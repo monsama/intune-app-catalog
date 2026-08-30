@@ -6925,6 +6925,159 @@ if (`$Apps) { return "Installed!" }
 }
 
 # ---------------------------------------------------------------
+# Local vs. Intune metadata drift compare dialog
+# ---------------------------------------------------------------
+# Shown from inside Show-CreateInIntuneDialog's auto-fetch, right after it
+# finds fields that differ between what's saved locally and what's actually
+# live in Intune right now. By the time this shows, every field in that
+# dialog already holds Intune's value - Intune stays the default winner for
+# every row here too (an unticked box is the only way a row changes), so
+# this only ADDS visibility and a per-field opt-out; it never changes what
+# happens if nobody looks at it before it's dismissed.
+#
+# -Rows is an array of @{ Field; Local; Intune } (all plain display strings
+# - no live control references or scriptblocks in here, deliberately, so
+# this dialog stays a simple, self-contained compare/pick UI with nothing
+# that needs closure-capture care). Returns an array of Field values (a
+# subset of $Rows.Field) for the rows whose "Use Intune's value" box ended
+# up UNCHECKED - i.e. the fields the caller should revert back to the local
+# value. An empty array (every box left checked, or Cancel) means the
+# caller should leave every field exactly as the auto-fetch already set it.
+function Show-MetadataDriftDialog {
+    param($Rows)
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $rowWord = if (@($Rows).Count -eq 1) { "field" } else { "fields" }
+    $dlg.Text = "Local vs. Intune - $(@($Rows).Count) $rowWord differ"
+    $dlg.ClientSize = New-Object System.Drawing.Size(800, 480)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "Sizable"
+    $dlg.MinimumSize = New-Object System.Drawing.Size(600, 320)
+    $dlg.MaximizeBox = $true
+    $dlg.MinimizeBox = $false
+
+    $lblHeader = New-Object System.Windows.Forms.Label
+    $lblHeader.Text = "These fields differ between your local catalog copy and what's actually live in Intune. Every field in the deploy dialog already holds Intune's value (Intune wins by default) - untick a row below to keep your local value for that field instead."
+    $lblHeader.Location = New-Object System.Drawing.Point(15,12)
+    $lblHeader.Size = New-Object System.Drawing.Size(770,40)
+    $dlg.Controls.Add($lblHeader)
+
+    $grid = New-Object System.Windows.Forms.DataGridView
+    $grid.Location = New-Object System.Drawing.Point(15,58)
+    $grid.Size = New-Object System.Drawing.Size(770,362)
+    $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+    $grid.AllowUserToAddRows = $false
+    $grid.AllowUserToDeleteRows = $false
+    $grid.AllowUserToResizeRows = $false
+    $grid.RowHeadersVisible = $false
+    $grid.SelectionMode = "FullRowSelect"
+    $grid.AutoSizeRowsMode = [System.Windows.Forms.DataGridViewAutoSizeRowsMode]::AllCells
+    $grid.ColumnHeadersHeightSizeMode = [System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode]::AutoSize
+
+    $colUse = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
+    $colUse.Name = "UseIntune"
+    $colUse.HeaderText = "Use Intune's value"
+    $colUse.Width = 110
+    [void]$grid.Columns.Add($colUse)
+
+    $colField = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colField.Name = "Field"
+    $colField.HeaderText = "Field"
+    $colField.ReadOnly = $true
+    $colField.Width = 150
+    [void]$grid.Columns.Add($colField)
+
+    $colLocal = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colLocal.Name = "Local"
+    $colLocal.HeaderText = "Local (catalog)"
+    $colLocal.ReadOnly = $true
+    $colLocal.Width = 250
+    $colLocal.DefaultCellStyle.WrapMode = [System.Windows.Forms.DataGridViewTriState]::True
+    [void]$grid.Columns.Add($colLocal)
+
+    $colIntune = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colIntune.Name = "Intune"
+    $colIntune.HeaderText = "Intune (live)"
+    $colIntune.ReadOnly = $true
+    $colIntune.Width = 250
+    $colIntune.DefaultCellStyle.WrapMode = [System.Windows.Forms.DataGridViewTriState]::True
+    [void]$grid.Columns.Add($colIntune)
+
+    $dlg.Controls.Add($grid)
+
+    foreach ($row in @($Rows)) {
+        $rIdx = $grid.Rows.Add()
+        $grid.Rows[$rIdx].Cells["UseIntune"].Value = $true
+        $grid.Rows[$rIdx].Cells["Field"].Value = $row.Field
+        $grid.Rows[$rIdx].Cells["Local"].Value = if ([string]::IsNullOrWhiteSpace($row.Local)) { "(blank)" } else { $row.Local }
+        $grid.Rows[$rIdx].Cells["Intune"].Value = if ([string]::IsNullOrWhiteSpace($row.Intune)) { "(blank)" } else { $row.Intune }
+    }
+
+    $btnAllIntune = New-Object System.Windows.Forms.Button
+    $btnAllIntune.Text = "Use Intune for all"
+    $btnAllIntune.Location = New-Object System.Drawing.Point(15,428)
+    $btnAllIntune.Size = New-Object System.Drawing.Size(140,28)
+    $btnAllIntune.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
+    $dlg.Controls.Add($btnAllIntune)
+
+    $btnAllLocal = New-Object System.Windows.Forms.Button
+    $btnAllLocal.Text = "Keep local for all"
+    $btnAllLocal.Location = New-Object System.Drawing.Point(160,428)
+    $btnAllLocal.Size = New-Object System.Drawing.Size(140,28)
+    $btnAllLocal.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
+    $dlg.Controls.Add($btnAllLocal)
+
+    $btnAllIntune.Add_Click({
+        $grid.EndEdit()
+        foreach ($r in $grid.Rows) { $r.Cells["UseIntune"].Value = $true }
+    }.GetNewClosure())
+    $btnAllLocal.Add_Click({
+        $grid.EndEdit()
+        foreach ($r in $grid.Rows) { $r.Cells["UseIntune"].Value = $false }
+    }.GetNewClosure())
+
+    $btnOk = New-Object System.Windows.Forms.Button
+    $btnOk.Text = "OK"
+    $btnOk.Location = New-Object System.Drawing.Point(615,428)
+    $btnOk.Size = New-Object System.Drawing.Size(80,28)
+    $btnOk.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+    $dlg.Controls.Add($btnOk)
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Cancel"
+    $btnCancel.Location = New-Object System.Drawing.Point(705,428)
+    $btnCancel.Size = New-Object System.Drawing.Size(80,28)
+    $btnCancel.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+    $dlg.Controls.Add($btnCancel)
+
+    # Plain local box (not $Script:-qualified) - see the same pattern/reasoning
+    # in Show-SimpleListPicker.
+    $resultBox = @{ Value = @() }
+    $btnOk.Add_Click({
+        $grid.EndEdit()
+        $keepLocal = New-Object System.Collections.Generic.List[string]
+        foreach ($r in $grid.Rows) {
+            if (-not [bool]$r.Cells["UseIntune"].Value) { $keepLocal.Add([string]$r.Cells["Field"].Value) }
+        }
+        $resultBox.Value = @($keepLocal)
+        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $dlg.Close()
+    }.GetNewClosure())
+    $btnCancel.Add_Click({
+        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+        $dlg.Close()
+    }.GetNewClosure())
+
+    $dlg.AcceptButton = $btnOk
+    $dlg.CancelButton = $btnCancel
+    Set-Theme -Control $dlg
+
+    $result = $dlg.ShowDialog($form)
+    if ($result -eq [System.Windows.Forms.DialogResult]::OK) { return $resultBox.Value }
+    return @()
+}
+
+# ---------------------------------------------------------------
 # Create in Intune dialog
 # ---------------------------------------------------------------
 # Builds a new Win32 app in Intune (or updates an existing one's metadata) from
@@ -8713,6 +8866,14 @@ function Show-CreateInIntuneDialog {
             DeviceRestartBehavior = if ($m.deviceRestartBehavior) { $m.deviceRestartBehavior } else { "basedOnReturnCode" }
             AllowAvailableUninstall = [bool]$m.allowAvailableUninstall
             ReturnCodesSummary = if (@($m.returnCodes).Count -gt 0) { (@($m.returnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
+            # The raw structured objects behind the two summary strings
+            # above - only used if the drift-compare dialog needs to
+            # actually REVERT one of these two composite fields back to the
+            # local value (repopulating the detection-rule sub-form or the
+            # return-codes grid needs the real object, not the JSON string
+            # used for the diff/display).
+            DetectionRule = $m.detectionRule
+            ReturnCodes   = @($m.returnCodes)
         }
     }
 
@@ -8987,6 +9148,124 @@ function Show-CreateInIntuneDialog {
                         # to be discovered later via a confusing "check at least
                         # one" validation error on submit.
                         $lblCreateStatusRef.Text = "Loaded current metadata from Intune - but it didn't return a usable architecture value, so none are pre-checked below. Select the correct one(s) manually."
+                    }
+                }
+
+                # Every field above already holds Intune's value - this only
+                # offers a look at what actually differs and a way to pick
+                # individual fields back to the local value, it never
+                # changes the outcome on its own. Built as flat, explicit
+                # per-field checks against $diffFields/$keepLocalFields
+                # (not scriptblocks built inside a loop) - a closure built
+                # per loop iteration to capture that iteration's own control
+                # reference is exactly the class of bug already hunted down
+                # elsewhere in this file (self-referencing/loop-captured
+                # closures), so this sidesteps it entirely by never doing
+                # that in the first place.
+                if ($diffFields.Count -gt 0) {
+                    $driftRows = New-Object System.Collections.Generic.List[object]
+                    if ($diffFields -contains "Description")              { $driftRows.Add([pscustomobject]@{ Field = "Description"; Local = $localSnapshotRef.Description; Intune = [string]$data.Description }) }
+                    if ($diffFields -contains "Publisher")                { $driftRows.Add([pscustomobject]@{ Field = "Publisher"; Local = $localSnapshotRef.Publisher; Intune = [string]$data.Publisher }) }
+                    if ($diffFields -contains "Owner")                    { $driftRows.Add([pscustomobject]@{ Field = "Owner"; Local = $localSnapshotRef.Owner; Intune = [string]$data.Owner }) }
+                    if ($diffFields -contains "Developer")                { $driftRows.Add([pscustomobject]@{ Field = "Developer"; Local = $localSnapshotRef.Developer; Intune = [string]$data.Developer }) }
+                    if ($diffFields -contains "Information URL")         { $driftRows.Add([pscustomobject]@{ Field = "Information URL"; Local = $localSnapshotRef.InformationUrl; Intune = [string]$data.InformationUrl }) }
+                    if ($diffFields -contains "Privacy URL")              { $driftRows.Add([pscustomobject]@{ Field = "Privacy URL"; Local = $localSnapshotRef.PrivacyUrl; Intune = [string]$data.PrivacyInformationUrl }) }
+                    if ($diffFields -contains "Notes")                    { $driftRows.Add([pscustomobject]@{ Field = "Notes"; Local = $localSnapshotRef.Notes; Intune = [string]$data.Notes }) }
+                    if ($diffFields -contains "Install command")          { $driftRows.Add([pscustomobject]@{ Field = "Install command"; Local = $localSnapshotRef.InstallCommand; Intune = [string]$data.InstallCommandLine }) }
+                    if ($diffFields -contains "Uninstall command")        { $driftRows.Add([pscustomobject]@{ Field = "Uninstall command"; Local = $localSnapshotRef.UninstallCommand; Intune = [string]$data.UninstallCommandLine }) }
+                    if ($diffFields -contains "Architecture")             { $driftRows.Add([pscustomobject]@{ Field = "Architecture"; Local = $localSnapshotRef.Architecture; Intune = [string]$archSource }) }
+                    if ($diffFields -contains "Detection rule")           { $driftRows.Add([pscustomobject]@{ Field = "Detection rule"; Local = $localSnapshotRef.DetectionSummary; Intune = $liveDetSummary }) }
+                    if ($diffFields -contains "Disk space requirement")   { $driftRows.Add([pscustomobject]@{ Field = "Disk space requirement"; Local = [string]$localSnapshotRef.MinDiskSpaceMB; Intune = [string]$data.MinDiskSpaceMB }) }
+                    if ($diffFields -contains "Memory requirement")       { $driftRows.Add([pscustomobject]@{ Field = "Memory requirement"; Local = [string]$localSnapshotRef.MinMemoryMB; Intune = [string]$data.MinMemoryMB }) }
+                    if ($diffFields -contains "Min. processors requirement")  { $driftRows.Add([pscustomobject]@{ Field = "Min. processors requirement"; Local = [string]$localSnapshotRef.MinProcessors; Intune = [string]$data.MinProcessors }) }
+                    if ($diffFields -contains "Min. CPU speed requirement")   { $driftRows.Add([pscustomobject]@{ Field = "Min. CPU speed requirement"; Local = [string]$localSnapshotRef.MinCpuSpeedMHz; Intune = [string]$data.MinCpuSpeedMHz }) }
+                    if ($diffFields -contains "Install time required")    { $driftRows.Add([pscustomobject]@{ Field = "Install time required"; Local = [string]$localSnapshotRef.InstallTimeMinutes; Intune = [string]$data.InstallTimeMinutes }) }
+                    if ($diffFields -contains "Device restart behavior")  { $driftRows.Add([pscustomobject]@{ Field = "Device restart behavior"; Local = [string]$localSnapshotRef.DeviceRestartBehavior; Intune = [string]$data.DeviceRestartBehavior }) }
+                    if ($diffFields -contains "Allow available uninstall") { $driftRows.Add([pscustomobject]@{ Field = "Allow available uninstall"; Local = [string]$localSnapshotRef.AllowAvailableUninstall; Intune = [string][bool]$data.AllowAvailableUninstall }) }
+                    if ($diffFields -contains "Return codes")             { $driftRows.Add([pscustomobject]@{ Field = "Return codes"; Local = $localSnapshotRef.ReturnCodesSummary; Intune = $liveReturnCodesSummary }) }
+
+                    $keepLocalFields = @(Show-MetadataDriftDialog -Rows $driftRows.ToArray())
+
+                    if ($keepLocalFields.Count -gt 0) {
+                        if ($keepLocalFields -contains "Description")          { $txtDescRef.Text = $localSnapshotRef.Description }
+                        if ($keepLocalFields -contains "Publisher")            { $txtPublisherRef.Text = $localSnapshotRef.Publisher }
+                        if ($keepLocalFields -contains "Owner")                { $txtOwnerRef.Text = $localSnapshotRef.Owner }
+                        if ($keepLocalFields -contains "Developer")            { $txtDeveloperRef.Text = $localSnapshotRef.Developer }
+                        if ($keepLocalFields -contains "Information URL")      { $txtInfoUrlRef.Text = $localSnapshotRef.InformationUrl }
+                        if ($keepLocalFields -contains "Privacy URL")          { $txtPrivacyUrlRef.Text = $localSnapshotRef.PrivacyUrl }
+                        if ($keepLocalFields -contains "Notes")                { $txtNotesRef.Text = $localSnapshotRef.Notes }
+                        if ($keepLocalFields -contains "Install command")      { $txtInstallRef.Text = $localSnapshotRef.InstallCommand }
+                        if ($keepLocalFields -contains "Uninstall command")    { $txtUninstallRef.Text = $localSnapshotRef.UninstallCommand }
+                        if ($keepLocalFields -contains "Architecture") {
+                            $localArchList = @([string]$localSnapshotRef.Architecture -split ',' | ForEach-Object { $_.Trim().ToLower() })
+                            $chkArchX86Ref.Checked = $localArchList -contains "x86"
+                            $chkArchX64Ref.Checked = $localArchList -contains "x64"
+                            $chkArchArm64Ref.Checked = $localArchList -contains "arm64"
+                        }
+                        # Mirrors the local-prefill switch earlier in this
+                        # function almost exactly - same field-by-field
+                        # mapping, just re-pointed at $localSnapshotRef's
+                        # raw DetectionRule instead of $m.detectionRule, and
+                        # using the *Ref control aliases this nested closure
+                        # actually has in scope.
+                        if ($keepLocalFields -contains "Detection rule" -and $localSnapshotRef.DetectionRule) {
+                            $localDetRule = $localSnapshotRef.DetectionRule
+                            switch ($localDetRule.Type) {
+                                "Script" {
+                                    $cmbDetectionTypeRef.SelectedIndex = 0
+                                    if ($localDetRule.Script_Content) { $txtDetectionRef.Text = $localDetRule.Script_Content }
+                                }
+                                "Msi" {
+                                    $cmbDetectionTypeRef.SelectedIndex = 1
+                                    $txtMsiCodeRef.Text = $localDetRule.Msi_ProductCode
+                                    $opKey = $operatorMapRef.Keys | Where-Object { $operatorMapRef[$_] -eq $localDetRule.Msi_VersionOperator } | Select-Object -First 1
+                                    if ($opKey) { $cmbMsiOperatorRef.SelectedItem = $opKey }
+                                    $txtMsiVersionRef.Text = $localDetRule.Msi_Version
+                                }
+                                "File" {
+                                    $cmbDetectionTypeRef.SelectedIndex = 2
+                                    $txtFilePathRef.Text = $localDetRule.File_Path
+                                    $txtFileNameRef.Text = $localDetRule.File_Name
+                                    $chkFileCheck32Ref.Checked = [bool]$localDetRule.File_Check32Bit
+                                    $dtKey = $fileDetTypeMapRef.Keys | Where-Object { $fileDetTypeMapRef[$_] -eq $localDetRule.File_DetectionType } | Select-Object -First 1
+                                    if ($dtKey) { $cmbFileDetTypeRef.SelectedItem = $dtKey }
+                                    $opKey = $operatorMapRef.Keys | Where-Object { $operatorMapRef[$_] -eq $localDetRule.File_Operator } | Select-Object -First 1
+                                    if ($opKey) { $cmbFileOperatorRef.SelectedItem = $opKey }
+                                    $txtFileDetValueRef.Text = $localDetRule.File_DetectionValue
+                                }
+                                "Registry" {
+                                    $cmbDetectionTypeRef.SelectedIndex = 3
+                                    $txtRegKeyPathRef.Text = $localDetRule.Reg_KeyPath
+                                    $txtRegValueNameRef.Text = $localDetRule.Reg_ValueName
+                                    $chkRegCheck32Ref.Checked = [bool]$localDetRule.Reg_Check32Bit
+                                    $dtKey = $regDetTypeMapRef.Keys | Where-Object { $regDetTypeMapRef[$_] -eq $localDetRule.Reg_DetectionType } | Select-Object -First 1
+                                    if ($dtKey) { $cmbRegDetTypeRef.SelectedItem = $dtKey }
+                                    $opKey = $operatorMapRef.Keys | Where-Object { $operatorMapRef[$_] -eq $localDetRule.Reg_Operator } | Select-Object -First 1
+                                    if ($opKey) { $cmbRegOperatorRef.SelectedItem = $opKey }
+                                    $txtRegDetValueRef.Text = $localDetRule.Reg_DetectionValue
+                                }
+                            }
+                        }
+                        if ($keepLocalFields -contains "Disk space requirement")        { $txtDiskSpaceRef.Text = [string]$localSnapshotRef.MinDiskSpaceMB }
+                        if ($keepLocalFields -contains "Memory requirement")            { $txtMemoryRef.Text = [string]$localSnapshotRef.MinMemoryMB }
+                        if ($keepLocalFields -contains "Min. processors requirement")   { $txtProcessorsRef.Text = [string]$localSnapshotRef.MinProcessors }
+                        if ($keepLocalFields -contains "Min. CPU speed requirement")    { $txtCpuSpeedRef.Text = [string]$localSnapshotRef.MinCpuSpeedMHz }
+                        if ($keepLocalFields -contains "Install time required")         { $txtInstallTimeRef.Text = [string]$localSnapshotRef.InstallTimeMinutes }
+                        if ($keepLocalFields -contains "Device restart behavior") {
+                            $rbKeyLocal = $restartBehaviorMapRef.Keys | Where-Object { $restartBehaviorMapRef[$_] -eq $localSnapshotRef.DeviceRestartBehavior } | Select-Object -First 1
+                            if ($rbKeyLocal) { $cmbRestartBehaviorRef.SelectedItem = $rbKeyLocal }
+                        }
+                        if ($keepLocalFields -contains "Allow available uninstall") { $chkAllowUninstallRef.Checked = [bool]$localSnapshotRef.AllowAvailableUninstall }
+                        if ($keepLocalFields -contains "Return codes" -and $localSnapshotRef.ReturnCodes) {
+                            $grdReturnCodesRef.Rows.Clear()
+                            foreach ($rc in @($localSnapshotRef.ReturnCodes)) {
+                                $rcRowIdxLocal = $grdReturnCodesRef.Rows.Add()
+                                $grdReturnCodesRef.Rows[$rcRowIdxLocal].Cells["Code"].Value = [string]$rc.returnCode
+                                $grdReturnCodesRef.Rows[$rcRowIdxLocal].Cells["Type"].Value = [string]$rc.type
+                            }
+                        }
+                        $lblCreateStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
+                        $lblCreateStatusRef.Text = "Loaded current metadata from Intune - kept your local value for: $($keepLocalFields -join ', ')."
                     }
                 }
             }.GetNewClosure()
