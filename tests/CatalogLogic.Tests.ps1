@@ -93,7 +93,8 @@ $testableFunctionNames = @(
     "Get-CatalogMetadataFieldDiffs",
     "Merge-CatalogMetadata",
     "Get-CreateAppTemplates",
-    "Get-DefaultAppMetadata"
+    "Get-DefaultAppMetadata",
+    "Get-FriendlyIntuneAppType"
 )
 
 $funcAsts = $ast.FindAll({
@@ -284,6 +285,22 @@ $Script:Apps.Clear()
 $defaultsNoWau = Get-DefaultAppMetadata -AppName "Some Other App" -WingetId "some.app" -Uncommon $false
 Assert-Equal 0 @($defaultsNoWau.dependencies).Count `
     "Get-DefaultAppMetadata: no dependency default when Winget AutoUpdate isn't in the catalog at all"
+
+# -----------------------------------------------------------------
+# Get-FriendlyIntuneAppType
+# -----------------------------------------------------------------
+Assert-Equal "Windows app (Win32)" (Get-FriendlyIntuneAppType -ODataType "#microsoft.graph.win32LobApp") `
+    "Get-FriendlyIntuneAppType: win32LobApp maps to the Intune portal's own label"
+Assert-Equal "Windows app (Win32)" (Get-FriendlyIntuneAppType -ODataType "microsoft.graph.win32CatalogApp") `
+    "Get-FriendlyIntuneAppType: win32CatalogApp maps the same as win32LobApp (works without the leading #)"
+Assert-Equal "Microsoft 365 Apps (Windows 10 and later)" (Get-FriendlyIntuneAppType -ODataType "#microsoft.graph.officeSuiteApp") `
+    "Get-FriendlyIntuneAppType: officeSuiteApp maps to the Microsoft 365 Apps label"
+Assert-Equal "Microsoft Store app (new)" (Get-FriendlyIntuneAppType -ODataType "#microsoft.graph.winGetApp") `
+    "Get-FriendlyIntuneAppType: winGetApp maps to the new Microsoft Store app label"
+Assert-Equal "" (Get-FriendlyIntuneAppType -ODataType "") `
+    "Get-FriendlyIntuneAppType: blank input returns blank, not an error"
+Assert-Equal "Some Unmapped Type" (Get-FriendlyIntuneAppType -ODataType "#microsoft.graph.someUnmappedType") `
+    "Get-FriendlyIntuneAppType: an unrecognized type still gets a readable, space-separated fallback label"
 
 # =================================================================
 # Report

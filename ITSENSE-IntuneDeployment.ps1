@@ -3001,12 +3001,17 @@ try {
                 returnCodes             = @($app.returnCodes | ForEach-Object { [pscustomobject]@{ returnCode = $_.returnCode; type = $_.type } })
             }
 
-            $allResults.Add([pscustomobject]@{ AppName = $appEntry.AppName; Success = $true; Metadata = $metadata; Error = "" })
+            # Raw here, not friendly-mapped - the parent GUI process is the
+            # one place that maps @odata.type to the same label the Intune
+            # portal itself shows (Get-FriendlyIntuneAppType), so that
+            # mapping only has to live in one place, not duplicated into
+            # every embedded child-process script that could report it.
+            $allResults.Add([pscustomobject]@{ AppName = $appEntry.AppName; Success = $true; Metadata = $metadata; OdataType = $app.'@odata.type'; DisplayVersion = [string]$app.displayVersion; Error = "" })
             Write-Host "  [OK] Synced." -ForegroundColor Green
         }
         catch {
             Write-Host "  [ERROR] $($_.Exception.Message)" -ForegroundColor Red
-            $allResults.Add([pscustomobject]@{ AppName = $appEntry.AppName; Success = $false; Metadata = $null; Error = $_.Exception.Message })
+            $allResults.Add([pscustomobject]@{ AppName = $appEntry.AppName; Success = $false; Metadata = $null; OdataType = ""; DisplayVersion = ""; Error = $_.Exception.Message })
         }
     }
 
@@ -3439,6 +3444,15 @@ function ConvertTo-AppRecord {
         # "uncommon" is no longer a stored field - see Test-AppIsUncommon.
         # Any stray "uncommon" key in an older input.json is simply ignored;
         # whether an app is common/uncommon is always derived from wingetId.
+        #
+        # Read-only, Intune-reported facts (not deployment config, so
+        # deliberately siblings of appId/wingetId, not nested inside
+        # metadata) - the app's actual @odata.type from Intune (e.g.
+        # "Windows app (Win32)") and its displayVersion, if any. Blank
+        # (missing from an older catalog file, or never synced yet) for
+        # any app this hasn't been fetched for.
+        intuneAppType    = [string]$Raw.intuneAppType
+        intuneAppVersion = [string]$Raw.intuneAppVersion
         requiredFor  = @($Raw.requiredFor)
         availableFor = @($Raw.availableFor)
         uninstallFor = @($Raw.uninstallFor)
@@ -3640,6 +3654,12 @@ function ConvertTo-SingleAppJson {
     $fields.Add("  `"appName`": $(ConvertTo-JsonStringLiteral $App.appName)")
     if ($App.wingetId) {
         $fields.Add("  `"wingetId`": $(ConvertTo-JsonStringLiteral $App.wingetId)")
+    }
+    if ($App.intuneAppType) {
+        $fields.Add("  `"intuneAppType`": $(ConvertTo-JsonStringLiteral $App.intuneAppType)")
+    }
+    if ($App.intuneAppVersion) {
+        $fields.Add("  `"intuneAppVersion`": $(ConvertTo-JsonStringLiteral $App.intuneAppVersion)")
     }
     $fields.Add("  `"requiredFor`": $(ConvertTo-JsonStringArray -Items @($App.requiredFor) -IndentLevel 1)")
     $fields.Add("  `"availableFor`": $(ConvertTo-JsonStringArray -Items @($App.availableFor) -IndentLevel 1)")
@@ -6340,6 +6360,8 @@ function New-GridColumn {
 
 $grid.Columns.Add((New-GridColumn "AppName" "App Name" -FillWeight 18)) | Out-Null
 $grid.Columns.Add((New-GridColumn "WingetId" "Winget ID" -FillWeight 14)) | Out-Null
+$grid.Columns.Add((New-GridColumn "Type" "Type" -FillWeight 14)) | Out-Null
+$grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 8)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 5)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Folder" "Package folder" -FillWeight 24)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Required" "Required" -FillWeight 5)) | Out-Null
@@ -6410,6 +6432,8 @@ function Refresh-Grid {
         $rows.Add([pscustomobject]@{
             AppName   = $app.appName
             WingetId  = $app.wingetId
+            Type      = if ($app.intuneAppType) { $app.intuneAppType } else { "" }
+            Version   = if ($app.intuneAppVersion) { $app.intuneAppVersion } else { "" }
             Uncommon  = if ($isUncommon) { "Yes" } else { "" }
             Folder    = $folderDisplay
             Required  = @($app.requiredFor).Count
@@ -6794,13 +6818,15 @@ function Save-AppMetadataToLocalCatalog {
     $createdNewEntry = $false
     if ($targetIndex -lt 0) {
         $newEntry = [pscustomobject]@{
-            appId        = ""
-            appName      = $AppName
-            wingetId     = ""
-            requiredFor  = @()
-            availableFor = @()
-            uninstallFor = @()
-            metadata     = $null
+            appId            = ""
+            appName          = $AppName
+            wingetId         = ""
+            intuneAppType    = ""
+            intuneAppVersion = ""
+            requiredFor      = @()
+            availableFor     = @()
+            uninstallFor     = @()
+            metadata         = $null
         }
         [void]$AppsRef.Add($newEntry)
         $targetIndex = $AppsRef.Count - 1
@@ -6809,13 +6835,19 @@ function Save-AppMetadataToLocalCatalog {
 
     $existingApp = $AppsRef[$targetIndex]
     $updatedApp = [pscustomobject]@{
-        appId        = if ($NewAppId) { $NewAppId } else { $existingApp.appId }
-        appName      = $existingApp.appName
-        wingetId     = $existingApp.wingetId
-        requiredFor  = @($existingApp.requiredFor)
-        availableFor = @($existingApp.availableFor)
-        uninstallFor = @($existingApp.uninstallFor)
-        metadata     = $Metadata
+        appId            = if ($NewAppId) { $NewAppId } else { $existingApp.appId }
+        appName          = $existingApp.appName
+        wingetId         = $existingApp.wingetId
+        # A NewAppId means this call is reporting a just-succeeded Intune
+        # creation, not just staging local metadata - and this tool only
+        # ever creates win32LobApp objects, so the type is a known fact,
+        # not something that needs fetching.
+        intuneAppType    = if ($NewAppId) { "Windows app (Win32)" } else { $existingApp.intuneAppType }
+        intuneAppVersion = $existingApp.intuneAppVersion
+        requiredFor      = @($existingApp.requiredFor)
+        availableFor     = @($existingApp.availableFor)
+        uninstallFor     = @($existingApp.uninstallFor)
+        metadata         = $Metadata
     }
     $AppsRef[$targetIndex] = $updatedApp
 
@@ -6930,6 +6962,42 @@ function Merge-CatalogMetadata {
 function Test-AppIsUncommon {
     param($App)
     return [string]::IsNullOrWhiteSpace($App.wingetId)
+}
+
+# Maps an Intune app's raw @odata.type to the same friendly label the
+# Intune admin center's own "Type" column shows for it - the ONE place
+# this mapping lives (embedded child-process scripts that fetch an app's
+# raw type hand it back unmapped, specifically so it isn't duplicated
+# into every one of them separately). Deliberately only covers the types
+# most likely to actually show up in a Windows-app-focused catalog like
+# this one's; an unmapped type falls back to a readable derived label
+# (e.g. "androidStoreApp" -> "Android Store App") rather than guessing at
+# wrong portal wording for something rare here.
+function Get-FriendlyIntuneAppType {
+    param([string]$ODataType)
+
+    if (-not $ODataType) { return "" }
+    $typeName = $ODataType -replace '^#?microsoft\.graph\.', ''
+
+    $knownTypes = @{
+        "win32LobApp"             = "Windows app (Win32)"
+        "win32CatalogApp"         = "Windows app (Win32)"
+        "officeSuiteApp"          = "Microsoft 365 Apps (Windows 10 and later)"
+        "windowsMicrosoftEdgeApp" = "Microsoft Edge, version 77 and later"
+        "windowsStoreApp"         = "Microsoft Store app (legacy)"
+        "winGetApp"               = "Microsoft Store app (new)"
+        "windowsUniversalAppX"    = "Microsoft Store app (legacy)"
+        "windowsAppX"             = "Windows app package (.appx)"
+        "windowsPhone81AppX"      = "Windows Phone app package (.appx)"
+        "windowsWebApp"           = "Web link"
+        "webApp"                  = "Web link"
+        "windowsMobileMSI"        = "Windows app (Win32)"
+    }
+    if ($knownTypes.ContainsKey($typeName)) { return $knownTypes[$typeName] }
+
+    $spaced = $typeName -creplace '([a-z0-9])([A-Z])', '$1 $2'
+    if ($spaced.Length -gt 0) { return $spaced.Substring(0,1).ToUpper() + $spaced.Substring(1) }
+    return $spaced
 }
 
 # Mirrors Get-SafeFileName inside the embedded package script exactly, so we
@@ -8146,7 +8214,7 @@ function Show-CreateInIntuneDialog {
     $dlg.Controls.Add($rtbCreateLog)
 
     $btnCreate = New-Object System.Windows.Forms.Button
-    $btnCreate.Text = if ($isDuplicate) { "Update Metadata" } else { "Create" }
+    $btnCreate.Text = if ($isDuplicate) { "Update Metadata" } else { "Deploy" }
     $btnCreate.Location = New-Object System.Drawing.Point(340,941)
     $btnCreate.Size = New-Object System.Drawing.Size(200,32)
     $dlg.Controls.Add($btnCreate)
@@ -8160,9 +8228,10 @@ function Show-CreateInIntuneDialog {
     # record of an app's metadata without needing to push anything back to
     # Intune at all.
     $btnSaveForLater = New-Object System.Windows.Forms.Button
-    $btnSaveForLater.Text = if ($isDuplicate) { "Save local copy..." } else { "Save for later..." }
-    $btnSaveForLater.Location = New-Object System.Drawing.Point(150,941)
-    $btnSaveForLater.Size = New-Object System.Drawing.Size(180,32)
+    $btnSaveForLater.Text = if ($isDuplicate) { "Save local copy..." } else { "Save to App Catalog without Deploying" }
+    $btnSaveForLater.Location = New-Object System.Drawing.Point(15,941)
+    $btnSaveForLater.Size = New-Object System.Drawing.Size(315,32)
+    $btnSaveForLater.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $dlg.Controls.Add($btnSaveForLater)
 
     $btnCancel = New-Object System.Windows.Forms.Button
@@ -8194,10 +8263,10 @@ function Show-CreateInIntuneDialog {
                 # post-creation.
                 $cmbContext.Enabled = $false
             }
-            $btnCreate.Text = if ($chkForceNew.Checked) { "Create" } elseif ($chkReplaceContent.Checked) { "Update + Replace Content" } else { "Update Metadata" }
+            $btnCreate.Text = if ($chkForceNew.Checked) { "Deploy" } elseif ($chkReplaceContent.Checked) { "Update + Replace Content" } else { "Update Metadata" }
         }.GetNewClosure())
         $chkReplaceContent.Add_Click({
-            $btnCreate.Text = if ($chkForceNew.Checked) { "Create" } elseif ($chkReplaceContent.Checked) { "Update + Replace Content" } else { "Update Metadata" }
+            $btnCreate.Text = if ($chkForceNew.Checked) { "Deploy" } elseif ($chkReplaceContent.Checked) { "Update + Replace Content" } else { "Update Metadata" }
         }.GetNewClosure())
     }
 
@@ -9906,6 +9975,23 @@ function Show-BatchDeployDialog {
             # to disk right after its own creation, inside the loop above,
             # rather than only once at the very end here.
             $lblStatus.Text = "Done - $createdCount created, $skippedCount skipped, $failedCount failed."
+
+            # Main grid is already stale the moment this ran (every
+            # successful app saved its new App ID/type straight to disk
+            # inside the loop above, not just here at the end) - refreshed
+            # now regardless of whether this dialog is about to close,
+            # same reasoning as every other bulk action in this app.
+            Refresh-Grid
+
+            # Closes itself on a clean run, same as bulk delete already
+            # does - nothing left here worth an extra manual click to
+            # dismiss. A skip isn't a failure (it's an expected, already-
+            # explained outcome - missing package or no detection to
+            # default), so it doesn't hold this open; an actual failure
+            # does, since the log is the whole point of staying up then.
+            if ($failedCount -eq 0) {
+                $dlg.Close()
+            }
             return
         }
 
@@ -10055,6 +10141,10 @@ function Show-BatchDeployDialog {
                             for ($ai = 0; $ai -lt $appsRefRef.Count; $ai++) {
                                 if ($appsRefRef[$ai].appName -eq $currentAppRef.appName) {
                                     $appsRefRef[$ai].appId = $result.appId
+                                    # This tool only ever creates win32LobApp
+                                    # objects, so the type is a known fact on
+                                    # any successful creation - no fetch needed.
+                                    $appsRefRef[$ai].intuneAppType = "Windows app (Win32)"
                                     # The generated defaults are only saved
                                     # into the catalog on actual SUCCESS,
                                     # not the moment they're computed above -
@@ -10379,6 +10469,15 @@ function Show-SyncMetadataDialog {
                     if (-not $oneResult.Success) { $failedNames.Add($oneResult.AppName); continue }
                     for ($ai = 0; $ai -lt $appsRefRef.Count; $ai++) {
                         if ($appsRefRef[$ai].appName -eq $oneResult.AppName) {
+                            # Always applied directly, unlike metadata below -
+                            # there's no local, user-editable counterpart for
+                            # "what type of app is this in Intune" or "what
+                            # version does Intune currently have", so there's
+                            # nothing to preserve/review a conflict against;
+                            # it's just a fact mirrored from Intune.
+                            $appsRefRef[$ai].intuneAppType = Get-FriendlyIntuneAppType -ODataType $oneResult.OdataType
+                            $appsRefRef[$ai].intuneAppVersion = $oneResult.DisplayVersion
+
                             # Not a blind overwrite - an app whose local copy
                             # already differs from what Intune actually has
                             # right now is queued for an interactive
@@ -11013,9 +11112,13 @@ function Show-IntuneOnlyAppsDialog {
         }
         else {
             $prefill = [pscustomobject]@{ appName = $intuneName; appId = $id }
-            $newApp = Show-AppEditor -ExistingApp $prefill
-            if ($newApp) {
-                [void]$appsRef.Add($newApp)
+            $editorResult = Show-AppEditor -ExistingApp $prefill
+            if ($editorResult) {
+                # This app already has an App ID (it came from Intune) - "Save
+                # && Deploy" would find nothing eligible to deploy here even
+                # if clicked, so its DeployAfterSave flag is simply unused
+                # in this particular flow.
+                [void]$appsRef.Add($editorResult.App)
                 $unsavedBoxRef.Value = $true
                 $anyAddedBox.Value = $true
                 [void](Save-AppsToFile -Path $linkedFilePathRef)
@@ -11052,13 +11155,19 @@ function Show-IntuneOnlyAppsDialog {
         # once.
         foreach ($item in $toAdd) {
             $newEntry = [pscustomobject]@{
-                appId        = $item.Id
-                appName      = $item.Name
-                wingetId     = ""
-                requiredFor  = @()
-                availableFor = @()
-                uninstallFor = @()
-                metadata     = $null
+                appId            = $item.Id
+                appName          = $item.Name
+                wingetId         = ""
+                # Not fetched here - this is a lightweight bulk add (name +
+                # App ID only, same as the single-row "Add to catalog..."
+                # button). "Sync metadata..." picks up type/version for it
+                # the first time it runs against this App ID.
+                intuneAppType    = ""
+                intuneAppVersion = ""
+                requiredFor      = @()
+                availableFor     = @()
+                uninstallFor     = @()
+                metadata         = $null
             }
             [void]$appsRef.Add($newEntry)
         }
@@ -12657,6 +12766,13 @@ function Show-AppEditor {
     # handler can later READ that write back out.
     $pendingDeployMetadataBox = @{ Value = $null }
 
+    # Set by "Save && Deploy (Winget defaults)" only - tells this editor's
+    # caller (below, via the return value) to route straight to Batch
+    # Deploy for this one app right after saving, instead of just saving.
+    # Same declare-before-any-closure reasoning as $pendingDeployMetadataBox
+    # above.
+    $deployAfterSaveBox = @{ Value = $false }
+
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = if ($ExistingApp) { "Edit app" } else { "Add app" }
     $dlg.ClientSize = New-Object System.Drawing.Size(470, 745)
@@ -12724,8 +12840,23 @@ function Show-AppEditor {
     $btnCreateInIntune = New-Object System.Windows.Forms.Button
     $btnCreateInIntune.Text = "Deploy to Intune..."
     $btnCreateInIntune.Location = New-Object System.Drawing.Point(15,216)
-    $btnCreateInIntune.Size = New-Object System.Drawing.Size(430,30)
+    $btnCreateInIntune.Size = New-Object System.Drawing.Size(210,30)
     $dlg.Controls.Add($btnCreateInIntune)
+
+    # Shortcut for the common case (a Winget app with nothing unusual about
+    # it): saves this app to the catalog, then routes straight to Batch
+    # Deploy scoped to just this one app - same defaulting logic Batch
+    # Deploy already uses for any app with no saved metadata (see
+    # Get-DefaultAppMetadata), so there's exactly one place that computes
+    # "sensible Winget defaults", not a second copy of that logic living
+    # here. Batch Deploy's own pre-flight (package built? eligible?) and
+    # progress log are reused as-is, rather than re-implemented inline in
+    # this already-large editor.
+    $btnSaveAndDeployWinget = New-Object System.Windows.Forms.Button
+    $btnSaveAndDeployWinget.Text = "Save && Deploy (Winget defaults)"
+    $btnSaveAndDeployWinget.Location = New-Object System.Drawing.Point(235,216)
+    $btnSaveAndDeployWinget.Size = New-Object System.Drawing.Size(210,30)
+    $dlg.Controls.Add($btnSaveAndDeployWinget)
 
     # Lives at the bottom now, to the right of "Save app to catalog" -
     # created here (rather than down where the Save/Cancel buttons are)
@@ -12899,13 +13030,19 @@ function Show-AppEditor {
         if ($delFromIntuneIdx -ge 0) {
             $existingForClear = $appsRef[$delFromIntuneIdx]
             $appsRef[$delFromIntuneIdx] = [pscustomobject]@{
-                appId        = ""
-                appName      = $existingForClear.appName
-                wingetId     = $existingForClear.wingetId
-                requiredFor  = @($existingForClear.requiredFor)
-                availableFor = @($existingForClear.availableFor)
-                uninstallFor = @($existingForClear.uninstallFor)
-                metadata     = $existingForClear.metadata
+                appId            = ""
+                appName          = $existingForClear.appName
+                wingetId         = $existingForClear.wingetId
+                # Cleared, not preserved, same reasoning as appId itself -
+                # both describe what Intune currently says about this app,
+                # and there's no longer anything in Intune for either to
+                # describe.
+                intuneAppType    = ""
+                intuneAppVersion = ""
+                requiredFor      = @($existingForClear.requiredFor)
+                availableFor     = @($existingForClear.availableFor)
+                uninstallFor     = @($existingForClear.uninstallFor)
+                metadata         = $existingForClear.metadata
             }
         }
         $unsavedBoxRef.Value = $true
@@ -13042,7 +13179,13 @@ function Show-AppEditor {
     # .GetNewClosure()'d block do not reliably reach the real script scope.
     $resultBox = @{ Value = $null }
 
-    $btnOk.Add_Click({
+    # Shared by both "Save app to catalog" and "Save && Deploy (Winget
+    # defaults)" - the two buttons only differ in validation (the latter
+    # additionally requires a Winget ID) and in whether $deployAfterSaveBox
+    # gets set before this runs; the actual "build the saved object and
+    # close" logic is identical either way, so it lives in exactly one
+    # place rather than two copies that could drift.
+    $performSave = {
         if (-not $txtName.Text.Trim()) {
             [System.Windows.Forms.MessageBox]::Show("App name is required.", "Missing name", "OK", "Warning") | Out-Null
             return
@@ -13103,18 +13246,45 @@ function Show-AppEditor {
         # preserved metadata (disk, memory, or neither), rather than
         # assuming.
         Write-Log "Save app: ExistingApp.appName=`"$($ExistingApp.appName)`" - metadata source: $metadataSource, preservedMetadata is `$null: $($null -eq $preservedMetadata).`r`n"
+
+        # intuneAppType/intuneAppVersion are read-only, Intune-reported
+        # facts this editor has no field for - same reasoning as metadata
+        # above, preserved from whatever's already on file for this app
+        # rather than silently blanked out just because this editor
+        # doesn't show or edit them.
+        $preservedIntuneAppType = ""
+        $preservedIntuneAppVersion = ""
+        if ($ExistingApp) {
+            $liveAppForType = $Script:Apps | Where-Object { $_.appName -eq $ExistingApp.appName } | Select-Object -First 1
+            $preservedIntuneAppType = if ($liveAppForType -and $liveAppForType.intuneAppType) { $liveAppForType.intuneAppType } else { $ExistingApp.intuneAppType }
+            $preservedIntuneAppVersion = if ($liveAppForType -and $liveAppForType.intuneAppVersion) { $liveAppForType.intuneAppVersion } else { $ExistingApp.intuneAppVersion }
+        }
         $resultBox.Value = [pscustomobject]@{
-            appId        = $txtId.Text.Trim()
-            appName      = $txtName.Text.Trim()
-            wingetId     = $txtWinget.Text.Trim()
-            requiredFor  = @($reqGroup.List.CheckedItems)
-            availableFor = @($availGroup.List.CheckedItems)
-            uninstallFor = @($uninstGroup.List.CheckedItems)
-            metadata     = $preservedMetadata
+            appId            = $txtId.Text.Trim()
+            appName          = $txtName.Text.Trim()
+            wingetId         = $txtWinget.Text.Trim()
+            intuneAppType    = $preservedIntuneAppType
+            intuneAppVersion = $preservedIntuneAppVersion
+            requiredFor      = @($reqGroup.List.CheckedItems)
+            availableFor     = @($availGroup.List.CheckedItems)
+            uninstallFor     = @($uninstGroup.List.CheckedItems)
+            metadata         = $preservedMetadata
         }
         $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
         $dlg.Close()
+    }.GetNewClosure()
+
+    $btnOk.Add_Click({ & $performSave }.GetNewClosure())
+
+    $btnSaveAndDeployWinget.Add_Click({
+        if (-not $txtWinget.Text.Trim()) {
+            [System.Windows.Forms.MessageBox]::Show("A Winget ID is required to deploy with Winget defaults. Leave it blank and use `"Save app to catalog`" instead for a custom-install (uncommon) app.", "Winget ID required", "OK", "Warning") | Out-Null
+            return
+        }
+        $deployAfterSaveBox.Value = $true
+        & $performSave
     }.GetNewClosure())
+
     $btnCancel.Add_Click({
         $dlg.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
         $dlg.Close()
@@ -13176,14 +13346,15 @@ function Show-AppEditor {
 
     $dlgResult = $dlg.ShowDialog($form)
     if ($dlgResult -eq [System.Windows.Forms.DialogResult]::OK) {
-        return $resultBox.Value
+        return [pscustomobject]@{ App = $resultBox.Value; DeployAfterSave = $deployAfterSaveBox.Value }
     }
     return $null
 }
 
 $btnNew.Add_Click({
-    $newApp = Show-AppEditor -ExistingApp $null
-    if ($newApp) {
+    $editorResult = Show-AppEditor -ExistingApp $null
+    if ($editorResult) {
+        $newApp = $editorResult.App
         [void]$Script:Apps.Add($newApp)
         $Script:UnsavedChangesBox.Value = $true
         # Direct-save, not just staged in memory - same reasoning as every
@@ -13192,6 +13363,13 @@ $btnNew.Add_Click({
         # benefit to be had from deferring the write to a separate click.
         [void](Save-AppsToFile -Path $Script:LinkedFilePath)
         Refresh-Grid
+        if ($editorResult.DeployAfterSave) {
+            $newIndex = -1
+            for ($ni = 0; $ni -lt $Script:Apps.Count; $ni++) {
+                if ($Script:Apps[$ni].appName -eq $newApp.appName) { $newIndex = $ni; break }
+            }
+            if ($newIndex -ge 0) { Show-BatchDeployDialog -ScopedIndices @($newIndex) }
+        }
     }
 })
 
@@ -13201,8 +13379,9 @@ $btnEdit.Add_Click({
         [System.Windows.Forms.MessageBox]::Show("Select an app first.", "No selection", "OK", "Information") | Out-Null
         return
     }
-    $updated = Show-AppEditor -ExistingApp $Script:Apps[$i]
-    if ($updated) {
+    $editorResult = Show-AppEditor -ExistingApp $Script:Apps[$i]
+    if ($editorResult) {
+        $updated = $editorResult.App
         # Logged before and after the assignment/save, mirroring the
         # checkpoint approach that already found the actual bug in Save
         # for later - confirms $updated genuinely carries metadata coming
@@ -13217,6 +13396,7 @@ $btnEdit.Add_Click({
         $Script:UnsavedChangesBox.Value = $true
         [void](Save-AppsToFile -Path $Script:LinkedFilePath)
         Refresh-Grid
+        if ($editorResult.DeployAfterSave) { Show-BatchDeployDialog -ScopedIndices @($i) }
     }
 })
 
@@ -13272,8 +13452,15 @@ $gridContextMenu.Add_Opening({
     $menuItemEdit.Enabled = $hasSelection -and -not $isMulti
     $menuItemEdit.ToolTipText = if ($isMulti) { "Select just one app to edit." } else { "" }
 
-    $menuItemDeploy.Enabled = $hasSelection -and -not $isMulti
-    $menuItemDeploy.ToolTipText = if ($isMulti) { "Select just one app, or use `"Batch deploy...`" on the toolbar for apps already saved for later." } else { "" }
+    # Single selection still opens the full interactive per-app dialog
+    # (there's no sane multi-app equivalent for that); multiple selected
+    # routes to Batch Deploy instead of graying out, same as Assign
+    # Groups... below - Batch Deploy already handles "no saved metadata"
+    # apps with sensible defaults, so there's no real reason multi-select
+    # can't reach it directly from here too.
+    $menuItemDeploy.Text = if ($isMulti) { "Batch deploy..." } else { "Deploy to Intune..." }
+    $menuItemDeploy.Enabled = $hasSelection
+    $menuItemDeploy.ToolTipText = ""
 
     $menuItemAssign.Text = if ($isMulti) { "Batch assign groups..." } else { "Assign Groups..." }
     $menuItemAssign.Enabled = $hasSelection
@@ -13321,9 +13508,13 @@ $menuItemEdit.Add_Click({ $btnEdit.PerformClick() })
 $menuItemRemoveCatalog.Add_Click({ $btnDelete.PerformClick() })
 
 $menuItemDeploy.Add_Click({
-    $i = Get-SelectedAppIndex
-    if ($null -eq $i) { return }
-    Invoke-QuickDeploy -Index $i
+    $indices = Get-SelectedAppIndices
+    if ($indices.Count -eq 0) { return }
+    if ($indices.Count -eq 1) {
+        Invoke-QuickDeploy -Index $indices[0]
+        return
+    }
+    Show-BatchDeployDialog -ScopedIndices $indices
 })
 
 $menuItemPackage.Add_Click({
