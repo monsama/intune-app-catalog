@@ -105,6 +105,13 @@ $Script:SettingsFilePath = Join-Path $Script:RootPath "itsense-intune-settings.j
 # comment on Write-SettingsFile below for why.
 $Script:FavoriteGroups = New-Object System.Collections.Generic.List[string]
 
+# Guards Start-TypeVersionBackfill (see its own definition) against
+# running more than once per catalog load - it's kicked off automatically
+# on startup and after Reload/Open other folder, not on every grid
+# refresh (typing in the search box refreshes the grid on every
+# keystroke - firing a Graph fetch queue on each one would be absurd).
+$Script:TypeVersionBackfillDone = $false
+
 # =====================================================================
 # Styling - single, consistent light palette applied to every control
 # =====================================================================
@@ -3463,6 +3470,11 @@ function ConvertTo-AppRecord {
 function Load-AppsFromFile {
     param([string]$Path)
 
+    # Every (re)load is a fresh catalog as far as the Type/Version
+    # backfill is concerned - see Start-TypeVersionBackfill and
+    # $Script:TypeVersionBackfillDone.
+    $Script:TypeVersionBackfillDone = $false
+
     # One-time automatic migration: if the new per-app folder doesn't exist
     # or is empty, but the OLD single-file input.json does, split it into
     # per-app files now rather than starting with an empty catalog. The
@@ -6798,6 +6810,80 @@ function Start-AppMetadataFetch {
         }
     }.GetNewClosure())
     $timer.Start()
+}
+
+# Backfills intuneAppType/intuneAppVersion for every deployed app (has an
+# App ID) that's never had them set - the main grid's own Type/Version
+# columns, populated automatically instead of only ever getting filled in
+# by "Sync metadata..." or a Deploy/Update run happening to touch that
+# app. Kicked off automatically once per catalog load (startup, Reload,
+# Open other folder) rather than on every grid refresh - see the note
+# next to $Script:TypeVersionBackfillDone for why. Same queue-runner
+# pattern as every other bulk fetch in this app (one app's Graph call at
+# a time, not all in flight at once), reusing Start-AppMetadataFetch
+# since the network round-trip - not the parsing - is what actually
+# costs anything, and that function already returns exactly the two
+# fields needed (OdataType, DisplayVersion) alongside everything else it
+# fetches for the same one GET request.
+function Start-TypeVersionBackfill {
+    if ($Script:TypeVersionBackfillDone) { return }
+    if (-not (Test-GraphCredentialsConfigured)) { return }
+
+    $needsBackfill = @($Script:Apps | Where-Object { $_.appId -and -not $_.intuneAppType })
+    if ($needsBackfill.Count -eq 0) {
+        $Script:TypeVersionBackfillDone = $true
+        return
+    }
+
+    $Script:TypeVersionBackfillDone = $true
+    Write-Log "Backfilling Type/Version for $($needsBackfill.Count) app(s) never synced before...`r`n" ([System.Drawing.Color]::Gainsboro)
+
+    $appsRef = $Script:Apps
+    $linkedFilePathRef = $Script:LinkedFilePath
+    $unsavedBoxRef = $Script:UnsavedChangesBox
+
+    $RunBackfillQueueBox = @{ Value = $null }
+    $RunBackfillQueueBox.Value = {
+        param($Queue, $QueueIndex, $UpdatedCount)
+
+        if ($QueueIndex -ge $Queue.Count) {
+            if ($UpdatedCount -gt 0) {
+                [void](Save-AppsToFile -Path $linkedFilePathRef)
+                Refresh-Grid
+            }
+            Write-Log "Type/Version backfill done - $UpdatedCount app(s) updated.`r`n" ([System.Drawing.Color]::LightGreen)
+            return
+        }
+
+        $currentApp = $Queue[$QueueIndex]
+
+        # Fresh aliases for this nested -OnComplete closure - see note at
+        # the top of Show-CreateInIntuneDialog.
+        $currentAppRef = $currentApp
+        $appsRefRef = $appsRef
+        $QueueRef = $Queue
+        $QueueIndexRef = $QueueIndex
+        $UpdatedCountRef = $UpdatedCount
+        $RunBackfillQueueBoxRef = $RunBackfillQueueBox
+        $unsavedBoxRefRef = $unsavedBoxRef
+
+        Start-AppMetadataFetch -AppId $currentAppRef.appId -OnComplete {
+            param($ok, $errMsg, $data)
+            $nextUpdatedCount = $UpdatedCountRef
+            if ($ok) {
+                $target = $appsRefRef | Where-Object { $_.appName -eq $currentAppRef.appName } | Select-Object -First 1
+                if ($target -and -not $target.intuneAppType) {
+                    $target.intuneAppType = Get-FriendlyIntuneAppType -ODataType $data.OdataType
+                    $target.intuneAppVersion = $data.DisplayVersion
+                    $unsavedBoxRefRef.Value = $true
+                    $nextUpdatedCount = $UpdatedCountRef + 1
+                }
+            }
+            & $RunBackfillQueueBoxRef.Value -Queue $QueueRef -QueueIndex ($QueueIndexRef + 1) -UpdatedCount $nextUpdatedCount
+        }.GetNewClosure()
+    }.GetNewClosure()
+
+    & $RunBackfillQueueBox.Value -Queue $needsBackfill -QueueIndex 0 -UpdatedCount 0
 }
 
 # Fetches a group's current members by name, for Group Manager's "current
@@ -14694,6 +14780,7 @@ $btnReload.Add_Click({
     }
     Load-AppsFromFile -Path $Script:LinkedFilePath
     Refresh-Grid
+    Start-TypeVersionBackfill
 })
 
 $btnOpen.Add_Click({
@@ -14706,6 +14793,7 @@ $btnOpen.Add_Click({
         $Script:LinkedFilePath = $fbd.SelectedPath
         Load-AppsFromFile -Path $Script:LinkedFilePath
         Refresh-Grid
+        Start-TypeVersionBackfill
     }
 })
 
@@ -15075,6 +15163,7 @@ Ensure-Folders
 Load-AppsFromFile -Path $Script:LinkedFilePath
 Refresh-Grid
 Write-Log "ITSENSE Intune deployment console ready (v$($Script:AppVersion)). Root: $Script:RootPath`r`n" ([System.Drawing.Color]::Gainsboro)
+Start-TypeVersionBackfill
 
 if (-not $Script:GraphTenantId -or -not $Script:GraphClientId -or -not $Script:GraphCertificateThumbprint) {
     Write-Log "No Graph connection configured yet - open 'Settings...' to set your Tenant ID, Client ID, and certificate before using anything that talks to Intune or Entra ID (App ID lookup, Deploy to Intune, Assign Groups, Intune sync check, Batch assign).`r`n" ([System.Drawing.Color]::Orange)
