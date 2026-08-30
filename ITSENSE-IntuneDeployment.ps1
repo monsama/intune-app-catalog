@@ -12799,6 +12799,11 @@ $menuItemEdit = New-Object System.Windows.Forms.ToolStripMenuItem "Edit..."
 $menuItemDeploy = New-Object System.Windows.Forms.ToolStripMenuItem "Deploy to Intune..."
 $menuItemPackage = New-Object System.Windows.Forms.ToolStripMenuItem "Package this app"
 $menuItemAssign = New-Object System.Windows.Forms.ToolStripMenuItem "Assign Groups..."
+# Already selection-aware via -ScopedIndices, same as the toolbar button
+# it reuses - was reachable only from there before, requiring a
+# pre-selection made before ever opening the toolbar dialog, when a
+# right-click on the row(s) in question is the more natural way in.
+$menuItemSyncMetadata = New-Object System.Windows.Forms.ToolStripMenuItem "Sync metadata from Intune..."
 $menuItemDeleteIntune = New-Object System.Windows.Forms.ToolStripMenuItem "Delete from Intune..."
 $menuItemSeparator = New-Object System.Windows.Forms.ToolStripSeparator
 $menuItemRemoveCatalog = New-Object System.Windows.Forms.ToolStripMenuItem "Remove from catalog..."
@@ -12806,6 +12811,7 @@ $menuItemRemoveCatalog = New-Object System.Windows.Forms.ToolStripMenuItem "Remo
 [void]$gridContextMenu.Items.Add($menuItemDeploy)
 [void]$gridContextMenu.Items.Add($menuItemPackage)
 [void]$gridContextMenu.Items.Add($menuItemAssign)
+[void]$gridContextMenu.Items.Add($menuItemSyncMetadata)
 [void]$gridContextMenu.Items.Add($menuItemDeleteIntune)
 [void]$gridContextMenu.Items.Add($menuItemSeparator)
 [void]$gridContextMenu.Items.Add($menuItemRemoveCatalog)
@@ -12841,6 +12847,12 @@ $gridContextMenu.Add_Opening({
 
     $menuItemAssign.Text = if ($isMulti) { "Batch assign groups..." } else { "Assign Groups..." }
     $menuItemAssign.Enabled = $hasSelection
+
+    # Same eligibility Show-SyncMetadataDialog itself checks (an app needs
+    # an App ID before there's anything in Intune to pull metadata FROM) -
+    # checked here too so this greys out up front instead of only showing
+    # "nothing to do" after the click.
+    $menuItemSyncMetadata.Enabled = $hasSelection -and (@($selectedIndices | ForEach-Object { $Script:Apps[$_] } | Where-Object { $_.appId }).Count -gt 0)
 
     $menuItemDeleteIntune.Text = if ($isMulti) { "Delete $($selectedIndices.Count) app(s) from Intune..." } else { "Delete from Intune..." }
     $menuItemDeleteIntune.Enabled = $hasSelection
@@ -12906,6 +12918,12 @@ $menuItemAssign.Add_Click({
         return
     }
     Show-BatchAssignDialog -ScopedIndices $indices
+})
+
+$menuItemSyncMetadata.Add_Click({
+    $indices = Get-SelectedAppIndices
+    if ($indices.Count -eq 0) { return }
+    Show-SyncMetadataDialog -ScopedIndices $indices
 })
 
 $menuItemDeleteIntune.Add_Click({
