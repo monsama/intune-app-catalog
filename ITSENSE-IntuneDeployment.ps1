@@ -11125,39 +11125,39 @@ function Show-DiagnosticsDialog {
 
         & $appendLine "=== Configuration ===" $headerColor
         $moduleOk = [bool](Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)
-        & $appendLine "$(if ($moduleOk) { '[OK]' } else { '[FAIL]' }) Microsoft.Graph.Authentication module installed" (if ($moduleOk) { $okColor } else { $failColor })
+        & $appendLine "$(if ($moduleOk) { '[OK]' } else { '[FAIL]' }) Microsoft.Graph.Authentication module installed" $(if ($moduleOk) { $okColor } else { $failColor })
 
         $credsOk = Test-GraphCredentialsConfigured
-        & $appendLine "$(if ($credsOk) { '[OK]' } else { '[FAIL]' }) Tenant ID / Client ID / Certificate thumbprint all set" (if ($credsOk) { $okColor } else { $failColor })
+        & $appendLine "$(if ($credsOk) { '[OK]' } else { '[FAIL]' }) Tenant ID / Client ID / Certificate thumbprint all set" $(if ($credsOk) { $okColor } else { $failColor })
 
         if ($credsOk) {
             $certStatus = Get-CertificateStatusText -Thumbprint $Script:GraphCertificateThumbprint
             $certOk = $certStatus.Color -eq [System.Drawing.Color]::SeaGreen
             $certWarn = $certStatus.Color -eq [System.Drawing.Color]::DarkOrange
             $certTag = if ($certOk) { "[OK]" } elseif ($certWarn) { "[WARN]" } else { "[FAIL]" }
-            & $appendLine "$certTag Certificate: $($certStatus.Text)" (if ($certOk) { $okColor } elseif ($certWarn) { $warnColor } else { $failColor })
+            & $appendLine "$certTag Certificate: $($certStatus.Text)" $(if ($certOk) { $okColor } elseif ($certWarn) { $warnColor } else { $failColor })
         }
 
         & $appendLine "" $infoColor
         & $appendLine "=== Catalog completeness ($($appsRef.Count) app(s)) ===" $headerColor
 
         $noAppIdNoMetadata = @($appsRef | Where-Object { -not $_.appId -and -not $_.metadata })
-        & $appendLine "$(if ($noAppIdNoMetadata.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($noAppIdNoMetadata.Count) app(s) with no App ID and no saved metadata (nothing to deploy yet)" (if ($noAppIdNoMetadata.Count -eq 0) { $okColor } else { $warnColor })
+        & $appendLine "$(if ($noAppIdNoMetadata.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($noAppIdNoMetadata.Count) app(s) with no App ID and no saved metadata (nothing to deploy yet)" $(if ($noAppIdNoMetadata.Count -eq 0) { $okColor } else { $warnColor })
         foreach ($a in $noAppIdNoMetadata) { & $appendLine "    - $($a.appName)" $infoColor }
 
         $uncommonUnconfigured = @($appsRef | Where-Object { (Test-AppIsUncommon -App $_) -and -not $_.metadata })
-        & $appendLine "$(if ($uncommonUnconfigured.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($uncommonUnconfigured.Count) uncommon app(s) (no Winget ID) with no saved metadata - can't be deployed or defaulted as-is" (if ($uncommonUnconfigured.Count -eq 0) { $okColor } else { $warnColor })
+        & $appendLine "$(if ($uncommonUnconfigured.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($uncommonUnconfigured.Count) uncommon app(s) (no Winget ID) with no saved metadata - can't be deployed or defaulted as-is" $(if ($uncommonUnconfigured.Count -eq 0) { $okColor } else { $warnColor })
         foreach ($a in $uncommonUnconfigured) { & $appendLine "    - $($a.appName)" $infoColor }
 
         $neverSynced = @($appsRef | Where-Object { $_.appId -and -not $_.intuneAppType })
-        & $appendLine "$(if ($neverSynced.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($neverSynced.Count) deployed app(s) never synced (no Type/Version recorded) - run `"Sync metadata...`" to pick this up" (if ($neverSynced.Count -eq 0) { $okColor } else { $infoColor })
+        & $appendLine "$(if ($neverSynced.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($neverSynced.Count) deployed app(s) never synced (no Type/Version recorded) - run `"Sync metadata...`" to pick this up" $(if ($neverSynced.Count -eq 0) { $okColor } else { $infoColor })
 
         $noGroups = @($appsRef | Where-Object { $_.appId -and @($_.requiredFor).Count -eq 0 -and @($_.availableFor).Count -eq 0 -and @($_.uninstallFor).Count -eq 0 })
-        & $appendLine "$(if ($noGroups.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($noGroups.Count) deployed app(s) with no group assignments at all (assigned to nobody)" (if ($noGroups.Count -eq 0) { $okColor } else { $warnColor })
+        & $appendLine "$(if ($noGroups.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($noGroups.Count) deployed app(s) with no group assignments at all (assigned to nobody)" $(if ($noGroups.Count -eq 0) { $okColor } else { $warnColor })
         foreach ($a in $noGroups) { & $appendLine "    - $($a.appName)" $infoColor }
 
         $dupeNames = @($appsRef | Group-Object { ($_.appName.Trim() -replace '\s+', ' ').ToLowerInvariant() } | Where-Object { $_.Count -gt 1 })
-        & $appendLine "$(if ($dupeNames.Count -eq 0) { '[OK]' } else { '[FAIL]' }) $($dupeNames.Count) duplicate app name(s) in the catalog" (if ($dupeNames.Count -eq 0) { $okColor } else { $failColor })
+        & $appendLine "$(if ($dupeNames.Count -eq 0) { '[OK]' } else { '[FAIL]' }) $($dupeNames.Count) duplicate app name(s) in the catalog" $(if ($dupeNames.Count -eq 0) { $okColor } else { $failColor })
         foreach ($d in $dupeNames) { & $appendLine "    - $($d.Name) ($($d.Count) entries)" $infoColor }
 
         if (-not $credsOk) {
@@ -11207,16 +11207,16 @@ function Show-DiagnosticsDialog {
 
             $deployedApps = @($appsRefRef | Where-Object { $_.appId })
             $deletedFromIntune = @($deployedApps | Where-Object { -not $intuneById.ContainsKey([string]$_.appId) })
-            & $appendLineRef "$(if ($deletedFromIntune.Count -eq 0) { '[OK]' } else { '[FAIL]' }) $($deletedFromIntune.Count) catalog app(s) whose App ID no longer exists in Intune" (if ($deletedFromIntune.Count -eq 0) { $okColorRef } else { $failColorRef })
+            & $appendLineRef "$(if ($deletedFromIntune.Count -eq 0) { '[OK]' } else { '[FAIL]' }) $($deletedFromIntune.Count) catalog app(s) whose App ID no longer exists in Intune" $(if ($deletedFromIntune.Count -eq 0) { $okColorRef } else { $failColorRef })
             foreach ($a in $deletedFromIntune) { & $appendLineRef "    - $($a.appName) (App ID $($a.appId))" $infoColorRef }
 
             $renamed = @($deployedApps | Where-Object { $intuneById.ContainsKey([string]$_.appId) -and $intuneById[[string]$_.appId].displayName -ne $_.appName })
-            & $appendLineRef "$(if ($renamed.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($renamed.Count) catalog app(s) whose name doesn't match Intune's current name" (if ($renamed.Count -eq 0) { $okColorRef } else { $warnColorRef })
+            & $appendLineRef "$(if ($renamed.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($renamed.Count) catalog app(s) whose name doesn't match Intune's current name" $(if ($renamed.Count -eq 0) { $okColorRef } else { $warnColorRef })
             foreach ($a in $renamed) { & $appendLineRef "    - catalog: `"$($a.appName)`" / Intune: `"$($intuneById[[string]$a.appId].displayName)`"" $infoColorRef }
 
             $catalogAppIds = @($appsRefRef | ForEach-Object { [string]$_.appId } | Where-Object { $_ })
             $notInCatalogCount = @($data | Where-Object { $catalogAppIds -notcontains [string]$_.id }).Count
-            & $appendLineRef "$(if ($notInCatalogCount -eq 0) { '[OK]' } else { '[INFO]' }) $notInCatalogCount app(s) in Intune with no matching catalog entry - see `"Intune sync check...`"" (if ($notInCatalogCount -eq 0) { $okColorRef } else { $infoColorRef })
+            & $appendLineRef "$(if ($notInCatalogCount -eq 0) { '[OK]' } else { '[INFO]' }) $notInCatalogCount app(s) in Intune with no matching catalog entry - see `"Intune sync check...`"" $(if ($notInCatalogCount -eq 0) { $okColorRef } else { $infoColorRef })
 
             & $appendLineRef "Fetching Minimum Windows values for deployed Win32 apps..." $infoColorRef
 
@@ -11257,7 +11257,7 @@ function Show-DiagnosticsDialog {
                     $minOsNewProperty = @($deployedAppsRef | Where-Object {
                         $minOsById.ContainsKey([string]$_.appId) -and $minOsById[[string]$_.appId].minimumSupportedWindowsRelease
                     })
-                    & $appendLineRef2 "$(if ($minOsNewProperty.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($minOsNewProperty.Count) app(s) with a Minimum Windows value set via Intune's newer property - this tool's dropdown doesn't read or write it" (if ($minOsNewProperty.Count -eq 0) { $okColorRef2 } else { $infoColorRef2 })
+                    & $appendLineRef2 "$(if ($minOsNewProperty.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($minOsNewProperty.Count) app(s) with a Minimum Windows value set via Intune's newer property - this tool's dropdown doesn't read or write it" $(if ($minOsNewProperty.Count -eq 0) { $okColorRef2 } else { $infoColorRef2 })
                     foreach ($a in $minOsNewProperty) { & $appendLineRef2 "    - $($a.appName): $($minOsById[[string]$a.appId].minimumSupportedWindowsRelease)" $infoColorRef2 }
 
                     $minOsDrift = @($deployedAppsRef | Where-Object {
@@ -11266,7 +11266,7 @@ function Show-DiagnosticsDialog {
                         $minOsById[[string]$_.appId].minOSPropertyName -and
                         $knownMinOsValuesRef2 -notcontains $minOsById[[string]$_.appId].minOSPropertyName
                     })
-                    & $appendLineRef2 "$(if ($minOsDrift.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($minOsDrift.Count) app(s) with a legacy Minimum Windows value in Intune this tool's own dropdown doesn't offer" (if ($minOsDrift.Count -eq 0) { $okColorRef2 } else { $warnColorRef2 })
+                    & $appendLineRef2 "$(if ($minOsDrift.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($minOsDrift.Count) app(s) with a legacy Minimum Windows value in Intune this tool's own dropdown doesn't offer" $(if ($minOsDrift.Count -eq 0) { $okColorRef2 } else { $warnColorRef2 })
                     foreach ($a in $minOsDrift) { & $appendLineRef2 "    - $($a.appName): $($minOsById[[string]$a.appId].minOSPropertyName)" $infoColorRef2 }
                 }
 
