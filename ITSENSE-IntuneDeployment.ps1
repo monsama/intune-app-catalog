@@ -6744,6 +6744,14 @@ function Start-AppMetadataFetch {
             # legacy property above - it's already a plain value like
             # "W11_21H2" directly on the app.
             MinimumSupportedWindowsRelease = $app.minimumSupportedWindowsRelease
+            # Same fields Show-SyncMetadataDialog's own embedded fetch
+            # already captures for the main grid's Type/Version columns -
+            # this is the OTHER live-fetch path (Deploy to Intune's own
+            # auto-fetch for an existing app) that used to leave those two
+            # columns blank forever unless "Sync metadata..." was run
+            # separately at least once.
+            OdataType       = $app.'@odata.type'
+            DisplayVersion  = [string]$app.displayVersion
             DetectionRule           = $detectionRule
             Dependencies            = $dependencyNames
             MinDiskSpaceMB          = $app.minimumFreeDiskSpaceInMB
@@ -6960,7 +6968,7 @@ function Invoke-QuickDeleteFromIntune {
 # to disk immediately. Returns $true/$false for whether the disk write
 # itself succeeded - matching Save-AppsToFile's own return value.
 function Save-AppMetadataToLocalCatalog {
-    param($AppsRef, $LinkedFilePath, $AppName, $Metadata, $NewAppId = $null)
+    param($AppsRef, $LinkedFilePath, $AppName, $Metadata, $NewAppId = $null, $IntuneAppVersion = $null)
 
     $targetIndex = -1
     for ($si = 0; $si -lt $AppsRef.Count; $si++) {
@@ -6994,7 +7002,14 @@ function Save-AppMetadataToLocalCatalog {
         # ever creates win32LobApp objects, so the type is a known fact,
         # not something that needs fetching.
         intuneAppType    = if ($NewAppId) { "Windows app (Win32)" } else { $existingApp.intuneAppType }
-        intuneAppVersion = $existingApp.intuneAppVersion
+        # Same reasoning as intuneAppType above, but version genuinely
+        # ISN'T a known fact the way the type is - it comes from whatever
+        # the caller fetched live from Intune (blank for a brand-new
+        # create, where Intune hasn't necessarily processed/reported a
+        # version yet), so it's only overwritten when the caller actually
+        # supplied one, never blanked out just because this particular
+        # call didn't have one to offer.
+        intuneAppVersion = if ($IntuneAppVersion) { $IntuneAppVersion } else { $existingApp.intuneAppVersion }
         requiredFor      = @($existingApp.requiredFor)
         availableFor     = @($existingApp.availableFor)
         uninstallFor     = @($existingApp.uninstallFor)
@@ -8439,7 +8454,17 @@ function Show-CreateInIntuneDialog {
     # Metadata is $null unless -FromAppEditor deferred a local-catalog save
     # to the caller (see the Create/Update success handler and
     # $btnSaveForLater below) - the caller then folds it into its own save.
-    $resultBox = @{ NewAppId = $null; NewAppName = $null; Metadata = $null }
+    $resultBox = @{ NewAppId = $null; NewAppName = $null; Metadata = $null; IntuneAppType = $null; IntuneAppVersion = $null }
+
+    # Filled in by the auto-fetch below (isDuplicate case only - a brand
+    # new app has nothing live to fetch yet) and read back by the Create/
+    # Update success handler further down, so a successful Update can
+    # record the version Intune had right before this run, not leave it
+    # permanently blank just because this dialog itself never asks
+    # Intune to report a version back after a Create/Update completes.
+    # Declared here, before either closure that touches it, for the same
+    # reason as every other mutable container in this file.
+    $fetchedIntuneFactsBox = @{ OdataType = $null; DisplayVersion = $null }
     $procBox = @{ Proc = $null }   # lets btnCancel below terminate a still-running step
 
     $btnCreate.Add_Click({
@@ -8813,6 +8838,7 @@ function Show-CreateInIntuneDialog {
         $returnCodesConfigRef = $returnCodesConfig
         $clbDepsRef = $clbDeps
         $depNameByLabelRef = $depNameByLabel
+        $fetchedIntuneFactsBoxRef = $fetchedIntuneFactsBox
 
         $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".itsense_embedded_createapp.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbCreateLog -OnComplete {
             param($code)
@@ -8827,6 +8853,16 @@ function Show-CreateInIntuneDialog {
                     if ($result.success) {
                         $resultBoxRef.NewAppId = $result.appId
                         $resultBoxRef.NewAppName = $appNameRef
+                        # This tool only ever creates/updates win32LobApp
+                        # objects, so the type is a known fact on any
+                        # success, no fetch needed. Version isn't a known
+                        # fact the same way - $fetchedIntuneFactsBoxRef only
+                        # has one whenever this WAS an existing app (the
+                        # auto-fetch above ran before this click); blank for
+                        # a genuinely brand-new create, where Intune hasn't
+                        # necessarily processed/reported a version yet.
+                        $resultBoxRef.IntuneAppType = "Windows app (Win32)"
+                        $resultBoxRef.IntuneAppVersion = $fetchedIntuneFactsBoxRef.DisplayVersion
 
                         # Builds and saves a catalog-shaped metadata object
                         # now, same schema and same shared function "Save
@@ -8891,7 +8927,7 @@ function Show-CreateInIntuneDialog {
                                 $resultBoxRef.Metadata = $createMetadata
                             }
                             else {
-                                $localSaveResult = Save-AppMetadataToLocalCatalog -AppsRef $appsRefRef -LinkedFilePath $linkedFilePathRef -AppName $appNameRef -Metadata $createMetadata -NewAppId $result.appId
+                                $localSaveResult = Save-AppMetadataToLocalCatalog -AppsRef $appsRefRef -LinkedFilePath $linkedFilePathRef -AppName $appNameRef -Metadata $createMetadata -NewAppId $result.appId -IntuneAppVersion $fetchedIntuneFactsBoxRef.DisplayVersion
                                 $localSaveOk = $localSaveResult.Success
                             }
                         }
@@ -9425,6 +9461,7 @@ function Show-CreateInIntuneDialog {
             $restartBehaviorMapRef = $restartBehaviorMap
             $chkAllowUninstallRef = $chkAllowUninstall
             $grdReturnCodesRef = $grdReturnCodes
+            $fetchedIntuneFactsBoxRef = $fetchedIntuneFactsBox
 
             Start-AppMetadataFetch -AppId $existingAppIdRef -OnComplete {
                 param($ok, $errMsg, $data)
@@ -9433,6 +9470,8 @@ function Show-CreateInIntuneDialog {
                     $lblCreateStatusRef.Text = "Could not load current metadata ($errMsg) - fields above are local guesses, not confirmed live values."
                     return
                 }
+                $fetchedIntuneFactsBoxRef.OdataType = $data.OdataType
+                $fetchedIntuneFactsBoxRef.DisplayVersion = $data.DisplayVersion
                 if ($data.DisplayName)              { $txtCreateNameRef.Text = $data.DisplayName }
                 if ($null -ne $data.Description)    { $txtDescRef.Text = $data.Description }
                 if ($null -ne $data.Publisher)      { $txtPublisherRef.Text = $data.Publisher }
@@ -13370,6 +13409,12 @@ function Show-AppEditor {
     # handler can later READ that write back out.
     $pendingDeployMetadataBox = @{ Value = $null }
 
+    # Same staging idea as $pendingDeployMetadataBox above, for the two
+    # top-level (non-metadata) Intune-reported facts - Type and Version -
+    # since a brand-new app has nowhere else for a just-succeeded Create's
+    # result to land until "Save app to catalog" actually runs.
+    $pendingDeployIntuneFactsBox = @{ IntuneAppType = ""; IntuneAppVersion = "" }
+
     # Set by "Save && Deploy (Winget defaults)" only - tells this editor's
     # caller (below, via the return value) to route straight to Batch
     # Deploy for this one app right after saving, instead of just saving.
@@ -13597,8 +13642,13 @@ function Show-AppEditor {
         if ($deployResult -and $deployResult.Metadata) {
             $pendingDeployMetadataBox.Value = $deployResult.Metadata
         }
+        # Staged the same freshest-first way as metadata above, for the
+        # brand-new-app case below that has no catalog entry yet to write
+        # Type/Version into directly.
+        if ($deployResult -and $deployResult.IntuneAppType) { $pendingDeployIntuneFactsBox.IntuneAppType = $deployResult.IntuneAppType }
+        if ($deployResult -and $deployResult.IntuneAppVersion) { $pendingDeployIntuneFactsBox.IntuneAppVersion = $deployResult.IntuneAppVersion }
         if ($deployResult -and ($deployResult.NewAppId -or $deployResult.Metadata) -and $ExistingApp) {
-            $saveNowResult = Save-AppMetadataToLocalCatalog -AppsRef $appsRef -LinkedFilePath $linkedFilePath -AppName $ExistingApp.appName -Metadata $deployResult.Metadata -NewAppId $deployResult.NewAppId
+            $saveNowResult = Save-AppMetadataToLocalCatalog -AppsRef $appsRef -LinkedFilePath $linkedFilePath -AppName $ExistingApp.appName -Metadata $deployResult.Metadata -NewAppId $deployResult.NewAppId -IntuneAppVersion $deployResult.IntuneAppVersion
             if ($deployResult.NewAppId) {
                 $txtId.Text = $deployResult.NewAppId
                 if ($deployResult.NewAppName) { $txtName.Text = $deployResult.NewAppName }
@@ -13917,6 +13967,13 @@ function Show-AppEditor {
             $preservedIntuneAppType = if ($liveAppForType -and $liveAppForType.intuneAppType) { $liveAppForType.intuneAppType } else { $ExistingApp.intuneAppType }
             $preservedIntuneAppVersion = if ($liveAppForType -and $liveAppForType.intuneAppVersion) { $liveAppForType.intuneAppVersion } else { $ExistingApp.intuneAppVersion }
         }
+        # A brand-new app (no $ExistingApp) has nothing to preserve above,
+        # but "Deploy to Intune..." may still have just staged a fresh
+        # Create result via $pendingDeployIntuneFactsBox (see its own
+        # button handler) - freshest wins, same reasoning and same
+        # override pattern as $pendingDeployMetadataBox above.
+        if ($pendingDeployIntuneFactsBox.IntuneAppType) { $preservedIntuneAppType = $pendingDeployIntuneFactsBox.IntuneAppType }
+        if ($pendingDeployIntuneFactsBox.IntuneAppVersion) { $preservedIntuneAppVersion = $pendingDeployIntuneFactsBox.IntuneAppVersion }
         $resultBox.Value = [pscustomobject]@{
             appId            = $txtId.Text.Trim()
             appName          = $txtName.Text.Trim()
