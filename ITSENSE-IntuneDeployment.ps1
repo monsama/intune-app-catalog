@@ -10703,13 +10703,16 @@ function Show-IntuneOnlyAppsDialog {
     # get set on a not-yet-created window handle, which doesn't reliably
     # "stick" - the cursor could end up stuck spinning even after the async
     # work (and its Cursor = Default reset) had already completed.
+    #
+    # Always a live fetch, never the reused-cache branch this used to have -
+    # $cacheRef ($Script:IntuneAppsCache) is shared across the whole app, so
+    # it can already be non-empty here purely from something unrelated (e.g.
+    # the app editor's own "Look up" button) run earlier in the session.
+    # This dialog's entire job is telling you what's actually different
+    # right now, so opening it must mean "check now", not "show whatever
+    # happened to be cached from something else, however old that is".
     $dlg.Add_Shown({
-        if ($cacheRef.Count -gt 0) {
-            & $populateGrid
-        }
-        else {
-            $btnRefresh.PerformClick()
-        }
+        $btnRefresh.PerformClick()
     }.GetNewClosure())
 
     Set-Theme -Control $dlg
