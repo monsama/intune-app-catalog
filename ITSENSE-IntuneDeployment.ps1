@@ -11577,6 +11577,17 @@ function Show-BulkDeleteFromIntuneDialog {
             $lblStatus.ForeColor = if ($failedCount -gt 0) { [System.Drawing.Color]::DarkOrange } else { [System.Drawing.Color]::SeaGreen }
             $catalogSuffix = if ($removedCatalogCount -gt 0) { " $removedCatalogCount removed from the catalog entirely." } else { "" }
             $lblStatus.Text = "Done - $okCount deleted, $failedCount failed.$catalogSuffix"
+
+            # Closes itself on a clean run, same as the single-app delete
+            # dialog already does - nothing left here worth an extra manual
+            # click to dismiss. Left open on ANY failure, though, even a
+            # partial one: the log and "Retry failed only" are the whole
+            # point of staying up in that case, and the user already had to
+            # make an active choice on the catalog-removal prompt above
+            # regardless, so this isn't closing out from under them mid-task.
+            if ($failedCount -eq 0) {
+                $dlg.Close()
+            }
             return
         }
 
