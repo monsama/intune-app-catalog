@@ -4726,10 +4726,14 @@ function Show-AppIdMatchDialog {
     $dlg.FormBorderStyle = "Sizable"
     $dlg.MinimumSize = New-Object System.Drawing.Size(900, 360)
 
+    # Regular weight, color-coded by outcome (below) - matches how every
+    # other dialog's own status line (Intune sync check, Check group
+    # names, ...) is styled, rather than this one dialog alone using bold.
     $lblHelp = New-Object System.Windows.Forms.Label
-    $lblHelp.Text = "Rows where an exact name match would actually CHANGE the App ID are pre-checked. Already-correct and no-match rows are left unchecked - use Choose... to pick a match manually, then Apply."
+    $lblHelp.Text = "Matches each catalog app to an Intune app by name, so you can link the App ID Intune already has into your LOCAL catalog. This only updates App IDs stored in your local catalog files - it never creates, changes, or deletes anything in Intune itself. Rows where an exact match would actually change the App ID are pre-checked; use `"Choose...`" to pick a different match, then `"Apply checked rows`"."
     $lblHelp.Dock = "Top"
-    $lblHelp.Height = 48
+    $lblHelp.Height = 62
+    $lblHelp.ForeColor = [System.Drawing.Color]::DimGray
     $lblHelp.Padding = New-Object System.Windows.Forms.Padding(10,8,10,8)
     $dlg.Controls.Add($lblHelp)
 
@@ -4737,7 +4741,6 @@ function Show-AppIdMatchDialog {
     $lblSummary.Dock = "Top"
     $lblSummary.Height = 24
     $lblSummary.Padding = New-Object System.Windows.Forms.Padding(10,0,10,0)
-    $lblSummary.Font = New-Object System.Drawing.Font($dlg.Font, [System.Drawing.FontStyle]::Bold)
     $dlg.Controls.Add($lblSummary)
 
     $matchGrid = New-Object System.Windows.Forms.DataGridView
@@ -4828,7 +4831,7 @@ function Show-AppIdMatchDialog {
     }
     else {
         $lblSummary.ForeColor = [System.Drawing.Color]::DarkOrange
-        $lblSummary.Text = "$changeCount app(s) pre-checked below - applying would change their App ID."
+        $lblSummary.Text = "$changeCount app(s) pre-checked below - applying would change their App ID in the local catalog only."
     }
 
     $dlg.Controls.Add($matchGrid)
@@ -4888,7 +4891,7 @@ function Show-AppIdMatchDialog {
             Refresh-Grid
             Write-Log "Applied $applied App ID(s) from Intune lookup.`r`n" ([System.Drawing.Color]::LightGreen)
         }
-        $doneMsg = if ($applied -gt 0) { "$applied App ID(s) applied and saved." } else { "$applied App ID(s) applied." }
+        $doneMsg = if ($applied -gt 0) { "$applied App ID(s) applied and saved to the local catalog." } else { "$applied App ID(s) applied." }
         [System.Windows.Forms.MessageBox]::Show($doneMsg, "Done", "OK", "Information") | Out-Null
     }.GetNewClosure())
 
