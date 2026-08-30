@@ -11122,7 +11122,7 @@ function Show-BulkDeleteFromIntuneDialog {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Delete from Intune - $($eligibleApps.Count) app(s)"
-    $dlg.ClientSize = New-Object System.Drawing.Size(660, 620)
+    $dlg.ClientSize = New-Object System.Drawing.Size(660, 646)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -11166,28 +11166,46 @@ function Show-BulkDeleteFromIntuneDialog {
     $btnRetryFailed.Visible = $false
     $dlg.Controls.Add($btnRetryFailed)
 
+    # Checked by default - a checked app blocked because Intune itself has
+    # it set as a dependency for another app (Winget AutoUpdate depending
+    # on nearly everything else being a very common real case, per testing)
+    # is by far the more likely outcome than a genuine "leave it alone"
+    # case, and leaving this unchecked just means every blocked app fails
+    # outright instead. No per-app Yes/No prompt during the run itself,
+    # unlike the single-app dialog's own version of this same retry - a
+    # bulk run with N apps queued up is exactly the case where stopping to
+    # ask mid-run, once per blocked app, defeats the point of doing this in
+    # bulk at all; this single upfront checkbox is the batch-appropriate
+    # equivalent of that same Yes/No.
+    $chkAutoRemoveDeps = New-Object System.Windows.Forms.CheckBox
+    $chkAutoRemoveDeps.Text = "Automatically remove blocking dependency relationships (e.g. `"Winget AutoUpdate`") and retry, instead of just failing"
+    $chkAutoRemoveDeps.Location = New-Object System.Drawing.Point(15,346)
+    $chkAutoRemoveDeps.Size = New-Object System.Drawing.Size(630,20)
+    $chkAutoRemoveDeps.Checked = $true
+    $dlg.Controls.Add($chkAutoRemoveDeps)
+
     $lblConfirmPrompt = New-Object System.Windows.Forms.Label
     # Typing the exact name (like the single-app dialog) doesn't scale to N
     # apps at once - typing the literal word DELETE is the same convention
     # widely used elsewhere for an irreversible bulk/multi-item action.
     $lblConfirmPrompt.Text = "Type DELETE below to confirm:"
-    $lblConfirmPrompt.Location = New-Object System.Drawing.Point(15,350)
+    $lblConfirmPrompt.Location = New-Object System.Drawing.Point(15,376)
     $lblConfirmPrompt.AutoSize = $true
     $dlg.Controls.Add($lblConfirmPrompt)
 
     $txtConfirm = New-Object System.Windows.Forms.TextBox
-    $txtConfirm.Location = New-Object System.Drawing.Point(15,370)
+    $txtConfirm.Location = New-Object System.Drawing.Point(15,396)
     $txtConfirm.Size = New-Object System.Drawing.Size(630,24)
     $dlg.Controls.Add($txtConfirm)
 
     $lblStatus = New-Object System.Windows.Forms.Label
-    $lblStatus.Location = New-Object System.Drawing.Point(15,400)
+    $lblStatus.Location = New-Object System.Drawing.Point(15,426)
     $lblStatus.Size = New-Object System.Drawing.Size(630,36)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbLog.Location = New-Object System.Drawing.Point(15,440)
+    $rtbLog.Location = New-Object System.Drawing.Point(15,466)
     $rtbLog.Size = New-Object System.Drawing.Size(630,120)
     $rtbLog.ReadOnly = $true
     $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
@@ -11197,14 +11215,14 @@ function Show-BulkDeleteFromIntuneDialog {
 
     $btnDelete = New-Object System.Windows.Forms.Button
     $btnDelete.Text = "Delete permanently"
-    $btnDelete.Location = New-Object System.Drawing.Point(455,576)
+    $btnDelete.Location = New-Object System.Drawing.Point(455,602)
     $btnDelete.Size = New-Object System.Drawing.Size(190,32)
     $btnDelete.Enabled = $false
     $dlg.Controls.Add($btnDelete)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(365,576)
+    $btnClose.Location = New-Object System.Drawing.Point(365,602)
     $btnClose.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnClose)
 
@@ -11237,7 +11255,17 @@ function Show-BulkDeleteFromIntuneDialog {
     $RunNextBox = @{ Value = $null }
 
     $RunNextBox.Value = {
-        param($Queue, $QueueIndex, $Results)
+        # $RemoveDependencyFromAppId/$RetryAttempt let this same queue item
+        # be re-run in place (same $QueueIndex, not the next one) after
+        # removing a blocking dependency, mirroring what the single-app
+        # dialog's own $RunDeleteBox does interactively - just without a
+        # Yes/No prompt each time, since $chkAutoRemoveDeps up front already
+        # covers that consent for the whole run. $RetryAttempt caps how many
+        # times in a row THIS app can loop back on itself (a fresh
+        # dependency found each time) - protects against a pathological
+        # dependency chain looping forever; a single-app dependency block
+        # only ever needs one or two removals in practice.
+        param($Queue, $QueueIndex, $Results, $RemoveDependencyFromAppId = "", $RetryAttempt = 0)
 
         if ($QueueIndex -ge $Queue.Count) {
             $okCount = @($Results | Where-Object { $_.Status -eq "Deleted" }).Count
@@ -11245,6 +11273,7 @@ function Show-BulkDeleteFromIntuneDialog {
             $btnSelectAll.Enabled = $true
             $btnSelectNone.Enabled = $true
             $clbApps.Enabled = $true
+            $chkAutoRemoveDeps.Enabled = $true
             $txtConfirm.Enabled = $true
             $btnDelete.Enabled = ($txtConfirm.Text.Trim() -eq "DELETE")
             $failedNames = @($Results | Where-Object { $_.Status -eq "Failed" } | ForEach-Object { $_.AppName })
@@ -11256,8 +11285,14 @@ function Show-BulkDeleteFromIntuneDialog {
         }
 
         $currentApp = $Queue[$QueueIndex]
-        $rtbLog.AppendText("`r`n[$($QueueIndex+1)/$($Queue.Count)] $($currentApp.appName)`r`n")
-        $lblStatus.Text = "Deleting $($QueueIndex+1) of $($Queue.Count): $($currentApp.appName)..."
+        if ($RemoveDependencyFromAppId) {
+            $rtbLog.AppendText("  [!] Blocked by a dependency - removing it and retrying ($($RetryAttempt+1)/5)...`r`n")
+            $lblStatus.Text = "Removing a blocking dependency for $($currentApp.appName), then retrying..."
+        }
+        else {
+            $rtbLog.AppendText("`r`n[$($QueueIndex+1)/$($Queue.Count)] $($currentApp.appName)`r`n")
+            $lblStatus.Text = "Deleting $($QueueIndex+1) of $($Queue.Count): $($currentApp.appName)..."
+        }
 
         $configPath = Join-Path $env:TEMP (".itsense_bulkdelete_config_" + [guid]::NewGuid().ToString("N") + ".json")
         $resultPath = Join-Path $env:TEMP (".itsense_bulkdelete_result_" + [guid]::NewGuid().ToString("N") + ".json")
@@ -11267,7 +11302,7 @@ function Show-BulkDeleteFromIntuneDialog {
             CertificateThumbprint     = $certThumb
             AppId                     = $currentApp.appId
             AppName                   = $currentApp.appName
-            RemoveDependencyFromAppId = ""
+            RemoveDependencyFromAppId = $RemoveDependencyFromAppId
             OutputResultPath          = $resultPath
         }
         try {
@@ -11285,6 +11320,8 @@ function Show-BulkDeleteFromIntuneDialog {
         $queueRef = $Queue
         $queueIndexRef = $QueueIndex
         $resultsRef = $Results
+        $retryAttemptRef = $RetryAttempt
+        $chkAutoRemoveDepsRef = $chkAutoRemoveDeps
         $configPathRef = $configPath
         $resultPathRef = $resultPath
         $procBoxRef = $procBox
@@ -11302,6 +11339,7 @@ function Show-BulkDeleteFromIntuneDialog {
 
             $status = "Failed"
             $message = "No result written (exit code $code)."
+            $retryBlockingAppId = $null
             if (Test-Path $resultPathRef) {
                 try {
                     $result = Get-Content -Path $resultPathRef -Raw | ConvertFrom-Json
@@ -11327,8 +11365,20 @@ function Show-BulkDeleteFromIntuneDialog {
                         [void](Save-AppsToFile -Path $linkedFilePathRef)
                         $rtbLogRef.AppendText("  [OK] Deleted`r`n")
                     }
+                    elseif ($result.blockingAppId -and $chkAutoRemoveDepsRef.Checked -and $retryAttemptRef -lt 5) {
+                        # Not recorded as Failed and not advancing the queue
+                        # yet - retried in place below instead, same as the
+                        # single-app dialog's own Yes/No retry, just without
+                        # asking each time (the checkbox up front already
+                        # covers that consent for the whole run).
+                        $retryBlockingAppId = $result.blockingAppId
+                    }
                     elseif ($result.blockingAppId) {
-                        $message = "Blocked - Intune has it set as a dependency for `"$($result.blockingAppName)`". Use `"Delete from Intune...`" on just this one app to remove that dependency and retry."
+                        $message = if (-not $chkAutoRemoveDepsRef.Checked) {
+                            "Blocked - Intune has it set as a dependency for `"$($result.blockingAppName)`". Tick `"Automatically remove blocking dependency relationships`" above and retry, or use `"Delete from Intune...`" on just this one app."
+                        } else {
+                            "Still blocked after removing $retryAttemptRef blocking dependenc$(if ($retryAttemptRef -eq 1) {'y'} else {'ies'}) in a row - stopping here to avoid looping forever. Currently blocked by `"$($result.blockingAppName)`" - use `"Delete from Intune...`" on just this one app to look closer."
+                        }
                         $rtbLogRef.AppendText("  [FAILED] $message`r`n")
                     }
                     else {
@@ -11343,6 +11393,11 @@ function Show-BulkDeleteFromIntuneDialog {
             }
             else {
                 $rtbLogRef.AppendText("  [FAILED] $message`r`n")
+            }
+
+            if ($retryBlockingAppId) {
+                & $RunNextBoxRef.Value -Queue $queueRef -QueueIndex $queueIndexRef -Results $resultsRef -RemoveDependencyFromAppId $retryBlockingAppId -RetryAttempt ($retryAttemptRef + 1)
+                return
             }
 
             $resultsRef.Add([pscustomobject]@{ AppName = $currentAppRef.appName; Status = $status; Message = $message })
@@ -11369,6 +11424,7 @@ function Show-BulkDeleteFromIntuneDialog {
         $btnSelectAll.Enabled = $false
         $btnSelectNone.Enabled = $false
         $clbApps.Enabled = $false
+        $chkAutoRemoveDeps.Enabled = $false
         $txtConfirm.Enabled = $false
         $btnRetryFailed.Visible = $false
         $rtbLog.Clear()
