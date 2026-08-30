@@ -10949,6 +10949,317 @@ function Show-DeleteAppDialog {
     return $deletedBox.Success
 }
 
+# ---------------------------------------------------------------
+# Bulk delete from Intune
+# ---------------------------------------------------------------
+# Same permanent, irreversible Intune deletion Show-DeleteAppDialog does for
+# one app, run across every checked app here in sequence - same
+# self-referencing queue-runner pattern as Show-BatchDeployDialog's own
+# $RunNextBox, reusing $Script:EmbeddedDeleteAppScript completely unchanged,
+# one app at a time. Deliberately NOT taught to accept a whole batch in one
+# process invocation the way the (read-only, much lower-stakes) sync-
+# metadata script is - that script's dependency-block detection and
+# interactive "remove the blocking dependency and retry?" prompt is exactly
+# the kind of per-app judgment call that has no sane unattended answer
+# across many apps at once. A dependency-blocked app here is simply
+# reported as a failure with a pointer to the single-app dialog, which
+# still offers that interactive retry.
+function Show-BulkDeleteFromIntuneDialog {
+    param([int[]]$Indices)
+
+    # Plain local aliases - see note in Start-IntuneAppLookup.
+    $appsRef        = $Script:Apps
+    $tenantId       = $Script:GraphTenantId
+    $clientId       = $Script:GraphClientId
+    $certThumb      = $Script:GraphCertificateThumbprint
+    $deleteScript   = $Script:EmbeddedDeleteAppScript
+    $unsavedBox     = $Script:UnsavedChangesBox
+    $linkedFilePath = $Script:LinkedFilePath
+
+    $candidateApps = @($Indices | ForEach-Object { $appsRef[$_] })
+    $eligibleApps  = @($candidateApps | Where-Object { $_.appId })
+
+    if ($eligibleApps.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("None of the selected app(s) have an App ID - there's nothing in Intune to delete for them.", "Nothing to do", "OK", "Information") | Out-Null
+        return $false
+    }
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Delete from Intune - $($eligibleApps.Count) app(s)"
+    $dlg.ClientSize = New-Object System.Drawing.Size(660, 620)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+
+    $lblWarning = New-Object System.Windows.Forms.Label
+    $skippedNote = if ($candidateApps.Count -gt $eligibleApps.Count) { " $($candidateApps.Count - $eligibleApps.Count) of the app(s) you selected have no App ID and are left out below - there's nothing in Intune to delete for them." } else { "" }
+    $lblWarning.Text = "This PERMANENTLY deletes every checked app below from Intune, including its content, assignments, and install history. This CANNOT be undone.$skippedNote`n`nEach catalog entry itself is not removed - only its App ID is cleared on success, so you can recreate it later without losing the groups already set here."
+    $lblWarning.Location = New-Object System.Drawing.Point(15,12)
+    $lblWarning.Size = New-Object System.Drawing.Size(630,72)
+    $lblWarning.ForeColor = [System.Drawing.Color]::Firebrick
+    $dlg.Controls.Add($lblWarning)
+
+    $clbApps = New-Object System.Windows.Forms.CheckedListBox
+    $clbApps.Location = New-Object System.Drawing.Point(15,90)
+    $clbApps.Size = New-Object System.Drawing.Size(630,220)
+    $clbApps.CheckOnClick = $true
+    $dlg.Controls.Add($clbApps)
+    foreach ($eligibleApp in ($eligibleApps | Sort-Object appName)) {
+        [void]$clbApps.Items.Add($eligibleApp.appName, $true)
+    }
+
+    $btnSelectAll = New-Object System.Windows.Forms.Button
+    $btnSelectAll.Text = "Select all"
+    $btnSelectAll.Location = New-Object System.Drawing.Point(15,316)
+    $btnSelectAll.Size = New-Object System.Drawing.Size(100,26)
+    $dlg.Controls.Add($btnSelectAll)
+
+    $btnSelectNone = New-Object System.Windows.Forms.Button
+    $btnSelectNone.Text = "Select none"
+    $btnSelectNone.Location = New-Object System.Drawing.Point(125,316)
+    $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
+    $dlg.Controls.Add($btnSelectNone)
+
+    # Hidden until a run actually has failures to retry - same convention
+    # as Show-SyncMetadataDialog's own "Retry failed only".
+    $btnRetryFailed = New-Object System.Windows.Forms.Button
+    $btnRetryFailed.Text = "Retry failed only"
+    $btnRetryFailed.Location = New-Object System.Drawing.Point(245,316)
+    $btnRetryFailed.Size = New-Object System.Drawing.Size(155,26)
+    $btnRetryFailed.Visible = $false
+    $dlg.Controls.Add($btnRetryFailed)
+
+    $lblConfirmPrompt = New-Object System.Windows.Forms.Label
+    # Typing the exact name (like the single-app dialog) doesn't scale to N
+    # apps at once - typing the literal word DELETE is the same convention
+    # widely used elsewhere for an irreversible bulk/multi-item action.
+    $lblConfirmPrompt.Text = "Type DELETE below to confirm:"
+    $lblConfirmPrompt.Location = New-Object System.Drawing.Point(15,350)
+    $lblConfirmPrompt.AutoSize = $true
+    $dlg.Controls.Add($lblConfirmPrompt)
+
+    $txtConfirm = New-Object System.Windows.Forms.TextBox
+    $txtConfirm.Location = New-Object System.Drawing.Point(15,370)
+    $txtConfirm.Size = New-Object System.Drawing.Size(630,24)
+    $dlg.Controls.Add($txtConfirm)
+
+    $lblStatus = New-Object System.Windows.Forms.Label
+    $lblStatus.Location = New-Object System.Drawing.Point(15,400)
+    $lblStatus.Size = New-Object System.Drawing.Size(630,36)
+    $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+    $dlg.Controls.Add($lblStatus)
+
+    $rtbLog = New-Object System.Windows.Forms.RichTextBox
+    $rtbLog.Location = New-Object System.Drawing.Point(15,440)
+    $rtbLog.Size = New-Object System.Drawing.Size(630,120)
+    $rtbLog.ReadOnly = $true
+    $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
+    $rtbLog.ForeColor = [System.Drawing.Color]::Gainsboro
+    $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $dlg.Controls.Add($rtbLog)
+
+    $btnDelete = New-Object System.Windows.Forms.Button
+    $btnDelete.Text = "Delete permanently"
+    $btnDelete.Location = New-Object System.Drawing.Point(455,576)
+    $btnDelete.Size = New-Object System.Drawing.Size(190,32)
+    $btnDelete.Enabled = $false
+    $dlg.Controls.Add($btnDelete)
+
+    $btnClose = New-Object System.Windows.Forms.Button
+    $btnClose.Text = "Close"
+    $btnClose.Location = New-Object System.Drawing.Point(365,576)
+    $btnClose.Size = New-Object System.Drawing.Size(85,32)
+    $dlg.Controls.Add($btnClose)
+
+    $procBox = @{ Proc = $null }
+    $lastFailedBox = @{ Names = @() }
+    $deletedAnyBox = @{ Value = $false }
+
+    $txtConfirm.Add_TextChanged({
+        $btnDelete.Enabled = ($txtConfirm.Text.Trim() -eq "DELETE")
+    }.GetNewClosure())
+
+    $btnSelectAll.Add_Click({
+        for ($ci = 0; $ci -lt $clbApps.Items.Count; $ci++) { $clbApps.SetItemChecked($ci, $true) }
+    }.GetNewClosure())
+    $btnSelectNone.Add_Click({
+        for ($ci = 0; $ci -lt $clbApps.Items.Count; $ci++) { $clbApps.SetItemChecked($ci, $false) }
+    }.GetNewClosure())
+    $btnRetryFailed.Add_Click({
+        for ($ci = 0; $ci -lt $clbApps.Items.Count; $ci++) {
+            $itemName = [string]$clbApps.Items[$ci]
+            $clbApps.SetItemChecked($ci, ($lastFailedBox.Names -contains $itemName))
+        }
+    }.GetNewClosure())
+
+    # A mutable container, not a plain variable - RunNext needs to call
+    # ITSELF again (moving on to the next app) from within its own
+    # -OnComplete - see the extensive reasoning on the identical pattern in
+    # Show-BatchDeployDialog's own $RunNextBox for why a plain
+    # self-referencing scriptblock would capture $null instead.
+    $RunNextBox = @{ Value = $null }
+
+    $RunNextBox.Value = {
+        param($Queue, $QueueIndex, $Results)
+
+        if ($QueueIndex -ge $Queue.Count) {
+            $okCount = @($Results | Where-Object { $_.Status -eq "Deleted" }).Count
+            $failedCount = @($Results | Where-Object { $_.Status -eq "Failed" }).Count
+            $btnSelectAll.Enabled = $true
+            $btnSelectNone.Enabled = $true
+            $clbApps.Enabled = $true
+            $txtConfirm.Enabled = $true
+            $btnDelete.Enabled = ($txtConfirm.Text.Trim() -eq "DELETE")
+            $failedNames = @($Results | Where-Object { $_.Status -eq "Failed" } | ForEach-Object { $_.AppName })
+            $lastFailedBox.Names = $failedNames
+            $btnRetryFailed.Visible = ($failedNames.Count -gt 0)
+            $lblStatus.ForeColor = if ($failedCount -gt 0) { [System.Drawing.Color]::DarkOrange } else { [System.Drawing.Color]::SeaGreen }
+            $lblStatus.Text = "Done - $okCount deleted, $failedCount failed."
+            return
+        }
+
+        $currentApp = $Queue[$QueueIndex]
+        $rtbLog.AppendText("`r`n[$($QueueIndex+1)/$($Queue.Count)] $($currentApp.appName)`r`n")
+        $lblStatus.Text = "Deleting $($QueueIndex+1) of $($Queue.Count): $($currentApp.appName)..."
+
+        $configPath = Join-Path $env:TEMP (".itsense_bulkdelete_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".itsense_bulkdelete_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $config = [pscustomobject]@{
+            TenantId                  = $tenantId
+            ClientId                  = $clientId
+            CertificateThumbprint     = $certThumb
+            AppId                     = $currentApp.appId
+            AppName                   = $currentApp.appName
+            RemoveDependencyFromAppId = ""
+            OutputResultPath          = $resultPath
+        }
+        try {
+            $configJsonText = $config | ConvertTo-Json -Depth 8 -ErrorAction Stop
+            [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
+        }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            return
+        }
+
+        # Fresh aliases for this nested -OnComplete closure - see note at
+        # the top of Show-CreateInIntuneDialog for why this matters here too.
+        $currentAppRef = $currentApp
+        $queueRef = $Queue
+        $queueIndexRef = $QueueIndex
+        $resultsRef = $Results
+        $configPathRef = $configPath
+        $resultPathRef = $resultPath
+        $procBoxRef = $procBox
+        $rtbLogRef = $rtbLog
+        $appsRefRef = $appsRef
+        $unsavedBoxRef = $unsavedBox
+        $linkedFilePathRef = $linkedFilePath
+        $deletedAnyBoxRef = $deletedAnyBox
+        $RunNextBoxRef = $RunNextBox
+
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $deleteScript -TempScriptName ".itsense_embedded_bulkdelete.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLogRef -OnComplete {
+            param($code)
+            $procBoxRef.Proc = $null
+            Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue
+
+            $status = "Failed"
+            $message = "No result written (exit code $code)."
+            if (Test-Path $resultPathRef) {
+                try {
+                    $result = Get-Content -Path $resultPathRef -Raw | ConvertFrom-Json
+                    Remove-Item $resultPathRef -Force -ErrorAction SilentlyContinue
+                    if ($result.success) {
+                        $status = "Deleted"
+                        $message = "Deleted"
+                        for ($ai = 0; $ai -lt $appsRefRef.Count; $ai++) {
+                            if ($appsRefRef[$ai].appName -eq $currentAppRef.appName) {
+                                $appsRefRef[$ai].appId = ""
+                                break
+                            }
+                        }
+                        $unsavedBoxRef.Value = $true
+                        $deletedAnyBoxRef.Value = $true
+                        # Direct-save after EACH successful delete, not just
+                        # once at the very end - same reasoning as the
+                        # identical per-item save in Show-BatchDeployDialog's
+                        # own queue runner: a batch interrupted partway
+                        # through must not leave an already-deleted app's
+                        # stale App ID sitting in the catalog looking like
+                        # it's still there.
+                        [void](Save-AppsToFile -Path $linkedFilePathRef)
+                        $rtbLogRef.AppendText("  [OK] Deleted`r`n")
+                    }
+                    elseif ($result.blockingAppId) {
+                        $message = "Blocked - Intune has it set as a dependency for `"$($result.blockingAppName)`". Use `"Delete from Intune...`" on just this one app to remove that dependency and retry."
+                        $rtbLogRef.AppendText("  [FAILED] $message`r`n")
+                    }
+                    else {
+                        $message = $result.error
+                        $rtbLogRef.AppendText("  [FAILED] $message`r`n")
+                    }
+                }
+                catch {
+                    $message = "Could not read result: $($_.Exception.Message)"
+                    $rtbLogRef.AppendText("  [FAILED] $message`r`n")
+                }
+            }
+            else {
+                $rtbLogRef.AppendText("  [FAILED] $message`r`n")
+            }
+
+            $resultsRef.Add([pscustomobject]@{ AppName = $currentAppRef.appName; Status = $status; Message = $message })
+            & $RunNextBoxRef.Value -Queue $queueRef -QueueIndex ($queueIndexRef + 1) -Results $resultsRef
+        }.GetNewClosure()
+    }.GetNewClosure()
+
+    $btnDelete.Add_Click({
+        $checkedNames = @($clbApps.CheckedItems | ForEach-Object { [string]$_ })
+        if ($checkedNames.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Check at least one app to delete.", "Nothing selected", "OK", "Warning") | Out-Null
+            return
+        }
+        $r = [System.Windows.Forms.MessageBox]::Show("Permanently delete these $($checkedNames.Count) app(s) from Intune?`n`n$($checkedNames -join ", ")", "Confirm bulk delete", "YesNo", "Warning")
+        if ($r -ne "Yes") { return }
+
+        $queueApps = New-Object System.Collections.Generic.List[object]
+        foreach ($checkedName in $checkedNames) {
+            $matchApp = $eligibleApps | Where-Object { $_.appName -eq $checkedName } | Select-Object -First 1
+            if ($matchApp) { $queueApps.Add($matchApp) }
+        }
+
+        $btnDelete.Enabled = $false
+        $btnSelectAll.Enabled = $false
+        $btnSelectNone.Enabled = $false
+        $clbApps.Enabled = $false
+        $txtConfirm.Enabled = $false
+        $btnRetryFailed.Visible = $false
+        $rtbLog.Clear()
+        $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+        $lblStatus.Text = "Starting..."
+
+        $resultsList = New-Object System.Collections.Generic.List[object]
+        & $RunNextBox.Value -Queue $queueApps.ToArray() -QueueIndex 0 -Results $resultsList
+    }.GetNewClosure())
+
+    $btnClose.Add_Click({
+        if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
+            $r = [System.Windows.Forms.MessageBox]::Show(
+                "A deletion is currently running. Stop it and close this dialog?`n`nAny app already deleted from Intune stays deleted - check the catalog's App ID column afterward.",
+                "Stop and close?", "YesNo", "Warning")
+            if ($r -ne "Yes") { return }
+            try { $procBox.Proc.Kill() } catch { }
+        }
+        $dlg.Close()
+    }.GetNewClosure())
+    $dlg.CancelButton = $btnClose
+
+    Set-Theme -Control $dlg
+    [void]$dlg.ShowDialog($form)
+    return $deletedAnyBox.Value
+}
+
 # =====================================================================
 # =====================================================================
 # Group name drift check
@@ -12402,34 +12713,62 @@ $grid.ContextMenuStrip = $gridContextMenu
 # whole grid control - without this, clicking any item then would silently
 # do nothing, with zero feedback about why. Graying them out up front is the
 # standard convention instead of a silent no-op after the click.
+#
+# With multiple rows selected, every item here used to silently act on only
+# the FIRST selected row (Get-SelectedAppIndex, singular) with zero
+# indication that the rest of the selection was simply ignored - a real
+# trap, not just a missing feature. Each item now does one of two things
+# instead: genuinely act on the whole selection (Delete from Intune...,
+# Remove from catalog... already did via $btnDelete; Assign Groups... and
+# Package this app now do too, the latter two by reusing the exact same
+# batch features already on the toolbar), or - for Edit... and Deploy to
+# Intune..., which open a single interactive per-app form and have no sane
+# multi-app equivalent - grey out and say why, rather than quietly editing
+# just whichever row happened to be selected first.
 $gridContextMenu.Add_Opening({
-    $hasSelection = $grid.SelectedRows.Count -gt 0
-    $menuItemEdit.Enabled = $hasSelection
-    $menuItemDeploy.Enabled = $hasSelection
+    $selectedIndices = Get-SelectedAppIndices
+    $hasSelection = $selectedIndices.Count -gt 0
+    $isMulti = $selectedIndices.Count -gt 1
+
+    $menuItemEdit.Enabled = $hasSelection -and -not $isMulti
+    $menuItemEdit.ToolTipText = if ($isMulti) { "Select just one app to edit." } else { "" }
+
+    $menuItemDeploy.Enabled = $hasSelection -and -not $isMulti
+    $menuItemDeploy.ToolTipText = if ($isMulti) { "Select just one app, or use `"Batch deploy...`" on the toolbar for apps already saved for later." } else { "" }
+
+    $menuItemAssign.Text = if ($isMulti) { "Batch assign groups..." } else { "Assign Groups..." }
     $menuItemAssign.Enabled = $hasSelection
+
+    $menuItemDeleteIntune.Text = if ($isMulti) { "Delete $($selectedIndices.Count) app(s) from Intune..." } else { "Delete from Intune..." }
     $menuItemDeleteIntune.Enabled = $hasSelection
+
+    $menuItemRemoveCatalog.Text = if ($isMulti) { "Remove $($selectedIndices.Count) app(s) from catalog..." } else { "Remove from catalog..." }
     $menuItemRemoveCatalog.Enabled = $hasSelection
 
     # Only uncommon apps (no Winget ID) have their own package folder to
     # build - common apps share the one generic init.intunewin, so there's
-    # nothing for this action to do for them.
-    $menuItemPackage.Enabled = $false
-    if ($hasSelection) {
-        $i = Get-SelectedAppIndex
-        if ($null -ne $i -and (Test-AppIsUncommon -App $Script:Apps[$i])) {
-            $menuItemPackage.Enabled = $true
-        }
-    }
+    # nothing for this action to do for them. With multiple selected, at
+    # least one being uncommon is enough to enable it - Invoke-LaunchStep
+    # (via Package apps... on the toolbar) already silently skips common
+    # apps in a -FolderNames batch on its own.
+    $menuItemPackage.Text = if ($isMulti) { "Package $($selectedIndices.Count) app(s)" } else { "Package this app" }
+    $menuItemPackage.Enabled = $hasSelection -and (@($selectedIndices | ForEach-Object { $Script:Apps[$_] } | Where-Object { Test-AppIsUncommon -App $_ }).Count -gt 0)
 })
 
 # Right-click selects the row under the cursor first, standard convention -
 # otherwise the menu would act on whatever was already selected, which is
-# confusing if that's a different row than the one just right-clicked.
+# confusing if that's a different row than the one just right-clicked. Only
+# when that row isn't ALREADY part of the current selection - ctrl/shift
+# right-clicking to extend a multi-selection before opening the menu (the
+# same thing left-click already lets you do) would otherwise be undone by
+# this collapsing it back down to one row first.
 $grid.Add_CellMouseDown({
     param($gridSender, $e)
     if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Right -and $e.RowIndex -ge 0) {
-        $grid.ClearSelection()
-        $grid.Rows[$e.RowIndex].Selected = $true
+        if (-not $grid.Rows[$e.RowIndex].Selected) {
+            $grid.ClearSelection()
+            $grid.Rows[$e.RowIndex].Selected = $true
+        }
     }
 })
 
@@ -12443,24 +12782,37 @@ $menuItemDeploy.Add_Click({
 })
 
 $menuItemPackage.Add_Click({
-    $i = Get-SelectedAppIndex
-    if ($null -eq $i) { return }
-    $app = $Script:Apps[$i]
-    $folderName = Get-SafeFileNameForApp -Name $app.appName
+    $indices = Get-SelectedAppIndices
+    if ($indices.Count -eq 0) { return }
     $tabs.SelectedTab = $tabPipeline
-    Invoke-LaunchStep -OnComplete $null -SingleFolderName $folderName
+    if ($indices.Count -eq 1) {
+        $app = $Script:Apps[$indices[0]]
+        Invoke-LaunchStep -OnComplete $null -SingleFolderName (Get-SafeFileNameForApp -Name $app.appName)
+        return
+    }
+    $uncommonApps = @($indices | ForEach-Object { $Script:Apps[$_] } | Where-Object { Test-AppIsUncommon -App $_ })
+    $folderNames = @($uncommonApps | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
+    Invoke-LaunchStep -OnComplete $null -FolderNames $folderNames
 })
 
 $menuItemAssign.Add_Click({
-    $i = Get-SelectedAppIndex
-    if ($null -eq $i) { return }
-    Invoke-QuickAssignGroups -Index $i
+    $indices = Get-SelectedAppIndices
+    if ($indices.Count -eq 0) { return }
+    if ($indices.Count -eq 1) {
+        Invoke-QuickAssignGroups -Index $indices[0]
+        return
+    }
+    Show-BatchAssignDialog -ScopedIndices $indices
 })
 
 $menuItemDeleteIntune.Add_Click({
-    $i = Get-SelectedAppIndex
-    if ($null -eq $i) { return }
-    Invoke-QuickDeleteFromIntune -Index $i
+    $indices = Get-SelectedAppIndices
+    if ($indices.Count -eq 0) { return }
+    if ($indices.Count -eq 1) {
+        Invoke-QuickDeleteFromIntune -Index $indices[0]
+        return
+    }
+    if (Show-BulkDeleteFromIntuneDialog -Indices $indices) { Refresh-Grid }
 })
 
 $btnDelete.Add_Click({
