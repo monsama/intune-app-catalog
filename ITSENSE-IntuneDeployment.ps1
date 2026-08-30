@@ -15229,10 +15229,17 @@ function Start-PipelineProcess {
             & $ReadNewLogContent
 
             $code = $proc.ExitCode
-            if ($code -eq 0) {
-                Write-Log "`r`n[Finished - exit code 0]`r`n`r`n" ([System.Drawing.Color]::LightGreen)
-            } else {
-                Write-Log "`r`n[Finished - exit code $code]`r`n`r`n" ([System.Drawing.Color]::Orange)
+            $finishedText = if ($code -eq 0) { "`r`n[Finished - exit code 0]`r`n`r`n" } else { "`r`n[Finished - exit code $code]`r`n`r`n" }
+            Write-Log $finishedText ([System.Drawing.Color]::LightGreen)
+            # Mirror into the caller's own inline log too - otherwise every
+            # -ExtraLogTarget dialog (Packaging, Deploy, Sync, Batch Assign,
+            # Create in Intune) ends its local log right at the embedded
+            # script's own last output line, with no visible confirmation
+            # the run actually finished.
+            if ($ExtraLogTarget) {
+                $ExtraLogTarget.AppendText($finishedText)
+                $ExtraLogTarget.SelectionStart = $ExtraLogTarget.TextLength
+                $ExtraLogTarget.ScrollToCaret()
             }
             Remove-Item $logFile -Force -ErrorAction SilentlyContinue
             Remove-Item $tempScriptPath -Force -ErrorAction SilentlyContinue
@@ -15338,16 +15345,31 @@ function Show-PackagingProgressDialog {
     $dlg.Add_Shown({
         Invoke-LaunchStep -ExtraLogTarget $rtbLogRef -SingleFolderName $SingleFolderName -FolderNames $FolderNames -OnComplete {
             param($code)
-            $runningBoxRef.Running = $false
-            Refresh-Grid
-            $btnCloseRef.Enabled = $true
-            if ($code -eq 0) {
-                $lblStatusRef.Text = "Packaging complete."
-                $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
+            # Refresh-Grid wrapped in try/finally - it's local catalog/filesystem
+            # work with no reason to fail, but this runs from inside a Timer.Tick
+            # handler (see Start-PipelineProcess), where an unhandled exception
+            # can be silently swallowed by the .NET event dispatch instead of
+            # surfacing anywhere - which previously would have skipped every
+            # statement after it, leaving Close permanently disabled and the
+            # dialog's FormClosing guard blocking the window forever. Whatever
+            # happens in Refresh-Grid, the dialog must still unlock.
+            try {
+                Refresh-Grid
             }
-            else {
-                $lblStatusRef.Text = "Packaging finished with exit code $code - see the log above."
-                $lblStatusRef.ForeColor = [System.Drawing.Color]::Orange
+            catch {
+                $rtbLogRef.AppendText("`r`n[WARN] Grid refresh after packaging failed: $($_.Exception.Message)`r`n")
+            }
+            finally {
+                $runningBoxRef.Running = $false
+                $btnCloseRef.Enabled = $true
+                if ($code -eq 0) {
+                    $lblStatusRef.Text = "Packaging complete."
+                    $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
+                }
+                else {
+                    $lblStatusRef.Text = "Packaging finished with exit code $code - see the log above."
+                    $lblStatusRef.ForeColor = [System.Drawing.Color]::Orange
+                }
             }
         }.GetNewClosure()
     }.GetNewClosure())
