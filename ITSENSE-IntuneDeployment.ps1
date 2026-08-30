@@ -13685,7 +13685,7 @@ function Show-AppEditor {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = if ($ExistingApp) { "Edit app" } else { "Add app" }
-    $dlg.ClientSize = New-Object System.Drawing.Size(470, 745)
+    $dlg.ClientSize = New-Object System.Drawing.Size(470, 805)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -13799,7 +13799,7 @@ function Show-AppEditor {
     # defined right below, next to the rest of this button's own logic.
     $btnDeleteFromIntune = New-Object System.Windows.Forms.Button
     $btnDeleteFromIntune.Text = "Delete from Intune..."
-    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(170,705)
+    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(170,765)
     $btnDeleteFromIntune.Size = New-Object System.Drawing.Size(190,30)
     $dlg.Controls.Add($btnDeleteFromIntune)
     $appEditorTip = New-Object System.Windows.Forms.ToolTip
@@ -13810,6 +13810,20 @@ function Show-AppEditor {
     $lblIdStatus.Size = New-Object System.Drawing.Size(430,40)
     $lblIdStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblIdStatus)
+
+    # Pulls this app's CURRENT live group assignments from Intune and sets
+    # the three pickers below to match exactly - the read-only counterpart
+    # to "Assign Groups to Intune..." (which only ever pushes THIS
+    # editor's checkboxes outward). Without it, an app that already has
+    # real assignments in Intune (created outside this tool, or from
+    # before these checkboxes existed) shows every box unchecked here,
+    # which reads as "assigned to nobody" when the truth is just "this
+    # editor never asked Intune what's actually there".
+    $btnReadGroupsFromIntune = New-Object System.Windows.Forms.Button
+    $btnReadGroupsFromIntune.Text = "Read groups from Intune"
+    $btnReadGroupsFromIntune.Location = New-Object System.Drawing.Point(15,300)
+    $btnReadGroupsFromIntune.Size = New-Object System.Drawing.Size(430,30)
+    $dlg.Controls.Add($btnReadGroupsFromIntune)
 
     $TryFillIdFromCache = {
         $candidates = Find-IntuneMatches -Name $txtName.Text.Trim()
@@ -14105,22 +14119,22 @@ function Show-AppEditor {
         return @{ Box = $gb; List = $clb }
     }
 
-    $reqGroup   = New-GroupBox -Title "Required for"  -Top 280 -Selected @($ExistingApp.requiredFor)
-    $availGroup = New-GroupBox -Title "Available for" -Top 410 -Selected @($ExistingApp.availableFor)
-    $uninstGroup= New-GroupBox -Title "Uninstall for" -Top 540 -Selected @($ExistingApp.uninstallFor)
+    $reqGroup   = New-GroupBox -Title "Required for"  -Top 340 -Selected @($ExistingApp.requiredFor)
+    $availGroup = New-GroupBox -Title "Available for" -Top 470 -Selected @($ExistingApp.availableFor)
+    $uninstGroup= New-GroupBox -Title "Uninstall for" -Top 600 -Selected @($ExistingApp.uninstallFor)
     $dlg.Controls.Add($reqGroup.Box)
     $dlg.Controls.Add($availGroup.Box)
     $dlg.Controls.Add($uninstGroup.Box)
 
     $btnAssignGroups = New-Object System.Windows.Forms.Button
     $btnAssignGroups.Text = "Assign Groups to Intune (this app only)..."
-    $btnAssignGroups.Location = New-Object System.Drawing.Point(15,665)
+    $btnAssignGroups.Location = New-Object System.Drawing.Point(15,725)
     $btnAssignGroups.Size = New-Object System.Drawing.Size(430,30)
     $dlg.Controls.Add($btnAssignGroups)
 
     $btnOk = New-Object System.Windows.Forms.Button
     $btnOk.Text = "Save app to catalog"
-    $btnOk.Location = New-Object System.Drawing.Point(15,705)
+    $btnOk.Location = New-Object System.Drawing.Point(15,765)
     $btnOk.Size = New-Object System.Drawing.Size(150,30)
     $dlg.Controls.Add($btnOk)
 
@@ -14130,7 +14144,7 @@ function Show-AppEditor {
     # bottom row.
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(365,705)
+    $btnCancel.Location = New-Object System.Drawing.Point(365,765)
     $btnCancel.Size = New-Object System.Drawing.Size(90,30)
     $dlg.Controls.Add($btnCancel)
 
@@ -14141,6 +14155,58 @@ function Show-AppEditor {
         }
         Show-TargetedAssignDialog -AppId $txtId.Text.Trim() -AppName $txtName.Text.Trim() `
             -RequiredGroups @($reqGroup.List.CheckedItems) -AvailableGroups @($availGroup.List.CheckedItems) -UninstallGroups @($uninstGroup.List.CheckedItems) | Out-Null
+    }.GetNewClosure())
+
+    $btnReadGroupsFromIntune.Add_Click({
+        if (-not $txtId.Text.Trim()) {
+            [System.Windows.Forms.MessageBox]::Show("This app has no App ID yet - there's nothing in Intune to read groups from.", "No App ID", "OK", "Information") | Out-Null
+            return
+        }
+        $btnReadGroupsFromIntune.Enabled = $false
+        $lblIdStatus.ForeColor = [System.Drawing.Color]::DimGray
+        $lblIdStatus.Text = "Reading current group assignments from Intune..."
+
+        # Fresh aliases for the nested -OnComplete closure - see note at
+        # the top of Show-CreateInIntuneDialog for why this matters here
+        # too.
+        $reqGroupRef = $reqGroup
+        $availGroupRef = $availGroup
+        $uninstGroupRef = $uninstGroup
+        $btnReadGroupsFromIntuneRef = $btnReadGroupsFromIntune
+        $lblIdStatusRef = $lblIdStatus
+
+        Start-AppMetadataFetch -AppId $txtId.Text.Trim() -OnComplete {
+            param($ok, $errMsg, $data)
+            $btnReadGroupsFromIntuneRef.Enabled = $true
+            if (-not $ok) {
+                $lblIdStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
+                $lblIdStatusRef.Text = "Could not read groups from Intune ($errMsg)."
+                return
+            }
+            # Sets each list to match Intune EXACTLY, not a merge - this
+            # button's whole point is "show me what's actually there",
+            # same as Sync metadata's own authoritative-pull philosophy
+            # elsewhere in this app. A group Intune has that isn't in the
+            # list yet is added (same as "+ New group..."), then every
+            # box is checked/unchecked to match live reality, including
+            # unchecking anything checked here that Intune doesn't
+            # actually have.
+            $syncGroupList = {
+                param($List, $Names)
+                foreach ($groupName in @($Names)) {
+                    if ($List.Items -notcontains $groupName) { [void]$List.Items.Add($groupName) }
+                }
+                for ($gi = 0; $gi -lt $List.Items.Count; $gi++) {
+                    $List.SetItemChecked($gi, (@($Names) -contains [string]$List.Items[$gi]))
+                }
+            }
+            & $syncGroupList $reqGroupRef.List $data.RequiredGroupNames
+            & $syncGroupList $availGroupRef.List $data.AvailableGroupNames
+            & $syncGroupList $uninstGroupRef.List $data.UninstallGroupNames
+
+            $lblIdStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
+            $lblIdStatusRef.Text = "Groups above now match what's currently assigned in Intune."
+        }.GetNewClosure()
     }.GetNewClosure())
 
     # Plain local box (not $Script:-qualified) - see the same pattern/reasoning in
