@@ -1545,8 +1545,15 @@ try {
             minimumCpuSpeedInMHz      = if ($Config.MinCpuSpeedMHz) { [int]$Config.MinCpuSpeedMHz } else { 0 }
             allowAvailableUninstall   = [bool]$Config.AllowAvailableUninstall
         }
-        $minOSPatch = @{ $Config.MinOSVersionKey = $true }
-        $patchBody.minimumSupportedOperatingSystem = $minOSPatch
+        # minimumSupportedWindowsRelease (a plain string, e.g. "W11_21H2"),
+        # not the legacy minimumSupportedOperatingSystem boolean bag -
+        # Microsoft has REPLACED the old property with this one (confirmed
+        # against the IntuneWin32App PowerShell module's own release
+        # notes: "minimumSupportedOperatingSystem property is replaced by
+        # minimumSupportedWindowsRelease"), and the old property's schema
+        # has no Windows 11 values at all, so it's the only one that can
+        # actually express one.
+        $patchBody.minimumSupportedWindowsRelease = $Config.MinOSVersionKey
         # Same rule already established and fixed once this session for
         # Create mode - applicableArchitectures can only hold a single
         # value; multiple architectures go through allowedArchitectures
@@ -1621,8 +1628,6 @@ try {
         maxRunTimeInMinutes     = if ($Config.InstallTimeMinutes) { [int]$Config.InstallTimeMinutes } else { 60 }
     }
 
-    $minOS = @{ $Config.MinOSVersionKey = $true }
-
     # Falls back to the original fixed 5-code set if this wasn't supplied -
     # same reasoning as deviceRestartBehavior above.
     $returnCodesPayload = if (@($Config.ReturnCodes).Count -gt 0) {
@@ -1644,7 +1649,11 @@ try {
         publisher                          = $Config.Publisher
         installCommandLine                = $Config.InstallCommand
         uninstallCommandLine              = $Config.UninstallCommand
-        minimumSupportedOperatingSystem   = $minOS
+        # minimumSupportedWindowsRelease, not the legacy
+        # minimumSupportedOperatingSystem boolean bag - see the matching
+        # note next to the Update path's own $patchBody assignment above
+        # in this same embedded script for why.
+        minimumSupportedWindowsRelease    = $Config.MinOSVersionKey
         installExperience                 = $installExperience
         setupFilePath                     = $packageInfo.SetupFile
         fileName                          = $packageInfo.OriginalFileName
@@ -7516,7 +7525,11 @@ function Get-DefaultAppMetadata {
         uninstallCommand = $templates.Uninstall
         architecture     = "x64"
         installContext   = "System"
-        minOSKey         = "v10_21H1"
+        # Newest Windows 10 release, not Windows 11 - a sensible default
+        # shouldn't silently require Windows 11 for every new app. See
+        # Show-CreateInIntuneDialog's own $minOsMap for the full set this
+        # can be overridden to.
+        minOSKey         = "W10_22H2"
         detectionRule    = if ($templates.Detection) { [pscustomobject]@{ Type = "Script"; Script_Content = $templates.Detection } } else { $null }
         dependencies     = $defaultDeps
         minDiskSpaceMB          = 0
@@ -8317,22 +8330,17 @@ function Show-CreateInIntuneDialog {
     $cmbMinOS.Location = New-Object System.Drawing.Point(415,650)
     $cmbMinOS.Size = New-Object System.Drawing.Size(190,24)
     $cmbMinOS.DropDownStyle = "DropDownList"
-    # Confirmed against Microsoft's own documentation (learn.microsoft.com,
-    # windowsMinimumOperatingSystem, beta) after v10_21H2 was rejected by
-    # Graph with "the property does not exist on this type" - the beta
-    # schema's property list genuinely stops at v10_21H1; there is no
-    # v10_21H2 or v10_22H2 despite those being real Windows versions. Note
-    # the 20H2 property is spelled "v10_2H20" (digits swapped) in Microsoft's
-    # own docs, not "v10_20H2" - used exactly as documented since Graph
-    # validates the literal property name server-side.
-    $minOsMap = [ordered]@{
-        "1607 or later (broadest)" = "v10_1607"
-        "1809 or later"            = "v10_1809"
-        "1909 or later"            = "v10_1909"
-        "2004 or later"            = "v10_2004"
-        "20H2 or later"            = "v10_2H20"
-        "21H1 or later (newest available)" = "v10_21H1"
-    }
+    # Values (not labels - see Get-FriendlyMinOsRelease for those) are the
+    # full confirmed set for minimumSupportedWindowsRelease, sourced from
+    # the IntuneWin32App PowerShell module's own ValidateSet - this used
+    # to be a deliberately curated 6-value subset of the OLD
+    # minimumSupportedOperatingSystem property (whose schema has no
+    # Windows 11 values at all, full stop), before this dialog switched
+    # to writing the new property - see the note next to
+    # $Script:EmbeddedCreateAppScript's own $patchBody assignment for why.
+    $minOsRawValues = @("W10_1607", "W10_1703", "W10_1709", "W10_1803", "W10_1809", "W10_1903", "W10_1909", "W10_2004", "W10_20H2", "W10_21H1", "W10_21H2", "W10_22H2", "W11_21H2", "W11_22H2")
+    $minOsMap = [ordered]@{}
+    foreach ($rawValue in $minOsRawValues) { $minOsMap[(Get-FriendlyMinOsRelease -RawValue $rawValue)] = $rawValue }
     [void]$cmbMinOS.Items.AddRange(@($minOsMap.Keys))
     if (-not $isDuplicate -and $defaults.minOSKey) {
         $defaultMinOsLabel = $minOsMap.Keys | Where-Object { $minOsMap[$_] -eq $defaults.minOSKey } | Select-Object -First 1
@@ -8485,24 +8493,30 @@ function Show-CreateInIntuneDialog {
     $scrollPanel.Controls.Add($lblRestartBehavior)
     $cmbRestartBehavior = New-Object System.Windows.Forms.ComboBox
     $cmbRestartBehavior.Location = New-Object System.Drawing.Point(160,914)
-    $cmbRestartBehavior.Size = New-Object System.Drawing.Size(230,23)
+    $cmbRestartBehavior.Size = New-Object System.Drawing.Size(350,23)
     $cmbRestartBehavior.DropDownStyle = "DropDownList"
-    # Display labels map to the exact win32LobAppRestartBehavior enum
-    # values confirmed against Microsoft's own resource docs.
+    # Display labels are the exact wording the Intune portal's own
+    # "Device restart behavior" dropdown uses (confirmed directly against
+    # a live screenshot of it) - the enum VALUES on the right were already
+    # correct (confirmed against Microsoft's resource docs separately),
+    # only the LABELS shown here were off: "No specific action" was
+    # previously mapped to basedOnReturnCode, but the portal actually uses
+    # that exact wording for "allow" instead - "Determine behavior based
+    # on return codes" is the portal's real label for basedOnReturnCode.
     $restartBehaviorMap = [ordered]@{
-        "No specific action" = "basedOnReturnCode"
-        "Allow"              = "allow"
-        "Suppress"           = "suppress"
-        "Force"              = "force"
+        "Determine behavior based on return codes"      = "basedOnReturnCode"
+        "No specific action"                            = "allow"
+        "App install may force a device restart"        = "suppress"
+        "Intune will force a mandatory device restart"  = "force"
     }
     foreach ($k in $restartBehaviorMap.Keys) { [void]$cmbRestartBehavior.Items.Add($k) }
     $defaultRestartLabel = $restartBehaviorMap.Keys | Where-Object { $restartBehaviorMap[$_] -eq $defaults.deviceRestartBehavior } | Select-Object -First 1
-    $cmbRestartBehavior.SelectedItem = if ($defaultRestartLabel) { $defaultRestartLabel } else { "No specific action" }
+    $cmbRestartBehavior.SelectedItem = if ($defaultRestartLabel) { $defaultRestartLabel } else { "Determine behavior based on return codes" }
     $scrollPanel.Controls.Add($cmbRestartBehavior)
 
     $chkAllowUninstall = New-Object System.Windows.Forms.CheckBox
     $chkAllowUninstall.Text = "Allow available uninstall"
-    $chkAllowUninstall.Location = New-Object System.Drawing.Point(405,916)
+    $chkAllowUninstall.Location = New-Object System.Drawing.Point(525,916)
     $chkAllowUninstall.AutoSize = $true
     $chkAllowUninstall.Checked = [bool]$defaults.allowAvailableUninstall
     $scrollPanel.Controls.Add($chkAllowUninstall)
@@ -9839,64 +9853,43 @@ function Show-CreateInIntuneDialog {
                     $chkArchX64Ref.Checked = $archList -contains "x64"
                     $chkArchArm64Ref.Checked = $archList -contains "arm64"
                 }
-                # Legacy match resolved FIRST, regardless of which property
-                # ends up driving the status text below - needed so the new-
-                # property check just below can tell "genuinely different
-                # value" apart from "same release, reported through both
-                # properties" (e.g. legacy v10_21H1 and new W10_21H1/bare
-                # "21H1", all observed live for the exact same app).
-                $legacyMatchKey = $null
-                if ($data.MinOSPropertyName) {
-                    $legacyMatchKey = $minOsMapRef.Keys | Where-Object { $minOsMapRef[$_] -eq $data.MinOSPropertyName } | Select-Object -First 1
-                    if ($legacyMatchKey) { $cmbMinOSRef.SelectedItem = $legacyMatchKey }
+                # This dialog now reads/writes minimumSupportedWindowsRelease
+                # (see the note next to $Script:EmbeddedCreateAppScript's own
+                # $patchBody assignment for why) - matched via
+                # Get-ParsedMinOsRelease, not a raw string comparison, since
+                # THREE different spellings of this same property have been
+                # observed live for the exact same release ("W11_21H2",
+                # "Windows11_21H2", bare "21H1").
+                $matchedFromNew = $null
+                if ($data.MinimumSupportedWindowsRelease) {
+                    $newParsed = Get-ParsedMinOsRelease -RawValue $data.MinimumSupportedWindowsRelease
+                    $matchedFromNew = $minOsMapRef.Keys | Where-Object {
+                        $candidateParsed = Get-ParsedMinOsRelease -RawValue $minOsMapRef[$_]
+                        $candidateParsed.Major -eq $newParsed.Major -and $candidateParsed.Release -eq $newParsed.Release
+                    } | Select-Object -First 1
                 }
 
-                if ($data.MinimumSupportedWindowsRelease) {
-                    # Microsoft has replaced the legacy
-                    # minimumSupportedOperatingSystem property (what
-                    # $legacyMatchKey/$minOsMap above still read AND write)
-                    # with this one, mainly to support Windows 11
-                    # requirements the old property's schema has no room
-                    # for - see the note next to Start-AppMetadataFetch's
-                    # own MinimumSupportedWindowsRelease field. Parsed via
-                    # Get-ParsedMinOsRelease, not compared as raw strings -
-                    # THREE different spellings of this same property have
-                    # been observed live ("W11_21H2", "Windows11_21H2",
-                    # bare "21H1"), so a naive string comparison against
-                    # the legacy property's own "v10_21H1"-style value
-                    # would false-positive on every one of them.
-                    $newParsed = Get-ParsedMinOsRelease -RawValue $data.MinimumSupportedWindowsRelease
-                    $legacyParsed = if ($legacyMatchKey) { Get-ParsedMinOsRelease -RawValue $data.MinOSPropertyName } else { $null }
-                    $sameRelease = $legacyParsed -and $newParsed.Major -eq $legacyParsed.Major -and $newParsed.Release -eq $legacyParsed.Release
-                    if ($sameRelease) {
-                        # Both properties agree - nothing actually
-                        # inconsistent to call out.
-                        $lblMinOSStatusRef.Text = ""
-                    }
-                    else {
-                        # This dialog's dropdown only reads/writes the
-                        # legacy property (switching that is a real Graph-
-                        # write behavior change, not made here without
-                        # deciding it deliberately) - so the live value is
-                        # just shown, not selected, and saving here does
-                        # NOT change it either way. Shown with the same
-                        # friendly wording the Intune portal itself uses
-                        # ("Windows 11 21H2"), not Graph's own raw spelling
-                        # - see Get-FriendlyMinOsRelease.
-                        $lblMinOSStatusRef.Text = "Live: `"$(Get-FriendlyMinOsRelease -RawValue $data.MinimumSupportedWindowsRelease)`" (newer property, not read/written here)."
-                    }
-                }
-                elseif ($legacyMatchKey) {
+                if ($matchedFromNew) {
+                    $cmbMinOSRef.SelectedItem = $matchedFromNew
                     $lblMinOSStatusRef.Text = ""
                 }
                 elseif ($data.MinOSPropertyName) {
-                    # Really set in Intune, just not one of the values this
-                    # dialog's own dropdown offers (see the note next to
-                    # $minOsMap) - said explicitly rather than leaving the
-                    # dropdown looking blank/unset, which would read as
-                    # "Intune has no minimum OS" when the truth is just
-                    # "not one of these six options".
-                    $lblMinOSStatusRef.Text = "Intune has `"$($data.MinOSPropertyName)`" set - not offered above. Saving will change it."
+                    # This app has never had the NEW property set at all -
+                    # only the legacy one (e.g. not touched since before
+                    # Microsoft's switch). Pre-selects the dropdown's
+                    # equivalent as a convenience, but says so plainly:
+                    # saving from here sets the NEW property, which this
+                    # app doesn't currently have.
+                    $legacyParsed = Get-ParsedMinOsRelease -RawValue $data.MinOSPropertyName
+                    $matchedFromLegacy = $minOsMapRef.Keys | Where-Object {
+                        $candidateParsed = Get-ParsedMinOsRelease -RawValue $minOsMapRef[$_]
+                        $candidateParsed.Major -eq $legacyParsed.Major -and $candidateParsed.Release -eq $legacyParsed.Release
+                    } | Select-Object -First 1
+                    if ($matchedFromLegacy) { $cmbMinOSRef.SelectedItem = $matchedFromLegacy }
+                    $lblMinOSStatusRef.Text = "Intune only has the older property set (`"$(Get-FriendlyMinOsRelease -RawValue $data.MinOSPropertyName)`"). Saving here sets the current one instead."
+                }
+                else {
+                    $lblMinOSStatusRef.Text = ""
                 }
                 else {
                     $lblMinOSStatusRef.Text = ""
@@ -11600,15 +11593,15 @@ function Show-DiagnosticsDialog {
         $rtbLog.ScrollToCaret()
     }.GetNewClosure()
 
-    # These mirror $minOsMap's VALUES inside Show-CreateInIntuneDialog -
-    # not a shared reference to it (that map is local to that function,
+    # Mirrors $minOsRawValues inside Show-CreateInIntuneDialog - not a
+    # shared reference to it (that list is local to that function,
     # deliberately, same as every other detection/operator map in this
     # app), so this is a second copy by necessity. Kept in sync manually;
-    # if that map's values ever change, update this list too. This is
-    # exactly the class of drift the Min OS dropdown fix elsewhere this
-    # session was about, so a live app using something outside this list
-    # is a real, previously-silent finding, not a false positive.
-    $knownMinOsValues = @("v10_1607", "v10_1809", "v10_1909", "v10_2004", "v10_2H20", "v10_21H1")
+    # if that list ever changes, update this one too. This is exactly the
+    # class of drift the Min OS dropdown fix elsewhere this session was
+    # about, so a live app using something outside this list is a real,
+    # previously-silent finding, not a false positive.
+    $knownMinOsValues = @("W10_1607", "W10_1703", "W10_1709", "W10_1803", "W10_1809", "W10_1903", "W10_1909", "W10_2004", "W10_20H2", "W10_21H1", "W10_21H2", "W10_22H2", "W11_21H2", "W11_22H2")
 
     $btnRun.Add_Click({
         $btnRun.Enabled = $false
@@ -11736,32 +11729,39 @@ function Show-DiagnosticsDialog {
                     $minOsById = @{}
                     foreach ($m in @($minOsData)) { $minOsById[[string]$m.id] = $m }
 
-                    # Microsoft has replaced the legacy
-                    # minimumSupportedOperatingSystem property (what
-                    # $knownMinOsValues/this dialog's own dropdown still
-                    # read AND write) with minimumSupportedWindowsRelease,
-                    # specifically to support Windows 11 requirements - see
-                    # the note next to Start-AppMetadataFetch's own
-                    # MinimumSupportedWindowsRelease field for how this was
-                    # found. Any app using the new property is worth
-                    # flagging on its own (informational, not a defect - it
-                    # just means this tool's own Min OS dropdown neither
-                    # reads nor writes it), separately from the rarer case
-                    # of an unrecognized LEGACY value.
-                    $minOsNewProperty = @($deployedAppsRef | Where-Object {
-                        $minOsById.ContainsKey([string]$_.appId) -and $minOsById[[string]$_.appId].minimumSupportedWindowsRelease
+                    # Show-CreateInIntuneDialog now reads/writes
+                    # minimumSupportedWindowsRelease (see the note next to
+                    # $Script:EmbeddedCreateAppScript's own $patchBody
+                    # assignment for why) - a value here that doesn't parse
+                    # to one of $knownMinOsValues is a genuine finding: the
+                    # dropdown has no matching option for it (most likely a
+                    # Windows release newer than this list knows about).
+                    $minOsUnrecognized = @($deployedAppsRef | Where-Object {
+                        if (-not $minOsById.ContainsKey([string]$_.appId)) { return $false }
+                        $rawVal = $minOsById[[string]$_.appId].minimumSupportedWindowsRelease
+                        if (-not $rawVal) { return $false }
+                        $parsedVal = Get-ParsedMinOsRelease -RawValue $rawVal
+                        -not (@($knownMinOsValuesRef2) | Where-Object {
+                            $knownParsed = Get-ParsedMinOsRelease -RawValue $_
+                            $knownParsed.Major -eq $parsedVal.Major -and $knownParsed.Release -eq $parsedVal.Release
+                        })
                     })
-                    & $appendLineRef2 "$(if ($minOsNewProperty.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($minOsNewProperty.Count) app(s) with a Minimum Windows value set via Intune's newer property - this tool's dropdown doesn't read or write it" $(if ($minOsNewProperty.Count -eq 0) { $okColorRef2 } else { $infoColorRef2 })
-                    foreach ($a in $minOsNewProperty) { & $appendLineRef2 "    - $($a.appName): $(Get-FriendlyMinOsRelease -RawValue $minOsById[[string]$a.appId].minimumSupportedWindowsRelease)" $infoColorRef2 }
+                    & $appendLineRef2 "$(if ($minOsUnrecognized.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($minOsUnrecognized.Count) app(s) with a Minimum Windows value this tool's own dropdown doesn't offer" $(if ($minOsUnrecognized.Count -eq 0) { $okColorRef2 } else { $warnColorRef2 })
+                    foreach ($a in $minOsUnrecognized) { & $appendLineRef2 "    - $($a.appName): $(Get-FriendlyMinOsRelease -RawValue $minOsById[[string]$a.appId].minimumSupportedWindowsRelease)" $infoColorRef2 }
 
-                    $minOsDrift = @($deployedAppsRef | Where-Object {
+                    # Never had the new property set at all - only the
+                    # legacy one (not touched since before Microsoft's
+                    # switch). Informational, not a defect: opening
+                    # "Intune Deployment" for one of these pre-selects the
+                    # dropdown from the legacy value as a convenience, and
+                    # the next save sets the current property.
+                    $minOsLegacyOnly = @($deployedAppsRef | Where-Object {
                         $minOsById.ContainsKey([string]$_.appId) -and
                         -not $minOsById[[string]$_.appId].minimumSupportedWindowsRelease -and
-                        $minOsById[[string]$_.appId].minOSPropertyName -and
-                        $knownMinOsValuesRef2 -notcontains $minOsById[[string]$_.appId].minOSPropertyName
+                        $minOsById[[string]$_.appId].minOSPropertyName
                     })
-                    & $appendLineRef2 "$(if ($minOsDrift.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($minOsDrift.Count) app(s) with a legacy Minimum Windows value in Intune this tool's own dropdown doesn't offer" $(if ($minOsDrift.Count -eq 0) { $okColorRef2 } else { $warnColorRef2 })
-                    foreach ($a in $minOsDrift) { & $appendLineRef2 "    - $($a.appName): $($minOsById[[string]$a.appId].minOSPropertyName)" $infoColorRef2 }
+                    & $appendLineRef2 "$(if ($minOsLegacyOnly.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($minOsLegacyOnly.Count) app(s) still only have the OLDER Minimum Windows property set - will be updated to the current one next time they're saved" $(if ($minOsLegacyOnly.Count -eq 0) { $okColorRef2 } else { $infoColorRef2 })
+                    foreach ($a in $minOsLegacyOnly) { & $appendLineRef2 "    - $($a.appName): $($minOsById[[string]$a.appId].minOSPropertyName)" $infoColorRef2 }
                 }
 
                 & $appendLineRef2 "" $infoColorRef2

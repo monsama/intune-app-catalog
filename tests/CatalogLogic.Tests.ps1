@@ -262,7 +262,7 @@ Assert-True ($null -ne $wingetDefaults.detectionRule) `
     "Get-DefaultAppMetadata: a winget app's defaults include a usable detection rule"
 Assert-Equal "x64" $wingetDefaults.architecture "Get-DefaultAppMetadata: default architecture is x64-only"
 Assert-Equal "System" $wingetDefaults.installContext "Get-DefaultAppMetadata: default install context is System"
-Assert-Equal "v10_21H1" $wingetDefaults.minOSKey "Get-DefaultAppMetadata: default Min OS is the newest available"
+Assert-Equal "W10_22H2" $wingetDefaults.minOSKey "Get-DefaultAppMetadata: default Min OS is the newest Windows 10 release (not Windows 11)"
 Assert-Equal "basedOnReturnCode" $wingetDefaults.deviceRestartBehavior "Get-DefaultAppMetadata: default restart behavior is basedOnReturnCode"
 Assert-Equal 5 @($wingetDefaults.returnCodes).Count "Get-DefaultAppMetadata: the standard 5 return codes are included"
 Assert-Equal "ITSENSE" $wingetDefaults.publisher "Get-DefaultAppMetadata: default publisher is ITSENSE"
