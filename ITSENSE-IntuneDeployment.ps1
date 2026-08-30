@@ -18,19 +18,20 @@
         shows them in a grid, and lets you add, edit, or delete apps. Group membership
         (Required / Available / Uninstall) is set with checkboxes against every group already
         used in the catalog, plus a button to add a brand new group. Save writes straight
-        back to each app's own file - no export/import step.
+        back to each app's own file - no export/import step. Its own toolbar covers the rest
+        of the pipeline: "Package apps..." builds the .intunewin package(s) (same logic as the
+        old 1_GenerateIntunePackage.ps1 / runDeployment.cmd) and its output streams into the
+        Log tab; "Batch deploy...", "Sync metadata...", and "Assign Groups..." (per app, from
+        the app editor, or "Batch assign groups..." across several) cover what
+        5_AssignGroupsAndNames.ps1 used to do - syncing Intune app names, Entra ID groups, and
+        assignments against the catalog - without a separate combined "Assign" step.
 
-    Pipeline
-        Launch    - packages apps_uncommon (same logic as the old 1_GenerateIntunePackage.ps1
-                    / runDeployment.cmd).
-        Assign    - syncs Intune app names, Entra ID groups, and assignments against the
-                    app catalog (same logic as the old 5_AssignGroupsAndNames.ps1).
-        Full run  - Launch, then Assign.
-        Folder scaffolding (apps_uncommon, apps-data, logs) happens automatically before
-        Launch if those folders don't exist yet.
+    Log
+        Shows the real-time combined output of whichever pipeline step ("Package apps...",
+        etc.) is currently running, and stays on the last run's output afterward.
 
         Each step runs as its own hidden PowerShell process so the GUI stays responsive; its
-        combined output streams into the log box in real time. Under the hood, the embedded
+        combined output streams into this log box in real time. Under the hood, the embedded
         script text gets written out to a short-lived temp .ps1 file in this script's own
         folder (deleted again as soon as that step finishes) and run from there - this keeps
         each step safely isolated in its own process, so an "exit" call inside that logic
@@ -6232,9 +6233,13 @@ $txtSearch = New-Object System.Windows.Forms.TextBox
 $txtSearch.Width = 220
 
 $gbCatalog = New-ToolbarGroup -Title "Catalog" -Buttons @($btnNew, $btnEdit, $btnDelete, $btnSave, $btnReload, $btnOpen, $btnFavoriteGroups)
-$gbIntune  = New-ToolbarGroup -Title "Intune"  -Buttons @($btnLookupIds, $btnCheckIntuneOnly, $btnBatchAssign, $btnSyncMetadata, $btnBatchDeploy)
+# $btnRunLaunch ("Package apps...") lives here, not in the leftover "Tools"
+# group below - it's an Intune-pipeline action (builds the .intunewin
+# package(s) apps get deployed from), same category as Batch deploy/Sync
+# metadata, not a general-purpose tool.
+$gbIntune  = New-ToolbarGroup -Title "Intune"  -Buttons @($btnLookupIds, $btnCheckIntuneOnly, $btnBatchAssign, $btnSyncMetadata, $btnBatchDeploy, $btnRunLaunch)
 $gbEntra   = New-ToolbarGroup -Title "Entra ID" -Buttons @($btnGroupManager, $btnGroupDrift)
-$gbTools   = New-ToolbarGroup -Title "Tools"   -Buttons @($btnRunLaunch, $btnCertSetup)
+$gbTools   = New-ToolbarGroup -Title "Settings" -Buttons @($btnCertSetup)
 
 $searchPanel = New-Object System.Windows.Forms.FlowLayoutPanel
 $searchPanel.AutoSize = $true
