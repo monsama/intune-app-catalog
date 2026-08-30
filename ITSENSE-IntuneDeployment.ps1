@@ -6743,7 +6743,12 @@ function Invoke-QuickDeleteFromIntune {
     param([int]$Index)
     $app = $Script:Apps[$Index]
     $deleted = Show-DeleteAppDialog -AppId $app.appId -AppName $app.appName
-    if (-not $deleted.Success) { return }
+    # .Success only ever means "deleted from Intune" - a catalog-only
+    # removal (no App ID to begin with) reports Success=$false with
+    # RemovedFromCatalog=$true instead, so both are checked here, not
+    # just Success alone; missing that would skip the Refresh-Grid below
+    # and leave a stale row for an app that's already gone from $Script:Apps.
+    if (-not $deleted.Success -and -not $deleted.RemovedFromCatalog) { return }
     # Show-DeleteAppDialog itself already removed the catalog entry and
     # saved when the user chose that - nothing left here to clear or save
     # for an entry that no longer exists. Only the "keep the entry, just
@@ -11102,8 +11107,24 @@ function Show-DeleteAppDialog {
     param([string]$AppId, [string]$AppName)
 
     if (-not $AppId) {
-        [System.Windows.Forms.MessageBox]::Show("This app doesn't have an App ID - nothing to delete in Intune.", "No App ID", "OK", "Information") | Out-Null
-        return @{ Success = $false; RemovedFromCatalog = $false }
+        # Same question the app editor's own "Delete from Intune..." button
+        # already asks in this exact situation (no App ID at all) - offered
+        # here too now, rather than this dialog just being a dead end that
+        # tells you there's nothing to delete and leaves the (already
+        # pointless, since there's nothing in Intune for it to refer to)
+        # catalog entry sitting there regardless.
+        $r = [System.Windows.Forms.MessageBox]::Show("`"$AppName`" doesn't have an App ID - there's nothing in Intune to delete.`n`nDelete it from the local catalog instead?", "No App ID", "YesNo", "Question")
+        if ($r -ne "Yes") {
+            return @{ Success = $false; RemovedFromCatalog = $false }
+        }
+        $noIdDelIdx = -1
+        for ($ndi = 0; $ndi -lt $Script:Apps.Count; $ndi++) {
+            if ($Script:Apps[$ndi].appName -eq $AppName) { $noIdDelIdx = $ndi; break }
+        }
+        if ($noIdDelIdx -ge 0) { $Script:Apps.RemoveAt($noIdDelIdx) }
+        $Script:UnsavedChangesBox.Value = $true
+        [void](Save-AppsToFile -Path $Script:LinkedFilePath)
+        return @{ Success = $false; RemovedFromCatalog = $true }
     }
 
     # Plain local aliases - see note in Start-IntuneAppLookup.
@@ -12839,7 +12860,13 @@ function Show-AppEditor {
             return
         }
         $deleted = Show-DeleteAppDialog -AppId $txtId.Text.Trim() -AppName $txtName.Text.Trim()
-        if (-not $deleted.Success) { return }
+        # .Success alone would miss a catalog-only removal (Success=$false,
+        # RemovedFromCatalog=$true) - can't actually happen from THIS call
+        # site today (the no-App-ID case is already intercepted above,
+        # before Show-DeleteAppDialog is ever called with a blank AppId),
+        # but checked the same defensive way as Invoke-QuickDeleteFromIntune
+        # regardless, in case that guard above ever changes.
+        if (-not $deleted.Success -and -not $deleted.RemovedFromCatalog) { return }
         if ($deleted.RemovedFromCatalog) {
             # Show-DeleteAppDialog already removed the whole catalog entry
             # and saved, when the user chose that there - nothing left in
