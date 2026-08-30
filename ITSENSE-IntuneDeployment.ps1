@@ -6515,6 +6515,39 @@ function Start-AppMetadataFetch {
         }
         catch { }
 
+        # This app's CURRENT live Intune assignments, sorted by intent into
+        # the same three buckets the catalog itself uses (requiredFor/
+        # availableFor/uninstallFor) - same endpoint and per-group
+        # displayName resolution already used by Invoke-QuickAssignGroups'
+        # own "show current assignments before changing anything" step
+        # (see the detailed note there). Non-group targets (All users/All
+        # devices) are skipped - the catalog's own group-assignment model
+        # has no representation for those. Wrapped the same defensively as
+        # dependencies above: a failure here shouldn't sink the rest of
+        # the fetch.
+        $requiredGroupNames = @()
+        $availableGroupNames = @()
+        $uninstallGroupNames = @()
+        try {
+            $currentAssignments = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$TargetAppId/assignments" -Method GET -ErrorAction Stop
+            foreach ($a in @($currentAssignments.value)) {
+                if ($a.target.'@odata.type' -ne '#microsoft.graph.groupAssignmentTarget') { continue }
+                $gid = $a.target.groupId
+                $groupDisplayName = $gid
+                try {
+                    $groupInfo = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -ErrorAction Stop
+                    if ($groupInfo.displayName) { $groupDisplayName = $groupInfo.displayName }
+                }
+                catch { }
+                switch ($a.intent) {
+                    "required"  { $requiredGroupNames += $groupDisplayName }
+                    "available" { $availableGroupNames += $groupDisplayName }
+                    "uninstall" { $uninstallGroupNames += $groupDisplayName }
+                }
+            }
+        }
+        catch { }
+
         # Structured the same way the GUI's submit-side config is, so the
         # populate-from-fetch logic can read these fields directly into the
         # same controls the submit logic reads them back out of.
@@ -6606,6 +6639,9 @@ function Start-AppMetadataFetch {
             DeviceRestartBehavior   = $app.installExperience.deviceRestartBehavior
             AllowAvailableUninstall = $app.allowAvailableUninstall
             ReturnCodes             = @($app.returnCodes | ForEach-Object { [pscustomobject]@{ returnCode = $_.returnCode; type = $_.type } })
+            RequiredGroupNames      = $requiredGroupNames
+            AvailableGroupNames     = $availableGroupNames
+            UninstallGroupNames     = $uninstallGroupNames
         }
     }).AddArgument($Script:GraphTenantId).AddArgument($Script:GraphClientId).AddArgument($Script:GraphCertificateThumbprint).AddArgument($AppId)
 
@@ -7986,6 +8022,21 @@ function Show-CreateInIntuneDialog {
     }
     $scrollPanel.Controls.Add($cmbMinOS)
 
+    # $minOsMap above is a deliberately curated subset (only the values
+    # this dialog itself ever sets) - Intune's real schema has more
+    # possible values than that (e.g. v10_1703, v10_1803, v10_1903, set by
+    # an app created outside this tool, in the Intune portal or another
+    # tool entirely). The live-fetch OnComplete below fills this in
+    # whenever that happens, so a value that's genuinely set in Intune but
+    # not offered here doesn't just silently look unset.
+    $lblMinOSStatus = New-Object System.Windows.Forms.Label
+    $lblMinOSStatus.Text = ""
+    $lblMinOSStatus.Location = New-Object System.Drawing.Point(415,676)
+    $lblMinOSStatus.Size = New-Object System.Drawing.Size(215,40)
+    $lblMinOSStatus.ForeColor = [System.Drawing.Color]::DarkOrange
+    $lblMinOSStatus.Font = New-Object System.Drawing.Font($lblMinOSStatus.Font.FontFamily, 7.5)
+    $scrollPanel.Controls.Add($lblMinOSStatus)
+
     # Only install context is actually excluded here - confirmed rejected
     # by Graph specifically ("The 'RunAsAccount' property cannot be
     # patched for the 'Win32LobApp' type."). Architecture and Min OS were
@@ -9226,6 +9277,7 @@ function Show-CreateInIntuneDialog {
             $chkArchArm64Ref = $chkArchArm64
             $cmbMinOSRef = $cmbMinOS
             $minOsMapRef = $minOsMap
+            $lblMinOSStatusRef = $lblMinOSStatus
             $cmbDetectionTypeRef = $cmbDetectionType
             $operatorMapRef = $operatorMap
             $txtMsiCodeRef = $txtMsiCode
@@ -9414,7 +9466,22 @@ function Show-CreateInIntuneDialog {
                 }
                 if ($data.MinOSPropertyName) {
                     $matchKey = $minOsMapRef.Keys | Where-Object { $minOsMapRef[$_] -eq $data.MinOSPropertyName } | Select-Object -First 1
-                    if ($matchKey) { $cmbMinOSRef.SelectedItem = $matchKey }
+                    if ($matchKey) {
+                        $cmbMinOSRef.SelectedItem = $matchKey
+                        $lblMinOSStatusRef.Text = ""
+                    }
+                    else {
+                        # Really set in Intune, just not one of the values
+                        # this dialog's own dropdown offers (see the note
+                        # next to $minOsMap) - said explicitly rather than
+                        # leaving the dropdown looking blank/unset, which
+                        # would read as "Intune has no minimum OS" when the
+                        # truth is just "not one of these six options".
+                        $lblMinOSStatusRef.Text = "Intune has `"$($data.MinOSPropertyName)`" set - not one of the options above. Saving here will change it to whatever you pick."
+                    }
+                }
+                else {
+                    $lblMinOSStatusRef.Text = ""
                 }
 
                 # Compared against whatever was saved locally BEFORE this
@@ -10936,6 +11003,23 @@ function Show-IntuneOnlyAppsDialog {
     $btnAddChecked.Size = New-Object System.Drawing.Size(175,32)
     $dlg.Controls.Add($btnAddChecked)
 
+    # Same "Select all"/"Select none" convenience the other checkbox-driven
+    # bulk-pick dialogs already have (Batch Deploy, Sync Metadata, Bulk
+    # Delete) - this grid's checkbox column was the one bulk-selection UI
+    # in the app missing them, forcing every row to be clicked
+    # individually.
+    $btnSelectAllChecked = New-Object System.Windows.Forms.Button
+    $btnSelectAllChecked.Text = "Select all"
+    $btnSelectAllChecked.Location = New-Object System.Drawing.Point(200,474)
+    $btnSelectAllChecked.Size = New-Object System.Drawing.Size(90,32)
+    $dlg.Controls.Add($btnSelectAllChecked)
+
+    $btnSelectNoneChecked = New-Object System.Windows.Forms.Button
+    $btnSelectNoneChecked.Text = "Select none"
+    $btnSelectNoneChecked.Location = New-Object System.Drawing.Point(300,474)
+    $btnSelectNoneChecked.Size = New-Object System.Drawing.Size(100,32)
+    $dlg.Controls.Add($btnSelectNoneChecked)
+
     $btnAction = New-Object System.Windows.Forms.Button
     $btnAction.Text = "Add to catalog..."
     $btnAction.Location = New-Object System.Drawing.Point(515,474)
@@ -11111,21 +11195,142 @@ function Show-IntuneOnlyAppsDialog {
             }
         }
         else {
-            $prefill = [pscustomobject]@{ appName = $intuneName; appId = $id }
-            $editorResult = Show-AppEditor -ExistingApp $prefill
-            if ($editorResult) {
-                # This app already has an App ID (it came from Intune) - "Save
-                # && Deploy" would find nothing eligible to deploy here even
-                # if clicked, so its DeployAfterSave flag is simply unused
-                # in this particular flow.
-                [void]$appsRef.Add($editorResult.App)
-                $unsavedBoxRef.Value = $true
-                $anyAddedBox.Value = $true
-                [void](Save-AppsToFile -Path $linkedFilePathRef)
-                & $populateGrid   # the just-added app drops out of the "not in catalog" list
-            }
+            $btnAction.Enabled = $false
+            $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+            $lblStatus.Text = "Fetching current group assignments from Intune..."
+            $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+
+            # Fresh aliases for the nested -OnComplete closure - see note at
+            # the top of Show-CreateInIntuneDialog for why this matters here
+            # too.
+            $intuneNameRef2 = $intuneName
+            $idRef2 = $id
+            $appsRefRef2 = $appsRef
+            $unsavedBoxRefRef2 = $unsavedBoxRef
+            $anyAddedBoxRef2 = $anyAddedBox
+            $linkedFilePathRefRef2 = $linkedFilePathRef
+            $populateGridRef2 = $populateGrid
+            $dlgRef2 = $dlg
+            $lblStatusRef2 = $lblStatus
+            $btnActionRef2 = $btnAction
+
+            Start-AppMetadataFetch -AppId $id -OnComplete {
+                param($ok, $errMsg, $data)
+                $dlgRef2.Cursor = [System.Windows.Forms.Cursors]::Default
+                $btnActionRef2.Enabled = $true
+                $lblStatusRef2.Text = ""
+
+                # A failed fetch still opens the editor - the whole point of
+                # this button is adding the app locally, and a Graph hiccup
+                # fetching its CURRENT group assignments shouldn't block
+                # that; it just means groups start blank, same as before
+                # this fetch existed at all.
+                $prefill = [pscustomobject]@{
+                    appName      = $intuneNameRef2
+                    appId        = $idRef2
+                    requiredFor  = if ($ok) { @($data.RequiredGroupNames) } else { @() }
+                    availableFor = if ($ok) { @($data.AvailableGroupNames) } else { @() }
+                    uninstallFor = if ($ok) { @($data.UninstallGroupNames) } else { @() }
+                }
+                # Auto-opens "Deploy to Intune..." the instant the editor is
+                # shown - since appId is already set here, that's the exact
+                # same auto-fetch-and-review flow already used for updating
+                # an existing app (see $btnCreateInIntune.Add_Click), just
+                # without the extra manual click. Metadata still goes
+                # through that dialog's own human-reviewable fetch/confirm
+                # step, not a silent direct write - same reasoning as
+                # everywhere else this app treats a detection rule or
+                # install command as too consequential to blind-copy.
+                $editorResult = Show-AppEditor -ExistingApp $prefill -AutoOpenDeployOnShown
+                if ($editorResult) {
+                    [void]$appsRefRef2.Add($editorResult.App)
+                    $unsavedBoxRefRef2.Value = $true
+                    $anyAddedBoxRef2.Value = $true
+                    [void](Save-AppsToFile -Path $linkedFilePathRefRef2)
+                    & $populateGridRef2   # the just-added app drops out of the "not in catalog" list
+                }
+            }.GetNewClosure()
         }
     }.GetNewClosure())
+
+    $btnSelectAllChecked.Add_Click({
+        $grid.EndEdit()
+        foreach ($row in $grid.Rows) {
+            if ([string]$row.Cells["Type"].Value -eq "Not in catalog") { $row.Cells["Selected"].Value = $true }
+        }
+    }.GetNewClosure())
+    $btnSelectNoneChecked.Add_Click({
+        $grid.EndEdit()
+        foreach ($row in $grid.Rows) {
+            if ([string]$row.Cells["Type"].Value -eq "Not in catalog") { $row.Cells["Selected"].Value = $false }
+        }
+    }.GetNewClosure())
+
+    # Self-referencing queue-runner, same pattern as Show-BatchDeployDialog's
+    # own $RunNextBox - fetches each checked app's CURRENT Intune group
+    # assignments one at a time (each fetch runs in its own runspace via
+    # Start-AppMetadataFetch) rather than firing every fetch at once.
+    # Metadata deliberately stays OUT of this bulk path, unlike the
+    # single-row "Add to catalog..." button above - that one auto-opens a
+    # single, human-reviewable Deploy-to-Intune dialog per app; doing that
+    # N times in a row for a bulk add would be far more tedious than
+    # useful, so bulk-added apps still pick up metadata later via "Sync
+    # metadata..." instead, same as before this queue existed.
+    $RunAddQueueBox = @{ Value = $null }
+    $RunAddQueueBox.Value = {
+        param($Queue, $QueueIndex, $AddedCount)
+
+        if ($QueueIndex -ge $Queue.Count) {
+            $btnAddChecked.Enabled = $true
+            $btnAction.Enabled = $true
+            $grid.Enabled = $true
+            $dlg.Cursor = [System.Windows.Forms.Cursors]::Default
+            $lblStatus.ForeColor = [System.Drawing.Color]::SeaGreen
+            $lblStatus.Text = ""
+            $unsavedBoxRef.Value = $true
+            $anyAddedBox.Value = $true
+            [void](Save-AppsToFile -Path $linkedFilePathRef)
+            [System.Windows.Forms.MessageBox]::Show("Added $AddedCount app(s) to the catalog, with their current group assignments fetched from Intune. Set Winget ID and metadata for them later from the main catalog.", "Added", "OK", "Information") | Out-Null
+            & $populateGrid   # the just-added apps drop out of the "not in catalog" list
+            return
+        }
+
+        $currentItem = $Queue[$QueueIndex]
+        $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+        $lblStatus.Text = "Fetching group assignments $($QueueIndex+1) of $($Queue.Count): $($currentItem.Name)..."
+
+        # Fresh aliases for this nested -OnComplete closure - see note at
+        # the top of Show-CreateInIntuneDialog for why this matters here
+        # too.
+        $currentItemRef = $currentItem
+        $appsRefRef3 = $appsRef
+        $QueueRef = $Queue
+        $QueueIndexRef = $QueueIndex
+        $AddedCountRef = $AddedCount
+        $RunAddQueueBoxRef = $RunAddQueueBox
+
+        Start-AppMetadataFetch -AppId $currentItem.Id -OnComplete {
+            param($ok, $errMsg, $data)
+            # A failed fetch still adds the app - same reasoning as the
+            # single-row path above: a Graph hiccup fetching one app's
+            # groups shouldn't block adding it at all, it just means
+            # groups start blank for that one, same as before this fetch
+            # existed.
+            $newEntry = [pscustomobject]@{
+                appId            = $currentItemRef.Id
+                appName          = $currentItemRef.Name
+                wingetId         = ""
+                intuneAppType    = ""
+                intuneAppVersion = ""
+                requiredFor      = if ($ok) { @($data.RequiredGroupNames) } else { @() }
+                availableFor     = if ($ok) { @($data.AvailableGroupNames) } else { @() }
+                uninstallFor     = if ($ok) { @($data.UninstallGroupNames) } else { @() }
+                metadata         = $null
+            }
+            [void]$appsRefRef3.Add($newEntry)
+            & $RunAddQueueBoxRef.Value -Queue $QueueRef -QueueIndex ($QueueIndexRef + 1) -AddedCount ($AddedCountRef + 1)
+        }.GetNewClosure()
+    }.GetNewClosure()
 
     $btnAddChecked.Add_Click({
         # Defensive, on top of the CurrentCellDirtyStateChanged commit
@@ -11146,36 +11351,18 @@ function Show-IntuneOnlyAppsDialog {
             [System.Windows.Forms.MessageBox]::Show("Check at least one `"Not in catalog`" app first.", "Nothing checked", "OK", "Information") | Out-Null
             return
         }
-        # Minimal entries added directly, no full editor per app - just
-        # name and App ID, matching exactly what the single-row "Add to
-        # catalog..." button pre-fills that editor with anyway. Winget ID,
-        # group assignments, and metadata are all still fully editable
-        # afterward from the main catalog - this only removes having to
-        # open and close that editor once per app when adding several at
-        # once.
-        foreach ($item in $toAdd) {
-            $newEntry = [pscustomobject]@{
-                appId            = $item.Id
-                appName          = $item.Name
-                wingetId         = ""
-                # Not fetched here - this is a lightweight bulk add (name +
-                # App ID only, same as the single-row "Add to catalog..."
-                # button). "Sync metadata..." picks up type/version for it
-                # the first time it runs against this App ID.
-                intuneAppType    = ""
-                intuneAppVersion = ""
-                requiredFor      = @()
-                availableFor     = @()
-                uninstallFor     = @()
-                metadata         = $null
-            }
-            [void]$appsRef.Add($newEntry)
-        }
-        $unsavedBoxRef.Value = $true
-        $anyAddedBox.Value = $true
-        [void](Save-AppsToFile -Path $linkedFilePathRef)
-        [System.Windows.Forms.MessageBox]::Show("Added $($toAdd.Count) app(s) to the catalog. Set Winget ID, group assignments, and metadata for them later from the main catalog.", "Added", "OK", "Information") | Out-Null
-        & $populateGrid   # the just-added apps drop out of the "not in catalog" list
+        # Still a minimal entry per app - no full editor, no metadata (see
+        # $RunAddQueueBox below for why metadata specifically stays out of
+        # this bulk path) - but group assignments ARE fetched now, one app
+        # at a time via the same queue-runner pattern Batch Deploy/Bulk
+        # Delete already use, matching what the single-row "Add to
+        # catalog..." button does. Winget ID and metadata are still fully
+        # editable afterward from the main catalog.
+        $btnAddChecked.Enabled = $false
+        $btnAction.Enabled = $false
+        $grid.Enabled = $false
+        $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        & $RunAddQueueBox.Value -Queue $toAdd.ToArray() -QueueIndex 0 -AddedCount 0
     }.GetNewClosure())
 
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
@@ -12746,7 +12933,16 @@ function Show-GroupManagerDialog {
 # App editor dialog
 # ---------------------------------------------------------------
 function Show-AppEditor {
-    param($ExistingApp) # $null when adding a new app
+    param(
+        $ExistingApp, # $null when adding a new app
+        # Set by "Intune sync check"'s "Add to catalog..." - auto-clicks
+        # "Deploy to Intune..." the moment this dialog is shown, since
+        # $ExistingApp.appId is already known there (an app just found
+        # live in Intune), so the exact same auto-fetch-and-review flow
+        # normally reached by an extra manual click can run immediately
+        # instead.
+        [switch]$AutoOpenDeployOnShown
+    )
 
     # Plain (non-$Script:) local alias - see note in Start-IntuneAppLookup.
     $cache = $Script:IntuneAppsCache
@@ -13343,6 +13539,15 @@ function Show-AppEditor {
     }.GetNewClosure()
     $txtName.Add_TextChanged({ & $checkDuplicateName }.GetNewClosure())
     & $checkDuplicateName   # catches a pre-filled duplicate (e.g. Intune sync check's prefill) immediately on open, not just after the first keystroke
+
+    if ($AutoOpenDeployOnShown) {
+        # Deferred to Add_Shown, not called directly here - same reasoning
+        # as every other "kick off async work only once the window has
+        # actually been realized" case in this app (see the note next to
+        # Show-IntuneOnlyAppsDialog's own Add_Shown refresh): PerformClick
+        # here would fire before this dialog even has a window handle yet.
+        $dlg.Add_Shown({ $btnCreateInIntune.PerformClick() }.GetNewClosure())
+    }
 
     $dlgResult = $dlg.ShowDialog($form)
     if ($dlgResult -eq [System.Windows.Forms.DialogResult]::OK) {
