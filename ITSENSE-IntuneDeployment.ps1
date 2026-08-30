@@ -2921,6 +2921,19 @@ try {
             elseif ($app.applicableArchitectures -and $app.applicableArchitectures -ne "none") {
                 $archValue = $app.applicableArchitectures
             }
+            # Re-normalized into the same canonical, comma-joined
+            # "x86,x64,arm64" order the local catalog's own architecture
+            # field always uses - Intune has been observed returning this
+            # as a PERIOD-separated string (e.g. "x64.arm64") for a
+            # multi-architecture app, not comma. Without this, that raw
+            # value would get written straight into the local catalog's
+            # metadata.architecture field, silently corrupting it for
+            # every downstream comma-based split of that field (the app
+            # editor's own local-metadata prefill included).
+            if ($archValue) {
+                $archTokensNorm = @($archValue -split '[,.]' | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
+                $archValue = (@("x86","x64","arm64") | Where-Object { $archTokensNorm -contains $_ }) -join ","
+            }
 
             # Dependencies fetched from the SAME endpoint already used
             # during the delete-dependency work earlier this session -
@@ -9162,6 +9175,25 @@ function Show-CreateInIntuneDialog {
                 }
                 elseif ($data.ApplicableArchitectures -and $data.ApplicableArchitectures -ne "none") {
                     $archSource = $data.ApplicableArchitectures
+                }
+                # Re-normalized into the same canonical, comma-joined
+                # "x86,x64,arm64" order the local catalog's own architecture
+                # field always uses (see the -join "," that builds it) -
+                # Intune has been observed returning this as a
+                # PERIOD-separated string (e.g. "x64.arm64") for a
+                # multi-architecture app, not comma. Splitting on [,.]
+                # handles either separator; re-joining in this fixed order
+                # (rather than whatever order/separator Intune used) means
+                # both the checkbox pre-fill right below AND the
+                # local-vs-Intune comparison further down are comparing the
+                # actual architecture SET, not incidental formatting -
+                # without this, splitting a period-joined value on a comma
+                # leaves it as one unmatched token, so every checkbox below
+                # would silently end up unchecked, and an identical local
+                # copy would always be flagged as "different".
+                if ($archSource) {
+                    $archTokensNorm = @($archSource -split '[,.]' | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
+                    $archSource = (@("x86","x64","arm64") | Where-Object { $archTokensNorm -contains $_ }) -join ","
                 }
                 if ($archSource) {
                     $archList = @($archSource -split ',' | ForEach-Object { $_.Trim().ToLower() })
