@@ -9922,10 +9922,23 @@ function Show-CreateInIntuneDialog {
                     if (([string]$archSource) -ne ([string]$localSnapshotRef.Architecture)) { $diffFields.Add("Architecture") }
                     $liveDetSummary = if ($data.DetectionRule) { ($data.DetectionRule | ConvertTo-Json -Compress -Depth 5) } else { "" }
                     if ($liveDetSummary -ne $localSnapshotRef.DetectionSummary) { $diffFields.Add("Detection rule") }
-                    if (([string]$data.MinDiskSpaceMB) -ne ([string]$localSnapshotRef.MinDiskSpaceMB)) { $diffFields.Add("Disk space requirement") }
-                    if (([string]$data.MinMemoryMB) -ne ([string]$localSnapshotRef.MinMemoryMB)) { $diffFields.Add("Memory requirement") }
-                    if (([string]$data.MinProcessors) -ne ([string]$localSnapshotRef.MinProcessors)) { $diffFields.Add("Min. processors requirement") }
-                    if (([string]$data.MinCpuSpeedMHz) -ne ([string]$localSnapshotRef.MinCpuSpeedMHz)) { $diffFields.Add("Min. CPU speed requirement") }
+                    # "0" (local) and blank (Intune) are the SAME thing for
+                    # these four - the same "0 = not required" convention
+                    # the editor's own "Requirements (0 = not required)"
+                    # label documents, and the exact same false-positive
+                    # already fixed once in Get-CatalogMetadataFieldDiffs
+                    # for the bulk Sync metadata flow - this single-app
+                    # auto-fetch duplicates that comparison inline instead
+                    # of reusing that function, so it needed the same fix
+                    # applied here too, confirmed still broken live (a
+                    # 3-field "diff" - Memory/Min. processors/Min. CPU
+                    # speed, all local "0" vs Intune "(blank)" - for an app
+                    # where nothing had actually changed).
+                    $normalizeReq = { param($v) if ([string]$v -eq "0") { "" } else { [string]$v } }
+                    if ((& $normalizeReq $data.MinDiskSpaceMB) -ne (& $normalizeReq $localSnapshotRef.MinDiskSpaceMB)) { $diffFields.Add("Disk space requirement") }
+                    if ((& $normalizeReq $data.MinMemoryMB) -ne (& $normalizeReq $localSnapshotRef.MinMemoryMB)) { $diffFields.Add("Memory requirement") }
+                    if ((& $normalizeReq $data.MinProcessors) -ne (& $normalizeReq $localSnapshotRef.MinProcessors)) { $diffFields.Add("Min. processors requirement") }
+                    if ((& $normalizeReq $data.MinCpuSpeedMHz) -ne (& $normalizeReq $localSnapshotRef.MinCpuSpeedMHz)) { $diffFields.Add("Min. CPU speed requirement") }
                     if (([string]$data.InstallTimeMinutes) -ne ([string]$localSnapshotRef.InstallTimeMinutes)) { $diffFields.Add("Install time required") }
                     if (([string]$data.DeviceRestartBehavior) -ne ([string]$localSnapshotRef.DeviceRestartBehavior)) { $diffFields.Add("Device restart behavior") }
                     if (([string][bool]$data.AllowAvailableUninstall) -ne ([string]$localSnapshotRef.AllowAvailableUninstall)) { $diffFields.Add("Allow available uninstall") }
@@ -13902,7 +13915,7 @@ function Show-AppEditor {
     $dlg.Controls.Add($btnLookupId)
 
     $btnCreateInIntune = New-Object System.Windows.Forms.Button
-    $btnCreateInIntune.Text = "Deploy to Intune..."
+    $btnCreateInIntune.Text = "Intune Deployment"
     $btnCreateInIntune.Location = New-Object System.Drawing.Point(15,216)
     $btnCreateInIntune.Size = New-Object System.Drawing.Size(210,30)
     $dlg.Controls.Add($btnCreateInIntune)
