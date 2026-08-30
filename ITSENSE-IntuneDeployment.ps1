@@ -6372,7 +6372,7 @@ $toolbarTips.SetToolTip($btnReload, "Discard any unsaved changes and reload the 
 $toolbarTips.SetToolTip($btnOpen, "Switch to a different folder of per-app JSON files.")
 $toolbarTips.SetToolTip($btnLookupIds, "Search Intune by name for apps missing an App ID, and fill it in.")
 $toolbarTips.SetToolTip($btnCheckIntuneOnly, "Find apps that exist in Intune but aren't in this catalog yet.")
-$toolbarTips.SetToolTip($btnBatchAssign, "Preview and apply group assignments across multiple apps at once.")
+$toolbarTips.SetToolTip($btnBatchAssign, "Add a favorite group to multiple apps at once, then preview and apply the result to Intune.")
 $toolbarTips.SetToolTip($btnSyncMetadata, "Pull current metadata from Intune into the local catalog for apps that already have an App ID. Read-only.")
 $toolbarTips.SetToolTip($btnBatchDeploy, "Create multiple apps in Intune, in dependency order. Uses metadata saved via 'Save for later...' where an app has it, otherwise the same defaults Deploy to Intune's own form would.")
 $toolbarTips.SetToolTip($btnGroupManager, "Create, update, or delete an Entra ID group and manage its members.")
@@ -10835,6 +10835,169 @@ function Show-SyncMetadataDialog {
     [void]$dlg.ShowDialog($form)
 }
 
+# Bulk-adds ONE favorite group, at one intent (Required/Available/
+# Uninstall), to however many catalog apps are checked - the piece
+# "Batch assign groups..." itself never had: that dialog only ever
+# RECONCILES groups an app already has set against what's live in
+# Intune, with no way to add a group to several apps that don't have it
+# yet without opening each one's own editor individually. Purely a
+# catalog-side edit (adds to requiredFor/availableFor/uninstallFor and
+# saves) - pushing the result to Intune is still "Batch assign groups...
+# "'s job, same as any other catalog-side group change.
+# Returns the number of apps actually changed (apps that already had
+# this exact group+intent are left alone, not counted), or $null if
+# cancelled.
+function Show-AddFavoriteGroupToAppsDialog {
+    param([object[]]$CandidateApps)
+
+    if ($Script:FavoriteGroups.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("No favorite groups set yet - use `"Favorite groups...`" on the toolbar to pick some first.", "No favorite groups", "OK", "Information") | Out-Null
+        return $null
+    }
+
+    $appsRef = $Script:Apps
+    $unsavedBoxRef = $Script:UnsavedChangesBox
+    $linkedFilePathRef = $Script:LinkedFilePath
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Add favorite group to apps"
+    $dlg.ClientSize = New-Object System.Drawing.Size(460, 480)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+
+    $lblGroup = New-Object System.Windows.Forms.Label
+    $lblGroup.Text = "Favorite group"
+    $lblGroup.Location = New-Object System.Drawing.Point(15,12)
+    $lblGroup.AutoSize = $true
+    $dlg.Controls.Add($lblGroup)
+
+    $cmbGroup = New-Object System.Windows.Forms.ComboBox
+    $cmbGroup.Location = New-Object System.Drawing.Point(15,32)
+    $cmbGroup.Size = New-Object System.Drawing.Size(430,24)
+    $cmbGroup.DropDownStyle = "DropDownList"
+    [void]$cmbGroup.Items.AddRange(@($Script:FavoriteGroups | Sort-Object))
+    if ($cmbGroup.Items.Count -gt 0) { $cmbGroup.SelectedIndex = 0 }
+    $dlg.Controls.Add($cmbGroup)
+
+    $lblIntent = New-Object System.Windows.Forms.Label
+    $lblIntent.Text = "Add as"
+    $lblIntent.Location = New-Object System.Drawing.Point(15,66)
+    $lblIntent.AutoSize = $true
+    $dlg.Controls.Add($lblIntent)
+
+    $rbRequired = New-Object System.Windows.Forms.RadioButton
+    $rbRequired.Text = "Required"
+    $rbRequired.Location = New-Object System.Drawing.Point(15,86)
+    $rbRequired.AutoSize = $true
+    $rbRequired.Checked = $true
+    $dlg.Controls.Add($rbRequired)
+
+    $rbAvailable = New-Object System.Windows.Forms.RadioButton
+    $rbAvailable.Text = "Available"
+    $rbAvailable.Location = New-Object System.Drawing.Point(130,86)
+    $rbAvailable.AutoSize = $true
+    $dlg.Controls.Add($rbAvailable)
+
+    $rbUninstall = New-Object System.Windows.Forms.RadioButton
+    $rbUninstall.Text = "Uninstall"
+    $rbUninstall.Location = New-Object System.Drawing.Point(245,86)
+    $rbUninstall.AutoSize = $true
+    $dlg.Controls.Add($rbUninstall)
+
+    $lblApps = New-Object System.Windows.Forms.Label
+    $lblApps.Text = "Apps (unchecked ones below are left alone)"
+    $lblApps.Location = New-Object System.Drawing.Point(15,120)
+    $lblApps.AutoSize = $true
+    $dlg.Controls.Add($lblApps)
+
+    $clbApps = New-Object System.Windows.Forms.CheckedListBox
+    $clbApps.Location = New-Object System.Drawing.Point(15,140)
+    $clbApps.Size = New-Object System.Drawing.Size(430,260)
+    $clbApps.CheckOnClick = $true
+    $dlg.Controls.Add($clbApps)
+    foreach ($candidateApp in ($CandidateApps | Sort-Object appName)) {
+        [void]$clbApps.Items.Add($candidateApp.appName, $true)
+    }
+
+    $btnSelectAll = New-Object System.Windows.Forms.Button
+    $btnSelectAll.Text = "Select all"
+    $btnSelectAll.Location = New-Object System.Drawing.Point(15,406)
+    $btnSelectAll.Size = New-Object System.Drawing.Size(100,26)
+    $dlg.Controls.Add($btnSelectAll)
+
+    $btnSelectNone = New-Object System.Windows.Forms.Button
+    $btnSelectNone.Text = "Select none"
+    $btnSelectNone.Location = New-Object System.Drawing.Point(125,406)
+    $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
+    $dlg.Controls.Add($btnSelectNone)
+
+    $btnSelectAll.Add_Click({
+        for ($ci = 0; $ci -lt $clbApps.Items.Count; $ci++) { $clbApps.SetItemChecked($ci, $true) }
+    }.GetNewClosure())
+    $btnSelectNone.Add_Click({
+        for ($ci = 0; $ci -lt $clbApps.Items.Count; $ci++) { $clbApps.SetItemChecked($ci, $false) }
+    }.GetNewClosure())
+
+    $btnAdd = New-Object System.Windows.Forms.Button
+    $btnAdd.Text = "Add to checked apps"
+    $btnAdd.Location = New-Object System.Drawing.Point(255,444)
+    $btnAdd.Size = New-Object System.Drawing.Size(190,30)
+    $dlg.Controls.Add($btnAdd)
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Cancel"
+    $btnCancel.Location = New-Object System.Drawing.Point(155,444)
+    $btnCancel.Size = New-Object System.Drawing.Size(90,30)
+    $dlg.Controls.Add($btnCancel)
+
+    $resultBox = @{ Count = $null }
+
+    $btnAdd.Add_Click({
+        if ($cmbGroup.Items.Count -eq 0 -or -not $cmbGroup.SelectedItem) {
+            [System.Windows.Forms.MessageBox]::Show("Pick a group first.", "No group selected", "OK", "Warning") | Out-Null
+            return
+        }
+        $checkedNames = @($clbApps.CheckedItems | ForEach-Object { [string]$_ })
+        if ($checkedNames.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Check at least one app first.", "Nothing checked", "OK", "Warning") | Out-Null
+            return
+        }
+        $groupName = [string]$cmbGroup.SelectedItem
+        $fieldName = if ($rbRequired.Checked) { "requiredFor" } elseif ($rbAvailable.Checked) { "availableFor" } else { "uninstallFor" }
+
+        $changedCount = 0
+        foreach ($checkedName in $checkedNames) {
+            $target = $appsRef | Where-Object { $_.appName -eq $checkedName } | Select-Object -First 1
+            if (-not $target) { continue }
+            if (@($target.$fieldName) -notcontains $groupName) {
+                $target.$fieldName = @(@($target.$fieldName) + $groupName)
+                $changedCount++
+            }
+        }
+        if ($changedCount -gt 0) {
+            $unsavedBoxRef.Value = $true
+            [void](Save-AppsToFile -Path $linkedFilePathRef)
+        }
+        $resultBox.Count = $changedCount
+        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $dlg.Close()
+    }.GetNewClosure())
+
+    $btnCancel.Add_Click({
+        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+        $dlg.Close()
+    }.GetNewClosure())
+
+    $dlg.CancelButton = $btnCancel
+    $dlg.AcceptButton = $btnAdd
+    Set-Theme -Control $dlg
+    $dlgResult = $dlg.ShowDialog($form)
+    if ($dlgResult -eq [System.Windows.Forms.DialogResult]::OK) { return $resultBox.Count }
+    return $null
+}
+
 function Show-BatchAssignDialog {
     param([int[]]$ScopedIndices = @())
 
@@ -10855,8 +11018,20 @@ function Show-BatchAssignDialog {
     })
 
     if ($eligibleApps.Count -eq 0) {
-        $msg = if ($isScoped) { "None of the selected app(s) have both an App ID and at least one group set - nothing to check." } else { "No apps have both an App ID and at least one group set - nothing to check." }
-        [System.Windows.Forms.MessageBox]::Show($msg, "Nothing to do", "OK", "Information") | Out-Null
+        # This used to just say "nothing to do" and stop - true as far as
+        # reconciling goes (nothing here has a group to reconcile YET),
+        # but it's also exactly the situation someone reaches for "Batch
+        # assign groups..." to fix in the first place: several apps that
+        # need the SAME group and don't have it yet. Offers the actual
+        # fix right here instead of a dead end - add a favorite group to
+        # these apps, then reopen this same dialog (same scope) so
+        # they're immediately eligible to reconcile/push to Intune.
+        $msg = if ($isScoped) { "None of the selected app(s) have both an App ID and at least one group set - nothing to reconcile yet." } else { "No apps have both an App ID and at least one group set - nothing to reconcile yet." }
+        $r = [System.Windows.Forms.MessageBox]::Show("$msg`n`nAdd a favorite group to these apps now?", "Nothing to reconcile yet", "YesNo", "Information")
+        if ($r -eq "Yes") {
+            $addedCount = Show-AddFavoriteGroupToAppsDialog -CandidateApps $candidateApps
+            if ($addedCount -gt 0) { Show-BatchAssignDialog -ScopedIndices $ScopedIndices }
+        }
         return
     }
 
@@ -10937,6 +11112,12 @@ function Show-BatchAssignDialog {
     $btnViewDetails.Size = New-Object System.Drawing.Size(150,32)
     $btnViewDetails.Enabled = $false
     $dlg.Controls.Add($btnViewDetails)
+
+    $btnAddFavoriteGroup = New-Object System.Windows.Forms.Button
+    $btnAddFavoriteGroup.Text = "+ Add favorite group..."
+    $btnAddFavoriteGroup.Location = New-Object System.Drawing.Point(180,476)
+    $btnAddFavoriteGroup.Size = New-Object System.Drawing.Size(180,32)
+    $dlg.Controls.Add($btnAddFavoriteGroup)
 
     $btnApply = New-Object System.Windows.Forms.Button
     $btnApply.Text = "Apply changes..."
@@ -11073,6 +11254,20 @@ function Show-BatchAssignDialog {
             "Confirm batch apply", "YesNo", "Warning")
         if ($r -ne "Yes") { return }
         & $runBatch "Apply"
+    }.GetNewClosure())
+
+    $btnAddFavoriteGroup.Add_Click({
+        $addedCount = Show-AddFavoriteGroupToAppsDialog -CandidateApps $candidateApps
+        if ($addedCount -gt 0) {
+            # Reopens fresh rather than trying to patch the live grid/
+            # snapshot in place - $appsForScript above is a point-in-time
+            # snapshot taken before this button existed, and re-invoking
+            # with the same scope is the same proven pattern the "nothing
+            # to reconcile yet" branch above already uses to pick up a
+            # newly-added group immediately.
+            $dlg.Close()
+            Show-BatchAssignDialog -ScopedIndices $ScopedIndices
+        }
     }.GetNewClosure())
 
     $btnClose.Add_Click({
