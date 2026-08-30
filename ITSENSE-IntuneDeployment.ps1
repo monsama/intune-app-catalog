@@ -14483,6 +14483,7 @@ $menuItemSyncMetadata.Add_Click({
     $indices = Get-SelectedAppIndices
     if ($indices.Count -eq 0) { return }
     Show-SyncMetadataDialog -ScopedIndices $indices
+    Refresh-Grid
 })
 
 $menuItemDeleteIntune.Add_Click({
@@ -14615,6 +14616,12 @@ $btnBatchAssign.Add_Click({
 $btnSyncMetadata.Add_Click({
     $selectedIndices = Get-SelectedAppIndices
     Show-SyncMetadataDialog -ScopedIndices $selectedIndices
+    # Same reasoning as every other bulk action this session (Batch
+    # Deploy, Bulk Delete) - a sync run can change appName/Type/Version/
+    # metadata directly on disk while this dialog is open, so the main
+    # grid is stale the moment it closes regardless of how it was
+    # closed (Close button vs. the window's own X).
+    Refresh-Grid
 })
 $btnBatchDeploy.Add_Click({
     $selectedIndices = Get-SelectedAppIndices
