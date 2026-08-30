@@ -6254,7 +6254,7 @@ $toolbarTips.SetToolTip($btnLookupIds, "Search Intune by name for apps missing a
 $toolbarTips.SetToolTip($btnCheckIntuneOnly, "Find apps that exist in Intune but aren't in this catalog yet.")
 $toolbarTips.SetToolTip($btnBatchAssign, "Preview and apply group assignments across multiple apps at once.")
 $toolbarTips.SetToolTip($btnSyncMetadata, "Pull current metadata from Intune into the local catalog for apps that already have an App ID. Read-only.")
-$toolbarTips.SetToolTip($btnBatchDeploy, "Create multiple apps in Intune from metadata saved locally via 'Save for later...', in dependency order.")
+$toolbarTips.SetToolTip($btnBatchDeploy, "Create multiple apps in Intune, in dependency order. Uses metadata saved via 'Save for later...' where an app has it, otherwise the same defaults Deploy to Intune's own form would.")
 $toolbarTips.SetToolTip($btnGroupManager, "Create, update, or delete an Entra ID group and manage its members.")
 $toolbarTips.SetToolTip($btnFavoriteGroups, "Pick which groups show up as ready-to-tick options in every app's Required/Available/Uninstall lists.")
 $toolbarTips.SetToolTip($btnGroupDrift, "Check every group name referenced in the catalog against what actually exists in Entra ID.")
@@ -7343,6 +7343,19 @@ function Show-CreateInIntuneDialog {
 
     $isDuplicate = [bool]$ExistingAppId
 
+    # Single source of truth for every default value this form pre-fills
+    # for a brand-new app - Batch Deploy's own Get-DefaultAppMetadata
+    # computes the exact same defaults for an app that has no saved
+    # metadata, so both places read from one function instead of
+    # maintaining two separately-hardcoded copies of "what a new app
+    # defaults to" that could silently drift apart. Computed unconditionally
+    # (not just when -not $isDuplicate) - several of these fields (requirements,
+    # return codes, restart behavior) are set as a sensible placeholder even
+    # in Update mode, later overwritten by the live Intune fetch below if
+    # that succeeds; same reasoning the original hardcoded values already
+    # followed.
+    $defaults = Get-DefaultAppMetadata -AppName $AppName -WingetId $WingetId -Uncommon $Uncommon
+
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Deploy to Intune - $AppName"
     $dlg.ClientSize = New-Object System.Drawing.Size(645, 990)
@@ -7417,7 +7430,7 @@ function Show-CreateInIntuneDialog {
     $txtPublisher = New-Object System.Windows.Forms.TextBox
     $txtPublisher.Location = New-Object System.Drawing.Point(15,230)
     $txtPublisher.Size = New-Object System.Drawing.Size(590,24)
-    if (-not $isDuplicate) { $txtPublisher.Text = "ITSENSE" }
+    if (-not $isDuplicate) { $txtPublisher.Text = $defaults.publisher }
     $scrollPanel.Controls.Add($txtPublisher)
 
     # Optional, purely descriptive fields - not tied to install mechanics, so
@@ -7802,11 +7815,15 @@ function Show-CreateInIntuneDialog {
     $cmbDetectionType.Add_SelectedIndexChanged({ & $UpdateDetPanel }.GetNewClosure())
     & $UpdateDetPanel
 
-    $templates = Get-CreateAppTemplates -WingetId $WingetId -Uncommon $Uncommon
     if (-not $isDuplicate) {
-        $txtInstall.Text = $templates.Install
-        $txtUninstall.Text = $templates.Uninstall
-        $txtDetection.Text = $templates.Detection
+        $txtInstall.Text = $defaults.installCommand
+        $txtUninstall.Text = $defaults.uninstallCommand
+        # .detectionRule is $null for an uncommon app (see
+        # Get-DefaultAppMetadata) - there's genuinely no default to give it,
+        # so $txtDetection is deliberately left however it already started
+        # (blank) rather than risk assigning a WinForms TextBox.Text a $null
+        # value, which throws.
+        if ($defaults.detectionRule) { $txtDetection.Text = $defaults.detectionRule.Script_Content }
     }
 
     # --- Context / Architecture / Min OS, one row ---
@@ -7821,7 +7838,7 @@ function Show-CreateInIntuneDialog {
     $cmbContext.Size = New-Object System.Drawing.Size(180,24)
     $cmbContext.DropDownStyle = "DropDownList"
     [void]$cmbContext.Items.AddRange(@("System","User"))
-    if (-not $isDuplicate) { $cmbContext.SelectedItem = "System" }
+    if (-not $isDuplicate) { $cmbContext.SelectedItem = $defaults.installContext }
     $scrollPanel.Controls.Add($cmbContext)
 
     $lblArch = New-Object System.Windows.Forms.Label
@@ -7840,7 +7857,6 @@ function Show-CreateInIntuneDialog {
     $chkArchX64.Text = "x64"
     $chkArchX64.Location = New-Object System.Drawing.Point(261,651)
     $chkArchX64.Size = New-Object System.Drawing.Size(48,22)
-    if (-not $isDuplicate) { $chkArchX64.Checked = $true }
     $scrollPanel.Controls.Add($chkArchX64)
 
     $chkArchArm64 = New-Object System.Windows.Forms.CheckBox
@@ -7849,6 +7865,20 @@ function Show-CreateInIntuneDialog {
     $chkArchArm64.Size = New-Object System.Drawing.Size(65,22)
     $chkArchArm64.Checked = $false
     $scrollPanel.Controls.Add($chkArchArm64)
+
+    # All three set together, from $defaults.architecture, now that all
+    # three controls exist - same comma-split parsing already used
+    # elsewhere in this function for the live-fetched value, applied here
+    # to the DEFAULT value instead, so a future change to what
+    # Get-DefaultAppMetadata defaults to (e.g. adding arm64) is reflected
+    # here automatically instead of needing this checkbox logic updated
+    # separately too.
+    if (-not $isDuplicate -and $defaults.architecture) {
+        $defaultArchList = @($defaults.architecture -split ',' | ForEach-Object { $_.Trim().ToLower() })
+        $chkArchX86.Checked = $defaultArchList -contains "x86"
+        $chkArchX64.Checked = $defaultArchList -contains "x64"
+        $chkArchArm64.Checked = $defaultArchList -contains "arm64"
+    }
 
     $lblMinOS = New-Object System.Windows.Forms.Label
     $lblMinOS.Text = "Minimum Windows"
@@ -7877,7 +7907,10 @@ function Show-CreateInIntuneDialog {
         "21H1 or later (newest available)" = "v10_21H1"
     }
     [void]$cmbMinOS.Items.AddRange(@($minOsMap.Keys))
-    if (-not $isDuplicate) { $cmbMinOS.SelectedIndex = 5 }
+    if (-not $isDuplicate -and $defaults.minOSKey) {
+        $defaultMinOsLabel = $minOsMap.Keys | Where-Object { $minOsMap[$_] -eq $defaults.minOSKey } | Select-Object -First 1
+        if ($defaultMinOsLabel) { $cmbMinOS.SelectedItem = $defaultMinOsLabel }
+    }
     $scrollPanel.Controls.Add($cmbMinOS)
 
     # Only install context is actually excluded here - confirmed rejected
@@ -7955,7 +7988,7 @@ function Show-CreateInIntuneDialog {
     $txtDiskSpace = New-Object System.Windows.Forms.TextBox
     $txtDiskSpace.Location = New-Object System.Drawing.Point(15,836)
     $txtDiskSpace.Size = New-Object System.Drawing.Size(130,23)
-    $txtDiskSpace.Text = "0"
+    $txtDiskSpace.Text = [string]$defaults.minDiskSpaceMB
     $scrollPanel.Controls.Add($txtDiskSpace)
 
     $lblMemory = New-Object System.Windows.Forms.Label
@@ -7966,7 +7999,7 @@ function Show-CreateInIntuneDialog {
     $txtMemory = New-Object System.Windows.Forms.TextBox
     $txtMemory.Location = New-Object System.Drawing.Point(160,836)
     $txtMemory.Size = New-Object System.Drawing.Size(130,23)
-    $txtMemory.Text = "0"
+    $txtMemory.Text = [string]$defaults.minMemoryMB
     $scrollPanel.Controls.Add($txtMemory)
 
     $lblProcessors = New-Object System.Windows.Forms.Label
@@ -7977,7 +8010,7 @@ function Show-CreateInIntuneDialog {
     $txtProcessors = New-Object System.Windows.Forms.TextBox
     $txtProcessors.Location = New-Object System.Drawing.Point(305,836)
     $txtProcessors.Size = New-Object System.Drawing.Size(130,23)
-    $txtProcessors.Text = "0"
+    $txtProcessors.Text = [string]$defaults.minProcessors
     $scrollPanel.Controls.Add($txtProcessors)
 
     $lblCpuSpeed = New-Object System.Windows.Forms.Label
@@ -7988,7 +8021,7 @@ function Show-CreateInIntuneDialog {
     $txtCpuSpeed = New-Object System.Windows.Forms.TextBox
     $txtCpuSpeed.Location = New-Object System.Drawing.Point(450,836)
     $txtCpuSpeed.Size = New-Object System.Drawing.Size(130,23)
-    $txtCpuSpeed.Text = "0"
+    $txtCpuSpeed.Text = [string]$defaults.minCpuSpeedMHz
     $scrollPanel.Controls.Add($txtCpuSpeed)
 
     # --- Install experience extras ---
@@ -8000,7 +8033,7 @@ function Show-CreateInIntuneDialog {
     $txtInstallTime = New-Object System.Windows.Forms.TextBox
     $txtInstallTime.Location = New-Object System.Drawing.Point(15,889)
     $txtInstallTime.Size = New-Object System.Drawing.Size(130,23)
-    $txtInstallTime.Text = "60"
+    $txtInstallTime.Text = [string]$defaults.installTimeMinutes
     $scrollPanel.Controls.Add($txtInstallTime)
 
     $lblRestartBehavior = New-Object System.Windows.Forms.Label
@@ -8021,13 +8054,15 @@ function Show-CreateInIntuneDialog {
         "Force"              = "force"
     }
     foreach ($k in $restartBehaviorMap.Keys) { [void]$cmbRestartBehavior.Items.Add($k) }
-    $cmbRestartBehavior.SelectedItem = "No specific action"
+    $defaultRestartLabel = $restartBehaviorMap.Keys | Where-Object { $restartBehaviorMap[$_] -eq $defaults.deviceRestartBehavior } | Select-Object -First 1
+    $cmbRestartBehavior.SelectedItem = if ($defaultRestartLabel) { $defaultRestartLabel } else { "No specific action" }
     $scrollPanel.Controls.Add($cmbRestartBehavior)
 
     $chkAllowUninstall = New-Object System.Windows.Forms.CheckBox
     $chkAllowUninstall.Text = "Allow available uninstall"
     $chkAllowUninstall.Location = New-Object System.Drawing.Point(405,891)
     $chkAllowUninstall.AutoSize = $true
+    $chkAllowUninstall.Checked = [bool]$defaults.allowAvailableUninstall
     $scrollPanel.Controls.Add($chkAllowUninstall)
 
     # --- Return codes ---
@@ -8075,19 +8110,13 @@ function Show-CreateInIntuneDialog {
         if ($grdReturnCodes.CurrentRow) { $grdReturnCodes.Rows.RemoveAt($grdReturnCodes.CurrentRow.Index) }
     }.GetNewClosure())
 
-    # Standard defaults - the same fixed set the Create-app script has
-    # always hardcoded, now shown as editable, pre-filled rows instead of
-    # being invisible and fixed.
-    foreach ($rc in @(
-        @{ Code = "0";    Type = "success" }
-        @{ Code = "1707"; Type = "success" }
-        @{ Code = "3010"; Type = "softReboot" }
-        @{ Code = "1641"; Type = "hardReboot" }
-        @{ Code = "1618"; Type = "retry" }
-    )) {
+    # Standard defaults - the same fixed set Get-DefaultAppMetadata also
+    # uses for Batch Deploy, shown here as editable, pre-filled rows
+    # instead of being invisible and fixed.
+    foreach ($rc in @($defaults.returnCodes)) {
         $rowIdx = $grdReturnCodes.Rows.Add()
-        $grdReturnCodes.Rows[$rowIdx].Cells["Code"].Value = $rc.Code
-        $grdReturnCodes.Rows[$rowIdx].Cells["Type"].Value = $rc.Type
+        $grdReturnCodes.Rows[$rowIdx].Cells["Code"].Value = [string]$rc.returnCode
+        $grdReturnCodes.Rows[$rowIdx].Cells["Type"].Value = $rc.type
     }
 
     # Requirements, return codes, and install time/restart behavior/
