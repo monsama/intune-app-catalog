@@ -5389,7 +5389,6 @@ function Show-CertificateSetupDialog {
     # level of GetNewClosure() (like $btnUpload.Add_Click below) does not
     # reliably see $Script:-qualified variables directly, only plain ones.
     $certUploadScript = $Script:EmbeddedCertUploadScript
-    $rootPath = $Script:RootPath
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Settings - Microsoft Graph Connection"
@@ -9405,7 +9404,6 @@ function Show-TargetedAssignDialog {
     $clientId       = $Script:GraphClientId
     $certThumb      = $Script:GraphCertificateThumbprint
     $targetedScript = $Script:EmbeddedTargetedAssignScript
-    $rootPath       = $Script:RootPath
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Assign Groups - $AppName"
@@ -9591,7 +9589,6 @@ function Show-BatchDeployDialog {
     $tenantId     = $Script:GraphTenantId
     $clientId     = $Script:GraphClientId
     $certThumb    = $Script:GraphCertificateThumbprint
-    $rootPath     = $Script:RootPath
     $createScript = $Script:EmbeddedCreateAppScript
     $unsavedBox   = $Script:UnsavedChangesBox
     $linkedFilePath = $Script:LinkedFilePath
@@ -9803,6 +9800,7 @@ function Show-BatchDeployDialog {
         $appsRefRef = $appsRef
         $RunNextBoxRef = $RunNextBox
         $linkedFilePathRef = $linkedFilePath
+        $unsavedBoxRef = $unsavedBox
 
         $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".itsense_embedded_batchdeploy.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLogRef -OnComplete {
             param($code)
@@ -9825,6 +9823,7 @@ function Show-BatchDeployDialog {
                                     break
                                 }
                             }
+                            $unsavedBoxRef.Value = $true
                             # Direct-save after EACH successful app, not just
                             # once at the very end of the whole batch - the
                             # stakes of losing progress here are real: if a
@@ -9914,7 +9913,6 @@ function Show-SyncMetadataDialog {
     $tenantId     = $Script:GraphTenantId
     $clientId     = $Script:GraphClientId
     $certThumb    = $Script:GraphCertificateThumbprint
-    $rootPath     = $Script:RootPath
     $syncScript   = $Script:EmbeddedSyncMetadataScript
     $unsavedBox   = $Script:UnsavedChangesBox
     $linkedFilePath = $Script:LinkedFilePath
@@ -10221,7 +10219,6 @@ function Show-BatchAssignDialog {
     $tenantId     = $Script:GraphTenantId
     $clientId     = $Script:GraphClientId
     $certThumb    = $Script:GraphCertificateThumbprint
-    $rootPath     = $Script:RootPath
     $batchScript  = $Script:EmbeddedBatchAssignScript
 
     # Selected rows (if any, passed in by the caller) scope this to just
@@ -10852,7 +10849,6 @@ function Show-DeleteAppDialog {
     $tenantId      = $Script:GraphTenantId
     $clientId      = $Script:GraphClientId
     $certThumb     = $Script:GraphCertificateThumbprint
-    $rootPath      = $Script:RootPath
     $deleteScript  = $Script:EmbeddedDeleteAppScript
 
     $dlg = New-Object System.Windows.Forms.Form
@@ -10963,7 +10959,6 @@ function Show-DeleteAppDialog {
         # Fresh aliases for the nested -OnComplete closure - see note at the
         # top of Show-CreateInIntuneDialog for why this matters here too.
         $btnDeleteRef = $btnDelete
-        $btnCancelRef = $btnCancel
         $lblStatusRef = $lblStatus
         $resultPathRef = $resultPath
         $configPathRef = $configPath
@@ -11690,7 +11685,6 @@ function Show-GroupManagerDialog {
     $tenantId    = $Script:GraphTenantId
     $clientId    = $Script:GraphClientId
     $certThumb   = $Script:GraphCertificateThumbprint
-    $rootPath    = $Script:RootPath
     $gmScript    = $Script:EmbeddedGroupManagerScript
     $cacheRef    = $Script:EntraDirectoryCache
 
