@@ -6780,6 +6780,66 @@ function Save-AppMetadataToLocalCatalog {
     return @{ Success = $saveSucceeded; CreatedNewEntry = $createdNewEntry }
 }
 
+# Compares two CATALOG-shaped metadata objects (the exact schema this app's
+# own "metadata" field always uses - description/publisher/.../returnCodes,
+# camelCase) field by field and returns every field that differs, as
+# @{ Field; Local; Remote } (display strings). Used by Show-SyncMetadataDialog's
+# bulk path so it can tell "nothing to reconcile" from "local actually
+# differs from Intune" - the same question Show-CreateInIntuneDialog's own
+# auto-fetch answers per app, just against a much simpler pair of inputs
+# here: both sides are ALREADY catalog-shaped (Show-CreateInIntuneDialog's
+# own diff, by contrast, has to translate Intune's raw Graph field names on
+# the fly, which is why it isn't reused here as-is).
+# $Local may be $null (nothing saved locally yet) - that's "nothing to
+# compare against", not "every field differs", so it always returns empty.
+function Get-CatalogMetadataFieldDiffs {
+    param($Local, $Remote)
+
+    $diffs = New-Object System.Collections.Generic.List[object]
+    if (-not $Local) { return $diffs.ToArray() }
+
+    $simpleFields = @(
+        @{ Key = "description"; Label = "Description" }
+        @{ Key = "publisher"; Label = "Publisher" }
+        @{ Key = "owner"; Label = "Owner" }
+        @{ Key = "developer"; Label = "Developer" }
+        @{ Key = "informationUrl"; Label = "Information URL" }
+        @{ Key = "privacyUrl"; Label = "Privacy URL" }
+        @{ Key = "notes"; Label = "Notes" }
+        @{ Key = "installCommand"; Label = "Install command" }
+        @{ Key = "uninstallCommand"; Label = "Uninstall command" }
+        @{ Key = "architecture"; Label = "Architecture" }
+        @{ Key = "minDiskSpaceMB"; Label = "Disk space requirement" }
+        @{ Key = "minMemoryMB"; Label = "Memory requirement" }
+        @{ Key = "minProcessors"; Label = "Min. processors requirement" }
+        @{ Key = "minCpuSpeedMHz"; Label = "Min. CPU speed requirement" }
+        @{ Key = "installTimeMinutes"; Label = "Install time required" }
+        @{ Key = "deviceRestartBehavior"; Label = "Device restart behavior" }
+        @{ Key = "allowAvailableUninstall"; Label = "Allow available uninstall" }
+    )
+    foreach ($f in $simpleFields) {
+        $localVal = [string]$Local.($f.Key)
+        $remoteVal = [string]$Remote.($f.Key)
+        if ($localVal -ne $remoteVal) {
+            $diffs.Add([pscustomobject]@{ Field = $f.Label; Local = $localVal; Remote = $remoteVal })
+        }
+    }
+
+    $localDetSummary = if ($Local.detectionRule) { ($Local.detectionRule | ConvertTo-Json -Compress -Depth 5) } else { "" }
+    $remoteDetSummary = if ($Remote.detectionRule) { ($Remote.detectionRule | ConvertTo-Json -Compress -Depth 5) } else { "" }
+    if ($localDetSummary -ne $remoteDetSummary) {
+        $diffs.Add([pscustomobject]@{ Field = "Detection rule"; Local = $localDetSummary; Remote = $remoteDetSummary })
+    }
+
+    $localRcSummary = if (@($Local.returnCodes).Count -gt 0) { (@($Local.returnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
+    $remoteRcSummary = if (@($Remote.returnCodes).Count -gt 0) { (@($Remote.returnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
+    if ($localRcSummary -ne $remoteRcSummary) {
+        $diffs.Add([pscustomobject]@{ Field = "Return codes"; Local = $localRcSummary; Remote = $remoteRcSummary })
+    }
+
+    return $diffs.ToArray()
+}
+
 # "Uncommon" is derived, not a separately-stored field: an app with a
 # Winget ID gets installed via the shared winget wrapper package, so it's
 # "common"; an app with no Winget ID needs its own individually-packaged
@@ -9855,7 +9915,7 @@ function Show-SyncMetadataDialog {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Sync metadata from Intune"
-    $dlg.ClientSize = New-Object System.Drawing.Size(620, 560)
+    $dlg.ClientSize = New-Object System.Drawing.Size(620, 576)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -9863,13 +9923,13 @@ function Show-SyncMetadataDialog {
 
     $lblIntro = New-Object System.Windows.Forms.Label
     $scopeText = if ($isScoped) { "$($eligibleApps.Count) selected app(s)" } else { "all $($eligibleApps.Count) app(s) with an App ID" }
-    $lblIntro.Text = "Fetches current metadata from Intune for $scopeText and stores it locally in the catalog. This is READ-ONLY - it never changes anything in Intune itself."
+    $lblIntro.Text = "Fetches current metadata from Intune for $scopeText and stores it locally in the catalog. This is READ-ONLY - it never changes anything in Intune itself. An app whose local copy already differs from Intune is left alone, not overwritten - it's listed in the log instead, to review one at a time via `"Deploy to Intune...`" on that app."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
-    $lblIntro.Size = New-Object System.Drawing.Size(590,40)
+    $lblIntro.Size = New-Object System.Drawing.Size(590,56)
     $dlg.Controls.Add($lblIntro)
 
     $clbApps = New-Object System.Windows.Forms.CheckedListBox
-    $clbApps.Location = New-Object System.Drawing.Point(15,58)
+    $clbApps.Location = New-Object System.Drawing.Point(15,74)
     $clbApps.Size = New-Object System.Drawing.Size(590,260)
     $clbApps.CheckOnClick = $true
     $dlg.Controls.Add($clbApps)
@@ -9879,13 +9939,13 @@ function Show-SyncMetadataDialog {
 
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Select all"
-    $btnSelectAll.Location = New-Object System.Drawing.Point(15,322)
+    $btnSelectAll.Location = New-Object System.Drawing.Point(15,338)
     $btnSelectAll.Size = New-Object System.Drawing.Size(100,26)
     $dlg.Controls.Add($btnSelectAll)
 
     $btnSelectNone = New-Object System.Windows.Forms.Button
     $btnSelectNone.Text = "Select none"
-    $btnSelectNone.Location = New-Object System.Drawing.Point(125,322)
+    $btnSelectNone.Location = New-Object System.Drawing.Point(125,338)
     $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
     $dlg.Controls.Add($btnSelectNone)
 
@@ -9895,19 +9955,19 @@ function Show-SyncMetadataDialog {
     # fully succeeds.
     $btnRetryFailed = New-Object System.Windows.Forms.Button
     $btnRetryFailed.Text = "Retry failed only"
-    $btnRetryFailed.Location = New-Object System.Drawing.Point(245,322)
+    $btnRetryFailed.Location = New-Object System.Drawing.Point(245,338)
     $btnRetryFailed.Size = New-Object System.Drawing.Size(155,26)
     $btnRetryFailed.Visible = $false
     $dlg.Controls.Add($btnRetryFailed)
 
     $lblStatus = New-Object System.Windows.Forms.Label
-    $lblStatus.Location = New-Object System.Drawing.Point(15,356)
+    $lblStatus.Location = New-Object System.Drawing.Point(15,372)
     $lblStatus.Size = New-Object System.Drawing.Size(590,36)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbLog.Location = New-Object System.Drawing.Point(15,396)
+    $rtbLog.Location = New-Object System.Drawing.Point(15,412)
     $rtbLog.Size = New-Object System.Drawing.Size(590,110)
     $rtbLog.ReadOnly = $true
     $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
@@ -9917,13 +9977,13 @@ function Show-SyncMetadataDialog {
 
     $btnSync = New-Object System.Windows.Forms.Button
     $btnSync.Text = "Sync selected"
-    $btnSync.Location = New-Object System.Drawing.Point(420,516)
+    $btnSync.Location = New-Object System.Drawing.Point(420,532)
     $btnSync.Size = New-Object System.Drawing.Size(185,32)
     $dlg.Controls.Add($btnSync)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(330,516)
+    $btnClose.Location = New-Object System.Drawing.Point(330,532)
     $btnClose.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnClose)
 
@@ -10040,14 +10100,33 @@ function Show-SyncMetadataDialog {
 
             try {
                 $okCount = 0
+                $reviewCount = 0
                 $totalCount = @($result.results).Count
                 $failedNames = New-Object System.Collections.Generic.List[string]
                 foreach ($oneResult in @($result.results)) {
                     if (-not $oneResult.Success) { $failedNames.Add($oneResult.AppName); continue }
                     for ($ai = 0; $ai -lt $appsRefRef.Count; $ai++) {
                         if ($appsRefRef[$ai].appName -eq $oneResult.AppName) {
-                            $appsRefRef[$ai].metadata = $oneResult.Metadata
-                            $okCount++
+                            # Not a blind overwrite - an app whose local copy
+                            # already differs from what Intune actually has
+                            # right now is left alone rather than silently
+                            # taking Intune's value, same principle as the
+                            # per-field compare Show-CreateInIntuneDialog's
+                            # own auto-fetch already offers for one app at a
+                            # time; this bulk path has no per-field UI of its
+                            # own to offer that choice across N apps, so it
+                            # defers to that existing tool instead of guessing.
+                            $existingMetadata = $appsRefRef[$ai].metadata
+                            $fieldDiffs = Get-CatalogMetadataFieldDiffs -Local $existingMetadata -Remote $oneResult.Metadata
+                            if ($existingMetadata -and $fieldDiffs.Count -gt 0) {
+                                $reviewCount++
+                                $diffFieldNames = ($fieldDiffs | ForEach-Object { $_.Field }) -join ", "
+                                $rtbLogRef.AppendText("  [REVIEW] $($oneResult.AppName): local copy differs from Intune in $diffFieldNames - not overwritten. Use `"Deploy to Intune...`" on this app to compare and choose.`r`n")
+                            }
+                            else {
+                                $appsRefRef[$ai].metadata = $oneResult.Metadata
+                                $okCount++
+                            }
                             break
                         }
                     }
@@ -10055,7 +10134,11 @@ function Show-SyncMetadataDialog {
                 # Shown only when there's actually something to retry -
                 # re-checks just the failed apps in the picker so "Sync
                 # selected" can be re-run on them directly, instead of
-                # manually re-selecting from a list of 50 apps by hand.
+                # manually re-selecting from a list of 50 apps by hand. Apps
+                # that need review, not retry, aren't included here - running
+                # the exact same fetch again produces the exact same "differs
+                # locally" outcome, so re-checking them for another sync
+                # attempt would just be a no-op dressed up as a retry.
                 if ($failedNames.Count -gt 0) {
                     $lastFailedBoxRef.Names = @($failedNames)
                     $btnRetryFailedRef.Visible = $true
@@ -10070,17 +10153,22 @@ function Show-SyncMetadataDialog {
                 # to be had from deferring it, so a separate click
                 # afterward just to persist it is pure friction.
                 $syncSaveOk = if ($okCount -gt 0) { Save-AppsToFile -Path $linkedFilePathRef } else { $true }
-                if ($okCount -eq $totalCount -and $syncSaveOk) {
-                    $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
-                    $lblStatusRef.Text = "$okCount of $totalCount synced and written to disk."
-                }
-                elseif (-not $syncSaveOk) {
+                $summaryParts = New-Object System.Collections.Generic.List[string]
+                $summaryParts.Add("$okCount synced")
+                if ($reviewCount -gt 0) { $summaryParts.Add("$reviewCount need review") }
+                if ($failedNames.Count -gt 0) { $summaryParts.Add("$($failedNames.Count) failed") }
+                $summary = ($summaryParts -join ", ") + " of $totalCount."
+                if (-not $syncSaveOk) {
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
-                    $lblStatusRef.Text = "$okCount of $totalCount synced in memory, but writing to disk was cancelled or failed - use Force save to try again."
+                    $lblStatusRef.Text = "$summary Writing to disk was cancelled or failed - use Force save to try again."
+                }
+                elseif ($reviewCount -gt 0 -or $failedNames.Count -gt 0) {
+                    $lblStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
+                    $lblStatusRef.Text = "$summary See log for details."
                 }
                 else {
-                    $lblStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
-                    $lblStatusRef.Text = "$okCount of $totalCount synced and written to disk - see log for what failed on the rest."
+                    $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
+                    $lblStatusRef.Text = "$summary"
                 }
             }
             catch {
