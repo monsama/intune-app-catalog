@@ -6480,18 +6480,21 @@ function New-GridColumn {
     return $col
 }
 
-$grid.Columns.Add((New-GridColumn "AppName" "App Name" -FillWeight 18)) | Out-Null
-$grid.Columns.Add((New-GridColumn "WingetId" "Winget ID" -FillWeight 14)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Type" "Type" -FillWeight 14)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 5)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 4)) | Out-Null
-$grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -FillWeight 6)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Folder" "Package folder" -FillWeight 30)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Required" "Required" -FillWeight 5)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Available" "Available" -FillWeight 5)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Uninstall" "Uninstall" -FillWeight 5)) | Out-Null
-$grid.Columns.Add((New-GridColumn "AppId" "App ID" -FillWeight 22)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Status" "Status" -FillWeight 11)) | Out-Null
+$grid.Columns.Add((New-GridColumn "AppName" "App Name" -FillWeight 16)) | Out-Null
+$grid.Columns.Add((New-GridColumn "WingetId" "Winget ID" -FillWeight 10)) | Out-Null
+$grid.Columns.Add((New-GridColumn "Type" "Type" -FillWeight 13)) | Out-Null
+$grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 4)) | Out-Null
+$grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 3)) | Out-Null
+$grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -FillWeight 5)) | Out-Null
+# Package folder holds full filesystem paths, which routinely run longer
+# than every other column's content (including the App ID GUID) - by far
+# the widest allotment here on purpose.
+$grid.Columns.Add((New-GridColumn "Folder" "Package folder" -FillWeight 42)) | Out-Null
+$grid.Columns.Add((New-GridColumn "Required" "Required" -FillWeight 4)) | Out-Null
+$grid.Columns.Add((New-GridColumn "Available" "Available" -FillWeight 4)) | Out-Null
+$grid.Columns.Add((New-GridColumn "Uninstall" "Uninstall" -FillWeight 4)) | Out-Null
+$grid.Columns.Add((New-GridColumn "AppId" "App ID" -FillWeight 20)) | Out-Null
+$grid.Columns.Add((New-GridColumn "Status" "Status" -FillWeight 8)) | Out-Null
 
 $colIndex = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
 $colIndex.Name = "Index"
