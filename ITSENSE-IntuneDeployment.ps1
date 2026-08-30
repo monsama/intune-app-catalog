@@ -4719,6 +4719,28 @@ function Show-AppIdMatchDialog {
     $linkedFilePath = $Script:LinkedFilePath
     $pickerChoices = @($cache | ForEach-Object { "$($_.displayName)  [$($_.id)]" })
 
+    # Scoped to apps with NO App ID yet - this dialog exists to bootstrap
+    # the App ID for a catalog app that's never been linked to anything in
+    # Intune, matched by NAME since there's nothing more reliable to go on
+    # yet for those. An app that ALREADY has an App ID is deliberately left
+    # out here, not re-matched by name too - "Intune sync check..."'s own
+    # "Renamed in Intune" already covers that same "does this app's stored
+    # ID still make sense?" question, the correct direction: by the App ID
+    # already on file (the durable identity), checking whether Intune's
+    # CURRENT name for that exact ID has drifted from the catalog's. Doing
+    # it here too, by name, could disagree with that - a name collision (or
+    # a coincidentally similar name) could suggest switching an already-
+    # correct App ID to a wrong one, with no way to tell which of the two
+    # tools' answers to trust. One tool, one direction, per case.
+    $eligibleIndices = New-Object System.Collections.Generic.List[int]
+    for ($ei = 0; $ei -lt $appsRef.Count; $ei++) {
+        if (-not $appsRef[$ei].appId) { $eligibleIndices.Add($ei) }
+    }
+    if ($eligibleIndices.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("Every catalog app already has an App ID - there's nothing to look up. If one looks wrong or stale, use `"Intune sync check...`" instead, which checks against the App ID already on file rather than matching by name.", "Nothing to do", "OK", "Information") | Out-Null
+        return
+    }
+
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Match App IDs from Intune"
     $dlg.ClientSize = New-Object System.Drawing.Size(1300, 520)
@@ -4730,7 +4752,7 @@ function Show-AppIdMatchDialog {
     # other dialog's own status line (Intune sync check, Check group
     # names, ...) is styled, rather than this one dialog alone using bold.
     $lblHelp = New-Object System.Windows.Forms.Label
-    $lblHelp.Text = "Matches each catalog app to an Intune app by name, so you can link the App ID Intune already has into your LOCAL catalog. This only updates App IDs stored in your local catalog files - it never creates, changes, or deletes anything in Intune itself. Rows where an exact match would actually change the App ID are pre-checked; use `"Choose...`" to pick a different match, then `"Apply checked rows`"."
+    $lblHelp.Text = "Matches each catalog app that has NO App ID yet to an Intune app by name, so you can link the App ID Intune already has into your LOCAL catalog. This only updates App IDs stored in your local catalog files - it never creates, changes, or deletes anything in Intune itself. Rows with an exact name match are pre-checked; use `"Choose...`" to pick a different match, then `"Apply checked rows`". Apps that already have an App ID aren't shown here - use `"Intune sync check...`" for those instead."
     $lblHelp.Dock = "Top"
     $lblHelp.Height = 62
     $lblHelp.ForeColor = [System.Drawing.Color]::DimGray
@@ -4796,24 +4818,23 @@ function Show-AppIdMatchDialog {
     $colIndex.Name = "CatalogIndex"; $colIndex.Visible = $false
     $matchGrid.Columns.Add($colIndex) | Out-Null
 
+    # Every eligible app here has NO App ID yet (see the eligibility filter
+    # above), so any exact match is inherently a real change - going from
+    # blank to a real ID - not just a possible one, unlike when this used
+    # to also consider apps that already had an ID of their own.
     $changeCount = 0
-    for ($i = 0; $i -lt $appsRef.Count; $i++) {
+    foreach ($i in $eligibleIndices) {
         $app = $appsRef[$i]
         $candidates = Find-IntuneMatches -Name $app.appName
         $normAppName = ($app.appName.Trim() -replace '\s+', ' ')
         $isExact = $candidates.Count -gt 0 -and (($candidates[0].displayName.Trim() -replace '\s+', ' ') -eq $normAppName)
-        # Only pre-check Apply when it would actually CHANGE something - an
-        # exact name match whose ID already equals what's saved is a no-op;
-        # pre-checking it anyway just makes "already checked" stop meaning
-        # "needs action", which is the whole point of the checkbox.
-        $wouldChange = $isExact -and $app.appId -ne $candidates[0].id
-        if ($wouldChange) { $changeCount++ }
+        if ($isExact) { $changeCount++ }
 
         $rowIdx = $matchGrid.Rows.Add()
         $row = $matchGrid.Rows[$rowIdx]
-        $row.Cells["Apply"].Value = $wouldChange
+        $row.Cells["Apply"].Value = $isExact
         $row.Cells["AppName"].Value = $app.appName
-        $row.Cells["CurrentId"].Value = if ($app.appId) { $app.appId } else { "(none)" }
+        $row.Cells["CurrentId"].Value = "(none)"
         if ($isExact) {
             $row.Cells["Match"].Value = $candidates[0].displayName
             $row.Cells["MatchedId"].Value = $candidates[0].id
@@ -4826,12 +4847,12 @@ function Show-AppIdMatchDialog {
     }
 
     if ($changeCount -eq 0) {
-        $lblSummary.ForeColor = [System.Drawing.Color]::SeaGreen
-        $lblSummary.Text = "No differences found - every catalog app's App ID already matches Intune."
+        $lblSummary.ForeColor = [System.Drawing.Color]::DarkOrange
+        $lblSummary.Text = "$($eligibleIndices.Count) app(s) have no App ID yet, but none matched an Intune app by name - use `"Choose...`" to pick one manually if it's just a naming difference."
     }
     else {
-        $lblSummary.ForeColor = [System.Drawing.Color]::DarkOrange
-        $lblSummary.Text = "$changeCount app(s) pre-checked below - applying would change their App ID in the local catalog only."
+        $lblSummary.ForeColor = [System.Drawing.Color]::SeaGreen
+        $lblSummary.Text = "$changeCount of $($eligibleIndices.Count) app(s) with no App ID matched by name and are pre-checked below - applying sets their App ID in the local catalog only."
     }
 
     $dlg.Controls.Add($matchGrid)
