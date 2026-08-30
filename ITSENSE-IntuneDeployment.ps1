@@ -14459,14 +14459,18 @@ $menuItemPackage.Add_Click({
     $indices = Get-SelectedAppIndices
     if ($indices.Count -eq 0) { return }
     $tabs.SelectedTab = $tabPipeline
+    # Packaging directly determines the grid's own "Package missing"
+    # status and Folder column (see Resolve-AppPackagePath) - without
+    # this, a just-built package wouldn't show as found until something
+    # else happened to trigger a redraw.
     if ($indices.Count -eq 1) {
         $app = $Script:Apps[$indices[0]]
-        Invoke-LaunchStep -OnComplete $null -SingleFolderName (Get-SafeFileNameForApp -Name $app.appName)
+        Invoke-LaunchStep -OnComplete { param($code) Refresh-Grid }.GetNewClosure() -SingleFolderName (Get-SafeFileNameForApp -Name $app.appName)
         return
     }
     $uncommonApps = @($indices | ForEach-Object { $Script:Apps[$_] } | Where-Object { Test-AppIsUncommon -App $_ })
     $folderNames = @($uncommonApps | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
-    Invoke-LaunchStep -OnComplete $null -FolderNames $folderNames
+    Invoke-LaunchStep -OnComplete { param($code) Refresh-Grid }.GetNewClosure() -FolderNames $folderNames
 })
 
 $menuItemAssign.Add_Click({
@@ -14477,6 +14481,7 @@ $menuItemAssign.Add_Click({
         return
     }
     Show-BatchAssignDialog -ScopedIndices $indices
+    Refresh-Grid
 })
 
 $menuItemSyncMetadata.Add_Click({
@@ -14612,6 +14617,11 @@ $btnCheckIntuneOnly.Add_Click({
 $btnBatchAssign.Add_Click({
     $selectedIndices = Get-SelectedAppIndices
     Show-BatchAssignDialog -ScopedIndices $selectedIndices
+    # "+ Add favorite group..." inside this dialog writes straight to
+    # disk (same as every other bulk action) and changes the main
+    # grid's own Required/Available/Uninstall counts - same reasoning
+    # as the identical fix just made for Sync metadata.
+    Refresh-Grid
 })
 $btnSyncMetadata.Add_Click({
     $selectedIndices = Get-SelectedAppIndices
@@ -14933,11 +14943,15 @@ $btnRunLaunch.Add_Click({
         }
         $folderNames = @($selectedUncommon | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
         $tabs.SelectedTab = $tabPipeline
-        Invoke-LaunchStep -OnComplete $null -FolderNames $folderNames
+        # Packaging directly determines the grid's own "Package missing"
+        # status and Folder column (see Resolve-AppPackagePath) - without
+        # this, a just-built package wouldn't show as found until
+        # something else happened to trigger a redraw.
+        Invoke-LaunchStep -OnComplete { param($code) Refresh-Grid }.GetNewClosure() -FolderNames $folderNames
         return
     }
     $tabs.SelectedTab = $tabPipeline   # switch to the Log tab so the run is visible without an extra click
-    Invoke-LaunchStep -OnComplete $null
+    Invoke-LaunchStep -OnComplete { param($code) Refresh-Grid }.GetNewClosure()
 })
 
 # =====================================================================
