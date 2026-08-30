@@ -11135,13 +11135,17 @@ function Show-GroupDriftCheckDialog {
     # get set on a not-yet-created window handle, which doesn't reliably
     # "stick" - the cursor could end up stuck spinning even after the async
     # work (and its Cursor = Default reset) had already completed.
+    #
+    # Always a live fetch, never the reused-cache branch this used to have -
+    # $cacheRef ($Script:EntraDirectoryCache) is shared across the whole
+    # app, so it can already be non-empty here purely from something
+    # unrelated done earlier in the session. This dialog's entire job is
+    # telling you what's actually missing in Entra ID right now, so opening
+    # it must mean "check now", not "show whatever happened to be cached
+    # from something else, however old that is" - same reasoning as the
+    # identical fix in Show-IntuneOnlyAppsDialog's own Add_Shown.
     $dlg.Add_Shown({
-        if ($cacheRef.Count -gt 0) {
-            & $populateGrid
-        }
-        else {
-            $btnRefresh.PerformClick()
-        }
+        $btnRefresh.PerformClick()
     }.GetNewClosure())
 
     Set-Theme -Control $dlg
