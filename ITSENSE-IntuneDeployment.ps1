@@ -6830,13 +6830,16 @@ function Save-AppMetadataToLocalCatalog {
 # the fly, which is why it isn't reused here as-is).
 # $Local may be $null (nothing saved locally yet) - that's "nothing to
 # compare against", not "every field differs", so it always returns empty.
-function Get-CatalogMetadataFieldDiffs {
-    param($Local, $Remote)
-
-    $diffs = New-Object System.Collections.Generic.List[object]
-    if (-not $Local) { return $diffs.ToArray() }
-
-    $simpleFields = @(
+# Single source of truth for the "simple" (plain-value) catalog metadata
+# fields both Get-CatalogMetadataFieldDiffs and Merge-CatalogMetadata key
+# off of, so the two stay in sync by construction - a field added to one
+# but not the other would mean either a diff that's shown but can never
+# actually be applied by the merge, or one silently applied that the diff
+# UI never surfaced. Detection rule and return codes are handled by name,
+# not through this list, in both functions - they're composite objects,
+# not simple values.
+function Get-CatalogMetadataSimpleFields {
+    return @(
         @{ Key = "description"; Label = "Description" }
         @{ Key = "publisher"; Label = "Publisher" }
         @{ Key = "owner"; Label = "Owner" }
@@ -6855,7 +6858,15 @@ function Get-CatalogMetadataFieldDiffs {
         @{ Key = "deviceRestartBehavior"; Label = "Device restart behavior" }
         @{ Key = "allowAvailableUninstall"; Label = "Allow available uninstall" }
     )
-    foreach ($f in $simpleFields) {
+}
+
+function Get-CatalogMetadataFieldDiffs {
+    param($Local, $Remote)
+
+    $diffs = New-Object System.Collections.Generic.List[object]
+    if (-not $Local) { return $diffs.ToArray() }
+
+    foreach ($f in (Get-CatalogMetadataSimpleFields)) {
         $localVal = [string]$Local.($f.Key)
         $remoteVal = [string]$Remote.($f.Key)
         if ($localVal -ne $remoteVal) {
@@ -6876,6 +6887,34 @@ function Get-CatalogMetadataFieldDiffs {
     }
 
     return $diffs.ToArray()
+}
+
+# Builds a new catalog-shaped metadata object starting from $Remote
+# (Intune's fetched value - the default winner everywhere else in this
+# app), substituting the LOCAL value for any field whose Label is in
+# $KeepLocalFields (the same Field values Get-CatalogMetadataFieldDiffs
+# produces and Show-MetadataDriftDialog returns as its "keep local"
+# picks). Used by bulk "Sync metadata..." to actually apply a per-field
+# reviewed choice for an app instead of either blindly taking Intune's
+# value for everything or skipping the app outright.
+function Merge-CatalogMetadata {
+    param($Remote, $Local, [string[]]$KeepLocalFields)
+
+    $merged = $Remote.PSObject.Copy()
+    if (-not $Local -or @($KeepLocalFields).Count -eq 0) { return $merged }
+
+    foreach ($f in (Get-CatalogMetadataSimpleFields)) {
+        if ($KeepLocalFields -contains $f.Label) {
+            $merged | Add-Member -NotePropertyName $f.Key -NotePropertyValue $Local.($f.Key) -Force
+        }
+    }
+    if ($KeepLocalFields -contains "Detection rule") {
+        $merged | Add-Member -NotePropertyName "detectionRule" -NotePropertyValue $Local.detectionRule -Force
+    }
+    if ($KeepLocalFields -contains "Return codes") {
+        $merged | Add-Member -NotePropertyName "returnCodes" -NotePropertyValue $Local.returnCodes -Force
+    }
+    return $merged
 }
 
 # "Uncommon" is derived, not a separately-stored field: an app with a
@@ -7056,11 +7095,16 @@ if (`$Apps) { return "Installed!" }
 # value. An empty array (every box left checked, or Cancel) means the
 # caller should leave every field exactly as the auto-fetch already set it.
 function Show-MetadataDriftDialog {
-    param($Rows)
+    # -AppName is optional and purely cosmetic (title/header only) - lets a
+    # caller reviewing MULTIPLE apps in a row (bulk "Sync metadata...")
+    # make clear which app each popup is actually about, since several of
+    # these can appear back to back in that flow.
+    param($Rows, [string]$AppName = "")
 
     $dlg = New-Object System.Windows.Forms.Form
     $rowWord = if (@($Rows).Count -eq 1) { "field" } else { "fields" }
-    $dlg.Text = "Local vs. Intune - $(@($Rows).Count) $rowWord differ"
+    $appSuffix = if ($AppName) { " - $AppName" } else { "" }
+    $dlg.Text = "Local vs. Intune - $(@($Rows).Count) $rowWord differ$appSuffix"
     $dlg.ClientSize = New-Object System.Drawing.Size(800, 480)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "Sizable"
@@ -7069,7 +7113,8 @@ function Show-MetadataDriftDialog {
     $dlg.MinimizeBox = $false
 
     $lblHeader = New-Object System.Windows.Forms.Label
-    $lblHeader.Text = "These fields differ between your local catalog copy and what's actually live in Intune. Every field in the deploy dialog already holds Intune's value (Intune wins by default) - untick a row below to keep your local value for that field instead."
+    $appPhrase = if ($AppName) { " for `"$AppName`"" } else { "" }
+    $lblHeader.Text = "These fields$appPhrase differ between your local catalog copy and what's actually live in Intune. Intune's value wins by default for every row - untick a row below to keep your local value for that field instead."
     $lblHeader.Location = New-Object System.Drawing.Point(15,12)
     $lblHeader.Size = New-Object System.Drawing.Size(770,40)
     $dlg.Controls.Add($lblHeader)
@@ -9979,7 +10024,7 @@ function Show-SyncMetadataDialog {
 
     $lblIntro = New-Object System.Windows.Forms.Label
     $scopeText = if ($isScoped) { "$($eligibleApps.Count) selected app(s)" } else { "all $($eligibleApps.Count) app(s) with an App ID" }
-    $lblIntro.Text = "Fetches current metadata from Intune for $scopeText and stores it locally in the catalog. This is READ-ONLY - it never changes anything in Intune itself. An app whose local copy already differs from Intune is left alone, not overwritten - it's listed in the log instead, to review one at a time via `"Deploy to Intune...`" on that app."
+    $lblIntro.Text = "Fetches current metadata from Intune for $scopeText and stores it locally in the catalog. This is READ-ONLY - it never changes anything in Intune itself. An app whose local copy already differs from Intune isn't silently overwritten - a compare dialog opens for it, one app at a time, so you can pick which fields keep your local value before it's applied."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(590,56)
     $dlg.Controls.Add($lblIntro)
@@ -10156,28 +10201,30 @@ function Show-SyncMetadataDialog {
 
             try {
                 $okCount = 0
-                $reviewCount = 0
+                $reviewedCount = 0
                 $totalCount = @($result.results).Count
                 $failedNames = New-Object System.Collections.Generic.List[string]
+                # Apps with real drift are queued here, not resolved
+                # inline - the loop below still needs to finish matching
+                # every result against $appsRefRef by name before any
+                # review dialog pops up, so a slow/interactive review for
+                # app #2 doesn't delay even starting to process app #3..N.
+                $reviewQueue = New-Object System.Collections.Generic.List[object]
                 foreach ($oneResult in @($result.results)) {
                     if (-not $oneResult.Success) { $failedNames.Add($oneResult.AppName); continue }
                     for ($ai = 0; $ai -lt $appsRefRef.Count; $ai++) {
                         if ($appsRefRef[$ai].appName -eq $oneResult.AppName) {
                             # Not a blind overwrite - an app whose local copy
                             # already differs from what Intune actually has
-                            # right now is left alone rather than silently
-                            # taking Intune's value, same principle as the
-                            # per-field compare Show-CreateInIntuneDialog's
-                            # own auto-fetch already offers for one app at a
-                            # time; this bulk path has no per-field UI of its
-                            # own to offer that choice across N apps, so it
-                            # defers to that existing tool instead of guessing.
+                            # right now is queued for an interactive
+                            # per-field compare below, same one
+                            # Show-CreateInIntuneDialog's own auto-fetch
+                            # already offers for one app at a time, rather
+                            # than silently taking Intune's value.
                             $existingMetadata = $appsRefRef[$ai].metadata
                             $fieldDiffs = Get-CatalogMetadataFieldDiffs -Local $existingMetadata -Remote $oneResult.Metadata
                             if ($existingMetadata -and $fieldDiffs.Count -gt 0) {
-                                $reviewCount++
-                                $diffFieldNames = ($fieldDiffs | ForEach-Object { $_.Field }) -join ", "
-                                $rtbLogRef.AppendText("  [REVIEW] $($oneResult.AppName): local copy differs from Intune in $diffFieldNames - not overwritten. Use `"Deploy to Intune...`" on this app to compare and choose.`r`n")
+                                $reviewQueue.Add([pscustomobject]@{ Index = $ai; AppName = $oneResult.AppName; Local = $existingMetadata; Remote = $oneResult.Metadata; Diffs = $fieldDiffs })
                             }
                             else {
                                 $appsRefRef[$ai].metadata = $oneResult.Metadata
@@ -10187,14 +10234,31 @@ function Show-SyncMetadataDialog {
                         }
                     }
                 }
+
+                # Reviewed one app at a time, right here - each compare
+                # dialog blocks until closed (safe to do from inside this
+                # background process's -OnComplete: it still runs on the
+                # UI thread, same as everything else in this callback), but
+                # it only ever appears for an app that actually has real
+                # drift; the common no-drift case above never triggers it.
+                foreach ($reviewItem in $reviewQueue) {
+                    $driftRows = New-Object System.Collections.Generic.List[object]
+                    foreach ($d in $reviewItem.Diffs) {
+                        $driftRows.Add([pscustomobject]@{ Field = $d.Field; Local = $d.Local; Intune = $d.Remote })
+                    }
+                    $keepLocalFields = @(Show-MetadataDriftDialog -Rows $driftRows.ToArray() -AppName $reviewItem.AppName)
+                    $mergedMetadata = Merge-CatalogMetadata -Remote $reviewItem.Remote -Local $reviewItem.Local -KeepLocalFields $keepLocalFields
+                    $appsRefRef[$reviewItem.Index].metadata = $mergedMetadata
+                    $okCount++
+                    $reviewedCount++
+                    $keptMsg = if ($keepLocalFields.Count -gt 0) { "kept your local value for: $($keepLocalFields -join ', ')" } else { "took Intune's value for everything" }
+                    $rtbLogRef.AppendText("  [REVIEWED] $($reviewItem.AppName): $keptMsg`r`n")
+                }
+
                 # Shown only when there's actually something to retry -
                 # re-checks just the failed apps in the picker so "Sync
                 # selected" can be re-run on them directly, instead of
-                # manually re-selecting from a list of 50 apps by hand. Apps
-                # that need review, not retry, aren't included here - running
-                # the exact same fetch again produces the exact same "differs
-                # locally" outcome, so re-checking them for another sync
-                # attempt would just be a no-op dressed up as a retry.
+                # manually re-selecting from a list of 50 apps by hand.
                 if ($failedNames.Count -gt 0) {
                     $lastFailedBoxRef.Names = @($failedNames)
                     $btnRetryFailedRef.Visible = $true
@@ -10211,16 +10275,16 @@ function Show-SyncMetadataDialog {
                 $syncSaveOk = if ($okCount -gt 0) { Save-AppsToFile -Path $linkedFilePathRef } else { $true }
                 $summaryParts = New-Object System.Collections.Generic.List[string]
                 $summaryParts.Add("$okCount synced")
-                if ($reviewCount -gt 0) { $summaryParts.Add("$reviewCount need review") }
+                if ($reviewedCount -gt 0) { $summaryParts.Add("$reviewedCount of those reviewed") }
                 if ($failedNames.Count -gt 0) { $summaryParts.Add("$($failedNames.Count) failed") }
                 $summary = ($summaryParts -join ", ") + " of $totalCount."
                 if (-not $syncSaveOk) {
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
                     $lblStatusRef.Text = "$summary Writing to disk was cancelled or failed - use Force save to try again."
                 }
-                elseif ($reviewCount -gt 0 -or $failedNames.Count -gt 0) {
+                elseif ($failedNames.Count -gt 0) {
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
-                    $lblStatusRef.Text = "$summary See log for details."
+                    $lblStatusRef.Text = "$summary See log for what failed."
                 }
                 else {
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
