@@ -8624,6 +8624,12 @@ function Show-CreateInIntuneDialog {
                 # (confirmed patchable on an existing app), so there's
                 # nothing else to re-enable here now.
                 $cmbContext.Enabled = $true
+                # A non-win32 EXISTING app (see the auto-fetch's own type
+                # check above) doesn't matter anymore once Force-new is
+                # checked - this is now about creating a brand new
+                # win32LobApp alongside it, not touching that other object
+                # at all, so the block on Create/Update doesn't apply here.
+                $btnCreate.Enabled = $true
             }
             else {
                 $chkReplaceContent.Enabled = $true
@@ -8631,6 +8637,13 @@ function Show-CreateInIntuneDialog {
                 # the one field Graph genuinely won't let get changed
                 # post-creation.
                 $cmbContext.Enabled = $false
+                # Re-block if the existing app's own fetched type still
+                # says it isn't a win32 app - unchecking Force-new means
+                # this button is back to targeting THAT object again.
+                $rawTypeNameForToggle = if ($fetchedIntuneFactsBox.OdataType) { $fetchedIntuneFactsBox.OdataType -replace '^#?microsoft\.graph\.', '' } else { "" }
+                if ($rawTypeNameForToggle -and @("win32LobApp", "win32CatalogApp", "windowsMobileMSI") -notcontains $rawTypeNameForToggle) {
+                    $btnCreate.Enabled = $false
+                }
             }
             $btnCreate.Text = if ($chkForceNew.Checked) { "Deploy" } elseif ($chkReplaceContent.Checked) { "Update + Replace Content" } else { "Update Metadata" }
         }.GetNewClosure())
@@ -9650,6 +9663,7 @@ function Show-CreateInIntuneDialog {
             $chkAllowUninstallRef = $chkAllowUninstall
             $grdReturnCodesRef = $grdReturnCodes
             $fetchedIntuneFactsBoxRef = $fetchedIntuneFactsBox
+            $btnCreateRef = $btnCreate
 
             Start-AppMetadataFetch -AppId $existingAppIdRef -OnComplete {
                 param($ok, $errMsg, $data)
@@ -9660,6 +9674,25 @@ function Show-CreateInIntuneDialog {
                 }
                 $fetchedIntuneFactsBoxRef.OdataType = $data.OdataType
                 $fetchedIntuneFactsBoxRef.DisplayVersion = $data.DisplayVersion
+
+                # This tool only ever builds a win32LobApp-shaped PATCH body
+                # (installExperience, detectionRules, minimumSupportedOS,
+                # ...) - sending that to an app of any OTHER type (Microsoft
+                # 365 Apps, a Store app, ...) means Graph rejects it with a
+                # confusing "property does not exist on this type" error,
+                # not a helpful one. Blocked here, against the type just
+                # fetched LIVE, rather than only from the cached local
+                # intuneAppType column (which is blank for anything never
+                # synced) - this is the one place that already has to know
+                # the real type regardless.
+                $knownWin32Types = @("win32LobApp", "win32CatalogApp", "windowsMobileMSI")
+                $rawTypeName = if ($data.OdataType) { $data.OdataType -replace '^#?microsoft\.graph\.', '' } else { "" }
+                if ($rawTypeName -and $knownWin32Types -notcontains $rawTypeName) {
+                    $btnCreateRef.Enabled = $false
+                    $lblCreateStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                    $lblCreateStatusRef.Text = "This app is a `"$(Get-FriendlyIntuneAppType -ODataType $data.OdataType)`" in Intune, not a Win32 app - this tool only manages Win32 app deployments. Use the Intune portal directly for this app."
+                    return
+                }
                 if ($data.DisplayName)              { $txtCreateNameRef.Text = $data.DisplayName }
                 if ($null -ne $data.Description)    { $txtDescRef.Text = $data.Description }
                 if ($null -ne $data.Publisher)      { $txtPublisherRef.Text = $data.Publisher }
