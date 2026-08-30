@@ -7205,6 +7205,24 @@ function Resolve-AppPackagePath {
     if (Test-Path $uncommonRoot) {
         $found = Get-ChildItem -Path $uncommonRoot -Recurse -Filter "$safeName.intunewin" -File -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($found) { return @{ Path = $found.FullName; Found = $true } }
+
+        # The .intunewin file itself doesn't always end up named after the
+        # app the way this tool's own packaging step names it - a file
+        # someone packaged with a different tool (or a raw win32 content
+        # prep utility) commonly keeps the SOURCE installer's own name
+        # instead (e.g. "OpenXMLSDKV25.intunewin" for "Open XML SDK 2.5
+        # for Microsoft Office"). The FOLDER, though, is still reliably
+        # this app's own - it's this same $safeName, created by whatever
+        # put the package there. So: if that expected folder exists and
+        # holds exactly one .intunewin file, that's this app's package,
+        # regardless of what it's actually called. More than one is
+        # ambiguous (which one's real?) - falls through to "not found"
+        # rather than guessing wrong.
+        $expectedFolder = Join-Path $uncommonRoot $safeName
+        if (Test-Path $expectedFolder) {
+            $filesInFolder = @(Get-ChildItem -Path $expectedFolder -Filter "*.intunewin" -File -ErrorAction SilentlyContinue)
+            if ($filesInFolder.Count -eq 1) { return @{ Path = $filesInFolder[0].FullName; Found = $true } }
+        }
     }
     # Not found under the predicted name - still return the guess so the
     # dialog can show it (crossed out / flagged) alongside a Browse button.
@@ -10861,59 +10879,50 @@ function Show-AddFavoriteGroupToAppsDialog {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Add favorite group to apps"
-    $dlg.ClientSize = New-Object System.Drawing.Size(460, 480)
+    $dlg.ClientSize = New-Object System.Drawing.Size(460, 700)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
     $dlg.MinimizeBox = $false
 
-    $lblGroup = New-Object System.Windows.Forms.Label
-    $lblGroup.Text = "Favorite group"
-    $lblGroup.Location = New-Object System.Drawing.Point(15,12)
-    $lblGroup.AutoSize = $true
-    $dlg.Controls.Add($lblGroup)
+    # Same three-CheckedListBox layout as the App Editor's own Required/
+    # Available/Uninstall pickers (see New-GroupBox in Show-AppEditor) -
+    # tick as many favorite groups as needed per intent, not just one
+    # group at a time. Deliberately favorites-only here, no "+ New
+    # group..." - this dialog's whole point is a quick bulk pick from an
+    # already-curated list, not managing group membership.
+    function New-FavoriteGroupBox {
+        param($Title, $Top)
+        $gb = New-Object System.Windows.Forms.GroupBox
+        $gb.Text = $Title
+        $gb.Location = New-Object System.Drawing.Point(15,$Top)
+        $gb.Size = New-Object System.Drawing.Size(430,100)
 
-    $cmbGroup = New-Object System.Windows.Forms.ComboBox
-    $cmbGroup.Location = New-Object System.Drawing.Point(15,32)
-    $cmbGroup.Size = New-Object System.Drawing.Size(430,24)
-    $cmbGroup.DropDownStyle = "DropDownList"
-    [void]$cmbGroup.Items.AddRange(@($Script:FavoriteGroups | Sort-Object))
-    if ($cmbGroup.Items.Count -gt 0) { $cmbGroup.SelectedIndex = 0 }
-    $dlg.Controls.Add($cmbGroup)
+        $clb = New-Object System.Windows.Forms.CheckedListBox
+        $clb.Location = New-Object System.Drawing.Point(10,20)
+        $clb.Size = New-Object System.Drawing.Size(410,70)
+        $clb.CheckOnClick = $true
+        [void]$clb.Items.AddRange(@($Script:FavoriteGroups | Sort-Object))
+        $gb.Controls.Add($clb)
 
-    $lblIntent = New-Object System.Windows.Forms.Label
-    $lblIntent.Text = "Add as"
-    $lblIntent.Location = New-Object System.Drawing.Point(15,66)
-    $lblIntent.AutoSize = $true
-    $dlg.Controls.Add($lblIntent)
+        return @{ Box = $gb; List = $clb }
+    }
 
-    $rbRequired = New-Object System.Windows.Forms.RadioButton
-    $rbRequired.Text = "Required"
-    $rbRequired.Location = New-Object System.Drawing.Point(15,86)
-    $rbRequired.AutoSize = $true
-    $rbRequired.Checked = $true
-    $dlg.Controls.Add($rbRequired)
-
-    $rbAvailable = New-Object System.Windows.Forms.RadioButton
-    $rbAvailable.Text = "Available"
-    $rbAvailable.Location = New-Object System.Drawing.Point(130,86)
-    $rbAvailable.AutoSize = $true
-    $dlg.Controls.Add($rbAvailable)
-
-    $rbUninstall = New-Object System.Windows.Forms.RadioButton
-    $rbUninstall.Text = "Uninstall"
-    $rbUninstall.Location = New-Object System.Drawing.Point(245,86)
-    $rbUninstall.AutoSize = $true
-    $dlg.Controls.Add($rbUninstall)
+    $reqGroup    = New-FavoriteGroupBox -Title "Required for"  -Top 12
+    $availGroup  = New-FavoriteGroupBox -Title "Available for" -Top 118
+    $uninstGroup = New-FavoriteGroupBox -Title "Uninstall for" -Top 224
+    $dlg.Controls.Add($reqGroup.Box)
+    $dlg.Controls.Add($availGroup.Box)
+    $dlg.Controls.Add($uninstGroup.Box)
 
     $lblApps = New-Object System.Windows.Forms.Label
     $lblApps.Text = "Apps (unchecked ones below are left alone)"
-    $lblApps.Location = New-Object System.Drawing.Point(15,120)
+    $lblApps.Location = New-Object System.Drawing.Point(15,334)
     $lblApps.AutoSize = $true
     $dlg.Controls.Add($lblApps)
 
     $clbApps = New-Object System.Windows.Forms.CheckedListBox
-    $clbApps.Location = New-Object System.Drawing.Point(15,140)
+    $clbApps.Location = New-Object System.Drawing.Point(15,354)
     $clbApps.Size = New-Object System.Drawing.Size(430,260)
     $clbApps.CheckOnClick = $true
     $dlg.Controls.Add($clbApps)
@@ -10923,13 +10932,13 @@ function Show-AddFavoriteGroupToAppsDialog {
 
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Select all"
-    $btnSelectAll.Location = New-Object System.Drawing.Point(15,406)
+    $btnSelectAll.Location = New-Object System.Drawing.Point(15,620)
     $btnSelectAll.Size = New-Object System.Drawing.Size(100,26)
     $dlg.Controls.Add($btnSelectAll)
 
     $btnSelectNone = New-Object System.Windows.Forms.Button
     $btnSelectNone.Text = "Select none"
-    $btnSelectNone.Location = New-Object System.Drawing.Point(125,406)
+    $btnSelectNone.Location = New-Object System.Drawing.Point(125,620)
     $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
     $dlg.Controls.Add($btnSelectNone)
 
@@ -10942,21 +10951,27 @@ function Show-AddFavoriteGroupToAppsDialog {
 
     $btnAdd = New-Object System.Windows.Forms.Button
     $btnAdd.Text = "Add to checked apps"
-    $btnAdd.Location = New-Object System.Drawing.Point(255,444)
+    $btnAdd.Location = New-Object System.Drawing.Point(255,658)
     $btnAdd.Size = New-Object System.Drawing.Size(190,30)
     $dlg.Controls.Add($btnAdd)
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(155,444)
+    $btnCancel.Location = New-Object System.Drawing.Point(155,658)
     $btnCancel.Size = New-Object System.Drawing.Size(90,30)
     $dlg.Controls.Add($btnCancel)
 
     $resultBox = @{ Count = $null }
 
     $btnAdd.Add_Click({
-        if ($cmbGroup.Items.Count -eq 0 -or -not $cmbGroup.SelectedItem) {
-            [System.Windows.Forms.MessageBox]::Show("Pick a group first.", "No group selected", "OK", "Warning") | Out-Null
+        $pickedFields = @(
+            @{ List = $reqGroup.List; FieldName = "requiredFor" }
+            @{ List = $availGroup.List; FieldName = "availableFor" }
+            @{ List = $uninstGroup.List; FieldName = "uninstallFor" }
+        )
+        $anyGroupChecked = (@($pickedFields | ForEach-Object { $_.List.CheckedItems.Count }) | Measure-Object -Sum).Sum -gt 0
+        if (-not $anyGroupChecked) {
+            [System.Windows.Forms.MessageBox]::Show("Check at least one group above (Required/Available/Uninstall) first.", "No group selected", "OK", "Warning") | Out-Null
             return
         }
         $checkedNames = @($clbApps.CheckedItems | ForEach-Object { [string]$_ })
@@ -10964,17 +10979,21 @@ function Show-AddFavoriteGroupToAppsDialog {
             [System.Windows.Forms.MessageBox]::Show("Check at least one app first.", "Nothing checked", "OK", "Warning") | Out-Null
             return
         }
-        $groupName = [string]$cmbGroup.SelectedItem
-        $fieldName = if ($rbRequired.Checked) { "requiredFor" } elseif ($rbAvailable.Checked) { "availableFor" } else { "uninstallFor" }
 
         $changedCount = 0
         foreach ($checkedName in $checkedNames) {
             $target = $appsRef | Where-Object { $_.appName -eq $checkedName } | Select-Object -First 1
             if (-not $target) { continue }
-            if (@($target.$fieldName) -notcontains $groupName) {
-                $target.$fieldName = @(@($target.$fieldName) + $groupName)
-                $changedCount++
+            $targetChanged = $false
+            foreach ($pick in $pickedFields) {
+                foreach ($groupName in @($pick.List.CheckedItems | ForEach-Object { [string]$_ })) {
+                    if (@($target.($pick.FieldName)) -notcontains $groupName) {
+                        $target.($pick.FieldName) = @(@($target.($pick.FieldName)) + $groupName)
+                        $targetChanged = $true
+                    }
+                }
             }
+            if ($targetChanged) { $changedCount++ }
         }
         if ($changedCount -gt 0) {
             $unsavedBoxRef.Value = $true
