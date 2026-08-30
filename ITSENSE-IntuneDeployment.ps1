@@ -7069,10 +7069,26 @@ function Get-CatalogMetadataFieldDiffs {
     $diffs = New-Object System.Collections.Generic.List[object]
     if (-not $Local) { return $diffs.ToArray() }
 
+    # These four fields use the same "0 = not required" convention the
+    # editor's own "Requirements (0 = not required)" label documents -
+    # Intune reports an unset requirement as blank/null, not 0, so a
+    # local "0" and a live blank are the SAME thing (no requirement),
+    # not a real difference worth flagging. Confirmed as a real false
+    # positive live: memory/processors/CPU speed all showing local "0"
+    # vs Intune "(blank)" as a 3-field diff for an app where nothing had
+    # actually changed.
+    $zeroEqualsBlankFields = @("minDiskSpaceMB", "minMemoryMB", "minProcessors", "minCpuSpeedMHz")
+
     foreach ($f in (Get-CatalogMetadataSimpleFields)) {
         $localVal = [string]$Local.($f.Key)
         $remoteVal = [string]$Remote.($f.Key)
-        if ($localVal -ne $remoteVal) {
+        $compareLocal = $localVal
+        $compareRemote = $remoteVal
+        if ($zeroEqualsBlankFields -contains $f.Key) {
+            if ($compareLocal -eq "0") { $compareLocal = "" }
+            if ($compareRemote -eq "0") { $compareRemote = "" }
+        }
+        if ($compareLocal -ne $compareRemote) {
             $diffs.Add([pscustomobject]@{ Field = $f.Label; Local = $localVal; Remote = $remoteVal })
         }
     }
@@ -7657,7 +7673,7 @@ function Show-CreateInIntuneDialog {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Deploy to Intune - $AppName"
-    $dlg.ClientSize = New-Object System.Drawing.Size(645, 990)
+    $dlg.ClientSize = New-Object System.Drawing.Size(730, 990)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -7671,7 +7687,7 @@ function Show-CreateInIntuneDialog {
     # find them.
     $scrollPanel = New-Object System.Windows.Forms.Panel
     $scrollPanel.Location = New-Object System.Drawing.Point(0,0)
-    $scrollPanel.Size = New-Object System.Drawing.Size(645,560)
+    $scrollPanel.Size = New-Object System.Drawing.Size(730,560)
     $scrollPanel.AutoScroll = $true
     $dlg.Controls.Add($scrollPanel)
 
@@ -7679,20 +7695,20 @@ function Show-CreateInIntuneDialog {
         $lblDup = New-Object System.Windows.Forms.Label
         $lblDup.Text = "This app already has an App ID ($ExistingAppId). By default this will UPDATE that app's metadata (name/description/install/uninstall/detection/dependencies) - it will NOT touch or re-upload package content."
         $lblDup.Location = New-Object System.Drawing.Point(15,12)
-        $lblDup.Size = New-Object System.Drawing.Size(590,44)
+        $lblDup.Size = New-Object System.Drawing.Size(675,44)
         $lblDup.ForeColor = [System.Drawing.Color]::DarkOrange
         $scrollPanel.Controls.Add($lblDup)
 
         $chkForceNew = New-Object System.Windows.Forms.CheckBox
         $chkForceNew.Text = "Create a brand new app instead (uploads package content, leaves the existing app untouched)"
         $chkForceNew.Location = New-Object System.Drawing.Point(15,58)
-        $chkForceNew.Size = New-Object System.Drawing.Size(590,20)
+        $chkForceNew.Size = New-Object System.Drawing.Size(675,20)
         $scrollPanel.Controls.Add($chkForceNew)
 
         $chkReplaceContent = New-Object System.Windows.Forms.CheckBox
         $chkReplaceContent.Text = "Also replace package content on the existing app (uses the Package field below)"
         $chkReplaceContent.Location = New-Object System.Drawing.Point(15,80)
-        $chkReplaceContent.Size = New-Object System.Drawing.Size(590,20)
+        $chkReplaceContent.Size = New-Object System.Drawing.Size(675,20)
         $scrollPanel.Controls.Add($chkReplaceContent)
     }
 
@@ -7704,7 +7720,7 @@ function Show-CreateInIntuneDialog {
 
     $txtCreateName = New-Object System.Windows.Forms.TextBox
     $txtCreateName.Location = New-Object System.Drawing.Point(15,128)
-    $txtCreateName.Size = New-Object System.Drawing.Size(590,24)
+    $txtCreateName.Size = New-Object System.Drawing.Size(675,24)
     $txtCreateName.Text = $AppName
     $scrollPanel.Controls.Add($txtCreateName)
 
@@ -7716,7 +7732,7 @@ function Show-CreateInIntuneDialog {
 
     $txtDesc = New-Object System.Windows.Forms.TextBox
     $txtDesc.Location = New-Object System.Drawing.Point(15,179)
-    $txtDesc.Size = New-Object System.Drawing.Size(590,24)
+    $txtDesc.Size = New-Object System.Drawing.Size(675,24)
     if (-not $isDuplicate) { $txtDesc.Text = $AppName }
     $scrollPanel.Controls.Add($txtDesc)
 
@@ -7728,7 +7744,7 @@ function Show-CreateInIntuneDialog {
 
     $txtPublisher = New-Object System.Windows.Forms.TextBox
     $txtPublisher.Location = New-Object System.Drawing.Point(15,230)
-    $txtPublisher.Size = New-Object System.Drawing.Size(590,24)
+    $txtPublisher.Size = New-Object System.Drawing.Size(675,24)
     if (-not $isDuplicate) { $txtPublisher.Text = $defaults.publisher }
     $scrollPanel.Controls.Add($txtPublisher)
 
@@ -7793,7 +7809,7 @@ function Show-CreateInIntuneDialog {
 
     $txtNotes = New-Object System.Windows.Forms.TextBox
     $txtNotes.Location = New-Object System.Drawing.Point(15,383)
-    $txtNotes.Size = New-Object System.Drawing.Size(590,40)
+    $txtNotes.Size = New-Object System.Drawing.Size(675,40)
     $txtNotes.Multiline = $true
     $scrollPanel.Controls.Add($txtNotes)
 
@@ -7805,12 +7821,12 @@ function Show-CreateInIntuneDialog {
 
     $txtPackagePath = New-Object System.Windows.Forms.TextBox
     $txtPackagePath.Location = New-Object System.Drawing.Point(15,452)
-    $txtPackagePath.Size = New-Object System.Drawing.Size(495,24)
+    $txtPackagePath.Size = New-Object System.Drawing.Size(580,24)
     $scrollPanel.Controls.Add($txtPackagePath)
 
     $btnBrowsePackage = New-Object System.Windows.Forms.Button
     $btnBrowsePackage.Text = "Browse..."
-    $btnBrowsePackage.Location = New-Object System.Drawing.Point(515,451)
+    $btnBrowsePackage.Location = New-Object System.Drawing.Point(600,451)
     $btnBrowsePackage.Size = New-Object System.Drawing.Size(90,26)
     $scrollPanel.Controls.Add($btnBrowsePackage)
 
@@ -7836,7 +7852,7 @@ function Show-CreateInIntuneDialog {
 
     $txtInstall = New-Object System.Windows.Forms.TextBox
     $txtInstall.Location = New-Object System.Drawing.Point(15,504)
-    $txtInstall.Size = New-Object System.Drawing.Size(590,46)
+    $txtInstall.Size = New-Object System.Drawing.Size(675,46)
     $txtInstall.Multiline = $true
     $txtInstall.ScrollBars = "Vertical"
     $scrollPanel.Controls.Add($txtInstall)
@@ -7849,7 +7865,7 @@ function Show-CreateInIntuneDialog {
 
     $txtUninstall = New-Object System.Windows.Forms.TextBox
     $txtUninstall.Location = New-Object System.Drawing.Point(15,574)
-    $txtUninstall.Size = New-Object System.Drawing.Size(590,46)
+    $txtUninstall.Size = New-Object System.Drawing.Size(675,46)
     $txtUninstall.Multiline = $true
     $txtUninstall.ScrollBars = "Vertical"
     $scrollPanel.Controls.Add($txtUninstall)
@@ -7887,12 +7903,12 @@ function Show-CreateInIntuneDialog {
     # --- PowerShell script panel (default, matches previous behavior) ---
     $pnlDetScript = New-Object System.Windows.Forms.Panel
     $pnlDetScript.Location = New-Object System.Drawing.Point(15,$detPanelY)
-    $pnlDetScript.Size = New-Object System.Drawing.Size(590,$detPanelH)
+    $pnlDetScript.Size = New-Object System.Drawing.Size(675,$detPanelH)
     $dlg.Controls.Add($pnlDetScript)
 
     $txtDetection = New-Object System.Windows.Forms.TextBox
     $txtDetection.Location = New-Object System.Drawing.Point(0,0)
-    $txtDetection.Size = New-Object System.Drawing.Size(590,$detPanelH)
+    $txtDetection.Size = New-Object System.Drawing.Size(675,$detPanelH)
     $txtDetection.Multiline = $true
     $txtDetection.ScrollBars = "Vertical"
     $txtDetection.Font = New-Object System.Drawing.Font("Consolas", 8.5)
@@ -7901,7 +7917,7 @@ function Show-CreateInIntuneDialog {
     # --- MSI product code panel ---
     $pnlDetMsi = New-Object System.Windows.Forms.Panel
     $pnlDetMsi.Location = New-Object System.Drawing.Point(15,$detPanelY)
-    $pnlDetMsi.Size = New-Object System.Drawing.Size(590,$detPanelH)
+    $pnlDetMsi.Size = New-Object System.Drawing.Size(675,$detPanelH)
     $dlg.Controls.Add($pnlDetMsi)
 
     $lblMsiCode = New-Object System.Windows.Forms.Label
@@ -7912,7 +7928,7 @@ function Show-CreateInIntuneDialog {
 
     $txtMsiCode = New-Object System.Windows.Forms.TextBox
     $txtMsiCode.Location = New-Object System.Drawing.Point(0,19)
-    $txtMsiCode.Size = New-Object System.Drawing.Size(590,24)
+    $txtMsiCode.Size = New-Object System.Drawing.Size(675,24)
     $pnlDetMsi.Controls.Add($txtMsiCode)
 
     $lblMsiVer = New-Object System.Windows.Forms.Label
@@ -7937,7 +7953,7 @@ function Show-CreateInIntuneDialog {
     # --- File or folder panel ---
     $pnlDetFile = New-Object System.Windows.Forms.Panel
     $pnlDetFile.Location = New-Object System.Drawing.Point(15,$detPanelY)
-    $pnlDetFile.Size = New-Object System.Drawing.Size(590,$detPanelH)
+    $pnlDetFile.Size = New-Object System.Drawing.Size(675,$detPanelH)
     $dlg.Controls.Add($pnlDetFile)
 
     $lblFilePath = New-Object System.Windows.Forms.Label
@@ -7965,7 +7981,7 @@ function Show-CreateInIntuneDialog {
 
     $txtFileName = New-Object System.Windows.Forms.TextBox
     $txtFileName.Location = New-Object System.Drawing.Point(0,70)
-    $txtFileName.Size = New-Object System.Drawing.Size(590,24)
+    $txtFileName.Size = New-Object System.Drawing.Size(675,24)
     $pnlDetFile.Controls.Add($txtFileName)
 
     $lblFileDetType = New-Object System.Windows.Forms.Label
@@ -8018,7 +8034,7 @@ function Show-CreateInIntuneDialog {
     # --- Registry panel ---
     $pnlDetReg = New-Object System.Windows.Forms.Panel
     $pnlDetReg.Location = New-Object System.Drawing.Point(15,$detPanelY)
-    $pnlDetReg.Size = New-Object System.Drawing.Size(590,$detPanelH)
+    $pnlDetReg.Size = New-Object System.Drawing.Size(675,$detPanelH)
     $dlg.Controls.Add($pnlDetReg)
 
     $lblRegPath = New-Object System.Windows.Forms.Label
@@ -8046,7 +8062,7 @@ function Show-CreateInIntuneDialog {
 
     $txtRegValueName = New-Object System.Windows.Forms.TextBox
     $txtRegValueName.Location = New-Object System.Drawing.Point(0,70)
-    $txtRegValueName.Size = New-Object System.Drawing.Size(590,24)
+    $txtRegValueName.Size = New-Object System.Drawing.Size(675,24)
     $pnlDetReg.Controls.Add($txtRegValueName)
 
     $lblRegDetType = New-Object System.Windows.Forms.Label
@@ -8263,7 +8279,7 @@ function Show-CreateInIntuneDialog {
 
     $clbDeps = New-Object System.Windows.Forms.CheckedListBox
     $clbDeps.Location = New-Object System.Drawing.Point(15,729)
-    $clbDeps.Size = New-Object System.Drawing.Size(590,85)
+    $clbDeps.Size = New-Object System.Drawing.Size(675,85)
     $clbDeps.CheckOnClick = $true
     # Undeployed apps (no App ID yet) are now included, not just ones
     # already in Intune - Batch Deploy's own ordering logic already
@@ -8442,12 +8458,12 @@ function Show-CreateInIntuneDialog {
 
     $lblCreateStatus = New-Object System.Windows.Forms.Label
     $lblCreateStatus.Location = New-Object System.Drawing.Point(15,773)
-    $lblCreateStatus.Size = New-Object System.Drawing.Size(615,40)
+    $lblCreateStatus.Size = New-Object System.Drawing.Size(700,40)
     $dlg.Controls.Add($lblCreateStatus)
 
     $rtbCreateLog = New-Object System.Windows.Forms.RichTextBox
     $rtbCreateLog.Location = New-Object System.Drawing.Point(15,821)
-    $rtbCreateLog.Size = New-Object System.Drawing.Size(615,110)
+    $rtbCreateLog.Size = New-Object System.Drawing.Size(700,110)
     $rtbCreateLog.ReadOnly = $true
     $rtbCreateLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
     $rtbCreateLog.ForeColor = [System.Drawing.Color]::Gainsboro
@@ -8456,7 +8472,7 @@ function Show-CreateInIntuneDialog {
 
     $btnCreate = New-Object System.Windows.Forms.Button
     $btnCreate.Text = if ($isDuplicate) { "Update Metadata" } else { "Deploy" }
-    $btnCreate.Location = New-Object System.Drawing.Point(340,941)
+    $btnCreate.Location = New-Object System.Drawing.Point(425,941)
     $btnCreate.Size = New-Object System.Drawing.Size(200,32)
     $dlg.Controls.Add($btnCreate)
 
@@ -8471,13 +8487,13 @@ function Show-CreateInIntuneDialog {
     $btnSaveForLater = New-Object System.Windows.Forms.Button
     $btnSaveForLater.Text = if ($isDuplicate) { "Save local copy..." } else { "Save to App Catalog without Deploying" }
     $btnSaveForLater.Location = New-Object System.Drawing.Point(15,941)
-    $btnSaveForLater.Size = New-Object System.Drawing.Size(315,32)
+    $btnSaveForLater.Size = New-Object System.Drawing.Size(400,32)
     $btnSaveForLater.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $dlg.Controls.Add($btnSaveForLater)
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(550,941)
+    $btnCancel.Location = New-Object System.Drawing.Point(635,941)
     $btnCancel.Size = New-Object System.Drawing.Size(80,32)
     $dlg.Controls.Add($btnCancel)
 
@@ -13678,7 +13694,7 @@ function Show-AppEditor {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = if ($ExistingApp) { "Edit app" } else { "Add app" }
-    $dlg.ClientSize = New-Object System.Drawing.Size(470, 805)
+    $dlg.ClientSize = New-Object System.Drawing.Size(470, 845)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -13792,7 +13808,7 @@ function Show-AppEditor {
     # defined right below, next to the rest of this button's own logic.
     $btnDeleteFromIntune = New-Object System.Windows.Forms.Button
     $btnDeleteFromIntune.Text = "Delete from Intune..."
-    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(170,765)
+    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(170,805)
     $btnDeleteFromIntune.Size = New-Object System.Drawing.Size(190,30)
     $dlg.Controls.Add($btnDeleteFromIntune)
     $appEditorTip = New-Object System.Windows.Forms.ToolTip
@@ -13803,20 +13819,6 @@ function Show-AppEditor {
     $lblIdStatus.Size = New-Object System.Drawing.Size(430,40)
     $lblIdStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblIdStatus)
-
-    # Pulls this app's CURRENT live group assignments from Intune and sets
-    # the three pickers below to match exactly - the read-only counterpart
-    # to "Assign Groups to Intune..." (which only ever pushes THIS
-    # editor's checkboxes outward). Without it, an app that already has
-    # real assignments in Intune (created outside this tool, or from
-    # before these checkboxes existed) shows every box unchecked here,
-    # which reads as "assigned to nobody" when the truth is just "this
-    # editor never asked Intune what's actually there".
-    $btnReadGroupsFromIntune = New-Object System.Windows.Forms.Button
-    $btnReadGroupsFromIntune.Text = "Read groups from Intune"
-    $btnReadGroupsFromIntune.Location = New-Object System.Drawing.Point(15,300)
-    $btnReadGroupsFromIntune.Size = New-Object System.Drawing.Size(430,30)
-    $dlg.Controls.Add($btnReadGroupsFromIntune)
 
     $TryFillIdFromCache = {
         $candidates = Find-IntuneMatches -Name $txtName.Text.Trim()
@@ -14119,15 +14121,30 @@ function Show-AppEditor {
     $dlg.Controls.Add($availGroup.Box)
     $dlg.Controls.Add($uninstGroup.Box)
 
+    # Pulls this app's CURRENT live group assignments from Intune and sets
+    # the three pickers above to match exactly - the read-only counterpart
+    # to "Assign Groups to Intune..." right below (which only ever pushes
+    # THESE checkboxes outward), so the two live next to each other.
+    # Without it, an app that already has real assignments in Intune
+    # (created outside this tool, or from before these checkboxes
+    # existed) shows every box unchecked here, which reads as "assigned
+    # to nobody" when the truth is just "this editor never asked Intune
+    # what's actually there".
+    $btnReadGroupsFromIntune = New-Object System.Windows.Forms.Button
+    $btnReadGroupsFromIntune.Text = "Read groups from Intune"
+    $btnReadGroupsFromIntune.Location = New-Object System.Drawing.Point(15,725)
+    $btnReadGroupsFromIntune.Size = New-Object System.Drawing.Size(430,30)
+    $dlg.Controls.Add($btnReadGroupsFromIntune)
+
     $btnAssignGroups = New-Object System.Windows.Forms.Button
     $btnAssignGroups.Text = "Assign Groups to Intune (this app only)..."
-    $btnAssignGroups.Location = New-Object System.Drawing.Point(15,725)
+    $btnAssignGroups.Location = New-Object System.Drawing.Point(15,765)
     $btnAssignGroups.Size = New-Object System.Drawing.Size(430,30)
     $dlg.Controls.Add($btnAssignGroups)
 
     $btnOk = New-Object System.Windows.Forms.Button
     $btnOk.Text = "Save app to catalog"
-    $btnOk.Location = New-Object System.Drawing.Point(15,765)
+    $btnOk.Location = New-Object System.Drawing.Point(15,805)
     $btnOk.Size = New-Object System.Drawing.Size(150,30)
     $dlg.Controls.Add($btnOk)
 
@@ -14137,7 +14154,7 @@ function Show-AppEditor {
     # bottom row.
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(365,765)
+    $btnCancel.Location = New-Object System.Drawing.Point(365,805)
     $btnCancel.Size = New-Object System.Drawing.Size(90,30)
     $dlg.Controls.Add($btnCancel)
 
