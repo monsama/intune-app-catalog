@@ -4226,11 +4226,39 @@ function Start-IntuneAppLookup {
         $ctx = Get-MgContext -ErrorAction Stop
 
         $apps = New-Object System.Collections.Generic.List[object]
-        $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?`$top=999"
+        # minimumSupportedOperatingSystem requested explicitly (not part of
+        # the default mobileApps list response) so Show-DiagnosticsDialog
+        # can flag apps set to a value outside this tool's own known-values
+        # list, all from this one bulk call - same reasoning Show-
+        # DiagnosticsDialog documents next to its own check for why this
+        # rides along here instead of a separate per-app fetch.
+        $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?`$top=999&`$select=id,displayName,minimumSupportedOperatingSystem,minimumSupportedWindowsRelease"
         do {
             $result = Invoke-MgGraphRequest -Uri $uri -Method GET -ErrorAction Stop
             foreach ($item in $result.value) {
-                $apps.Add([pscustomobject]@{ id = $item.id; displayName = $item.displayName })
+                # Same generic Hashtable-or-PSCustomObject handling as
+                # Start-AppMetadataFetch's own minOS parsing - see the note
+                # there.
+                $itemMinOsPropName = $null
+                if ($item.minimumSupportedOperatingSystem) {
+                    $itemMinOsObj = $item.minimumSupportedOperatingSystem
+                    if ($itemMinOsObj -is [System.Collections.IDictionary]) {
+                        foreach ($key in $itemMinOsObj.Keys) {
+                            if ($itemMinOsObj[$key] -eq $true) { $itemMinOsPropName = $key; break }
+                        }
+                    }
+                    else {
+                        foreach ($prop in $itemMinOsObj.PSObject.Properties) {
+                            if ($prop.Value -eq $true) { $itemMinOsPropName = $prop.Name; break }
+                        }
+                    }
+                }
+                # See the note next to Start-AppMetadataFetch's own
+                # MinimumSupportedWindowsRelease field - this is the
+                # AUTHORITATIVE minimum-OS value whenever it's set;
+                # minOSPropertyName below only reflects the legacy
+                # property Microsoft has replaced it with.
+                $apps.Add([pscustomobject]@{ id = $item.id; displayName = $item.displayName; minOSPropertyName = $itemMinOsPropName; minimumSupportedWindowsRelease = $item.minimumSupportedWindowsRelease })
             }
             $uri = $result.'@odata.nextLink'
         } while ($uri)
@@ -6255,6 +6283,7 @@ $btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.
 $btnGroupDrift = New-Object System.Windows.Forms.Button; $btnGroupDrift.Text = "Check group names..."
 $btnRunLaunch = New-Object System.Windows.Forms.Button; $btnRunLaunch.Text = "Package apps"
 $btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "Settings..."
+$btnDiagnostics = New-Object System.Windows.Forms.Button; $btnDiagnostics.Text = "Run diagnostics..."
 
 # One shared ToolTip component serves every button - several have
 # similar-sounding names that actually do quite different things (e.g.
@@ -6280,6 +6309,7 @@ $toolbarTips.SetToolTip($btnFavoriteGroups, "Pick which groups show up as ready-
 $toolbarTips.SetToolTip($btnGroupDrift, "Check every group name referenced in the catalog against what actually exists in Entra ID.")
 $toolbarTips.SetToolTip($btnRunLaunch, "Build the .intunewin package(s) for the selected (or all) uncommon apps.")
 $toolbarTips.SetToolTip($btnCertSetup, "Configure the Tenant ID, Client ID, and certificate used to connect to Microsoft Graph.")
+$toolbarTips.SetToolTip($btnDiagnostics, "Read-only health check: Graph connectivity, certificate expiry, catalog completeness, and drift against what's actually in Intune.")
 
 $lblSearch = New-Object System.Windows.Forms.Label
 $lblSearch.Text = "Search:"
@@ -6295,7 +6325,7 @@ $gbCatalog = New-ToolbarGroup -Title "Catalog" -Buttons @($btnNew, $btnEdit, $bt
 # metadata, not a general-purpose tool.
 $gbIntune  = New-ToolbarGroup -Title "Intune"  -Buttons @($btnLookupIds, $btnCheckIntuneOnly, $btnBatchAssign, $btnSyncMetadata, $btnBatchDeploy, $btnRunLaunch)
 $gbEntra   = New-ToolbarGroup -Title "Entra ID" -Buttons @($btnGroupManager, $btnGroupDrift)
-$gbTools   = New-ToolbarGroup -Title "Settings" -Buttons @($btnCertSetup)
+$gbTools   = New-ToolbarGroup -Title "Settings" -Buttons @($btnCertSetup, $btnDiagnostics)
 
 $searchPanel = New-Object System.Windows.Forms.FlowLayoutPanel
 $searchPanel.AutoSize = $true
@@ -6629,6 +6659,20 @@ function Start-AppMetadataFetch {
             AllowedArchitectures    = $app.allowedArchitectures
             RunAsAccount            = $app.installExperience.runAsAccount
             MinOSPropertyName       = $minOsPropName
+            # Microsoft has REPLACED minimumSupportedOperatingSystem (the
+            # boolean-bag property MinOSPropertyName above reads) with this
+            # plain string property, specifically to support Windows 11
+            # requirements (W10_xxxx / W11_xxxx values) that the old
+            # property's schema never had room for - confirmed directly
+            # against the IntuneWin32App PowerShell module's own release
+            # notes ("minimumSupportedOperatingSystem property is replaced
+            # by minimumSupportedWindowsRelease") after a real app (set via
+            # the Intune portal, to "Windows 11 21H2") came back with
+            # MinOSPropertyName entirely blank despite genuinely having a
+            # minimum OS set - this is why. No parsing needed, unlike the
+            # legacy property above - it's already a plain value like
+            # "W11_21H2" directly on the app.
+            MinimumSupportedWindowsRelease = $app.minimumSupportedWindowsRelease
             DetectionRule           = $detectionRule
             Dependencies            = $dependencyNames
             MinDiskSpaceMB          = $app.minimumFreeDiskSpaceInMB
@@ -8032,7 +8076,7 @@ function Show-CreateInIntuneDialog {
     $lblMinOSStatus = New-Object System.Windows.Forms.Label
     $lblMinOSStatus.Text = ""
     $lblMinOSStatus.Location = New-Object System.Drawing.Point(415,676)
-    $lblMinOSStatus.Size = New-Object System.Drawing.Size(215,40)
+    $lblMinOSStatus.Size = New-Object System.Drawing.Size(215,66)
     $lblMinOSStatus.ForeColor = [System.Drawing.Color]::DarkOrange
     $lblMinOSStatus.Font = New-Object System.Drawing.Font($lblMinOSStatus.Font.FontFamily, 7.5)
     $scrollPanel.Controls.Add($lblMinOSStatus)
@@ -9464,7 +9508,25 @@ function Show-CreateInIntuneDialog {
                     $chkArchX64Ref.Checked = $archList -contains "x64"
                     $chkArchArm64Ref.Checked = $archList -contains "arm64"
                 }
-                if ($data.MinOSPropertyName) {
+                if ($data.MinimumSupportedWindowsRelease) {
+                    # This is now the AUTHORITATIVE live value whenever it's
+                    # set - Microsoft has replaced the legacy
+                    # minimumSupportedOperatingSystem property (what
+                    # MinOSPropertyName/$minOsMap below still read AND
+                    # write) with this one specifically so Windows 11
+                    # requirements (which the old property's schema has no
+                    # room for at all) can be expressed - see the note next
+                    # to Start-AppMetadataFetch's own
+                    # MinimumSupportedWindowsRelease field. This dialog's
+                    # dropdown still only reads/writes the legacy property
+                    # (changing that is a real Graph-write behavior change,
+                    # not made here without deciding it deliberately) - so
+                    # this is shown, not selected into the dropdown, and
+                    # saving here does NOT touch this value in Intune
+                    # either way.
+                    $lblMinOSStatusRef.Text = "Intune actually has `"$($data.MinimumSupportedWindowsRelease)`" set (the newer property Microsoft replaced the old one with). This dropdown doesn't read or write that property - saving here won't change it."
+                }
+                elseif ($data.MinOSPropertyName) {
                     $matchKey = $minOsMapRef.Keys | Where-Object { $minOsMapRef[$_] -eq $data.MinOSPropertyName } | Select-Object -First 1
                     if ($matchKey) {
                         $cmbMinOSRef.SelectedItem = $matchKey
@@ -10897,6 +10959,233 @@ function Show-BatchAssignDialog {
     $dlg.Add_Shown({
         & $runBatch "Preview"
     }.GetNewClosure())
+
+    Set-Theme -Control $dlg
+    [void]$dlg.ShowDialog($form)
+}
+
+# ---------------------------------------------------------------
+# Diagnostics - read-only health check
+# ---------------------------------------------------------------
+# Reads only. Never writes to Intune, Entra ID, or the local catalog -
+# this exists so "is anything actually wrong right now" can be answered
+# without any of the risk every other Graph-facing dialog in this app
+# carries. Split into two phases: LOCAL checks (config file shape,
+# catalog completeness) that run instantly with no network at all, then
+# LIVE checks (one Graph connectivity test, one bulk app list) that only
+# run if credentials are configured - a missing/broken Graph setup
+# doesn't block the local half of the report.
+function Show-DiagnosticsDialog {
+    # Plain local aliases - see note in Start-IntuneAppLookup.
+    $appsRef = $Script:Apps
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Diagnostics"
+    $dlg.ClientSize = New-Object System.Drawing.Size(700, 560)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+
+    $lblIntro = New-Object System.Windows.Forms.Label
+    $lblIntro.Text = "Read-only health check - makes no changes to Intune, Entra ID, or the local catalog. Checks Graph connectivity and certificate expiry, catalog completeness, and drift between this catalog and what's actually in Intune right now."
+    $lblIntro.Location = New-Object System.Drawing.Point(15,12)
+    $lblIntro.Size = New-Object System.Drawing.Size(670,48)
+    $dlg.Controls.Add($lblIntro)
+
+    $rtbLog = New-Object System.Windows.Forms.RichTextBox
+    $rtbLog.Location = New-Object System.Drawing.Point(15,66)
+    $rtbLog.Size = New-Object System.Drawing.Size(670,436)
+    $rtbLog.ReadOnly = $true
+    $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
+    $rtbLog.ForeColor = [System.Drawing.Color]::Gainsboro
+    $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $dlg.Controls.Add($rtbLog)
+
+    $lblStatus = New-Object System.Windows.Forms.Label
+    $lblStatus.Location = New-Object System.Drawing.Point(15,510)
+    $lblStatus.Size = New-Object System.Drawing.Size(430,24)
+    $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+    $dlg.Controls.Add($lblStatus)
+
+    $btnRun = New-Object System.Windows.Forms.Button
+    $btnRun.Text = "Run diagnostics"
+    $btnRun.Location = New-Object System.Drawing.Point(455,506)
+    $btnRun.Size = New-Object System.Drawing.Size(140,32)
+    $dlg.Controls.Add($btnRun)
+
+    $btnClose = New-Object System.Windows.Forms.Button
+    $btnClose.Text = "Close"
+    $btnClose.Location = New-Object System.Drawing.Point(605,506)
+    $btnClose.Size = New-Object System.Drawing.Size(80,32)
+    $dlg.Controls.Add($btnClose)
+
+    $okColor = [System.Drawing.Color]::LightGreen
+    $warnColor = [System.Drawing.Color]::Orange
+    $failColor = [System.Drawing.Color]::Tomato
+    $infoColor = [System.Drawing.Color]::Gainsboro
+    $headerColor = [System.Drawing.Color]::DeepSkyBlue
+
+    $appendLine = {
+        param($Text, $Color)
+        $rtbLog.SelectionStart = $rtbLog.TextLength
+        $rtbLog.SelectionLength = 0
+        $rtbLog.SelectionColor = $Color
+        $rtbLog.AppendText("$Text`r`n")
+        $rtbLog.ScrollToCaret()
+    }.GetNewClosure()
+
+    # These mirror $minOsMap's VALUES inside Show-CreateInIntuneDialog -
+    # not a shared reference to it (that map is local to that function,
+    # deliberately, same as every other detection/operator map in this
+    # app), so this is a second copy by necessity. Kept in sync manually;
+    # if that map's values ever change, update this list too. This is
+    # exactly the class of drift the Min OS dropdown fix elsewhere this
+    # session was about, so a live app using something outside this list
+    # is a real, previously-silent finding, not a false positive.
+    $knownMinOsValues = @("v10_1607", "v10_1809", "v10_1909", "v10_2004", "v10_2H20", "v10_21H1")
+
+    $btnRun.Add_Click({
+        $btnRun.Enabled = $false
+        $btnClose.Enabled = $false
+        $rtbLog.Clear()
+        $lblStatus.Text = "Running..."
+        $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+
+        & $appendLine "=== Configuration ===" $headerColor
+        $moduleOk = [bool](Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)
+        & $appendLine "$(if ($moduleOk) { '[OK]' } else { '[FAIL]' }) Microsoft.Graph.Authentication module installed" (if ($moduleOk) { $okColor } else { $failColor })
+
+        $credsOk = Test-GraphCredentialsConfigured
+        & $appendLine "$(if ($credsOk) { '[OK]' } else { '[FAIL]' }) Tenant ID / Client ID / Certificate thumbprint all set" (if ($credsOk) { $okColor } else { $failColor })
+
+        if ($credsOk) {
+            $certStatus = Get-CertificateStatusText -Thumbprint $Script:GraphCertificateThumbprint
+            $certOk = $certStatus.Color -eq [System.Drawing.Color]::SeaGreen
+            $certWarn = $certStatus.Color -eq [System.Drawing.Color]::DarkOrange
+            $certTag = if ($certOk) { "[OK]" } elseif ($certWarn) { "[WARN]" } else { "[FAIL]" }
+            & $appendLine "$certTag Certificate: $($certStatus.Text)" (if ($certOk) { $okColor } elseif ($certWarn) { $warnColor } else { $failColor })
+        }
+
+        & $appendLine "" $infoColor
+        & $appendLine "=== Catalog completeness ($($appsRef.Count) app(s)) ===" $headerColor
+
+        $noAppIdNoMetadata = @($appsRef | Where-Object { -not $_.appId -and -not $_.metadata })
+        & $appendLine "$(if ($noAppIdNoMetadata.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($noAppIdNoMetadata.Count) app(s) with no App ID and no saved metadata (nothing to deploy yet)" (if ($noAppIdNoMetadata.Count -eq 0) { $okColor } else { $warnColor })
+        foreach ($a in $noAppIdNoMetadata) { & $appendLine "    - $($a.appName)" $infoColor }
+
+        $uncommonUnconfigured = @($appsRef | Where-Object { (Test-AppIsUncommon -App $_) -and -not $_.metadata })
+        & $appendLine "$(if ($uncommonUnconfigured.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($uncommonUnconfigured.Count) uncommon app(s) (no Winget ID) with no saved metadata - can't be deployed or defaulted as-is" (if ($uncommonUnconfigured.Count -eq 0) { $okColor } else { $warnColor })
+        foreach ($a in $uncommonUnconfigured) { & $appendLine "    - $($a.appName)" $infoColor }
+
+        $neverSynced = @($appsRef | Where-Object { $_.appId -and -not $_.intuneAppType })
+        & $appendLine "$(if ($neverSynced.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($neverSynced.Count) deployed app(s) never synced (no Type/Version recorded) - run `"Sync metadata...`" to pick this up" (if ($neverSynced.Count -eq 0) { $okColor } else { $infoColor })
+
+        $noGroups = @($appsRef | Where-Object { $_.appId -and @($_.requiredFor).Count -eq 0 -and @($_.availableFor).Count -eq 0 -and @($_.uninstallFor).Count -eq 0 })
+        & $appendLine "$(if ($noGroups.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($noGroups.Count) deployed app(s) with no group assignments at all (assigned to nobody)" (if ($noGroups.Count -eq 0) { $okColor } else { $warnColor })
+        foreach ($a in $noGroups) { & $appendLine "    - $($a.appName)" $infoColor }
+
+        $dupeNames = @($appsRef | Group-Object { ($_.appName.Trim() -replace '\s+', ' ').ToLowerInvariant() } | Where-Object { $_.Count -gt 1 })
+        & $appendLine "$(if ($dupeNames.Count -eq 0) { '[OK]' } else { '[FAIL]' }) $($dupeNames.Count) duplicate app name(s) in the catalog" (if ($dupeNames.Count -eq 0) { $okColor } else { $failColor })
+        foreach ($d in $dupeNames) { & $appendLine "    - $($d.Name) ($($d.Count) entries)" $infoColor }
+
+        if (-not $credsOk) {
+            & $appendLine "" $infoColor
+            & $appendLine "=== Live checks against Intune ===" $headerColor
+            & $appendLine "[SKIPPED] Graph credentials aren't configured - see Settings..." $warnColor
+            $btnRun.Enabled = $true
+            $btnClose.Enabled = $true
+            $lblStatus.Text = "Done."
+            $lblStatus.ForeColor = [System.Drawing.Color]::SeaGreen
+            return
+        }
+
+        & $appendLine "" $infoColor
+        & $appendLine "=== Live checks against Intune ===" $headerColor
+        & $appendLine "Connecting and fetching every app from Intune..." $infoColor
+        $lblStatus.Text = "Connecting to Intune..."
+
+        # Fresh aliases for the nested -OnComplete closure - see note at the
+        # top of Show-CreateInIntuneDialog for why this matters here too.
+        $appsRefRef = $appsRef
+        $appendLineRef = $appendLine
+        $knownMinOsValuesRef = $knownMinOsValues
+        $btnRunRef = $btnRun
+        $btnCloseRef = $btnClose
+        $lblStatusRef = $lblStatus
+        $okColorRef = $okColor
+        $warnColorRef = $warnColor
+        $failColorRef = $failColor
+        $infoColorRef = $infoColor
+        $headerColorRef = $headerColor
+
+        Start-IntuneAppLookup -OnComplete {
+            param($ok, $data)
+            if (-not $ok) {
+                & $appendLineRef "[FAIL] Could not connect to Intune: $data" $failColorRef
+                $btnRunRef.Enabled = $true
+                $btnCloseRef.Enabled = $true
+                $lblStatusRef.Text = "Done - live checks failed."
+                $lblStatusRef.ForeColor = $warnColorRef
+                return
+            }
+            & $appendLineRef "[OK] Connected - $($data.Count) app(s) currently in Intune." $okColorRef
+
+            $intuneById = @{}
+            foreach ($ia in @($data)) { $intuneById[[string]$ia.id] = $ia }
+
+            $deployedApps = @($appsRefRef | Where-Object { $_.appId })
+            $deletedFromIntune = @($deployedApps | Where-Object { -not $intuneById.ContainsKey([string]$_.appId) })
+            & $appendLineRef "$(if ($deletedFromIntune.Count -eq 0) { '[OK]' } else { '[FAIL]' }) $($deletedFromIntune.Count) catalog app(s) whose App ID no longer exists in Intune" (if ($deletedFromIntune.Count -eq 0) { $okColorRef } else { $failColorRef })
+            foreach ($a in $deletedFromIntune) { & $appendLineRef "    - $($a.appName) (App ID $($a.appId))" $infoColorRef }
+
+            $renamed = @($deployedApps | Where-Object { $intuneById.ContainsKey([string]$_.appId) -and $intuneById[[string]$_.appId].displayName -ne $_.appName })
+            & $appendLineRef "$(if ($renamed.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($renamed.Count) catalog app(s) whose name doesn't match Intune's current name" (if ($renamed.Count -eq 0) { $okColorRef } else { $warnColorRef })
+            foreach ($a in $renamed) { & $appendLineRef "    - catalog: `"$($a.appName)`" / Intune: `"$($intuneById[[string]$a.appId].displayName)`"" $infoColorRef }
+
+            $catalogAppIds = @($appsRefRef | ForEach-Object { [string]$_.appId } | Where-Object { $_ })
+            $notInCatalogCount = @($data | Where-Object { $catalogAppIds -notcontains [string]$_.id }).Count
+            & $appendLineRef "$(if ($notInCatalogCount -eq 0) { '[OK]' } else { '[INFO]' }) $notInCatalogCount app(s) in Intune with no matching catalog entry - see `"Intune sync check...`"" (if ($notInCatalogCount -eq 0) { $okColorRef } else { $infoColorRef })
+
+            # Microsoft has replaced the legacy minimumSupportedOperatingSystem
+            # property (what $knownMinOsValues/this dialog's own dropdown
+            # still read AND write) with minimumSupportedWindowsRelease,
+            # specifically to support Windows 11 requirements - see the
+            # note next to Start-AppMetadataFetch's own
+            # MinimumSupportedWindowsRelease field for how this was found.
+            # Any app using the new property is worth flagging on its own
+            # (informational, not a defect - it just means this tool's own
+            # Min OS dropdown neither reads nor writes it), separately from
+            # the rarer case of an unrecognized LEGACY value.
+            $minOsNewProperty = @($deployedApps | Where-Object {
+                $intuneById.ContainsKey([string]$_.appId) -and $intuneById[[string]$_.appId].minimumSupportedWindowsRelease
+            })
+            & $appendLineRef "$(if ($minOsNewProperty.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($minOsNewProperty.Count) app(s) with a Minimum Windows value set via Intune's newer property - this tool's dropdown doesn't read or write it" (if ($minOsNewProperty.Count -eq 0) { $okColorRef } else { $infoColorRef })
+            foreach ($a in $minOsNewProperty) { & $appendLineRef "    - $($a.appName): $($intuneById[[string]$a.appId].minimumSupportedWindowsRelease)" $infoColorRef }
+
+            $minOsDrift = @($deployedApps | Where-Object {
+                $intuneById.ContainsKey([string]$_.appId) -and
+                -not $intuneById[[string]$_.appId].minimumSupportedWindowsRelease -and
+                $intuneById[[string]$_.appId].minOSPropertyName -and
+                $knownMinOsValuesRef -notcontains $intuneById[[string]$_.appId].minOSPropertyName
+            })
+            & $appendLineRef "$(if ($minOsDrift.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($minOsDrift.Count) app(s) with a legacy Minimum Windows value in Intune this tool's own dropdown doesn't offer" (if ($minOsDrift.Count -eq 0) { $okColorRef } else { $warnColorRef })
+            foreach ($a in $minOsDrift) { & $appendLineRef "    - $($a.appName): $($intuneById[[string]$a.appId].minOSPropertyName)" $infoColorRef }
+
+            & $appendLineRef "" $infoColorRef
+            & $appendLineRef "=== Done ===" $headerColorRef
+
+            $btnRunRef.Enabled = $true
+            $btnCloseRef.Enabled = $true
+            $lblStatusRef.Text = "Done."
+            $lblStatusRef.ForeColor = $okColorRef
+        }.GetNewClosure()
+    }.GetNewClosure())
+
+    $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
+    $dlg.CancelButton = $btnClose
+
+    $dlg.Add_Shown({ $btnRun.PerformClick() }.GetNewClosure())
 
     Set-Theme -Control $dlg
     [void]$dlg.ShowDialog($form)
@@ -13054,6 +13343,31 @@ function Show-AppEditor {
     $btnSaveAndDeployWinget.Size = New-Object System.Drawing.Size(210,30)
     $dlg.Controls.Add($btnSaveAndDeployWinget)
 
+    # Only makes sense for a genuinely brand-new app - $ExistingApp is
+    # non-null both for a normal Edit AND for "Intune sync check"'s "Add
+    # to catalog..." prefill (which already carries an App ID, since it
+    # came from an app found live in Intune) - either way there's already
+    # an Intune presence or an existing catalog entry to respect, not a
+    # blank slate to default-and-deploy from scratch. When hidden, "Deploy
+    # to Intune..." reclaims the full row it used to have before this
+    # button existed.
+    if ($ExistingApp) {
+        $btnSaveAndDeployWinget.Visible = $false
+        $btnCreateInIntune.Size = New-Object System.Drawing.Size(430,30)
+    }
+    else {
+        # Greyed out until a Winget ID is actually typed - "Winget
+        # defaults" has nothing to default FROM without one (that's also
+        # exactly what its own click handler already validates below;
+        # this just surfaces the same requirement up front instead of
+        # only after a click).
+        $updateSaveAndDeployWingetState = {
+            $btnSaveAndDeployWinget.Enabled = [bool]$txtWinget.Text.Trim()
+        }.GetNewClosure()
+        $txtWinget.Add_TextChanged({ & $updateSaveAndDeployWingetState }.GetNewClosure())
+        & $updateSaveAndDeployWingetState
+    }
+
     # Lives at the bottom now, to the right of "Save app to catalog" -
     # created here (rather than down where the Save/Cancel buttons are)
     # since $updateDeleteButtonState and its Add_Click handler are both
@@ -13869,6 +14183,7 @@ $btnLookupIds.Add_Click({
 })
 
 $btnCertSetup.Add_Click({ Show-CertificateSetupDialog })
+$btnDiagnostics.Add_Click({ Show-DiagnosticsDialog })
 $btnCheckIntuneOnly.Add_Click({
     $changed = Show-IntuneOnlyAppsDialog
     if ($changed) { Refresh-Grid }
