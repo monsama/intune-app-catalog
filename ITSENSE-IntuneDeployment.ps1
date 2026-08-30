@@ -6483,14 +6483,14 @@ function New-GridColumn {
 $grid.Columns.Add((New-GridColumn "AppName" "App Name" -FillWeight 18)) | Out-Null
 $grid.Columns.Add((New-GridColumn "WingetId" "Winget ID" -FillWeight 14)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Type" "Type" -FillWeight 14)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 8)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 5)) | Out-Null
-$grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -FillWeight 9)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Folder" "Package folder" -FillWeight 24)) | Out-Null
+$grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 5)) | Out-Null
+$grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 4)) | Out-Null
+$grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -FillWeight 6)) | Out-Null
+$grid.Columns.Add((New-GridColumn "Folder" "Package folder" -FillWeight 30)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Required" "Required" -FillWeight 5)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Available" "Available" -FillWeight 5)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Uninstall" "Uninstall" -FillWeight 5)) | Out-Null
-$grid.Columns.Add((New-GridColumn "AppId" "App ID" -FillWeight 13)) | Out-Null
+$grid.Columns.Add((New-GridColumn "AppId" "App ID" -FillWeight 22)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Status" "Status" -FillWeight 11)) | Out-Null
 
 $colIndex = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
