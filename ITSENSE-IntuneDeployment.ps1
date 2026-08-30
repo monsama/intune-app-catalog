@@ -7166,6 +7166,48 @@ function Get-FriendlyIntuneAppType {
     return $spaced
 }
 
+# Parses a raw minimumSupportedWindowsRelease value into its Windows major
+# version (10/11) and release token (e.g. "21H2") - genuinely necessary,
+# not cosmetic: THREE different raw spellings for the exact same property
+# have been observed live across different apps/tenants so far -
+# "W11_21H2" (the IntuneWin32App module's own convention), "Windows11_21H2"
+# (set directly via the Intune portal), and a bare "21H1" with no major-
+# version marker at all. Every caller that needs to compare or display
+# this value goes through here so a fourth spelling only needs handling
+# in one place.
+function Get-ParsedMinOsRelease {
+    param([string]$RawValue)
+
+    if (-not $RawValue) { return $null }
+    if ($RawValue -match '^(?i)(?:W|Windows)(10|11)[_\s]?(.+)$') {
+        return @{ Major = $Matches[1]; Release = $Matches[2].ToUpperInvariant() }
+    }
+    if ($RawValue -match '^(?i)v10_(.+)$') {
+        # Same digit-swapped "20H2" quirk as the legacy property's own
+        # v10_2H20 - see the note next to $minOsMap in
+        # Show-CreateInIntuneDialog.
+        $release = $Matches[1].ToUpperInvariant()
+        if ($release -eq "2H20") { $release = "20H2" }
+        return @{ Major = "10"; Release = $release }
+    }
+    # No recognizable major-version marker at all (e.g. a bare "21H1",
+    # observed live) - every release token seen without one so far
+    # predates Windows 11 (which only exists from 21H2 onward), so
+    # Windows 10 is a safe default rather than leaving it unlabeled.
+    return @{ Major = "10"; Release = $RawValue.ToUpperInvariant() }
+}
+
+# Human-readable label for a raw minimumSupportedWindowsRelease value,
+# matching the Intune portal's own "Windows 11 21H2" style wording (see
+# Get-ParsedMinOsRelease just above for why this needs real parsing, not
+# a straight display of whatever Graph handed back).
+function Get-FriendlyMinOsRelease {
+    param([string]$RawValue)
+    $parsed = Get-ParsedMinOsRelease -RawValue $RawValue
+    if (-not $parsed) { return "" }
+    return "Windows $($parsed.Major) $($parsed.Release)"
+}
+
 # Mirrors Get-SafeFileName inside the embedded package script exactly, so we
 # can predict what filename 1_GenerateIntunePackage.ps1's logic gave an
 # uncommon app's .intunewin without having to run/parse that script.
@@ -8180,7 +8222,7 @@ function Show-CreateInIntuneDialog {
     $lblMinOSStatus = New-Object System.Windows.Forms.Label
     $lblMinOSStatus.Text = ""
     $lblMinOSStatus.Location = New-Object System.Drawing.Point(415,676)
-    $lblMinOSStatus.Size = New-Object System.Drawing.Size(220,48)
+    $lblMinOSStatus.Size = New-Object System.Drawing.Size(220,30)
     $lblMinOSStatus.ForeColor = [System.Drawing.Color]::DarkOrange
     $lblMinOSStatus.Font = New-Object System.Drawing.Font($lblMinOSStatus.Font.FontFamily, 7.5)
     $scrollPanel.Controls.Add($lblMinOSStatus)
@@ -8206,7 +8248,7 @@ function Show-CreateInIntuneDialog {
     # complexity of actually hiding it.
     $lblAdvancedSeparator = New-Object System.Windows.Forms.Label
     $lblAdvancedSeparator.Text = "Advanced (usually fine to leave as-is)"
-    $lblAdvancedSeparator.Location = New-Object System.Drawing.Point(15,665)
+    $lblAdvancedSeparator.Location = New-Object System.Drawing.Point(15,690)
     $lblAdvancedSeparator.AutoSize = $true
     $lblAdvancedSeparator.ForeColor = [System.Drawing.Color]::Gray
     $lblAdvancedSeparator.Font = New-Object System.Drawing.Font($lblAdvancedSeparator.Font, [System.Drawing.FontStyle]::Italic)
@@ -8215,12 +8257,12 @@ function Show-CreateInIntuneDialog {
     # --- Dependencies ---
     $lblDeps = New-Object System.Windows.Forms.Label
     $lblDeps.Text = "Dependencies (undeployed apps shown too - resolved by name at actual deploy time)"
-    $lblDeps.Location = New-Object System.Drawing.Point(15,685)
+    $lblDeps.Location = New-Object System.Drawing.Point(15,710)
     $lblDeps.AutoSize = $true
     $scrollPanel.Controls.Add($lblDeps)
 
     $clbDeps = New-Object System.Windows.Forms.CheckedListBox
-    $clbDeps.Location = New-Object System.Drawing.Point(15,704)
+    $clbDeps.Location = New-Object System.Drawing.Point(15,729)
     $clbDeps.Size = New-Object System.Drawing.Size(590,85)
     $clbDeps.CheckOnClick = $true
     # Undeployed apps (no App ID yet) are now included, not just ones
@@ -8248,50 +8290,50 @@ function Show-CreateInIntuneDialog {
     # required" wording for an unset value) ---
     $lblReqs = New-Object System.Windows.Forms.Label
     $lblReqs.Text = "Requirements (0 = not required)"
-    $lblReqs.Location = New-Object System.Drawing.Point(15,798)
+    $lblReqs.Location = New-Object System.Drawing.Point(15,823)
     $lblReqs.AutoSize = $true
     $scrollPanel.Controls.Add($lblReqs)
 
     $lblDiskSpace = New-Object System.Windows.Forms.Label
     $lblDiskSpace.Text = "Disk space (MB)"
-    $lblDiskSpace.Location = New-Object System.Drawing.Point(15,819)
+    $lblDiskSpace.Location = New-Object System.Drawing.Point(15,844)
     $lblDiskSpace.AutoSize = $true
     $scrollPanel.Controls.Add($lblDiskSpace)
     $txtDiskSpace = New-Object System.Windows.Forms.TextBox
-    $txtDiskSpace.Location = New-Object System.Drawing.Point(15,836)
+    $txtDiskSpace.Location = New-Object System.Drawing.Point(15,861)
     $txtDiskSpace.Size = New-Object System.Drawing.Size(130,23)
     $txtDiskSpace.Text = [string]$defaults.minDiskSpaceMB
     $scrollPanel.Controls.Add($txtDiskSpace)
 
     $lblMemory = New-Object System.Windows.Forms.Label
     $lblMemory.Text = "Memory (MB)"
-    $lblMemory.Location = New-Object System.Drawing.Point(160,819)
+    $lblMemory.Location = New-Object System.Drawing.Point(160,844)
     $lblMemory.AutoSize = $true
     $scrollPanel.Controls.Add($lblMemory)
     $txtMemory = New-Object System.Windows.Forms.TextBox
-    $txtMemory.Location = New-Object System.Drawing.Point(160,836)
+    $txtMemory.Location = New-Object System.Drawing.Point(160,861)
     $txtMemory.Size = New-Object System.Drawing.Size(130,23)
     $txtMemory.Text = [string]$defaults.minMemoryMB
     $scrollPanel.Controls.Add($txtMemory)
 
     $lblProcessors = New-Object System.Windows.Forms.Label
     $lblProcessors.Text = "Min. processors"
-    $lblProcessors.Location = New-Object System.Drawing.Point(305,819)
+    $lblProcessors.Location = New-Object System.Drawing.Point(305,844)
     $lblProcessors.AutoSize = $true
     $scrollPanel.Controls.Add($lblProcessors)
     $txtProcessors = New-Object System.Windows.Forms.TextBox
-    $txtProcessors.Location = New-Object System.Drawing.Point(305,836)
+    $txtProcessors.Location = New-Object System.Drawing.Point(305,861)
     $txtProcessors.Size = New-Object System.Drawing.Size(130,23)
     $txtProcessors.Text = [string]$defaults.minProcessors
     $scrollPanel.Controls.Add($txtProcessors)
 
     $lblCpuSpeed = New-Object System.Windows.Forms.Label
     $lblCpuSpeed.Text = "Min. CPU speed (MHz)"
-    $lblCpuSpeed.Location = New-Object System.Drawing.Point(450,819)
+    $lblCpuSpeed.Location = New-Object System.Drawing.Point(450,844)
     $lblCpuSpeed.AutoSize = $true
     $scrollPanel.Controls.Add($lblCpuSpeed)
     $txtCpuSpeed = New-Object System.Windows.Forms.TextBox
-    $txtCpuSpeed.Location = New-Object System.Drawing.Point(450,836)
+    $txtCpuSpeed.Location = New-Object System.Drawing.Point(450,861)
     $txtCpuSpeed.Size = New-Object System.Drawing.Size(130,23)
     $txtCpuSpeed.Text = [string]$defaults.minCpuSpeedMHz
     $scrollPanel.Controls.Add($txtCpuSpeed)
@@ -8299,22 +8341,22 @@ function Show-CreateInIntuneDialog {
     # --- Install experience extras ---
     $lblInstallTime = New-Object System.Windows.Forms.Label
     $lblInstallTime.Text = "Install time required (mins)"
-    $lblInstallTime.Location = New-Object System.Drawing.Point(15,872)
+    $lblInstallTime.Location = New-Object System.Drawing.Point(15,897)
     $lblInstallTime.AutoSize = $true
     $scrollPanel.Controls.Add($lblInstallTime)
     $txtInstallTime = New-Object System.Windows.Forms.TextBox
-    $txtInstallTime.Location = New-Object System.Drawing.Point(15,889)
+    $txtInstallTime.Location = New-Object System.Drawing.Point(15,914)
     $txtInstallTime.Size = New-Object System.Drawing.Size(130,23)
     $txtInstallTime.Text = [string]$defaults.installTimeMinutes
     $scrollPanel.Controls.Add($txtInstallTime)
 
     $lblRestartBehavior = New-Object System.Windows.Forms.Label
     $lblRestartBehavior.Text = "Device restart behavior"
-    $lblRestartBehavior.Location = New-Object System.Drawing.Point(160,872)
+    $lblRestartBehavior.Location = New-Object System.Drawing.Point(160,897)
     $lblRestartBehavior.AutoSize = $true
     $scrollPanel.Controls.Add($lblRestartBehavior)
     $cmbRestartBehavior = New-Object System.Windows.Forms.ComboBox
-    $cmbRestartBehavior.Location = New-Object System.Drawing.Point(160,889)
+    $cmbRestartBehavior.Location = New-Object System.Drawing.Point(160,914)
     $cmbRestartBehavior.Size = New-Object System.Drawing.Size(230,23)
     $cmbRestartBehavior.DropDownStyle = "DropDownList"
     # Display labels map to the exact win32LobAppRestartBehavior enum
@@ -8332,7 +8374,7 @@ function Show-CreateInIntuneDialog {
 
     $chkAllowUninstall = New-Object System.Windows.Forms.CheckBox
     $chkAllowUninstall.Text = "Allow available uninstall"
-    $chkAllowUninstall.Location = New-Object System.Drawing.Point(405,891)
+    $chkAllowUninstall.Location = New-Object System.Drawing.Point(405,916)
     $chkAllowUninstall.AutoSize = $true
     $chkAllowUninstall.Checked = [bool]$defaults.allowAvailableUninstall
     $scrollPanel.Controls.Add($chkAllowUninstall)
@@ -8340,12 +8382,12 @@ function Show-CreateInIntuneDialog {
     # --- Return codes ---
     $lblReturnCodes = New-Object System.Windows.Forms.Label
     $lblReturnCodes.Text = "Return codes"
-    $lblReturnCodes.Location = New-Object System.Drawing.Point(15,925)
+    $lblReturnCodes.Location = New-Object System.Drawing.Point(15,950)
     $lblReturnCodes.AutoSize = $true
     $scrollPanel.Controls.Add($lblReturnCodes)
 
     $grdReturnCodes = New-Object System.Windows.Forms.DataGridView
-    $grdReturnCodes.Location = New-Object System.Drawing.Point(15,944)
+    $grdReturnCodes.Location = New-Object System.Drawing.Point(15,969)
     $grdReturnCodes.Size = New-Object System.Drawing.Size(460,110)
     $grdReturnCodes.AllowUserToAddRows = $false
     $grdReturnCodes.AllowUserToDeleteRows = $false
@@ -8365,7 +8407,7 @@ function Show-CreateInIntuneDialog {
 
     $btnAddReturnCode = New-Object System.Windows.Forms.Button
     $btnAddReturnCode.Text = "Add row"
-    $btnAddReturnCode.Location = New-Object System.Drawing.Point(485,944)
+    $btnAddReturnCode.Location = New-Object System.Drawing.Point(485,969)
     $btnAddReturnCode.Size = New-Object System.Drawing.Size(120,26)
     $scrollPanel.Controls.Add($btnAddReturnCode)
     $btnAddReturnCode.Add_Click({
@@ -8375,7 +8417,7 @@ function Show-CreateInIntuneDialog {
 
     $btnRemoveReturnCode = New-Object System.Windows.Forms.Button
     $btnRemoveReturnCode.Text = "Remove row"
-    $btnRemoveReturnCode.Location = New-Object System.Drawing.Point(485,974)
+    $btnRemoveReturnCode.Location = New-Object System.Drawing.Point(485,999)
     $btnRemoveReturnCode.Size = New-Object System.Drawing.Size(120,26)
     $scrollPanel.Controls.Add($btnRemoveReturnCode)
     $btnRemoveReturnCode.Add_Click({
@@ -9655,15 +9697,17 @@ function Show-CreateInIntuneDialog {
                     # with this one, mainly to support Windows 11
                     # requirements the old property's schema has no room
                     # for - see the note next to Start-AppMetadataFetch's
-                    # own MinimumSupportedWindowsRelease field. Prefixes
-                    # ("W10_"/"W11_") vary, and a bare value with no prefix
-                    # at all has been observed live too - stripped here so
-                    # "v10_21H1" (legacy) and "W10_21H1"/"21H1" (new) are
-                    # recognized as the SAME release, not a false mismatch.
-                    $normalizeRelease = { param($v) if (-not $v) { return "" }; ($v -replace '^(W10_|W11_|v10_)', '').ToUpperInvariant() }
-                    $newReleaseNorm = & $normalizeRelease $data.MinimumSupportedWindowsRelease
-                    $legacyReleaseNorm = if ($legacyMatchKey) { & $normalizeRelease $data.MinOSPropertyName } else { "" }
-                    if ($legacyMatchKey -and $newReleaseNorm -eq $legacyReleaseNorm) {
+                    # own MinimumSupportedWindowsRelease field. Parsed via
+                    # Get-ParsedMinOsRelease, not compared as raw strings -
+                    # THREE different spellings of this same property have
+                    # been observed live ("W11_21H2", "Windows11_21H2",
+                    # bare "21H1"), so a naive string comparison against
+                    # the legacy property's own "v10_21H1"-style value
+                    # would false-positive on every one of them.
+                    $newParsed = Get-ParsedMinOsRelease -RawValue $data.MinimumSupportedWindowsRelease
+                    $legacyParsed = if ($legacyMatchKey) { Get-ParsedMinOsRelease -RawValue $data.MinOSPropertyName } else { $null }
+                    $sameRelease = $legacyParsed -and $newParsed.Major -eq $legacyParsed.Major -and $newParsed.Release -eq $legacyParsed.Release
+                    if ($sameRelease) {
                         # Both properties agree - nothing actually
                         # inconsistent to call out.
                         $lblMinOSStatusRef.Text = ""
@@ -9674,8 +9718,11 @@ function Show-CreateInIntuneDialog {
                         # write behavior change, not made here without
                         # deciding it deliberately) - so the live value is
                         # just shown, not selected, and saving here does
-                        # NOT change it either way.
-                        $lblMinOSStatusRef.Text = "Live value: `"$($data.MinimumSupportedWindowsRelease)`" (newer property - not read/written here)."
+                        # NOT change it either way. Shown with the same
+                        # friendly wording the Intune portal itself uses
+                        # ("Windows 11 21H2"), not Graph's own raw spelling
+                        # - see Get-FriendlyMinOsRelease.
+                        $lblMinOSStatusRef.Text = "Live: `"$(Get-FriendlyMinOsRelease -RawValue $data.MinimumSupportedWindowsRelease)`" (newer property, not read/written here)."
                     }
                 }
                 elseif ($legacyMatchKey) {
@@ -11531,7 +11578,7 @@ function Show-DiagnosticsDialog {
                         $minOsById.ContainsKey([string]$_.appId) -and $minOsById[[string]$_.appId].minimumSupportedWindowsRelease
                     })
                     & $appendLineRef2 "$(if ($minOsNewProperty.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($minOsNewProperty.Count) app(s) with a Minimum Windows value set via Intune's newer property - this tool's dropdown doesn't read or write it" $(if ($minOsNewProperty.Count -eq 0) { $okColorRef2 } else { $infoColorRef2 })
-                    foreach ($a in $minOsNewProperty) { & $appendLineRef2 "    - $($a.appName): $($minOsById[[string]$a.appId].minimumSupportedWindowsRelease)" $infoColorRef2 }
+                    foreach ($a in $minOsNewProperty) { & $appendLineRef2 "    - $($a.appName): $(Get-FriendlyMinOsRelease -RawValue $minOsById[[string]$a.appId].minimumSupportedWindowsRelease)" $infoColorRef2 }
 
                     $minOsDrift = @($deployedAppsRef | Where-Object {
                         $minOsById.ContainsKey([string]$_.appId) -and

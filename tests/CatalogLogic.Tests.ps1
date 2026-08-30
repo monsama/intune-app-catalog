@@ -94,7 +94,9 @@ $testableFunctionNames = @(
     "Merge-CatalogMetadata",
     "Get-CreateAppTemplates",
     "Get-DefaultAppMetadata",
-    "Get-FriendlyIntuneAppType"
+    "Get-FriendlyIntuneAppType",
+    "Get-ParsedMinOsRelease",
+    "Get-FriendlyMinOsRelease"
 )
 
 $funcAsts = $ast.FindAll({
@@ -301,6 +303,29 @@ Assert-Equal "" (Get-FriendlyIntuneAppType -ODataType "") `
     "Get-FriendlyIntuneAppType: blank input returns blank, not an error"
 Assert-Equal "Some Unmapped Type" (Get-FriendlyIntuneAppType -ODataType "#microsoft.graph.someUnmappedType") `
     "Get-FriendlyIntuneAppType: an unrecognized type still gets a readable, space-separated fallback label"
+
+# -----------------------------------------------------------------
+# Get-FriendlyMinOsRelease / Get-ParsedMinOsRelease
+# -----------------------------------------------------------------
+# All three of these raw spellings have been observed live for the exact
+# same minimumSupportedWindowsRelease property - the whole point of this
+# function is recognizing all of them as the same underlying release.
+Assert-Equal "Windows 11 21H2" (Get-FriendlyMinOsRelease -RawValue "W11_21H2") `
+    "Get-FriendlyMinOsRelease: W11_21H2 (IntuneWin32App module convention)"
+Assert-Equal "Windows 11 21H2" (Get-FriendlyMinOsRelease -RawValue "Windows11_21H2") `
+    "Get-FriendlyMinOsRelease: Windows11_21H2 (Intune portal's own spelling)"
+Assert-Equal "Windows 10 21H1" (Get-FriendlyMinOsRelease -RawValue "21H1") `
+    "Get-FriendlyMinOsRelease: a bare release with no major-version marker defaults to Windows 10"
+Assert-Equal "Windows 10 21H1" (Get-FriendlyMinOsRelease -RawValue "v10_21H1") `
+    "Get-FriendlyMinOsRelease: legacy v10_ prefix"
+Assert-Equal "Windows 10 20H2" (Get-FriendlyMinOsRelease -RawValue "v10_2H20") `
+    "Get-FriendlyMinOsRelease: legacy property's own digit-swapped 20H2 spelling is un-swapped"
+Assert-Equal "" (Get-FriendlyMinOsRelease -RawValue "") `
+    "Get-FriendlyMinOsRelease: blank input returns blank, not an error"
+$parsedForCompare1 = Get-ParsedMinOsRelease -RawValue "W11_21H2"
+$parsedForCompare2 = Get-ParsedMinOsRelease -RawValue "Windows11_21H2"
+Assert-Equal $true ($parsedForCompare1.Major -eq $parsedForCompare2.Major -and $parsedForCompare1.Release -eq $parsedForCompare2.Release) `
+    "Get-ParsedMinOsRelease: two different raw spellings of the same release parse as equal"
 
 # =================================================================
 # Report
