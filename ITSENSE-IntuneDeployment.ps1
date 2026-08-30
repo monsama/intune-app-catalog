@@ -6176,9 +6176,15 @@ $toolbar.AutoSize = $true
 $toolbar.AutoSizeMode = [System.Windows.Forms.AutoSizeMode]::GrowAndShrink
 $toolbar.Padding = New-Object System.Windows.Forms.Padding(6)
 
-$btnNew    = New-Object System.Windows.Forms.Button; $btnNew.Text = "+ Add app"
-$btnEdit   = New-Object System.Windows.Forms.Button; $btnEdit.Text = "Edit"
-$btnDelete = New-Object System.Windows.Forms.Button; $btnDelete.Text = "Delete"
+# Ellipsis marks every one of these three as "opens another window", same
+# convention used everywhere else in this app (Settings..., Batch deploy...,
+# etc.) - and matches the wording the right-click context menu already uses
+# for the identical actions (Edit.../Remove from catalog..., both of which
+# just PerformClick() these same buttons), rather than a second, different
+# label for the same click.
+$btnNew    = New-Object System.Windows.Forms.Button; $btnNew.Text = "+ Add app..."
+$btnEdit   = New-Object System.Windows.Forms.Button; $btnEdit.Text = "Edit..."
+$btnDelete = New-Object System.Windows.Forms.Button; $btnDelete.Text = "Remove from catalog..."
 $btnSave   = New-Object System.Windows.Forms.Button; $btnSave.Text = "Force save"
 $btnReload = New-Object System.Windows.Forms.Button; $btnReload.Text = "Reload"
 $btnOpen   = New-Object System.Windows.Forms.Button; $btnOpen.Text = "Open other folder..."
