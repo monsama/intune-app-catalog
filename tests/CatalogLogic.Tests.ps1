@@ -96,7 +96,8 @@ $testableFunctionNames = @(
     "Get-DefaultAppMetadata",
     "Get-FriendlyIntuneAppType",
     "Get-ParsedMinOsRelease",
-    "Get-FriendlyMinOsRelease"
+    "Get-FriendlyMinOsRelease",
+    "Test-AppHasCustomConfig"
 )
 
 $funcAsts = $ast.FindAll({
@@ -326,6 +327,29 @@ $parsedForCompare1 = Get-ParsedMinOsRelease -RawValue "W11_21H2"
 $parsedForCompare2 = Get-ParsedMinOsRelease -RawValue "Windows11_21H2"
 Assert-Equal $true ($parsedForCompare1.Major -eq $parsedForCompare2.Major -and $parsedForCompare1.Release -eq $parsedForCompare2.Release) `
     "Get-ParsedMinOsRelease: two different raw spellings of the same release parse as equal"
+
+# -----------------------------------------------------------------
+# Test-AppHasCustomConfig
+# -----------------------------------------------------------------
+$Script:Apps.Clear()
+$uncommonApp = [pscustomobject]@{ appName = "Some Custom App"; wingetId = ""; metadata = $null }
+Assert-Equal $true (Test-AppHasCustomConfig -App $uncommonApp) `
+    "Test-AppHasCustomConfig: an uncommon app (no Winget ID) is always Yes - no shared default to compare against"
+
+$wingetAppNoMetadata = [pscustomobject]@{ appName = "Some Winget App"; wingetId = "some.app"; metadata = $null }
+Assert-Equal $false (Test-AppHasCustomConfig -App $wingetAppNoMetadata) `
+    "Test-AppHasCustomConfig: a Winget app with no saved metadata is No - nothing to have customized yet"
+
+$defaultsForCompare = Get-DefaultAppMetadata -AppName "Some Winget App" -WingetId "some.app" -Uncommon $false
+$wingetAppDefaultMetadata = [pscustomobject]@{ appName = "Some Winget App"; wingetId = "some.app"; metadata = $defaultsForCompare }
+Assert-Equal $false (Test-AppHasCustomConfig -App $wingetAppDefaultMetadata) `
+    "Test-AppHasCustomConfig: a Winget app whose saved metadata exactly matches the computed defaults is No"
+
+$customizedMetadata = $defaultsForCompare.PSObject.Copy()
+$customizedMetadata.installCommand = "custom-install.exe /silent"
+$wingetAppCustomMetadata = [pscustomobject]@{ appName = "Some Winget App"; wingetId = "some.app"; metadata = $customizedMetadata }
+Assert-Equal $true (Test-AppHasCustomConfig -App $wingetAppCustomMetadata) `
+    "Test-AppHasCustomConfig: a Winget app whose saved install command differs from the default is Yes"
 
 # =================================================================
 # Report

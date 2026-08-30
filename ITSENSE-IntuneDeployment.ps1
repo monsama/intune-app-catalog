@@ -6476,6 +6476,7 @@ $grid.Columns.Add((New-GridColumn "WingetId" "Winget ID" -FillWeight 14)) | Out-
 $grid.Columns.Add((New-GridColumn "Type" "Type" -FillWeight 14)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 8)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 5)) | Out-Null
+$grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -FillWeight 9)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Folder" "Package folder" -FillWeight 24)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Required" "Required" -FillWeight 5)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Available" "Available" -FillWeight 5)) | Out-Null
@@ -6548,6 +6549,7 @@ function Refresh-Grid {
             Type      = if ($app.intuneAppType) { $app.intuneAppType } else { "" }
             Version   = if ($app.intuneAppVersion) { $app.intuneAppVersion } else { "" }
             Uncommon  = if ($isUncommon) { "Yes" } else { "" }
+            CustomConfig = if (Test-AppHasCustomConfig -App $app) { "Yes" } else { "No" }
             Folder    = $folderDisplay
             Required  = @($app.requiredFor).Count
             Available = @($app.availableFor).Count
@@ -7532,6 +7534,30 @@ function Get-DefaultAppMetadata {
             [pscustomobject]@{ returnCode = 1618; type = "retry" }
         )
     }
+}
+
+# Drives the main grid's "Custom Config" column - "Yes" means this app
+# WON'T just deploy with Get-DefaultAppMetadata's plain defaults, so
+# whoever's scanning the catalog knows which apps need a closer look
+# before a batch action touches them, rather than only finding out at
+# actual deploy time. An uncommon app (no Winget ID) is unconditionally
+# "Yes" - there's no shared default for a custom install to compare
+# against at all, everything about it is inherently app-specific. A
+# Winget app with no saved metadata at all is "No" - Batch Deploy (or a
+# manual Deploy to Intune) would default it, and defaulted is not
+# customized. Otherwise, reuses Get-CatalogMetadataFieldDiffs - same
+# field-by-field comparison already proven for the Local-vs-Intune drift
+# dialog - just pointed at "saved metadata" vs "computed defaults"
+# instead of "local" vs "live Intune".
+function Test-AppHasCustomConfig {
+    param($App)
+
+    if (Test-AppIsUncommon -App $App) { return $true }
+    if (-not $App.metadata) { return $false }
+
+    $defaults = Get-DefaultAppMetadata -AppName $App.appName -WingetId $App.wingetId -Uncommon $false
+    $diffs = Get-CatalogMetadataFieldDiffs -Local $App.metadata -Remote $defaults
+    return (@($diffs).Count -gt 0)
 }
 
 # ---------------------------------------------------------------
