@@ -6743,7 +6743,12 @@ function Invoke-QuickDeleteFromIntune {
     param([int]$Index)
     $app = $Script:Apps[$Index]
     $deleted = Show-DeleteAppDialog -AppId $app.appId -AppName $app.appName
-    if ($deleted) {
+    if (-not $deleted.Success) { return }
+    # Show-DeleteAppDialog itself already removed the catalog entry and
+    # saved when the user chose that - nothing left here to clear or save
+    # for an entry that no longer exists. Only the "keep the entry, just
+    # clear its App ID" path still needs handling here.
+    if (-not $deleted.RemovedFromCatalog) {
         $Script:Apps[$Index].appId = ""
         $Script:UnsavedChangesBox.Value = $true
         # Direct-save, not just staged in memory - matters more here than
@@ -6752,8 +6757,8 @@ function Invoke-QuickDeleteFromIntune {
         # catalog wrongly think the app still exists there until someone
         # remembered to save separately.
         [void](Save-AppsToFile -Path $Script:LinkedFilePath)
-        Refresh-Grid
     }
+    Refresh-Grid
 }
 
 # =====================================================================
@@ -10874,7 +10879,7 @@ function Show-DeleteAppDialog {
 
     if (-not $AppId) {
         [System.Windows.Forms.MessageBox]::Show("This app doesn't have an App ID - nothing to delete in Intune.", "No App ID", "OK", "Information") | Out-Null
-        return $false
+        return @{ Success = $false; RemovedFromCatalog = $false }
     }
 
     # Plain local aliases - see note in Start-IntuneAppLookup.
@@ -10882,6 +10887,9 @@ function Show-DeleteAppDialog {
     $clientId      = $Script:GraphClientId
     $certThumb     = $Script:GraphCertificateThumbprint
     $deleteScript  = $Script:EmbeddedDeleteAppScript
+    $appsRef       = $Script:Apps
+    $unsavedBox    = $Script:UnsavedChangesBox
+    $linkedFilePath = $Script:LinkedFilePath
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Delete from Intune - $AppName"
@@ -10892,7 +10900,7 @@ function Show-DeleteAppDialog {
     $dlg.MinimizeBox = $false
 
     $lblWarning = New-Object System.Windows.Forms.Label
-    $lblWarning.Text = "This permanently deletes `"$AppName`" (App ID: $AppId) from Intune, including its content, assignments, and install history. This CANNOT be undone.`n`nThe catalog entry itself is not removed - only its App ID is cleared on success, so you can recreate it later without losing the groups already set here."
+    $lblWarning.Text = "This permanently deletes `"$AppName`" (App ID: $AppId) from Intune, including its content, assignments, and install history. This CANNOT be undone.`n`nOn success, you'll be asked whether to also remove the catalog entry itself, or just clear its App ID and keep the entry (and its group assignments) around to recreate later."
     $lblWarning.Location = New-Object System.Drawing.Point(15,12)
     $lblWarning.Size = New-Object System.Drawing.Size(530,90)
     $lblWarning.ForeColor = [System.Drawing.Color]::Firebrick
@@ -10938,7 +10946,7 @@ function Show-DeleteAppDialog {
     $dlg.Controls.Add($btnCancel)
 
     $procBox = @{ Proc = $null }
-    $deletedBox = @{ Success = $false }
+    $deletedBox = @{ Success = $false; RemovedFromCatalog = $false }
 
     # Stored as a named closure (rather than inline in the button handler)
     # specifically so it can call itself again from within its own
@@ -10999,6 +11007,10 @@ function Show-DeleteAppDialog {
         $dlgRef = $dlg
         $rtbLogRef = $rtbLog
         $RunDeleteBoxRef = $RunDeleteBox
+        $AppNameRef = $AppName
+        $appsRefRef = $appsRef
+        $unsavedBoxRef = $unsavedBox
+        $linkedFilePathRef = $linkedFilePath
 
         $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $deleteScript -TempScriptName ".itsense_embedded_deleteapp.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
@@ -11032,8 +11044,33 @@ function Show-DeleteAppDialog {
                 if ($result.success) {
                     $deletedBoxRef.Success = $true
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
-                    $lblStatusRef.Text = "Deleted."
-                    [System.Windows.Forms.MessageBox]::Show("Deleted from Intune.", "Deleted", "OK", "Information") | Out-Null
+                    $lblStatusRef.Text = "Deleted from Intune."
+                    # Asked now, right after Intune confirms the delete,
+                    # rather than leaving the caller to always just clear
+                    # the App ID and silently keep the entry around - most
+                    # of the time deleting an app from Intune means you're
+                    # actually done with it, not planning to recreate it, so
+                    # leaving a now-orphaned catalog entry behind by default
+                    # was the more surprising outcome, not the friendlier one.
+                    $removeChoice = [System.Windows.Forms.MessageBox]::Show(
+                        "Deleted `"$AppNameRef`" from Intune.`n`nAlso remove it from the local catalog entirely? Choosing No just clears its App ID here, keeping the entry (and its group assignments) so it's easy to recreate later.",
+                        "Remove from catalog too?", "YesNo", "Question")
+                    if ($removeChoice -eq "Yes") {
+                        $delCatalogIdx = -1
+                        for ($dci = 0; $dci -lt $appsRefRef.Count; $dci++) {
+                            if ($appsRefRef[$dci].appName -eq $AppNameRef) { $delCatalogIdx = $dci; break }
+                        }
+                        if ($delCatalogIdx -ge 0) { $appsRefRef.RemoveAt($delCatalogIdx) }
+                        $unsavedBoxRef.Value = $true
+                        # Direct-save here too - the caller's own post-close
+                        # handling (clearing the App ID and saving) is
+                        # skipped entirely when RemovedFromCatalog is true,
+                        # since there's no longer an entry left for it to
+                        # act on, so this has to be the one place that
+                        # actually persists the removal.
+                        [void](Save-AppsToFile -Path $linkedFilePathRef)
+                        $deletedBoxRef.RemovedFromCatalog = $true
+                    }
                     $dlgRef.Close()
                 }
                 elseif ($result.blockingAppId) {
@@ -11082,7 +11119,12 @@ function Show-DeleteAppDialog {
 
     Set-Theme -Control $dlg
     [void]$dlg.ShowDialog($form)
-    return $deletedBox.Success
+    # A hashtable now, not a plain bool - callers must check .Success
+    # explicitly (a hashtable reference is truthy on its own, even one with
+    # Success=$false), and .RemovedFromCatalog tells them whether they still
+    # need to do their own "clear the App ID and save" step, or whether this
+    # dialog already removed the whole entry (and saved) itself.
+    return $deletedBox
 }
 
 # ---------------------------------------------------------------
@@ -11268,7 +11310,8 @@ function Show-BulkDeleteFromIntuneDialog {
         param($Queue, $QueueIndex, $Results, $RemoveDependencyFromAppId = "", $RetryAttempt = 0)
 
         if ($QueueIndex -ge $Queue.Count) {
-            $okCount = @($Results | Where-Object { $_.Status -eq "Deleted" }).Count
+            $deletedNames = @($Results | Where-Object { $_.Status -eq "Deleted" } | ForEach-Object { $_.AppName })
+            $okCount = $deletedNames.Count
             $failedCount = @($Results | Where-Object { $_.Status -eq "Failed" }).Count
             $btnSelectAll.Enabled = $true
             $btnSelectNone.Enabled = $true
@@ -11279,8 +11322,37 @@ function Show-BulkDeleteFromIntuneDialog {
             $failedNames = @($Results | Where-Object { $_.Status -eq "Failed" } | ForEach-Object { $_.AppName })
             $lastFailedBox.Names = $failedNames
             $btnRetryFailed.Visible = ($failedNames.Count -gt 0)
+
+            # Asked once for the whole run, right after it finishes - not
+            # per app mid-run, same reasoning as $chkAutoRemoveDeps above:
+            # a single upfront-or-afterward choice, not a popup for every
+            # item. Most of the time deleting an app from Intune means
+            # you're actually done with it, so leaving every one of these
+            # now-orphaned catalog entries behind by default would just be
+            # more manual cleanup afterward, not the friendlier outcome.
+            $removedCatalogCount = 0
+            if ($okCount -gt 0) {
+                $catalogChoice = [System.Windows.Forms.MessageBox]::Show(
+                    "Deleted $okCount app(s) from Intune.`n`nAlso remove these from the local catalog entirely?`n`n$($deletedNames -join ", ")`n`nChoosing No just clears their App IDs, keeping the entries (and group assignments) so they're easy to recreate later.",
+                    "Remove from catalog too?", "YesNo", "Question")
+                if ($catalogChoice -eq "Yes") {
+                    foreach ($deletedName in $deletedNames) {
+                        for ($dci = 0; $dci -lt $appsRef.Count; $dci++) {
+                            if ($appsRef[$dci].appName -eq $deletedName) {
+                                $appsRef.RemoveAt($dci)
+                                $removedCatalogCount++
+                                break
+                            }
+                        }
+                    }
+                    $unsavedBox.Value = $true
+                    [void](Save-AppsToFile -Path $linkedFilePath)
+                }
+            }
+
             $lblStatus.ForeColor = if ($failedCount -gt 0) { [System.Drawing.Color]::DarkOrange } else { [System.Drawing.Color]::SeaGreen }
-            $lblStatus.Text = "Done - $okCount deleted, $failedCount failed."
+            $catalogSuffix = if ($removedCatalogCount -gt 0) { " $removedCatalogCount removed from the catalog entirely." } else { "" }
+            $lblStatus.Text = "Done - $okCount deleted, $failedCount failed.$catalogSuffix"
             return
         }
 
@@ -12532,49 +12604,57 @@ function Show-AppEditor {
             return
         }
         $deleted = Show-DeleteAppDialog -AppId $txtId.Text.Trim() -AppName $txtName.Text.Trim()
-        if ($deleted) {
-            $txtId.Text = ""
-            # Direct-save immediately, matching the main grid's own "Quick
-            # delete from Intune" - this specific branch was the one gap
-            # left over from before that convention existed everywhere
-            # else. Without this, the App ID was only ever cleared in this
-            # dialog's own textbox and in-memory copy, not actually
-            # persisted - reopening the editor without first clicking
-            # "Save app" separately would reload the OLD, still-persisted
-            # App ID from disk, making it look like the Intune delete
-            # itself hadn't done anything at all, since this button's own
-            # dynamic text (see $updateDeleteButtonState) would then
-            # incorrectly still read the stale, non-empty value too.
-            # Whole-element replacement, not property mutation - see the
-            # extensive comment on the identical pattern in
-            # Save-AppMetadataToLocalCatalog for why that distinction
-            # specifically matters here.
-            $delFromIntuneIdx = -1
-            for ($dfi = 0; $dfi -lt $appsRef.Count; $dfi++) {
-                if ($ExistingApp -and $appsRef[$dfi].appName -eq $ExistingApp.appName) { $delFromIntuneIdx = $dfi; break }
+        if (-not $deleted.Success) { return }
+        if ($deleted.RemovedFromCatalog) {
+            # Show-DeleteAppDialog already removed the whole catalog entry
+            # and saved, when the user chose that there - nothing left in
+            # this editor to keep editing, since the entry it opened for no
+            # longer exists. Closing it (same as the "no App ID" branch
+            # above) rather than leaving it open on a now-nonexistent app.
+            $dlg.Close()
+            return
+        }
+        $txtId.Text = ""
+        # Direct-save immediately, matching the main grid's own "Quick
+        # delete from Intune" - this specific branch was the one gap
+        # left over from before that convention existed everywhere
+        # else. Without this, the App ID was only ever cleared in this
+        # dialog's own textbox and in-memory copy, not actually
+        # persisted - reopening the editor without first clicking
+        # "Save app" separately would reload the OLD, still-persisted
+        # App ID from disk, making it look like the Intune delete
+        # itself hadn't done anything at all, since this button's own
+        # dynamic text (see $updateDeleteButtonState) would then
+        # incorrectly still read the stale, non-empty value too.
+        # Whole-element replacement, not property mutation - see the
+        # extensive comment on the identical pattern in
+        # Save-AppMetadataToLocalCatalog for why that distinction
+        # specifically matters here.
+        $delFromIntuneIdx = -1
+        for ($dfi = 0; $dfi -lt $appsRef.Count; $dfi++) {
+            if ($ExistingApp -and $appsRef[$dfi].appName -eq $ExistingApp.appName) { $delFromIntuneIdx = $dfi; break }
+        }
+        if ($delFromIntuneIdx -ge 0) {
+            $existingForClear = $appsRef[$delFromIntuneIdx]
+            $appsRef[$delFromIntuneIdx] = [pscustomobject]@{
+                appId        = ""
+                appName      = $existingForClear.appName
+                wingetId     = $existingForClear.wingetId
+                requiredFor  = @($existingForClear.requiredFor)
+                availableFor = @($existingForClear.availableFor)
+                uninstallFor = @($existingForClear.uninstallFor)
+                metadata     = $existingForClear.metadata
             }
-            if ($delFromIntuneIdx -ge 0) {
-                $existingForClear = $appsRef[$delFromIntuneIdx]
-                $appsRef[$delFromIntuneIdx] = [pscustomobject]@{
-                    appId        = ""
-                    appName      = $existingForClear.appName
-                    wingetId     = $existingForClear.wingetId
-                    requiredFor  = @($existingForClear.requiredFor)
-                    availableFor = @($existingForClear.availableFor)
-                    uninstallFor = @($existingForClear.uninstallFor)
-                    metadata     = $existingForClear.metadata
-                }
-            }
-            $unsavedBoxRef.Value = $true
-            $delFromIntuneSaveOk = Save-AppsToFile -Path $linkedFilePath
-            if ($delFromIntuneSaveOk) {
-                $lblIdStatus.Text = "Deleted from Intune - App ID cleared and saved."
-                $lblIdStatus.ForeColor = [System.Drawing.Color]::SeaGreen
-            }
-            else {
-                $lblIdStatus.Text = "Deleted from Intune, but saving the cleared App ID failed - check the Log tab, then use Force save."
-                $lblIdStatus.ForeColor = [System.Drawing.Color]::Firebrick
-            }
+        }
+        $unsavedBoxRef.Value = $true
+        $delFromIntuneSaveOk = Save-AppsToFile -Path $linkedFilePath
+        if ($delFromIntuneSaveOk) {
+            $lblIdStatus.Text = "Deleted from Intune - App ID cleared and saved."
+            $lblIdStatus.ForeColor = [System.Drawing.Color]::SeaGreen
+        }
+        else {
+            $lblIdStatus.Text = "Deleted from Intune, but saving the cleared App ID failed - check the Log tab, then use Force save."
+            $lblIdStatus.ForeColor = [System.Drawing.Color]::Firebrick
         }
     }.GetNewClosure())
 
