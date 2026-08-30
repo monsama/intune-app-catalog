@@ -7075,6 +7075,64 @@ if (`$Apps) { return "Installed!" }
     }
 }
 
+# Computes the SAME default values Show-CreateInIntuneDialog's own form
+# pre-fills for a brand-new (non-duplicate, non-Update) app, as one
+# catalog-shaped metadata object - every default that function sets
+# unconditionally (install/uninstall/detection templates, x64-only
+# architecture, System context, newest Min OS, the standard 5 return
+# codes, "basedOnReturnCode" restart behavior, 0 for every requirement,
+# and defaulting to depend on "Winget AutoUpdate" when it exists) lives
+# here exactly once, so Batch Deploy can use the identical defaults for
+# an app that was never manually walked through "Save for later..."
+# instead of just skipping it.
+#
+# Detection is the one field that can't always be defaulted: for an
+# UNCOMMON app there's no real install to derive a detection script from
+# (same reason the single-app dialog itself leaves it blank and requires
+# something be typed in before Save/Create can proceed there too) -
+# .detectionRule comes back $null in that case, and callers must check
+# for that themselves before treating the result as actually deployable.
+function Get-DefaultAppMetadata {
+    param([string]$AppName, [string]$WingetId, [bool]$Uncommon)
+
+    $templates = Get-CreateAppTemplates -WingetId $WingetId -Uncommon $Uncommon
+    $defaultDeps = @()
+    if ($AppName -ne "Winget AutoUpdate" -and ($Script:Apps | Where-Object { $_.appName -eq "Winget AutoUpdate" })) {
+        $defaultDeps = @("Winget AutoUpdate")
+    }
+
+    return [pscustomobject]@{
+        description      = $AppName
+        publisher        = "ITSENSE"
+        owner            = ""
+        developer        = ""
+        informationUrl   = ""
+        privacyUrl       = ""
+        notes            = ""
+        installCommand   = $templates.Install
+        uninstallCommand = $templates.Uninstall
+        architecture     = "x64"
+        installContext   = "System"
+        minOSKey         = "v10_21H1"
+        detectionRule    = if ($templates.Detection) { [pscustomobject]@{ Type = "Script"; Script_Content = $templates.Detection } } else { $null }
+        dependencies     = $defaultDeps
+        minDiskSpaceMB          = 0
+        minMemoryMB             = 0
+        minProcessors           = 0
+        minCpuSpeedMHz          = 0
+        installTimeMinutes      = 60
+        deviceRestartBehavior   = "basedOnReturnCode"
+        allowAvailableUninstall = $false
+        returnCodes = @(
+            [pscustomobject]@{ returnCode = 0; type = "success" }
+            [pscustomobject]@{ returnCode = 1707; type = "success" }
+            [pscustomobject]@{ returnCode = 3010; type = "softReboot" }
+            [pscustomobject]@{ returnCode = 1641; type = "hardReboot" }
+            [pscustomobject]@{ returnCode = 1618; type = "retry" }
+        )
+    }
+}
+
 # ---------------------------------------------------------------
 # Local vs. Intune metadata drift compare dialog
 # ---------------------------------------------------------------
@@ -9678,19 +9736,28 @@ function Show-BatchDeployDialog {
     $candidateApps = if ($ScopedIndices.Count -gt 0) { @($ScopedIndices | ForEach-Object { $appsRef[$_] }) } else { @($appsRef) }
     $isScoped = $ScopedIndices.Count -gt 0
 
-    # Eligible: no App ID yet (not deployed), but has saved metadata (from
-    # Deploy to Intune's "Save for later") - the whole point of this dialog.
-    $eligibleApps = @($candidateApps | Where-Object { -not $_.appId -and $_.metadata })
+    # Eligible: just no App ID yet (not deployed) - metadata is no longer
+    # required up front. An app with saved metadata (from "Save for
+    # later...") uses it; one without gets the same defaults
+    # Show-CreateInIntuneDialog's own form would pre-fill for a brand-new
+    # app (see Get-DefaultAppMetadata), computed and saved into the
+    # catalog at actual deploy time below - rather than being excluded
+    # from the batch just for never having been opened in that dialog
+    # once first. The one real exception: an UNCOMMON app with no saved
+    # metadata has no detection script to default to (there's no real
+    # install to derive one from), so that specific case is still skipped
+    # at deploy time, same as a missing package.
+    $eligibleApps = @($candidateApps | Where-Object { -not $_.appId })
 
     if ($eligibleApps.Count -eq 0) {
-        $msg = if ($isScoped) { "None of the selected app(s) have saved metadata ready to deploy - use Deploy to Intune's `"Save for later...`" first." } else { "No apps have saved metadata ready to deploy - use Deploy to Intune's `"Save for later...`" first." }
+        $msg = if ($isScoped) { "None of the selected app(s) need deploying - they all already have an App ID." } else { "No apps need deploying - they all already have an App ID." }
         [System.Windows.Forms.MessageBox]::Show($msg, "Nothing to do", "OK", "Information") | Out-Null
         return
     }
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Batch deploy to Intune"
-    $dlg.ClientSize = New-Object System.Drawing.Size(660, 600)
+    $dlg.ClientSize = New-Object System.Drawing.Size(660, 630)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -9698,16 +9765,17 @@ function Show-BatchDeployDialog {
 
     $lblIntro = New-Object System.Windows.Forms.Label
     $scopeText = if ($isScoped) { "$($eligibleApps.Count) selected app(s)" } else { "all $($eligibleApps.Count) app(s)" }
-    $lblIntro.Text = "Creates $scopeText in Intune from their saved local metadata, in dependency order where one depends on another. Apps whose package isn't built yet are skipped, not failed."
+    $lblIntro.Text = "Creates $scopeText in Intune, in dependency order where one depends on another. Uses saved metadata where an app has it; otherwise uses the same defaults Deploy to Intune's own form would, and saves them to the catalog. Apps whose package isn't built yet (or, for an uncommon app with no saved metadata, has no detection to default to) are skipped, not failed."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
-    $lblIntro.Size = New-Object System.Drawing.Size(630,40)
+    $lblIntro.Size = New-Object System.Drawing.Size(630,66)
     $dlg.Controls.Add($lblIntro)
 
     # Package readiness is shown up front, per app, rather than only
     # discovered mid-run - so a missing package can be noticed and fixed
     # before starting, instead of the run just skipping past it silently.
+    # Same for whether saved metadata exists or defaults will be used.
     $clbApps = New-Object System.Windows.Forms.CheckedListBox
-    $clbApps.Location = New-Object System.Drawing.Point(15,58)
+    $clbApps.Location = New-Object System.Drawing.Point(15,84)
     $clbApps.Size = New-Object System.Drawing.Size(630,240)
     $clbApps.CheckOnClick = $true
     $dlg.Controls.Add($clbApps)
@@ -9715,31 +9783,39 @@ function Show-BatchDeployDialog {
     foreach ($eligibleApp in ($eligibleApps | Sort-Object appName)) {
         $isUncommon = Test-AppIsUncommon -App $eligibleApp
         $pkg = Resolve-AppPackagePath -AppName $eligibleApp.appName -Uncommon $isUncommon
-        $label = if ($pkg.Found) { $eligibleApp.appName } else { "$($eligibleApp.appName)  [package not built yet]" }
+        $tag = if (-not $pkg.Found) {
+            "  [package not built yet]"
+        }
+        elseif (-not $eligibleApp.metadata) {
+            if ($isUncommon) { "  [no saved metadata and no Winget ID - can't default detection]" } else { "  [no saved metadata - will use defaults]" }
+        }
+        else { "" }
+        $label = "$($eligibleApp.appName)$tag"
         $itemLabelToApp[$label] = $eligibleApp
-        [void]$clbApps.Items.Add($label, [bool]$pkg.Found)
+        $canCheck = $pkg.Found -and (-not $isUncommon -or $eligibleApp.metadata)
+        [void]$clbApps.Items.Add($label, $canCheck)
     }
 
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Select all"
-    $btnSelectAll.Location = New-Object System.Drawing.Point(15,302)
+    $btnSelectAll.Location = New-Object System.Drawing.Point(15,328)
     $btnSelectAll.Size = New-Object System.Drawing.Size(100,26)
     $dlg.Controls.Add($btnSelectAll)
 
     $btnSelectNone = New-Object System.Windows.Forms.Button
     $btnSelectNone.Text = "Select none"
-    $btnSelectNone.Location = New-Object System.Drawing.Point(125,302)
+    $btnSelectNone.Location = New-Object System.Drawing.Point(125,328)
     $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
     $dlg.Controls.Add($btnSelectNone)
 
     $lblStatus = New-Object System.Windows.Forms.Label
-    $lblStatus.Location = New-Object System.Drawing.Point(15,336)
+    $lblStatus.Location = New-Object System.Drawing.Point(15,362)
     $lblStatus.Size = New-Object System.Drawing.Size(630,36)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbLog.Location = New-Object System.Drawing.Point(15,376)
+    $rtbLog.Location = New-Object System.Drawing.Point(15,402)
     $rtbLog.Size = New-Object System.Drawing.Size(630,150)
     $rtbLog.ReadOnly = $true
     $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
@@ -9749,13 +9825,13 @@ function Show-BatchDeployDialog {
 
     $btnDeploy = New-Object System.Windows.Forms.Button
     $btnDeploy.Text = "Deploy selected"
-    $btnDeploy.Location = New-Object System.Drawing.Point(455,556)
+    $btnDeploy.Location = New-Object System.Drawing.Point(455,582)
     $btnDeploy.Size = New-Object System.Drawing.Size(185,32)
     $dlg.Controls.Add($btnDeploy)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(365,556)
+    $btnClose.Location = New-Object System.Drawing.Point(365,582)
     $btnClose.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnClose)
 
@@ -9816,12 +9892,36 @@ function Show-BatchDeployDialog {
             return
         }
 
+        # An app with no saved metadata gets the same defaults
+        # Show-CreateInIntuneDialog's own form would pre-fill for it - see
+        # Get-DefaultAppMetadata. $usedDefaults is threaded through to the
+        # success handler below so it knows to actually save this computed
+        # metadata into the catalog alongside the new App ID, same as if
+        # "Save for later..." had been done first.
+        $usedDefaults = -not $currentApp.metadata
+        $effectiveMetadata = if ($currentApp.metadata) { $currentApp.metadata } else { Get-DefaultAppMetadata -AppName $currentApp.appName -WingetId $currentApp.wingetId -Uncommon $isUncommon }
+        if (-not $effectiveMetadata.detectionRule) {
+            # Calls out the Winget ID specifically, not just "uncommon" -
+            # a blank Winget ID IS what makes Test-AppIsUncommon call this
+            # app uncommon in the first place (see its own definition), so
+            # for an app that was actually meant to be a winget app, a
+            # missing/typo'd ID here is the single most likely, and most
+            # directly fixable, reason detection couldn't be defaulted.
+            $rtbLog.AppendText("  [SKIPPED] No detection available - this app has no Winget ID (so it's treated as uncommon) and no saved metadata to default detection from. If it should be a winget app, set its Winget ID; otherwise use `"Deploy to Intune...`" to set detection manually. Then re-run.`r`n")
+            $Results.Add([pscustomobject]@{ AppName = $currentApp.appName; Status = "Skipped"; Message = "No Winget ID and no detection script available" })
+            & $RunNextBox.Value -Queue $Queue -QueueIndex ($QueueIndex + 1) -Results $Results
+            return
+        }
+        if ($usedDefaults) {
+            $rtbLog.AppendText("  [i] No saved metadata - using the same defaults Deploy to Intune's own form would.`r`n")
+        }
+
         # Dependency names resolved to App IDs at the moment each app is
         # actually about to be created, not once up front - a dependency
         # earlier in this SAME batch may only have just received its own
         # App ID a few seconds ago, from an earlier step in this loop.
         $resolvedDepIds = New-Object System.Collections.Generic.List[string]
-        foreach ($depName in @($currentApp.metadata.dependencies)) {
+        foreach ($depName in @($effectiveMetadata.dependencies)) {
             $depApp = $appsRef | Where-Object { $_.appName -eq $depName } | Select-Object -First 1
             if ($depApp -and $depApp.appId) {
                 $resolvedDepIds.Add($depApp.appId)
@@ -9835,29 +9935,46 @@ function Show-BatchDeployDialog {
         $resultPath = Join-Path $env:TEMP (".itsense_batchdeploy_result_" + [guid]::NewGuid().ToString("N") + ".json")
 
         $config = [pscustomobject]@{
-            TenantId              = $tenantId
-            ClientId              = $clientId
-            CertificateThumbprint = $certThumb
-            Mode                  = "Create"
-            ExistingAppId         = ""
-            AppName               = $currentApp.appName
-            Description           = $currentApp.metadata.description
-            Publisher             = $currentApp.metadata.publisher
-            Owner                 = $currentApp.metadata.owner
-            Developer             = $currentApp.metadata.developer
-            InformationUrl        = $currentApp.metadata.informationUrl
-            PrivacyUrl            = $currentApp.metadata.privacyUrl
-            Notes                 = $currentApp.metadata.notes
-            InstallCommand        = $currentApp.metadata.installCommand
-            UninstallCommand      = $currentApp.metadata.uninstallCommand
-            DetectionRule         = $currentApp.metadata.detectionRule
-            InstallContext        = $currentApp.metadata.installContext
-            Architecture          = $currentApp.metadata.architecture
-            MinOSVersionKey       = $currentApp.metadata.minOSKey
-            PackagePath           = $pkg.Path
-            DependencyAppIds      = @($resolvedDepIds)
-            ReplaceContent        = $false
-            OutputResultPath      = $resultPath
+            TenantId                = $tenantId
+            ClientId                = $clientId
+            CertificateThumbprint   = $certThumb
+            Mode                    = "Create"
+            ExistingAppId           = ""
+            AppName                 = $currentApp.appName
+            Description             = $effectiveMetadata.description
+            Publisher               = $effectiveMetadata.publisher
+            Owner                   = $effectiveMetadata.owner
+            Developer               = $effectiveMetadata.developer
+            InformationUrl          = $effectiveMetadata.informationUrl
+            PrivacyUrl              = $effectiveMetadata.privacyUrl
+            Notes                   = $effectiveMetadata.notes
+            InstallCommand          = $effectiveMetadata.installCommand
+            UninstallCommand        = $effectiveMetadata.uninstallCommand
+            DetectionRule           = $effectiveMetadata.detectionRule
+            InstallContext          = $effectiveMetadata.installContext
+            Architecture            = $effectiveMetadata.architecture
+            MinOSVersionKey         = $effectiveMetadata.minOSKey
+            # Previously omitted here entirely (this config never had these
+            # fields at all) - the embedded create script silently fell back
+            # to ITS OWN internal defaults for them instead, which for
+            # DeviceRestartBehavior ("suppress") and ReturnCodes (none at
+            # all) actually differed from what Deploy to Intune's own form
+            # defaults to ("basedOnReturnCode" and the standard 5 rows) -
+            # every batch-deployed app was silently getting different
+            # requirements/return-code/restart-behavior settings than a
+            # manually-created one, not just ones using generated defaults.
+            MinDiskSpaceMB          = $effectiveMetadata.minDiskSpaceMB
+            MinMemoryMB             = $effectiveMetadata.minMemoryMB
+            MinProcessors           = $effectiveMetadata.minProcessors
+            MinCpuSpeedMHz          = $effectiveMetadata.minCpuSpeedMHz
+            InstallTimeMinutes      = $effectiveMetadata.installTimeMinutes
+            DeviceRestartBehavior   = $effectiveMetadata.deviceRestartBehavior
+            AllowAvailableUninstall = $effectiveMetadata.allowAvailableUninstall
+            ReturnCodes             = @($effectiveMetadata.returnCodes)
+            PackagePath             = $pkg.Path
+            DependencyAppIds        = @($resolvedDepIds)
+            ReplaceContent          = $false
+            OutputResultPath        = $resultPath
         }
 
         try {
@@ -9883,6 +10000,8 @@ function Show-BatchDeployDialog {
         $RunNextBoxRef = $RunNextBox
         $linkedFilePathRef = $linkedFilePath
         $unsavedBoxRef = $unsavedBox
+        $usedDefaultsRef = $usedDefaults
+        $effectiveMetadataRef = $effectiveMetadata
 
         $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".itsense_embedded_batchdeploy.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLogRef -OnComplete {
             param($code)
@@ -9902,6 +10021,17 @@ function Show-BatchDeployDialog {
                             for ($ai = 0; $ai -lt $appsRefRef.Count; $ai++) {
                                 if ($appsRefRef[$ai].appName -eq $currentAppRef.appName) {
                                     $appsRefRef[$ai].appId = $result.appId
+                                    # The generated defaults are only saved
+                                    # into the catalog on actual SUCCESS,
+                                    # not the moment they're computed above -
+                                    # a failed create (bad detection script,
+                                    # Graph rejecting something, etc.)
+                                    # shouldn't leave unvalidated, made-up
+                                    # metadata sitting in the catalog for an
+                                    # app that was never actually deployed.
+                                    if ($usedDefaultsRef) {
+                                        $appsRefRef[$ai].metadata = $effectiveMetadataRef
+                                    }
                                     break
                                 }
                             }
@@ -9915,7 +10045,8 @@ function Show-BatchDeployDialog {
                             # exist in Intune, not just redo harmless work.
                             [void](Save-AppsToFile -Path $linkedFilePathRef)
                         }
-                        $rtbLogRef.AppendText("  [OK] Created (App ID: $($result.appId))`r`n")
+                        $defaultsNote = if ($usedDefaultsRef) { " - default metadata saved to the catalog" } else { "" }
+                        $rtbLogRef.AppendText("  [OK] Created (App ID: $($result.appId))$defaultsNote`r`n")
                     }
                     else {
                         $message = $result.error
