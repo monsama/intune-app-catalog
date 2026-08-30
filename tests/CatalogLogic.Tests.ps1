@@ -1,0 +1,299 @@
+<#
+.SYNOPSIS
+    Plain, no-framework unit tests for this app's pure, side-effect-free
+    catalog logic - the part of ITSENSE-IntuneDeployment.ps1 that doesn't
+    touch WinForms or Microsoft Graph and can genuinely run headless.
+
+.DESCRIPTION
+    No Pester dependency deliberately - PowerShell Gallery isn't reachable
+    from every environment this might need to run in (including the one
+    this suite was first written in), and a single self-contained script
+    with a tiny assertion helper is enough for the handful of pure
+    functions this app actually has. If Pester ever becomes available
+    where this runs, these Assert-* calls could be swapped for
+    Should/It blocks without changing what's actually being checked.
+
+    IMPORTANT - what this suite does NOT and CANNOT cover: almost all of
+    this app's real behavior lives inside WinForms button-click closures
+    and embedded scripts that make live Microsoft Graph calls - neither
+    is unit-testable this way (WinForms isn't even available outside
+    Windows, and Graph calls need a real tenant). This suite is
+    deliberately narrow: it only exercises the handful of functions that
+    are pure logic with no UI or network dependency. A green run here is
+    NOT proof the GUI or the Intune-facing flows work - see this file's
+    own header comment in the repo root for what would actually be needed
+    to test those (a real sandbox tenant for Graph-facing flows, a
+    Windows UI-automation framework for the WinForms flows - both real
+    projects in their own right, not something this suite attempts).
+
+    Extracts the functions under test directly from the real script's AST
+    (never a hand-copied duplicate) so this suite can't silently drift
+    from what actually ships - if a targeted function's signature changes
+    incompatibly, these tests fail loudly instead of quietly testing a
+    stale copy.
+
+.EXAMPLE
+    pwsh -NoProfile -File tests/CatalogLogic.Tests.ps1
+#>
+
+$ErrorActionPreference = "Stop"
+$script:failures = New-Object System.Collections.Generic.List[string]
+$script:passCount = 0
+
+function Assert-Equal {
+    param($Expected, $Actual, [string]$Because)
+    if ("$Expected" -ne "$Actual") {
+        $script:failures.Add("$Because`n    Expected: $Expected`n    Actual:   $Actual")
+    } else {
+        $script:passCount++
+    }
+}
+
+function Assert-True {
+    param([bool]$Condition, [string]$Because)
+    if (-not $Condition) {
+        $script:failures.Add("$Because`n    Expected: truthy`n    Actual:   falsy")
+    } else {
+        $script:passCount++
+    }
+}
+
+function Assert-Null {
+    param($Value, [string]$Because)
+    if ($null -ne $Value) {
+        $script:failures.Add("$Because`n    Expected: `$null`n    Actual:   $Value")
+    } else {
+        $script:passCount++
+    }
+}
+
+# ---------------------------------------------------------------
+# Extract the pure functions under test straight from the real script
+# ---------------------------------------------------------------
+$mainScriptPath = Join-Path $PSScriptRoot "..\ITSENSE-IntuneDeployment.ps1"
+$mainScriptPath = Resolve-Path $mainScriptPath
+
+$parseErrors = $null
+$tokens = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($mainScriptPath, [ref]$tokens, [ref]$parseErrors)
+if ($parseErrors.Count -gt 0) {
+    Write-Host "FAIL: $mainScriptPath has $($parseErrors.Count) syntax error(s) - fix before running tests." -ForegroundColor Red
+    foreach ($e in $parseErrors) { Write-Host "  Line $($e.Extent.StartLineNumber): $($e.Message)" -ForegroundColor Red }
+    exit 1
+}
+
+# Deliberately narrow list - only genuinely pure, side-effect-free
+# functions. Adding a name here is a claim that function has NO WinForms
+# and NO live Graph dependency; verify that before adding one.
+$testableFunctionNames = @(
+    "Test-AppIsUncommon",
+    "Get-SafeFileNameForApp",
+    "Get-DependencyOrderedApps",
+    "Get-CatalogMetadataSimpleFields",
+    "Get-CatalogMetadataFieldDiffs",
+    "Merge-CatalogMetadata",
+    "Get-CreateAppTemplates",
+    "Get-DefaultAppMetadata"
+)
+
+$funcAsts = $ast.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $testableFunctionNames -contains $node.Name
+}, $true)
+
+$foundNames = @($funcAsts | ForEach-Object { $_.Name })
+$missingNames = @($testableFunctionNames | Where-Object { $foundNames -notcontains $_ })
+if ($missingNames.Count -gt 0) {
+    Write-Host "FAIL: expected function(s) not found in the main script: $($missingNames -join ', ')" -ForegroundColor Red
+    exit 1
+}
+
+foreach ($fn in $funcAsts) {
+    . ([scriptblock]::Create($fn.Extent.Text))
+}
+
+# $Script:Apps is what Get-DefaultAppMetadata reads (its "default to
+# depending on Winget AutoUpdate if it exists" check) - stubbed here since
+# the real script's own startup (which populates this from the apps-data
+# folder) never runs in this harness.
+$Script:Apps = New-Object System.Collections.Generic.List[object]
+
+# =================================================================
+# Test-AppIsUncommon
+# =================================================================
+Assert-True (Test-AppIsUncommon -App ([pscustomobject]@{ wingetId = "" })) `
+    "Test-AppIsUncommon: blank Winget ID is uncommon"
+Assert-True (Test-AppIsUncommon -App ([pscustomobject]@{ wingetId = $null })) `
+    "Test-AppIsUncommon: null Winget ID is uncommon"
+Assert-True (-not (Test-AppIsUncommon -App ([pscustomobject]@{ wingetId = "7zip.7zip" }))) `
+    "Test-AppIsUncommon: real Winget ID is NOT uncommon"
+
+# =================================================================
+# Get-SafeFileNameForApp
+# =================================================================
+Assert-Equal "7-Zip" (Get-SafeFileNameForApp -Name "7-Zip") `
+    "Get-SafeFileNameForApp: simple name passes through"
+Assert-Equal "MyAppTest" (Get-SafeFileNameForApp -Name "My/App:Test") `
+    "Get-SafeFileNameForApp: unsafe path characters removed outright (not dash-replaced - only whitespace becomes a dash)"
+Assert-Equal "My-App" (Get-SafeFileNameForApp -Name "  My   App  ") `
+    "Get-SafeFileNameForApp: whitespace collapsed and trimmed to a single dash"
+Assert-Equal "App" (Get-SafeFileNameForApp -Name "") `
+    "Get-SafeFileNameForApp: blank name falls back to 'App'"
+
+# =================================================================
+# Get-DependencyOrderedApps
+# =================================================================
+$chain = @(
+    [pscustomobject]@{ appName = "C"; metadata = [pscustomobject]@{ dependencies = @("B") } }
+    [pscustomobject]@{ appName = "B"; metadata = [pscustomobject]@{ dependencies = @("A") } }
+    [pscustomobject]@{ appName = "A"; metadata = [pscustomobject]@{ dependencies = @() } }
+)
+$chainResult = Get-DependencyOrderedApps -Apps $chain
+Assert-Equal "A,B,C" (($chainResult.Ordered | ForEach-Object { $_.appName }) -join ",") `
+    "Get-DependencyOrderedApps: a chain (C->B->A) orders as A,B,C"
+Assert-Equal 0 $chainResult.CircularNames.Count `
+    "Get-DependencyOrderedApps: a chain has no circular names"
+
+$diamond = @(
+    [pscustomobject]@{ appName = "D"; metadata = [pscustomobject]@{ dependencies = @("B","C") } }
+    [pscustomobject]@{ appName = "B"; metadata = [pscustomobject]@{ dependencies = @("A") } }
+    [pscustomobject]@{ appName = "C"; metadata = [pscustomobject]@{ dependencies = @("A") } }
+    [pscustomobject]@{ appName = "A"; metadata = [pscustomobject]@{ dependencies = @() } }
+)
+$diamondResult = Get-DependencyOrderedApps -Apps $diamond
+$diamondOrder = @($diamondResult.Ordered | ForEach-Object { $_.appName })
+Assert-Equal 0 $diamondResult.CircularNames.Count "Get-DependencyOrderedApps: a diamond has no circular names"
+Assert-True ($diamondOrder.IndexOf("A") -lt $diamondOrder.IndexOf("B")) "Get-DependencyOrderedApps: diamond - A before B"
+Assert-True ($diamondOrder.IndexOf("A") -lt $diamondOrder.IndexOf("C")) "Get-DependencyOrderedApps: diamond - A before C"
+Assert-True ($diamondOrder.IndexOf("B") -lt $diamondOrder.IndexOf("D")) "Get-DependencyOrderedApps: diamond - B before D"
+Assert-True ($diamondOrder.IndexOf("C") -lt $diamondOrder.IndexOf("D")) "Get-DependencyOrderedApps: diamond - C before D"
+
+$cycle = @(
+    [pscustomobject]@{ appName = "X"; metadata = [pscustomobject]@{ dependencies = @("Y") } }
+    [pscustomobject]@{ appName = "Y"; metadata = [pscustomobject]@{ dependencies = @("X") } }
+)
+$cycleResult = Get-DependencyOrderedApps -Apps $cycle
+Assert-Equal 2 $cycleResult.CircularNames.Count "Get-DependencyOrderedApps: a genuine cycle (X<->Y) is flagged circular"
+Assert-Equal 2 $cycleResult.Ordered.Count "Get-DependencyOrderedApps: a genuine cycle still returns both apps, not neither"
+
+$independent = @(
+    [pscustomobject]@{ appName = "P"; metadata = [pscustomobject]@{ dependencies = @() } }
+    [pscustomobject]@{ appName = "Q"; metadata = [pscustomobject]@{ dependencies = @() } }
+)
+$independentResult = Get-DependencyOrderedApps -Apps $independent
+Assert-Equal 0 $independentResult.CircularNames.Count "Get-DependencyOrderedApps: independent apps have no circular names"
+Assert-Equal 2 $independentResult.Ordered.Count "Get-DependencyOrderedApps: independent apps both come back"
+
+$outsideDep = @(
+    [pscustomobject]@{ appName = "R"; metadata = [pscustomobject]@{ dependencies = @("NotInThisBatch") } }
+)
+$outsideResult = Get-DependencyOrderedApps -Apps $outsideDep
+Assert-Equal 1 $outsideResult.Ordered.Count "Get-DependencyOrderedApps: a dependency outside the batch doesn't block ordering"
+Assert-Equal 0 $outsideResult.CircularNames.Count "Get-DependencyOrderedApps: a dependency outside the batch isn't a false circular flag"
+
+# =================================================================
+# Get-CatalogMetadataFieldDiffs / Merge-CatalogMetadata
+# =================================================================
+$localMeta = [pscustomobject]@{
+    description = "Local desc"; publisher = "ITSENSE"; owner = ""; developer = ""
+    informationUrl = ""; privacyUrl = ""; notes = ""
+    installCommand = "install.ps1"; uninstallCommand = "uninstall.ps1"
+    architecture = "x64"
+    minDiskSpaceMB = 0; minMemoryMB = 0; minProcessors = 0; minCpuSpeedMHz = 0
+    installTimeMinutes = 60; deviceRestartBehavior = "basedOnReturnCode"
+    allowAvailableUninstall = $false
+    detectionRule = [pscustomobject]@{ Type = "Script"; Script_Content = "local script" }
+    returnCodes = @([pscustomobject]@{ returnCode = 0; type = "success" })
+}
+$remoteMetaSame = $localMeta | Select-Object *
+$diffsNone = Get-CatalogMetadataFieldDiffs -Local $localMeta -Remote $remoteMetaSame
+Assert-Equal 0 $diffsNone.Count "Get-CatalogMetadataFieldDiffs: identical local/remote produce zero diffs"
+
+$remoteMetaDiff = $localMeta | Select-Object *
+$remoteMetaDiff.description = "Remote desc"
+$remoteMetaDiff.architecture = "x64,arm64"
+$diffsSome = Get-CatalogMetadataFieldDiffs -Local $localMeta -Remote $remoteMetaDiff
+Assert-Equal 2 $diffsSome.Count "Get-CatalogMetadataFieldDiffs: two changed simple fields produce two diffs"
+Assert-True (@($diffsSome | ForEach-Object { $_.Field }) -contains "Description") "Get-CatalogMetadataFieldDiffs: Description flagged"
+Assert-True (@($diffsSome | ForEach-Object { $_.Field }) -contains "Architecture") "Get-CatalogMetadataFieldDiffs: Architecture flagged"
+
+$remoteMetaDetDiff = $localMeta | Select-Object *
+$remoteMetaDetDiff.detectionRule = [pscustomobject]@{ Type = "Script"; Script_Content = "different script" }
+$diffsDet = Get-CatalogMetadataFieldDiffs -Local $localMeta -Remote $remoteMetaDetDiff
+Assert-True (@($diffsDet | ForEach-Object { $_.Field }) -contains "Detection rule") "Get-CatalogMetadataFieldDiffs: Detection rule content change is flagged"
+
+$diffsNoLocal = Get-CatalogMetadataFieldDiffs -Local $null -Remote $remoteMetaDiff
+Assert-Equal 0 $diffsNoLocal.Count "Get-CatalogMetadataFieldDiffs: no local metadata at all means zero diffs (nothing to compare), not 'everything differs'"
+
+# Merge: no fields kept local -> pure Remote copy
+$mergedAllRemote = Merge-CatalogMetadata -Remote $remoteMetaDiff -Local $localMeta -KeepLocalFields @()
+Assert-Equal $remoteMetaDiff.description $mergedAllRemote.description "Merge-CatalogMetadata: no keep-local fields -> description is Remote's"
+Assert-Equal $remoteMetaDiff.architecture $mergedAllRemote.architecture "Merge-CatalogMetadata: no keep-local fields -> architecture is Remote's"
+
+# Merge: keep Description local, everything else Remote
+$mergedKeepDesc = Merge-CatalogMetadata -Remote $remoteMetaDiff -Local $localMeta -KeepLocalFields @("Description")
+Assert-Equal $localMeta.description $mergedKeepDesc.description "Merge-CatalogMetadata: kept field (Description) comes from Local"
+Assert-Equal $remoteMetaDiff.architecture $mergedKeepDesc.architecture "Merge-CatalogMetadata: non-kept field (Architecture) still comes from Remote"
+
+# Merge: keep Detection rule local
+$mergedKeepDet = Merge-CatalogMetadata -Remote $remoteMetaDetDiff -Local $localMeta -KeepLocalFields @("Detection rule")
+Assert-Equal $localMeta.detectionRule.Script_Content $mergedKeepDet.detectionRule.Script_Content `
+    "Merge-CatalogMetadata: kept 'Detection rule' pulls the composite object from Local, not just a simple field"
+
+# =================================================================
+# Get-CreateAppTemplates / Get-DefaultAppMetadata
+# =================================================================
+$wingetTemplates = Get-CreateAppTemplates -WingetId "7zip.7zip" -Uncommon $false
+Assert-True (-not [string]::IsNullOrWhiteSpace($wingetTemplates.Detection)) `
+    "Get-CreateAppTemplates: a winget app gets a real, non-blank default detection script"
+Assert-True ($wingetTemplates.Install -like "*7zip.7zip*") `
+    "Get-CreateAppTemplates: the winget ID is actually embedded in the install command"
+
+$uncommonTemplates = Get-CreateAppTemplates -WingetId "" -Uncommon $true
+Assert-Equal "" $uncommonTemplates.Detection `
+    "Get-CreateAppTemplates: an uncommon app has no default detection - there's nothing to derive one from"
+
+$wingetDefaults = Get-DefaultAppMetadata -AppName "Test Winget App" -WingetId "7zip.7zip" -Uncommon $false
+Assert-True ($null -ne $wingetDefaults.detectionRule) `
+    "Get-DefaultAppMetadata: a winget app's defaults include a usable detection rule"
+Assert-Equal "x64" $wingetDefaults.architecture "Get-DefaultAppMetadata: default architecture is x64-only"
+Assert-Equal "System" $wingetDefaults.installContext "Get-DefaultAppMetadata: default install context is System"
+Assert-Equal "v10_21H1" $wingetDefaults.minOSKey "Get-DefaultAppMetadata: default Min OS is the newest available"
+Assert-Equal "basedOnReturnCode" $wingetDefaults.deviceRestartBehavior "Get-DefaultAppMetadata: default restart behavior is basedOnReturnCode"
+Assert-Equal 5 @($wingetDefaults.returnCodes).Count "Get-DefaultAppMetadata: the standard 5 return codes are included"
+Assert-Equal "ITSENSE" $wingetDefaults.publisher "Get-DefaultAppMetadata: default publisher is ITSENSE"
+
+$uncommonDefaults = Get-DefaultAppMetadata -AppName "Test Uncommon App" -WingetId "" -Uncommon $true
+Assert-Null $uncommonDefaults.detectionRule `
+    "Get-DefaultAppMetadata: an uncommon app with no Winget ID has NO usable default detection rule - this is the exact case Batch Deploy must skip, not silently deploy with broken detection"
+
+# Winget AutoUpdate dependency default - present in $Script:Apps, app isn't itself Winget AutoUpdate
+$Script:Apps.Clear()
+$Script:Apps.Add([pscustomobject]@{ appName = "Winget AutoUpdate" })
+$defaultsWithWau = Get-DefaultAppMetadata -AppName "Some Other App" -WingetId "some.app" -Uncommon $false
+Assert-True (@($defaultsWithWau.dependencies) -contains "Winget AutoUpdate") `
+    "Get-DefaultAppMetadata: defaults to depending on Winget AutoUpdate when it exists in the catalog"
+
+# Winget AutoUpdate itself shouldn't depend on itself
+$defaultsForWauItself = Get-DefaultAppMetadata -AppName "Winget AutoUpdate" -WingetId "some.app" -Uncommon $false
+Assert-True (@($defaultsForWauItself.dependencies) -notcontains "Winget AutoUpdate") `
+    "Get-DefaultAppMetadata: Winget AutoUpdate itself never defaults to depending on itself"
+
+# Winget AutoUpdate absent from the catalog entirely
+$Script:Apps.Clear()
+$defaultsNoWau = Get-DefaultAppMetadata -AppName "Some Other App" -WingetId "some.app" -Uncommon $false
+Assert-Equal 0 @($defaultsNoWau.dependencies).Count `
+    "Get-DefaultAppMetadata: no dependency default when Winget AutoUpdate isn't in the catalog at all"
+
+# =================================================================
+# Report
+# =================================================================
+Write-Host ""
+if ($script:failures.Count -eq 0) {
+    Write-Host "PASSED: $($script:passCount) assertion(s), 0 failure(s)." -ForegroundColor Green
+    exit 0
+} else {
+    Write-Host "FAILED: $($script:failures.Count) of $($script:passCount + $script:failures.Count) assertion(s)." -ForegroundColor Red
+    foreach ($f in $script:failures) { Write-Host "`n$f" -ForegroundColor Red }
+    exit 1
+}
