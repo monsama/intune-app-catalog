@@ -11940,16 +11940,18 @@ function Show-IntuneOnlyAppsDialog {
                     availableFor = if ($ok) { @($data.AvailableGroupNames) } else { @() }
                     uninstallFor = if ($ok) { @($data.UninstallGroupNames) } else { @() }
                 }
-                # Auto-opens "Deploy to Intune..." the instant the editor is
-                # shown - since appId is already set here, that's the exact
-                # same auto-fetch-and-review flow already used for updating
-                # an existing app (see $btnCreateInIntune.Add_Click), just
-                # without the extra manual click. Metadata still goes
-                # through that dialog's own human-reviewable fetch/confirm
-                # step, not a silent direct write - same reasoning as
-                # everywhere else this app treats a detection rule or
-                # install command as too consequential to blind-copy.
-                $editorResult = Show-AppEditor -ExistingApp $prefill -AutoOpenDeployOnShown
+                # Opens plain, not auto-deploying - this used to auto-open
+                # "Deploy to Intune..." the instant the editor showed, but
+                # that meant the Deploy dialog popped up immediately,
+                # before there was any chance to set a Winget ID first (a
+                # detail Deploy to Intune's own defaults care about). Groups
+                # and metadata are still both reachable from here - groups
+                # via "Read groups from Intune" (which this dialog's own
+                # fetch above already primed requiredFor/availableFor/
+                # uninstallFor with, so it's a re-confirm not a first
+                # fetch), metadata via "Deploy to Intune..." itself, once
+                # Winget ID (or a custom install script) is actually set.
+                $editorResult = Show-AppEditor -ExistingApp $prefill
                 if ($editorResult) {
                     [void]$appsRefRef2.Add($editorResult.App)
                     $unsavedBoxRefRef2.Value = $true
@@ -13641,16 +13643,7 @@ function Show-GroupManagerDialog {
 # App editor dialog
 # ---------------------------------------------------------------
 function Show-AppEditor {
-    param(
-        $ExistingApp, # $null when adding a new app
-        # Set by "Intune sync check"'s "Add to catalog..." - auto-clicks
-        # "Deploy to Intune..." the moment this dialog is shown, since
-        # $ExistingApp.appId is already known there (an app just found
-        # live in Intune), so the exact same auto-fetch-and-review flow
-        # normally reached by an extra manual click can run immediately
-        # instead.
-        [switch]$AutoOpenDeployOnShown
-    )
+    param($ExistingApp) # $null when adding a new app
 
     # Plain (non-$Script:) local alias - see note in Start-IntuneAppLookup.
     $cache = $Script:IntuneAppsCache
@@ -14385,15 +14378,6 @@ function Show-AppEditor {
     }.GetNewClosure()
     $txtName.Add_TextChanged({ & $checkDuplicateName }.GetNewClosure())
     & $checkDuplicateName   # catches a pre-filled duplicate (e.g. Intune sync check's prefill) immediately on open, not just after the first keystroke
-
-    if ($AutoOpenDeployOnShown) {
-        # Deferred to Add_Shown, not called directly here - same reasoning
-        # as every other "kick off async work only once the window has
-        # actually been realized" case in this app (see the note next to
-        # Show-IntuneOnlyAppsDialog's own Add_Shown refresh): PerformClick
-        # here would fire before this dialog even has a window handle yet.
-        $dlg.Add_Shown({ $btnCreateInIntune.PerformClick() }.GetNewClosure())
-    }
 
     $dlgResult = $dlg.ShowDialog($form)
     if ($dlgResult -eq [System.Windows.Forms.DialogResult]::OK) {
