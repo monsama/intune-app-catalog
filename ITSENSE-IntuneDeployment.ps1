@@ -8147,7 +8147,7 @@ function Show-CreateInIntuneDialog {
     $lblMinOSStatus = New-Object System.Windows.Forms.Label
     $lblMinOSStatus.Text = ""
     $lblMinOSStatus.Location = New-Object System.Drawing.Point(415,676)
-    $lblMinOSStatus.Size = New-Object System.Drawing.Size(215,66)
+    $lblMinOSStatus.Size = New-Object System.Drawing.Size(220,48)
     $lblMinOSStatus.ForeColor = [System.Drawing.Color]::DarkOrange
     $lblMinOSStatus.Font = New-Object System.Drawing.Font($lblMinOSStatus.Font.FontFamily, 7.5)
     $scrollPanel.Controls.Add($lblMinOSStatus)
@@ -9579,39 +9579,59 @@ function Show-CreateInIntuneDialog {
                     $chkArchX64Ref.Checked = $archList -contains "x64"
                     $chkArchArm64Ref.Checked = $archList -contains "arm64"
                 }
-                if ($data.MinimumSupportedWindowsRelease) {
-                    # This is now the AUTHORITATIVE live value whenever it's
-                    # set - Microsoft has replaced the legacy
-                    # minimumSupportedOperatingSystem property (what
-                    # MinOSPropertyName/$minOsMap below still read AND
-                    # write) with this one specifically so Windows 11
-                    # requirements (which the old property's schema has no
-                    # room for at all) can be expressed - see the note next
-                    # to Start-AppMetadataFetch's own
-                    # MinimumSupportedWindowsRelease field. This dialog's
-                    # dropdown still only reads/writes the legacy property
-                    # (changing that is a real Graph-write behavior change,
-                    # not made here without deciding it deliberately) - so
-                    # this is shown, not selected into the dropdown, and
-                    # saving here does NOT touch this value in Intune
-                    # either way.
-                    $lblMinOSStatusRef.Text = "Intune actually has `"$($data.MinimumSupportedWindowsRelease)`" set (the newer property Microsoft replaced the old one with). This dropdown doesn't read or write that property - saving here won't change it."
+                # Legacy match resolved FIRST, regardless of which property
+                # ends up driving the status text below - needed so the new-
+                # property check just below can tell "genuinely different
+                # value" apart from "same release, reported through both
+                # properties" (e.g. legacy v10_21H1 and new W10_21H1/bare
+                # "21H1", all observed live for the exact same app).
+                $legacyMatchKey = $null
+                if ($data.MinOSPropertyName) {
+                    $legacyMatchKey = $minOsMapRef.Keys | Where-Object { $minOsMapRef[$_] -eq $data.MinOSPropertyName } | Select-Object -First 1
+                    if ($legacyMatchKey) { $cmbMinOSRef.SelectedItem = $legacyMatchKey }
                 }
-                elseif ($data.MinOSPropertyName) {
-                    $matchKey = $minOsMapRef.Keys | Where-Object { $minOsMapRef[$_] -eq $data.MinOSPropertyName } | Select-Object -First 1
-                    if ($matchKey) {
-                        $cmbMinOSRef.SelectedItem = $matchKey
+
+                if ($data.MinimumSupportedWindowsRelease) {
+                    # Microsoft has replaced the legacy
+                    # minimumSupportedOperatingSystem property (what
+                    # $legacyMatchKey/$minOsMap above still read AND write)
+                    # with this one, mainly to support Windows 11
+                    # requirements the old property's schema has no room
+                    # for - see the note next to Start-AppMetadataFetch's
+                    # own MinimumSupportedWindowsRelease field. Prefixes
+                    # ("W10_"/"W11_") vary, and a bare value with no prefix
+                    # at all has been observed live too - stripped here so
+                    # "v10_21H1" (legacy) and "W10_21H1"/"21H1" (new) are
+                    # recognized as the SAME release, not a false mismatch.
+                    $normalizeRelease = { param($v) if (-not $v) { return "" }; ($v -replace '^(W10_|W11_|v10_)', '').ToUpperInvariant() }
+                    $newReleaseNorm = & $normalizeRelease $data.MinimumSupportedWindowsRelease
+                    $legacyReleaseNorm = if ($legacyMatchKey) { & $normalizeRelease $data.MinOSPropertyName } else { "" }
+                    if ($legacyMatchKey -and $newReleaseNorm -eq $legacyReleaseNorm) {
+                        # Both properties agree - nothing actually
+                        # inconsistent to call out.
                         $lblMinOSStatusRef.Text = ""
                     }
                     else {
-                        # Really set in Intune, just not one of the values
-                        # this dialog's own dropdown offers (see the note
-                        # next to $minOsMap) - said explicitly rather than
-                        # leaving the dropdown looking blank/unset, which
-                        # would read as "Intune has no minimum OS" when the
-                        # truth is just "not one of these six options".
-                        $lblMinOSStatusRef.Text = "Intune has `"$($data.MinOSPropertyName)`" set - not one of the options above. Saving here will change it to whatever you pick."
+                        # This dialog's dropdown only reads/writes the
+                        # legacy property (switching that is a real Graph-
+                        # write behavior change, not made here without
+                        # deciding it deliberately) - so the live value is
+                        # just shown, not selected, and saving here does
+                        # NOT change it either way.
+                        $lblMinOSStatusRef.Text = "Live value: `"$($data.MinimumSupportedWindowsRelease)`" (newer property - not read/written here)."
                     }
+                }
+                elseif ($legacyMatchKey) {
+                    $lblMinOSStatusRef.Text = ""
+                }
+                elseif ($data.MinOSPropertyName) {
+                    # Really set in Intune, just not one of the values this
+                    # dialog's own dropdown offers (see the note next to
+                    # $minOsMap) - said explicitly rather than leaving the
+                    # dropdown looking blank/unset, which would read as
+                    # "Intune has no minimum OS" when the truth is just
+                    # "not one of these six options".
+                    $lblMinOSStatusRef.Text = "Intune has `"$($data.MinOSPropertyName)`" set - not offered above. Saving will change it."
                 }
                 else {
                     $lblMinOSStatusRef.Text = ""
