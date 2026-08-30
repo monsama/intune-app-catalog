@@ -11546,7 +11546,7 @@ function Show-DiagnosticsDialog {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Read-only health check - makes no changes to Intune, Entra ID, or the local catalog. Checks Graph connectivity and certificate expiry, catalog completeness, and drift between this catalog and what's actually in Intune right now."
+    $lblIntro.Text = "Read-only health check - makes no changes to Intune, Entra ID, or the local catalog. Checks Graph connectivity, certificate expiry, group permissions, catalog completeness (including duplicate App IDs and orphaned package folders), and drift between this catalog and what's actually in Intune right now."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(670,48)
     $dlg.Controls.Add($lblIntro)
@@ -11646,6 +11646,25 @@ function Show-DiagnosticsDialog {
         $dupeNames = @($appsRef | Group-Object { ($_.appName.Trim() -replace '\s+', ' ').ToLowerInvariant() } | Where-Object { $_.Count -gt 1 })
         & $appendLine "$(if ($dupeNames.Count -eq 0) { '[OK]' } else { '[FAIL]' }) $($dupeNames.Count) duplicate app name(s) in the catalog" $(if ($dupeNames.Count -eq 0) { $okColor } else { $failColor })
         foreach ($d in $dupeNames) { & $appendLine "    - $($d.Name) ($($d.Count) entries)" $infoColor }
+
+        $dupeAppIds = @($appsRef | Where-Object { $_.appId } | Group-Object { [string]$_.appId } | Where-Object { $_.Count -gt 1 })
+        & $appendLine "$(if ($dupeAppIds.Count -eq 0) { '[OK]' } else { '[FAIL]' }) $($dupeAppIds.Count) duplicate App ID(s) - more than one catalog entry pointing at the same Intune app" $(if ($dupeAppIds.Count -eq 0) { $okColor } else { $failColor })
+        foreach ($d in $dupeAppIds) { & $appendLine "    - $($d.Name): $(($d.Group | ForEach-Object { $_.appName }) -join ', ')" $infoColor }
+
+        # Local-only, no network needed - a folder under apps_uncommon that
+        # doesn't match any current uncommon app's safe name (Get-SafeFileNameForApp)
+        # is either a leftover from a renamed/removed app or build output that
+        # never got cleaned up. Not necessarily a problem (Resolve-AppPackagePath
+        # only ever looks for folders it DOES expect), just worth surfacing since
+        # it's otherwise invisible from inside the app.
+        $uncommonRootPath = Join-Path $Script:RootPath "apps_uncommon"
+        $expectedSafeNames = @($appsRef | Where-Object { Test-AppIsUncommon -App $_ } | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
+        $orphanFolders = @()
+        if (Test-Path $uncommonRootPath) {
+            $orphanFolders = @(Get-ChildItem -Path $uncommonRootPath -Directory -ErrorAction SilentlyContinue | Where-Object { $expectedSafeNames -notcontains $_.Name })
+        }
+        & $appendLine "$(if ($orphanFolders.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($orphanFolders.Count) folder(s) under apps_uncommon with no matching catalog entry" $(if ($orphanFolders.Count -eq 0) { $okColor } else { $infoColor })
+        foreach ($f in $orphanFolders) { & $appendLine "    - $($f.Name)" $infoColor }
 
         if (-not $credsOk) {
             & $appendLine "" $infoColor
@@ -11764,13 +11783,51 @@ function Show-DiagnosticsDialog {
                     foreach ($a in $minOsLegacyOnly) { & $appendLineRef2 "    - $($a.appName): $($minOsById[[string]$a.appId].minOSPropertyName)" $infoColorRef2 }
                 }
 
-                & $appendLineRef2 "" $infoColorRef2
-                & $appendLineRef2 "=== Done ===" $headerColorRef2
+                & $appendLineRef2 "Checking Entra ID group/user read permissions (needed for group assignment)..." $infoColorRef2
 
-                $btnRunRef2.Enabled = $true
-                $btnCloseRef2.Enabled = $true
-                $lblStatusRef2.Text = "Done."
-                $lblStatusRef2.ForeColor = $okColorRef2
+                # Fresh aliases for this third nested -OnComplete closure -
+                # see note at the top of Show-CreateInIntuneDialog.
+                $appendLineRef3 = $appendLineRef2
+                $okColorRef3    = $okColorRef2
+                $warnColorRef3  = $warnColorRef2
+                $failColorRef3  = $failColorRef2
+                $infoColorRef3  = $infoColorRef2
+                $headerColorRef3 = $headerColorRef2
+                $btnRunRef3     = $btnRunRef2
+                $btnCloseRef3   = $btnCloseRef2
+                $lblStatusRef3  = $lblStatusRef2
+
+                Start-EntraDirectoryLookup -OnComplete {
+                    param($groupsOk, $groupsData)
+                    if ($groupsOk) {
+                        & $appendLineRef3 "[OK] App registration can read Entra ID groups and users" $okColorRef3
+                    }
+                    else {
+                        # Distinguish an actual permissions problem (the app
+                        # registration lacks Group.Read.All / User.Read.All)
+                        # from a generic connectivity hiccup - the fix for
+                        # one is "grant the API permission in Entra ID", the
+                        # fix for the other is unrelated, so lumping them
+                        # into one generic failure would send the user down
+                        # the wrong path.
+                        $errText = [string]$groupsData
+                        $isPermissionError = $errText -match 'Forbidden|Authorization_RequestDenied|403|Insufficient privileges'
+                        if ($isPermissionError) {
+                            & $appendLineRef3 "[FAIL] App registration is missing Graph permission to read groups/users (Group.Read.All / User.Read.All) - group assignment will fail" $failColorRef3
+                        }
+                        else {
+                            & $appendLineRef3 "[WARN] Could not verify group/user read permissions: $errText" $warnColorRef3
+                        }
+                    }
+
+                    & $appendLineRef3 "" $infoColorRef3
+                    & $appendLineRef3 "=== Done ===" $headerColorRef3
+
+                    $btnRunRef3.Enabled = $true
+                    $btnCloseRef3.Enabled = $true
+                    $lblStatusRef3.Text = "Done."
+                    $lblStatusRef3.ForeColor = $okColorRef3
+                }.GetNewClosure()
             }.GetNewClosure()
         }.GetNewClosure()
     }.GetNewClosure())
@@ -14730,19 +14787,14 @@ $menuItemDeploy.Add_Click({
 $menuItemPackage.Add_Click({
     $indices = Get-SelectedAppIndices
     if ($indices.Count -eq 0) { return }
-    $tabs.SelectedTab = $tabPipeline
-    # Packaging directly determines the grid's own "Package missing"
-    # status and Folder column (see Resolve-AppPackagePath) - without
-    # this, a just-built package wouldn't show as found until something
-    # else happened to trigger a redraw.
     if ($indices.Count -eq 1) {
         $app = $Script:Apps[$indices[0]]
-        Invoke-LaunchStep -OnComplete { param($code) Refresh-Grid }.GetNewClosure() -SingleFolderName (Get-SafeFileNameForApp -Name $app.appName)
+        Show-PackagingProgressDialog -SingleFolderName (Get-SafeFileNameForApp -Name $app.appName)
         return
     }
     $uncommonApps = @($indices | ForEach-Object { $Script:Apps[$_] } | Where-Object { Test-AppIsUncommon -App $_ })
     $folderNames = @($uncommonApps | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
-    Invoke-LaunchStep -OnComplete { param($code) Refresh-Grid }.GetNewClosure() -FolderNames $folderNames
+    Show-PackagingProgressDialog -FolderNames $folderNames
 })
 
 $menuItemAssign.Add_Click({
@@ -15065,8 +15117,14 @@ function Start-PipelineProcess {
         [System.IO.File]::WriteAllText($tempScriptPath, $ScriptContent, $utf8NoBom)
     }
     catch {
-        Write-Log "[ERROR] Could not write temp script: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
+        $errText = "[ERROR] Could not write temp script: $($_.Exception.Message)`r`n"
+        Write-Log $errText ([System.Drawing.Color]::Tomato)
+        if ($ExtraLogTarget) { $ExtraLogTarget.AppendText($errText) }
         Set-PipelineButtonsEnabled $true
+        # Still notify the caller even though the process never started -
+        # otherwise anything gating on -OnComplete (like Show-PackagingProgressDialog's
+        # Close button) would stay stuck forever on this early-failure path.
+        if ($OnComplete) { & $OnComplete -1 }
         return
     }
 
@@ -15126,9 +15184,13 @@ function Start-PipelineProcess {
         $proc = [System.Diagnostics.Process]::Start($psi)
     }
     catch {
-        Write-Log "[ERROR] Could not start process: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
+        $errText = "[ERROR] Could not start process: $($_.Exception.Message)`r`n"
+        Write-Log $errText ([System.Drawing.Color]::Tomato)
+        if ($ExtraLogTarget) { $ExtraLogTarget.AppendText($errText) }
         Remove-Item $tempScriptPath -Force -ErrorAction SilentlyContinue
         Set-PipelineButtonsEnabled $true
+        # See the note on the "Could not write temp script" catch block above.
+        if ($OnComplete) { & $OnComplete -1 }
         return
     }
 
@@ -15183,7 +15245,14 @@ function Start-PipelineProcess {
 }
 
 function Invoke-LaunchStep {
-    param([scriptblock]$OnComplete, [string]$SingleFolderName = "", [string[]]$FolderNames = @())
+    param(
+        [scriptblock]$OnComplete,
+        [string]$SingleFolderName = "",
+        [string[]]$FolderNames = @(),
+        # Optional - see the note on Start-PipelineProcess's own -ExtraLogTarget
+        # param for why this exists.
+        [System.Windows.Forms.RichTextBox]$ExtraLogTarget = $null
+    )
     Ensure-Folders
     $rootPath = $Script:RootPath   # plain local alias - see note in Start-IntuneAppLookup
     if ($SingleFolderName) {
@@ -15202,7 +15271,89 @@ function Invoke-LaunchStep {
     elseif ($FolderNames.Count -gt 0) {
         $argStr += " -FolderNames '$($FolderNames -join ',')'"
     }
-    Start-PipelineProcess -ScriptContent $Script:EmbeddedPackageScript -TempScriptName ".itsense_embedded_launch.ps1" -ArgumentString $argStr -OnComplete $OnComplete
+    Start-PipelineProcess -ScriptContent $Script:EmbeddedPackageScript -TempScriptName ".itsense_embedded_launch.ps1" -ArgumentString $argStr -OnComplete $OnComplete -ExtraLogTarget $ExtraLogTarget
+}
+
+# Small modal wrapper around Invoke-LaunchStep - shows the run's output live
+# in its own log box instead of just switching the main window to the
+# Pipeline/Log tab, same reasoning as every other action dialog's own
+# -ExtraLogTarget (Show-CreateInIntuneDialog, Show-SyncMetadataDialog, etc.):
+# Start-PipelineProcess's Timer keeps ticking while this is modal (it's the
+# same UI thread's message loop, just nested), so live output still streams
+# in normally.
+function Show-PackagingProgressDialog {
+    param([string]$SingleFolderName = "", [string[]]$FolderNames = @())
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Packaging"
+    $dlg.ClientSize = New-Object System.Drawing.Size(620, 400)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+
+    $lblStatus = New-Object System.Windows.Forms.Label
+    $lblStatus.Text = "Packaging in progress..."
+    $lblStatus.Location = New-Object System.Drawing.Point(15,12)
+    $lblStatus.Size = New-Object System.Drawing.Size(590,20)
+    $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+    $dlg.Controls.Add($lblStatus)
+
+    $rtbLog = New-Object System.Windows.Forms.RichTextBox
+    $rtbLog.Location = New-Object System.Drawing.Point(15,40)
+    $rtbLog.Size = New-Object System.Drawing.Size(590,312)
+    $rtbLog.ReadOnly = $true
+    $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
+    $rtbLog.ForeColor = [System.Drawing.Color]::Gainsboro
+    $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $dlg.Controls.Add($rtbLog)
+
+    $btnClose = New-Object System.Windows.Forms.Button
+    $btnClose.Text = "Close"
+    $btnClose.Enabled = $false
+    $btnClose.Location = New-Object System.Drawing.Point(520,362)
+    $btnClose.Size = New-Object System.Drawing.Size(85,28)
+    $dlg.Controls.Add($btnClose)
+
+    # Mutable container, not a plain bool - written from inside the nested
+    # -OnComplete closure below, read from FormClosing. Blocks the window
+    # (X button / Alt+F4) from being closed out from under a still-running
+    # packaging process, same as this dialog's Close button starting disabled.
+    $runningBox = @{ Running = $true }
+
+    # Fresh aliases for the nested -OnComplete closure - see note at the top
+    # of Show-CreateInIntuneDialog for why this matters here too.
+    $dlgRef = $dlg
+    $btnCloseRef = $btnClose
+    $lblStatusRef = $lblStatus
+    $runningBoxRef = $runningBox
+    $rtbLogRef = $rtbLog
+
+    $btnClose.Add_Click({ $dlgRef.Close() }.GetNewClosure())
+    $dlg.Add_FormClosing({
+        param($s, $e)
+        if ($runningBoxRef.Running) { $e.Cancel = $true }
+    }.GetNewClosure())
+
+    $dlg.Add_Shown({
+        Invoke-LaunchStep -ExtraLogTarget $rtbLogRef -SingleFolderName $SingleFolderName -FolderNames $FolderNames -OnComplete {
+            param($code)
+            $runningBoxRef.Running = $false
+            Refresh-Grid
+            $btnCloseRef.Enabled = $true
+            if ($code -eq 0) {
+                $lblStatusRef.Text = "Packaging complete."
+                $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
+            }
+            else {
+                $lblStatusRef.Text = "Packaging finished with exit code $code - see the log above."
+                $lblStatusRef.ForeColor = [System.Drawing.Color]::Orange
+            }
+        }.GetNewClosure()
+    }.GetNewClosure())
+
+    Set-Theme -Control $dlg
+    [void]$dlg.ShowDialog($form)
 }
 
 $btnRunLaunch.Add_Click({
@@ -15216,16 +15367,10 @@ $btnRunLaunch.Add_Click({
             return
         }
         $folderNames = @($selectedUncommon | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
-        $tabs.SelectedTab = $tabPipeline
-        # Packaging directly determines the grid's own "Package missing"
-        # status and Folder column (see Resolve-AppPackagePath) - without
-        # this, a just-built package wouldn't show as found until
-        # something else happened to trigger a redraw.
-        Invoke-LaunchStep -OnComplete { param($code) Refresh-Grid }.GetNewClosure() -FolderNames $folderNames
+        Show-PackagingProgressDialog -FolderNames $folderNames
         return
     }
-    $tabs.SelectedTab = $tabPipeline   # switch to the Log tab so the run is visible without an extra click
-    Invoke-LaunchStep -OnComplete { param($code) Refresh-Grid }.GetNewClosure()
+    Show-PackagingProgressDialog
 })
 
 # =====================================================================
