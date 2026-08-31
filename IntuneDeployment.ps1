@@ -6804,7 +6804,19 @@ function Start-AppMetadataFetch {
         try {
             $raw = @($ps.EndInvoke($handle))
             if ($ps.Streams.Error.Count -gt 0) {
-                $errMsg = ($ps.Streams.Error | ForEach-Object { $_.ToString() }) -join "`n"
+                # $_.ToString() alone is just the message - for something
+                # like a stray "'else' is not recognized..." (which reads
+                # like a parse error, but can't be one in THIS script - see
+                # Start-AppMetadataFetch's own scriptblock, which parses
+                # clean) that's not enough to tell whether it came from our
+                # own code or from deep inside the Graph module chain
+                # (Import-Module/Connect-MgGraph/Invoke-MgGraphRequest).
+                # Appending where it was thrown (script file + line, if
+                # any) turns a mystery message into something diagnosable.
+                $errMsg = ($ps.Streams.Error | ForEach-Object {
+                    $where = $_.InvocationInfo.PositionMessage
+                    if ($where) { "$($_.ToString()) [$($where.Trim())]" } else { $_.ToString() }
+                }) -join "`n"
                 if ($OnComplete) { & $OnComplete $false $errMsg $null }
             }
             elseif ($raw.Count -eq 0) {
