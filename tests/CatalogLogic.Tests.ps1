@@ -118,7 +118,7 @@ foreach ($fn in $funcAsts) {
 
 # $Script:Apps is what Get-DefaultAppMetadata reads (its "default to
 # depending on Winget AutoUpdate if it exists" check) - stubbed here since
-# the real script's own startup (which populates this from the apps-data
+# the real script's own startup (which populates this from the app-data
 # folder) never runs in this harness.
 $Script:Apps = New-Object System.Collections.Generic.List[object]
 

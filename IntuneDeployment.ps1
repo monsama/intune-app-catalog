@@ -7,14 +7,14 @@
     A WinForms front end for the Intune deployment pipeline. Self-contained: the
     packaging and assignment logic (what used to be 1_GenerateIntunePackage.ps1 and
     5_AssignGroupsAndNames.ps1) is embedded directly in this file. App data lives as one
-    JSON file per app in an "apps-data" folder next to this script - not a single combined
+    JSON file per app in an "app-data" folder next to this script - not a single combined
     file - so a Git diff for one app's change only ever touches that app's own file, and one
     corrupted file doesn't take the rest of the catalog down with it. An older single
     input.json is migrated into this folder automatically, once, the first time this script
     doesn't find the new folder already there. Two tabs:
 
     App Catalog
-        Loads every app's own JSON file from the "apps-data" folder next to this script,
+        Loads every app's own JSON file from the "app-data" folder next to this script,
         shows them in a grid, and lets you add, edit, or delete apps. Group membership
         (Required / Available / Uninstall) is set with checkboxes against every group already
         used in the catalog, plus a button to add a brand new group. Save writes straight
@@ -47,7 +47,7 @@
     you tick that dialog's "Yes, apply".
 
     Requires: Windows PowerShell 5.1+ (or PowerShell 7+ on Windows), the Microsoft.Graph
-    modules that the Assign logic itself checks for, and an "apps-data" folder (or an old
+    modules that the Assign logic itself checks for, and an "app-data" folder (or an old
     single input.json to migrate from) next to this script.
 
 .EXAMPLE
@@ -68,13 +68,13 @@ Add-Type -AssemblyName System.Security   # for the native X509Certificate2UI sto
 # =====================================================================
 $Script:RootPath        = $PSScriptRoot
 # Points at a FOLDER of per-app JSON files now (one file per app, e.g.
-# "apps-data/7zip.json"), not a single input.json - kept the same variable
+# "app-data/7zip.json"), not a single input.json - kept the same variable
 # name despite the changed meaning to minimize how many of the many
 # existing references throughout this script needed touching, given the
 # genuine risk of a change this size. Load-AppsFromFile automatically
 # migrates an old single-file input.json into this folder the first time
 # it doesn't find the new structure already there.
-$Script:LinkedFilePath  = Join-Path $RootPath "apps-data"
+$Script:LinkedFilePath  = Join-Path $RootPath "app-data"
 $Script:Apps            = New-Object System.Collections.ArrayList
 $Script:UnsavedChangesBox = @{ Value = $false }   # container (never reassigned) so closures can mutate it safely
 $Script:IntuneAppsCache = New-Object System.Collections.ArrayList   # populated by Start-IntuneAppLookup: array of @{ id; displayName } - mutated in place (Clear+Add), never reassigned, so every closure that references it stays in sync
@@ -3894,12 +3894,12 @@ function Save-AppsToFile {
         try {
             $backupDir = Join-Path $Script:RootPath "backups"
             if (-not (Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
-            $backupName = "apps-data_" + (Get-Date -Format "yyyy-MM-dd_HHmmss")
+            $backupName = "app-data_" + (Get-Date -Format "yyyy-MM-dd_HHmmss")
             Copy-Item -Path $Path -Destination (Join-Path $backupDir $backupName) -Recurse -Force -ErrorAction Stop
 
             # Keep the last 20 - enough recovery headroom without letting
             # the backups folder grow without bound over months of use.
-            $existingBackups = Get-ChildItem -Path $backupDir -Filter "apps-data_*" -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
+            $existingBackups = Get-ChildItem -Path $backupDir -Filter "app-data_*" -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
             if ($existingBackups.Count -gt 20) {
                 $existingBackups | Select-Object -Skip 20 | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
             }
@@ -15026,7 +15026,7 @@ function Set-PipelineButtonsEnabled {
 }
 
 function Ensure-Folders {
-    $folders = @("app-packages","apps-data","logs","backups")
+    $folders = @("app-packages","app-data","logs","backups")
     foreach ($f in $folders) {
         $p = Join-Path $Script:RootPath $f
         if (-not (Test-Path $p)) {
