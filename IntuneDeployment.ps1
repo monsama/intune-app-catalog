@@ -6827,15 +6827,27 @@ function Start-AppMetadataFetch {
             }
         }
         catch {
-            # A raw "term not recognized" error (the one worth tracking down
-            # here) surfaces as a TERMINATING error, which lands here - not
-            # in the $ps.Streams.Error branch above, which only ever sees
-            # NON-terminating ones. $_.Exception.Message alone dropped the
-            # same location detail added there; same fix, same reasoning.
-            $where = $_.InvocationInfo.PositionMessage
-            $exType = $_.Exception.GetType().FullName
-            $msg = if ($where) { "$($_.Exception.Message) [$exType @ $($where.Trim())]" } else { "$($_.Exception.Message) [$exType]" }
-            if ($OnComplete) { & $OnComplete $false $msg $null }
+            # $_ here reflects the RE-THROW site (EndInvoke's own call site,
+            # in THIS file) - not where the error actually originated inside
+            # the background runspace's script, which by this point has
+            # already been disposed of below. $ps.Streams.Error, if
+            # anything made it there before the pipeline gave up, still
+            # carries the REAL position (line/char within that in-memory
+            # script, even without a filename since it was never a .ps1
+            # file) - prefer that when present, same reasoning/format as
+            # the sibling branch above.
+            if ($ps.Streams.Error.Count -gt 0) {
+                $errMsg = ($ps.Streams.Error | ForEach-Object {
+                    $where = $_.InvocationInfo.PositionMessage
+                    if ($where) { "$($_.ToString()) [$($where.Trim())]" } else { $_.ToString() }
+                }) -join "`n"
+            }
+            else {
+                $where = $_.InvocationInfo.PositionMessage
+                $exType = $_.Exception.GetType().FullName
+                $errMsg = if ($where) { "$($_.Exception.Message) [$exType @ $($where.Trim())]" } else { "$($_.Exception.Message) [$exType]" }
+            }
+            if ($OnComplete) { & $OnComplete $false $errMsg $null }
         }
         finally {
             $ps.Dispose()
@@ -9708,12 +9720,20 @@ function Show-CreateInIntuneDialog {
             $grdReturnCodesRef = $grdReturnCodes
             $fetchedIntuneFactsBoxRef = $fetchedIntuneFactsBox
             $btnCreateRef = $btnCreate
+            $rtbCreateLogRef = $rtbCreateLog
 
             Start-AppMetadataFetch -AppId $existingAppIdRef -OnComplete {
                 param($ok, $errMsg, $data)
                 if (-not $ok) {
                     $lblCreateStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
                     $lblCreateStatusRef.Text = "Could not load current metadata ($errMsg) - fields above are local guesses, not confirmed live values."
+                    # The label above wraps to a fixed height and clips
+                    # anything past it - the diagnostic detail this can now
+                    # carry (exception type, source position) routinely runs
+                    # past that. The log box below has room to spare and is
+                    # already scrollable, so the FULL message always lands
+                    # there too.
+                    $rtbCreateLogRef.AppendText("`r`n[FAILED] Could not load current metadata: $errMsg`r`n")
                     return
                 }
                 $fetchedIntuneFactsBoxRef.OdataType = $data.OdataType
