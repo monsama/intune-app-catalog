@@ -13956,7 +13956,7 @@ function Show-AppEditor {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = if ($ExistingApp) { "Edit app" } else { "Add app" }
-    $dlg.ClientSize = New-Object System.Drawing.Size(470, 865)
+    $dlg.ClientSize = New-Object System.Drawing.Size(470, 900)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -14070,10 +14070,33 @@ function Show-AppEditor {
     # defined right below, next to the rest of this button's own logic.
     $btnDeleteFromIntune = New-Object System.Windows.Forms.Button
     $btnDeleteFromIntune.Text = "Delete from Intune..."
-    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(170,825)
+    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(170,860)
     $btnDeleteFromIntune.Size = New-Object System.Drawing.Size(190,30)
     $dlg.Controls.Add($btnDeleteFromIntune)
     $appEditorTip = New-Object System.Windows.Forms.ToolTip
+
+    # Shared output log for this whole dialog - same black-console look as
+    # $rtbCreateLog in Show-CreateInIntuneDialog. Every error this dialog
+    # can hit (App ID lookup, Intune Deployment, delete, group read/sync)
+    # used to only ever get a single, easily-missed status line up near
+    # whatever control triggered it - some of them long enough to run past
+    # that label's fixed height and get silently clipped (the exact bug
+    # chased down in Start-AppMetadataFetch's own error path). Routing
+    # every error into one scrollable, persistent log instead means
+    # nothing gets lost, and the status labels themselves can stay short
+    # (compact) since they're no longer the only place the full message
+    # lives. Created here, early, rather than down where it visually sits
+    # (right above the bottom button row) - it needs to already be in
+    # scope for every .GetNewClosure()'d handler below to capture it, same
+    # reasoning as every other cross-cutting variable in this function.
+    $rtbAppEditorLog = New-Object System.Windows.Forms.RichTextBox
+    $rtbAppEditorLog.Location = New-Object System.Drawing.Point(15,766)
+    $rtbAppEditorLog.Size = New-Object System.Drawing.Size(430,86)
+    $rtbAppEditorLog.ReadOnly = $true
+    $rtbAppEditorLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
+    $rtbAppEditorLog.ForeColor = [System.Drawing.Color]::Gainsboro
+    $rtbAppEditorLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $dlg.Controls.Add($rtbAppEditorLog)
 
     $lblIdStatus = New-Object System.Windows.Forms.Label
     $lblIdStatus.Text = ""
@@ -14087,6 +14110,7 @@ function Show-AppEditor {
         if ($candidates.Count -eq 0) {
             $lblIdStatus.Text = "No matching app found in Intune for '$($txtName.Text.Trim())'."
             $lblIdStatus.ForeColor = [System.Drawing.Color]::DarkOrange
+            $rtbAppEditorLog.AppendText("[WARN] No matching app found in Intune for `"$($txtName.Text.Trim())`".`r`n")
         }
         elseif ($candidates.Count -eq 1 -or $candidates[0].displayName -eq $txtName.Text.Trim()) {
             $txtId.Text = $candidates[0].id
@@ -14118,12 +14142,14 @@ function Show-AppEditor {
             # $lblIdStatus/$TryFillIdFromCache directly.
             $lblIdStatusRef = $lblIdStatus
             $tryFillRef = $TryFillIdFromCache
+            $rtbAppEditorLogRef = $rtbAppEditorLog
             Start-IntuneAppLookup -OnComplete {
                 param($ok, $data)
                 if ($ok) { & $tryFillRef }
                 else {
                     $lblIdStatusRef.Text = "Lookup failed: $data"
                     $lblIdStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                    $rtbAppEditorLogRef.AppendText("[FAILED] Lookup failed: $data`r`n")
                 }
             }.GetNewClosure()
         }
@@ -14192,6 +14218,7 @@ function Show-AppEditor {
             else {
                 $lblIdStatus.Text = "Deployed to Intune, but saving to the catalog failed - check the Log tab, then use `"Save app to catalog`" below."
                 $lblIdStatus.ForeColor = [System.Drawing.Color]::DarkOrange
+                $rtbAppEditorLog.AppendText("[FAILED] Deployed to Intune, but saving to the local catalog failed - see the Log tab for details.`r`n")
             }
         }
         elseif ($deployResult -and $deployResult.NewAppId) {
@@ -14294,6 +14321,7 @@ function Show-AppEditor {
         else {
             $lblIdStatus.Text = "Deleted from Intune, but saving the cleared App ID failed - check the Log tab, then use Force save."
             $lblIdStatus.ForeColor = [System.Drawing.Color]::Firebrick
+            $rtbAppEditorLog.AppendText("[FAILED] Deleted from Intune, but saving the cleared App ID locally failed - see the Log tab for details.`r`n")
         }
     }.GetNewClosure())
 
@@ -14376,29 +14404,9 @@ function Show-AppEditor {
         return @{ Box = $gb; List = $clb }
     }
 
-    # Same bold-label + divider-line pattern used for section headers in
-    # Show-CertificateSetupDialog ("LOCAL CERTIFICATE"/"ENTRA ID
-    # CERTIFICATE") - reused here to both label this next block of
-    # controls AND put the otherwise-empty gap between the App ID status
-    # line above (ends y=290) and the group boxes below (start y=340) to
-    # actual use, instead of just leaving it as dead space.
-    $lblGroupsSection = New-Object System.Windows.Forms.Label
-    $lblGroupsSection.Text = "GROUP ASSIGNMENTS"
-    $lblGroupsSection.Location = New-Object System.Drawing.Point(15,306)
-    $lblGroupsSection.AutoSize = $true
-    $lblGroupsSection.Font = New-Object System.Drawing.Font($dlg.Font.FontFamily, 8, [System.Drawing.FontStyle]::Bold)
-    $lblGroupsSection.ForeColor = [System.Drawing.Color]::FromArgb(90,90,90)
-    $dlg.Controls.Add($lblGroupsSection)
-
-    $sepGroupsSection = New-Object System.Windows.Forms.Panel
-    $sepGroupsSection.Location = New-Object System.Drawing.Point(155,310)
-    $sepGroupsSection.Size = New-Object System.Drawing.Size(290,1)
-    $sepGroupsSection.BackColor = [System.Drawing.Color]::FromArgb(200,200,200)
-    $dlg.Controls.Add($sepGroupsSection)
-
-    $reqGroup   = New-GroupBox -Title "Required for"  -Top 340 -Selected @($ExistingApp.requiredFor)
-    $availGroup = New-GroupBox -Title "Available for" -Top 470 -Selected @($ExistingApp.availableFor)
-    $uninstGroup= New-GroupBox -Title "Uninstall for" -Top 600 -Selected @($ExistingApp.uninstallFor)
+    $reqGroup   = New-GroupBox -Title "Required for"  -Top 296 -Selected @($ExistingApp.requiredFor)
+    $availGroup = New-GroupBox -Title "Available for" -Top 422 -Selected @($ExistingApp.availableFor)
+    $uninstGroup= New-GroupBox -Title "Uninstall for" -Top 548 -Selected @($ExistingApp.uninstallFor)
     $dlg.Controls.Add($reqGroup.Box)
     $dlg.Controls.Add($availGroup.Box)
     $dlg.Controls.Add($uninstGroup.Box)
@@ -14414,7 +14422,7 @@ function Show-AppEditor {
     # what's actually there".
     $btnReadGroupsFromIntune = New-Object System.Windows.Forms.Button
     $btnReadGroupsFromIntune.Text = "Read groups from Intune"
-    $btnReadGroupsFromIntune.Location = New-Object System.Drawing.Point(15,725)
+    $btnReadGroupsFromIntune.Location = New-Object System.Drawing.Point(15,674)
     $btnReadGroupsFromIntune.Size = New-Object System.Drawing.Size(430,30)
     $dlg.Controls.Add($btnReadGroupsFromIntune)
 
@@ -14424,20 +14432,20 @@ function Show-AppEditor {
     # near the button/lists it was actually reporting on.
     $lblGroupSyncStatus = New-Object System.Windows.Forms.Label
     $lblGroupSyncStatus.Text = ""
-    $lblGroupSyncStatus.Location = New-Object System.Drawing.Point(15,757)
-    $lblGroupSyncStatus.Size = New-Object System.Drawing.Size(430,20)
+    $lblGroupSyncStatus.Location = New-Object System.Drawing.Point(15,708)
+    $lblGroupSyncStatus.Size = New-Object System.Drawing.Size(430,18)
     $lblGroupSyncStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblGroupSyncStatus)
 
     $btnAssignGroups = New-Object System.Windows.Forms.Button
     $btnAssignGroups.Text = "Assign Groups to Intune (this app only)..."
-    $btnAssignGroups.Location = New-Object System.Drawing.Point(15,785)
+    $btnAssignGroups.Location = New-Object System.Drawing.Point(15,730)
     $btnAssignGroups.Size = New-Object System.Drawing.Size(430,30)
     $dlg.Controls.Add($btnAssignGroups)
 
     $btnOk = New-Object System.Windows.Forms.Button
     $btnOk.Text = "Save app to catalog"
-    $btnOk.Location = New-Object System.Drawing.Point(15,825)
+    $btnOk.Location = New-Object System.Drawing.Point(15,860)
     $btnOk.Size = New-Object System.Drawing.Size(150,30)
     $dlg.Controls.Add($btnOk)
 
@@ -14447,7 +14455,7 @@ function Show-AppEditor {
     # bottom row.
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(365,825)
+    $btnCancel.Location = New-Object System.Drawing.Point(365,860)
     $btnCancel.Size = New-Object System.Drawing.Size(90,30)
     $dlg.Controls.Add($btnCancel)
 
@@ -14477,13 +14485,15 @@ function Show-AppEditor {
         $uninstGroupRef = $uninstGroup
         $btnReadGroupsFromIntuneRef = $btnReadGroupsFromIntune
         $lblGroupSyncStatusRef = $lblGroupSyncStatus
+        $rtbAppEditorLogRef = $rtbAppEditorLog
 
         Start-AppMetadataFetch -AppId $txtId.Text.Trim() -OnComplete {
             param($ok, $errMsg, $data)
             $btnReadGroupsFromIntuneRef.Enabled = $true
             if (-not $ok) {
                 $lblGroupSyncStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
-                $lblGroupSyncStatusRef.Text = "Could not read groups from Intune ($errMsg)."
+                $lblGroupSyncStatusRef.Text = "Could not read groups from Intune - see log below."
+                $rtbAppEditorLogRef.AppendText("[FAILED] Could not read groups from Intune: $errMsg`r`n")
                 return
             }
             # Sets each list to match Intune EXACTLY, not a merge - this
