@@ -7359,7 +7359,7 @@ function Resolve-AppPackagePath {
     }
 
     $safeName = Get-SafeFileNameForApp -Name $AppName
-    $uncommonRoot = Join-Path $Script:RootPath "apps_uncommon"
+    $uncommonRoot = Join-Path $Script:RootPath "app-packages"
     if (Test-Path $uncommonRoot) {
         $found = Get-ChildItem -Path $uncommonRoot -Recurse -Filter "$safeName.intunewin" -File -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($found) { return @{ Path = $found.FullName; Found = $true } }
@@ -11654,19 +11654,19 @@ function Show-DiagnosticsDialog {
         & $appendLine "$(if ($dupeAppIds.Count -eq 0) { '[OK]' } else { '[FAIL]' }) $($dupeAppIds.Count) duplicate App ID(s) - more than one catalog entry pointing at the same Intune app" $(if ($dupeAppIds.Count -eq 0) { $okColor } else { $failColor })
         foreach ($d in $dupeAppIds) { & $appendLine "    - $($d.Name): $(($d.Group | ForEach-Object { $_.appName }) -join ', ')" $infoColor }
 
-        # Local-only, no network needed - a folder under apps_uncommon that
+        # Local-only, no network needed - a folder under app-packages that
         # doesn't match any current uncommon app's safe name (Get-SafeFileNameForApp)
         # is either a leftover from a renamed/removed app or build output that
         # never got cleaned up. Not necessarily a problem (Resolve-AppPackagePath
         # only ever looks for folders it DOES expect), just worth surfacing since
         # it's otherwise invisible from inside the app.
-        $uncommonRootPath = Join-Path $Script:RootPath "apps_uncommon"
+        $uncommonRootPath = Join-Path $Script:RootPath "app-packages"
         $expectedSafeNames = @($appsRef | Where-Object { Test-AppIsUncommon -App $_ } | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
         $orphanFolders = @()
         if (Test-Path $uncommonRootPath) {
             $orphanFolders = @(Get-ChildItem -Path $uncommonRootPath -Directory -ErrorAction SilentlyContinue | Where-Object { $expectedSafeNames -notcontains $_.Name })
         }
-        & $appendLine "$(if ($orphanFolders.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($orphanFolders.Count) folder(s) under apps_uncommon with no matching catalog entry" $(if ($orphanFolders.Count -eq 0) { $okColor } else { $infoColor })
+        & $appendLine "$(if ($orphanFolders.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($orphanFolders.Count) folder(s) under app-packages with no matching catalog entry" $(if ($orphanFolders.Count -eq 0) { $okColor } else { $infoColor })
         foreach ($f in $orphanFolders) { & $appendLine "    - $($f.Name)" $infoColor }
 
         if (-not $credsOk) {
@@ -15026,7 +15026,7 @@ function Set-PipelineButtonsEnabled {
 }
 
 function Ensure-Folders {
-    $folders = @("apps_uncommon","apps-data","logs","backups")
+    $folders = @("app-packages","apps-data","logs","backups")
     foreach ($f in $folders) {
         $p = Join-Path $Script:RootPath $f
         if (-not (Test-Path $p)) {
@@ -15272,9 +15272,9 @@ function Invoke-LaunchStep {
         Write-Log "=== Package selected apps ($($FolderNames.Count)) ===`r`n" ([System.Drawing.Color]::DeepSkyBlue)
     }
     else {
-        Write-Log "=== Package all apps (apps_uncommon) ===`r`n" ([System.Drawing.Color]::DeepSkyBlue)
+        Write-Log "=== Package all apps (app-packages) ===`r`n" ([System.Drawing.Color]::DeepSkyBlue)
     }
-    $argStr = "-InputFolder '$(Join-Path $rootPath 'apps_uncommon')' -Force"
+    $argStr = "-InputFolder '$(Join-Path $rootPath 'app-packages')' -Force"
     if ($SingleFolderName) {
         $argStr += " -SingleFolderName '$SingleFolderName'"
     }
