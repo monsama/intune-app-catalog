@@ -13919,7 +13919,7 @@ function Show-AppEditor {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = if ($ExistingApp) { "Edit app" } else { "Add app" }
-    $dlg.ClientSize = New-Object System.Drawing.Size(470, 845)
+    $dlg.ClientSize = New-Object System.Drawing.Size(470, 865)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -14033,7 +14033,7 @@ function Show-AppEditor {
     # defined right below, next to the rest of this button's own logic.
     $btnDeleteFromIntune = New-Object System.Windows.Forms.Button
     $btnDeleteFromIntune.Text = "Delete from Intune..."
-    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(170,805)
+    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(170,825)
     $btnDeleteFromIntune.Size = New-Object System.Drawing.Size(190,30)
     $dlg.Controls.Add($btnDeleteFromIntune)
     $appEditorTip = New-Object System.Windows.Forms.ToolTip
@@ -14361,15 +14361,26 @@ function Show-AppEditor {
     $btnReadGroupsFromIntune.Size = New-Object System.Drawing.Size(430,30)
     $dlg.Controls.Add($btnReadGroupsFromIntune)
 
+    # Dedicated status label for the button right above - this used to
+    # reuse $lblIdStatus (the App ID lookup status, up near the top of the
+    # dialog around y=250), which put "Groups above now match..." nowhere
+    # near the button/lists it was actually reporting on.
+    $lblGroupSyncStatus = New-Object System.Windows.Forms.Label
+    $lblGroupSyncStatus.Text = ""
+    $lblGroupSyncStatus.Location = New-Object System.Drawing.Point(15,757)
+    $lblGroupSyncStatus.Size = New-Object System.Drawing.Size(430,20)
+    $lblGroupSyncStatus.ForeColor = [System.Drawing.Color]::DimGray
+    $dlg.Controls.Add($lblGroupSyncStatus)
+
     $btnAssignGroups = New-Object System.Windows.Forms.Button
     $btnAssignGroups.Text = "Assign Groups to Intune (this app only)..."
-    $btnAssignGroups.Location = New-Object System.Drawing.Point(15,765)
+    $btnAssignGroups.Location = New-Object System.Drawing.Point(15,785)
     $btnAssignGroups.Size = New-Object System.Drawing.Size(430,30)
     $dlg.Controls.Add($btnAssignGroups)
 
     $btnOk = New-Object System.Windows.Forms.Button
     $btnOk.Text = "Save app to catalog"
-    $btnOk.Location = New-Object System.Drawing.Point(15,805)
+    $btnOk.Location = New-Object System.Drawing.Point(15,825)
     $btnOk.Size = New-Object System.Drawing.Size(150,30)
     $dlg.Controls.Add($btnOk)
 
@@ -14379,7 +14390,7 @@ function Show-AppEditor {
     # bottom row.
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(365,805)
+    $btnCancel.Location = New-Object System.Drawing.Point(365,825)
     $btnCancel.Size = New-Object System.Drawing.Size(90,30)
     $dlg.Controls.Add($btnCancel)
 
@@ -14398,8 +14409,8 @@ function Show-AppEditor {
             return
         }
         $btnReadGroupsFromIntune.Enabled = $false
-        $lblIdStatus.ForeColor = [System.Drawing.Color]::DimGray
-        $lblIdStatus.Text = "Reading current group assignments from Intune..."
+        $lblGroupSyncStatus.ForeColor = [System.Drawing.Color]::DimGray
+        $lblGroupSyncStatus.Text = "Reading current group assignments from Intune..."
 
         # Fresh aliases for the nested -OnComplete closure - see note at
         # the top of Show-CreateInIntuneDialog for why this matters here
@@ -14408,14 +14419,14 @@ function Show-AppEditor {
         $availGroupRef = $availGroup
         $uninstGroupRef = $uninstGroup
         $btnReadGroupsFromIntuneRef = $btnReadGroupsFromIntune
-        $lblIdStatusRef = $lblIdStatus
+        $lblGroupSyncStatusRef = $lblGroupSyncStatus
 
         Start-AppMetadataFetch -AppId $txtId.Text.Trim() -OnComplete {
             param($ok, $errMsg, $data)
             $btnReadGroupsFromIntuneRef.Enabled = $true
             if (-not $ok) {
-                $lblIdStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
-                $lblIdStatusRef.Text = "Could not read groups from Intune ($errMsg)."
+                $lblGroupSyncStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
+                $lblGroupSyncStatusRef.Text = "Could not read groups from Intune ($errMsg)."
                 return
             }
             # Sets each list to match Intune EXACTLY, not a merge - this
@@ -14439,8 +14450,8 @@ function Show-AppEditor {
             & $syncGroupList $availGroupRef.List $data.AvailableGroupNames
             & $syncGroupList $uninstGroupRef.List $data.UninstallGroupNames
 
-            $lblIdStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
-            $lblIdStatusRef.Text = "Groups above now match what's currently assigned in Intune."
+            $lblGroupSyncStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
+            $lblGroupSyncStatusRef.Text = "Groups above now match what's currently assigned in Intune."
         }.GetNewClosure()
     }.GetNewClosure())
 
