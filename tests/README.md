@@ -2,7 +2,7 @@
 
 `CatalogLogic.Tests.ps1` is a small, framework-free test suite for the
 handful of **pure, side-effect-free** functions in
-`ITSENSE-IntuneDeployment.ps1` - the ones with no WinForms dependency and no
+`IntuneDeployment.ps1` - the ones with no WinForms dependency and no
 live Microsoft Graph call, so they can actually run headless (including in
 CI, or any Linux box with PowerShell 7+ - no Windows needed for this part).
 

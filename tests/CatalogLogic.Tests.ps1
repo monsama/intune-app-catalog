@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Plain, no-framework unit tests for this app's pure, side-effect-free
-    catalog logic - the part of ITSENSE-IntuneDeployment.ps1 that doesn't
+    catalog logic - the part of IntuneDeployment.ps1 that doesn't
     touch WinForms or Microsoft Graph and can genuinely run headless.
 
 .DESCRIPTION
@@ -70,7 +70,7 @@ function Assert-Null {
 # ---------------------------------------------------------------
 # Extract the pure functions under test straight from the real script
 # ---------------------------------------------------------------
-$mainScriptPath = Join-Path $PSScriptRoot "..\ITSENSE-IntuneDeployment.ps1"
+$mainScriptPath = Join-Path $PSScriptRoot "..\IntuneDeployment.ps1"
 $mainScriptPath = Resolve-Path $mainScriptPath
 
 $parseErrors = $null

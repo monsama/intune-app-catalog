@@ -51,7 +51,7 @@
     single input.json to migrate from) next to this script.
 
 .EXAMPLE
-    .\ITSENSE-IntuneDeployment.ps1
+    .\IntuneDeployment.ps1
 #>
 
 [CmdletBinding()]
