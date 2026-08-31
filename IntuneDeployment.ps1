@@ -6827,7 +6827,15 @@ function Start-AppMetadataFetch {
             }
         }
         catch {
-            if ($OnComplete) { & $OnComplete $false $_.Exception.Message $null }
+            # A raw "term not recognized" error (the one worth tracking down
+            # here) surfaces as a TERMINATING error, which lands here - not
+            # in the $ps.Streams.Error branch above, which only ever sees
+            # NON-terminating ones. $_.Exception.Message alone dropped the
+            # same location detail added there; same fix, same reasoning.
+            $where = $_.InvocationInfo.PositionMessage
+            $exType = $_.Exception.GetType().FullName
+            $msg = if ($where) { "$($_.Exception.Message) [$exType @ $($where.Trim())]" } else { "$($_.Exception.Message) [$exType]" }
+            if ($OnComplete) { & $OnComplete $false $msg $null }
         }
         finally {
             $ps.Dispose()
