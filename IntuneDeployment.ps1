@@ -6484,7 +6484,7 @@ $grid.Columns.Add((New-GridColumn "AppName" "App Name" -FillWeight 16)) | Out-Nu
 $grid.Columns.Add((New-GridColumn "WingetId" "Winget ID" -FillWeight 10)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Type" "Type" -FillWeight 13)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 4)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 3)) | Out-Null
+$grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 6)) | Out-Null
 $grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -FillWeight 5)) | Out-Null
 # Package folder holds full filesystem paths, which routinely run longer
 # than every other column's content (including the App ID GUID) - by far
