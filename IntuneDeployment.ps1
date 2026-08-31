@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    ITSENSE Intune App Catalog & Deployment GUI - manage the app catalog and run the Intune
+    Intune App Catalog & Deployment GUI - manage the app catalog and run the Intune
     pipeline, all from one window, all from one file.
 
 .DESCRIPTION
-    A WinForms front end for the ITSENSE Intune deployment pipeline. Self-contained: the
+    A WinForms front end for the Intune deployment pipeline. Self-contained: the
     packaging and assignment logic (what used to be 1_GenerateIntunePackage.ps1 and
     5_AssignGroupsAndNames.ps1) is embedded directly in this file. App data lives as one
     JSON file per app in an "apps-data" folder next to this script - not a single combined
@@ -87,7 +87,7 @@ $Script:AppVersion = "1.1"   # bump when shipping a meaningfully different build
 # your Entra ID app registration. Left blank on purpose - no tenant/client
 # ID or certificate thumbprint should ever be hardcoded in a script that
 # lives in a repo. Configure these via "Settings..." in the app on first
-# run; they're then saved to itsense-intune-settings.json next to this
+# run; they're then saved to intune-deployment-settings.json next to this
 # script and loaded automatically from there on every subsequent launch
 # (see Load-GraphSettings below). The certificate itself must already be
 # installed in this user's certificate store - Settings can also pick an
@@ -95,7 +95,7 @@ $Script:AppVersion = "1.1"   # bump when shipping a meaningfully different build
 $Script:GraphTenantId              = ""
 $Script:GraphClientId              = ""
 $Script:GraphCertificateThumbprint = ""
-$Script:SettingsFilePath = Join-Path $Script:RootPath "itsense-intune-settings.json"
+$Script:SettingsFilePath = Join-Path $Script:RootPath "intune-deployment-settings.json"
 
 # Group names marked as "favorites" - shown as ready-to-tick options in
 # every app's Required/Available/Uninstall lists (new and existing alike),
@@ -222,7 +222,7 @@ function Set-ThemeRecursive {
 }
 
 # Overrides $Script:GraphTenantId/ClientId/CertificateThumbprint from
-# itsense-intune-settings.json if that file exists, so choices made in the Settings
+# intune-deployment-settings.json if that file exists, so choices made in the Settings
 # dialog persist across restarts without editing this script's source.
 function Load-GraphSettings {
     if (-not (Test-Path $Script:SettingsFilePath)) { return }
@@ -1245,7 +1245,7 @@ function Get-IntuneWinPackageInfo {
         $contentEntry = $zip.Entries | Where-Object { $_.FullName -match [regex]::Escape($contentFileName) + '$' } | Select-Object -First 1
         if (-not $contentEntry) { throw "Encrypted content file '$contentFileName' not found inside the package." }
 
-        $tempEncryptedPath = Join-Path $env:TEMP ("itsense_upload_" + [guid]::NewGuid().ToString("N") + ".bin")
+        $tempEncryptedPath = Join-Path $env:TEMP ("intunepkg_upload_" + [guid]::NewGuid().ToString("N") + ".bin")
         [System.IO.Compression.ZipFileExtensions]::ExtractToFile($contentEntry, $tempEncryptedPath)
         $encryptedSize = (Get-Item $tempEncryptedPath).Length
         Write-Host "  Encrypted size  : $encryptedSize bytes" -ForegroundColor Gray
@@ -5553,7 +5553,7 @@ function Show-CertificateSetupDialog {
 
     $y = 15
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "These identify the Entra ID app registration used for app-only sign-in (Launch/Assign and the App ID lookup). Changes here are saved to itsense-intune-settings.json next to this script."
+    $lblIntro.Text = "These identify the Entra ID app registration used for app-only sign-in (Launch/Assign and the App ID lookup). Changes here are saved to intune-deployment-settings.json next to this script."
     $lblIntro.Location = New-Object System.Drawing.Point(15,$y)
     $lblIntro.Size = New-Object System.Drawing.Size(900,45)
     $dlg.Controls.Add($lblIntro)
@@ -5826,7 +5826,7 @@ function Show-CertificateSetupDialog {
 
         $subject = [Microsoft.VisualBasic.Interaction]::InputBox(
             "Certificate subject (the 'CN=' prefix is added automatically if you leave it out):",
-            "Generate certificate", "ITSENSE Intune Deployment")
+            "Generate certificate", "Intune Deployment")
         if (-not $subject) { return }
         $subject = $subject.Trim()
         if (-not $subject) { return }
@@ -5842,7 +5842,7 @@ function Show-CertificateSetupDialog {
 
             $sfd = New-Object System.Windows.Forms.SaveFileDialog
             $sfd.Filter = "Certificate files (*.cer)|*.cer"
-            $sfd.FileName = "ITSENSE-Intune-Deployment.cer"
+            $sfd.FileName = "Intune-Deployment.cer"
             $sfd.Title = "Export public certificate (upload this to Entra ID)"
             if ($sfd.ShowDialog($dlg) -eq [System.Windows.Forms.DialogResult]::OK) {
                 Export-Certificate -Cert $newCert -FilePath $sfd.FileName | Out-Null
@@ -5885,8 +5885,8 @@ function Show-CertificateSetupDialog {
         $lblUploadStatus.Text = "Starting sign-in..."
         $rtbUploadLog.Clear()
 
-        $configPath = Join-Path $env:TEMP (".itsense_certupload_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".itsense_certupload_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $configPath = Join-Path $env:TEMP (".intunepkg_certupload_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_certupload_result_" + [guid]::NewGuid().ToString("N") + ".json")
         # OutputResultPath included directly in the object literal, not
         # bolted on afterward via a separate Select-Object step - that
         # extra step was confirmed, directly and repeatedly, to sometimes
@@ -5921,7 +5921,7 @@ function Show-CertificateSetupDialog {
         $lstCertsRef = $lstCerts
         $certKeyIdsRef = $certKeyIds
 
-        Start-PipelineProcess -ScriptContent $certUploadScript -TempScriptName ".itsense_embedded_certupload.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbUploadLog -ShowConsoleWindow -OnComplete {
+        Start-PipelineProcess -ScriptContent $certUploadScript -TempScriptName ".intunepkg_embedded_certupload.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbUploadLog -ShowConsoleWindow -OnComplete {
             param($code)
             $btnCheckCertsRef.Enabled = $true
             $btnUploadRef.Enabled = $true
@@ -5988,8 +5988,8 @@ function Show-CertificateSetupDialog {
         $lblUploadStatus.Text = "Starting sign-in..."
         $rtbUploadLog.Clear()
 
-        $configPath = Join-Path $env:TEMP (".itsense_certupload_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".itsense_certupload_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $configPath = Join-Path $env:TEMP (".intunepkg_certupload_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_certupload_result_" + [guid]::NewGuid().ToString("N") + ".json")
         $config = [pscustomobject]@{
             Mode             = "Upload"
             TenantId         = $uploadTenant
@@ -6019,7 +6019,7 @@ function Show-CertificateSetupDialog {
         $configPathRef = $configPath
         $rtbUploadLogRef = $rtbUploadLog
 
-        Start-PipelineProcess -ScriptContent $certUploadScript -TempScriptName ".itsense_embedded_certupload.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbUploadLog -ShowConsoleWindow -OnComplete {
+        Start-PipelineProcess -ScriptContent $certUploadScript -TempScriptName ".intunepkg_embedded_certupload.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbUploadLog -ShowConsoleWindow -OnComplete {
             param($code)
             $btnUploadRef.Enabled = $true
             $btnCheckCertsRef.Enabled = $true
@@ -6081,8 +6081,8 @@ function Show-CertificateSetupDialog {
         $lblUploadStatus.Text = "Starting sign-in..."
         $rtbUploadLog.Clear()
 
-        $configPath = Join-Path $env:TEMP (".itsense_certupload_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".itsense_certupload_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $configPath = Join-Path $env:TEMP (".intunepkg_certupload_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_certupload_result_" + [guid]::NewGuid().ToString("N") + ".json")
         $config = [pscustomobject]@{
             Mode             = "DeleteCert"
             TenantId         = $deleteTenant
@@ -6109,7 +6109,7 @@ function Show-CertificateSetupDialog {
         $configPathRef = $configPath
         $rtbUploadLogRef = $rtbUploadLog
 
-        Start-PipelineProcess -ScriptContent $certUploadScript -TempScriptName ".itsense_embedded_certupload.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbUploadLog -ShowConsoleWindow -OnComplete {
+        Start-PipelineProcess -ScriptContent $certUploadScript -TempScriptName ".intunepkg_embedded_certupload.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbUploadLog -ShowConsoleWindow -OnComplete {
             param($code)
             $btnCheckCertsRef.Enabled = $true
             $btnUploadRef.Enabled = $true
@@ -6257,7 +6257,7 @@ function Show-CertificateSetupDialog {
 # Main window
 # =====================================================================
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "ITSENSE Intune App Catalog & Deployment (v$($Script:AppVersion))"
+$form.Text = "Intune App Catalog & Deployment (v$($Script:AppVersion))"
 $form.Size = New-Object System.Drawing.Size(1080, 720)
 $form.MinimumSize = New-Object System.Drawing.Size(860, 560)
 $form.StartPosition = "CenterScreen"
@@ -7518,7 +7518,7 @@ function Get-DefaultAppMetadata {
 
     return [pscustomobject]@{
         description      = $AppName
-        publisher        = "ITSENSE"
+        publisher        = ""
         owner            = ""
         developer        = ""
         informationUrl   = ""
@@ -8847,8 +8847,8 @@ function Show-CreateInIntuneDialog {
         # ruled out. Rather than keep chasing why that specific PowerShell
         # construct misbehaves, this sidesteps it entirely by never using
         # it in the first place.
-        $configPath = Join-Path $env:TEMP (".itsense_createapp_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".itsense_createapp_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $configPath = Join-Path $env:TEMP (".intunepkg_createapp_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_createapp_result_" + [guid]::NewGuid().ToString("N") + ".json")
 
         $config = [pscustomobject]@{
             TenantId              = $tenantId
@@ -9058,7 +9058,7 @@ function Show-CreateInIntuneDialog {
         $depNameByLabelRef = $depNameByLabel
         $fetchedIntuneFactsBoxRef = $fetchedIntuneFactsBox
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".itsense_embedded_createapp.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbCreateLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".intunepkg_embedded_createapp.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbCreateLog -OnComplete {
             param($code)
             $btnCreateRef.Enabled = $true
             $procBoxRef.Proc = $null
@@ -10217,8 +10217,8 @@ function Show-TargetedAssignDialog {
             "Confirm", "YesNo", "Question")
         if ($r -ne "Yes") { return }
 
-        $configPath = Join-Path $env:TEMP (".itsense_targetedassign_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".itsense_targetedassign_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $configPath = Join-Path $env:TEMP (".intunepkg_targetedassign_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_targetedassign_result_" + [guid]::NewGuid().ToString("N") + ".json")
         $config = [pscustomobject]@{
             TenantId              = $tenantId
             ClientId              = $clientId
@@ -10252,7 +10252,7 @@ function Show-TargetedAssignDialog {
         $procBoxRef = $procBox
         $rtbLogRef = $rtbLog
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $targetedScript -TempScriptName ".itsense_embedded_targetedassign.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $targetedScript -TempScriptName ".intunepkg_embedded_targetedassign.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $btnRunRef.Enabled = $true
             $procBoxRef.Proc = $null
@@ -10545,8 +10545,8 @@ function Show-BatchDeployDialog {
             }
         }
 
-        $configPath = Join-Path $env:TEMP (".itsense_batchdeploy_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".itsense_batchdeploy_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $configPath = Join-Path $env:TEMP (".intunepkg_batchdeploy_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_batchdeploy_result_" + [guid]::NewGuid().ToString("N") + ".json")
 
         $config = [pscustomobject]@{
             TenantId                = $tenantId
@@ -10617,7 +10617,7 @@ function Show-BatchDeployDialog {
         $usedDefaultsRef = $usedDefaults
         $effectiveMetadataRef = $effectiveMetadata
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".itsense_embedded_batchdeploy.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLogRef -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".intunepkg_embedded_batchdeploy.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLogRef -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
             Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue
@@ -10884,8 +10884,8 @@ function Show-SyncMetadataDialog {
         $lblStatus.Text = "Syncing $($configApps.Count) app(s)..."
         $rtbLog.Clear()
 
-        $configPath = Join-Path $env:TEMP (".itsense_syncmeta_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".itsense_syncmeta_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $configPath = Join-Path $env:TEMP (".intunepkg_syncmeta_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_syncmeta_result_" + [guid]::NewGuid().ToString("N") + ".json")
         $config = [pscustomobject]@{
             TenantId              = $tenantId
             ClientId              = $clientId
@@ -10919,7 +10919,7 @@ function Show-SyncMetadataDialog {
         $lastFailedBoxRef = $lastFailedBox
         $btnRetryFailedRef = $btnRetryFailed
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".itsense_embedded_syncmeta.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".intunepkg_embedded_syncmeta.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
             $btnSyncRef.Enabled = $true
@@ -11394,8 +11394,8 @@ function Show-BatchAssignDialog {
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = if ($Mode -eq "Preview") { "Checking $($eligibleApps.Count) app(s)..." } else { "Applying changes to $($eligibleApps.Count) app(s)..." }
 
-        $configPath = Join-Path $env:TEMP (".itsense_batchassign_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".itsense_batchassign_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $configPath = Join-Path $env:TEMP (".intunepkg_batchassign_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_batchassign_result_" + [guid]::NewGuid().ToString("N") + ".json")
         $config = [pscustomobject]@{
             TenantId              = $tenantId
             ClientId              = $clientId
@@ -11425,7 +11425,7 @@ function Show-BatchAssignDialog {
         $modeRef = $Mode
         $rtbLogRef = $rtbLog
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $batchScript -TempScriptName ".itsense_embedded_batchassign.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $batchScript -TempScriptName ".intunepkg_embedded_batchassign.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
             Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue
@@ -12461,8 +12461,8 @@ function Show-DeleteAppDialog {
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = if ($RemoveDependencyFromAppId) { "Removing the blocking dependency, then deleting..." } else { "Deleting..." }
 
-        $configPath = Join-Path $env:TEMP (".itsense_deleteapp_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".itsense_deleteapp_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $configPath = Join-Path $env:TEMP (".intunepkg_deleteapp_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_deleteapp_result_" + [guid]::NewGuid().ToString("N") + ".json")
         $config = [pscustomobject]@{
             TenantId                  = $tenantId
             ClientId                  = $clientId
@@ -12497,7 +12497,7 @@ function Show-DeleteAppDialog {
         $unsavedBoxRef = $unsavedBox
         $linkedFilePathRef = $linkedFilePath
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $deleteScript -TempScriptName ".itsense_embedded_deleteapp.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $deleteScript -TempScriptName ".intunepkg_embedded_deleteapp.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
             Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue
@@ -12862,8 +12862,8 @@ function Show-BulkDeleteFromIntuneDialog {
             $lblStatus.Text = "Deleting $($QueueIndex+1) of $($Queue.Count): $($currentApp.appName)..."
         }
 
-        $configPath = Join-Path $env:TEMP (".itsense_bulkdelete_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".itsense_bulkdelete_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $configPath = Join-Path $env:TEMP (".intunepkg_bulkdelete_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_bulkdelete_result_" + [guid]::NewGuid().ToString("N") + ".json")
         $config = [pscustomobject]@{
             TenantId                  = $tenantId
             ClientId                  = $clientId
@@ -12900,7 +12900,7 @@ function Show-BulkDeleteFromIntuneDialog {
         $deletedAnyBoxRef = $deletedAnyBox
         $RunNextBoxRef = $RunNextBox
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $deleteScript -TempScriptName ".itsense_embedded_bulkdelete.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLogRef -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $deleteScript -TempScriptName ".intunepkg_embedded_bulkdelete.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLogRef -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
             Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue
@@ -13598,8 +13598,8 @@ function Show-GroupManagerDialog {
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = "Working..."
 
-        $configPath = Join-Path $env:TEMP (".itsense_groupmanager_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".itsense_groupmanager_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $configPath = Join-Path $env:TEMP (".intunepkg_groupmanager_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_groupmanager_result_" + [guid]::NewGuid().ToString("N") + ".json")
         $config = [pscustomobject]@{
             TenantId              = $tenantId
             ClientId              = $clientId
@@ -13634,7 +13634,7 @@ function Show-GroupManagerDialog {
         $lstMembersRef = $lstMembers
         $pendingMemberIdsRef = $pendingMemberIds
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".itsense_embedded_groupmanager.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".intunepkg_embedded_groupmanager.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $btnRunRef.Enabled = $true
             $btnDeleteGroupRef.Enabled = $true
@@ -13694,8 +13694,8 @@ function Show-GroupManagerDialog {
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = "Deleting..."
 
-        $configPath = Join-Path $env:TEMP (".itsense_groupmanager_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".itsense_groupmanager_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $configPath = Join-Path $env:TEMP (".intunepkg_groupmanager_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_groupmanager_result_" + [guid]::NewGuid().ToString("N") + ".json")
         $config = [pscustomobject]@{
             TenantId              = $tenantId
             ClientId              = $clientId
@@ -13730,7 +13730,7 @@ function Show-GroupManagerDialog {
         $currentMemberIdsRef = $currentMemberIds
         $currentGroupIdBoxRef = $currentGroupIdBox
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".itsense_embedded_groupmanager.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".intunepkg_embedded_groupmanager.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $btnRunRef.Enabled = $true
             $btnDeleteGroupRef.Enabled = $true
@@ -13790,8 +13790,8 @@ function Show-GroupManagerDialog {
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = "Removing..."
 
-        $configPath = Join-Path $env:TEMP (".itsense_groupmanager_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".itsense_groupmanager_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $configPath = Join-Path $env:TEMP (".intunepkg_groupmanager_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_groupmanager_result_" + [guid]::NewGuid().ToString("N") + ".json")
         $config = [pscustomobject]@{
             TenantId              = $tenantId
             ClientId              = $clientId
@@ -13826,7 +13826,7 @@ function Show-GroupManagerDialog {
         $rtbLogRef = $rtbLog
         $loadCurrentMembersRef = $LoadCurrentMembers
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".itsense_embedded_groupmanager.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".intunepkg_embedded_groupmanager.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $btnRunRef.Enabled = $true
             $btnDeleteGroupRef.Enabled = $true
@@ -15042,7 +15042,7 @@ function Ensure-Folders {
     # membership, granting certificate trust).
     if (-not $Script:LogFileWriter) {
         try {
-            $logPath = Join-Path (Join-Path $Script:RootPath "logs") ("itsense-intune-" + (Get-Date -Format "yyyy-MM-dd") + ".log")
+            $logPath = Join-Path (Join-Path $Script:RootPath "logs") ("intune-deployment-" + (Get-Date -Format "yyyy-MM-dd") + ".log")
             $Script:LogFileWriter = New-Object System.IO.StreamWriter($logPath, $true, [System.Text.Encoding]::UTF8)
             # Flushed periodically (below) rather than on every single
             # Write-Log call - AutoFlush forces a synchronous disk write on
@@ -15131,7 +15131,7 @@ function Start-PipelineProcess {
         return
     }
 
-    $logFile = Join-Path $env:TEMP ("itsense_" + [guid]::NewGuid().ToString("N") + ".log")
+    $logFile = Join-Path $env:TEMP ("intunepkg_" + [guid]::NewGuid().ToString("N") + ".log")
     New-Item -Path $logFile -ItemType File -Force | Out-Null
 
     $escapedScript = $tempScriptPath -replace "'", "''"
@@ -15281,7 +15281,7 @@ function Invoke-LaunchStep {
     elseif ($FolderNames.Count -gt 0) {
         $argStr += " -FolderNames '$($FolderNames -join ',')'"
     }
-    Start-PipelineProcess -ScriptContent $Script:EmbeddedPackageScript -TempScriptName ".itsense_embedded_launch.ps1" -ArgumentString $argStr -OnComplete $OnComplete -ExtraLogTarget $ExtraLogTarget
+    Start-PipelineProcess -ScriptContent $Script:EmbeddedPackageScript -TempScriptName ".intunepkg_embedded_launch.ps1" -ArgumentString $argStr -OnComplete $OnComplete -ExtraLogTarget $ExtraLogTarget
 }
 
 # Small modal wrapper around Invoke-LaunchStep - shows the run's output live
@@ -15404,7 +15404,7 @@ $btnRunLaunch.Add_Click({
 Ensure-Folders
 Load-AppsFromFile -Path $Script:LinkedFilePath
 Refresh-Grid
-Write-Log "ITSENSE Intune deployment console ready (v$($Script:AppVersion)). Root: $Script:RootPath`r`n" ([System.Drawing.Color]::Gainsboro)
+Write-Log "Intune deployment console ready (v$($Script:AppVersion)). Root: $Script:RootPath`r`n" ([System.Drawing.Color]::Gainsboro)
 Start-TypeVersionBackfill
 
 if (-not $Script:GraphTenantId -or -not $Script:GraphClientId -or -not $Script:GraphCertificateThumbprint) {
