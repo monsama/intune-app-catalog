@@ -8271,7 +8271,11 @@ function Show-CreateInIntuneDialog {
 
     # --- Context / Architecture / Min OS, one row ---
     $lblContext = New-Object System.Windows.Forms.Label
-    $lblContext.Text = if ($isDuplicate) { "Install context (locked - set at creation only)" } else { "Install context" }
+    # Kept short deliberately - the full "(locked - set at creation only)"
+    # wording used to run wide enough to overlap "Applicable architectures"
+    # right next to it (the two labels share this one row). The full
+    # explanation is still available, via the tooltip below.
+    $lblContext.Text = if ($isDuplicate) { "Install context (locked)" } else { "Install context" }
     $lblContext.Location = New-Object System.Drawing.Point(15,631)
     $lblContext.AutoSize = $true
     $scrollPanel.Controls.Add($lblContext)
@@ -8377,6 +8381,9 @@ function Show-CreateInIntuneDialog {
     # an existing app.
     if ($isDuplicate) {
         $cmbContext.Enabled = $false
+        $contextLockedTip = New-Object System.Windows.Forms.ToolTip
+        $contextLockedTip.SetToolTip($lblContext, "Set at creation only - cannot be changed afterward.")
+        $contextLockedTip.SetToolTip($cmbContext, "Set at creation only - cannot be changed afterward.")
     }
 
     # A visual separator, not an actual collapsible section - this dialog's
