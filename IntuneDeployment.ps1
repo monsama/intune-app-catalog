@@ -14376,6 +14376,26 @@ function Show-AppEditor {
         return @{ Box = $gb; List = $clb }
     }
 
+    # Same bold-label + divider-line pattern used for section headers in
+    # Show-CertificateSetupDialog ("LOCAL CERTIFICATE"/"ENTRA ID
+    # CERTIFICATE") - reused here to both label this next block of
+    # controls AND put the otherwise-empty gap between the App ID status
+    # line above (ends y=290) and the group boxes below (start y=340) to
+    # actual use, instead of just leaving it as dead space.
+    $lblGroupsSection = New-Object System.Windows.Forms.Label
+    $lblGroupsSection.Text = "GROUP ASSIGNMENTS"
+    $lblGroupsSection.Location = New-Object System.Drawing.Point(15,306)
+    $lblGroupsSection.AutoSize = $true
+    $lblGroupsSection.Font = New-Object System.Drawing.Font($dlg.Font.FontFamily, 8, [System.Drawing.FontStyle]::Bold)
+    $lblGroupsSection.ForeColor = [System.Drawing.Color]::FromArgb(90,90,90)
+    $dlg.Controls.Add($lblGroupsSection)
+
+    $sepGroupsSection = New-Object System.Windows.Forms.Panel
+    $sepGroupsSection.Location = New-Object System.Drawing.Point(155,310)
+    $sepGroupsSection.Size = New-Object System.Drawing.Size(290,1)
+    $sepGroupsSection.BackColor = [System.Drawing.Color]::FromArgb(200,200,200)
+    $dlg.Controls.Add($sepGroupsSection)
+
     $reqGroup   = New-GroupBox -Title "Required for"  -Top 340 -Selected @($ExistingApp.requiredFor)
     $availGroup = New-GroupBox -Title "Available for" -Top 470 -Selected @($ExistingApp.availableFor)
     $uninstGroup= New-GroupBox -Title "Uninstall for" -Top 600 -Selected @($ExistingApp.uninstallFor)
