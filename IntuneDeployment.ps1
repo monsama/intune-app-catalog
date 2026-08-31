@@ -9941,9 +9941,6 @@ function Show-CreateInIntuneDialog {
                 else {
                     $lblMinOSStatusRef.Text = ""
                 }
-                else {
-                    $lblMinOSStatusRef.Text = ""
-                }
 
                 # Compared against whatever was saved locally BEFORE this
                 # fetch overwrote the fields above with live values - Intune
