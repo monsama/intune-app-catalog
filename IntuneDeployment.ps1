@@ -15619,7 +15619,26 @@ function Show-PackagingProgressDialog {
     }.GetNewClosure())
 
     $dlg.Add_Shown({
-        Invoke-LaunchStep -ExtraLogTarget $rtbLogRef -SingleFolderName $SingleFolderName -FolderNames $FolderNames -OnComplete {
+        # Re-aliased HERE, fresh, in the immediately-enclosing (Add_Shown)
+        # closure's own body - reusing $rtbLogRef/$btnCloseRef/etc. directly
+        # inside the -OnComplete closure below (as this used to) is exactly
+        # the "nested closure doesn't reliably see a variable only captured
+        # by an OUTER closure" gap this app's own established convention
+        # exists to avoid (see the note in Show-BatchDeployDialog's own
+        # $RunNextBox handler) - it was just missed here. Confirmed live:
+        # the finally block's own $btnCloseRef.Enabled = $true silently
+        # never took effect, leaving Close permanently greyed out even
+        # though the run itself completed successfully (exit code 0,
+        # "[Finished]" printed) - a doubly-nested closure failing to see an
+        # outer closure's own capture, not a Refresh-Grid exception (that
+        # path was already defended with its own try/catch/finally, which
+        # is why this went unnoticed until now).
+        $btnCloseRef2 = $btnCloseRef
+        $lblStatusRef2 = $lblStatusRef
+        $runningBoxRef2 = $runningBoxRef
+        $rtbLogRef2 = $rtbLogRef
+
+        Invoke-LaunchStep -ExtraLogTarget $rtbLogRef2 -SingleFolderName $SingleFolderName -FolderNames $FolderNames -OnComplete {
             param($code)
             # Refresh-Grid wrapped in try/finally - it's local catalog/filesystem
             # work with no reason to fail, but this runs from inside a Timer.Tick
@@ -15633,18 +15652,18 @@ function Show-PackagingProgressDialog {
                 Refresh-Grid
             }
             catch {
-                $rtbLogRef.AppendText("`r`n[WARN] Grid refresh after packaging failed: $($_.Exception.Message)`r`n")
+                $rtbLogRef2.AppendText("`r`n[WARN] Grid refresh after packaging failed: $($_.Exception.Message)`r`n")
             }
             finally {
-                $runningBoxRef.Running = $false
-                $btnCloseRef.Enabled = $true
+                $runningBoxRef2.Running = $false
+                $btnCloseRef2.Enabled = $true
                 if ($code -eq 0) {
-                    $lblStatusRef.Text = "Packaging complete."
-                    $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
+                    $lblStatusRef2.Text = "Packaging complete."
+                    $lblStatusRef2.ForeColor = [System.Drawing.Color]::SeaGreen
                 }
                 else {
-                    $lblStatusRef.Text = "Packaging finished with exit code $code - see the log above."
-                    $lblStatusRef.ForeColor = [System.Drawing.Color]::Orange
+                    $lblStatusRef2.Text = "Packaging finished with exit code $code - see the log above."
+                    $lblStatusRef2.ForeColor = [System.Drawing.Color]::Orange
                 }
             }
         }.GetNewClosure()
