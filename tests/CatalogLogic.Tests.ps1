@@ -231,6 +231,31 @@ Assert-True (@($diffsDet | ForEach-Object { $_.Field }) -contains "Detection rul
 $diffsNoLocal = Get-CatalogMetadataFieldDiffs -Local $null -Remote $remoteMetaDiff
 Assert-Equal 0 $diffsNoLocal.Count "Get-CatalogMetadataFieldDiffs: no local metadata at all means zero diffs (nothing to compare), not 'everything differs'"
 
+# Win32Only fields (install time/restart behavior/allow-uninstall/detection
+# rule/return codes) must never be flagged for a non-Win32 app - Intune
+# always reports them blank/null for e.g. a Microsoft Store app, so
+# comparing them against this tool's Win32-shaped local defaults would be a
+# permanent false positive, not a real difference.
+$remoteMetaStoreApp = $localMeta | Select-Object *
+$remoteMetaStoreApp.installTimeMinutes = $null
+$remoteMetaStoreApp.deviceRestartBehavior = ""
+$remoteMetaStoreApp.allowAvailableUninstall = $false
+$remoteMetaStoreApp.detectionRule = $null
+$remoteMetaStoreApp.returnCodes = @()
+$diffsStoreApp = Get-CatalogMetadataFieldDiffs -Local $localMeta -Remote $remoteMetaStoreApp -OdataType "#microsoft.graph.winGetApp"
+Assert-Equal 0 $diffsStoreApp.Count "Get-CatalogMetadataFieldDiffs: Win32Only fields aren't flagged for a non-Win32 OdataType"
+
+# Omitting -OdataType (every pre-existing caller) still assumes Win32 - the
+# same fields flag as real diffs when the type is unknown/blank.
+$diffsAssumedWin32 = Get-CatalogMetadataFieldDiffs -Local $localMeta -Remote $remoteMetaStoreApp
+Assert-True ($diffsAssumedWin32.Count -gt 0) "Get-CatalogMetadataFieldDiffs: omitting -OdataType still compares Win32Only fields (backward compatible default)"
+
+# A Win32-like OdataType other than plain win32LobApp (e.g. the legacy MSI
+# wrapper type) must still compare Win32Only fields, not just an exact
+# "win32LobApp" match.
+$diffsWindowsMobileMsi = Get-CatalogMetadataFieldDiffs -Local $localMeta -Remote $remoteMetaStoreApp -OdataType "#microsoft.graph.windowsMobileMSI"
+Assert-True ($diffsWindowsMobileMsi.Count -gt 0) "Get-CatalogMetadataFieldDiffs: windowsMobileMSI is treated as Win32-like, not skipped"
+
 # Merge: no fields kept local -> pure Remote copy
 $mergedAllRemote = Merge-CatalogMetadata -Remote $remoteMetaDiff -Local $localMeta -KeepLocalFields @()
 Assert-Equal $remoteMetaDiff.description $mergedAllRemote.description "Merge-CatalogMetadata: no keep-local fields -> description is Remote's"
