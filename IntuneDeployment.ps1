@@ -15645,7 +15645,14 @@ Refresh-Grid
 Write-Log "Intune deployment console ready (v$($Script:AppVersion)). Root: $Script:RootPath`r`n" ([System.Drawing.Color]::Gainsboro)
 Start-TypeVersionBackfill
 
-if (-not $Script:GraphTenantId -or -not $Script:GraphClientId -or -not $Script:GraphCertificateThumbprint) {
+# Whitespace-aware, same as Test-GraphCredentialsConfigured - a plain
+# truthiness check here would treat a whitespace-only value as "set" and
+# skip straight to the certificate-store lookup below, which is exactly
+# the class of bug that made Diagnostics contradict itself (see
+# Test-GraphCredentialsConfigured's own comment). Not calling that
+# function directly here since it also pops a MessageBox on failure,
+# which this silent startup check must never do.
+if ([string]::IsNullOrWhiteSpace($Script:GraphTenantId) -or [string]::IsNullOrWhiteSpace($Script:GraphClientId) -or [string]::IsNullOrWhiteSpace($Script:GraphCertificateThumbprint)) {
     Write-Log "No Graph connection configured yet - open 'Settings...' to set your Tenant ID, Client ID, and certificate before using anything that talks to Intune or Entra ID (App ID lookup, Deploy to Intune, Assign Groups, Intune sync check, Batch assign).`r`n" ([System.Drawing.Color]::Orange)
     # Also shown as a banner on the App Catalog tab itself, not just logged -
     # the Log tab isn't the default active one, so this is otherwise easy
