@@ -11734,8 +11734,23 @@ function Show-BatchAssignDialog {
 # run if credentials are configured - a missing/broken Graph setup
 # doesn't block the local half of the report.
 function Show-DiagnosticsDialog {
-    # Plain local aliases - see note in Start-IntuneAppLookup.
+    # Plain local aliases - see note in Start-IntuneAppLookup. $certThumbRef
+    # specifically fixes a real, confirmed-live bug: $btnRun.Add_Click below
+    # is itself a .GetNewClosure()'d scriptblock, and reading
+    # $Script:GraphCertificateThumbprint DIRECTLY from inside it (as this
+    # used to) returned a stale/blank value even though the real, current
+    # thumbprint was genuinely set - while Test-GraphCredentialsConfigured,
+    # a real FUNCTION called from that same closure, correctly saw the live
+    # value (functions always resolve $Script: fresh; a closure's direct
+    # $Script: reads don't). That mismatch is exactly what produced the
+    # impossible-looking "[OK] ... all set" immediately followed by
+    # "[WARN] Certificate: No thumbprint set." - not a whitespace issue at
+    # all, confirmed by an actual user's live DEBUG output showing
+    # Test-GraphCredentialsConfigured() correctly returning true while a
+    # direct $Script: read of the same variable, from the same closure, at
+    # the same instant, read back empty.
     $appsRef = $Script:Apps
+    $certThumbRef = $Script:GraphCertificateThumbprint
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Diagnostics"
@@ -11818,7 +11833,7 @@ function Show-DiagnosticsDialog {
         & $appendLine "$(if ($credsOk) { '[OK]' } else { '[FAIL]' }) Tenant ID / Client ID / Certificate thumbprint all set" $(if ($credsOk) { $okColor } else { $failColor })
 
         if ($credsOk) {
-            $certStatus = Get-CertificateStatusText -Thumbprint $Script:GraphCertificateThumbprint
+            $certStatus = Get-CertificateStatusText -Thumbprint $certThumbRef
             $certOk = $certStatus.Color -eq [System.Drawing.Color]::SeaGreen
             $certWarn = $certStatus.Color -eq [System.Drawing.Color]::DarkOrange
             $certTag = if ($certOk) { "[OK]" } elseif ($certWarn) { "[WARN]" } else { "[FAIL]" }
