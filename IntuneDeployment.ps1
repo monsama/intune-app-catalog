@@ -1110,6 +1110,26 @@ function Add-OptionalStringField {
     if (-not [string]::IsNullOrWhiteSpace($Value)) { $Body[$GraphKey] = $Value }
 }
 
+# $Config.MinOSVersionKey arrives in the IntuneWin32App module's own
+# convention ("W10_1607", "W11_21H2", ...) - the GUI's $minOsRawValues list
+# in Show-CreateInIntuneDialog is sourced directly from that module's
+# ValidateSet, and this raw value is also what gets stored in the local
+# catalog JSON. Confirmed live against the tenant, though, that Graph
+# itself rejects that spelling outright on write ("Unknown
+# MinimumSupportedWindowsRelease: W11_21H2") - Microsoft's own
+# documentation for this property only shows the "Windows11_23H2" style
+# (Windows<major>_<release>, no leading "W" abbreviation) as a valid
+# value. Read paths elsewhere in this app (Get-ParsedMinOsRelease) already
+# tolerate both spellings, since apps created via the portal or other
+# tools can carry either - this just normalizes to the one spelling Graph
+# actually accepts before writing.
+function ConvertTo-GraphMinOsRelease {
+    param([string]$RawValue)
+    if (-not $RawValue) { return $RawValue }
+    if ($RawValue -match '^(?i)W(10|11)_(.+)$') { return "Windows$($Matches[1])_$($Matches[2])" }
+    return $RawValue
+}
+
 # Wraps Invoke-MgGraphRequest so any failure throws an exception whose message
 # includes the actual Graph error body (error.code / error.message), not just
 # the generic "response status does not indicate success" text.
@@ -1562,7 +1582,7 @@ try {
         # minimumSupportedWindowsRelease"), and the old property's schema
         # has no Windows 11 values at all, so it's the only one that can
         # actually express one.
-        $patchBody.minimumSupportedWindowsRelease = $Config.MinOSVersionKey
+        $patchBody.minimumSupportedWindowsRelease = ConvertTo-GraphMinOsRelease -RawValue $Config.MinOSVersionKey
         # Same rule already established and fixed once this session for
         # Create mode - applicableArchitectures can only hold a single
         # value; multiple architectures go through allowedArchitectures
@@ -1678,7 +1698,7 @@ try {
         # minimumSupportedOperatingSystem boolean bag - see the matching
         # note next to the Update path's own $patchBody assignment above
         # in this same embedded script for why.
-        minimumSupportedWindowsRelease    = $Config.MinOSVersionKey
+        minimumSupportedWindowsRelease    = ConvertTo-GraphMinOsRelease -RawValue $Config.MinOSVersionKey
         installExperience                 = $installExperience
         setupFilePath                     = $packageInfo.SetupFile
         fileName                          = $packageInfo.OriginalFileName
