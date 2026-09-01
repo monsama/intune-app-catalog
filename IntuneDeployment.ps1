@@ -1567,12 +1567,21 @@ try {
         # Create mode - applicableArchitectures can only hold a single
         # value; multiple architectures go through allowedArchitectures
         # instead, which forces applicableArchitectures to "none" as a
-        # side effect on the server's own side.
+        # side effect on the server's own side. UNLIKE Create mode though,
+        # Graph now rejects applicableArchitectures inside an Update PATCH
+        # outright ("The ApplicableArchitectures property can only be set
+        # via ODataAction: enableApplicableArchitectures" - confirmed live
+        # against the tenant, and matches Microsoft's own documented
+        # enableApplicableArchitectures action). allowedArchitectures is
+        # unaffected by this and still goes through the PATCH as before;
+        # only the single-architecture case is deferred to a separate call
+        # further down, once the main PATCH has gone through.
+        $singleArchForAction = $null
         if ($Config.Architecture -match ',') {
             $patchBody.allowedArchitectures = $Config.Architecture
         }
         else {
-            $patchBody.applicableArchitectures = $Config.Architecture
+            $singleArchForAction = $Config.Architecture
         }
         Add-OptionalStringField -Body $patchBody -GraphKey "owner" -Value $Config.Owner
         Add-OptionalStringField -Body $patchBody -GraphKey "developer" -Value $Config.Developer
@@ -1584,6 +1593,13 @@ try {
         Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.ExistingAppId)" `
             -Method PATCH -Body $patchBody -ContentType "application/json" -StepDescription "Update app metadata" | Out-Null
         Write-Host "  [OK] Metadata updated (name, description, publisher, install/uninstall commands, detection, architecture, min OS, requirements, return codes, install experience, and any owner/developer/notes/URL fields you filled in)." -ForegroundColor Green
+
+        if ($singleArchForAction) {
+            $archActionBody = @{ applicableArchitectures = $singleArchForAction } | ConvertTo-Json -Depth 4
+            Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.ExistingAppId)/enableApplicableArchitectures" `
+                -Method POST -Body $archActionBody -ContentType "application/json" -StepDescription "Set applicable architecture" | Out-Null
+            Write-Host "  [OK] Applicable architecture set to $singleArchForAction." -ForegroundColor Green
+        }
 
         # Always runs, even with zero dependencies checked - updateRelationships
         # has REPLACE semantics (it sets the relationship list to exactly what's
