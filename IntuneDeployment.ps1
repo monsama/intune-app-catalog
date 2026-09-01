@@ -3014,7 +3014,19 @@ try {
                 installTimeMinutes      = $app.installExperience.maxRunTimeInMinutes
                 deviceRestartBehavior   = $app.installExperience.deviceRestartBehavior
                 allowAvailableUninstall = $app.allowAvailableUninstall
-                returnCodes             = @($app.returnCodes | ForEach-Object { [pscustomobject]@{ returnCode = $_.returnCode; type = $_.type } })
+                # Guarded with Count -gt 0 rather than piping $app.returnCodes
+                # straight into ForEach-Object - a $null value piped into
+                # ForEach-Object still runs the script block once with $_ =
+                # $null (PowerShell doesn't collapse a single $null the way
+                # it collapses an empty array), so a non-Win32 app like
+                # "Microsoft Store app (new)" (which has no returnCodes at
+                # all from Graph) produced one phantom { returnCode = $null;
+                # type = $null } entry instead of an empty array. That
+                # $null then serialized as "returnCode": with nothing before
+                # the comma - invalid JSON that made the whole per-app file
+                # fail to parse (and get silently skipped) on every later
+                # load, permanently hiding that app from the catalog.
+                returnCodes             = if (@($app.returnCodes).Count -gt 0) { @($app.returnCodes | ForEach-Object { [pscustomobject]@{ returnCode = $_.returnCode; type = $_.type } }) } else { @() }
             }
 
             # Raw here, not friendly-mapped - the parent GUI process is the
@@ -3539,7 +3551,29 @@ function Load-AppsFromFile {
         $failedFiles = New-Object System.Collections.Generic.List[string]
         foreach ($file in $files) {
             try {
-                $raw = Get-Content -Path $file.FullName -Raw | ConvertFrom-Json
+                $rawText = Get-Content -Path $file.FullName -Raw
+                try {
+                    $raw = $rawText | ConvertFrom-Json
+                }
+                catch {
+                    # Self-heals the one specific corruption pattern the
+                    # $null-pipe returnCodes bug above used to write to disk
+                    # before it was fixed: "returnCode": , (nothing before
+                    # the comma) instead of valid JSON. Files already saved
+                    # with this corruption (typically non-Win32 apps like
+                    # "Microsoft Store app (new)", which Graph never returns
+                    # returnCodes for) would otherwise stay permanently
+                    # unparseable and silently vanish from the catalog on
+                    # every load, even after the writer itself was fixed -
+                    # only fixing new writes doesn't help a file already
+                    # broken on disk. Re-throws the original error if this
+                    # single targeted repair doesn't make the text valid, so
+                    # any other, unrelated parse failure still surfaces
+                    # normally as a skipped file below.
+                    $repairedText = $rawText -replace '"returnCode"\s*:\s*,', '"returnCode": null,'
+                    $raw = $repairedText | ConvertFrom-Json
+                    [System.IO.File]::WriteAllText($file.FullName, $repairedText, (New-Object System.Text.UTF8Encoding($false)))
+                }
                 [void]$Script:Apps.Add((ConvertTo-AppRecord $raw))
             }
             catch {
@@ -3736,7 +3770,15 @@ function ConvertTo-SingleAppJson {
         # produced "returnCode": with nothing before the comma: invalid
         # JSON that then failed to parse and got silently skipped on
         # every subsequent load.
-        $rcItems = @($m.returnCodes | Where-Object { $_ })
+        # Also filters out any entry that IS a real (non-null) object but
+        # still has a $null returnCode - the "$null piped into
+        # ForEach-Object still runs once" quirk documented where
+        # metadata.returnCodes gets built (e.g. non-Win32 apps like
+        # "Microsoft Store app (new)", which Graph never returns
+        # returnCodes for at all) produces exactly this shape, and it's
+        # not caught by the plain-truthiness filter above since the
+        # object itself is truthy even though its returnCode isn't.
+        $rcItems = @($m.returnCodes | Where-Object { $_ -and $null -ne $_.returnCode })
         if ($rcItems.Count -eq 0) {
             $metaFields.Add("    `"returnCodes`": []")
         }
@@ -6787,7 +6829,10 @@ function Start-AppMetadataFetch {
             InstallTimeMinutes      = $app.installExperience.maxRunTimeInMinutes
             DeviceRestartBehavior   = $app.installExperience.deviceRestartBehavior
             AllowAvailableUninstall = $app.allowAvailableUninstall
-            ReturnCodes             = @($app.returnCodes | ForEach-Object { [pscustomobject]@{ returnCode = $_.returnCode; type = $_.type } })
+            # Same $null-pipe guard as the other embedded fetch script's
+            # returnCodes mapping - see its comment for why this matters for
+            # non-Win32 apps (e.g. "Microsoft Store app (new)").
+            ReturnCodes             = if (@($app.returnCodes).Count -gt 0) { @($app.returnCodes | ForEach-Object { [pscustomobject]@{ returnCode = $_.returnCode; type = $_.type } }) } else { @() }
             RequiredGroupNames      = $requiredGroupNames
             AvailableGroupNames     = $availableGroupNames
             UninstallGroupNames     = $uninstallGroupNames
@@ -7225,8 +7270,12 @@ function Get-CatalogMetadataFieldDiffs {
         }
     }
 
-    $localDetSummary = if ($Local.detectionRule) { ($Local.detectionRule | ConvertTo-Json -Compress -Depth 5) } else { "" }
-    $remoteDetSummary = if ($Remote.detectionRule) { ($Remote.detectionRule | ConvertTo-Json -Compress -Depth 5) } else { "" }
+    # ConvertTo-Json is not used here - it's confirmed (see ConvertTo-DetectionRuleJson's
+    # own comment) to sometimes silently return an empty result for certain inputs,
+    # which made multi-line Script detection rules (e.g. winget apps) show up as a
+    # spurious "Detection rule" diff on every sync even when nothing had changed.
+    $localDetSummary = if ($Local.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $Local.detectionRule -IndentLevel 0 } else { "" }
+    $remoteDetSummary = if ($Remote.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $Remote.detectionRule -IndentLevel 0 } else { "" }
     if ($localDetSummary -ne $remoteDetSummary) {
         $diffs.Add([pscustomobject]@{ Field = "Detection rule"; Local = $localDetSummary; Remote = $remoteDetSummary })
     }
@@ -9634,7 +9683,7 @@ function Show-CreateInIntuneDialog {
             InstallCommand     = $txtInstall.Text
             UninstallCommand   = $txtUninstall.Text
             Architecture       = $m.architecture
-            DetectionSummary   = if ($m.detectionRule) { ($m.detectionRule | ConvertTo-Json -Compress -Depth 5) } else { "" }
+            DetectionSummary   = if ($m.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $m.detectionRule -IndentLevel 0 } else { "" }
             MinDiskSpaceMB     = $txtDiskSpace.Text
             MinMemoryMB        = $txtMemory.Text
             MinProcessors      = $txtProcessors.Text
@@ -9960,7 +10009,7 @@ function Show-CreateInIntuneDialog {
                     if (([string]$data.InstallCommandLine) -ne ([string]$localSnapshotRef.InstallCommand)) { $diffFields.Add("Install command") }
                     if (([string]$data.UninstallCommandLine) -ne ([string]$localSnapshotRef.UninstallCommand)) { $diffFields.Add("Uninstall command") }
                     if (([string]$archSource) -ne ([string]$localSnapshotRef.Architecture)) { $diffFields.Add("Architecture") }
-                    $liveDetSummary = if ($data.DetectionRule) { ($data.DetectionRule | ConvertTo-Json -Compress -Depth 5) } else { "" }
+                    $liveDetSummary = if ($data.DetectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $data.DetectionRule -IndentLevel 0 } else { "" }
                     if ($liveDetSummary -ne $localSnapshotRef.DetectionSummary) { $diffFields.Add("Detection rule") }
                     # "0" (local) and blank (Intune) are the SAME thing for
                     # these four - the same "0 = not required" convention
