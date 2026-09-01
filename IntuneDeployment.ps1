@@ -8898,8 +8898,8 @@ function Show-CreateInIntuneDialog {
     $procBox = @{ Proc = $null }   # lets btnCancel below terminate a still-running step
 
     $btnCreate.Add_Click({
-        if (-not $txtCreateName.Text.Trim() -or -not $txtInstall.Text.Trim() -or -not $txtUninstall.Text.Trim() -or -not $txtDetection.Text.Trim()) {
-            [System.Windows.Forms.MessageBox]::Show("Name, install command, uninstall command, and detection script are all required.", "Missing values", "OK", "Warning") | Out-Null
+        if (-not $txtCreateName.Text.Trim() -or -not $txtInstall.Text.Trim() -or -not $txtUninstall.Text.Trim()) {
+            [System.Windows.Forms.MessageBox]::Show("Name, install command, and uninstall command are all required.", "Missing values", "OK", "Warning") | Out-Null
             return
         }
 
@@ -9402,8 +9402,8 @@ function Show-CreateInIntuneDialog {
     }.GetNewClosure())
 
     $btnSaveForLater.Add_Click({
-        if (-not $txtCreateName.Text.Trim() -or -not $txtInstall.Text.Trim() -or -not $txtUninstall.Text.Trim() -or -not $txtDetection.Text.Trim()) {
-            [System.Windows.Forms.MessageBox]::Show("Name, install command, uninstall command, and detection script are all required.", "Missing values", "OK", "Warning") | Out-Null
+        if (-not $txtCreateName.Text.Trim() -or -not $txtInstall.Text.Trim() -or -not $txtUninstall.Text.Trim()) {
+            [System.Windows.Forms.MessageBox]::Show("Name, install command, and uninstall command are all required.", "Missing values", "OK", "Warning") | Out-Null
             return
         }
 
