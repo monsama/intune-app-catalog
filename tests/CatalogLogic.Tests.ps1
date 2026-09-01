@@ -91,6 +91,8 @@ $testableFunctionNames = @(
     "Get-DependencyOrderedApps",
     "Get-CatalogMetadataSimpleFields",
     "Get-CatalogMetadataFieldDiffs",
+    "ConvertTo-DetectionRuleJson",
+    "ConvertTo-JsonStringLiteral",
     "Merge-CatalogMetadata",
     "Get-CreateAppTemplates",
     "Get-DefaultAppMetadata",
