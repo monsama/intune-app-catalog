@@ -1583,33 +1583,29 @@ try {
         # has no Windows 11 values at all, so it's the only one that can
         # actually express one.
         $patchBody.minimumSupportedWindowsRelease = ConvertTo-GraphMinOsRelease -RawValue $Config.MinOSVersionKey
-        # Same rule already established and fixed once this session for
-        # Create mode - applicableArchitectures can only hold a single
-        # value; multiple architectures go through allowedArchitectures
-        # instead, which forces applicableArchitectures to "none" as a
-        # side effect on the server's own side. UNLIKE Create mode though,
-        # Graph rejects applicableArchitectures inside an Update PATCH
-        # outright ("The ApplicableArchitectures property can only be set
-        # via ODataAction: enableApplicableArchitectures"). That action
-        # itself was tried here and confirmed NOT to exist on this Graph
-        # endpoint either ("Resource not found for the segment
-        # 'enableApplicableArchitectures'") - other tooling has hit and
-        # documented this exact same dead end. So there is currently no
-        # working way to change a single architecture value on an
-        # EXISTING app via this API - the single-architecture case is
-        # just left out of the patch below (leaving whatever's already
-        # live in Intune untouched, per normal PATCH semantics) rather
-        # than attempting a call guaranteed to fail every time.
-        # allowedArchitectures (multiple architectures selected) is a
-        # different property, unaffected by this restriction, and still
-        # goes through the PATCH as before.
-        $archSkippedSingle = $null
-        if ($Config.Architecture -match ',') {
-            $patchBody.allowedArchitectures = $Config.Architecture
-        }
-        else {
-            $archSkippedSingle = $Config.Architecture
-        }
+        # applicableArchitectures is the OLD, legacy single-value property -
+        # confirmed live against the tenant that Graph rejects it outright
+        # inside an Update PATCH ("can only be set via ODataAction:
+        # enableApplicableArchitectures"), and that action itself 404s on
+        # this endpoint ("Resource not found for the segment"), so there's
+        # no working way to write it directly at all anymore. It's also
+        # the property responsible for Intune's June 2025 ARM64
+        # backward-compatibility change: a single "x64" written there gets
+        # silently expanded to "x64,arm64" live (x64 apps are treated as
+        # ARM64-emulation-compatible by default) - confirmed live via a
+        # brand new app created through this same code path with only x64
+        # selected. allowedArchitectures is the newer flags-based property
+        # Microsoft added specifically to give exact, exclusive control
+        # over this (confirmed in Microsoft's own current documentation:
+        # "a non-null value for allowedArchitectures forces
+        # applicableArchitectures to 'none'" - it takes over entirely) -
+        # and unlike applicableArchitectures it holds a single value just
+        # fine, not only a comma-joined list, and isn't subject to either
+        # restriction above. So this now ALWAYS goes through
+        # allowedArchitectures, whether one architecture is selected or
+        # several - applicableArchitectures is never written by this app
+        # at all any more, on Create or Update.
+        $patchBody.allowedArchitectures = $Config.Architecture
         Add-OptionalStringField -Body $patchBody -GraphKey "owner" -Value $Config.Owner
         Add-OptionalStringField -Body $patchBody -GraphKey "developer" -Value $Config.Developer
         Add-OptionalStringField -Body $patchBody -GraphKey "informationUrl" -Value $Config.InformationUrl
@@ -1619,11 +1615,7 @@ try {
 
         Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.ExistingAppId)" `
             -Method PATCH -Body $patchBody -ContentType "application/json" -StepDescription "Update app metadata" | Out-Null
-        Write-Host "  [OK] Metadata updated (name, description, publisher, install/uninstall commands, detection, min OS, requirements, return codes, install experience, and any owner/developer/notes/URL fields you filled in)." -ForegroundColor Green
-
-        if ($archSkippedSingle) {
-            Write-Host "  [!] Architecture left unchanged in Intune (still whatever it currently is there) - Graph has no working way to set a single architecture on an existing app right now; the documented enableApplicableArchitectures action 404s on this endpoint. Not fatal to this update. If the architecture genuinely needs to change, that currently requires creating a new app." -ForegroundColor Yellow
-        }
+        Write-Host "  [OK] Metadata updated (name, description, publisher, install/uninstall commands, detection, architecture, min OS, requirements, return codes, install experience, and any owner/developer/notes/URL fields you filled in)." -ForegroundColor Green
 
         # Always runs, even with zero dependencies checked - updateRelationships
         # has REPLACE semantics (it sets the relationship list to exactly what's
@@ -1718,21 +1710,24 @@ try {
         minimumCpuSpeedInMHz              = if ($Config.MinCpuSpeedMHz) { [int]$Config.MinCpuSpeedMHz } else { 0 }
         allowAvailableUninstall           = [bool]$Config.AllowAvailableUninstall
     }
-    # Confirmed directly from Microsoft's own win32LobApp docs:
-    # applicableArchitectures can only hold a SINGLE value (none/x86/x64/
-    # arm/neutral/arm64), not a comma-joined list - multiple architectures
-    # are represented via the separate allowedArchitectures property
-    # instead, and setting that forces applicableArchitectures to the
-    # literal "none" as a side effect on the server's own side. Sending
-    # both, or a comma-joined value into the wrong one, isn't correct - so
-    # exactly one of these two gets set here, chosen by whether more than
-    # one architecture was actually selected.
-    if ($Config.Architecture -match ',') {
-        $createBody.allowedArchitectures = $Config.Architecture
-    }
-    else {
-        $createBody.applicableArchitectures = $Config.Architecture
-    }
+    # applicableArchitectures is the OLD, legacy single-value property -
+    # confirmed live against the tenant that a brand new app created with
+    # only "x64" selected here ends up showing "x64,arm64" live in Intune,
+    # because Microsoft's June 2025 ARM64 backward-compatibility change
+    # treats an x64-only app as ARM64-emulation-compatible by default when
+    # this property is used. allowedArchitectures is the newer flags-based
+    # property Microsoft added specifically to give exact, exclusive
+    # control over this (confirmed in Microsoft's own current
+    # documentation: "a non-null value for allowedArchitectures forces
+    # applicableArchitectures to 'none'" - it takes over entirely), and
+    # unlike applicableArchitectures it holds a single value just fine,
+    # not only a comma-joined list. So this always goes through
+    # allowedArchitectures now, whether one architecture is selected or
+    # several - applicableArchitectures is never written by this app at
+    # all any more, on Create or Update (see the matching note next to
+    # the Update path's own $patchBody assignment for the Update-side
+    # history of this).
+    $createBody.allowedArchitectures = $Config.Architecture
     Add-OptionalStringField -Body $createBody -GraphKey "owner" -Value $Config.Owner
     Add-OptionalStringField -Body $createBody -GraphKey "developer" -Value $Config.Developer
     Add-OptionalStringField -Body $createBody -GraphKey "informationUrl" -Value $Config.InformationUrl
