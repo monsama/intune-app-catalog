@@ -6624,22 +6624,42 @@ function Refresh-Grid {
             if ($hay -notlike "*$filter*") { continue }
         }
         $isUncommon = Test-AppIsUncommon -App $app
+        # A blank Winget ID alone (what Test-AppIsUncommon actually checks)
+        # doesn't distinguish "an uncommon WIN32 app that genuinely needs
+        # its own .intunewin built" from "a non-Win32 app type (Company
+        # Portal - Microsoft Store app (new), Microsoft 365 Apps, ...) that
+        # never needs a package from this tool at all" - this app only ever
+        # PACKAGES/DEPLOYS win32LobApp objects, so an app already known
+        # (from a prior sync) to be some other Intune type was showing a
+        # permanent, unfixable "Package missing" for something that isn't
+        # actually missing - there was never going to be a package for it.
+        # Same "Windows app (Win32)" friendly-label check already used
+        # elsewhere (Get-FriendlyIntuneAppType collapses win32LobApp/
+        # win32CatalogApp/windowsMobileMSI to this one string) - blank
+        # intuneAppType (never synced, or genuinely not deployed yet) still
+        # falls through to the normal uncommon/package check below, since
+        # that's the only case where a real package IS actually expected.
+        $isKnownNonWin32 = $app.intuneAppType -and $app.intuneAppType -ne "Windows app (Win32)"
+        $needsPackageCheck = $isUncommon -and -not $isKnownNonWin32
         # Resolved once and reused for both the Status warning and the
         # Folder column below, rather than searching the filesystem twice
         # per uncommon app on every grid refresh.
-        $pkg = if ($isUncommon) { Resolve-AppPackagePath -AppName $app.appName -Uncommon $true } else { $null }
+        $pkg = if ($needsPackageCheck) { Resolve-AppPackagePath -AppName $app.appName -Uncommon $true } else { $null }
 
         $status = ""
         if (-not $app.appId) {
             $status = if ($app.metadata) { "Metadata saved - ready to deploy" } else { "No App ID" }
         }
-        elseif ($isUncommon -and -not $pkg.Found) {
+        elseif ($needsPackageCheck -and -not $pkg.Found) {
             $status = "Package missing"
         }
 
         $folderDisplay = ""
-        if ($isUncommon) {
+        if ($needsPackageCheck) {
             $folderDisplay = if ($pkg.Found) { Split-Path $pkg.Path -Parent } else { "(not found)" }
+        }
+        elseif ($isUncommon -and $isKnownNonWin32) {
+            $folderDisplay = "(not applicable - $($app.intuneAppType))"
         }
 
         $rows.Add([pscustomobject]@{
