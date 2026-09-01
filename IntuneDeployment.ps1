@@ -1588,20 +1588,27 @@ try {
         # value; multiple architectures go through allowedArchitectures
         # instead, which forces applicableArchitectures to "none" as a
         # side effect on the server's own side. UNLIKE Create mode though,
-        # Graph now rejects applicableArchitectures inside an Update PATCH
+        # Graph rejects applicableArchitectures inside an Update PATCH
         # outright ("The ApplicableArchitectures property can only be set
-        # via ODataAction: enableApplicableArchitectures" - confirmed live
-        # against the tenant, and matches Microsoft's own documented
-        # enableApplicableArchitectures action). allowedArchitectures is
-        # unaffected by this and still goes through the PATCH as before;
-        # only the single-architecture case is deferred to a separate call
-        # further down, once the main PATCH has gone through.
-        $singleArchForAction = $null
+        # via ODataAction: enableApplicableArchitectures"). That action
+        # itself was tried here and confirmed NOT to exist on this Graph
+        # endpoint either ("Resource not found for the segment
+        # 'enableApplicableArchitectures'") - other tooling has hit and
+        # documented this exact same dead end. So there is currently no
+        # working way to change a single architecture value on an
+        # EXISTING app via this API - the single-architecture case is
+        # just left out of the patch below (leaving whatever's already
+        # live in Intune untouched, per normal PATCH semantics) rather
+        # than attempting a call guaranteed to fail every time.
+        # allowedArchitectures (multiple architectures selected) is a
+        # different property, unaffected by this restriction, and still
+        # goes through the PATCH as before.
+        $archSkippedSingle = $null
         if ($Config.Architecture -match ',') {
             $patchBody.allowedArchitectures = $Config.Architecture
         }
         else {
-            $singleArchForAction = $Config.Architecture
+            $archSkippedSingle = $Config.Architecture
         }
         Add-OptionalStringField -Body $patchBody -GraphKey "owner" -Value $Config.Owner
         Add-OptionalStringField -Body $patchBody -GraphKey "developer" -Value $Config.Developer
@@ -1612,13 +1619,10 @@ try {
 
         Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.ExistingAppId)" `
             -Method PATCH -Body $patchBody -ContentType "application/json" -StepDescription "Update app metadata" | Out-Null
-        Write-Host "  [OK] Metadata updated (name, description, publisher, install/uninstall commands, detection, architecture, min OS, requirements, return codes, install experience, and any owner/developer/notes/URL fields you filled in)." -ForegroundColor Green
+        Write-Host "  [OK] Metadata updated (name, description, publisher, install/uninstall commands, detection, min OS, requirements, return codes, install experience, and any owner/developer/notes/URL fields you filled in)." -ForegroundColor Green
 
-        if ($singleArchForAction) {
-            $archActionBody = @{ applicableArchitectures = $singleArchForAction } | ConvertTo-Json -Depth 4
-            Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.ExistingAppId)/enableApplicableArchitectures" `
-                -Method POST -Body $archActionBody -ContentType "application/json" -StepDescription "Set applicable architecture" | Out-Null
-            Write-Host "  [OK] Applicable architecture set to $singleArchForAction." -ForegroundColor Green
+        if ($archSkippedSingle) {
+            Write-Host "  [!] Architecture left unchanged in Intune (still whatever it currently is there) - Graph has no working way to set a single architecture on an existing app right now; the documented enableApplicableArchitectures action 404s on this endpoint. Not fatal to this update. If the architecture genuinely needs to change, that currently requires creating a new app." -ForegroundColor Yellow
         }
 
         # Always runs, even with zero dependencies checked - updateRelationships
