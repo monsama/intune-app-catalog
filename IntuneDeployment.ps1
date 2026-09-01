@@ -228,9 +228,18 @@ function Load-GraphSettings {
     if (-not (Test-Path $Script:SettingsFilePath)) { return }
     try {
         $settings = Get-Content -Path $Script:SettingsFilePath -Raw | ConvertFrom-Json
-        if ($settings.TenantId)  { $Script:GraphTenantId = $settings.TenantId }
-        if ($settings.ClientId)  { $Script:GraphClientId = $settings.ClientId }
-        if ($settings.CertificateThumbprint) { $Script:GraphCertificateThumbprint = $settings.CertificateThumbprint }
+        # Trimmed and whitespace-checked here, not just truthiness-checked -
+        # the Settings dialog's own save path already strips whitespace
+        # before writing (see btnSave's Trim() / -replace '\s',''), but a
+        # value that reached this file some other way (an older version of
+        # this app, a manual edit) might not be. Loading a whitespace-only
+        # value as if it were "set" is exactly what made
+        # Test-GraphCredentialsConfigured and Get-CertificateStatusText
+        # disagree in Diagnostics - fixed at the source here too, not just
+        # in the two places that read these variables afterward.
+        if (-not [string]::IsNullOrWhiteSpace($settings.TenantId))  { $Script:GraphTenantId = ([string]$settings.TenantId).Trim() }
+        if (-not [string]::IsNullOrWhiteSpace($settings.ClientId))  { $Script:GraphClientId = ([string]$settings.ClientId).Trim() }
+        if (-not [string]::IsNullOrWhiteSpace($settings.CertificateThumbprint)) { $Script:GraphCertificateThumbprint = ([string]$settings.CertificateThumbprint) -replace '\s', '' }
         if ($settings.FavoriteGroups) {
             $Script:FavoriteGroups.Clear()
             foreach ($g in @($settings.FavoriteGroups)) { [void]$Script:FavoriteGroups.Add([string]$g) }
@@ -4261,7 +4270,18 @@ function Start-WingetSearch {
 # $OnComplete is called with ($success, $data) where $data is either the
 # array of apps or an error message string.
 function Test-GraphCredentialsConfigured {
-    if ($Script:GraphTenantId -and $Script:GraphClientId -and $Script:GraphCertificateThumbprint) { return $true }
+    # -not [string]::IsNullOrWhiteSpace(...), not plain PowerShell truthiness
+    # ($Script:GraphTenantId -and ...) - a value that's present but only
+    # whitespace (e.g. a stray-space CertificateThumbprint loaded from an
+    # unrimmed intune-deployment-settings.json - see Load-GraphSettings) is
+    # truthy in PowerShell, so the old plain check reported "all set" here
+    # while Get-CertificateStatusText's own (already whitespace-aware)
+    # check correctly reported "No thumbprint set." for the exact same
+    # value - two Diagnostics lines flatly contradicting each other. Both
+    # now agree by using the same definition of "set".
+    if ((-not [string]::IsNullOrWhiteSpace($Script:GraphTenantId)) -and
+        (-not [string]::IsNullOrWhiteSpace($Script:GraphClientId)) -and
+        (-not [string]::IsNullOrWhiteSpace($Script:GraphCertificateThumbprint))) { return $true }
     [System.Windows.Forms.MessageBox]::Show(
         "No Graph connection is configured yet. Open 'Settings...' in the Tools group and fill in your Tenant ID, Client ID, and certificate first.",
         "Not configured", "OK", "Warning") | Out-Null
