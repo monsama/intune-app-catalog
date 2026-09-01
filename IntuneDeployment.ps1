@@ -2781,6 +2781,31 @@ function Write-Result {
     $result | ConvertTo-Json -Depth 10 | Set-Content -Path $Config.OutputResultPath -Encoding UTF8
 }
 
+# Invoke-MgGraphRequest under Windows PowerShell 5.1 has a known,
+# reproducible bug decoding non-ASCII text in a JSON response body -
+# confirmed live on Company Portal's own (fixed, Microsoft-authored)
+# description, which came back with every curly apostrophe/quote/dash
+# mangled into the exact "a UTF-8 byte sequence read back as Windows-1252"
+# pattern (e.g. a right single quote, U+2019, turning into the three
+# characters "a-circumflex, Euro sign, trademark"). Re-encoding as
+# Windows-1252 and re-decoding the resulting bytes as UTF-8 reverses
+# exactly that mistake. Gated on detecting the tell-tale byte pattern first
+# (rather than applied unconditionally) so text that ISN'T mojibake is
+# never touched, and the result is only trusted if it re-decodes clean (no
+# U+FFFD replacement characters) - anything else returns the original text
+# untouched.
+function Repair-MojibakeText {
+    param([string]$Text)
+    if (-not $Text) { return $Text }
+    if ($Text.IndexOf([char]0x00C3) -lt 0 -and $Text.IndexOf(([string]([char]0x00E2) + [char]0x20AC)) -lt 0) { return $Text }
+    try {
+        $bytes = [System.Text.Encoding]::GetEncoding(1252).GetBytes($Text)
+        $repaired = [System.Text.Encoding]::UTF8.GetString($bytes)
+        if ($repaired.IndexOf([char]0xFFFD) -lt 0) { return $repaired }
+    } catch { }
+    return $Text
+}
+
 function Get-HttpErrorDetail {
     param($ErrorRecord)
     $detail = $ErrorRecord.ErrorDetails.Message
@@ -2991,13 +3016,13 @@ try {
             }
 
             $metadata = [pscustomobject]@{
-                description      = $app.description
-                publisher        = $app.publisher
-                owner            = $app.owner
-                developer        = $app.developer
+                description      = Repair-MojibakeText $app.description
+                publisher        = Repair-MojibakeText $app.publisher
+                owner            = Repair-MojibakeText $app.owner
+                developer        = Repair-MojibakeText $app.developer
                 informationUrl   = $app.informationUrl
                 privacyUrl       = $app.privacyInformationUrl
-                notes            = $app.notes
+                notes            = Repair-MojibakeText $app.notes
                 installCommand   = $app.installCommandLine
                 uninstallCommand = $app.uninstallCommandLine
                 architecture     = $archValue
@@ -6667,6 +6692,31 @@ function Start-AppMetadataFetch {
                 -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
         }
 
+        # Invoke-MgGraphRequest under Windows PowerShell 5.1 has a known,
+        # reproducible bug decoding non-ASCII text in a JSON response body -
+        # confirmed live on Company Portal's own (fixed, Microsoft-authored)
+        # description, which came back with every curly apostrophe/quote/
+        # dash mangled into the exact "a UTF-8 byte sequence read back as
+        # Windows-1252" pattern (e.g. a right single quote, U+2019, turning
+        # into the three characters "a-circumflex, Euro sign, trademark").
+        # Re-encoding as Windows-1252 and re-decoding the resulting bytes as
+        # UTF-8 reverses exactly that mistake. Gated on detecting the
+        # tell-tale byte pattern first (rather than applied unconditionally)
+        # so text that ISN'T mojibake is never touched, and the result is
+        # only trusted if it re-decodes clean (no U+FFFD replacement
+        # characters) - anything else returns the original text untouched.
+        function Repair-MojibakeText {
+            param([string]$Text)
+            if (-not $Text) { return $Text }
+            if ($Text.IndexOf([char]0x00C3) -lt 0 -and $Text.IndexOf(([string]([char]0x00E2) + [char]0x20AC)) -lt 0) { return $Text }
+            try {
+                $bytes = [System.Text.Encoding]::GetEncoding(1252).GetBytes($Text)
+                $repaired = [System.Text.Encoding]::UTF8.GetString($bytes)
+                if ($repaired.IndexOf([char]0xFFFD) -lt 0) { return $repaired }
+            } catch { }
+            return $Text
+        }
+
         $app = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$TargetAppId" -Method GET -ErrorAction Stop
 
         # Same endpoint and filtering as the bulk Sync metadata script -
@@ -6785,13 +6835,13 @@ function Start-AppMetadataFetch {
 
         [pscustomobject]@{
             DisplayName             = $app.displayName
-            Description             = $app.description
-            Publisher               = $app.publisher
-            Owner                   = $app.owner
-            Developer               = $app.developer
+            Description             = Repair-MojibakeText $app.description
+            Publisher               = Repair-MojibakeText $app.publisher
+            Owner                   = Repair-MojibakeText $app.owner
+            Developer               = Repair-MojibakeText $app.developer
             InformationUrl          = $app.informationUrl
             PrivacyInformationUrl   = $app.privacyInformationUrl
-            Notes                   = $app.notes
+            Notes                   = Repair-MojibakeText $app.notes
             InstallCommandLine      = $app.installCommandLine
             UninstallCommandLine    = $app.uninstallCommandLine
             ApplicableArchitectures = $app.applicableArchitectures
@@ -7227,24 +7277,52 @@ function Get-CatalogMetadataSimpleFields {
         @{ Key = "informationUrl"; Label = "Information URL" }
         @{ Key = "privacyUrl"; Label = "Privacy URL" }
         @{ Key = "notes"; Label = "Notes" }
-        @{ Key = "installCommand"; Label = "Install command" }
-        @{ Key = "uninstallCommand"; Label = "Uninstall command" }
-        @{ Key = "architecture"; Label = "Architecture" }
-        @{ Key = "minDiskSpaceMB"; Label = "Disk space requirement" }
-        @{ Key = "minMemoryMB"; Label = "Memory requirement" }
-        @{ Key = "minProcessors"; Label = "Min. processors requirement" }
-        @{ Key = "minCpuSpeedMHz"; Label = "Min. CPU speed requirement" }
-        @{ Key = "installTimeMinutes"; Label = "Install time required" }
-        @{ Key = "deviceRestartBehavior"; Label = "Device restart behavior" }
-        @{ Key = "allowAvailableUninstall"; Label = "Allow available uninstall" }
+        # Win32Only fields below only exist as concepts on a win32LobApp -
+        # Graph has no installCommandLine/architecture/requirements/
+        # installExperience/returnCodes (or detection rules, handled
+        # separately below) for any other app type, so it always reports
+        # them blank/null for e.g. a "Microsoft Store app (new)" like
+        # Company Portal. Comparing those against this tool's own Win32-
+        # shaped local defaults (installTimeMinutes: 60,
+        # deviceRestartBehavior: "basedOnReturnCode", ...) produced a
+        # permanent, unfixable "N fields differ" on every single sync for
+        # every non-Win32 app in the catalog - see Get-CatalogMetadataFieldDiffs's
+        # own -OdataType gating.
+        @{ Key = "installCommand"; Label = "Install command"; Win32Only = $true }
+        @{ Key = "uninstallCommand"; Label = "Uninstall command"; Win32Only = $true }
+        @{ Key = "architecture"; Label = "Architecture"; Win32Only = $true }
+        @{ Key = "minDiskSpaceMB"; Label = "Disk space requirement"; Win32Only = $true }
+        @{ Key = "minMemoryMB"; Label = "Memory requirement"; Win32Only = $true }
+        @{ Key = "minProcessors"; Label = "Min. processors requirement"; Win32Only = $true }
+        @{ Key = "minCpuSpeedMHz"; Label = "Min. CPU speed requirement"; Win32Only = $true }
+        @{ Key = "installTimeMinutes"; Label = "Install time required"; Win32Only = $true }
+        @{ Key = "deviceRestartBehavior"; Label = "Device restart behavior"; Win32Only = $true }
+        @{ Key = "allowAvailableUninstall"; Label = "Allow available uninstall"; Win32Only = $true }
     )
 }
 
 function Get-CatalogMetadataFieldDiffs {
-    param($Local, $Remote)
+    # -OdataType is the live app's raw @odata.type (with or without the
+    # "#microsoft.graph." prefix) - pass it whenever it's known (the bulk
+    # "Sync metadata..." flow always has it) so Win32Only fields are
+    # skipped for a non-Win32 app instead of producing a permanent false
+    # "N fields differ". Left blank/omitted, this assumes Win32 - the
+    # right default for every OTHER caller (Test-AppHasCustomConfig, the
+    # single-app auto-fetch), which only ever deal with apps this tool
+    # itself deploys as win32LobApp.
+    param($Local, $Remote, [string]$OdataType = "")
 
     $diffs = New-Object System.Collections.Generic.List[object]
     if (-not $Local) { return $diffs.ToArray() }
+
+    # Same set already used elsewhere in this app (see the "not a Win32
+    # app" guard in Show-CreateInIntuneDialog's own auto-fetch) to decide
+    # whether this tool's Win32-shaped deploy flow applies to a given live
+    # Intune app - types that behave like a Win32 app for the Win32Only
+    # fields below.
+    $win32LikeOdataTypes = @("win32LobApp", "win32CatalogApp", "windowsMobileMSI")
+    $rawOdataType = $OdataType -replace '^#?microsoft\.graph\.', ''
+    $isWin32 = (-not $rawOdataType) -or ($win32LikeOdataTypes -contains $rawOdataType)
 
     # These four fields use the same "0 = not required" convention the
     # editor's own "Requirements (0 = not required)" label documents -
@@ -7257,6 +7335,7 @@ function Get-CatalogMetadataFieldDiffs {
     $zeroEqualsBlankFields = @("minDiskSpaceMB", "minMemoryMB", "minProcessors", "minCpuSpeedMHz")
 
     foreach ($f in (Get-CatalogMetadataSimpleFields)) {
+        if ($f.Win32Only -and -not $isWin32) { continue }
         $localVal = [string]$Local.($f.Key)
         $remoteVal = [string]$Remote.($f.Key)
         $compareLocal = $localVal
@@ -7270,20 +7349,25 @@ function Get-CatalogMetadataFieldDiffs {
         }
     }
 
-    # ConvertTo-Json is not used here - it's confirmed (see ConvertTo-DetectionRuleJson's
-    # own comment) to sometimes silently return an empty result for certain inputs,
-    # which made multi-line Script detection rules (e.g. winget apps) show up as a
-    # spurious "Detection rule" diff on every sync even when nothing had changed.
-    $localDetSummary = if ($Local.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $Local.detectionRule -IndentLevel 0 } else { "" }
-    $remoteDetSummary = if ($Remote.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $Remote.detectionRule -IndentLevel 0 } else { "" }
-    if ($localDetSummary -ne $remoteDetSummary) {
-        $diffs.Add([pscustomobject]@{ Field = "Detection rule"; Local = $localDetSummary; Remote = $remoteDetSummary })
-    }
+    # Detection rule and return codes are Win32Only concepts too, same
+    # reasoning as above - skipped entirely for a non-Win32 app rather
+    # than comparing against Intune's inherent blank/null for both.
+    if ($isWin32) {
+        # ConvertTo-Json is not used here - it's confirmed (see ConvertTo-DetectionRuleJson's
+        # own comment) to sometimes silently return an empty result for certain inputs,
+        # which made multi-line Script detection rules (e.g. winget apps) show up as a
+        # spurious "Detection rule" diff on every sync even when nothing had changed.
+        $localDetSummary = if ($Local.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $Local.detectionRule -IndentLevel 0 } else { "" }
+        $remoteDetSummary = if ($Remote.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $Remote.detectionRule -IndentLevel 0 } else { "" }
+        if ($localDetSummary -ne $remoteDetSummary) {
+            $diffs.Add([pscustomobject]@{ Field = "Detection rule"; Local = $localDetSummary; Remote = $remoteDetSummary })
+        }
 
-    $localRcSummary = if (@($Local.returnCodes).Count -gt 0) { (@($Local.returnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
-    $remoteRcSummary = if (@($Remote.returnCodes).Count -gt 0) { (@($Remote.returnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
-    if ($localRcSummary -ne $remoteRcSummary) {
-        $diffs.Add([pscustomobject]@{ Field = "Return codes"; Local = $localRcSummary; Remote = $remoteRcSummary })
+        $localRcSummary = if (@($Local.returnCodes).Count -gt 0) { (@($Local.returnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
+        $remoteRcSummary = if (@($Remote.returnCodes).Count -gt 0) { (@($Remote.returnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
+        if ($localRcSummary -ne $remoteRcSummary) {
+            $diffs.Add([pscustomobject]@{ Field = "Return codes"; Local = $localRcSummary; Remote = $remoteRcSummary })
+        }
     }
 
     return $diffs.ToArray()
@@ -11073,7 +11157,7 @@ function Show-SyncMetadataDialog {
                             # already offers for one app at a time, rather
                             # than silently taking Intune's value.
                             $existingMetadata = $appsRefRef[$ai].metadata
-                            $fieldDiffs = Get-CatalogMetadataFieldDiffs -Local $existingMetadata -Remote $oneResult.Metadata
+                            $fieldDiffs = Get-CatalogMetadataFieldDiffs -Local $existingMetadata -Remote $oneResult.Metadata -OdataType $oneResult.OdataType
                             if ($existingMetadata -and $fieldDiffs.Count -gt 0) {
                                 $reviewQueue.Add([pscustomobject]@{ Index = $ai; AppName = $oneResult.AppName; Local = $existingMetadata; Remote = $oneResult.Metadata; Diffs = $fieldDiffs })
                             }
