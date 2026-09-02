@@ -1833,6 +1833,24 @@ function Get-HttpErrorDetail {
     return $null
 }
 
+# Turns Graph's raw "An inclusion intent already exists for group id: ..."
+# error (thrown when the SAME group ends up in the assignment body with more
+# than one intent - required/available/uninstall are all "inclusion"
+# intents, and Intune only allows one per group per app, same restriction
+# the admin console itself enforces) into something the user can actually
+# act on: which group, in plain catalog terms, and what to go fix. Falls
+# through to the raw message unchanged for any other kind of failure -
+# this only recognizes this one specific, previously-confirmed error shape.
+function Get-FriendlyAssignError {
+    param([string]$RawError, [string]$AppName, [hashtable]$GroupNameById)
+    if ($RawError -match "inclusion intent already exists for group id: '([0-9a-fA-F-]{36})'") {
+        $gid = $Matches[1]
+        $gName = if ($GroupNameById.ContainsKey($gid)) { $GroupNameById[$gid] } else { $gid }
+        return "Intune rejected the assignment for `"$AppName`": the group `"$gName`" is set in more than one of Required/Available/Uninstall for this app, and Intune only allows ONE assignment intent per group per app. Open `"$AppName`" in Edit app, remove `"$gName`" from all but one of those three lists, then try again.`n`n(Raw Intune error: $RawError)"
+    }
+    return $RawError
+}
+
 function Invoke-GraphRequestDetailed {
     param(
         [Parameter(Mandatory=$true)][string]$Uri,
@@ -2025,7 +2043,14 @@ try {
     catch {
         throw "Building the assignment request body failed: $($_.Exception.Message)"
     }
-    Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.AppId)/assign" -Method POST -Body $assignBody -StepDescription "Assign app to groups" | Out-Null
+    try {
+        Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.AppId)/assign" -Method POST -Body $assignBody -StepDescription "Assign app to groups" | Out-Null
+    }
+    catch {
+        $groupNameById = @{}
+        foreach ($name in $groupIdByName.Keys) { $groupNameById[$groupIdByName[$name]] = $name }
+        throw (Get-FriendlyAssignError -RawError $_.Exception.Message -AppName $Config.AppName -GroupNameById $groupNameById)
+    }
     Write-Host "  [OK] Assignments applied." -ForegroundColor Green
 
     Write-Step "Done"
@@ -2100,6 +2125,24 @@ function Get-HttpErrorDetail {
         }
     } catch { }
     return $null
+}
+
+# Turns Graph's raw "An inclusion intent already exists for group id: ..."
+# error (thrown when the SAME group ends up in the assignment body with more
+# than one intent - required/available/uninstall are all "inclusion"
+# intents, and Intune only allows one per group per app, same restriction
+# the admin console itself enforces) into something the user can actually
+# act on: which group, in plain catalog terms, and what to go fix. Falls
+# through to the raw message unchanged for any other kind of failure -
+# this only recognizes this one specific, previously-confirmed error shape.
+function Get-FriendlyAssignError {
+    param([string]$RawError, [string]$AppName, [hashtable]$GroupNameById)
+    if ($RawError -match "inclusion intent already exists for group id: '([0-9a-fA-F-]{36})'") {
+        $gid = $Matches[1]
+        $gName = if ($GroupNameById.ContainsKey($gid)) { $GroupNameById[$gid] } else { $gid }
+        return "Intune rejected the assignment for `"$AppName`": the group `"$gName`" is set in more than one of Required/Available/Uninstall for this app, and Intune only allows ONE assignment intent per group per app. Open `"$AppName`" in Edit app, remove `"$gName`" from all but one of those three lists, then try again.`n`n(Raw Intune error: $RawError)"
+    }
+    return $RawError
 }
 
 function Invoke-GraphRequestDetailed {
@@ -2277,7 +2320,14 @@ try {
             }
 
             $assignBody = [string](@{ mobileAppAssignments = @($assignments) } | ConvertTo-Json -Depth 10)
-            Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($app.AppId)/assign" -Method POST -Body $assignBody -ContentType "application/json" -StepDescription "Assign $($app.AppName)" | Out-Null
+            try {
+                Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($app.AppId)/assign" -Method POST -Body $assignBody -ContentType "application/json" -StepDescription "Assign $($app.AppName)" | Out-Null
+            }
+            catch {
+                $groupNameById = @{}
+                foreach ($name in $groupIdCache.Keys) { if ($groupIdCache[$name]) { $groupNameById[$groupIdCache[$name]] = $name } }
+                throw (Get-FriendlyAssignError -RawError $_.Exception.Message -AppName $app.AppName -GroupNameById $groupNameById)
+            }
             Write-Host "  [OK] Applied." -ForegroundColor Green
         }
     }
@@ -10588,6 +10638,7 @@ function Show-TargetedAssignDialog {
             ClientId              = $clientId
             CertificateThumbprint = $certThumb
             AppId                 = $AppId
+            AppName               = $AppName
             RequiredGroups        = @($RequiredGroups)
             AvailableGroups       = @($AvailableGroups)
             UninstallGroups       = @($UninstallGroups)
