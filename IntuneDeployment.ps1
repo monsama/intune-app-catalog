@@ -7942,7 +7942,16 @@ function Get-DependencyOrderedApps {
 # $Script:Apps directly - so unlike almost every other "Check..." dialog
 # in this app, this one needs no Refresh button or async plumbing at all.
 function Show-DependencyOverviewDialog {
-    $appsRef = $Script:Apps
+    # Plain local aliases - see note in Start-IntuneAppLookup.
+    $appsRef     = $Script:Apps
+    $tenantId    = $Script:GraphTenantId
+    $clientId    = $Script:GraphClientId
+    $certThumb   = $Script:GraphCertificateThumbprint
+    # Reused rather than a new embedded script - it already fetches each
+    # app's live Intune dependencies (by name, from the relationships
+    # endpoint) as part of its normal metadata fetch, entirely read-only.
+    # Same config shape Show-SyncMetadataDialog itself sends it.
+    $syncScript  = $Script:EmbeddedSyncMetadataScript
 
     if ($appsRef.Count -eq 0) {
         [System.Windows.Forms.MessageBox]::Show("The catalog is empty - nothing to show.", "Nothing to do", "OK", "Information") | Out-Null
@@ -7976,9 +7985,21 @@ function Show-DependencyOverviewDialog {
     $lblIntro.Size = New-Object System.Drawing.Size(790,32)
     $dlg.Controls.Add($lblIntro)
 
+    $btnCheckIntune = New-Object System.Windows.Forms.Button
+    $btnCheckIntune.Text = "Check against Intune..."
+    $btnCheckIntune.Location = New-Object System.Drawing.Point(15,48)
+    $btnCheckIntune.Size = New-Object System.Drawing.Size(160,28)
+    $dlg.Controls.Add($btnCheckIntune)
+
+    $lblCheckStatus = New-Object System.Windows.Forms.Label
+    $lblCheckStatus.Text = "Local catalog data only - not yet checked against Intune."
+    $lblCheckStatus.Location = New-Object System.Drawing.Point(185,53)
+    $lblCheckStatus.Size = New-Object System.Drawing.Size(620,20)
+    $dlg.Controls.Add($lblCheckStatus)
+
     $grid = New-Object System.Windows.Forms.DataGridView
-    $grid.Location = New-Object System.Drawing.Point(15,50)
-    $grid.Size = New-Object System.Drawing.Size(790,430)
+    $grid.Location = New-Object System.Drawing.Point(15,82)
+    $grid.Size = New-Object System.Drawing.Size(790,398)
     $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $grid.ReadOnly = $true
     $grid.AllowUserToAddRows = $false
@@ -8004,20 +8025,37 @@ function Show-DependencyOverviewDialog {
     $colStatus = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $colStatus.Name = "Status"; $colStatus.HeaderText = "Status"; $colStatus.FillWeight = 18
     $grid.Columns.Add($colStatus) | Out-Null
+    $colIntuneCheck = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colIntuneCheck.Name = "IntuneCheck"; $colIntuneCheck.HeaderText = "Intune check"; $colIntuneCheck.FillWeight = 24
+    $grid.Columns.Add($colIntuneCheck) | Out-Null
 
     # Not-OK rows in bold orange/red, same convention as every other check
     # dialog in this app (Show-GroupDriftCheckDialog, Show-UnknownAssignmentsCheckDialog)
     # - problems stand out at a glance instead of needing to read every row.
     $grid.Add_CellFormatting({
         param($gridSender, $e)
-        if ($grid.Columns[$e.ColumnIndex].Name -ne "Status") { return }
-        if ([string]$e.Value -eq "Circular") {
-            $e.CellStyle.ForeColor = [System.Drawing.Color]::Firebrick
-            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+        $colName = $grid.Columns[$e.ColumnIndex].Name
+        if ($colName -eq "Status") {
+            if ([string]$e.Value -eq "Circular") {
+                $e.CellStyle.ForeColor = [System.Drawing.Color]::Firebrick
+                $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+            }
+            elseif ([string]$e.Value -like "Missing dependency*") {
+                $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
+                $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+            }
         }
-        elseif ([string]$e.Value -like "Missing dependency*") {
-            $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
-            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+        elseif ($colName -eq "IntuneCheck") {
+            if ([string]$e.Value -eq "Matches Intune") {
+                $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
+            }
+            elseif ([string]$e.Value -like "Differs from Intune*") {
+                $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
+                $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+            }
+            elseif ([string]$e.Value -like "Failed*") {
+                $e.CellStyle.ForeColor = [System.Drawing.Color]::Firebrick
+            }
         }
     }.GetNewClosure())
 
@@ -8031,9 +8069,16 @@ function Show-DependencyOverviewDialog {
         $lines.Add("")
         $lines.Add("Depended on by:")
         $lines.Add("  $([string]$row.Cells['DependedOnBy'].Value)")
+        $intuneCheckVal = [string]$row.Cells['IntuneCheck'].Value
+        if ($intuneCheckVal) {
+            $lines.Add("")
+            $lines.Add("Intune check:")
+            $lines.Add("  $intuneCheckVal")
+        }
         [System.Windows.Forms.MessageBox]::Show(($lines -join "`r`n"), "Dependencies - $([string]$row.Cells['App'].Value)", "OK", "Information") | Out-Null
     }.GetNewClosure())
 
+    $rowByAppName = @{}
     foreach ($a in ($appsRef | Sort-Object appName)) {
         $depNames = @($a.metadata.dependencies)
         $dependedOnByNames = if ($dependedOnBy.ContainsKey($a.appName)) { @($dependedOnBy[$a.appName]) } else { @() }
@@ -8045,8 +8090,10 @@ function Show-DependencyOverviewDialog {
 
         $dependsOnText = if ($depNames.Count -gt 0) { $depNames -join ", " } else { "(none)" }
         $dependedOnByText = if ($dependedOnByNames.Count -gt 0) { $dependedOnByNames -join ", " } else { "(none)" }
+        $intuneCheckText = if ($a.appId) { "(not checked)" } else { "(no App ID)" }
 
-        [void]$grid.Rows.Add($a.appName, $dependsOnText, $dependedOnByText, $status)
+        $rowIdx = $grid.Rows.Add($a.appName, $dependsOnText, $dependedOnByText, $status, $intuneCheckText)
+        $rowByAppName[$a.appName] = $grid.Rows[$rowIdx]
     }
 
     $btnClose = New-Object System.Windows.Forms.Button
@@ -8058,6 +8105,124 @@ function Show-DependencyOverviewDialog {
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     $dlg.CancelButton = $btnClose
     $dlg.AcceptButton = $btnClose
+
+    $procBox = @{ Proc = $null }
+
+    $btnCheckIntune.Add_Click({
+        $deployedApps = @($appsRef | Where-Object { $_.appId })
+        if ($deployedApps.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("No apps have an App ID yet - nothing to check against Intune.", "Nothing to do", "OK", "Information") | Out-Null
+            return
+        }
+
+        $configApps = New-Object System.Collections.Generic.List[object]
+        foreach ($deployedApp in $deployedApps) {
+            $configApps.Add([pscustomobject]@{ AppName = $deployedApp.appName; AppId = $deployedApp.appId })
+        }
+
+        $btnCheckIntune.Enabled = $false
+        $lblCheckStatus.ForeColor = [System.Drawing.Color]::DimGray
+        $lblCheckStatus.Text = "Checking $($configApps.Count) app(s) against Intune..."
+
+        $configPath = Join-Path $env:TEMP (".intunepkg_depcheck_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_depcheck_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $config = [pscustomobject]@{
+            TenantId              = $tenantId
+            ClientId              = $clientId
+            CertificateThumbprint = $certThumb
+            Apps                  = $configApps.ToArray()
+            OutputResultPath      = $resultPath
+        }
+        try {
+            $configJsonText = $config | ConvertTo-Json -Depth 10 -ErrorAction Stop
+            [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
+        }
+        catch {
+            $btnCheckIntune.Enabled = $true
+            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            return
+        }
+
+        # Fresh aliases for the nested -OnComplete closure - see note at the
+        # top of Show-CreateInIntuneDialog for why this matters here too.
+        $btnCheckIntuneRef = $btnCheckIntune
+        $lblCheckStatusRef = $lblCheckStatus
+        $resultPathRef = $resultPath
+        $configPathRef = $configPath
+        $procBoxRef = $procBox
+        $gridRef = $grid
+        $rowByAppNameRef = $rowByAppName
+
+        # Purely read-only here - this never writes anything back into
+        # $appsRef or the catalog, unlike Show-SyncMetadataDialog which
+        # applies what it fetches. It only ever updates the IntuneCheck
+        # column of this dialog's own grid.
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".intunepkg_embedded_depcheck.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -OnComplete {
+            param($code)
+            $procBoxRef.Proc = $null
+            $btnCheckIntuneRef.Enabled = $true
+            Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue
+
+            if (-not (Test-Path $resultPathRef)) {
+                $lblCheckStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                $lblCheckStatusRef.Text = "Check failed: no result written (exit code $code)."
+                return
+            }
+
+            $result = $null
+            try {
+                $result = Get-Content -Path $resultPathRef -Raw | ConvertFrom-Json
+                Remove-Item $resultPathRef -Force -ErrorAction SilentlyContinue
+            }
+            catch {
+                $lblCheckStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                $lblCheckStatusRef.Text = "Check failed: could not read result (exit code $code): $($_.Exception.Message)"
+                return
+            }
+
+            if (-not $result.success) {
+                $lblCheckStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                $lblCheckStatusRef.Text = "Check failed: $($result.error)"
+                return
+            }
+
+            $driftCount = 0
+            $okCount = 0
+            $failCount = 0
+            foreach ($oneResult in @($result.results)) {
+                if (-not $rowByAppNameRef.ContainsKey($oneResult.AppName)) { continue }
+                $row = $rowByAppNameRef[$oneResult.AppName]
+
+                if (-not $oneResult.Success) {
+                    $row.Cells['IntuneCheck'].Value = "Failed: $($oneResult.Error)"
+                    $failCount++
+                    continue
+                }
+
+                $liveDeps = @($oneResult.Metadata.dependencies) | Sort-Object
+                $catalogApp = $appsRef | Where-Object { $_.appName -eq $oneResult.AppName } | Select-Object -First 1
+                $localDepsSorted = @($catalogApp.metadata.dependencies) | Sort-Object
+
+                $liveJoined = $liveDeps -join "|"
+                $localJoined = $localDepsSorted -join "|"
+
+                if ($liveJoined -eq $localJoined) {
+                    $row.Cells['IntuneCheck'].Value = "Matches Intune"
+                    $okCount++
+                }
+                else {
+                    $liveText = if ($liveDeps.Count -gt 0) { $liveDeps -join ", " } else { "(none)" }
+                    $localText = if ($localDepsSorted.Count -gt 0) { $localDepsSorted -join ", " } else { "(none)" }
+                    $row.Cells['IntuneCheck'].Value = "Differs from Intune - catalog has: $localText | Intune has: $liveText"
+                    $driftCount++
+                }
+            }
+            $gridRef.Refresh()
+
+            $lblCheckStatusRef.ForeColor = if ($driftCount -gt 0 -or $failCount -gt 0) { [System.Drawing.Color]::DarkOrange } else { [System.Drawing.Color]::SeaGreen }
+            $lblCheckStatusRef.Text = "Checked against Intune: $okCount matching, $driftCount differing, $failCount failed."
+        }.GetNewClosure()
+    }.GetNewClosure())
 
     Set-Theme -Control $dlg
     [void]$dlg.ShowDialog($form)
@@ -9054,6 +9219,18 @@ function Show-CreateInIntuneDialog {
     $lblAdvancedSeparator.Font = New-Object System.Drawing.Font($lblAdvancedSeparator.Font, [System.Drawing.FontStyle]::Italic)
     $scrollPanel.Controls.Add($lblAdvancedSeparator)
 
+    # Only meaningful for a Winget app - an Uncommon app has no shared
+    # Get-DefaultAppMetadata template to reset back to (its install/
+    # uninstall/detection are inherently app-specific, same reasoning as
+    # Test-AppIsUncommon everywhere else in this app), so there's nothing
+    # for this button to do for one and it stays hidden.
+    $btnSetDefaults = New-Object System.Windows.Forms.Button
+    $btnSetDefaults.Text = "Set default values..."
+    $btnSetDefaults.Location = New-Object System.Drawing.Point(480,687)
+    $btnSetDefaults.Size = New-Object System.Drawing.Size(210,22)
+    $btnSetDefaults.Visible = (-not $Uncommon)
+    $scrollPanel.Controls.Add($btnSetDefaults)
+
     # --- Dependencies ---
     $lblDeps = New-Object System.Windows.Forms.Label
     $lblDeps.Text = "Dependencies (undeployed apps shown too - resolved by name at actual deploy time)"
@@ -9245,6 +9422,170 @@ function Show-CreateInIntuneDialog {
     # unverified assumption that they'd behave the same way as
     # runAsAccount. See the note on Install context above for the
     # confirming evidence.
+
+    # Compares the form's CURRENT values against Get-DefaultAppMetadata's
+    # computed defaults (the exact same defaults this dialog itself
+    # pre-fills a brand-new Winget app with) and, on confirmation, resets
+    # every differing field back to its default. Deliberately scoped to
+    # install-mechanics fields only (install/uninstall/detection,
+    # architecture, min OS, requirements, restart behavior, allow-
+    # uninstall, return codes, dependencies) - NOT description/publisher/
+    # owner/developer/URLs/notes, which are free-text metadata this button
+    # has no business silently blanking out.
+    $btnSetDefaults.Add_Click({
+        $currentDetection = switch ($cmbDetectionType.SelectedIndex) {
+            0 { if ($txtDetection.Text.Trim()) { [pscustomobject]@{ Type = "Script"; Script_Content = $txtDetection.Text } } else { $null } }
+            default { [pscustomobject]@{ Type = "Other" } }
+        }
+        $currentArches = New-Object System.Collections.Generic.List[string]
+        if ($chkArchX86.Checked)   { $currentArches.Add("x86") }
+        if ($chkArchX64.Checked)   { $currentArches.Add("x64") }
+        if ($chkArchArm64.Checked) { $currentArches.Add("arm64") }
+        $currentDepNames = New-Object System.Collections.Generic.List[string]
+        foreach ($checkedLabel in $clbDeps.CheckedItems) {
+            if ($depNameByLabel.ContainsKey([string]$checkedLabel)) { $currentDepNames.Add($depNameByLabel[[string]$checkedLabel]) }
+        }
+        $currentReturnCodes = New-Object System.Collections.Generic.List[object]
+        foreach ($rcRow in $grdReturnCodes.Rows) {
+            if ($rcRow.IsNewRow) { continue }
+            $rcCode = [string]$rcRow.Cells["Code"].Value
+            $rcType = [string]$rcRow.Cells["Type"].Value
+            if (-not $rcCode -and -not $rcType) { continue }
+            $parsedRc = 0
+            [void][int]::TryParse($rcCode.Trim(), [ref]$parsedRc)
+            $currentReturnCodes.Add([pscustomobject]@{ returnCode = $parsedRc; type = $rcType })
+        }
+        $currentMinOsKey = if ($cmbMinOS.SelectedItem) { $minOsMap[[string]$cmbMinOS.SelectedItem] } else { "" }
+        $currentRestartBehavior = if ($cmbRestartBehavior.SelectedItem) { $restartBehaviorMap[[string]$cmbRestartBehavior.SelectedItem] } else { "" }
+        $parsedDisk = 0; [void][int]::TryParse($txtDiskSpace.Text.Trim(), [ref]$parsedDisk)
+        $parsedMem = 0; [void][int]::TryParse($txtMemory.Text.Trim(), [ref]$parsedMem)
+        $parsedProc = 0; [void][int]::TryParse($txtProcessors.Text.Trim(), [ref]$parsedProc)
+        $parsedCpu = 0; [void][int]::TryParse($txtCpuSpeed.Text.Trim(), [ref]$parsedCpu)
+        $parsedInstallTime = 0; [void][int]::TryParse($txtInstallTime.Text.Trim(), [ref]$parsedInstallTime)
+
+        # {Label; Current; Default} rows, plain display strings only - built
+        # by hand rather than through Get-CatalogMetadataFieldDiffs, which
+        # compares a different (and wider, description/publisher/notes
+        # included) field set than this button intentionally touches.
+        $changeRows = New-Object System.Collections.Generic.List[object]
+        if ($txtInstall.Text -ne $defaults.installCommand) {
+            $changeRows.Add([pscustomobject]@{ Label = "Install command"; Current = $txtInstall.Text; Default = $defaults.installCommand })
+        }
+        if ($txtUninstall.Text -ne $defaults.uninstallCommand) {
+            $changeRows.Add([pscustomobject]@{ Label = "Uninstall command"; Current = $txtUninstall.Text; Default = $defaults.uninstallCommand })
+        }
+        $defaultDetSummary = if ($defaults.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $defaults.detectionRule -IndentLevel 0 } else { "" }
+        $currentDetSummary = if ($currentDetection -and $currentDetection.Type -eq "Script") { ConvertTo-DetectionRuleJson -DetectionRule $currentDetection -IndentLevel 0 } else { "(non-script detection method)" }
+        if ($cmbDetectionType.SelectedIndex -ne 0 -or $currentDetSummary -ne $defaultDetSummary) {
+            $changeRows.Add([pscustomobject]@{ Label = "Detection rule"; Current = $currentDetSummary; Default = $defaultDetSummary })
+        }
+        $currentArchText = ($currentArches -join ",")
+        if ($currentArchText -ne $defaults.architecture) {
+            $changeRows.Add([pscustomobject]@{ Label = "Architecture"; Current = $currentArchText; Default = $defaults.architecture })
+        }
+        if ($currentMinOsKey -ne $defaults.minOSKey) {
+            $changeRows.Add([pscustomobject]@{ Label = "Minimum OS"; Current = $currentMinOsKey; Default = $defaults.minOSKey })
+        }
+        $currentDepText = (@($currentDepNames) | Sort-Object) -join ", "
+        $defaultDepText = (@($defaults.dependencies) | Sort-Object) -join ", "
+        if ($currentDepText -ne $defaultDepText) {
+            $changeRows.Add([pscustomobject]@{ Label = "Dependencies"; Current = $currentDepText; Default = $defaultDepText })
+        }
+        if ($parsedDisk -ne $defaults.minDiskSpaceMB) {
+            $changeRows.Add([pscustomobject]@{ Label = "Disk space (MB)"; Current = $parsedDisk; Default = $defaults.minDiskSpaceMB })
+        }
+        if ($parsedMem -ne $defaults.minMemoryMB) {
+            $changeRows.Add([pscustomobject]@{ Label = "Memory (MB)"; Current = $parsedMem; Default = $defaults.minMemoryMB })
+        }
+        if ($parsedProc -ne $defaults.minProcessors) {
+            $changeRows.Add([pscustomobject]@{ Label = "Min. processors"; Current = $parsedProc; Default = $defaults.minProcessors })
+        }
+        if ($parsedCpu -ne $defaults.minCpuSpeedMHz) {
+            $changeRows.Add([pscustomobject]@{ Label = "Min. CPU speed (MHz)"; Current = $parsedCpu; Default = $defaults.minCpuSpeedMHz })
+        }
+        if ($parsedInstallTime -ne $defaults.installTimeMinutes) {
+            $changeRows.Add([pscustomobject]@{ Label = "Install time (mins)"; Current = $parsedInstallTime; Default = $defaults.installTimeMinutes })
+        }
+        if ($currentRestartBehavior -ne $defaults.deviceRestartBehavior) {
+            $changeRows.Add([pscustomobject]@{ Label = "Device restart behavior"; Current = $currentRestartBehavior; Default = $defaults.deviceRestartBehavior })
+        }
+        if ($chkAllowUninstall.Checked -ne [bool]$defaults.allowAvailableUninstall) {
+            $changeRows.Add([pscustomobject]@{ Label = "Allow available uninstall"; Current = $chkAllowUninstall.Checked; Default = [bool]$defaults.allowAvailableUninstall })
+        }
+        $currentRcSummary = if ($currentReturnCodes.Count -gt 0) { (@($currentReturnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
+        $defaultRcSummary = if (@($defaults.returnCodes).Count -gt 0) { (@($defaults.returnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
+        if ($currentRcSummary -ne $defaultRcSummary) {
+            $changeRows.Add([pscustomobject]@{ Label = "Return codes"; Current = $currentRcSummary; Default = $defaultRcSummary })
+        }
+
+        if ($changeRows.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Every setting already matches the computed defaults for this app.", "Nothing to change", "OK", "Information") | Out-Null
+            return
+        }
+
+        $summaryLines = New-Object System.Collections.Generic.List[string]
+        foreach ($cr in $changeRows) {
+            $curText = if ([string]::IsNullOrWhiteSpace([string]$cr.Current)) { "(blank)" } else { [string]$cr.Current }
+            $defText = if ([string]::IsNullOrWhiteSpace([string]$cr.Default)) { "(blank)" } else { [string]$cr.Default }
+            $summaryLines.Add("$($cr.Label): $curText  ->  $defText")
+        }
+        $promptText = "Reset the following $($changeRows.Count) setting(s) to their computed defaults?`n`n$($summaryLines -join "`n")"
+        $confirmResult = [System.Windows.Forms.MessageBox]::Show($promptText, "Set default values", "YesNo", "Question")
+        if ($confirmResult -ne "Yes") { return }
+
+        foreach ($cr in $changeRows) {
+            switch ($cr.Label) {
+                "Install command" { $txtInstall.Text = $defaults.installCommand }
+                "Uninstall command" { $txtUninstall.Text = $defaults.uninstallCommand }
+                "Detection rule" {
+                    if ($defaults.detectionRule -and $defaults.detectionRule.Type -eq "Script") {
+                        $cmbDetectionType.SelectedIndex = 0
+                        $txtDetection.Text = $defaults.detectionRule.Script_Content
+                    }
+                }
+                "Architecture" {
+                    if ($defaults.architecture) {
+                        $defArchList = @($defaults.architecture -split ',' | ForEach-Object { $_.Trim().ToLower() })
+                        $chkArchX86.Checked = $defArchList -contains "x86"
+                        $chkArchX64.Checked = $defArchList -contains "x64"
+                        $chkArchArm64.Checked = $defArchList -contains "arm64"
+                    }
+                }
+                "Minimum OS" {
+                    $defMinOsLabel = $minOsMap.Keys | Where-Object { $minOsMap[$_] -eq $defaults.minOSKey } | Select-Object -First 1
+                    if ($defMinOsLabel) { $cmbMinOS.SelectedItem = $defMinOsLabel }
+                }
+                "Dependencies" {
+                    for ($ci = 0; $ci -lt $clbDeps.Items.Count; $ci++) { $clbDeps.SetItemChecked($ci, $false) }
+                    for ($ci = 0; $ci -lt $clbDeps.Items.Count; $ci++) {
+                        $itemLabel = [string]$clbDeps.Items[$ci]
+                        if ($depNameByLabel.ContainsKey($itemLabel) -and (@($defaults.dependencies) -contains $depNameByLabel[$itemLabel])) {
+                            $clbDeps.SetItemChecked($ci, $true)
+                        }
+                    }
+                }
+                "Disk space (MB)" { $txtDiskSpace.Text = [string]$defaults.minDiskSpaceMB }
+                "Memory (MB)" { $txtMemory.Text = [string]$defaults.minMemoryMB }
+                "Min. processors" { $txtProcessors.Text = [string]$defaults.minProcessors }
+                "Min. CPU speed (MHz)" { $txtCpuSpeed.Text = [string]$defaults.minCpuSpeedMHz }
+                "Install time (mins)" { $txtInstallTime.Text = [string]$defaults.installTimeMinutes }
+                "Device restart behavior" {
+                    $defRbKey = $restartBehaviorMap.Keys | Where-Object { $restartBehaviorMap[$_] -eq $defaults.deviceRestartBehavior } | Select-Object -First 1
+                    if ($defRbKey) { $cmbRestartBehavior.SelectedItem = $defRbKey }
+                }
+                "Allow available uninstall" { $chkAllowUninstall.Checked = [bool]$defaults.allowAvailableUninstall }
+                "Return codes" {
+                    $grdReturnCodes.Rows.Clear()
+                    foreach ($rc in @($defaults.returnCodes)) {
+                        $rcRowIdx = $grdReturnCodes.Rows.Add()
+                        $grdReturnCodes.Rows[$rcRowIdx].Cells["Code"].Value = [string]$rc.returnCode
+                        $grdReturnCodes.Rows[$rcRowIdx].Cells["Type"].Value = [string]$rc.type
+                    }
+                }
+            }
+        }
+        [System.Windows.Forms.MessageBox]::Show("Reset $($changeRows.Count) setting(s) to their computed defaults. Nothing has been saved or deployed yet - review below, then Save/Deploy as usual.", "Defaults applied", "OK", "Information") | Out-Null
+    }.GetNewClosure())
 
     $lblCreateStatus = New-Object System.Windows.Forms.Label
     $lblCreateStatus.Location = New-Object System.Drawing.Point(15,773)
