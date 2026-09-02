@@ -2793,9 +2793,11 @@ catch {
 $Script:EmbeddedSyncMetadataScript = @'
 <#
 .SYNOPSIS
-    Fetches current Intune metadata for MULTIPLE apps in one run, writing it
-    all back as a single JSON array - used to bulk-sync the local catalog's
-    metadata field from what's actually live in Intune right now.
+    Fetches current Intune metadata AND current group assignments for
+    MULTIPLE apps in one run, writing it all back as a single JSON array -
+    used to bulk-sync the local catalog's metadata and requiredFor/
+    availableFor/uninstallFor fields from what's actually live in Intune
+    right now.
 .DESCRIPTION
     Reuses the exact same field-extraction logic as Start-AppMetadataFetch
     (the single-app version used by Deploy to Intune's Update mode) rather
@@ -2803,6 +2805,14 @@ $Script:EmbeddedSyncMetadataScript = @'
     rounds of real bug fixes this session (architecture handling
     specifically), and re-deriving it here risked reintroducing one of
     those exact bugs.
+
+    Group assignments are resolved by the assignment's groupId, not by
+    name - the same live-assignment lookup Start-AppMetadataFetch already
+    does. That's what lets this pick up a group renamed in Entra ID: the
+    assignment's groupId doesn't change on a rename, so this always
+    reports Intune's CURRENT displayName for it, unlike Assign Groups /
+    Batch Assign, which resolve a catalog group NAME against Entra ID and
+    have no way to tell a rename apart from a deletion.
 #>
 param(
     [Parameter(Mandatory=$true)]
@@ -3059,6 +3069,43 @@ try {
                 Write-Host "  [!] Could not fetch dependencies: $($_.Exception.Message)" -ForegroundColor Yellow
             }
 
+            # This app's CURRENT live Intune assignments, resolved the same
+            # way Start-AppMetadataFetch's own single-app fetch already does
+            # (see its comment) - the one signal that survives a group
+            # rename in Entra ID, since it resolves each assignment's
+            # groupId to Intune's live displayName right now rather than
+            # matching against the catalog's (possibly stale) stored name.
+            # Wrapped defensively, same as the dependencies fetch above - a
+            # failure here shouldn't sink the rest of the sync, it just
+            # means this app's group names are left untouched below rather
+            # than risk overwriting real local data with an empty result.
+            $requiredGroupNames = @()
+            $availableGroupNames = @()
+            $uninstallGroupNames = @()
+            $groupFetchOk = $true
+            try {
+                $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($appEntry.AppId)/assignments" -Method GET -StepDescription "Fetch group assignments"
+                foreach ($a in @($currentAssignments.value)) {
+                    if ($a.target.'@odata.type' -ne '#microsoft.graph.groupAssignmentTarget') { continue }
+                    $gid = $a.target.groupId
+                    $groupDisplayName = $gid
+                    try {
+                        $groupInfo = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve group name"
+                        if ($groupInfo.displayName) { $groupDisplayName = $groupInfo.displayName }
+                    }
+                    catch { }
+                    switch ($a.intent) {
+                        "required"  { $requiredGroupNames += $groupDisplayName }
+                        "available" { $availableGroupNames += $groupDisplayName }
+                        "uninstall" { $uninstallGroupNames += $groupDisplayName }
+                    }
+                }
+            }
+            catch {
+                $groupFetchOk = $false
+                Write-Host "  [!] Could not fetch group assignments: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+
             $metadata = [pscustomobject]@{
                 description      = Repair-MojibakeText $app.description
                 publisher        = Repair-MojibakeText $app.publisher
@@ -3103,12 +3150,12 @@ try {
             # portal itself shows (Get-FriendlyIntuneAppType), so that
             # mapping only has to live in one place, not duplicated into
             # every embedded child-process script that could report it.
-            $allResults.Add([pscustomobject]@{ AppName = $appEntry.AppName; Success = $true; Metadata = $metadata; OdataType = $app.'@odata.type'; DisplayVersion = [string]$app.displayVersion; Error = "" })
+            $allResults.Add([pscustomobject]@{ AppName = $appEntry.AppName; Success = $true; Metadata = $metadata; OdataType = $app.'@odata.type'; DisplayVersion = [string]$app.displayVersion; RequiredGroupNames = $requiredGroupNames; AvailableGroupNames = $availableGroupNames; UninstallGroupNames = $uninstallGroupNames; GroupFetchOk = $groupFetchOk; Error = "" })
             Write-Host "  [OK] Synced." -ForegroundColor Green
         }
         catch {
             Write-Host "  [ERROR] $($_.Exception.Message)" -ForegroundColor Red
-            $allResults.Add([pscustomobject]@{ AppName = $appEntry.AppName; Success = $false; Metadata = $null; OdataType = ""; DisplayVersion = ""; Error = $_.Exception.Message })
+            $allResults.Add([pscustomobject]@{ AppName = $appEntry.AppName; Success = $false; Metadata = $null; OdataType = ""; DisplayVersion = ""; RequiredGroupNames = @(); AvailableGroupNames = @(); UninstallGroupNames = @(); GroupFetchOk = $false; Error = $_.Exception.Message })
         }
     }
 
@@ -7476,6 +7523,41 @@ function Merge-CatalogMetadata {
     return $merged
 }
 
+# Compares an app's local requiredFor/availableFor/uninstallFor group-NAME
+# lists against Intune's CURRENT live assignment group names for that same
+# app (as fetched by the bulk "Sync metadata..." embedded script, which
+# resolves each assignment's groupId to its live displayName). That's the
+# one signal in this app that survives a group rename in Entra ID - Assign
+# Groups/Batch Assign both match by the catalog's stored NAME, so a rename
+# there just looks like "group not found"; this instead follows the live
+# Intune assignment's groupId, which doesn't change on a rename. Kept as
+# its own function rather than folded into Get-CatalogMetadataFieldDiffs -
+# these three fields live directly on the app object, not under
+# App.metadata, and are lists compared by membership, not scalars compared
+# by string equality.
+# Order-insensitive: only an actual membership difference counts, not a
+# re-ordering of the same names.
+function Get-GroupFieldDiffs {
+    param($LocalApp, $RemoteResult)
+
+    $diffs = New-Object System.Collections.Generic.List[object]
+    if (-not $LocalApp -or -not $RemoteResult) { return $diffs.ToArray() }
+
+    $fields = @(
+        @{ Key = "requiredFor"; RemoteKey = "RequiredGroupNames"; Label = "Required for" }
+        @{ Key = "availableFor"; RemoteKey = "AvailableGroupNames"; Label = "Available for" }
+        @{ Key = "uninstallFor"; RemoteKey = "UninstallGroupNames"; Label = "Uninstall for" }
+    )
+    foreach ($f in $fields) {
+        $localStr = (@($LocalApp.($f.Key)) | Sort-Object) -join ", "
+        $remoteStr = (@($RemoteResult.($f.RemoteKey)) | Sort-Object) -join ", "
+        if ($localStr -ne $remoteStr) {
+            $diffs.Add([pscustomobject]@{ Field = $f.Label; Local = $localStr; Remote = $remoteStr })
+        }
+    }
+    return $diffs.ToArray()
+}
+
 # "Uncommon" is derived, not a separately-stored field: an app with a
 # Winget ID gets installed via the shared winget wrapper package, so it's
 # "common"; an app with no Winget ID needs its own individually-packaged
@@ -11025,7 +11107,7 @@ function Show-SyncMetadataDialog {
 
     $lblIntro = New-Object System.Windows.Forms.Label
     $scopeText = if ($isScoped) { "$($eligibleApps.Count) selected app(s)" } else { "all $($eligibleApps.Count) app(s) with an App ID" }
-    $lblIntro.Text = "Fetches current metadata from Intune for $scopeText and stores it locally in the catalog. This is READ-ONLY - it never changes anything in Intune itself. An app whose local copy already differs from Intune isn't silently overwritten - a compare dialog opens for it, one app at a time, so you can pick which fields keep your local value before it's applied."
+    $lblIntro.Text = "Fetches current metadata AND current group assignments from Intune for $scopeText and stores them locally in the catalog - including picking up a group that was renamed in Entra ID, since this follows each assignment's group by ID rather than by name. This is READ-ONLY - it never changes anything in Intune itself. An app whose local copy already differs from Intune isn't silently overwritten - a compare dialog opens for it, one app at a time, so you can pick which fields keep your local value before it's applied."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(590,56)
     $dlg.Controls.Add($lblIntro)
@@ -11233,8 +11315,20 @@ function Show-SyncMetadataDialog {
                             # than silently taking Intune's value.
                             $existingMetadata = $appsRefRef[$ai].metadata
                             $fieldDiffs = Get-CatalogMetadataFieldDiffs -Local $existingMetadata -Remote $oneResult.Metadata -OdataType $oneResult.OdataType
-                            if ($existingMetadata -and $fieldDiffs.Count -gt 0) {
-                                $reviewQueue.Add([pscustomobject]@{ Index = $ai; AppName = $oneResult.AppName; Local = $existingMetadata; Remote = $oneResult.Metadata; Diffs = $fieldDiffs })
+
+                            # Group names are only compared when this app's
+                            # live assignments actually fetched OK - see the
+                            # embedded script's own comment next to
+                            # GroupFetchOk. A failed fetch there already
+                            # comes back as empty name lists, which would
+                            # otherwise look exactly like "every group was
+                            # removed" and clear real local assignments for
+                            # nothing worse than a transient Graph hiccup.
+                            $groupDiffs = if ($oneResult.GroupFetchOk) { Get-GroupFieldDiffs -LocalApp $appsRefRef[$ai] -RemoteResult $oneResult } else { @() }
+                            $allDiffs = @($fieldDiffs) + @($groupDiffs)
+
+                            if (($existingMetadata -and $fieldDiffs.Count -gt 0) -or $groupDiffs.Count -gt 0) {
+                                $reviewQueue.Add([pscustomobject]@{ Index = $ai; AppName = $oneResult.AppName; Local = $existingMetadata; Remote = $oneResult.Metadata; Diffs = $allDiffs; GroupsRemote = $oneResult })
                             }
                             else {
                                 $appsRefRef[$ai].metadata = $oneResult.Metadata
@@ -11259,6 +11353,22 @@ function Show-SyncMetadataDialog {
                     $keepLocalFields = @(Show-MetadataDriftDialog -Rows $driftRows.ToArray() -AppName $reviewItem.AppName)
                     $mergedMetadata = Merge-CatalogMetadata -Remote $reviewItem.Remote -Local $reviewItem.Local -KeepLocalFields $keepLocalFields
                     $appsRefRef[$reviewItem.Index].metadata = $mergedMetadata
+
+                    # Same reviewed keep-local-or-take-Intune choice, applied
+                    # to the three group fields - handled here rather than
+                    # inside Merge-CatalogMetadata since these live directly
+                    # on the app object, not under App.metadata.
+                    if ($reviewItem.GroupsRemote) {
+                        if ($keepLocalFields -notcontains "Required for") {
+                            $appsRefRef[$reviewItem.Index].requiredFor = @($reviewItem.GroupsRemote.RequiredGroupNames)
+                        }
+                        if ($keepLocalFields -notcontains "Available for") {
+                            $appsRefRef[$reviewItem.Index].availableFor = @($reviewItem.GroupsRemote.AvailableGroupNames)
+                        }
+                        if ($keepLocalFields -notcontains "Uninstall for") {
+                            $appsRefRef[$reviewItem.Index].uninstallFor = @($reviewItem.GroupsRemote.UninstallGroupNames)
+                        }
+                    }
                     $okCount++
                     $reviewedCount++
                     $keptMsg = if ($keepLocalFields.Count -gt 0) { "kept your local value for: $($keepLocalFields -join ', ')" } else { "took Intune's value for everything" }
@@ -13294,15 +13404,23 @@ function Show-BulkDeleteFromIntuneDialog {
 # Unlike the app "Renamed in Intune" check, there's no Entra ID group Object
 # ID stored anywhere in the catalog - only the group NAME (in requiredFor /
 # availableFor / uninstallFor). That means an actual rename can't be traced
-# back the way an app rename can; all this can honestly tell you is "this
-# name isn't found in Entra ID right now" - could be a rename, a deletion, a
-# typo, or a group that was simply never created yet. Deliberately
-# informational only (no auto-create button here) - Batch Assign / Assign
-# Groups already auto-create a missing group when you actually apply
+# back HERE the way an app rename can; all this dialog can honestly tell you
+# is "this name isn't found in Entra ID right now" - could be a rename, a
+# deletion, a typo, or a group that was simply never created yet.
+# Deliberately informational only (no auto-fix button here) - Batch Assign /
+# Assign Groups already auto-create a missing group when you actually apply
 # assignments, and doing that automatically FROM this check too would risk
 # silently creating a throwaway duplicate for what's actually a typo or a
 # rename, which is exactly the mistake this check exists to catch before it
 # happens.
+#
+# For an app that already has assignments live in Intune, "Sync metadata..."
+# (Show-SyncMetadataDialog) IS rename-safe: it reads that app's group names
+# back from its live assignments by groupId, which survives a rename, and
+# offers to update the catalog's stored name to match. So if this dialog
+# flags a name as "Not found" and it's actually a rename, the fix is: run
+# "Sync metadata..." for the app(s) that reference it (this updates the
+# stored name straight from Intune), not to hand-edit the name here.
 function Show-GroupDriftCheckDialog {
     # Plain local aliases - see note in Start-IntuneAppLookup.
     $appsRef  = $Script:Apps
@@ -13317,7 +13435,7 @@ function Show-GroupDriftCheckDialog {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Checks every group name referenced anywhere in the catalog (Required/Available/Uninstall) against Entra ID, and lists any that aren't found - could be a rename, a deletion, a typo, or one that was never created. Review each and fix the catalog or Entra ID as needed."
+    $lblIntro.Text = "Checks every group name referenced anywhere in the catalog against Entra ID, and lists any not found - a rename, a deletion, a typo, or one never created. A rename is best fixed via `"Sync metadata...`"; review and fix anything else here by hand."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(670,48)
     $dlg.Controls.Add($lblIntro)
