@@ -11515,13 +11515,16 @@ function Show-SyncMetadataDialog {
 
 # Bulk-REMOVES one or more groups from however many catalog apps are
 # checked - the "unassign" counterpart to Show-AddFavoriteGroupToAppsDialog
-# just below (and, unlike that one, not favorites-only: it lists every
-# group actually referenced across $CandidateApps, since the whole point is
-# unassigning a group that's already there, favorite or not). A group is
-# removed from ALL THREE of an app's Required/Available/Uninstall lists at
-# once, wherever it's actually present - not just one intent - since
-# "unassign this group from this app" means the app shouldn't reference it
-# under any intent, not that it should move from one bucket to another.
+# just below, with the SAME three-CheckedListBox-per-intent layout (see
+# New-FavoriteGroupBox there) rather than one combined list: a group can be
+# Required for one app and merely Available for another, and removal needs
+# to target one specific bucket at a time just like adding does - checking
+# a group under "Required for" only removes it from THAT field, leaving it
+# untouched if it's also (separately) checked under Available/Uninstall
+# for that same app. Unlike the Add dialog, this isn't favorites-only - it
+# lists every group actually referenced in each bucket across
+# $CandidateApps, since the whole point here is unassigning something
+# that's already there, favorite or not.
 # Purely a catalog-side edit, same division of labor as the Add dialog:
 # this only removes the group NAME from the local catalog and saves: it
 # does not touch Intune. Pushing the removal to Intune is still "Batch
@@ -11532,8 +11535,10 @@ function Show-SyncMetadataDialog {
 function Show-RemoveGroupFromAppsDialog {
     param([object[]]$CandidateApps)
 
-    $allGroupNames = @($CandidateApps | ForEach-Object { @($_.requiredFor) + @($_.availableFor) + @($_.uninstallFor) } | Select-Object -Unique | Sort-Object)
-    if ($allGroupNames.Count -eq 0) {
+    $reqNames    = @($CandidateApps | ForEach-Object { $_.requiredFor }  | Select-Object -Unique | Sort-Object)
+    $availNames  = @($CandidateApps | ForEach-Object { $_.availableFor } | Select-Object -Unique | Sort-Object)
+    $uninstNames = @($CandidateApps | ForEach-Object { $_.uninstallFor } | Select-Object -Unique | Sort-Object)
+    if ($reqNames.Count -eq 0 -and $availNames.Count -eq 0 -and $uninstNames.Count -eq 0) {
         [System.Windows.Forms.MessageBox]::Show("None of these apps have any group set - nothing to remove.", "No groups", "OK", "Information") | Out-Null
         return $null
     }
@@ -11550,33 +11555,47 @@ function Show-RemoveGroupFromAppsDialog {
     $dlg.MaximizeBox = $false
     $dlg.MinimizeBox = $false
 
-    $lblGroups = New-Object System.Windows.Forms.Label
-    $lblGroups.Text = "Groups to remove (unchecked ones are left alone)"
-    $lblGroups.Location = New-Object System.Drawing.Point(15,12)
-    $lblGroups.AutoSize = $true
-    $dlg.Controls.Add($lblGroups)
+    # Same layout as Show-AddFavoriteGroupToAppsDialog's New-FavoriteGroupBox
+    # (three GroupBoxes at the same Top offsets), just sourced from each
+    # field's actually-referenced group names instead of the favorites
+    # list. Starts every item UNCHECKED, unlike the Add dialog's app list -
+    # removal is destructive (it takes effect on Intune the moment Batch
+    # assign groups' Apply step runs afterward), so which group(s) get
+    # removed should always be a deliberate pick, never a default-
+    # everything list someone has to remember to uncheck.
+    function New-GroupRemovalBox {
+        param($Title, $Top, [string[]]$Names)
+        $gb = New-Object System.Windows.Forms.GroupBox
+        $gb.Text = $Title
+        $gb.Location = New-Object System.Drawing.Point(15,$Top)
+        $gb.Size = New-Object System.Drawing.Size(430,100)
 
-    # Unlike the Add dialog's app list, these start UNCHECKED - removal is
-    # destructive (it takes effect on Intune the moment Batch assign
-    # groups' Apply step runs afterward), so which group(s) get removed
-    # should always be a deliberate pick, never a default-everything list
-    # someone has to remember to uncheck.
-    $clbGroups = New-Object System.Windows.Forms.CheckedListBox
-    $clbGroups.Location = New-Object System.Drawing.Point(15,32)
-    $clbGroups.Size = New-Object System.Drawing.Size(430,220)
-    $clbGroups.CheckOnClick = $true
-    $dlg.Controls.Add($clbGroups)
-    foreach ($groupName in $allGroupNames) { [void]$clbGroups.Items.Add($groupName, $false) }
+        $clb = New-Object System.Windows.Forms.CheckedListBox
+        $clb.Location = New-Object System.Drawing.Point(10,20)
+        $clb.Size = New-Object System.Drawing.Size(410,70)
+        $clb.CheckOnClick = $true
+        foreach ($n in $Names) { [void]$clb.Items.Add($n, $false) }
+        $gb.Controls.Add($clb)
+
+        return @{ Box = $gb; List = $clb }
+    }
+
+    $reqGroup    = New-GroupRemovalBox -Title "Required for"  -Top 12  -Names $reqNames
+    $availGroup  = New-GroupRemovalBox -Title "Available for" -Top 118 -Names $availNames
+    $uninstGroup = New-GroupRemovalBox -Title "Uninstall for" -Top 224 -Names $uninstNames
+    $dlg.Controls.Add($reqGroup.Box)
+    $dlg.Controls.Add($availGroup.Box)
+    $dlg.Controls.Add($uninstGroup.Box)
 
     $lblApps = New-Object System.Windows.Forms.Label
     $lblApps.Text = "From these apps (unchecked ones below are left alone)"
-    $lblApps.Location = New-Object System.Drawing.Point(15,264)
+    $lblApps.Location = New-Object System.Drawing.Point(15,334)
     $lblApps.AutoSize = $true
     $dlg.Controls.Add($lblApps)
 
     $clbApps = New-Object System.Windows.Forms.CheckedListBox
-    $clbApps.Location = New-Object System.Drawing.Point(15,284)
-    $clbApps.Size = New-Object System.Drawing.Size(430,330)
+    $clbApps.Location = New-Object System.Drawing.Point(15,354)
+    $clbApps.Size = New-Object System.Drawing.Size(430,260)
     $clbApps.CheckOnClick = $true
     $dlg.Controls.Add($clbApps)
     foreach ($candidateApp in ($CandidateApps | Sort-Object appName)) {
@@ -11595,9 +11614,9 @@ function Show-RemoveGroupFromAppsDialog {
     $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
     $dlg.Controls.Add($btnSelectNone)
 
-    # Both act on the APPS list only - the groups list keeps its own
-    # deliberate picks regardless, same reasoning as starting it unchecked
-    # above.
+    # Both act on the APPS list only - the group boxes keep their own
+    # deliberate picks regardless, same reasoning as starting them
+    # unchecked above.
     $btnSelectAll.Add_Click({
         for ($ci = 0; $ci -lt $clbApps.Items.Count; $ci++) { $clbApps.SetItemChecked($ci, $true) }
     }.GetNewClosure())
@@ -11620,9 +11639,14 @@ function Show-RemoveGroupFromAppsDialog {
     $resultBox = @{ Count = $null }
 
     $btnRemove.Add_Click({
-        $checkedGroupNames = @($clbGroups.CheckedItems | ForEach-Object { [string]$_ })
-        if ($checkedGroupNames.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Check at least one group above first.", "No group selected", "OK", "Warning") | Out-Null
+        $pickedFields = @(
+            @{ List = $reqGroup.List; FieldName = "requiredFor" }
+            @{ List = $availGroup.List; FieldName = "availableFor" }
+            @{ List = $uninstGroup.List; FieldName = "uninstallFor" }
+        )
+        $totalPicked = (@($pickedFields | ForEach-Object { $_.List.CheckedItems.Count }) | Measure-Object -Sum).Sum
+        if ($totalPicked -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Check at least one group above (Required/Available/Uninstall) first.", "No group selected", "OK", "Warning") | Out-Null
             return
         }
         $checkedAppNames = @($clbApps.CheckedItems | ForEach-Object { [string]$_ })
@@ -11632,7 +11656,7 @@ function Show-RemoveGroupFromAppsDialog {
         }
 
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "Removes $($checkedGroupNames.Count) group(s) from $($checkedAppNames.Count) app(s) in the LOCAL CATALOG (Required/Available/Uninstall, wherever each one appears). This alone does not change anything in Intune - run `"Batch assign groups...`" (Preview, then Apply) right after this to actually unassign them there too.`n`nContinue?",
+            "Removes $totalPicked group/field pick(s) from $($checkedAppNames.Count) app(s) in the LOCAL CATALOG - each group only from the specific list(s) (Required/Available/Uninstall) it's checked under above. This alone does not change anything in Intune - run `"Batch assign groups...`" (Preview, then Apply) right after this to actually unassign them there too.`n`nContinue?",
             "Confirm removal", "YesNo", "Warning")
         if ($r -ne "Yes") { return }
 
@@ -11641,11 +11665,13 @@ function Show-RemoveGroupFromAppsDialog {
             $target = $appsRef | Where-Object { $_.appName -eq $checkedAppName } | Select-Object -First 1
             if (-not $target) { continue }
             $targetChanged = $false
-            foreach ($fieldName in @("requiredFor", "availableFor", "uninstallFor")) {
-                $before = @($target.$fieldName)
-                $after = @($before | Where-Object { $checkedGroupNames -notcontains $_ })
+            foreach ($pick in $pickedFields) {
+                $checkedNamesForField = @($pick.List.CheckedItems | ForEach-Object { [string]$_ })
+                if ($checkedNamesForField.Count -eq 0) { continue }
+                $before = @($target.($pick.FieldName))
+                $after = @($before | Where-Object { $checkedNamesForField -notcontains $_ })
                 if ($after.Count -ne $before.Count) {
-                    $target.$fieldName = $after
+                    $target.($pick.FieldName) = $after
                     $targetChanged = $true
                 }
             }
