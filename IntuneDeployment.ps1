@@ -12188,6 +12188,23 @@ function Show-BatchAssignDialog {
             if ($r -ne "Yes") { return }
             try { $procBox.Proc.Kill() } catch { }
         }
+
+        # Warns on whatever the last Preview found, regardless of where it
+        # came from - a group added/removed via the buttons above (which
+        # already saved to the LOCAL catalog the moment you clicked them,
+        # Apply or not) just as much as any pre-existing drift this dialog
+        # opened with. The catalog change itself is never at risk of being
+        # lost here; what closing without Apply actually leaves behind is
+        # Intune still not matching it.
+        $totalAddPending = ($previewDataBox.Results | ForEach-Object { @($_.ToAdd).Count } | Measure-Object -Sum).Sum
+        $totalRemovePending = ($previewDataBox.Results | ForEach-Object { @($_.ToRemove).Count } | Measure-Object -Sum).Sum
+        if ($totalAddPending -gt 0 -or $totalRemovePending -gt 0) {
+            $r = [System.Windows.Forms.MessageBox]::Show(
+                "$totalAddPending assignment(s) to add and $totalRemovePending to remove haven't been applied to Intune yet.`n`nAny local catalog changes from Add/Remove group above are already saved either way - this only affects Intune. Close without applying?",
+                "Unapplied changes", "YesNo", "Warning")
+            if ($r -ne "Yes") { return }
+        }
+
         $dlg.Close()
     }.GetNewClosure())
     $dlg.CancelButton = $btnClose
