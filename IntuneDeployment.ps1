@@ -11223,7 +11223,7 @@ function Show-SyncMetadataDialog {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Sync metadata from Intune"
-    $dlg.ClientSize = New-Object System.Drawing.Size(620, 576)
+    $dlg.ClientSize = New-Object System.Drawing.Size(620, 600)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -11233,11 +11233,11 @@ function Show-SyncMetadataDialog {
     $scopeText = if ($isScoped) { "$($eligibleApps.Count) selected app(s)" } else { "all $($eligibleApps.Count) app(s) with an App ID" }
     $lblIntro.Text = "Fetches current metadata AND current group assignments from Intune for $scopeText and stores them locally in the catalog - including picking up a group that was renamed in Entra ID, since this follows each assignment's group by ID rather than by name. This is READ-ONLY - it never changes anything in Intune itself. An app whose local copy already differs from Intune isn't silently overwritten - a compare dialog opens for it, one app at a time, so you can pick which fields keep your local value before it's applied."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
-    $lblIntro.Size = New-Object System.Drawing.Size(590,56)
+    $lblIntro.Size = New-Object System.Drawing.Size(590,80)
     $dlg.Controls.Add($lblIntro)
 
     $clbApps = New-Object System.Windows.Forms.CheckedListBox
-    $clbApps.Location = New-Object System.Drawing.Point(15,74)
+    $clbApps.Location = New-Object System.Drawing.Point(15,98)
     $clbApps.Size = New-Object System.Drawing.Size(590,260)
     $clbApps.CheckOnClick = $true
     $dlg.Controls.Add($clbApps)
@@ -11247,13 +11247,13 @@ function Show-SyncMetadataDialog {
 
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Select all"
-    $btnSelectAll.Location = New-Object System.Drawing.Point(15,338)
+    $btnSelectAll.Location = New-Object System.Drawing.Point(15,362)
     $btnSelectAll.Size = New-Object System.Drawing.Size(100,26)
     $dlg.Controls.Add($btnSelectAll)
 
     $btnSelectNone = New-Object System.Windows.Forms.Button
     $btnSelectNone.Text = "Select none"
-    $btnSelectNone.Location = New-Object System.Drawing.Point(125,338)
+    $btnSelectNone.Location = New-Object System.Drawing.Point(125,362)
     $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
     $dlg.Controls.Add($btnSelectNone)
 
@@ -11263,19 +11263,19 @@ function Show-SyncMetadataDialog {
     # fully succeeds.
     $btnRetryFailed = New-Object System.Windows.Forms.Button
     $btnRetryFailed.Text = "Retry failed only"
-    $btnRetryFailed.Location = New-Object System.Drawing.Point(245,338)
+    $btnRetryFailed.Location = New-Object System.Drawing.Point(245,362)
     $btnRetryFailed.Size = New-Object System.Drawing.Size(155,26)
     $btnRetryFailed.Visible = $false
     $dlg.Controls.Add($btnRetryFailed)
 
     $lblStatus = New-Object System.Windows.Forms.Label
-    $lblStatus.Location = New-Object System.Drawing.Point(15,372)
+    $lblStatus.Location = New-Object System.Drawing.Point(15,396)
     $lblStatus.Size = New-Object System.Drawing.Size(590,36)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbLog.Location = New-Object System.Drawing.Point(15,412)
+    $rtbLog.Location = New-Object System.Drawing.Point(15,436)
     $rtbLog.Size = New-Object System.Drawing.Size(590,110)
     $rtbLog.ReadOnly = $true
     $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
@@ -11285,13 +11285,13 @@ function Show-SyncMetadataDialog {
 
     $btnSync = New-Object System.Windows.Forms.Button
     $btnSync.Text = "Sync selected"
-    $btnSync.Location = New-Object System.Drawing.Point(420,532)
+    $btnSync.Location = New-Object System.Drawing.Point(420,556)
     $btnSync.Size = New-Object System.Drawing.Size(185,32)
     $dlg.Controls.Add($btnSync)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(330,532)
+    $btnClose.Location = New-Object System.Drawing.Point(330,556)
     $btnClose.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnClose)
 
