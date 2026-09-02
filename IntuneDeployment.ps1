@@ -6813,6 +6813,19 @@ $grid.Add_CellFormatting({
             $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
             $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
         }
+        elseif ([string]$e.Value -eq "Custom Winget params") {
+            # Informational, not a warning either - a Winget app with
+            # deliberately customized install/detection/etc. isn't a
+            # problem the way a missing package or App ID is, so it gets
+            # its own neutral color rather than the same DarkOrange used
+            # for things that actually need fixing. Only when this is the
+            # WHOLE status text, though - composed with anything else
+            # (e.g. "No App ID; Custom Winget params") falls through to
+            # the orange case below, since something else there DOES need
+            # attention.
+            $e.CellStyle.ForeColor = [System.Drawing.Color]::SteelBlue
+            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Italic)
+        }
         else {
             $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
             $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
@@ -6853,12 +6866,31 @@ function Refresh-Grid {
         # per uncommon app on every grid refresh.
         $pkg = if ($needsPackageCheck) { Resolve-AppPackagePath -AppName $app.appName -Uncommon $true } else { $null }
 
+        # Computed once, reused for both the Status note below and the
+        # separate Custom Config column - same check, no reason to run
+        # Test-AppHasCustomConfig twice per app on every grid refresh.
+        $hasCustomConfig = Test-AppHasCustomConfig -App $app
+
         $status = ""
         if (-not $app.appId) {
             $status = if ($app.metadata) { "Metadata saved - ready to deploy" } else { "No App ID" }
         }
         elseif ($needsPackageCheck -and -not $pkg.Found) {
             $status = "Package missing"
+        }
+
+        # A Winget app (has a Winget ID, so NOT uncommon) whose saved
+        # metadata deviates from what this tool would default it to - a
+        # custom install/uninstall command, detection rule, requirements,
+        # etc. The separate "Custom Config" column already tracks this as
+        # a plain Yes/No, but that column has no highlighting and is easy
+        # to scroll past; surfacing it here too puts it next to every
+        # other actionable note this column already carries. Composed
+        # with whatever else Status already says (semicolon-joined)
+        # rather than replacing it, so a Winget app that's ALSO missing
+        # its App ID still shows both.
+        if (-not $isUncommon -and $hasCustomConfig) {
+            $status = if ($status) { "$status; Custom Winget params" } else { "Custom Winget params" }
         }
 
         $folderDisplay = ""
@@ -6875,7 +6907,7 @@ function Refresh-Grid {
             Type      = if ($app.intuneAppType) { $app.intuneAppType } else { "" }
             Version   = if ($app.intuneAppVersion) { $app.intuneAppVersion } else { "" }
             Uncommon  = if ($isUncommon) { "Yes" } else { "" }
-            CustomConfig = if (Test-AppHasCustomConfig -App $app) { "Yes" } else { "No" }
+            CustomConfig = if ($hasCustomConfig) { "Yes" } else { "No" }
             Folder    = $folderDisplay
             Required  = @($app.requiredFor).Count
             Available = @($app.availableFor).Count
