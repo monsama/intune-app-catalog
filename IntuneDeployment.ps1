@@ -16455,11 +16455,24 @@ function Invoke-LaunchStep {
         Write-Log "=== Package all apps (app-packages) ===`r`n" ([System.Drawing.Color]::DeepSkyBlue)
     }
     $argStr = "-InputFolder '$(Join-Path $rootPath 'app-packages')' -Force"
+    # Single quotes doubled (PowerShell's own escaping for a literal ' inside
+    # a single-quoted string) - same idiom already used throughout this file
+    # for OData filter values (see e.g. Resolve-GroupId's $GroupName.Replace("'",
+    # "''")). $SingleFolderName/$FolderNames come from Get-SafeFileNameForApp,
+    # which strips Windows-illegal filename characters but NOT a single quote
+    # (a perfectly legal filename character) - left unescaped, an app display
+    # name containing one would break out of the quoted -SingleFolderName/
+    # -FolderNames value here and inject arbitrary PowerShell into $argStr,
+    # which Start-PipelineProcess runs via `powershell.exe -EncodedCommand`.
+    # Since a display name can come from Intune itself (synced in by anyone
+    # with rights to create/rename an app there, not just this tool's own
+    # user), this was a real code-execution path, not just a theoretical one.
     if ($SingleFolderName) {
-        $argStr += " -SingleFolderName '$SingleFolderName'"
+        $argStr += " -SingleFolderName '$($SingleFolderName -replace "'", "''")'"
     }
     elseif ($FolderNames.Count -gt 0) {
-        $argStr += " -FolderNames '$($FolderNames -join ',')'"
+        $safeFolderNames = @($FolderNames | ForEach-Object { $_ -replace "'", "''" })
+        $argStr += " -FolderNames '$($safeFolderNames -join ',')'"
     }
     Start-PipelineProcess -ScriptContent $Script:EmbeddedPackageScript -TempScriptName ".intunepkg_embedded_launch.ps1" -ArgumentString $argStr -OnComplete $OnComplete -ExtraLogTarget $ExtraLogTarget
 }
