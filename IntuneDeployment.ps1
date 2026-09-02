@@ -2540,6 +2540,14 @@ $Script:EmbeddedGroupManagerScript = @'
     silently treats "already a member" as success rather than an error for
     each member. Writes a result JSON (success/error/groupId) to
     -OutputResultPath.
+
+    Config.Mode selects an alternate one-off action instead of the default
+    create-or-update-and-add-members flow above: "Delete" removes the group
+    (looked up by GroupName), "RemoveMember" removes Config.MemberId from
+    Config.GroupId, and "Rename" PATCHes Config.GroupId's displayName to
+    Config.NewGroupName - by ID, not by re-resolving GroupName, since the
+    caller already has the ID from a prior Load/Search against the OLD
+    name.
 #>
 param(
     [Parameter(Mandatory=$true)]
@@ -2679,6 +2687,20 @@ try {
         Write-Step "Removing member from group"
         Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$($Config.GroupId)/members/$($Config.MemberId)/`$ref" -Method DELETE -StepDescription "Remove member" | Out-Null
         Write-Host "  [OK] Removed from group." -ForegroundColor Green
+        Write-Step "Done"
+        Write-Result -Success $true -ErrorMessage "" -GroupId $Config.GroupId
+        exit 0
+    }
+
+    if ($Config.Mode -eq "Rename") {
+        # By GroupId, not by looking the group up by its (old) name first -
+        # the caller already resolved GroupId via a prior Load/Search
+        # against the OLD name, so this stays correct even if that old name
+        # is no longer unique or has already drifted.
+        Write-Step "Renaming group"
+        $renameBody = @{ displayName = $Config.NewGroupName } | ConvertTo-Json
+        Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$($Config.GroupId)" -Method PATCH -Body $renameBody -ContentType "application/json" -StepDescription "Rename group" | Out-Null
+        Write-Host "  [OK] Renamed to `"$($Config.NewGroupName)`" in Entra ID." -ForegroundColor Green
         Write-Step "Done"
         Write-Result -Success $true -ErrorMessage "" -GroupId $Config.GroupId
         exit 0
@@ -13723,11 +13745,14 @@ function Show-FavoriteGroupsManager {
 # deployment group before any app references it.
 function Show-GroupManagerDialog {
     # Plain local aliases - see note in Start-IntuneAppLookup.
-    $tenantId    = $Script:GraphTenantId
-    $clientId    = $Script:GraphClientId
-    $certThumb   = $Script:GraphCertificateThumbprint
-    $gmScript    = $Script:EmbeddedGroupManagerScript
-    $cacheRef    = $Script:EntraDirectoryCache
+    $tenantId       = $Script:GraphTenantId
+    $clientId       = $Script:GraphClientId
+    $certThumb      = $Script:GraphCertificateThumbprint
+    $gmScript       = $Script:EmbeddedGroupManagerScript
+    $cacheRef       = $Script:EntraDirectoryCache
+    $appsRef        = $Script:Apps
+    $linkedFilePath = $Script:LinkedFilePath
+    $unsavedBoxRef  = $Script:UnsavedChangesBox
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Group manager"
@@ -13738,7 +13763,7 @@ function Show-GroupManagerDialog {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Creates a security group (or reuses one that already has this exact name). Shows its current members on the left, so you can review and remove them here too - not just add new ones."
+    $lblIntro.Text = "Creates a security group (or reuses one with this exact name). Shows current members on the left to review/remove. Load/Search a group, then Rename group updates Entra ID and the whole catalog together."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(590,32)
     $dlg.Controls.Add($lblIntro)
@@ -13843,6 +13868,12 @@ function Show-GroupManagerDialog {
     $btnDeleteGroup.Location = New-Object System.Drawing.Point(15,553)
     $btnDeleteGroup.Size = New-Object System.Drawing.Size(150,32)
     $dlg.Controls.Add($btnDeleteGroup)
+
+    $btnRenameGroup = New-Object System.Windows.Forms.Button
+    $btnRenameGroup.Text = "Rename group..."
+    $btnRenameGroup.Location = New-Object System.Drawing.Point(175,553)
+    $btnRenameGroup.Size = New-Object System.Drawing.Size(140,32)
+    $dlg.Controls.Add($btnRenameGroup)
 
     $btnRun = New-Object System.Windows.Forms.Button
     $btnRun.Text = "Create / Update Group"
@@ -13977,6 +14008,7 @@ function Show-GroupManagerDialog {
 
         $btnRun.Enabled = $false
         $btnDeleteGroup.Enabled = $false
+        $btnRenameGroup.Enabled = $false
         $btnRemoveCurrentMember.Enabled = $false
         $btnLoadMembers.Enabled = $false
         $btnClose.Enabled = $false
@@ -14007,6 +14039,7 @@ function Show-GroupManagerDialog {
         # top of Show-CreateInIntuneDialog for why this matters here too.
         $btnRunRef = $btnRun
         $btnDeleteGroupRef = $btnDeleteGroup
+        $btnRenameGroupRef = $btnRenameGroup
         $btnRemoveCurrentMemberRef = $btnRemoveCurrentMember
         $btnLoadMembersRef = $btnLoadMembers
         $btnCloseRef = $btnClose
@@ -14023,6 +14056,7 @@ function Show-GroupManagerDialog {
             param($code)
             $btnRunRef.Enabled = $true
             $btnDeleteGroupRef.Enabled = $true
+            $btnRenameGroupRef.Enabled = $true
             $btnRemoveCurrentMemberRef.Enabled = $true
             $btnLoadMembersRef.Enabled = $true
             $btnCloseRef.Enabled = $true
@@ -14073,6 +14107,7 @@ function Show-GroupManagerDialog {
 
         $btnRun.Enabled = $false
         $btnDeleteGroup.Enabled = $false
+        $btnRenameGroup.Enabled = $false
         $btnRemoveCurrentMember.Enabled = $false
         $btnLoadMembers.Enabled = $false
         $btnClose.Enabled = $false
@@ -14103,6 +14138,7 @@ function Show-GroupManagerDialog {
         # top of Show-CreateInIntuneDialog for why this matters here too.
         $btnRunRef = $btnRun
         $btnDeleteGroupRef = $btnDeleteGroup
+        $btnRenameGroupRef = $btnRenameGroup
         $btnRemoveCurrentMemberRef = $btnRemoveCurrentMember
         $btnLoadMembersRef = $btnLoadMembers
         $btnCloseRef = $btnClose
@@ -14119,6 +14155,7 @@ function Show-GroupManagerDialog {
             param($code)
             $btnRunRef.Enabled = $true
             $btnDeleteGroupRef.Enabled = $true
+            $btnRenameGroupRef.Enabled = $true
             $btnRemoveCurrentMemberRef.Enabled = $true
             $btnLoadMembersRef.Enabled = $true
             $btnCloseRef.Enabled = $true
@@ -14154,6 +14191,159 @@ function Show-GroupManagerDialog {
         }.GetNewClosure()
     }.GetNewClosure())
 
+    # Requires the group to already be Loaded/Searched (so $currentGroupIdBox
+    # has its real Object ID) rather than just typed into the name field -
+    # renaming by NAME alone would mean either re-resolving against the OLD
+    # name (which stops working the instant it's actually renamed) or, worse,
+    # silently creating a brand-new group under the new name the way editing
+    # the name field for Create/Update already does. Going by ID sidesteps
+    # both: it's unambiguous no matter what the name says.
+    #
+    # This is also the one place in the whole app that can fix a rename
+    # immediately and everywhere at once: every app in the local catalog
+    # that references the OLD name gets updated to the new one, right here,
+    # rather than needing "Sync metadata..." to catch it up per app later.
+    $btnRenameGroup.Add_Click({
+        $groupName = $txtGroupName.Text.Trim()
+        if (-not $groupName) {
+            [System.Windows.Forms.MessageBox]::Show("Enter (or search for) a group name first.", "No name", "OK", "Warning") | Out-Null
+            return
+        }
+        if (-not $currentGroupIdBox.Value) {
+            [System.Windows.Forms.MessageBox]::Show("Load members (or Search...) for this group first - renaming needs its actual Object ID, not just the name typed here.", "Nothing loaded", "OK", "Warning") | Out-Null
+            return
+        }
+
+        $newName = [Microsoft.VisualBasic.Interaction]::InputBox(
+            "New name for `"$groupName`":", "Rename group", $groupName)
+        if (-not $newName) { return }
+        $newName = $newName.Trim()
+        if (-not $newName -or $newName -eq $groupName) { return }
+
+        $r = [System.Windows.Forms.MessageBox]::Show(
+            "Renames `"$groupName`" to `"$newName`" in Entra ID, and updates every app in the local catalog that references `"$groupName`" (Required/Available/Uninstall) to the new name. Continue?",
+            "Confirm rename", "YesNo", "Question")
+        if ($r -ne "Yes") { return }
+
+        $btnRun.Enabled = $false
+        $btnDeleteGroup.Enabled = $false
+        $btnRenameGroup.Enabled = $false
+        $btnRemoveCurrentMember.Enabled = $false
+        $btnLoadMembers.Enabled = $false
+        $btnClose.Enabled = $false
+        $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+        $lblStatus.Text = "Renaming..."
+
+        $configPath = Join-Path $env:TEMP (".intunepkg_groupmanager_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_groupmanager_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $config = [pscustomobject]@{
+            TenantId              = $tenantId
+            ClientId              = $clientId
+            CertificateThumbprint = $certThumb
+            Mode                  = "Rename"
+            GroupId               = $currentGroupIdBox.Value
+            NewGroupName          = $newName
+            GroupName             = $groupName
+            MemberIds             = @()
+            OutputResultPath      = $resultPath
+        }
+        try {
+            $configJsonText = $config | ConvertTo-Json -Depth 8 -ErrorAction Stop
+            [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
+        }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            return
+        }
+
+        # Fresh aliases for the nested -OnComplete closure - see note at the
+        # top of Show-CreateInIntuneDialog for why this matters here too.
+        $btnRunRef = $btnRun
+        $btnDeleteGroupRef = $btnDeleteGroup
+        $btnRenameGroupRef = $btnRenameGroup
+        $btnRemoveCurrentMemberRef = $btnRemoveCurrentMember
+        $btnLoadMembersRef = $btnLoadMembers
+        $btnCloseRef = $btnClose
+        $lblStatusRef = $lblStatus
+        $resultPathRef = $resultPath
+        $configPathRef = $configPath
+        $procBoxRef = $procBox
+        $rtbLogRef = $rtbLog
+        $oldNameRef = $groupName
+        $newNameRef = $newName
+        $txtGroupNameRef = $txtGroupName
+        $appsRefRef = $appsRef
+        $linkedFilePathRef = $linkedFilePath
+        $unsavedBoxRefRef = $unsavedBoxRef
+        $loadCurrentMembersRef = $LoadCurrentMembers
+
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".intunepkg_embedded_groupmanager.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+            param($code)
+            $btnRunRef.Enabled = $true
+            $btnDeleteGroupRef.Enabled = $true
+            $btnRenameGroupRef.Enabled = $true
+            $btnRemoveCurrentMemberRef.Enabled = $true
+            $btnLoadMembersRef.Enabled = $true
+            $btnCloseRef.Enabled = $true
+            $procBoxRef.Proc = $null
+            Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue
+
+            if (Test-Path $resultPathRef) {
+                try {
+                    $result = Get-Content -Path $resultPathRef -Raw | ConvertFrom-Json
+                    Remove-Item $resultPathRef -Force -ErrorAction SilentlyContinue
+                    if ($result.success) {
+                        # Propagate the rename into every app in the catalog
+                        # that referenced the OLD name - straight to the new
+                        # name, since this already has proof (the Entra ID
+                        # rename above just succeeded, by this exact group's
+                        # ID) that it's the same group, not a guess the way
+                        # a name-only match would be.
+                        $updatedCount = 0
+                        foreach ($appEntry in $appsRefRef) {
+                            $changed = $false
+                            for ($gi = 0; $gi -lt $appEntry.requiredFor.Count; $gi++) {
+                                if ($appEntry.requiredFor[$gi] -eq $oldNameRef) { $appEntry.requiredFor[$gi] = $newNameRef; $changed = $true }
+                            }
+                            for ($gi = 0; $gi -lt $appEntry.availableFor.Count; $gi++) {
+                                if ($appEntry.availableFor[$gi] -eq $oldNameRef) { $appEntry.availableFor[$gi] = $newNameRef; $changed = $true }
+                            }
+                            for ($gi = 0; $gi -lt $appEntry.uninstallFor.Count; $gi++) {
+                                if ($appEntry.uninstallFor[$gi] -eq $oldNameRef) { $appEntry.uninstallFor[$gi] = $newNameRef; $changed = $true }
+                            }
+                            if ($changed) { $updatedCount++ }
+                        }
+                        if ($updatedCount -gt 0) {
+                            $unsavedBoxRefRef.Value = $true
+                            [void](Save-AppsToFile -Path $linkedFilePathRef)
+                        }
+
+                        $txtGroupNameRef.Text = $newNameRef
+                        $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
+                        $lblStatusRef.Text = "Renamed to `"$newNameRef`" - updated $updatedCount app(s) in the catalog to match."
+                        $rtbLogRef.AppendText("[OK] Renamed `"$oldNameRef`" to `"$newNameRef`" and updated $updatedCount app(s) in the catalog.`r`n")
+                        # $txtGroupNameRef.Text just above already triggers
+                        # Add_TextChanged, which clears the loaded-members
+                        # view (a name change usually means "different
+                        # group" to that handler) - reload right after so
+                        # it ends up showing the SAME group's members again,
+                        # now under its new name, instead of sitting empty.
+                        & $loadCurrentMembersRef
+                    }
+                    else {
+                        Write-DialogError -StatusLabel $lblStatusRef -LogBox $rtbLogRef -ErrorMessage $result.error
+                    }
+                }
+                catch {
+                    Write-DialogError -StatusLabel $lblStatusRef -LogBox $rtbLogRef -ErrorMessage "Could not read result (exit code $code)."
+                }
+            }
+            else {
+                Write-DialogError -StatusLabel $lblStatusRef -LogBox $rtbLogRef -ErrorMessage "No result written (exit code $code). See progress above."
+            }
+        }.GetNewClosure()
+    }.GetNewClosure())
+
     $btnRemoveCurrentMember.Add_Click({
         if ($lstCurrentMembers.SelectedIndex -lt 0) { return }
         if (-not $currentGroupIdBox.Value) {
@@ -14169,6 +14359,7 @@ function Show-GroupManagerDialog {
 
         $btnRun.Enabled = $false
         $btnDeleteGroup.Enabled = $false
+        $btnRenameGroup.Enabled = $false
         $btnRemoveCurrentMember.Enabled = $false
         $btnLoadMembers.Enabled = $false
         $btnClose.Enabled = $false
@@ -14201,6 +14392,7 @@ function Show-GroupManagerDialog {
         # top of Show-CreateInIntuneDialog for why this matters here too.
         $btnRunRef = $btnRun
         $btnDeleteGroupRef = $btnDeleteGroup
+        $btnRenameGroupRef = $btnRenameGroup
         $btnRemoveCurrentMemberRef = $btnRemoveCurrentMember
         $btnLoadMembersRef = $btnLoadMembers
         $btnCloseRef = $btnClose
@@ -14215,6 +14407,7 @@ function Show-GroupManagerDialog {
             param($code)
             $btnRunRef.Enabled = $true
             $btnDeleteGroupRef.Enabled = $true
+            $btnRenameGroupRef.Enabled = $true
             $btnRemoveCurrentMemberRef.Enabled = $true
             $btnLoadMembersRef.Enabled = $true
             $btnCloseRef.Enabled = $true
