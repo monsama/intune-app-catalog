@@ -11729,6 +11729,15 @@ function Show-BatchAssignDialog {
         }
     })
 
+    # Boxed (not plain variables) so "+ Add favorite group..." below can
+    # refresh what $runBatch's already-built closure sees on its NEXT
+    # Preview run - $runBatch is .GetNewClosure()'d once, which snapshots
+    # whatever a plain variable holds at that moment; only a shared,
+    # mutable container (same pattern as $procBox/$previewDataBox just
+    # below) stays visible to a closure that already captured it.
+    $eligibleAppsBox = @{ Value = $eligibleApps }
+    $appsForScriptBox = @{ Value = $appsForScript }
+
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Batch assign groups"
     $dlg.ClientSize = New-Object System.Drawing.Size(780, 530)
@@ -11835,7 +11844,7 @@ function Show-BatchAssignDialog {
         $btnApply.Enabled = $false
         $btnViewDetails.Enabled = $false
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
-        $lblStatus.Text = if ($Mode -eq "Preview") { "Checking $($eligibleApps.Count) app(s)..." } else { "Applying changes to $($eligibleApps.Count) app(s)..." }
+        $lblStatus.Text = if ($Mode -eq "Preview") { "Checking $($eligibleAppsBox.Value.Count) app(s)..." } else { "Applying changes to $($eligibleAppsBox.Value.Count) app(s)..." }
 
         $configPath = Join-Path $env:TEMP (".intunepkg_batchassign_config_" + [guid]::NewGuid().ToString("N") + ".json")
         $resultPath = Join-Path $env:TEMP (".intunepkg_batchassign_result_" + [guid]::NewGuid().ToString("N") + ".json")
@@ -11844,7 +11853,7 @@ function Show-BatchAssignDialog {
             ClientId              = $clientId
             CertificateThumbprint = $certThumb
             Mode                  = $Mode
-            Apps                  = $appsForScript
+            Apps                  = $appsForScriptBox.Value
             OutputResultPath      = $resultPath
         }
         try {
@@ -11929,7 +11938,7 @@ function Show-BatchAssignDialog {
         $totalAdd = ($previewDataBox.Results | ForEach-Object { @($_.ToAdd).Count } | Measure-Object -Sum).Sum
         $totalRemove = ($previewDataBox.Results | ForEach-Object { @($_.ToRemove).Count } | Measure-Object -Sum).Sum
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "This applies the changes shown above to $($eligibleApps.Count) app(s) in Intune: $totalAdd assignment(s) added, $totalRemove removed in total.`n`nAny assignment not in an app's catalog groups gets removed, including ones this catalog doesn't know about. This cannot be undone from here. Continue?",
+            "This applies the changes shown above to $($eligibleAppsBox.Value.Count) app(s) in Intune: $totalAdd assignment(s) added, $totalRemove removed in total.`n`nAny assignment not in an app's catalog groups gets removed, including ones this catalog doesn't know about. This cannot be undone from here. Continue?",
             "Confirm batch apply", "YesNo", "Warning")
         if ($r -ne "Yes") { return }
         & $runBatch "Apply"
@@ -11938,14 +11947,30 @@ function Show-BatchAssignDialog {
     $btnAddFavoriteGroup.Add_Click({
         $addedCount = Show-AddFavoriteGroupToAppsDialog -CandidateApps $candidateApps
         if ($addedCount -gt 0) {
-            # Reopens fresh rather than trying to patch the live grid/
-            # snapshot in place - $appsForScript above is a point-in-time
-            # snapshot taken before this button existed, and re-invoking
-            # with the same scope is the same proven pattern the "nothing
-            # to reconcile yet" branch above already uses to pick up a
-            # newly-added group immediately.
-            $dlg.Close()
-            Show-BatchAssignDialog -ScopedIndices $ScopedIndices
+            # Refreshed in place - re-derive eligibility and the Preview/
+            # Apply snapshot from $candidateApps (now updated by the dialog
+            # above) and write them into the SAME boxes $runBatch already
+            # closed over, then just re-run Preview. Re-filtering rather
+            # than assuming every candidate is now eligible matters here:
+            # an app that had NO groups at all before is only newly
+            # eligible if the group was actually added to it specifically
+            # (Show-AddFavoriteGroupToAppsDialog lets you pick which of the
+            # candidates get it), not to every app in $candidateApps.
+            $eligibleAppsBox.Value = @($candidateApps | Where-Object {
+                $_.appId -and (@($_.requiredFor).Count -gt 0 -or @($_.availableFor).Count -gt 0 -or @($_.uninstallFor).Count -gt 0)
+            })
+            $appsForScriptBox.Value = @($eligibleAppsBox.Value | ForEach-Object {
+                [pscustomobject]@{
+                    AppName         = $_.appName
+                    AppId           = $_.appId
+                    RequiredGroups  = @($_.requiredFor)
+                    AvailableGroups = @($_.availableFor)
+                    UninstallGroups = @($_.uninstallFor)
+                }
+            })
+            $scopeText = if ($isScoped) { "$($eligibleAppsBox.Value.Count) of your selected app(s) that have" } else { "every app with" }
+            $lblIntro.Text = "Checks $scopeText an App ID and at least one group against Intune's CURRENT assignments. Nothing changes until you click Apply below."
+            & $runBatch "Preview"
         }
     }.GetNewClosure())
 
