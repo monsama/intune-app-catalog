@@ -99,7 +99,9 @@ $testableFunctionNames = @(
     "Get-FriendlyIntuneAppType",
     "Get-ParsedMinOsRelease",
     "Get-FriendlyMinOsRelease",
-    "Test-AppHasCustomConfig"
+    "Test-AppHasCustomConfig",
+    "ConvertTo-AppRecord",
+    "Get-GroupFieldDiffs"
 )
 
 $funcAsts = $ast.FindAll({
@@ -377,6 +379,66 @@ $customizedMetadata.installCommand = "custom-install.exe /silent"
 $wingetAppCustomMetadata = [pscustomobject]@{ appName = "Some Winget App"; wingetId = "some.app"; metadata = $customizedMetadata }
 Assert-Equal $true (Test-AppHasCustomConfig -App $wingetAppCustomMetadata) `
     "Test-AppHasCustomConfig: a Winget app whose saved install command differs from the default is Yes"
+
+# -----------------------------------------------------------------
+# ConvertTo-AppRecord
+# -----------------------------------------------------------------
+# A missing/null requiredFor/availableFor/uninstallFor in the source JSON
+# used to load as @($null) - a ONE-element array containing $null, not an
+# empty array (a PowerShell @() gotcha: @($null) always has Count 1) -
+# which then miscounted an app with genuinely zero groups as "has a
+# group" everywhere @($_.requiredFor).Count is checked, and crashed
+# Show-RemoveGroupFromAppsDialog outright (CheckedListBox.Items.Add
+# doesn't accept $null). This is the regression test for that fix.
+$rawNoGroupFields = [pscustomobject]@{ appId = "id-1"; appName = "No Group Fields" }
+$recordNoGroupFields = ConvertTo-AppRecord -Raw $rawNoGroupFields
+Assert-Equal 0 @($recordNoGroupFields.requiredFor).Count `
+    "ConvertTo-AppRecord: a source object with NO requiredFor property at all loads as an empty array, not [`$null]"
+Assert-Equal 0 @($recordNoGroupFields.availableFor).Count `
+    "ConvertTo-AppRecord: a source object with NO availableFor property at all loads as an empty array, not [`$null]"
+Assert-Equal 0 @($recordNoGroupFields.uninstallFor).Count `
+    "ConvertTo-AppRecord: a source object with NO uninstallFor property at all loads as an empty array, not [`$null]"
+
+$rawExplicitNullGroups = [pscustomobject]@{ appId = "id-2"; appName = "Null Group Fields"; requiredFor = $null; availableFor = $null; uninstallFor = $null }
+$recordExplicitNull = ConvertTo-AppRecord -Raw $rawExplicitNullGroups
+Assert-Equal 0 @($recordExplicitNull.requiredFor).Count `
+    "ConvertTo-AppRecord: an EXPLICIT `$null requiredFor (valid JSON 'null') also loads as an empty array"
+
+$rawRealGroups = [pscustomobject]@{
+    appId = "id-3"; appName = "Real Groups"
+    requiredFor = @("GroupA", "GroupB"); availableFor = @("GroupC"); uninstallFor = @()
+}
+$recordRealGroups = ConvertTo-AppRecord -Raw $rawRealGroups
+Assert-Equal "GroupA,GroupB" (($recordRealGroups.requiredFor) -join ",") `
+    "ConvertTo-AppRecord: real requiredFor values pass through unchanged, in order"
+Assert-Equal "GroupC" (($recordRealGroups.availableFor) -join ",") `
+    "ConvertTo-AppRecord: real availableFor values pass through unchanged"
+Assert-Equal 0 @($recordRealGroups.uninstallFor).Count `
+    "ConvertTo-AppRecord: a genuinely empty (but present) uninstallFor array stays empty"
+
+# -----------------------------------------------------------------
+# Get-GroupFieldDiffs
+# -----------------------------------------------------------------
+$localAppNoDrift = [pscustomobject]@{ requiredFor = @("Deploy Dev"); availableFor = @("Company Portal"); uninstallFor = @() }
+$remoteResultNoDrift = [pscustomobject]@{ RequiredGroupNames = @("Deploy Dev"); AvailableGroupNames = @("Company Portal"); UninstallGroupNames = @() }
+Assert-Equal 0 @(Get-GroupFieldDiffs -LocalApp $localAppNoDrift -RemoteResult $remoteResultNoDrift).Count `
+    "Get-GroupFieldDiffs: identical local/remote group sets produce zero diffs"
+
+$localAppMultiReq = [pscustomobject]@{ requiredFor = @("B", "A"); availableFor = @(); uninstallFor = @() }
+$remoteResultMultiReq = [pscustomobject]@{ RequiredGroupNames = @("A", "B"); AvailableGroupNames = @(); UninstallGroupNames = @() }
+Assert-Equal 0 @(Get-GroupFieldDiffs -LocalApp $localAppMultiReq -RemoteResult $remoteResultMultiReq).Count `
+    "Get-GroupFieldDiffs: same membership in a different order is NOT a diff (order-insensitive)"
+
+$localAppRenamed = [pscustomobject]@{ requiredFor = @("Old Group Name"); availableFor = @(); uninstallFor = @() }
+$remoteResultRenamed = [pscustomobject]@{ RequiredGroupNames = @("New Group Name"); AvailableGroupNames = @(); UninstallGroupNames = @() }
+$diffsRenamed = @(Get-GroupFieldDiffs -LocalApp $localAppRenamed -RemoteResult $remoteResultRenamed)
+Assert-Equal 1 $diffsRenamed.Count "Get-GroupFieldDiffs: a renamed group in one bucket produces exactly one diff row"
+Assert-Equal "Required for" $diffsRenamed[0].Field "Get-GroupFieldDiffs: the diff is reported under the correct bucket label"
+Assert-Equal "Old Group Name" $diffsRenamed[0].Local "Get-GroupFieldDiffs: Local shows the stale catalog name"
+Assert-Equal "New Group Name" $diffsRenamed[0].Remote "Get-GroupFieldDiffs: Remote shows Intune's current live name"
+
+$diffsNullInputs = @(Get-GroupFieldDiffs -LocalApp $null -RemoteResult $remoteResultNoDrift)
+Assert-Equal 0 $diffsNullInputs.Count "Get-GroupFieldDiffs: a `$null LocalApp produces zero diffs rather than throwing"
 
 # =================================================================
 # Report
