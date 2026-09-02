@@ -6663,7 +6663,7 @@ $btnGroupManager = New-Object System.Windows.Forms.Button; $btnGroupManager.Text
 $btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.Text = "Favorite groups..."
 $btnDependencies = New-Object System.Windows.Forms.Button; $btnDependencies.Text = "View dependencies..."
 $btnGroupDrift = New-Object System.Windows.Forms.Button; $btnGroupDrift.Text = "Check catalog groups against Entra ID..."
-$btnUnknownAssignments = New-Object System.Windows.Forms.Button; $btnUnknownAssignments.Text = "Check Intune assignments against catalog..."
+$btnIntuneAudit = New-Object System.Windows.Forms.Button; $btnIntuneAudit.Text = "Audit against Intune..."
 $btnRunLaunch = New-Object System.Windows.Forms.Button; $btnRunLaunch.Text = "Package apps"
 $btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "Settings..."
 $btnDiagnostics = New-Object System.Windows.Forms.Button; $btnDiagnostics.Text = "Run diagnostics..."
@@ -6692,7 +6692,7 @@ $toolbarTips.SetToolTip($btnGroupManager, "Create, update, or delete an Entra ID
 $toolbarTips.SetToolTip($btnFavoriteGroups, "Pick which groups show up as ready-to-tick options in every app's Required/Available/Uninstall lists.")
 $toolbarTips.SetToolTip($btnDependencies, "See every app's dependencies, what depends on it, and any missing or circular dependency. Read-only, local only.")
 $toolbarTips.SetToolTip($btnGroupDrift, "Check every group name referenced in the catalog against what actually exists in Entra ID.")
-$toolbarTips.SetToolTip($btnUnknownAssignments, "Check every deployed app's live Intune assignments for a group the local catalog doesn't know about. Read-only.")
+$toolbarTips.SetToolTip($btnIntuneAudit, "Check every deployed app's Metadata, Groups, Dependencies, and Assignments against what's actually live in Intune, all in one grid. Read-only.")
 $toolbarTips.SetToolTip($btnRunLaunch, "Build the .intunewin package(s) for the selected (or all) uncommon apps.")
 $toolbarTips.SetToolTip($btnCertSetup, "Configure the Tenant ID, Client ID, and certificate used to connect to Microsoft Graph.")
 $toolbarTips.SetToolTip($btnDiagnostics, "Read-only health check: Graph connectivity, certificate expiry, catalog completeness, and drift against what's actually in Intune.")
@@ -6709,7 +6709,7 @@ $gbCatalog = New-ToolbarGroup -Title "Catalog" -Buttons @($btnNew, $btnEdit, $bt
 # group below - it's an Intune-pipeline action (builds the .intunewin
 # package(s) apps get deployed from), same category as Batch deploy/Sync
 # metadata, not a general-purpose tool.
-$gbIntune  = New-ToolbarGroup -Title "Intune"  -Buttons @($btnLookupIds, $btnCheckIntuneOnly, $btnBatchAssign, $btnUnknownAssignments, $btnSyncMetadata, $btnBatchDeploy, $btnRunLaunch)
+$gbIntune  = New-ToolbarGroup -Title "Intune"  -Buttons @($btnLookupIds, $btnCheckIntuneOnly, $btnBatchAssign, $btnIntuneAudit, $btnSyncMetadata, $btnBatchDeploy, $btnRunLaunch)
 $gbEntra   = New-ToolbarGroup -Title "Entra ID" -Buttons @($btnGroupManager, $btnGroupDrift)
 $gbTools   = New-ToolbarGroup -Title "Settings" -Buttons @($btnCertSetup, $btnDiagnostics)
 
@@ -7942,16 +7942,8 @@ function Get-DependencyOrderedApps {
 # $Script:Apps directly - so unlike almost every other "Check..." dialog
 # in this app, this one needs no Refresh button or async plumbing at all.
 function Show-DependencyOverviewDialog {
-    # Plain local aliases - see note in Start-IntuneAppLookup.
-    $appsRef     = $Script:Apps
-    $tenantId    = $Script:GraphTenantId
-    $clientId    = $Script:GraphClientId
-    $certThumb   = $Script:GraphCertificateThumbprint
-    # Reused rather than a new embedded script - it already fetches each
-    # app's live Intune dependencies (by name, from the relationships
-    # endpoint) as part of its normal metadata fetch, entirely read-only.
-    # Same config shape Show-SyncMetadataDialog itself sends it.
-    $syncScript  = $Script:EmbeddedSyncMetadataScript
+    # Plain local alias - see note in Start-IntuneAppLookup.
+    $appsRef = $Script:Apps
 
     if ($appsRef.Count -eq 0) {
         [System.Windows.Forms.MessageBox]::Show("The catalog is empty - nothing to show.", "Nothing to do", "OK", "Information") | Out-Null
@@ -7979,27 +7971,21 @@ function Show-DependencyOverviewDialog {
     $dlg.MaximizeBox = $true
     $dlg.MinimizeBox = $false
 
+    # Whether this checks against LIVE Intune data too used to be a fair
+    # question - it doesn't, deliberately: that comparison now lives in
+    # "Audit against Intune...", alongside every other local-vs-Intune
+    # check, instead of being duplicated (and re-fetched) here too. This
+    # stays a purely local, always-instant view of the catalog's own
+    # dependency graph.
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Every app in the catalog, what it depends on, and what depends on it. Read-only. Double-click a row to see the full lists if they're truncated."
+    $lblIntro.Text = "Every app in the catalog, what it depends on, and what depends on it. Read-only, local only - see `"Audit against Intune...`" to check dependencies against what's actually live. Double-click a row to see the full lists if they're truncated."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(790,32)
     $dlg.Controls.Add($lblIntro)
 
-    $btnCheckIntune = New-Object System.Windows.Forms.Button
-    $btnCheckIntune.Text = "Check against Intune..."
-    $btnCheckIntune.Location = New-Object System.Drawing.Point(15,48)
-    $btnCheckIntune.Size = New-Object System.Drawing.Size(160,28)
-    $dlg.Controls.Add($btnCheckIntune)
-
-    $lblCheckStatus = New-Object System.Windows.Forms.Label
-    $lblCheckStatus.Text = "Local catalog data only - not yet checked against Intune."
-    $lblCheckStatus.Location = New-Object System.Drawing.Point(185,53)
-    $lblCheckStatus.Size = New-Object System.Drawing.Size(620,20)
-    $dlg.Controls.Add($lblCheckStatus)
-
     $grid = New-Object System.Windows.Forms.DataGridView
-    $grid.Location = New-Object System.Drawing.Point(15,82)
-    $grid.Size = New-Object System.Drawing.Size(790,398)
+    $grid.Location = New-Object System.Drawing.Point(15,50)
+    $grid.Size = New-Object System.Drawing.Size(790,430)
     $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $grid.ReadOnly = $true
     $grid.AllowUserToAddRows = $false
@@ -8017,45 +8003,27 @@ function Show-DependencyOverviewDialog {
     $colApp.Name = "App"; $colApp.HeaderText = "App"; $colApp.FillWeight = 22
     $grid.Columns.Add($colApp) | Out-Null
     $colDependsOn = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colDependsOn.Name = "DependsOn"; $colDependsOn.HeaderText = "Depends on"; $colDependsOn.FillWeight = 30
+    $colDependsOn.Name = "DependsOn"; $colDependsOn.HeaderText = "Depends on"; $colDependsOn.FillWeight = 34
     $grid.Columns.Add($colDependsOn) | Out-Null
     $colDependedOnBy = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colDependedOnBy.Name = "DependedOnBy"; $colDependedOnBy.HeaderText = "Depended on by"; $colDependedOnBy.FillWeight = 30
+    $colDependedOnBy.Name = "DependedOnBy"; $colDependedOnBy.HeaderText = "Depended on by"; $colDependedOnBy.FillWeight = 34
     $grid.Columns.Add($colDependedOnBy) | Out-Null
     $colStatus = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colStatus.Name = "Status"; $colStatus.HeaderText = "Status"; $colStatus.FillWeight = 18
+    $colStatus.Name = "Status"; $colStatus.HeaderText = "Status"; $colStatus.FillWeight = 20
     $grid.Columns.Add($colStatus) | Out-Null
-    $colIntuneCheck = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colIntuneCheck.Name = "IntuneCheck"; $colIntuneCheck.HeaderText = "Intune check"; $colIntuneCheck.FillWeight = 24
-    $grid.Columns.Add($colIntuneCheck) | Out-Null
 
     # Not-OK rows in bold orange/red, same convention as every other check
-    # dialog in this app (Show-GroupDriftCheckDialog, Show-UnknownAssignmentsCheckDialog)
-    # - problems stand out at a glance instead of needing to read every row.
+    # dialog in this app.
     $grid.Add_CellFormatting({
         param($gridSender, $e)
-        $colName = $grid.Columns[$e.ColumnIndex].Name
-        if ($colName -eq "Status") {
-            if ([string]$e.Value -eq "Circular") {
-                $e.CellStyle.ForeColor = [System.Drawing.Color]::Firebrick
-                $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
-            }
-            elseif ([string]$e.Value -like "Missing dependency*") {
-                $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
-                $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
-            }
+        if ($grid.Columns[$e.ColumnIndex].Name -ne "Status") { return }
+        if ([string]$e.Value -eq "Circular") {
+            $e.CellStyle.ForeColor = [System.Drawing.Color]::Firebrick
+            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
         }
-        elseif ($colName -eq "IntuneCheck") {
-            if ([string]$e.Value -eq "Matches Intune") {
-                $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
-            }
-            elseif ([string]$e.Value -like "Differs from Intune*") {
-                $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
-                $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
-            }
-            elseif ([string]$e.Value -like "Failed*") {
-                $e.CellStyle.ForeColor = [System.Drawing.Color]::Firebrick
-            }
+        elseif ([string]$e.Value -like "Missing dependency*") {
+            $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
+            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
         }
     }.GetNewClosure())
 
@@ -8069,16 +8037,9 @@ function Show-DependencyOverviewDialog {
         $lines.Add("")
         $lines.Add("Depended on by:")
         $lines.Add("  $([string]$row.Cells['DependedOnBy'].Value)")
-        $intuneCheckVal = [string]$row.Cells['IntuneCheck'].Value
-        if ($intuneCheckVal) {
-            $lines.Add("")
-            $lines.Add("Intune check:")
-            $lines.Add("  $intuneCheckVal")
-        }
         [System.Windows.Forms.MessageBox]::Show(($lines -join "`r`n"), "Dependencies - $([string]$row.Cells['App'].Value)", "OK", "Information") | Out-Null
     }.GetNewClosure())
 
-    $rowByAppName = @{}
     foreach ($a in ($appsRef | Sort-Object appName)) {
         $depNames = @($a.metadata.dependencies)
         $dependedOnByNames = if ($dependedOnBy.ContainsKey($a.appName)) { @($dependedOnBy[$a.appName]) } else { @() }
@@ -8090,10 +8051,8 @@ function Show-DependencyOverviewDialog {
 
         $dependsOnText = if ($depNames.Count -gt 0) { $depNames -join ", " } else { "(none)" }
         $dependedOnByText = if ($dependedOnByNames.Count -gt 0) { $dependedOnByNames -join ", " } else { "(none)" }
-        $intuneCheckText = if ($a.appId) { "(not checked)" } else { "(no App ID)" }
 
-        $rowIdx = $grid.Rows.Add($a.appName, $dependsOnText, $dependedOnByText, $status, $intuneCheckText)
-        $rowByAppName[$a.appName] = $grid.Rows[$rowIdx]
+        [void]$grid.Rows.Add($a.appName, $dependsOnText, $dependedOnByText, $status)
     }
 
     $btnClose = New-Object System.Windows.Forms.Button
@@ -8105,125 +8064,6 @@ function Show-DependencyOverviewDialog {
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     $dlg.CancelButton = $btnClose
     $dlg.AcceptButton = $btnClose
-
-    $procBox = @{ Proc = $null }
-
-    $btnCheckIntune.Add_Click({
-        $deployedApps = @($appsRef | Where-Object { $_.appId })
-        if ($deployedApps.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("No apps have an App ID yet - nothing to check against Intune.", "Nothing to do", "OK", "Information") | Out-Null
-            return
-        }
-
-        $configApps = New-Object System.Collections.Generic.List[object]
-        foreach ($deployedApp in $deployedApps) {
-            $configApps.Add([pscustomobject]@{ AppName = $deployedApp.appName; AppId = $deployedApp.appId })
-        }
-
-        $btnCheckIntune.Enabled = $false
-        $lblCheckStatus.ForeColor = [System.Drawing.Color]::DimGray
-        $lblCheckStatus.Text = "Checking $($configApps.Count) app(s) against Intune..."
-
-        $configPath = Join-Path $env:TEMP (".intunepkg_depcheck_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".intunepkg_depcheck_result_" + [guid]::NewGuid().ToString("N") + ".json")
-        $config = [pscustomobject]@{
-            TenantId              = $tenantId
-            ClientId              = $clientId
-            CertificateThumbprint = $certThumb
-            Apps                  = $configApps.ToArray()
-            OutputResultPath      = $resultPath
-        }
-        try {
-            $configJsonText = $config | ConvertTo-Json -Depth 10 -ErrorAction Stop
-            [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
-        }
-        catch {
-            $btnCheckIntune.Enabled = $true
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
-            return
-        }
-
-        # Fresh aliases for the nested -OnComplete closure - see note at the
-        # top of Show-CreateInIntuneDialog for why this matters here too.
-        $btnCheckIntuneRef = $btnCheckIntune
-        $lblCheckStatusRef = $lblCheckStatus
-        $resultPathRef = $resultPath
-        $configPathRef = $configPath
-        $procBoxRef = $procBox
-        $gridRef = $grid
-        $rowByAppNameRef = $rowByAppName
-        $appsRefRef = $appsRef
-
-        # Purely read-only here - this never writes anything back into
-        # $appsRef or the catalog, unlike Show-SyncMetadataDialog which
-        # applies what it fetches. It only ever updates the IntuneCheck
-        # column of this dialog's own grid.
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".intunepkg_embedded_depcheck.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -OnComplete {
-            param($code)
-            $procBoxRef.Proc = $null
-            $btnCheckIntuneRef.Enabled = $true
-            Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue
-
-            if (-not (Test-Path $resultPathRef)) {
-                $lblCheckStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                $lblCheckStatusRef.Text = "Check failed: no result written (exit code $code)."
-                return
-            }
-
-            $result = $null
-            try {
-                $result = Get-Content -Path $resultPathRef -Raw | ConvertFrom-Json
-                Remove-Item $resultPathRef -Force -ErrorAction SilentlyContinue
-            }
-            catch {
-                $lblCheckStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                $lblCheckStatusRef.Text = "Check failed: could not read result (exit code $code): $($_.Exception.Message)"
-                return
-            }
-
-            if (-not $result.success) {
-                $lblCheckStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                $lblCheckStatusRef.Text = "Check failed: $($result.error)"
-                return
-            }
-
-            $driftCount = 0
-            $okCount = 0
-            $failCount = 0
-            foreach ($oneResult in @($result.results)) {
-                if (-not $rowByAppNameRef.ContainsKey($oneResult.AppName)) { continue }
-                $row = $rowByAppNameRef[$oneResult.AppName]
-
-                if (-not $oneResult.Success) {
-                    $row.Cells['IntuneCheck'].Value = "Failed: $($oneResult.Error)"
-                    $failCount++
-                    continue
-                }
-
-                $liveDeps = @($oneResult.Metadata.dependencies) | Sort-Object
-                $catalogApp = $appsRefRef | Where-Object { $_.appName -eq $oneResult.AppName } | Select-Object -First 1
-                $localDepsSorted = @($catalogApp.metadata.dependencies) | Sort-Object
-
-                $liveJoined = $liveDeps -join "|"
-                $localJoined = $localDepsSorted -join "|"
-
-                if ($liveJoined -eq $localJoined) {
-                    $row.Cells['IntuneCheck'].Value = "Matches Intune"
-                    $okCount++
-                }
-                else {
-                    $liveText = if ($liveDeps.Count -gt 0) { $liveDeps -join ", " } else { "(none)" }
-                    $localText = if ($localDepsSorted.Count -gt 0) { $localDepsSorted -join ", " } else { "(none)" }
-                    $row.Cells['IntuneCheck'].Value = "Differs from Intune - catalog has: $localText | Intune has: $liveText"
-                    $driftCount++
-                }
-            }
-            $gridRef.Refresh()
-
-            $lblCheckStatusRef.ForeColor = if ($driftCount -gt 0 -or $failCount -gt 0) { [System.Drawing.Color]::DarkOrange } else { [System.Drawing.Color]::SeaGreen }
-            $lblCheckStatusRef.Text = "Checked against Intune: $okCount matching, $driftCount differing, $failCount failed."
-        }.GetNewClosure()
-    }.GetNewClosure())
 
     Set-Theme -Control $dlg
     [void]$dlg.ShowDialog($form)
@@ -14713,70 +14553,94 @@ function Show-GroupDriftCheckDialog {
 }
 
 # =====================================================================
-# Unknown-assignments check
-# =====================================================================
-# The reverse direction of the group name check above: that one asks "is
-# every group name this catalog references still a real group in Entra
-# ID?" - this asks "does Intune have any group assigned to a deployed app
-# that this catalog has never heard of at all?" (assigned directly through
-# the Intune portal, by a script outside this tool, or left behind after a
-# catalog entry's group list was edited without ever pushing that edit to
-# Intune). Read-only, same as the group name check - no Apply button here;
-# actually reconciling a finding is still "Push groups to Intune (multiple apps)..." (Apply
-# removes a stray assignment) or the app's own editor (add the group to
-# the catalog first, if it should stay assigned).
+# Intune Audit - the one place that checks a deployed app against what's
+# actually live in Intune, across every dimension this app used to spread
+# across separate dialogs: Metadata (installer/detection/requirements
+# fields), Groups (Required/Available/Uninstall bucket membership),
+# Dependencies, and Unknown Assignments (a live Intune assignment the
+# catalog has never recorded). One grid, one row per deployed app, one
+# "Run audit" click.
 #
-# Reuses $Script:EmbeddedBatchAssignScript in "Preview" mode rather than a
-# new embedded script - Preview already does exactly the fetch-and-diff
-# this needs (live assignments vs. the catalog's current group lists) for
-# every app it's given, entirely read-only. Unlike Show-BatchAssignDialog's
-# own eligibility filter, apps with NO catalog groups at all are
-# deliberately INCLUDED here (only an App ID is required) - those are
-# exactly the apps most likely to have an assignment the catalog has never
-# recorded, so excluding them would hide the most useful findings.
-function Show-UnknownAssignmentsCheckDialog {
+# Deliberately does NOT also fold in the group-NAME-vs-Entra-ID check
+# (Show-GroupDriftCheckDialog) - that one is fundamentally group-centric
+# (one row per group name, "which apps reference this"), not app-centric,
+# and answers a different question ("does this group still exist at all")
+# than everything else here ("does this app's catalog entry match what
+# Intune has"). Forcing it into a per-app row here would either lose that
+# grouping or need a second, differently-shaped grid bolted onto this one
+# - not worth it for one more column. It stays its own focused tool.
+# Show-SyncMetadataDialog also stays separate - this dialog only ever
+# REPORTS drift, it never applies anything; pulling a finding into the
+# catalog is still that dialog's job.
+#
+# Two independent background fetches power this, both reused as-is rather
+# than duplicated: $Script:EmbeddedSyncMetadataScript (same one
+# Show-SyncMetadataDialog and Show-CreateInIntuneDialog's own auto-fetch
+# use) covers Metadata, Groups, AND Dependencies in one pass - dependency
+# names already ride along in its per-app Metadata.dependencies, so
+# checking them here costs nothing extra. $Script:EmbeddedBatchAssignScript
+# in "Preview" mode (same one Show-BatchAssignDialog uses to show what an
+# Apply would do) covers Unknown Assignments - a different live-vs-catalog
+# diff (it also considers assignment INTENT, not just group presence) that
+# the sync script doesn't compute. Both run concurrently, each filling in
+# its own columns as it completes, rather than making someone wait through
+# two sequential fetches for one combined view.
+function Show-IntuneAuditDialog {
     # Plain local aliases - see note in Start-IntuneAppLookup.
     $appsRef     = $Script:Apps
     $tenantId    = $Script:GraphTenantId
     $clientId    = $Script:GraphClientId
     $certThumb   = $Script:GraphCertificateThumbprint
+    $syncScript  = $Script:EmbeddedSyncMetadataScript
     $batchScript = $Script:EmbeddedBatchAssignScript
 
     $deployedApps = @($appsRef | Where-Object { $_.appId })
     if ($deployedApps.Count -eq 0) {
-        [System.Windows.Forms.MessageBox]::Show("No apps have an App ID yet - nothing to check.", "Nothing to do", "OK", "Information") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("No apps have an App ID yet - nothing to audit.", "Nothing to do", "OK", "Information") | Out-Null
         return
     }
 
+    # Local lookup by name - built once here rather than re-scanning
+    # $appsRef with Where-Object from inside every nested -OnComplete
+    # closure below (the same closure-safety reasoning as the "fresh
+    # alias" note above: a lookup built fresh outside those closures and
+    # then aliased into each one is both faster and one less thing that
+    # can silently read a stale/empty capture).
+    $appByName = @{}
+    foreach ($a in $deployedApps) { $appByName[$a.appName] = $a }
+
     $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "Unknown Intune assignments"
-    $dlg.ClientSize = New-Object System.Drawing.Size(760, 560)
+    $dlg.Text = "Intune Audit"
+    $dlg.ClientSize = New-Object System.Drawing.Size(920, 600)
     $dlg.StartPosition = "CenterParent"
-    $dlg.FormBorderStyle = "FixedDialog"
-    $dlg.MaximizeBox = $false
+    $dlg.FormBorderStyle = "Sizable"
+    $dlg.MinimumSize = New-Object System.Drawing.Size(700, 400)
+    $dlg.MaximizeBox = $true
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Checks every deployed app's CURRENT live Intune assignments against this catalog's Required/Available/Uninstall groups, and lists any group Intune has that the catalog doesn't know about. Read-only - makes no changes. To fix a finding: add the group to the app's catalog entry if it should stay assigned, or run `"Push groups to Intune (multiple apps)...`" (Apply) to remove the stray assignment from Intune."
+    $lblIntro.Text = "Checks every deployed app's Metadata, Groups, Dependencies, and Assignments against what's actually live in Intune right now. Read-only - never changes Intune or the catalog. Double-click a row for the full detail; findings are fixed via `"Pull metadata and groups from Intune...`" (Metadata/Groups/Dependencies) or `"Push groups to Intune (multiple apps)...`" (Unknown Assignments)."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
-    $lblIntro.Size = New-Object System.Drawing.Size(730,48)
+    $lblIntro.Size = New-Object System.Drawing.Size(890,48)
     $dlg.Controls.Add($lblIntro)
 
     $lblStatus = New-Object System.Windows.Forms.Label
     $lblStatus.Location = New-Object System.Drawing.Point(15,64)
-    $lblStatus.Size = New-Object System.Drawing.Size(560,20)
+    $lblStatus.Size = New-Object System.Drawing.Size(700,20)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
-    $btnRefresh = New-Object System.Windows.Forms.Button
-    $btnRefresh.Text = "Check now"
-    $btnRefresh.Location = New-Object System.Drawing.Point(585,62)
-    $btnRefresh.Size = New-Object System.Drawing.Size(160,26)
-    $dlg.Controls.Add($btnRefresh)
+    $btnRun = New-Object System.Windows.Forms.Button
+    $btnRun.Text = "Run audit"
+    $btnRun.Location = New-Object System.Drawing.Point(825,60)
+    $btnRun.Size = New-Object System.Drawing.Size(80,26)
+    $btnRun.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+    $dlg.Controls.Add($btnRun)
 
     $grid = New-Object System.Windows.Forms.DataGridView
     $grid.Location = New-Object System.Drawing.Point(15,94)
-    $grid.Size = New-Object System.Drawing.Size(730,300)
+    $grid.Size = New-Object System.Drawing.Size(890,450)
+    $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $grid.ReadOnly = $true
     $grid.AllowUserToAddRows = $false
     $grid.AllowUserToDeleteRows = $false
@@ -14790,51 +14654,207 @@ function Show-UnknownAssignmentsCheckDialog {
     $dlg.Controls.Add($grid)
 
     $colApp = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colApp.Name = "App"; $colApp.HeaderText = "App"; $colApp.FillWeight = 35
+    $colApp.Name = "App"; $colApp.HeaderText = "App"; $colApp.FillWeight = 22
     $grid.Columns.Add($colApp) | Out-Null
+    $colMetadata = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colMetadata.Name = "Metadata"; $colMetadata.HeaderText = "Metadata"; $colMetadata.FillWeight = 19
+    $grid.Columns.Add($colMetadata) | Out-Null
     $colGroups = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colGroups.Name = "Groups"; $colGroups.HeaderText = "Unknown group(s) in Intune"; $colGroups.FillWeight = 65
+    $colGroups.Name = "Groups"; $colGroups.HeaderText = "Groups"; $colGroups.FillWeight = 19
     $grid.Columns.Add($colGroups) | Out-Null
+    $colDependencies = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colDependencies.Name = "Dependencies"; $colDependencies.HeaderText = "Dependencies"; $colDependencies.FillWeight = 19
+    $grid.Columns.Add($colDependencies) | Out-Null
+    $colUnknown = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colUnknown.Name = "Unknown"; $colUnknown.HeaderText = "Unknown assignments"; $colUnknown.FillWeight = 21
+    $grid.Columns.Add($colUnknown) | Out-Null
 
-    # The "Unknown group(s)" cell can be a long, comma-joined list that
-    # gets truncated within the cell - double-click any row to see the
-    # full text rather than needing to widen the column or scroll
-    # horizontally, same as the group name check's "Referenced by" column.
+    $checkColumns = @("Metadata", "Groups", "Dependencies", "Unknown")
+
+    # Same bold-orange/firebrick/green convention as every other check
+    # dialog in this app - applied identically across all four check
+    # columns instead of one bespoke rule per column.
+    $grid.Add_CellFormatting({
+        param($gridSender, $e)
+        $colName = $grid.Columns[$e.ColumnIndex].Name
+        if ($checkColumns -notcontains $colName) { return }
+        $val = [string]$e.Value
+        if ($val -eq "OK") {
+            $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
+        }
+        elseif ($val -like "Failed*") {
+            $e.CellStyle.ForeColor = [System.Drawing.Color]::Firebrick
+        }
+        elseif ($val -and $val -ne "(not checked)" -and $val -ne "(checking...)") {
+            $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
+            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+        }
+    }.GetNewClosure())
+
     $grid.Add_CellDoubleClick({
         param($gridSender, $e)
         if ($e.RowIndex -lt 0) { return }
         $row = $grid.Rows[$e.RowIndex]
-        $appName = [string]$row.Cells["App"].Value
-        $groupsText = [string]$row.Cells["Groups"].Value
-        [System.Windows.Forms.MessageBox]::Show($groupsText, "Unknown group(s) - $appName", "OK", "Information") | Out-Null
+        $lines = New-Object System.Collections.Generic.List[string]
+        foreach ($colName in $checkColumns) {
+            $lines.Add("$($grid.Columns[$colName].HeaderText):")
+            $lines.Add("  $([string]$row.Cells[$colName].Value)")
+            $lines.Add("")
+        }
+        [System.Windows.Forms.MessageBox]::Show(($lines -join "`r`n").TrimEnd(), "Audit detail - $([string]$row.Cells['App'].Value)", "OK", "Information") | Out-Null
     }.GetNewClosure())
 
-    $rtbLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbLog.Location = New-Object System.Drawing.Point(15,400)
-    $rtbLog.Size = New-Object System.Drawing.Size(730,110)
-    $rtbLog.ReadOnly = $true
-    $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
-    $rtbLog.ForeColor = [System.Drawing.Color]::Gainsboro
-    $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
-    $dlg.Controls.Add($rtbLog)
+    $rowByAppName = @{}
+    foreach ($a in ($deployedApps | Sort-Object appName)) {
+        $rowIdx = $grid.Rows.Add($a.appName, "(not checked)", "(not checked)", "(not checked)", "(not checked)")
+        $rowByAppName[$a.appName] = $grid.Rows[$rowIdx]
+    }
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(665,522)
+    $btnClose.Location = New-Object System.Drawing.Point(825,550)
     $btnClose.Size = New-Object System.Drawing.Size(80,32)
+    $btnClose.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($btnClose)
 
-    $procBox = @{ Proc = $null }
+    $procBox1 = @{ Proc = $null }
+    $procBox2 = @{ Proc = $null }
+    # Ticked down by each of the two fetches' own -OnComplete as it
+    # finishes - only once BOTH reach zero does the status label report
+    # "audit complete" and Run audit/Close re-enable, since either fetch
+    # can finish well before the other.
+    $pendingBox = @{ Count = 0 }
 
-    $btnRefresh.Add_Click({
-        $btnRefresh.Enabled = $false
-        $btnClose.Enabled = $false
-        $rtbLog.Clear()
-        $grid.Rows.Clear()
+    $btnRun.Add_Click({
+        $btnRun.Enabled = $false
+        foreach ($rowKey in $rowByAppName.Keys) {
+            foreach ($colName in $checkColumns) { $rowByAppName[$rowKey].Cells[$colName].Value = "(checking...)" }
+        }
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
-        $lblStatus.Text = "Checking $($deployedApps.Count) app(s)..."
+        $lblStatus.Text = "Auditing $($deployedApps.Count) app(s)..."
+        $pendingBox.Count = 2
 
-        $appsForScript = @($deployedApps | ForEach-Object {
+        # Fresh aliases for the two nested -OnComplete closures below - see
+        # note at the top of Show-CreateInIntuneDialog for why this matters:
+        # a plain outer-function variable isn't reliably visible two
+        # closure levels deep (btnRun.Add_Click's own .GetNewClosure(),
+        # then Start-PipelineProcess's own -OnComplete .GetNewClosure()
+        # nested inside it) - confirmed as a real, live bug in this exact
+        # dialog's own dependency-check predecessor, not a theoretical
+        # concern.
+        $btnRunRef = $btnRun
+        $btnCloseRef = $btnClose
+        $lblStatusRef = $lblStatus
+        $gridRef = $grid
+        $rowByAppNameRef = $rowByAppName
+        $appByNameRef = $appByName
+        $pendingBoxRef = $pendingBox
+        $deployedAppsCountRef = $deployedApps.Count
+        $procBox1Ref = $procBox1
+        $procBox2Ref = $procBox2
+
+        $finishOne = {
+            $pendingBoxRef.Count--
+            $gridRef.Refresh()
+            if ($pendingBoxRef.Count -le 0) {
+                $btnRunRef.Enabled = $true
+                $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
+                $lblStatusRef.Text = "Audit complete - $deployedAppsCountRef app(s) checked."
+            }
+        }.GetNewClosure()
+
+        # --- Fetch 1: Metadata + Groups + Dependencies, one pass ---
+        $configApps1 = New-Object System.Collections.Generic.List[object]
+        foreach ($a in $deployedApps) { $configApps1.Add([pscustomobject]@{ AppName = $a.appName; AppId = $a.appId }) }
+        $configPath1 = Join-Path $env:TEMP (".intunepkg_audit_sync_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath1 = Join-Path $env:TEMP (".intunepkg_audit_sync_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $config1 = [pscustomobject]@{
+            TenantId              = $tenantId
+            ClientId              = $clientId
+            CertificateThumbprint = $certThumb
+            Apps                  = $configApps1.ToArray()
+            OutputResultPath      = $resultPath1
+        }
+        $configPath1Ref = $configPath1
+        $resultPath1Ref = $resultPath1
+        try {
+            $configJsonText1 = $config1 | ConvertTo-Json -Depth 10 -ErrorAction Stop
+            [System.IO.File]::WriteAllText($configPath1Ref, $configJsonText1, (New-Object System.Text.UTF8Encoding($false)))
+
+            $procBox1Ref.Proc = Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".intunepkg_embedded_audit_sync.ps1" -ArgumentString "-ConfigPath `"$configPath1Ref`"" -OnComplete {
+                param($code)
+                $procBox1Ref.Proc = $null
+                Remove-Item $configPath1Ref -Force -ErrorAction SilentlyContinue
+
+                if (-not (Test-Path $resultPath1Ref)) {
+                    $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                    $lblStatusRef.Text = "Metadata/Groups/Dependencies fetch failed: no result written (exit code $code)."
+                    & $finishOne
+                    return
+                }
+                $result1 = $null
+                try {
+                    $result1 = Get-Content -Path $resultPath1Ref -Raw | ConvertFrom-Json
+                    Remove-Item $resultPath1Ref -Force -ErrorAction SilentlyContinue
+                }
+                catch {
+                    $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                    $lblStatusRef.Text = "Metadata/Groups/Dependencies fetch failed: could not read result: $($_.Exception.Message)"
+                    & $finishOne
+                    return
+                }
+                if (-not $result1.success) {
+                    $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                    $lblStatusRef.Text = "Metadata/Groups/Dependencies fetch failed: $($result1.error)"
+                    & $finishOne
+                    return
+                }
+
+                foreach ($oneResult in @($result1.results)) {
+                    if (-not $rowByAppNameRef.ContainsKey($oneResult.AppName)) { continue }
+                    $row = $rowByAppNameRef[$oneResult.AppName]
+                    $catalogApp = $appByNameRef[$oneResult.AppName]
+
+                    if (-not $oneResult.Success) {
+                        $row.Cells['Metadata'].Value = "Failed: $($oneResult.Error)"
+                        $row.Cells['Groups'].Value = "Failed: $($oneResult.Error)"
+                        $row.Cells['Dependencies'].Value = "Failed: $($oneResult.Error)"
+                        continue
+                    }
+
+                    $metaDiffs = Get-CatalogMetadataFieldDiffs -Local $catalogApp.metadata -Remote $oneResult.Metadata -OdataType $oneResult.OdataType
+                    $row.Cells['Metadata'].Value = if ($metaDiffs.Count -eq 0) { "OK" } else { "$($metaDiffs.Count) field(s) differ: $(($metaDiffs | ForEach-Object { $_.Field }) -join ', ')" }
+
+                    if ($oneResult.GroupFetchOk) {
+                        $groupDiffs = Get-GroupFieldDiffs -LocalApp $catalogApp -RemoteResult $oneResult
+                        $row.Cells['Groups'].Value = if ($groupDiffs.Count -eq 0) { "OK" } else { "$($groupDiffs.Count) differ: $(($groupDiffs | ForEach-Object { $_.Field }) -join ', ')" }
+                    }
+                    else {
+                        $row.Cells['Groups'].Value = "Failed: could not fetch live assignments"
+                    }
+
+                    $liveDeps = @($oneResult.Metadata.dependencies) | Sort-Object
+                    $localDeps = @($catalogApp.metadata.dependencies) | Sort-Object
+                    if (($liveDeps -join "|") -eq ($localDeps -join "|")) {
+                        $row.Cells['Dependencies'].Value = "OK"
+                    }
+                    else {
+                        $liveText = if ($liveDeps.Count -gt 0) { $liveDeps -join ", " } else { "(none)" }
+                        $localText = if ($localDeps.Count -gt 0) { $localDeps -join ", " } else { "(none)" }
+                        $row.Cells['Dependencies'].Value = "Catalog has: $localText | Intune has: $liveText"
+                    }
+                }
+                & $finishOne
+            }.GetNewClosure()
+        }
+        catch {
+            $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+            $lblStatusRef.Text = "Could not start the Metadata/Groups/Dependencies check: $($_.Exception.Message)"
+            & $finishOne
+        }
+
+        # --- Fetch 2: Unknown Assignments ---
+        $appsForScript2 = @($deployedApps | ForEach-Object {
             [pscustomobject]@{
                 AppName         = $_.appName
                 AppId           = $_.appId
@@ -14843,80 +14863,74 @@ function Show-UnknownAssignmentsCheckDialog {
                 UninstallGroups = @($_.uninstallFor)
             }
         })
-
-        $configPath = Join-Path $env:TEMP (".intunepkg_unknownassign_config_" + [guid]::NewGuid().ToString("N") + ".json")
-        $resultPath = Join-Path $env:TEMP (".intunepkg_unknownassign_result_" + [guid]::NewGuid().ToString("N") + ".json")
-        $config = [pscustomobject]@{
+        $configPath2 = Join-Path $env:TEMP (".intunepkg_audit_assign_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath2 = Join-Path $env:TEMP (".intunepkg_audit_assign_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $config2 = [pscustomobject]@{
             TenantId              = $tenantId
             ClientId              = $clientId
             CertificateThumbprint = $certThumb
             Mode                  = "Preview"
-            Apps                  = $appsForScript
-            OutputResultPath      = $resultPath
+            Apps                  = $appsForScript2
+            OutputResultPath      = $resultPath2
         }
+        $configPath2Ref = $configPath2
+        $resultPath2Ref = $resultPath2
         try {
-            $configJsonText = $config | ConvertTo-Json -Depth 8 -ErrorAction Stop
-            [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
+            $configJsonText2 = $config2 | ConvertTo-Json -Depth 8 -ErrorAction Stop
+            [System.IO.File]::WriteAllText($configPath2Ref, $configJsonText2, (New-Object System.Text.UTF8Encoding($false)))
+
+            $procBox2Ref.Proc = Start-PipelineProcess -ScriptContent $batchScript -TempScriptName ".intunepkg_embedded_audit_assign.ps1" -ArgumentString "-ConfigPath `"$configPath2Ref`"" -OnComplete {
+                param($code)
+                $procBox2Ref.Proc = $null
+                Remove-Item $configPath2Ref -Force -ErrorAction SilentlyContinue
+
+                if (-not (Test-Path $resultPath2Ref)) {
+                    $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                    $lblStatusRef.Text = "Unknown assignments fetch failed: no result written (exit code $code)."
+                    & $finishOne
+                    return
+                }
+                $result2 = $null
+                try {
+                    $result2 = Get-Content -Path $resultPath2Ref -Raw | ConvertFrom-Json
+                    Remove-Item $resultPath2Ref -Force -ErrorAction SilentlyContinue
+                }
+                catch {
+                    $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                    $lblStatusRef.Text = "Unknown assignments fetch failed: could not read result: $($_.Exception.Message)"
+                    & $finishOne
+                    return
+                }
+                if (-not $result2.success) {
+                    $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                    $lblStatusRef.Text = "Unknown assignments fetch failed: $($result2.error)"
+                    & $finishOne
+                    return
+                }
+
+                foreach ($oneResult in @($result2.data)) {
+                    if (-not $rowByAppNameRef.ContainsKey($oneResult.AppName)) { continue }
+                    $row = $rowByAppNameRef[$oneResult.AppName]
+                    $toRemove = @($oneResult.ToRemove)
+                    $row.Cells['Unknown'].Value = if ($toRemove.Count -eq 0) { "OK" } else { "$($toRemove.Count) unknown: $($toRemove -join ', ')" }
+                }
+                & $finishOne
+            }.GetNewClosure()
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
-            $btnRefresh.Enabled = $true
-            $btnClose.Enabled = $true
-            return
+            $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+            $lblStatusRef.Text = "Could not start the Unknown Assignments check: $($_.Exception.Message)"
+            & $finishOne
         }
-
-        # Fresh aliases for the nested -OnComplete closure - see note at the
-        # top of Show-CreateInIntuneDialog for why this matters here too.
-        $btnRefreshRef = $btnRefresh
-        $btnCloseRef = $btnClose
-        $lblStatusRef = $lblStatus
-        $resultPathRef = $resultPath
-        $configPathRef = $configPath
-        $procBoxRef = $procBox
-        $rtbLogRef = $rtbLog
-        $gridRef = $grid
-        $deployedAppsCountRef = $deployedApps.Count
-
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $batchScript -TempScriptName ".intunepkg_embedded_unknownassign.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
-            param($code)
-            $btnRefreshRef.Enabled = $true
-            $btnCloseRef.Enabled = $true
-            $procBoxRef.Proc = $null
-            Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue
-
-            if (-not (Test-Path $resultPathRef)) {
-                Write-DialogError -StatusLabel $lblStatusRef -LogBox $rtbLogRef -ErrorMessage "No result written (exit code $code). See progress above."
-                return
-            }
-            $result = $null
-            try {
-                $result = Get-Content -Path $resultPathRef -Raw | ConvertFrom-Json
-                Remove-Item $resultPathRef -Force -ErrorAction SilentlyContinue
-            }
-            catch {
-                Write-DialogError -StatusLabel $lblStatusRef -LogBox $rtbLogRef -ErrorMessage "Could not read result (exit code $code): $($_.Exception.Message)"
-                return
-            }
-            if (-not $result.success) {
-                Write-DialogError -StatusLabel $lblStatusRef -LogBox $rtbLogRef -ErrorMessage $result.error
-                return
-            }
-
-            $results = @($result.data)
-            $findings = @($results | Where-Object { @($_.ToRemove).Count -gt 0 })
-            foreach ($f in ($findings | Sort-Object AppName)) {
-                [void]$gridRef.Rows.Add($f.AppName, (@($f.ToRemove) -join ", "))
-            }
-            $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
-            $lblStatusRef.Text = "$deployedAppsCountRef app(s) checked - $($findings.Count) with an unknown assignment."
-        }.GetNewClosure()
     }.GetNewClosure())
 
     $btnClose.Add_Click({
-        if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
-            $r = [System.Windows.Forms.MessageBox]::Show("A check is currently running. Stop it and close this dialog?", "Stop and close?", "YesNo", "Warning")
+        $stillRunning = ($procBox1.Proc -and -not $procBox1.Proc.HasExited) -or ($procBox2.Proc -and -not $procBox2.Proc.HasExited)
+        if ($stillRunning) {
+            $r = [System.Windows.Forms.MessageBox]::Show("An audit is currently running. Stop it and close this dialog?", "Stop and close?", "YesNo", "Warning")
             if ($r -ne "Yes") { return }
-            try { $procBox.Proc.Kill() } catch { }
+            try { if ($procBox1.Proc) { $procBox1.Proc.Kill() } } catch { }
+            try { if ($procBox2.Proc) { $procBox2.Proc.Kill() } } catch { }
         }
         $dlg.Close()
     }.GetNewClosure())
@@ -14927,9 +14941,9 @@ function Show-UnknownAssignmentsCheckDialog {
     # own Add_Shown: kicking off the fetch before the window is actually
     # realized can leave a WaitCursor-equivalent UI state that doesn't
     # reliably stick, and this dialog's whole job is telling you what's
-    # unknown RIGHT NOW, not showing stale results from some earlier run.
+    # true RIGHT NOW, not showing stale results from some earlier run.
     $dlg.Add_Shown({
-        $btnRefresh.PerformClick()
+        $btnRun.PerformClick()
     }.GetNewClosure())
 
     Set-Theme -Control $dlg
@@ -17052,7 +17066,7 @@ $btnGroupManager.Add_Click({ Show-GroupManagerDialog })
 $btnFavoriteGroups.Add_Click({ Show-FavoriteGroupsManager })
 $btnGroupDrift.Add_Click({ Show-GroupDriftCheckDialog })
 $btnDependencies.Add_Click({ Show-DependencyOverviewDialog })
-$btnUnknownAssignments.Add_Click({ Show-UnknownAssignmentsCheckDialog })
+$btnIntuneAudit.Add_Click({ Show-IntuneAuditDialog })
 
 $txtSearch.Add_TextChanged({ Refresh-Grid })
 
