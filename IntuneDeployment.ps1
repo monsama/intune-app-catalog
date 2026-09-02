@@ -15057,13 +15057,56 @@ function Show-GroupManagerDialog {
 # App editor dialog
 # ---------------------------------------------------------------
 function Show-AppEditor {
-    param($ExistingApp) # $null when adding a new app
+    param(
+        $ExistingApp, # $null when adding a new app
+        # This app's position in $Script:Apps - only known (and only >= 0)
+        # when opened from the grid for an app that's actually IN the
+        # catalog already. Powers the "Previous app"/"Next app" buttons
+        # below; left at the default for the "Add app" flow (nothing to
+        # navigate to/from for an app that doesn't exist yet) and for every
+        # OTHER caller of this function (Show-IntuneOnlyAppsDialog's own
+        # "Add to catalog..." prefill, etc.) - all of them are adding a
+        # brand-new entry, not editing one already at a known index.
+        [int]$CurrentIndex = -1
+    )
 
     # Plain (non-$Script:) local alias - see note in Start-IntuneAppLookup.
     $cache = $Script:IntuneAppsCache
     $linkedFilePath = $Script:LinkedFilePath
     $appsRef = $Script:Apps
     $unsavedBoxRef = $Script:UnsavedChangesBox
+
+    # Previous/Next targets, computed once against the SAME filter the main
+    # grid itself is currently showing (Refresh-Grid's own "$appName
+    # $wingetId" -like "*filter*" check, duplicated here rather than
+    # shared - it's a two-line check, and sharing it would mean threading
+    # a delegate through a function that otherwise has zero dependency on
+    # the main grid's own internals) - so "Next" always matches whatever
+    # row is actually next in the grid the user just came from, filtered
+    # search included, not silently ignoring an active search and jumping
+    # to a row that's currently hidden.
+    $prevAppIndex = $null
+    $nextAppIndex = $null
+    if ($CurrentIndex -ge 0) {
+        $navFilter = $txtSearch.Text.Trim().ToLower()
+        $visibleAppIndices = New-Object System.Collections.Generic.List[int]
+        for ($vi = 0; $vi -lt $appsRef.Count; $vi++) {
+            if ($navFilter) {
+                $navHay = ("$($appsRef[$vi].appName) $($appsRef[$vi].wingetId)").ToLower()
+                if ($navHay -notlike "*$navFilter*") { continue }
+            }
+            $visibleAppIndices.Add($vi)
+        }
+        $navPos = $visibleAppIndices.IndexOf($CurrentIndex)
+        if ($navPos -gt 0) { $prevAppIndex = $visibleAppIndices[$navPos - 1] }
+        if ($navPos -ge 0 -and $navPos -lt ($visibleAppIndices.Count - 1)) { $nextAppIndex = $visibleAppIndices[$navPos + 1] }
+    }
+
+    # Set by the Previous/Next handlers below to request navigation instead
+    # of a normal close - checked right after ShowDialog returns. Declared
+    # here, before any closure below could reference it, same reasoning as
+    # every other mutable box in this function.
+    $navigateToIndexBox = @{ Value = $null }
 
     # Holds metadata handed back from "Deploy to Intune..." (Create/Update or
     # Save for later) while this editor is still open, so it can be folded
@@ -15092,7 +15135,10 @@ function Show-AppEditor {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = if ($ExistingApp) { "Edit app" } else { "Add app" }
-    $dlg.ClientSize = New-Object System.Drawing.Size(470, 900)
+    # 40px taller than before, to fit the Previous/Next row below the
+    # existing Save/Delete/Cancel row without moving any of this
+    # function's many other absolutely-positioned controls.
+    $dlg.ClientSize = New-Object System.Drawing.Size(470, 940)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -15595,6 +15641,61 @@ function Show-AppEditor {
     $btnCancel.Size = New-Object System.Drawing.Size(90,30)
     $dlg.Controls.Add($btnCancel)
 
+    # Only shown for an app actually opened from the grid (see
+    # $CurrentIndex's own param comment) - hidden outright for "Add app",
+    # where there's no catalog position to navigate from. Same Cancel-is-
+    # a-silent-discard convention this dialog (and every other dialog in
+    # this app) already uses for its own Cancel button - clicking Previous/
+    # Next does NOT save whatever's currently in the form first; it moves
+    # on exactly like Cancel would, just straight into the next editor
+    # instead of closing outright. Anyone mid-edit who wants THIS app's
+    # changes kept needs "Save app to catalog" before navigating away.
+    $btnPrevApp = New-Object System.Windows.Forms.Button
+    $btnPrevApp.Text = "< Previous app"
+    $btnPrevApp.Location = New-Object System.Drawing.Point(15,898)
+    $btnPrevApp.Size = New-Object System.Drawing.Size(150,30)
+    $btnPrevApp.Enabled = ($null -ne $prevAppIndex)
+    $btnPrevApp.Visible = ($CurrentIndex -ge 0)
+    $dlg.Controls.Add($btnPrevApp)
+
+    $lblAppNavPosition = New-Object System.Windows.Forms.Label
+    $lblAppNavPosition.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    $lblAppNavPosition.Location = New-Object System.Drawing.Point(170,898)
+    $lblAppNavPosition.Size = New-Object System.Drawing.Size(130,30)
+    $lblAppNavPosition.ForeColor = [System.Drawing.Color]::DimGray
+    if ($CurrentIndex -ge 0) {
+        $navFilterForLabel = $txtSearch.Text.Trim().ToLower()
+        $visibleCountForLabel = 0
+        $visiblePosForLabel = 0
+        for ($li = 0; $li -lt $appsRef.Count; $li++) {
+            if ($navFilterForLabel) {
+                $liHay = ("$($appsRef[$li].appName) $($appsRef[$li].wingetId)").ToLower()
+                if ($liHay -notlike "*$navFilterForLabel*") { continue }
+            }
+            $visibleCountForLabel++
+            if ($li -eq $CurrentIndex) { $visiblePosForLabel = $visibleCountForLabel }
+        }
+        $lblAppNavPosition.Text = if ($visiblePosForLabel -gt 0) { "$visiblePosForLabel of $visibleCountForLabel" } else { "" }
+    }
+    $dlg.Controls.Add($lblAppNavPosition)
+
+    $btnNextApp = New-Object System.Windows.Forms.Button
+    $btnNextApp.Text = "Next app >"
+    $btnNextApp.Location = New-Object System.Drawing.Point(305,898)
+    $btnNextApp.Size = New-Object System.Drawing.Size(150,30)
+    $btnNextApp.Enabled = ($null -ne $nextAppIndex)
+    $btnNextApp.Visible = ($CurrentIndex -ge 0)
+    $dlg.Controls.Add($btnNextApp)
+
+    $btnPrevApp.Add_Click({
+        $navigateToIndexBox.Value = $prevAppIndex
+        $dlg.Close()
+    }.GetNewClosure())
+    $btnNextApp.Add_Click({
+        $navigateToIndexBox.Value = $nextAppIndex
+        $dlg.Close()
+    }.GetNewClosure())
+
     $btnAssignGroups.Add_Click({
         if (-not $txtName.Text.Trim()) {
             [System.Windows.Forms.MessageBox]::Show("Enter an app name first.", "No name", "OK", "Information") | Out-Null
@@ -15836,8 +15937,23 @@ function Show-AppEditor {
     & $checkDuplicateName   # catches a pre-filled duplicate (e.g. Intune sync check's prefill) immediately on open, not just after the first keystroke
 
     $dlgResult = $dlg.ShowDialog($form)
+
+    # Previous/Next was clicked - this editor's own result (there isn't
+    # one; navigating away is a discard, same as Cancel) is done, and the
+    # NEXT app's editor takes over from here. Tail-recurses rather than
+    # looping, so an arbitrarily long chain of Previous/Next clicks in one
+    # sitting is just nested calls, each returning the one after it -
+    # whatever the LAST editor in the chain actually returns (a save, or
+    # $null on Cancel/Close) is what this whole chain ultimately hands
+    # back to the ORIGINAL caller (btnEdit's own click handler), Index
+    # included, so it knows exactly which catalog slot that result belongs
+    # to even though it's no longer the app it originally opened.
+    if ($null -ne $navigateToIndexBox.Value) {
+        return Show-AppEditor -ExistingApp $Script:Apps[$navigateToIndexBox.Value] -CurrentIndex $navigateToIndexBox.Value
+    }
+
     if ($dlgResult -eq [System.Windows.Forms.DialogResult]::OK) {
-        return [pscustomobject]@{ App = $resultBox.Value; DeployAfterSave = $deployAfterSaveBox.Value }
+        return [pscustomobject]@{ App = $resultBox.Value; DeployAfterSave = $deployAfterSaveBox.Value; Index = $CurrentIndex }
     }
     return $null
 }
@@ -15870,24 +15986,31 @@ $btnEdit.Add_Click({
         [System.Windows.Forms.MessageBox]::Show("Select an app first.", "No selection", "OK", "Information") | Out-Null
         return
     }
-    $editorResult = Show-AppEditor -ExistingApp $Script:Apps[$i]
+    $editorResult = Show-AppEditor -ExistingApp $Script:Apps[$i] -CurrentIndex $i
     if ($editorResult) {
         $updated = $editorResult.App
+        # Not necessarily $i anymore - Previous/Next inside the editor can
+        # navigate to (and save) a DIFFERENT app before finally returning
+        # here, and Show-AppEditor's own result always carries the index
+        # of whichever app it actually last saved (see its own comment
+        # next to this Index field). Falling back to $i covers older
+        # in-memory result shapes/callers that never set it.
+        $targetIndex = if ($null -ne $editorResult.Index -and $editorResult.Index -ge 0) { $editorResult.Index } else { $i }
         # Logged before and after the assignment/save, mirroring the
         # checkpoint approach that already found the actual bug in Save
         # for later - confirms $updated genuinely carries metadata coming
-        # OUT of the editor, and separately confirms $Script:Apps[$i]
+        # OUT of the editor, and separately confirms $Script:Apps[$targetIndex]
         # still has it immediately after the assignment, before Save-
         # AppsToFile even runs. Narrows this down the same way: is
         # metadata already missing by the time the editor returns, or
         # does it go missing somewhere after that.
         Write-Log "btnEdit: `$updated returned from editor - has metadata: $($null -ne $updated.metadata).`r`n"
-        $Script:Apps[$i] = $updated
-        Write-Log "btnEdit: after assignment, `$Script:Apps[$i] has metadata: $($null -ne $Script:Apps[$i].metadata).`r`n"
+        $Script:Apps[$targetIndex] = $updated
+        Write-Log "btnEdit: after assignment, `$Script:Apps[$targetIndex] has metadata: $($null -ne $Script:Apps[$targetIndex].metadata).`r`n"
         $Script:UnsavedChangesBox.Value = $true
         [void](Save-AppsToFile -Path $Script:LinkedFilePath)
         Refresh-Grid
-        if ($editorResult.DeployAfterSave) { Show-BatchDeployDialog -ScopedIndices @($i) }
+        if ($editorResult.DeployAfterSave) { Show-BatchDeployDialog -ScopedIndices @($targetIndex) }
     }
 })
 
