@@ -1833,6 +1833,24 @@ function Get-HttpErrorDetail {
     return $null
 }
 
+# Turns Graph's raw "An inclusion intent already exists for group id: ..."
+# error (thrown when the SAME group ends up in the assignment body with more
+# than one intent - required/available/uninstall are all "inclusion"
+# intents, and Intune only allows one per group per app, same restriction
+# the admin console itself enforces) into something the user can actually
+# act on: which group, in plain catalog terms, and what to go fix. Falls
+# through to the raw message unchanged for any other kind of failure -
+# this only recognizes this one specific, previously-confirmed error shape.
+function Get-FriendlyAssignError {
+    param([string]$RawError, [string]$AppName, [hashtable]$GroupNameById)
+    if ($RawError -match "inclusion intent already exists for group id: '([0-9a-fA-F-]{36})'") {
+        $gid = $Matches[1]
+        $gName = if ($GroupNameById.ContainsKey($gid)) { $GroupNameById[$gid] } else { $gid }
+        return "Intune rejected the assignment for `"$AppName`": the group `"$gName`" is set in more than one of Required/Available/Uninstall for this app, and Intune only allows ONE assignment intent per group per app. Open `"$AppName`" in Edit app, remove `"$gName`" from all but one of those three lists, then try again.`n`n(Raw Intune error: $RawError)"
+    }
+    return $RawError
+}
+
 function Invoke-GraphRequestDetailed {
     param(
         [Parameter(Mandatory=$true)][string]$Uri,
@@ -1998,20 +2016,23 @@ try {
     # for dependency relationships later in this script. Avoids any ambiguity
     # ConvertTo-Json or Graph's own deserialization might have with a
     # System.Collections.Generic.List[object] specifically.
+    #
+    # Built from $newGroupSet (one entry per DISTINCT group name, already
+    # deduped above for the toAdd/toRemove preview), not by re-walking
+    # Config.RequiredGroups/AvailableGroups/UninstallGroups separately - a
+    # group listed in more than one of those three buckets used to produce
+    # TWO assignment entries for the same groupId with different intents,
+    # which Graph's /assign endpoint rejects outright ("An inclusion intent
+    # already exists for group id: ..."), failing the ENTIRE app's
+    # assignment even though the preview just above had reported "no
+    # change". Going through $newGroupSet guarantees exactly one entry per
+    # group, with the same intent the preview already showed (last bucket
+    # wins - uninstall, then available, then required, matching the order
+    # $newGroupSet was built in above).
     $assignments = @()
-    foreach ($g in @($Config.RequiredGroups)) {
+    foreach ($g in @($newGroupSet.Keys)) {
         if ($groupIdByName.ContainsKey($g)) {
-            $assignments += @{ "@odata.type" = "#microsoft.graph.mobileAppAssignment"; intent = "required"; target = @{ "@odata.type" = "#microsoft.graph.groupAssignmentTarget"; groupId = $groupIdByName[$g] } }
-        }
-    }
-    foreach ($g in @($Config.AvailableGroups)) {
-        if ($groupIdByName.ContainsKey($g)) {
-            $assignments += @{ "@odata.type" = "#microsoft.graph.mobileAppAssignment"; intent = "available"; target = @{ "@odata.type" = "#microsoft.graph.groupAssignmentTarget"; groupId = $groupIdByName[$g] } }
-        }
-    }
-    foreach ($g in @($Config.UninstallGroups)) {
-        if ($groupIdByName.ContainsKey($g)) {
-            $assignments += @{ "@odata.type" = "#microsoft.graph.mobileAppAssignment"; intent = "uninstall"; target = @{ "@odata.type" = "#microsoft.graph.groupAssignmentTarget"; groupId = $groupIdByName[$g] } }
+            $assignments += @{ "@odata.type" = "#microsoft.graph.mobileAppAssignment"; intent = $newGroupSet[$g]; target = @{ "@odata.type" = "#microsoft.graph.groupAssignmentTarget"; groupId = $groupIdByName[$g] } }
         }
     }
 
@@ -2022,7 +2043,14 @@ try {
     catch {
         throw "Building the assignment request body failed: $($_.Exception.Message)"
     }
-    Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.AppId)/assign" -Method POST -Body $assignBody -StepDescription "Assign app to groups" | Out-Null
+    try {
+        Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.AppId)/assign" -Method POST -Body $assignBody -StepDescription "Assign app to groups" | Out-Null
+    }
+    catch {
+        $groupNameById = @{}
+        foreach ($name in $groupIdByName.Keys) { $groupNameById[$groupIdByName[$name]] = $name }
+        throw (Get-FriendlyAssignError -RawError $_.Exception.Message -AppName $Config.AppName -GroupNameById $groupNameById)
+    }
     Write-Host "  [OK] Assignments applied." -ForegroundColor Green
 
     Write-Step "Done"
@@ -2097,6 +2125,24 @@ function Get-HttpErrorDetail {
         }
     } catch { }
     return $null
+}
+
+# Turns Graph's raw "An inclusion intent already exists for group id: ..."
+# error (thrown when the SAME group ends up in the assignment body with more
+# than one intent - required/available/uninstall are all "inclusion"
+# intents, and Intune only allows one per group per app, same restriction
+# the admin console itself enforces) into something the user can actually
+# act on: which group, in plain catalog terms, and what to go fix. Falls
+# through to the raw message unchanged for any other kind of failure -
+# this only recognizes this one specific, previously-confirmed error shape.
+function Get-FriendlyAssignError {
+    param([string]$RawError, [string]$AppName, [hashtable]$GroupNameById)
+    if ($RawError -match "inclusion intent already exists for group id: '([0-9a-fA-F-]{36})'") {
+        $gid = $Matches[1]
+        $gName = if ($GroupNameById.ContainsKey($gid)) { $GroupNameById[$gid] } else { $gid }
+        return "Intune rejected the assignment for `"$AppName`": the group `"$gName`" is set in more than one of Required/Available/Uninstall for this app, and Intune only allows ONE assignment intent per group per app. Open `"$AppName`" in Edit app, remove `"$gName`" from all but one of those three lists, then try again.`n`n(Raw Intune error: $RawError)"
+    }
+    return $RawError
 }
 
 function Invoke-GraphRequestDetailed {
@@ -2257,19 +2303,31 @@ try {
         if ($Config.Mode -eq "Apply") {
             foreach ($gName in @($newGroupSet.Keys)) { Resolve-GroupId -GroupName $gName -CreateIfMissing $true | Out-Null }
 
+            # Built from $newGroupSet (one entry per DISTINCT group name,
+            # already deduped above for the toAdd/toRemove preview), not by
+            # re-walking RequiredGroups/AvailableGroups/UninstallGroups
+            # separately - see the matching note in
+            # $Script:EmbeddedTargetedAssignScript for why: a group listed
+            # in more than one bucket used to produce two assignment
+            # entries for the same groupId with different intents, which
+            # Graph's /assign endpoint rejects outright ("An inclusion
+            # intent already exists for group id: ..."), failing this
+            # app's ENTIRE assignment even though the preview just above
+            # had reported "no change".
             $assignments = @()
-            foreach ($g in @($app.RequiredGroups)) {
-                if ($groupIdCache[$g]) { $assignments += @{ "@odata.type" = "#microsoft.graph.mobileAppAssignment"; intent = "required"; target = @{ "@odata.type" = "#microsoft.graph.groupAssignmentTarget"; groupId = $groupIdCache[$g] } } }
-            }
-            foreach ($g in @($app.AvailableGroups)) {
-                if ($groupIdCache[$g]) { $assignments += @{ "@odata.type" = "#microsoft.graph.mobileAppAssignment"; intent = "available"; target = @{ "@odata.type" = "#microsoft.graph.groupAssignmentTarget"; groupId = $groupIdCache[$g] } } }
-            }
-            foreach ($g in @($app.UninstallGroups)) {
-                if ($groupIdCache[$g]) { $assignments += @{ "@odata.type" = "#microsoft.graph.mobileAppAssignment"; intent = "uninstall"; target = @{ "@odata.type" = "#microsoft.graph.groupAssignmentTarget"; groupId = $groupIdCache[$g] } } }
+            foreach ($g in @($newGroupSet.Keys)) {
+                if ($groupIdCache[$g]) { $assignments += @{ "@odata.type" = "#microsoft.graph.mobileAppAssignment"; intent = $newGroupSet[$g]; target = @{ "@odata.type" = "#microsoft.graph.groupAssignmentTarget"; groupId = $groupIdCache[$g] } } }
             }
 
             $assignBody = [string](@{ mobileAppAssignments = @($assignments) } | ConvertTo-Json -Depth 10)
-            Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($app.AppId)/assign" -Method POST -Body $assignBody -ContentType "application/json" -StepDescription "Assign $($app.AppName)" | Out-Null
+            try {
+                Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($app.AppId)/assign" -Method POST -Body $assignBody -ContentType "application/json" -StepDescription "Assign $($app.AppName)" | Out-Null
+            }
+            catch {
+                $groupNameById = @{}
+                foreach ($name in $groupIdCache.Keys) { if ($groupIdCache[$name]) { $groupNameById[$groupIdCache[$name]] = $name } }
+                throw (Get-FriendlyAssignError -RawError $_.Exception.Message -AppName $app.AppName -GroupNameById $groupNameById)
+            }
             Write-Host "  [OK] Applied." -ForegroundColor Green
         }
     }
@@ -10580,6 +10638,7 @@ function Show-TargetedAssignDialog {
             ClientId              = $clientId
             CertificateThumbprint = $certThumb
             AppId                 = $AppId
+            AppName               = $AppName
             RequiredGroups        = @($RequiredGroups)
             AvailableGroups       = @($AvailableGroups)
             UninstallGroups       = @($UninstallGroups)
