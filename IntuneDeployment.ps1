@@ -6661,6 +6661,7 @@ $btnSyncMetadata = New-Object System.Windows.Forms.Button; $btnSyncMetadata.Text
 $btnBatchDeploy = New-Object System.Windows.Forms.Button; $btnBatchDeploy.Text = "Batch deploy..."
 $btnGroupManager = New-Object System.Windows.Forms.Button; $btnGroupManager.Text = "Group manager..."
 $btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.Text = "Favorite groups..."
+$btnDependencies = New-Object System.Windows.Forms.Button; $btnDependencies.Text = "View dependencies..."
 $btnGroupDrift = New-Object System.Windows.Forms.Button; $btnGroupDrift.Text = "Check catalog groups against Entra ID..."
 $btnUnknownAssignments = New-Object System.Windows.Forms.Button; $btnUnknownAssignments.Text = "Check Intune assignments against catalog..."
 $btnRunLaunch = New-Object System.Windows.Forms.Button; $btnRunLaunch.Text = "Package apps"
@@ -6689,6 +6690,7 @@ $toolbarTips.SetToolTip($btnSyncMetadata, "Pull current metadata from Intune int
 $toolbarTips.SetToolTip($btnBatchDeploy, "Create multiple apps in Intune, in dependency order. Uses metadata saved via 'Save for later...' where an app has it, otherwise the same defaults Deploy to Intune's own form would.")
 $toolbarTips.SetToolTip($btnGroupManager, "Create, update, or delete an Entra ID group and manage its members.")
 $toolbarTips.SetToolTip($btnFavoriteGroups, "Pick which groups show up as ready-to-tick options in every app's Required/Available/Uninstall lists.")
+$toolbarTips.SetToolTip($btnDependencies, "See every app's dependencies, what depends on it, and any missing or circular dependency. Read-only, local only.")
 $toolbarTips.SetToolTip($btnGroupDrift, "Check every group name referenced in the catalog against what actually exists in Entra ID.")
 $toolbarTips.SetToolTip($btnUnknownAssignments, "Check every deployed app's live Intune assignments for a group the local catalog doesn't know about. Read-only.")
 $toolbarTips.SetToolTip($btnRunLaunch, "Build the .intunewin package(s) for the selected (or all) uncommon apps.")
@@ -6702,7 +6704,7 @@ $lblSearch.Padding = New-Object System.Windows.Forms.Padding(10,7,0,0)
 $txtSearch = New-Object System.Windows.Forms.TextBox
 $txtSearch.Width = 220
 
-$gbCatalog = New-ToolbarGroup -Title "Catalog" -Buttons @($btnNew, $btnEdit, $btnDelete, $btnSave, $btnReload, $btnOpen, $btnFavoriteGroups)
+$gbCatalog = New-ToolbarGroup -Title "Catalog" -Buttons @($btnNew, $btnEdit, $btnDelete, $btnSave, $btnReload, $btnOpen, $btnFavoriteGroups, $btnDependencies)
 # $btnRunLaunch ("Package apps...") lives here, not in the leftover "Tools"
 # group below - it's an Intune-pipeline action (builds the .intunewin
 # package(s) apps get deployed from), same category as Batch deploy/Sync
@@ -7888,6 +7890,147 @@ function Get-DependencyOrderedApps {
     return [pscustomobject]@{ Ordered = $ordered.ToArray(); CircularNames = @() }
 }
 
+# =====================================================================
+# Dependency overview
+# =====================================================================
+# Read-only, whole-catalog report: every app, what it depends on, and what
+# depends on IT (the reverse direction - dependencies are only ever stored
+# on the dependent app's own metadata.dependencies, by name, so "what
+# needs THIS app" isn't visible anywhere else without checking every other
+# app's list by hand). Flags two real problems inline, reusing
+# Get-DependencyOrderedApps against the WHOLE catalog rather than
+# reimplementing cycle detection separately:
+#   - Circular: this app is part of a dependency cycle - Batch Deploy can
+#     never fully order it (see Get-DependencyOrderedApps's own handling).
+#   - Missing: this app depends on a name that isn't in the catalog at all
+#     (typo, or the dependency was renamed/removed) - Batch Deploy will
+#     just skip a dependency like that silently at ordering time, so this
+#     is the only place that actually surfaces it.
+# Entirely local - no Graph calls, no background process, just reads
+# $Script:Apps directly - so unlike almost every other "Check..." dialog
+# in this app, this one needs no Refresh button or async plumbing at all.
+function Show-DependencyOverviewDialog {
+    $appsRef = $Script:Apps
+
+    if ($appsRef.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("The catalog is empty - nothing to show.", "Nothing to do", "OK", "Information") | Out-Null
+        return
+    }
+
+    $dependedOnBy = @{}
+    foreach ($a in $appsRef) {
+        foreach ($depName in @($a.metadata.dependencies)) {
+            if (-not $dependedOnBy.ContainsKey($depName)) { $dependedOnBy[$depName] = New-Object System.Collections.Generic.List[string] }
+            if (-not $dependedOnBy[$depName].Contains($a.appName)) { $dependedOnBy[$depName].Add($a.appName) }
+        }
+    }
+
+    $catalogNames = @($appsRef | ForEach-Object { $_.appName })
+    $orderResult = Get-DependencyOrderedApps -Apps $appsRef
+    $circularNames = @($orderResult.CircularNames)
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Dependency overview"
+    $dlg.ClientSize = New-Object System.Drawing.Size(820, 540)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "Sizable"
+    $dlg.MinimumSize = New-Object System.Drawing.Size(600, 360)
+    $dlg.MaximizeBox = $true
+    $dlg.MinimizeBox = $false
+
+    $lblIntro = New-Object System.Windows.Forms.Label
+    $lblIntro.Text = "Every app in the catalog, what it depends on, and what depends on it. Read-only. Double-click a row to see the full lists if they're truncated."
+    $lblIntro.Location = New-Object System.Drawing.Point(15,12)
+    $lblIntro.Size = New-Object System.Drawing.Size(790,32)
+    $dlg.Controls.Add($lblIntro)
+
+    $grid = New-Object System.Windows.Forms.DataGridView
+    $grid.Location = New-Object System.Drawing.Point(15,50)
+    $grid.Size = New-Object System.Drawing.Size(790,430)
+    $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+    $grid.ReadOnly = $true
+    $grid.AllowUserToAddRows = $false
+    $grid.AllowUserToDeleteRows = $false
+    $grid.AllowUserToResizeRows = $false
+    $grid.SelectionMode = "FullRowSelect"
+    $grid.MultiSelect = $false
+    $grid.AutoSizeColumnsMode = "Fill"
+    $grid.RowHeadersVisible = $false
+    $grid.AutoGenerateColumns = $false
+    $grid.BackgroundColor = [System.Drawing.SystemColors]::Window
+    $dlg.Controls.Add($grid)
+
+    $colApp = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colApp.Name = "App"; $colApp.HeaderText = "App"; $colApp.FillWeight = 22
+    $grid.Columns.Add($colApp) | Out-Null
+    $colDependsOn = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colDependsOn.Name = "DependsOn"; $colDependsOn.HeaderText = "Depends on"; $colDependsOn.FillWeight = 30
+    $grid.Columns.Add($colDependsOn) | Out-Null
+    $colDependedOnBy = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colDependedOnBy.Name = "DependedOnBy"; $colDependedOnBy.HeaderText = "Depended on by"; $colDependedOnBy.FillWeight = 30
+    $grid.Columns.Add($colDependedOnBy) | Out-Null
+    $colStatus = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colStatus.Name = "Status"; $colStatus.HeaderText = "Status"; $colStatus.FillWeight = 18
+    $grid.Columns.Add($colStatus) | Out-Null
+
+    # Not-OK rows in bold orange/red, same convention as every other check
+    # dialog in this app (Show-GroupDriftCheckDialog, Show-UnknownAssignmentsCheckDialog)
+    # - problems stand out at a glance instead of needing to read every row.
+    $grid.Add_CellFormatting({
+        param($gridSender, $e)
+        if ($grid.Columns[$e.ColumnIndex].Name -ne "Status") { return }
+        if ([string]$e.Value -eq "Circular") {
+            $e.CellStyle.ForeColor = [System.Drawing.Color]::Firebrick
+            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+        }
+        elseif ([string]$e.Value -like "Missing dependency*") {
+            $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
+            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+        }
+    }.GetNewClosure())
+
+    $grid.Add_CellDoubleClick({
+        param($gridSender, $e)
+        if ($e.RowIndex -lt 0) { return }
+        $row = $grid.Rows[$e.RowIndex]
+        $lines = New-Object System.Collections.Generic.List[string]
+        $lines.Add("Depends on:")
+        $lines.Add("  $([string]$row.Cells['DependsOn'].Value)")
+        $lines.Add("")
+        $lines.Add("Depended on by:")
+        $lines.Add("  $([string]$row.Cells['DependedOnBy'].Value)")
+        [System.Windows.Forms.MessageBox]::Show(($lines -join "`r`n"), "Dependencies - $([string]$row.Cells['App'].Value)", "OK", "Information") | Out-Null
+    }.GetNewClosure())
+
+    foreach ($a in ($appsRef | Sort-Object appName)) {
+        $depNames = @($a.metadata.dependencies)
+        $dependedOnByNames = if ($dependedOnBy.ContainsKey($a.appName)) { @($dependedOnBy[$a.appName]) } else { @() }
+        $missingDeps = @($depNames | Where-Object { $catalogNames -notcontains $_ })
+
+        $status = "OK"
+        if ($circularNames -contains $a.appName) { $status = "Circular" }
+        elseif ($missingDeps.Count -gt 0) { $status = "Missing dependency: $($missingDeps -join ', ')" }
+
+        $dependsOnText = if ($depNames.Count -gt 0) { $depNames -join ", " } else { "(none)" }
+        $dependedOnByText = if ($dependedOnByNames.Count -gt 0) { $dependedOnByNames -join ", " } else { "(none)" }
+
+        [void]$grid.Rows.Add($a.appName, $dependsOnText, $dependedOnByText, $status)
+    }
+
+    $btnClose = New-Object System.Windows.Forms.Button
+    $btnClose.Text = "Close"
+    $btnClose.Location = New-Object System.Drawing.Point(720,490)
+    $btnClose.Size = New-Object System.Drawing.Size(85,32)
+    $btnClose.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+    $dlg.Controls.Add($btnClose)
+    $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
+    $dlg.CancelButton = $btnClose
+    $dlg.AcceptButton = $btnClose
+
+    Set-Theme -Control $dlg
+    [void]$dlg.ShowDialog($form)
+}
+
 # Default install/uninstall/detection templates. Only pre-filled for
 # non-uncommon (winget) apps, where there's an actual established convention
 # to draw from - uncommon apps get a generic Machine-scope command pattern for
@@ -8188,7 +8331,16 @@ function Show-MetadataDriftDialog {
 # cancelled/failed - the caller (Show-AppEditor) is responsible for putting
 # that into its own App ID field and saving, same as the "Look up" button.
 function Show-CreateInIntuneDialog {
-    param([string]$AppName, [string]$WingetId, [string]$ExistingAppId, [switch]$FromAppEditor)
+    param(
+        [string]$AppName, [string]$WingetId, [string]$ExistingAppId, [switch]$FromAppEditor,
+        # Same meaning as Show-AppEditor's own -CurrentIndex - only set (and
+        # only >= 0) when this was opened FROM the app editor for an app
+        # actually at a known catalog position, which is the only case
+        # where the Previous/Next buttons below make sense. Powers
+        # navigating straight from one app's Deploy view to the next one's,
+        # without a detour back through the plain editor screen in between.
+        [int]$CurrentIndex = -1
+    )
 
     # Derived, not passed in separately - see Test-AppIsUncommon. Keeps this
     # dialog's notion of "uncommon" in sync with the same single source of
@@ -8208,6 +8360,28 @@ function Show-CreateInIntuneDialog {
     $appsRef       = $Script:Apps
     $unsavedBox    = $Script:UnsavedChangesBox
     $linkedFilePath = $Script:LinkedFilePath
+
+    # Previous/Next targets - same filtered-list computation as
+    # Show-AppEditor's own (duplicated rather than shared, same reasoning
+    # as that copy's own comment: it's a two-line check, not worth
+    # threading a delegate through a function with otherwise zero
+    # dependency on the main grid's internals).
+    $prevAppIndex = $null
+    $nextAppIndex = $null
+    if ($CurrentIndex -ge 0) {
+        $navFilter = $txtSearch.Text.Trim().ToLower()
+        $visibleAppIndices = New-Object System.Collections.Generic.List[int]
+        for ($vi = 0; $vi -lt $appsRef.Count; $vi++) {
+            if ($navFilter) {
+                $navHay = ("$($appsRef[$vi].appName) $($appsRef[$vi].wingetId)").ToLower()
+                if ($navHay -notlike "*$navFilter*") { continue }
+            }
+            $visibleAppIndices.Add($vi)
+        }
+        $navPos = $visibleAppIndices.IndexOf($CurrentIndex)
+        if ($navPos -gt 0) { $prevAppIndex = $visibleAppIndices[$navPos - 1] }
+        if ($navPos -ge 0 -and $navPos -lt ($visibleAppIndices.Count - 1)) { $nextAppIndex = $visibleAppIndices[$navPos + 1] }
+    }
 
     # A mutable container, not a plain variable - needs to be WRITTEN from
     # inside the auto-fetch's nested -OnComplete closure further down (a
@@ -8246,7 +8420,10 @@ function Show-CreateInIntuneDialog {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Deploy to Intune - $AppName"
-    $dlg.ClientSize = New-Object System.Drawing.Size(730, 990)
+    # 40px taller than before, to fit the Previous/Next row below the
+    # existing Save/Deploy/Cancel row without moving any of this
+    # function's many other absolutely-positioned controls.
+    $dlg.ClientSize = New-Object System.Drawing.Size(730, 1030)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -9124,7 +9301,68 @@ function Show-CreateInIntuneDialog {
     # Metadata is $null unless -FromAppEditor deferred a local-catalog save
     # to the caller (see the Create/Update success handler and
     # $btnSaveForLater below) - the caller then folds it into its own save.
-    $resultBox = @{ NewAppId = $null; NewAppName = $null; Metadata = $null; IntuneAppType = $null; IntuneAppVersion = $null }
+    # NavigateToIndex is set only by the Previous/Next buttons below - the
+    # caller (Show-AppEditor's own "Intune Deployment" click handler)
+    # checks it before touching anything else in this result, since
+    # navigating away means none of this dialog's other fields apply to
+    # the app that's about to close.
+    $resultBox = @{ NewAppId = $null; NewAppName = $null; Metadata = $null; IntuneAppType = $null; IntuneAppVersion = $null; NavigateToIndex = $null }
+
+    # Only shown when this was opened from the app editor for an app at a
+    # known catalog position (see -CurrentIndex's own param comment) -
+    # hidden for a brand-new app or any other caller. Navigating away
+    # discards whatever's in THIS form the same way Cancel would (no
+    # implicit save) - Show-AppEditor's own Previous/Next buttons work the
+    # same way, for the same reason. Wired here, right after $resultBox
+    # exists, not up by the rest of the button row - .GetNewClosure()
+    # captures variable VALUES at the moment it's called, so wiring these
+    # any earlier (before $resultBox was ever assigned) would have
+    # permanently captured $null instead of the real box.
+    $btnPrevAppDeploy = New-Object System.Windows.Forms.Button
+    $btnPrevAppDeploy.Text = "< Previous app"
+    $btnPrevAppDeploy.Location = New-Object System.Drawing.Point(15,979)
+    $btnPrevAppDeploy.Size = New-Object System.Drawing.Size(150,30)
+    $btnPrevAppDeploy.Enabled = ($null -ne $prevAppIndex)
+    $btnPrevAppDeploy.Visible = ($CurrentIndex -ge 0)
+    $dlg.Controls.Add($btnPrevAppDeploy)
+
+    $lblDeployNavPosition = New-Object System.Windows.Forms.Label
+    $lblDeployNavPosition.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    $lblDeployNavPosition.Location = New-Object System.Drawing.Point(280,979)
+    $lblDeployNavPosition.Size = New-Object System.Drawing.Size(170,30)
+    $lblDeployNavPosition.ForeColor = [System.Drawing.Color]::DimGray
+    if ($CurrentIndex -ge 0) {
+        $navFilterForLabel = $txtSearch.Text.Trim().ToLower()
+        $visibleCountForLabel = 0
+        $visiblePosForLabel = 0
+        for ($li = 0; $li -lt $appsRef.Count; $li++) {
+            if ($navFilterForLabel) {
+                $liHay = ("$($appsRef[$li].appName) $($appsRef[$li].wingetId)").ToLower()
+                if ($liHay -notlike "*$navFilterForLabel*") { continue }
+            }
+            $visibleCountForLabel++
+            if ($li -eq $CurrentIndex) { $visiblePosForLabel = $visibleCountForLabel }
+        }
+        $lblDeployNavPosition.Text = if ($visiblePosForLabel -gt 0) { "$visiblePosForLabel of $visibleCountForLabel" } else { "" }
+    }
+    $dlg.Controls.Add($lblDeployNavPosition)
+
+    $btnNextAppDeploy = New-Object System.Windows.Forms.Button
+    $btnNextAppDeploy.Text = "Next app >"
+    $btnNextAppDeploy.Location = New-Object System.Drawing.Point(565,979)
+    $btnNextAppDeploy.Size = New-Object System.Drawing.Size(150,30)
+    $btnNextAppDeploy.Enabled = ($null -ne $nextAppIndex)
+    $btnNextAppDeploy.Visible = ($CurrentIndex -ge 0)
+    $dlg.Controls.Add($btnNextAppDeploy)
+
+    $btnPrevAppDeploy.Add_Click({
+        $resultBox.NavigateToIndex = $prevAppIndex
+        $dlg.Close()
+    }.GetNewClosure())
+    $btnNextAppDeploy.Add_Click({
+        $resultBox.NavigateToIndex = $nextAppIndex
+        $dlg.Close()
+    }.GetNewClosure())
 
     # Filled in by the auto-fetch below (isDuplicate case only - a brand
     # new app has nothing live to fetch yet) and read back by the Create/
@@ -15067,7 +15305,13 @@ function Show-AppEditor {
         # OTHER caller of this function (Show-IntuneOnlyAppsDialog's own
         # "Add to catalog..." prefill, etc.) - all of them are adding a
         # brand-new entry, not editing one already at a known index.
-        [int]$CurrentIndex = -1
+        [int]$CurrentIndex = -1,
+        # Set only when this editor is being (re)opened because Previous/
+        # Next was clicked FROM WITHIN the "Intune Deployment" dialog
+        # itself, not from this editor's own Previous/Next - lets that
+        # navigation land straight back in Deploy view for the next app
+        # instead of stopping on the plain editor screen in between.
+        [switch]$AutoOpenDeploy
     )
 
     # Plain (non-$Script:) local alias - see note in Start-IntuneAppLookup.
@@ -15102,11 +15346,17 @@ function Show-AppEditor {
         if ($navPos -ge 0 -and $navPos -lt ($visibleAppIndices.Count - 1)) { $nextAppIndex = $visibleAppIndices[$navPos + 1] }
     }
 
-    # Set by the Previous/Next handlers below to request navigation instead
-    # of a normal close - checked right after ShowDialog returns. Declared
+    # Set by the Previous/Next handlers below (this editor's own, AND the
+    # nested "Intune Deployment" dialog's) to request navigation instead of
+    # a normal close - checked right after ShowDialog returns. Declared
     # here, before any closure below could reference it, same reasoning as
     # every other mutable box in this function.
     $navigateToIndexBox = @{ Value = $null }
+    # Companion to the box above - set to $true only when the navigation
+    # request came from INSIDE "Intune Deployment" (see its own handler
+    # below), so the next app's editor knows to jump straight back into
+    # Deploy view instead of stopping on the plain editor screen.
+    $navigateAutoOpenDeployBox = @{ Value = $false }
 
     # Holds metadata handed back from "Deploy to Intune..." (Create/Update or
     # Save for later) while this editor is still open, so it can be folded
@@ -15355,7 +15605,21 @@ function Show-AppEditor {
             [System.Windows.Forms.MessageBox]::Show("Enter an app name first.", "No name", "OK", "Information") | Out-Null
             return
         }
-        $deployResult = Show-CreateInIntuneDialog -AppName $txtName.Text.Trim() -WingetId $txtWinget.Text.Trim() -ExistingAppId $txtId.Text.Trim() -FromAppEditor
+        $deployResult = Show-CreateInIntuneDialog -AppName $txtName.Text.Trim() -WingetId $txtWinget.Text.Trim() -ExistingAppId $txtId.Text.Trim() -FromAppEditor -CurrentIndex $CurrentIndex
+
+        # Previous/Next was clicked INSIDE "Intune Deployment" - none of
+        # this handler's own staging/save logic below applies (there's
+        # nothing from THIS app to stage; navigating away is a discard,
+        # same as Cancel), so hand off to this editor's own navigation
+        # exactly like its own Previous/Next buttons do, with
+        # AutoOpenDeploy set so the next app lands straight back in
+        # Deploy view instead of stopping on the plain editor screen.
+        if ($null -ne $deployResult -and $null -ne $deployResult.NavigateToIndex) {
+            $navigateToIndexBox.Value = $deployResult.NavigateToIndex
+            $navigateAutoOpenDeployBox.Value = $true
+            $dlg.Close()
+            return
+        }
         # Metadata (from Create/Update or "Save for later") is staged here,
         # not written to the catalog yet - Show-CreateInIntuneDialog, called
         # with -FromAppEditor, deliberately defers that write to this
@@ -15936,6 +16200,17 @@ function Show-AppEditor {
     $txtName.Add_TextChanged({ & $checkDuplicateName }.GetNewClosure())
     & $checkDuplicateName   # catches a pre-filled duplicate (e.g. Intune sync check's prefill) immediately on open, not just after the first keystroke
 
+    # Only fires when THIS editor was itself opened by Previous/Next
+    # clicked inside "Intune Deployment" for a different app (see
+    # -AutoOpenDeploy's own param comment) - deferred to Add_Shown, not
+    # called directly here, same reasoning as every other "kick off work
+    # right as the window appears" case in this app: doing it before the
+    # window is actually realized can leave WaitCursor-equivalent UI state
+    # that doesn't reliably stick.
+    if ($AutoOpenDeploy) {
+        $dlg.Add_Shown({ $btnCreateInIntune.PerformClick() }.GetNewClosure())
+    }
+
     $dlgResult = $dlg.ShowDialog($form)
 
     # Previous/Next was clicked - this editor's own result (there isn't
@@ -15949,7 +16224,7 @@ function Show-AppEditor {
     # included, so it knows exactly which catalog slot that result belongs
     # to even though it's no longer the app it originally opened.
     if ($null -ne $navigateToIndexBox.Value) {
-        return Show-AppEditor -ExistingApp $Script:Apps[$navigateToIndexBox.Value] -CurrentIndex $navigateToIndexBox.Value
+        return Show-AppEditor -ExistingApp $Script:Apps[$navigateToIndexBox.Value] -CurrentIndex $navigateToIndexBox.Value -AutoOpenDeploy:$navigateAutoOpenDeployBox.Value
     }
 
     if ($dlgResult -eq [System.Windows.Forms.DialogResult]::OK) {
@@ -16313,6 +16588,7 @@ $btnBatchDeploy.Add_Click({
 $btnGroupManager.Add_Click({ Show-GroupManagerDialog })
 $btnFavoriteGroups.Add_Click({ Show-FavoriteGroupsManager })
 $btnGroupDrift.Add_Click({ Show-GroupDriftCheckDialog })
+$btnDependencies.Add_Click({ Show-DependencyOverviewDialog })
 $btnUnknownAssignments.Add_Click({ Show-UnknownAssignmentsCheckDialog })
 
 $txtSearch.Add_TextChanged({ Refresh-Grid })
