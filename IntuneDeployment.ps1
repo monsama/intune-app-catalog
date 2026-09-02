@@ -6622,6 +6622,7 @@ $btnBatchDeploy = New-Object System.Windows.Forms.Button; $btnBatchDeploy.Text =
 $btnGroupManager = New-Object System.Windows.Forms.Button; $btnGroupManager.Text = "Group manager..."
 $btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.Text = "Favorite groups..."
 $btnGroupDrift = New-Object System.Windows.Forms.Button; $btnGroupDrift.Text = "Check group names..."
+$btnUnknownAssignments = New-Object System.Windows.Forms.Button; $btnUnknownAssignments.Text = "Check unknown assignments..."
 $btnRunLaunch = New-Object System.Windows.Forms.Button; $btnRunLaunch.Text = "Package apps"
 $btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "Settings..."
 $btnDiagnostics = New-Object System.Windows.Forms.Button; $btnDiagnostics.Text = "Run diagnostics..."
@@ -6648,6 +6649,7 @@ $toolbarTips.SetToolTip($btnBatchDeploy, "Create multiple apps in Intune, in dep
 $toolbarTips.SetToolTip($btnGroupManager, "Create, update, or delete an Entra ID group and manage its members.")
 $toolbarTips.SetToolTip($btnFavoriteGroups, "Pick which groups show up as ready-to-tick options in every app's Required/Available/Uninstall lists.")
 $toolbarTips.SetToolTip($btnGroupDrift, "Check every group name referenced in the catalog against what actually exists in Entra ID.")
+$toolbarTips.SetToolTip($btnUnknownAssignments, "Check every deployed app's live Intune assignments for a group the local catalog doesn't know about. Read-only.")
 $toolbarTips.SetToolTip($btnRunLaunch, "Build the .intunewin package(s) for the selected (or all) uncommon apps.")
 $toolbarTips.SetToolTip($btnCertSetup, "Configure the Tenant ID, Client ID, and certificate used to connect to Microsoft Graph.")
 $toolbarTips.SetToolTip($btnDiagnostics, "Read-only health check: Graph connectivity, certificate expiry, catalog completeness, and drift against what's actually in Intune.")
@@ -6664,7 +6666,7 @@ $gbCatalog = New-ToolbarGroup -Title "Catalog" -Buttons @($btnNew, $btnEdit, $bt
 # group below - it's an Intune-pipeline action (builds the .intunewin
 # package(s) apps get deployed from), same category as Batch deploy/Sync
 # metadata, not a general-purpose tool.
-$gbIntune  = New-ToolbarGroup -Title "Intune"  -Buttons @($btnLookupIds, $btnCheckIntuneOnly, $btnBatchAssign, $btnSyncMetadata, $btnBatchDeploy, $btnRunLaunch)
+$gbIntune  = New-ToolbarGroup -Title "Intune"  -Buttons @($btnLookupIds, $btnCheckIntuneOnly, $btnBatchAssign, $btnUnknownAssignments, $btnSyncMetadata, $btnBatchDeploy, $btnRunLaunch)
 $gbEntra   = New-ToolbarGroup -Title "Entra ID" -Buttons @($btnGroupManager, $btnGroupDrift)
 $gbTools   = New-ToolbarGroup -Title "Settings" -Buttons @($btnCertSetup, $btnDiagnostics)
 
@@ -13942,6 +13944,230 @@ function Show-GroupDriftCheckDialog {
     [void]$dlg.ShowDialog($form)
 }
 
+# =====================================================================
+# Unknown-assignments check
+# =====================================================================
+# The reverse direction of the group name check above: that one asks "is
+# every group name this catalog references still a real group in Entra
+# ID?" - this asks "does Intune have any group assigned to a deployed app
+# that this catalog has never heard of at all?" (assigned directly through
+# the Intune portal, by a script outside this tool, or left behind after a
+# catalog entry's group list was edited without ever pushing that edit to
+# Intune). Read-only, same as the group name check - no Apply button here;
+# actually reconciling a finding is still "Batch assign groups..." (Apply
+# removes a stray assignment) or the app's own editor (add the group to
+# the catalog first, if it should stay assigned).
+#
+# Reuses $Script:EmbeddedBatchAssignScript in "Preview" mode rather than a
+# new embedded script - Preview already does exactly the fetch-and-diff
+# this needs (live assignments vs. the catalog's current group lists) for
+# every app it's given, entirely read-only. Unlike Show-BatchAssignDialog's
+# own eligibility filter, apps with NO catalog groups at all are
+# deliberately INCLUDED here (only an App ID is required) - those are
+# exactly the apps most likely to have an assignment the catalog has never
+# recorded, so excluding them would hide the most useful findings.
+function Show-UnknownAssignmentsCheckDialog {
+    # Plain local aliases - see note in Start-IntuneAppLookup.
+    $appsRef     = $Script:Apps
+    $tenantId    = $Script:GraphTenantId
+    $clientId    = $Script:GraphClientId
+    $certThumb   = $Script:GraphCertificateThumbprint
+    $batchScript = $Script:EmbeddedBatchAssignScript
+
+    $deployedApps = @($appsRef | Where-Object { $_.appId })
+    if ($deployedApps.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("No apps have an App ID yet - nothing to check.", "Nothing to do", "OK", "Information") | Out-Null
+        return
+    }
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Unknown Intune assignments"
+    $dlg.ClientSize = New-Object System.Drawing.Size(760, 560)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+
+    $lblIntro = New-Object System.Windows.Forms.Label
+    $lblIntro.Text = "Checks every deployed app's CURRENT live Intune assignments against this catalog's Required/Available/Uninstall groups, and lists any group Intune has that the catalog doesn't know about. Read-only - makes no changes. To fix a finding: add the group to the app's catalog entry if it should stay assigned, or run `"Batch assign groups...`" (Apply) to remove the stray assignment from Intune."
+    $lblIntro.Location = New-Object System.Drawing.Point(15,12)
+    $lblIntro.Size = New-Object System.Drawing.Size(730,48)
+    $dlg.Controls.Add($lblIntro)
+
+    $lblStatus = New-Object System.Windows.Forms.Label
+    $lblStatus.Location = New-Object System.Drawing.Point(15,64)
+    $lblStatus.Size = New-Object System.Drawing.Size(560,20)
+    $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+    $dlg.Controls.Add($lblStatus)
+
+    $btnRefresh = New-Object System.Windows.Forms.Button
+    $btnRefresh.Text = "Check now"
+    $btnRefresh.Location = New-Object System.Drawing.Point(585,62)
+    $btnRefresh.Size = New-Object System.Drawing.Size(160,26)
+    $dlg.Controls.Add($btnRefresh)
+
+    $grid = New-Object System.Windows.Forms.DataGridView
+    $grid.Location = New-Object System.Drawing.Point(15,94)
+    $grid.Size = New-Object System.Drawing.Size(730,300)
+    $grid.ReadOnly = $true
+    $grid.AllowUserToAddRows = $false
+    $grid.AllowUserToDeleteRows = $false
+    $grid.AllowUserToResizeRows = $false
+    $grid.SelectionMode = "FullRowSelect"
+    $grid.MultiSelect = $false
+    $grid.AutoSizeColumnsMode = "Fill"
+    $grid.RowHeadersVisible = $false
+    $grid.AutoGenerateColumns = $false
+    $grid.BackgroundColor = [System.Drawing.SystemColors]::Window
+    $dlg.Controls.Add($grid)
+
+    $colApp = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colApp.Name = "App"; $colApp.HeaderText = "App"; $colApp.FillWeight = 35
+    $grid.Columns.Add($colApp) | Out-Null
+    $colGroups = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colGroups.Name = "Groups"; $colGroups.HeaderText = "Unknown group(s) in Intune"; $colGroups.FillWeight = 65
+    $grid.Columns.Add($colGroups) | Out-Null
+
+    # The "Unknown group(s)" cell can be a long, comma-joined list that
+    # gets truncated within the cell - double-click any row to see the
+    # full text rather than needing to widen the column or scroll
+    # horizontally, same as the group name check's "Referenced by" column.
+    $grid.Add_CellDoubleClick({
+        param($gridSender, $e)
+        if ($e.RowIndex -lt 0) { return }
+        $row = $grid.Rows[$e.RowIndex]
+        $appName = [string]$row.Cells["App"].Value
+        $groupsText = [string]$row.Cells["Groups"].Value
+        [System.Windows.Forms.MessageBox]::Show($groupsText, "Unknown group(s) - $appName", "OK", "Information") | Out-Null
+    }.GetNewClosure())
+
+    $rtbLog = New-Object System.Windows.Forms.RichTextBox
+    $rtbLog.Location = New-Object System.Drawing.Point(15,400)
+    $rtbLog.Size = New-Object System.Drawing.Size(730,110)
+    $rtbLog.ReadOnly = $true
+    $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
+    $rtbLog.ForeColor = [System.Drawing.Color]::Gainsboro
+    $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $dlg.Controls.Add($rtbLog)
+
+    $btnClose = New-Object System.Windows.Forms.Button
+    $btnClose.Text = "Close"
+    $btnClose.Location = New-Object System.Drawing.Point(665,522)
+    $btnClose.Size = New-Object System.Drawing.Size(80,32)
+    $dlg.Controls.Add($btnClose)
+
+    $procBox = @{ Proc = $null }
+
+    $btnRefresh.Add_Click({
+        $btnRefresh.Enabled = $false
+        $btnClose.Enabled = $false
+        $rtbLog.Clear()
+        $grid.Rows.Clear()
+        $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+        $lblStatus.Text = "Checking $($deployedApps.Count) app(s)..."
+
+        $appsForScript = @($deployedApps | ForEach-Object {
+            [pscustomobject]@{
+                AppName         = $_.appName
+                AppId           = $_.appId
+                RequiredGroups  = @($_.requiredFor)
+                AvailableGroups = @($_.availableFor)
+                UninstallGroups = @($_.uninstallFor)
+            }
+        })
+
+        $configPath = Join-Path $env:TEMP (".intunepkg_unknownassign_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_unknownassign_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $config = [pscustomobject]@{
+            TenantId              = $tenantId
+            ClientId              = $clientId
+            CertificateThumbprint = $certThumb
+            Mode                  = "Preview"
+            Apps                  = $appsForScript
+            OutputResultPath      = $resultPath
+        }
+        try {
+            $configJsonText = $config | ConvertTo-Json -Depth 8 -ErrorAction Stop
+            [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
+        }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            $btnRefresh.Enabled = $true
+            $btnClose.Enabled = $true
+            return
+        }
+
+        # Fresh aliases for the nested -OnComplete closure - see note at the
+        # top of Show-CreateInIntuneDialog for why this matters here too.
+        $btnRefreshRef = $btnRefresh
+        $btnCloseRef = $btnClose
+        $lblStatusRef = $lblStatus
+        $resultPathRef = $resultPath
+        $configPathRef = $configPath
+        $procBoxRef = $procBox
+        $rtbLogRef = $rtbLog
+        $gridRef = $grid
+        $deployedAppsCountRef = $deployedApps.Count
+
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $batchScript -TempScriptName ".intunepkg_embedded_unknownassign.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+            param($code)
+            $btnRefreshRef.Enabled = $true
+            $btnCloseRef.Enabled = $true
+            $procBoxRef.Proc = $null
+            Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue
+
+            if (-not (Test-Path $resultPathRef)) {
+                Write-DialogError -StatusLabel $lblStatusRef -LogBox $rtbLogRef -ErrorMessage "No result written (exit code $code). See progress above."
+                return
+            }
+            $result = $null
+            try {
+                $result = Get-Content -Path $resultPathRef -Raw | ConvertFrom-Json
+                Remove-Item $resultPathRef -Force -ErrorAction SilentlyContinue
+            }
+            catch {
+                Write-DialogError -StatusLabel $lblStatusRef -LogBox $rtbLogRef -ErrorMessage "Could not read result (exit code $code): $($_.Exception.Message)"
+                return
+            }
+            if (-not $result.success) {
+                Write-DialogError -StatusLabel $lblStatusRef -LogBox $rtbLogRef -ErrorMessage $result.error
+                return
+            }
+
+            $results = @($result.data)
+            $findings = @($results | Where-Object { @($_.ToRemove).Count -gt 0 })
+            foreach ($f in ($findings | Sort-Object AppName)) {
+                [void]$gridRef.Rows.Add($f.AppName, (@($f.ToRemove) -join ", "))
+            }
+            $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
+            $lblStatusRef.Text = "$deployedAppsCountRef app(s) checked - $($findings.Count) with an unknown assignment."
+        }.GetNewClosure()
+    }.GetNewClosure())
+
+    $btnClose.Add_Click({
+        if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
+            $r = [System.Windows.Forms.MessageBox]::Show("A check is currently running. Stop it and close this dialog?", "Stop and close?", "YesNo", "Warning")
+            if ($r -ne "Yes") { return }
+            try { $procBox.Proc.Kill() } catch { }
+        }
+        $dlg.Close()
+    }.GetNewClosure())
+    $dlg.CancelButton = $btnClose
+    $dlg.AcceptButton = $btnClose
+
+    # Deferred to Add_Shown - same reasoning as Show-GroupDriftCheckDialog's
+    # own Add_Shown: kicking off the fetch before the window is actually
+    # realized can leave a WaitCursor-equivalent UI state that doesn't
+    # reliably stick, and this dialog's whole job is telling you what's
+    # unknown RIGHT NOW, not showing stale results from some earlier run.
+    $dlg.Add_Shown({
+        $btnRefresh.PerformClick()
+    }.GetNewClosure())
+
+    Set-Theme -Control $dlg
+    [void]$dlg.ShowDialog($form)
+}
+
 # Favorite groups manager
 # =====================================================================
 # Lets someone mark specific groups as "favorites" - these are what show
@@ -15897,6 +16123,7 @@ $btnBatchDeploy.Add_Click({
 $btnGroupManager.Add_Click({ Show-GroupManagerDialog })
 $btnFavoriteGroups.Add_Click({ Show-FavoriteGroupsManager })
 $btnGroupDrift.Add_Click({ Show-GroupDriftCheckDialog })
+$btnUnknownAssignments.Add_Click({ Show-UnknownAssignmentsCheckDialog })
 
 $txtSearch.Add_TextChanged({ Refresh-Grid })
 
