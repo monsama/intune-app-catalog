@@ -8521,6 +8521,65 @@ function Show-MetadataDriftDialog {
     return @()
 }
 
+# Read-only, resizable "these N things are about to change - proceed?"
+# confirmation, used by Show-CreateInIntuneDialog's "Set default values..."
+# button. A plain MessageBox can't scroll or resize, so a longer change
+# list (many requirements/return codes differing at once) just got cut off
+# or ran off the bottom of the screen - this is a real dialog instead, with
+# a proper scrollable, word-wrapped list.
+function Show-SetDefaultsConfirmDialog {
+    param([string[]]$Lines, $ParentForm)
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Set default values"
+    $dlg.ClientSize = New-Object System.Drawing.Size(620, 420)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "Sizable"
+    $dlg.MinimumSize = New-Object System.Drawing.Size(420, 260)
+    $dlg.MaximizeBox = $true
+    $dlg.MinimizeBox = $false
+
+    $lblHeader = New-Object System.Windows.Forms.Label
+    $rowWord = if (@($Lines).Count -eq 1) { "setting" } else { "settings" }
+    $lblHeader.Text = "Reset the following $(@($Lines).Count) $rowWord to their computed defaults?"
+    $lblHeader.Location = New-Object System.Drawing.Point(15,12)
+    $lblHeader.Size = New-Object System.Drawing.Size(590,20)
+    $dlg.Controls.Add($lblHeader)
+
+    $lstChanges = New-Object System.Windows.Forms.ListBox
+    $lstChanges.Location = New-Object System.Drawing.Point(15,40)
+    $lstChanges.Size = New-Object System.Drawing.Size(590,320)
+    $lstChanges.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+    $lstChanges.HorizontalScrollbar = $true
+    $lstChanges.SelectionMode = "None"
+    $lstChanges.IntegralHeight = $false
+    foreach ($line in @($Lines)) { [void]$lstChanges.Items.Add($line) }
+    $dlg.Controls.Add($lstChanges)
+
+    $btnYes = New-Object System.Windows.Forms.Button
+    $btnYes.Text = "Yes, reset these"
+    $btnYes.Location = New-Object System.Drawing.Point(400,372)
+    $btnYes.Size = New-Object System.Drawing.Size(120,30)
+    $btnYes.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+    $dlg.Controls.Add($btnYes)
+
+    $btnNo = New-Object System.Windows.Forms.Button
+    $btnNo.Text = "No"
+    $btnNo.Location = New-Object System.Drawing.Point(525,372)
+    $btnNo.Size = New-Object System.Drawing.Size(80,30)
+    $btnNo.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+    $dlg.Controls.Add($btnNo)
+
+    $btnYes.Add_Click({ $dlg.DialogResult = [System.Windows.Forms.DialogResult]::Yes; $dlg.Close() }.GetNewClosure())
+    $btnNo.Add_Click({ $dlg.DialogResult = [System.Windows.Forms.DialogResult]::No; $dlg.Close() }.GetNewClosure())
+    $dlg.AcceptButton = $btnNo
+    $dlg.CancelButton = $btnNo
+
+    Set-Theme -Control $dlg
+    $result = $dlg.ShowDialog($ParentForm)
+    return ($result -eq [System.Windows.Forms.DialogResult]::Yes)
+}
+
 # ---------------------------------------------------------------
 # Create in Intune dialog
 # ---------------------------------------------------------------
@@ -9220,27 +9279,39 @@ function Show-CreateInIntuneDialog {
     $lblAdvancedSeparator.Font = New-Object System.Drawing.Font($lblAdvancedSeparator.Font, [System.Drawing.FontStyle]::Italic)
     $scrollPanel.Controls.Add($lblAdvancedSeparator)
 
-    # Only meaningful for a Winget app - an Uncommon app has no shared
-    # Get-DefaultAppMetadata template to reset back to (its install/
-    # uninstall/detection are inherently app-specific, same reasoning as
-    # Test-AppIsUncommon everywhere else in this app), so there's nothing
-    # for this button to do for one and it stays hidden.
+    # Its own full row, not squeezed beside the separator label - a plain
+    # button crammed onto the same tight baseline as an italic label read
+    # as an unlabeled bar rather than a clickable button. Only meaningful
+    # for a Winget app - an Uncommon app has no shared Get-DefaultAppMetadata
+    # template to reset back to (its install/uninstall/detection are
+    # inherently app-specific, same reasoning as Test-AppIsUncommon
+    # everywhere else in this app), so there's nothing for this button to
+    # do for one and it stays hidden.
     $btnSetDefaults = New-Object System.Windows.Forms.Button
     $btnSetDefaults.Text = "Set default values..."
-    $btnSetDefaults.Location = New-Object System.Drawing.Point(480,687)
-    $btnSetDefaults.Size = New-Object System.Drawing.Size(210,22)
+    $btnSetDefaults.Location = New-Object System.Drawing.Point(15,712)
+    $btnSetDefaults.Size = New-Object System.Drawing.Size(220,28)
     $btnSetDefaults.Visible = (-not $Uncommon)
     $scrollPanel.Controls.Add($btnSetDefaults)
+
+    $lblSetDefaultsHint = New-Object System.Windows.Forms.Label
+    $lblSetDefaultsHint.Text = "Resets install/uninstall/detection, architecture, min OS, requirements, and return codes to this app's standard Winget defaults - free-text fields (description, publisher, notes, ...) are left alone."
+    $lblSetDefaultsHint.Location = New-Object System.Drawing.Point(245,717)
+    $lblSetDefaultsHint.Size = New-Object System.Drawing.Size(445,40)
+    $lblSetDefaultsHint.ForeColor = [System.Drawing.Color]::Gray
+    $lblSetDefaultsHint.Font = New-Object System.Drawing.Font($lblSetDefaultsHint.Font.FontFamily, 7.5)
+    $lblSetDefaultsHint.Visible = (-not $Uncommon)
+    $scrollPanel.Controls.Add($lblSetDefaultsHint)
 
     # --- Dependencies ---
     $lblDeps = New-Object System.Windows.Forms.Label
     $lblDeps.Text = "Dependencies (undeployed apps shown too - resolved by name at actual deploy time)"
-    $lblDeps.Location = New-Object System.Drawing.Point(15,710)
+    $lblDeps.Location = New-Object System.Drawing.Point(15,760)
     $lblDeps.AutoSize = $true
     $scrollPanel.Controls.Add($lblDeps)
 
     $clbDeps = New-Object System.Windows.Forms.CheckedListBox
-    $clbDeps.Location = New-Object System.Drawing.Point(15,729)
+    $clbDeps.Location = New-Object System.Drawing.Point(15,779)
     $clbDeps.Size = New-Object System.Drawing.Size(675,85)
     $clbDeps.CheckOnClick = $true
     # Undeployed apps (no App ID yet) are now included, not just ones
@@ -9268,50 +9339,50 @@ function Show-CreateInIntuneDialog {
     # required" wording for an unset value) ---
     $lblReqs = New-Object System.Windows.Forms.Label
     $lblReqs.Text = "Requirements (0 = not required)"
-    $lblReqs.Location = New-Object System.Drawing.Point(15,823)
+    $lblReqs.Location = New-Object System.Drawing.Point(15,873)
     $lblReqs.AutoSize = $true
     $scrollPanel.Controls.Add($lblReqs)
 
     $lblDiskSpace = New-Object System.Windows.Forms.Label
     $lblDiskSpace.Text = "Disk space (MB)"
-    $lblDiskSpace.Location = New-Object System.Drawing.Point(15,844)
+    $lblDiskSpace.Location = New-Object System.Drawing.Point(15,894)
     $lblDiskSpace.AutoSize = $true
     $scrollPanel.Controls.Add($lblDiskSpace)
     $txtDiskSpace = New-Object System.Windows.Forms.TextBox
-    $txtDiskSpace.Location = New-Object System.Drawing.Point(15,861)
+    $txtDiskSpace.Location = New-Object System.Drawing.Point(15,911)
     $txtDiskSpace.Size = New-Object System.Drawing.Size(130,23)
     $txtDiskSpace.Text = [string]$defaults.minDiskSpaceMB
     $scrollPanel.Controls.Add($txtDiskSpace)
 
     $lblMemory = New-Object System.Windows.Forms.Label
     $lblMemory.Text = "Memory (MB)"
-    $lblMemory.Location = New-Object System.Drawing.Point(160,844)
+    $lblMemory.Location = New-Object System.Drawing.Point(160,894)
     $lblMemory.AutoSize = $true
     $scrollPanel.Controls.Add($lblMemory)
     $txtMemory = New-Object System.Windows.Forms.TextBox
-    $txtMemory.Location = New-Object System.Drawing.Point(160,861)
+    $txtMemory.Location = New-Object System.Drawing.Point(160,911)
     $txtMemory.Size = New-Object System.Drawing.Size(130,23)
     $txtMemory.Text = [string]$defaults.minMemoryMB
     $scrollPanel.Controls.Add($txtMemory)
 
     $lblProcessors = New-Object System.Windows.Forms.Label
     $lblProcessors.Text = "Min. processors"
-    $lblProcessors.Location = New-Object System.Drawing.Point(305,844)
+    $lblProcessors.Location = New-Object System.Drawing.Point(305,894)
     $lblProcessors.AutoSize = $true
     $scrollPanel.Controls.Add($lblProcessors)
     $txtProcessors = New-Object System.Windows.Forms.TextBox
-    $txtProcessors.Location = New-Object System.Drawing.Point(305,861)
+    $txtProcessors.Location = New-Object System.Drawing.Point(305,911)
     $txtProcessors.Size = New-Object System.Drawing.Size(130,23)
     $txtProcessors.Text = [string]$defaults.minProcessors
     $scrollPanel.Controls.Add($txtProcessors)
 
     $lblCpuSpeed = New-Object System.Windows.Forms.Label
     $lblCpuSpeed.Text = "Min. CPU speed (MHz)"
-    $lblCpuSpeed.Location = New-Object System.Drawing.Point(450,844)
+    $lblCpuSpeed.Location = New-Object System.Drawing.Point(450,894)
     $lblCpuSpeed.AutoSize = $true
     $scrollPanel.Controls.Add($lblCpuSpeed)
     $txtCpuSpeed = New-Object System.Windows.Forms.TextBox
-    $txtCpuSpeed.Location = New-Object System.Drawing.Point(450,861)
+    $txtCpuSpeed.Location = New-Object System.Drawing.Point(450,911)
     $txtCpuSpeed.Size = New-Object System.Drawing.Size(130,23)
     $txtCpuSpeed.Text = [string]$defaults.minCpuSpeedMHz
     $scrollPanel.Controls.Add($txtCpuSpeed)
@@ -9319,22 +9390,22 @@ function Show-CreateInIntuneDialog {
     # --- Install experience extras ---
     $lblInstallTime = New-Object System.Windows.Forms.Label
     $lblInstallTime.Text = "Install time required (mins)"
-    $lblInstallTime.Location = New-Object System.Drawing.Point(15,897)
+    $lblInstallTime.Location = New-Object System.Drawing.Point(15,947)
     $lblInstallTime.AutoSize = $true
     $scrollPanel.Controls.Add($lblInstallTime)
     $txtInstallTime = New-Object System.Windows.Forms.TextBox
-    $txtInstallTime.Location = New-Object System.Drawing.Point(15,914)
+    $txtInstallTime.Location = New-Object System.Drawing.Point(15,964)
     $txtInstallTime.Size = New-Object System.Drawing.Size(130,23)
     $txtInstallTime.Text = [string]$defaults.installTimeMinutes
     $scrollPanel.Controls.Add($txtInstallTime)
 
     $lblRestartBehavior = New-Object System.Windows.Forms.Label
     $lblRestartBehavior.Text = "Device restart behavior"
-    $lblRestartBehavior.Location = New-Object System.Drawing.Point(160,897)
+    $lblRestartBehavior.Location = New-Object System.Drawing.Point(160,947)
     $lblRestartBehavior.AutoSize = $true
     $scrollPanel.Controls.Add($lblRestartBehavior)
     $cmbRestartBehavior = New-Object System.Windows.Forms.ComboBox
-    $cmbRestartBehavior.Location = New-Object System.Drawing.Point(160,914)
+    $cmbRestartBehavior.Location = New-Object System.Drawing.Point(160,964)
     $cmbRestartBehavior.Size = New-Object System.Drawing.Size(350,23)
     $cmbRestartBehavior.DropDownStyle = "DropDownList"
     # Display labels are the exact wording the Intune portal's own
@@ -9358,7 +9429,7 @@ function Show-CreateInIntuneDialog {
 
     $chkAllowUninstall = New-Object System.Windows.Forms.CheckBox
     $chkAllowUninstall.Text = "Allow available uninstall"
-    $chkAllowUninstall.Location = New-Object System.Drawing.Point(525,916)
+    $chkAllowUninstall.Location = New-Object System.Drawing.Point(525,966)
     $chkAllowUninstall.AutoSize = $true
     $chkAllowUninstall.Checked = [bool]$defaults.allowAvailableUninstall
     $scrollPanel.Controls.Add($chkAllowUninstall)
@@ -9366,12 +9437,12 @@ function Show-CreateInIntuneDialog {
     # --- Return codes ---
     $lblReturnCodes = New-Object System.Windows.Forms.Label
     $lblReturnCodes.Text = "Return codes"
-    $lblReturnCodes.Location = New-Object System.Drawing.Point(15,950)
+    $lblReturnCodes.Location = New-Object System.Drawing.Point(15,1000)
     $lblReturnCodes.AutoSize = $true
     $scrollPanel.Controls.Add($lblReturnCodes)
 
     $grdReturnCodes = New-Object System.Windows.Forms.DataGridView
-    $grdReturnCodes.Location = New-Object System.Drawing.Point(15,969)
+    $grdReturnCodes.Location = New-Object System.Drawing.Point(15,1019)
     $grdReturnCodes.Size = New-Object System.Drawing.Size(460,110)
     $grdReturnCodes.AllowUserToAddRows = $false
     $grdReturnCodes.AllowUserToDeleteRows = $false
@@ -9391,7 +9462,7 @@ function Show-CreateInIntuneDialog {
 
     $btnAddReturnCode = New-Object System.Windows.Forms.Button
     $btnAddReturnCode.Text = "Add row"
-    $btnAddReturnCode.Location = New-Object System.Drawing.Point(485,969)
+    $btnAddReturnCode.Location = New-Object System.Drawing.Point(485,1019)
     $btnAddReturnCode.Size = New-Object System.Drawing.Size(120,26)
     $scrollPanel.Controls.Add($btnAddReturnCode)
     $btnAddReturnCode.Add_Click({
@@ -9401,7 +9472,7 @@ function Show-CreateInIntuneDialog {
 
     $btnRemoveReturnCode = New-Object System.Windows.Forms.Button
     $btnRemoveReturnCode.Text = "Remove row"
-    $btnRemoveReturnCode.Location = New-Object System.Drawing.Point(485,999)
+    $btnRemoveReturnCode.Location = New-Object System.Drawing.Point(485,1049)
     $btnRemoveReturnCode.Size = New-Object System.Drawing.Size(120,26)
     $scrollPanel.Controls.Add($btnRemoveReturnCode)
     $btnRemoveReturnCode.Add_Click({
@@ -9464,59 +9535,84 @@ function Show-CreateInIntuneDialog {
         $parsedCpu = 0; [void][int]::TryParse($txtCpuSpeed.Text.Trim(), [ref]$parsedCpu)
         $parsedInstallTime = 0; [void][int]::TryParse($txtInstallTime.Text.Trim(), [ref]$parsedInstallTime)
 
-        # {Label; Current; Default} rows, plain display strings only - built
-        # by hand rather than through Get-CatalogMetadataFieldDiffs, which
-        # compares a different (and wider, description/publisher/notes
-        # included) field set than this button intentionally touches.
+        # Truncates a one-line value for the confirmation list below - the
+        # full current value is already visible on the form itself right
+        # above this button, so this only needs to say ENOUGH to recognize
+        # which setting is which, not reproduce it in full.
+        function Get-ShortDisplayValue([string]$Text, [int]$MaxLen = 70) {
+            if ([string]::IsNullOrWhiteSpace($Text)) { return "(blank)" }
+            $oneLine = ($Text -replace '\r?\n', ' ').Trim()
+            if ($oneLine.Length -gt $MaxLen) { return $oneLine.Substring(0, $MaxLen) + "..." }
+            return $oneLine
+        }
+
+        # {Label; Current; Default; Display} rows - built by hand rather
+        # than through Get-CatalogMetadataFieldDiffs, which compares a
+        # different (and wider, description/publisher/notes included)
+        # field set than this button intentionally touches. Display is a
+        # short, human-readable one-liner for the confirmation dialog -
+        # multi-line/large values (detection script, return codes) get a
+        # plain-English description there instead of a raw dump, which is
+        # unreadable at any dialog size and duplicates what's already
+        # visible on the form itself.
         $changeRows = New-Object System.Collections.Generic.List[object]
         if ($txtInstall.Text -ne $defaults.installCommand) {
-            $changeRows.Add([pscustomobject]@{ Label = "Install command"; Current = $txtInstall.Text; Default = $defaults.installCommand })
+            $changeRows.Add([pscustomobject]@{ Label = "Install command"; Display = "Install command: $(Get-ShortDisplayValue $txtInstall.Text)  ->  $(Get-ShortDisplayValue $defaults.installCommand)" })
         }
         if ($txtUninstall.Text -ne $defaults.uninstallCommand) {
-            $changeRows.Add([pscustomobject]@{ Label = "Uninstall command"; Current = $txtUninstall.Text; Default = $defaults.uninstallCommand })
+            $changeRows.Add([pscustomobject]@{ Label = "Uninstall command"; Display = "Uninstall command: $(Get-ShortDisplayValue $txtUninstall.Text)  ->  $(Get-ShortDisplayValue $defaults.uninstallCommand)" })
         }
         $defaultDetSummary = if ($defaults.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $defaults.detectionRule -IndentLevel 0 } else { "" }
         $currentDetSummary = if ($currentDetection -and $currentDetection.Type -eq "Script") { ConvertTo-DetectionRuleJson -DetectionRule $currentDetection -IndentLevel 0 } else { "(non-script detection method)" }
         if ($cmbDetectionType.SelectedIndex -ne 0 -or $currentDetSummary -ne $defaultDetSummary) {
-            $changeRows.Add([pscustomobject]@{ Label = "Detection rule"; Current = $currentDetSummary; Default = $defaultDetSummary })
+            $detDisplay = if ($cmbDetectionType.SelectedIndex -ne 0) { "Detection rule: switches from a non-script detection method back to the standard Winget detection script" } else { "Detection rule: replaced with the standard Winget detection script" }
+            $changeRows.Add([pscustomobject]@{ Label = "Detection rule"; Display = $detDisplay })
         }
         $currentArchText = ($currentArches -join ",")
         if ($currentArchText -ne $defaults.architecture) {
-            $changeRows.Add([pscustomobject]@{ Label = "Architecture"; Current = $currentArchText; Default = $defaults.architecture })
+            $archDisplay = if ($currentArchText) { $currentArchText } else { "(none selected)" }
+            $changeRows.Add([pscustomobject]@{ Label = "Architecture"; Display = "Architecture: $archDisplay  ->  $($defaults.architecture)" })
         }
         if ($currentMinOsKey -ne $defaults.minOSKey) {
-            $changeRows.Add([pscustomobject]@{ Label = "Minimum OS"; Current = $currentMinOsKey; Default = $defaults.minOSKey })
+            $curOsLabel = if ($currentMinOsKey) { Get-FriendlyMinOsRelease -RawValue $currentMinOsKey } else { "(none selected)" }
+            $defOsLabel = Get-FriendlyMinOsRelease -RawValue $defaults.minOSKey
+            $changeRows.Add([pscustomobject]@{ Label = "Minimum OS"; Display = "Minimum OS: $curOsLabel  ->  $defOsLabel" })
         }
         $currentDepText = (@($currentDepNames) | Sort-Object) -join ", "
         $defaultDepText = (@($defaults.dependencies) | Sort-Object) -join ", "
         if ($currentDepText -ne $defaultDepText) {
-            $changeRows.Add([pscustomobject]@{ Label = "Dependencies"; Current = $currentDepText; Default = $defaultDepText })
+            $curDepDisplay = if ($currentDepText) { $currentDepText } else { "(none)" }
+            $defDepDisplay = if ($defaultDepText) { $defaultDepText } else { "(none)" }
+            $changeRows.Add([pscustomobject]@{ Label = "Dependencies"; Display = "Dependencies: $curDepDisplay  ->  $defDepDisplay" })
         }
         if ($parsedDisk -ne $defaults.minDiskSpaceMB) {
-            $changeRows.Add([pscustomobject]@{ Label = "Disk space (MB)"; Current = $parsedDisk; Default = $defaults.minDiskSpaceMB })
+            $changeRows.Add([pscustomobject]@{ Label = "Disk space (MB)"; Display = "Disk space (MB): $parsedDisk  ->  $($defaults.minDiskSpaceMB)" })
         }
         if ($parsedMem -ne $defaults.minMemoryMB) {
-            $changeRows.Add([pscustomobject]@{ Label = "Memory (MB)"; Current = $parsedMem; Default = $defaults.minMemoryMB })
+            $changeRows.Add([pscustomobject]@{ Label = "Memory (MB)"; Display = "Memory (MB): $parsedMem  ->  $($defaults.minMemoryMB)" })
         }
         if ($parsedProc -ne $defaults.minProcessors) {
-            $changeRows.Add([pscustomobject]@{ Label = "Min. processors"; Current = $parsedProc; Default = $defaults.minProcessors })
+            $changeRows.Add([pscustomobject]@{ Label = "Min. processors"; Display = "Min. processors: $parsedProc  ->  $($defaults.minProcessors)" })
         }
         if ($parsedCpu -ne $defaults.minCpuSpeedMHz) {
-            $changeRows.Add([pscustomobject]@{ Label = "Min. CPU speed (MHz)"; Current = $parsedCpu; Default = $defaults.minCpuSpeedMHz })
+            $changeRows.Add([pscustomobject]@{ Label = "Min. CPU speed (MHz)"; Display = "Min. CPU speed (MHz): $parsedCpu  ->  $($defaults.minCpuSpeedMHz)" })
         }
         if ($parsedInstallTime -ne $defaults.installTimeMinutes) {
-            $changeRows.Add([pscustomobject]@{ Label = "Install time (mins)"; Current = $parsedInstallTime; Default = $defaults.installTimeMinutes })
+            $changeRows.Add([pscustomobject]@{ Label = "Install time (mins)"; Display = "Install time (mins): $parsedInstallTime  ->  $($defaults.installTimeMinutes)" })
         }
         if ($currentRestartBehavior -ne $defaults.deviceRestartBehavior) {
-            $changeRows.Add([pscustomobject]@{ Label = "Device restart behavior"; Current = $currentRestartBehavior; Default = $defaults.deviceRestartBehavior })
+            $curRbLabel = if ($currentRestartBehavior) { ($restartBehaviorMap.Keys | Where-Object { $restartBehaviorMap[$_] -eq $currentRestartBehavior } | Select-Object -First 1) } else { $null }
+            $defRbLabel = $restartBehaviorMap.Keys | Where-Object { $restartBehaviorMap[$_] -eq $defaults.deviceRestartBehavior } | Select-Object -First 1
+            $changeRows.Add([pscustomobject]@{ Label = "Device restart behavior"; Display = "Device restart behavior: $(if ($curRbLabel) { $curRbLabel } else { '(none selected)' })  ->  $defRbLabel" })
         }
         if ($chkAllowUninstall.Checked -ne [bool]$defaults.allowAvailableUninstall) {
-            $changeRows.Add([pscustomobject]@{ Label = "Allow available uninstall"; Current = $chkAllowUninstall.Checked; Default = [bool]$defaults.allowAvailableUninstall })
+            $changeRows.Add([pscustomobject]@{ Label = "Allow available uninstall"; Display = "Allow available uninstall: $($chkAllowUninstall.Checked)  ->  $([bool]$defaults.allowAvailableUninstall)" })
         }
         $currentRcSummary = if ($currentReturnCodes.Count -gt 0) { (@($currentReturnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
         $defaultRcSummary = if (@($defaults.returnCodes).Count -gt 0) { (@($defaults.returnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
         if ($currentRcSummary -ne $defaultRcSummary) {
-            $changeRows.Add([pscustomobject]@{ Label = "Return codes"; Current = $currentRcSummary; Default = $defaultRcSummary })
+            $rcToText = { param($rcList) if (@($rcList).Count -eq 0) { "(none)" } else { (@($rcList) | ForEach-Object { "$($_.returnCode) ($($_.type))" }) -join ", " } }
+            $changeRows.Add([pscustomobject]@{ Label = "Return codes"; Display = "Return codes: $(& $rcToText $currentReturnCodes)  ->  $(& $rcToText $defaults.returnCodes)" })
         }
 
         if ($changeRows.Count -eq 0) {
@@ -9524,15 +9620,8 @@ function Show-CreateInIntuneDialog {
             return
         }
 
-        $summaryLines = New-Object System.Collections.Generic.List[string]
-        foreach ($cr in $changeRows) {
-            $curText = if ([string]::IsNullOrWhiteSpace([string]$cr.Current)) { "(blank)" } else { [string]$cr.Current }
-            $defText = if ([string]::IsNullOrWhiteSpace([string]$cr.Default)) { "(blank)" } else { [string]$cr.Default }
-            $summaryLines.Add("$($cr.Label): $curText  ->  $defText")
-        }
-        $promptText = "Reset the following $($changeRows.Count) setting(s) to their computed defaults?`n`n$($summaryLines -join "`n")"
-        $confirmResult = [System.Windows.Forms.MessageBox]::Show($promptText, "Set default values", "YesNo", "Question")
-        if ($confirmResult -ne "Yes") { return }
+        $confirmResult = Show-SetDefaultsConfirmDialog -Lines (@($changeRows | ForEach-Object { $_.Display })) -ParentForm $dlg
+        if (-not $confirmResult) { return }
 
         foreach ($cr in $changeRows) {
             switch ($cr.Label) {
