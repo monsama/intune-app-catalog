@@ -8152,6 +8152,7 @@ function Show-DependencyOverviewDialog {
         $procBoxRef = $procBox
         $gridRef = $grid
         $rowByAppNameRef = $rowByAppName
+        $appsRefRef = $appsRef
 
         # Purely read-only here - this never writes anything back into
         # $appsRef or the catalog, unlike Show-SyncMetadataDialog which
@@ -8200,7 +8201,7 @@ function Show-DependencyOverviewDialog {
                 }
 
                 $liveDeps = @($oneResult.Metadata.dependencies) | Sort-Object
-                $catalogApp = $appsRef | Where-Object { $_.appName -eq $oneResult.AppName } | Select-Object -First 1
+                $catalogApp = $appsRefRef | Where-Object { $_.appName -eq $oneResult.AppName } | Select-Object -First 1
                 $localDepsSorted = @($catalogApp.metadata.dependencies) | Sort-Object
 
                 $liveJoined = $liveDeps -join "|"
