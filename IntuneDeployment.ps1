@@ -1991,13 +1991,31 @@ try {
         Write-Host "  (no existing assignments on this app)" -ForegroundColor Gray
     }
 
+    # Blank/whitespace entries skipped here, same as the group-creation loop
+    # above already skips them ([string]::IsNullOrWhiteSpace($groupName)) -
+    # left in, a blank would become a real key in $newGroupSet and show up
+    # in $toAdd below (Preview promising "will add" for it), but never gets
+    # an actual assignment built later since $groupIdByName only ever has
+    # entries for groups that were actually looked up/created, silently
+    # under-delivering what Preview said would happen.
     $newGroupSet = @{}
-    foreach ($g in @($Config.RequiredGroups))  { $newGroupSet[$g] = "required" }
-    foreach ($g in @($Config.AvailableGroups)) { $newGroupSet[$g] = "available" }
-    foreach ($g in @($Config.UninstallGroups)) { $newGroupSet[$g] = "uninstall" }
+    foreach ($g in @($Config.RequiredGroups))  { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "required" } }
+    foreach ($g in @($Config.AvailableGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "available" } }
+    foreach ($g in @($Config.UninstallGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "uninstall" } }
 
-    $toRemove = @($currentByGroup.Keys | Where-Object { -not $newGroupSet.ContainsKey($_) })
-    $toAdd    = @($newGroupSet.Keys | Where-Object { -not $currentByGroup.ContainsKey($_) })
+    # Diffs on INTENT too, not just presence of the name - a group that's
+    # currently "required" but the catalog now wants "available" (moving a
+    # group between Required/Available/Uninstall is a normal, supported
+    # catalog edit) is a real change: Graph doesn't offer an in-place
+    # "change this assignment's intent" - it's remove-the-old-intent,
+    # add-the-new-one. Missing the intent check here used to make that
+    # exact case invisible: same name present in both sets meant it was
+    # counted as neither toAdd nor toRemove, so the diff (and this app's
+    # own $btnApply gate in the GUI, which enables only when either count
+    # is nonzero) silently reported "no change" even though Intune still
+    # had the group under the OLD intent.
+    $toRemove = @($currentByGroup.Keys | Where-Object { -not $newGroupSet.ContainsKey($_) -or $newGroupSet[$_] -ne $currentByGroup[$_] })
+    $toAdd    = @($newGroupSet.Keys | Where-Object { -not $currentByGroup.ContainsKey($_) -or $currentByGroup[$_] -ne $newGroupSet[$_] })
     if ($toRemove.Count -gt 0) {
         Write-Host "  WILL BE REMOVED:" -ForegroundColor Yellow
         foreach ($g in $toRemove) { Write-Host "    - [$($currentByGroup[$g])] $g" -ForegroundColor Yellow }
@@ -2279,13 +2297,22 @@ try {
             }
         }
 
+        # Blank/whitespace entries skipped - see the matching note in
+        # $Script:EmbeddedTargetedAssignScript for why: left in, a blank
+        # becomes a real $newGroupSet key that Preview promises to add but
+        # Apply never actually builds an assignment for.
         $newGroupSet = @{}
-        foreach ($g in @($app.RequiredGroups))  { $newGroupSet[$g] = "required" }
-        foreach ($g in @($app.AvailableGroups)) { $newGroupSet[$g] = "available" }
-        foreach ($g in @($app.UninstallGroups)) { $newGroupSet[$g] = "uninstall" }
+        foreach ($g in @($app.RequiredGroups))  { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "required" } }
+        foreach ($g in @($app.AvailableGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "available" } }
+        foreach ($g in @($app.UninstallGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "uninstall" } }
 
-        $toRemove = @($currentByGroup.Keys | Where-Object { -not $newGroupSet.ContainsKey($_) })
-        $toAdd    = @($newGroupSet.Keys | Where-Object { -not $currentByGroup.ContainsKey($_) })
+        # Diffs on INTENT too, not just presence of the name - see the
+        # matching note in $Script:EmbeddedTargetedAssignScript for why: a
+        # group moved between Required/Available/Uninstall for an app used
+        # to be invisible to this diff (same name on both sides), reporting
+        # "no change" even though Intune still had it under the old intent.
+        $toRemove = @($currentByGroup.Keys | Where-Object { -not $newGroupSet.ContainsKey($_) -or $newGroupSet[$_] -ne $currentByGroup[$_] })
+        $toAdd    = @($newGroupSet.Keys | Where-Object { -not $currentByGroup.ContainsKey($_) -or $currentByGroup[$_] -ne $newGroupSet[$_] })
 
         if ($toRemove.Count -eq 0 -and $toAdd.Count -eq 0) {
             Write-Host "  (no change)" -ForegroundColor Gray
@@ -3677,9 +3704,20 @@ function ConvertTo-AppRecord {
         # any app this hasn't been fetched for.
         intuneAppType    = [string]$Raw.intuneAppType
         intuneAppVersion = [string]$Raw.intuneAppVersion
-        requiredFor  = @($Raw.requiredFor)
-        availableFor = @($Raw.availableFor)
-        uninstallFor = @($Raw.uninstallFor)
+        # Filtered, not just wrapped in @() - a missing/null field in the
+        # source JSON (an older catalog entry from before groups existed,
+        # or hand-edited JSON) makes $Raw.requiredFor itself $null, and
+        # @($null) in PowerShell is a ONE-element array containing $null,
+        # not an empty array. Left unfiltered, that single $null element
+        # then flows everywhere this field is read - inflating
+        # @($_.requiredFor).Count to 1 for an app with genuinely zero
+        # groups (miscounting it as "has a group" in every eligibility
+        # check that relies on that Count), and reaching
+        # CheckedListBox.Items.Add($null, ...) in Show-RemoveGroupFromAppsDialog's
+        # New-GroupRemovalBox, which throws ArgumentNullException outright.
+        requiredFor  = @(@($Raw.requiredFor)  | Where-Object { $null -ne $_ })
+        availableFor = @(@($Raw.availableFor) | Where-Object { $null -ne $_ })
+        uninstallFor = @(@($Raw.uninstallFor) | Where-Object { $null -ne $_ })
         metadata     = $metadata
     }
 }
