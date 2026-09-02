@@ -11513,6 +11513,166 @@ function Show-SyncMetadataDialog {
     [void]$dlg.ShowDialog($form)
 }
 
+# Bulk-REMOVES one or more groups from however many catalog apps are
+# checked - the "unassign" counterpart to Show-AddFavoriteGroupToAppsDialog
+# just below (and, unlike that one, not favorites-only: it lists every
+# group actually referenced across $CandidateApps, since the whole point is
+# unassigning a group that's already there, favorite or not). A group is
+# removed from ALL THREE of an app's Required/Available/Uninstall lists at
+# once, wherever it's actually present - not just one intent - since
+# "unassign this group from this app" means the app shouldn't reference it
+# under any intent, not that it should move from one bucket to another.
+# Purely a catalog-side edit, same division of labor as the Add dialog:
+# this only removes the group NAME from the local catalog and saves: it
+# does not touch Intune. Pushing the removal to Intune is still "Batch
+# assign groups..."'s job - its Apply step already removes any live
+# assignment that's no longer in the catalog's current group set, so
+# running Preview/Apply right after this is what actually unassigns it.
+# Returns the number of apps actually changed, or $null if cancelled.
+function Show-RemoveGroupFromAppsDialog {
+    param([object[]]$CandidateApps)
+
+    $allGroupNames = @($CandidateApps | ForEach-Object { @($_.requiredFor) + @($_.availableFor) + @($_.uninstallFor) } | Select-Object -Unique | Sort-Object)
+    if ($allGroupNames.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("None of these apps have any group set - nothing to remove.", "No groups", "OK", "Information") | Out-Null
+        return $null
+    }
+
+    $appsRef = $Script:Apps
+    $unsavedBoxRef = $Script:UnsavedChangesBox
+    $linkedFilePathRef = $Script:LinkedFilePath
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Remove group from apps"
+    $dlg.ClientSize = New-Object System.Drawing.Size(460, 700)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+
+    $lblGroups = New-Object System.Windows.Forms.Label
+    $lblGroups.Text = "Groups to remove (unchecked ones are left alone)"
+    $lblGroups.Location = New-Object System.Drawing.Point(15,12)
+    $lblGroups.AutoSize = $true
+    $dlg.Controls.Add($lblGroups)
+
+    # Unlike the Add dialog's app list, these start UNCHECKED - removal is
+    # destructive (it takes effect on Intune the moment Batch assign
+    # groups' Apply step runs afterward), so which group(s) get removed
+    # should always be a deliberate pick, never a default-everything list
+    # someone has to remember to uncheck.
+    $clbGroups = New-Object System.Windows.Forms.CheckedListBox
+    $clbGroups.Location = New-Object System.Drawing.Point(15,32)
+    $clbGroups.Size = New-Object System.Drawing.Size(430,220)
+    $clbGroups.CheckOnClick = $true
+    $dlg.Controls.Add($clbGroups)
+    foreach ($groupName in $allGroupNames) { [void]$clbGroups.Items.Add($groupName, $false) }
+
+    $lblApps = New-Object System.Windows.Forms.Label
+    $lblApps.Text = "From these apps (unchecked ones below are left alone)"
+    $lblApps.Location = New-Object System.Drawing.Point(15,264)
+    $lblApps.AutoSize = $true
+    $dlg.Controls.Add($lblApps)
+
+    $clbApps = New-Object System.Windows.Forms.CheckedListBox
+    $clbApps.Location = New-Object System.Drawing.Point(15,284)
+    $clbApps.Size = New-Object System.Drawing.Size(430,330)
+    $clbApps.CheckOnClick = $true
+    $dlg.Controls.Add($clbApps)
+    foreach ($candidateApp in ($CandidateApps | Sort-Object appName)) {
+        [void]$clbApps.Items.Add($candidateApp.appName, $true)
+    }
+
+    $btnSelectAll = New-Object System.Windows.Forms.Button
+    $btnSelectAll.Text = "Select all"
+    $btnSelectAll.Location = New-Object System.Drawing.Point(15,620)
+    $btnSelectAll.Size = New-Object System.Drawing.Size(100,26)
+    $dlg.Controls.Add($btnSelectAll)
+
+    $btnSelectNone = New-Object System.Windows.Forms.Button
+    $btnSelectNone.Text = "Select none"
+    $btnSelectNone.Location = New-Object System.Drawing.Point(125,620)
+    $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
+    $dlg.Controls.Add($btnSelectNone)
+
+    # Both act on the APPS list only - the groups list keeps its own
+    # deliberate picks regardless, same reasoning as starting it unchecked
+    # above.
+    $btnSelectAll.Add_Click({
+        for ($ci = 0; $ci -lt $clbApps.Items.Count; $ci++) { $clbApps.SetItemChecked($ci, $true) }
+    }.GetNewClosure())
+    $btnSelectNone.Add_Click({
+        for ($ci = 0; $ci -lt $clbApps.Items.Count; $ci++) { $clbApps.SetItemChecked($ci, $false) }
+    }.GetNewClosure())
+
+    $btnRemove = New-Object System.Windows.Forms.Button
+    $btnRemove.Text = "Remove from checked apps"
+    $btnRemove.Location = New-Object System.Drawing.Point(240,658)
+    $btnRemove.Size = New-Object System.Drawing.Size(205,30)
+    $dlg.Controls.Add($btnRemove)
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Cancel"
+    $btnCancel.Location = New-Object System.Drawing.Point(140,658)
+    $btnCancel.Size = New-Object System.Drawing.Size(90,30)
+    $dlg.Controls.Add($btnCancel)
+
+    $resultBox = @{ Count = $null }
+
+    $btnRemove.Add_Click({
+        $checkedGroupNames = @($clbGroups.CheckedItems | ForEach-Object { [string]$_ })
+        if ($checkedGroupNames.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Check at least one group above first.", "No group selected", "OK", "Warning") | Out-Null
+            return
+        }
+        $checkedAppNames = @($clbApps.CheckedItems | ForEach-Object { [string]$_ })
+        if ($checkedAppNames.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Check at least one app first.", "Nothing checked", "OK", "Warning") | Out-Null
+            return
+        }
+
+        $r = [System.Windows.Forms.MessageBox]::Show(
+            "Removes $($checkedGroupNames.Count) group(s) from $($checkedAppNames.Count) app(s) in the LOCAL CATALOG (Required/Available/Uninstall, wherever each one appears). This alone does not change anything in Intune - run `"Batch assign groups...`" (Preview, then Apply) right after this to actually unassign them there too.`n`nContinue?",
+            "Confirm removal", "YesNo", "Warning")
+        if ($r -ne "Yes") { return }
+
+        $changedCount = 0
+        foreach ($checkedAppName in $checkedAppNames) {
+            $target = $appsRef | Where-Object { $_.appName -eq $checkedAppName } | Select-Object -First 1
+            if (-not $target) { continue }
+            $targetChanged = $false
+            foreach ($fieldName in @("requiredFor", "availableFor", "uninstallFor")) {
+                $before = @($target.$fieldName)
+                $after = @($before | Where-Object { $checkedGroupNames -notcontains $_ })
+                if ($after.Count -ne $before.Count) {
+                    $target.$fieldName = $after
+                    $targetChanged = $true
+                }
+            }
+            if ($targetChanged) { $changedCount++ }
+        }
+        if ($changedCount -gt 0) {
+            $unsavedBoxRef.Value = $true
+            [void](Save-AppsToFile -Path $linkedFilePathRef)
+        }
+        $resultBox.Count = $changedCount
+        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $dlg.Close()
+    }.GetNewClosure())
+
+    $btnCancel.Add_Click({
+        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+        $dlg.Close()
+    }.GetNewClosure())
+
+    $dlg.CancelButton = $btnCancel
+    $dlg.AcceptButton = $btnRemove
+    Set-Theme -Control $dlg
+    $dlgResult = $dlg.ShowDialog($form)
+    if ($dlgResult -eq [System.Windows.Forms.DialogResult]::OK) { return $resultBox.Count }
+    return $null
+}
+
 # Bulk-adds ONE favorite group, at one intent (Required/Available/
 # Uninstall), to however many catalog apps are checked - the piece
 # "Batch assign groups..." itself never had: that dialog only ever
@@ -11807,6 +11967,12 @@ function Show-BatchAssignDialog {
     $btnAddFavoriteGroup.Size = New-Object System.Drawing.Size(180,32)
     $dlg.Controls.Add($btnAddFavoriteGroup)
 
+    $btnRemoveGroup = New-Object System.Windows.Forms.Button
+    $btnRemoveGroup.Text = "- Remove group..."
+    $btnRemoveGroup.Location = New-Object System.Drawing.Point(365,476)
+    $btnRemoveGroup.Size = New-Object System.Drawing.Size(165,32)
+    $dlg.Controls.Add($btnRemoveGroup)
+
     $btnApply = New-Object System.Windows.Forms.Button
     $btnApply.Text = "Apply changes..."
     $btnApply.Location = New-Object System.Drawing.Point(535,476)
@@ -11944,34 +12110,50 @@ function Show-BatchAssignDialog {
         & $runBatch "Apply"
     }.GetNewClosure())
 
+    # Shared by both the Add and Remove favorite-group buttons below - both
+    # only ever change catalog data (via $candidateApps, whose app objects
+    # are the same live references $Script:Apps holds), then need the SAME
+    # re-derive-and-Preview-again refresh: eligibility and the Preview/
+    # Apply snapshot are re-derived from $candidateApps and written into
+    # the SAME boxes $runBatch already closed over (see the note by
+    # $eligibleAppsBox/$appsForScriptBox above for why boxes, not plain
+    # variables, are needed here), then Preview just re-runs in place - no
+    # second window. Re-filtering rather than assuming the checked set is
+    # now exactly right matters for Add specifically: an app that had NO
+    # groups at all before is only newly eligible if the group was
+    # actually added to it, not to every app in $candidateApps.
+    $refreshAfterCatalogEdit = {
+        $eligibleAppsBox.Value = @($candidateApps | Where-Object {
+            $_.appId -and (@($_.requiredFor).Count -gt 0 -or @($_.availableFor).Count -gt 0 -or @($_.uninstallFor).Count -gt 0)
+        })
+        $appsForScriptBox.Value = @($eligibleAppsBox.Value | ForEach-Object {
+            [pscustomobject]@{
+                AppName         = $_.appName
+                AppId           = $_.appId
+                RequiredGroups  = @($_.requiredFor)
+                AvailableGroups = @($_.availableFor)
+                UninstallGroups = @($_.uninstallFor)
+            }
+        })
+        $scopeText = if ($isScoped) { "$($eligibleAppsBox.Value.Count) of your selected app(s) that have" } else { "every app with" }
+        $lblIntro.Text = "Checks $scopeText an App ID and at least one group against Intune's CURRENT assignments. Nothing changes until you click Apply below."
+        & $runBatch "Preview"
+    }.GetNewClosure()
+
     $btnAddFavoriteGroup.Add_Click({
         $addedCount = Show-AddFavoriteGroupToAppsDialog -CandidateApps $candidateApps
-        if ($addedCount -gt 0) {
-            # Refreshed in place - re-derive eligibility and the Preview/
-            # Apply snapshot from $candidateApps (now updated by the dialog
-            # above) and write them into the SAME boxes $runBatch already
-            # closed over, then just re-run Preview. Re-filtering rather
-            # than assuming every candidate is now eligible matters here:
-            # an app that had NO groups at all before is only newly
-            # eligible if the group was actually added to it specifically
-            # (Show-AddFavoriteGroupToAppsDialog lets you pick which of the
-            # candidates get it), not to every app in $candidateApps.
-            $eligibleAppsBox.Value = @($candidateApps | Where-Object {
-                $_.appId -and (@($_.requiredFor).Count -gt 0 -or @($_.availableFor).Count -gt 0 -or @($_.uninstallFor).Count -gt 0)
-            })
-            $appsForScriptBox.Value = @($eligibleAppsBox.Value | ForEach-Object {
-                [pscustomobject]@{
-                    AppName         = $_.appName
-                    AppId           = $_.appId
-                    RequiredGroups  = @($_.requiredFor)
-                    AvailableGroups = @($_.availableFor)
-                    UninstallGroups = @($_.uninstallFor)
-                }
-            })
-            $scopeText = if ($isScoped) { "$($eligibleAppsBox.Value.Count) of your selected app(s) that have" } else { "every app with" }
-            $lblIntro.Text = "Checks $scopeText an App ID and at least one group against Intune's CURRENT assignments. Nothing changes until you click Apply below."
-            & $runBatch "Preview"
-        }
+        if ($addedCount -gt 0) { & $refreshAfterCatalogEdit }
+    }.GetNewClosure())
+
+    # Catalog-side only, same as Add above - removes the picked group(s)
+    # from the picked apps' requiredFor/availableFor/uninstallFor and
+    # saves, but doesn't touch Intune itself. The refresh above re-runs
+    # Preview right after, which is what actually SHOWS the now-stale
+    # Intune assignment as something "Will remove" - Apply (still a
+    # separate, explicit click) is what pushes that removal to Intune.
+    $btnRemoveGroup.Add_Click({
+        $removedCount = Show-RemoveGroupFromAppsDialog -CandidateApps $candidateApps
+        if ($removedCount -gt 0) { & $refreshAfterCatalogEdit }
     }.GetNewClosure())
 
     $btnClose.Add_Click({
