@@ -12017,6 +12017,16 @@ function Show-BatchAssignDialog {
     $procBox = @{ Proc = $null }
     $previewDataBox = @{ Results = @() }
 
+    # Separate from $previewDataBox on purpose - that one is the grid's
+    # historical record (a successful Apply's own ToAdd/ToRemove is exactly
+    # what it JUST did, and the grid should keep showing that as a record
+    # of what happened), while THIS is "how much is still outstanding
+    # against Intune right now", which is 0/0 the instant an Apply
+    # succeeds - conflating the two used to make Close's own pending-
+    # changes warning below fire right after a successful Apply, reading
+    # "what was just applied" as if it were still unapplied.
+    $pendingBox = @{ TotalAdd = 0; TotalRemove = 0 }
+
     # Rebuilds the grid from whatever preview/apply results just came back.
     $populateGrid = {
         param($Results)
@@ -12068,6 +12078,7 @@ function Show-BatchAssignDialog {
         $configPathRef = $configPath
         $procBoxRef = $procBox
         $populateGridRef = $populateGrid
+        $pendingBoxRef = $pendingBox
         $modeRef = $Mode
         $rtbLogRef = $rtbLog
 
@@ -12090,10 +12101,22 @@ function Show-BatchAssignDialog {
                             $btnApplyRef.Enabled = ($totalAdd -gt 0 -or $totalRemove -gt 0)
                             $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
                             $lblStatusRef.Text = "Checked $(@($results).Count) app(s) - $totalAdd to add, $totalRemove to remove in total."
+                            # Preview's own diff IS the outstanding amount.
+                            $pendingBoxRef.TotalAdd = $totalAdd
+                            $pendingBoxRef.TotalRemove = $totalRemove
                         }
                         else {
                             $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
                             $lblStatusRef.Text = "Applied. $(@($results).Count) app(s) processed."
+                            # A successful Apply just pushed exactly this
+                            # diff to Intune - nothing is outstanding
+                            # anymore, even though $totalAdd/$totalRemove
+                            # above (and the grid $populateGridRef just
+                            # populated from the same $results) still show
+                            # those same numbers as a record of what was
+                            # done.
+                            $pendingBoxRef.TotalAdd = 0
+                            $pendingBoxRef.TotalRemove = 0
                         }
                     }
                     else {
@@ -12191,18 +12214,20 @@ function Show-BatchAssignDialog {
             try { $procBox.Proc.Kill() } catch { }
         }
 
-        # Warns on whatever the last Preview found, regardless of where it
-        # came from - a group added/removed via the buttons above (which
-        # already saved to the LOCAL catalog the moment you clicked them,
-        # Apply or not) just as much as any pre-existing drift this dialog
-        # opened with. The catalog change itself is never at risk of being
-        # lost here; what closing without Apply actually leaves behind is
-        # Intune still not matching it.
-        $totalAddPending = ($previewDataBox.Results | ForEach-Object { @($_.ToAdd).Count } | Measure-Object -Sum).Sum
-        $totalRemovePending = ($previewDataBox.Results | ForEach-Object { @($_.ToRemove).Count } | Measure-Object -Sum).Sum
-        if ($totalAddPending -gt 0 -or $totalRemovePending -gt 0) {
+        # Warns on whatever's still outstanding against Intune - a group
+        # added/removed via the buttons above (which already saved to the
+        # LOCAL catalog the moment you clicked them, Apply or not) just as
+        # much as any pre-existing drift this dialog opened with. Reads
+        # $pendingBox, NOT $previewDataBox.Results - the latter is the
+        # grid's historical record and, right after a successful Apply,
+        # still shows the diff that Apply just PUSHED (that's the whole
+        # point of it as a record), which would make this warning fire
+        # immediately after every successful Apply if used here instead.
+        # $pendingBox is exactly "still outstanding right now": set by
+        # Preview, zeroed by a successful Apply - see its own comment above.
+        if ($pendingBox.TotalAdd -gt 0 -or $pendingBox.TotalRemove -gt 0) {
             $r = [System.Windows.Forms.MessageBox]::Show(
-                "$totalAddPending assignment(s) to add and $totalRemovePending to remove haven't been applied to Intune yet.`n`nAny local catalog changes from Add/Remove group above are already saved either way - this only affects Intune. Close without applying?",
+                "$($pendingBox.TotalAdd) assignment(s) to add and $($pendingBox.TotalRemove) to remove haven't been applied to Intune yet.`n`nAny local catalog changes from Add/Remove group above are already saved either way - this only affects Intune. Close without applying?",
                 "Unapplied changes", "YesNo", "Warning")
             if ($r -ne "Yes") { return }
         }
