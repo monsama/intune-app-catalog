@@ -21,10 +21,11 @@
         back to each app's own file - no export/import step. Its own toolbar covers the rest
         of the pipeline: "Package apps..." builds the .intunewin package(s) (same logic as the
         old 1_GenerateIntunePackage.ps1 / runDeployment.cmd) and its output streams into the
-        Log tab; "Batch deploy...", "Sync metadata...", and "Assign Groups..." (per app, from
-        the app editor, or "Batch assign groups..." across several) cover what
-        5_AssignGroupsAndNames.ps1 used to do - syncing Intune app names, Entra ID groups, and
-        assignments against the catalog - without a separate combined "Assign" step.
+        Log tab; "Batch deploy...", "Pull metadata and groups from Intune...", and "Push groups
+        to Intune (single app)..." (per app, from the app editor, or "Push groups to Intune
+        (multiple apps)..." across several) cover what 5_AssignGroupsAndNames.ps1 used to do -
+        syncing Intune app names, Entra ID groups, and assignments against the catalog -
+        without a separate combined "Assign" step.
 
     Log
         Shows the real-time combined output of whichever pipeline step ("Package apps...",
@@ -1991,13 +1992,31 @@ try {
         Write-Host "  (no existing assignments on this app)" -ForegroundColor Gray
     }
 
+    # Blank/whitespace entries skipped here, same as the group-creation loop
+    # above already skips them ([string]::IsNullOrWhiteSpace($groupName)) -
+    # left in, a blank would become a real key in $newGroupSet and show up
+    # in $toAdd below (Preview promising "will add" for it), but never gets
+    # an actual assignment built later since $groupIdByName only ever has
+    # entries for groups that were actually looked up/created, silently
+    # under-delivering what Preview said would happen.
     $newGroupSet = @{}
-    foreach ($g in @($Config.RequiredGroups))  { $newGroupSet[$g] = "required" }
-    foreach ($g in @($Config.AvailableGroups)) { $newGroupSet[$g] = "available" }
-    foreach ($g in @($Config.UninstallGroups)) { $newGroupSet[$g] = "uninstall" }
+    foreach ($g in @($Config.RequiredGroups))  { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "required" } }
+    foreach ($g in @($Config.AvailableGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "available" } }
+    foreach ($g in @($Config.UninstallGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "uninstall" } }
 
-    $toRemove = @($currentByGroup.Keys | Where-Object { -not $newGroupSet.ContainsKey($_) })
-    $toAdd    = @($newGroupSet.Keys | Where-Object { -not $currentByGroup.ContainsKey($_) })
+    # Diffs on INTENT too, not just presence of the name - a group that's
+    # currently "required" but the catalog now wants "available" (moving a
+    # group between Required/Available/Uninstall is a normal, supported
+    # catalog edit) is a real change: Graph doesn't offer an in-place
+    # "change this assignment's intent" - it's remove-the-old-intent,
+    # add-the-new-one. Missing the intent check here used to make that
+    # exact case invisible: same name present in both sets meant it was
+    # counted as neither toAdd nor toRemove, so the diff (and this app's
+    # own $btnApply gate in the GUI, which enables only when either count
+    # is nonzero) silently reported "no change" even though Intune still
+    # had the group under the OLD intent.
+    $toRemove = @($currentByGroup.Keys | Where-Object { -not $newGroupSet.ContainsKey($_) -or $newGroupSet[$_] -ne $currentByGroup[$_] })
+    $toAdd    = @($newGroupSet.Keys | Where-Object { -not $currentByGroup.ContainsKey($_) -or $currentByGroup[$_] -ne $newGroupSet[$_] })
     if ($toRemove.Count -gt 0) {
         Write-Host "  WILL BE REMOVED:" -ForegroundColor Yellow
         foreach ($g in $toRemove) { Write-Host "    - [$($currentByGroup[$g])] $g" -ForegroundColor Yellow }
@@ -2279,13 +2298,22 @@ try {
             }
         }
 
+        # Blank/whitespace entries skipped - see the matching note in
+        # $Script:EmbeddedTargetedAssignScript for why: left in, a blank
+        # becomes a real $newGroupSet key that Preview promises to add but
+        # Apply never actually builds an assignment for.
         $newGroupSet = @{}
-        foreach ($g in @($app.RequiredGroups))  { $newGroupSet[$g] = "required" }
-        foreach ($g in @($app.AvailableGroups)) { $newGroupSet[$g] = "available" }
-        foreach ($g in @($app.UninstallGroups)) { $newGroupSet[$g] = "uninstall" }
+        foreach ($g in @($app.RequiredGroups))  { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "required" } }
+        foreach ($g in @($app.AvailableGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "available" } }
+        foreach ($g in @($app.UninstallGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "uninstall" } }
 
-        $toRemove = @($currentByGroup.Keys | Where-Object { -not $newGroupSet.ContainsKey($_) })
-        $toAdd    = @($newGroupSet.Keys | Where-Object { -not $currentByGroup.ContainsKey($_) })
+        # Diffs on INTENT too, not just presence of the name - see the
+        # matching note in $Script:EmbeddedTargetedAssignScript for why: a
+        # group moved between Required/Available/Uninstall for an app used
+        # to be invisible to this diff (same name on both sides), reporting
+        # "no change" even though Intune still had it under the old intent.
+        $toRemove = @($currentByGroup.Keys | Where-Object { -not $newGroupSet.ContainsKey($_) -or $newGroupSet[$_] -ne $currentByGroup[$_] })
+        $toAdd    = @($newGroupSet.Keys | Where-Object { -not $currentByGroup.ContainsKey($_) -or $currentByGroup[$_] -ne $newGroupSet[$_] })
 
         if ($toRemove.Count -eq 0 -and $toAdd.Count -eq 0) {
             Write-Host "  (no change)" -ForegroundColor Gray
@@ -3677,9 +3705,20 @@ function ConvertTo-AppRecord {
         # any app this hasn't been fetched for.
         intuneAppType    = [string]$Raw.intuneAppType
         intuneAppVersion = [string]$Raw.intuneAppVersion
-        requiredFor  = @($Raw.requiredFor)
-        availableFor = @($Raw.availableFor)
-        uninstallFor = @($Raw.uninstallFor)
+        # Filtered, not just wrapped in @() - a missing/null field in the
+        # source JSON (an older catalog entry from before groups existed,
+        # or hand-edited JSON) makes $Raw.requiredFor itself $null, and
+        # @($null) in PowerShell is a ONE-element array containing $null,
+        # not an empty array. Left unfiltered, that single $null element
+        # then flows everywhere this field is read - inflating
+        # @($_.requiredFor).Count to 1 for an app with genuinely zero
+        # groups (miscounting it as "has a group" in every eligibility
+        # check that relies on that Count), and reaching
+        # CheckedListBox.Items.Add($null, ...) in Show-RemoveGroupFromAppsDialog's
+        # New-GroupRemovalBox, which throws ArgumentNullException outright.
+        requiredFor  = @(@($Raw.requiredFor)  | Where-Object { $null -ne $_ })
+        availableFor = @(@($Raw.availableFor) | Where-Object { $null -ne $_ })
+        uninstallFor = @(@($Raw.uninstallFor) | Where-Object { $null -ne $_ })
         metadata     = $metadata
     }
 }
@@ -5125,7 +5164,7 @@ function Show-AppIdMatchDialog {
     # the App ID for a catalog app that's never been linked to anything in
     # Intune, matched by NAME since there's nothing more reliable to go on
     # yet for those. An app that ALREADY has an App ID is deliberately left
-    # out here, not re-matched by name too - "Intune sync check..."'s own
+    # out here, not re-matched by name too - "Find apps missing from catalog..."'s own
     # "Renamed in Intune" already covers that same "does this app's stored
     # ID still make sense?" question, the correct direction: by the App ID
     # already on file (the durable identity), checking whether Intune's
@@ -5139,7 +5178,7 @@ function Show-AppIdMatchDialog {
         if (-not $appsRef[$ei].appId) { $eligibleIndices.Add($ei) }
     }
     if ($eligibleIndices.Count -eq 0) {
-        [System.Windows.Forms.MessageBox]::Show("Every catalog app already has an App ID - there's nothing to look up. If one looks wrong or stale, use `"Intune sync check...`" instead, which checks against the App ID already on file rather than matching by name.", "Nothing to do", "OK", "Information") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("Every catalog app already has an App ID - there's nothing to look up. If one looks wrong or stale, use `"Find apps missing from catalog...`" instead, which checks against the App ID already on file rather than matching by name.", "Nothing to do", "OK", "Information") | Out-Null
         return
     }
 
@@ -5151,10 +5190,11 @@ function Show-AppIdMatchDialog {
     $dlg.MinimumSize = New-Object System.Drawing.Size(900, 360)
 
     # Regular weight, color-coded by outcome (below) - matches how every
-    # other dialog's own status line (Intune sync check, Check group
-    # names, ...) is styled, rather than this one dialog alone using bold.
+    # other dialog's own status line (Find apps missing from catalog,
+    # Check catalog groups against Entra ID, ...) is styled, rather than
+    # this one dialog alone using bold.
     $lblHelp = New-Object System.Windows.Forms.Label
-    $lblHelp.Text = "Matches each catalog app that has NO App ID yet to an Intune app by name, so you can link the App ID Intune already has into your LOCAL catalog. This only updates App IDs stored in your local catalog files - it never creates, changes, or deletes anything in Intune itself. Rows with an exact name match are pre-checked; use `"Choose...`" to pick a different match, then `"Apply checked rows`". Apps that already have an App ID aren't shown here - use `"Intune sync check...`" for those instead."
+    $lblHelp.Text = "Matches each catalog app that has NO App ID yet to an Intune app by name, so you can link the App ID Intune already has into your LOCAL catalog. This only updates App IDs stored in your local catalog files - it never creates, changes, or deletes anything in Intune itself. Rows with an exact name match are pre-checked; use `"Choose...`" to pick a different match, then `"Apply checked rows`". Apps that already have an App ID aren't shown here - use `"Find apps missing from catalog...`" for those instead."
     $lblHelp.Dock = "Top"
     $lblHelp.Height = 62
     $lblHelp.ForeColor = [System.Drawing.Color]::DimGray
@@ -6615,22 +6655,23 @@ $btnSave   = New-Object System.Windows.Forms.Button; $btnSave.Text = "Force save
 $btnReload = New-Object System.Windows.Forms.Button; $btnReload.Text = "Reload"
 $btnOpen   = New-Object System.Windows.Forms.Button; $btnOpen.Text = "Open other folder..."
 $btnLookupIds = New-Object System.Windows.Forms.Button; $btnLookupIds.Text = "Look up App IDs..."
-$btnCheckIntuneOnly = New-Object System.Windows.Forms.Button; $btnCheckIntuneOnly.Text = "Intune sync check..."
-$btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text = "Batch assign groups..."
-$btnSyncMetadata = New-Object System.Windows.Forms.Button; $btnSyncMetadata.Text = "Sync metadata..."
+$btnCheckIntuneOnly = New-Object System.Windows.Forms.Button; $btnCheckIntuneOnly.Text = "Find apps missing from catalog..."
+$btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text = "Push groups to Intune (multiple apps)..."
+$btnSyncMetadata = New-Object System.Windows.Forms.Button; $btnSyncMetadata.Text = "Pull metadata and groups from Intune..."
 $btnBatchDeploy = New-Object System.Windows.Forms.Button; $btnBatchDeploy.Text = "Batch deploy..."
 $btnGroupManager = New-Object System.Windows.Forms.Button; $btnGroupManager.Text = "Group manager..."
 $btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.Text = "Favorite groups..."
-$btnGroupDrift = New-Object System.Windows.Forms.Button; $btnGroupDrift.Text = "Check group names..."
-$btnUnknownAssignments = New-Object System.Windows.Forms.Button; $btnUnknownAssignments.Text = "Check unknown assignments..."
+$btnGroupDrift = New-Object System.Windows.Forms.Button; $btnGroupDrift.Text = "Check catalog groups against Entra ID..."
+$btnUnknownAssignments = New-Object System.Windows.Forms.Button; $btnUnknownAssignments.Text = "Check Intune assignments against catalog..."
 $btnRunLaunch = New-Object System.Windows.Forms.Button; $btnRunLaunch.Text = "Package apps"
 $btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "Settings..."
 $btnDiagnostics = New-Object System.Windows.Forms.Button; $btnDiagnostics.Text = "Run diagnostics..."
 
-# One shared ToolTip component serves every button - several have
-# similar-sounding names that actually do quite different things (e.g.
-# "Intune sync check..." vs "Sync metadata..."), with no way for a new
-# user to tell them apart without clicking each one to find out.
+# One shared ToolTip component serves every button - there are enough of
+# them doing related-but-different things (several Pull/Push/Check pairs
+# across Intune and Entra ID) that a tooltip spelling out exactly what each
+# one touches is worth having on all of them, not just the less obvious
+# ones.
 $toolbarTips = New-Object System.Windows.Forms.ToolTip
 $toolbarTips.AutoPopDelay = 15000
 $toolbarTips.InitialDelay = 400
@@ -7070,7 +7111,7 @@ function Start-AppMetadataFetch {
             # already captures for the main grid's Type/Version columns -
             # this is the OTHER live-fetch path (Deploy to Intune's own
             # auto-fetch for an existing app) that used to leave those two
-            # columns blank forever unless "Sync metadata..." was run
+            # columns blank forever unless "Pull metadata and groups from Intune..." was run
             # separately at least once.
             OdataType       = $app.'@odata.type'
             DisplayVersion  = [string]$app.displayVersion
@@ -7160,7 +7201,7 @@ function Start-AppMetadataFetch {
 # Backfills intuneAppType/intuneAppVersion for every deployed app (has an
 # App ID) that's never had them set - the main grid's own Type/Version
 # columns, populated automatically instead of only ever getting filled in
-# by "Sync metadata..." or a Deploy/Update run happening to touch that
+# by "Pull metadata and groups from Intune..." or a Deploy/Update run happening to touch that
 # app. Kicked off automatically once per catalog load (startup, Reload,
 # Open other folder) rather than on every grid refresh - see the note
 # next to $Script:TypeVersionBackfillDone for why. Same queue-runner
@@ -7508,7 +7549,7 @@ function Get-CatalogMetadataSimpleFields {
 function Get-CatalogMetadataFieldDiffs {
     # -OdataType is the live app's raw @odata.type (with or without the
     # "#microsoft.graph." prefix) - pass it whenever it's known (the bulk
-    # "Sync metadata..." flow always has it) so Win32Only fields are
+    # "Pull metadata and groups from Intune..." flow always has it) so Win32Only fields are
     # skipped for a non-Win32 app instead of producing a permanent false
     # "N fields differ". Left blank/omitted, this assumes Win32 - the
     # right default for every OTHER caller (Test-AppHasCustomConfig, the
@@ -7582,7 +7623,7 @@ function Get-CatalogMetadataFieldDiffs {
 # app), substituting the LOCAL value for any field whose Label is in
 # $KeepLocalFields (the same Field values Get-CatalogMetadataFieldDiffs
 # produces and Show-MetadataDriftDialog returns as its "keep local"
-# picks). Used by bulk "Sync metadata..." to actually apply a per-field
+# picks). Used by bulk "Pull metadata and groups from Intune..." to actually apply a per-field
 # reviewed choice for an app instead of either blindly taking Intune's
 # value for everything or skipping the app outright.
 function Merge-CatalogMetadata {
@@ -7607,7 +7648,7 @@ function Merge-CatalogMetadata {
 
 # Compares an app's local requiredFor/availableFor/uninstallFor group-NAME
 # lists against Intune's CURRENT live assignment group names for that same
-# app (as fetched by the bulk "Sync metadata..." embedded script, which
+# app (as fetched by the bulk "Pull metadata and groups from Intune..." embedded script, which
 # resolves each assignment's groupId to its live displayName). That's the
 # one signal in this app that survives a group rename in Entra ID - Assign
 # Groups/Batch Assign both match by the catalog's stored NAME, so a rename
@@ -8001,7 +8042,7 @@ function Test-AppHasCustomConfig {
 # caller should leave every field exactly as the auto-fetch already set it.
 function Show-MetadataDriftDialog {
     # -AppName is optional and purely cosmetic (title/header only) - lets a
-    # caller reviewing MULTIPLE apps in a row (bulk "Sync metadata...")
+    # caller reviewing MULTIPLE apps in a row (bulk "Pull metadata and groups from Intune...")
     # make clear which app each popup is actually about, since several of
     # these can appear back to back in that flow.
     param($Rows, [string]$AppName = "")
@@ -11658,7 +11699,7 @@ function Show-RemoveGroupFromAppsDialog {
         }
 
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "Removes $totalPicked group/field pick(s) from $($checkedAppNames.Count) app(s) in the LOCAL CATALOG - each group only from the specific list(s) (Required/Available/Uninstall) it's checked under above. This alone does not change anything in Intune - run `"Batch assign groups...`" (Preview, then Apply) right after this to actually unassign them there too.`n`nContinue?",
+            "Removes $totalPicked group/field pick(s) from $($checkedAppNames.Count) app(s) in the LOCAL CATALOG - each group only from the specific list(s) (Required/Available/Uninstall) it's checked under above. This alone does not change anything in Intune - run `"Push groups to Intune (multiple apps)...`" (Preview, then Apply) right after this to actually unassign them there too.`n`nContinue?",
             "Confirm removal", "YesNo", "Warning")
         if ($r -ne "Yes") { return }
 
@@ -11703,13 +11744,14 @@ function Show-RemoveGroupFromAppsDialog {
 
 # Bulk-adds ONE favorite group, at one intent (Required/Available/
 # Uninstall), to however many catalog apps are checked - the piece
-# "Batch assign groups..." itself never had: that dialog only ever
-# RECONCILES groups an app already has set against what's live in
-# Intune, with no way to add a group to several apps that don't have it
-# yet without opening each one's own editor individually. Purely a
-# catalog-side edit (adds to requiredFor/availableFor/uninstallFor and
-# saves) - pushing the result to Intune is still "Batch assign groups...
-# "'s job, same as any other catalog-side group change.
+# "Push groups to Intune (multiple apps)..." itself never had: that
+# dialog only ever RECONCILES groups an app already has set against
+# what's live in Intune, with no way to add a group to several apps that
+# don't have it yet without opening each one's own editor individually.
+# Purely a catalog-side edit (adds to requiredFor/availableFor/
+# uninstallFor and saves) - pushing the result to Intune is still
+# "Push groups to Intune (multiple apps)..."'s job, same as any other
+# catalog-side group change.
 # Returns the number of apps actually changed (apps that already had
 # this exact group+intent are left alone, not counted), or $null if
 # cancelled.
@@ -12375,7 +12417,7 @@ function Show-DiagnosticsDialog {
         foreach ($a in $uncommonUnconfigured) { & $appendLine "    - $($a.appName)" $infoColor }
 
         $neverSynced = @($appsRef | Where-Object { $_.appId -and -not $_.intuneAppType })
-        & $appendLine "$(if ($neverSynced.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($neverSynced.Count) deployed app(s) never synced (no Type/Version recorded) - run `"Sync metadata...`" to pick this up" $(if ($neverSynced.Count -eq 0) { $okColor } else { $infoColor })
+        & $appendLine "$(if ($neverSynced.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($neverSynced.Count) deployed app(s) never synced (no Type/Version recorded) - run `"Pull metadata and groups from Intune...`" to pick this up" $(if ($neverSynced.Count -eq 0) { $okColor } else { $infoColor })
 
         $noGroups = @($appsRef | Where-Object { $_.appId -and @($_.requiredFor).Count -eq 0 -and @($_.availableFor).Count -eq 0 -and @($_.uninstallFor).Count -eq 0 })
         & $appendLine "$(if ($noGroups.Count -eq 0) { '[OK]' } else { '[WARN]' }) $($noGroups.Count) deployed app(s) with no group assignments at all (assigned to nobody)" $(if ($noGroups.Count -eq 0) { $okColor } else { $warnColor })
@@ -12460,7 +12502,7 @@ function Show-DiagnosticsDialog {
 
             $catalogAppIds = @($appsRefRef | ForEach-Object { [string]$_.appId } | Where-Object { $_ })
             $notInCatalogCount = @($data | Where-Object { $catalogAppIds -notcontains [string]$_.id }).Count
-            & $appendLineRef "$(if ($notInCatalogCount -eq 0) { '[OK]' } else { '[INFO]' }) $notInCatalogCount app(s) in Intune with no matching catalog entry - see `"Intune sync check...`"" $(if ($notInCatalogCount -eq 0) { $okColorRef } else { $infoColorRef })
+            & $appendLineRef "$(if ($notInCatalogCount -eq 0) { '[OK]' } else { '[INFO]' }) $notInCatalogCount app(s) in Intune with no matching catalog entry - see `"Find apps missing from catalog...`"" $(if ($notInCatalogCount -eq 0) { $okColorRef } else { $infoColorRef })
 
             & $appendLineRef "Fetching Minimum Windows values for deployed Win32 apps..." $infoColorRef
 
@@ -12915,7 +12957,7 @@ function Show-IntuneOnlyAppsDialog {
                 # before there was any chance to set a Winget ID first (a
                 # detail Deploy to Intune's own defaults care about). Groups
                 # and metadata are still both reachable from here - groups
-                # via "Read groups from Intune" (which this dialog's own
+                # via "Pull groups from Intune" (which this dialog's own
                 # fetch above already primed requiredFor/availableFor/
                 # uninstallFor with, so it's a re-confirm not a first
                 # fetch), metadata via "Deploy to Intune..." itself, once
@@ -13772,12 +13814,12 @@ function Show-BulkDeleteFromIntuneDialog {
 # rename, which is exactly the mistake this check exists to catch before it
 # happens.
 #
-# For an app that already has assignments live in Intune, "Sync metadata..."
+# For an app that already has assignments live in Intune, "Pull metadata and groups from Intune..."
 # (Show-SyncMetadataDialog) IS rename-safe: it reads that app's group names
 # back from its live assignments by groupId, which survives a rename, and
 # offers to update the catalog's stored name to match. So if this dialog
 # flags a name as "Not found" and it's actually a rename, the fix is: run
-# "Sync metadata..." for the app(s) that reference it (this updates the
+# "Pull metadata and groups from Intune..." for the app(s) that reference it (this updates the
 # stored name straight from Intune), not to hand-edit the name here.
 function Show-GroupDriftCheckDialog {
     # Plain local aliases - see note in Start-IntuneAppLookup.
@@ -13793,7 +13835,7 @@ function Show-GroupDriftCheckDialog {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Checks every group name referenced anywhere in the catalog against Entra ID, and lists any not found - a rename, a deletion, a typo, or one never created. A rename is best fixed via `"Sync metadata...`"; review and fix anything else here by hand."
+    $lblIntro.Text = "Checks every group name referenced anywhere in the catalog against Entra ID, and lists any not found - a rename, a deletion, a typo, or one never created. A rename is best fixed via `"Pull metadata and groups from Intune...`"; review and fix anything else here by hand."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(670,48)
     $dlg.Controls.Add($lblIntro)
@@ -13979,7 +14021,7 @@ function Show-GroupDriftCheckDialog {
 # the Intune portal, by a script outside this tool, or left behind after a
 # catalog entry's group list was edited without ever pushing that edit to
 # Intune). Read-only, same as the group name check - no Apply button here;
-# actually reconciling a finding is still "Batch assign groups..." (Apply
+# actually reconciling a finding is still "Push groups to Intune (multiple apps)..." (Apply
 # removes a stray assignment) or the app's own editor (add the group to
 # the catalog first, if it should stay assigned).
 #
@@ -14014,7 +14056,7 @@ function Show-UnknownAssignmentsCheckDialog {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Checks every deployed app's CURRENT live Intune assignments against this catalog's Required/Available/Uninstall groups, and lists any group Intune has that the catalog doesn't know about. Read-only - makes no changes. To fix a finding: add the group to the app's catalog entry if it should stay assigned, or run `"Batch assign groups...`" (Apply) to remove the stray assignment from Intune."
+    $lblIntro.Text = "Checks every deployed app's CURRENT live Intune assignments against this catalog's Required/Available/Uninstall groups, and lists any group Intune has that the catalog doesn't know about. Read-only - makes no changes. To fix a finding: add the group to the app's catalog entry if it should stay assigned, or run `"Push groups to Intune (multiple apps)...`" (Apply) to remove the stray assignment from Intune."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(730,48)
     $dlg.Controls.Add($lblIntro)
@@ -14762,7 +14804,7 @@ function Show-GroupManagerDialog {
     # This is also the one place in the whole app that can fix a rename
     # immediately and everywhere at once: every app in the local catalog
     # that references the OLD name gets updated to the new one, right here,
-    # rather than needing "Sync metadata..." to catch it up per app later.
+    # rather than needing "Pull metadata and groups from Intune..." to catch it up per app later.
     $btnRenameGroup.Add_Click({
         $groupName = $txtGroupName.Text.Trim()
         if (-not $groupName) {
@@ -15515,7 +15557,7 @@ function Show-AppEditor {
     # to nobody" when the truth is just "this editor never asked Intune
     # what's actually there".
     $btnReadGroupsFromIntune = New-Object System.Windows.Forms.Button
-    $btnReadGroupsFromIntune.Text = "Read groups from Intune"
+    $btnReadGroupsFromIntune.Text = "Pull groups from Intune"
     $btnReadGroupsFromIntune.Location = New-Object System.Drawing.Point(15,674)
     $btnReadGroupsFromIntune.Size = New-Object System.Drawing.Size(430,30)
     $dlg.Controls.Add($btnReadGroupsFromIntune)
@@ -15532,7 +15574,7 @@ function Show-AppEditor {
     $dlg.Controls.Add($lblGroupSyncStatus)
 
     $btnAssignGroups = New-Object System.Windows.Forms.Button
-    $btnAssignGroups.Text = "Assign Groups to Intune (this app only)..."
+    $btnAssignGroups.Text = "Push groups to Intune (single app)..."
     $btnAssignGroups.Location = New-Object System.Drawing.Point(15,730)
     $btnAssignGroups.Size = New-Object System.Drawing.Size(430,30)
     $dlg.Controls.Add($btnAssignGroups)
@@ -15857,7 +15899,7 @@ $gridContextMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $menuItemEdit = New-Object System.Windows.Forms.ToolStripMenuItem "Edit..."
 $menuItemDeploy = New-Object System.Windows.Forms.ToolStripMenuItem "Deploy to Intune..."
 $menuItemPackage = New-Object System.Windows.Forms.ToolStripMenuItem "Package this app"
-$menuItemAssign = New-Object System.Windows.Forms.ToolStripMenuItem "Assign Groups..."
+$menuItemAssign = New-Object System.Windows.Forms.ToolStripMenuItem "Push groups to Intune (single app)..."
 # Already selection-aware via -ScopedIndices, same as the toolbar button
 # it reuses - was reachable only from there before, requiring a
 # pre-selection made before ever opening the toolbar dialog, when a
@@ -15911,7 +15953,7 @@ $gridContextMenu.Add_Opening({
     $menuItemDeploy.Enabled = $hasSelection
     $menuItemDeploy.ToolTipText = ""
 
-    $menuItemAssign.Text = if ($isMulti) { "Batch assign groups..." } else { "Assign Groups..." }
+    $menuItemAssign.Text = if ($isMulti) { "Push groups to Intune (multiple apps)..." } else { "Push groups to Intune (single app)..." }
     $menuItemAssign.Enabled = $hasSelection
 
     # Same eligibility Show-SyncMetadataDialog itself checks (an app needs
@@ -16455,11 +16497,24 @@ function Invoke-LaunchStep {
         Write-Log "=== Package all apps (app-packages) ===`r`n" ([System.Drawing.Color]::DeepSkyBlue)
     }
     $argStr = "-InputFolder '$(Join-Path $rootPath 'app-packages')' -Force"
+    # Single quotes doubled (PowerShell's own escaping for a literal ' inside
+    # a single-quoted string) - same idiom already used throughout this file
+    # for OData filter values (see e.g. Resolve-GroupId's $GroupName.Replace("'",
+    # "''")). $SingleFolderName/$FolderNames come from Get-SafeFileNameForApp,
+    # which strips Windows-illegal filename characters but NOT a single quote
+    # (a perfectly legal filename character) - left unescaped, an app display
+    # name containing one would break out of the quoted -SingleFolderName/
+    # -FolderNames value here and inject arbitrary PowerShell into $argStr,
+    # which Start-PipelineProcess runs via `powershell.exe -EncodedCommand`.
+    # Since a display name can come from Intune itself (synced in by anyone
+    # with rights to create/rename an app there, not just this tool's own
+    # user), this was a real code-execution path, not just a theoretical one.
     if ($SingleFolderName) {
-        $argStr += " -SingleFolderName '$SingleFolderName'"
+        $argStr += " -SingleFolderName '$($SingleFolderName -replace "'", "''")'"
     }
     elseif ($FolderNames.Count -gt 0) {
-        $argStr += " -FolderNames '$($FolderNames -join ',')'"
+        $safeFolderNames = @($FolderNames | ForEach-Object { $_ -replace "'", "''" })
+        $argStr += " -FolderNames '$($safeFolderNames -join ',')'"
     }
     Start-PipelineProcess -ScriptContent $Script:EmbeddedPackageScript -TempScriptName ".intunepkg_embedded_launch.ps1" -ArgumentString $argStr -OnComplete $OnComplete -ExtraLogTarget $ExtraLogTarget
 }
