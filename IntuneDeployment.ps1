@@ -152,9 +152,10 @@ $Script:DefaultAppSettings = [pscustomobject]@{
         [pscustomobject]@{ returnCode = 1641; type = "hardReboot" }
         [pscustomobject]@{ returnCode = 1618; type = "retry" }
     )
-    # The app every OTHER app defaults to depending on, when one by this
-    # name exists in the catalog - blank means "no default dependency".
-    DefaultDependencyAppName = "Winget AutoUpdate"
+    # The app(s) every OTHER app defaults to depending on, when an app by
+    # that name exists in the catalog - an empty array means "no default
+    # dependencies".
+    DefaultDependencyAppNames = @("Winget AutoUpdate")
 }
 
 # Guards Start-TypeVersionBackfill (see its own definition) against
@@ -322,7 +323,17 @@ function Load-GraphSettings {
             if (@($das.ReturnCodes).Count -gt 0) {
                 $Script:DefaultAppSettings.ReturnCodes = @($das.ReturnCodes | ForEach-Object { [pscustomobject]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })
             }
-            if ($null -ne $das.DefaultDependencyAppName)   { $Script:DefaultAppSettings.DefaultDependencyAppName = [string]$das.DefaultDependencyAppName }
+            if ($null -ne $das.DefaultDependencyAppNames) {
+                $Script:DefaultAppSettings.DefaultDependencyAppNames = @($das.DefaultDependencyAppNames | ForEach-Object { [string]$_ } | Where-Object { $_ })
+            }
+            # Back-compat with a settings file saved by the single-dependency
+            # version of this dialog (a plain string field, no "s") - only
+            # consulted when the new plural field above wasn't present at
+            # all, so an already-migrated file's own (possibly now empty)
+            # array is never silently overwritten by stale singular data.
+            elseif ($null -ne $das.DefaultDependencyAppName -and [string]$das.DefaultDependencyAppName) {
+                $Script:DefaultAppSettings.DefaultDependencyAppNames = @([string]$das.DefaultDependencyAppName)
+            }
         }
     }
     catch {
@@ -8725,10 +8736,18 @@ function Get-DefaultAppMetadata {
 
     $templates = Get-CreateAppTemplates -WingetId $WingetId -Uncommon $Uncommon
     $das = $Script:DefaultAppSettings
-    $defaultDeps = @()
-    if ($das.DefaultDependencyAppName -and $AppName -ne $das.DefaultDependencyAppName -and ($Script:Apps | Where-Object { $_.appName -eq $das.DefaultDependencyAppName })) {
-        $defaultDeps = @($das.DefaultDependencyAppName)
-    }
+    # Each configured name only counts as a default dependency if an app by
+    # that name actually exists in the catalog (same as the single-
+    # dependency version this replaced) AND isn't this app itself - a
+    # default dependency list that happens to include the app currently
+    # being defaulted (e.g. computing Winget AutoUpdate's own defaults)
+    # would otherwise make it depend on itself.
+    $defaultDeps = @(
+        $das.DefaultDependencyAppNames | Where-Object {
+            $depName = $_
+            $depName -and $depName -ne $AppName -and ($Script:Apps | Where-Object { $_.appName -eq $depName })
+        }
+    )
 
     return [pscustomobject]@{
         description      = $AppName
@@ -8845,20 +8864,15 @@ function Show-DefaultAppSettingsDialog {
     $cmbMinOS.SelectedItem = if ($defaultMinOsLabel) { $defaultMinOsLabel } else { $minOsMap.Keys | Select-Object -First 1 }
     $dlg.Controls.Add($cmbMinOS)
 
-    $lblDep = New-Object System.Windows.Forms.Label
-    $lblDep.Text = "Default dependency"
-    $lblDep.Location = New-Object System.Drawing.Point(320,118)
-    $lblDep.AutoSize = $true
-    $dlg.Controls.Add($lblDep)
-
-    $cmbDefaultDep = New-Object System.Windows.Forms.ComboBox
-    $cmbDefaultDep.Location = New-Object System.Drawing.Point(320,137)
-    $cmbDefaultDep.Size = New-Object System.Drawing.Size(285,24)
-    $cmbDefaultDep.DropDownStyle = "DropDownList"
-    [void]$cmbDefaultDep.Items.Add("(none)")
-    foreach ($a in ($Script:Apps | Sort-Object appName)) { [void]$cmbDefaultDep.Items.Add($a.appName) }
-    $cmbDefaultDep.SelectedItem = if ($Script:DefaultAppSettings.DefaultDependencyAppName -and $cmbDefaultDep.Items.Contains($Script:DefaultAppSettings.DefaultDependencyAppName)) { $Script:DefaultAppSettings.DefaultDependencyAppName } else { "(none)" }
-    $dlg.Controls.Add($cmbDefaultDep)
+    # Moved out of this row entirely (was a single-select ComboBox right
+    # here) - a new app can sensibly default to depending on MORE than one
+    # other app (e.g. both a runtime AND an updater), unlike every other
+    # combo in this dialog (Install context/Min. Windows/Restart behavior),
+    # which really is just one value each. A CheckedListBox needs more
+    # height than fits in this row without overlapping the Requirements
+    # section right below it, so it lives instead in the return-codes
+    # column's own unused space below its Add/Remove row buttons - see
+    # $lblDefaultDeps/$clbDefaultDeps further down.
 
     $lblReqs = New-Object System.Windows.Forms.Label
     $lblReqs.Text = "Requirements (0 = not required)"
@@ -8995,6 +9009,25 @@ function Show-DefaultAppSettingsDialog {
         if ($grdReturnCodes.CurrentRow) { $grdReturnCodes.Rows.RemoveAt($grdReturnCodes.CurrentRow.Index) }
     }.GetNewClosure())
 
+    $lblDefaultDeps = New-Object System.Windows.Forms.Label
+    $lblDefaultDeps.Text = "Default dependencies"
+    $lblDefaultDeps.Location = New-Object System.Drawing.Point(485,412)
+    $lblDefaultDeps.AutoSize = $true
+    $dlg.Controls.Add($lblDefaultDeps)
+
+    # A CheckedListBox, not a single-select ComboBox - see the note where
+    # this field used to live (right after the Min. Windows combo above)
+    # for why more than one default dependency needs to be pickable here.
+    $clbDefaultDeps = New-Object System.Windows.Forms.CheckedListBox
+    $clbDefaultDeps.Location = New-Object System.Drawing.Point(485,431)
+    $clbDefaultDeps.Size = New-Object System.Drawing.Size(120,100)
+    $clbDefaultDeps.CheckOnClick = $true
+    foreach ($a in ($Script:Apps | Sort-Object appName)) {
+        $idx = $clbDefaultDeps.Items.Add($a.appName)
+        if (@($Script:DefaultAppSettings.DefaultDependencyAppNames) -contains $a.appName) { $clbDefaultDeps.SetItemChecked($idx, $true) }
+    }
+    $dlg.Controls.Add($clbDefaultDeps)
+
     $btnResetFactory = New-Object System.Windows.Forms.Button
     $btnResetFactory.Text = "Reset to built-in defaults"
     $btnResetFactory.Location = New-Object System.Drawing.Point(15,540)
@@ -9028,7 +9061,9 @@ function Show-DefaultAppSettingsDialog {
         $chkArchArm64.Checked = $false
         $factoryMinOsLabel = $minOsMap.Keys | Where-Object { $minOsMap[$_] -eq "W10_22H2" } | Select-Object -First 1
         if ($factoryMinOsLabel) { $cmbMinOS.SelectedItem = $factoryMinOsLabel }
-        $cmbDefaultDep.SelectedItem = if ($cmbDefaultDep.Items.Contains("Winget AutoUpdate")) { "Winget AutoUpdate" } else { "(none)" }
+        for ($ci = 0; $ci -lt $clbDefaultDeps.Items.Count; $ci++) {
+            $clbDefaultDeps.SetItemChecked($ci, ([string]$clbDefaultDeps.Items[$ci] -eq "Winget AutoUpdate"))
+        }
         $txtDiskSpace.Text = "0"
         $txtMemory.Text = "0"
         $txtProcessors.Text = "0"
@@ -9109,7 +9144,7 @@ function Show-DefaultAppSettingsDialog {
         $Script:DefaultAppSettings.DeviceRestartBehavior     = $restartBehaviorMap[[string]$cmbRestartBehavior.SelectedItem]
         $Script:DefaultAppSettings.AllowAvailableUninstall   = $chkAllowUninstall.Checked
         $Script:DefaultAppSettings.ReturnCodes               = $returnCodesConfig.ToArray()
-        $Script:DefaultAppSettings.DefaultDependencyAppName  = if ([string]$cmbDefaultDep.SelectedItem -eq "(none)") { "" } else { [string]$cmbDefaultDep.SelectedItem }
+        $Script:DefaultAppSettings.DefaultDependencyAppNames = @($clbDefaultDeps.CheckedItems | ForEach-Object { [string]$_ })
 
         if (-not (Write-SettingsFile)) { return }
         [System.Windows.Forms.MessageBox]::Show("Default values saved. Only affects NEW comparisons/deploys from here on - no existing app's saved metadata was touched.", "Saved", "OK", "Information") | Out-Null
