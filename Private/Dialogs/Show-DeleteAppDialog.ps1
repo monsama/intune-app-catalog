@@ -1,4 +1,4 @@
-function Show-DeleteAppDialog {
+function Global:Show-DeleteAppDialog {
     param([string]$AppId, [string]$AppName)
 
     if (-not $AppId) {

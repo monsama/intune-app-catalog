@@ -1,4 +1,4 @@
-function Show-CreateInIntuneDialog {
+function Global:Show-CreateInIntuneDialog {
     param(
         [string]$AppName, [string]$WingetId, [string]$ExistingAppId, [switch]$FromAppEditor,
         # Same meaning as Show-AppEditor's own -CurrentIndex - only set (and

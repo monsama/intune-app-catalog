@@ -1,4 +1,4 @@
-function Show-WingetSearchDialog {
+function Global:Show-WingetSearchDialog {
     param([string]$InitialQuery = "")
 
     $dlg = New-Object System.Windows.Forms.Form

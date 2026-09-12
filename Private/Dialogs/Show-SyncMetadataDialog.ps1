@@ -1,4 +1,4 @@
-function Show-SyncMetadataDialog {
+function Global:Show-SyncMetadataDialog {
     param([int[]]$ScopedIndices = @())
 
     # Plain local aliases - see note in Start-IntuneAppLookup.

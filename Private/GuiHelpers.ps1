@@ -1,9 +1,9 @@
-function Set-Theme {
+function Global:Set-Theme {
     param([System.Windows.Forms.Control]$Control)
     Set-ThemeRecursive -Ctrl $Control -Palette $Script:LightPalette
 }
 
-function Set-ThemeRecursive {
+function Global:Set-ThemeRecursive {
     param($Ctrl, $Palette)
 
     switch ($Ctrl.GetType().Name) {
@@ -84,7 +84,7 @@ function Set-ThemeRecursive {
     }
 }
 
-function Add-RemovableItemContextMenu {
+function Global:Add-RemovableItemContextMenu {
     param($CheckedListBox)
 
     $ctxMenu = New-Object System.Windows.Forms.ContextMenuStrip
@@ -117,7 +117,7 @@ function Add-RemovableItemContextMenu {
     $CheckedListBox.ContextMenuStrip = $ctxMenu
 }
 
-function Show-SimpleListPicker {
+function Global:Show-SimpleListPicker {
     param([string]$Title, [string]$Prompt, [string[]]$Items)
 
     $dlg = New-Object System.Windows.Forms.Form
@@ -177,12 +177,12 @@ function Show-SimpleListPicker {
     return $null
 }
 
-function Set-Status {
+function Global:Set-Status {
     param([string]$Text)
     $statusLabel.Text = $Text
 }
 
-function Write-DialogError {
+function Global:Write-DialogError {
     param(
         [System.Windows.Forms.Label]$StatusLabel,
         [System.Windows.Forms.RichTextBox]$LogBox,
@@ -200,12 +200,12 @@ function Write-DialogError {
     }
 }
 
-function Show-ConfigWriteFailedError {
+function Global:Show-ConfigWriteFailedError {
     param([string]$ErrorMessage)
     [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $ErrorMessage", "Failed to prepare", "OK", "Error") | Out-Null
 }
 
-function Initialize-DarkLogBox {
+function Global:Initialize-DarkLogBox {
     param(
         [System.Windows.Forms.RichTextBox]$LogBox,
         [double]$FontSize = 8.5
@@ -216,7 +216,7 @@ function Initialize-DarkLogBox {
     $LogBox.Font = New-Object System.Drawing.Font("Consolas", $FontSize)
 }
 
-function New-ToolbarGroup {
+function Global:New-ToolbarGroup {
     param([string]$Title, [System.Windows.Forms.Control[]]$Buttons)
 
     $gb = New-Object System.Windows.Forms.GroupBox
@@ -243,7 +243,7 @@ function New-ToolbarGroup {
     return $gb
 }
 
-function New-OverflowSubmenu {
+function Global:New-OverflowSubmenu {
     param([string]$Title, [array]$Items)
     $sub = New-Object System.Windows.Forms.ToolStripMenuItem $Title
     foreach ($item in $Items) {
@@ -255,7 +255,7 @@ function New-OverflowSubmenu {
     return $sub
 }
 
-function New-GridColumn {
+function Global:New-GridColumn {
     param($Name, $Header, $Width = 100, $FillWeight = 20)
     $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $col.Name = $Name
@@ -265,7 +265,7 @@ function New-GridColumn {
     return $col
 }
 
-function Refresh-Grid {
+function Global:Refresh-Grid {
     $filter = $txtSearch.Text.Trim().ToLower()
     $rows = New-Object System.Collections.Generic.List[Object]
 
@@ -361,16 +361,16 @@ function Refresh-Grid {
     Set-Status "$($Script:Apps.Count) apps  |  $reqTotal required, $availTotal available, $uninstTotal uninstall assignments  |  $Script:LinkedFilePath$dirty"
 }
 
-function Get-SelectedAppIndex {
+function Global:Get-SelectedAppIndex {
     if ($grid.SelectedRows.Count -eq 0) { return $null }
     return [int]$grid.SelectedRows[0].Cells["Index"].Value
 }
 
-function Get-SelectedAppIndices {
+function Global:Get-SelectedAppIndices {
     return @($grid.SelectedRows | ForEach-Object { [int]$_.Cells["Index"].Value })
 }
 
-function Show-LastAuditDetail {
+function Global:Show-LastAuditDetail {
     param([string]$AppName)
 
     if (-not $Script:LastAuditResults.ContainsKey($AppName)) {

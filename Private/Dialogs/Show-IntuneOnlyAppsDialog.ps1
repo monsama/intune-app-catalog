@@ -1,4 +1,4 @@
-function Show-IntuneOnlyAppsDialog {
+function Global:Show-IntuneOnlyAppsDialog {
     # Plain local aliases - see note in Start-IntuneAppLookup. This dialog's
     # own closures (populateGrid, the action button handler) cannot reliably
     # read or write $Script:-qualified variables directly.

@@ -1,4 +1,4 @@
-function Show-RemoveGroupFromAppsDialog {
+function Global:Show-RemoveGroupFromAppsDialog {
     param([object[]]$CandidateApps)
 
     $reqNames    = @($CandidateApps | ForEach-Object { $_.requiredFor }  | Select-Object -Unique | Sort-Object)

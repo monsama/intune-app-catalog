@@ -1,4 +1,4 @@
-function Show-CertificatePickerDialog {
+function Global:Show-CertificatePickerDialog {
     $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("My", [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
     $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
     $certs = @($store.Certificates)

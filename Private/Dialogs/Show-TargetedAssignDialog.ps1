@@ -1,4 +1,4 @@
-function Show-TargetedAssignDialog {
+function Global:Show-TargetedAssignDialog {
     param(
         [string]$AppId,
         [string]$AppName,

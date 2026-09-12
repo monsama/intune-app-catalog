@@ -1,4 +1,4 @@
-function Save-AppMetadataToLocalCatalog {
+function Global:Save-AppMetadataToLocalCatalog {
     param($AppsRef, $LinkedFilePath, $AppName, $Metadata, $NewAppId = $null, $IntuneAppVersion = $null)
 
     $targetIndex = -1
@@ -52,7 +52,7 @@ function Save-AppMetadataToLocalCatalog {
     return @{ Success = $saveSucceeded; CreatedNewEntry = $createdNewEntry }
 }
 
-function Get-FriendlyAge {
+function Global:Get-FriendlyAge {
     param([datetime]$Timestamp)
 
     $span = (Get-Date) - $Timestamp
@@ -62,7 +62,7 @@ function Get-FriendlyAge {
     return "$([int]$span.TotalDays)d ago"
 }
 
-function Get-LastAuditSummary {
+function Global:Get-LastAuditSummary {
     param([string]$AppName)
 
     if (-not $Script:LastAuditResults.ContainsKey($AppName)) { return "Never audited" }
@@ -76,7 +76,7 @@ function Get-LastAuditSummary {
     return "$issueCount issue$(if ($issueCount -ne 1) { 's' }) ($age)"
 }
 
-function Get-CatalogMetadataSimpleFields {
+function Global:Get-CatalogMetadataSimpleFields {
     return @(
         @{ Key = "description"; Label = "Description" }
         @{ Key = "publisher"; Label = "Publisher" }
@@ -109,7 +109,7 @@ function Get-CatalogMetadataSimpleFields {
     )
 }
 
-function Get-CatalogMetadataFieldDiffs {
+function Global:Get-CatalogMetadataFieldDiffs {
     # -OdataType is the live app's raw @odata.type (with or without the
     # "#microsoft.graph." prefix) - pass it whenever it's known (the bulk
     # "Pull metadata and groups from Intune..." flow always has it) so Win32Only fields are
@@ -181,7 +181,7 @@ function Get-CatalogMetadataFieldDiffs {
     return $diffs.ToArray()
 }
 
-function Merge-CatalogMetadata {
+function Global:Merge-CatalogMetadata {
     param($Remote, $Local, [string[]]$KeepLocalFields)
 
     $merged = $Remote.PSObject.Copy()
@@ -201,7 +201,7 @@ function Merge-CatalogMetadata {
     return $merged
 }
 
-function Get-GroupFieldDiffs {
+function Global:Get-GroupFieldDiffs {
     param($LocalApp, $RemoteResult)
 
     $diffs = New-Object System.Collections.Generic.List[object]
@@ -222,12 +222,12 @@ function Get-GroupFieldDiffs {
     return $diffs.ToArray()
 }
 
-function Test-AppIsUncommon {
+function Global:Test-AppIsUncommon {
     param($App)
     return [string]::IsNullOrWhiteSpace($App.wingetId)
 }
 
-function Get-FriendlyIntuneAppType {
+function Global:Get-FriendlyIntuneAppType {
     param([string]$ODataType)
 
     if (-not $ODataType) { return "" }
@@ -254,7 +254,7 @@ function Get-FriendlyIntuneAppType {
     return $spaced
 }
 
-function Get-ParsedMinOsRelease {
+function Global:Get-ParsedMinOsRelease {
     param([string]$RawValue)
 
     if (-not $RawValue) { return $null }
@@ -276,14 +276,14 @@ function Get-ParsedMinOsRelease {
     return @{ Major = "10"; Release = $RawValue.ToUpperInvariant() }
 }
 
-function Get-FriendlyMinOsRelease {
+function Global:Get-FriendlyMinOsRelease {
     param([string]$RawValue)
     $parsed = Get-ParsedMinOsRelease -RawValue $RawValue
     if (-not $parsed) { return "" }
     return "Windows $($parsed.Major) $($parsed.Release)"
 }
 
-function Get-SafeFileNameForApp {
+function Global:Get-SafeFileNameForApp {
     param([string]$Name)
     $safeName = $Name -replace '[<>:"/\\|?*]', ''
     $safeName = $safeName -replace '\s+', ' '
@@ -294,7 +294,7 @@ function Get-SafeFileNameForApp {
     return $safeName
 }
 
-function Resolve-AppPackagePath {
+function Global:Resolve-AppPackagePath {
     param([string]$AppName, [bool]$Uncommon)
 
     if (-not $Uncommon) {
@@ -341,7 +341,7 @@ function Resolve-AppPackagePath {
     return @{ Path = (Join-Path $uncommonRoot "$safeName\$safeName.intunewin"); Found = $false }
 }
 
-function Get-DependencyOrderedApps {
+function Global:Get-DependencyOrderedApps {
     param($Apps)
 
     $byName = @{}
@@ -389,7 +389,7 @@ function Get-DependencyOrderedApps {
     return [pscustomobject]@{ Ordered = $ordered.ToArray(); CircularNames = @() }
 }
 
-function Get-CreateAppTemplates {
+function Global:Get-CreateAppTemplates {
     param([string]$WingetId, [bool]$Uncommon)
 
     if (-not $Uncommon -and $WingetId) {
@@ -430,7 +430,7 @@ if (`$Apps) { return "Installed!" }
     }
 }
 
-function Get-DefaultAppMetadata {
+function Global:Get-DefaultAppMetadata {
     param([string]$AppName, [string]$WingetId, [bool]$Uncommon)
 
     $templates = Get-CreateAppTemplates -WingetId $WingetId -Uncommon $Uncommon
@@ -474,7 +474,7 @@ function Get-DefaultAppMetadata {
     }
 }
 
-function Test-AppHasCustomConfig {
+function Global:Test-AppHasCustomConfig {
     param($App)
 
     if (Test-AppIsUncommon -App $App) { return $true }

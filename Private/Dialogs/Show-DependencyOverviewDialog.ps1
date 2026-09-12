@@ -1,4 +1,4 @@
-function Show-DependencyOverviewDialog {
+function Global:Show-DependencyOverviewDialog {
     # Plain local alias - see note in Start-IntuneAppLookup.
     $appsRef = $Script:Apps
 

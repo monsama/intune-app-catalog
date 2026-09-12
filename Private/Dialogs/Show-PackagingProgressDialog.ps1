@@ -1,4 +1,4 @@
-function Show-PackagingProgressDialog {
+function Global:Show-PackagingProgressDialog {
     param([string]$SingleFolderName = "", [string[]]$FolderNames = @())
 
     $dlg = New-Object System.Windows.Forms.Form

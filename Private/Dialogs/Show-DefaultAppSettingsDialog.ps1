@@ -1,4 +1,4 @@
-function Show-DefaultAppSettingsDialog {
+function Global:Show-DefaultAppSettingsDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Edit default values"
     $dlg.ClientSize = New-Object System.Drawing.Size(620, 590)

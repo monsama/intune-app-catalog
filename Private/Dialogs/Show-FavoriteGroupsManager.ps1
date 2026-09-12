@@ -1,4 +1,4 @@
-function Show-FavoriteGroupsManager {
+function Global:Show-FavoriteGroupsManager {
     # Plain local alias - see note in Start-IntuneAppLookup. Needed here
     # specifically because $btnSave's own closure below mutates this
     # (Clear/Add), not just reads it.

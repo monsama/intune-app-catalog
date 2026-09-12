@@ -1,4 +1,4 @@
-function Show-GroupManagerDialog {
+function Global:Show-GroupManagerDialog {
     # Plain local aliases - see note in Start-IntuneAppLookup.
     $tenantId       = $Script:GraphTenantId
     $clientId       = $Script:GraphClientId

@@ -1,4 +1,4 @@
-function Invoke-QuickDeploy {
+function Global:Invoke-QuickDeploy {
     param([int]$Index)
     $app = $Script:Apps[$Index]
     if (-not $app.appName.Trim()) {
@@ -20,7 +20,7 @@ function Invoke-QuickDeploy {
     }
 }
 
-function Invoke-QuickAssignGroups {
+function Global:Invoke-QuickAssignGroups {
     param([int]$Index)
     $app = $Script:Apps[$Index]
     if (-not $app.appId) {
@@ -31,7 +31,7 @@ function Invoke-QuickAssignGroups {
         -RequiredGroups @($app.requiredFor) -AvailableGroups @($app.availableFor) -UninstallGroups @($app.uninstallFor) | Out-Null
 }
 
-function Invoke-QuickDeleteFromIntune {
+function Global:Invoke-QuickDeleteFromIntune {
     param([int]$Index)
     $app = $Script:Apps[$Index]
     $deleted = Show-DeleteAppDialog -AppId $app.appId -AppName $app.appName

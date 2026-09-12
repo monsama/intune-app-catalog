@@ -1,4 +1,4 @@
-function Show-BatchEditMetadataDialog {
+function Global:Show-BatchEditMetadataDialog {
     param([int[]]$ScopedIndices = @())
 
     # Plain local aliases - see note in Start-IntuneAppLookup.

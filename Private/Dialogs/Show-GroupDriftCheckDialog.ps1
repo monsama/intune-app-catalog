@@ -1,4 +1,4 @@
-function Show-GroupDriftCheckDialog {
+function Global:Show-GroupDriftCheckDialog {
     # Plain local aliases - see note in Start-IntuneAppLookup.
     $appsRef  = $Script:Apps
     $cacheRef = $Script:EntraDirectoryCache

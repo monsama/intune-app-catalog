@@ -119,12 +119,16 @@ foreach ($file in $privateFiles) {
     }
     $matches = $ast.FindAll({
         param($node)
-        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $testableFunctionNames -contains $node.Name
+        # Every top-level Private\ function is declared as "function
+        # Global:Name" (see IntuneDeployment.ps1's header comment for why),
+        # so the AST's own Name includes that "Global:" scope prefix - strip
+        # it before comparing against the plain names below.
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $testableFunctionNames -contains ($node.Name -replace '^[A-Za-z]+:', '')
     }, $true)
     foreach ($m in $matches) { $funcAsts.Add($m) }
 }
 
-$foundNames = @($funcAsts | ForEach-Object { $_.Name })
+$foundNames = @($funcAsts | ForEach-Object { $_.Name -replace '^[A-Za-z]+:', '' })
 $missingNames = @($testableFunctionNames | Where-Object { $foundNames -notcontains $_ })
 if ($missingNames.Count -gt 0) {
     Write-Host "FAIL: expected function(s) not found under $privateRoot`: $($missingNames -join ', ')" -ForegroundColor Red

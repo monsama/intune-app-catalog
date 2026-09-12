@@ -1,4 +1,4 @@
-function Start-WingetSearch {
+function Global:Start-WingetSearch {
     param([string]$Query, [scriptblock]$OnComplete)
 
     $rs = [runspacefactory]::CreateRunspace()
@@ -128,7 +128,7 @@ function Start-WingetSearch {
     $timer.Start()
 }
 
-function Start-IntuneAppLookup {
+function Global:Start-IntuneAppLookup {
     param([scriptblock]$OnComplete)
 
     if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
@@ -246,7 +246,7 @@ function Start-IntuneAppLookup {
     $timer.Start()
 }
 
-function Start-Win32AppMinOsFetch {
+function Global:Start-Win32AppMinOsFetch {
     param([scriptblock]$OnComplete)
 
     $rs = [runspacefactory]::CreateRunspace()
@@ -330,7 +330,7 @@ function Start-Win32AppMinOsFetch {
     $timer.Start()
 }
 
-function Start-EntraDirectoryLookup {
+function Global:Start-EntraDirectoryLookup {
     param([scriptblock]$OnComplete)
 
     if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
@@ -436,7 +436,7 @@ function Start-EntraDirectoryLookup {
     $timer.Start()
 }
 
-function Find-IntuneMatches {
+function Global:Find-IntuneMatches {
     param([string]$Name)
 
     # Build the result as an explicit List and return it with a leading comma.
@@ -467,7 +467,7 @@ function Find-IntuneMatches {
     return ,$results.ToArray()
 }
 
-function Start-AppMetadataFetch {
+function Global:Start-AppMetadataFetch {
     param([string]$AppId, [scriptblock]$OnComplete)
 
     if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
@@ -753,7 +753,7 @@ function Start-AppMetadataFetch {
     $timer.Start()
 }
 
-function Start-TypeVersionBackfill {
+function Global:Start-TypeVersionBackfill {
     if ($Script:TypeVersionBackfillDone) { return }
     if (-not (Test-GraphCredentialsConfigured)) { return }
 
@@ -823,7 +823,7 @@ function Start-TypeVersionBackfill {
     & $RunBackfillQueueBox.Value -Queue $needsBackfill -QueueIndex 0 -UpdatedCount 0 -FailedCount 0
 }
 
-function Start-GroupMembersFetch {
+function Global:Start-GroupMembersFetch {
     param([string]$GroupName, [scriptblock]$OnComplete)
 
     if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {

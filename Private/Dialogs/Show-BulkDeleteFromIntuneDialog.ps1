@@ -1,4 +1,4 @@
-function Show-BulkDeleteFromIntuneDialog {
+function Global:Show-BulkDeleteFromIntuneDialog {
     param([int[]]$Indices)
 
     # Plain local aliases - see note in Start-IntuneAppLookup.

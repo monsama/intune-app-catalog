@@ -1,4 +1,4 @@
-function ConvertTo-AppRecord {
+function Global:ConvertTo-AppRecord {
     param($Raw)
     # Only present once metadata has actually been captured for an app
     # that doesn't exist in Intune yet (via Deploy to Intune's "Save for
@@ -96,7 +96,7 @@ function ConvertTo-AppRecord {
     }
 }
 
-function Load-AppsFromFile {
+function Global:Load-AppsFromFile {
     param([string]$Path)
 
     # Every (re)load is a fresh catalog as far as the Type/Version
@@ -218,14 +218,14 @@ function Load-AppsFromFile {
     }
 }
 
-function ConvertTo-JsonStringLiteral {
+function Global:ConvertTo-JsonStringLiteral {
     param([string]$Value)
     if ($null -eq $Value) { return '""' }
     $escaped = $Value.Replace('\', '\\').Replace('"', '\"').Replace("`t", '\t').Replace("`r", '\r').Replace("`n", '\n')
     return '"' + $escaped + '"'
 }
 
-function ConvertTo-DetectionRuleJson {
+function Global:ConvertTo-DetectionRuleJson {
     param($DetectionRule, [int]$IndentLevel)
 
     if (-not $DetectionRule) { return "null" }
@@ -272,7 +272,7 @@ function ConvertTo-DetectionRuleJson {
     return "{`r`n" + ($fields -join ",`r`n") + "`r`n$pad}"
 }
 
-function ConvertTo-JsonStringArray {
+function Global:ConvertTo-JsonStringArray {
     param([string[]]$Items, [int]$IndentLevel)
     # Filters out null/empty entries explicitly, not just wraps and
     # counts - PowerShell coerces a $null element into an empty string
@@ -294,7 +294,7 @@ function ConvertTo-JsonStringArray {
     return "[`r`n" + ($lines -join "`r`n") + "`r`n$pad]"
 }
 
-function ConvertTo-SingleAppJson {
+function Global:ConvertTo-SingleAppJson {
     param($App)
 
     $fields = New-Object System.Collections.Generic.List[string]
@@ -388,7 +388,7 @@ function ConvertTo-SingleAppJson {
     return "{`r`n" + ($fields -join ",`r`n") + "`r`n}"
 }
 
-function ConvertTo-CreateAppConfigJson {
+function Global:ConvertTo-CreateAppConfigJson {
     param($Config)
 
     $fields = New-Object System.Collections.Generic.List[string]
@@ -450,7 +450,7 @@ function ConvertTo-CreateAppConfigJson {
     return "{`r`n" + ($fields -join ",`r`n") + "`r`n}"
 }
 
-function Save-AppsToFile {
+function Global:Save-AppsToFile {
     param([string]$Path)
 
     $dupIds = $Script:Apps | Where-Object { $_.appId } | Group-Object appId | Where-Object { $_.Count -gt 1 }
@@ -609,7 +609,7 @@ function Save-AppsToFile {
     }
 }
 
-function Get-AllKnownGroups {
+function Global:Get-AllKnownGroups {
     $set = New-Object System.Collections.Generic.HashSet[string]
     foreach ($app in $Script:Apps) {
         foreach ($g in @($app.requiredFor))  { [void]$set.Add($g) }
@@ -619,7 +619,7 @@ function Get-AllKnownGroups {
     return ($set | Sort-Object)
 }
 
-function Load-LastAuditCache {
+function Global:Load-LastAuditCache {
     if (-not (Test-Path $Script:LastAuditCachePath)) { return }
     try {
         $raw = Get-Content -Path $Script:LastAuditCachePath -Raw | ConvertFrom-Json
@@ -637,14 +637,14 @@ function Load-LastAuditCache {
     catch { }
 }
 
-function Save-LastAuditCache {
+function Global:Save-LastAuditCache {
     try {
         $Script:LastAuditResults | ConvertTo-Json -Depth 5 | Set-Content -Path $Script:LastAuditCachePath -Encoding UTF8 -ErrorAction Stop
     }
     catch { }
 }
 
-function Set-LastAuditCacheEntry {
+function Global:Set-LastAuditCacheEntry {
     param([string]$AppName, [string]$Metadata, [string]$Groups, [string]$Dependencies, [string]$Unknown)
 
     # $PSBoundParameters, not a $null check on the parameter itself - a

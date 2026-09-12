@@ -1,4 +1,4 @@
-function Load-GraphSettings {
+function Global:Load-GraphSettings {
     if (-not (Test-Path $Script:SettingsFilePath)) { return }
     try {
         # -Encoding UTF8 explicitly - same reasoning as Load-AppsFromFile's
@@ -63,7 +63,7 @@ function Load-GraphSettings {
     }
 }
 
-function Write-SettingsFile {
+function Global:Write-SettingsFile {
     try {
         $settings = [pscustomobject]@{
             TenantId              = $Script:GraphTenantId
@@ -84,7 +84,7 @@ function Write-SettingsFile {
     }
 }
 
-function Save-GraphSettings {
+function Global:Save-GraphSettings {
     param(
         [string]$TenantId,
         [string]$ClientId,
@@ -96,11 +96,11 @@ function Save-GraphSettings {
     return (Write-SettingsFile)
 }
 
-function Save-FavoriteGroups {
+function Global:Save-FavoriteGroups {
     return (Write-SettingsFile)
 }
 
-function Clear-DelegatedSignInCache {
+function Global:Clear-DelegatedSignInCache {
     try {
         $msalCacheDir = Join-Path $env:LOCALAPPDATA ".IdentityService"
         foreach ($cacheFile in @("mg.msal.cache.cae", "mg.msal.cache.nocae")) {
@@ -110,7 +110,7 @@ function Clear-DelegatedSignInCache {
     } catch { }
 }
 
-function Test-GraphCredentialsConfigured {
+function Global:Test-GraphCredentialsConfigured {
     # -not [string]::IsNullOrWhiteSpace(...), not plain PowerShell truthiness
     # ($Script:GraphTenantId -and ...) - a value that's present but only
     # whitespace (e.g. a stray-space CertificateThumbprint loaded from an
@@ -129,7 +129,7 @@ function Test-GraphCredentialsConfigured {
     return $false
 }
 
-function Get-CertificateStatusText {
+function Global:Get-CertificateStatusText {
     param([string]$Thumbprint)
 
     if ([string]::IsNullOrWhiteSpace($Thumbprint)) {

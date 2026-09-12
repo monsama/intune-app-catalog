@@ -1,4 +1,4 @@
-function Show-SetDefaultsConfirmDialog {
+function Global:Show-SetDefaultsConfirmDialog {
     param([string[]]$Lines, $ParentForm)
 
     $dlg = New-Object System.Windows.Forms.Form

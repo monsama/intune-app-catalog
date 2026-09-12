@@ -1,4 +1,4 @@
-function Show-BatchDeployDialog {
+function Global:Show-BatchDeployDialog {
     param([int[]]$ScopedIndices = @())
 
     # Plain local aliases - see note in Start-IntuneAppLookup.

@@ -1,4 +1,4 @@
-function Show-EntraMemberPicker {
+function Global:Show-EntraMemberPicker {
     # Plain local alias - see note in Start-IntuneAppLookup. $UpdateStatus and
     # $RefreshList below are closures; even a single level of GetNewClosure()
     # does not reliably see $Script:-qualified variables, only plain ones.

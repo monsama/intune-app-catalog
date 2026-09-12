@@ -1,4 +1,4 @@
-function Write-Log {
+function Global:Write-Log {
     param([string]$Text, [System.Drawing.Color]$Color = [System.Drawing.Color]::Gainsboro)
     if ($logBox.InvokeRequired) {
         $logBox.Invoke([Action]{ Write-Log -Text $Text -Color $Color })
@@ -19,13 +19,13 @@ function Write-Log {
     }
 }
 
-function Set-PipelineButtonsEnabled {
+function Global:Set-PipelineButtonsEnabled {
     param([bool]$Enabled)
     $btnRunLaunch.Enabled = $Enabled
     $progress.Visible = -not $Enabled
 }
 
-function Ensure-Folders {
+function Global:Ensure-Folders {
     $folders = @("app-packages","app-data","logs","backups")
     foreach ($f in $folders) {
         $p = Join-Path $Script:RootPath $f
@@ -80,7 +80,7 @@ function Ensure-Folders {
     }
 }
 
-function Start-PipelineProcess {
+function Global:Start-PipelineProcess {
     param(
         [string]$ScriptContent,
         [string]$TempScriptName,
@@ -250,7 +250,7 @@ function Start-PipelineProcess {
     return $proc
 }
 
-function Invoke-LaunchStep {
+function Global:Invoke-LaunchStep {
     param(
         [scriptblock]$OnComplete,
         [string]$SingleFolderName = "",

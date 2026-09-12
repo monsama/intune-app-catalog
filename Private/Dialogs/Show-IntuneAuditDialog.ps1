@@ -1,4 +1,4 @@
-function Show-IntuneAuditDialog {
+function Global:Show-IntuneAuditDialog {
     # Selected rows (if any, passed in by the caller) scope this to just
     # them; nothing selected audits the whole catalog like every other
     # -ScopedIndices dialog in this app - same convention Batch Deploy and

@@ -1,4 +1,4 @@
-function Show-GroupOnlyPicker {
+function Global:Show-GroupOnlyPicker {
     # Plain local alias - see note in Start-IntuneAppLookup.
     $cache = $Script:EntraDirectoryCache
 

@@ -1,4 +1,4 @@
-function Show-AddFavoriteGroupToAppsDialog {
+function Global:Show-AddFavoriteGroupToAppsDialog {
     param([object[]]$CandidateApps)
 
     if ($Script:FavoriteGroups.Count -eq 0) {

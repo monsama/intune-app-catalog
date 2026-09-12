@@ -1,4 +1,4 @@
-function Show-AppRegistrationGuideDialog {
+function Global:Show-AppRegistrationGuideDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Set up the Entra ID app registration"
     $dlg.ClientSize = New-Object System.Drawing.Size(560, 460)

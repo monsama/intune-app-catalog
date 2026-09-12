@@ -1,4 +1,4 @@
-function Show-MetadataDriftDialog {
+function Global:Show-MetadataDriftDialog {
     # -AppName is optional and purely cosmetic (title/header only) - lets a
     # caller reviewing MULTIPLE apps in a row (bulk "Pull metadata and groups from Intune...")
     # make clear which app each popup is actually about, since several of

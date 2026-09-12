@@ -1,4 +1,4 @@
-function Show-DiagnosticsDialog {
+function Global:Show-DiagnosticsDialog {
     # Plain local aliases - see note in Start-IntuneAppLookup. $certThumbRef
     # specifically fixes a real, confirmed-live bug: $btnRun.Add_Click below
     # is itself a .GetNewClosure()'d scriptblock, and reading

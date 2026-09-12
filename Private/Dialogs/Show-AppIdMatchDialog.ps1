@@ -1,4 +1,4 @@
-function Show-AppIdMatchDialog {
+function Global:Show-AppIdMatchDialog {
     if ($Script:IntuneAppsCache.Count -eq 0) {
         [System.Windows.Forms.MessageBox]::Show("No apps were returned from Intune. Check the Pipeline tab's log for details - likely a missing 'DeviceManagementApps.Read.All' application permission (with admin consent) on the app registration.", "Nothing to match", "OK", "Information") | Out-Null
         return

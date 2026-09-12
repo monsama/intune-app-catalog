@@ -1,4 +1,4 @@
-function Show-AppEditor {
+function Global:Show-AppEditor {
     param(
         $ExistingApp, # $null when adding a new app
         # This app's position in $Script:Apps - only known (and only >= 0)

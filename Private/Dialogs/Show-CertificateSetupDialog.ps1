@@ -1,4 +1,4 @@
-function Show-CertificateSetupDialog {
+function Global:Show-CertificateSetupDialog {
     # Plain local aliases - see note in Start-IntuneAppLookup. Even a single
     # level of GetNewClosure() (like $btnUpload.Add_Click below) does not
     # reliably see $Script:-qualified variables directly, only plain ones.
