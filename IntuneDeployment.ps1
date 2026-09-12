@@ -12975,8 +12975,19 @@ function Show-BatchEditMetadataDialog {
     $unsavedBox   = $Script:UnsavedChangesBox
     $linkedFilePath = $Script:LinkedFilePath
 
-    $candidateApps = if ($ScopedIndices.Count -gt 0) { @($ScopedIndices | ForEach-Object { $appsRef[$_] }) } else { @($appsRef) }
+    # ScopedIndices only decides which eligible apps start CHECKED below,
+    # never which ones are shown - unlike Batch Deploy/Sync Metadata's own
+    # -ScopedIndices (which narrow the whole list, correct for THEM since
+    # they're reached from a right-click on a specific selection), this
+    # dialog is reached from a plain toolbar button while the grid's
+    # normal single-row selection is very likely just whatever row was
+    # last clicked/browsed, not a deliberate "only these apps" choice for
+    # a batch field edit. Hard-filtering the list to that one leftover
+    # selection (a real, reported bug) meant "Apps to change" showed just
+    # one app almost every time this was opened from the toolbar, with no
+    # way to see or add any other eligible app from inside the dialog.
     $isScoped = $ScopedIndices.Count -gt 0
+    $scopedAppNames = if ($isScoped) { @($ScopedIndices | ForEach-Object { $appsRef[$_].appName }) } else { @() }
 
     # Win32 (not uncommon), already deployed (has an App ID - nothing in
     # Intune to PATCH otherwise), and has saved local metadata to use as
@@ -12985,12 +12996,12 @@ function Show-BatchEditMetadataDialog {
     # comment on why it can't do a partial patch), so an app with no local
     # metadata at all has nothing safe to fill the untouched fields with
     # and is excluded rather than guessed at.
-    $allCandidates = @($candidateApps | Where-Object { -not (Test-AppIsUncommon -App $_) })
+    $allCandidates = @($appsRef | Where-Object { -not (Test-AppIsUncommon -App $_) })
     $eligibleApps = @($allCandidates | Where-Object { $_.appId -and $_.metadata })
     $noMetadataCount = @($allCandidates | Where-Object { $_.appId -and -not $_.metadata }).Count
 
     if ($eligibleApps.Count -eq 0) {
-        $msg = if ($isScoped) { "None of the selected app(s) are eligible - this needs a Win32 app that's already deployed (has an App ID) and has saved metadata." } else { "No apps are eligible - this needs a Win32 app that's already deployed (has an App ID) and has saved metadata." }
+        $msg = "No apps are eligible - this needs a Win32 app that's already deployed (has an App ID) and has saved metadata."
         if ($noMetadataCount -gt 0) { $msg += " $noMetadataCount app(s) have an App ID but no saved metadata - use `"Pull metadata and groups from Intune...`" on them first." }
         [System.Windows.Forms.MessageBox]::Show($msg, "Nothing to do", "OK", "Information") | Out-Null
         return
@@ -13005,8 +13016,7 @@ function Show-BatchEditMetadataDialog {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $scopeText = if ($isScoped) { "$($eligibleApps.Count) selected app(s)" } else { "all $($eligibleApps.Count) eligible app(s)" }
-    $lblIntro.Text = "Changes only the field(s) checked below, on whichever apps are checked on the left, then pushes each one straight to Intune. Every other field on each app is left exactly as it already is. Scoped to $scopeText - Win32 apps that are deployed and have saved metadata. Install/uninstall commands and the detection rule aren't offered here - those are per-app by nature, not something safe to set to one shared value across different apps."
+    $lblIntro.Text = "Changes only the field(s) checked below, on whichever apps are checked on the left, then pushes each one straight to Intune. Every other field on each app is left exactly as it already is. Lists every eligible Win32 app that's deployed and has saved metadata - not just whatever's currently selected in the main grid (that's only used to pre-check apps below, never to hide the rest). Install/uninstall commands and the detection rule aren't offered here - those are per-app by nature, not something safe to set to one shared value across different apps."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(920,54)
     $dlg.Controls.Add($lblIntro)
@@ -13022,7 +13032,14 @@ function Show-BatchEditMetadataDialog {
     $clbApps.Size = New-Object System.Drawing.Size(330,380)
     $clbApps.CheckOnClick = $true
     $dlg.Controls.Add($clbApps)
-    foreach ($eligibleApp in ($eligibleApps | Sort-Object appName)) { [void]$clbApps.Items.Add($eligibleApp.appName, $true) }
+    # Pre-checked: every eligible app whenever nothing specific was
+    # selected in the main grid, otherwise just the ones that were - see
+    # $scopedAppNames's own comment above for why this never hides the
+    # rest of the list either way.
+    foreach ($eligibleApp in ($eligibleApps | Sort-Object appName)) {
+        $startChecked = if ($isScoped) { $scopedAppNames -contains $eligibleApp.appName } else { $true }
+        [void]$clbApps.Items.Add($eligibleApp.appName, $startChecked)
+    }
 
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Select all"
