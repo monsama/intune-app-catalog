@@ -5235,6 +5235,8 @@ function Show-EntraMemberPicker {
     $btnRefresh.Location = New-Object System.Drawing.Point(388,31)
     $btnRefresh.Size = New-Object System.Drawing.Size(80,26)
     $dlg.Controls.Add($btnRefresh)
+    $refreshTip = New-Object System.Windows.Forms.ToolTip
+    $refreshTip.SetToolTip($btnRefresh, "Re-fetches this list from Entra ID.")
 
     $lst = New-Object System.Windows.Forms.ListBox
     $lst.Location = New-Object System.Drawing.Point(12,64)
@@ -5386,6 +5388,8 @@ function Show-GroupOnlyPicker {
     $btnRefresh.Location = New-Object System.Drawing.Point(388,31)
     $btnRefresh.Size = New-Object System.Drawing.Size(80,26)
     $dlg.Controls.Add($btnRefresh)
+    $refreshTip = New-Object System.Windows.Forms.ToolTip
+    $refreshTip.SetToolTip($btnRefresh, "Re-fetches this list from Entra ID.")
 
     $lst = New-Object System.Windows.Forms.ListBox
     $lst.Location = New-Object System.Drawing.Point(12,64)
@@ -5512,7 +5516,7 @@ function Show-AppIdMatchDialog {
     # the App ID for a catalog app that's never been linked to anything in
     # Intune, matched by NAME since there's nothing more reliable to go on
     # yet for those. An app that ALREADY has an App ID is deliberately left
-    # out here, not re-matched by name too - "Find apps missing from catalog..."'s own
+    # out here, not re-matched by name too - "Intune sync check..."'s own
     # "Renamed in Intune" already covers that same "does this app's stored
     # ID still make sense?" question, the correct direction: by the App ID
     # already on file (the durable identity), checking whether Intune's
@@ -5526,23 +5530,23 @@ function Show-AppIdMatchDialog {
         if (-not $appsRef[$ei].appId) { $eligibleIndices.Add($ei) }
     }
     if ($eligibleIndices.Count -eq 0) {
-        [System.Windows.Forms.MessageBox]::Show("Every catalog app already has an App ID - there's nothing to look up. If one looks wrong or stale, use `"Find apps missing from catalog...`" instead, which checks against the App ID already on file rather than matching by name.", "Nothing to do", "OK", "Information") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("Every catalog app already has an App ID - there's nothing to look up. If one looks wrong or stale, use `"Intune sync check...`" instead, which checks against the App ID already on file rather than matching by name.", "Nothing to do", "OK", "Information") | Out-Null
         return
     }
 
     $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "Match App IDs from Intune"
+    $dlg.Text = "Look up App IDs from Intune"
     $dlg.ClientSize = New-Object System.Drawing.Size(1300, 520)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "Sizable"
     $dlg.MinimumSize = New-Object System.Drawing.Size(900, 360)
 
     # Regular weight, color-coded by outcome (below) - matches how every
-    # other dialog's own status line (Find apps missing from catalog,
+    # other dialog's own status line (Intune sync check,
     # Check catalog groups against Entra ID, ...) is styled, rather than
     # this one dialog alone using bold.
     $lblHelp = New-Object System.Windows.Forms.Label
-    $lblHelp.Text = "Matches each catalog app that has NO App ID yet to an Intune app by name, so you can link the App ID Intune already has into your LOCAL catalog. This only updates App IDs stored in your local catalog files - it never creates, changes, or deletes anything in Intune itself. Rows with an exact name match are pre-checked; use `"Choose...`" to pick a different match, then `"Apply checked rows`". Apps that already have an App ID aren't shown here - use `"Find apps missing from catalog...`" for those instead."
+    $lblHelp.Text = "Matches each catalog app that has NO App ID yet to an Intune app by name, so you can link the App ID Intune already has into your LOCAL catalog. This only updates App IDs stored in your local catalog files - it never creates, changes, or deletes anything in Intune itself. Rows with an exact name match are pre-checked; use `"Choose...`" to pick a different match, then `"Apply checked rows to catalog`". Apps that already have an App ID aren't shown here - use `"Intune sync check...`" for those instead."
     $lblHelp.Dock = "Top"
     $lblHelp.Height = 62
     $lblHelp.ForeColor = [System.Drawing.Color]::DimGray
@@ -5659,7 +5663,7 @@ function Show-AppIdMatchDialog {
     $btnCancelMatch.AutoSize = $true
 
     $btnApplyMatch = New-Object System.Windows.Forms.Button
-    $btnApplyMatch.Text = "Apply checked rows"
+    $btnApplyMatch.Text = "Apply checked rows to catalog"
     $btnApplyMatch.AutoSize = $true
 
     $btnPanel.Controls.Add($btnCancelMatch)
@@ -7021,11 +7025,11 @@ $toolbar.Padding = New-Object System.Windows.Forms.Padding(6)
 $btnNew    = New-Object System.Windows.Forms.Button; $btnNew.Text = "+ Add app..."
 $btnEdit   = New-Object System.Windows.Forms.Button; $btnEdit.Text = "Edit..."
 $btnDelete = New-Object System.Windows.Forms.Button; $btnDelete.Text = "Remove from catalog..."
-$btnSave   = New-Object System.Windows.Forms.Button; $btnSave.Text = "Force save"
+$btnSave   = New-Object System.Windows.Forms.Button; $btnSave.Text = "Force save catalog"
 $btnReload = New-Object System.Windows.Forms.Button; $btnReload.Text = "Reload"
 $btnOpen   = New-Object System.Windows.Forms.Button; $btnOpen.Text = "Open other folder..."
 $btnLookupIds = New-Object System.Windows.Forms.Button; $btnLookupIds.Text = "Look up App IDs..."
-$btnCheckIntuneOnly = New-Object System.Windows.Forms.Button; $btnCheckIntuneOnly.Text = "Find apps missing from catalog..."
+$btnCheckIntuneOnly = New-Object System.Windows.Forms.Button; $btnCheckIntuneOnly.Text = "Intune sync check..."
 $btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text = "Push groups to Intune (multiple apps)..."
 $btnSyncMetadata = New-Object System.Windows.Forms.Button; $btnSyncMetadata.Text = "Pull metadata and groups from Intune..."
 $btnBatchDeploy = New-Object System.Windows.Forms.Button; $btnBatchDeploy.Text = "Batch deploy..."
@@ -7033,7 +7037,7 @@ $btnGroupManager = New-Object System.Windows.Forms.Button; $btnGroupManager.Text
 $btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.Text = "Favorite groups..."
 $btnDependencies = New-Object System.Windows.Forms.Button; $btnDependencies.Text = "View dependencies..."
 $btnGroupDrift = New-Object System.Windows.Forms.Button; $btnGroupDrift.Text = "Check catalog groups against Entra ID..."
-$btnIntuneAudit = New-Object System.Windows.Forms.Button; $btnIntuneAudit.Text = "Audit against Intune..."
+$btnIntuneAudit = New-Object System.Windows.Forms.Button; $btnIntuneAudit.Text = "Intune Audit..."
 $btnRunLaunch = New-Object System.Windows.Forms.Button; $btnRunLaunch.Text = "Package apps"
 $btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "Settings..."
 $btnDefaultValues = New-Object System.Windows.Forms.Button; $btnDefaultValues.Text = "Edit default values..."
@@ -7055,7 +7059,7 @@ $toolbarTips.SetToolTip($btnSave, "Not usually needed - every change already sav
 $toolbarTips.SetToolTip($btnReload, "Discard any unsaved changes and reload the catalog from disk.")
 $toolbarTips.SetToolTip($btnOpen, "Switch to a different folder of per-app JSON files.")
 $toolbarTips.SetToolTip($btnLookupIds, "Search Intune by name for apps missing an App ID, and fill it in.")
-$toolbarTips.SetToolTip($btnCheckIntuneOnly, "Find apps that exist in Intune but aren't in this catalog yet.")
+$toolbarTips.SetToolTip($btnCheckIntuneOnly, "Compares Intune against this catalog: apps in Intune not yet in the catalog, catalog apps renamed in Intune since, and catalog apps whose App ID no longer exists in Intune. Read-only.")
 $toolbarTips.SetToolTip($btnBatchAssign, "Add a favorite group to multiple apps at once, then preview and apply the result to Intune.")
 $toolbarTips.SetToolTip($btnSyncMetadata, "Pull current metadata from Intune into the local catalog for apps that already have an App ID. Read-only.")
 $toolbarTips.SetToolTip($btnBatchDeploy, "Create multiple apps in Intune, in dependency order. Uses metadata saved via 'Save for later...' where an app has it, otherwise the same defaults Deploy to Intune's own form would.")
@@ -7861,7 +7865,7 @@ function Start-GroupMembersFetch {
 
 
 # Direct-saves after a successful deploy, same as every other single,
-# atomic catalog action this session - "Force save" (the main toolbar
+# atomic catalog action this session - "Force save catalog" (the main toolbar
 # button) is no longer a required step for this to actually persist.
 # =====================================================================
 function Invoke-QuickDeploy {
@@ -8119,7 +8123,7 @@ function Show-LastAuditDetail {
     param([string]$AppName)
 
     if (-not $Script:LastAuditResults.ContainsKey($AppName)) {
-        [System.Windows.Forms.MessageBox]::Show("`"$AppName`" hasn't been checked against Intune yet this session. Run `"Audit against Intune...`" (or open `"Deploy to Intune...`" for it, which checks Metadata and Dependencies automatically) to see where it stands.", "Never audited - $AppName", "OK", "Information") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("`"$AppName`" hasn't been checked against Intune yet this session. Run `"Intune Audit...`" (or open `"Deploy to Intune...`" for it, which checks Metadata and Dependencies automatically) to see where it stands.", "Never audited - $AppName", "OK", "Information") | Out-Null
         return
     }
 
@@ -8572,12 +8576,12 @@ function Show-DependencyOverviewDialog {
 
     # Whether this checks against LIVE Intune data too used to be a fair
     # question - it doesn't, deliberately: that comparison now lives in
-    # "Audit against Intune...", alongside every other local-vs-Intune
+    # "Intune Audit...", alongside every other local-vs-Intune
     # check, instead of being duplicated (and re-fetched) here too. This
     # stays a purely local, always-instant view of the catalog's own
     # dependency graph.
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Every app in the catalog, what it depends on, and what depends on it. Read-only, local only - see `"Audit against Intune...`" to check dependencies against what's actually live. Double-click a row to see the full lists if they're truncated."
+    $lblIntro.Text = "Every app in the catalog, what it depends on, and what depends on it. Read-only, local only - see `"Intune Audit...`" to check dependencies against what's actually live. Double-click a row to see the full lists if they're truncated."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(790,32)
     $dlg.Controls.Add($lblIntro)
@@ -9033,6 +9037,8 @@ function Show-DefaultAppSettingsDialog {
     $btnResetFactory.Location = New-Object System.Drawing.Point(15,540)
     $btnResetFactory.Size = New-Object System.Drawing.Size(180,32)
     $dlg.Controls.Add($btnResetFactory)
+    $resetFactoryTip = New-Object System.Windows.Forms.ToolTip
+    $resetFactoryTip.SetToolTip($btnResetFactory, "Fills in the fields above with this app's original built-in defaults - still requires Save below to actually apply.")
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
@@ -10121,6 +10127,8 @@ function Show-CreateInIntuneDialog {
     $btnSetDefaults.Size = New-Object System.Drawing.Size(220,28)
     $btnSetDefaults.Visible = (-not $Uncommon)
     $scrollPanel.Controls.Add($btnSetDefaults)
+    $setDefaultsTip = New-Object System.Windows.Forms.ToolTip
+    $setDefaultsTip.SetToolTip($btnSetDefaults, "Fills in the fields below with the computed Winget defaults - nothing is saved or deployed until you click Save/Deploy afterward.")
 
     $lblSetDefaultsHint = New-Object System.Windows.Forms.Label
     $lblSetDefaultsHint.Text = "Resets install/uninstall/detection, architecture, min OS, requirements, and return codes to this app's standard Winget defaults - free-text fields (description, publisher, notes, ...) are left alone."
@@ -11507,7 +11515,7 @@ function Show-CreateInIntuneDialog {
             # (e.g. via the main toolbar's Save to input.json) rather than
             # closing on them right when something needs attention.
             $lblCreateStatus.ForeColor = [System.Drawing.Color]::DarkOrange
-            $lblCreateStatus.Text = "$($createdMsg)Metadata saved in memory for `"$AppName`", but writing to disk was cancelled or failed - use Force save to try again."
+            $lblCreateStatus.Text = "$($createdMsg)Metadata saved in memory for `"$AppName`", but writing to disk was cancelled or failed - use Force save catalog to try again."
             return
         }
 
@@ -12023,7 +12031,7 @@ function Show-CreateInIntuneDialog {
                     # opening this dialog surfaces a dependency drift (e.g.
                     # something added/removed directly in Intune) the same
                     # way it already does for every other field, instead of
-                    # needing a separate trip to "Audit against Intune..."
+                    # needing a separate trip to "Intune Audit..."
                     # to notice it.
                     $liveDependenciesSorted = @($data.Dependencies) | Sort-Object
                     $localDependenciesSorted = @($localSnapshotRef.Dependencies) | Sort-Object
@@ -12031,7 +12039,7 @@ function Show-CreateInIntuneDialog {
 
                     # Feeds the main grid's own "Last Audit" column - opening
                     # this dialog for an app now counts as a (partial) audit
-                    # of it, same as a full "Audit against Intune..." run
+                    # of it, same as a full "Intune Audit..." run
                     # would, just for Metadata/Dependencies only (this
                     # dialog has no Groups/Unknown Assignments check of its
                     # own - see the note on Get-GroupFieldDiffs's usage
@@ -12900,7 +12908,7 @@ function Show-SyncMetadataDialog {
     }
 
     $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "Sync metadata from Intune"
+    $dlg.Text = "Pull metadata and groups from Intune"
     $dlg.ClientSize = New-Object System.Drawing.Size(620, 600)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
@@ -13215,7 +13223,7 @@ function Show-SyncMetadataDialog {
                 $summary = ($summaryParts -join ", ") + " of $totalCount."
                 if (-not $syncSaveOk) {
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
-                    $lblStatusRef.Text = "$summary Writing to disk was cancelled or failed - use Force save to try again."
+                    $lblStatusRef.Text = "$summary Writing to disk was cancelled or failed - use Force save catalog to try again."
                 }
                 elseif ($failedNames.Count -gt 0) {
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
@@ -13732,7 +13740,7 @@ function Show-BatchAssignDialog {
     $dlg.Controls.Add($btnRemoveGroup)
 
     $btnApply = New-Object System.Windows.Forms.Button
-    $btnApply.Text = "Apply changes..."
+    $btnApply.Text = "Apply to Intune..."
     $btnApply.Location = New-Object System.Drawing.Point(535,476)
     $btnApply.Size = New-Object System.Drawing.Size(130,32)
     $btnApply.Enabled = $false
@@ -14187,7 +14195,7 @@ function Show-DiagnosticsDialog {
 
             $catalogAppIds = @($appsRefRef | ForEach-Object { [string]$_.appId } | Where-Object { $_ })
             $notInCatalogCount = @($data | Where-Object { $catalogAppIds -notcontains [string]$_.id }).Count
-            & $appendLineRef "$(if ($notInCatalogCount -eq 0) { '[OK]' } else { '[INFO]' }) $notInCatalogCount app(s) in Intune with no matching catalog entry - see `"Find apps missing from catalog...`"" $(if ($notInCatalogCount -eq 0) { $okColorRef } else { $infoColorRef })
+            & $appendLineRef "$(if ($notInCatalogCount -eq 0) { '[OK]' } else { '[INFO]' }) $notInCatalogCount app(s) in Intune with no matching catalog entry - see `"Intune sync check...`"" $(if ($notInCatalogCount -eq 0) { $okColorRef } else { $infoColorRef })
 
             & $appendLineRef "Fetching Minimum Windows values for deployed Win32 apps..." $infoColorRef
 
@@ -14651,7 +14659,7 @@ function Show-IntuneOnlyAppsDialog {
                 # before there was any chance to set a Winget ID first (a
                 # detail Deploy to Intune's own defaults care about). Groups
                 # and metadata are still both reachable from here - groups
-                # via "Pull groups from Intune" (which this dialog's own
+                # via "Pull groups from Intune..." (which this dialog's own
                 # fetch above already primed requiredFor/availableFor/
                 # uninstallFor with, so it's a re-confirm not a first
                 # fetch), metadata via "Deploy to Intune..." itself, once
@@ -17436,7 +17444,7 @@ function Show-AppEditor {
             $lblIdStatus.ForeColor = [System.Drawing.Color]::SeaGreen
         }
         else {
-            $lblIdStatus.Text = "Deleted from Intune, but saving the cleared App ID failed - check the Log tab, then use Force save."
+            $lblIdStatus.Text = "Deleted from Intune, but saving the cleared App ID failed - check the Log tab, then use Force save catalog."
             $lblIdStatus.ForeColor = [System.Drawing.Color]::Firebrick
             $rtbAppEditorLog.AppendText("[FAILED] Deleted from Intune, but saving the cleared App ID locally failed - see the Log tab for details.`r`n")
         }
@@ -17538,7 +17546,7 @@ function Show-AppEditor {
     # to nobody" when the truth is just "this editor never asked Intune
     # what's actually there".
     $btnReadGroupsFromIntune = New-Object System.Windows.Forms.Button
-    $btnReadGroupsFromIntune.Text = "Pull groups from Intune"
+    $btnReadGroupsFromIntune.Text = "Pull groups from Intune..."
     $btnReadGroupsFromIntune.Location = New-Object System.Drawing.Point(15,674)
     $btnReadGroupsFromIntune.Size = New-Object System.Drawing.Size(430,30)
     $dlg.Controls.Add($btnReadGroupsFromIntune)
@@ -17987,7 +17995,7 @@ $menuItemAssign = New-Object System.Windows.Forms.ToolStripMenuItem "Push groups
 # it reuses - was reachable only from there before, requiring a
 # pre-selection made before ever opening the toolbar dialog, when a
 # right-click on the row(s) in question is the more natural way in.
-$menuItemSyncMetadata = New-Object System.Windows.Forms.ToolStripMenuItem "Sync metadata from Intune..."
+$menuItemSyncMetadata = New-Object System.Windows.Forms.ToolStripMenuItem "Pull metadata and groups from Intune..."
 # Same eligibility/scoping as $menuItemSyncMetadata right above - an app
 # needs an App ID before there's anything in Intune to audit against.
 # Reuses Show-IntuneAuditDialog's own -ScopedIndices (added specifically
