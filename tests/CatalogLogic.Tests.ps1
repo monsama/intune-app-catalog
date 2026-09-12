@@ -126,6 +126,34 @@ foreach ($fn in $funcAsts) {
 # folder) never runs in this harness.
 $Script:Apps = New-Object System.Collections.Generic.List[object]
 
+# $Script:DefaultAppSettings is what Get-DefaultAppMetadata now reads for
+# every value it used to hardcode directly - stubbed with the exact same
+# factory values the real script itself initializes this to, so this
+# harness exercises the same defaults a real, never-customized install
+# would compute. If the real script's own factory values above ever
+# change, this needs updating to match, same as every other value this
+# test suite mirrors from the real script.
+$Script:DefaultAppSettings = [pscustomobject]@{
+    Architecture             = "x64"
+    InstallContext           = "System"
+    MinOSKey                 = "W10_22H2"
+    MinDiskSpaceMB           = 0
+    MinMemoryMB              = 0
+    MinProcessors            = 0
+    MinCpuSpeedMHz           = 0
+    InstallTimeMinutes       = 60
+    DeviceRestartBehavior    = "basedOnReturnCode"
+    AllowAvailableUninstall  = $false
+    ReturnCodes              = @(
+        [pscustomobject]@{ returnCode = 0; type = "success" }
+        [pscustomobject]@{ returnCode = 1707; type = "success" }
+        [pscustomobject]@{ returnCode = 3010; type = "softReboot" }
+        [pscustomobject]@{ returnCode = 1641; type = "hardReboot" }
+        [pscustomobject]@{ returnCode = 1618; type = "retry" }
+    )
+    DefaultDependencyAppName = "Winget AutoUpdate"
+}
+
 # =================================================================
 # Test-AppIsUncommon
 # =================================================================

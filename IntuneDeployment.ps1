@@ -121,6 +121,42 @@ $Script:SettingsFilePath = Join-Path $Script:RootPath "intune-deployment-setting
 # comment on Write-SettingsFile below for why.
 $Script:FavoriteGroups = New-Object System.Collections.Generic.List[string]
 
+# The computed defaults Get-DefaultAppMetadata hands out for a brand-new
+# Winget app (what "Set default values..." and the custom-field
+# highlighting in Show-CreateInIntuneDialog both compare against, and what
+# Batch Deploy falls back to for an app with no saved metadata). Starts as
+# exactly the values this app has always hardcoded here - so behavior is
+# byte-for-byte identical until someone actually opens "Edit default
+# values..." and changes something - then persisted in the same settings
+# file as Graph credentials/Favorite groups, for the same
+# write-everything-together reason documented on Write-SettingsFile below.
+$Script:DefaultAppSettings = [pscustomobject]@{
+    Architecture             = "x64"
+    InstallContext           = "System"
+    # Newest Windows 10 release, not Windows 11 - a sensible default
+    # shouldn't silently require Windows 11 for every new app. See
+    # Show-CreateInIntuneDialog's own $minOsMap for the full set this can
+    # be set to.
+    MinOSKey                 = "W10_22H2"
+    MinDiskSpaceMB           = 0
+    MinMemoryMB              = 0
+    MinProcessors            = 0
+    MinCpuSpeedMHz           = 0
+    InstallTimeMinutes       = 60
+    DeviceRestartBehavior    = "basedOnReturnCode"
+    AllowAvailableUninstall  = $false
+    ReturnCodes              = @(
+        [pscustomobject]@{ returnCode = 0; type = "success" }
+        [pscustomobject]@{ returnCode = 1707; type = "success" }
+        [pscustomobject]@{ returnCode = 3010; type = "softReboot" }
+        [pscustomobject]@{ returnCode = 1641; type = "hardReboot" }
+        [pscustomobject]@{ returnCode = 1618; type = "retry" }
+    )
+    # The app every OTHER app defaults to depending on, when one by this
+    # name exists in the catalog - blank means "no default dependency".
+    DefaultDependencyAppName = "Winget AutoUpdate"
+}
+
 # Guards Start-TypeVersionBackfill (see its own definition) against
 # running more than once per catalog load - it's kicked off automatically
 # on startup and after Reload/Open other folder, not on every grid
@@ -260,6 +296,30 @@ function Load-GraphSettings {
             $Script:FavoriteGroups.Clear()
             foreach ($g in @($settings.FavoriteGroups)) { [void]$Script:FavoriteGroups.Add([string]$g) }
         }
+        # Missing entirely (an older settings file, or one from before this
+        # existed) leaves $Script:DefaultAppSettings at its own built-in
+        # factory values, untouched - same "fall back silently" reasoning
+        # as everything else in this function. Only individual fields that
+        # are ACTUALLY present get overwritten, so a settings file saved by
+        # an older version of this dialog (missing a field added later)
+        # can't accidentally null one out.
+        if ($settings.DefaultAppSettings) {
+            $das = $settings.DefaultAppSettings
+            if ($null -ne $das.Architecture)             { $Script:DefaultAppSettings.Architecture = [string]$das.Architecture }
+            if ($null -ne $das.InstallContext)            { $Script:DefaultAppSettings.InstallContext = [string]$das.InstallContext }
+            if ($null -ne $das.MinOSKey)                  { $Script:DefaultAppSettings.MinOSKey = [string]$das.MinOSKey }
+            if ($null -ne $das.MinDiskSpaceMB)             { $Script:DefaultAppSettings.MinDiskSpaceMB = [int]$das.MinDiskSpaceMB }
+            if ($null -ne $das.MinMemoryMB)                { $Script:DefaultAppSettings.MinMemoryMB = [int]$das.MinMemoryMB }
+            if ($null -ne $das.MinProcessors)              { $Script:DefaultAppSettings.MinProcessors = [int]$das.MinProcessors }
+            if ($null -ne $das.MinCpuSpeedMHz)             { $Script:DefaultAppSettings.MinCpuSpeedMHz = [int]$das.MinCpuSpeedMHz }
+            if ($null -ne $das.InstallTimeMinutes)         { $Script:DefaultAppSettings.InstallTimeMinutes = [int]$das.InstallTimeMinutes }
+            if ($null -ne $das.DeviceRestartBehavior)      { $Script:DefaultAppSettings.DeviceRestartBehavior = [string]$das.DeviceRestartBehavior }
+            if ($null -ne $das.AllowAvailableUninstall)    { $Script:DefaultAppSettings.AllowAvailableUninstall = [bool]$das.AllowAvailableUninstall }
+            if (@($das.ReturnCodes).Count -gt 0) {
+                $Script:DefaultAppSettings.ReturnCodes = @($das.ReturnCodes | ForEach-Object { [pscustomobject]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })
+            }
+            if ($null -ne $das.DefaultDependencyAppName)   { $Script:DefaultAppSettings.DefaultDependencyAppName = [string]$das.DefaultDependencyAppName }
+        }
     }
     catch {
         # Bad/corrupt settings file - fall back to the built-in defaults silently;
@@ -283,6 +343,7 @@ function Write-SettingsFile {
             ClientId              = $Script:GraphClientId
             CertificateThumbprint = $Script:GraphCertificateThumbprint
             FavoriteGroups        = @($Script:FavoriteGroups)
+            DefaultAppSettings    = $Script:DefaultAppSettings
         }
         $json = $settings | ConvertTo-Json -Depth 5
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -6682,6 +6743,7 @@ $btnGroupDrift = New-Object System.Windows.Forms.Button; $btnGroupDrift.Text = "
 $btnIntuneAudit = New-Object System.Windows.Forms.Button; $btnIntuneAudit.Text = "Audit against Intune..."
 $btnRunLaunch = New-Object System.Windows.Forms.Button; $btnRunLaunch.Text = "Package apps"
 $btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "Settings..."
+$btnDefaultValues = New-Object System.Windows.Forms.Button; $btnDefaultValues.Text = "Edit default values..."
 $btnDiagnostics = New-Object System.Windows.Forms.Button; $btnDiagnostics.Text = "Run diagnostics..."
 
 # One shared ToolTip component serves every button - there are enough of
@@ -6711,6 +6773,7 @@ $toolbarTips.SetToolTip($btnGroupDrift, "Check every group name referenced in th
 $toolbarTips.SetToolTip($btnIntuneAudit, "Check every deployed app's Metadata, Groups, Dependencies, and Assignments against what's actually live in Intune, all in one grid. Read-only.")
 $toolbarTips.SetToolTip($btnRunLaunch, "Build the .intunewin package(s) for the selected (or all) uncommon apps.")
 $toolbarTips.SetToolTip($btnCertSetup, "Configure the Tenant ID, Client ID, and certificate used to connect to Microsoft Graph.")
+$toolbarTips.SetToolTip($btnDefaultValues, "Change the computed defaults every new Winget app starts with (architecture, min OS, requirements, return codes, ...). Doesn't touch any app already saved or deployed.")
 $toolbarTips.SetToolTip($btnDiagnostics, "Read-only health check: Graph connectivity, certificate expiry, catalog completeness, and drift against what's actually in Intune.")
 
 $lblSearch = New-Object System.Windows.Forms.Label
@@ -6781,6 +6844,7 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
 )))
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Settings" -Items @(
     @{ Text = $btnCertSetup.Text; Btn = $btnCertSetup }
+    @{ Text = $btnDefaultValues.Text; Btn = $btnDefaultValues }
 )))
 
 $btnMoreActions = New-Object System.Windows.Forms.Button
@@ -8351,14 +8415,13 @@ if (`$Apps) { return "Installed!" }
 
 # Computes the SAME default values Show-CreateInIntuneDialog's own form
 # pre-fills for a brand-new (non-duplicate, non-Update) app, as one
-# catalog-shaped metadata object - every default that function sets
-# unconditionally (install/uninstall/detection templates, x64-only
-# architecture, System context, newest Min OS, the standard 5 return
-# codes, "basedOnReturnCode" restart behavior, 0 for every requirement,
-# and defaulting to depend on "Winget AutoUpdate" when it exists) lives
-# here exactly once, so Batch Deploy can use the identical defaults for
-# an app that was never manually walked through "Save for later..."
-# instead of just skipping it.
+# catalog-shaped metadata object - every default here (besides
+# install/uninstall/detection templates, which are always derived per-app
+# from the Winget ID) comes from $Script:DefaultAppSettings, editable via
+# "Edit default values..." rather than hardcoded, so Batch Deploy can use
+# the SAME (possibly customized) defaults for an app that was never
+# manually walked through "Save for later..." instead of just skipping
+# it.
 #
 # Detection is the one field that can't always be defaulted: for an
 # UNCOMMON app there's no real install to derive a detection script from
@@ -8370,9 +8433,10 @@ function Get-DefaultAppMetadata {
     param([string]$AppName, [string]$WingetId, [bool]$Uncommon)
 
     $templates = Get-CreateAppTemplates -WingetId $WingetId -Uncommon $Uncommon
+    $das = $Script:DefaultAppSettings
     $defaultDeps = @()
-    if ($AppName -ne "Winget AutoUpdate" -and ($Script:Apps | Where-Object { $_.appName -eq "Winget AutoUpdate" })) {
-        $defaultDeps = @("Winget AutoUpdate")
+    if ($das.DefaultDependencyAppName -and $AppName -ne $das.DefaultDependencyAppName -and ($Script:Apps | Where-Object { $_.appName -eq $das.DefaultDependencyAppName })) {
+        $defaultDeps = @($das.DefaultDependencyAppName)
     }
 
     return [pscustomobject]@{
@@ -8385,30 +8449,386 @@ function Get-DefaultAppMetadata {
         notes            = ""
         installCommand   = $templates.Install
         uninstallCommand = $templates.Uninstall
-        architecture     = "x64"
-        installContext   = "System"
-        # Newest Windows 10 release, not Windows 11 - a sensible default
-        # shouldn't silently require Windows 11 for every new app. See
-        # Show-CreateInIntuneDialog's own $minOsMap for the full set this
-        # can be overridden to.
-        minOSKey         = "W10_22H2"
+        architecture     = $das.Architecture
+        installContext   = $das.InstallContext
+        minOSKey         = $das.MinOSKey
         detectionRule    = if ($templates.Detection) { [pscustomobject]@{ Type = "Script"; Script_Content = $templates.Detection } } else { $null }
         dependencies     = $defaultDeps
-        minDiskSpaceMB          = 0
-        minMemoryMB             = 0
-        minProcessors           = 0
-        minCpuSpeedMHz          = 0
-        installTimeMinutes      = 60
-        deviceRestartBehavior   = "basedOnReturnCode"
-        allowAvailableUninstall = $false
-        returnCodes = @(
+        minDiskSpaceMB          = $das.MinDiskSpaceMB
+        minMemoryMB             = $das.MinMemoryMB
+        minProcessors           = $das.MinProcessors
+        minCpuSpeedMHz          = $das.MinCpuSpeedMHz
+        installTimeMinutes      = $das.InstallTimeMinutes
+        deviceRestartBehavior   = $das.DeviceRestartBehavior
+        allowAvailableUninstall = $das.AllowAvailableUninstall
+        returnCodes             = @($das.ReturnCodes)
+    }
+}
+
+# ---------------------------------------------------------------
+# Edit default values dialog
+# ---------------------------------------------------------------
+# Lets $Script:DefaultAppSettings itself be edited - the values
+# Get-DefaultAppMetadata hands out for every Winget app that doesn't
+# override them. Same field set and controls as the "Advanced" section of
+# Show-CreateInIntuneDialog (architecture, install context, min OS,
+# requirements, install time, restart behavior, allow-uninstall, return
+# codes, default dependency), just for the GLOBAL defaults instead of one
+# app's saved metadata - install/uninstall/detection templates aren't
+# here at all, since those are always derived per-app from the Winget ID,
+# never a fixed default.
+function Show-DefaultAppSettingsDialog {
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Edit default values"
+    $dlg.ClientSize = New-Object System.Drawing.Size(620, 590)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+
+    $lblIntro = New-Object System.Windows.Forms.Label
+    $lblIntro.Text = "These are the defaults every new Winget app starts with - in `"Deploy to Intune`", `"Set default values...`", and Batch Deploy for an app with no saved metadata. Changing these here does NOT touch any app already saved or deployed."
+    $lblIntro.Location = New-Object System.Drawing.Point(15,12)
+    $lblIntro.Size = New-Object System.Drawing.Size(590,40)
+    $dlg.Controls.Add($lblIntro)
+
+    $lblContext = New-Object System.Windows.Forms.Label
+    $lblContext.Text = "Install context"
+    $lblContext.Location = New-Object System.Drawing.Point(15,64)
+    $lblContext.AutoSize = $true
+    $dlg.Controls.Add($lblContext)
+
+    $cmbContext = New-Object System.Windows.Forms.ComboBox
+    $cmbContext.Location = New-Object System.Drawing.Point(15,83)
+    $cmbContext.Size = New-Object System.Drawing.Size(160,24)
+    $cmbContext.DropDownStyle = "DropDownList"
+    [void]$cmbContext.Items.AddRange(@("System","User"))
+    $cmbContext.SelectedItem = $Script:DefaultAppSettings.InstallContext
+    $dlg.Controls.Add($cmbContext)
+
+    $lblArch = New-Object System.Windows.Forms.Label
+    $lblArch.Text = "Applicable architectures"
+    $lblArch.Location = New-Object System.Drawing.Point(200,64)
+    $lblArch.AutoSize = $true
+    $dlg.Controls.Add($lblArch)
+
+    $archList = @($Script:DefaultAppSettings.Architecture -split ',' | ForEach-Object { $_.Trim().ToLower() })
+    $chkArchX86 = New-Object System.Windows.Forms.CheckBox
+    $chkArchX86.Text = "x86"
+    $chkArchX86.Location = New-Object System.Drawing.Point(200,83)
+    $chkArchX86.Size = New-Object System.Drawing.Size(48,22)
+    $chkArchX86.Checked = $archList -contains "x86"
+    $dlg.Controls.Add($chkArchX86)
+
+    $chkArchX64 = New-Object System.Windows.Forms.CheckBox
+    $chkArchX64.Text = "x64"
+    $chkArchX64.Location = New-Object System.Drawing.Point(256,83)
+    $chkArchX64.Size = New-Object System.Drawing.Size(48,22)
+    $chkArchX64.Checked = $archList -contains "x64"
+    $dlg.Controls.Add($chkArchX64)
+
+    $chkArchArm64 = New-Object System.Windows.Forms.CheckBox
+    $chkArchArm64.Text = "ARM64"
+    $chkArchArm64.Location = New-Object System.Drawing.Point(312,83)
+    $chkArchArm64.Size = New-Object System.Drawing.Size(65,22)
+    $chkArchArm64.Checked = $archList -contains "arm64"
+    $dlg.Controls.Add($chkArchArm64)
+
+    $lblMinOS = New-Object System.Windows.Forms.Label
+    $lblMinOS.Text = "Minimum Windows"
+    $lblMinOS.Location = New-Object System.Drawing.Point(15,118)
+    $lblMinOS.AutoSize = $true
+    $dlg.Controls.Add($lblMinOS)
+
+    $cmbMinOS = New-Object System.Windows.Forms.ComboBox
+    $cmbMinOS.Location = New-Object System.Drawing.Point(15,137)
+    $cmbMinOS.Size = New-Object System.Drawing.Size(260,24)
+    $cmbMinOS.DropDownStyle = "DropDownList"
+    # Same full set Show-CreateInIntuneDialog's own $minOsMap offers -
+    # kept in sync manually, same as every other copy of this list.
+    $minOsRawValues = @("W10_1607", "W10_1703", "W10_1709", "W10_1803", "W10_1809", "W10_1903", "W10_1909", "W10_2004", "W10_20H2", "W10_21H1", "W10_21H2", "W10_22H2", "W11_21H2", "W11_22H2")
+    $minOsMap = [ordered]@{}
+    foreach ($rawValue in $minOsRawValues) { $minOsMap[(Get-FriendlyMinOsRelease -RawValue $rawValue)] = $rawValue }
+    [void]$cmbMinOS.Items.AddRange(@($minOsMap.Keys))
+    $defaultMinOsLabel = $minOsMap.Keys | Where-Object { $minOsMap[$_] -eq $Script:DefaultAppSettings.MinOSKey } | Select-Object -First 1
+    $cmbMinOS.SelectedItem = if ($defaultMinOsLabel) { $defaultMinOsLabel } else { $minOsMap.Keys | Select-Object -First 1 }
+    $dlg.Controls.Add($cmbMinOS)
+
+    $lblDep = New-Object System.Windows.Forms.Label
+    $lblDep.Text = "Default dependency"
+    $lblDep.Location = New-Object System.Drawing.Point(320,118)
+    $lblDep.AutoSize = $true
+    $dlg.Controls.Add($lblDep)
+
+    $cmbDefaultDep = New-Object System.Windows.Forms.ComboBox
+    $cmbDefaultDep.Location = New-Object System.Drawing.Point(320,137)
+    $cmbDefaultDep.Size = New-Object System.Drawing.Size(285,24)
+    $cmbDefaultDep.DropDownStyle = "DropDownList"
+    [void]$cmbDefaultDep.Items.Add("(none)")
+    foreach ($a in ($Script:Apps | Sort-Object appName)) { [void]$cmbDefaultDep.Items.Add($a.appName) }
+    $cmbDefaultDep.SelectedItem = if ($Script:DefaultAppSettings.DefaultDependencyAppName -and $cmbDefaultDep.Items.Contains($Script:DefaultAppSettings.DefaultDependencyAppName)) { $Script:DefaultAppSettings.DefaultDependencyAppName } else { "(none)" }
+    $dlg.Controls.Add($cmbDefaultDep)
+
+    $lblReqs = New-Object System.Windows.Forms.Label
+    $lblReqs.Text = "Requirements (0 = not required)"
+    $lblReqs.Location = New-Object System.Drawing.Point(15,172)
+    $lblReqs.AutoSize = $true
+    $dlg.Controls.Add($lblReqs)
+
+    $lblDiskSpace = New-Object System.Windows.Forms.Label
+    $lblDiskSpace.Text = "Disk space (MB)"
+    $lblDiskSpace.Location = New-Object System.Drawing.Point(15,193)
+    $lblDiskSpace.AutoSize = $true
+    $dlg.Controls.Add($lblDiskSpace)
+    $txtDiskSpace = New-Object System.Windows.Forms.TextBox
+    $txtDiskSpace.Location = New-Object System.Drawing.Point(15,210)
+    $txtDiskSpace.Size = New-Object System.Drawing.Size(130,23)
+    $txtDiskSpace.Text = [string]$Script:DefaultAppSettings.MinDiskSpaceMB
+    $dlg.Controls.Add($txtDiskSpace)
+
+    $lblMemory = New-Object System.Windows.Forms.Label
+    $lblMemory.Text = "Memory (MB)"
+    $lblMemory.Location = New-Object System.Drawing.Point(160,193)
+    $lblMemory.AutoSize = $true
+    $dlg.Controls.Add($lblMemory)
+    $txtMemory = New-Object System.Windows.Forms.TextBox
+    $txtMemory.Location = New-Object System.Drawing.Point(160,210)
+    $txtMemory.Size = New-Object System.Drawing.Size(130,23)
+    $txtMemory.Text = [string]$Script:DefaultAppSettings.MinMemoryMB
+    $dlg.Controls.Add($txtMemory)
+
+    $lblProcessors = New-Object System.Windows.Forms.Label
+    $lblProcessors.Text = "Min. processors"
+    $lblProcessors.Location = New-Object System.Drawing.Point(305,193)
+    $lblProcessors.AutoSize = $true
+    $dlg.Controls.Add($lblProcessors)
+    $txtProcessors = New-Object System.Windows.Forms.TextBox
+    $txtProcessors.Location = New-Object System.Drawing.Point(305,210)
+    $txtProcessors.Size = New-Object System.Drawing.Size(130,23)
+    $txtProcessors.Text = [string]$Script:DefaultAppSettings.MinProcessors
+    $dlg.Controls.Add($txtProcessors)
+
+    $lblCpuSpeed = New-Object System.Windows.Forms.Label
+    $lblCpuSpeed.Text = "Min. CPU speed (MHz)"
+    $lblCpuSpeed.Location = New-Object System.Drawing.Point(450,193)
+    $lblCpuSpeed.AutoSize = $true
+    $dlg.Controls.Add($lblCpuSpeed)
+    $txtCpuSpeed = New-Object System.Windows.Forms.TextBox
+    $txtCpuSpeed.Location = New-Object System.Drawing.Point(450,210)
+    $txtCpuSpeed.Size = New-Object System.Drawing.Size(130,23)
+    $txtCpuSpeed.Text = [string]$Script:DefaultAppSettings.MinCpuSpeedMHz
+    $dlg.Controls.Add($txtCpuSpeed)
+
+    $lblInstallTime = New-Object System.Windows.Forms.Label
+    $lblInstallTime.Text = "Install time required (mins)"
+    $lblInstallTime.Location = New-Object System.Drawing.Point(15,246)
+    $lblInstallTime.AutoSize = $true
+    $dlg.Controls.Add($lblInstallTime)
+    $txtInstallTime = New-Object System.Windows.Forms.TextBox
+    $txtInstallTime.Location = New-Object System.Drawing.Point(15,263)
+    $txtInstallTime.Size = New-Object System.Drawing.Size(130,23)
+    $txtInstallTime.Text = [string]$Script:DefaultAppSettings.InstallTimeMinutes
+    $dlg.Controls.Add($txtInstallTime)
+
+    $lblRestartBehavior = New-Object System.Windows.Forms.Label
+    $lblRestartBehavior.Text = "Device restart behavior"
+    $lblRestartBehavior.Location = New-Object System.Drawing.Point(160,246)
+    $lblRestartBehavior.AutoSize = $true
+    $dlg.Controls.Add($lblRestartBehavior)
+    $cmbRestartBehavior = New-Object System.Windows.Forms.ComboBox
+    $cmbRestartBehavior.Location = New-Object System.Drawing.Point(160,263)
+    $cmbRestartBehavior.Size = New-Object System.Drawing.Size(350,23)
+    $cmbRestartBehavior.DropDownStyle = "DropDownList"
+    $restartBehaviorMap = [ordered]@{
+        "Determine behavior based on return codes"      = "basedOnReturnCode"
+        "No specific action"                            = "allow"
+        "App install may force a device restart"        = "suppress"
+        "Intune will force a mandatory device restart"  = "force"
+    }
+    foreach ($k in $restartBehaviorMap.Keys) { [void]$cmbRestartBehavior.Items.Add($k) }
+    $defaultRestartLabel = $restartBehaviorMap.Keys | Where-Object { $restartBehaviorMap[$_] -eq $Script:DefaultAppSettings.DeviceRestartBehavior } | Select-Object -First 1
+    $cmbRestartBehavior.SelectedItem = if ($defaultRestartLabel) { $defaultRestartLabel } else { "Determine behavior based on return codes" }
+    $dlg.Controls.Add($cmbRestartBehavior)
+
+    $chkAllowUninstall = New-Object System.Windows.Forms.CheckBox
+    $chkAllowUninstall.Text = "Allow available uninstall"
+    $chkAllowUninstall.Location = New-Object System.Drawing.Point(15,300)
+    $chkAllowUninstall.AutoSize = $true
+    $chkAllowUninstall.Checked = [bool]$Script:DefaultAppSettings.AllowAvailableUninstall
+    $dlg.Controls.Add($chkAllowUninstall)
+
+    $lblReturnCodes = New-Object System.Windows.Forms.Label
+    $lblReturnCodes.Text = "Return codes"
+    $lblReturnCodes.Location = New-Object System.Drawing.Point(15,332)
+    $lblReturnCodes.AutoSize = $true
+    $dlg.Controls.Add($lblReturnCodes)
+
+    $grdReturnCodes = New-Object System.Windows.Forms.DataGridView
+    $grdReturnCodes.Location = New-Object System.Drawing.Point(15,351)
+    $grdReturnCodes.Size = New-Object System.Drawing.Size(460,150)
+    $grdReturnCodes.AllowUserToAddRows = $false
+    $grdReturnCodes.AllowUserToDeleteRows = $false
+    $grdReturnCodes.RowHeadersVisible = $false
+    $grdReturnCodes.SelectionMode = "FullRowSelect"
+    $grdReturnCodes.MultiSelect = $false
+    $colCode = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colCode.Name = "Code"; $colCode.HeaderText = "Return code"; $colCode.FillWeight = 40
+    [void]$grdReturnCodes.Columns.Add($colCode)
+    $colType = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
+    $colType.Name = "Type"; $colType.HeaderText = "Type"; $colType.FillWeight = 60
+    [void]$colType.Items.AddRange(@("success", "softReboot", "hardReboot", "retry", "failed"))
+    [void]$grdReturnCodes.Columns.Add($colType)
+    $dlg.Controls.Add($grdReturnCodes)
+    foreach ($rc in @($Script:DefaultAppSettings.ReturnCodes)) {
+        $rowIdx = $grdReturnCodes.Rows.Add()
+        $grdReturnCodes.Rows[$rowIdx].Cells["Code"].Value = [string]$rc.returnCode
+        $grdReturnCodes.Rows[$rowIdx].Cells["Type"].Value = [string]$rc.type
+    }
+
+    $btnAddReturnCode = New-Object System.Windows.Forms.Button
+    $btnAddReturnCode.Text = "Add row"
+    $btnAddReturnCode.Location = New-Object System.Drawing.Point(485,351)
+    $btnAddReturnCode.Size = New-Object System.Drawing.Size(120,26)
+    $dlg.Controls.Add($btnAddReturnCode)
+    $btnAddReturnCode.Add_Click({
+        $rowIdx = $grdReturnCodes.Rows.Add()
+        $grdReturnCodes.Rows[$rowIdx].Cells["Type"].Value = "success"
+    }.GetNewClosure())
+
+    $btnRemoveReturnCode = New-Object System.Windows.Forms.Button
+    $btnRemoveReturnCode.Text = "Remove row"
+    $btnRemoveReturnCode.Location = New-Object System.Drawing.Point(485,381)
+    $btnRemoveReturnCode.Size = New-Object System.Drawing.Size(120,26)
+    $dlg.Controls.Add($btnRemoveReturnCode)
+    $btnRemoveReturnCode.Add_Click({
+        if ($grdReturnCodes.CurrentRow) { $grdReturnCodes.Rows.RemoveAt($grdReturnCodes.CurrentRow.Index) }
+    }.GetNewClosure())
+
+    $btnResetFactory = New-Object System.Windows.Forms.Button
+    $btnResetFactory.Text = "Reset to built-in defaults"
+    $btnResetFactory.Location = New-Object System.Drawing.Point(15,540)
+    $btnResetFactory.Size = New-Object System.Drawing.Size(180,32)
+    $dlg.Controls.Add($btnResetFactory)
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Cancel"
+    $btnCancel.Location = New-Object System.Drawing.Point(435,540)
+    $btnCancel.Size = New-Object System.Drawing.Size(80,32)
+    $dlg.Controls.Add($btnCancel)
+
+    $btnSave = New-Object System.Windows.Forms.Button
+    $btnSave.Text = "Save"
+    $btnSave.Location = New-Object System.Drawing.Point(520,540)
+    $btnSave.Size = New-Object System.Drawing.Size(85,32)
+    $dlg.Controls.Add($btnSave)
+
+    # Factory values live here, once, rather than duplicating the literal
+    # list a second time - re-running Get-DefaultAppMetadata's own logic
+    # would need an app name/Winget ID it doesn't have here, so this is a
+    # plain, separate literal copy of the same starting values
+    # $Script:DefaultAppSettings itself is initialized with at the top of
+    # this script - kept in sync manually if those ever change.
+    $btnResetFactory.Add_Click({
+        $r = [System.Windows.Forms.MessageBox]::Show("Reset every field below to this app's original built-in defaults? (Still requires Save to actually apply.)", "Reset to built-in defaults", "YesNo", "Warning")
+        if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+        $cmbContext.SelectedItem = "System"
+        $chkArchX86.Checked = $false
+        $chkArchX64.Checked = $true
+        $chkArchArm64.Checked = $false
+        $factoryMinOsLabel = $minOsMap.Keys | Where-Object { $minOsMap[$_] -eq "W10_22H2" } | Select-Object -First 1
+        if ($factoryMinOsLabel) { $cmbMinOS.SelectedItem = $factoryMinOsLabel }
+        $cmbDefaultDep.SelectedItem = if ($cmbDefaultDep.Items.Contains("Winget AutoUpdate")) { "Winget AutoUpdate" } else { "(none)" }
+        $txtDiskSpace.Text = "0"
+        $txtMemory.Text = "0"
+        $txtProcessors.Text = "0"
+        $txtCpuSpeed.Text = "0"
+        $txtInstallTime.Text = "60"
+        $cmbRestartBehavior.SelectedItem = "Determine behavior based on return codes"
+        $chkAllowUninstall.Checked = $false
+        $grdReturnCodes.Rows.Clear()
+        foreach ($rc in @(
             [pscustomobject]@{ returnCode = 0; type = "success" }
             [pscustomobject]@{ returnCode = 1707; type = "success" }
             [pscustomobject]@{ returnCode = 3010; type = "softReboot" }
             [pscustomobject]@{ returnCode = 1641; type = "hardReboot" }
             [pscustomobject]@{ returnCode = 1618; type = "retry" }
+        )) {
+            $rowIdx = $grdReturnCodes.Rows.Add()
+            $grdReturnCodes.Rows[$rowIdx].Cells["Code"].Value = [string]$rc.returnCode
+            $grdReturnCodes.Rows[$rowIdx].Cells["Type"].Value = $rc.type
+        }
+    }.GetNewClosure())
+
+    $btnCancel.Add_Click({ $dlg.Close() }.GetNewClosure())
+
+    $btnSave.Add_Click({
+        if (-not $chkArchX86.Checked -and -not $chkArchX64.Checked -and -not $chkArchArm64.Checked) {
+            [System.Windows.Forms.MessageBox]::Show("Check at least one architecture.", "No architecture selected", "OK", "Warning") | Out-Null
+            return
+        }
+        $numericChecks = @(
+            @{ Label = "Disk space (MB)"; Box = $txtDiskSpace }
+            @{ Label = "Memory (MB)"; Box = $txtMemory }
+            @{ Label = "Min. processors"; Box = $txtProcessors }
+            @{ Label = "Min. CPU speed (MHz)"; Box = $txtCpuSpeed }
+            @{ Label = "Install time required (mins)"; Box = $txtInstallTime }
         )
-    }
+        foreach ($numCheck in $numericChecks) {
+            $parsedNum = 0
+            if (-not [int]::TryParse($numCheck.Box.Text.Trim(), [ref]$parsedNum) -or $parsedNum -lt 0) {
+                [System.Windows.Forms.MessageBox]::Show("$($numCheck.Label) must be a whole number, 0 or greater.", "Invalid value", "OK", "Warning") | Out-Null
+                return
+            }
+        }
+        $returnCodesConfig = New-Object System.Collections.Generic.List[object]
+        foreach ($rcRow in $grdReturnCodes.Rows) {
+            if ($rcRow.IsNewRow) { continue }
+            $rcCode = [string]$rcRow.Cells["Code"].Value
+            $rcType = [string]$rcRow.Cells["Type"].Value
+            if (-not $rcCode -and -not $rcType) { continue }
+            $parsedCode = 0
+            if (-not [int]::TryParse($rcCode.Trim(), [ref]$parsedCode)) {
+                [System.Windows.Forms.MessageBox]::Show("Return code `"$rcCode`" isn't a valid whole number.", "Invalid return code", "OK", "Warning") | Out-Null
+                return
+            }
+            if (-not $rcType) {
+                [System.Windows.Forms.MessageBox]::Show("Return code $parsedCode needs a type selected.", "Missing return code type", "OK", "Warning") | Out-Null
+                return
+            }
+            $returnCodesConfig.Add([pscustomobject]@{ returnCode = $parsedCode; type = $rcType })
+        }
+        if ($returnCodesConfig.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("At least one return code is required.", "No return codes", "OK", "Warning") | Out-Null
+            return
+        }
+
+        $selectedArches = New-Object System.Collections.Generic.List[string]
+        if ($chkArchX86.Checked)   { $selectedArches.Add("x86") }
+        if ($chkArchX64.Checked)   { $selectedArches.Add("x64") }
+        if ($chkArchArm64.Checked) { $selectedArches.Add("arm64") }
+
+        $Script:DefaultAppSettings.Architecture             = ($selectedArches -join ",")
+        $Script:DefaultAppSettings.InstallContext            = [string]$cmbContext.SelectedItem
+        $Script:DefaultAppSettings.MinOSKey                  = $minOsMap[[string]$cmbMinOS.SelectedItem]
+        $Script:DefaultAppSettings.MinDiskSpaceMB            = [int]$txtDiskSpace.Text.Trim()
+        $Script:DefaultAppSettings.MinMemoryMB               = [int]$txtMemory.Text.Trim()
+        $Script:DefaultAppSettings.MinProcessors             = [int]$txtProcessors.Text.Trim()
+        $Script:DefaultAppSettings.MinCpuSpeedMHz            = [int]$txtCpuSpeed.Text.Trim()
+        $Script:DefaultAppSettings.InstallTimeMinutes        = [int]$txtInstallTime.Text.Trim()
+        $Script:DefaultAppSettings.DeviceRestartBehavior     = $restartBehaviorMap[[string]$cmbRestartBehavior.SelectedItem]
+        $Script:DefaultAppSettings.AllowAvailableUninstall   = $chkAllowUninstall.Checked
+        $Script:DefaultAppSettings.ReturnCodes               = $returnCodesConfig.ToArray()
+        $Script:DefaultAppSettings.DefaultDependencyAppName  = if ([string]$cmbDefaultDep.SelectedItem -eq "(none)") { "" } else { [string]$cmbDefaultDep.SelectedItem }
+
+        if (-not (Write-SettingsFile)) { return }
+        [System.Windows.Forms.MessageBox]::Show("Default values saved. Only affects NEW comparisons/deploys from here on - no existing app's saved metadata was touched.", "Saved", "OK", "Information") | Out-Null
+        $dlg.Close()
+    }.GetNewClosure())
+
+    $dlg.CancelButton = $btnCancel
+    $dlg.AcceptButton = $btnSave
+    Set-Theme -Control $dlg
+    [void]$dlg.ShowDialog($form)
 }
 
 # Drives the main grid's "Custom Config" column - "Yes" means this app
@@ -17423,6 +17843,7 @@ $btnLookupIds.Add_Click({
 })
 
 $btnCertSetup.Add_Click({ Show-CertificateSetupDialog })
+$btnDefaultValues.Add_Click({ Show-DefaultAppSettingsDialog })
 $btnDiagnostics.Add_Click({ Show-DiagnosticsDialog })
 $btnCheckIntuneOnly.Add_Click({
     $changed = Show-IntuneOnlyAppsDialog
