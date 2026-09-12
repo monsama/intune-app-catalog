@@ -80,16 +80,21 @@ $Script:IntuneAppsCache = New-Object System.Collections.ArrayList   # populated 
 $Script:EntraDirectoryCache = New-Object System.Collections.ArrayList   # populated by Start-EntraDirectoryLookup: array of @{ displayName; type ("Group"/"User"); id; upn } - same mutate-in-place pattern as above
 # Populated whenever any live-vs-Intune check runs for an app - the
 # single-app auto-fetch inside Show-CreateInIntuneDialog, or
-# Show-IntuneAuditDialog's own bulk run - keyed by appName. Purely an
-# in-memory, per-session cache, never written to disk or round-tripped
+# Show-IntuneAuditDialog's own bulk run - keyed by appName. Persisted to
+# its OWN file ($Script:LastAuditCachePath), deliberately NOT round-tripped
 # through ConvertTo-AppRecord/ConvertTo-SingleAppJson (both are strict,
-# hand-rolled field whitelists - see their own comments - so persisting
-# this would mean touching five separate construction/serialization
-# sites for what's really just a "how stale is this" convenience).
-# Resets to empty on every relaunch; the main grid's own "Last Audit"
-# column falls back to "Never audited" until something populates it
-# again. See Set-LastAuditCacheEntry/Get-LastAuditSummary.
+# hand-rolled field whitelists that exist specifically so a Git diff for
+# one app's change only ever touches that one app's file - an audit
+# timestamp that changes on every check would turn every audit run into
+# diff noise across every checked app's own catalog file, working against
+# the whole reason that per-app-file design exists). See
+# Load-LastAuditCache/Save-LastAuditCache/Set-LastAuditCacheEntry/
+# Get-LastAuditSummary. A missing or corrupt cache file just leaves this
+# empty, same as it always was before persistence existed - nothing here
+# is load-bearing for the app to function; the main grid's own
+# "Last Audit" column simply falls back to "Never audited".
 $Script:LastAuditResults = @{}
+$Script:LastAuditCachePath = Join-Path $Script:RootPath "last-audit-cache.json"
 $Script:LogFileWriter = $null   # opened in Ensure-Folders, written to by Write-Log, closed on FormClosing - see both below
 $Script:LogFlushTimer = $null   # periodic flush timer for the above - see Ensure-Folders
 $Script:AppVersion = "1.1"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance rather than by diffing the whole file
@@ -7641,6 +7646,43 @@ function Get-FriendlyAge {
     return "$([int]$span.TotalDays)d ago"
 }
 
+# Loads $Script:LastAuditResults from its own cache file - never the
+# per-app catalog files themselves, see $Script:LastAuditResults's own
+# comment for why. Called once at startup. A missing or corrupt file is
+# silently treated as "nothing cached yet", the same state this had
+# before persistence existed at all - not worth a warning over.
+function Load-LastAuditCache {
+    if (-not (Test-Path $Script:LastAuditCachePath)) { return }
+    try {
+        $raw = Get-Content -Path $Script:LastAuditCachePath -Raw | ConvertFrom-Json
+        foreach ($prop in $raw.PSObject.Properties) {
+            $entry = $prop.Value
+            $Script:LastAuditResults[$prop.Name] = [pscustomobject]@{
+                Timestamp    = [datetime]$entry.Timestamp
+                Metadata     = $entry.Metadata
+                Groups       = $entry.Groups
+                Dependencies = $entry.Dependencies
+                Unknown      = $entry.Unknown
+            }
+        }
+    }
+    catch { }
+}
+
+# Writes $Script:LastAuditResults out as-is. Unlike Save-AppsToFile, this
+# has none of that function's Git-diff-friendliness or hand-rolled JSON
+# concerns (this cache is never meant to be hand-edited, diffed, or
+# checked in), so a plain ConvertTo-Json is fine here. Called after every
+# audit run/single-app check completes; a failed write is silently
+# ignored - worst case the cache is one run behind on next launch, never
+# a reason to interrupt or warn about an otherwise-successful check.
+function Save-LastAuditCache {
+    try {
+        $Script:LastAuditResults | ConvertTo-Json -Depth 5 | Set-Content -Path $Script:LastAuditCachePath -Encoding UTF8 -ErrorAction Stop
+    }
+    catch { }
+}
+
 # Merges whichever of the four check results are passed in (any omitted -
 # left as $null - keep whatever was cached before) into
 # $Script:LastAuditResults for one app, stamping the current time. Called
@@ -11146,6 +11188,7 @@ function Show-CreateInIntuneDialog {
                     $metadataStatus = if ($metadataOnlyDiffCount -eq 0) { "OK" } else { "$metadataOnlyDiffCount field(s) differ" }
                     $dependencyStatus = if ($diffFields -contains "Dependencies") { "Catalog and Intune differ" } else { "OK" }
                     Set-LastAuditCacheEntry -AppName $AppNameRef -Metadata $metadataStatus -Dependencies $dependencyStatus
+                    Save-LastAuditCache
                 }
 
                 if ($archSource) {
@@ -14982,6 +15025,10 @@ function Show-IntuneAuditDialog {
                 $btnRunRef.Enabled = $true
                 $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
                 $lblStatusRef.Text = "Audit complete - $deployedAppsCountRef app(s) checked."
+                # Written once, here, after BOTH fetches have finished -
+                # not after each individual app's row updates - so a
+                # 49-app audit writes the cache file once, not 49 times.
+                Save-LastAuditCache
             }
         }.GetNewClosure()
 
@@ -17783,6 +17830,7 @@ $btnRunLaunch.Add_Click({
 # =====================================================================
 Ensure-Folders
 Load-AppsFromFile -Path $Script:LinkedFilePath
+Load-LastAuditCache
 Refresh-Grid
 Write-Log "Intune deployment console ready (v$($Script:AppVersion)). Root: $Script:RootPath`r`n" ([System.Drawing.Color]::Gainsboro)
 Start-TypeVersionBackfill
