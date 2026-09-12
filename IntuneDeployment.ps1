@@ -10730,7 +10730,7 @@ function Show-CreateInIntuneDialog {
     $btnSaveForLater = New-Object System.Windows.Forms.Button
     $btnSaveForLater.Text = if ($isDuplicate) { "Save local copy..." } else { "Save to App Catalog without Deploying" }
     $btnSaveForLater.Location = New-Object System.Drawing.Point(15,941)
-    $btnSaveForLater.Size = New-Object System.Drawing.Size(340,32)
+    $btnSaveForLater.Size = New-Object System.Drawing.Size(300,32)
     $btnSaveForLater.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $dlg.Controls.Add($btnSaveForLater)
 
@@ -10738,16 +10738,18 @@ function Show-CreateInIntuneDialog {
     # already showed once, for whichever fields it found differing - without
     # this, dismissing/deciding it that one time was the only chance to see
     # it again; re-checking meant closing and reopening this whole dialog (a
-    # fresh Intune fetch) just to look. Starts disabled - there's nothing to
-    # show until the auto-fetch below actually finds a difference (or hasn't
-    # run/finished yet), and stays disabled for a brand-new app, which has
-    # no live Intune copy to diff against in the first place.
+    # fresh Intune fetch) just to look. Hidden by default rather than just
+    # disabled - there's nothing to compare for a brand-new app (no live
+    # Intune copy to diff against at all), and for an existing app it stays
+    # hidden until the auto-fetch below actually finds a real difference, so
+    # its mere presence is itself a signal something differs, not a
+    # permanently-greyed-out button with nothing behind it most of the time.
     $btnShowDiff = New-Object System.Windows.Forms.Button
-    $btnShowDiff.Text = "Diff..."
-    $btnShowDiff.Location = New-Object System.Drawing.Point(360,941)
-    $btnShowDiff.Size = New-Object System.Drawing.Size(60,32)
+    $btnShowDiff.Text = "Compare..."
+    $btnShowDiff.Location = New-Object System.Drawing.Point(320,941)
+    $btnShowDiff.Size = New-Object System.Drawing.Size(95,32)
     $btnShowDiff.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
-    $btnShowDiff.Enabled = $false
+    $btnShowDiff.Visible = $false
     $dlg.Controls.Add($btnShowDiff)
     $showDiffTip = New-Object System.Windows.Forms.ToolTip
     $showDiffTip.SetToolTip($btnShowDiff, "Show again which fields differ from Intune's live copy, and optionally keep your local value for some of them.")
@@ -12270,7 +12272,7 @@ function Show-CreateInIntuneDialog {
                     # see $lastDriftBox's own comment further up.
                     $lastDriftBoxRef.Rows = $driftRows.ToArray()
                     $lastDriftBoxRef.LocalSnapshot = $localSnapshotRef
-                    $btnShowDiffRef.Enabled = $true
+                    $btnShowDiffRef.Visible = $true
 
                     $keepLocalFields = @(Show-MetadataDriftDialog -Rows $driftRows.ToArray())
                     if ($keepLocalFields.Count -gt 0) {
@@ -18043,7 +18045,7 @@ $grid.Add_CellDoubleClick({
 $gridContextMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $menuItemEdit = New-Object System.Windows.Forms.ToolStripMenuItem "Edit..."
 $menuItemDeploy = New-Object System.Windows.Forms.ToolStripMenuItem "Deploy to Intune..."
-$menuItemPackage = New-Object System.Windows.Forms.ToolStripMenuItem "Package this app"
+$menuItemPackage = New-Object System.Windows.Forms.ToolStripMenuItem "Package this app for Intune"
 $menuItemAssign = New-Object System.Windows.Forms.ToolStripMenuItem "Push groups to Intune (single app)..."
 # Already selection-aware via -ScopedIndices, same as the toolbar button
 # it reuses - was reachable only from there before, requiring a
@@ -18128,7 +18130,7 @@ $gridContextMenu.Add_Opening({
     # least one being uncommon is enough to enable it - Invoke-LaunchStep
     # (via Package apps... on the toolbar) already silently skips common
     # apps in a -FolderNames batch on its own.
-    $menuItemPackage.Text = if ($isMulti) { "Package $($selectedIndices.Count) app(s)" } else { "Package this app" }
+    $menuItemPackage.Text = if ($isMulti) { "Package $($selectedIndices.Count) app(s) for Intune" } else { "Package this app for Intune" }
     $menuItemPackage.Enabled = $hasSelection -and (@($selectedIndices | ForEach-Object { $Script:Apps[$_] } | Where-Object { Test-AppIsUncommon -App $_ }).Count -gt 0)
 })
 
