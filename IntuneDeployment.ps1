@@ -152,9 +152,10 @@ $Script:DefaultAppSettings = [pscustomobject]@{
         [pscustomobject]@{ returnCode = 1641; type = "hardReboot" }
         [pscustomobject]@{ returnCode = 1618; type = "retry" }
     )
-    # The app every OTHER app defaults to depending on, when one by this
-    # name exists in the catalog - blank means "no default dependency".
-    DefaultDependencyAppName = "Winget AutoUpdate"
+    # The app(s) every OTHER app defaults to depending on, when an app by
+    # that name exists in the catalog - an empty array means "no default
+    # dependencies".
+    DefaultDependencyAppNames = @("Winget AutoUpdate")
 }
 
 # Guards Start-TypeVersionBackfill (see its own definition) against
@@ -279,7 +280,11 @@ function Set-ThemeRecursive {
 function Load-GraphSettings {
     if (-not (Test-Path $Script:SettingsFilePath)) { return }
     try {
-        $settings = Get-Content -Path $Script:SettingsFilePath -Raw | ConvertFrom-Json
+        # -Encoding UTF8 explicitly - same reasoning as Load-AppsFromFile's
+        # own per-app file read: this file is written BOM-less UTF8
+        # (Write-SettingsFile), which Get-Content silently misreads as the
+        # system ANSI codepage under Windows PowerShell 5.1 without this.
+        $settings = Get-Content -Path $Script:SettingsFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
         # Trimmed and whitespace-checked here, not just truthiness-checked -
         # the Settings dialog's own save path already strips whitespace
         # before writing (see btnSave's Trim() / -replace '\s',''), but a
@@ -318,7 +323,17 @@ function Load-GraphSettings {
             if (@($das.ReturnCodes).Count -gt 0) {
                 $Script:DefaultAppSettings.ReturnCodes = @($das.ReturnCodes | ForEach-Object { [pscustomobject]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })
             }
-            if ($null -ne $das.DefaultDependencyAppName)   { $Script:DefaultAppSettings.DefaultDependencyAppName = [string]$das.DefaultDependencyAppName }
+            if ($null -ne $das.DefaultDependencyAppNames) {
+                $Script:DefaultAppSettings.DefaultDependencyAppNames = @($das.DefaultDependencyAppNames | ForEach-Object { [string]$_ } | Where-Object { $_ })
+            }
+            # Back-compat with a settings file saved by the single-dependency
+            # version of this dialog (a plain string field, no "s") - only
+            # consulted when the new plural field above wasn't present at
+            # all, so an already-migrated file's own (possibly now empty)
+            # array is never silently overwritten by stale singular data.
+            elseif ($null -ne $das.DefaultDependencyAppName -and [string]$das.DefaultDependencyAppName) {
+                $Script:DefaultAppSettings.DefaultDependencyAppNames = @([string]$das.DefaultDependencyAppName)
+            }
         }
     }
     catch {
@@ -1512,7 +1527,7 @@ if (-not (Test-Path $ConfigPath)) {
     Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  App: $($Config.AppName)" -ForegroundColor Gray
 Write-Host "  Mode: $($Config.Mode)" -ForegroundColor Gray
 
@@ -1990,7 +2005,7 @@ if (-not (Test-Path $ConfigPath)) {
     Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  App ID: $($Config.AppId)" -ForegroundColor Gray
 Write-Host "  Required groups : $(@($Config.RequiredGroups).Count)" -ForegroundColor Gray
 Write-Host "  Available groups: $(@($Config.AvailableGroups).Count)" -ForegroundColor Gray
@@ -2302,7 +2317,7 @@ if (-not (Test-Path $ConfigPath)) {
     Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  Mode: $($Config.Mode)" -ForegroundColor Gray
 Write-Host "  Apps: $(@($Config.Apps).Count)" -ForegroundColor Gray
 
@@ -2715,7 +2730,7 @@ if (-not (Test-Path $ConfigPath)) {
     Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  App: $($Config.AppName)" -ForegroundColor Gray
 Write-Host "  App ID: $($Config.AppId)" -ForegroundColor Gray
 
@@ -2962,7 +2977,7 @@ if (-not (Test-Path $ConfigPath)) {
     Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  Group: $($Config.GroupName)" -ForegroundColor Gray
 Write-Host "  Members to add: $(@($Config.MemberIds).Count)" -ForegroundColor Gray
 
@@ -3256,7 +3271,7 @@ if (-not (Test-Path $ConfigPath)) {
     Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $appList = @($Config.Apps)
 Write-Host "  Apps to sync: $($appList.Count)" -ForegroundColor Gray
 
@@ -3737,7 +3752,7 @@ if (-not (Test-Path $ConfigPath)) {
     Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  App (client) ID: $($Config.ClientId)" -ForegroundColor Gray
 # Check mode never sends CertSubject/CertThumbprint at all - it only signs
 # in and lists what's already trusted in Entra, with no local certificate
@@ -4058,7 +4073,9 @@ function Load-AppsFromFile {
         $oldSingleFilePath = Join-Path $Script:RootPath "input.json"
         if (Test-Path $oldSingleFilePath) {
             try {
-                $rawOld = Get-Content -Path $oldSingleFilePath -Raw | ConvertFrom-Json
+                # -Encoding UTF8 explicitly - same reasoning as the per-app
+                # file read further below in this function.
+                $rawOld = Get-Content -Path $oldSingleFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
                 if ($null -eq $rawOld) { $rawOld = @() }
                 if (-not (Test-Path $Path)) { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
                 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -4103,7 +4120,21 @@ function Load-AppsFromFile {
         $failedFiles = New-Object System.Collections.Generic.List[string]
         foreach ($file in $files) {
             try {
-                $rawText = Get-Content -Path $file.FullName -Raw
+                # -Encoding UTF8 explicitly, not left to Get-Content's own
+                # default - these files are always written BOM-less UTF-8
+                # (see Save-AppsToFile's $utf8NoBom), but under Windows
+                # PowerShell 5.1 (not pwsh 7, where UTF-8 is already the
+                # no-BOM default), Get-Content falls back to the system's
+                # ANSI codepage for any file with no BOM. That silently
+                # re-corrupted every non-ASCII character (curly quotes, em
+                # dashes, accented names) on EVERY load, even for text that
+                # was perfectly clean on disk - confirmed as the actual
+                # cause of a live report where "Sync metadata..." fixed a
+                # field's mojibake, the very next audit in the same session
+                # showed it fixed, and then it came back exactly as before
+                # after simply restarting the app (no editing in between) -
+                # this read-time corruption, not the write path, was reintroducing it.
+                $rawText = Get-Content -Path $file.FullName -Raw -Encoding UTF8
                 try {
                     $raw = $rawText | ConvertFrom-Json
                 }
@@ -8705,10 +8736,18 @@ function Get-DefaultAppMetadata {
 
     $templates = Get-CreateAppTemplates -WingetId $WingetId -Uncommon $Uncommon
     $das = $Script:DefaultAppSettings
-    $defaultDeps = @()
-    if ($das.DefaultDependencyAppName -and $AppName -ne $das.DefaultDependencyAppName -and ($Script:Apps | Where-Object { $_.appName -eq $das.DefaultDependencyAppName })) {
-        $defaultDeps = @($das.DefaultDependencyAppName)
-    }
+    # Each configured name only counts as a default dependency if an app by
+    # that name actually exists in the catalog (same as the single-
+    # dependency version this replaced) AND isn't this app itself - a
+    # default dependency list that happens to include the app currently
+    # being defaulted (e.g. computing Winget AutoUpdate's own defaults)
+    # would otherwise make it depend on itself.
+    $defaultDeps = @(
+        $das.DefaultDependencyAppNames | Where-Object {
+            $depName = $_
+            $depName -and $depName -ne $AppName -and ($Script:Apps | Where-Object { $_.appName -eq $depName })
+        }
+    )
 
     return [pscustomobject]@{
         description      = $AppName
@@ -8825,20 +8864,15 @@ function Show-DefaultAppSettingsDialog {
     $cmbMinOS.SelectedItem = if ($defaultMinOsLabel) { $defaultMinOsLabel } else { $minOsMap.Keys | Select-Object -First 1 }
     $dlg.Controls.Add($cmbMinOS)
 
-    $lblDep = New-Object System.Windows.Forms.Label
-    $lblDep.Text = "Default dependency"
-    $lblDep.Location = New-Object System.Drawing.Point(320,118)
-    $lblDep.AutoSize = $true
-    $dlg.Controls.Add($lblDep)
-
-    $cmbDefaultDep = New-Object System.Windows.Forms.ComboBox
-    $cmbDefaultDep.Location = New-Object System.Drawing.Point(320,137)
-    $cmbDefaultDep.Size = New-Object System.Drawing.Size(285,24)
-    $cmbDefaultDep.DropDownStyle = "DropDownList"
-    [void]$cmbDefaultDep.Items.Add("(none)")
-    foreach ($a in ($Script:Apps | Sort-Object appName)) { [void]$cmbDefaultDep.Items.Add($a.appName) }
-    $cmbDefaultDep.SelectedItem = if ($Script:DefaultAppSettings.DefaultDependencyAppName -and $cmbDefaultDep.Items.Contains($Script:DefaultAppSettings.DefaultDependencyAppName)) { $Script:DefaultAppSettings.DefaultDependencyAppName } else { "(none)" }
-    $dlg.Controls.Add($cmbDefaultDep)
+    # Moved out of this row entirely (was a single-select ComboBox right
+    # here) - a new app can sensibly default to depending on MORE than one
+    # other app (e.g. both a runtime AND an updater), unlike every other
+    # combo in this dialog (Install context/Min. Windows/Restart behavior),
+    # which really is just one value each. A CheckedListBox needs more
+    # height than fits in this row without overlapping the Requirements
+    # section right below it, so it lives instead in the return-codes
+    # column's own unused space below its Add/Remove row buttons - see
+    # $lblDefaultDeps/$clbDefaultDeps further down.
 
     $lblReqs = New-Object System.Windows.Forms.Label
     $lblReqs.Text = "Requirements (0 = not required)"
@@ -8975,6 +9009,25 @@ function Show-DefaultAppSettingsDialog {
         if ($grdReturnCodes.CurrentRow) { $grdReturnCodes.Rows.RemoveAt($grdReturnCodes.CurrentRow.Index) }
     }.GetNewClosure())
 
+    $lblDefaultDeps = New-Object System.Windows.Forms.Label
+    $lblDefaultDeps.Text = "Default dependencies"
+    $lblDefaultDeps.Location = New-Object System.Drawing.Point(485,412)
+    $lblDefaultDeps.AutoSize = $true
+    $dlg.Controls.Add($lblDefaultDeps)
+
+    # A CheckedListBox, not a single-select ComboBox - see the note where
+    # this field used to live (right after the Min. Windows combo above)
+    # for why more than one default dependency needs to be pickable here.
+    $clbDefaultDeps = New-Object System.Windows.Forms.CheckedListBox
+    $clbDefaultDeps.Location = New-Object System.Drawing.Point(485,431)
+    $clbDefaultDeps.Size = New-Object System.Drawing.Size(120,100)
+    $clbDefaultDeps.CheckOnClick = $true
+    foreach ($a in ($Script:Apps | Sort-Object appName)) {
+        $idx = $clbDefaultDeps.Items.Add($a.appName)
+        if (@($Script:DefaultAppSettings.DefaultDependencyAppNames) -contains $a.appName) { $clbDefaultDeps.SetItemChecked($idx, $true) }
+    }
+    $dlg.Controls.Add($clbDefaultDeps)
+
     $btnResetFactory = New-Object System.Windows.Forms.Button
     $btnResetFactory.Text = "Reset to built-in defaults"
     $btnResetFactory.Location = New-Object System.Drawing.Point(15,540)
@@ -9008,7 +9061,9 @@ function Show-DefaultAppSettingsDialog {
         $chkArchArm64.Checked = $false
         $factoryMinOsLabel = $minOsMap.Keys | Where-Object { $minOsMap[$_] -eq "W10_22H2" } | Select-Object -First 1
         if ($factoryMinOsLabel) { $cmbMinOS.SelectedItem = $factoryMinOsLabel }
-        $cmbDefaultDep.SelectedItem = if ($cmbDefaultDep.Items.Contains("Winget AutoUpdate")) { "Winget AutoUpdate" } else { "(none)" }
+        for ($ci = 0; $ci -lt $clbDefaultDeps.Items.Count; $ci++) {
+            $clbDefaultDeps.SetItemChecked($ci, ([string]$clbDefaultDeps.Items[$ci] -eq "Winget AutoUpdate"))
+        }
         $txtDiskSpace.Text = "0"
         $txtMemory.Text = "0"
         $txtProcessors.Text = "0"
@@ -9089,7 +9144,7 @@ function Show-DefaultAppSettingsDialog {
         $Script:DefaultAppSettings.DeviceRestartBehavior     = $restartBehaviorMap[[string]$cmbRestartBehavior.SelectedItem]
         $Script:DefaultAppSettings.AllowAvailableUninstall   = $chkAllowUninstall.Checked
         $Script:DefaultAppSettings.ReturnCodes               = $returnCodesConfig.ToArray()
-        $Script:DefaultAppSettings.DefaultDependencyAppName  = if ([string]$cmbDefaultDep.SelectedItem -eq "(none)") { "" } else { [string]$cmbDefaultDep.SelectedItem }
+        $Script:DefaultAppSettings.DefaultDependencyAppNames = @($clbDefaultDeps.CheckedItems | ForEach-Object { [string]$_ })
 
         if (-not (Write-SettingsFile)) { return }
         [System.Windows.Forms.MessageBox]::Show("Default values saved. Only affects NEW comparisons/deploys from here on - no existing app's saved metadata was touched.", "Saved", "OK", "Information") | Out-Null
@@ -17690,7 +17745,9 @@ function Show-AppEditor {
             try {
                 $existingFilePath = Join-Path $linkedFilePath ((Get-SafeFileNameForApp -Name $ExistingApp.appName) + ".json")
                 if ($ExistingApp -and (Test-Path $existingFilePath)) {
-                    $onDiskApp = Get-Content -Path $existingFilePath -Raw | ConvertFrom-Json
+                    # -Encoding UTF8 explicitly - same reasoning as
+                    # Load-AppsFromFile's own read of this same file format.
+                    $onDiskApp = Get-Content -Path $existingFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
                     if ($onDiskApp.metadata) {
                         $preservedMetadata = $onDiskApp.metadata
                         $metadataSource = "disk"

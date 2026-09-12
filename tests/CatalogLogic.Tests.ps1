@@ -151,7 +151,7 @@ $Script:DefaultAppSettings = [pscustomobject]@{
         [pscustomobject]@{ returnCode = 1641; type = "hardReboot" }
         [pscustomobject]@{ returnCode = 1618; type = "retry" }
     )
-    DefaultDependencyAppName = "Winget AutoUpdate"
+    DefaultDependencyAppNames = @("Winget AutoUpdate")
 }
 
 # =================================================================
