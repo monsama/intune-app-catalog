@@ -68,13 +68,32 @@ $Script:RequiredPrivateFiles = @(
 )
 
 $Script:MissingPrivateFiles = @()
+$Script:FailedPrivateFiles = @()
 foreach ($relativePath in $Script:RequiredPrivateFiles) {
     $fullPath = Join-Path $PSScriptRoot $relativePath
     if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
         $Script:MissingPrivateFiles += $relativePath
         continue
     }
-    . $fullPath
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # Force any error inside the dot-sourced file (including a normally
+        # non-terminating one, e.g. a bad property access) to be terminating
+        # for the duration of this one dot-source, so it lands in this catch
+        # instead of silently being written to the error stream and skipped
+        # past - which is exactly what made earlier load failures invisible.
+        $ErrorActionPreference = 'Stop'
+        . $fullPath
+    }
+    catch {
+        $Script:FailedPrivateFiles += [PSCustomObject]@{
+            Path  = $relativePath
+            Error = $_.Exception.Message
+        }
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
 }
 
 if ($Script:MissingPrivateFiles.Count -gt 0) {
@@ -95,6 +114,20 @@ if ($Script:MissingPrivateFiles.Count -gt 0) {
     Write-Host " run this script again." -ForegroundColor Yellow
     Write-Host ""
     throw "Startup aborted: $($Script:MissingPrivateFiles.Count) required file(s) under Private\ were not found. See list above."
+}
+
+if ($Script:FailedPrivateFiles.Count -gt 0) {
+    Write-Host ""
+    Write-Host "=================================================================" -ForegroundColor Red
+    Write-Host " Cannot start: required file(s) failed to load." -ForegroundColor Red
+    Write-Host "=================================================================" -ForegroundColor Red
+    Write-Host ""
+    foreach ($failed in $Script:FailedPrivateFiles) {
+        Write-Host " - $($failed.Path)" -ForegroundColor Yellow
+        Write-Host "     $($failed.Error)" -ForegroundColor Yellow
+        Write-Host ""
+    }
+    throw "Startup aborted: $($Script:FailedPrivateFiles.Count) required file(s) under Private\ failed to load. See error(s) above."
 }
 
 $Script:MainAppPath = Join-Path $PSScriptRoot "MainApp.ps1"
