@@ -7628,6 +7628,35 @@ function Get-LastAuditSummary {
     return "$issueCount issue$(if ($issueCount -ne 1) { 's' }) ($age)"
 }
 
+# The main grid's "Last Audit" column only ever has room for a one-line
+# summary ("1 issue (5m ago)") - this is what double-clicking that cell
+# shows instead, breaking it back out into which of the four checks
+# actually found something, same field-by-field detail
+# Show-IntuneAuditDialog's own double-click already gives you there.
+function Show-LastAuditDetail {
+    param([string]$AppName)
+
+    if (-not $Script:LastAuditResults.ContainsKey($AppName)) {
+        [System.Windows.Forms.MessageBox]::Show("`"$AppName`" hasn't been checked against Intune yet this session. Run `"Audit against Intune...`" (or open `"Deploy to Intune...`" for it, which checks Metadata and Dependencies automatically) to see where it stands.", "Never audited - $AppName", "OK", "Information") | Out-Null
+        return
+    }
+
+    $entry = $Script:LastAuditResults[$AppName]
+    $age = Get-FriendlyAge -Timestamp $entry.Timestamp
+    $lines = New-Object System.Collections.Generic.List[string]
+    $fields = @(
+        @{ Label = "Metadata"; Value = $entry.Metadata }
+        @{ Label = "Groups"; Value = $entry.Groups }
+        @{ Label = "Dependencies"; Value = $entry.Dependencies }
+        @{ Label = "Unknown assignments"; Value = $entry.Unknown }
+    )
+    foreach ($f in $fields) {
+        $displayVal = if ($null -ne $f.Value) { $f.Value } else { "(not checked this session)" }
+        $lines.Add("$($f.Label): $displayVal")
+    }
+    [System.Windows.Forms.MessageBox]::Show(($lines -join "`r`n`r`n"), "Last audit - $AppName ($age)", "OK", "Information") | Out-Null
+}
+
 # fields both Get-CatalogMetadataFieldDiffs and Merge-CatalogMetadata key
 # off of, so the two stay in sync by construction - a field added to one
 # but not the other would mean either a diff that's shown but can never
@@ -16898,7 +16927,19 @@ $btnEdit.Add_Click({
     }
 })
 
-$grid.Add_CellDoubleClick({ $btnEdit.PerformClick() })
+# The "Last Audit" column only has room for a one-line summary ("1 issue
+# (5m ago)") - double-clicking it shows the full per-check breakdown
+# instead of opening the editor, same as every other cell here does.
+$grid.Add_CellDoubleClick({
+    param($gridSender, $e)
+    if ($e.RowIndex -lt 0) { return }
+    if ($grid.Columns[$e.ColumnIndex].Name -eq "IntuneAudit") {
+        $clickedAppName = [string]$grid.Rows[$e.RowIndex].Cells["AppName"].Value
+        Show-LastAuditDetail -AppName $clickedAppName
+        return
+    }
+    $btnEdit.PerformClick()
+})
 
 # Right-click context menu - lets Deploy/Assign/Delete happen straight from
 # the grid instead of always requiring a trip through the full editor first.
