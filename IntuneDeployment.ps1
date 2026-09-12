@@ -17,43 +17,89 @@
     Order among the files below doesn't matter, since none of them call
     each other at their OWN definition time - only from inside a function
     body, which isn't executed until something later calls it.
+
+    Each file is checked with Test-Path before being dot-sourced. This
+    matters because dot-sourcing a path that doesn't exist ". <missing path>"
+    does NOT stop the script - PowerShell treats the missing path as an
+    unrecognized command name, writes a non-terminating error, and keeps
+    going. Left unchecked, a single missing/incompletely-extracted file
+    here would silently skip that file's functions and only surface much
+    later as a confusing "CommandNotFoundException" from whatever dialog
+    happens to call one of them.
 #>
 
-. (Join-Path $PSScriptRoot "Private\Catalog\CatalogIO.ps1")
-. (Join-Path $PSScriptRoot "Private\Catalog\CatalogLogic.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-AddFavoriteGroupToAppsDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-AppEditor.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-AppIdMatchDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-AppRegistrationGuideDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-BatchAssignDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-BatchDeployDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-BatchEditMetadataDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-BulkDeleteFromIntuneDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-CertificatePickerDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-CertificateSetupDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-CreateInIntuneDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-DefaultAppSettingsDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-DeleteAppDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-DependencyOverviewDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-DiagnosticsDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-EntraMemberPicker.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-FavoriteGroupsManager.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-GroupDriftCheckDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-GroupManagerDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-GroupOnlyPicker.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-IntuneAuditDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-IntuneOnlyAppsDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-MetadataDriftDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-PackagingProgressDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-RemoveGroupFromAppsDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-SetDefaultsConfirmDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-SyncMetadataDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-TargetedAssignDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Dialogs\Show-WingetSearchDialog.ps1")
-. (Join-Path $PSScriptRoot "Private\Graph\GraphFetch.ps1")
-. (Join-Path $PSScriptRoot "Private\GuiHelpers.ps1")
-. (Join-Path $PSScriptRoot "Private\Pipeline.ps1")
-. (Join-Path $PSScriptRoot "Private\QuickActions.ps1")
-. (Join-Path $PSScriptRoot "Private\Settings.ps1")
+$Script:RequiredPrivateFiles = @(
+    "Private\Catalog\CatalogIO.ps1"
+    "Private\Catalog\CatalogLogic.ps1"
+    "Private\Dialogs\Show-AddFavoriteGroupToAppsDialog.ps1"
+    "Private\Dialogs\Show-AppEditor.ps1"
+    "Private\Dialogs\Show-AppIdMatchDialog.ps1"
+    "Private\Dialogs\Show-AppRegistrationGuideDialog.ps1"
+    "Private\Dialogs\Show-BatchAssignDialog.ps1"
+    "Private\Dialogs\Show-BatchDeployDialog.ps1"
+    "Private\Dialogs\Show-BatchEditMetadataDialog.ps1"
+    "Private\Dialogs\Show-BulkDeleteFromIntuneDialog.ps1"
+    "Private\Dialogs\Show-CertificatePickerDialog.ps1"
+    "Private\Dialogs\Show-CertificateSetupDialog.ps1"
+    "Private\Dialogs\Show-CreateInIntuneDialog.ps1"
+    "Private\Dialogs\Show-DefaultAppSettingsDialog.ps1"
+    "Private\Dialogs\Show-DeleteAppDialog.ps1"
+    "Private\Dialogs\Show-DependencyOverviewDialog.ps1"
+    "Private\Dialogs\Show-DiagnosticsDialog.ps1"
+    "Private\Dialogs\Show-EntraMemberPicker.ps1"
+    "Private\Dialogs\Show-FavoriteGroupsManager.ps1"
+    "Private\Dialogs\Show-GroupDriftCheckDialog.ps1"
+    "Private\Dialogs\Show-GroupManagerDialog.ps1"
+    "Private\Dialogs\Show-GroupOnlyPicker.ps1"
+    "Private\Dialogs\Show-IntuneAuditDialog.ps1"
+    "Private\Dialogs\Show-IntuneOnlyAppsDialog.ps1"
+    "Private\Dialogs\Show-MetadataDriftDialog.ps1"
+    "Private\Dialogs\Show-PackagingProgressDialog.ps1"
+    "Private\Dialogs\Show-RemoveGroupFromAppsDialog.ps1"
+    "Private\Dialogs\Show-SetDefaultsConfirmDialog.ps1"
+    "Private\Dialogs\Show-SyncMetadataDialog.ps1"
+    "Private\Dialogs\Show-TargetedAssignDialog.ps1"
+    "Private\Dialogs\Show-WingetSearchDialog.ps1"
+    "Private\Graph\GraphFetch.ps1"
+    "Private\GuiHelpers.ps1"
+    "Private\Pipeline.ps1"
+    "Private\QuickActions.ps1"
+    "Private\Settings.ps1"
+)
 
-. (Join-Path $PSScriptRoot "MainApp.ps1")
+$Script:MissingPrivateFiles = @()
+foreach ($relativePath in $Script:RequiredPrivateFiles) {
+    $fullPath = Join-Path $PSScriptRoot $relativePath
+    if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+        $Script:MissingPrivateFiles += $relativePath
+        continue
+    }
+    . $fullPath
+}
+
+if ($Script:MissingPrivateFiles.Count -gt 0) {
+    Write-Host ""
+    Write-Host "=================================================================" -ForegroundColor Red
+    Write-Host " Cannot start: required file(s) are missing from this folder." -ForegroundColor Red
+    Write-Host "=================================================================" -ForegroundColor Red
+    Write-Host ""
+    Write-Host " Expected next to IntuneDeployment.ps1 (in `$PSScriptRoot = $PSScriptRoot):" -ForegroundColor Yellow
+    foreach ($missing in $Script:MissingPrivateFiles) {
+        Write-Host "   - $missing" -ForegroundColor Yellow
+    }
+    Write-Host ""
+    Write-Host " This usually means the download/extraction of this folder was" -ForegroundColor Yellow
+    Write-Host " incomplete (a zip extracted without its subfolders, files not" -ForegroundColor Yellow
+    Write-Host " copied recursively, etc). Re-download or re-copy the full folder" -ForegroundColor Yellow
+    Write-Host " (including the Private\ subfolder and all its subfolders), then" -ForegroundColor Yellow
+    Write-Host " run this script again." -ForegroundColor Yellow
+    Write-Host ""
+    throw "Startup aborted: $($Script:MissingPrivateFiles.Count) required file(s) under Private\ were not found. See list above."
+}
+
+$Script:MainAppPath = Join-Path $PSScriptRoot "MainApp.ps1"
+if (-not (Test-Path -LiteralPath $Script:MainAppPath -PathType Leaf)) {
+    throw "Startup aborted: MainApp.ps1 was not found next to IntuneDeployment.ps1 (expected at: $Script:MainAppPath)."
+}
+
+. $Script:MainAppPath
