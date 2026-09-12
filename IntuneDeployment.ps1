@@ -10530,6 +10530,113 @@ function Show-CreateInIntuneDialog {
         }
     }.GetNewClosure()
 
+    # Applies a reviewed "keep my local value for these fields" choice
+    # (from Show-MetadataDriftDialog) to the form - factored out into its
+    # own scriptblock variable, same reasoning/pattern as
+    # $getCurrentVsDefaultChanges/$updateCustomFieldHighlights above, so
+    # $btnShowDiff's own click handler further down can re-run the exact
+    # same field-by-field logic the live-Intune auto-fetch already uses,
+    # without duplicating it. Takes $LocalSnapshot as a parameter rather
+    # than closing over $localSnapshot directly - the auto-fetch's own
+    # call site is two closure levels deep (inside Start-AppMetadataFetch's
+    # -OnComplete) and needs a fresh alias for its own local snapshot
+    # anyway, so passing it explicitly here means this scriptblock doesn't
+    # also need a *Ref alias just for that one value.
+    $applyKeepLocalFields = {
+        param($KeepLocalFields, $LocalSnapshot)
+
+        if ($KeepLocalFields -contains "Description")          { $txtDesc.Text = $LocalSnapshot.Description }
+        if ($KeepLocalFields -contains "Publisher")             { $txtPublisher.Text = $LocalSnapshot.Publisher }
+        if ($KeepLocalFields -contains "Owner")                 { $txtOwner.Text = $LocalSnapshot.Owner }
+        if ($KeepLocalFields -contains "Developer")             { $txtDeveloper.Text = $LocalSnapshot.Developer }
+        if ($KeepLocalFields -contains "Information URL")       { $txtInfoUrl.Text = $LocalSnapshot.InformationUrl }
+        if ($KeepLocalFields -contains "Privacy URL")           { $txtPrivacyUrl.Text = $LocalSnapshot.PrivacyUrl }
+        if ($KeepLocalFields -contains "Notes")                 { $txtNotes.Text = $LocalSnapshot.Notes }
+        if ($KeepLocalFields -contains "Install command")       { $txtInstall.Text = $LocalSnapshot.InstallCommand }
+        if ($KeepLocalFields -contains "Uninstall command")     { $txtUninstall.Text = $LocalSnapshot.UninstallCommand }
+        if ($KeepLocalFields -contains "Architecture") {
+            $localArchList = @([string]$LocalSnapshot.Architecture -split ',' | ForEach-Object { $_.Trim().ToLower() })
+            $chkArchX86.Checked = $localArchList -contains "x86"
+            $chkArchX64.Checked = $localArchList -contains "x64"
+            $chkArchArm64.Checked = $localArchList -contains "arm64"
+        }
+        if ($KeepLocalFields -contains "Detection rule" -and $LocalSnapshot.DetectionRule) {
+            $localDetRule = $LocalSnapshot.DetectionRule
+            switch ($localDetRule.Type) {
+                "Script" {
+                    $cmbDetectionType.SelectedIndex = 0
+                    if ($localDetRule.Script_Content) { $txtDetection.Text = $localDetRule.Script_Content }
+                }
+                "Msi" {
+                    $cmbDetectionType.SelectedIndex = 1
+                    $txtMsiCode.Text = $localDetRule.Msi_ProductCode
+                    $opKey = $operatorMap.Keys | Where-Object { $operatorMap[$_] -eq $localDetRule.Msi_VersionOperator } | Select-Object -First 1
+                    if ($opKey) { $cmbMsiOperator.SelectedItem = $opKey }
+                    $txtMsiVersion.Text = $localDetRule.Msi_Version
+                }
+                "File" {
+                    $cmbDetectionType.SelectedIndex = 2
+                    $txtFilePath.Text = $localDetRule.File_Path
+                    $txtFileName.Text = $localDetRule.File_Name
+                    $chkFileCheck32.Checked = [bool]$localDetRule.File_Check32Bit
+                    $dtKey = $fileDetTypeMap.Keys | Where-Object { $fileDetTypeMap[$_] -eq $localDetRule.File_DetectionType } | Select-Object -First 1
+                    if ($dtKey) { $cmbFileDetType.SelectedItem = $dtKey }
+                    $opKey = $operatorMap.Keys | Where-Object { $operatorMap[$_] -eq $localDetRule.File_Operator } | Select-Object -First 1
+                    if ($opKey) { $cmbFileOperator.SelectedItem = $opKey }
+                    $txtFileDetValue.Text = $localDetRule.File_DetectionValue
+                }
+                "Registry" {
+                    $cmbDetectionType.SelectedIndex = 3
+                    $txtRegKeyPath.Text = $localDetRule.Reg_KeyPath
+                    $txtRegValueName.Text = $localDetRule.Reg_ValueName
+                    $chkRegCheck32.Checked = [bool]$localDetRule.Reg_Check32Bit
+                    $dtKey = $regDetTypeMap.Keys | Where-Object { $regDetTypeMap[$_] -eq $localDetRule.Reg_DetectionType } | Select-Object -First 1
+                    if ($dtKey) { $cmbRegDetType.SelectedItem = $dtKey }
+                    $opKey = $operatorMap.Keys | Where-Object { $operatorMap[$_] -eq $localDetRule.Reg_Operator } | Select-Object -First 1
+                    if ($opKey) { $cmbRegOperator.SelectedItem = $opKey }
+                    $txtRegDetValue.Text = $localDetRule.Reg_DetectionValue
+                }
+            }
+        }
+        if ($KeepLocalFields -contains "Disk space requirement")        { $txtDiskSpace.Text = [string]$LocalSnapshot.MinDiskSpaceMB }
+        if ($KeepLocalFields -contains "Memory requirement")            { $txtMemory.Text = [string]$LocalSnapshot.MinMemoryMB }
+        if ($KeepLocalFields -contains "Min. processors requirement")   { $txtProcessors.Text = [string]$LocalSnapshot.MinProcessors }
+        if ($KeepLocalFields -contains "Min. CPU speed requirement")    { $txtCpuSpeed.Text = [string]$LocalSnapshot.MinCpuSpeedMHz }
+        if ($KeepLocalFields -contains "Install time required")         { $txtInstallTime.Text = [string]$LocalSnapshot.InstallTimeMinutes }
+        if ($KeepLocalFields -contains "Device restart behavior") {
+            $rbKeyLocal = $restartBehaviorMap.Keys | Where-Object { $restartBehaviorMap[$_] -eq $LocalSnapshot.DeviceRestartBehavior } | Select-Object -First 1
+            if ($rbKeyLocal) { $cmbRestartBehavior.SelectedItem = $rbKeyLocal }
+        }
+        if ($KeepLocalFields -contains "Allow available uninstall") { $chkAllowUninstall.Checked = [bool]$LocalSnapshot.AllowAvailableUninstall }
+        if ($KeepLocalFields -contains "Return codes" -and $LocalSnapshot.ReturnCodes) {
+            $grdReturnCodes.Rows.Clear()
+            foreach ($rc in @($LocalSnapshot.ReturnCodes)) {
+                $rcRowIdxLocal = $grdReturnCodes.Rows.Add()
+                $grdReturnCodes.Rows[$rcRowIdxLocal].Cells["Code"].Value = [string]$rc.returnCode
+                $grdReturnCodes.Rows[$rcRowIdxLocal].Cells["Type"].Value = [string]$rc.type
+            }
+        }
+        if ($KeepLocalFields -contains "Dependencies") {
+            for ($ci = 0; $ci -lt $clbDeps.Items.Count; $ci++) { $clbDeps.SetItemChecked($ci, $false) }
+            for ($ci = 0; $ci -lt $clbDeps.Items.Count; $ci++) {
+                $itemLabel = [string]$clbDeps.Items[$ci]
+                if ($depNameByLabel.ContainsKey($itemLabel) -and (@($LocalSnapshot.Dependencies) -contains $depNameByLabel[$itemLabel])) {
+                    $clbDeps.SetItemChecked($ci, $true)
+                }
+            }
+        }
+        $lblCreateStatus.ForeColor = [System.Drawing.Color]::DarkOrange
+        $lblCreateStatus.Text = "Kept your local value for: $($KeepLocalFields -join ', ')."
+        & $updateCustomFieldHighlights
+    }.GetNewClosure()
+
+    # Holds the most recent live-vs-local drift rows (from the auto-fetch
+    # below) so $btnShowDiff can bring the SAME compare dialog back up on
+    # demand - without this, dismissing/deciding that dialog once was the
+    # only chance to see it; re-reading it meant closing and reopening this
+    # whole dialog (a fresh Intune fetch) just to look again.
+    $lastDriftBox = @{ Rows = $null; LocalSnapshot = $null }
+
     $btnSetDefaults.Add_Click({
         $changeRows = & $getCurrentVsDefaultChanges
         if ($changeRows.Count -eq 0) {
@@ -10623,9 +10730,34 @@ function Show-CreateInIntuneDialog {
     $btnSaveForLater = New-Object System.Windows.Forms.Button
     $btnSaveForLater.Text = if ($isDuplicate) { "Save local copy..." } else { "Save to App Catalog without Deploying" }
     $btnSaveForLater.Location = New-Object System.Drawing.Point(15,941)
-    $btnSaveForLater.Size = New-Object System.Drawing.Size(400,32)
+    $btnSaveForLater.Size = New-Object System.Drawing.Size(340,32)
     $btnSaveForLater.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $dlg.Controls.Add($btnSaveForLater)
+
+    # Brings back the SAME compare dialog the live-Intune auto-fetch below
+    # already showed once, for whichever fields it found differing - without
+    # this, dismissing/deciding it that one time was the only chance to see
+    # it again; re-checking meant closing and reopening this whole dialog (a
+    # fresh Intune fetch) just to look. Starts disabled - there's nothing to
+    # show until the auto-fetch below actually finds a difference (or hasn't
+    # run/finished yet), and stays disabled for a brand-new app, which has
+    # no live Intune copy to diff against in the first place.
+    $btnShowDiff = New-Object System.Windows.Forms.Button
+    $btnShowDiff.Text = "Diff..."
+    $btnShowDiff.Location = New-Object System.Drawing.Point(360,941)
+    $btnShowDiff.Size = New-Object System.Drawing.Size(60,32)
+    $btnShowDiff.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
+    $btnShowDiff.Enabled = $false
+    $dlg.Controls.Add($btnShowDiff)
+    $showDiffTip = New-Object System.Windows.Forms.ToolTip
+    $showDiffTip.SetToolTip($btnShowDiff, "Show again which fields differ from Intune's live copy, and optionally keep your local value for some of them.")
+    $btnShowDiff.Add_Click({
+        if (-not $lastDriftBox.Rows -or $lastDriftBox.Rows.Count -eq 0) { return }
+        $keepLocalFields = @(Show-MetadataDriftDialog -Rows $lastDriftBox.Rows)
+        if ($keepLocalFields.Count -gt 0) {
+            & $applyKeepLocalFields -KeepLocalFields $keepLocalFields -LocalSnapshot $lastDriftBox.LocalSnapshot
+        }
+    }.GetNewClosure())
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
@@ -11706,6 +11838,9 @@ function Show-CreateInIntuneDialog {
             # the top of this function for why this matters.
             $existingAppIdRef = $ExistingAppId
             $updateCustomFieldHighlightsRef = $updateCustomFieldHighlights
+            $applyKeepLocalFieldsRef = $applyKeepLocalFields
+            $lastDriftBoxRef = $lastDriftBox
+            $btnShowDiffRef = $btnShowDiff
             $AppNameRef = $AppName
             $lblCreateStatusRef = $lblCreateStatus
             $txtCreateNameRef = $txtCreateName
@@ -12130,97 +12265,16 @@ function Show-CreateInIntuneDialog {
                         $driftRows.Add([pscustomobject]@{ Field = "Dependencies"; Local = $localDepsText; Intune = $liveDepsText })
                     }
 
-                    $keepLocalFields = @(Show-MetadataDriftDialog -Rows $driftRows.ToArray())
+                    # Cached so $btnShowDiff can bring this exact compare
+                    # dialog back up later without a fresh Intune fetch -
+                    # see $lastDriftBox's own comment further up.
+                    $lastDriftBoxRef.Rows = $driftRows.ToArray()
+                    $lastDriftBoxRef.LocalSnapshot = $localSnapshotRef
+                    $btnShowDiffRef.Enabled = $true
 
+                    $keepLocalFields = @(Show-MetadataDriftDialog -Rows $driftRows.ToArray())
                     if ($keepLocalFields.Count -gt 0) {
-                        if ($keepLocalFields -contains "Description")          { $txtDescRef.Text = $localSnapshotRef.Description }
-                        if ($keepLocalFields -contains "Publisher")            { $txtPublisherRef.Text = $localSnapshotRef.Publisher }
-                        if ($keepLocalFields -contains "Owner")                { $txtOwnerRef.Text = $localSnapshotRef.Owner }
-                        if ($keepLocalFields -contains "Developer")            { $txtDeveloperRef.Text = $localSnapshotRef.Developer }
-                        if ($keepLocalFields -contains "Information URL")      { $txtInfoUrlRef.Text = $localSnapshotRef.InformationUrl }
-                        if ($keepLocalFields -contains "Privacy URL")          { $txtPrivacyUrlRef.Text = $localSnapshotRef.PrivacyUrl }
-                        if ($keepLocalFields -contains "Notes")                { $txtNotesRef.Text = $localSnapshotRef.Notes }
-                        if ($keepLocalFields -contains "Install command")      { $txtInstallRef.Text = $localSnapshotRef.InstallCommand }
-                        if ($keepLocalFields -contains "Uninstall command")    { $txtUninstallRef.Text = $localSnapshotRef.UninstallCommand }
-                        if ($keepLocalFields -contains "Architecture") {
-                            $localArchList = @([string]$localSnapshotRef.Architecture -split ',' | ForEach-Object { $_.Trim().ToLower() })
-                            $chkArchX86Ref.Checked = $localArchList -contains "x86"
-                            $chkArchX64Ref.Checked = $localArchList -contains "x64"
-                            $chkArchArm64Ref.Checked = $localArchList -contains "arm64"
-                        }
-                        # Mirrors the local-prefill switch earlier in this
-                        # function almost exactly - same field-by-field
-                        # mapping, just re-pointed at $localSnapshotRef's
-                        # raw DetectionRule instead of $m.detectionRule, and
-                        # using the *Ref control aliases this nested closure
-                        # actually has in scope.
-                        if ($keepLocalFields -contains "Detection rule" -and $localSnapshotRef.DetectionRule) {
-                            $localDetRule = $localSnapshotRef.DetectionRule
-                            switch ($localDetRule.Type) {
-                                "Script" {
-                                    $cmbDetectionTypeRef.SelectedIndex = 0
-                                    if ($localDetRule.Script_Content) { $txtDetectionRef.Text = $localDetRule.Script_Content }
-                                }
-                                "Msi" {
-                                    $cmbDetectionTypeRef.SelectedIndex = 1
-                                    $txtMsiCodeRef.Text = $localDetRule.Msi_ProductCode
-                                    $opKey = $operatorMapRef.Keys | Where-Object { $operatorMapRef[$_] -eq $localDetRule.Msi_VersionOperator } | Select-Object -First 1
-                                    if ($opKey) { $cmbMsiOperatorRef.SelectedItem = $opKey }
-                                    $txtMsiVersionRef.Text = $localDetRule.Msi_Version
-                                }
-                                "File" {
-                                    $cmbDetectionTypeRef.SelectedIndex = 2
-                                    $txtFilePathRef.Text = $localDetRule.File_Path
-                                    $txtFileNameRef.Text = $localDetRule.File_Name
-                                    $chkFileCheck32Ref.Checked = [bool]$localDetRule.File_Check32Bit
-                                    $dtKey = $fileDetTypeMapRef.Keys | Where-Object { $fileDetTypeMapRef[$_] -eq $localDetRule.File_DetectionType } | Select-Object -First 1
-                                    if ($dtKey) { $cmbFileDetTypeRef.SelectedItem = $dtKey }
-                                    $opKey = $operatorMapRef.Keys | Where-Object { $operatorMapRef[$_] -eq $localDetRule.File_Operator } | Select-Object -First 1
-                                    if ($opKey) { $cmbFileOperatorRef.SelectedItem = $opKey }
-                                    $txtFileDetValueRef.Text = $localDetRule.File_DetectionValue
-                                }
-                                "Registry" {
-                                    $cmbDetectionTypeRef.SelectedIndex = 3
-                                    $txtRegKeyPathRef.Text = $localDetRule.Reg_KeyPath
-                                    $txtRegValueNameRef.Text = $localDetRule.Reg_ValueName
-                                    $chkRegCheck32Ref.Checked = [bool]$localDetRule.Reg_Check32Bit
-                                    $dtKey = $regDetTypeMapRef.Keys | Where-Object { $regDetTypeMapRef[$_] -eq $localDetRule.Reg_DetectionType } | Select-Object -First 1
-                                    if ($dtKey) { $cmbRegDetTypeRef.SelectedItem = $dtKey }
-                                    $opKey = $operatorMapRef.Keys | Where-Object { $operatorMapRef[$_] -eq $localDetRule.Reg_Operator } | Select-Object -First 1
-                                    if ($opKey) { $cmbRegOperatorRef.SelectedItem = $opKey }
-                                    $txtRegDetValueRef.Text = $localDetRule.Reg_DetectionValue
-                                }
-                            }
-                        }
-                        if ($keepLocalFields -contains "Disk space requirement")        { $txtDiskSpaceRef.Text = [string]$localSnapshotRef.MinDiskSpaceMB }
-                        if ($keepLocalFields -contains "Memory requirement")            { $txtMemoryRef.Text = [string]$localSnapshotRef.MinMemoryMB }
-                        if ($keepLocalFields -contains "Min. processors requirement")   { $txtProcessorsRef.Text = [string]$localSnapshotRef.MinProcessors }
-                        if ($keepLocalFields -contains "Min. CPU speed requirement")    { $txtCpuSpeedRef.Text = [string]$localSnapshotRef.MinCpuSpeedMHz }
-                        if ($keepLocalFields -contains "Install time required")         { $txtInstallTimeRef.Text = [string]$localSnapshotRef.InstallTimeMinutes }
-                        if ($keepLocalFields -contains "Device restart behavior") {
-                            $rbKeyLocal = $restartBehaviorMapRef.Keys | Where-Object { $restartBehaviorMapRef[$_] -eq $localSnapshotRef.DeviceRestartBehavior } | Select-Object -First 1
-                            if ($rbKeyLocal) { $cmbRestartBehaviorRef.SelectedItem = $rbKeyLocal }
-                        }
-                        if ($keepLocalFields -contains "Allow available uninstall") { $chkAllowUninstallRef.Checked = [bool]$localSnapshotRef.AllowAvailableUninstall }
-                        if ($keepLocalFields -contains "Return codes" -and $localSnapshotRef.ReturnCodes) {
-                            $grdReturnCodesRef.Rows.Clear()
-                            foreach ($rc in @($localSnapshotRef.ReturnCodes)) {
-                                $rcRowIdxLocal = $grdReturnCodesRef.Rows.Add()
-                                $grdReturnCodesRef.Rows[$rcRowIdxLocal].Cells["Code"].Value = [string]$rc.returnCode
-                                $grdReturnCodesRef.Rows[$rcRowIdxLocal].Cells["Type"].Value = [string]$rc.type
-                            }
-                        }
-                        if ($keepLocalFields -contains "Dependencies") {
-                            for ($ci = 0; $ci -lt $clbDepsRef.Items.Count; $ci++) { $clbDepsRef.SetItemChecked($ci, $false) }
-                            for ($ci = 0; $ci -lt $clbDepsRef.Items.Count; $ci++) {
-                                $itemLabel = [string]$clbDepsRef.Items[$ci]
-                                if ($depNameByLabelRef.ContainsKey($itemLabel) -and (@($localSnapshotRef.Dependencies) -contains $depNameByLabelRef[$itemLabel])) {
-                                    $clbDepsRef.SetItemChecked($ci, $true)
-                                }
-                            }
-                        }
-                        $lblCreateStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
-                        $lblCreateStatusRef.Text = "Loaded current metadata from Intune - kept your local value for: $($keepLocalFields -join ', ')."
+                        & $applyKeepLocalFieldsRef -KeepLocalFields $keepLocalFields -LocalSnapshot $localSnapshotRef
                     }
                 }
 
