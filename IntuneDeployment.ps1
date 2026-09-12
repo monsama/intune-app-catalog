@@ -4660,11 +4660,11 @@ function Start-IntuneAppLookup {
                 Write-Log "Connected app-only as '$($info.AppName)' (client $($info.ClientId), tenant $($info.TenantId)).`r`n" ([System.Drawing.Color]::Gainsboro)
                 Write-Log "Cache now holds $($cache.Count) app(s).`r`n" ([System.Drawing.Color]::Gainsboro)
                 if ($cache.Count -eq 0) {
-                    Write-Log "Graph returned 0 apps from /deviceAppManagement/mobileApps.`r`n" ([System.Drawing.Color]::Orange)
-                    Write-Log "Check that this app registration's APPLICATION permission 'DeviceManagementApps.Read.All' (or ReadWrite.All) has admin consent - Delegated permissions used by interactive sign-in scripts do not carry over to app-only auth.`r`n" ([System.Drawing.Color]::Orange)
+                    Write-Log "[WARN] Graph returned 0 apps from /deviceAppManagement/mobileApps.`r`n" ([System.Drawing.Color]::Orange)
+                    Write-Log "[WARN] Check that this app registration's APPLICATION permission 'DeviceManagementApps.Read.All' (or ReadWrite.All) has admin consent - Delegated permissions used by interactive sign-in scripts do not carry over to app-only auth.`r`n" ([System.Drawing.Color]::Orange)
                 }
                 else {
-                    Write-Log "Fetched $($cache.Count) apps from Intune. Names returned:`r`n" ([System.Drawing.Color]::LightGreen)
+                    Write-Log "[OK] Fetched $($cache.Count) apps from Intune. Names returned:`r`n" ([System.Drawing.Color]::LightGreen)
                     foreach ($n in ($cache | Sort-Object displayName | ForEach-Object { $_.displayName })) {
                         Write-Log "    - $n`r`n" ([System.Drawing.Color]::Gainsboro)
                     }
@@ -4880,7 +4880,7 @@ function Start-EntraDirectoryLookup {
                 foreach ($e in @($info.Entries)) { [void]$cache.Add($e) }
                 $groupCount = @($cache | Where-Object { $_.type -eq "Group" }).Count
                 $userCount  = @($cache | Where-Object { $_.type -eq "User" }).Count
-                Write-Log "Connected app-only as '$($info.AppName)'. Loaded $groupCount group(s) and $userCount user(s).`r`n" ([System.Drawing.Color]::LightGreen)
+                Write-Log "[OK] Connected app-only as '$($info.AppName)'. Loaded $groupCount group(s) and $userCount user(s).`r`n" ([System.Drawing.Color]::LightGreen)
                 if ($OnComplete) { & $OnComplete $true $cache }
             }
         }
@@ -6073,10 +6073,7 @@ function Show-CertificateSetupDialog {
     $rtbUploadLog = New-Object System.Windows.Forms.RichTextBox
     $rtbUploadLog.Location = New-Object System.Drawing.Point(15,$y)
     $rtbUploadLog.Size = New-Object System.Drawing.Size(900,170)
-    $rtbUploadLog.ReadOnly = $true
-    $rtbUploadLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
-    $rtbUploadLog.ForeColor = [System.Drawing.Color]::Gainsboro
-    $rtbUploadLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    Initialize-DarkLogBox -LogBox $rtbUploadLog
     # DetectUrls only makes a URL look like a link (blue, underlined) - it
     # doesn't open anything by itself, that needs its own LinkClicked handler.
     $rtbUploadLog.DetectUrls = $true
@@ -6272,7 +6269,7 @@ function Show-CertificateSetupDialog {
             [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
             return
         }
 
@@ -6373,7 +6370,7 @@ function Show-CertificateSetupDialog {
             [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
             return
         }
 
@@ -6462,7 +6459,7 @@ function Show-CertificateSetupDialog {
             [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
             return
         }
 
@@ -6614,7 +6611,7 @@ function Show-CertificateSetupDialog {
             $Script:GraphClientId = $saveResultBox.ClientId
             $Script:GraphCertificateThumbprint = $saveResultBox.Thumbprint
             $Script:IntuneAppsCache.Clear()   # old cache may have been fetched under a different identity
-            Write-Log "Settings saved. Client: $($saveResultBox.ClientId), Tenant: $($saveResultBox.TenantId).`r`n" ([System.Drawing.Color]::LightGreen)
+            Write-Log "[OK] Settings saved. Client: $($saveResultBox.ClientId), Tenant: $($saveResultBox.TenantId).`r`n" ([System.Drawing.Color]::LightGreen)
             [System.Windows.Forms.MessageBox]::Show("Saved.", "Saved", "OK", "Information") | Out-Null
         }
     }
@@ -6674,6 +6671,31 @@ function Write-DialogError {
         $LogBox.SelectionColor = $LogBox.ForeColor
         $LogBox.ScrollToCaret()
     }
+}
+
+# The one MessageBox every embedded-pipeline dialog shows when it can't even
+# write the temp config file a Start-PipelineProcess run needs - identical
+# wording used to be copy-pasted at every one of those ~14 call sites, which
+# meant a future wording tweak would need to happen in all of them at once.
+# Centralized here instead so there's exactly one place that owns it.
+function Show-ConfigWriteFailedError {
+    param([string]$ErrorMessage)
+    [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $ErrorMessage", "Failed to prepare", "OK", "Error") | Out-Null
+}
+
+# The same dark-terminal ReadOnly/BackColor/ForeColor/Font setup was
+# copy-pasted onto every log RichTextBox in this app (14 of them) - applied
+# here instead so the theme lives in one place. Location/Size/Dock are
+# layout, not theme, so callers still set those themselves after this.
+function Initialize-DarkLogBox {
+    param(
+        [System.Windows.Forms.RichTextBox]$LogBox,
+        [double]$FontSize = 8.5
+    )
+    $LogBox.ReadOnly = $true
+    $LogBox.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
+    $LogBox.ForeColor = [System.Drawing.Color]::Gainsboro
+    $LogBox.Font = New-Object System.Drawing.Font("Consolas", $FontSize)
 }
 
 # =====================================================================
@@ -10263,10 +10285,7 @@ function Show-CreateInIntuneDialog {
     $rtbCreateLog = New-Object System.Windows.Forms.RichTextBox
     $rtbCreateLog.Location = New-Object System.Drawing.Point(15,821)
     $rtbCreateLog.Size = New-Object System.Drawing.Size(700,110)
-    $rtbCreateLog.ReadOnly = $true
-    $rtbCreateLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
-    $rtbCreateLog.ForeColor = [System.Drawing.Color]::Gainsboro
-    $rtbCreateLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    Initialize-DarkLogBox -LogBox $rtbCreateLog
     $dlg.Controls.Add($rtbCreateLog)
 
     $btnCreate = New-Object System.Windows.Forms.Button
@@ -10644,7 +10663,7 @@ function Show-CreateInIntuneDialog {
             [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
             return
         }
         # Verified explicitly, immediately after the write, rather than
@@ -11987,10 +12006,7 @@ function Show-TargetedAssignDialog {
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
     $rtbLog.Location = New-Object System.Drawing.Point(15,282)
     $rtbLog.Size = New-Object System.Drawing.Size(530,180)
-    $rtbLog.ReadOnly = $true
-    $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
-    $rtbLog.ForeColor = [System.Drawing.Color]::Gainsboro
-    $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $btnRun = New-Object System.Windows.Forms.Button
@@ -12032,7 +12048,7 @@ function Show-TargetedAssignDialog {
             [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
             return
         }
 
@@ -12209,13 +12225,20 @@ function Show-BatchDeployDialog {
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
+    # A known-length queue (one app at a time, count known up front) is
+    # exactly what a determinate ProgressBar is for - the label above
+    # already says "N of M", but a bar makes overall progress readable at
+    # a glance without reading the text.
+    $progressBar = New-Object System.Windows.Forms.ProgressBar
+    $progressBar.Location = New-Object System.Drawing.Point(15,398)
+    $progressBar.Size = New-Object System.Drawing.Size(630,12)
+    $progressBar.Style = "Continuous"
+    $dlg.Controls.Add($progressBar)
+
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbLog.Location = New-Object System.Drawing.Point(15,402)
-    $rtbLog.Size = New-Object System.Drawing.Size(630,150)
-    $rtbLog.ReadOnly = $true
-    $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
-    $rtbLog.ForeColor = [System.Drawing.Color]::Gainsboro
-    $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $rtbLog.Location = New-Object System.Drawing.Point(15,414)
+    $rtbLog.Size = New-Object System.Drawing.Size(630,138)
+    Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $btnDeploy = New-Object System.Windows.Forms.Button
@@ -12257,6 +12280,7 @@ function Show-BatchDeployDialog {
             $createdCount = @($Results | Where-Object { $_.Status -eq "Created" }).Count
             $skippedCount = @($Results | Where-Object { $_.Status -eq "Skipped" }).Count
             $failedCount  = @($Results | Where-Object { $_.Status -eq "Failed" }).Count
+            $progressBar.Value = $progressBar.Maximum
             $btnDeploy.Enabled = $true
             $btnSelectAll.Enabled = $true
             $btnSelectNone.Enabled = $true
@@ -12290,6 +12314,7 @@ function Show-BatchDeployDialog {
         $currentApp = $Queue[$QueueIndex]
         $rtbLog.AppendText("`r`n[$($QueueIndex+1)/$($Queue.Count)] $($currentApp.appName)`r`n")
         $lblStatus.Text = "Deploying $($QueueIndex+1) of $($Queue.Count): $($currentApp.appName)..."
+        $progressBar.Value = $QueueIndex
 
         $isUncommon = Test-AppIsUncommon -App $currentApp
         $pkg = Resolve-AppPackagePath -AppName $currentApp.appName -Uncommon $isUncommon
@@ -12394,7 +12419,7 @@ function Show-BatchDeployDialog {
             [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
             return
         }
 
@@ -12511,6 +12536,9 @@ function Show-BatchDeployDialog {
         $rtbLog.Clear()
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = "Starting..."
+        $progressBar.Minimum = 0
+        $progressBar.Maximum = [Math]::Max(1, $orderResult.Ordered.Count)
+        $progressBar.Value = 0
 
         $resultsList = New-Object System.Collections.Generic.List[object]
         & $RunNextBox.Value -Queue $orderResult.Ordered -QueueIndex 0 -Results $resultsList
@@ -12614,13 +12642,23 @@ function Show-SyncMetadataDialog {
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
+    # Marquee, not a determinate bar - unlike the app/delete queue-runners
+    # (one Graph call per app, from THIS process, so their own loop can just
+    # report "N of M" directly), this whole sync runs as a single embedded
+    # child-process invocation covering every checked app at once with no
+    # per-app progress signal streamed back - there's genuinely no "N of M"
+    # to report here, just "still running" vs "done".
+    $progressBar = New-Object System.Windows.Forms.ProgressBar
+    $progressBar.Location = New-Object System.Drawing.Point(15,432)
+    $progressBar.Size = New-Object System.Drawing.Size(590,12)
+    $progressBar.Style = "Marquee"
+    $progressBar.MarqueeAnimationSpeed = 0
+    $dlg.Controls.Add($progressBar)
+
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbLog.Location = New-Object System.Drawing.Point(15,436)
-    $rtbLog.Size = New-Object System.Drawing.Size(590,110)
-    $rtbLog.ReadOnly = $true
-    $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
-    $rtbLog.ForeColor = [System.Drawing.Color]::Gainsboro
-    $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $rtbLog.Location = New-Object System.Drawing.Point(15,448)
+    $rtbLog.Size = New-Object System.Drawing.Size(590,98)
+    Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $btnSync = New-Object System.Windows.Forms.Button
@@ -12681,6 +12719,7 @@ function Show-SyncMetadataDialog {
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = "Syncing $($configApps.Count) app(s)..."
         $rtbLog.Clear()
+        $progressBar.MarqueeAnimationSpeed = 30
 
         $configPath = Join-Path $env:TEMP (".intunepkg_syncmeta_config_" + [guid]::NewGuid().ToString("N") + ".json")
         $resultPath = Join-Path $env:TEMP (".intunepkg_syncmeta_result_" + [guid]::NewGuid().ToString("N") + ".json")
@@ -12696,7 +12735,7 @@ function Show-SyncMetadataDialog {
             [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
             return
         }
 
@@ -12716,10 +12755,12 @@ function Show-SyncMetadataDialog {
         $linkedFilePathRef = $linkedFilePath
         $lastFailedBoxRef = $lastFailedBox
         $btnRetryFailedRef = $btnRetryFailed
+        $progressBarRef = $progressBar
 
         $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".intunepkg_embedded_syncmeta.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
+            $progressBarRef.MarqueeAnimationSpeed = 0
             $btnSyncRef.Enabled = $true
             $btnSelectAllRef.Enabled = $true
             $btnSelectNoneRef.Enabled = $true
@@ -13358,10 +13399,7 @@ function Show-BatchAssignDialog {
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
     $rtbLog.Location = New-Object System.Drawing.Point(15,296)
     $rtbLog.Size = New-Object System.Drawing.Size(750,170)
-    $rtbLog.ReadOnly = $true
-    $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
-    $rtbLog.ForeColor = [System.Drawing.Color]::Gainsboro
-    $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $btnViewDetails = New-Object System.Windows.Forms.Button
@@ -13447,7 +13485,7 @@ function Show-BatchAssignDialog {
             [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
             return
         }
 
@@ -13674,10 +13712,7 @@ function Show-DiagnosticsDialog {
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
     $rtbLog.Location = New-Object System.Drawing.Point(15,66)
     $rtbLog.Size = New-Object System.Drawing.Size(670,436)
-    $rtbLog.ReadOnly = $true
-    $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
-    $rtbLog.ForeColor = [System.Drawing.Color]::Gainsboro
-    $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $lblStatus = New-Object System.Windows.Forms.Label
@@ -14548,10 +14583,7 @@ function Show-DeleteAppDialog {
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
     $rtbLog.Location = New-Object System.Drawing.Point(15,212)
     $rtbLog.Size = New-Object System.Drawing.Size(530,120)
-    $rtbLog.ReadOnly = $true
-    $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
-    $rtbLog.ForeColor = [System.Drawing.Color]::Gainsboro
-    $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $btnDelete = New-Object System.Windows.Forms.Button
@@ -14614,7 +14646,7 @@ function Show-DeleteAppDialog {
             [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
             return
         }
 
@@ -14868,13 +14900,16 @@ function Show-BulkDeleteFromIntuneDialog {
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
+    $progressBar = New-Object System.Windows.Forms.ProgressBar
+    $progressBar.Location = New-Object System.Drawing.Point(15,462)
+    $progressBar.Size = New-Object System.Drawing.Size(630,12)
+    $progressBar.Style = "Continuous"
+    $dlg.Controls.Add($progressBar)
+
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbLog.Location = New-Object System.Drawing.Point(15,466)
-    $rtbLog.Size = New-Object System.Drawing.Size(630,120)
-    $rtbLog.ReadOnly = $true
-    $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
-    $rtbLog.ForeColor = [System.Drawing.Color]::Gainsboro
-    $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    $rtbLog.Location = New-Object System.Drawing.Point(15,478)
+    $rtbLog.Size = New-Object System.Drawing.Size(630,108)
+    Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $btnDelete = New-Object System.Windows.Forms.Button
@@ -14935,6 +14970,7 @@ function Show-BulkDeleteFromIntuneDialog {
             $deletedNames = @($Results | Where-Object { $_.Status -eq "Deleted" } | ForEach-Object { $_.AppName })
             $okCount = $deletedNames.Count
             $failedCount = @($Results | Where-Object { $_.Status -eq "Failed" }).Count
+            $progressBar.Value = $progressBar.Maximum
             $btnSelectAll.Enabled = $true
             $btnSelectNone.Enabled = $true
             $clbApps.Enabled = $true
@@ -14997,6 +15033,7 @@ function Show-BulkDeleteFromIntuneDialog {
         else {
             $rtbLog.AppendText("`r`n[$($QueueIndex+1)/$($Queue.Count)] $($currentApp.appName)`r`n")
             $lblStatus.Text = "Deleting $($QueueIndex+1) of $($Queue.Count): $($currentApp.appName)..."
+            $progressBar.Value = $QueueIndex
         }
 
         $configPath = Join-Path $env:TEMP (".intunepkg_bulkdelete_config_" + [guid]::NewGuid().ToString("N") + ".json")
@@ -15015,7 +15052,7 @@ function Show-BulkDeleteFromIntuneDialog {
             [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
             return
         }
 
@@ -15135,6 +15172,9 @@ function Show-BulkDeleteFromIntuneDialog {
         $rtbLog.Clear()
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = "Starting..."
+        $progressBar.Minimum = 0
+        $progressBar.Maximum = [Math]::Max(1, $queueApps.Count)
+        $progressBar.Value = 0
 
         $resultsList = New-Object System.Collections.Generic.List[object]
         & $RunNextBox.Value -Queue $queueApps.ToArray() -QueueIndex 0 -Results $resultsList
@@ -16013,10 +16053,7 @@ function Show-GroupManagerDialog {
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
     $rtbLog.Location = New-Object System.Drawing.Point(15,423)
     $rtbLog.Size = New-Object System.Drawing.Size(590,120)
-    $rtbLog.ReadOnly = $true
-    $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
-    $rtbLog.ForeColor = [System.Drawing.Color]::Gainsboro
-    $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $btnDeleteGroup = New-Object System.Windows.Forms.Button
@@ -16187,7 +16224,7 @@ function Show-GroupManagerDialog {
             [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
             return
         }
 
@@ -16286,7 +16323,7 @@ function Show-GroupManagerDialog {
             [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
             return
         }
 
@@ -16408,7 +16445,7 @@ function Show-GroupManagerDialog {
             [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
             return
         }
 
@@ -16540,7 +16577,7 @@ function Show-GroupManagerDialog {
             [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not write the config file needed to run this: $($_.Exception.Message)", "Failed to prepare", "OK", "Error") | Out-Null
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
             return
         }
 
@@ -16840,10 +16877,7 @@ function Show-AppEditor {
     $rtbAppEditorLog = New-Object System.Windows.Forms.RichTextBox
     $rtbAppEditorLog.Location = New-Object System.Drawing.Point(15,766)
     $rtbAppEditorLog.Size = New-Object System.Drawing.Size(430,86)
-    $rtbAppEditorLog.ReadOnly = $true
-    $rtbAppEditorLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
-    $rtbAppEditorLog.ForeColor = [System.Drawing.Color]::Gainsboro
-    $rtbAppEditorLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    Initialize-DarkLogBox -LogBox $rtbAppEditorLog
     $dlg.Controls.Add($rtbAppEditorLog)
 
     $lblIdStatus = New-Object System.Windows.Forms.Label
@@ -17941,10 +17975,7 @@ $tabPipeline.Controls.Add($progress)
 
 $logBox = New-Object System.Windows.Forms.RichTextBox
 $logBox.Dock = "Fill"
-$logBox.ReadOnly = $true
-$logBox.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
-$logBox.ForeColor = [System.Drawing.Color]::Gainsboro
-$logBox.Font = New-Object System.Drawing.Font("Consolas", 9)
+Initialize-DarkLogBox -LogBox $logBox -FontSize 9
 $tabPipeline.Controls.Add($logBox)
 $logBox.BringToFront()
 
@@ -18275,10 +18306,7 @@ function Show-PackagingProgressDialog {
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
     $rtbLog.Location = New-Object System.Drawing.Point(15,40)
     $rtbLog.Size = New-Object System.Drawing.Size(590,312)
-    $rtbLog.ReadOnly = $true
-    $rtbLog.BackColor = [System.Drawing.Color]::FromArgb(13,17,23)
-    $rtbLog.ForeColor = [System.Drawing.Color]::Gainsboro
-    $rtbLog.Font = New-Object System.Drawing.Font("Consolas", 8.5)
+    Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $btnClose = New-Object System.Windows.Forms.Button
