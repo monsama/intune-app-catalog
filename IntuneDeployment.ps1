@@ -6707,7 +6707,6 @@ $toolbarTips.SetToolTip($btnIntuneAudit, "Check every deployed app's Metadata, G
 $toolbarTips.SetToolTip($btnRunLaunch, "Build the .intunewin package(s) for the selected (or all) uncommon apps.")
 $toolbarTips.SetToolTip($btnCertSetup, "Configure the Tenant ID, Client ID, and certificate used to connect to Microsoft Graph.")
 $toolbarTips.SetToolTip($btnDiagnostics, "Read-only health check: Graph connectivity, certificate expiry, catalog completeness, and drift against what's actually in Intune.")
-$toolbarTips.SetToolTip($btnMoreActions, "Catalog maintenance, one-off Intune lookups, Entra ID tools, and Settings.")
 
 $lblSearch = New-Object System.Windows.Forms.Label
 $lblSearch.Text = "Search:"
@@ -6777,6 +6776,7 @@ $btnMoreActions.Text = "More actions..."
 $btnMoreActions.Add_Click({
     $menuMoreActions.Show($btnMoreActions, (New-Object System.Drawing.Point(0, $btnMoreActions.Height)))
 }.GetNewClosure())
+$toolbarTips.SetToolTip($btnMoreActions, "Catalog maintenance, one-off Intune lookups, Entra ID tools, and Settings.")
 $gbMoreActions = New-ToolbarGroup -Title "More" -Buttons @($btnMoreActions)
 
 $searchPanel = New-Object System.Windows.Forms.FlowLayoutPanel
