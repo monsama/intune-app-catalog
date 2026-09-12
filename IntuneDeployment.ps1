@@ -2319,108 +2319,260 @@ try {
     }
     Write-Host "  [OK] Connected." -ForegroundColor Green
 
-    # Cache group name -> id lookups across apps (many apps share groups like
-    # "Deploy Dev Workplace", so this avoids repeating the same GET call).
-    $groupIdCache = @{}
-
-    function Resolve-GroupId {
-        param([string]$GroupName, [bool]$CreateIfMissing)
-        if ($groupIdCache.ContainsKey($GroupName)) { return $groupIdCache[$GroupName] }
-        $escapedName = $GroupName.Replace("'", "''")
-        $encodedFilter = [Uri]::EscapeDataString("displayName eq '$escapedName'")
-        $existing = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=$encodedFilter&`$select=id,displayName" -Method GET -StepDescription "Look up group '$GroupName'"
-        if ($existing.value -and $existing.value.Count -gt 0) {
-            $groupIdCache[$GroupName] = $existing.value[0].id
-            return $existing.value[0].id
-        }
-        if ($CreateIfMissing) {
-            $mailNickname = ($GroupName -replace '[^a-zA-Z0-9]', '')
-            if ($mailNickname.Length -gt 60) { $mailNickname = $mailNickname.Substring(0, 60) }
-            if ([string]::IsNullOrWhiteSpace($mailNickname)) { $mailNickname = "grp" + (Get-Random -Minimum 1000 -Maximum 9999) }
-            $groupBody = @{
-                displayName     = $GroupName
-                mailEnabled     = $false
-                mailNickname    = $mailNickname
-                securityEnabled = $true
-                "@odata.type"   = "#microsoft.graph.group"
-            } | ConvertTo-Json -Depth 5
-            $newGroup = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups" -Method POST -Body $groupBody -StepDescription "Create group '$GroupName'"
-            $groupIdCache[$GroupName] = $newGroup.id
-            Write-Host "  [+] Created group: $GroupName" -ForegroundColor Green
-            return $newGroup.id
-        }
-        $groupIdCache[$GroupName] = $null
-        return $null
-    }
-
+    # $groupIdCache/Resolve-GroupId moved into the Apply-mode branch below,
+    # right next to the only mode that actually uses them now - Preview
+    # never touches group creation/lookup by id at all (see that branch's
+    # own comment).
     $allResults = New-Object System.Collections.Generic.List[object]
     $appList = @($Config.Apps)
     $totalApps = $appList.Count
     $appIndex = 0
 
-    foreach ($app in $appList) {
-        $appIndex++
-        Write-Step "[$appIndex/$totalApps] $($app.AppName)"
+    if ($Config.Mode -eq "Preview") {
+        # Preview is fully read-only (no group creation, no assignment
+        # writes - see the Apply-only branch below) with no shared mutable
+        # state across apps, unlike Apply's $groupIdCache (used to dedupe
+        # group lookups/creation) - so it's safe to fetch every app's
+        # current assignments concurrently instead of one at a time. Same
+        # runspace-pool approach and reasoning as
+        # $Script:EmbeddedSyncMetadataScript's own per-app fetch (see its
+        # comment for why a runspace pool, not ForEach-Object -Parallel,
+        # and why each runspace is fully self-contained). Apply mode is
+        # deliberately left as the original sequential loop below,
+        # unchanged - concurrent group creation for a group name shared by
+        # multiple apps would race two runspaces into creating it twice.
+        $maxConcurrency = [Math]::Max(1, [Math]::Min(6, $appList.Count))
+        Write-Host "  Checking $($appList.Count) app(s), up to $maxConcurrency at a time..." -ForegroundColor Gray
 
-        $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($app.AppId)/assignments" -Method GET -StepDescription "Get current assignments for $($app.AppName)"
-        $currentByGroup = @{}
-        foreach ($a in @($currentAssignments.value)) {
-            if ($a.target.'@odata.type' -eq '#microsoft.graph.groupAssignmentTarget') {
-                $gid = $a.target.groupId
-                $gName = $gid
+        $perAppPreview = {
+            param($App, $TenantId, $ClientId, $CertThumbprint)
+
+            function Get-HttpErrorDetail {
+                param($ErrorRecord)
+                $detail = $ErrorRecord.ErrorDetails.Message
+                if ($detail) { return $detail }
                 try {
-                    $gi = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve current assignment's group name"
-                    if ($gi.displayName) { $gName = $gi.displayName }
+                    if ($ErrorRecord.Exception.Response) {
+                        $stream = $ErrorRecord.Exception.Response.GetResponseStream()
+                        $reader = New-Object System.IO.StreamReader($stream)
+                        $body = $reader.ReadToEnd()
+                        $reader.Close()
+                        if ($body) { return $body }
+                    }
                 } catch { }
-                $currentByGroup[$gName] = $a.intent
+                return $null
+            }
+
+            function Invoke-GraphRequestDetailed {
+                param(
+                    [Parameter(Mandatory=$true)][string]$Uri,
+                    [string]$Method = "GET",
+                    [string]$Body = $null,
+                    [string]$ContentType = "application/json",
+                    [Parameter(Mandatory=$true)][string]$StepDescription
+                )
+                $maxAttempts = 4
+                for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+                    try {
+                        if ($Body) {
+                            return Invoke-MgGraphRequest -Uri $Uri -Method $Method -Body $Body -ContentType $ContentType -ErrorAction Stop
+                        }
+                        else {
+                            return Invoke-MgGraphRequest -Uri $Uri -Method $Method -ErrorAction Stop
+                        }
+                    }
+                    catch {
+                        $isThrottled = $_.Exception.Message -match '429|TooManyRequests|Too Many Requests'
+                        $isTransient = $_.Exception.Message -match '503|ServiceUnavailable|Service Unavailable'
+                        $safeToRetryTransient = $isTransient -and $Method -ne "POST"
+                        if (($isThrottled -or $safeToRetryTransient) -and $attempt -lt $maxAttempts) {
+                            Start-Sleep -Seconds ($attempt * $attempt * 3)
+                            continue
+                        }
+                        $detail = Get-HttpErrorDetail -ErrorRecord $_
+                        $msg = "$StepDescription failed [$Method $Uri]: $($_.Exception.Message)"
+                        if ($detail) { $msg += "`nResponse body: $detail" }
+                        throw $msg
+                    }
+                }
+            }
+
+            Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+            $ctx = Get-MgContext -ErrorAction SilentlyContinue
+            if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+                Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertThumbprint -NoWelcome -ErrorAction Stop
+            }
+
+            $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($App.AppId)/assignments" -Method GET -StepDescription "Get current assignments for $($App.AppName)"
+            $currentByGroup = @{}
+            foreach ($a in @($currentAssignments.value)) {
+                if ($a.target.'@odata.type' -eq '#microsoft.graph.groupAssignmentTarget') {
+                    $gid = $a.target.groupId
+                    $gName = $gid
+                    try {
+                        $gi = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve current assignment's group name"
+                        if ($gi.displayName) { $gName = $gi.displayName }
+                    } catch { }
+                    $currentByGroup[$gName] = $a.intent
+                }
+            }
+
+            $newGroupSet = @{}
+            foreach ($g in @($App.RequiredGroups))  { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "required" } }
+            foreach ($g in @($App.AvailableGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "available" } }
+            foreach ($g in @($App.UninstallGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "uninstall" } }
+
+            $toRemove = @($currentByGroup.Keys | Where-Object { -not $newGroupSet.ContainsKey($_) -or $newGroupSet[$_] -ne $currentByGroup[$_] })
+            $toAdd    = @($newGroupSet.Keys | Where-Object { -not $currentByGroup.ContainsKey($_) -or $currentByGroup[$_] -ne $newGroupSet[$_] })
+
+            return [pscustomobject]@{
+                AppName  = $App.AppName
+                AppId    = $App.AppId
+                ToAdd    = @($toAdd | ForEach-Object { "[$($newGroupSet[$_])] $_" })
+                ToRemove = @($toRemove | ForEach-Object { "[$($currentByGroup[$_])] $_" })
             }
         }
 
-        # Blank/whitespace entries skipped - see the matching note in
-        # $Script:EmbeddedTargetedAssignScript for why: left in, a blank
-        # becomes a real $newGroupSet key that Preview promises to add but
-        # Apply never actually builds an assignment for.
-        $newGroupSet = @{}
-        foreach ($g in @($app.RequiredGroups))  { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "required" } }
-        foreach ($g in @($app.AvailableGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "available" } }
-        foreach ($g in @($app.UninstallGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "uninstall" } }
+        $pool = [runspacefactory]::CreateRunspacePool(1, $maxConcurrency)
+        $pool.Open()
+        $jobs = New-Object System.Collections.Generic.List[object]
+        try {
+            foreach ($app in $appList) {
+                $ps = [powershell]::Create()
+                $ps.RunspacePool = $pool
+                [void]$ps.AddScript($perAppPreview).AddParameter('App', $app).AddParameter('TenantId', $Config.TenantId).AddParameter('ClientId', $Config.ClientId).AddParameter('CertThumbprint', $Config.CertificateThumbprint)
+                $jobs.Add([pscustomobject]@{ Ps = $ps; Handle = $ps.BeginInvoke(); App = $app })
+            }
 
-        # Diffs on INTENT too, not just presence of the name - see the
-        # matching note in $Script:EmbeddedTargetedAssignScript for why: a
-        # group moved between Required/Available/Uninstall for an app used
-        # to be invisible to this diff (same name on both sides), reporting
-        # "no change" even though Intune still had it under the old intent.
-        $toRemove = @($currentByGroup.Keys | Where-Object { -not $newGroupSet.ContainsKey($_) -or $newGroupSet[$_] -ne $currentByGroup[$_] })
-        $toAdd    = @($newGroupSet.Keys | Where-Object { -not $currentByGroup.ContainsKey($_) -or $currentByGroup[$_] -ne $newGroupSet[$_] })
+            foreach ($job in $jobs) {
+                $appIndex++
+                $output = $null
+                $workerError = $null
+                try {
+                    $output = $job.Ps.EndInvoke($job.Handle)
+                }
+                catch {
+                    # EndInvoke() itself throws for an unhandled terminating
+                    # error inside the runspace (a plain `throw`, which is
+                    # how Invoke-GraphRequestDetailed reports a failed Graph
+                    # call here) rather than only populating
+                    # $job.Ps.Streams.Error - confirmed directly against
+                    # pwsh, not an assumption. Same "prefer Streams.Error,
+                    # fall back to the catch's own exception" precedence
+                    # already used by this app's other runspace caller
+                    # (Start-AppMetadataFetch's -OnComplete).
+                    $workerError = $_.Exception.Message
+                }
+                if (-not $workerError -and $job.Ps.Streams.Error.Count -gt 0) {
+                    $workerError = [string]$job.Ps.Streams.Error[0]
+                }
 
-        if ($toRemove.Count -eq 0 -and $toAdd.Count -eq 0) {
-            Write-Host "  (no change)" -ForegroundColor Gray
+                # Same as the original sequential loop - a single app's
+                # Graph failure aborts the whole preview rather than
+                # returning partial results, so this rethrows on the main
+                # thread instead of silently degrading (the pool is closed
+                # in the finally below either way).
+                if ($workerError) {
+                    $job.Ps.Dispose()
+                    throw $workerError
+                }
+
+                $oneResult = if ($output -and $output.Count -gt 0) { $output[0] } else { $null }
+                $job.Ps.Dispose()
+                if (-not $oneResult) { throw "No result returned for `"$($job.App.AppName)`"." }
+
+                Write-Step "[$appIndex/$totalApps] $($oneResult.AppName)"
+                if ($oneResult.ToRemove.Count -eq 0 -and $oneResult.ToAdd.Count -eq 0) {
+                    Write-Host "  (no change)" -ForegroundColor Gray
+                }
+                foreach ($g in $oneResult.ToRemove) { Write-Host "  - $g" -ForegroundColor Yellow }
+                foreach ($g in $oneResult.ToAdd)    { Write-Host "  + $g" -ForegroundColor Green }
+                $allResults.Add($oneResult)
+            }
         }
-        foreach ($g in $toRemove) { Write-Host "  - [$($currentByGroup[$g])] $g" -ForegroundColor Yellow }
-        foreach ($g in $toAdd)    { Write-Host "  + [$($newGroupSet[$g])] $g" -ForegroundColor Green }
+        finally {
+            $pool.Close()
+            $pool.Dispose()
+        }
+    }
+    else {
+        # Cache group name -> id lookups across apps (many apps share groups
+        # like "Deploy Dev Workplace", so this avoids repeating the same GET
+        # call) - shared mutable state across apps is exactly why this
+        # (Apply) mode stays a plain sequential loop, unlike Preview above.
+        $groupIdCache = @{}
 
-        $allResults.Add([pscustomobject]@{
-            AppName  = $app.AppName
-            AppId    = $app.AppId
-            ToAdd    = @($toAdd | ForEach-Object { "[$($newGroupSet[$_])] $_" })
-            ToRemove = @($toRemove | ForEach-Object { "[$($currentByGroup[$_])] $_" })
-        })
+        function Resolve-GroupId {
+            param([string]$GroupName, [bool]$CreateIfMissing)
+            if ($groupIdCache.ContainsKey($GroupName)) { return $groupIdCache[$GroupName] }
+            $escapedName = $GroupName.Replace("'", "''")
+            $encodedFilter = [Uri]::EscapeDataString("displayName eq '$escapedName'")
+            $existing = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=$encodedFilter&`$select=id,displayName" -Method GET -StepDescription "Look up group '$GroupName'"
+            if ($existing.value -and $existing.value.Count -gt 0) {
+                $groupIdCache[$GroupName] = $existing.value[0].id
+                return $existing.value[0].id
+            }
+            if ($CreateIfMissing) {
+                $mailNickname = ($GroupName -replace '[^a-zA-Z0-9]', '')
+                if ($mailNickname.Length -gt 60) { $mailNickname = $mailNickname.Substring(0, 60) }
+                if ([string]::IsNullOrWhiteSpace($mailNickname)) { $mailNickname = "grp" + (Get-Random -Minimum 1000 -Maximum 9999) }
+                $groupBody = @{
+                    displayName     = $GroupName
+                    mailEnabled     = $false
+                    mailNickname    = $mailNickname
+                    securityEnabled = $true
+                    "@odata.type"   = "#microsoft.graph.group"
+                } | ConvertTo-Json -Depth 5
+                $newGroup = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups" -Method POST -Body $groupBody -StepDescription "Create group '$GroupName'"
+                $groupIdCache[$GroupName] = $newGroup.id
+                Write-Host "  [+] Created group: $GroupName" -ForegroundColor Green
+                return $newGroup.id
+            }
+            $groupIdCache[$GroupName] = $null
+            return $null
+        }
 
-        if ($Config.Mode -eq "Apply") {
-            foreach ($gName in @($newGroupSet.Keys)) { Resolve-GroupId -GroupName $gName -CreateIfMissing $true | Out-Null }
+        foreach ($app in $appList) {
+            $appIndex++
+            Write-Step "[$appIndex/$totalApps] $($app.AppName)"
 
-            # Built from $newGroupSet (one entry per DISTINCT group name,
-            # already deduped above for the toAdd/toRemove preview), not by
-            # re-walking RequiredGroups/AvailableGroups/UninstallGroups
-            # separately - see the matching note in
-            # $Script:EmbeddedTargetedAssignScript for why: a group listed
-            # in more than one bucket used to produce two assignment
-            # entries for the same groupId with different intents, which
-            # Graph's /assign endpoint rejects outright ("An inclusion
-            # intent already exists for group id: ..."), failing this
-            # app's ENTIRE assignment even though the preview just above
-            # had reported "no change".
+            $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($app.AppId)/assignments" -Method GET -StepDescription "Get current assignments for $($app.AppName)"
+            $currentByGroup = @{}
+            foreach ($a in @($currentAssignments.value)) {
+                if ($a.target.'@odata.type' -eq '#microsoft.graph.groupAssignmentTarget') {
+                    $gid = $a.target.groupId
+                    $gName = $gid
+                    try {
+                        $gi = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve current assignment's group name"
+                        if ($gi.displayName) { $gName = $gi.displayName }
+                    } catch { }
+                    $currentByGroup[$gName] = $a.intent
+                }
+            }
+
+            $newGroupSet = @{}
+            foreach ($g in @($app.RequiredGroups))  { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "required" } }
+            foreach ($g in @($app.AvailableGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "available" } }
+            foreach ($g in @($app.UninstallGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "uninstall" } }
+
+            $toRemove = @($currentByGroup.Keys | Where-Object { -not $newGroupSet.ContainsKey($_) -or $newGroupSet[$_] -ne $currentByGroup[$_] })
+            $toAdd    = @($newGroupSet.Keys | Where-Object { -not $currentByGroup.ContainsKey($_) -or $currentByGroup[$_] -ne $newGroupSet[$_] })
+
+            if ($toRemove.Count -eq 0 -and $toAdd.Count -eq 0) {
+                Write-Host "  (no change)" -ForegroundColor Gray
+            }
+            foreach ($g in $toRemove) { Write-Host "  - [$($currentByGroup[$g])] $g" -ForegroundColor Yellow }
+            foreach ($g in $toAdd)    { Write-Host "  + [$($newGroupSet[$g])] $g" -ForegroundColor Green }
+
+            $allResults.Add([pscustomobject]@{
+                AppName  = $app.AppName
+                AppId    = $app.AppId
+                ToAdd    = @($toAdd | ForEach-Object { "[$($newGroupSet[$_])] $_" })
+                ToRemove = @($toRemove | ForEach-Object { "[$($currentByGroup[$_])] $_" })
+            })
+
             $assignments = @()
+            foreach ($gName in @($newGroupSet.Keys)) { Resolve-GroupId -GroupName $gName -CreateIfMissing $true | Out-Null }
             foreach ($g in @($newGroupSet.Keys)) {
                 if ($groupIdCache[$g]) { $assignments += @{ "@odata.type" = "#microsoft.graph.mobileAppAssignment"; intent = $newGroupSet[$g]; target = @{ "@odata.type" = "#microsoft.graph.groupAssignmentTarget"; groupId = $groupIdCache[$g] } } }
             }
@@ -3121,228 +3273,315 @@ try {
     }
     Write-Host "  [OK] Connected." -ForegroundColor Green
 
-    $allResults = New-Object System.Collections.Generic.List[object]
-    $doneCount = 0
-    foreach ($appEntry in $appList) {
-        $doneCount++
-        Write-Host ""
-        Write-Host "[$doneCount/$($appList.Count)] $($appEntry.AppName)" -ForegroundColor Cyan
+    $maxConcurrency = [Math]::Max(1, [Math]::Min(6, $appList.Count))
+    Write-Host "  Fetching $($appList.Count) app(s), up to $maxConcurrency at a time..." -ForegroundColor Gray
+
+    # Runs each app's fetch in its own runspace instead of one at a time - a
+    # 40+ app catalog audit/sync used to mean 40+ sequential rounds of
+    # metadata + dependencies + group-assignment Graph calls, each waiting
+    # on the network latency of the one before it. Windows PowerShell 5.1
+    # (this embedded script's own host - see Start-PipelineProcess, which
+    # launches powershell.exe, not pwsh) has no ForEach-Object -Parallel, so
+    # a runspace pool is the compatible equivalent; capped at 6 concurrent
+    # so this doesn't push Graph hard enough to trigger throttling beyond
+    # what Invoke-GraphRequestDetailed's own 429 retry/backoff below already
+    # absorbs for a single caller. Safe to parallelize freely - unlike
+    # $Script:EmbeddedBatchAssignScript's Apply mode, this whole fetch is
+    # read-only, with no shared mutable state (like a group-creation cache)
+    # across apps that concurrent access could race on.
+    #
+    # Fully self-contained (its own Connect-MgGraph, Invoke-GraphRequestDetailed,
+    # Get-HttpErrorDetail, Repair-MojibakeText, all redefined inside the
+    # scriptblock) because a runspace does NOT share the calling script's
+    # already-defined functions - only what's explicitly passed in or
+    # defined inside it. Never calls Write-Host directly either - a
+    # background runspace isn't reliably attached to a host UI that can
+    # render it, so per-app progress/warning text comes back in the result
+    # object instead and is printed by this (foreground, host-attached)
+    # runspace once collected below.
+    $perAppWork = {
+        param($AppEntry, $TenantId, $ClientId, $CertThumbprint)
+
+        function Get-HttpErrorDetail {
+            param($ErrorRecord)
+            $detail = $ErrorRecord.ErrorDetails.Message
+            if ($detail) { return $detail }
+            try {
+                if ($ErrorRecord.Exception.Response) {
+                    $stream = $ErrorRecord.Exception.Response.GetResponseStream()
+                    $reader = New-Object System.IO.StreamReader($stream)
+                    $body = $reader.ReadToEnd()
+                    $reader.Close()
+                    if ($body) { return $body }
+                }
+            } catch { }
+            return $null
+        }
+
+        function Invoke-GraphRequestDetailed {
+            param(
+                [Parameter(Mandatory=$true)][string]$Uri,
+                [string]$Method = "GET",
+                [string]$Body = $null,
+                [string]$ContentType = "application/json",
+                [Parameter(Mandatory=$true)][string]$StepDescription
+            )
+            $maxAttempts = 4
+            for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+                try {
+                    if ($Body) {
+                        return Invoke-MgGraphRequest -Uri $Uri -Method $Method -Body $Body -ContentType $ContentType -ErrorAction Stop
+                    }
+                    else {
+                        return Invoke-MgGraphRequest -Uri $Uri -Method $Method -ErrorAction Stop
+                    }
+                }
+                catch {
+                    $isThrottled = $_.Exception.Message -match '429|TooManyRequests|Too Many Requests'
+                    $isTransient = $_.Exception.Message -match '503|ServiceUnavailable|Service Unavailable'
+                    $safeToRetryTransient = $isTransient -and $Method -ne "POST"
+                    if (($isThrottled -or $safeToRetryTransient) -and $attempt -lt $maxAttempts) {
+                        Start-Sleep -Seconds ($attempt * $attempt * 3)
+                        continue
+                    }
+                    $detail = Get-HttpErrorDetail -ErrorRecord $_
+                    $msg = "$StepDescription failed [$Method $Uri]: $($_.Exception.Message)"
+                    if ($detail) { $msg += "`nResponse body: $detail" }
+                    throw $msg
+                }
+            }
+        }
+
+        function Repair-MojibakeText {
+            param([string]$Text)
+            if (-not $Text) { return $Text }
+            if ($Text.IndexOf([char]0x00C3) -lt 0 -and $Text.IndexOf(([string]([char]0x00E2) + [char]0x20AC)) -lt 0) { return $Text }
+            try {
+                $bytes = [System.Text.Encoding]::GetEncoding(1252).GetBytes($Text)
+                $repaired = [System.Text.Encoding]::UTF8.GetString($bytes)
+                if ($repaired.IndexOf([char]0xFFFD) -lt 0) { return $repaired }
+            } catch { }
+            return $Text
+        }
+
+        $warnings = New-Object System.Collections.Generic.List[string]
+
+        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+        $ctx = Get-MgContext -ErrorAction SilentlyContinue
+        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+            Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertThumbprint -NoWelcome -ErrorAction Stop
+        }
+
+        $app = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($AppEntry.AppId)" -Method GET -StepDescription "Fetch metadata"
+
+        $detectionRule = $null
+        foreach ($rule in @($app.detectionRules)) {
+            $odType = $rule.'@odata.type'
+            if ($odType -eq '#microsoft.graph.win32LobAppPowerShellScriptDetection' -and $rule.scriptContent) {
+                $scriptText = $null
+                try { $scriptText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($rule.scriptContent)) } catch { }
+                $detectionRule = [pscustomobject]@{ Type = "Script"; Script_Content = $scriptText }
+                break
+            }
+            elseif ($odType -eq '#microsoft.graph.win32LobAppProductCodeDetection') {
+                $detectionRule = [pscustomobject]@{
+                    Type                 = "Msi"
+                    Msi_ProductCode      = $rule.productCode
+                    Msi_VersionOperator  = $rule.productVersionOperator
+                    Msi_Version          = $rule.productVersion
+                }
+                break
+            }
+            elseif ($odType -eq '#microsoft.graph.win32LobAppFileSystemDetection') {
+                $detectionRule = [pscustomobject]@{
+                    Type                = "File"
+                    File_Path            = $rule.path
+                    File_Name            = $rule.fileOrFolderName
+                    File_Check32Bit      = $rule.check32BitOn64System
+                    File_DetectionType   = $rule.detectionType
+                    File_Operator        = $rule.operator
+                    File_DetectionValue  = $rule.detectionValue
+                }
+                break
+            }
+            elseif ($odType -eq '#microsoft.graph.win32LobAppRegistryDetection') {
+                $detectionRule = [pscustomobject]@{
+                    Type                = "Registry"
+                    Reg_KeyPath          = $rule.keyPath
+                    Reg_ValueName        = $rule.valueName
+                    Reg_Check32Bit       = $rule.check32BitOn64System
+                    Reg_DetectionType    = $rule.detectionType
+                    Reg_Operator         = $rule.operator
+                    Reg_DetectionValue   = $rule.detectionValue
+                }
+                break
+            }
+        }
+
+        $minOsPropName = $null
+        if ($app.minimumSupportedOperatingSystem) {
+            $minOsObj = $app.minimumSupportedOperatingSystem
+            if ($minOsObj -is [System.Collections.IDictionary]) {
+                foreach ($key in $minOsObj.Keys) {
+                    if ($minOsObj[$key] -eq $true) { $minOsPropName = $key; break }
+                }
+            }
+            else {
+                foreach ($prop in $minOsObj.PSObject.Properties) {
+                    if ($prop.Value -eq $true) { $minOsPropName = $prop.Name; break }
+                }
+            }
+        }
+
+        $archValue = ""
+        if ($app.allowedArchitectures -and $app.allowedArchitectures -ne "none") {
+            $archValue = $app.allowedArchitectures
+        }
+        elseif ($app.applicableArchitectures -and $app.applicableArchitectures -ne "none") {
+            $archValue = $app.applicableArchitectures
+        }
+        if ($archValue) {
+            $archTokensNorm = @($archValue -split '[,.]' | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
+            $archValue = (@("x86","x64","arm64") | Where-Object { $archTokensNorm -contains $_ }) -join ","
+        }
+
+        $depNames = @()
         try {
-            $app = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($appEntry.AppId)" -Method GET -StepDescription "Fetch metadata"
-
-            $detectionRule = $null
-            foreach ($rule in @($app.detectionRules)) {
-                $odType = $rule.'@odata.type'
-                if ($odType -eq '#microsoft.graph.win32LobAppPowerShellScriptDetection' -and $rule.scriptContent) {
-                    $scriptText = $null
-                    try { $scriptText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($rule.scriptContent)) } catch { }
-                    $detectionRule = [pscustomobject]@{ Type = "Script"; Script_Content = $scriptText }
-                    break
-                }
-                elseif ($odType -eq '#microsoft.graph.win32LobAppProductCodeDetection') {
-                    $detectionRule = [pscustomobject]@{
-                        Type                 = "Msi"
-                        Msi_ProductCode      = $rule.productCode
-                        Msi_VersionOperator  = $rule.productVersionOperator
-                        Msi_Version          = $rule.productVersion
-                    }
-                    break
-                }
-                elseif ($odType -eq '#microsoft.graph.win32LobAppFileSystemDetection') {
-                    $detectionRule = [pscustomobject]@{
-                        Type                = "File"
-                        File_Path            = $rule.path
-                        File_Name            = $rule.fileOrFolderName
-                        File_Check32Bit      = $rule.check32BitOn64System
-                        File_DetectionType   = $rule.detectionType
-                        File_Operator        = $rule.operator
-                        File_DetectionValue  = $rule.detectionValue
-                    }
-                    break
-                }
-                elseif ($odType -eq '#microsoft.graph.win32LobAppRegistryDetection') {
-                    $detectionRule = [pscustomobject]@{
-                        Type                = "Registry"
-                        Reg_KeyPath          = $rule.keyPath
-                        Reg_ValueName        = $rule.valueName
-                        Reg_Check32Bit       = $rule.check32BitOn64System
-                        Reg_DetectionType    = $rule.detectionType
-                        Reg_Operator         = $rule.operator
-                        Reg_DetectionValue   = $rule.detectionValue
-                    }
-                    break
-                }
-            }
-
-            $minOsPropName = $null
-            if ($app.minimumSupportedOperatingSystem) {
-                $minOsObj = $app.minimumSupportedOperatingSystem
-                if ($minOsObj -is [System.Collections.IDictionary]) {
-                    foreach ($key in $minOsObj.Keys) {
-                        if ($minOsObj[$key] -eq $true) { $minOsPropName = $key; break }
-                    }
-                }
-                else {
-                    foreach ($prop in $minOsObj.PSObject.Properties) {
-                        if ($prop.Value -eq $true) { $minOsPropName = $prop.Name; break }
-                    }
-                }
-            }
-
-            # Same precedence as the GUI's own populate-from-fetch logic for
-            # a single app (Deploy to Intune, Update mode) - allowedArchitectures
-            # is preferred whenever it holds a real, non-"none" value, since
-            # that's how Intune represents an app using MULTIPLE
-            # architectures; applicableArchitectures is the single-value
-            # fallback for apps that only ever set that one.
-            $archValue = ""
-            if ($app.allowedArchitectures -and $app.allowedArchitectures -ne "none") {
-                $archValue = $app.allowedArchitectures
-            }
-            elseif ($app.applicableArchitectures -and $app.applicableArchitectures -ne "none") {
-                $archValue = $app.applicableArchitectures
-            }
-            # Re-normalized into the same canonical, comma-joined
-            # "x86,x64,arm64" order the local catalog's own architecture
-            # field always uses - Intune has been observed returning this
-            # as a PERIOD-separated string (e.g. "x64.arm64") for a
-            # multi-architecture app, not comma. Without this, that raw
-            # value would get written straight into the local catalog's
-            # metadata.architecture field, silently corrupting it for
-            # every downstream comma-based split of that field (the app
-            # editor's own local-metadata prefill included).
-            if ($archValue) {
-                $archTokensNorm = @($archValue -split '[,.]' | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
-                $archValue = (@("x86","x64","arm64") | Where-Object { $archTokensNorm -contains $_ }) -join ","
-            }
-
-            # Dependencies fetched from the SAME endpoint already used
-            # during the delete-dependency work earlier this session -
-            # GET .../relationships returns each dependency as a
-            # mobileAppDependency object, which already includes
-            # targetDisplayName directly, no extra name-resolution lookup
-            # needed. Filtered on TWO conditions, not just one:
-            #   1. @odata.type -eq mobileAppDependency - this endpoint can
-            #      also return mobileAppSupersedence entries (this app
-            #      REPLACES another), a different relationship that isn't a
-            #      dependency and shouldn't be mixed into this list.
-            #   2. targetType -eq "child" - CORRECTED after being wrong the
-            #      first time. The docs' own wording ("whether the target
-            #      is a parent or child") reads as if "parent" should mean
-            #      "prerequisite", but a real, concrete example settled it:
-            #      a GitHub issue showing an actual create-dependency
-            #      payload has target "Chocolatey" with targetType="child"
-            #      and dependencyType="autoInstall" - and autoInstall is
-            #      documented as "the child app should be installed before
-            #      the parent app". So the PREREQUISITE is labeled "child"
-            #      here, not "parent" - the opposite of the intuitive
-            #      reading, confirmed against this app's own real data too
-            #      (querying the app that has NO dependencies of its own
-            #      but IS depended upon by another returned that other app
-            #      under targetType="parent", not "child").
-            # Stored by NAME, not targetId - matching how dependencies are
-            # stored everywhere else in the catalog, so one that hasn't
-            # been deployed yet elsewhere still resolves correctly once it
-            # is, at actual batch-deploy time.
-            $depNames = @()
-            try {
-                $rels = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($appEntry.AppId)/relationships" -Method GET -StepDescription "Fetch dependencies"
-                $relCount = @($rels.value).Count
-                Write-Host "  ($relCount relationship entr$(if ($relCount -eq 1) {'y'} else {'ies'}) found)" -ForegroundColor Gray
-                $depNames = @($rels.value | Where-Object { $_.'@odata.type' -eq '#microsoft.graph.mobileAppDependency' -and $_.targetType -eq 'child' } | ForEach-Object { $_.targetDisplayName } | Where-Object { $_ })
-            }
-            catch {
-                Write-Host "  [!] Could not fetch dependencies: $($_.Exception.Message)" -ForegroundColor Yellow
-            }
-
-            # This app's CURRENT live Intune assignments, resolved the same
-            # way Start-AppMetadataFetch's own single-app fetch already does
-            # (see its comment) - the one signal that survives a group
-            # rename in Entra ID, since it resolves each assignment's
-            # groupId to Intune's live displayName right now rather than
-            # matching against the catalog's (possibly stale) stored name.
-            # Wrapped defensively, same as the dependencies fetch above - a
-            # failure here shouldn't sink the rest of the sync, it just
-            # means this app's group names are left untouched below rather
-            # than risk overwriting real local data with an empty result.
-            $requiredGroupNames = @()
-            $availableGroupNames = @()
-            $uninstallGroupNames = @()
-            $groupFetchOk = $true
-            try {
-                $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($appEntry.AppId)/assignments" -Method GET -StepDescription "Fetch group assignments"
-                foreach ($a in @($currentAssignments.value)) {
-                    if ($a.target.'@odata.type' -ne '#microsoft.graph.groupAssignmentTarget') { continue }
-                    $gid = $a.target.groupId
-                    $groupDisplayName = $gid
-                    try {
-                        $groupInfo = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve group name"
-                        if ($groupInfo.displayName) { $groupDisplayName = $groupInfo.displayName }
-                    }
-                    catch { }
-                    switch ($a.intent) {
-                        "required"  { $requiredGroupNames += $groupDisplayName }
-                        "available" { $availableGroupNames += $groupDisplayName }
-                        "uninstall" { $uninstallGroupNames += $groupDisplayName }
-                    }
-                }
-            }
-            catch {
-                $groupFetchOk = $false
-                Write-Host "  [!] Could not fetch group assignments: $($_.Exception.Message)" -ForegroundColor Yellow
-            }
-
-            $metadata = [pscustomobject]@{
-                description      = Repair-MojibakeText $app.description
-                publisher        = Repair-MojibakeText $app.publisher
-                owner            = Repair-MojibakeText $app.owner
-                developer        = Repair-MojibakeText $app.developer
-                informationUrl   = $app.informationUrl
-                privacyUrl       = $app.privacyInformationUrl
-                notes            = Repair-MojibakeText $app.notes
-                installCommand   = $app.installCommandLine
-                uninstallCommand = $app.uninstallCommandLine
-                architecture     = $archValue
-                installContext   = $app.installExperience.runAsAccount
-                minOSKey         = $minOsPropName
-                detectionRule    = $detectionRule
-                dependencies     = $depNames
-                # Same fields added to Deploy to Intune's own fetch/populate
-                # logic, confirmed against the same win32LobApp schema docs.
-                minDiskSpaceMB          = $app.minimumFreeDiskSpaceInMB
-                minMemoryMB             = $app.minimumMemoryInMB
-                minProcessors           = $app.minimumNumberOfProcessors
-                minCpuSpeedMHz          = $app.minimumCpuSpeedInMHz
-                installTimeMinutes      = $app.installExperience.maxRunTimeInMinutes
-                deviceRestartBehavior   = $app.installExperience.deviceRestartBehavior
-                allowAvailableUninstall = $app.allowAvailableUninstall
-                # Guarded with Count -gt 0 rather than piping $app.returnCodes
-                # straight into ForEach-Object - a $null value piped into
-                # ForEach-Object still runs the script block once with $_ =
-                # $null (PowerShell doesn't collapse a single $null the way
-                # it collapses an empty array), so a non-Win32 app like
-                # "Microsoft Store app (new)" (which has no returnCodes at
-                # all from Graph) produced one phantom { returnCode = $null;
-                # type = $null } entry instead of an empty array. That
-                # $null then serialized as "returnCode": with nothing before
-                # the comma - invalid JSON that made the whole per-app file
-                # fail to parse (and get silently skipped) on every later
-                # load, permanently hiding that app from the catalog.
-                returnCodes             = if (@($app.returnCodes).Count -gt 0) { @($app.returnCodes | ForEach-Object { [pscustomobject]@{ returnCode = $_.returnCode; type = $_.type } }) } else { @() }
-            }
-
-            # Raw here, not friendly-mapped - the parent GUI process is the
-            # one place that maps @odata.type to the same label the Intune
-            # portal itself shows (Get-FriendlyIntuneAppType), so that
-            # mapping only has to live in one place, not duplicated into
-            # every embedded child-process script that could report it.
-            $allResults.Add([pscustomobject]@{ AppName = $appEntry.AppName; Success = $true; Metadata = $metadata; OdataType = $app.'@odata.type'; DisplayVersion = [string]$app.displayVersion; RequiredGroupNames = $requiredGroupNames; AvailableGroupNames = $availableGroupNames; UninstallGroupNames = $uninstallGroupNames; GroupFetchOk = $groupFetchOk; Error = "" })
-            Write-Host "  [OK] Synced." -ForegroundColor Green
+            $rels = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($AppEntry.AppId)/relationships" -Method GET -StepDescription "Fetch dependencies"
+            $depNames = @($rels.value | Where-Object { $_.'@odata.type' -eq '#microsoft.graph.mobileAppDependency' -and $_.targetType -eq 'child' } | ForEach-Object { $_.targetDisplayName } | Where-Object { $_ })
         }
         catch {
-            Write-Host "  [ERROR] $($_.Exception.Message)" -ForegroundColor Red
-            $allResults.Add([pscustomobject]@{ AppName = $appEntry.AppName; Success = $false; Metadata = $null; OdataType = ""; DisplayVersion = ""; RequiredGroupNames = @(); AvailableGroupNames = @(); UninstallGroupNames = @(); GroupFetchOk = $false; Error = $_.Exception.Message })
+            $warnings.Add("Could not fetch dependencies: $($_.Exception.Message)")
         }
+
+        $requiredGroupNames = @()
+        $availableGroupNames = @()
+        $uninstallGroupNames = @()
+        $groupFetchOk = $true
+        try {
+            $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($AppEntry.AppId)/assignments" -Method GET -StepDescription "Fetch group assignments"
+            foreach ($a in @($currentAssignments.value)) {
+                if ($a.target.'@odata.type' -ne '#microsoft.graph.groupAssignmentTarget') { continue }
+                $gid = $a.target.groupId
+                $groupDisplayName = $gid
+                try {
+                    $groupInfo = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve group name"
+                    if ($groupInfo.displayName) { $groupDisplayName = $groupInfo.displayName }
+                }
+                catch { }
+                switch ($a.intent) {
+                    "required"  { $requiredGroupNames += $groupDisplayName }
+                    "available" { $availableGroupNames += $groupDisplayName }
+                    "uninstall" { $uninstallGroupNames += $groupDisplayName }
+                }
+            }
+        }
+        catch {
+            $groupFetchOk = $false
+            $warnings.Add("Could not fetch group assignments: $($_.Exception.Message)")
+        }
+
+        $metadata = [pscustomobject]@{
+            description      = Repair-MojibakeText $app.description
+            publisher        = Repair-MojibakeText $app.publisher
+            owner            = Repair-MojibakeText $app.owner
+            developer        = Repair-MojibakeText $app.developer
+            informationUrl   = $app.informationUrl
+            privacyUrl       = $app.privacyInformationUrl
+            notes            = Repair-MojibakeText $app.notes
+            installCommand   = $app.installCommandLine
+            uninstallCommand = $app.uninstallCommandLine
+            architecture     = $archValue
+            installContext   = $app.installExperience.runAsAccount
+            minOSKey         = $minOsPropName
+            detectionRule    = $detectionRule
+            dependencies     = $depNames
+            minDiskSpaceMB          = $app.minimumFreeDiskSpaceInMB
+            minMemoryMB             = $app.minimumMemoryInMB
+            minProcessors           = $app.minimumNumberOfProcessors
+            minCpuSpeedMHz          = $app.minimumCpuSpeedInMHz
+            installTimeMinutes      = $app.installExperience.maxRunTimeInMinutes
+            deviceRestartBehavior   = $app.installExperience.deviceRestartBehavior
+            allowAvailableUninstall = $app.allowAvailableUninstall
+            returnCodes             = if (@($app.returnCodes).Count -gt 0) { @($app.returnCodes | ForEach-Object { [pscustomobject]@{ returnCode = $_.returnCode; type = $_.type } }) } else { @() }
+        }
+
+        return [pscustomobject]@{
+            AppName              = $AppEntry.AppName
+            Success              = $true
+            Metadata             = $metadata
+            OdataType            = $app.'@odata.type'
+            DisplayVersion       = [string]$app.displayVersion
+            RequiredGroupNames   = $requiredGroupNames
+            AvailableGroupNames  = $availableGroupNames
+            UninstallGroupNames  = $uninstallGroupNames
+            GroupFetchOk         = $groupFetchOk
+            Error                = ""
+            Warnings             = $warnings.ToArray()
+        }
+    }
+
+    $pool = [runspacefactory]::CreateRunspacePool(1, $maxConcurrency)
+    $pool.Open()
+    $jobs = New-Object System.Collections.Generic.List[object]
+    $allResults = New-Object System.Collections.Generic.List[object]
+    try {
+        foreach ($appEntry in $appList) {
+            $ps = [powershell]::Create()
+            $ps.RunspacePool = $pool
+            [void]$ps.AddScript($perAppWork).AddParameter('AppEntry', $appEntry).AddParameter('TenantId', $Config.TenantId).AddParameter('ClientId', $Config.ClientId).AddParameter('CertThumbprint', $Config.CertificateThumbprint)
+            $jobs.Add([pscustomobject]@{ Ps = $ps; Handle = $ps.BeginInvoke(); AppEntry = $appEntry })
+        }
+
+        $doneCount = 0
+        foreach ($job in $jobs) {
+            $doneCount++
+            $output = $null
+            $workerError = $null
+            try {
+                $output = $job.Ps.EndInvoke($job.Handle)
+            }
+            catch {
+                # EndInvoke() itself throws for an unhandled terminating
+                # error inside the runspace (a plain `throw`, which is how
+                # Invoke-GraphRequestDetailed reports a failed Graph call
+                # here) rather than only populating $job.Ps.Streams.Error -
+                # confirmed directly against pwsh, not an assumption. Same
+                # "prefer Streams.Error, fall back to the catch's own
+                # exception" precedence already used by this app's other
+                # runspace caller (Start-AppMetadataFetch's -OnComplete).
+                $workerError = $_.Exception.Message
+            }
+            if (-not $workerError -and $job.Ps.Streams.Error.Count -gt 0) {
+                $workerError = [string]$job.Ps.Streams.Error[0]
+            }
+
+            if ($workerError) {
+                Write-Host ""
+                Write-Host "[$doneCount/$($jobs.Count)] $($job.AppEntry.AppName)" -ForegroundColor Cyan
+                Write-Host "  [ERROR] $workerError" -ForegroundColor Red
+                $allResults.Add([pscustomobject]@{ AppName = $job.AppEntry.AppName; Success = $false; Metadata = $null; OdataType = ""; DisplayVersion = ""; RequiredGroupNames = @(); AvailableGroupNames = @(); UninstallGroupNames = @(); GroupFetchOk = $false; Error = $workerError })
+                $job.Ps.Dispose()
+                continue
+            }
+
+            $oneResult = if ($output -and $output.Count -gt 0) { $output[0] } else { $null }
+            $job.Ps.Dispose()
+            if (-not $oneResult) {
+                $allResults.Add([pscustomobject]@{ AppName = $job.AppEntry.AppName; Success = $false; Metadata = $null; OdataType = ""; DisplayVersion = ""; RequiredGroupNames = @(); AvailableGroupNames = @(); UninstallGroupNames = @(); GroupFetchOk = $false; Error = "No result returned from worker runspace." })
+                continue
+            }
+
+            Write-Host ""
+            Write-Host "[$doneCount/$($jobs.Count)] $($oneResult.AppName)" -ForegroundColor Cyan
+            foreach ($w in @($oneResult.Warnings)) { Write-Host "  [!] $w" -ForegroundColor Yellow }
+            Write-Host "  [OK] Synced." -ForegroundColor Green
+            $allResults.Add($oneResult)
+        }
+    }
+    finally {
+        $pool.Close()
+        $pool.Dispose()
     }
 
     Write-Step "Done"
