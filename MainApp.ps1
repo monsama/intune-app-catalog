@@ -405,7 +405,7 @@ $Script:EmbeddedCertUploadScript = Get-Content -Path (Join-Path $PSScriptRoot "E
 # =====================================================================
 # Main window
 # =====================================================================
-$form = New-Object System.Windows.Forms.Form
+$Global:form = New-Object System.Windows.Forms.Form
 $form.Text = "Intune App Catalog & Deployment (v$($Script:AppVersion))"
 $form.Size = New-Object System.Drawing.Size(1080, 720)
 $form.MinimumSize = New-Object System.Drawing.Size(860, 560)
@@ -421,7 +421,7 @@ $tabs.TabPages.AddRange(@($tabCatalog, $tabPipeline))
 $form.Controls.Add($tabs)
 
 $statusStrip = New-Object System.Windows.Forms.StatusStrip
-$statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
+$Global:statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
 $statusLabel.Spring = $true
 $statusLabel.TextAlign = "MiddleLeft"
 $statusStrip.Items.Add($statusLabel) | Out-Null
@@ -474,11 +474,11 @@ $toolbar.Padding = New-Object System.Windows.Forms.Padding(6)
 # label for the same click.
 $btnNew    = New-Object System.Windows.Forms.Button; $btnNew.Text = "+ Add app..."
 $btnEdit   = New-Object System.Windows.Forms.Button; $btnEdit.Text = "Edit..."
-$btnDelete = New-Object System.Windows.Forms.Button; $btnDelete.Text = "Remove from catalog..."
-$btnSave   = New-Object System.Windows.Forms.Button; $btnSave.Text = "Force save catalog"
+$Global:btnDelete = New-Object System.Windows.Forms.Button; $btnDelete.Text = "Remove from catalog..."
+$Global:btnSave   = New-Object System.Windows.Forms.Button; $btnSave.Text = "Force save catalog"
 $btnReload = New-Object System.Windows.Forms.Button; $btnReload.Text = "Reload"
 $btnOpen   = New-Object System.Windows.Forms.Button; $btnOpen.Text = "Open other folder..."
-$btnLookupIds = New-Object System.Windows.Forms.Button; $btnLookupIds.Text = "Look up App IDs..."
+$Global:btnLookupIds = New-Object System.Windows.Forms.Button; $btnLookupIds.Text = "Look up App IDs..."
 $btnCheckIntuneOnly = New-Object System.Windows.Forms.Button; $btnCheckIntuneOnly.Text = "Intune sync check..."
 $btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text = "Push groups to Intune (multiple apps)..."
 $btnSyncMetadata = New-Object System.Windows.Forms.Button; $btnSyncMetadata.Text = "Pull metadata and groups from Intune..."
@@ -489,7 +489,7 @@ $btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.
 $btnDependencies = New-Object System.Windows.Forms.Button; $btnDependencies.Text = "View dependencies..."
 $btnGroupDrift = New-Object System.Windows.Forms.Button; $btnGroupDrift.Text = "Check catalog groups against Entra ID..."
 $btnIntuneAudit = New-Object System.Windows.Forms.Button; $btnIntuneAudit.Text = "Intune Audit..."
-$btnRunLaunch = New-Object System.Windows.Forms.Button; $btnRunLaunch.Text = "Package apps"
+$Global:btnRunLaunch = New-Object System.Windows.Forms.Button; $btnRunLaunch.Text = "Package apps"
 $btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "Settings..."
 $btnDefaultValues = New-Object System.Windows.Forms.Button; $btnDefaultValues.Text = "Edit default values..."
 $btnDiagnostics = New-Object System.Windows.Forms.Button; $btnDiagnostics.Text = "Run diagnostics..."
@@ -525,11 +525,11 @@ $toolbarTips.SetToolTip($btnCertSetup, "Configure the Tenant ID, Client ID, and 
 $toolbarTips.SetToolTip($btnDefaultValues, "Change the computed defaults every new Winget app starts with (architecture, min OS, requirements, return codes, ...). Doesn't touch any app already saved or deployed.")
 $toolbarTips.SetToolTip($btnDiagnostics, "Read-only health check: Graph connectivity, certificate expiry, catalog completeness, and drift against what's actually in Intune.")
 
-$lblSearch = New-Object System.Windows.Forms.Label
+$Global:lblSearch = New-Object System.Windows.Forms.Label
 $lblSearch.Text = "Search:"
 $lblSearch.AutoSize = $true
 $lblSearch.Padding = New-Object System.Windows.Forms.Padding(10,4,0,0)
-$txtSearch = New-Object System.Windows.Forms.TextBox
+$Global:txtSearch = New-Object System.Windows.Forms.TextBox
 $txtSearch.Width = 220
 
 # The toolbar used to be organized by WHICH SYSTEM a button touches
@@ -641,7 +641,7 @@ $panelCredWarning.Controls.Add($btnCredWarningSettings)
 $btnCredWarningSettings.Add_Click({ Show-CertificateSetupDialog })
 $tabCatalog.Controls.Add($panelCredWarning)
 
-$grid = New-Object System.Windows.Forms.DataGridView
+$Global:grid = New-Object System.Windows.Forms.DataGridView
 $grid.Dock = "Fill"
 $grid.ReadOnly = $true
 $grid.AllowUserToAddRows = $false
@@ -672,7 +672,7 @@ $grid.Columns.Add((New-GridColumn "AppId" "App ID" -FillWeight 20)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Status" "Status" -FillWeight 8)) | Out-Null
 $grid.Columns.Add((New-GridColumn "IntuneAudit" "Last Audit" -FillWeight 10)) | Out-Null
 
-$colIndex = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+$Global:colIndex = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
 $colIndex.Name = "Index"
 $colIndex.DataPropertyName = "Index"
 $colIndex.Visible = $false
@@ -1643,14 +1643,14 @@ $txtSearch.Add_TextChanged({ Refresh-Grid })
 # own tab. This tab is kept and renamed because Write-Log is genuinely used
 # throughout the app as the general status/diagnostic log - not just by
 # Launch - so removing it isn't an option, just moving Launch off it.
-$progress = New-Object System.Windows.Forms.ProgressBar
+$Global:progress = New-Object System.Windows.Forms.ProgressBar
 $progress.Dock = "Bottom"
 $progress.Height = 6
 $progress.Style = "Marquee"
 $progress.Visible = $false
 $tabPipeline.Controls.Add($progress)
 
-$logBox = New-Object System.Windows.Forms.RichTextBox
+$Global:logBox = New-Object System.Windows.Forms.RichTextBox
 $logBox.Dock = "Fill"
 Initialize-DarkLogBox -LogBox $logBox -FontSize 9
 $tabPipeline.Controls.Add($logBox)
