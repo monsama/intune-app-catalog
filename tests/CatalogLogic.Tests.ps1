@@ -1,8 +1,9 @@
 <#
 .SYNOPSIS
     Plain, no-framework unit tests for this app's pure, side-effect-free
-    catalog logic - the part of IntuneDeployment.ps1 that doesn't
-    touch WinForms or Microsoft Graph and can genuinely run headless.
+    catalog logic - the part of this app (under .\Private\Catalog\) that
+    doesn't touch WinForms or Microsoft Graph and can genuinely run
+    headless.
 
 .DESCRIPTION
     No Pester dependency deliberately - PowerShell Gallery isn't reachable
@@ -68,19 +69,21 @@ function Assert-Null {
 }
 
 # ---------------------------------------------------------------
-# Extract the pure functions under test straight from the real script
+# Extract the pure functions under test straight from the real source
+# files under .\Private\ (never a hand-copied duplicate)
 # ---------------------------------------------------------------
-$mainScriptPath = Join-Path $PSScriptRoot "..\IntuneDeployment.ps1"
-$mainScriptPath = Resolve-Path $mainScriptPath
-
-$parseErrors = $null
-$tokens = $null
-$ast = [System.Management.Automation.Language.Parser]::ParseFile($mainScriptPath, [ref]$tokens, [ref]$parseErrors)
-if ($parseErrors.Count -gt 0) {
-    Write-Host "FAIL: $mainScriptPath has $($parseErrors.Count) syntax error(s) - fix before running tests." -ForegroundColor Red
-    foreach ($e in $parseErrors) { Write-Host "  Line $($e.Extent.StartLineNumber): $($e.Message)" -ForegroundColor Red }
-    exit 1
-}
+# Scans every .\Private\**\*.ps1 file, not just IntuneDeployment.ps1
+# directly - since the module rebuild, IntuneDeployment.ps1 itself is
+# just a thin entry point that dot-sources those files (plus
+# MainApp.ps1) and no longer contains any function BODIES of its own to
+# extract an AST from. All 16 functions this suite targets currently
+# live in Private\Catalog\, but this deliberately isn't hardcoded to
+# just those two files - it's robust to a function moving to a
+# different Private\ file later without this suite needing an update
+# just to keep finding it.
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$privateRoot = Join-Path $repoRoot "Private"
+$privateFiles = Get-ChildItem -Path $privateRoot -Filter "*.ps1" -Recurse
 
 # Deliberately narrow list - only genuinely pure, side-effect-free
 # functions. Adding a name here is a claim that function has NO WinForms
@@ -104,15 +107,32 @@ $testableFunctionNames = @(
     "Get-GroupFieldDiffs"
 )
 
-$funcAsts = $ast.FindAll({
-    param($node)
-    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $testableFunctionNames -contains $node.Name
-}, $true)
+$funcAsts = New-Object System.Collections.Generic.List[object]
+foreach ($file in $privateFiles) {
+    $parseErrors = $null
+    $tokens = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$parseErrors)
+    if ($parseErrors.Count -gt 0) {
+        Write-Host "FAIL: $($file.FullName) has $($parseErrors.Count) syntax error(s) - fix before running tests." -ForegroundColor Red
+        foreach ($e in $parseErrors) { Write-Host "  Line $($e.Extent.StartLineNumber): $($e.Message)" -ForegroundColor Red }
+        exit 1
+    }
+    $matches = $ast.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $testableFunctionNames -contains $node.Name
+    }, $true)
+    foreach ($m in $matches) { $funcAsts.Add($m) }
+}
 
 $foundNames = @($funcAsts | ForEach-Object { $_.Name })
 $missingNames = @($testableFunctionNames | Where-Object { $foundNames -notcontains $_ })
 if ($missingNames.Count -gt 0) {
-    Write-Host "FAIL: expected function(s) not found in the main script: $($missingNames -join ', ')" -ForegroundColor Red
+    Write-Host "FAIL: expected function(s) not found under $privateRoot`: $($missingNames -join ', ')" -ForegroundColor Red
+    exit 1
+}
+$dupeNames = @($foundNames | Group-Object | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name })
+if ($dupeNames.Count -gt 0) {
+    Write-Host "FAIL: function(s) defined more than once under $privateRoot`: $($dupeNames -join ', ')" -ForegroundColor Red
     exit 1
 }
 
