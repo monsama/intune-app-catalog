@@ -279,7 +279,11 @@ function Set-ThemeRecursive {
 function Load-GraphSettings {
     if (-not (Test-Path $Script:SettingsFilePath)) { return }
     try {
-        $settings = Get-Content -Path $Script:SettingsFilePath -Raw | ConvertFrom-Json
+        # -Encoding UTF8 explicitly - same reasoning as Load-AppsFromFile's
+        # own per-app file read: this file is written BOM-less UTF8
+        # (Write-SettingsFile), which Get-Content silently misreads as the
+        # system ANSI codepage under Windows PowerShell 5.1 without this.
+        $settings = Get-Content -Path $Script:SettingsFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
         # Trimmed and whitespace-checked here, not just truthiness-checked -
         # the Settings dialog's own save path already strips whitespace
         # before writing (see btnSave's Trim() / -replace '\s',''), but a
@@ -1512,7 +1516,7 @@ if (-not (Test-Path $ConfigPath)) {
     Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  App: $($Config.AppName)" -ForegroundColor Gray
 Write-Host "  Mode: $($Config.Mode)" -ForegroundColor Gray
 
@@ -1990,7 +1994,7 @@ if (-not (Test-Path $ConfigPath)) {
     Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  App ID: $($Config.AppId)" -ForegroundColor Gray
 Write-Host "  Required groups : $(@($Config.RequiredGroups).Count)" -ForegroundColor Gray
 Write-Host "  Available groups: $(@($Config.AvailableGroups).Count)" -ForegroundColor Gray
@@ -2302,7 +2306,7 @@ if (-not (Test-Path $ConfigPath)) {
     Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  Mode: $($Config.Mode)" -ForegroundColor Gray
 Write-Host "  Apps: $(@($Config.Apps).Count)" -ForegroundColor Gray
 
@@ -2715,7 +2719,7 @@ if (-not (Test-Path $ConfigPath)) {
     Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  App: $($Config.AppName)" -ForegroundColor Gray
 Write-Host "  App ID: $($Config.AppId)" -ForegroundColor Gray
 
@@ -2962,7 +2966,7 @@ if (-not (Test-Path $ConfigPath)) {
     Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  Group: $($Config.GroupName)" -ForegroundColor Gray
 Write-Host "  Members to add: $(@($Config.MemberIds).Count)" -ForegroundColor Gray
 
@@ -3256,7 +3260,7 @@ if (-not (Test-Path $ConfigPath)) {
     Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $appList = @($Config.Apps)
 Write-Host "  Apps to sync: $($appList.Count)" -ForegroundColor Gray
 
@@ -3737,7 +3741,7 @@ if (-not (Test-Path $ConfigPath)) {
     Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Json
+$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  App (client) ID: $($Config.ClientId)" -ForegroundColor Gray
 # Check mode never sends CertSubject/CertThumbprint at all - it only signs
 # in and lists what's already trusted in Entra, with no local certificate
@@ -4058,7 +4062,9 @@ function Load-AppsFromFile {
         $oldSingleFilePath = Join-Path $Script:RootPath "input.json"
         if (Test-Path $oldSingleFilePath) {
             try {
-                $rawOld = Get-Content -Path $oldSingleFilePath -Raw | ConvertFrom-Json
+                # -Encoding UTF8 explicitly - same reasoning as the per-app
+                # file read further below in this function.
+                $rawOld = Get-Content -Path $oldSingleFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
                 if ($null -eq $rawOld) { $rawOld = @() }
                 if (-not (Test-Path $Path)) { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
                 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -4103,7 +4109,21 @@ function Load-AppsFromFile {
         $failedFiles = New-Object System.Collections.Generic.List[string]
         foreach ($file in $files) {
             try {
-                $rawText = Get-Content -Path $file.FullName -Raw
+                # -Encoding UTF8 explicitly, not left to Get-Content's own
+                # default - these files are always written BOM-less UTF-8
+                # (see Save-AppsToFile's $utf8NoBom), but under Windows
+                # PowerShell 5.1 (not pwsh 7, where UTF-8 is already the
+                # no-BOM default), Get-Content falls back to the system's
+                # ANSI codepage for any file with no BOM. That silently
+                # re-corrupted every non-ASCII character (curly quotes, em
+                # dashes, accented names) on EVERY load, even for text that
+                # was perfectly clean on disk - confirmed as the actual
+                # cause of a live report where "Sync metadata..." fixed a
+                # field's mojibake, the very next audit in the same session
+                # showed it fixed, and then it came back exactly as before
+                # after simply restarting the app (no editing in between) -
+                # this read-time corruption, not the write path, was reintroducing it.
+                $rawText = Get-Content -Path $file.FullName -Raw -Encoding UTF8
                 try {
                     $raw = $rawText | ConvertFrom-Json
                 }
@@ -17690,7 +17710,9 @@ function Show-AppEditor {
             try {
                 $existingFilePath = Join-Path $linkedFilePath ((Get-SafeFileNameForApp -Name $ExistingApp.appName) + ".json")
                 if ($ExistingApp -and (Test-Path $existingFilePath)) {
-                    $onDiskApp = Get-Content -Path $existingFilePath -Raw | ConvertFrom-Json
+                    # -Encoding UTF8 explicitly - same reasoning as
+                    # Load-AppsFromFile's own read of this same file format.
+                    $onDiskApp = Get-Content -Path $existingFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
                     if ($onDiskApp.metadata) {
                         $preservedMetadata = $onDiskApp.metadata
                         $metadataSource = "disk"
