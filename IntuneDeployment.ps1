@@ -6731,7 +6731,12 @@ $txtSearch.Width = 220
 # still exists exactly as before, fully wired the same way - nothing here
 # changes what any of them do, only how many are visible before you've
 # asked for more.
-$gbPrimary = New-ToolbarGroup -Title "Get started" -Buttons @($btnNew, $btnEdit, $btnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnIntuneAudit)
+# Reload sits here too, not in the overflow menu - this catalog is Git-
+# tracked (the whole per-app-JSON-file design exists for clean diffs), so
+# "someone else pushed a change, pull it and reload" is a genuinely
+# recurring step for this tool's actual audience, not a rare recovery
+# action worth burying.
+$gbPrimary = New-ToolbarGroup -Title "Get started" -Buttons @($btnNew, $btnEdit, $btnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnIntuneAudit, $btnReload)
 
 # Builds one ToolStripMenuItem submenu from a list of {Text;Btn} pairs -
 # each item just PerformClick()s the real button (still fully wired, just
@@ -6754,10 +6759,8 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Catalog maintenance" -Items @(
     @{ Text = $btnDelete.Text; Btn = $btnDelete }
     @{ Text = $btnSave.Text; Btn = $btnSave }
-    @{ Text = $btnReload.Text; Btn = $btnReload }
     @{ Text = $btnOpen.Text; Btn = $btnOpen }
     @{ Text = $btnFavoriteGroups.Text; Btn = $btnFavoriteGroups }
-    @{ Text = $btnDependencies.Text; Btn = $btnDependencies }
 )))
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Intune" -Items @(
     @{ Text = $btnLookupIds.Text; Btn = $btnLookupIds }
@@ -6766,11 +6769,18 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
 )))
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Entra ID" -Items @(
     @{ Text = $btnGroupManager.Text; Btn = $btnGroupManager }
+)))
+# Every read-only "check something" action grouped together here,
+# regardless of which system it happens to touch - someone looking for
+# "check X" shouldn't need to already know whether X lives under
+# Catalog/Intune/Entra ID to find it.
+[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Verify" -Items @(
+    @{ Text = $btnDependencies.Text; Btn = $btnDependencies }
     @{ Text = $btnGroupDrift.Text; Btn = $btnGroupDrift }
+    @{ Text = $btnDiagnostics.Text; Btn = $btnDiagnostics }
 )))
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Settings" -Items @(
     @{ Text = $btnCertSetup.Text; Btn = $btnCertSetup }
-    @{ Text = $btnDiagnostics.Text; Btn = $btnDiagnostics }
 )))
 
 $btnMoreActions = New-Object System.Windows.Forms.Button
@@ -9569,14 +9579,22 @@ function Show-CreateInIntuneDialog {
 
     # Compares the form's CURRENT values against Get-DefaultAppMetadata's
     # computed defaults (the exact same defaults this dialog itself
-    # pre-fills a brand-new Winget app with) and, on confirmation, resets
-    # every differing field back to its default. Deliberately scoped to
+    # pre-fills a brand-new Winget app with). Deliberately scoped to
     # install-mechanics fields only (install/uninstall/detection,
     # architecture, min OS, requirements, restart behavior, allow-
     # uninstall, return codes, dependencies) - NOT description/publisher/
-    # owner/developer/URLs/notes, which are free-text metadata this button
-    # has no business silently blanking out.
-    $btnSetDefaults.Add_Click({
+    # owner/developer/URLs/notes, which are free-text metadata neither this
+    # function nor "Set default values..." has any business touching.
+    #
+    # A plain nested function, not a scriptblock/closure - reads every
+    # control below via normal PowerShell parent-scope lookup at CALL
+    # time, which (unlike a .GetNewClosure()'d scriptblock reading the
+    # same variables) doesn't need any of the "fresh alias" care documented
+    # elsewhere in this function, since a real function call always
+    # resolves its parent scope fresh. Used both by "Set default values..."
+    # itself (below) and by Update-CustomFieldHighlights, so the two can
+    # never drift apart on what counts as "differs from default".
+    function Get-CurrentVsDefaultChanges {
         $currentDetection = switch ($cmbDetectionType.SelectedIndex) {
             0 { if ($txtDetection.Text.Trim()) { [pscustomobject]@{ Type = "Script"; Script_Content = $txtDetection.Text } } else { $null } }
             default { [pscustomobject]@{ Type = "Other" } }
@@ -9687,6 +9705,55 @@ function Show-CreateInIntuneDialog {
             $changeRows.Add([pscustomobject]@{ Label = "Return codes"; Display = "Return codes: $(& $rcToText $currentReturnCodes)  ->  $(& $rcToText $defaults.returnCodes)" })
         }
 
+        return $changeRows
+    }
+
+    # Highlights each field's LABEL in bold DarkOrange when its current
+    # value differs from the computed Winget default, so "which settings
+    # are custom here" is visible at a glance without clicking "Set
+    # default values..." - that button still exists for actually
+    # resetting them; this just answers "which ones, right now" passively.
+    # Only meaningful for a Winget app - see Get-CurrentVsDefaultChanges's
+    # own comment on why an Uncommon app has nothing to compare against.
+    # Not live/reactive (doesn't re-run on every keystroke) - called once
+    # after the form settles (pre-fill, and again after the live-Intune
+    # auto-fetch for an existing app), which is enough to answer "what's
+    # custom on this app" without wiring change-tracking onto every one of
+    # these controls.
+    function Update-CustomFieldHighlights {
+        if ($Uncommon) { return }
+        $customLabels = @((Get-CurrentVsDefaultChanges) | ForEach-Object { $_.Label })
+        $fieldControls = @{
+            "Install command"          = $lblInstall
+            "Uninstall command"        = $lblUninstall
+            "Detection rule"           = $lblDetection
+            "Architecture"             = $lblArch
+            "Minimum OS"               = $lblMinOS
+            "Dependencies"             = $lblDeps
+            "Disk space (MB)"          = $lblDiskSpace
+            "Memory (MB)"              = $lblMemory
+            "Min. processors"          = $lblProcessors
+            "Min. CPU speed (MHz)"     = $lblCpuSpeed
+            "Install time (mins)"      = $lblInstallTime
+            "Device restart behavior"  = $lblRestartBehavior
+            "Allow available uninstall" = $chkAllowUninstall
+            "Return codes"             = $lblReturnCodes
+        }
+        foreach ($fieldLabel in $fieldControls.Keys) {
+            $ctrl = $fieldControls[$fieldLabel]
+            if ($customLabels -contains $fieldLabel) {
+                $ctrl.ForeColor = [System.Drawing.Color]::DarkOrange
+                $ctrl.Font = New-Object System.Drawing.Font($ctrl.Font, ($ctrl.Font.Style -bor [System.Drawing.FontStyle]::Bold))
+            }
+            else {
+                $ctrl.ForeColor = [System.Drawing.SystemColors]::ControlText
+                $ctrl.Font = New-Object System.Drawing.Font($ctrl.Font, ($ctrl.Font.Style -band (-bnot [System.Drawing.FontStyle]::Bold)))
+            }
+        }
+    }
+
+    $btnSetDefaults.Add_Click({
+        $changeRows = Get-CurrentVsDefaultChanges
         if ($changeRows.Count -eq 0) {
             [System.Windows.Forms.MessageBox]::Show("Every setting already matches the computed defaults for this app.", "Nothing to change", "OK", "Information") | Out-Null
             return
@@ -9746,6 +9813,7 @@ function Show-CreateInIntuneDialog {
                 }
             }
         }
+        Update-CustomFieldHighlights
         [System.Windows.Forms.MessageBox]::Show("Reset $($changeRows.Count) setting(s) to their computed defaults. Nothing has been saved or deployed yet - review below, then Save/Deploy as usual.", "Defaults applied", "OK", "Information") | Out-Null
     }.GetNewClosure())
 
@@ -10841,6 +10909,14 @@ function Show-CreateInIntuneDialog {
         }
     }
 
+    # First pass - covers a brand-new app (nothing but computed defaults on
+    # the form yet, so nothing highlights) and an existing app before its
+    # live-Intune auto-fetch below has come back (highlights based on the
+    # locally saved copy just pre-filled above). The auto-fetch's own
+    # OnComplete calls this again once live values are in, for an existing
+    # app - see there for why that second pass matters.
+    Update-CustomFieldHighlights
+
     if ($isDuplicate) {
         # Fetches what's actually live in Intune right now and repopulates
         # the fields above (which start out holding local guesses/templates)
@@ -11371,6 +11447,14 @@ function Show-CreateInIntuneDialog {
                         $lblCreateStatusRef.Text = "Loaded current metadata from Intune - kept your local value for: $($keepLocalFields -join ', ')."
                     }
                 }
+
+                # Second pass, now that live Intune values (and any
+                # per-field "keep local" reverts just above) have fully
+                # settled - Update-CustomFieldHighlights is a plain nested
+                # function, not a closure, so it's safe to call directly
+                # here without an alias despite being two closure levels
+                # removed from where it's defined.
+                Update-CustomFieldHighlights
             }.GetNewClosure()
         }.GetNewClosure())
     }
