@@ -351,6 +351,7 @@ function Write-SettingsFile {
         return $true
     }
     catch {
+        Write-Log "[FAILED] Could not save settings: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::IndianRed)
         [System.Windows.Forms.MessageBox]::Show("Could not save settings: $($_.Exception.Message)", "Save failed", "OK", "Error") | Out-Null
         return $false
     }
@@ -7431,14 +7432,17 @@ function Start-TypeVersionBackfill {
 
     $RunBackfillQueueBox = @{ Value = $null }
     $RunBackfillQueueBox.Value = {
-        param($Queue, $QueueIndex, $UpdatedCount)
+        param($Queue, $QueueIndex, $UpdatedCount, $FailedCount)
 
         if ($QueueIndex -ge $Queue.Count) {
             if ($UpdatedCount -gt 0) {
                 [void](Save-AppsToFile -Path $linkedFilePathRef)
                 Refresh-Grid
             }
-            Write-Log "Type/Version backfill done - $UpdatedCount app(s) updated.`r`n" ([System.Drawing.Color]::LightGreen)
+            $doneColor = if ($FailedCount -gt 0) { [System.Drawing.Color]::DarkOrange } else { [System.Drawing.Color]::LightGreen }
+            $doneMsg = "Type/Version backfill done - $UpdatedCount app(s) updated."
+            if ($FailedCount -gt 0) { $doneMsg += " $FailedCount app(s) failed - see above." }
+            Write-Log "$doneMsg`r`n" $doneColor
             return
         }
 
@@ -7451,12 +7455,14 @@ function Start-TypeVersionBackfill {
         $QueueRef = $Queue
         $QueueIndexRef = $QueueIndex
         $UpdatedCountRef = $UpdatedCount
+        $FailedCountRef = $FailedCount
         $RunBackfillQueueBoxRef = $RunBackfillQueueBox
         $unsavedBoxRefRef = $unsavedBoxRef
 
         Start-AppMetadataFetch -AppId $currentAppRef.appId -OnComplete {
             param($ok, $errMsg, $data)
             $nextUpdatedCount = $UpdatedCountRef
+            $nextFailedCount = $FailedCountRef
             if ($ok) {
                 $target = $appsRefRef | Where-Object { $_.appName -eq $currentAppRef.appName } | Select-Object -First 1
                 if ($target -and -not $target.intuneAppType) {
@@ -7466,11 +7472,15 @@ function Start-TypeVersionBackfill {
                     $nextUpdatedCount = $UpdatedCountRef + 1
                 }
             }
-            & $RunBackfillQueueBoxRef.Value -Queue $QueueRef -QueueIndex ($QueueIndexRef + 1) -UpdatedCount $nextUpdatedCount
+            else {
+                $nextFailedCount = $FailedCountRef + 1
+                Write-Log "[FAILED] Type/Version backfill for `"$($currentAppRef.appName)`": $errMsg`r`n" ([System.Drawing.Color]::IndianRed)
+            }
+            & $RunBackfillQueueBoxRef.Value -Queue $QueueRef -QueueIndex ($QueueIndexRef + 1) -UpdatedCount $nextUpdatedCount -FailedCount $nextFailedCount
         }.GetNewClosure()
     }.GetNewClosure()
 
-    & $RunBackfillQueueBox.Value -Queue $needsBackfill -QueueIndex 0 -UpdatedCount 0
+    & $RunBackfillQueueBox.Value -Queue $needsBackfill -QueueIndex 0 -UpdatedCount 0 -FailedCount 0
 }
 
 # Fetches a group's current members by name, for Group Manager's "current
@@ -14267,13 +14277,22 @@ function Show-IntuneOnlyAppsDialog {
                 param($ok, $errMsg, $data)
                 $dlgRef2.Cursor = [System.Windows.Forms.Cursors]::Default
                 $btnActionRef2.Enabled = $true
-                $lblStatusRef2.Text = ""
 
                 # A failed fetch still opens the editor - the whole point of
                 # this button is adding the app locally, and a Graph hiccup
                 # fetching its CURRENT group assignments shouldn't block
                 # that; it just means groups start blank, same as before
-                # this fetch existed at all.
+                # this fetch existed at all. Not silent though - a brief
+                # DarkOrange note before the editor opens, same convention
+                # as every other "degraded but continuing" fetch failure in
+                # this file.
+                if ($ok) {
+                    $lblStatusRef2.Text = ""
+                }
+                else {
+                    $lblStatusRef2.ForeColor = [System.Drawing.Color]::DarkOrange
+                    $lblStatusRef2.Text = "Could not fetch current group assignments ($errMsg) - opening with blank groups."
+                }
                 $prefill = [pscustomobject]@{
                     appName      = $intuneNameRef2
                     appId        = $idRef2
@@ -14329,7 +14348,7 @@ function Show-IntuneOnlyAppsDialog {
     # metadata..." instead, same as before this queue existed.
     $RunAddQueueBox = @{ Value = $null }
     $RunAddQueueBox.Value = {
-        param($Queue, $QueueIndex, $AddedCount)
+        param($Queue, $QueueIndex, $AddedCount, $FailedGroupFetchCount)
 
         if ($QueueIndex -ge $Queue.Count) {
             $btnAddChecked.Enabled = $true
@@ -14341,7 +14360,15 @@ function Show-IntuneOnlyAppsDialog {
             $unsavedBoxRef.Value = $true
             $anyAddedBox.Value = $true
             [void](Save-AppsToFile -Path $linkedFilePathRef)
-            [System.Windows.Forms.MessageBox]::Show("Added $AddedCount app(s) to the catalog, with their current group assignments fetched from Intune. Set Winget ID and metadata for them later from the main catalog.", "Added", "OK", "Information") | Out-Null
+            # A failed group fetch doesn't block adding the app (see the
+            # per-item comment below), but it shouldn't be silent either -
+            # otherwise "added N apps" reads as fully successful even when
+            # some came in with blank groups because Graph hiccuped.
+            $addedMsg = "Added $AddedCount app(s) to the catalog, with their current group assignments fetched from Intune. Set Winget ID and metadata for them later from the main catalog."
+            if ($FailedGroupFetchCount -gt 0) {
+                $addedMsg += "`n`n$FailedGroupFetchCount of them could not have their group assignments fetched (Graph error) - those were added with blank groups instead."
+            }
+            [System.Windows.Forms.MessageBox]::Show($addedMsg, "Added", "OK", "Information") | Out-Null
             & $populateGrid   # the just-added apps drop out of the "not in catalog" list
             return
         }
@@ -14358,6 +14385,7 @@ function Show-IntuneOnlyAppsDialog {
         $QueueRef = $Queue
         $QueueIndexRef = $QueueIndex
         $AddedCountRef = $AddedCount
+        $FailedGroupFetchCountRef = $FailedGroupFetchCount
         $RunAddQueueBoxRef = $RunAddQueueBox
 
         Start-AppMetadataFetch -AppId $currentItem.Id -OnComplete {
@@ -14366,7 +14394,8 @@ function Show-IntuneOnlyAppsDialog {
             # single-row path above: a Graph hiccup fetching one app's
             # groups shouldn't block adding it at all, it just means
             # groups start blank for that one, same as before this fetch
-            # existed.
+            # existed. Not silent though - counted and reported in the
+            # final summary MessageBox once the whole queue finishes.
             $newEntry = [pscustomobject]@{
                 appId            = $currentItemRef.Id
                 appName          = $currentItemRef.Name
@@ -14379,7 +14408,8 @@ function Show-IntuneOnlyAppsDialog {
                 metadata         = $null
             }
             [void]$appsRefRef3.Add($newEntry)
-            & $RunAddQueueBoxRef.Value -Queue $QueueRef -QueueIndex ($QueueIndexRef + 1) -AddedCount ($AddedCountRef + 1)
+            $nextFailedCount = $FailedGroupFetchCountRef + $(if ($ok) { 0 } else { 1 })
+            & $RunAddQueueBoxRef.Value -Queue $QueueRef -QueueIndex ($QueueIndexRef + 1) -AddedCount ($AddedCountRef + 1) -FailedGroupFetchCount $nextFailedCount
         }.GetNewClosure()
     }.GetNewClosure()
 
@@ -14413,7 +14443,7 @@ function Show-IntuneOnlyAppsDialog {
         $btnAction.Enabled = $false
         $grid.Enabled = $false
         $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
-        & $RunAddQueueBox.Value -Queue $toAdd.ToArray() -QueueIndex 0 -AddedCount 0
+        & $RunAddQueueBox.Value -Queue $toAdd.ToArray() -QueueIndex 0 -AddedCount 0 -FailedGroupFetchCount 0
     }.GetNewClosure())
 
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
@@ -17278,7 +17308,7 @@ function Show-AppEditor {
             param($ok, $errMsg, $data)
             $btnReadGroupsFromIntuneRef.Enabled = $true
             if (-not $ok) {
-                $lblGroupSyncStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
+                $lblGroupSyncStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
                 $lblGroupSyncStatusRef.Text = "Could not read groups from Intune - see log below."
                 $rtbAppEditorLogRef.AppendText("[FAILED] Could not read groups from Intune: $errMsg`r`n")
                 return
