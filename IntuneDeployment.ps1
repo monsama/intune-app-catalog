@@ -4,9 +4,9 @@
     pipeline, all from one window, all from one file.
 
 .DESCRIPTION
-    A WinForms front end for the Intune deployment pipeline. Self-contained: the
-    packaging and assignment logic (what used to be 1_GenerateIntunePackage.ps1 and
-    5_AssignGroupsAndNames.ps1) is embedded directly in this file. App data lives as one
+    A WinForms front end for the Intune deployment pipeline. Self-contained: every
+    packaging, deployment, and assignment step is embedded directly in this one file -
+    nothing else to keep next to it except the app-data folder. App data lives as one
     JSON file per app in an "app-data" folder next to this script - not a single combined
     file - so a Git diff for one app's change only ever touches that app's own file, and one
     corrupted file doesn't take the rest of the catalog down with it. An older single
@@ -19,13 +19,11 @@
         (Required / Available / Uninstall) is set with checkboxes against every group already
         used in the catalog, plus a button to add a brand new group. Save writes straight
         back to each app's own file - no export/import step. Its own toolbar covers the rest
-        of the pipeline: "Package apps..." builds the .intunewin package(s) (same logic as the
-        old 1_GenerateIntunePackage.ps1 / runDeployment.cmd) and its output streams into the
-        Log tab; "Batch deploy...", "Pull metadata and groups from Intune...", and "Push groups
-        to Intune (single app)..." (per app, from the app editor, or "Push groups to Intune
-        (multiple apps)..." across several) cover what 5_AssignGroupsAndNames.ps1 used to do -
-        syncing Intune app names, Entra ID groups, and assignments against the catalog -
-        without a separate combined "Assign" step.
+        of the pipeline: "Package apps..." builds the .intunewin package(s) and its output
+        streams into the Log tab; "Batch deploy...", "Pull metadata and groups from
+        Intune...", and "Push groups to Intune (single app)..." (per app, from the app
+        editor, or "Push groups to Intune (multiple apps)..." across several) sync Intune app
+        names, Entra ID groups, and assignments against the catalog.
 
     Log
         Shows the real-time combined output of whichever pipeline step ("Package apps...",
@@ -41,15 +39,15 @@
 
 .NOTES
     IMPORTANT - about confirmation prompts:
-    The Assign logic normally asks "proceed? (y/n)" on the console before applying changes.
-    A hidden background process can never answer that prompt, so it would hang forever. To
-    avoid that, this GUI always runs it with -AutoApprove $true and shows its own confirmation
-    dialog first instead. Use the Dry Run checkbox to preview changes with zero risk before
-    you tick that dialog's "Yes, apply".
+    The group-assignment step normally asks "proceed? (y/n)" on the console before applying
+    changes. A hidden background process can never answer that prompt, so it would hang
+    forever. To avoid that, this GUI always runs it with -AutoApprove $true and shows its own
+    confirmation dialog first instead. Use the Dry Run checkbox to preview changes with zero
+    risk before you tick that dialog's "Yes, apply".
 
     Requires: Windows PowerShell 5.1+ (or PowerShell 7+ on Windows), the Microsoft.Graph
-    modules that the Assign logic itself checks for, and an "app-data" folder (or an old
-    single input.json to migrate from) next to this script.
+    modules the deployment/assignment steps themselves check for, and an "app-data" folder
+    (or an old single input.json to migrate from) next to this script.
 
 .EXAMPLE
     .\IntuneDeployment.ps1
@@ -334,14 +332,15 @@ Load-GraphSettings
 # =====================================================================
 # Embedded pipeline scripts
 # =====================================================================
-# The full content of 1_GenerateIntunePackage.ps1 and 5_AssignGroupsAndNames.ps1,
-# embedded verbatim so this GUI is a single self-contained file - nothing else
-# to keep next to it except input.json. At runtime, Start-PipelineProcess writes
-# whichever one is needed out to a temp .ps1 file INSIDE $Script:RootPath (not
-# $env:TEMP), because both scripts use $PSScriptRoot internally to find
-# input.json / IntuneWinAppUtil.exe - the temp file has to live in the real
-# deployment folder for that to resolve correctly. It's deleted again as soon
-# as the child process exits, successfully or not.
+# Every packaging, deployment, and assignment step's full script content,
+# embedded verbatim so this GUI is a single self-contained file - nothing
+# else to keep next to it except the app-data folder. At runtime,
+# Start-PipelineProcess writes whichever one is needed out to a temp .ps1
+# file INSIDE $Script:RootPath (not $env:TEMP), because several of these
+# scripts use $PSScriptRoot internally to find app-data / IntuneWinAppUtil.exe
+# - the temp file has to live in the real deployment folder for that to
+# resolve correctly. It's deleted again as soon as the child process exits,
+# successfully or not.
 $Script:EmbeddedPackageScript = @'
 <#
 .SYNOPSIS
@@ -1791,8 +1790,8 @@ catch {
 $Script:EmbeddedTargetedAssignScript = @'
 <#
 .SYNOPSIS
-    Targeted, single-app version of what 5_AssignGroupsAndNames.ps1 does for
-    the whole catalog: ensures the Entra ID groups an app's requiredFor/
+    Targeted, single-app version of the bulk group-assignment step: ensures
+    the Entra ID groups an app's requiredFor/
     availableFor/uninstallFor reference actually exist, then sets that ONE
     app's Intune assignments to match exactly - Required, Available, and
     Uninstall. Does not touch group membership or any other app.
@@ -4476,7 +4475,7 @@ function Start-WingetSearch {
 # =====================================================================
 # Fetches every app currently registered in Intune (id + displayName) via
 # Microsoft Graph, using the same app-only certificate authentication as
-# 5_AssignGroupsAndNames.ps1 (see $Script:GraphTenantId / GraphClientId /
+# every other Graph call in this app (see $Script:GraphTenantId / GraphClientId /
 # GraphCertificateThumbprint above) - no interactive sign-in required, but the
 # certificate must be installed in this machine's/user's certificate store.
 # Runs on a background runspace so the GUI doesn't freeze during the call.
@@ -6708,6 +6707,7 @@ $toolbarTips.SetToolTip($btnIntuneAudit, "Check every deployed app's Metadata, G
 $toolbarTips.SetToolTip($btnRunLaunch, "Build the .intunewin package(s) for the selected (or all) uncommon apps.")
 $toolbarTips.SetToolTip($btnCertSetup, "Configure the Tenant ID, Client ID, and certificate used to connect to Microsoft Graph.")
 $toolbarTips.SetToolTip($btnDiagnostics, "Read-only health check: Graph connectivity, certificate expiry, catalog completeness, and drift against what's actually in Intune.")
+$toolbarTips.SetToolTip($btnMoreActions, "Catalog maintenance, one-off Intune lookups, Entra ID tools, and Settings.")
 
 $lblSearch = New-Object System.Windows.Forms.Label
 $lblSearch.Text = "Search:"
@@ -6716,14 +6716,68 @@ $lblSearch.Padding = New-Object System.Windows.Forms.Padding(10,7,0,0)
 $txtSearch = New-Object System.Windows.Forms.TextBox
 $txtSearch.Width = 220
 
-$gbCatalog = New-ToolbarGroup -Title "Catalog" -Buttons @($btnNew, $btnEdit, $btnDelete, $btnSave, $btnReload, $btnOpen, $btnFavoriteGroups, $btnDependencies)
-# $btnRunLaunch ("Package apps...") lives here, not in the leftover "Tools"
-# group below - it's an Intune-pipeline action (builds the .intunewin
-# package(s) apps get deployed from), same category as Batch deploy/Sync
-# metadata, not a general-purpose tool.
-$gbIntune  = New-ToolbarGroup -Title "Intune"  -Buttons @($btnLookupIds, $btnCheckIntuneOnly, $btnBatchAssign, $btnIntuneAudit, $btnSyncMetadata, $btnBatchDeploy, $btnRunLaunch)
-$gbEntra   = New-ToolbarGroup -Title "Entra ID" -Buttons @($btnGroupManager, $btnGroupDrift)
-$gbTools   = New-ToolbarGroup -Title "Settings" -Buttons @($btnCertSetup, $btnDiagnostics)
+# The toolbar used to be organized by WHICH SYSTEM a button touches
+# (Catalog/Intune/Entra ID/Settings), which meant a brand-new user facing
+# ~19 buttons across four boxes had no signal for which ones they'd
+# actually need first. Reorganized instead around the core workflow - add
+# an app, edit it, package it, deploy it, assign it, audit it - as one
+# small "Get started" row, with everything else (maintenance, one-off
+# lookups, Entra ID/Settings tools) tucked behind a single "More actions"
+# dropdown, grouped by when you'd actually reach for it. Every button
+# still exists exactly as before, fully wired the same way - nothing here
+# changes what any of them do, only how many are visible before you've
+# asked for more.
+$gbPrimary = New-ToolbarGroup -Title "Get started" -Buttons @($btnNew, $btnEdit, $btnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnIntuneAudit)
+
+# Builds one ToolStripMenuItem submenu from a list of {Text;Btn} pairs -
+# each item just PerformClick()s the real button (still fully wired, just
+# no longer directly on the toolbar), the same "menu item delegates to
+# the real control" convention the grid's own right-click context menu
+# already uses.
+function New-OverflowSubmenu {
+    param([string]$Title, [array]$Items)
+    $sub = New-Object System.Windows.Forms.ToolStripMenuItem $Title
+    foreach ($item in $Items) {
+        $mi = New-Object System.Windows.Forms.ToolStripMenuItem $item.Text
+        $btnRef = $item.Btn
+        $mi.Add_Click({ $btnRef.PerformClick() }.GetNewClosure())
+        [void]$sub.DropDownItems.Add($mi)
+    }
+    return $sub
+}
+
+$menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
+[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Catalog maintenance" -Items @(
+    @{ Text = $btnDelete.Text; Btn = $btnDelete }
+    @{ Text = $btnSave.Text; Btn = $btnSave }
+    @{ Text = $btnReload.Text; Btn = $btnReload }
+    @{ Text = $btnOpen.Text; Btn = $btnOpen }
+    @{ Text = $btnFavoriteGroups.Text; Btn = $btnFavoriteGroups }
+    @{ Text = $btnDependencies.Text; Btn = $btnDependencies }
+)))
+[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Intune" -Items @(
+    @{ Text = $btnLookupIds.Text; Btn = $btnLookupIds }
+    @{ Text = $btnCheckIntuneOnly.Text; Btn = $btnCheckIntuneOnly }
+    @{ Text = $btnSyncMetadata.Text; Btn = $btnSyncMetadata }
+)))
+[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Entra ID" -Items @(
+    @{ Text = $btnGroupManager.Text; Btn = $btnGroupManager }
+    @{ Text = $btnGroupDrift.Text; Btn = $btnGroupDrift }
+)))
+[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Settings" -Items @(
+    @{ Text = $btnCertSetup.Text; Btn = $btnCertSetup }
+    @{ Text = $btnDiagnostics.Text; Btn = $btnDiagnostics }
+)))
+
+$btnMoreActions = New-Object System.Windows.Forms.Button
+$btnMoreActions.Text = "More actions..."
+# A plain Button doesn't show its ContextMenuStrip on a left click (that's
+# right-click-only by default) - .Show() at the button's own bottom-left
+# corner is the standard WinForms way to make a button open a dropdown.
+$btnMoreActions.Add_Click({
+    $menuMoreActions.Show($btnMoreActions, (New-Object System.Drawing.Point(0, $btnMoreActions.Height)))
+}.GetNewClosure())
+$gbMoreActions = New-ToolbarGroup -Title "More" -Buttons @($btnMoreActions)
 
 $searchPanel = New-Object System.Windows.Forms.FlowLayoutPanel
 $searchPanel.AutoSize = $true
@@ -6733,7 +6787,7 @@ $searchPanel.Margin = New-Object System.Windows.Forms.Padding(4,4,4,0)
 $searchPanel.Controls.Add($lblSearch)
 $searchPanel.Controls.Add($txtSearch)
 
-$toolbar.Controls.AddRange(@($gbCatalog, $gbIntune, $gbEntra, $gbTools, $searchPanel))
+$toolbar.Controls.AddRange(@($gbPrimary, $gbMoreActions, $searchPanel))
 $tabCatalog.Controls.Add($toolbar)
 
 # Hidden by default - shown only when Graph credentials aren't configured
@@ -7921,8 +7975,8 @@ function Get-FriendlyMinOsRelease {
 }
 
 # Mirrors Get-SafeFileName inside the embedded package script exactly, so we
-# can predict what filename 1_GenerateIntunePackage.ps1's logic gave an
-# uncommon app's .intunewin without having to run/parse that script.
+# can predict what filename that script's own logic gave an uncommon app's
+# .intunewin without having to run/parse it.
 function Get-SafeFileNameForApp {
     param([string]$Name)
     $safeName = $Name -replace '[<>:"/\\|?*]', ''
@@ -8189,7 +8243,7 @@ function Show-DependencyOverviewDialog {
 # Default install/uninstall/detection templates. Only pre-filled for
 # non-uncommon (winget) apps, where there's an actual established convention
 # to draw from - uncommon apps get a generic Machine-scope command pattern for
-# install/uninstall (matching what 1_GenerateIntunePackage.ps1's own printed
+# install/uninstall (matching what the embedded package script's own printed
 # deployment guide recommends) and no detection default, since that's
 # genuinely per-app.
 function Get-CreateAppTemplates {
@@ -17449,7 +17503,7 @@ function Start-PipelineProcess {
     }
     # Without this, the child process inherits whatever folder the GUI itself happened
     # to be launched from - breaking relative paths inside the target script (e.g.
-    # 1_GenerateIntunePackage.ps1's default ".\IntuneWinAppUtil.exe").
+    # the embedded package script's default ".\IntuneWinAppUtil.exe").
     $psi.WorkingDirectory = $Script:RootPath
 
     Set-PipelineButtonsEnabled $false
