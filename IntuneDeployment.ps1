@@ -10155,10 +10155,26 @@ function Show-CreateInIntuneDialog {
         if ($chkAllowUninstall.Checked -ne [bool]$defaults.allowAvailableUninstall) {
             $changeRows.Add([pscustomobject]@{ Label = "Allow available uninstall"; Display = "Allow available uninstall: $($chkAllowUninstall.Checked)  ->  $([bool]$defaults.allowAvailableUninstall)" })
         }
-        $currentRcSummary = if ($currentReturnCodes.Count -gt 0) { (@($currentReturnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
+        # Piped straight into ConvertTo-Json/ForEach-Object below, never
+        # wrapped in @(...) first - $currentReturnCodes is a
+        # System.Collections.Generic.List[object] (built via New-Object a
+        # few lines up), and PowerShell's @() array-subexpression operator
+        # throws "Argument types do not match" (a real .NET/PowerShell
+        # binder bug, not a logic error here) when applied directly to a
+        # List[object] instance. Piping it through a cmdlet first sidesteps
+        # the buggy code path entirely and behaves identically for this
+        # purpose. This is exactly the crash reported live ("Could not load
+        # current metadata (Argument types do not match ... currentReturnCodes)
+        # | ConvertTo-Json ...") the first time an app with default return
+        # codes had its live metadata re-fetched.
+        $currentRcSummary = if ($currentReturnCodes.Count -gt 0) { ($currentReturnCodes | ConvertTo-Json -Compress -Depth 5) } else { "" }
         $defaultRcSummary = if (@($defaults.returnCodes).Count -gt 0) { (@($defaults.returnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
         if ($currentRcSummary -ne $defaultRcSummary) {
-            $rcToText = { param($rcList) if (@($rcList).Count -eq 0) { "(none)" } else { (@($rcList) | ForEach-Object { "$($_.returnCode) ($($_.type))" }) -join ", " } }
+            # Same reasoning as above - no @(...) around $rcList, since this
+            # is called with $currentReturnCodes (a List[object]) as well as
+            # $defaults.returnCodes (a plain array); .Count and a plain pipe
+            # both work identically for either one without it.
+            $rcToText = { param($rcList) if ($rcList.Count -eq 0) { "(none)" } else { ($rcList | ForEach-Object { "$($_.returnCode) ($($_.type))" }) -join ", " } }
             $changeRows.Add([pscustomobject]@{ Label = "Return codes"; Display = "Return codes: $(& $rcToText $currentReturnCodes)  ->  $(& $rcToText $defaults.returnCodes)" })
         }
 
