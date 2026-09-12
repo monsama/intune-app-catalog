@@ -80,6 +80,18 @@ $Script:Apps            = New-Object System.Collections.ArrayList
 $Script:UnsavedChangesBox = @{ Value = $false }   # container (never reassigned) so closures can mutate it safely
 $Script:IntuneAppsCache = New-Object System.Collections.ArrayList   # populated by Start-IntuneAppLookup: array of @{ id; displayName } - mutated in place (Clear+Add), never reassigned, so every closure that references it stays in sync
 $Script:EntraDirectoryCache = New-Object System.Collections.ArrayList   # populated by Start-EntraDirectoryLookup: array of @{ displayName; type ("Group"/"User"); id; upn } - same mutate-in-place pattern as above
+# Populated whenever any live-vs-Intune check runs for an app - the
+# single-app auto-fetch inside Show-CreateInIntuneDialog, or
+# Show-IntuneAuditDialog's own bulk run - keyed by appName. Purely an
+# in-memory, per-session cache, never written to disk or round-tripped
+# through ConvertTo-AppRecord/ConvertTo-SingleAppJson (both are strict,
+# hand-rolled field whitelists - see their own comments - so persisting
+# this would mean touching five separate construction/serialization
+# sites for what's really just a "how stale is this" convenience).
+# Resets to empty on every relaunch; the main grid's own "Last Audit"
+# column falls back to "Never audited" until something populates it
+# again. See Set-LastAuditCacheEntry/Get-LastAuditSummary.
+$Script:LastAuditResults = @{}
 $Script:LogFileWriter = $null   # opened in Ensure-Folders, written to by Write-Log, closed on FormClosing - see both below
 $Script:LogFlushTimer = $null   # periodic flush timer for the above - see Ensure-Folders
 $Script:AppVersion = "1.1"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance rather than by diffing the whole file
@@ -6789,6 +6801,7 @@ $grid.Columns.Add((New-GridColumn "Available" "Available" -FillWeight 4)) | Out-
 $grid.Columns.Add((New-GridColumn "Uninstall" "Uninstall" -FillWeight 4)) | Out-Null
 $grid.Columns.Add((New-GridColumn "AppId" "App ID" -FillWeight 20)) | Out-Null
 $grid.Columns.Add((New-GridColumn "Status" "Status" -FillWeight 8)) | Out-Null
+$grid.Columns.Add((New-GridColumn "IntuneAudit" "Last Audit" -FillWeight 10)) | Out-Null
 
 $colIndex = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
 $colIndex.Name = "Index"
@@ -6804,31 +6817,51 @@ $grid.BringToFront()
 # each app individually.
 $grid.Add_CellFormatting({
     param($gridSender, $e)
-    if ($grid.Columns[$e.ColumnIndex].Name -ne "Status") { return }
-    if ($e.Value -and [string]$e.Value) {
-        if ([string]$e.Value -eq "Metadata saved - ready to deploy") {
-            # Good news, not a warning - distinct from the orange/bold
-            # treatment below, which is reserved for things that actually
-            # need attention (no App ID at all, a missing package).
-            $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
-            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+    $colName = $grid.Columns[$e.ColumnIndex].Name
+    if ($colName -eq "Status") {
+        if ($e.Value -and [string]$e.Value) {
+            if ([string]$e.Value -eq "Metadata saved - ready to deploy") {
+                # Good news, not a warning - distinct from the orange/bold
+                # treatment below, which is reserved for things that actually
+                # need attention (no App ID at all, a missing package).
+                $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
+                $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+            }
+            elseif ([string]$e.Value -eq "Custom Winget params") {
+                # Informational, not a warning either - a Winget app with
+                # deliberately customized install/detection/etc. isn't a
+                # problem the way a missing package or App ID is, so it gets
+                # its own neutral color rather than the same DarkOrange used
+                # for things that actually need fixing. Only when this is the
+                # WHOLE status text, though - composed with anything else
+                # (e.g. "No App ID; Custom Winget params") falls through to
+                # the orange case below, since something else there DOES need
+                # attention.
+                $e.CellStyle.ForeColor = [System.Drawing.Color]::SteelBlue
+                $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Italic)
+            }
+            else {
+                $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
+                $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+            }
         }
-        elseif ([string]$e.Value -eq "Custom Winget params") {
-            # Informational, not a warning either - a Winget app with
-            # deliberately customized install/detection/etc. isn't a
-            # problem the way a missing package or App ID is, so it gets
-            # its own neutral color rather than the same DarkOrange used
-            # for things that actually need fixing. Only when this is the
-            # WHOLE status text, though - composed with anything else
-            # (e.g. "No App ID; Custom Winget params") falls through to
-            # the orange case below, since something else there DOES need
-            # attention.
-            $e.CellStyle.ForeColor = [System.Drawing.Color]::SteelBlue
-            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Italic)
-        }
-        else {
+    }
+    elseif ($colName -eq "IntuneAudit") {
+        # Same in-memory cache Get-LastAuditSummary reads from - never
+        # persisted, so this is only ever as fresh as the last audit or
+        # single-app fetch that happened to run THIS session (see
+        # $Script:LastAuditResults's own comment for why).
+        $val = [string]$e.Value
+        if ($val -like "*issue*" -or $val -like "Check failed*") {
             $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
             $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+        }
+        elseif ($val -like "OK (*") {
+            $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
+        }
+        elseif ($val -eq "Never audited") {
+            $e.CellStyle.ForeColor = [System.Drawing.Color]::Gray
+            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Italic)
         }
     }
 })
@@ -6914,6 +6947,7 @@ function Refresh-Grid {
             Uninstall = @($app.uninstallFor).Count
             AppId     = if ($app.appId) { $app.appId } else { "(none yet)" }
             Status    = $status
+            IntuneAudit = if ($app.appId) { Get-LastAuditSummary -AppName $app.appName } else { "" }
             Index     = $i
         })
     }
@@ -7540,6 +7574,60 @@ function Save-AppMetadataToLocalCatalog {
 # $Local may be $null (nothing saved locally yet) - that's "nothing to
 # compare against", not "every field differs", so it always returns empty.
 # Single source of truth for the "simple" (plain-value) catalog metadata
+# Relative-time formatting for the "Last Audit" column below - "how long
+# ago" reads at a glance far better than a raw timestamp in a narrow grid
+# cell.
+function Get-FriendlyAge {
+    param([datetime]$Timestamp)
+
+    $span = (Get-Date) - $Timestamp
+    if ($span.TotalSeconds -lt 60) { return "just now" }
+    if ($span.TotalMinutes -lt 60) { return "$([int]$span.TotalMinutes)m ago" }
+    if ($span.TotalHours -lt 24) { return "$([int]$span.TotalHours)h ago" }
+    return "$([int]$span.TotalDays)d ago"
+}
+
+# Merges whichever of the four check results are passed in (any omitted -
+# left as $null - keep whatever was cached before) into
+# $Script:LastAuditResults for one app, stamping the current time. Called
+# from both the single-app auto-fetch inside Show-CreateInIntuneDialog
+# (Metadata/Dependencies only - it has no Groups/Unknown Assignments check
+# of its own, see the note by its own Dependencies diff) and
+# Show-IntuneAuditDialog's two background fetches (every field, as each
+# fetch completes).
+function Set-LastAuditCacheEntry {
+    param([string]$AppName, [string]$Metadata, [string]$Groups, [string]$Dependencies, [string]$Unknown)
+
+    $existing = if ($Script:LastAuditResults.ContainsKey($AppName)) { $Script:LastAuditResults[$AppName] } else { $null }
+    $Script:LastAuditResults[$AppName] = [pscustomobject]@{
+        Timestamp    = Get-Date
+        Metadata     = if ($null -ne $Metadata)     { $Metadata }     elseif ($existing) { $existing.Metadata }     else { $null }
+        Groups       = if ($null -ne $Groups)       { $Groups }       elseif ($existing) { $existing.Groups }       else { $null }
+        Dependencies = if ($null -ne $Dependencies) { $Dependencies } elseif ($existing) { $existing.Dependencies } else { $null }
+        Unknown      = if ($null -ne $Unknown)      { $Unknown }      elseif ($existing) { $existing.Unknown }      else { $null }
+    }
+}
+
+# Turns one app's cache entry (if any) into the main grid's "Last Audit"
+# column text - "Never audited" with nothing cached, otherwise a summary
+# of whether anything's actually wrong across whichever checks have run,
+# plus how long ago. A field that's never been checked (still $null) is
+# simply left out - this reports on what's KNOWN, not a false "all clear"
+# for a check that just hasn't happened yet.
+function Get-LastAuditSummary {
+    param([string]$AppName)
+
+    if (-not $Script:LastAuditResults.ContainsKey($AppName)) { return "Never audited" }
+    $entry = $Script:LastAuditResults[$AppName]
+    $checked = @($entry.Metadata, $entry.Groups, $entry.Dependencies, $entry.Unknown) | Where-Object { $null -ne $_ }
+    $age = Get-FriendlyAge -Timestamp $entry.Timestamp
+
+    if (@($checked | Where-Object { $_ -like "Failed*" }).Count -gt 0) { return "Check failed ($age)" }
+    $issueCount = @($checked | Where-Object { $_ -ne "OK" }).Count
+    if ($issueCount -eq 0) { return "OK ($age)" }
+    return "$issueCount issue$(if ($issueCount -ne 1) { 's' }) ($age)"
+}
+
 # fields both Get-CatalogMetadataFieldDiffs and Merge-CatalogMetadata key
 # off of, so the two stay in sync by construction - a field added to one
 # but not the other would mean either a diff that's shown but can never
@@ -10588,6 +10676,7 @@ function Show-CreateInIntuneDialog {
             InstallCommand     = $txtInstall.Text
             UninstallCommand   = $txtUninstall.Text
             Architecture       = $m.architecture
+            Dependencies       = @($m.dependencies)
             DetectionSummary   = if ($m.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $m.detectionRule -IndentLevel 0 } else { "" }
             MinDiskSpaceMB     = $txtDiskSpace.Text
             MinMemoryMB        = $txtMemory.Text
@@ -10621,6 +10710,7 @@ function Show-CreateInIntuneDialog {
             # Fresh aliases for the nested -OnComplete closure - see note at
             # the top of this function for why this matters.
             $existingAppIdRef = $ExistingAppId
+            $AppNameRef = $AppName
             $lblCreateStatusRef = $lblCreateStatus
             $txtCreateNameRef = $txtCreateName
             $txtDescRef = $txtDesc
@@ -10938,6 +11028,31 @@ function Show-CreateInIntuneDialog {
                     if (([string][bool]$data.AllowAvailableUninstall) -ne ([string]$localSnapshotRef.AllowAvailableUninstall)) { $diffFields.Add("Allow available uninstall") }
                     $liveReturnCodesSummary = if (@($data.ReturnCodes).Count -gt 0) { (@($data.ReturnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
                     if ($liveReturnCodesSummary -ne $localSnapshotRef.ReturnCodesSummary) { $diffFields.Add("Return codes") }
+
+                    # Dependencies were already fetched live (right above,
+                    # to repopulate the picker) and already held locally in
+                    # $localSnapshotRef - comparing the two here means
+                    # opening this dialog surfaces a dependency drift (e.g.
+                    # something added/removed directly in Intune) the same
+                    # way it already does for every other field, instead of
+                    # needing a separate trip to "Audit against Intune..."
+                    # to notice it.
+                    $liveDependenciesSorted = @($data.Dependencies) | Sort-Object
+                    $localDependenciesSorted = @($localSnapshotRef.Dependencies) | Sort-Object
+                    if (($liveDependenciesSorted -join "|") -ne ($localDependenciesSorted -join "|")) { $diffFields.Add("Dependencies") }
+
+                    # Feeds the main grid's own "Last Audit" column - opening
+                    # this dialog for an app now counts as a (partial) audit
+                    # of it, same as a full "Audit against Intune..." run
+                    # would, just for Metadata/Dependencies only (this
+                    # dialog has no Groups/Unknown Assignments check of its
+                    # own - see the note on Get-GroupFieldDiffs's usage
+                    # inside Show-IntuneAuditDialog for why that one stays
+                    # bulk-tooling territory).
+                    $metadataOnlyDiffCount = @($diffFields | Where-Object { $_ -ne "Dependencies" }).Count
+                    $metadataStatus = if ($metadataOnlyDiffCount -eq 0) { "OK" } else { "$metadataOnlyDiffCount field(s) differ" }
+                    $dependencyStatus = if ($diffFields -contains "Dependencies") { "Catalog and Intune differ" } else { "OK" }
+                    Set-LastAuditCacheEntry -AppName $AppNameRef -Metadata $metadataStatus -Dependencies $dependencyStatus
                 }
 
                 if ($archSource) {
@@ -11012,6 +11127,11 @@ function Show-CreateInIntuneDialog {
                     if ($diffFields -contains "Device restart behavior")  { $driftRows.Add([pscustomobject]@{ Field = "Device restart behavior"; Local = [string]$localSnapshotRef.DeviceRestartBehavior; Intune = [string]$data.DeviceRestartBehavior }) }
                     if ($diffFields -contains "Allow available uninstall") { $driftRows.Add([pscustomobject]@{ Field = "Allow available uninstall"; Local = [string]$localSnapshotRef.AllowAvailableUninstall; Intune = [string][bool]$data.AllowAvailableUninstall }) }
                     if ($diffFields -contains "Return codes")             { $driftRows.Add([pscustomobject]@{ Field = "Return codes"; Local = $localSnapshotRef.ReturnCodesSummary; Intune = $liveReturnCodesSummary }) }
+                    if ($diffFields -contains "Dependencies") {
+                        $localDepsText = if ($localDependenciesSorted.Count -gt 0) { $localDependenciesSorted -join ", " } else { "(none)" }
+                        $liveDepsText = if ($liveDependenciesSorted.Count -gt 0) { $liveDependenciesSorted -join ", " } else { "(none)" }
+                        $driftRows.Add([pscustomobject]@{ Field = "Dependencies"; Local = $localDepsText; Intune = $liveDepsText })
+                    }
 
                     $keepLocalFields = @(Show-MetadataDriftDialog -Rows $driftRows.ToArray())
 
@@ -11091,6 +11211,15 @@ function Show-CreateInIntuneDialog {
                                 $rcRowIdxLocal = $grdReturnCodesRef.Rows.Add()
                                 $grdReturnCodesRef.Rows[$rcRowIdxLocal].Cells["Code"].Value = [string]$rc.returnCode
                                 $grdReturnCodesRef.Rows[$rcRowIdxLocal].Cells["Type"].Value = [string]$rc.type
+                            }
+                        }
+                        if ($keepLocalFields -contains "Dependencies") {
+                            for ($ci = 0; $ci -lt $clbDepsRef.Items.Count; $ci++) { $clbDepsRef.SetItemChecked($ci, $false) }
+                            for ($ci = 0; $ci -lt $clbDepsRef.Items.Count; $ci++) {
+                                $itemLabel = [string]$clbDepsRef.Items[$ci]
+                                if ($depNameByLabelRef.ContainsKey($itemLabel) -and (@($localSnapshotRef.Dependencies) -contains $depNameByLabelRef[$itemLabel])) {
+                                    $clbDepsRef.SetItemChecked($ci, $true)
+                                }
                             }
                         }
                         $lblCreateStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
@@ -14819,6 +14948,7 @@ function Show-IntuneAuditDialog {
                         $row.Cells['Metadata'].Value = "Failed: $($oneResult.Error)"
                         $row.Cells['Groups'].Value = "Failed: $($oneResult.Error)"
                         $row.Cells['Dependencies'].Value = "Failed: $($oneResult.Error)"
+                        Set-LastAuditCacheEntry -AppName $oneResult.AppName -Metadata "Failed: $($oneResult.Error)" -Groups "Failed: $($oneResult.Error)" -Dependencies "Failed: $($oneResult.Error)"
                         continue
                     }
 
@@ -14843,6 +14973,7 @@ function Show-IntuneAuditDialog {
                         $localText = if ($localDeps.Count -gt 0) { $localDeps -join ", " } else { "(none)" }
                         $row.Cells['Dependencies'].Value = "Catalog has: $localText | Intune has: $liveText"
                     }
+                    Set-LastAuditCacheEntry -AppName $oneResult.AppName -Metadata ([string]$row.Cells['Metadata'].Value) -Groups ([string]$row.Cells['Groups'].Value) -Dependencies ([string]$row.Cells['Dependencies'].Value)
                 }
                 & $finishOne
             }.GetNewClosure()
@@ -14913,6 +15044,7 @@ function Show-IntuneAuditDialog {
                     $row = $rowByAppNameRef[$oneResult.AppName]
                     $toRemove = @($oneResult.ToRemove)
                     $row.Cells['Unknown'].Value = if ($toRemove.Count -eq 0) { "OK" } else { "$($toRemove.Count) unknown: $($toRemove -join ', ')" }
+                    Set-LastAuditCacheEntry -AppName $oneResult.AppName -Unknown ([string]$row.Cells['Unknown'].Value)
                 }
                 & $finishOne
             }.GetNewClosure()
@@ -17066,7 +17198,7 @@ $btnGroupManager.Add_Click({ Show-GroupManagerDialog })
 $btnFavoriteGroups.Add_Click({ Show-FavoriteGroupsManager })
 $btnGroupDrift.Add_Click({ Show-GroupDriftCheckDialog })
 $btnDependencies.Add_Click({ Show-DependencyOverviewDialog })
-$btnIntuneAudit.Add_Click({ Show-IntuneAuditDialog })
+$btnIntuneAudit.Add_Click({ Show-IntuneAuditDialog; Refresh-Grid })
 
 $txtSearch.Add_TextChanged({ Refresh-Grid })
 
