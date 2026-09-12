@@ -10006,15 +10006,20 @@ function Show-CreateInIntuneDialog {
     # owner/developer/URLs/notes, which are free-text metadata neither this
     # function nor "Set default values..." has any business touching.
     #
-    # A plain nested function, not a scriptblock/closure - reads every
-    # control below via normal PowerShell parent-scope lookup at CALL
-    # time, which (unlike a .GetNewClosure()'d scriptblock reading the
-    # same variables) doesn't need any of the "fresh alias" care documented
-    # elsewhere in this function, since a real function call always
-    # resolves its parent scope fresh. Used both by "Set default values..."
-    # itself (below) and by Update-CustomFieldHighlights, so the two can
-    # never drift apart on what counts as "differs from default".
-    function Get-CurrentVsDefaultChanges {
+    # A scriptblock variable, NOT a nested `function` - confirmed live
+    # (real crash: "Update-CustomFieldHighlights is not recognized...")
+    # that a plain nested function defined here is NOT reliably callable
+    # from inside the doubly-nested closure the live-Intune auto-fetch's
+    # own -OnComplete runs in (Add_Shown's own .GetNewClosure(), then
+    # Start-AppMetadataFetch's own -OnComplete .GetNewClosure() nested
+    # inside it) - unlike a plain VARIABLE holding a scriptblock, which
+    # this file's "fresh alias" convention already handles correctly
+    # everywhere else. Needs the same fresh-alias care at each call site
+    # this note used to claim it didn't. Used both by "Set default
+    # values..." itself (below) and by $updateCustomFieldHighlights, so
+    # the two can never drift apart on what counts as "differs from
+    # default".
+    $getCurrentVsDefaultChanges = {
         $currentDetection = switch ($cmbDetectionType.SelectedIndex) {
             0 { if ($txtDetection.Text.Trim()) { [pscustomobject]@{ Type = "Script"; Script_Content = $txtDetection.Text } } else { $null } }
             default { [pscustomobject]@{ Type = "Other" } }
@@ -10126,23 +10131,26 @@ function Show-CreateInIntuneDialog {
         }
 
         return $changeRows
-    }
+    }.GetNewClosure()
 
     # Highlights each field's LABEL in bold DarkOrange when its current
     # value differs from the computed Winget default, so "which settings
     # are custom here" is visible at a glance without clicking "Set
     # default values..." - that button still exists for actually
     # resetting them; this just answers "which ones, right now" passively.
-    # Only meaningful for a Winget app - see Get-CurrentVsDefaultChanges's
+    # Only meaningful for a Winget app - see $getCurrentVsDefaultChanges's
     # own comment on why an Uncommon app has nothing to compare against.
     # Not live/reactive (doesn't re-run on every keystroke) - called once
     # after the form settles (pre-fill, and again after the live-Intune
     # auto-fetch for an existing app), which is enough to answer "what's
     # custom on this app" without wiring change-tracking onto every one of
-    # these controls.
-    function Update-CustomFieldHighlights {
+    # these controls. A scriptblock variable, same reasoning as
+    # $getCurrentVsDefaultChanges above - references that one directly
+    # (safe here, both are defined at this same top level, no extra
+    # closure nesting between them).
+    $updateCustomFieldHighlights = {
         if ($Uncommon) { return }
-        $customLabels = @((Get-CurrentVsDefaultChanges) | ForEach-Object { $_.Label })
+        $customLabels = @((& $getCurrentVsDefaultChanges) | ForEach-Object { $_.Label })
         $fieldControls = @{
             "Install command"          = $lblInstall
             "Uninstall command"        = $lblUninstall
@@ -10170,10 +10178,10 @@ function Show-CreateInIntuneDialog {
                 $ctrl.Font = New-Object System.Drawing.Font($ctrl.Font, ($ctrl.Font.Style -band (-bnot [System.Drawing.FontStyle]::Bold)))
             }
         }
-    }
+    }.GetNewClosure()
 
     $btnSetDefaults.Add_Click({
-        $changeRows = Get-CurrentVsDefaultChanges
+        $changeRows = & $getCurrentVsDefaultChanges
         if ($changeRows.Count -eq 0) {
             [System.Windows.Forms.MessageBox]::Show("Every setting already matches the computed defaults for this app.", "Nothing to change", "OK", "Information") | Out-Null
             return
@@ -10233,7 +10241,7 @@ function Show-CreateInIntuneDialog {
                 }
             }
         }
-        Update-CustomFieldHighlights
+        & $updateCustomFieldHighlights
         [System.Windows.Forms.MessageBox]::Show("Reset $($changeRows.Count) setting(s) to their computed defaults. Nothing has been saved or deployed yet - review below, then Save/Deploy as usual.", "Defaults applied", "OK", "Information") | Out-Null
     }.GetNewClosure())
 
@@ -11335,7 +11343,7 @@ function Show-CreateInIntuneDialog {
     # locally saved copy just pre-filled above). The auto-fetch's own
     # OnComplete calls this again once live values are in, for an existing
     # app - see there for why that second pass matters.
-    Update-CustomFieldHighlights
+    & $updateCustomFieldHighlights
 
     if ($isDuplicate) {
         # Fetches what's actually live in Intune right now and repopulates
@@ -11350,6 +11358,7 @@ function Show-CreateInIntuneDialog {
             # Fresh aliases for the nested -OnComplete closure - see note at
             # the top of this function for why this matters.
             $existingAppIdRef = $ExistingAppId
+            $updateCustomFieldHighlightsRef = $updateCustomFieldHighlights
             $AppNameRef = $AppName
             $lblCreateStatusRef = $lblCreateStatus
             $txtCreateNameRef = $txtCreateName
@@ -11870,11 +11879,13 @@ function Show-CreateInIntuneDialog {
 
                 # Second pass, now that live Intune values (and any
                 # per-field "keep local" reverts just above) have fully
-                # settled - Update-CustomFieldHighlights is a plain nested
-                # function, not a closure, so it's safe to call directly
-                # here without an alias despite being two closure levels
-                # removed from where it's defined.
-                Update-CustomFieldHighlights
+                # settled. This is two closure levels removed from where
+                # $updateCustomFieldHighlights is defined, so it must be
+                # called through the fresh alias captured above - a plain
+                # nested function is NOT reliably callable here (this is
+                # what caused the real "Update-CustomFieldHighlights is
+                # not recognized" crash).
+                & $updateCustomFieldHighlightsRef
             }.GetNewClosure()
         }.GetNewClosure())
     }
