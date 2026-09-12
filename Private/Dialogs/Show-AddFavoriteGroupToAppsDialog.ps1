@@ -1,14 +1,14 @@
 function Global:Show-AddFavoriteGroupToAppsDialog {
     param([object[]]$CandidateApps)
 
-    if ($Script:FavoriteGroups.Count -eq 0) {
+    if ($Global:App.FavoriteGroups.Count -eq 0) {
         [System.Windows.Forms.MessageBox]::Show("No favorite groups set yet - use `"Favorite groups...`" on the toolbar to pick some first.", "No favorite groups", "OK", "Information") | Out-Null
         return $null
     }
 
-    $appsRef = $Script:Apps
-    $unsavedBoxRef = $Script:UnsavedChangesBox
-    $linkedFilePathRef = $Script:LinkedFilePath
+    $appsRef = $Global:App.Apps
+    $unsavedBoxRef = $Global:App.UnsavedChangesBox
+    $linkedFilePathRef = $Global:App.LinkedFilePath
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Add favorite group to apps"
@@ -35,7 +35,7 @@ function Global:Show-AddFavoriteGroupToAppsDialog {
         $clb.Location = New-Object System.Drawing.Point(10,20)
         $clb.Size = New-Object System.Drawing.Size(410,70)
         $clb.CheckOnClick = $true
-        [void]$clb.Items.AddRange(@($Script:FavoriteGroups | Sort-Object))
+        [void]$clb.Items.AddRange(@($Global:App.FavoriteGroups | Sort-Object))
         $gb.Controls.Add($clb)
 
         return @{ Box = $gb; List = $clb }
@@ -145,7 +145,7 @@ function Global:Show-AddFavoriteGroupToAppsDialog {
     $dlg.CancelButton = $btnCancel
     $dlg.AcceptButton = $btnAdd
     Set-Theme -Control $dlg
-    $dlgResult = $dlg.ShowDialog($form)
+    $dlgResult = $dlg.ShowDialog($Global:App.Form)
     if ($dlgResult -eq [System.Windows.Forms.DialogResult]::OK) { return $resultBox.Count }
     return $null
 }

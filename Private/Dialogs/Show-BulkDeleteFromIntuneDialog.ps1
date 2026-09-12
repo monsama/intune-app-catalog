@@ -2,13 +2,13 @@ function Global:Show-BulkDeleteFromIntuneDialog {
     param([int[]]$Indices)
 
     # Plain local aliases - see note in Start-IntuneAppLookup.
-    $appsRef        = $Script:Apps
-    $tenantId       = $Script:GraphTenantId
-    $clientId       = $Script:GraphClientId
-    $certThumb      = $Script:GraphCertificateThumbprint
-    $deleteScript   = $Script:EmbeddedDeleteAppScript
-    $unsavedBox     = $Script:UnsavedChangesBox
-    $linkedFilePath = $Script:LinkedFilePath
+    $appsRef        = $Global:App.Apps
+    $tenantId       = $Global:App.GraphTenantId
+    $clientId       = $Global:App.GraphClientId
+    $certThumb      = $Global:App.GraphCertificateThumbprint
+    $deleteScript   = $Global:App.EmbeddedDeleteAppScript
+    $unsavedBox     = $Global:App.UnsavedChangesBox
+    $linkedFilePath = $Global:App.LinkedFilePath
 
     $candidateApps = @($Indices | ForEach-Object { $appsRef[$_] })
     $eligibleApps  = @($candidateApps | Where-Object { $_.appId })
@@ -395,6 +395,6 @@ function Global:Show-BulkDeleteFromIntuneDialog {
     $dlg.CancelButton = $btnClose
 
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
     return $deletedAnyBox.Value
 }

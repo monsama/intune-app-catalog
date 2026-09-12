@@ -144,20 +144,21 @@ foreach ($fn in $funcAsts) {
     . ([scriptblock]::Create($fn.Extent.Text))
 }
 
-# $Script:Apps is what Get-DefaultAppMetadata reads (its "default to
+# $Global:App.Apps is what Get-DefaultAppMetadata reads (its "default to
 # depending on Winget AutoUpdate if it exists" check) - stubbed here since
 # the real script's own startup (which populates this from the app-data
 # folder) never runs in this harness.
-$Script:Apps = New-Object System.Collections.Generic.List[object]
+$Global:App = @{}
+$Global:App.Apps = New-Object System.Collections.Generic.List[object]
 
-# $Script:DefaultAppSettings is what Get-DefaultAppMetadata now reads for
+# $Global:App.DefaultAppSettings is what Get-DefaultAppMetadata now reads for
 # every value it used to hardcode directly - stubbed with the exact same
 # factory values the real script itself initializes this to, so this
 # harness exercises the same defaults a real, never-customized install
 # would compute. If the real script's own factory values above ever
 # change, this needs updating to match, same as every other value this
 # test suite mirrors from the real script.
-$Script:DefaultAppSettings = [pscustomobject]@{
+$Global:App.DefaultAppSettings = [pscustomobject]@{
     Architecture             = "x64"
     InstallContext           = "System"
     MinOSKey                 = "W10_22H2"
@@ -352,9 +353,9 @@ $uncommonDefaults = Get-DefaultAppMetadata -AppName "Test Uncommon App" -WingetI
 Assert-Null $uncommonDefaults.detectionRule `
     "Get-DefaultAppMetadata: an uncommon app with no Winget ID has NO usable default detection rule - this is the exact case Batch Deploy must skip, not silently deploy with broken detection"
 
-# Winget AutoUpdate dependency default - present in $Script:Apps, app isn't itself Winget AutoUpdate
-$Script:Apps.Clear()
-$Script:Apps.Add([pscustomobject]@{ appName = "Winget AutoUpdate" })
+# Winget AutoUpdate dependency default - present in $Global:App.Apps, app isn't itself Winget AutoUpdate
+$Global:App.Apps.Clear()
+$Global:App.Apps.Add([pscustomobject]@{ appName = "Winget AutoUpdate" })
 $defaultsWithWau = Get-DefaultAppMetadata -AppName "Some Other App" -WingetId "some.app" -Uncommon $false
 Assert-True (@($defaultsWithWau.dependencies) -contains "Winget AutoUpdate") `
     "Get-DefaultAppMetadata: defaults to depending on Winget AutoUpdate when it exists in the catalog"
@@ -365,7 +366,7 @@ Assert-True (@($defaultsForWauItself.dependencies) -notcontains "Winget AutoUpda
     "Get-DefaultAppMetadata: Winget AutoUpdate itself never defaults to depending on itself"
 
 # Winget AutoUpdate absent from the catalog entirely
-$Script:Apps.Clear()
+$Global:App.Apps.Clear()
 $defaultsNoWau = Get-DefaultAppMetadata -AppName "Some Other App" -WingetId "some.app" -Uncommon $false
 Assert-Equal 0 @($defaultsNoWau.dependencies).Count `
     "Get-DefaultAppMetadata: no dependency default when Winget AutoUpdate isn't in the catalog at all"
@@ -412,7 +413,7 @@ Assert-Equal $true ($parsedForCompare1.Major -eq $parsedForCompare2.Major -and $
 # -----------------------------------------------------------------
 # Test-AppHasCustomConfig
 # -----------------------------------------------------------------
-$Script:Apps.Clear()
+$Global:App.Apps.Clear()
 $uncommonApp = [pscustomobject]@{ appName = "Some Custom App"; wingetId = ""; metadata = $null }
 Assert-Equal $true (Test-AppHasCustomConfig -App $uncommonApp) `
     "Test-AppHasCustomConfig: an uncommon app (no Winget ID) is always Yes - no shared default to compare against"

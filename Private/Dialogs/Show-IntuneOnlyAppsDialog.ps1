@@ -2,10 +2,10 @@ function Global:Show-IntuneOnlyAppsDialog {
     # Plain local aliases - see note in Start-IntuneAppLookup. This dialog's
     # own closures (populateGrid, the action button handler) cannot reliably
     # read or write $Script:-qualified variables directly.
-    $appsRef       = $Script:Apps
-    $cacheRef      = $Script:IntuneAppsCache
-    $unsavedBoxRef = $Script:UnsavedChangesBox
-    $linkedFilePathRef = $Script:LinkedFilePath
+    $appsRef       = $Global:App.Apps
+    $cacheRef      = $Global:App.IntuneAppsCache
+    $unsavedBoxRef = $Global:App.UnsavedChangesBox
+    $linkedFilePathRef = $Global:App.LinkedFilePath
 
     # Tracks whether anything changed, so the caller (a plain, top-level
     # button handler - the same proven-safe context every other Refresh-Grid
@@ -494,7 +494,7 @@ function Global:Show-IntuneOnlyAppsDialog {
     # work (and its Cursor = Default reset) had already completed.
     #
     # Always a live fetch, never the reused-cache branch this used to have -
-    # $cacheRef ($Script:IntuneAppsCache) is shared across the whole app, so
+    # $cacheRef ($Global:App.IntuneAppsCache) is shared across the whole app, so
     # it can already be non-empty here purely from something unrelated (e.g.
     # the app editor's own "Look up" button) run earlier in the session.
     # This dialog's entire job is telling you what's actually different
@@ -505,6 +505,6 @@ function Global:Show-IntuneOnlyAppsDialog {
     }.GetNewClosure())
 
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
     return $anyAddedBox.Value
 }

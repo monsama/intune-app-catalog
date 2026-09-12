@@ -65,8 +65,8 @@ function Global:Get-FriendlyAge {
 function Global:Get-LastAuditSummary {
     param([string]$AppName)
 
-    if (-not $Script:LastAuditResults.ContainsKey($AppName)) { return "Never audited" }
-    $entry = $Script:LastAuditResults[$AppName]
+    if (-not $Global:App.LastAuditResults.ContainsKey($AppName)) { return "Never audited" }
+    $entry = $Global:App.LastAuditResults[$AppName]
     $checked = @($entry.Metadata, $entry.Groups, $entry.Dependencies, $entry.Unknown) | Where-Object { $null -ne $_ }
     $age = Get-FriendlyAge -Timestamp $entry.Timestamp
 
@@ -300,20 +300,20 @@ function Global:Resolve-AppPackagePath {
     if (-not $Uncommon) {
         # Check the expected exact location first (fast - no need to walk the
         # whole repo in the common case where it's right where expected).
-        $initPath = Join-Path $Script:RootPath "init\init.intunewin"
+        $initPath = Join-Path $Global:App.RootPath "init\init.intunewin"
         if (Test-Path $initPath) { return @{ Path = $initPath; Found = $true } }
 
         # Not there - fall back to searching under the base path, same
         # approach as uncommon apps below, in case it ended up nested
         # slightly differently, before giving up.
-        $found = Get-ChildItem -Path $Script:RootPath -Recurse -Filter "init.intunewin" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        $found = Get-ChildItem -Path $Global:App.RootPath -Recurse -Filter "init.intunewin" -File -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($found) { return @{ Path = $found.FullName; Found = $true } }
 
         return @{ Path = $initPath; Found = $false }
     }
 
     $safeName = Get-SafeFileNameForApp -Name $AppName
-    $uncommonRoot = Join-Path $Script:RootPath "app-packages"
+    $uncommonRoot = Join-Path $Global:App.RootPath "app-packages"
     if (Test-Path $uncommonRoot) {
         $found = Get-ChildItem -Path $uncommonRoot -Recurse -Filter "$safeName.intunewin" -File -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($found) { return @{ Path = $found.FullName; Found = $true } }
@@ -434,7 +434,7 @@ function Global:Get-DefaultAppMetadata {
     param([string]$AppName, [string]$WingetId, [bool]$Uncommon)
 
     $templates = Get-CreateAppTemplates -WingetId $WingetId -Uncommon $Uncommon
-    $das = $Script:DefaultAppSettings
+    $das = $Global:App.DefaultAppSettings
     # Each configured name only counts as a default dependency if an app by
     # that name actually exists in the catalog (same as the single-
     # dependency version this replaced) AND isn't this app itself - a
@@ -444,7 +444,7 @@ function Global:Get-DefaultAppMetadata {
     $defaultDeps = @(
         $das.DefaultDependencyAppNames | Where-Object {
             $depName = $_
-            $depName -and $depName -ne $AppName -and ($Script:Apps | Where-Object { $_.appName -eq $depName })
+            $depName -and $depName -ne $AppName -and ($Global:App.Apps | Where-Object { $_.appName -eq $depName })
         }
     )
 

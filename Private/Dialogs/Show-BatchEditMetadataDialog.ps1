@@ -2,13 +2,13 @@ function Global:Show-BatchEditMetadataDialog {
     param([int[]]$ScopedIndices = @())
 
     # Plain local aliases - see note in Start-IntuneAppLookup.
-    $appsRef      = $Script:Apps
-    $tenantId     = $Script:GraphTenantId
-    $clientId     = $Script:GraphClientId
-    $certThumb    = $Script:GraphCertificateThumbprint
-    $createScript = $Script:EmbeddedCreateAppScript
-    $unsavedBox   = $Script:UnsavedChangesBox
-    $linkedFilePath = $Script:LinkedFilePath
+    $appsRef      = $Global:App.Apps
+    $tenantId     = $Global:App.GraphTenantId
+    $clientId     = $Global:App.GraphClientId
+    $certThumb    = $Global:App.GraphCertificateThumbprint
+    $createScript = $Global:App.EmbeddedCreateAppScript
+    $unsavedBox   = $Global:App.UnsavedChangesBox
+    $linkedFilePath = $Global:App.LinkedFilePath
 
     # ScopedIndices only decides which eligible apps start CHECKED below,
     # never which ones are shown - unlike Batch Deploy/Sync Metadata's own
@@ -634,5 +634,5 @@ function Global:Show-BatchEditMetadataDialog {
     $dlg.CancelButton = $btnClose
 
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 }

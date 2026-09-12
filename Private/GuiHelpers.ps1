@@ -1,6 +1,6 @@
 function Global:Set-Theme {
     param([System.Windows.Forms.Control]$Control)
-    Set-ThemeRecursive -Ctrl $Control -Palette $Script:LightPalette
+    Set-ThemeRecursive -Ctrl $Control -Palette $Global:App.LightPalette
 }
 
 function Global:Set-ThemeRecursive {
@@ -172,14 +172,14 @@ function Global:Show-SimpleListPicker {
     $dlg.AcceptButton = $btnOk
     $dlg.CancelButton = $btnCancel
     Set-Theme -Control $dlg
-    $result = $dlg.ShowDialog($form)
+    $result = $dlg.ShowDialog($Global:App.Form)
     if ($result -eq [System.Windows.Forms.DialogResult]::OK) { return $resultBox.Value }
     return $null
 }
 
 function Global:Set-Status {
     param([string]$Text)
-    $statusLabel.Text = $Text
+    $Global:App.StatusLabel.Text = $Text
 }
 
 function Global:Write-DialogError {
@@ -266,11 +266,11 @@ function Global:New-GridColumn {
 }
 
 function Global:Refresh-Grid {
-    $filter = $txtSearch.Text.Trim().ToLower()
+    $filter = $Global:App.TxtSearch.Text.Trim().ToLower()
     $rows = New-Object System.Collections.Generic.List[Object]
 
-    for ($i = 0; $i -lt $Script:Apps.Count; $i++) {
-        $app = $Script:Apps[$i]
+    for ($i = 0; $i -lt $Global:App.Apps.Count; $i++) {
+        $app = $Global:App.Apps[$i]
         if ($filter) {
             $hay = ("$($app.appName) $($app.wingetId)").ToLower()
             if ($hay -notlike "*$filter*") { continue }
@@ -351,34 +351,34 @@ function Global:Refresh-Grid {
         })
     }
 
-    $grid.DataSource = $null
-    $grid.DataSource = $rows
+    $Global:App.Grid.DataSource = $null
+    $Global:App.Grid.DataSource = $rows
 
-    $reqTotal   = ($Script:Apps | ForEach-Object { @($_.requiredFor).Count } | Measure-Object -Sum).Sum
-    $availTotal = ($Script:Apps | ForEach-Object { @($_.availableFor).Count } | Measure-Object -Sum).Sum
-    $uninstTotal= ($Script:Apps | ForEach-Object { @($_.uninstallFor).Count } | Measure-Object -Sum).Sum
-    $dirty = if ($Script:UnsavedChangesBox.Value) { "  *unsaved changes*" } else { "" }
-    Set-Status "$($Script:Apps.Count) apps  |  $reqTotal required, $availTotal available, $uninstTotal uninstall assignments  |  $Script:LinkedFilePath$dirty"
+    $reqTotal   = ($Global:App.Apps | ForEach-Object { @($_.requiredFor).Count } | Measure-Object -Sum).Sum
+    $availTotal = ($Global:App.Apps | ForEach-Object { @($_.availableFor).Count } | Measure-Object -Sum).Sum
+    $uninstTotal= ($Global:App.Apps | ForEach-Object { @($_.uninstallFor).Count } | Measure-Object -Sum).Sum
+    $dirty = if ($Global:App.UnsavedChangesBox.Value) { "  *unsaved changes*" } else { "" }
+    Set-Status "$($Global:App.Apps.Count) apps  |  $reqTotal required, $availTotal available, $uninstTotal uninstall assignments  |  $Global:App.LinkedFilePath$dirty"
 }
 
 function Global:Get-SelectedAppIndex {
-    if ($grid.SelectedRows.Count -eq 0) { return $null }
-    return [int]$grid.SelectedRows[0].Cells["Index"].Value
+    if ($Global:App.Grid.SelectedRows.Count -eq 0) { return $null }
+    return [int]$Global:App.Grid.SelectedRows[0].Cells["Index"].Value
 }
 
 function Global:Get-SelectedAppIndices {
-    return @($grid.SelectedRows | ForEach-Object { [int]$_.Cells["Index"].Value })
+    return @($Global:App.Grid.SelectedRows | ForEach-Object { [int]$_.Cells["Index"].Value })
 }
 
 function Global:Show-LastAuditDetail {
     param([string]$AppName)
 
-    if (-not $Script:LastAuditResults.ContainsKey($AppName)) {
+    if (-not $Global:App.LastAuditResults.ContainsKey($AppName)) {
         [System.Windows.Forms.MessageBox]::Show("`"$AppName`" hasn't been checked against Intune yet this session. Run `"Intune Audit...`" (or open `"Deploy to Intune...`" for it, which checks Metadata and Dependencies automatically) to see where it stands.", "Never audited - $AppName", "OK", "Information") | Out-Null
         return
     }
 
-    $entry = $Script:LastAuditResults[$AppName]
+    $entry = $Global:App.LastAuditResults[$AppName]
     $age = Get-FriendlyAge -Timestamp $entry.Timestamp
     $lines = New-Object System.Collections.Generic.List[string]
     $fields = @(

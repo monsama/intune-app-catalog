@@ -1,5 +1,5 @@
 function Global:Show-AppIdMatchDialog {
-    if ($Script:IntuneAppsCache.Count -eq 0) {
+    if ($Global:App.IntuneAppsCache.Count -eq 0) {
         [System.Windows.Forms.MessageBox]::Show("No apps were returned from Intune. Check the Pipeline tab's log for details - likely a missing 'DeviceManagementApps.Read.All' application permission (with admin consent) on the app registration.", "Nothing to match", "OK", "Information") | Out-Null
         return
     }
@@ -7,10 +7,10 @@ function Global:Show-AppIdMatchDialog {
     # Plain (non-$Script:) local aliases - see note in Start-IntuneAppLookup. Both are
     # reference types, so mutating them through these aliases from inside closures
     # below is visible everywhere else that reads the real $Script: names.
-    $appsRef = $Script:Apps
-    $unsavedBox = $Script:UnsavedChangesBox
-    $cache = $Script:IntuneAppsCache
-    $linkedFilePath = $Script:LinkedFilePath
+    $appsRef = $Global:App.Apps
+    $unsavedBox = $Global:App.UnsavedChangesBox
+    $cache = $Global:App.IntuneAppsCache
+    $linkedFilePath = $Global:App.LinkedFilePath
     $pickerChoices = @($cache | ForEach-Object { "$($_.displayName)  [$($_.id)]" })
 
     # Scoped to apps with NO App ID yet - this dialog exists to bootstrap
@@ -216,5 +216,5 @@ function Global:Show-AppIdMatchDialog {
     $dlg.CancelButton = $btnCancelMatch
     $dlg.AcceptButton = $btnApplyMatch
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 }

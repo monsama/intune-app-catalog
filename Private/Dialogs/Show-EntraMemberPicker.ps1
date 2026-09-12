@@ -2,7 +2,7 @@ function Global:Show-EntraMemberPicker {
     # Plain local alias - see note in Start-IntuneAppLookup. $UpdateStatus and
     # $RefreshList below are closures; even a single level of GetNewClosure()
     # does not reliably see $Script:-qualified variables, only plain ones.
-    $cache = $Script:EntraDirectoryCache
+    $cache = $Global:App.EntraDirectoryCache
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Add group or user"
@@ -140,7 +140,7 @@ function Global:Show-EntraMemberPicker {
     $dlg.CancelButton = $btnCancel
     $dlg.AcceptButton = $btnAdd
     Set-Theme -Control $dlg
-    $result = $dlg.ShowDialog($form)
+    $result = $dlg.ShowDialog($Global:App.Form)
     if ($result -eq [System.Windows.Forms.DialogResult]::OK) { return $resultBox.Value }
     return $null
 }

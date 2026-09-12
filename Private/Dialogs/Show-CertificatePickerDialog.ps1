@@ -104,7 +104,7 @@ function Global:Show-CertificatePickerDialog {
     $dlg.AcceptButton = $btnOK
     $dlg.CancelButton = $btnCancelPick
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 
     return $resultBox.Thumbprint
 }

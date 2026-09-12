@@ -9,9 +9,9 @@ function Global:Show-RemoveGroupFromAppsDialog {
         return $null
     }
 
-    $appsRef = $Script:Apps
-    $unsavedBoxRef = $Script:UnsavedChangesBox
-    $linkedFilePathRef = $Script:LinkedFilePath
+    $appsRef = $Global:App.Apps
+    $unsavedBoxRef = $Global:App.UnsavedChangesBox
+    $linkedFilePathRef = $Global:App.LinkedFilePath
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Remove group from apps"
@@ -160,7 +160,7 @@ function Global:Show-RemoveGroupFromAppsDialog {
     $dlg.CancelButton = $btnCancel
     $dlg.AcceptButton = $btnRemove
     Set-Theme -Control $dlg
-    $dlgResult = $dlg.ShowDialog($form)
+    $dlgResult = $dlg.ShowDialog($Global:App.Form)
     if ($dlgResult -eq [System.Windows.Forms.DialogResult]::OK) { return $resultBox.Count }
     return $null
 }

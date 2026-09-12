@@ -1,11 +1,11 @@
 function Global:Load-GraphSettings {
-    if (-not (Test-Path $Script:SettingsFilePath)) { return }
+    if (-not (Test-Path $Global:App.SettingsFilePath)) { return }
     try {
         # -Encoding UTF8 explicitly - same reasoning as Load-AppsFromFile's
         # own per-app file read: this file is written BOM-less UTF8
         # (Write-SettingsFile), which Get-Content silently misreads as the
         # system ANSI codepage under Windows PowerShell 5.1 without this.
-        $settings = Get-Content -Path $Script:SettingsFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $settings = Get-Content -Path $Global:App.SettingsFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
         # Trimmed and whitespace-checked here, not just truthiness-checked -
         # the Settings dialog's own save path already strips whitespace
         # before writing (see btnSave's Trim() / -replace '\s',''), but a
@@ -15,15 +15,15 @@ function Global:Load-GraphSettings {
         # Test-GraphCredentialsConfigured and Get-CertificateStatusText
         # disagree in Diagnostics - fixed at the source here too, not just
         # in the two places that read these variables afterward.
-        if (-not [string]::IsNullOrWhiteSpace($settings.TenantId))  { $Script:GraphTenantId = ([string]$settings.TenantId).Trim() }
-        if (-not [string]::IsNullOrWhiteSpace($settings.ClientId))  { $Script:GraphClientId = ([string]$settings.ClientId).Trim() }
-        if (-not [string]::IsNullOrWhiteSpace($settings.CertificateThumbprint)) { $Script:GraphCertificateThumbprint = ([string]$settings.CertificateThumbprint) -replace '\s', '' }
+        if (-not [string]::IsNullOrWhiteSpace($settings.TenantId))  { $Global:App.GraphTenantId = ([string]$settings.TenantId).Trim() }
+        if (-not [string]::IsNullOrWhiteSpace($settings.ClientId))  { $Global:App.GraphClientId = ([string]$settings.ClientId).Trim() }
+        if (-not [string]::IsNullOrWhiteSpace($settings.CertificateThumbprint)) { $Global:App.GraphCertificateThumbprint = ([string]$settings.CertificateThumbprint) -replace '\s', '' }
         if ($settings.FavoriteGroups) {
-            $Script:FavoriteGroups.Clear()
-            foreach ($g in @($settings.FavoriteGroups)) { [void]$Script:FavoriteGroups.Add([string]$g) }
+            $Global:App.FavoriteGroups.Clear()
+            foreach ($g in @($settings.FavoriteGroups)) { [void]$Global:App.FavoriteGroups.Add([string]$g) }
         }
         # Missing entirely (an older settings file, or one from before this
-        # existed) leaves $Script:DefaultAppSettings at its own built-in
+        # existed) leaves $Global:App.DefaultAppSettings at its own built-in
         # factory values, untouched - same "fall back silently" reasoning
         # as everything else in this function. Only individual fields that
         # are ACTUALLY present get overwritten, so a settings file saved by
@@ -31,21 +31,21 @@ function Global:Load-GraphSettings {
         # can't accidentally null one out.
         if ($settings.DefaultAppSettings) {
             $das = $settings.DefaultAppSettings
-            if ($null -ne $das.Architecture)             { $Script:DefaultAppSettings.Architecture = [string]$das.Architecture }
-            if ($null -ne $das.InstallContext)            { $Script:DefaultAppSettings.InstallContext = [string]$das.InstallContext }
-            if ($null -ne $das.MinOSKey)                  { $Script:DefaultAppSettings.MinOSKey = [string]$das.MinOSKey }
-            if ($null -ne $das.MinDiskSpaceMB)             { $Script:DefaultAppSettings.MinDiskSpaceMB = [int]$das.MinDiskSpaceMB }
-            if ($null -ne $das.MinMemoryMB)                { $Script:DefaultAppSettings.MinMemoryMB = [int]$das.MinMemoryMB }
-            if ($null -ne $das.MinProcessors)              { $Script:DefaultAppSettings.MinProcessors = [int]$das.MinProcessors }
-            if ($null -ne $das.MinCpuSpeedMHz)             { $Script:DefaultAppSettings.MinCpuSpeedMHz = [int]$das.MinCpuSpeedMHz }
-            if ($null -ne $das.InstallTimeMinutes)         { $Script:DefaultAppSettings.InstallTimeMinutes = [int]$das.InstallTimeMinutes }
-            if ($null -ne $das.DeviceRestartBehavior)      { $Script:DefaultAppSettings.DeviceRestartBehavior = [string]$das.DeviceRestartBehavior }
-            if ($null -ne $das.AllowAvailableUninstall)    { $Script:DefaultAppSettings.AllowAvailableUninstall = [bool]$das.AllowAvailableUninstall }
+            if ($null -ne $das.Architecture)             { $Global:App.DefaultAppSettings.Architecture = [string]$das.Architecture }
+            if ($null -ne $das.InstallContext)            { $Global:App.DefaultAppSettings.InstallContext = [string]$das.InstallContext }
+            if ($null -ne $das.MinOSKey)                  { $Global:App.DefaultAppSettings.MinOSKey = [string]$das.MinOSKey }
+            if ($null -ne $das.MinDiskSpaceMB)             { $Global:App.DefaultAppSettings.MinDiskSpaceMB = [int]$das.MinDiskSpaceMB }
+            if ($null -ne $das.MinMemoryMB)                { $Global:App.DefaultAppSettings.MinMemoryMB = [int]$das.MinMemoryMB }
+            if ($null -ne $das.MinProcessors)              { $Global:App.DefaultAppSettings.MinProcessors = [int]$das.MinProcessors }
+            if ($null -ne $das.MinCpuSpeedMHz)             { $Global:App.DefaultAppSettings.MinCpuSpeedMHz = [int]$das.MinCpuSpeedMHz }
+            if ($null -ne $das.InstallTimeMinutes)         { $Global:App.DefaultAppSettings.InstallTimeMinutes = [int]$das.InstallTimeMinutes }
+            if ($null -ne $das.DeviceRestartBehavior)      { $Global:App.DefaultAppSettings.DeviceRestartBehavior = [string]$das.DeviceRestartBehavior }
+            if ($null -ne $das.AllowAvailableUninstall)    { $Global:App.DefaultAppSettings.AllowAvailableUninstall = [bool]$das.AllowAvailableUninstall }
             if (@($das.ReturnCodes).Count -gt 0) {
-                $Script:DefaultAppSettings.ReturnCodes = @($das.ReturnCodes | ForEach-Object { [pscustomobject]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })
+                $Global:App.DefaultAppSettings.ReturnCodes = @($das.ReturnCodes | ForEach-Object { [pscustomobject]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })
             }
             if ($null -ne $das.DefaultDependencyAppNames) {
-                $Script:DefaultAppSettings.DefaultDependencyAppNames = @($das.DefaultDependencyAppNames | ForEach-Object { [string]$_ } | Where-Object { $_ })
+                $Global:App.DefaultAppSettings.DefaultDependencyAppNames = @($das.DefaultDependencyAppNames | ForEach-Object { [string]$_ } | Where-Object { $_ })
             }
             # Back-compat with a settings file saved by the single-dependency
             # version of this dialog (a plain string field, no "s") - only
@@ -53,7 +53,7 @@ function Global:Load-GraphSettings {
             # all, so an already-migrated file's own (possibly now empty)
             # array is never silently overwritten by stale singular data.
             elseif ($null -ne $das.DefaultDependencyAppName -and [string]$das.DefaultDependencyAppName) {
-                $Script:DefaultAppSettings.DefaultDependencyAppNames = @([string]$das.DefaultDependencyAppName)
+                $Global:App.DefaultAppSettings.DefaultDependencyAppNames = @([string]$das.DefaultDependencyAppName)
             }
         }
     }
@@ -66,15 +66,15 @@ function Global:Load-GraphSettings {
 function Global:Write-SettingsFile {
     try {
         $settings = [pscustomobject]@{
-            TenantId              = $Script:GraphTenantId
-            ClientId              = $Script:GraphClientId
-            CertificateThumbprint = $Script:GraphCertificateThumbprint
-            FavoriteGroups        = @($Script:FavoriteGroups)
-            DefaultAppSettings    = $Script:DefaultAppSettings
+            TenantId              = $Global:App.GraphTenantId
+            ClientId              = $Global:App.GraphClientId
+            CertificateThumbprint = $Global:App.GraphCertificateThumbprint
+            FavoriteGroups        = @($Global:App.FavoriteGroups)
+            DefaultAppSettings    = $Global:App.DefaultAppSettings
         }
         $json = $settings | ConvertTo-Json -Depth 5
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-        [System.IO.File]::WriteAllText($Script:SettingsFilePath, $json, $utf8NoBom)
+        [System.IO.File]::WriteAllText($Global:App.SettingsFilePath, $json, $utf8NoBom)
         return $true
     }
     catch {
@@ -90,9 +90,9 @@ function Global:Save-GraphSettings {
         [string]$ClientId,
         [string]$CertificateThumbprint
     )
-    $Script:GraphTenantId = $TenantId
-    $Script:GraphClientId = $ClientId
-    $Script:GraphCertificateThumbprint = $CertificateThumbprint
+    $Global:App.GraphTenantId = $TenantId
+    $Global:App.GraphClientId = $ClientId
+    $Global:App.GraphCertificateThumbprint = $CertificateThumbprint
     return (Write-SettingsFile)
 }
 
@@ -112,7 +112,7 @@ function Global:Clear-DelegatedSignInCache {
 
 function Global:Test-GraphCredentialsConfigured {
     # -not [string]::IsNullOrWhiteSpace(...), not plain PowerShell truthiness
-    # ($Script:GraphTenantId -and ...) - a value that's present but only
+    # ($Global:App.GraphTenantId -and ...) - a value that's present but only
     # whitespace (e.g. a stray-space CertificateThumbprint loaded from an
     # unrimmed intune-deployment-settings.json - see Load-GraphSettings) is
     # truthy in PowerShell, so the old plain check reported "all set" here
@@ -120,9 +120,9 @@ function Global:Test-GraphCredentialsConfigured {
     # check correctly reported "No thumbprint set." for the exact same
     # value - two Diagnostics lines flatly contradicting each other. Both
     # now agree by using the same definition of "set".
-    if ((-not [string]::IsNullOrWhiteSpace($Script:GraphTenantId)) -and
-        (-not [string]::IsNullOrWhiteSpace($Script:GraphClientId)) -and
-        (-not [string]::IsNullOrWhiteSpace($Script:GraphCertificateThumbprint))) { return $true }
+    if ((-not [string]::IsNullOrWhiteSpace($Global:App.GraphTenantId)) -and
+        (-not [string]::IsNullOrWhiteSpace($Global:App.GraphClientId)) -and
+        (-not [string]::IsNullOrWhiteSpace($Global:App.GraphCertificateThumbprint))) { return $true }
     [System.Windows.Forms.MessageBox]::Show(
         "No Graph connection is configured yet. Open 'Settings...' in the Tools group and fill in your Tenant ID, Client ID, and certificate first.",
         "Not configured", "OK", "Warning") | Out-Null

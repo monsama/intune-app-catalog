@@ -2,13 +2,13 @@ function Global:Show-SyncMetadataDialog {
     param([int[]]$ScopedIndices = @())
 
     # Plain local aliases - see note in Start-IntuneAppLookup.
-    $appsRef      = $Script:Apps
-    $tenantId     = $Script:GraphTenantId
-    $clientId     = $Script:GraphClientId
-    $certThumb    = $Script:GraphCertificateThumbprint
-    $syncScript   = $Script:EmbeddedSyncMetadataScript
-    $unsavedBox   = $Script:UnsavedChangesBox
-    $linkedFilePath = $Script:LinkedFilePath
+    $appsRef      = $Global:App.Apps
+    $tenantId     = $Global:App.GraphTenantId
+    $clientId     = $Global:App.GraphClientId
+    $certThumb    = $Global:App.GraphCertificateThumbprint
+    $syncScript   = $Global:App.EmbeddedSyncMetadataScript
+    $unsavedBox   = $Global:App.UnsavedChangesBox
+    $linkedFilePath = $Global:App.LinkedFilePath
 
     # Selected rows (if any, passed in by the caller) scope this to just
     # them; nothing selected checks the whole catalog like Batch Assign
@@ -370,5 +370,5 @@ function Global:Show-SyncMetadataDialog {
     $dlg.AcceptButton = $btnSync
 
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 }

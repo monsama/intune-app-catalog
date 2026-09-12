@@ -1,6 +1,6 @@
 function Global:Show-GroupOnlyPicker {
     # Plain local alias - see note in Start-IntuneAppLookup.
-    $cache = $Script:EntraDirectoryCache
+    $cache = $Global:App.EntraDirectoryCache
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Find a group"
@@ -128,7 +128,7 @@ function Global:Show-GroupOnlyPicker {
     $dlg.CancelButton = $btnCancel
     $dlg.AcceptButton = $btnSelect
     Set-Theme -Control $dlg
-    $result = $dlg.ShowDialog($form)
+    $result = $dlg.ShowDialog($Global:App.Form)
     if ($result -eq [System.Windows.Forms.DialogResult]::OK) { return $resultBox.Value }
     return $null
 }

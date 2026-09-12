@@ -13,23 +13,23 @@ function Global:Show-DeleteAppDialog {
             return @{ Success = $false; RemovedFromCatalog = $false }
         }
         $noIdDelIdx = -1
-        for ($ndi = 0; $ndi -lt $Script:Apps.Count; $ndi++) {
-            if ($Script:Apps[$ndi].appName -eq $AppName) { $noIdDelIdx = $ndi; break }
+        for ($ndi = 0; $ndi -lt $Global:App.Apps.Count; $ndi++) {
+            if ($Global:App.Apps[$ndi].appName -eq $AppName) { $noIdDelIdx = $ndi; break }
         }
-        if ($noIdDelIdx -ge 0) { $Script:Apps.RemoveAt($noIdDelIdx) }
-        $Script:UnsavedChangesBox.Value = $true
-        [void](Save-AppsToFile -Path $Script:LinkedFilePath)
+        if ($noIdDelIdx -ge 0) { $Global:App.Apps.RemoveAt($noIdDelIdx) }
+        $Global:App.UnsavedChangesBox.Value = $true
+        [void](Save-AppsToFile -Path $Global:App.LinkedFilePath)
         return @{ Success = $false; RemovedFromCatalog = $true }
     }
 
     # Plain local aliases - see note in Start-IntuneAppLookup.
-    $tenantId      = $Script:GraphTenantId
-    $clientId      = $Script:GraphClientId
-    $certThumb     = $Script:GraphCertificateThumbprint
-    $deleteScript  = $Script:EmbeddedDeleteAppScript
-    $appsRef       = $Script:Apps
-    $unsavedBox    = $Script:UnsavedChangesBox
-    $linkedFilePath = $Script:LinkedFilePath
+    $tenantId      = $Global:App.GraphTenantId
+    $clientId      = $Global:App.GraphClientId
+    $certThumb     = $Global:App.GraphCertificateThumbprint
+    $deleteScript  = $Global:App.EmbeddedDeleteAppScript
+    $appsRef       = $Global:App.Apps
+    $unsavedBox    = $Global:App.UnsavedChangesBox
+    $linkedFilePath = $Global:App.LinkedFilePath
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Delete from Intune - $AppName"
@@ -255,7 +255,7 @@ function Global:Show-DeleteAppDialog {
     $dlg.AcceptButton = $btnDelete
 
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
     # A hashtable now, not a plain bool - callers must check .Success
     # explicitly (a hashtable reference is truthy on its own, even one with
     # Success=$false), and .RemovedFromCatalog tells them whether they still

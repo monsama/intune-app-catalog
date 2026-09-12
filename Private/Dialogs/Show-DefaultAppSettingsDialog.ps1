@@ -24,7 +24,7 @@ function Global:Show-DefaultAppSettingsDialog {
     $cmbContext.Size = New-Object System.Drawing.Size(160,24)
     $cmbContext.DropDownStyle = "DropDownList"
     [void]$cmbContext.Items.AddRange(@("System","User"))
-    $cmbContext.SelectedItem = $Script:DefaultAppSettings.InstallContext
+    $cmbContext.SelectedItem = $Global:App.DefaultAppSettings.InstallContext
     $dlg.Controls.Add($cmbContext)
 
     $lblArch = New-Object System.Windows.Forms.Label
@@ -33,7 +33,7 @@ function Global:Show-DefaultAppSettingsDialog {
     $lblArch.AutoSize = $true
     $dlg.Controls.Add($lblArch)
 
-    $archList = @($Script:DefaultAppSettings.Architecture -split ',' | ForEach-Object { $_.Trim().ToLower() })
+    $archList = @($Global:App.DefaultAppSettings.Architecture -split ',' | ForEach-Object { $_.Trim().ToLower() })
     $chkArchX86 = New-Object System.Windows.Forms.CheckBox
     $chkArchX86.Text = "x86"
     $chkArchX86.Location = New-Object System.Drawing.Point(200,83)
@@ -71,7 +71,7 @@ function Global:Show-DefaultAppSettingsDialog {
     $minOsMap = [ordered]@{}
     foreach ($rawValue in $minOsRawValues) { $minOsMap[(Get-FriendlyMinOsRelease -RawValue $rawValue)] = $rawValue }
     [void]$cmbMinOS.Items.AddRange(@($minOsMap.Keys))
-    $defaultMinOsLabel = $minOsMap.Keys | Where-Object { $minOsMap[$_] -eq $Script:DefaultAppSettings.MinOSKey } | Select-Object -First 1
+    $defaultMinOsLabel = $minOsMap.Keys | Where-Object { $minOsMap[$_] -eq $Global:App.DefaultAppSettings.MinOSKey } | Select-Object -First 1
     $cmbMinOS.SelectedItem = if ($defaultMinOsLabel) { $defaultMinOsLabel } else { $minOsMap.Keys | Select-Object -First 1 }
     $dlg.Controls.Add($cmbMinOS)
 
@@ -99,7 +99,7 @@ function Global:Show-DefaultAppSettingsDialog {
     $txtDiskSpace = New-Object System.Windows.Forms.TextBox
     $txtDiskSpace.Location = New-Object System.Drawing.Point(15,210)
     $txtDiskSpace.Size = New-Object System.Drawing.Size(130,23)
-    $txtDiskSpace.Text = [string]$Script:DefaultAppSettings.MinDiskSpaceMB
+    $txtDiskSpace.Text = [string]$Global:App.DefaultAppSettings.MinDiskSpaceMB
     $dlg.Controls.Add($txtDiskSpace)
 
     $lblMemory = New-Object System.Windows.Forms.Label
@@ -110,7 +110,7 @@ function Global:Show-DefaultAppSettingsDialog {
     $txtMemory = New-Object System.Windows.Forms.TextBox
     $txtMemory.Location = New-Object System.Drawing.Point(160,210)
     $txtMemory.Size = New-Object System.Drawing.Size(130,23)
-    $txtMemory.Text = [string]$Script:DefaultAppSettings.MinMemoryMB
+    $txtMemory.Text = [string]$Global:App.DefaultAppSettings.MinMemoryMB
     $dlg.Controls.Add($txtMemory)
 
     $lblProcessors = New-Object System.Windows.Forms.Label
@@ -121,7 +121,7 @@ function Global:Show-DefaultAppSettingsDialog {
     $txtProcessors = New-Object System.Windows.Forms.TextBox
     $txtProcessors.Location = New-Object System.Drawing.Point(305,210)
     $txtProcessors.Size = New-Object System.Drawing.Size(130,23)
-    $txtProcessors.Text = [string]$Script:DefaultAppSettings.MinProcessors
+    $txtProcessors.Text = [string]$Global:App.DefaultAppSettings.MinProcessors
     $dlg.Controls.Add($txtProcessors)
 
     $lblCpuSpeed = New-Object System.Windows.Forms.Label
@@ -132,7 +132,7 @@ function Global:Show-DefaultAppSettingsDialog {
     $txtCpuSpeed = New-Object System.Windows.Forms.TextBox
     $txtCpuSpeed.Location = New-Object System.Drawing.Point(450,210)
     $txtCpuSpeed.Size = New-Object System.Drawing.Size(130,23)
-    $txtCpuSpeed.Text = [string]$Script:DefaultAppSettings.MinCpuSpeedMHz
+    $txtCpuSpeed.Text = [string]$Global:App.DefaultAppSettings.MinCpuSpeedMHz
     $dlg.Controls.Add($txtCpuSpeed)
 
     $lblInstallTime = New-Object System.Windows.Forms.Label
@@ -143,7 +143,7 @@ function Global:Show-DefaultAppSettingsDialog {
     $txtInstallTime = New-Object System.Windows.Forms.TextBox
     $txtInstallTime.Location = New-Object System.Drawing.Point(15,263)
     $txtInstallTime.Size = New-Object System.Drawing.Size(130,23)
-    $txtInstallTime.Text = [string]$Script:DefaultAppSettings.InstallTimeMinutes
+    $txtInstallTime.Text = [string]$Global:App.DefaultAppSettings.InstallTimeMinutes
     $dlg.Controls.Add($txtInstallTime)
 
     $lblRestartBehavior = New-Object System.Windows.Forms.Label
@@ -162,7 +162,7 @@ function Global:Show-DefaultAppSettingsDialog {
         "Intune will force a mandatory device restart"  = "force"
     }
     foreach ($k in $restartBehaviorMap.Keys) { [void]$cmbRestartBehavior.Items.Add($k) }
-    $defaultRestartLabel = $restartBehaviorMap.Keys | Where-Object { $restartBehaviorMap[$_] -eq $Script:DefaultAppSettings.DeviceRestartBehavior } | Select-Object -First 1
+    $defaultRestartLabel = $restartBehaviorMap.Keys | Where-Object { $restartBehaviorMap[$_] -eq $Global:App.DefaultAppSettings.DeviceRestartBehavior } | Select-Object -First 1
     $cmbRestartBehavior.SelectedItem = if ($defaultRestartLabel) { $defaultRestartLabel } else { "Determine behavior based on return codes" }
     $dlg.Controls.Add($cmbRestartBehavior)
 
@@ -170,7 +170,7 @@ function Global:Show-DefaultAppSettingsDialog {
     $chkAllowUninstall.Text = "Allow available uninstall"
     $chkAllowUninstall.Location = New-Object System.Drawing.Point(15,300)
     $chkAllowUninstall.AutoSize = $true
-    $chkAllowUninstall.Checked = [bool]$Script:DefaultAppSettings.AllowAvailableUninstall
+    $chkAllowUninstall.Checked = [bool]$Global:App.DefaultAppSettings.AllowAvailableUninstall
     $dlg.Controls.Add($chkAllowUninstall)
 
     $lblReturnCodes = New-Object System.Windows.Forms.Label
@@ -195,7 +195,7 @@ function Global:Show-DefaultAppSettingsDialog {
     [void]$colType.Items.AddRange(@("success", "softReboot", "hardReboot", "retry", "failed"))
     [void]$grdReturnCodes.Columns.Add($colType)
     $dlg.Controls.Add($grdReturnCodes)
-    foreach ($rc in @($Script:DefaultAppSettings.ReturnCodes)) {
+    foreach ($rc in @($Global:App.DefaultAppSettings.ReturnCodes)) {
         $rowIdx = $grdReturnCodes.Rows.Add()
         $grdReturnCodes.Rows[$rowIdx].Cells["Code"].Value = [string]$rc.returnCode
         $grdReturnCodes.Rows[$rowIdx].Cells["Type"].Value = [string]$rc.type
@@ -233,9 +233,9 @@ function Global:Show-DefaultAppSettingsDialog {
     $clbDefaultDeps.Location = New-Object System.Drawing.Point(485,431)
     $clbDefaultDeps.Size = New-Object System.Drawing.Size(120,100)
     $clbDefaultDeps.CheckOnClick = $true
-    foreach ($a in ($Script:Apps | Sort-Object appName)) {
+    foreach ($a in ($Global:App.Apps | Sort-Object appName)) {
         $idx = $clbDefaultDeps.Items.Add($a.appName)
-        if (@($Script:DefaultAppSettings.DefaultDependencyAppNames) -contains $a.appName) { $clbDefaultDeps.SetItemChecked($idx, $true) }
+        if (@($Global:App.DefaultAppSettings.DefaultDependencyAppNames) -contains $a.appName) { $clbDefaultDeps.SetItemChecked($idx, $true) }
     }
     $dlg.Controls.Add($clbDefaultDeps)
 
@@ -263,7 +263,7 @@ function Global:Show-DefaultAppSettingsDialog {
     # list a second time - re-running Get-DefaultAppMetadata's own logic
     # would need an app name/Winget ID it doesn't have here, so this is a
     # plain, separate literal copy of the same starting values
-    # $Script:DefaultAppSettings itself is initialized with at the top of
+    # $Global:App.DefaultAppSettings itself is initialized with at the top of
     # this script - kept in sync manually if those ever change.
     $btnResetFactory.Add_Click({
         $r = [System.Windows.Forms.MessageBox]::Show("Reset every field below to this app's original built-in defaults? (Still requires Save to actually apply.)", "Reset to built-in defaults", "YesNo", "Warning")
@@ -346,18 +346,18 @@ function Global:Show-DefaultAppSettingsDialog {
         if ($chkArchX64.Checked)   { $selectedArches.Add("x64") }
         if ($chkArchArm64.Checked) { $selectedArches.Add("arm64") }
 
-        $Script:DefaultAppSettings.Architecture             = ($selectedArches -join ",")
-        $Script:DefaultAppSettings.InstallContext            = [string]$cmbContext.SelectedItem
-        $Script:DefaultAppSettings.MinOSKey                  = $minOsMap[[string]$cmbMinOS.SelectedItem]
-        $Script:DefaultAppSettings.MinDiskSpaceMB            = [int]$txtDiskSpace.Text.Trim()
-        $Script:DefaultAppSettings.MinMemoryMB               = [int]$txtMemory.Text.Trim()
-        $Script:DefaultAppSettings.MinProcessors             = [int]$txtProcessors.Text.Trim()
-        $Script:DefaultAppSettings.MinCpuSpeedMHz            = [int]$txtCpuSpeed.Text.Trim()
-        $Script:DefaultAppSettings.InstallTimeMinutes        = [int]$txtInstallTime.Text.Trim()
-        $Script:DefaultAppSettings.DeviceRestartBehavior     = $restartBehaviorMap[[string]$cmbRestartBehavior.SelectedItem]
-        $Script:DefaultAppSettings.AllowAvailableUninstall   = $chkAllowUninstall.Checked
-        $Script:DefaultAppSettings.ReturnCodes               = $returnCodesConfig.ToArray()
-        $Script:DefaultAppSettings.DefaultDependencyAppNames = @($clbDefaultDeps.CheckedItems | ForEach-Object { [string]$_ })
+        $Global:App.DefaultAppSettings.Architecture             = ($selectedArches -join ",")
+        $Global:App.DefaultAppSettings.InstallContext            = [string]$cmbContext.SelectedItem
+        $Global:App.DefaultAppSettings.MinOSKey                  = $minOsMap[[string]$cmbMinOS.SelectedItem]
+        $Global:App.DefaultAppSettings.MinDiskSpaceMB            = [int]$txtDiskSpace.Text.Trim()
+        $Global:App.DefaultAppSettings.MinMemoryMB               = [int]$txtMemory.Text.Trim()
+        $Global:App.DefaultAppSettings.MinProcessors             = [int]$txtProcessors.Text.Trim()
+        $Global:App.DefaultAppSettings.MinCpuSpeedMHz            = [int]$txtCpuSpeed.Text.Trim()
+        $Global:App.DefaultAppSettings.InstallTimeMinutes        = [int]$txtInstallTime.Text.Trim()
+        $Global:App.DefaultAppSettings.DeviceRestartBehavior     = $restartBehaviorMap[[string]$cmbRestartBehavior.SelectedItem]
+        $Global:App.DefaultAppSettings.AllowAvailableUninstall   = $chkAllowUninstall.Checked
+        $Global:App.DefaultAppSettings.ReturnCodes               = $returnCodesConfig.ToArray()
+        $Global:App.DefaultAppSettings.DefaultDependencyAppNames = @($clbDefaultDeps.CheckedItems | ForEach-Object { [string]$_ })
 
         if (-not (Write-SettingsFile)) { return }
         [System.Windows.Forms.MessageBox]::Show("Default values saved. Only affects NEW comparisons/deploys from here on - no existing app's saved metadata was touched.", "Saved", "OK", "Information") | Out-Null
@@ -367,5 +367,5 @@ function Global:Show-DefaultAppSettingsDialog {
     $dlg.CancelButton = $btnCancel
     $dlg.AcceptButton = $btnSave
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 }

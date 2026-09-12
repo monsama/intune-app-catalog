@@ -2,7 +2,7 @@ function Global:Show-DiagnosticsDialog {
     # Plain local aliases - see note in Start-IntuneAppLookup. $certThumbRef
     # specifically fixes a real, confirmed-live bug: $btnRun.Add_Click below
     # is itself a .GetNewClosure()'d scriptblock, and reading
-    # $Script:GraphCertificateThumbprint DIRECTLY from inside it (as this
+    # $Global:App.GraphCertificateThumbprint DIRECTLY from inside it (as this
     # used to) returned a stale/blank value even though the real, current
     # thumbprint was genuinely set - while Test-GraphCredentialsConfigured,
     # a real FUNCTION called from that same closure, correctly saw the live
@@ -14,8 +14,8 @@ function Global:Show-DiagnosticsDialog {
     # Test-GraphCredentialsConfigured() correctly returning true while a
     # direct $Script: read of the same variable, from the same closure, at
     # the same instant, read back empty.
-    $appsRef = $Script:Apps
-    $certThumbRef = $Script:GraphCertificateThumbprint
+    $appsRef = $Global:App.Apps
+    $certThumbRef = $Global:App.GraphCertificateThumbprint
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Diagnostics"
@@ -134,7 +134,7 @@ function Global:Show-DiagnosticsDialog {
         # never got cleaned up. Not necessarily a problem (Resolve-AppPackagePath
         # only ever looks for folders it DOES expect), just worth surfacing since
         # it's otherwise invisible from inside the app.
-        $uncommonRootPath = Join-Path $Script:RootPath "app-packages"
+        $uncommonRootPath = Join-Path $Global:App.RootPath "app-packages"
         $expectedSafeNames = @($appsRef | Where-Object { Test-AppIsUncommon -App $_ } | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
         $orphanFolders = @()
         if (Test-Path $uncommonRootPath) {
@@ -227,7 +227,7 @@ function Global:Show-DiagnosticsDialog {
 
                     # Show-CreateInIntuneDialog now reads/writes
                     # minimumSupportedWindowsRelease (see the note next to
-                    # $Script:EmbeddedCreateAppScript's own $patchBody
+                    # $Global:App.EmbeddedCreateAppScript's own $patchBody
                     # assignment for why) - a value here that doesn't parse
                     # to one of $knownMinOsValues is a genuine finding: the
                     # dropdown has no matching option for it (most likely a
@@ -315,5 +315,5 @@ function Global:Show-DiagnosticsDialog {
     $dlg.Add_Shown({ $btnRun.PerformClick() }.GetNewClosure())
 
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 }

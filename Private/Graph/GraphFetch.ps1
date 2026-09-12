@@ -144,20 +144,20 @@ function Global:Start-IntuneAppLookup {
         return
     }
 
-    if (-not $btnLookupIds.Enabled) {
+    if (-not $Global:App.BtnLookupIds.Enabled) {
         Write-Log "A lookup is already running - please wait for it to finish.`r`n" ([System.Drawing.Color]::Orange)
         return
     }
 
-    $btnLookupIds.Enabled = $false
+    $Global:App.BtnLookupIds.Enabled = $false
     Write-Log "=== Looking up app IDs from Intune (Microsoft Graph, app-only via certificate) ===`r`n" ([System.Drawing.Color]::DeepSkyBlue)
-    $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+    $Global:App.Form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
     # Plain (non-$Script:) local alias - closures reliably capture plain variables via
     # GetNewClosure(), but do NOT reliably see live $Script: state from inside the closure.
-    # $Script:IntuneAppsCache is an ArrayList (reference type) so mutating it through this
-    # alias is visible everywhere else that reads $Script:IntuneAppsCache normally.
-    $cache = $Script:IntuneAppsCache
+    # $Global:App.IntuneAppsCache is an ArrayList (reference type) so mutating it through this
+    # alias is visible everywhere else that reads $Global:App.IntuneAppsCache normally.
+    $cache = $Global:App.IntuneAppsCache
 
     $rs = [runspacefactory]::CreateRunspace()
     $rs.Open()
@@ -190,7 +190,7 @@ function Global:Start-IntuneAppLookup {
             ClientId = $ctx.ClientId
             TenantId = $ctx.TenantId
         }
-    }).AddArgument($Script:GraphTenantId).AddArgument($Script:GraphClientId).AddArgument($Script:GraphCertificateThumbprint)
+    }).AddArgument($Global:App.GraphTenantId).AddArgument($Global:App.GraphClientId).AddArgument($Global:App.GraphCertificateThumbprint)
 
     $handle = $ps.BeginInvoke()
     $timer = New-Object System.Windows.Forms.Timer
@@ -199,9 +199,9 @@ function Global:Start-IntuneAppLookup {
         if (-not $handle.IsCompleted) { return }
         $timer.Stop()
         $timer.Dispose()
-        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        $Global:App.Form.Cursor = [System.Windows.Forms.Cursors]::Default
         [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
-        $btnLookupIds.Enabled = $true
+        $Global:App.BtnLookupIds.Enabled = $true
 
         try {
             $raw = @($ps.EndInvoke($handle))
@@ -299,7 +299,7 @@ function Global:Start-Win32AppMinOsFetch {
         } while ($uri)
 
         $apps.ToArray()
-    }).AddArgument($Script:GraphTenantId).AddArgument($Script:GraphClientId).AddArgument($Script:GraphCertificateThumbprint)
+    }).AddArgument($Global:App.GraphTenantId).AddArgument($Global:App.GraphClientId).AddArgument($Global:App.GraphCertificateThumbprint)
 
     $handle = $ps.BeginInvoke()
     $timer = New-Object System.Windows.Forms.Timer
@@ -347,10 +347,10 @@ function Global:Start-EntraDirectoryLookup {
     }
 
     Write-Log "=== Looking up groups and users from Entra ID (Microsoft Graph, app-only via certificate) ===`r`n" ([System.Drawing.Color]::DeepSkyBlue)
-    $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+    $Global:App.Form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
     # Plain local alias - see note in Start-IntuneAppLookup.
-    $cache = $Script:EntraDirectoryCache
+    $cache = $Global:App.EntraDirectoryCache
 
     $rs = [runspacefactory]::CreateRunspace()
     $rs.Open()
@@ -390,7 +390,7 @@ function Global:Start-EntraDirectoryLookup {
             Entries  = $entries.ToArray()
             AppName  = $ctx.AppName
         }
-    }).AddArgument($Script:GraphTenantId).AddArgument($Script:GraphClientId).AddArgument($Script:GraphCertificateThumbprint)
+    }).AddArgument($Global:App.GraphTenantId).AddArgument($Global:App.GraphClientId).AddArgument($Global:App.GraphCertificateThumbprint)
 
     $handle = $ps.BeginInvoke()
     $timer = New-Object System.Windows.Forms.Timer
@@ -399,7 +399,7 @@ function Global:Start-EntraDirectoryLookup {
         if (-not $handle.IsCompleted) { return }
         $timer.Stop()
         $timer.Dispose()
-        $form.Cursor = [System.Windows.Forms.Cursors]::Default
+        $Global:App.Form.Cursor = [System.Windows.Forms.Cursors]::Default
         [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
 
         try {
@@ -450,13 +450,13 @@ function Global:Find-IntuneMatches {
 
     $normalizedName = ($Name.Trim() -replace '\s+', ' ')
 
-    foreach ($candidate in $Script:IntuneAppsCache) {
+    foreach ($candidate in $Global:App.IntuneAppsCache) {
         $normDisplay = ($candidate.displayName.Trim() -replace '\s+', ' ')
         if ($normDisplay -eq $normalizedName) {
             $results.Add($candidate)
         }
     }
-    foreach ($candidate in $Script:IntuneAppsCache) {
+    foreach ($candidate in $Global:App.IntuneAppsCache) {
         $normDisplay = ($candidate.displayName.Trim() -replace '\s+', ' ')
         if ($normDisplay -ne $normalizedName -and (
             $normDisplay -like "*$normalizedName*" -or $normalizedName -like "*$normDisplay*"
@@ -687,7 +687,7 @@ function Global:Start-AppMetadataFetch {
             AvailableGroupNames     = $availableGroupNames
             UninstallGroupNames     = $uninstallGroupNames
         }
-    }).AddArgument($Script:GraphTenantId).AddArgument($Script:GraphClientId).AddArgument($Script:GraphCertificateThumbprint).AddArgument($AppId)
+    }).AddArgument($Global:App.GraphTenantId).AddArgument($Global:App.GraphClientId).AddArgument($Global:App.GraphCertificateThumbprint).AddArgument($AppId)
 
     $handle = $ps.BeginInvoke()
     $timer = New-Object System.Windows.Forms.Timer
@@ -754,21 +754,21 @@ function Global:Start-AppMetadataFetch {
 }
 
 function Global:Start-TypeVersionBackfill {
-    if ($Script:TypeVersionBackfillDone) { return }
+    if ($Global:App.TypeVersionBackfillDone) { return }
     if (-not (Test-GraphCredentialsConfigured)) { return }
 
-    $needsBackfill = @($Script:Apps | Where-Object { $_.appId -and -not $_.intuneAppType })
+    $needsBackfill = @($Global:App.Apps | Where-Object { $_.appId -and -not $_.intuneAppType })
     if ($needsBackfill.Count -eq 0) {
-        $Script:TypeVersionBackfillDone = $true
+        $Global:App.TypeVersionBackfillDone = $true
         return
     }
 
-    $Script:TypeVersionBackfillDone = $true
+    $Global:App.TypeVersionBackfillDone = $true
     Write-Log "Backfilling Type/Version for $($needsBackfill.Count) app(s) never synced before...`r`n" ([System.Drawing.Color]::Gainsboro)
 
-    $appsRef = $Script:Apps
-    $linkedFilePathRef = $Script:LinkedFilePath
-    $unsavedBoxRef = $Script:UnsavedChangesBox
+    $appsRef = $Global:App.Apps
+    $linkedFilePathRef = $Global:App.LinkedFilePath
+    $unsavedBoxRef = $Global:App.UnsavedChangesBox
 
     $RunBackfillQueueBox = @{ Value = $null }
     $RunBackfillQueueBox.Value = {
@@ -869,7 +869,7 @@ function Global:Start-GroupMembersFetch {
         } while ($uri)
 
         [pscustomobject]@{ Found = $true; GroupId = $groupId; Description = $description; Members = $members.ToArray() }
-    }).AddArgument($Script:GraphTenantId).AddArgument($Script:GraphClientId).AddArgument($Script:GraphCertificateThumbprint).AddArgument($GroupName)
+    }).AddArgument($Global:App.GraphTenantId).AddArgument($Global:App.GraphClientId).AddArgument($Global:App.GraphCertificateThumbprint).AddArgument($GroupName)
 
     $handle = $ps.BeginInvoke()
     $timer = New-Object System.Windows.Forms.Timer

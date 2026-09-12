@@ -1,13 +1,13 @@
 function Global:Show-GroupManagerDialog {
     # Plain local aliases - see note in Start-IntuneAppLookup.
-    $tenantId       = $Script:GraphTenantId
-    $clientId       = $Script:GraphClientId
-    $certThumb      = $Script:GraphCertificateThumbprint
-    $gmScript       = $Script:EmbeddedGroupManagerScript
-    $cacheRef       = $Script:EntraDirectoryCache
-    $appsRef        = $Script:Apps
-    $linkedFilePath = $Script:LinkedFilePath
-    $unsavedBoxRef  = $Script:UnsavedChangesBox
+    $tenantId       = $Global:App.GraphTenantId
+    $clientId       = $Global:App.GraphClientId
+    $certThumb      = $Global:App.GraphCertificateThumbprint
+    $gmScript       = $Global:App.EmbeddedGroupManagerScript
+    $cacheRef       = $Global:App.EntraDirectoryCache
+    $appsRef        = $Global:App.Apps
+    $linkedFilePath = $Global:App.LinkedFilePath
+    $unsavedBoxRef  = $Global:App.UnsavedChangesBox
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Group manager"
@@ -700,5 +700,5 @@ function Global:Show-GroupManagerDialog {
     $dlg.CancelButton = $btnClose
 
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 }

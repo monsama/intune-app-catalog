@@ -1,19 +1,19 @@
 function Global:Write-Log {
     param([string]$Text, [System.Drawing.Color]$Color = [System.Drawing.Color]::Gainsboro)
-    if ($logBox.InvokeRequired) {
-        $logBox.Invoke([Action]{ Write-Log -Text $Text -Color $Color })
+    if ($Global:App.LogBox.InvokeRequired) {
+        $Global:App.LogBox.Invoke([Action]{ Write-Log -Text $Text -Color $Color })
         return
     }
-    $logBox.SelectionStart = $logBox.TextLength
-    $logBox.SelectionLength = 0
-    $logBox.SelectionColor = $Color
-    $logBox.AppendText($Text)
-    $logBox.ScrollToCaret()
+    $Global:App.LogBox.SelectionStart = $Global:App.LogBox.TextLength
+    $Global:App.LogBox.SelectionLength = 0
+    $Global:App.LogBox.SelectionColor = $Color
+    $Global:App.LogBox.AppendText($Text)
+    $Global:App.LogBox.ScrollToCaret()
 
-    if ($Script:LogFileWriter) {
+    if ($Global:App.LogFileWriter) {
         try {
             $stamp = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-            $Script:LogFileWriter.Write("[$stamp] $Text")
+            $Global:App.LogFileWriter.Write("[$stamp] $Text")
         }
         catch { }
     }
@@ -21,14 +21,14 @@ function Global:Write-Log {
 
 function Global:Set-PipelineButtonsEnabled {
     param([bool]$Enabled)
-    $btnRunLaunch.Enabled = $Enabled
-    $progress.Visible = -not $Enabled
+    $Global:App.BtnRunLaunch.Enabled = $Enabled
+    $Global:App.Progress.Visible = -not $Enabled
 }
 
 function Global:Ensure-Folders {
     $folders = @("app-packages","app-data","logs","backups")
     foreach ($f in $folders) {
-        $p = Join-Path $Script:RootPath $f
+        $p = Join-Path $Global:App.RootPath $f
         if (-not (Test-Path $p)) {
             New-Item -ItemType Directory -Path $p -Force | Out-Null
             Write-Log "[+] Created folder: $f`r`n" ([System.Drawing.Color]::LightGreen)
@@ -40,10 +40,10 @@ function Global:Ensure-Folders {
     # window closes. Worth having given this tool performs real
     # destructive, audit-relevant actions (deleting apps, changing group
     # membership, granting certificate trust).
-    if (-not $Script:LogFileWriter) {
+    if (-not $Global:App.LogFileWriter) {
         try {
-            $logPath = Join-Path (Join-Path $Script:RootPath "logs") ("intune-deployment-" + (Get-Date -Format "yyyy-MM-dd") + ".log")
-            $Script:LogFileWriter = New-Object System.IO.StreamWriter($logPath, $true, [System.Text.Encoding]::UTF8)
+            $logPath = Join-Path (Join-Path $Global:App.RootPath "logs") ("intune-deployment-" + (Get-Date -Format "yyyy-MM-dd") + ".log")
+            $Global:App.LogFileWriter = New-Object System.IO.StreamWriter($logPath, $true, [System.Text.Encoding]::UTF8)
             # Flushed periodically (below) rather than on every single
             # Write-Log call - AutoFlush forces a synchronous disk write on
             # every call, which runs on the UI thread and could cause
@@ -52,30 +52,30 @@ function Global:Ensure-Folders {
             # 2-second periodic flush keeps worst-case data loss on a
             # crash small (a couple of seconds of log lines) without
             # paying that cost on every single line.
-            $Script:LogFileWriter.AutoFlush = $false
+            $Global:App.LogFileWriter.AutoFlush = $false
 
             # Plain local alias, referenced by the timer handler instead of
-            # $Script:LogFileWriter directly - even code inside a function
+            # $Global:App.LogFileWriter directly - even code inside a function
             # (not just nested dialog closures) doesn't reliably see
             # $Script:-qualified variables from within an event handler
             # scriptblock; see the note in Start-IntuneAppLookup. Safe to
             # alias once here since Ensure-Folders only ever opens this
             # writer once per app session (guarded by the outer "if (-not
-            # $Script:LogFileWriter)" check above), so this reference never
+            # $Global:App.LogFileWriter)" check above), so this reference never
             # goes stale during the run.
-            $logWriterRef = $Script:LogFileWriter
+            $logWriterRef = $Global:App.LogFileWriter
 
-            $Script:LogFlushTimer = New-Object System.Windows.Forms.Timer
-            $Script:LogFlushTimer.Interval = 2000
-            $Script:LogFlushTimer.Add_Tick({
+            $Global:App.LogFlushTimer = New-Object System.Windows.Forms.Timer
+            $Global:App.LogFlushTimer.Interval = 2000
+            $Global:App.LogFlushTimer.Add_Tick({
                 try { $logWriterRef.Flush() } catch { }
             }.GetNewClosure())
-            $Script:LogFlushTimer.Start()
+            $Global:App.LogFlushTimer.Start()
         }
         catch {
             # A file-logging failure shouldn't take down the app itself -
             # the in-app Log tab still works fine either way.
-            $Script:LogFileWriter = $null
+            $Global:App.LogFileWriter = $null
         }
     }
 }
@@ -106,10 +106,10 @@ function Global:Start-PipelineProcess {
         [switch]$ShowConsoleWindow
     )
 
-    # The temp file has to live inside $Script:RootPath (not $env:TEMP), because
+    # The temp file has to live inside $Global:App.RootPath (not $env:TEMP), because
     # both embedded scripts use $PSScriptRoot internally to find input.json /
-    # IntuneWinAppUtil.exe - see the note above $Script:EmbeddedPackageScript.
-    $tempScriptPath = Join-Path $Script:RootPath $TempScriptName
+    # IntuneWinAppUtil.exe - see the note above $Global:App.EmbeddedPackageScript.
+    $tempScriptPath = Join-Path $Global:App.RootPath $TempScriptName
     try {
         # No BOM, matching how the catalog file itself is written.
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -175,7 +175,7 @@ function Global:Start-PipelineProcess {
     # Without this, the child process inherits whatever folder the GUI itself happened
     # to be launched from - breaking relative paths inside the target script (e.g.
     # the embedded package script's default ".\IntuneWinAppUtil.exe").
-    $psi.WorkingDirectory = $Script:RootPath
+    $psi.WorkingDirectory = $Global:App.RootPath
 
     Set-PipelineButtonsEnabled $false
 
@@ -260,7 +260,7 @@ function Global:Invoke-LaunchStep {
         [System.Windows.Forms.RichTextBox]$ExtraLogTarget = $null
     )
     Ensure-Folders
-    $rootPath = $Script:RootPath   # plain local alias - see note in Start-IntuneAppLookup
+    $rootPath = $Global:App.RootPath   # plain local alias - see note in Start-IntuneAppLookup
     if ($SingleFolderName) {
         Write-Log "=== Package single app: $SingleFolderName ===`r`n" ([System.Drawing.Color]::DeepSkyBlue)
     }
@@ -290,5 +290,5 @@ function Global:Invoke-LaunchStep {
         $safeFolderNames = @($FolderNames | ForEach-Object { $_ -replace "'", "''" })
         $argStr += " -FolderNames '$($safeFolderNames -join ',')'"
     }
-    Start-PipelineProcess -ScriptContent $Script:EmbeddedPackageScript -TempScriptName ".intunepkg_embedded_launch.ps1" -ArgumentString $argStr -OnComplete $OnComplete -ExtraLogTarget $ExtraLogTarget
+    Start-PipelineProcess -ScriptContent $Global:App.EmbeddedPackageScript -TempScriptName ".intunepkg_embedded_launch.ps1" -ArgumentString $argStr -OnComplete $OnComplete -ExtraLogTarget $ExtraLogTarget
 }

@@ -2,7 +2,7 @@ function Global:Show-CertificateSetupDialog {
     # Plain local aliases - see note in Start-IntuneAppLookup. Even a single
     # level of GetNewClosure() (like $btnUpload.Add_Click below) does not
     # reliably see $Script:-qualified variables directly, only plain ones.
-    $certUploadScript = $Script:EmbeddedCertUploadScript
+    $certUploadScript = $Global:App.EmbeddedCertUploadScript
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Settings - Microsoft Graph Connection"
@@ -37,7 +37,7 @@ function Global:Show-CertificateSetupDialog {
     $txtTenant = New-Object System.Windows.Forms.TextBox
     $txtTenant.Location = New-Object System.Drawing.Point(15,$y)
     $txtTenant.Size = New-Object System.Drawing.Size(900,24)
-    $txtTenant.Text = $Script:GraphTenantId
+    $txtTenant.Text = $Global:App.GraphTenantId
     $dlg.Controls.Add($txtTenant)
     $y += 34
 
@@ -51,7 +51,7 @@ function Global:Show-CertificateSetupDialog {
     $txtClient = New-Object System.Windows.Forms.TextBox
     $txtClient.Location = New-Object System.Drawing.Point(15,$y)
     $txtClient.Size = New-Object System.Drawing.Size(900,24)
-    $txtClient.Text = $Script:GraphClientId
+    $txtClient.Text = $Global:App.GraphClientId
     $dlg.Controls.Add($txtClient)
     $y += 34
 
@@ -65,7 +65,7 @@ function Global:Show-CertificateSetupDialog {
     $txtThumb = New-Object System.Windows.Forms.TextBox
     $txtThumb.Location = New-Object System.Drawing.Point(15,$y)
     $txtThumb.Size = New-Object System.Drawing.Size(900,24)
-    $txtThumb.Text = $Script:GraphCertificateThumbprint
+    $txtThumb.Text = $Global:App.GraphCertificateThumbprint
     $dlg.Controls.Add($txtThumb)
     $y += 30
 
@@ -676,7 +676,7 @@ function Global:Show-CertificateSetupDialog {
     # Plain local box (not $Script:-qualified) - the btnSave handler below is a
     # closure and cannot reliably write $Script:-qualified variables (see the
     # note in Start-IntuneAppLookup). It records what to save here instead; the
-    # actual $Script:GraphTenantId/etc mutation happens after ShowDialog
+    # actual $Global:App.GraphTenantId/etc mutation happens after ShowDialog
     # returns, in this function's own plain (non-closure) body.
     $saveResultBox = @{ Saved = $false; TenantId = $null; ClientId = $null; Thumbprint = $null }
 
@@ -697,14 +697,14 @@ function Global:Show-CertificateSetupDialog {
     $dlg.CancelButton = $btnCancel
     $dlg.AcceptButton = $btnSave
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 
     if ($saveResultBox.Saved) {
         if (Save-GraphSettings -TenantId $saveResultBox.TenantId -ClientId $saveResultBox.ClientId -CertificateThumbprint $saveResultBox.Thumbprint) {
-            $Script:GraphTenantId = $saveResultBox.TenantId
-            $Script:GraphClientId = $saveResultBox.ClientId
-            $Script:GraphCertificateThumbprint = $saveResultBox.Thumbprint
-            $Script:IntuneAppsCache.Clear()   # old cache may have been fetched under a different identity
+            $Global:App.GraphTenantId = $saveResultBox.TenantId
+            $Global:App.GraphClientId = $saveResultBox.ClientId
+            $Global:App.GraphCertificateThumbprint = $saveResultBox.Thumbprint
+            $Global:App.IntuneAppsCache.Clear()   # old cache may have been fetched under a different identity
             Write-Log "[OK] Settings saved. Client: $($saveResultBox.ClientId), Tenant: $($saveResultBox.TenantId).`r`n" ([System.Drawing.Color]::LightGreen)
             [System.Windows.Forms.MessageBox]::Show("Saved.", "Saved", "OK", "Information") | Out-Null
         }

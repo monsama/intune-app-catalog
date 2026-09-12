@@ -2,7 +2,7 @@ function Global:Show-FavoriteGroupsManager {
     # Plain local alias - see note in Start-IntuneAppLookup. Needed here
     # specifically because $btnSave's own closure below mutates this
     # (Clear/Add), not just reads it.
-    $favoriteGroupsRef = $Script:FavoriteGroups
+    $favoriteGroupsRef = $Global:App.FavoriteGroups
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Favorite groups"
@@ -88,5 +88,5 @@ function Global:Show-FavoriteGroupsManager {
     $dlg.CancelButton = $btnCancel
     $dlg.AcceptButton = $btnSave
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 }

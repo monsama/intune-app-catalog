@@ -1,6 +1,6 @@
 function Global:Show-DependencyOverviewDialog {
     # Plain local alias - see note in Start-IntuneAppLookup.
-    $appsRef = $Script:Apps
+    $appsRef = $Global:App.Apps
 
     if ($appsRef.Count -eq 0) {
         [System.Windows.Forms.MessageBox]::Show("The catalog is empty - nothing to show.", "Nothing to do", "OK", "Information") | Out-Null
@@ -123,5 +123,5 @@ function Global:Show-DependencyOverviewDialog {
     $dlg.AcceptButton = $btnClose
 
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 }

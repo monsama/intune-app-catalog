@@ -101,8 +101,8 @@ function Global:Load-AppsFromFile {
 
     # Every (re)load is a fresh catalog as far as the Type/Version
     # backfill is concerned - see Start-TypeVersionBackfill and
-    # $Script:TypeVersionBackfillDone.
-    $Script:TypeVersionBackfillDone = $false
+    # $Global:App.TypeVersionBackfillDone.
+    $Global:App.TypeVersionBackfillDone = $false
 
     # One-time automatic migration: if the new per-app folder doesn't exist
     # or is empty, but the OLD single-file input.json does, split it into
@@ -111,7 +111,7 @@ function Global:Load-AppsFromFile {
     # until the new format has actually proven itself in practice.
     $hasFolderData = (Test-Path $Path) -and (@(Get-ChildItem -Path $Path -Filter "*.json" -ErrorAction SilentlyContinue).Count -gt 0)
     if (-not $hasFolderData) {
-        $oldSingleFilePath = Join-Path $Script:RootPath "input.json"
+        $oldSingleFilePath = Join-Path $Global:App.RootPath "input.json"
         if (Test-Path $oldSingleFilePath) {
             try {
                 # -Encoding UTF8 explicitly - same reasoning as the per-app
@@ -147,13 +147,13 @@ function Global:Load-AppsFromFile {
         [System.Windows.Forms.MessageBox]::Show(
             "No app data found at:`n$Path`n`nStarting with an empty catalog. Use Save to create it.",
             "No data found", "OK", "Warning") | Out-Null
-        $Script:Apps.Clear()
+        $Global:App.Apps.Clear()
         return
     }
 
     try {
         $files = @(Get-ChildItem -Path $Path -Filter "*.json" -ErrorAction SilentlyContinue)
-        $Script:Apps.Clear()
+        $Global:App.Apps.Clear()
         # One bad file no longer takes down the whole catalog load - each
         # app's file is now completely independent of every other one,
         # unlike the old single-array format where a single syntax error
@@ -198,16 +198,16 @@ function Global:Load-AppsFromFile {
                     $raw = $repairedText | ConvertFrom-Json
                     [System.IO.File]::WriteAllText($file.FullName, $repairedText, (New-Object System.Text.UTF8Encoding($false)))
                 }
-                [void]$Script:Apps.Add((ConvertTo-AppRecord $raw))
+                [void]$Global:App.Apps.Add((ConvertTo-AppRecord $raw))
             }
             catch {
                 $failedFiles.Add($file.Name)
             }
         }
-        $Script:UnsavedChangesBox.Value = $false
+        $Global:App.UnsavedChangesBox.Value = $false
         if ($failedFiles.Count -gt 0) {
             [System.Windows.Forms.MessageBox]::Show(
-                "Loaded $($Script:Apps.Count) app(s) successfully, but these file(s) could not be parsed and were skipped:`n$($failedFiles -join "`n")",
+                "Loaded $($Global:App.Apps.Count) app(s) successfully, but these file(s) could not be parsed and were skipped:`n$($failedFiles -join "`n")",
                 "Some files failed to load", "OK", "Warning") | Out-Null
         }
     }
@@ -453,7 +453,7 @@ function Global:ConvertTo-CreateAppConfigJson {
 function Global:Save-AppsToFile {
     param([string]$Path)
 
-    $dupIds = $Script:Apps | Where-Object { $_.appId } | Group-Object appId | Where-Object { $_.Count -gt 1 }
+    $dupIds = $Global:App.Apps | Where-Object { $_.appId } | Group-Object appId | Where-Object { $_.Count -gt 1 }
     if ($dupIds) {
         $names = ($dupIds | ForEach-Object { $_.Name }) -join ", "
         $r = [System.Windows.Forms.MessageBox]::Show(
@@ -467,7 +467,7 @@ function Global:Save-AppsToFile {
     # matches by name (Group Manager, App ID lookup, the drift check), and
     # would also collide on the derived package folder name for uncommon
     # apps, since that's computed directly from the name.
-    $dupNames = $Script:Apps | Where-Object { $_.appName } | Group-Object { ($_.appName.Trim() -replace '\s+', ' ').ToLowerInvariant() } | Where-Object { $_.Count -gt 1 }
+    $dupNames = $Global:App.Apps | Where-Object { $_.appName } | Group-Object { ($_.appName.Trim() -replace '\s+', ' ').ToLowerInvariant() } | Where-Object { $_.Count -gt 1 }
     if ($dupNames) {
         $names = ($dupNames | ForEach-Object { $_.Group[0].appName }) -join ", "
         $r2 = [System.Windows.Forms.MessageBox]::Show(
@@ -483,7 +483,7 @@ function Global:Save-AppsToFile {
     # become "MyApp-Test") - with one file per app now, that's not a
     # display inconsistency, it's one app's file silently overwriting the
     # other's on disk.
-    $dupFileNames = $Script:Apps | Where-Object { $_.appName } | Group-Object { Get-SafeFileNameForApp -Name $_.appName } | Where-Object { $_.Count -gt 1 }
+    $dupFileNames = $Global:App.Apps | Where-Object { $_.appName } | Group-Object { Get-SafeFileNameForApp -Name $_.appName } | Where-Object { $_.Count -gt 1 }
     if ($dupFileNames) {
         $collisionText = ($dupFileNames | ForEach-Object { "`"" + (($_.Group | ForEach-Object { $_.appName }) -join "`" and `"") + "`" both -> $($_.Name).json" }) -join "`n"
         [System.Windows.Forms.MessageBox]::Show(
@@ -498,7 +498,7 @@ function Global:Save-AppsToFile {
     # would otherwise delete every one of them as "no longer in the
     # catalog" (see the orphan cleanup below). That's not a save, it's
     # silently wiping out an entire existing catalog.
-    if ($Script:Apps.Count -eq 0 -and (Test-Path $Path)) {
+    if ($Global:App.Apps.Count -eq 0 -and (Test-Path $Path)) {
         $existingCount = @(Get-ChildItem -Path $Path -Filter "*.json" -ErrorAction SilentlyContinue).Count
         if ($existingCount -gt 0) {
             $r3 = [System.Windows.Forms.MessageBox]::Show(
@@ -516,7 +516,7 @@ function Global:Save-AppsToFile {
     # the single-file version did, rather than one backup per app file.
     if (Test-Path $Path) {
         try {
-            $backupDir = Join-Path $Script:RootPath "backups"
+            $backupDir = Join-Path $Global:App.RootPath "backups"
             if (-not (Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
             $backupName = "app-data_" + (Get-Date -Format "yyyy-MM-dd_HHmmss")
             Copy-Item -Path $Path -Destination (Join-Path $backupDir $backupName) -Recurse -Force -ErrorAction Stop
@@ -558,9 +558,9 @@ function Global:Save-AppsToFile {
         # caller assigned it) doesn't show up here, the loss happened
         # somewhere between assignment and this save call - not inside
         # this function at all.
-        $metaCountAtSave = @($Script:Apps | Where-Object { $_.metadata }).Count
-        Write-Log "Save-AppsToFile: $metaCountAtSave of $($Script:Apps.Count) app(s) have metadata set at the start of this save.`r`n"
-        foreach ($app in $Script:Apps) {
+        $metaCountAtSave = @($Global:App.Apps | Where-Object { $_.metadata }).Count
+        Write-Log "Save-AppsToFile: $metaCountAtSave of $($Global:App.Apps.Count) app(s) have metadata set at the start of this save.`r`n"
+        foreach ($app in $Global:App.Apps) {
             $fileName = (Get-SafeFileNameForApp -Name $app.appName) + ".json"
             [void]$currentFileNames.Add($fileName)
             $filePath = Join-Path $Path $fileName
@@ -593,12 +593,12 @@ function Global:Save-AppsToFile {
         # right alongside this warning.
         if ($failedSaveApps.Count -gt 0) {
             [System.Windows.Forms.MessageBox]::Show(
-                "$($Script:Apps.Count - $failedSaveApps.Count) of $($Script:Apps.Count) app(s) saved. These failed and were left unchanged on disk:`n`n$($failedSaveApps -join "`n")",
+                "$($Global:App.Apps.Count - $failedSaveApps.Count) of $($Global:App.Apps.Count) app(s) saved. These failed and were left unchanged on disk:`n`n$($failedSaveApps -join "`n")",
                 "Some apps failed to save", "OK", "Warning") | Out-Null
             return $false
         }
 
-        $Script:UnsavedChangesBox.Value = $false
+        $Global:App.UnsavedChangesBox.Value = $false
         return $true
     }
     catch {
@@ -611,7 +611,7 @@ function Global:Save-AppsToFile {
 
 function Global:Get-AllKnownGroups {
     $set = New-Object System.Collections.Generic.HashSet[string]
-    foreach ($app in $Script:Apps) {
+    foreach ($app in $Global:App.Apps) {
         foreach ($g in @($app.requiredFor))  { [void]$set.Add($g) }
         foreach ($g in @($app.availableFor)) { [void]$set.Add($g) }
         foreach ($g in @($app.uninstallFor)) { [void]$set.Add($g) }
@@ -620,12 +620,12 @@ function Global:Get-AllKnownGroups {
 }
 
 function Global:Load-LastAuditCache {
-    if (-not (Test-Path $Script:LastAuditCachePath)) { return }
+    if (-not (Test-Path $Global:App.LastAuditCachePath)) { return }
     try {
-        $raw = Get-Content -Path $Script:LastAuditCachePath -Raw | ConvertFrom-Json
+        $raw = Get-Content -Path $Global:App.LastAuditCachePath -Raw | ConvertFrom-Json
         foreach ($prop in $raw.PSObject.Properties) {
             $entry = $prop.Value
-            $Script:LastAuditResults[$prop.Name] = [pscustomobject]@{
+            $Global:App.LastAuditResults[$prop.Name] = [pscustomobject]@{
                 Timestamp    = [datetime]$entry.Timestamp
                 Metadata     = $entry.Metadata
                 Groups       = $entry.Groups
@@ -639,7 +639,7 @@ function Global:Load-LastAuditCache {
 
 function Global:Save-LastAuditCache {
     try {
-        $Script:LastAuditResults | ConvertTo-Json -Depth 5 | Set-Content -Path $Script:LastAuditCachePath -Encoding UTF8 -ErrorAction Stop
+        $Global:App.LastAuditResults | ConvertTo-Json -Depth 5 | Set-Content -Path $Global:App.LastAuditCachePath -Encoding UTF8 -ErrorAction Stop
     }
     catch { }
 }
@@ -657,8 +657,8 @@ function Global:Set-LastAuditCacheEntry {
     # over what the other one had just written - a real, confirmed-live bug
     # (every field the second call's caller didn't pass got reset to "",
     # which then counted as a false "issue" in Get-LastAuditSummary below).
-    $existing = if ($Script:LastAuditResults.ContainsKey($AppName)) { $Script:LastAuditResults[$AppName] } else { $null }
-    $Script:LastAuditResults[$AppName] = [pscustomobject]@{
+    $existing = if ($Global:App.LastAuditResults.ContainsKey($AppName)) { $Global:App.LastAuditResults[$AppName] } else { $null }
+    $Global:App.LastAuditResults[$AppName] = [pscustomobject]@{
         Timestamp    = Get-Date
         Metadata     = if ($PSBoundParameters.ContainsKey('Metadata'))     { $Metadata }     elseif ($existing) { $existing.Metadata }     else { $null }
         Groups       = if ($PSBoundParameters.ContainsKey('Groups'))       { $Groups }       elseif ($existing) { $existing.Groups }       else { $null }

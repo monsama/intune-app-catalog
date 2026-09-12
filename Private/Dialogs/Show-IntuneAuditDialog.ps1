@@ -6,12 +6,12 @@ function Global:Show-IntuneAuditDialog {
     param([int[]]$ScopedIndices = @())
 
     # Plain local aliases - see note in Start-IntuneAppLookup.
-    $appsRef     = $Script:Apps
-    $tenantId    = $Script:GraphTenantId
-    $clientId    = $Script:GraphClientId
-    $certThumb   = $Script:GraphCertificateThumbprint
-    $syncScript  = $Script:EmbeddedSyncMetadataScript
-    $batchScript = $Script:EmbeddedBatchAssignScript
+    $appsRef     = $Global:App.Apps
+    $tenantId    = $Global:App.GraphTenantId
+    $clientId    = $Global:App.GraphClientId
+    $certThumb   = $Global:App.GraphCertificateThumbprint
+    $syncScript  = $Global:App.EmbeddedSyncMetadataScript
+    $batchScript = $Global:App.EmbeddedBatchAssignScript
 
     $isScoped = $ScopedIndices.Count -gt 0
     $candidateApps = if ($isScoped) { @($ScopedIndices | ForEach-Object { $appsRef[$_] }) } else { @($appsRef) }
@@ -391,5 +391,5 @@ function Global:Show-IntuneAuditDialog {
     }.GetNewClosure())
 
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 }

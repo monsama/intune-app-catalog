@@ -2,11 +2,11 @@ function Global:Show-BatchAssignDialog {
     param([int[]]$ScopedIndices = @())
 
     # Plain local aliases - see note in Start-IntuneAppLookup.
-    $appsRef      = $Script:Apps
-    $tenantId     = $Script:GraphTenantId
-    $clientId     = $Script:GraphClientId
-    $certThumb    = $Script:GraphCertificateThumbprint
-    $batchScript  = $Script:EmbeddedBatchAssignScript
+    $appsRef      = $Global:App.Apps
+    $tenantId     = $Global:App.GraphTenantId
+    $clientId     = $Global:App.GraphClientId
+    $certThumb    = $Global:App.GraphCertificateThumbprint
+    $batchScript  = $Global:App.EmbeddedBatchAssignScript
 
     # Selected rows (if any, passed in by the caller) scope this to just
     # them; nothing selected checks the whole catalog like before.
@@ -293,7 +293,7 @@ function Global:Show-BatchAssignDialog {
 
     # Shared by both the Add and Remove favorite-group buttons below - both
     # only ever change catalog data (via $candidateApps, whose app objects
-    # are the same live references $Script:Apps holds), then need the SAME
+    # are the same live references $Global:App.Apps holds), then need the SAME
     # re-derive-and-Preview-again refresh: eligibility and the Preview/
     # Apply snapshot are re-derived from $candidateApps and written into
     # the SAME boxes $runBatch already closed over (see the note by
@@ -372,5 +372,5 @@ function Global:Show-BatchAssignDialog {
     }.GetNewClosure())
 
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 }

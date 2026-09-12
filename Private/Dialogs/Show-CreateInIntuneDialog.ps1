@@ -20,14 +20,14 @@ function Global:Show-CreateInIntuneDialog {
     # nested -OnComplete closure inside btnCreate's handler touches must be a
     # freshly-assigned plain variable, not a $Script:-qualified read or a
     # variable this function itself only inherited from an outer closure.
-    $rootPath      = $Script:RootPath
-    $tenantId      = $Script:GraphTenantId
-    $clientId      = $Script:GraphClientId
-    $certThumb     = $Script:GraphCertificateThumbprint
-    $createScript  = $Script:EmbeddedCreateAppScript
-    $appsRef       = $Script:Apps
-    $unsavedBox    = $Script:UnsavedChangesBox
-    $linkedFilePath = $Script:LinkedFilePath
+    $rootPath      = $Global:App.RootPath
+    $tenantId      = $Global:App.GraphTenantId
+    $clientId      = $Global:App.GraphClientId
+    $certThumb     = $Global:App.GraphCertificateThumbprint
+    $createScript  = $Global:App.EmbeddedCreateAppScript
+    $appsRef       = $Global:App.Apps
+    $unsavedBox    = $Global:App.UnsavedChangesBox
+    $linkedFilePath = $Global:App.LinkedFilePath
 
     # Previous/Next targets - same filtered-list computation as
     # Show-AppEditor's own (duplicated rather than shared, same reasoning
@@ -37,7 +37,7 @@ function Global:Show-CreateInIntuneDialog {
     $prevAppIndex = $null
     $nextAppIndex = $null
     if ($CurrentIndex -ge 0) {
-        $navFilter = $txtSearch.Text.Trim().ToLower()
+        $navFilter = $Global:App.TxtSearch.Text.Trim().ToLower()
         $visibleAppIndices = New-Object System.Collections.Generic.List[int]
         for ($vi = 0; $vi -lt $appsRef.Count; $vi++) {
             if ($navFilter) {
@@ -634,7 +634,7 @@ function Global:Show-CreateInIntuneDialog {
     # minimumSupportedOperatingSystem property (whose schema has no
     # Windows 11 values at all, full stop), before this dialog switched
     # to writing the new property - see the note next to
-    # $Script:EmbeddedCreateAppScript's own $patchBody assignment for why.
+    # $Global:App.EmbeddedCreateAppScript's own $patchBody assignment for why.
     $minOsRawValues = @("W10_1607", "W10_1703", "W10_1709", "W10_1803", "W10_1809", "W10_1903", "W10_1909", "W10_2004", "W10_20H2", "W10_21H1", "W10_21H2", "W10_22H2", "W11_21H2", "W11_22H2")
     $minOsMap = [ordered]@{}
     foreach ($rawValue in $minOsRawValues) { $minOsMap[(Get-FriendlyMinOsRelease -RawValue $rawValue)] = $rawValue }
@@ -736,7 +736,7 @@ function Global:Show-CreateInIntuneDialog {
     # a REAL App ID right now, though - that path can't defer resolution
     # the way Batch Deploy can, so it validates and blocks separately,
     # below, rather than silently sending Graph something it can't use.
-    $depCandidates = @($Script:Apps | Where-Object { $_.appName -ne $AppName })
+    $depCandidates = @($Global:App.Apps | Where-Object { $_.appName -ne $AppName })
     $depIdByLabel = @{}
     $depNameByLabel = @{}
     foreach ($d in ($depCandidates | Sort-Object appName)) {
@@ -1421,7 +1421,7 @@ function Global:Show-CreateInIntuneDialog {
     $lblDeployNavPosition.Size = New-Object System.Drawing.Size(170,30)
     $lblDeployNavPosition.ForeColor = [System.Drawing.Color]::DimGray
     if ($CurrentIndex -ge 0) {
-        $navFilterForLabel = $txtSearch.Text.Trim().ToLower()
+        $navFilterForLabel = $Global:App.TxtSearch.Text.Trim().ToLower()
         $visibleCountForLabel = 0
         $visiblePosForLabel = 0
         for ($li = 0; $li -lt $appsRef.Count; $li++) {
@@ -1910,7 +1910,7 @@ function Global:Show-CreateInIntuneDialog {
                                 # with its own unsaved appName/wingetId/group
                                 # fields, and hasn't had its own "Save app to
                                 # catalog" clicked yet. Writing this metadata
-                                # (and $result.appId) straight to $Script:Apps
+                                # (and $result.appId) straight to $Global:App.Apps
                                 # and disk here, unconditionally, used to mean
                                 # a brand-new app got ADDED to the catalog the
                                 # instant Create succeeded - so that editor's
@@ -2658,7 +2658,7 @@ function Global:Show-CreateInIntuneDialog {
                     $chkArchArm64Ref.Checked = $archList -contains "arm64"
                 }
                 # This dialog now reads/writes minimumSupportedWindowsRelease
-                # (see the note next to $Script:EmbeddedCreateAppScript's own
+                # (see the note next to $Global:App.EmbeddedCreateAppScript's own
                 # $patchBody assignment for why) - matched via
                 # Get-ParsedMinOsRelease, not a raw string comparison, since
                 # THREE different spellings of this same property have been
@@ -2872,6 +2872,6 @@ function Global:Show-CreateInIntuneDialog {
 
     $dlg.CancelButton = $btnCancel
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
     return $resultBox
 }

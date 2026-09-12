@@ -1,7 +1,7 @@
 function Global:Show-GroupDriftCheckDialog {
     # Plain local aliases - see note in Start-IntuneAppLookup.
-    $appsRef  = $Script:Apps
-    $cacheRef = $Script:EntraDirectoryCache
+    $appsRef  = $Global:App.Apps
+    $cacheRef = $Global:App.EntraDirectoryCache
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Group name check"
@@ -173,7 +173,7 @@ function Global:Show-GroupDriftCheckDialog {
     # work (and its Cursor = Default reset) had already completed.
     #
     # Always a live fetch, never the reused-cache branch this used to have -
-    # $cacheRef ($Script:EntraDirectoryCache) is shared across the whole
+    # $cacheRef ($Global:App.EntraDirectoryCache) is shared across the whole
     # app, so it can already be non-empty here purely from something
     # unrelated done earlier in the session. This dialog's entire job is
     # telling you what's actually missing in Entra ID right now, so opening
@@ -185,5 +185,5 @@ function Global:Show-GroupDriftCheckDialog {
     }.GetNewClosure())
 
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 }

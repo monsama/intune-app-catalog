@@ -2,13 +2,13 @@ function Global:Show-BatchDeployDialog {
     param([int[]]$ScopedIndices = @())
 
     # Plain local aliases - see note in Start-IntuneAppLookup.
-    $appsRef      = $Script:Apps
-    $tenantId     = $Script:GraphTenantId
-    $clientId     = $Script:GraphClientId
-    $certThumb    = $Script:GraphCertificateThumbprint
-    $createScript = $Script:EmbeddedCreateAppScript
-    $unsavedBox   = $Script:UnsavedChangesBox
-    $linkedFilePath = $Script:LinkedFilePath
+    $appsRef      = $Global:App.Apps
+    $tenantId     = $Global:App.GraphTenantId
+    $clientId     = $Global:App.GraphClientId
+    $certThumb    = $Global:App.GraphCertificateThumbprint
+    $createScript = $Global:App.EmbeddedCreateAppScript
+    $unsavedBox   = $Global:App.UnsavedChangesBox
+    $linkedFilePath = $Global:App.LinkedFilePath
 
     $candidateApps = if ($ScopedIndices.Count -gt 0) { @($ScopedIndices | ForEach-Object { $appsRef[$_] }) } else { @($appsRef) }
     $isScoped = $ScopedIndices.Count -gt 0
@@ -424,5 +424,5 @@ function Global:Show-BatchDeployDialog {
     $dlg.AcceptButton = $btnDeploy
 
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 }

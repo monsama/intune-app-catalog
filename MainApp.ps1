@@ -63,9 +63,27 @@ Add-Type -AssemblyName System.Security   # for the native X509Certificate2UI sto
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 # =====================================================================
+# Shared app state
+# =====================================================================
+# Single explicit container for every piece of state that needs to be
+# reachable from Private\ functions (main-window controls, Graph
+# settings, the in-memory catalog, caches, ...) - replaces what used to
+# be dozens of separate $Script:/$Global: variables scattered across
+# this file. A hashtable rather than a fixed-shape object since new
+# keys get added incrementally below as each piece of UI/state is
+# built, and PowerShell hashtables support the same dot-notation
+# property access ($Global:App.Foo) either way. Declared global (not
+# script-scoped) for the same reason every Private\ function itself is
+# declared "Global:" - a Windows PowerShell 5.1/pwsh 7 difference in
+# how deeply a deferred closure's variable lookup reaches back into an
+# intermediate script scope meant a script-scoped container was not
+# reliably visible from inside every closure/callback; global always is.
+$Global:App = @{}
+
+# =====================================================================
 # Paths & state
 # =====================================================================
-$Script:RootPath        = $PSScriptRoot
+$Global:App.RootPath        = $PSScriptRoot
 # Points at a FOLDER of per-app JSON files now (one file per app, e.g.
 # "app-data/7zip.json"), not a single input.json - kept the same variable
 # name despite the changed meaning to minimize how many of the many
@@ -73,15 +91,15 @@ $Script:RootPath        = $PSScriptRoot
 # genuine risk of a change this size. Load-AppsFromFile automatically
 # migrates an old single-file input.json into this folder the first time
 # it doesn't find the new structure already there.
-$Script:LinkedFilePath  = Join-Path $RootPath "app-data"
-$Script:Apps            = New-Object System.Collections.ArrayList
-$Script:UnsavedChangesBox = @{ Value = $false }   # container (never reassigned) so closures can mutate it safely
-$Script:IntuneAppsCache = New-Object System.Collections.ArrayList   # populated by Start-IntuneAppLookup: array of @{ id; displayName } - mutated in place (Clear+Add), never reassigned, so every closure that references it stays in sync
-$Script:EntraDirectoryCache = New-Object System.Collections.ArrayList   # populated by Start-EntraDirectoryLookup: array of @{ displayName; type ("Group"/"User"); id; upn } - same mutate-in-place pattern as above
+$Global:App.LinkedFilePath  = Join-Path $Global:App.RootPath "app-data"
+$Global:App.Apps            = New-Object System.Collections.ArrayList
+$Global:App.UnsavedChangesBox = @{ Value = $false }   # container (never reassigned) so closures can mutate it safely
+$Global:App.IntuneAppsCache = New-Object System.Collections.ArrayList   # populated by Start-IntuneAppLookup: array of @{ id; displayName } - mutated in place (Clear+Add), never reassigned, so every closure that references it stays in sync
+$Global:App.EntraDirectoryCache = New-Object System.Collections.ArrayList   # populated by Start-EntraDirectoryLookup: array of @{ displayName; type ("Group"/"User"); id; upn } - same mutate-in-place pattern as above
 # Populated whenever any live-vs-Intune check runs for an app - the
 # single-app auto-fetch inside Show-CreateInIntuneDialog, or
 # Show-IntuneAuditDialog's own bulk run - keyed by appName. Persisted to
-# its OWN file ($Script:LastAuditCachePath), deliberately NOT round-tripped
+# its OWN file ($Global:App.LastAuditCachePath), deliberately NOT round-tripped
 # through ConvertTo-AppRecord/ConvertTo-SingleAppJson (both are strict,
 # hand-rolled field whitelists that exist specifically so a Git diff for
 # one app's change only ever touches that one app's file - an audit
@@ -93,11 +111,11 @@ $Script:EntraDirectoryCache = New-Object System.Collections.ArrayList   # popula
 # empty, same as it always was before persistence existed - nothing here
 # is load-bearing for the app to function; the main grid's own
 # "Last Audit" column simply falls back to "Never audited".
-$Script:LastAuditResults = @{}
-$Script:LastAuditCachePath = Join-Path $Script:RootPath "last-audit-cache.json"
-$Script:LogFileWriter = $null   # opened in Ensure-Folders, written to by Write-Log, closed on FormClosing - see both below
-$Script:LogFlushTimer = $null   # periodic flush timer for the above - see Ensure-Folders
-$Script:AppVersion = "1.1"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance rather than by diffing the whole file
+$Global:App.LastAuditResults = @{}
+$Global:App.LastAuditCachePath = Join-Path $Global:App.RootPath "last-audit-cache.json"
+$Global:App.LogFileWriter = $null   # opened in Ensure-Folders, written to by Write-Log, closed on FormClosing - see both below
+$Global:App.LogFlushTimer = $null   # periodic flush timer for the above - see Ensure-Folders
+$Global:App.AppVersion = "1.1"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance rather than by diffing the whole file
 
 # App-only Graph auth (certificate) - must match the values in the Assign step /
 # your Entra ID app registration. Left blank on purpose - no tenant/client
@@ -108,10 +126,10 @@ $Script:AppVersion = "1.1"   # bump when shipping a meaningfully different build
 # (see Load-GraphSettings below). The certificate itself must already be
 # installed in this user's certificate store - Settings can also pick an
 # existing one or generate a new one.
-$Script:GraphTenantId              = ""
-$Script:GraphClientId              = ""
-$Script:GraphCertificateThumbprint = ""
-$Script:SettingsFilePath = Join-Path $Script:RootPath "intune-deployment-settings.json"
+$Global:App.GraphTenantId              = ""
+$Global:App.GraphClientId              = ""
+$Global:App.GraphCertificateThumbprint = ""
+$Global:App.SettingsFilePath = Join-Path $Global:App.RootPath "intune-deployment-settings.json"
 
 # Group names marked as "favorites" - shown as ready-to-tick options in
 # every app's Required/Available/Uninstall lists (new and existing alike),
@@ -119,7 +137,7 @@ $Script:SettingsFilePath = Join-Path $Script:RootPath "intune-deployment-setting
 # the whole catalog. Persisted in the same settings file as Graph
 # credentials, so both need to be written together on every save - see the
 # comment on Write-SettingsFile below for why.
-$Script:FavoriteGroups = New-Object System.Collections.Generic.List[string]
+$Global:App.FavoriteGroups = New-Object System.Collections.Generic.List[string]
 
 # The computed defaults Get-DefaultAppMetadata hands out for a brand-new
 # Winget app (what "Set default values..." and the custom-field
@@ -130,7 +148,7 @@ $Script:FavoriteGroups = New-Object System.Collections.Generic.List[string]
 # values..." and changes something - then persisted in the same settings
 # file as Graph credentials/Favorite groups, for the same
 # write-everything-together reason documented on Write-SettingsFile below.
-$Script:DefaultAppSettings = [pscustomobject]@{
+$Global:App.DefaultAppSettings = [pscustomobject]@{
     Architecture             = "x64"
     InstallContext           = "System"
     # Newest Windows 10 release, not Windows 11 - a sensible default
@@ -163,12 +181,12 @@ $Script:DefaultAppSettings = [pscustomobject]@{
 # on startup and after Reload/Open other folder, not on every grid
 # refresh (typing in the search box refreshes the grid on every
 # keystroke - firing a Graph fetch queue on each one would be absurd).
-$Script:TypeVersionBackfillDone = $false
+$Global:App.TypeVersionBackfillDone = $false
 
 # =====================================================================
 # Styling - single, consistent light palette applied to every control
 # =====================================================================
-$Script:LightPalette = @{
+$Global:App.LightPalette = @{
     FormBack       = [System.Drawing.SystemColors]::Control
     ControlFore    = [System.Drawing.SystemColors]::ControlText
     FieldBack      = [System.Drawing.SystemColors]::Window
@@ -190,7 +208,7 @@ $Script:LightPalette = @{
 # here would fight that.
 
 
-# Overrides $Script:GraphTenantId/ClientId/CertificateThumbprint from
+# Overrides $Global:App.GraphTenantId/ClientId/CertificateThumbprint from
 # intune-deployment-settings.json if that file exists, so choices made in the Settings
 # dialog persist across restarts without editing this script's source.
 
@@ -228,19 +246,19 @@ Load-GraphSettings
 # once at startup relative to this script's own location ($PSScriptRoot),
 # not embedded as a literal here-string in this file anymore. At runtime,
 # Start-PipelineProcess writes whichever one is needed out to a temp .ps1
-# file INSIDE $Script:RootPath (not $env:TEMP), because several of these
+# file INSIDE $Global:App.RootPath (not $env:TEMP), because several of these
 # scripts use $PSScriptRoot internally to find app-data / IntuneWinAppUtil.exe
 # - the temp file has to live in the real deployment folder for that to
 # resolve correctly. It's deleted again as soon as the child process exits,
 # successfully or not.
-$Script:EmbeddedPackageScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\Package.ps1") -Raw -Encoding UTF8
-$Script:EmbeddedCreateAppScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\CreateApp.ps1") -Raw -Encoding UTF8
-$Script:EmbeddedTargetedAssignScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\TargetedAssign.ps1") -Raw -Encoding UTF8
-$Script:EmbeddedBatchAssignScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\BatchAssign.ps1") -Raw -Encoding UTF8
-$Script:EmbeddedDeleteAppScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\DeleteApp.ps1") -Raw -Encoding UTF8
-$Script:EmbeddedGroupManagerScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\GroupManager.ps1") -Raw -Encoding UTF8
-$Script:EmbeddedSyncMetadataScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\SyncMetadata.ps1") -Raw -Encoding UTF8
-$Script:EmbeddedCertUploadScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\CertUpload.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedPackageScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\Package.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedCreateAppScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\CreateApp.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedTargetedAssignScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\TargetedAssign.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedBatchAssignScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\BatchAssign.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedDeleteAppScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\DeleteApp.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedGroupManagerScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\GroupManager.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedSyncMetadataScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\SyncMetadata.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedCertUploadScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\CertUpload.ps1") -Raw -Encoding UTF8
 
 # =====================================================================
 # Data helpers
@@ -327,7 +345,7 @@ $Script:EmbeddedCertUploadScript = Get-Content -Path (Join-Path $PSScriptRoot "E
 # =====================================================================
 # Fetches every app currently registered in Intune (id + displayName) via
 # Microsoft Graph, using the same app-only certificate authentication as
-# every other Graph call in this app (see $Script:GraphTenantId / GraphClientId /
+# every other Graph call in this app (see $Global:App.GraphTenantId / GraphClientId /
 # GraphCertificateThumbprint above) - no interactive sign-in required, but the
 # certificate must be installed in this machine's/user's certificate store.
 # Runs on a background runspace so the GUI doesn't freeze during the call.
@@ -363,7 +381,7 @@ $Script:EmbeddedCertUploadScript = Get-Content -Path (Join-Path $PSScriptRoot "E
 # then partial (contains, either direction) matches.
 
 # Search/browse picker for Entra ID groups and users, backed by
-# $Script:EntraDirectoryCache. Includes a manual-entry fallback (whatever's
+# $Global:App.EntraDirectoryCache. Includes a manual-entry fallback (whatever's
 # typed in the search box is used if nothing in the list is selected) and a
 # Refresh button to (re)run Start-EntraDirectoryLookup without leaving the
 # dialog. Returns the chosen/typed display name, or $null if cancelled.
@@ -377,7 +395,7 @@ $Script:EmbeddedCertUploadScript = Get-Content -Path (Join-Path $PSScriptRoot "E
 # established callers (the catalog's group pickers) that shouldn't be put
 # at risk by changes made for this unrelated use.
 
-# Bulk review dialog: matches every catalog app against $Script:IntuneAppsCache
+# Bulk review dialog: matches every catalog app against $Global:App.IntuneAppsCache
 # by name and lets the user apply App IDs for the rows they check.
 
 # =====================================================================
@@ -405,27 +423,27 @@ $Script:EmbeddedCertUploadScript = Get-Content -Path (Join-Path $PSScriptRoot "E
 # =====================================================================
 # Main window
 # =====================================================================
-$Global:form = New-Object System.Windows.Forms.Form
-$form.Text = "Intune App Catalog & Deployment (v$($Script:AppVersion))"
-$form.Size = New-Object System.Drawing.Size(1080, 720)
-$form.MinimumSize = New-Object System.Drawing.Size(860, 560)
-$form.StartPosition = "CenterScreen"
-$form.WindowState = [System.Windows.Forms.FormWindowState]::Maximized
-$form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$Global:App.Form = New-Object System.Windows.Forms.Form
+$Global:App.Form.Text = "Intune App Catalog & Deployment (v$($Global:App.AppVersion))"
+$Global:App.Form.Size = New-Object System.Drawing.Size(1080, 720)
+$Global:App.Form.MinimumSize = New-Object System.Drawing.Size(860, 560)
+$Global:App.Form.StartPosition = "CenterScreen"
+$Global:App.Form.WindowState = [System.Windows.Forms.FormWindowState]::Maximized
+$Global:App.Form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
 $tabs = New-Object System.Windows.Forms.TabControl
 $tabs.Dock = "Fill"
 $tabCatalog  = New-Object System.Windows.Forms.TabPage "App Catalog"
 $tabPipeline = New-Object System.Windows.Forms.TabPage "Log"
 $tabs.TabPages.AddRange(@($tabCatalog, $tabPipeline))
-$form.Controls.Add($tabs)
+$Global:App.Form.Controls.Add($tabs)
 
 $statusStrip = New-Object System.Windows.Forms.StatusStrip
-$Global:statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
-$statusLabel.Spring = $true
-$statusLabel.TextAlign = "MiddleLeft"
-$statusStrip.Items.Add($statusLabel) | Out-Null
-$form.Controls.Add($statusStrip)
+$Global:App.StatusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
+$Global:App.StatusLabel.Spring = $true
+$Global:App.StatusLabel.TextAlign = "MiddleLeft"
+$statusStrip.Items.Add($Global:App.StatusLabel) | Out-Null
+$Global:App.Form.Controls.Add($statusStrip)
 
 
 # Shared function purely so the theme-toggle logic lives in one place
@@ -474,11 +492,11 @@ $toolbar.Padding = New-Object System.Windows.Forms.Padding(6)
 # label for the same click.
 $btnNew    = New-Object System.Windows.Forms.Button; $btnNew.Text = "+ Add app..."
 $btnEdit   = New-Object System.Windows.Forms.Button; $btnEdit.Text = "Edit..."
-$Global:btnDelete = New-Object System.Windows.Forms.Button; $btnDelete.Text = "Remove from catalog..."
-$Global:btnSave   = New-Object System.Windows.Forms.Button; $btnSave.Text = "Force save catalog"
+$Global:App.BtnDelete = New-Object System.Windows.Forms.Button; $Global:App.BtnDelete.Text = "Remove from catalog..."
+$Global:App.BtnSave   = New-Object System.Windows.Forms.Button; $Global:App.BtnSave.Text = "Force save catalog"
 $btnReload = New-Object System.Windows.Forms.Button; $btnReload.Text = "Reload"
 $btnOpen   = New-Object System.Windows.Forms.Button; $btnOpen.Text = "Open other folder..."
-$Global:btnLookupIds = New-Object System.Windows.Forms.Button; $btnLookupIds.Text = "Look up App IDs..."
+$Global:App.BtnLookupIds = New-Object System.Windows.Forms.Button; $Global:App.BtnLookupIds.Text = "Look up App IDs..."
 $btnCheckIntuneOnly = New-Object System.Windows.Forms.Button; $btnCheckIntuneOnly.Text = "Intune sync check..."
 $btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text = "Push groups to Intune (multiple apps)..."
 $btnSyncMetadata = New-Object System.Windows.Forms.Button; $btnSyncMetadata.Text = "Pull metadata and groups from Intune..."
@@ -489,7 +507,7 @@ $btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.
 $btnDependencies = New-Object System.Windows.Forms.Button; $btnDependencies.Text = "View dependencies..."
 $btnGroupDrift = New-Object System.Windows.Forms.Button; $btnGroupDrift.Text = "Check catalog groups against Entra ID..."
 $btnIntuneAudit = New-Object System.Windows.Forms.Button; $btnIntuneAudit.Text = "Intune Audit..."
-$Global:btnRunLaunch = New-Object System.Windows.Forms.Button; $btnRunLaunch.Text = "Package apps"
+$Global:App.BtnRunLaunch = New-Object System.Windows.Forms.Button; $Global:App.BtnRunLaunch.Text = "Package apps"
 $btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "Settings..."
 $btnDefaultValues = New-Object System.Windows.Forms.Button; $btnDefaultValues.Text = "Edit default values..."
 $btnDiagnostics = New-Object System.Windows.Forms.Button; $btnDiagnostics.Text = "Run diagnostics..."
@@ -505,11 +523,11 @@ $toolbarTips.InitialDelay = 400
 $toolbarTips.ReshowDelay = 200
 $toolbarTips.SetToolTip($btnNew, "Add a new app to the catalog by name - doesn't touch Intune yet.")
 $toolbarTips.SetToolTip($btnEdit, "Edit the selected app's name, winget ID, and group assignments.")
-$toolbarTips.SetToolTip($btnDelete, "Remove the selected app from the catalog. Does not delete it from Intune.")
-$toolbarTips.SetToolTip($btnSave, "Not usually needed - every change already saves itself automatically. Force-saves the whole catalog now anyway, if you ever want to be extra sure.")
+$toolbarTips.SetToolTip($Global:App.BtnDelete, "Remove the selected app from the catalog. Does not delete it from Intune.")
+$toolbarTips.SetToolTip($Global:App.BtnSave, "Not usually needed - every change already saves itself automatically. Force-saves the whole catalog now anyway, if you ever want to be extra sure.")
 $toolbarTips.SetToolTip($btnReload, "Discard any unsaved changes and reload the catalog from disk.")
 $toolbarTips.SetToolTip($btnOpen, "Switch to a different folder of per-app JSON files.")
-$toolbarTips.SetToolTip($btnLookupIds, "Search Intune by name for apps missing an App ID, and fill it in.")
+$toolbarTips.SetToolTip($Global:App.BtnLookupIds, "Search Intune by name for apps missing an App ID, and fill it in.")
 $toolbarTips.SetToolTip($btnCheckIntuneOnly, "Compares Intune against this catalog: apps in Intune not yet in the catalog, catalog apps renamed in Intune since, and catalog apps whose App ID no longer exists in Intune. Read-only.")
 $toolbarTips.SetToolTip($btnBatchAssign, "Add a favorite group to multiple apps at once, then preview and apply the result to Intune.")
 $toolbarTips.SetToolTip($btnSyncMetadata, "Pull current metadata from Intune into the local catalog for apps that already have an App ID. Read-only.")
@@ -520,17 +538,17 @@ $toolbarTips.SetToolTip($btnFavoriteGroups, "Pick which groups show up as ready-
 $toolbarTips.SetToolTip($btnDependencies, "See every app's dependencies, what depends on it, and any missing or circular dependency. Read-only, local only.")
 $toolbarTips.SetToolTip($btnGroupDrift, "Check every group name referenced in the catalog against what actually exists in Entra ID.")
 $toolbarTips.SetToolTip($btnIntuneAudit, "Check every deployed app's Metadata, Groups, Dependencies, and Assignments against what's actually live in Intune, all in one grid. Read-only.")
-$toolbarTips.SetToolTip($btnRunLaunch, "Build the .intunewin package(s) for the selected (or all) uncommon apps.")
+$toolbarTips.SetToolTip($Global:App.BtnRunLaunch, "Build the .intunewin package(s) for the selected (or all) uncommon apps.")
 $toolbarTips.SetToolTip($btnCertSetup, "Configure the Tenant ID, Client ID, and certificate used to connect to Microsoft Graph.")
 $toolbarTips.SetToolTip($btnDefaultValues, "Change the computed defaults every new Winget app starts with (architecture, min OS, requirements, return codes, ...). Doesn't touch any app already saved or deployed.")
 $toolbarTips.SetToolTip($btnDiagnostics, "Read-only health check: Graph connectivity, certificate expiry, catalog completeness, and drift against what's actually in Intune.")
 
-$Global:lblSearch = New-Object System.Windows.Forms.Label
-$lblSearch.Text = "Search:"
-$lblSearch.AutoSize = $true
-$lblSearch.Padding = New-Object System.Windows.Forms.Padding(10,4,0,0)
-$Global:txtSearch = New-Object System.Windows.Forms.TextBox
-$txtSearch.Width = 220
+$Global:App.LblSearch = New-Object System.Windows.Forms.Label
+$Global:App.LblSearch.Text = "Search:"
+$Global:App.LblSearch.AutoSize = $true
+$Global:App.LblSearch.Padding = New-Object System.Windows.Forms.Padding(10,4,0,0)
+$Global:App.TxtSearch = New-Object System.Windows.Forms.TextBox
+$Global:App.TxtSearch.Width = 220
 
 # The toolbar used to be organized by WHICH SYSTEM a button touches
 # (Catalog/Intune/Entra ID/Settings), which meant a brand-new user facing
@@ -548,7 +566,7 @@ $txtSearch.Width = 220
 # "someone else pushed a change, pull it and reload" is a genuinely
 # recurring step for this tool's actual audience, not a rare recovery
 # action worth burying.
-$gbPrimary = New-ToolbarGroup -Title "Get started" -Buttons @($btnNew, $btnEdit, $btnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnIntuneAudit, $btnReload)
+$gbPrimary = New-ToolbarGroup -Title "Get started" -Buttons @($btnNew, $btnEdit, $Global:App.BtnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnIntuneAudit, $btnReload)
 
 # Builds one ToolStripMenuItem submenu from a list of {Text;Btn} pairs -
 # each item just PerformClick()s the real button (still fully wired, just
@@ -558,13 +576,13 @@ $gbPrimary = New-ToolbarGroup -Title "Get started" -Buttons @($btnNew, $btnEdit,
 
 $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Catalog maintenance" -Items @(
-    @{ Text = $btnDelete.Text; Btn = $btnDelete }
-    @{ Text = $btnSave.Text; Btn = $btnSave }
+    @{ Text = $Global:App.BtnDelete.Text; Btn = $Global:App.BtnDelete }
+    @{ Text = $Global:App.BtnSave.Text; Btn = $Global:App.BtnSave }
     @{ Text = $btnOpen.Text; Btn = $btnOpen }
     @{ Text = $btnFavoriteGroups.Text; Btn = $btnFavoriteGroups }
 )))
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Intune" -Items @(
-    @{ Text = $btnLookupIds.Text; Btn = $btnLookupIds }
+    @{ Text = $Global:App.BtnLookupIds.Text; Btn = $Global:App.BtnLookupIds }
     @{ Text = $btnCheckIntuneOnly.Text; Btn = $btnCheckIntuneOnly }
     @{ Text = $btnSyncMetadata.Text; Btn = $btnSyncMetadata }
     @{ Text = $btnBatchEdit.Text; Btn = $btnBatchEdit }
@@ -608,8 +626,8 @@ $searchPanel.FlowDirection = "LeftToRight"
 # left Search sitting visibly higher than the buttons beside it instead of
 # level with them.
 $searchPanel.Margin = New-Object System.Windows.Forms.Padding(4,24,4,0)
-$searchPanel.Controls.Add($lblSearch)
-$searchPanel.Controls.Add($txtSearch)
+$searchPanel.Controls.Add($Global:App.LblSearch)
+$searchPanel.Controls.Add($Global:App.TxtSearch)
 
 $toolbar.Controls.AddRange(@($gbPrimary, $gbMoreActions, $searchPanel))
 $tabCatalog.Controls.Add($toolbar)
@@ -641,52 +659,52 @@ $panelCredWarning.Controls.Add($btnCredWarningSettings)
 $btnCredWarningSettings.Add_Click({ Show-CertificateSetupDialog })
 $tabCatalog.Controls.Add($panelCredWarning)
 
-$Global:grid = New-Object System.Windows.Forms.DataGridView
-$grid.Dock = "Fill"
-$grid.ReadOnly = $true
-$grid.AllowUserToAddRows = $false
-$grid.AllowUserToDeleteRows = $false
-$grid.AllowUserToResizeRows = $false
-$grid.SelectionMode = "FullRowSelect"
-$grid.MultiSelect = $true
-$grid.AutoGenerateColumns = $false
-$grid.AutoSizeColumnsMode = "Fill"
-$grid.RowHeadersVisible = $false
-$grid.BackgroundColor = [System.Drawing.Color]::White
+$Global:App.Grid = New-Object System.Windows.Forms.DataGridView
+$Global:App.Grid.Dock = "Fill"
+$Global:App.Grid.ReadOnly = $true
+$Global:App.Grid.AllowUserToAddRows = $false
+$Global:App.Grid.AllowUserToDeleteRows = $false
+$Global:App.Grid.AllowUserToResizeRows = $false
+$Global:App.Grid.SelectionMode = "FullRowSelect"
+$Global:App.Grid.MultiSelect = $true
+$Global:App.Grid.AutoGenerateColumns = $false
+$Global:App.Grid.AutoSizeColumnsMode = "Fill"
+$Global:App.Grid.RowHeadersVisible = $false
+$Global:App.Grid.BackgroundColor = [System.Drawing.Color]::White
 
 
-$grid.Columns.Add((New-GridColumn "AppName" "App Name" -FillWeight 16)) | Out-Null
-$grid.Columns.Add((New-GridColumn "WingetId" "Winget ID" -FillWeight 10)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Type" "Type" -FillWeight 13)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 4)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 6)) | Out-Null
-$grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -FillWeight 5)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "AppName" "App Name" -FillWeight 16)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "WingetId" "Winget ID" -FillWeight 10)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Type" "Type" -FillWeight 13)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 4)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 6)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -FillWeight 5)) | Out-Null
 # Package folder holds full filesystem paths, which routinely run longer
 # than every other column's content (including the App ID GUID) - by far
 # the widest allotment here on purpose.
-$grid.Columns.Add((New-GridColumn "Folder" "Package folder" -FillWeight 42)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Required" "Required" -FillWeight 4)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Available" "Available" -FillWeight 4)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Uninstall" "Uninstall" -FillWeight 4)) | Out-Null
-$grid.Columns.Add((New-GridColumn "AppId" "App ID" -FillWeight 20)) | Out-Null
-$grid.Columns.Add((New-GridColumn "Status" "Status" -FillWeight 8)) | Out-Null
-$grid.Columns.Add((New-GridColumn "IntuneAudit" "Last Audit" -FillWeight 10)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Folder" "Package folder" -FillWeight 42)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Required" "Required" -FillWeight 4)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Available" "Available" -FillWeight 4)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Uninstall" "Uninstall" -FillWeight 4)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "AppId" "App ID" -FillWeight 20)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Status" "Status" -FillWeight 8)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "IntuneAudit" "Last Audit" -FillWeight 10)) | Out-Null
 
-$Global:colIndex = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-$colIndex.Name = "Index"
-$colIndex.DataPropertyName = "Index"
-$colIndex.Visible = $false
-$grid.Columns.Add($colIndex) | Out-Null
+$Global:App.ColIndex = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+$Global:App.ColIndex.Name = "Index"
+$Global:App.ColIndex.DataPropertyName = "Index"
+$Global:App.ColIndex.Visible = $false
+$Global:App.Grid.Columns.Add($Global:App.ColIndex) | Out-Null
 
-$tabCatalog.Controls.Add($grid)
-$grid.BringToFront()
+$tabCatalog.Controls.Add($Global:App.Grid)
+$Global:App.Grid.BringToFront()
 
 # Highlight the Status column when it's flagging something, so problems are
 # visible at a glance across the whole catalog instead of only when you open
 # each app individually.
-$grid.Add_CellFormatting({
+$Global:App.Grid.Add_CellFormatting({
     param($gridSender, $e)
-    $colName = $grid.Columns[$e.ColumnIndex].Name
+    $colName = $Global:App.Grid.Columns[$e.ColumnIndex].Name
     if ($colName -eq "Status") {
         if ($e.Value -and [string]$e.Value) {
             if ([string]$e.Value -eq "Metadata saved - ready to deploy") {
@@ -694,7 +712,7 @@ $grid.Add_CellFormatting({
                 # treatment below, which is reserved for things that actually
                 # need attention (no App ID at all, a missing package).
                 $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
-                $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+                $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Bold)
             }
             elseif ([string]$e.Value -eq "Custom config") {
                 # Informational, not a warning either - a Winget app with
@@ -707,11 +725,11 @@ $grid.Add_CellFormatting({
                 # the orange case below, since something else there DOES need
                 # attention.
                 $e.CellStyle.ForeColor = [System.Drawing.Color]::SteelBlue
-                $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Italic)
+                $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Italic)
             }
             else {
                 $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
-                $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+                $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Bold)
             }
         }
     }
@@ -719,18 +737,18 @@ $grid.Add_CellFormatting({
         # Same in-memory cache Get-LastAuditSummary reads from - never
         # persisted, so this is only ever as fresh as the last audit or
         # single-app fetch that happened to run THIS session (see
-        # $Script:LastAuditResults's own comment for why).
+        # $Global:App.LastAuditResults's own comment for why).
         $val = [string]$e.Value
         if ($val -like "*issue*" -or $val -like "Check failed*") {
             $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
-            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+            $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Bold)
         }
         elseif ($val -like "OK (*") {
             $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
         }
         elseif ($val -eq "Never audited") {
             $e.CellStyle.ForeColor = [System.Drawing.Color]::Gray
-            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Italic)
+            $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Italic)
         }
     }
 })
@@ -754,7 +772,7 @@ $grid.Add_CellFormatting({
 # by "Pull metadata and groups from Intune..." or a Deploy/Update run happening to touch that
 # app. Kicked off automatically once per catalog load (startup, Reload,
 # Open other folder) rather than on every grid refresh - see the note
-# next to $Script:TypeVersionBackfillDone for why. Same queue-runner
+# next to $Global:App.TypeVersionBackfillDone for why. Same queue-runner
 # pattern as every other bulk fetch in this app (one app's Graph call at
 # a time, not all in flight at once), reusing Start-AppMetadataFetch
 # since the network round-trip - not the parsing - is what actually
@@ -811,13 +829,13 @@ $grid.Add_CellFormatting({
 # ago" reads at a glance far better than a raw timestamp in a narrow grid
 # cell.
 
-# Loads $Script:LastAuditResults from its own cache file - never the
-# per-app catalog files themselves, see $Script:LastAuditResults's own
+# Loads $Global:App.LastAuditResults from its own cache file - never the
+# per-app catalog files themselves, see $Global:App.LastAuditResults's own
 # comment for why. Called once at startup. A missing or corrupt file is
 # silently treated as "nothing cached yet", the same state this had
 # before persistence existed at all - not worth a warning over.
 
-# Writes $Script:LastAuditResults out as-is. Unlike Save-AppsToFile, this
+# Writes $Global:App.LastAuditResults out as-is. Unlike Save-AppsToFile, this
 # has none of that function's Git-diff-friendliness or hand-rolled JSON
 # concerns (this cache is never meant to be hand-edited, diffed, or
 # checked in), so a plain ConvertTo-Json is fine here. Called after every
@@ -827,7 +845,7 @@ $grid.Add_CellFormatting({
 
 # Merges whichever of the four check results are passed in (any omitted -
 # left as $null - keep whatever was cached before) into
-# $Script:LastAuditResults for one app, stamping the current time. Called
+# $Global:App.LastAuditResults for one app, stamping the current time. Called
 # from both the single-app auto-fetch inside Show-CreateInIntuneDialog
 # (Metadata/Dependencies only - it has no Groups/Unknown Assignments check
 # of its own, see the note by its own Dependencies diff) and
@@ -944,7 +962,7 @@ $grid.Add_CellFormatting({
 #     just skip a dependency like that silently at ordering time, so this
 #     is the only place that actually surfaces it.
 # Entirely local - no Graph calls, no background process, just reads
-# $Script:Apps directly - so unlike almost every other "Check..." dialog
+# $Global:App.Apps directly - so unlike almost every other "Check..." dialog
 # in this app, this one needs no Refresh button or async plumbing at all.
 
 # Default install/uninstall/detection templates. Only pre-filled for
@@ -958,7 +976,7 @@ $grid.Add_CellFormatting({
 # pre-fills for a brand-new (non-duplicate, non-Update) app, as one
 # catalog-shaped metadata object - every default here (besides
 # install/uninstall/detection templates, which are always derived per-app
-# from the Winget ID) comes from $Script:DefaultAppSettings, editable via
+# from the Winget ID) comes from $Global:App.DefaultAppSettings, editable via
 # "Edit default values..." rather than hardcoded, so Batch Deploy can use
 # the SAME (possibly customized) defaults for an app that was never
 # manually walked through "Save for later..." instead of just skipping
@@ -974,7 +992,7 @@ $grid.Add_CellFormatting({
 # ---------------------------------------------------------------
 # Edit default values dialog
 # ---------------------------------------------------------------
-# Lets $Script:DefaultAppSettings itself be edited - the values
+# Lets $Global:App.DefaultAppSettings itself be edited - the values
 # Get-DefaultAppMetadata hands out for every Winget app that doesn't
 # override them. Same field set and controls as the "Advanced" section of
 # Show-CreateInIntuneDialog (architecture, install context, min OS,
@@ -1077,7 +1095,7 @@ $grid.Add_CellFormatting({
 # path or detection script text), and setting the SAME literal value
 # across several different apps would silently break them, not update
 # them the way changing a shared field like Min OS safely can.
-# Reuses $Script:EmbeddedCreateAppScript's "UpdateMetadata" mode (the same
+# Reuses $Global:App.EmbeddedCreateAppScript's "UpdateMetadata" mode (the same
 # one Show-CreateInIntuneDialog's own "Update Metadata" button uses for a
 # single app), one app at a time via the same self-referencing queue-runner
 # pattern Show-BatchDeployDialog already uses - see its own $RunNextBox
@@ -1147,7 +1165,7 @@ $grid.Add_CellFormatting({
 # Same permanent, irreversible Intune deletion Show-DeleteAppDialog does for
 # one app, run across every checked app here in sequence - same
 # self-referencing queue-runner pattern as Show-BatchDeployDialog's own
-# $RunNextBox, reusing $Script:EmbeddedDeleteAppScript completely unchanged,
+# $RunNextBox, reusing $Global:App.EmbeddedDeleteAppScript completely unchanged,
 # one app at a time. Deliberately NOT taught to accept a whole batch in one
 # process invocation the way the (read-only, much lower-stakes) sync-
 # metadata script is - that script's dependency-block detection and
@@ -1204,11 +1222,11 @@ $grid.Add_CellFormatting({
 # catalog is still that dialog's job.
 #
 # Two independent background fetches power this, both reused as-is rather
-# than duplicated: $Script:EmbeddedSyncMetadataScript (same one
+# than duplicated: $Global:App.EmbeddedSyncMetadataScript (same one
 # Show-SyncMetadataDialog and Show-CreateInIntuneDialog's own auto-fetch
 # use) covers Metadata, Groups, AND Dependencies in one pass - dependency
 # names already ride along in its per-app Metadata.dependencies, so
-# checking them here costs nothing extra. $Script:EmbeddedBatchAssignScript
+# checking them here costs nothing extra. $Global:App.EmbeddedBatchAssignScript
 # in "Preview" mode (same one Show-BatchAssignDialog uses to show what an
 # Apply would do) covers Unknown Assignments - a different live-vs-catalog
 # diff (it also considers assignment INTENT, not just group presence) that
@@ -1243,18 +1261,18 @@ $btnNew.Add_Click({
     $editorResult = Show-AppEditor -ExistingApp $null
     if ($editorResult) {
         $newApp = $editorResult.App
-        [void]$Script:Apps.Add($newApp)
-        $Script:UnsavedChangesBox.Value = $true
+        [void]$Global:App.Apps.Add($newApp)
+        $Global:App.UnsavedChangesBox.Value = $true
         # Direct-save, not just staged in memory - same reasoning as every
         # other single, atomic action made direct-save this session:
         # adding one app is a complete action in itself, with no batching
         # benefit to be had from deferring the write to a separate click.
-        [void](Save-AppsToFile -Path $Script:LinkedFilePath)
+        [void](Save-AppsToFile -Path $Global:App.LinkedFilePath)
         Refresh-Grid
         if ($editorResult.DeployAfterSave) {
             $newIndex = -1
-            for ($ni = 0; $ni -lt $Script:Apps.Count; $ni++) {
-                if ($Script:Apps[$ni].appName -eq $newApp.appName) { $newIndex = $ni; break }
+            for ($ni = 0; $ni -lt $Global:App.Apps.Count; $ni++) {
+                if ($Global:App.Apps[$ni].appName -eq $newApp.appName) { $newIndex = $ni; break }
             }
             if ($newIndex -ge 0) { Show-BatchDeployDialog -ScopedIndices @($newIndex) }
         }
@@ -1267,7 +1285,7 @@ $btnEdit.Add_Click({
         [System.Windows.Forms.MessageBox]::Show("Select an app first.", "No selection", "OK", "Information") | Out-Null
         return
     }
-    $editorResult = Show-AppEditor -ExistingApp $Script:Apps[$i] -CurrentIndex $i
+    $editorResult = Show-AppEditor -ExistingApp $Global:App.Apps[$i] -CurrentIndex $i
     if ($editorResult) {
         $updated = $editorResult.App
         # Not necessarily $i anymore - Previous/Next inside the editor can
@@ -1280,16 +1298,16 @@ $btnEdit.Add_Click({
         # Logged before and after the assignment/save, mirroring the
         # checkpoint approach that already found the actual bug in Save
         # for later - confirms $updated genuinely carries metadata coming
-        # OUT of the editor, and separately confirms $Script:Apps[$targetIndex]
+        # OUT of the editor, and separately confirms $Global:App.Apps[$targetIndex]
         # still has it immediately after the assignment, before Save-
         # AppsToFile even runs. Narrows this down the same way: is
         # metadata already missing by the time the editor returns, or
         # does it go missing somewhere after that.
         Write-Log "btnEdit: `$updated returned from editor - has metadata: $($null -ne $updated.metadata).`r`n"
-        $Script:Apps[$targetIndex] = $updated
-        Write-Log "btnEdit: after assignment, `$Script:Apps[$targetIndex] has metadata: $($null -ne $Script:Apps[$targetIndex].metadata).`r`n"
-        $Script:UnsavedChangesBox.Value = $true
-        [void](Save-AppsToFile -Path $Script:LinkedFilePath)
+        $Global:App.Apps[$targetIndex] = $updated
+        Write-Log "btnEdit: after assignment, `$Global:App.Apps[$targetIndex] has metadata: $($null -ne $Global:App.Apps[$targetIndex].metadata).`r`n"
+        $Global:App.UnsavedChangesBox.Value = $true
+        [void](Save-AppsToFile -Path $Global:App.LinkedFilePath)
         Refresh-Grid
         if ($editorResult.DeployAfterSave) { Show-BatchDeployDialog -ScopedIndices @($targetIndex) }
     }
@@ -1298,11 +1316,11 @@ $btnEdit.Add_Click({
 # The "Last Audit" column only has room for a one-line summary ("1 issue
 # (5m ago)") - double-clicking it shows the full per-check breakdown
 # instead of opening the editor, same as every other cell here does.
-$grid.Add_CellDoubleClick({
+$Global:App.Grid.Add_CellDoubleClick({
     param($gridSender, $e)
     if ($e.RowIndex -lt 0) { return }
-    if ($grid.Columns[$e.ColumnIndex].Name -eq "IntuneAudit") {
-        $clickedAppName = [string]$grid.Rows[$e.RowIndex].Cells["AppName"].Value
+    if ($Global:App.Grid.Columns[$e.ColumnIndex].Name -eq "IntuneAudit") {
+        $clickedAppName = [string]$Global:App.Grid.Rows[$e.RowIndex].Cells["AppName"].Value
         Show-LastAuditDetail -AppName $clickedAppName
         return
     }
@@ -1338,7 +1356,7 @@ $menuItemRemoveCatalog = New-Object System.Windows.Forms.ToolStripMenuItem "Remo
 [void]$gridContextMenu.Items.Add($menuItemDeleteIntune)
 [void]$gridContextMenu.Items.Add($menuItemSeparator)
 [void]$gridContextMenu.Items.Add($menuItemRemoveCatalog)
-$grid.ContextMenuStrip = $gridContextMenu
+$Global:App.Grid.ContextMenuStrip = $gridContextMenu
 
 # Right-clicking empty grid space (below the last row, or before anything's
 # ever been selected) still shows this same menu, since it's bound to the
@@ -1351,7 +1369,7 @@ $grid.ContextMenuStrip = $gridContextMenu
 # indication that the rest of the selection was simply ignored - a real
 # trap, not just a missing feature. Each item now does one of two things
 # instead: genuinely act on the whole selection (Delete from Intune...,
-# Remove from catalog... already did via $btnDelete; Assign Groups... and
+# Remove from catalog... already did via $Global:App.BtnDelete; Assign Groups... and
 # Package this app now do too, the latter two by reusing the exact same
 # batch features already on the toolbar), or - for Edit... and Deploy to
 # Intune..., which open a single interactive per-app form and have no sane
@@ -1382,10 +1400,10 @@ $gridContextMenu.Add_Opening({
     # an App ID before there's anything in Intune to pull metadata FROM) -
     # checked here too so this greys out up front instead of only showing
     # "nothing to do" after the click.
-    $menuItemSyncMetadata.Enabled = $hasSelection -and (@($selectedIndices | ForEach-Object { $Script:Apps[$_] } | Where-Object { $_.appId }).Count -gt 0)
+    $menuItemSyncMetadata.Enabled = $hasSelection -and (@($selectedIndices | ForEach-Object { $Global:App.Apps[$_] } | Where-Object { $_.appId }).Count -gt 0)
 
     $menuItemAudit.Text = if ($isMulti) { "Audit $($selectedIndices.Count) app(s)..." } else { "Run audit..." }
-    $menuItemAudit.Enabled = $hasSelection -and (@($selectedIndices | ForEach-Object { $Script:Apps[$_] } | Where-Object { $_.appId }).Count -gt 0)
+    $menuItemAudit.Enabled = $hasSelection -and (@($selectedIndices | ForEach-Object { $Global:App.Apps[$_] } | Where-Object { $_.appId }).Count -gt 0)
 
     $menuItemDeleteIntune.Text = if ($isMulti) { "Delete $($selectedIndices.Count) app(s) from Intune..." } else { "Delete from Intune..." }
     $menuItemDeleteIntune.Enabled = $hasSelection
@@ -1400,7 +1418,7 @@ $gridContextMenu.Add_Opening({
     # (via Package apps... on the toolbar) already silently skips common
     # apps in a -FolderNames batch on its own.
     $menuItemPackage.Text = if ($isMulti) { "Package $($selectedIndices.Count) app(s) for Intune" } else { "Package this app for Intune" }
-    $menuItemPackage.Enabled = $hasSelection -and (@($selectedIndices | ForEach-Object { $Script:Apps[$_] } | Where-Object { Test-AppIsUncommon -App $_ }).Count -gt 0)
+    $menuItemPackage.Enabled = $hasSelection -and (@($selectedIndices | ForEach-Object { $Global:App.Apps[$_] } | Where-Object { Test-AppIsUncommon -App $_ }).Count -gt 0)
 })
 
 # Right-click selects the row under the cursor first, standard convention -
@@ -1410,18 +1428,18 @@ $gridContextMenu.Add_Opening({
 # right-clicking to extend a multi-selection before opening the menu (the
 # same thing left-click already lets you do) would otherwise be undone by
 # this collapsing it back down to one row first.
-$grid.Add_CellMouseDown({
+$Global:App.Grid.Add_CellMouseDown({
     param($gridSender, $e)
     if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Right -and $e.RowIndex -ge 0) {
-        if (-not $grid.Rows[$e.RowIndex].Selected) {
-            $grid.ClearSelection()
-            $grid.Rows[$e.RowIndex].Selected = $true
+        if (-not $Global:App.Grid.Rows[$e.RowIndex].Selected) {
+            $Global:App.Grid.ClearSelection()
+            $Global:App.Grid.Rows[$e.RowIndex].Selected = $true
         }
     }
 })
 
 $menuItemEdit.Add_Click({ $btnEdit.PerformClick() })
-$menuItemRemoveCatalog.Add_Click({ $btnDelete.PerformClick() })
+$menuItemRemoveCatalog.Add_Click({ $Global:App.BtnDelete.PerformClick() })
 
 $menuItemDeploy.Add_Click({
     $indices = Get-SelectedAppIndices
@@ -1437,11 +1455,11 @@ $menuItemPackage.Add_Click({
     $indices = Get-SelectedAppIndices
     if ($indices.Count -eq 0) { return }
     if ($indices.Count -eq 1) {
-        $app = $Script:Apps[$indices[0]]
+        $app = $Global:App.Apps[$indices[0]]
         Show-PackagingProgressDialog -SingleFolderName (Get-SafeFileNameForApp -Name $app.appName)
         return
     }
-    $uncommonApps = @($indices | ForEach-Object { $Script:Apps[$_] } | Where-Object { Test-AppIsUncommon -App $_ })
+    $uncommonApps = @($indices | ForEach-Object { $Global:App.Apps[$_] } | Where-Object { Test-AppIsUncommon -App $_ })
     $folderNames = @($uncommonApps | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
     Show-PackagingProgressDialog -FolderNames $folderNames
 })
@@ -1481,18 +1499,18 @@ $menuItemDeleteIntune.Add_Click({
     if (Show-BulkDeleteFromIntuneDialog -Indices $indices) { Refresh-Grid }
 })
 
-$btnDelete.Add_Click({
+$Global:App.BtnDelete.Add_Click({
     $indices = Get-SelectedAppIndices
     if ($indices.Count -eq 0) {
         [System.Windows.Forms.MessageBox]::Show("Select an app first.", "No selection", "OK", "Information") | Out-Null
         return
     }
     if ($indices.Count -eq 1) {
-        $name = $Script:Apps[$indices[0]].appName
+        $name = $Global:App.Apps[$indices[0]].appName
         $r = [System.Windows.Forms.MessageBox]::Show("Delete '$name' from the catalog?", "Confirm delete", "YesNo", "Warning")
     }
     else {
-        $names = @($indices | Sort-Object | ForEach-Object { $Script:Apps[$_].appName }) -join ", "
+        $names = @($indices | Sort-Object | ForEach-Object { $Global:App.Apps[$_].appName }) -join ", "
         $r = [System.Windows.Forms.MessageBox]::Show("Delete $($indices.Count) apps from the catalog?`n`n$names", "Confirm delete", "YesNo", "Warning")
     }
     if ($r -eq "Yes") {
@@ -1500,35 +1518,35 @@ $btnDelete.Add_Click({
         # every later index down by one, so removing low-to-high would
         # invalidate the remaining queued indices partway through.
         foreach ($idx in ($indices | Sort-Object -Descending)) {
-            $Script:Apps.RemoveAt($idx)
+            $Global:App.Apps.RemoveAt($idx)
         }
-        $Script:UnsavedChangesBox.Value = $true
+        $Global:App.UnsavedChangesBox.Value = $true
         # Direct-save, not just staged in memory - matters even more here
         # than for most other actions, given the per-app file structure:
         # without this, a deleted app's own file would still sit on disk
         # untouched, and the app would silently reappear the next time the
         # catalog gets reloaded without an explicit save having happened
         # first.
-        [void](Save-AppsToFile -Path $Script:LinkedFilePath)
+        [void](Save-AppsToFile -Path $Global:App.LinkedFilePath)
         Refresh-Grid
     }
 })
 
-$btnSave.Add_Click({
-    if (Save-AppsToFile -Path $Script:LinkedFilePath) {
+$Global:App.BtnSave.Add_Click({
+    if (Save-AppsToFile -Path $Global:App.LinkedFilePath) {
         Refresh-Grid
-        Set-Status "Saved $($Script:Apps.Count) app(s) to $Script:LinkedFilePath"
+        Set-Status "Saved $($Global:App.Apps.Count) app(s) to $Global:App.LinkedFilePath"
     }
 })
 
 # Ctrl+S saves the catalog when on the App Catalog tab - matches every other
-# app's save shortcut. $form.KeyPreview lets the form see key presses before
+# app's save shortcut. $Global:App.Form.KeyPreview lets the form see key presses before
 # whatever control currently has focus does.
-$form.KeyPreview = $true
-$form.Add_KeyDown({
+$Global:App.Form.KeyPreview = $true
+$Global:App.Form.Add_KeyDown({
     if ($tabs.SelectedTab -ne $tabCatalog) { return }
     if ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::S) {
-        $btnSave.PerformClick()
+        $Global:App.BtnSave.PerformClick()
         $_.SuppressKeyPress = $true
         return
     }
@@ -1541,24 +1559,24 @@ $form.Add_KeyDown({
     # they don't fire while typing in the search box or anywhere else on
     # this tab - Delete in particular removes an app from the catalog and
     # shouldn't be reachable from an unrelated control by accident.
-    if ($grid.Focused -and $_.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
+    if ($Global:App.Grid.Focused -and $_.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
         $btnEdit.PerformClick()
         $_.SuppressKeyPress = $true
         return
     }
-    if ($grid.Focused -and $_.KeyCode -eq [System.Windows.Forms.Keys]::Delete) {
-        $btnDelete.PerformClick()
+    if ($Global:App.Grid.Focused -and $_.KeyCode -eq [System.Windows.Forms.Keys]::Delete) {
+        $Global:App.BtnDelete.PerformClick()
         $_.SuppressKeyPress = $true
         return
     }
 })
 
 $btnReload.Add_Click({
-    if ($Script:UnsavedChangesBox.Value) {
+    if ($Global:App.UnsavedChangesBox.Value) {
         $r = [System.Windows.Forms.MessageBox]::Show("Discard unsaved changes and reload from disk?", "Reload", "YesNo", "Warning")
         if ($r -ne "Yes") { return }
     }
-    Load-AppsFromFile -Path $Script:LinkedFilePath
+    Load-AppsFromFile -Path $Global:App.LinkedFilePath
     Refresh-Grid
     Start-TypeVersionBackfill
 })
@@ -1568,16 +1586,16 @@ $btnOpen.Add_Click({
     # FOLDER of per-app files, not a single input.json to pick.
     $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
     $fbd.Description = "Select the folder containing per-app JSON files"
-    $fbd.SelectedPath = $Script:RootPath
+    $fbd.SelectedPath = $Global:App.RootPath
     if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-        $Script:LinkedFilePath = $fbd.SelectedPath
-        Load-AppsFromFile -Path $Script:LinkedFilePath
+        $Global:App.LinkedFilePath = $fbd.SelectedPath
+        Load-AppsFromFile -Path $Global:App.LinkedFilePath
         Refresh-Grid
         Start-TypeVersionBackfill
     }
 })
 
-$btnLookupIds.Add_Click({
+$Global:App.BtnLookupIds.Add_Click({
     Start-IntuneAppLookup -OnComplete {
         param($ok, $data)
         if ($ok) {
@@ -1631,7 +1649,7 @@ $btnGroupDrift.Add_Click({ Show-GroupDriftCheckDialog })
 $btnDependencies.Add_Click({ Show-DependencyOverviewDialog })
 $btnIntuneAudit.Add_Click({ Show-IntuneAuditDialog; Refresh-Grid })
 
-$txtSearch.Add_TextChanged({ Refresh-Grid })
+$Global:App.TxtSearch.Add_TextChanged({ Refresh-Grid })
 
 # =====================================================================
 # Log tab
@@ -1643,18 +1661,18 @@ $txtSearch.Add_TextChanged({ Refresh-Grid })
 # own tab. This tab is kept and renamed because Write-Log is genuinely used
 # throughout the app as the general status/diagnostic log - not just by
 # Launch - so removing it isn't an option, just moving Launch off it.
-$Global:progress = New-Object System.Windows.Forms.ProgressBar
-$progress.Dock = "Bottom"
-$progress.Height = 6
-$progress.Style = "Marquee"
-$progress.Visible = $false
-$tabPipeline.Controls.Add($progress)
+$Global:App.Progress = New-Object System.Windows.Forms.ProgressBar
+$Global:App.Progress.Dock = "Bottom"
+$Global:App.Progress.Height = 6
+$Global:App.Progress.Style = "Marquee"
+$Global:App.Progress.Visible = $false
+$tabPipeline.Controls.Add($Global:App.Progress)
 
-$Global:logBox = New-Object System.Windows.Forms.RichTextBox
-$logBox.Dock = "Fill"
-Initialize-DarkLogBox -LogBox $logBox -FontSize 9
-$tabPipeline.Controls.Add($logBox)
-$logBox.BringToFront()
+$Global:App.LogBox = New-Object System.Windows.Forms.RichTextBox
+$Global:App.LogBox.Dock = "Fill"
+Initialize-DarkLogBox -LogBox $Global:App.LogBox -FontSize 9
+$tabPipeline.Controls.Add($Global:App.LogBox)
+$Global:App.LogBox.BringToFront()
 
 
 
@@ -1673,12 +1691,12 @@ $logBox.BringToFront()
 # same UI thread's message loop, just nested), so live output still streams
 # in normally.
 
-$btnRunLaunch.Add_Click({
+$Global:App.BtnRunLaunch.Add_Click({
     # Selected rows (if any) scope this to just them; nothing selected falls
     # back to the previous "package everything" behavior.
     $selectedIndices = Get-SelectedAppIndices
     if ($selectedIndices.Count -gt 0) {
-        $selectedUncommon = @($selectedIndices | ForEach-Object { $Script:Apps[$_] } | Where-Object { Test-AppIsUncommon -App $_ })
+        $selectedUncommon = @($selectedIndices | ForEach-Object { $Global:App.Apps[$_] } | Where-Object { Test-AppIsUncommon -App $_ })
         if ($selectedUncommon.Count -eq 0) {
             [System.Windows.Forms.MessageBox]::Show("None of the $($selectedIndices.Count) selected app(s) are uncommon (they all have a Winget ID, so they share the one generic package) - nothing to build for this selection. Clear the selection to package everything, or select at least one uncommon app.", "Nothing to package", "OK", "Information") | Out-Null
             return
@@ -1694,10 +1712,10 @@ $btnRunLaunch.Add_Click({
 # Startup
 # =====================================================================
 Ensure-Folders
-Load-AppsFromFile -Path $Script:LinkedFilePath
+Load-AppsFromFile -Path $Global:App.LinkedFilePath
 Load-LastAuditCache
 Refresh-Grid
-Write-Log "Intune deployment console ready (v$($Script:AppVersion)). Root: $Script:RootPath`r`n" ([System.Drawing.Color]::Gainsboro)
+Write-Log "Intune deployment console ready (v$($Global:App.AppVersion)). Root: $Global:App.RootPath`r`n" ([System.Drawing.Color]::Gainsboro)
 Start-TypeVersionBackfill
 
 # Whitespace-aware, same as Test-GraphCredentialsConfigured - a plain
@@ -1707,7 +1725,7 @@ Start-TypeVersionBackfill
 # Test-GraphCredentialsConfigured's own comment). Not calling that
 # function directly here since it also pops a MessageBox on failure,
 # which this silent startup check must never do.
-if ([string]::IsNullOrWhiteSpace($Script:GraphTenantId) -or [string]::IsNullOrWhiteSpace($Script:GraphClientId) -or [string]::IsNullOrWhiteSpace($Script:GraphCertificateThumbprint)) {
+if ([string]::IsNullOrWhiteSpace($Global:App.GraphTenantId) -or [string]::IsNullOrWhiteSpace($Global:App.GraphClientId) -or [string]::IsNullOrWhiteSpace($Global:App.GraphCertificateThumbprint)) {
     Write-Log "No Graph connection configured yet - open 'Settings...' to set your Tenant ID, Client ID, and certificate before using anything that talks to Intune or Entra ID (App ID lookup, Deploy to Intune, Assign Groups, Intune sync check, Batch assign).`r`n" ([System.Drawing.Color]::Orange)
     # Also shown as a banner on the App Catalog tab itself, not just logged -
     # the Log tab isn't the default active one, so this is otherwise easy
@@ -1721,7 +1739,7 @@ else {
     # someone happened to open Settings, meaning it could quietly expire
     # with zero warning until every Graph-based feature started failing
     # all at once.
-    $certStatus = Get-CertificateStatusText -Thumbprint $Script:GraphCertificateThumbprint
+    $certStatus = Get-CertificateStatusText -Thumbprint $Global:App.GraphCertificateThumbprint
     if ($certStatus.Color -ne [System.Drawing.Color]::SeaGreen) {
         Write-Log "Certificate warning: $($certStatus.Text) Open 'Settings...' to check or replace it.`r`n" ([System.Drawing.Color]::Orange)
         $lblCredWarning.Text = "Certificate warning: $($certStatus.Text) Open Settings to check or replace it."
@@ -1729,21 +1747,21 @@ else {
     }
 }
 
-$form.Add_FormClosing({
-    if ($Script:UnsavedChangesBox.Value) {
+$Global:App.Form.Add_FormClosing({
+    if ($Global:App.UnsavedChangesBox.Value) {
         $r = [System.Windows.Forms.MessageBox]::Show("You have unsaved catalog changes. Close anyway?", "Unsaved changes", "YesNo", "Warning")
         if ($r -ne "Yes") { $_.Cancel = $true }
     }
 })
 
-$form.Add_FormClosed({
-    if ($Script:LogFlushTimer) {
-        try { $Script:LogFlushTimer.Stop(); $Script:LogFlushTimer.Dispose() } catch { }
-        $Script:LogFlushTimer = $null
+$Global:App.Form.Add_FormClosed({
+    if ($Global:App.LogFlushTimer) {
+        try { $Global:App.LogFlushTimer.Stop(); $Global:App.LogFlushTimer.Dispose() } catch { }
+        $Global:App.LogFlushTimer = $null
     }
-    if ($Script:LogFileWriter) {
-        try { $Script:LogFileWriter.Flush(); $Script:LogFileWriter.Close() } catch { }
-        $Script:LogFileWriter = $null
+    if ($Global:App.LogFileWriter) {
+        try { $Global:App.LogFileWriter.Flush(); $Global:App.LogFileWriter.Close() } catch { }
+        $Global:App.LogFileWriter = $null
     }
     # Only cleared here, on the whole app closing - not when Settings
     # closes, so closing/reopening Settings mid-session doesn't force a
@@ -1751,5 +1769,5 @@ $form.Add_FormClosed({
     Clear-DelegatedSignInCache
 })
 
-Set-Theme -Control $form
-[void]$form.ShowDialog()
+Set-Theme -Control $Global:App.Form
+[void]$Global:App.Form.ShowDialog()

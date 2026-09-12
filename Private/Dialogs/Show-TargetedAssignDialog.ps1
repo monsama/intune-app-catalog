@@ -19,10 +19,10 @@ function Global:Show-TargetedAssignDialog {
     }
 
     # Plain local aliases - see note in Start-IntuneAppLookup.
-    $tenantId       = $Script:GraphTenantId
-    $clientId       = $Script:GraphClientId
-    $certThumb      = $Script:GraphCertificateThumbprint
-    $targetedScript = $Script:EmbeddedTargetedAssignScript
+    $tenantId       = $Global:App.GraphTenantId
+    $clientId       = $Global:App.GraphClientId
+    $certThumb      = $Global:App.GraphCertificateThumbprint
+    $targetedScript = $Global:App.EmbeddedTargetedAssignScript
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Assign Groups - $AppName"
@@ -173,6 +173,6 @@ function Global:Show-TargetedAssignDialog {
     $dlg.CancelButton = $btnCancel
     $dlg.AcceptButton = $btnRun
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
     return $resultBox.Success
 }

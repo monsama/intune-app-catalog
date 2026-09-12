@@ -165,6 +165,6 @@ function Global:Show-WingetSearchDialog {
     if ($InitialQuery) { & $runSearch }
 
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
     return $resultBox.SelectedId
 }

@@ -142,7 +142,7 @@ function Global:Show-MetadataDriftDialog {
     $dlg.CancelButton = $btnCancel
     Set-Theme -Control $dlg
 
-    $result = $dlg.ShowDialog($form)
+    $result = $dlg.ShowDialog($Global:App.Form)
     if ($result -eq [System.Windows.Forms.DialogResult]::OK) { return $resultBox.Value }
     return @()
 }

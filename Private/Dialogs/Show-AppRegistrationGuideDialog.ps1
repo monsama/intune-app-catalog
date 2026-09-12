@@ -68,5 +68,5 @@ could run either path.
     $dlg.AcceptButton = $btnClose
 
     Set-Theme -Control $dlg
-    [void]$dlg.ShowDialog($form)
+    [void]$dlg.ShowDialog($Global:App.Form)
 }

@@ -1,7 +1,7 @@
 function Global:Show-AppEditor {
     param(
         $ExistingApp, # $null when adding a new app
-        # This app's position in $Script:Apps - only known (and only >= 0)
+        # This app's position in $Global:App.Apps - only known (and only >= 0)
         # when opened from the grid for an app that's actually IN the
         # catalog already. Powers the "Previous app"/"Next app" buttons
         # below; left at the default for the "Add app" flow (nothing to
@@ -19,10 +19,10 @@ function Global:Show-AppEditor {
     )
 
     # Plain (non-$Script:) local alias - see note in Start-IntuneAppLookup.
-    $cache = $Script:IntuneAppsCache
-    $linkedFilePath = $Script:LinkedFilePath
-    $appsRef = $Script:Apps
-    $unsavedBoxRef = $Script:UnsavedChangesBox
+    $cache = $Global:App.IntuneAppsCache
+    $linkedFilePath = $Global:App.LinkedFilePath
+    $appsRef = $Global:App.Apps
+    $unsavedBoxRef = $Global:App.UnsavedChangesBox
 
     # Previous/Next targets, computed once against the SAME filter the main
     # grid itself is currently showing (Refresh-Grid's own "$appName
@@ -36,7 +36,7 @@ function Global:Show-AppEditor {
     $prevAppIndex = $null
     $nextAppIndex = $null
     if ($CurrentIndex -ge 0) {
-        $navFilter = $txtSearch.Text.Trim().ToLower()
+        $navFilter = $Global:App.TxtSearch.Text.Trim().ToLower()
         $visibleAppIndices = New-Object System.Collections.Generic.List[int]
         for ($vi = 0; $vi -lt $appsRef.Count; $vi++) {
             if ($navFilter) {
@@ -507,7 +507,7 @@ function Global:Show-AppEditor {
     # within each list) remains the way to reach any other group not
     # marked a favorite - see Show-FavoriteGroupsManager for managing
     # which ones get this default, always-visible treatment.
-    $known = @($Script:FavoriteGroups)
+    $known = @($Global:App.FavoriteGroups)
 
     function New-GroupBox {
         param($Title, $Top, $Selected)
@@ -629,7 +629,7 @@ function Global:Show-AppEditor {
     $lblAppNavPosition.Size = New-Object System.Drawing.Size(130,30)
     $lblAppNavPosition.ForeColor = [System.Drawing.Color]::DimGray
     if ($CurrentIndex -ge 0) {
-        $navFilterForLabel = $txtSearch.Text.Trim().ToLower()
+        $navFilterForLabel = $Global:App.TxtSearch.Text.Trim().ToLower()
         $visibleCountForLabel = 0
         $visiblePosForLabel = 0
         for ($li = 0; $li -lt $appsRef.Count; $li++) {
@@ -748,8 +748,8 @@ function Global:Show-AppEditor {
         # dialog at all.
         #
         # Read directly from this app's own file on disk now, not from
-        # $Script:Apps in memory - confirmed, directly, that by the time
-        # this handler runs, $Script:Apps can have already lost this
+        # $Global:App.Apps in memory - confirmed, directly, that by the time
+        # this handler runs, $Global:App.Apps can have already lost this
         # app entirely (a name-based lookup against it came back with no
         # match at all, despite the app definitively existing seconds
         # earlier), even though the file on disk was independently
@@ -757,7 +757,7 @@ function Global:Show-AppEditor {
         # chasing why the in-memory collection loses this specific entry
         # in this specific nested-dialog sequence, this reads from the
         # one source that's actually been reliable throughout: disk.
-        # Falls back to $Script:Apps only if no file exists yet (a brand
+        # Falls back to $Global:App.Apps only if no file exists yet (a brand
         # new app that's never been saved at all).
         $preservedMetadata = $null
         $metadataSource = "none"
@@ -790,7 +790,7 @@ function Global:Show-AppEditor {
             }
         }
         if (-not $preservedMetadata) {
-            $liveAppForMetadata = $Script:Apps | Where-Object { $_.appName -eq $ExistingApp.appName } | Select-Object -First 1
+            $liveAppForMetadata = $Global:App.Apps | Where-Object { $_.appName -eq $ExistingApp.appName } | Select-Object -First 1
             $preservedMetadata = if ($liveAppForMetadata) { $liveAppForMetadata.metadata } else { $ExistingApp.metadata }
             if ($preservedMetadata) { $metadataSource = "memory" }
         }
@@ -807,7 +807,7 @@ function Global:Show-AppEditor {
         $preservedIntuneAppType = ""
         $preservedIntuneAppVersion = ""
         if ($ExistingApp) {
-            $liveAppForType = $Script:Apps | Where-Object { $_.appName -eq $ExistingApp.appName } | Select-Object -First 1
+            $liveAppForType = $Global:App.Apps | Where-Object { $_.appName -eq $ExistingApp.appName } | Select-Object -First 1
             $preservedIntuneAppType = if ($liveAppForType -and $liveAppForType.intuneAppType) { $liveAppForType.intuneAppType } else { $ExistingApp.intuneAppType }
             $preservedIntuneAppVersion = if ($liveAppForType -and $liveAppForType.intuneAppVersion) { $liveAppForType.intuneAppVersion } else { $ExistingApp.intuneAppVersion }
         }
@@ -914,7 +914,7 @@ function Global:Show-AppEditor {
         $dlg.Add_Shown({ $btnCreateInIntune.PerformClick() }.GetNewClosure())
     }
 
-    $dlgResult = $dlg.ShowDialog($form)
+    $dlgResult = $dlg.ShowDialog($Global:App.Form)
 
     # Previous/Next was clicked - this editor's own result (there isn't
     # one; navigating away is a discard, same as Cancel) is done, and the
@@ -927,7 +927,7 @@ function Global:Show-AppEditor {
     # included, so it knows exactly which catalog slot that result belongs
     # to even though it's no longer the app it originally opened.
     if ($null -ne $navigateToIndexBox.Value) {
-        return Show-AppEditor -ExistingApp $Script:Apps[$navigateToIndexBox.Value] -CurrentIndex $navigateToIndexBox.Value -AutoOpenDeploy:$navigateAutoOpenDeployBox.Value
+        return Show-AppEditor -ExistingApp $Global:App.Apps[$navigateToIndexBox.Value] -CurrentIndex $navigateToIndexBox.Value -AutoOpenDeploy:$navigateAutoOpenDeployBox.Value
     }
 
     if ($dlgResult -eq [System.Windows.Forms.DialogResult]::OK) {
