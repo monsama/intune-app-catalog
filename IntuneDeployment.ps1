@@ -10155,10 +10155,26 @@ function Show-CreateInIntuneDialog {
         if ($chkAllowUninstall.Checked -ne [bool]$defaults.allowAvailableUninstall) {
             $changeRows.Add([pscustomobject]@{ Label = "Allow available uninstall"; Display = "Allow available uninstall: $($chkAllowUninstall.Checked)  ->  $([bool]$defaults.allowAvailableUninstall)" })
         }
-        $currentRcSummary = if ($currentReturnCodes.Count -gt 0) { (@($currentReturnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
+        # Piped straight into ConvertTo-Json/ForEach-Object below, never
+        # wrapped in @(...) first - $currentReturnCodes is a
+        # System.Collections.Generic.List[object] (built via New-Object a
+        # few lines up), and PowerShell's @() array-subexpression operator
+        # throws "Argument types do not match" (a real .NET/PowerShell
+        # binder bug, not a logic error here) when applied directly to a
+        # List[object] instance. Piping it through a cmdlet first sidesteps
+        # the buggy code path entirely and behaves identically for this
+        # purpose. This is exactly the crash reported live ("Could not load
+        # current metadata (Argument types do not match ... currentReturnCodes)
+        # | ConvertTo-Json ...") the first time an app with default return
+        # codes had its live metadata re-fetched.
+        $currentRcSummary = if ($currentReturnCodes.Count -gt 0) { ($currentReturnCodes | ConvertTo-Json -Compress -Depth 5) } else { "" }
         $defaultRcSummary = if (@($defaults.returnCodes).Count -gt 0) { (@($defaults.returnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
         if ($currentRcSummary -ne $defaultRcSummary) {
-            $rcToText = { param($rcList) if (@($rcList).Count -eq 0) { "(none)" } else { (@($rcList) | ForEach-Object { "$($_.returnCode) ($($_.type))" }) -join ", " } }
+            # Same reasoning as above - no @(...) around $rcList, since this
+            # is called with $currentReturnCodes (a List[object]) as well as
+            # $defaults.returnCodes (a plain array); .Count and a plain pipe
+            # both work identically for either one without it.
+            $rcToText = { param($rcList) if ($rcList.Count -eq 0) { "(none)" } else { ($rcList | ForEach-Object { "$($_.returnCode) ($($_.type))" }) -join ", " } }
             $changeRows.Add([pscustomobject]@{ Label = "Return codes"; Display = "Return codes: $(& $rcToText $currentReturnCodes)  ->  $(& $rcToText $defaults.returnCodes)" })
         }
 
@@ -15445,6 +15461,12 @@ function Show-GroupDriftCheckDialog {
 # its own columns as it completes, rather than making someone wait through
 # two sequential fetches for one combined view.
 function Show-IntuneAuditDialog {
+    # Selected rows (if any, passed in by the caller) scope this to just
+    # them; nothing selected audits the whole catalog like every other
+    # -ScopedIndices dialog in this app - same convention Batch Deploy and
+    # Sync Metadata already use.
+    param([int[]]$ScopedIndices = @())
+
     # Plain local aliases - see note in Start-IntuneAppLookup.
     $appsRef     = $Script:Apps
     $tenantId    = $Script:GraphTenantId
@@ -15453,9 +15475,13 @@ function Show-IntuneAuditDialog {
     $syncScript  = $Script:EmbeddedSyncMetadataScript
     $batchScript = $Script:EmbeddedBatchAssignScript
 
-    $deployedApps = @($appsRef | Where-Object { $_.appId })
+    $isScoped = $ScopedIndices.Count -gt 0
+    $candidateApps = if ($isScoped) { @($ScopedIndices | ForEach-Object { $appsRef[$_] }) } else { @($appsRef) }
+
+    $deployedApps = @($candidateApps | Where-Object { $_.appId })
     if ($deployedApps.Count -eq 0) {
-        [System.Windows.Forms.MessageBox]::Show("No apps have an App ID yet - nothing to audit.", "Nothing to do", "OK", "Information") | Out-Null
+        $msg = if ($isScoped) { "None of the selected app(s) have an App ID yet - nothing to audit." } else { "No apps have an App ID yet - nothing to audit." }
+        [System.Windows.Forms.MessageBox]::Show($msg, "Nothing to do", "OK", "Information") | Out-Null
         return
     }
 
@@ -15469,7 +15495,7 @@ function Show-IntuneAuditDialog {
     foreach ($a in $deployedApps) { $appByName[$a.appName] = $a }
 
     $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "Intune Audit"
+    $dlg.Text = if ($isScoped) { "Intune Audit - $($deployedApps.Count) selected app(s)" } else { "Intune Audit" }
     $dlg.ClientSize = New-Object System.Drawing.Size(920, 600)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "Sizable"
@@ -15478,7 +15504,8 @@ function Show-IntuneAuditDialog {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Checks every deployed app's Metadata, Groups, Dependencies, and Assignments against what's actually live in Intune right now. Read-only - never changes Intune or the catalog. Double-click a row for the full detail; findings are fixed via `"Pull metadata and groups from Intune...`" (Metadata/Groups/Dependencies) or `"Push groups to Intune (multiple apps)...`" (Unknown Assignments)."
+    $scopeText = if ($isScoped) { "the $($deployedApps.Count) selected app(s)'" } else { "every deployed app's" }
+    $lblIntro.Text = "Checks $scopeText Metadata, Groups, Dependencies, and Assignments against what's actually live in Intune right now. Read-only - never changes Intune or the catalog. Double-click a row for the full detail; findings are fixed via `"Pull metadata and groups from Intune...`" (Metadata/Groups/Dependencies) or `"Push groups to Intune (multiple apps)...`" (Unknown Assignments)."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(890,48)
     $dlg.Controls.Add($lblIntro)
@@ -17665,6 +17692,11 @@ $menuItemAssign = New-Object System.Windows.Forms.ToolStripMenuItem "Push groups
 # pre-selection made before ever opening the toolbar dialog, when a
 # right-click on the row(s) in question is the more natural way in.
 $menuItemSyncMetadata = New-Object System.Windows.Forms.ToolStripMenuItem "Sync metadata from Intune..."
+# Same eligibility/scoping as $menuItemSyncMetadata right above - an app
+# needs an App ID before there's anything in Intune to audit against.
+# Reuses Show-IntuneAuditDialog's own -ScopedIndices (added specifically
+# for this), same as every other selection-aware item here.
+$menuItemAudit = New-Object System.Windows.Forms.ToolStripMenuItem "Run audit..."
 $menuItemDeleteIntune = New-Object System.Windows.Forms.ToolStripMenuItem "Delete from Intune..."
 $menuItemSeparator = New-Object System.Windows.Forms.ToolStripSeparator
 $menuItemRemoveCatalog = New-Object System.Windows.Forms.ToolStripMenuItem "Remove from catalog..."
@@ -17673,6 +17705,7 @@ $menuItemRemoveCatalog = New-Object System.Windows.Forms.ToolStripMenuItem "Remo
 [void]$gridContextMenu.Items.Add($menuItemPackage)
 [void]$gridContextMenu.Items.Add($menuItemAssign)
 [void]$gridContextMenu.Items.Add($menuItemSyncMetadata)
+[void]$gridContextMenu.Items.Add($menuItemAudit)
 [void]$gridContextMenu.Items.Add($menuItemDeleteIntune)
 [void]$gridContextMenu.Items.Add($menuItemSeparator)
 [void]$gridContextMenu.Items.Add($menuItemRemoveCatalog)
@@ -17721,6 +17754,9 @@ $gridContextMenu.Add_Opening({
     # checked here too so this greys out up front instead of only showing
     # "nothing to do" after the click.
     $menuItemSyncMetadata.Enabled = $hasSelection -and (@($selectedIndices | ForEach-Object { $Script:Apps[$_] } | Where-Object { $_.appId }).Count -gt 0)
+
+    $menuItemAudit.Text = if ($isMulti) { "Audit $($selectedIndices.Count) app(s)..." } else { "Run audit..." }
+    $menuItemAudit.Enabled = $hasSelection -and (@($selectedIndices | ForEach-Object { $Script:Apps[$_] } | Where-Object { $_.appId }).Count -gt 0)
 
     $menuItemDeleteIntune.Text = if ($isMulti) { "Delete $($selectedIndices.Count) app(s) from Intune..." } else { "Delete from Intune..." }
     $menuItemDeleteIntune.Enabled = $hasSelection
@@ -17796,6 +17832,13 @@ $menuItemSyncMetadata.Add_Click({
     $indices = Get-SelectedAppIndices
     if ($indices.Count -eq 0) { return }
     Show-SyncMetadataDialog -ScopedIndices $indices
+    Refresh-Grid
+})
+
+$menuItemAudit.Add_Click({
+    $indices = Get-SelectedAppIndices
+    if ($indices.Count -eq 0) { return }
+    Show-IntuneAuditDialog -ScopedIndices $indices
     Refresh-Grid
 })
 
