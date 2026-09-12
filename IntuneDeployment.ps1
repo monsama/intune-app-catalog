@@ -8480,25 +8480,34 @@ function Show-MetadataDriftDialog {
     $grid.SelectionMode = "FullRowSelect"
     $grid.AutoSizeRowsMode = [System.Windows.Forms.DataGridViewAutoSizeRowsMode]::AllCells
     $grid.ColumnHeadersHeightSizeMode = [System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode]::AutoSize
+    # Fixed-pixel column widths (the original .Width-only setup this
+    # replaced) meant the GRID itself stretched to fill a resized/
+    # maximized dialog (it's anchored on all four sides), but the columns
+    # inside it stayed pinned at their original widths - leaving a large,
+    # useless blank strip on the right instead of actually using the extra
+    # room for the Local/Intune text columns that need it most. FillWeight
+    # mirrors the original 110:150:250:250 proportions, so a default-sized
+    # window looks the same as before; only a resized one now benefits.
+    $grid.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
 
     $colUse = New-Object System.Windows.Forms.DataGridViewCheckBoxColumn
     $colUse.Name = "UseIntune"
     $colUse.HeaderText = "Use Intune's value"
-    $colUse.Width = 110
+    $colUse.FillWeight = 14
     [void]$grid.Columns.Add($colUse)
 
     $colField = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $colField.Name = "Field"
     $colField.HeaderText = "Field"
     $colField.ReadOnly = $true
-    $colField.Width = 150
+    $colField.FillWeight = 19
     [void]$grid.Columns.Add($colField)
 
     $colLocal = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $colLocal.Name = "Local"
     $colLocal.HeaderText = "Local (catalog)"
     $colLocal.ReadOnly = $true
-    $colLocal.Width = 250
+    $colLocal.FillWeight = 33
     $colLocal.DefaultCellStyle.WrapMode = [System.Windows.Forms.DataGridViewTriState]::True
     [void]$grid.Columns.Add($colLocal)
 
@@ -8506,7 +8515,7 @@ function Show-MetadataDriftDialog {
     $colIntune.Name = "Intune"
     $colIntune.HeaderText = "Intune (live)"
     $colIntune.ReadOnly = $true
-    $colIntune.Width = 250
+    $colIntune.FillWeight = 34
     $colIntune.DefaultCellStyle.WrapMode = [System.Windows.Forms.DataGridViewTriState]::True
     [void]$grid.Columns.Add($colIntune)
 
