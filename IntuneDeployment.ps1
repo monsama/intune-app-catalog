@@ -7652,13 +7652,23 @@ function Get-FriendlyAge {
 function Set-LastAuditCacheEntry {
     param([string]$AppName, [string]$Metadata, [string]$Groups, [string]$Dependencies, [string]$Unknown)
 
+    # $PSBoundParameters, not a $null check on the parameter itself - a
+    # [string] parameter that's simply never PASSED still comes back as ""
+    # (empty string), not $null, once PowerShell's parameter binder is done
+    # with it - confirmed live, not a guess. A $null check here was
+    # therefore treating "this field wasn't part of THIS call" the same as
+    # "this field really is blank", clobbering whichever of the two fetches
+    # (Metadata/Groups/Dependencies vs Unknown) finished SECOND for an app
+    # over what the other one had just written - a real, confirmed-live bug
+    # (every field the second call's caller didn't pass got reset to "",
+    # which then counted as a false "issue" in Get-LastAuditSummary below).
     $existing = if ($Script:LastAuditResults.ContainsKey($AppName)) { $Script:LastAuditResults[$AppName] } else { $null }
     $Script:LastAuditResults[$AppName] = [pscustomobject]@{
         Timestamp    = Get-Date
-        Metadata     = if ($null -ne $Metadata)     { $Metadata }     elseif ($existing) { $existing.Metadata }     else { $null }
-        Groups       = if ($null -ne $Groups)       { $Groups }       elseif ($existing) { $existing.Groups }       else { $null }
-        Dependencies = if ($null -ne $Dependencies) { $Dependencies } elseif ($existing) { $existing.Dependencies } else { $null }
-        Unknown      = if ($null -ne $Unknown)      { $Unknown }      elseif ($existing) { $existing.Unknown }      else { $null }
+        Metadata     = if ($PSBoundParameters.ContainsKey('Metadata'))     { $Metadata }     elseif ($existing) { $existing.Metadata }     else { $null }
+        Groups       = if ($PSBoundParameters.ContainsKey('Groups'))       { $Groups }       elseif ($existing) { $existing.Groups }       else { $null }
+        Dependencies = if ($PSBoundParameters.ContainsKey('Dependencies')) { $Dependencies } elseif ($existing) { $existing.Dependencies } else { $null }
+        Unknown      = if ($PSBoundParameters.ContainsKey('Unknown'))      { $Unknown }      elseif ($existing) { $existing.Unknown }      else { $null }
     }
 }
 
@@ -15143,14 +15153,27 @@ function Show-IntuneAuditDialog {
         $stillRunning = ($procBox1.Proc -and -not $procBox1.Proc.HasExited) -or ($procBox2.Proc -and -not $procBox2.Proc.HasExited)
         if ($stillRunning) {
             $r = [System.Windows.Forms.MessageBox]::Show("An audit is currently running. Stop it and close this dialog?", "Stop and close?", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
+            # Compared against the enum value itself, not the string "Yes" -
+            # this is the one Close handler in this app that ALSO sits behind
+            # a Form.AcceptButton assignment (see the removed line below), so
+            # it gets the stricter, unambiguous comparison as a second,
+            # independent safeguard against a live report of "No" closing
+            # the dialog anyway.
+            if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
             try { if ($procBox1.Proc) { $procBox1.Proc.Kill() } } catch { }
             try { if ($procBox2.Proc) { $procBox2.Proc.Kill() } } catch { }
         }
         $dlg.Close()
     }.GetNewClosure())
     $dlg.CancelButton = $btnClose
-    $dlg.AcceptButton = $btnClose
+    # Deliberately NOT also AcceptButton, unlike a couple of other dialogs'
+    # Close buttons - every OTHER dialog whose Close handler shows a
+    # blocking "still running, stop and close?" confirmation (Create,
+    # Sync, Batch Assign, Bulk Delete, ...) leaves AcceptButton pointing at
+    # its own PRIMARY action button instead, never at Close - this was the
+    # one exception, and a live report showed "No" on that confirmation
+    # still closing the dialog. Removing it matches the working convention
+    # everywhere else this pattern is used.
 
     # Deferred to Add_Shown - same reasoning as Show-GroupDriftCheckDialog's
     # own Add_Shown: kicking off the fetch before the window is actually
