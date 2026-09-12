@@ -7032,6 +7032,7 @@ $btnLookupIds = New-Object System.Windows.Forms.Button; $btnLookupIds.Text = "Lo
 $btnCheckIntuneOnly = New-Object System.Windows.Forms.Button; $btnCheckIntuneOnly.Text = "Intune sync check..."
 $btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text = "Push groups to Intune (multiple apps)..."
 $btnSyncMetadata = New-Object System.Windows.Forms.Button; $btnSyncMetadata.Text = "Pull metadata and groups from Intune..."
+$btnBatchEdit = New-Object System.Windows.Forms.Button; $btnBatchEdit.Text = "Batch edit Intune fields..."
 $btnBatchDeploy = New-Object System.Windows.Forms.Button; $btnBatchDeploy.Text = "Batch deploy..."
 $btnGroupManager = New-Object System.Windows.Forms.Button; $btnGroupManager.Text = "Group manager..."
 $btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.Text = "Favorite groups..."
@@ -7062,6 +7063,7 @@ $toolbarTips.SetToolTip($btnLookupIds, "Search Intune by name for apps missing a
 $toolbarTips.SetToolTip($btnCheckIntuneOnly, "Compares Intune against this catalog: apps in Intune not yet in the catalog, catalog apps renamed in Intune since, and catalog apps whose App ID no longer exists in Intune. Read-only.")
 $toolbarTips.SetToolTip($btnBatchAssign, "Add a favorite group to multiple apps at once, then preview and apply the result to Intune.")
 $toolbarTips.SetToolTip($btnSyncMetadata, "Pull current metadata from Intune into the local catalog for apps that already have an App ID. Read-only.")
+$toolbarTips.SetToolTip($btnBatchEdit, "Change one or more fields (architecture, min OS, requirements, restart behavior, return codes, dependencies) across multiple deployed Win32 apps at once, then push each one to Intune.")
 $toolbarTips.SetToolTip($btnBatchDeploy, "Create multiple apps in Intune, in dependency order. Uses metadata saved via 'Save for later...' where an app has it, otherwise the same defaults Deploy to Intune's own form would.")
 $toolbarTips.SetToolTip($btnGroupManager, "Create, update, or delete an Entra ID group and manage its members.")
 $toolbarTips.SetToolTip($btnFavoriteGroups, "Pick which groups show up as ready-to-tick options in every app's Required/Available/Uninstall lists.")
@@ -7076,7 +7078,7 @@ $toolbarTips.SetToolTip($btnDiagnostics, "Read-only health check: Graph connecti
 $lblSearch = New-Object System.Windows.Forms.Label
 $lblSearch.Text = "Search:"
 $lblSearch.AutoSize = $true
-$lblSearch.Padding = New-Object System.Windows.Forms.Padding(10,7,0,0)
+$lblSearch.Padding = New-Object System.Windows.Forms.Padding(10,4,0,0)
 $txtSearch = New-Object System.Windows.Forms.TextBox
 $txtSearch.Width = 220
 
@@ -7126,6 +7128,7 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
     @{ Text = $btnLookupIds.Text; Btn = $btnLookupIds }
     @{ Text = $btnCheckIntuneOnly.Text; Btn = $btnCheckIntuneOnly }
     @{ Text = $btnSyncMetadata.Text; Btn = $btnSyncMetadata }
+    @{ Text = $btnBatchEdit.Text; Btn = $btnBatchEdit }
 )))
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Entra ID" -Items @(
     @{ Text = $btnGroupManager.Text; Btn = $btnGroupManager }
@@ -7159,7 +7162,13 @@ $searchPanel = New-Object System.Windows.Forms.FlowLayoutPanel
 $searchPanel.AutoSize = $true
 $searchPanel.AutoSizeMode = [System.Windows.Forms.AutoSizeMode]::GrowAndShrink
 $searchPanel.FlowDirection = "LeftToRight"
-$searchPanel.Margin = New-Object System.Windows.Forms.Padding(4,4,4,0)
+# Top margin bumped up from the toolbar groups' own 4px - a GroupBox (what
+# every button sits inside) has its title text ABOVE the button row, so
+# the buttons themselves sit well below the box's own top edge; this plain
+# FlowLayoutPanel has no such header, so matching the groups' 4px margin
+# left Search sitting visibly higher than the buttons beside it instead of
+# level with them.
+$searchPanel.Margin = New-Object System.Windows.Forms.Padding(4,24,4,0)
 $searchPanel.Controls.Add($lblSearch)
 $searchPanel.Controls.Add($txtSearch)
 
@@ -12936,6 +12945,646 @@ function Show-BatchDeployDialog {
 }
 
 
+# ---------------------------------------------------------------
+# Batch edit Intune fields
+# ---------------------------------------------------------------
+# Changes one or more win32LobApp fields (architecture, min OS,
+# requirements, restart behavior, allow-uninstall, return codes,
+# dependencies) across multiple ALREADY-DEPLOYED Win32 apps at once, then
+# pushes each one straight to Intune - e.g. "raise the minimum Windows
+# release for every app that currently requires 21H2". Deliberately does
+# NOT offer install/uninstall commands or the detection rule here, unlike
+# "Set default values..." - those are inherently per-app (a literal script
+# path or detection script text), and setting the SAME literal value
+# across several different apps would silently break them, not update
+# them the way changing a shared field like Min OS safely can.
+# Reuses $Script:EmbeddedCreateAppScript's "UpdateMetadata" mode (the same
+# one Show-CreateInIntuneDialog's own "Update Metadata" button uses for a
+# single app), one app at a time via the same self-referencing queue-runner
+# pattern Show-BatchDeployDialog already uses - see its own $RunNextBox
+# comment for why a plain self-referencing scriptblock doesn't work here.
+function Show-BatchEditMetadataDialog {
+    param([int[]]$ScopedIndices = @())
+
+    # Plain local aliases - see note in Start-IntuneAppLookup.
+    $appsRef      = $Script:Apps
+    $tenantId     = $Script:GraphTenantId
+    $clientId     = $Script:GraphClientId
+    $certThumb    = $Script:GraphCertificateThumbprint
+    $createScript = $Script:EmbeddedCreateAppScript
+    $unsavedBox   = $Script:UnsavedChangesBox
+    $linkedFilePath = $Script:LinkedFilePath
+
+    $candidateApps = if ($ScopedIndices.Count -gt 0) { @($ScopedIndices | ForEach-Object { $appsRef[$_] }) } else { @($appsRef) }
+    $isScoped = $ScopedIndices.Count -gt 0
+
+    # Win32 (not uncommon), already deployed (has an App ID - nothing in
+    # Intune to PATCH otherwise), and has saved local metadata to use as
+    # the base for the fields NOT being changed - UpdateMetadata PATCHes
+    # every one of these fields at once (see the embedded script's own
+    # comment on why it can't do a partial patch), so an app with no local
+    # metadata at all has nothing safe to fill the untouched fields with
+    # and is excluded rather than guessed at.
+    $allCandidates = @($candidateApps | Where-Object { -not (Test-AppIsUncommon -App $_) })
+    $eligibleApps = @($allCandidates | Where-Object { $_.appId -and $_.metadata })
+    $noMetadataCount = @($allCandidates | Where-Object { $_.appId -and -not $_.metadata }).Count
+
+    if ($eligibleApps.Count -eq 0) {
+        $msg = if ($isScoped) { "None of the selected app(s) are eligible - this needs a Win32 app that's already deployed (has an App ID) and has saved metadata." } else { "No apps are eligible - this needs a Win32 app that's already deployed (has an App ID) and has saved metadata." }
+        if ($noMetadataCount -gt 0) { $msg += " $noMetadataCount app(s) have an App ID but no saved metadata - use `"Pull metadata and groups from Intune...`" on them first." }
+        [System.Windows.Forms.MessageBox]::Show($msg, "Nothing to do", "OK", "Information") | Out-Null
+        return
+    }
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Batch edit Intune fields"
+    $dlg.ClientSize = New-Object System.Drawing.Size(950, 830)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+
+    $lblIntro = New-Object System.Windows.Forms.Label
+    $scopeText = if ($isScoped) { "$($eligibleApps.Count) selected app(s)" } else { "all $($eligibleApps.Count) eligible app(s)" }
+    $lblIntro.Text = "Changes only the field(s) checked below, on whichever apps are checked on the left, then pushes each one straight to Intune. Every other field on each app is left exactly as it already is. Scoped to $scopeText - Win32 apps that are deployed and have saved metadata. Install/uninstall commands and the detection rule aren't offered here - those are per-app by nature, not something safe to set to one shared value across different apps."
+    $lblIntro.Location = New-Object System.Drawing.Point(15,12)
+    $lblIntro.Size = New-Object System.Drawing.Size(920,54)
+    $dlg.Controls.Add($lblIntro)
+
+    $lblApps = New-Object System.Windows.Forms.Label
+    $lblApps.Text = "Apps to change"
+    $lblApps.Location = New-Object System.Drawing.Point(15,72)
+    $lblApps.AutoSize = $true
+    $dlg.Controls.Add($lblApps)
+
+    $clbApps = New-Object System.Windows.Forms.CheckedListBox
+    $clbApps.Location = New-Object System.Drawing.Point(15,92)
+    $clbApps.Size = New-Object System.Drawing.Size(330,380)
+    $clbApps.CheckOnClick = $true
+    $dlg.Controls.Add($clbApps)
+    foreach ($eligibleApp in ($eligibleApps | Sort-Object appName)) { [void]$clbApps.Items.Add($eligibleApp.appName, $true) }
+
+    $btnSelectAll = New-Object System.Windows.Forms.Button
+    $btnSelectAll.Text = "Select all"
+    $btnSelectAll.Location = New-Object System.Drawing.Point(15,478)
+    $btnSelectAll.Size = New-Object System.Drawing.Size(100,26)
+    $dlg.Controls.Add($btnSelectAll)
+
+    $btnSelectNone = New-Object System.Windows.Forms.Button
+    $btnSelectNone.Text = "Select none"
+    $btnSelectNone.Location = New-Object System.Drawing.Point(125,478)
+    $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
+    $dlg.Controls.Add($btnSelectNone)
+
+    $lblFields = New-Object System.Windows.Forms.Label
+    $lblFields.Text = "Fields to change (check a field to include it)"
+    $lblFields.Location = New-Object System.Drawing.Point(365,72)
+    $lblFields.AutoSize = $true
+    $dlg.Controls.Add($lblFields)
+
+    $fieldsY = 96
+
+    $chkEnableArch = New-Object System.Windows.Forms.CheckBox
+    $chkEnableArch.Text = "Architecture"
+    $chkEnableArch.Location = New-Object System.Drawing.Point(365,$fieldsY)
+    $chkEnableArch.Size = New-Object System.Drawing.Size(110,22)
+    $dlg.Controls.Add($chkEnableArch)
+    $chkArchX86 = New-Object System.Windows.Forms.CheckBox
+    $chkArchX86.Text = "x86"
+    $chkArchX86.Location = New-Object System.Drawing.Point(480,$fieldsY)
+    $chkArchX86.Size = New-Object System.Drawing.Size(48,22)
+    $dlg.Controls.Add($chkArchX86)
+    $chkArchX64 = New-Object System.Windows.Forms.CheckBox
+    $chkArchX64.Text = "x64"
+    $chkArchX64.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $chkArchX64.Size = New-Object System.Drawing.Size(48,22)
+    $chkArchX64.Checked = $true
+    $dlg.Controls.Add($chkArchX64)
+    $chkArchArm64 = New-Object System.Windows.Forms.CheckBox
+    $chkArchArm64.Text = "ARM64"
+    $chkArchArm64.Location = New-Object System.Drawing.Point(580,$fieldsY)
+    $chkArchArm64.Size = New-Object System.Drawing.Size(65,22)
+    $dlg.Controls.Add($chkArchArm64)
+    $fieldsY += 30
+
+    $chkEnableMinOS = New-Object System.Windows.Forms.CheckBox
+    $chkEnableMinOS.Text = "Minimum Windows"
+    $chkEnableMinOS.Location = New-Object System.Drawing.Point(365,$fieldsY)
+    $chkEnableMinOS.Size = New-Object System.Drawing.Size(160,22)
+    $dlg.Controls.Add($chkEnableMinOS)
+    $cmbMinOS = New-Object System.Windows.Forms.ComboBox
+    $cmbMinOS.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $cmbMinOS.Size = New-Object System.Drawing.Size(260,24)
+    $cmbMinOS.DropDownStyle = "DropDownList"
+    # Same full set Show-CreateInIntuneDialog/Show-DefaultAppSettingsDialog's
+    # own $minOsMap offer - kept in sync manually, same as every other copy
+    # of this list.
+    $minOsRawValues = @("W10_1607", "W10_1703", "W10_1709", "W10_1803", "W10_1809", "W10_1903", "W10_1909", "W10_2004", "W10_20H2", "W10_21H1", "W10_21H2", "W10_22H2", "W11_21H2", "W11_22H2")
+    $minOsMap = [ordered]@{}
+    foreach ($rawValue in $minOsRawValues) { $minOsMap[(Get-FriendlyMinOsRelease -RawValue $rawValue)] = $rawValue }
+    [void]$cmbMinOS.Items.AddRange(@($minOsMap.Keys))
+    $cmbMinOS.SelectedIndex = 0
+    $dlg.Controls.Add($cmbMinOS)
+    $fieldsY += 34
+
+    $chkEnableDiskSpace = New-Object System.Windows.Forms.CheckBox
+    $chkEnableDiskSpace.Text = "Disk space (MB)"
+    $chkEnableDiskSpace.Location = New-Object System.Drawing.Point(365,$fieldsY)
+    $chkEnableDiskSpace.Size = New-Object System.Drawing.Size(160,22)
+    $dlg.Controls.Add($chkEnableDiskSpace)
+    $txtDiskSpace = New-Object System.Windows.Forms.TextBox
+    $txtDiskSpace.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $txtDiskSpace.Size = New-Object System.Drawing.Size(120,23)
+    $txtDiskSpace.Text = "0"
+    $dlg.Controls.Add($txtDiskSpace)
+    $fieldsY += 30
+
+    $chkEnableMemory = New-Object System.Windows.Forms.CheckBox
+    $chkEnableMemory.Text = "Memory (MB)"
+    $chkEnableMemory.Location = New-Object System.Drawing.Point(365,$fieldsY)
+    $chkEnableMemory.Size = New-Object System.Drawing.Size(160,22)
+    $dlg.Controls.Add($chkEnableMemory)
+    $txtMemory = New-Object System.Windows.Forms.TextBox
+    $txtMemory.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $txtMemory.Size = New-Object System.Drawing.Size(120,23)
+    $txtMemory.Text = "0"
+    $dlg.Controls.Add($txtMemory)
+    $fieldsY += 30
+
+    $chkEnableProcessors = New-Object System.Windows.Forms.CheckBox
+    $chkEnableProcessors.Text = "Min. processors"
+    $chkEnableProcessors.Location = New-Object System.Drawing.Point(365,$fieldsY)
+    $chkEnableProcessors.Size = New-Object System.Drawing.Size(160,22)
+    $dlg.Controls.Add($chkEnableProcessors)
+    $txtProcessors = New-Object System.Windows.Forms.TextBox
+    $txtProcessors.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $txtProcessors.Size = New-Object System.Drawing.Size(120,23)
+    $txtProcessors.Text = "0"
+    $dlg.Controls.Add($txtProcessors)
+    $fieldsY += 30
+
+    $chkEnableCpuSpeed = New-Object System.Windows.Forms.CheckBox
+    $chkEnableCpuSpeed.Text = "Min. CPU speed (MHz)"
+    $chkEnableCpuSpeed.Location = New-Object System.Drawing.Point(365,$fieldsY)
+    $chkEnableCpuSpeed.Size = New-Object System.Drawing.Size(160,22)
+    $dlg.Controls.Add($chkEnableCpuSpeed)
+    $txtCpuSpeed = New-Object System.Windows.Forms.TextBox
+    $txtCpuSpeed.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $txtCpuSpeed.Size = New-Object System.Drawing.Size(120,23)
+    $txtCpuSpeed.Text = "0"
+    $dlg.Controls.Add($txtCpuSpeed)
+    $fieldsY += 30
+
+    $chkEnableInstallTime = New-Object System.Windows.Forms.CheckBox
+    $chkEnableInstallTime.Text = "Install time required (mins)"
+    $chkEnableInstallTime.Location = New-Object System.Drawing.Point(365,$fieldsY)
+    $chkEnableInstallTime.Size = New-Object System.Drawing.Size(160,22)
+    $dlg.Controls.Add($chkEnableInstallTime)
+    $txtInstallTime = New-Object System.Windows.Forms.TextBox
+    $txtInstallTime.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $txtInstallTime.Size = New-Object System.Drawing.Size(120,23)
+    $txtInstallTime.Text = "60"
+    $dlg.Controls.Add($txtInstallTime)
+    $fieldsY += 34
+
+    $chkEnableRestartBehavior = New-Object System.Windows.Forms.CheckBox
+    $chkEnableRestartBehavior.Text = "Device restart behavior"
+    $chkEnableRestartBehavior.Location = New-Object System.Drawing.Point(365,$fieldsY)
+    $chkEnableRestartBehavior.Size = New-Object System.Drawing.Size(160,22)
+    $dlg.Controls.Add($chkEnableRestartBehavior)
+    $cmbRestartBehavior = New-Object System.Windows.Forms.ComboBox
+    $cmbRestartBehavior.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $cmbRestartBehavior.Size = New-Object System.Drawing.Size(260,24)
+    $cmbRestartBehavior.DropDownStyle = "DropDownList"
+    $restartBehaviorMap = [ordered]@{
+        "Determine behavior based on return codes"      = "basedOnReturnCode"
+        "No specific action"                            = "allow"
+        "App install may force a device restart"        = "suppress"
+        "Intune will force a mandatory device restart"  = "force"
+    }
+    foreach ($k in $restartBehaviorMap.Keys) { [void]$cmbRestartBehavior.Items.Add($k) }
+    $cmbRestartBehavior.SelectedIndex = 0
+    $dlg.Controls.Add($cmbRestartBehavior)
+    $fieldsY += 34
+
+    $chkEnableAllowUninstall = New-Object System.Windows.Forms.CheckBox
+    $chkEnableAllowUninstall.Text = "Allow available uninstall"
+    $chkEnableAllowUninstall.Location = New-Object System.Drawing.Point(365,$fieldsY)
+    $chkEnableAllowUninstall.Size = New-Object System.Drawing.Size(180,22)
+    $dlg.Controls.Add($chkEnableAllowUninstall)
+    $chkAllowUninstall = New-Object System.Windows.Forms.CheckBox
+    $chkAllowUninstall.Text = "Yes"
+    $chkAllowUninstall.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $chkAllowUninstall.Size = New-Object System.Drawing.Size(60,22)
+    $dlg.Controls.Add($chkAllowUninstall)
+    $fieldsY += 34
+
+    $chkEnableReturnCodes = New-Object System.Windows.Forms.CheckBox
+    $chkEnableReturnCodes.Text = "Return codes (replaces the whole list)"
+    $chkEnableReturnCodes.Location = New-Object System.Drawing.Point(365,$fieldsY)
+    $chkEnableReturnCodes.AutoSize = $true
+    $dlg.Controls.Add($chkEnableReturnCodes)
+    $fieldsY += 22
+    $grdReturnCodes = New-Object System.Windows.Forms.DataGridView
+    $grdReturnCodes.Location = New-Object System.Drawing.Point(365,$fieldsY)
+    $grdReturnCodes.Size = New-Object System.Drawing.Size(425,120)
+    $grdReturnCodes.AllowUserToAddRows = $false
+    $grdReturnCodes.AllowUserToDeleteRows = $false
+    $grdReturnCodes.RowHeadersVisible = $false
+    $grdReturnCodes.SelectionMode = "FullRowSelect"
+    $grdReturnCodes.MultiSelect = $false
+    $colCode = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colCode.Name = "Code"; $colCode.HeaderText = "Return code"; $colCode.FillWeight = 40
+    [void]$grdReturnCodes.Columns.Add($colCode)
+    $colType = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
+    $colType.Name = "Type"; $colType.HeaderText = "Type"; $colType.FillWeight = 60
+    [void]$colType.Items.AddRange(@("success", "softReboot", "hardReboot", "retry", "failed"))
+    [void]$grdReturnCodes.Columns.Add($colType)
+    $dlg.Controls.Add($grdReturnCodes)
+    foreach ($rc in @(
+        [pscustomobject]@{ returnCode = 0; type = "success" }
+        [pscustomobject]@{ returnCode = 1707; type = "success" }
+        [pscustomobject]@{ returnCode = 3010; type = "softReboot" }
+        [pscustomobject]@{ returnCode = 1641; type = "hardReboot" }
+        [pscustomobject]@{ returnCode = 1618; type = "retry" }
+    )) {
+        $rowIdx = $grdReturnCodes.Rows.Add()
+        $grdReturnCodes.Rows[$rowIdx].Cells["Code"].Value = [string]$rc.returnCode
+        $grdReturnCodes.Rows[$rowIdx].Cells["Type"].Value = [string]$rc.type
+    }
+    $btnAddReturnCode = New-Object System.Windows.Forms.Button
+    $btnAddReturnCode.Text = "Add row"
+    $btnAddReturnCode.Location = New-Object System.Drawing.Point(800,$fieldsY)
+    $btnAddReturnCode.Size = New-Object System.Drawing.Size(90,26)
+    $dlg.Controls.Add($btnAddReturnCode)
+    $btnAddReturnCode.Add_Click({
+        $rowIdx = $grdReturnCodes.Rows.Add()
+        $grdReturnCodes.Rows[$rowIdx].Cells["Type"].Value = "success"
+    }.GetNewClosure())
+    $btnRemoveReturnCode = New-Object System.Windows.Forms.Button
+    $btnRemoveReturnCode.Text = "Remove row"
+    $btnRemoveReturnCode.Location = New-Object System.Drawing.Point(800,($fieldsY+30))
+    $btnRemoveReturnCode.Size = New-Object System.Drawing.Size(90,26)
+    $dlg.Controls.Add($btnRemoveReturnCode)
+    $btnRemoveReturnCode.Add_Click({
+        if ($grdReturnCodes.CurrentRow) { $grdReturnCodes.Rows.RemoveAt($grdReturnCodes.CurrentRow.Index) }
+    }.GetNewClosure())
+    $fieldsY += 130
+
+    $chkEnableDependencies = New-Object System.Windows.Forms.CheckBox
+    $chkEnableDependencies.Text = "Dependencies (replaces the whole list)"
+    $chkEnableDependencies.Location = New-Object System.Drawing.Point(365,$fieldsY)
+    $chkEnableDependencies.AutoSize = $true
+    $dlg.Controls.Add($chkEnableDependencies)
+    $fieldsY += 22
+    $clbDeps = New-Object System.Windows.Forms.CheckedListBox
+    $clbDeps.Location = New-Object System.Drawing.Point(365,$fieldsY)
+    $clbDeps.Size = New-Object System.Drawing.Size(560,70)
+    $clbDeps.CheckOnClick = $true
+    $dlg.Controls.Add($clbDeps)
+    # A dependency on itself is silently dropped per-app at run time below
+    # (an app can't depend on itself), not filtered out of this list up
+    # front - the same shared list is offered for every checked app, and
+    # which app(s) that would even apply to varies per app being changed.
+    foreach ($a in ($appsRef | Sort-Object appName)) { [void]$clbDeps.Items.Add($a.appName) }
+
+    $lblStatus = New-Object System.Windows.Forms.Label
+    $lblStatus.Location = New-Object System.Drawing.Point(15,640)
+    $lblStatus.Size = New-Object System.Drawing.Size(920,20)
+    $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+    $dlg.Controls.Add($lblStatus)
+
+    $progressBar = New-Object System.Windows.Forms.ProgressBar
+    $progressBar.Location = New-Object System.Drawing.Point(15,664)
+    $progressBar.Size = New-Object System.Drawing.Size(920,12)
+    $progressBar.Style = "Continuous"
+    $dlg.Controls.Add($progressBar)
+
+    $rtbLog = New-Object System.Windows.Forms.RichTextBox
+    $rtbLog.Location = New-Object System.Drawing.Point(15,680)
+    $rtbLog.Size = New-Object System.Drawing.Size(920,90)
+    Initialize-DarkLogBox -LogBox $rtbLog
+    $dlg.Controls.Add($rtbLog)
+
+    $btnRun = New-Object System.Windows.Forms.Button
+    $btnRun.Text = "Apply to Intune..."
+    $btnRun.Location = New-Object System.Drawing.Point(755,776)
+    $btnRun.Size = New-Object System.Drawing.Size(180,32)
+    $dlg.Controls.Add($btnRun)
+
+    $btnClose = New-Object System.Windows.Forms.Button
+    $btnClose.Text = "Close"
+    $btnClose.Location = New-Object System.Drawing.Point(665,776)
+    $btnClose.Size = New-Object System.Drawing.Size(85,32)
+    $dlg.Controls.Add($btnClose)
+
+    $procBox = @{ Proc = $null }
+
+    $btnSelectAll.Add_Click({
+        for ($ci = 0; $ci -lt $clbApps.Items.Count; $ci++) { $clbApps.SetItemChecked($ci, $true) }
+    }.GetNewClosure())
+    $btnSelectNone.Add_Click({
+        for ($ci = 0; $ci -lt $clbApps.Items.Count; $ci++) { $clbApps.SetItemChecked($ci, $false) }
+    }.GetNewClosure())
+
+    $RunNextBox = @{ Value = $null }
+
+    $RunNextBox.Value = {
+        param($Queue, $QueueIndex, $Results, $Changes)
+
+        if ($QueueIndex -ge $Queue.Count) {
+            $updatedCount = @($Results | Where-Object { $_.Status -eq "Updated" }).Count
+            $failedCount  = @($Results | Where-Object { $_.Status -eq "Failed" }).Count
+            $progressBar.Value = $progressBar.Maximum
+            $btnRun.Enabled = $true
+            $btnSelectAll.Enabled = $true
+            $btnSelectNone.Enabled = $true
+            $clbApps.Enabled = $true
+            $lblStatus.ForeColor = if ($failedCount -gt 0) { [System.Drawing.Color]::DarkOrange } else { [System.Drawing.Color]::SeaGreen }
+            $lblStatus.Text = "Done - $updatedCount updated, $failedCount failed."
+            Refresh-Grid
+            if ($failedCount -eq 0) { $dlg.Close() }
+            return
+        }
+
+        $currentApp = $Queue[$QueueIndex]
+        $rtbLog.AppendText("`r`n[$($QueueIndex+1)/$($Queue.Count)] $($currentApp.appName)`r`n")
+        $lblStatus.Text = "Updating $($QueueIndex+1) of $($Queue.Count): $($currentApp.appName)..."
+        $progressBar.Value = $QueueIndex
+
+        # Starts from this app's OWN saved metadata (every field, not just
+        # the ones being changed) - UpdateMetadata PATCHes the whole
+        # win32LobApp shape at once (see this function's own top comment),
+        # so anything not explicitly overridden here must still be the
+        # app's real current value, not a blank/default.
+        $m = $currentApp.metadata
+        $newMetadata = [pscustomobject]@{
+            description      = $m.description
+            publisher        = $m.publisher
+            owner            = $m.owner
+            developer        = $m.developer
+            informationUrl   = $m.informationUrl
+            privacyUrl       = $m.privacyUrl
+            notes            = $m.notes
+            installCommand   = $m.installCommand
+            uninstallCommand = $m.uninstallCommand
+            architecture     = $m.architecture
+            installContext   = $m.installContext
+            minOSKey         = $m.minOSKey
+            detectionRule    = $m.detectionRule
+            dependencies     = @($m.dependencies)
+            minDiskSpaceMB          = $m.minDiskSpaceMB
+            minMemoryMB             = $m.minMemoryMB
+            minProcessors           = $m.minProcessors
+            minCpuSpeedMHz          = $m.minCpuSpeedMHz
+            installTimeMinutes      = $m.installTimeMinutes
+            deviceRestartBehavior   = $m.deviceRestartBehavior
+            allowAvailableUninstall = $m.allowAvailableUninstall
+            returnCodes             = @($m.returnCodes)
+        }
+        if ($Changes.Architecture)          { $newMetadata.architecture = $Changes.Architecture }
+        if ($Changes.MinOSKey)               { $newMetadata.minOSKey = $Changes.MinOSKey }
+        if ($null -ne $Changes.MinDiskSpaceMB)       { $newMetadata.minDiskSpaceMB = $Changes.MinDiskSpaceMB }
+        if ($null -ne $Changes.MinMemoryMB)          { $newMetadata.minMemoryMB = $Changes.MinMemoryMB }
+        if ($null -ne $Changes.MinProcessors)        { $newMetadata.minProcessors = $Changes.MinProcessors }
+        if ($null -ne $Changes.MinCpuSpeedMHz)       { $newMetadata.minCpuSpeedMHz = $Changes.MinCpuSpeedMHz }
+        if ($null -ne $Changes.InstallTimeMinutes)   { $newMetadata.installTimeMinutes = $Changes.InstallTimeMinutes }
+        if ($Changes.DeviceRestartBehavior)  { $newMetadata.deviceRestartBehavior = $Changes.DeviceRestartBehavior }
+        if ($null -ne $Changes.AllowAvailableUninstall) { $newMetadata.allowAvailableUninstall = $Changes.AllowAvailableUninstall }
+        if ($Changes.ReturnCodes)            { $newMetadata.returnCodes = @($Changes.ReturnCodes) }
+        if ($Changes.Dependencies) {
+            # An app can't depend on itself - silently dropped here rather
+            # than failing the whole batch over it, same "skip just the
+            # one bad piece, not the whole app" reasoning Show-BatchDeployDialog
+            # already uses for an unresolved dependency App ID.
+            $newMetadata.dependencies = @($Changes.Dependencies | Where-Object { $_ -ne $currentApp.appName })
+        }
+
+        $resolvedDepIds = New-Object System.Collections.Generic.List[string]
+        foreach ($depName in @($newMetadata.dependencies)) {
+            $depApp = $appsRef | Where-Object { $_.appName -eq $depName } | Select-Object -First 1
+            if ($depApp -and $depApp.appId) {
+                $resolvedDepIds.Add($depApp.appId)
+            }
+            else {
+                $rtbLog.AppendText("  [!] Dependency `"$depName`" has no App ID yet - skipping just that dependency, not the whole app.`r`n")
+            }
+        }
+
+        $configPath = Join-Path $env:TEMP (".intunepkg_batchedit_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_batchedit_result_" + [guid]::NewGuid().ToString("N") + ".json")
+
+        $config = [pscustomobject]@{
+            TenantId                = $tenantId
+            ClientId                = $clientId
+            CertificateThumbprint   = $certThumb
+            Mode                    = "UpdateMetadata"
+            ExistingAppId           = $currentApp.appId
+            AppName                 = $currentApp.appName
+            Description             = $newMetadata.description
+            Publisher               = $newMetadata.publisher
+            Owner                   = $newMetadata.owner
+            Developer               = $newMetadata.developer
+            InformationUrl          = $newMetadata.informationUrl
+            PrivacyUrl              = $newMetadata.privacyUrl
+            Notes                   = $newMetadata.notes
+            InstallCommand          = $newMetadata.installCommand
+            UninstallCommand        = $newMetadata.uninstallCommand
+            DetectionRule           = $newMetadata.detectionRule
+            InstallContext          = $newMetadata.installContext
+            Architecture            = $newMetadata.architecture
+            MinOSVersionKey         = $newMetadata.minOSKey
+            MinDiskSpaceMB          = $newMetadata.minDiskSpaceMB
+            MinMemoryMB             = $newMetadata.minMemoryMB
+            MinProcessors           = $newMetadata.minProcessors
+            MinCpuSpeedMHz          = $newMetadata.minCpuSpeedMHz
+            InstallTimeMinutes      = $newMetadata.installTimeMinutes
+            DeviceRestartBehavior   = $newMetadata.deviceRestartBehavior
+            AllowAvailableUninstall = $newMetadata.allowAvailableUninstall
+            ReturnCodes             = @($newMetadata.returnCodes)
+            PackagePath             = ""
+            DependencyAppIds        = @($resolvedDepIds)
+            ReplaceContent          = $false
+            OutputResultPath        = $resultPath
+        }
+
+        try {
+            $configJsonText = $config | ConvertTo-Json -Depth 10 -ErrorAction Stop
+            [System.IO.File]::WriteAllText($configPath, $configJsonText, (New-Object System.Text.UTF8Encoding($false)))
+        }
+        catch {
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
+            return
+        }
+
+        # Fresh aliases for this nested -OnComplete closure - see note at
+        # the top of Show-CreateInIntuneDialog for why this matters here too.
+        $currentAppRef = $currentApp
+        $newMetadataRef = $newMetadata
+        $queueRef = $Queue
+        $queueIndexRef = $QueueIndex
+        $resultsRef = $Results
+        $changesRef = $Changes
+        $configPathRef = $configPath
+        $resultPathRef = $resultPath
+        $procBoxRef = $procBox
+        $rtbLogRef = $rtbLog
+        $appsRefRef = $appsRef
+        $RunNextBoxRef = $RunNextBox
+        $linkedFilePathRef = $linkedFilePath
+        $unsavedBoxRef = $unsavedBox
+
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".intunepkg_embedded_batchedit.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLogRef -OnComplete {
+            param($code)
+            $procBoxRef.Proc = $null
+            Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue
+
+            $status = "Failed"
+            $message = "No result written (exit code $code)."
+            if (Test-Path $resultPathRef) {
+                try {
+                    $result = Get-Content -Path $resultPathRef -Raw -Encoding UTF8 | ConvertFrom-Json
+                    Remove-Item $resultPathRef -Force -ErrorAction SilentlyContinue
+                    if ($result.success) {
+                        $status = "Updated"
+                        $message = "Updated"
+                        for ($ai = 0; $ai -lt $appsRefRef.Count; $ai++) {
+                            if ($appsRefRef[$ai].appName -eq $currentAppRef.appName) {
+                                # Saved as the NEW values just pushed, not
+                                # re-fetched from Intune - a successful PATCH
+                                # means Intune now matches this exactly.
+                                $appsRefRef[$ai].metadata = $newMetadataRef
+                                break
+                            }
+                        }
+                        $unsavedBoxRef.Value = $true
+                        # Direct-save after EACH successful app, not just once
+                        # at the end - same reasoning as Show-BatchDeployDialog's
+                        # own per-app save: an interrupted batch shouldn't lose
+                        # progress already confirmed successful in Intune.
+                        [void](Save-AppsToFile -Path $linkedFilePathRef)
+                        $rtbLogRef.AppendText("  [OK] Updated.`r`n")
+                    }
+                    else {
+                        $message = $result.error
+                        $rtbLogRef.AppendText("  [FAILED] $($result.error)`r`n")
+                    }
+                }
+                catch {
+                    $message = "Could not read result: $($_.Exception.Message)"
+                    $rtbLogRef.AppendText("  [FAILED] Could not read result: $($_.Exception.Message)`r`n")
+                }
+            }
+            else {
+                $rtbLogRef.AppendText("  [FAILED] $message`r`n")
+            }
+
+            $resultsRef.Add([pscustomobject]@{ AppName = $currentAppRef.appName; Status = $status; Message = $message })
+            & $RunNextBoxRef.Value -Queue $queueRef -QueueIndex ($queueIndexRef + 1) -Results $resultsRef -Changes $changesRef
+        }.GetNewClosure()
+    }.GetNewClosure()
+
+    $btnRun.Add_Click({
+        $checkedNames = @($clbApps.CheckedItems | ForEach-Object { [string]$_ })
+        if ($checkedNames.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Check at least one app to change.", "Nothing selected", "OK", "Warning") | Out-Null
+            return
+        }
+        if (-not ($chkEnableArch.Checked -or $chkEnableMinOS.Checked -or $chkEnableDiskSpace.Checked -or $chkEnableMemory.Checked -or $chkEnableProcessors.Checked -or $chkEnableCpuSpeed.Checked -or $chkEnableInstallTime.Checked -or $chkEnableRestartBehavior.Checked -or $chkEnableAllowUninstall.Checked -or $chkEnableReturnCodes.Checked -or $chkEnableDependencies.Checked)) {
+            [System.Windows.Forms.MessageBox]::Show("Check at least one field to change.", "Nothing to change", "OK", "Warning") | Out-Null
+            return
+        }
+        if ($chkEnableArch.Checked -and -not ($chkArchX86.Checked -or $chkArchX64.Checked -or $chkArchArm64.Checked)) {
+            [System.Windows.Forms.MessageBox]::Show("Architecture is checked, but no architecture is selected. Pick at least one (x86/x64/ARM64).", "Nothing selected", "OK", "Warning") | Out-Null
+            return
+        }
+
+        $checkedApps = New-Object System.Collections.Generic.List[object]
+        foreach ($name in $checkedNames) {
+            $matchApp = $eligibleApps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+            if ($matchApp) { $checkedApps.Add($matchApp) }
+        }
+
+        $changeSummary = New-Object System.Collections.Generic.List[string]
+        $changes = [pscustomobject]@{
+            Architecture = $null; MinOSKey = $null; MinDiskSpaceMB = $null; MinMemoryMB = $null
+            MinProcessors = $null; MinCpuSpeedMHz = $null; InstallTimeMinutes = $null
+            DeviceRestartBehavior = $null; AllowAvailableUninstall = $null; ReturnCodes = $null; Dependencies = $null
+        }
+        if ($chkEnableArch.Checked) {
+            $archList = @(@("x86","x64","arm64") | Where-Object { ($_ -eq "x86" -and $chkArchX86.Checked) -or ($_ -eq "x64" -and $chkArchX64.Checked) -or ($_ -eq "arm64" -and $chkArchArm64.Checked) })
+            $changes.Architecture = $archList -join ","
+            $changeSummary.Add("Architecture -> $($changes.Architecture)")
+        }
+        if ($chkEnableMinOS.Checked) {
+            $changes.MinOSKey = $minOsMap[[string]$cmbMinOS.SelectedItem]
+            $changeSummary.Add("Minimum Windows -> $($cmbMinOS.SelectedItem)")
+        }
+        if ($chkEnableDiskSpace.Checked)      { $changes.MinDiskSpaceMB = [int]$txtDiskSpace.Text.Trim(); $changeSummary.Add("Disk space (MB) -> $($changes.MinDiskSpaceMB)") }
+        if ($chkEnableMemory.Checked)         { $changes.MinMemoryMB = [int]$txtMemory.Text.Trim(); $changeSummary.Add("Memory (MB) -> $($changes.MinMemoryMB)") }
+        if ($chkEnableProcessors.Checked)     { $changes.MinProcessors = [int]$txtProcessors.Text.Trim(); $changeSummary.Add("Min. processors -> $($changes.MinProcessors)") }
+        if ($chkEnableCpuSpeed.Checked)       { $changes.MinCpuSpeedMHz = [int]$txtCpuSpeed.Text.Trim(); $changeSummary.Add("Min. CPU speed (MHz) -> $($changes.MinCpuSpeedMHz)") }
+        if ($chkEnableInstallTime.Checked)    { $changes.InstallTimeMinutes = [int]$txtInstallTime.Text.Trim(); $changeSummary.Add("Install time (mins) -> $($changes.InstallTimeMinutes)") }
+        if ($chkEnableRestartBehavior.Checked) {
+            $changes.DeviceRestartBehavior = $restartBehaviorMap[[string]$cmbRestartBehavior.SelectedItem]
+            $changeSummary.Add("Device restart behavior -> $($cmbRestartBehavior.SelectedItem)")
+        }
+        if ($chkEnableAllowUninstall.Checked) { $changes.AllowAvailableUninstall = $chkAllowUninstall.Checked; $changeSummary.Add("Allow available uninstall -> $($chkAllowUninstall.Checked)") }
+        if ($chkEnableReturnCodes.Checked) {
+            $rcList = New-Object System.Collections.Generic.List[object]
+            foreach ($row in $grdReturnCodes.Rows) {
+                if ($row.IsNewRow) { continue }
+                $rcCode = [string]$row.Cells["Code"].Value
+                $rcType = [string]$row.Cells["Type"].Value
+                if (-not $rcCode -and -not $rcType) { continue }
+                $parsedRc = 0
+                [void][int]::TryParse($rcCode.Trim(), [ref]$parsedRc)
+                $rcList.Add([pscustomobject]@{ returnCode = $parsedRc; type = $rcType })
+            }
+            $changes.ReturnCodes = $rcList.ToArray()
+            $changeSummary.Add("Return codes -> $($rcList.Count) row(s)")
+        }
+        if ($chkEnableDependencies.Checked) {
+            $changes.Dependencies = @($clbDeps.CheckedItems | ForEach-Object { [string]$_ })
+            $depsText = if ($changes.Dependencies.Count -gt 0) { $changes.Dependencies -join ", " } else { "(none)" }
+            $changeSummary.Add("Dependencies -> $depsText")
+        }
+
+        $confirmMsg = "This will PATCH $($checkedApps.Count) app(s) directly in Intune:`n`n$($changeSummary -join "`n")`n`nApps: $($checkedNames -join ", ")`n`nContinue?"
+        $r = [System.Windows.Forms.MessageBox]::Show($confirmMsg, "Confirm batch edit", "YesNo", "Warning")
+        if ($r -ne "Yes") { return }
+
+        $btnRun.Enabled = $false
+        $btnSelectAll.Enabled = $false
+        $btnSelectNone.Enabled = $false
+        $clbApps.Enabled = $false
+        $rtbLog.Clear()
+        $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+        $lblStatus.Text = "Starting..."
+        $progressBar.Minimum = 0
+        $progressBar.Maximum = [Math]::Max(1, $checkedApps.Count)
+        $progressBar.Value = 0
+
+        $resultsList = New-Object System.Collections.Generic.List[object]
+        & $RunNextBox.Value -Queue $checkedApps.ToArray() -QueueIndex 0 -Results $resultsList -Changes $changes
+    }.GetNewClosure())
+
+    $btnClose.Add_Click({
+        if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
+            $r = [System.Windows.Forms.MessageBox]::Show(
+                "A batch edit is currently running. Stop it and close this dialog?`n`nAny app already updated in Intune stays updated.",
+                "Stop and close?", "YesNo", "Warning")
+            if ($r -ne "Yes") { return }
+            try { $procBox.Proc.Kill() } catch { }
+        }
+        $dlg.Close()
+    }.GetNewClosure())
+    $dlg.CancelButton = $btnClose
+
+    Set-Theme -Control $dlg
+    [void]$dlg.ShowDialog($form)
+}
+
 function Show-SyncMetadataDialog {
     param([int[]]$ScopedIndices = @())
 
@@ -18345,6 +18994,11 @@ $btnSyncMetadata.Add_Click({
     # metadata directly on disk while this dialog is open, so the main
     # grid is stale the moment it closes regardless of how it was
     # closed (Close button vs. the window's own X).
+    Refresh-Grid
+})
+$btnBatchEdit.Add_Click({
+    $selectedIndices = Get-SelectedAppIndices
+    Show-BatchEditMetadataDialog -ScopedIndices $selectedIndices
     Refresh-Grid
 })
 $btnBatchDeploy.Add_Click({
