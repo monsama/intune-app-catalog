@@ -265,7 +265,7 @@ function Global:New-GridColumn {
     return $col
 }
 
-function Global:Refresh-Grid {
+function Global:Update-Grid {
     $filter = $Global:App.TxtSearch.Text.Trim().ToLower()
     $rows = New-Object System.Collections.Generic.List[Object]
 

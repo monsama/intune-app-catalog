@@ -163,7 +163,7 @@ function Global:Show-BatchDeployDialog {
             # inside the loop above, not just here at the end) - refreshed
             # now regardless of whether this dialog is about to close,
             # same reasoning as every other bulk action in this app.
-            Refresh-Grid
+            Update-Grid
 
             # Closes itself on a clean run, same as bulk delete already
             # does - nothing left here worth an extra manual click to

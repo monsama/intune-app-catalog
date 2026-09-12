@@ -88,7 +88,7 @@ $Global:App.RootPath        = $PSScriptRoot
 # "app-data/7zip.json"), not a single input.json - kept the same variable
 # name despite the changed meaning to minimize how many of the many
 # existing references throughout this script needed touching, given the
-# genuine risk of a change this size. Load-AppsFromFile automatically
+# genuine risk of a change this size. Import-AppsFromFile automatically
 # migrates an old single-file input.json into this folder the first time
 # it doesn't find the new structure already there.
 $Global:App.LinkedFilePath  = Join-Path $Global:App.RootPath "app-data"
@@ -113,8 +113,8 @@ $Global:App.EntraDirectoryCache = New-Object System.Collections.ArrayList   # po
 # "Last Audit" column simply falls back to "Never audited".
 $Global:App.LastAuditResults = @{}
 $Global:App.LastAuditCachePath = Join-Path $Global:App.RootPath "last-audit-cache.json"
-$Global:App.LogFileWriter = $null   # opened in Ensure-Folders, written to by Write-Log, closed on FormClosing - see both below
-$Global:App.LogFlushTimer = $null   # periodic flush timer for the above - see Ensure-Folders
+$Global:App.LogFileWriter = $null   # opened in Initialize-Folders, written to by Write-Log, closed on FormClosing - see both below
+$Global:App.LogFlushTimer = $null   # periodic flush timer for the above - see Initialize-Folders
 $Global:App.AppVersion = "1.1"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance rather than by diffing the whole file
 
 # App-only Graph auth (certificate) - must match the values in the Assign step /
@@ -123,7 +123,7 @@ $Global:App.AppVersion = "1.1"   # bump when shipping a meaningfully different b
 # lives in a repo. Configure these via "Settings..." in the app on first
 # run; they're then saved to intune-deployment-settings.json next to this
 # script and loaded automatically from there on every subsequent launch
-# (see Load-GraphSettings below). The certificate itself must already be
+# (see Import-GraphSettings below). The certificate itself must already be
 # installed in this user's certificate store - Settings can also pick an
 # existing one or generate a new one.
 $Global:App.GraphTenantId              = ""
@@ -236,7 +236,7 @@ $Global:App.LightPalette = @{
 # run another cert operation) shouldn't force a fresh sign-in each time.
 # Only when the app itself exits does the cached credential get cleared.
 
-Load-GraphSettings
+Import-GraphSettings
 
 # =====================================================================
 # Embedded pipeline scripts
@@ -1268,7 +1268,7 @@ $btnNew.Add_Click({
         # adding one app is a complete action in itself, with no batching
         # benefit to be had from deferring the write to a separate click.
         [void](Save-AppsToFile -Path $Global:App.LinkedFilePath)
-        Refresh-Grid
+        Update-Grid
         if ($editorResult.DeployAfterSave) {
             $newIndex = -1
             for ($ni = 0; $ni -lt $Global:App.Apps.Count; $ni++) {
@@ -1308,7 +1308,7 @@ $btnEdit.Add_Click({
         Write-Log "btnEdit: after assignment, `$Global:App.Apps[$targetIndex] has metadata: $($null -ne $Global:App.Apps[$targetIndex].metadata).`r`n"
         $Global:App.UnsavedChangesBox.Value = $true
         [void](Save-AppsToFile -Path $Global:App.LinkedFilePath)
-        Refresh-Grid
+        Update-Grid
         if ($editorResult.DeployAfterSave) { Show-BatchDeployDialog -ScopedIndices @($targetIndex) }
     }
 })
@@ -1472,21 +1472,21 @@ $menuItemAssign.Add_Click({
         return
     }
     Show-BatchAssignDialog -ScopedIndices $indices
-    Refresh-Grid
+    Update-Grid
 })
 
 $menuItemSyncMetadata.Add_Click({
     $indices = Get-SelectedAppIndices
     if ($indices.Count -eq 0) { return }
     Show-SyncMetadataDialog -ScopedIndices $indices
-    Refresh-Grid
+    Update-Grid
 })
 
 $menuItemAudit.Add_Click({
     $indices = Get-SelectedAppIndices
     if ($indices.Count -eq 0) { return }
     Show-IntuneAuditDialog -ScopedIndices $indices
-    Refresh-Grid
+    Update-Grid
 })
 
 $menuItemDeleteIntune.Add_Click({
@@ -1496,7 +1496,7 @@ $menuItemDeleteIntune.Add_Click({
         Invoke-QuickDeleteFromIntune -Index $indices[0]
         return
     }
-    if (Show-BulkDeleteFromIntuneDialog -Indices $indices) { Refresh-Grid }
+    if (Show-BulkDeleteFromIntuneDialog -Indices $indices) { Update-Grid }
 })
 
 $Global:App.BtnDelete.Add_Click({
@@ -1528,13 +1528,13 @@ $Global:App.BtnDelete.Add_Click({
         # catalog gets reloaded without an explicit save having happened
         # first.
         [void](Save-AppsToFile -Path $Global:App.LinkedFilePath)
-        Refresh-Grid
+        Update-Grid
     }
 })
 
 $Global:App.BtnSave.Add_Click({
     if (Save-AppsToFile -Path $Global:App.LinkedFilePath) {
-        Refresh-Grid
+        Update-Grid
         Set-Status "Saved $($Global:App.Apps.Count) app(s) to $Global:App.LinkedFilePath"
     }
 })
@@ -1576,8 +1576,8 @@ $btnReload.Add_Click({
         $r = [System.Windows.Forms.MessageBox]::Show("Discard unsaved changes and reload from disk?", "Reload", "YesNo", "Warning")
         if ($r -ne "Yes") { return }
     }
-    Load-AppsFromFile -Path $Global:App.LinkedFilePath
-    Refresh-Grid
+    Import-AppsFromFile -Path $Global:App.LinkedFilePath
+    Update-Grid
     Start-TypeVersionBackfill
 })
 
@@ -1589,8 +1589,8 @@ $btnOpen.Add_Click({
     $fbd.SelectedPath = $Global:App.RootPath
     if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
         $Global:App.LinkedFilePath = $fbd.SelectedPath
-        Load-AppsFromFile -Path $Global:App.LinkedFilePath
-        Refresh-Grid
+        Import-AppsFromFile -Path $Global:App.LinkedFilePath
+        Update-Grid
         Start-TypeVersionBackfill
     }
 })
@@ -1612,7 +1612,7 @@ $btnDefaultValues.Add_Click({ Show-DefaultAppSettingsDialog })
 $btnDiagnostics.Add_Click({ Show-DiagnosticsDialog })
 $btnCheckIntuneOnly.Add_Click({
     $changed = Show-IntuneOnlyAppsDialog
-    if ($changed) { Refresh-Grid }
+    if ($changed) { Update-Grid }
 })
 
 $btnBatchAssign.Add_Click({
@@ -1622,7 +1622,7 @@ $btnBatchAssign.Add_Click({
     # disk (same as every other bulk action) and changes the main
     # grid's own Required/Available/Uninstall counts - same reasoning
     # as the identical fix just made for Sync metadata.
-    Refresh-Grid
+    Update-Grid
 })
 $btnSyncMetadata.Add_Click({
     $selectedIndices = Get-SelectedAppIndices
@@ -1632,12 +1632,12 @@ $btnSyncMetadata.Add_Click({
     # metadata directly on disk while this dialog is open, so the main
     # grid is stale the moment it closes regardless of how it was
     # closed (Close button vs. the window's own X).
-    Refresh-Grid
+    Update-Grid
 })
 $btnBatchEdit.Add_Click({
     $selectedIndices = Get-SelectedAppIndices
     Show-BatchEditMetadataDialog -ScopedIndices $selectedIndices
-    Refresh-Grid
+    Update-Grid
 })
 $btnBatchDeploy.Add_Click({
     $selectedIndices = Get-SelectedAppIndices
@@ -1647,9 +1647,9 @@ $btnGroupManager.Add_Click({ Show-GroupManagerDialog })
 $btnFavoriteGroups.Add_Click({ Show-FavoriteGroupsManager })
 $btnGroupDrift.Add_Click({ Show-GroupDriftCheckDialog })
 $btnDependencies.Add_Click({ Show-DependencyOverviewDialog })
-$btnIntuneAudit.Add_Click({ Show-IntuneAuditDialog; Refresh-Grid })
+$btnIntuneAudit.Add_Click({ Show-IntuneAuditDialog; Update-Grid })
 
-$Global:App.TxtSearch.Add_TextChanged({ Refresh-Grid })
+$Global:App.TxtSearch.Add_TextChanged({ Update-Grid })
 
 # =====================================================================
 # Log tab
@@ -1711,10 +1711,10 @@ $Global:App.BtnRunLaunch.Add_Click({
 # =====================================================================
 # Startup
 # =====================================================================
-Ensure-Folders
-Load-AppsFromFile -Path $Global:App.LinkedFilePath
+Initialize-Folders
+Import-AppsFromFile -Path $Global:App.LinkedFilePath
 Load-LastAuditCache
-Refresh-Grid
+Update-Grid
 Write-Log "Intune deployment console ready (v$($Global:App.AppVersion)). Root: $Global:App.RootPath`r`n" ([System.Drawing.Color]::Gainsboro)
 Start-TypeVersionBackfill
 

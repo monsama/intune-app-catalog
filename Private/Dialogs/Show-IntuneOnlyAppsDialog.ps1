@@ -8,7 +8,7 @@ function Global:Show-IntuneOnlyAppsDialog {
     $linkedFilePathRef = $Global:App.LinkedFilePath
 
     # Tracks whether anything changed, so the caller (a plain, top-level
-    # button handler - the same proven-safe context every other Refresh-Grid
+    # button handler - the same proven-safe context every other Update-Grid
     # call site uses) can refresh the main catalog grid itself after this
     # dialog closes, rather than this dialog trying to reach across into the
     # main grid's own refresh from deep inside a nested closure.

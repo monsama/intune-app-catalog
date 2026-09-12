@@ -25,7 +25,7 @@ function Global:Show-AppEditor {
     $unsavedBoxRef = $Global:App.UnsavedChangesBox
 
     # Previous/Next targets, computed once against the SAME filter the main
-    # grid itself is currently showing (Refresh-Grid's own "$appName
+    # grid itself is currently showing (Update-Grid's own "$appName
     # $wingetId" -like "*filter*" check, duplicated here rather than
     # shared - it's a two-line check, and sharing it would mean threading
     # a delegate through a function that otherwise has zero dependency on
@@ -776,7 +776,7 @@ function Global:Show-AppEditor {
                 $existingFilePath = Join-Path $linkedFilePath ((Get-SafeFileNameForApp -Name $ExistingApp.appName) + ".json")
                 if ($ExistingApp -and (Test-Path $existingFilePath)) {
                     # -Encoding UTF8 explicitly - same reasoning as
-                    # Load-AppsFromFile's own read of this same file format.
+                    # Import-AppsFromFile's own read of this same file format.
                     $onDiskApp = Get-Content -Path $existingFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
                     if ($onDiskApp.metadata) {
                         $preservedMetadata = $onDiskApp.metadata

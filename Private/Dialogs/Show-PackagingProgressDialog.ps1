@@ -61,7 +61,7 @@ function Global:Show-PackagingProgressDialog {
         # never took effect, leaving Close permanently greyed out even
         # though the run itself completed successfully (exit code 0,
         # "[Finished]" printed) - a doubly-nested closure failing to see an
-        # outer closure's own capture, not a Refresh-Grid exception (that
+        # outer closure's own capture, not a Update-Grid exception (that
         # path was already defended with its own try/catch/finally, which
         # is why this went unnoticed until now).
         $btnCloseRef2 = $btnCloseRef
@@ -71,16 +71,16 @@ function Global:Show-PackagingProgressDialog {
 
         Invoke-LaunchStep -ExtraLogTarget $rtbLogRef2 -SingleFolderName $SingleFolderName -FolderNames $FolderNames -OnComplete {
             param($code)
-            # Refresh-Grid wrapped in try/finally - it's local catalog/filesystem
+            # Update-Grid wrapped in try/finally - it's local catalog/filesystem
             # work with no reason to fail, but this runs from inside a Timer.Tick
             # handler (see Start-PipelineProcess), where an unhandled exception
             # can be silently swallowed by the .NET event dispatch instead of
             # surfacing anywhere - which previously would have skipped every
             # statement after it, leaving Close permanently disabled and the
             # dialog's FormClosing guard blocking the window forever. Whatever
-            # happens in Refresh-Grid, the dialog must still unlock.
+            # happens in Update-Grid, the dialog must still unlock.
             try {
-                Refresh-Grid
+                Update-Grid
             }
             catch {
                 $rtbLogRef2.AppendText("`r`n[WARN] Grid refresh after packaging failed: $($_.Exception.Message)`r`n")

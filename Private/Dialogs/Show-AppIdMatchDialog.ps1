@@ -204,7 +204,7 @@ function Global:Show-AppIdMatchDialog {
             # session: applying matched App IDs is a complete action in
             # itself, with no batching benefit to be had from deferring it.
             [void](Save-AppsToFile -Path $linkedFilePath)
-            Refresh-Grid
+            Update-Grid
             Write-Log "Applied $applied App ID(s) from Intune lookup.`r`n" ([System.Drawing.Color]::LightGreen)
         }
         $doneMsg = if ($applied -gt 0) { "$applied App ID(s) applied and saved to the local catalog." } else { "$applied App ID(s) applied." }

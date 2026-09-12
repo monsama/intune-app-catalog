@@ -1,7 +1,7 @@
-function Global:Load-GraphSettings {
+function Global:Import-GraphSettings {
     if (-not (Test-Path $Global:App.SettingsFilePath)) { return }
     try {
-        # -Encoding UTF8 explicitly - same reasoning as Load-AppsFromFile's
+        # -Encoding UTF8 explicitly - same reasoning as Import-AppsFromFile's
         # own per-app file read: this file is written BOM-less UTF8
         # (Write-SettingsFile), which Get-Content silently misreads as the
         # system ANSI codepage under Windows PowerShell 5.1 without this.
@@ -114,7 +114,7 @@ function Global:Test-GraphCredentialsConfigured {
     # -not [string]::IsNullOrWhiteSpace(...), not plain PowerShell truthiness
     # ($Global:App.GraphTenantId -and ...) - a value that's present but only
     # whitespace (e.g. a stray-space CertificateThumbprint loaded from an
-    # unrimmed intune-deployment-settings.json - see Load-GraphSettings) is
+    # unrimmed intune-deployment-settings.json - see Import-GraphSettings) is
     # truthy in PowerShell, so the old plain check reported "all set" here
     # while Get-CertificateStatusText's own (already whitespace-aware)
     # check correctly reported "No thumbprint set." for the exact same

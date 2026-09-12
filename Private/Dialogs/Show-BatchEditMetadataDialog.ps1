@@ -354,7 +354,7 @@ function Global:Show-BatchEditMetadataDialog {
             $clbApps.Enabled = $true
             $lblStatus.ForeColor = if ($failedCount -gt 0) { [System.Drawing.Color]::DarkOrange } else { [System.Drawing.Color]::SeaGreen }
             $lblStatus.Text = "Done - $updatedCount updated, $failedCount failed."
-            Refresh-Grid
+            Update-Grid
             if ($failedCount -eq 0) { $dlg.Close() }
             return
         }

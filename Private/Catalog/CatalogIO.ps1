@@ -96,7 +96,7 @@ function Global:ConvertTo-AppRecord {
     }
 }
 
-function Global:Load-AppsFromFile {
+function Global:Import-AppsFromFile {
     param([string]$Path)
 
     # Every (re)load is a fresh catalog as far as the Type/Version
@@ -545,7 +545,7 @@ function Global:Save-AppsToFile {
 
         # Each app's write isolated in its own try/catch, not one shared
         # try around the whole loop - the same principle already applied
-        # in Load-AppsFromFile: one app's data being unable to serialize
+        # in Import-AppsFromFile: one app's data being unable to serialize
         # shouldn't block every OTHER app in the catalog from being saved
         # correctly. Failed apps are collected and reported clearly
         # afterward, rather than either silently skipping them or letting

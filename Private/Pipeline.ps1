@@ -25,7 +25,7 @@ function Global:Set-PipelineButtonsEnabled {
     $Global:App.Progress.Visible = -not $Enabled
 }
 
-function Global:Ensure-Folders {
+function Global:Initialize-Folders {
     $folders = @("app-packages","app-data","logs","backups")
     foreach ($f in $folders) {
         $p = Join-Path $Global:App.RootPath $f
@@ -59,7 +59,7 @@ function Global:Ensure-Folders {
             # (not just nested dialog closures) doesn't reliably see
             # $Script:-qualified variables from within an event handler
             # scriptblock; see the note in Start-IntuneAppLookup. Safe to
-            # alias once here since Ensure-Folders only ever opens this
+            # alias once here since Initialize-Folders only ever opens this
             # writer once per app session (guarded by the outer "if (-not
             # $Global:App.LogFileWriter)" check above), so this reference never
             # goes stale during the run.
@@ -259,7 +259,7 @@ function Global:Invoke-LaunchStep {
         # param for why this exists.
         [System.Windows.Forms.RichTextBox]$ExtraLogTarget = $null
     )
-    Ensure-Folders
+    Initialize-Folders
     $rootPath = $Global:App.RootPath   # plain local alias - see note in Start-IntuneAppLookup
     if ($SingleFolderName) {
         Write-Log "=== Package single app: $SingleFolderName ===`r`n" ([System.Drawing.Color]::DeepSkyBlue)

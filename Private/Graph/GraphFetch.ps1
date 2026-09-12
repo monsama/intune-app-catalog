@@ -777,7 +777,7 @@ function Global:Start-TypeVersionBackfill {
         if ($QueueIndex -ge $Queue.Count) {
             if ($UpdatedCount -gt 0) {
                 [void](Save-AppsToFile -Path $linkedFilePathRef)
-                Refresh-Grid
+                Update-Grid
             }
             $doneColor = if ($FailedCount -gt 0) { [System.Drawing.Color]::DarkOrange } else { [System.Drawing.Color]::LightGreen }
             $doneMsg = "Type/Version backfill done - $UpdatedCount app(s) updated."

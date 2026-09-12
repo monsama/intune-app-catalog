@@ -16,7 +16,7 @@ function Global:Invoke-QuickDeploy {
         # again later thinking it still needs it, that creates a genuine
         # duplicate in Intune, not just a display inconsistency.
         [void](Save-AppsToFile -Path $Global:App.LinkedFilePath)
-        Refresh-Grid
+        Update-Grid
     }
 }
 
@@ -38,7 +38,7 @@ function Global:Invoke-QuickDeleteFromIntune {
     # .Success only ever means "deleted from Intune" - a catalog-only
     # removal (no App ID to begin with) reports Success=$false with
     # RemovedFromCatalog=$true instead, so both are checked here, not
-    # just Success alone; missing that would skip the Refresh-Grid below
+    # just Success alone; missing that would skip the Update-Grid below
     # and leave a stale row for an app that's already gone from $Global:App.Apps.
     if (-not $deleted.Success -and -not $deleted.RemovedFromCatalog) { return }
     # Show-DeleteAppDialog itself already removed the catalog entry and
@@ -55,5 +55,5 @@ function Global:Invoke-QuickDeleteFromIntune {
         # remembered to save separately.
         [void](Save-AppsToFile -Path $Global:App.LinkedFilePath)
     }
-    Refresh-Grid
+    Update-Grid
 }
