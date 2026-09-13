@@ -2246,7 +2246,7 @@ function Global:Show-CreateInIntuneDialog {
         if (-not $saveSucceeded) {
             # A real failure worth seeing and acting on, not just a
             # confirmation - dialog stays open so the user can retry
-            # (e.g. via the main toolbar's Save to input.json) rather than
+            # (e.g. via the main toolbar's "Force save catalog") rather than
             # closing on them right when something needs attention.
             $lblCreateStatus.ForeColor = [System.Drawing.Color]::DarkOrange
             $lblCreateStatus.Text = "$($createdMsg)Metadata saved in memory for `"$AppName`", but writing to disk was cancelled or failed - use Force save catalog to try again."
