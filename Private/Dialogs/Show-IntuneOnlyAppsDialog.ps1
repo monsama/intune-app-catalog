@@ -14,6 +14,20 @@ function Global:Show-IntuneOnlyAppsDialog {
     # main grid's own refresh from deep inside a nested closure.
     $anyAddedBox = @{ Value = $false }
 
+    # Counts how many of this dialog's THREE separate background fetches
+    # (Refresh, the single-row "Add to catalog..." group fetch, and the
+    # bulk "Add checked to catalog" queue) are currently in flight - none
+    # of the existing per-button Enabled flags work as a single "is
+    # anything running" signal on their own ($btnAction.Enabled in
+    # particular also means "a row happens to be selected", unrelated to
+    # any fetch), so this is a dedicated counter instead. Read by
+    # FormClosing below to block the window from closing mid-fetch, which
+    # would otherwise leave a Timer still ticking against controls on a
+    # disposed form - and for the bulk queue specifically, keep silently
+    # calling Save-AppsToFile/mutating the catalog after the user believes
+    # they've cancelled.
+    $busyBox = @{ Count = 0 }
+
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Intune sync check"
     $dlg.ClientSize = New-Object System.Drawing.Size(760, 534)
@@ -216,6 +230,7 @@ function Global:Show-IntuneOnlyAppsDialog {
 
     $btnRefresh.Add_Click({
         $btnRefresh.Enabled = $false
+        $busyBox.Count++
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = "Fetching apps from Intune..."
         $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
@@ -226,12 +241,14 @@ function Global:Show-IntuneOnlyAppsDialog {
         $dlgRef = $dlg
         $lblStatusRef = $lblStatus
         $populateGridRef = $populateGrid
+        $busyBoxRef = $busyBox
 
         Start-IntuneAppLookup -OnComplete {
             param($ok, $data)
             $dlgRef.Cursor = [System.Windows.Forms.Cursors]::Default
             [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
             $btnRefreshRef.Enabled = $true
+            $busyBoxRef.Count--
             if (-not $ok) {
                 $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
                 $lblStatusRef.Text = "Fetch failed: $data"
@@ -292,6 +309,7 @@ function Global:Show-IntuneOnlyAppsDialog {
         }
         else {
             $btnAction.Enabled = $false
+            $busyBox.Count++
             $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
             $lblStatus.Text = "Fetching current group assignments from Intune..."
             $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
@@ -309,11 +327,13 @@ function Global:Show-IntuneOnlyAppsDialog {
             $dlgRef2 = $dlg
             $lblStatusRef2 = $lblStatus
             $btnActionRef2 = $btnAction
+            $busyBoxRef2 = $busyBox
 
             Start-AppMetadataFetch -AppId $id -OnComplete {
                 param($ok, $errMsg, $data)
                 $dlgRef2.Cursor = [System.Windows.Forms.Cursors]::Default
                 $btnActionRef2.Enabled = $true
+                $busyBoxRef2.Count--
 
                 # A failed fetch still opens the editor - the whole point of
                 # this button is adding the app locally, and a Graph hiccup
@@ -391,6 +411,7 @@ function Global:Show-IntuneOnlyAppsDialog {
             $btnAddChecked.Enabled = $true
             $btnAction.Enabled = $true
             $grid.Enabled = $true
+            $busyBox.Count--
             $dlg.Cursor = [System.Windows.Forms.Cursors]::Default
             $lblStatus.ForeColor = [System.Drawing.Color]::SeaGreen
             $lblStatus.Text = ""
@@ -479,12 +500,22 @@ function Global:Show-IntuneOnlyAppsDialog {
         $btnAddChecked.Enabled = $false
         $btnAction.Enabled = $false
         $grid.Enabled = $false
+        $busyBox.Count++
         $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         & $RunAddQueueBox.Value -Queue $toAdd.ToArray() -QueueIndex 0 -AddedCount 0 -FailedGroupFetchCount 0
     }.GetNewClosure())
 
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     $dlg.CancelButton = $btnClose
+
+    # Blocks the window (X button / Alt+F4, not just Close) from closing
+    # while any of this dialog's three background fetches is still in
+    # flight - see $busyBox's own comment above for why a dedicated
+    # counter, not an existing Enabled flag, is what this checks.
+    $dlg.Add_FormClosing({
+        param($s, $e)
+        if ($busyBox.Count -gt 0) { $e.Cancel = $true }
+    }.GetNewClosure())
 
     # Deferred to Add_Shown rather than called directly here - kicking off
     # the async refresh (PerformClick -> Start-.../timer) BEFORE ShowDialog()

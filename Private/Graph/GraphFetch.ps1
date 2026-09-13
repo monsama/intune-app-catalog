@@ -346,6 +346,20 @@ function Global:Start-EntraDirectoryLookup {
         return
     }
 
+    # Same guard as Start-IntuneAppLookup's own $Global:App.BtnLookupIds
+    # check, but this function is called from several different dialogs
+    # (not one dedicated toolbar button), so it needs its own dedicated
+    # flag rather than borrowing a specific button's Enabled state. Without
+    # it, double-clicking a Refresh button that calls this can launch two
+    # concurrent runspaces; whichever finishes first resets the WaitCursor
+    # back to Default while the other is still silently fetching.
+    if ($Global:App.EntraDirectoryLookupRunning) {
+        Write-Log "A lookup is already running - please wait for it to finish.`r`n" ([System.Drawing.Color]::Orange)
+        if ($OnComplete) { & $OnComplete $false "A lookup is already running" }
+        return
+    }
+    $Global:App.EntraDirectoryLookupRunning = $true
+
     Write-Log "=== Looking up groups and users from Entra ID (Microsoft Graph, app-only via certificate) ===`r`n" ([System.Drawing.Color]::DeepSkyBlue)
     $Global:App.Form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
@@ -431,6 +445,7 @@ function Global:Start-EntraDirectoryLookup {
             $ps.Dispose()
             $rs.Close()
             $rs.Dispose()
+            $Global:App.EntraDirectoryLookupRunning = $false
         }
     }.GetNewClosure())
     $timer.Start()
@@ -755,13 +770,23 @@ function Global:Start-AppMetadataFetch {
 
 function Global:Start-TypeVersionBackfill {
     if ($Global:App.TypeVersionBackfillDone) { return }
-    if (-not (Test-GraphCredentialsConfigured)) { return }
 
+    # Checked BEFORE Test-GraphCredentialsConfigured (which pops a blocking
+    # "Not configured" MessageBox on failure) - not after, the way this used
+    # to be ordered. This runs automatically on every startup/Reload/Open
+    # other folder, unconditionally - a brand-new catalog, or one where
+    # every app already has intuneAppType recorded, has nothing to back
+    # fill at all, and was still getting an interruptive popup for a
+    # background maintenance task the user never asked to run, before
+    # they'd even seen the app's own (deliberately non-intrusive) yellow
+    # credential-warning banner further down in MainApp.ps1's startup.
     $needsBackfill = @($Global:App.Apps | Where-Object { $_.appId -and -not $_.intuneAppType })
     if ($needsBackfill.Count -eq 0) {
         $Global:App.TypeVersionBackfillDone = $true
         return
     }
+
+    if (-not (Test-GraphCredentialsConfigured)) { return }
 
     $Global:App.TypeVersionBackfillDone = $true
     Write-Log "Backfilling Type/Version for $($needsBackfill.Count) app(s) never synced before...`r`n" ([System.Drawing.Color]::Gainsboro)
@@ -769,10 +794,22 @@ function Global:Start-TypeVersionBackfill {
     $appsRef = $Global:App.Apps
     $linkedFilePathRef = $Global:App.LinkedFilePath
     $unsavedBoxRef = $Global:App.UnsavedChangesBox
+    # Captured now, checked again before every write below - see
+    # $Global:App.CatalogGeneration's own comment in MainApp.ps1 for why:
+    # $appsRef above is the SAME list object Import-AppsFromFile mutates in
+    # place on a Reload/Open other folder, so a generation mismatch is the
+    # only way this queue can tell "the catalog I started against isn't the
+    # one in front of the user anymore" and stop touching it.
+    $startGeneration = $Global:App.CatalogGeneration
 
     $RunBackfillQueueBox = @{ Value = $null }
     $RunBackfillQueueBox.Value = {
         param($Queue, $QueueIndex, $UpdatedCount, $FailedCount)
+
+        if ($Global:App.CatalogGeneration -ne $startGeneration) {
+            Write-Log "[SKIPPED] Type/Version backfill stopped - the catalog was reloaded partway through.`r`n" ([System.Drawing.Color]::DimGray)
+            return
+        }
 
         if ($QueueIndex -ge $Queue.Count) {
             if ($UpdatedCount -gt 0) {
@@ -798,9 +835,21 @@ function Global:Start-TypeVersionBackfill {
         $FailedCountRef = $FailedCount
         $RunBackfillQueueBoxRef = $RunBackfillQueueBox
         $unsavedBoxRefRef = $unsavedBoxRef
+        $startGenerationRef = $startGeneration
 
         Start-AppMetadataFetch -AppId $currentAppRef.appId -OnComplete {
             param($ok, $errMsg, $data)
+            # Checked again here, not just at the top of the queue loop
+            # above - THIS is where the actual write onto $appsRefRef
+            # happens (by app NAME, against whatever is in that list right
+            # now), and the catalog could have been reloaded in the time
+            # this one Graph fetch was in flight, not just between queue
+            # items. A stale generation here isn't a fetch failure (the
+            # fetch itself may well have succeeded), so it's not counted
+            # or logged as one - the top-of-loop check already logs the
+            # one summary line for this queue being abandoned.
+            if ($Global:App.CatalogGeneration -ne $startGenerationRef) { return }
+
             $nextUpdatedCount = $UpdatedCountRef
             $nextFailedCount = $FailedCountRef
             if ($ok) {

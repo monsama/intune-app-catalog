@@ -182,6 +182,49 @@ function Global:Set-Status {
     $Global:App.StatusLabel.Text = $Text
 }
 
+# Shows/hides the App Catalog tab's yellow "no Graph connection"/
+# "certificate warning" banner and logs the same thing to the Log tab -
+# extracted out of MainApp.ps1's own startup code so it can be re-run
+# after Settings closes too, not just once at launch. Previously the
+# banner only ever got EVALUATED at startup - if it came up (no
+# credentials, or a certificate that needs attention) and the user then
+# fixed it via Settings mid-session, the banner stayed up for the rest of
+# the session regardless, contradicting the app's own now-working state.
+# Always resets to hidden first, then re-shows only if still warranted -
+# safe to call as often as needed (startup, and after Settings closes).
+function Global:Update-CredentialWarningBanner {
+    $Global:App.PanelCredWarning.Visible = $false
+
+    # Whitespace-aware, same as Test-GraphCredentialsConfigured - a plain
+    # truthiness check here would treat a whitespace-only value as "set" and
+    # skip straight to the certificate-store lookup below, which is exactly
+    # the class of bug that made Diagnostics contradict itself (see
+    # Test-GraphCredentialsConfigured's own comment). Not calling that
+    # function directly here since it also pops a MessageBox on failure,
+    # which this silent check must never do.
+    if ([string]::IsNullOrWhiteSpace($Global:App.GraphTenantId) -or [string]::IsNullOrWhiteSpace($Global:App.GraphClientId) -or [string]::IsNullOrWhiteSpace($Global:App.GraphCertificateThumbprint)) {
+        Write-Log "No Graph connection configured yet - open 'Settings...' to set your Tenant ID, Client ID, and certificate before using anything that talks to Intune or Entra ID (App ID lookup, Deploy to Intune, Assign Groups, Intune sync check, Batch assign).`r`n" ([System.Drawing.Color]::Orange)
+        # Also shown as a banner on the App Catalog tab itself, not just
+        # logged - the Log tab isn't the default active one, so this is
+        # otherwise easy for a new user to never see until something fails
+        # with no obvious explanation why.
+        $Global:App.PanelCredWarning.Visible = $true
+        return
+    }
+
+    # Proactive, since every Graph-based feature in this app depends on this
+    # one certificate - previously this status only ever showed up if
+    # someone happened to open Settings, meaning it could quietly expire
+    # with zero warning until every Graph-based feature started failing
+    # all at once.
+    $certStatus = Get-CertificateStatusText -Thumbprint $Global:App.GraphCertificateThumbprint
+    if ($certStatus.Color -ne [System.Drawing.Color]::SeaGreen) {
+        Write-Log "Certificate warning: $($certStatus.Text) Open 'Settings...' to check or replace it.`r`n" ([System.Drawing.Color]::Orange)
+        $Global:App.LblCredWarning.Text = "Certificate warning: $($certStatus.Text) Open Settings to check or replace it."
+        $Global:App.PanelCredWarning.Visible = $true
+    }
+}
+
 function Global:Write-DialogError {
     param(
         [System.Windows.Forms.Label]$StatusLabel,

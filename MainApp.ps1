@@ -96,6 +96,7 @@ $Global:App.Apps            = New-Object System.Collections.ArrayList
 $Global:App.UnsavedChangesBox = @{ Value = $false }   # container (never reassigned) so closures can mutate it safely
 $Global:App.IntuneAppsCache = New-Object System.Collections.ArrayList   # populated by Start-IntuneAppLookup: array of @{ id; displayName } - mutated in place (Clear+Add), never reassigned, so every closure that references it stays in sync
 $Global:App.EntraDirectoryCache = New-Object System.Collections.ArrayList   # populated by Start-EntraDirectoryLookup: array of @{ displayName; type ("Group"/"User"); id; upn } - same mutate-in-place pattern as above
+$Global:App.EntraDirectoryLookupRunning = $false   # guards against two overlapping Start-EntraDirectoryLookup runs - see its own comment
 # Populated whenever any live-vs-Intune check runs for an app - the
 # single-app auto-fetch inside Show-CreateInIntuneDialog, or
 # Show-IntuneAuditDialog's own bulk run - keyed by appName. Persisted to
@@ -113,6 +114,17 @@ $Global:App.EntraDirectoryCache = New-Object System.Collections.ArrayList   # po
 # "Last Audit" column simply falls back to "Never audited".
 $Global:App.LastAuditResults = @{}
 $Global:App.LastAuditCachePath = Join-Path $Global:App.RootPath "last-audit-cache.json"
+# Bumped by Import-AppsFromFile every time it (re)loads the catalog -
+# Reload, Open other folder..., or startup itself. Start-TypeVersionBackfill
+# captures the value in effect when its background queue starts and checks
+# it again before every write; Import-AppsFromFile mutates $Global:App.Apps
+# IN PLACE (.Clear()/.Add(), never replaces the list object itself), so a
+# backfill queue still in flight from a folder the user has since moved
+# away from would otherwise happily go on matching by app NAME against
+# whatever is now in that same list - silently writing borrowed Intune
+# type/version data onto an unrelated app in the newly-loaded catalog that
+# just happens to share a name with one from the old one.
+$Global:App.CatalogGeneration = 0
 $Global:App.LogFileWriter = $null   # opened in Initialize-Folders, written to by Write-Log, closed on FormClosing - see both below
 $Global:App.LogFlushTimer = $null   # periodic flush timer for the above - see Initialize-Folders
 $Global:App.AppVersion = "1.1"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance rather than by diffing the whole file
@@ -638,26 +650,26 @@ $tabCatalog.Controls.Add($toolbar)
 # first. Previously this only ever got written to the Log tab, which
 # isn't the default active one - easy to never notice until something
 # fails with no obvious reason why.
-$panelCredWarning = New-Object System.Windows.Forms.Panel
-$panelCredWarning.Dock = "Top"
-$panelCredWarning.Height = 40
-$panelCredWarning.BackColor = [System.Drawing.Color]::FromArgb(255, 243, 205)
-$panelCredWarning.Visible = $false
-$lblCredWarning = New-Object System.Windows.Forms.Label
-$lblCredWarning.Text = "No Graph connection configured yet - Intune/Entra ID features won't work until this is set up."
-$lblCredWarning.ForeColor = [System.Drawing.Color]::FromArgb(133, 100, 4)
-$lblCredWarning.Font = New-Object System.Drawing.Font($panelCredWarning.Font, [System.Drawing.FontStyle]::Bold)
-$lblCredWarning.Location = New-Object System.Drawing.Point(12, 10)
-$lblCredWarning.AutoSize = $true
-$panelCredWarning.Controls.Add($lblCredWarning)
+$Global:App.PanelCredWarning = New-Object System.Windows.Forms.Panel
+$Global:App.PanelCredWarning.Dock = "Top"
+$Global:App.PanelCredWarning.Height = 40
+$Global:App.PanelCredWarning.BackColor = [System.Drawing.Color]::FromArgb(255, 243, 205)
+$Global:App.PanelCredWarning.Visible = $false
+$Global:App.LblCredWarning = New-Object System.Windows.Forms.Label
+$Global:App.LblCredWarning.Text = "No Graph connection configured yet - Intune/Entra ID features won't work until this is set up."
+$Global:App.LblCredWarning.ForeColor = [System.Drawing.Color]::FromArgb(133, 100, 4)
+$Global:App.LblCredWarning.Font = New-Object System.Drawing.Font($Global:App.PanelCredWarning.Font, [System.Drawing.FontStyle]::Bold)
+$Global:App.LblCredWarning.Location = New-Object System.Drawing.Point(12, 10)
+$Global:App.LblCredWarning.AutoSize = $true
+$Global:App.PanelCredWarning.Controls.Add($Global:App.LblCredWarning)
 $btnCredWarningSettings = New-Object System.Windows.Forms.Button
 $btnCredWarningSettings.Text = "Open Settings..."
 $btnCredWarningSettings.Location = New-Object System.Drawing.Point(720, 5)
 $btnCredWarningSettings.Size = New-Object System.Drawing.Size(130, 28)
 $btnCredWarningSettings.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
-$panelCredWarning.Controls.Add($btnCredWarningSettings)
-$btnCredWarningSettings.Add_Click({ Show-CertificateSetupDialog })
-$tabCatalog.Controls.Add($panelCredWarning)
+$Global:App.PanelCredWarning.Controls.Add($btnCredWarningSettings)
+$btnCredWarningSettings.Add_Click({ Show-CertificateSetupDialog; Update-CredentialWarningBanner })
+$tabCatalog.Controls.Add($Global:App.PanelCredWarning)
 
 $Global:App.Grid = New-Object System.Windows.Forms.DataGridView
 $Global:App.Grid.Dock = "Fill"
@@ -1295,17 +1307,7 @@ $btnEdit.Add_Click({
         # next to this Index field). Falling back to $i covers older
         # in-memory result shapes/callers that never set it.
         $targetIndex = if ($null -ne $editorResult.Index -and $editorResult.Index -ge 0) { $editorResult.Index } else { $i }
-        # Logged before and after the assignment/save, mirroring the
-        # checkpoint approach that already found the actual bug in Save
-        # for later - confirms $updated genuinely carries metadata coming
-        # OUT of the editor, and separately confirms $Global:App.Apps[$targetIndex]
-        # still has it immediately after the assignment, before Save-
-        # AppsToFile even runs. Narrows this down the same way: is
-        # metadata already missing by the time the editor returns, or
-        # does it go missing somewhere after that.
-        Write-Log "btnEdit: `$updated returned from editor - has metadata: $($null -ne $updated.metadata).`r`n"
         $Global:App.Apps[$targetIndex] = $updated
-        Write-Log "btnEdit: after assignment, `$Global:App.Apps[$targetIndex] has metadata: $($null -ne $Global:App.Apps[$targetIndex].metadata).`r`n"
         $Global:App.UnsavedChangesBox.Value = $true
         [void](Save-AppsToFile -Path $Global:App.LinkedFilePath)
         Update-Grid
@@ -1607,7 +1609,7 @@ $Global:App.BtnLookupIds.Add_Click({
     }.GetNewClosure()
 })
 
-$btnCertSetup.Add_Click({ Show-CertificateSetupDialog })
+$btnCertSetup.Add_Click({ Show-CertificateSetupDialog; Update-CredentialWarningBanner })
 $btnDefaultValues.Add_Click({ Show-DefaultAppSettingsDialog })
 $btnDiagnostics.Add_Click({ Show-DiagnosticsDialog })
 $btnCheckIntuneOnly.Add_Click({
@@ -1718,34 +1720,7 @@ Update-Grid
 Write-Log "Intune deployment console ready (v$($Global:App.AppVersion)). Root: $($Global:App.RootPath)`r`n" ([System.Drawing.Color]::Gainsboro)
 Start-TypeVersionBackfill
 
-# Whitespace-aware, same as Test-GraphCredentialsConfigured - a plain
-# truthiness check here would treat a whitespace-only value as "set" and
-# skip straight to the certificate-store lookup below, which is exactly
-# the class of bug that made Diagnostics contradict itself (see
-# Test-GraphCredentialsConfigured's own comment). Not calling that
-# function directly here since it also pops a MessageBox on failure,
-# which this silent startup check must never do.
-if ([string]::IsNullOrWhiteSpace($Global:App.GraphTenantId) -or [string]::IsNullOrWhiteSpace($Global:App.GraphClientId) -or [string]::IsNullOrWhiteSpace($Global:App.GraphCertificateThumbprint)) {
-    Write-Log "No Graph connection configured yet - open 'Settings...' to set your Tenant ID, Client ID, and certificate before using anything that talks to Intune or Entra ID (App ID lookup, Deploy to Intune, Assign Groups, Intune sync check, Batch assign).`r`n" ([System.Drawing.Color]::Orange)
-    # Also shown as a banner on the App Catalog tab itself, not just logged -
-    # the Log tab isn't the default active one, so this is otherwise easy
-    # for a new user to never see until something fails with no obvious
-    # explanation why.
-    $panelCredWarning.Visible = $true
-}
-else {
-    # Proactive, since every Graph-based feature in this app depends on this
-    # one certificate - previously this status only ever showed up if
-    # someone happened to open Settings, meaning it could quietly expire
-    # with zero warning until every Graph-based feature started failing
-    # all at once.
-    $certStatus = Get-CertificateStatusText -Thumbprint $Global:App.GraphCertificateThumbprint
-    if ($certStatus.Color -ne [System.Drawing.Color]::SeaGreen) {
-        Write-Log "Certificate warning: $($certStatus.Text) Open 'Settings...' to check or replace it.`r`n" ([System.Drawing.Color]::Orange)
-        $lblCredWarning.Text = "Certificate warning: $($certStatus.Text) Open Settings to check or replace it."
-        $panelCredWarning.Visible = $true
-    }
-}
+Update-CredentialWarningBanner
 
 $Global:App.Form.Add_FormClosing({
     if ($Global:App.UnsavedChangesBox.Value) {

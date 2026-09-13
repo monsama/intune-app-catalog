@@ -393,6 +393,11 @@ function Global:Show-BulkDeleteFromIntuneDialog {
         $dlg.Close()
     }.GetNewClosure())
     $dlg.CancelButton = $btnClose
+    # Same type-DELETE-to-confirm pattern as Show-DeleteAppDialog's own
+    # $btnDelete/AcceptButton pairing - btnDelete starts disabled and only
+    # arms once the confirmation text matches, so Enter is safe here for
+    # the same reason it's safe there.
+    $dlg.AcceptButton = $btnDelete
 
     Set-Theme -Control $dlg
     [void]$dlg.ShowDialog($Global:App.Form)

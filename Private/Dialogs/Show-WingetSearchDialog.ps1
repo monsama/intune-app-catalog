@@ -69,7 +69,7 @@ function Global:Show-WingetSearchDialog {
     $dlg.Controls.Add($btnSelect)
 
     $btnCancel = New-Object System.Windows.Forms.Button
-    $btnCancel.Text = "Close"
+    $btnCancel.Text = "Cancel"
     $btnCancel.Location = New-Object System.Drawing.Point(535,426)
     $btnCancel.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnCancel)
@@ -162,7 +162,30 @@ function Global:Show-WingetSearchDialog {
     $dlg.CancelButton = $btnCancel
     $dlg.AcceptButton = $btnSearch
 
-    if ($InitialQuery) { & $runSearch }
+    # Blocks the window (X button / Alt+F4, not just Cancel/Select) from
+    # closing while a search's background runspace is still in flight -
+    # $btnSearch.Enabled already IS the "is a search running" flag (see
+    # $runSearch's own guard above), so this reuses it rather than adding
+    # a second one. Without this, closing mid-search leaves the timer in
+    # Start-WingetSearch ticking against controls on a disposed form -
+    # an ObjectDisposedException inside a Timer.Tick handler, which
+    # WinForms can surface as an unhandled-exception dialog or worse.
+    $dlg.Add_FormClosing({
+        param($s, $e)
+        if (-not $btnSearch.Enabled) { $e.Cancel = $true }
+    }.GetNewClosure())
+
+    # Deferred to Add_Shown rather than called directly here - kicking off
+    # the search (which sets $dlg.Cursor = WaitCursor) BEFORE ShowDialog()
+    # has actually shown/realized the window lets that cursor assignment
+    # land on a not-yet-created window handle, which doesn't reliably
+    # stick - same confirmed-live bug already fixed this same way in
+    # Show-GroupDriftCheckDialog/Show-IntuneOnlyAppsDialog's own Add_Shown.
+    if ($InitialQuery) {
+        $dlg.Add_Shown({
+            & $runSearch
+        }.GetNewClosure())
+    }
 
     Set-Theme -Control $dlg
     [void]$dlg.ShowDialog($Global:App.Form)

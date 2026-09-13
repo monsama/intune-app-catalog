@@ -442,6 +442,7 @@ function Global:Show-CertificateSetupDialog {
 
         $btnUpload.Enabled = $false
         $btnCheckCerts.Enabled = $false
+        $btnDeleteEntraCert.Enabled = $false
         $lblUploadStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblUploadStatus.Text = "Starting sign-in..."
         $rtbUploadLog.Clear()
@@ -680,7 +681,25 @@ function Global:Show-CertificateSetupDialog {
     # returns, in this function's own plain (non-closure) body.
     $saveResultBox = @{ Saved = $false; TenantId = $null; ClientId = $null; Thumbprint = $null }
 
+    # True while any of Check certificates / Upload certificate / Delete
+    # from Entra is running (they always disable at least one of these
+    # three buttons together - see each handler above) OR while Test
+    # connection's own background runspace is running ($btnTest.Enabled).
+    # Unlike the batch dialogs elsewhere in this app, none of these four
+    # operations had ANY guard against Save/Cancel/the window's own X
+    # button closing the dialog out from under them - an interactive
+    # browser sign-in (Check/Upload/Delete) or a live Graph connection
+    # test can run for a while, and closing mid-run left their -OnComplete
+    # closures touching disposed controls once they eventually finished.
+    $anyCertOpRunning = {
+        (-not $btnCheckCerts.Enabled) -or (-not $btnUpload.Enabled) -or (-not $btnDeleteEntraCert.Enabled) -or (-not $btnTest.Enabled)
+    }.GetNewClosure()
+
     $btnSave.Add_Click({
+        if (& $anyCertOpRunning) {
+            [System.Windows.Forms.MessageBox]::Show("An operation is still running - wait for it to finish first.", "Please wait", "OK", "Information") | Out-Null
+            return
+        }
         if (-not $txtTenant.Text.Trim() -or -not $txtClient.Text.Trim() -or -not $txtThumb.Text.Trim()) {
             [System.Windows.Forms.MessageBox]::Show("Tenant ID, Client ID, and thumbprint are all required.", "Missing values", "OK", "Warning") | Out-Null
             return
@@ -692,7 +711,20 @@ function Global:Show-CertificateSetupDialog {
         $dlg.Close()
     }.GetNewClosure())
 
-    $btnCancel.Add_Click({ $dlg.Close() }.GetNewClosure())
+    $btnCancel.Add_Click({
+        if (& $anyCertOpRunning) {
+            [System.Windows.Forms.MessageBox]::Show("An operation is still running - wait for it to finish first.", "Please wait", "OK", "Information") | Out-Null
+            return
+        }
+        $dlg.Close()
+    }.GetNewClosure())
+
+    # Backstop for the window's own X button / Alt+F4, which don't go
+    # through Save/Cancel's click handlers above at all.
+    $dlg.Add_FormClosing({
+        param($s, $e)
+        if (& $anyCertOpRunning) { $e.Cancel = $true }
+    }.GetNewClosure())
 
     $dlg.CancelButton = $btnCancel
     $dlg.AcceptButton = $btnSave

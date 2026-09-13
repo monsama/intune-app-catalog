@@ -760,7 +760,6 @@ function Global:Show-AppEditor {
         # Falls back to $Global:App.Apps only if no file exists yet (a brand
         # new app that's never been saved at all).
         $preservedMetadata = $null
-        $metadataSource = "none"
         # Freshest first: metadata just staged by "Deploy to Intune..." in
         # THIS still-open editing session (see $pendingDeployMetadataBox
         # above) is more current than whatever's already on disk or in
@@ -769,7 +768,6 @@ function Global:Show-AppEditor {
         # click is the one that commits it.
         if ($pendingDeployMetadataBox.Value) {
             $preservedMetadata = $pendingDeployMetadataBox.Value
-            $metadataSource = "pending-deploy"
         }
         if (-not $preservedMetadata) {
             try {
@@ -780,7 +778,6 @@ function Global:Show-AppEditor {
                     $onDiskApp = Get-Content -Path $existingFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
                     if ($onDiskApp.metadata) {
                         $preservedMetadata = $onDiskApp.metadata
-                        $metadataSource = "disk"
                     }
                 }
             }
@@ -792,12 +789,7 @@ function Global:Show-AppEditor {
         if (-not $preservedMetadata) {
             $liveAppForMetadata = $Global:App.Apps | Where-Object { $_.appName -eq $ExistingApp.appName } | Select-Object -First 1
             $preservedMetadata = if ($liveAppForMetadata) { $liveAppForMetadata.metadata } else { $ExistingApp.metadata }
-            if ($preservedMetadata) { $metadataSource = "memory" }
         }
-        # Logged explicitly - confirms which source actually supplied the
-        # preserved metadata (disk, memory, or neither), rather than
-        # assuming.
-        Write-Log "Save app: ExistingApp.appName=`"$($ExistingApp.appName)`" - metadata source: $metadataSource, preservedMetadata is `$null: $($null -eq $preservedMetadata).`r`n"
 
         # intuneAppType/intuneAppVersion are read-only, Intune-reported
         # facts this editor has no field for - same reasoning as metadata

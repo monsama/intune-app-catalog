@@ -1397,6 +1397,20 @@ function Global:Show-CreateInIntuneDialog {
     # the app that's about to close.
     $resultBox = @{ NewAppId = $null; NewAppName = $null; Metadata = $null; IntuneAppType = $null; IntuneAppVersion = $null; NavigateToIndex = $null }
 
+    # True for the duration of the isDuplicate auto-fetch's background
+    # runspace (see Add_Shown further below) - unlike $procBox further
+    # below (an external process this dialog can .Kill()), a runspace
+    # fetch can't be cleanly cancelled mid-flight, so Cancel/Previous/
+    # Next/FormClosing all check this and simply refuse to close while
+    # it's true instead. Declared here, before Previous/Next are wired
+    # just below, not next to $procBox where it's used alongside it
+    # further down - GetNewClosure() only captures variables that already
+    # exist at the moment it's called, and Previous/Next are wired before
+    # $procBox's own declaration point. Without this, closing mid-fetch
+    # leaves the fetch's own Timer.Tick handler (see Start-AppMetadataFetch)
+    # touching ~40 aliased controls on a form that's already been disposed.
+    $metadataFetchRunningBox = @{ Running = $false }
+
     # Only shown when this was opened from the app editor for an app at a
     # known catalog position (see -CurrentIndex's own param comment) -
     # hidden for a brand-new app or any other caller. Navigating away
@@ -1445,10 +1459,18 @@ function Global:Show-CreateInIntuneDialog {
     $dlg.Controls.Add($btnNextAppDeploy)
 
     $btnPrevAppDeploy.Add_Click({
+        if ($metadataFetchRunningBox.Running) {
+            [System.Windows.Forms.MessageBox]::Show("Still loading current metadata from Intune - wait for that to finish first.", "Please wait", "OK", "Information") | Out-Null
+            return
+        }
         $resultBox.NavigateToIndex = $prevAppIndex
         $dlg.Close()
     }.GetNewClosure())
     $btnNextAppDeploy.Add_Click({
+        if ($metadataFetchRunningBox.Running) {
+            [System.Windows.Forms.MessageBox]::Show("Still loading current metadata from Intune - wait for that to finish first.", "Please wait", "OK", "Information") | Out-Null
+            return
+        }
         $resultBox.NavigateToIndex = $nextAppIndex
         $dlg.Close()
     }.GetNewClosure())
@@ -2245,6 +2267,10 @@ function Global:Show-CreateInIntuneDialog {
     }.GetNewClosure())
 
     $btnCancel.Add_Click({
+        if ($metadataFetchRunningBox.Running) {
+            [System.Windows.Forms.MessageBox]::Show("Still loading current metadata from Intune - wait for that to finish first.", "Please wait", "OK", "Information") | Out-Null
+            return
+        }
         if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
             $r = [System.Windows.Forms.MessageBox]::Show(
                 "A step is currently running (PID $($procBox.Proc.Id)). Stop it and close this dialog?`n`nIf the app object was already created in Intune, it may be left in an incomplete state - check the Intune portal afterward and delete it if needed before retrying.",
@@ -2253,6 +2279,15 @@ function Global:Show-CreateInIntuneDialog {
             try { $procBox.Proc.Kill() } catch { }
         }
         $dlg.Close()
+    }.GetNewClosure())
+
+    # Backstop for the window's own X button / Alt+F4, which don't go
+    # through btnCancel's click handler above at all - blocks closing
+    # while the metadata auto-fetch is still in flight, same check, same
+    # reasoning as $metadataFetchRunningBox's own comment.
+    $dlg.Add_FormClosing({
+        param($s, $e)
+        if ($metadataFetchRunningBox.Running) { $e.Cancel = $true }
     }.GetNewClosure())
 
     # Pre-fill from LOCALLY saved metadata (if any), before anything else -
@@ -2412,9 +2447,11 @@ function Global:Show-CreateInIntuneDialog {
         $dlg.Add_Shown({
             $lblCreateStatus.ForeColor = [System.Drawing.Color]::DimGray
             $lblCreateStatus.Text = "Loading current metadata from Intune..."
+            $metadataFetchRunningBox.Running = $true
 
             # Fresh aliases for the nested -OnComplete closure - see note at
             # the top of this function for why this matters.
+            $metadataFetchRunningBoxRef = $metadataFetchRunningBox
             $existingAppIdRef = $ExistingAppId
             $updateCustomFieldHighlightsRef = $updateCustomFieldHighlights
             $applyKeepLocalFieldsRef = $applyKeepLocalFields
@@ -2478,6 +2515,12 @@ function Global:Show-CreateInIntuneDialog {
 
             Start-AppMetadataFetch -AppId $existingAppIdRef -OnComplete {
                 param($ok, $errMsg, $data)
+                # Wrapped in try/finally, not just reset at the natural end
+                # of this closure - this body has several early `return`s
+                # below, and $metadataFetchRunningBoxRef must come back to
+                # $false on EVERY one of them, not just the one that falls
+                # all the way through.
+                try {
                 if (-not $ok) {
                     $lblCreateStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
                     $lblCreateStatusRef.Text = "Could not load current metadata ($errMsg) - fields above are local guesses, not confirmed live values."
@@ -2866,6 +2909,10 @@ function Global:Show-CreateInIntuneDialog {
                 # what caused the real "Update-CustomFieldHighlights is
                 # not recognized" crash).
                 & $updateCustomFieldHighlightsRef
+                }
+                finally {
+                    $metadataFetchRunningBoxRef.Running = $false
+                }
             }.GetNewClosure()
         }.GetNewClosure())
     }

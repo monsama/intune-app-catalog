@@ -103,6 +103,10 @@ function Global:Import-AppsFromFile {
     # backfill is concerned - see Start-TypeVersionBackfill and
     # $Global:App.TypeVersionBackfillDone.
     $Global:App.TypeVersionBackfillDone = $false
+    # See $Global:App.CatalogGeneration's own comment in MainApp.ps1 - this
+    # invalidates any backfill queue still in flight from whatever was
+    # loaded before this call.
+    $Global:App.CatalogGeneration++
 
     # One-time automatic migration: if the new per-app folder doesn't exist
     # or is empty, but the OLD single-file input.json does, split it into
@@ -551,15 +555,6 @@ function Global:Save-AppsToFile {
         # afterward, rather than either silently skipping them or letting
         # one bad app take the whole save down with it.
         $failedSaveApps = New-Object System.Collections.Generic.List[string]
-        # Logged once per save, not per app - confirms the in-memory
-        # catalog's actual metadata state at the exact moment of writing,
-        # right before any file gets touched. If an app that should have
-        # metadata set (per a prior, separate log line from whatever
-        # caller assigned it) doesn't show up here, the loss happened
-        # somewhere between assignment and this save call - not inside
-        # this function at all.
-        $metaCountAtSave = @($Global:App.Apps | Where-Object { $_.metadata }).Count
-        Write-Log "Save-AppsToFile: $metaCountAtSave of $($Global:App.Apps.Count) app(s) have metadata set at the start of this save.`r`n"
         foreach ($app in $Global:App.Apps) {
             $fileName = (Get-SafeFileNameForApp -Name $app.appName) + ".json"
             [void]$currentFileNames.Add($fileName)
@@ -622,7 +617,12 @@ function Global:Get-AllKnownGroups {
 function Global:Load-LastAuditCache {
     if (-not (Test-Path $Global:App.LastAuditCachePath)) { return }
     try {
-        $raw = Get-Content -Path $Global:App.LastAuditCachePath -Raw | ConvertFrom-Json
+        # -Encoding UTF8 explicitly, same reasoning as Import-AppsFromFile/
+        # Import-GraphSettings - Save-LastAuditCache's own Set-Content
+        # -Encoding UTF8 writes a BOM under Windows PowerShell 5.1, which
+        # happens to make auto-detection work today, but that's the writer's
+        # accident to rely on, not this reader's guarantee.
+        $raw = Get-Content -Path $Global:App.LastAuditCachePath -Raw -Encoding UTF8 | ConvertFrom-Json
         foreach ($prop in $raw.PSObject.Properties) {
             $entry = $prop.Value
             $Global:App.LastAuditResults[$prop.Name] = [pscustomobject]@{
@@ -634,14 +634,25 @@ function Global:Load-LastAuditCache {
             }
         }
     }
-    catch { }
+    catch {
+        # Previously silent - a load failure here looked EXACTLY like "the
+        # audit cache just doesn't persist across a restart", with nothing
+        # anywhere to say why. Logged, not a MessageBox - called once during
+        # ordinary startup (after the main window and its Log tab already
+        # exist - see MainApp.ps1's own startup sequence), and a failure
+        # here isn't worth interrupting startup over.
+        Write-Log "[WARN] Could not load the last-audit cache ($($Global:App.LastAuditCachePath)): $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Orange)
+    }
 }
 
 function Global:Save-LastAuditCache {
     try {
         $Global:App.LastAuditResults | ConvertTo-Json -Depth 5 | Set-Content -Path $Global:App.LastAuditCachePath -Encoding UTF8 -ErrorAction Stop
     }
-    catch { }
+    catch {
+        # See the matching note in Load-LastAuditCache above - same reasoning.
+        Write-Log "[WARN] Could not save the last-audit cache ($($Global:App.LastAuditCachePath)): $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Orange)
+    }
 }
 
 function Global:Set-LastAuditCacheEntry {

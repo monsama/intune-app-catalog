@@ -84,7 +84,7 @@ function Global:Show-DiagnosticsDialog {
         $btnRun.Enabled = $false
         $btnClose.Enabled = $false
         $rtbLog.Clear()
-        $lblStatus.Text = "Running..."
+        $lblStatus.Text = "Running... (Close is disabled until this finishes)"
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
 
         & $appendLine "=== Configuration ===" $headerColor
@@ -311,6 +311,14 @@ function Global:Show-DiagnosticsDialog {
 
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     $dlg.CancelButton = $btnClose
+
+    # Backstop for the window's own X button / Alt+F4 - $btnClose.Enabled
+    # already being $false blocks the button itself while a run is in
+    # progress, but neither the titlebar X nor Alt+F4 go through it at all.
+    $dlg.Add_FormClosing({
+        param($s, $e)
+        if (-not $btnRun.Enabled) { $e.Cancel = $true }
+    }.GetNewClosure())
 
     $dlg.Add_Shown({ $btnRun.PerformClick() }.GetNewClosure())
 

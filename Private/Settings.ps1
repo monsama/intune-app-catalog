@@ -124,7 +124,7 @@ function Global:Test-GraphCredentialsConfigured {
         (-not [string]::IsNullOrWhiteSpace($Global:App.GraphClientId)) -and
         (-not [string]::IsNullOrWhiteSpace($Global:App.GraphCertificateThumbprint))) { return $true }
     [System.Windows.Forms.MessageBox]::Show(
-        "No Graph connection is configured yet. Open 'Settings...' in the Tools group and fill in your Tenant ID, Client ID, and certificate first.",
+        "No Graph connection is configured yet. Open 'More actions...' -> 'Settings...' and fill in your Tenant ID, Client ID, and certificate first.",
         "Not configured", "OK", "Warning") | Out-Null
     return $false
 }

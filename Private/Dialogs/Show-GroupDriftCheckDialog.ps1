@@ -165,6 +165,17 @@ function Global:Show-GroupDriftCheckDialog {
     $dlg.CancelButton = $btnClose
     $dlg.AcceptButton = $btnClose
 
+    # Blocks the window (X button / Alt+F4, not just Close) from closing
+    # while Start-EntraDirectoryLookup's background runspace is still in
+    # flight - $btnRefresh.Enabled already IS the "is a fetch running" flag
+    # (see the click handler above). Without this, closing mid-fetch leaves
+    # its timer ticking against controls on a disposed form.
+    $dlg.Add_FormClosing({
+        param($s, $e)
+        if (-not $btnRefresh.Enabled) { return }
+        $e.Cancel = $true
+    }.GetNewClosure())
+
     # Deferred to Add_Shown rather than called directly here - kicking off
     # the async refresh (PerformClick -> Start-.../timer) BEFORE ShowDialog()
     # has actually shown/realized the window let the WaitCursor assignment

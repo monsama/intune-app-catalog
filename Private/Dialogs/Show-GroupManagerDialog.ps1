@@ -552,6 +552,14 @@ function Global:Show-GroupManagerDialog {
                         # ID) that it's the same group, not a guess the way
                         # a name-only match would be.
                         $updatedCount = 0
+                        # Names, not just a count - a count alone gives no
+                        # way to tell, from THIS dialog, whether an
+                        # unexpectedly low number means "that's genuinely
+                        # every app that referenced this group" or "some
+                        # were silently missed" (e.g. a stray whitespace/
+                        # casing mismatch in one entry) without going to
+                        # inspect the main catalog grid separately.
+                        $updatedNames = New-Object System.Collections.Generic.List[string]
                         foreach ($appEntry in $appsRefRef) {
                             $changed = $false
                             for ($gi = 0; $gi -lt $appEntry.requiredFor.Count; $gi++) {
@@ -563,7 +571,7 @@ function Global:Show-GroupManagerDialog {
                             for ($gi = 0; $gi -lt $appEntry.uninstallFor.Count; $gi++) {
                                 if ($appEntry.uninstallFor[$gi] -eq $oldNameRef) { $appEntry.uninstallFor[$gi] = $newNameRef; $changed = $true }
                             }
-                            if ($changed) { $updatedCount++ }
+                            if ($changed) { $updatedCount++; $updatedNames.Add($appEntry.appName) }
                         }
                         if ($updatedCount -gt 0) {
                             $unsavedBoxRefRef.Value = $true
@@ -573,7 +581,8 @@ function Global:Show-GroupManagerDialog {
                         $txtGroupNameRef.Text = $newNameRef
                         $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
                         $lblStatusRef.Text = "Renamed to `"$newNameRef`" - updated $updatedCount app(s) in the catalog to match."
-                        Write-DialogLogLine -LogBox $rtbLogRef -Text "[OK] Renamed `"$oldNameRef`" to `"$newNameRef`" and updated $updatedCount app(s) in the catalog.`r`n"
+                        $updatedNamesText = if ($updatedNames.Count -gt 0) { " ($($updatedNames -join ', '))" } else { "" }
+                        Write-DialogLogLine -LogBox $rtbLogRef -Text "[OK] Renamed `"$oldNameRef`" to `"$newNameRef`" and updated $updatedCount app(s) in the catalog$updatedNamesText.`r`n"
                         # $txtGroupNameRef.Text just above already triggers
                         # Add_TextChanged, which clears the loaded-members
                         # view (a name change usually means "different

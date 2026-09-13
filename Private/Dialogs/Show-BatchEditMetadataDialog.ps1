@@ -551,6 +551,28 @@ function Global:Show-BatchEditMetadataDialog {
             return
         }
 
+        # Same [int]::TryParse validation as Show-DefaultAppSettingsDialog's
+        # own identical set of numeric fields, only for whichever ones are
+        # actually checked here - a raw [int] cast further down used to
+        # throw an unhandled exception (aborting the whole batch) on any
+        # non-numeric text, instead of the friendly warning every other
+        # numeric field in this app already gives.
+        $numericChecks = @(
+            @{ Label = "Disk space (MB)"; Box = $txtDiskSpace; Enabled = $chkEnableDiskSpace.Checked }
+            @{ Label = "Memory (MB)"; Box = $txtMemory; Enabled = $chkEnableMemory.Checked }
+            @{ Label = "Min. processors"; Box = $txtProcessors; Enabled = $chkEnableProcessors.Checked }
+            @{ Label = "Min. CPU speed (MHz)"; Box = $txtCpuSpeed; Enabled = $chkEnableCpuSpeed.Checked }
+            @{ Label = "Install time required (mins)"; Box = $txtInstallTime; Enabled = $chkEnableInstallTime.Checked }
+        )
+        foreach ($numCheck in $numericChecks) {
+            if (-not $numCheck.Enabled) { continue }
+            $parsedNum = 0
+            if (-not [int]::TryParse($numCheck.Box.Text.Trim(), [ref]$parsedNum) -or $parsedNum -lt 0) {
+                [System.Windows.Forms.MessageBox]::Show("$($numCheck.Label) must be a whole number, 0 or greater.", "Invalid value", "OK", "Warning") | Out-Null
+                return
+            }
+        }
+
         $checkedApps = New-Object System.Collections.Generic.List[object]
         foreach ($name in $checkedNames) {
             $matchApp = $eligibleApps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
