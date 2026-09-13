@@ -339,7 +339,14 @@ function Global:Update-Grid {
             Type      = if ($app.intuneAppType) { $app.intuneAppType } else { "" }
             Version   = if ($app.intuneAppVersion) { $app.intuneAppVersion } else { "" }
             Uncommon  = if ($isUncommon) { "Yes" } else { "" }
-            CustomConfig = if ($hasCustomConfig) { "Yes" } else { "No" }
+            # Blank (not "Yes") for an Uncommon app: Test-AppHasCustomConfig
+            # returns true for every Uncommon app unconditionally (there's
+            # no computed default for it to have deviated FROM), so showing
+            # "Yes" here just echoed the Uncommon column back with no new
+            # information. Left meaning one specific thing everywhere it's
+            # shown: a Winget app whose saved settings were hand-edited
+            # away from what this tool would otherwise default it to.
+            CustomConfig = if ($isUncommon) { "" } elseif ($hasCustomConfig) { "Yes" } else { "No" }
             Folder    = $folderDisplay
             Required  = @($app.requiredFor).Count
             Available = @($app.availableFor).Count
@@ -358,7 +365,7 @@ function Global:Update-Grid {
     $availTotal = ($Global:App.Apps | ForEach-Object { @($_.availableFor).Count } | Measure-Object -Sum).Sum
     $uninstTotal= ($Global:App.Apps | ForEach-Object { @($_.uninstallFor).Count } | Measure-Object -Sum).Sum
     $dirty = if ($Global:App.UnsavedChangesBox.Value) { "  *unsaved changes*" } else { "" }
-    Set-Status "$($Global:App.Apps.Count) apps  |  $reqTotal required, $availTotal available, $uninstTotal uninstall assignments  |  $Global:App.LinkedFilePath$dirty"
+    Set-Status "$($Global:App.Apps.Count) apps  |  $reqTotal required, $availTotal available, $uninstTotal uninstall assignments  |  $($Global:App.LinkedFilePath)$dirty"
 }
 
 function Global:Get-SelectedAppIndex {

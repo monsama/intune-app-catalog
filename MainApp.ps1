@@ -1535,7 +1535,7 @@ $Global:App.BtnDelete.Add_Click({
 $Global:App.BtnSave.Add_Click({
     if (Save-AppsToFile -Path $Global:App.LinkedFilePath) {
         Update-Grid
-        Set-Status "Saved $($Global:App.Apps.Count) app(s) to $Global:App.LinkedFilePath"
+        Set-Status "Saved $($Global:App.Apps.Count) app(s) to $($Global:App.LinkedFilePath)"
     }
 })
 
@@ -1715,7 +1715,7 @@ Initialize-Folders
 Import-AppsFromFile -Path $Global:App.LinkedFilePath
 Load-LastAuditCache
 Update-Grid
-Write-Log "Intune deployment console ready (v$($Global:App.AppVersion)). Root: $Global:App.RootPath`r`n" ([System.Drawing.Color]::Gainsboro)
+Write-Log "Intune deployment console ready (v$($Global:App.AppVersion)). Root: $($Global:App.RootPath)`r`n" ([System.Drawing.Color]::Gainsboro)
 Start-TypeVersionBackfill
 
 # Whitespace-aware, same as Test-GraphCredentialsConfigured - a plain
