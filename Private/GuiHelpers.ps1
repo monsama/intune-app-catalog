@@ -216,6 +216,37 @@ function Global:Initialize-DarkLogBox {
     $LogBox.Font = New-Object System.Drawing.Font("Consolas", $FontSize)
 }
 
+# The single place that maps a line's leading [TAG] to a color, so every
+# dark log box in the app (not just the main Log tab and Diagnostics, which
+# used to be the only two that colored anything) highlights the same way.
+# Was previously plain white-on-black text in most dialogs - the [OK]/
+# [FAILED]/etc tag was there to read, but nothing let you glance-scan for
+# red vs green the way the main Log tab always could.
+function Global:Get-DialogLogLineColor {
+    param([string]$Text)
+    if ($Text -match '^\s*(\[OK\])') { return [System.Drawing.Color]::LightGreen }
+    if ($Text -match '^\s*(\[FAILED\])') { return [System.Drawing.Color]::Tomato }
+    if ($Text -match '^\s*(\[WARN\])') { return [System.Drawing.Color]::Orange }
+    if ($Text -match '^\s*(\[SKIPPED\])') { return [System.Drawing.Color]::DimGray }
+    if ($Text -match '^\s*(\[INFO\])') { return [System.Drawing.Color]::Gainsboro }
+    return [System.Drawing.Color]::Gainsboro
+}
+
+# Appends one line to a dialog's own dark log box, colored by its leading
+# [TAG] via Get-DialogLogLineColor above - the per-dialog equivalent of
+# Write-Log (which only ever targets the main window's single Log tab).
+function Global:Write-DialogLogLine {
+    param(
+        [System.Windows.Forms.RichTextBox]$LogBox,
+        [string]$Text
+    )
+    $LogBox.SelectionStart = $LogBox.TextLength
+    $LogBox.SelectionLength = 0
+    $LogBox.SelectionColor = Get-DialogLogLineColor -Text $Text
+    $LogBox.AppendText($Text)
+    $LogBox.ScrollToCaret()
+}
+
 function Global:New-ToolbarGroup {
     param([string]$Title, [System.Windows.Forms.Control[]]$Buttons)
 

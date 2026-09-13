@@ -132,7 +132,7 @@ function Invoke-GraphRequestDetailed {
 
 Write-Step "Loading configuration"
 if (-not (Test-Path $ConfigPath)) {
-    Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
+    Write-Host "[FAILED] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
 $Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -435,7 +435,7 @@ try {
 }
 catch {
     Write-Host ""
-    Write-Host "[ERROR] $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[FAILED] $($_.Exception.Message)" -ForegroundColor Red
     Write-Result -Success $false -ErrorMessage $_.Exception.Message -Data $null
     exit 1
 }

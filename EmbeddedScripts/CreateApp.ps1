@@ -346,7 +346,7 @@ function Invoke-Win32AppContentUpload {
         Write-Host "  [OK] $storageHost is reachable." -ForegroundColor Green
     }
     else {
-        Write-Host "  [WARNING] Could not open a TCP connection to $storageHost on port 443 within 8 seconds." -ForegroundColor Yellow
+        Write-Host "  [WARN] Could not open a TCP connection to $storageHost on port 443 within 8 seconds." -ForegroundColor Yellow
         Write-Host "  Microsoft Graph worked fine, but Azure Blob Storage is a different domain - this strongly suggests" -ForegroundColor Yellow
         Write-Host "  a firewall or proxy is blocking outbound HTTPS to it. Ask your network team to allow" -ForegroundColor Yellow
         Write-Host "  *.blob.core.windows.net (or specifically $storageHost). Attempting the upload anyway..." -ForegroundColor Yellow
@@ -411,7 +411,7 @@ function Invoke-Win32AppContentUpload {
 
 Write-Step "Loading configuration"
 if (-not (Test-Path $ConfigPath)) {
-    Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
+    Write-Host "[FAILED] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
 $Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -615,7 +615,7 @@ try {
             Write-Host "  [OK] Set $(@($Config.DependencyAppIds).Count) dependency/dependencies." -ForegroundColor Green
         }
         catch {
-            Write-Host "  [WARNING] Could not set dependencies: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "  [WARN] Could not set dependencies: $($_.Exception.Message)" -ForegroundColor Yellow
             Write-Host "  The app was still updated successfully - set dependencies manually in the Intune portal if needed." -ForegroundColor Yellow
             }
 
@@ -736,7 +736,7 @@ try {
             Write-Host "  [OK] Set $(@($Config.DependencyAppIds).Count) dependency/dependencies." -ForegroundColor Green
         }
         catch {
-            Write-Host "  [WARNING] Could not set dependencies: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "  [WARN] Could not set dependencies: $($_.Exception.Message)" -ForegroundColor Yellow
             Write-Host "  The app and its content uploaded successfully - set dependencies manually in the Intune portal if needed." -ForegroundColor Yellow
         }
     }
@@ -749,7 +749,7 @@ try {
 }
 catch {
     Write-Host ""
-    Write-Host "[ERROR] $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[FAILED] $($_.Exception.Message)" -ForegroundColor Red
     Write-Result -Success $false -AppId "" -ErrorMessage $_.Exception.Message
     exit 1
 }

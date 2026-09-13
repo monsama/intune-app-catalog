@@ -243,7 +243,7 @@ function Global:Show-AppEditor {
         if ($candidates.Count -eq 0) {
             $lblIdStatus.Text = "No matching app found in Intune for '$($txtName.Text.Trim())'."
             $lblIdStatus.ForeColor = [System.Drawing.Color]::DarkOrange
-            $rtbAppEditorLog.AppendText("[WARN] No matching app found in Intune for `"$($txtName.Text.Trim())`".`r`n")
+            Write-DialogLogLine -LogBox $rtbAppEditorLog -Text "[WARN] No matching app found in Intune for `"$($txtName.Text.Trim())`".`r`n"
         }
         elseif ($candidates.Count -eq 1 -or $candidates[0].displayName -eq $txtName.Text.Trim()) {
             $txtId.Text = $candidates[0].id
@@ -282,7 +282,7 @@ function Global:Show-AppEditor {
                 else {
                     $lblIdStatusRef.Text = "Lookup failed: $data"
                     $lblIdStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $rtbAppEditorLogRef.AppendText("[FAILED] Lookup failed: $data`r`n")
+                    Write-DialogLogLine -LogBox $rtbAppEditorLogRef -Text "[FAILED] Lookup failed: $data`r`n"
                 }
             }.GetNewClosure()
         }
@@ -365,7 +365,7 @@ function Global:Show-AppEditor {
             else {
                 $lblIdStatus.Text = "Deployed to Intune, but saving to the catalog failed - check the Log tab, then use `"Save app to catalog`" below."
                 $lblIdStatus.ForeColor = [System.Drawing.Color]::DarkOrange
-                $rtbAppEditorLog.AppendText("[FAILED] Deployed to Intune, but saving to the local catalog failed - see the Log tab for details.`r`n")
+                Write-DialogLogLine -LogBox $rtbAppEditorLog -Text "[FAILED] Deployed to Intune, but saving to the local catalog failed - see the Log tab for details.`r`n"
             }
         }
         elseif ($deployResult -and $deployResult.NewAppId) {
@@ -468,7 +468,7 @@ function Global:Show-AppEditor {
         else {
             $lblIdStatus.Text = "Deleted from Intune, but saving the cleared App ID failed - check the Log tab, then use Force save catalog."
             $lblIdStatus.ForeColor = [System.Drawing.Color]::Firebrick
-            $rtbAppEditorLog.AppendText("[FAILED] Deleted from Intune, but saving the cleared App ID locally failed - see the Log tab for details.`r`n")
+            Write-DialogLogLine -LogBox $rtbAppEditorLog -Text "[FAILED] Deleted from Intune, but saving the cleared App ID locally failed - see the Log tab for details.`r`n"
         }
     }.GetNewClosure())
 
@@ -695,7 +695,7 @@ function Global:Show-AppEditor {
             if (-not $ok) {
                 $lblGroupSyncStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
                 $lblGroupSyncStatusRef.Text = "Could not read groups from Intune - see log below."
-                $rtbAppEditorLogRef.AppendText("[FAILED] Could not read groups from Intune: $errMsg`r`n")
+                Write-DialogLogLine -LogBox $rtbAppEditorLogRef -Text "[FAILED] Could not read groups from Intune: $errMsg`r`n"
                 return
             }
             # Sets each list to match Intune EXACTLY, not a merge - this

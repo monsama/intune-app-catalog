@@ -112,7 +112,7 @@ function Invoke-GraphRequestDetailed {
 
 Write-Step "Loading configuration"
 if (-not (Test-Path $ConfigPath)) {
-    Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
+    Write-Host "[FAILED] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
 $Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -231,7 +231,7 @@ try {
             Write-Host "  [OK] Group is available." -ForegroundColor Green
         }
         else {
-            Write-Host "  [WARNING] Group still not confirmed visible after 20s - continuing anyway; member adds below will retry individually too." -ForegroundColor Yellow
+            Write-Host "  [WARN] Group still not confirmed visible after 20s - continuing anyway; member adds below will retry individually too." -ForegroundColor Yellow
         }
     }
 
@@ -259,7 +259,7 @@ try {
                         Start-Sleep -Seconds 3
                     }
                     else {
-                        Write-Host "  [WARNING] Could not add $memberId : $($_.Exception.Message)" -ForegroundColor Yellow
+                        Write-Host "  [WARN] Could not add $memberId : $($_.Exception.Message)" -ForegroundColor Yellow
                         break
                     }
                 }
@@ -274,7 +274,7 @@ try {
 }
 catch {
     Write-Host ""
-    Write-Host "[ERROR] $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[FAILED] $($_.Exception.Message)" -ForegroundColor Red
     Write-Result -Success $false -ErrorMessage $_.Exception.Message -GroupId ""
     exit 1
 }

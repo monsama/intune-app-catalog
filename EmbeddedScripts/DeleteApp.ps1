@@ -100,7 +100,7 @@ function Invoke-GraphRequestDetailed {
 
 Write-Step "Loading configuration"
 if (-not (Test-Path $ConfigPath)) {
-    Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
+    Write-Host "[FAILED] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
 $Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -196,7 +196,7 @@ try {
                 $blockingApp = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$blockingId`?`$select=displayName" -Method GET -StepDescription "Look up blocking app name"
                 if ($blockingApp.displayName) { $blockingName = $blockingApp.displayName }
             } catch { }
-            Write-Host "[ERROR] Blocked by a dependency: `"$blockingName`" ($blockingId) still requires this app." -ForegroundColor Red
+            Write-Host "[FAILED] Blocked by a dependency: `"$blockingName`" ($blockingId) still requires this app." -ForegroundColor Red
             Write-Result -Success $false -ErrorMessage "This app can't be deleted because Intune has it set as a dependency for `"$blockingName`"." -BlockingAppId $blockingId -BlockingAppName $blockingName
             exit 1
         }
@@ -225,7 +225,7 @@ try {
 }
 catch {
     Write-Host ""
-    Write-Host "[ERROR] $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[FAILED] $($_.Exception.Message)" -ForegroundColor Red
     Write-Result -Success $false -ErrorMessage $_.Exception.Message
     exit 1
 }

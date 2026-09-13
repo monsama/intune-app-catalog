@@ -1930,7 +1930,7 @@ function Global:Show-CreateInIntuneDialog {
                         }
                         catch {
                             $localSaveOk = $false
-                            Write-Log "[ERROR] Create/Update Metadata: saving to the local catalog threw: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
+                            Write-Log "[FAILED] Create/Update Metadata: saving to the local catalog threw: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
                         }
 
                         $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
@@ -2182,7 +2182,7 @@ function Global:Show-CreateInIntuneDialog {
             Write-Log "Save for later: final object assembly OK.`r`n"
         }
         catch {
-            Write-Log "[ERROR] Save for later: building the metadata object threw: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
+            Write-Log "[FAILED] Save for later: building the metadata object threw: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
             [System.Windows.Forms.MessageBox]::Show("Could not build the metadata to save: $($_.Exception.Message)", "Save failed", "OK", "Error") | Out-Null
             return
         }
@@ -2487,7 +2487,7 @@ function Global:Show-CreateInIntuneDialog {
                     # past that. The log box below has room to spare and is
                     # already scrollable, so the FULL message always lands
                     # there too.
-                    $rtbCreateLogRef.AppendText("`r`n[FAILED] Could not load current metadata: $errMsg`r`n")
+                    Write-DialogLogLine -LogBox $rtbCreateLogRef -Text "`r`n[FAILED] Could not load current metadata: $errMsg`r`n"
                     return
                 }
                 $fetchedIntuneFactsBoxRef.OdataType = $data.OdataType

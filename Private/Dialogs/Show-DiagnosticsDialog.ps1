@@ -89,16 +89,16 @@ function Global:Show-DiagnosticsDialog {
 
         & $appendLine "=== Configuration ===" $headerColor
         $moduleOk = [bool](Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)
-        & $appendLine "$(if ($moduleOk) { '[OK]' } else { '[FAIL]' }) Microsoft.Graph.Authentication module installed" $(if ($moduleOk) { $okColor } else { $failColor })
+        & $appendLine "$(if ($moduleOk) { '[OK]' } else { '[FAILED]' }) Microsoft.Graph.Authentication module installed" $(if ($moduleOk) { $okColor } else { $failColor })
 
         $credsOk = Test-GraphCredentialsConfigured
-        & $appendLine "$(if ($credsOk) { '[OK]' } else { '[FAIL]' }) Tenant ID / Client ID / Certificate thumbprint all set" $(if ($credsOk) { $okColor } else { $failColor })
+        & $appendLine "$(if ($credsOk) { '[OK]' } else { '[FAILED]' }) Tenant ID / Client ID / Certificate thumbprint all set" $(if ($credsOk) { $okColor } else { $failColor })
 
         if ($credsOk) {
             $certStatus = Get-CertificateStatusText -Thumbprint $certThumbRef
             $certOk = $certStatus.Color -eq [System.Drawing.Color]::SeaGreen
             $certWarn = $certStatus.Color -eq [System.Drawing.Color]::DarkOrange
-            $certTag = if ($certOk) { "[OK]" } elseif ($certWarn) { "[WARN]" } else { "[FAIL]" }
+            $certTag = if ($certOk) { "[OK]" } elseif ($certWarn) { "[WARN]" } else { "[FAILED]" }
             & $appendLine "$certTag Certificate: $($certStatus.Text)" $(if ($certOk) { $okColor } elseif ($certWarn) { $warnColor } else { $failColor })
         }
 
@@ -121,11 +121,11 @@ function Global:Show-DiagnosticsDialog {
         foreach ($a in $noGroups) { & $appendLine "    - $($a.appName)" $infoColor }
 
         $dupeNames = @($appsRef | Group-Object { ($_.appName.Trim() -replace '\s+', ' ').ToLowerInvariant() } | Where-Object { $_.Count -gt 1 })
-        & $appendLine "$(if ($dupeNames.Count -eq 0) { '[OK]' } else { '[FAIL]' }) $($dupeNames.Count) duplicate app name(s) in the catalog" $(if ($dupeNames.Count -eq 0) { $okColor } else { $failColor })
+        & $appendLine "$(if ($dupeNames.Count -eq 0) { '[OK]' } else { '[FAILED]' }) $($dupeNames.Count) duplicate app name(s) in the catalog" $(if ($dupeNames.Count -eq 0) { $okColor } else { $failColor })
         foreach ($d in $dupeNames) { & $appendLine "    - $($d.Name) ($($d.Count) entries)" $infoColor }
 
         $dupeAppIds = @($appsRef | Where-Object { $_.appId } | Group-Object { [string]$_.appId } | Where-Object { $_.Count -gt 1 })
-        & $appendLine "$(if ($dupeAppIds.Count -eq 0) { '[OK]' } else { '[FAIL]' }) $($dupeAppIds.Count) duplicate App ID(s) - more than one catalog entry pointing at the same Intune app" $(if ($dupeAppIds.Count -eq 0) { $okColor } else { $failColor })
+        & $appendLine "$(if ($dupeAppIds.Count -eq 0) { '[OK]' } else { '[FAILED]' }) $($dupeAppIds.Count) duplicate App ID(s) - more than one catalog entry pointing at the same Intune app" $(if ($dupeAppIds.Count -eq 0) { $okColor } else { $failColor })
         foreach ($d in $dupeAppIds) { & $appendLine "    - $($d.Name): $(($d.Group | ForEach-Object { $_.appName }) -join ', ')" $infoColor }
 
         # Local-only, no network needed - a folder under app-packages that
@@ -176,7 +176,7 @@ function Global:Show-DiagnosticsDialog {
         Start-IntuneAppLookup -OnComplete {
             param($ok, $data)
             if (-not $ok) {
-                & $appendLineRef "[FAIL] Could not connect to Intune: $data" $failColorRef
+                & $appendLineRef "[FAILED] Could not connect to Intune: $data" $failColorRef
                 $btnRunRef.Enabled = $true
                 $btnCloseRef.Enabled = $true
                 $lblStatusRef.Text = "Done - live checks failed."
@@ -190,7 +190,7 @@ function Global:Show-DiagnosticsDialog {
 
             $deployedApps = @($appsRefRef | Where-Object { $_.appId })
             $deletedFromIntune = @($deployedApps | Where-Object { -not $intuneById.ContainsKey([string]$_.appId) })
-            & $appendLineRef "$(if ($deletedFromIntune.Count -eq 0) { '[OK]' } else { '[FAIL]' }) $($deletedFromIntune.Count) catalog app(s) whose App ID no longer exists in Intune" $(if ($deletedFromIntune.Count -eq 0) { $okColorRef } else { $failColorRef })
+            & $appendLineRef "$(if ($deletedFromIntune.Count -eq 0) { '[OK]' } else { '[FAILED]' }) $($deletedFromIntune.Count) catalog app(s) whose App ID no longer exists in Intune" $(if ($deletedFromIntune.Count -eq 0) { $okColorRef } else { $failColorRef })
             foreach ($a in $deletedFromIntune) { & $appendLineRef "    - $($a.appName) (App ID $($a.appId))" $infoColorRef }
 
             $renamed = @($deployedApps | Where-Object { $intuneById.ContainsKey([string]$_.appId) -and $intuneById[[string]$_.appId].displayName -ne $_.appName })
@@ -219,7 +219,7 @@ function Global:Show-DiagnosticsDialog {
             Start-Win32AppMinOsFetch -OnComplete {
                 param($minOsOk, $minOsData)
                 if (-not $minOsOk) {
-                    & $appendLineRef2 "[FAIL] Could not fetch Minimum Windows values: $minOsData" $warnColorRef2
+                    & $appendLineRef2 "[FAILED] Could not fetch Minimum Windows values: $minOsData" $warnColorRef2
                 }
                 else {
                     $minOsById = @{}
@@ -290,7 +290,7 @@ function Global:Show-DiagnosticsDialog {
                         $errText = [string]$groupsData
                         $isPermissionError = $errText -match 'Forbidden|Authorization_RequestDenied|403|Insufficient privileges'
                         if ($isPermissionError) {
-                            & $appendLineRef3 "[FAIL] App registration is missing Graph permission to read groups/users (Group.Read.All / User.Read.All) - group assignment will fail" $failColorRef3
+                            & $appendLineRef3 "[FAILED] App registration is missing Graph permission to read groups/users (Group.Read.All / User.Read.All) - group assignment will fail" $failColorRef3
                         }
                         else {
                             & $appendLineRef3 "[WARN] Could not verify group/user read permissions: $errText" $warnColorRef3

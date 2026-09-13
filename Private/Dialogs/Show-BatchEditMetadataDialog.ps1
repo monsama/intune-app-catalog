@@ -360,7 +360,7 @@ function Global:Show-BatchEditMetadataDialog {
         }
 
         $currentApp = $Queue[$QueueIndex]
-        $rtbLog.AppendText("`r`n[$($QueueIndex+1)/$($Queue.Count)] $($currentApp.appName)`r`n")
+        Write-DialogLogLine -LogBox $rtbLog -Text "`r`n[$($QueueIndex+1)/$($Queue.Count)] $($currentApp.appName)`r`n"
         $lblStatus.Text = "Updating $($QueueIndex+1) of $($Queue.Count): $($currentApp.appName)..."
         $progressBar.Value = $QueueIndex
 
@@ -419,7 +419,7 @@ function Global:Show-BatchEditMetadataDialog {
                 $resolvedDepIds.Add($depApp.appId)
             }
             else {
-                $rtbLog.AppendText("  [!] Dependency `"$depName`" has no App ID yet - skipping just that dependency, not the whole app.`r`n")
+                Write-DialogLogLine -LogBox $rtbLog -Text "  [SKIPPED] Dependency `"$depName`" has no App ID yet - skipping just that dependency, not the whole app.`r`n"
             }
         }
 
@@ -515,20 +515,20 @@ function Global:Show-BatchEditMetadataDialog {
                         # own per-app save: an interrupted batch shouldn't lose
                         # progress already confirmed successful in Intune.
                         [void](Save-AppsToFile -Path $linkedFilePathRef)
-                        $rtbLogRef.AppendText("  [OK] Updated.`r`n")
+                        Write-DialogLogLine -LogBox $rtbLogRef -Text "  [OK] Updated.`r`n"
                     }
                     else {
                         $message = $result.error
-                        $rtbLogRef.AppendText("  [FAILED] $($result.error)`r`n")
+                        Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] $($result.error)`r`n"
                     }
                 }
                 catch {
                     $message = "Could not read result: $($_.Exception.Message)"
-                    $rtbLogRef.AppendText("  [FAILED] Could not read result: $($_.Exception.Message)`r`n")
+                    Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] Could not read result: $($_.Exception.Message)`r`n"
                 }
             }
             else {
-                $rtbLogRef.AppendText("  [FAILED] $message`r`n")
+                Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] $message`r`n"
             }
 
             $resultsRef.Add([pscustomobject]@{ AppName = $currentAppRef.appName; Status = $status; Message = $message })

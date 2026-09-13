@@ -83,7 +83,7 @@ function Global:Show-PackagingProgressDialog {
                 Update-Grid
             }
             catch {
-                $rtbLogRef2.AppendText("`r`n[WARN] Grid refresh after packaging failed: $($_.Exception.Message)`r`n")
+                Write-DialogLogLine -LogBox $rtbLogRef2 -Text "`r`n[WARN] Grid refresh after packaging failed: $($_.Exception.Message)`r`n"
             }
             finally {
                 $runningBoxRef2.Running = $false

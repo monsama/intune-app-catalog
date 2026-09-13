@@ -573,7 +573,7 @@ function Global:Show-GroupManagerDialog {
                         $txtGroupNameRef.Text = $newNameRef
                         $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
                         $lblStatusRef.Text = "Renamed to `"$newNameRef`" - updated $updatedCount app(s) in the catalog to match."
-                        $rtbLogRef.AppendText("[OK] Renamed `"$oldNameRef`" to `"$newNameRef`" and updated $updatedCount app(s) in the catalog.`r`n")
+                        Write-DialogLogLine -LogBox $rtbLogRef -Text "[OK] Renamed `"$oldNameRef`" to `"$newNameRef`" and updated $updatedCount app(s) in the catalog.`r`n"
                         # $txtGroupNameRef.Text just above already triggers
                         # Add_TextChanged, which clears the loaded-members
                         # view (a name change usually means "different

@@ -116,7 +116,7 @@ function Global:Start-PipelineProcess {
         [System.IO.File]::WriteAllText($tempScriptPath, $ScriptContent, $utf8NoBom)
     }
     catch {
-        $errText = "[ERROR] Could not write temp script: $($_.Exception.Message)`r`n"
+        $errText = "[FAILED] Could not write temp script: $($_.Exception.Message)`r`n"
         Write-Log $errText ([System.Drawing.Color]::Tomato)
         if ($ExtraLogTarget) { $ExtraLogTarget.AppendText($errText) }
         Set-PipelineButtonsEnabled $true
@@ -183,7 +183,7 @@ function Global:Start-PipelineProcess {
         $proc = [System.Diagnostics.Process]::Start($psi)
     }
     catch {
-        $errText = "[ERROR] Could not start process: $($_.Exception.Message)`r`n"
+        $errText = "[FAILED] Could not start process: $($_.Exception.Message)`r`n"
         Write-Log $errText ([System.Drawing.Color]::Tomato)
         if ($ExtraLogTarget) { $ExtraLogTarget.AppendText($errText) }
         Remove-Item $tempScriptPath -Force -ErrorAction SilentlyContinue

@@ -122,7 +122,7 @@ function Invoke-GraphRequestDetailed {
 
 Write-Step "Loading configuration"
 if (-not (Test-Path $ConfigPath)) {
-    Write-Host "[ERROR] Config file not found: $ConfigPath" -ForegroundColor Red
+    Write-Host "[FAILED] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
 $Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -428,7 +428,7 @@ try {
             if ($workerError) {
                 Write-Host ""
                 Write-Host "[$doneCount/$($jobs.Count)] $($job.AppEntry.AppName)" -ForegroundColor Cyan
-                Write-Host "  [ERROR] $workerError" -ForegroundColor Red
+                Write-Host "  [FAILED] $workerError" -ForegroundColor Red
                 $allResults.Add([pscustomobject]@{ AppName = $job.AppEntry.AppName; Success = $false; Metadata = $null; OdataType = ""; DisplayVersion = ""; RequiredGroupNames = @(); AvailableGroupNames = @(); UninstallGroupNames = @(); GroupFetchOk = $false; Error = $workerError })
                 $job.Ps.Dispose()
                 continue
@@ -461,7 +461,7 @@ try {
 }
 catch {
     Write-Host ""
-    Write-Host "[ERROR] $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[FAILED] $($_.Exception.Message)" -ForegroundColor Red
     Write-Result -Success $false -ErrorMessage $_.Exception.Message -Results @()
     exit 1
 }

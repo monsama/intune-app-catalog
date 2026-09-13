@@ -207,11 +207,11 @@ function Global:Start-IntuneAppLookup {
             $raw = @($ps.EndInvoke($handle))
             if ($ps.Streams.Error.Count -gt 0) {
                 $errMsg = ($ps.Streams.Error | ForEach-Object { $_.ToString() }) -join "`n"
-                Write-Log "[ERROR] $errMsg`r`n" ([System.Drawing.Color]::Tomato)
+                Write-Log "[FAILED] $errMsg`r`n" ([System.Drawing.Color]::Tomato)
                 if ($OnComplete) { & $OnComplete $false $errMsg }
             }
             elseif ($raw.Count -eq 0) {
-                Write-Log "[ERROR] No response came back from the lookup runspace.`r`n" ([System.Drawing.Color]::Tomato)
+                Write-Log "[FAILED] No response came back from the lookup runspace.`r`n" ([System.Drawing.Color]::Tomato)
                 if ($OnComplete) { & $OnComplete $false "No response from lookup" }
             }
             else {
@@ -234,7 +234,7 @@ function Global:Start-IntuneAppLookup {
             }
         }
         catch {
-            Write-Log "[ERROR] $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
+            Write-Log "[FAILED] $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
             if ($OnComplete) { & $OnComplete $false $_.Exception.Message }
         }
         finally {
@@ -406,11 +406,11 @@ function Global:Start-EntraDirectoryLookup {
             $raw = @($ps.EndInvoke($handle))
             if ($ps.Streams.Error.Count -gt 0) {
                 $errMsg = ($ps.Streams.Error | ForEach-Object { $_.ToString() }) -join "`n"
-                Write-Log "[ERROR] $errMsg`r`n" ([System.Drawing.Color]::Tomato)
+                Write-Log "[FAILED] $errMsg`r`n" ([System.Drawing.Color]::Tomato)
                 if ($OnComplete) { & $OnComplete $false $errMsg }
             }
             elseif ($raw.Count -eq 0) {
-                Write-Log "[ERROR] No response came back from the lookup runspace.`r`n" ([System.Drawing.Color]::Tomato)
+                Write-Log "[FAILED] No response came back from the lookup runspace.`r`n" ([System.Drawing.Color]::Tomato)
                 if ($OnComplete) { & $OnComplete $false "No response from lookup" }
             }
             else {
@@ -424,7 +424,7 @@ function Global:Start-EntraDirectoryLookup {
             }
         }
         catch {
-            Write-Log "[ERROR] $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
+            Write-Log "[FAILED] $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
             if ($OnComplete) { & $OnComplete $false $_.Exception.Message }
         }
         finally {

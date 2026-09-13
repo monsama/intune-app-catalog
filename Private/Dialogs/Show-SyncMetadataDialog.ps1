@@ -313,7 +313,7 @@ function Global:Show-SyncMetadataDialog {
                     $okCount++
                     $reviewedCount++
                     $keptMsg = if ($keepLocalFields.Count -gt 0) { "kept your local value for: $($keepLocalFields -join ', ')" } else { "took Intune's value for everything" }
-                    $rtbLogRef.AppendText("  [REVIEWED] $($reviewItem.AppName): $keptMsg`r`n")
+                    Write-DialogLogLine -LogBox $rtbLogRef -Text "  [OK] $($reviewItem.AppName): $keptMsg`r`n"
                 }
 
                 # Shown only when there's actually something to retry -
