@@ -113,20 +113,20 @@ function Global:Show-CreateInIntuneDialog {
         $lblDup = New-Object System.Windows.Forms.Label
         $lblDup.Text = "This app already has an App ID ($ExistingAppId). By default this will UPDATE that app's metadata (name/description/install/uninstall/detection/dependencies) - it will NOT touch or re-upload package content."
         $lblDup.Location = New-Object System.Drawing.Point(15,12)
-        $lblDup.Size = New-Object System.Drawing.Size(1260,44)
+        $lblDup.Size = New-Object System.Drawing.Size(575,44)
         $lblDup.ForeColor = [System.Drawing.Color]::DarkOrange
         $scrollPanel.Controls.Add($lblDup)
 
         $chkForceNew = New-Object System.Windows.Forms.CheckBox
         $chkForceNew.Text = "Create a brand new app instead (uploads package content, leaves the existing app untouched)"
         $chkForceNew.Location = New-Object System.Drawing.Point(15,58)
-        $chkForceNew.Size = New-Object System.Drawing.Size(1260,20)
+        $chkForceNew.Size = New-Object System.Drawing.Size(575,20)
         $scrollPanel.Controls.Add($chkForceNew)
 
         $chkReplaceContent = New-Object System.Windows.Forms.CheckBox
         $chkReplaceContent.Text = "Also replace package content on the existing app (uses the Package field below)"
         $chkReplaceContent.Location = New-Object System.Drawing.Point(15,80)
-        $chkReplaceContent.Size = New-Object System.Drawing.Size(1260,20)
+        $chkReplaceContent.Size = New-Object System.Drawing.Size(575,20)
         $scrollPanel.Controls.Add($chkReplaceContent)
     }
 
