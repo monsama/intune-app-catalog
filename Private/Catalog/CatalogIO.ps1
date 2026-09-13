@@ -623,15 +623,61 @@ function Global:Load-LastAuditCache {
         # happens to make auto-detection work today, but that's the writer's
         # accident to rely on, not this reader's guarantee.
         $raw = Get-Content -Path $Global:App.LastAuditCachePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $skipped = 0
         foreach ($prop in $raw.PSObject.Properties) {
-            $entry = $prop.Value
-            $Global:App.LastAuditResults[$prop.Name] = [pscustomobject]@{
-                Timestamp    = [datetime]$entry.Timestamp
-                Metadata     = $entry.Metadata
-                Groups       = $entry.Groups
-                Dependencies = $entry.Dependencies
-                Unknown      = $entry.Unknown
+            # Wrapped in its OWN try/catch, per entry - this used to be one
+            # big try around the whole loop, so ONE bad entry threw and
+            # silently dropped every remaining app too, not just itself.
+            # Confirmed live: a cache written by Windows PowerShell 5.1 has
+            # $entry.Timestamp as a NESTED object (5.1's ConvertTo-Json
+            # serializes [datetime] as {value="/Date(...)/"; DisplayHint;
+            # DateTime}, unlike PowerShell 7's plain ISO string) - a bare
+            # [datetime]$entry.Timestamp cast on that threw on the very
+            # FIRST entry, which is exactly what made every app show "Never
+            # audited" after a restart despite the file being right there,
+            # full of valid data. Set-LastAuditCacheEntry now writes
+            # Timestamp as an explicit .ToString("o") string specifically to
+            # stop relying on ConvertTo-Json's per-PowerShell-version
+            # datetime shape at all - the fallback below only exists to
+            # still read a cache file written before that fix.
+            try {
+                $entry = $prop.Value
+                $tsRaw = $entry.Timestamp
+                $ts = if ($tsRaw -is [string]) {
+                    [datetime]$tsRaw
+                }
+                elseif ($tsRaw.PSObject.Properties.Name -contains 'value') {
+                    # $tsRaw.value itself is ALSO version-dependent: Windows
+                    # PowerShell 5.1's ConvertFrom-Json leaves it as the raw
+                    # "/Date(1234567890123)/" string, but PowerShell 7's
+                    # ConvertFrom-Json recognizes that same convention and
+                    # already hands back a real [datetime] - confirmed by
+                    # directly testing both shapes, not assumed.
+                    if ($tsRaw.value -is [datetime]) {
+                        $tsRaw.value
+                    }
+                    else {
+                        $ms = [int64]([regex]::Match([string]$tsRaw.value, '-?\d+').Value)
+                        [DateTimeOffset]::FromUnixTimeMilliseconds($ms).LocalDateTime
+                    }
+                }
+                else {
+                    [datetime]$tsRaw
+                }
+                $Global:App.LastAuditResults[$prop.Name] = [pscustomobject]@{
+                    Timestamp    = $ts
+                    Metadata     = $entry.Metadata
+                    Groups       = $entry.Groups
+                    Dependencies = $entry.Dependencies
+                    Unknown      = $entry.Unknown
+                }
             }
+            catch {
+                $skipped++
+            }
+        }
+        if ($skipped -gt 0) {
+            Write-Log "[WARN] Skipped $skipped unreadable entr$(if ($skipped -eq 1) { 'y' } else { 'ies' }) in the last-audit cache - re-run an audit for those app(s).`r`n" ([System.Drawing.Color]::Orange)
         }
     }
     catch {
@@ -670,7 +716,13 @@ function Global:Set-LastAuditCacheEntry {
     # which then counted as a false "issue" in Get-LastAuditSummary below).
     $existing = if ($Global:App.LastAuditResults.ContainsKey($AppName)) { $Global:App.LastAuditResults[$AppName] } else { $null }
     $Global:App.LastAuditResults[$AppName] = [pscustomobject]@{
-        Timestamp    = Get-Date
+        # An ISO-8601 string ("o" - round-trip format), not a raw [datetime]
+        # - ConvertTo-Json's own serialization of [datetime] differs between
+        # PowerShell versions (see Load-LastAuditCache's note on this same
+        # field), so writing it as an already-plain string here sidesteps
+        # that entirely rather than relying on the reader to know which
+        # shape the writer's PowerShell version happened to produce.
+        Timestamp    = (Get-Date).ToString("o")
         Metadata     = if ($PSBoundParameters.ContainsKey('Metadata'))     { $Metadata }     elseif ($existing) { $existing.Metadata }     else { $null }
         Groups       = if ($PSBoundParameters.ContainsKey('Groups'))       { $Groups }       elseif ($existing) { $existing.Groups }       else { $null }
         Dependencies = if ($PSBoundParameters.ContainsKey('Dependencies')) { $Dependencies } elseif ($existing) { $existing.Dependencies } else { $null }
