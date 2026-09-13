@@ -538,12 +538,12 @@ function Global:Show-CreateInIntuneDialog {
     # attachment rather than relying on invalidation of an already-attached,
     # merely-hidden sibling.
     $detPanels = @($pnlDetScript, $pnlDetMsi, $pnlDetFile, $pnlDetReg)
-    foreach ($p in $detPanels) { $dlg.Controls.Remove($p) }
+    foreach ($p in $detPanels) { $scrollPanel.Controls.Remove($p) }
     $UpdateDetPanel = {
         $sel = $cmbDetectionType.SelectedIndex
-        foreach ($p in $detPanels) { $dlg.Controls.Remove($p) }
+        foreach ($p in $detPanels) { $scrollPanel.Controls.Remove($p) }
         if ($sel -ge 0 -and $sel -lt $detPanels.Count) {
-            $dlg.Controls.Add($detPanels[$sel])
+            $scrollPanel.Controls.Add($detPanels[$sel])
         }
     }.GetNewClosure()
     $cmbDetectionType.Add_SelectedIndexChanged({ & $UpdateDetPanel }.GetNewClosure())
