@@ -9,9 +9,7 @@
     nothing else to keep next to it except the app-data folder. App data lives as one
     JSON file per app in an "app-data" folder next to this script - not a single combined
     file - so a Git diff for one app's change only ever touches that app's own file, and one
-    corrupted file doesn't take the rest of the catalog down with it. An older single
-    input.json is migrated into this folder automatically, once, the first time this script
-    doesn't find the new folder already there. Two tabs:
+    corrupted file doesn't take the rest of the catalog down with it. Two tabs:
 
     App Catalog
         Loads every app's own JSON file from the "app-data" folder next to this script,
@@ -47,7 +45,7 @@
 
     Requires: Windows PowerShell 5.1+ (or PowerShell 7+ on Windows), the Microsoft.Graph
     modules the deployment/assignment steps themselves check for, and an "app-data" folder
-    (or an old single input.json to migrate from) next to this script.
+    next to this script.
 
 .EXAMPLE
     .\IntuneDeployment.ps1
@@ -88,9 +86,7 @@ $Global:App.RootPath        = $PSScriptRoot
 # "app-data/7zip.json"), not a single input.json - kept the same variable
 # name despite the changed meaning to minimize how many of the many
 # existing references throughout this script needed touching, given the
-# genuine risk of a change this size. Import-AppsFromFile automatically
-# migrates an old single-file input.json into this folder the first time
-# it doesn't find the new structure already there.
+# genuine risk of a change this size.
 $Global:App.LinkedFilePath  = Join-Path $Global:App.RootPath "app-data"
 $Global:App.Apps            = New-Object System.Collections.ArrayList
 $Global:App.UnsavedChangesBox = @{ Value = $false }   # container (never reassigned) so closures can mutate it safely

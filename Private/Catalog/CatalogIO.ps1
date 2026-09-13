@@ -108,45 +108,6 @@ function Global:Import-AppsFromFile {
     # loaded before this call.
     $Global:App.CatalogGeneration++
 
-    # One-time automatic migration: if the new per-app folder doesn't exist
-    # or is empty, but the OLD single-file input.json does, split it into
-    # per-app files now rather than starting with an empty catalog. The
-    # old file is renamed, not deleted, afterward - kept as a safety net
-    # until the new format has actually proven itself in practice.
-    $hasFolderData = (Test-Path $Path) -and (@(Get-ChildItem -Path $Path -Filter "*.json" -ErrorAction SilentlyContinue).Count -gt 0)
-    if (-not $hasFolderData) {
-        $oldSingleFilePath = Join-Path $Global:App.RootPath "input.json"
-        if (Test-Path $oldSingleFilePath) {
-            try {
-                # -Encoding UTF8 explicitly - same reasoning as the per-app
-                # file read further below in this function.
-                $rawOld = Get-Content -Path $oldSingleFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
-                if ($null -eq $rawOld) { $rawOld = @() }
-                if (-not (Test-Path $Path)) { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
-                $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-                $migratedCount = 0
-                foreach ($item in @($rawOld)) {
-                    $record = ConvertTo-AppRecord $item
-                    $fileName = (Get-SafeFileNameForApp -Name $record.appName) + ".json"
-                    $filePath = Join-Path $Path $fileName
-                    $json = ConvertTo-SingleAppJson -App $record
-                    [System.IO.File]::WriteAllText($filePath, $json, $utf8NoBom)
-                    $migratedCount++
-                }
-                $migratedBackupName = "input.json.migrated-$(Get-Date -Format 'yyyy-MM-dd_HHmmss')"
-                Rename-Item -Path $oldSingleFilePath -NewName $migratedBackupName -Force -ErrorAction SilentlyContinue
-                [System.Windows.Forms.MessageBox]::Show(
-                    "Migrated $migratedCount app(s) from the old single input.json into one file per app in:`n$Path`n`nThe old file was kept, renamed to:`n$migratedBackupName",
-                    "Migrated to per-app files", "OK", "Information") | Out-Null
-            }
-            catch {
-                [System.Windows.Forms.MessageBox]::Show(
-                    "Found an old input.json to migrate, but migration failed:`n$($_.Exception.Message)`n`nStarting with an empty catalog instead - the old file was left untouched, nothing was lost.",
-                    "Migration failed", "OK", "Error") | Out-Null
-            }
-        }
-    }
-
     if (-not (Test-Path $Path)) {
         [System.Windows.Forms.MessageBox]::Show(
             "No app data found at:`n$Path`n`nStarting with an empty catalog. Use Save to create it.",
