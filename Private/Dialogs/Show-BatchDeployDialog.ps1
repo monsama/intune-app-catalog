@@ -178,14 +178,14 @@ function Global:Show-BatchDeployDialog {
         }
 
         $currentApp = $Queue[$QueueIndex]
-        Write-DialogLogLine -LogBox $rtbLog -Text "`r`n[$($QueueIndex+1)/$($Queue.Count)] $($currentApp.appName)`r`n"
+        Write-DialogLogLine -LogBox $rtbLog -Text "`r`n[$($QueueIndex+1)/$($Queue.Count)] $($currentApp.appName)`r`n" -MirrorToMainLog
         $lblStatus.Text = "Deploying $($QueueIndex+1) of $($Queue.Count): $($currentApp.appName)..."
         $progressBar.Value = $QueueIndex
 
         $isUncommon = Test-AppIsUncommon -App $currentApp
         $pkg = Resolve-AppPackagePath -AppName $currentApp.appName -Uncommon $isUncommon
         if (-not $pkg.Found) {
-            Write-DialogLogLine -LogBox $rtbLog -Text "  [SKIPPED] Package not built yet: $($pkg.Path)`r`n"
+            Write-DialogLogLine -LogBox $rtbLog -Text "  [SKIPPED] Package not built yet: $($pkg.Path)`r`n" -MirrorToMainLog
             $Results.Add([pscustomobject]@{ AppName = $currentApp.appName; Status = "Skipped"; Message = "Package not built yet" })
             # $RunNextBox directly, not an alias - still the outer
             # scriptblock's own direct body at this point, not the nested
@@ -210,13 +210,13 @@ function Global:Show-BatchDeployDialog {
             # for an app that was actually meant to be a winget app, a
             # missing/typo'd ID here is the single most likely, and most
             # directly fixable, reason detection couldn't be defaulted.
-            Write-DialogLogLine -LogBox $rtbLog -Text "  [SKIPPED] No detection available - this app has no Winget ID (so it's treated as uncommon) and no saved metadata to default detection from. If it should be a winget app, set its Winget ID; otherwise use `"Deploy to Intune...`" to set detection manually. Then re-run.`r`n"
+            Write-DialogLogLine -LogBox $rtbLog -Text "  [SKIPPED] No detection available - this app has no Winget ID (so it's treated as uncommon) and no saved metadata to default detection from. If it should be a winget app, set its Winget ID; otherwise use `"Deploy to Intune...`" to set detection manually. Then re-run.`r`n" -MirrorToMainLog
             $Results.Add([pscustomobject]@{ AppName = $currentApp.appName; Status = "Skipped"; Message = "No Winget ID and no detection script available" })
             & $RunNextBox.Value -Queue $Queue -QueueIndex ($QueueIndex + 1) -Results $Results
             return
         }
         if ($usedDefaults) {
-            Write-DialogLogLine -LogBox $rtbLog -Text "  [INFO] No saved metadata - using the same defaults Deploy to Intune's own form would.`r`n"
+            Write-DialogLogLine -LogBox $rtbLog -Text "  [INFO] No saved metadata - using the same defaults Deploy to Intune's own form would.`r`n" -MirrorToMainLog
         }
 
         # Dependency names resolved to App IDs at the moment each app is
@@ -230,7 +230,7 @@ function Global:Show-BatchDeployDialog {
                 $resolvedDepIds.Add($depApp.appId)
             }
             else {
-                Write-DialogLogLine -LogBox $rtbLog -Text "  [SKIPPED] Dependency `"$depName`" has no App ID yet - skipping just that dependency, not the whole app.`r`n"
+                Write-DialogLogLine -LogBox $rtbLog -Text "  [SKIPPED] Dependency `"$depName`" has no App ID yet - skipping just that dependency, not the whole app.`r`n" -MirrorToMainLog
             }
         }
 
@@ -353,20 +353,20 @@ function Global:Show-BatchDeployDialog {
                             [void](Save-AppsToFile -Path $linkedFilePathRef)
                         }
                         $defaultsNote = if ($usedDefaultsRef) { " - default metadata saved to the catalog" } else { "" }
-                        Write-DialogLogLine -LogBox $rtbLogRef -Text "  [OK] Created (App ID: $($result.appId))$defaultsNote`r`n"
+                        Write-DialogLogLine -LogBox $rtbLogRef -Text "  [OK] Created (App ID: $($result.appId))$defaultsNote`r`n" -MirrorToMainLog
                     }
                     else {
                         $message = $result.error
-                        Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] $($result.error)`r`n"
+                        Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] $($result.error)`r`n" -MirrorToMainLog
                     }
                 }
                 catch {
                     $message = "Could not read result: $($_.Exception.Message)"
-                    Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] Could not read result: $($_.Exception.Message)`r`n"
+                    Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] Could not read result: $($_.Exception.Message)`r`n" -MirrorToMainLog
                 }
             }
             else {
-                Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] $message`r`n"
+                Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] $message`r`n" -MirrorToMainLog
             }
 
             $resultsRef.Add([pscustomobject]@{ AppName = $currentAppRef.appName; Status = $status; Message = $message })

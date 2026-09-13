@@ -235,16 +235,33 @@ function Global:Get-DialogLogLineColor {
 # Appends one line to a dialog's own dark log box, colored by its leading
 # [TAG] via Get-DialogLogLineColor above - the per-dialog equivalent of
 # Write-Log (which only ever targets the main window's single Log tab).
+#
+# -MirrorToMainLog also writes the same line to the main Log tab (and,
+# through it, to the persisted log file on disk) - use this for a dialog
+# whose own results are worth keeping around after it closes (the batch/
+# bulk dialogs looping over many apps: Batch Deploy, Batch Edit, Bulk
+# Delete). Every OTHER dialog with its own log box already gets mirrored
+# for free, indirectly, because it shells out to an embedded script via
+# Start-PipelineProcess -ExtraLogTarget, which mirrors that script's raw
+# output into the main Log tab itself - these three don't shell out to
+# anything, they call Graph directly in a loop, so without this they were
+# the one place a completed run's outcome existed nowhere but that one
+# dialog's own memory, gone the moment it closed.
 function Global:Write-DialogLogLine {
     param(
         [System.Windows.Forms.RichTextBox]$LogBox,
-        [string]$Text
+        [string]$Text,
+        [switch]$MirrorToMainLog
     )
+    $color = Get-DialogLogLineColor -Text $Text
     $LogBox.SelectionStart = $LogBox.TextLength
     $LogBox.SelectionLength = 0
-    $LogBox.SelectionColor = Get-DialogLogLineColor -Text $Text
+    $LogBox.SelectionColor = $color
     $LogBox.AppendText($Text)
     $LogBox.ScrollToCaret()
+    if ($MirrorToMainLog) {
+        Write-Log $Text $color
+    }
 }
 
 function Global:New-ToolbarGroup {

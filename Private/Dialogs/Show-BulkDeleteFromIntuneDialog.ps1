@@ -229,11 +229,11 @@ function Global:Show-BulkDeleteFromIntuneDialog {
 
         $currentApp = $Queue[$QueueIndex]
         if ($RemoveDependencyFromAppId) {
-            Write-DialogLogLine -LogBox $rtbLog -Text "  [WARN] Blocked by a dependency - removing it and retrying ($($RetryAttempt+1)/5)...`r`n"
+            Write-DialogLogLine -LogBox $rtbLog -Text "  [WARN] Blocked by a dependency - removing it and retrying ($($RetryAttempt+1)/5)...`r`n" -MirrorToMainLog
             $lblStatus.Text = "Removing a blocking dependency for $($currentApp.appName), then retrying..."
         }
         else {
-            Write-DialogLogLine -LogBox $rtbLog -Text "`r`n[$($QueueIndex+1)/$($Queue.Count)] $($currentApp.appName)`r`n"
+            Write-DialogLogLine -LogBox $rtbLog -Text "`r`n[$($QueueIndex+1)/$($Queue.Count)] $($currentApp.appName)`r`n" -MirrorToMainLog
             $lblStatus.Text = "Deleting $($QueueIndex+1) of $($Queue.Count): $($currentApp.appName)..."
             $progressBar.Value = $QueueIndex
         }
@@ -307,7 +307,7 @@ function Global:Show-BulkDeleteFromIntuneDialog {
                         # stale App ID sitting in the catalog looking like
                         # it's still there.
                         [void](Save-AppsToFile -Path $linkedFilePathRef)
-                        Write-DialogLogLine -LogBox $rtbLogRef -Text "  [OK] Deleted`r`n"
+                        Write-DialogLogLine -LogBox $rtbLogRef -Text "  [OK] Deleted`r`n" -MirrorToMainLog
                     }
                     elseif ($result.blockingAppId -and $chkAutoRemoveDepsRef.Checked -and $retryAttemptRef -lt 5) {
                         # Not recorded as Failed and not advancing the queue
@@ -323,20 +323,20 @@ function Global:Show-BulkDeleteFromIntuneDialog {
                         } else {
                             "Still blocked after removing $retryAttemptRef blocking dependenc$(if ($retryAttemptRef -eq 1) {'y'} else {'ies'}) in a row - stopping here to avoid looping forever. Currently blocked by `"$($result.blockingAppName)`" - use `"Delete from Intune...`" on just this one app to look closer."
                         }
-                        Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] $message`r`n"
+                        Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] $message`r`n" -MirrorToMainLog
                     }
                     else {
                         $message = $result.error
-                        Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] $message`r`n"
+                        Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] $message`r`n" -MirrorToMainLog
                     }
                 }
                 catch {
                     $message = "Could not read result: $($_.Exception.Message)"
-                    Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] $message`r`n"
+                    Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] $message`r`n" -MirrorToMainLog
                 }
             }
             else {
-                Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] $message`r`n"
+                Write-DialogLogLine -LogBox $rtbLogRef -Text "  [FAILED] $message`r`n" -MirrorToMainLog
             }
 
             if ($retryBlockingAppId) {
