@@ -166,6 +166,7 @@ function Global:Show-IntuneAuditDialog {
         # nested inside it) - confirmed as a real, live bug in this exact
         # dialog's own dependency-check predecessor, not a theoretical
         # concern.
+        $dlgRef = $dlg
         $btnRunRef = $btnRun
         $btnCloseRef = $btnClose
         $lblStatusRef = $lblStatus
@@ -179,6 +180,12 @@ function Global:Show-IntuneAuditDialog {
 
         $finishOne = {
             $pendingBoxRef.Count--
+            # The dialog can already be closed and disposed by the time this
+            # fires - Close (after a user-confirmed Kill() of a still-running
+            # audit) doesn't wait for these background -OnComplete closures,
+            # so the polling timer's next tick still runs this against a
+            # disposed grid/button/label. Bails before touching any of them.
+            if ($dlgRef.IsDisposed) { return }
             $gridRef.Refresh()
             if ($pendingBoxRef.Count -le 0) {
                 $btnRunRef.Enabled = $true
@@ -213,6 +220,11 @@ function Global:Show-IntuneAuditDialog {
                 param($code)
                 $procBox1Ref.Proc = $null
                 Remove-Item $configPath1Ref -Force -ErrorAction SilentlyContinue
+
+                # See $finishOne's own note above - same reasoning, this
+                # closure runs unconditionally on process exit regardless of
+                # whether the dialog that started it is still open.
+                if ($dlgRef.IsDisposed) { & $finishOne; return }
 
                 if (-not (Test-Path $resultPath1Ref)) {
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
@@ -313,6 +325,9 @@ function Global:Show-IntuneAuditDialog {
                 param($code)
                 $procBox2Ref.Proc = $null
                 Remove-Item $configPath2Ref -Force -ErrorAction SilentlyContinue
+
+                # See $finishOne's own note above - same reasoning.
+                if ($dlgRef.IsDisposed) { & $finishOne; return }
 
                 if (-not (Test-Path $resultPath2Ref)) {
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
