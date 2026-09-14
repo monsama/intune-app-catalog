@@ -2,13 +2,13 @@
 .SYNOPSIS
     Intune App Catalog & Deployment GUI - entry point.
 .DESCRIPTION
-    Loads every function this app defines (grouped by area under .\Private\,
-    plus one file per dialog under .\Private\Dialogs\), then runs the actual
+    Loads every function this app defines (grouped by area under .\code\Private\,
+    plus one file per dialog under .\code\Private\Dialogs\), then runs the actual
     GUI-building code in .\MainApp.ps1. See MainApp.ps1's own header comment
-    for the full app description, and .\EmbeddedScripts\ for the embedded
+    for the full app description, and .\code\EmbeddedScripts\ for the embedded
     pipeline step scripts.
 
-    All of .\Private\*.ps1 are dot-sourced BEFORE MainApp.ps1 runs, so every
+    All of .\code\Private\*.ps1 are dot-sourced BEFORE MainApp.ps1 runs, so every
     function exists before any of MainApp.ps1's top-level code (which
     actually builds and shows the window) can reach it - confirmed this is
     required, not just convention: PowerShell does NOT hoist function
@@ -29,42 +29,42 @@
 #>
 
 $Script:RequiredPrivateFiles = @(
-    "Private\Catalog\CatalogIO.ps1"
-    "Private\Catalog\CatalogLogic.ps1"
-    "Private\Dialogs\Show-AddFavoriteGroupToAppsDialog.ps1"
-    "Private\Dialogs\Show-AppEditor.ps1"
-    "Private\Dialogs\Show-AppIdMatchDialog.ps1"
-    "Private\Dialogs\Show-AppRegistrationGuideDialog.ps1"
-    "Private\Dialogs\Show-BatchAssignDialog.ps1"
-    "Private\Dialogs\Show-BatchDeployDialog.ps1"
-    "Private\Dialogs\Show-BatchEditMetadataDialog.ps1"
-    "Private\Dialogs\Show-BulkDeleteFromIntuneDialog.ps1"
-    "Private\Dialogs\Show-CertificatePickerDialog.ps1"
-    "Private\Dialogs\Show-CertificateSetupDialog.ps1"
-    "Private\Dialogs\Show-CreateInIntuneDialog.ps1"
-    "Private\Dialogs\Show-DefaultAppSettingsDialog.ps1"
-    "Private\Dialogs\Show-DeleteAppDialog.ps1"
-    "Private\Dialogs\Show-DependencyOverviewDialog.ps1"
-    "Private\Dialogs\Show-DiagnosticsDialog.ps1"
-    "Private\Dialogs\Show-EntraMemberPicker.ps1"
-    "Private\Dialogs\Show-FavoriteGroupsManager.ps1"
-    "Private\Dialogs\Show-GroupDriftCheckDialog.ps1"
-    "Private\Dialogs\Show-GroupManagerDialog.ps1"
-    "Private\Dialogs\Show-GroupOnlyPicker.ps1"
-    "Private\Dialogs\Show-IntuneAuditDialog.ps1"
-    "Private\Dialogs\Show-IntuneOnlyAppsDialog.ps1"
-    "Private\Dialogs\Show-MetadataDriftDialog.ps1"
-    "Private\Dialogs\Show-PackagingProgressDialog.ps1"
-    "Private\Dialogs\Show-RemoveGroupFromAppsDialog.ps1"
-    "Private\Dialogs\Show-SetDefaultsConfirmDialog.ps1"
-    "Private\Dialogs\Show-SyncMetadataDialog.ps1"
-    "Private\Dialogs\Show-TargetedAssignDialog.ps1"
-    "Private\Dialogs\Show-WingetSearchDialog.ps1"
-    "Private\Graph\GraphFetch.ps1"
-    "Private\GuiHelpers.ps1"
-    "Private\Pipeline.ps1"
-    "Private\QuickActions.ps1"
-    "Private\Settings.ps1"
+    "code\Private\Catalog\CatalogIO.ps1"
+    "code\Private\Catalog\CatalogLogic.ps1"
+    "code\Private\Dialogs\Show-AddFavoriteGroupToAppsDialog.ps1"
+    "code\Private\Dialogs\Show-AppEditor.ps1"
+    "code\Private\Dialogs\Show-AppIdMatchDialog.ps1"
+    "code\Private\Dialogs\Show-AppRegistrationGuideDialog.ps1"
+    "code\Private\Dialogs\Show-BatchAssignDialog.ps1"
+    "code\Private\Dialogs\Show-BatchDeployDialog.ps1"
+    "code\Private\Dialogs\Show-BatchEditMetadataDialog.ps1"
+    "code\Private\Dialogs\Show-BulkDeleteFromIntuneDialog.ps1"
+    "code\Private\Dialogs\Show-CertificatePickerDialog.ps1"
+    "code\Private\Dialogs\Show-CertificateSetupDialog.ps1"
+    "code\Private\Dialogs\Show-CreateInIntuneDialog.ps1"
+    "code\Private\Dialogs\Show-DefaultAppSettingsDialog.ps1"
+    "code\Private\Dialogs\Show-DeleteAppDialog.ps1"
+    "code\Private\Dialogs\Show-DependencyOverviewDialog.ps1"
+    "code\Private\Dialogs\Show-DiagnosticsDialog.ps1"
+    "code\Private\Dialogs\Show-EntraMemberPicker.ps1"
+    "code\Private\Dialogs\Show-FavoriteGroupsManager.ps1"
+    "code\Private\Dialogs\Show-GroupDriftCheckDialog.ps1"
+    "code\Private\Dialogs\Show-GroupManagerDialog.ps1"
+    "code\Private\Dialogs\Show-GroupOnlyPicker.ps1"
+    "code\Private\Dialogs\Show-IntuneAuditDialog.ps1"
+    "code\Private\Dialogs\Show-IntuneOnlyAppsDialog.ps1"
+    "code\Private\Dialogs\Show-MetadataDriftDialog.ps1"
+    "code\Private\Dialogs\Show-PackagingProgressDialog.ps1"
+    "code\Private\Dialogs\Show-RemoveGroupFromAppsDialog.ps1"
+    "code\Private\Dialogs\Show-SetDefaultsConfirmDialog.ps1"
+    "code\Private\Dialogs\Show-SyncMetadataDialog.ps1"
+    "code\Private\Dialogs\Show-TargetedAssignDialog.ps1"
+    "code\Private\Dialogs\Show-WingetSearchDialog.ps1"
+    "code\Private\Graph\GraphFetch.ps1"
+    "code\Private\GuiHelpers.ps1"
+    "code\Private\Pipeline.ps1"
+    "code\Private\QuickActions.ps1"
+    "code\Private\Settings.ps1"
 )
 
 $Script:MissingPrivateFiles = @()
@@ -110,10 +110,10 @@ if ($Script:MissingPrivateFiles.Count -gt 0) {
     Write-Host " This usually means the download/extraction of this folder was" -ForegroundColor Yellow
     Write-Host " incomplete (a zip extracted without its subfolders, files not" -ForegroundColor Yellow
     Write-Host " copied recursively, etc). Re-download or re-copy the full folder" -ForegroundColor Yellow
-    Write-Host " (including the Private\ subfolder and all its subfolders), then" -ForegroundColor Yellow
+    Write-Host " (including the code\Private\ subfolder and all its subfolders), then" -ForegroundColor Yellow
     Write-Host " run this script again." -ForegroundColor Yellow
     Write-Host ""
-    throw "Startup aborted: $($Script:MissingPrivateFiles.Count) required file(s) under Private\ were not found. See list above."
+    throw "Startup aborted: $($Script:MissingPrivateFiles.Count) required file(s) under code\Private\ were not found. See list above."
 }
 
 if ($Script:FailedPrivateFiles.Count -gt 0) {
@@ -127,7 +127,7 @@ if ($Script:FailedPrivateFiles.Count -gt 0) {
         Write-Host "     $($failed.Error)" -ForegroundColor Yellow
         Write-Host ""
     }
-    throw "Startup aborted: $($Script:FailedPrivateFiles.Count) required file(s) under Private\ failed to load. See error(s) above."
+    throw "Startup aborted: $($Script:FailedPrivateFiles.Count) required file(s) under code\Private\ failed to load. See error(s) above."
 }
 
 $Script:MainAppPath = Join-Path $PSScriptRoot "MainApp.ps1"

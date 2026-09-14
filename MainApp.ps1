@@ -64,14 +64,14 @@ Add-Type -AssemblyName System.Security   # for the native X509Certificate2UI sto
 # Shared app state
 # =====================================================================
 # Single explicit container for every piece of state that needs to be
-# reachable from Private\ functions (main-window controls, Graph
+# reachable from code\Private\ functions (main-window controls, Graph
 # settings, the in-memory catalog, caches, ...) - replaces what used to
 # be dozens of separate $Script:/$Global: variables scattered across
 # this file. A hashtable rather than a fixed-shape object since new
 # keys get added incrementally below as each piece of UI/state is
 # built, and PowerShell hashtables support the same dot-notation
 # property access ($Global:App.Foo) either way. Declared global (not
-# script-scoped) for the same reason every Private\ function itself is
+# script-scoped) for the same reason every code\Private\ function itself is
 # declared "Global:" - a Windows PowerShell 5.1/pwsh 7 difference in
 # how deeply a deferred closure's variable lookup reaches back into an
 # intermediate script scope meant a script-scoped container was not
@@ -250,7 +250,7 @@ Import-GraphSettings
 # Embedded pipeline scripts
 # =====================================================================
 # Every packaging, deployment, and assignment step's full script content -
-# each one lives as its own real file under .\EmbeddedScripts, loaded here
+# each one lives as its own real file under .\code\EmbeddedScripts, loaded here
 # once at startup relative to this script's own location ($PSScriptRoot),
 # not embedded as a literal here-string in this file anymore. At runtime,
 # Start-PipelineProcess writes whichever one is needed out to a temp .ps1
@@ -259,14 +259,14 @@ Import-GraphSettings
 # - the temp file has to live in the real deployment folder for that to
 # resolve correctly. It's deleted again as soon as the child process exits,
 # successfully or not.
-$Global:App.EmbeddedPackageScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\Package.ps1") -Raw -Encoding UTF8
-$Global:App.EmbeddedCreateAppScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\CreateApp.ps1") -Raw -Encoding UTF8
-$Global:App.EmbeddedTargetedAssignScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\TargetedAssign.ps1") -Raw -Encoding UTF8
-$Global:App.EmbeddedBatchAssignScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\BatchAssign.ps1") -Raw -Encoding UTF8
-$Global:App.EmbeddedDeleteAppScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\DeleteApp.ps1") -Raw -Encoding UTF8
-$Global:App.EmbeddedGroupManagerScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\GroupManager.ps1") -Raw -Encoding UTF8
-$Global:App.EmbeddedSyncMetadataScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\SyncMetadata.ps1") -Raw -Encoding UTF8
-$Global:App.EmbeddedCertUploadScript = Get-Content -Path (Join-Path $PSScriptRoot "EmbeddedScripts\CertUpload.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedPackageScript = Get-Content -Path (Join-Path $PSScriptRoot "code\EmbeddedScripts\Package.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedCreateAppScript = Get-Content -Path (Join-Path $PSScriptRoot "code\EmbeddedScripts\CreateApp.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedTargetedAssignScript = Get-Content -Path (Join-Path $PSScriptRoot "code\EmbeddedScripts\TargetedAssign.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedBatchAssignScript = Get-Content -Path (Join-Path $PSScriptRoot "code\EmbeddedScripts\BatchAssign.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedDeleteAppScript = Get-Content -Path (Join-Path $PSScriptRoot "code\EmbeddedScripts\DeleteApp.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedGroupManagerScript = Get-Content -Path (Join-Path $PSScriptRoot "code\EmbeddedScripts\GroupManager.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedSyncMetadataScript = Get-Content -Path (Join-Path $PSScriptRoot "code\EmbeddedScripts\SyncMetadata.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedCertUploadScript = Get-Content -Path (Join-Path $PSScriptRoot "code\EmbeddedScripts\CertUpload.ps1") -Raw -Encoding UTF8
 
 # =====================================================================
 # Data helpers
