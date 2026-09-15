@@ -518,7 +518,13 @@ function Global:Show-AppEditor {
 
         $clb = New-Object System.Windows.Forms.CheckedListBox
         $clb.Location = New-Object System.Drawing.Point(10,20)
-        $clb.Size = New-Object System.Drawing.Size(300,85)
+        # Width trimmed from 300 to 292 - the list used to end at x=310
+        # (10+300), exactly where "+ New group..." starts, with zero gap
+        # between them (a live screenshot showed the checkbox list and
+        # button touching directly). $btnAddGroup's own x=310 is
+        # unchanged, so this alone opens an 8px gap without needing to
+        # move the button too.
+        $clb.Size = New-Object System.Drawing.Size(292,85)
         $clb.CheckOnClick = $true
         # Union of already-known groups and whatever's pre-selected (e.g. a
         # default group from Settings that no existing app has used yet) -
