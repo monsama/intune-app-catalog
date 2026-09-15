@@ -38,7 +38,7 @@ param(
     [string]$OutputFolder = "",
     
     [Parameter(Mandatory=$false)]
-    [string]$ToolPath = ".\IntuneWinAppUtil.exe",
+    [string]$ToolPath = ".\tools\IntuneWinAppUtil.exe",
     
     [Parameter(Mandatory=$false)]
     [switch]$Recursive,

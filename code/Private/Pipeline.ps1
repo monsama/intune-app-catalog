@@ -26,7 +26,7 @@ function Global:Set-PipelineButtonsEnabled {
 }
 
 function Global:Initialize-Folders {
-    $folders = @("app-packages","app-data","logs","backups")
+    $folders = @("data\app-packages","data\app-data","data\logs","data\backups")
     foreach ($f in $folders) {
         $p = Join-Path $Global:App.RootPath $f
         if (-not (Test-Path $p)) {
@@ -42,7 +42,7 @@ function Global:Initialize-Folders {
     # membership, granting certificate trust).
     if (-not $Global:App.LogFileWriter) {
         try {
-            $logPath = Join-Path (Join-Path $Global:App.RootPath "logs") ("intune-deployment-" + (Get-Date -Format "yyyy-MM-dd") + ".log")
+            $logPath = Join-Path (Join-Path $Global:App.RootPath "data\logs") ("intune-deployment-" + (Get-Date -Format "yyyy-MM-dd") + ".log")
             $Global:App.LogFileWriter = New-Object System.IO.StreamWriter($logPath, $true, [System.Text.Encoding]::UTF8)
             # Flushed periodically (below) rather than on every single
             # Write-Log call - AutoFlush forces a synchronous disk write on
@@ -174,7 +174,7 @@ function Global:Start-PipelineProcess {
     }
     # Without this, the child process inherits whatever folder the GUI itself happened
     # to be launched from - breaking relative paths inside the target script (e.g.
-    # the embedded package script's default ".\IntuneWinAppUtil.exe").
+    # the embedded package script's default ".\tools\IntuneWinAppUtil.exe").
     $psi.WorkingDirectory = $Global:App.RootPath
 
     Set-PipelineButtonsEnabled $false
@@ -270,7 +270,7 @@ function Global:Invoke-LaunchStep {
     else {
         Write-Log "=== Package all apps (app-packages) ===`r`n" ([System.Drawing.Color]::DeepSkyBlue)
     }
-    $argStr = "-InputFolder '$(Join-Path $rootPath 'app-packages')' -Force"
+    $argStr = "-InputFolder '$(Join-Path $rootPath 'data\app-packages')' -Force"
     # Single quotes doubled (PowerShell's own escaping for a literal ' inside
     # a single-quoted string) - same idiom already used throughout this file
     # for OData filter values (see e.g. Resolve-GroupId's $GroupName.Replace("'",

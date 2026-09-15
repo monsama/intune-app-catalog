@@ -81,8 +81,14 @@ function Assert-Null {
 # just those two files - it's robust to a function moving to a
 # different Private\ file later without this suite needing an update
 # just to keep finding it.
-$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$privateRoot = Join-Path $repoRoot "Private"
+# Two levels up, not one - this file lives at code\tests\, not tests\
+# directly under the repo root (moved there along with Private\ and
+# EmbeddedScripts\ under code\). $PSScriptRoot\.. alone already broke
+# the moment Private\ itself moved to code\Private\ (confirmed: it still
+# failed loudly - "expected function(s) not found under .../Private" -
+# just pointing at a Private\ that no longer exists at the repo root).
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
+$privateRoot = Join-Path $repoRoot "code\Private"
 $privateFiles = Get-ChildItem -Path $privateRoot -Filter "*.ps1" -Recurse
 
 # Deliberately narrow list - only genuinely pure, side-effect-free

@@ -6,13 +6,13 @@
 .DESCRIPTION
     A WinForms front end for the Intune deployment pipeline. Self-contained: every
     packaging, deployment, and assignment step is embedded directly in this one file -
-    nothing else to keep next to it except the app-data folder. App data lives as one
-    JSON file per app in an "app-data" folder next to this script - not a single combined
+    nothing else to keep next to it except the data folder. App data lives as one
+    JSON file per app in a "data\app-data" folder next to this script - not a single combined
     file - so a Git diff for one app's change only ever touches that app's own file, and one
     corrupted file doesn't take the rest of the catalog down with it. Two tabs:
 
     App Catalog
-        Loads every app's own JSON file from the "app-data" folder next to this script,
+        Loads every app's own JSON file from the "data\app-data" folder next to this script,
         shows them in a grid, and lets you add, edit, or delete apps. Group membership
         (Required / Available / Uninstall) is set with checkboxes against every group already
         used in the catalog, plus a button to add a brand new group. Save writes straight
@@ -44,7 +44,7 @@
     risk before you tick that dialog's "Yes, apply".
 
     Requires: Windows PowerShell 5.1+ (or PowerShell 7+ on Windows), the Microsoft.Graph
-    modules the deployment/assignment steps themselves check for, and an "app-data" folder
+    modules the deployment/assignment steps themselves check for, and a "data\app-data" folder
     next to this script.
 
 .EXAMPLE
@@ -87,7 +87,7 @@ $Global:App.RootPath        = $PSScriptRoot
 # name despite the changed meaning to minimize how many of the many
 # existing references throughout this script needed touching, given the
 # genuine risk of a change this size.
-$Global:App.LinkedFilePath  = Join-Path $Global:App.RootPath "app-data"
+$Global:App.LinkedFilePath  = Join-Path $Global:App.RootPath "data\app-data"
 $Global:App.Apps            = New-Object System.Collections.ArrayList
 $Global:App.UnsavedChangesBox = @{ Value = $false }   # container (never reassigned) so closures can mutate it safely
 $Global:App.IntuneAppsCache = New-Object System.Collections.ArrayList   # populated by Start-IntuneAppLookup: array of @{ id; displayName } - mutated in place (Clear+Add), never reassigned, so every closure that references it stays in sync
@@ -109,7 +109,7 @@ $Global:App.EntraDirectoryLookupRunning = $false   # guards against two overlapp
 # is load-bearing for the app to function; the main grid's own
 # "Last Audit" column simply falls back to "Never audited".
 $Global:App.LastAuditResults = @{}
-$Global:App.LastAuditCachePath = Join-Path $Global:App.RootPath "last-audit-cache.json"
+$Global:App.LastAuditCachePath = Join-Path $Global:App.RootPath "data\last-audit-cache.json"
 # Bumped by Import-AppsFromFile every time it (re)loads the catalog -
 # Reload, Open other folder..., or startup itself. Start-TypeVersionBackfill
 # captures the value in effect when its background queue starts and checks
@@ -137,7 +137,7 @@ $Global:App.AppVersion = "1.1"   # bump when shipping a meaningfully different b
 $Global:App.GraphTenantId              = ""
 $Global:App.GraphClientId              = ""
 $Global:App.GraphCertificateThumbprint = ""
-$Global:App.SettingsFilePath = Join-Path $Global:App.RootPath "intune-deployment-settings.json"
+$Global:App.SettingsFilePath = Join-Path $Global:App.RootPath "data\intune-deployment-settings.json"
 
 # Group names marked as "favorites" - shown as ready-to-tick options in
 # every app's Required/Available/Uninstall lists (new and existing alike),

@@ -134,7 +134,7 @@ function Global:Show-DiagnosticsDialog {
         # never got cleaned up. Not necessarily a problem (Resolve-AppPackagePath
         # only ever looks for folders it DOES expect), just worth surfacing since
         # it's otherwise invisible from inside the app.
-        $uncommonRootPath = Join-Path $Global:App.RootPath "app-packages"
+        $uncommonRootPath = Join-Path $Global:App.RootPath "data\app-packages"
         $expectedSafeNames = @($appsRef | Where-Object { Test-AppIsUncommon -App $_ } | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
         $orphanFolders = @()
         if (Test-Path $uncommonRootPath) {

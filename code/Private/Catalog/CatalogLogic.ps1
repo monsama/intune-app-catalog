@@ -313,7 +313,7 @@ function Global:Resolve-AppPackagePath {
     }
 
     $safeName = Get-SafeFileNameForApp -Name $AppName
-    $uncommonRoot = Join-Path $Global:App.RootPath "app-packages"
+    $uncommonRoot = Join-Path $Global:App.RootPath "data\app-packages"
     if (Test-Path $uncommonRoot) {
         $found = Get-ChildItem -Path $uncommonRoot -Recurse -Filter "$safeName.intunewin" -File -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($found) { return @{ Path = $found.FullName; Found = $true } }

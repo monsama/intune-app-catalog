@@ -9,7 +9,7 @@ CI, or any Linux box with PowerShell 7+ - no Windows needed for this part).
 Run it with:
 
 ```
-pwsh -NoProfile -File tests/CatalogLogic.Tests.ps1
+pwsh -NoProfile -File code/tests/CatalogLogic.Tests.ps1
 ```
 
 It extracts the functions under test directly from the real script's AST
