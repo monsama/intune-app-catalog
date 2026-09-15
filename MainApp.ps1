@@ -575,7 +575,7 @@ $Global:App.TxtSearch.Width = 220
 # actually need first. Reorganized instead around the core workflow - add
 # an app, edit it, package it, deploy it, assign it, audit it - as one
 # small "Get started" row, with everything else (maintenance, one-off
-# lookups, Entra ID/Settings tools) tucked behind a single "More actions"
+# lookups, Entra ID tools) tucked behind a single "More actions"
 # dropdown, grouped by when you'd actually reach for it. Every button
 # still exists exactly as before, fully wired the same way - nothing here
 # changes what any of them do, only how many are visible before you've
@@ -605,6 +605,7 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
     @{ Text = $btnCheckIntuneOnly.Text; Btn = $btnCheckIntuneOnly }
     @{ Text = $btnSyncMetadata.Text; Btn = $btnSyncMetadata }
     @{ Text = $btnBatchEdit.Text; Btn = $btnBatchEdit }
+    @{ Text = $btnDefaultValues.Text; Btn = $btnDefaultValues }
 )))
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Entra ID" -Items @(
     @{ Text = $btnGroupManager.Text; Btn = $btnGroupManager }
@@ -618,11 +619,6 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
     @{ Text = $btnGroupDrift.Text; Btn = $btnGroupDrift }
     @{ Text = $btnDiagnostics.Text; Btn = $btnDiagnostics }
 )))
-[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Settings" -Items @(
-    @{ Text = $btnCertSetup.Text; Btn = $btnCertSetup }
-    @{ Text = $btnDefaultValues.Text; Btn = $btnDefaultValues }
-)))
-
 $btnMoreActions = New-Object System.Windows.Forms.Button
 $btnMoreActions.Text = "More actions..."
 # A plain Button doesn't show its ContextMenuStrip on a left click (that's
@@ -631,7 +627,7 @@ $btnMoreActions.Text = "More actions..."
 $btnMoreActions.Add_Click({
     $menuMoreActions.Show($btnMoreActions, (New-Object System.Drawing.Point(0, $btnMoreActions.Height)))
 }.GetNewClosure())
-$toolbarTips.SetToolTip($btnMoreActions, "Catalog maintenance, one-off Intune lookups, Entra ID tools, and Settings.")
+$toolbarTips.SetToolTip($btnMoreActions, "Catalog maintenance, one-off Intune lookups, and Entra ID tools.")
 $gbMoreActions = New-ToolbarGroup -Title "More" -Buttons @($btnMoreActions)
 
 $searchPanel = New-Object System.Windows.Forms.FlowLayoutPanel
