@@ -559,9 +559,13 @@ function Global:Show-AppEditor {
         $gb.Controls.Add($clb)
 
         $btnAddGroup = New-Object System.Windows.Forms.Button
-        $btnAddGroup.Text = "+ New group..."
+        # "+ Group/user...", not "+ New group..." - Show-EntraMemberPicker
+        # below lets you pick a USER too, not just a group (confirmed:
+        # its own picker list is prefixed "[Group]"/"[User]"), so the old
+        # label was misleading about what this button actually does.
+        $btnAddGroup.Text = "+ Group/user..."
         $btnAddGroup.Location = New-Object System.Drawing.Point(310,20)
-        $btnAddGroup.Size = New-Object System.Drawing.Size(110,28)
+        $btnAddGroup.Size = New-Object System.Drawing.Size(118,28)
         $btnAddGroup.Add_Click({
             $picked = Show-EntraMemberPicker
             if ($picked) {

@@ -46,9 +46,12 @@ function Global:Show-FavoriteGroupsManager {
     $dlg.Controls.Add($clb)
 
     $btnAddGroup = New-Object System.Windows.Forms.Button
-    $btnAddGroup.Text = "+ New group..."
+    # "+ Group/user...", not "+ New group..." - see the same rename and
+    # reasoning in Show-AppEditor's own New-GroupBox (Show-EntraMemberPicker
+    # below lets you pick a USER too, not just a group).
+    $btnAddGroup.Text = "+ Group/user..."
     $btnAddGroup.Location = New-Object System.Drawing.Point(15,340)
-    $btnAddGroup.Size = New-Object System.Drawing.Size(120,30)
+    $btnAddGroup.Size = New-Object System.Drawing.Size(140,30)
     $btnAddGroup.Add_Click({
         $picked = Show-EntraMemberPicker
         if ($picked) {
