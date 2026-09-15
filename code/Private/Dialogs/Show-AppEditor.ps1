@@ -578,7 +578,11 @@ function Global:Show-AppEditor {
     # dialog around y=250), which put "Groups above now match..." nowhere
     # near the button/lists it was actually reporting on.
     $lblGroupSyncStatus = New-Object System.Windows.Forms.Label
-    $lblGroupSyncStatus.Text = ""
+    # A placeholder, not blank - otherwise this whole row reads as empty
+    # dead space until the user has clicked Pull at least once, rather
+    # than as a status line that just hasn't reported anything yet.
+    # Overwritten by the real status (below) the moment Pull actually runs.
+    $lblGroupSyncStatus.Text = "Not yet checked against Intune."
     $lblGroupSyncStatus.Location = New-Object System.Drawing.Point(15,708)
     $lblGroupSyncStatus.Size = New-Object System.Drawing.Size(430,18)
     $lblGroupSyncStatus.ForeColor = [System.Drawing.Color]::DimGray
