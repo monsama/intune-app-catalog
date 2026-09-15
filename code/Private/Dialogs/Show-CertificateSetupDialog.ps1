@@ -688,17 +688,29 @@ function Global:Show-CertificateSetupDialog {
     $saveResultBox = @{ Saved = $false; TenantId = $null; ClientId = $null; Thumbprint = $null }
 
     # True while any of Check certificates / Upload certificate / Delete
-    # from Entra is running (they always disable at least one of these
-    # three buttons together - see each handler above) OR while Test
-    # connection's own background runspace is running ($btnTest.Enabled).
-    # Unlike the batch dialogs elsewhere in this app, none of these four
-    # operations had ANY guard against Save/Cancel/the window's own X
-    # button closing the dialog out from under them - an interactive
-    # browser sign-in (Check/Upload/Delete) or a live Graph connection
-    # test can run for a while, and closing mid-run left their -OnComplete
-    # closures touching disposed controls once they eventually finished.
+    # from Entra is running, OR while Test connection's own background
+    # runspace is running ($btnTest.Enabled). Unlike the batch dialogs
+    # elsewhere in this app, none of these four operations had ANY guard
+    # against Save/Cancel/the window's own X button closing the dialog
+    # out from under them - an interactive browser sign-in (Check/Upload/
+    # Delete) or a live Graph connection test can run for a while, and
+    # closing mid-run left their -OnComplete closures touching disposed
+    # controls once they eventually finished.
+    #
+    # Deliberately checks btnCheckCerts/btnUpload only, NOT
+    # btnDeleteEntraCert - all three of Check/Upload/Delete disable both
+    # btnCheckCerts and btnUpload together whenever any of them starts, so
+    # those two alone already fully cover "one of these three is
+    # running." btnDeleteEntraCert's own Enabled state means something
+    # else entirely most of the time (whether a certificate is currently
+    # SELECTED in the list - see $lstCerts' own SelectionChanged handler),
+    # which is $false by default and after every completed Check, long
+    # before/after any operation is actually running - including it here
+    # made this dialog impossible to close (Save/Cancel/X all silently
+    # blocked with "An operation is still running") from the moment it
+    # opened, confirmed live.
     $anyCertOpRunning = {
-        (-not $btnCheckCerts.Enabled) -or (-not $btnUpload.Enabled) -or (-not $btnDeleteEntraCert.Enabled) -or (-not $btnTest.Enabled)
+        (-not $btnCheckCerts.Enabled) -or (-not $btnUpload.Enabled) -or (-not $btnTest.Enabled)
     }.GetNewClosure()
 
     $btnSave.Add_Click({
