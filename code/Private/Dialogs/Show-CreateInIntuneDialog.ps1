@@ -2449,9 +2449,19 @@ function Global:Show-CreateInIntuneDialog {
             $lblCreateStatus.ForeColor = [System.Drawing.Color]::DimGray
             $lblCreateStatus.Text = "Loading current metadata from Intune..."
             $metadataFetchRunningBox.Running = $true
+            # This dialog previously had no cursor handling at all for this
+            # auto-fetch (a live report: opening an EXISTING app shows a
+            # "loading" cursor with nothing to indicate why or when it ends -
+            # the status label was the only feedback). WaitCursor here makes
+            # that loading state deliberate and visible; the matching reset
+            # (Cursor + Cursor.Current + Position nudge + DoEvents, same
+            # pattern as Show-WingetSearchDialog) is in this fetch's own
+            # finally block below.
+            $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
             # Fresh aliases for the nested -OnComplete closure - see note at
             # the top of this function for why this matters.
+            $dlgRef = $dlg
             $metadataFetchRunningBoxRef = $metadataFetchRunningBox
             $existingAppIdRef = $ExistingAppId
             $updateCustomFieldHighlightsRef = $updateCustomFieldHighlights
@@ -2913,6 +2923,16 @@ function Global:Show-CreateInIntuneDialog {
                 }
                 finally {
                     $metadataFetchRunningBoxRef.Running = $false
+                    # See this fetch's own WaitCursor note above - same
+                    # reset pattern as Show-WingetSearchDialog: Cursor.Current
+                    # alone doesn't force an immediate repaint, and DoEvents
+                    # alone doesn't help when the mouse hasn't moved (no
+                    # WM_SETCURSOR queued), so the Position self-assignment
+                    # is what actually makes this reliable.
+                    $dlgRef.Cursor = [System.Windows.Forms.Cursors]::Default
+                    [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+                    [System.Windows.Forms.Application]::DoEvents()
+                    [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
                 }
             }.GetNewClosure()
         }.GetNewClosure())
