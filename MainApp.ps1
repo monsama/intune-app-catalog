@@ -194,17 +194,28 @@ $Global:App.TypeVersionBackfillDone = $false
 # =====================================================================
 # Styling - single, consistent light palette applied to every control
 # =====================================================================
+# A designed palette, not raw SystemColors - the previous version themed
+# every control to whatever the OS's own Control/Window/Highlight colors
+# happened to be, which is exactly the dated, mismatched-grey Windows look
+# this was meant to move away from. Colors below are fixed values instead,
+# so the app looks the same, deliberately, on every machine regardless of
+# the user's own Windows accent color or theme. Only colors change here -
+# no controls gain new fixed sizes/positions, so this carries none of the
+# layout risk a font-size change would (many dialogs use hand-tuned pixel
+# coordinates already sized for the current font).
 $Global:App.LightPalette = @{
-    FormBack       = [System.Drawing.SystemColors]::Control
-    ControlFore    = [System.Drawing.SystemColors]::ControlText
-    FieldBack      = [System.Drawing.SystemColors]::Window
-    ButtonBack     = [System.Drawing.SystemColors]::Control
-    GridBack       = [System.Drawing.SystemColors]::Window
-    GridAltBack    = [System.Drawing.Color]::FromArgb(245,245,245)
-    GridHeaderBack = [System.Drawing.SystemColors]::Control
-    BorderColor    = [System.Drawing.SystemColors]::ControlDark
-    SelectionBack  = [System.Drawing.SystemColors]::Highlight
-    SelectionFore  = [System.Drawing.SystemColors]::HighlightText
+    FormBack       = [System.Drawing.Color]::FromArgb(246,247,249)
+    ControlFore    = [System.Drawing.Color]::FromArgb(32,33,36)
+    FieldBack      = [System.Drawing.Color]::White
+    ButtonBack     = [System.Drawing.Color]::White
+    ButtonHoverBack = [System.Drawing.Color]::FromArgb(237,242,253)
+    ButtonPressBack = [System.Drawing.Color]::FromArgb(222,231,250)
+    GridBack       = [System.Drawing.Color]::White
+    GridAltBack    = [System.Drawing.Color]::FromArgb(248,249,251)
+    GridHeaderBack = [System.Drawing.Color]::FromArgb(241,243,246)
+    BorderColor    = [System.Drawing.Color]::FromArgb(216,219,224)
+    SelectionBack  = [System.Drawing.Color]::FromArgb(37,99,235)
+    SelectionFore  = [System.Drawing.Color]::White
 }
 
 # Applies the current theme to a control and everything nested inside it,

@@ -27,6 +27,16 @@ function Global:Set-ThemeRecursive {
             $Ctrl.ForeColor = $Palette.ControlFore
             $Ctrl.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
             $Ctrl.FlatAppearance.BorderColor = $Palette.BorderColor
+            # A hover/press color, not just a flat border - the previous
+            # version left FlatAppearance's Mouse*BackColor at their
+            # WinForms defaults (a jarring dark-grey flash on hover/click
+            # against a light theme), which read as broken rather than
+            # deliberately flat. Palette entries are optional (checked with
+            # -contains, not direct access) so a caller that themes a
+            # button with an older/custom palette missing these two keys
+            # doesn't hit a $null FlatAppearance.MouseOverBackColor assignment.
+            if ($Palette.Keys -contains 'ButtonHoverBack') { $Ctrl.FlatAppearance.MouseOverBackColor = $Palette.ButtonHoverBack }
+            if ($Palette.Keys -contains 'ButtonPressBack') { $Ctrl.FlatAppearance.MouseDownBackColor = $Palette.ButtonPressBack }
         }
         { $_ -in @("CheckBox","RadioButton") } {
             $Ctrl.ForeColor = $Palette.ControlFore
