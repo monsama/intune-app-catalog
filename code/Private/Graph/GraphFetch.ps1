@@ -201,6 +201,9 @@ function Global:Start-IntuneAppLookup {
         $timer.Dispose()
         $Global:App.Form.Cursor = [System.Windows.Forms.Cursors]::Default
         [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+        # See the same pattern's note in Show-WingetSearchDialog - forces
+        # an immediate cursor repaint instead of waiting on a mouse move.
+        [System.Windows.Forms.Application]::DoEvents()
         $Global:App.BtnLookupIds.Enabled = $true
 
         try {
@@ -415,6 +418,9 @@ function Global:Start-EntraDirectoryLookup {
         $timer.Dispose()
         $Global:App.Form.Cursor = [System.Windows.Forms.Cursors]::Default
         [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+        # See the same pattern's note in Show-WingetSearchDialog - forces
+        # an immediate cursor repaint instead of waiting on a mouse move.
+        [System.Windows.Forms.Application]::DoEvents()
 
         try {
             $raw = @($ps.EndInvoke($handle))

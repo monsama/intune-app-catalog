@@ -247,6 +247,9 @@ function Global:Show-IntuneOnlyAppsDialog {
             param($ok, $data)
             $dlgRef.Cursor = [System.Windows.Forms.Cursors]::Default
             [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+            # See the same pattern's note in Show-WingetSearchDialog - forces
+            # an immediate cursor repaint instead of waiting on a mouse move.
+            [System.Windows.Forms.Application]::DoEvents()
             $btnRefreshRef.Enabled = $true
             $busyBoxRef.Count--
             if (-not $ok) {
@@ -332,6 +335,12 @@ function Global:Show-IntuneOnlyAppsDialog {
             Start-AppMetadataFetch -AppId $id -OnComplete {
                 param($ok, $errMsg, $data)
                 $dlgRef2.Cursor = [System.Windows.Forms.Cursors]::Default
+                # Cursor.Current + DoEvents, not just Form.Cursor - see the
+                # note on this same pattern in Show-WingetSearchDialog: a
+                # confirmed live report of the wait cursor sticking around
+                # after results/UI had already updated.
+                [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+                [System.Windows.Forms.Application]::DoEvents()
                 $btnActionRef2.Enabled = $true
                 $busyBoxRef2.Count--
 
@@ -413,6 +422,10 @@ function Global:Show-IntuneOnlyAppsDialog {
             $grid.Enabled = $true
             $busyBox.Count--
             $dlg.Cursor = [System.Windows.Forms.Cursors]::Default
+            # See the note on this same pattern above (Start-AppMetadataFetch's
+            # own -OnComplete) - same fix, same reason.
+            [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+            [System.Windows.Forms.Application]::DoEvents()
             $lblStatus.ForeColor = [System.Drawing.Color]::SeaGreen
             $lblStatus.Text = ""
             $unsavedBoxRef.Value = $true

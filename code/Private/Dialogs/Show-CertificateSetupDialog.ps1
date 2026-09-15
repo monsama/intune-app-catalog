@@ -647,6 +647,11 @@ function Global:Show-CertificateSetupDialog {
             $timer.Stop(); $timer.Dispose()
             $dlgRef.Cursor = [System.Windows.Forms.Cursors]::Default
             [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+            # Forces Windows to actually repaint the cursor now instead of
+            # waiting on the next mouse-move to trigger it - see the note
+            # on this same pattern in Show-WingetSearchDialog for the
+            # confirmed live report this fixes.
+            [System.Windows.Forms.Application]::DoEvents()
             $btnTestRef.Enabled = $true
             try {
                 $raw = @($ps.EndInvoke($handle))

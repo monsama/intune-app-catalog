@@ -127,6 +127,15 @@ function Global:Show-WingetSearchDialog {
                 # skippable by an exception partway through populating rows.
                 $dlgRef.Cursor = [System.Windows.Forms.Cursors]::Default
                 [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+                # Resetting Cursor.Current alone doesn't force Windows to
+                # actually repaint it - that only happens on the next
+                # message-pump cycle, normally triggered by the mouse
+                # moving. Without this, the wait cursor could visibly stick
+                # around (a live, confirmed report: results shown, cursor
+                # still spinning) until the user happened to nudge the
+                # mouse. DoEvents forces that pump right now instead of
+                # waiting on one.
+                [System.Windows.Forms.Application]::DoEvents()
                 $btnSearchRef.Enabled = $true
             }
         }.GetNewClosure()
