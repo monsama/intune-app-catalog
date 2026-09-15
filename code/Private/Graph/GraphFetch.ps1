@@ -204,6 +204,7 @@ function Global:Start-IntuneAppLookup {
         # See the same pattern's note in Show-WingetSearchDialog - forces
         # an immediate cursor repaint instead of waiting on a mouse move.
         [System.Windows.Forms.Application]::DoEvents()
+        [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
         $Global:App.BtnLookupIds.Enabled = $true
 
         try {
@@ -421,6 +422,7 @@ function Global:Start-EntraDirectoryLookup {
         # See the same pattern's note in Show-WingetSearchDialog - forces
         # an immediate cursor repaint instead of waiting on a mouse move.
         [System.Windows.Forms.Application]::DoEvents()
+        [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
 
         try {
             $raw = @($ps.EndInvoke($handle))

@@ -250,6 +250,7 @@ function Global:Show-IntuneOnlyAppsDialog {
             # See the same pattern's note in Show-WingetSearchDialog - forces
             # an immediate cursor repaint instead of waiting on a mouse move.
             [System.Windows.Forms.Application]::DoEvents()
+            [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
             $btnRefreshRef.Enabled = $true
             $busyBoxRef.Count--
             if (-not $ok) {
@@ -341,6 +342,7 @@ function Global:Show-IntuneOnlyAppsDialog {
                 # after results/UI had already updated.
                 [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
                 [System.Windows.Forms.Application]::DoEvents()
+                [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
                 $btnActionRef2.Enabled = $true
                 $busyBoxRef2.Count--
 
@@ -426,6 +428,7 @@ function Global:Show-IntuneOnlyAppsDialog {
             # own -OnComplete) - same fix, same reason.
             [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
             [System.Windows.Forms.Application]::DoEvents()
+            [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
             $lblStatus.ForeColor = [System.Drawing.Color]::SeaGreen
             $lblStatus.Text = ""
             $unsavedBoxRef.Value = $true

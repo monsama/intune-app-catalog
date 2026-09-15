@@ -154,6 +154,7 @@ function Global:Show-GroupDriftCheckDialog {
             # See the same pattern's note in Show-WingetSearchDialog - forces
             # an immediate cursor repaint instead of waiting on a mouse move.
             [System.Windows.Forms.Application]::DoEvents()
+            [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
             $btnRefreshRef.Enabled = $true
             if (-not $ok) {
                 $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick

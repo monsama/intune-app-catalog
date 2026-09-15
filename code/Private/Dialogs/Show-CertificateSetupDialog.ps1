@@ -652,6 +652,7 @@ function Global:Show-CertificateSetupDialog {
             # on this same pattern in Show-WingetSearchDialog for the
             # confirmed live report this fixes.
             [System.Windows.Forms.Application]::DoEvents()
+            [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
             $btnTestRef.Enabled = $true
             try {
                 $raw = @($ps.EndInvoke($handle))

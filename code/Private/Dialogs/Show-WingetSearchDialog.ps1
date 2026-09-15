@@ -129,13 +129,19 @@ function Global:Show-WingetSearchDialog {
                 [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
                 # Resetting Cursor.Current alone doesn't force Windows to
                 # actually repaint it - that only happens on the next
-                # message-pump cycle, normally triggered by the mouse
-                # moving. Without this, the wait cursor could visibly stick
-                # around (a live, confirmed report: results shown, cursor
-                # still spinning) until the user happened to nudge the
-                # mouse. DoEvents forces that pump right now instead of
-                # waiting on one.
+                # WM_SETCURSOR, normally sent in response to the mouse
+                # moving. DoEvents() alone isn't enough either - it only
+                # processes messages already QUEUED, and if the mouse is
+                # stationary there's no WM_SETCURSOR waiting to be
+                # processed (confirmed: the wait cursor still stuck around
+                # after adding DoEvents alone). Setting Cursor.Position to
+                # itself forces Windows to recompute and repaint the
+                # cursor right now regardless of whether the mouse has
+                # actually moved; DoEvents then flushes that repaint
+                # immediately instead of leaving it for the next natural
+                # message-pump cycle.
                 [System.Windows.Forms.Application]::DoEvents()
+                [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
                 $btnSearchRef.Enabled = $true
             }
         }.GetNewClosure()
