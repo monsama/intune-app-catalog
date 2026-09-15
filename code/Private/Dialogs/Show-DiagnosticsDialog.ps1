@@ -158,9 +158,17 @@ function Global:Show-DiagnosticsDialog {
         & $appendLine "=== Live checks against Intune ===" $headerColor
         & $appendLine "Connecting and fetching every app from Intune..." $infoColor
         $lblStatus.Text = "Connecting to Intune..."
+        # Start-IntuneAppLookup/Start-Win32AppMinOsFetch/Start-EntraDirectoryLookup
+        # each set $Global:App.Form.Cursor themselves, but that's the MAIN
+        # window, which sits behind this modal dialog the whole time these
+        # three chained fetches run - setting its cursor has no visible
+        # effect here. Set/reset THIS dialog's own cursor instead, same
+        # fix already applied to Show-CreateInIntuneDialog and Show-AppEditor.
+        $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
         # Fresh aliases for the nested -OnComplete closure - see note at the
         # top of Show-CreateInIntuneDialog for why this matters here too.
+        $dlgRef = $dlg
         $appsRefRef = $appsRef
         $appendLineRef = $appendLine
         $knownMinOsValuesRef = $knownMinOsValues
@@ -181,6 +189,10 @@ function Global:Show-DiagnosticsDialog {
                 $btnCloseRef.Enabled = $true
                 $lblStatusRef.Text = "Done - live checks failed."
                 $lblStatusRef.ForeColor = $warnColorRef
+                $dlgRef.Cursor = [System.Windows.Forms.Cursors]::Default
+                [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+                [System.Windows.Forms.Application]::DoEvents()
+                [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
                 return
             }
             & $appendLineRef "[OK] Connected - $($data.Count) app(s) currently in Intune." $okColorRef
@@ -208,6 +220,7 @@ function Global:Show-DiagnosticsDialog {
             $deployedAppsRef = $deployedApps
             $appendLineRef2 = $appendLineRef
             $knownMinOsValuesRef2 = $knownMinOsValuesRef
+            $dlgRef2 = $dlgRef
             $btnRunRef2 = $btnRunRef
             $btnCloseRef2 = $btnCloseRef
             $lblStatusRef2 = $lblStatusRef
@@ -270,6 +283,7 @@ function Global:Show-DiagnosticsDialog {
                 $failColorRef3  = $failColorRef2
                 $infoColorRef3  = $infoColorRef2
                 $headerColorRef3 = $headerColorRef2
+                $dlgRef3        = $dlgRef2
                 $btnRunRef3     = $btnRunRef2
                 $btnCloseRef3   = $btnCloseRef2
                 $lblStatusRef3  = $lblStatusRef2
@@ -304,6 +318,10 @@ function Global:Show-DiagnosticsDialog {
                     $btnCloseRef3.Enabled = $true
                     $lblStatusRef3.Text = "Done."
                     $lblStatusRef3.ForeColor = $okColorRef3
+                    $dlgRef3.Cursor = [System.Windows.Forms.Cursors]::Default
+                    [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+                    [System.Windows.Forms.Application]::DoEvents()
+                    [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
                 }.GetNewClosure()
             }.GetNewClosure()
         }.GetNewClosure()

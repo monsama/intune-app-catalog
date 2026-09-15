@@ -268,21 +268,41 @@ function Global:Show-AppEditor {
         if ($cache.Count -eq 0) {
             $lblIdStatus.Text = "Connecting to Intune..."
             $lblIdStatus.ForeColor = [System.Drawing.Color]::DimGray
+            # Start-IntuneAppLookup sets $Global:App.Form.Cursor itself, but
+            # that's the MAIN window, which sits behind this modal editor
+            # the whole time this runs - setting its cursor has no visible
+            # effect here. Set/reset THIS dialog's own cursor instead so
+            # there's actually a visible loading indicator (a live report:
+            # this exact class of bug, just fixed the same way already in
+            # Show-CreateInIntuneDialog).
+            $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
             # Fresh local aliases - see note in Show-CertificateSetupDialog's Test
             # Connection handler. The -OnComplete block below is a closure nested
             # inside this already-closured Add_Click handler, so it needs its own
             # freshly-assigned copies of anything it touches rather than reusing
             # $lblIdStatus/$TryFillIdFromCache directly.
+            $dlgRef = $dlg
             $lblIdStatusRef = $lblIdStatus
             $tryFillRef = $TryFillIdFromCache
             $rtbAppEditorLogRef = $rtbAppEditorLog
             Start-IntuneAppLookup -OnComplete {
                 param($ok, $data)
-                if ($ok) { & $tryFillRef }
-                else {
-                    $lblIdStatusRef.Text = "Lookup failed: $data"
-                    $lblIdStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    Write-DialogLogLine -LogBox $rtbAppEditorLogRef -Text "[FAILED] Lookup failed: $data`r`n"
+                try {
+                    if ($ok) { & $tryFillRef }
+                    else {
+                        $lblIdStatusRef.Text = "Lookup failed: $data"
+                        $lblIdStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                        Write-DialogLogLine -LogBox $rtbAppEditorLogRef -Text "[FAILED] Lookup failed: $data`r`n"
+                    }
+                }
+                finally {
+                    # Cursor + Cursor.Current + DoEvents + a Position
+                    # self-assignment - see Show-WingetSearchDialog's own
+                    # note on why all four are needed for a reliable reset.
+                    $dlgRef.Cursor = [System.Windows.Forms.Cursors]::Default
+                    [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+                    [System.Windows.Forms.Application]::DoEvents()
+                    [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
                 }
             }.GetNewClosure()
         }
@@ -688,10 +708,15 @@ function Global:Show-AppEditor {
         $btnReadGroupsFromIntune.Enabled = $false
         $lblGroupSyncStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblGroupSyncStatus.Text = "Reading current group assignments from Intune..."
+        # Start-AppMetadataFetch has no cursor handling of its own - this
+        # button gave no visible loading feedback beyond the status label.
+        # Same fix as this same dialog's "Look up" button above.
+        $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
         # Fresh aliases for the nested -OnComplete closure - see note at
         # the top of Show-CreateInIntuneDialog for why this matters here
         # too.
+        $dlgRef2 = $dlg
         $reqGroupRef = $reqGroup
         $availGroupRef = $availGroup
         $uninstGroupRef = $uninstGroup
@@ -702,6 +727,10 @@ function Global:Show-AppEditor {
         Start-AppMetadataFetch -AppId $txtId.Text.Trim() -OnComplete {
             param($ok, $errMsg, $data)
             $btnReadGroupsFromIntuneRef.Enabled = $true
+            $dlgRef2.Cursor = [System.Windows.Forms.Cursors]::Default
+            [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+            [System.Windows.Forms.Application]::DoEvents()
+            [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
             if (-not $ok) {
                 $lblGroupSyncStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
                 $lblGroupSyncStatusRef.Text = "Could not read groups from Intune - see log below."

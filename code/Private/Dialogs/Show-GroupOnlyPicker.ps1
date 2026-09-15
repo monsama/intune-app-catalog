@@ -85,9 +85,15 @@ function Global:Show-GroupOnlyPicker {
         $btnRefresh.Enabled = $false
         $lblStatus.Text = "Connecting to Entra ID..."
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+        # Start-EntraDirectoryLookup sets $Global:App.Form.Cursor itself,
+        # but that's the MAIN window, hidden behind this modal picker the
+        # whole time this runs - see the same fix and note in
+        # Show-EntraMemberPicker's own Refresh handler.
+        $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
         # Fresh local aliases for everything the nested -OnComplete closure below
         # touches - see the note in Show-EntraMemberPicker's own Refresh handler.
+        $dlgRef          = $dlg
         $btnRefreshRef   = $btnRefresh
         $lblStatusRef    = $lblStatus
         $updateStatusRef = $UpdateStatus
@@ -96,6 +102,10 @@ function Global:Show-GroupOnlyPicker {
         Start-EntraDirectoryLookup -OnComplete {
             param($ok, $msg)
             $btnRefreshRef.Enabled = $true
+            $dlgRef.Cursor = [System.Windows.Forms.Cursors]::Default
+            [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+            [System.Windows.Forms.Application]::DoEvents()
+            [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
             if ($ok) {
                 & $updateStatusRef
                 & $refreshListRef

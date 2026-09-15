@@ -89,12 +89,20 @@ function Global:Show-EntraMemberPicker {
         $btnRefresh.Enabled = $false
         $lblStatus.Text = "Connecting to Entra ID..."
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+        # Start-EntraDirectoryLookup sets $Global:App.Form.Cursor itself,
+        # but that's the MAIN window, hidden behind this modal picker the
+        # whole time this runs - set/reset THIS dialog's own cursor
+        # instead, same fix already applied to the other dialogs that hit
+        # this same class of bug (Show-CreateInIntuneDialog, Show-AppEditor,
+        # Show-DiagnosticsDialog).
+        $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
         # Fresh local aliases for everything the nested -OnComplete closure below
         # touches - a closure nested inside this already-closured Add_Click does
         # not reliably re-capture variables THIS handler itself only inherited
         # from the outer Show-EntraMemberPicker scope (see the note in
         # Show-CertificateSetupDialog's Test Connection handler).
+        $dlgRef          = $dlg
         $btnRefreshRef   = $btnRefresh
         $lblStatusRef    = $lblStatus
         $updateStatusRef = $UpdateStatus
@@ -103,6 +111,10 @@ function Global:Show-EntraMemberPicker {
         Start-EntraDirectoryLookup -OnComplete {
             param($ok, $msg)
             $btnRefreshRef.Enabled = $true
+            $dlgRef.Cursor = [System.Windows.Forms.Cursors]::Default
+            [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+            [System.Windows.Forms.Application]::DoEvents()
+            [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
             if ($ok) {
                 & $updateStatusRef
                 & $refreshListRef

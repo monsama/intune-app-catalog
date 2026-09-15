@@ -159,9 +159,16 @@ function Global:Show-GroupManagerDialog {
         $btnRemoveCurrentMember.Enabled = $false
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = "Loading current members..."
+        # Start-GroupMembersFetch has no cursor handling of its own - this
+        # dialog gave no visible loading feedback beyond the status label.
+        # Same fix as the other dialogs that hit this (Show-CreateInIntuneDialog,
+        # Show-AppEditor, Show-DiagnosticsDialog, Show-EntraMemberPicker,
+        # Show-GroupOnlyPicker).
+        $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
         # Fresh aliases for the nested -OnComplete closure - see note at the
         # top of Show-CreateInIntuneDialog for why this matters here too.
+        $dlgRef = $dlg
         $btnLoadMembersRef = $btnLoadMembers
         $btnRemoveCurrentMemberRef = $btnRemoveCurrentMember
         $lblStatusRef = $lblStatus
@@ -173,6 +180,7 @@ function Global:Show-GroupManagerDialog {
 
         Start-GroupMembersFetch -GroupName $groupNameRef -OnComplete {
             param($ok, $errMsg, $data)
+            try {
             $btnLoadMembersRef.Enabled = $true
             $lstCurrentMembersRef.Items.Clear()
             $currentMemberIdsRef.Clear()
@@ -197,6 +205,16 @@ function Global:Show-GroupManagerDialog {
             $btnRemoveCurrentMemberRef.Enabled = ($currentMemberIdsRef.Count -gt 0)
             $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
             $lblStatusRef.Text = "Loaded $($currentMemberIdsRef.Count) current member(s) and description."
+            }
+            finally {
+                # Cursor + Cursor.Current + DoEvents + a Position
+                # self-assignment - see Show-WingetSearchDialog's own note
+                # on why all four are needed for a reliable reset.
+                $dlgRef.Cursor = [System.Windows.Forms.Cursors]::Default
+                [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
+                [System.Windows.Forms.Application]::DoEvents()
+                [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
+            }
         }.GetNewClosure()
     }.GetNewClosure()
 
