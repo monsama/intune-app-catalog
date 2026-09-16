@@ -511,6 +511,40 @@ $diffsNullInputs = @(Get-GroupFieldDiffs -LocalApp $null -RemoteResult $remoteRe
 Assert-Equal 0 $diffsNullInputs.Count "Get-GroupFieldDiffs: a `$null LocalApp produces zero diffs rather than throwing"
 
 # -----------------------------------------------------------------
+# ConvertTo-JsonStringLiteral - only ever exercised indirectly before
+# (through ConvertTo-DetectionRuleJson), so a broken edge case here could
+# have silently corrupted the catalog's own JSON files with no test
+# actually pinning down the escaping rules directly.
+# -----------------------------------------------------------------
+Assert-Equal '""' (ConvertTo-JsonStringLiteral "") `
+    "ConvertTo-JsonStringLiteral: an empty string becomes an empty JSON string literal"
+Assert-Equal '""' (ConvertTo-JsonStringLiteral $null) `
+    "ConvertTo-JsonStringLiteral: `$null is treated the same as an empty string, not an error"
+Assert-Equal '"plain text"' (ConvertTo-JsonStringLiteral "plain text") `
+    "ConvertTo-JsonStringLiteral: plain text with no special characters passes through unescaped"
+Assert-Equal '"say \"hi\""' (ConvertTo-JsonStringLiteral 'say "hi"') `
+    "ConvertTo-JsonStringLiteral: embedded double quotes are escaped"
+Assert-Equal '"C:\\Program Files\\App"' (ConvertTo-JsonStringLiteral 'C:\Program Files\App') `
+    "ConvertTo-JsonStringLiteral: backslashes (e.g. a Windows path) are escaped"
+Assert-Equal '"a\\\"b"' (ConvertTo-JsonStringLiteral 'a\"b') `
+    "ConvertTo-JsonStringLiteral: a backslash immediately followed by a quote escapes to \\\" - the backslash isn't itself swallowed into escaping the quote (order-of-replacement regression)"
+Assert-Equal '"a\tb"' (ConvertTo-JsonStringLiteral "a`tb") `
+    "ConvertTo-JsonStringLiteral: a literal tab character becomes the two-character \t escape"
+Assert-Equal '"a\rb"' (ConvertTo-JsonStringLiteral "a`rb") `
+    "ConvertTo-JsonStringLiteral: a literal CR character becomes the two-character \r escape"
+Assert-Equal '"a\nb"' (ConvertTo-JsonStringLiteral "a`nb") `
+    "ConvertTo-JsonStringLiteral: a literal LF character becomes the two-character \n escape"
+
+# Round-trip check, not just a literal string comparison - confirms the
+# escaped output is actually valid JSON that decodes back to the exact
+# original value, for a value that exercises every escape rule at once.
+$roundTripInput = "line1`r`nline2`ttabbed and a `"quote`" and a \backslash\"
+$roundTripJson = ConvertTo-JsonStringLiteral $roundTripInput
+$roundTripDecoded = $roundTripJson | ConvertFrom-Json
+Assert-Equal $roundTripInput $roundTripDecoded `
+    "ConvertTo-JsonStringLiteral: output round-trips through ConvertFrom-Json back to the exact original value"
+
+# -----------------------------------------------------------------
 # ConvertTo-CanonicalLineEndings
 # -----------------------------------------------------------------
 Assert-Equal "line1`nline2" (ConvertTo-CanonicalLineEndings "line1`r`nline2") `
