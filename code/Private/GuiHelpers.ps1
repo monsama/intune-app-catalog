@@ -1,3 +1,16 @@
+function Global:ConvertTo-DisplayLineEndings {
+    # WinForms Multiline TextBox/RichTextBox controls only ever render a
+    # bare `n as a line break inconsistently - they need real `r`n. This
+    # repo's own source files use LF-only line endings, so any here-string
+    # template (like the winget detection script below) carries bare `n
+    # when read into a string - fine to execute as a script, but it shows
+    # up as one giant run-on line if put straight into a TextBox.Text.
+    # Idempotent: an already-CRLF string round-trips unchanged.
+    param([string]$Text)
+    if (-not $Text) { return $Text }
+    return ($Text -replace "`r?`n", "`r`n")
+}
+
 function Global:Set-Theme {
     param([System.Windows.Forms.Control]$Control)
     Set-ThemeRecursive -Ctrl $Control -Palette $Global:App.LightPalette

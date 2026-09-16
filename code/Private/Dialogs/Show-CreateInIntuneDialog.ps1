@@ -557,7 +557,7 @@ function Global:Show-CreateInIntuneDialog {
         # so $txtDetection is deliberately left however it already started
         # (blank) rather than risk assigning a WinForms TextBox.Text a $null
         # value, which throws.
-        if ($defaults.detectionRule) { $txtDetection.Text = $defaults.detectionRule.Script_Content }
+        if ($defaults.detectionRule) { $txtDetection.Text = ConvertTo-DisplayLineEndings $defaults.detectionRule.Script_Content }
     }
 
     # --- Context / Architecture / Min OS, one row ---
@@ -1143,7 +1143,7 @@ function Global:Show-CreateInIntuneDialog {
             switch ($localDetRule.Type) {
                 "Script" {
                     $cmbDetectionType.SelectedIndex = 0
-                    if ($localDetRule.Script_Content) { $txtDetection.Text = $localDetRule.Script_Content }
+                    if ($localDetRule.Script_Content) { $txtDetection.Text = ConvertTo-DisplayLineEndings $localDetRule.Script_Content }
                 }
                 "Msi" {
                     $cmbDetectionType.SelectedIndex = 1
@@ -1232,7 +1232,7 @@ function Global:Show-CreateInIntuneDialog {
                 "Detection rule" {
                     if ($defaults.detectionRule -and $defaults.detectionRule.Type -eq "Script") {
                         $cmbDetectionType.SelectedIndex = 0
-                        $txtDetection.Text = $defaults.detectionRule.Script_Content
+                        $txtDetection.Text = ConvertTo-DisplayLineEndings $defaults.detectionRule.Script_Content
                     }
                 }
                 "Architecture" {
@@ -2323,7 +2323,7 @@ function Global:Show-CreateInIntuneDialog {
             switch ($m.detectionRule.Type) {
                 "Script" {
                     $cmbDetectionType.SelectedIndex = 0
-                    if ($m.detectionRule.Script_Content) { $txtDetection.Text = $m.detectionRule.Script_Content }
+                    if ($m.detectionRule.Script_Content) { $txtDetection.Text = ConvertTo-DisplayLineEndings $m.detectionRule.Script_Content }
                 }
                 "Msi" {
                     $cmbDetectionType.SelectedIndex = 1
@@ -2632,7 +2632,7 @@ function Global:Show-CreateInIntuneDialog {
                     switch ($data.DetectionRule.Type) {
                         "Script" {
                             $cmbDetectionTypeRef.SelectedIndex = 0
-                            if ($data.DetectionRule.Script_Content) { $txtDetectionRef.Text = $data.DetectionRule.Script_Content }
+                            if ($data.DetectionRule.Script_Content) { $txtDetectionRef.Text = ConvertTo-DisplayLineEndings $data.DetectionRule.Script_Content }
                         }
                         "Msi" {
                             $cmbDetectionTypeRef.SelectedIndex = 1
