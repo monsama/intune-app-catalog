@@ -1012,11 +1012,19 @@ function Global:Show-CreateInIntuneDialog {
         # plain-English description there instead of a raw dump, which is
         # unreadable at any dialog size and duplicates what's already
         # visible on the form itself.
+        # Same normalization as the live-Intune drift check just below (and
+        # ConvertTo-DetectionRuleJson's own, for the detection script) -
+        # Install/Uninstall command are Multiline textboxes too, so a
+        # trailing-newline-style-only difference here would otherwise mark
+        # a field "custom" (bold blue highlight, "Set default values..."
+        # confirm list) for no real reason, same bug as the detection rule
+        # one, just on a different field.
+        $normalizeForDefaultCompare = { param($v) (ConvertTo-CanonicalLineEndings ([string]$v)).TrimEnd() }
         $changeRows = New-Object System.Collections.Generic.List[object]
-        if ($txtInstall.Text -ne $defaults.installCommand) {
+        if ((& $normalizeForDefaultCompare $txtInstall.Text) -ne (& $normalizeForDefaultCompare $defaults.installCommand)) {
             $changeRows.Add([pscustomobject]@{ Label = "Install command"; Display = "Install command: $(Get-ShortDisplayValue $txtInstall.Text)  ->  $(Get-ShortDisplayValue $defaults.installCommand)" })
         }
-        if ($txtUninstall.Text -ne $defaults.uninstallCommand) {
+        if ((& $normalizeForDefaultCompare $txtUninstall.Text) -ne (& $normalizeForDefaultCompare $defaults.uninstallCommand)) {
             $changeRows.Add([pscustomobject]@{ Label = "Uninstall command"; Display = "Uninstall command: $(Get-ShortDisplayValue $txtUninstall.Text)  ->  $(Get-ShortDisplayValue $defaults.uninstallCommand)" })
         }
         $defaultDetSummary = if ($defaults.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $defaults.detectionRule -IndentLevel 0 } else { "" }
@@ -2817,17 +2825,27 @@ function Global:Show-CreateInIntuneDialog {
                 # (it's the current truth), but drift from the local copy
                 # is worth surfacing rather than silently disappearing the
                 # moment this dialog is opened.
+                # Same "a line-ending/trailing-whitespace-only difference is
+                # not a real change" normalization ConvertTo-DetectionRuleJson
+                # already applies for the detection script (confirmed live,
+                # WinMerge), applied here too - Notes/Install command/
+                # Uninstall command are all Multiline textboxes and just as
+                # capable of round-tripping through a CRLF-vs-LF difference
+                # against Intune's own copy; the rest cost nothing extra to
+                # cover the same way rather than leaving a narrower, easy-to-
+                # rediscover gap for the exact same bug on a different field.
+                $normalizeForCompare = { param($v) (ConvertTo-CanonicalLineEndings ([string]$v)).TrimEnd() }
                 $diffFields = New-Object System.Collections.Generic.List[string]
                 if ($localSnapshotRef) {
-                    if (([string]$data.Description) -ne ([string]$localSnapshotRef.Description)) { $diffFields.Add("Description") }
-                    if (([string]$data.Publisher) -ne ([string]$localSnapshotRef.Publisher)) { $diffFields.Add("Publisher") }
-                    if (([string]$data.Owner) -ne ([string]$localSnapshotRef.Owner)) { $diffFields.Add("Owner") }
-                    if (([string]$data.Developer) -ne ([string]$localSnapshotRef.Developer)) { $diffFields.Add("Developer") }
-                    if (([string]$data.InformationUrl) -ne ([string]$localSnapshotRef.InformationUrl)) { $diffFields.Add("Information URL") }
-                    if (([string]$data.PrivacyInformationUrl) -ne ([string]$localSnapshotRef.PrivacyUrl)) { $diffFields.Add("Privacy URL") }
-                    if (([string]$data.Notes) -ne ([string]$localSnapshotRef.Notes)) { $diffFields.Add("Notes") }
-                    if (([string]$data.InstallCommandLine) -ne ([string]$localSnapshotRef.InstallCommand)) { $diffFields.Add("Install command") }
-                    if (([string]$data.UninstallCommandLine) -ne ([string]$localSnapshotRef.UninstallCommand)) { $diffFields.Add("Uninstall command") }
+                    if ((& $normalizeForCompare $data.Description) -ne (& $normalizeForCompare $localSnapshotRef.Description)) { $diffFields.Add("Description") }
+                    if ((& $normalizeForCompare $data.Publisher) -ne (& $normalizeForCompare $localSnapshotRef.Publisher)) { $diffFields.Add("Publisher") }
+                    if ((& $normalizeForCompare $data.Owner) -ne (& $normalizeForCompare $localSnapshotRef.Owner)) { $diffFields.Add("Owner") }
+                    if ((& $normalizeForCompare $data.Developer) -ne (& $normalizeForCompare $localSnapshotRef.Developer)) { $diffFields.Add("Developer") }
+                    if ((& $normalizeForCompare $data.InformationUrl) -ne (& $normalizeForCompare $localSnapshotRef.InformationUrl)) { $diffFields.Add("Information URL") }
+                    if ((& $normalizeForCompare $data.PrivacyInformationUrl) -ne (& $normalizeForCompare $localSnapshotRef.PrivacyUrl)) { $diffFields.Add("Privacy URL") }
+                    if ((& $normalizeForCompare $data.Notes) -ne (& $normalizeForCompare $localSnapshotRef.Notes)) { $diffFields.Add("Notes") }
+                    if ((& $normalizeForCompare $data.InstallCommandLine) -ne (& $normalizeForCompare $localSnapshotRef.InstallCommand)) { $diffFields.Add("Install command") }
+                    if ((& $normalizeForCompare $data.UninstallCommandLine) -ne (& $normalizeForCompare $localSnapshotRef.UninstallCommand)) { $diffFields.Add("Uninstall command") }
                     if (([string]$archSource) -ne ([string]$localSnapshotRef.Architecture)) { $diffFields.Add("Architecture") }
                     $liveDetSummary = if ($data.DetectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $data.DetectionRule -IndentLevel 0 } else { "" }
                     if ($liveDetSummary -ne $localSnapshotRef.DetectionSummary) { $diffFields.Add("Detection rule") }

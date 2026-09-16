@@ -207,8 +207,20 @@ function Global:Get-CatalogMetadataFieldDiffs {
         if ($f.Win32Only -and -not $isWin32) { continue }
         $localVal = [string]$Local.($f.Key)
         $remoteVal = [string]$Remote.($f.Key)
-        $compareLocal = $localVal
-        $compareRemote = $remoteVal
+        # Same "a line-ending/trailing-whitespace-only difference is not a
+        # real change" normalization ConvertTo-DetectionRuleJson applies for
+        # the detection script (confirmed live, WinMerge: Intune's own copy
+        # of a script came back with a trailing `r`n where the local
+        # catalog had a trailing `n). Notes/Install command/Uninstall
+        # command are all Multiline textboxes just as capable of the same
+        # CRLF-vs-LF round trip against Intune's own copy - applied to
+        # every simple field here, not just those three, since it's a
+        # no-op for a genuinely single-line value (no `r`n or trailing
+        # whitespace to strip) and cheaper than maintaining a field-by-field
+        # allowlist that's one rediscovery of this same bug away from
+        # needing a third entry.
+        $compareLocal = (ConvertTo-CanonicalLineEndings $localVal).TrimEnd()
+        $compareRemote = (ConvertTo-CanonicalLineEndings $remoteVal).TrimEnd()
         if ($zeroEqualsBlankFields -contains $f.Key) {
             if ($compareLocal -eq "0") { $compareLocal = "" }
             if ($compareRemote -eq "0") { $compareRemote = "" }
