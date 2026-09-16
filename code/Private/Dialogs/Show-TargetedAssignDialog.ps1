@@ -172,6 +172,15 @@ function Global:Show-TargetedAssignDialog {
 
     $dlg.CancelButton = $btnCancel
     $dlg.AcceptButton = $btnRun
+
+    # $txtSummary is first in tab order (no button precedes it), so it's
+    # what gets focus by default when the form first shows - the same
+    # WinForms quirk confirmed live in Show-AppRegistrationGuideDialog
+    # selects an entire TextBox's contents the instant it receives focus
+    # that way. Read-only and never meant to be typed into, so point
+    # initial focus at Assign instead.
+    $dlg.Add_Shown({ $btnRun.Focus() }.GetNewClosure())
+
     Set-Theme -Control $dlg
     [void]$dlg.ShowDialog($Global:App.Form)
     return $resultBox.Success
