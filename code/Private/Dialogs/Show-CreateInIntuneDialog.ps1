@@ -1239,13 +1239,9 @@ function Global:Show-CreateInIntuneDialog {
     # a fixed-height Label) an unusually long status message no longer
     # gets silently clipped with no way to see the rest of it - it just
     # scrolls, the same as $rtbCreateLog below it. A FlowLayoutPanel, not
-    # manually-positioned children - $lblCreateStatus is AutoSize (its
-    # actual height varies with how long the current status message is,
-    # e.g. a one-line "Loaded current metadata..." vs. a multi-clause
-    # "Differs from the locally saved copy in: ..." list), and
-    # FlowLayoutPanel stacks its children top-down using each one's own
-    # current size, so the legend right after it is never manually
-    # repositioned or, worse, overlapped when the status text changes.
+    # manually-positioned children, so the legend right after
+    # $lblCreateStatus is never manually repositioned or, worse,
+    # overlapped when the status text changes.
     $pnlStatusInfo = New-Object System.Windows.Forms.FlowLayoutPanel
     $pnlStatusInfo.Location = New-Object System.Drawing.Point(15,773)
     $pnlStatusInfo.Size = New-Object System.Drawing.Size(1270,90)
@@ -1257,11 +1253,27 @@ function Global:Show-CreateInIntuneDialog {
     $pnlStatusInfo.Padding = New-Object System.Windows.Forms.Padding(6)
     $dlg.Controls.Add($pnlStatusInfo)
 
-    $lblCreateStatus = New-Object System.Windows.Forms.Label
-    $lblCreateStatus.AutoSize = $true
-    $lblCreateStatus.MaximumSize = New-Object System.Drawing.Size(1230,0)
+    # A RichTextBox, not a Label - per the user, so its text is selectable/
+    # copyable the same way $rtbFieldLegend's always was, and so its font
+    # can be pinned to the exact same size as that legend (a plain Label's
+    # own default font read visibly smaller than $rtbFieldLegend's
+    # explicit 9pt next to it). Fixed height with its own vertical
+    # scrollbar, not AutoSize - a RichTextBox has no real equivalent of
+    # Label's grow-to-fit-content AutoSize, so an unusually long status
+    # message scrolls within its own box instead; $pnlStatusInfo's own
+    # AutoScroll stays as an outer safety net if both boxes together ever
+    # exceed its visible height.
+    $lblCreateStatus = New-Object System.Windows.Forms.RichTextBox
+    $lblCreateStatus.Size = New-Object System.Drawing.Size(1230,40)
+    $lblCreateStatus.ReadOnly = $true
+    $lblCreateStatus.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+    $lblCreateStatus.ScrollBars = "Vertical"
+    $lblCreateStatus.TabStop = $false
+    $lblCreateStatus.DetectUrls = $false
+    $lblCreateStatus.BackColor = $Global:App.LightPalette.FieldBack
+    $lblCreateStatus.Font = New-Object System.Drawing.Font("Segoe UI", 9)
     # Left margin 0, not WinForms' own default (3,3,3,3) - without this,
-    # this Label started 3px further right than $rtbFieldLegend below it
+    # this box started 3px further right than $rtbFieldLegend below it
     # (whose own Margin is set explicitly with left=0 too), leaving the
     # two visibly unaligned against $pnlStatusInfo's shared left inset.
     $lblCreateStatus.Margin = New-Object System.Windows.Forms.Padding(0,0,0,6)
