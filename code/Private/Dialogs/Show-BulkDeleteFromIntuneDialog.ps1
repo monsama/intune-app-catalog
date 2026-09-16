@@ -26,12 +26,32 @@ function Global:Show-BulkDeleteFromIntuneDialog {
     $dlg.MaximizeBox = $false
     $dlg.MinimizeBox = $false
 
-    $lblWarning = New-Object System.Windows.Forms.Label
-    $skippedNote = if ($candidateApps.Count -gt $eligibleApps.Count) { " $($candidateApps.Count - $eligibleApps.Count) of the app(s) you selected have no App ID and are left out below - there's nothing in Intune to delete for them." } else { "" }
-    $lblWarning.Text = "This PERMANENTLY deletes every checked app below from Intune, including its content, assignments, and install history. This CANNOT be undone.$skippedNote`n`nEach catalog entry itself is not removed - only its App ID is cleared on success, so you can recreate it later without losing the groups already set here."
+    # Shortened from an original ~330-char, two-run-on-sentence version -
+    # the stakes here (permanent, unrecoverable delete) deserve a warning
+    # that's actually quick to read, not one more paragraph to skim past.
+    # Bold used for the one sentence that matters most if this is all
+    # anyone reads; everything else is plain-weight follow-up detail.
+    $lblWarning = New-Object System.Windows.Forms.RichTextBox
     $lblWarning.Location = New-Object System.Drawing.Point(15,12)
-    $lblWarning.Size = New-Object System.Drawing.Size(630,72)
-    $lblWarning.ForeColor = [System.Drawing.Color]::Firebrick
+    $lblWarning.Size = New-Object System.Drawing.Size(630,60)
+    $lblWarning.ReadOnly = $true
+    $lblWarning.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+    $lblWarning.BackColor = $Global:App.LightPalette.FormBack
+    $lblWarning.DetectUrls = $false
+    $lblWarning.SelectionFont = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $lblWarning.SelectionColor = [System.Drawing.Color]::Firebrick
+    $lblWarning.AppendText("Permanently deletes every checked app from Intune - content, assignments, and install history included. This cannot be undone.")
+    $skippedCount = $candidateApps.Count - $eligibleApps.Count
+    if ($skippedCount -gt 0) {
+        $lblWarning.SelectionFont = New-Object System.Drawing.Font("Segoe UI", 9)
+        $lblWarning.SelectionColor = [System.Drawing.Color]::Firebrick
+        $lblWarning.AppendText(" $skippedCount app(s) you selected have no App ID, so there's nothing to delete for them - left out below.")
+    }
+    $lblWarning.SelectionFont = New-Object System.Drawing.Font("Segoe UI", 9)
+    $lblWarning.SelectionColor = $Global:App.LightPalette.ControlFore
+    $lblWarning.AppendText("`n`nEach catalog entry stays - only its App ID is cleared, so you can recreate it later without losing its groups.")
+    $lblWarning.SelectionStart = 0
+    $lblWarning.SelectionLength = 0
     $dlg.Controls.Add($lblWarning)
 
     $clbApps = New-Object System.Windows.Forms.CheckedListBox
