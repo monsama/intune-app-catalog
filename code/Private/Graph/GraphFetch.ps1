@@ -271,11 +271,16 @@ function Global:Start-StartupDriftCheck {
     # Visible feedback that this is actually happening - otherwise the
     # only sign anything is running at all is a brief busy cursor (easy to
     # miss) and a line in the Log tab, which isn't the default active tab.
-    # Neutral gray while in flight, not the banner's usual warning color -
-    # this state isn't a problem, just "still working."
-    $Global:App.LblDriftWarning.ForeColor = [System.Drawing.Color]::DimGray
-    $Global:App.LblDriftWarning.Text = "Checking for Intune drift..."
-    $Global:App.PanelDriftWarning.Visible = $true
+    # Goes on the shared LblStartupBusy indicator next to the search box,
+    # not PanelDriftWarning - that panel is Dock="Top", so flipping it
+    # visible here and (in the very common case of nothing found) back
+    # invisible a moment later reflows the whole tab twice in quick
+    # succession right as the grid is loading - the toolbar/search
+    # row and the grid below jump down and back up, which read as the
+    # grid "flickering" on startup. PanelDriftWarning itself is reserved
+    # below for when there's actually something to show - a single
+    # reflow, only when it's worth the layout shift.
+    $Global:App.LblStartupBusy.Text = "Checking for Intune drift..."
     Update-StartupBusyIndicator -Delta 1
 
     # Reuses the exact same fetch (and $Global:App.IntuneAppsCache) as the
@@ -288,15 +293,17 @@ function Global:Start-StartupDriftCheck {
         param($ok, $data)
         Update-StartupBusyIndicator -Delta -1
         if (-not $ok) {
-            # Already logged in detail by Start-IntuneAppLookup itself -
-            # this just clears the "Checking..." state so it doesn't sit
-            # there forever looking like nothing ever happened.
+            # Already logged in detail by Start-IntuneAppLookup itself.
+            # Still clears a PREVIOUS run's banner (e.g. Reload/Open other
+            # folder triggering this again) rather than leaving stale
+            # findings up - only actually reflows if it was showing.
             $Global:App.PanelDriftWarning.Visible = $false
             return
         }
         $drift = Get-IntuneCatalogDrift -Apps $Global:App.Apps -IntuneApps $data
         $total = $drift.Missing.Count + $drift.Renamed.Count + $drift.DeletedFromIntune.Count
         if ($total -eq 0) {
+            # Same "clear a previous run's stale banner" reasoning as above.
             $Global:App.PanelDriftWarning.Visible = $false
             return
         }
