@@ -936,7 +936,7 @@ function Global:Show-CreateInIntuneDialog {
     # default".
     $getCurrentVsDefaultChanges = {
         $currentDetection = switch ($cmbDetectionType.SelectedIndex) {
-            0 { if ($txtDetection.Text.Trim()) { [pscustomobject]@{ Type = "Script"; Script_Content = $txtDetection.Text } } else { $null } }
+            0 { if ($txtDetection.Text.Trim()) { [pscustomobject]@{ Type = "Script"; Script_Content = ConvertTo-CanonicalLineEndings $txtDetection.Text } } else { $null } }
             default { [pscustomobject]@{ Type = "Other" } }
         }
         $currentArches = New-Object System.Collections.Generic.List[string]
@@ -1596,7 +1596,7 @@ function Global:Show-CreateInIntuneDialog {
                     [System.Windows.Forms.MessageBox]::Show("Enter a detection script.", "No detection script", "OK", "Warning") | Out-Null
                     return
                 }
-                $detectionRuleConfig = [pscustomobject]@{ Type = "Script"; Script_Content = $txtDetection.Text }
+                $detectionRuleConfig = [pscustomobject]@{ Type = "Script"; Script_Content = ConvertTo-CanonicalLineEndings $txtDetection.Text }
             }
             1 {
                 if (-not $txtMsiCode.Text.Trim()) {
@@ -2071,7 +2071,7 @@ function Global:Show-CreateInIntuneDialog {
                     [System.Windows.Forms.MessageBox]::Show("Enter a detection script.", "No detection script", "OK", "Warning") | Out-Null
                     return
                 }
-                $detectionRuleConfig = [pscustomobject]@{ Type = "Script"; Script_Content = $txtDetection.Text }
+                $detectionRuleConfig = [pscustomobject]@{ Type = "Script"; Script_Content = ConvertTo-CanonicalLineEndings $txtDetection.Text }
             }
             1 {
                 if (-not $txtMsiCode.Text.Trim()) {

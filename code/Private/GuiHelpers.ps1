@@ -54,6 +54,26 @@ function Global:ConvertTo-DisplayLineEndings {
     return ($Text -replace "`r?`n", "`r`n")
 }
 
+function Global:ConvertTo-CanonicalLineEndings {
+    # The inverse of ConvertTo-DisplayLineEndings, for the other direction
+    # of the same round trip - reading a detection script back OUT of a
+    # TextBox (now `r`n, after display normalization) to save it to the
+    # catalog or upload it to Intune. Without this, a detection script
+    # that was only ever VIEWED (not edited - e.g. just opening an
+    # existing app to change an unrelated field like Architecture) would
+    # get written back with `r`n even though the original catalog file
+    # and whatever's already live in Intune both still have the original
+    # bare `n - a byte-for-byte difference with no real content change
+    # behind it, but enough to make the next metadata-drift check flag
+    # "Detection rule" as differing (confirmed live) and needlessly dirty
+    # the catalog file's own git diff. Normalizing back to `n here - not
+    # leaving it as `r`n - matches this repo's own LF convention and
+    # keeps re-saves of an unedited script byte-identical to before.
+    param([string]$Text)
+    if (-not $Text) { return $Text }
+    return ($Text -replace "`r`n", "`n")
+}
+
 function Global:Set-Theme {
     param([System.Windows.Forms.Control]$Control)
     Set-ThemeRecursive -Ctrl $Control -Palette $Global:App.LightPalette

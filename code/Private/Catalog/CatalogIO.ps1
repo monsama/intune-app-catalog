@@ -201,7 +201,18 @@ function Global:ConvertTo-DetectionRuleJson {
     switch ([string]$DetectionRule.Type) {
         "Script" {
             $fields.Add("$innerPad`"Type`": $(ConvertTo-JsonStringLiteral 'Script')")
-            $fields.Add("$innerPad`"Script_Content`": $(ConvertTo-JsonStringLiteral $DetectionRule.Script_Content)")
+            # Normalized to `n here, not left as whatever the caller
+            # happened to pass - this function serves BOTH the catalog
+            # file's own actual persisted JSON (self-healing any stray
+            # `r`n forward, e.g. from a WinForms TextBox round-trip) and
+            # every metadata-drift comparison in the app (Show-
+            # CreateInIntuneDialog, CatalogLogic.ps1's own Get-
+            # CatalogMetadataFieldDiffs) - a line-ending-only difference
+            # between two functionally-identical scripts is not a real
+            # change and must never surface as one (confirmed live: an
+            # unrelated field edit alone made "Detection rule" show up as
+            # differing between local and Intune).
+            $fields.Add("$innerPad`"Script_Content`": $(ConvertTo-JsonStringLiteral (ConvertTo-CanonicalLineEndings $DetectionRule.Script_Content))")
         }
         "Msi" {
             $fields.Add("$innerPad`"Type`": $(ConvertTo-JsonStringLiteral 'Msi')")
