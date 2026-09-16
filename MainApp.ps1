@@ -618,7 +618,12 @@ $Global:App.TxtSearch.Width = 220
 # "someone else pushed a change, pull it and reload" is a genuinely
 # recurring step for this tool's actual audience, not a rare recovery
 # action worth burying.
-$gbPrimary = New-ToolbarGroup -Title "Get started" -Buttons @($btnGettingStarted, $btnNew, $btnEdit, $Global:App.BtnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnIntuneAudit, $btnReload, $btnCertSetup)
+# $btnGettingStarted last, right after $btnCertSetup ("Settings...") -
+# per the user, not first - reads better as "here's how to use what
+# you just configured" once Settings is already in view, rather than
+# leading with a walkthrough before the toolbar's own buttons are even
+# visible.
+$gbPrimary = New-ToolbarGroup -Title "Get started" -Buttons @($btnNew, $btnEdit, $Global:App.BtnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnIntuneAudit, $btnReload, $btnCertSetup, $btnGettingStarted)
 
 # Builds one ToolStripMenuItem submenu from a list of {Text;Btn} pairs -
 # each item just PerformClick()s the real button (still fully wired, just
