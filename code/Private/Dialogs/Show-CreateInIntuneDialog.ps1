@@ -112,6 +112,33 @@ function Global:Show-CreateInIntuneDialog {
     $dlg.MaximizeBox = $false
     $dlg.MinimizeBox = $false
 
+    # Combined info block - the App ID notice (if this is an existing app)
+    # stacked directly above the "differs from default" legend (if this is
+    # a Winget app, see $updateCustomFieldHighlights further down) - a
+    # RichTextBox, not two separate Labels off in different corners of the
+    # form, so the two read together instead of a user finding one, then
+    # discovering the other by accident somewhere else entirely.
+    #
+    # A full-width strip ABOVE the scrollable area below, not shoehorned
+    # into some gap inside it - this dialog's own content is already so
+    # densely packed edge-to-edge (confirmed live, twice: x=825/y=350 first
+    # collided with $lblDeps's own long AutoSize label; x=870/y=12 then
+    # turned out to still be squarely inside the 675px-wide detection
+    # script panel, which starts at x=595 - not just $cmbDetectionType's
+    # narrower 260px combo box above it, which is what that check actually
+    # looked at) that there's no small gap anywhere on the right two-thirds
+    # of this form both wide AND tall enough for two full sentences of
+    # text without colliding with something else already there. $scrollPanel
+    # is a plain container - shifting IT down and shrinking its height by
+    # the same amount moves every control inside it without touching any
+    # of their own (relative) coordinates, and keeps $scrollPanel's own
+    # BOTTOM edge at the same y=750 everything below it (status/log/
+    # buttons) already assumes, so nothing else in this very long function
+    # needs to change to make room.
+    $topInfoNeeded = ($isDuplicate -or -not $Uncommon)
+    $topInfoBothLines = ($isDuplicate -and -not $Uncommon)
+    $topInfoHeight = if (-not $topInfoNeeded) { 0 } elseif ($topInfoBothLines) { 70 } else { 38 }
+
     # This dialog has grown past what fits on a typical screen - everything
     # from here down to the Dependencies checklist lives inside a scrollable
     # panel with a fixed visible height, instead of the dialog itself just
@@ -119,27 +146,17 @@ function Global:Show-CreateInIntuneDialog {
     # the scroll area, so they're always reachable without scrolling down to
     # find them.
     $scrollPanel = New-Object System.Windows.Forms.Panel
-    $scrollPanel.Location = New-Object System.Drawing.Point(0,0)
-    $scrollPanel.Size = New-Object System.Drawing.Size(1300,750)
+    $scrollPanel.Location = New-Object System.Drawing.Point(0,$topInfoHeight)
+    $scrollPanel.Size = New-Object System.Drawing.Size(1300,(750 - $topInfoHeight))
     $scrollPanel.AutoScroll = $true
     $dlg.Controls.Add($scrollPanel)
 
-    # Combined info block - the App ID notice (if this is an existing app)
-    # stacked directly above the "differs from default" legend (if this is
-    # a Winget app, see $updateCustomFieldHighlights further down) - a
-    # RichTextBox, not two separate Labels off in different corners of the
-    # form, so the two read together instead of a user finding one, then
-    # discovering the other by accident somewhere else entirely. x=870, not
-    # the more obvious x=15 under the dialog's own title - the left column
-    # at y=12 is already packed solid down to $lblName at y=109 (App ID
-    # notice + both its checkboxes), with no room left to also fit the
-    # legend without pushing every other absolutely-positioned control in
-    # this very long dialog down to make space. x=870 is clear of
-    # $cmbDetectionType (595, ends at 855) and everything else up here.
-    if ($isDuplicate -or -not $Uncommon) {
+    if ($topInfoNeeded) {
+        # Added to $dlg directly, not $scrollPanel - always visible, never
+        # scrolls out of view along with the fields below it.
         $rtbTopInfo = New-Object System.Windows.Forms.RichTextBox
-        $rtbTopInfo.Location = New-Object System.Drawing.Point(870,12)
-        $rtbTopInfo.Size = New-Object System.Drawing.Size(415,95)
+        $rtbTopInfo.Location = New-Object System.Drawing.Point(15,4)
+        $rtbTopInfo.Size = New-Object System.Drawing.Size(1270,($topInfoHeight - 6))
         $rtbTopInfo.ReadOnly = $true
         $rtbTopInfo.BorderStyle = [System.Windows.Forms.BorderStyle]::None
         $rtbTopInfo.ScrollBars = "None"
@@ -161,14 +178,14 @@ function Global:Show-CreateInIntuneDialog {
             $isFirstLine = $false
         }
         if (-not $Uncommon) {
-            if (-not $isFirstLine) { $rtbTopInfo.AppendText("`n`n") }
+            if (-not $isFirstLine) { $rtbTopInfo.AppendText("`n") }
             $rtbTopInfo.SelectionFont = $fontLegend
             $rtbTopInfo.SelectionColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
             $rtbTopInfo.AppendText("A bold blue field label (like this) means that field's current value differs from the computed Winget default.")
         }
         $rtbTopInfo.SelectionStart = 0
         $rtbTopInfo.SelectionLength = 0
-        $scrollPanel.Controls.Add($rtbTopInfo)
+        $dlg.Controls.Add($rtbTopInfo)
     }
 
     if ($isDuplicate) {
