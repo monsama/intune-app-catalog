@@ -108,7 +108,7 @@ function Global:Start-WingetSearch {
         try {
             $raw = @($ps.EndInvoke($handle))
             if ($ps.Streams.Error.Count -gt 0) {
-                $errMsg = ($ps.Streams.Error | ForEach-Object { $_.ToString() }) -join "`n"
+                $errMsg = Get-GraphRunspaceErrorMessage $ps.Streams.Error
                 if ($OnComplete) { & $OnComplete $false $errMsg }
             }
             else {
@@ -210,7 +210,7 @@ function Global:Start-IntuneAppLookup {
         try {
             $raw = @($ps.EndInvoke($handle))
             if ($ps.Streams.Error.Count -gt 0) {
-                $errMsg = ($ps.Streams.Error | ForEach-Object { $_.ToString() }) -join "`n"
+                $errMsg = Get-GraphRunspaceErrorMessage $ps.Streams.Error
                 Write-Log "[FAILED] $errMsg`r`n" ([System.Drawing.Color]::Tomato)
                 if ($OnComplete) { & $OnComplete $false $errMsg }
             }
@@ -315,7 +315,7 @@ function Global:Start-Win32AppMinOsFetch {
         try {
             $raw = @($ps.EndInvoke($handle))
             if ($ps.Streams.Error.Count -gt 0) {
-                $errMsg = ($ps.Streams.Error | ForEach-Object { $_.ToString() }) -join "`n"
+                $errMsg = Get-GraphRunspaceErrorMessage $ps.Streams.Error
                 if ($OnComplete) { & $OnComplete $false $errMsg }
             }
             else {
@@ -427,7 +427,7 @@ function Global:Start-EntraDirectoryLookup {
         try {
             $raw = @($ps.EndInvoke($handle))
             if ($ps.Streams.Error.Count -gt 0) {
-                $errMsg = ($ps.Streams.Error | ForEach-Object { $_.ToString() }) -join "`n"
+                $errMsg = Get-GraphRunspaceErrorMessage $ps.Streams.Error
                 Write-Log "[FAILED] $errMsg`r`n" ([System.Drawing.Color]::Tomato)
                 if ($OnComplete) { & $OnComplete $false $errMsg }
             }
@@ -731,10 +731,7 @@ function Global:Start-AppMetadataFetch {
                 # (Import-Module/Connect-MgGraph/Invoke-MgGraphRequest).
                 # Appending where it was thrown (script file + line, if
                 # any) turns a mystery message into something diagnosable.
-                $errMsg = ($ps.Streams.Error | ForEach-Object {
-                    $where = $_.InvocationInfo.PositionMessage
-                    if ($where) { "$($_.ToString()) [$($where.Trim())]" } else { $_.ToString() }
-                }) -join "`n"
+                $errMsg = Get-GraphRunspaceErrorMessage $ps.Streams.Error
                 if ($OnComplete) { & $OnComplete $false $errMsg $null }
             }
             elseif ($raw.Count -eq 0) {
@@ -755,10 +752,7 @@ function Global:Start-AppMetadataFetch {
             # file) - prefer that when present, same reasoning/format as
             # the sibling branch above.
             if ($ps.Streams.Error.Count -gt 0) {
-                $errMsg = ($ps.Streams.Error | ForEach-Object {
-                    $where = $_.InvocationInfo.PositionMessage
-                    if ($where) { "$($_.ToString()) [$($where.Trim())]" } else { $_.ToString() }
-                }) -join "`n"
+                $errMsg = Get-GraphRunspaceErrorMessage $ps.Streams.Error
             }
             else {
                 $where = $_.InvocationInfo.PositionMessage
@@ -938,7 +932,7 @@ function Global:Start-GroupMembersFetch {
         try {
             $raw = @($ps.EndInvoke($handle))
             if ($ps.Streams.Error.Count -gt 0) {
-                $errMsg = ($ps.Streams.Error | ForEach-Object { $_.ToString() }) -join "`n"
+                $errMsg = Get-GraphRunspaceErrorMessage $ps.Streams.Error
                 if ($OnComplete) { & $OnComplete $false $errMsg $null }
             }
             elseif ($raw.Count -eq 0) {

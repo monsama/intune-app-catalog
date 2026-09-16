@@ -1,3 +1,46 @@
+function Global:ConvertTo-FriendlyGraphError {
+    # Recognizes a handful of common, recurring Connect-MgGraph/Graph SDK
+    # failure shapes and puts the actual takeaway first, in plain words -
+    # the raw exception (confirmed live: "ClientCertificateCredential
+    # authentication failed: [At line:35 char:16 + ... ]") reads like an
+    # internal parse error to anyone who isn't already familiar with this
+    # app's own runspace plumbing, and gives no hint the real fix is back
+    # in Settings. The original text is always kept, appended below the
+    # plain-language summary, so a genuinely unfamiliar failure is still
+    # fully diagnosable - this only adds context, never hides detail.
+    param([string]$RawMessage)
+    if (-not $RawMessage) { return $RawMessage }
+    $summary = $null
+    if ($RawMessage -match 'ClientCertificateCredential authentication failed|Cannot find the certificate|certificate.*not found|No certificate found') {
+        $summary = "Could not sign in with the configured certificate - it may have been replaced, expired, or removed from this machine since Settings was last saved. Open Settings, Test connection, and Save once it succeeds."
+    }
+    elseif ($RawMessage -match 'AADSTS700027|invalid_client|AADSTS70021') {
+        $summary = "Microsoft Entra ID rejected this app's credentials. Double-check the Tenant ID, Client ID, and certificate in Settings."
+    }
+    elseif ($RawMessage -match '\bunauthorized\b|\b401\b') {
+        $summary = "Microsoft Graph rejected this request as unauthorized - the configured credentials may be stale. Try Settings > Test connection."
+    }
+    elseif ($RawMessage -match '\bforbidden\b|\b403\b|insufficient privileges') {
+        $summary = "Microsoft Graph refused this request - the app registration is likely missing a required permission (see Settings > First time? Setup guide...)."
+    }
+    if (-not $summary) { return $RawMessage }
+    return "$summary`n`n(Raw error: $RawMessage)"
+}
+
+function Global:Get-GraphRunspaceErrorMessage {
+    # Shared by every Timer-polled runspace fetch in this file - builds
+    # the same "message [file:line]" detail every one of them wants for
+    # diagnosing a genuinely unexpected failure, then routes it through
+    # ConvertTo-FriendlyGraphError so the common, already-recognized ones
+    # lead with something a non-developer can actually act on.
+    param($ErrorRecords)
+    $raw = (@($ErrorRecords) | ForEach-Object {
+        $where = $_.InvocationInfo.PositionMessage
+        if ($where) { "$($_.ToString()) [$($where.Trim())]" } else { $_.ToString() }
+    }) -join "`n"
+    return ConvertTo-FriendlyGraphError $raw
+}
+
 function Global:ConvertTo-DisplayLineEndings {
     # WinForms Multiline TextBox/RichTextBox controls only ever render a
     # bare `n as a line break inconsistently - they need real `r`n. This
