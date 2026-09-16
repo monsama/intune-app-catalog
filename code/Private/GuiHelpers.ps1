@@ -320,6 +320,10 @@ function Global:Write-DialogLogLine {
         [switch]$MirrorToMainLog
     )
     $color = Get-DialogLogLineColor -Text $Text
+    # Same fix as Write-Log's own copy (Pipeline.ps1) - some callers build
+    # multi-line text with a bare `n (e.g. joining PowerShell error
+    # records), which this RichTextBox won't render as a line break.
+    $Text = ConvertTo-DisplayLineEndings $Text
     $LogBox.SelectionStart = $LogBox.TextLength
     $LogBox.SelectionLength = 0
     $LogBox.SelectionColor = $color

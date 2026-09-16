@@ -4,6 +4,13 @@ function Global:Write-Log {
         $Global:App.LogBox.Invoke([Action]{ Write-Log -Text $Text -Color $Color })
         return
     }
+    # Some callers build multi-line text (e.g. joining several PowerShell
+    # error records) with a bare `n, which a RichTextBox's native edit
+    # control won't render as a line break - see ConvertTo-DisplayLineEndings
+    # (GuiHelpers.ps1) for the full story. Normalizing once here, right
+    # before AppendText, covers every caller instead of needing each one
+    # to remember to do it themselves.
+    $Text = ConvertTo-DisplayLineEndings $Text
     $Global:App.LogBox.SelectionStart = $Global:App.LogBox.TextLength
     $Global:App.LogBox.SelectionLength = 0
     $Global:App.LogBox.SelectionColor = $Color

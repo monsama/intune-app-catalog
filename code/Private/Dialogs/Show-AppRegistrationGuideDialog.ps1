@@ -41,10 +41,11 @@ Granting an application broad tenant permissions is worth doing deliberately thr
     # lone LF as a line break, so the here-string's own newlines above
     # were silently getting swallowed, running adjacent lines together
     # with no space at all (a confirmed, live, visibly garbled result -
-    # "isworth", "notsilently", "somethingthis"). Converting to CRLF here,
-    # at assignment, fixes it regardless of what line endings this or any
-    # future edit of this file happens to be saved with.
-    $txtGuide.Text = $guideText -replace "`r`n", "`n" -replace "`n", "`r`n"
+    # "isworth", "notsilently", "somethingthis"). ConvertTo-DisplayLineEndings
+    # (GuiHelpers.ps1) fixes it regardless of what line endings this or any
+    # future edit of this file happens to be saved with - same helper used
+    # for the winget detection script in Show-CreateInIntuneDialog.
+    $txtGuide.Text = ConvertTo-DisplayLineEndings $guideText
     $dlg.Controls.Add($txtGuide)
 
     $btnOpenPortal = New-Object System.Windows.Forms.Button
