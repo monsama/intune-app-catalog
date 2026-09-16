@@ -212,7 +212,15 @@ function Global:ConvertTo-DetectionRuleJson {
             # change and must never surface as one (confirmed live: an
             # unrelated field edit alone made "Detection rule" show up as
             # differing between local and Intune).
-            $fields.Add("$innerPad`"Script_Content`": $(ConvertTo-JsonStringLiteral (ConvertTo-CanonicalLineEndings $DetectionRule.Script_Content))")
+            # .TrimEnd() on top of that, not just the `r`n->`n swap above -
+            # confirmed live (WinMerge): Intune's own copy of a script can
+            # come back with a trailing `r`n where the local catalog copy
+            # has a trailing `n (or none at all) - same harmless "how many/
+            # what kind of newline(s) sit after the last real line"
+            # non-difference, just at the very end of the string instead of
+            # mid-script, and trailing whitespace of any kind after a
+            # script's last real line never changes what it does when run.
+            $fields.Add("$innerPad`"Script_Content`": $(ConvertTo-JsonStringLiteral ((ConvertTo-CanonicalLineEndings $DetectionRule.Script_Content).TrimEnd()))")
         }
         "Msi" {
             $fields.Add("$innerPad`"Type`": $(ConvertTo-JsonStringLiteral 'Msi')")
