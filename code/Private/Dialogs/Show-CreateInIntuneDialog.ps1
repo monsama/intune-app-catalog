@@ -735,12 +735,16 @@ function Global:Show-CreateInIntuneDialog {
     # Legend for $updateCustomFieldHighlights below - without this, a
     # highlighted label just looks like a color/weight change with no
     # explanation of what it means or why only some labels get it.
+    # y=400, not right under $lblSetDefaultsHint (confirmed live: at
+    # y=350 it collided with $lblDeps's own label - that one has
+    # AutoSize=true and its text is long enough to render well past
+    # x=825 into this column, at y=353, landing right on top of this
+    # one). Nothing else occupies x=825ish between here and $lblProcessors
+    # at y=487.
     $lblCustomFieldLegend = New-Object System.Windows.Forms.Label
     $lblCustomFieldLegend.Text = "A bold blue field label (like this) means that field's current value differs from the computed Winget default."
-    $lblCustomFieldLegend.Location = New-Object System.Drawing.Point(825,350)
-    $lblCustomFieldLegend.Size = New-Object System.Drawing.Size(445,30)
-    $lblCustomFieldLegend.ForeColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
-    $lblCustomFieldLegend.Font = New-Object System.Drawing.Font($lblCustomFieldLegend.Font, [System.Drawing.FontStyle]::Bold)
+    $lblCustomFieldLegend.Location = New-Object System.Drawing.Point(825,400)
+    $lblCustomFieldLegend.Size = New-Object System.Drawing.Size(445,40)
     $lblCustomFieldLegend.Visible = (-not $Uncommon)
     $scrollPanel.Controls.Add($lblCustomFieldLegend)
 
@@ -3019,6 +3023,19 @@ function Global:Show-CreateInIntuneDialog {
 
     $dlg.CancelButton = $btnCancel
     Set-Theme -Control $dlg
+    # Set-ThemeRecursive's "Label" case unconditionally resets every
+    # Label's ForeColor to the palette's plain text color - confirmed
+    # live: $lblCustomFieldLegend's own blue was getting wiped back to
+    # black by this call, since it's set once at creation, well before
+    # this point. $updateCustomFieldHighlights's OWN blue survives this
+    # the same way $lblCustomFieldLegend now does - its only synchronous
+    # call happens above (before this line, so also wiped in the common
+    # case), but for an existing app the live-Intune auto-fetch's
+    # OnComplete calls it again well after ShowDialog() begins, i.e.
+    # after Set-Theme has already run for good - so it never needed this
+    # same fix to look right live.
+    $lblCustomFieldLegend.ForeColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
+    $lblCustomFieldLegend.Font = New-Object System.Drawing.Font($lblCustomFieldLegend.Font, [System.Drawing.FontStyle]::Bold)
     [void]$dlg.ShowDialog($Global:App.Form)
     return $resultBox
 }
