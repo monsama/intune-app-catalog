@@ -176,7 +176,13 @@ function Global:Show-GroupDriftCheckDialog {
     # its timer ticking against controls on a disposed form.
     $dlg.Add_FormClosing({
         param($s, $e)
-        if (-not $btnRefresh.Enabled) { return }
+        # $btnRefresh.Enabled is TRUE when idle (no fetch running) and
+        # FALSE while a fetch is in flight (see the click handler above) -
+        # this condition was inverted, so closing was blocked whenever
+        # idle (confirmed live: the dialog couldn't be closed at all once
+        # its own auto-refresh on open had finished) and silently
+        # ALLOWED mid-fetch, the one case this was actually meant to stop.
+        if ($btnRefresh.Enabled) { return }
         $e.Cancel = $true
     }.GetNewClosure())
 
