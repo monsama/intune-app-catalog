@@ -88,11 +88,27 @@ function Global:Set-ThemeRecursive {
             $Ctrl.ForeColor = $Palette.ControlFore
         }
         { $_ -in @("Panel","GroupBox","TabPage","FlowLayoutPanel","TabControl") } {
-            $Ctrl.BackColor = $Palette.FormBack
-            $Ctrl.ForeColor = $Palette.ControlFore
+            # Only overwrites a color still at its WinForms default - a
+            # caller that already gave this control its own deliberate
+            # BackColor/ForeColor (e.g. a bordered "field"-look info box)
+            # keeps it. Confirmed live, repeatedly: this function runs
+            # once, right before ShowDialog(), well AFTER every control's
+            # own creation-time styling - unconditionally overwriting here
+            # silently wiped out custom colors set earlier in the same
+            # function, with no way for the caller to tell without
+            # re-applying its own color again after this call (which is
+            # what every one of those call sites had to do before this
+            # fix, one at a time, as each case was found).
+            if ($Ctrl.BackColor -eq [System.Drawing.SystemColors]::Control) { $Ctrl.BackColor = $Palette.FormBack }
+            if ($Ctrl.ForeColor -eq [System.Drawing.SystemColors]::ControlText) { $Ctrl.ForeColor = $Palette.ControlFore }
         }
         "Label" {
-            $Ctrl.ForeColor = $Palette.ControlFore
+            # Same "only touch it if it's still at the default" reasoning
+            # as the Panel/GroupBox/... case above - a Label given its own
+            # color at creation (DimGray for a status line, DarkOrange/
+            # Firebrick for a warning, ...) keeps it instead of being
+            # silently flattened to plain body text the moment this runs.
+            if ($Ctrl.ForeColor -eq [System.Drawing.SystemColors]::ControlText) { $Ctrl.ForeColor = $Palette.ControlFore }
         }
         { $_ -in @("TextBox","ComboBox") } {
             $Ctrl.BackColor = $Palette.FieldBack
