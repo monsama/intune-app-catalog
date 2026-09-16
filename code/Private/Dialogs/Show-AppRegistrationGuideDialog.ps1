@@ -66,6 +66,14 @@ Granting an application broad tenant permissions is worth doing deliberately thr
     $dlg.CancelButton = $btnClose
     $dlg.AcceptButton = $btnClose
 
+    # $txtGuide is first in tab order, so it's what the form focuses by
+    # default when first shown - a known WinForms quirk selects an entire
+    # TextBox's text the moment it receives focus that way, visible as
+    # the whole guide highlighted blue on open (confirmed live). It's
+    # read-only and never meant to be typed into, so just point initial
+    # focus at Close instead of fighting the selection after the fact.
+    $dlg.Add_Shown({ $btnClose.Focus() }.GetNewClosure())
+
     Set-Theme -Control $dlg
     [void]$dlg.ShowDialog($Global:App.Form)
 }
