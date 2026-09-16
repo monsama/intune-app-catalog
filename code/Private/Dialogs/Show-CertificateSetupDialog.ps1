@@ -760,8 +760,13 @@ function Global:Show-CertificateSetupDialog {
             $Global:App.GraphClientId = $saveResultBox.ClientId
             $Global:App.GraphCertificateThumbprint = $saveResultBox.Thumbprint
             $Global:App.IntuneAppsCache.Clear()   # old cache may have been fetched under a different identity
+            # No confirmation popup here, deliberately - the only place in
+            # this app that had one after a successful save. The dialog
+            # already closed and this line is already in the persistent
+            # Log tab; every other save action in this app (catalog,
+            # favorite groups, default app settings, ...) relies on that
+            # same combination without an extra required click.
             Write-Log "[OK] Settings saved. Client: $($saveResultBox.ClientId), Tenant: $($saveResultBox.TenantId).`r`n" ([System.Drawing.Color]::LightGreen)
-            [System.Windows.Forms.MessageBox]::Show("Saved.", "Saved", "OK", "Information") | Out-Null
         }
     }
 }
