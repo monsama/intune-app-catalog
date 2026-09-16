@@ -49,6 +49,7 @@ $Script:RequiredPrivateFiles = @(
     "code\Private\Dialogs\Show-DiagnosticsDialog.ps1"
     "code\Private\Dialogs\Show-EntraMemberPicker.ps1"
     "code\Private\Dialogs\Show-FavoriteGroupsManager.ps1"
+    "code\Private\Dialogs\Show-GettingStartedGuideDialog.ps1"
     "code\Private\Dialogs\Show-GroupDriftCheckDialog.ps1"
     "code\Private\Dialogs\Show-GroupManagerDialog.ps1"
     "code\Private\Dialogs\Show-GroupOnlyPicker.ps1"

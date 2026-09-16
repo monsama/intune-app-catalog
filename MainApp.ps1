@@ -520,6 +520,7 @@ $toolbar.Padding = New-Object System.Windows.Forms.Padding(6)
 # for the identical actions (Edit.../Remove from catalog..., both of which
 # just PerformClick() these same buttons), rather than a second, different
 # label for the same click.
+$btnGettingStarted = New-Object System.Windows.Forms.Button; $btnGettingStarted.Text = "Getting started..."
 $btnNew    = New-Object System.Windows.Forms.Button; $btnNew.Text = "+ Add app..."
 $btnEdit   = New-Object System.Windows.Forms.Button; $btnEdit.Text = "Edit..."
 $Global:App.BtnDelete = New-Object System.Windows.Forms.Button; $Global:App.BtnDelete.Text = "Remove from catalog..."
@@ -551,6 +552,7 @@ $toolbarTips = New-Object System.Windows.Forms.ToolTip
 $toolbarTips.AutoPopDelay = 15000
 $toolbarTips.InitialDelay = 400
 $toolbarTips.ReshowDelay = 200
+$toolbarTips.SetToolTip($btnGettingStarted, "A short walkthrough of the common workflows: importing what's already in Intune, deploying a new catalog for the first time, and keeping the two in sync afterward.")
 $toolbarTips.SetToolTip($btnNew, "Add a new app to the catalog by name - doesn't touch Intune yet.")
 $toolbarTips.SetToolTip($btnEdit, "Edit the selected app's name, winget ID, and group assignments.")
 $toolbarTips.SetToolTip($Global:App.BtnDelete, "Remove the selected app from the catalog. Does not delete it from Intune.")
@@ -596,7 +598,7 @@ $Global:App.TxtSearch.Width = 220
 # "someone else pushed a change, pull it and reload" is a genuinely
 # recurring step for this tool's actual audience, not a rare recovery
 # action worth burying.
-$gbPrimary = New-ToolbarGroup -Title "Get started" -Buttons @($btnNew, $btnEdit, $Global:App.BtnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnIntuneAudit, $btnReload, $btnCertSetup)
+$gbPrimary = New-ToolbarGroup -Title "Get started" -Buttons @($btnGettingStarted, $btnNew, $btnEdit, $Global:App.BtnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnIntuneAudit, $btnReload, $btnCertSetup)
 
 # Builds one ToolStripMenuItem submenu from a list of {Text;Btn} pairs -
 # each item just PerformClick()s the real button (still fully wired, just
@@ -1332,6 +1334,8 @@ $Global:App.Grid.Add_CellFormatting({
 # handling in Assign Groups) and add users or other groups to it as
 # members. Not tied to the app catalog at all - useful for setting up a
 # deployment group before any app references it.
+
+$btnGettingStarted.Add_Click({ Show-GettingStartedGuideDialog })
 
 # ---------------------------------------------------------------
 # App editor dialog
