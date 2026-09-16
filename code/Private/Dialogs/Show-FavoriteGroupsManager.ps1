@@ -20,7 +20,7 @@ function Global:Show-FavoriteGroupsManager {
 
     $clb = New-Object System.Windows.Forms.CheckedListBox
     $clb.Location = New-Object System.Drawing.Point(15,93)
-    $clb.Size = New-Object System.Drawing.Size(390,255)
+    $clb.Size = New-Object System.Drawing.Size(390,238)
     $clb.CheckOnClick = $true
     # Union of every group already used anywhere in the catalog and
     # whatever's currently marked a favorite - a favorite that no app
@@ -51,6 +51,39 @@ function Global:Show-FavoriteGroupsManager {
     Add-RemovableItemContextMenu -CheckedListBox $clb
     $dlg.Controls.Add($clb)
 
+    # Makes the gap this whole fix exists for actually visible instead of
+    # only surfacing on the way out (Cancel/X's own warning) - live
+    # feedback on whether what's checked right now matches what's really
+    # on disk, updated as soon as a box is (un)checked, an item is added,
+    # or Save runs.
+    $lblSaveStatus = New-Object System.Windows.Forms.Label
+    $lblSaveStatus.Location = New-Object System.Drawing.Point(15,333)
+    $lblSaveStatus.Size = New-Object System.Drawing.Size(390,18)
+    $dlg.Controls.Add($lblSaveStatus)
+
+    $UpdateSaveStatus = {
+        $checkedNow = @($clb.CheckedItems | ForEach-Object { [string]$_ } | Sort-Object)
+        $saved = @($actuallySavedFavorites | Sort-Object)
+        if ([string]::Join("`n", $checkedNow) -eq [string]::Join("`n", $saved)) {
+            $lblSaveStatus.Text = "Saved."
+            $lblSaveStatus.ForeColor = [System.Drawing.Color]::SeaGreen
+        } else {
+            $lblSaveStatus.Text = "Not saved yet - click Save to apply these checked groups."
+            $lblSaveStatus.ForeColor = [System.Drawing.Color]::DarkOrange
+        }
+    }.GetNewClosure()
+    & $UpdateSaveStatus
+
+    # ItemCheck fires BEFORE the box's own checked state actually updates,
+    # so reading $clb.CheckedItems synchronously here would still see the
+    # PREVIOUS state - deferred one tick via BeginInvoke so this runs
+    # after the click has fully taken effect.
+    $clb.Add_ItemCheck({
+        $dlgRef2 = $dlg
+        $updateSaveStatusRef2 = $UpdateSaveStatus
+        $dlgRef2.BeginInvoke([Action]{ & $updateSaveStatusRef2 }) | Out-Null
+    }.GetNewClosure())
+
     $btnAddGroup = New-Object System.Windows.Forms.Button
     # "+ Group/user...", not "+ New group..." - see the same rename and
     # reasoning in Show-AppEditor's own New-GroupBox (Show-EntraMemberPicker
@@ -65,6 +98,7 @@ function Global:Show-FavoriteGroupsManager {
             if ($picked -and ($clb.Items -notcontains $picked)) {
                 $idx = $clb.Items.Add($picked)
                 $clb.SetItemChecked($idx, $true)
+                & $UpdateSaveStatus
             }
         }
     }.GetNewClosure())
