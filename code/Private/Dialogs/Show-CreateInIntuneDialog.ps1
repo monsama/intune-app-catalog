@@ -101,12 +101,14 @@ function Global:Show-CreateInIntuneDialog {
     # followed.
     $defaults = Get-DefaultAppMetadata -AppName $AppName -WingetId $WingetId -Uncommon $Uncommon
 
-    # Combined info block - the App ID notice (if this is an existing app)
-    # stacked directly above the "differs from default" legend (if this is
-    # a Winget app, see $updateCustomFieldHighlights further down) - a
-    # RichTextBox, not two separate Labels off in different corners of the
-    # form, so the two read together instead of a user finding one, then
-    # discovering the other by accident somewhere else entirely.
+    # Info block for the "differs from default" legend (only meaningful
+    # for a Winget app - see $updateCustomFieldHighlights further down).
+    # Used to also carry an "this app already has an App ID..." notice
+    # whenever this was an existing app, stacked above the legend - per
+    # the user, that notice wasn't worth keeping at all (it stated the
+    # normal, expected case every time an existing app is opened here,
+    # not something anyone actually needed telling twice), so it's gone
+    # rather than just recolored/repositioned again.
     #
     # A full-width strip ABOVE the scrollable area below, not shoehorned
     # into some gap inside it - this dialog's own content is already so
@@ -116,8 +118,8 @@ function Global:Show-CreateInIntuneDialog {
     # script panel, which starts at x=595 - not just $cmbDetectionType's
     # narrower 260px combo box above it, which is what that check actually
     # looked at) that there's no small gap anywhere on the right two-thirds
-    # of this form both wide AND tall enough for two full sentences of
-    # text without colliding with something else already there.
+    # of this form both wide AND tall enough for a full sentence of text
+    # without colliding with something else already there.
     #
     # Adds this height to the WHOLE dialog and pushes every fixed
     # below-the-scroll-area control (status/log/buttons) down by the same
@@ -126,9 +128,8 @@ function Global:Show-CreateInIntuneDialog {
     # first version reintroduced a vertical scrollbar partway down a form
     # that used to fit without one, to show the exact same fields as
     # before.
-    $topInfoNeeded = ($isDuplicate -or -not $Uncommon)
-    $topInfoBothLines = ($isDuplicate -and -not $Uncommon)
-    $topInfoHeight = if (-not $topInfoNeeded) { 0 } elseif ($topInfoBothLines) { 70 } else { 38 }
+    $topInfoNeeded = -not $Uncommon
+    $topInfoHeight = if ($topInfoNeeded) { 38 } else { 0 }
 
     # The left column (Name, Description, ...) used to start at y=109
     # unconditionally, leaving a tall blank gap above it whenever
@@ -185,29 +186,9 @@ function Global:Show-CreateInIntuneDialog {
         # silently overwritten later by the Set-Theme -Control $dlg call
         # near the bottom of this function.
         $rtbTopInfo.BackColor = $Global:App.LightPalette.FormBack
-        $fontTopInfo = New-Object System.Drawing.Font("Segoe UI", 9)
-        $fontLegend = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $isFirstLine = $true
-        if ($isDuplicate) {
-            # Plain text color, not DarkOrange - per the user, this line
-            # reads as an alarm for something that's actually the normal,
-            # expected case every time an existing app is opened here, not
-            # a problem. Orange/red stay reserved for things that actually
-            # need attention elsewhere in this app (missing App ID, an
-            # expiring certificate, real drift) - the blue legend line
-            # right below keeps its own color, since THAT one genuinely
-            # flags something worth noticing (a custom value).
-            $rtbTopInfo.SelectionFont = $fontTopInfo
-            $rtbTopInfo.SelectionColor = $Global:App.LightPalette.ControlFore
-            $rtbTopInfo.AppendText("This app already has an App ID ($ExistingAppId). By default this will UPDATE that app's metadata (name/description/install/uninstall/detection/dependencies) - it will NOT touch or re-upload package content.")
-            $isFirstLine = $false
-        }
-        if (-not $Uncommon) {
-            if (-not $isFirstLine) { $rtbTopInfo.AppendText("`n") }
-            $rtbTopInfo.SelectionFont = $fontLegend
-            $rtbTopInfo.SelectionColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
-            $rtbTopInfo.AppendText("A bold blue field label (like this) means that field's current value differs from the computed Winget default.")
-        }
+        $rtbTopInfo.SelectionFont = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $rtbTopInfo.SelectionColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
+        $rtbTopInfo.AppendText("A bold blue field label (like this) means that field's current value differs from the computed Winget default.")
         $rtbTopInfo.SelectionStart = 0
         $rtbTopInfo.SelectionLength = 0
         $dlg.Controls.Add($rtbTopInfo)
@@ -3089,6 +3070,16 @@ function Global:Show-CreateInIntuneDialog {
 
     $dlg.CancelButton = $btnCancel
     Set-Theme -Control $dlg
+    # $rtbTopInfo (when shown) is first in tab order, so it's what gets
+    # focus by default when the dialog is shown - a known WinForms quirk
+    # (confirmed live, same one already fixed in Show-GettingStartedGuideDialog
+    # and Show-AppRegistrationGuideDialog) highlights a read-only
+    # RichTextBox's ENTIRE text blue the moment it receives focus that
+    # way - TabStop = $false on $rtbTopInfo doesn't prevent this initial
+    # assignment by itself. Points focus at the Name field instead - a
+    # real, natural place to start typing, not just an arbitrary control
+    # picked to dodge the bug.
+    $dlg.Add_Shown({ $txtCreateName.Focus() }.GetNewClosure())
     [void]$dlg.ShowDialog($Global:App.Form)
     return $resultBox
 }
