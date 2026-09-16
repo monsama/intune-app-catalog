@@ -732,6 +732,18 @@ function Global:Show-CreateInIntuneDialog {
     $lblSetDefaultsHint.Visible = (-not $Uncommon)
     $scrollPanel.Controls.Add($lblSetDefaultsHint)
 
+    # Legend for $updateCustomFieldHighlights below - without this, a
+    # highlighted label just looks like a color/weight change with no
+    # explanation of what it means or why only some labels get it.
+    $lblCustomFieldLegend = New-Object System.Windows.Forms.Label
+    $lblCustomFieldLegend.Text = "A bold blue field label (like this) means that field's current value differs from the computed Winget default."
+    $lblCustomFieldLegend.Location = New-Object System.Drawing.Point(825,350)
+    $lblCustomFieldLegend.Size = New-Object System.Drawing.Size(445,30)
+    $lblCustomFieldLegend.ForeColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
+    $lblCustomFieldLegend.Font = New-Object System.Drawing.Font($lblCustomFieldLegend.Font, [System.Drawing.FontStyle]::Bold)
+    $lblCustomFieldLegend.Visible = (-not $Uncommon)
+    $scrollPanel.Controls.Add($lblCustomFieldLegend)
+
     # --- Dependencies ---
     $lblDeps = New-Object System.Windows.Forms.Label
     $lblDeps.Text = "Dependencies (undeployed apps shown too - resolved by name at actual deploy time)"
@@ -1079,11 +1091,16 @@ function Global:Show-CreateInIntuneDialog {
         return $changeRows
     }.GetNewClosure()
 
-    # Highlights each field's LABEL in bold DarkOrange when its current
-    # value differs from the computed Winget default, so "which settings
-    # are custom here" is visible at a glance without clicking "Set
-    # default values..." - that button still exists for actually
-    # resetting them; this just answers "which ones, right now" passively.
+    # Highlights each field's LABEL in bold blue (see $lblCustomFieldLegend
+    # above, which explains this to the user) when its current value
+    # differs from the computed Winget default, so "which settings are
+    # custom here" is visible at a glance without clicking "Set default
+    # values..." - that button still exists for actually resetting them;
+    # this just answers "which ones, right now" passively. Blue rather
+    # than DarkOrange/Firebrick/etc. - this app already uses warm colors
+    # (orange/red) elsewhere for actual problems (drift, missing
+    # certificate, expiring things), and a "this is just custom, not
+    # wrong" difference reading as a warning was misleading.
     # Only meaningful for a Winget app - see $getCurrentVsDefaultChanges's
     # own comment on why an Uncommon app has nothing to compare against.
     # Not live/reactive (doesn't re-run on every keystroke) - called once
@@ -1116,7 +1133,8 @@ function Global:Show-CreateInIntuneDialog {
         foreach ($fieldLabel in $fieldControls.Keys) {
             $ctrl = $fieldControls[$fieldLabel]
             if ($customLabels -contains $fieldLabel) {
-                $ctrl.ForeColor = [System.Drawing.Color]::DarkOrange
+                # Same blue as $lblCustomFieldLegend above.
+                $ctrl.ForeColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
                 $ctrl.Font = New-Object System.Drawing.Font($ctrl.Font, ($ctrl.Font.Style -bor [System.Drawing.FontStyle]::Bold))
             }
             else {
