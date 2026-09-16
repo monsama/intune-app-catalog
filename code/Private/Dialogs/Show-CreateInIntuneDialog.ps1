@@ -1990,7 +1990,7 @@ function Global:Show-CreateInIntuneDialog {
                         $doneMsg = if (-not $localSaveOk) {
                             "Done. App ID: $($result.appId)`n`n...but saving this to the local catalog failed - check the Log tab. The app was still created/updated in Intune successfully."
                         } elseif ($fromAppEditorRef) {
-                            "Done. App ID: $($result.appId)`n`nThe App ID has been filled in above. Nothing is saved to the catalog yet - click `"Save app to catalog`" in the app editor to save it there (or Cancel to discard it; the app in Intune itself is unaffected either way)."
+                            "Done. App ID: $($result.appId)`n`nIntune has already been created/updated with this. The App ID has been filled in above, but nothing is saved to the LOCAL CATALOG yet - click `"Save app to catalog`" in the app editor to keep this reflected there too. Clicking Cancel there instead only skips the local save; it does NOT undo what was just done in Intune."
                         } else {
                             "Done. App ID: $($result.appId)`n`nAlready saved to disk."
                         }
