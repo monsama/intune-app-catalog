@@ -159,51 +159,13 @@ function Global:Show-IntuneOnlyAppsDialog {
         $grid.DataSource = $null
         $grid.Rows.Clear()
 
-        $catalogByNormName = @{}
-        $catalogByAppId = @{}
-        foreach ($app in $appsRef) {
-            $normName = ($app.appName.Trim() -replace '\s+', ' ')
-            $catalogByNormName[$normName] = $true
-            if ($app.appId) { $catalogByAppId[$app.appId] = $app }
-        }
-
-        # Every ID actually live in Intune right now, for the third
-        # comparison direction below - a catalog entry can only be flagged
-        # as genuinely deleted if its own stored ID isn't in this set at all,
-        # not just absent from a name-based lookup.
-        $intuneIds = New-Object System.Collections.Generic.HashSet[string]
-        foreach ($ia in $cacheRef) { [void]$intuneIds.Add($ia.id) }
-
-        $missing = New-Object System.Collections.Generic.List[object]
-        $renamed = New-Object System.Collections.Generic.List[object]
-        foreach ($ia in $cacheRef) {
-            $normIntuneName = ($ia.displayName.Trim() -replace '\s+', ' ')
-            if ($catalogByAppId.ContainsKey($ia.id)) {
-                # Known App ID - check whether the catalog's name still matches
-                $catalogApp = $catalogByAppId[$ia.id]
-                $normCatalogName = ($catalogApp.appName.Trim() -replace '\s+', ' ')
-                if ($normCatalogName -ne $normIntuneName) {
-                    $renamed.Add([pscustomobject]@{ IntuneName = $ia.displayName; CatalogName = $catalogApp.appName; Id = $ia.id })
-                }
-            }
-            elseif (-not $catalogByNormName.ContainsKey($normIntuneName)) {
-                $missing.Add($ia)
-            }
-        }
-
-        # The third direction, walked from the CATALOG's own side rather
-        # than Intune's - the two loops above only ever iterate Intune's
-        # app list, so a catalog entry whose own stored App ID has been
-        # deleted from Intune entirely (not renamed - genuinely gone, e.g.
-        # removed directly in the portal, bypassing this tool) would never
-        # surface in either "Not in catalog" or "Renamed in Intune", since
-        # neither of those checks ever looks the other way.
-        $deletedFromIntune = New-Object System.Collections.Generic.List[object]
-        foreach ($app in $appsRef) {
-            if ($app.appId -and -not $intuneIds.Contains($app.appId)) {
-                $deletedFromIntune.Add($app)
-            }
-        }
+        # Shared with the Settings-toggled startup drift check (Get-
+        # IntuneCatalogDrift, CatalogLogic.ps1) - same walk, same three
+        # buckets, so the two never quietly disagree.
+        $drift = Get-IntuneCatalogDrift -Apps $appsRef -IntuneApps $cacheRef
+        $missing = $drift.Missing
+        $renamed = $drift.Renamed
+        $deletedFromIntune = $drift.DeletedFromIntune
 
         foreach ($o in ($missing | Sort-Object displayName)) {
             [void]$grid.Rows.Add($false, "Not in catalog", $o.displayName, "", $o.id)

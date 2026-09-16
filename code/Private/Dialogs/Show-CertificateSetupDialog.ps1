@@ -11,7 +11,10 @@ function Global:Show-CertificateSetupDialog {
     # is ~30px tall, ending around y=950; the extra 84px past that was
     # pure dead space at the bottom of the window, confirmed against a
     # live screenshot showing exactly that empty gap below the buttons.
-    $dlg.ClientSize = New-Object System.Drawing.Size(930, 955)
+    # Grown by 30 (to 985) for the "Check for Intune drift..." checkbox
+    # added below the thumbprint field - same reasoning, just growing
+    # instead of trimming this time so Save/Close don't end up clipped.
+    $dlg.ClientSize = New-Object System.Drawing.Size(930, 985)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -74,6 +77,16 @@ function Global:Show-CertificateSetupDialog {
     $dlg.Controls.Add($txtThumb)
     $y += 30
 
+    $chkCheckDriftOnStartup = New-Object System.Windows.Forms.CheckBox
+    $chkCheckDriftOnStartup.Text = "Check for Intune drift when the app starts"
+    $chkCheckDriftOnStartup.Location = New-Object System.Drawing.Point(15,$y)
+    $chkCheckDriftOnStartup.AutoSize = $true
+    $chkCheckDriftOnStartup.Checked = [bool]$Global:App.CheckDriftOnStartup
+    $dlg.Controls.Add($chkCheckDriftOnStartup)
+    $driftTip = New-Object System.Windows.Forms.ToolTip
+    $driftTip.SetToolTip($chkCheckDriftOnStartup, "Runs the same read-only comparison as 'Intune sync check...' once, quietly, right after the app opens - useful if more than one person works from this catalog. Needs Tenant ID/Client ID/certificate configured above to do anything.")
+    $y += 26
+
     # Baseline to detect "typed/tested a new value but never actually
     # saved it" on the way out - a real, live-confirmed gap: Test
     # connection (below) checks whatever's currently typed, but only Save
@@ -88,6 +101,7 @@ function Global:Show-CertificateSetupDialog {
     $origTenant = $txtTenant.Text
     $origClient = $txtClient.Text
     $origThumb  = $txtThumb.Text
+    $origCheckDriftOnStartup = $chkCheckDriftOnStartup.Checked
 
     $lblStatus = New-Object System.Windows.Forms.Label
     $lblStatus.Location = New-Object System.Drawing.Point(15,$y)
@@ -693,7 +707,7 @@ function Global:Show-CertificateSetupDialog {
     # note in Start-IntuneAppLookup). It records what to save here instead; the
     # actual $Global:App.GraphTenantId/etc mutation happens after ShowDialog
     # returns, in this function's own plain (non-closure) body.
-    $saveResultBox = @{ Saved = $false; TenantId = $null; ClientId = $null; Thumbprint = $null }
+    $saveResultBox = @{ Saved = $false; TenantId = $null; ClientId = $null; Thumbprint = $null; CheckDriftOnStartup = $false }
 
     # True while any of Check certificates / Upload certificate / Delete
     # from Entra is running, OR while Test connection's own background
@@ -724,7 +738,8 @@ function Global:Show-CertificateSetupDialog {
     $HasUnsavedConnectionChanges = {
         ($txtTenant.Text.Trim() -ne $origTenant.Trim()) -or
         ($txtClient.Text.Trim() -ne $origClient.Trim()) -or
-        (($txtThumb.Text.Trim() -replace '\s', '') -ne ($origThumb.Trim() -replace '\s', ''))
+        (($txtThumb.Text.Trim() -replace '\s', '') -ne ($origThumb.Trim() -replace '\s', '')) -or
+        ($chkCheckDriftOnStartup.Checked -ne $origCheckDriftOnStartup)
     }.GetNewClosure()
 
     # Set by Cancel's own click handler once it has already asked and the
@@ -745,6 +760,7 @@ function Global:Show-CertificateSetupDialog {
         $saveResultBox.TenantId   = $txtTenant.Text.Trim()
         $saveResultBox.ClientId   = $txtClient.Text.Trim()
         $saveResultBox.Thumbprint = ($txtThumb.Text.Trim() -replace '\s', '')
+        $saveResultBox.CheckDriftOnStartup = $chkCheckDriftOnStartup.Checked
         $saveResultBox.Saved = $true
         $dlg.Close()
     }.GetNewClosure())
@@ -786,10 +802,11 @@ function Global:Show-CertificateSetupDialog {
     [void]$dlg.ShowDialog($Global:App.Form)
 
     if ($saveResultBox.Saved) {
-        if (Save-GraphSettings -TenantId $saveResultBox.TenantId -ClientId $saveResultBox.ClientId -CertificateThumbprint $saveResultBox.Thumbprint) {
+        if (Save-GraphSettings -TenantId $saveResultBox.TenantId -ClientId $saveResultBox.ClientId -CertificateThumbprint $saveResultBox.Thumbprint -CheckDriftOnStartup $saveResultBox.CheckDriftOnStartup) {
             $Global:App.GraphTenantId = $saveResultBox.TenantId
             $Global:App.GraphClientId = $saveResultBox.ClientId
             $Global:App.GraphCertificateThumbprint = $saveResultBox.Thumbprint
+            $Global:App.CheckDriftOnStartup = $saveResultBox.CheckDriftOnStartup
             $Global:App.IntuneAppsCache.Clear()   # old cache may have been fetched under a different identity
             # No confirmation popup here, deliberately - the only place in
             # this app that had one after a successful save. The dialog

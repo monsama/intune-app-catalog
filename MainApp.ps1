@@ -147,6 +147,17 @@ $Global:App.SettingsFilePath = Join-Path $Global:App.RootPath "data\intune-deplo
 # comment on Write-SettingsFile below for why.
 $Global:App.FavoriteGroups = New-Object System.Collections.Generic.List[string]
 
+# Opt-in, off by default - a shared catalog file (multiple people pointed
+# at the same folder/repo) can drift from what's actually live in Intune
+# without anyone noticing until they happen to run "Intune sync check..."
+# themselves. When on, the same comparison that dialog runs happens once,
+# quietly, in the background after the main window is shown - see
+# Start-StartupDriftCheck below. Off by default because it needs Graph
+# credentials already configured to be useful at all, and adds a
+# background fetch proportional to catalog size that a single, solo user
+# working offline-ish has no reason to want on every launch.
+$Global:App.CheckDriftOnStartup = $false
+
 # The computed defaults Get-DefaultAppMetadata hands out for a brand-new
 # Winget app (what "Set default values..." and the custom-field
 # highlighting in Show-CreateInIntuneDialog both compare against, and what
@@ -673,6 +684,39 @@ $btnCredWarningSettings.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [
 $Global:App.PanelCredWarning.Controls.Add($btnCredWarningSettings)
 $btnCredWarningSettings.Add_Click({ Show-CertificateSetupDialog; Update-CredentialWarningBanner })
 $tabCatalog.Controls.Add($Global:App.PanelCredWarning)
+
+# Hidden by default, and only ever shown by Start-StartupDriftCheck
+# (GraphFetch.ps1) - opt-in via Settings' "Check for Intune drift when
+# the app starts", off by default. A separate panel from PanelCredWarning
+# above rather than reusing it - different cause, different fix (open the
+# sync check dialog, not Settings), and the two could in principle both
+# have something to say at once.
+$Global:App.PanelDriftWarning = New-Object System.Windows.Forms.Panel
+$Global:App.PanelDriftWarning.Dock = "Top"
+$Global:App.PanelDriftWarning.Height = 40
+$Global:App.PanelDriftWarning.BackColor = [System.Drawing.Color]::FromArgb(255, 243, 205)
+$Global:App.PanelDriftWarning.Visible = $false
+$Global:App.LblDriftWarning = New-Object System.Windows.Forms.Label
+$Global:App.LblDriftWarning.ForeColor = [System.Drawing.Color]::FromArgb(133, 100, 4)
+$Global:App.LblDriftWarning.Font = New-Object System.Drawing.Font($Global:App.PanelDriftWarning.Font, [System.Drawing.FontStyle]::Bold)
+$Global:App.LblDriftWarning.Location = New-Object System.Drawing.Point(12, 10)
+$Global:App.LblDriftWarning.AutoSize = $true
+$Global:App.PanelDriftWarning.Controls.Add($Global:App.LblDriftWarning)
+$btnDriftWarningCheck = New-Object System.Windows.Forms.Button
+$btnDriftWarningCheck.Text = "Intune sync check..."
+$btnDriftWarningCheck.Location = New-Object System.Drawing.Point(650, 5)
+$btnDriftWarningCheck.Size = New-Object System.Drawing.Size(150, 28)
+$btnDriftWarningCheck.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+$Global:App.PanelDriftWarning.Controls.Add($btnDriftWarningCheck)
+$btnDriftWarningCheck.Add_Click({ Show-IntuneOnlyAppsDialog; Update-Grid; $Global:App.PanelDriftWarning.Visible = $false })
+$btnDriftWarningDismiss = New-Object System.Windows.Forms.Button
+$btnDriftWarningDismiss.Text = "Dismiss"
+$btnDriftWarningDismiss.Location = New-Object System.Drawing.Point(810, 5)
+$btnDriftWarningDismiss.Size = New-Object System.Drawing.Size(80, 28)
+$btnDriftWarningDismiss.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+$Global:App.PanelDriftWarning.Controls.Add($btnDriftWarningDismiss)
+$btnDriftWarningDismiss.Add_Click({ $Global:App.PanelDriftWarning.Visible = $false })
+$tabCatalog.Controls.Add($Global:App.PanelDriftWarning)
 
 $Global:App.Grid = New-Object System.Windows.Forms.DataGridView
 $Global:App.Grid.Dock = "Fill"
@@ -1730,6 +1774,14 @@ Write-Log "Intune deployment console ready (v$($Global:App.AppVersion)). Root: $
 Start-TypeVersionBackfill
 
 Update-CredentialWarningBanner
+
+# Add_Shown, not called directly here - this line runs before
+# Form.ShowDialog() even starts pumping messages, so kicking off the
+# background fetch right here would have it (and its Timer) racing the
+# window's own first paint. Add_Shown only fires once the window is
+# actually visible, same reasoning as every other "don't block getting
+# into the app" deferral in this file.
+$Global:App.Form.Add_Shown({ Start-StartupDriftCheck })
 
 $Global:App.Form.Add_FormClosing({
     if ($Global:App.UnsavedChangesBox.Value) {

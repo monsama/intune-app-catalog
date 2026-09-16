@@ -22,6 +22,14 @@ function Global:Import-GraphSettings {
             $Global:App.FavoriteGroups.Clear()
             foreach ($g in @($settings.FavoriteGroups)) { [void]$Global:App.FavoriteGroups.Add([string]$g) }
         }
+        # -is [bool], not just truthiness - $settings.CheckDriftOnStartup
+        # being $false is a real, meaningful saved choice, not "missing" -
+        # a plain "if ($settings.CheckDriftOnStartup)" would silently treat
+        # an explicit off the same as never-set-at-all, which happens to
+        # read the same as leaving it at its own $false default, but only
+        # by accident. Doesn't exist at all (older settings file) leaves
+        # $Global:App.CheckDriftOnStartup at its own default, untouched.
+        if ($settings.CheckDriftOnStartup -is [bool]) { $Global:App.CheckDriftOnStartup = $settings.CheckDriftOnStartup }
         # Missing entirely (an older settings file, or one from before this
         # existed) leaves $Global:App.DefaultAppSettings at its own built-in
         # factory values, untouched - same "fall back silently" reasoning
@@ -71,6 +79,7 @@ function Global:Write-SettingsFile {
             CertificateThumbprint = $Global:App.GraphCertificateThumbprint
             FavoriteGroups        = @($Global:App.FavoriteGroups)
             DefaultAppSettings    = $Global:App.DefaultAppSettings
+            CheckDriftOnStartup   = $Global:App.CheckDriftOnStartup
         }
         $json = $settings | ConvertTo-Json -Depth 5
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -88,11 +97,13 @@ function Global:Save-GraphSettings {
     param(
         [string]$TenantId,
         [string]$ClientId,
-        [string]$CertificateThumbprint
+        [string]$CertificateThumbprint,
+        [bool]$CheckDriftOnStartup = $Global:App.CheckDriftOnStartup
     )
     $Global:App.GraphTenantId = $TenantId
     $Global:App.GraphClientId = $ClientId
     $Global:App.GraphCertificateThumbprint = $CertificateThumbprint
+    $Global:App.CheckDriftOnStartup = $CheckDriftOnStartup
     return (Write-SettingsFile)
 }
 

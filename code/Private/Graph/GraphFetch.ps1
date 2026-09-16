@@ -250,6 +250,41 @@ function Global:Start-IntuneAppLookup {
     $timer.Start()
 }
 
+function Global:Start-StartupDriftCheck {
+    # Opt-in (Settings' "Check for Intune drift when the app starts"),
+    # off by default - see $Global:App.CheckDriftOnStartup's own comment
+    # in MainApp.ps1 for why. Called once from Form.Add_Shown, after the
+    # main window is already visible, so this never delays getting into
+    # the app even on a slow connection.
+    if (-not $Global:App.CheckDriftOnStartup) { return }
+
+    # Same whitespace-aware check Update-CredentialWarningBanner uses, not
+    # Test-GraphCredentialsConfigured directly - that one pops a blocking
+    # MessageBox on failure, which a silent background startup check must
+    # never do. Not configured yet just means nothing to check.
+    if ([string]::IsNullOrWhiteSpace($Global:App.GraphTenantId) -or
+        [string]::IsNullOrWhiteSpace($Global:App.GraphClientId) -or
+        [string]::IsNullOrWhiteSpace($Global:App.GraphCertificateThumbprint)) {
+        return
+    }
+
+    # Reuses the exact same fetch (and $Global:App.IntuneAppsCache) as the
+    # toolbar's own "Look up App IDs..." and Show-IntuneOnlyAppsDialog's
+    # Refresh - no separate code path to keep in sync, just a different,
+    # quiet caller. -OnComplete here runs on the main UI thread (this
+    # function's own Timer.Add_Tick, not the background runspace), so
+    # touching the banner's controls directly below is safe.
+    Start-IntuneAppLookup -OnComplete {
+        param($ok, $data)
+        if (-not $ok) { return }
+        $drift = Get-IntuneCatalogDrift -Apps $Global:App.Apps -IntuneApps $data
+        $total = $drift.Missing.Count + $drift.Renamed.Count + $drift.DeletedFromIntune.Count
+        if ($total -eq 0) { return }
+        $Global:App.LblDriftWarning.Text = "Startup check found $total discrepanc$(if ($total -eq 1) { 'y' } else { 'ies' }) between Intune and this catalog: $($drift.Missing.Count) not in catalog, $($drift.Renamed.Count) renamed, $($drift.DeletedFromIntune.Count) deleted from Intune."
+        $Global:App.PanelDriftWarning.Visible = $true
+    }.GetNewClosure()
+}
+
 function Global:Start-Win32AppMinOsFetch {
     param([scriptblock]$OnComplete)
 
