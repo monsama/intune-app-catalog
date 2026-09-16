@@ -101,17 +101,6 @@ function Global:Show-CreateInIntuneDialog {
     # followed.
     $defaults = Get-DefaultAppMetadata -AppName $AppName -WingetId $WingetId -Uncommon $Uncommon
 
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "Deploy to Intune - $AppName"
-    # 40px taller than before, to fit the Previous/Next row below the
-    # existing Save/Deploy/Cancel row without moving any of this
-    # function's many other absolutely-positioned controls.
-    $dlg.ClientSize = New-Object System.Drawing.Size(1300, 1035)
-    $dlg.StartPosition = "CenterParent"
-    $dlg.FormBorderStyle = "FixedDialog"
-    $dlg.MaximizeBox = $false
-    $dlg.MinimizeBox = $false
-
     # Combined info block - the App ID notice (if this is an existing app)
     # stacked directly above the "differs from default" legend (if this is
     # a Winget app, see $updateCustomFieldHighlights further down) - a
@@ -128,26 +117,41 @@ function Global:Show-CreateInIntuneDialog {
     # narrower 260px combo box above it, which is what that check actually
     # looked at) that there's no small gap anywhere on the right two-thirds
     # of this form both wide AND tall enough for two full sentences of
-    # text without colliding with something else already there. $scrollPanel
-    # is a plain container - shifting IT down and shrinking its height by
-    # the same amount moves every control inside it without touching any
-    # of their own (relative) coordinates, and keeps $scrollPanel's own
-    # BOTTOM edge at the same y=750 everything below it (status/log/
-    # buttons) already assumes, so nothing else in this very long function
-    # needs to change to make room.
+    # text without colliding with something else already there.
+    #
+    # Adds this height to the WHOLE dialog and pushes every fixed
+    # below-the-scroll-area control (status/log/buttons) down by the same
+    # amount, rather than shrinking $scrollPanel's own visible height to
+    # make room within the original 1035 total - confirmed live: that
+    # first version reintroduced a vertical scrollbar partway down a form
+    # that used to fit without one, to show the exact same fields as
+    # before.
     $topInfoNeeded = ($isDuplicate -or -not $Uncommon)
     $topInfoBothLines = ($isDuplicate -and -not $Uncommon)
     $topInfoHeight = if (-not $topInfoNeeded) { 0 } elseif ($topInfoBothLines) { 70 } else { 38 }
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Deploy to Intune - $AppName"
+    # 40px taller than before, to fit the Previous/Next row below the
+    # existing Save/Deploy/Cancel row without moving any of this
+    # function's many other absolutely-positioned controls - plus
+    # $topInfoHeight on top of that now, for the info block above.
+    $dlg.ClientSize = New-Object System.Drawing.Size(1300, (1035 + $topInfoHeight))
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
 
     # This dialog has grown past what fits on a typical screen - everything
     # from here down to the Dependencies checklist lives inside a scrollable
     # panel with a fixed visible height, instead of the dialog itself just
     # being 1230px tall. Status/log/buttons stay pinned below it, outside
     # the scroll area, so they're always reachable without scrolling down to
-    # find them.
+    # find them. Same 750px visible height as before $topInfoHeight existed -
+    # only its Y position shifts, to sit below the info block above it.
     $scrollPanel = New-Object System.Windows.Forms.Panel
     $scrollPanel.Location = New-Object System.Drawing.Point(0,$topInfoHeight)
-    $scrollPanel.Size = New-Object System.Drawing.Size(1300,(750 - $topInfoHeight))
+    $scrollPanel.Size = New-Object System.Drawing.Size(1300,750)
     $scrollPanel.AutoScroll = $true
     $dlg.Controls.Add($scrollPanel)
 
@@ -1270,7 +1274,7 @@ function Global:Show-CreateInIntuneDialog {
     }.GetNewClosure())
 
     $lblCreateStatus = New-Object System.Windows.Forms.Label
-    $lblCreateStatus.Location = New-Object System.Drawing.Point(15,773)
+    $lblCreateStatus.Location = New-Object System.Drawing.Point(15,(773 + $topInfoHeight))
     $lblCreateStatus.Size = New-Object System.Drawing.Size(1270,40)
     $dlg.Controls.Add($lblCreateStatus)
 
@@ -1384,14 +1388,14 @@ function Global:Show-CreateInIntuneDialog {
     }.GetNewClosure()
 
     $rtbCreateLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbCreateLog.Location = New-Object System.Drawing.Point(15,821)
+    $rtbCreateLog.Location = New-Object System.Drawing.Point(15,(821 + $topInfoHeight))
     $rtbCreateLog.Size = New-Object System.Drawing.Size(1270,110)
     Initialize-DarkLogBox -LogBox $rtbCreateLog
     $dlg.Controls.Add($rtbCreateLog)
 
     $btnCreate = New-Object System.Windows.Forms.Button
     $btnCreate.Text = if ($isDuplicate) { "Update Metadata" } else { "Deploy" }
-    $btnCreate.Location = New-Object System.Drawing.Point(995,941)
+    $btnCreate.Location = New-Object System.Drawing.Point(995,(941 + $topInfoHeight))
     $btnCreate.Size = New-Object System.Drawing.Size(200,32)
     $dlg.Controls.Add($btnCreate)
     $createTip = New-Object System.Windows.Forms.ToolTip
@@ -1407,7 +1411,7 @@ function Global:Show-CreateInIntuneDialog {
     # Intune at all.
     $btnSaveForLater = New-Object System.Windows.Forms.Button
     $btnSaveForLater.Text = if ($isDuplicate) { "Save local copy..." } else { "Save to App Catalog without Deploying" }
-    $btnSaveForLater.Location = New-Object System.Drawing.Point(15,941)
+    $btnSaveForLater.Location = New-Object System.Drawing.Point(15,(941 + $topInfoHeight))
     $btnSaveForLater.Size = New-Object System.Drawing.Size(300,32)
     $btnSaveForLater.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $dlg.Controls.Add($btnSaveForLater)
@@ -1426,7 +1430,7 @@ function Global:Show-CreateInIntuneDialog {
     # permanently-greyed-out button with nothing behind it most of the time.
     $btnShowDiff = New-Object System.Windows.Forms.Button
     $btnShowDiff.Text = "Compare..."
-    $btnShowDiff.Location = New-Object System.Drawing.Point(320,941)
+    $btnShowDiff.Location = New-Object System.Drawing.Point(320,(941 + $topInfoHeight))
     $btnShowDiff.Size = New-Object System.Drawing.Size(95,32)
     $btnShowDiff.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $btnShowDiff.Visible = $false
@@ -1443,7 +1447,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(1205,941)
+    $btnCancel.Location = New-Object System.Drawing.Point(1205,(941 + $topInfoHeight))
     $btnCancel.Size = New-Object System.Drawing.Size(80,32)
     $dlg.Controls.Add($btnCancel)
 
@@ -1526,7 +1530,7 @@ function Global:Show-CreateInIntuneDialog {
     # permanently captured $null instead of the real box.
     $btnPrevAppDeploy = New-Object System.Windows.Forms.Button
     $btnPrevAppDeploy.Text = "< Previous app"
-    $btnPrevAppDeploy.Location = New-Object System.Drawing.Point(15,979)
+    $btnPrevAppDeploy.Location = New-Object System.Drawing.Point(15,(979 + $topInfoHeight))
     $btnPrevAppDeploy.Size = New-Object System.Drawing.Size(150,30)
     $btnPrevAppDeploy.Enabled = ($null -ne $prevAppIndex)
     $btnPrevAppDeploy.Visible = ($CurrentIndex -ge 0)
@@ -1536,7 +1540,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $lblDeployNavPosition = New-Object System.Windows.Forms.Label
     $lblDeployNavPosition.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $lblDeployNavPosition.Location = New-Object System.Drawing.Point(280,979)
+    $lblDeployNavPosition.Location = New-Object System.Drawing.Point(280,(979 + $topInfoHeight))
     $lblDeployNavPosition.Size = New-Object System.Drawing.Size(170,30)
     $lblDeployNavPosition.ForeColor = [System.Drawing.Color]::DimGray
     if ($CurrentIndex -ge 0) {
@@ -1557,7 +1561,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $btnNextAppDeploy = New-Object System.Windows.Forms.Button
     $btnNextAppDeploy.Text = "Next app >"
-    $btnNextAppDeploy.Location = New-Object System.Drawing.Point(1135,979)
+    $btnNextAppDeploy.Location = New-Object System.Drawing.Point(1135,(979 + $topInfoHeight))
     $btnNextAppDeploy.Size = New-Object System.Drawing.Size(150,30)
     $btnNextAppDeploy.Enabled = ($null -ne $nextAppIndex)
     $btnNextAppDeploy.Visible = ($CurrentIndex -ge 0)
