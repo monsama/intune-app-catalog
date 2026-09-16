@@ -112,12 +112,29 @@ function Global:Save-FavoriteGroups {
     return (Write-SettingsFile)
 }
 
+function Global:Get-DelegatedSignInCachePaths {
+    # Microsoft Graph PowerShell's token cache - shared by EVERY Graph
+    # PowerShell session of this Windows user, not just this app's.
+    $msalCacheDir = Join-Path $env:LOCALAPPDATA ".IdentityService"
+    @("mg.msal.cache.cae", "mg.msal.cache.nocae") | ForEach-Object { Join-Path $msalCacheDir $_ }
+}
+
+function Global:Save-DelegatedSignInCacheSnapshot {
+    # Called once at startup: which cache files already existed before this
+    # app could have signed anyone in (see Clear-DelegatedSignInCache).
+    $Global:App.PreexistingSignInCacheFiles = @(Get-DelegatedSignInCachePaths | Where-Object { Test-Path -LiteralPath $_ })
+}
+
 function Global:Clear-DelegatedSignInCache {
+    # Removes the cached delegated sign-in (certificate Check/Upload) when the
+    # app closes - but only a cache file this session created. A file that
+    # was already there belongs to the user's own Connect-MgGraph sessions
+    # (other scripts, other tools), and deleting it signed all of those out.
     try {
-        $msalCacheDir = Join-Path $env:LOCALAPPDATA ".IdentityService"
-        foreach ($cacheFile in @("mg.msal.cache.cae", "mg.msal.cache.nocae")) {
-            $cachePath = Join-Path $msalCacheDir $cacheFile
-            if (Test-Path $cachePath) { Remove-Item -Path $cachePath -Force -ErrorAction SilentlyContinue }
+        $keep = @($Global:App.PreexistingSignInCacheFiles)
+        foreach ($cachePath in Get-DelegatedSignInCachePaths) {
+            if ($keep -contains $cachePath) { continue }
+            if (Test-Path -LiteralPath $cachePath) { Remove-Item -LiteralPath $cachePath -Force -ErrorAction SilentlyContinue }
         }
     } catch { }
 }

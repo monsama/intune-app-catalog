@@ -58,6 +58,19 @@ namespace GuiTest {
         [DllImport("user32.dll")] static extern IntPtr ChildWindowFromPointEx(IntPtr p, POINT pt, uint flags);
         [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr h);
         [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int index);
+        [DllImport("user32.dll")] static extern IntPtr GetWindowDpiAwarenessContext(IntPtr h);
+        [DllImport("user32.dll")] static extern int GetAwarenessFromDpiAwarenessContext(IntPtr ctx);
+        [DllImport("user32.dll", EntryPoint = "SendMessageW", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageSb(IntPtr h, uint m, IntPtr w, StringBuilder l);
+        [DllImport("user32.dll", EntryPoint = "SendMessageW")] static extern IntPtr SendMessagePtr(IntPtr h, uint m, IntPtr w, IntPtr l);
+        // 0 = unaware, 1 = system aware, 2 = per-monitor aware
+        public static int DpiAwareness(IntPtr h) { return GetAwarenessFromDpiAwarenessContext(GetWindowDpiAwarenessContext(h)); }
+        // Full control text via WM_GETTEXT - GetWindowText can't read e.g. a RichEdit in another process.
+        public static string ControlText(IntPtr h) {
+            int len = SendMessagePtr(h, 0x000E, IntPtr.Zero, IntPtr.Zero).ToInt32();   // WM_GETTEXTLENGTH
+            var sb = new StringBuilder(len + 2);
+            SendMessageSb(h, 0x000D, (IntPtr)sb.Capacity, sb);                            // WM_GETTEXT
+            return sb.ToString();
+        }
 
         public static string Text(IntPtr h) { var sb = new StringBuilder(GetWindowTextLength(h) + 2); GetWindowText(h, sb, sb.Capacity); return sb.ToString(); }
         public static string Cls(IntPtr h) { var sb = new StringBuilder(256); GetClassName(h, sb, 256); return sb.ToString(); }
@@ -229,16 +242,18 @@ function Start-AppUnderTest {
       and waits for the main window. Returns a context object used by
       every other helper here.
     #>
-    param([string]$AppHost, [string]$Root, [int]$TimeoutSec = 90)
+    param([string]$AppHost, [string]$Root, [int]$TimeoutSec = 90, [hashtable]$Environment = @{})
     $stdout = Join-Path $Root 'stdout.txt'
     $stderr = Join-Path $Root 'stderr.txt'
-    $oldLocal = $env:LOCALAPPDATA
+    $vars = @{ LOCALAPPDATA = (Join-Path $Root 'localappdata') } + $Environment
+    $saved = @{}
+    foreach ($k in $vars.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k) }
     try {
-        $env:LOCALAPPDATA = Join-Path $Root 'localappdata'
+        foreach ($k in $vars.Keys) { [Environment]::SetEnvironmentVariable($k, $vars[$k]) }
         $p = Start-Process $AppHost -ArgumentList @('-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Root 'IntuneDeployment.ps1')) `
             -WorkingDirectory $Root -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
     }
-    finally { $env:LOCALAPPDATA = $oldLocal }
+    finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
     $ctx = [pscustomobject]@{ Process = $p; Pid = [uint32]$p.Id; Main = [IntPtr]::Zero; Root = $Root; StdErr = $stderr; AppData = (Join-Path $Root 'data\app-data'); Buttons = @{}; ShotDir = $null; ShotN = 0 }
     $sw = [Diagnostics.Stopwatch]::StartNew()
     while ($sw.Elapsed.TotalSeconds -lt $TimeoutSec -and -not $p.HasExited) {

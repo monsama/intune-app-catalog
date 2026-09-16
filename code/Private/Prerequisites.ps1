@@ -6,11 +6,14 @@
 #   - the PowerShell running this GUI - every Graph lookup runs in a runspace
 #   - Windows PowerShell 5.1 - Start-PipelineProcess always launches the
 #     embedded deployment/assignment scripts with powershell.exe
-# Installing into the GUI's own PowerShell covers both: those 5.1 steps
-# inherit this process's environment, PSModulePath included, so under
-# PowerShell 7 they search PowerShell 7's module folders (and NOT 5.1's own
-# per-user folder - confirmed live). The 5.1 side is still checked
-# separately, by actually importing the module there the way a step would.
+# Installing into the GUI's own PowerShell covers both: every 5.1 child gets
+# Get-WindowsPowerShellModulePath, which adds the folder this PowerShell loads
+# the module from. The 5.1 side is still checked separately, by actually
+# importing the module there the way a step would.
+
+# This file's own path - Show-PrerequisitesDialog loads it into a background
+# runspace to run the (slow) status check off the UI thread.
+$Global:IntunePackagerPrerequisitesScript = $PSCommandPath
 
 function Global:Get-GraphModuleName { "Microsoft.Graph.Authentication" }
 
@@ -18,21 +21,74 @@ function Global:Get-WindowsPowerShellPath {
     Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 }
 
+function Global:Get-WindowsPowerShellModulePath {
+    <#
+      The PSModulePath every Windows PowerShell 5.1 child of this app runs with.
+      Set explicitly rather than inherited: under PowerShell 7 the inherited
+      value is PowerShell 7's, which (confirmed live) hides 5.1's own per-user
+      module folder and puts PowerShell 7's $PSHOME\Modules - its .NET builds
+      of PowerShellGet, PackageManagement, ... - in front of 5.1's.
+      = 5.1's own defaults (per-user folder + the machine/user PSModulePath
+        entries 5.1 would read itself)
+      + under PowerShell 7: the folder(s) this PowerShell loads the Graph
+        module from, so one install serves both.
+    #>
+    $paths = New-Object System.Collections.Generic.List[string]
+    $add = {
+        param([string]$p)
+        $p = "$p".Trim().TrimEnd('\')
+        if (-not $p) { return }
+        foreach ($existing in $paths) { if ($existing -ieq $p) { return } }
+        $paths.Add($p)
+    }
+    & $add (Join-Path ([Environment]::GetFolderPath("MyDocuments")) "WindowsPowerShell\Modules")
+    foreach ($scope in "User", "Machine") {
+        foreach ($p in "$([Environment]::GetEnvironmentVariable('PSModulePath', $scope))" -split ';') { & $add $p }
+    }
+    & $add (Join-Path $env:ProgramFiles "WindowsPowerShell\Modules")
+    & $add (Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\Modules")
+    if ($PSVersionTable.PSEdition -eq "Core") {
+        $moduleName = Get-GraphModuleName
+        foreach ($m in Get-Module -ListAvailable -Name $moduleName) {
+            # ...\Modules\<name>\<version>  or  ...\Modules\<name>
+            $dir = Split-Path $m.ModuleBase -Parent
+            if ((Split-Path $dir -Leaf) -ieq $moduleName) { $dir = Split-Path $dir -Parent }
+            if (-not $dir.StartsWith($PSHOME, [System.StringComparison]::OrdinalIgnoreCase)) { & $add $dir }
+        }
+    }
+    return ($paths -join ";")
+}
+
+function Global:Set-WindowsPowerShellEnvironment {
+    # Applies Get-WindowsPowerShellModulePath to a ProcessStartInfo that's about
+    # to start Windows PowerShell (no-op for anything else).
+    param([System.Diagnostics.ProcessStartInfo]$StartInfo)
+    $exe = [System.IO.Path]::GetFileName($StartInfo.FileName)
+    if ($exe -ieq "powershell.exe" -or $exe -ieq "powershell") {
+        $StartInfo.EnvironmentVariables["PSModulePath"] = Get-WindowsPowerShellModulePath
+    }
+}
+
 function Global:Invoke-HiddenPowerShell {
-    # Runs a short command in a separate, windowless PowerShell - launched the
-    # same way Start-PipelineProcess launches its steps (inherited environment),
-    # so the answer matches what those steps will actually see. Returns the
-    # last line of output, or $null on failure/timeout.
+    # Runs a short command in a separate, windowless PowerShell - with the same
+    # environment Start-PipelineProcess gives its steps, so the answer matches
+    # what those steps will actually see. Returns the last line of output, or
+    # $null on failure/timeout.
     param([string]$Exe, [string]$Command, [int]$TimeoutMs = 30000)
     try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $Exe
-        $psi.Arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($Command))
+        $psi.Arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes("`$ProgressPreference = 'SilentlyContinue'; " + $Command))
         $psi.UseShellExecute = $false
         $psi.CreateNoWindow = $true
+        # Both streams captured - an inherited stderr would put the child's
+        # progress/CLIXML noise into this app's own error output.
         $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        Set-WindowsPowerShellEnvironment -StartInfo $psi
         $proc = [System.Diagnostics.Process]::Start($psi)
         $out = $proc.StandardOutput.ReadToEndAsync()
+        [void]$proc.StandardError.ReadToEndAsync()
         if (-not $proc.WaitForExit($TimeoutMs)) { try { $proc.Kill() } catch { }; return $null }
         $lines = @($out.Result -split "`r?`n" | Where-Object { $_.Trim() })
         if ($lines.Count -eq 0) { return $null }
@@ -41,12 +97,27 @@ function Global:Invoke-HiddenPowerShell {
     catch { return $null }
 }
 
+function Global:Test-GraphModuleHere {
+    # Installed in the PowerShell running this window? A yes is remembered for
+    # the session (nothing here uninstalls); a no is re-checked every time, in
+    # case the user installed it some other way meanwhile.
+    if ($Global:App.GraphModuleHereConfirmed) { return $true }
+    if (Get-Module -ListAvailable -Name (Get-GraphModuleName)) {
+        $Global:App.GraphModuleHereConfirmed = $true
+        return $true
+    }
+    return $false
+}
+
 function Global:Get-GraphModuleStatus {
     <#
       One row per PowerShell this app loads the module in: Name (for
       display), Version ('' when unusable there), Problem (why, if not just
       "not installed"). Row 0 is always the PowerShell running this window -
       the one Install missing installs into.
+      The Windows PowerShell row starts a separate powershell.exe and imports
+      the module there - a few seconds; Show-PrerequisitesDialog runs this
+      off the UI thread.
     #>
     $moduleName = Get-GraphModuleName
     $rows = New-Object System.Collections.Generic.List[object]
@@ -75,7 +146,7 @@ function Global:Get-GraphModuleStatus {
 
 function Global:Test-GraphModuleAvailable {
     <#
-      $true when the module is installed everywhere this app needs it.
+      $true when the module is usable everywhere this app needs it.
       Otherwise opens Show-PrerequisitesDialog (unless -Quiet) so the user can
       install it right there, and returns whether it's available afterward.
       -CurrentHostOnly: only the PowerShell running this window matters (for
@@ -87,24 +158,23 @@ function Global:Test-GraphModuleAvailable {
     param([switch]$Quiet, [switch]$CurrentHostOnly, [switch]$PromptOnce)
     $moduleName = Get-GraphModuleName
     if ($CurrentHostOnly) {
-        if (Get-Module -ListAvailable -Name $moduleName) { return $true }
-        if ($Quiet) { return $false }
+        if (Test-GraphModuleHere) { return $true }
     }
     else {
-        # A positive answer can't go stale within a session (nothing here
-        # uninstalls), so it's remembered - a missing one is re-checked every
-        # time, in case the user installed it some other way meanwhile.
         if ($Global:App.GraphModuleConfirmed) { return $true }
-        $missing = @(Get-GraphModuleStatus | Where-Object { -not $_.Version })
-        if ($missing.Count -eq 0) { $Global:App.GraphModuleConfirmed = $true; return $true }
-        if ($Quiet) { return $false }
+        # Cheap check first: without the module here, the (slow) Windows
+        # PowerShell check can't come out any better.
+        if (Test-GraphModuleHere) {
+            $missing = @(Get-GraphModuleStatus | Where-Object { -not $_.Version })
+            if ($missing.Count -eq 0) { $Global:App.GraphModuleConfirmed = $true; return $true }
+        }
     }
+    if ($Quiet) { return $false }
     if ($PromptOnce -and $Global:App.GraphModulePromptDeclined) { return $false }
     $ok = [bool](Show-PrerequisitesDialog -Reason "This needs the $($moduleName) PowerShell module, which isn't installed yet.")
     if (-not $ok) { $Global:App.GraphModulePromptDeclined = $true }
     return $ok
 }
-
 function Global:Show-PrerequisitesDialog {
     <#
       Shows where the Graph module is / isn't installed and installs what's
@@ -184,11 +254,10 @@ function Global:Show-PrerequisitesDialog {
 
     # Mutable state shared by the handlers below (see the closure notes
     # elsewhere in this app - containers, never reassigned variables).
-    $state = @{ Rows = @(); Busy = $false; AllInstalled = $false }
+    $state = @{ Rows = @(); Busy = $false; Checking = $false; AllInstalled = $false; AfterCheck = $null }
+    $prereqScript = $Global:IntunePackagerPrerequisitesScript
 
-    $Refresh = {
-        $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
-        try { $state.Rows = @(Get-GraphModuleStatus) } finally { $dlg.Cursor = [System.Windows.Forms.Cursors]::Default }
+    $ShowRows = {
         $grid.Rows.Clear()
         foreach ($r in $state.Rows) {
             $i = $grid.Rows.Add($r.Name, $(if ($r.Version) { "Installed ($($r.Version))" } elseif ($r.Problem) { $r.Problem } else { "Missing" }))
@@ -203,6 +272,55 @@ function Global:Show-PrerequisitesDialog {
         # see the note at the top of this file.
         $btnInstall.Enabled = (-not $state.Busy) -and ($state.Rows.Count -gt 0) -and (-not $state.Rows[0].Version)
         $btnRecheck.Enabled = -not $state.Busy
+    }.GetNewClosure()
+
+    # Runs Get-GraphModuleStatus in a background runspace (it may start
+    # Windows PowerShell and import the module - seconds), shows "Checking..."
+    # meanwhile, then runs $state.AfterCheck, if set, once the rows are in.
+    $Refresh = {
+        if ($state.Checking) { return }
+        $state.Checking = $true
+        $btnInstall.Enabled = $false
+        $btnRecheck.Enabled = $false
+        $grid.Rows.Clear()
+        [void]$grid.Rows.Add("Checking...", "")
+        $grid.ClearSelection()
+
+        $rs = [runspacefactory]::CreateRunspace()
+        $rs.Open()
+        $ps = [powershell]::Create()
+        $ps.Runspace = $rs
+        [void]$ps.AddScript({
+            param($ScriptPath)
+            $Global:App = @{}
+            . $ScriptPath
+            Get-GraphModuleStatus
+        }).AddArgument($prereqScript)
+        $handle = $ps.BeginInvoke()
+
+        # Fresh aliases - a closure nested in an already-closured handler only
+        # reliably sees variables assigned in its immediately enclosing scope.
+        $stateRef = $state
+        $dlgRef = $dlg
+        $showRowsRef = $ShowRows
+        $timer = New-Object System.Windows.Forms.Timer
+        $timer.Interval = 300
+        $timer.Add_Tick({
+            if (-not $handle.IsCompleted) { return }
+            $timer.Stop(); $timer.Dispose()
+            try { $stateRef.Rows = @($ps.EndInvoke($handle)) }
+            catch { $stateRef.Rows = @([pscustomobject]@{ Name = "Status check failed"; Exe = ""; Version = ""; Problem = $_.Exception.Message }) }
+            finally { $ps.Dispose(); $rs.Close(); $rs.Dispose() }
+            $stateRef.Checking = $false
+            if ($dlgRef.IsDisposed) { return }
+            & $showRowsRef
+            if ($stateRef.AfterCheck) {
+                $next = $stateRef.AfterCheck
+                $stateRef.AfterCheck = $null
+                & $next
+            }
+        }.GetNewClosure())
+        $timer.Start()
     }.GetNewClosure()
 
     # The installer, run in each PowerShell that's missing the module. Output
@@ -222,7 +340,15 @@ try {
         }
     }
     '[INFO] Downloading __MODULE__ from the PowerShell Gallery...'
-    Install-Module -Name __MODULE__ -Scope CurrentUser -Repository PSGallery -Force -AllowClobber
+    if ($env:INTUNEPACKAGER_TEST_MODULE_DIR) {
+        # GUI tests only: same download, into a throwaway folder instead of
+        # the user profile (that folder is on the test app's PSModulePath).
+        Save-Module -Name __MODULE__ -Path $env:INTUNEPACKAGER_TEST_MODULE_DIR -Repository PSGallery -Force
+        $env:PSModulePath = "$env:INTUNEPACKAGER_TEST_MODULE_DIR;$env:PSModulePath"
+    }
+    else {
+        Install-Module -Name __MODULE__ -Scope CurrentUser -Repository PSGallery -Force -AllowClobber
+    }
     $m = Get-Module -ListAvailable -Name __MODULE__ | Sort-Object Version -Descending | Select-Object -First 1
     if (-not $m) { throw 'Install-Module finished, but the module still isn''t found.' }
     "[OK] __MODULE__ $($m.Version) installed ($($m.ModuleBase))"
@@ -239,14 +365,19 @@ catch {
         param([object[]]$Queue, [int]$Index)
         if ($Index -ge $Queue.Count) {
             $state.Busy = $false
-            & $Refresh
-            if ($state.AllInstalled) {
-                Write-DialogLogLine -LogBox $rtbLog -Text "[OK] Everything's installed.`r`n" -MirrorToMainLog
-            }
-            else {
-                Write-DialogLogLine -LogBox $rtbLog -Text "[WARN] Still missing somewhere - see the messages above. You can also run, in that PowerShell: Install-Module $($moduleName) -Scope CurrentUser`r`n" -MirrorToMainLog
-            }
             $btnClose.Enabled = $true
+            $doneStateRef = $state
+            $doneLogRef = $rtbLog
+            $doneModuleRef = $moduleName
+            $state.AfterCheck = {
+                if ($doneStateRef.AllInstalled) {
+                    Write-DialogLogLine -LogBox $doneLogRef -Text "[OK] Everything's installed.`r`n" -MirrorToMainLog
+                }
+                else {
+                    Write-DialogLogLine -LogBox $doneLogRef -Text "[WARN] Still missing somewhere - see the messages above. You can also run, in that PowerShell: Install-Module $doneModuleRef -Scope CurrentUser`r`n" -MirrorToMainLog
+                }
+            }.GetNewClosure()
+            & $Refresh
             return
         }
         $target = $Queue[$Index]
@@ -266,7 +397,16 @@ catch {
         $psi.Arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($inner))
         $psi.UseShellExecute = $false
         $psi.CreateNoWindow = $true
-        try { $proc = [System.Diagnostics.Process]::Start($psi) }
+        # Everything worth showing goes to the log file; the raw streams are
+        # captured and dropped so they don't land in this app's own output.
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        Set-WindowsPowerShellEnvironment -StartInfo $psi
+        try {
+            $proc = [System.Diagnostics.Process]::Start($psi)
+            [void]$proc.StandardOutput.ReadToEndAsync()
+            [void]$proc.StandardError.ReadToEndAsync()
+        }
         catch {
             Write-DialogLogLine -LogBox $rtbLog -Text "[FAILED] Could not start $($target.Exe): $($_.Exception.Message)`r`n" -MirrorToMainLog
             & $StartInstallBox.Value -Queue $Queue -Index ($Index + 1)
@@ -274,6 +414,7 @@ catch {
         }
 
         $readPos = @{ Value = 0L }
+        $logBoxRef = $rtbLog
         $ReadNew = {
             try {
                 $fs = [System.IO.File]::Open($logPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
@@ -284,7 +425,7 @@ catch {
                 $sr.Close(); $fs.Close()
                 foreach ($line in ($text -split "`r?`n" | Where-Object { $_.Trim() })) {
                     $shown = if ($line -match '^\s*\[(OK|FAILED|WARN|INFO)\]') { $line } else { "    $line" }
-                    Write-DialogLogLine -LogBox $rtbLog -Text "$shown`r`n" -MirrorToMainLog
+                    Write-DialogLogLine -LogBox $logBoxRef -Text "$shown`r`n" -MirrorToMainLog
                 }
             } catch { }
         }.GetNewClosure()
@@ -299,7 +440,7 @@ catch {
                 Start-Sleep -Milliseconds 300
                 & $ReadNew
                 if ($proc.ExitCode -ne 0) {
-                    Write-DialogLogLine -LogBox $rtbLog -Text "[FAILED] Installer exited with code $($proc.ExitCode).`r`n" -MirrorToMainLog
+                    Write-DialogLogLine -LogBox $logBoxRef -Text "[FAILED] Installer exited with code $($proc.ExitCode).`r`n" -MirrorToMainLog
                 }
                 Remove-Item -LiteralPath $scriptPath, $logPath -Force -ErrorAction SilentlyContinue
                 & $startBoxRef.Value -Queue $queueRef -Index ($indexRef + 1)
@@ -329,15 +470,20 @@ catch {
     }.GetNewClosure())
 
     $dlg.Add_Shown({
+        $shownStateRef = $state
+        $shownLogRef = $rtbLog
+        $shownModuleRef = $moduleName
+        $state.AfterCheck = {
+            if ($shownStateRef.AllInstalled) {
+                Write-DialogLogLine -LogBox $shownLogRef -Text "[OK] $shownModuleRef is installed everywhere this app needs it.`r`n"
+            }
+            else {
+                $first = if ($shownStateRef.Rows.Count) { $shownStateRef.Rows[0] } else { $null }
+                $hint = if ($first -and -not $first.Version) { " - click `"Install missing`"." } else { " - see the status above." }
+                Write-DialogLogLine -LogBox $shownLogRef -Text "[WARN] Not usable everywhere yet$hint`r`n"
+            }
+        }.GetNewClosure()
         & $Refresh
-        if ($state.AllInstalled) {
-            Write-DialogLogLine -LogBox $rtbLog -Text "[OK] $($moduleName) is installed everywhere this app needs it.`r`n"
-        }
-        else {
-            $first = if ($state.Rows.Count) { $state.Rows[0] } else { $null }
-            $hint = if ($first -and -not $first.Version) { " - click `"Install missing`"." } else { " - see the status above." }
-            Write-DialogLogLine -LogBox $rtbLog -Text "[WARN] Not usable everywhere yet$hint`r`n"
-        }
     }.GetNewClosure())
 
     Set-Theme -Control $dlg

@@ -60,6 +60,19 @@ Add-Type -AssemblyName Microsoft.VisualBasic
 Add-Type -AssemblyName System.Security   # for the native X509Certificate2UI store picker
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
+# Pin every window this thread creates to DPI-unaware, which is what both
+# powershell.exe and pwsh.exe give it today anyway. Every dialog here is laid
+# out in fixed pixels with no auto-scaling, so on a 125%/150% display Windows
+# stretching the finished window (slightly soft text, correct layout) is the
+# safe behavior - a DPI-aware process would get unscaled 96-DPI positions
+# with larger fonts, i.e. clipped text everywhere. Per-thread, so it still
+# holds if a future PowerShell ships a DPI-aware manifest. Remove this only
+# once the dialogs scale themselves.
+if (-not ('IntunePackager.Dpi' -as [type])) {
+    Add-Type -Namespace IntunePackager -Name Dpi -MemberDefinition '[DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);'
+}
+try { [void][IntunePackager.Dpi]::SetThreadDpiAwarenessContext([IntPtr]-1) } catch { }   # DPI_AWARENESS_CONTEXT_UNAWARE; not available before Windows 10 1607
+
 # =====================================================================
 # Shared app state
 # =====================================================================
@@ -1912,6 +1925,7 @@ $Global:App.BtnRunLaunch.Add_Click({
 # Startup
 # =====================================================================
 Initialize-Folders
+Save-DelegatedSignInCacheSnapshot
 Import-AppsFromFile -Path $Global:App.LinkedFilePath
 Load-LastAuditCache
 Update-Grid

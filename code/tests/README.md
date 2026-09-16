@@ -77,6 +77,16 @@ window they open - handy for comparing the two hosts side by side.
   apps through the real dialogs (main window and editor paths, Yes and No
   answers, empty-name validation) and checks the per-app JSON files after
   every step.
+- `Prerequisites.GuiTests.ps1` - **needs internet.** Clicks *Install missing*
+  in the Prerequisites dialog and follows it through: the download, the live
+  log, the status re-check, and Graph actions getting past the module check
+  afterwards. The module is saved into the sandbox (the app's
+  `INTUNEPACKAGER_TEST_MODULE_DIR` test hook), never into your profile, and
+  a host where the module is already installed for real is skipped. Kept
+  separate so the other two stay offline. (Windows PowerShell's package
+  tooling creates an empty `%LOCALAPPDATA%\PackageManagement` in the *real*
+  profile regardless of the redirect below; the test removes it again if it
+  wasn't there before.)
 
 **Safe by construction:** each run copies the app into a throwaway temp
 folder with its own fixture catalog and **no settings file**, so no Graph

@@ -1,0 +1,53 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    name: unit (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux, PowerShell 7
+            os: ubuntu-latest
+            shell: pwsh
+          - name: Windows, PowerShell 7
+            os: windows-latest
+            shell: pwsh
+          - name: Windows PowerShell 5.1
+            os: windows-latest
+            shell: powershell
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: CatalogLogic.Tests.ps1
+        shell: ${{ matrix.shell }}
+        run: ./code/tests/CatalogLogic.Tests.ps1
+
+  gui:
+    # Drives the real WinForms app, so it needs the runner's desktop session.
+    # Not a required check until it has proven stable on hosted runners.
+    name: GUI (Windows, both PowerShells)
+    runs-on: windows-latest
+    needs: unit
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: DialogSmoke.GuiTests.ps1
+        shell: pwsh
+        run: ./code/tests/gui/DialogSmoke.GuiTests.ps1 -ShotDir "$env:RUNNER_TEMP/gui-shots/smoke"
+      - name: CatalogCrud.GuiTests.ps1
+        if: always()
+        shell: pwsh
+        run: ./code/tests/gui/CatalogCrud.GuiTests.ps1 -ShotDir "$env:RUNNER_TEMP/gui-shots/crud"
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-screenshots
+          path: ${{ runner.temp }}/gui-shots
+          if-no-files-found: ignore

@@ -167,6 +167,14 @@ function Global:Set-ThemeRecursive {
             # headers looking like headers.
             $Ctrl.ColumnHeadersDefaultCellStyle.SelectionBackColor = $Palette.GridHeaderBack
             $Ctrl.ColumnHeadersDefaultCellStyle.SelectionForeColor = $Palette.ControlFore
+            # One row height under both PowerShells - .NET 7+ pads rows a few
+            # pixels more than .NET Framework for the same font. Grids that
+            # size their own rows (wrapped multi-line cells) are left alone.
+            if ($Ctrl.AutoSizeRowsMode -eq [System.Windows.Forms.DataGridViewAutoSizeRowsMode]::None) {
+                $rowHeight = $Ctrl.Font.Height + 6
+                $Ctrl.RowTemplate.Height = $rowHeight
+                foreach ($row in $Ctrl.Rows) { $row.Height = $rowHeight }
+            }
             $Ctrl.RowHeadersDefaultCellStyle.BackColor = $Palette.GridHeaderBack
             $Ctrl.RowHeadersDefaultCellStyle.ForeColor = $Palette.ControlFore
         }

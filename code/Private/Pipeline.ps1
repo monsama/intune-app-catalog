@@ -175,6 +175,10 @@ function Global:Start-PipelineProcess {
     $psi.FileName = "powershell.exe"
     $psi.Arguments = "-NoLogo -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded"
     $psi.UseShellExecute = $false
+    # Windows PowerShell's own module path (plus wherever this window loads
+    # the Graph module from), not whatever this process happens to have -
+    # see Get-WindowsPowerShellModulePath.
+    Set-WindowsPowerShellEnvironment -StartInfo $psi
     $psi.CreateNoWindow = -not $ShowConsoleWindow
     if ($ShowConsoleWindow) {
         # Minimized rather than Normal - WAM (Windows' interactive sign-in

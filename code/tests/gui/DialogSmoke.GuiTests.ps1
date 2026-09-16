@@ -132,9 +132,16 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
     $script:currentHost = [IO.Path]::GetFileNameWithoutExtension($exe)
     Write-Host "`n=== Dialog smoke test - app running under $exe ===" -ForegroundColor Cyan
     $root = New-AppSandbox
+    # A Graph PowerShell sign-in cache the user already had - the app must leave it alone on exit.
+    $cacheDir = Join-Path $root 'localappdata\.IdentityService'
+    [void][IO.Directory]::CreateDirectory($cacheDir)
+    [IO.File]::WriteAllText((Join-Path $cacheDir 'mg.msal.cache.cae'), 'pre-existing')
     $ctx = $null
     try {
         $ctx = Start-AppUnderTest -AppHost $exe -Root $root
+        # ...and one that appears while the app runs (as a delegated sign-in would create) - removed on exit.
+        [IO.File]::WriteAllText((Join-Path $cacheDir 'mg.msal.cache.nocae'), 'from this session')
+        Assert-True ($W32::DpiAwareness($ctx.Main) -eq 0) "main window is DPI-unaware (layouts are fixed-pixel)" "awareness: $($W32::DpiAwareness($ctx.Main))"
         if ($ShotDir) {
             $ctx.ShotDir = Join-Path $ShotDir $script:currentHost
             [void][IO.Directory]::CreateDirectory($ctx.ShotDir)
@@ -218,6 +225,8 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
             Assert-True (Stop-AppUnderTest $ctx) "app closes cleanly"
             $err = Get-AppStdErr $ctx
             Assert-True ([string]::IsNullOrWhiteSpace($err)) "app wrote nothing to stderr" $err
+            Assert-True (Test-Path (Join-Path $cacheDir 'mg.msal.cache.cae')) "a sign-in cache file that existed before the app started is kept"
+            Assert-True (-not (Test-Path (Join-Path $cacheDir 'mg.msal.cache.nocae'))) "a sign-in cache file created during the session is removed on exit"
         }
         Remove-AppSandbox $root
     }
