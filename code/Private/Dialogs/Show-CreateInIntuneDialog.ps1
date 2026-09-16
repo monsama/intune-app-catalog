@@ -1260,6 +1260,11 @@ function Global:Show-CreateInIntuneDialog {
     $lblCreateStatus = New-Object System.Windows.Forms.Label
     $lblCreateStatus.AutoSize = $true
     $lblCreateStatus.MaximumSize = New-Object System.Drawing.Size(1230,0)
+    # Left margin 0, not WinForms' own default (3,3,3,3) - without this,
+    # this Label started 3px further right than $rtbFieldLegend below it
+    # (whose own Margin is set explicitly with left=0 too), leaving the
+    # two visibly unaligned against $pnlStatusInfo's shared left inset.
+    $lblCreateStatus.Margin = New-Object System.Windows.Forms.Padding(0,0,0,6)
     $pnlStatusInfo.Controls.Add($lblCreateStatus)
 
     if (-not $Uncommon) {
@@ -1270,7 +1275,9 @@ function Global:Show-CreateInIntuneDialog {
         # (confirmed live, the exact bug this dodges).
         $rtbFieldLegend = New-Object System.Windows.Forms.RichTextBox
         $rtbFieldLegend.Size = New-Object System.Drawing.Size(1230,22)
-        $rtbFieldLegend.Margin = New-Object System.Windows.Forms.Padding(0,6,0,0)
+        # Top margin 0 - $lblCreateStatus's own Margin above already adds
+        # 6px below itself, so this avoids doubling that gap.
+        $rtbFieldLegend.Margin = New-Object System.Windows.Forms.Padding(0,0,0,0)
         $rtbFieldLegend.ReadOnly = $true
         $rtbFieldLegend.BorderStyle = [System.Windows.Forms.BorderStyle]::None
         $rtbFieldLegend.ScrollBars = "None"
