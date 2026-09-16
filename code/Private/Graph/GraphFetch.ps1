@@ -332,9 +332,16 @@ function Global:Start-StartupFullAuditCheck {
     $appByName = @{}
     foreach ($a in $deployedApps) { $appByName[$a.appName] = $a }
 
-    $Global:App.LblAuditWarning.ForeColor = [System.Drawing.Color]::DimGray
-    $Global:App.LblAuditWarning.Text = "Running full Intune audit on $($deployedApps.Count) app(s)..."
-    $Global:App.PanelAuditWarning.Visible = $true
+    # "Running..." itself isn't actionable, so it goes on the shared
+    # LblStartupBusy indicator next to the search box (like Start-
+    # StartupDriftCheck's own in-flight state arguably should too, but
+    # that one is fast enough this hasn't come up) rather than opening
+    # PanelAuditWarning immediately - that banner is reserved below for
+    # when there's actually something to act on. Overwrites whatever
+    # generic text LblStartupBusy already had; harmless if
+    # Start-StartupDriftCheck is also running right now, since both are
+    # short-lived and either message is equally "something's happening."
+    $Global:App.LblStartupBusy.Text = "Running full Intune audit on $($deployedApps.Count) app(s)..."
     Update-StartupBusyIndicator -Delta 1
 
     $tenantId  = $Global:App.GraphTenantId
@@ -357,12 +364,21 @@ function Global:Start-StartupFullAuditCheck {
         if ($pendingBox.Count -gt 0) { return }
         Update-StartupBusyIndicator -Delta -1
         Save-LastAuditCache
+        # Without this, the grid's own "Last Audit" column (already
+        # color-coded - DarkOrange for an issue, SeaGreen for "OK", see
+        # the Grid's CellFormatting in MainApp.ps1) keeps showing
+        # whatever it last showed - stale results from before this run,
+        # or "Never audited" - until something else happens to trigger a
+        # redraw. This is what actually answers "which app(s)" without
+        # opening "Intune Audit..." - the banner below only ever gives a
+        # count.
+        Update-Grid
         if ($appsWithFindings.Count -eq 0) {
             $Global:App.PanelAuditWarning.Visible = $false
             return
         }
         $Global:App.LblAuditWarning.ForeColor = [System.Drawing.Color]::FromArgb(133, 100, 4)
-        $Global:App.LblAuditWarning.Text = "Full audit found $($appsWithFindings.Count) app(s) with at least one discrepancy (Metadata/Groups/Dependencies/Assignments) against Intune."
+        $Global:App.LblAuditWarning.Text = "Full audit found $($appsWithFindings.Count) app(s) with at least one discrepancy (Metadata/Groups/Dependencies/Assignments) against Intune - see the 'Last Audit' column."
         $Global:App.PanelAuditWarning.Visible = $true
     }.GetNewClosure()
 
