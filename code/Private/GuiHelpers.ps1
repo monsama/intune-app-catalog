@@ -268,6 +268,18 @@ function Global:Set-Status {
     $Global:App.StatusLabel.Text = $Text
 }
 
+# Called in pairs around any background startup task (Start-
+# StartupDriftCheck, Start-TypeVersionBackfill) - $Delta is +1 when the
+# task starts, -1 when it finishes (success, failure, or nothing to do).
+# A shared counter rather than a plain boolean because both tasks can
+# legitimately run at once; the indicator only disappears once EVERY
+# task that raised it has also lowered it again.
+function Global:Update-StartupBusyIndicator {
+    param([int]$Delta = 0)
+    $Global:App.StartupBusyCount = [Math]::Max(0, $Global:App.StartupBusyCount + $Delta)
+    $Global:App.LblStartupBusy.Visible = ($Global:App.StartupBusyCount -gt 0)
+}
+
 # Shows/hides the App Catalog tab's yellow "no Graph connection"/
 # "certificate warning" banner and logs the same thing to the Log tab -
 # extracted out of MainApp.ps1's own startup code so it can be re-run

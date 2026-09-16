@@ -276,6 +276,7 @@ function Global:Start-StartupDriftCheck {
     $Global:App.LblDriftWarning.ForeColor = [System.Drawing.Color]::DimGray
     $Global:App.LblDriftWarning.Text = "Checking for Intune drift..."
     $Global:App.PanelDriftWarning.Visible = $true
+    Update-StartupBusyIndicator -Delta 1
 
     # Reuses the exact same fetch (and $Global:App.IntuneAppsCache) as the
     # toolbar's own "Look up App IDs..." and Show-IntuneOnlyAppsDialog's
@@ -285,6 +286,7 @@ function Global:Start-StartupDriftCheck {
     # touching the banner's controls directly below is safe.
     Start-IntuneAppLookup -OnComplete {
         param($ok, $data)
+        Update-StartupBusyIndicator -Delta -1
         if (-not $ok) {
             # Already logged in detail by Start-IntuneAppLookup itself -
             # this just clears the "Checking..." state so it doesn't sit
@@ -846,6 +848,7 @@ function Global:Start-TypeVersionBackfill {
 
     $Global:App.TypeVersionBackfillDone = $true
     Write-Log "Backfilling Type/Version for $($needsBackfill.Count) app(s) never synced before...`r`n" ([System.Drawing.Color]::Gainsboro)
+    Update-StartupBusyIndicator -Delta 1
 
     $appsRef = $Global:App.Apps
     $linkedFilePathRef = $Global:App.LinkedFilePath
@@ -864,6 +867,7 @@ function Global:Start-TypeVersionBackfill {
 
         if ($Global:App.CatalogGeneration -ne $startGeneration) {
             Write-Log "[SKIPPED] Type/Version backfill stopped - the catalog was reloaded partway through.`r`n" ([System.Drawing.Color]::DimGray)
+            Update-StartupBusyIndicator -Delta -1
             return
         }
 
@@ -876,6 +880,7 @@ function Global:Start-TypeVersionBackfill {
             $doneMsg = "Type/Version backfill done - $UpdatedCount app(s) updated."
             if ($FailedCount -gt 0) { $doneMsg += " $FailedCount app(s) failed - see above." }
             Write-Log "$doneMsg`r`n" $doneColor
+            Update-StartupBusyIndicator -Delta -1
             return
         }
 
@@ -904,7 +909,10 @@ function Global:Start-TypeVersionBackfill {
             # fetch itself may well have succeeded), so it's not counted
             # or logged as one - the top-of-loop check already logs the
             # one summary line for this queue being abandoned.
-            if ($Global:App.CatalogGeneration -ne $startGenerationRef) { return }
+            if ($Global:App.CatalogGeneration -ne $startGenerationRef) {
+                Update-StartupBusyIndicator -Delta -1
+                return
+            }
 
             $nextUpdatedCount = $UpdatedCountRef
             $nextFailedCount = $FailedCountRef

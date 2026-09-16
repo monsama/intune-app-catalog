@@ -202,6 +202,16 @@ $Global:App.DefaultAppSettings = [pscustomobject]@{
 # keystroke - firing a Graph fetch queue on each one would be absurd).
 $Global:App.TypeVersionBackfillDone = $false
 
+# How many background startup tasks are currently in flight (Start-
+# StartupDriftCheck, Start-TypeVersionBackfill - both silent otherwise,
+# the backfill especially so: it never even set a busy cursor, only Log
+# tab entries on a tab that isn't the default active one). A shared
+# counter, not a plain boolean, since both can legitimately overlap on
+# the same startup - the indicator this drives (LblStartupBusy, built
+# alongside the search box further down) only needs to know "is anything
+# still running," not which one.
+$Global:App.StartupBusyCount = 0
+
 # =====================================================================
 # Styling - single, consistent light palette applied to every control
 # =====================================================================
@@ -677,6 +687,19 @@ $searchPanel.FlowDirection = "LeftToRight"
 $searchPanel.Margin = New-Object System.Windows.Forms.Padding(4,24,4,0)
 $searchPanel.Controls.Add($Global:App.LblSearch)
 $searchPanel.Controls.Add($Global:App.TxtSearch)
+
+# Hidden by default - shown only while Update-StartupBusyIndicator says
+# something's running (Start-StartupDriftCheck, Start-TypeVersionBackfill).
+# The busy cursor alone was easy to miss, and the backfill task in
+# particular had NO other visible sign of running at all before this -
+# only Log tab entries, on a tab that isn't the default active one.
+$Global:App.LblStartupBusy = New-Object System.Windows.Forms.Label
+$Global:App.LblStartupBusy.Text = "Checking for updates..."
+$Global:App.LblStartupBusy.AutoSize = $true
+$Global:App.LblStartupBusy.ForeColor = [System.Drawing.Color]::DimGray
+$Global:App.LblStartupBusy.Margin = New-Object System.Windows.Forms.Padding(10,6,0,0)
+$Global:App.LblStartupBusy.Visible = $false
+$searchPanel.Controls.Add($Global:App.LblStartupBusy)
 
 $toolbar.Controls.AddRange(@($gbPrimary, $gbMoreActions, $gbSync, $searchPanel))
 $tabCatalog.Controls.Add($toolbar)
