@@ -14,38 +14,37 @@ function Global:Show-AppRegistrationGuideDialog {
     $txtGuide.ReadOnly = $true
     $txtGuide.ScrollBars = "Vertical"
     $txtGuide.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $txtGuide.Text = @"
-This is a one-time setup, done once per tenant/environment - not something
-this tool automates. Granting an application broad tenant permissions is
-worth doing deliberately through the portal's own review screens, not
-silently via a script, even though only a Global/Privileged Role Admin
-could run either path.
+    $guideText = @"
+This is a one-time setup, done once per tenant/environment - not something this tool automates.
 
-1. In the Entra admin center, go to "App registrations" and create a new
-   registration (or use an existing one your organization has already
-   approved for this purpose).
+Granting an application broad tenant permissions is worth doing deliberately through the portal's own review screens, not silently via a script, even though only a Global/Privileged Role Admin could run either path.
 
-2. Note its "Application (client) ID" and "Directory (tenant) ID" - enter
-   both into the fields in the Settings dialog.
+1. In the Entra admin center, go to "App registrations" and create a new registration (or use an existing one your organization has already approved for this purpose).
+
+2. Note its "Application (client) ID" and "Directory (tenant) ID" - enter both into the fields in the Settings dialog.
 
 3. Open the app registration, go to:
-   API permissions > Add a permission > Microsoft Graph >
-   Application permissions (NOT Delegated) - and add:
-     - DeviceManagementApps.ReadWrite.All
-     - Group.ReadWrite.All
-     - User.Read.All
-     - Device.Read.All
-     - Directory.Read.All
+   API permissions > Add a permission > Microsoft Graph > Application permissions (NOT Delegated) - and add:
 
-4. Click "Grant admin consent for [tenant]" and confirm every permission
-   shows "Granted."
-   Requires a Global Administrator or Privileged Role Administrator.
+       - DeviceManagementApps.ReadWrite.All
+       - Group.ReadWrite.All
+       - User.Read.All
+       - Device.Read.All
+       - Directory.Read.All
 
-5. Back in Settings, use "Pick certificate..." or "Generate certificate...",
-   then "Upload certificate..." to link this tool to that app registration
-   - or export/upload the certificate through the portal yourself instead,
-   if you'd rather do that step there too.
+4. Click "Grant admin consent for [tenant]" and confirm every permission shows "Granted." Requires a Global Administrator or Privileged Role Administrator.
+
+5. Back in Settings, use "Pick certificate..." or "Generate certificate...", then "Upload certificate..." to link this tool to that app registration - or export/upload the certificate through the portal yourself instead, if you'd rather do that step there too.
 "@
+    # This whole file has LF-only line endings (no CRLF) - a plain
+    # WinForms TextBox's native Win32 control doesn't reliably treat a
+    # lone LF as a line break, so the here-string's own newlines above
+    # were silently getting swallowed, running adjacent lines together
+    # with no space at all (a confirmed, live, visibly garbled result -
+    # "isworth", "notsilently", "somethingthis"). Converting to CRLF here,
+    # at assignment, fixes it regardless of what line endings this or any
+    # future edit of this file happens to be saved with.
+    $txtGuide.Text = $guideText -replace "`r`n", "`n" -replace "`n", "`r`n"
     $dlg.Controls.Add($txtGuide)
 
     $btnOpenPortal = New-Object System.Windows.Forms.Button
