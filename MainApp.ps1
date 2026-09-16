@@ -641,6 +641,27 @@ $btnMoreActions.Add_Click({
 $toolbarTips.SetToolTip($btnMoreActions, "Catalog maintenance, one-off Intune lookups, and Entra ID tools.")
 $gbMoreActions = New-ToolbarGroup -Title "More" -Buttons @($btnMoreActions)
 
+# On the toolbar itself, not tucked away in Settings - this is a
+# frequently-relevant, at-a-glance choice ("is this catalog being
+# watched for drift or not"), not a one-time connection detail like
+# Tenant ID/Client ID/certificate. Takes effect on the NEXT app start
+# (Start-StartupDriftCheck, GraphFetch.ps1, only ever runs once per
+# launch from Form.Add_Shown), not immediately - still saved the instant
+# it's toggled, same as every other setting in this app, just nothing to
+# show for it until next time.
+$chkCheckDriftOnStartup = New-Object System.Windows.Forms.CheckBox
+$chkCheckDriftOnStartup.Text = "Check Intune drift on start"
+$chkCheckDriftOnStartup.AutoSize = $true
+$chkCheckDriftOnStartup.Checked = [bool]$Global:App.CheckDriftOnStartup
+$toolbarTips.SetToolTip($chkCheckDriftOnStartup, "When checked, the NEXT time this app starts it quietly compares Intune against this catalog once and flags any differences - useful if more than one person works from this catalog. Needs Tenant ID/Client ID/certificate configured in Settings to do anything.")
+$chkCheckDriftOnStartup.Add_CheckedChanged({
+    $Global:App.CheckDriftOnStartup = $chkCheckDriftOnStartup.Checked
+    if (Write-SettingsFile) {
+        Write-Log "[OK] $(if ($chkCheckDriftOnStartup.Checked) { 'Will' } else { 'Will not' }) check for Intune drift the next time this app starts.`r`n" ([System.Drawing.Color]::LightGreen)
+    }
+}.GetNewClosure())
+$gbSync = New-ToolbarGroup -Title "Sync" -Buttons @($chkCheckDriftOnStartup)
+
 $searchPanel = New-Object System.Windows.Forms.FlowLayoutPanel
 $searchPanel.AutoSize = $true
 $searchPanel.AutoSizeMode = [System.Windows.Forms.AutoSizeMode]::GrowAndShrink
@@ -655,7 +676,7 @@ $searchPanel.Margin = New-Object System.Windows.Forms.Padding(4,24,4,0)
 $searchPanel.Controls.Add($Global:App.LblSearch)
 $searchPanel.Controls.Add($Global:App.TxtSearch)
 
-$toolbar.Controls.AddRange(@($gbPrimary, $gbMoreActions, $searchPanel))
+$toolbar.Controls.AddRange(@($gbPrimary, $gbMoreActions, $gbSync, $searchPanel))
 $tabCatalog.Controls.Add($toolbar)
 
 # Hidden by default - shown only when Graph credentials aren't configured

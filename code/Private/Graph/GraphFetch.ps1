@@ -268,6 +268,15 @@ function Global:Start-StartupDriftCheck {
         return
     }
 
+    # Visible feedback that this is actually happening - otherwise the
+    # only sign anything is running at all is a brief busy cursor (easy to
+    # miss) and a line in the Log tab, which isn't the default active tab.
+    # Neutral gray while in flight, not the banner's usual warning color -
+    # this state isn't a problem, just "still working."
+    $Global:App.LblDriftWarning.ForeColor = [System.Drawing.Color]::DimGray
+    $Global:App.LblDriftWarning.Text = "Checking for Intune drift..."
+    $Global:App.PanelDriftWarning.Visible = $true
+
     # Reuses the exact same fetch (and $Global:App.IntuneAppsCache) as the
     # toolbar's own "Look up App IDs..." and Show-IntuneOnlyAppsDialog's
     # Refresh - no separate code path to keep in sync, just a different,
@@ -276,10 +285,20 @@ function Global:Start-StartupDriftCheck {
     # touching the banner's controls directly below is safe.
     Start-IntuneAppLookup -OnComplete {
         param($ok, $data)
-        if (-not $ok) { return }
+        if (-not $ok) {
+            # Already logged in detail by Start-IntuneAppLookup itself -
+            # this just clears the "Checking..." state so it doesn't sit
+            # there forever looking like nothing ever happened.
+            $Global:App.PanelDriftWarning.Visible = $false
+            return
+        }
         $drift = Get-IntuneCatalogDrift -Apps $Global:App.Apps -IntuneApps $data
         $total = $drift.Missing.Count + $drift.Renamed.Count + $drift.DeletedFromIntune.Count
-        if ($total -eq 0) { return }
+        if ($total -eq 0) {
+            $Global:App.PanelDriftWarning.Visible = $false
+            return
+        }
+        $Global:App.LblDriftWarning.ForeColor = [System.Drawing.Color]::FromArgb(133, 100, 4)
         $Global:App.LblDriftWarning.Text = "Startup check found $total discrepanc$(if ($total -eq 1) { 'y' } else { 'ies' }) between Intune and this catalog: $($drift.Missing.Count) not in catalog, $($drift.Renamed.Count) renamed, $($drift.DeletedFromIntune.Count) deleted from Intune."
         $Global:App.PanelDriftWarning.Visible = $true
     }.GetNewClosure()

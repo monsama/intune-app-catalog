@@ -97,13 +97,11 @@ function Global:Save-GraphSettings {
     param(
         [string]$TenantId,
         [string]$ClientId,
-        [string]$CertificateThumbprint,
-        [bool]$CheckDriftOnStartup = $Global:App.CheckDriftOnStartup
+        [string]$CertificateThumbprint
     )
     $Global:App.GraphTenantId = $TenantId
     $Global:App.GraphClientId = $ClientId
     $Global:App.GraphCertificateThumbprint = $CertificateThumbprint
-    $Global:App.CheckDriftOnStartup = $CheckDriftOnStartup
     return (Write-SettingsFile)
 }
 
