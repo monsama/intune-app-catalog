@@ -80,6 +80,8 @@ function Global:Show-TargetedAssignDialog {
     $btnRun.Location = New-Object System.Drawing.Point(370,476)
     $btnRun.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnRun)
+    $runTip = New-Object System.Windows.Forms.ToolTip
+    $runTip.SetToolTip($btnRun, "REPLACES this app's entire Intune assignment list with exactly the group(s) listed above - any assignment not in that list is removed, including ones this catalog doesn't know about.")
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Close"

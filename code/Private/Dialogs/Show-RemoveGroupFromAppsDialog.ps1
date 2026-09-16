@@ -95,6 +95,8 @@ function Global:Show-RemoveGroupFromAppsDialog {
     $btnRemove.Location = New-Object System.Drawing.Point(240,658)
     $btnRemove.Size = New-Object System.Drawing.Size(205,30)
     $dlg.Controls.Add($btnRemove)
+    $removeTip = New-Object System.Windows.Forms.ToolTip
+    $removeTip.SetToolTip($btnRemove, "Removes the checked group(s) from the checked apps in the LOCAL CATALOG only. Push groups to Intune afterward to unassign them there too.")
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"

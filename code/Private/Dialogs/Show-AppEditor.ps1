@@ -153,12 +153,16 @@ function Global:Show-AppEditor {
     $btnLookupId.Location = New-Object System.Drawing.Point(345,185)
     $btnLookupId.Size = New-Object System.Drawing.Size(100,26)
     $dlg.Controls.Add($btnLookupId)
+    $lookupIdTip = New-Object System.Windows.Forms.ToolTip
+    $lookupIdTip.SetToolTip($btnLookupId, "Searches Intune by this app's name and fills in App ID above if a match is found.")
 
     $btnCreateInIntune = New-Object System.Windows.Forms.Button
     $btnCreateInIntune.Text = "Intune Deployment"
     $btnCreateInIntune.Location = New-Object System.Drawing.Point(15,216)
     $btnCreateInIntune.Size = New-Object System.Drawing.Size(210,30)
     $dlg.Controls.Add($btnCreateInIntune)
+    $createInIntuneTip = New-Object System.Windows.Forms.ToolTip
+    $createInIntuneTip.SetToolTip($btnCreateInIntune, "Opens the full deployment workflow (package, requirements, assignments) for this app - separate from 'Save app to catalog' below.")
 
     # Shortcut for the common case (a Winget app with nothing unusual about
     # it): saves this app to the catalog, then routes straight to Batch
@@ -602,6 +606,8 @@ function Global:Show-AppEditor {
     $btnReadGroupsFromIntune.Location = New-Object System.Drawing.Point(15,674)
     $btnReadGroupsFromIntune.Size = New-Object System.Drawing.Size(430,30)
     $dlg.Controls.Add($btnReadGroupsFromIntune)
+    $readGroupsTip = New-Object System.Windows.Forms.ToolTip
+    $readGroupsTip.SetToolTip($btnReadGroupsFromIntune, "Sets the group lists above to match Intune EXACTLY, not a merge - anything checked here that Intune doesn't actually have gets unchecked.")
 
     # Dedicated status label for the button right above - this used to
     # reuse $lblIdStatus (the App ID lookup status, up near the top of the
@@ -656,6 +662,8 @@ function Global:Show-AppEditor {
     $btnPrevApp.Enabled = ($null -ne $prevAppIndex)
     $btnPrevApp.Visible = ($CurrentIndex -ge 0)
     $dlg.Controls.Add($btnPrevApp)
+    $prevAppTip = New-Object System.Windows.Forms.ToolTip
+    $prevAppTip.SetToolTip($btnPrevApp, "Discards unsaved changes to this app, same as Cancel, then opens the previous one. Use 'Save app to catalog' first if you want to keep them.")
 
     $lblAppNavPosition = New-Object System.Windows.Forms.Label
     $lblAppNavPosition.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
@@ -685,6 +693,8 @@ function Global:Show-AppEditor {
     $btnNextApp.Enabled = ($null -ne $nextAppIndex)
     $btnNextApp.Visible = ($CurrentIndex -ge 0)
     $dlg.Controls.Add($btnNextApp)
+    $nextAppTip = New-Object System.Windows.Forms.ToolTip
+    $nextAppTip.SetToolTip($btnNextApp, "Discards unsaved changes to this app, same as Cancel, then opens the next one. Use 'Save app to catalog' first if you want to keep them.")
 
     $btnPrevApp.Add_Click({
         $navigateToIndexBox.Value = $prevAppIndex

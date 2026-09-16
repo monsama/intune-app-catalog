@@ -1296,6 +1296,8 @@ function Global:Show-CreateInIntuneDialog {
     $btnCreate.Location = New-Object System.Drawing.Point(995,941)
     $btnCreate.Size = New-Object System.Drawing.Size(200,32)
     $dlg.Controls.Add($btnCreate)
+    $createTip = New-Object System.Windows.Forms.ToolTip
+    $createTip.SetToolTip($btnCreate, $(if ($isDuplicate) { "Pushes the fields above to this existing Intune app as an update." } else { "Packages and deploys this app to Intune now." }))
 
     # For a new app, lets its metadata be captured and saved locally
     # without requiring the package to exist yet - so a batch of new apps
@@ -1311,6 +1313,8 @@ function Global:Show-CreateInIntuneDialog {
     $btnSaveForLater.Size = New-Object System.Drawing.Size(300,32)
     $btnSaveForLater.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $dlg.Controls.Add($btnSaveForLater)
+    $saveForLaterTip = New-Object System.Windows.Forms.ToolTip
+    $saveForLaterTip.SetToolTip($btnSaveForLater, "Saves these fields to the local catalog only - does not push anything to Intune. For a new app, lets you fill it in now and deploy it later in a batch.")
 
     # Brings back the SAME compare dialog the live-Intune auto-fetch below
     # already showed once, for whichever fields it found differing - without
@@ -1429,6 +1433,8 @@ function Global:Show-CreateInIntuneDialog {
     $btnPrevAppDeploy.Enabled = ($null -ne $prevAppIndex)
     $btnPrevAppDeploy.Visible = ($CurrentIndex -ge 0)
     $dlg.Controls.Add($btnPrevAppDeploy)
+    $prevAppDeployTip = New-Object System.Windows.Forms.ToolTip
+    $prevAppDeployTip.SetToolTip($btnPrevAppDeploy, "Discards unsaved changes on this screen, same as Cancel, then opens the previous app.")
 
     $lblDeployNavPosition = New-Object System.Windows.Forms.Label
     $lblDeployNavPosition.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
@@ -1458,6 +1464,8 @@ function Global:Show-CreateInIntuneDialog {
     $btnNextAppDeploy.Enabled = ($null -ne $nextAppIndex)
     $btnNextAppDeploy.Visible = ($CurrentIndex -ge 0)
     $dlg.Controls.Add($btnNextAppDeploy)
+    $nextAppDeployTip = New-Object System.Windows.Forms.ToolTip
+    $nextAppDeployTip.SetToolTip($btnNextAppDeploy, "Discards unsaved changes on this screen, same as Cancel, then opens the next app.")
 
     $btnPrevAppDeploy.Add_Click({
         if ($metadataFetchRunningBox.Running) {

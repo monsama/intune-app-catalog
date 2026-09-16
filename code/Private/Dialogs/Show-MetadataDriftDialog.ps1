@@ -89,6 +89,8 @@ function Global:Show-MetadataDriftDialog {
     $btnAllIntune.Size = New-Object System.Drawing.Size(140,28)
     $btnAllIntune.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
     $dlg.Controls.Add($btnAllIntune)
+    $allIntuneTip = New-Object System.Windows.Forms.ToolTip
+    $allIntuneTip.SetToolTip($btnAllIntune, "Sets every row's choice to Intune's value - just changes the picks below, doesn't apply anything until you click OK.")
 
     $btnAllLocal = New-Object System.Windows.Forms.Button
     $btnAllLocal.Text = "Keep local for all"
@@ -96,6 +98,8 @@ function Global:Show-MetadataDriftDialog {
     $btnAllLocal.Size = New-Object System.Drawing.Size(140,28)
     $btnAllLocal.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
     $dlg.Controls.Add($btnAllLocal)
+    $allLocalTip = New-Object System.Windows.Forms.ToolTip
+    $allLocalTip.SetToolTip($btnAllLocal, "Sets every row's choice to keep your local value - just changes the picks below, doesn't apply anything until you click OK.")
 
     $btnAllIntune.Add_Click({
         $grid.EndEdit()
