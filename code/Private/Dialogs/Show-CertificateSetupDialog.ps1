@@ -74,6 +74,21 @@ function Global:Show-CertificateSetupDialog {
     $dlg.Controls.Add($txtThumb)
     $y += 30
 
+    # Baseline to detect "typed/tested a new value but never actually
+    # saved it" on the way out - a real, live-confirmed gap: Test
+    # connection (below) checks whatever's currently typed, but only Save
+    # ever updates $Global:App.Graph* - every OTHER feature (Deploy, Sync,
+    # Assign, ...) keeps using the previous saved values until then, with
+    # no indication anything is stale. Silently discarding that mismatch
+    # on Cancel/X is the same convention every other dialog in this app
+    # already uses for a plain edit, but the blast radius here is bigger
+    # (confusing auth failures elsewhere, not just a lost edit), so this
+    # one dialog asks first instead of assuming Cancel always means "fine
+    # to lose this."
+    $origTenant = $txtTenant.Text
+    $origClient = $txtClient.Text
+    $origThumb  = $txtThumb.Text
+
     $lblStatus = New-Object System.Windows.Forms.Label
     $lblStatus.Location = New-Object System.Drawing.Point(15,$y)
     $lblStatus.Size = New-Object System.Drawing.Size(900,36)
@@ -706,6 +721,18 @@ function Global:Show-CertificateSetupDialog {
         (-not $btnCheckCerts.Enabled) -or (-not $btnUpload.Enabled) -or (-not $btnTest.Enabled)
     }.GetNewClosure()
 
+    $HasUnsavedConnectionChanges = {
+        ($txtTenant.Text.Trim() -ne $origTenant.Trim()) -or
+        ($txtClient.Text.Trim() -ne $origClient.Trim()) -or
+        (($txtThumb.Text.Trim() -replace '\s', '') -ne ($origThumb.Trim() -replace '\s', ''))
+    }.GetNewClosure()
+
+    # Set by Cancel's own click handler once it has already asked and the
+    # user chose to discard - stops FormClosing (fired by $dlg.Close()
+    # from that same click) from immediately asking the exact same
+    # question a second time right after the first answer.
+    $discardConfirmedBox = @{ Value = $false }
+
     $btnSave.Add_Click({
         if (& $anyCertOpRunning) {
             [System.Windows.Forms.MessageBox]::Show("An operation is still running - wait for it to finish first.", "Please wait", "OK", "Information") | Out-Null
@@ -727,14 +754,30 @@ function Global:Show-CertificateSetupDialog {
             [System.Windows.Forms.MessageBox]::Show("An operation is still running - wait for it to finish first.", "Please wait", "OK", "Information") | Out-Null
             return
         }
+        if (& $HasUnsavedConnectionChanges) {
+            $r = [System.Windows.Forms.MessageBox]::Show(
+                "Tenant ID, Client ID, or Certificate Thumbprint changed here but were never saved - Test connection only checks a combination works, it doesn't save it. Every other feature (Deploy, Sync, Assign, ...) will keep using the PREVIOUS saved values until you save.`n`nDiscard these changes?",
+                "Unsaved connection changes", "YesNo", "Warning")
+            if ($r -ne "Yes") { return }
+            $discardConfirmedBox.Value = $true
+        }
         $dlg.Close()
     }.GetNewClosure())
 
     # Backstop for the window's own X button / Alt+F4, which don't go
-    # through Save/Cancel's click handlers above at all.
+    # through Save/Cancel's click handlers above at all - including the
+    # unsaved-changes check, so a change never saved doesn't silently slip
+    # out through this path just because Cancel wasn't the button used.
     $dlg.Add_FormClosing({
         param($s, $e)
-        if (& $anyCertOpRunning) { $e.Cancel = $true }
+        if (& $anyCertOpRunning) { $e.Cancel = $true; return }
+        if ($saveResultBox.Saved -or $discardConfirmedBox.Value) { return }
+        if (& $HasUnsavedConnectionChanges) {
+            $r = [System.Windows.Forms.MessageBox]::Show(
+                "Tenant ID, Client ID, or Certificate Thumbprint changed here but were never saved - Test connection only checks a combination works, it doesn't save it. Every other feature (Deploy, Sync, Assign, ...) will keep using the PREVIOUS saved values until you save.`n`nDiscard these changes?",
+                "Unsaved connection changes", "YesNo", "Warning")
+            if ($r -ne "Yes") { $e.Cancel = $true }
+        }
     }.GetNewClosure())
 
     $dlg.CancelButton = $btnCancel

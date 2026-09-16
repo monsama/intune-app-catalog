@@ -857,7 +857,10 @@ function Global:Show-CreateInIntuneDialog {
 
     $grdReturnCodes = New-Object System.Windows.Forms.DataGridView
     $grdReturnCodes.Location = New-Object System.Drawing.Point(595,612)
-    $grdReturnCodes.Size = New-Object System.Drawing.Size(460,110)
+    # Tall enough for the header row plus the 4-row Winget base set
+    # (0/1707 success, 3010 softReboot, 1641 hardReboot) with no
+    # scrollbar - the previous 110px cut off part of the last row.
+    $grdReturnCodes.Size = New-Object System.Drawing.Size(460,135)
     $grdReturnCodes.AllowUserToAddRows = $false
     $grdReturnCodes.AllowUserToDeleteRows = $false
     $grdReturnCodes.RowHeadersVisible = $false
