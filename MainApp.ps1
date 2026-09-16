@@ -158,6 +158,16 @@ $Global:App.FavoriteGroups = New-Object System.Collections.Generic.List[string]
 # working offline-ish has no reason to want on every launch.
 $Global:App.CheckDriftOnStartup = $false
 
+# Separate from, and off by default independent of, CheckDriftOnStartup
+# above - that one is a single cheap "list every app in Intune" call;
+# this is "Intune Audit..."'s own full check (Metadata/Groups/
+# Dependencies/Assignments), which needs a live fetch PER deployed app,
+# not one call for the whole catalog. Meaningfully slower on a large
+# catalog, which is exactly why it's a second, separately-labeled
+# opt-in rather than folded into the drift toggle - see
+# Start-StartupFullAuditCheck (GraphFetch.ps1).
+$Global:App.RunFullAuditOnStartup = $false
+
 # The computed defaults Get-DefaultAppMetadata hands out for a brand-new
 # Winget app (what "Set default values..." and the custom-field
 # highlighting in Show-CreateInIntuneDialog both compare against, and what
@@ -672,7 +682,26 @@ $chkCheckDriftOnStartup.Add_CheckedChanged({
         Write-Log "[OK] $(if ($chkCheckDriftOnStartup.Checked) { 'Will' } else { 'Will not' }) check for Intune drift the next time this app starts.`r`n" ([System.Drawing.Color]::LightGreen)
     }
 }.GetNewClosure())
-$gbSync = New-ToolbarGroup -Title "Sync" -Buttons @($chkCheckDriftOnStartup)
+
+# Separate, independent toggle from the one above - see
+# $Global:App.RunFullAuditOnStartup's own comment for why this is a
+# second checkbox instead of folded into the drift one: a full audit
+# fetches every deployed app individually, meaningfully slower than the
+# drift check's one list-everything call, so it gets its own explicit,
+# clearly-labeled opt-in rather than silently riding along.
+$chkRunFullAuditOnStartup = New-Object System.Windows.Forms.CheckBox
+$chkRunFullAuditOnStartup.Text = "Also run full audit (slower)"
+$chkRunFullAuditOnStartup.AutoSize = $true
+$chkRunFullAuditOnStartup.Checked = [bool]$Global:App.RunFullAuditOnStartup
+$toolbarTips.SetToolTip($chkRunFullAuditOnStartup, "When checked, the NEXT time this app starts it also runs the full 'Intune Audit...' check (Metadata/Groups/Dependencies/Assignments) - not just the lighter drift check above. Fetches every deployed app individually, so this is noticeably slower to complete on a large catalog.")
+$chkRunFullAuditOnStartup.Add_CheckedChanged({
+    $Global:App.RunFullAuditOnStartup = $chkRunFullAuditOnStartup.Checked
+    if (Write-SettingsFile) {
+        Write-Log "[OK] $(if ($chkRunFullAuditOnStartup.Checked) { 'Will' } else { 'Will not' }) run a full Intune audit the next time this app starts.`r`n" ([System.Drawing.Color]::LightGreen)
+    }
+}.GetNewClosure())
+
+$gbSync = New-ToolbarGroup -Title "Sync" -Buttons @($chkCheckDriftOnStartup, $chkRunFullAuditOnStartup)
 
 $searchPanel = New-Object System.Windows.Forms.FlowLayoutPanel
 $searchPanel.AutoSize = $true
@@ -763,6 +792,38 @@ $btnDriftWarningDismiss.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [
 $Global:App.PanelDriftWarning.Controls.Add($btnDriftWarningDismiss)
 $btnDriftWarningDismiss.Add_Click({ $Global:App.PanelDriftWarning.Visible = $false })
 $tabCatalog.Controls.Add($Global:App.PanelDriftWarning)
+
+# Same structure as PanelDriftWarning above, separate panel since the
+# cause and fix differ (opens "Intune Audit...", not "Intune sync
+# check...") - only ever shown by Start-StartupFullAuditCheck
+# (GraphFetch.ps1), opt-in via the "Also run full audit (slower)"
+# toolbar checkbox, off by default.
+$Global:App.PanelAuditWarning = New-Object System.Windows.Forms.Panel
+$Global:App.PanelAuditWarning.Dock = "Top"
+$Global:App.PanelAuditWarning.Height = 40
+$Global:App.PanelAuditWarning.BackColor = [System.Drawing.Color]::FromArgb(255, 243, 205)
+$Global:App.PanelAuditWarning.Visible = $false
+$Global:App.LblAuditWarning = New-Object System.Windows.Forms.Label
+$Global:App.LblAuditWarning.ForeColor = [System.Drawing.Color]::FromArgb(133, 100, 4)
+$Global:App.LblAuditWarning.Font = New-Object System.Drawing.Font($Global:App.PanelAuditWarning.Font, [System.Drawing.FontStyle]::Bold)
+$Global:App.LblAuditWarning.Location = New-Object System.Drawing.Point(12, 10)
+$Global:App.LblAuditWarning.AutoSize = $true
+$Global:App.PanelAuditWarning.Controls.Add($Global:App.LblAuditWarning)
+$btnAuditWarningCheck = New-Object System.Windows.Forms.Button
+$btnAuditWarningCheck.Text = "Intune Audit..."
+$btnAuditWarningCheck.Location = New-Object System.Drawing.Point(650, 5)
+$btnAuditWarningCheck.Size = New-Object System.Drawing.Size(150, 28)
+$btnAuditWarningCheck.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+$Global:App.PanelAuditWarning.Controls.Add($btnAuditWarningCheck)
+$btnAuditWarningCheck.Add_Click({ Show-IntuneAuditDialog; Update-Grid; $Global:App.PanelAuditWarning.Visible = $false })
+$btnAuditWarningDismiss = New-Object System.Windows.Forms.Button
+$btnAuditWarningDismiss.Text = "Dismiss"
+$btnAuditWarningDismiss.Location = New-Object System.Drawing.Point(810, 5)
+$btnAuditWarningDismiss.Size = New-Object System.Drawing.Size(80, 28)
+$btnAuditWarningDismiss.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+$Global:App.PanelAuditWarning.Controls.Add($btnAuditWarningDismiss)
+$btnAuditWarningDismiss.Add_Click({ $Global:App.PanelAuditWarning.Visible = $false })
+$tabCatalog.Controls.Add($Global:App.PanelAuditWarning)
 
 $Global:App.Grid = New-Object System.Windows.Forms.DataGridView
 $Global:App.Grid.Dock = "Fill"
@@ -1829,7 +1890,7 @@ Update-CredentialWarningBanner
 # window's own first paint. Add_Shown only fires once the window is
 # actually visible, same reasoning as every other "don't block getting
 # into the app" deferral in this file.
-$Global:App.Form.Add_Shown({ Start-StartupDriftCheck })
+$Global:App.Form.Add_Shown({ Start-StartupDriftCheck; Start-StartupFullAuditCheck })
 
 $Global:App.Form.Add_FormClosing({
     if ($Global:App.UnsavedChangesBox.Value) {

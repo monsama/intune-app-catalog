@@ -306,6 +306,176 @@ function Global:Start-StartupDriftCheck {
     }.GetNewClosure()
 }
 
+function Global:Start-StartupFullAuditCheck {
+    # Opt-in (toolbar's "Also run full audit (slower)"), off by default,
+    # independent of Start-StartupDriftCheck above - see
+    # $Global:App.RunFullAuditOnStartup's own comment in MainApp.ps1 for
+    # why this is a separate toggle: a full metadata fetch PER deployed
+    # app, not one list call for the whole catalog. Headless version of
+    # Show-IntuneAuditDialog's own two-fetch logic (Metadata/Groups/
+    # Dependencies, then Unknown Assignments) - same embedded scripts,
+    # same comparison functions, same LastAuditResults cache, just
+    # accumulating counts for the banner below instead of grid rows, so
+    # opening "Intune Audit..." afterward still shows fresh cached
+    # results without needing its own re-run.
+    if (-not $Global:App.RunFullAuditOnStartup) { return }
+
+    if ([string]::IsNullOrWhiteSpace($Global:App.GraphTenantId) -or
+        [string]::IsNullOrWhiteSpace($Global:App.GraphClientId) -or
+        [string]::IsNullOrWhiteSpace($Global:App.GraphCertificateThumbprint)) {
+        return
+    }
+
+    $deployedApps = @($Global:App.Apps | Where-Object { $_.appId })
+    if ($deployedApps.Count -eq 0) { return }
+
+    $appByName = @{}
+    foreach ($a in $deployedApps) { $appByName[$a.appName] = $a }
+
+    $Global:App.LblAuditWarning.ForeColor = [System.Drawing.Color]::DimGray
+    $Global:App.LblAuditWarning.Text = "Running full Intune audit on $($deployedApps.Count) app(s)..."
+    $Global:App.PanelAuditWarning.Visible = $true
+    Update-StartupBusyIndicator -Delta 1
+
+    $tenantId  = $Global:App.GraphTenantId
+    $clientId  = $Global:App.GraphClientId
+    $certThumb = $Global:App.GraphCertificateThumbprint
+    $syncScript  = $Global:App.EmbeddedSyncMetadataScript
+    $batchScript = $Global:App.EmbeddedBatchAssignScript
+
+    # Same "how many app(s) have a difference in ANY category" tally
+    # Show-IntuneAuditDialog's own grid would let you eyeball at a glance
+    # (a row with anything other than "OK" in any column) - a HashSet
+    # since one app can show up from both fetches below, and should only
+    # count once toward the total no matter how many of its own
+    # categories differ.
+    $appsWithFindings = New-Object System.Collections.Generic.HashSet[string]
+    $pendingBox = @{ Count = 2 }
+
+    $finishOne = {
+        $pendingBox.Count--
+        if ($pendingBox.Count -gt 0) { return }
+        Update-StartupBusyIndicator -Delta -1
+        Save-LastAuditCache
+        if ($appsWithFindings.Count -eq 0) {
+            $Global:App.PanelAuditWarning.Visible = $false
+            return
+        }
+        $Global:App.LblAuditWarning.ForeColor = [System.Drawing.Color]::FromArgb(133, 100, 4)
+        $Global:App.LblAuditWarning.Text = "Full audit found $($appsWithFindings.Count) app(s) with at least one discrepancy (Metadata/Groups/Dependencies/Assignments) against Intune."
+        $Global:App.PanelAuditWarning.Visible = $true
+    }.GetNewClosure()
+
+    # --- Fetch 1: Metadata + Groups + Dependencies, one pass ---
+    $configApps1 = New-Object System.Collections.Generic.List[object]
+    foreach ($a in $deployedApps) { $configApps1.Add([pscustomobject]@{ AppName = $a.appName; AppId = $a.appId }) }
+    $configPath1 = Join-Path $env:TEMP (".intunepkg_startupaudit_sync_config_" + [guid]::NewGuid().ToString("N") + ".json")
+    $resultPath1 = Join-Path $env:TEMP (".intunepkg_startupaudit_sync_result_" + [guid]::NewGuid().ToString("N") + ".json")
+    $config1 = [pscustomobject]@{
+        TenantId              = $tenantId
+        ClientId              = $clientId
+        CertificateThumbprint = $certThumb
+        Apps                  = $configApps1.ToArray()
+        OutputResultPath      = $resultPath1
+    }
+    try {
+        $configJsonText1 = $config1 | ConvertTo-Json -Depth 10 -ErrorAction Stop
+        [System.IO.File]::WriteAllText($configPath1, $configJsonText1, (New-Object System.Text.UTF8Encoding($false)))
+        [void](Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".intunepkg_embedded_startupaudit_sync.ps1" -ArgumentString "-ConfigPath `"$configPath1`"" -OnComplete {
+            param($code)
+            Remove-Item $configPath1 -Force -ErrorAction SilentlyContinue
+            if (Test-Path $resultPath1) {
+                try {
+                    $result1 = Get-Content -Path $resultPath1 -Raw | ConvertFrom-Json
+                    Remove-Item $resultPath1 -Force -ErrorAction SilentlyContinue
+                    if ($result1.success) {
+                        foreach ($oneResult in @($result1.results)) {
+                            if (-not $appByName.ContainsKey($oneResult.AppName)) { continue }
+                            $catalogApp = $appByName[$oneResult.AppName]
+                            if (-not $oneResult.Success) {
+                                Set-LastAuditCacheEntry -AppName $oneResult.AppName -Metadata "Failed: $($oneResult.Error)" -Groups "Failed: $($oneResult.Error)" -Dependencies "Failed: $($oneResult.Error)"
+                                [void]$appsWithFindings.Add($oneResult.AppName)
+                                continue
+                            }
+                            $metaDiffs = Get-CatalogMetadataFieldDiffs -Local $catalogApp.metadata -Remote $oneResult.Metadata -OdataType $oneResult.OdataType
+                            $metaText = if ($metaDiffs.Count -eq 0) { "OK" } else { "$($metaDiffs.Count) field(s) differ: $(($metaDiffs | ForEach-Object { $_.Field }) -join ', ')" }
+                            $groupsText = if ($oneResult.GroupFetchOk) {
+                                $groupDiffs = Get-GroupFieldDiffs -LocalApp $catalogApp -RemoteResult $oneResult
+                                if ($groupDiffs.Count -eq 0) { "OK" } else { "$($groupDiffs.Count) differ: $(($groupDiffs | ForEach-Object { $_.Field }) -join ', ')" }
+                            } else { "Failed: could not fetch live assignments" }
+                            $liveDeps = @($oneResult.Metadata.dependencies) | Sort-Object
+                            $localDeps = @($catalogApp.metadata.dependencies) | Sort-Object
+                            $depsText = if (($liveDeps -join "|") -eq ($localDeps -join "|")) {
+                                "OK"
+                            } else {
+                                $liveText = if ($liveDeps.Count -gt 0) { $liveDeps -join ", " } else { "(none)" }
+                                $localText = if ($localDeps.Count -gt 0) { $localDeps -join ", " } else { "(none)" }
+                                "Catalog has: $localText | Intune has: $liveText"
+                            }
+                            Set-LastAuditCacheEntry -AppName $oneResult.AppName -Metadata $metaText -Groups $groupsText -Dependencies $depsText
+                            if ($metaText -ne "OK" -or $groupsText -ne "OK" -or $depsText -ne "OK") { [void]$appsWithFindings.Add($oneResult.AppName) }
+                        }
+                    }
+                }
+                catch { }
+            }
+            & $finishOne
+        }.GetNewClosure())
+    }
+    catch {
+        & $finishOne
+    }
+
+    # --- Fetch 2: Unknown Assignments ---
+    $appsForScript2 = @($deployedApps | ForEach-Object {
+        [pscustomobject]@{
+            AppName         = $_.appName
+            AppId           = $_.appId
+            RequiredGroups  = @($_.requiredFor)
+            AvailableGroups = @($_.availableFor)
+            UninstallGroups = @($_.uninstallFor)
+        }
+    })
+    $configPath2 = Join-Path $env:TEMP (".intunepkg_startupaudit_assign_config_" + [guid]::NewGuid().ToString("N") + ".json")
+    $resultPath2 = Join-Path $env:TEMP (".intunepkg_startupaudit_assign_result_" + [guid]::NewGuid().ToString("N") + ".json")
+    $config2 = [pscustomobject]@{
+        TenantId              = $tenantId
+        ClientId              = $clientId
+        CertificateThumbprint = $certThumb
+        Mode                  = "Preview"
+        Apps                  = $appsForScript2
+        OutputResultPath      = $resultPath2
+    }
+    try {
+        $configJsonText2 = $config2 | ConvertTo-Json -Depth 8 -ErrorAction Stop
+        [System.IO.File]::WriteAllText($configPath2, $configJsonText2, (New-Object System.Text.UTF8Encoding($false)))
+        [void](Start-PipelineProcess -ScriptContent $batchScript -TempScriptName ".intunepkg_embedded_startupaudit_assign.ps1" -ArgumentString "-ConfigPath `"$configPath2`"" -OnComplete {
+            param($code)
+            Remove-Item $configPath2 -Force -ErrorAction SilentlyContinue
+            if (Test-Path $resultPath2) {
+                try {
+                    $result2 = Get-Content -Path $resultPath2 -Raw | ConvertFrom-Json
+                    Remove-Item $resultPath2 -Force -ErrorAction SilentlyContinue
+                    if ($result2.success) {
+                        foreach ($oneResult in @($result2.data)) {
+                            if (-not $appByName.ContainsKey($oneResult.AppName)) { continue }
+                            $toRemove = @($oneResult.ToRemove)
+                            $unknownText = if ($toRemove.Count -eq 0) { "OK" } else { "$($toRemove.Count) unknown: $($toRemove -join ', ')" }
+                            Set-LastAuditCacheEntry -AppName $oneResult.AppName -Unknown $unknownText
+                            if ($unknownText -ne "OK") { [void]$appsWithFindings.Add($oneResult.AppName) }
+                        }
+                    }
+                }
+                catch { }
+            }
+            & $finishOne
+        }.GetNewClosure())
+    }
+    catch {
+        & $finishOne
+    }
+}
+
 function Global:Start-Win32AppMinOsFetch {
     param([scriptblock]$OnComplete)
 

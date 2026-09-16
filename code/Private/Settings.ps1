@@ -30,6 +30,8 @@ function Global:Import-GraphSettings {
         # by accident. Doesn't exist at all (older settings file) leaves
         # $Global:App.CheckDriftOnStartup at its own default, untouched.
         if ($settings.CheckDriftOnStartup -is [bool]) { $Global:App.CheckDriftOnStartup = $settings.CheckDriftOnStartup }
+        # Same -is [bool] reasoning as CheckDriftOnStartup right above.
+        if ($settings.RunFullAuditOnStartup -is [bool]) { $Global:App.RunFullAuditOnStartup = $settings.RunFullAuditOnStartup }
         # Missing entirely (an older settings file, or one from before this
         # existed) leaves $Global:App.DefaultAppSettings at its own built-in
         # factory values, untouched - same "fall back silently" reasoning
@@ -80,6 +82,7 @@ function Global:Write-SettingsFile {
             FavoriteGroups        = @($Global:App.FavoriteGroups)
             DefaultAppSettings    = $Global:App.DefaultAppSettings
             CheckDriftOnStartup   = $Global:App.CheckDriftOnStartup
+            RunFullAuditOnStartup = $Global:App.RunFullAuditOnStartup
         }
         $json = $settings | ConvertTo-Json -Depth 5
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
