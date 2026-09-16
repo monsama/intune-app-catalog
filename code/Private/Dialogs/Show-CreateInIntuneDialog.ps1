@@ -1,6 +1,21 @@
 function Global:Show-CreateInIntuneDialog {
     param(
         [string]$AppName, [string]$WingetId, [string]$ExistingAppId, [switch]$FromAppEditor,
+        # NOT the same thing as -CurrentIndex below, even though they're
+        # usually set together - this is [bool]$ExistingApp from the app
+        # editor's own scope, true whenever ITS OWN "auto-save immediately
+        # after a successful Deploy/Update Metadata" branch will fire
+        # (Show-AppEditor.ps1, $btnCreateInIntune.Add_Click). Confirmed a
+        # real mismatch between the two: Show-IntuneOnlyAppsDialog's own
+        # "Add to catalog..." flow opens the editor with -ExistingApp set
+        # to a pre-fill object (real appName/appId/groups from Intune) but
+        # no -CurrentIndex at all, since the app isn't in $Global:App.Apps
+        # yet - $ExistingApp is still truthy there, so the editor WILL
+        # auto-save, but -CurrentIndex alone would have said otherwise.
+        # Powers picking the right success message below - saying
+        # "nothing saved to the catalog yet" would be simply wrong for a
+        # caller that's about to auto-save this immediately.
+        [switch]$CallerHasExistingCatalogEntry,
         # Same meaning as Show-AppEditor's own -CurrentIndex - only set (and
         # only >= 0) when this was opened FROM the app editor for an app
         # actually at a known catalog position, which is the only case
@@ -1841,6 +1856,7 @@ function Global:Show-CreateInIntuneDialog {
         $procBoxRef = $procBox
         $appNameRef = $config.AppName
         $fromAppEditorRef = $FromAppEditor
+        $callerHasExistingCatalogEntryRef = $CallerHasExistingCatalogEntry
         $rtbLogRef = $rtbCreateLog
         # Added specifically so the success handler below can build and
         # save a catalog-shaped metadata object via
@@ -1978,19 +1994,26 @@ function Global:Show-CreateInIntuneDialog {
 
                         $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
                         $lblStatusRef.Text = "Success - App ID: $($result.appId)"
-                        # Accurate for both callers, not just one - this
-                        # dialog is opened from two different places with two
-                        # different save behaviors: the App Editor (which
-                        # still has its own separate appName/wingetId/group
-                        # fields, and this app's App ID/metadata now stay
-                        # staged - not written anywhere - until its own "Save
-                        # app to catalog" is clicked) and everywhere else
-                        # (where App ID and metadata are both already saved
-                        # directly, right above).
+                        # Accurate for all three cases, not just one -
+                        # $fromAppEditorRef alone used to decide this, but
+                        # that only tells you whether the App Editor is the
+                        # caller, not whether IT will save this immediately.
+                        # Confirmed live: for an app already in the catalog
+                        # ($CallerHasExistingCatalogEntry), the App Editor's
+                        # own handler auto-saves the instant this dialog
+                        # closes (Show-AppEditor.ps1, $btnCreateInIntune.
+                        # Add_Click - it upserts by name, so this doesn't
+                        # need to be a "known" entry, just a truthy
+                        # -ExistingApp on that side) - only a BRAND-NEW app
+                        # opened fresh (no existing catalog entry at all)
+                        # genuinely stays staged until its own later "Save
+                        # app to catalog" click.
                         $doneMsg = if (-not $localSaveOk) {
                             "Done. App ID: $($result.appId)`n`n...but saving this to the local catalog failed - check the Log tab. The app was still created/updated in Intune successfully."
-                        } elseif ($fromAppEditorRef) {
+                        } elseif ($fromAppEditorRef -and -not $callerHasExistingCatalogEntryRef) {
                             "Done. App ID: $($result.appId)`n`nIntune has already been created/updated with this. The App ID has been filled in above, but nothing is saved to the LOCAL CATALOG yet - click `"Save app to catalog`" in the app editor to keep this reflected there too. Clicking Cancel there instead only skips the local save; it does NOT undo what was just done in Intune."
+                        } elseif ($fromAppEditorRef) {
+                            "Done. App ID: $($result.appId)`n`nThe app editor will save this to the local catalog automatically as soon as you close this window - nothing further to click."
                         } else {
                             "Done. App ID: $($result.appId)`n`nAlready saved to disk."
                         }
