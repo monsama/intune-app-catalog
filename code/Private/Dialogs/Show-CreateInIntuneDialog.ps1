@@ -138,9 +138,22 @@ function Global:Show-CreateInIntuneDialog {
     # $topInfoHeight on top of that now, for the info block above.
     $dlg.ClientSize = New-Object System.Drawing.Size(1300, (1035 + $topInfoHeight))
     $dlg.StartPosition = "CenterParent"
-    $dlg.FormBorderStyle = "FixedDialog"
-    $dlg.MaximizeBox = $false
+    # Sizable, not FixedDialog - per the user, a fixed 1035-tall dialog
+    # feels like a lot of wasted blank space for a simple/new app with
+    # most optional fields still empty (Notes, Owner/Developer, an empty
+    # detection script...) since it's always rendered at the SAME size
+    # either way. Letting the window (and $scrollPanel inside it, anchored
+    # below) grow or shrink means someone on a large monitor can enlarge it
+    # to see more of the form and the log at once without scrolling, and
+    # someone who wants it more compact can shrink it back down - rather
+    # than this app guessing a single "right" size that's too tall for a
+    # sparse app and possibly still too short for a dense one.
+    # MinimumSize keeps it from ever going smaller than this baseline
+    # layout, which is still exactly what it was as a fixed size before.
+    $dlg.FormBorderStyle = "Sizable"
+    $dlg.MaximizeBox = $true
     $dlg.MinimizeBox = $false
+    $dlg.MinimumSize = New-Object System.Drawing.Size(1316, (1035 + $topInfoHeight + 39))
 
     # This dialog has grown past what fits on a typical screen - everything
     # from here down to the Dependencies checklist lives inside a scrollable
@@ -149,9 +162,15 @@ function Global:Show-CreateInIntuneDialog {
     # the scroll area, so they're always reachable without scrolling down to
     # find them. Same 750px visible height as before $topInfoHeight existed -
     # only its Y position shifts, to sit below the info block above it.
+    # Anchored on all four sides (not just Top,Left, the effective default
+    # for an absolutely-positioned control) so enlarging the now-resizable
+    # dialog actually grows this panel's own visible area instead of just
+    # exposing more blank dialog background around a panel stuck at its
+    # original size.
     $scrollPanel = New-Object System.Windows.Forms.Panel
     $scrollPanel.Location = New-Object System.Drawing.Point(0,$topInfoHeight)
     $scrollPanel.Size = New-Object System.Drawing.Size(1300,750)
+    $scrollPanel.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $scrollPanel.AutoScroll = $true
     $dlg.Controls.Add($scrollPanel)
 
@@ -161,6 +180,7 @@ function Global:Show-CreateInIntuneDialog {
         $rtbTopInfo = New-Object System.Windows.Forms.RichTextBox
         $rtbTopInfo.Location = New-Object System.Drawing.Point(15,4)
         $rtbTopInfo.Size = New-Object System.Drawing.Size(1270,($topInfoHeight - 6))
+        $rtbTopInfo.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
         $rtbTopInfo.ReadOnly = $true
         $rtbTopInfo.BorderStyle = [System.Windows.Forms.BorderStyle]::None
         $rtbTopInfo.ScrollBars = "None"
@@ -1284,6 +1304,12 @@ function Global:Show-CreateInIntuneDialog {
     $lblCreateStatus = New-Object System.Windows.Forms.Label
     $lblCreateStatus.Location = New-Object System.Drawing.Point(15,(773 + $topInfoHeight))
     $lblCreateStatus.Size = New-Object System.Drawing.Size(1270,40)
+    # Bottom-anchored (not the Top,Left default) - see $dlg.MinimumSize's
+    # own comment on making this dialog resizable: this row needs to track
+    # the form's bottom edge, the same fixed distance away, as the form
+    # grows or shrinks - not stay glued near the top while $scrollPanel
+    # (itself anchored on all four sides) grows underneath/over it.
+    $lblCreateStatus.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($lblCreateStatus)
 
     # Applies a reviewed "keep my local value for these fields" choice
@@ -1398,6 +1424,8 @@ function Global:Show-CreateInIntuneDialog {
     $rtbCreateLog = New-Object System.Windows.Forms.RichTextBox
     $rtbCreateLog.Location = New-Object System.Drawing.Point(15,(821 + $topInfoHeight))
     $rtbCreateLog.Size = New-Object System.Drawing.Size(1270,110)
+    # Same reasoning as $lblCreateStatus's own Anchor above.
+    $rtbCreateLog.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     Initialize-DarkLogBox -LogBox $rtbCreateLog
     $dlg.Controls.Add($rtbCreateLog)
 
@@ -1405,6 +1433,7 @@ function Global:Show-CreateInIntuneDialog {
     $btnCreate.Text = if ($isDuplicate) { "Update Metadata" } else { "Deploy" }
     $btnCreate.Location = New-Object System.Drawing.Point(995,(941 + $topInfoHeight))
     $btnCreate.Size = New-Object System.Drawing.Size(200,32)
+    $btnCreate.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($btnCreate)
     $createTip = New-Object System.Windows.Forms.ToolTip
     $createTip.SetToolTip($btnCreate, $(if ($isDuplicate) { "Pushes the fields above to this existing Intune app as an update." } else { "Packages and deploys this app to Intune now." }))
@@ -1421,6 +1450,7 @@ function Global:Show-CreateInIntuneDialog {
     $btnSaveForLater.Text = if ($isDuplicate) { "Save local copy..." } else { "Save to App Catalog without Deploying" }
     $btnSaveForLater.Location = New-Object System.Drawing.Point(15,(941 + $topInfoHeight))
     $btnSaveForLater.Size = New-Object System.Drawing.Size(300,32)
+    $btnSaveForLater.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
     $btnSaveForLater.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $dlg.Controls.Add($btnSaveForLater)
     $saveForLaterTip = New-Object System.Windows.Forms.ToolTip
@@ -1440,6 +1470,7 @@ function Global:Show-CreateInIntuneDialog {
     $btnShowDiff.Text = "Compare..."
     $btnShowDiff.Location = New-Object System.Drawing.Point(320,(941 + $topInfoHeight))
     $btnShowDiff.Size = New-Object System.Drawing.Size(95,32)
+    $btnShowDiff.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
     $btnShowDiff.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $btnShowDiff.Visible = $false
     $dlg.Controls.Add($btnShowDiff)
@@ -1457,6 +1488,7 @@ function Global:Show-CreateInIntuneDialog {
     $btnCancel.Text = "Cancel"
     $btnCancel.Location = New-Object System.Drawing.Point(1205,(941 + $topInfoHeight))
     $btnCancel.Size = New-Object System.Drawing.Size(80,32)
+    $btnCancel.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($btnCancel)
 
     if ($isDuplicate) {
@@ -1540,6 +1572,7 @@ function Global:Show-CreateInIntuneDialog {
     $btnPrevAppDeploy.Text = "< Previous app"
     $btnPrevAppDeploy.Location = New-Object System.Drawing.Point(15,(979 + $topInfoHeight))
     $btnPrevAppDeploy.Size = New-Object System.Drawing.Size(150,30)
+    $btnPrevAppDeploy.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
     $btnPrevAppDeploy.Enabled = ($null -ne $prevAppIndex)
     $btnPrevAppDeploy.Visible = ($CurrentIndex -ge 0)
     $dlg.Controls.Add($btnPrevAppDeploy)
@@ -1550,6 +1583,7 @@ function Global:Show-CreateInIntuneDialog {
     $lblDeployNavPosition.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
     $lblDeployNavPosition.Location = New-Object System.Drawing.Point(280,(979 + $topInfoHeight))
     $lblDeployNavPosition.Size = New-Object System.Drawing.Size(170,30)
+    $lblDeployNavPosition.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
     $lblDeployNavPosition.ForeColor = [System.Drawing.Color]::DimGray
     if ($CurrentIndex -ge 0) {
         $navFilterForLabel = $Global:App.TxtSearch.Text.Trim().ToLower()
@@ -1571,6 +1605,7 @@ function Global:Show-CreateInIntuneDialog {
     $btnNextAppDeploy.Text = "Next app >"
     $btnNextAppDeploy.Location = New-Object System.Drawing.Point(1135,(979 + $topInfoHeight))
     $btnNextAppDeploy.Size = New-Object System.Drawing.Size(150,30)
+    $btnNextAppDeploy.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
     $btnNextAppDeploy.Enabled = ($null -ne $nextAppIndex)
     $btnNextAppDeploy.Visible = ($CurrentIndex -ge 0)
     $dlg.Controls.Add($btnNextAppDeploy)
