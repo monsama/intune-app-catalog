@@ -26,11 +26,8 @@ works end to end. Almost everything in this app lives outside what's tested
 here:
 
 - **The GUI itself** - every dialog, button handler, and closure is
-  WinForms, which isn't even available outside Windows. Testing that would
-  need a Windows UI-automation framework (e.g. FlaUI) driving the actual
-  compiled app - a real project of its own, and a fragile one for a
-  hand-built, closure-heavy single-file app like this where a harmless
-  layout tweak can break automation that isn't testing logic at all.
+  WinForms, which isn't even available outside Windows. That part is what
+  the separate GUI tests below are for.
 - **Every live Microsoft Graph / Intune call** - creating, updating, or
   deleting a Win32 app, assigning groups, fetching current metadata, all of
   it. Testing that for real means real API calls against a real tenant.
@@ -49,3 +46,49 @@ has **no** WinForms control references and **no** live Graph/network call in
 it. If it touches `$Script:Apps` or similar script-scoped state (like
 `Get-DefaultAppMetadata` does), stub that state in the test file before
 calling it, same as the existing tests do.
+
+## GUI tests (Windows only)
+
+`gui\` drives the **real app** - the same `IntuneDeployment.ps1` you'd run -
+by posting Win32 clicks and text to its windows, and checks what happens on
+screen and on disk. It needs an interactive Windows desktop session; windows
+pop up and close by themselves while it runs, so don't type or click into
+them.
+
+```
+pwsh -NoProfile -File code/tests/gui/DialogSmoke.GuiTests.ps1
+pwsh -NoProfile -File code/tests/gui/CatalogCrud.GuiTests.ps1
+```
+
+Both run the app under **both** PowerShell 7 and Windows PowerShell 5.1 by
+default (`-AppHost pwsh` or `-AppHost powershell` for just one), and work
+when launched from either. `-ShotDir <folder>` saves a screenshot of every
+window they open - handy for comparing the two hosts side by side.
+
+- `DialogSmoke.GuiTests.ps1` - opens every toolbar button and every
+  "More actions..." item and closes whatever appears; fails on a crash, any
+  stderr output, a window that won't close, or two sibling controls that
+  overlap (a caption sitting on its field's border, a grid running into a
+  button). Also checks that every main-grid column header fits its text
+  (PowerShell 7 host only - .NET Framework doesn't expose that grid to UI
+  Automation) and that the toolbar wraps in a narrow window. Skips
+  "Package apps" and every Delete/Remove action.
+- `CatalogCrud.GuiTests.ps1` - adds, edits, renames, and removes catalog
+  apps through the real dialogs (main window and editor paths, Yes and No
+  answers, empty-name validation) and checks the per-app JSON files after
+  every step.
+
+**Safe by construction:** each run copies the app into a throwaway temp
+folder with its own fixture catalog and **no settings file**, so no Graph
+credentials exist - every Intune/Entra action stops at its own "not
+configured" / "module missing" guard. The app's `LOCALAPPDATA` is pointed
+into that folder too (the app clears the Microsoft Graph PowerShell sign-in
+cache there on exit). The repo's own `data\` folder is never touched, and
+the temp folder is deleted afterwards. Test apps never get an App ID, and
+the editor's delete button is only confirmed when its prompt says it just
+removes the local entry.
+
+`gui\GuiTestDriver.ps1` holds the shared plumbing (dot-source it). Clicks
+are always *posted*, never sent through a synchronous UI Automation
+Invoke - a synchronous Invoke on a button that opens a modal dialog never
+returns and hangs every later automation call.
