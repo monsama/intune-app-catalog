@@ -124,14 +124,54 @@ function Global:Show-CreateInIntuneDialog {
     $scrollPanel.AutoScroll = $true
     $dlg.Controls.Add($scrollPanel)
 
-    if ($isDuplicate) {
-        $lblDup = New-Object System.Windows.Forms.Label
-        $lblDup.Text = "This app already has an App ID ($ExistingAppId). By default this will UPDATE that app's metadata (name/description/install/uninstall/detection/dependencies) - it will NOT touch or re-upload package content."
-        $lblDup.Location = New-Object System.Drawing.Point(15,12)
-        $lblDup.Size = New-Object System.Drawing.Size(575,44)
-        $lblDup.ForeColor = [System.Drawing.Color]::DarkOrange
-        $scrollPanel.Controls.Add($lblDup)
+    # Combined info block - the App ID notice (if this is an existing app)
+    # stacked directly above the "differs from default" legend (if this is
+    # a Winget app, see $updateCustomFieldHighlights further down) - a
+    # RichTextBox, not two separate Labels off in different corners of the
+    # form, so the two read together instead of a user finding one, then
+    # discovering the other by accident somewhere else entirely. x=870, not
+    # the more obvious x=15 under the dialog's own title - the left column
+    # at y=12 is already packed solid down to $lblName at y=109 (App ID
+    # notice + both its checkboxes), with no room left to also fit the
+    # legend without pushing every other absolutely-positioned control in
+    # this very long dialog down to make space. x=870 is clear of
+    # $cmbDetectionType (595, ends at 855) and everything else up here.
+    if ($isDuplicate -or -not $Uncommon) {
+        $rtbTopInfo = New-Object System.Windows.Forms.RichTextBox
+        $rtbTopInfo.Location = New-Object System.Drawing.Point(870,12)
+        $rtbTopInfo.Size = New-Object System.Drawing.Size(415,95)
+        $rtbTopInfo.ReadOnly = $true
+        $rtbTopInfo.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+        $rtbTopInfo.ScrollBars = "None"
+        $rtbTopInfo.TabStop = $false
+        $rtbTopInfo.DetectUrls = $false
+        # Not themed by Set-ThemeRecursive at all (no case for
+        # RichTextBox) - set explicitly here instead of inheriting the
+        # dialog's palette, and unlike a Label's ForeColor, never gets
+        # silently overwritten later by the Set-Theme -Control $dlg call
+        # near the bottom of this function.
+        $rtbTopInfo.BackColor = $Global:App.LightPalette.FormBack
+        $fontTopInfo = New-Object System.Drawing.Font("Segoe UI", 9)
+        $fontLegend = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $isFirstLine = $true
+        if ($isDuplicate) {
+            $rtbTopInfo.SelectionFont = $fontTopInfo
+            $rtbTopInfo.SelectionColor = [System.Drawing.Color]::DarkOrange
+            $rtbTopInfo.AppendText("This app already has an App ID ($ExistingAppId). By default this will UPDATE that app's metadata (name/description/install/uninstall/detection/dependencies) - it will NOT touch or re-upload package content.")
+            $isFirstLine = $false
+        }
+        if (-not $Uncommon) {
+            if (-not $isFirstLine) { $rtbTopInfo.AppendText("`n`n") }
+            $rtbTopInfo.SelectionFont = $fontLegend
+            $rtbTopInfo.SelectionColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
+            $rtbTopInfo.AppendText("A bold blue field label (like this) means that field's current value differs from the computed Winget default.")
+        }
+        $rtbTopInfo.SelectionStart = 0
+        $rtbTopInfo.SelectionLength = 0
+        $scrollPanel.Controls.Add($rtbTopInfo)
+    }
 
+    if ($isDuplicate) {
         $chkForceNew = New-Object System.Windows.Forms.CheckBox
         $chkForceNew.Text = "Create a brand new app instead (uploads package content, leaves the existing app untouched)"
         $chkForceNew.Location = New-Object System.Drawing.Point(15,58)
@@ -732,22 +772,6 @@ function Global:Show-CreateInIntuneDialog {
     $lblSetDefaultsHint.Visible = (-not $Uncommon)
     $scrollPanel.Controls.Add($lblSetDefaultsHint)
 
-    # Legend for $updateCustomFieldHighlights below - without this, a
-    # highlighted label just looks like a color/weight change with no
-    # explanation of what it means or why only some labels get it.
-    # y=400, not right under $lblSetDefaultsHint (confirmed live: at
-    # y=350 it collided with $lblDeps's own label - that one has
-    # AutoSize=true and its text is long enough to render well past
-    # x=825 into this column, at y=353, landing right on top of this
-    # one). Nothing else occupies x=825ish between here and $lblProcessors
-    # at y=487.
-    $lblCustomFieldLegend = New-Object System.Windows.Forms.Label
-    $lblCustomFieldLegend.Text = "A bold blue field label (like this) means that field's current value differs from the computed Winget default."
-    $lblCustomFieldLegend.Location = New-Object System.Drawing.Point(825,400)
-    $lblCustomFieldLegend.Size = New-Object System.Drawing.Size(445,40)
-    $lblCustomFieldLegend.Visible = (-not $Uncommon)
-    $scrollPanel.Controls.Add($lblCustomFieldLegend)
-
     # --- Dependencies ---
     $lblDeps = New-Object System.Windows.Forms.Label
     $lblDeps.Text = "Dependencies (undeployed apps shown too - resolved by name at actual deploy time)"
@@ -1103,8 +1127,8 @@ function Global:Show-CreateInIntuneDialog {
         return $changeRows
     }.GetNewClosure()
 
-    # Highlights each field's LABEL in bold blue (see $lblCustomFieldLegend
-    # above, which explains this to the user) when its current value
+    # Highlights each field's LABEL in bold blue (see $rtbTopInfo above,
+    # which explains this to the user) when its current value
     # differs from the computed Winget default, so "which settings are
     # custom here" is visible at a glance without clicking "Set default
     # values..." - that button still exists for actually resetting them;
@@ -1145,7 +1169,7 @@ function Global:Show-CreateInIntuneDialog {
         foreach ($fieldLabel in $fieldControls.Keys) {
             $ctrl = $fieldControls[$fieldLabel]
             if ($customLabels -contains $fieldLabel) {
-                # Same blue as $lblCustomFieldLegend above.
+                # Same blue as $rtbTopInfo's own legend line above.
                 $ctrl.ForeColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
                 $ctrl.Font = New-Object System.Drawing.Font($ctrl.Font, ($ctrl.Font.Style -bor [System.Drawing.FontStyle]::Bold))
             }
@@ -3023,19 +3047,6 @@ function Global:Show-CreateInIntuneDialog {
 
     $dlg.CancelButton = $btnCancel
     Set-Theme -Control $dlg
-    # Set-ThemeRecursive's "Label" case unconditionally resets every
-    # Label's ForeColor to the palette's plain text color - confirmed
-    # live: $lblCustomFieldLegend's own blue was getting wiped back to
-    # black by this call, since it's set once at creation, well before
-    # this point. $updateCustomFieldHighlights's OWN blue survives this
-    # the same way $lblCustomFieldLegend now does - its only synchronous
-    # call happens above (before this line, so also wiped in the common
-    # case), but for an existing app the live-Intune auto-fetch's
-    # OnComplete calls it again well after ShowDialog() begins, i.e.
-    # after Set-Theme has already run for good - so it never needed this
-    # same fix to look right live.
-    $lblCustomFieldLegend.ForeColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
-    $lblCustomFieldLegend.Font = New-Object System.Drawing.Font($lblCustomFieldLegend.Font, [System.Drawing.FontStyle]::Bold)
     [void]$dlg.ShowDialog($Global:App.Form)
     return $resultBox
 }
