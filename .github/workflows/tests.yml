@@ -24,8 +24,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: CatalogLogic.Tests.ps1
-        shell: ${{ matrix.shell }}
+      # A step's shell can't come from an expression, hence one step per shell.
+      - name: CatalogLogic.Tests.ps1 (pwsh)
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: ./code/tests/CatalogLogic.Tests.ps1
+      - name: CatalogLogic.Tests.ps1 (Windows PowerShell)
+        if: matrix.shell == 'powershell'
+        shell: powershell
         run: ./code/tests/CatalogLogic.Tests.ps1
 
   gui:
