@@ -101,36 +101,6 @@ function Global:Show-CreateInIntuneDialog {
     # followed.
     $defaults = Get-DefaultAppMetadata -AppName $AppName -WingetId $WingetId -Uncommon $Uncommon
 
-    # Info block for the "differs from default" legend (only meaningful
-    # for a Winget app - see $updateCustomFieldHighlights further down).
-    # Used to also carry an "this app already has an App ID..." notice
-    # whenever this was an existing app, stacked above the legend - per
-    # the user, that notice wasn't worth keeping at all (it stated the
-    # normal, expected case every time an existing app is opened here,
-    # not something anyone actually needed telling twice), so it's gone
-    # rather than just recolored/repositioned again.
-    #
-    # A full-width strip ABOVE the scrollable area below, not shoehorned
-    # into some gap inside it - this dialog's own content is already so
-    # densely packed edge-to-edge (confirmed live, twice: x=825/y=350 first
-    # collided with $lblDeps's own long AutoSize label; x=870/y=12 then
-    # turned out to still be squarely inside the 675px-wide detection
-    # script panel, which starts at x=595 - not just $cmbDetectionType's
-    # narrower 260px combo box above it, which is what that check actually
-    # looked at) that there's no small gap anywhere on the right two-thirds
-    # of this form both wide AND tall enough for a full sentence of text
-    # without colliding with something else already there.
-    #
-    # Adds this height to the WHOLE dialog and pushes every fixed
-    # below-the-scroll-area control (status/log/buttons) down by the same
-    # amount, rather than shrinking $scrollPanel's own visible height to
-    # make room within the original 1035 total - confirmed live: that
-    # first version reintroduced a vertical scrollbar partway down a form
-    # that used to fit without one, to show the exact same fields as
-    # before.
-    $topInfoNeeded = -not $Uncommon
-    $topInfoHeight = if ($topInfoNeeded) { 38 } else { 0 }
-
     # The left column (Name, Description, ...) used to start at y=109
     # unconditionally, leaving a tall blank gap above it whenever
     # $chkForceNew/$chkReplaceContent below aren't shown (any new app,
@@ -144,13 +114,26 @@ function Global:Show-CreateInIntuneDialog {
     # flush with y=12 (matching Detection method) when they're not.
     $leftColumnShift = if ($isDuplicate) { 46 } else { 97 }
 
+    # The "differs from default" legend (only meaningful for a Winget app -
+    # see $updateCustomFieldHighlights further down) used to live in its
+    # own strip at the very top of the dialog, disconnected from every
+    # other piece of dynamic, this-app-specific status text. Per the user,
+    # it reads better grouped with $lblCreateStatus right below the form -
+    # the other dynamic text here, reporting what actually happened
+    # loading/comparing this app's data - as one info block, rather than
+    # scattered across the dialog. $legendHeight reserves the extra room
+    # for it, added below $lblCreateStatus.
+    $legendNeeded = -not $Uncommon
+    $legendHeight = if ($legendNeeded) { 24 } else { 0 }
+
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Deploy to Intune - $AppName"
     # 40px taller than before, to fit the Previous/Next row below the
     # existing Save/Deploy/Cancel row without moving any of this
     # function's many other absolutely-positioned controls - plus
-    # $topInfoHeight on top of that now, for the info block above.
-    $dlg.ClientSize = New-Object System.Drawing.Size(1300, (1035 + $topInfoHeight))
+    # $legendHeight on top of that now, for the legend line below
+    # $lblCreateStatus.
+    $dlg.ClientSize = New-Object System.Drawing.Size(1300, (1035 + $legendHeight))
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -161,38 +144,12 @@ function Global:Show-CreateInIntuneDialog {
     # panel with a fixed visible height, instead of the dialog itself just
     # being 1230px tall. Status/log/buttons stay pinned below it, outside
     # the scroll area, so they're always reachable without scrolling down to
-    # find them. Same 750px visible height as before $topInfoHeight existed -
-    # only its Y position shifts, to sit below the info block above it.
+    # find them.
     $scrollPanel = New-Object System.Windows.Forms.Panel
-    $scrollPanel.Location = New-Object System.Drawing.Point(0,$topInfoHeight)
+    $scrollPanel.Location = New-Object System.Drawing.Point(0,0)
     $scrollPanel.Size = New-Object System.Drawing.Size(1300,750)
     $scrollPanel.AutoScroll = $true
     $dlg.Controls.Add($scrollPanel)
-
-    if ($topInfoNeeded) {
-        # Added to $dlg directly, not $scrollPanel - always visible, never
-        # scrolls out of view along with the fields below it.
-        $rtbTopInfo = New-Object System.Windows.Forms.RichTextBox
-        $rtbTopInfo.Location = New-Object System.Drawing.Point(15,4)
-        $rtbTopInfo.Size = New-Object System.Drawing.Size(1270,($topInfoHeight - 6))
-        $rtbTopInfo.ReadOnly = $true
-        $rtbTopInfo.BorderStyle = [System.Windows.Forms.BorderStyle]::None
-        $rtbTopInfo.ScrollBars = "None"
-        $rtbTopInfo.TabStop = $false
-        $rtbTopInfo.DetectUrls = $false
-        # Not themed by Set-ThemeRecursive at all (no case for
-        # RichTextBox) - set explicitly here instead of inheriting the
-        # dialog's palette, and unlike a Label's ForeColor, never gets
-        # silently overwritten later by the Set-Theme -Control $dlg call
-        # near the bottom of this function.
-        $rtbTopInfo.BackColor = $Global:App.LightPalette.FormBack
-        $rtbTopInfo.SelectionFont = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $rtbTopInfo.SelectionColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
-        $rtbTopInfo.AppendText("A bold blue field label (like this) means that field's current value differs from the computed Winget default.")
-        $rtbTopInfo.SelectionStart = 0
-        $rtbTopInfo.SelectionLength = 0
-        $dlg.Controls.Add($rtbTopInfo)
-    }
 
     if ($isDuplicate) {
         $chkForceNew = New-Object System.Windows.Forms.CheckBox
@@ -1150,8 +1107,9 @@ function Global:Show-CreateInIntuneDialog {
         return $changeRows
     }.GetNewClosure()
 
-    # Highlights each field's LABEL in bold blue (see $rtbTopInfo above,
-    # which explains this to the user) when its current value
+    # Highlights each field's LABEL in bold blue (see $rtbFieldLegend
+    # further down, next to $lblCreateStatus, which explains this to the
+    # user) when its current value
     # differs from the computed Winget default, so "which settings are
     # custom here" is visible at a glance without clicking "Set default
     # values..." - that button still exists for actually resetting them;
@@ -1192,7 +1150,7 @@ function Global:Show-CreateInIntuneDialog {
         foreach ($fieldLabel in $fieldControls.Keys) {
             $ctrl = $fieldControls[$fieldLabel]
             if ($customLabels -contains $fieldLabel) {
-                # Same blue as $rtbTopInfo's own legend line above.
+                # Same blue as $rtbFieldLegend's own legend line.
                 $ctrl.ForeColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
                 $ctrl.Font = New-Object System.Drawing.Font($ctrl.Font, ($ctrl.Font.Style -bor [System.Drawing.FontStyle]::Bold))
             }
@@ -1276,9 +1234,35 @@ function Global:Show-CreateInIntuneDialog {
     }.GetNewClosure())
 
     $lblCreateStatus = New-Object System.Windows.Forms.Label
-    $lblCreateStatus.Location = New-Object System.Drawing.Point(15,(773 + $topInfoHeight))
+    $lblCreateStatus.Location = New-Object System.Drawing.Point(15,773)
     $lblCreateStatus.Size = New-Object System.Drawing.Size(1270,40)
     $dlg.Controls.Add($lblCreateStatus)
+
+    if ($legendNeeded) {
+        # Right below $lblCreateStatus, not off in its own strip elsewhere -
+        # per the user, these two read as one info block: whatever this
+        # app's own status is right now, plus what a bold blue field label
+        # means if one shows up below. A RichTextBox, not a Label - immune
+        # to Set-ThemeRecursive (no case for RichTextBox at all), so its
+        # color is never silently overwritten by the Set-Theme -Control
+        # $dlg call near the bottom of this function the way a Label's own
+        # ForeColor would be (confirmed live, the exact bug this dodges).
+        $rtbFieldLegend = New-Object System.Windows.Forms.RichTextBox
+        $rtbFieldLegend.Location = New-Object System.Drawing.Point(15,813)
+        $rtbFieldLegend.Size = New-Object System.Drawing.Size(1270,($legendHeight - 2))
+        $rtbFieldLegend.ReadOnly = $true
+        $rtbFieldLegend.BorderStyle = [System.Windows.Forms.BorderStyle]::None
+        $rtbFieldLegend.ScrollBars = "None"
+        $rtbFieldLegend.TabStop = $false
+        $rtbFieldLegend.DetectUrls = $false
+        $rtbFieldLegend.BackColor = $Global:App.LightPalette.FormBack
+        $rtbFieldLegend.SelectionFont = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $rtbFieldLegend.SelectionColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
+        $rtbFieldLegend.AppendText("A bold blue field label (like this) means that field's current value differs from the computed Winget default.")
+        $rtbFieldLegend.SelectionStart = 0
+        $rtbFieldLegend.SelectionLength = 0
+        $dlg.Controls.Add($rtbFieldLegend)
+    }
 
     # Applies a reviewed "keep my local value for these fields" choice
     # (from Show-MetadataDriftDialog) to the form - factored out into its
@@ -1390,14 +1374,14 @@ function Global:Show-CreateInIntuneDialog {
     }.GetNewClosure()
 
     $rtbCreateLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbCreateLog.Location = New-Object System.Drawing.Point(15,(821 + $topInfoHeight))
+    $rtbCreateLog.Location = New-Object System.Drawing.Point(15,(821 + $legendHeight))
     $rtbCreateLog.Size = New-Object System.Drawing.Size(1270,110)
     Initialize-DarkLogBox -LogBox $rtbCreateLog
     $dlg.Controls.Add($rtbCreateLog)
 
     $btnCreate = New-Object System.Windows.Forms.Button
     $btnCreate.Text = if ($isDuplicate) { "Update Metadata" } else { "Deploy" }
-    $btnCreate.Location = New-Object System.Drawing.Point(995,(941 + $topInfoHeight))
+    $btnCreate.Location = New-Object System.Drawing.Point(995,(941 + $legendHeight))
     $btnCreate.Size = New-Object System.Drawing.Size(200,32)
     $dlg.Controls.Add($btnCreate)
     $createTip = New-Object System.Windows.Forms.ToolTip
@@ -1413,7 +1397,7 @@ function Global:Show-CreateInIntuneDialog {
     # Intune at all.
     $btnSaveForLater = New-Object System.Windows.Forms.Button
     $btnSaveForLater.Text = if ($isDuplicate) { "Save local copy..." } else { "Save to App Catalog without Deploying" }
-    $btnSaveForLater.Location = New-Object System.Drawing.Point(15,(941 + $topInfoHeight))
+    $btnSaveForLater.Location = New-Object System.Drawing.Point(15,(941 + $legendHeight))
     $btnSaveForLater.Size = New-Object System.Drawing.Size(300,32)
     $btnSaveForLater.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $dlg.Controls.Add($btnSaveForLater)
@@ -1432,7 +1416,7 @@ function Global:Show-CreateInIntuneDialog {
     # permanently-greyed-out button with nothing behind it most of the time.
     $btnShowDiff = New-Object System.Windows.Forms.Button
     $btnShowDiff.Text = "Compare..."
-    $btnShowDiff.Location = New-Object System.Drawing.Point(320,(941 + $topInfoHeight))
+    $btnShowDiff.Location = New-Object System.Drawing.Point(320,(941 + $legendHeight))
     $btnShowDiff.Size = New-Object System.Drawing.Size(95,32)
     $btnShowDiff.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $btnShowDiff.Visible = $false
@@ -1449,7 +1433,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(1205,(941 + $topInfoHeight))
+    $btnCancel.Location = New-Object System.Drawing.Point(1205,(941 + $legendHeight))
     $btnCancel.Size = New-Object System.Drawing.Size(80,32)
     $dlg.Controls.Add($btnCancel)
 
@@ -1532,7 +1516,7 @@ function Global:Show-CreateInIntuneDialog {
     # permanently captured $null instead of the real box.
     $btnPrevAppDeploy = New-Object System.Windows.Forms.Button
     $btnPrevAppDeploy.Text = "< Previous app"
-    $btnPrevAppDeploy.Location = New-Object System.Drawing.Point(15,(979 + $topInfoHeight))
+    $btnPrevAppDeploy.Location = New-Object System.Drawing.Point(15,(979 + $legendHeight))
     $btnPrevAppDeploy.Size = New-Object System.Drawing.Size(150,30)
     $btnPrevAppDeploy.Enabled = ($null -ne $prevAppIndex)
     $btnPrevAppDeploy.Visible = ($CurrentIndex -ge 0)
@@ -1542,7 +1526,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $lblDeployNavPosition = New-Object System.Windows.Forms.Label
     $lblDeployNavPosition.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $lblDeployNavPosition.Location = New-Object System.Drawing.Point(280,(979 + $topInfoHeight))
+    $lblDeployNavPosition.Location = New-Object System.Drawing.Point(280,(979 + $legendHeight))
     $lblDeployNavPosition.Size = New-Object System.Drawing.Size(170,30)
     $lblDeployNavPosition.ForeColor = [System.Drawing.Color]::DimGray
     if ($CurrentIndex -ge 0) {
@@ -1563,7 +1547,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $btnNextAppDeploy = New-Object System.Windows.Forms.Button
     $btnNextAppDeploy.Text = "Next app >"
-    $btnNextAppDeploy.Location = New-Object System.Drawing.Point(1135,(979 + $topInfoHeight))
+    $btnNextAppDeploy.Location = New-Object System.Drawing.Point(1135,(979 + $legendHeight))
     $btnNextAppDeploy.Size = New-Object System.Drawing.Size(150,30)
     $btnNextAppDeploy.Enabled = ($null -ne $nextAppIndex)
     $btnNextAppDeploy.Visible = ($CurrentIndex -ge 0)
@@ -3070,13 +3054,13 @@ function Global:Show-CreateInIntuneDialog {
 
     $dlg.CancelButton = $btnCancel
     Set-Theme -Control $dlg
-    # $rtbTopInfo (when shown) is first in tab order, so it's what gets
-    # focus by default when the dialog is shown - a known WinForms quirk
-    # (confirmed live, same one already fixed in Show-GettingStartedGuideDialog
-    # and Show-AppRegistrationGuideDialog) highlights a read-only
-    # RichTextBox's ENTIRE text blue the moment it receives focus that
-    # way - TabStop = $false on $rtbTopInfo doesn't prevent this initial
-    # assignment by itself. Points focus at the Name field instead - a
+    # $scrollPanel (or whatever's first inside it) can end up with default
+    # focus when the dialog is shown - a known WinForms quirk (confirmed
+    # live, same one already fixed in Show-GettingStartedGuideDialog and
+    # Show-AppRegistrationGuideDialog) highlights a read-only RichTextBox's
+    # ENTIRE text blue the moment it receives focus that way; TabStop =
+    # $false on $rtbFieldLegend alone doesn't reliably prevent this kind
+    # of initial assignment. Points focus at the Name field instead - a
     # real, natural place to start typing, not just an arbitrary control
     # picked to dodge the bug.
     $dlg.Add_Shown({ $txtCreateName.Focus() }.GetNewClosure())
