@@ -1,5 +1,6 @@
 function Global:Show-DefaultAppSettingsDialog {
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Edit default values"
     $dlg.ClientSize = New-Object System.Drawing.Size(620, 590)
     $dlg.StartPosition = "CenterParent"
@@ -10,7 +11,7 @@ function Global:Show-DefaultAppSettingsDialog {
     $lblIntro = New-Object System.Windows.Forms.Label
     $lblIntro.Text = "These are the defaults every new Winget app starts with - in `"Deploy to Intune`", `"Set default values...`", and Batch Deploy for an app with no saved metadata. Changing these here does NOT touch any app already saved or deployed."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
-    $lblIntro.Size = New-Object System.Drawing.Size(590,40)
+    $lblIntro.Size = New-Object System.Drawing.Size(590,48)
     $dlg.Controls.Add($lblIntro)
 
     $lblContext = New-Object System.Windows.Forms.Label
@@ -87,7 +88,7 @@ function Global:Show-DefaultAppSettingsDialog {
 
     $lblReqs = New-Object System.Windows.Forms.Label
     $lblReqs.Text = "Requirements (0 = not required)"
-    $lblReqs.Location = New-Object System.Drawing.Point(15,172)
+    $lblReqs.Location = New-Object System.Drawing.Point(15,167)
     $lblReqs.AutoSize = $true
     $dlg.Controls.Add($lblReqs)
 
@@ -148,12 +149,12 @@ function Global:Show-DefaultAppSettingsDialog {
 
     $lblRestartBehavior = New-Object System.Windows.Forms.Label
     $lblRestartBehavior.Text = "Device restart behavior"
-    $lblRestartBehavior.Location = New-Object System.Drawing.Point(160,246)
+    $lblRestartBehavior.Location = New-Object System.Drawing.Point(180,246)
     $lblRestartBehavior.AutoSize = $true
     $dlg.Controls.Add($lblRestartBehavior)
     $cmbRestartBehavior = New-Object System.Windows.Forms.ComboBox
-    $cmbRestartBehavior.Location = New-Object System.Drawing.Point(160,263)
-    $cmbRestartBehavior.Size = New-Object System.Drawing.Size(350,23)
+    $cmbRestartBehavior.Location = New-Object System.Drawing.Point(180,263)
+    $cmbRestartBehavior.Size = New-Object System.Drawing.Size(330,23)
     $cmbRestartBehavior.DropDownStyle = "DropDownList"
     $restartBehaviorMap = [ordered]@{
         "Determine behavior based on return codes"      = "basedOnReturnCode"

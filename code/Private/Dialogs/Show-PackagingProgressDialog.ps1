@@ -2,6 +2,7 @@ function Global:Show-PackagingProgressDialog {
     param([string]$SingleFolderName = "", [string[]]$FolderNames = @())
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Packaging"
     $dlg.ClientSize = New-Object System.Drawing.Size(620, 400)
     $dlg.StartPosition = "CenterParent"

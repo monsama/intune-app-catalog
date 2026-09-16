@@ -2,6 +2,7 @@ function Global:Show-WingetSearchDialog {
     param([string]$InitialQuery = "")
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Search winget"
     $dlg.ClientSize = New-Object System.Drawing.Size(640, 470)
     $dlg.StartPosition = "CenterParent"

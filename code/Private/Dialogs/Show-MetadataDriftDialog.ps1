@@ -6,6 +6,7 @@ function Global:Show-MetadataDriftDialog {
     param($Rows, [string]$AppName = "")
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $rowWord = if (@($Rows).Count -eq 1) { "field" } else { "fields" }
     $appSuffix = if ($AppName) { " - $AppName" } else { "" }
     $dlg.Text = "Local vs. Intune - $(@($Rows).Count) $rowWord differ$appSuffix"

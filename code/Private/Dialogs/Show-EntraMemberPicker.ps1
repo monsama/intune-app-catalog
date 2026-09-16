@@ -5,6 +5,7 @@ function Global:Show-EntraMemberPicker {
     $cache = $Global:App.EntraDirectoryCache
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Add group or user"
     $dlg.ClientSize = New-Object System.Drawing.Size(480, 420)
     $dlg.StartPosition = "CenterParent"

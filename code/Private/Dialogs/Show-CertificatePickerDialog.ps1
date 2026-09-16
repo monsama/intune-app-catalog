@@ -15,6 +15,7 @@ function Global:Show-CertificatePickerDialog {
     # thumbprint, and expiry side by side, wide enough to actually read all
     # of it, which is the whole reason to build a custom version at all.
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Select Certificate"
     $dlg.ClientSize = New-Object System.Drawing.Size(760, 420)
     $dlg.StartPosition = "CenterParent"

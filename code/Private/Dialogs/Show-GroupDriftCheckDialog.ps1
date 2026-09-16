@@ -4,6 +4,7 @@ function Global:Show-GroupDriftCheckDialog {
     $cacheRef = $Global:App.EntraDirectoryCache
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Group name check"
     $dlg.ClientSize = New-Object System.Drawing.Size(700, 500)
     $dlg.StartPosition = "CenterParent"

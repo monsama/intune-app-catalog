@@ -1,5 +1,6 @@
 function Global:Show-GettingStartedGuideDialog {
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Getting started"
     $dlg.ClientSize = New-Object System.Drawing.Size(620, 560)
     $dlg.StartPosition = "CenterParent"
@@ -44,7 +45,7 @@ function Global:Show-GettingStartedGuideDialog {
 
         @{ Type = "Header"; Text = "Before any of this: connect to Microsoft Graph" }
         @{ Type = "Body"; Text = "Everything below talks to Intune, so none of it works until this app can sign in. One-time, per tenant:" }
-        @{ Type = "Body"; Text = "1. Open `"Settings...`" (toolbar).`n2. If your organization hasn't already set up an app registration for this tool, click `"First time? Setup guide...`" inside Settings first - that's the Entra ID / permissions side, a separate topic from everything else in this guide.`n3. Fill in Tenant ID, Client ID, and a certificate (pick an existing one or generate a new one right there), click `"Test connection`" to confirm it actually works, then `"Save.`"" }
+        @{ Type = "Body"; Text = "1. Open `"Settings...`" (toolbar). If anything here says a PowerShell module is missing, `"More actions > Verify > Prerequisites...`" installs it.`n2. If your organization hasn't already set up an app registration for this tool, click `"First time? Setup guide...`" inside Settings first - that's the Entra ID / permissions side, a separate topic from everything else in this guide.`n3. Fill in Tenant ID, Client ID, and a certificate (pick an existing one or generate a new one right there), click `"Test connection`" to confirm it actually works, then `"Save.`"" }
         @{ Type = "Note"; Text = "A banner across the top of the Catalog tab says outright when this hasn't been done yet, so it's hard to miss - but the two workflows below assume it's already sorted." }
 
         @{ Type = "Header"; Text = "Catalog is empty, Intune already has apps" }
@@ -59,6 +60,16 @@ function Global:Show-GettingStartedGuideDialog {
         @{ Type = "Body"; Text = "- `"Intune sync check...`" (above) is also the tool for ongoing drift, not just first-time import - it flags apps renamed in Intune since, and catalog apps whose App ID no longer exists in Intune at all (deleted outside this tool), not just brand-new ones.`n- The `"Check Intune drift on start`" toggle (toolbar, Sync group) runs that same check quietly once every time the app opens, and only says something if it actually finds a difference - useful if more than one person works from this catalog, so drift doesn't sit unnoticed until something fails.`n- `"Pull metadata and groups from Intune...`" goes the other direction - updates the LOCAL catalog to match what's live in Intune for apps that already have an App ID, for when Intune is the one with the current truth (e.g. someone changed something there directly)." }
     )
 
+    # Parent, font, and native handle all settled BEFORE any formatting is
+    # applied. On .NET Framework (Windows PowerShell 5.1) SelectionFont/
+    # SelectionColor set before the handle exists are silently dropped, and
+    # a later ambient font change (e.g. being added to the dialog) re-fonts
+    # all existing text - either way the guide came out as plain text there,
+    # while PowerShell 7 kept the formatting.
+    $txtGuide.Font = $fontBody
+    $dlg.Controls.Add($txtGuide)
+    [void]$txtGuide.Handle
+
     $isFirstBlock = $true
     foreach ($block in $blocks) {
         if (-not $isFirstBlock) {
@@ -70,6 +81,10 @@ function Global:Show-GettingStartedGuideDialog {
         }
         $isFirstBlock = $false
 
+        # Style applies at the caret - put it at the end first, same order
+        # Write-DialogLogLine uses.
+        $txtGuide.SelectionStart = $txtGuide.TextLength
+        $txtGuide.SelectionLength = 0
         switch ($block.Type) {
             "Header"  { $txtGuide.SelectionFont = $fontHeader; $txtGuide.SelectionColor = $colorHeader }
             "SubNote" { $txtGuide.SelectionFont = $fontNote;   $txtGuide.SelectionColor = $colorNote }
@@ -85,8 +100,6 @@ function Global:Show-GettingStartedGuideDialog {
     $txtGuide.SelectionStart = 0
     $txtGuide.SelectionLength = 0
     $txtGuide.ScrollToCaret()
-
-    $dlg.Controls.Add($txtGuide)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"

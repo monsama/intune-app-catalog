@@ -60,6 +60,7 @@ function Global:Show-BatchAssignDialog {
     $appsForScriptBox = @{ Value = $appsForScript }
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Batch assign groups"
     $dlg.ClientSize = New-Object System.Drawing.Size(780, 530)
     $dlg.StartPosition = "CenterParent"

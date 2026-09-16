@@ -128,6 +128,7 @@ function Global:Show-CreateInIntuneDialog {
     $statusBoxExtraHeight = 52
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Deploy to Intune - $AppName"
     # 40px taller than before, to fit the Previous/Next row below the
     # existing Save/Deploy/Cancel row without moving any of this

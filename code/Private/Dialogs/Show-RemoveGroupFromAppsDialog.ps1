@@ -14,6 +14,7 @@ function Global:Show-RemoveGroupFromAppsDialog {
     $linkedFilePathRef = $Global:App.LinkedFilePath
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Remove group from apps"
     $dlg.ClientSize = New-Object System.Drawing.Size(460, 700)
     $dlg.StartPosition = "CenterParent"

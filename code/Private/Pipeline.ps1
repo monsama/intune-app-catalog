@@ -113,6 +113,18 @@ function Global:Start-PipelineProcess {
         [switch]$ShowConsoleWindow
     )
 
+    # Steps that talk to Graph fail deep inside a hidden process without the
+    # module - check first (and offer to install it, once per session)
+    # instead. These run under Windows PowerShell 5.1, so both PowerShells
+    # are checked.
+    if ($ScriptContent -match 'Import-Module\s+Microsoft\.Graph\.Authentication' -and -not (Test-GraphModuleAvailable -PromptOnce)) {
+        $errText = "[FAILED] Not started - the Microsoft.Graph.Authentication module isn't available (More actions > Verify > Prerequisites... installs it).`r`n"
+        Write-Log $errText ([System.Drawing.Color]::Tomato)
+        if ($ExtraLogTarget) { $ExtraLogTarget.AppendText($errText) }
+        if ($OnComplete) { & $OnComplete -1 }
+        return
+    }
+
     # The temp file has to live inside $Global:App.RootPath (not $env:TEMP), because
     # both embedded scripts use $PSScriptRoot internally to find input.json /
     # IntuneWinAppUtil.exe - see the note above $Global:App.EmbeddedPackageScript.

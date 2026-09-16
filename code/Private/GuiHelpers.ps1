@@ -1,3 +1,15 @@
+function Global:Get-AppUiFont {
+    # The one UI font every window uses. Set explicitly on each Form right
+    # after it's created (before any child control exists), because the
+    # WinForms default differs by host: PowerShell 7 (.NET) defaults to
+    # Segoe UI 9, Windows PowerShell 5.1 (.NET Framework) to Microsoft Sans
+    # Serif 8.25 - so a dialog without its own Font rendered noticeably
+    # smaller, differently-shaped text on 5.1 in layouts sized for Segoe UI.
+    # Segoe UI ships with every supported Windows version.
+    if (-not $script:AppUiFont) { $script:AppUiFont = New-Object System.Drawing.Font("Segoe UI", 9) }
+    return $script:AppUiFont
+}
+
 function Global:ConvertTo-FriendlyGraphError {
     # Recognizes a handful of common, recurring Connect-MgGraph/Graph SDK
     # failure shapes and puts the actual takeaway first, in plain words -
@@ -150,6 +162,11 @@ function Global:Set-ThemeRecursive {
             $Ctrl.AlternatingRowsDefaultCellStyle.ForeColor = $Palette.ControlFore
             $Ctrl.ColumnHeadersDefaultCellStyle.BackColor = $Palette.GridHeaderBack
             $Ctrl.ColumnHeadersDefaultCellStyle.ForeColor = $Palette.ControlFore
+            # With header visual styles off, newer WinForms (PS 7) paints the
+            # selected cell's column header in the selection color - keep
+            # headers looking like headers.
+            $Ctrl.ColumnHeadersDefaultCellStyle.SelectionBackColor = $Palette.GridHeaderBack
+            $Ctrl.ColumnHeadersDefaultCellStyle.SelectionForeColor = $Palette.ControlFore
             $Ctrl.RowHeadersDefaultCellStyle.BackColor = $Palette.GridHeaderBack
             $Ctrl.RowHeadersDefaultCellStyle.ForeColor = $Palette.ControlFore
         }
@@ -183,6 +200,36 @@ function Global:Set-ThemeRecursive {
 
     foreach ($child in @($Ctrl.Controls)) {
         Set-ThemeRecursive -Ctrl $child -Palette $Palette
+    }
+    Resolve-CaptionOverlaps -Container $Ctrl
+}
+
+function Global:Resolve-CaptionOverlaps {
+    # An AutoSize Label is a few pixels taller than its text, so a caption
+    # placed the usual ~20px above its field ended up covering the field's
+    # top border (text boxes, list boxes, combo boxes - app-wide, found by
+    # code\tests\gui\DialogSmoke.GuiTests.ps1). Nudges each such caption up
+    # by exactly the overlap. Only small overlaps (up to 6px) are touched,
+    # so a label deliberately placed over another control stays put, and
+    # layout-engine containers (FlowLayoutPanel/TableLayoutPanel) are left
+    # to position their own children.
+    param([System.Windows.Forms.Control]$Container)
+    if ($Container -is [System.Windows.Forms.FlowLayoutPanel] -or $Container -is [System.Windows.Forms.TableLayoutPanel]) { return }
+    $kids = @($Container.Controls)
+    foreach ($lbl in $kids) {
+        if ($lbl -isnot [System.Windows.Forms.Label] -or -not $lbl.AutoSize) { continue }
+        $b = $lbl.Bounds
+        $overlap = 0
+        foreach ($o in $kids) {
+            if ($o -eq $lbl -or $o -is [System.Windows.Forms.Label]) { continue }
+            if ($o -is [System.Windows.Forms.Panel] -or $o -is [System.Windows.Forms.GroupBox] -or $o -is [System.Windows.Forms.TabControl] -or $o -is [System.Windows.Forms.SplitContainer]) { continue }
+            $below = $o.Top -gt $b.Top -and $o.Top -lt $b.Bottom
+            $sideBySide = $o.Left -lt $b.Right -and $o.Right -gt $b.Left
+            if ($below -and $sideBySide) { $overlap = [Math]::Max($overlap, $b.Bottom - $o.Top) }
+        }
+        if ($overlap -gt 0 -and $overlap -le 6) {
+            $lbl.Top = [Math]::Max(0, $lbl.Top - $overlap)
+        }
     }
 }
 
@@ -223,6 +270,7 @@ function Global:Show-SimpleListPicker {
     param([string]$Title, [string]$Prompt, [string[]]$Items)
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = $Title
     $dlg.ClientSize = New-Object System.Drawing.Size(420, 320)
     $dlg.StartPosition = "CenterParent"
@@ -473,12 +521,24 @@ function Global:New-OverflowSubmenu {
 }
 
 function Global:New-GridColumn {
-    param($Name, $Header, $Width = 100, $FillWeight = 20)
+    # -Font: the grid's font, used to give the column a MinimumWidth that
+    # always fits its own header text (plus cell padding and the sort
+    # glyph) - Fill mode alone happily squeezes a narrow column down until
+    # "Required" reads "Requirec". -MinimumWidth raises that floor further,
+    # for columns whose VALUES need more room than their header (App ID).
+    param($Name, $Header, $Width = 100, $FillWeight = 20, [System.Drawing.Font]$Font, [int]$MinimumWidth = 0)
     $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $col.Name = $Name
     $col.HeaderText = $Header
     $col.DataPropertyName = $Name
     $col.FillWeight = $FillWeight
+    if ($Font) {
+        $headerWidth = [System.Windows.Forms.TextRenderer]::MeasureText($Header, $Font).Width + 24
+        $col.MinimumWidth = [Math]::Max($headerWidth, $MinimumWidth)
+    }
+    elseif ($MinimumWidth -gt 0) {
+        $col.MinimumWidth = $MinimumWidth
+    }
     return $col
 }
 

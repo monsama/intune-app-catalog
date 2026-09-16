@@ -25,6 +25,7 @@ function Global:Show-TargetedAssignDialog {
     $targetedScript = $Global:App.EmbeddedTargetedAssignScript
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Assign Groups - $AppName"
     $dlg.ClientSize = New-Object System.Drawing.Size(560, 560)
     $dlg.StartPosition = "CenterParent"

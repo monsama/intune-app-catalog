@@ -12,6 +12,7 @@ function Global:Show-DeleteLocalCertificateDialog {
     # happened to be the one currently shown in its own field.
     #
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Delete Local Certificate"
     $dlg.ClientSize = New-Object System.Drawing.Size(780, 440)
     $dlg.StartPosition = "CenterParent"

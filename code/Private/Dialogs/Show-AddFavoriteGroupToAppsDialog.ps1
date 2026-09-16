@@ -11,6 +11,7 @@ function Global:Show-AddFavoriteGroupToAppsDialog {
     $linkedFilePathRef = $Global:App.LinkedFilePath
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Add favorite group to apps"
     $dlg.ClientSize = New-Object System.Drawing.Size(460, 700)
     $dlg.StartPosition = "CenterParent"

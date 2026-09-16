@@ -36,6 +36,7 @@ function Global:Show-AppIdMatchDialog {
     }
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Look up App IDs from Intune"
     $dlg.ClientSize = New-Object System.Drawing.Size(1300, 520)
     $dlg.StartPosition = "CenterParent"

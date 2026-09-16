@@ -5,6 +5,7 @@ function Global:Show-FavoriteGroupsManager {
     $favoriteGroupsRef = $Global:App.FavoriteGroups
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Favorite groups"
     $dlg.ClientSize = New-Object System.Drawing.Size(420, 415)
     $dlg.StartPosition = "CenterParent"
@@ -59,7 +60,7 @@ function Global:Show-FavoriteGroupsManager {
         $checkedNow = @($clb.CheckedItems | ForEach-Object { [string]$_ } | Sort-Object)
         $saved = @($actuallySavedFavorites | Sort-Object)
         if ([string]::Join("`n", $checkedNow) -eq [string]::Join("`n", $saved)) {
-            $lblSaveStatus.Text = "Saved."
+            $lblSaveStatus.Text = "No unsaved changes."
             $lblSaveStatus.ForeColor = [System.Drawing.Color]::SeaGreen
         } else {
             $lblSaveStatus.Text = "Not saved yet - click Save to apply these checked groups."

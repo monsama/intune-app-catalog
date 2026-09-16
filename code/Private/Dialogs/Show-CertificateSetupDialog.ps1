@@ -5,6 +5,7 @@ function Global:Show-CertificateSetupDialog {
     $certUploadScript = $Global:App.EmbeddedCertUploadScript
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Settings - Microsoft Graph Connection"
     # Height trimmed from 1034 to 955 - tracing every $y increment below
     # shows the last row of real content (Save/Close) lands at y=920 and
@@ -634,6 +635,12 @@ function Global:Show-CertificateSetupDialog {
         if (-not $testTenant -or -not $testClient -or -not $testThumb) {
             $lblTestResult.ForeColor = [System.Drawing.Color]::Firebrick
             $lblTestResult.Text = "Fill in Tenant ID, Client ID, and Certificate Thumbprint first."
+            return
+        }
+
+        if (-not (Test-GraphModuleAvailable -CurrentHostOnly)) {
+            $lblTestResult.ForeColor = [System.Drawing.Color]::Firebrick
+            $lblTestResult.Text = "The Microsoft.Graph.Authentication module isn't installed yet."
             return
         }
 

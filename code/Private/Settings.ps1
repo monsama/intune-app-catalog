@@ -123,6 +123,9 @@ function Global:Clear-DelegatedSignInCache {
 }
 
 function Global:Test-GraphCredentialsConfigured {
+    # -Quiet skips the "Not configured" MessageBox, for callers that report
+    # the result themselves (Diagnostics lists it as a [FAILED] line).
+    param([switch]$Quiet)
     # -not [string]::IsNullOrWhiteSpace(...), not plain PowerShell truthiness
     # ($Global:App.GraphTenantId -and ...) - a value that's present but only
     # whitespace (e.g. a stray-space CertificateThumbprint loaded from an
@@ -135,6 +138,7 @@ function Global:Test-GraphCredentialsConfigured {
     if ((-not [string]::IsNullOrWhiteSpace($Global:App.GraphTenantId)) -and
         (-not [string]::IsNullOrWhiteSpace($Global:App.GraphClientId)) -and
         (-not [string]::IsNullOrWhiteSpace($Global:App.GraphCertificateThumbprint))) { return $true }
+    if ($Quiet) { return $false }
     [System.Windows.Forms.MessageBox]::Show(
         "No Graph connection is configured yet. Open 'More actions...' -> 'Settings...' and fill in your Tenant ID, Client ID, and certificate first.",
         "Not configured", "OK", "Warning") | Out-Null

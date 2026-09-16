@@ -18,6 +18,7 @@ function Global:Show-DiagnosticsDialog {
     $certThumbRef = $Global:App.GraphCertificateThumbprint
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Diagnostics"
     $dlg.ClientSize = New-Object System.Drawing.Size(700, 560)
     $dlg.StartPosition = "CenterParent"
@@ -39,9 +40,16 @@ function Global:Show-DiagnosticsDialog {
 
     $lblStatus = New-Object System.Windows.Forms.Label
     $lblStatus.Location = New-Object System.Drawing.Point(15,510)
-    $lblStatus.Size = New-Object System.Drawing.Size(430,24)
+    $lblStatus.Size = New-Object System.Drawing.Size(280,24)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
+
+    $btnPrereqs = New-Object System.Windows.Forms.Button
+    $btnPrereqs.Text = "Prerequisites..."
+    $btnPrereqs.Location = New-Object System.Drawing.Point(305,506)
+    $btnPrereqs.Size = New-Object System.Drawing.Size(140,32)
+    $dlg.Controls.Add($btnPrereqs)
+    $btnPrereqs.Add_Click({ [void](Show-PrerequisitesDialog) }.GetNewClosure())
 
     $btnRun = New-Object System.Windows.Forms.Button
     $btnRun.Text = "Run diagnostics"
@@ -88,10 +96,12 @@ function Global:Show-DiagnosticsDialog {
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
 
         & $appendLine "=== Configuration ===" $headerColor
-        $moduleOk = [bool](Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)
-        & $appendLine "$(if ($moduleOk) { '[OK]' } else { '[FAILED]' }) Microsoft.Graph.Authentication module installed" $(if ($moduleOk) { $okColor } else { $failColor })
+        foreach ($moduleRow in (Get-GraphModuleStatus)) {
+            $moduleText = if ($moduleRow.Version) { "installed ($($moduleRow.Version))" } elseif ($moduleRow.Problem) { $moduleRow.Problem } else { "not installed - use Prerequisites... below" }
+            & $appendLine "$(if ($moduleRow.Version) { '[OK]' } else { '[FAILED]' }) Microsoft.Graph.Authentication module, $($moduleRow.Name): $moduleText" $(if ($moduleRow.Version) { $okColor } else { $failColor })
+        }
 
-        $credsOk = Test-GraphCredentialsConfigured
+        $credsOk = Test-GraphCredentialsConfigured -Quiet
         & $appendLine "$(if ($credsOk) { '[OK]' } else { '[FAILED]' }) Tenant ID / Client ID / Certificate thumbprint all set" $(if ($credsOk) { $okColor } else { $failColor })
 
         if ($credsOk) {

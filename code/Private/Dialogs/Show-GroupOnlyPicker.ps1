@@ -3,6 +3,7 @@ function Global:Show-GroupOnlyPicker {
     $cache = $Global:App.EntraDirectoryCache
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Find a group"
     $dlg.ClientSize = New-Object System.Drawing.Size(480, 420)
     $dlg.StartPosition = "CenterParent"

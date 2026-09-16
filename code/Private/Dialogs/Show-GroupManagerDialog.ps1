@@ -10,6 +10,7 @@ function Global:Show-GroupManagerDialog {
     $unsavedBoxRef  = $Global:App.UnsavedChangesBox
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Group manager"
     $dlg.ClientSize = New-Object System.Drawing.Size(620, 600)
     $dlg.StartPosition = "CenterParent"
@@ -18,7 +19,7 @@ function Global:Show-GroupManagerDialog {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Creates a security group (or reuses one with this exact name). Shows current members on the left to review/remove. Load/Search a group, then Rename group updates Entra ID and the whole catalog together."
+    $lblIntro.Text = "Creates a security group (or reuses one with this exact name) and lists its current members on the left. For a loaded group, Rename group updates Entra ID and the whole catalog together."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(590,32)
     $dlg.Controls.Add($lblIntro)

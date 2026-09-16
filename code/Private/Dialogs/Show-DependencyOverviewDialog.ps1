@@ -9,7 +9,10 @@ function Global:Show-DependencyOverviewDialog {
 
     $dependedOnBy = @{}
     foreach ($a in $appsRef) {
-        foreach ($depName in @($a.metadata.dependencies)) {
+        # @($null) is a one-element array, not an empty one - an app with no
+        # metadata would otherwise count as depending on $null (a crash on
+        # ContainsKey here, and a bogus "Missing dependency:" status below).
+        foreach ($depName in @($a.metadata.dependencies | Where-Object { $_ })) {
             if (-not $dependedOnBy.ContainsKey($depName)) { $dependedOnBy[$depName] = New-Object System.Collections.Generic.List[string] }
             if (-not $dependedOnBy[$depName].Contains($a.appName)) { $dependedOnBy[$depName].Add($a.appName) }
         }
@@ -20,6 +23,7 @@ function Global:Show-DependencyOverviewDialog {
     $circularNames = @($orderResult.CircularNames)
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Dependency overview"
     $dlg.ClientSize = New-Object System.Drawing.Size(820, 540)
     $dlg.StartPosition = "CenterParent"
@@ -98,7 +102,7 @@ function Global:Show-DependencyOverviewDialog {
     }.GetNewClosure())
 
     foreach ($a in ($appsRef | Sort-Object appName)) {
-        $depNames = @($a.metadata.dependencies)
+        $depNames = @($a.metadata.dependencies | Where-Object { $_ })
         $dependedOnByNames = if ($dependedOnBy.ContainsKey($a.appName)) { @($dependedOnBy[$a.appName]) } else { @() }
         $missingDeps = @($depNames | Where-Object { $catalogNames -notcontains $_ })
 

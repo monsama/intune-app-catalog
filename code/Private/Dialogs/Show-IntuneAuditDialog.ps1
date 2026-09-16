@@ -33,6 +33,7 @@ function Global:Show-IntuneAuditDialog {
     foreach ($a in $deployedApps) { $appByName[$a.appName] = $a }
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = if ($isScoped) { "Intune Audit - $($deployedApps.Count) selected app(s)" } else { "Intune Audit" }
     $dlg.ClientSize = New-Object System.Drawing.Size(920, 620)
     $dlg.StartPosition = "CenterParent"
@@ -82,7 +83,8 @@ function Global:Show-IntuneAuditDialog {
 
     $grid = New-Object System.Windows.Forms.DataGridView
     $grid.Location = New-Object System.Drawing.Point(15,114)
-    $grid.Size = New-Object System.Drawing.Size(890,450)
+    # Ends 10px above Close below (it used to run 14px into it).
+    $grid.Size = New-Object System.Drawing.Size(890,452)
     $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $grid.ReadOnly = $true
     $grid.AllowUserToAddRows = $false
@@ -155,7 +157,7 @@ function Global:Show-IntuneAuditDialog {
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(825,550)
+    $btnClose.Location = New-Object System.Drawing.Point(825,576)
     $btnClose.Size = New-Object System.Drawing.Size(80,32)
     $btnClose.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($btnClose)

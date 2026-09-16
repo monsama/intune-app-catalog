@@ -26,6 +26,7 @@ function Global:Show-SyncMetadataDialog {
     }
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Pull metadata and groups from Intune"
     $dlg.ClientSize = New-Object System.Drawing.Size(620, 600)
     $dlg.StartPosition = "CenterParent"

@@ -131,10 +131,9 @@ function Global:Start-WingetSearch {
 function Global:Start-IntuneAppLookup {
     param([scriptblock]$OnComplete)
 
-    if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
-        [System.Windows.Forms.MessageBox]::Show(
-            "The Microsoft.Graph.Authentication module isn't installed.`n`nInstall it with:`nInstall-Module Microsoft.Graph.Authentication -Scope CurrentUser",
-            "Module missing", "OK", "Warning") | Out-Null
+    # Offers to install it right away (Prerequisites.ps1) - lookups only
+    # run in this process, so only this PowerShell has to have it.
+    if (-not (Test-GraphModuleAvailable -CurrentHostOnly)) {
         if ($OnComplete) { & $OnComplete $false "Module missing" }
         return
     }
@@ -257,6 +256,9 @@ function Global:Start-StartupDriftCheck {
     # main window is already visible, so this never delays getting into
     # the app even on a slow connection.
     if (-not $Global:App.CheckDriftOnStartup) { return }
+    # Quietly, like the credentials check below - a missing module is for
+    # Prerequisites... to report, not a popup while the app is starting.
+    if (-not (Test-GraphModuleAvailable -CurrentHostOnly -Quiet)) { return }
 
     # Same whitespace-aware check Update-CredentialWarningBanner uses, not
     # Test-GraphCredentialsConfigured directly - that one pops a blocking
@@ -326,6 +328,7 @@ function Global:Start-StartupFullAuditCheck {
     # opening "Intune Audit..." afterward still shows fresh cached
     # results without needing its own re-run.
     if (-not $Global:App.RunFullAuditOnStartup) { return }
+    if (-not (Test-GraphModuleAvailable -Quiet)) { return }
 
     if ([string]::IsNullOrWhiteSpace($Global:App.GraphTenantId) -or
         [string]::IsNullOrWhiteSpace($Global:App.GraphClientId) -or
@@ -586,10 +589,9 @@ function Global:Start-Win32AppMinOsFetch {
 function Global:Start-EntraDirectoryLookup {
     param([scriptblock]$OnComplete)
 
-    if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
-        [System.Windows.Forms.MessageBox]::Show(
-            "The Microsoft.Graph.Authentication module isn't installed.`n`nInstall it with:`nInstall-Module Microsoft.Graph.Authentication -Scope CurrentUser",
-            "Module missing", "OK", "Warning") | Out-Null
+    # Offers to install it right away (Prerequisites.ps1) - lookups only
+    # run in this process, so only this PowerShell has to have it.
+    if (-not (Test-GraphModuleAvailable -CurrentHostOnly)) {
         if ($OnComplete) { & $OnComplete $false "Module missing" }
         return
     }

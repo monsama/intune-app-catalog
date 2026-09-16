@@ -479,7 +479,7 @@ $Global:App.Form.Size = New-Object System.Drawing.Size(1080, 720)
 $Global:App.Form.MinimumSize = New-Object System.Drawing.Size(860, 560)
 $Global:App.Form.StartPosition = "CenterScreen"
 $Global:App.Form.WindowState = [System.Windows.Forms.FormWindowState]::Maximized
-$Global:App.Form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+$Global:App.Form.Font = Get-AppUiFont
 
 $tabs = New-Object System.Windows.Forms.TabControl
 $tabs.Dock = "Fill"
@@ -562,6 +562,7 @@ $Global:App.BtnRunLaunch = New-Object System.Windows.Forms.Button; $Global:App.B
 $btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "Settings..."
 $btnDefaultValues = New-Object System.Windows.Forms.Button; $btnDefaultValues.Text = "Edit default values..."
 $btnDiagnostics = New-Object System.Windows.Forms.Button; $btnDiagnostics.Text = "Run diagnostics..."
+$btnPrerequisites = New-Object System.Windows.Forms.Button; $btnPrerequisites.Text = "Prerequisites..."
 
 # One shared ToolTip component serves every button - there are enough of
 # them doing related-but-different things (several Pull/Push/Check pairs
@@ -594,6 +595,7 @@ $toolbarTips.SetToolTip($Global:App.BtnRunLaunch, "Build the .intunewin package(
 $toolbarTips.SetToolTip($btnCertSetup, "Configure the Tenant ID, Client ID, and certificate used to connect to Microsoft Graph.")
 $toolbarTips.SetToolTip($btnDefaultValues, "Change the computed defaults every new Winget app starts with (architecture, min OS, requirements, return codes, ...). Doesn't touch any app already saved or deployed.")
 $toolbarTips.SetToolTip($btnDiagnostics, "Read-only health check: Graph connectivity, certificate expiry, catalog completeness, and drift against what's actually in Intune.")
+$toolbarTips.SetToolTip($btnPrerequisites, "Check whether the Microsoft.Graph.Authentication PowerShell module this app needs is installed, and install it for your user account if it isn't.")
 
 $Global:App.LblSearch = New-Object System.Windows.Forms.Label
 $Global:App.LblSearch.Text = "Search:"
@@ -656,6 +658,7 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
     @{ Text = $btnDependencies.Text; Btn = $btnDependencies }
     @{ Text = $btnGroupDrift.Text; Btn = $btnGroupDrift }
     @{ Text = $btnDiagnostics.Text; Btn = $btnDiagnostics }
+    @{ Text = $btnPrerequisites.Text; Btn = $btnPrerequisites }
 )))
 $btnMoreActions = New-Object System.Windows.Forms.Button
 $btnMoreActions.Text = "More actions..."
@@ -737,6 +740,18 @@ $searchPanel.Controls.Add($Global:App.LblStartupBusy)
 
 $toolbar.Controls.AddRange(@($gbPrimary, $gbMoreActions, $gbSync, $searchPanel))
 $tabCatalog.Controls.Add($toolbar)
+
+# The toolbar wraps whole groups, but "Get started" alone is wider than the
+# form's MinimumSize - its own buttons need to wrap too, or the last few
+# (Settings..., Getting started...) just run off the right edge. Capping the
+# inner FlowLayoutPanel's width at what the toolbar can actually show lets
+# it wrap onto a second row; AutoSize grows the GroupBox to match.
+$primaryFlow = $gbPrimary.Controls[0]
+$primaryFlow.WrapContents = $true
+$toolbar.Add_SizeChanged({
+    $available = $toolbar.ClientSize.Width - $toolbar.Padding.Horizontal - $gbPrimary.Margin.Horizontal - $primaryFlow.Left * 2
+    $primaryFlow.MaximumSize = New-Object System.Drawing.Size([Math]::Max(200, $available), 0)
+}.GetNewClosure())
 
 # Hidden by default - shown only when Graph credentials aren't configured
 # yet, which otherwise silently blocks every Graph-based feature in this
@@ -844,22 +859,35 @@ $Global:App.Grid.RowHeadersVisible = $false
 $Global:App.Grid.BackgroundColor = [System.Drawing.Color]::White
 
 
-$Global:App.Grid.Columns.Add((New-GridColumn "AppName" "App Name" -FillWeight 16)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "WingetId" "Winget ID" -FillWeight 10)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Type" "Type" -FillWeight 13)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 4)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 6)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -FillWeight 5)) | Out-Null
+# Every column gets a MinimumWidth that fits its header text (see
+# New-GridColumn) - below that total width the grid scrolls horizontally
+# instead of truncating headers to "Req"/"Ava"/"Uni".
+$gridFont = $Global:App.Form.Font
+# App Name is what people scan for - it keeps a readable floor even when
+# App ID's full-GUID floor below eats into a narrower window.
+$Global:App.Grid.Columns.Add((New-GridColumn "AppName" "App Name" -FillWeight 16 -Font $gridFont -MinimumWidth 170)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "WingetId" "Winget ID" -FillWeight 10 -Font $gridFont)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Type" "Type" -FillWeight 13 -Font $gridFont)) | Out-Null
+# Real Win32 versions run to "140.0.7339.128" - 4 was too little even maximized.
+$Global:App.Grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 7 -Font $gridFont)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 6 -Font $gridFont)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -FillWeight 7 -Font $gridFont)) | Out-Null
 # Package folder holds full filesystem paths, which routinely run longer
-# than every other column's content (including the App ID GUID) - by far
-# the widest allotment here on purpose.
-$Global:App.Grid.Columns.Add((New-GridColumn "Folder" "Package folder" -FillWeight 42)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Required" "Required" -FillWeight 4)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Available" "Available" -FillWeight 4)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Uninstall" "Uninstall" -FillWeight 4)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "AppId" "App ID" -FillWeight 20)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Status" "Status" -FillWeight 8)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "IntuneAudit" "Last Audit" -FillWeight 10)) | Out-Null
+# than every other column's content (including the App ID GUID) - still
+# the widest allotment here on purpose, just not so wide that it starves
+# the narrow columns next to it.
+$Global:App.Grid.Columns.Add((New-GridColumn "Folder" "Package folder" -FillWeight 28 -Font $gridFont)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Required" "Required" -FillWeight 5 -Font $gridFont)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Available" "Available" -FillWeight 5 -Font $gridFont)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Uninstall" "Uninstall" -FillWeight 5 -Font $gridFont)) | Out-Null
+# Floor sized to a full GUID, so an App ID is never shown cut off.
+$guidWidth = [System.Windows.Forms.TextRenderer]::MeasureText("00000000-0000-0000-0000-000000000000", $gridFont).Width + 12
+$Global:App.Grid.Columns.Add((New-GridColumn "AppId" "App ID" -FillWeight 18 -Font $gridFont -MinimumWidth $guidWidth)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Status" "Status" -FillWeight 10 -Font $gridFont)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "IntuneAudit" "Last Audit" -FillWeight 10 -Font $gridFont)) | Out-Null
+# The header row is one line tall - a header that wrapped ("Custom Config")
+# drew its first line higher than every other header and clipped the rest.
+$Global:App.Grid.ColumnHeadersDefaultCellStyle.WrapMode = [System.Windows.Forms.DataGridViewTriState]::False
 
 $Global:App.ColIndex = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
 $Global:App.ColIndex.Name = "Index"
@@ -1770,7 +1798,9 @@ $Global:App.BtnLookupIds.Add_Click({
         if ($ok) {
             Show-AppIdMatchDialog
         }
-        else {
+        # "Module missing" / "Not configured" already got their own
+        # MessageBox inside Start-IntuneAppLookup - don't stack a second one.
+        elseif ($data -notin @("Module missing", "Not configured")) {
             [System.Windows.Forms.MessageBox]::Show("Could not fetch apps from Intune:`n`n$data", "Lookup failed", "OK", "Error") | Out-Null
         }
     }.GetNewClosure()
@@ -1779,6 +1809,7 @@ $Global:App.BtnLookupIds.Add_Click({
 $btnCertSetup.Add_Click({ Show-CertificateSetupDialog; Update-CredentialWarningBanner })
 $btnDefaultValues.Add_Click({ Show-DefaultAppSettingsDialog })
 $btnDiagnostics.Add_Click({ Show-DiagnosticsDialog })
+$btnPrerequisites.Add_Click({ [void](Show-PrerequisitesDialog) })
 $btnCheckIntuneOnly.Add_Click({
     $changed = Show-IntuneOnlyAppsDialog
     if ($changed) { Update-Grid }

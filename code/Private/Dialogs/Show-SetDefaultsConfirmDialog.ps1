@@ -2,6 +2,7 @@ function Global:Show-SetDefaultsConfirmDialog {
     param([string[]]$Lines, $ParentForm)
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Set default values"
     $dlg.ClientSize = New-Object System.Drawing.Size(620, 420)
     $dlg.StartPosition = "CenterParent"

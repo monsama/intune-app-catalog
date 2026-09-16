@@ -32,6 +32,7 @@ function Global:Show-DeleteAppDialog {
     $linkedFilePath = $Global:App.LinkedFilePath
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Delete from Intune - $AppName"
     $dlg.ClientSize = New-Object System.Drawing.Size(560, 380)
     $dlg.StartPosition = "CenterParent"

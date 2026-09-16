@@ -19,6 +19,7 @@ function Global:Show-BulkDeleteFromIntuneDialog {
     }
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Delete from Intune - $($eligibleApps.Count) app(s)"
     $dlg.ClientSize = New-Object System.Drawing.Size(660, 646)
     $dlg.StartPosition = "CenterParent"

@@ -43,6 +43,7 @@ function Global:Show-BatchEditMetadataDialog {
     }
 
     $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
     $dlg.Text = "Batch edit Intune fields"
     $dlg.ClientSize = New-Object System.Drawing.Size(950, 830)
     $dlg.StartPosition = "CenterParent"
