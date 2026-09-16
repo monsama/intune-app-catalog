@@ -7,45 +7,82 @@ function Global:Show-AppRegistrationGuideDialog {
     $dlg.MaximizeBox = $false
     $dlg.MinimizeBox = $false
 
-    $txtGuide = New-Object System.Windows.Forms.TextBox
+    # RichTextBox, not a plain TextBox - same reasoning as
+    # Show-GettingStartedGuideDialog's own version of this: per-block
+    # font/color (the caution note in italic gray, the permission list as
+    # real indented bullets) instead of one flat wall of text. Set-
+    # ThemeRecursive has no case for "RichTextBox" at all, so BackColor/
+    # ForeColor are set explicitly here rather than left to the theme pass.
+    $txtGuide = New-Object System.Windows.Forms.RichTextBox
     $txtGuide.Location = New-Object System.Drawing.Point(15,15)
     $txtGuide.Size = New-Object System.Drawing.Size(530,390)
-    $txtGuide.Multiline = $true
     $txtGuide.ReadOnly = $true
     $txtGuide.ScrollBars = "Vertical"
-    $txtGuide.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $guideText = @"
-This is a one-time setup, done once per tenant/environment - not something this tool automates.
+    $txtGuide.BorderStyle = [System.Windows.Forms.BorderStyle]::Fixed3D
+    $txtGuide.BackColor = $Global:App.LightPalette.FieldBack
+    $txtGuide.ForeColor = $Global:App.LightPalette.ControlFore
+    $txtGuide.DetectUrls = $false
 
-Granting an application broad tenant permissions is worth doing deliberately through the portal's own review screens, not silently via a script, even though only a Global/Privileged Role Admin could run either path.
+    $fontBody = New-Object System.Drawing.Font("Segoe UI", 9)
+    $fontBold = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $fontNote = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Italic)
+    $colorBody = $Global:App.LightPalette.ControlFore
+    $colorNote = [System.Drawing.Color]::FromArgb(110,114,120)
 
-1. In the Entra admin center, go to "App registrations" and create a new registration (or use an existing one your organization has already approved for this purpose).
+    # {Type; Text} blocks, in reading order - same pattern as
+    # Show-GettingStartedGuideDialog. "Step" bolds just the leading number
+    # so the 5 steps are easy to find scanning down the page; "Bullets"
+    # renders each line as its own indented, bulleted line instead of
+    # a single run-on paragraph.
+    $blocks = @(
+        @{ Type = "Body"; Text = "This is a one-time setup, done once per tenant/environment - not something this tool automates." }
+        @{ Type = "Note"; Text = "Granting an application broad tenant permissions is worth doing deliberately through the portal's own review screens, not silently via a script, even though only a Global/Privileged Role Admin could run either path." }
+        @{ Type = "Step"; Number = "1."; Text = "In the Entra admin center, go to `"App registrations`" and create a new registration (or use an existing one your organization has already approved for this purpose)." }
+        @{ Type = "Step"; Number = "2."; Text = "Note its `"Application (client) ID`" and `"Directory (tenant) ID`" - enter both into the fields in the Settings dialog." }
+        @{ Type = "Step"; Number = "3."; Text = "Open the app registration, go to:`nAPI permissions > Add a permission > Microsoft Graph > Application permissions (NOT Delegated) - and add:" }
+        @{ Type = "Bullets"; Items = @("DeviceManagementApps.ReadWrite.All", "Group.ReadWrite.All", "User.Read.All", "Device.Read.All", "Directory.Read.All") }
+        @{ Type = "Step"; Number = "4."; Text = "Click `"Grant admin consent for [tenant]`" and confirm every permission shows `"Granted.`" Requires a Global Administrator or Privileged Role Administrator." }
+        @{ Type = "Step"; Number = "5."; Text = "Back in Settings, use `"Pick certificate...`" or `"Generate certificate...`", then `"Upload certificate...`" to link this tool to that app registration - or export/upload the certificate through the portal yourself instead, if you'd rather do that step there too." }
+    )
 
-2. Note its "Application (client) ID" and "Directory (tenant) ID" - enter both into the fields in the Settings dialog.
+    $isFirstBlock = $true
+    foreach ($block in $blocks) {
+        if (-not $isFirstBlock) { $txtGuide.AppendText("`r`n`r`n") }
+        $isFirstBlock = $false
 
-3. Open the app registration, go to:
-   API permissions > Add a permission > Microsoft Graph > Application permissions (NOT Delegated) - and add:
+        switch ($block.Type) {
+            "Note" {
+                $txtGuide.SelectionFont = $fontNote
+                $txtGuide.SelectionColor = $colorNote
+                $txtGuide.AppendText((ConvertTo-DisplayLineEndings $block.Text))
+            }
+            "Step" {
+                $txtGuide.SelectionFont = $fontBold
+                $txtGuide.SelectionColor = $colorBody
+                $txtGuide.AppendText("$($block.Number) ")
+                $txtGuide.SelectionFont = $fontBody
+                $txtGuide.AppendText((ConvertTo-DisplayLineEndings $block.Text))
+            }
+            "Bullets" {
+                $txtGuide.SelectionFont = $fontBody
+                $txtGuide.SelectionColor = $colorBody
+                $lines = @($block.Items | ForEach-Object { "     - $_" })
+                $txtGuide.AppendText((ConvertTo-DisplayLineEndings ($lines -join "`n")))
+            }
+            default {
+                $txtGuide.SelectionFont = $fontBody
+                $txtGuide.SelectionColor = $colorBody
+                $txtGuide.AppendText((ConvertTo-DisplayLineEndings $block.Text))
+            }
+        }
+    }
 
-       - DeviceManagementApps.ReadWrite.All
-       - Group.ReadWrite.All
-       - User.Read.All
-       - Device.Read.All
-       - Directory.Read.All
+    # AppendText leaves the caret (and scroll position) at the end -
+    # reset so the dialog opens showing the intro, not the last step.
+    $txtGuide.SelectionStart = 0
+    $txtGuide.SelectionLength = 0
+    $txtGuide.ScrollToCaret()
 
-4. Click "Grant admin consent for [tenant]" and confirm every permission shows "Granted." Requires a Global Administrator or Privileged Role Administrator.
-
-5. Back in Settings, use "Pick certificate..." or "Generate certificate...", then "Upload certificate..." to link this tool to that app registration - or export/upload the certificate through the portal yourself instead, if you'd rather do that step there too.
-"@
-    # This whole file has LF-only line endings (no CRLF) - a plain
-    # WinForms TextBox's native Win32 control doesn't reliably treat a
-    # lone LF as a line break, so the here-string's own newlines above
-    # were silently getting swallowed, running adjacent lines together
-    # with no space at all (a confirmed, live, visibly garbled result -
-    # "isworth", "notsilently", "somethingthis"). ConvertTo-DisplayLineEndings
-    # (GuiHelpers.ps1) fixes it regardless of what line endings this or any
-    # future edit of this file happens to be saved with - same helper used
-    # for the winget detection script in Show-CreateInIntuneDialog.
-    $txtGuide.Text = ConvertTo-DisplayLineEndings $guideText
     $dlg.Controls.Add($txtGuide)
 
     $btnOpenPortal = New-Object System.Windows.Forms.Button
