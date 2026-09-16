@@ -47,7 +47,7 @@ function Global:Show-AppIdMatchDialog {
     # Check catalog groups against Entra ID, ...) is styled, rather than
     # this one dialog alone using bold.
     $lblHelp = New-Object System.Windows.Forms.Label
-    $lblHelp.Text = "Matches each catalog app that has NO App ID yet to an Intune app by name, so you can link the App ID Intune already has into your LOCAL catalog. This only updates App IDs stored in your local catalog files - it never creates, changes, or deletes anything in Intune itself. Rows with an exact name match are pre-checked; use `"Choose...`" to pick a different match, then `"Apply checked rows to catalog`". Apps that already have an App ID aren't shown here - use `"Intune sync check...`" for those instead."
+    $lblHelp.Text = "Matches catalog apps with no App ID to an Intune app by name, so you can link them - this only updates your LOCAL catalog, never Intune itself. Exact matches are pre-checked; use `"Choose...`" to pick a different one, then `"Apply checked rows to catalog`". Apps that already have an App ID aren't shown here - use `"Intune sync check...`" for those instead."
     $lblHelp.Dock = "Top"
     $lblHelp.Height = 62
     $lblHelp.ForeColor = [System.Drawing.Color]::DimGray

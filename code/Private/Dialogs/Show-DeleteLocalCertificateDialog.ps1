@@ -19,7 +19,7 @@ function Global:Show-DeleteLocalCertificateDialog {
     $dlg.MinimumSize = New-Object System.Drawing.Size(640, 320)
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Certificates found in CurrentUser\My and LocalMachine\My on this machine. This only removes a certificate locally - it does NOT remove it from Entra ID (use Check certificates / Delete from Entra for that, separately)."
+    $lblIntro.Text = "Certificates found in CurrentUser\My and LocalMachine\My. This only removes a certificate locally - it does NOT remove it from Entra ID (use Check certificates / Delete from Entra for that)."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(750,36)
     $lblIntro.Anchor = "Top,Left,Right"

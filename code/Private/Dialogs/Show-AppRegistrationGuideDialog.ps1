@@ -24,16 +24,15 @@ function Global:Show-AppRegistrationGuideDialog {
     $txtGuide.DetectUrls = $false
 
     $fontBody = New-Object System.Drawing.Font("Segoe UI", 9)
-    $fontBold = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     $fontNote = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Italic)
     $colorBody = $Global:App.LightPalette.ControlFore
     $colorNote = [System.Drawing.Color]::FromArgb(110,114,120)
 
     # {Type; Text} blocks, in reading order - same pattern as
-    # Show-GettingStartedGuideDialog. "Step" bolds just the leading number
-    # so the 5 steps are easy to find scanning down the page; "Bullets"
-    # renders each line as its own indented, bulleted line instead of
-    # a single run-on paragraph.
+    # Show-GettingStartedGuideDialog, including its plain (not bolded)
+    # step numbering, so the two guides read consistently side by side.
+    # "Bullets" renders each line as its own indented, bulleted line
+    # instead of a single run-on paragraph.
     $blocks = @(
         @{ Type = "Body"; Text = "This is a one-time setup, done once per tenant/environment - not something this tool automates." }
         @{ Type = "Note"; Text = "Granting an application broad tenant permissions is worth doing deliberately through the portal's own review screens, not silently via a script, even though only a Global/Privileged Role Admin could run either path." }
@@ -57,11 +56,13 @@ function Global:Show-AppRegistrationGuideDialog {
                 $txtGuide.AppendText((ConvertTo-DisplayLineEndings $block.Text))
             }
             "Step" {
-                $txtGuide.SelectionFont = $fontBold
-                $txtGuide.SelectionColor = $colorBody
-                $txtGuide.AppendText("$($block.Number) ")
+                # Same plain-weight numbering as Getting started's own
+                # numbered steps - bolding just the number read as
+                # inconsistent with that dialog once the two sat side by
+                # side (per the user, "not fat numbers").
                 $txtGuide.SelectionFont = $fontBody
-                $txtGuide.AppendText((ConvertTo-DisplayLineEndings $block.Text))
+                $txtGuide.SelectionColor = $colorBody
+                $txtGuide.AppendText((ConvertTo-DisplayLineEndings "$($block.Number) $($block.Text)"))
             }
             "Bullets" {
                 $txtGuide.SelectionFont = $fontBody

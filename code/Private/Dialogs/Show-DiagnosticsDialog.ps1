@@ -26,7 +26,7 @@ function Global:Show-DiagnosticsDialog {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Read-only health check - makes no changes to Intune, Entra ID, or the local catalog. Checks Graph connectivity, certificate expiry, group permissions, catalog completeness (including duplicate App IDs and orphaned package folders), and drift between this catalog and what's actually in Intune right now."
+    $lblIntro.Text = "Read-only health check - no changes to Intune, Entra ID, or the local catalog. Checks Graph connectivity, certificate expiry, group permissions, catalog completeness (duplicate App IDs, orphaned package folders), and drift against what's actually in Intune."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(670,48)
     $dlg.Controls.Add($lblIntro)

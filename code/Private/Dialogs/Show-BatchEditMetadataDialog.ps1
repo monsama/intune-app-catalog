@@ -51,7 +51,7 @@ function Global:Show-BatchEditMetadataDialog {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Changes only the field(s) checked below, on whichever apps are checked on the left, then pushes each one straight to Intune. Every other field on each app is left exactly as it already is. Lists every eligible Win32 app that's deployed and has saved metadata - not just whatever's currently selected in the main grid (that's only used to pre-check apps below, never to hide the rest). Install/uninstall commands and the detection rule aren't offered here - those are per-app by nature, not something safe to set to one shared value across different apps."
+    $lblIntro.Text = "Changes only the checked field(s) on the checked apps, then pushes each straight to Intune - everything else is left as-is. Lists every eligible app, not just what's selected in the main grid (that only pre-checks rows here). Install/uninstall commands and the detection rule aren't offered - those are per-app, not safe to set to one shared value."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(920,54)
     $dlg.Controls.Add($lblIntro)

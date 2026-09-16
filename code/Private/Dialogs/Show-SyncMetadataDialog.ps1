@@ -35,7 +35,7 @@ function Global:Show-SyncMetadataDialog {
 
     $lblIntro = New-Object System.Windows.Forms.Label
     $scopeText = if ($isScoped) { "$($eligibleApps.Count) selected app(s)" } else { "all $($eligibleApps.Count) app(s) with an App ID" }
-    $lblIntro.Text = "Fetches current metadata AND current group assignments from Intune for $scopeText and stores them locally in the catalog - including picking up a group that was renamed in Entra ID, since this follows each assignment's group by ID rather than by name. This is READ-ONLY - it never changes anything in Intune itself. An app whose local copy already differs from Intune isn't silently overwritten - a compare dialog opens for it, one app at a time, so you can pick which fields keep your local value before it's applied."
+    $lblIntro.Text = "Fetches current metadata and group assignments from Intune for $scopeText, and saves them locally - groups follow by ID, so a rename in Entra ID is picked up too. READ-ONLY: nothing in Intune changes. If an app's local copy differs, a compare dialog opens for it so you can choose which fields to keep."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(590,80)
     $dlg.Controls.Add($lblIntro)
