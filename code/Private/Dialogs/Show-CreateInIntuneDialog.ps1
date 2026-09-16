@@ -176,8 +176,16 @@ function Global:Show-CreateInIntuneDialog {
         $fontLegend = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
         $isFirstLine = $true
         if ($isDuplicate) {
+            # Plain text color, not DarkOrange - per the user, this line
+            # reads as an alarm for something that's actually the normal,
+            # expected case every time an existing app is opened here, not
+            # a problem. Orange/red stay reserved for things that actually
+            # need attention elsewhere in this app (missing App ID, an
+            # expiring certificate, real drift) - the blue legend line
+            # right below keeps its own color, since THAT one genuinely
+            # flags something worth noticing (a custom value).
             $rtbTopInfo.SelectionFont = $fontTopInfo
-            $rtbTopInfo.SelectionColor = [System.Drawing.Color]::DarkOrange
+            $rtbTopInfo.SelectionColor = $Global:App.LightPalette.ControlFore
             $rtbTopInfo.AppendText("This app already has an App ID ($ExistingAppId). By default this will UPDATE that app's metadata (name/description/install/uninstall/detection/dependencies) - it will NOT touch or re-upload package content.")
             $isFirstLine = $false
         }
