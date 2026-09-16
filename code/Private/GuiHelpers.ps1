@@ -345,11 +345,19 @@ function Global:New-ToolbarGroup {
 }
 
 function Global:New-OverflowSubmenu {
-    param([string]$Title, [array]$Items)
+    # $Tips is the same ToolTip instance already used to tooltip the real
+    # toolbar buttons these items delegate to - reusing GetToolTip($Btn)
+    # here means each menu item automatically carries the identical
+    # wording as its button, with nothing to keep in sync by hand.
+    param([string]$Title, [array]$Items, [System.Windows.Forms.ToolTip]$Tips)
     $sub = New-Object System.Windows.Forms.ToolStripMenuItem $Title
     foreach ($item in $Items) {
         $mi = New-Object System.Windows.Forms.ToolStripMenuItem $item.Text
         $btnRef = $item.Btn
+        if ($Tips) {
+            $btnTip = $Tips.GetToolTip($btnRef)
+            if ($btnTip) { $mi.ToolTipText = $btnTip }
+        }
         $mi.Add_Click({ $btnRef.PerformClick() }.GetNewClosure())
         [void]$sub.DropDownItems.Add($mi)
     }

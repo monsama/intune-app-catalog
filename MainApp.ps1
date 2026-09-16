@@ -594,27 +594,27 @@ $gbPrimary = New-ToolbarGroup -Title "Get started" -Buttons @($btnNew, $btnEdit,
 # already uses.
 
 $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
-[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Catalog maintenance" -Items @(
+[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Catalog maintenance" -Tips $toolbarTips -Items @(
     @{ Text = $Global:App.BtnDelete.Text; Btn = $Global:App.BtnDelete }
     @{ Text = $Global:App.BtnSave.Text; Btn = $Global:App.BtnSave }
     @{ Text = $btnOpen.Text; Btn = $btnOpen }
     @{ Text = $btnFavoriteGroups.Text; Btn = $btnFavoriteGroups }
 )))
-[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Intune" -Items @(
+[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Intune" -Tips $toolbarTips -Items @(
     @{ Text = $Global:App.BtnLookupIds.Text; Btn = $Global:App.BtnLookupIds }
     @{ Text = $btnCheckIntuneOnly.Text; Btn = $btnCheckIntuneOnly }
     @{ Text = $btnSyncMetadata.Text; Btn = $btnSyncMetadata }
     @{ Text = $btnBatchEdit.Text; Btn = $btnBatchEdit }
     @{ Text = $btnDefaultValues.Text; Btn = $btnDefaultValues }
 )))
-[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Entra ID" -Items @(
+[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Entra ID" -Tips $toolbarTips -Items @(
     @{ Text = $btnGroupManager.Text; Btn = $btnGroupManager }
 )))
 # Every read-only "check something" action grouped together here,
 # regardless of which system it happens to touch - someone looking for
 # "check X" shouldn't need to already know whether X lives under
 # Catalog/Intune/Entra ID to find it.
-[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Verify" -Items @(
+[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Verify" -Tips $toolbarTips -Items @(
     @{ Text = $btnDependencies.Text; Btn = $btnDependencies }
     @{ Text = $btnGroupDrift.Text; Btn = $btnGroupDrift }
     @{ Text = $btnDiagnostics.Text; Btn = $btnDiagnostics }
@@ -1337,19 +1337,25 @@ $Global:App.Grid.Add_CellDoubleClick({
 $gridContextMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $menuItemEdit = New-Object System.Windows.Forms.ToolStripMenuItem "Edit..."
 $menuItemDeploy = New-Object System.Windows.Forms.ToolStripMenuItem "Deploy to Intune..."
+$menuItemDeploy.ToolTipText = "One row selected: deploys it directly. Multiple rows: opens the batch deploy dialog, pre-scoped to your selection."
 $menuItemPackage = New-Object System.Windows.Forms.ToolStripMenuItem "Package this app for Intune"
+$menuItemPackage.ToolTipText = "One row selected: packages just that app. Multiple rows: packages every selected app that isn't a common/store app."
 $menuItemAssign = New-Object System.Windows.Forms.ToolStripMenuItem "Push groups to Intune (single app)..."
+$menuItemAssign.ToolTipText = "One row selected: pushes its groups directly. Multiple rows: opens the batch assign dialog, pre-scoped to your selection."
 # Already selection-aware via -ScopedIndices, same as the toolbar button
 # it reuses - was reachable only from there before, requiring a
 # pre-selection made before ever opening the toolbar dialog, when a
 # right-click on the row(s) in question is the more natural way in.
 $menuItemSyncMetadata = New-Object System.Windows.Forms.ToolStripMenuItem "Pull metadata and groups from Intune..."
+$menuItemSyncMetadata.ToolTipText = "Opens the sync dialog pre-scoped to your selected row(s). Read-only on the Intune side, like the toolbar version."
 # Same eligibility/scoping as $menuItemSyncMetadata right above - an app
 # needs an App ID before there's anything in Intune to audit against.
 # Reuses Show-IntuneAuditDialog's own -ScopedIndices (added specifically
 # for this), same as every other selection-aware item here.
 $menuItemAudit = New-Object System.Windows.Forms.ToolStripMenuItem "Run audit..."
+$menuItemAudit.ToolTipText = "Opens the audit dialog pre-scoped to your selected row(s), instead of every app. Read-only."
 $menuItemDeleteIntune = New-Object System.Windows.Forms.ToolStripMenuItem "Delete from Intune..."
+$menuItemDeleteIntune.ToolTipText = "One row selected: deletes it directly. Multiple rows: opens the bulk delete dialog, pre-scoped to your selection. Intune only, same as the toolbar delete."
 $menuItemSeparator = New-Object System.Windows.Forms.ToolStripSeparator
 $menuItemRemoveCatalog = New-Object System.Windows.Forms.ToolStripMenuItem "Remove from catalog..."
 [void]$gridContextMenu.Items.Add($menuItemEdit)
