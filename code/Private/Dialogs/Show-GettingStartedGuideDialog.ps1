@@ -17,6 +17,16 @@ function Global:Show-GettingStartedGuideDialog {
     $guideText = @"
 This app manages a local catalog (one JSON file per app) alongside whatever's actually deployed in Intune. The two aren't the same thing until you make them match - here's how, for the situations that come up most.
 
+BEFORE ANY OF THIS: CONNECT TO MICROSOFT GRAPH
+
+Everything below talks to Intune, so none of it works until this app can sign in. One-time, per tenant:
+
+1. Open "Settings..." (toolbar).
+2. If your organization hasn't already set up an app registration for this tool, click "First time? Setup guide..." inside Settings first - that's the Entra ID / permissions side, a separate topic from everything else in this guide.
+3. Fill in Tenant ID, Client ID, and a certificate (pick an existing one or generate a new one right there), click "Test connection" to confirm it actually works, then "Save."
+
+A banner across the top of the Catalog tab says outright when this hasn't been done yet, so it's hard to miss - but the two workflows below assume it's already sorted.
+
 CATALOG IS EMPTY, INTUNE ALREADY HAS APPS
 (a fresh checkout of an existing catalog folder, or your first time using this catalog against an established tenant)
 
