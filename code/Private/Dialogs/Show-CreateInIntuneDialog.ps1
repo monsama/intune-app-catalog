@@ -1111,6 +1111,83 @@ function Global:Show-CreateInIntuneDialog {
         }
     }.GetNewClosure()
 
+    # Holds the most recent live-vs-local drift rows (from the auto-fetch
+    # below) so $btnShowDiff can bring the SAME compare dialog back up on
+    # demand - without this, dismissing/deciding that dialog once was the
+    # only chance to see it; re-reading it meant closing and reopening this
+    # whole dialog (a fresh Intune fetch) just to look again.
+    $lastDriftBox = @{ Rows = $null; LocalSnapshot = $null }
+
+    $btnSetDefaults.Add_Click({
+        $changeRows = & $getCurrentVsDefaultChanges
+        if ($changeRows.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Every setting already matches the computed defaults for this app.", "Nothing to change", "OK", "Information") | Out-Null
+            return
+        }
+
+        $confirmResult = Show-SetDefaultsConfirmDialog -Lines (@($changeRows | ForEach-Object { $_.Display })) -ParentForm $dlg
+        if (-not $confirmResult) { return }
+
+        foreach ($cr in $changeRows) {
+            switch ($cr.Label) {
+                "Install command" { $txtInstall.Text = $defaults.installCommand }
+                "Uninstall command" { $txtUninstall.Text = $defaults.uninstallCommand }
+                "Detection rule" {
+                    if ($defaults.detectionRule -and $defaults.detectionRule.Type -eq "Script") {
+                        $cmbDetectionType.SelectedIndex = 0
+                        $txtDetection.Text = ConvertTo-DisplayLineEndings $defaults.detectionRule.Script_Content
+                    }
+                }
+                "Architecture" {
+                    if ($defaults.architecture) {
+                        $defArchList = @($defaults.architecture -split ',' | ForEach-Object { $_.Trim().ToLower() })
+                        $chkArchX86.Checked = $defArchList -contains "x86"
+                        $chkArchX64.Checked = $defArchList -contains "x64"
+                        $chkArchArm64.Checked = $defArchList -contains "arm64"
+                    }
+                }
+                "Minimum OS" {
+                    $defMinOsLabel = $minOsMap.Keys | Where-Object { $minOsMap[$_] -eq $defaults.minOSKey } | Select-Object -First 1
+                    if ($defMinOsLabel) { $cmbMinOS.SelectedItem = $defMinOsLabel }
+                }
+                "Dependencies" {
+                    for ($ci = 0; $ci -lt $clbDeps.Items.Count; $ci++) { $clbDeps.SetItemChecked($ci, $false) }
+                    for ($ci = 0; $ci -lt $clbDeps.Items.Count; $ci++) {
+                        $itemLabel = [string]$clbDeps.Items[$ci]
+                        if ($depNameByLabel.ContainsKey($itemLabel) -and (@($defaults.dependencies) -contains $depNameByLabel[$itemLabel])) {
+                            $clbDeps.SetItemChecked($ci, $true)
+                        }
+                    }
+                }
+                "Disk space (MB)" { $txtDiskSpace.Text = [string]$defaults.minDiskSpaceMB }
+                "Memory (MB)" { $txtMemory.Text = [string]$defaults.minMemoryMB }
+                "Min. processors" { $txtProcessors.Text = [string]$defaults.minProcessors }
+                "Min. CPU speed (MHz)" { $txtCpuSpeed.Text = [string]$defaults.minCpuSpeedMHz }
+                "Install time (mins)" { $txtInstallTime.Text = [string]$defaults.installTimeMinutes }
+                "Device restart behavior" {
+                    $defRbKey = $restartBehaviorMap.Keys | Where-Object { $restartBehaviorMap[$_] -eq $defaults.deviceRestartBehavior } | Select-Object -First 1
+                    if ($defRbKey) { $cmbRestartBehavior.SelectedItem = $defRbKey }
+                }
+                "Allow available uninstall" { $chkAllowUninstall.Checked = [bool]$defaults.allowAvailableUninstall }
+                "Return codes" {
+                    $grdReturnCodes.Rows.Clear()
+                    foreach ($rc in @($defaults.returnCodes)) {
+                        $rcRowIdx = $grdReturnCodes.Rows.Add()
+                        $grdReturnCodes.Rows[$rcRowIdx].Cells["Code"].Value = [string]$rc.returnCode
+                        $grdReturnCodes.Rows[$rcRowIdx].Cells["Type"].Value = [string]$rc.type
+                    }
+                }
+            }
+        }
+        & $updateCustomFieldHighlights
+        [System.Windows.Forms.MessageBox]::Show("Reset $($changeRows.Count) setting(s) to their computed defaults. Nothing has been saved or deployed yet - review below, then Save/Deploy as usual.", "Defaults applied", "OK", "Information") | Out-Null
+    }.GetNewClosure())
+
+    $lblCreateStatus = New-Object System.Windows.Forms.Label
+    $lblCreateStatus.Location = New-Object System.Drawing.Point(15,773)
+    $lblCreateStatus.Size = New-Object System.Drawing.Size(1270,40)
+    $dlg.Controls.Add($lblCreateStatus)
+
     # Applies a reviewed "keep my local value for these fields" choice
     # (from Show-MetadataDriftDialog) to the form - factored out into its
     # own scriptblock variable, same reasoning/pattern as
@@ -1123,6 +1200,15 @@ function Global:Show-CreateInIntuneDialog {
     # -OnComplete) and needs a fresh alias for its own local snapshot
     # anyway, so passing it explicitly here means this scriptblock doesn't
     # also need a *Ref alias just for that one value.
+    #
+    # Defined here, AFTER $lblCreateStatus above - not up with
+    # $getCurrentVsDefaultChanges/$updateCustomFieldHighlights, where this
+    # used to live. GetNewClosure() captures variable VALUES at the
+    # moment it runs, and $lblCreateStatus didn't exist yet up there -
+    # confirmed as a real, live crash the very first time this scriptblock
+    # actually ran ("The property 'ForeColor' cannot be found on this
+    # object" - PowerShell's actual error for setting a property on a
+    # captured $null, not a real missing-property error at all).
     $applyKeepLocalFields = {
         param($KeepLocalFields, $LocalSnapshot)
 
@@ -1210,83 +1296,6 @@ function Global:Show-CreateInIntuneDialog {
         $lblCreateStatus.Text = "Kept your local value for: $($KeepLocalFields -join ', ')."
         & $updateCustomFieldHighlights
     }.GetNewClosure()
-
-    # Holds the most recent live-vs-local drift rows (from the auto-fetch
-    # below) so $btnShowDiff can bring the SAME compare dialog back up on
-    # demand - without this, dismissing/deciding that dialog once was the
-    # only chance to see it; re-reading it meant closing and reopening this
-    # whole dialog (a fresh Intune fetch) just to look again.
-    $lastDriftBox = @{ Rows = $null; LocalSnapshot = $null }
-
-    $btnSetDefaults.Add_Click({
-        $changeRows = & $getCurrentVsDefaultChanges
-        if ($changeRows.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Every setting already matches the computed defaults for this app.", "Nothing to change", "OK", "Information") | Out-Null
-            return
-        }
-
-        $confirmResult = Show-SetDefaultsConfirmDialog -Lines (@($changeRows | ForEach-Object { $_.Display })) -ParentForm $dlg
-        if (-not $confirmResult) { return }
-
-        foreach ($cr in $changeRows) {
-            switch ($cr.Label) {
-                "Install command" { $txtInstall.Text = $defaults.installCommand }
-                "Uninstall command" { $txtUninstall.Text = $defaults.uninstallCommand }
-                "Detection rule" {
-                    if ($defaults.detectionRule -and $defaults.detectionRule.Type -eq "Script") {
-                        $cmbDetectionType.SelectedIndex = 0
-                        $txtDetection.Text = ConvertTo-DisplayLineEndings $defaults.detectionRule.Script_Content
-                    }
-                }
-                "Architecture" {
-                    if ($defaults.architecture) {
-                        $defArchList = @($defaults.architecture -split ',' | ForEach-Object { $_.Trim().ToLower() })
-                        $chkArchX86.Checked = $defArchList -contains "x86"
-                        $chkArchX64.Checked = $defArchList -contains "x64"
-                        $chkArchArm64.Checked = $defArchList -contains "arm64"
-                    }
-                }
-                "Minimum OS" {
-                    $defMinOsLabel = $minOsMap.Keys | Where-Object { $minOsMap[$_] -eq $defaults.minOSKey } | Select-Object -First 1
-                    if ($defMinOsLabel) { $cmbMinOS.SelectedItem = $defMinOsLabel }
-                }
-                "Dependencies" {
-                    for ($ci = 0; $ci -lt $clbDeps.Items.Count; $ci++) { $clbDeps.SetItemChecked($ci, $false) }
-                    for ($ci = 0; $ci -lt $clbDeps.Items.Count; $ci++) {
-                        $itemLabel = [string]$clbDeps.Items[$ci]
-                        if ($depNameByLabel.ContainsKey($itemLabel) -and (@($defaults.dependencies) -contains $depNameByLabel[$itemLabel])) {
-                            $clbDeps.SetItemChecked($ci, $true)
-                        }
-                    }
-                }
-                "Disk space (MB)" { $txtDiskSpace.Text = [string]$defaults.minDiskSpaceMB }
-                "Memory (MB)" { $txtMemory.Text = [string]$defaults.minMemoryMB }
-                "Min. processors" { $txtProcessors.Text = [string]$defaults.minProcessors }
-                "Min. CPU speed (MHz)" { $txtCpuSpeed.Text = [string]$defaults.minCpuSpeedMHz }
-                "Install time (mins)" { $txtInstallTime.Text = [string]$defaults.installTimeMinutes }
-                "Device restart behavior" {
-                    $defRbKey = $restartBehaviorMap.Keys | Where-Object { $restartBehaviorMap[$_] -eq $defaults.deviceRestartBehavior } | Select-Object -First 1
-                    if ($defRbKey) { $cmbRestartBehavior.SelectedItem = $defRbKey }
-                }
-                "Allow available uninstall" { $chkAllowUninstall.Checked = [bool]$defaults.allowAvailableUninstall }
-                "Return codes" {
-                    $grdReturnCodes.Rows.Clear()
-                    foreach ($rc in @($defaults.returnCodes)) {
-                        $rcRowIdx = $grdReturnCodes.Rows.Add()
-                        $grdReturnCodes.Rows[$rcRowIdx].Cells["Code"].Value = [string]$rc.returnCode
-                        $grdReturnCodes.Rows[$rcRowIdx].Cells["Type"].Value = [string]$rc.type
-                    }
-                }
-            }
-        }
-        & $updateCustomFieldHighlights
-        [System.Windows.Forms.MessageBox]::Show("Reset $($changeRows.Count) setting(s) to their computed defaults. Nothing has been saved or deployed yet - review below, then Save/Deploy as usual.", "Defaults applied", "OK", "Information") | Out-Null
-    }.GetNewClosure())
-
-    $lblCreateStatus = New-Object System.Windows.Forms.Label
-    $lblCreateStatus.Location = New-Object System.Drawing.Point(15,773)
-    $lblCreateStatus.Size = New-Object System.Drawing.Size(1270,40)
-    $dlg.Controls.Add($lblCreateStatus)
 
     $rtbCreateLog = New-Object System.Windows.Forms.RichTextBox
     $rtbCreateLog.Location = New-Object System.Drawing.Point(15,821)
