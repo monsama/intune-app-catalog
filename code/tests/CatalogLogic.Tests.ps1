@@ -110,7 +110,18 @@ $testableFunctionNames = @(
     "Get-FriendlyMinOsRelease",
     "Test-AppHasCustomConfig",
     "ConvertTo-AppRecord",
-    "Get-GroupFieldDiffs"
+    "Get-GroupFieldDiffs",
+    # Lives in GuiHelpers.ps1, not Private\Catalog\ - the scan below isn't
+    # hardcoded to Catalog files, so adding the name here is enough. Pure
+    # string normalization, no WinForms/Graph dependency despite living
+    # next to code that has both. ConvertTo-DetectionRuleJson (and, via
+    # it, Get-CatalogMetadataFieldDiffs) calls this directly - omitting it
+    # here left this whole suite unable to even LOAD ("the term
+    # 'ConvertTo-CanonicalLineEndings' is not recognized") the moment
+    # either of those ran, silently as a load-time error rather than a
+    # test failure, so it was never actually exercising the fix it was
+    # meant to be able to cover.
+    "ConvertTo-CanonicalLineEndings"
 )
 
 $funcAsts = New-Object System.Collections.Generic.List[object]
@@ -498,6 +509,65 @@ Assert-Equal "New Group Name" $diffsRenamed[0].Remote "Get-GroupFieldDiffs: Remo
 
 $diffsNullInputs = @(Get-GroupFieldDiffs -LocalApp $null -RemoteResult $remoteResultNoDrift)
 Assert-Equal 0 $diffsNullInputs.Count "Get-GroupFieldDiffs: a `$null LocalApp produces zero diffs rather than throwing"
+
+# -----------------------------------------------------------------
+# ConvertTo-CanonicalLineEndings
+# -----------------------------------------------------------------
+Assert-Equal "line1`nline2" (ConvertTo-CanonicalLineEndings "line1`r`nline2") `
+    "ConvertTo-CanonicalLineEndings: CRLF is normalized to bare LF"
+Assert-Equal "already`nlf" (ConvertTo-CanonicalLineEndings "already`nlf") `
+    "ConvertTo-CanonicalLineEndings: bare LF passes through unchanged (idempotent)"
+Assert-Equal "" (ConvertTo-CanonicalLineEndings "") `
+    "ConvertTo-CanonicalLineEndings: blank input returns blank, not an error"
+
+# -----------------------------------------------------------------
+# ConvertTo-DetectionRuleJson - regression coverage for the WinMerge
+# false-positive fix (live: Intune's own copy of a script came back with
+# a trailing `r`n where the local catalog had a trailing `n, incorrectly
+# flagging "Detection rule" as 1 field differing when the script was
+# otherwise byte-identical).
+# -----------------------------------------------------------------
+$detLf = [pscustomobject]@{ Type = "Script"; Script_Content = "if (Test-Path 'x') { exit 0 }; exit 1`n" }
+$detCrlf = [pscustomobject]@{ Type = "Script"; Script_Content = "if (Test-Path 'x') { exit 0 }; exit 1`r`n" }
+$detNoTrailing = [pscustomobject]@{ Type = "Script"; Script_Content = "if (Test-Path 'x') { exit 0 }; exit 1" }
+$detExtraBlankLines = [pscustomobject]@{ Type = "Script"; Script_Content = "if (Test-Path 'x') { exit 0 }; exit 1`r`n`r`n  " }
+$jsonLf = ConvertTo-DetectionRuleJson -DetectionRule $detLf -IndentLevel 0
+$jsonCrlf = ConvertTo-DetectionRuleJson -DetectionRule $detCrlf -IndentLevel 0
+$jsonNoTrailing = ConvertTo-DetectionRuleJson -DetectionRule $detNoTrailing -IndentLevel 0
+$jsonExtraBlankLines = ConvertTo-DetectionRuleJson -DetectionRule $detExtraBlankLines -IndentLevel 0
+Assert-Equal $jsonLf $jsonCrlf `
+    "ConvertTo-DetectionRuleJson: a trailing LF vs. a trailing CRLF on an otherwise-identical script produce identical JSON (WinMerge regression)"
+Assert-Equal $jsonLf $jsonNoTrailing `
+    "ConvertTo-DetectionRuleJson: a trailing newline vs. no trailing newline at all also produce identical JSON"
+Assert-Equal $jsonLf $jsonExtraBlankLines `
+    "ConvertTo-DetectionRuleJson: extra trailing blank lines/whitespace also normalize to the same JSON"
+
+$detRealChange = [pscustomobject]@{ Type = "Script"; Script_Content = "if (Test-Path 'x') { exit 0 }; exit 1`n; exit 2" }
+$jsonRealChange = ConvertTo-DetectionRuleJson -DetectionRule $detRealChange -IndentLevel 0
+Assert-True ($jsonLf -ne $jsonRealChange) `
+    "ConvertTo-DetectionRuleJson: a genuine content change (not just trailing whitespace) still produces different JSON"
+
+# -----------------------------------------------------------------
+# Get-CatalogMetadataFieldDiffs - same normalization extended to Notes/
+# Install command/Uninstall command (also Multiline textboxes, just as
+# able to pick up a CRLF-vs-LF-only difference against Intune's own
+# copy as the detection script was).
+# -----------------------------------------------------------------
+$localMetaMultiline = $localMeta | Select-Object *
+$localMetaMultiline.installCommand = "line1`nline2`n"
+$localMetaMultiline.notes = "some notes`n"
+$remoteMetaMultilineSameContent = $localMetaMultiline | Select-Object *
+$remoteMetaMultilineSameContent.installCommand = "line1`r`nline2`r`n"
+$remoteMetaMultilineSameContent.notes = "some notes`r`n"
+$diffsMultilineSame = Get-CatalogMetadataFieldDiffs -Local $localMetaMultiline -Remote $remoteMetaMultilineSameContent
+Assert-Equal 0 $diffsMultilineSame.Count `
+    "Get-CatalogMetadataFieldDiffs: a CRLF-vs-LF-only difference in Install command/Notes is not flagged as a diff"
+
+$remoteMetaMultilineRealChange = $localMetaMultiline | Select-Object *
+$remoteMetaMultilineRealChange.installCommand = "line1`r`nline2-changed`r`n"
+$diffsMultilineRealChange = Get-CatalogMetadataFieldDiffs -Local $localMetaMultiline -Remote $remoteMetaMultilineRealChange
+Assert-True (@($diffsMultilineRealChange | ForEach-Object { $_.Field }) -contains "Install command") `
+    "Get-CatalogMetadataFieldDiffs: a genuine content change in Install command (not just line endings) is still flagged"
 
 # =================================================================
 # Report
