@@ -6,7 +6,12 @@ function Global:Show-CertificateSetupDialog {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Settings - Microsoft Graph Connection"
-    $dlg.ClientSize = New-Object System.Drawing.Size(930, 1034)
+    # Height trimmed from 1034 to 955 - tracing every $y increment below
+    # shows the last row of real content (Save/Close) lands at y=920 and
+    # is ~30px tall, ending around y=950; the extra 84px past that was
+    # pure dead space at the bottom of the window, confirmed against a
+    # live screenshot showing exactly that empty gap below the buttons.
+    $dlg.ClientSize = New-Object System.Drawing.Size(930, 955)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
