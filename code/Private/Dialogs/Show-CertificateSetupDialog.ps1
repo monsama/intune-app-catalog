@@ -107,18 +107,24 @@ function Global:Show-CertificateSetupDialog {
     $btnPick.Location = New-Object System.Drawing.Point(15,$y)
     $btnPick.Size = New-Object System.Drawing.Size(160,30)
     $dlg.Controls.Add($btnPick)
+    $pickTip = New-Object System.Windows.Forms.ToolTip
+    $pickTip.SetToolTip($btnPick, "Choose an existing certificate already in CurrentUser\My on this machine.")
 
     $btnGenerate = New-Object System.Windows.Forms.Button
     $btnGenerate.Text = "Generate certificate..."
     $btnGenerate.Location = New-Object System.Drawing.Point(185,$y)
     $btnGenerate.Size = New-Object System.Drawing.Size(190,30)
     $dlg.Controls.Add($btnGenerate)
+    $generateTip = New-Object System.Windows.Forms.ToolTip
+    $generateTip.SetToolTip($btnGenerate, "Creates a new self-signed certificate in CurrentUser\My and offers to export its public .cer file for upload to Entra ID.")
 
     $btnTest = New-Object System.Windows.Forms.Button
     $btnTest.Text = "Test connection"
     $btnTest.Location = New-Object System.Drawing.Point(385,$y)
     $btnTest.Size = New-Object System.Drawing.Size(530,30)
     $dlg.Controls.Add($btnTest)
+    $testTip = New-Object System.Windows.Forms.ToolTip
+    $testTip.SetToolTip($btnTest, "Tries an app-only Graph sign-in with the Tenant ID, Client ID, and certificate above - confirms this exact combination actually works before you Save.")
     $y += 40
 
     $btnDeleteLocal = New-Object System.Windows.Forms.Button
@@ -126,6 +132,8 @@ function Global:Show-CertificateSetupDialog {
     $btnDeleteLocal.Location = New-Object System.Drawing.Point(15,$y)
     $btnDeleteLocal.Size = New-Object System.Drawing.Size(900,28)
     $dlg.Controls.Add($btnDeleteLocal)
+    $deleteLocalTip = New-Object System.Windows.Forms.ToolTip
+    $deleteLocalTip.SetToolTip($btnDeleteLocal, "Removes a certificate from THIS machine only (CurrentUser\My or LocalMachine\My) - does not touch Entra ID.")
     $y += 40
 
     $lblEntraSection = New-Object System.Windows.Forms.Label
@@ -153,12 +161,16 @@ function Global:Show-CertificateSetupDialog {
     $btnCheckCerts.Location = New-Object System.Drawing.Point(15,$y)
     $btnCheckCerts.Size = New-Object System.Drawing.Size(445,30)
     $dlg.Controls.Add($btnCheckCerts)
+    $checkCertsTip = New-Object System.Windows.Forms.ToolTip
+    $checkCertsTip.SetToolTip($btnCheckCerts, "Lists which certificates this app registration currently trusts in Entra ID - read-only, changes nothing.")
 
     $btnUpload = New-Object System.Windows.Forms.Button
     $btnUpload.Text = "Upload certificate..."
     $btnUpload.Location = New-Object System.Drawing.Point(470,$y)
     $btnUpload.Size = New-Object System.Drawing.Size(445,30)
     $dlg.Controls.Add($btnUpload)
+    $uploadTip = New-Object System.Windows.Forms.ToolTip
+    $uploadTip.SetToolTip($btnUpload, "Adds the certificate above (from Tenant/Client/thumbprint) as a trusted certificate on the app registration in Entra ID - existing trusted certificates are kept, not replaced.")
     $y += 38
 
     $lblUploadStatus = New-Object System.Windows.Forms.Label
@@ -202,6 +214,8 @@ function Global:Show-CertificateSetupDialog {
     $btnDeleteEntraCert.Size = New-Object System.Drawing.Size(250,28)
     $btnDeleteEntraCert.Enabled = $false
     $dlg.Controls.Add($btnDeleteEntraCert)
+    $deleteEntraTip = New-Object System.Windows.Forms.ToolTip
+    $deleteEntraTip.SetToolTip($btnDeleteEntraCert, "Removes the certificate selected below from Entra ID's trust list - does not touch anything on this machine.")
     $y += 36
 
     $lblTestResult = New-Object System.Windows.Forms.Label

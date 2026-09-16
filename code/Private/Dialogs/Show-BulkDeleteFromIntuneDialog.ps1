@@ -120,6 +120,8 @@ function Global:Show-BulkDeleteFromIntuneDialog {
     $btnDelete.Size = New-Object System.Drawing.Size(190,32)
     $btnDelete.Enabled = $false
     $dlg.Controls.Add($btnDelete)
+    $deleteTip = New-Object System.Windows.Forms.ToolTip
+    $deleteTip.SetToolTip($btnDelete, "Deletes every checked app from Intune only. Catalog entries are kept (just their App ID cleared) unless you choose to remove them too, asked separately afterward.")
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"

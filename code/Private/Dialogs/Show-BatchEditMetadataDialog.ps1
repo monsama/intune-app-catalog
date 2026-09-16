@@ -323,6 +323,8 @@ function Global:Show-BatchEditMetadataDialog {
     $btnRun.Location = New-Object System.Drawing.Point(755,776)
     $btnRun.Size = New-Object System.Drawing.Size(180,32)
     $dlg.Controls.Add($btnRun)
+    $runTip = New-Object System.Windows.Forms.ToolTip
+    $runTip.SetToolTip($btnRun, "Applies every checked field change to every checked app in Intune. Unchecked apps and unchecked fields are left untouched.")
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"

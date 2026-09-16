@@ -102,6 +102,8 @@ function Global:Show-SyncMetadataDialog {
     $btnSync.Location = New-Object System.Drawing.Point(420,556)
     $btnSync.Size = New-Object System.Drawing.Size(185,32)
     $dlg.Controls.Add($btnSync)
+    $syncTip = New-Object System.Windows.Forms.ToolTip
+    $syncTip.SetToolTip($btnSync, "Pulls FROM Intune INTO the local catalog for every checked app - read-only on the Intune side, never pushes local changes there.")
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"

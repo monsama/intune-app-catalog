@@ -120,18 +120,24 @@ function Global:Show-GroupManagerDialog {
     $btnDeleteGroup.Location = New-Object System.Drawing.Point(15,553)
     $btnDeleteGroup.Size = New-Object System.Drawing.Size(150,32)
     $dlg.Controls.Add($btnDeleteGroup)
+    $deleteGroupTip = New-Object System.Windows.Forms.ToolTip
+    $deleteGroupTip.SetToolTip($btnDeleteGroup, "Deletes the group from Entra ID only - any app in the catalog still referencing it by name is NOT updated and its assignment will break.")
 
     $btnRenameGroup = New-Object System.Windows.Forms.Button
     $btnRenameGroup.Text = "Rename group..."
     $btnRenameGroup.Location = New-Object System.Drawing.Point(175,553)
     $btnRenameGroup.Size = New-Object System.Drawing.Size(140,32)
     $dlg.Controls.Add($btnRenameGroup)
+    $renameGroupTip = New-Object System.Windows.Forms.ToolTip
+    $renameGroupTip.SetToolTip($btnRenameGroup, "Renames the group in Entra ID AND updates every catalog app that references its old name, all in one step.")
 
     $btnRun = New-Object System.Windows.Forms.Button
     $btnRun.Text = "Create / Update Group"
     $btnRun.Location = New-Object System.Drawing.Point(420,553)
     $btnRun.Size = New-Object System.Drawing.Size(185,32)
     $dlg.Controls.Add($btnRun)
+    $runGroupTip = New-Object System.Windows.Forms.ToolTip
+    $runGroupTip.SetToolTip($btnRun, "Creates the group in Entra ID if it does not already exist (exact name match), or updates its description/members if it does. Entra ID only - does not touch the catalog.")
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"

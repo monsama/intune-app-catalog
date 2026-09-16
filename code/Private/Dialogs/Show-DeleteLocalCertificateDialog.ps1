@@ -107,6 +107,8 @@ function Global:Show-DeleteLocalCertificateDialog {
     $btnDelete.Anchor = "Bottom,Left"
     $btnDelete.Enabled = ($grid.SelectedRows.Count -gt 0)
     $dlg.Controls.Add($btnDelete)
+    $deleteTip = New-Object System.Windows.Forms.ToolTip
+    $deleteTip.SetToolTip($btnDelete, "Permanently removes the selected certificate from this machine only - does not touch Entra ID.")
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"

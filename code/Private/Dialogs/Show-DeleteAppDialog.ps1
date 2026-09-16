@@ -75,6 +75,8 @@ function Global:Show-DeleteAppDialog {
     $btnDelete.Size = New-Object System.Drawing.Size(150,32)
     $btnDelete.Enabled = $false
     $dlg.Controls.Add($btnDelete)
+    $deleteTip = New-Object System.Windows.Forms.ToolTip
+    $deleteTip.SetToolTip($btnDelete, "Permanently removes this app from Intune only. Afterward you'll be asked whether to also remove it from the local catalog, or just clear its App ID and keep the entry.")
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"

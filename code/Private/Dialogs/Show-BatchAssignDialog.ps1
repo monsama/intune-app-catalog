@@ -137,6 +137,8 @@ function Global:Show-BatchAssignDialog {
     $btnApply.Size = New-Object System.Drawing.Size(130,32)
     $btnApply.Enabled = $false
     $dlg.Controls.Add($btnApply)
+    $applyTip = New-Object System.Windows.Forms.ToolTip
+    $applyTip.SetToolTip($btnApply, "Pushes the assignment changes shown above to Intune, for every eligible app. Any assignment not backed by an app's catalog groups is removed too, even ones this catalog didn't create - cannot be undone from here.")
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"

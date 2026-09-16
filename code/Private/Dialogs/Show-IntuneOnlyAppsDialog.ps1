@@ -112,6 +112,8 @@ function Global:Show-IntuneOnlyAppsDialog {
     $btnAddChecked.Location = New-Object System.Drawing.Point(15,474)
     $btnAddChecked.Size = New-Object System.Drawing.Size(175,32)
     $dlg.Controls.Add($btnAddChecked)
+    $addCheckedTip = New-Object System.Windows.Forms.ToolTip
+    $addCheckedTip.SetToolTip($btnAddChecked, "Bulk-adds every checked ""Not in catalog"" app using just its Intune name and App ID - no full editor per app. Renamed/deleted rows are not affected by this button.")
 
     # Same "Select all"/"Select none" convenience the other checkbox-driven
     # bulk-pick dialogs already have (Batch Deploy, Sync Metadata, Bulk
@@ -136,6 +138,8 @@ function Global:Show-IntuneOnlyAppsDialog {
     $btnAction.Size = New-Object System.Drawing.Size(140,32)
     $btnAction.Enabled = $false
     $dlg.Controls.Add($btnAction)
+    $actionTip = New-Object System.Windows.Forms.ToolTip
+    $actionTip.SetToolTip($btnAction, "Acts on the single selected row - label changes with the row's kind: opens the full editor to add it, syncs the catalog's stored name to match Intune, or clears an App ID that no longer exists in Intune.")
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
