@@ -28,25 +28,19 @@ function Global:Show-FavoriteGroupsManager {
     # group...", below) still needs to show up checked, not silently
     # dropped just because Get-AllKnownGroups doesn't know about it yet.
     $knownGroups = @(Get-AllKnownGroups)
-    # The ACTUALLY-saved set, before the first-time default below can
-    # replace it - used to detect "nothing real has been saved, what's
-    # checked right now is just a suggestion" so Cancel/X can warn instead
-    # of silently discarding what looks, on screen, exactly like a normal
-    # saved state.
+    # The checked set ALWAYS matches what's actually saved, nothing more -
+    # this used to also pre-check every group already in use as a
+    # "starting point to prune from" whenever no favorites existed yet,
+    # but that looked identical to a real saved state and caused a live,
+    # confirmed report of a new app's group lists coming up empty despite
+    # this dialog appearing to already have favorites checked. Every group
+    # still in use is listed either way (just unchecked, if not already a
+    # favorite) - there's nothing to manually re-add, only to check.
     $actuallySavedFavorites = @($favoriteGroupsRef)
-    $currentFavorites = $actuallySavedFavorites
-    # First time this is ever opened - no favorites have been marked at
-    # all yet - defaults to every group already in use as a sensible
-    # starting point to prune from, rather than opening on an entirely
-    # blank list that offers nothing to work with until every box gets
-    # checked by hand one at a time.
-    if ($currentFavorites.Count -eq 0 -and $knownGroups.Count -gt 0) {
-        $currentFavorites = $knownGroups
-    }
-    $allOptions = @(@($knownGroups) + @($currentFavorites) | Select-Object -Unique | Sort-Object)
+    $allOptions = @(@($knownGroups) + @($actuallySavedFavorites) | Select-Object -Unique | Sort-Object)
     foreach ($g in $allOptions) {
         $idx = $clb.Items.Add($g)
-        if ($currentFavorites -contains $g) { $clb.SetItemChecked($idx, $true) }
+        if ($actuallySavedFavorites -contains $g) { $clb.SetItemChecked($idx, $true) }
     }
     Add-RemovableItemContextMenu -CheckedListBox $clb
     $dlg.Controls.Add($clb)
@@ -123,12 +117,9 @@ function Global:Show-FavoriteGroupsManager {
     $btnCancel.Location = New-Object System.Drawing.Point(320,355)
     $btnCancel.Size = New-Object System.Drawing.Size(85,30)
 
-    # Compares what's checked right now against the set actually on disk
-    # (captured above, before the first-time "suggest everything" default
-    # could overwrite it) - catches both "changed something and forgot to
-    # Save" AND the more surprising case this exists for: opened on a
-    # totally untouched suggested default and closed without ever
-    # realizing nothing was saved yet.
+    # Compares what's checked right now against the set actually on disk -
+    # catches unsaved changes on the way out, same as Show-
+    # CertificateSetupDialog's own version of this same check.
     $HasUnsavedFavoriteChanges = {
         $checkedNow = @($clb.CheckedItems | ForEach-Object { [string]$_ } | Sort-Object)
         $saved = @($actuallySavedFavorites | Sort-Object)
