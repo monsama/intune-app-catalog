@@ -130,6 +130,19 @@ function Global:Show-CreateInIntuneDialog {
     $topInfoBothLines = ($isDuplicate -and -not $Uncommon)
     $topInfoHeight = if (-not $topInfoNeeded) { 0 } elseif ($topInfoBothLines) { 70 } else { 38 }
 
+    # The left column (Name, Description, ...) used to start at y=109
+    # unconditionally, leaving a tall blank gap above it whenever
+    # $chkForceNew/$chkReplaceContent below aren't shown (any new app,
+    # not just a duplicate) - confirmed live as one of the biggest
+    # contributors to "a lot of empty space" on a simple/new app, since
+    # the right column's own Detection method starts right at y=12 with
+    # nothing above it. Shifts the WHOLE left column (every x=15 and
+    # x=290 control from here down through Uninstall command) up by this
+    # amount, closing that gap without touching the right column at all -
+    # just enough room for the two checkboxes when they're shown, or
+    # flush with y=12 (matching Detection method) when they're not.
+    $leftColumnShift = if ($isDuplicate) { 46 } else { 97 }
+
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Deploy to Intune - $AppName"
     # 40px taller than before, to fit the Previous/Next row below the
@@ -203,49 +216,49 @@ function Global:Show-CreateInIntuneDialog {
     if ($isDuplicate) {
         $chkForceNew = New-Object System.Windows.Forms.CheckBox
         $chkForceNew.Text = "Create a brand new app instead (uploads package content, leaves the existing app untouched)"
-        $chkForceNew.Location = New-Object System.Drawing.Point(15,58)
+        $chkForceNew.Location = New-Object System.Drawing.Point(15,(58 - $leftColumnShift))
         $chkForceNew.Size = New-Object System.Drawing.Size(575,20)
         $scrollPanel.Controls.Add($chkForceNew)
 
         $chkReplaceContent = New-Object System.Windows.Forms.CheckBox
         $chkReplaceContent.Text = "Also replace package content on the existing app (uses the Package field below)"
-        $chkReplaceContent.Location = New-Object System.Drawing.Point(15,80)
+        $chkReplaceContent.Location = New-Object System.Drawing.Point(15,(80 - $leftColumnShift))
         $chkReplaceContent.Size = New-Object System.Drawing.Size(575,20)
         $scrollPanel.Controls.Add($chkReplaceContent)
     }
 
     $lblName = New-Object System.Windows.Forms.Label
     $lblName.Text = "Name"
-    $lblName.Location = New-Object System.Drawing.Point(15,109)
+    $lblName.Location = New-Object System.Drawing.Point(15,(109 - $leftColumnShift))
     $lblName.AutoSize = $true
     $scrollPanel.Controls.Add($lblName)
 
     $txtCreateName = New-Object System.Windows.Forms.TextBox
-    $txtCreateName.Location = New-Object System.Drawing.Point(15,128)
+    $txtCreateName.Location = New-Object System.Drawing.Point(15,(128 - $leftColumnShift))
     $txtCreateName.Size = New-Object System.Drawing.Size(540,24)
     $txtCreateName.Text = $AppName
     $scrollPanel.Controls.Add($txtCreateName)
 
     $lblDesc = New-Object System.Windows.Forms.Label
     $lblDesc.Text = "Description"
-    $lblDesc.Location = New-Object System.Drawing.Point(15,160)
+    $lblDesc.Location = New-Object System.Drawing.Point(15,(160 - $leftColumnShift))
     $lblDesc.AutoSize = $true
     $scrollPanel.Controls.Add($lblDesc)
 
     $txtDesc = New-Object System.Windows.Forms.TextBox
-    $txtDesc.Location = New-Object System.Drawing.Point(15,179)
+    $txtDesc.Location = New-Object System.Drawing.Point(15,(179 - $leftColumnShift))
     $txtDesc.Size = New-Object System.Drawing.Size(540,24)
     if (-not $isDuplicate) { $txtDesc.Text = $AppName }
     $scrollPanel.Controls.Add($txtDesc)
 
     $lblPublisher = New-Object System.Windows.Forms.Label
     $lblPublisher.Text = "Publisher"
-    $lblPublisher.Location = New-Object System.Drawing.Point(15,211)
+    $lblPublisher.Location = New-Object System.Drawing.Point(15,(211 - $leftColumnShift))
     $lblPublisher.AutoSize = $true
     $scrollPanel.Controls.Add($lblPublisher)
 
     $txtPublisher = New-Object System.Windows.Forms.TextBox
-    $txtPublisher.Location = New-Object System.Drawing.Point(15,230)
+    $txtPublisher.Location = New-Object System.Drawing.Point(15,(230 - $leftColumnShift))
     $txtPublisher.Size = New-Object System.Drawing.Size(540,24)
     if (-not $isDuplicate) { $txtPublisher.Text = $defaults.publisher }
     $scrollPanel.Controls.Add($txtPublisher)
@@ -261,75 +274,75 @@ function Global:Show-CreateInIntuneDialog {
     # value with nothing even when the fetch didn't succeed.
     $lblOwner = New-Object System.Windows.Forms.Label
     $lblOwner.Text = "Owner (optional)"
-    $lblOwner.Location = New-Object System.Drawing.Point(15,262)
+    $lblOwner.Location = New-Object System.Drawing.Point(15,(262 - $leftColumnShift))
     $lblOwner.AutoSize = $true
     $scrollPanel.Controls.Add($lblOwner)
 
     $txtOwner = New-Object System.Windows.Forms.TextBox
-    $txtOwner.Location = New-Object System.Drawing.Point(15,281)
+    $txtOwner.Location = New-Object System.Drawing.Point(15,(281 - $leftColumnShift))
     $txtOwner.Size = New-Object System.Drawing.Size(260,24)
     $scrollPanel.Controls.Add($txtOwner)
 
     $lblDeveloper = New-Object System.Windows.Forms.Label
     $lblDeveloper.Text = "Developer (optional)"
-    $lblDeveloper.Location = New-Object System.Drawing.Point(290,262)
+    $lblDeveloper.Location = New-Object System.Drawing.Point(290,(262 - $leftColumnShift))
     $lblDeveloper.AutoSize = $true
     $scrollPanel.Controls.Add($lblDeveloper)
 
     $txtDeveloper = New-Object System.Windows.Forms.TextBox
-    $txtDeveloper.Location = New-Object System.Drawing.Point(290,281)
+    $txtDeveloper.Location = New-Object System.Drawing.Point(290,(281 - $leftColumnShift))
     $txtDeveloper.Size = New-Object System.Drawing.Size(265,24)
     $scrollPanel.Controls.Add($txtDeveloper)
 
     $lblInfoUrl = New-Object System.Windows.Forms.Label
     $lblInfoUrl.Text = "Information URL (optional)"
-    $lblInfoUrl.Location = New-Object System.Drawing.Point(15,313)
+    $lblInfoUrl.Location = New-Object System.Drawing.Point(15,(313 - $leftColumnShift))
     $lblInfoUrl.AutoSize = $true
     $scrollPanel.Controls.Add($lblInfoUrl)
 
     $txtInfoUrl = New-Object System.Windows.Forms.TextBox
-    $txtInfoUrl.Location = New-Object System.Drawing.Point(15,332)
+    $txtInfoUrl.Location = New-Object System.Drawing.Point(15,(332 - $leftColumnShift))
     $txtInfoUrl.Size = New-Object System.Drawing.Size(260,24)
     $scrollPanel.Controls.Add($txtInfoUrl)
 
     $lblPrivacyUrl = New-Object System.Windows.Forms.Label
     $lblPrivacyUrl.Text = "Privacy URL (optional)"
-    $lblPrivacyUrl.Location = New-Object System.Drawing.Point(290,313)
+    $lblPrivacyUrl.Location = New-Object System.Drawing.Point(290,(313 - $leftColumnShift))
     $lblPrivacyUrl.AutoSize = $true
     $scrollPanel.Controls.Add($lblPrivacyUrl)
 
     $txtPrivacyUrl = New-Object System.Windows.Forms.TextBox
-    $txtPrivacyUrl.Location = New-Object System.Drawing.Point(290,332)
+    $txtPrivacyUrl.Location = New-Object System.Drawing.Point(290,(332 - $leftColumnShift))
     $txtPrivacyUrl.Size = New-Object System.Drawing.Size(265,24)
     $scrollPanel.Controls.Add($txtPrivacyUrl)
 
     $lblNotes = New-Object System.Windows.Forms.Label
     $lblNotes.Text = "Notes (optional)"
-    $lblNotes.Location = New-Object System.Drawing.Point(15,364)
+    $lblNotes.Location = New-Object System.Drawing.Point(15,(364 - $leftColumnShift))
     $lblNotes.AutoSize = $true
     $scrollPanel.Controls.Add($lblNotes)
 
     $txtNotes = New-Object System.Windows.Forms.TextBox
-    $txtNotes.Location = New-Object System.Drawing.Point(15,383)
+    $txtNotes.Location = New-Object System.Drawing.Point(15,(383 - $leftColumnShift))
     $txtNotes.Size = New-Object System.Drawing.Size(540,40)
     $txtNotes.Multiline = $true
     $scrollPanel.Controls.Add($txtNotes)
 
     $lblPackage = New-Object System.Windows.Forms.Label
     $lblPackage.Text = "Package (.intunewin) - used when creating a new app, or when replacing content on an existing one"
-    $lblPackage.Location = New-Object System.Drawing.Point(15,433)
+    $lblPackage.Location = New-Object System.Drawing.Point(15,(433 - $leftColumnShift))
     $lblPackage.AutoSize = $false
     $lblPackage.Size = New-Object System.Drawing.Size(540,32)
     $scrollPanel.Controls.Add($lblPackage)
 
     $txtPackagePath = New-Object System.Windows.Forms.TextBox
-    $txtPackagePath.Location = New-Object System.Drawing.Point(15,470)
+    $txtPackagePath.Location = New-Object System.Drawing.Point(15,(470 - $leftColumnShift))
     $txtPackagePath.Size = New-Object System.Drawing.Size(445,24)
     $scrollPanel.Controls.Add($txtPackagePath)
 
     $btnBrowsePackage = New-Object System.Windows.Forms.Button
     $btnBrowsePackage.Text = "Browse..."
-    $btnBrowsePackage.Location = New-Object System.Drawing.Point(465,469)
+    $btnBrowsePackage.Location = New-Object System.Drawing.Point(465,(469 - $leftColumnShift))
     $btnBrowsePackage.Size = New-Object System.Drawing.Size(90,26)
     $scrollPanel.Controls.Add($btnBrowsePackage)
 
@@ -349,12 +362,12 @@ function Global:Show-CreateInIntuneDialog {
 
     $lblInstall = New-Object System.Windows.Forms.Label
     $lblInstall.Text = "Install command"
-    $lblInstall.Location = New-Object System.Drawing.Point(15,505)
+    $lblInstall.Location = New-Object System.Drawing.Point(15,(505 - $leftColumnShift))
     $lblInstall.AutoSize = $true
     $scrollPanel.Controls.Add($lblInstall)
 
     $txtInstall = New-Object System.Windows.Forms.TextBox
-    $txtInstall.Location = New-Object System.Drawing.Point(15,524)
+    $txtInstall.Location = New-Object System.Drawing.Point(15,(524 - $leftColumnShift))
     $txtInstall.Size = New-Object System.Drawing.Size(540,46)
     $txtInstall.Multiline = $true
     $txtInstall.ScrollBars = "Vertical"
@@ -362,12 +375,12 @@ function Global:Show-CreateInIntuneDialog {
 
     $lblUninstall = New-Object System.Windows.Forms.Label
     $lblUninstall.Text = "Uninstall command"
-    $lblUninstall.Location = New-Object System.Drawing.Point(15,580)
+    $lblUninstall.Location = New-Object System.Drawing.Point(15,(580 - $leftColumnShift))
     $lblUninstall.AutoSize = $true
     $scrollPanel.Controls.Add($lblUninstall)
 
     $txtUninstall = New-Object System.Windows.Forms.TextBox
-    $txtUninstall.Location = New-Object System.Drawing.Point(15,599)
+    $txtUninstall.Location = New-Object System.Drawing.Point(15,(599 - $leftColumnShift))
     $txtUninstall.Size = New-Object System.Drawing.Size(540,46)
     $txtUninstall.Multiline = $true
     $txtUninstall.ScrollBars = "Vertical"
