@@ -44,6 +44,7 @@ $Script:RequiredPrivateFiles = @(
     "code\Private\Dialogs\Show-CreateInIntuneDialog.ps1"
     "code\Private\Dialogs\Show-DefaultAppSettingsDialog.ps1"
     "code\Private\Dialogs\Show-DeleteAppDialog.ps1"
+    "code\Private\Dialogs\Show-DeleteLocalCertificateDialog.ps1"
     "code\Private\Dialogs\Show-DependencyOverviewDialog.ps1"
     "code\Private\Dialogs\Show-DiagnosticsDialog.ps1"
     "code\Private\Dialogs\Show-EntraMemberPicker.ps1"

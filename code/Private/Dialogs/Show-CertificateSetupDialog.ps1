@@ -238,46 +238,20 @@ function Global:Show-CertificateSetupDialog {
     }.GetNewClosure())
 
     $btnDeleteLocal.Add_Click({
-        $thumb = $txtThumb.Text.Trim() -replace '\s', ''
-        if (-not $thumb) {
-            [System.Windows.Forms.MessageBox]::Show("Enter or pick a certificate thumbprint first.", "No thumbprint", "OK", "Information") | Out-Null
-            return
-        }
-
-        # Same two locations Get-CertificateStatusText already searches -
-        # deletion should look wherever the status check would have found it.
-        $foundPath = $null
-        $foundCert = $null
-        foreach ($location in @("Cert:\CurrentUser\My", "Cert:\LocalMachine\My")) {
-            $candidate = Get-ChildItem -Path $location -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $thumb } | Select-Object -First 1
-            if ($candidate) {
-                $foundPath = Join-Path $location $thumb
-                $foundCert = $candidate
-                break
-            }
-        }
-        if (-not $foundCert) {
-            [System.Windows.Forms.MessageBox]::Show("No certificate with thumbprint $thumb was found in CurrentUser\My or LocalMachine\My on this machine.", "Not found", "OK", "Warning") | Out-Null
-            return
-        }
-
-        $r = [System.Windows.Forms.MessageBox]::Show(
-            "Permanently delete this certificate from $foundPath ?`n`n$($foundCert.Subject)`n`nThis only removes it from THIS machine - it does NOT remove it from Entra ID. Use Check certificates / Delete from Entra above for that, separately.",
-            "Confirm local delete", "YesNo", "Warning")
-        if ($r -ne "Yes") { return }
-
-        try {
-            Remove-Item -Path $foundPath -Force -ErrorAction Stop
-            # Only clear the field if it still pointed at the cert that was
-            # just deleted - not if the user had already typed something else.
-            if (($txtThumb.Text.Trim() -replace '\s', '') -eq $thumb) {
-                $txtThumb.Text = ""
-                & $RefreshStatus
-            }
-            [System.Windows.Forms.MessageBox]::Show("Certificate deleted from $foundPath.", "Deleted", "OK", "Information") | Out-Null
-        }
-        catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not delete the certificate: $($_.Exception.Message)`n`nDeleting from LocalMachine\My usually needs an elevated (Run as Administrator) session.", "Delete failed", "OK", "Error") | Out-Null
+        # Delegated entirely to its own dialog now, not this dialog's
+        # $txtThumb field - see Show-DeleteLocalCertificateDialog's own
+        # header comment for why reusing that field as the delete target
+        # was a real risk (it also represents the ACTIVE configured
+        # certificate). Only reconciled here afterward: if whatever got
+        # deleted happens to match what's currently shown in $txtThumb,
+        # clear it and refresh the status line - same end result as
+        # before for that specific case, just decided by the returned
+        # list instead of by sharing the field itself.
+        $deletedThumbprints = @(Show-DeleteLocalCertificateDialog)
+        $currentThumb = $txtThumb.Text.Trim() -replace '\s', ''
+        if ($currentThumb -and ($deletedThumbprints -contains $currentThumb)) {
+            $txtThumb.Text = ""
+            & $RefreshStatus
         }
     }.GetNewClosure())
 
