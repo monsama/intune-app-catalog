@@ -54,11 +54,28 @@ function Global:Show-AppIdMatchDialog {
     $lblHelp.Padding = New-Object System.Windows.Forms.Padding(10,8,10,8)
     $dlg.Controls.Add($lblHelp)
 
+    # Bordered, scrollable box instead of a plain fixed-height Label -
+    # $lblSummary's own count-based sentences (below) could wrap onto more
+    # lines than this had room for on a large catalog, with no way to see
+    # the rest. $matchGrid's own Dock="Fill" means growing this needs no
+    # coordinate math anywhere else in this dialog. Same pattern as Show-
+    # CreateInIntuneDialog's own $pnlStatusInfo.
+    $pnlSummaryInfo = New-Object System.Windows.Forms.FlowLayoutPanel
+    $pnlSummaryInfo.Dock = "Top"
+    $pnlSummaryInfo.Height = 40
+    $pnlSummaryInfo.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
+    $pnlSummaryInfo.WrapContents = $false
+    $pnlSummaryInfo.AutoScroll = $true
+    $pnlSummaryInfo.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    $pnlSummaryInfo.BackColor = $Global:App.LightPalette.FieldBack
+    $pnlSummaryInfo.Padding = New-Object System.Windows.Forms.Padding(6)
+    $dlg.Controls.Add($pnlSummaryInfo)
+
     $lblSummary = New-Object System.Windows.Forms.Label
-    $lblSummary.Dock = "Top"
-    $lblSummary.Height = 24
-    $lblSummary.Padding = New-Object System.Windows.Forms.Padding(10,0,10,0)
-    $dlg.Controls.Add($lblSummary)
+    $lblSummary.AutoSize = $true
+    $lblSummary.MaximumSize = New-Object System.Drawing.Size(1260,0)
+    $lblSummary.Margin = New-Object System.Windows.Forms.Padding(0,0,0,0)
+    $pnlSummaryInfo.Controls.Add($lblSummary)
 
     $matchGrid = New-Object System.Windows.Forms.DataGridView
     $matchGrid.Dock = "Fill"
@@ -216,5 +233,10 @@ function Global:Show-AppIdMatchDialog {
     $dlg.CancelButton = $btnCancelMatch
     $dlg.AcceptButton = $btnApplyMatch
     Set-Theme -Control $dlg
+    # Set-ThemeRecursive's combined Panel/FlowLayoutPanel/... case
+    # unconditionally resets BackColor to the dialog's own plain
+    # background - reapplied so $pnlSummaryInfo actually looks like the
+    # bordered, distinct "field" it's meant to be.
+    $pnlSummaryInfo.BackColor = $Global:App.LightPalette.FieldBack
     [void]$dlg.ShowDialog($Global:App.Form)
 }

@@ -11,7 +11,7 @@ function Global:Show-CertificateSetupDialog {
     # is ~30px tall, ending around y=950; the extra 84px past that was
     # pure dead space at the bottom of the window, confirmed against a
     # live screenshot showing exactly that empty gap below the buttons.
-    $dlg.ClientSize = New-Object System.Drawing.Size(930, 955)
+    $dlg.ClientSize = New-Object System.Drawing.Size(930, 970)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -233,11 +233,29 @@ function Global:Show-CertificateSetupDialog {
     $deleteEntraTip.SetToolTip($btnDeleteEntraCert, "Removes the certificate selected below from Entra ID's trust list - does not touch anything on this machine.")
     $y += 36
 
+    # Bordered, scrollable box instead of a plain fixed-height Label -
+    # $lblTestResult's own .Text includes raw exception text below
+    # ("Failed: $($ps.Streams.Error[0].ToString())"), which is unbounded
+    # in length, and a fixed 36px/couple-lines height would silently clip
+    # anything longer than that with no way to see the rest. Same pattern
+    # as Show-CreateInIntuneDialog's own $pnlStatusInfo.
+    $pnlTestResultInfo = New-Object System.Windows.Forms.FlowLayoutPanel
+    $pnlTestResultInfo.Location = New-Object System.Drawing.Point(15,$y)
+    $pnlTestResultInfo.Size = New-Object System.Drawing.Size(900,50)
+    $pnlTestResultInfo.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
+    $pnlTestResultInfo.WrapContents = $false
+    $pnlTestResultInfo.AutoScroll = $true
+    $pnlTestResultInfo.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    $pnlTestResultInfo.BackColor = $Global:App.LightPalette.FieldBack
+    $pnlTestResultInfo.Padding = New-Object System.Windows.Forms.Padding(6)
+    $dlg.Controls.Add($pnlTestResultInfo)
+
     $lblTestResult = New-Object System.Windows.Forms.Label
-    $lblTestResult.Location = New-Object System.Drawing.Point(15,$y)
-    $lblTestResult.Size = New-Object System.Drawing.Size(900,36)
-    $dlg.Controls.Add($lblTestResult)
-    $y += 46
+    $lblTestResult.AutoSize = $true
+    $lblTestResult.MaximumSize = New-Object System.Drawing.Size(870,0)
+    $lblTestResult.Margin = New-Object System.Windows.Forms.Padding(0,0,0,0)
+    $pnlTestResultInfo.Controls.Add($lblTestResult)
+    $y += 60
 
     $btnSave = New-Object System.Windows.Forms.Button
     $btnSave.Text = "Save"
@@ -783,6 +801,11 @@ function Global:Show-CertificateSetupDialog {
     $dlg.CancelButton = $btnCancel
     $dlg.AcceptButton = $btnSave
     Set-Theme -Control $dlg
+    # Set-ThemeRecursive's combined Panel/FlowLayoutPanel/... case
+    # unconditionally resets BackColor to the dialog's own plain
+    # background - reapplied so $pnlTestResultInfo actually looks like
+    # the bordered, distinct "field" it's meant to be.
+    $pnlTestResultInfo.BackColor = $Global:App.LightPalette.FieldBack
     [void]$dlg.ShowDialog($Global:App.Form)
 
     if ($saveResultBox.Saved) {

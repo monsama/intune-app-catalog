@@ -34,10 +34,10 @@ function Global:Show-IntuneAuditDialog {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = if ($isScoped) { "Intune Audit - $($deployedApps.Count) selected app(s)" } else { "Intune Audit" }
-    $dlg.ClientSize = New-Object System.Drawing.Size(920, 600)
+    $dlg.ClientSize = New-Object System.Drawing.Size(920, 620)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "Sizable"
-    $dlg.MinimumSize = New-Object System.Drawing.Size(700, 400)
+    $dlg.MinimumSize = New-Object System.Drawing.Size(700, 420)
     $dlg.MaximizeBox = $true
     $dlg.MinimizeBox = $false
 
@@ -48,11 +48,30 @@ function Global:Show-IntuneAuditDialog {
     $lblIntro.Size = New-Object System.Drawing.Size(890,48)
     $dlg.Controls.Add($lblIntro)
 
+    # Bordered, scrollable box instead of a plain fixed-height Label -
+    # $lblStatus's own .Text is set from several places below (including
+    # raw exception messages, which are unbounded in length) and a fixed
+    # 20px/1-line height would silently clip anything longer than that
+    # with no way to see the rest. Same pattern as Show-
+    # CreateInIntuneDialog's own $pnlStatusInfo.
+    $pnlStatusInfo = New-Object System.Windows.Forms.FlowLayoutPanel
+    $pnlStatusInfo.Location = New-Object System.Drawing.Point(15,64)
+    $pnlStatusInfo.Size = New-Object System.Drawing.Size(700,40)
+    $pnlStatusInfo.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+    $pnlStatusInfo.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
+    $pnlStatusInfo.WrapContents = $false
+    $pnlStatusInfo.AutoScroll = $true
+    $pnlStatusInfo.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    $pnlStatusInfo.BackColor = $Global:App.LightPalette.FieldBack
+    $pnlStatusInfo.Padding = New-Object System.Windows.Forms.Padding(6)
+    $dlg.Controls.Add($pnlStatusInfo)
+
     $lblStatus = New-Object System.Windows.Forms.Label
-    $lblStatus.Location = New-Object System.Drawing.Point(15,64)
-    $lblStatus.Size = New-Object System.Drawing.Size(700,20)
+    $lblStatus.AutoSize = $true
+    $lblStatus.MaximumSize = New-Object System.Drawing.Size(670,0)
+    $lblStatus.Margin = New-Object System.Windows.Forms.Padding(0,0,0,0)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
-    $dlg.Controls.Add($lblStatus)
+    $pnlStatusInfo.Controls.Add($lblStatus)
 
     $btnRun = New-Object System.Windows.Forms.Button
     $btnRun.Text = "Run audit"
@@ -62,7 +81,7 @@ function Global:Show-IntuneAuditDialog {
     $dlg.Controls.Add($btnRun)
 
     $grid = New-Object System.Windows.Forms.DataGridView
-    $grid.Location = New-Object System.Drawing.Point(15,94)
+    $grid.Location = New-Object System.Drawing.Point(15,114)
     $grid.Size = New-Object System.Drawing.Size(890,450)
     $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $grid.ReadOnly = $true
@@ -406,5 +425,10 @@ function Global:Show-IntuneAuditDialog {
     }.GetNewClosure())
 
     Set-Theme -Control $dlg
+    # Set-ThemeRecursive's combined Panel/FlowLayoutPanel/... case
+    # unconditionally resets BackColor to the dialog's own plain
+    # background - reapplied so $pnlStatusInfo actually looks like the
+    # bordered, distinct "field" it's meant to be.
+    $pnlStatusInfo.BackColor = $Global:App.LightPalette.FieldBack
     [void]$dlg.ShowDialog($Global:App.Form)
 }
