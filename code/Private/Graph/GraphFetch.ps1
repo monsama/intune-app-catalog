@@ -158,8 +158,8 @@ function Global:Start-IntuneAppLookup {
     # alias is visible everywhere else that reads $Global:App.IntuneAppsCache normally.
     $cache = $Global:App.IntuneAppsCache
 
-    $rs = [runspacefactory]::CreateRunspace()
-    $rs.Open()
+    # Invoke-LoggedGraphRequest available inside - see GraphLog.ps1
+    $rs = New-GraphLogRunspace
     $ps = [powershell]::Create()
     $ps.Runspace = $rs
     [void]$ps.AddScript({
@@ -175,7 +175,7 @@ function Global:Start-IntuneAppLookup {
         $apps = New-Object System.Collections.Generic.List[object]
         $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?`$top=999"
         do {
-            $result = Invoke-MgGraphRequest -Uri $uri -Method GET -ErrorAction Stop
+            $result = Invoke-LoggedGraphRequest -Uri $uri -Method GET -ErrorAction Stop
             foreach ($item in $result.value) {
                 $apps.Add([pscustomobject]@{ id = $item.id; displayName = $item.displayName })
             }
@@ -241,6 +241,7 @@ function Global:Start-IntuneAppLookup {
             if ($OnComplete) { & $OnComplete $false $_.Exception.Message }
         }
         finally {
+            try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation 'Intune app lookup' } catch { }
             $ps.Dispose()
             $rs.Close()
             $rs.Dispose()
@@ -505,8 +506,8 @@ function Global:Start-StartupFullAuditCheck {
 function Global:Start-Win32AppMinOsFetch {
     param([scriptblock]$OnComplete)
 
-    $rs = [runspacefactory]::CreateRunspace()
-    $rs.Open()
+    # Invoke-LoggedGraphRequest available inside - see GraphLog.ps1
+    $rs = New-GraphLogRunspace
     $ps = [powershell]::Create()
     $ps.Runspace = $rs
     [void]$ps.AddScript({
@@ -521,7 +522,7 @@ function Global:Start-Win32AppMinOsFetch {
         $apps = New-Object System.Collections.Generic.List[object]
         $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?`$filter=isof('microsoft.graph.win32LobApp')&`$top=999"
         do {
-            $result = Invoke-MgGraphRequest -Uri $uri -Method GET -ErrorAction Stop
+            $result = Invoke-LoggedGraphRequest -Uri $uri -Method GET -ErrorAction Stop
             foreach ($item in $result.value) {
                 # Same generic Hashtable-or-PSCustomObject handling as
                 # Start-AppMetadataFetch's own minOS parsing - see the note
@@ -578,6 +579,7 @@ function Global:Start-Win32AppMinOsFetch {
             if ($OnComplete) { & $OnComplete $false $_.Exception.Message }
         }
         finally {
+            try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation 'Minimum OS lookup' } catch { }
             $ps.Dispose()
             $rs.Close()
             $rs.Dispose()
@@ -621,8 +623,8 @@ function Global:Start-EntraDirectoryLookup {
     # Plain local alias - see note in Start-IntuneAppLookup.
     $cache = $Global:App.EntraDirectoryCache
 
-    $rs = [runspacefactory]::CreateRunspace()
-    $rs.Open()
+    # Invoke-LoggedGraphRequest available inside - see GraphLog.ps1
+    $rs = New-GraphLogRunspace
     $ps = [powershell]::Create()
     $ps.Runspace = $rs
     [void]$ps.AddScript({
@@ -639,7 +641,7 @@ function Global:Start-EntraDirectoryLookup {
 
         $uri = "https://graph.microsoft.com/v1.0/groups?`$select=id,displayName&`$top=999"
         do {
-            $result = Invoke-MgGraphRequest -Uri $uri -Method GET -ErrorAction Stop
+            $result = Invoke-LoggedGraphRequest -Uri $uri -Method GET -ErrorAction Stop
             foreach ($item in $result.value) {
                 $entries.Add([pscustomobject]@{ displayName = $item.displayName; type = "Group"; id = $item.id; upn = "" })
             }
@@ -648,7 +650,7 @@ function Global:Start-EntraDirectoryLookup {
 
         $uri = "https://graph.microsoft.com/v1.0/users?`$select=id,displayName,userPrincipalName&`$top=999"
         do {
-            $result = Invoke-MgGraphRequest -Uri $uri -Method GET -ErrorAction Stop
+            $result = Invoke-LoggedGraphRequest -Uri $uri -Method GET -ErrorAction Stop
             foreach ($item in $result.value) {
                 $entries.Add([pscustomobject]@{ displayName = $item.displayName; type = "User"; id = $item.id; upn = $item.userPrincipalName })
             }
@@ -701,6 +703,7 @@ function Global:Start-EntraDirectoryLookup {
             if ($OnComplete) { & $OnComplete $false $_.Exception.Message }
         }
         finally {
+            try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation 'Entra ID directory lookup' } catch { }
             $ps.Dispose()
             $rs.Close()
             $rs.Dispose()
@@ -753,8 +756,8 @@ function Global:Start-AppMetadataFetch {
         return
     }
 
-    $rs = [runspacefactory]::CreateRunspace()
-    $rs.Open()
+    # Invoke-LoggedGraphRequest available inside - see GraphLog.ps1
+    $rs = New-GraphLogRunspace
     $ps = [powershell]::Create()
     $ps.Runspace = $rs
     [void]$ps.AddScript({
@@ -791,7 +794,7 @@ function Global:Start-AppMetadataFetch {
             return $Text
         }
 
-        $app = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$TargetAppId" -Method GET -ErrorAction Stop
+        $app = Invoke-LoggedGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$TargetAppId" -Method GET -ErrorAction Stop
 
         # Same endpoint and filtering as the bulk Sync metadata script -
         # targetType -eq "child" specifically. Corrected after being wrong
@@ -803,7 +806,7 @@ function Global:Start-AppMetadataFetch {
         # every other field along with it.
         $dependencyNames = @()
         try {
-            $rels = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$TargetAppId/relationships" -Method GET -ErrorAction Stop
+            $rels = Invoke-LoggedGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$TargetAppId/relationships" -Method GET -ErrorAction Stop
             $dependencyNames = @($rels.value | Where-Object { $_.'@odata.type' -eq '#microsoft.graph.mobileAppDependency' -and $_.targetType -eq 'child' } | ForEach-Object { $_.targetDisplayName } | Where-Object { $_ })
         }
         catch { }
@@ -822,13 +825,13 @@ function Global:Start-AppMetadataFetch {
         $availableGroupNames = @()
         $uninstallGroupNames = @()
         try {
-            $currentAssignments = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$TargetAppId/assignments" -Method GET -ErrorAction Stop
+            $currentAssignments = Invoke-LoggedGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$TargetAppId/assignments" -Method GET -ErrorAction Stop
             foreach ($a in @($currentAssignments.value)) {
                 if ($a.target.'@odata.type' -ne '#microsoft.graph.groupAssignmentTarget') { continue }
                 $gid = $a.target.groupId
                 $groupDisplayName = $gid
                 try {
-                    $groupInfo = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -ErrorAction Stop
+                    $groupInfo = Invoke-LoggedGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -ErrorAction Stop
                     if ($groupInfo.displayName) { $groupDisplayName = $groupInfo.displayName }
                 }
                 catch { }
@@ -1013,6 +1016,7 @@ function Global:Start-AppMetadataFetch {
             if ($OnComplete) { & $OnComplete $false $errMsg $null }
         }
         finally {
+            try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation "Intune app details ($AppId)" } catch { }
             $ps.Dispose()
             $rs.Close()
             $rs.Dispose()
@@ -1143,8 +1147,8 @@ function Global:Start-GroupMembersFetch {
         return
     }
 
-    $rs = [runspacefactory]::CreateRunspace()
-    $rs.Open()
+    # Invoke-LoggedGraphRequest available inside - see GraphLog.ps1
+    $rs = New-GraphLogRunspace
     $ps = [powershell]::Create()
     $ps.Runspace = $rs
     [void]$ps.AddScript({
@@ -1158,7 +1162,7 @@ function Global:Start-GroupMembersFetch {
 
         $escapedName = $TargetGroupName.Replace("'", "''")
         $encodedFilter = [Uri]::EscapeDataString("displayName eq '$escapedName'")
-        $existing = Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=$encodedFilter&`$select=id,displayName,description" -Method GET -ErrorAction Stop
+        $existing = Invoke-LoggedGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=$encodedFilter&`$select=id,displayName,description" -Method GET -ErrorAction Stop
         if (-not $existing.value -or $existing.value.Count -eq 0) {
             return [pscustomobject]@{ Found = $false; GroupId = $null; Description = $null; Members = @() }
         }
@@ -1168,7 +1172,7 @@ function Global:Start-GroupMembersFetch {
         $members = New-Object System.Collections.Generic.List[object]
         $uri = "https://graph.microsoft.com/v1.0/groups/$groupId/members?`$select=id,displayName&`$top=999"
         do {
-            $result = Invoke-MgGraphRequest -Uri $uri -Method GET -ErrorAction Stop
+            $result = Invoke-LoggedGraphRequest -Uri $uri -Method GET -ErrorAction Stop
             foreach ($m in $result.value) {
                 $mType = if ($m.'@odata.type' -eq '#microsoft.graph.group') { "Group" } else { "User" }
                 $members.Add([pscustomobject]@{ id = $m.id; displayName = $m.displayName; type = $mType })
@@ -1203,6 +1207,7 @@ function Global:Start-GroupMembersFetch {
             if ($OnComplete) { & $OnComplete $false $_.Exception.Message $null }
         }
         finally {
+            try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation "Group lookup ($GroupName)" } catch { }
             $ps.Dispose()
             $rs.Close()
             $rs.Dispose()

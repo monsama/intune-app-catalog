@@ -121,7 +121,12 @@ $testableFunctionNames = @(
     # either of those ran, silently as a load-time error rather than a
     # test failure, so it was never actually exercising the fix it was
     # meant to be able to cover.
-    "ConvertTo-CanonicalLineEndings"
+    "ConvertTo-CanonicalLineEndings",
+    # Graph request log formatting (GraphLog.ps1) - pure string work
+    "Get-GraphRequestPath",
+    "Get-GraphRequestId",
+    "ConvertTo-GraphLogLine",
+    "ConvertTo-GraphReadSummary"
 )
 
 $funcAsts = New-Object System.Collections.Generic.List[object]
@@ -603,6 +608,37 @@ $diffsMultilineRealChange = Get-CatalogMetadataFieldDiffs -Local $localMetaMulti
 Assert-True (@($diffsMultilineRealChange | ForEach-Object { $_.Field }) -contains "Install command") `
     "Get-CatalogMetadataFieldDiffs: a genuine content change in Install command (not just line endings) is still flagged"
 
+# =================================================================
+# Graph request log lines (GraphLog.ps1)
+# =================================================================
+Assert-Equal "/beta/deviceAppManagement/mobileApps/abc" (Get-GraphRequestPath "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/abc") `
+    "Get-GraphRequestPath: the graph.microsoft.com host is dropped, the version and path kept"
+$longPath = Get-GraphRequestPath ("https://graph.microsoft.com/v1.0/groups?`$filter=" + ("x" * 300))
+Assert-True ($longPath.Length -eq 180 -and $longPath.EndsWith("...")) `
+    "Get-GraphRequestPath: a very long address is cut to 180 characters, marked with ..."
+
+Assert-Equal "11111111-2222-3333-4444-555555555555" (Get-GraphRequestId '{"error":{"code":"NotFound","innerError":{"date":"2026-09-17T10:00:00","request-id":"11111111-2222-3333-4444-555555555555"}}}') `
+    "Get-GraphRequestId: finds request-id in a Graph error body"
+Assert-Equal "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" (Get-GraphRequestId "Status: 404 (NotFound) client-request-id: aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee") `
+    "Get-GraphRequestId: finds client-request-id in plain error text"
+Assert-Null (Get-GraphRequestId "Response status code does not indicate success: Forbidden") `
+    "Get-GraphRequestId: nothing when there's no id"
+
+Assert-Equal "[GRAPH] PATCH /beta/deviceAppManagement/mobileApps/abc -> OK (310 ms)" (ConvertTo-GraphLogLine -Method "patch" -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/abc" -Milliseconds 310) `
+    "ConvertTo-GraphLogLine: a successful request - upper-case method, short path, duration"
+$failedLine = ConvertTo-GraphLogLine -Method "DELETE" -Uri "https://graph.microsoft.com/beta/x" -Milliseconds 40 `
+    -ErrorText "NotFound (Not Found)`nat line 12" -Detail '{"error":{"innerError":{"request-id":"11111111-2222-3333-4444-555555555555"}}}'
+Assert-Equal "[GRAPH] DELETE /beta/x -> FAILED (40 ms): NotFound (Not Found) (request-id 11111111-2222-3333-4444-555555555555)" $failedLine `
+    "ConvertTo-GraphLogLine: a failed request - first line of the error plus Graph's request-id"
+Assert-True ((ConvertTo-GraphLogLine -Method GET -Uri "https://graph.microsoft.com/v1.0/me" -Milliseconds 1 -ErrorText ("e" * 500)).Length -lt 300) `
+    "ConvertTo-GraphLogLine: a huge error message is shortened"
+
+Assert-Null (ConvertTo-GraphReadSummary -Count 0 -Milliseconds 0) `
+    "ConvertTo-GraphReadSummary: no line when there were no reads"
+Assert-Equal "[GRAPH] 3 read request(s) (450 ms)" (ConvertTo-GraphReadSummary -Count 3 -Milliseconds 450) `
+    "ConvertTo-GraphReadSummary: under a second shows milliseconds"
+Assert-Equal "[GRAPH] Intune app lookup: 12 read request(s) (1.4 s)" (ConvertTo-GraphReadSummary -Count 12 -Milliseconds 1420 -Operation "Intune app lookup") `
+    "ConvertTo-GraphReadSummary: a second or more shows seconds with a dot decimal, named by operation"
 # =================================================================
 # Report
 # =================================================================

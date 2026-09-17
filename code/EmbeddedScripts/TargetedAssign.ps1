@@ -84,12 +84,16 @@ function Invoke-GraphRequestDetailed {
     $maxAttempts = 4
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         try {
+            $graphTimer = [System.Diagnostics.Stopwatch]::StartNew()
             if ($Body) {
-                return Invoke-MgGraphRequest -Uri $Uri -Method $Method -Body $Body -ContentType $ContentType -ErrorAction Stop
+                $graphResult = Invoke-MgGraphRequest -Uri $Uri -Method $Method -Body $Body -ContentType $ContentType -ErrorAction Stop
             }
             else {
-                return Invoke-MgGraphRequest -Uri $Uri -Method $Method -ErrorAction Stop
+                $graphResult = Invoke-MgGraphRequest -Uri $Uri -Method $Method -ErrorAction Stop
             }
+            # [GRAPH] log line / read summary - see GraphLog.ps1 (absent when run on its own)
+            if (Get-Command Write-GraphRequestLog -ErrorAction SilentlyContinue) { Write-GraphRequestLog -Method $Method -Uri $Uri -Milliseconds $graphTimer.ElapsedMilliseconds }
+            return $graphResult
         }
         catch {
             # Graph rate-limits (429) or has brief service hiccups (503) far
@@ -121,6 +125,7 @@ function Invoke-GraphRequestDetailed {
                 continue
             }
             $detail = Get-HttpErrorDetail -ErrorRecord $_
+            if (Get-Command Write-GraphRequestLog -ErrorAction SilentlyContinue) { Write-GraphRequestLog -Method $Method -Uri $Uri -Milliseconds $graphTimer.ElapsedMilliseconds -ErrorText $_.Exception.Message -Detail $detail }
             $msg = "$StepDescription failed [$Method $Uri]: $($_.Exception.Message)"
             if ($detail) { $msg += "`nResponse body: $detail" }
             throw $msg

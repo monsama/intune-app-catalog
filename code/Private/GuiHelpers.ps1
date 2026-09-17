@@ -545,6 +545,8 @@ function Global:Initialize-DarkLogBox {
 # red vs green the way the main Log tab always could.
 function Global:Get-DialogLogLineColor {
     param([string]$Text)
+    if ($Text -match '^\s*\[GRAPH\].*-> FAILED') { return [System.Drawing.Color]::Tomato }
+    if ($Text -match '^\s*\[GRAPH\]') { return [System.Drawing.Color]::LightSkyBlue }
     if ($Text -match '^\s*(\[OK\])') { return [System.Drawing.Color]::LightGreen }
     if ($Text -match '^\s*(\[FAILED\])') { return [System.Drawing.Color]::Tomato }
     if ($Text -match '^\s*(\[WARN\])') { return [System.Drawing.Color]::Orange }

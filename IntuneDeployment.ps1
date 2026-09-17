@@ -63,6 +63,7 @@ $Script:RequiredPrivateFiles = @(
     "code\Private\Dialogs\Show-TargetedAssignDialog.ps1"
     "code\Private\Dialogs\Show-WingetSearchDialog.ps1"
     "code\Private\Graph\GraphFetch.ps1"
+    "code\Private\Graph\GraphLog.ps1"
     "code\Private\GuiHelpers.ps1"
     "code\Private\Pipeline.ps1"
     "code\Private\Prerequisites.ps1"

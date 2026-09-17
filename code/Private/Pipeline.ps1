@@ -150,6 +150,18 @@ function Global:Start-PipelineProcess {
     New-Item -Path $logFile -ItemType File -Force | Out-Null
 
     $escapedScript = $tempScriptPath -replace "'", "''"
+
+    # Graph request logging (GraphLog.ps1): steps that talk to Graph get the
+    # helper functions dot-sourced first, and print the pending read summary
+    # when they end. Their exit code is passed through unchanged (every
+    # embedded Graph script ends with an explicit exit 0/1).
+    $usesGraph = $ScriptContent -match 'Import-Module\s+Microsoft\.Graph\.Authentication'
+    $graphHelperPath = $null
+    if ($usesGraph) {
+        $graphHelperPath = Join-Path $env:TEMP (".intunepkg_graphlog_" + [guid]::NewGuid().ToString("N") + ".ps1")
+        try { [System.IO.File]::WriteAllText($graphHelperPath, (Get-GraphLogScriptHelpers), (New-Object System.Text.UTF8Encoding($false))) }
+        catch { $graphHelperPath = $null }
+    }
     # Add-Content (not Tee-Object) deliberately - Tee-Object keeps an internal
     # buffered writer open for the whole pipeline and doesn't reliably flush to
     # disk as output is produced, only in unpredictable bursts. That left our
@@ -168,7 +180,14 @@ function Global:Start-PipelineProcess {
     # quickly), so a few short retries resolve it silently instead of
     # dropping that line of output and surfacing a visible error for what's
     # really just a timing collision, not a real failure.
-    $innerCommand = "& '$escapedScript' $ArgumentString *>&1 | ForEach-Object { `$line = `$_; `$ok = `$false; for (`$i = 0; `$i -lt 5 -and -not `$ok; `$i++) { try { Add-Content -LiteralPath '$logFile' -Value `$line -Encoding UTF8 -ErrorAction Stop; `$ok = `$true } catch { Start-Sleep -Milliseconds 150 } } }"
+    $appendToLog = "ForEach-Object { `$line = `$_; `$ok = `$false; for (`$i = 0; `$i -lt 5 -and -not `$ok; `$i++) { try { Add-Content -LiteralPath '$logFile' -Value `$line -Encoding UTF8 -ErrorAction Stop; `$ok = `$true } catch { Start-Sleep -Milliseconds 150 } } }"
+    if ($graphHelperPath) {
+        $escapedHelper = $graphHelperPath -replace "'", "''"
+        $innerCommand = "& { . '$escapedHelper'; try { & '$escapedScript' $ArgumentString } finally { Write-GraphReadSummary }; exit `$LASTEXITCODE } *>&1 | $appendToLog"
+    }
+    else {
+        $innerCommand = "& '$escapedScript' $ArgumentString *>&1 | $appendToLog"
+    }
     $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($innerCommand))
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -179,6 +198,7 @@ function Global:Start-PipelineProcess {
     # the Graph module from), not whatever this process happens to have -
     # see Get-WindowsPowerShellModulePath.
     Set-WindowsPowerShellEnvironment -StartInfo $psi
+    $psi.EnvironmentVariables["INTUNEPACKAGER_GRAPH_LOG"] = $(if ($Global:App.DetailedGraphLog) { "detailed" } else { "summary" })
     $psi.CreateNoWindow = -not $ShowConsoleWindow
     if ($ShowConsoleWindow) {
         # Minimized rather than Normal - WAM (Windows' interactive sign-in
@@ -210,6 +230,7 @@ function Global:Start-PipelineProcess {
         Write-Log $errText ([System.Drawing.Color]::Tomato)
         if ($ExtraLogTarget) { $ExtraLogTarget.AppendText($errText) }
         Remove-Item $tempScriptPath -Force -ErrorAction SilentlyContinue
+            if ($graphHelperPath) { Remove-Item -LiteralPath $graphHelperPath -Force -ErrorAction SilentlyContinue }
         Set-PipelineButtonsEnabled $true
         # See the note on the "Could not write temp script" catch block above.
         if ($OnComplete) { & $OnComplete -1 }
@@ -265,6 +286,7 @@ function Global:Start-PipelineProcess {
             }
             Remove-Item $logFile -Force -ErrorAction SilentlyContinue
             Remove-Item $tempScriptPath -Force -ErrorAction SilentlyContinue
+            if ($graphHelperPath) { Remove-Item -LiteralPath $graphHelperPath -Force -ErrorAction SilentlyContinue }
             Set-PipelineButtonsEnabled $true
             if ($OnComplete) { & $OnComplete $code }
         }

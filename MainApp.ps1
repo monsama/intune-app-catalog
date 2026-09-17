@@ -171,6 +171,10 @@ $Global:App.FavoriteGroups = New-Object System.Collections.Generic.List[string]
 # working offline-ish has no reason to want on every launch.
 $Global:App.CheckDriftOnStartup = $false
 
+# "Detailed Graph log" (Log tab): every Graph request on its own log line,
+# not just writes and failures plus a read summary - see GraphLog.ps1.
+$Global:App.DetailedGraphLog = $false
+
 # Separate from, and off by default independent of, CheckDriftOnStartup
 # above - that one is a single cheap "list every app in Intune" call;
 # this is "Intune Audit..."'s own full check (Metadata/Groups/
@@ -1872,6 +1876,27 @@ $Global:App.LogBox.Dock = "Fill"
 Initialize-DarkLogBox -LogBox $Global:App.LogBox -FontSize 9
 $tabPipeline.Controls.Add($Global:App.LogBox)
 $Global:App.LogBox.BringToFront()
+
+# Above the log: what gets logged about Microsoft Graph (GraphLog.ps1).
+$pnlLogOptions = New-Object System.Windows.Forms.FlowLayoutPanel
+$pnlLogOptions.Dock = "Top"
+$pnlLogOptions.AutoSize = $true
+$pnlLogOptions.AutoSizeMode = [System.Windows.Forms.AutoSizeMode]::GrowAndShrink
+$pnlLogOptions.Padding = New-Object System.Windows.Forms.Padding(4, 4, 4, 2)
+$chkDetailedGraphLog = New-Object System.Windows.Forms.CheckBox
+$chkDetailedGraphLog.Text = "Detailed Graph log (every request, not just changes, failures and a read summary)"
+$chkDetailedGraphLog.AutoSize = $true
+$chkDetailedGraphLog.Checked = [bool]$Global:App.DetailedGraphLog
+$toolbarTips.SetToolTip($chkDetailedGraphLog, "Lines starting with [GRAPH] show what this app sends to Microsoft Graph. Changes (create/update/assign/delete) and failures - with Graph's request-id for support cases - are always logged; with this on, every read request is logged on its own line too. Never logs tokens or request contents.")
+$chkDetailedGraphLog.Add_CheckedChanged({
+    $Global:App.DetailedGraphLog = $chkDetailedGraphLog.Checked
+    if (Write-SettingsFile) {
+        Write-Log "[OK] Detailed Graph log $(if ($chkDetailedGraphLog.Checked) { 'on' } else { 'off' }).`r`n" ([System.Drawing.Color]::LightGreen)
+    }
+}.GetNewClosure())
+$pnlLogOptions.Controls.Add($chkDetailedGraphLog)
+$tabPipeline.Controls.Add($pnlLogOptions)
+$Global:App.ChkDetailedGraphLog = $chkDetailedGraphLog
 
 
 

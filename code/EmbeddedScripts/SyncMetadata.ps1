@@ -94,12 +94,16 @@ function Invoke-GraphRequestDetailed {
     $maxAttempts = 4
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         try {
+            $graphTimer = [System.Diagnostics.Stopwatch]::StartNew()
             if ($Body) {
-                return Invoke-MgGraphRequest -Uri $Uri -Method $Method -Body $Body -ContentType $ContentType -ErrorAction Stop
+                $graphResult = Invoke-MgGraphRequest -Uri $Uri -Method $Method -Body $Body -ContentType $ContentType -ErrorAction Stop
             }
             else {
-                return Invoke-MgGraphRequest -Uri $Uri -Method $Method -ErrorAction Stop
+                $graphResult = Invoke-MgGraphRequest -Uri $Uri -Method $Method -ErrorAction Stop
             }
+            # [GRAPH] log line / read summary - see GraphLog.ps1 (absent when run on its own)
+            if (Get-Command Write-GraphRequestLog -ErrorAction SilentlyContinue) { Write-GraphRequestLog -Method $Method -Uri $Uri -Milliseconds $graphTimer.ElapsedMilliseconds }
+            return $graphResult
         }
         catch {
             $isThrottled = $_.Exception.Message -match '429|TooManyRequests|Too Many Requests'
@@ -113,6 +117,7 @@ function Invoke-GraphRequestDetailed {
                 continue
             }
             $detail = Get-HttpErrorDetail -ErrorRecord $_
+            if (Get-Command Write-GraphRequestLog -ErrorAction SilentlyContinue) { Write-GraphRequestLog -Method $Method -Uri $Uri -Milliseconds $graphTimer.ElapsedMilliseconds -ErrorText $_.Exception.Message -Detail $detail }
             $msg = "$StepDescription failed [$Method $Uri]: $($_.Exception.Message)"
             if ($detail) { $msg += "`nResponse body: $detail" }
             throw $msg
@@ -198,12 +203,16 @@ try {
             $maxAttempts = 4
             for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
                 try {
+                    $graphTimer = [System.Diagnostics.Stopwatch]::StartNew()
                     if ($Body) {
-                        return Invoke-MgGraphRequest -Uri $Uri -Method $Method -Body $Body -ContentType $ContentType -ErrorAction Stop
+                        $graphResult = Invoke-MgGraphRequest -Uri $Uri -Method $Method -Body $Body -ContentType $ContentType -ErrorAction Stop
                     }
                     else {
-                        return Invoke-MgGraphRequest -Uri $Uri -Method $Method -ErrorAction Stop
+                        $graphResult = Invoke-MgGraphRequest -Uri $Uri -Method $Method -ErrorAction Stop
                     }
+                    # parallel worker: recorded for the main script to log (Write-GraphLogFromInformation)
+                    Write-Information -MessageData @{ IntunePackagerGraphLog = $true; Method = $Method; Uri = $Uri; Milliseconds = $graphTimer.ElapsedMilliseconds } -InformationAction SilentlyContinue
+                    return $graphResult
                 }
                 catch {
                     $isThrottled = $_.Exception.Message -match '429|TooManyRequests|Too Many Requests'
@@ -214,6 +223,7 @@ try {
                         continue
                     }
                     $detail = Get-HttpErrorDetail -ErrorRecord $_
+                    if (Get-Command Write-GraphRequestLog -ErrorAction SilentlyContinue) { Write-GraphRequestLog -Method $Method -Uri $Uri -Milliseconds $graphTimer.ElapsedMilliseconds -ErrorText $_.Exception.Message -Detail $detail }
                     $msg = "$StepDescription failed [$Method $Uri]: $($_.Exception.Message)"
                     if ($detail) { $msg += "`nResponse body: $detail" }
                     throw $msg
@@ -421,6 +431,7 @@ try {
                 # runspace caller (Start-AppMetadataFetch's -OnComplete).
                 $workerError = $_.Exception.Message
             }
+            if (Get-Command Write-GraphLogFromInformation -ErrorAction SilentlyContinue) { Write-GraphLogFromInformation $job.Ps.Streams.Information }
             if (-not $workerError -and $job.Ps.Streams.Error.Count -gt 0) {
                 $workerError = [string]$job.Ps.Streams.Error[0]
             }
