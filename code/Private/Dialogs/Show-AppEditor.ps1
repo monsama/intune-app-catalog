@@ -314,7 +314,7 @@ function Global:Show-AppEditor {
             $lblIdStatusRef = $lblIdStatus
             $tryFillRef = $TryFillIdFromCache
             $rtbAppEditorLogRef = $rtbAppEditorLog
-            Start-IntuneAppLookup -OnComplete {
+            Start-IntuneAppLookup -LogBox $rtbAppEditorLogRef -OnComplete {
                 param($ok, $data)
                 try {
                     if ($ok) { & $tryFillRef }
@@ -786,7 +786,7 @@ function Global:Show-AppEditor {
         $lblGroupSyncStatusRef = $lblGroupSyncStatus
         $rtbAppEditorLogRef = $rtbAppEditorLog
 
-        Start-AppMetadataFetch -AppId $txtId.Text.Trim() -OnComplete {
+        Start-AppMetadataFetch -AppId $txtId.Text.Trim() -LogBox $rtbAppEditorLogRef -OnComplete {
             param($ok, $errMsg, $data)
             $btnReadGroupsFromIntuneRef.Enabled = $true
             $dlgRef2.Cursor = [System.Windows.Forms.Cursors]::Default

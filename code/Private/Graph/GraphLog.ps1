@@ -201,8 +201,10 @@ function Global:Write-GraphLogFromStreams {
       Called on the UI thread when a lookup has finished: writes the
       requests its runspace recorded to the Log tab - failures and writes
       always, reads as one summary line (or one line each when detailed).
+      With -LogBox (the dialog that started the lookup) the lines go there
+      too, like a deployment script's output does.
     #>
-    param($Streams, [string]$Operation)
+    param($Streams, [string]$Operation, [System.Windows.Forms.RichTextBox]$LogBox)
     if (-not $Streams) { return }
     $detailed = Test-GraphLogDetailed
     $reads = 0
@@ -223,9 +225,14 @@ function Global:Write-GraphLogFromStreams {
         })
     }
     $summary = ConvertTo-GraphReadSummary -Count $reads -Milliseconds $readMs -Operation $Operation
-    if ($summary) { Write-Log "$summary`r`n" (Get-DialogLogLineColor -Text $summary) }
+    $out = New-Object System.Collections.Generic.List[string]
+    if ($summary) { $out.Add($summary) }
     foreach ($l in $lines) {
-        $text = if ($Operation -and -not $detailed) { $l.Text -replace '^\[GRAPH\] ', "[GRAPH] ${Operation}: " } else { $l.Text }
-        Write-Log "$text`r`n" (Get-DialogLogLineColor -Text $text)
+        $out.Add($(if ($Operation -and -not $detailed) { $l.Text -replace '^\[GRAPH\] ', "[GRAPH] ${Operation}: " } else { $l.Text }))
+    }
+    $toDialog = $LogBox -and -not $LogBox.IsDisposed
+    foreach ($text in $out) {
+        if ($toDialog) { Write-DialogLogLine -LogBox $LogBox -Text "$text`r`n" -MirrorToMainLog }
+        else { Write-Log "$text`r`n" (Get-DialogLogLineColor -Text $text) }
     }
 }

@@ -134,7 +134,8 @@ function Global:Start-WingetSearch {
 }
 
 function Global:Start-IntuneAppLookup {
-    param([scriptblock]$OnComplete)
+    # -LogBox: the calling dialog's log box, which also gets this lookup's [GRAPH] lines
+    param([scriptblock]$OnComplete, [System.Windows.Forms.RichTextBox]$LogBox)
 
     # Offers to install it right away (Prerequisites.ps1) - lookups only
     # run in this process, so only this PowerShell has to have it.
@@ -211,6 +212,8 @@ function Global:Start-IntuneAppLookup {
         [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
         $Global:App.BtnLookupIds.Enabled = $true
 
+        # what this lookup asked Graph - before the results, which the caller may log right away
+        try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation 'Intune app lookup' -LogBox $LogBox } catch { }
         try {
             $raw = @($ps.EndInvoke($handle))
             if ($ps.Streams.Error.Count -gt 0) {
@@ -246,7 +249,6 @@ function Global:Start-IntuneAppLookup {
             if ($OnComplete) { & $OnComplete $false $_.Exception.Message }
         }
         finally {
-            try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation 'Intune app lookup' } catch { }
             $ps.Dispose()
             $rs.Close()
             $rs.Dispose()
@@ -509,7 +511,8 @@ function Global:Start-StartupFullAuditCheck {
 }
 
 function Global:Start-Win32AppMinOsFetch {
-    param([scriptblock]$OnComplete)
+    # -LogBox: the calling dialog's log box, which also gets this lookup's [GRAPH] lines
+    param([scriptblock]$OnComplete, [System.Windows.Forms.RichTextBox]$LogBox)
 
     # Invoke-LoggedGraphRequest available inside - see GraphLog.ps1
     $rs = New-GraphLogRunspace
@@ -570,6 +573,8 @@ function Global:Start-Win32AppMinOsFetch {
         if (-not $handle.IsCompleted) { return }
         $timer.Stop()
         $timer.Dispose()
+        # what this lookup asked Graph - before the results, which the caller may log right away
+        try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation 'Minimum OS lookup' -LogBox $LogBox } catch { }
         try {
             $raw = @($ps.EndInvoke($handle))
             if ($ps.Streams.Error.Count -gt 0) {
@@ -584,7 +589,6 @@ function Global:Start-Win32AppMinOsFetch {
             if ($OnComplete) { & $OnComplete $false $_.Exception.Message }
         }
         finally {
-            try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation 'Minimum OS lookup' } catch { }
             $ps.Dispose()
             $rs.Close()
             $rs.Dispose()
@@ -594,7 +598,8 @@ function Global:Start-Win32AppMinOsFetch {
 }
 
 function Global:Start-EntraDirectoryLookup {
-    param([scriptblock]$OnComplete)
+    # -LogBox: the calling dialog's log box, which also gets this lookup's [GRAPH] lines
+    param([scriptblock]$OnComplete, [System.Windows.Forms.RichTextBox]$LogBox)
 
     # Offers to install it right away (Prerequisites.ps1) - lookups only
     # run in this process, so only this PowerShell has to have it.
@@ -682,6 +687,8 @@ function Global:Start-EntraDirectoryLookup {
         [System.Windows.Forms.Application]::DoEvents()
         [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
 
+        # what this lookup asked Graph - before the results, which the caller may log right away
+        try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation 'Entra ID directory lookup' -LogBox $LogBox } catch { }
         try {
             $raw = @($ps.EndInvoke($handle))
             if ($ps.Streams.Error.Count -gt 0) {
@@ -708,7 +715,6 @@ function Global:Start-EntraDirectoryLookup {
             if ($OnComplete) { & $OnComplete $false $_.Exception.Message }
         }
         finally {
-            try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation 'Entra ID directory lookup' } catch { }
             $ps.Dispose()
             $rs.Close()
             $rs.Dispose()
@@ -750,7 +756,8 @@ function Global:Find-IntuneMatches {
 }
 
 function Global:Start-AppMetadataFetch {
-    param([string]$AppId, [scriptblock]$OnComplete)
+    # -LogBox: see Start-IntuneAppLookup
+    param([string]$AppId, [scriptblock]$OnComplete, [System.Windows.Forms.RichTextBox]$LogBox)
 
     if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
         if ($OnComplete) { & $OnComplete $false "Microsoft.Graph.Authentication module isn't installed." $null }
@@ -978,6 +985,8 @@ function Global:Start-AppMetadataFetch {
         if (-not $handle.IsCompleted) { return }
         $timer.Stop()
         $timer.Dispose()
+        # what this lookup asked Graph - before the results, which the caller may log right away
+        try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation "Intune app details ($AppId)" -LogBox $LogBox } catch { }
         try {
             $raw = @($ps.EndInvoke($handle))
             if ($ps.Streams.Error.Count -gt 0) {
@@ -1021,7 +1030,6 @@ function Global:Start-AppMetadataFetch {
             if ($OnComplete) { & $OnComplete $false $errMsg $null }
         }
         finally {
-            try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation "Intune app details ($AppId)" } catch { }
             $ps.Dispose()
             $rs.Close()
             $rs.Dispose()
@@ -1141,7 +1149,8 @@ function Global:Start-TypeVersionBackfill {
 }
 
 function Global:Start-GroupMembersFetch {
-    param([string]$GroupName, [scriptblock]$OnComplete)
+    # -LogBox: see Start-IntuneAppLookup
+    param([string]$GroupName, [scriptblock]$OnComplete, [System.Windows.Forms.RichTextBox]$LogBox)
 
     if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
         if ($OnComplete) { & $OnComplete $false "Microsoft.Graph.Authentication module isn't installed." $null }
@@ -1195,6 +1204,8 @@ function Global:Start-GroupMembersFetch {
         if (-not $handle.IsCompleted) { return }
         $timer.Stop()
         $timer.Dispose()
+        # what this lookup asked Graph - before the results, which the caller may log right away
+        try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation "Group lookup ($GroupName)" -LogBox $LogBox } catch { }
         try {
             $raw = @($ps.EndInvoke($handle))
             if ($ps.Streams.Error.Count -gt 0) {
@@ -1212,7 +1223,6 @@ function Global:Start-GroupMembersFetch {
             if ($OnComplete) { & $OnComplete $false $_.Exception.Message $null }
         }
         finally {
-            try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation "Group lookup ($GroupName)" } catch { }
             $ps.Dispose()
             $rs.Close()
             $rs.Dispose()

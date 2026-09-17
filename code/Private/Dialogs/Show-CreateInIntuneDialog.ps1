@@ -2672,7 +2672,7 @@ function Global:Show-CreateInIntuneDialog {
             $btnCreateRef = $btnCreate
             $rtbCreateLogRef = $rtbCreateLog
 
-            Start-AppMetadataFetch -AppId $existingAppIdRef -OnComplete {
+            Start-AppMetadataFetch -AppId $existingAppIdRef -LogBox $rtbCreateLogRef -OnComplete {
                 param($ok, $errMsg, $data)
                 # Wrapped in try/finally, not just reset at the natural end
                 # of this closure - this body has several early `return`s

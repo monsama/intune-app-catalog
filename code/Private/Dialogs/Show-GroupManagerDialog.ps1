@@ -185,7 +185,7 @@ function Global:Show-GroupManagerDialog {
         $groupNameRef = $groupName
         $txtDescriptionRef = $txtDescription
 
-        Start-GroupMembersFetch -GroupName $groupNameRef -OnComplete {
+        Start-GroupMembersFetch -GroupName $groupNameRef -LogBox $rtbLog -OnComplete {
             param($ok, $errMsg, $data)
             try {
             $btnLoadMembersRef.Enabled = $true

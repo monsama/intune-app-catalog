@@ -190,8 +190,9 @@ function Global:Show-DiagnosticsDialog {
         $failColorRef = $failColor
         $infoColorRef = $infoColor
         $headerColorRef = $headerColor
+        $rtbLogRef = $rtbLog
 
-        Start-IntuneAppLookup -OnComplete {
+        Start-IntuneAppLookup -LogBox $rtbLogRef -OnComplete {
             param($ok, $data)
             if (-not $ok) {
                 & $appendLineRef "[FAILED] Could not connect to Intune: $data" $failColorRef
@@ -238,8 +239,9 @@ function Global:Show-DiagnosticsDialog {
             $warnColorRef2 = $warnColorRef
             $infoColorRef2 = $infoColorRef
             $headerColorRef2 = $headerColorRef
+            $rtbLogRef2 = $rtbLogRef
 
-            Start-Win32AppMinOsFetch -OnComplete {
+            Start-Win32AppMinOsFetch -LogBox $rtbLogRef2 -OnComplete {
                 param($minOsOk, $minOsData)
                 if (-not $minOsOk) {
                     & $appendLineRef2 "[FAILED] Could not fetch Minimum Windows values: $minOsData" $warnColorRef2
@@ -297,8 +299,9 @@ function Global:Show-DiagnosticsDialog {
                 $btnRunRef3     = $btnRunRef2
                 $btnCloseRef3   = $btnCloseRef2
                 $lblStatusRef3  = $lblStatusRef2
+                $rtbLogRef3     = $rtbLogRef2
 
-                Start-EntraDirectoryLookup -OnComplete {
+                Start-EntraDirectoryLookup -LogBox $rtbLogRef3 -OnComplete {
                     param($groupsOk, $groupsData)
                     if ($groupsOk) {
                         & $appendLineRef3 "[OK] App registration can read Entra ID groups and users" $okColorRef3
