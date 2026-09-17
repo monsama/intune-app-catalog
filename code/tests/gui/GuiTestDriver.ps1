@@ -74,6 +74,7 @@ namespace GuiTest {
 
         public static string Text(IntPtr h) { var sb = new StringBuilder(GetWindowTextLength(h) + 2); GetWindowText(h, sb, sb.Capacity); return sb.ToString(); }
         public static string Cls(IntPtr h) { var sb = new StringBuilder(256); GetClassName(h, sb, 256); return sb.ToString(); }
+        public static uint ProcessOf(IntPtr h) { uint p; GetWindowThreadProcessId(h, out p); return p; }
         public static List<IntPtr> TopLevel(uint pid) {
             var r = new List<IntPtr>();
             EnumWindows((h, l) => { uint p; GetWindowThreadProcessId(h, out p); if (p == pid && IsWindowVisible(h)) r.Add(h); return true; }, IntPtr.Zero);
@@ -367,15 +368,23 @@ function Wait-Condition {
 function Close-AppDialog {
     <#
       WM_CLOSE, then No/Cancel/Close/OK if the window refuses (Yes/No boxes).
-      A dialog that's still busy (e.g. Intune Audit mid-check) may refuse for a
-      while - keep asking for up to $TimeoutSec. Returns how it closed.
+      A dialog that's still running a step asks "Stop and close?" - that's
+      answered Yes, since closing it is what the caller wants. A dialog that's
+      still busy otherwise may refuse for a while - keep asking for up to
+      $TimeoutSec. Returns how it closed.
     #>
     param([IntPtr]$Window, [int]$TimeoutSec = 20)
     $isOpen = { $W32::IsWindow($Window) -and $W32::IsWindowVisible($Window) }
     $end = (Get-Date).AddSeconds($TimeoutSec)
+    $appPid = $W32::ProcessOf($Window)
     do {
         $W32::Close($Window)
         if (-not (Wait-Condition { -not (& $isOpen) } -TimeoutSec 2)) {
+            $stopQuestion = $W32::TopLevel($appPid) | Where-Object { $W32::Cls($_) -eq '#32770' -and $W32::Text($_) -eq 'Stop and close?' } | Select-Object -First 1
+            if ($stopQuestion) {
+                $W32::Click((Get-ChildWindow $stopQuestion 'Yes'))
+                if (Wait-Condition { -not (& $isOpen) } -TimeoutSec 3) { return 'closed after Stop and close? -> Yes' }
+            }
             foreach ($label in 'No', 'Cancel', 'Close', 'OK') {
                 $b = Get-ChildWindow $Window $label
                 if ($b -and $W32::IsWindowEnabled($b)) {
