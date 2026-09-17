@@ -587,10 +587,24 @@ function Global:New-ToolbarGroup {
     $flow.WrapContents = $false
     $flow.FlowDirection = "LeftToRight"
 
+    # Every item gets a button's height - a group of checkboxes (Sync) was
+    # otherwise a few pixels shorter than the button groups beside it.
+    $probe = New-Object System.Windows.Forms.Button
+    $probe.Font = Get-AppUiFont
+    $probe.AutoSize = $true
+    $probe.Padding = New-Object System.Windows.Forms.Padding(8,3,8,3)
+    $probe.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat   # what Set-Theme turns every button into
+    $probe.Text = "Ag"
+    $rowHeight = $probe.PreferredSize.Height
+    $probe.Dispose()
+
     foreach ($b in $Buttons) {
         $b.AutoSize = $true
         $b.Padding = New-Object System.Windows.Forms.Padding(8,3,8,3)
         $b.Margin = New-Object System.Windows.Forms.Padding(0,0,4,0)
+        if ($b -isnot [System.Windows.Forms.Button]) {
+            $b.MinimumSize = New-Object System.Drawing.Size(0, $rowHeight)   # content stays vertically centered
+        }
         $flow.Controls.Add($b)
     }
     $gb.Controls.Add($flow)
