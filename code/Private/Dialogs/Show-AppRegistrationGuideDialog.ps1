@@ -40,7 +40,7 @@ function Global:Show-AppRegistrationGuideDialog {
         @{ Type = "Step"; Number = "1."; Text = "In the Entra admin center, go to `"App registrations`" and create a new registration (or use an existing one your organization has already approved for this purpose)." }
         @{ Type = "Step"; Number = "2."; Text = "Note its `"Application (client) ID`" and `"Directory (tenant) ID`" - enter both into the fields in the Settings dialog." }
         @{ Type = "Step"; Number = "3."; Text = "Open the app registration, go to:`nAPI permissions > Add a permission > Microsoft Graph > Application permissions (NOT Delegated) - and add:" }
-        @{ Type = "Bullets"; Items = @("DeviceManagementApps.ReadWrite.All", "Group.ReadWrite.All", "User.Read.All", "Device.Read.All", "Directory.Read.All") }
+        @{ Type = "Bullets"; Items = @("DeviceManagementApps.ReadWrite.All", "Group.ReadWrite.All", "User.Read.All", "Device.Read.All", "Directory.Read.All", "DeviceManagementScripts.ReadWrite.All (only for `"Platform scripts...`")") }
         @{ Type = "Step"; Number = "4."; Text = "Click `"Grant admin consent for [tenant]`" and confirm every permission shows `"Granted.`" Requires a Global Administrator or Privileged Role Administrator." }
         @{ Type = "Step"; Number = "5."; Text = "Back in Settings, use `"Pick certificate...`" or `"Generate certificate...`", then `"Upload certificate...`" to link this tool to that app registration - or export/upload the certificate through the portal yourself instead, if you'd rather do that step there too." }
     )
