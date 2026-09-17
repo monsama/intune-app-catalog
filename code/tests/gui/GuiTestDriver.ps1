@@ -549,8 +549,10 @@ function Invoke-MoreActionsItem {
 # ---------------------------------------------------------------------------
 function Get-CatalogEntries {
     param($Ctx, [string]$AppName)
+    # The app rewrites the catalog while saving - a file can vanish between
+    # listing and reading; callers poll, so just skip it this time.
     @(Get-ChildItem $Ctx.AppData -Filter *.json | ForEach-Object {
-        $j = Get-Content $_.FullName -Raw | ConvertFrom-Json
+        try { $j = [IO.File]::ReadAllText($_.FullName) | ConvertFrom-Json } catch { return }
         if ($j.appName -eq $AppName) { $j }
     })
 }

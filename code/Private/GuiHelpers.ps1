@@ -123,9 +123,28 @@ function Global:Resize-DialogToScreen {
         }
         return
     }
-    $content = $Form.ClientSize
-    $chromeWidth = $Form.Width - $content.Width
-    $chromeHeight = $Form.Height - $content.Height
+    # What the dialog was laid out for: its requested ClientSize, or further
+    # if any control reaches beyond that (+ the usual 10px margin).
+    $contentWidth = $Form.ClientSize.Width
+    $contentHeight = $Form.ClientSize.Height
+    foreach ($c in @($Form.Controls)) {
+        if ($c.Dock -ne [System.Windows.Forms.DockStyle]::None) { continue }
+        $contentWidth = [Math]::Max($contentWidth, $c.Right + 10)
+        $contentHeight = [Math]::Max($contentHeight, $c.Bottom + 10)
+    }
+    $content = New-Object System.Drawing.Size($contentWidth, $contentHeight)
+    # Title bar + borders, measured on a small throwaway form with the same
+    # border style - not as $Form.Size minus its ClientSize, because on a
+    # small screen Windows has already capped $Form.Size (not its requested
+    # ClientSize), which made that difference negative.
+    $probe = New-Object System.Windows.Forms.Form
+    try {
+        $probe.FormBorderStyle = $Form.FormBorderStyle
+        $probe.ClientSize = New-Object System.Drawing.Size(100, 100)
+        $chromeWidth = $probe.Width - 100
+        $chromeHeight = $probe.Height - 100
+    }
+    finally { $probe.Dispose() }
     $maxWidth = $area.Width - $chromeWidth
     $maxHeight = $area.Height - $chromeHeight
     if ($content.Width -le $maxWidth -and $content.Height -le $maxHeight) { return }
