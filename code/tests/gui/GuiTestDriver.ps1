@@ -346,20 +346,40 @@ function Get-EditBoxes {
     } | Sort-Object Top, Left | ForEach-Object Handle)
 }
 
-function Close-AppDialog {
-    <# WM_CLOSE, then No/Cancel/Close/OK if the window refuses (Yes/No boxes). Returns how it closed. #>
-    param([IntPtr]$Window)
-    $W32::Close($Window)
-    for ($i = 0; $i -lt 10 -and $W32::IsWindow($Window) -and $W32::IsWindowVisible($Window); $i++) { Start-Sleep -Milliseconds 200 }
-    if (-not ($W32::IsWindow($Window) -and $W32::IsWindowVisible($Window))) { return 'closed' }
-    foreach ($label in 'No', 'Cancel', 'Close', 'OK') {
-        $b = Get-ChildWindow $Window $label
-        if ($b) {
-            $W32::Click($b)
-            for ($i = 0; $i -lt 10 -and $W32::IsWindow($Window) -and $W32::IsWindowVisible($Window); $i++) { Start-Sleep -Milliseconds 200 }
-            if (-not ($W32::IsWindow($Window) -and $W32::IsWindowVisible($Window))) { return "closed via $label" }
-        }
+function Wait-Condition {
+    # Polls $Condition until it's true or the timeout passes; returns the final answer.
+    # CI runners are much slower than a dev box - never assert right after a fixed sleep.
+    param([scriptblock]$Condition, [int]$TimeoutSec = 15)
+    $end = (Get-Date).AddSeconds($TimeoutSec)
+    while ((Get-Date) -lt $end) {
+        if (& $Condition) { return $true }
+        Start-Sleep -Milliseconds 250
     }
+    return [bool](& $Condition)
+}
+
+function Close-AppDialog {
+    <#
+      WM_CLOSE, then No/Cancel/Close/OK if the window refuses (Yes/No boxes).
+      A dialog that's still busy (e.g. Intune Audit mid-check) may refuse for a
+      while - keep asking for up to $TimeoutSec. Returns how it closed.
+    #>
+    param([IntPtr]$Window, [int]$TimeoutSec = 20)
+    $isOpen = { $W32::IsWindow($Window) -and $W32::IsWindowVisible($Window) }
+    $end = (Get-Date).AddSeconds($TimeoutSec)
+    do {
+        $W32::Close($Window)
+        if (-not (Wait-Condition { -not (& $isOpen) } -TimeoutSec 2)) {
+            foreach ($label in 'No', 'Cancel', 'Close', 'OK') {
+                $b = Get-ChildWindow $Window $label
+                if ($b -and $W32::IsWindowEnabled($b)) {
+                    $W32::Click($b)
+                    if (Wait-Condition { -not (& $isOpen) } -TimeoutSec 2) { return "closed via $label" }
+                }
+            }
+        }
+        if (-not (& $isOpen)) { return 'closed' }
+    } while ((Get-Date) -lt $end)
     return 'WOULD NOT CLOSE'
 }
 

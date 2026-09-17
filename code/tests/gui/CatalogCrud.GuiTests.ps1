@@ -50,7 +50,6 @@ function Save-Editor {
         foreach ($d in Get-AppDialogs $Ctx) { [void](Close-AppDialog $d) }
     }
     Assert-True $closed "$Step - editor saves and closes without further prompts" ($left -join '; ')
-    Start-Sleep -Milliseconds 800
 }
 
 function Get-FixtureState {
@@ -84,6 +83,7 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         $W32::SetText($boxes[0], $appA)
         $W32::SetText($boxes[1], 'Test.GuiApp')
         Save-Editor $ctx $ed 'create'
+        [void](Wait-Condition { @(Get-CatalogEntries $ctx $appA).Count -eq 1 })
         $saved = @(Get-CatalogEntries $ctx $appA)
         Assert-True ($saved.Count -eq 1) "create writes exactly one catalog file" "found $($saved.Count)"
         Assert-True ($saved[0].wingetId -eq 'Test.GuiApp') "create saves the Winget ID" "wingetId=$($saved[0].wingetId)"
@@ -112,6 +112,7 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
             Assert-True (($W32::Text($boxes[0]) -eq $appA) -and ($W32::Text($boxes[1]) -eq 'Test.GuiApp')) "editor is prefilled from the catalog (also after Reload)" "name='$($W32::Text($boxes[0]))' winget='$($W32::Text($boxes[1]))'"
             $W32::SetText($boxes[1], 'Test.GuiApp.Edited')
             Save-Editor $ctx $ed 'edit'
+            [void](Wait-Condition { @(Get-CatalogEntries $ctx $appA | Where-Object { $_.wingetId -eq 'Test.GuiApp.Edited' }).Count -eq 1 })
             $saved = @(Get-CatalogEntries $ctx $appA)
             Assert-True ($saved.Count -eq 1 -and $saved[0].wingetId -eq 'Test.GuiApp.Edited') "edit is saved in place, no duplicate file" "files=$($saved.Count) wingetId=$($saved[0].wingetId)"
         }
@@ -121,6 +122,7 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         if ($ed) {
             $W32::SetText((Get-EditBoxes $ed)[0], "$appA Renamed")
             Save-Editor $ctx $ed 'rename'
+            [void](Wait-Condition { (@(Get-CatalogEntries $ctx "$appA Renamed").Count -eq 1) -and (@(Get-CatalogEntries $ctx $appA).Count -eq 0) })
             $renamed = @(Get-CatalogEntries $ctx "$appA Renamed")
             Assert-True ($renamed.Count -eq 1 -and $renamed[0].wingetId -eq 'Test.GuiApp.Edited') "rename keeps the app's other fields"
             Assert-True (@(Get-CatalogEntries $ctx $appA).Count -eq 0) "rename leaves no file behind under the old name"
@@ -133,7 +135,7 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         $cf = Wait-AppDialog $ctx 'Confirm delete'
         Assert-True ($cf -and (Get-StaticText $cf) -like "*'$appA'*") "Remove from catalog asks for confirmation, naming the app" "$(if ($cf) { Get-StaticText $cf })"
         if ($cf) { $W32::Click((Get-ChildWindow $cf 'No')); [void](Wait-NoAppDialogs $ctx 5) }
-        Start-Sleep -Milliseconds 800
+        Start-Sleep -Seconds 2   # nothing should happen - give a slow machine time to do the wrong thing
         Assert-True (@(Get-CatalogEntries $ctx $appA).Count -eq 1) "answering No keeps the app"
 
         Select-OnlyGridRow $ctx $appA
@@ -144,8 +146,7 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
             $W32::Click((Get-ChildWindow $cf 'Yes'))
             [void](Wait-NoAppDialogs $ctx 5)
         }
-        Start-Sleep -Milliseconds 800
-        Assert-True (@(Get-CatalogEntries $ctx $appA).Count -eq 0) "answering Yes deletes the app's file"
+        Assert-True (Wait-Condition { @(Get-CatalogEntries $ctx $appA).Count -eq 0 }) "answering Yes deletes the app's file"
         Clear-GridFilter $ctx
 
         # --- remove from inside the editor (no App ID -> catalog-only) ---
@@ -153,6 +154,7 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         $ed = Wait-AppDialog $ctx 'Add app'
         $W32::SetText((Get-EditBoxes $ed)[0], $appB)
         Save-Editor $ctx $ed 'create uncommon app'
+        [void](Wait-Condition { @(Get-CatalogEntries $ctx $appB).Count -eq 1 })
         $saved = @(Get-CatalogEntries $ctx $appB)
         Assert-True ($saved.Count -eq 1 -and [string]::IsNullOrEmpty($saved[0].wingetId)) "an app without a Winget ID (uncommon) can be created"
 
@@ -169,8 +171,7 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
                 if ($isLocalOnly) { $W32::Click((Get-ChildWindow $cf 'Yes')) }
                 [void](Wait-NoAppDialogs $ctx 5)
                 foreach ($d in Get-AppDialogs $ctx) { [void](Close-AppDialog $d) }
-                Start-Sleep -Milliseconds 800
-                Assert-True (@(Get-CatalogEntries $ctx $appB).Count -eq 0) "deleting from the editor removes the app's file"
+                Assert-True (Wait-Condition { @(Get-CatalogEntries $ctx $appB).Count -eq 0 }) "deleting from the editor removes the app's file"
             }
         }
         Clear-GridFilter $ctx
