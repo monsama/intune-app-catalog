@@ -233,6 +233,7 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'Certificate picker' { Show-CertificatePickerDialog }
     Add-LayoutAuditStep 'Settings' { Show-CertificateSetupDialog }
     Add-LayoutAuditStep 'Deploy to Intune (existing)' { Show-CreateInIntuneDialog -AppName $a0.appName -WingetId $a0.wingetId -ExistingAppId $a0.appId }.GetNewClosure()
+    Add-LayoutAuditStep 'Deploy to Intune (from app editor, with Previous/Next)' { Show-CreateInIntuneDialog -AppName $a0.appName -WingetId $a0.wingetId -ExistingAppId $a0.appId -FromAppEditor -CallerHasExistingCatalogEntry -CurrentIndex $i0 }.GetNewClosure()
     Add-LayoutAuditStep 'Deploy to Intune (long name)' { Show-CreateInIntuneDialog -AppName $long.appName -WingetId $long.wingetId -ExistingAppId $long.appId }.GetNewClosure()
     Add-LayoutAuditStep 'Deploy to Intune (new)' { Show-CreateInIntuneDialog -AppName $noId.appName -WingetId '' }.GetNewClosure()
     Add-LayoutAuditStep 'Edit default values' { Show-DefaultAppSettingsDialog }

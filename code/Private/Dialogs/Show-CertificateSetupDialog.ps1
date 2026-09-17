@@ -143,6 +143,34 @@ function Global:Show-CertificateSetupDialog {
     $testTip.SetToolTip($btnTest, "Tries an app-only Graph sign-in with the Tenant ID, Client ID, and certificate above - confirms this exact combination actually works before you Save.")
     $y += 40
 
+    # Directly under Test connection, so its result shows next to the button
+    # (it used to sit at the very bottom of the dialog).
+    # Bordered, scrollable box instead of a plain fixed-height Label -
+    # $lblTestResult's own .Text includes raw exception text below
+    # ("Failed: $($ps.Streams.Error[0].ToString())"), which is unbounded
+    # in length, and a fixed 36px/couple-lines height would silently clip
+    # anything longer than that with no way to see the rest. Same pattern
+    # as Show-CreateInIntuneDialog's own $pnlStatusInfo.
+    $pnlTestResultInfo = New-Object System.Windows.Forms.FlowLayoutPanel
+    $pnlTestResultInfo.Location = New-Object System.Drawing.Point(15,$y)
+    $pnlTestResultInfo.Size = New-Object System.Drawing.Size(900,50)
+    $pnlTestResultInfo.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
+    $pnlTestResultInfo.WrapContents = $false
+    $pnlTestResultInfo.AutoScroll = $true
+    $pnlTestResultInfo.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    $pnlTestResultInfo.BackColor = $Global:App.LightPalette.FieldBack
+    $pnlTestResultInfo.Padding = New-Object System.Windows.Forms.Padding(6)
+    $dlg.Controls.Add($pnlTestResultInfo)
+
+    $lblTestResult = New-Object System.Windows.Forms.Label
+    $lblTestResult.AutoSize = $true
+    $lblTestResult.MaximumSize = New-Object System.Drawing.Size(870,0)
+    $lblTestResult.Margin = New-Object System.Windows.Forms.Padding(0,0,0,0)
+    $lblTestResult.Text = "Test connection shows its result here."
+    $lblTestResult.ForeColor = [System.Drawing.Color]::DimGray
+    $pnlTestResultInfo.Controls.Add($lblTestResult)
+    $y += 58
+
     $btnDeleteLocal = New-Object System.Windows.Forms.Button
     $btnDeleteLocal.Text = "Delete local certificate..."
     $btnDeleteLocal.Location = New-Object System.Drawing.Point(15,$y)
@@ -234,29 +262,6 @@ function Global:Show-CertificateSetupDialog {
     $deleteEntraTip.SetToolTip($btnDeleteEntraCert, "Removes the certificate selected below from Entra ID's trust list - does not touch anything on this machine.")
     $y += 36
 
-    # Bordered, scrollable box instead of a plain fixed-height Label -
-    # $lblTestResult's own .Text includes raw exception text below
-    # ("Failed: $($ps.Streams.Error[0].ToString())"), which is unbounded
-    # in length, and a fixed 36px/couple-lines height would silently clip
-    # anything longer than that with no way to see the rest. Same pattern
-    # as Show-CreateInIntuneDialog's own $pnlStatusInfo.
-    $pnlTestResultInfo = New-Object System.Windows.Forms.FlowLayoutPanel
-    $pnlTestResultInfo.Location = New-Object System.Drawing.Point(15,$y)
-    $pnlTestResultInfo.Size = New-Object System.Drawing.Size(900,50)
-    $pnlTestResultInfo.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
-    $pnlTestResultInfo.WrapContents = $false
-    $pnlTestResultInfo.AutoScroll = $true
-    $pnlTestResultInfo.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-    $pnlTestResultInfo.BackColor = $Global:App.LightPalette.FieldBack
-    $pnlTestResultInfo.Padding = New-Object System.Windows.Forms.Padding(6)
-    $dlg.Controls.Add($pnlTestResultInfo)
-
-    $lblTestResult = New-Object System.Windows.Forms.Label
-    $lblTestResult.AutoSize = $true
-    $lblTestResult.MaximumSize = New-Object System.Drawing.Size(870,0)
-    $lblTestResult.Margin = New-Object System.Windows.Forms.Padding(0,0,0,0)
-    $pnlTestResultInfo.Controls.Add($lblTestResult)
-    $y += 60
 
     $btnSave = New-Object System.Windows.Forms.Button
     $btnSave.Text = "Save"

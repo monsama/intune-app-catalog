@@ -307,20 +307,22 @@ function Global:Show-CreateInIntuneDialog {
 
     $txtInstall = New-Object System.Windows.Forms.TextBox
     $txtInstall.Location = New-Object System.Drawing.Point(15,(524 - $leftColumnShift))
-    $txtInstall.Size = New-Object System.Drawing.Size(540,46)
+    # Four lines each - long install/uninstall commands (full paths plus
+    # switches) used to need scrolling at two and a half.
+    $txtInstall.Size = New-Object System.Drawing.Size(540,68)
     $txtInstall.Multiline = $true
     $txtInstall.ScrollBars = "Vertical"
     $scrollPanel.Controls.Add($txtInstall)
 
     $lblUninstall = New-Object System.Windows.Forms.Label
     $lblUninstall.Text = "Uninstall command"
-    $lblUninstall.Location = New-Object System.Drawing.Point(15,(580 - $leftColumnShift))
+    $lblUninstall.Location = New-Object System.Drawing.Point(15,(600 - $leftColumnShift))
     $lblUninstall.AutoSize = $true
     $scrollPanel.Controls.Add($lblUninstall)
 
     $txtUninstall = New-Object System.Windows.Forms.TextBox
-    $txtUninstall.Location = New-Object System.Drawing.Point(15,(599 - $leftColumnShift))
-    $txtUninstall.Size = New-Object System.Drawing.Size(540,46)
+    $txtUninstall.Location = New-Object System.Drawing.Point(15,(619 - $leftColumnShift))
+    $txtUninstall.Size = New-Object System.Drawing.Size(540,68)
     $txtUninstall.Multiline = $true
     $txtUninstall.ScrollBars = "Vertical"
     $scrollPanel.Controls.Add($txtUninstall)
@@ -1567,7 +1569,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $lblDeployNavPosition = New-Object System.Windows.Forms.Label
     $lblDeployNavPosition.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $lblDeployNavPosition.Location = New-Object System.Drawing.Point(280,(979 + $statusBoxExtraHeight))
+    $lblDeployNavPosition.Location = New-Object System.Drawing.Point(565,(979 + $statusBoxExtraHeight))   # centered in the 1300px dialog
     $lblDeployNavPosition.Size = New-Object System.Drawing.Size(170,30)
     $lblDeployNavPosition.ForeColor = [System.Drawing.Color]::DimGray
     if ($CurrentIndex -ge 0) {
