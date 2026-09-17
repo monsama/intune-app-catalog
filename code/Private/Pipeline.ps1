@@ -26,6 +26,13 @@ function Global:Write-Log {
     }
 }
 
+function Global:Get-LogTabText {
+    # The Log tab's text with Windows line endings (a RichTextBox's Text uses bare `n) - $null when it's empty
+    $text = [string]$Global:App.LogBox.Text
+    if (-not $text.Trim()) { return $null }
+    return ($text -replace "\r?\n", "`r`n")
+}
+
 function Global:Set-PipelineButtonsEnabled {
     param([bool]$Enabled)
     $Global:App.BtnRunLaunch.Enabled = $Enabled

@@ -126,7 +126,9 @@ $testableFunctionNames = @(
     "Get-GraphRequestPath",
     "Get-GraphRequestId",
     "ConvertTo-GraphLogLine",
-    "ConvertTo-GraphReadSummary"
+    "ConvertTo-GraphReadSummary",
+    "Format-LogDuration",
+    "ConvertTo-RunLogLine"
 )
 
 $funcAsts = New-Object System.Collections.Generic.List[object]
@@ -639,7 +641,13 @@ Assert-Equal "[GRAPH] 3 read request(s) (450 ms)" (ConvertTo-GraphReadSummary -C
     "ConvertTo-GraphReadSummary: under a second shows milliseconds"
 Assert-Equal "[GRAPH] Intune app lookup: 12 read request(s) (1.4 s)" (ConvertTo-GraphReadSummary -Count 12 -Milliseconds 1420 -Operation "Intune app lookup") `
     "ConvertTo-GraphReadSummary: a second or more shows seconds with a dot decimal, named by operation"
-# =================================================================
+
+Assert-Equal "[RUN] winget search `"7zip`" -> 12 result(s) (2.3 s)" (ConvertTo-RunLogLine -Command 'winget search "7zip"' -Milliseconds 2310 -Result "12 result(s)") `
+    "ConvertTo-RunLogLine: a finished command with its result"
+Assert-Equal "[RUN] winget search `"x`" -> FAILED (30 s): winget search timed out after 30 seconds." (ConvertTo-RunLogLine -Command 'winget search "x"' -Milliseconds 30000 -ErrorText "winget search timed out after 30 seconds.`nmore") `
+    "ConvertTo-RunLogLine: a failed command with the first line of its error"
+Assert-Equal "[RUN] tool.exe -> OK (5 ms)" (ConvertTo-RunLogLine -Command "tool.exe" -Milliseconds 5) `
+    "ConvertTo-RunLogLine: OK by default"# =================================================================
 # Report
 # =================================================================
 Write-Host ""

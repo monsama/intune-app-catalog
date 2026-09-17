@@ -1894,7 +1894,53 @@ $chkDetailedGraphLog.Add_CheckedChanged({
         Write-Log "[OK] Detailed Graph log $(if ($chkDetailedGraphLog.Checked) { 'on' } else { 'off' }).`r`n" ([System.Drawing.Color]::LightGreen)
     }
 }.GetNewClosure())
-$pnlLogOptions.Controls.Add($chkDetailedGraphLog)
+# Getting the log to someone else (e.g. with Graph request-ids for a support case)
+$btnCopyLog = New-Object System.Windows.Forms.Button
+$btnCopyLog.Text = "Copy log"
+$btnCopyLog.AutoSize = $true
+$toolbarTips.SetToolTip($btnCopyLog, "Copy everything in this log to the clipboard.")
+$btnCopyLog.Add_Click({
+    $text = Get-LogTabText
+    if (-not $text) { return }
+    try {
+        [System.Windows.Forms.Clipboard]::SetText($text)
+        Write-Log "[OK] Log copied to the clipboard.`r`n" ([System.Drawing.Color]::LightGreen)
+    }
+    catch { Write-Log "[FAILED] Couldn't copy the log: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato) }
+})
+$btnSaveLog = New-Object System.Windows.Forms.Button
+$btnSaveLog.Text = "Save log..."
+$btnSaveLog.AutoSize = $true
+$toolbarTips.SetToolTip($btnSaveLog, "Save everything in this log to a text file.")
+$btnSaveLog.Add_Click({
+    $text = Get-LogTabText
+    if (-not $text) { return }
+    $sfd = New-Object System.Windows.Forms.SaveFileDialog
+    try {
+        $sfd.Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*"
+        $sfd.FileName = "intune-packager-log-" + (Get-Date -Format "yyyy-MM-dd-HHmmss") + ".txt"
+        if ($sfd.ShowDialog($Global:App.Form) -ne [System.Windows.Forms.DialogResult]::OK) { return }
+        [System.IO.File]::WriteAllText($sfd.FileName, $text, (New-Object System.Text.UTF8Encoding($false)))
+        Write-Log "[OK] Log saved to $($sfd.FileName)`r`n" ([System.Drawing.Color]::LightGreen)
+    }
+    catch { Write-Log "[FAILED] Couldn't save the log: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato) }
+    finally { $sfd.Dispose() }
+})
+$btnOpenLogFolder = New-Object System.Windows.Forms.Button
+$btnOpenLogFolder.Text = "Open log folder"
+$btnOpenLogFolder.AutoSize = $true
+$toolbarTips.SetToolTip($btnOpenLogFolder, "Open data\logs - one file per day with everything this log has shown, including earlier sessions.")
+$btnOpenLogFolder.Add_Click({
+    $logDir = Join-Path $Global:App.RootPath "data\logs"
+    try {
+        if ($Global:App.LogFileWriter) { $Global:App.LogFileWriter.Flush() }
+        if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+        Start-Process explorer.exe -ArgumentList "`"$logDir`""
+    }
+    catch { Write-Log "[FAILED] Couldn't open $($logDir): $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato) }
+})
+$chkDetailedGraphLog.Margin = New-Object System.Windows.Forms.Padding(12, 7, 3, 3)
+$pnlLogOptions.Controls.AddRange(@($btnCopyLog, $btnSaveLog, $btnOpenLogFolder, $chkDetailedGraphLog))
 $tabPipeline.Controls.Add($pnlLogOptions)
 $Global:App.ChkDetailedGraphLog = $chkDetailedGraphLog
 

@@ -97,6 +97,8 @@ function Global:Start-WingetSearch {
         return ,$results.ToArray()
     }).AddArgument($Query)
 
+    $runCommand = "winget search `"$Query`""
+    $runTimer = [System.Diagnostics.Stopwatch]::StartNew()
     $handle = $ps.BeginInvoke()
     $timer = New-Object System.Windows.Forms.Timer
     $timer.Interval = 300
@@ -109,14 +111,17 @@ function Global:Start-WingetSearch {
             $raw = @($ps.EndInvoke($handle))
             if ($ps.Streams.Error.Count -gt 0) {
                 $errMsg = Get-GraphRunspaceErrorMessage $ps.Streams.Error
+                Write-RunLogLine -Command $runCommand -Milliseconds $runTimer.ElapsedMilliseconds -ErrorText $errMsg
                 if ($OnComplete) { & $OnComplete $false $errMsg }
             }
             else {
                 $results = if ($raw.Count -gt 0) { $raw[0] } else { @() }
+                Write-RunLogLine -Command $runCommand -Milliseconds $runTimer.ElapsedMilliseconds -Result "$(@($results).Count) result(s)"
                 if ($OnComplete) { & $OnComplete $true $results }
             }
         }
         catch {
+            Write-RunLogLine -Command $runCommand -Milliseconds $runTimer.ElapsedMilliseconds -ErrorText $_.Exception.Message
             if ($OnComplete) { & $OnComplete $false $_.Exception.Message }
         }
         finally {

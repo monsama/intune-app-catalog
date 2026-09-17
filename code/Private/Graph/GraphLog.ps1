@@ -58,8 +58,38 @@ function Global:ConvertTo-GraphReadSummary {
     param([int]$Count, [long]$Milliseconds, [string]$Operation)
     if ($Count -le 0) { return $null }
     $prefix = if ($Operation) { "[GRAPH] ${Operation}: " } else { "[GRAPH] " }
-    $took = if ($Milliseconds -lt 1000) { "$Milliseconds ms" } else { "$([Math]::Round($Milliseconds / 1000.0, 1).ToString([System.Globalization.CultureInfo]::InvariantCulture)) s" }
-    return "$prefix$Count read request(s) ($took)"
+    return "$prefix$Count read request(s) ($(Format-LogDuration $Milliseconds))"
+}
+
+function Global:Format-LogDuration {
+    # 450 -> "450 ms", 1430 -> "1.4 s"
+    param([long]$Milliseconds)
+    if ($Milliseconds -lt 1000) { return "$Milliseconds ms" }
+    return "$([Math]::Round($Milliseconds / 1000.0, 1).ToString([System.Globalization.CultureInfo]::InvariantCulture)) s"
+}
+
+function Global:ConvertTo-RunLogLine {
+    <#
+      Other programs this app runs, in the same shape as the [GRAPH] lines:
+      [RUN] winget search "7zip" -> 12 result(s) (2.3 s)
+      [RUN] winget search "7zip" -> FAILED (30.0 s): winget search timed out after 30 seconds.
+    #>
+    param([string]$Command, [long]$Milliseconds, [string]$Result = 'OK', [string]$ErrorText)
+    if ($Command.Length -gt 300) { $Command = $Command.Substring(0, 297) + '...' }
+    if (-not $ErrorText) { return "[RUN] $Command -> $Result ($(Format-LogDuration $Milliseconds))" }
+    $reason = (([string]$ErrorText -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1)
+    if ($reason.Length -gt 200) { $reason = $reason.Substring(0, 197) + '...' }
+    return "[RUN] $Command -> FAILED ($(Format-LogDuration $Milliseconds)): $reason"
+}
+
+function Global:Write-RunLogLine {
+    # A [RUN] line on the Log tab (UI thread) - never lets logging break the caller
+    param([string]$Command, [long]$Milliseconds, [string]$Result = 'OK', [string]$ErrorText)
+    try {
+        $line = ConvertTo-RunLogLine -Command $Command -Milliseconds $Milliseconds -Result $Result -ErrorText $ErrorText
+        Write-Log "$line`r`n" (Get-DialogLogLineColor -Text $line)
+    }
+    catch { }
 }
 
 function Global:Test-GraphLogDetailed {
@@ -81,7 +111,7 @@ function Global:Get-GraphLogScriptHelpers {
     #>
     $parts = New-Object System.Collections.Generic.List[string]
     $parts.Add('$global:IntunePackagerGraphLog = @{ Detailed = ($env:INTUNEPACKAGER_GRAPH_LOG -eq ''detailed''); Reads = 0; ReadMs = [long]0 }')
-    foreach ($name in 'Get-GraphRequestPath', 'Get-GraphRequestId', 'ConvertTo-GraphLogLine', 'ConvertTo-GraphReadSummary') {
+    foreach ($name in 'Get-GraphRequestPath', 'Get-GraphRequestId', 'ConvertTo-GraphLogLine', 'ConvertTo-GraphReadSummary', 'Format-LogDuration') {
         $parts.Add("function global:$name {`n$((Get-Command $name).ScriptBlock.ToString())`n}")
     }
     $parts.Add(@'

@@ -544,7 +544,7 @@ foreach ($App in $AppsToProcess) {
             $ToolFullPath = $ToolPath
         }
         
-        # Run packaging tool - suppress all output
+        # Run packaging tool - its own output is only shown when it fails
         $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
         $ProcessInfo.FileName = $ToolFullPath
         $ProcessInfo.Arguments = $Args -join " "
@@ -553,12 +553,28 @@ foreach ($App in $AppsToProcess) {
         $ProcessInfo.UseShellExecute = $false
         $ProcessInfo.CreateNoWindow = $true
         
+        $ToolTimer = [System.Diagnostics.Stopwatch]::StartNew()
         $Process = New-Object System.Diagnostics.Process
         $Process.StartInfo = $ProcessInfo
         $Process.Start() | Out-Null
+        # Read both streams while it runs - waiting first could deadlock once
+        # the tool fills an output pipe
+        $ToolStdout = $Process.StandardOutput.ReadToEndAsync()
+        $ToolStderr = $Process.StandardError.ReadToEndAsync()
         $Process.WaitForExit()
+        $ToolTimer.Stop()
         
         $ExitCode = $Process.ExitCode
+        $ToolTook = if ($ToolTimer.ElapsedMilliseconds -lt 1000) { "$($ToolTimer.ElapsedMilliseconds) ms" } else { "$([Math]::Round($ToolTimer.ElapsedMilliseconds / 1000.0, 1).ToString([System.Globalization.CultureInfo]::InvariantCulture)) s" }
+        $ToolCommand = "$([System.IO.Path]::GetFileName($ToolFullPath)) $($ProcessInfo.Arguments)"
+        if ($ExitCode -eq 0) {
+            Write-Host "  [RUN] $ToolCommand -> OK ($ToolTook)" -ForegroundColor DarkGray
+        }
+        else {
+            Write-Host "  [RUN] $ToolCommand -> FAILED ($ToolTook): exit code $ExitCode" -ForegroundColor Red
+            $ToolOutput = @(("$($ToolStdout.GetAwaiter().GetResult())`n$($ToolStderr.GetAwaiter().GetResult())" -split "`r?`n") | Where-Object { $_.Trim() })
+            foreach ($ToolLine in ($ToolOutput | Select-Object -Last 15)) { Write-Host "    $ToolLine" -ForegroundColor Gray }
+        }
         
         # Clean up temp source folder for installers
         if ($App.Type -eq "Installer" -and (Test-Path $TempSourceFolder)) {
