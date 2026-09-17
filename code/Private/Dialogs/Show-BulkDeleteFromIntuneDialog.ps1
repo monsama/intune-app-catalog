@@ -99,7 +99,10 @@ function Global:Show-BulkDeleteFromIntuneDialog {
     $chkAutoRemoveDeps = New-Object System.Windows.Forms.CheckBox
     $chkAutoRemoveDeps.Text = "Automatically remove blocking dependency relationships (e.g. `"Winget AutoUpdate`") and retry, instead of just failing"
     $chkAutoRemoveDeps.Location = New-Object System.Drawing.Point(15,346)
-    $chkAutoRemoveDeps.Size = New-Object System.Drawing.Size(630,20)
+    # Two lines tall - the text doesn't fit on one.
+    $chkAutoRemoveDeps.Size = New-Object System.Drawing.Size(630,36)
+    $chkAutoRemoveDeps.CheckAlign = [System.Drawing.ContentAlignment]::TopLeft
+    $chkAutoRemoveDeps.TextAlign = [System.Drawing.ContentAlignment]::TopLeft
     $chkAutoRemoveDeps.Checked = $true
     $dlg.Controls.Add($chkAutoRemoveDeps)
 
@@ -108,30 +111,30 @@ function Global:Show-BulkDeleteFromIntuneDialog {
     # apps at once - typing the literal word DELETE is the same convention
     # widely used elsewhere for an irreversible bulk/multi-item action.
     $lblConfirmPrompt.Text = "Type DELETE below to confirm:"
-    $lblConfirmPrompt.Location = New-Object System.Drawing.Point(15,376)
+    $lblConfirmPrompt.Location = New-Object System.Drawing.Point(15,390)
     $lblConfirmPrompt.AutoSize = $true
     $dlg.Controls.Add($lblConfirmPrompt)
 
     $txtConfirm = New-Object System.Windows.Forms.TextBox
-    $txtConfirm.Location = New-Object System.Drawing.Point(15,396)
+    $txtConfirm.Location = New-Object System.Drawing.Point(15,410)
     $txtConfirm.Size = New-Object System.Drawing.Size(630,24)
     $dlg.Controls.Add($txtConfirm)
 
     $lblStatus = New-Object System.Windows.Forms.Label
-    $lblStatus.Location = New-Object System.Drawing.Point(15,426)
+    $lblStatus.Location = New-Object System.Drawing.Point(15,440)
     $lblStatus.Size = New-Object System.Drawing.Size(630,36)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
     $progressBar = New-Object System.Windows.Forms.ProgressBar
-    $progressBar.Location = New-Object System.Drawing.Point(15,462)
+    $progressBar.Location = New-Object System.Drawing.Point(15,476)
     $progressBar.Size = New-Object System.Drawing.Size(630,12)
     $progressBar.Style = "Continuous"
     $dlg.Controls.Add($progressBar)
 
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbLog.Location = New-Object System.Drawing.Point(15,478)
-    $rtbLog.Size = New-Object System.Drawing.Size(630,108)
+    $rtbLog.Location = New-Object System.Drawing.Point(15,492)
+    $rtbLog.Size = New-Object System.Drawing.Size(630,94)
     Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 

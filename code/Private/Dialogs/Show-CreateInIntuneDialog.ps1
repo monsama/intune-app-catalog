@@ -789,7 +789,7 @@ function Global:Show-CreateInIntuneDialog {
     # required" wording for an unset value) ---
     $lblReqs = New-Object System.Windows.Forms.Label
     $lblReqs.Text = "Requirements (0 = not required)"
-    $lblReqs.Location = New-Object System.Drawing.Point(595,466)
+    $lblReqs.Location = New-Object System.Drawing.Point(595,461)
     $lblReqs.AutoSize = $true
     $scrollPanel.Controls.Add($lblReqs)
 
@@ -851,12 +851,12 @@ function Global:Show-CreateInIntuneDialog {
 
     $lblRestartBehavior = New-Object System.Windows.Forms.Label
     $lblRestartBehavior.Text = "Device restart behavior"
-    $lblRestartBehavior.Location = New-Object System.Drawing.Point(740,540)
+    $lblRestartBehavior.Location = New-Object System.Drawing.Point(760,540)
     $lblRestartBehavior.AutoSize = $true
     $scrollPanel.Controls.Add($lblRestartBehavior)
     $cmbRestartBehavior = New-Object System.Windows.Forms.ComboBox
-    $cmbRestartBehavior.Location = New-Object System.Drawing.Point(740,557)
-    $cmbRestartBehavior.Size = New-Object System.Drawing.Size(350,23)
+    $cmbRestartBehavior.Location = New-Object System.Drawing.Point(760,557)
+    $cmbRestartBehavior.Size = New-Object System.Drawing.Size(330,23)
     $cmbRestartBehavior.DropDownStyle = "DropDownList"
     # Display labels are the exact wording the Intune portal's own
     # "Device restart behavior" dropdown uses (confirmed directly against

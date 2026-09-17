@@ -95,7 +95,7 @@ function Global:Show-DeleteLocalCertificateDialog {
 
     $lblEmpty = New-Object System.Windows.Forms.Label
     $lblEmpty.Text = "No certificates found."
-    $lblEmpty.Location = New-Object System.Drawing.Point(15,370)
+    $lblEmpty.Location = New-Object System.Drawing.Point(175,376)   # next to Delete selected..., not under it
     $lblEmpty.AutoSize = $true
     $lblEmpty.ForeColor = [System.Drawing.Color]::DimGray
     $lblEmpty.Visible = ($grid.Rows.Count -eq 0)

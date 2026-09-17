@@ -41,7 +41,7 @@ function Global:Show-TargetedAssignDialog {
 
     $lblSummaryHeader = New-Object System.Windows.Forms.Label
     $lblSummaryHeader.Text = "Groups involved ($($allGroups.Count) total):"
-    $lblSummaryHeader.Location = New-Object System.Drawing.Point(15,64)
+    $lblSummaryHeader.Location = New-Object System.Drawing.Point(15,70)
     $lblSummaryHeader.AutoSize = $true
     $dlg.Controls.Add($lblSummaryHeader)
 
@@ -59,8 +59,8 @@ function Global:Show-TargetedAssignDialog {
     $txtSummary.Multiline = $true
     $txtSummary.ReadOnly = $true
     $txtSummary.ScrollBars = "Vertical"
-    $txtSummary.Location = New-Object System.Drawing.Point(15,84)
-    $txtSummary.Size = New-Object System.Drawing.Size(530,170)
+    $txtSummary.Location = New-Object System.Drawing.Point(15,90)
+    $txtSummary.Size = New-Object System.Drawing.Size(530,164)
     $txtSummary.Font = New-Object System.Drawing.Font("Consolas", 8.5)
     $txtSummary.Text = ($summaryLines -join "`r`n")
     $dlg.Controls.Add($txtSummary)

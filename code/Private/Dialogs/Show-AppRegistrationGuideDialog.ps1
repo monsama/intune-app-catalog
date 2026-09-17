@@ -45,11 +45,20 @@ function Global:Show-AppRegistrationGuideDialog {
         @{ Type = "Step"; Number = "5."; Text = "Back in Settings, use `"Pick certificate...`" or `"Generate certificate...`", then `"Upload certificate...`" to link this tool to that app registration - or export/upload the certificate through the portal yourself instead, if you'd rather do that step there too." }
     )
 
+    # Parent, font, and native handle settled BEFORE any formatting - see the
+    # same note in Show-GettingStartedGuideDialog (on Windows PowerShell 5.1
+    # the guide otherwise lost all its styling).
+    $txtGuide.Font = $fontBody
+    $dlg.Controls.Add($txtGuide)
+    [void]$txtGuide.Handle
+
     $isFirstBlock = $true
     foreach ($block in $blocks) {
         if (-not $isFirstBlock) { $txtGuide.AppendText("`r`n`r`n") }
         $isFirstBlock = $false
 
+        $txtGuide.SelectionStart = $txtGuide.TextLength
+        $txtGuide.SelectionLength = 0
         switch ($block.Type) {
             "Note" {
                 $txtGuide.SelectionFont = $fontNote
@@ -84,8 +93,6 @@ function Global:Show-AppRegistrationGuideDialog {
     $txtGuide.SelectionStart = 0
     $txtGuide.SelectionLength = 0
     $txtGuide.ScrollToCaret()
-
-    $dlg.Controls.Add($txtGuide)
 
     $btnOpenPortal = New-Object System.Windows.Forms.Button
     $btnOpenPortal.Text = "Open Entra admin center"

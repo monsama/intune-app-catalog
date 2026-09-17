@@ -280,7 +280,9 @@ function Global:Show-SimpleListPicker {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = $Title
-    $dlg.ClientSize = New-Object System.Drawing.Size(420, 320)
+    # Wide enough for "<app name>  [<App ID GUID>]" entries - the GUID at the
+    # end is what tells same-named matches apart, so it must not be cut off.
+    $dlg.ClientSize = New-Object System.Drawing.Size(600, 320)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -289,25 +291,26 @@ function Global:Show-SimpleListPicker {
     $lbl = New-Object System.Windows.Forms.Label
     $lbl.Text = $Prompt
     $lbl.Location = New-Object System.Drawing.Point(12,12)
-    $lbl.Size = New-Object System.Drawing.Size(396,40)
+    $lbl.Size = New-Object System.Drawing.Size(576,40)
     $dlg.Controls.Add($lbl)
 
     $lst = New-Object System.Windows.Forms.ListBox
     $lst.Location = New-Object System.Drawing.Point(12,55)
-    $lst.Size = New-Object System.Drawing.Size(396,210)
+    $lst.Size = New-Object System.Drawing.Size(576,210)
+    $lst.HorizontalScrollbar = $true   # still readable when a name is longer still
     $lst.Items.AddRange($Items)
     if ($lst.Items.Count -gt 0) { $lst.SelectedIndex = 0 }
     $dlg.Controls.Add($lst)
 
     $btnOk = New-Object System.Windows.Forms.Button
     $btnOk.Text = "Select"
-    $btnOk.Location = New-Object System.Drawing.Point(228,275)
+    $btnOk.Location = New-Object System.Drawing.Point(408,275)
     $btnOk.Size = New-Object System.Drawing.Size(85,28)
     $dlg.Controls.Add($btnOk)
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(323,275)
+    $btnCancel.Location = New-Object System.Drawing.Point(503,275)
     $btnCancel.Size = New-Object System.Drawing.Size(85,28)
     $dlg.Controls.Add($btnCancel)
 
