@@ -58,6 +58,7 @@ them.
 ```
 pwsh -NoProfile -File code/tests/gui/DialogSmoke.GuiTests.ps1
 pwsh -NoProfile -File code/tests/gui/CatalogCrud.GuiTests.ps1
+pwsh -NoProfile -File code/tests/gui/CloseConfirmation.GuiTests.ps1
 pwsh -NoProfile -File code/tests/gui/DialogLayout.GuiTests.ps1
 ```
 
@@ -76,8 +77,16 @@ window they open - handy for comparing the two hosts side by side.
   "Package apps" and every Delete/Remove action.
 - `CatalogCrud.GuiTests.ps1` - adds, edits, renames, and removes catalog
   apps through the real dialogs (main window and editor paths, Yes and No
-  answers, empty-name validation) and checks the per-app JSON files after
-  every step.
+  answers, empty-name validation, the editor's "Discard changes?" question)
+  and checks the per-app JSON files after every step.
+- `CloseConfirmation.GuiTests.ps1` - the "Stop and close?" question of the
+  dialogs that run a step in a child process. Those need a Graph connection
+  before they start anything, so it drives a stand-in
+  (`CloseConfirmationHarness.ps1`) wired the same way - the real
+  `Register-CloseConfirmation`, Close as the CancelButton, a real sleeping
+  child process - and checks that Close and X both ask, No is the default
+  and keeps the dialog and the step running, Yes stops the step, and
+  nothing is asked once nothing runs.
 - `DialogLayout.GuiTests.ps1` - opens **every** dialog (via
   `DialogLayoutHarness.ps1`, which runs inside the app process) with sample
   data, including deliberately long app and group names, and measures each

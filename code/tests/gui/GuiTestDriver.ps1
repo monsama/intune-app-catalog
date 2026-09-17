@@ -88,6 +88,7 @@ namespace GuiTest {
         public static void Close(IntPtr h) { PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }   // WM_CLOSE
         public static void Escape(IntPtr h) { PostMessage(h, 0x0100, (IntPtr)0x1B, IntPtr.Zero); } // WM_KEYDOWN VK_ESCAPE
         public static void SetText(IntPtr h, string s) { SendMessage(h, 0x000C, IntPtr.Zero, s); }  // WM_SETTEXT
+        public static int DefaultButtonId(IntPtr h) { return (int)(SendMessagePtr(h, 0x0400, IntPtr.Zero, IntPtr.Zero).ToInt64() & 0xFFFF); }  // DM_GETDEFID (IDYES 6, IDNO 7)
         public static void ClickAt(IntPtr h, int screenX, int screenY) {
             var p = new POINT { X = screenX, Y = screenY }; ScreenToClient(h, ref p);
             var lp = (IntPtr)((p.Y << 16) | (p.X & 0xFFFF));

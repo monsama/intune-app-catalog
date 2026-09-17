@@ -49,6 +49,10 @@ jobs:
         if: always()
         shell: pwsh
         run: ./code/tests/gui/CatalogCrud.GuiTests.ps1 -ShotDir "$env:RUNNER_TEMP/gui-shots/crud"
+      - name: CloseConfirmation.GuiTests.ps1
+        if: always()
+        shell: pwsh
+        run: ./code/tests/gui/CloseConfirmation.GuiTests.ps1
       - name: DialogLayout.GuiTests.ps1
         if: always()
         shell: pwsh

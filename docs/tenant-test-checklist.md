@@ -1,0 +1,97 @@
+# Tenant test checklist
+
+The automated tests never sign in to Microsoft Graph, so these parts of 1.2
+have only been checked against a stand-in. Run through this once against a
+**test tenant** (never production) before relying on them. About 30 minutes.
+
+## Setup
+
+- A test tenant with the app registration from **Settings... > First time?
+  Setup guide...** and its certificate.
+- Two throwaway groups, e.g. `ZZ-Test-A` and `ZZ-Test-B`.
+- On the **Log** tab, leave **Detailed Graph log** off for now.
+- Work on a copy of your catalog (**Open other folder...**), or remove the
+  test apps afterwards.
+
+For every step, check the dialog's log box **and** the Log tab.
+
+## 1. Graph log lines
+
+- [ ] **Look up App IDs...** - the Log tab shows
+      `[GRAPH] Intune app lookup: N read request(s) (…)`, no line per request.
+- [ ] Turn on **Detailed Graph log**, look up again - one
+      `[GRAPH] GET /beta/deviceAppManagement/mobileApps… -> OK` line per request.
+      Turn it off again.
+- [ ] Add a test app (e.g. Winget ID `7zip.7zip`), **Deploy to Intune...**,
+      **Deploy**. The log box shows light-blue `[GRAPH] POST …` / `PATCH …`
+      lines for the create and upload steps, and **no** line containing
+      `blob.core.windows.net` or `sig=` (the package upload).
+- [ ] Open the app in the editor - the **Deploy to Intune...** dialog shows
+      `[GRAPH] Intune app details (…): N read request(s)` in its log box
+      before the loaded values.
+- [ ] **Run diagnostics...** - its log box shows `[GRAPH]` lines for the
+      app lookup, the Minimum OS lookup and the Entra ID lookup.
+- [ ] Group manager: type `ZZ-Test-A`, load members - `[GRAPH] Group
+      lookup (ZZ-Test-A): …` in its log box.
+- [ ] Make a request fail on purpose: in the editor, enter a made-up App ID
+      (`00000000-0000-0000-0000-000000000000`) and **Pull groups from
+      Intune...**. A red `[GRAPH] … -> FAILED (…): … (request-id <guid>)`
+      line appears.
+- [ ] **Copy log**, paste somewhere - the `[GRAPH]` lines are there.
+      **Save log...** writes the same text. **Open log folder** opens
+      `data\logs` with today's file.
+- [ ] Nothing in the log or the log file contains a token, `Bearer`, or a
+      certificate thumbprint in a request address.
+
+## 2. "Stop and close?" with a real step
+
+- [ ] Deploy the test app again (Update + Replace Content with any
+      package) and click **Cancel** while it runs. The question appears,
+      **No** is highlighted. Answer **No** - the dialog stays and the step
+      finishes normally.
+- [ ] Start the same again, close with the window's **X**, answer **Yes** -
+      the dialog closes, the Log tab shows where it stopped. Check the app
+      in the Intune portal.
+- [ ] **Pull metadata and groups from Intune...** (Sync) on a few apps,
+      press **Esc** while it runs - asked; **Yes** stops it.
+- [ ] **Push groups to Intune (multiple apps)...**: after Preview shows
+      changes, close without applying - one "Unapplied changes" question,
+      not two.
+
+## 3. Settings "Save changes?"
+
+- [ ] Open **Settings...**, change the Client ID by one character, close
+      with **X** - "Save changes?" with Yes / No / Cancel.
+      **Cancel** keeps Settings open. **No** closes and the old value is
+      still used (**Look up App IDs...** still works).
+- [ ] Change it again, answer **Yes** - it's saved (reopen Settings to
+      check), then change it back and **Save**.
+- [ ] **Delete selected from Entra...** on a test certificate when the app
+      registration has only one - a single question that includes the
+      "ONLY certificate" warning. Answer **No**.
+
+## 4. Batch edit clears dependencies
+
+- [ ] Give the test app a dependency (Deploy to Intune..., dependencies,
+      Update Metadata). Check it in the Intune portal.
+- [ ] **Batch edit Intune fields...**, tick only **Dependencies** with
+      nothing checked, **Apply to Intune...** - the question says
+      "none (existing dependencies are removed)". Answer **Yes**.
+- [ ] The portal shows no dependency any more, and the catalog entry has
+      none either.
+- [ ] Same with **Return codes** ticked and no rows: the portal shows the
+      standard codes 0, 1707, 3010, 1641, 1618, and so does the app's
+      catalog file.
+
+## 5. Delete prompts
+
+- [ ] **Delete from Intune...** on the test app, where a second test app
+      depends on it - "Dependency in the way" names both apps and says Yes
+      changes the other one. **No** is the default.
+- [ ] Delete the group `ZZ-Test-B` in Group manager while a catalog app
+      uses it - the question lists that app.
+
+## Clean up
+
+- [ ] Delete the test apps from Intune (and the catalog) and the two test
+      groups.
