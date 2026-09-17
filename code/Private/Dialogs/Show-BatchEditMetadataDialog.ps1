@@ -45,7 +45,7 @@ function Global:Show-BatchEditMetadataDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Batch edit Intune fields"
-    $dlg.ClientSize = New-Object System.Drawing.Size(950, 830)
+    $dlg.ClientSize = New-Object System.Drawing.Size(950, 850)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -54,17 +54,17 @@ function Global:Show-BatchEditMetadataDialog {
     $lblIntro = New-Object System.Windows.Forms.Label
     $lblIntro.Text = "Changes only the checked field(s) on the checked apps, then pushes each straight to Intune - everything else is left as-is. Lists every eligible app, not just what's selected in the main grid (that only pre-checks rows here). Install/uninstall commands and the detection rule aren't offered - those are per-app, not safe to set to one shared value."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
-    $lblIntro.Size = New-Object System.Drawing.Size(920,54)
+    $lblIntro.Size = New-Object System.Drawing.Size(920,74)
     $dlg.Controls.Add($lblIntro)
 
     $lblApps = New-Object System.Windows.Forms.Label
     $lblApps.Text = "Apps to change"
-    $lblApps.Location = New-Object System.Drawing.Point(15,72)
+    $lblApps.Location = New-Object System.Drawing.Point(15,92)
     $lblApps.AutoSize = $true
     $dlg.Controls.Add($lblApps)
 
     $clbApps = New-Object System.Windows.Forms.CheckedListBox
-    $clbApps.Location = New-Object System.Drawing.Point(15,92)
+    $clbApps.Location = New-Object System.Drawing.Point(15,112)
     $clbApps.Size = New-Object System.Drawing.Size(330,380)
     $clbApps.CheckOnClick = $true
     $dlg.Controls.Add($clbApps)
@@ -79,23 +79,23 @@ function Global:Show-BatchEditMetadataDialog {
 
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Select all"
-    $btnSelectAll.Location = New-Object System.Drawing.Point(15,478)
+    $btnSelectAll.Location = New-Object System.Drawing.Point(15,498)
     $btnSelectAll.Size = New-Object System.Drawing.Size(100,26)
     $dlg.Controls.Add($btnSelectAll)
 
     $btnSelectNone = New-Object System.Windows.Forms.Button
     $btnSelectNone.Text = "Select none"
-    $btnSelectNone.Location = New-Object System.Drawing.Point(125,478)
+    $btnSelectNone.Location = New-Object System.Drawing.Point(125,498)
     $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
     $dlg.Controls.Add($btnSelectNone)
 
     $lblFields = New-Object System.Windows.Forms.Label
     $lblFields.Text = "Fields to change (check a field to include it)"
-    $lblFields.Location = New-Object System.Drawing.Point(365,72)
+    $lblFields.Location = New-Object System.Drawing.Point(365,92)
     $lblFields.AutoSize = $true
     $dlg.Controls.Add($lblFields)
 
-    $fieldsY = 96
+    $fieldsY = 116
 
     $chkEnableArch = New-Object System.Windows.Forms.CheckBox
     $chkEnableArch.Text = "Architecture"
@@ -123,10 +123,10 @@ function Global:Show-BatchEditMetadataDialog {
     $chkEnableMinOS = New-Object System.Windows.Forms.CheckBox
     $chkEnableMinOS.Text = "Minimum Windows"
     $chkEnableMinOS.Location = New-Object System.Drawing.Point(365,$fieldsY)
-    $chkEnableMinOS.Size = New-Object System.Drawing.Size(160,22)
+    $chkEnableMinOS.Size = New-Object System.Drawing.Size(190,22)
     $dlg.Controls.Add($chkEnableMinOS)
     $cmbMinOS = New-Object System.Windows.Forms.ComboBox
-    $cmbMinOS.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $cmbMinOS.Location = New-Object System.Drawing.Point(560,$fieldsY)
     $cmbMinOS.Size = New-Object System.Drawing.Size(260,24)
     $cmbMinOS.DropDownStyle = "DropDownList"
     # Same full set Show-CreateInIntuneDialog/Show-DefaultAppSettingsDialog's
@@ -143,10 +143,10 @@ function Global:Show-BatchEditMetadataDialog {
     $chkEnableDiskSpace = New-Object System.Windows.Forms.CheckBox
     $chkEnableDiskSpace.Text = "Disk space (MB)"
     $chkEnableDiskSpace.Location = New-Object System.Drawing.Point(365,$fieldsY)
-    $chkEnableDiskSpace.Size = New-Object System.Drawing.Size(160,22)
+    $chkEnableDiskSpace.Size = New-Object System.Drawing.Size(190,22)
     $dlg.Controls.Add($chkEnableDiskSpace)
     $txtDiskSpace = New-Object System.Windows.Forms.TextBox
-    $txtDiskSpace.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $txtDiskSpace.Location = New-Object System.Drawing.Point(560,$fieldsY)
     $txtDiskSpace.Size = New-Object System.Drawing.Size(120,23)
     $txtDiskSpace.Text = "0"
     $dlg.Controls.Add($txtDiskSpace)
@@ -155,10 +155,10 @@ function Global:Show-BatchEditMetadataDialog {
     $chkEnableMemory = New-Object System.Windows.Forms.CheckBox
     $chkEnableMemory.Text = "Memory (MB)"
     $chkEnableMemory.Location = New-Object System.Drawing.Point(365,$fieldsY)
-    $chkEnableMemory.Size = New-Object System.Drawing.Size(160,22)
+    $chkEnableMemory.Size = New-Object System.Drawing.Size(190,22)
     $dlg.Controls.Add($chkEnableMemory)
     $txtMemory = New-Object System.Windows.Forms.TextBox
-    $txtMemory.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $txtMemory.Location = New-Object System.Drawing.Point(560,$fieldsY)
     $txtMemory.Size = New-Object System.Drawing.Size(120,23)
     $txtMemory.Text = "0"
     $dlg.Controls.Add($txtMemory)
@@ -167,10 +167,10 @@ function Global:Show-BatchEditMetadataDialog {
     $chkEnableProcessors = New-Object System.Windows.Forms.CheckBox
     $chkEnableProcessors.Text = "Min. processors"
     $chkEnableProcessors.Location = New-Object System.Drawing.Point(365,$fieldsY)
-    $chkEnableProcessors.Size = New-Object System.Drawing.Size(160,22)
+    $chkEnableProcessors.Size = New-Object System.Drawing.Size(190,22)
     $dlg.Controls.Add($chkEnableProcessors)
     $txtProcessors = New-Object System.Windows.Forms.TextBox
-    $txtProcessors.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $txtProcessors.Location = New-Object System.Drawing.Point(560,$fieldsY)
     $txtProcessors.Size = New-Object System.Drawing.Size(120,23)
     $txtProcessors.Text = "0"
     $dlg.Controls.Add($txtProcessors)
@@ -179,10 +179,10 @@ function Global:Show-BatchEditMetadataDialog {
     $chkEnableCpuSpeed = New-Object System.Windows.Forms.CheckBox
     $chkEnableCpuSpeed.Text = "Min. CPU speed (MHz)"
     $chkEnableCpuSpeed.Location = New-Object System.Drawing.Point(365,$fieldsY)
-    $chkEnableCpuSpeed.Size = New-Object System.Drawing.Size(160,22)
+    $chkEnableCpuSpeed.Size = New-Object System.Drawing.Size(190,22)
     $dlg.Controls.Add($chkEnableCpuSpeed)
     $txtCpuSpeed = New-Object System.Windows.Forms.TextBox
-    $txtCpuSpeed.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $txtCpuSpeed.Location = New-Object System.Drawing.Point(560,$fieldsY)
     $txtCpuSpeed.Size = New-Object System.Drawing.Size(120,23)
     $txtCpuSpeed.Text = "0"
     $dlg.Controls.Add($txtCpuSpeed)
@@ -191,10 +191,10 @@ function Global:Show-BatchEditMetadataDialog {
     $chkEnableInstallTime = New-Object System.Windows.Forms.CheckBox
     $chkEnableInstallTime.Text = "Install time required (mins)"
     $chkEnableInstallTime.Location = New-Object System.Drawing.Point(365,$fieldsY)
-    $chkEnableInstallTime.Size = New-Object System.Drawing.Size(160,22)
+    $chkEnableInstallTime.Size = New-Object System.Drawing.Size(190,22)
     $dlg.Controls.Add($chkEnableInstallTime)
     $txtInstallTime = New-Object System.Windows.Forms.TextBox
-    $txtInstallTime.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $txtInstallTime.Location = New-Object System.Drawing.Point(560,$fieldsY)
     $txtInstallTime.Size = New-Object System.Drawing.Size(120,23)
     $txtInstallTime.Text = "60"
     $dlg.Controls.Add($txtInstallTime)
@@ -203,10 +203,10 @@ function Global:Show-BatchEditMetadataDialog {
     $chkEnableRestartBehavior = New-Object System.Windows.Forms.CheckBox
     $chkEnableRestartBehavior.Text = "Device restart behavior"
     $chkEnableRestartBehavior.Location = New-Object System.Drawing.Point(365,$fieldsY)
-    $chkEnableRestartBehavior.Size = New-Object System.Drawing.Size(160,22)
+    $chkEnableRestartBehavior.Size = New-Object System.Drawing.Size(190,22)
     $dlg.Controls.Add($chkEnableRestartBehavior)
     $cmbRestartBehavior = New-Object System.Windows.Forms.ComboBox
-    $cmbRestartBehavior.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $cmbRestartBehavior.Location = New-Object System.Drawing.Point(560,$fieldsY)
     $cmbRestartBehavior.Size = New-Object System.Drawing.Size(260,24)
     $cmbRestartBehavior.DropDownStyle = "DropDownList"
     $restartBehaviorMap = [ordered]@{
@@ -223,11 +223,11 @@ function Global:Show-BatchEditMetadataDialog {
     $chkEnableAllowUninstall = New-Object System.Windows.Forms.CheckBox
     $chkEnableAllowUninstall.Text = "Allow available uninstall"
     $chkEnableAllowUninstall.Location = New-Object System.Drawing.Point(365,$fieldsY)
-    $chkEnableAllowUninstall.Size = New-Object System.Drawing.Size(180,22)
+    $chkEnableAllowUninstall.Size = New-Object System.Drawing.Size(190,22)
     $dlg.Controls.Add($chkEnableAllowUninstall)
     $chkAllowUninstall = New-Object System.Windows.Forms.CheckBox
     $chkAllowUninstall.Text = "Yes"
-    $chkAllowUninstall.Location = New-Object System.Drawing.Point(530,$fieldsY)
+    $chkAllowUninstall.Location = New-Object System.Drawing.Point(560,$fieldsY)
     $chkAllowUninstall.Size = New-Object System.Drawing.Size(60,22)
     $dlg.Controls.Add($chkAllowUninstall)
     $fieldsY += 34
@@ -302,26 +302,26 @@ function Global:Show-BatchEditMetadataDialog {
     foreach ($a in ($appsRef | Sort-Object appName)) { [void]$clbDeps.Items.Add($a.appName) }
 
     $lblStatus = New-Object System.Windows.Forms.Label
-    $lblStatus.Location = New-Object System.Drawing.Point(15,640)
+    $lblStatus.Location = New-Object System.Drawing.Point(15,660)
     $lblStatus.Size = New-Object System.Drawing.Size(920,20)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
     $progressBar = New-Object System.Windows.Forms.ProgressBar
-    $progressBar.Location = New-Object System.Drawing.Point(15,664)
+    $progressBar.Location = New-Object System.Drawing.Point(15,684)
     $progressBar.Size = New-Object System.Drawing.Size(920,12)
     $progressBar.Style = "Continuous"
     $dlg.Controls.Add($progressBar)
 
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbLog.Location = New-Object System.Drawing.Point(15,680)
+    $rtbLog.Location = New-Object System.Drawing.Point(15,700)
     $rtbLog.Size = New-Object System.Drawing.Size(920,90)
     Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $btnRun = New-Object System.Windows.Forms.Button
     $btnRun.Text = "Apply to Intune..."
-    $btnRun.Location = New-Object System.Drawing.Point(755,776)
+    $btnRun.Location = New-Object System.Drawing.Point(755,796)
     $btnRun.Size = New-Object System.Drawing.Size(180,32)
     $dlg.Controls.Add($btnRun)
     $runTip = New-Object System.Windows.Forms.ToolTip
@@ -329,7 +329,7 @@ function Global:Show-BatchEditMetadataDialog {
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(665,776)
+    $btnClose.Location = New-Object System.Drawing.Point(665,796)
     $btnClose.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnClose)
 
