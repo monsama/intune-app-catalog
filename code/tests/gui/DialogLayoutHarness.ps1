@@ -73,6 +73,11 @@ function Global:Get-LayoutControlName($c) {
 function Global:Test-FormLayout($Form) {
     <# Every visible control whose text doesn't fit, that runs outside its container, or that overlaps a sibling. #>
     $issues = New-Object System.Collections.Generic.List[string]
+    # the window itself has to fit the screen (or the pretend one - INTUNEPACKAGER_TEST_SCREEN)
+    $area = Get-UsableScreenArea
+    if ($Form.Width -gt $area.Width -or $Form.Height -gt $area.Height) {
+        $issues.Add("TOO BIG  window is $($Form.Width)x$($Form.Height), usable screen area is $($area.Width)x$($area.Height)")
+    }
     $walk = {
         param($parent)
         $kids = @($parent.Controls | Where-Object { $_.Visible })

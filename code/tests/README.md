@@ -85,7 +85,9 @@ window they open - handy for comparing the two hosts side by side.
   off or hidden, list entries wider than a list without a scrollbar, grid
   headers too narrow for their text, controls running past their container,
   and overlapping controls - one assertion per window. Takes a few minutes
-  per host; `-ShotDir` keeps a screenshot of every window.
+  per host; `-ShotDir` keeps a screenshot of every window, and
+  `-Screen 1024x768` checks the small-screen case on a big monitor (every
+  dialog must fit the screen - oversized ones scroll instead).
 - `Prerequisites.GuiTests.ps1` - **needs internet.** Clicks *Install missing*
   in the Prerequisites dialog and follows it through: the download, the live
   log, the status re-check, and Graph actions getting past the module check

@@ -89,6 +89,70 @@ function Global:ConvertTo-CanonicalLineEndings {
 function Global:Set-Theme {
     param([System.Windows.Forms.Control]$Control)
     Set-ThemeRecursive -Ctrl $Control -Palette $Global:App.LightPalette
+    if ($Control -is [System.Windows.Forms.Form]) { Resize-DialogToScreen -Form $Control }
+}
+
+function Global:Get-UsableScreenArea {
+    # Working area of the screen the app is on. INTUNEPACKAGER_TEST_SCREEN
+    # ("1024x768") pretends a smaller one, to reproduce small-screen layout
+    # problems on a big monitor.
+    if ($env:INTUNEPACKAGER_TEST_SCREEN -match '^(\d+)x(\d+)$') {
+        return New-Object System.Drawing.Rectangle(0, 0, ([int]$Matches[1]), ([int]$Matches[2] - 40))   # minus a taskbar
+    }
+    $screen = if ($Global:App.Form -and $Global:App.Form.IsHandleCreated) { [System.Windows.Forms.Screen]::FromControl($Global:App.Form) } else { [System.Windows.Forms.Screen]::PrimaryScreen }
+    return $screen.WorkingArea
+}
+
+function Global:Resize-DialogToScreen {
+    # The fixed-size dialogs are laid out for a large screen - App editor is
+    # 940px tall, Deploy to Intune 1300x1087. On a smaller one (1366x768
+    # laptops, 1024x768 VMs) Windows just cuts the window down and the bottom
+    # rows (Save, Close, Apply...) become unreachable. Instead, when a dialog
+    # doesn't fit, its content moves into a scrolling panel and the window
+    # shrinks to the screen. A dialog that fits is left exactly as it is.
+    # Resizable dialogs lay themselves out (anchors), so they're just made
+    # small enough to fit.
+    param([System.Windows.Forms.Form]$Form)
+    if ([object]::ReferenceEquals($Form, $Global:App.Form)) { return }
+    $area = Get-UsableScreenArea
+    if ($Form.FormBorderStyle -eq [System.Windows.Forms.FormBorderStyle]::Sizable -or $Form.FormBorderStyle -eq [System.Windows.Forms.FormBorderStyle]::SizableToolWindow) {
+        if ($Form.Width -gt $area.Width -or $Form.Height -gt $area.Height) {
+            $Form.Size = New-Object System.Drawing.Size(
+                [Math]::Max($Form.MinimumSize.Width, [Math]::Min($Form.Width, $area.Width)),
+                [Math]::Max($Form.MinimumSize.Height, [Math]::Min($Form.Height, $area.Height)))
+        }
+        return
+    }
+    $content = $Form.ClientSize
+    $chromeWidth = $Form.Width - $content.Width
+    $chromeHeight = $Form.Height - $content.Height
+    $maxWidth = $area.Width - $chromeWidth
+    $maxHeight = $area.Height - $chromeHeight
+    if ($content.Width -le $maxWidth -and $content.Height -le $maxHeight) { return }
+
+    $scroller = New-Object System.Windows.Forms.Panel
+    $scroller.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $scroller.AutoScroll = $true
+    $scroller.BackColor = $Form.BackColor
+    $Form.SuspendLayout()
+    foreach ($c in @($Form.Controls)) {
+        # keep each control exactly where the dialog put it, inside the scroll area
+        if ($c.Dock -eq [System.Windows.Forms.DockStyle]::None) {
+            $c.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
+        }
+        $Form.Controls.Remove($c)
+        $scroller.Controls.Add($c)
+    }
+    $Form.Controls.Add($scroller)
+    $scroller.AutoScrollMinSize = $content
+    # Room for the scrollbar that will appear, so it doesn't force a second one
+    # (a vertical bar eats into the width, a horizontal one into the height).
+    $width = $content.Width
+    $height = $content.Height
+    if ($height -gt $maxHeight) { $width += [System.Windows.Forms.SystemInformation]::VerticalScrollBarWidth }
+    if ($width -gt $maxWidth) { $height += [System.Windows.Forms.SystemInformation]::HorizontalScrollBarHeight }
+    $Form.ClientSize = New-Object System.Drawing.Size([Math]::Min($width, $maxWidth), [Math]::Min($height, $maxHeight))
+    $Form.ResumeLayout()
 }
 
 function Global:Set-ThemeRecursive {

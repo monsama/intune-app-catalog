@@ -9,7 +9,8 @@
     has, and closes it again. Each window it saw is one assertion here:
     labels/buttons/checkboxes whose text doesn't fit, list entries wider than
     a list without a scrollbar, grid headers too narrow, controls running
-    past their container, and sibling controls overlapping all fail it.
+    past their container, overlapping sibling controls, and a window bigger
+    than the (usable) screen all fail it.
 
     Offline, and as safe as the other GUI tests (throwaway sandbox, no Graph
     credentials; every Intune/Entra action stops at its own guard). Needs an
@@ -21,12 +22,20 @@
 .PARAMETER ShotDir
     Optional folder for a screenshot of every window the harness opened.
 
+.PARAMETER Screen
+    Pretend the screen is this small (e.g. 1024x768), to check that every
+    dialog still fits and stays usable on a small screen from a big monitor.
+    Default: the real screen.
+
 .EXAMPLE
     pwsh -NoProfile -File code/tests/gui/DialogLayout.GuiTests.ps1 -ShotDir .\layout-shots
+.EXAMPLE
+    pwsh -NoProfile -File code/tests/gui/DialogLayout.GuiTests.ps1 -Screen 1024x768
 #>
 param(
     [string[]]$AppHost = @('pwsh', 'powershell'),
-    [string]$ShotDir
+    [string]$ShotDir,
+    [ValidatePattern('^(\d+x\d+)?$')][string]$Screen = ''
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'GuiTestDriver.ps1')
@@ -46,10 +55,12 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
     }
     $ctx = $null
     try {
-        $ctx = Start-AppUnderTest -AppHost $exe -Root $root -Script 'DialogLayoutHarness.ps1' -ScriptArguments $harnessArgs
+        $envVars = @{}
+        if ($Screen) { $envVars['INTUNEPACKAGER_TEST_SCREEN'] = $Screen }
+        $ctx = Start-AppUnderTest -AppHost $exe -Root $root -Script 'DialogLayoutHarness.ps1' -ScriptArguments $harnessArgs -Environment $envVars
         # the harness closes the app itself once every dialog has been checked
         $finished = $ctx.Process.WaitForExit(20 * 60 * 1000)
-        Assert-True $finished "the audit finished within 20 minutes"
+        Assert-True $finished "the audit finished within 20 minutes$(if ($Screen) { " (screen: $Screen)" })"
         if (-not $finished) { [void](Stop-AppUnderTest $ctx) }
 
         $lines = @(Get-Content (Join-Path $outDir 'findings.txt') -ErrorAction SilentlyContinue)
