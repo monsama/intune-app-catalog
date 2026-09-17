@@ -28,7 +28,7 @@ function Global:Show-SyncMetadataDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Pull metadata and groups from Intune"
-    $dlg.ClientSize = New-Object System.Drawing.Size(620, 600)
+    $dlg.ClientSize = New-Object System.Drawing.Size(620, 625)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -38,11 +38,11 @@ function Global:Show-SyncMetadataDialog {
     $scopeText = if ($isScoped) { "$($eligibleApps.Count) selected app(s)" } else { "all $($eligibleApps.Count) app(s) with an App ID" }
     $lblIntro.Text = "Fetches current metadata and group assignments from Intune for $scopeText, and saves them locally - groups follow by ID, so a rename in Entra ID is picked up too. READ-ONLY: nothing in Intune changes. If an app's local copy differs, a compare dialog opens for it so you can choose which fields to keep."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
-    $lblIntro.Size = New-Object System.Drawing.Size(590,80)
+    $lblIntro.Size = New-Object System.Drawing.Size(590,100)
     $dlg.Controls.Add($lblIntro)
 
     $clbApps = New-Object System.Windows.Forms.CheckedListBox
-    $clbApps.Location = New-Object System.Drawing.Point(15,98)
+    $clbApps.Location = New-Object System.Drawing.Point(15,118)
     $clbApps.Size = New-Object System.Drawing.Size(590,260)
     $clbApps.CheckOnClick = $true
     $dlg.Controls.Add($clbApps)
@@ -52,13 +52,13 @@ function Global:Show-SyncMetadataDialog {
 
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Select all"
-    $btnSelectAll.Location = New-Object System.Drawing.Point(15,362)
+    $btnSelectAll.Location = New-Object System.Drawing.Point(15,382)
     $btnSelectAll.Size = New-Object System.Drawing.Size(100,26)
     $dlg.Controls.Add($btnSelectAll)
 
     $btnSelectNone = New-Object System.Windows.Forms.Button
     $btnSelectNone.Text = "Select none"
-    $btnSelectNone.Location = New-Object System.Drawing.Point(125,362)
+    $btnSelectNone.Location = New-Object System.Drawing.Point(125,382)
     $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
     $dlg.Controls.Add($btnSelectNone)
 
@@ -68,13 +68,13 @@ function Global:Show-SyncMetadataDialog {
     # fully succeeds.
     $btnRetryFailed = New-Object System.Windows.Forms.Button
     $btnRetryFailed.Text = "Retry failed only"
-    $btnRetryFailed.Location = New-Object System.Drawing.Point(245,362)
+    $btnRetryFailed.Location = New-Object System.Drawing.Point(245,382)
     $btnRetryFailed.Size = New-Object System.Drawing.Size(155,26)
     $btnRetryFailed.Visible = $false
     $dlg.Controls.Add($btnRetryFailed)
 
     $lblStatus = New-Object System.Windows.Forms.Label
-    $lblStatus.Location = New-Object System.Drawing.Point(15,396)
+    $lblStatus.Location = New-Object System.Drawing.Point(15,416)
     $lblStatus.Size = New-Object System.Drawing.Size(590,36)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
@@ -86,21 +86,21 @@ function Global:Show-SyncMetadataDialog {
     # per-app progress signal streamed back - there's genuinely no "N of M"
     # to report here, just "still running" vs "done".
     $progressBar = New-Object System.Windows.Forms.ProgressBar
-    $progressBar.Location = New-Object System.Drawing.Point(15,432)
+    $progressBar.Location = New-Object System.Drawing.Point(15,452)
     $progressBar.Size = New-Object System.Drawing.Size(590,12)
     $progressBar.Style = "Marquee"
     $progressBar.MarqueeAnimationSpeed = 0
     $dlg.Controls.Add($progressBar)
 
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbLog.Location = New-Object System.Drawing.Point(15,448)
+    $rtbLog.Location = New-Object System.Drawing.Point(15,468)
     $rtbLog.Size = New-Object System.Drawing.Size(590,98)
     Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $btnSync = New-Object System.Windows.Forms.Button
     $btnSync.Text = "Sync selected"
-    $btnSync.Location = New-Object System.Drawing.Point(420,556)
+    $btnSync.Location = New-Object System.Drawing.Point(420,576)
     $btnSync.Size = New-Object System.Drawing.Size(185,32)
     $dlg.Controls.Add($btnSync)
     $syncTip = New-Object System.Windows.Forms.ToolTip
@@ -108,7 +108,7 @@ function Global:Show-SyncMetadataDialog {
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(330,556)
+    $btnClose.Location = New-Object System.Drawing.Point(330,576)
     $btnClose.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnClose)
 
