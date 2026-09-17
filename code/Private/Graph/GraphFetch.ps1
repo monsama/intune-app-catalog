@@ -1127,6 +1127,180 @@ function Global:Start-AppInstallStatusFetch {
     $timer.Start()
 }
 
+function Global:Start-PlatformScriptListFetch {
+    <#
+      Every platform script in the tenant, as grid rows
+      (ConvertTo-PlatformScriptRow). Read-only.
+      -OnComplete gets ($ok, $errorMessage, $rows).
+    #>
+    param([scriptblock]$OnComplete, [System.Windows.Forms.RichTextBox]$LogBox)
+
+    if (-not (Test-GraphModuleAvailable -CurrentHostOnly)) {
+        if ($OnComplete) { & $OnComplete $false "Microsoft.Graph.Authentication module isn't installed." $null }
+        return
+    }
+    if (-not (Test-GraphCredentialsConfigured)) {
+        if ($OnComplete) { & $OnComplete $false "Not configured" $null }
+        return
+    }
+
+    $rs = New-GraphLogRunspace
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript({
+        param($TenantId, $ClientId, $CertThumb, $HelperText)
+        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+        $ctx = Get-MgContext -ErrorAction SilentlyContinue
+        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+            Connect-MgGraph -TenantId $TenantId -ClientId $ClientId `
+                -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
+        }
+        . ([scriptblock]::Create($HelperText))
+
+        $rows = New-Object System.Collections.Generic.List[object]
+        # $select without scriptContent on purpose: a list of scripts
+        # doesn't need every script's full text, which can be 200 KB each.
+        $uri = "https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts?`$select=id,displayName,description,fileName,runAsAccount,runAs32Bit,enforceSignatureCheck,lastModifiedDateTime"
+        while ($uri) {
+            $page = Invoke-LoggedGraphRequest -Uri $uri -Method GET -ErrorAction Stop
+            $values = if ($page -is [System.Collections.IDictionary]) { $page['value'] } else { $page.value }
+            foreach ($script in @($values)) { $rows.Add((ConvertTo-PlatformScriptRow $script)) }
+            $uri = if ($page -is [System.Collections.IDictionary]) { [string]$page['@odata.nextLink'] } else { [string]$page.'@odata.nextLink' }
+        }
+        return , $rows.ToArray()
+    }).AddArgument($Global:App.GraphTenantId).AddArgument($Global:App.GraphClientId).AddArgument($Global:App.GraphCertificateThumbprint).
+        AddArgument((Get-ReportHelperScriptText -Names 'Format-InstallStatusTime', 'ConvertTo-PlatformScriptRow'))
+
+    $handle = $ps.BeginInvoke()
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 300
+    $timer.Add_Tick({
+        if (-not $handle.IsCompleted) { return }
+        $timer.Stop()
+        $timer.Dispose()
+        try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation "Platform scripts" -LogBox $LogBox } catch { }
+        try {
+            $raw = @($ps.EndInvoke($handle))
+            if ($ps.Streams.Error.Count -gt 0) {
+                if ($OnComplete) { & $OnComplete $false (Get-GraphRunspaceErrorMessage $ps.Streams.Error) $null }
+            }
+            else {
+                if ($OnComplete) { & $OnComplete $true "" @($raw[0]) }
+            }
+        }
+        catch {
+            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { $_.Exception.Message }
+            if ($OnComplete) { & $OnComplete $false $errMsg $null }
+        }
+        finally {
+            $ps.Dispose()
+            $rs.Close()
+            $rs.Dispose()
+        }
+    }.GetNewClosure())
+    $timer.Start()
+}
+
+function Global:Start-PlatformScriptDetailFetch {
+    <#
+      One platform script with its content and its assigned groups, for
+      the editor. Read-only. -OnComplete gets ($ok, $errorMessage, $detail),
+      $detail being @{ Script; ScriptContent; GroupNames; GroupsKnown }.
+      GroupsKnown is $false when the assignments couldn't be read, so the
+      editor can avoid presenting "no groups" as if that were the truth.
+    #>
+    param([string]$ScriptId, [scriptblock]$OnComplete, [System.Windows.Forms.RichTextBox]$LogBox)
+
+    if (-not (Test-GraphModuleAvailable -CurrentHostOnly)) {
+        if ($OnComplete) { & $OnComplete $false "Microsoft.Graph.Authentication module isn't installed." $null }
+        return
+    }
+    if (-not (Test-GraphCredentialsConfigured)) {
+        if ($OnComplete) { & $OnComplete $false "Not configured" $null }
+        return
+    }
+
+    $rs = New-GraphLogRunspace
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript({
+        param($TenantId, $ClientId, $CertThumb, $TargetScriptId, $HelperText)
+        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+        $ctx = Get-MgContext -ErrorAction SilentlyContinue
+        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+            Connect-MgGraph -TenantId $TenantId -ClientId $ClientId `
+                -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
+        }
+        . ([scriptblock]::Create($HelperText))
+
+        $script = Invoke-LoggedGraphRequest -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts/$TargetScriptId" -Method GET -ErrorAction Stop
+        $base64 = if ($script -is [System.Collections.IDictionary]) { [string]$script['scriptContent'] } else { [string]$script.scriptContent }
+
+        # A failure here shouldn't cost the whole fetch - the script itself
+        # is what the editor mainly needs.
+        $groupNames = @()
+        $groupsKnown = $true
+        try {
+            $assignmentsResponse = Invoke-LoggedGraphRequest -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts/$TargetScriptId/assignments" -Method GET -ErrorAction Stop
+            $assignments = if ($assignmentsResponse -is [System.Collections.IDictionary]) { $assignmentsResponse['value'] } else { $assignmentsResponse.value }
+            $namesById = @{}
+            foreach ($assignment in @($assignments)) {
+                $target = if ($assignment -is [System.Collections.IDictionary]) { $assignment['target'] } else { $assignment.target }
+                $groupId = if ($target -is [System.Collections.IDictionary]) { [string]$target['groupId'] } else { [string]$target.groupId }
+                if (-not $groupId -or $namesById.Contains($groupId)) { continue }
+                try {
+                    $group = Invoke-LoggedGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$groupId`?`$select=displayName" -Method GET -ErrorAction Stop
+                    $displayName = if ($group -is [System.Collections.IDictionary]) { [string]$group['displayName'] } else { [string]$group.displayName }
+                    if ($displayName) { $namesById[$groupId] = $displayName }
+                }
+                catch { }
+            }
+            $groupNames = @(Get-PlatformScriptGroupNames -Assignments $assignments -GroupNamesById $namesById)
+        }
+        catch { $groupsKnown = $false }
+
+        return @{
+            Script        = (ConvertTo-PlatformScriptRow $script)
+            ScriptContent = (ConvertFrom-PlatformScriptBase64 $base64)
+            GroupNames    = $groupNames
+            GroupsKnown   = $groupsKnown
+        }
+    }).AddArgument($Global:App.GraphTenantId).AddArgument($Global:App.GraphClientId).AddArgument($Global:App.GraphCertificateThumbprint).AddArgument($ScriptId).
+        AddArgument((Get-ReportHelperScriptText -Names 'Format-InstallStatusTime', 'ConvertTo-PlatformScriptRow', 'ConvertFrom-PlatformScriptBase64', 'Get-PlatformScriptGroupNames'))
+
+    $handle = $ps.BeginInvoke()
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 300
+    $timer.Add_Tick({
+        if (-not $handle.IsCompleted) { return }
+        $timer.Stop()
+        $timer.Dispose()
+        try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation "Platform script ($ScriptId)" -LogBox $LogBox } catch { }
+        try {
+            $raw = @($ps.EndInvoke($handle))
+            if ($ps.Streams.Error.Count -gt 0) {
+                if ($OnComplete) { & $OnComplete $false (Get-GraphRunspaceErrorMessage $ps.Streams.Error) $null }
+            }
+            elseif ($raw.Count -eq 0) {
+                if ($OnComplete) { & $OnComplete $false "No response came back." $null }
+            }
+            else {
+                if ($OnComplete) { & $OnComplete $true "" $raw[0] }
+            }
+        }
+        catch {
+            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { $_.Exception.Message }
+            if ($OnComplete) { & $OnComplete $false $errMsg $null }
+        }
+        finally {
+            $ps.Dispose()
+            $rs.Close()
+            $rs.Dispose()
+        }
+    }.GetNewClosure())
+    $timer.Start()
+}
+
 function Global:Start-TypeVersionBackfill {
     if ($Global:App.TypeVersionBackfillDone) { return }
 

@@ -137,7 +137,16 @@ $testableFunctionNames = @(
     "ConvertTo-InstallStatusRow",
     "Format-InstallStatusSummary",
     "Test-InstallStatusRowMatchesFilter",
-    "Get-AppInstallStatusRows"
+    "Get-AppInstallStatusRows",
+    # Platform scripts (PlatformScripts.ps1) - body building and validation
+    "ConvertTo-PlatformScriptBase64",
+    "ConvertFrom-PlatformScriptBase64",
+    "Get-PlatformScriptFileName",
+    "Test-PlatformScriptInput",
+    "New-PlatformScriptBody",
+    "New-PlatformScriptAssignBody",
+    "ConvertTo-PlatformScriptRow",
+    "Get-PlatformScriptGroupNames"
 )
 
 $funcAsts = New-Object System.Collections.Generic.List[object]
@@ -750,6 +759,66 @@ $bothFailInvoke = { param($Uri, $Method, $Body) throw "nope" }
 $bothFailed = $false
 try { [void](Get-AppInstallStatusRows -AppId "app-1" -Invoke $bothFailInvoke) } catch { $bothFailed = $_.Exception.Message -like "*deviceStatuses endpoint didn't work either*" }
 Assert-True $bothFailed "Get-AppInstallStatusRows: both endpoints failing reports both errors"
+
+# -----------------------------------------------------------------
+# Platform scripts (PlatformScripts.ps1)
+# -----------------------------------------------------------------
+Assert-Equal "V3JpdGUtSG9zdCAnaGknCg==" (ConvertTo-PlatformScriptBase64 "Write-Host 'hi'`n") `
+    "ConvertTo-PlatformScriptBase64: UTF-8 base64, no BOM"
+Assert-Equal "Write-Host 'hi'" (ConvertFrom-PlatformScriptBase64 (ConvertTo-PlatformScriptBase64 "Write-Host 'hi'")) `
+    "ConvertFrom-PlatformScriptBase64: round-trips a script unchanged"
+Assert-Equal "" (ConvertFrom-PlatformScriptBase64 "not base64 at all !!") `
+    "ConvertFrom-PlatformScriptBase64: unreadable content is empty, not an error"
+Assert-Equal "Set-TimeZone.ps1" (Get-PlatformScriptFileName -DisplayName "Set TimeZone" -FileName "") `
+    "Get-PlatformScriptFileName: derives a file name from the script name"
+Assert-Equal "my-script.ps1" (Get-PlatformScriptFileName -DisplayName "Anything" -FileName "my-script") `
+    "Get-PlatformScriptFileName: adds the .ps1 extension to what was typed"
+Assert-Equal "keep.me.ps1" (Get-PlatformScriptFileName -DisplayName "Anything" -FileName "keep.me.ps1") `
+    "Get-PlatformScriptFileName: leaves a proper file name alone"
+
+Assert-Equal "Enter a name for the script." (Test-PlatformScriptInput -DisplayName "  " -ScriptContent "Write-Host 1") `
+    "Test-PlatformScriptInput: a script needs a name"
+Assert-True ((Test-PlatformScriptInput -DisplayName "X" -ScriptContent "   ") -like "*empty*") `
+    "Test-PlatformScriptInput: an empty script is refused"
+Assert-True ((Test-PlatformScriptInput -DisplayName "X" -ScriptContent ("a" * 200001)) -like "*200 KB*") `
+    "Test-PlatformScriptInput: a script over Intune's size limit is refused"
+Assert-Null (Test-PlatformScriptInput -DisplayName "Set time zone" -ScriptContent "Set-TimeZone -Id 'W. Europe Standard Time'") `
+    "Test-PlatformScriptInput: nothing wrong with a normal script"
+
+$scriptBody = New-PlatformScriptBody -DisplayName " Set time zone " -Description "" -FileName "" `
+    -ScriptContent "Set-TimeZone -Id 'W. Europe Standard Time'" -RunAsAccount 'user' -RunAs32Bit $true -EnforceSignatureCheck $false
+Assert-Equal "Set time zone" $scriptBody.displayName "New-PlatformScriptBody: trims the name"
+Assert-Equal "Set-time-zone.ps1" $scriptBody.fileName "New-PlatformScriptBody: fills in a file name"
+Assert-Equal "user" $scriptBody.runAsAccount "New-PlatformScriptBody: keeps the run-as choice"
+Assert-Equal $true $scriptBody.runAs32Bit "New-PlatformScriptBody: keeps the 32-bit choice"
+Assert-Equal "#microsoft.graph.deviceManagementScript" $scriptBody.'@odata.type' "New-PlatformScriptBody: the type Graph expects"
+Assert-Equal "Set-TimeZone -Id 'W. Europe Standard Time'" (ConvertFrom-PlatformScriptBase64 $scriptBody.scriptContent) `
+    "New-PlatformScriptBody: the script itself survives the round trip"
+
+$assignBody = New-PlatformScriptAssignBody -GroupIds @("11111111-1111-1111-1111-111111111111", "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
+Assert-Equal 2 @($assignBody.deviceManagementScriptAssignments).Count "New-PlatformScriptAssignBody: the same group twice is one assignment"
+Assert-Equal "#microsoft.graph.groupAssignmentTarget" @($assignBody.deviceManagementScriptAssignments)[0].target.'@odata.type' `
+    "New-PlatformScriptAssignBody: assigns to a group target"
+Assert-Equal 0 @((New-PlatformScriptAssignBody -GroupIds @()).deviceManagementScriptAssignments).Count `
+    "New-PlatformScriptAssignBody: no groups is an empty list, which clears the assignments"
+
+$listed = ConvertTo-PlatformScriptRow @{ id = "s1"; displayName = "Set time zone"; fileName = "tz.ps1"; runAsAccount = "user"; runAs32Bit = $true; enforceSignatureCheck = $false; lastModifiedDateTime = "2026-09-17 08:14:00" }
+Assert-Equal "Signed-in user" $listed.RunAs "ConvertTo-PlatformScriptRow: says who the script runs as in words"
+Assert-Equal "Yes" $listed.RunAs32Bit "ConvertTo-PlatformScriptRow: 32-bit as Yes/No"
+Assert-Equal "Not required" $listed.Signature "ConvertTo-PlatformScriptRow: signature check in words"
+Assert-Equal "2026-09-17 08:14" $listed.Modified "ConvertTo-PlatformScriptRow: shortens the timestamp"
+Assert-Equal "System" (ConvertTo-PlatformScriptRow @{ runAsAccount = "system" }).RunAs "ConvertTo-PlatformScriptRow: the system account"
+
+$assignments = @(
+    @{ target = @{ groupId = "g1" } },
+    @{ target = @{ groupId = "g2" } },
+    @{ target = @{ '@odata.type' = '#microsoft.graph.allDevicesAssignmentTarget' } }
+)
+$knownNames = @{ "g1" = "SG-Intune-AllDevices" }
+$assignedNames = @(Get-PlatformScriptGroupNames -Assignments $assignments -GroupNamesById $knownNames)
+Assert-Equal "SG-Intune-AllDevices" $assignedNames[0] "Get-PlatformScriptGroupNames: uses the group name when it's known"
+Assert-Equal "g2" $assignedNames[1] "Get-PlatformScriptGroupNames: an unknown group keeps its id rather than disappearing"
+Assert-Equal 2 $assignedNames.Count "Get-PlatformScriptGroupNames: a non-group target is skipped"
 
 # =================================================================
 # Report

@@ -2,6 +2,22 @@
 
 ## 1.3
 
+### Platform scripts
+
+**More actions... > Intune > Platform scripts...** lists the PowerShell
+scripts Intune runs on enrolled Windows devices, and lets you add, change
+and delete them without the portal: paste a script or load a `.ps1`, set
+the name, description and file name, choose whether it runs as the system
+account or the signed-in user, in 32-bit, and whether a signature is
+required, then tick the groups that get it.
+
+Saving replaces that script's assignments in Intune with exactly the
+groups ticked, and says so before it does. Changing a script makes Intune
+run it again on devices that already had it. Needs
+`DeviceManagementScripts.ReadWrite.All` as an application permission
+(the older `DeviceManagementConfiguration.ReadWrite.All` also works), plus
+the `Group.Read.All` the app already uses to resolve group names.
+
 ### Installation status of an app
 
 Right-click an app in the catalog and choose **Installation status...** to

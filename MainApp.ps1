@@ -326,6 +326,7 @@ $Global:App.EmbeddedDeleteAppScript = Get-Content -Path (Join-Path $PSScriptRoot
 $Global:App.EmbeddedGroupManagerScript = Get-Content -Path (Join-Path $PSScriptRoot "code\EmbeddedScripts\GroupManager.ps1") -Raw -Encoding UTF8
 $Global:App.EmbeddedSyncMetadataScript = Get-Content -Path (Join-Path $PSScriptRoot "code\EmbeddedScripts\SyncMetadata.ps1") -Raw -Encoding UTF8
 $Global:App.EmbeddedCertUploadScript = Get-Content -Path (Join-Path $PSScriptRoot "code\EmbeddedScripts\CertUpload.ps1") -Raw -Encoding UTF8
+$Global:App.EmbeddedPlatformScriptsScript = Get-Content -Path (Join-Path $PSScriptRoot "code\EmbeddedScripts\PlatformScripts.ps1") -Raw -Encoding UTF8
 
 # =====================================================================
 # Data helpers
@@ -566,6 +567,7 @@ $btnReload = New-Object System.Windows.Forms.Button; $btnReload.Text = "Reload"
 $btnOpen   = New-Object System.Windows.Forms.Button; $btnOpen.Text = "Open other folder..."
 $Global:App.BtnLookupIds = New-Object System.Windows.Forms.Button; $Global:App.BtnLookupIds.Text = "Look up App IDs..."
 $btnCheckIntuneOnly = New-Object System.Windows.Forms.Button; $btnCheckIntuneOnly.Text = "Intune sync check..."
+$btnPlatformScripts = New-Object System.Windows.Forms.Button; $btnPlatformScripts.Text = "Platform scripts..."
 $btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text = "Push groups to Intune (multiple apps)..."
 $btnSyncMetadata = New-Object System.Windows.Forms.Button; $btnSyncMetadata.Text = "Pull metadata and groups from Intune..."
 $btnBatchEdit = New-Object System.Windows.Forms.Button; $btnBatchEdit.Text = "Batch edit Intune fields..."
@@ -598,6 +600,7 @@ $toolbarTips.SetToolTip($Global:App.BtnSave, "Not usually needed - every change 
 $toolbarTips.SetToolTip($btnReload, "Discard any unsaved changes and reload the catalog from disk.")
 $toolbarTips.SetToolTip($btnOpen, "Switch to a different folder of per-app JSON files.")
 $toolbarTips.SetToolTip($Global:App.BtnLookupIds, "Search Intune by name for apps missing an App ID, and fill it in.")
+$toolbarTips.SetToolTip($btnPlatformScripts, "The PowerShell scripts Intune runs on enrolled Windows devices: list them, add one, change one, delete one.")
 $toolbarTips.SetToolTip($btnCheckIntuneOnly, "Compares Intune against this catalog: apps in Intune not yet in the catalog, catalog apps renamed in Intune since, and catalog apps whose App ID no longer exists in Intune. Read-only.")
 $toolbarTips.SetToolTip($btnBatchAssign, "Add a favorite group to multiple apps at once, then preview and apply the result to Intune.")
 $toolbarTips.SetToolTip($btnSyncMetadata, "Pull current metadata from Intune into the local catalog for apps that already have an App ID. Read-only.")
@@ -659,6 +662,7 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
     @{ Text = $btnSyncMetadata.Text; Btn = $btnSyncMetadata }
     @{ Text = $btnBatchEdit.Text; Btn = $btnBatchEdit }
     @{ Text = $btnDefaultValues.Text; Btn = $btnDefaultValues }
+    @{ Text = $btnPlatformScripts.Text; Btn = $btnPlatformScripts }
 )))
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Entra ID" -Tips $toolbarTips -Items @(
     @{ Text = $btnGroupManager.Text; Btn = $btnGroupManager }
@@ -1870,6 +1874,7 @@ $btnBatchDeploy.Add_Click({
     Show-BatchDeployDialog -ScopedIndices $selectedIndices
 })
 $btnGroupManager.Add_Click({ Show-GroupManagerDialog })
+$btnPlatformScripts.Add_Click({ Show-PlatformScriptsDialog })
 $btnFavoriteGroups.Add_Click({ Show-FavoriteGroupsManager })
 $btnGroupDrift.Add_Click({ Show-GroupDriftCheckDialog })
 $btnDependencies.Add_Click({ Show-DependencyOverviewDialog })

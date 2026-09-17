@@ -77,9 +77,9 @@ function Global:Show-AppInstallStatusDialog {
         @{ Name = "DeviceName"; Header = "Device"; Weight = 17 }
         @{ Name = "UserName";   Header = "User";   Weight = 21 }
         @{ Name = "State";      Header = "State";  Weight = 12 }
-        @{ Name = "Detail";     Header = "Detail"; Weight = 24 }
+        @{ Name = "Detail";     Header = "Detail"; Weight = 23 }
         @{ Name = "ErrorCode";  Header = "Error";  Weight = 11 }
-        @{ Name = "Version";    Header = "Version"; Weight = 7 }
+        @{ Name = "Version";    Header = "Version"; Weight = 8 }
         @{ Name = "LastSeen";   Header = "Last reported"; Weight = 13 }
     )) {
         $gridCol = New-Object System.Windows.Forms.DataGridViewTextBoxColumn

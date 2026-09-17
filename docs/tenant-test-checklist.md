@@ -104,7 +104,35 @@ For every step, check the dialog's log box **and** the Log tab.
 - [ ] The menu entry is greyed out for an app without an App ID, and for a
       multi-row selection.
 
-## 6. Delete prompts
+## 6. Platform scripts (new in 1.3)
+
+- [ ] **More actions... > Intune > Platform scripts...** lists what the
+      portal shows under Devices > Scripts and remediations > Platform
+      scripts, with the same "runs as", 32-bit and signature values.
+- [ ] **New script...**: paste a harmless script (e.g.
+      `Write-Output "hello"`), name it `ZZ-Test-Script`, tick one test
+      group, **Create in Intune**. The black box shows `[GRAPH] POST
+      /beta/deviceManagement/deviceManagementScripts -> OK` and a second
+      `POST .../assign`, and the list shows it afterwards.
+- [ ] The portal shows the same script, with that group assigned and the
+      script text intact (no stray characters at the top - that would mean
+      the encoding is wrong).
+- [ ] **Edit...** on it loads the script text and the group back, exactly
+      as saved.
+- [ ] Change the text, untick every group, Save - it warns that the script
+      stops being assigned, and afterwards the portal shows no assignment.
+- [ ] Load a `.ps1` file with **Load .ps1 file...** - the name and file
+      name fill in from the file name when they're empty.
+- [ ] A script that doesn't exist in Entra: type a group name that doesn't
+      exist via "+ Group..." and save - the run fails with "No group named
+      ... exists in Entra ID", and nothing half-done is left behind.
+- [ ] **Delete...** asks first, with No as the default, then the script is
+      gone from both the list and the portal.
+- [ ] If Graph refuses with a permissions error, add
+      `DeviceManagementScripts.ReadWrite.All` (application) to the app
+      registration and grant admin consent, then retry.
+
+## 7. Delete prompts
 
 - [ ] **Delete from Intune...** on the test app, where a second test app
       depends on it - "Dependency in the way" names both apps and says Yes
@@ -112,7 +140,7 @@ For every step, check the dialog's log box **and** the Log tab.
 - [ ] Delete the group `ZZ-Test-B` in Group manager while a catalog app
       uses it - the question lists that app.
 
-## 7. Clean up
+## 8. Clean up
 
-- [ ] Delete the test apps from Intune (and the catalog) and the two test
-      groups.
+- [ ] Delete the test apps from Intune (and the catalog), the two test
+      groups, and the `ZZ-Test-Script` platform script if it's still there.

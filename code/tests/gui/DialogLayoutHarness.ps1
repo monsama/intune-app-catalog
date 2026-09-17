@@ -256,6 +256,14 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'Intune Audit' { Show-IntuneAuditDialog }
     Add-LayoutAuditStep 'Intune sync check' { Show-IntuneOnlyAppsDialog }
     Add-LayoutAuditStep 'Install status' { Show-AppInstallStatusDialog -AppId $a0.appId -AppName $a0.appName }.GetNewClosure()
+    Add-LayoutAuditStep 'Platform scripts' { Show-PlatformScriptsDialog }
+    Add-LayoutAuditStep 'Platform script (new)' { Show-PlatformScriptEditorDialog }
+    Add-LayoutAuditStep 'Platform script (existing)' {
+        Show-PlatformScriptEditorDialog -ScriptId 'd1e2f3a4-0000-4000-8000-000000000001' `
+            -DisplayName 'Set the time zone on every enrolled device' -Description 'Sets W. Europe Standard Time and enables automatic DST' `
+            -FileName 'Set-TimeZone.ps1' -ScriptContent "Set-TimeZone -Id 'W. Europe Standard Time'`nSet-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation' -Name 'DynamicDaylightTimeDisabled' -Value 0" `
+            -RunAsAccount 'system' -RunAs32Bit $false -EnforceSignatureCheck $false -GroupNames @($longGroup, 'SG-Intune-AllDevices')
+    }.GetNewClosure()
     Add-LayoutAuditStep 'Install status (long name)' { Show-AppInstallStatusDialog -AppId $long.appId -AppName $long.appName }.GetNewClosure()
     Add-LayoutAuditStep 'Local vs. Intune' {
         Show-MetadataDriftDialog -AppName $a0.appName -Rows @(
