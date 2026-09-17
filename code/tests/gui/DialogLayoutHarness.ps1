@@ -255,6 +255,8 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'Find a group' { Show-GroupOnlyPicker }
     Add-LayoutAuditStep 'Intune Audit' { Show-IntuneAuditDialog }
     Add-LayoutAuditStep 'Intune sync check' { Show-IntuneOnlyAppsDialog }
+    Add-LayoutAuditStep 'Install status' { Show-AppInstallStatusDialog -AppId $a0.appId -AppName $a0.appName }.GetNewClosure()
+    Add-LayoutAuditStep 'Install status (long name)' { Show-AppInstallStatusDialog -AppId $long.appId -AppName $long.appName }.GetNewClosure()
     Add-LayoutAuditStep 'Local vs. Intune' {
         Show-MetadataDriftDialog -AppName $a0.appName -Rows @(
             [pscustomobject]@{ Field = 'Install command'; Local = 'powershell.exe -ExecutionPolicy Bypass -File install.ps1 -Mode Silent -LogPath C:\Windows\Temp\7zip.log'; Intune = 'install.cmd' }

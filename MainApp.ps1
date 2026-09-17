@@ -136,7 +136,7 @@ $Global:App.LastAuditCachePath = Join-Path $Global:App.RootPath "data\last-audit
 $Global:App.CatalogGeneration = 0
 $Global:App.LogFileWriter = $null   # opened in Initialize-Folders, written to by Write-Log, closed on FormClosing - see both below
 $Global:App.LogFlushTimer = $null   # periodic flush timer for the above - see Initialize-Folders
-$Global:App.AppVersion = "1.2"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance rather than by diffing the whole file
+$Global:App.AppVersion = "1.3"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance rather than by diffing the whole file
 
 # App-only Graph auth (certificate) - must match the values in the Assign step /
 # your Entra ID app registration. Left blank on purpose - no tenant/client
@@ -1543,6 +1543,11 @@ $menuItemSyncMetadata.ToolTipText = "Opens the sync dialog pre-scoped to your se
 # for this), same as every other selection-aware item here.
 $menuItemAudit = New-Object System.Windows.Forms.ToolStripMenuItem "Run audit..."
 $menuItemAudit.ToolTipText = "Opens the audit dialog pre-scoped to your selected row(s), instead of every app. Read-only."
+# What Intune reports about an app per device - read-only, one app at a
+# time (the report is per app, and a mixed list of several apps' devices
+# would say less than one app's list does).
+$menuItemInstallStatus = New-Object System.Windows.Forms.ToolStripMenuItem "Installation status..."
+$menuItemInstallStatus.ToolTipText = "Shows which devices and users have this app installed, and which failed with what error. Read-only."
 $menuItemDeleteIntune = New-Object System.Windows.Forms.ToolStripMenuItem "Delete from Intune..."
 $menuItemDeleteIntune.ToolTipText = "One row selected: deletes it directly. Multiple rows: opens the bulk delete dialog, pre-scoped to your selection. Intune only, same as the toolbar delete."
 $menuItemSeparator = New-Object System.Windows.Forms.ToolStripSeparator
@@ -1553,6 +1558,7 @@ $menuItemRemoveCatalog = New-Object System.Windows.Forms.ToolStripMenuItem "Remo
 [void]$gridContextMenu.Items.Add($menuItemAssign)
 [void]$gridContextMenu.Items.Add($menuItemSyncMetadata)
 [void]$gridContextMenu.Items.Add($menuItemAudit)
+[void]$gridContextMenu.Items.Add($menuItemInstallStatus)
 [void]$gridContextMenu.Items.Add($menuItemDeleteIntune)
 [void]$gridContextMenu.Items.Add($menuItemSeparator)
 [void]$gridContextMenu.Items.Add($menuItemRemoveCatalog)
@@ -1604,6 +1610,10 @@ $gridContextMenu.Add_Opening({
 
     $menuItemAudit.Text = if ($isMulti) { "Audit $($selectedIndices.Count) app(s)..." } else { "Run audit..." }
     $menuItemAudit.Enabled = $hasSelection -and (@($selectedIndices | ForEach-Object { $Global:App.Apps[$_] } | Where-Object { $_.appId }).Count -gt 0)
+
+    # One app only, and only once it exists in Intune
+    $firstSelectedApp = if ($hasSelection) { $Global:App.Apps[$selectedIndices[0]] } else { $null }
+    $menuItemInstallStatus.Enabled = (-not $isMulti) -and $firstSelectedApp -and [bool]$firstSelectedApp.appId
 
     $menuItemDeleteIntune.Text = if ($isMulti) { "Delete $($selectedIndices.Count) app(s) from Intune..." } else { "Delete from Intune..." }
     $menuItemDeleteIntune.Enabled = $hasSelection
@@ -1680,6 +1690,13 @@ $menuItemSyncMetadata.Add_Click({
     if ($indices.Count -eq 0) { return }
     Show-SyncMetadataDialog -ScopedIndices $indices
     Update-Grid
+})
+
+$menuItemInstallStatus.Add_Click({
+    $indices = Get-SelectedAppIndices
+    if ($indices.Count -ne 1) { return }
+    $app = $Global:App.Apps[$indices[0]]
+    Show-AppInstallStatusDialog -AppId $app.appId -AppName $app.appName
 })
 
 $menuItemAudit.Add_Click({

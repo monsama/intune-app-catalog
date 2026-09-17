@@ -1038,6 +1038,95 @@ function Global:Start-AppMetadataFetch {
     $timer.Start()
 }
 
+function Global:Start-AppInstallStatusFetch {
+    <#
+      Who actually has this app: one row per device, with the user, the
+      state and the error code of a failure. Read-only.
+
+      Uses the same report endpoint the Intune portal's own "Device install
+      status" view is built on - the obvious-looking
+      mobileApps/{id}/deviceStatuses has been deprecated since 2023 and
+      answers "Resource not found for the segment 'deviceStatuses'" on
+      current tenants - and falls back to that older endpoint anyway if the
+      report one isn't available in this tenant.
+
+      -LogBox: see Start-IntuneAppLookup. -OnComplete gets
+      ($ok, $errorMessage, $result), $result being
+      @{ Rows = <normalized rows>; Source = 'report'|'deviceStatuses'; Truncated = <bool> }.
+    #>
+    param([string]$AppId, [scriptblock]$OnComplete, [System.Windows.Forms.RichTextBox]$LogBox)
+
+    if (-not (Test-GraphModuleAvailable -CurrentHostOnly)) {
+        if ($OnComplete) { & $OnComplete $false "Microsoft.Graph.Authentication module isn't installed." $null }
+        return
+    }
+    if (-not (Test-GraphCredentialsConfigured)) {
+        if ($OnComplete) { & $OnComplete $false "Not configured" $null }
+        return
+    }
+
+    # Invoke-LoggedGraphRequest available inside - see GraphLog.ps1
+    $rs = New-GraphLogRunspace
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript({
+        param($TenantId, $ClientId, $CertThumb, $TargetAppId, $ReportHelperText)
+        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+        $ctx = Get-MgContext -ErrorAction SilentlyContinue
+        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+            Connect-MgGraph -TenantId $TenantId -ClientId $ClientId `
+                -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
+        }
+        # The pure helpers (GraphReports.ps1) as text - a runspace of its
+        # own doesn't inherit this process's functions.
+        . ([scriptblock]::Create($ReportHelperText))
+
+        return Get-AppInstallStatusRows -AppId $TargetAppId -Invoke {
+            param($Uri, $Method, $Body)
+            if ($null -ne $Body) {
+                Invoke-LoggedGraphRequest -Uri $Uri -Method $Method -Body $Body -ContentType "application/json" -ErrorAction Stop
+            }
+            else {
+                Invoke-LoggedGraphRequest -Uri $Uri -Method $Method -ErrorAction Stop
+            }
+        }
+    }).AddArgument($Global:App.GraphTenantId).AddArgument($Global:App.GraphClientId).AddArgument($Global:App.GraphCertificateThumbprint).AddArgument($AppId).
+        AddArgument((Get-ReportHelperScriptText -Names 'ConvertFrom-GraphReportTable', 'Get-ReportColumnValue', 'Format-InstallStatusError', 'ConvertTo-InstallStatusRow', 'Get-AppInstallStatusRows'))
+
+    $handle = $ps.BeginInvoke()
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 300
+    $timer.Add_Tick({
+        if (-not $handle.IsCompleted) { return }
+        $timer.Stop()
+        $timer.Dispose()
+        # what this lookup asked Graph - before the results, which the caller may log right away
+        try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation "Install status ($AppId)" -LogBox $LogBox } catch { }
+        try {
+            $raw = @($ps.EndInvoke($handle))
+            if ($ps.Streams.Error.Count -gt 0) {
+                if ($OnComplete) { & $OnComplete $false (Get-GraphRunspaceErrorMessage $ps.Streams.Error) $null }
+            }
+            elseif ($raw.Count -eq 0) {
+                if ($OnComplete) { & $OnComplete $false "No response came back." $null }
+            }
+            else {
+                if ($OnComplete) { & $OnComplete $true "" $raw[0] }
+            }
+        }
+        catch {
+            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { $_.Exception.Message }
+            if ($OnComplete) { & $OnComplete $false $errMsg $null }
+        }
+        finally {
+            $ps.Dispose()
+            $rs.Close()
+            $rs.Dispose()
+        }
+    }.GetNewClosure())
+    $timer.Start()
+}
+
 function Global:Start-TypeVersionBackfill {
     if ($Global:App.TypeVersionBackfillDone) { return }
 

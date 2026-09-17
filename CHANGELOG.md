@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.3
+
+### Installation status of an app
+
+Right-click an app in the catalog and choose **Installation status...** to
+see what Intune reports about it, per device: the device, its user, the
+state, the error code of a failure (in red, with the searchable hex form),
+the version and when it was last reported. **Failed only** filters the
+list, **Copy list** puts it on the clipboard, and **Refresh** asks Intune
+again. Read-only - nothing here changes Intune or the catalog.
+
+The numbers come from Intune's reporting pipeline, the same one behind the
+portal's own "Device install status" view, so a very recent install or
+failure takes a while to appear. It reads the report endpoint the portal
+uses, and falls back to the older `deviceStatuses` endpoint if a tenant
+doesn't answer on it. Needs `DeviceManagementApps.Read.All`, which the app
+registration already has.
+
 ## 1.2
 
 ### See what the app does in Intune

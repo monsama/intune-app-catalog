@@ -128,7 +128,15 @@ $testableFunctionNames = @(
     "ConvertTo-GraphLogLine",
     "ConvertTo-GraphReadSummary",
     "Format-LogDuration",
-    "ConvertTo-RunLogLine"
+    "ConvertTo-RunLogLine",
+    # Install status report parsing (GraphReports.ps1) - pure table/string work
+    "ConvertFrom-GraphReportTable",
+    "Get-ReportColumnValue",
+    "Format-InstallStatusError",
+    "ConvertTo-InstallStatusRow",
+    "Format-InstallStatusSummary",
+    "Test-InstallStatusRowMatchesFilter",
+    "Get-AppInstallStatusRows"
 )
 
 $funcAsts = New-Object System.Collections.Generic.List[object]
@@ -647,7 +655,95 @@ Assert-Equal "[RUN] winget search `"7zip`" -> 12 result(s) (2.3 s)" (ConvertTo-R
 Assert-Equal "[RUN] winget search `"x`" -> FAILED (30 s): winget search timed out after 30 seconds." (ConvertTo-RunLogLine -Command 'winget search "x"' -Milliseconds 30000 -ErrorText "winget search timed out after 30 seconds.`nmore") `
     "ConvertTo-RunLogLine: a failed command with the first line of its error"
 Assert-Equal "[RUN] tool.exe -> OK (5 ms)" (ConvertTo-RunLogLine -Command "tool.exe" -Milliseconds 5) `
-    "ConvertTo-RunLogLine: OK by default"# =================================================================
+    "ConvertTo-RunLogLine: OK by default"# -----------------------------------------------------------------
+# Install status report (GraphReports.ps1)
+# -----------------------------------------------------------------
+$sampleReport = @{
+    Schema = @(@{ Column = "DeviceName" }, @{ Column = "UserPrincipalName" }, @{ Column = "AppInstallState_loc" }, @{ Column = "ErrorCode" })
+    Values = @(
+        @("PC-01", "ada@contoso.com", "Installed", 0),
+        @("PC-02", "bob@contoso.com", "Failed", -2016345060)
+    )
+}
+$reportRows = @(ConvertFrom-GraphReportTable $sampleReport)
+Assert-Equal 2 $reportRows.Count "ConvertFrom-GraphReportTable: one row per Values entry"
+Assert-Equal "PC-02" $reportRows[1]["DeviceName"] "ConvertFrom-GraphReportTable: cells are keyed by their column name"
+Assert-Equal 0 (@(ConvertFrom-GraphReportTable $null)).Count "ConvertFrom-GraphReportTable: no report means no rows"
+$shortRow = @(ConvertFrom-GraphReportTable @{ Schema = @(@{ Column = "A" }, @{ Column = "B" }); Values = @(, @("only-a")) })
+Assert-Equal "only-a" $shortRow[0]["A"] "ConvertFrom-GraphReportTable: a row shorter than the schema keeps the cells it has"
+Assert-Equal "" "$($shortRow[0]['B'])" "ConvertFrom-GraphReportTable: the missing cells of a short row are empty"
+
+Assert-Equal "ada@contoso.com" (Get-ReportColumnValue $reportRows[0] @('UserPrincipalName', 'UserName')) `
+    "Get-ReportColumnValue: takes the first column name that exists"
+Assert-Equal "" (Get-ReportColumnValue $reportRows[0] @('NoSuchColumn')) `
+    "Get-ReportColumnValue: a missing column is empty, not an error"
+
+Assert-Equal "" (Format-InstallStatusError 0) "Format-InstallStatusError: 0 means no error"
+Assert-Equal "" (Format-InstallStatusError "") "Format-InstallStatusError: blank means no error"
+Assert-Equal "0x87D10324 (-2016345308)" (Format-InstallStatusError -2016345308) `
+    "Format-InstallStatusError: a negative code shows the searchable hex form too"
+
+$installed = ConvertTo-InstallStatusRow $reportRows[0]
+Assert-Equal "PC-01" $installed.DeviceName "ConvertTo-InstallStatusRow: device name"
+Assert-Equal "Installed" $installed.State "ConvertTo-InstallStatusRow: prefers the report's own state text"
+Assert-Equal "" $installed.ErrorCode "ConvertTo-InstallStatusRow: no error code for a successful install"
+$numericState = ConvertTo-InstallStatusRow ([ordered]@{ DeviceName = "PC-03"; AppInstallState = 3 })
+Assert-Equal "State 3" $numericState.State `
+    "ConvertTo-InstallStatusRow: a state with no text column is shown as its number, not guessed"
+
+Assert-Equal "No install status reported for this app yet." (Format-InstallStatusSummary @()) `
+    "Format-InstallStatusSummary: nothing reported yet"
+Assert-Equal "2 devices: 1 Failed, 1 Installed" (Format-InstallStatusSummary @($installed, (ConvertTo-InstallStatusRow $reportRows[1]))) `
+    "Format-InstallStatusSummary: counts every state that came back, same order every time"
+Assert-Equal "1 device: 1 Installed" (Format-InstallStatusSummary @($installed)) `
+    "Format-InstallStatusSummary: one device isn't called devices"
+
+Assert-True (Test-InstallStatusRowMatchesFilter -Row $installed -Filter 'All') "filter All keeps every row"
+Assert-True (-not (Test-InstallStatusRowMatchesFilter -Row $installed -Filter 'Failed only')) "filter Failed only drops an installed row"
+Assert-True (Test-InstallStatusRowMatchesFilter -Row ([pscustomobject]@{ State = "Failed" }) -Filter 'Failed only') "filter Failed only keeps a failed row"
+
+# Paging, the fallback to the older endpoint and the row cap, with the Graph
+# call itself faked - see Get-AppInstallStatusRows' -Invoke
+$script:calls = New-Object System.Collections.Generic.List[string]
+$pagingInvoke = {
+    param($Uri, $Method, $Body)
+    $script:calls.Add("$Method $($Uri -replace '^https://graph.microsoft.com', '') skip=$($Body.skip) top=$($Body.top)")
+    $names = if ($Body.skip -eq 0) { @("PC-1", "PC-2") } else { @("PC-3") }
+    @{ Schema = @(@{ Column = "DeviceName" }); Values = @($names | ForEach-Object { , @($_) }) }
+}
+$paged = Get-AppInstallStatusRows -AppId "app-1" -Invoke $pagingInvoke -PageSize 2
+Assert-Equal 3 @($paged.Rows).Count "Get-AppInstallStatusRows: keeps paging while a full page comes back"
+Assert-Equal "report" $paged.Source "Get-AppInstallStatusRows: says the rows came from the report endpoint"
+Assert-True (-not $paged.Truncated) "Get-AppInstallStatusRows: a complete result isn't truncated"
+Assert-Equal "POST /beta/deviceManagement/reports/getDeviceInstallStatusReport skip=0 top=2" $script:calls[0] `
+    "Get-AppInstallStatusRows: asks the report endpoint, filtered by app, from the first row"
+Assert-Equal "POST /beta/deviceManagement/reports/getDeviceInstallStatusReport skip=2 top=2" $script:calls[1] `
+    "Get-AppInstallStatusRows: the next page skips what it already has"
+
+$cappedInvoke = {
+    param($Uri, $Method, $Body)
+    @{ Schema = @(@{ Column = "DeviceName" }); Values = @(1..2 | ForEach-Object { , @("PC-$_") }) }
+}
+$capped = Get-AppInstallStatusRows -AppId "app-1" -Invoke $cappedInvoke -PageSize 2 -MaxRows 4
+Assert-Equal 4 @($capped.Rows).Count "Get-AppInstallStatusRows: stops at the row cap instead of paging forever"
+Assert-True $capped.Truncated "Get-AppInstallStatusRows: says so when it stopped at the cap"
+
+$fallbackInvoke = {
+    param($Uri, $Method, $Body)
+    if ($Uri -like '*getDeviceInstallStatusReport*') { throw "Resource not found for the segment 'reports'" }
+    @{ value = @(@{ deviceName = "PC-9"; userPrincipalName = "ada@contoso.com"; installState = "failed"; errorCode = -2016345308 }) }
+}
+$fallback = Get-AppInstallStatusRows -AppId "app-1" -Invoke $fallbackInvoke
+Assert-Equal "deviceStatuses" $fallback.Source "Get-AppInstallStatusRows: falls back to the older endpoint when the report one fails"
+Assert-Equal "PC-9" @($fallback.Rows)[0].DeviceName "Get-AppInstallStatusRows: the fallback's rows are normalized the same way"
+Assert-Equal "0x87D10324 (-2016345308)" @($fallback.Rows)[0].ErrorCode "Get-AppInstallStatusRows: the fallback keeps the error code"
+
+$bothFailInvoke = { param($Uri, $Method, $Body) throw "nope" }
+$bothFailed = $false
+try { [void](Get-AppInstallStatusRows -AppId "app-1" -Invoke $bothFailInvoke) } catch { $bothFailed = $_.Exception.Message -like "*deviceStatuses endpoint didn't work either*" }
+Assert-True $bothFailed "Get-AppInstallStatusRows: both endpoints failing reports both errors"
+
+# =================================================================
 # Report
 # =================================================================
 Write-Host ""

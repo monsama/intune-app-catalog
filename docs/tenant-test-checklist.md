@@ -83,7 +83,28 @@ For every step, check the dialog's log box **and** the Log tab.
       standard codes 0, 1707, 3010, 1641, 1618, and so does the app's
       catalog file.
 
-## 5. Delete prompts
+## 5. Installation status (new in 1.3)
+
+- [ ] Right-click a deployed app > **Installation status...** - a row per
+      device, with user, state, version and "last reported".
+- [ ] The line above the list counts the states ("12 devices: 9 Installed,
+      2 Failed, 1 Pending"), and the numbers match the Intune portal's own
+      "Device install status" for that app.
+- [ ] A failed row is red and shows an error code like
+      `0x87D10324 (-2016345308)`.
+- [ ] **Failed only** shows just those rows; **All** brings the rest back.
+- [ ] **Copy list** pastes as a tab-separated table.
+- [ ] **Refresh** reloads, and the Log tab shows a `[GRAPH] Install status
+      (<app id>): N read request(s)` line.
+- [ ] An app with many devices (more than 200) shows them all - paging
+      works - or says "only the first N rows are shown".
+- [ ] If the State column shows "State 1" style values instead of words
+      like "Installed", tell me: the report returned numbers without the
+      text column, and the app deliberately doesn't guess what they mean.
+- [ ] The menu entry is greyed out for an app without an App ID, and for a
+      multi-row selection.
+
+## 6. Delete prompts
 
 - [ ] **Delete from Intune...** on the test app, where a second test app
       depends on it - "Dependency in the way" names both apps and says Yes
@@ -91,7 +112,7 @@ For every step, check the dialog's log box **and** the Log tab.
 - [ ] Delete the group `ZZ-Test-B` in Group manager while a catalog app
       uses it - the question lists that app.
 
-## Clean up
+## 7. Clean up
 
 - [ ] Delete the test apps from Intune (and the catalog) and the two test
       groups.
