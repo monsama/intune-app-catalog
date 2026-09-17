@@ -1091,7 +1091,7 @@ function Global:Start-AppInstallStatusFetch {
             }
         }
     }).AddArgument($Global:App.GraphTenantId).AddArgument($Global:App.GraphClientId).AddArgument($Global:App.GraphCertificateThumbprint).AddArgument($AppId).
-        AddArgument((Get-ReportHelperScriptText -Names 'ConvertFrom-GraphReportTable', 'Get-ReportColumnValue', 'Format-InstallStatusError', 'ConvertTo-InstallStatusRow', 'Get-AppInstallStatusRows'))
+        AddArgument((Get-ReportHelperScriptText -Names 'ConvertFrom-GraphReportTable', 'Get-ReportColumnValue', 'Format-InstallStatusError', 'Format-InstallStatusTime', 'ConvertTo-InstallStatusRow', 'Get-AppInstallStatusRows'))
 
     $handle = $ps.BeginInvoke()
     $timer = New-Object System.Windows.Forms.Timer

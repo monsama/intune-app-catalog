@@ -27,7 +27,7 @@ function Global:Show-AppInstallStatusDialog {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "What Intune reports about this app per device. Read-only. These numbers come from Intune's reporting pipeline, the same one the portal's own 'Device install status' view uses, so a very recent install or failure can take a while to show up here."
+    $lblIntro.Text = "What Intune reports about this app per device, in your local time. Read-only. These numbers come from Intune's reporting pipeline, the same one the portal's own 'Device install status' view uses, so a very recent install or failure can take a while to show up here. Hover a row for the full text."
     $lblIntro.Location = New-Object System.Drawing.Point(15, 12)
     $lblIntro.Size = New-Object System.Drawing.Size(830, 36)
     $dlg.Controls.Add($lblIntro)
@@ -74,13 +74,13 @@ function Global:Show-AppInstallStatusDialog {
     $grid.AutoGenerateColumns = $false
     $grid.BackgroundColor = [System.Drawing.SystemColors]::Window
     foreach ($col in @(
-        @{ Name = "DeviceName"; Header = "Device"; Weight = 20 }
-        @{ Name = "UserName";   Header = "User";   Weight = 22 }
-        @{ Name = "State";      Header = "State";  Weight = 13 }
-        @{ Name = "Detail";     Header = "Detail"; Weight = 15 }
-        @{ Name = "ErrorCode";  Header = "Error";  Weight = 15 }
-        @{ Name = "Version";    Header = "Version"; Weight = 8 }
-        @{ Name = "LastSeen";   Header = "Last reported"; Weight = 12 }
+        @{ Name = "DeviceName"; Header = "Device"; Weight = 17 }
+        @{ Name = "UserName";   Header = "User";   Weight = 21 }
+        @{ Name = "State";      Header = "State";  Weight = 12 }
+        @{ Name = "Detail";     Header = "Detail"; Weight = 24 }
+        @{ Name = "ErrorCode";  Header = "Error";  Weight = 11 }
+        @{ Name = "Version";    Header = "Version"; Weight = 7 }
+        @{ Name = "LastSeen";   Header = "Last reported"; Weight = 13 }
     )) {
         $gridCol = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
         $gridCol.Name = $col.Name
@@ -113,11 +113,22 @@ function Global:Show-AppInstallStatusDialog {
         $filter = [string]$cmbFilter.SelectedItem
         $shown = @($rowsBox.Value | Where-Object { Test-InstallStatusRowMatchesFilter -Row $_ -Filter $filter })
         foreach ($row in $shown) {
-            $index = $grid.Rows.Add($row.DeviceName, $row.UserName, $row.State, $row.Detail, $row.ErrorCode, $row.Version, $row.LastSeen)
+            # the hex form alone in the cell, the decimal too in its tooltip -
+            # a long error string otherwise pushes the Detail column out
+            $errorShort = ([string]$row.ErrorCode -split ' ')[0]
+            $index = $grid.Rows.Add($row.DeviceName, $row.UserName, $row.State, $row.Detail, $errorShort, $row.Version, $row.LastSeen)
+            $gridRow = $grid.Rows[$index]
             if ([string]$row.State -like '*fail*') {
-                $grid.Rows[$index].DefaultCellStyle.ForeColor = [System.Drawing.Color]::Firebrick
+                $gridRow.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Firebrick
             }
+            # every cell keeps its full text on hover - Detail especially is
+            # a whole sentence from Intune, far wider than any column here
+            $full = @($row.DeviceName, $row.UserName, $row.State, $row.Detail, $row.ErrorCode, $row.Version, $row.LastSeen)
+            for ($c = 0; $c -lt $full.Count; $c++) { $gridRow.Cells[$c].ToolTipText = [string]$full[$c] }
         }
+        # nothing preselected when the list appears
+        $grid.ClearSelection()
+        $grid.CurrentCell = $null
         $summary = Format-InstallStatusSummary $rowsBox.Value
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = if ($filter -eq 'All') { $summary } else { "$summary - showing $($shown.Count) of $($rowsBox.Value.Count)" }

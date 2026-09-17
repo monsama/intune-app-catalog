@@ -95,6 +95,21 @@ function Global:Format-InstallStatusError {
     return $text
 }
 
+function Global:Format-InstallStatusTime {
+    # Graph's timestamp as "2026-09-17 10:14", in THIS machine's time zone
+    # (Graph reports UTC) - the seconds and the zone marker just cost
+    # column width. Anything unparseable is left exactly as it came.
+    param($Value)
+    $text = "$Value".Trim()
+    if (-not $text) { return "" }
+    $parsed = [datetime]::MinValue
+    if ([datetime]::TryParse($text, [ref]$parsed)) {
+        if ($parsed.Kind -eq [System.DateTimeKind]::Utc) { $parsed = $parsed.ToLocalTime() }
+        return $parsed.ToString("yyyy-MM-dd HH:mm")
+    }
+    return $text
+}
+
 function Global:ConvertTo-InstallStatusRow {
     <#
       One row of the app install status report, normalized to what the
@@ -116,7 +131,7 @@ function Global:ConvertTo-InstallStatusRow {
         ErrorCode  = Format-InstallStatusError (Get-ReportColumnValue $Row @('ErrorCode', 'errorCode', 'HexErrorCode'))
         Version    = Get-ReportColumnValue $Row @('AppVersion', 'appVersion', 'DisplayVersion', 'displayVersion')
         Platform   = Get-ReportColumnValue $Row @('Platform_loc', 'Platform', 'platform', 'DeviceModel')
-        LastSeen   = Get-ReportColumnValue $Row @('LastModifiedDateTime', 'lastModifiedDateTime', 'LastSyncDateTime', 'lastSyncDateTime')
+        LastSeen   = Format-InstallStatusTime (Get-ReportColumnValue $Row @('LastModifiedDateTime', 'lastModifiedDateTime', 'LastSyncDateTime', 'lastSyncDateTime'))
     }
 }
 

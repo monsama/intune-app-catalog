@@ -133,6 +133,7 @@ $testableFunctionNames = @(
     "ConvertFrom-GraphReportTable",
     "Get-ReportColumnValue",
     "Format-InstallStatusError",
+    "Format-InstallStatusTime",
     "ConvertTo-InstallStatusRow",
     "Format-InstallStatusSummary",
     "Test-InstallStatusRowMatchesFilter",
@@ -690,6 +691,13 @@ Assert-Equal "" $installed.ErrorCode "ConvertTo-InstallStatusRow: no error code 
 $numericState = ConvertTo-InstallStatusRow ([ordered]@{ DeviceName = "PC-03"; AppInstallState = 3 })
 Assert-Equal "State 3" $numericState.State `
     "ConvertTo-InstallStatusRow: a state with no text column is shown as its number, not guessed"
+
+Assert-Equal "2026-09-17 08:14" (Format-InstallStatusTime "2026-09-17 08:14:32") `
+    "Format-InstallStatusTime: a timestamp without a zone keeps its time, without seconds"
+Assert-Equal ([datetime]::Parse("2026-09-17T08:14:32Z").ToLocalTime().ToString("yyyy-MM-dd HH:mm")) (Format-InstallStatusTime "2026-09-17T08:14:32.7654321Z") `
+    "Format-InstallStatusTime: a UTC timestamp from Graph is shown in this machine's time zone"
+Assert-Equal "" (Format-InstallStatusTime "") "Format-InstallStatusTime: nothing stays nothing"
+Assert-Equal "not a date" (Format-InstallStatusTime "not a date") "Format-InstallStatusTime: anything unparseable is left as it came"
 
 Assert-Equal "No install status reported for this app yet." (Format-InstallStatusSummary @()) `
     "Format-InstallStatusSummary: nothing reported yet"
