@@ -2,7 +2,7 @@ function Global:Show-DefaultAppSettingsDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Edit default values"
-    $dlg.ClientSize = New-Object System.Drawing.Size(620, 590)
+    $dlg.ClientSize = New-Object System.Drawing.Size(820, 590)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -11,7 +11,7 @@ function Global:Show-DefaultAppSettingsDialog {
     $lblIntro = New-Object System.Windows.Forms.Label
     $lblIntro.Text = "These are the defaults every new Winget app starts with - in `"Deploy to Intune`", `"Set default values...`", and Batch Deploy for an app with no saved metadata. Changing these here does NOT touch any app already saved or deployed."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
-    $lblIntro.Size = New-Object System.Drawing.Size(590,48)
+    $lblIntro.Size = New-Object System.Drawing.Size(790,48)
     $dlg.Controls.Add($lblIntro)
 
     $lblContext = New-Object System.Windows.Forms.Label
@@ -232,7 +232,7 @@ function Global:Show-DefaultAppSettingsDialog {
     # for why more than one default dependency needs to be pickable here.
     $clbDefaultDeps = New-Object System.Windows.Forms.CheckedListBox
     $clbDefaultDeps.Location = New-Object System.Drawing.Point(485,431)
-    $clbDefaultDeps.Size = New-Object System.Drawing.Size(120,100)
+    $clbDefaultDeps.Size = New-Object System.Drawing.Size(320,100)
     $clbDefaultDeps.CheckOnClick = $true
     foreach ($a in ($Global:App.Apps | Sort-Object appName)) {
         $idx = $clbDefaultDeps.Items.Add($a.appName)
@@ -250,13 +250,13 @@ function Global:Show-DefaultAppSettingsDialog {
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(435,540)
+    $btnCancel.Location = New-Object System.Drawing.Point(635,540)
     $btnCancel.Size = New-Object System.Drawing.Size(80,32)
     $dlg.Controls.Add($btnCancel)
 
     $btnSave = New-Object System.Windows.Forms.Button
     $btnSave.Text = "Save"
-    $btnSave.Location = New-Object System.Drawing.Point(520,540)
+    $btnSave.Location = New-Object System.Drawing.Point(720,540)
     $btnSave.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnSave)
 
