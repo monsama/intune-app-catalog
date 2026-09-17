@@ -240,9 +240,11 @@ function Start-AppUnderTest {
     <#
       Launches IntuneDeployment.ps1 from the sandbox under the given host
       and waits for the main window. Returns a context object used by
-      every other helper here.
+      every other helper here. -Script/-ScriptArguments run a different
+      entry script from the sandbox instead (one that loads the app itself).
     #>
-    param([string]$AppHost, [string]$Root, [int]$TimeoutSec = 90, [hashtable]$Environment = @{})
+    param([string]$AppHost, [string]$Root, [int]$TimeoutSec = 90, [hashtable]$Environment = @{},
+          [string]$Script = 'IntuneDeployment.ps1', [string[]]$ScriptArguments = @())
     $stdout = Join-Path $Root 'stdout.txt'
     $stderr = Join-Path $Root 'stderr.txt'
     $vars = @{ LOCALAPPDATA = (Join-Path $Root 'localappdata') } + $Environment
@@ -250,7 +252,7 @@ function Start-AppUnderTest {
     foreach ($k in $vars.Keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k) }
     try {
         foreach ($k in $vars.Keys) { [Environment]::SetEnvironmentVariable($k, $vars[$k]) }
-        $p = Start-Process $AppHost -ArgumentList @('-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Root 'IntuneDeployment.ps1')) `
+        $p = Start-Process $AppHost -ArgumentList (@('-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Root $Script)) + $ScriptArguments) `
             -WorkingDirectory $Root -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
     }
     finally { foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) } }
