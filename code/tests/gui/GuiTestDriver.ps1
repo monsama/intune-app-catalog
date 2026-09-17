@@ -209,7 +209,7 @@ function New-AppSandbox {
       seeds data\app-data with fixture apps. Returns the sandbox root.
     #>
     $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-    $root = Join-Path ([IO.Path]::GetTempPath()) ("intune-packager-guitest-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    $root = Join-Path ([IO.Path]::GetTempPath()) ("intune-app-catalog-guitest-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
     [void][IO.Directory]::CreateDirectory($root)
     Copy-Item (Join-Path $repoRoot 'IntuneDeployment.ps1'), (Join-Path $repoRoot 'MainApp.ps1') $root
     [void][IO.Directory]::CreateDirectory((Join-Path $root 'code'))
@@ -231,7 +231,7 @@ function New-AppSandbox {
 
 function Remove-AppSandbox {
     param([string]$Root)
-    if ($Root -and $Root.StartsWith([IO.Path]::GetTempPath()) -and (Split-Path $Root -Leaf) -like 'intune-packager-guitest-*') {
+    if ($Root -and $Root.StartsWith([IO.Path]::GetTempPath()) -and (Split-Path $Root -Leaf) -like 'intune-app-catalog-guitest-*') {
         for ($i = 0; $i -lt 5; $i++) {
             try { [IO.Directory]::Delete($Root, $true); return } catch { Start-Sleep -Milliseconds 500 }
         }

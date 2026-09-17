@@ -1924,7 +1924,7 @@ $btnSaveLog.Add_Click({
     $sfd = New-Object System.Windows.Forms.SaveFileDialog
     try {
         $sfd.Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*"
-        $sfd.FileName = "intune-packager-log-" + (Get-Date -Format "yyyy-MM-dd-HHmmss") + ".txt"
+        $sfd.FileName = "intune-app-catalog-log-" + (Get-Date -Format "yyyy-MM-dd-HHmmss") + ".txt"
         if ($sfd.ShowDialog($Global:App.Form) -ne [System.Windows.Forms.DialogResult]::OK) { return }
         [System.IO.File]::WriteAllText($sfd.FileName, $text, (New-Object System.Text.UTF8Encoding($false)))
         Write-Log "[OK] Log saved to $($sfd.FileName)`r`n" ([System.Drawing.Color]::LightGreen)

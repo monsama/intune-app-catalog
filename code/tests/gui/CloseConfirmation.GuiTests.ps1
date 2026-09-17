@@ -34,7 +34,7 @@ $question = 'Stop and close?'
 foreach ($exe in Resolve-AppHosts $AppHost) {
     $script:currentHost = [IO.Path]::GetFileNameWithoutExtension($exe)
     Write-Host "`n=== Stop and close? - running under $exe ===" -ForegroundColor Cyan
-    $statusFile = Join-Path ([IO.Path]::GetTempPath()) ("intune-packager-closetest-" + [guid]::NewGuid().ToString('N').Substring(0, 8) + ".txt")
+    $statusFile = Join-Path ([IO.Path]::GetTempPath()) ("intune-app-catalog-closetest-" + [guid]::NewGuid().ToString('N').Substring(0, 8) + ".txt")
     $p = Start-Process $exe -ArgumentList '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'CloseConfirmationHarness.ps1'), $repoRoot, $statusFile -PassThru
     $ctx = [pscustomobject]@{ Process = $p; Pid = [uint32]$p.Id; Main = [IntPtr]::Zero }
     $childPid = $null
