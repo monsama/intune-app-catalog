@@ -63,6 +63,9 @@ function Test-GridHeaders {
     foreach ($size in @(@(($mr.R - $mr.L), ($mr.B - $mr.T)), @(1366, 768), @(1100, 700))) {
         [void]$W32::MoveWindow($Ctx.Main, $mr.L, $mr.T, $size[0], $size[1], $true)
         Start-Sleep -Milliseconds 1200
+        # Windows clamps the size to the screen (CI runners are 1024x768) - use what we actually got.
+        $ar = New-Object GuiTest.W32+RECT; [void]$W32::GetWindowRect($Ctx.Main, [ref]$ar)
+        $size = @(($ar.R - $ar.L), ($ar.B - $ar.T))
         $headers = @($grid.FindAll($TS::Descendants, (New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, $CT::Header))) |
             Where-Object { $_.Current.BoundingRectangle.Width -gt 0 -and $_.Current.Name })
         $tops = @($headers | ForEach-Object { [int]$_.Current.BoundingRectangle.Top } | Select-Object -Unique)
