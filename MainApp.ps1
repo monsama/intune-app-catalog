@@ -610,10 +610,6 @@ $toolbarTips.SetToolTip($btnDefaultValues, "Change the computed defaults every n
 $toolbarTips.SetToolTip($btnDiagnostics, "Read-only health check: Graph connectivity, certificate expiry, catalog completeness, and drift against what's actually in Intune.")
 $toolbarTips.SetToolTip($btnPrerequisites, "Check whether the Microsoft.Graph.Authentication PowerShell module this app needs is installed, and install it for your user account if it isn't.")
 
-$Global:App.LblSearch = New-Object System.Windows.Forms.Label
-$Global:App.LblSearch.Text = "Search:"
-$Global:App.LblSearch.AutoSize = $true
-$Global:App.LblSearch.Padding = New-Object System.Windows.Forms.Padding(10,4,0,0)
 $Global:App.TxtSearch = New-Object System.Windows.Forms.TextBox
 $Global:App.TxtSearch.Width = 220
 
@@ -724,20 +720,10 @@ $chkRunFullAuditOnStartup.Add_CheckedChanged({
 
 $gbSync = New-ToolbarGroup -Title "Sync" -Buttons @($chkCheckDriftOnStartup, $chkRunFullAuditOnStartup)
 
-$searchPanel = New-Object System.Windows.Forms.FlowLayoutPanel
-$searchPanel.AutoSize = $true
-$searchPanel.AutoSizeMode = [System.Windows.Forms.AutoSizeMode]::GrowAndShrink
-$searchPanel.FlowDirection = "LeftToRight"
-# Top margin bumped up from the toolbar groups' own 4px - a GroupBox (what
-# every button sits inside) has its title text ABOVE the button row, so
-# the buttons themselves sit well below the box's own top edge; this plain
-# FlowLayoutPanel has no such header, so matching the groups' 4px margin
-# left Search sitting visibly higher than the buttons beside it instead of
-# level with them.
-$searchPanel.Margin = New-Object System.Windows.Forms.Padding(4,24,4,0)
-$searchPanel.Controls.Add($Global:App.LblSearch)
-$searchPanel.Controls.Add($Global:App.TxtSearch)
-
+# Its own titled box like the other toolbar groups (it used to float next to
+# them with a hand-tuned top margin to line up). The box title replaces the
+# old "Search:" label.
+$gbSearch = New-ToolbarGroup -Title "Search" -Buttons @($Global:App.TxtSearch)
 # Hidden by default - shown only while Update-StartupBusyIndicator says
 # something's running (Start-StartupDriftCheck, Start-TypeVersionBackfill).
 # The busy cursor alone was easy to miss, and the backfill task in
@@ -747,11 +733,11 @@ $Global:App.LblStartupBusy = New-Object System.Windows.Forms.Label
 $Global:App.LblStartupBusy.Text = "Checking for updates..."
 $Global:App.LblStartupBusy.AutoSize = $true
 $Global:App.LblStartupBusy.ForeColor = [System.Drawing.Color]::DimGray
-$Global:App.LblStartupBusy.Margin = New-Object System.Windows.Forms.Padding(10,6,0,0)
+# Level with the text inside the toolbar boxes: box margin + title area + the search box's own centering.
+$Global:App.LblStartupBusy.Margin = New-Object System.Windows.Forms.Padding(6, ($gbSearch.Margin.Top + 20 + $Global:App.TxtSearch.Margin.Top + 3), 0, 0)
 $Global:App.LblStartupBusy.Visible = $false
-$searchPanel.Controls.Add($Global:App.LblStartupBusy)
 
-$toolbar.Controls.AddRange(@($gbPrimary, $gbMoreActions, $gbSync, $searchPanel))
+$toolbar.Controls.AddRange(@($gbPrimary, $gbMoreActions, $gbSync, $gbSearch, $Global:App.LblStartupBusy))
 $tabCatalog.Controls.Add($toolbar)
 
 # The toolbar wraps whole groups, but "Get started" alone is wider than the

@@ -89,7 +89,26 @@ function Global:ConvertTo-CanonicalLineEndings {
 function Global:Set-Theme {
     param([System.Windows.Forms.Control]$Control)
     Set-ThemeRecursive -Ctrl $Control -Palette $Global:App.LightPalette
-    if ($Control -is [System.Windows.Forms.Form]) { Resize-DialogToScreen -Form $Control }
+    if ($Control -is [System.Windows.Forms.Form]) {
+        Resize-DialogToScreen -Form $Control
+        # Windows selects all text in the text box that gets focus when a
+        # dialog opens (e.g. the app name in Edit app) - one careless
+        # keystroke would replace it. Put the caret at the end instead.
+        # Deferred (BeginInvoke) so it runs after the dialog's own Shown
+        # handlers - some move focus to their name box there themselves.
+        $Control.Add_Shown({
+            param($sender, $e)
+            $shownForm = $sender
+            [void]$shownForm.BeginInvoke([Action]{
+                $focused = $shownForm.ActiveControl
+                while ($focused -is [System.Windows.Forms.ContainerControl] -and $focused.ActiveControl) { $focused = $focused.ActiveControl }
+                if ($focused -is [System.Windows.Forms.TextBoxBase] -and $focused.SelectionLength -gt 0) {
+                    $focused.SelectionStart = $focused.TextLength
+                    $focused.SelectionLength = 0
+                }
+            }.GetNewClosure())
+        })
+    }
 }
 
 function Global:Get-UsableScreenArea {
@@ -602,7 +621,14 @@ function Global:New-ToolbarGroup {
         $b.AutoSize = $true
         $b.Padding = New-Object System.Windows.Forms.Padding(8,3,8,3)
         $b.Margin = New-Object System.Windows.Forms.Padding(0,0,4,0)
-        if ($b -isnot [System.Windows.Forms.Button]) {
+        if ($b -is [System.Windows.Forms.TextBox]) {
+            # a single-line text box keeps its own height - center it in the row instead
+            $b.Font = Get-AppUiFont   # measured in the font it will actually use (5.1 would inherit it only later)
+            $spare = [Math]::Max(0, $rowHeight - $b.PreferredHeight)
+            $top = [int][Math]::Floor($spare / 2)
+            $b.Margin = New-Object System.Windows.Forms.Padding(0, $top, 4, ($spare - $top))
+        }
+        elseif ($b -isnot [System.Windows.Forms.Button]) {
             $b.MinimumSize = New-Object System.Drawing.Size(0, $rowHeight)   # content stays vertically centered
         }
         $flow.Controls.Add($b)

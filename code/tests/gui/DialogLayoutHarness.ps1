@@ -78,7 +78,12 @@ function Global:Test-FormLayout($Form) {
     if ($Form.Width -gt $area.Width -or $Form.Height -gt $area.Height) {
         $issues.Add("TOO BIG  window is $($Form.Width)x$($Form.Height), usable screen area is $($area.Width)x$($area.Height)")
     }
-    $walk = {
+    # nothing preselected in the focused box (a keystroke would replace it)
+    $focused = $Form.ActiveControl
+    while ($focused -is [System.Windows.Forms.ContainerControl] -and $focused.ActiveControl) { $focused = $focused.ActiveControl }
+    if ($focused -is [System.Windows.Forms.TextBoxBase] -and $focused.TextLength -gt 0 -and $focused.SelectionLength -eq $focused.TextLength) {
+        $issues.Add("SELECTED $(Get-LayoutControlName $focused): all its text is preselected when the window opens")
+    }    $walk = {
         param($parent)
         $kids = @($parent.Controls | Where-Object { $_.Visible })
         foreach ($c in $kids) {
