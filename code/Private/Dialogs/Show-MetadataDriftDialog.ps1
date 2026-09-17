@@ -49,6 +49,7 @@ function Global:Show-MetadataDriftDialog {
     $colUse.Name = "UseIntune"
     $colUse.HeaderText = "Use Intune's value"
     $colUse.FillWeight = 14
+    $colUse.MinimumWidth = 124   # "Use Intune's value" on one line
     [void]$grid.Columns.Add($colUse)
 
     $colField = New-Object System.Windows.Forms.DataGridViewTextBoxColumn

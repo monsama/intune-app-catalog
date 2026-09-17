@@ -148,6 +148,9 @@ function Global:Set-ThemeRecursive {
         { $_ -in @("ListBox","CheckedListBox") } {
             $Ctrl.BackColor = $Palette.FieldBack
             $Ctrl.ForeColor = $Palette.ControlFore
+            # Long group/app names scroll sideways instead of being cut off at
+            # the right edge (the bar only appears when something is wider).
+            if (-not $Ctrl.MultiColumn) { $Ctrl.HorizontalScrollbar = $true }
         }
         "DataGridView" {
             $Ctrl.BackgroundColor = $Palette.GridBack

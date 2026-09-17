@@ -14,14 +14,16 @@ function Global:Show-FavoriteGroupsManager {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Checked groups show up as ready-to-tick options in every app's Required/Available/Uninstall lists. Unchecked groups still work fine via `"+ New group...`" in those lists - they just aren't shown by default. Right-click an unchecked group to remove it from this list entirely.`n`nNothing here takes effect until you click Save below."
+    $lblIntro.Text = "Checked groups show up as ready-to-tick options in every app's Required/Available/Uninstall lists. Unchecked groups still work fine via `"+ Group/user...`" in those lists - they just aren't shown by default. Right-click an unchecked group to remove it from this list entirely.`n`nNothing here takes effect until you click Save below."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
-    $lblIntro.Size = New-Object System.Drawing.Size(390,75)
+    # Tall enough for both paragraphs - at 75px the "Nothing here takes
+    # effect until you click Save" line was cut off entirely.
+    $lblIntro.Size = New-Object System.Drawing.Size(390,100)
     $dlg.Controls.Add($lblIntro)
 
     $clb = New-Object System.Windows.Forms.CheckedListBox
-    $clb.Location = New-Object System.Drawing.Point(15,93)
-    $clb.Size = New-Object System.Drawing.Size(390,238)
+    $clb.Location = New-Object System.Drawing.Point(15,118)
+    $clb.Size = New-Object System.Drawing.Size(390,213)
     $clb.CheckOnClick = $true
     # Union of every group already used anywhere in the catalog and
     # whatever's currently marked a favorite - a favorite that no app
