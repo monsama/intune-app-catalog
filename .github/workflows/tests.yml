@@ -35,12 +35,11 @@ jobs:
         run: ./code/tests/CatalogLogic.Tests.ps1
 
   gui:
-    # Drives the real WinForms app, so it needs the runner's desktop session.
-    # Not a required check until it has proven stable on hosted runners.
+    # Drives the real WinForms app, so it needs the runner's desktop session
+    # (hosted runners have one, at 1024x768).
     name: GUI (Windows, both PowerShells)
     runs-on: windows-latest
     needs: unit
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: DialogSmoke.GuiTests.ps1
