@@ -267,7 +267,7 @@ function Global:Show-DefaultAppSettingsDialog {
     # $Global:App.DefaultAppSettings itself is initialized with at the top of
     # this script - kept in sync manually if those ever change.
     $btnResetFactory.Add_Click({
-        $r = [System.Windows.Forms.MessageBox]::Show("Reset every field below to this app's original built-in defaults? (Still requires Save to actually apply.)", "Reset to built-in defaults", "YesNo", "Warning")
+        $r = [System.Windows.Forms.MessageBox]::Show("Reset all fields below to the tool's built-in defaults?`n`nNothing is saved until you click Save.", "Reset to built-in defaults", "YesNo", "Question")
         if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
         $cmbContext.SelectedItem = "System"
         $chkArchX86.Checked = $false

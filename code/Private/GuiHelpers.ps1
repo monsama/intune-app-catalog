@@ -593,6 +593,52 @@ function Global:Write-DialogLogLine {
     }
 }
 
+# Names of the catalog apps that have a group in Required, Available or
+# Uninstall - shown before a group is deleted or renamed.
+function Global:Get-CatalogAppsUsingGroup {
+    param([string]$GroupName)
+    @($Global:App.Apps | Where-Object {
+        (@($_.requiredFor) + @($_.availableFor) + @($_.uninstallFor)) -contains $GroupName
+    } | ForEach-Object { [string]$_.appName })
+}
+
+# Deleting an app that has no App ID: it isn't in Intune, so only the
+# catalog entry goes. The same question wherever it's asked (app editor,
+# "Delete from Intune" on such an app). No is the default button.
+function Global:Confirm-CatalogOnlyDelete {
+    param([string]$AppName, [switch]$UnsavedEdits)
+    $text = "Delete '$AppName' from the catalog?`n`nIt has no App ID, so it isn't in Intune - this only removes the local entry."
+    if ($UnsavedEdits) { $text += " Your unsaved edits to it are discarded too." }
+    $r = [System.Windows.Forms.MessageBox]::Show($text, "Confirm delete", "YesNo", "Warning", "Button2")
+    return ($r -eq [System.Windows.Forms.DialogResult]::Yes)
+}
+
+# Asks before a dialog closes, however it's closed - its Close button, Esc,
+# the X or Alt+F4 all end up in FormClosing. -GetQuestion returns $null
+# (close without asking), the question text, or @{ Title; Text }; the
+# title defaults to "Stop and close?". -OnConfirmed runs after Yes, e.g. to
+# stop the step that's still running. No is the default button, so Enter
+# never closes over a running step by accident.
+function Global:Register-CloseConfirmation {
+    param(
+        [System.Windows.Forms.Form]$Dialog,
+        [scriptblock]$GetQuestion,
+        [scriptblock]$OnConfirmed
+    )
+    $Dialog.Add_FormClosing({
+        param($sender, $e)
+        if ($e.Cancel) { return }
+        $question = & $GetQuestion
+        if (-not $question) { return }
+        $title = "Stop and close?"
+        $text = [string]$question
+        if ($question -is [hashtable]) { $title = [string]$question.Title; $text = [string]$question.Text }
+        $r = [System.Windows.Forms.MessageBox]::Show($text, $title, "YesNo", "Warning", "Button2")
+        if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { $e.Cancel = $true; return }
+        if ($OnConfirmed) { try { & $OnConfirmed } catch { } }
+    }.GetNewClosure())
+}
+
 function Global:New-ToolbarGroup {
     param([string]$Title, [System.Windows.Forms.Control[]]$Buttons)
 

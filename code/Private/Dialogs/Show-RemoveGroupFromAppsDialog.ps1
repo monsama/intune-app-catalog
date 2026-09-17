@@ -124,9 +124,10 @@ function Global:Show-RemoveGroupFromAppsDialog {
             return
         }
 
+        $pickedGroupNames = @($pickedFields | ForEach-Object { @($_.List.CheckedItems) } | ForEach-Object { "'$_'" } | Select-Object -Unique)
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "Removes $totalPicked group/field pick(s) from $($checkedAppNames.Count) app(s) in the LOCAL CATALOG - each group only from the specific list(s) (Required/Available/Uninstall) it's checked under above. This alone does not change anything in Intune - run `"Push groups to Intune (multiple apps)...`" (Preview, then Apply) right after this to actually unassign them there too.`n`nContinue?",
-            "Confirm removal", "YesNo", "Warning")
+            "Remove $($pickedGroupNames -join ', ') from $($checkedAppNames.Count) app(s) in the catalog?`n`nEach group is removed only from the list(s) - Required, Available, Uninstall - it's checked under above. Intune isn't changed until you click Apply in the 'Push groups to Intune' window; its preview updates right after this.",
+            "Remove groups", "YesNo", "Warning", "Button2")
         if ($r -ne "Yes") { return }
 
         $changedCount = 0

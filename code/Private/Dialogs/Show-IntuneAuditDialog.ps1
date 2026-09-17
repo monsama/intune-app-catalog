@@ -391,21 +391,12 @@ function Global:Show-IntuneAuditDialog {
         }
     }.GetNewClosure())
 
-    $btnClose.Add_Click({
-        $stillRunning = ($procBox1.Proc -and -not $procBox1.Proc.HasExited) -or ($procBox2.Proc -and -not $procBox2.Proc.HasExited)
-        if ($stillRunning) {
-            $r = [System.Windows.Forms.MessageBox]::Show("An audit is currently running. Stop it and close this dialog?", "Stop and close?", "YesNo", "Warning")
-            # Compared against the enum value itself, not the string "Yes" -
-            # this is the one Close handler in this app that ALSO sits behind
-            # a Form.AcceptButton assignment (see the removed line below), so
-            # it gets the stricter, unambiguous comparison as a second,
-            # independent safeguard against a live report of "No" closing
-            # the dialog anyway.
-            if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
-            try { if ($procBox1.Proc) { $procBox1.Proc.Kill() } } catch { }
-            try { if ($procBox2.Proc) { $procBox2.Proc.Kill() } } catch { }
-        }
-        $dlg.Close()
+    $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
+    # The audit only reads from Intune - closing just stops it, no question
+    # needed, however the dialog is closed.
+    $dlg.Add_FormClosing({
+        try { if ($procBox1.Proc -and -not $procBox1.Proc.HasExited) { $procBox1.Proc.Kill() } } catch { }
+        try { if ($procBox2.Proc -and -not $procBox2.Proc.HasExited) { $procBox2.Proc.Kill() } } catch { }
     }.GetNewClosure())
     $dlg.CancelButton = $btnClose
     # Deliberately NOT also AcceptButton, unlike a couple of other dialogs'

@@ -50,7 +50,7 @@ function Global:Show-BulkDeleteFromIntuneDialog {
     }
     $lblWarning.SelectionFont = New-Object System.Drawing.Font("Segoe UI", 9)
     $lblWarning.SelectionColor = $Global:App.LightPalette.ControlFore
-    $lblWarning.AppendText("`n`nEach catalog entry stays - only its App ID is cleared, so you can recreate it later without losing its groups.")
+    $lblWarning.AppendText("`n`nAfterwards you're asked whether to also remove the entries from the catalog, or keep them (with their groups) and just clear their App IDs.")
     $lblWarning.SelectionStart = 0
     $lblWarning.SelectionLength = 0
     $dlg.Controls.Add($lblWarning)
@@ -381,8 +381,8 @@ function Global:Show-BulkDeleteFromIntuneDialog {
             [System.Windows.Forms.MessageBox]::Show("Check at least one app to delete.", "Nothing selected", "OK", "Warning") | Out-Null
             return
         }
-        $r = [System.Windows.Forms.MessageBox]::Show("Permanently delete these $($checkedNames.Count) app(s) from Intune?`n`n$($checkedNames -join ", ")", "Confirm bulk delete", "YesNo", "Warning")
-        if ($r -ne "Yes") { return }
+        # Typing DELETE (which arms this button) is the confirmation - the
+        # same single step as deleting one app, not a second question on top.
 
         $queueApps = New-Object System.Collections.Generic.List[object]
         foreach ($checkedName in $checkedNames) {
@@ -408,16 +408,12 @@ function Global:Show-BulkDeleteFromIntuneDialog {
         & $RunNextBox.Value -Queue $queueApps.ToArray() -QueueIndex 0 -Results $resultsList
     }.GetNewClosure())
 
-    $btnClose.Add_Click({
+    $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
+    Register-CloseConfirmation -Dialog $dlg -GetQuestion {
         if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "A deletion is currently running. Stop it and close this dialog?`n`nAny app already deleted from Intune stays deleted - check the catalog's App ID column afterward.",
-                "Stop and close?", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
-            try { $procBox.Proc.Kill() } catch { }
+            "Deleting is still running. Stop it and close?`n`nApps already deleted from Intune stay deleted - check the catalog's App ID column afterwards."
         }
-        $dlg.Close()
-    }.GetNewClosure())
+    }.GetNewClosure() -OnConfirmed { $procBox.Proc.Kill() }.GetNewClosure()
     $dlg.CancelButton = $btnClose
     # Same type-DELETE-to-confirm pattern as Show-DeleteAppDialog's own
     # $btnDelete/AcceptButton pairing - btnDelete starts disabled and only

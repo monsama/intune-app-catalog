@@ -411,16 +411,12 @@ function Global:Show-BatchDeployDialog {
         & $RunNextBox.Value -Queue $orderResult.Ordered -QueueIndex 0 -Results $resultsList
     }.GetNewClosure())
 
-    $btnClose.Add_Click({
+    $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
+    Register-CloseConfirmation -Dialog $dlg -GetQuestion {
         if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "A deployment is currently running. Stop it and close this dialog?`n`nAny app already created in Intune stays created - check the catalog's App ID column afterward.",
-                "Stop and close?", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
-            try { $procBox.Proc.Kill() } catch { }
+            "A deployment is still running. Stop it and close?`n`nApps already created in Intune stay there - check the catalog's App ID column afterwards."
         }
-        $dlg.Close()
-    }.GetNewClosure())
+    }.GetNewClosure() -OnConfirmed { $procBox.Proc.Kill() }.GetNewClosure()
     $dlg.CancelButton = $btnClose
     $dlg.AcceptButton = $btnDeploy
 

@@ -26,10 +26,18 @@ function Global:Show-BatchAssignDialog {
         # fix right here instead of a dead end - add a favorite group to
         # these apps, then reopen this same dialog (same scope) so
         # they're immediately eligible to reconcile/push to Intune.
-        $msg = if ($isScoped) { "None of the selected app(s) have both an App ID and at least one group set - nothing to reconcile yet." } else { "No apps have both an App ID and at least one group set - nothing to reconcile yet." }
-        $r = [System.Windows.Forms.MessageBox]::Show("$msg`n`nAdd a favorite group to these apps now?", "Nothing to reconcile yet", "YesNo", "Information")
+        # ...but only when a group is what's missing: an app without an App
+        # ID can't become eligible by adding a group, and offering it anyway
+        # just led back to this same question.
+        $scopeText = if ($isScoped) { "None of the selected app(s) have" } else { "No apps have" }
+        $appsWithId = @($candidateApps | Where-Object { $_.appId })
+        if ($appsWithId.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("$scopeText an App ID yet, so there's nothing to push to Intune.`n`nDeploy the app(s) first, or use 'Look up App IDs' to find apps that already exist in Intune.", "Nothing to push yet", "OK", "Information") | Out-Null
+            return
+        }
+        $r = [System.Windows.Forms.MessageBox]::Show("$scopeText any groups set yet, so there's nothing to push to Intune.`n`nAdd a favorite group to $(if ($appsWithId.Count -eq 1) { "'$($appsWithId[0].appName)'" } else { "these $($appsWithId.Count) apps" }) now?", "Nothing to push yet", "YesNo", "Question")
         if ($r -eq "Yes") {
-            $addedCount = Show-AddFavoriteGroupToAppsDialog -CandidateApps $candidateApps
+            $addedCount = Show-AddFavoriteGroupToAppsDialog -CandidateApps $appsWithId
             if ($addedCount -gt 0) { Show-BatchAssignDialog -ScopedIndices $ScopedIndices }
         }
         return
@@ -287,9 +295,10 @@ function Global:Show-BatchAssignDialog {
     $btnApply.Add_Click({
         $totalAdd = ($previewDataBox.Results | ForEach-Object { @($_.ToAdd).Count } | Measure-Object -Sum).Sum
         $totalRemove = ($previewDataBox.Results | ForEach-Object { @($_.ToRemove).Count } | Measure-Object -Sum).Sum
+        $changedApps = @($previewDataBox.Results | Where-Object { @($_.ToAdd).Count -gt 0 -or @($_.ToRemove).Count -gt 0 }).Count
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "This applies the changes shown above to $($eligibleAppsBox.Value.Count) app(s) in Intune: $totalAdd assignment(s) added, $totalRemove removed in total.`n`nAny assignment not in an app's catalog groups gets removed, including ones this catalog doesn't know about. This cannot be undone from here. Continue?",
-            "Confirm batch apply", "YesNo", "Warning")
+            "Apply the changes shown above to $changedApps app(s) in Intune? $totalAdd assignment(s) will be added and $totalRemove removed.`n`nAny assignment that isn't in an app's catalog groups is removed, including ones this catalog doesn't know about. This can't be undone from here.",
+            "Confirm batch apply", "YesNo", "Warning", "Button2")
         if ($r -ne "Yes") { return }
         & $runBatch "Apply"
     }.GetNewClosure())
@@ -340,33 +349,38 @@ function Global:Show-BatchAssignDialog {
         if ($removedCount -gt 0) { & $refreshAfterCatalogEdit }
     }.GetNewClosure())
 
-    $btnClose.Add_Click({
-        if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
-            $r = [System.Windows.Forms.MessageBox]::Show("A step is currently running. Stop it and close this dialog?", "Stop and close?", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
-            try { $procBox.Proc.Kill() } catch { }
-        }
+    $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
 
-        # Warns on whatever's still outstanding against Intune - a group
-        # added/removed via the buttons above (which already saved to the
-        # LOCAL catalog the moment you clicked them, Apply or not) just as
-        # much as any pre-existing drift this dialog opened with. Reads
-        # $pendingBox, NOT $previewDataBox.Results - the latter is the
-        # grid's historical record and, right after a successful Apply,
-        # still shows the diff that Apply just PUSHED (that's the whole
-        # point of it as a record), which would make this warning fire
-        # immediately after every successful Apply if used here instead.
-        # $pendingBox is exactly "still outstanding right now": set by
-        # Preview, zeroed by a successful Apply - see its own comment above.
-        if ($pendingBox.TotalAdd -gt 0 -or $pendingBox.TotalRemove -gt 0) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "$($pendingBox.TotalAdd) assignment(s) to add and $($pendingBox.TotalRemove) to remove haven't been applied to Intune yet.`n`nAny local catalog changes from Add/Remove group above are already saved either way - this only affects Intune. Close without applying?",
-                "Unapplied changes", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
+    # One question on close, however the dialog is closed - a running step
+    # (Preview or Apply) and changes not yet applied to Intune are asked
+    # about together, not in two prompts in a row.
+    #
+    # Warns on whatever's still outstanding against Intune - a group
+    # added/removed via the buttons above (which already saved to the
+    # LOCAL catalog the moment you clicked them, Apply or not) just as
+    # much as any pre-existing drift this dialog opened with. Reads
+    # $pendingBox, NOT $previewDataBox.Results - the latter is the
+    # grid's historical record and, right after a successful Apply,
+    # still shows the diff that Apply just PUSHED (that's the whole
+    # point of it as a record), which would make this warning fire
+    # immediately after every successful Apply if used here instead.
+    # $pendingBox is exactly "still outstanding right now": set by
+    # Preview, zeroed by a successful Apply - see its own comment above.
+    Register-CloseConfirmation -Dialog $dlg -GetQuestion {
+        $running = $procBox.Proc -and -not $procBox.Proc.HasExited
+        $pending = $pendingBox.TotalAdd -gt 0 -or $pendingBox.TotalRemove -gt 0
+        $pendingText = "$($pendingBox.TotalAdd) assignment(s) to add and $($pendingBox.TotalRemove) to remove aren't applied to Intune."
+        if ($running) {
+            $text = "A step is still running. Stop it and close?`n`nIf Apply was running, some apps may already be changed in Intune."
+            if ($pending) { $text += " $pendingText" }
+            return $text
         }
-
-        $dlg.Close()
-    }.GetNewClosure())
+        if ($pending) {
+            return @{ Title = "Unapplied changes"; Text = "$pendingText`n`nGroups you added or removed above are already saved in the catalog - this only affects Intune.`n`nClose without applying?" }
+        }
+    }.GetNewClosure() -OnConfirmed {
+        if ($procBox.Proc -and -not $procBox.Proc.HasExited) { $procBox.Proc.Kill() }
+    }.GetNewClosure()
     $dlg.CancelButton = $btnClose
     $dlg.AcceptButton = $btnApply
 

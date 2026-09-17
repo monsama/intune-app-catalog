@@ -438,12 +438,16 @@ function Global:Save-AppsToFile {
     param([string]$Path)
 
     $dupIds = $Global:App.Apps | Where-Object { $_.appId } | Group-Object appId | Where-Object { $_.Count -gt 1 }
+    # These questions can come up in the middle of another action that saves
+    # (delete, rename, ...) - answering No leaves that change unsaved, which
+    # the Log tab says, since the action itself doesn't.
+    $notSavedNote = "[WARN] Catalog not saved - your latest change is kept in memory only. Fix the duplicates and click Save.`r`n"
     if ($dupIds) {
-        $names = ($dupIds | ForEach-Object { $_.Name }) -join ", "
+        $names = ($dupIds | ForEach-Object { "'" + (($_.Group | ForEach-Object { $_.appName }) -join "' and '") + "' (App ID $($_.Name))" }) -join "`n"
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "These App IDs are used by more than one app:`n$names`n`nSave anyway?",
+            "Some apps share the same App ID:`n`n$names`n`nEach app should have its own. Save anyway?",
             "Duplicate App IDs", "YesNo", "Warning")
-        if ($r -ne "Yes") { return $false }
+        if ($r -ne "Yes") { Write-Log $notSavedNote ([System.Drawing.Color]::Orange); return $false }
     }
 
     # Case-insensitive, whitespace-normalized - two entries that differ only
@@ -457,7 +461,7 @@ function Global:Save-AppsToFile {
         $r2 = [System.Windows.Forms.MessageBox]::Show(
             "These app names are used by more than one entry:`n$names`n`nSave anyway?",
             "Duplicate app names", "YesNo", "Warning")
-        if ($r2 -ne "Yes") { return $false }
+        if ($r2 -ne "Yes") { Write-Log $notSavedNote ([System.Drawing.Color]::Orange); return $false }
     }
 
     # NOT just a warning like the two checks above - this one BLOCKS
@@ -486,9 +490,9 @@ function Global:Save-AppsToFile {
         $existingCount = @(Get-ChildItem -Path $Path -Filter "*.json" -ErrorAction SilentlyContinue).Count
         if ($existingCount -gt 0) {
             $r3 = [System.Windows.Forms.MessageBox]::Show(
-                "The catalog in memory is empty, but $existingCount app file(s) already exist in:`n$Path`n`nSaving now would delete all of them. Save anyway?",
-                "Empty catalog - confirm", "YesNo", "Warning")
-            if ($r3 -ne "Yes") { return $false }
+                "The catalog is empty, but this folder still has $existingCount app file(s):`n$Path`n`nSaving now deletes all of them (a backup is made first). Save anyway?",
+                "Empty catalog - confirm", "YesNo", "Warning", "Button2")
+            if ($r3 -ne "Yes") { Write-Log "[WARN] Catalog not saved - the app files in $Path are unchanged.`r`n" ([System.Drawing.Color]::Orange); return $false }
         }
     }
 

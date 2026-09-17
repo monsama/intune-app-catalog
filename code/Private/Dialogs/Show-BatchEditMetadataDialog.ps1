@@ -406,8 +406,8 @@ function Global:Show-BatchEditMetadataDialog {
         if ($null -ne $Changes.InstallTimeMinutes)   { $newMetadata.installTimeMinutes = $Changes.InstallTimeMinutes }
         if ($Changes.DeviceRestartBehavior)  { $newMetadata.deviceRestartBehavior = $Changes.DeviceRestartBehavior }
         if ($null -ne $Changes.AllowAvailableUninstall) { $newMetadata.allowAvailableUninstall = $Changes.AllowAvailableUninstall }
-        if ($Changes.ReturnCodes)            { $newMetadata.returnCodes = @($Changes.ReturnCodes) }
-        if ($Changes.Dependencies) {
+        if ($null -ne $Changes.ReturnCodes)  { $newMetadata.returnCodes = @($Changes.ReturnCodes) }
+        if ($null -ne $Changes.Dependencies) {
             # An app can't depend on itself - silently dropped here rather
             # than failing the whole batch over it, same "skip just the
             # one bad piece, not the whole app" reasoning Show-BatchDeployDialog
@@ -606,7 +606,7 @@ function Global:Show-BatchEditMetadataDialog {
             $changes.DeviceRestartBehavior = $restartBehaviorMap[[string]$cmbRestartBehavior.SelectedItem]
             $changeSummary.Add("Device restart behavior -> $($cmbRestartBehavior.SelectedItem)")
         }
-        if ($chkEnableAllowUninstall.Checked) { $changes.AllowAvailableUninstall = $chkAllowUninstall.Checked; $changeSummary.Add("Allow available uninstall -> $($chkAllowUninstall.Checked)") }
+        if ($chkEnableAllowUninstall.Checked) { $changes.AllowAvailableUninstall = $chkAllowUninstall.Checked; $changeSummary.Add("Allow available uninstall -> $(if ($chkAllowUninstall.Checked) { 'Yes' } else { 'No' })") }
         if ($chkEnableReturnCodes.Checked) {
             $rcList = New-Object System.Collections.Generic.List[object]
             foreach ($row in $grdReturnCodes.Rows) {
@@ -618,17 +618,28 @@ function Global:Show-BatchEditMetadataDialog {
                 [void][int]::TryParse($rcCode.Trim(), [ref]$parsedRc)
                 $rcList.Add([pscustomobject]@{ returnCode = $parsedRc; type = $rcType })
             }
+            if ($rcList.Count -eq 0) {
+                # Intune always needs return codes - an app update without any
+                # gets these (CreateApp.ps1), so the catalog gets them too
+                foreach ($standardRc in @(@(0, 'success'), @(1707, 'success'), @(3010, 'softReboot'), @(1641, 'hardReboot'), @(1618, 'retry'))) {
+                    $rcList.Add([pscustomobject]@{ returnCode = $standardRc[0]; type = $standardRc[1] })
+                }
+                $changeSummary.Add("Return codes -> Intune's standard set (0, 1707, 3010, 1641, 1618), since no rows are entered")
+            }
+            else {
+                $changeSummary.Add("Return codes -> the $($rcList.Count) row(s) entered")
+            }
             $changes.ReturnCodes = $rcList.ToArray()
-            $changeSummary.Add("Return codes -> $($rcList.Count) row(s)")
         }
         if ($chkEnableDependencies.Checked) {
             $changes.Dependencies = @($clbDeps.CheckedItems | ForEach-Object { [string]$_ })
-            $depsText = if ($changes.Dependencies.Count -gt 0) { $changes.Dependencies -join ", " } else { "(none)" }
+            $depsText = if ($changes.Dependencies.Count -gt 0) { $changes.Dependencies -join ", " } else { "none (existing dependencies are removed)" }
             $changeSummary.Add("Dependencies -> $depsText")
         }
 
-        $confirmMsg = "This will PATCH $($checkedApps.Count) app(s) directly in Intune:`n`n$($changeSummary -join "`n")`n`nApps: $($checkedNames -join ", ")`n`nContinue?"
-        $r = [System.Windows.Forms.MessageBox]::Show($confirmMsg, "Confirm batch edit", "YesNo", "Warning")
+        $appList = (@($checkedNames | Select-Object -First 15) -join ", ") + $(if ($checkedNames.Count -gt 15) { ", and $($checkedNames.Count - 15) more" })
+        $confirmMsg = "Update $($checkedApps.Count) app(s) in Intune and in the catalog with these settings?`n`n$($changeSummary -join "`n")`n`nApps: $appList"
+        $r = [System.Windows.Forms.MessageBox]::Show($confirmMsg, "Confirm batch edit", "YesNo", "Warning", "Button2")
         if ($r -ne "Yes") { return }
 
         $btnRun.Enabled = $false
@@ -646,16 +657,12 @@ function Global:Show-BatchEditMetadataDialog {
         & $RunNextBox.Value -Queue $checkedApps.ToArray() -QueueIndex 0 -Results $resultsList -Changes $changes
     }.GetNewClosure())
 
-    $btnClose.Add_Click({
+    $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
+    Register-CloseConfirmation -Dialog $dlg -GetQuestion {
         if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "A batch edit is currently running. Stop it and close this dialog?`n`nAny app already updated in Intune stays updated.",
-                "Stop and close?", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
-            try { $procBox.Proc.Kill() } catch { }
+            "A batch edit is still running. Stop it and close?`n`nApps already updated in Intune stay updated."
         }
-        $dlg.Close()
-    }.GetNewClosure())
+    }.GetNewClosure() -OnConfirmed { $procBox.Proc.Kill() }.GetNewClosure()
     $dlg.CancelButton = $btnClose
 
     Set-Theme -Control $dlg

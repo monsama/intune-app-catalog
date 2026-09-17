@@ -131,28 +131,22 @@ function Global:Show-FavoriteGroupsManager {
     $discardConfirmedBox = @{ Value = $false }
 
     $btnCancel.Add_Click({
-        if (& $HasUnsavedFavoriteChanges) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "These checked groups were never saved as favorites - closing now discards them, and they won't show up as ready-to-tick options in any app's Required/Available/Uninstall lists.`n`nDiscard?",
-                "Unsaved favorite groups", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
-            $discardConfirmedBox.Value = $true
-        }
         $dlg.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
         $dlg.Close()
     }.GetNewClosure())
     $dlg.Controls.Add($btnCancel)
 
-    # Backstop for the window's own X button / Alt+F4, which don't go
-    # through Cancel's click handler above at all.
+    # Asked here for every way out - Cancel (also Esc), X, Alt+F4. A
+    # CancelButton closes the dialog on its own after its click handler,
+    # so a question asked there couldn't keep the dialog open.
     $dlg.Add_FormClosing({
         param($s, $e)
         if ($dlg.DialogResult -eq [System.Windows.Forms.DialogResult]::OK) { return }
         if ($discardConfirmedBox.Value) { return }
         if (& $HasUnsavedFavoriteChanges) {
             $r = [System.Windows.Forms.MessageBox]::Show(
-                "These checked groups were never saved as favorites - closing now discards them, and they won't show up as ready-to-tick options in any app's Required/Available/Uninstall lists.`n`nDiscard?",
-                "Unsaved favorite groups", "YesNo", "Warning")
+                "Your changes to the favorite groups aren't saved. Discard them?",
+                "Discard changes?", "YesNo", "Warning", "Button2")
             if ($r -ne "Yes") { $e.Cancel = $true }
         }
     }.GetNewClosure())

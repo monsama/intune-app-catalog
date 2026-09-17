@@ -1707,11 +1707,12 @@ $Global:App.BtnDelete.Add_Click({
     }
     if ($indices.Count -eq 1) {
         $name = $Global:App.Apps[$indices[0]].appName
-        $r = [System.Windows.Forms.MessageBox]::Show("Delete '$name' from the catalog?", "Confirm delete", "YesNo", "Warning")
+        $r = [System.Windows.Forms.MessageBox]::Show("Delete '$name' from the catalog?`n`nIts file is removed right away. The app in Intune isn't affected.", "Confirm delete", "YesNo", "Warning", "Button2")
     }
     else {
-        $names = @($indices | Sort-Object | ForEach-Object { $Global:App.Apps[$_].appName }) -join ", "
-        $r = [System.Windows.Forms.MessageBox]::Show("Delete $($indices.Count) apps from the catalog?`n`n$names", "Confirm delete", "YesNo", "Warning")
+        $allNames = @($indices | Sort-Object | ForEach-Object { $Global:App.Apps[$_].appName })
+        $names = (@($allNames | Select-Object -First 15) -join ", ") + $(if ($allNames.Count -gt 15) { ", and $($allNames.Count - 15) more" })
+        $r = [System.Windows.Forms.MessageBox]::Show("Delete $($indices.Count) apps from the catalog?`n`n$names`n`nTheir files are removed right away. The apps in Intune aren't affected.", "Confirm delete", "YesNo", "Warning", "Button2")
     }
     if ($r -eq "Yes") {
         # Highest index first - removing from an ArrayList by index shifts
@@ -1773,7 +1774,7 @@ $Global:App.Form.Add_KeyDown({
 
 $btnReload.Add_Click({
     if ($Global:App.UnsavedChangesBox.Value) {
-        $r = [System.Windows.Forms.MessageBox]::Show("Discard unsaved changes and reload from disk?", "Reload", "YesNo", "Warning")
+        $r = [System.Windows.Forms.MessageBox]::Show("Discard your unsaved catalog changes and reload the catalog from disk?", "Discard changes?", "YesNo", "Warning", "Button2")
         if ($r -ne "Yes") { return }
     }
     Import-AppsFromFile -Path $Global:App.LinkedFilePath
@@ -1788,6 +1789,11 @@ $btnOpen.Add_Click({
     $fbd.Description = "Select the folder containing per-app JSON files"
     $fbd.SelectedPath = $Global:App.RootPath
     if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        # same question Reload asks - opening another folder replaces the catalog in memory too
+        if ($Global:App.UnsavedChangesBox.Value) {
+            $r = [System.Windows.Forms.MessageBox]::Show("Discard your unsaved catalog changes and open the catalog in this folder?`n`n$($fbd.SelectedPath)", "Discard changes?", "YesNo", "Warning", "Button2")
+            if ($r -ne "Yes") { return }
+        }
         $Global:App.LinkedFilePath = $fbd.SelectedPath
         Import-AppsFromFile -Path $Global:App.LinkedFilePath
         Update-Grid
@@ -2000,9 +2006,14 @@ Update-CredentialWarningBanner
 $Global:App.Form.Add_Shown({ Start-StartupDriftCheck; Start-StartupFullAuditCheck })
 
 $Global:App.Form.Add_FormClosing({
+    $closingArgs = $_
     if ($Global:App.UnsavedChangesBox.Value) {
-        $r = [System.Windows.Forms.MessageBox]::Show("You have unsaved catalog changes. Close anyway?", "Unsaved changes", "YesNo", "Warning")
-        if ($r -ne "Yes") { $_.Cancel = $true }
+        $r = [System.Windows.Forms.MessageBox]::Show("Save your catalog changes before closing?", "Save changes?", "YesNoCancel", "Warning")
+        if ($r -eq [System.Windows.Forms.DialogResult]::Yes) {
+            # a save that's refused (duplicates, ...) keeps the app open
+            if (-not (Save-AppsToFile -Path $Global:App.LinkedFilePath)) { $closingArgs.Cancel = $true }
+        }
+        elseif ($r -ne [System.Windows.Forms.DialogResult]::No) { $closingArgs.Cancel = $true }
     }
 })
 

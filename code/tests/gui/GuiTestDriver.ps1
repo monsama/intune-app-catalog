@@ -289,9 +289,12 @@ function Stop-AppUnderTest {
     $W32::Close($Ctx.Main)
     Start-Sleep -Seconds 2
     foreach ($d in Get-AppDialogs $Ctx) {
-        # e.g. "unsaved changes - close anyway?"
+        # "Save changes?" (Yes/No/Cancel) -> No, don't save; a Yes/No "close anyway?" -> Yes
+        $no = Get-ChildWindow $d 'No'
         $yes = Get-ChildWindow $d 'Yes'
-        if ($yes) { $W32::Click($yes) } else { $W32::Close($d) }
+        if ($no -and (Get-ChildWindow $d 'Cancel')) { $W32::Click($no) }
+        elseif ($yes) { $W32::Click($yes) }
+        else { $W32::Close($d) }
     }
     $clean = $Ctx.Process.WaitForExit(20000)
     if (-not $clean) { $Ctx.Process.Kill() }

@@ -8,8 +8,7 @@ function Global:Show-DeleteAppDialog {
         # tells you there's nothing to delete and leaves the (already
         # pointless, since there's nothing in Intune for it to refer to)
         # catalog entry sitting there regardless.
-        $r = [System.Windows.Forms.MessageBox]::Show("`"$AppName`" doesn't have an App ID - there's nothing in Intune to delete.`n`nDelete it from the local catalog instead?", "No App ID", "YesNo", "Question")
-        if ($r -ne "Yes") {
+        if (-not (Confirm-CatalogOnlyDelete -AppName $AppName)) {
             return @{ Success = $false; RemovedFromCatalog = $false }
         }
         $noIdDelIdx = -1
@@ -215,8 +214,8 @@ function Global:Show-DeleteAppDialog {
                 }
                 elseif ($result.blockingAppId) {
                     $r2 = [System.Windows.Forms.MessageBox]::Show(
-                        "This app can't be deleted because Intune has it set as a dependency for `"$($result.blockingAppName)`".`n`nRemove that dependency relationship and then delete this app?",
-                        "Dependency in the way", "YesNo", "Warning")
+                        "'$AppNameRef' can't be deleted yet: '$($result.blockingAppName)' needs it as a dependency in Intune.`n`nYes changes '$($result.blockingAppName)' in Intune so it no longer depends on '$AppNameRef', then deletes '$AppNameRef'.",
+                        "Dependency in the way", "YesNo", "Warning", "Button2")
                     if ($r2 -eq "Yes") {
                         & $RunDeleteBoxRef.Value -RemoveDependencyFromAppId $result.blockingAppId
                     }
@@ -246,14 +245,12 @@ function Global:Show-DeleteAppDialog {
         & $RunDeleteBox.Value
     }.GetNewClosure())
 
-    $btnCancel.Add_Click({
+    $btnCancel.Add_Click({ $dlg.Close() }.GetNewClosure())
+    Register-CloseConfirmation -Dialog $dlg -GetQuestion {
         if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
-            $r = [System.Windows.Forms.MessageBox]::Show("A step is currently running. Stop it and close this dialog?", "Stop and close?", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
-            try { $procBox.Proc.Kill() } catch { }
+            "The delete is still running. Stop it and close?`n`nThe app may already be deleted from Intune - if so, its catalog entry isn't updated when you stop now. 'Intune sync check' finds it afterwards."
         }
-        $dlg.Close()
-    }.GetNewClosure())
+    }.GetNewClosure() -OnConfirmed { $procBox.Proc.Kill() }.GetNewClosure()
     $dlg.CancelButton = $btnCancel
     $dlg.AcceptButton = $btnDelete
 

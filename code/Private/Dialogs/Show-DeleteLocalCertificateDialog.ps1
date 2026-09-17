@@ -141,9 +141,13 @@ function Global:Show-DeleteLocalCertificateDialog {
         $entry = $grid.SelectedRows[0].Tag
         $foundPath = Join-Path $entry.StorePath $entry.Thumbprint
 
+        $storeName = if ([string]$entry.StorePath -match 'LocalMachine') { "this computer's certificate store (Local Machine)" } else { "your personal certificate store (Current User)" }
+        $inUseWarning = if ($Global:App.GraphCertificateThumbprint -and (($Global:App.GraphCertificateThumbprint -replace '\s', '') -eq $entry.Thumbprint)) {
+            "`n`nThis is the certificate the app signs in with (Settings). Without it, Deploy, Sync, Assign and App ID lookup fail until you choose another one."
+        } else { "" }
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "Permanently delete this certificate from $foundPath ?`n`n$($entry.Subject)`n`nThis only removes it from THIS machine - it does NOT remove it from Entra ID. Use Check certificates / Delete from Entra separately for that.",
-            "Confirm local delete", "YesNo", "Warning")
+            "Permanently delete this certificate, including its private key, from $($storeName)?`n`n$($entry.Subject)`nThumbprint $($entry.Thumbprint)$inUseWarning`n`nIt isn't removed from Entra ID - use 'Delete from Entra ID' in Settings for that.",
+            "Delete local certificate", "YesNo", "Warning", "Button2")
         if ($r -ne "Yes") { return }
 
         try {

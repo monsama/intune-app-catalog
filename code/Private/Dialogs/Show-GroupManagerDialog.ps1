@@ -204,6 +204,7 @@ function Global:Show-GroupManagerDialog {
                 return
             }
             $currentGroupIdBoxRef.Value = $data.GroupId
+            $currentGroupIdBoxRef.Name = $groupNameRef
             $txtDescriptionRef.Text = $data.Description
             foreach ($m in @($data.Members)) {
                 [void]$lstCurrentMembersRef.Items.Add("[$($m.type)] $($m.displayName)")
@@ -279,8 +280,8 @@ function Global:Show-GroupManagerDialog {
         }
 
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "Creates `"$groupName`" if it doesn't already exist (exact name match), sets its description if you entered one, and adds $($pendingMemberIds.Count) member(s) to it. Continue?",
-            "Confirm", "YesNo", "Question")
+            "Create or update the group '$groupName' in Entra ID and add $($pendingMemberIds.Count) member(s) to it?`n`nThe group is created only if no group has exactly this name, and its description is set if you entered one.",
+            "Create or update group", "YesNo", "Question")
         if ($r -ne "Yes") { return }
 
         $btnRun.Enabled = $false
@@ -377,9 +378,15 @@ function Global:Show-GroupManagerDialog {
             return
         }
 
+        $usedBy = @(Get-CatalogAppsUsingGroup -GroupName $groupName)
+        $usedByText = if ($usedBy.Count -eq 0) {
+            "No app in this catalog uses it."
+        } else {
+            "It's used by $($usedBy.Count) app(s) in this catalog: $((@($usedBy | Select-Object -First 10) -join ', '))$(if ($usedBy.Count -gt 10) { ', ...' }). Their assignments to it stop working."
+        }
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "This permanently deletes the group `"$groupName`" from Entra ID. If any app is currently assigned to it (required/available/uninstall), that assignment breaks too. This CANNOT be undone.`n`nContinue?",
-            "Confirm group deletion", "YesNo", "Warning")
+            "Permanently delete the group '$groupName' from Entra ID?`n`n$usedByText Apps in Intune that are assigned to it lose that assignment too. This can't be undone.",
+            "Delete group", "YesNo", "Warning", "Button2")
         if ($r -ne "Yes") { return }
 
         $btnRun.Enabled = $false
@@ -497,9 +504,10 @@ function Global:Show-GroupManagerDialog {
         $newName = $newName.Trim()
         if (-not $newName -or $newName -eq $groupName) { return }
 
+        $renameUsedBy = @(Get-CatalogAppsUsingGroup -GroupName $groupName).Count
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "Renames `"$groupName`" to `"$newName`" in Entra ID, and updates every app in the local catalog that references `"$groupName`" (Required/Available/Uninstall) to the new name. Continue?",
-            "Confirm rename", "YesNo", "Question")
+            "Rename '$groupName' to '$newName' in Entra ID?`n`n$(if ($renameUsedBy -gt 0) { "The $renameUsedBy app(s) in this catalog that use it are updated to the new name too." } else { "No app in this catalog uses it." })",
+            "Rename group", "YesNo", "Question")
         if ($r -ne "Yes") { return }
 
         $btnRun.Enabled = $false
@@ -640,7 +648,8 @@ function Global:Show-GroupManagerDialog {
         $memberLabel = [string]$lstCurrentMembers.Items[$idx]
         $memberId = $currentMemberIds[$idx]
 
-        $r = [System.Windows.Forms.MessageBox]::Show("Remove $memberLabel from this group? This only removes them from the group - it does not delete the user or group itself.", "Confirm removal", "YesNo", "Warning")
+        $fromGroup = if ($currentGroupIdBox.Name) { "'$($currentGroupIdBox.Name)'" } else { "this group" }
+        $r = [System.Windows.Forms.MessageBox]::Show("Remove $memberLabel from ${fromGroup}?`n`nThis only takes them out of the group - the user or group itself isn't deleted.", "Remove member", "YesNo", "Warning", "Button2")
         if ($r -ne "Yes") { return }
 
         $btnRun.Enabled = $false
@@ -723,14 +732,13 @@ function Global:Show-GroupManagerDialog {
         }.GetNewClosure()
     }.GetNewClosure())
 
-    $btnClose.Add_Click({
+    # Close is disabled while a step runs; this covers the window's X / Alt+F4
+    $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
+    Register-CloseConfirmation -Dialog $dlg -GetQuestion {
         if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
-            $r = [System.Windows.Forms.MessageBox]::Show("A step is currently running. Stop it and close this dialog?", "Stop and close?", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
-            try { $procBox.Proc.Kill() } catch { }
+            "A group change is still running. Stop it and close?`n`nIt may already be done in Entra ID - if you stop now, the catalog may not be updated to match."
         }
-        $dlg.Close()
-    }.GetNewClosure())
+    }.GetNewClosure() -OnConfirmed { $procBox.Proc.Kill() }.GetNewClosure()
     $dlg.CancelButton = $btnClose
 
     Set-Theme -Control $dlg

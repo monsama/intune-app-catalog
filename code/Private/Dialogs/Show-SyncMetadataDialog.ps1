@@ -361,14 +361,12 @@ function Global:Show-SyncMetadataDialog {
         }.GetNewClosure()
     }.GetNewClosure())
 
-    $btnClose.Add_Click({
+    $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
+    Register-CloseConfirmation -Dialog $dlg -GetQuestion {
         if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
-            $r = [System.Windows.Forms.MessageBox]::Show("A sync is currently running. Stop it and close this dialog?", "Stop and close?", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
-            try { $procBox.Proc.Kill() } catch { }
+            "A sync is still running. Stop it and close?`n`nThe sync only reads from Intune, so stopping it changes nothing there."
         }
-        $dlg.Close()
-    }.GetNewClosure())
+    }.GetNewClosure() -OnConfirmed { $procBox.Proc.Kill() }.GetNewClosure()
     $dlg.CancelButton = $btnClose
     $dlg.AcceptButton = $btnSync
 

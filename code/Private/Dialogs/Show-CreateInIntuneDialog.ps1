@@ -1773,8 +1773,8 @@ function Global:Show-CreateInIntuneDialog {
 
         if ($replaceContent) {
             $r = [System.Windows.Forms.MessageBox]::Show(
-                "This replaces the package content on the EXISTING, live app ($ExistingAppId) with:`n$($txtPackagePath.Text)`n`nDevices that already have this app installed will get the new content on their next check-in. This cannot be undone from here. Continue?",
-                "Confirm content replacement", "YesNo", "Warning")
+                "Replace the package of the live Intune app '$AppName' with this one?`n`n$($txtPackagePath.Text)`n`nDevices that already have the app get the new package at their next check-in. This can't be undone from here.`n`n(App ID $ExistingAppId)",
+                "Replace package", "YesNo", "Warning", "Button2")
             if ($r -ne "Yes") { return }
         }
 
@@ -2415,29 +2415,24 @@ function Global:Show-CreateInIntuneDialog {
         $dlg.Close()
     }.GetNewClosure())
 
-    $btnCancel.Add_Click({
-        if ($metadataFetchRunningBox.Running) {
-            [System.Windows.Forms.MessageBox]::Show("Still loading current metadata from Intune - wait for that to finish first.", "Please wait", "OK", "Information") | Out-Null
-            return
-        }
-        if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "A step is currently running (PID $($procBox.Proc.Id)). Stop it and close this dialog?`n`nIf the app object was already created in Intune, it may be left in an incomplete state - check the Intune portal afterward and delete it if needed before retrying.",
-                "Stop and close?", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
-            try { $procBox.Proc.Kill() } catch { }
-        }
-        $dlg.Close()
-    }.GetNewClosure())
+    $btnCancel.Add_Click({ $dlg.Close() }.GetNewClosure())
 
-    # Backstop for the window's own X button / Alt+F4, which don't go
-    # through btnCancel's click handler above at all - blocks closing
-    # while the metadata auto-fetch is still in flight, same check, same
-    # reasoning as $metadataFetchRunningBox's own comment.
+    # Every way out (Cancel, Esc, X, Alt+F4) ends up here: closing waits
+    # for the metadata auto-fetch (see $metadataFetchRunningBox), and a
+    # running deployment step is only stopped after asking. Registered in
+    # this order, so the fetch check runs first.
     $dlg.Add_FormClosing({
         param($s, $e)
-        if ($metadataFetchRunningBox.Running) { $e.Cancel = $true }
+        if ($metadataFetchRunningBox.Running) {
+            [System.Windows.Forms.MessageBox]::Show("Still loading the app's current settings from Intune - wait for that to finish first.", "Please wait", "OK", "Information") | Out-Null
+            $e.Cancel = $true
+        }
     }.GetNewClosure())
+    Register-CloseConfirmation -Dialog $dlg -GetQuestion {
+        if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
+            "A deployment step is still running. Stop it and close?`n`nIf the app was already created in Intune, it may be left incomplete - check it in Intune and delete it there if needed before trying again."
+        }
+    }.GetNewClosure() -OnConfirmed { $procBox.Proc.Kill() }.GetNewClosure()
 
     # Pre-fill from LOCALLY saved metadata (if any), before anything else -
     # for a new app that was already "Saved for later" once, this restores

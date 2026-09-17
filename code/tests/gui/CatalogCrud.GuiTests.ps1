@@ -117,6 +117,28 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
             Assert-True ($saved.Count -eq 1 -and $saved[0].wingetId -eq 'Test.GuiApp.Edited') "edit is saved in place, no duplicate file" "files=$($saved.Count) wingetId=$($saved[0].wingetId)"
         }
 
+        # --- leaving with unsaved edits asks first: No stays, Yes discards ---
+        $ed = Open-EditorForRow $ctx $appA
+        if ($ed) {
+            $W32::SetText((Get-EditBoxes $ed)[1], 'Test.GuiApp.NotSaved')
+            $W32::Click((Get-ChildWindow $ed 'Cancel'))
+            $q = Wait-AppDialog $ctx 'Discard changes?' 5
+            Assert-True ($q -and (Get-StaticText $q) -like "*unsaved changes to '$appA'*") "Cancel with an unsaved edit asks before discarding it" "$(if ($q) { Get-StaticText $q })"
+            if ($q) {
+                $W32::Click((Get-ChildWindow $q 'No'))
+                Start-Sleep -Milliseconds 800
+                Assert-True ($W32::IsWindowVisible($ed)) "answering No keeps the editor open"
+                $W32::Close($ed)
+                $q = Wait-AppDialog $ctx 'Discard changes?' 5
+                Assert-True ([bool]$q) "the window's X asks the same question"
+                if ($q) { $W32::Click((Get-ChildWindow $q 'Yes')) }
+                Assert-True (Wait-NoAppDialogs $ctx 5) "answering Yes closes the editor"
+            }
+            foreach ($d in Get-AppDialogs $ctx) { [void](Close-AppDialog $d) }
+            $saved = @(Get-CatalogEntries $ctx $appA)
+            Assert-True ($saved.Count -eq 1 -and $saved[0].wingetId -eq 'Test.GuiApp.Edited') "a discarded edit isn't saved" "wingetId=$($saved[0].wingetId)"
+        }
+
         # --- rename ---
         $ed = Open-EditorForRow $ctx $appA
         if ($ed) {

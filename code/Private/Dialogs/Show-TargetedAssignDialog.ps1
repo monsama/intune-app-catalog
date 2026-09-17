@@ -95,8 +95,8 @@ function Global:Show-TargetedAssignDialog {
 
     $btnRun.Add_Click({
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "This REPLACES this app's entire Intune assignment list with exactly the $($allGroups.Count) group(s) listed above.`n`nAny assignment currently on this app that isn't in that list - including ones this catalog doesn't know about - will be REMOVED. The log will show the app's current assignments before making any change, so you can Cancel if something looks unexpected.`n`nContinue?",
-            "Confirm", "YesNo", "Question")
+            "Replace all Intune assignments of '$AppName' with exactly the $($allGroups.Count) group(s) listed above?`n`nAny assignment on this app that isn't in that list is removed - including ones this catalog doesn't know about. The log shows the app's current assignments first, but once the change has started it can't be stopped safely.",
+            "Replace assignments", "YesNo", "Warning", "Button2")
         if ($r -ne "Yes") { return }
 
         $configPath = Join-Path $env:TEMP (".intunepkg_targetedassign_config_" + [guid]::NewGuid().ToString("N") + ".json")
@@ -164,14 +164,12 @@ function Global:Show-TargetedAssignDialog {
         }.GetNewClosure()
     }.GetNewClosure())
 
-    $btnCancel.Add_Click({
+    $btnCancel.Add_Click({ $dlg.Close() }.GetNewClosure())
+    Register-CloseConfirmation -Dialog $dlg -GetQuestion {
         if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
-            $r = [System.Windows.Forms.MessageBox]::Show("A step is currently running. Stop it and close this dialog?", "Stop and close?", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
-            try { $procBox.Proc.Kill() } catch { }
+            "Assigning is still running. Stop it and close?`n`nStopping part-way can leave '$AppName' with only some of its assignments changed - check it in Intune afterwards."
         }
-        $dlg.Close()
-    }.GetNewClosure())
+    }.GetNewClosure() -OnConfirmed { $procBox.Proc.Kill() }.GetNewClosure()
 
     $dlg.CancelButton = $btnCancel
     $dlg.AcceptButton = $btnRun

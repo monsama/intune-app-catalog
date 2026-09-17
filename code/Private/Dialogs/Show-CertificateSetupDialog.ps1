@@ -551,18 +551,14 @@ function Global:Show-CertificateSetupDialog {
         $deleteClient = $txtClient.Text.Trim()
 
         # Removing the only certificate left would break app-only sign-in
-        # for the WHOLE rest of this app entirely, not just this dialog -
-        # worth a sharper warning than a routine confirmation.
-        if ($certKeyIds.Count -eq 1) {
-            $r0 = [System.Windows.Forms.MessageBox]::Show(
-                "This is the ONLY certificate currently trusted for this app registration. Removing it will break app-only sign-in for this app entirely, everywhere it's used (Deploy, Assign, App ID lookup, etc.) until a new one is uploaded. Continue anyway?",
-                "This is the last certificate", "YesNo", "Warning")
-            if ($r0 -ne "Yes") { return }
-        }
-
+        # for the WHOLE rest of this app, not just this dialog - said in the
+        # same question rather than a second one.
+        $lastCertWarning = if ($certKeyIds.Count -eq 1) {
+            "`n`nThis is the ONLY certificate trusted for this app registration. Without it, sign-in fails everywhere in this app (Deploy, Assign, App ID lookup, ...) until a new one is uploaded."
+        } else { "" }
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "Remove this certificate from Entra ID?`n`n$certLabel`n`nThis only removes it from Entra - it does NOT delete it from this machine. Use Delete local certificate above for that, separately.",
-            "Confirm delete from Entra", "YesNo", "Warning")
+            "Remove this certificate from Entra ID?`n`n$certLabel$lastCertWarning`n`nIt stays on this machine - use 'Delete local certificate' for that.",
+            "Delete from Entra ID", "YesNo", "Warning", "Button2")
         if ($r -ne "Yes") { return }
 
         $btnCheckCerts.Enabled = $false
@@ -762,51 +758,53 @@ function Global:Show-CertificateSetupDialog {
     # from that same click) from immediately asking the exact same
     # question a second time right after the first answer.
     $discardConfirmedBox = @{ Value = $false }
+    # $true while closing runs Save itself - Save then mustn't close again
+    $closingBox = @{ Value = $false }
 
-    $btnSave.Add_Click({
+    # Save's checks and result - also used when closing asks "Save changes?"
+    # and the answer is Yes. Returns $true when saved.
+    $performSave = {
         if (& $anyCertOpRunning) {
             [System.Windows.Forms.MessageBox]::Show("An operation is still running - wait for it to finish first.", "Please wait", "OK", "Information") | Out-Null
             return
         }
         if (-not $txtTenant.Text.Trim() -or -not $txtClient.Text.Trim() -or -not $txtThumb.Text.Trim()) {
             [System.Windows.Forms.MessageBox]::Show("Tenant ID, Client ID, and thumbprint are all required.", "Missing values", "OK", "Warning") | Out-Null
-            return
+            return $false
         }
         $saveResultBox.TenantId   = $txtTenant.Text.Trim()
         $saveResultBox.ClientId   = $txtClient.Text.Trim()
         $saveResultBox.Thumbprint = ($txtThumb.Text.Trim() -replace '\s', '')
         $saveResultBox.Saved = $true
-        $dlg.Close()
-    }.GetNewClosure())
+        if (-not $closingBox.Value) { $dlg.Close() }
+        return $true
+    }.GetNewClosure()
+    $btnSave.Add_Click({ [void](& $performSave) }.GetNewClosure())
 
-    $btnCancel.Add_Click({
-        if (& $anyCertOpRunning) {
-            [System.Windows.Forms.MessageBox]::Show("An operation is still running - wait for it to finish first.", "Please wait", "OK", "Information") | Out-Null
-            return
-        }
-        if (& $HasUnsavedConnectionChanges) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "Tenant ID, Client ID, or Certificate Thumbprint changed here but were never saved - Test connection only checks a combination works, it doesn't save it. Every other feature (Deploy, Sync, Assign, ...) will keep using the PREVIOUS saved values until you save.`n`nDiscard these changes?",
-                "Unsaved connection changes", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
-            $discardConfirmedBox.Value = $true
-        }
-        $dlg.Close()
-    }.GetNewClosure())
+    $btnCancel.Add_Click({ $dlg.Close() }.GetNewClosure())
 
-    # Backstop for the window's own X button / Alt+F4, which don't go
-    # through Save/Cancel's click handlers above at all - including the
-    # unsaved-changes check, so a change never saved doesn't silently slip
-    # out through this path just because Cancel wasn't the button used.
+    # The one place leaving is checked - Save, Cancel (also Esc), X and
+    # Alt+F4 all end up here. A CancelButton closes the dialog on its own
+    # after its click handler, so asking in the handler couldn't have kept
+    # the dialog open anyway.
     $dlg.Add_FormClosing({
         param($s, $e)
-        if (& $anyCertOpRunning) { $e.Cancel = $true; return }
+        if (& $anyCertOpRunning) {
+            [System.Windows.Forms.MessageBox]::Show("An operation is still running - wait for it to finish first.", "Please wait", "OK", "Information") | Out-Null
+            $e.Cancel = $true
+            return
+        }
         if ($saveResultBox.Saved -or $discardConfirmedBox.Value) { return }
         if (& $HasUnsavedConnectionChanges) {
             $r = [System.Windows.Forms.MessageBox]::Show(
-                "Tenant ID, Client ID, or Certificate Thumbprint changed here but were never saved - Test connection only checks a combination works, it doesn't save it. Every other feature (Deploy, Sync, Assign, ...) will keep using the PREVIOUS saved values until you save.`n`nDiscard these changes?",
-                "Unsaved connection changes", "YesNo", "Warning")
-            if ($r -ne "Yes") { $e.Cancel = $true }
+                "Save your changes to the Tenant ID, Client ID or certificate thumbprint?`n`nIf you don't, the rest of the app (Deploy, Sync, Assign, ...) keeps using the previously saved values - 'Test connection' doesn't save anything.",
+                "Save changes?", "YesNoCancel", "Warning")
+            if ($r -eq [System.Windows.Forms.DialogResult]::Yes) {
+                $closingBox.Value = $true
+                try { if (-not (& $performSave)) { $e.Cancel = $true } }
+                finally { $closingBox.Value = $false }
+            }
+            elseif ($r -ne [System.Windows.Forms.DialogResult]::No) { $e.Cancel = $true }
         }
     }.GetNewClosure())
 

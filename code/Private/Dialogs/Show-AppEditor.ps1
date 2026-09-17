@@ -164,7 +164,26 @@ function Global:Show-AppEditor {
     # defining this any later would have left $btnCreateInIntune's own
     # copy permanently pointing at $null.
     $HasUnsavedDeployResult = {
-        (-not $ExistingApp) -and ($pendingDeployMetadataBox.Value -or $pendingDeployIntuneFactsBox.IntuneAppType -or $txtId.Text.Trim())
+        (-not $ExistingApp) -and ($pendingDeployMetadataBox.Value -or $pendingDeployIntuneFactsBox.IntuneAppType)
+    }.GetNewClosure()
+    # What leaving without saving would lose, as the question to ask - or
+    # $null when nothing would be lost. Asked in FormClosing (below) for
+    # every way out: Cancel, Previous/Next (here and inside "Intune
+    # Deployment"), X and Alt+F4. Compares the fields "Save app to
+    # catalog" writes with how they were when the editor opened;
+    # $editorStateBox.Get is filled in once the group lists exist.
+    $editorStateBox = @{ Initial = $null; Get = $null }
+    $GetDiscardQuestion = {
+        $name = $txtName.Text.Trim()
+        $label = if ($name) { "'$name'" } else { "This new app" }
+        if (& $HasUnsavedDeployResult) {
+            return "$label was deployed to Intune, but isn't saved to the catalog yet. Discard it here?`n`nThe app stays in Intune either way - click 'Save app to catalog' to keep it here too."
+        }
+        if ($editorStateBox.Get -and ((& $editorStateBox.Get) -ne $editorStateBox.Initial)) {
+            if ($ExistingApp) { return "Discard your unsaved changes to ${label}?" }
+            return "$label isn't saved to the catalog yet. Discard it?"
+        }
+        return $null
     }.GetNewClosure()
     # Set once the user has already been asked (Cancel/Previous/Next) and
     # chose to discard, or the close is one this editor already resolved
@@ -365,13 +384,7 @@ function Global:Show-AppEditor {
         # AutoOpenDeploy set so the next app lands straight back in
         # Deploy view instead of stopping on the plain editor screen.
         if ($null -ne $deployResult -and $null -ne $deployResult.NavigateToIndex) {
-            if (& $HasUnsavedDeployResult) {
-                $r = [System.Windows.Forms.MessageBox]::Show(
-                    "This app was just created/updated in Intune, but that change was never saved to the local catalog - navigating away now discards it from here (Intune itself keeps the change either way).`n`nDiscard?",
-                    "Unsaved catalog entry", "YesNo", "Warning")
-                if ($r -ne "Yes") { return }
-            }
-            $discardConfirmedBox.Value = $true
+            # FormClosing asks first if anything unsaved would be lost
             $navigateToIndexBox.Value = $deployResult.NavigateToIndex
             $navigateAutoOpenDeployBox.Value = $true
             $dlg.Close()
@@ -448,8 +461,7 @@ function Global:Show-AppEditor {
             # live action; removing a catalog entry that already has no
             # Intune presence at all is a much lower-stakes, purely local
             # change.
-            $r = [System.Windows.Forms.MessageBox]::Show("Delete '$($txtName.Text.Trim())' from the catalog? It has no App ID, so this only removes the local entry - there is nothing left in Intune to delete.", "Confirm delete", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
+            if (-not (Confirm-CatalogOnlyDelete -AppName $txtName.Text.Trim() -UnsavedEdits:([bool](& $GetDiscardQuestion)))) { return }
             $delIdx = -1
             for ($di = 0; $di -lt $appsRef.Count; $di++) {
                 if ($ExistingApp -and $appsRef[$di].appName -eq $ExistingApp.appName) { $delIdx = $di; break }
@@ -697,7 +709,7 @@ function Global:Show-AppEditor {
     $btnPrevApp.Visible = ($CurrentIndex -ge 0)
     $dlg.Controls.Add($btnPrevApp)
     $prevAppTip = New-Object System.Windows.Forms.ToolTip
-    $prevAppTip.SetToolTip($btnPrevApp, "Discards unsaved changes to this app, same as Cancel, then opens the previous one. Use 'Save app to catalog' first if you want to keep them.")
+    $prevAppTip.SetToolTip($btnPrevApp, "Opens the previous app. Asks first if this one has unsaved changes.")
 
     $lblAppNavPosition = New-Object System.Windows.Forms.Label
     $lblAppNavPosition.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
@@ -728,27 +740,14 @@ function Global:Show-AppEditor {
     $btnNextApp.Visible = ($CurrentIndex -ge 0)
     $dlg.Controls.Add($btnNextApp)
     $nextAppTip = New-Object System.Windows.Forms.ToolTip
-    $nextAppTip.SetToolTip($btnNextApp, "Discards unsaved changes to this app, same as Cancel, then opens the next one. Use 'Save app to catalog' first if you want to keep them.")
+    $nextAppTip.SetToolTip($btnNextApp, "Opens the next app. Asks first if this one has unsaved changes.")
 
+    # FormClosing asks first if anything unsaved would be lost
     $btnPrevApp.Add_Click({
-        if (& $HasUnsavedDeployResult) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "This app was just created/updated in Intune, but that change was never saved to the local catalog - navigating away now discards it from here (Intune itself keeps the change either way).`n`nDiscard?",
-                "Unsaved catalog entry", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
-            $discardConfirmedBox.Value = $true
-        }
         $navigateToIndexBox.Value = $prevAppIndex
         $dlg.Close()
     }.GetNewClosure())
     $btnNextApp.Add_Click({
-        if (& $HasUnsavedDeployResult) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "This app was just created/updated in Intune, but that change was never saved to the local catalog - navigating away now discards it from here (Intune itself keeps the change either way).`n`nDiscard?",
-                "Unsaved catalog entry", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
-            $discardConfirmedBox.Value = $true
-        }
         $navigateToIndexBox.Value = $nextAppIndex
         $dlg.Close()
     }.GetNewClosure())
@@ -938,28 +937,26 @@ function Global:Show-AppEditor {
     }.GetNewClosure())
 
     $btnCancel.Add_Click({
-        if (& $HasUnsavedDeployResult) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "This app was just created/updated in Intune, but that change was never saved to the local catalog - cancelling now discards it from here (Intune itself keeps the change either way).`n`nDiscard?",
-                "Unsaved catalog entry", "YesNo", "Warning")
-            if ($r -ne "Yes") { return }
-            $discardConfirmedBox.Value = $true
-        }
         $dlg.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
         $dlg.Close()
     }.GetNewClosure())
 
-    # Backstop for the window's own X button / Alt+F4, which don't go
-    # through Cancel/Previous/Next's own click handlers above at all.
+    # The one place leaving without saving is confirmed - Cancel (also
+    # Esc), Previous/Next and the window's X / Alt+F4 all end up here. A
+    # CancelButton closes the dialog on its own after its click handler,
+    # so asking in the handler couldn't have kept the editor open anyway.
     $dlg.Add_FormClosing({
         param($s, $e)
         if ($dlg.DialogResult -eq [System.Windows.Forms.DialogResult]::OK) { return }
         if ($discardConfirmedBox.Value) { return }
-        if (& $HasUnsavedDeployResult) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "This app was just created/updated in Intune, but that change was never saved to the local catalog - closing now discards it from here (Intune itself keeps the change either way).`n`nDiscard?",
-                "Unsaved catalog entry", "YesNo", "Warning")
-            if ($r -ne "Yes") { $e.Cancel = $true }
+        $question = & $GetDiscardQuestion
+        if (-not $question) { return }
+        $r = [System.Windows.Forms.MessageBox]::Show($question, "Discard changes?", "YesNo", "Warning", "Button2")
+        if ($r -ne [System.Windows.Forms.DialogResult]::Yes) {
+            $e.Cancel = $true
+            # stay on this app
+            $navigateToIndexBox.Value = $null
+            $navigateAutoOpenDeployBox.Value = $false
         }
     }.GetNewClosure())
 
@@ -1027,6 +1024,18 @@ function Global:Show-AppEditor {
     if ($AutoOpenDeploy) {
         $dlg.Add_Shown({ $btnCreateInIntune.PerformClick() }.GetNewClosure())
     }
+
+    # The fields "Save app to catalog" writes, as they are now - compared
+    # with how they were on opening (see $GetDiscardQuestion)
+    $editorStateBox.Get = {
+        @(
+            $txtName.Text.Trim(), $txtWinget.Text.Trim(), $txtId.Text.Trim(),
+            (@($reqGroup.List.CheckedItems) -join "`n"),
+            (@($availGroup.List.CheckedItems) -join "`n"),
+            (@($uninstGroup.List.CheckedItems) -join "`n")
+        ) -join [char]1
+    }.GetNewClosure()
+    $editorStateBox.Initial = & $editorStateBox.Get
 
     $dlgResult = $dlg.ShowDialog($Global:App.Form)
 
