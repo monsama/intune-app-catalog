@@ -10,6 +10,23 @@ function Global:Get-AppUiFont {
     return $script:AppUiFont
 }
 
+function Global:Get-GraphPermissionHint {
+    <#
+      Which application permission a refused request most likely needs,
+      worked out from the address in the error text - "Forbidden" on its
+      own never says which one. $null when the text names no endpoint this
+      app knows.
+    #>
+    param([string]$Text)
+    if (-not $Text) { return $null }
+    if ($Text -match 'deviceManagementScripts|deviceHealthScripts') { return "DeviceManagementScripts.ReadWrite.All (application)" }
+    if ($Text -match 'deviceManagement/reports')                    { return "DeviceManagementApps.Read.All (application)" }
+    if ($Text -match 'deviceAppManagement|mobileApps')              { return "DeviceManagementApps.ReadWrite.All (application)" }
+    if ($Text -match 'graph\.microsoft\.com/(v1\.0|beta)/(groups|users|directoryObjects)') { return "Group.Read.All and Directory.Read.All (application)" }
+    if ($Text -match 'deviceManagement')                            { return "DeviceManagementConfiguration.ReadWrite.All (application)" }
+    return $null
+}
+
 function Global:ConvertTo-FriendlyGraphError {
     # Recognizes a handful of common, recurring Connect-MgGraph/Graph SDK
     # failure shapes and puts the actual takeaway first, in plain words -
@@ -32,8 +49,13 @@ function Global:ConvertTo-FriendlyGraphError {
     elseif ($RawMessage -match '\bunauthorized\b|\b401\b') {
         $summary = "Microsoft Graph rejected this request as unauthorized - the configured credentials may be stale. Try Settings > Test connection."
     }
-    elseif ($RawMessage -match '\bforbidden\b|\b403\b|insufficient privileges') {
-        $summary = "Microsoft Graph refused this request - the app registration is likely missing a required permission (see Settings > First time? Setup guide...)."
+    elseif ($RawMessage -match '\bforbidden\b|\b403\b|insufficient privileges|Authorization_RequestDenied') {
+        $permission = Get-GraphPermissionHint $RawMessage
+        $summary = if ($permission) {
+            "Microsoft Graph refused this request: the app registration is missing a permission. Add $permission to it and grant admin consent, then try again (Settings > First time? Setup guide... walks through it)."
+        } else {
+            "Microsoft Graph refused this request - the app registration is likely missing a required permission (see Settings > First time? Setup guide...)."
+        }
     }
     if (-not $summary) { return $RawMessage }
     return "$summary`n`n(Raw error: $RawMessage)"
@@ -509,6 +531,10 @@ function Global:Write-DialogError {
         [System.Windows.Forms.RichTextBox]$LogBox,
         [string]$ErrorMessage
     )
+    # Through the same plain-language pass the in-process lookups get, so a
+    # refused permission or a stale certificate reads the same way whether
+    # the call came from this process or from an embedded script.
+    $ErrorMessage = ConvertTo-FriendlyGraphError $ErrorMessage
     $StatusLabel.ForeColor = [System.Drawing.Color]::Firebrick
     $StatusLabel.Text = "Failed - see the log below for details."
     if ($LogBox) {

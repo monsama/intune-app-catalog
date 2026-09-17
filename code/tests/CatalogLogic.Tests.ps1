@@ -122,6 +122,9 @@ $testableFunctionNames = @(
     # test failure, so it was never actually exercising the fix it was
     # meant to be able to cover.
     "ConvertTo-CanonicalLineEndings",
+    # Plain-language Graph errors (GuiHelpers.ps1)
+    "Get-GraphPermissionHint",
+    "ConvertTo-FriendlyGraphError",
     # Graph request log formatting (GraphLog.ps1) - pure string work
     "Get-GraphRequestPath",
     "Get-GraphRequestId",
@@ -759,6 +762,32 @@ $bothFailInvoke = { param($Uri, $Method, $Body) throw "nope" }
 $bothFailed = $false
 try { [void](Get-AppInstallStatusRows -AppId "app-1" -Invoke $bothFailInvoke) } catch { $bothFailed = $_.Exception.Message -like "*deviceStatuses endpoint didn't work either*" }
 Assert-True $bothFailed "Get-AppInstallStatusRows: both endpoints failing reports both errors"
+
+# -----------------------------------------------------------------
+# Which permission a refused request needs (GuiHelpers.ps1)
+# -----------------------------------------------------------------
+Assert-Equal "DeviceManagementScripts.ReadWrite.All (application)" `
+    (Get-GraphPermissionHint "POST https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts failed: Forbidden") `
+    "Get-GraphPermissionHint: platform scripts"
+Assert-Equal "DeviceManagementApps.Read.All (application)" `
+    (Get-GraphPermissionHint "POST https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceInstallStatusReport failed") `
+    "Get-GraphPermissionHint: the install status report"
+Assert-Equal "DeviceManagementApps.ReadWrite.All (application)" `
+    (Get-GraphPermissionHint "PATCH https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/x failed") `
+    "Get-GraphPermissionHint: apps"
+Assert-Equal "Group.Read.All and Directory.Read.All (application)" `
+    (Get-GraphPermissionHint "GET https://graph.microsoft.com/v1.0/groups?`$filter=... failed") `
+    "Get-GraphPermissionHint: groups and users"
+Assert-Null (Get-GraphPermissionHint "Something else entirely went wrong") `
+    "Get-GraphPermissionHint: nothing claimed for an unrelated error"
+
+$forbidden = ConvertTo-FriendlyGraphError "Create platform script failed: Forbidden (Forbidden)`nGraph said: {""error"":{""code"":""Forbidden""}} at https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts"
+Assert-True ($forbidden -like "*DeviceManagementScripts.ReadWrite.All*") `
+    "ConvertTo-FriendlyGraphError: a refused request names the permission to add"
+Assert-True ($forbidden -like "*Raw error:*") `
+    "ConvertTo-FriendlyGraphError: the original error text is kept underneath"
+Assert-Equal "Just a plain message" (ConvertTo-FriendlyGraphError "Just a plain message") `
+    "ConvertTo-FriendlyGraphError: an unrecognized error is left alone"
 
 # -----------------------------------------------------------------
 # Platform scripts (PlatformScripts.ps1)

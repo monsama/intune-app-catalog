@@ -96,6 +96,12 @@ function Invoke-GraphRequestDetailed {
             }
             $message = "$StepDescription failed: $($_.Exception.Message)"
             if ($detail) { $message += "`nGraph said: $detail" }
+            # "Forbidden" alone never says which permission is missing, and
+            # this script needs two different ones (scripts, groups).
+            if ("$($_.Exception.Message) $detail" -match '\bforbidden\b|\b403\b|insufficient privileges|Authorization_RequestDenied') {
+                $needed = if ($Uri -match 'deviceManagementScripts') { "DeviceManagementScripts.ReadWrite.All" } else { "Group.Read.All" }
+                $message += "`nThis usually means the app registration is missing the $needed application permission (with admin consent). Settings > First time? Setup guide... walks through adding it."
+            }
             throw $message
         }
     }
