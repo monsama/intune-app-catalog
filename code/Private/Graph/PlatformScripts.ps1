@@ -131,6 +131,51 @@ function Global:ConvertTo-PlatformScriptRow {
     }
 }
 
+function Global:ConvertTo-ScriptRunStateRow {
+    <#
+      One device's run of a platform script, as the dialog shows it.
+      Graph's deviceRunStates carry the device under managedDevice when
+      the call asked for it ($expand); without it there's only the id.
+    #>
+    param($RunState)
+    $get = {
+        param($Object, $Name)
+        if ($null -eq $Object) { return "" }
+        if ($Object -is [System.Collections.IDictionary]) { return [string]$Object[$Name] }
+        return [string]$Object.$Name
+    }
+    $device = if ($RunState -is [System.Collections.IDictionary]) { $RunState['managedDevice'] } else { $RunState.managedDevice }
+    $state = & $get $RunState 'runState'
+    $friendlyState = switch -Regex ("$state") {
+        '^success$' { "Success"; break }
+        '^fail'     { "Failed"; break }
+        '^pending$' { "Pending"; break }
+        '^notApplicable$' { "Not applicable"; break }
+        '^unknown$' { "Unknown"; break }
+        default     { if ("$state") { "$state" } else { "" } }
+    }
+    $errorText = & $get $RunState 'errorDescription'
+    if (-not $errorText) { $errorText = Format-InstallStatusError (& $get $RunState 'errorCode') }
+    return [pscustomobject]@{
+        DeviceName = $(if ($device) { & $get $device 'deviceName' } else { & $get $RunState 'managedDeviceId' })
+        UserName   = $(if ($device) { & $get $device 'userPrincipalName' } else { "" })
+        State      = $friendlyState
+        Result     = (& $get $RunState 'resultMessage')
+        ErrorText  = $errorText
+        LastRun    = Format-InstallStatusTime (& $get $RunState 'lastStateUpdateDateTime')
+    }
+}
+
+function Global:Format-ScriptRunSummary {
+    # "12 devices: 9 Success, 2 Failed, 1 Pending"
+    param($Rows)
+    $all = @($Rows)
+    if ($all.Count -eq 0) { return "Intune hasn't reported a run of this script yet." }
+    $byState = $all | Group-Object { if ($_.State) { $_.State } else { "Unknown" } } | Sort-Object @{ Expression = 'Count'; Descending = $true }, @{ Expression = 'Name'; Descending = $false }
+    $deviceWord = if ($all.Count -eq 1) { "device" } else { "devices" }
+    return "$($all.Count) $($deviceWord): $((@($byState | ForEach-Object { "$($_.Count) $($_.Name)" })) -join ', ')"
+}
+
 function Global:Get-PlatformScriptGroupNames {
     <#
       The group names of a script's assignments, given the assignments

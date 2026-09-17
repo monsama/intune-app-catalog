@@ -150,6 +150,8 @@ $testableFunctionNames = @(
     "New-PlatformScriptAssignBody",
     "ConvertTo-PlatformScriptRow",
     "Get-PlatformScriptGroupNames",
+    "ConvertTo-ScriptRunStateRow",
+    "Format-ScriptRunSummary",
     # Assignments incl. exclusions (Assignments.ps1)
     "Get-AssignmentKey",
     "Get-DesiredAssignmentEntries",
@@ -855,6 +857,24 @@ $assignedNames = @(Get-PlatformScriptGroupNames -Assignments $assignments -Group
 Assert-Equal "SG-Intune-AllDevices" $assignedNames[0] "Get-PlatformScriptGroupNames: uses the group name when it's known"
 Assert-Equal "g2" $assignedNames[1] "Get-PlatformScriptGroupNames: an unknown group keeps its id rather than disappearing"
 Assert-Equal 2 $assignedNames.Count "Get-PlatformScriptGroupNames: a non-group target is skipped"
+
+$runState = ConvertTo-ScriptRunStateRow @{
+    runState = 'fail'; errorCode = -2147024894; errorDescription = 'The system cannot find the file specified'
+    resultMessage = 'Set-TimeZone : not recognized'; lastStateUpdateDateTime = '2026-09-17 06:32:00'
+    managedDevice = @{ deviceName = 'HR-PC-0110'; userPrincipalName = 'chiara.rossi@contoso.com' }
+}
+Assert-Equal "HR-PC-0110" $runState.DeviceName "ConvertTo-ScriptRunStateRow: the expanded device's name"
+Assert-Equal "Failed" $runState.State "ConvertTo-ScriptRunStateRow: Intune's runState in plain words"
+Assert-Equal "The system cannot find the file specified" $runState.ErrorText "ConvertTo-ScriptRunStateRow: prefers Intune's own error text"
+Assert-Equal "2026-09-17 06:32" $runState.LastRun "ConvertTo-ScriptRunStateRow: shortened timestamp"
+$noDevice = ConvertTo-ScriptRunStateRow @{ runState = 'success'; managedDeviceId = 'abc-123' }
+Assert-Equal "abc-123" $noDevice.DeviceName "ConvertTo-ScriptRunStateRow: falls back to the device id when it wasn't expanded"
+Assert-Equal "Success" $noDevice.State "ConvertTo-ScriptRunStateRow: success"
+Assert-Equal "0x8007002E (-2147024850)" (ConvertTo-ScriptRunStateRow @{ runState = 'fail'; errorCode = -2147024850 }).ErrorText `
+    "ConvertTo-ScriptRunStateRow: without error text it shows the code"
+
+Assert-Equal "Intune hasn't reported a run of this script yet." (Format-ScriptRunSummary @()) "Format-ScriptRunSummary: nothing reported yet"
+Assert-Equal "2 devices: 1 Failed, 1 Success" (Format-ScriptRunSummary @($runState, $noDevice)) "Format-ScriptRunSummary: counts the states"
 
 # -----------------------------------------------------------------
 # Assignments, including exclusions (Assignments.ps1)

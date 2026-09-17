@@ -2,6 +2,28 @@
 
 ## 1.3
 
+### Excluded groups
+
+An app can now carry an **Excluded from** list next to Required, Available
+and Uninstall: those groups never get the app, whichever list would
+otherwise have covered them ("everyone in Sales except contractors").
+Before, exclusions had to be set in the portal - and the next push from
+here wiped them.
+
+The preview shows exclusions as their own lines, and a target the catalog
+can't express (All devices, All users) is now listed as "WILL BE REMOVED"
+instead of disappearing without a word.
+
+### Winget package check
+
+**More actions... > Verify > Winget package check...** asks winget on your
+machine whether each catalog app's Winget ID still exists. A renamed or
+dropped ID keeps working on devices that already have the app, but fails
+to install on every new one, which otherwise only surfaces as install
+failures much later. Versions aren't compared on purpose: the deployed
+install command takes whatever Winget ships at install time, and the
+generated detection rule matches the package ID, not a version.
+
 ### Platform scripts
 
 **More actions... > Intune > Platform scripts...** lists the PowerShell
@@ -17,6 +39,10 @@ run it again on devices that already had it. Needs
 `DeviceManagementScripts.ReadWrite.All` as an application permission
 (the older `DeviceManagementConfiguration.ReadWrite.All` also works), plus
 the `Group.Read.All` the app already uses to resolve group names.
+
+Each script's **Run status...** shows how it actually went per device -
+Intune's own state, its result message, the error of a failure and when it
+last ran.
 
 ### Installation status of an app
 

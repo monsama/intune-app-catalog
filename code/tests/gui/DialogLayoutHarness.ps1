@@ -257,6 +257,7 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'Intune sync check' { Show-IntuneOnlyAppsDialog }
     Add-LayoutAuditStep 'Install status' { Show-AppInstallStatusDialog -AppId $a0.appId -AppName $a0.appName }.GetNewClosure()
     Add-LayoutAuditStep 'Platform scripts' { Show-PlatformScriptsDialog }
+    Add-LayoutAuditStep 'Platform script run status' { Show-PlatformScriptRunStatusDialog -ScriptId 'd1e2f3a4-0000-4000-8000-000000000001' -ScriptName 'Set the time zone on every enrolled device' }
     Add-LayoutAuditStep 'Platform script (new)' { Show-PlatformScriptEditorDialog }
     Add-LayoutAuditStep 'Platform script (existing)' {
         Show-PlatformScriptEditorDialog -ScriptId 'd1e2f3a4-0000-4000-8000-000000000001' `
@@ -274,6 +275,7 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'Pull metadata and groups' { Show-SyncMetadataDialog -ScopedIndices @($i0) }.GetNewClosure()
     Add-LayoutAuditStep 'Assign groups' { Show-TargetedAssignDialog -AppId $a0.appId -AppName $a0.appName -RequiredGroups @($a0.requiredFor) -AvailableGroups @($a0.availableFor) -UninstallGroups @() }.GetNewClosure()
     Add-LayoutAuditStep 'Assign groups (long names)' { Show-TargetedAssignDialog -AppId $long.appId -AppName $long.appName -RequiredGroups @($longGroup) -AvailableGroups @() -UninstallGroups @() }.GetNewClosure()
+    Add-LayoutAuditStep 'Winget package check' { Show-WingetHealthCheckDialog }
     Add-LayoutAuditStep 'Search winget' { Show-WingetSearchDialog -InitialQuery '' }
     Add-LayoutAuditStep 'Multiple matches picker' {
         Show-SimpleListPicker -Title 'Multiple matches' -Prompt "Several Intune apps match '$($long.appName)'. Pick one:" -Items @("$($long.appName)  [$($long.appId)]", "Microsoft Visual C++ Redistributable  [c0ffee00-1111-4222-8333-444455556667]")

@@ -568,6 +568,7 @@ $btnOpen   = New-Object System.Windows.Forms.Button; $btnOpen.Text = "Open other
 $Global:App.BtnLookupIds = New-Object System.Windows.Forms.Button; $Global:App.BtnLookupIds.Text = "Look up App IDs..."
 $btnCheckIntuneOnly = New-Object System.Windows.Forms.Button; $btnCheckIntuneOnly.Text = "Intune sync check..."
 $btnPlatformScripts = New-Object System.Windows.Forms.Button; $btnPlatformScripts.Text = "Platform scripts..."
+$btnWingetHealth = New-Object System.Windows.Forms.Button; $btnWingetHealth.Text = "Winget package check..."
 $btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text = "Push groups to Intune (multiple apps)..."
 $btnSyncMetadata = New-Object System.Windows.Forms.Button; $btnSyncMetadata.Text = "Pull metadata and groups from Intune..."
 $btnBatchEdit = New-Object System.Windows.Forms.Button; $btnBatchEdit.Text = "Batch edit Intune fields..."
@@ -601,6 +602,7 @@ $toolbarTips.SetToolTip($btnReload, "Discard any unsaved changes and reload the 
 $toolbarTips.SetToolTip($btnOpen, "Switch to a different folder of per-app JSON files.")
 $toolbarTips.SetToolTip($Global:App.BtnLookupIds, "Search Intune by name for apps missing an App ID, and fill it in.")
 $toolbarTips.SetToolTip($btnPlatformScripts, "The PowerShell scripts Intune runs on enrolled Windows devices: list them, add one, change one, delete one.")
+$toolbarTips.SetToolTip($btnWingetHealth, "Checks every catalog app's Winget ID against winget on this machine. An ID that no longer exists still works on devices that have the app, but fails to install on new ones. Read-only.")
 $toolbarTips.SetToolTip($btnCheckIntuneOnly, "Compares Intune against this catalog: apps in Intune not yet in the catalog, catalog apps renamed in Intune since, and catalog apps whose App ID no longer exists in Intune. Read-only.")
 $toolbarTips.SetToolTip($btnBatchAssign, "Add a favorite group to multiple apps at once, then preview and apply the result to Intune.")
 $toolbarTips.SetToolTip($btnSyncMetadata, "Pull current metadata from Intune into the local catalog for apps that already have an App ID. Read-only.")
@@ -674,6 +676,7 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Verify" -Tips $toolbarTips -Items @(
     @{ Text = $btnDependencies.Text; Btn = $btnDependencies }
     @{ Text = $btnGroupDrift.Text; Btn = $btnGroupDrift }
+    @{ Text = $btnWingetHealth.Text; Btn = $btnWingetHealth }
     @{ Text = $btnDiagnostics.Text; Btn = $btnDiagnostics }
     @{ Text = $btnPrerequisites.Text; Btn = $btnPrerequisites }
 )))
@@ -1875,6 +1878,7 @@ $btnBatchDeploy.Add_Click({
 })
 $btnGroupManager.Add_Click({ Show-GroupManagerDialog })
 $btnPlatformScripts.Add_Click({ Show-PlatformScriptsDialog })
+$btnWingetHealth.Add_Click({ Show-WingetHealthCheckDialog })
 $btnFavoriteGroups.Add_Click({ Show-FavoriteGroupsManager })
 $btnGroupDrift.Add_Click({ Show-GroupDriftCheckDialog })
 $btnDependencies.Add_Click({ Show-DependencyOverviewDialog })

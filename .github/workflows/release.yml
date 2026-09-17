@@ -1,0 +1,88 @@
+name: release
+
+# Tag a commit to publish a release:
+#   git tag v1.3 && git push origin v1.3
+# The zip holds exactly what's needed to run the app - no tests, no CI
+# config, no screenshots - so unzipping it and running IntuneDeployment.ps1
+# is the whole install.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for a manual build (e.g. v1.3-test)'
+        required: true
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out the version
+        id: version
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:GITHUB_REF -replace '^refs/tags/', '' } else { '${{ inputs.version }}' }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "Building $version"
+
+      - name: Check the app's own version matches the tag
+        shell: pwsh
+        run: |
+          $tag = '${{ steps.version.outputs.version }}' -replace '^v', '' -replace '-.*$', ''
+          $appVersion = (Select-String -Path MainApp.ps1 -Pattern '\$Global:App\.AppVersion = "([^"]+)"').Matches[0].Groups[1].Value
+          if ($tag -ne $appVersion) {
+            throw "The tag says $tag but MainApp.ps1 says $appVersion - bump `$Global:App.AppVersion first."
+          }
+          "Version $appVersion"
+
+      - name: Build the zip
+        shell: pwsh
+        run: |
+          $staging = Join-Path $env:RUNNER_TEMP 'intune-app-catalog'
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          Copy-Item IntuneDeployment.ps1, MainApp.ps1, README.md, CHANGELOG.md $staging
+          Copy-Item code -Destination (Join-Path $staging 'code') -Recurse
+          Remove-Item (Join-Path $staging 'code\tests') -Recurse -Force
+          Copy-Item docs -Destination (Join-Path $staging 'docs') -Recurse
+          $zip = Join-Path $env:RUNNER_TEMP "intune-app-catalog-${{ steps.version.outputs.version }}.zip"
+          Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip -Force
+          "zip=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Get-ChildItem $zip | Select-Object Name, Length
+
+      - name: It still starts from the zip
+        shell: pwsh
+        run: |
+          # Unzips into a clean folder and parses every script - catches a
+          # file left out of the zip, which a green test run wouldn't.
+          $check = Join-Path $env:RUNNER_TEMP 'unzipped'
+          Expand-Archive -Path $env:zip -DestinationPath $check -Force
+          $errors = 0
+          Get-ChildItem $check -Recurse -Filter *.ps1 | ForEach-Object {
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$parseErrors)
+            if ($parseErrors.Count -gt 0) { $errors += $parseErrors.Count; Write-Host "$($_.Name): $($parseErrors[0].Message)" }
+          }
+          if ($errors -gt 0) { throw "$errors parse error(s) in the zip" }
+          foreach ($needed in 'IntuneDeployment.ps1', 'MainApp.ps1', 'code\Private\GuiHelpers.ps1', 'code\EmbeddedScripts\CreateApp.ps1') {
+            if (-not (Test-Path (Join-Path $check $needed))) { throw "$needed is missing from the zip" }
+          }
+          "The zip parses and has what it needs"
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.version.outputs.version }}
+          tag_name: ${{ steps.version.outputs.version }}
+          files: ${{ env.zip }}
+          body: |
+            See [CHANGELOG.md](CHANGELOG.md) for what changed.
+
+            Download the zip, unblock it if Windows marked it as downloaded, and run `IntuneDeployment.ps1`.
+          draft: false
+          generate_release_notes: true

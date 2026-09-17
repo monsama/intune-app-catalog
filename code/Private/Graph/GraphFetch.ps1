@@ -1301,6 +1301,92 @@ function Global:Start-PlatformScriptDetailFetch {
     $timer.Start()
 }
 
+function Global:Start-PlatformScriptRunStatusFetch {
+    <#
+      How a platform script actually went, per device: Intune's own
+      deviceRunStates for it, with the device expanded so the rows carry
+      a device name and user rather than an id. Read-only.
+      -OnComplete gets ($ok, $errorMessage, $rows).
+    #>
+    param([string]$ScriptId, [scriptblock]$OnComplete, [System.Windows.Forms.RichTextBox]$LogBox)
+
+    if (-not (Test-GraphModuleAvailable -CurrentHostOnly)) {
+        if ($OnComplete) { & $OnComplete $false "Microsoft.Graph.Authentication module isn't installed." $null }
+        return
+    }
+    if (-not (Test-GraphCredentialsConfigured)) {
+        if ($OnComplete) { & $OnComplete $false "Not configured" $null }
+        return
+    }
+
+    $rs = New-GraphLogRunspace
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript({
+        param($TenantId, $ClientId, $CertThumb, $TargetScriptId, $HelperText)
+        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+        $ctx = Get-MgContext -ErrorAction SilentlyContinue
+        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+            Connect-MgGraph -TenantId $TenantId -ClientId $ClientId `
+                -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
+        }
+        . ([scriptblock]::Create($HelperText))
+
+        $rows = New-Object System.Collections.Generic.List[object]
+        # $expand=managedDevice for the device name and its user - without it
+        # every row would only carry an id nobody can read.
+        $uri = "https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts/$TargetScriptId/deviceRunStates?`$expand=managedDevice"
+        $expanded = $true
+        while ($uri) {
+            try {
+                $page = Invoke-LoggedGraphRequest -Uri $uri -Method GET -ErrorAction Stop
+            }
+            catch {
+                # Some tenants refuse the $expand; the plain list still works
+                # and simply shows device ids instead of names.
+                if (-not $expanded) { throw }
+                $expanded = $false
+                $uri = "https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts/$TargetScriptId/deviceRunStates"
+                continue
+            }
+            $values = if ($page -is [System.Collections.IDictionary]) { $page['value'] } else { $page.value }
+            foreach ($runState in @($values)) { $rows.Add((ConvertTo-ScriptRunStateRow $runState)) }
+            $uri = if ($page -is [System.Collections.IDictionary]) { [string]$page['@odata.nextLink'] } else { [string]$page.'@odata.nextLink' }
+        }
+        return , $rows.ToArray()
+    }).AddArgument($Global:App.GraphTenantId).AddArgument($Global:App.GraphClientId).AddArgument($Global:App.GraphCertificateThumbprint).AddArgument($ScriptId).
+        AddArgument((Get-ReportHelperScriptText -Names 'Format-InstallStatusTime', 'Format-InstallStatusError', 'ConvertTo-ScriptRunStateRow'))
+
+    $handle = $ps.BeginInvoke()
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 300
+    $timer.Add_Tick({
+        if (-not $handle.IsCompleted) { return }
+        $timer.Stop()
+        $timer.Dispose()
+        try { Write-GraphLogFromStreams -Streams $ps.Streams -Operation "Script run status ($ScriptId)" -LogBox $LogBox } catch { }
+        try {
+            $raw = @($ps.EndInvoke($handle))
+            if ($ps.Streams.Error.Count -gt 0) {
+                if ($OnComplete) { & $OnComplete $false (Get-GraphRunspaceErrorMessage $ps.Streams.Error) $null }
+            }
+            else {
+                if ($OnComplete) { & $OnComplete $true "" @($raw[0]) }
+            }
+        }
+        catch {
+            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { $_.Exception.Message }
+            if ($OnComplete) { & $OnComplete $false $errMsg $null }
+        }
+        finally {
+            $ps.Dispose()
+            $rs.Close()
+            $rs.Dispose()
+        }
+    }.GetNewClosure())
+    $timer.Start()
+}
+
 function Global:Start-TypeVersionBackfill {
     if ($Global:App.TypeVersionBackfillDone) { return }
 

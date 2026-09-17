@@ -85,9 +85,16 @@ function Global:Show-PlatformScriptsDialog {
     $btnEdit.Enabled = $false
     $dlg.Controls.Add($btnEdit)
 
+    $btnRunStatus = New-Object System.Windows.Forms.Button
+    $btnRunStatus.Text = "Run status..."
+    $btnRunStatus.Location = New-Object System.Drawing.Point(295, 344)
+    $btnRunStatus.Size = New-Object System.Drawing.Size(130, 30)
+    $btnRunStatus.Enabled = $false
+    $dlg.Controls.Add($btnRunStatus)
+
     $btnDelete = New-Object System.Windows.Forms.Button
     $btnDelete.Text = "Delete..."
-    $btnDelete.Location = New-Object System.Drawing.Point(295, 344)
+    $btnDelete.Location = New-Object System.Drawing.Point(435, 344)
     $btnDelete.Size = New-Object System.Drawing.Size(130, 30)
     $btnDelete.Enabled = $false
     $dlg.Controls.Add($btnDelete)
@@ -116,6 +123,7 @@ function Global:Show-PlatformScriptsDialog {
         $grid.Enabled = -not $Busy
         $hasSelection = (-not $Busy) -and ($grid.SelectedRows.Count -gt 0)
         $btnEdit.Enabled = $hasSelection
+        $btnRunStatus.Enabled = $hasSelection
         $btnDelete.Enabled = $hasSelection
     }.GetNewClosure()
 
@@ -315,11 +323,18 @@ function Global:Show-PlatformScriptsDialog {
         if ($busyBox.Value) { return }
         $hasSelection = $grid.SelectedRows.Count -gt 0
         $btnEdit.Enabled = $hasSelection
+        $btnRunStatus.Enabled = $hasSelection
         $btnDelete.Enabled = $hasSelection
     }.GetNewClosure())
     $grid.Add_CellDoubleClick({
         param($sender, $e)
         if ($e.RowIndex -ge 0 -and $btnEdit.Enabled) { $btnEdit.PerformClick() }
+    }.GetNewClosure())
+
+    $btnRunStatus.Add_Click({
+        if ($grid.SelectedRows.Count -eq 0) { return }
+        $selected = $grid.SelectedRows[0].Tag
+        Show-PlatformScriptRunStatusDialog -ScriptId $selected.Id -ScriptName $selected.DisplayName
     }.GetNewClosure())
 
     $btnRefresh.Add_Click({ & $loadList }.GetNewClosure())

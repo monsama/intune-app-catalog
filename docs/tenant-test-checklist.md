@@ -132,7 +132,29 @@ For every step, check the dialog's log box **and** the Log tab.
       `DeviceManagementScripts.ReadWrite.All` (application) to the app
       registration and grant admin consent, then retry.
 
-## 7. Delete prompts
+## 7. Excluded groups, run status, winget check (new in 1.3)
+
+- [ ] Open an app with a group in **Required for**, add a test group to
+      **Excluded from**, then **Push groups to Intune (single app)...**.
+      The preview lists `[required] EXCLUDE <group>` as an addition.
+- [ ] After it runs, the portal shows that group under "Excluded groups"
+      for the app's Required assignment.
+- [ ] Remove the exclusion, push again - the preview says it's removed, and
+      the portal agrees.
+- [ ] Assign an app to "All devices" in the portal, then preview a push
+      from here: the preview says that target WILL BE REMOVED (the catalog
+      has no way to express it). Undo in the portal if you don't want that.
+- [ ] **Push groups to Intune (multiple apps)...** shows the same exclusion
+      lines in its preview, and Apply produces them in the portal.
+- [ ] Platform scripts > select the test script > **Run status...**: rows
+      per device with a state, and the Log tab shows a `[GRAPH] Script run
+      status (...)` line. (A brand-new script may legitimately have no rows
+      yet.)
+- [ ] **More actions... > Verify > Winget package check...**: every real ID
+      says "Found", and if you temporarily set an app's Winget ID to
+      something invented, it turns red with "NOT FOUND".
+
+## 8. Delete prompts
 
 - [ ] **Delete from Intune...** on the test app, where a second test app
       depends on it - "Dependency in the way" names both apps and says Yes
@@ -140,7 +162,7 @@ For every step, check the dialog's log box **and** the Log tab.
 - [ ] Delete the group `ZZ-Test-B` in Group manager while a catalog app
       uses it - the question lists that app.
 
-## 8. Clean up
+## 9. Clean up
 
 - [ ] Delete the test apps from Intune (and the catalog), the two test
       groups, and the `ZZ-Test-Script` platform script if it's still there.
