@@ -149,7 +149,14 @@ $testableFunctionNames = @(
     "New-PlatformScriptBody",
     "New-PlatformScriptAssignBody",
     "ConvertTo-PlatformScriptRow",
-    "Get-PlatformScriptGroupNames"
+    "Get-PlatformScriptGroupNames",
+    # Assignments incl. exclusions (Assignments.ps1)
+    "Get-AssignmentKey",
+    "Get-DesiredAssignmentEntries",
+    "ConvertTo-CurrentAssignmentEntries",
+    "Format-AssignmentLabel",
+    "Get-AssignmentDiff",
+    "New-AppAssignmentBody"
 )
 
 $funcAsts = New-Object System.Collections.Generic.List[object]
@@ -848,6 +855,48 @@ $assignedNames = @(Get-PlatformScriptGroupNames -Assignments $assignments -Group
 Assert-Equal "SG-Intune-AllDevices" $assignedNames[0] "Get-PlatformScriptGroupNames: uses the group name when it's known"
 Assert-Equal "g2" $assignedNames[1] "Get-PlatformScriptGroupNames: an unknown group keeps its id rather than disappearing"
 Assert-Equal 2 $assignedNames.Count "Get-PlatformScriptGroupNames: a non-group target is skipped"
+
+# -----------------------------------------------------------------
+# Assignments, including exclusions (Assignments.ps1)
+# -----------------------------------------------------------------
+$desired = @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All') -AvailableGroups @('SG-Pilot') -ExcludeGroups @('SG-Contractors'))
+Assert-Equal 4 $desired.Count "Get-DesiredAssignmentEntries: an exclusion is added to every intent the app uses"
+Assert-True (@($desired | Where-Object { $_.Key -eq 'required|include|SG-All' }).Count -eq 1) "Get-DesiredAssignmentEntries: the required group"
+Assert-True (@($desired | Where-Object { $_.Key -eq 'available|exclude|SG-Contractors' }).Count -eq 1) "Get-DesiredAssignmentEntries: excluded from available too"
+Assert-Equal 0 @(Get-DesiredAssignmentEntries -ExcludeGroups @('SG-Contractors')).Count `
+    "Get-DesiredAssignmentEntries: an exclusion alone means nothing - no intent uses it"
+$bothWays = @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All', 'SG-Contractors') -ExcludeGroups @('SG-Contractors'))
+Assert-True (@($bothWays | Where-Object { $_.Key -eq 'required|include|SG-Contractors' }).Count -eq 0) `
+    "Get-DesiredAssignmentEntries: a group both included and excluded is only excluded"
+Assert-Equal 2 @(Get-DesiredAssignmentEntries -RequiredGroups @(' SG-All ', 'SG-All', $null, '') -AvailableGroups @('SG-Pilot')).Count `
+    "Get-DesiredAssignmentEntries: blanks dropped, duplicates and stray spaces collapsed"
+
+$otherTargets = @()
+$currentEntries = @(ConvertTo-CurrentAssignmentEntries -Assignments @(
+    @{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.groupAssignmentTarget'; groupId = 'g1' } },
+    @{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.exclusionGroupAssignmentTarget'; groupId = 'g2' } },
+    @{ intent = 'available'; target = @{ '@odata.type' = '#microsoft.graph.allDevicesAssignmentTarget' } }
+) -GroupNameById @{ 'g1' = 'SG-All'; 'g2' = 'SG-Contractors' } -OtherTargets ([ref]$otherTargets))
+Assert-Equal 2 $currentEntries.Count "ConvertTo-CurrentAssignmentEntries: group targets only"
+Assert-Equal "required|exclude|SG-Contractors" $currentEntries[1].Key "ConvertTo-CurrentAssignmentEntries: an exclusion target is read as an exclusion"
+Assert-Equal 1 $otherTargets.Count "ConvertTo-CurrentAssignmentEntries: All devices is reported separately, not dropped silently"
+Assert-Equal "g9" (ConvertTo-CurrentAssignmentEntries -Assignments @(@{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.groupAssignmentTarget'; groupId = 'g9' } }) -GroupNameById @{})[0].Group `
+    "ConvertTo-CurrentAssignmentEntries: an unknown group keeps its id"
+
+$noChange = Get-AssignmentDiff -Current $currentEntries -Desired @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All') -ExcludeGroups @('SG-Contractors'))
+Assert-Equal 0 @($noChange.ToAdd).Count "Get-AssignmentDiff: nothing to add when Intune already matches"
+Assert-Equal 0 @($noChange.ToRemove).Count "Get-AssignmentDiff: nothing to remove when Intune already matches"
+$movedIntent = Get-AssignmentDiff -Current $currentEntries -Desired @(Get-DesiredAssignmentEntries -AvailableGroups @('SG-All') -ExcludeGroups @('SG-Contractors'))
+Assert-True (@($movedIntent.ToAdd) -contains "[available] SG-All") "Get-AssignmentDiff: moving a group to another intent is an add"
+Assert-True (@($movedIntent.ToRemove) -contains "[required] SG-All") "Get-AssignmentDiff: ...and a remove of the old intent"
+Assert-True (@($movedIntent.ToRemove) -contains "[required] EXCLUDE SG-Contractors") "Get-AssignmentDiff: an exclusion under a no-longer-used intent goes too"
+
+$body = New-AppAssignmentBody -Entries @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All') -ExcludeGroups @('SG-Contractors')) -GroupIdByName @{ 'SG-All' = 'id-1'; 'SG-Contractors' = 'id-2' }
+Assert-Equal 2 @($body.mobileAppAssignments).Count "New-AppAssignmentBody: one entry per assignment"
+Assert-Equal "#microsoft.graph.exclusionGroupAssignmentTarget" (@($body.mobileAppAssignments) | Where-Object { $_.target.groupId -eq 'id-2' }).target.'@odata.type' `
+    "New-AppAssignmentBody: the excluded group gets an exclusion target"
+Assert-Equal 1 @((New-AppAssignmentBody -Entries @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All', 'SG-Unknown')) -GroupIdByName @{ 'SG-All' = 'id-1' }).mobileAppAssignments).Count `
+    "New-AppAssignmentBody: a group with no id yet is skipped rather than sent empty"
 
 # =================================================================
 # Report

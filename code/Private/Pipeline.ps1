@@ -162,11 +162,18 @@ function Global:Start-PipelineProcess {
     # helper functions dot-sourced first, and print the pending read summary
     # when they end. Their exit code is passed through unchanged (every
     # embedded Graph script ends with an explicit exit 0/1).
+    # The assignment logic (Assignments.ps1) rides along in the same file:
+    # the scripts that push an app's groups need exactly the answer the
+    # GUI's own preview and the audit use, and a second copy inside each
+    # script would be a copy to keep in sync.
     $usesGraph = $ScriptContent -match 'Import-Module\s+Microsoft\.Graph\.Authentication'
     $graphHelperPath = $null
     if ($usesGraph) {
         $graphHelperPath = Join-Path $env:TEMP (".intunepkg_graphlog_" + [guid]::NewGuid().ToString("N") + ".ps1")
-        try { [System.IO.File]::WriteAllText($graphHelperPath, (Get-GraphLogScriptHelpers), (New-Object System.Text.UTF8Encoding($false))) }
+        try {
+            $helperText = (Get-GraphLogScriptHelpers) + "`n`n" + (Get-AssignmentScriptHelpers)
+            [System.IO.File]::WriteAllText($graphHelperPath, $helperText, (New-Object System.Text.UTF8Encoding($false)))
+        }
         catch { $graphHelperPath = $null }
     }
     # Add-Content (not Tee-Object) deliberately - Tee-Object keeps an internal

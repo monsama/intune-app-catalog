@@ -55,6 +55,7 @@ function Global:Show-BatchAssignDialog {
             RequiredGroups  = @($_.requiredFor)
             AvailableGroups = @($_.availableFor)
             UninstallGroups = @($_.uninstallFor)
+            ExcludeGroups   = @($_.excludeFor)
         }
     })
 
@@ -326,6 +327,7 @@ function Global:Show-BatchAssignDialog {
                 RequiredGroups  = @($_.requiredFor)
                 AvailableGroups = @($_.availableFor)
                 UninstallGroups = @($_.uninstallFor)
+            ExcludeGroups   = @($_.excludeFor)
             }
         })
         $scopeText = if ($isScoped) { "$($eligibleAppsBox.Value.Count) of your selected app(s) that have" } else { "every app with" }

@@ -179,11 +179,21 @@ try {
         # deliberately left as the original sequential loop below,
         # unchanged - concurrent group creation for a group name shared by
         # multiple apps would race two runspaces into creating it twice.
+        if (-not (Get-Command Get-DesiredAssignmentEntries -ErrorAction SilentlyContinue)) {
+            throw "This script is missing the shared assignment helpers. Run it from the app (it supplies them), not on its own."
+        }
+        # Handed to each worker as text - a runspace of its own doesn't
+        # inherit the functions Start-PipelineProcess dot-sourced here.
+        $assignmentHelperText = (@(
+            'Get-AssignmentKey', 'Get-DesiredAssignmentEntries', 'ConvertTo-CurrentAssignmentEntries',
+            'Format-AssignmentLabel', 'Get-AssignmentDiff', 'New-AppAssignmentBody'
+        ) | ForEach-Object { "function global:$_ {`n$((Get-Command $_).ScriptBlock.ToString())`n}" }) -join "`n`n"
         $maxConcurrency = [Math]::Max(1, [Math]::Min(6, $appList.Count))
         Write-Host "  Checking $($appList.Count) app(s), up to $maxConcurrency at a time..." -ForegroundColor Gray
 
         $perAppPreview = {
-            param($App, $TenantId, $ClientId, $CertThumbprint)
+            param($App, $TenantId, $ClientId, $CertThumbprint, $AssignmentHelperText)
+            . ([scriptblock]::Create($AssignmentHelperText))
 
             function Get-HttpErrorDetail {
                 param($ErrorRecord)
@@ -247,32 +257,28 @@ try {
             }
 
             $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($App.AppId)/assignments" -Method GET -StepDescription "Get current assignments for $($App.AppName)"
-            $currentByGroup = @{}
+            $groupNameById = @{}
             foreach ($a in @($currentAssignments.value)) {
-                if ($a.target.'@odata.type' -eq '#microsoft.graph.groupAssignmentTarget') {
-                    $gid = $a.target.groupId
-                    $gName = $gid
-                    try {
-                        $gi = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve current assignment's group name"
-                        if ($gi.displayName) { $gName = $gi.displayName }
-                    } catch { }
-                    $currentByGroup[$gName] = $a.intent
-                }
+                $gid = $a.target.groupId
+                if (-not $gid -or $groupNameById.Contains($gid)) { continue }
+                try {
+                    $gi = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve current assignment's group name"
+                    if ($gi.displayName) { $groupNameById[$gid] = $gi.displayName }
+                } catch { }
             }
-
-            $newGroupSet = @{}
-            foreach ($g in @($App.RequiredGroups))  { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "required" } }
-            foreach ($g in @($App.AvailableGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "available" } }
-            foreach ($g in @($App.UninstallGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "uninstall" } }
-
-            $toRemove = @($currentByGroup.Keys | Where-Object { -not $newGroupSet.ContainsKey($_) -or $newGroupSet[$_] -ne $currentByGroup[$_] })
-            $toAdd    = @($newGroupSet.Keys | Where-Object { -not $currentByGroup.ContainsKey($_) -or $currentByGroup[$_] -ne $newGroupSet[$_] })
+            $otherTargets = @()
+            $currentEntries = ConvertTo-CurrentAssignmentEntries -Assignments @($currentAssignments.value) -GroupNameById $groupNameById -OtherTargets ([ref]$otherTargets)
+            $desiredEntries = Get-DesiredAssignmentEntries -RequiredGroups @($App.RequiredGroups) -AvailableGroups @($App.AvailableGroups) `
+                -UninstallGroups @($App.UninstallGroups) -ExcludeGroups @($App.ExcludeGroups)
+            $diff = Get-AssignmentDiff -Current $currentEntries -Desired $desiredEntries
 
             return [pscustomobject]@{
                 AppName  = $App.AppName
                 AppId    = $App.AppId
-                ToAdd    = @($toAdd | ForEach-Object { "[$($newGroupSet[$_])] $_" })
-                ToRemove = @($toRemove | ForEach-Object { "[$($currentByGroup[$_])] $_" })
+                ToAdd    = @($diff.ToAdd)
+                # A target the catalog can't express (All devices, All users)
+                # would be dropped by Apply, so it belongs in the preview.
+                ToRemove = @(@($diff.ToRemove) + @($otherTargets))
             }
         }
 
@@ -283,7 +289,7 @@ try {
             foreach ($app in $appList) {
                 $ps = [powershell]::Create()
                 $ps.RunspacePool = $pool
-                [void]$ps.AddScript($perAppPreview).AddParameter('App', $app).AddParameter('TenantId', $Config.TenantId).AddParameter('ClientId', $Config.ClientId).AddParameter('CertThumbprint', $Config.CertificateThumbprint)
+                [void]$ps.AddScript($perAppPreview).AddParameter('App', $app).AddParameter('TenantId', $Config.TenantId).AddParameter('ClientId', $Config.ClientId).AddParameter('CertThumbprint', $Config.CertificateThumbprint).AddParameter('AssignmentHelperText', $assignmentHelperText)
                 $jobs.Add([pscustomobject]@{ Ps = $ps; Handle = $ps.BeginInvoke(); App = $app })
             }
 
@@ -381,45 +387,40 @@ try {
             Write-Step "[$appIndex/$totalApps] $($app.AppName)"
 
             $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($app.AppId)/assignments" -Method GET -StepDescription "Get current assignments for $($app.AppName)"
-            $currentByGroup = @{}
+            $groupNameById = @{}
             foreach ($a in @($currentAssignments.value)) {
-                if ($a.target.'@odata.type' -eq '#microsoft.graph.groupAssignmentTarget') {
-                    $gid = $a.target.groupId
-                    $gName = $gid
-                    try {
-                        $gi = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve current assignment's group name"
-                        if ($gi.displayName) { $gName = $gi.displayName }
-                    } catch { }
-                    $currentByGroup[$gName] = $a.intent
-                }
+                $gid = $a.target.groupId
+                if (-not $gid -or $groupNameById.Contains($gid)) { continue }
+                try {
+                    $gi = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve current assignment's group name"
+                    if ($gi.displayName) { $groupNameById[$gid] = $gi.displayName }
+                } catch { }
             }
-
-            $newGroupSet = @{}
-            foreach ($g in @($app.RequiredGroups))  { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "required" } }
-            foreach ($g in @($app.AvailableGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "available" } }
-            foreach ($g in @($app.UninstallGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "uninstall" } }
-
-            $toRemove = @($currentByGroup.Keys | Where-Object { -not $newGroupSet.ContainsKey($_) -or $newGroupSet[$_] -ne $currentByGroup[$_] })
-            $toAdd    = @($newGroupSet.Keys | Where-Object { -not $currentByGroup.ContainsKey($_) -or $currentByGroup[$_] -ne $newGroupSet[$_] })
+            $otherTargets = @()
+            $currentEntries = ConvertTo-CurrentAssignmentEntries -Assignments @($currentAssignments.value) -GroupNameById $groupNameById -OtherTargets ([ref]$otherTargets)
+            $desiredEntries = Get-DesiredAssignmentEntries -RequiredGroups @($app.RequiredGroups) -AvailableGroups @($app.AvailableGroups) `
+                -UninstallGroups @($app.UninstallGroups) -ExcludeGroups @($app.ExcludeGroups)
+            $diff = Get-AssignmentDiff -Current $currentEntries -Desired $desiredEntries
+            $toRemove = @(@($diff.ToRemove) + @($otherTargets))
+            $toAdd = @($diff.ToAdd)
 
             if ($toRemove.Count -eq 0 -and $toAdd.Count -eq 0) {
                 Write-Host "  (no change)" -ForegroundColor Gray
             }
-            foreach ($g in $toRemove) { Write-Host "  - [$($currentByGroup[$g])] $g" -ForegroundColor Yellow }
-            foreach ($g in $toAdd)    { Write-Host "  + [$($newGroupSet[$g])] $g" -ForegroundColor Green }
+            foreach ($label in $toRemove) { Write-Host "  - $label" -ForegroundColor Yellow }
+            foreach ($label in $toAdd)    { Write-Host "  + $label" -ForegroundColor Green }
 
             $allResults.Add([pscustomobject]@{
                 AppName  = $app.AppName
                 AppId    = $app.AppId
-                ToAdd    = @($toAdd | ForEach-Object { "[$($newGroupSet[$_])] $_" })
-                ToRemove = @($toRemove | ForEach-Object { "[$($currentByGroup[$_])] $_" })
+                ToAdd    = @($toAdd)
+                ToRemove = @($toRemove)
             })
 
-            $assignments = @()
-            foreach ($gName in @($newGroupSet.Keys)) { Resolve-GroupId -GroupName $gName -CreateIfMissing $true | Out-Null }
-            foreach ($g in @($newGroupSet.Keys)) {
-                if ($groupIdCache[$g]) { $assignments += @{ "@odata.type" = "#microsoft.graph.mobileAppAssignment"; intent = $newGroupSet[$g]; target = @{ "@odata.type" = "#microsoft.graph.groupAssignmentTarget"; groupId = $groupIdCache[$g] } } }
+            foreach ($gName in @(@($desiredEntries | ForEach-Object { $_.Group }) | Select-Object -Unique)) {
+                Resolve-GroupId -GroupName $gName -CreateIfMissing $true | Out-Null
             }
+            $assignments = @((New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdCache).mobileAppAssignments)
 
             $assignBody = [string](@{ mobileAppAssignments = @($assignments) } | ConvertTo-Json -Depth 10)
             try {

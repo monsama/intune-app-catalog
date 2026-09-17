@@ -28,7 +28,8 @@ function Global:Invoke-QuickAssignGroups {
         return
     }
     Show-TargetedAssignDialog -AppId $app.appId -AppName $app.appName `
-        -RequiredGroups @($app.requiredFor) -AvailableGroups @($app.availableFor) -UninstallGroups @($app.uninstallFor) | Out-Null
+        -RequiredGroups @($app.requiredFor) -AvailableGroups @($app.availableFor) -UninstallGroups @($app.uninstallFor) `
+        -ExcludeGroups @($app.excludeFor) | Out-Null
 }
 
 function Global:Invoke-QuickDeleteFromIntune {

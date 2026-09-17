@@ -69,6 +69,7 @@ $Script:RequiredPrivateFiles = @(
     "code\Private\Graph\GraphLog.ps1"
     "code\Private\Graph\GraphReports.ps1"
     "code\Private\Graph\PlatformScripts.ps1"
+    "code\Private\Graph\Assignments.ps1"
     "code\Private\GuiHelpers.ps1"
     "code\Private\Pipeline.ps1"
     "code\Private\Prerequisites.ps1"

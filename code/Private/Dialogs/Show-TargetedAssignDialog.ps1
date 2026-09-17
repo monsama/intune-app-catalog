@@ -4,7 +4,8 @@ function Global:Show-TargetedAssignDialog {
         [string]$AppName,
         [string[]]$RequiredGroups,
         [string[]]$AvailableGroups,
-        [string[]]$UninstallGroups
+        [string[]]$UninstallGroups,
+        [string[]]$ExcludeGroups = @()
     )
 
     if (-not $AppId) {
@@ -54,6 +55,11 @@ function Global:Show-TargetedAssignDialog {
     $summaryLines.Add("")
     $summaryLines.Add("UNINSTALL ($(@($UninstallGroups).Count)):")
     foreach ($g in $UninstallGroups) { $summaryLines.Add("  - $g") }
+    if (@($ExcludeGroups).Count -gt 0) {
+        $summaryLines.Add("")
+        $summaryLines.Add("EXCLUDED ($(@($ExcludeGroups).Count)) - these never get the app, whichever list above would have covered them:")
+        foreach ($g in $ExcludeGroups) { $summaryLines.Add("  - $g") }
+    }
 
     $txtSummary = New-Object System.Windows.Forms.TextBox
     $txtSummary.Multiline = $true
@@ -95,7 +101,7 @@ function Global:Show-TargetedAssignDialog {
 
     $btnRun.Add_Click({
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "Replace all Intune assignments of '$AppName' with exactly the $($allGroups.Count) group(s) listed above?`n`nAny assignment on this app that isn't in that list is removed - including ones this catalog doesn't know about. The log shows the app's current assignments first, but once the change has started it can't be stopped safely.",
+            "Replace all Intune assignments of '$AppName' with exactly what's listed above - $($allGroups.Count) group(s)$(if (@($ExcludeGroups).Count -gt 0) { ", $(@($ExcludeGroups).Count) of them excluded" })?`n`nAny assignment on this app that isn't in that list is removed - including ones this catalog doesn't know about. The log shows the app's current assignments first, but once the change has started it can't be stopped safely.",
             "Replace assignments", "YesNo", "Warning", "Button2")
         if ($r -ne "Yes") { return }
 
@@ -110,6 +116,7 @@ function Global:Show-TargetedAssignDialog {
             RequiredGroups        = @($RequiredGroups)
             AvailableGroups       = @($AvailableGroups)
             UninstallGroups       = @($UninstallGroups)
+            ExcludeGroups         = @($ExcludeGroups)
             OutputResultPath      = $resultPath
         }
         try {

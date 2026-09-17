@@ -92,6 +92,9 @@ function Global:ConvertTo-AppRecord {
         requiredFor  = @(@($Raw.requiredFor)  | Where-Object { $null -ne $_ })
         availableFor = @(@($Raw.availableFor) | Where-Object { $null -ne $_ })
         uninstallFor = @(@($Raw.uninstallFor) | Where-Object { $null -ne $_ })
+        # Groups that must NOT get this app, whichever of the three lists
+        # above would otherwise have covered them ("everyone in X except Y")
+        excludeFor   = @(@($Raw.excludeFor)   | Where-Object { $null -ne $_ })
         metadata     = $metadata
     }
 }
@@ -295,6 +298,7 @@ function Global:ConvertTo-SingleAppJson {
     }
     $fields.Add("  `"requiredFor`": $(ConvertTo-JsonStringArray -Items @($App.requiredFor) -IndentLevel 1)")
     $fields.Add("  `"availableFor`": $(ConvertTo-JsonStringArray -Items @($App.availableFor) -IndentLevel 1)")
+    $fields.Add("  `"excludeFor`": $(ConvertTo-JsonStringArray -Items @($App.excludeFor) -IndentLevel 1)")
     $fields.Add("  `"uninstallFor`": $(ConvertTo-JsonStringArray -Items @($App.uninstallFor) -IndentLevel 1)")
     if ($App.metadata) {
         # Fully hand-rolled now, matching this whole file's style

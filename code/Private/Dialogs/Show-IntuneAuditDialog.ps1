@@ -324,6 +324,7 @@ function Global:Show-IntuneAuditDialog {
                 RequiredGroups  = @($_.requiredFor)
                 AvailableGroups = @($_.availableFor)
                 UninstallGroups = @($_.uninstallFor)
+            ExcludeGroups   = @($_.excludeFor)
             }
         })
         $configPath2 = Join-Path $env:TEMP (".intunepkg_audit_assign_config_" + [guid]::NewGuid().ToString("N") + ".json")

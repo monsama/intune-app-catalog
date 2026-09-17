@@ -143,6 +143,7 @@ Write-Host "  App ID: $($Config.AppId)" -ForegroundColor Gray
 Write-Host "  Required groups : $(@($Config.RequiredGroups).Count)" -ForegroundColor Gray
 Write-Host "  Available groups: $(@($Config.AvailableGroups).Count)" -ForegroundColor Gray
 Write-Host "  Uninstall groups: $(@($Config.UninstallGroups).Count)" -ForegroundColor Gray
+Write-Host "  Excluded groups : $(@($Config.ExcludeGroups).Count)" -ForegroundColor Gray
 
 try {
     Write-Step "Connecting to Microsoft Graph (app-only, certificate)"
@@ -159,7 +160,15 @@ try {
 
     # ---- Ensure every referenced group exists ----
     Write-Step "Ensuring groups exist"
-    $allGroupNames = @($Config.RequiredGroups) + @($Config.AvailableGroups) + @($Config.UninstallGroups) | Select-Object -Unique
+    # The shared assignment logic (Assignments.ps1) is dot-sourced into this
+    # process by Start-PipelineProcess - without it, exclusions would be
+    # silently dropped, which would unassign people instead of excluding them.
+    if (-not (Get-Command Get-DesiredAssignmentEntries -ErrorAction SilentlyContinue)) {
+        throw "This script is missing the shared assignment helpers. Run it from the app (it supplies them), not on its own."
+    }
+    $desiredEntries = Get-DesiredAssignmentEntries -RequiredGroups @($Config.RequiredGroups) -AvailableGroups @($Config.AvailableGroups) `
+        -UninstallGroups @($Config.UninstallGroups) -ExcludeGroups @($Config.ExcludeGroups)
+    $allGroupNames = @(@($desiredEntries | ForEach-Object { $_.Group }) | Select-Object -Unique)
     $groupIdByName = @{}
     $createdCount = 0
 
@@ -197,22 +206,22 @@ try {
     # ---- Show current assignments before changing anything ----
     Write-Step "Checking current assignments (before making any change)"
     $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.AppId)/assignments" -Method GET -StepDescription "Get current assignments"
-    $currentByGroup = @{}   # groupId -> intent, for groups only (skips allDevices/allLicensedUsers targets)
+    $currentGroupNameById = @{}
     foreach ($a in @($currentAssignments.value)) {
-        $targetType = $a.target.'@odata.type'
-        if ($targetType -eq '#microsoft.graph.groupAssignmentTarget') {
-            $gid = $a.target.groupId
-            $groupDisplayName = $gid
-            try {
-                $groupInfo = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve current assignment's group name"
-                if ($groupInfo.displayName) { $groupDisplayName = $groupInfo.displayName }
-            } catch { }
-            $currentByGroup[$groupDisplayName] = $a.intent
-            Write-Host "  currently: [$($a.intent)] $groupDisplayName" -ForegroundColor Gray
-        }
-        else {
-            Write-Host "  currently: [$($a.intent)] (non-group target: $targetType)" -ForegroundColor Gray
-        }
+        $gid = $a.target.groupId
+        if (-not $gid -or $currentGroupNameById.Contains($gid)) { continue }
+        try {
+            $groupInfo = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve current assignment's group name"
+            if ($groupInfo.displayName) { $currentGroupNameById[$gid] = $groupInfo.displayName }
+        } catch { }
+    }
+    $otherTargets = @()
+    $currentEntries = ConvertTo-CurrentAssignmentEntries -Assignments @($currentAssignments.value) -GroupNameById $currentGroupNameById -OtherTargets ([ref]$otherTargets)
+    foreach ($entry in $currentEntries) { Write-Host "  currently: $(Format-AssignmentLabel $entry)" -ForegroundColor Gray }
+    foreach ($other in $otherTargets) {
+        # All devices / All users can't be expressed in the catalog, and this
+        # call replaces the whole list - so say plainly that it goes away.
+        Write-Host "  currently: $other - WILL BE REMOVED (this app's catalog has no way to express that target)" -ForegroundColor Yellow
     }
     if (@($currentAssignments.value).Count -eq 0) {
         Write-Host "  (no existing assignments on this app)" -ForegroundColor Gray
@@ -225,10 +234,7 @@ try {
     # an actual assignment built later since $groupIdByName only ever has
     # entries for groups that were actually looked up/created, silently
     # under-delivering what Preview said would happen.
-    $newGroupSet = @{}
-    foreach ($g in @($Config.RequiredGroups))  { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "required" } }
-    foreach ($g in @($Config.AvailableGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "available" } }
-    foreach ($g in @($Config.UninstallGroups)) { if (-not [string]::IsNullOrWhiteSpace($g)) { $newGroupSet[$g] = "uninstall" } }
+
 
     # Diffs on INTENT too, not just presence of the name - a group that's
     # currently "required" but the catalog now wants "available" (moving a
@@ -241,15 +247,16 @@ try {
     # own $btnApply gate in the GUI, which enables only when either count
     # is nonzero) silently reported "no change" even though Intune still
     # had the group under the OLD intent.
-    $toRemove = @($currentByGroup.Keys | Where-Object { -not $newGroupSet.ContainsKey($_) -or $newGroupSet[$_] -ne $currentByGroup[$_] })
-    $toAdd    = @($newGroupSet.Keys | Where-Object { -not $currentByGroup.ContainsKey($_) -or $currentByGroup[$_] -ne $newGroupSet[$_] })
+    $diff = Get-AssignmentDiff -Current $currentEntries -Desired $desiredEntries
+    $toRemove = @($diff.ToRemove)
+    $toAdd = @($diff.ToAdd)
     if ($toRemove.Count -gt 0) {
         Write-Host "  WILL BE REMOVED:" -ForegroundColor Yellow
-        foreach ($g in $toRemove) { Write-Host "    - [$($currentByGroup[$g])] $g" -ForegroundColor Yellow }
+        foreach ($label in $toRemove) { Write-Host "    - $label" -ForegroundColor Yellow }
     }
     if ($toAdd.Count -gt 0) {
         Write-Host "  WILL BE ADDED:" -ForegroundColor Green
-        foreach ($g in $toAdd) { Write-Host "    + [$($newGroupSet[$g])] $g" -ForegroundColor Green }
+        foreach ($label in $toAdd) { Write-Host "    + $label" -ForegroundColor Green }
     }
     if ($toRemove.Count -eq 0 -and $toAdd.Count -eq 0) {
         Write-Host "  No change - current assignments already match." -ForegroundColor Gray
@@ -262,24 +269,16 @@ try {
     # ConvertTo-Json or Graph's own deserialization might have with a
     # System.Collections.Generic.List[object] specifically.
     #
-    # Built from $newGroupSet (one entry per DISTINCT group name, already
-    # deduped above for the toAdd/toRemove preview), not by re-walking
-    # Config.RequiredGroups/AvailableGroups/UninstallGroups separately - a
-    # group listed in more than one of those three buckets used to produce
-    # TWO assignment entries for the same groupId with different intents,
-    # which Graph's /assign endpoint rejects outright ("An inclusion intent
-    # already exists for group id: ..."), failing the ENTIRE app's
-    # assignment even though the preview just above had reported "no
-    # change". Going through $newGroupSet guarantees exactly one entry per
-    # group, with the same intent the preview already showed (last bucket
-    # wins - uninstall, then available, then required, matching the order
-    # $newGroupSet was built in above).
-    $assignments = @()
-    foreach ($g in @($newGroupSet.Keys)) {
-        if ($groupIdByName.ContainsKey($g)) {
-            $assignments += @{ "@odata.type" = "#microsoft.graph.mobileAppAssignment"; intent = $newGroupSet[$g]; target = @{ "@odata.type" = "#microsoft.graph.groupAssignmentTarget"; groupId = $groupIdByName[$g] } }
-        }
-    }
+    # Built from exactly the entries the preview above showed
+    # (Get-DesiredAssignmentEntries), which is also what guarantees one
+    # entry per group per intent: a group listed in more than one of
+    # Required/Available/Uninstall used to produce TWO entries for the same
+    # groupId, which Graph's /assign endpoint rejects outright ("An
+    # inclusion intent already exists for group id: ..."), failing the
+    # ENTIRE app's assignment even though the preview had reported "no
+    # change".
+    $assignBodyObject = New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdByName
+    $assignments = @($assignBodyObject.mobileAppAssignments)
 
     Write-Host "  Applying $($assignments.Count) assignment(s)..." -ForegroundColor Gray
     try {

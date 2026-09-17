@@ -16,6 +16,7 @@ function Global:Save-AppMetadataToLocalCatalog {
             requiredFor      = @()
             availableFor     = @()
             uninstallFor     = @()
+            excludeFor       = @()
             metadata         = $null
         }
         [void]$AppsRef.Add($newEntry)
@@ -44,6 +45,7 @@ function Global:Save-AppMetadataToLocalCatalog {
         requiredFor      = @($existingApp.requiredFor)
         availableFor     = @($existingApp.availableFor)
         uninstallFor     = @($existingApp.uninstallFor)
+        excludeFor       = @($existingApp.excludeFor)
         metadata         = $Metadata
     }
     $AppsRef[$targetIndex] = $updatedApp

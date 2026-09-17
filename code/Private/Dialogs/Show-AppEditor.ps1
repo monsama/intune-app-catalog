@@ -93,7 +93,7 @@ function Global:Show-AppEditor {
     # 40px taller than before, to fit the Previous/Next row below the
     # existing Save/Delete/Cancel row without moving any of this
     # function's many other absolutely-positioned controls.
-    $dlg.ClientSize = New-Object System.Drawing.Size(470, 940)
+    $dlg.ClientSize = New-Object System.Drawing.Size(470, 1066)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -254,7 +254,7 @@ function Global:Show-AppEditor {
     # defined right below, next to the rest of this button's own logic.
     $btnDeleteFromIntune = New-Object System.Windows.Forms.Button
     $btnDeleteFromIntune.Text = "Delete from Intune..."
-    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(170,860)
+    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(170,986)
     $btnDeleteFromIntune.Size = New-Object System.Drawing.Size(190,30)
     $dlg.Controls.Add($btnDeleteFromIntune)
     $appEditorTip = New-Object System.Windows.Forms.ToolTip
@@ -274,7 +274,7 @@ function Global:Show-AppEditor {
     # scope for every .GetNewClosure()'d handler below to capture it, same
     # reasoning as every other cross-cutting variable in this function.
     $rtbAppEditorLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbAppEditorLog.Location = New-Object System.Drawing.Point(15,766)
+    $rtbAppEditorLog.Location = New-Object System.Drawing.Point(15,892)
     $rtbAppEditorLog.Size = New-Object System.Drawing.Size(430,86)
     Initialize-DarkLogBox -LogBox $rtbAppEditorLog
     $dlg.Controls.Add($rtbAppEditorLog)
@@ -526,6 +526,7 @@ function Global:Show-AppEditor {
                 requiredFor      = @($existingForClear.requiredFor)
                 availableFor     = @($existingForClear.availableFor)
                 uninstallFor     = @($existingForClear.uninstallFor)
+                excludeFor       = @($existingForClear.excludeFor)
                 metadata         = $existingForClear.metadata
             }
         }
@@ -634,6 +635,10 @@ function Global:Show-AppEditor {
     $reqGroup   = New-GroupBox -Title "Required for"  -Top 296 -Selected @($ExistingApp.requiredFor)
     $availGroup = New-GroupBox -Title "Available for" -Top 422 -Selected @($ExistingApp.availableFor)
     $uninstGroup= New-GroupBox -Title "Uninstall for" -Top 548 -Selected @($ExistingApp.uninstallFor)
+    # Excluded groups apply to whichever of the three lists above this app
+    # actually uses - that's what "everyone in X except Y" means, and it's
+    # how the assignment push (Assignments.ps1) builds them.
+    $excludeGroup = New-GroupBox -Title "Excluded from (overrides the lists above)" -Top 674 -Selected @($ExistingApp.excludeFor)
     $dlg.Controls.Add($reqGroup.Box)
     $dlg.Controls.Add($availGroup.Box)
     $dlg.Controls.Add($uninstGroup.Box)
@@ -649,7 +654,7 @@ function Global:Show-AppEditor {
     # what's actually there".
     $btnReadGroupsFromIntune = New-Object System.Windows.Forms.Button
     $btnReadGroupsFromIntune.Text = "Pull groups from Intune..."
-    $btnReadGroupsFromIntune.Location = New-Object System.Drawing.Point(15,674)
+    $btnReadGroupsFromIntune.Location = New-Object System.Drawing.Point(15,800)
     $btnReadGroupsFromIntune.Size = New-Object System.Drawing.Size(430,30)
     $dlg.Controls.Add($btnReadGroupsFromIntune)
     $readGroupsTip = New-Object System.Windows.Forms.ToolTip
@@ -665,20 +670,20 @@ function Global:Show-AppEditor {
     # than as a status line that just hasn't reported anything yet.
     # Overwritten by the real status (below) the moment Pull actually runs.
     $lblGroupSyncStatus.Text = "Not yet checked against Intune."
-    $lblGroupSyncStatus.Location = New-Object System.Drawing.Point(15,708)
+    $lblGroupSyncStatus.Location = New-Object System.Drawing.Point(15,834)
     $lblGroupSyncStatus.Size = New-Object System.Drawing.Size(430,18)
     $lblGroupSyncStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblGroupSyncStatus)
 
     $btnAssignGroups = New-Object System.Windows.Forms.Button
     $btnAssignGroups.Text = "Push groups to Intune (single app)..."
-    $btnAssignGroups.Location = New-Object System.Drawing.Point(15,730)
+    $btnAssignGroups.Location = New-Object System.Drawing.Point(15,856)
     $btnAssignGroups.Size = New-Object System.Drawing.Size(430,30)
     $dlg.Controls.Add($btnAssignGroups)
 
     $btnOk = New-Object System.Windows.Forms.Button
     $btnOk.Text = "Save app to catalog"
-    $btnOk.Location = New-Object System.Drawing.Point(15,860)
+    $btnOk.Location = New-Object System.Drawing.Point(15,986)
     $btnOk.Size = New-Object System.Drawing.Size(150,30)
     $dlg.Controls.Add($btnOk)
 
@@ -688,7 +693,7 @@ function Global:Show-AppEditor {
     # bottom row.
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(365,860)
+    $btnCancel.Location = New-Object System.Drawing.Point(365,986)
     $btnCancel.Size = New-Object System.Drawing.Size(90,30)
     $dlg.Controls.Add($btnCancel)
 
@@ -703,7 +708,7 @@ function Global:Show-AppEditor {
     # changes kept needs "Save app to catalog" before navigating away.
     $btnPrevApp = New-Object System.Windows.Forms.Button
     $btnPrevApp.Text = "< Previous app"
-    $btnPrevApp.Location = New-Object System.Drawing.Point(15,898)
+    $btnPrevApp.Location = New-Object System.Drawing.Point(15,1024)
     $btnPrevApp.Size = New-Object System.Drawing.Size(150,30)
     $btnPrevApp.Enabled = ($null -ne $prevAppIndex)
     $btnPrevApp.Visible = ($CurrentIndex -ge 0)
@@ -713,7 +718,7 @@ function Global:Show-AppEditor {
 
     $lblAppNavPosition = New-Object System.Windows.Forms.Label
     $lblAppNavPosition.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $lblAppNavPosition.Location = New-Object System.Drawing.Point(170,898)
+    $lblAppNavPosition.Location = New-Object System.Drawing.Point(170,1024)
     $lblAppNavPosition.Size = New-Object System.Drawing.Size(130,30)
     $lblAppNavPosition.ForeColor = [System.Drawing.Color]::DimGray
     if ($CurrentIndex -ge 0) {
@@ -734,7 +739,7 @@ function Global:Show-AppEditor {
 
     $btnNextApp = New-Object System.Windows.Forms.Button
     $btnNextApp.Text = "Next app >"
-    $btnNextApp.Location = New-Object System.Drawing.Point(305,898)
+    $btnNextApp.Location = New-Object System.Drawing.Point(305,1024)
     $btnNextApp.Size = New-Object System.Drawing.Size(150,30)
     $btnNextApp.Enabled = ($null -ne $nextAppIndex)
     $btnNextApp.Visible = ($CurrentIndex -ge 0)
@@ -758,7 +763,8 @@ function Global:Show-AppEditor {
             return
         }
         Show-TargetedAssignDialog -AppId $txtId.Text.Trim() -AppName $txtName.Text.Trim() `
-            -RequiredGroups @($reqGroup.List.CheckedItems) -AvailableGroups @($availGroup.List.CheckedItems) -UninstallGroups @($uninstGroup.List.CheckedItems) | Out-Null
+            -RequiredGroups @($reqGroup.List.CheckedItems) -AvailableGroups @($availGroup.List.CheckedItems) -UninstallGroups @($uninstGroup.List.CheckedItems) `
+            -ExcludeGroups @($excludeGroup.List.CheckedItems) | Out-Null
     }.GetNewClosure())
 
     $btnReadGroupsFromIntune.Add_Click({
@@ -919,6 +925,7 @@ function Global:Show-AppEditor {
             requiredFor      = @($reqGroup.List.CheckedItems)
             availableFor     = @($availGroup.List.CheckedItems)
             uninstallFor     = @($uninstGroup.List.CheckedItems)
+            excludeFor       = @($excludeGroup.List.CheckedItems)
             metadata         = $preservedMetadata
         }
         $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
@@ -1032,7 +1039,8 @@ function Global:Show-AppEditor {
             $txtName.Text.Trim(), $txtWinget.Text.Trim(), $txtId.Text.Trim(),
             (@($reqGroup.List.CheckedItems) -join "`n"),
             (@($availGroup.List.CheckedItems) -join "`n"),
-            (@($uninstGroup.List.CheckedItems) -join "`n")
+            (@($uninstGroup.List.CheckedItems) -join "`n"),
+            (@($excludeGroup.List.CheckedItems) -join "`n")
         ) -join [char]1
     }.GetNewClosure()
     $editorStateBox.Initial = & $editorStateBox.Get
