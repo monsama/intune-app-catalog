@@ -1299,11 +1299,12 @@ function Global:Show-CreateInIntuneDialog {
         $rtbFieldLegend.TabStop = $false
         $rtbFieldLegend.DetectUrls = $false
         $rtbFieldLegend.BackColor = $Global:App.LightPalette.FieldBack
-        $rtbFieldLegend.SelectionFont = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $rtbFieldLegend.SelectionColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
-        $rtbFieldLegend.AppendText("A bold blue field label (like this) means that field's current value differs from the computed Winget default.")
-        $rtbFieldLegend.SelectionStart = 0
-        $rtbFieldLegend.SelectionLength = 0
+        # One style for the whole line, so set on the box itself - selection
+        # styling applied before the box has a window handle is dropped on
+        # Windows PowerShell 5.1, which left the legend plain black there.
+        $rtbFieldLegend.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $rtbFieldLegend.ForeColor = [System.Drawing.Color]::FromArgb(0, 90, 200)
+        $rtbFieldLegend.Text = "A bold blue field label (like this) means that field's current value differs from the computed Winget default."
         $pnlStatusInfo.Controls.Add($rtbFieldLegend)
     }
 
