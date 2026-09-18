@@ -6,7 +6,7 @@
 
 A Windows desktop app (PowerShell + WinForms, no install) for keeping a
 **catalog of Win32 apps as files**, packaging them, and deploying and
-assigning them in Microsoft Intune – without clicking through the portal
+assigning them in Microsoft Intune - without clicking through the portal
 for every app, and without losing track of what an app is *supposed* to
 look like.
 
@@ -28,7 +28,7 @@ in git next to everything else you version.
 
 **Intune**
 - Deploy a single app or a batch, update metadata, replace package content.
-- Assign groups per app – Required, Available, Uninstall, plus **Excluded
+- Assign groups per app - Required, Available, Uninstall, plus **Excluded
   from**, with a preview of exactly what will change before anything is
   pushed.
 - Pull metadata and groups back from Intune, and an audit that lists every
@@ -49,7 +49,7 @@ in git next to everything else you version.
   request-id. `[RUN]` lines show the winget and packaging commands.
 - Tokens, headers and request bodies are never logged.
 
-One app, as the catalog stores it – name, Winget ID, App ID, and the groups
+One app, as the catalog stores it - name, Winget ID, App ID, and the groups
 it's required for, available to, uninstalled from, and excluded from:
 
 ![The app editor](docs/images/app-editor.png)
@@ -66,7 +66,7 @@ The platform scripts Intune runs on enrolled devices:
 
 - Windows 10/11 with **PowerShell 7** or **Windows PowerShell 5.1** (both
   are supported and tested).
-- The **Microsoft.Graph.Authentication** module – the app offers to install
+- The **Microsoft.Graph.Authentication** module - the app offers to install
   it for you (More actions... > Verify > Prerequisites...).
 - **winget** (the "App Installer" package) for the Winget features.
 - An **Entra ID app registration** with a certificate, for app-only
@@ -90,7 +90,7 @@ refuses to run the scripts inside.
 
 1. Download the zip (see above) or clone this repo, and unblock it if
    Windows marked it as downloaded.
-2. Run `IntuneDeployment.ps1` – double-click it, or:
+2. Run `IntuneDeployment.ps1` - double-click it, or:
    ```powershell
    pwsh -ExecutionPolicy Bypass -File .\IntuneDeployment.ps1
    ```
@@ -116,10 +116,10 @@ missing.
 
 ## Documentation
 
-- [CHANGELOG.md](CHANGELOG.md) – what changed per version.
-- [docs/tenant-test-checklist.md](docs/tenant-test-checklist.md) – a pass
+- [CHANGELOG.md](CHANGELOG.md) - what changed per version.
+- [docs/tenant-test-checklist.md](docs/tenant-test-checklist.md) - a pass
   through a **test tenant** for the parts that can only be verified live.
-- [code/tests/README.md](code/tests/README.md) – the test suites, what they
+- [code/tests/README.md](code/tests/README.md) - the test suites, what they
   cover and, just as importantly, what they don't.
 
 ## Tests
@@ -138,7 +138,7 @@ Copyright (C) 2026 Viktor Ljuca <https://monsama.ch>
 
 This program is free software: you can redistribute it and/or modify it
 under the terms of the **GNU General Public License version 2**, or (at
-your option) any later version – `SPDX-License-Identifier:
+your option) any later version - `SPDX-License-Identifier:
 GPL-2.0-or-later`. It is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See

@@ -17,27 +17,27 @@ For every step, check the dialog's log box **and** the Log tab.
 
 ## 1. Graph log lines
 
-- [ ] **Look up App IDs...** – the Log tab shows
+- [ ] **Look up App IDs...** - the Log tab shows
       `[GRAPH] Intune app lookup: N read request(s) (…)`, no line per request.
-- [ ] Turn on **Detailed Graph log**, look up again – one
+- [ ] Turn on **Detailed Graph log**, look up again - one
       `[GRAPH] GET /beta/deviceAppManagement/mobileApps… -> OK` line per request.
       Turn it off again.
 - [ ] Add a test app (e.g. Winget ID `7zip.7zip`), **Deploy to Intune...**,
       **Deploy**. The log box shows light-blue `[GRAPH] POST …` / `PATCH …`
       lines for the create and upload steps, and **no** line containing
       `blob.core.windows.net` or `sig=` (the package upload).
-- [ ] Open the app in the editor – the **Deploy to Intune...** dialog shows
+- [ ] Open the app in the editor - the **Deploy to Intune...** dialog shows
       `[GRAPH] Intune app details (…): N read request(s)` in its log box
       before the loaded values.
-- [ ] **Run diagnostics...** – its log box shows `[GRAPH]` lines for the
+- [ ] **Run diagnostics...** - its log box shows `[GRAPH]` lines for the
       app lookup, the Minimum OS lookup and the Entra ID lookup.
-- [ ] Group manager: type `ZZ-Test-A`, load members – `[GRAPH] Group
+- [ ] Group manager: type `ZZ-Test-A`, load members - `[GRAPH] Group
       lookup (ZZ-Test-A): …` in its log box.
 - [ ] Make a request fail on purpose: in the editor, enter a made-up App ID
       (`00000000-0000-0000-0000-000000000000`) and **Pull groups from
       Intune...**. A red `[GRAPH] … -> FAILED (…): … (request-id <guid>)`
       line appears.
-- [ ] **Copy log**, paste somewhere – the `[GRAPH]` lines are there.
+- [ ] **Copy log**, paste somewhere - the `[GRAPH]` lines are there.
       **Save log...** writes the same text. **Open log folder** opens
       `data\logs` with today's file.
 - [ ] Nothing in the log or the log file contains a token, `Bearer`, or a
@@ -47,27 +47,27 @@ For every step, check the dialog's log box **and** the Log tab.
 
 - [ ] Deploy the test app again (Update + Replace Content with any
       package) and click **Cancel** while it runs. The question appears,
-      **No** is highlighted. Answer **No** – the dialog stays and the step
+      **No** is highlighted. Answer **No** - the dialog stays and the step
       finishes normally.
 - [ ] Start the same again, close with the window's **X**, answer **Yes** -
       the dialog closes, the Log tab shows where it stopped. Check the app
       in the Intune portal.
 - [ ] **Pull metadata and groups from Intune...** (Sync) on a few apps,
-      press **Esc** while it runs – asked; **Yes** stops it.
+      press **Esc** while it runs - asked; **Yes** stops it.
 - [ ] **Push groups to Intune (multiple apps)...**: after Preview shows
-      changes, close without applying – one "Unapplied changes" question,
+      changes, close without applying - one "Unapplied changes" question,
       not two.
 
 ## 3. Settings "Save changes?"
 
 - [ ] Open **Settings...**, change the Client ID by one character, close
-      with **X** – "Save changes?" with Yes / No / Cancel.
+      with **X** - "Save changes?" with Yes / No / Cancel.
       **Cancel** keeps Settings open. **No** closes and the old value is
       still used (**Look up App IDs...** still works).
-- [ ] Change it again, answer **Yes** – it's saved (reopen Settings to
+- [ ] Change it again, answer **Yes** - it's saved (reopen Settings to
       check), then change it back and **Save**.
 - [ ] **Delete selected from Entra...** on a test certificate when the app
-      registration has only one – a single question that includes the
+      registration has only one - a single question that includes the
       "ONLY certificate" warning. Answer **No**.
 
 ## 4. Batch edit clears dependencies
@@ -75,7 +75,7 @@ For every step, check the dialog's log box **and** the Log tab.
 - [ ] Give the test app a dependency (Deploy to Intune..., dependencies,
       Update Metadata). Check it in the Intune portal.
 - [ ] **Batch edit Intune fields...**, tick only **Dependencies** with
-      nothing checked, **Apply to Intune...** – the question says
+      nothing checked, **Apply to Intune...** - the question says
       "none (existing dependencies are removed)". Answer **Yes**.
 - [ ] The portal shows no dependency any more, and the catalog entry has
       none either.
@@ -85,7 +85,7 @@ For every step, check the dialog's log box **and** the Log tab.
 
 ## 5. Installation status (new in 1.3)
 
-- [ ] Right-click a deployed app > **Installation status...** – a row per
+- [ ] Right-click a deployed app > **Installation status...** - a row per
       device, with user, state, version and "last reported".
 - [ ] The line above the list counts the states ("12 devices: 9 Installed,
       2 Failed, 1 Pending"), and the numbers match the Intune portal's own
@@ -96,8 +96,8 @@ For every step, check the dialog's log box **and** the Log tab.
 - [ ] **Copy list** pastes as a tab-separated table.
 - [ ] **Refresh** reloads, and the Log tab shows a `[GRAPH] Install status
       (<app id>): N read request(s)` line.
-- [ ] An app with many devices (more than 200) shows them all – paging
-      works – or says "only the first N rows are shown".
+- [ ] An app with many devices (more than 200) shows them all - paging
+      works - or says "only the first N rows are shown".
 - [ ] If the State column shows "State 1" style values instead of words
       like "Installed", tell me: the report returned numbers without the
       text column, and the app deliberately doesn't guess what they mean.
@@ -115,16 +115,16 @@ For every step, check the dialog's log box **and** the Log tab.
       /beta/deviceManagement/deviceManagementScripts -> OK` and a second
       `POST .../assign`, and the list shows it afterwards.
 - [ ] The portal shows the same script, with that group assigned and the
-      script text intact (no stray characters at the top – that would mean
+      script text intact (no stray characters at the top - that would mean
       the encoding is wrong).
 - [ ] **Edit...** on it loads the script text and the group back, exactly
       as saved.
-- [ ] Change the text, untick every group, Save – it warns that the script
+- [ ] Change the text, untick every group, Save - it warns that the script
       stops being assigned, and afterwards the portal shows no assignment.
-- [ ] Load a `.ps1` file with **Load .ps1 file...** – the name and file
+- [ ] Load a `.ps1` file with **Load .ps1 file...** - the name and file
       name fill in from the file name when they're empty.
 - [ ] A script that doesn't exist in Entra: type a group name that doesn't
-      exist via "+ Group..." and save – the run fails with "No group named
+      exist via "+ Group..." and save - the run fails with "No group named
       ... exists in Entra ID", and nothing half-done is left behind.
 - [ ] **Delete...** asks first, with No as the default, then the script is
       gone from both the list and the portal.
@@ -139,7 +139,7 @@ For every step, check the dialog's log box **and** the Log tab.
       The preview lists `[required] EXCLUDE <group>` as an addition.
 - [ ] After it runs, the portal shows that group under "Excluded groups"
       for the app's Required assignment.
-- [ ] Remove the exclusion, push again – the preview says it's removed, and
+- [ ] Remove the exclusion, push again - the preview says it's removed, and
       the portal agrees.
 - [ ] Assign an app to "All devices" in the portal, then preview a push
       from here: the preview says that target WILL BE REMOVED (the catalog
@@ -163,7 +163,7 @@ update is sent". Test it on a **test app**, not something real.
 - [ ] Untick **Check Intune when opening Deploy** (toolbar, Sync box).
       Reopen the app to confirm the setting survived a restart.
 - [ ] Right-click a deployed test app > **Deploy to Intune...**. It opens
-      immediately, says "Showing the values saved here – Intune hasn't been
+      immediately, says "Showing the values saved here - Intune hasn't been
       asked...", and shows a **Refresh from Intune** button.
 - [ ] Press **Refresh from Intune**: the fields load from Intune, the
       status line changes, and the Log tab shows the `[GRAPH]` lines.
@@ -173,7 +173,7 @@ update is sent". Test it on a **test app**, not something real.
       - It must first load from Intune, then show the drift dialog naming
         the description, let you keep either value, and only then run the
         update.
-      - Afterwards the portal shows what you chose – never the stale value
+      - Afterwards the portal shows what you chose - never the stale value
         silently.
 - [ ] Repeat with **Update + Replace Content** on a test app, to confirm
       the same pre-check happens for that path.
@@ -205,7 +205,7 @@ update is sent". Test it on a **test app**, not something real.
 - [ ] Tick **Publisher** with an empty box: the confirmation says
       "(blank)", and afterwards the field is empty in the portal too.
 - [ ] Tick **Install command**, change it, and confirm the portal shows the
-      new command (this one really does change how the app installs – use a
+      new command (this one really does change how the app installs - use a
       throwaway app).
 - [ ] Tick **Catalog only** and run: the black box shows only catalog
       lines, no `[GRAPH]` lines appear, and the portal is unchanged.
@@ -227,10 +227,10 @@ update is sent". Test it on a **test app**, not something real.
 ## 12. Delete prompts
 
 - [ ] **Delete from Intune...** on the test app, where a second test app
-      depends on it – "Dependency in the way" names both apps and says Yes
+      depends on it - "Dependency in the way" names both apps and says Yes
       changes the other one. **No** is the default.
 - [ ] Delete the group `ZZ-Test-B` in Group manager while a catalog app
-      uses it – the question lists that app.
+      uses it - the question lists that app.
 
 ## 13. Clean up
 
