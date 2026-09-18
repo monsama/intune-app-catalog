@@ -32,8 +32,21 @@ function Global:ConvertFrom-GraphReportTable {
     # $Report['Values'], never $Report.Values: a hashtable (what
     # Invoke-MgGraphRequest hands back) has its own .Values property, which
     # returns every value in the hashtable instead of the report's rows.
-    $schema = if ($Report -is [System.Collections.IDictionary]) { $Report['Schema'] } else { $Report.Schema }
-    $values = if ($Report -is [System.Collections.IDictionary]) { $Report['Values'] } else { $Report.Values }
+    # Assigned inside the branches, not as $x = if (...) {...}: the value of
+    # an if statement goes through the pipeline, which unrolls a one-element
+    # array. For a report with exactly one device that turned Values from
+    # "one row of N cells" into "N rows of one cell" - the app then showed a
+    # row per column, each holding one cell of the real row.
+    $schema = $null
+    $values = $null
+    if ($Report -is [System.Collections.IDictionary]) {
+        $schema = $Report['Schema']
+        $values = $Report['Values']
+    }
+    else {
+        $schema = $Report.Schema
+        $values = $Report.Values
+    }
     $columns = @(@($schema) | ForEach-Object {
         if ($null -eq $_) { "" }
         elseif ($_ -is [string]) { $_ }
@@ -142,75 +155,62 @@ function Global:Get-AppInstallStatusRows {
       & $Invoke $uri $method $body - so this logic (paging, the fallback
       to the older endpoint, the row cap) is testable without a tenant.
 
-      Returns @{ Rows; Source = 'report'|'deviceStatuses'; Truncated }.
+      Returns @{ Rows; Source = 'beta'|'v1.0'; Truncated }.
     #>
     param([string]$AppId, [scriptblock]$Invoke, [int]$PageSize = 200, [int]$MaxRows = 5000)
-    $rows = New-Object System.Collections.Generic.List[object]
-    $truncated = $false
-    try {
-        $skip = 0
-        while ($true) {
-            # select and orderBy aren't optional: without them the report
-            # endpoint answers BadRequest (confirmed against a live tenant).
-            # The columns are the ones the portal's own "Device install
-            # status" view asks for; ConvertTo-InstallStatusRow copes with
-            # a tenant that returns a different subset.
-            $body = @{
-                select  = @(
-                    'DeviceName', 'UserPrincipalName', 'UserName', 'Platform', 'AppVersion',
-                    'DeviceId', 'UserId', 'ApplicationId', 'InstallState', 'InstallStateDetail',
-                    'AppInstallState', 'AppInstallStateDetails', 'ErrorCode', 'HexErrorCode',
-                    'LastModifiedDateTime'
-                )
-                filter  = "(ApplicationId eq '$AppId')"
-                orderBy = @()
-                skip    = $skip
-                top     = $PageSize
-            }
-            $page = & $Invoke "https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceInstallStatusReport" "POST" $body
-            $pageRows = @(ConvertFrom-GraphReportTable $page)
-            foreach ($r in $pageRows) { $rows.Add((ConvertTo-InstallStatusRow $r)) }
-            if ($pageRows.Count -lt $PageSize) { break }
-            if ($rows.Count -ge $MaxRows) { $truncated = $true; break }
-            $skip += $PageSize
-        }
-        return @{ Rows = $rows.ToArray(); Source = 'report'; Truncated = $truncated }
-    }
-    catch {
-        # Older tenants, or a renamed report: the pre-2023 endpoint still
-        # answers on some, so it's worth one try before giving up.
-        # Graph's own response body says WHICH property it disliked, so it
-        # goes into the message - "BadRequest" alone is undiagnosable.
-        $reportError = $_.Exception.Message
-        $reportDetail = [string]$_.ErrorDetails.Message
-        if ($reportDetail) { $reportError = "$reportError`n$($reportDetail.Trim())" }
-        $rows.Clear()
+
+    # The action is called retrieveDeviceAppInstallationStatusReport. Not
+    # getDeviceInstallStatusReport, which several guides still name and which
+    # answers "Resource not found for the segment" because no such action
+    # exists - checked against Graph's own $metadata, where it appears in
+    # neither beta nor v1.0. The same check is why there's no
+    # mobileApps/{id}/deviceStatuses fallback any more: that navigation
+    # property is gone from mobileApp in both versions, so trying it could
+    # only ever produce a second, more confusing error.
+    #
+    # beta first (it's what the portal's own view uses), v1.0 if the tenant
+    # doesn't serve it - the action exists in both.
+    $endpoints = @(
+        @{ Source = 'beta';  Uri = "https://graph.microsoft.com/beta/deviceManagement/reports/retrieveDeviceAppInstallationStatusReport" }
+        @{ Source = 'v1.0';  Uri = "https://graph.microsoft.com/v1.0/deviceManagement/reports/retrieveDeviceAppInstallationStatusReport" }
+    )
+    $failures = New-Object System.Collections.Generic.List[string]
+
+    foreach ($endpoint in $endpoints) {
+        $rows = New-Object System.Collections.Generic.List[object]
+        $truncated = $false
         try {
-            $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$AppId/deviceStatuses"
-            while ($uri) {
-                $page = & $Invoke $uri "GET" $null
-                $values = if ($page -is [System.Collections.IDictionary]) { $page['value'] } else { $page.value }
-                foreach ($status in @($values)) {
-                    $rows.Add((ConvertTo-InstallStatusRow ([ordered]@{
-                        DeviceName         = [string]$status.deviceName
-                        UserPrincipalName  = [string]$status.userPrincipalName
-                        InstallState       = [string]$status.installState
-                        InstallStateDetail = [string]$status.installStateDetail
-                        ErrorCode          = $status.errorCode
-                        DisplayVersion     = [string]$status.displayVersion
-                        Platform           = [string]$status.osDescription
-                        LastSyncDateTime   = [string]$status.lastSyncDateTime
-                    })))
+            $skip = 0
+            while ($true) {
+                # No select: the report returns its own default columns, and
+                # ConvertTo-InstallStatusRow already copes with whichever
+                # subset a tenant sends. Naming columns here would only add a
+                # way to get BadRequest for a column this tenant doesn't have.
+                $body = @{
+                    filter  = "(ApplicationId eq '$AppId')"
+                    orderBy = @()
+                    skip    = $skip
+                    top     = $PageSize
                 }
+                $page = & $Invoke $endpoint.Uri "POST" $body
+                $pageRows = @(ConvertFrom-GraphReportTable $page)
+                foreach ($r in $pageRows) { $rows.Add((ConvertTo-InstallStatusRow $r)) }
+                if ($pageRows.Count -lt $PageSize) { break }
                 if ($rows.Count -ge $MaxRows) { $truncated = $true; break }
-                $uri = if ($page -is [System.Collections.IDictionary]) { [string]$page['@odata.nextLink'] } else { [string]$page.'@odata.nextLink' }
+                $skip += $PageSize
             }
-            return @{ Rows = $rows.ToArray(); Source = 'deviceStatuses'; Truncated = $truncated }
+            return @{ Rows = $rows.ToArray(); Source = $endpoint.Source; Truncated = $truncated }
         }
         catch {
-            throw "Could not read the install status report: $reportError`nThe older deviceStatuses endpoint didn't work either: $($_.Exception.Message)"
+            # Graph's response body says WHICH property it disliked, and
+            # "BadRequest" on its own is undiagnosable without it.
+            $message = $_.Exception.Message
+            $detail = [string]$_.ErrorDetails.Message
+            if ($detail) { $message = "$message`n$($detail.Trim())" }
+            $failures.Add("$($endpoint.Source): $message")
         }
     }
+    throw "Could not read the install status report.`n$($failures -join "`n")"
 }
 
 function Global:Format-InstallStatusSummary {
