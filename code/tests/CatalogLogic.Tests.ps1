@@ -132,6 +132,7 @@ $testableFunctionNames = @(
     "Get-GraphRequestId",
     "Get-GraphErrorBodyMessage",
     "Get-GraphErrorRecordMessage",
+    "Get-GraphRunspaceErrorMessage",
     "Get-InnermostErrorMessage",
     "ConvertTo-GraphLogLine",
     "ConvertTo-GraphReadSummary",
@@ -856,6 +857,24 @@ Assert-True ($forbiddenFriendly -like "*DeviceManagementScripts.Read.All*") `
     "ConvertTo-FriendlyGraphError: a Forbidden names the scopes Graph asked for" $forbiddenFriendly
 Assert-Equal $forbiddenFriendly (ConvertTo-FriendlyGraphError $forbiddenFriendly) `
     "ConvertTo-FriendlyGraphError: converting an already-converted message changes nothing"
+
+# Through a real ErrorRecord, which is what a fetch actually hands over.
+# ToString() on a record that has ErrorDetails returns the DETAILS, so
+# building the message from it dropped the exception's own text and repeated
+# the body - a string-only test can't catch that.
+$forbiddenException = New-Object System.Exception("Response status code does not indicate success: Forbidden (Forbidden).")
+$forbiddenRecord = New-Object System.Management.Automation.ErrorRecord($forbiddenException, 'GraphFail', 'NotSpecified', $null)
+$forbiddenRecord.ErrorDetails = New-Object System.Management.Automation.ErrorDetails($forbiddenBody)
+$recordMessage = Get-GraphErrorRecordMessage $forbiddenRecord
+Assert-True ($recordMessage -like "*Forbidden (Forbidden)*") `
+    "Get-GraphErrorRecordMessage: keeps the exception's own text" $recordMessage
+Assert-True ($recordMessage -like "*DeviceManagementScripts.Read.All*") `
+    "Get-GraphErrorRecordMessage: adds Graph's body to it" $recordMessage
+Assert-Equal 1 ([regex]::Matches($recordMessage, '_version').Count) `
+    "Get-GraphErrorRecordMessage: the body appears once, not twice"
+$fromStreams = Get-GraphRunspaceErrorMessage @($forbiddenRecord)
+Assert-True ($fromStreams -like "*Add DeviceManagementScripts.Read.All or DeviceManagementScripts.ReadWrite.All*") `
+    "Get-GraphRunspaceErrorMessage: a refused read names the scopes to add" $fromStreams
 
 Assert-Equal "DeviceManagementScripts.Read.All or DeviceManagementScripts.ReadWrite.All (application)" `
     (Get-GraphPermissionHint 'GET https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts -> Forbidden - {"Message":"Application is not authorized to perform this operation. Application must have one of the following scopes: DeviceManagementScripts.Read.All, DeviceManagementScripts.ReadWrite.All - Operation ID"}') `
