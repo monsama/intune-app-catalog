@@ -130,6 +130,11 @@ $testableFunctionNames = @(
     # Graph request log formatting (GraphLog.ps1) - pure string work
     "Get-GraphRequestPath",
     "Get-GraphRequestId",
+    # What the token is allowed to do (GraphToken.ps1) - pure claim work
+    "ConvertFrom-JwtPayload",
+    "Get-GraphRoleRequirements",
+    "Get-GraphRoleReport",
+    "Format-GraphRoleReport",
     "Get-GraphErrorBodyMessage",
     "Get-GraphErrorRecordMessage",
     "Get-GraphRunspaceErrorMessage",
@@ -834,6 +839,49 @@ $bothFailedMessage = ''
 try { [void](Get-AppInstallStatusRows -AppId "app-1" -Invoke $bothFailInvoke) } catch { $bothFailedMessage = $_.Exception.Message }
 Assert-True ($bothFailedMessage -like "*beta*" -and $bothFailedMessage -like "*v1.0*") `
     "Get-AppInstallStatusRows: both versions failing reports what each one said" $bothFailedMessage
+
+# -----------------------------------------------------------------
+# What the token is allowed to do (GraphToken.ps1)
+# -----------------------------------------------------------------
+# A JWT payload is base64url - base64 with two characters swapped and the
+# padding left off - so decoding it needs both put back.
+$claimsJson = '{"appid":"930746cc","tid":"6495c33e","roles":["Group.ReadWrite.All","DeviceManagementApps.ReadWrite.All"]}'
+$claimsSegment = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($claimsJson)).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+$decodedClaims = ConvertFrom-JwtPayload "header.$claimsSegment.signature"
+Assert-Equal "930746cc" ([string]$decodedClaims.appid) "ConvertFrom-JwtPayload: reads the app the token was issued for"
+Assert-Equal 2 (@($decodedClaims.roles).Count) "ConvertFrom-JwtPayload: reads the roles"
+Assert-Null (ConvertFrom-JwtPayload "not-a-jwt") "ConvertFrom-JwtPayload: nothing from text that isn't a JWT"
+Assert-Null (ConvertFrom-JwtPayload "") "ConvertFrom-JwtPayload: nothing from an empty string"
+Assert-Null (ConvertFrom-JwtPayload "header.!!!not-base64!!!.sig") "ConvertFrom-JwtPayload: nothing from an unreadable payload"
+
+# The live case this was built for: a token that looks fine until you check
+# it against what the app actually uses. These are the five roles a tenant
+# returned while the platform scripts kept answering Forbidden.
+$liveRoles = @('Device.Read.All', 'DeviceManagementApps.ReadWrite.All', 'Directory.Read.All', 'Group.ReadWrite.All', 'User.Read.All')
+$liveReport = Get-GraphRoleReport -Roles $liveRoles
+$liveMissing = @($liveReport.Missing)
+Assert-Equal 1 $liveMissing.Count "Get-GraphRoleReport: names the one feature this token can't reach"
+Assert-Equal "Platform scripts" ([string]$liveMissing[0].Feature) "Get-GraphRoleReport: and says which feature it is"
+Assert-True (-not $liveMissing[0].Required) "Get-GraphRoleReport: platform scripts is a feature, not a blocker"
+
+# Either permission satisfies a read - the app never needs ReadWrite to look
+Assert-Equal 0 (@((Get-GraphRoleReport -Roles @('DeviceManagementApps.ReadWrite.All', 'Group.Read.All', 'DeviceManagementScripts.Read.All', 'User.Read.All')).Missing).Count) `
+    "Get-GraphRoleReport: the read-only permission counts where the app only reads"
+Assert-True (@((Get-GraphRoleReport -Roles @()).Missing).Count -ge 2) `
+    "Get-GraphRoleReport: a token with no roles is missing everything"
+
+$liveLines = @(Format-GraphRoleReport -Report $liveReport -TokenAppId '930746cc' -SettingsClientId '930746cc')
+Assert-True (($liveLines -join "`n") -like "*DeviceManagementScripts.Read.All or DeviceManagementScripts.ReadWrite.All*") `
+    "Format-GraphRoleReport: names the permission to add" ($liveLines -join "`n")
+Assert-True (-not (($liveLines -join "`n") -like "*but Settings names*")) `
+    "Format-GraphRoleReport: no mismatch warning when the token is for the configured app"
+# The other half of the trap: right permission, wrong registration
+$otherAppLines = @(Format-GraphRoleReport -Report $liveReport -TokenAppId 'aaaa1111' -SettingsClientId '930746cc')
+Assert-True (($otherAppLines -join "`n") -like "*token is for app aaaa1111*") `
+    "Format-GraphRoleReport: says so when the token belongs to a different registration"
+$noRoleLines = @(Format-GraphRoleReport -Report (Get-GraphRoleReport -Roles @()) -TokenAppId 'x' -SettingsClientId 'x')
+Assert-True (($noRoleLines -join "`n") -like "*no application permissions at all*") `
+    "Format-GraphRoleReport: says plainly when the token carries nothing"
 
 # -----------------------------------------------------------------
 # Which permission a refused request needs (GuiHelpers.ps1)

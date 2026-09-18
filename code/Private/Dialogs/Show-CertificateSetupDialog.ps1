@@ -662,18 +662,37 @@ function Global:Show-CertificateSetupDialog {
         $dlgRef = $dlg
         $btnTestRef = $btnTest
         $lblTestResultRef = $lblTestResult
+        $rtbUploadLogRef = $rtbUploadLog
+        $testClientRef = $testClient
 
         $rs = [runspacefactory]::CreateRunspace()
         $rs.Open()
         $ps = [powershell]::Create()
         $ps.Runspace = $rs
         [void]$ps.AddScript({
-            param($TenantId, $ClientId, $CertThumb)
+            param($TenantId, $ClientId, $CertThumb, $TokenHelperText)
             Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
             Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
             $ctx = Get-MgContext -ErrorAction Stop
-            [pscustomobject]@{ AppName = $ctx.AppName; AuthType = $ctx.AuthType }
-        }).AddArgument($testTenant).AddArgument($testClient).AddArgument($testThumb)
+            # A signed-in app that is allowed to do nothing still reports
+            # success here, which is how "I granted it but it says Forbidden"
+            # survives a passing connection test. So the token is read too -
+            # see GraphToken.ps1. A failure to read it doesn't fail the test:
+            # the sign-in genuinely did work.
+            . ([scriptblock]::Create($TokenHelperText))
+            $claims = $null
+            $claimsError = ''
+            try { $claims = Get-GraphAppTokenClaims -TenantId $TenantId -ClientId $ClientId -Thumbprint $CertThumb }
+            catch { $claimsError = $_.Exception.Message }
+            [pscustomobject]@{
+                AppName     = $ctx.AppName
+                AuthType    = $ctx.AuthType
+                Roles       = @($claims.roles)
+                TokenAppId  = [string]$claims.appid
+                ClaimsError = $claimsError
+            }
+        }).AddArgument($testTenant).AddArgument($testClient).AddArgument($testThumb).
+            AddArgument((Get-ReportHelperScriptText -Names 'ConvertFrom-JwtPayload', 'Get-GraphAppTokenClaims'))
 
         $handle = $ps.BeginInvoke()
         $timer = New-Object System.Windows.Forms.Timer
@@ -701,8 +720,28 @@ function Global:Show-CertificateSetupDialog {
                     $lblTestResultRef.Text = "Failed: no response."
                 }
                 else {
-                    $lblTestResultRef.ForeColor = [System.Drawing.Color]::SeaGreen
-                    $lblTestResultRef.Text = "Success - connected as '$($raw[0].AppName)' ($($raw[0].AuthType))."
+                    $result = $raw[0]
+                    $report = Get-GraphRoleReport -Roles @($result.Roles)
+                    $blocked = @(@($report.Missing) | Where-Object { $_.Required }).Count
+                    $lblTestResultRef.ForeColor = if ($blocked -gt 0) { [System.Drawing.Color]::Firebrick }
+                                                  elseif (@($report.Missing).Count -gt 0) { [System.Drawing.Color]::DarkOrange }
+                                                  else { [System.Drawing.Color]::SeaGreen }
+                    $signedIn = "Signed in as '$($result.AppName)' ($($result.AuthType))"
+                    $lblTestResultRef.Text = if ($result.ClaimsError) { "$signedIn - couldn't read the permissions, see the log below." }
+                                             elseif ($blocked -gt 0) { "$signedIn, but it's missing a permission the app needs - see the log below." }
+                                             elseif (@($report.Missing).Count -gt 0) { "$signedIn. Some features are missing a permission - see the log below." }
+                                             else { "$signedIn, with every permission this app uses." }
+                    if ($rtbUploadLogRef) {
+                        Write-DialogLogLine -LogBox $rtbUploadLogRef -Text "`r`n[INFO] Test connection: $signedIn.`r`n"
+                        if ($result.ClaimsError) {
+                            Write-DialogLogLine -LogBox $rtbUploadLogRef -Text "[WARN] The sign-in worked, but reading the token's permissions didn't: $($result.ClaimsError)`r`n"
+                        }
+                        else {
+                            foreach ($line in (Format-GraphRoleReport -Report $report -TokenAppId $result.TokenAppId -SettingsClientId $testClientRef)) {
+                                Write-DialogLogLine -LogBox $rtbUploadLogRef -Text "$line`r`n"
+                            }
+                        }
+                    }
                 }
             }
             catch {
