@@ -1,5 +1,5 @@
 function Global:Show-SyncMetadataDialog {
-    param([int[]]$ScopedIndices = @())
+    param([int[]]$ScopedIndices = @(), [System.Windows.Forms.TabPage]$HostTabPage, [System.Windows.Forms.Form]$HostForm)
 
     # Plain local aliases - see note in Start-IntuneAppLookup.
     $appsRef      = $Global:App.Apps
@@ -26,6 +26,9 @@ function Global:Show-SyncMetadataDialog {
     }
 
     $dlg = New-Object System.Windows.Forms.Form
+    # Which window the close buttons act on - its own, or the host's when
+    # this dialog is a tab of Show-IntuneCheckDialog.
+    $closeTargetBox = @{ Form = $dlg }
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Pull metadata and groups from Intune"
     $dlg.ClientSize = New-Object System.Drawing.Size(620, 625)
@@ -361,7 +364,7 @@ function Global:Show-SyncMetadataDialog {
         }.GetNewClosure()
     }.GetNewClosure())
 
-    $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
+    $btnClose.Add_Click({ $closeTargetBox.Form.Close() }.GetNewClosure())
     Register-CloseConfirmation -Dialog $dlg -GetQuestion {
         if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
             "A sync is still running. Stop it and close?`n`nThe sync only reads from Intune, so stopping it changes nothing there."
@@ -371,5 +374,11 @@ function Global:Show-SyncMetadataDialog {
     $dlg.AcceptButton = $btnSync
 
     Set-Theme -Control $dlg
+    if ($HostTabPage) {
+        $closeTargetBox.Form = $HostForm
+        $btnClose.Visible = $false
+        [void](Move-DialogToTabPage -Dialog $dlg -Page $HostTabPage)
+        return
+    }
     [void]$dlg.ShowDialog($Global:App.Form)
 }

@@ -1945,7 +1945,10 @@ $Global:App.BtnLookupIds.Add_Click({
     Start-IntuneAppLookup -OnComplete {
         param($ok, $data)
         if ($ok) {
-            Show-AppIdMatchDialog
+            # One window for all three checks - the lookup that just ran
+            # fills the App IDs tab, and the same fetch serves the other two.
+            Show-IntuneCheckDialog
+            Update-Grid
         }
         # "Module missing" / "Not configured" already got their own
         # MessageBox inside Start-IntuneAppLookup - don't stack a second one.
@@ -1998,7 +2001,7 @@ $btnWingetHealth.Add_Click({ Show-WingetHealthCheckDialog })
 $btnFavoriteGroups.Add_Click({ Show-FavoriteGroupsManager })
 $btnGroupDrift.Add_Click({ Show-GroupDriftCheckDialog })
 $btnDependencies.Add_Click({ Show-DependencyOverviewDialog })
-$btnIntuneAudit.Add_Click({ Show-IntuneAuditDialog; Update-Grid })
+$btnIntuneAudit.Add_Click({ Show-IntuneCheckDialog; Update-Grid })
 
 $Global:App.TxtSearch.Add_TextChanged({ Update-Grid })
 

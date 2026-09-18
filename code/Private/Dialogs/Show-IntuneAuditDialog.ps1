@@ -3,7 +3,7 @@ function Global:Show-IntuneAuditDialog {
     # them; nothing selected audits the whole catalog like every other
     # -ScopedIndices dialog in this app - same convention Batch Deploy and
     # Sync Metadata already use.
-    param([int[]]$ScopedIndices = @())
+    param([int[]]$ScopedIndices = @(), [System.Windows.Forms.TabPage]$HostTabPage, [System.Windows.Forms.Form]$HostForm)
 
     # Plain local aliases - see note in Start-IntuneAppLookup.
     $appsRef     = $Global:App.Apps
@@ -33,6 +33,9 @@ function Global:Show-IntuneAuditDialog {
     foreach ($a in $deployedApps) { $appByName[$a.appName] = $a }
 
     $dlg = New-Object System.Windows.Forms.Form
+    # Which window the close buttons act on - its own, or the host's when
+    # this dialog is a tab of Show-IntuneCheckDialog.
+    $closeTargetBox = @{ Form = $dlg }
     $dlg.Font = Get-AppUiFont
     $dlg.Text = if ($isScoped) { "Intune Audit - $($deployedApps.Count) selected app(s)" } else { "Intune Audit" }
     $dlg.ClientSize = New-Object System.Drawing.Size(920, 620)
@@ -392,7 +395,7 @@ function Global:Show-IntuneAuditDialog {
         }
     }.GetNewClosure())
 
-    $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
+    $btnClose.Add_Click({ $closeTargetBox.Form.Close() }.GetNewClosure())
     # The audit only reads from Intune - closing just stops it, no question
     # needed, however the dialog is closed.
     $dlg.Add_FormClosing({
@@ -424,5 +427,11 @@ function Global:Show-IntuneAuditDialog {
     # background - reapplied so $pnlStatusInfo actually looks like the
     # bordered, distinct "field" it's meant to be.
     $pnlStatusInfo.BackColor = $Global:App.LightPalette.FieldBack
+    if ($HostTabPage) {
+        $closeTargetBox.Form = $HostForm
+        $btnClose.Visible = $false
+        [void](Move-DialogToTabPage -Dialog $dlg -Page $HostTabPage)
+        return
+    }
     [void]$dlg.ShowDialog($Global:App.Form)
 }
