@@ -33,6 +33,8 @@ function Global:Import-GraphSettings {
         if ($settings.DetailedGraphLog -is [bool]) { $Global:App.DetailedGraphLog = $settings.DetailedGraphLog }
         # Same -is [bool] reasoning as CheckDriftOnStartup right above.
         if ($settings.RunFullAuditOnStartup -is [bool]) { $Global:App.RunFullAuditOnStartup = $settings.RunFullAuditOnStartup }
+    # Same -is [bool] reasoning as CheckDriftOnStartup above.
+    if ($settings.CheckIntuneOnDeployOpen -is [bool]) { $Global:App.CheckIntuneOnDeployOpen = $settings.CheckIntuneOnDeployOpen }
         # Missing entirely (an older settings file, or one from before this
         # existed) leaves $Global:App.DefaultAppSettings at its own built-in
         # factory values, untouched - same "fall back silently" reasoning
@@ -84,6 +86,7 @@ function Global:Write-SettingsFile {
             DefaultAppSettings    = $Global:App.DefaultAppSettings
             CheckDriftOnStartup   = $Global:App.CheckDriftOnStartup
             RunFullAuditOnStartup = $Global:App.RunFullAuditOnStartup
+        CheckIntuneOnDeployOpen = [bool]$Global:App.CheckIntuneOnDeployOpen
             DetailedGraphLog      = [bool]$Global:App.DetailedGraphLog
         }
         $json = $settings | ConvertTo-Json -Depth 5

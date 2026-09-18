@@ -32,11 +32,11 @@ function Global:Show-BatchEditMetadataDialog {
     # metadata at all has nothing safe to fill the untouched fields with
     # and is excluded rather than guessed at.
     $allCandidates = @($appsRef | Where-Object { -not (Test-AppIsUncommon -App $_) })
-    $eligibleApps = @($allCandidates | Where-Object { $_.appId -and $_.metadata })
+    $eligibleApps = @($allCandidates | Where-Object { $_.metadata })
     $noMetadataCount = @($allCandidates | Where-Object { $_.appId -and -not $_.metadata }).Count
 
     if ($eligibleApps.Count -eq 0) {
-        $msg = "No apps are eligible - this needs a Win32 app that's already deployed (has an App ID) and has saved metadata."
+        $msg = "No apps are eligible - this needs a Win32 app with saved metadata (deploy it once, or use 'Save to App Catalog without Deploying')."
         if ($noMetadataCount -gt 0) { $msg += " $noMetadataCount app(s) have an App ID but no saved metadata - use `"Pull metadata and groups from Intune...`" on them first." }
         [System.Windows.Forms.MessageBox]::Show($msg, "Nothing to do", "OK", "Information") | Out-Null
         return
@@ -45,7 +45,7 @@ function Global:Show-BatchEditMetadataDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Batch edit Intune fields"
-    $dlg.ClientSize = New-Object System.Drawing.Size(950, 850)
+    $dlg.ClientSize = New-Object System.Drawing.Size(950, 1190)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -302,26 +302,77 @@ function Global:Show-BatchEditMetadataDialog {
     foreach ($a in ($appsRef | Sort-Object appName)) { [void]$clbDeps.Items.Add($a.appName) }
 
     $lblStatus = New-Object System.Windows.Forms.Label
-    $lblStatus.Location = New-Object System.Drawing.Point(15,660)
+    # Text fields Intune shows in Company Portal, plus the commands. Same
+    # tick-to-change pattern as the requirement fields above: an unticked
+    # field is left exactly as each app already has it.
+    $fieldsY += 100
+    $textFieldControls = [ordered]@{}
+    foreach ($field in @(
+        @{ Key = 'Description';      Label = 'Description' }
+        @{ Key = 'Publisher';        Label = 'Publisher' }
+        @{ Key = 'Owner';            Label = 'Owner' }
+        @{ Key = 'Developer';        Label = 'Developer' }
+        @{ Key = 'InformationUrl';   Label = 'Information URL' }
+        @{ Key = 'PrivacyUrl';       Label = 'Privacy URL' }
+        @{ Key = 'Notes';            Label = 'Notes' }
+        @{ Key = 'InstallCommand';   Label = 'Install command' }
+        @{ Key = 'UninstallCommand'; Label = 'Uninstall command' }
+    )) {
+        $chk = New-Object System.Windows.Forms.CheckBox
+        $chk.Text = $field.Label
+        $chk.Location = New-Object System.Drawing.Point(365,$fieldsY)
+        $chk.Size = New-Object System.Drawing.Size(190,22)
+        $dlg.Controls.Add($chk)
+        $txt = New-Object System.Windows.Forms.TextBox
+        $txt.Location = New-Object System.Drawing.Point(560,$fieldsY)
+        $txt.Size = New-Object System.Drawing.Size(360,24)
+        $dlg.Controls.Add($txt)
+        $textFieldControls[$field.Key] = @{ Enable = $chk; Text = $txt }
+        $fieldsY += 30
+    }
+
+    $chkEnableInstallContext = New-Object System.Windows.Forms.CheckBox
+    $chkEnableInstallContext.Text = "Install context"
+    $chkEnableInstallContext.Location = New-Object System.Drawing.Point(365,$fieldsY)
+    $chkEnableInstallContext.Size = New-Object System.Drawing.Size(190,22)
+    $dlg.Controls.Add($chkEnableInstallContext)
+    $cmbInstallContext = New-Object System.Windows.Forms.ComboBox
+    $cmbInstallContext.DropDownStyle = "DropDownList"
+    $cmbInstallContext.Location = New-Object System.Drawing.Point(560,$fieldsY)
+    $cmbInstallContext.Size = New-Object System.Drawing.Size(180,24)
+    [void]$cmbInstallContext.Items.Add("System")
+    [void]$cmbInstallContext.Items.Add("User")
+    $cmbInstallContext.SelectedIndex = 0
+    $dlg.Controls.Add($cmbInstallContext)
+
+    $chkCatalogOnly = New-Object System.Windows.Forms.CheckBox
+    $chkCatalogOnly.Text = "Catalog only - don't send anything to Intune"
+    $chkCatalogOnly.Location = New-Object System.Drawing.Point(15,628)
+    $chkCatalogOnly.Size = New-Object System.Drawing.Size(330,22)
+    $catalogOnlyTip = New-Object System.Windows.Forms.ToolTip
+    $catalogOnlyTip.SetToolTip($chkCatalogOnly, "Applies the ticked fields to the catalog files only. Apps without an App ID can be edited this way too - they simply aren't in Intune yet.")
+    $dlg.Controls.Add($chkCatalogOnly)
+
+    $lblStatus.Location = New-Object System.Drawing.Point(15,1000)
     $lblStatus.Size = New-Object System.Drawing.Size(920,20)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
     $progressBar = New-Object System.Windows.Forms.ProgressBar
-    $progressBar.Location = New-Object System.Drawing.Point(15,684)
+    $progressBar.Location = New-Object System.Drawing.Point(15,1024)
     $progressBar.Size = New-Object System.Drawing.Size(920,12)
     $progressBar.Style = "Continuous"
     $dlg.Controls.Add($progressBar)
 
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbLog.Location = New-Object System.Drawing.Point(15,700)
+    $rtbLog.Location = New-Object System.Drawing.Point(15,1040)
     $rtbLog.Size = New-Object System.Drawing.Size(920,90)
     Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $btnRun = New-Object System.Windows.Forms.Button
     $btnRun.Text = "Apply to Intune..."
-    $btnRun.Location = New-Object System.Drawing.Point(755,796)
+    $btnRun.Location = New-Object System.Drawing.Point(755,1136)
     $btnRun.Size = New-Object System.Drawing.Size(180,32)
     $dlg.Controls.Add($btnRun)
     $runTip = New-Object System.Windows.Forms.ToolTip
@@ -329,7 +380,7 @@ function Global:Show-BatchEditMetadataDialog {
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(665,796)
+    $btnClose.Location = New-Object System.Drawing.Point(665,1136)
     $btnClose.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnClose)
 
@@ -342,31 +393,14 @@ function Global:Show-BatchEditMetadataDialog {
         for ($ci = 0; $ci -lt $clbApps.Items.Count; $ci++) { $clbApps.SetItemChecked($ci, $false) }
     }.GetNewClosure())
 
-    $RunNextBox = @{ Value = $null }
-
-    $RunNextBox.Value = {
-        param($Queue, $QueueIndex, $Results, $Changes)
-
-        if ($QueueIndex -ge $Queue.Count) {
-            $updatedCount = @($Results | Where-Object { $_.Status -eq "Updated" }).Count
-            $failedCount  = @($Results | Where-Object { $_.Status -eq "Failed" }).Count
-            $progressBar.Value = $progressBar.Maximum
-            $btnRun.Enabled = $true
-            $btnSelectAll.Enabled = $true
-            $btnSelectNone.Enabled = $true
-            $clbApps.Enabled = $true
-            $lblStatus.ForeColor = if ($failedCount -gt 0) { [System.Drawing.Color]::DarkOrange } else { [System.Drawing.Color]::SeaGreen }
-            $lblStatus.Text = "Done - $updatedCount updated, $failedCount failed."
-            Update-Grid
-            if ($failedCount -eq 0) { $dlg.Close() }
-            return
-        }
-
-        $currentApp = $Queue[$QueueIndex]
-        Write-DialogLogLine -LogBox $rtbLog -Text "`r`n[$($QueueIndex+1)/$($Queue.Count)] $($currentApp.appName)`r`n" -MirrorToMainLog
-        $lblStatus.Text = "Updating $($QueueIndex+1) of $($Queue.Count): $($currentApp.appName)..."
-        $progressBar.Value = $QueueIndex
-
+    # One app's new metadata: its own saved values, with the ticked
+    # changes applied on top. Used by the Intune run (which PATCHes the
+    # whole win32LobApp shape, so untouched fields must keep their real
+    # current values) and by the catalog-only run.
+    $BuildNewMetadataBox = @{ Value = $null }
+    $BuildNewMetadataBox.Value = {
+        param($App, $Changes)
+        $currentApp = $App
         # Starts from this app's OWN saved metadata (every field, not just
         # the ones being changed) - UpdateMetadata PATCHes the whole
         # win32LobApp shape at once (see this function's own top comment),
@@ -407,6 +441,16 @@ function Global:Show-BatchEditMetadataDialog {
         if ($Changes.DeviceRestartBehavior)  { $newMetadata.deviceRestartBehavior = $Changes.DeviceRestartBehavior }
         if ($null -ne $Changes.AllowAvailableUninstall) { $newMetadata.allowAvailableUninstall = $Changes.AllowAvailableUninstall }
         if ($null -ne $Changes.ReturnCodes)  { $newMetadata.returnCodes = @($Changes.ReturnCodes) }
+        if ($null -ne $Changes.Description)      { $newMetadata.description = $Changes.Description }
+        if ($null -ne $Changes.Publisher)        { $newMetadata.publisher = $Changes.Publisher }
+        if ($null -ne $Changes.Owner)            { $newMetadata.owner = $Changes.Owner }
+        if ($null -ne $Changes.Developer)        { $newMetadata.developer = $Changes.Developer }
+        if ($null -ne $Changes.InformationUrl)   { $newMetadata.informationUrl = $Changes.InformationUrl }
+        if ($null -ne $Changes.PrivacyUrl)       { $newMetadata.privacyUrl = $Changes.PrivacyUrl }
+        if ($null -ne $Changes.Notes)            { $newMetadata.notes = $Changes.Notes }
+        if ($null -ne $Changes.InstallCommand)   { $newMetadata.installCommand = $Changes.InstallCommand }
+        if ($null -ne $Changes.UninstallCommand) { $newMetadata.uninstallCommand = $Changes.UninstallCommand }
+        if ($null -ne $Changes.InstallContext)   { $newMetadata.installContext = $Changes.InstallContext }
         if ($null -ne $Changes.Dependencies) {
             # An app can't depend on itself - silently dropped here rather
             # than failing the whole batch over it, same "skip just the
@@ -414,6 +458,35 @@ function Global:Show-BatchEditMetadataDialog {
             # already uses for an unresolved dependency App ID.
             $newMetadata.dependencies = @($Changes.Dependencies | Where-Object { $_ -ne $currentApp.appName })
         }
+        return $newMetadata
+    }.GetNewClosure()
+
+    $RunNextBox = @{ Value = $null }
+
+    $RunNextBox.Value = {
+        param($Queue, $QueueIndex, $Results, $Changes)
+
+        if ($QueueIndex -ge $Queue.Count) {
+            $updatedCount = @($Results | Where-Object { $_.Status -eq "Updated" }).Count
+            $failedCount  = @($Results | Where-Object { $_.Status -eq "Failed" }).Count
+            $progressBar.Value = $progressBar.Maximum
+            $btnRun.Enabled = $true
+            $btnSelectAll.Enabled = $true
+            $btnSelectNone.Enabled = $true
+            $clbApps.Enabled = $true
+            $lblStatus.ForeColor = if ($failedCount -gt 0) { [System.Drawing.Color]::DarkOrange } else { [System.Drawing.Color]::SeaGreen }
+            $lblStatus.Text = "Done - $updatedCount updated, $failedCount failed."
+            Update-Grid
+            if ($failedCount -eq 0) { $dlg.Close() }
+            return
+        }
+
+        $currentApp = $Queue[$QueueIndex]
+        Write-DialogLogLine -LogBox $rtbLog -Text "`r`n[$($QueueIndex+1)/$($Queue.Count)] $($currentApp.appName)`r`n" -MirrorToMainLog
+        $lblStatus.Text = "Updating $($QueueIndex+1) of $($Queue.Count): $($currentApp.appName)..."
+        $progressBar.Value = $QueueIndex
+
+        $newMetadata = & $BuildNewMetadataBox.Value -App $currentApp -Changes $Changes
 
         $resolvedDepIds = New-Object System.Collections.Generic.List[string]
         foreach ($depName in @($newMetadata.dependencies)) {
@@ -587,6 +660,22 @@ function Global:Show-BatchEditMetadataDialog {
             Architecture = $null; MinOSKey = $null; MinDiskSpaceMB = $null; MinMemoryMB = $null
             MinProcessors = $null; MinCpuSpeedMHz = $null; InstallTimeMinutes = $null
             DeviceRestartBehavior = $null; AllowAvailableUninstall = $null; ReturnCodes = $null; Dependencies = $null
+            Description = $null; Publisher = $null; Owner = $null; Developer = $null
+            InformationUrl = $null; PrivacyUrl = $null; Notes = $null
+            InstallCommand = $null; UninstallCommand = $null; InstallContext = $null
+        }
+        # A ticked text field is applied exactly as typed, blank included -
+        # that's how you clear a Publisher across many apps at once.
+        foreach ($key in @($textFieldControls.Keys)) {
+            if ($textFieldControls[$key].Enable.Checked) {
+                $value = $textFieldControls[$key].Text.Text
+                $changes.$key = $value
+                $changeSummary.Add("$($textFieldControls[$key].Enable.Text) -> $(if ($value) { $value } else { '(blank)' })")
+            }
+        }
+        if ($chkEnableInstallContext.Checked) {
+            $changes.InstallContext = [string]$cmbInstallContext.SelectedItem
+            $changeSummary.Add("Install context -> $($changes.InstallContext)")
         }
         if ($chkEnableArch.Checked) {
             $archList = @(@("x86","x64","arm64") | Where-Object { ($_ -eq "x86" -and $chkArchX86.Checked) -or ($_ -eq "x64" -and $chkArchX64.Checked) -or ($_ -eq "arm64" -and $chkArchArm64.Checked) })
@@ -637,10 +726,61 @@ function Global:Show-BatchEditMetadataDialog {
             $changeSummary.Add("Dependencies -> $depsText")
         }
 
+        if ($changeSummary.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Tick at least one field to change.", "Nothing to change", "OK", "Warning") | Out-Null
+            return
+        }
+
+        $catalogOnly = $chkCatalogOnly.Checked
+        if (-not $catalogOnly) {
+            # Only the Intune write needs an App ID - an app that was never
+            # deployed can still be edited in the catalog.
+            $withoutAppId = @($checkedApps | Where-Object { -not $_.appId })
+            if ($withoutAppId.Count -gt 0) {
+                $names = (@($withoutAppId | ForEach-Object { $_.appName } | Select-Object -First 10) -join ", ")
+                [System.Windows.Forms.MessageBox]::Show("$($withoutAppId.Count) of the checked app(s) aren't in Intune yet (no App ID):`n`n$names`n`nUntick them, or tick 'Catalog only' to change the catalog files instead.", "Not in Intune yet", "OK", "Warning") | Out-Null
+                return
+            }
+        }
+
         $appList = (@($checkedNames | Select-Object -First 15) -join ", ") + $(if ($checkedNames.Count -gt 15) { ", and $($checkedNames.Count - 15) more" })
-        $confirmMsg = "Update $($checkedApps.Count) app(s) in Intune and in the catalog with these settings?`n`n$($changeSummary -join "`n")`n`nApps: $appList"
+        $confirmMsg = if ($catalogOnly) {
+            "Update $($checkedApps.Count) app(s) in the catalog only - nothing is sent to Intune?`n`n$($changeSummary -join "`n")`n`nApps: $appList"
+        } else {
+            "Update $($checkedApps.Count) app(s) in Intune and in the catalog with these settings?`n`n$($changeSummary -join "`n")`n`nApps: $appList"
+        }
         $r = [System.Windows.Forms.MessageBox]::Show($confirmMsg, "Confirm batch edit", "YesNo", "Warning", "Button2")
         if ($r -ne "Yes") { return }
+
+        if ($catalogOnly) {
+            # No Graph, no child process: merge the ticked fields into each
+            # app's saved metadata and write the catalog once.
+            $rtbLog.Clear()
+            $changedCount = 0
+            foreach ($app in $checkedApps) {
+                $newMetadata = & $BuildNewMetadataBox.Value -App $app -Changes $changes
+                $index = -1
+                for ($ai = 0; $ai -lt $appsRef.Count; $ai++) {
+                    if ($appsRef[$ai].appName -eq $app.appName) { $index = $ai; break }
+                }
+                if ($index -lt 0) { continue }
+                $appsRef[$index].metadata = $newMetadata
+                $changedCount++
+                Write-DialogLogLine -LogBox $rtbLog -Text "[OK] $($app.appName) - catalog updated.`r`n" -MirrorToMainLog
+            }
+            $unsavedBox.Value = $true
+            if (Save-AppsToFile -Path $linkedFilePath) {
+                $lblStatus.ForeColor = [System.Drawing.Color]::SeaGreen
+                $lblStatus.Text = "Done - $changedCount app(s) changed in the catalog. Intune was not contacted."
+                Update-Grid
+            }
+            else {
+                Write-DialogLogLine -LogBox $rtbLog -Text "[FAILED] The catalog could not be saved - see the Log tab.`r`n" -MirrorToMainLog
+                $lblStatus.ForeColor = [System.Drawing.Color]::Firebrick
+                $lblStatus.Text = "Changed in memory, but the catalog could not be saved."
+            }
+            return
+        }
 
         $btnRun.Enabled = $false
         $btnSelectAll.Enabled = $false

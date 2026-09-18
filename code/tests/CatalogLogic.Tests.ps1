@@ -110,6 +110,7 @@ $testableFunctionNames = @(
     "Get-FriendlyMinOsRelease",
     "Test-AppHasCustomConfig",
     "ConvertTo-AppRecord",
+    "ConvertTo-TemplateAppRecord",
     "Get-GroupFieldDiffs",
     # Lives in GuiHelpers.ps1, not Private\Catalog\ - the scan below isn't
     # hardcoded to Catalog files, so adding the name here is enough. Pure
@@ -875,6 +876,23 @@ Assert-Equal "0x8007002E (-2147024850)" (ConvertTo-ScriptRunStateRow @{ runState
 
 Assert-Equal "Intune hasn't reported a run of this script yet." (Format-ScriptRunSummary @()) "Format-ScriptRunSummary: nothing reported yet"
 Assert-Equal "2 devices: 1 Failed, 1 Success" (Format-ScriptRunSummary @($runState, $noDevice)) "Format-ScriptRunSummary: counts the states"
+
+$templateSource = [pscustomobject]@{
+    appId = '3f1c2a9e-5b7d-4e21-9a0c-8d6e4b1f2a37'; appName = '7-Zip'; wingetId = '7zip.7zip'
+    intuneAppType = 'Windows app (Win32)'; intuneAppVersion = '24.08'
+    requiredFor = @('SG-All'); availableFor = @(); uninstallFor = @(); excludeFor = @('SG-Contractors')
+    metadata = [pscustomobject]@{ publisher = 'Igor Pavlov' }
+}
+$template = ConvertTo-TemplateAppRecord -App $templateSource
+Assert-Equal "" $template.appId "ConvertTo-TemplateAppRecord: the App ID goes"
+Assert-Equal "" $template.intuneAppType "ConvertTo-TemplateAppRecord: Intune's reported type goes"
+Assert-Equal "" $template.intuneAppVersion "ConvertTo-TemplateAppRecord: Intune's reported version goes"
+Assert-Equal "7-Zip" $template.appName "ConvertTo-TemplateAppRecord: the name stays"
+Assert-Equal "7zip.7zip" $template.wingetId "ConvertTo-TemplateAppRecord: the Winget ID stays"
+Assert-Equal "SG-All" (@($template.requiredFor) -join ',') "ConvertTo-TemplateAppRecord: groups stay"
+Assert-Equal "SG-Contractors" (@($template.excludeFor) -join ',') "ConvertTo-TemplateAppRecord: exclusions stay"
+Assert-Equal "Igor Pavlov" $template.metadata.publisher "ConvertTo-TemplateAppRecord: the metadata stays"
+Assert-Equal '3f1c2a9e-5b7d-4e21-9a0c-8d6e4b1f2a37' $templateSource.appId "ConvertTo-TemplateAppRecord: the app it came from is untouched"
 
 # -----------------------------------------------------------------
 # Assignments, including exclusions (Assignments.ps1)

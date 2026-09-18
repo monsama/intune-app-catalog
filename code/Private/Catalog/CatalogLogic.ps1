@@ -464,6 +464,31 @@ function Global:Get-DependencyOrderedApps {
     return [pscustomobject]@{ Ordered = $ordered.ToArray(); CircularNames = @() }
 }
 
+function Global:ConvertTo-TemplateAppRecord {
+    <#
+      The same app with everything that ties it to ONE tenant removed:
+      the App ID, and the type/version Intune itself reported. Everything
+      that was actual work - the name, Winget ID, groups, metadata - stays.
+
+      That's what makes a catalog reusable as a starting point: in another
+      tenant (or after the Intune apps are gone) these entries deploy as
+      new apps instead of pointing at IDs that don't exist there.
+    #>
+    param($App)
+    return [pscustomobject]@{
+        appId            = ""
+        appName          = [string]$App.appName
+        wingetId         = [string]$App.wingetId
+        intuneAppType    = ""
+        intuneAppVersion = ""
+        requiredFor      = @($App.requiredFor)
+        availableFor     = @($App.availableFor)
+        uninstallFor     = @($App.uninstallFor)
+        excludeFor       = @($App.excludeFor)
+        metadata         = $App.metadata
+    }
+}
+
 function Global:Get-CreateAppTemplates {
     param([string]$WingetId, [bool]$Uncommon)
 

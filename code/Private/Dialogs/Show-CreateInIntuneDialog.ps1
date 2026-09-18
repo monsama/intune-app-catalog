@@ -1170,6 +1170,15 @@ function Global:Show-CreateInIntuneDialog {
     # only chance to see it; re-reading it meant closing and reopening this
     # whole dialog (a fresh Intune fetch) just to look again.
     $lastDriftBox = @{ Rows = $null; LocalSnapshot = $null }
+    # Whether this dialog has asked Intune for the app's current values
+    # yet, and whether an update is waiting for that to happen - see
+    # $runMetadataFetch further down.
+    $liveFetchDoneBox = @{ Value = $false }
+    $pendingUpdateBox = @{ Value = $false }
+    # $runMetadataFetch only exists further down (it needs every field it
+    # fills), so the Refresh button and the update path reach it through
+    # this box - same pattern as $RunNextBox in the batch dialogs.
+    $fetchBox = @{ Run = $null }
 
     $btnSetDefaults.Add_Click({
         $changeRows = & $getCurrentVsDefaultChanges
@@ -1459,12 +1468,27 @@ function Global:Show-CreateInIntuneDialog {
     # its mere presence is itself a signal something differs, not a
     # permanently-greyed-out button with nothing behind it most of the time.
     $btnShowDiff = New-Object System.Windows.Forms.Button
+    $btnRefreshFromIntune = New-Object System.Windows.Forms.Button
+    $btnRefreshFromIntune.Text = "Refresh from Intune"
+    $btnRefreshFromIntune.Visible = $false
+    $btnRefreshFromIntune.Add_Click({
+        if ($fetchBox.Run) { & $fetchBox.Run }
+    }.GetNewClosure())
+
     $btnShowDiff.Text = "Compare..."
     $btnShowDiff.Location = New-Object System.Drawing.Point(320,(941 + $statusBoxExtraHeight))
     $btnShowDiff.Size = New-Object System.Drawing.Size(95,32)
     $btnShowDiff.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $btnShowDiff.Visible = $false
     $dlg.Controls.Add($btnShowDiff)
+    # Only shown when the dialog didn't ask Intune on opening - see
+    # $runMetadataFetch and the "Check Intune when opening Deploy" setting.
+    $btnRefreshFromIntune.Location = New-Object System.Drawing.Point(425,(941 + $statusBoxExtraHeight))
+    $btnRefreshFromIntune.Size = New-Object System.Drawing.Size(150,32)
+    $btnRefreshFromIntune.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
+    $dlg.Controls.Add($btnRefreshFromIntune)
+    $refreshTip = New-Object System.Windows.Forms.ToolTip
+    $refreshTip.SetToolTip($btnRefreshFromIntune, "Loads this app's current values from Intune into the fields above. Happens automatically before any update either way.")
     $showDiffTip = New-Object System.Windows.Forms.ToolTip
     $showDiffTip.SetToolTip($btnShowDiff, "Show again which fields differ from Intune's live copy, and optionally keep your local value for some of them.")
     $btnShowDiff.Add_Click({
@@ -1635,6 +1659,17 @@ function Global:Show-CreateInIntuneDialog {
 
         $mode = if ($isDuplicate -and -not $chkForceNew.Checked) { "UpdateMetadata" } else { "Create" }
         $replaceContent = ($mode -eq "UpdateMetadata") -and $isDuplicate -and $chkReplaceContent.Checked
+
+        # Updating an app means writing over what Intune has, so its current
+        # values are fetched first if this dialog hasn't asked yet (the
+        # "Check Intune when opening Deploy" setting is off). The fetch
+        # shows any drift, lets the user decide field by field, and then
+        # clicks this button again - see $pendingUpdateBox.
+        if ($mode -eq "UpdateMetadata" -and -not $liveFetchDoneBox.Value -and $fetchBox.Run) {
+            $pendingUpdateBox.Value = $true
+            & $fetchBox.Run
+            return
+        }
 
         if ($mode -eq "Create" -or $replaceContent) {
             if (-not (Test-Path $txtPackagePath.Text)) {
@@ -2584,11 +2619,18 @@ function Global:Show-CreateInIntuneDialog {
 
     if ($isDuplicate) {
         # Fetches what's actually live in Intune right now and repopulates
-        # the fields above (which start out holding local guesses/templates)
-        # once it comes back, so Update Metadata edits a real, current
-        # picture instead of possibly overwriting a correct Intune value
-        # with a stale local guess.
-        $dlg.Add_Shown({
+        # the fields above (which start out holding local guesses/templates),
+        # so Update Metadata edits a real, current picture instead of
+        # possibly overwriting a correct Intune value with a stale local
+        # guess.
+        #
+        # A scriptblock, not just an Add_Shown handler, because it runs from
+        # three places now: opening the dialog (when "Check Intune when
+        # opening Deploy" is on), the Refresh from Intune button, and - the
+        # one that actually protects the data - immediately before an
+        # update is sent, if it hasn't run yet in this session. See
+        # $pendingUpdateBox below for how the update continues afterwards.
+        $runMetadataFetch = {
             $lblCreateStatus.ForeColor = [System.Drawing.Color]::DimGray
             $lblCreateStatus.Text = "Loading current metadata from Intune..."
             $metadataFetchRunningBox.Running = $true
@@ -2610,6 +2652,9 @@ function Global:Show-CreateInIntuneDialog {
             $updateCustomFieldHighlightsRef = $updateCustomFieldHighlights
             $applyKeepLocalFieldsRef = $applyKeepLocalFields
             $lastDriftBoxRef = $lastDriftBox
+            $liveFetchDoneBoxRef = $liveFetchDoneBox
+            $pendingUpdateBoxRef = $pendingUpdateBox
+            $btnCreateRef = $btnCreate
             $btnShowDiffRef = $btnShowDiff
             $AppNameRef = $AppName
             $lblCreateStatusRef = $lblCreateStatus
@@ -3086,9 +3131,31 @@ function Global:Show-CreateInIntuneDialog {
                     [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
                     [System.Windows.Forms.Application]::DoEvents()
                     [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
+                    $liveFetchDoneBoxRef.Value = $true
+                    # An update was waiting for this check - carry on with it
+                    # now that the fields (and any drift the user just
+                    # resolved) reflect what Intune actually has.
+                    if ($pendingUpdateBoxRef.Value) {
+                        $pendingUpdateBoxRef.Value = $false
+                        if (-not $dlgRef.IsDisposed) { $btnCreateRef.PerformClick() }
+                    }
                 }
             }.GetNewClosure()
-        }.GetNewClosure())
+        }.GetNewClosure()
+
+        $fetchBox.Run = $runMetadataFetch
+        if ($Global:App.CheckIntuneOnDeployOpen) {
+            $dlg.Add_Shown({ & $runMetadataFetch }.GetNewClosure())
+        }
+        else {
+            # Nothing fetched yet: say so plainly rather than letting the
+            # fields look like they came from Intune.
+            $dlg.Add_Shown({
+                $lblCreateStatus.ForeColor = [System.Drawing.Color]::DimGray
+                $lblCreateStatus.Text = "Showing the values saved here - Intune hasn't been asked. It's checked automatically before any update, or press Refresh from Intune."
+                $btnRefreshFromIntune.Visible = $true
+            }.GetNewClosure())
+        }
     }
 
     $dlg.CancelButton = $btnCancel

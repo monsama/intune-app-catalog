@@ -184,6 +184,13 @@ $Global:App.DetailedGraphLog = $false
 # opt-in rather than folded into the drift toggle - see
 # Start-StartupFullAuditCheck (GraphFetch.ps1).
 $Global:App.RunFullAuditOnStartup = $false
+# Whether "Deploy to Intune" asks Intune for an existing app's current
+# values the moment it opens. On means every open waits for that round
+# trip; off means the dialog shows what's saved here and only asks before
+# an update is actually sent - which is where it protects anything, since
+# that's the write that could otherwise overwrite a newer Intune value.
+# The startup audit already keeps an eye on drift either way.
+$Global:App.CheckIntuneOnDeployOpen = $true
 
 # The computed defaults Get-DefaultAppMetadata hands out for a brand-new
 # Winget app (what "Set default values..." and the custom-field
@@ -699,6 +706,18 @@ $gbMoreActions = New-ToolbarGroup -Title "More" -Buttons @($btnMoreActions)
 # launch from Form.Add_Shown), not immediately - still saved the instant
 # it's toggled, same as every other setting in this app, just nothing to
 # show for it until next time.
+$chkCheckIntuneOnDeployOpen = New-Object System.Windows.Forms.CheckBox
+$chkCheckIntuneOnDeployOpen.Text = "Check Intune when opening Deploy"
+$chkCheckIntuneOnDeployOpen.AutoSize = $true
+$chkCheckIntuneOnDeployOpen.Checked = [bool]$Global:App.CheckIntuneOnDeployOpen
+$toolbarTips.SetToolTip($chkCheckIntuneOnDeployOpen, "When checked, 'Deploy to Intune' loads an existing app's current values from Intune every time it opens. Unchecked, it opens straight away with what's saved here and asks Intune only before an update is sent (and whenever you press Refresh from Intune) - the check that actually prevents overwriting a newer value.")
+$chkCheckIntuneOnDeployOpen.Add_CheckedChanged({
+    $Global:App.CheckIntuneOnDeployOpen = $chkCheckIntuneOnDeployOpen.Checked
+    if (Write-SettingsFile) {
+        Write-Log "[OK] Deploy to Intune $(if ($chkCheckIntuneOnDeployOpen.Checked) { 'checks Intune when it opens.' } else { 'opens without contacting Intune - it still checks before any update.' })`r`n" ([System.Drawing.Color]::LightGreen)
+    }
+}.GetNewClosure())
+
 $chkCheckDriftOnStartup = New-Object System.Windows.Forms.CheckBox
 $chkCheckDriftOnStartup.Text = "Check Intune drift on start"
 $chkCheckDriftOnStartup.AutoSize = $true
@@ -729,7 +748,7 @@ $chkRunFullAuditOnStartup.Add_CheckedChanged({
     }
 }.GetNewClosure())
 
-$gbSync = New-ToolbarGroup -Title "Sync" -Buttons @($chkCheckDriftOnStartup, $chkRunFullAuditOnStartup)
+$gbSync = New-ToolbarGroup -Title "Sync" -Buttons @($chkCheckDriftOnStartup, $chkRunFullAuditOnStartup, $chkCheckIntuneOnDeployOpen)
 
 # Its own titled box like the other toolbar groups (it used to float next to
 # them with a hand-tuned top margin to line up). The box title replaces the
@@ -1557,6 +1576,15 @@ $menuItemInstallStatus = New-Object System.Windows.Forms.ToolStripMenuItem "Inst
 $menuItemInstallStatus.ToolTipText = "Shows which devices and users have this app installed, and which failed with what error. Read-only."
 $menuItemDeleteIntune = New-Object System.Windows.Forms.ToolStripMenuItem "Delete from Intune..."
 $menuItemDeleteIntune.ToolTipText = "One row selected: deletes it directly. Multiple rows: opens the bulk delete dialog, pre-scoped to your selection. Intune only, same as the toolbar delete."
+# Catalog-only, both of them: nothing here touches Intune. Clearing an App
+# ID unlinks the catalog entry from the live app (the app itself stays in
+# Intune); saving as a template copies the selection somewhere else with
+# the App IDs stripped, so the same configuration can be deployed into
+# another tenant - or this one again - as new apps.
+$menuItemClearAppId = New-Object System.Windows.Forms.ToolStripMenuItem "Clear App ID..."
+$menuItemClearAppId.ToolTipText = "Forgets which Intune app this catalog entry belongs to. The app in Intune is not touched, and nothing else about the entry changes."
+$menuItemSaveTemplate = New-Object System.Windows.Forms.ToolStripMenuItem "Save as template..."
+$menuItemSaveTemplate.ToolTipText = "Copies the selected app(s) to a folder you pick, without their App IDs, so the same configuration can be deployed into another tenant. This catalog is unchanged."
 $menuItemSeparator = New-Object System.Windows.Forms.ToolStripSeparator
 $menuItemRemoveCatalog = New-Object System.Windows.Forms.ToolStripMenuItem "Remove from catalog..."
 [void]$gridContextMenu.Items.Add($menuItemEdit)
@@ -1568,6 +1596,8 @@ $menuItemRemoveCatalog = New-Object System.Windows.Forms.ToolStripMenuItem "Remo
 [void]$gridContextMenu.Items.Add($menuItemInstallStatus)
 [void]$gridContextMenu.Items.Add($menuItemDeleteIntune)
 [void]$gridContextMenu.Items.Add($menuItemSeparator)
+[void]$gridContextMenu.Items.Add($menuItemClearAppId)
+[void]$gridContextMenu.Items.Add($menuItemSaveTemplate)
 [void]$gridContextMenu.Items.Add($menuItemRemoveCatalog)
 $Global:App.Grid.ContextMenuStrip = $gridContextMenu
 
@@ -1624,6 +1654,12 @@ $gridContextMenu.Add_Opening({
 
     $menuItemDeleteIntune.Text = if ($isMulti) { "Delete $($selectedIndices.Count) app(s) from Intune..." } else { "Delete from Intune..." }
     $menuItemDeleteIntune.Enabled = $hasSelection
+
+    $withAppId = @($selectedIndices | ForEach-Object { $Global:App.Apps[$_] } | Where-Object { $_.appId }).Count
+    $menuItemClearAppId.Text = if ($withAppId -gt 1) { "Clear $withAppId App IDs..." } else { "Clear App ID..." }
+    $menuItemClearAppId.Enabled = $withAppId -gt 0
+    $menuItemSaveTemplate.Text = if ($isMulti) { "Save $($selectedIndices.Count) app(s) as template..." } else { "Save as template..." }
+    $menuItemSaveTemplate.Enabled = $hasSelection
 
     $menuItemRemoveCatalog.Text = if ($isMulti) { "Remove $($selectedIndices.Count) app(s) from catalog..." } else { "Remove from catalog..." }
     $menuItemRemoveCatalog.Enabled = $hasSelection
@@ -1697,6 +1733,76 @@ $menuItemSyncMetadata.Add_Click({
     if ($indices.Count -eq 0) { return }
     Show-SyncMetadataDialog -ScopedIndices $indices
     Update-Grid
+})
+
+$menuItemClearAppId.Add_Click({
+    $indices = @(Get-SelectedAppIndices | Where-Object { $Global:App.Apps[$_].appId })
+    if ($indices.Count -eq 0) { return }
+    $names = @($indices | ForEach-Object { $Global:App.Apps[$_].appName })
+    $shown = (@($names | Select-Object -First 15) -join ", ") + $(if ($names.Count -gt 15) { ", and $($names.Count - 15) more" })
+    $r = [System.Windows.Forms.MessageBox]::Show(
+        "Forget which Intune app $(if ($indices.Count -eq 1) { "this entry belongs" } else { "these $($indices.Count) entries belong" }) to?`n`n$shown`n`nThe app(s) in Intune are not touched - only the App ID stored here is cleared, so deploying from this catalog would create new app(s) instead of updating the existing ones.",
+        "Clear App ID", "YesNo", "Warning", "Button2")
+    if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+    foreach ($idx in $indices) {
+        $Global:App.Apps[$idx].appId = ""
+        $Global:App.Apps[$idx].intuneAppType = ""
+        $Global:App.Apps[$idx].intuneAppVersion = ""
+    }
+    $Global:App.UnsavedChangesBox.Value = $true
+    if (Save-AppsToFile -Path $Global:App.LinkedFilePath) {
+        Update-Grid
+        Set-Status "Cleared the App ID of $($indices.Count) app(s)"
+        Write-Log "[OK] Cleared the App ID of $($indices.Count) app(s) - the app(s) in Intune were not touched.`r`n" ([System.Drawing.Color]::LightGreen)
+    }
+})
+
+$menuItemSaveTemplate.Add_Click({
+    $indices = Get-SelectedAppIndices
+    if ($indices.Count -eq 0) { return }
+    $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
+    try {
+        $fbd.Description = "Pick an empty folder for the template copy of $($indices.Count) app(s)"
+        $fbd.SelectedPath = $Global:App.RootPath
+        if ($fbd.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }
+        $targetPath = $fbd.SelectedPath
+    }
+    finally { $fbd.Dispose() }
+
+    # Writing into the folder this catalog is loaded from would mix the
+    # stripped copies in with the originals (same file names), so that's
+    # refused rather than resolved by guessing.
+    if ([IO.Path]::GetFullPath($targetPath).TrimEnd('\') -eq [IO.Path]::GetFullPath($Global:App.LinkedFilePath).TrimEnd('\')) {
+        [System.Windows.Forms.MessageBox]::Show("That's the folder this catalog is loaded from. Pick a different one - the template is a copy, and would otherwise overwrite the originals.", "Pick another folder", "OK", "Warning") | Out-Null
+        return
+    }
+
+    $existing = @(Get-ChildItem -Path $targetPath -Filter *.json -ErrorAction SilentlyContinue)
+    if ($existing.Count -gt 0) {
+        $r = [System.Windows.Forms.MessageBox]::Show(
+            "$targetPath already holds $($existing.Count) .json file(s).`n`nFiles with the same name as an app being saved are overwritten. Continue?",
+            "Folder isn't empty", "YesNo", "Warning", "Button2")
+        if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+    }
+
+    $written = 0
+    $failed = New-Object System.Collections.Generic.List[string]
+    foreach ($idx in $indices) {
+        $app = $Global:App.Apps[$idx]
+        try {
+            $template = ConvertTo-TemplateAppRecord -App $app
+            $fileName = (Get-SafeFileNameForApp -Name $template.appName) + ".json"
+            [System.IO.File]::WriteAllText((Join-Path $targetPath $fileName), (ConvertTo-SingleAppJson -App $template), (New-Object System.Text.UTF8Encoding($false)))
+            $written++
+        }
+        catch { $failed.Add("$($app.appName): $($_.Exception.Message)") }
+    }
+    if ($failed.Count -gt 0) {
+        Write-Log "[FAILED] $($failed.Count) app(s) could not be written: $($failed -join '; ')`r`n" ([System.Drawing.Color]::Tomato)
+    }
+    Write-Log "[OK] Saved $written app(s) as a template in $targetPath - without App IDs, so they deploy as new apps.`r`n" ([System.Drawing.Color]::LightGreen)
+    Set-Status "Saved $written app(s) as a template in $targetPath"
+    [System.Windows.Forms.MessageBox]::Show("Saved $written app(s) to:`n$targetPath`n`nTheir App IDs, type and version were left out, so deploying from that folder creates new apps. This catalog is unchanged.$(if ($failed.Count -gt 0) { "`n`n$($failed.Count) app(s) failed - see the Log tab." })", "Template saved", "OK", "Information") | Out-Null
 })
 
 $menuItemInstallStatus.Add_Click({
