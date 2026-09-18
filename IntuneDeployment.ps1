@@ -80,6 +80,7 @@ $Script:RequiredPrivateFiles = @(
     "code\Private\Graph\GraphFetch.ps1"
     "code\Private\Graph\GraphLog.ps1"
     "code\Private\Graph\GraphReports.ps1"
+    "code\Private\Graph\GraphToken.ps1"
     "code\Private\Graph\PlatformScripts.ps1"
     "code\Private\Graph\Assignments.ps1"
     "code\Private\GuiHelpers.ps1"
