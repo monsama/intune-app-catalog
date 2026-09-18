@@ -1116,7 +1116,7 @@ function Global:Start-AppInstallStatusFetch {
             }
         }
         catch {
-            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { Get-InnermostErrorMessage $_.Exception }
+            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { Get-GraphErrorRecordMessage $_ }
             if ($OnComplete) { & $OnComplete $false $errMsg $null }
         }
         finally {
@@ -1190,7 +1190,7 @@ function Global:Start-PlatformScriptListFetch {
             }
         }
         catch {
-            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { Get-InnermostErrorMessage $_.Exception }
+            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { Get-GraphErrorRecordMessage $_ }
             if ($OnComplete) { & $OnComplete $false $errMsg $null }
         }
         finally {
@@ -1290,7 +1290,7 @@ function Global:Start-PlatformScriptDetailFetch {
             }
         }
         catch {
-            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { Get-InnermostErrorMessage $_.Exception }
+            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { Get-GraphErrorRecordMessage $_ }
             if ($OnComplete) { & $OnComplete $false $errMsg $null }
         }
         finally {
@@ -1376,7 +1376,7 @@ function Global:Start-PlatformScriptRunStatusFetch {
             }
         }
         catch {
-            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { Get-InnermostErrorMessage $_.Exception }
+            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { Get-GraphErrorRecordMessage $_ }
             if ($OnComplete) { & $OnComplete $false $errMsg $null }
         }
         finally {
