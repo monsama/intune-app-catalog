@@ -1998,6 +1998,8 @@ function Global:Show-CreateInIntuneDialog {
         $fromAppEditorRef = $FromAppEditor
         $callerHasExistingCatalogEntryRef = $CallerHasExistingCatalogEntry
         $rtbLogRef = $rtbCreateLog
+        $btnSaveForLaterRef = $btnSaveForLater
+        $btnCancelRef = $btnCancel
         # Added specifically so the success handler below can build and
         # save a catalog-shaped metadata object via
         # Save-AppMetadataToLocalCatalog - a real Create/Update Metadata
@@ -2157,8 +2159,20 @@ function Global:Show-CreateInIntuneDialog {
                         } else {
                             "Done. App ID: $($result.appId)`n`nAlready saved to disk."
                         }
-                        [System.Windows.Forms.MessageBox]::Show($doneMsg, "Success", "OK", "Information") | Out-Null
-                        $dlgRef.Close()
+                        # The window stays open on success, so the log box
+                        # above can still be read (a popup whose OK also
+                        # closed the whole dialog took that away). The
+                        # result is already in $resultBox, and this function
+                        # returns it however the window is closed, so
+                        # closing it later still saves to the catalog.
+                        Write-DialogLogLine -LogBox $rtbLogRef -Text "`r`n[OK] $($doneMsg -replace "`r?`n", ' ')`r`n" -MirrorToMainLog
+                        $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
+                        $lblStatusRef.Text = "Done - App ID $($result.appId). Read the log below, then Close."
+                        # Nothing left to send: another click would repeat the
+                        # whole thing against Intune.
+                        $btnCreateRef.Enabled = $false
+                        if ($btnSaveForLaterRef) { $btnSaveForLaterRef.Enabled = $false }
+                        if ($btnCancelRef) { $btnCancelRef.Text = "Close" }
                     }
                     else {
                         Write-DialogError -StatusLabel $lblStatusRef -LogBox $rtbLogRef -ErrorMessage $result.error
