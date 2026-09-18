@@ -29,7 +29,7 @@ jobs:
             shell: powershell
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # A step's shell can't come from an expression, hence one step per shell.
       - name: CatalogLogic.Tests.ps1 (pwsh)
         if: matrix.shell == 'pwsh'
@@ -57,7 +57,7 @@ jobs:
         test: [DialogSmoke, CatalogCrud, CloseConfirmation, DialogLayout]
         host: [pwsh, powershell]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: ${{ matrix.test }}.GuiTests.ps1
         shell: pwsh
         run: >
@@ -66,7 +66,7 @@ jobs:
           -ShotDir "$env:RUNNER_TEMP/gui-shots/${{ matrix.test }}"
       - name: Upload screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gui-screenshots-${{ matrix.test }}-${{ matrix.host }}
           path: ${{ runner.temp }}/gui-shots
