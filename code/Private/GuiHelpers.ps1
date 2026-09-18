@@ -73,6 +73,88 @@ function Global:ConvertTo-FriendlyGraphError {
     return "$summary`n`n(Raw error: $RawMessage)"
 }
 
+function Global:Get-ControlGroupOrigin {
+    <#
+      The top-left corner of a set of controls, as @{ X; Y }, from their
+      (x, y) pairs. Moving a group onto its own tab means subtracting this
+      and adding back the margin the page wants, so a group that started
+      600px down the old panel starts at the top of its page instead.
+      @{ X = 0; Y = 0 } for an empty set, so the caller can move nothing
+      without a special case.
+    #>
+    param($Points)
+    $all = @($Points)
+    if ($all.Count -eq 0) { return @{ X = 0; Y = 0 } }
+    $minX = ($all | ForEach-Object { [int]$_.X } | Measure-Object -Minimum).Minimum
+    $minY = ($all | ForEach-Object { [int]$_.Y } | Measure-Object -Minimum).Minimum
+    return @{ X = [int]$minX; Y = [int]$minY }
+}
+
+function Global:Convert-PanelToTabs {
+    <#
+      Splits one flat panel of absolutely-positioned controls into tab
+      pages, without any of them being re-laid-out by hand: each page takes
+      the controls named for it, keeps their positions relative to each
+      other, and is shifted up so the group starts at the top of its page.
+
+      -Pages is @(@{ Title = '...'; Controls = @($a, $b, ...) }, ...).
+      $null entries are ignored, so a caller can list a control that only
+      exists in some modes. Anything left over lands on the first page
+      rather than disappearing, because a control that silently stops being
+      shown is far worse than one on the wrong tab.
+
+      Returns the TabControl.
+    #>
+    param(
+        [System.Windows.Forms.Form]$Dialog,
+        [System.Windows.Forms.Panel]$Panel,
+        $Pages,
+        [int]$Margin = 12
+    )
+    $tabs = New-Object System.Windows.Forms.TabControl
+    $tabs.Location = $Panel.Location
+    $tabs.Size = $Panel.Size
+
+    foreach ($spec in @($Pages)) {
+        $page = New-Object System.Windows.Forms.TabPage
+        $page.Text = [string]$spec.Title
+        $page.UseVisualStyleBackColor = $true
+        $inner = New-Object System.Windows.Forms.Panel
+        $inner.Dock = [System.Windows.Forms.DockStyle]::Fill
+        $inner.AutoScroll = $true
+        $page.Controls.Add($inner)
+        [void]$tabs.TabPages.Add($page)
+
+        # Only what this panel actually holds. A control the dialog attaches
+        # and detaches as the user picks something (the detection panels
+        # here) has no parent at this moment, and adding it anyway would put
+        # every one of them on screen at once, stacked.
+        $wanted = @(@($spec.Controls) | Where-Object { $_ -and [object]::ReferenceEquals($_.Parent, $Panel) })
+        if ($wanted.Count -eq 0) { continue }
+        $origin = Get-ControlGroupOrigin -Points (@($wanted | ForEach-Object { @{ X = $_.Left; Y = $_.Top } }))
+        foreach ($control in $wanted) {
+            $newX = $control.Left - $origin.X + $Margin
+            $newY = $control.Top - $origin.Y + $Margin
+            $Panel.Controls.Remove($control)
+            $control.Location = New-Object System.Drawing.Point($newX, $newY)
+            $inner.Controls.Add($control)
+        }
+    }
+
+    # Whatever wasn't listed, onto the first page at the position it had
+    if ($tabs.TabPages.Count -gt 0) {
+        $firstInner = $tabs.TabPages[0].Controls[0]
+        foreach ($leftover in @($Panel.Controls)) {
+            $Panel.Controls.Remove($leftover)
+            $firstInner.Controls.Add($leftover)
+        }
+    }
+
+    $Dialog.Controls.Remove($Panel)
+    $Dialog.Controls.Add($tabs)
+    return $tabs
+}
+
 function Global:Get-GroupDeletionPlan {
     <#
       What deleting these groups would cost, one row per group:

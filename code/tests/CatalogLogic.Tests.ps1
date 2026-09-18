@@ -130,6 +130,8 @@ $testableFunctionNames = @(
     # Graph request log formatting (GraphLog.ps1) - pure string work
     "Get-GraphRequestPath",
     "Get-GraphRequestId",
+    # Moving a group of controls onto its own tab (GuiHelpers.ps1) - pure maths
+    "Get-ControlGroupOrigin",
     # Deleting several groups at once (GuiHelpers.ps1) - pure planning work
     "Get-GroupDeletionPlan",
     "Format-GroupDeletionWarning",
@@ -842,6 +844,20 @@ $bothFailedMessage = ''
 try { [void](Get-AppInstallStatusRows -AppId "app-1" -Invoke $bothFailInvoke) } catch { $bothFailedMessage = $_.Exception.Message }
 Assert-True ($bothFailedMessage -like "*beta*" -and $bothFailedMessage -like "*v1.0*") `
     "Get-AppInstallStatusRows: both versions failing reports what each one said" $bothFailedMessage
+
+# -----------------------------------------------------------------
+# Moving a group of controls onto its own tab (GuiHelpers.ps1)
+# -----------------------------------------------------------------
+# A group that sat 600px down a tall panel has to start at the top of its
+# own page, which means subtracting where the group actually began.
+$origin = Get-ControlGroupOrigin -Points @(@{ X = 595; Y = 612 }, @{ X = 15; Y = 275 }, @{ X = 995; Y = 941 })
+Assert-Equal 15 $origin.X "Get-ControlGroupOrigin: the leftmost edge of the group"
+Assert-Equal 275 $origin.Y "Get-ControlGroupOrigin: the topmost edge of the group"
+$emptyOrigin = Get-ControlGroupOrigin -Points @()
+Assert-Equal 0 $emptyOrigin.X "Get-ControlGroupOrigin: an empty group starts at zero, not an error"
+Assert-Equal 0 $emptyOrigin.Y "Get-ControlGroupOrigin: an empty group starts at zero, not an error"
+$oneOrigin = Get-ControlGroupOrigin -Points @(@{ X = 42; Y = 7 })
+Assert-Equal 42 $oneOrigin.X "Get-ControlGroupOrigin: one control is its own origin"
 
 # -----------------------------------------------------------------
 # Deleting several groups at once (GuiHelpers.ps1)

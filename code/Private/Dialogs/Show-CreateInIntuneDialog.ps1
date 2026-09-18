@@ -577,11 +577,16 @@ function Global:Show-CreateInIntuneDialog {
     # merely-hidden sibling.
     $detPanels = @($pnlDetScript, $pnlDetMsi, $pnlDetFile, $pnlDetReg)
     foreach ($p in $detPanels) { $scrollPanel.Controls.Remove($p) }
+    # Which container the chosen panel is attached to. It starts as the flat
+    # panel and becomes the Package tab's page once the tabs are built - a
+    # box, because the switcher below is a closure and has to keep working
+    # after the move rather than holding on to a container that is gone.
+    $detHostBox = @{ Panel = $scrollPanel }
     $UpdateDetPanel = {
         $sel = $cmbDetectionType.SelectedIndex
-        foreach ($p in $detPanels) { $scrollPanel.Controls.Remove($p) }
+        foreach ($p in $detPanels) { if ($p.Parent) { $p.Parent.Controls.Remove($p) } }
         if ($sel -ge 0 -and $sel -lt $detPanels.Count) {
-            $scrollPanel.Controls.Add($detPanels[$sel])
+            $detHostBox.Panel.Controls.Add($detPanels[$sel])
         }
     }.GetNewClosure()
     $cmbDetectionType.Add_SelectedIndexChanged({ & $UpdateDetPanel }.GetNewClosure())
@@ -954,6 +959,71 @@ function Global:Show-CreateInIntuneDialog {
         $grdReturnCodes.Rows[$rowIdx].Cells["Code"].Value = [string]$rc.returnCode
         $grdReturnCodes.Rows[$rowIdx].Cells["Type"].Value = $rc.type
     }
+
+    # Everything above was laid out as one very tall panel and is split into
+    # tabs here, rather than at each control: the positions stay exactly as
+    # they were written, relative to whichever group they belong to, so this
+    # is a regrouping and not a re-layout. Status, log and the buttons stay
+    # below the tabs, outside them, since they belong to the whole dialog.
+    #
+    # $chkForceNew/$chkReplaceContent only exist for a duplicate, which
+    # Convert-PanelToTabs allows for - it ignores $null and puts anything
+    # not listed on the first page rather than losing it.
+    $deployTabs = Convert-PanelToTabs -Dialog $dlg -Panel $scrollPanel -Pages @(
+        @{
+            Title = 'Metadata'
+            Controls = @(
+                $chkForceNew, $chkReplaceContent,
+                $lblName, $txtCreateName, $lblDesc, $txtDesc,
+                $lblPublisher, $txtPublisher, $lblOwner, $txtOwner,
+                $lblDeveloper, $txtDeveloper, $lblInfoUrl, $txtInfoUrl,
+                $lblPrivacyUrl, $txtPrivacyUrl, $lblNotes, $txtNotes
+            )
+        }
+        @{
+            Title = 'Package and detection'
+            Controls = @(
+                $lblPackage, $txtPackagePath, $btnBrowsePackage,
+                $lblInstall, $txtInstall, $lblUninstall, $txtUninstall,
+                $lblDetection, $cmbDetectionType
+            )
+        }
+        @{
+            Title = 'Requirements and behaviour'
+            Controls = @(
+                $lblContext, $cmbContext,
+                $lblArch, $chkArchX86, $chkArchX64, $chkArchArm64,
+                $lblMinOS, $cmbMinOS, $lblMinOSStatus,
+                $lblAdvancedSeparator, $btnSetDefaults, $lblSetDefaultsHint,
+                $lblDeps, $clbDeps,
+                $lblReqs, $lblDiskSpace, $txtDiskSpace, $lblMemory, $txtMemory,
+                $lblProcessors, $txtProcessors, $lblCpuSpeed, $txtCpuSpeed,
+                $lblInstallTime, $txtInstallTime,
+                $lblRestartBehavior, $cmbRestartBehavior, $chkAllowUninstall,
+                $lblReturnCodes, $grdReturnCodes, $btnAddReturnCode, $btnRemoveReturnCode
+            )
+        }
+    )
+
+    # The Package tab is the one group whose old positions don't survive the
+    # move: the package and command fields sat far down the original column,
+    # below metadata that is now a tab of its own, which left the top of the
+    # page empty. Placed here instead - commands on the left, detection on
+    # the right, both starting at the top.
+    $packagePage = $deployTabs.TabPages[1].Controls[0]
+    $lblPackage.Location = New-Object System.Drawing.Point(15,12)
+    $txtPackagePath.Location = New-Object System.Drawing.Point(15,50)
+    $btnBrowsePackage.Location = New-Object System.Drawing.Point(465,49)
+    $lblInstall.Location = New-Object System.Drawing.Point(15,86)
+    $txtInstall.Location = New-Object System.Drawing.Point(15,105)
+    $lblUninstall.Location = New-Object System.Drawing.Point(15,183)
+    $txtUninstall.Location = New-Object System.Drawing.Point(15,202)
+    $lblDetection.Location = New-Object System.Drawing.Point(600,12)
+    $cmbDetectionType.Location = New-Object System.Drawing.Point(600,31)
+    foreach ($p in $detPanels) { $p.Location = New-Object System.Drawing.Point(600,65) }
+    # and the chosen detection panel moves with them
+    $detHostBox.Panel = $packagePage
+    & $UpdateDetPanel
 
     # Requirements, return codes, and install time/restart behavior/
     # allow-uninstall are NOT locked (unlike Install context above) -
