@@ -66,8 +66,25 @@ function Global:Get-GraphErrorRecordMessage {
     $message = Get-InnermostErrorMessage $ErrorRecord.Exception
     $body = ''
     try { $body = [string]$ErrorRecord.ErrorDetails.Message } catch { }
-    if (-not $body -and $ErrorRecord.Exception -and $ErrorRecord.Exception.Data -and $ErrorRecord.Exception.Data['GraphBody']) {
-        $body = [string]$ErrorRecord.Exception.Data['GraphBody']
+    # Every exception from here down, not just the outer one: a failure that
+    # crossed out of a runspace arrives wrapped in EndInvoke's
+    # MethodInvocationException, and the body was stashed on the exception
+    # underneath it (Invoke-LoggedGraphRequest) because ErrorDetails doesn't
+    # survive that crossing.
+    if (-not $body) {
+        $exception = $ErrorRecord.Exception
+        $guard = 0
+        while ($exception -and $guard -lt 10) {
+            try {
+                if ($exception.Data -and $exception.Data['GraphBody']) {
+                    $body = [string]$exception.Data['GraphBody']
+                    break
+                }
+            }
+            catch { }
+            $exception = $exception.InnerException
+            $guard++
+        }
     }
     if ($body) { $message = "$message`n$($body.Trim())" }
     return $message
@@ -282,6 +299,15 @@ function Global:Initialize-GraphLogRunspace {
                     # since there's no ErrorDetails for it to live in.
                     $detail = [string]$_.ErrorDetails.Message
                     if (-not $detail -and $_.Exception.Data -and $_.Exception.Data['GraphBody']) { $detail = [string]$_.Exception.Data['GraphBody'] }
+                    # ErrorDetails does NOT survive leaving this runspace:
+                    # EndInvoke re-wraps the failure and the caller's record
+                    # has none, which is how a refusal reached the dialog as a
+                    # bare "Forbidden" while the body was already in the log.
+                    # Exception.Data travels with the exception object, so the
+                    # body goes there before this is rethrown.
+                    if ($detail -and $_.Exception) {
+                        try { $_.Exception.Data['GraphBody'] = $detail } catch { }
+                    }
                     Write-Information -MessageData @{ IntunePackagerGraphLog = $true; Method = $Method; Uri = $Uri; Milliseconds = $timer.ElapsedMilliseconds; ErrorText = $_.Exception.Message; Detail = $detail } -InformationAction SilentlyContinue
                     throw
                 }

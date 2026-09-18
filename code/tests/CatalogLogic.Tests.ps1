@@ -876,6 +876,43 @@ $fromStreams = Get-GraphRunspaceErrorMessage @($forbiddenRecord)
 Assert-True ($fromStreams -like "*Add DeviceManagementScripts.Read.All or DeviceManagementScripts.ReadWrite.All*") `
     "Get-GraphRunspaceErrorMessage: a refused read names the scopes to add" $fromStreams
 
+# Through an actual runspace, the way every Graph fetch in this app runs.
+# ErrorDetails does NOT survive that crossing - EndInvoke re-wraps the
+# failure and the caller's record has none - so the body is stashed on the
+# exception, which does survive. Asserting on a hand-built ErrorRecord in
+# this process passed for three attempts while the real path stayed broken.
+$crossingRunspace = [runspacefactory]::CreateRunspace()
+$crossingRunspace.Open()
+$crossingShell = [powershell]::Create()
+$crossingShell.Runspace = $crossingRunspace
+# no [void] in front: Windows PowerShell won't chain .AddArgument off it
+$crossingShell.AddScript({
+    param($Body)
+    try {
+        $ex = New-Object System.Exception("Response status code does not indicate success: Forbidden (Forbidden).")
+        $rec = New-Object System.Management.Automation.ErrorRecord($ex, 'GraphFail', 'NotSpecified', $null)
+        $rec.ErrorDetails = New-Object System.Management.Automation.ErrorDetails($Body)
+        throw $rec
+    }
+    catch {
+        $detail = [string]$_.ErrorDetails.Message
+        if ($detail -and $_.Exception) { try { $_.Exception.Data['GraphBody'] = $detail } catch { } }
+        throw
+    }
+}).AddArgument($forbiddenBody) | Out-Null
+$crossingHandle = $crossingShell.BeginInvoke()
+$crossedMessage = ''
+try { [void]$crossingShell.EndInvoke($crossingHandle) }
+catch { $crossedMessage = Get-GraphErrorRecordMessage $_ }
+$crossingShell.Dispose()
+$crossingRunspace.Close()
+Assert-True ($crossedMessage -like "*Forbidden (Forbidden)*") `
+    "Get-GraphErrorRecordMessage: a failure out of a runspace keeps its status text" $crossedMessage
+Assert-True ($crossedMessage -like "*DeviceManagementScripts.Read.All*") `
+    "Get-GraphErrorRecordMessage: and Graph's body, which ErrorDetails loses on the way out" $crossedMessage
+Assert-True ((ConvertTo-FriendlyGraphError $crossedMessage) -like "*Add DeviceManagementScripts.Read.All*") `
+    "the whole chain: a refusal crossing a runspace still names the scopes to add"
+
 Assert-Equal "DeviceManagementScripts.Read.All or DeviceManagementScripts.ReadWrite.All (application)" `
     (Get-GraphPermissionHint 'GET https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts -> Forbidden - {"Message":"Application is not authorized to perform this operation. Application must have one of the following scopes: DeviceManagementScripts.Read.All, DeviceManagementScripts.ReadWrite.All - Operation ID"}') `
     "Get-GraphPermissionHint: prefers the scopes Graph named over the guess from the address"
