@@ -1,5 +1,9 @@
 # Intune App Catalog & Deployment
 
+[![tests](https://github.com/monsama/intune-app-catalog/actions/workflows/tests.yml/badge.svg)](https://github.com/monsama/intune-app-catalog/actions/workflows/tests.yml)
+[![license: GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue)](LICENSE)
+[![PowerShell 5.1 and 7](https://img.shields.io/badge/PowerShell-5.1%20%7C%207-5391FE)](#requirements)
+
 A Windows desktop app (PowerShell + WinForms, no install) for keeping a
 **catalog of Win32 apps as files**, packaging them, and deploying and
 assigning them in Microsoft Intune – without clicking through the portal
@@ -69,10 +73,23 @@ The platform scripts Intune runs on enrolled devices:
   sign-in. Settings... > First time? Setup guide... walks through it.
 - **IntuneWinAppUtil.exe** is downloaded automatically when packaging.
 
+## Download
+
+Take the zip from the [latest release](https://github.com/monsama/intune-app-catalog/releases/latest):
+it holds just what's needed to run, without the tests and CI files.
+
+**Code > Download ZIP** on the repository page works too, and gives you the
+whole repository including the test suites - handy if you want to run them,
+noise if you don't.
+
+Either way, Windows marks a downloaded zip as blocked. Unblock it before
+unpacking (right-click the zip > Properties > Unblock), or PowerShell
+refuses to run the scripts inside.
+
 ## Getting started
 
-1. Download the release zip (or clone this repo) and unblock it if Windows
-   marked it as downloaded.
+1. Download the zip (see above) or clone this repo, and unblock it if
+   Windows marked it as downloaded.
 2. Run `IntuneDeployment.ps1` – double-click it, or:
    ```powershell
    pwsh -ExecutionPolicy Bypass -File .\IntuneDeployment.ps1
