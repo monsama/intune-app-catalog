@@ -642,6 +642,7 @@ function Global:Show-AppEditor {
     $dlg.Controls.Add($reqGroup.Box)
     $dlg.Controls.Add($availGroup.Box)
     $dlg.Controls.Add($uninstGroup.Box)
+    $dlg.Controls.Add($excludeGroup.Box)
 
     # Pulls this app's CURRENT live group assignments from Intune and sets
     # the three pickers above to match exactly - the read-only counterpart

@@ -9,7 +9,7 @@ look like.
 The catalog is one JSON file per app in a folder you choose, so it can live
 in git next to everything else you version.
 
-![Platform scripts](docs/images/platform-scripts.png)
+![The app catalog](docs/images/main-window.png)
 
 ## What it does
 
@@ -45,7 +45,18 @@ in git next to everything else you version.
   request-id. `[RUN]` lines show the winget and packaging commands.
 - Tokens, headers and request bodies are never logged.
 
+One app, as the catalog stores it - name, Winget ID, App ID, and the groups
+it's required for, available to, uninstalled from, and excluded from:
+
+![The app editor](docs/images/app-editor.png)
+
+Who actually has an app, and which devices failed:
+
 ![Install status](docs/images/install-status.png)
+
+The platform scripts Intune runs on enrolled devices:
+
+![Platform scripts](docs/images/platform-scripts.png)
 
 ## Requirements
 
