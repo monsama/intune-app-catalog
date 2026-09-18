@@ -841,7 +841,7 @@ function Global:Show-CreateInIntuneDialog {
 
     # --- Install experience extras ---
     $lblInstallTime = New-Object System.Windows.Forms.Label
-    $lblInstallTime.Text = "Install time required (mins, steps of 5)"
+    $lblInstallTime.Text = "Install time required (mins)"
     $lblInstallTime.Location = New-Object System.Drawing.Point(595,540)
     $lblInstallTime.AutoSize = $true
     $scrollPanel.Controls.Add($lblInstallTime)

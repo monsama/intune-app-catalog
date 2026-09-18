@@ -189,7 +189,9 @@ function Global:Show-BatchEditMetadataDialog {
     $fieldsY += 30
 
     $chkEnableInstallTime = New-Object System.Windows.Forms.CheckBox
-    $chkEnableInstallTime.Text = "Install time required (mins, steps of 5)"
+    $chkEnableInstallTime.Text = "Install time required (mins)"
+    $installTimeStepTip = New-Object System.Windows.Forms.ToolTip
+    $installTimeStepTip.SetToolTip($chkEnableInstallTime, "Intune keeps this in steps of 5 minutes (61 becomes 60) and at most 1440. The confirmation shows the value that will really be stored.")
     $chkEnableInstallTime.Location = New-Object System.Drawing.Point(365,$fieldsY)
     $chkEnableInstallTime.Size = New-Object System.Drawing.Size(190,22)
     $dlg.Controls.Add($chkEnableInstallTime)
@@ -691,6 +693,7 @@ function Global:Show-BatchEditMetadataDialog {
         if ($chkEnableProcessors.Checked)     { $changes.MinProcessors = [int]$txtProcessors.Text.Trim(); $changeSummary.Add("Min. processors -> $($changes.MinProcessors)") }
         if ($chkEnableCpuSpeed.Checked)       { $changes.MinCpuSpeedMHz = [int]$txtCpuSpeed.Text.Trim(); $changeSummary.Add("Min. CPU speed (MHz) -> $($changes.MinCpuSpeedMHz)") }
         if ($chkEnableInstallTime.Checked) {
+            # (tooltip on the checkbox says Intune keeps 5-minute steps)
             # Intune keeps this in 5-minute steps - the confirmation shows
             # the value that will really be stored.
             $changes.InstallTimeMinutes = (Get-NormalizedInstallTimeMinutes $txtInstallTime.Text)
