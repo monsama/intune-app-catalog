@@ -20,11 +20,16 @@
 .PARAMETER AppHost
     Which PowerShell(s) to run the stand-in under. Default: both.
 
+.PARAMETER ShotDir
+    Optional folder for a screenshot of the question, which is the one thing
+    worth seeing when this fails somewhere with no screen to look at.
+
 .EXAMPLE
     pwsh -NoProfile -File code/tests/gui/CloseConfirmation.GuiTests.ps1
 #>
 param(
-    [string[]]$AppHost = @('pwsh', 'powershell')
+    [string[]]$AppHost = @('pwsh', 'powershell'),
+    [string]$ShotDir
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'GuiTestDriver.ps1')
@@ -36,7 +41,14 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
     Write-Host "`n=== Stop and close? - running under $exe ===" -ForegroundColor Cyan
     $statusFile = Join-Path ([IO.Path]::GetTempPath()) ("intune-app-catalog-closetest-" + [guid]::NewGuid().ToString('N').Substring(0, 8) + ".txt")
     $p = Start-Process $exe -ArgumentList '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'CloseConfirmationHarness.ps1'), $repoRoot, $statusFile -PassThru
-    $ctx = [pscustomobject]@{ Process = $p; Pid = [uint32]$p.Id; Main = [IntPtr]::Zero }
+    # ShotDir/ShotN are what Save-AppShot writes to - the other tests get them
+    # from Start-AppUnderTest, which this one doesn't use.
+    $ctx = [pscustomobject]@{ Process = $p; Pid = [uint32]$p.Id; Main = [IntPtr]::Zero; ShotDir = $null; ShotN = 0 }
+    if ($ShotDir) {
+        $shots = Join-Path $ShotDir $script:currentHost
+        [void][IO.Directory]::CreateDirectory($shots)
+        $ctx.ShotDir = $shots
+    }
     $childPid = $null
     try {
         $dlg = Wait-AppDialog $ctx 'Close confirmation test - running' 60
@@ -51,6 +63,7 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
             $no = Get-ChildWindow $q 'No'
             $defId = $W32::DefaultButtonId($q)
             Assert-True ($defId -eq 7) "No is the default button, so Enter doesn't stop the step" "default button id $defId (7 = No)"
+            if ($ctx.ShotDir) { Save-AppShot $ctx $q 'close question' }
             $W32::Click($no)
             Start-Sleep -Seconds 1
             Assert-True ($W32::IsWindow($dlg) -and $W32::IsWindowVisible($dlg)) "answering No keeps the dialog open"

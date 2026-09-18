@@ -144,7 +144,7 @@ function Global:Show-FavoriteGroupsManager {
         if ($dlg.DialogResult -eq [System.Windows.Forms.DialogResult]::OK) { return }
         if ($discardConfirmedBox.Value) { return }
         if (& $HasUnsavedFavoriteChanges) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
+            $r = [System.Windows.Forms.MessageBox]::Show($s,
                 "Your changes to the favorite groups aren't saved. Discard them?",
                 "Discard changes?", "YesNo", "Warning", "Button2")
             if ($r -ne "Yes") { $e.Cancel = $true }

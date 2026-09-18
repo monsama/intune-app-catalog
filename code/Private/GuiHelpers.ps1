@@ -651,15 +651,24 @@ function Global:Register-CloseConfirmation {
         [scriptblock]$GetQuestion,
         [scriptblock]$OnConfirmed
     )
+    # $true while the question is on screen. Without it, a second attempt to
+    # close (the Close button, Esc, the X) opens ANOTHER question on top of
+    # the first - they stack up and the window looks stuck.
+    $askingBox = @{ Value = $false }
     $Dialog.Add_FormClosing({
         param($sender, $e)
         if ($e.Cancel) { return }
+        if ($askingBox.Value) { $e.Cancel = $true; return }
         $question = & $GetQuestion
         if (-not $question) { return }
         $title = "Stop and close?"
         $text = [string]$question
         if ($question -is [hashtable]) { $title = [string]$question.Title; $text = [string]$question.Text }
-        $r = [System.Windows.Forms.MessageBox]::Show($text, $title, "YesNo", "Warning", "Button2")
+        # $sender as the owner: a message box without one doesn't disable the
+        # window behind it, so that window keeps accepting clicks.
+        $askingBox.Value = $true
+        try { $r = [System.Windows.Forms.MessageBox]::Show($sender, $text, $title, "YesNo", "Warning", "Button2") }
+        finally { $askingBox.Value = $false }
         if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { $e.Cancel = $true; return }
         if ($OnConfirmed) { try { & $OnConfirmed } catch { } }
     }.GetNewClosure())

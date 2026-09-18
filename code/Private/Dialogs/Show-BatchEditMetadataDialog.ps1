@@ -45,7 +45,7 @@ function Global:Show-BatchEditMetadataDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Batch edit Intune fields"
-    $dlg.ClientSize = New-Object System.Drawing.Size(950, 1190)
+    $dlg.ClientSize = New-Object System.Drawing.Size(1180, 900)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -54,11 +54,12 @@ function Global:Show-BatchEditMetadataDialog {
     $lblIntro = New-Object System.Windows.Forms.Label
     $lblIntro.Text = "Changes only the checked field(s) on the checked apps, then pushes each straight to Intune - everything else is left as-is. Lists every eligible app, not just what's selected in the main grid (that only pre-checks rows here). Install/uninstall commands and the detection rule aren't offered - those are per-app, not safe to set to one shared value."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
-    $lblIntro.Size = New-Object System.Drawing.Size(920,74)
+    $lblIntro.Size = New-Object System.Drawing.Size(1150,74)
     $dlg.Controls.Add($lblIntro)
 
     $lblApps = New-Object System.Windows.Forms.Label
     $lblApps.Text = "Apps to change"
+    $lblApps.Font = New-Object System.Drawing.Font($dlg.Font, [System.Drawing.FontStyle]::Bold)
     $lblApps.Location = New-Object System.Drawing.Point(15,92)
     $lblApps.AutoSize = $true
     $dlg.Controls.Add($lblApps)
@@ -90,7 +91,8 @@ function Global:Show-BatchEditMetadataDialog {
     $dlg.Controls.Add($btnSelectNone)
 
     $lblFields = New-Object System.Windows.Forms.Label
-    $lblFields.Text = "Fields to change (check a field to include it)"
+    $lblFields.Text = "Requirements and install behaviour"
+    $lblFields.Font = New-Object System.Drawing.Font($dlg.Font, [System.Drawing.FontStyle]::Bold)
     $lblFields.Location = New-Object System.Drawing.Point(365,92)
     $lblFields.AutoSize = $true
     $dlg.Controls.Add($lblFields)
@@ -127,7 +129,7 @@ function Global:Show-BatchEditMetadataDialog {
     $dlg.Controls.Add($chkEnableMinOS)
     $cmbMinOS = New-Object System.Windows.Forms.ComboBox
     $cmbMinOS.Location = New-Object System.Drawing.Point(560,$fieldsY)
-    $cmbMinOS.Size = New-Object System.Drawing.Size(260,24)
+    $cmbMinOS.Size = New-Object System.Drawing.Size(255,24)
     $cmbMinOS.DropDownStyle = "DropDownList"
     # Same full set Show-CreateInIntuneDialog/Show-DefaultAppSettingsDialog's
     # own $minOsMap offer - kept in sync manually, same as every other copy
@@ -209,7 +211,7 @@ function Global:Show-BatchEditMetadataDialog {
     $dlg.Controls.Add($chkEnableRestartBehavior)
     $cmbRestartBehavior = New-Object System.Windows.Forms.ComboBox
     $cmbRestartBehavior.Location = New-Object System.Drawing.Point(560,$fieldsY)
-    $cmbRestartBehavior.Size = New-Object System.Drawing.Size(260,24)
+    $cmbRestartBehavior.Size = New-Object System.Drawing.Size(255,24)
     $cmbRestartBehavior.DropDownStyle = "DropDownList"
     $restartBehaviorMap = [ordered]@{
         "Determine behavior based on return codes"      = "basedOnReturnCode"
@@ -242,7 +244,7 @@ function Global:Show-BatchEditMetadataDialog {
     $fieldsY += 22
     $grdReturnCodes = New-Object System.Windows.Forms.DataGridView
     $grdReturnCodes.Location = New-Object System.Drawing.Point(365,$fieldsY)
-    $grdReturnCodes.Size = New-Object System.Drawing.Size(425,120)
+    $grdReturnCodes.Size = New-Object System.Drawing.Size(375,110)
     $grdReturnCodes.AllowUserToAddRows = $false
     $grdReturnCodes.AllowUserToDeleteRows = $false
     $grdReturnCodes.RowHeadersVisible = $false
@@ -269,7 +271,7 @@ function Global:Show-BatchEditMetadataDialog {
     }
     $btnAddReturnCode = New-Object System.Windows.Forms.Button
     $btnAddReturnCode.Text = "Add row"
-    $btnAddReturnCode.Location = New-Object System.Drawing.Point(800,$fieldsY)
+    $btnAddReturnCode.Location = New-Object System.Drawing.Point(365,($fieldsY+116))
     $btnAddReturnCode.Size = New-Object System.Drawing.Size(90,26)
     $dlg.Controls.Add($btnAddReturnCode)
     $btnAddReturnCode.Add_Click({
@@ -278,13 +280,13 @@ function Global:Show-BatchEditMetadataDialog {
     }.GetNewClosure())
     $btnRemoveReturnCode = New-Object System.Windows.Forms.Button
     $btnRemoveReturnCode.Text = "Remove row"
-    $btnRemoveReturnCode.Location = New-Object System.Drawing.Point(800,($fieldsY+30))
+    $btnRemoveReturnCode.Location = New-Object System.Drawing.Point(465,($fieldsY+116))
     $btnRemoveReturnCode.Size = New-Object System.Drawing.Size(90,26)
     $dlg.Controls.Add($btnRemoveReturnCode)
     $btnRemoveReturnCode.Add_Click({
         if ($grdReturnCodes.CurrentRow) { $grdReturnCodes.Rows.RemoveAt($grdReturnCodes.CurrentRow.Index) }
     }.GetNewClosure())
-    $fieldsY += 130
+    $fieldsY += 152
 
     $chkEnableDependencies = New-Object System.Windows.Forms.CheckBox
     $chkEnableDependencies.Text = "Dependencies (replaces the whole list)"
@@ -294,7 +296,7 @@ function Global:Show-BatchEditMetadataDialog {
     $fieldsY += 22
     $clbDeps = New-Object System.Windows.Forms.CheckedListBox
     $clbDeps.Location = New-Object System.Drawing.Point(365,$fieldsY)
-    $clbDeps.Size = New-Object System.Drawing.Size(560,70)
+    $clbDeps.Size = New-Object System.Drawing.Size(375,84)
     $clbDeps.CheckOnClick = $true
     $dlg.Controls.Add($clbDeps)
     # A dependency on itself is silently dropped per-app at run time below
@@ -307,7 +309,15 @@ function Global:Show-BatchEditMetadataDialog {
     # Text fields Intune shows in Company Portal, plus the commands. Same
     # tick-to-change pattern as the requirement fields above: an unticked
     # field is left exactly as each app already has it.
-    $fieldsY += 100
+    $lblTextFields = New-Object System.Windows.Forms.Label
+    $lblTextFields.Text = "Description and commands"
+    $lblTextFields.Font = New-Object System.Drawing.Font($dlg.Font, [System.Drawing.FontStyle]::Bold)
+    $lblTextFields.Location = New-Object System.Drawing.Point(830,92)
+    $lblTextFields.AutoSize = $true
+    $dlg.Controls.Add($lblTextFields)
+
+    $textX = 830
+    $textY = 116
     $textFieldControls = [ordered]@{}
     foreach ($field in @(
         @{ Key = 'Description';      Label = 'Description' }
@@ -322,25 +332,25 @@ function Global:Show-BatchEditMetadataDialog {
     )) {
         $chk = New-Object System.Windows.Forms.CheckBox
         $chk.Text = $field.Label
-        $chk.Location = New-Object System.Drawing.Point(365,$fieldsY)
-        $chk.Size = New-Object System.Drawing.Size(190,22)
+        $chk.Location = New-Object System.Drawing.Point($textX,$textY)
+        $chk.Size = New-Object System.Drawing.Size(335,20)
         $dlg.Controls.Add($chk)
         $txt = New-Object System.Windows.Forms.TextBox
-        $txt.Location = New-Object System.Drawing.Point(560,$fieldsY)
-        $txt.Size = New-Object System.Drawing.Size(360,24)
+        $txt.Location = New-Object System.Drawing.Point(($textX + 18),($textY + 20))
+        $txt.Size = New-Object System.Drawing.Size(317,24)
         $dlg.Controls.Add($txt)
         $textFieldControls[$field.Key] = @{ Enable = $chk; Text = $txt }
-        $fieldsY += 30
+        $textY += 52
     }
 
     $chkEnableInstallContext = New-Object System.Windows.Forms.CheckBox
     $chkEnableInstallContext.Text = "Install context"
-    $chkEnableInstallContext.Location = New-Object System.Drawing.Point(365,$fieldsY)
-    $chkEnableInstallContext.Size = New-Object System.Drawing.Size(190,22)
+    $chkEnableInstallContext.Location = New-Object System.Drawing.Point($textX,$textY)
+    $chkEnableInstallContext.Size = New-Object System.Drawing.Size(335,20)
     $dlg.Controls.Add($chkEnableInstallContext)
     $cmbInstallContext = New-Object System.Windows.Forms.ComboBox
     $cmbInstallContext.DropDownStyle = "DropDownList"
-    $cmbInstallContext.Location = New-Object System.Drawing.Point(560,$fieldsY)
+    $cmbInstallContext.Location = New-Object System.Drawing.Point(($textX + 18),($textY + 20))
     $cmbInstallContext.Size = New-Object System.Drawing.Size(180,24)
     [void]$cmbInstallContext.Items.Add("System")
     [void]$cmbInstallContext.Items.Add("User")
@@ -349,32 +359,32 @@ function Global:Show-BatchEditMetadataDialog {
 
     $chkCatalogOnly = New-Object System.Windows.Forms.CheckBox
     $chkCatalogOnly.Text = "Catalog only - don't send anything to Intune"
-    $chkCatalogOnly.Location = New-Object System.Drawing.Point(15,628)
+    $chkCatalogOnly.Location = New-Object System.Drawing.Point(15,534)
     $chkCatalogOnly.Size = New-Object System.Drawing.Size(330,22)
     $catalogOnlyTip = New-Object System.Windows.Forms.ToolTip
     $catalogOnlyTip.SetToolTip($chkCatalogOnly, "Applies the ticked fields to the catalog files only. Apps without an App ID can be edited this way too - they simply aren't in Intune yet.")
     $dlg.Controls.Add($chkCatalogOnly)
 
-    $lblStatus.Location = New-Object System.Drawing.Point(15,1000)
-    $lblStatus.Size = New-Object System.Drawing.Size(920,20)
+    $lblStatus.Location = New-Object System.Drawing.Point(15,700)
+    $lblStatus.Size = New-Object System.Drawing.Size(1150,20)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
     $progressBar = New-Object System.Windows.Forms.ProgressBar
-    $progressBar.Location = New-Object System.Drawing.Point(15,1024)
-    $progressBar.Size = New-Object System.Drawing.Size(920,12)
+    $progressBar.Location = New-Object System.Drawing.Point(15,724)
+    $progressBar.Size = New-Object System.Drawing.Size(1150,12)
     $progressBar.Style = "Continuous"
     $dlg.Controls.Add($progressBar)
 
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbLog.Location = New-Object System.Drawing.Point(15,1040)
-    $rtbLog.Size = New-Object System.Drawing.Size(920,90)
+    $rtbLog.Location = New-Object System.Drawing.Point(15,742)
+    $rtbLog.Size = New-Object System.Drawing.Size(1150,96)
     Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $btnRun = New-Object System.Windows.Forms.Button
     $btnRun.Text = "Apply to Intune..."
-    $btnRun.Location = New-Object System.Drawing.Point(755,1136)
+    $btnRun.Location = New-Object System.Drawing.Point(985,850)
     $btnRun.Size = New-Object System.Drawing.Size(180,32)
     $dlg.Controls.Add($btnRun)
     $runTip = New-Object System.Windows.Forms.ToolTip
@@ -382,7 +392,7 @@ function Global:Show-BatchEditMetadataDialog {
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(665,1136)
+    $btnClose.Location = New-Object System.Drawing.Point(895,850)
     $btnClose.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnClose)
 

@@ -275,7 +275,9 @@ function Global:Show-CertificateSetupDialog {
     $btnCancel.Size = New-Object System.Drawing.Size(80,30)
     $dlg.Controls.Add($btnCancel)
 
-    $btnSetupGuide.Add_Click({ Show-AppRegistrationGuideDialog }.GetNewClosure())
+    # -Owner so Settings stays usable while the guide is open - the steps
+    # exist to be followed IN Settings.
+    $btnSetupGuide.Add_Click({ Show-AppRegistrationGuideDialog -Owner $dlg }.GetNewClosure())
 
     $btnPick.Add_Click({
         try {
@@ -763,13 +765,16 @@ function Global:Show-CertificateSetupDialog {
 
     # Save's checks and result - also used when closing asks "Save changes?"
     # and the answer is Yes. Returns $true when saved.
+    # -Quiet: closing asks its own question about what to do next, so the
+    # complaint about missing values isn't shown twice.
     $performSave = {
+        param([switch]$Quiet)
         if (& $anyCertOpRunning) {
-            [System.Windows.Forms.MessageBox]::Show("An operation is still running - wait for it to finish first.", "Please wait", "OK", "Information") | Out-Null
-            return
+            if (-not $Quiet) { [System.Windows.Forms.MessageBox]::Show("An operation is still running - wait for it to finish first.", "Please wait", "OK", "Information") | Out-Null }
+            return $false
         }
         if (-not $txtTenant.Text.Trim() -or -not $txtClient.Text.Trim() -or -not $txtThumb.Text.Trim()) {
-            [System.Windows.Forms.MessageBox]::Show("Tenant ID, Client ID, and thumbprint are all required.", "Missing values", "OK", "Warning") | Out-Null
+            if (-not $Quiet) { [System.Windows.Forms.MessageBox]::Show("Tenant ID, Client ID, and thumbprint are all required.", "Missing values", "OK", "Warning") | Out-Null }
             return $false
         }
         $saveResultBox.TenantId   = $txtTenant.Text.Trim()
@@ -787,22 +792,52 @@ function Global:Show-CertificateSetupDialog {
     # Alt+F4 all end up here. A CancelButton closes the dialog on its own
     # after its click handler, so asking in the handler couldn't have kept
     # the dialog open anyway.
+    # $true while a question about closing is on screen - a second attempt
+    # to close would otherwise stack another one on top of it.
+    $askingBox = @{ Value = $false }
     $dlg.Add_FormClosing({
         param($s, $e)
+        if ($askingBox.Value) { $e.Cancel = $true; return }
         if (& $anyCertOpRunning) {
-            [System.Windows.Forms.MessageBox]::Show("An operation is still running - wait for it to finish first.", "Please wait", "OK", "Information") | Out-Null
+            $askingBox.Value = $true
+            try { [System.Windows.Forms.MessageBox]::Show($s, "An operation is still running - wait for it to finish first.", "Please wait", "OK", "Information") | Out-Null }
+            finally { $askingBox.Value = $false }
             $e.Cancel = $true
             return
         }
         if ($saveResultBox.Saved -or $discardConfirmedBox.Value) { return }
         if (& $HasUnsavedConnectionChanges) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "Save your changes to the Tenant ID, Client ID or certificate thumbprint?`n`nIf you don't, the rest of the app (Deploy, Sync, Assign, ...) keeps using the previously saved values - 'Test connection' doesn't save anything.",
-                "Save changes?", "YesNoCancel", "Warning")
+            $askingBox.Value = $true
+            try {
+                $r = [System.Windows.Forms.MessageBox]::Show($s,
+                    "Save your changes to the Tenant ID, Client ID or certificate thumbprint?`n`nIf you don't, the rest of the app (Deploy, Sync, Assign, ...) keeps using the previously saved values - 'Test connection' doesn't save anything.",
+                    "Save changes?", "YesNoCancel", "Warning")
+            }
+            finally { $askingBox.Value = $false }
             if ($r -eq [System.Windows.Forms.DialogResult]::Yes) {
                 $closingBox.Value = $true
-                try { if (-not (& $performSave)) { $e.Cancel = $true } }
+                $saved = $false
+                try { $saved = [bool](& $performSave -Quiet) }
                 finally { $closingBox.Value = $false }
+                if (-not $saved) {
+                    # Without this the window is a trap: saving can't succeed
+                    # with a field still empty, so every attempt to close
+                    # asked the same question again, for ever.
+                    $why = if (& $anyCertOpRunning) {
+                        "An operation is still running, so the settings can't be saved yet."
+                    } else {
+                        "Tenant ID, Client ID and certificate thumbprint are all required, and one of them is still empty."
+                    }
+                    $askingBox.Value = $true
+                    try {
+                        $r2 = [System.Windows.Forms.MessageBox]::Show($s,
+                            "$why`n`nClose anyway and lose the changes made here?",
+                            "Not saved", "YesNo", "Warning", "Button2")
+                    }
+                    finally { $askingBox.Value = $false }
+                    if ($r2 -eq [System.Windows.Forms.DialogResult]::Yes) { $discardConfirmedBox.Value = $true }
+                    else { $e.Cancel = $true }
+                }
             }
             elseif ($r -ne [System.Windows.Forms.DialogResult]::No) { $e.Cancel = $true }
         }

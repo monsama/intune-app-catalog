@@ -150,7 +150,23 @@ function Global:Get-AppInstallStatusRows {
     try {
         $skip = 0
         while ($true) {
-            $body = @{ filter = "(ApplicationId eq '$AppId')"; skip = $skip; top = $PageSize }
+            # select and orderBy aren't optional: without them the report
+            # endpoint answers BadRequest (confirmed against a live tenant).
+            # The columns are the ones the portal's own "Device install
+            # status" view asks for; ConvertTo-InstallStatusRow copes with
+            # a tenant that returns a different subset.
+            $body = @{
+                select  = @(
+                    'DeviceName', 'UserPrincipalName', 'UserName', 'Platform', 'AppVersion',
+                    'DeviceId', 'UserId', 'ApplicationId', 'InstallState', 'InstallStateDetail',
+                    'AppInstallState', 'AppInstallStateDetails', 'ErrorCode', 'HexErrorCode',
+                    'LastModifiedDateTime'
+                )
+                filter  = "(ApplicationId eq '$AppId')"
+                orderBy = @()
+                skip    = $skip
+                top     = $PageSize
+            }
             $page = & $Invoke "https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceInstallStatusReport" "POST" $body
             $pageRows = @(ConvertFrom-GraphReportTable $page)
             foreach ($r in $pageRows) { $rows.Add((ConvertTo-InstallStatusRow $r)) }
@@ -163,7 +179,11 @@ function Global:Get-AppInstallStatusRows {
     catch {
         # Older tenants, or a renamed report: the pre-2023 endpoint still
         # answers on some, so it's worth one try before giving up.
+        # Graph's own response body says WHICH property it disliked, so it
+        # goes into the message - "BadRequest" alone is undiagnosable.
         $reportError = $_.Exception.Message
+        $reportDetail = [string]$_.ErrorDetails.Message
+        if ($reportDetail) { $reportError = "$reportError`n$($reportDetail.Trim())" }
         $rows.Clear()
         try {
             $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$AppId/deviceStatuses"

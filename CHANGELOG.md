@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- **"Save changes?" no longer comes back over and over.** The question was
+  asked without owning the window behind it, so every further Close or Esc
+  stacked another copy of it, and answering Yes with an empty Tenant ID,
+  Client ID or thumbprint left the window open with nothing to click. The
+  question now blocks its own window, and when the settings can't be saved
+  it says why and offers to close and lose the changes. The same ownership
+  fix applies to the app editor, the favorite groups manager, the main
+  window and every dialog that asks before closing.
+- **The first-time setup guide is now a separate window**, opened beside
+  Settings instead of on top of it, so the steps can be read while the
+  fields are filled in. It closes with Settings.
+- **Install status** works again: the report Intune builds needs `select`
+  and `orderBy` in the request, and without them every lookup came back as
+  BadRequest.
+- **Batch edit Intune fields** is laid out in three columns – the apps, the
+  requirements and install behaviour, and the description and commands –
+  with each text field's label above its box, instead of one very tall
+  column.
+
 ## 1.3
 
 ### Fixes from a live tenant
