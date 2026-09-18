@@ -130,6 +130,8 @@ $testableFunctionNames = @(
     # Graph request log formatting (GraphLog.ps1) - pure string work
     "Get-GraphRequestPath",
     "Get-GraphRequestId",
+    "Get-GraphErrorBodyMessage",
+    "Get-InnermostErrorMessage",
     "ConvertTo-GraphLogLine",
     "ConvertTo-GraphReadSummary",
     "Format-LogDuration",
@@ -666,6 +668,32 @@ Assert-Equal "[GRAPH] DELETE /beta/x -> FAILED (40 ms): NotFound (Not Found) (re
     "ConvertTo-GraphLogLine: a failed request - first line of the error plus Graph's request-id"
 Assert-True ((ConvertTo-GraphLogLine -Method GET -Uri "https://graph.microsoft.com/v1.0/me" -Milliseconds 1 -ErrorText ("e" * 500)).Length -lt 300) `
     "ConvertTo-GraphLogLine: a huge error message is shortened"
+
+# "BadRequest (Bad Request)" says nothing; Graph's body says which property
+# it disliked, and that's the whole point of reading the log.
+Assert-Equal "Invalid select column: Foo" (Get-GraphErrorBodyMessage '{"error":{"code":"BadRequest","message":"Invalid select column: Foo"}}') `
+    "Get-GraphErrorBodyMessage: the message out of a Graph error body"
+Assert-Equal "Plain shape" (Get-GraphErrorBodyMessage '{"message":"Plain shape"}') `
+    "Get-GraphErrorBodyMessage: a body that isn't wrapped in 'error'"
+Assert-Equal "Not JSON at all" (Get-GraphErrorBodyMessage 'gateway said "message": "Not JSON at all" and stopped') `
+    "Get-GraphErrorBodyMessage: falls back to matching text when the body isn't JSON"
+Assert-Null (Get-GraphErrorBodyMessage '') "Get-GraphErrorBodyMessage: nothing to add for an empty body"
+Assert-Null (Get-GraphErrorBodyMessage '<html>503</html>') "Get-GraphErrorBodyMessage: nothing to add when there's no message"
+$badRequestLine = ConvertTo-GraphLogLine -Method POST -Uri "https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceInstallStatusReport" `
+    -Milliseconds 323 -ErrorText "Response status code does not indicate success: BadRequest (Bad Request)." `
+    -Detail '{"error":{"code":"BadRequest","message":"Invalid select column: AppInstallState"}}'
+Assert-True ($badRequestLine -like "*Invalid select column: AppInstallState*") `
+    "ConvertTo-GraphLogLine: a BadRequest carries Graph's own explanation" $badRequestLine
+
+# A failure inside a runspace arrives wrapped in EndInvoke plumbing
+$wrapped = New-Object System.Management.Automation.MethodInvocationException(
+    'Exception calling "EndInvoke" with "1" argument(s): "Could not read the install status report"',
+    (New-Object System.InvalidOperationException("Could not read the install status report")))
+Assert-Equal "Could not read the install status report" (Get-InnermostErrorMessage $wrapped) `
+    "Get-InnermostErrorMessage: unwraps the EndInvoke wrapper"
+Assert-Equal "plain" (Get-InnermostErrorMessage (New-Object System.Exception("plain"))) `
+    "Get-InnermostErrorMessage: an unwrapped exception is returned as is"
+Assert-Equal "" (Get-InnermostErrorMessage $null) "Get-InnermostErrorMessage: no exception, no message"
 
 Assert-Null (ConvertTo-GraphReadSummary -Count 0 -Milliseconds 0) `
     "ConvertTo-GraphReadSummary: no line when there were no reads"

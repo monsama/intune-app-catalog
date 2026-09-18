@@ -36,6 +36,53 @@ function Global:Get-GraphRequestId {
     return $null
 }
 
+function Global:Get-InnermostErrorMessage {
+    <#
+      The message of the exception that actually went wrong, not the
+      plumbing that carried it. A failure inside a runspace surfaces as
+      Exception calling "EndInvoke" with "1" argument(s): "<the real one>"
+      which tells the reader nothing about their tenant.
+    #>
+    param($Exception)
+    if ($null -eq $Exception) { return '' }
+    try {
+        $inner = $Exception.GetBaseException()
+        if ($inner -and $inner.Message) { return [string]$inner.Message }
+    }
+    catch { }
+    return [string]$Exception.Message
+}
+
+function Global:Get-GraphErrorBodyMessage {
+    <#
+      The sentence out of a Graph error body that says what was actually
+      wrong - {"error":{"code":"BadRequest","message":"Invalid select
+      column: Foo"}} -> "Invalid select column: Foo".
+
+      Parsed as JSON where possible and matched as text where not, since a
+      gateway or proxy can answer with something that isn't Graph's shape.
+      Returns $null when there's nothing worth adding.
+    #>
+    param([string]$Detail)
+    if ([string]::IsNullOrWhiteSpace($Detail)) { return $null }
+    $message = $null
+    try {
+        $body = $Detail | ConvertFrom-Json -ErrorAction Stop
+        $message = if ($body.error -and $body.error.message) { [string]$body.error.message }
+                   elseif ($body.message) { [string]$body.message }
+    }
+    catch {
+        if ($Detail -match '"message"\s*:\s*"((?:[^"\\]|\\.)*)"') {
+            $message = $Matches[1] -replace '\\"', '"' -replace '\\r?\\n', ' ' -replace '\\\\', '\'
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($message)) { return $null }
+    # one line, and short enough to sit on the end of the status line
+    $message = (($message -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
+    if ($message.Length -gt 300) { $message = $message.Substring(0, 297) + '...' }
+    return $message
+}
+
 function Global:ConvertTo-GraphLogLine {
     <#
       [GRAPH] PATCH /beta/deviceAppManagement/mobileApps/<id> -> OK (310 ms)
@@ -48,6 +95,11 @@ function Global:ConvertTo-GraphLogLine {
     $reason = (([string]$ErrorText -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1)
     if ($reason.Length -gt 200) { $reason = $reason.Substring(0, 197) + '...' }
     $line += " -> FAILED ($Milliseconds ms): $reason"
+    # "BadRequest (Bad Request)" on its own is undiagnosable. Graph's response
+    # body says which property it disliked, so that sentence is worth more
+    # than the whole status line - see Get-GraphErrorBodyMessage.
+    $why = Get-GraphErrorBodyMessage $Detail
+    if ($why -and $reason -notlike "*$why*") { $line += " - $why" }
     $requestId = Get-GraphRequestId "$Detail`n$ErrorText"
     if ($requestId -and $reason -notmatch [regex]::Escape($requestId)) { $line += " (request-id $requestId)" }
     return $line
@@ -111,7 +163,7 @@ function Global:Get-GraphLogScriptHelpers {
     #>
     $parts = New-Object System.Collections.Generic.List[string]
     $parts.Add('$global:IntunePackagerGraphLog = @{ Detailed = ($env:INTUNEPACKAGER_GRAPH_LOG -eq ''detailed''); Reads = 0; ReadMs = [long]0 }')
-    foreach ($name in 'Get-GraphRequestPath', 'Get-GraphRequestId', 'ConvertTo-GraphLogLine', 'ConvertTo-GraphReadSummary', 'Format-LogDuration') {
+    foreach ($name in 'Get-GraphRequestPath', 'Get-GraphRequestId', 'Get-GraphErrorBodyMessage', 'ConvertTo-GraphLogLine', 'ConvertTo-GraphReadSummary', 'Format-LogDuration') {
         $parts.Add("function global:$name {`n$((Get-Command $name).ScriptBlock.ToString())`n}")
     }
     $parts.Add(@'

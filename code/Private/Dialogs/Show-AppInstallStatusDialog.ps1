@@ -20,7 +20,7 @@ function Global:Show-AppInstallStatusDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Install status - $AppName"
-    $dlg.ClientSize = New-Object System.Drawing.Size(860, 560)
+    $dlg.ClientSize = New-Object System.Drawing.Size(860, 660)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -91,15 +91,24 @@ function Global:Show-AppInstallStatusDialog {
     }
     $dlg.Controls.Add($grid)
 
+    # Same log box as the dialogs that write: what was asked of Graph, and
+    # the whole of what came back. The status line above is one line and
+    # clips, which is no use for an error that names a property.
+    $rtbLog = New-Object System.Windows.Forms.RichTextBox
+    $rtbLog.Location = New-Object System.Drawing.Point(15, 494)
+    $rtbLog.Size = New-Object System.Drawing.Size(830, 98)
+    Initialize-DarkLogBox -LogBox $rtbLog
+    $dlg.Controls.Add($rtbLog)
+
     $btnCopy = New-Object System.Windows.Forms.Button
     $btnCopy.Text = "Copy list"
-    $btnCopy.Location = New-Object System.Drawing.Point(15, 498)
+    $btnCopy.Location = New-Object System.Drawing.Point(15, 604)
     $btnCopy.Size = New-Object System.Drawing.Size(120, 30)
     $dlg.Controls.Add($btnCopy)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(760, 498)
+    $btnClose.Location = New-Object System.Drawing.Point(760, 604)
     $btnClose.Size = New-Object System.Drawing.Size(85, 30)
     $dlg.Controls.Add($btnClose)
 
@@ -153,14 +162,21 @@ function Global:Show-AppInstallStatusDialog {
         $rowsBoxRef = $rowsBox
         $busyBoxRef = $busyBox
         $populateGridRef = $populateGrid
+        $rtbLogRef = $rtbLog
 
-        Start-AppInstallStatusFetch -AppId $AppId -OnComplete {
+        Start-AppInstallStatusFetch -AppId $AppId -LogBox $rtbLog -OnComplete {
             param($ok, $errMsg, $data)
             try {
                 if ($dlgRef.IsDisposed) { return }
                 if (-not $ok) {
+                    # The label gets the first line, the log box the whole
+                    # thing - a Graph error is several lines and the one that
+                    # names the offending property is rarely the first.
+                    $full = [string]$errMsg
+                    $first = (($full -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1)
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $lblStatusRef.Text = "Could not load: $errMsg"
+                    $lblStatusRef.Text = "Could not load: $first"
+                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] $full`r`n"
                     $gridRef.Rows.Clear()
                     return
                 }
@@ -170,13 +186,14 @@ function Global:Show-AppInstallStatusDialog {
                     $lblStatusRef.Text = "$($lblStatusRef.Text) - only the first $($rowsBoxRef.Value.Count) rows are shown"
                 }
                 if ($data.Source -eq 'deviceStatuses') {
-                    Write-Log "[INFO] Install status came from the older deviceStatuses endpoint - the report endpoint wasn't available in this tenant.`r`n" ([System.Drawing.Color]::Gainsboro)
+                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[INFO] Install status came from the older deviceStatuses endpoint - the report endpoint wasn't available in this tenant.`r`n" -MirrorToMainLog
                 }
             }
             catch {
                 if (-not $dlgRef.IsDisposed) {
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
                     $lblStatusRef.Text = "Could not show the result: $($_.Exception.Message)"
+                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] $($_.Exception.ToString())`r`n"
                 }
             }
             finally {

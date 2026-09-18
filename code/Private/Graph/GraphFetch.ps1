@@ -1115,7 +1115,7 @@ function Global:Start-AppInstallStatusFetch {
             }
         }
         catch {
-            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { $_.Exception.Message }
+            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { Get-InnermostErrorMessage $_.Exception }
             if ($OnComplete) { & $OnComplete $false $errMsg $null }
         }
         finally {
@@ -1189,7 +1189,7 @@ function Global:Start-PlatformScriptListFetch {
             }
         }
         catch {
-            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { $_.Exception.Message }
+            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { Get-InnermostErrorMessage $_.Exception }
             if ($OnComplete) { & $OnComplete $false $errMsg $null }
         }
         finally {
@@ -1289,7 +1289,7 @@ function Global:Start-PlatformScriptDetailFetch {
             }
         }
         catch {
-            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { $_.Exception.Message }
+            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { Get-InnermostErrorMessage $_.Exception }
             if ($OnComplete) { & $OnComplete $false $errMsg $null }
         }
         finally {
@@ -1375,7 +1375,7 @@ function Global:Start-PlatformScriptRunStatusFetch {
             }
         }
         catch {
-            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { $_.Exception.Message }
+            $errMsg = if ($ps.Streams.Error.Count -gt 0) { Get-GraphRunspaceErrorMessage $ps.Streams.Error } else { Get-InnermostErrorMessage $_.Exception }
             if ($OnComplete) { & $OnComplete $false $errMsg $null }
         }
         finally {
