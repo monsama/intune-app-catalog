@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.1
 
 - **"Save changes?" no longer comes back over and over.** The question was
   asked without owning the window behind it, so every further Close or Esc
