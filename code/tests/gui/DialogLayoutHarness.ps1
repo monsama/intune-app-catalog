@@ -70,6 +70,16 @@ function Global:Get-LayoutControlName($c) {
     "$($c.GetType().Name) $shown".Trim()
 }
 
+function Global:Get-FormTabControls($Parent) {
+    # Every TabControl in the window, however deeply nested.
+    $found = New-Object System.Collections.Generic.List[object]
+    foreach ($c in @($Parent.Controls)) {
+        if ($c -is [System.Windows.Forms.TabControl]) { [void]$found.Add($c) }
+        foreach ($nested in @(Get-FormTabControls $c)) { [void]$found.Add($nested) }
+    }
+    return $found.ToArray()
+}
+
 function Global:Test-FormLayout($Form) {
     <# Every visible control whose text doesn't fit, that runs outside its container, or that overlaps a sibling. #>
     $issues = New-Object System.Collections.Generic.List[string]
@@ -192,7 +202,25 @@ function Global:Close-LayoutAuditWindow {
     $key = $f.GetHashCode()
     if (-not $Global:LayoutAudit.Seen.ContainsKey($key)) {
         $Global:LayoutAudit.Seen[$key] = $true
-        $issues = Test-FormLayout $f
+        # Every tab page, not just the one that happens to be open: an
+        # unselected TabPage isn't Visible, so the walk below skips it and a
+        # whole tab's worth of layout would never be measured at all.
+        $issues = New-Object System.Collections.Generic.List[string]
+        foreach ($i in (Test-FormLayout $f)) { [void]$issues.Add($i) }
+        foreach ($tabs in @(Get-FormTabControls $f)) {
+            $originalIndex = $tabs.SelectedIndex
+            for ($p = 0; $p -lt $tabs.TabPages.Count; $p++) {
+                if ($p -eq $originalIndex) { continue }
+                $tabs.SelectedIndex = $p
+                [System.Windows.Forms.Application]::DoEvents()
+                foreach ($i in (Test-FormLayout $f)) {
+                    $tagged = "[tab '$($tabs.TabPages[$p].Text)'] $i"
+                    if (-not $issues.Contains($tagged)) { [void]$issues.Add($tagged) }
+                }
+                Save-LayoutShot $f
+            }
+            if ($originalIndex -ge 0) { $tabs.SelectedIndex = $originalIndex; [System.Windows.Forms.Application]::DoEvents() }
+        }
         Write-LayoutAudit "  window '$($f.Text)' ($($f.ClientSize.Width)x$($f.ClientSize.Height)): $(if ($issues.Count) { "$($issues.Count) issue(s)" } else { 'ok' })"
         foreach ($i in $issues) { Write-LayoutAudit "      $i" }
         Save-LayoutShot $f
