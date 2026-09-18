@@ -2,6 +2,20 @@
 
 ## 1.3
 
+### Fixes from a live tenant
+
+- **Install time required** is now kept in the 5-minute steps Intune
+  actually stores. Entering 61 used to be sent as 61 while Intune kept 60,
+  so the catalog and Intune disagreed for ever and the audit reported that
+  difference on every run. The field snaps as you leave it (61 -> 60,
+  64 -> 65), and is capped at Intune's maximum of 1440 minutes.
+- **Deploy to Intune stays open after a successful run**, so the log box
+  can still be read - the success popup's OK used to close the whole
+  window. The action buttons are disabled afterwards and Cancel becomes
+  Close; closing still saves to the catalog exactly as before.
+- The app editor's **Excluded from** list was built but never added to the
+  window, so exclusions couldn't be seen or changed.
+
 ### Templates, and a Deploy dialog that doesn't wait
 
 - Right-click apps > **Clear App ID...** forgets which Intune app an entry

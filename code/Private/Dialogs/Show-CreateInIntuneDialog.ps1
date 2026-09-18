@@ -841,13 +841,25 @@ function Global:Show-CreateInIntuneDialog {
 
     # --- Install experience extras ---
     $lblInstallTime = New-Object System.Windows.Forms.Label
-    $lblInstallTime.Text = "Install time required (mins)"
+    $lblInstallTime.Text = "Install time required (mins, steps of 5)"
     $lblInstallTime.Location = New-Object System.Drawing.Point(595,540)
     $lblInstallTime.AutoSize = $true
     $scrollPanel.Controls.Add($lblInstallTime)
     $txtInstallTime = New-Object System.Windows.Forms.TextBox
     $txtInstallTime.Location = New-Object System.Drawing.Point(595,557)
     $txtInstallTime.Size = New-Object System.Drawing.Size(130,23)
+    # Intune keeps this in 5-minute steps (61 comes back as 60), so the
+    # field shows what will actually be stored instead of letting the
+    # catalog and Intune disagree for ever - see
+    # Get-NormalizedInstallTimeMinutes.
+    $txtInstallTime.Add_Leave({
+        $normalized = Get-NormalizedInstallTimeMinutes $txtInstallTime.Text
+        if ($null -ne $normalized -and "$normalized" -ne $txtInstallTime.Text.Trim()) {
+            $txtInstallTime.Text = [string]$normalized
+        }
+    }.GetNewClosure())
+    $installTimeTip = New-Object System.Windows.Forms.ToolTip
+    $installTimeTip.SetToolTip($txtInstallTime, "How long Intune waits for the installer before giving up. Intune stores this in steps of 5 minutes (enter 61 and it keeps 60), and at most 1440 (a day).")
     $txtInstallTime.Text = [string]$defaults.installTimeMinutes
     $scrollPanel.Controls.Add($txtInstallTime)
 
@@ -1854,7 +1866,7 @@ function Global:Show-CreateInIntuneDialog {
             MinMemoryMB           = [int]$txtMemory.Text.Trim()
             MinProcessors         = [int]$txtProcessors.Text.Trim()
             MinCpuSpeedMHz        = [int]$txtCpuSpeed.Text.Trim()
-            InstallTimeMinutes    = [int]$txtInstallTime.Text.Trim()
+            InstallTimeMinutes    = (Get-NormalizedInstallTimeMinutes $txtInstallTime.Text)
             DeviceRestartBehavior = $restartBehaviorMap[[string]$cmbRestartBehavior.SelectedItem]
             AllowAvailableUninstall = $chkAllowUninstall.Checked
             # .ToArray() now, not @(...) - confirmed, directly and
@@ -2100,7 +2112,7 @@ function Global:Show-CreateInIntuneDialog {
                                 minMemoryMB             = [int]$txtMemoryRef.Text.Trim()
                                 minProcessors           = [int]$txtProcessorsRef.Text.Trim()
                                 minCpuSpeedMHz          = [int]$txtCpuSpeedRef.Text.Trim()
-                                installTimeMinutes      = [int]$txtInstallTimeRef.Text.Trim()
+                                installTimeMinutes      = (Get-NormalizedInstallTimeMinutes $txtInstallTimeRef.Text)
                                 deviceRestartBehavior   = $restartBehaviorMapRef[[string]$cmbRestartBehaviorRef.SelectedItem]
                                 allowAvailableUninstall = $chkAllowUninstallRef.Checked
                                 returnCodes             = $returnCodesConfigRef.ToArray()
@@ -2352,7 +2364,7 @@ function Global:Show-CreateInIntuneDialog {
             $fMinMemoryMB = [int]$txtMemory.Text.Trim()
             $fMinProcessors = [int]$txtProcessors.Text.Trim()
             $fMinCpuSpeedMHz = [int]$txtCpuSpeed.Text.Trim()
-            $fInstallTimeMinutes = [int]$txtInstallTime.Text.Trim()
+            $fInstallTimeMinutes = (Get-NormalizedInstallTimeMinutes $txtInstallTime.Text)
             Write-Log "Save for later: checkpoint 6/6a ([int] casts) OK.`r`n"
 
             $fRestartBehaviorSelected = [string]$cmbRestartBehavior.SelectedItem

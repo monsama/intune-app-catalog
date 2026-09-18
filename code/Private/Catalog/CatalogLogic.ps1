@@ -464,6 +464,31 @@ function Global:Get-DependencyOrderedApps {
     return [pscustomobject]@{ Ordered = $ordered.ToArray(); CircularNames = @() }
 }
 
+function Global:Get-NormalizedInstallTimeMinutes {
+    <#
+      "Install time required" as Intune will actually store it.
+
+      Confirmed against a live tenant: Intune keeps this value in steps of
+      5 minutes - send 61 and reading the app back gives 60. Sending the
+      raw number therefore left the catalog saying 61 while Intune said
+      60, which the audit and the Deploy dialog's drift check then reported
+      as a difference on every single run. Snapping here, before anything
+      is sent, keeps both sides equal.
+
+      Also clamps to 5..1440 minutes: Microsoft documents 1440 (a day) as
+      the maximum, and 0 would mean "give up immediately".
+    #>
+    param($Minutes)
+    $value = 0
+    if (-not [int]::TryParse("$Minutes".Trim(), [ref]$value)) { return $null }
+    if ($value -le 0) { return 5 }
+    if ($value -gt 1440) { return 1440 }
+    $rounded = [int]([Math]::Round($value / 5.0, [System.MidpointRounding]::AwayFromZero) * 5)
+    if ($rounded -lt 5) { $rounded = 5 }
+    if ($rounded -gt 1440) { $rounded = 1440 }
+    return $rounded
+}
+
 function Global:ConvertTo-TemplateAppRecord {
     <#
       The same app with everything that ties it to ONE tenant removed:

@@ -144,6 +144,13 @@ function Global:Show-DefaultAppSettingsDialog {
     $txtInstallTime = New-Object System.Windows.Forms.TextBox
     $txtInstallTime.Location = New-Object System.Drawing.Point(15,263)
     $txtInstallTime.Size = New-Object System.Drawing.Size(130,23)
+    # Intune keeps this in 5-minute steps - see Get-NormalizedInstallTimeMinutes
+    $txtInstallTime.Add_Leave({
+        $normalized = Get-NormalizedInstallTimeMinutes $txtInstallTime.Text
+        if ($null -ne $normalized -and "$normalized" -ne $txtInstallTime.Text.Trim()) {
+            $txtInstallTime.Text = [string]$normalized
+        }
+    }.GetNewClosure())
     $txtInstallTime.Text = [string]$Global:App.DefaultAppSettings.InstallTimeMinutes
     $dlg.Controls.Add($txtInstallTime)
 
@@ -354,7 +361,7 @@ function Global:Show-DefaultAppSettingsDialog {
         $Global:App.DefaultAppSettings.MinMemoryMB               = [int]$txtMemory.Text.Trim()
         $Global:App.DefaultAppSettings.MinProcessors             = [int]$txtProcessors.Text.Trim()
         $Global:App.DefaultAppSettings.MinCpuSpeedMHz            = [int]$txtCpuSpeed.Text.Trim()
-        $Global:App.DefaultAppSettings.InstallTimeMinutes        = [int]$txtInstallTime.Text.Trim()
+        $Global:App.DefaultAppSettings.InstallTimeMinutes        = (Get-NormalizedInstallTimeMinutes $txtInstallTime.Text)
         $Global:App.DefaultAppSettings.DeviceRestartBehavior     = $restartBehaviorMap[[string]$cmbRestartBehavior.SelectedItem]
         $Global:App.DefaultAppSettings.AllowAvailableUninstall   = $chkAllowUninstall.Checked
         $Global:App.DefaultAppSettings.ReturnCodes               = $returnCodesConfig.ToArray()

@@ -111,6 +111,7 @@ $testableFunctionNames = @(
     "Test-AppHasCustomConfig",
     "ConvertTo-AppRecord",
     "ConvertTo-TemplateAppRecord",
+    "Get-NormalizedInstallTimeMinutes",
     "Get-GroupFieldDiffs",
     # Lives in GuiHelpers.ps1, not Private\Catalog\ - the scan below isn't
     # hardcoded to Catalog files, so adding the name here is enough. Pure
@@ -876,6 +877,16 @@ Assert-Equal "0x8007002E (-2147024850)" (ConvertTo-ScriptRunStateRow @{ runState
 
 Assert-Equal "Intune hasn't reported a run of this script yet." (Format-ScriptRunSummary @()) "Format-ScriptRunSummary: nothing reported yet"
 Assert-Equal "2 devices: 1 Failed, 1 Success" (Format-ScriptRunSummary @($runState, $noDevice)) "Format-ScriptRunSummary: counts the states"
+
+# Intune stores "install time required" in steps of 5 (verified live: 61 comes back as 60)
+Assert-Equal 60 (Get-NormalizedInstallTimeMinutes 60) "Get-NormalizedInstallTimeMinutes: a multiple of 5 is left alone"
+Assert-Equal 60 (Get-NormalizedInstallTimeMinutes 61) "Get-NormalizedInstallTimeMinutes: 61 becomes 60, which is what Intune keeps"
+Assert-Equal 65 (Get-NormalizedInstallTimeMinutes 64) "Get-NormalizedInstallTimeMinutes: rounds to the nearest step, not always down"
+Assert-Equal 65 (Get-NormalizedInstallTimeMinutes 65) "Get-NormalizedInstallTimeMinutes: 65 is already a step"
+Assert-Equal 5 (Get-NormalizedInstallTimeMinutes 1) "Get-NormalizedInstallTimeMinutes: never below one step"
+Assert-Equal 5 (Get-NormalizedInstallTimeMinutes 0) "Get-NormalizedInstallTimeMinutes: 0 would mean give up at once"
+Assert-Equal 1440 (Get-NormalizedInstallTimeMinutes 5000) "Get-NormalizedInstallTimeMinutes: capped at Intune's maximum of a day"
+Assert-Null (Get-NormalizedInstallTimeMinutes "not a number") "Get-NormalizedInstallTimeMinutes: nothing to normalize"
 
 $templateSource = [pscustomobject]@{
     appId = '3f1c2a9e-5b7d-4e21-9a0c-8d6e4b1f2a37'; appName = '7-Zip'; wingetId = '7zip.7zip'

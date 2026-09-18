@@ -189,7 +189,7 @@ function Global:Show-BatchEditMetadataDialog {
     $fieldsY += 30
 
     $chkEnableInstallTime = New-Object System.Windows.Forms.CheckBox
-    $chkEnableInstallTime.Text = "Install time required (mins)"
+    $chkEnableInstallTime.Text = "Install time required (mins, steps of 5)"
     $chkEnableInstallTime.Location = New-Object System.Drawing.Point(365,$fieldsY)
     $chkEnableInstallTime.Size = New-Object System.Drawing.Size(190,22)
     $dlg.Controls.Add($chkEnableInstallTime)
@@ -690,7 +690,12 @@ function Global:Show-BatchEditMetadataDialog {
         if ($chkEnableMemory.Checked)         { $changes.MinMemoryMB = [int]$txtMemory.Text.Trim(); $changeSummary.Add("Memory (MB) -> $($changes.MinMemoryMB)") }
         if ($chkEnableProcessors.Checked)     { $changes.MinProcessors = [int]$txtProcessors.Text.Trim(); $changeSummary.Add("Min. processors -> $($changes.MinProcessors)") }
         if ($chkEnableCpuSpeed.Checked)       { $changes.MinCpuSpeedMHz = [int]$txtCpuSpeed.Text.Trim(); $changeSummary.Add("Min. CPU speed (MHz) -> $($changes.MinCpuSpeedMHz)") }
-        if ($chkEnableInstallTime.Checked)    { $changes.InstallTimeMinutes = [int]$txtInstallTime.Text.Trim(); $changeSummary.Add("Install time (mins) -> $($changes.InstallTimeMinutes)") }
+        if ($chkEnableInstallTime.Checked) {
+            # Intune keeps this in 5-minute steps - the confirmation shows
+            # the value that will really be stored.
+            $changes.InstallTimeMinutes = (Get-NormalizedInstallTimeMinutes $txtInstallTime.Text)
+            $changeSummary.Add("Install time (mins) -> $($changes.InstallTimeMinutes)")
+        }
         if ($chkEnableRestartBehavior.Checked) {
             $changes.DeviceRestartBehavior = $restartBehaviorMap[[string]$cmbRestartBehavior.SelectedItem]
             $changeSummary.Add("Device restart behavior -> $($cmbRestartBehavior.SelectedItem)")

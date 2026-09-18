@@ -214,7 +214,17 @@ update is sent". Test it on a **test app**, not something real.
 - [ ] An app that was never deployed can be edited with **Catalog only**
       ticked, and its .json file shows the change.
 
-## 11. Delete prompts
+## 11. Install time steps (fixed in 1.3)
+
+- [ ] Deploy to Intune > set **Install time required** to 61 and click
+      elsewhere: the field becomes 60 (Intune stores 5-minute steps).
+      64 becomes 65, 5000 becomes 1440.
+- [ ] Update Metadata with it, then **Refresh from Intune**: the value
+      matches what the field showed, and the app's catalog file agrees.
+- [ ] The audit no longer reports "Install time required" as drift for
+      that app.
+
+## 12. Delete prompts
 
 - [ ] **Delete from Intune...** on the test app, where a second test app
       depends on it - "Dependency in the way" names both apps and says Yes
@@ -222,7 +232,7 @@ update is sent". Test it on a **test app**, not something real.
 - [ ] Delete the group `ZZ-Test-B` in Group manager while a catalog app
       uses it - the question lists that app.
 
-## 12. Clean up
+## 13. Clean up
 
 - [ ] Delete the test apps from Intune (and the catalog), the two test
       groups, the `ZZ-Test-Script` platform script if it's still there, and
