@@ -81,18 +81,12 @@ function Global:Get-GraphRunspaceErrorMessage {
     # lead with something a non-developer can actually act on.
     param($ErrorRecords)
     $raw = (@($ErrorRecords) | ForEach-Object {
-        $line = $_.ToString()
-        # Graph's response body, which is where a refusal names the scopes it
-        # wanted. Without it the message is only "Forbidden (Forbidden)" and
-        # Get-GraphPermissionHint has nothing to go on - so the app said
-        # "likely missing a required permission" while Graph had already
-        # spelled out which one.
-        $body = ''
-        try { $body = [string]$_.ErrorDetails.Message } catch { }
-        if (-not $body -and $_.Exception -and $_.Exception.Data -and $_.Exception.Data['GraphBody']) {
-            $body = [string]$_.Exception.Data['GraphBody']
-        }
-        if ($body) { $line = "$line`n$($body.Trim())" }
+        # Get-GraphErrorRecordMessage, not $_.ToString(): an ErrorRecord with
+        # ErrorDetails set returns the DETAILS from ToString(), so the
+        # exception's own text ("Forbidden (Forbidden)") was being replaced by
+        # Graph's body rather than joined to it. It builds both halves, and
+        # it's the same message the catch path produces.
+        $line = Get-GraphErrorRecordMessage $_
         $where = $_.InvocationInfo.PositionMessage
         if ($where) { "$line [$($where.Trim())]" } else { $line }
     }) -join "`n"
