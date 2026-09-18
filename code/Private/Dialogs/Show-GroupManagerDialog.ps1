@@ -12,7 +12,7 @@ function Global:Show-GroupManagerDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Group manager"
-    $dlg.ClientSize = New-Object System.Drawing.Size(620, 600)
+    $dlg.ClientSize = New-Object System.Drawing.Size(620, 640)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -123,6 +123,17 @@ function Global:Show-GroupManagerDialog {
     $dlg.Controls.Add($btnDeleteGroup)
     $deleteGroupTip = New-Object System.Windows.Forms.ToolTip
     $deleteGroupTip.SetToolTip($btnDeleteGroup, "Deletes the group from Entra ID only - any app in the catalog still referencing it by name is NOT updated and its assignment will break.")
+
+    # Its own window, below: this dialog works on one group at a time (the
+    # name in the box up top), and several at once needs a list to tick.
+    $btnDeleteManyGroups = New-Object System.Windows.Forms.Button
+    $btnDeleteManyGroups.Text = "Delete several groups..."
+    $btnDeleteManyGroups.Location = New-Object System.Drawing.Point(15,593)
+    $btnDeleteManyGroups.Size = New-Object System.Drawing.Size(200,32)
+    $dlg.Controls.Add($btnDeleteManyGroups)
+    $deleteManyTip = New-Object System.Windows.Forms.ToolTip
+    $deleteManyTip.SetToolTip($btnDeleteManyGroups, "Opens a list of every Entra ID group, to tick several and delete them in one go. Groups the catalog still uses are marked there, and nothing is deleted until you confirm.")
+    $btnDeleteManyGroups.Add_Click({ Show-BulkDeleteGroupsDialog -Owner $dlg }.GetNewClosure())
 
     $btnRenameGroup = New-Object System.Windows.Forms.Button
     $btnRenameGroup.Text = "Rename group..."

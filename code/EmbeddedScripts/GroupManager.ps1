@@ -12,7 +12,10 @@
 
     Config.Mode selects an alternate one-off action instead of the default
     create-or-update-and-add-members flow above: "Delete" removes the group
-    (looked up by GroupName), "RemoveMember" removes Config.MemberId from
+    (looked up by GroupName), "DeleteMany" removes each of
+    Config.GroupNames and keeps going when one of them fails, so a name
+    that no longer exists doesn't abandon the rest of a confirmed list,
+    "RemoveMember" removes Config.MemberId from
     Config.GroupId, and "Rename" PATCHes Config.GroupId's displayName to
     Config.NewGroupName - by ID, not by re-resolving GroupName, since the
     caller already has the ID from a prior Load/Search against the OLD
@@ -121,8 +124,13 @@ if (-not (Test-Path $ConfigPath)) {
     exit 1
 }
 $Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
-Write-Host "  Group: $($Config.GroupName)" -ForegroundColor Gray
-Write-Host "  Members to add: $(@($Config.MemberIds).Count)" -ForegroundColor Gray
+if ($Config.Mode -eq "DeleteMany") {
+    Write-Host "  Groups: $(@($Config.GroupNames).Count)" -ForegroundColor Gray
+}
+else {
+    Write-Host "  Group: $($Config.GroupName)" -ForegroundColor Gray
+    Write-Host "  Members to add: $(@($Config.MemberIds).Count)" -ForegroundColor Gray
+}
 
 try {
     Write-Step "Connecting to Microsoft Graph (app-only, certificate)"
@@ -154,6 +162,45 @@ try {
 
         Write-Step "Done"
         Write-Result -Success $true -ErrorMessage "" -GroupId $groupId
+        exit 0
+    }
+
+    if ($Config.Mode -eq "DeleteMany") {
+        # One group failing doesn't stop the others: a name that no longer
+        # exists, or one the app isn't allowed to touch, shouldn't silently
+        # abandon the rest of a list the user already confirmed.
+        $names = @($Config.GroupNames | Where-Object { $_ })
+        Write-Host "  $($names.Count) group(s) to delete." -ForegroundColor Gray
+        $deleted = 0
+        $failed = New-Object System.Collections.Generic.List[string]
+        foreach ($name in $names) {
+            Write-Step "Deleting $name"
+            try {
+                $escapedName = ([string]$name).Replace("'", "''")
+                $encodedFilter = [Uri]::EscapeDataString("displayName eq '$escapedName'")
+                $existing = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=$encodedFilter&`$select=id,displayName" -Method GET -StepDescription "Look up $name"
+                if (-not $existing.value -or $existing.value.Count -eq 0) {
+                    Write-Host "  [SKIPPED] No group named '$name' - nothing to delete." -ForegroundColor DarkGray
+                    $failed.Add("$name (not found)")
+                    continue
+                }
+                $gid = $existing.value[0].id
+                Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid" -Method DELETE -StepDescription "Delete $name" | Out-Null
+                Write-Host "  [OK] Deleted '$name'." -ForegroundColor Green
+                $deleted++
+            }
+            catch {
+                Write-Host "  [FAILED] '$name': $($_.Exception.Message)" -ForegroundColor Red
+                $failed.Add("$name ($($_.Exception.Message))")
+            }
+        }
+        Write-Step "Done"
+        Write-Host "  Deleted $deleted of $($names.Count)." -ForegroundColor $(if ($failed.Count) { "Yellow" } else { "Green" })
+        if ($failed.Count) {
+            Write-Result -Success $false -ErrorMessage "Deleted $deleted of $($names.Count). Not deleted: $($failed -join '; ')" -GroupId ""
+            exit 1
+        }
+        Write-Result -Success $true -ErrorMessage "" -GroupId ""
         exit 0
     }
 

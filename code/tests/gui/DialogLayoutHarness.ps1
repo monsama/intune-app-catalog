@@ -252,6 +252,7 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'Getting started' { Show-GettingStartedGuideDialog }
     Add-LayoutAuditStep 'Group name check' { Show-GroupDriftCheckDialog }
     Add-LayoutAuditStep 'Group manager' { Show-GroupManagerDialog }
+    Add-LayoutAuditStep 'Delete groups (bulk)' { Show-BulkDeleteGroupsDialog }
     Add-LayoutAuditStep 'Find a group' { Show-GroupOnlyPicker }
     Add-LayoutAuditStep 'Intune Audit' { Show-IntuneAuditDialog }
     Add-LayoutAuditStep 'Intune sync check' { Show-IntuneOnlyAppsDialog }
