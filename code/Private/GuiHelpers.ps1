@@ -47,6 +47,10 @@ function Global:ConvertTo-FriendlyGraphError {
     # fully diagnosable - this only adds context, never hides detail.
     param([string]$RawMessage)
     if (-not $RawMessage) { return $RawMessage }
+    # Idempotent: a fetch converts its own message, and the dialog showing it
+    # converts again. Without this the second pass wraps the first one's
+    # summary and the reader gets the same sentence twice, nested.
+    if ($RawMessage -like '*(Raw error:*') { return $RawMessage }
     $summary = $null
     if ($RawMessage -match 'ClientCertificateCredential authentication failed|Cannot find the certificate|certificate.*not found|No certificate found') {
         $summary = "Could not sign in with the configured certificate - it may have been replaced, expired, or removed from this machine since Settings was last saved. Open Settings, Test connection, and Save once it succeeds."
@@ -77,8 +81,20 @@ function Global:Get-GraphRunspaceErrorMessage {
     # lead with something a non-developer can actually act on.
     param($ErrorRecords)
     $raw = (@($ErrorRecords) | ForEach-Object {
+        $line = $_.ToString()
+        # Graph's response body, which is where a refusal names the scopes it
+        # wanted. Without it the message is only "Forbidden (Forbidden)" and
+        # Get-GraphPermissionHint has nothing to go on - so the app said
+        # "likely missing a required permission" while Graph had already
+        # spelled out which one.
+        $body = ''
+        try { $body = [string]$_.ErrorDetails.Message } catch { }
+        if (-not $body -and $_.Exception -and $_.Exception.Data -and $_.Exception.Data['GraphBody']) {
+            $body = [string]$_.Exception.Data['GraphBody']
+        }
+        if ($body) { $line = "$line`n$($body.Trim())" }
         $where = $_.InvocationInfo.PositionMessage
-        if ($where) { "$($_.ToString()) [$($where.Trim())]" } else { $_.ToString() }
+        if ($where) { "$line [$($where.Trim())]" } else { $line }
     }) -join "`n"
     return ConvertTo-FriendlyGraphError $raw
 }

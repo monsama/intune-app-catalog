@@ -53,6 +53,26 @@ function Global:Get-InnermostErrorMessage {
     return [string]$Exception.Message
 }
 
+function Global:Get-GraphErrorRecordMessage {
+    <#
+      An error record from a runspace fetch, as a message worth showing:
+      the innermost exception (not the EndInvoke plumbing around it) plus
+      Graph's response body, which is where a refusal names the scopes it
+      wanted. Without the body a Forbidden reads only as "Forbidden
+      (Forbidden)" and Get-GraphPermissionHint has nothing to work from.
+    #>
+    param($ErrorRecord)
+    if (-not $ErrorRecord) { return '' }
+    $message = Get-InnermostErrorMessage $ErrorRecord.Exception
+    $body = ''
+    try { $body = [string]$ErrorRecord.ErrorDetails.Message } catch { }
+    if (-not $body -and $ErrorRecord.Exception -and $ErrorRecord.Exception.Data -and $ErrorRecord.Exception.Data['GraphBody']) {
+        $body = [string]$ErrorRecord.Exception.Data['GraphBody']
+    }
+    if ($body) { $message = "$message`n$($body.Trim())" }
+    return $message
+}
+
 function Global:Get-GraphErrorBodyMessage {
     <#
       The sentence out of a Graph error body that says what was actually

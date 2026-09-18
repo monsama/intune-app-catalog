@@ -131,6 +131,7 @@ $testableFunctionNames = @(
     "Get-GraphRequestPath",
     "Get-GraphRequestId",
     "Get-GraphErrorBodyMessage",
+    "Get-GraphErrorRecordMessage",
     "Get-InnermostErrorMessage",
     "ConvertTo-GraphLogLine",
     "ConvertTo-GraphReadSummary",
@@ -847,6 +848,15 @@ Assert-Equal "DeviceManagementApps.ReadWrite.All (application)" `
     "Get-GraphPermissionHint: apps"
 # What Graph itself named beats anything worked out from the address - this
 # is the body a tenant actually returned for a read of the platform scripts.
+# The whole chain, on the body a tenant actually returned: the refusal must
+# come out naming the two scopes, not "likely missing a required permission".
+$forbiddenBody = '{ "_version": 3, "Message": "Application is not authorized to perform this operation. Application must have one of the following scopes: DeviceManagementScripts.Read.All, DeviceManagementScripts.ReadWrite.All - Operation ID (for customer support): 00000000-0000-0000-0000-000000000000" }'
+$forbiddenFriendly = ConvertTo-FriendlyGraphError "Response status code does not indicate success: Forbidden (Forbidden).`n$forbiddenBody"
+Assert-True ($forbiddenFriendly -like "*DeviceManagementScripts.Read.All*") `
+    "ConvertTo-FriendlyGraphError: a Forbidden names the scopes Graph asked for" $forbiddenFriendly
+Assert-Equal $forbiddenFriendly (ConvertTo-FriendlyGraphError $forbiddenFriendly) `
+    "ConvertTo-FriendlyGraphError: converting an already-converted message changes nothing"
+
 Assert-Equal "DeviceManagementScripts.Read.All or DeviceManagementScripts.ReadWrite.All (application)" `
     (Get-GraphPermissionHint 'GET https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts -> Forbidden - {"Message":"Application is not authorized to perform this operation. Application must have one of the following scopes: DeviceManagementScripts.Read.All, DeviceManagementScripts.ReadWrite.All - Operation ID"}') `
     "Get-GraphPermissionHint: prefers the scopes Graph named over the guess from the address"
