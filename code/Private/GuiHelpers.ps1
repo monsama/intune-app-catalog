@@ -109,11 +109,26 @@ function Global:Convert-PanelToTabs {
         [System.Windows.Forms.Form]$Dialog,
         [System.Windows.Forms.Panel]$Panel,
         $Pages,
-        [int]$Margin = 12
+        [int]$Margin = 12,
+        # Where the tabs go when the controls come straight off the dialog
+        # (no panel to inherit a position from).
+        [System.Drawing.Rectangle]$Bounds
     )
+    # Without a panel the controls are taken off the dialog itself, and then
+    # only the ones named may move - everything else on the form (the log,
+    # the buttons) has to stay exactly where it is.
+    $source = if ($Panel) { $Panel } else { $Dialog }
+    $sweepLeftovers = [bool]$Panel
+
     $tabs = New-Object System.Windows.Forms.TabControl
-    $tabs.Location = $Panel.Location
-    $tabs.Size = $Panel.Size
+    if ($Panel) {
+        $tabs.Location = $Panel.Location
+        $tabs.Size = $Panel.Size
+    }
+    else {
+        $tabs.Location = New-Object System.Drawing.Point($Bounds.X, $Bounds.Y)
+        $tabs.Size = New-Object System.Drawing.Size($Bounds.Width, $Bounds.Height)
+    }
 
     foreach ($spec in @($Pages)) {
         $page = New-Object System.Windows.Forms.TabPage
@@ -129,20 +144,22 @@ function Global:Convert-PanelToTabs {
         # and detaches as the user picks something (the detection panels
         # here) has no parent at this moment, and adding it anyway would put
         # every one of them on screen at once, stacked.
-        $wanted = @(@($spec.Controls) | Where-Object { $_ -and [object]::ReferenceEquals($_.Parent, $Panel) })
+        $wanted = @(@($spec.Controls) | Where-Object { $_ -and [object]::ReferenceEquals($_.Parent, $source) })
         if ($wanted.Count -eq 0) { continue }
         $origin = Get-ControlGroupOrigin -Points (@($wanted | ForEach-Object { @{ X = $_.Left; Y = $_.Top } }))
         foreach ($control in $wanted) {
             $newX = $control.Left - $origin.X + $Margin
             $newY = $control.Top - $origin.Y + $Margin
-            $Panel.Controls.Remove($control)
+            $source.Controls.Remove($control)
             $control.Location = New-Object System.Drawing.Point($newX, $newY)
             $inner.Controls.Add($control)
         }
     }
 
-    # Whatever wasn't listed, onto the first page at the position it had
-    if ($tabs.TabPages.Count -gt 0) {
+    # Whatever wasn't listed, onto the first page at the position it had -
+    # only when a panel was emptied, since a dialog's other controls belong
+    # where they are.
+    if ($sweepLeftovers -and $tabs.TabPages.Count -gt 0) {
         $firstInner = $tabs.TabPages[0].Controls[0]
         foreach ($leftover in @($Panel.Controls)) {
             $Panel.Controls.Remove($leftover)
@@ -150,7 +167,7 @@ function Global:Convert-PanelToTabs {
         }
     }
 
-    $Dialog.Controls.Remove($Panel)
+    if ($Panel) { $Dialog.Controls.Remove($Panel) }
     $Dialog.Controls.Add($tabs)
     return $tabs
 }

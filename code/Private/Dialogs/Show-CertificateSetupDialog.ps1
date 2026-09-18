@@ -12,7 +12,7 @@ function Global:Show-CertificateSetupDialog {
     # is ~30px tall, ending around y=950; the extra 84px past that was
     # pure dead space at the bottom of the window, confirmed against a
     # live screenshot showing exactly that empty gap below the buttons.
-    $dlg.ClientSize = New-Object System.Drawing.Size(930, 970)
+    $dlg.ClientSize = New-Object System.Drawing.Size(930, 658)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -263,15 +263,89 @@ function Global:Show-CertificateSetupDialog {
     $y += 36
 
 
+    # Two tabs, because these are two separate jobs: the connection details
+    # the app signs in with, and looking after the certificate itself. Only
+    # one of them is ever the reason Settings is open.
+    #
+    # The log stays below both. Test connection lives on Connection but
+    # writes the token's permissions into that log, and an answer that
+    # appears on a tab you aren't looking at may as well not appear.
+    $settingsTabs = Convert-PanelToTabs -Dialog $dlg -Bounds (New-Object System.Drawing.Rectangle(10, 8, 910, 440)) -Pages @(
+        @{
+            Title = 'Connection'
+            Controls = @(
+                $lblIntro, $btnSetupGuide,
+                $lblTenant, $txtTenant, $lblClient, $txtClient, $lblThumb, $txtThumb,
+                $lblStatus, $btnTest, $pnlTestResultInfo
+            )
+        }
+        @{
+            Title = 'Certificate'
+            Controls = @(
+                $lblLocalSection, $sepLocal, $btnPick, $btnGenerate, $btnDeleteLocal,
+                $lblEntraSection, $sepEntra, $btnCheckCerts, $btnUpload, $lblUploadStatus,
+                $lblCertList, $lstCerts, $btnDeleteEntraCert
+            )
+        }
+    )
+
+    # Laid out for the page rather than for the old single column: the
+    # controls were 900 wide inside a dialog 930 wide, which is wider than a
+    # tab page and put a scrollbar on every one of them.
+    $lblIntro.Location = New-Object System.Drawing.Point(12,12)
+    $lblIntro.Size = New-Object System.Drawing.Size(866,45)
+    $btnSetupGuide.Location = New-Object System.Drawing.Point(12,64)
+    $btnSetupGuide.Size = New-Object System.Drawing.Size(866,28)
+    $lblTenant.Location = New-Object System.Drawing.Point(12,100)
+    $txtTenant.Location = New-Object System.Drawing.Point(12,120)
+    $txtTenant.Size = New-Object System.Drawing.Size(866,24)
+    $lblClient.Location = New-Object System.Drawing.Point(12,154)
+    $txtClient.Location = New-Object System.Drawing.Point(12,174)
+    $txtClient.Size = New-Object System.Drawing.Size(866,24)
+    $lblThumb.Location = New-Object System.Drawing.Point(12,208)
+    $txtThumb.Location = New-Object System.Drawing.Point(12,228)
+    $txtThumb.Size = New-Object System.Drawing.Size(866,24)
+    $lblStatus.Location = New-Object System.Drawing.Point(12,258)
+    $lblStatus.Size = New-Object System.Drawing.Size(866,36)
+    $btnTest.Location = New-Object System.Drawing.Point(12,302)
+    $btnTest.Size = New-Object System.Drawing.Size(866,30)
+    $pnlTestResultInfo.Location = New-Object System.Drawing.Point(12,340)
+    $pnlTestResultInfo.Size = New-Object System.Drawing.Size(866,60)
+    $lblTestResult.MaximumSize = New-Object System.Drawing.Size(836,0)
+
+    $lblLocalSection.Location = New-Object System.Drawing.Point(12,12)
+    $sepLocal.Location = New-Object System.Drawing.Point(180,20)
+    $sepLocal.Size = New-Object System.Drawing.Size(698,1)
+    $btnPick.Location = New-Object System.Drawing.Point(12,34)
+    $btnGenerate.Location = New-Object System.Drawing.Point(182,34)
+    $btnDeleteLocal.Location = New-Object System.Drawing.Point(382,34)
+    $btnDeleteLocal.Size = New-Object System.Drawing.Size(496,30)
+    $lblEntraSection.Location = New-Object System.Drawing.Point(12,80)
+    $sepEntra.Location = New-Object System.Drawing.Point(180,88)
+    $sepEntra.Size = New-Object System.Drawing.Size(698,1)
+    $btnCheckCerts.Location = New-Object System.Drawing.Point(12,102)
+    $btnCheckCerts.Size = New-Object System.Drawing.Size(430,30)
+    $btnUpload.Location = New-Object System.Drawing.Point(448,102)
+    $btnUpload.Size = New-Object System.Drawing.Size(430,30)
+    $lblUploadStatus.Location = New-Object System.Drawing.Point(12,140)
+    $lblUploadStatus.Size = New-Object System.Drawing.Size(866,58)
+    $lblCertList.Location = New-Object System.Drawing.Point(12,204)
+    $lstCerts.Location = New-Object System.Drawing.Point(12,224)
+    $lstCerts.Size = New-Object System.Drawing.Size(866,108)
+    $btnDeleteEntraCert.Location = New-Object System.Drawing.Point(12,340)
+
+    $rtbUploadLog.Location = New-Object System.Drawing.Point(15,458)
+    $rtbUploadLog.Size = New-Object System.Drawing.Size(900,140)
+
     $btnSave = New-Object System.Windows.Forms.Button
     $btnSave.Text = "Save"
-    $btnSave.Location = New-Object System.Drawing.Point(745,$y)
+    $btnSave.Location = New-Object System.Drawing.Point(745,610)
     $btnSave.Size = New-Object System.Drawing.Size(80,30)
     $dlg.Controls.Add($btnSave)
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Close"
-    $btnCancel.Location = New-Object System.Drawing.Point(835,$y)
+    $btnCancel.Location = New-Object System.Drawing.Point(835,610)
     $btnCancel.Size = New-Object System.Drawing.Size(80,30)
     $dlg.Controls.Add($btnCancel)
 
