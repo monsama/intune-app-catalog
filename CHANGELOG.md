@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.2
 
 ### Install status works against a current tenant
 
