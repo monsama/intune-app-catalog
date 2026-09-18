@@ -117,9 +117,15 @@ PowerShell 5.1, plus the GUI suites on Windows, under both PowerShells.
 
 ## License
 
-This program is free software, licensed under the **GNU General Public
-License version 2** (or, at your option, any later version). See
-[LICENSE](LICENSE).
+Copyright (C) 2026 Viktor Ljuca <https://monsama.ch>
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the **GNU General Public License version 2**, or (at
+your option) any later version - `SPDX-License-Identifier:
+GPL-2.0-or-later`. It is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+[LICENSE](LICENSE) for the full text.
 
 It talks to Microsoft Intune and Microsoft Entra ID through the Microsoft
 Graph API and uses the `Microsoft.Graph.Authentication` PowerShell module,
