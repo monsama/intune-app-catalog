@@ -134,7 +134,7 @@ function Global:Show-CreateInIntuneDialog {
     # existing Save/Deploy/Cancel row without moving any of this
     # function's many other absolutely-positioned controls - plus
     # $statusBoxExtraHeight on top of that now, for $pnlStatusInfo below.
-    $dlg.ClientSize = New-Object System.Drawing.Size(1300, (1035 + $statusBoxExtraHeight))
+    $dlg.ClientSize = New-Object System.Drawing.Size(900, (912 + $statusBoxExtraHeight))
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -148,7 +148,7 @@ function Global:Show-CreateInIntuneDialog {
     # find them.
     $scrollPanel = New-Object System.Windows.Forms.Panel
     $scrollPanel.Location = New-Object System.Drawing.Point(0,0)
-    $scrollPanel.Size = New-Object System.Drawing.Size(1300,750)
+    $scrollPanel.Size = New-Object System.Drawing.Size(900,640)
     $scrollPanel.AutoScroll = $true
     $dlg.Controls.Add($scrollPanel)
 
@@ -1018,9 +1018,12 @@ function Global:Show-CreateInIntuneDialog {
     $txtInstall.Location = New-Object System.Drawing.Point(15,105)
     $lblUninstall.Location = New-Object System.Drawing.Point(15,183)
     $txtUninstall.Location = New-Object System.Drawing.Point(15,202)
-    $lblDetection.Location = New-Object System.Drawing.Point(600,12)
-    $cmbDetectionType.Location = New-Object System.Drawing.Point(600,31)
-    foreach ($p in $detPanels) { $p.Location = New-Object System.Drawing.Point(600,65) }
+    # Detection under the commands rather than beside them: side by side, the
+    # widest thing on any tab was a second column that only this tab had, and
+    # every other tab paid for it in empty space.
+    $lblDetection.Location = New-Object System.Drawing.Point(15,282)
+    $cmbDetectionType.Location = New-Object System.Drawing.Point(15,301)
+    foreach ($p in $detPanels) { $p.Location = New-Object System.Drawing.Point(15,335) }
     # and the chosen detection panel moves with them
     $detHostBox.Panel = $packagePage
     & $UpdateDetPanel
@@ -1337,8 +1340,8 @@ function Global:Show-CreateInIntuneDialog {
     # $lblCreateStatus is never manually repositioned or, worse,
     # overlapped when the status text changes.
     $pnlStatusInfo = New-Object System.Windows.Forms.FlowLayoutPanel
-    $pnlStatusInfo.Location = New-Object System.Drawing.Point(15,773)
-    $pnlStatusInfo.Size = New-Object System.Drawing.Size(1270,90)
+    $pnlStatusInfo.Location = New-Object System.Drawing.Point(15,650)
+    $pnlStatusInfo.Size = New-Object System.Drawing.Size(870,90)
     $pnlStatusInfo.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
     $pnlStatusInfo.WrapContents = $false
     $pnlStatusInfo.AutoScroll = $true
@@ -1358,7 +1361,7 @@ function Global:Show-CreateInIntuneDialog {
     # AutoScroll stays as an outer safety net if both boxes together ever
     # exceed its visible height.
     $lblCreateStatus = New-Object System.Windows.Forms.RichTextBox
-    $lblCreateStatus.Size = New-Object System.Drawing.Size(1230,40)
+    $lblCreateStatus.Size = New-Object System.Drawing.Size(830,40)
     $lblCreateStatus.ReadOnly = $true
     $lblCreateStatus.BorderStyle = [System.Windows.Forms.BorderStyle]::None
     $lblCreateStatus.ScrollBars = "Vertical"
@@ -1380,7 +1383,7 @@ function Global:Show-CreateInIntuneDialog {
         # of this function the way a Label's own ForeColor would be
         # (confirmed live, the exact bug this dodges).
         $rtbFieldLegend = New-Object System.Windows.Forms.RichTextBox
-        $rtbFieldLegend.Size = New-Object System.Drawing.Size(1230,22)
+        $rtbFieldLegend.Size = New-Object System.Drawing.Size(830,22)
         # Top margin 0 - $lblCreateStatus's own Margin above already adds
         # 6px below itself, so this avoids doubling that gap.
         $rtbFieldLegend.Margin = New-Object System.Windows.Forms.Padding(0,0,0,0)
@@ -1509,14 +1512,14 @@ function Global:Show-CreateInIntuneDialog {
     }.GetNewClosure()
 
     $rtbCreateLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbCreateLog.Location = New-Object System.Drawing.Point(15,(821 + $statusBoxExtraHeight))
-    $rtbCreateLog.Size = New-Object System.Drawing.Size(1270,110)
+    $rtbCreateLog.Location = New-Object System.Drawing.Point(15,(698 + $statusBoxExtraHeight))
+    $rtbCreateLog.Size = New-Object System.Drawing.Size(870,110)
     Initialize-DarkLogBox -LogBox $rtbCreateLog
     $dlg.Controls.Add($rtbCreateLog)
 
     $btnCreate = New-Object System.Windows.Forms.Button
     $btnCreate.Text = if ($isDuplicate) { "Update Metadata" } else { "Deploy" }
-    $btnCreate.Location = New-Object System.Drawing.Point(995,(941 + $statusBoxExtraHeight))
+    $btnCreate.Location = New-Object System.Drawing.Point(595,(818 + $statusBoxExtraHeight))
     $btnCreate.Size = New-Object System.Drawing.Size(200,32)
     $dlg.Controls.Add($btnCreate)
     $createTip = New-Object System.Windows.Forms.ToolTip
@@ -1532,7 +1535,7 @@ function Global:Show-CreateInIntuneDialog {
     # Intune at all.
     $btnSaveForLater = New-Object System.Windows.Forms.Button
     $btnSaveForLater.Text = if ($isDuplicate) { "Save local copy..." } else { "Save to App Catalog without Deploying" }
-    $btnSaveForLater.Location = New-Object System.Drawing.Point(15,(941 + $statusBoxExtraHeight))
+    $btnSaveForLater.Location = New-Object System.Drawing.Point(15,(818 + $statusBoxExtraHeight))
     $btnSaveForLater.Size = New-Object System.Drawing.Size(300,32)
     $btnSaveForLater.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $dlg.Controls.Add($btnSaveForLater)
@@ -1558,14 +1561,14 @@ function Global:Show-CreateInIntuneDialog {
     }.GetNewClosure())
 
     $btnShowDiff.Text = "Compare..."
-    $btnShowDiff.Location = New-Object System.Drawing.Point(320,(941 + $statusBoxExtraHeight))
+    $btnShowDiff.Location = New-Object System.Drawing.Point(320,(818 + $statusBoxExtraHeight))
     $btnShowDiff.Size = New-Object System.Drawing.Size(95,32)
     $btnShowDiff.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $btnShowDiff.Visible = $false
     $dlg.Controls.Add($btnShowDiff)
     # Only shown when the dialog didn't ask Intune on opening - see
     # $runMetadataFetch and the "Check Intune when opening Deploy" setting.
-    $btnRefreshFromIntune.Location = New-Object System.Drawing.Point(425,(941 + $statusBoxExtraHeight))
+    $btnRefreshFromIntune.Location = New-Object System.Drawing.Point(425,(818 + $statusBoxExtraHeight))
     $btnRefreshFromIntune.Size = New-Object System.Drawing.Size(150,32)
     $btnRefreshFromIntune.Font = New-Object System.Drawing.Font($btnSaveForLater.Font.FontFamily, 8)
     $dlg.Controls.Add($btnRefreshFromIntune)
@@ -1583,7 +1586,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(1205,(941 + $statusBoxExtraHeight))
+    $btnCancel.Location = New-Object System.Drawing.Point(805,(818 + $statusBoxExtraHeight))
     $btnCancel.Size = New-Object System.Drawing.Size(80,32)
     $dlg.Controls.Add($btnCancel)
 
@@ -1666,7 +1669,7 @@ function Global:Show-CreateInIntuneDialog {
     # permanently captured $null instead of the real box.
     $btnPrevAppDeploy = New-Object System.Windows.Forms.Button
     $btnPrevAppDeploy.Text = "< Previous app"
-    $btnPrevAppDeploy.Location = New-Object System.Drawing.Point(15,(979 + $statusBoxExtraHeight))
+    $btnPrevAppDeploy.Location = New-Object System.Drawing.Point(15,(856 + $statusBoxExtraHeight))
     $btnPrevAppDeploy.Size = New-Object System.Drawing.Size(150,30)
     $btnPrevAppDeploy.Enabled = ($null -ne $prevAppIndex)
     $btnPrevAppDeploy.Visible = ($CurrentIndex -ge 0)
@@ -1676,7 +1679,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $lblDeployNavPosition = New-Object System.Windows.Forms.Label
     $lblDeployNavPosition.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $lblDeployNavPosition.Location = New-Object System.Drawing.Point(565,(979 + $statusBoxExtraHeight))   # centered in the 1300px dialog
+    $lblDeployNavPosition.Location = New-Object System.Drawing.Point(365,(856 + $statusBoxExtraHeight))   # centered in the 900px dialog
     $lblDeployNavPosition.Size = New-Object System.Drawing.Size(170,30)
     $lblDeployNavPosition.ForeColor = [System.Drawing.Color]::DimGray
     if ($CurrentIndex -ge 0) {
@@ -1697,7 +1700,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $btnNextAppDeploy = New-Object System.Windows.Forms.Button
     $btnNextAppDeploy.Text = "Next app >"
-    $btnNextAppDeploy.Location = New-Object System.Drawing.Point(1135,(979 + $statusBoxExtraHeight))
+    $btnNextAppDeploy.Location = New-Object System.Drawing.Point(735,(856 + $statusBoxExtraHeight))
     $btnNextAppDeploy.Size = New-Object System.Drawing.Size(150,30)
     $btnNextAppDeploy.Enabled = ($null -ne $nextAppIndex)
     $btnNextAppDeploy.Visible = ($CurrentIndex -ge 0)

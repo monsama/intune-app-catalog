@@ -45,7 +45,7 @@ function Global:Show-BatchEditMetadataDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Batch edit Intune fields"
-    $dlg.ClientSize = New-Object System.Drawing.Size(1180, 900)
+    $dlg.ClientSize = New-Object System.Drawing.Size(870, 900)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -54,7 +54,7 @@ function Global:Show-BatchEditMetadataDialog {
     $lblIntro = New-Object System.Windows.Forms.Label
     $lblIntro.Text = "Changes only the checked field(s) on the checked apps, then pushes each straight to Intune - everything else is left as-is. Lists every eligible app, not just what's selected in the main grid (that only pre-checks rows here). Install/uninstall commands and the detection rule aren't offered - those are per-app, not safe to set to one shared value."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
-    $lblIntro.Size = New-Object System.Drawing.Size(1150,74)
+    $lblIntro.Size = New-Object System.Drawing.Size(840,74)
     $dlg.Controls.Add($lblIntro)
 
     $lblApps = New-Object System.Windows.Forms.Label
@@ -66,7 +66,7 @@ function Global:Show-BatchEditMetadataDialog {
 
     $clbApps = New-Object System.Windows.Forms.CheckedListBox
     $clbApps.Location = New-Object System.Drawing.Point(15,112)
-    $clbApps.Size = New-Object System.Drawing.Size(330,380)
+    $clbApps.Size = New-Object System.Drawing.Size(330,468)
     $clbApps.CheckOnClick = $true
     $dlg.Controls.Add($clbApps)
     # Pre-checked: every eligible app whenever nothing specific was
@@ -80,13 +80,13 @@ function Global:Show-BatchEditMetadataDialog {
 
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Select all"
-    $btnSelectAll.Location = New-Object System.Drawing.Point(15,498)
+    $btnSelectAll.Location = New-Object System.Drawing.Point(15,588)
     $btnSelectAll.Size = New-Object System.Drawing.Size(100,26)
     $dlg.Controls.Add($btnSelectAll)
 
     $btnSelectNone = New-Object System.Windows.Forms.Button
     $btnSelectNone.Text = "Select none"
-    $btnSelectNone.Location = New-Object System.Drawing.Point(125,498)
+    $btnSelectNone.Location = New-Object System.Drawing.Point(125,588)
     $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
     $dlg.Controls.Add($btnSelectNone)
 
@@ -359,32 +359,63 @@ function Global:Show-BatchEditMetadataDialog {
 
     $chkCatalogOnly = New-Object System.Windows.Forms.CheckBox
     $chkCatalogOnly.Text = "Catalog only - don't send anything to Intune"
-    $chkCatalogOnly.Location = New-Object System.Drawing.Point(15,534)
+    $chkCatalogOnly.Location = New-Object System.Drawing.Point(15,624)
     $chkCatalogOnly.Size = New-Object System.Drawing.Size(330,22)
     $catalogOnlyTip = New-Object System.Windows.Forms.ToolTip
     $catalogOnlyTip.SetToolTip($chkCatalogOnly, "Applies the ticked fields to the catalog files only. Apps without an App ID can be edited this way too - they simply aren't in Intune yet.")
     $dlg.Controls.Add($chkCatalogOnly)
 
+    # The two field columns become tabs; the app list stays beside them,
+    # because which apps and which fields are one decision and hiding either
+    # half behind a tab would mean picking blind. The third column existed
+    # only because both sets had to be on screen at once.
+    $batchTabs = Convert-PanelToTabs -Dialog $dlg -Bounds (New-Object System.Drawing.Rectangle(360, 86, 495, 600)) -Pages @(
+        @{
+            Title = 'Requirements and install behaviour'
+            Controls = @(
+                $chkEnableArch, $chkArchX86, $chkArchX64, $chkArchArm64,
+                $chkEnableMinOS, $cmbMinOS,
+                $chkEnableDiskSpace, $txtDiskSpace, $chkEnableMemory, $txtMemory,
+                $chkEnableProcessors, $txtProcessors, $chkEnableCpuSpeed, $txtCpuSpeed,
+                $chkEnableInstallTime, $txtInstallTime,
+                $chkEnableRestartBehavior, $cmbRestartBehavior,
+                $chkEnableAllowUninstall, $chkAllowUninstall,
+                $chkEnableReturnCodes, $grdReturnCodes, $btnAddReturnCode, $btnRemoveReturnCode,
+                $chkEnableDependencies, $clbDeps
+            )
+        }
+        @{
+            Title = 'Description and commands'
+            Controls = @(
+                @($textFieldControls.Values | ForEach-Object { $_.Enable; $_.Text })
+                $chkEnableInstallContext, $cmbInstallContext
+            )
+        }
+    )
+    # The two column headings are what the tab strip now says
+    $lblFields.Visible = $false
+    $lblTextFields.Visible = $false
+
     $lblStatus.Location = New-Object System.Drawing.Point(15,700)
-    $lblStatus.Size = New-Object System.Drawing.Size(1150,20)
+    $lblStatus.Size = New-Object System.Drawing.Size(840,20)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
     $progressBar = New-Object System.Windows.Forms.ProgressBar
     $progressBar.Location = New-Object System.Drawing.Point(15,724)
-    $progressBar.Size = New-Object System.Drawing.Size(1150,12)
+    $progressBar.Size = New-Object System.Drawing.Size(840,12)
     $progressBar.Style = "Continuous"
     $dlg.Controls.Add($progressBar)
 
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
     $rtbLog.Location = New-Object System.Drawing.Point(15,742)
-    $rtbLog.Size = New-Object System.Drawing.Size(1150,96)
+    $rtbLog.Size = New-Object System.Drawing.Size(840,96)
     Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $btnRun = New-Object System.Windows.Forms.Button
     $btnRun.Text = "Apply to Intune..."
-    $btnRun.Location = New-Object System.Drawing.Point(985,850)
+    $btnRun.Location = New-Object System.Drawing.Point(675,850)
     $btnRun.Size = New-Object System.Drawing.Size(180,32)
     $dlg.Controls.Add($btnRun)
     $runTip = New-Object System.Windows.Forms.ToolTip
@@ -392,7 +423,7 @@ function Global:Show-BatchEditMetadataDialog {
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(895,850)
+    $btnClose.Location = New-Object System.Drawing.Point(585,850)
     $btnClose.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnClose)
 
