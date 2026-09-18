@@ -396,6 +396,24 @@ function Global:Show-BatchEditMetadataDialog {
     $lblFields.Visible = $false
     $lblTextFields.Visible = $false
 
+    # Install context is the one field Intune refuses to change on an app it
+    # already has: Graph answers "The 'RunAsAccount' property cannot be
+    # patched for the 'Win32LobApp' type", and this dialog's Intune path is
+    # exactly that patch. It is only offered in Catalog only mode, where it
+    # updates the saved metadata a future new deployment would be built
+    # from. Offering it otherwise is offering a change that cannot happen.
+    $installContextTip = New-Object System.Windows.Forms.ToolTip
+    $installContextTip.SetToolTip($chkEnableInstallContext, "Only available with 'Catalog only' ticked. Intune refuses to change the install context of an app it already has - it is fixed when the app is first created.")
+    $SyncInstallContextAvailability = {
+        $allowed = $chkCatalogOnly.Checked
+        $chkEnableInstallContext.Enabled = $allowed
+        $cmbInstallContext.Enabled = $allowed
+        if (-not $allowed) { $chkEnableInstallContext.Checked = $false }
+        $chkEnableInstallContext.Text = if ($allowed) { "Install context" } else { "Install context (catalog only)" }
+    }.GetNewClosure()
+    $chkCatalogOnly.Add_CheckedChanged({ & $SyncInstallContextAvailability }.GetNewClosure())
+    & $SyncInstallContextAvailability
+
     $lblStatus.Location = New-Object System.Drawing.Point(15,700)
     $lblStatus.Size = New-Object System.Drawing.Size(840,20)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray

@@ -22,8 +22,22 @@ function Global:Show-CreateInIntuneDialog {
         # where the Previous/Next buttons below make sense. Powers
         # navigating straight from one app's Deploy view to the next one's,
         # without a detour back through the plain editor screen in between.
-        [int]$CurrentIndex = -1
+        [int]$CurrentIndex = -1,
+        # Embedded mode: instead of opening a window, hand the three tab
+        # pages to -HostTabControl and the status box, log and buttons to
+        # -HostForm, then return without showing anything. The app editor
+        # uses it so an app is one window rather than two. Every handler
+        # below keeps working unchanged - they reference variables, not
+        # whichever container a control happens to sit in.
+        [System.Windows.Forms.TabControl]$HostTabControl,
+        [System.Windows.Forms.Form]$HostForm,
+        [int]$HostBottomY = 0,
+        # Run after a successful create or update, with the result box.
+        # The app editor used to do this work when the modal dialog
+        # returned; embedded there is no such moment.
+        [scriptblock]$OnDeployComplete
     )
+    $embedded = [bool]$HostTabControl
 
     # Derived, not passed in separately - see Test-AppIsUncommon. Keeps this
     # dialog's notion of "uncommon" in sync with the same single source of
@@ -130,6 +144,10 @@ function Global:Show-CreateInIntuneDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Deploy to Intune - $AppName"
+    # Which window the handlers below close when they are done. Its own,
+    # normally; the host's when embedded, since by then this form is an
+    # empty shell nobody ever sees.
+    $closeTargetBox = @{ Form = $dlg }
     # 40px taller than before, to fit the Previous/Next row below the
     # existing Save/Deploy/Cancel row without moving any of this
     # function's many other absolutely-positioned controls - plus
@@ -1714,7 +1732,7 @@ function Global:Show-CreateInIntuneDialog {
             return
         }
         $resultBox.NavigateToIndex = $prevAppIndex
-        $dlg.Close()
+        $closeTargetBox.Form.Close()
     }.GetNewClosure())
     $btnNextAppDeploy.Add_Click({
         if ($metadataFetchRunningBox.Running) {
@@ -1722,7 +1740,7 @@ function Global:Show-CreateInIntuneDialog {
             return
         }
         $resultBox.NavigateToIndex = $nextAppIndex
-        $dlg.Close()
+        $closeTargetBox.Form.Close()
     }.GetNewClosure())
 
     # Filled in by the auto-fetch below (isDuplicate case only - a brand
@@ -2076,6 +2094,7 @@ function Global:Show-CreateInIntuneDialog {
         $lblStatusRef = $lblCreateStatus
         $dlgRef = $dlg
         $resultBoxRef = $resultBox
+        $onDeployCompleteRef = $OnDeployComplete
         $resultPathRef = $resultPath
         $configPathRef = $configPath
         $procBoxRef = $procBox
@@ -2251,6 +2270,15 @@ function Global:Show-CreateInIntuneDialog {
                         # returns it however the window is closed, so
                         # closing it later still saves to the catalog.
                         Write-DialogLogLine -LogBox $rtbLogRef -Text "`r`n[OK] $($doneMsg -replace "`r?`n", ' ')`r`n" -MirrorToMainLog
+                        # Embedded in the app editor there is no "when this
+                        # window closes" moment to save on, because it is
+                        # the editor's own window and it stays open. The
+                        # editor hands over what it used to do afterwards,
+                        # and it runs here instead, on the same result.
+                        if ($onDeployCompleteRef) {
+                            try { & $onDeployCompleteRef $resultBoxRef }
+                            catch { Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] Saving to the catalog after deploying threw: $($_.Exception.Message)`r`n" }
+                        }
                         $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
                         $lblStatusRef.Text = "Done - App ID $($result.appId). Read the log below, then Close."
                         # Nothing left to send: another click would repeat the
@@ -2503,7 +2531,7 @@ function Global:Show-CreateInIntuneDialog {
         if ($FromAppEditor) {
             $resultBox.Metadata = $newMetadata
             Write-Log "Save for later (from app editor): metadata staged for `"$AppName`" - will be saved when `"Save app to catalog`" is clicked there.`r`n" ([System.Drawing.Color]::LightGreen)
-            $dlg.Close()
+            $closeTargetBox.Form.Close()
             return
         }
 
@@ -2546,10 +2574,10 @@ function Global:Show-CreateInIntuneDialog {
         # is itself sufficient confirmation; the details still go to the
         # Log tab for anyone who wants to check back on them.
         Write-Log $savedMsg ([System.Drawing.Color]::LightGreen)
-        $dlg.Close()
+        $closeTargetBox.Form.Close()
     }.GetNewClosure())
 
-    $btnCancel.Add_Click({ $dlg.Close() }.GetNewClosure())
+    $btnCancel.Add_Click({ $closeTargetBox.Form.Close() }.GetNewClosure())
 
     # Every way out (Cancel, Esc, X, Alt+F4) ends up here: closing waits
     # for the metadata auto-fetch (see $metadataFetchRunningBox), and a
@@ -3276,6 +3304,41 @@ function Global:Show-CreateInIntuneDialog {
     # of initial assignment. Points focus at the Name field instead - a
     # real, natural place to start typing, not just an arbitrary control
     # picked to dodge the bug.
+    if ($embedded) {
+        # The three pages move across as they are - a TabPage carries its
+        # controls, and every handler already built refers to those controls
+        # by variable, so nothing below this point has to know it moved.
+        $closeTargetBox.Form = $HostForm
+        foreach ($page in @($deployTabs.TabPages)) {
+            $deployTabs.TabPages.Remove($page)
+            [void]$HostTabControl.TabPages.Add($page)
+        }
+        # The status box, the log and the actions belong to the whole
+        # window, the same as they did here.
+        # "Save local copy..." stays behind: the host has "Save app to
+        # catalog", and two buttons that both mean save-it-here is the
+        # confusion a single window was supposed to remove.
+        $btnSaveForLater.Visible = $false
+        $shift = $HostBottomY - $pnlStatusInfo.Top
+        foreach ($control in @($pnlStatusInfo, $rtbCreateLog, $btnCreate, $btnShowDiff, $btnRefreshFromIntune)) {
+            if (-not $control) { continue }
+            $dlg.Controls.Remove($control)
+            $control.Location = New-Object System.Drawing.Point($control.Left, ($control.Top + $shift))
+            $HostForm.Controls.Add($control)
+        }
+        $pnlStatusInfo.BackColor = $Global:App.LightPalette.FieldBack
+        # Its own Cancel and the Previous/Next pair stay behind: the host
+        # has both already, and two of each is how a merged window starts
+        # looking like two windows in a trench coat.
+        return @{
+            Result    = $resultBox
+            Form      = $dlg
+            Deploy    = $btnCreate
+            Status    = $lblCreateStatus
+            Log       = $rtbCreateLog
+            BottomEnd = $btnCreate.Bottom
+        }
+    }
     $dlg.Add_Shown({ $txtCreateName.Focus() }.GetNewClosure())
     [void]$dlg.ShowDialog($Global:App.Form)
     return $resultBox
