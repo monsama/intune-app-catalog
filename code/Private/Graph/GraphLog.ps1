@@ -217,20 +217,52 @@ function Global:Initialize-GraphLogRunspace {
         $init.Runspace = $Runspace
         [void]$init.AddScript({
             function global:Invoke-LoggedGraphRequest {
+                <#
+                  -AsStream is for the actions Graph declares as Edm.Stream,
+                  such as the install status report. Their body is JSON but
+                  it arrives as application/octet-stream, and
+                  Invoke-MgGraphRequest refuses to parse that: "Request
+                  returned Non-Json response of OctetStream ... Please
+                  specify '-OutputFilePath'". Asking for the raw
+                  HttpResponseMessage and reading it here avoids a temporary
+                  file, and keeps the report in memory where the caller
+                  wants it.
+                #>
                 [CmdletBinding()]
-                param([Parameter(Mandatory)][string]$Uri, [string]$Method = 'GET', $Body, [string]$ContentType = 'application/json')
+                param([Parameter(Mandatory)][string]$Uri, [string]$Method = 'GET', $Body, [string]$ContentType = 'application/json', [switch]$AsStream)
                 $timer = [System.Diagnostics.Stopwatch]::StartNew()
                 try {
-                    $result = if ($null -ne $Body) {
-                        Invoke-MgGraphRequest -Uri $Uri -Method $Method -Body $Body -ContentType $ContentType -ErrorAction Stop
-                    } else {
-                        Invoke-MgGraphRequest -Uri $Uri -Method $Method -ErrorAction Stop
+                    $callParams = @{ Uri = $Uri; Method = $Method; ErrorAction = 'Stop' }
+                    if ($null -ne $Body) {
+                        $callParams['Body'] = $Body
+                        $callParams['ContentType'] = $ContentType
+                    }
+                    if ($AsStream) { $callParams['OutputType'] = 'HttpResponseMessage' }
+                    $result = Invoke-MgGraphRequest @callParams
+                    if ($AsStream) {
+                        $response = $result
+                        $text = ''
+                        if ($response.Content) { $text = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult() }
+                        # HttpResponseMessage hands back failures instead of
+                        # throwing, so the status is checked here - the body
+                        # is where Graph says what it objected to.
+                        if (-not $response.IsSuccessStatusCode) {
+                            $status = "$([int]$response.StatusCode) $($response.ReasonPhrase)"
+                            $err = New-Object System.Exception("Response status code does not indicate success: $status.")
+                            $err.Data['GraphBody'] = $text
+                            throw $err
+                        }
+                        $result = if ([string]::IsNullOrWhiteSpace($text)) { $null } else { $text | ConvertFrom-Json }
                     }
                     Write-Information -MessageData @{ IntunePackagerGraphLog = $true; Method = $Method; Uri = $Uri; Milliseconds = $timer.ElapsedMilliseconds } -InformationAction SilentlyContinue
                     return $result
                 }
                 catch {
-                    Write-Information -MessageData @{ IntunePackagerGraphLog = $true; Method = $Method; Uri = $Uri; Milliseconds = $timer.ElapsedMilliseconds; ErrorText = $_.Exception.Message; Detail = [string]$_.ErrorDetails.Message } -InformationAction SilentlyContinue
+                    # A streamed call carries Graph's body on the exception,
+                    # since there's no ErrorDetails for it to live in.
+                    $detail = [string]$_.ErrorDetails.Message
+                    if (-not $detail -and $_.Exception.Data -and $_.Exception.Data['GraphBody']) { $detail = [string]$_.Exception.Data['GraphBody'] }
+                    Write-Information -MessageData @{ IntunePackagerGraphLog = $true; Method = $Method; Uri = $Uri; Milliseconds = $timer.ElapsedMilliseconds; ErrorText = $_.Exception.Message; Detail = $detail } -InformationAction SilentlyContinue
                     throw
                 }
             }

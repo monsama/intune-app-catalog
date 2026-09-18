@@ -1080,13 +1080,15 @@ function Global:Start-AppInstallStatusFetch {
         # own doesn't inherit this process's functions.
         . ([scriptblock]::Create($ReportHelperText))
 
+        # -AsStream: the report action is declared Edm.Stream, so its JSON
+        # arrives as application/octet-stream and the SDK won't parse it.
         return Get-AppInstallStatusRows -AppId $TargetAppId -Invoke {
             param($Uri, $Method, $Body)
             if ($null -ne $Body) {
-                Invoke-LoggedGraphRequest -Uri $Uri -Method $Method -Body $Body -ContentType "application/json" -ErrorAction Stop
+                Invoke-LoggedGraphRequest -Uri $Uri -Method $Method -Body $Body -ContentType "application/json" -AsStream -ErrorAction Stop
             }
             else {
-                Invoke-LoggedGraphRequest -Uri $Uri -Method $Method -ErrorAction Stop
+                Invoke-LoggedGraphRequest -Uri $Uri -Method $Method -AsStream -ErrorAction Stop
             }
         }
     }).AddArgument($Global:App.GraphTenantId).AddArgument($Global:App.GraphClientId).AddArgument($Global:App.GraphCertificateThumbprint).AddArgument($AppId).
