@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### Dialogs that stopped being walls
+
+- **Deploy to Intune** is three tabs - Metadata, Package and detection,
+  Requirements and behaviour - with the status box, the log and the buttons
+  below them, since those belong to the whole dialog. Detection moved under
+  the install commands, which is what the extra 400px of width was for, so
+  the window is 900x912 instead of 1300x1035.
+- **Settings** is Connection and Certificate: two unrelated jobs, and only
+  one of them is ever the reason it is open. The log stays below both,
+  because Test connection sits on Connection and writes into it. 930x970
+  becomes 930x658.
+- **Batch edit Intune fields** puts its two field columns on tabs and keeps
+  the app list beside them - which apps and which fields are one decision.
+  1180x900 becomes 870x900.
+
+The layout audit only ever measured whichever tab happened to be open, so
+two thirds of Deploy, and every page but the first of the main window, were
+never checked at all. It now walks each page in turn - and caught a bug in
+this very change within a minute of being taught to.
+
+### Deleting groups
+
+**Group manager > Delete several groups...** ticks off a list instead of
+repeating the same three steps per group. Groups the catalog still uses are
+marked, and the confirmation names the apps whose assignments would break
+rather than counting them. One group failing doesn't abandon the rest.
+
 ## 1.3.2
 
 ### Install status works against a current tenant
