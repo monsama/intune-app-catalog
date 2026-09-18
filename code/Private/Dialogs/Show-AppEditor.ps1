@@ -93,7 +93,7 @@ function Global:Show-AppEditor {
     # 40px taller than before, to fit the Previous/Next row below the
     # existing Save/Delete/Cancel row without moving any of this
     # function's many other absolutely-positioned controls.
-    $dlg.ClientSize = New-Object System.Drawing.Size(900, 712)
+    $dlg.ClientSize = New-Object System.Drawing.Size(900, 959)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -371,12 +371,12 @@ function Global:Show-AppEditor {
         if ($picked) { $txtWinget.Text = $picked }
     }.GetNewClosure())
 
-    $btnCreateInIntune.Add_Click({
-        if (-not $txtName.Text.Trim()) {
-            [System.Windows.Forms.MessageBox]::Show("Enter an app name first.", "No name", "OK", "Information") | Out-Null
-            return
-        }
-        $deployResult = Show-CreateInIntuneDialog -AppName $txtName.Text.Trim() -WingetId $txtWinget.Text.Trim() -ExistingAppId $txtId.Text.Trim() -FromAppEditor -CallerHasExistingCatalogEntry:([bool]$ExistingApp) -CurrentIndex $CurrentIndex
+    # What used to run when the separate Deploy window closed. The Intune
+    # side is tabs of this window now, so it runs the moment a create or
+    # update succeeds instead - same logic, same result object, handed to
+    # Show-CreateInIntuneDialog as -OnDeployComplete.
+    $ApplyDeployResult = {
+        param($deployResult)
 
         # Previous/Next was clicked INSIDE "Intune Deployment" - none of
         # this handler's own staging/save logic below applies (there's
@@ -449,7 +449,7 @@ function Global:Show-AppEditor {
             $lblIdStatus.Text = "Metadata staged - click `"Save app to catalog`" below to save it here."
             $lblIdStatus.ForeColor = [System.Drawing.Color]::SeaGreen
         }
-    }.GetNewClosure())
+    }.GetNewClosure()
 
     $btnDeleteFromIntune.Add_Click({
         if (-not $txtId.Text.Trim()) {
@@ -774,20 +774,31 @@ function Global:Show-AppEditor {
     # Its own log belongs with the actions that write to it - the App ID
     # lookup and Delete from Intune, both on Catalog.
     $rtbAppEditorLog.Location = New-Object System.Drawing.Point(12,300)
-    $rtbAppEditorLog.Size = New-Object System.Drawing.Size(846,240)
+    $rtbAppEditorLog.Size = New-Object System.Drawing.Size(846,150)
     $txtName.Size = New-Object System.Drawing.Size(846,24)
     $lblUncommonNote.Size = New-Object System.Drawing.Size(846,32)
     $lblIdStatus.Size = New-Object System.Drawing.Size(846,40)
 
+    # The Intune side, as three more tabs of this same window. Its status
+    # box, log and Deploy button come with it and sit under every tab, so
+    # there is one place things are reported and one button that sends.
+    $deployHost = Show-CreateInIntuneDialog -AppName $txtName.Text.Trim() -WingetId $txtWinget.Text.Trim() `
+        -ExistingAppId $txtId.Text.Trim() -FromAppEditor -CallerHasExistingCatalogEntry:([bool]$ExistingApp) `
+        -CurrentIndex $CurrentIndex -HostTabControl $editorTabs -HostForm $dlg -HostBottomY 616 `
+        -OnDeployComplete $ApplyDeployResult
+
+    # Its own two launch buttons were how you reached that window. There is
+    # no second window now.
+    $btnCreateInIntune.Visible = $false
+    $btnSaveAndDeployWinget.Visible = $false
+
     # One row across the bottom of the window, below every tab
-    $btnOk.Location = New-Object System.Drawing.Point(15,628)
-    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(175,628)
-    $btnCreateInIntune.Location = New-Object System.Drawing.Point(375,628)
-    $btnSaveAndDeployWinget.Location = New-Object System.Drawing.Point(590,628)
-    $btnCancel.Location = New-Object System.Drawing.Point(805,628)
-    $btnPrevApp.Location = New-Object System.Drawing.Point(15,666)
-    $lblAppNavPosition.Location = New-Object System.Drawing.Point(175,666)
-    $btnNextApp.Location = New-Object System.Drawing.Point(315,666)
+    $btnOk.Location = New-Object System.Drawing.Point(15,876)
+    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(175,876)
+    $btnCancel.Location = New-Object System.Drawing.Point(805,876)
+    $btnPrevApp.Location = New-Object System.Drawing.Point(15,914)
+    $lblAppNavPosition.Location = New-Object System.Drawing.Point(175,914)
+    $btnNextApp.Location = New-Object System.Drawing.Point(315,914)
 
     # FormClosing asks first if anything unsaved would be lost
     $btnPrevApp.Add_Click({
