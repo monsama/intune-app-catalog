@@ -2150,7 +2150,7 @@ $Global:App.Form.Add_Shown({ Start-StartupDriftCheck; Start-StartupFullAuditChec
 $Global:App.Form.Add_FormClosing({
     $closingArgs = $_
     if ($Global:App.UnsavedChangesBox.Value) {
-        $r = [System.Windows.Forms.MessageBox]::Show("Save your catalog changes before closing?", "Save changes?", "YesNoCancel", "Warning")
+        $r = [System.Windows.Forms.MessageBox]::Show($Global:App.Form, "Save your catalog changes before closing?", "Save changes?", "YesNoCancel", "Warning")
         if ($r -eq [System.Windows.Forms.DialogResult]::Yes) {
             # a save that's refused (duplicates, ...) keeps the app open
             if (-not (Save-AppsToFile -Path $Global:App.LinkedFilePath)) { $closingArgs.Cancel = $true }

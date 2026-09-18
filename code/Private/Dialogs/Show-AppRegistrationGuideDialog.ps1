@@ -1,4 +1,12 @@
 function Global:Show-AppRegistrationGuideDialog {
+    <#
+      -Owner opens the guide alongside that window instead of on top of it:
+      the steps stay readable while the Tenant ID, Client ID and
+      certificate are filled in behind them, which is the whole point of a
+      guide. It closes with its owner. Without -Owner (the layout test,
+      or any future caller) it behaves as before and blocks.
+    #>
+    param([System.Windows.Forms.Form]$Owner)
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Set up the Entra ID app registration"
@@ -122,5 +130,30 @@ function Global:Show-AppRegistrationGuideDialog {
     $dlg.Add_Shown({ $btnClose.Focus() }.GetNewClosure())
 
     Set-Theme -Control $dlg
+    if ($Owner -and -not $Owner.IsDisposed) {
+        # Shown, not ShowDialog: the owner stays usable, and WinForms closes
+        # an owned window when its owner closes.
+        $dlg.Owner = $Owner
+        $dlg.StartPosition = "Manual"
+        # Beside the owner when there's room, otherwise cascaded onto it, so
+        # it never lands exactly on top of the fields it describes.
+        $screen = Get-UsableScreenArea
+        $right = $Owner.Left + $Owner.Width + 10
+        if (($right + $dlg.Width) -le ($screen.X + $screen.Width)) {
+            $dlg.Location = New-Object System.Drawing.Point($right, $Owner.Top)
+        }
+        else {
+            $dlg.Location = New-Object System.Drawing.Point([Math]::Max($screen.X, $Owner.Left - 60), [Math]::Max($screen.Y, $Owner.Top + 40))
+        }
+        # An owned window is only disposed with its owner when the owner is
+        # itself disposed - a modal dialog isn't, so closing Settings would
+        # otherwise leave the guide behind as an orphan window.
+        $guideRef = $dlg
+        $Owner.Add_FormClosed({
+            if ($guideRef -and -not $guideRef.IsDisposed) { $guideRef.Close() }
+        }.GetNewClosure())
+        [void]$dlg.Show()
+        return
+    }
     [void]$dlg.ShowDialog($Global:App.Form)
 }

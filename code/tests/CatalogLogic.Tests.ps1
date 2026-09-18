@@ -738,7 +738,7 @@ Assert-True (Test-InstallStatusRowMatchesFilter -Row ([pscustomobject]@{ State =
 $script:calls = New-Object System.Collections.Generic.List[string]
 $pagingInvoke = {
     param($Uri, $Method, $Body)
-    $script:calls.Add("$Method $($Uri -replace '^https://graph.microsoft.com', '') skip=$($Body.skip) top=$($Body.top)")
+    $script:calls.Add("$Method $($Uri -replace '^https://graph.microsoft.com', '') skip=$($Body.skip) top=$($Body.top) select=$(@($Body.select).Count) orderBy=$(if ($null -ne $Body.orderBy) { 'yes' } else { 'MISSING' }) filter=$($Body.filter)")
     $names = if ($Body.skip -eq 0) { @("PC-1", "PC-2") } else { @("PC-3") }
     @{ Schema = @(@{ Column = "DeviceName" }); Values = @($names | ForEach-Object { , @($_) }) }
 }
@@ -746,9 +746,9 @@ $paged = Get-AppInstallStatusRows -AppId "app-1" -Invoke $pagingInvoke -PageSize
 Assert-Equal 3 @($paged.Rows).Count "Get-AppInstallStatusRows: keeps paging while a full page comes back"
 Assert-Equal "report" $paged.Source "Get-AppInstallStatusRows: says the rows came from the report endpoint"
 Assert-True (-not $paged.Truncated) "Get-AppInstallStatusRows: a complete result isn't truncated"
-Assert-Equal "POST /beta/deviceManagement/reports/getDeviceInstallStatusReport skip=0 top=2" $script:calls[0] `
-    "Get-AppInstallStatusRows: asks the report endpoint, filtered by app, from the first row"
-Assert-Equal "POST /beta/deviceManagement/reports/getDeviceInstallStatusReport skip=2 top=2" $script:calls[1] `
+Assert-Equal "POST /beta/deviceManagement/reports/getDeviceInstallStatusReport skip=0 top=2 select=15 orderBy=yes filter=(ApplicationId eq 'app-1')" $script:calls[0] `
+    "Get-AppInstallStatusRows: the report body carries select and orderBy - without them Graph answers BadRequest"
+Assert-True ($script:calls[1] -like "*skip=2 top=2*") `
     "Get-AppInstallStatusRows: the next page skips what it already has"
 
 $cappedInvoke = {

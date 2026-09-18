@@ -191,6 +191,8 @@ function Global:Show-AppEditor {
     # outright) - stops FormClosing's own backstop further down from
     # asking the exact same question again right after.
     $discardConfirmedBox = @{ Value = $false }
+    # $true while the discard question is on screen - see the FormClosing below
+    $askingBox = @{ Value = $false }
 
     $btnLookupId = New-Object System.Windows.Forms.Button
     $btnLookupId.Text = "Look up"
@@ -957,9 +959,14 @@ function Global:Show-AppEditor {
         param($s, $e)
         if ($dlg.DialogResult -eq [System.Windows.Forms.DialogResult]::OK) { return }
         if ($discardConfirmedBox.Value) { return }
+        if ($askingBox.Value) { $e.Cancel = $true; return }
         $question = & $GetDiscardQuestion
         if (-not $question) { return }
-        $r = [System.Windows.Forms.MessageBox]::Show($question, "Discard changes?", "YesNo", "Warning", "Button2")
+        # $s as the owner, so this window is disabled while the question is
+        # up - otherwise another Close click stacks a second question.
+        $askingBox.Value = $true
+        try { $r = [System.Windows.Forms.MessageBox]::Show($s, $question, "Discard changes?", "YesNo", "Warning", "Button2") }
+        finally { $askingBox.Value = $false }
         if ($r -ne [System.Windows.Forms.DialogResult]::Yes) {
             $e.Cancel = $true
             # stay on this app
