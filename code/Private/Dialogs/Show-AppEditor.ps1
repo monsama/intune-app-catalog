@@ -93,7 +93,7 @@ function Global:Show-AppEditor {
     # 40px taller than before, to fit the Previous/Next row below the
     # existing Save/Delete/Cancel row without moving any of this
     # function's many other absolutely-positioned controls.
-    $dlg.ClientSize = New-Object System.Drawing.Size(470, 1066)
+    $dlg.ClientSize = New-Object System.Drawing.Size(900, 712)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -749,6 +749,45 @@ function Global:Show-AppEditor {
     $dlg.Controls.Add($btnNextApp)
     $nextAppTip = New-Object System.Windows.Forms.ToolTip
     $nextAppTip.SetToolTip($btnNextApp, "Opens the next app. Asks first if this one has unsaved changes.")
+
+    # The catalog entry and its assignments become two tabs, so that the
+    # Intune side can join them as three more (Show-CreateInIntuneDialog,
+    # -HostTabControl) and an app is one window rather than two.
+    $editorTabs = Convert-PanelToTabs -Dialog $dlg -Bounds (New-Object System.Drawing.Rectangle(10, 8, 880, 600)) -Pages @(
+        @{
+            Title = 'Catalog'
+            Controls = @(
+                $lblName, $txtName,
+                $lblWinget, $txtWinget, $btnSearchWinget, $lblUncommonNote,
+                $lblId, $txtId, $btnLookupId, $lblIdStatus,
+                $rtbAppEditorLog
+            )
+        }
+        @{
+            Title = 'Assignments'
+            Controls = @(
+                $reqGroup.Box, $availGroup.Box, $uninstGroup.Box, $excludeGroup.Box,
+                $btnReadGroupsFromIntune, $lblGroupSyncStatus, $btnAssignGroups
+            )
+        }
+    )
+    # Its own log belongs with the actions that write to it - the App ID
+    # lookup and Delete from Intune, both on Catalog.
+    $rtbAppEditorLog.Location = New-Object System.Drawing.Point(12,300)
+    $rtbAppEditorLog.Size = New-Object System.Drawing.Size(846,240)
+    $txtName.Size = New-Object System.Drawing.Size(846,24)
+    $lblUncommonNote.Size = New-Object System.Drawing.Size(846,32)
+    $lblIdStatus.Size = New-Object System.Drawing.Size(846,40)
+
+    # One row across the bottom of the window, below every tab
+    $btnOk.Location = New-Object System.Drawing.Point(15,628)
+    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(175,628)
+    $btnCreateInIntune.Location = New-Object System.Drawing.Point(375,628)
+    $btnSaveAndDeployWinget.Location = New-Object System.Drawing.Point(590,628)
+    $btnCancel.Location = New-Object System.Drawing.Point(805,628)
+    $btnPrevApp.Location = New-Object System.Drawing.Point(15,666)
+    $lblAppNavPosition.Location = New-Object System.Drawing.Point(175,666)
+    $btnNextApp.Location = New-Object System.Drawing.Point(315,666)
 
     # FormClosing asks first if anything unsaved would be lost
     $btnPrevApp.Add_Click({
