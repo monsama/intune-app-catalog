@@ -5,6 +5,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A new push to the same branch replaces the run that's still going - there's
+# no point finishing a 15-minute GUI audit of code that has already moved on.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   unit:
     name: unit (${{ matrix.name }})
@@ -37,30 +43,31 @@ jobs:
   gui:
     # Drives the real WinForms app, so it needs the runner's desktop session
     # (hosted runners have one, at 1024x768).
-    name: GUI (Windows, both PowerShells)
+    #
+    # One runner per test file and per PowerShell, all at the same time: run
+    # end to end on a single runner this is about a quarter of an hour, and
+    # the longest single leg (the layout audit under one host) is about five
+    # minutes. The unit tests aren't a gate for the same reason - waiting for
+    # them would add their queue time to every GUI run.
+    name: GUI ${{ matrix.test }} (${{ matrix.host }})
     runs-on: windows-latest
-    needs: unit
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [DialogSmoke, CatalogCrud, CloseConfirmation, DialogLayout]
+        host: [pwsh, powershell]
     steps:
       - uses: actions/checkout@v4
-      - name: DialogSmoke.GuiTests.ps1
+      - name: ${{ matrix.test }}.GuiTests.ps1
         shell: pwsh
-        run: ./code/tests/gui/DialogSmoke.GuiTests.ps1 -ShotDir "$env:RUNNER_TEMP/gui-shots/smoke"
-      - name: CatalogCrud.GuiTests.ps1
-        if: always()
-        shell: pwsh
-        run: ./code/tests/gui/CatalogCrud.GuiTests.ps1 -ShotDir "$env:RUNNER_TEMP/gui-shots/crud"
-      - name: CloseConfirmation.GuiTests.ps1
-        if: always()
-        shell: pwsh
-        run: ./code/tests/gui/CloseConfirmation.GuiTests.ps1
-      - name: DialogLayout.GuiTests.ps1
-        if: always()
-        shell: pwsh
-        run: ./code/tests/gui/DialogLayout.GuiTests.ps1 -ShotDir "$env:RUNNER_TEMP/gui-shots/layout"
+        run: >
+          ./code/tests/gui/${{ matrix.test }}.GuiTests.ps1
+          -AppHost ${{ matrix.host }}
+          -ShotDir "$env:RUNNER_TEMP/gui-shots/${{ matrix.test }}"
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gui-screenshots
+          name: gui-screenshots-${{ matrix.test }}-${{ matrix.host }}
           path: ${{ runner.temp }}/gui-shots
           if-no-files-found: ignore
