@@ -169,14 +169,12 @@ function Global:Show-AppInstallStatusDialog {
             try {
                 if ($dlgRef.IsDisposed) { return }
                 if (-not $ok) {
-                    # The label gets the first line, the log box the whole
-                    # thing - a Graph error is several lines and the one that
-                    # names the offending property is rarely the first.
-                    $full = [string]$errMsg
-                    $first = (($full -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1)
+                    # The label points at the log box rather than repeating a
+                    # sentence it's too narrow to finish - a clipped error
+                    # reads like the app ran out of things to say.
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $lblStatusRef.Text = "Could not load: $first"
-                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] $full`r`n"
+                    $lblStatusRef.Text = "Could not load - what Intune said is in the log below."
+                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] $([string]$errMsg)`r`n"
                     $gridRef.Rows.Clear()
                     return
                 }
@@ -185,14 +183,14 @@ function Global:Show-AppInstallStatusDialog {
                 if ($data.Truncated) {
                     $lblStatusRef.Text = "$($lblStatusRef.Text) - only the first $($rowsBoxRef.Value.Count) rows are shown"
                 }
-                if ($data.Source -eq 'deviceStatuses') {
-                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[INFO] Install status came from the older deviceStatuses endpoint - the report endpoint wasn't available in this tenant.`r`n" -MirrorToMainLog
+                if ($data.Source -eq 'v1.0') {
+                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[INFO] Install status came from the v1.0 report - this tenant didn't serve the beta one.`r`n" -MirrorToMainLog
                 }
             }
             catch {
                 if (-not $dlgRef.IsDisposed) {
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $lblStatusRef.Text = "Could not show the result: $($_.Exception.Message)"
+                    $lblStatusRef.Text = "Could not show the result - see the log below."
                     Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] $($_.Exception.ToString())`r`n"
                 }
             }

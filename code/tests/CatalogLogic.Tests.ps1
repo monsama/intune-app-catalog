@@ -681,8 +681,10 @@ Assert-Null (Get-GraphErrorBodyMessage '') "Get-GraphErrorBodyMessage: nothing t
 Assert-Null (Get-GraphErrorBodyMessage '<html>503</html>') "Get-GraphErrorBodyMessage: nothing to add when there's no message"
 $badRequestLine = ConvertTo-GraphLogLine -Method POST -Uri "https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceInstallStatusReport" `
     -Milliseconds 323 -ErrorText "Response status code does not indicate success: BadRequest (Bad Request)." `
-    -Detail '{"error":{"code":"BadRequest","message":"Invalid select column: AppInstallState"}}'
-Assert-True ($badRequestLine -like "*Invalid select column: AppInstallState*") `
+    -Detail '{"error":{"code":"BadRequest","message":"Resource not found for the segment ''getDeviceInstallStatusReport''."}}'
+# This exact line is what identified a wrong endpoint name as the cause -
+# "BadRequest (Bad Request)" alone had pointed at the request body instead.
+Assert-True ($badRequestLine -like "*Resource not found for the segment*") `
     "ConvertTo-GraphLogLine: a BadRequest carries Graph's own explanation" $badRequestLine
 
 # A failure inside a runspace arrives wrapped in EndInvoke plumbing
@@ -761,21 +763,38 @@ Assert-True (Test-InstallStatusRowMatchesFilter -Row $installed -Filter 'All') "
 Assert-True (-not (Test-InstallStatusRowMatchesFilter -Row $installed -Filter 'Failed only')) "filter Failed only drops an installed row"
 Assert-True (Test-InstallStatusRowMatchesFilter -Row ([pscustomobject]@{ State = "Failed" }) -Filter 'Failed only') "filter Failed only keeps a failed row"
 
-# Paging, the fallback to the older endpoint and the row cap, with the Graph
+# An app installed on exactly one device: the single row must stay one row.
+# Assigning the value of an if statement unrolls a one-element array, which
+# turned "one row of N cells" into "N rows of one cell" - so the dialog
+# showed a row per column, each holding one cell of the real row.
+$singleRowValues = New-Object System.Collections.Generic.List[object]
+$singleRowValues.Add(@("PC-ONLY", "ada@contoso.com", "Installed"))
+$singleRow = @(ConvertFrom-GraphReportTable @{
+    Schema = @(@{ Column = "DeviceName" }, @{ Column = "UserPrincipalName" }, @{ Column = "InstallState" })
+    Values = $singleRowValues.ToArray()
+})
+Assert-Equal 1 $singleRow.Count "ConvertFrom-GraphReportTable: a one-row report stays one row"
+Assert-Equal "PC-ONLY" ([string]$singleRow[0]['DeviceName']) "ConvertFrom-GraphReportTable: the one row keeps its first cell"
+Assert-Equal "Installed" ([string]$singleRow[0]['InstallState']) "ConvertFrom-GraphReportTable: the one row keeps its last cell"
+
+# Paging, the fallback from beta to v1.0 and the row cap, with the Graph
 # call itself faked - see Get-AppInstallStatusRows' -Invoke
 $script:calls = New-Object System.Collections.Generic.List[string]
 $pagingInvoke = {
     param($Uri, $Method, $Body)
-    $script:calls.Add("$Method $($Uri -replace '^https://graph.microsoft.com', '') skip=$($Body.skip) top=$($Body.top) select=$(@($Body.select).Count) orderBy=$(if ($null -ne $Body.orderBy) { 'yes' } else { 'MISSING' }) filter=$($Body.filter)")
+    $script:calls.Add("$Method $($Uri -replace '^https://graph.microsoft.com', '') skip=$($Body.skip) top=$($Body.top) filter=$($Body.filter)")
     $names = if ($Body.skip -eq 0) { @("PC-1", "PC-2") } else { @("PC-3") }
     @{ Schema = @(@{ Column = "DeviceName" }); Values = @($names | ForEach-Object { , @($_) }) }
 }
 $paged = Get-AppInstallStatusRows -AppId "app-1" -Invoke $pagingInvoke -PageSize 2
 Assert-Equal 3 @($paged.Rows).Count "Get-AppInstallStatusRows: keeps paging while a full page comes back"
-Assert-Equal "report" $paged.Source "Get-AppInstallStatusRows: says the rows came from the report endpoint"
+Assert-Equal "beta" $paged.Source "Get-AppInstallStatusRows: says which version answered"
 Assert-True (-not $paged.Truncated) "Get-AppInstallStatusRows: a complete result isn't truncated"
-Assert-Equal "POST /beta/deviceManagement/reports/getDeviceInstallStatusReport skip=0 top=2 select=15 orderBy=yes filter=(ApplicationId eq 'app-1')" $script:calls[0] `
-    "Get-AppInstallStatusRows: the report body carries select and orderBy - without them Graph answers BadRequest"
+# The action is retrieveDeviceAppInstallationStatusReport. The name several
+# guides give, getDeviceInstallStatusReport, is in neither beta nor v1.0 and
+# answers "Resource not found for the segment" - confirmed against a tenant.
+Assert-Equal "POST /beta/deviceManagement/reports/retrieveDeviceAppInstallationStatusReport skip=0 top=2 filter=(ApplicationId eq 'app-1')" $script:calls[0] `
+    "Get-AppInstallStatusRows: asks the report action that actually exists"
 Assert-True ($script:calls[1] -like "*skip=2 top=2*") `
     "Get-AppInstallStatusRows: the next page skips what it already has"
 
@@ -787,20 +806,32 @@ $capped = Get-AppInstallStatusRows -AppId "app-1" -Invoke $cappedInvoke -PageSiz
 Assert-Equal 4 @($capped.Rows).Count "Get-AppInstallStatusRows: stops at the row cap instead of paging forever"
 Assert-True $capped.Truncated "Get-AppInstallStatusRows: says so when it stopped at the cap"
 
+$script:fallbackCalls = New-Object System.Collections.Generic.List[string]
+# One row of two cells, built through a list: written as @(, @("PC-9", ...))
+# the outer @() flattens it back to two single-cell rows, which is a report
+# table that says something quite different.
+$script:oneRow = New-Object System.Collections.Generic.List[object]
+$script:oneRow.Add(@("PC-9", -2016345308))
 $fallbackInvoke = {
     param($Uri, $Method, $Body)
-    if ($Uri -like '*getDeviceInstallStatusReport*') { throw "Resource not found for the segment 'reports'" }
-    @{ value = @(@{ deviceName = "PC-9"; userPrincipalName = "ada@contoso.com"; installState = "failed"; errorCode = -2016345308 }) }
+    $script:fallbackCalls.Add($Uri)
+    if ($Uri -like '*/beta/*') { throw "Resource not found for the segment 'reports'" }
+    @{ Schema = @(@{ Column = "DeviceName" }, @{ Column = "ErrorCode" }); Values = $script:oneRow.ToArray() }
 }
 $fallback = Get-AppInstallStatusRows -AppId "app-1" -Invoke $fallbackInvoke
-Assert-Equal "deviceStatuses" $fallback.Source "Get-AppInstallStatusRows: falls back to the older endpoint when the report one fails"
+Assert-Equal "v1.0" $fallback.Source "Get-AppInstallStatusRows: falls back to v1.0 when beta doesn't answer"
 Assert-Equal "PC-9" @($fallback.Rows)[0].DeviceName "Get-AppInstallStatusRows: the fallback's rows are normalized the same way"
 Assert-Equal "0x87D10324 (-2016345308)" @($fallback.Rows)[0].ErrorCode "Get-AppInstallStatusRows: the fallback keeps the error code"
+# mobileApps/{id}/deviceStatuses is gone from mobileApp in both versions, so
+# asking for it could only ever add a second, more confusing error.
+Assert-True (-not (@($script:fallbackCalls) -like '*deviceStatuses*')) `
+    "Get-AppInstallStatusRows: never asks for the navigation property Graph removed"
 
-$bothFailInvoke = { param($Uri, $Method, $Body) throw "nope" }
-$bothFailed = $false
-try { [void](Get-AppInstallStatusRows -AppId "app-1" -Invoke $bothFailInvoke) } catch { $bothFailed = $_.Exception.Message -like "*deviceStatuses endpoint didn't work either*" }
-Assert-True $bothFailed "Get-AppInstallStatusRows: both endpoints failing reports both errors"
+$bothFailInvoke = { param($Uri, $Method, $Body) throw "nope from $($Uri -replace '^https://graph.microsoft.com/([^/]+)/.*$', '$1')" }
+$bothFailedMessage = ''
+try { [void](Get-AppInstallStatusRows -AppId "app-1" -Invoke $bothFailInvoke) } catch { $bothFailedMessage = $_.Exception.Message }
+Assert-True ($bothFailedMessage -like "*beta*" -and $bothFailedMessage -like "*v1.0*") `
+    "Get-AppInstallStatusRows: both versions failing reports what each one said" $bothFailedMessage
 
 # -----------------------------------------------------------------
 # Which permission a refused request needs (GuiHelpers.ps1)
@@ -809,7 +840,7 @@ Assert-Equal "DeviceManagementScripts.ReadWrite.All (application)" `
     (Get-GraphPermissionHint "POST https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts failed: Forbidden") `
     "Get-GraphPermissionHint: platform scripts"
 Assert-Equal "DeviceManagementApps.Read.All (application)" `
-    (Get-GraphPermissionHint "POST https://graph.microsoft.com/beta/deviceManagement/reports/getDeviceInstallStatusReport failed") `
+    (Get-GraphPermissionHint "POST https://graph.microsoft.com/beta/deviceManagement/reports/retrieveDeviceAppInstallationStatusReport failed") `
     "Get-GraphPermissionHint: the install status report"
 Assert-Equal "DeviceManagementApps.ReadWrite.All (application)" `
     (Get-GraphPermissionHint "PATCH https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/x failed") `

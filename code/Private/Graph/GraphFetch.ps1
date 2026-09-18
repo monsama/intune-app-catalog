@@ -1043,16 +1043,15 @@ function Global:Start-AppInstallStatusFetch {
       Who actually has this app: one row per device, with the user, the
       state and the error code of a failure. Read-only.
 
-      Uses the same report endpoint the Intune portal's own "Device install
-      status" view is built on - the obvious-looking
-      mobileApps/{id}/deviceStatuses has been deprecated since 2023 and
-      answers "Resource not found for the segment 'deviceStatuses'" on
-      current tenants - and falls back to that older endpoint anyway if the
-      report one isn't available in this tenant.
+      Uses the same report action the Intune portal's own "Device install
+      status" view is built on, retrieveDeviceAppInstallationStatusReport,
+      trying beta first and v1.0 second. The obvious-looking
+      mobileApps/{id}/deviceStatuses is not a fallback: that navigation
+      property no longer exists on mobileApp in either version.
 
       -LogBox: see Start-IntuneAppLookup. -OnComplete gets
       ($ok, $errorMessage, $result), $result being
-      @{ Rows = <normalized rows>; Source = 'report'|'deviceStatuses'; Truncated = <bool> }.
+      @{ Rows = <normalized rows>; Source = 'beta'|'v1.0'; Truncated = <bool> }.
     #>
     param([string]$AppId, [scriptblock]$OnComplete, [System.Windows.Forms.RichTextBox]$LogBox)
 
