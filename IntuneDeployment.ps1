@@ -53,6 +53,7 @@ $Script:RequiredPrivateFiles = @(
     "code\Private\Dialogs\Show-BatchDeployDialog.ps1"
     "code\Private\Dialogs\Show-BatchEditMetadataDialog.ps1"
     "code\Private\Dialogs\Show-BulkDeleteFromIntuneDialog.ps1"
+    "code\Private\Dialogs\Show-BulkDeleteGroupsDialog.ps1"
     "code\Private\Dialogs\Show-CertificatePickerDialog.ps1"
     "code\Private\Dialogs\Show-CertificateSetupDialog.ps1"
     "code\Private\Dialogs\Show-CreateInIntuneDialog.ps1"

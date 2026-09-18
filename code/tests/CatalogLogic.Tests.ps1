@@ -130,6 +130,9 @@ $testableFunctionNames = @(
     # Graph request log formatting (GraphLog.ps1) - pure string work
     "Get-GraphRequestPath",
     "Get-GraphRequestId",
+    # Deleting several groups at once (GuiHelpers.ps1) - pure planning work
+    "Get-GroupDeletionPlan",
+    "Format-GroupDeletionWarning",
     # What the token is allowed to do (GraphToken.ps1) - pure claim work
     "ConvertFrom-JwtPayload",
     "Get-GraphRoleRequirements",
@@ -839,6 +842,34 @@ $bothFailedMessage = ''
 try { [void](Get-AppInstallStatusRows -AppId "app-1" -Invoke $bothFailInvoke) } catch { $bothFailedMessage = $_.Exception.Message }
 Assert-True ($bothFailedMessage -like "*beta*" -and $bothFailedMessage -like "*v1.0*") `
     "Get-AppInstallStatusRows: both versions failing reports what each one said" $bothFailedMessage
+
+# -----------------------------------------------------------------
+# Deleting several groups at once (GuiHelpers.ps1)
+# -----------------------------------------------------------------
+# The catalog side is faked: deleting a group the catalog still assigns
+# apps to breaks those assignments silently, so the plan has to find them.
+$fakeUsage = { param($Name) if ($Name -eq 'Sales') { @('7-Zip', 'Notepad++') } elseif ($Name -eq 'Contractors') { @('Chrome') } else { @() } }
+$plan = @(Get-GroupDeletionPlan -GroupNames @('Sales', 'Unused', 'Contractors') -UsedByLookup $fakeUsage)
+Assert-Equal 3 $plan.Count "Get-GroupDeletionPlan: one row per group"
+Assert-Equal "Sales" ([string]$plan[0].Name) "Get-GroupDeletionPlan: keeps the order given"
+Assert-Equal 2 (@($plan[0].UsedBy).Count) "Get-GroupDeletionPlan: finds the apps using a group"
+Assert-Equal 0 (@($plan[1].UsedBy).Count) "Get-GroupDeletionPlan: an unused group has no apps"
+# A list of names can carry blanks and repeats; a delete must not run twice
+$dedupPlan = @(Get-GroupDeletionPlan -GroupNames @('Sales', ' ', 'sales', '', 'Sales ') -UsedByLookup $fakeUsage)
+Assert-Equal 1 $dedupPlan.Count "Get-GroupDeletionPlan: drops blanks and repeats, ignoring case and spacing"
+Assert-Equal 0 (@(Get-GroupDeletionPlan -GroupNames @() -UsedByLookup $fakeUsage)).Count `
+    "Get-GroupDeletionPlan: nothing selected, nothing planned"
+
+$warning = Format-GroupDeletionWarning -Plan $plan
+Assert-True ($warning -like "*3 group(s)*") "Format-GroupDeletionWarning: says how many will go" $warning
+Assert-True ($warning -like "*can't be undone*") "Format-GroupDeletionWarning: says it can't be undone" $warning
+Assert-True ($warning -like "*7-Zip*" -and $warning -like "*Chrome*") `
+    "Format-GroupDeletionWarning: names the apps whose assignments break" $warning
+Assert-True ($warning -notlike "*Unused -*") `
+    "Format-GroupDeletionWarning: doesn't list a group nothing uses" $warning
+$cleanWarning = Format-GroupDeletionWarning -Plan @(Get-GroupDeletionPlan -GroupNames @('Unused') -UsedByLookup $fakeUsage)
+Assert-True ($cleanWarning -like "*No app in this catalog uses any of them*") `
+    "Format-GroupDeletionWarning: says so when nothing is affected" $cleanWarning
 
 # -----------------------------------------------------------------
 # What the token is allowed to do (GraphToken.ps1)

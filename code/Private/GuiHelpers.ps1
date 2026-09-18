@@ -73,6 +73,59 @@ function Global:ConvertTo-FriendlyGraphError {
     return "$summary`n`n(Raw error: $RawMessage)"
 }
 
+function Global:Get-GroupDeletionPlan {
+    <#
+      What deleting these groups would cost, one row per group:
+      @{ Name; UsedBy = <catalog app names>; }. -UsedByLookup does the
+      catalog side (Get-CatalogAppsUsingGroup by default) so this is
+      testable without a catalog.
+
+      Rows come back in the order given, duplicates and blanks dropped -
+      a list built from a checked list can contain neither, but a list
+      built from anything else can.
+    #>
+    param([string[]]$GroupNames, [scriptblock]$UsedByLookup)
+    if (-not $UsedByLookup) { $UsedByLookup = { param($Name) @(Get-CatalogAppsUsingGroup -GroupName $Name) } }
+    $rows = New-Object System.Collections.Generic.List[object]
+    $seen = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($name in @($GroupNames)) {
+        $trimmed = ([string]$name).Trim()
+        if (-not $trimmed) { continue }
+        if (-not $seen.Add($trimmed)) { continue }
+        $rows.Add(@{ Name = $trimmed; UsedBy = @(& $UsedByLookup $trimmed) })
+    }
+    return $rows.ToArray()
+}
+
+function Global:Format-GroupDeletionWarning {
+    <#
+      The sentence above the confirmation box. Deleting a group the catalog
+      still assigns apps to breaks those assignments silently - the catalog
+      keeps the name and the next push fails - so the apps affected are
+      named rather than counted.
+    #>
+    param($Plan)
+    $rows = @($Plan)
+    if ($rows.Count -eq 0) { return "Nothing is selected." }
+    $inUse = @($rows | Where-Object { @($_.UsedBy).Count -gt 0 })
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add("Permanently delete $($rows.Count) group(s) from Entra ID. This can't be undone.")
+    if ($inUse.Count -eq 0) {
+        $lines.Add("No app in this catalog uses any of them.")
+    }
+    else {
+        $lines.Add("$($inUse.Count) of them are still used by apps in this catalog, whose assignments will break:")
+        foreach ($row in ($inUse | Select-Object -First 8)) {
+            $apps = @($row.UsedBy)
+            $shown = ($apps | Select-Object -First 5) -join ', '
+            if ($apps.Count -gt 5) { $shown = "$shown, +$($apps.Count - 5) more" }
+            $lines.Add("  $($row.Name) - $shown")
+        }
+        if ($inUse.Count -gt 8) { $lines.Add("  ...and $($inUse.Count - 8) more.") }
+    }
+    return ($lines -join "`r`n")
+}
+
 function Global:Get-GraphRunspaceErrorMessage {
     # Shared by every Timer-polled runspace fetch in this file - builds
     # the same "message [file:line]" detail every one of them wants for
