@@ -2,6 +2,24 @@
 
 ## 1.3
 
+### Templates, and a Deploy dialog that doesn't wait
+
+- Right-click apps > **Clear App ID...** forgets which Intune app an entry
+  belongs to (Intune itself is untouched), and **Save as template...**
+  copies the selection to a folder without App IDs, so the same
+  configuration deploys as new apps - in another tenant, or this one.
+- **Check Intune when opening Deploy** (toolbar, Sync box, on by default):
+  turn it off and "Deploy to Intune" opens immediately with what's saved
+  here, offers **Refresh from Intune**, and checks Intune automatically
+  right before an update is sent - the moment where a stale value could
+  actually overwrite a newer one. Drift is shown there, field by field,
+  before the update continues.
+- **Batch edit Intune fields...** can now also change description,
+  publisher, owner, developer, information and privacy URL, notes, install
+  and uninstall command and install context, and has a **Catalog only**
+  mode that contacts Intune not at all - so apps that were never deployed
+  can be bulk-edited too.
+
 ### Excluded groups
 
 An app can now carry an **Excluded from** list next to Required, Available

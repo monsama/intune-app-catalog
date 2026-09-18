@@ -154,7 +154,67 @@ For every step, check the dialog's log box **and** the Log tab.
       says "Found", and if you temporarily set an app's Winget ID to
       something invented, it turns red with "NOT FOUND".
 
-## 8. Delete prompts
+## 8. Deploy without checking Intune on open (new in 1.3)
+
+The risky one: the check that stops a stale local value overwriting a newer
+Intune value moved from "every time the dialog opens" to "right before an
+update is sent". Test it on a **test app**, not something real.
+
+- [ ] Untick **Check Intune when opening Deploy** (toolbar, Sync box).
+      Reopen the app to confirm the setting survived a restart.
+- [ ] Right-click a deployed test app > **Deploy to Intune...**. It opens
+      immediately, says "Showing the values saved here - Intune hasn't been
+      asked...", and shows a **Refresh from Intune** button.
+- [ ] Press **Refresh from Intune**: the fields load from Intune, the
+      status line changes, and the Log tab shows the `[GRAPH]` lines.
+- [ ] Close it. Change something about that app in the **Intune portal**
+      (e.g. the description). Open Deploy again (still without the check),
+      and press **Update Metadata** straight away.
+      - It must first load from Intune, then show the drift dialog naming
+        the description, let you keep either value, and only then run the
+        update.
+      - Afterwards the portal shows what you chose - never the stale value
+        silently.
+- [ ] Repeat with **Update + Replace Content** on a test app, to confirm
+      the same pre-check happens for that path.
+- [ ] Tick the setting again and confirm the dialog goes back to loading on
+      open (the Refresh button then stays hidden).
+
+## 9. Templates and Clear App ID (new in 1.3)
+
+- [ ] Select two apps > right-click > **Save as template...** and pick an
+      empty folder. The message says how many were written.
+- [ ] Those .json files have `"appId": ""` and no `intuneAppType` /
+      `intuneAppVersion`, but keep name, Winget ID, groups, exclusions and
+      metadata. Your working catalog is unchanged (check one app still has
+      its App ID).
+- [ ] Saving into the folder the catalog is loaded from is refused.
+- [ ] **Open other folder...** on the template folder, then deploy one app
+      from it into the test tenant: it creates a NEW app rather than
+      updating the original. Delete that test app afterwards.
+- [ ] Back in your real catalog: right-click a test app > **Clear App ID...**
+      - the question says Intune isn't touched, No is the default.
+      Answer Yes: the App ID column empties, the app still exists in the
+      Intune portal, and the Log tab confirms it.
+
+## 10. Bulk editing more fields (new in 1.3)
+
+- [ ] **Batch edit Intune fields...** on two test apps: tick **Publisher**,
+      type a value, run. Both apps show it in the portal and in their
+      catalog files.
+- [ ] Tick **Publisher** with an empty box: the confirmation says
+      "(blank)", and afterwards the field is empty in the portal too.
+- [ ] Tick **Install command**, change it, and confirm the portal shows the
+      new command (this one really does change how the app installs - use a
+      throwaway app).
+- [ ] Tick **Catalog only** and run: the black box shows only catalog
+      lines, no `[GRAPH]` lines appear, and the portal is unchanged.
+- [ ] With **Catalog only** off, check an app that has no App ID: running
+      is refused with "Not in Intune yet", naming that app.
+- [ ] An app that was never deployed can be edited with **Catalog only**
+      ticked, and its .json file shows the change.
+
+## 11. Delete prompts
 
 - [ ] **Delete from Intune...** on the test app, where a second test app
       depends on it - "Dependency in the way" names both apps and says Yes
@@ -162,7 +222,11 @@ For every step, check the dialog's log box **and** the Log tab.
 - [ ] Delete the group `ZZ-Test-B` in Group manager while a catalog app
       uses it - the question lists that app.
 
-## 9. Clean up
+## 12. Clean up
 
 - [ ] Delete the test apps from Intune (and the catalog), the two test
-      groups, and the `ZZ-Test-Script` platform script if it's still there.
+      groups, the `ZZ-Test-Script` platform script if it's still there, and
+      the template folder from section 9.
+- [ ] Put back anything you changed on a real app while testing (the
+      description in section 8, the publisher and install command in
+      section 10).
