@@ -115,6 +115,18 @@ pwsh -NoProfile -File code/tests/gui/DialogSmoke.GuiTests.ps1  # drives the real
 Every push runs the unit tests on Linux, PowerShell 7 and Windows
 PowerShell 5.1, plus the GUI suites on Windows, under both PowerShells.
 
+## License
+
+This program is free software, licensed under the **GNU General Public
+License version 2** (or, at your option, any later version). See
+[LICENSE](LICENSE).
+
+It talks to Microsoft Intune and Microsoft Entra ID through the Microsoft
+Graph API and uses the `Microsoft.Graph.Authentication` PowerShell module,
+which is Microsoft's own and carries its own license. IntuneWinAppUtil.exe
+(downloaded on demand when packaging) is Microsoft's Win32 Content Prep
+Tool, under its own license.
+
 ## What it is not
 
 Not a general Intune console. It handles apps, their groups and platform
