@@ -169,12 +169,11 @@ function Global:Show-AppInstallStatusDialog {
             try {
                 if ($dlgRef.IsDisposed) { return }
                 if (-not $ok) {
-                    # The label points at the log box rather than repeating a
-                    # sentence it's too narrow to finish - a clipped error
-                    # reads like the app ran out of things to say.
-                    $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $lblStatusRef.Text = "Could not load - what Intune said is in the log below."
-                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] $([string]$errMsg)`r`n"
+                    # Write-DialogError like every other dialog: the label
+                    # points at the log box instead of repeating a sentence
+                    # it's too narrow to finish, and a refused permission
+                    # says which one to add.
+                    Write-DialogError -StatusLabel $lblStatusRef -LogBox $rtbLogRef -ErrorMessage "Could not read the install status: $([string]$errMsg)"
                     $gridRef.Rows.Clear()
                     return
                 }
@@ -190,8 +189,7 @@ function Global:Show-AppInstallStatusDialog {
             catch {
                 if (-not $dlgRef.IsDisposed) {
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $lblStatusRef.Text = "Could not show the result - see the log below."
-                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] $($_.Exception.ToString())`r`n"
+                    Write-DialogError -StatusLabel $lblStatusRef -LogBox $rtbLogRef -ErrorMessage "Could not show the result: $($_.Exception.ToString())"
                 }
             }
             finally {
