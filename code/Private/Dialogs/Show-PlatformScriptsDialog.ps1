@@ -161,8 +161,9 @@ function Global:Show-PlatformScriptsDialog {
             try {
                 if ($dlgRef.IsDisposed) { return }
                 if (-not $ok) {
-                    $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $lblStatusRef.Text = "Could not load: $errMsg"
+                    # Through Write-DialogError, so a refused permission says
+                    # which one to add rather than only "Forbidden".
+                    Write-DialogError -StatusLabel $lblStatusRef -LogBox $rtbLogRef -ErrorMessage "Could not load the platform scripts: $errMsg"
                     return
                 }
                 $rowsBoxRef.Value = @($rows)

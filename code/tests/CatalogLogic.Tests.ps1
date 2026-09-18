@@ -845,6 +845,11 @@ Assert-Equal "DeviceManagementApps.Read.All (application)" `
 Assert-Equal "DeviceManagementApps.ReadWrite.All (application)" `
     (Get-GraphPermissionHint "PATCH https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/x failed") `
     "Get-GraphPermissionHint: apps"
+# What Graph itself named beats anything worked out from the address - this
+# is the body a tenant actually returned for a read of the platform scripts.
+Assert-Equal "DeviceManagementScripts.Read.All or DeviceManagementScripts.ReadWrite.All (application)" `
+    (Get-GraphPermissionHint 'GET https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts -> Forbidden - {"Message":"Application is not authorized to perform this operation. Application must have one of the following scopes: DeviceManagementScripts.Read.All, DeviceManagementScripts.ReadWrite.All - Operation ID"}') `
+    "Get-GraphPermissionHint: prefers the scopes Graph named over the guess from the address"
 Assert-Equal "Group.Read.All and Directory.Read.All (application)" `
     (Get-GraphPermissionHint "GET https://graph.microsoft.com/v1.0/groups?`$filter=... failed") `
     "Get-GraphPermissionHint: groups and users"

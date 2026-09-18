@@ -12,13 +12,21 @@ function Global:Get-AppUiFont {
 
 function Global:Get-GraphPermissionHint {
     <#
-      Which application permission a refused request most likely needs,
-      worked out from the address in the error text - "Forbidden" on its
-      own never says which one. $null when the text names no endpoint this
-      app knows.
+      Which application permission a refused request most likely needs.
+      "Forbidden" on its own never says which one.
+
+      Graph often names the scopes in the response body ("Application must
+      have one of the following scopes: X, Y"), and what it says beats
+      anything worked out from the address, so that is read first. The
+      address is the fallback for a refusal that explains nothing. $null
+      when the text names no endpoint this app knows.
     #>
     param([string]$Text)
     if (-not $Text) { return $null }
+    if ($Text -match '(?:following scopes|scopes required|requires the scopes?)\s*:?\s*([A-Za-z0-9_.]+(?:\.All)?(?:\s*,\s*[A-Za-z0-9_.]+)*)') {
+        $named = @($Matches[1] -split '\s*,\s*' | Where-Object { $_ -match '\.' } | Select-Object -Unique)
+        if ($named.Count) { return "$($named -join ' or ') (application)" }
+    }
     if ($Text -match 'deviceManagementScripts|deviceHealthScripts') { return "DeviceManagementScripts.ReadWrite.All (application)" }
     if ($Text -match 'deviceManagement/reports')                    { return "DeviceManagementApps.Read.All (application)" }
     if ($Text -match 'deviceAppManagement|mobileApps')              { return "DeviceManagementApps.ReadWrite.All (application)" }
