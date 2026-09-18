@@ -73,6 +73,29 @@ function Global:ConvertTo-FriendlyGraphError {
     return "$summary`n`n(Raw error: $RawMessage)"
 }
 
+function Global:Move-DialogToTabPage {
+    <#
+      Moves a whole dialog's contents onto a tab page, so a window that was
+      built to stand alone can be one tab of a bigger one. Positions are
+      kept: each of these dialogs already lays out from its own top-left,
+      which is exactly where a page starts too.
+
+      The dialog object stays alive and unshown - its handlers refer to
+      controls by variable, so they neither know nor care that the controls
+      now live somewhere else.
+    #>
+    param([System.Windows.Forms.Form]$Dialog, [System.Windows.Forms.TabPage]$Page)
+    $inner = New-Object System.Windows.Forms.Panel
+    $inner.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $inner.AutoScroll = $true
+    $Page.Controls.Add($inner)
+    foreach ($control in @($Dialog.Controls)) {
+        $Dialog.Controls.Remove($control)
+        $inner.Controls.Add($control)
+    }
+    return $inner
+}
+
 function Global:Get-ControlGroupOrigin {
     <#
       The top-left corner of a set of controls, as @{ X; Y }, from their

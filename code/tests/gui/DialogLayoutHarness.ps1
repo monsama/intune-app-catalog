@@ -279,6 +279,7 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'Favorite groups' { Show-FavoriteGroupsManager }
     Add-LayoutAuditStep 'Getting started' { Show-GettingStartedGuideDialog }
     Add-LayoutAuditStep 'Group name check' { Show-GroupDriftCheckDialog }
+    Add-LayoutAuditStep 'Check against Intune (all three)' { Show-IntuneCheckDialog }
     Add-LayoutAuditStep 'Group manager' { Show-GroupManagerDialog }
     Add-LayoutAuditStep 'Delete groups (bulk)' { Show-BulkDeleteGroupsDialog }
     Add-LayoutAuditStep 'Find a group' { Show-GroupOnlyPicker }

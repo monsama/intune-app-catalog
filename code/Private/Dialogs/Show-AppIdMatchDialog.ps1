@@ -1,5 +1,11 @@
 function Global:Show-AppIdMatchDialog {
-    if ($Global:App.IntuneAppsCache.Count -eq 0) {
+    # -HostTabPage: become one tab of Show-IntuneCheckDialog instead of a
+    # window of its own. See Move-DialogToTabPage.
+    param([System.Windows.Forms.TabPage]$HostTabPage, [System.Windows.Forms.Form]$HostForm)
+    # Embedded, an empty cache is not a reason to refuse: the other tabs
+    # still have something to say, and this one fills in once a lookup has
+    # run.
+    if ($Global:App.IntuneAppsCache.Count -eq 0 -and -not $HostTabPage) {
         [System.Windows.Forms.MessageBox]::Show("No apps were returned from Intune. Check the Pipeline tab's log for details - likely a missing 'DeviceManagementApps.Read.All' application permission (with admin consent) on the app registration.", "Nothing to match", "OK", "Information") | Out-Null
         return
     }
@@ -31,11 +37,25 @@ function Global:Show-AppIdMatchDialog {
         if (-not $appsRef[$ei].appId) { $eligibleIndices.Add($ei) }
     }
     if ($eligibleIndices.Count -eq 0) {
+        # Embedded, say it on the tab instead of in a popup over a window
+        # the user opened for the other two checks.
+        if ($HostTabPage) {
+            $lblNothing = New-Object System.Windows.Forms.Label
+            $lblNothing.Text = "Every catalog app already has an App ID - there's nothing to look up here. If one looks wrong or stale, the Audit and Metadata sync tabs check against the App ID already on file rather than matching by name."
+            $lblNothing.Location = New-Object System.Drawing.Point(15,15)
+            $lblNothing.Size = New-Object System.Drawing.Size(900,60)
+            $lblNothing.ForeColor = [System.Drawing.Color]::DimGray
+            $HostTabPage.Controls.Add($lblNothing)
+            return
+        }
         [System.Windows.Forms.MessageBox]::Show("Every catalog app already has an App ID - there's nothing to look up. If one looks wrong or stale, use `"Intune sync check...`" instead, which checks against the App ID already on file rather than matching by name.", "Nothing to do", "OK", "Information") | Out-Null
         return
     }
 
     $dlg = New-Object System.Windows.Forms.Form
+    # Which window the close buttons act on - its own, or the host's when
+    # this dialog is a tab of Show-IntuneCheckDialog.
+    $closeTargetBox = @{ Form = $dlg }
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Look up App IDs from Intune"
     $dlg.ClientSize = New-Object System.Drawing.Size(1300, 520)
@@ -229,7 +249,7 @@ function Global:Show-AppIdMatchDialog {
         [System.Windows.Forms.MessageBox]::Show($doneMsg, "Done", "OK", "Information") | Out-Null
     }.GetNewClosure())
 
-    $btnCancelMatch.Add_Click({ $dlg.Close() }.GetNewClosure())
+    $btnCancelMatch.Add_Click({ $closeTargetBox.Form.Close() }.GetNewClosure())
 
     $dlg.CancelButton = $btnCancelMatch
     $dlg.AcceptButton = $btnApplyMatch
@@ -239,5 +259,11 @@ function Global:Show-AppIdMatchDialog {
     # background - reapplied so $pnlSummaryInfo actually looks like the
     # bordered, distinct "field" it's meant to be.
     $pnlSummaryInfo.BackColor = $Global:App.LightPalette.FieldBack
+    if ($HostTabPage) {
+        $closeTargetBox.Form = $HostForm
+        $btnCancelMatch.Visible = $false
+        [void](Move-DialogToTabPage -Dialog $dlg -Page $HostTabPage)
+        return
+    }
     [void]$dlg.ShowDialog($Global:App.Form)
 }
