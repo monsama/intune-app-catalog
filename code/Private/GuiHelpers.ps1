@@ -85,6 +85,12 @@ function Global:Move-DialogToTabPage {
       now live somewhere else.
     #>
     param([System.Windows.Forms.Form]$Dialog, [System.Windows.Forms.TabPage]$Page)
+    # The width the dialog was laid out for, read before anything moves.
+    # Every decision below is "how did this control relate to its own
+    # dialog's edges?", which is only answerable while it still has them.
+    $originalWidth = $Dialog.ClientSize.Width
+    $originalHeight = $Dialog.ClientSize.Height
+
     $inner = New-Object System.Windows.Forms.Panel
     $inner.Dock = [System.Windows.Forms.DockStyle]::Fill
     $inner.AutoScroll = $true
@@ -92,6 +98,52 @@ function Global:Move-DialogToTabPage {
     foreach ($control in @($Dialog.Controls)) {
         $Dialog.Controls.Remove($control)
         $inner.Controls.Add($control)
+    }
+
+    # A tab page is wider than the dialog that used to hold these controls -
+    # and wider again when the window is resized or maximized. Left as they
+    # were, a 700px-wide text box sits in an 864px page with dead space
+    # down the right, which is what makes an embedded dialog look like it
+    # was dropped into a window rather than built for one.
+    #
+    # Nothing is repositioned here; the controls only learn which edges
+    # they belong to:
+    #   - something that spanned its dialog's width (a text box, a log, a
+    #     grid, a full-width label) is anchored to BOTH sides, so it grows
+    #     with the page - this is the one that actually shows
+    #   - something small that sat at the right edge (a button) is anchored
+    #     to the right only, so it moves rather than stretching into a
+    #     button half the window wide
+    #   - anything else keeps the top-left it always had
+    # A control that is docked already manages its own edges, so it is left
+    # strictly alone.
+    $edgeTolerance = 24
+    $spansWidth = 0.6
+    foreach ($control in @($inner.Controls)) {
+        if ($control.Dock -ne [System.Windows.Forms.DockStyle]::None) { continue }
+        $anchor = $control.Anchor
+        $reachesRight = ($control.Right -ge ($originalWidth - $edgeTolerance))
+        if ($reachesRight) {
+            if ($control.Width -ge ($originalWidth * $spansWidth)) {
+                $anchor = $anchor -bor [System.Windows.Forms.AnchorStyles]::Right
+            }
+            else {
+                $anchor = ($anchor -bor [System.Windows.Forms.AnchorStyles]::Right) -band (-bnot [System.Windows.Forms.AnchorStyles]::Left)
+            }
+        }
+        # The same question vertically, so a log box or a grid gains the
+        # height a taller window offers instead of leaving a gap under it,
+        # and a button row stays on the bottom edge where it was put.
+        $reachesBottom = ($control.Bottom -ge ($originalHeight - $edgeTolerance))
+        if ($reachesBottom) {
+            if ($control.Height -ge ($originalHeight * 0.5)) {
+                $anchor = $anchor -bor [System.Windows.Forms.AnchorStyles]::Bottom
+            }
+            else {
+                $anchor = ($anchor -bor [System.Windows.Forms.AnchorStyles]::Bottom) -band (-bnot [System.Windows.Forms.AnchorStyles]::Top)
+            }
+        }
+        $control.Anchor = $anchor
     }
     return $inner
 }
@@ -192,6 +244,12 @@ function Global:Convert-PanelToTabs {
 
     if ($Panel) { $Dialog.Controls.Remove($Panel) }
     $Dialog.Controls.Add($tabs)
+    # Run it now for the plain case, and again whenever this tab control is
+    # given a different size. That second part is what actually matters for
+    # the app editor: the deploy dialog builds these pages against its own
+    # narrow panel, and the editor then re-hosts the whole tab control in a
+    # much wider window - at build time there is no spare width to hand
+    # out, and the real width only exists later.
     return $tabs
 }
 

@@ -587,7 +587,7 @@ function Global:Show-AppEditor {
         $gb = New-Object System.Windows.Forms.GroupBox
         $gb.Text = $Title
         $gb.Location = New-Object System.Drawing.Point(15,$Top)
-        $gb.Size = New-Object System.Drawing.Size(430,120)
+        $gb.Size = New-Object System.Drawing.Size(820,120)
 
         $clb = New-Object System.Windows.Forms.CheckedListBox
         $clb.Location = New-Object System.Drawing.Point(10,20)
@@ -597,7 +597,7 @@ function Global:Show-AppEditor {
         # button touching directly). $btnAddGroup's own x=310 is
         # unchanged, so this alone opens an 8px gap without needing to
         # move the button too.
-        $clb.Size = New-Object System.Drawing.Size(292,85)
+        $clb.Size = New-Object System.Drawing.Size(682,85)
         $clb.CheckOnClick = $true
         # Union of already-known groups and whatever's pre-selected (e.g. a
         # default group from Settings that no existing app has used yet) -
@@ -617,7 +617,7 @@ function Global:Show-AppEditor {
         # its own picker list is prefixed "[Group]"/"[User]"), so the old
         # label was misleading about what this button actually does.
         $btnAddGroup.Text = "+ Group/user..."
-        $btnAddGroup.Location = New-Object System.Drawing.Point(310,20)
+        $btnAddGroup.Location = New-Object System.Drawing.Point(700,20)
         $btnAddGroup.Size = New-Object System.Drawing.Size(118,28)
         $btnAddGroup.Add_Click({
             $picked = Show-EntraMemberPicker
@@ -658,7 +658,7 @@ function Global:Show-AppEditor {
     $btnReadGroupsFromIntune = New-Object System.Windows.Forms.Button
     $btnReadGroupsFromIntune.Text = "Pull groups from Intune..."
     $btnReadGroupsFromIntune.Location = New-Object System.Drawing.Point(15,800)
-    $btnReadGroupsFromIntune.Size = New-Object System.Drawing.Size(430,30)
+    $btnReadGroupsFromIntune.Size = New-Object System.Drawing.Size(820,30)
     $dlg.Controls.Add($btnReadGroupsFromIntune)
     $readGroupsTip = New-Object System.Windows.Forms.ToolTip
     $readGroupsTip.SetToolTip($btnReadGroupsFromIntune, "Sets the group lists above to match Intune EXACTLY, not a merge - anything checked here that Intune doesn't actually have gets unchecked.")
@@ -674,7 +674,7 @@ function Global:Show-AppEditor {
     # Overwritten by the real status (below) the moment Pull actually runs.
     $lblGroupSyncStatus.Text = "Not yet checked against Intune."
     $lblGroupSyncStatus.Location = New-Object System.Drawing.Point(15,834)
-    $lblGroupSyncStatus.Size = New-Object System.Drawing.Size(430,18)
+    $lblGroupSyncStatus.Size = New-Object System.Drawing.Size(820,18)
     $lblGroupSyncStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblGroupSyncStatus)
 
@@ -774,10 +774,10 @@ function Global:Show-AppEditor {
     # Its own log belongs with the actions that write to it - the App ID
     # lookup and Delete from Intune, both on Catalog.
     $rtbAppEditorLog.Location = New-Object System.Drawing.Point(12,300)
-    $rtbAppEditorLog.Size = New-Object System.Drawing.Size(846,150)
-    $txtName.Size = New-Object System.Drawing.Size(846,24)
-    $lblUncommonNote.Size = New-Object System.Drawing.Size(846,32)
-    $lblIdStatus.Size = New-Object System.Drawing.Size(846,40)
+    $rtbAppEditorLog.Size = New-Object System.Drawing.Size(820,150)
+    $txtName.Size = New-Object System.Drawing.Size(820,24)
+    $lblUncommonNote.Size = New-Object System.Drawing.Size(820,32)
+    $lblIdStatus.Size = New-Object System.Drawing.Size(820,40)
 
     # The Intune side, as three more tabs of this same window. Its status
     # box, log and Deploy button come with it and sit under every tab, so
@@ -792,13 +792,48 @@ function Global:Show-AppEditor {
     $btnCreateInIntune.Visible = $false
     $btnSaveAndDeployWinget.Visible = $false
 
-    # One row across the bottom of the window, below every tab
-    $btnOk.Location = New-Object System.Drawing.Point(15,876)
-    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(175,876)
-    $btnCancel.Location = New-Object System.Drawing.Point(805,876)
-    $btnPrevApp.Location = New-Object System.Drawing.Point(15,914)
-    $lblAppNavPosition.Location = New-Object System.Drawing.Point(175,914)
-    $btnNextApp.Location = New-Object System.Drawing.Point(315,914)
+    # The bottom of the window, below every tab, laid out from the window's
+    # own edges rather than from numbers that happened to fit once: one
+    # left margin for everything, one right edge for everything, and every
+    # gap between neighbours the same.
+    #
+    # Two rows, because seven controls do not fit across 900px, and they
+    # split by what they are for: what this window can DO on top, moving
+    # between apps underneath. What the deploy side contributes (Update
+    # Metadata / Deploy) joins the top row beside Cancel instead of
+    # floating on a line of its own above it.
+    $edgeLeft = 15
+    $edgeRight = $dlg.ClientSize.Width - $edgeLeft
+    $gap = 10
+    $rowActions = 880
+    $rowNavigate = 918
+
+    # The status lines and the log reach the same edges, so the block above
+    # the buttons lines up with them instead of ending short of the window.
+    $statusPanel = $deployHost.Status.Parent
+    if ($statusPanel) {
+        $statusPanel.Location = New-Object System.Drawing.Point($edgeLeft,616)
+        $statusPanel.Size = New-Object System.Drawing.Size(($edgeRight - $edgeLeft),76)
+    }
+    if ($deployHost.Log) {
+        $deployHost.Log.Location = New-Object System.Drawing.Point($edgeLeft,700)
+        $deployHost.Log.Size = New-Object System.Drawing.Size(($edgeRight - $edgeLeft),168)
+    }
+
+    $btnOk.Location = New-Object System.Drawing.Point($edgeLeft,$rowActions)
+    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(($btnOk.Right + $gap),$rowActions)
+    # Cancel on the right edge, the deploy button immediately left of it:
+    # the two "I am finished here" actions together, and both as far as
+    # possible from the destructive one on the left.
+    $btnCancel.Location = New-Object System.Drawing.Point(($edgeRight - $btnCancel.Width),$rowActions)
+    if ($deployHost.Deploy) {
+        $deployHost.Deploy.Location = New-Object System.Drawing.Point(($btnCancel.Left - $gap - $deployHost.Deploy.Width),$rowActions)
+    }
+
+    $btnPrevApp.Location = New-Object System.Drawing.Point($edgeLeft,$rowNavigate)
+    $lblAppNavPosition.Location = New-Object System.Drawing.Point(($btnPrevApp.Right + $gap),$rowNavigate)
+    $lblAppNavPosition.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+    $btnNextApp.Location = New-Object System.Drawing.Point(($lblAppNavPosition.Right + $gap),$rowNavigate)
 
     # FormClosing asks first if anything unsaved would be lost
     $btnPrevApp.Add_Click({
