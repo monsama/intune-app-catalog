@@ -192,7 +192,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $txtCreateName = New-Object System.Windows.Forms.TextBox
     $txtCreateName.Location = New-Object System.Drawing.Point(15,(128 - $leftColumnShift))
-    $txtCreateName.Size = New-Object System.Drawing.Size(540,24)
+    $txtCreateName.Size = New-Object System.Drawing.Size(820,24)
     $txtCreateName.Text = $AppName
     $scrollPanel.Controls.Add($txtCreateName)
 
@@ -204,7 +204,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $txtDesc = New-Object System.Windows.Forms.TextBox
     $txtDesc.Location = New-Object System.Drawing.Point(15,(179 - $leftColumnShift))
-    $txtDesc.Size = New-Object System.Drawing.Size(540,24)
+    $txtDesc.Size = New-Object System.Drawing.Size(820,24)
     if (-not $isDuplicate) { $txtDesc.Text = $AppName }
     $scrollPanel.Controls.Add($txtDesc)
 
@@ -216,7 +216,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $txtPublisher = New-Object System.Windows.Forms.TextBox
     $txtPublisher.Location = New-Object System.Drawing.Point(15,(230 - $leftColumnShift))
-    $txtPublisher.Size = New-Object System.Drawing.Size(540,24)
+    $txtPublisher.Size = New-Object System.Drawing.Size(820,24)
     if (-not $isDuplicate) { $txtPublisher.Text = $defaults.publisher }
     $scrollPanel.Controls.Add($txtPublisher)
 
@@ -237,18 +237,18 @@ function Global:Show-CreateInIntuneDialog {
 
     $txtOwner = New-Object System.Windows.Forms.TextBox
     $txtOwner.Location = New-Object System.Drawing.Point(15,(281 - $leftColumnShift))
-    $txtOwner.Size = New-Object System.Drawing.Size(260,24)
+    $txtOwner.Size = New-Object System.Drawing.Size(402,24)
     $scrollPanel.Controls.Add($txtOwner)
 
     $lblDeveloper = New-Object System.Windows.Forms.Label
     $lblDeveloper.Text = "Developer (optional)"
-    $lblDeveloper.Location = New-Object System.Drawing.Point(290,(262 - $leftColumnShift))
+    $lblDeveloper.Location = New-Object System.Drawing.Point(433,(262 - $leftColumnShift))
     $lblDeveloper.AutoSize = $true
     $scrollPanel.Controls.Add($lblDeveloper)
 
     $txtDeveloper = New-Object System.Windows.Forms.TextBox
-    $txtDeveloper.Location = New-Object System.Drawing.Point(290,(281 - $leftColumnShift))
-    $txtDeveloper.Size = New-Object System.Drawing.Size(265,24)
+    $txtDeveloper.Location = New-Object System.Drawing.Point(433,(281 - $leftColumnShift))
+    $txtDeveloper.Size = New-Object System.Drawing.Size(402,24)
     $scrollPanel.Controls.Add($txtDeveloper)
 
     $lblInfoUrl = New-Object System.Windows.Forms.Label
@@ -259,18 +259,18 @@ function Global:Show-CreateInIntuneDialog {
 
     $txtInfoUrl = New-Object System.Windows.Forms.TextBox
     $txtInfoUrl.Location = New-Object System.Drawing.Point(15,(332 - $leftColumnShift))
-    $txtInfoUrl.Size = New-Object System.Drawing.Size(260,24)
+    $txtInfoUrl.Size = New-Object System.Drawing.Size(402,24)
     $scrollPanel.Controls.Add($txtInfoUrl)
 
     $lblPrivacyUrl = New-Object System.Windows.Forms.Label
     $lblPrivacyUrl.Text = "Privacy URL (optional)"
-    $lblPrivacyUrl.Location = New-Object System.Drawing.Point(290,(313 - $leftColumnShift))
+    $lblPrivacyUrl.Location = New-Object System.Drawing.Point(433,(313 - $leftColumnShift))
     $lblPrivacyUrl.AutoSize = $true
     $scrollPanel.Controls.Add($lblPrivacyUrl)
 
     $txtPrivacyUrl = New-Object System.Windows.Forms.TextBox
-    $txtPrivacyUrl.Location = New-Object System.Drawing.Point(290,(332 - $leftColumnShift))
-    $txtPrivacyUrl.Size = New-Object System.Drawing.Size(265,24)
+    $txtPrivacyUrl.Location = New-Object System.Drawing.Point(433,(332 - $leftColumnShift))
+    $txtPrivacyUrl.Size = New-Object System.Drawing.Size(402,24)
     $scrollPanel.Controls.Add($txtPrivacyUrl)
 
     $lblNotes = New-Object System.Windows.Forms.Label
@@ -281,7 +281,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $txtNotes = New-Object System.Windows.Forms.TextBox
     $txtNotes.Location = New-Object System.Drawing.Point(15,(383 - $leftColumnShift))
-    $txtNotes.Size = New-Object System.Drawing.Size(540,40)
+    $txtNotes.Size = New-Object System.Drawing.Size(820,40)
     $txtNotes.Multiline = $true
     $scrollPanel.Controls.Add($txtNotes)
 
@@ -289,17 +289,17 @@ function Global:Show-CreateInIntuneDialog {
     $lblPackage.Text = "Package (.intunewin) - used when creating a new app, or when replacing content on an existing one"
     $lblPackage.Location = New-Object System.Drawing.Point(15,(433 - $leftColumnShift))
     $lblPackage.AutoSize = $false
-    $lblPackage.Size = New-Object System.Drawing.Size(540,32)
+    $lblPackage.Size = New-Object System.Drawing.Size(820,32)
     $scrollPanel.Controls.Add($lblPackage)
 
     $txtPackagePath = New-Object System.Windows.Forms.TextBox
     $txtPackagePath.Location = New-Object System.Drawing.Point(15,(470 - $leftColumnShift))
-    $txtPackagePath.Size = New-Object System.Drawing.Size(445,24)
+    $txtPackagePath.Size = New-Object System.Drawing.Size(720,24)
     $scrollPanel.Controls.Add($txtPackagePath)
 
     $btnBrowsePackage = New-Object System.Windows.Forms.Button
     $btnBrowsePackage.Text = "Browse..."
-    $btnBrowsePackage.Location = New-Object System.Drawing.Point(465,(469 - $leftColumnShift))
+    $btnBrowsePackage.Location = New-Object System.Drawing.Point(745,(469 - $leftColumnShift))
     $btnBrowsePackage.Size = New-Object System.Drawing.Size(90,26)
     $scrollPanel.Controls.Add($btnBrowsePackage)
 
@@ -327,7 +327,7 @@ function Global:Show-CreateInIntuneDialog {
     $txtInstall.Location = New-Object System.Drawing.Point(15,(524 - $leftColumnShift))
     # Four lines each - long install/uninstall commands (full paths plus
     # switches) used to need scrolling at two and a half.
-    $txtInstall.Size = New-Object System.Drawing.Size(540,68)
+    $txtInstall.Size = New-Object System.Drawing.Size(820,68)
     $txtInstall.Multiline = $true
     $txtInstall.ScrollBars = "Vertical"
     $scrollPanel.Controls.Add($txtInstall)
@@ -340,7 +340,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $txtUninstall = New-Object System.Windows.Forms.TextBox
     $txtUninstall.Location = New-Object System.Drawing.Point(15,(619 - $leftColumnShift))
-    $txtUninstall.Size = New-Object System.Drawing.Size(540,68)
+    $txtUninstall.Size = New-Object System.Drawing.Size(820,68)
     $txtUninstall.Multiline = $true
     $txtUninstall.ScrollBars = "Vertical"
     $scrollPanel.Controls.Add($txtUninstall)
@@ -378,12 +378,12 @@ function Global:Show-CreateInIntuneDialog {
     # --- PowerShell script panel (default, matches previous behavior) ---
     $pnlDetScript = New-Object System.Windows.Forms.Panel
     $pnlDetScript.Location = New-Object System.Drawing.Point(595,$detPanelY)
-    $pnlDetScript.Size = New-Object System.Drawing.Size(675,$detPanelH)
+    $pnlDetScript.Size = New-Object System.Drawing.Size(820,$detPanelH)
     $scrollPanel.Controls.Add($pnlDetScript)
 
     $txtDetection = New-Object System.Windows.Forms.TextBox
     $txtDetection.Location = New-Object System.Drawing.Point(0,0)
-    $txtDetection.Size = New-Object System.Drawing.Size(675,$detPanelH)
+    $txtDetection.Size = New-Object System.Drawing.Size(820,$detPanelH)
     $txtDetection.Multiline = $true
     $txtDetection.ScrollBars = "Vertical"
     $txtDetection.Font = New-Object System.Drawing.Font("Consolas", 8.5)
@@ -392,7 +392,7 @@ function Global:Show-CreateInIntuneDialog {
     # --- MSI product code panel ---
     $pnlDetMsi = New-Object System.Windows.Forms.Panel
     $pnlDetMsi.Location = New-Object System.Drawing.Point(595,$detPanelY)
-    $pnlDetMsi.Size = New-Object System.Drawing.Size(675,$detPanelH)
+    $pnlDetMsi.Size = New-Object System.Drawing.Size(820,$detPanelH)
     $scrollPanel.Controls.Add($pnlDetMsi)
 
     $lblMsiCode = New-Object System.Windows.Forms.Label
@@ -403,7 +403,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $txtMsiCode = New-Object System.Windows.Forms.TextBox
     $txtMsiCode.Location = New-Object System.Drawing.Point(0,19)
-    $txtMsiCode.Size = New-Object System.Drawing.Size(675,24)
+    $txtMsiCode.Size = New-Object System.Drawing.Size(820,24)
     $pnlDetMsi.Controls.Add($txtMsiCode)
 
     $lblMsiVer = New-Object System.Windows.Forms.Label
@@ -428,7 +428,7 @@ function Global:Show-CreateInIntuneDialog {
     # --- File or folder panel ---
     $pnlDetFile = New-Object System.Windows.Forms.Panel
     $pnlDetFile.Location = New-Object System.Drawing.Point(595,$detPanelY)
-    $pnlDetFile.Size = New-Object System.Drawing.Size(675,$detPanelH)
+    $pnlDetFile.Size = New-Object System.Drawing.Size(820,$detPanelH)
     $scrollPanel.Controls.Add($pnlDetFile)
 
     $lblFilePath = New-Object System.Windows.Forms.Label
@@ -456,7 +456,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $txtFileName = New-Object System.Windows.Forms.TextBox
     $txtFileName.Location = New-Object System.Drawing.Point(0,70)
-    $txtFileName.Size = New-Object System.Drawing.Size(675,24)
+    $txtFileName.Size = New-Object System.Drawing.Size(820,24)
     $pnlDetFile.Controls.Add($txtFileName)
 
     $lblFileDetType = New-Object System.Windows.Forms.Label
@@ -509,7 +509,7 @@ function Global:Show-CreateInIntuneDialog {
     # --- Registry panel ---
     $pnlDetReg = New-Object System.Windows.Forms.Panel
     $pnlDetReg.Location = New-Object System.Drawing.Point(595,$detPanelY)
-    $pnlDetReg.Size = New-Object System.Drawing.Size(675,$detPanelH)
+    $pnlDetReg.Size = New-Object System.Drawing.Size(820,$detPanelH)
     $scrollPanel.Controls.Add($pnlDetReg)
 
     $lblRegPath = New-Object System.Windows.Forms.Label
@@ -537,7 +537,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $txtRegValueName = New-Object System.Windows.Forms.TextBox
     $txtRegValueName.Location = New-Object System.Drawing.Point(0,70)
-    $txtRegValueName.Size = New-Object System.Drawing.Size(675,24)
+    $txtRegValueName.Size = New-Object System.Drawing.Size(820,24)
     $pnlDetReg.Controls.Add($txtRegValueName)
 
     $lblRegDetType = New-Object System.Windows.Forms.Label
@@ -787,7 +787,7 @@ function Global:Show-CreateInIntuneDialog {
 
     $clbDeps = New-Object System.Windows.Forms.CheckedListBox
     $clbDeps.Location = New-Object System.Drawing.Point(595,372)
-    $clbDeps.Size = New-Object System.Drawing.Size(675,85)
+    $clbDeps.Size = New-Object System.Drawing.Size(820,85)
     $clbDeps.CheckOnClick = $true
     # Undeployed apps (no App ID yet) are now included, not just ones
     # already in Intune - Batch Deploy's own ordering logic already
@@ -1031,7 +1031,7 @@ function Global:Show-CreateInIntuneDialog {
     $packagePage = $deployTabs.TabPages[1].Controls[0]
     $lblPackage.Location = New-Object System.Drawing.Point(15,12)
     $txtPackagePath.Location = New-Object System.Drawing.Point(15,50)
-    $btnBrowsePackage.Location = New-Object System.Drawing.Point(465,49)
+    $btnBrowsePackage.Location = New-Object System.Drawing.Point(745,49)
     $lblInstall.Location = New-Object System.Drawing.Point(15,86)
     $txtInstall.Location = New-Object System.Drawing.Point(15,105)
     $lblUninstall.Location = New-Object System.Drawing.Point(15,183)
@@ -1363,8 +1363,13 @@ function Global:Show-CreateInIntuneDialog {
     $pnlStatusInfo.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
     $pnlStatusInfo.WrapContents = $false
     $pnlStatusInfo.AutoScroll = $true
-    $pnlStatusInfo.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-    $pnlStatusInfo.BackColor = $Global:App.LightPalette.FieldBack
+    # No border and no box colour of its own. It used to be a bordered,
+    # filled box, which put two stacked blocks above the buttons - and in
+    # the dark theme two black ones, where the eye reads a second log that
+    # is always empty. The status and the legend are lines of text about
+    # the window; the log is the one block down there. They keep their own
+    # scrolling, so a long status message still cannot be clipped.
+    $pnlStatusInfo.BorderStyle = [System.Windows.Forms.BorderStyle]::None
     $pnlStatusInfo.Padding = New-Object System.Windows.Forms.Padding(6)
     $dlg.Controls.Add($pnlStatusInfo)
 
@@ -1385,7 +1390,7 @@ function Global:Show-CreateInIntuneDialog {
     $lblCreateStatus.ScrollBars = "Vertical"
     $lblCreateStatus.TabStop = $false
     $lblCreateStatus.DetectUrls = $false
-    $lblCreateStatus.BackColor = $Global:App.LightPalette.FieldBack
+    $lblCreateStatus.BackColor = $Global:App.LightPalette.FormBack
     $lblCreateStatus.Font = New-Object System.Drawing.Font("Segoe UI", 9)
     # Left margin 0, not WinForms' own default (3,3,3,3) - without this,
     # this box started 3px further right than $rtbFieldLegend below it
@@ -1410,7 +1415,7 @@ function Global:Show-CreateInIntuneDialog {
         $rtbFieldLegend.ScrollBars = "None"
         $rtbFieldLegend.TabStop = $false
         $rtbFieldLegend.DetectUrls = $false
-        $rtbFieldLegend.BackColor = $Global:App.LightPalette.FieldBack
+        $rtbFieldLegend.BackColor = $Global:App.LightPalette.FormBack
         # One style for the whole line, so set on the box itself - selection
         # styling applied before the box has a window handle is dropped on
         # Windows PowerShell 5.1, which left the legend plain black there.
@@ -3294,7 +3299,7 @@ function Global:Show-CreateInIntuneDialog {
     # Reapplied here so $pnlStatusInfo actually looks like the bordered,
     # distinct "field" it's meant to be instead of blending into the rest
     # of the dialog once themed.
-    $pnlStatusInfo.BackColor = $Global:App.LightPalette.FieldBack
+    $pnlStatusInfo.BackColor = $Global:App.LightPalette.FormBack
     # $scrollPanel (or whatever's first inside it) can end up with default
     # focus when the dialog is shown - a known WinForms quirk (confirmed
     # live, same one already fixed in Show-GettingStartedGuideDialog and
@@ -3326,7 +3331,7 @@ function Global:Show-CreateInIntuneDialog {
             $control.Location = New-Object System.Drawing.Point($control.Left, ($control.Top + $shift))
             $HostForm.Controls.Add($control)
         }
-        $pnlStatusInfo.BackColor = $Global:App.LightPalette.FieldBack
+        $pnlStatusInfo.BackColor = $Global:App.LightPalette.FormBack
         # Its own Cancel and the Previous/Next pair stay behind: the host
         # has both already, and two of each is how a merged window starts
         # looking like two windows in a trench coat.
