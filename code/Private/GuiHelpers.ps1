@@ -1243,7 +1243,13 @@ function Global:Update-Grid {
     $availTotal = ($Global:App.Apps | ForEach-Object { @($_.availableFor).Count } | Measure-Object -Sum).Sum
     $uninstTotal= ($Global:App.Apps | ForEach-Object { @($_.uninstallFor).Count } | Measure-Object -Sum).Sum
     $dirty = if ($Global:App.UnsavedChangesBox.Value) { "  *unsaved changes*" } else { "" }
-    Set-Status "$($Global:App.Apps.Count) apps  |  $reqTotal required, $availTotal available, $uninstTotal uninstall assignments  |  $($Global:App.LinkedFilePath)$dirty"
+    # While a filter is on, the count has to be what you can actually see.
+    # It read "120 apps" over a grid showing three of them, which is the
+    # one moment that number is worth reading and the one moment it was
+    # wrong. The assignment totals below stay catalog-wide on purpose -
+    # they answer "what does this catalog deploy", not "what is on screen".
+    $countText = if ($filter) { "Showing $($rows.Count) of $($Global:App.Apps.Count) apps" } else { "$($Global:App.Apps.Count) apps" }
+    Set-Status "$countText  |  $reqTotal required, $availTotal available, $uninstTotal uninstall assignments  |  $($Global:App.LinkedFilePath)$dirty"
 }
 
 function Global:Get-SelectedAppIndex {

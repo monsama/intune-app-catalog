@@ -2070,7 +2070,40 @@ $btnPlatformScripts.Add_Click({ Show-PlatformScriptsDialog })
 $btnFavoriteGroups.Add_Click({ Show-FavoriteGroupsManager })
 $btnIntuneAudit.Add_Click({ Show-IntuneCheckDialog; Update-Grid })
 
-$Global:App.TxtSearch.Add_TextChanged({ Update-Grid })
+# Typing waits for you to stop before the grid is rebuilt. A rebuild is
+# not cheap: it re-derives every row, and for each app with no Winget ID
+# it calls Resolve-AppPackagePath, which walks data\app-packages
+# recursively looking for that app's .intunewin. Per keystroke, that was
+# a four-letter filter costing four passes over the catalog and dozens of
+# directory walks - felt as the search box lagging behind the typing.
+#
+# 250ms: below what reads as a delay, long enough that ordinary typing
+# lands one rebuild instead of one per character.
+$Global:App.SearchDebounce = New-Object System.Windows.Forms.Timer
+$Global:App.SearchDebounce.Interval = 250
+$Global:App.SearchDebounce.Add_Tick({
+    $Global:App.SearchDebounce.Stop()
+    Update-Grid
+})
+$Global:App.TxtSearch.Add_TextChanged({
+    # Restarted, not merely started: each keystroke pushes the rebuild
+    # back, so it happens once when typing stops.
+    $Global:App.SearchDebounce.Stop()
+    $Global:App.SearchDebounce.Start()
+})
+
+# Esc empties the search box while it has focus - the way out of a filter,
+# without reaching for the mouse or selecting the text to delete it.
+# Rebuilt immediately rather than through the debounce above: clearing is
+# one deliberate keypress, not a stream of them.
+$Global:App.TxtSearch.Add_KeyDown({
+    if ($_.KeyCode -ne [System.Windows.Forms.Keys]::Escape) { return }
+    $_.SuppressKeyPress = $true
+    if ($Global:App.TxtSearch.Text -eq '') { return }
+    $Global:App.SearchDebounce.Stop()
+    $Global:App.TxtSearch.Text = ''
+    Update-Grid
+})
 
 # =====================================================================
 # Log tab
@@ -2241,6 +2274,10 @@ $Global:App.Form.Add_FormClosed({
     if ($Global:App.LogFlushTimer) {
         try { $Global:App.LogFlushTimer.Stop(); $Global:App.LogFlushTimer.Dispose() } catch { }
         $Global:App.LogFlushTimer = $null
+    }
+    if ($Global:App.SearchDebounce) {
+        try { $Global:App.SearchDebounce.Stop(); $Global:App.SearchDebounce.Dispose() } catch { }
+        $Global:App.SearchDebounce = $null
     }
     if ($Global:App.LogFileWriter) {
         try { $Global:App.LogFileWriter.Flush(); $Global:App.LogFileWriter.Close() } catch { }
