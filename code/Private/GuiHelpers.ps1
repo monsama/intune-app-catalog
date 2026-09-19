@@ -963,6 +963,94 @@ function Global:New-GridColumn {
     return $col
 }
 
+function Global:Get-GridColumnWidths {
+    # Column name -> FillWeight, not pixels: the grid is in Fill mode, so
+    # dragging a column edge changes its weight. Weights are also the thing
+    # worth keeping - they still mean the same on a window reopened at a
+    # different size, where saved pixel widths would not.
+    $widths = @{}
+    if (-not $Global:App.Grid) { return $widths }
+    foreach ($col in $Global:App.Grid.Columns) {
+        if (-not $col.Visible) { continue }
+        $widths[$col.Name] = [Math]::Round([double]$col.FillWeight, 2)
+    }
+    return $widths
+}
+
+function Global:Restore-GridColumnWidths {
+    # Read back defensively: this comes from a file a person can edit, and
+    # a column that has since been renamed or removed simply has no saved
+    # width any more. Anything missing or unusable keeps the built-in
+    # weight, so the worst case is the layout this grid always had.
+    $saved = $Global:App.SavedGridColumnWidths
+    if (-not $saved -or -not $Global:App.Grid) { return }
+    foreach ($col in $Global:App.Grid.Columns) {
+        $value = if ($saved -is [System.Collections.IDictionary]) { $saved[$col.Name] }
+                 elseif ($saved.PSObject.Properties[$col.Name]) { $saved.PSObject.Properties[$col.Name].Value }
+                 else { $null }
+        if ($null -eq $value) { continue }
+        $weight = 0.0
+        # FillWeight refuses anything at or below zero, so a corrupt or
+        # hand-typed 0 must not reach it.
+        if ([double]::TryParse([string]$value, [ref]$weight) -and $weight -gt 0) {
+            $col.FillWeight = $weight
+        }
+    }
+}
+
+function Global:Get-WindowPlacement {
+    $form = $Global:App.Form
+    if (-not $form) { return $null }
+    # RestoreBounds, not Bounds, whenever the window isn't in its normal
+    # state: Bounds while maximized is the whole monitor, which would come
+    # back as a "normal" window exactly covering the screen - maximized to
+    # look at, but not actually maximized.
+    $bounds = if ($form.WindowState -eq [System.Windows.Forms.FormWindowState]::Normal) { $form.Bounds } else { $form.RestoreBounds }
+    # Minimized is never saved as a state to come back to - nobody wants to
+    # reopen an app into the taskbar.
+    $state = if ($form.WindowState -eq [System.Windows.Forms.FormWindowState]::Maximized) { 'Maximized' } else { 'Normal' }
+    return [pscustomobject]@{
+        State  = $state
+        X      = [int]$bounds.X
+        Y      = [int]$bounds.Y
+        Width  = [int]$bounds.Width
+        Height = [int]$bounds.Height
+    }
+}
+
+function Global:Restore-WindowPlacement {
+    # Called before the window is shown. Does nothing at all unless there is
+    # a saved placement that still makes sense on the monitors attached
+    # right now, so the default (maximized) stands on a first run.
+    $placement = $Global:App.SavedWindowPlacement
+    if (-not $placement) { return }
+    $width = [int]$placement.Width
+    $height = [int]$placement.Height
+    if ($width -lt 400 -or $height -lt 300) { return }
+    $rect = New-Object System.Drawing.Rectangle([int]$placement.X, [int]$placement.Y, $width, $height)
+
+    # The monitor this was last on may be gone - a laptop undocked, a screen
+    # unplugged. Restoring onto coordinates that no screen covers any more
+    # puts the window somewhere the user cannot reach or even see, and the
+    # app looks like it failed to start. Enough of it has to land on a
+    # screen that exists, or the saved placement is simply ignored.
+    $visible = $false
+    foreach ($screen in [System.Windows.Forms.Screen]::AllScreens) {
+        $overlap = [System.Drawing.Rectangle]::Intersect($screen.WorkingArea, $rect)
+        if ($overlap.Width -ge 200 -and $overlap.Height -ge 100) { $visible = $true; break }
+    }
+    if (-not $visible) { return }
+
+    $Global:App.Form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+    $Global:App.Form.Bounds = $rect
+    if ($placement.State -eq 'Maximized') {
+        $Global:App.Form.WindowState = [System.Windows.Forms.FormWindowState]::Maximized
+    }
+    else {
+        $Global:App.Form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+    }
+}
+
 function Global:Sort-Grid {
     # Called by the grid's own header click. The first click on a column
     # sorts it ascending, a second click on the SAME column reverses it -
@@ -1137,6 +1225,18 @@ function Global:Update-Grid {
     }
     if ($prevFirstRow -ge 0 -and $prevFirstRow -lt $Global:App.Grid.Rows.Count) {
         $Global:App.Grid.FirstDisplayedScrollingRowIndex = $prevFirstRow
+    }
+
+    # The empty-catalog panel covers the grid only when the CATALOG is
+    # empty, never when a search simply matches nothing - the search box is
+    # right there to explain that case, and "Add the first app..." would be
+    # the wrong advice while apps exist.
+    if ($Global:App.PanelEmptyCatalog) {
+        $catalogIsEmpty = ($Global:App.Apps.Count -eq 0)
+        $Global:App.PanelEmptyCatalog.Visible = $catalogIsEmpty
+        if ($catalogIsEmpty) {
+            $Global:App.LblEmptyPath.Text = "This catalog folder: $($Global:App.LinkedFilePath)"
+        }
     }
 
     $reqTotal   = ($Global:App.Apps | ForEach-Object { @($_.requiredFor).Count } | Measure-Object -Sum).Sum

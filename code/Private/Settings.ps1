@@ -33,8 +33,20 @@ function Global:Import-GraphSettings {
         if ($settings.DetailedGraphLog -is [bool]) { $Global:App.DetailedGraphLog = $settings.DetailedGraphLog }
         # Same -is [bool] reasoning as CheckDriftOnStartup right above.
         if ($settings.RunFullAuditOnStartup -is [bool]) { $Global:App.RunFullAuditOnStartup = $settings.RunFullAuditOnStartup }
-    # Same -is [bool] reasoning as CheckDriftOnStartup above.
-    if ($settings.CheckIntuneOnDeployOpen -is [bool]) { $Global:App.CheckIntuneOnDeployOpen = $settings.CheckIntuneOnDeployOpen }
+        # Same -is [bool] reasoning as CheckDriftOnStartup above.
+        if ($settings.CheckIntuneOnDeployOpen -is [bool]) { $Global:App.CheckIntuneOnDeployOpen = $settings.CheckIntuneOnDeployOpen }
+        # How the catalog grid was left: which column it was sorted by and
+        # which way, and how wide its columns were dragged. Nothing here is
+        # load-bearing - a missing or nonsense value just means the grid
+        # opens in catalog order at its default widths, which is where it
+        # was before any of this was remembered.
+        if ($settings.GridSortColumn -is [string]) { $Global:App.GridSortColumn = $settings.GridSortColumn }
+        if ($settings.GridSortAscending -is [bool]) { $Global:App.GridSortAscending = $settings.GridSortAscending }
+        if ($settings.GridColumnWidths) { $Global:App.SavedGridColumnWidths = $settings.GridColumnWidths }
+        # Where the window was, so it comes back on the same monitor at the
+        # same size. Applied only after it is checked against the screens
+        # actually attached right now - see Restore-WindowPlacement.
+        if ($settings.WindowPlacement) { $Global:App.SavedWindowPlacement = $settings.WindowPlacement }
         # Missing entirely (an older settings file, or one from before this
         # existed) leaves $Global:App.DefaultAppSettings at its own built-in
         # factory values, untouched - same "fall back silently" reasoning
@@ -86,8 +98,16 @@ function Global:Write-SettingsFile {
             DefaultAppSettings    = $Global:App.DefaultAppSettings
             CheckDriftOnStartup   = $Global:App.CheckDriftOnStartup
             RunFullAuditOnStartup = $Global:App.RunFullAuditOnStartup
-        CheckIntuneOnDeployOpen = [bool]$Global:App.CheckIntuneOnDeployOpen
+            CheckIntuneOnDeployOpen = [bool]$Global:App.CheckIntuneOnDeployOpen
             DetailedGraphLog      = [bool]$Global:App.DetailedGraphLog
+            # How the grid and the window were left - see the notes on the
+            # reading side. Written on every save like everything else here,
+            # and read back defensively, so an old settings file without
+            # them (or one written by hand) costs nothing.
+            GridSortColumn        = [string]$Global:App.GridSortColumn
+            GridSortAscending     = [bool]$Global:App.GridSortAscending
+            GridColumnWidths      = (Get-GridColumnWidths)
+            WindowPlacement       = (Get-WindowPlacement)
         }
         $json = $settings | ConvertTo-Json -Depth 5
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)

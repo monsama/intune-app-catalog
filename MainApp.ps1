@@ -514,8 +514,12 @@ $Global:App.Form.Text = "Intune App Catalog & Deployment (v$($Global:App.AppVers
 $Global:App.Form.Size = New-Object System.Drawing.Size(1080, 720)
 $Global:App.Form.MinimumSize = New-Object System.Drawing.Size(860, 560)
 $Global:App.Form.StartPosition = "CenterScreen"
+# Maximized is still what a first run gets. Restore-WindowPlacement then
+# overrides it with wherever the window was last closed, but only if that
+# still lands on a monitor attached right now.
 $Global:App.Form.WindowState = [System.Windows.Forms.FormWindowState]::Maximized
 $Global:App.Form.Font = Get-AppUiFont
+Restore-WindowPlacement
 
 $tabs = New-Object System.Windows.Forms.TabControl
 $tabs.Dock = "Fill"
@@ -643,6 +647,10 @@ $toolbarTips.SetToolTip($btnPrerequisites, "Check whether the Microsoft.Graph.Au
 
 $Global:App.TxtSearch = New-Object System.Windows.Forms.TextBox
 $Global:App.TxtSearch.Width = 220
+# Named for a screen reader: the only thing labelling this box on screen
+# is its group box title, which is read as a container rather than as
+# this field's name.
+$Global:App.TxtSearch.AccessibleName = "Search apps in this catalog"
 
 # The toolbar used to be organized by WHICH SYSTEM a button touches
 # (Catalog/Intune/Entra ID/Settings), which meant a brand-new user facing
@@ -855,6 +863,7 @@ $btnAuditWarningDismiss.Add_Click({ $Global:App.PanelAuditWarning.Visible = $fal
 $tabCatalog.Controls.Add($Global:App.PanelAuditWarning)
 
 $Global:App.Grid = New-Object System.Windows.Forms.DataGridView
+$Global:App.Grid.AccessibleName = "App catalog"
 $Global:App.Grid.Dock = "Fill"
 $Global:App.Grid.ReadOnly = $true
 $Global:App.Grid.AllowUserToAddRows = $false
@@ -904,8 +913,71 @@ $Global:App.ColIndex.DataPropertyName = "Index"
 $Global:App.ColIndex.Visible = $false
 $Global:App.Grid.Columns.Add($Global:App.ColIndex) | Out-Null
 
+# Column widths as they were last dragged. The sort needs no call here -
+# Update-Grid reads $Global:App.GridSortColumn itself, and Import-Graph-
+# Settings has already put the saved one there.
+Restore-GridColumnWidths
+
 $tabCatalog.Controls.Add($Global:App.Grid)
 $Global:App.Grid.BringToFront()
+
+# What an empty catalog looks like. Without this, a first run is a blank
+# grid, a row of column headers, and "0 apps" in the status bar - correct,
+# and no help at all about what to do next. Shown over the grid only while
+# there is genuinely nothing in the catalog (Update-Grid decides), so it
+# can never hide a catalog that does have apps in it.
+$Global:App.PanelEmptyCatalog = New-Object System.Windows.Forms.Panel
+$Global:App.PanelEmptyCatalog.Dock = "Fill"
+$Global:App.PanelEmptyCatalog.Visible = $false
+$Global:App.PanelEmptyCatalog.BackColor = [System.Drawing.Color]::White
+
+$lblEmptyTitle = New-Object System.Windows.Forms.Label
+$lblEmptyTitle.Text = "No apps in this catalog yet"
+$lblEmptyTitle.Font = New-Object System.Drawing.Font($Global:App.Form.Font.FontFamily, 13, [System.Drawing.FontStyle]::Bold)
+$lblEmptyTitle.Location = New-Object System.Drawing.Point(40, 40)
+$lblEmptyTitle.AutoSize = $true
+$Global:App.PanelEmptyCatalog.Controls.Add($lblEmptyTitle)
+
+$lblEmptyBody = New-Object System.Windows.Forms.Label
+$lblEmptyBody.Text = "A catalog is a folder of one JSON file per app, kept in git if you like. This one is empty - either add the first app, or point the tool at a folder that already has some."
+$lblEmptyBody.Location = New-Object System.Drawing.Point(42, 78)
+$lblEmptyBody.Size = New-Object System.Drawing.Size(620, 44)
+$lblEmptyBody.ForeColor = [System.Drawing.Color]::FromArgb(90,90,90)
+$Global:App.PanelEmptyCatalog.Controls.Add($lblEmptyBody)
+
+$Global:App.LblEmptyPath = New-Object System.Windows.Forms.Label
+$Global:App.LblEmptyPath.Location = New-Object System.Drawing.Point(42, 126)
+$Global:App.LblEmptyPath.Size = New-Object System.Drawing.Size(620, 20)
+$Global:App.LblEmptyPath.ForeColor = [System.Drawing.Color]::FromArgb(120,120,120)
+$Global:App.PanelEmptyCatalog.Controls.Add($Global:App.LblEmptyPath)
+
+# The same three buttons the toolbar has, not new actions - PerformClick on
+# the real ones, the convention the grid's context menu and the overflow
+# menu already use, so there is one handler per action however it is
+# reached.
+$btnEmptyAdd = New-Object System.Windows.Forms.Button
+$btnEmptyAdd.Text = "Add the first app..."
+$btnEmptyAdd.Location = New-Object System.Drawing.Point(42, 160)
+$btnEmptyAdd.Size = New-Object System.Drawing.Size(180, 34)
+$btnEmptyAdd.Add_Click({ $btnNew.PerformClick() }.GetNewClosure())
+$Global:App.PanelEmptyCatalog.Controls.Add($btnEmptyAdd)
+
+$btnEmptyOpen = New-Object System.Windows.Forms.Button
+$btnEmptyOpen.Text = "Open another folder..."
+$btnEmptyOpen.Location = New-Object System.Drawing.Point(232, 160)
+$btnEmptyOpen.Size = New-Object System.Drawing.Size(180, 34)
+$btnEmptyOpen.Add_Click({ $btnOpen.PerformClick() }.GetNewClosure())
+$Global:App.PanelEmptyCatalog.Controls.Add($btnEmptyOpen)
+
+$btnEmptyGuide = New-Object System.Windows.Forms.Button
+$btnEmptyGuide.Text = "Getting started..."
+$btnEmptyGuide.Location = New-Object System.Drawing.Point(422, 160)
+$btnEmptyGuide.Size = New-Object System.Drawing.Size(180, 34)
+$btnEmptyGuide.Add_Click({ $btnGettingStarted.PerformClick() }.GetNewClosure())
+$Global:App.PanelEmptyCatalog.Controls.Add($btnEmptyGuide)
+
+$tabCatalog.Controls.Add($Global:App.PanelEmptyCatalog)
+$Global:App.PanelEmptyCatalog.BringToFront()
 
 # Highlight the Status column when it's flagging something, so problems are
 # visible at a glance across the whole catalog instead of only when you open
@@ -2014,6 +2086,7 @@ $Global:App.Progress = New-Object System.Windows.Forms.ProgressBar
 $Global:App.Progress.Dock = "Bottom"
 $Global:App.Progress.Height = 6
 $Global:App.Progress.Style = "Marquee"
+$Global:App.Progress.AccessibleName = "Working"
 $Global:App.Progress.Visible = $false
 $tabPipeline.Controls.Add($Global:App.Progress)
 
@@ -2154,6 +2227,13 @@ $Global:App.Form.Add_FormClosing({
             if (-not (Save-AppsToFile -Path $Global:App.LinkedFilePath)) { $closingArgs.Cancel = $true }
         }
         elseif ($r -ne [System.Windows.Forms.DialogResult]::No) { $closingArgs.Cancel = $true }
+    }
+    # Where the window ended up, and how the grid was left, written once on
+    # the way out rather than on every drag of a column edge. Skipped if
+    # the close was called off above, since nothing is ending yet. Failing
+    # to write settings is never a reason to keep the app open.
+    if (-not $closingArgs.Cancel) {
+        try { [void](Write-SettingsFile) } catch { }
     }
 })
 
