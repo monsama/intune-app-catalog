@@ -17,7 +17,7 @@ function Global:Show-PlatformScriptsDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Platform scripts"
-    $dlg.ClientSize = New-Object System.Drawing.Size(880, 620)
+    $dlg.ClientSize = New-Object System.Drawing.Size(1040, 620)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -26,7 +26,7 @@ function Global:Show-PlatformScriptsDialog {
     $lblIntro = New-Object System.Windows.Forms.Label
     $lblIntro.Text = "PowerShell scripts Intune runs on enrolled Windows devices (Devices > Scripts and remediations > Platform scripts in the portal). A script runs once per device, and again whenever you change it here."
     $lblIntro.Location = New-Object System.Drawing.Point(15, 12)
-    $lblIntro.Size = New-Object System.Drawing.Size(850, 36)
+    $lblIntro.Size = New-Object System.Drawing.Size(1010, 36)
     $dlg.Controls.Add($lblIntro)
 
     $lblStatus = New-Object System.Windows.Forms.Label
@@ -38,13 +38,13 @@ function Global:Show-PlatformScriptsDialog {
 
     $btnRefresh = New-Object System.Windows.Forms.Button
     $btnRefresh.Text = "Refresh"
-    $btnRefresh.Location = New-Object System.Drawing.Point(735, 50)
+    $btnRefresh.Location = New-Object System.Drawing.Point(895, 50)
     $btnRefresh.Size = New-Object System.Drawing.Size(130, 26)
     $dlg.Controls.Add($btnRefresh)
 
     $grid = New-Object System.Windows.Forms.DataGridView
     $grid.Location = New-Object System.Drawing.Point(15, 84)
-    $grid.Size = New-Object System.Drawing.Size(850, 250)
+    $grid.Size = New-Object System.Drawing.Size(1010, 250)
     $grid.AllowUserToAddRows = $false
     $grid.AllowUserToDeleteRows = $false
     $grid.AllowUserToResizeRows = $false
@@ -84,21 +84,21 @@ function Global:Show-PlatformScriptsDialog {
 
     $btnEdit = New-Object System.Windows.Forms.Button
     $btnEdit.Text = "Edit..."
-    $btnEdit.Location = New-Object System.Drawing.Point(155, 344)
+    $btnEdit.Location = New-Object System.Drawing.Point(315, 344)
     $btnEdit.Size = New-Object System.Drawing.Size(130, 30)
     $btnEdit.Enabled = $false
     $dlg.Controls.Add($btnEdit)
 
     $btnRunStatus = New-Object System.Windows.Forms.Button
     $btnRunStatus.Text = "Run status..."
-    $btnRunStatus.Location = New-Object System.Drawing.Point(295, 344)
+    $btnRunStatus.Location = New-Object System.Drawing.Point(455, 344)
     $btnRunStatus.Size = New-Object System.Drawing.Size(130, 30)
     $btnRunStatus.Enabled = $false
     $dlg.Controls.Add($btnRunStatus)
 
     $btnDelete = New-Object System.Windows.Forms.Button
     $btnDelete.Text = "Delete..."
-    $btnDelete.Location = New-Object System.Drawing.Point(435, 344)
+    $btnDelete.Location = New-Object System.Drawing.Point(595, 344)
     $btnDelete.Size = New-Object System.Drawing.Size(130, 30)
     $btnDelete.Enabled = $false
     $dlg.Controls.Add($btnDelete)
@@ -109,9 +109,17 @@ function Global:Show-PlatformScriptsDialog {
     # live, and nothing to compare against afterwards.
     $scriptCatalogPath = Join-Path $Global:App.RootPath "data\script-data"
 
+    $btnNewLocal = New-Object System.Windows.Forms.Button
+    $btnNewLocal.Text = "New local script..."
+    $btnNewLocal.Location = New-Object System.Drawing.Point(155, 344)
+    $btnNewLocal.Size = New-Object System.Drawing.Size(150, 30)
+    $dlg.Controls.Add($btnNewLocal)
+    $newLocalTip = New-Object System.Windows.Forms.ToolTip
+    $newLocalTip.SetToolTip($btnNewLocal, "Writes a script to the local catalog without sending anything to Intune - for preparing one before it goes live. It appears in the list as 'Local only'; Edit it and save to create it in Intune.")
+
     $btnSaveLocal = New-Object System.Windows.Forms.Button
     $btnSaveLocal.Text = "Save local copies"
-    $btnSaveLocal.Location = New-Object System.Drawing.Point(575, 344)
+    $btnSaveLocal.Location = New-Object System.Drawing.Point(735, 344)
     $btnSaveLocal.Size = New-Object System.Drawing.Size(140, 30)
     $dlg.Controls.Add($btnSaveLocal)
     $saveLocalTip = New-Object System.Windows.Forms.ToolTip
@@ -119,7 +127,7 @@ function Global:Show-PlatformScriptsDialog {
 
     $btnOpenLocal = New-Object System.Windows.Forms.Button
     $btnOpenLocal.Text = "Open local folder"
-    $btnOpenLocal.Location = New-Object System.Drawing.Point(725, 344)
+    $btnOpenLocal.Location = New-Object System.Drawing.Point(885, 344)
     $btnOpenLocal.Size = New-Object System.Drawing.Size(140, 30)
     $dlg.Controls.Add($btnOpenLocal)
     $openLocalTip = New-Object System.Windows.Forms.ToolTip
@@ -134,13 +142,13 @@ function Global:Show-PlatformScriptsDialog {
 
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
     $rtbLog.Location = New-Object System.Drawing.Point(15, 384)
-    $rtbLog.Size = New-Object System.Drawing.Size(850, 182)
+    $rtbLog.Size = New-Object System.Drawing.Size(1010, 182)
     Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(780, 576)
+    $btnClose.Location = New-Object System.Drawing.Point(940, 576)
     $btnClose.Size = New-Object System.Drawing.Size(85, 30)
     $dlg.Controls.Add($btnClose)
 
@@ -183,13 +191,36 @@ function Global:Show-PlatformScriptsDialog {
             elseif ($localState -eq 'Saved') { $grid.Rows[$index].Cells[6].Style.ForeColor = [System.Drawing.Color]::SeaGreen }
             $grid.Rows[$index].Cells[6].ToolTipText = if ($local) { "A copy of this script is in the local catalog. 'Differs' compares only what a listing shows - the body and groups are checked when you save." } else { "No local copy yet - use 'Save local copies' to keep one." }
             $grid.Rows[$index].Tag = $row
+            if ($local) { [void]$localByName.Remove([string]$row.DisplayName) }
             $grid.Rows[$index].Cells[0].ToolTipText = if ($row.Description) { [string]$row.Description } else { [string]$row.DisplayName }
+        }
+        # Whatever is left in the local catalog exists only here - written
+        # before it was ever sent, or left behind by a script since deleted
+        # from the tenant. Shown as rows too, because a local script you
+        # can't see is a local script you'll forget to push.
+        $localOnlyCount = 0
+        foreach ($orphan in @($localByName.Values | Sort-Object displayName)) {
+            $orphanRunAs = if ($orphan.runAsAccount -eq 'user') { "Signed-in user" } else { "System" }
+            $orphan32Bit = if ($orphan.runAs32Bit) { "Yes" } else { "No" }
+            $orphanSignature = if ($orphan.enforceSignatureCheck) { "Required" } else { "Not required" }
+            $index = $grid.Rows.Add($orphan.displayName, $orphan.fileName, $orphanRunAs, $orphan32Bit, $orphanSignature, "", "Local only")
+            $grid.Rows[$index].Cells[6].Style.ForeColor = [System.Drawing.Color]::MediumBlue
+            $grid.Rows[$index].Cells[6].ToolTipText = "This script is in the local catalog but not in this tenant. Use Edit to review it, then save to create it in Intune."
+            # Marked so Edit and Delete know there is no Intune app behind it
+            $grid.Rows[$index].Tag = [pscustomobject]@{
+                Id = ""; DisplayName = $orphan.displayName; Description = $orphan.description
+                FileName = $orphan.fileName; RunAs = $orphan.runAsAccount
+                RunAs32Bit = $orphan.runAs32Bit; Signature = $orphan.enforceSignatureCheck
+                LocalOnly = $true; LocalRecord = $orphan
+            }
+            $localOnlyCount++
         }
         $grid.ClearSelection()
         $grid.CurrentCell = $null
         $count = @($rowsBox.Value).Count
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = if ($count -eq 0) { "No platform scripts in this tenant yet." } elseif ($count -eq 1) { "1 platform script." } else { "$count platform scripts." }
+        if ($localOnlyCount -gt 0) { $lblStatus.Text += " $localOnlyCount only in the local catalog." }
     }.GetNewClosure()
 
     # Saving means reading each script in full, one at a time - a listing has
@@ -379,9 +410,78 @@ function Global:Show-PlatformScriptsDialog {
         } "Creating '$($entered.DisplayName)' in Intune..."
     }.GetNewClosure())
 
+    # Writes one script into the local catalog without touching the others
+    $SaveOneLocally = {
+        param($Record)
+        $existing = @((Import-ScriptsFromFolder -Path $scriptCatalogPath).Scripts |
+            Where-Object { [string]$_.displayName -ne [string]$Record.displayName })
+        $saveResult = Save-ScriptsToFolder -Path $scriptCatalogPath -Scripts (@($existing) + @($Record))
+        foreach ($problem in @($saveResult.Errors)) {
+            Write-DialogLogLine -LogBox $rtbLog -Text "[FAILED] $problem`r`n"
+        }
+        return ($saveResult.Errors.Count -eq 0)
+    }.GetNewClosure()
+
+    $btnNewLocal.Add_Click({
+        $entered = Show-PlatformScriptEditorDialog
+        if (-not $entered) { return }
+        $record = ConvertTo-ScriptRecord @{
+            displayName           = $entered.DisplayName
+            description           = $entered.Description
+            fileName              = $entered.FileName
+            runAsAccount          = $entered.RunAsAccount
+            runAs32Bit            = $entered.RunAs32Bit
+            enforceSignatureCheck = $entered.EnforceSignatureCheck
+            scriptContent         = $entered.ScriptContent
+            assignedGroups        = @($entered.GroupNames)
+        }
+        if (& $SaveOneLocally $record) {
+            Write-DialogLogLine -LogBox $rtbLog -Text "[OK] '$($record.displayName)' saved to the local catalog. Nothing was sent to Intune - use Edit on its row to create it there.`r`n" -MirrorToMainLog
+            $lblStatus.ForeColor = [System.Drawing.Color]::SeaGreen
+            $lblStatus.Text = "'$($record.displayName)' saved locally - not in Intune yet."
+            & $populateGrid
+        }
+    }.GetNewClosure())
+
     $btnEdit.Add_Click({
         if ($grid.SelectedRows.Count -eq 0) { return }
         $selected = $grid.SelectedRows[0].Tag
+
+        # A local-only script has nothing in Intune to read, so it opens
+        # straight from its file; saving then CREATES it there.
+        if ($selected.LocalOnly) {
+            $local = $selected.LocalRecord
+            $edited = Show-PlatformScriptEditorDialog -DisplayName $local.displayName -Description $local.description `
+                -FileName $local.fileName -ScriptContent $local.scriptContent -RunAsAccount $local.runAsAccount `
+                -RunAs32Bit ([bool]$local.runAs32Bit) -EnforceSignatureCheck ([bool]$local.enforceSignatureCheck) `
+                -GroupNames @($local.assignedGroups)
+            if (-not $edited) { return }
+            [void](& $SaveOneLocally (ConvertTo-ScriptRecord @{
+                displayName           = $edited.DisplayName
+                description           = $edited.Description
+                fileName              = $edited.FileName
+                runAsAccount          = $edited.RunAsAccount
+                runAs32Bit            = $edited.RunAs32Bit
+                enforceSignatureCheck = $edited.EnforceSignatureCheck
+                scriptContent         = $edited.ScriptContent
+                assignedGroups        = @($edited.GroupNames)
+            }))
+            & $runScriptAction @{
+                Mode                  = "Save"
+                ScriptId              = ""
+                DisplayName           = $edited.DisplayName
+                Description           = $edited.Description
+                FileName              = $edited.FileName
+                ScriptContentBase64   = (ConvertTo-PlatformScriptBase64 $edited.ScriptContent)
+                RunAsAccount          = $edited.RunAsAccount
+                RunAs32Bit            = $edited.RunAs32Bit
+                EnforceSignatureCheck = $edited.EnforceSignatureCheck
+                GroupNames            = @($edited.GroupNames)
+                AssignGroups          = $edited.AssignGroups
+            } "Creating '$($edited.DisplayName)' in Intune from the local copy..."
+            return
+        }
+
         & $setBusy $true
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = "Loading '$($selected.DisplayName)' from Intune..."
