@@ -148,6 +148,57 @@ function Global:Move-DialogToTabPage {
     return $inner
 }
 
+function Global:Expand-HostedContent {
+    <#
+      Gives one control on a tab page the height the page has.
+
+      A dialog that becomes a tab leaves a hole: its own Close button and
+      button row are hidden, because the host window has those, and the
+      grid or log that sat above them keeps its old height - so the page
+      ends in empty space a third of the way up from the bottom.
+
+      Call this from the host's Shown handler, never while building. Before
+      the window is shown a TabPage reports a ClientSize of about 100, and
+      every control on it reports Visible = $false because nothing in the
+      chain is on screen yet - so "how tall is the page" and "is anything
+      below me" both answer wrongly, and confidently.
+
+      The caller names the control, because only the dialog knows which one
+      is its content. Guessing "the biggest one" is how the wrong thing
+      grows.
+    #>
+    param(
+        [System.Windows.Forms.Control]$Control,
+        [System.Windows.Forms.TabPage]$Page,
+        # What still sits under the content, if anything - the winget check
+        # keeps a "Copy list" button below its grid. Named by the caller
+        # rather than found by looking: a control on a tab page that is not
+        # the selected one reports Visible = $false, exactly like one hidden
+        # on purpose, so there is no way to tell "hidden" from "on another
+        # tab" by inspection.
+        [System.Windows.Forms.Control]$StopAbove,
+        [int]$BottomMargin = 12
+    )
+    if (-not $Control -or -not $Page) { return }
+    $fillTo = $Page.ClientSize.Height - $BottomMargin
+    $hasSomethingBelow = [bool]$StopAbove
+    if ($StopAbove -and ($StopAbove.Top - $BottomMargin) -lt $fillTo) {
+        $fillTo = $StopAbove.Top - $BottomMargin
+    }
+
+    # Only ever grows, and only into something worth having: a page shorter
+    # than the dialog would otherwise shrink its own content to nothing.
+    if ($fillTo -gt ($Control.Top + 80) -and ($fillTo - $Control.Top) -gt $Control.Height) {
+        $Control.Height = $fillTo - $Control.Top
+    }
+    # Anchored to the bottom only when nothing is under it. Whatever is
+    # below is anchored to the top and stays put, so a control that grows
+    # with the window would grow straight over it.
+    if (-not $hasSomethingBelow) {
+        $Control.Anchor = $Control.Anchor -bor [System.Windows.Forms.AnchorStyles]::Bottom
+    }
+}
+
 function Global:Get-ControlGroupOrigin {
     <#
       The top-left corner of a set of controls, as @{ X; Y }, from their
@@ -991,6 +1042,34 @@ function Global:New-OverflowSubmenu {
         [void]$sub.DropDownItems.Add($mi)
     }
     return $sub
+}
+
+function Global:Set-AppGridStyle {
+    <#
+      The house look for a table, applied to every grid in the app.
+
+      Deliberately cosmetic only - row headers, row resizing, the border
+      and the background. What a grid is FOR differs from dialog to dialog
+      (one allows multi-select, one is editable, one sizes its columns by
+      content), so nothing here touches selection, editing or column
+      sizing; those stay the caller's decision.
+
+      There were eighteen grids across the app and only eleven of them
+      agreed on a background, fourteen on whether rows could be dragged
+      taller. The difference is small in any one window and obvious when
+      you move between them.
+    #>
+    param([System.Windows.Forms.DataGridView]$Grid)
+    if (-not $Grid) { return }
+    $Grid.RowHeadersVisible = $false          # nothing in this app has a row header worth 40px
+    $Grid.AllowUserToResizeRows = $false      # rows are one line everywhere; dragging one taller only ever misaligns it
+    $Grid.AllowUserToAddRows = $false         # every grid here is filled from code
+    $Grid.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    $Grid.BackColor = $Global:App.LightPalette.GridBack
+    $Grid.BackgroundColor = $Global:App.LightPalette.GridBack
+    # Set-Theme repaints headers to match the palette, which WinForms
+    # ignores while a grid is drawing its headers in the visual style.
+    $Grid.EnableHeadersVisualStyles = $false
 }
 
 function Global:New-GridColumn {

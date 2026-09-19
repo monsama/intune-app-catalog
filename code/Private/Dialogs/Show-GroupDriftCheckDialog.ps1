@@ -40,6 +40,7 @@ function Global:Show-GroupDriftCheckDialog {
     $dlg.Controls.Add($btnRefresh)
 
     $grid = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $grid
     $grid.Location = New-Object System.Drawing.Point(15,92)
     $grid.Size = New-Object System.Drawing.Size(670,340)
     $grid.ReadOnly = $true
@@ -233,6 +234,7 @@ function Global:Show-GroupDriftCheckDialog {
         # $btnRefresh is disabled exactly while a fetch is in flight, and
         # a timer is still ticking against these controls.
         $HostTabPage.Tag = @{
+            Fill        = $grid
             OnFirstShow = { $btnRefresh.PerformClick() }.GetNewClosure()
             # IsBusy is "still working" (what Run all waits on before
             # starting the next check); BlockClose is the stricter "must not

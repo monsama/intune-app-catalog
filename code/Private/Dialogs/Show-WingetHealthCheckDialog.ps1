@@ -80,6 +80,7 @@ function Global:Show-WingetHealthCheckDialog {
     $dlg.Controls.Add($progress)
 
     $grid = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $grid
     $grid.Location = New-Object System.Drawing.Point(15, 108)
     $grid.Size = New-Object System.Drawing.Size(730, 340)
     $grid.AllowUserToAddRows = $false
@@ -300,6 +301,8 @@ function Global:Show-WingetHealthCheckDialog {
         # Run all still waits for it - one winget process per app is exactly
         # the thing not to start a second check on top of.
         $HostTabPage.Tag = @{
+            Fill        = $grid
+            FillStopAbove = $btnCopy
             OnFirstShow = { & $runCheck }.GetNewClosure()
             IsBusy      = { [bool]$stateBox.Running }.GetNewClosure()
         }

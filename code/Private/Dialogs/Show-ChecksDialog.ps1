@@ -109,7 +109,20 @@ function Global:Show-ChecksDialog {
         & $tag.OnFirstShow
     }.GetNewClosure()
     $tabs.Add_SelectedIndexChanged({ & $runPage $tabs.SelectedTab }.GetNewClosure())
-    $dlg.Add_Shown({ & $runPage $tabs.SelectedTab }.GetNewClosure())
+    $dlg.Add_Shown({
+        # Each tab's content takes the height its own dialog's hidden
+        # button row used to have. Done here rather than while building,
+        # because before the window is shown a page reports a height of
+        # about 100 and every control on it reports Visible = $false - so
+        # "how tall is the page" and "is anything below me" both answer
+        # wrongly. A page says which control is its content (Tag.Fill);
+        # nothing is guessed from geometry.
+        foreach ($page in $tabs.TabPages) {
+            $tag = $page.Tag
+            if ($tag -is [hashtable] -and $tag.Fill) { Expand-HostedContent -Control $tag.Fill -Page $page -StopAbove $tag.FillStopAbove }
+        }
+        & $runPage $tabs.SelectedTab
+    }.GetNewClosure())
 
     # "Run all checks" - one click for the whole window, for when the
     # question is "is anything wrong?" rather than one specific check.

@@ -27,6 +27,7 @@ function Global:Show-DeleteLocalCertificateDialog {
     $dlg.Controls.Add($lblIntro)
 
     $grid = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $grid
     $grid.Location = New-Object System.Drawing.Point(15,52)
     $grid.Size = New-Object System.Drawing.Size(750,310)
     $grid.Anchor = "Top,Bottom,Left,Right"

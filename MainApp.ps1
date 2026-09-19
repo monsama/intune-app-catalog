@@ -863,6 +863,7 @@ $btnAuditWarningDismiss.Add_Click({ $Global:App.PanelAuditWarning.Visible = $fal
 $tabCatalog.Controls.Add($Global:App.PanelAuditWarning)
 
 $Global:App.Grid = New-Object System.Windows.Forms.DataGridView
+Set-AppGridStyle -Grid $Global:App.Grid
 $Global:App.Grid.AccessibleName = "App catalog"
 $Global:App.Grid.Dock = "Fill"
 $Global:App.Grid.ReadOnly = $true

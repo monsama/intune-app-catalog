@@ -280,6 +280,13 @@ function Global:Show-AppEditor {
     $rtbAppEditorLog.Size = New-Object System.Drawing.Size(430,86)
     Initialize-DarkLogBox -LogBox $rtbAppEditorLog
     $dlg.Controls.Add($rtbAppEditorLog)
+    # Which log this editor's own messages go to. It starts as the box
+    # above, because the handlers below are built long before the deploy
+    # side is hosted - and once it is, this is repointed at the one log
+    # under every tab, and the box above is dropped. Two black boxes on the
+    # Catalog tab, one of them the window's log and the other this one, was
+    # never intentional: there is one place things get reported.
+    $editorLogBox = @{ Box = $rtbAppEditorLog }
 
     $lblIdStatus = New-Object System.Windows.Forms.Label
     $lblIdStatus.Text = ""
@@ -293,7 +300,7 @@ function Global:Show-AppEditor {
         if ($candidates.Count -eq 0) {
             $lblIdStatus.Text = "No matching app found in Intune for '$($txtName.Text.Trim())'."
             $lblIdStatus.ForeColor = [System.Drawing.Color]::DarkOrange
-            Write-DialogLogLine -LogBox $rtbAppEditorLog -Text "[WARN] No matching app found in Intune for `"$($txtName.Text.Trim())`".`r`n"
+            Write-DialogLogLine -LogBox $editorLogBox.Box -Text "[WARN] No matching app found in Intune for `"$($txtName.Text.Trim())`".`r`n"
         }
         elseif ($candidates.Count -eq 1 -or $candidates[0].displayName -eq $txtName.Text.Trim()) {
             $txtId.Text = $candidates[0].id
@@ -334,7 +341,7 @@ function Global:Show-AppEditor {
             $dlgRef = $dlg
             $lblIdStatusRef = $lblIdStatus
             $tryFillRef = $TryFillIdFromCache
-            $rtbAppEditorLogRef = $rtbAppEditorLog
+            $rtbAppEditorLogRef = $editorLogBox.Box
             Start-IntuneAppLookup -LogBox $rtbAppEditorLogRef -OnComplete {
                 param($ok, $data)
                 try {
@@ -436,7 +443,7 @@ function Global:Show-AppEditor {
             else {
                 $lblIdStatus.Text = "Deployed to Intune, but saving to the catalog failed - check the Log tab, then use `"Save app to catalog`" below."
                 $lblIdStatus.ForeColor = [System.Drawing.Color]::DarkOrange
-                Write-DialogLogLine -LogBox $rtbAppEditorLog -Text "[FAILED] Deployed to Intune, but saving to the local catalog failed - see the Log tab for details.`r`n"
+                Write-DialogLogLine -LogBox $editorLogBox.Box -Text "[FAILED] Deployed to Intune, but saving to the local catalog failed - see the Log tab for details.`r`n"
             }
         }
         elseif ($deployResult -and $deployResult.NewAppId) {
@@ -541,7 +548,7 @@ function Global:Show-AppEditor {
         else {
             $lblIdStatus.Text = "Deleted from Intune, but saving the cleared App ID failed - check the Log tab, then use Force save catalog."
             $lblIdStatus.ForeColor = [System.Drawing.Color]::Firebrick
-            Write-DialogLogLine -LogBox $rtbAppEditorLog -Text "[FAILED] Deleted from Intune, but saving the cleared App ID locally failed - see the Log tab for details.`r`n"
+            Write-DialogLogLine -LogBox $editorLogBox.Box -Text "[FAILED] Deleted from Intune, but saving the cleared App ID locally failed - see the Log tab for details.`r`n"
         }
     }.GetNewClosure())
 
@@ -759,8 +766,7 @@ function Global:Show-AppEditor {
             Controls = @(
                 $lblName, $txtName,
                 $lblWinget, $txtWinget, $btnSearchWinget, $lblUncommonNote,
-                $lblId, $txtId, $btnLookupId, $lblIdStatus,
-                $rtbAppEditorLog
+                $lblId, $txtId, $btnLookupId, $lblIdStatus
             )
         }
         @{
@@ -791,6 +797,15 @@ function Global:Show-AppEditor {
     # no second window now.
     $btnCreateInIntune.Visible = $false
     $btnSaveAndDeployWinget.Visible = $false
+
+    # One log for the window. The editor's own box goes away and everything
+    # it had to say goes to the log under every tab, which is where the
+    # deploy side already reports - see $editorLogBox.
+    if ($deployHost.Log) {
+        $editorLogBox.Box = $deployHost.Log
+        $rtbAppEditorLog.Visible = $false
+        $dlg.Controls.Remove($rtbAppEditorLog)
+    }
 
     # The bottom of the window, below every tab, laid out from the window's
     # own edges rather than from numbers that happened to fit once: one
@@ -830,10 +845,14 @@ function Global:Show-AppEditor {
         $deployHost.Deploy.Location = New-Object System.Drawing.Point(($btnCancel.Left - $gap - $deployHost.Deploy.Width),$rowActions)
     }
 
+    # Previous on the left edge, Next on the right edge, and "3 of 12"
+    # centred between them - the shape of the thing it describes. Bunched
+    # together at the left, the counter read like a third button.
     $btnPrevApp.Location = New-Object System.Drawing.Point($edgeLeft,$rowNavigate)
+    $btnNextApp.Location = New-Object System.Drawing.Point(($edgeRight - $btnNextApp.Width),$rowNavigate)
+    $lblAppNavPosition.Size = New-Object System.Drawing.Size(($btnNextApp.Left - $btnPrevApp.Right - ($gap * 2)),$btnPrevApp.Height)
     $lblAppNavPosition.Location = New-Object System.Drawing.Point(($btnPrevApp.Right + $gap),$rowNavigate)
     $lblAppNavPosition.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $btnNextApp.Location = New-Object System.Drawing.Point(($lblAppNavPosition.Right + $gap),$rowNavigate)
 
     # FormClosing asks first if anything unsaved would be lost
     $btnPrevApp.Add_Click({

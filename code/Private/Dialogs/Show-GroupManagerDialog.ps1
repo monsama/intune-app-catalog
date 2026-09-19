@@ -12,7 +12,7 @@ function Global:Show-GroupManagerDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Group manager"
-    $dlg.ClientSize = New-Object System.Drawing.Size(620, 640)
+    $dlg.ClientSize = New-Object System.Drawing.Size(870, 620)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -21,7 +21,7 @@ function Global:Show-GroupManagerDialog {
     $lblIntro = New-Object System.Windows.Forms.Label
     $lblIntro.Text = "Creates a security group (or reuses one with this exact name) and lists its current members on the left. For a loaded group, Rename group updates Entra ID and the whole catalog together."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
-    $lblIntro.Size = New-Object System.Drawing.Size(590,32)
+    $lblIntro.Size = New-Object System.Drawing.Size(840,32)
     $dlg.Controls.Add($lblIntro)
 
     $lblGroupName = New-Object System.Windows.Forms.Label
@@ -32,12 +32,12 @@ function Global:Show-GroupManagerDialog {
 
     $txtGroupName = New-Object System.Windows.Forms.TextBox
     $txtGroupName.Location = New-Object System.Drawing.Point(15,69)
-    $txtGroupName.Size = New-Object System.Drawing.Size(473,24)
+    $txtGroupName.Size = New-Object System.Drawing.Size(723,24)
     $dlg.Controls.Add($txtGroupName)
 
     $btnSearchGroup = New-Object System.Windows.Forms.Button
     $btnSearchGroup.Text = "Search..."
-    $btnSearchGroup.Location = New-Object System.Drawing.Point(498,68)
+    $btnSearchGroup.Location = New-Object System.Drawing.Point(748,68)
     $btnSearchGroup.Size = New-Object System.Drawing.Size(107,26)
     $dlg.Controls.Add($btnSearchGroup)
 
@@ -49,7 +49,7 @@ function Global:Show-GroupManagerDialog {
 
     $txtDescription = New-Object System.Windows.Forms.TextBox
     $txtDescription.Location = New-Object System.Drawing.Point(15,123)
-    $txtDescription.Size = New-Object System.Drawing.Size(590,48)
+    $txtDescription.Size = New-Object System.Drawing.Size(840,48)
     $txtDescription.Multiline = $true
     $dlg.Controls.Add($txtDescription)
 
@@ -66,7 +66,7 @@ function Global:Show-GroupManagerDialog {
 
     $lstCurrentMembers = New-Object System.Windows.Forms.ListBox
     $lstCurrentMembers.Location = New-Object System.Drawing.Point(15,201)
-    $lstCurrentMembers.Size = New-Object System.Drawing.Size(290,140)
+    $lstCurrentMembers.Size = New-Object System.Drawing.Size(410,140)
     $dlg.Controls.Add($lstCurrentMembers)
 
     $btnLoadMembers = New-Object System.Windows.Forms.Button
@@ -77,42 +77,42 @@ function Global:Show-GroupManagerDialog {
 
     $btnRemoveCurrentMember = New-Object System.Windows.Forms.Button
     $btnRemoveCurrentMember.Text = "Remove member..."
-    $btnRemoveCurrentMember.Location = New-Object System.Drawing.Point(155,345)
+    $btnRemoveCurrentMember.Location = New-Object System.Drawing.Point(275,345)
     $btnRemoveCurrentMember.Size = New-Object System.Drawing.Size(150,28)
     $dlg.Controls.Add($btnRemoveCurrentMember)
 
     $lblMembers = New-Object System.Windows.Forms.Label
     $lblMembers.Text = "Members to add"
-    $lblMembers.Location = New-Object System.Drawing.Point(315,181)
+    $lblMembers.Location = New-Object System.Drawing.Point(445,181)
     $lblMembers.AutoSize = $true
     $dlg.Controls.Add($lblMembers)
 
     $lstMembers = New-Object System.Windows.Forms.ListBox
-    $lstMembers.Location = New-Object System.Drawing.Point(315,201)
-    $lstMembers.Size = New-Object System.Drawing.Size(290,140)
+    $lstMembers.Location = New-Object System.Drawing.Point(445,201)
+    $lstMembers.Size = New-Object System.Drawing.Size(410,140)
     $dlg.Controls.Add($lstMembers)
 
     $btnAddMember = New-Object System.Windows.Forms.Button
     $btnAddMember.Text = "+ Add member..."
-    $btnAddMember.Location = New-Object System.Drawing.Point(315,345)
+    $btnAddMember.Location = New-Object System.Drawing.Point(445,345)
     $btnAddMember.Size = New-Object System.Drawing.Size(140,28)
     $dlg.Controls.Add($btnAddMember)
 
     $btnRemoveMember = New-Object System.Windows.Forms.Button
     $btnRemoveMember.Text = "Remove selected"
-    $btnRemoveMember.Location = New-Object System.Drawing.Point(465,345)
+    $btnRemoveMember.Location = New-Object System.Drawing.Point(715,345)
     $btnRemoveMember.Size = New-Object System.Drawing.Size(140,28)
     $dlg.Controls.Add($btnRemoveMember)
 
     $lblStatus = New-Object System.Windows.Forms.Label
     $lblStatus.Location = New-Object System.Drawing.Point(15,381)
-    $lblStatus.Size = New-Object System.Drawing.Size(590,40)
+    $lblStatus.Size = New-Object System.Drawing.Size(840,40)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
     $rtbLog.Location = New-Object System.Drawing.Point(15,423)
-    $rtbLog.Size = New-Object System.Drawing.Size(590,120)
+    $rtbLog.Size = New-Object System.Drawing.Size(840,120)
     Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
@@ -128,7 +128,7 @@ function Global:Show-GroupManagerDialog {
     # name in the box up top), and several at once needs a list to tick.
     $btnDeleteManyGroups = New-Object System.Windows.Forms.Button
     $btnDeleteManyGroups.Text = "Delete several groups..."
-    $btnDeleteManyGroups.Location = New-Object System.Drawing.Point(15,593)
+    $btnDeleteManyGroups.Location = New-Object System.Drawing.Point(325,553)
     $btnDeleteManyGroups.Size = New-Object System.Drawing.Size(200,32)
     $dlg.Controls.Add($btnDeleteManyGroups)
     $deleteManyTip = New-Object System.Windows.Forms.ToolTip
@@ -145,7 +145,7 @@ function Global:Show-GroupManagerDialog {
 
     $btnRun = New-Object System.Windows.Forms.Button
     $btnRun.Text = "Create / Update Group"
-    $btnRun.Location = New-Object System.Drawing.Point(420,553)
+    $btnRun.Location = New-Object System.Drawing.Point(535,553)
     $btnRun.Size = New-Object System.Drawing.Size(185,32)
     $dlg.Controls.Add($btnRun)
     $runGroupTip = New-Object System.Windows.Forms.ToolTip
@@ -153,7 +153,7 @@ function Global:Show-GroupManagerDialog {
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(325,553)
+    $btnClose.Location = New-Object System.Drawing.Point(770,553)
     $btnClose.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnClose)
 

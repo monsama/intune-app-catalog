@@ -30,6 +30,7 @@ function Global:Show-CertificatePickerDialog {
     $dlg.Controls.Add($lblIntro)
 
     $grid = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $grid
     $grid.Location = New-Object System.Drawing.Point(15,38)
     $grid.Size = New-Object System.Drawing.Size(730,330)
     $grid.Anchor = "Top,Bottom,Left,Right"

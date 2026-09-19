@@ -99,6 +99,7 @@ function Global:Show-AppIdMatchDialog {
     $pnlSummaryInfo.Controls.Add($lblSummary)
 
     $matchGrid = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $matchGrid
     $matchGrid.Dock = "Fill"
     $matchGrid.AllowUserToAddRows = $false
     $matchGrid.AllowUserToDeleteRows = $false

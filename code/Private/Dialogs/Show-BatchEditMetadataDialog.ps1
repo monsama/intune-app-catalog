@@ -243,6 +243,7 @@ function Global:Show-BatchEditMetadataDialog {
     $dlg.Controls.Add($chkEnableReturnCodes)
     $fieldsY += 22
     $grdReturnCodes = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $grdReturnCodes
     $grdReturnCodes.Location = New-Object System.Drawing.Point(365,$fieldsY)
     $grdReturnCodes.Size = New-Object System.Drawing.Size(375,110)
     $grdReturnCodes.AllowUserToAddRows = $false

@@ -382,6 +382,8 @@ function Global:Show-DiagnosticsDialog {
         # $btnRun is disabled exactly for the duration of a run, and the
         # titlebar X doesn't go through the button.
         $HostTabPage.Tag = @{
+            Fill        = $rtbLog
+            FillStopAbove = $btnRun
             OnFirstShow = { $btnRun.PerformClick() }.GetNewClosure()
             # See the note on the same pair in Show-GroupDriftCheckDialog:
             # a run in progress is both "still working" and "do not close".

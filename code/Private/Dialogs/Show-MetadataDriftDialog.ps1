@@ -25,6 +25,7 @@ function Global:Show-MetadataDriftDialog {
     $dlg.Controls.Add($lblHeader)
 
     $grid = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $grid
     $grid.Location = New-Object System.Drawing.Point(15,58)
     $grid.Size = New-Object System.Drawing.Size(770,362)
     $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
