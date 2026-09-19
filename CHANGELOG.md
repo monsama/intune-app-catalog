@@ -1,6 +1,33 @@
 # Changelog
 
-## Unreleased
+## 1.3.3
+
+### An app is one window
+
+Editing an app and deploying it were two windows for one thing. They are
+one now: **Catalog, Assignments, Metadata, Package and detection,
+Requirements and behaviour**, with the status box, the log and the deploy
+button under all five.
+
+Nothing was rewritten to get there - the deploy dialog builds exactly as
+before and hands its pages to the host instead of opening a window. What
+did need care: the places that closed the deploy window now close whichever
+window is showing it, and the catalog save that used to happen when that
+window returned now runs the moment a create or update succeeds.
+
+### All three Intune checks in one window
+
+**Look up App IDs**, **Intune audit** and **Sync metadata** ask three
+versions of one question and all three began with the same read of every
+app in the tenant. They are tabs of **Check against Intune** now, sharing
+that one fetch - so the obvious next question no longer costs another
+window and another wait.
+
+### Install context can no longer be asked for where it cannot happen
+
+Batch edit offered it for apps already in Intune, which Graph refuses
+outright ("The 'RunAsAccount' property cannot be patched for the
+'Win32LobApp' type"). It is offered only with **Catalog only** ticked now.
 
 ### Dialogs that stopped being walls
 
