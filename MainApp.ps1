@@ -665,7 +665,14 @@ $Global:App.TxtSearch.Width = 220
 # you just configured" once Settings is already in view, rather than
 # leading with a walkthrough before the toolbar's own buttons are even
 # visible.
-$gbPrimary = New-ToolbarGroup -Title "Get started" -Buttons @($btnNew, $btnEdit, $Global:App.BtnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnIntuneAudit, $btnReload, $btnCertSetup, $btnGettingStarted)
+# Three groups, not one row of nine under "Get started": those nine were
+# three different jobs sharing a label that described none of them. What
+# each box is titled now is the thing it does - the catalog on this
+# machine, the tenant, and getting this app set up - so the title answers
+# "where would that button live?" before you read the buttons.
+$gbCatalog = New-ToolbarGroup -Title "Catalog" -Buttons @($btnNew, $btnEdit, $btnReload)
+$gbIntune = New-ToolbarGroup -Title "Intune" -Buttons @($Global:App.BtnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnIntuneAudit)
+$gbSetup = New-ToolbarGroup -Title "Setup" -Buttons @($btnCertSetup, $btnGettingStarted)
 
 # Builds one ToolStripMenuItem submenu from a list of {Text;Btn} pairs -
 # each item just PerformClick()s the real button (still fully wired, just
@@ -716,58 +723,6 @@ $btnMoreActions.Add_Click({
 $toolbarTips.SetToolTip($btnMoreActions, "Catalog maintenance, one-off Intune lookups, and Entra ID tools.")
 $gbMoreActions = New-ToolbarGroup -Title "More" -Buttons @($btnMoreActions)
 
-# On the toolbar itself, not tucked away in Settings - this is a
-# frequently-relevant, at-a-glance choice ("is this catalog being
-# watched for drift or not"), not a one-time connection detail like
-# Tenant ID/Client ID/certificate. Takes effect on the NEXT app start
-# (Start-StartupDriftCheck, GraphFetch.ps1, only ever runs once per
-# launch from Form.Add_Shown), not immediately - still saved the instant
-# it's toggled, same as every other setting in this app, just nothing to
-# show for it until next time.
-$chkCheckIntuneOnDeployOpen = New-Object System.Windows.Forms.CheckBox
-$chkCheckIntuneOnDeployOpen.Text = "Check Intune when opening Deploy"
-$chkCheckIntuneOnDeployOpen.AutoSize = $true
-$chkCheckIntuneOnDeployOpen.Checked = [bool]$Global:App.CheckIntuneOnDeployOpen
-$toolbarTips.SetToolTip($chkCheckIntuneOnDeployOpen, "When checked, 'Deploy to Intune' loads an existing app's current values from Intune every time it opens. Unchecked, it opens straight away with what's saved here and asks Intune only before an update is sent (and whenever you press Refresh from Intune) - the check that actually prevents overwriting a newer value.")
-$chkCheckIntuneOnDeployOpen.Add_CheckedChanged({
-    $Global:App.CheckIntuneOnDeployOpen = $chkCheckIntuneOnDeployOpen.Checked
-    if (Write-SettingsFile) {
-        Write-Log "[OK] Deploy to Intune $(if ($chkCheckIntuneOnDeployOpen.Checked) { 'checks Intune when it opens.' } else { 'opens without contacting Intune - it still checks before any update.' })`r`n" ([System.Drawing.Color]::LightGreen)
-    }
-}.GetNewClosure())
-
-$chkCheckDriftOnStartup = New-Object System.Windows.Forms.CheckBox
-$chkCheckDriftOnStartup.Text = "Check Intune drift on start"
-$chkCheckDriftOnStartup.AutoSize = $true
-$chkCheckDriftOnStartup.Checked = [bool]$Global:App.CheckDriftOnStartup
-$toolbarTips.SetToolTip($chkCheckDriftOnStartup, "When checked, the NEXT time this app starts it quietly compares Intune against this catalog once and flags any differences - useful if more than one person works from this catalog. Needs Tenant ID/Client ID/certificate configured in Settings to do anything.")
-$chkCheckDriftOnStartup.Add_CheckedChanged({
-    $Global:App.CheckDriftOnStartup = $chkCheckDriftOnStartup.Checked
-    if (Write-SettingsFile) {
-        Write-Log "[OK] $(if ($chkCheckDriftOnStartup.Checked) { 'Will' } else { 'Will not' }) check for Intune drift the next time this app starts.`r`n" ([System.Drawing.Color]::LightGreen)
-    }
-}.GetNewClosure())
-
-# Separate, independent toggle from the one above - see
-# $Global:App.RunFullAuditOnStartup's own comment for why this is a
-# second checkbox instead of folded into the drift one: a full audit
-# fetches every deployed app individually, meaningfully slower than the
-# drift check's one list-everything call, so it gets its own explicit,
-# clearly-labeled opt-in rather than silently riding along.
-$chkRunFullAuditOnStartup = New-Object System.Windows.Forms.CheckBox
-$chkRunFullAuditOnStartup.Text = "Also run full audit (slower)"
-$chkRunFullAuditOnStartup.AutoSize = $true
-$chkRunFullAuditOnStartup.Checked = [bool]$Global:App.RunFullAuditOnStartup
-$toolbarTips.SetToolTip($chkRunFullAuditOnStartup, "When checked, the NEXT time this app starts it also runs the full 'Intune Audit...' check (Metadata/Groups/Dependencies/Assignments) - not just the lighter drift check above. Fetches every deployed app individually, so this is noticeably slower to complete on a large catalog.")
-$chkRunFullAuditOnStartup.Add_CheckedChanged({
-    $Global:App.RunFullAuditOnStartup = $chkRunFullAuditOnStartup.Checked
-    if (Write-SettingsFile) {
-        Write-Log "[OK] $(if ($chkRunFullAuditOnStartup.Checked) { 'Will' } else { 'Will not' }) run a full Intune audit the next time this app starts.`r`n" ([System.Drawing.Color]::LightGreen)
-    }
-}.GetNewClosure())
-
-$gbSync = New-ToolbarGroup -Title "Sync" -Buttons @($chkCheckDriftOnStartup, $chkRunFullAuditOnStartup, $chkCheckIntuneOnDeployOpen)
-
 # Its own titled box like the other toolbar groups (it used to float next to
 # them with a hand-tuned top margin to line up). The box title replaces the
 # old "Search:" label.
@@ -785,19 +740,26 @@ $Global:App.LblStartupBusy.ForeColor = [System.Drawing.Color]::DimGray
 $Global:App.LblStartupBusy.Margin = New-Object System.Windows.Forms.Padding(6, ($gbSearch.Margin.Top + 20 + $Global:App.TxtSearch.Margin.Top + 3), 0, 0)
 $Global:App.LblStartupBusy.Visible = $false
 
-$toolbar.Controls.AddRange(@($gbPrimary, $gbMoreActions, $gbSync, $gbSearch, $Global:App.LblStartupBusy))
+$toolbar.Controls.AddRange(@($gbCatalog, $gbIntune, $gbSetup, $gbMoreActions, $gbSearch, $Global:App.LblStartupBusy))
 $tabCatalog.Controls.Add($toolbar)
 
-# The toolbar wraps whole groups, but "Get started" alone is wider than the
-# form's MinimumSize - its own buttons need to wrap too, or the last few
-# (Settings..., Getting started...) just run off the right edge. Capping the
-# inner FlowLayoutPanel's width at what the toolbar can actually show lets
-# it wrap onto a second row; AutoSize grows the GroupBox to match.
-$primaryFlow = $gbPrimary.Controls[0]
-$primaryFlow.WrapContents = $true
+# The toolbar wraps whole groups, but a single group can still be wider
+# than the form's MinimumSize on its own - "Intune" holds "Push groups to
+# Intune (multiple apps)...", which is most of a narrow window by itself.
+# Its buttons have to wrap too, or the last ones just run off the right
+# edge. Capping each inner FlowLayoutPanel's width at what the toolbar can
+# actually show lets it wrap onto a second row; AutoSize grows the
+# GroupBox to match. Applied to every action group rather than one named
+# favourite, so splitting or reordering them later can't quietly drop it.
+$actionGroups = @($gbCatalog, $gbIntune, $gbSetup)
+$actionFlows = @($actionGroups | ForEach-Object { $_.Controls[0] })
+foreach ($flow in $actionFlows) { $flow.WrapContents = $true }
 $toolbar.Add_SizeChanged({
-    $available = $toolbar.ClientSize.Width - $toolbar.Padding.Horizontal - $gbPrimary.Margin.Horizontal - $primaryFlow.Left * 2
-    $primaryFlow.MaximumSize = New-Object System.Drawing.Size([Math]::Max(200, $available), 0)
+    for ($gi = 0; $gi -lt $actionGroups.Count; $gi++) {
+        $flow = $actionFlows[$gi]
+        $available = $toolbar.ClientSize.Width - $toolbar.Padding.Horizontal - $actionGroups[$gi].Margin.Horizontal - $flow.Left * 2
+        $flow.MaximumSize = New-Object System.Drawing.Size([Math]::Max(200, $available), 0)
+    }
 }.GetNewClosure())
 
 # Hidden by default - shown only when Graph credentials aren't configured
