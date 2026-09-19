@@ -1,5 +1,129 @@
 # Changelog
 
+## 1.4.0
+
+### The catalog grid keeps your place
+
+Clicking a column header sorts by it, and clicking it again reverses it.
+It never did before: the grid is bound to a plain list, which cannot sort
+itself, so the click did nothing at all. The rows are ordered before they
+are bound instead, which is also what makes the order survive everything
+below.
+
+That matters because the grid is thrown away and rebuilt constantly - on
+every save, deploy, sync, and on every keystroke in the search box.
+Everything it knew went with it, so after a deploy you were back at the
+top with nothing selected. Your selection and your scroll position come
+back now, and the selection is remembered by app **name**, not by row or
+catalog index, because those shift when an app is added, removed or
+sorted.
+
+The one case where a selection cannot come back is an app the current
+filter hides. Binding a list selects the first row by itself, so that is
+cleared deliberately - otherwise the selection lands on whichever app
+happens to sort first, and the next Deploy acts on **that** one.
+
+Sort column, direction and column widths survive a restart, and the
+window comes back where it was left. A saved position is used only if it
+still lands on a monitor attached right now: undock a laptop and
+yesterday's coordinates put the window somewhere unreachable, which looks
+exactly like the app failing to start.
+
+### Typing in the search box is not a workout
+
+Every character rebuilt the whole grid, and a rebuild walks
+`data\app-packages` recursively for every app with no Winget ID, hunting
+its `.intunewin`. A four-letter filter meant four full rebuilds and dozens
+of directory walks, felt as the box lagging behind the typing. It waits
+250ms for typing to stop now. **Esc** clears the filter.
+
+The status bar said "120 apps" above a grid showing three of them - the
+one moment that number is worth reading, and the one moment it was wrong.
+It says "Showing 3 of 120 apps" while a filter is on.
+
+Two other things in that same path: working out an app's default metadata
+scanned the whole catalog once per configured default dependency, once
+per app, on every refresh (333ms to 70ms over 200 apps), and the status
+bar's three assignment totals were three separate walks where one does
+(29ms to 9ms).
+
+### Every check in one window
+
+Dependencies, catalog groups against Entra ID, Winget IDs and this app's
+own diagnostics were four menu entries and four windows, with nothing to
+tell you from the outside which one answers the question you have. They
+are tabs of **Checks** now.
+
+A tab's check runs when you open that tab, never all four when the window
+opens - two of them cost real time. **Run all checks** is there for "is
+anything wrong?", and runs them strictly one at a time, because a second
+concurrent directory lookup is refused outright and would report a
+failure that isn't real. A full run also reads the tenant's groups and
+users **once** rather than twice, since two of those checks each read the
+whole directory.
+
+### Enter is no longer the answer to "are you sure?"
+
+Twelve confirmations focused **Yes**, so Enter confirmed them - including
+several that follow a click which already armed the action, where the
+Enter confirming the first thing carried into the second. Saving a
+catalog with duplicate App IDs, deploying through a circular dependency,
+"Also remove these from the local catalog entirely?" after an Intune
+delete, clearing a stale App ID, renaming a group in Entra ID, uploading
+a certificate: all default to **No** now. A prompt that only offers a next
+step, like batch assign's "Add a favorite group now?", still does not.
+
+### The toolbar says what it is
+
+Nine buttons sat under one box titled "Get started" while doing three
+different jobs. They are **Catalog**, **Intune** and **Setup** now, and
+the primary nine have Alt-key shortcuts. The three checkboxes that lived
+between them are persistent settings, so they moved to Settings' new
+**Automatic checks** tab, leaving the toolbar as actions only.
+
+Also in the main window: **Ctrl+F** goes to the search box, **F5**
+reloads, and an empty catalog explains what a catalog is and offers the
+three ways forward, instead of showing a blank grid and "0 apps".
+
+### Windows that use the window
+
+The app editor and Deploy were a narrow column in a wide window: fields
+stopping a third short of the right edge, and group lists so narrow that
+`SG-Intune-Win32-Required-Production-AllManagedDevices-EMEA` clipped
+mid-word. Everything ends at one right edge now, and those lists are more
+than twice as wide.
+
+The status line and the "bold blue label" legend sat in a bordered box
+stacked above the log - two blocks above the buttons, both dark in the
+dark theme, the upper one usually empty and reading as a second log that
+never fills. They are plain lines above the log now, which is the one
+block down there. The actions sit on a single row measured from the
+window's own edges, so **Update Metadata** joins Cancel on the right
+instead of floating on a line of its own above a 440px gap.
+
+### Platform scripts have a local catalog too
+
+The apps have always been a folder of files you can keep in git. The
+platform scripts now are as well: **Save local copies** writes what the
+tenant has into `data\script-data`, the same shape the apps use.
+
+And it goes both ways. **New local script...** writes one locally without
+sending anything anywhere, for preparing it before it goes live. It then
+appears in the list as **Local only**, alongside the tenant's own scripts,
+because a local script you cannot see is a local script you will forget to
+push. Edit opens it straight from its file, and saving creates it in
+Intune. A script deleted from the tenant but still in the catalog shows up
+the same way, rather than vanishing from view while its file stays on
+disk.
+
+### Under the hood
+
+`GridBehavior.GuiTests.ps1` is new: it drives the real grid with the real
+`Update-Grid` over a fixture catalog and checks the sort order, the
+selection and the scroll position a rebuild has to put back. It caught a
+real bug in that rebuild before it shipped, and it runs in CI beside the
+other four GUI suites.
+
 ## 1.3.3
 
 ### An app is one window
