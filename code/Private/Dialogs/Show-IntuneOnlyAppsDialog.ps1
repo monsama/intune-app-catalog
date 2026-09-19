@@ -56,6 +56,7 @@ function Global:Show-IntuneOnlyAppsDialog {
     $dlg.Controls.Add($btnRefresh)
 
     $grid = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $grid
     $grid.Location = New-Object System.Drawing.Point(15,96)
     $grid.Size = New-Object System.Drawing.Size(730,368)
     $grid.AllowUserToAddRows = $false

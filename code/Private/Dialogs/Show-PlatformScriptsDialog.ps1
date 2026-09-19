@@ -43,6 +43,7 @@ function Global:Show-PlatformScriptsDialog {
     $dlg.Controls.Add($btnRefresh)
 
     $grid = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $grid
     $grid.Location = New-Object System.Drawing.Point(15, 84)
     $grid.Size = New-Object System.Drawing.Size(1010, 250)
     $grid.AllowUserToAddRows = $false

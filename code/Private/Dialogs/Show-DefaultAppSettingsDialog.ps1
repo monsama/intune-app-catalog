@@ -188,6 +188,7 @@ function Global:Show-DefaultAppSettingsDialog {
     $dlg.Controls.Add($lblReturnCodes)
 
     $grdReturnCodes = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $grdReturnCodes
     $grdReturnCodes.Location = New-Object System.Drawing.Point(15,351)
     $grdReturnCodes.Size = New-Object System.Drawing.Size(460,150)
     $grdReturnCodes.AllowUserToAddRows = $false

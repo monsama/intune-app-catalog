@@ -59,6 +59,7 @@ function Global:Show-DependencyOverviewDialog {
     $dlg.Controls.Add($lblIntro)
 
     $grid = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $grid
     $grid.Location = New-Object System.Drawing.Point(15,50)
     $grid.Size = New-Object System.Drawing.Size(790,430)
     $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
@@ -145,6 +146,9 @@ function Global:Show-DependencyOverviewDialog {
         # The host window has the only Close button once this is a tab.
         $btnClose.Visible = $false
         [void](Move-DialogToTabPage -Dialog $dlg -Page $HostTabPage)
+        # This tab has no check to run - it reads the catalog as it opens -
+        # but its grid still wants the height the hidden button row leaves.
+        $HostTabPage.Tag = @{ Fill = $grid }
         return
     }
     [void]$dlg.ShowDialog($Global:App.Form)

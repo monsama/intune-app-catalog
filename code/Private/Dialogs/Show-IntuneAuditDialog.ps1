@@ -85,9 +85,28 @@ function Global:Show-IntuneAuditDialog {
     $dlg.Controls.Add($btnRun)
 
     $grid = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $grid
+    # An audit reads every deployed app from Intune one at a time, which on
+    # a real catalog is a long, silent wait - the status line said
+    # something was happening but nothing showed it moving. A marquee bar
+    # (the work is per-app, and the total only becomes known once the list
+    # comes back) and, below the grid, the same dark log every other
+    # Graph-facing window in this app has, so a refused permission or an
+    # expired certificate is readable here instead of only in the status
+    # line's one sentence.
+    $prgAudit = New-Object System.Windows.Forms.ProgressBar
+    $prgAudit.Location = New-Object System.Drawing.Point(15,106)
+    $prgAudit.Size = New-Object System.Drawing.Size(890,6)
+    $prgAudit.Style = "Marquee"
+    $prgAudit.MarqueeAnimationSpeed = 30
+    $prgAudit.Visible = $false
+    $prgAudit.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor
+                       [System.Windows.Forms.AnchorStyles]::Right
+    $dlg.Controls.Add($prgAudit)
+
     $grid.Location = New-Object System.Drawing.Point(15,114)
     # Ends 10px above Close below (it used to run 14px into it).
-    $grid.Size = New-Object System.Drawing.Size(890,452)
+    $grid.Size = New-Object System.Drawing.Size(890,300)
     $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $grid.ReadOnly = $true
     $grid.AllowUserToAddRows = $false
@@ -100,6 +119,19 @@ function Global:Show-IntuneAuditDialog {
     $grid.AutoGenerateColumns = $false
     $grid.BackgroundColor = [System.Drawing.SystemColors]::Window
     $dlg.Controls.Add($grid)
+
+    # The same dark log every other Graph-facing window here has. The
+    # status line above says what the audit concluded; this says what Graph
+    # was actually asked and what it answered, which is the difference
+    # between "Audit failed" and "the app registration is missing
+    # DeviceManagementApps.Read.All".
+    $rtbAuditLog = New-Object System.Windows.Forms.RichTextBox
+    $rtbAuditLog.Location = New-Object System.Drawing.Point(15,424)
+    $rtbAuditLog.Size = New-Object System.Drawing.Size(890,140)
+    $rtbAuditLog.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor
+                          [System.Windows.Forms.AnchorStyles]::Right
+    Initialize-DarkLogBox -LogBox $rtbAuditLog
+    $dlg.Controls.Add($rtbAuditLog)
 
     $colApp = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $colApp.Name = "App"; $colApp.HeaderText = "App"; $colApp.FillWeight = 22
@@ -175,6 +207,7 @@ function Global:Show-IntuneAuditDialog {
 
     $btnRun.Add_Click({
         $btnRun.Enabled = $false
+        $prgAudit.Visible = $true
         foreach ($rowKey in $rowByAppName.Keys) {
             foreach ($colName in $checkColumns) { $rowByAppName[$rowKey].Cells[$colName].Value = "(checking...)" }
         }
@@ -195,6 +228,8 @@ function Global:Show-IntuneAuditDialog {
         $btnCloseRef = $btnClose
         $lblStatusRef = $lblStatus
         $gridRef = $grid
+        $prgAuditRef = $prgAudit
+        $rtbAuditLogRef = $rtbAuditLog
         $rowByAppNameRef = $rowByAppName
         $appByNameRef = $appByName
         $pendingBoxRef = $pendingBox
@@ -213,6 +248,7 @@ function Global:Show-IntuneAuditDialog {
             $gridRef.Refresh()
             if ($pendingBoxRef.Count -le 0) {
                 $btnRunRef.Enabled = $true
+                $prgAuditRef.Visible = $false
                 $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
                 $lblStatusRef.Text = "Audit complete - $deployedAppsCountRef app(s) checked."
                 # Written once, here, after BOTH fetches have finished -
@@ -240,7 +276,7 @@ function Global:Show-IntuneAuditDialog {
             $configJsonText1 = $config1 | ConvertTo-Json -Depth 10 -ErrorAction Stop
             [System.IO.File]::WriteAllText($configPath1Ref, $configJsonText1, (New-Object System.Text.UTF8Encoding($false)))
 
-            $procBox1Ref.Proc = Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".intunepkg_embedded_audit_sync.ps1" -ArgumentString "-ConfigPath `"$configPath1Ref`"" -OnComplete {
+            $procBox1Ref.Proc = Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".intunepkg_embedded_audit_sync.ps1" -ArgumentString "-ConfigPath `"$configPath1Ref`"" -ExtraLogTarget $rtbAuditLogRef -OnComplete {
                 param($code)
                 $procBox1Ref.Proc = $null
                 Remove-Item $configPath1Ref -Force -ErrorAction SilentlyContinue
@@ -346,7 +382,7 @@ function Global:Show-IntuneAuditDialog {
             $configJsonText2 = $config2 | ConvertTo-Json -Depth 8 -ErrorAction Stop
             [System.IO.File]::WriteAllText($configPath2Ref, $configJsonText2, (New-Object System.Text.UTF8Encoding($false)))
 
-            $procBox2Ref.Proc = Start-PipelineProcess -ScriptContent $batchScript -TempScriptName ".intunepkg_embedded_audit_assign.ps1" -ArgumentString "-ConfigPath `"$configPath2Ref`"" -OnComplete {
+            $procBox2Ref.Proc = Start-PipelineProcess -ScriptContent $batchScript -TempScriptName ".intunepkg_embedded_audit_assign.ps1" -ArgumentString "-ConfigPath `"$configPath2Ref`"" -ExtraLogTarget $rtbAuditLogRef -OnComplete {
                 param($code)
                 $procBox2Ref.Proc = $null
                 Remove-Item $configPath2Ref -Force -ErrorAction SilentlyContinue

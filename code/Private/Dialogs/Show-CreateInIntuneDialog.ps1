@@ -373,7 +373,10 @@ function Global:Show-CreateInIntuneDialog {
     }
 
     $detPanelY = 59
-    $detPanelH = 150
+    # 210, not 150: the detection script is the longest thing anyone types
+    # on this page, and the tab has the room now that the fields use the
+    # full width instead of half of it.
+    $detPanelH = 210
 
     # --- PowerShell script panel (default, matches previous behavior) ---
     $pnlDetScript = New-Object System.Windows.Forms.Panel
@@ -929,6 +932,7 @@ function Global:Show-CreateInIntuneDialog {
     $scrollPanel.Controls.Add($lblReturnCodes)
 
     $grdReturnCodes = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $grdReturnCodes
     $grdReturnCodes.Location = New-Object System.Drawing.Point(595,612)
     # Tall enough for the header row plus the 4-row Winget base set
     # (0/1707 success, 3010 softReboot, 1641 hardReboot) with no
