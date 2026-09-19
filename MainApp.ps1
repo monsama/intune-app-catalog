@@ -116,6 +116,7 @@ $Global:App.UnsavedChangesBox = @{ Value = $false }   # container (never reassig
 $Global:App.IntuneAppsCache = New-Object System.Collections.ArrayList   # populated by Start-IntuneAppLookup: array of @{ id; displayName } - mutated in place (Clear+Add), never reassigned, so every closure that references it stays in sync
 $Global:App.EntraDirectoryCache = New-Object System.Collections.ArrayList   # populated by Start-EntraDirectoryLookup: array of @{ displayName; type ("Group"/"User"); id; upn } - same mutate-in-place pattern as above
 $Global:App.EntraDirectoryLookupRunning = $false   # guards against two overlapping Start-EntraDirectoryLookup runs - see its own comment
+$Global:App.EntraDirectoryCacheFetchedAt = $null   # when the cache above was last filled by a SUCCESSFUL lookup; only -ReuseCacheWithinSeconds callers read it
 # Populated whenever any live-vs-Intune check runs for an app - the
 # single-app auto-fetch inside Show-CreateInIntuneDialog, or
 # Show-IntuneAuditDialog's own bulk run - keyed by appName. Persisted to
@@ -513,8 +514,12 @@ $Global:App.Form.Text = "Intune App Catalog & Deployment (v$($Global:App.AppVers
 $Global:App.Form.Size = New-Object System.Drawing.Size(1080, 720)
 $Global:App.Form.MinimumSize = New-Object System.Drawing.Size(860, 560)
 $Global:App.Form.StartPosition = "CenterScreen"
+# Maximized is still what a first run gets. Restore-WindowPlacement then
+# overrides it with wherever the window was last closed, but only if that
+# still lands on a monitor attached right now.
 $Global:App.Form.WindowState = [System.Windows.Forms.FormWindowState]::Maximized
 $Global:App.Form.Font = Get-AppUiFont
+Restore-WindowPlacement
 
 $tabs = New-Object System.Windows.Forms.TabControl
 $tabs.Dock = "Fill"
@@ -575,30 +580,37 @@ $toolbar.Padding = New-Object System.Windows.Forms.Padding(6)
 # for the identical actions (Edit.../Remove from catalog..., both of which
 # just PerformClick() these same buttons), rather than a second, different
 # label for the same click.
-$btnGettingStarted = New-Object System.Windows.Forms.Button; $btnGettingStarted.Text = "Getting started..."
-$btnNew    = New-Object System.Windows.Forms.Button; $btnNew.Text = "+ Add app..."
-$btnEdit   = New-Object System.Windows.Forms.Button; $btnEdit.Text = "Edit..."
+#
+# The '&' marks the Alt-key mnemonic, and only the nine buttons of the
+# "Get started" group below have one: they are the primary row, they are
+# always visible, and nine underlined letters is already the point where
+# more would start reading as noise rather than as help. The letters are
+# unique across the form (G A E P B U I R S), so no Alt press is ambiguous.
+$btnGettingStarted = New-Object System.Windows.Forms.Button; $btnGettingStarted.Text = "&Getting started..."
+$btnNew    = New-Object System.Windows.Forms.Button; $btnNew.Text = "+ &Add app..."
+$btnEdit   = New-Object System.Windows.Forms.Button; $btnEdit.Text = "&Edit..."
 $Global:App.BtnDelete = New-Object System.Windows.Forms.Button; $Global:App.BtnDelete.Text = "Remove from catalog..."
 $Global:App.BtnSave   = New-Object System.Windows.Forms.Button; $Global:App.BtnSave.Text = "Force save catalog"
-$btnReload = New-Object System.Windows.Forms.Button; $btnReload.Text = "Reload"
+$btnReload = New-Object System.Windows.Forms.Button; $btnReload.Text = "&Reload"
 $btnOpen   = New-Object System.Windows.Forms.Button; $btnOpen.Text = "Open other folder..."
 $Global:App.BtnLookupIds = New-Object System.Windows.Forms.Button; $Global:App.BtnLookupIds.Text = "Look up App IDs..."
 $btnCheckIntuneOnly = New-Object System.Windows.Forms.Button; $btnCheckIntuneOnly.Text = "Intune sync check..."
 $btnPlatformScripts = New-Object System.Windows.Forms.Button; $btnPlatformScripts.Text = "Platform scripts..."
-$btnWingetHealth = New-Object System.Windows.Forms.Button; $btnWingetHealth.Text = "Winget package check..."
-$btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text = "Push groups to Intune (multiple apps)..."
+$btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text = "P&ush groups to Intune (multiple apps)..."
 $btnSyncMetadata = New-Object System.Windows.Forms.Button; $btnSyncMetadata.Text = "Pull metadata and groups from Intune..."
 $btnBatchEdit = New-Object System.Windows.Forms.Button; $btnBatchEdit.Text = "Batch edit Intune fields..."
-$btnBatchDeploy = New-Object System.Windows.Forms.Button; $btnBatchDeploy.Text = "Batch deploy..."
+$btnBatchDeploy = New-Object System.Windows.Forms.Button; $btnBatchDeploy.Text = "&Batch deploy..."
 $btnGroupManager = New-Object System.Windows.Forms.Button; $btnGroupManager.Text = "Group manager..."
 $btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.Text = "Favorite groups..."
-$btnDependencies = New-Object System.Windows.Forms.Button; $btnDependencies.Text = "View dependencies..."
-$btnGroupDrift = New-Object System.Windows.Forms.Button; $btnGroupDrift.Text = "Check catalog groups against Entra ID..."
-$btnIntuneAudit = New-Object System.Windows.Forms.Button; $btnIntuneAudit.Text = "Intune Audit..."
-$Global:App.BtnRunLaunch = New-Object System.Windows.Forms.Button; $Global:App.BtnRunLaunch.Text = "Package apps"
-$btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "Settings..."
+# One button for all four read-only checks (dependencies, catalog groups
+# against Entra ID, Winget IDs, diagnostics): they are tabs of one window
+# now - see Show-ChecksDialog. Each still opens standalone if called that
+# way, which is how the layout audit checks them one at a time.
+$btnChecks = New-Object System.Windows.Forms.Button; $btnChecks.Text = "Run checks..."
+$btnIntuneAudit = New-Object System.Windows.Forms.Button; $btnIntuneAudit.Text = "&Intune Audit..."
+$Global:App.BtnRunLaunch = New-Object System.Windows.Forms.Button; $Global:App.BtnRunLaunch.Text = "&Package apps"
+$btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "&Settings..."
 $btnDefaultValues = New-Object System.Windows.Forms.Button; $btnDefaultValues.Text = "Edit default values..."
-$btnDiagnostics = New-Object System.Windows.Forms.Button; $btnDiagnostics.Text = "Run diagnostics..."
 $btnPrerequisites = New-Object System.Windows.Forms.Button; $btnPrerequisites.Text = "Prerequisites..."
 
 # One shared ToolTip component serves every button - there are enough of
@@ -619,7 +631,6 @@ $toolbarTips.SetToolTip($btnReload, "Discard any unsaved changes and reload the 
 $toolbarTips.SetToolTip($btnOpen, "Switch to a different folder of per-app JSON files.")
 $toolbarTips.SetToolTip($Global:App.BtnLookupIds, "Search Intune by name for apps missing an App ID, and fill it in.")
 $toolbarTips.SetToolTip($btnPlatformScripts, "The PowerShell scripts Intune runs on enrolled Windows devices: list them, add one, change one, delete one.")
-$toolbarTips.SetToolTip($btnWingetHealth, "Checks every catalog app's Winget ID against winget on this machine. An ID that no longer exists still works on devices that have the app, but fails to install on new ones. Read-only.")
 $toolbarTips.SetToolTip($btnCheckIntuneOnly, "Compares Intune against this catalog: apps in Intune not yet in the catalog, catalog apps renamed in Intune since, and catalog apps whose App ID no longer exists in Intune. Read-only.")
 $toolbarTips.SetToolTip($btnBatchAssign, "Add a favorite group to multiple apps at once, then preview and apply the result to Intune.")
 $toolbarTips.SetToolTip($btnSyncMetadata, "Pull current metadata from Intune into the local catalog for apps that already have an App ID. Read-only.")
@@ -627,17 +638,19 @@ $toolbarTips.SetToolTip($btnBatchEdit, "Change one or more fields (architecture,
 $toolbarTips.SetToolTip($btnBatchDeploy, "Create multiple apps in Intune, in dependency order. Uses metadata saved via 'Save for later...' where an app has it, otherwise the same defaults Deploy to Intune's own form would.")
 $toolbarTips.SetToolTip($btnGroupManager, "Create, update, or delete an Entra ID group and manage its members.")
 $toolbarTips.SetToolTip($btnFavoriteGroups, "Pick which groups show up as ready-to-tick options in every app's Required/Available/Uninstall lists.")
-$toolbarTips.SetToolTip($btnDependencies, "See every app's dependencies, what depends on it, and any missing or circular dependency. Read-only, local only.")
-$toolbarTips.SetToolTip($btnGroupDrift, "Check every group name referenced in the catalog against what actually exists in Entra ID.")
 $toolbarTips.SetToolTip($btnIntuneAudit, "Check every deployed app's Metadata, Groups, Dependencies, and Assignments against what's actually live in Intune, all in one grid. Read-only.")
 $toolbarTips.SetToolTip($Global:App.BtnRunLaunch, "Build the .intunewin package(s) for the selected (or all) uncommon apps.")
 $toolbarTips.SetToolTip($btnCertSetup, "Configure the Tenant ID, Client ID, and certificate used to connect to Microsoft Graph.")
 $toolbarTips.SetToolTip($btnDefaultValues, "Change the computed defaults every new Winget app starts with (architecture, min OS, requirements, return codes, ...). Doesn't touch any app already saved or deployed.")
-$toolbarTips.SetToolTip($btnDiagnostics, "Read-only health check: Graph connectivity, certificate expiry, catalog completeness, and drift against what's actually in Intune.")
+$toolbarTips.SetToolTip($btnChecks, "Four read-only checks in one window: dependencies between catalog apps, catalog groups against Entra ID, Winget IDs against winget, and this app's own diagnostics. Each tab runs when you open it.")
 $toolbarTips.SetToolTip($btnPrerequisites, "Check whether the Microsoft.Graph.Authentication PowerShell module this app needs is installed, and install it for your user account if it isn't.")
 
 $Global:App.TxtSearch = New-Object System.Windows.Forms.TextBox
 $Global:App.TxtSearch.Width = 220
+# Named for a screen reader: the only thing labelling this box on screen
+# is its group box title, which is read as a container rather than as
+# this field's name.
+$Global:App.TxtSearch.AccessibleName = "Search apps in this catalog"
 
 # The toolbar used to be organized by WHICH SYSTEM a button touches
 # (Catalog/Intune/Entra ID/Settings), which meant a brand-new user facing
@@ -660,7 +673,14 @@ $Global:App.TxtSearch.Width = 220
 # you just configured" once Settings is already in view, rather than
 # leading with a walkthrough before the toolbar's own buttons are even
 # visible.
-$gbPrimary = New-ToolbarGroup -Title "Get started" -Buttons @($btnNew, $btnEdit, $Global:App.BtnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnIntuneAudit, $btnReload, $btnCertSetup, $btnGettingStarted)
+# Three groups, not one row of nine under "Get started": those nine were
+# three different jobs sharing a label that described none of them. What
+# each box is titled now is the thing it does - the catalog on this
+# machine, the tenant, and getting this app set up - so the title answers
+# "where would that button live?" before you read the buttons.
+$gbCatalog = New-ToolbarGroup -Title "Catalog" -Buttons @($btnNew, $btnEdit, $btnReload)
+$gbIntune = New-ToolbarGroup -Title "Intune" -Buttons @($Global:App.BtnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnIntuneAudit)
+$gbSetup = New-ToolbarGroup -Title "Setup" -Buttons @($btnCertSetup, $btnGettingStarted)
 
 # Builds one ToolStripMenuItem submenu from a list of {Text;Btn} pairs -
 # each item just PerformClick()s the real button (still fully wired, just
@@ -689,12 +709,15 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
 # Every read-only "check something" action grouped together here,
 # regardless of which system it happens to touch - someone looking for
 # "check X" shouldn't need to already know whether X lives under
-# Catalog/Intune/Entra ID to find it.
+# Catalog/Intune/Entra ID to find it. Four of the five are one window of
+# tabs now (Show-ChecksDialog), which is that same grouping where it
+# actually helps: in front of the user, not just in this menu.
+#
+# Prerequisites stays its own entry - it INSTALLS the missing module
+# rather than reporting on anything, it is what the other dialogs open
+# when they find the module missing, and the diagnostics tab links to it.
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Verify" -Tips $toolbarTips -Items @(
-    @{ Text = $btnDependencies.Text; Btn = $btnDependencies }
-    @{ Text = $btnGroupDrift.Text; Btn = $btnGroupDrift }
-    @{ Text = $btnWingetHealth.Text; Btn = $btnWingetHealth }
-    @{ Text = $btnDiagnostics.Text; Btn = $btnDiagnostics }
+    @{ Text = $btnChecks.Text; Btn = $btnChecks }
     @{ Text = $btnPrerequisites.Text; Btn = $btnPrerequisites }
 )))
 $btnMoreActions = New-Object System.Windows.Forms.Button
@@ -707,58 +730,6 @@ $btnMoreActions.Add_Click({
 }.GetNewClosure())
 $toolbarTips.SetToolTip($btnMoreActions, "Catalog maintenance, one-off Intune lookups, and Entra ID tools.")
 $gbMoreActions = New-ToolbarGroup -Title "More" -Buttons @($btnMoreActions)
-
-# On the toolbar itself, not tucked away in Settings - this is a
-# frequently-relevant, at-a-glance choice ("is this catalog being
-# watched for drift or not"), not a one-time connection detail like
-# Tenant ID/Client ID/certificate. Takes effect on the NEXT app start
-# (Start-StartupDriftCheck, GraphFetch.ps1, only ever runs once per
-# launch from Form.Add_Shown), not immediately - still saved the instant
-# it's toggled, same as every other setting in this app, just nothing to
-# show for it until next time.
-$chkCheckIntuneOnDeployOpen = New-Object System.Windows.Forms.CheckBox
-$chkCheckIntuneOnDeployOpen.Text = "Check Intune when opening Deploy"
-$chkCheckIntuneOnDeployOpen.AutoSize = $true
-$chkCheckIntuneOnDeployOpen.Checked = [bool]$Global:App.CheckIntuneOnDeployOpen
-$toolbarTips.SetToolTip($chkCheckIntuneOnDeployOpen, "When checked, 'Deploy to Intune' loads an existing app's current values from Intune every time it opens. Unchecked, it opens straight away with what's saved here and asks Intune only before an update is sent (and whenever you press Refresh from Intune) - the check that actually prevents overwriting a newer value.")
-$chkCheckIntuneOnDeployOpen.Add_CheckedChanged({
-    $Global:App.CheckIntuneOnDeployOpen = $chkCheckIntuneOnDeployOpen.Checked
-    if (Write-SettingsFile) {
-        Write-Log "[OK] Deploy to Intune $(if ($chkCheckIntuneOnDeployOpen.Checked) { 'checks Intune when it opens.' } else { 'opens without contacting Intune - it still checks before any update.' })`r`n" ([System.Drawing.Color]::LightGreen)
-    }
-}.GetNewClosure())
-
-$chkCheckDriftOnStartup = New-Object System.Windows.Forms.CheckBox
-$chkCheckDriftOnStartup.Text = "Check Intune drift on start"
-$chkCheckDriftOnStartup.AutoSize = $true
-$chkCheckDriftOnStartup.Checked = [bool]$Global:App.CheckDriftOnStartup
-$toolbarTips.SetToolTip($chkCheckDriftOnStartup, "When checked, the NEXT time this app starts it quietly compares Intune against this catalog once and flags any differences - useful if more than one person works from this catalog. Needs Tenant ID/Client ID/certificate configured in Settings to do anything.")
-$chkCheckDriftOnStartup.Add_CheckedChanged({
-    $Global:App.CheckDriftOnStartup = $chkCheckDriftOnStartup.Checked
-    if (Write-SettingsFile) {
-        Write-Log "[OK] $(if ($chkCheckDriftOnStartup.Checked) { 'Will' } else { 'Will not' }) check for Intune drift the next time this app starts.`r`n" ([System.Drawing.Color]::LightGreen)
-    }
-}.GetNewClosure())
-
-# Separate, independent toggle from the one above - see
-# $Global:App.RunFullAuditOnStartup's own comment for why this is a
-# second checkbox instead of folded into the drift one: a full audit
-# fetches every deployed app individually, meaningfully slower than the
-# drift check's one list-everything call, so it gets its own explicit,
-# clearly-labeled opt-in rather than silently riding along.
-$chkRunFullAuditOnStartup = New-Object System.Windows.Forms.CheckBox
-$chkRunFullAuditOnStartup.Text = "Also run full audit (slower)"
-$chkRunFullAuditOnStartup.AutoSize = $true
-$chkRunFullAuditOnStartup.Checked = [bool]$Global:App.RunFullAuditOnStartup
-$toolbarTips.SetToolTip($chkRunFullAuditOnStartup, "When checked, the NEXT time this app starts it also runs the full 'Intune Audit...' check (Metadata/Groups/Dependencies/Assignments) - not just the lighter drift check above. Fetches every deployed app individually, so this is noticeably slower to complete on a large catalog.")
-$chkRunFullAuditOnStartup.Add_CheckedChanged({
-    $Global:App.RunFullAuditOnStartup = $chkRunFullAuditOnStartup.Checked
-    if (Write-SettingsFile) {
-        Write-Log "[OK] $(if ($chkRunFullAuditOnStartup.Checked) { 'Will' } else { 'Will not' }) run a full Intune audit the next time this app starts.`r`n" ([System.Drawing.Color]::LightGreen)
-    }
-}.GetNewClosure())
-
-$gbSync = New-ToolbarGroup -Title "Sync" -Buttons @($chkCheckDriftOnStartup, $chkRunFullAuditOnStartup, $chkCheckIntuneOnDeployOpen)
 
 # Its own titled box like the other toolbar groups (it used to float next to
 # them with a hand-tuned top margin to line up). The box title replaces the
@@ -777,19 +748,26 @@ $Global:App.LblStartupBusy.ForeColor = [System.Drawing.Color]::DimGray
 $Global:App.LblStartupBusy.Margin = New-Object System.Windows.Forms.Padding(6, ($gbSearch.Margin.Top + 20 + $Global:App.TxtSearch.Margin.Top + 3), 0, 0)
 $Global:App.LblStartupBusy.Visible = $false
 
-$toolbar.Controls.AddRange(@($gbPrimary, $gbMoreActions, $gbSync, $gbSearch, $Global:App.LblStartupBusy))
+$toolbar.Controls.AddRange(@($gbCatalog, $gbIntune, $gbSetup, $gbMoreActions, $gbSearch, $Global:App.LblStartupBusy))
 $tabCatalog.Controls.Add($toolbar)
 
-# The toolbar wraps whole groups, but "Get started" alone is wider than the
-# form's MinimumSize - its own buttons need to wrap too, or the last few
-# (Settings..., Getting started...) just run off the right edge. Capping the
-# inner FlowLayoutPanel's width at what the toolbar can actually show lets
-# it wrap onto a second row; AutoSize grows the GroupBox to match.
-$primaryFlow = $gbPrimary.Controls[0]
-$primaryFlow.WrapContents = $true
+# The toolbar wraps whole groups, but a single group can still be wider
+# than the form's MinimumSize on its own - "Intune" holds "Push groups to
+# Intune (multiple apps)...", which is most of a narrow window by itself.
+# Its buttons have to wrap too, or the last ones just run off the right
+# edge. Capping each inner FlowLayoutPanel's width at what the toolbar can
+# actually show lets it wrap onto a second row; AutoSize grows the
+# GroupBox to match. Applied to every action group rather than one named
+# favourite, so splitting or reordering them later can't quietly drop it.
+$actionGroups = @($gbCatalog, $gbIntune, $gbSetup)
+$actionFlows = @($actionGroups | ForEach-Object { $_.Controls[0] })
+foreach ($flow in $actionFlows) { $flow.WrapContents = $true }
 $toolbar.Add_SizeChanged({
-    $available = $toolbar.ClientSize.Width - $toolbar.Padding.Horizontal - $gbPrimary.Margin.Horizontal - $primaryFlow.Left * 2
-    $primaryFlow.MaximumSize = New-Object System.Drawing.Size([Math]::Max(200, $available), 0)
+    for ($gi = 0; $gi -lt $actionGroups.Count; $gi++) {
+        $flow = $actionFlows[$gi]
+        $available = $toolbar.ClientSize.Width - $toolbar.Padding.Horizontal - $actionGroups[$gi].Margin.Horizontal - $flow.Left * 2
+        $flow.MaximumSize = New-Object System.Drawing.Size([Math]::Max(200, $available), 0)
+    }
 }.GetNewClosure())
 
 # Hidden by default - shown only when Graph credentials aren't configured
@@ -885,6 +863,7 @@ $btnAuditWarningDismiss.Add_Click({ $Global:App.PanelAuditWarning.Visible = $fal
 $tabCatalog.Controls.Add($Global:App.PanelAuditWarning)
 
 $Global:App.Grid = New-Object System.Windows.Forms.DataGridView
+$Global:App.Grid.AccessibleName = "App catalog"
 $Global:App.Grid.Dock = "Fill"
 $Global:App.Grid.ReadOnly = $true
 $Global:App.Grid.AllowUserToAddRows = $false
@@ -934,8 +913,71 @@ $Global:App.ColIndex.DataPropertyName = "Index"
 $Global:App.ColIndex.Visible = $false
 $Global:App.Grid.Columns.Add($Global:App.ColIndex) | Out-Null
 
+# Column widths as they were last dragged. The sort needs no call here -
+# Update-Grid reads $Global:App.GridSortColumn itself, and Import-Graph-
+# Settings has already put the saved one there.
+Restore-GridColumnWidths
+
 $tabCatalog.Controls.Add($Global:App.Grid)
 $Global:App.Grid.BringToFront()
+
+# What an empty catalog looks like. Without this, a first run is a blank
+# grid, a row of column headers, and "0 apps" in the status bar - correct,
+# and no help at all about what to do next. Shown over the grid only while
+# there is genuinely nothing in the catalog (Update-Grid decides), so it
+# can never hide a catalog that does have apps in it.
+$Global:App.PanelEmptyCatalog = New-Object System.Windows.Forms.Panel
+$Global:App.PanelEmptyCatalog.Dock = "Fill"
+$Global:App.PanelEmptyCatalog.Visible = $false
+$Global:App.PanelEmptyCatalog.BackColor = [System.Drawing.Color]::White
+
+$lblEmptyTitle = New-Object System.Windows.Forms.Label
+$lblEmptyTitle.Text = "No apps in this catalog yet"
+$lblEmptyTitle.Font = New-Object System.Drawing.Font($Global:App.Form.Font.FontFamily, 13, [System.Drawing.FontStyle]::Bold)
+$lblEmptyTitle.Location = New-Object System.Drawing.Point(40, 40)
+$lblEmptyTitle.AutoSize = $true
+$Global:App.PanelEmptyCatalog.Controls.Add($lblEmptyTitle)
+
+$lblEmptyBody = New-Object System.Windows.Forms.Label
+$lblEmptyBody.Text = "A catalog is a folder of one JSON file per app, kept in git if you like. This one is empty - either add the first app, or point the tool at a folder that already has some."
+$lblEmptyBody.Location = New-Object System.Drawing.Point(42, 78)
+$lblEmptyBody.Size = New-Object System.Drawing.Size(620, 44)
+$lblEmptyBody.ForeColor = [System.Drawing.Color]::FromArgb(90,90,90)
+$Global:App.PanelEmptyCatalog.Controls.Add($lblEmptyBody)
+
+$Global:App.LblEmptyPath = New-Object System.Windows.Forms.Label
+$Global:App.LblEmptyPath.Location = New-Object System.Drawing.Point(42, 126)
+$Global:App.LblEmptyPath.Size = New-Object System.Drawing.Size(620, 20)
+$Global:App.LblEmptyPath.ForeColor = [System.Drawing.Color]::FromArgb(120,120,120)
+$Global:App.PanelEmptyCatalog.Controls.Add($Global:App.LblEmptyPath)
+
+# The same three buttons the toolbar has, not new actions - PerformClick on
+# the real ones, the convention the grid's context menu and the overflow
+# menu already use, so there is one handler per action however it is
+# reached.
+$btnEmptyAdd = New-Object System.Windows.Forms.Button
+$btnEmptyAdd.Text = "Add the first app..."
+$btnEmptyAdd.Location = New-Object System.Drawing.Point(42, 160)
+$btnEmptyAdd.Size = New-Object System.Drawing.Size(180, 34)
+$btnEmptyAdd.Add_Click({ $btnNew.PerformClick() }.GetNewClosure())
+$Global:App.PanelEmptyCatalog.Controls.Add($btnEmptyAdd)
+
+$btnEmptyOpen = New-Object System.Windows.Forms.Button
+$btnEmptyOpen.Text = "Open another folder..."
+$btnEmptyOpen.Location = New-Object System.Drawing.Point(232, 160)
+$btnEmptyOpen.Size = New-Object System.Drawing.Size(180, 34)
+$btnEmptyOpen.Add_Click({ $btnOpen.PerformClick() }.GetNewClosure())
+$Global:App.PanelEmptyCatalog.Controls.Add($btnEmptyOpen)
+
+$btnEmptyGuide = New-Object System.Windows.Forms.Button
+$btnEmptyGuide.Text = "Getting started..."
+$btnEmptyGuide.Location = New-Object System.Drawing.Point(422, 160)
+$btnEmptyGuide.Size = New-Object System.Drawing.Size(180, 34)
+$btnEmptyGuide.Add_Click({ $btnGettingStarted.PerformClick() }.GetNewClosure())
+$Global:App.PanelEmptyCatalog.Controls.Add($btnEmptyGuide)
+
+$tabCatalog.Controls.Add($Global:App.PanelEmptyCatalog)
+$Global:App.PanelEmptyCatalog.BringToFront()
 
 # Highlight the Status column when it's flagging something, so problems are
 # visible at a glance across the whole catalog instead of only when you open
@@ -1557,6 +1599,18 @@ $Global:App.Grid.Add_CellDoubleClick({
     $btnEdit.PerformClick()
 })
 
+# Clicking a column header sorts by it, clicking it again reverses it. The
+# catalog's own order is what you get until the first click - "Index" is
+# the column that order lives in, and it stays out of the rotation because
+# sorting by a hidden row number isn't a thing anyone means to ask for.
+$Global:App.Grid.Add_ColumnHeaderMouseClick({
+    param($gridSender, $e)
+    if ($e.ColumnIndex -lt 0) { return }
+    $clickedColumn = $Global:App.Grid.Columns[$e.ColumnIndex].Name
+    if ($clickedColumn -eq "Index") { return }
+    Sort-Grid -ColumnName $clickedColumn
+})
+
 # Right-click context menu - lets Deploy/Assign/Delete happen straight from
 # the grid instead of always requiring a trip through the full editor first.
 $gridContextMenu = New-Object System.Windows.Forms.ContextMenuStrip
@@ -1880,9 +1934,10 @@ $Global:App.BtnSave.Add_Click({
     }
 })
 
-# Ctrl+S saves the catalog when on the App Catalog tab - matches every other
-# app's save shortcut. $Global:App.Form.KeyPreview lets the form see key presses before
-# whatever control currently has focus does.
+# Keyboard shortcuts for the App Catalog tab: Ctrl+S save, Ctrl+N new,
+# Ctrl+F search, F5 reload, and Enter/Delete on the grid - the ones every
+# other Windows app of this shape has. $Global:App.Form.KeyPreview lets the
+# form see key presses before whatever control currently has focus does.
 $Global:App.Form.KeyPreview = $true
 $Global:App.Form.Add_KeyDown({
     if ($tabs.SelectedTab -ne $tabCatalog) { return }
@@ -1893,6 +1948,21 @@ $Global:App.Form.Add_KeyDown({
     }
     if ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::N) {
         $btnNew.PerformClick()
+        $_.SuppressKeyPress = $true
+        return
+    }
+    # Ctrl+F goes to the search box and selects what's in it, so the next
+    # thing typed replaces the old filter instead of appending to it.
+    if ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::F) {
+        [void]$Global:App.TxtSearch.Focus()
+        $Global:App.TxtSearch.SelectAll()
+        $_.SuppressKeyPress = $true
+        return
+    }
+    # F5 reloads the catalog from disk - the same button, and the same
+    # question about unsaved changes, that Reload asks.
+    if ($_.KeyCode -eq [System.Windows.Forms.Keys]::F5) {
+        $btnReload.PerformClick()
         $_.SuppressKeyPress = $true
         return
     }
@@ -1960,7 +2030,7 @@ $Global:App.BtnLookupIds.Add_Click({
 
 $btnCertSetup.Add_Click({ Show-CertificateSetupDialog; Update-CredentialWarningBanner })
 $btnDefaultValues.Add_Click({ Show-DefaultAppSettingsDialog })
-$btnDiagnostics.Add_Click({ Show-DiagnosticsDialog })
+$btnChecks.Add_Click({ Show-ChecksDialog })
 $btnPrerequisites.Add_Click({ [void](Show-PrerequisitesDialog) })
 $btnCheckIntuneOnly.Add_Click({
     $changed = Show-IntuneOnlyAppsDialog
@@ -1997,13 +2067,43 @@ $btnBatchDeploy.Add_Click({
 })
 $btnGroupManager.Add_Click({ Show-GroupManagerDialog })
 $btnPlatformScripts.Add_Click({ Show-PlatformScriptsDialog })
-$btnWingetHealth.Add_Click({ Show-WingetHealthCheckDialog })
 $btnFavoriteGroups.Add_Click({ Show-FavoriteGroupsManager })
-$btnGroupDrift.Add_Click({ Show-GroupDriftCheckDialog })
-$btnDependencies.Add_Click({ Show-DependencyOverviewDialog })
 $btnIntuneAudit.Add_Click({ Show-IntuneCheckDialog; Update-Grid })
 
-$Global:App.TxtSearch.Add_TextChanged({ Update-Grid })
+# Typing waits for you to stop before the grid is rebuilt. A rebuild is
+# not cheap: it re-derives every row, and for each app with no Winget ID
+# it calls Resolve-AppPackagePath, which walks data\app-packages
+# recursively looking for that app's .intunewin. Per keystroke, that was
+# a four-letter filter costing four passes over the catalog and dozens of
+# directory walks - felt as the search box lagging behind the typing.
+#
+# 250ms: below what reads as a delay, long enough that ordinary typing
+# lands one rebuild instead of one per character.
+$Global:App.SearchDebounce = New-Object System.Windows.Forms.Timer
+$Global:App.SearchDebounce.Interval = 250
+$Global:App.SearchDebounce.Add_Tick({
+    $Global:App.SearchDebounce.Stop()
+    Update-Grid
+})
+$Global:App.TxtSearch.Add_TextChanged({
+    # Restarted, not merely started: each keystroke pushes the rebuild
+    # back, so it happens once when typing stops.
+    $Global:App.SearchDebounce.Stop()
+    $Global:App.SearchDebounce.Start()
+})
+
+# Esc empties the search box while it has focus - the way out of a filter,
+# without reaching for the mouse or selecting the text to delete it.
+# Rebuilt immediately rather than through the debounce above: clearing is
+# one deliberate keypress, not a stream of them.
+$Global:App.TxtSearch.Add_KeyDown({
+    if ($_.KeyCode -ne [System.Windows.Forms.Keys]::Escape) { return }
+    $_.SuppressKeyPress = $true
+    if ($Global:App.TxtSearch.Text -eq '') { return }
+    $Global:App.SearchDebounce.Stop()
+    $Global:App.TxtSearch.Text = ''
+    Update-Grid
+})
 
 # =====================================================================
 # Log tab
@@ -2019,6 +2119,7 @@ $Global:App.Progress = New-Object System.Windows.Forms.ProgressBar
 $Global:App.Progress.Dock = "Bottom"
 $Global:App.Progress.Height = 6
 $Global:App.Progress.Style = "Marquee"
+$Global:App.Progress.AccessibleName = "Working"
 $Global:App.Progress.Visible = $false
 $tabPipeline.Controls.Add($Global:App.Progress)
 
@@ -2160,12 +2261,23 @@ $Global:App.Form.Add_FormClosing({
         }
         elseif ($r -ne [System.Windows.Forms.DialogResult]::No) { $closingArgs.Cancel = $true }
     }
+    # Where the window ended up, and how the grid was left, written once on
+    # the way out rather than on every drag of a column edge. Skipped if
+    # the close was called off above, since nothing is ending yet. Failing
+    # to write settings is never a reason to keep the app open.
+    if (-not $closingArgs.Cancel) {
+        try { [void](Write-SettingsFile) } catch { }
+    }
 })
 
 $Global:App.Form.Add_FormClosed({
     if ($Global:App.LogFlushTimer) {
         try { $Global:App.LogFlushTimer.Stop(); $Global:App.LogFlushTimer.Dispose() } catch { }
         $Global:App.LogFlushTimer = $null
+    }
+    if ($Global:App.SearchDebounce) {
+        try { $Global:App.SearchDebounce.Stop(); $Global:App.SearchDebounce.Dispose() } catch { }
+        $Global:App.SearchDebounce = $null
     }
     if ($Global:App.LogFileWriter) {
         try { $Global:App.LogFileWriter.Flush(); $Global:App.LogFileWriter.Close() } catch { }

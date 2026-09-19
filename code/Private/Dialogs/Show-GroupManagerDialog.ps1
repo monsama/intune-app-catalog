@@ -292,7 +292,7 @@ function Global:Show-GroupManagerDialog {
 
         $r = [System.Windows.Forms.MessageBox]::Show(
             "Create or update the group '$groupName' in Entra ID and add $($pendingMemberIds.Count) member(s) to it?`n`nThe group is created only if no group has exactly this name, and its description is set if you entered one.",
-            "Create or update group", "YesNo", "Question")
+            "Create or update group", "YesNo", "Question", "Button2")
         if ($r -ne "Yes") { return }
 
         $btnRun.Enabled = $false
@@ -518,7 +518,7 @@ function Global:Show-GroupManagerDialog {
         $renameUsedBy = @(Get-CatalogAppsUsingGroup -GroupName $groupName).Count
         $r = [System.Windows.Forms.MessageBox]::Show(
             "Rename '$groupName' to '$newName' in Entra ID?`n`n$(if ($renameUsedBy -gt 0) { "The $renameUsedBy app(s) in this catalog that use it are updated to the new name too." } else { "No app in this catalog uses it." })",
-            "Rename group", "YesNo", "Question")
+            "Rename group", "YesNo", "Question", "Button2")
         if ($r -ne "Yes") { return }
 
         $btnRun.Enabled = $false

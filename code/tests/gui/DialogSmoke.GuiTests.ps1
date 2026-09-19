@@ -167,7 +167,13 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         }
         Select-OnlyGridRow $ctx '7-Zip'   # so Edit... has a selection
         foreach ($name in @($ctx.Buttons.Keys | Sort-Object)) {
-            if ($name -match $skipPattern -or $name -eq 'More actions...' -or $name -match '^(Check|Also run)') { continue }
+            # No '^(Check|Also run)' exclusion any more: that was for the
+            # three startup checkboxes (a WinForms CheckBox is a Win32
+            # BUTTON, so they landed in this map), and they live on
+            # Settings' "Automatic checks" tab now. Left in, the pattern
+            # would silently skip any future toolbar button whose label
+            # happens to start with "Check".
+            if ($name -match $skipPattern -or $name -eq 'More actions...') { continue }
             if (-not $W32::IsWindowEnabled($ctx.Buttons[$name])) { continue }
             $W32::Click($ctx.Buttons[$name])
             $seen = Watch-AppDialogs $ctx

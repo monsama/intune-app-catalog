@@ -14,14 +14,36 @@ function Global:Show-WingetHealthCheckDialog {
       detection rule matches on the package ID rather than a version, so
       "a newer version exists upstream" means nothing here.
     #>
+    # -HostTabPage: become one tab of Show-ChecksDialog instead of a window
+    # of its own - see Move-DialogToTabPage.
+    param([System.Windows.Forms.TabPage]$HostTabPage, [System.Windows.Forms.Form]$HostForm)
 
     $appsWithWingetId = @($Global:App.Apps | Where-Object { $_.wingetId })
     if ($appsWithWingetId.Count -eq 0) {
+        # Embedded, say it on the tab instead of in a popup over a window
+        # the user opened for the other checks.
+        if ($HostTabPage) {
+            $lblNothing = New-Object System.Windows.Forms.Label
+            $lblNothing.Text = "No app in this catalog has a Winget ID, so there is nothing for winget to check."
+            $lblNothing.Location = New-Object System.Drawing.Point(15,15)
+            $lblNothing.Size = New-Object System.Drawing.Size(700,40)
+            $lblNothing.ForeColor = [System.Drawing.Color]::DimGray
+            $HostTabPage.Controls.Add($lblNothing)
+            return
+        }
         [System.Windows.Forms.MessageBox]::Show("No app in this catalog has a Winget ID, so there's nothing to check.", "Nothing to check", "OK", "Information") | Out-Null
         return
     }
 
     $dlg = New-Object System.Windows.Forms.Form
+    # Which window this check's controls actually live in - this dialog
+    # standalone, or the host it was moved into as a tab. The poll timer
+    # below stops when that window is gone, and embedded it is the HOST
+    # that gets closed and disposes these controls: checking $dlg there
+    # would keep the timer writing into a dead grid. A box, not a plain
+    # variable, so the hosted branch at the bottom can repoint it after
+    # the closures below have already captured it.
+    $liveFormBox = @{ Form = $dlg }
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Winget package check"
     $dlg.ClientSize = New-Object System.Drawing.Size(760, 520)
@@ -167,7 +189,7 @@ function Global:Show-WingetHealthCheckDialog {
 
         # Fresh aliases for the timer's closure - see the note at the top of
         # Show-CreateInIntuneDialog.
-        $dlgRef = $dlg
+        $liveFormBoxRef = $liveFormBox
         $gridRef = $grid
         $lblStatusRef = $lblStatus
         $progressRef = $progress
@@ -183,7 +205,7 @@ function Global:Show-WingetHealthCheckDialog {
         $timer = New-Object System.Windows.Forms.Timer
         $timer.Interval = 400
         $timer.Add_Tick({
-            $closed = $dlgRef.IsDisposed
+            $closed = $liveFormBoxRef.Form.IsDisposed
             if (-not $closed) {
                 while ($takenBox.Count -lt $outputRef.Count) {
                     $item = $outputRef[$takenBox.Count]
@@ -258,7 +280,30 @@ function Global:Show-WingetHealthCheckDialog {
 
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     $dlg.CancelButton = $btnClose
+    # Enter dismisses this report, same as Esc - the check itself is read-only.
+    $dlg.AcceptButton = $btnClose
 
     Set-Theme -Control $dlg
+    if ($HostTabPage) {
+        $btnClose.Visible = $false
+        # From here on the controls belong to the host window, so that is
+        # what "is this still open?" has to mean - see $liveFormBox above.
+        $liveFormBox.Form = $HostForm
+        [void](Move-DialogToTabPage -Dialog $dlg -Page $HostTabPage)
+        # What the Add_Shown above would have done, run by the host when
+        # this tab is first opened - this one shells out to winget once per
+        # catalog app, which is not something to start behind a tab nobody
+        # has looked at yet.
+        # IsBusy but deliberately no BlockClose: this check was always
+        # closable mid-run standalone, and its poll timer stops on its own
+        # once the window holding these controls is gone (see $liveFormBox).
+        # Run all still waits for it - one winget process per app is exactly
+        # the thing not to start a second check on top of.
+        $HostTabPage.Tag = @{
+            OnFirstShow = { & $runCheck }.GetNewClosure()
+            IsBusy      = { [bool]$stateBox.Running }.GetNewClosure()
+        }
+        return
+    }
     [void]$dlg.ShowDialog($Global:App.Form)
 }

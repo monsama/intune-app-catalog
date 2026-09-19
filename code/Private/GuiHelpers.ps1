@@ -947,6 +947,12 @@ function Global:New-GridColumn {
     $col.HeaderText = $Header
     $col.DataPropertyName = $Name
     $col.FillWeight = $FillWeight
+    # Programmatic, not Automatic: the grid is bound to a plain List, which
+    # can't sort itself, so an Automatic header click does nothing at all.
+    # Sort-Grid orders the rows before they're bound and sets the glyph
+    # here itself - which also survives the rebuild Update-Grid does on
+    # every refresh and every keystroke in the search box.
+    $col.SortMode = [System.Windows.Forms.DataGridViewColumnSortMode]::Programmatic
     if ($Font) {
         $headerWidth = [System.Windows.Forms.TextRenderer]::MeasureText($Header, $Font).Width + 24
         $col.MinimumWidth = [Math]::Max($headerWidth, $MinimumWidth)
@@ -957,9 +963,127 @@ function Global:New-GridColumn {
     return $col
 }
 
+function Global:Get-GridColumnWidths {
+    # Column name -> FillWeight, not pixels: the grid is in Fill mode, so
+    # dragging a column edge changes its weight. Weights are also the thing
+    # worth keeping - they still mean the same on a window reopened at a
+    # different size, where saved pixel widths would not.
+    $widths = @{}
+    if (-not $Global:App.Grid) { return $widths }
+    foreach ($col in $Global:App.Grid.Columns) {
+        if (-not $col.Visible) { continue }
+        $widths[$col.Name] = [Math]::Round([double]$col.FillWeight, 2)
+    }
+    return $widths
+}
+
+function Global:Restore-GridColumnWidths {
+    # Read back defensively: this comes from a file a person can edit, and
+    # a column that has since been renamed or removed simply has no saved
+    # width any more. Anything missing or unusable keeps the built-in
+    # weight, so the worst case is the layout this grid always had.
+    $saved = $Global:App.SavedGridColumnWidths
+    if (-not $saved -or -not $Global:App.Grid) { return }
+    foreach ($col in $Global:App.Grid.Columns) {
+        $value = if ($saved -is [System.Collections.IDictionary]) { $saved[$col.Name] }
+                 elseif ($saved.PSObject.Properties[$col.Name]) { $saved.PSObject.Properties[$col.Name].Value }
+                 else { $null }
+        if ($null -eq $value) { continue }
+        $weight = 0.0
+        # FillWeight refuses anything at or below zero, so a corrupt or
+        # hand-typed 0 must not reach it.
+        if ([double]::TryParse([string]$value, [ref]$weight) -and $weight -gt 0) {
+            $col.FillWeight = $weight
+        }
+    }
+}
+
+function Global:Get-WindowPlacement {
+    $form = $Global:App.Form
+    if (-not $form) { return $null }
+    # RestoreBounds, not Bounds, whenever the window isn't in its normal
+    # state: Bounds while maximized is the whole monitor, which would come
+    # back as a "normal" window exactly covering the screen - maximized to
+    # look at, but not actually maximized.
+    $bounds = if ($form.WindowState -eq [System.Windows.Forms.FormWindowState]::Normal) { $form.Bounds } else { $form.RestoreBounds }
+    # Minimized is never saved as a state to come back to - nobody wants to
+    # reopen an app into the taskbar.
+    $state = if ($form.WindowState -eq [System.Windows.Forms.FormWindowState]::Maximized) { 'Maximized' } else { 'Normal' }
+    return [pscustomobject]@{
+        State  = $state
+        X      = [int]$bounds.X
+        Y      = [int]$bounds.Y
+        Width  = [int]$bounds.Width
+        Height = [int]$bounds.Height
+    }
+}
+
+function Global:Restore-WindowPlacement {
+    # Called before the window is shown. Does nothing at all unless there is
+    # a saved placement that still makes sense on the monitors attached
+    # right now, so the default (maximized) stands on a first run.
+    $placement = $Global:App.SavedWindowPlacement
+    if (-not $placement) { return }
+    $width = [int]$placement.Width
+    $height = [int]$placement.Height
+    if ($width -lt 400 -or $height -lt 300) { return }
+    $rect = New-Object System.Drawing.Rectangle([int]$placement.X, [int]$placement.Y, $width, $height)
+
+    # The monitor this was last on may be gone - a laptop undocked, a screen
+    # unplugged. Restoring onto coordinates that no screen covers any more
+    # puts the window somewhere the user cannot reach or even see, and the
+    # app looks like it failed to start. Enough of it has to land on a
+    # screen that exists, or the saved placement is simply ignored.
+    $visible = $false
+    foreach ($screen in [System.Windows.Forms.Screen]::AllScreens) {
+        $overlap = [System.Drawing.Rectangle]::Intersect($screen.WorkingArea, $rect)
+        if ($overlap.Width -ge 200 -and $overlap.Height -ge 100) { $visible = $true; break }
+    }
+    if (-not $visible) { return }
+
+    $Global:App.Form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+    $Global:App.Form.Bounds = $rect
+    if ($placement.State -eq 'Maximized') {
+        $Global:App.Form.WindowState = [System.Windows.Forms.FormWindowState]::Maximized
+    }
+    else {
+        $Global:App.Form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+    }
+}
+
+function Global:Sort-Grid {
+    # Called by the grid's own header click. The first click on a column
+    # sorts it ascending, a second click on the SAME column reverses it -
+    # the convention every other list in Windows follows.
+    param([string]$ColumnName)
+    if ($Global:App.GridSortColumn -eq $ColumnName) {
+        $Global:App.GridSortAscending = -not $Global:App.GridSortAscending
+    }
+    else {
+        $Global:App.GridSortColumn = $ColumnName
+        $Global:App.GridSortAscending = $true
+    }
+    Update-Grid
+}
+
 function Global:Update-Grid {
     $filter = $Global:App.TxtSearch.Text.Trim().ToLower()
     $rows = New-Object System.Collections.Generic.List[Object]
+
+    # What the user was looking at before this rebuild. Update-Grid runs
+    # from 20-odd places - every save, deploy, sync, and every keystroke in
+    # the search box - and rebinding DataSource drops the selection and
+    # scrolls back to the top, so without this you lose your place in a
+    # long catalog every time anything happens. Remembered by app NAME, not
+    # row or catalog index: both of those shift when an app is added,
+    # removed or sorted, and would quietly restore the selection onto a
+    # DIFFERENT app than the one that was selected.
+    $prevNames = @()
+    $prevFirstRow = -1
+    if ($Global:App.Grid -and $Global:App.Grid.Columns.Contains("AppName")) {
+        $prevNames = @($Global:App.Grid.SelectedRows | ForEach-Object { [string]$_.Cells["AppName"].Value })
+        $prevFirstRow = $Global:App.Grid.FirstDisplayedScrollingRowIndex
+    }
 
     for ($i = 0; $i -lt $Global:App.Apps.Count; $i++) {
         $app = $Global:App.Apps[$i]
@@ -1050,14 +1174,97 @@ function Global:Update-Grid {
         })
     }
 
+    # Sorted here, before binding, rather than by the grid: a plain List
+    # DataSource has no sorting of its own, and doing it here is what makes
+    # the order stick through every later rebuild instead of silently
+    # reverting to catalog order on the next keystroke or save.
+    $sortColumn = [string]$Global:App.GridSortColumn
+    if ($sortColumn -and $rows.Count -gt 1) {
+        $sorted = if ($Global:App.GridSortAscending) { @($rows | Sort-Object -Property $sortColumn) }
+                  else { @($rows | Sort-Object -Property $sortColumn -Descending) }
+        $rows = New-Object System.Collections.Generic.List[Object]
+        foreach ($r in $sorted) { $rows.Add($r) }
+    }
+
     $Global:App.Grid.DataSource = $null
     $Global:App.Grid.DataSource = $rows
 
-    $reqTotal   = ($Global:App.Apps | ForEach-Object { @($_.requiredFor).Count } | Measure-Object -Sum).Sum
-    $availTotal = ($Global:App.Apps | ForEach-Object { @($_.availableFor).Count } | Measure-Object -Sum).Sum
-    $uninstTotal= ($Global:App.Apps | ForEach-Object { @($_.uninstallFor).Count } | Measure-Object -Sum).Sum
+    foreach ($col in $Global:App.Grid.Columns) {
+        $glyph = if ($col.Name -eq $sortColumn) {
+            if ($Global:App.GridSortAscending) { "Ascending" } else { "Descending" }
+        } else { "None" }
+        $col.HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]$glyph
+    }
+
+    # Put the selection and the scroll position back where they were. An
+    # app that the current filter hides has no row to go back to, which is
+    # why this is best-effort and never forces a fallback selection: being
+    # handed row 0 when your app scrolled out of view is how the wrong app
+    # gets deployed.
+    if ($prevNames.Count -gt 0 -and $Global:App.Grid.Rows.Count -gt 0) {
+        # foreach, not a Where-Object pipeline: this runs on every refresh
+        # over every row in the grid, and -contains against a handful of
+        # remembered names is cheap next to the pipeline around it.
+        $restored = New-Object System.Collections.Generic.List[object]
+        foreach ($row in $Global:App.Grid.Rows) {
+            if ($prevNames -contains [string]$row.Cells["AppName"].Value) { [void]$restored.Add($row) }
+        }
+        if ($restored.Count -gt 0) {
+            # CurrentCell first, then the selection: assigning CurrentCell
+            # selects its own row and drops everything else, which would
+            # quietly shrink a restored multi-row selection back to one.
+            # It also drives keyboard navigation, so it has to move with the
+            # selection or the next arrow key jumps back to the old cursor.
+            $Global:App.Grid.CurrentCell = $restored[0].Cells[0]
+            $Global:App.Grid.ClearSelection()
+            foreach ($row in $restored) { $row.Selected = $true }
+        }
+        else {
+            # Nothing to restore, because what was selected is filtered out
+            # or gone from the catalog. Binding a DataSource selects the
+            # first row by itself, so this has to be undone deliberately:
+            # otherwise the selection silently lands on whichever app
+            # happens to sort first, and the next Deploy or Delete acts on
+            # THAT one. Better to select nothing and make the user pick.
+            $Global:App.Grid.ClearSelection()
+        }
+    }
+    if ($prevFirstRow -ge 0 -and $prevFirstRow -lt $Global:App.Grid.Rows.Count) {
+        $Global:App.Grid.FirstDisplayedScrollingRowIndex = $prevFirstRow
+    }
+
+    # The empty-catalog panel covers the grid only when the CATALOG is
+    # empty, never when a search simply matches nothing - the search box is
+    # right there to explain that case, and "Add the first app..." would be
+    # the wrong advice while apps exist.
+    if ($Global:App.PanelEmptyCatalog) {
+        $catalogIsEmpty = ($Global:App.Apps.Count -eq 0)
+        $Global:App.PanelEmptyCatalog.Visible = $catalogIsEmpty
+        if ($catalogIsEmpty) {
+            $Global:App.LblEmptyPath.Text = "This catalog folder: $($Global:App.LinkedFilePath)"
+        }
+    }
+
+    # One pass for all three totals. This was three separate pipelines over
+    # the whole catalog, each building a ForEach-Object and a Measure-Object
+    # for a running total - three walks and six pipelines per refresh, for
+    # three numbers that come out of the same single walk.
+    $reqTotal = 0
+    $availTotal = 0
+    $uninstTotal = 0
+    foreach ($app in $Global:App.Apps) {
+        $reqTotal    += @($app.requiredFor).Count
+        $availTotal  += @($app.availableFor).Count
+        $uninstTotal += @($app.uninstallFor).Count
+    }
     $dirty = if ($Global:App.UnsavedChangesBox.Value) { "  *unsaved changes*" } else { "" }
-    Set-Status "$($Global:App.Apps.Count) apps  |  $reqTotal required, $availTotal available, $uninstTotal uninstall assignments  |  $($Global:App.LinkedFilePath)$dirty"
+    # While a filter is on, the count has to be what you can actually see.
+    # It read "120 apps" over a grid showing three of them, which is the
+    # one moment that number is worth reading and the one moment it was
+    # wrong. The assignment totals below stay catalog-wide on purpose -
+    # they answer "what does this catalog deploy", not "what is on screen".
+    $countText = if ($filter) { "Showing $($rows.Count) of $($Global:App.Apps.Count) apps" } else { "$($Global:App.Apps.Count) apps" }
+    Set-Status "$countText  |  $reqTotal required, $availTotal available, $uninstTotal uninstall assignments  |  $($Global:App.LinkedFilePath)$dirty"
 }
 
 function Global:Get-SelectedAppIndex {

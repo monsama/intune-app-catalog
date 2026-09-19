@@ -599,7 +599,31 @@ function Global:Start-Win32AppMinOsFetch {
 
 function Global:Start-EntraDirectoryLookup {
     # -LogBox: the calling dialog's log box, which also gets this lookup's [GRAPH] lines
-    param([scriptblock]$OnComplete, [System.Windows.Forms.RichTextBox]$LogBox)
+    #
+    # -ReuseCacheWithinSeconds: answer from $Global:App.EntraDirectoryCache
+    # instead of fetching, if that cache was filled by a successful lookup
+    # less than this many seconds ago. 0 (the default) always fetches, so
+    # every existing caller behaves exactly as before - a button that says
+    # "Refresh from Entra ID" has to mean it. It is for the callers that
+    # want A group list rather than a freshly read one: this lookup pages
+    # through EVERY group and EVERY user in the tenant, and the Checks
+    # window would otherwise do that twice in one run, once for the
+    # Catalog groups tab and again for Diagnostics.
+    param(
+        [scriptblock]$OnComplete,
+        [System.Windows.Forms.RichTextBox]$LogBox,
+        [int]$ReuseCacheWithinSeconds = 0
+    )
+
+    if ($ReuseCacheWithinSeconds -gt 0 -and $Global:App.EntraDirectoryCache.Count -gt 0 -and $Global:App.EntraDirectoryCacheFetchedAt) {
+        $age = [int]((Get-Date) - $Global:App.EntraDirectoryCacheFetchedAt).TotalSeconds
+        if ($age -lt $ReuseCacheWithinSeconds) {
+            $cachedGroups = @($Global:App.EntraDirectoryCache | Where-Object { $_.type -eq 'Group' }).Count
+            Write-Log "[OK] Using the directory read $age second(s) ago ($cachedGroups group(s)) instead of reading every group and user again.`r`n" ([System.Drawing.Color]::LightGreen)
+            if ($OnComplete) { & $OnComplete $true $Global:App.EntraDirectoryCache }
+            return
+        }
+    }
 
     # Offers to install it right away (Prerequisites.ps1) - lookups only
     # run in this process, so only this PowerShell has to have it.
@@ -707,6 +731,11 @@ function Global:Start-EntraDirectoryLookup {
                 $groupCount = @($cache | Where-Object { $_.type -eq "Group" }).Count
                 $userCount  = @($cache | Where-Object { $_.type -eq "User" }).Count
                 Write-Log "[OK] Connected app-only as '$($info.AppName)'. Loaded $groupCount group(s) and $userCount user(s).`r`n" ([System.Drawing.Color]::LightGreen)
+                # When this list was last known to be good, for callers that
+                # pass -ReuseCacheWithinSeconds. Set only on a successful
+                # fetch, so a failed one can never make a stale cache look
+                # fresh.
+                $Global:App.EntraDirectoryCacheFetchedAt = Get-Date
                 if ($OnComplete) { & $OnComplete $true $cache }
             }
         }

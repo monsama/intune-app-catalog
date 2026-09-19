@@ -566,10 +566,21 @@ function Global:Get-DefaultAppMetadata {
     # default dependency list that happens to include the app currently
     # being defaulted (e.g. computing Winget AutoUpdate's own defaults)
     # would otherwise make it depend on itself.
+    # One pass over the catalog into a lookup, rather than a pipeline scan
+    # of every app per configured dependency name. This function runs once
+    # per app on every grid refresh (via Test-AppHasCustomConfig), so the
+    # scan it replaces was the whole catalog walked once per dependency
+    # name per app - quadratic in catalog size, for a question that is just
+    # "is there an app called this?". A PowerShell hashtable matches names
+    # case-insensitively, exactly as the -eq it replaces did.
+    $catalogNames = @{}
+    foreach ($catalogApp in $Global:App.Apps) {
+        if ($catalogApp.appName) { $catalogNames[[string]$catalogApp.appName] = $true }
+    }
     $defaultDeps = @(
         $das.DefaultDependencyAppNames | Where-Object {
             $depName = $_
-            $depName -and $depName -ne $AppName -and ($Global:App.Apps | Where-Object { $_.appName -eq $depName })
+            $depName -and $depName -ne $AppName -and $catalogNames.ContainsKey([string]$depName)
         }
     )
 

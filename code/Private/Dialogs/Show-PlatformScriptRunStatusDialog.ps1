@@ -181,6 +181,8 @@ function Global:Show-PlatformScriptRunStatusDialog {
 
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     $dlg.CancelButton = $btnClose
+    # Enter dismisses this report, same as Esc - read-only, like the app install status it mirrors.
+    $dlg.AcceptButton = $btnClose
     # Read-only, so closing mid-fetch just closes - same as the audit and
     # the app install status view.
     $dlg.Add_Shown({ & $runFetch }.GetNewClosure())

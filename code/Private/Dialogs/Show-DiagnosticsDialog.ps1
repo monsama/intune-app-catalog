@@ -1,4 +1,7 @@
 function Global:Show-DiagnosticsDialog {
+    # -HostTabPage: become one tab of Show-ChecksDialog instead of a window
+    # of its own - see Move-DialogToTabPage.
+    param([System.Windows.Forms.TabPage]$HostTabPage, [System.Windows.Forms.Form]$HostForm)
     # Plain local aliases - see note in Start-IntuneAppLookup. $certThumbRef
     # specifically fixes a real, confirmed-live bug: $btnRun.Add_Click below
     # is itself a .GetNewClosure()'d scriptblock, and reading
@@ -18,6 +21,12 @@ function Global:Show-DiagnosticsDialog {
     $certThumbRef = $Global:App.GraphCertificateThumbprint
 
     $dlg = New-Object System.Windows.Forms.Form
+    # The window the busy cursor belongs to: this dialog standalone, or the
+    # host it was moved into as a tab. Embedded, $dlg is never shown, so a
+    # wait cursor set on it is a wait cursor nobody sees. A box, so the
+    # hosted branch at the bottom can repoint it after the closures below
+    # have captured it.
+    $busyFormBox = @{ Form = $dlg }
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Diagnostics"
     $dlg.ClientSize = New-Object System.Drawing.Size(700, 560)
@@ -174,16 +183,16 @@ function Global:Show-DiagnosticsDialog {
         # three chained fetches run - setting its cursor has no visible
         # effect here. Set/reset THIS dialog's own cursor instead, same
         # fix already applied to Show-CreateInIntuneDialog and Show-AppEditor.
-        $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $busyFormBox.Form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
         # Fresh aliases for the nested -OnComplete closure - see note at the
         # top of Show-CreateInIntuneDialog for why this matters here too.
-        $dlgRef = $dlg
         $appsRefRef = $appsRef
         $appendLineRef = $appendLine
         $knownMinOsValuesRef = $knownMinOsValues
         $btnRunRef = $btnRun
         $btnCloseRef = $btnClose
+        $busyFormBoxRef = $busyFormBox
         $lblStatusRef = $lblStatus
         $okColorRef = $okColor
         $warnColorRef = $warnColor
@@ -200,7 +209,7 @@ function Global:Show-DiagnosticsDialog {
                 $btnCloseRef.Enabled = $true
                 $lblStatusRef.Text = "Done - live checks failed."
                 $lblStatusRef.ForeColor = $warnColorRef
-                $dlgRef.Cursor = [System.Windows.Forms.Cursors]::Default
+                $busyFormBoxRef.Form.Cursor = [System.Windows.Forms.Cursors]::Default
                 [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
                 [System.Windows.Forms.Application]::DoEvents()
                 [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
@@ -231,9 +240,9 @@ function Global:Show-DiagnosticsDialog {
             $deployedAppsRef = $deployedApps
             $appendLineRef2 = $appendLineRef
             $knownMinOsValuesRef2 = $knownMinOsValuesRef
-            $dlgRef2 = $dlgRef
             $btnRunRef2 = $btnRunRef
             $btnCloseRef2 = $btnCloseRef
+            $busyFormBoxRef2 = $busyFormBoxRef
             $lblStatusRef2 = $lblStatusRef
             $okColorRef2 = $okColorRef
             $warnColorRef2 = $warnColorRef
@@ -295,13 +304,19 @@ function Global:Show-DiagnosticsDialog {
                 $failColorRef3  = $failColorRef2
                 $infoColorRef3  = $infoColorRef2
                 $headerColorRef3 = $headerColorRef2
-                $dlgRef3        = $dlgRef2
                 $btnRunRef3     = $btnRunRef2
                 $btnCloseRef3   = $btnCloseRef2
+                $busyFormBoxRef3 = $busyFormBoxRef2
                 $lblStatusRef3  = $lblStatusRef2
                 $rtbLogRef3     = $rtbLogRef2
 
-                Start-EntraDirectoryLookup -LogBox $rtbLogRef3 -OnComplete {
+                # Diagnostics wants A directory listing, not a freshly read
+                # one - it is reporting, not refreshing. Reusing a read from
+                # the last five minutes is what stops "Run all checks" in
+                # the Checks window from paging through every group and user
+                # in the tenant twice, once here and once for the Catalog
+                # groups tab that just did it.
+                Start-EntraDirectoryLookup -LogBox $rtbLogRef3 -ReuseCacheWithinSeconds 300 -OnComplete {
                     param($groupsOk, $groupsData)
                     if ($groupsOk) {
                         & $appendLineRef3 "[OK] App registration can read Entra ID groups and users" $okColorRef3
@@ -331,7 +346,7 @@ function Global:Show-DiagnosticsDialog {
                     $btnCloseRef3.Enabled = $true
                     $lblStatusRef3.Text = "Done."
                     $lblStatusRef3.ForeColor = $okColorRef3
-                    $dlgRef3.Cursor = [System.Windows.Forms.Cursors]::Default
+                    $busyFormBoxRef3.Form.Cursor = [System.Windows.Forms.Cursors]::Default
                     [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
                     [System.Windows.Forms.Application]::DoEvents()
                     [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
@@ -342,6 +357,8 @@ function Global:Show-DiagnosticsDialog {
 
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     $dlg.CancelButton = $btnClose
+    # Enter runs the diagnostics again. They only read - nothing here changes Intune or the catalog.
+    $dlg.AcceptButton = $btnRun
 
     # Backstop for the window's own X button / Alt+F4 - $btnClose.Enabled
     # already being $false blocks the button itself while a run is in
@@ -354,5 +371,24 @@ function Global:Show-DiagnosticsDialog {
     $dlg.Add_Shown({ $btnRun.PerformClick() }.GetNewClosure())
 
     Set-Theme -Control $dlg
+    if ($HostTabPage) {
+        $btnClose.Visible = $false
+        # The controls belong to the host window now, so that is where the
+        # busy cursor has to go - see $busyFormBox above.
+        $busyFormBox.Form = $HostForm
+        [void](Move-DialogToTabPage -Dialog $dlg -Page $HostTabPage)
+        # Same handover as the other tabs: the run starts when this tab is
+        # first opened, and the host refuses to close while it is going -
+        # $btnRun is disabled exactly for the duration of a run, and the
+        # titlebar X doesn't go through the button.
+        $HostTabPage.Tag = @{
+            OnFirstShow = { $btnRun.PerformClick() }.GetNewClosure()
+            # See the note on the same pair in Show-GroupDriftCheckDialog:
+            # a run in progress is both "still working" and "do not close".
+            IsBusy      = { -not $btnRun.Enabled }.GetNewClosure()
+            BlockClose  = { -not $btnRun.Enabled }.GetNewClosure()
+        }
+        return
+    }
     [void]$dlg.ShowDialog($Global:App.Form)
 }

@@ -278,7 +278,16 @@ function Update-AppButtons {
     param($Ctx)
     $Ctx.Buttons = @{}
     foreach ($h in $W32::Children($Ctx.Main)) {
-        if ($W32::Cls($h) -match 'BUTTON' -and $W32::IsWindowVisible($h)) { $Ctx.Buttons[$W32::Text($h)] = $h }
+        if ($W32::Cls($h) -match 'BUTTON' -and $W32::IsWindowVisible($h)) {
+            # Keyed by what the button READS as on screen, not by its raw
+            # caption: an Alt-key mnemonic puts an '&' in the text
+            # ("&Edit...") that is never drawn, and a test asks for the
+            # button a user can see. '&&' is how a caption spells a literal
+            # ampersand, so it collapses to one instead of disappearing.
+            $sentinel = [string][char]1   # not "`u{...}": this file has to parse under Windows PowerShell 5.1 too
+            $caption = ($W32::Text($h) -replace '&&', $sentinel) -replace '&', ''
+            $Ctx.Buttons[($caption -replace $sentinel, '&')] = $h
+        }
     }
 }
 

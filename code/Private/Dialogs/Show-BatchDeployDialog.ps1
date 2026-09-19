@@ -392,7 +392,7 @@ function Global:Show-BatchDeployDialog {
             $names = $orderResult.CircularNames -join ", "
             $r = [System.Windows.Forms.MessageBox]::Show(
                 "These apps have a circular dependency and can't be fully ordered: $names`n`nThey'll still be attempted, but one or more may fail to reference a dependency that isn't created yet. Continue anyway?",
-                "Circular dependency", "YesNo", "Warning")
+                "Circular dependency", "YesNo", "Warning", "Button2")
             if ($r -ne "Yes") { return }
         }
 

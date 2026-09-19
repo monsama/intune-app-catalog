@@ -263,9 +263,77 @@ function Global:Show-CertificateSetupDialog {
     $y += 36
 
 
-    # Two tabs, because these are two separate jobs: the connection details
-    # the app signs in with, and looking after the certificate itself. Only
-    # one of them is ever the reason Settings is open.
+    # The three checks the app can run by itself, without being asked. They
+    # were checkboxes in the main toolbar, wedged between the buttons: a
+    # toolbar is for actions you take now, and each of these is a setting
+    # that persists to the settings file the moment it changes - which is
+    # what this window is. Same three flags, same writes, same wording.
+    $chkTips = New-Object System.Windows.Forms.ToolTip
+
+    $lblAutoIntro = New-Object System.Windows.Forms.Label
+    $lblAutoIntro.Text = "These run on their own, without being asked. Each needs Tenant ID, Client ID and a certificate on the Connection tab to do anything, and each takes effect the moment you tick it."
+    $lblAutoIntro.Location = New-Object System.Drawing.Point(15,15)
+    $lblAutoIntro.Size = New-Object System.Drawing.Size(860,40)
+    $dlg.Controls.Add($lblAutoIntro)
+
+    $chkDriftStart = New-Object System.Windows.Forms.CheckBox
+    $chkDriftStart.Text = "Check Intune drift when this app starts"
+    $chkDriftStart.AutoSize = $true
+    $chkDriftStart.Location = New-Object System.Drawing.Point(15,65)
+    $chkDriftStart.Checked = [bool]$Global:App.CheckDriftOnStartup
+    $chkTips.SetToolTip($chkDriftStart, "When checked, the NEXT time this app starts it quietly compares Intune against this catalog once and flags any differences - useful if more than one person works from this catalog.")
+    $dlg.Controls.Add($chkDriftStart)
+    $chkDriftStart.Add_CheckedChanged({
+        $Global:App.CheckDriftOnStartup = $chkDriftStart.Checked
+        if (Write-SettingsFile) {
+            Write-Log "[OK] $(if ($chkDriftStart.Checked) { 'Will' } else { 'Will not' }) check for Intune drift the next time this app starts.`r`n" ([System.Drawing.Color]::LightGreen)
+        }
+    }.GetNewClosure())
+
+    # Indented under the drift check because it only adds to it - still its
+    # own independent flag, for the reason $Global:App.RunFullAuditOnStartup
+    # documents: a full audit fetches every deployed app individually and is
+    # meaningfully slower, so it stays an explicit opt-in rather than
+    # silently riding along with the lighter check above.
+    $chkFullAudit = New-Object System.Windows.Forms.CheckBox
+    $chkFullAudit.Text = "...and also run the full audit (slower)"
+    $chkFullAudit.AutoSize = $true
+    $chkFullAudit.Location = New-Object System.Drawing.Point(35,93)
+    $chkFullAudit.Checked = [bool]$Global:App.RunFullAuditOnStartup
+    $chkTips.SetToolTip($chkFullAudit, "When checked, the NEXT time this app starts it also runs the full 'Intune Audit...' check (Metadata/Groups/Dependencies/Assignments) - not just the lighter drift check above. Fetches every deployed app individually, so this is noticeably slower to complete on a large catalog.")
+    $dlg.Controls.Add($chkFullAudit)
+    $chkFullAudit.Add_CheckedChanged({
+        $Global:App.RunFullAuditOnStartup = $chkFullAudit.Checked
+        if (Write-SettingsFile) {
+            Write-Log "[OK] $(if ($chkFullAudit.Checked) { 'Will' } else { 'Will not' }) run a full Intune audit the next time this app starts.`r`n" ([System.Drawing.Color]::LightGreen)
+        }
+    }.GetNewClosure())
+
+    $chkDeployOpen = New-Object System.Windows.Forms.CheckBox
+    $chkDeployOpen.Text = "Check Intune every time 'Deploy to Intune' opens"
+    $chkDeployOpen.AutoSize = $true
+    $chkDeployOpen.Location = New-Object System.Drawing.Point(15,129)
+    $chkDeployOpen.Checked = [bool]$Global:App.CheckIntuneOnDeployOpen
+    $chkTips.SetToolTip($chkDeployOpen, "When checked, 'Deploy to Intune' loads an existing app's current values from Intune every time it opens. Unchecked, it opens straight away with what's saved here and asks Intune only before an update is sent (and whenever you press Refresh from Intune) - the check that actually prevents overwriting a newer value.")
+    $dlg.Controls.Add($chkDeployOpen)
+    $chkDeployOpen.Add_CheckedChanged({
+        $Global:App.CheckIntuneOnDeployOpen = $chkDeployOpen.Checked
+        if (Write-SettingsFile) {
+            Write-Log "[OK] Deploy to Intune $(if ($chkDeployOpen.Checked) { 'checks Intune when it opens.' } else { 'opens without contacting Intune - it still checks before any update.' })`r`n" ([System.Drawing.Color]::LightGreen)
+        }
+    }.GetNewClosure())
+
+    $lblDeployOpenNote = New-Object System.Windows.Forms.Label
+    $lblDeployOpenNote.Text = "Unticked is the faster default, and still safe: Deploy always checks Intune before it sends an update, whatever this says."
+    $lblDeployOpenNote.Location = New-Object System.Drawing.Point(35,152)
+    $lblDeployOpenNote.Size = New-Object System.Drawing.Size(840,20)
+    $lblDeployOpenNote.ForeColor = [System.Drawing.Color]::DimGray
+    $dlg.Controls.Add($lblDeployOpenNote)
+
+    # Three tabs, because these are three separate jobs: the connection
+    # details the app signs in with, looking after the certificate itself,
+    # and what the app checks without being asked. Only one of them is ever
+    # the reason Settings is open.
     #
     # The log stays below both. Test connection lives on Connection but
     # writes the token's permissions into that log, and an answer that
@@ -285,6 +353,12 @@ function Global:Show-CertificateSetupDialog {
                 $lblLocalSection, $sepLocal, $btnPick, $btnGenerate, $btnDeleteLocal,
                 $lblEntraSection, $sepEntra, $btnCheckCerts, $btnUpload, $lblUploadStatus,
                 $lblCertList, $lstCerts, $btnDeleteEntraCert
+            )
+        }
+        @{
+            Title = 'Automatic checks'
+            Controls = @(
+                $lblAutoIntro, $chkDriftStart, $chkFullAudit, $chkDeployOpen, $lblDeployOpenNote
             )
         }
     )
@@ -545,7 +619,7 @@ function Global:Show-CertificateSetupDialog {
 
         $r = [System.Windows.Forms.MessageBox]::Show(
             "This adds `"$($localCert.Subject)`" to the app registration's trusted certificates in Entra ID.`n`nRequires signing in with YOUR OWN account (a console window and a browser window will both briefly open) and either the Application Administrator role or being an owner of this app registration.`n`nAny certificates already trusted for this app registration are kept, not replaced. Continue?",
-            "Confirm certificate upload", "YesNo", "Question")
+            "Confirm certificate upload", "YesNo", "Question", "Button2")
         if ($r -ne "Yes") { return }
 
         $btnUpload.Enabled = $false

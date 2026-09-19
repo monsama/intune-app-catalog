@@ -450,7 +450,7 @@ function Global:Save-AppsToFile {
         $names = ($dupIds | ForEach-Object { "'" + (($_.Group | ForEach-Object { $_.appName }) -join "' and '") + "' (App ID $($_.Name))" }) -join "`n"
         $r = [System.Windows.Forms.MessageBox]::Show(
             "Some apps share the same App ID:`n`n$names`n`nEach app should have its own. Save anyway?",
-            "Duplicate App IDs", "YesNo", "Warning")
+            "Duplicate App IDs", "YesNo", "Warning", "Button2")
         if ($r -ne "Yes") { Write-Log $notSavedNote ([System.Drawing.Color]::Orange); return $false }
     }
 
@@ -464,7 +464,7 @@ function Global:Save-AppsToFile {
         $names = ($dupNames | ForEach-Object { $_.Group[0].appName }) -join ", "
         $r2 = [System.Windows.Forms.MessageBox]::Show(
             "These app names are used by more than one entry:`n$names`n`nSave anyway?",
-            "Duplicate app names", "YesNo", "Warning")
+            "Duplicate app names", "YesNo", "Warning", "Button2")
         if ($r2 -ne "Yes") { Write-Log $notSavedNote ([System.Drawing.Color]::Orange); return $false }
     }
 

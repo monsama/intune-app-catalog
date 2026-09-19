@@ -29,6 +29,11 @@ function Global:Show-PackagingProgressDialog {
     $btnClose.Location = New-Object System.Drawing.Point(520,362)
     $btnClose.Size = New-Object System.Drawing.Size(85,28)
     $dlg.Controls.Add($btnClose)
+    # Enter closes the window once packaging has finished. While it is still
+    # running the button is disabled, and a disabled AcceptButton does
+    # nothing - so this can't dismiss a packaging run in progress any more
+    # than the Close button itself can.
+    $dlg.AcceptButton = $btnClose
 
     # Mutable container, not a plain bool - written from inside the nested
     # -OnComplete closure below, read from FormClosing. Blocks the window

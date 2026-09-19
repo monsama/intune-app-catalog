@@ -226,7 +226,7 @@ function Global:Show-PlatformScriptEditorDialog {
             else {
                 $r = [System.Windows.Forms.MessageBox]::Show(
                     "No group is checked, so Intune won't run this script anywhere yet. You can assign it later.`n`nCreate it anyway?",
-                    "No groups checked", "YesNo", "Question")
+                    "No groups checked", "YesNo", "Question", "Button2")
                 if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
             }
         }
@@ -250,6 +250,8 @@ function Global:Show-PlatformScriptEditorDialog {
         $dlg.Close()
     }.GetNewClosure())
     $dlg.CancelButton = $btnCancel
+    # Enter saves, the usual editor behaviour. The script body is multiline, so Enter inside it still just starts a new line.
+    $dlg.AcceptButton = $btnSave
 
     Set-Theme -Control $dlg
     [void]$dlg.ShowDialog($Global:App.Form)
