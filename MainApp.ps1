@@ -575,28 +575,34 @@ $toolbar.Padding = New-Object System.Windows.Forms.Padding(6)
 # for the identical actions (Edit.../Remove from catalog..., both of which
 # just PerformClick() these same buttons), rather than a second, different
 # label for the same click.
-$btnGettingStarted = New-Object System.Windows.Forms.Button; $btnGettingStarted.Text = "Getting started..."
-$btnNew    = New-Object System.Windows.Forms.Button; $btnNew.Text = "+ Add app..."
-$btnEdit   = New-Object System.Windows.Forms.Button; $btnEdit.Text = "Edit..."
+#
+# The '&' marks the Alt-key mnemonic, and only the nine buttons of the
+# "Get started" group below have one: they are the primary row, they are
+# always visible, and nine underlined letters is already the point where
+# more would start reading as noise rather than as help. The letters are
+# unique across the form (G A E P B U I R S), so no Alt press is ambiguous.
+$btnGettingStarted = New-Object System.Windows.Forms.Button; $btnGettingStarted.Text = "&Getting started..."
+$btnNew    = New-Object System.Windows.Forms.Button; $btnNew.Text = "+ &Add app..."
+$btnEdit   = New-Object System.Windows.Forms.Button; $btnEdit.Text = "&Edit..."
 $Global:App.BtnDelete = New-Object System.Windows.Forms.Button; $Global:App.BtnDelete.Text = "Remove from catalog..."
 $Global:App.BtnSave   = New-Object System.Windows.Forms.Button; $Global:App.BtnSave.Text = "Force save catalog"
-$btnReload = New-Object System.Windows.Forms.Button; $btnReload.Text = "Reload"
+$btnReload = New-Object System.Windows.Forms.Button; $btnReload.Text = "&Reload"
 $btnOpen   = New-Object System.Windows.Forms.Button; $btnOpen.Text = "Open other folder..."
 $Global:App.BtnLookupIds = New-Object System.Windows.Forms.Button; $Global:App.BtnLookupIds.Text = "Look up App IDs..."
 $btnCheckIntuneOnly = New-Object System.Windows.Forms.Button; $btnCheckIntuneOnly.Text = "Intune sync check..."
 $btnPlatformScripts = New-Object System.Windows.Forms.Button; $btnPlatformScripts.Text = "Platform scripts..."
 $btnWingetHealth = New-Object System.Windows.Forms.Button; $btnWingetHealth.Text = "Winget package check..."
-$btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text = "Push groups to Intune (multiple apps)..."
+$btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text = "P&ush groups to Intune (multiple apps)..."
 $btnSyncMetadata = New-Object System.Windows.Forms.Button; $btnSyncMetadata.Text = "Pull metadata and groups from Intune..."
 $btnBatchEdit = New-Object System.Windows.Forms.Button; $btnBatchEdit.Text = "Batch edit Intune fields..."
-$btnBatchDeploy = New-Object System.Windows.Forms.Button; $btnBatchDeploy.Text = "Batch deploy..."
+$btnBatchDeploy = New-Object System.Windows.Forms.Button; $btnBatchDeploy.Text = "&Batch deploy..."
 $btnGroupManager = New-Object System.Windows.Forms.Button; $btnGroupManager.Text = "Group manager..."
 $btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.Text = "Favorite groups..."
 $btnDependencies = New-Object System.Windows.Forms.Button; $btnDependencies.Text = "View dependencies..."
 $btnGroupDrift = New-Object System.Windows.Forms.Button; $btnGroupDrift.Text = "Check catalog groups against Entra ID..."
-$btnIntuneAudit = New-Object System.Windows.Forms.Button; $btnIntuneAudit.Text = "Intune Audit..."
-$Global:App.BtnRunLaunch = New-Object System.Windows.Forms.Button; $Global:App.BtnRunLaunch.Text = "Package apps"
-$btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "Settings..."
+$btnIntuneAudit = New-Object System.Windows.Forms.Button; $btnIntuneAudit.Text = "&Intune Audit..."
+$Global:App.BtnRunLaunch = New-Object System.Windows.Forms.Button; $Global:App.BtnRunLaunch.Text = "&Package apps"
+$btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "&Settings..."
 $btnDefaultValues = New-Object System.Windows.Forms.Button; $btnDefaultValues.Text = "Edit default values..."
 $btnDiagnostics = New-Object System.Windows.Forms.Button; $btnDiagnostics.Text = "Run diagnostics..."
 $btnPrerequisites = New-Object System.Windows.Forms.Button; $btnPrerequisites.Text = "Prerequisites..."
@@ -1557,6 +1563,18 @@ $Global:App.Grid.Add_CellDoubleClick({
     $btnEdit.PerformClick()
 })
 
+# Clicking a column header sorts by it, clicking it again reverses it. The
+# catalog's own order is what you get until the first click - "Index" is
+# the column that order lives in, and it stays out of the rotation because
+# sorting by a hidden row number isn't a thing anyone means to ask for.
+$Global:App.Grid.Add_ColumnHeaderMouseClick({
+    param($gridSender, $e)
+    if ($e.ColumnIndex -lt 0) { return }
+    $clickedColumn = $Global:App.Grid.Columns[$e.ColumnIndex].Name
+    if ($clickedColumn -eq "Index") { return }
+    Sort-Grid -ColumnName $clickedColumn
+})
+
 # Right-click context menu - lets Deploy/Assign/Delete happen straight from
 # the grid instead of always requiring a trip through the full editor first.
 $gridContextMenu = New-Object System.Windows.Forms.ContextMenuStrip
@@ -1880,9 +1898,10 @@ $Global:App.BtnSave.Add_Click({
     }
 })
 
-# Ctrl+S saves the catalog when on the App Catalog tab - matches every other
-# app's save shortcut. $Global:App.Form.KeyPreview lets the form see key presses before
-# whatever control currently has focus does.
+# Keyboard shortcuts for the App Catalog tab: Ctrl+S save, Ctrl+N new,
+# Ctrl+F search, F5 reload, and Enter/Delete on the grid - the ones every
+# other Windows app of this shape has. $Global:App.Form.KeyPreview lets the
+# form see key presses before whatever control currently has focus does.
 $Global:App.Form.KeyPreview = $true
 $Global:App.Form.Add_KeyDown({
     if ($tabs.SelectedTab -ne $tabCatalog) { return }
@@ -1893,6 +1912,21 @@ $Global:App.Form.Add_KeyDown({
     }
     if ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::N) {
         $btnNew.PerformClick()
+        $_.SuppressKeyPress = $true
+        return
+    }
+    # Ctrl+F goes to the search box and selects what's in it, so the next
+    # thing typed replaces the old filter instead of appending to it.
+    if ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::F) {
+        [void]$Global:App.TxtSearch.Focus()
+        $Global:App.TxtSearch.SelectAll()
+        $_.SuppressKeyPress = $true
+        return
+    }
+    # F5 reloads the catalog from disk - the same button, and the same
+    # question about unsaved changes, that Reload asks.
+    if ($_.KeyCode -eq [System.Windows.Forms.Keys]::F5) {
+        $btnReload.PerformClick()
         $_.SuppressKeyPress = $true
         return
     }

@@ -42,6 +42,8 @@ function Global:Show-IntuneCheckDialog {
     $dlg.Controls.Add($btnClose)
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     $dlg.CancelButton = $btnClose
+    # Enter closes the window. Every check on the tabs inside is read-only.
+    $dlg.AcceptButton = $btnClose
 
     # Built in the order they're usually needed: which app is which, then
     # what disagrees, then pulling it back.

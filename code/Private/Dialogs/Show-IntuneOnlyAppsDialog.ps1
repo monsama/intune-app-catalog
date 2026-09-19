@@ -490,6 +490,8 @@ function Global:Show-IntuneOnlyAppsDialog {
 
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     $dlg.CancelButton = $btnClose
+    # Enter closes the window rather than adding anything - adding to the catalog is a deliberate click, not a keystroke.
+    $dlg.AcceptButton = $btnClose
 
     # Blocks the window (X button / Alt+F4, not just Close) from closing
     # while any of this dialog's three background fetches is still in

@@ -258,6 +258,8 @@ function Global:Show-WingetHealthCheckDialog {
 
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     $dlg.CancelButton = $btnClose
+    # Enter dismisses this report, same as Esc - the check itself is read-only.
+    $dlg.AcceptButton = $btnClose
 
     Set-Theme -Control $dlg
     [void]$dlg.ShowDialog($Global:App.Form)

@@ -342,6 +342,8 @@ function Global:Show-DiagnosticsDialog {
 
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     $dlg.CancelButton = $btnClose
+    # Enter runs the diagnostics again. They only read - nothing here changes Intune or the catalog.
+    $dlg.AcceptButton = $btnRun
 
     # Backstop for the window's own X button / Alt+F4 - $btnClose.Enabled
     # already being $false blocks the button itself while a run is in

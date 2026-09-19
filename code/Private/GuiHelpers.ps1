@@ -947,6 +947,12 @@ function Global:New-GridColumn {
     $col.HeaderText = $Header
     $col.DataPropertyName = $Name
     $col.FillWeight = $FillWeight
+    # Programmatic, not Automatic: the grid is bound to a plain List, which
+    # can't sort itself, so an Automatic header click does nothing at all.
+    # Sort-Grid orders the rows before they're bound and sets the glyph
+    # here itself - which also survives the rebuild Update-Grid does on
+    # every refresh and every keystroke in the search box.
+    $col.SortMode = [System.Windows.Forms.DataGridViewColumnSortMode]::Programmatic
     if ($Font) {
         $headerWidth = [System.Windows.Forms.TextRenderer]::MeasureText($Header, $Font).Width + 24
         $col.MinimumWidth = [Math]::Max($headerWidth, $MinimumWidth)
@@ -957,9 +963,39 @@ function Global:New-GridColumn {
     return $col
 }
 
+function Global:Sort-Grid {
+    # Called by the grid's own header click. The first click on a column
+    # sorts it ascending, a second click on the SAME column reverses it -
+    # the convention every other list in Windows follows.
+    param([string]$ColumnName)
+    if ($Global:App.GridSortColumn -eq $ColumnName) {
+        $Global:App.GridSortAscending = -not $Global:App.GridSortAscending
+    }
+    else {
+        $Global:App.GridSortColumn = $ColumnName
+        $Global:App.GridSortAscending = $true
+    }
+    Update-Grid
+}
+
 function Global:Update-Grid {
     $filter = $Global:App.TxtSearch.Text.Trim().ToLower()
     $rows = New-Object System.Collections.Generic.List[Object]
+
+    # What the user was looking at before this rebuild. Update-Grid runs
+    # from 20-odd places - every save, deploy, sync, and every keystroke in
+    # the search box - and rebinding DataSource drops the selection and
+    # scrolls back to the top, so without this you lose your place in a
+    # long catalog every time anything happens. Remembered by app NAME, not
+    # row or catalog index: both of those shift when an app is added,
+    # removed or sorted, and would quietly restore the selection onto a
+    # DIFFERENT app than the one that was selected.
+    $prevNames = @()
+    $prevFirstRow = -1
+    if ($Global:App.Grid -and $Global:App.Grid.Columns.Contains("AppName")) {
+        $prevNames = @($Global:App.Grid.SelectedRows | ForEach-Object { [string]$_.Cells["AppName"].Value })
+        $prevFirstRow = $Global:App.Grid.FirstDisplayedScrollingRowIndex
+    }
 
     for ($i = 0; $i -lt $Global:App.Apps.Count; $i++) {
         $app = $Global:App.Apps[$i]
@@ -1050,8 +1086,58 @@ function Global:Update-Grid {
         })
     }
 
+    # Sorted here, before binding, rather than by the grid: a plain List
+    # DataSource has no sorting of its own, and doing it here is what makes
+    # the order stick through every later rebuild instead of silently
+    # reverting to catalog order on the next keystroke or save.
+    $sortColumn = [string]$Global:App.GridSortColumn
+    if ($sortColumn -and $rows.Count -gt 1) {
+        $sorted = if ($Global:App.GridSortAscending) { @($rows | Sort-Object -Property $sortColumn) }
+                  else { @($rows | Sort-Object -Property $sortColumn -Descending) }
+        $rows = New-Object System.Collections.Generic.List[Object]
+        foreach ($r in $sorted) { $rows.Add($r) }
+    }
+
     $Global:App.Grid.DataSource = $null
     $Global:App.Grid.DataSource = $rows
+
+    foreach ($col in $Global:App.Grid.Columns) {
+        $glyph = if ($col.Name -eq $sortColumn) {
+            if ($Global:App.GridSortAscending) { "Ascending" } else { "Descending" }
+        } else { "None" }
+        $col.HeaderCell.SortGlyphDirection = [System.Windows.Forms.SortOrder]$glyph
+    }
+
+    # Put the selection and the scroll position back where they were. An
+    # app that the current filter hides has no row to go back to, which is
+    # why this is best-effort and never forces a fallback selection: being
+    # handed row 0 when your app scrolled out of view is how the wrong app
+    # gets deployed.
+    if ($prevNames.Count -gt 0 -and $Global:App.Grid.Rows.Count -gt 0) {
+        $restored = @($Global:App.Grid.Rows | Where-Object { $prevNames -contains [string]$_.Cells["AppName"].Value })
+        if ($restored.Count -gt 0) {
+            # CurrentCell first, then the selection: assigning CurrentCell
+            # selects its own row and drops everything else, which would
+            # quietly shrink a restored multi-row selection back to one.
+            # It also drives keyboard navigation, so it has to move with the
+            # selection or the next arrow key jumps back to the old cursor.
+            $Global:App.Grid.CurrentCell = $restored[0].Cells[0]
+            $Global:App.Grid.ClearSelection()
+            foreach ($row in $restored) { $row.Selected = $true }
+        }
+        else {
+            # Nothing to restore, because what was selected is filtered out
+            # or gone from the catalog. Binding a DataSource selects the
+            # first row by itself, so this has to be undone deliberately:
+            # otherwise the selection silently lands on whichever app
+            # happens to sort first, and the next Deploy or Delete acts on
+            # THAT one. Better to select nothing and make the user pick.
+            $Global:App.Grid.ClearSelection()
+        }
+    }
+    if ($prevFirstRow -ge 0 -and $prevFirstRow -lt $Global:App.Grid.Rows.Count) {
+        $Global:App.Grid.FirstDisplayedScrollingRowIndex = $prevFirstRow
+    }
 
     $reqTotal   = ($Global:App.Apps | ForEach-Object { @($_.requiredFor).Count } | Measure-Object -Sum).Sum
     $availTotal = ($Global:App.Apps | ForEach-Object { @($_.availableFor).Count } | Measure-Object -Sum).Sum

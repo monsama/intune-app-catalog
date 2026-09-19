@@ -559,6 +559,8 @@ function Global:Show-PlatformScriptsDialog {
     $btnRefresh.Add_Click({ & $loadList }.GetNewClosure())
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     $dlg.CancelButton = $btnClose
+    # Enter opens the selected script, matching the double-click on the list and Enter on the main catalog grid. Delete stays a click - it is the one button here that destroys something.
+    $dlg.AcceptButton = $btnEdit
     Register-CloseConfirmation -Dialog $dlg -GetQuestion {
         if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
             "A change is still being sent to Intune. Stop it and close?`n`nWhatever already went through stays - reopen this window to see what Intune has now."

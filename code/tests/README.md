@@ -60,6 +60,7 @@ pwsh -NoProfile -File code/tests/gui/DialogSmoke.GuiTests.ps1
 pwsh -NoProfile -File code/tests/gui/CatalogCrud.GuiTests.ps1
 pwsh -NoProfile -File code/tests/gui/CloseConfirmation.GuiTests.ps1
 pwsh -NoProfile -File code/tests/gui/DialogLayout.GuiTests.ps1
+pwsh -NoProfile -File code/tests/gui/GridBehavior.GuiTests.ps1
 ```
 
 Both run the app under **both** PowerShell 7 and Windows PowerShell 5.1 by
@@ -97,6 +98,18 @@ window they open - handy for comparing the two hosts side by side.
   per host; `-ShotDir` keeps a screenshot of every window, and
   `-Screen 1024x768` checks the small-screen case on a big monitor (every
   dialog must fit the screen - oversized ones scroll instead).
+- `GridBehavior.GuiTests.ps1` - what the catalog grid has to remember
+  across a rebuild. `Update-Grid` throws the grid away and rebinds it on
+  every save, deploy, sync and keystroke in the search box, so the sort
+  order, the selected row(s) and the scroll position all have to be put
+  back deliberately. Drives the real grid with the real `Update-Grid` and
+  `Sort-Grid` over a fixture catalog inside the app's PowerShell
+  (`GridBehaviorHarness.ps1`), and checks header sorting (one click
+  ascending, the next descending, glyph on the sorted column only),
+  that a multi-row selection and the scroll position survive a rebuild,
+  and that an app the filter hides leaves *nothing* selected rather than
+  handing the selection to whichever app now sorts first. Offline, and a
+  few seconds per host.
 - `Prerequisites.GuiTests.ps1` - **needs internet.** Clicks *Install missing*
   in the Prerequisites dialog and follows it through: the download, the live
   log, the status re-check, and Graph actions getting past the module check

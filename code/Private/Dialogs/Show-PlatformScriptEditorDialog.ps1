@@ -250,6 +250,8 @@ function Global:Show-PlatformScriptEditorDialog {
         $dlg.Close()
     }.GetNewClosure())
     $dlg.CancelButton = $btnCancel
+    # Enter saves, the usual editor behaviour. The script body is multiline, so Enter inside it still just starts a new line.
+    $dlg.AcceptButton = $btnSave
 
     Set-Theme -Control $dlg
     [void]$dlg.ShowDialog($Global:App.Form)

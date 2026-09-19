@@ -231,6 +231,8 @@ function Global:Show-AppInstallStatusDialog {
 
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     $dlg.CancelButton = $btnClose
+    # Enter dismisses this report, same as Esc - it only ever reads from Intune, so there is nothing here for Enter to set off.
+    $dlg.AcceptButton = $btnClose
     # No question on close even mid-fetch: this only reads, and the fetch's
     # own callback checks IsDisposed before touching anything here - same
     # reasoning as the Intune Audit dialog.
