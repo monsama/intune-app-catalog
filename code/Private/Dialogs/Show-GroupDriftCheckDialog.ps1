@@ -1,9 +1,18 @@
 function Global:Show-GroupDriftCheckDialog {
+    # -HostTabPage: become one tab of Show-ChecksDialog instead of a window
+    # of its own - see Move-DialogToTabPage.
+    param([System.Windows.Forms.TabPage]$HostTabPage, [System.Windows.Forms.Form]$HostForm)
     # Plain local aliases - see note in Start-IntuneAppLookup.
     $appsRef  = $Global:App.Apps
     $cacheRef = $Global:App.EntraDirectoryCache
 
     $dlg = New-Object System.Windows.Forms.Form
+    # The window the busy cursor belongs to: this dialog standalone, or the
+    # host it was moved into as a tab. Embedded, $dlg is never shown, so a
+    # wait cursor set on it is a wait cursor nobody sees. A box, so the
+    # hosted branch at the bottom can repoint it after the closures below
+    # have captured it.
+    $busyFormBox = @{ Form = $dlg }
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Group name check"
     $dlg.ClientSize = New-Object System.Drawing.Size(700, 500)
@@ -139,18 +148,18 @@ function Global:Show-GroupDriftCheckDialog {
         $btnRefresh.Enabled = $false
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = "Fetching groups from Entra ID..."
-        $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        $busyFormBox.Form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
 
         # Fresh aliases for the nested -OnComplete closure - see note at the
         # top of Show-CreateInIntuneDialog for why this matters here too.
         $btnRefreshRef = $btnRefresh
-        $dlgRef = $dlg
         $lblStatusRef = $lblStatus
         $populateGridRef = $populateGrid
+        $busyFormBoxRef = $busyFormBox
 
         Start-EntraDirectoryLookup -OnComplete {
             param($ok, $msg)
-            $dlgRef.Cursor = [System.Windows.Forms.Cursors]::Default
+            $busyFormBoxRef.Form.Cursor = [System.Windows.Forms.Cursors]::Default
             [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
             # See the same pattern's note in Show-WingetSearchDialog - forces
             # an immediate cursor repaint instead of waiting on a mouse move.
@@ -207,5 +216,32 @@ function Global:Show-GroupDriftCheckDialog {
     }.GetNewClosure())
 
     Set-Theme -Control $dlg
+    if ($HostTabPage) {
+        $btnClose.Visible = $false
+        # The controls belong to the host window now, so that is where the
+        # busy cursor has to go - see $busyFormBox above.
+        $busyFormBox.Form = $HostForm
+        [void](Move-DialogToTabPage -Dialog $dlg -Page $HostTabPage)
+        # Embedded, the Add_Shown above never fires - the dialog itself is
+        # never shown. The host runs this the first time this tab is
+        # opened, deliberately not when the window opens: this check reads
+        # every group in the catalog out of Entra ID, and opening a window
+        # of checks should not fire off everything at once.
+        #
+        # BlockClose keeps the host from closing mid-fetch for the same
+        # reason the FormClosing guard above kept this dialog open:
+        # $btnRefresh is disabled exactly while a fetch is in flight, and
+        # a timer is still ticking against these controls.
+        $HostTabPage.Tag = @{
+            OnFirstShow = { $btnRefresh.PerformClick() }.GetNewClosure()
+            # IsBusy is "still working" (what Run all waits on before
+            # starting the next check); BlockClose is the stricter "must not
+            # be interrupted". Here they are the same condition, because a
+            # fetch in flight is exactly what closing would break.
+            IsBusy      = { -not $btnRefresh.Enabled }.GetNewClosure()
+            BlockClose  = { -not $btnRefresh.Enabled }.GetNewClosure()
+        }
+        return
+    }
     [void]$dlg.ShowDialog($Global:App.Form)
 }

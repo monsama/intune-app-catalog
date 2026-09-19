@@ -116,6 +116,7 @@ $Global:App.UnsavedChangesBox = @{ Value = $false }   # container (never reassig
 $Global:App.IntuneAppsCache = New-Object System.Collections.ArrayList   # populated by Start-IntuneAppLookup: array of @{ id; displayName } - mutated in place (Clear+Add), never reassigned, so every closure that references it stays in sync
 $Global:App.EntraDirectoryCache = New-Object System.Collections.ArrayList   # populated by Start-EntraDirectoryLookup: array of @{ displayName; type ("Group"/"User"); id; upn } - same mutate-in-place pattern as above
 $Global:App.EntraDirectoryLookupRunning = $false   # guards against two overlapping Start-EntraDirectoryLookup runs - see its own comment
+$Global:App.EntraDirectoryCacheFetchedAt = $null   # when the cache above was last filled by a SUCCESSFUL lookup; only -ReuseCacheWithinSeconds callers read it
 # Populated whenever any live-vs-Intune check runs for an app - the
 # single-app auto-fetch inside Show-CreateInIntuneDialog, or
 # Show-IntuneAuditDialog's own bulk run - keyed by appName. Persisted to
@@ -591,20 +592,21 @@ $btnOpen   = New-Object System.Windows.Forms.Button; $btnOpen.Text = "Open other
 $Global:App.BtnLookupIds = New-Object System.Windows.Forms.Button; $Global:App.BtnLookupIds.Text = "Look up App IDs..."
 $btnCheckIntuneOnly = New-Object System.Windows.Forms.Button; $btnCheckIntuneOnly.Text = "Intune sync check..."
 $btnPlatformScripts = New-Object System.Windows.Forms.Button; $btnPlatformScripts.Text = "Platform scripts..."
-$btnWingetHealth = New-Object System.Windows.Forms.Button; $btnWingetHealth.Text = "Winget package check..."
 $btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text = "P&ush groups to Intune (multiple apps)..."
 $btnSyncMetadata = New-Object System.Windows.Forms.Button; $btnSyncMetadata.Text = "Pull metadata and groups from Intune..."
 $btnBatchEdit = New-Object System.Windows.Forms.Button; $btnBatchEdit.Text = "Batch edit Intune fields..."
 $btnBatchDeploy = New-Object System.Windows.Forms.Button; $btnBatchDeploy.Text = "&Batch deploy..."
 $btnGroupManager = New-Object System.Windows.Forms.Button; $btnGroupManager.Text = "Group manager..."
 $btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.Text = "Favorite groups..."
-$btnDependencies = New-Object System.Windows.Forms.Button; $btnDependencies.Text = "View dependencies..."
-$btnGroupDrift = New-Object System.Windows.Forms.Button; $btnGroupDrift.Text = "Check catalog groups against Entra ID..."
+# One button for all four read-only checks (dependencies, catalog groups
+# against Entra ID, Winget IDs, diagnostics): they are tabs of one window
+# now - see Show-ChecksDialog. Each still opens standalone if called that
+# way, which is how the layout audit checks them one at a time.
+$btnChecks = New-Object System.Windows.Forms.Button; $btnChecks.Text = "Run checks..."
 $btnIntuneAudit = New-Object System.Windows.Forms.Button; $btnIntuneAudit.Text = "&Intune Audit..."
 $Global:App.BtnRunLaunch = New-Object System.Windows.Forms.Button; $Global:App.BtnRunLaunch.Text = "&Package apps"
 $btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "&Settings..."
 $btnDefaultValues = New-Object System.Windows.Forms.Button; $btnDefaultValues.Text = "Edit default values..."
-$btnDiagnostics = New-Object System.Windows.Forms.Button; $btnDiagnostics.Text = "Run diagnostics..."
 $btnPrerequisites = New-Object System.Windows.Forms.Button; $btnPrerequisites.Text = "Prerequisites..."
 
 # One shared ToolTip component serves every button - there are enough of
@@ -625,7 +627,6 @@ $toolbarTips.SetToolTip($btnReload, "Discard any unsaved changes and reload the 
 $toolbarTips.SetToolTip($btnOpen, "Switch to a different folder of per-app JSON files.")
 $toolbarTips.SetToolTip($Global:App.BtnLookupIds, "Search Intune by name for apps missing an App ID, and fill it in.")
 $toolbarTips.SetToolTip($btnPlatformScripts, "The PowerShell scripts Intune runs on enrolled Windows devices: list them, add one, change one, delete one.")
-$toolbarTips.SetToolTip($btnWingetHealth, "Checks every catalog app's Winget ID against winget on this machine. An ID that no longer exists still works on devices that have the app, but fails to install on new ones. Read-only.")
 $toolbarTips.SetToolTip($btnCheckIntuneOnly, "Compares Intune against this catalog: apps in Intune not yet in the catalog, catalog apps renamed in Intune since, and catalog apps whose App ID no longer exists in Intune. Read-only.")
 $toolbarTips.SetToolTip($btnBatchAssign, "Add a favorite group to multiple apps at once, then preview and apply the result to Intune.")
 $toolbarTips.SetToolTip($btnSyncMetadata, "Pull current metadata from Intune into the local catalog for apps that already have an App ID. Read-only.")
@@ -633,13 +634,11 @@ $toolbarTips.SetToolTip($btnBatchEdit, "Change one or more fields (architecture,
 $toolbarTips.SetToolTip($btnBatchDeploy, "Create multiple apps in Intune, in dependency order. Uses metadata saved via 'Save for later...' where an app has it, otherwise the same defaults Deploy to Intune's own form would.")
 $toolbarTips.SetToolTip($btnGroupManager, "Create, update, or delete an Entra ID group and manage its members.")
 $toolbarTips.SetToolTip($btnFavoriteGroups, "Pick which groups show up as ready-to-tick options in every app's Required/Available/Uninstall lists.")
-$toolbarTips.SetToolTip($btnDependencies, "See every app's dependencies, what depends on it, and any missing or circular dependency. Read-only, local only.")
-$toolbarTips.SetToolTip($btnGroupDrift, "Check every group name referenced in the catalog against what actually exists in Entra ID.")
 $toolbarTips.SetToolTip($btnIntuneAudit, "Check every deployed app's Metadata, Groups, Dependencies, and Assignments against what's actually live in Intune, all in one grid. Read-only.")
 $toolbarTips.SetToolTip($Global:App.BtnRunLaunch, "Build the .intunewin package(s) for the selected (or all) uncommon apps.")
 $toolbarTips.SetToolTip($btnCertSetup, "Configure the Tenant ID, Client ID, and certificate used to connect to Microsoft Graph.")
 $toolbarTips.SetToolTip($btnDefaultValues, "Change the computed defaults every new Winget app starts with (architecture, min OS, requirements, return codes, ...). Doesn't touch any app already saved or deployed.")
-$toolbarTips.SetToolTip($btnDiagnostics, "Read-only health check: Graph connectivity, certificate expiry, catalog completeness, and drift against what's actually in Intune.")
+$toolbarTips.SetToolTip($btnChecks, "Four read-only checks in one window: dependencies between catalog apps, catalog groups against Entra ID, Winget IDs against winget, and this app's own diagnostics. Each tab runs when you open it.")
 $toolbarTips.SetToolTip($btnPrerequisites, "Check whether the Microsoft.Graph.Authentication PowerShell module this app needs is installed, and install it for your user account if it isn't.")
 
 $Global:App.TxtSearch = New-Object System.Windows.Forms.TextBox
@@ -695,12 +694,15 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
 # Every read-only "check something" action grouped together here,
 # regardless of which system it happens to touch - someone looking for
 # "check X" shouldn't need to already know whether X lives under
-# Catalog/Intune/Entra ID to find it.
+# Catalog/Intune/Entra ID to find it. Four of the five are one window of
+# tabs now (Show-ChecksDialog), which is that same grouping where it
+# actually helps: in front of the user, not just in this menu.
+#
+# Prerequisites stays its own entry - it INSTALLS the missing module
+# rather than reporting on anything, it is what the other dialogs open
+# when they find the module missing, and the diagnostics tab links to it.
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Verify" -Tips $toolbarTips -Items @(
-    @{ Text = $btnDependencies.Text; Btn = $btnDependencies }
-    @{ Text = $btnGroupDrift.Text; Btn = $btnGroupDrift }
-    @{ Text = $btnWingetHealth.Text; Btn = $btnWingetHealth }
-    @{ Text = $btnDiagnostics.Text; Btn = $btnDiagnostics }
+    @{ Text = $btnChecks.Text; Btn = $btnChecks }
     @{ Text = $btnPrerequisites.Text; Btn = $btnPrerequisites }
 )))
 $btnMoreActions = New-Object System.Windows.Forms.Button
@@ -1994,7 +1996,7 @@ $Global:App.BtnLookupIds.Add_Click({
 
 $btnCertSetup.Add_Click({ Show-CertificateSetupDialog; Update-CredentialWarningBanner })
 $btnDefaultValues.Add_Click({ Show-DefaultAppSettingsDialog })
-$btnDiagnostics.Add_Click({ Show-DiagnosticsDialog })
+$btnChecks.Add_Click({ Show-ChecksDialog })
 $btnPrerequisites.Add_Click({ [void](Show-PrerequisitesDialog) })
 $btnCheckIntuneOnly.Add_Click({
     $changed = Show-IntuneOnlyAppsDialog
@@ -2031,10 +2033,7 @@ $btnBatchDeploy.Add_Click({
 })
 $btnGroupManager.Add_Click({ Show-GroupManagerDialog })
 $btnPlatformScripts.Add_Click({ Show-PlatformScriptsDialog })
-$btnWingetHealth.Add_Click({ Show-WingetHealthCheckDialog })
 $btnFavoriteGroups.Add_Click({ Show-FavoriteGroupsManager })
-$btnGroupDrift.Add_Click({ Show-GroupDriftCheckDialog })
-$btnDependencies.Add_Click({ Show-DependencyOverviewDialog })
 $btnIntuneAudit.Add_Click({ Show-IntuneCheckDialog; Update-Grid })
 
 $Global:App.TxtSearch.Add_TextChanged({ Update-Grid })

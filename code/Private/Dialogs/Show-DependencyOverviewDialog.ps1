@@ -1,8 +1,22 @@
 function Global:Show-DependencyOverviewDialog {
+    # -HostTabPage: become one tab of Show-ChecksDialog instead of a window
+    # of its own - see Move-DialogToTabPage.
+    param([System.Windows.Forms.TabPage]$HostTabPage, [System.Windows.Forms.Form]$HostForm)
     # Plain local alias - see note in Start-IntuneAppLookup.
     $appsRef = $Global:App.Apps
 
     if ($appsRef.Count -eq 0) {
+        # Embedded, say it on the tab instead of in a popup over a window
+        # the user opened for the other checks.
+        if ($HostTabPage) {
+            $lblNothing = New-Object System.Windows.Forms.Label
+            $lblNothing.Text = "The catalog is empty, so nothing depends on anything yet."
+            $lblNothing.Location = New-Object System.Drawing.Point(15,15)
+            $lblNothing.Size = New-Object System.Drawing.Size(700,40)
+            $lblNothing.ForeColor = [System.Drawing.Color]::DimGray
+            $HostTabPage.Controls.Add($lblNothing)
+            return
+        }
         [System.Windows.Forms.MessageBox]::Show("The catalog is empty - nothing to show.", "Nothing to do", "OK", "Information") | Out-Null
         return
     }
@@ -127,5 +141,11 @@ function Global:Show-DependencyOverviewDialog {
     $dlg.AcceptButton = $btnClose
 
     Set-Theme -Control $dlg
+    if ($HostTabPage) {
+        # The host window has the only Close button once this is a tab.
+        $btnClose.Visible = $false
+        [void](Move-DialogToTabPage -Dialog $dlg -Page $HostTabPage)
+        return
+    }
     [void]$dlg.ShowDialog($Global:App.Form)
 }

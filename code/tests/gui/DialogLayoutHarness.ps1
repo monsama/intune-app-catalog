@@ -280,6 +280,10 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'Getting started' { Show-GettingStartedGuideDialog }
     Add-LayoutAuditStep 'Group name check' { Show-GroupDriftCheckDialog }
     Add-LayoutAuditStep 'Check against Intune (all three)' { Show-IntuneCheckDialog }
+    # The four standalone check dialogs are audited one by one above and
+    # below; this is the window that hosts them as tabs, where they have
+    # to fit a shared page instead of their own form.
+    Add-LayoutAuditStep 'Checks (all four)' { Show-ChecksDialog }
     Add-LayoutAuditStep 'Group manager' { Show-GroupManagerDialog }
     Add-LayoutAuditStep 'Delete groups (bulk)' { Show-BulkDeleteGroupsDialog }
     Add-LayoutAuditStep 'Find a group' { Show-GroupOnlyPicker }
