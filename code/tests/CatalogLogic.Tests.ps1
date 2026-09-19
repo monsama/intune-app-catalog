@@ -130,6 +130,14 @@ $testableFunctionNames = @(
     # Graph request log formatting (GraphLog.ps1) - pure string work
     "Get-GraphRequestPath",
     "Get-GraphRequestId",
+    # A local catalog of platform scripts (ScriptCatalog.ps1)
+    "ConvertTo-ScriptRecord",
+    "ConvertTo-ScriptBool",
+    "Get-SafeFileNameForScript",
+    "Get-ScriptFieldDiffs",
+    "ConvertTo-SingleScriptJson",
+    "Save-ScriptsToFolder",
+    "Import-ScriptsFromFolder",
     # Moving a group of controls onto its own tab (GuiHelpers.ps1) - pure maths
     "Get-ControlGroupOrigin",
     # Deleting several groups at once (GuiHelpers.ps1) - pure planning work
@@ -844,6 +852,88 @@ $bothFailedMessage = ''
 try { [void](Get-AppInstallStatusRows -AppId "app-1" -Invoke $bothFailInvoke) } catch { $bothFailedMessage = $_.Exception.Message }
 Assert-True ($bothFailedMessage -like "*beta*" -and $bothFailedMessage -like "*v1.0*") `
     "Get-AppInstallStatusRows: both versions failing reports what each one said" $bothFailedMessage
+
+# -----------------------------------------------------------------
+# A local catalog of platform scripts (ScriptCatalog.ps1)
+# -----------------------------------------------------------------
+# The same script arrives three ways - from Graph, from the grid, from a
+# file - and has to land on one shape whichever way it came.
+$fromGraph = ConvertTo-ScriptRecord @{
+    id = 'abc-123'; displayName = 'Set power plan'; description = 'High performance'
+    fileName = 'power.ps1'; runAsAccount = 'system'; runAs32Bit = $false
+    enforceSignatureCheck = $false; scriptContent = "Write-Host 'hi'"
+}
+Assert-Equal 'abc-123' $fromGraph.scriptId "ConvertTo-ScriptRecord: Graph's id becomes scriptId"
+Assert-Equal 'system' $fromGraph.runAsAccount "ConvertTo-ScriptRecord: keeps the run-as account"
+$fromGrid = ConvertTo-ScriptRecord ([pscustomobject]@{
+    Id = 'abc-123'; DisplayName = 'Set power plan'; FileName = 'power.ps1'
+    RunAs = 'Signed-in user'; RunAs32Bit = 'Yes'; Signature = 'Required'
+})
+Assert-Equal 'user' $fromGrid.runAsAccount "ConvertTo-ScriptRecord: the grid's wording maps back to Graph's"
+Assert-True $fromGrid.runAs32Bit "ConvertTo-ScriptRecord: 'Yes' is true"
+Assert-True $fromGrid.enforceSignatureCheck "ConvertTo-ScriptRecord: 'Required' is true"
+Assert-Equal 0 (@((ConvertTo-ScriptRecord @{}).assignedGroups)).Count `
+    "ConvertTo-ScriptRecord: no groups is an empty list, never null"
+
+Assert-True (ConvertTo-ScriptBool 'True') "ConvertTo-ScriptBool: the string True"
+Assert-True (ConvertTo-ScriptBool $true) "ConvertTo-ScriptBool: a real boolean"
+Assert-True (-not (ConvertTo-ScriptBool 'No')) "ConvertTo-ScriptBool: No is false"
+Assert-True (-not (ConvertTo-ScriptBool $null)) "ConvertTo-ScriptBool: nothing is false"
+
+Assert-Equal "Set-power-plan" (Get-SafeFileNameForScript -Name "Set power plan") `
+    "Get-SafeFileNameForScript: spaces become hyphens"
+Assert-Equal "Script" (Get-SafeFileNameForScript -Name "  ") `
+    "Get-SafeFileNameForScript: an unusable name still gives a file name"
+
+# Drift: the same script, one field apart
+$localScript = @{ displayName = 'Set power plan'; fileName = 'power.ps1'; runAsAccount = 'system'; scriptContent = "Write-Host 'hi'"; assignedGroups = @('SG-All') }
+$remoteScript = @{ displayName = 'Set power plan'; fileName = 'power.ps1'; runAsAccount = 'user'; scriptContent = "Write-Host 'hi'"; assignedGroups = @('SG-All') }
+$scriptDiffs = @(Get-ScriptFieldDiffs -Local $localScript -Remote $remoteScript)
+Assert-Equal 1 $scriptDiffs.Count "Get-ScriptFieldDiffs: one field apart is one difference"
+Assert-Equal 'runAsAccount' ([string]$scriptDiffs[0].Field) "Get-ScriptFieldDiffs: says which field"
+# A body that only differs by line endings is not a change anyone made
+$crlfDiffs = @(Get-ScriptFieldDiffs -Local @{ displayName = 'X'; scriptContent = "a`r`nb" } -Remote @{ displayName = 'X'; scriptContent = "a`nb" })
+Assert-Equal 0 $crlfDiffs.Count "Get-ScriptFieldDiffs: line endings alone are not drift"
+$groupDiffs = @(Get-ScriptFieldDiffs -Local @{ displayName = 'X'; assignedGroups = @('B','A') } -Remote @{ displayName = 'X'; assignedGroups = @('A','B') })
+Assert-Equal 0 $groupDiffs.Count "Get-ScriptFieldDiffs: group order is not drift"
+$addedGroup = @(Get-ScriptFieldDiffs -Local @{ displayName = 'X'; assignedGroups = @('A') } -Remote @{ displayName = 'X'; assignedGroups = @() })
+Assert-Equal 'assignedGroups' ([string]$addedGroup[0].Field) "Get-ScriptFieldDiffs: a group only we have is drift"
+Assert-Equal '(none)' ([string]$addedGroup[0].Remote) "Get-ScriptFieldDiffs: says plainly when the other side has none"
+
+# Round trip through the folder, which is the catalog
+$scriptCatalogDir = Join-Path ([IO.Path]::GetTempPath()) ("scriptcat-" + [guid]::NewGuid().ToString('N').Substring(0,8))
+try {
+    $saveResult = Save-ScriptsToFolder -Path $scriptCatalogDir -Scripts @(
+        @{ displayName = 'Set power plan'; fileName = 'power.ps1'; runAsAccount = 'system'; scriptContent = "Write-Host 'hi'"; assignedGroups = @('SG-All') }
+        @{ displayName = 'Map drives'; fileName = 'drives.ps1'; runAsAccount = 'user'; runAs32Bit = $true; scriptContent = "net use" }
+    )
+    Assert-Equal 2 $saveResult.Saved "Save-ScriptsToFolder: one file per script"
+    Assert-Equal 0 (@($saveResult.Errors)).Count "Save-ScriptsToFolder: nothing went wrong"
+    $loaded = Import-ScriptsFromFolder -Path $scriptCatalogDir
+    Assert-Equal 2 (@($loaded.Scripts)).Count "Import-ScriptsFromFolder: reads them back"
+    $power = @($loaded.Scripts) | Where-Object { $_.displayName -eq 'Set power plan' } | Select-Object -First 1
+    Assert-Equal "Write-Host 'hi'" $power.scriptContent "Import-ScriptsFromFolder: the body survives the round trip"
+    Assert-Equal 'SG-All' (@($power.assignedGroups) -join ',') "Import-ScriptsFromFolder: so do the groups"
+    $drives = @($loaded.Scripts) | Where-Object { $_.displayName -eq 'Map drives' } | Select-Object -First 1
+    Assert-True $drives.runAs32Bit "Import-ScriptsFromFolder: and the flags"
+    Assert-Equal 0 (@(Get-ScriptFieldDiffs -Local $power -Remote $power)).Count `
+        "the round trip is lossless - a saved script doesn't drift from itself"
+    # Dropping one from the set removes its file: the folder is the catalog
+    $second = Save-ScriptsToFolder -Path $scriptCatalogDir -Scripts @(
+        @{ displayName = 'Set power plan'; fileName = 'power.ps1'; runAsAccount = 'system'; scriptContent = "Write-Host 'hi'" }
+    )
+    Assert-Equal 1 $second.Removed "Save-ScriptsToFolder: a script no longer in the set loses its file"
+    Assert-Equal 1 (@((Import-ScriptsFromFolder -Path $scriptCatalogDir).Scripts)).Count `
+        "Save-ScriptsToFolder: and is gone on the next read"
+    # A broken file is named, not silently skipped
+    [IO.File]::WriteAllText((Join-Path $scriptCatalogDir "broken.json"), "{ this is not json")
+    $withBroken = Import-ScriptsFromFolder -Path $scriptCatalogDir
+    Assert-Equal 1 (@($withBroken.Errors)).Count "Import-ScriptsFromFolder: a file that won't parse is reported"
+    Assert-True ((@($withBroken.Errors) -join ' ') -like "*broken.json*") "Import-ScriptsFromFolder: and named"
+}
+finally { Remove-Item -LiteralPath $scriptCatalogDir -Recurse -Force -ErrorAction SilentlyContinue }
+Assert-Equal 0 (@((Import-ScriptsFromFolder -Path (Join-Path ([IO.Path]::GetTempPath()) "no-such-script-folder")).Scripts)).Count `
+    "Import-ScriptsFromFolder: a folder that isn't there is empty, not an error"
 
 # -----------------------------------------------------------------
 # Moving a group of controls onto its own tab (GuiHelpers.ps1)
