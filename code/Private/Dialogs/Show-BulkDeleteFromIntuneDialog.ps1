@@ -220,7 +220,7 @@ function Global:Show-BulkDeleteFromIntuneDialog {
             if ($okCount -gt 0) {
                 $catalogChoice = [System.Windows.Forms.MessageBox]::Show(
                     "Deleted $okCount app(s) from Intune.`n`nAlso remove these from the local catalog entirely?`n`n$($deletedNames -join ", ")`n`nChoosing No just clears their App IDs, keeping the entries (and group assignments) so they're easy to recreate later.",
-                    "Remove from catalog too?", "YesNo", "Question")
+                    "Remove from catalog too?", "YesNo", "Question", "Button2")
                 if ($catalogChoice -eq "Yes") {
                     foreach ($deletedName in $deletedNames) {
                         for ($dci = 0; $dci -lt $appsRef.Count; $dci++) {

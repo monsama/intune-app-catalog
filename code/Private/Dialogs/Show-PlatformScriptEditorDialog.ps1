@@ -226,7 +226,7 @@ function Global:Show-PlatformScriptEditorDialog {
             else {
                 $r = [System.Windows.Forms.MessageBox]::Show(
                     "No group is checked, so Intune won't run this script anywhere yet. You can assign it later.`n`nCreate it anyway?",
-                    "No groups checked", "YesNo", "Question")
+                    "No groups checked", "YesNo", "Question", "Button2")
                 if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
             }
         }

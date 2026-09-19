@@ -249,7 +249,7 @@ function Global:Show-IntuneOnlyAppsDialog {
             $catalogName = [string]$grid.SelectedRows[0].Cells["CatalogName"].Value
             $r = [System.Windows.Forms.MessageBox]::Show(
                 "Rename this catalog entry from`n`n  `"$catalogName`"`n`nto match Intune's current name:`n`n  `"$intuneName`"`n`nContinue?",
-                "Sync name from Intune", "YesNo", "Question")
+                "Sync name from Intune", "YesNo", "Question", "Button2")
             if ($r -ne "Yes") { return }
             $target = $appsRef | Where-Object { $_.appId -eq $id } | Select-Object -First 1
             if ($target) {
@@ -267,7 +267,7 @@ function Global:Show-IntuneOnlyAppsDialog {
             $catalogName = [string]$grid.SelectedRows[0].Cells["CatalogName"].Value
             $r = [System.Windows.Forms.MessageBox]::Show(
                 "`"$catalogName`" has App ID $id in the catalog, but that App ID no longer exists in Intune - it was likely deleted there directly, outside this tool.`n`nClear the stale App ID from this catalog entry? It stays in the catalog, just without an ID - use `"Deploy to Intune`" afterward if it should be re-created.",
-                "Clear stale App ID", "YesNo", "Warning")
+                "Clear stale App ID", "YesNo", "Warning", "Button2")
             if ($r -ne "Yes") { return }
             $target = $appsRef | Where-Object { $_.appId -eq $id } | Select-Object -First 1
             if ($target) {

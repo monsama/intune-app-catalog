@@ -193,7 +193,7 @@ function Global:Show-DeleteAppDialog {
                     # was the more surprising outcome, not the friendlier one.
                     $removeChoice = [System.Windows.Forms.MessageBox]::Show(
                         "Deleted `"$AppNameRef`" from Intune.`n`nAlso remove it from the local catalog entirely? Choosing No just clears its App ID here, keeping the entry (and its group assignments) so it's easy to recreate later.",
-                        "Remove from catalog too?", "YesNo", "Question")
+                        "Remove from catalog too?", "YesNo", "Question", "Button2")
                     if ($removeChoice -eq "Yes") {
                         $delCatalogIdx = -1
                         for ($dci = 0; $dci -lt $appsRefRef.Count; $dci++) {

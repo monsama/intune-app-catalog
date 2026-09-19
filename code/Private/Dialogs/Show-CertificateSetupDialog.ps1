@@ -619,7 +619,7 @@ function Global:Show-CertificateSetupDialog {
 
         $r = [System.Windows.Forms.MessageBox]::Show(
             "This adds `"$($localCert.Subject)`" to the app registration's trusted certificates in Entra ID.`n`nRequires signing in with YOUR OWN account (a console window and a browser window will both briefly open) and either the Application Administrator role or being an owner of this app registration.`n`nAny certificates already trusted for this app registration are kept, not replaced. Continue?",
-            "Confirm certificate upload", "YesNo", "Question")
+            "Confirm certificate upload", "YesNo", "Question", "Button2")
         if ($r -ne "Yes") { return }
 
         $btnUpload.Enabled = $false
