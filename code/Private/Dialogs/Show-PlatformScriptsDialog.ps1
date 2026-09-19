@@ -60,8 +60,12 @@ function Global:Show-PlatformScriptsDialog {
         @{ Name = "FileName";    Header = "File"; Weight = 20 }
         @{ Name = "RunAs";       Header = "Runs as"; Weight = 14 }
         @{ Name = "RunAs32Bit";  Header = "32-bit"; Weight = 9 }
-        @{ Name = "Signature";   Header = "Signature"; Weight = 14 }
-        @{ Name = "Modified";    Header = "Last changed"; Weight = 17 }
+        @{ Name = "Signature";   Header = "Signature"; Weight = 12 }
+        @{ Name = "Modified";    Header = "Last changed"; Weight = 15 }
+        # Whether this tenant's script also exists in the local catalog,
+        # and whether the two still agree - the same question the app
+        # catalog answers with its own drift check.
+        @{ Name = "Local";       Header = "Local copy"; Weight = 14 }
     )) {
         $gridCol = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
         $gridCol.Name = $col.Name
@@ -99,6 +103,35 @@ function Global:Show-PlatformScriptsDialog {
     $btnDelete.Enabled = $false
     $dlg.Controls.Add($btnDelete)
 
+    # Local copies of what's in the tenant, the same way the app catalog
+    # keeps apps: one JSON per script under data\script-data. A script that
+    # only ever lived in Intune had nowhere to be written before it went
+    # live, and nothing to compare against afterwards.
+    $scriptCatalogPath = Join-Path $Global:App.RootPath "data\script-data"
+
+    $btnSaveLocal = New-Object System.Windows.Forms.Button
+    $btnSaveLocal.Text = "Save local copies"
+    $btnSaveLocal.Location = New-Object System.Drawing.Point(575, 344)
+    $btnSaveLocal.Size = New-Object System.Drawing.Size(140, 30)
+    $dlg.Controls.Add($btnSaveLocal)
+    $saveLocalTip = New-Object System.Windows.Forms.ToolTip
+    $saveLocalTip.SetToolTip($btnSaveLocal, "Reads every listed script in full - body and assigned groups - and saves it under data\script-data. Read-only against Intune. A script no longer in the tenant loses its local file, so the folder matches what is actually there.")
+
+    $btnOpenLocal = New-Object System.Windows.Forms.Button
+    $btnOpenLocal.Text = "Open local folder"
+    $btnOpenLocal.Location = New-Object System.Drawing.Point(725, 344)
+    $btnOpenLocal.Size = New-Object System.Drawing.Size(140, 30)
+    $dlg.Controls.Add($btnOpenLocal)
+    $openLocalTip = New-Object System.Windows.Forms.ToolTip
+    $openLocalTip.SetToolTip($btnOpenLocal, "Opens data\script-data, where the local copies live - one JSON per script, readable and diffable.")
+    $btnOpenLocal.Add_Click({
+        try {
+            [void][IO.Directory]::CreateDirectory($scriptCatalogPath)
+            Start-Process $scriptCatalogPath
+        }
+        catch { Write-DialogLogLine -LogBox $rtbLog -Text "[FAILED] Could not open $scriptCatalogPath : $($_.Exception.Message)`r`n" }
+    }.GetNewClosure())
+
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
     $rtbLog.Location = New-Object System.Drawing.Point(15, 384)
     $rtbLog.Size = New-Object System.Drawing.Size(850, 182)
@@ -125,12 +158,30 @@ function Global:Show-PlatformScriptsDialog {
         $btnEdit.Enabled = $hasSelection
         $btnRunStatus.Enabled = $hasSelection
         $btnDelete.Enabled = $hasSelection
+        $btnSaveLocal.Enabled = (-not $Busy) -and (@($rowsBox.Value).Count -gt 0)
     }.GetNewClosure()
 
     $populateGrid = {
         $grid.Rows.Clear()
+        # Read once per refresh, not once per row
+        $localByName = @{}
+        foreach ($localScript in @((Import-ScriptsFromFolder -Path $scriptCatalogPath).Scripts)) {
+            if ($localScript.displayName) { $localByName[[string]$localScript.displayName] = $localScript }
+        }
         foreach ($row in @($rowsBox.Value)) {
-            $index = $grid.Rows.Add($row.DisplayName, $row.FileName, $row.RunAs, $row.RunAs32Bit, $row.Signature, $row.Modified)
+            $localState = "Not saved here"
+            $local = $localByName[[string]$row.DisplayName]
+            if ($local) {
+                # Only the fields a listing actually knows: the body and the
+                # groups aren't in the list response, so claiming they match
+                # would be claiming something never looked at.
+                $listDiffs = @(Get-ScriptFieldDiffs -Local $local -Remote $row | Where-Object { $_.Field -notin @('scriptContent', 'assignedGroups') })
+                $localState = if ($listDiffs.Count -eq 0) { "Saved" } else { "Differs ($($listDiffs.Count))" }
+            }
+            $index = $grid.Rows.Add($row.DisplayName, $row.FileName, $row.RunAs, $row.RunAs32Bit, $row.Signature, $row.Modified, $localState)
+            if ($localState -like 'Differs*') { $grid.Rows[$index].Cells[6].Style.ForeColor = [System.Drawing.Color]::DarkOrange }
+            elseif ($localState -eq 'Saved') { $grid.Rows[$index].Cells[6].Style.ForeColor = [System.Drawing.Color]::SeaGreen }
+            $grid.Rows[$index].Cells[6].ToolTipText = if ($local) { "A copy of this script is in the local catalog. 'Differs' compares only what a listing shows - the body and groups are checked when you save." } else { "No local copy yet - use 'Save local copies' to keep one." }
             $grid.Rows[$index].Tag = $row
             $grid.Rows[$index].Cells[0].ToolTipText = if ($row.Description) { [string]$row.Description } else { [string]$row.DisplayName }
         }
@@ -140,6 +191,73 @@ function Global:Show-PlatformScriptsDialog {
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
         $lblStatus.Text = if ($count -eq 0) { "No platform scripts in this tenant yet." } elseif ($count -eq 1) { "1 platform script." } else { "$count platform scripts." }
     }.GetNewClosure()
+
+    # Saving means reading each script in full, one at a time - a listing has
+    # no body and no groups. A queue rather than a loop, because each read is
+    # a background fetch that finishes later.
+    $SaveLocalCopies = {
+        $pending = New-Object System.Collections.Generic.Queue[object]
+        foreach ($row in @($rowsBox.Value)) { $pending.Enqueue($row) }
+        $total = $pending.Count
+        if ($total -eq 0) { return }
+        $collected = New-Object System.Collections.Generic.List[object]
+        & $setBusy $true
+        Write-DialogLogLine -LogBox $rtbLog -Text "[INFO] Reading $total script(s) in full, to save local copies...`r`n"
+
+        $rtbLogRef = $rtbLog
+        $lblStatusRef = $lblStatus
+        $setBusyRef = $setBusy
+        $populateGridRef = $populateGrid
+        $catalogPathRef = $scriptCatalogPath
+        $dlgRef = $dlg
+
+        # Held in a box so the fetch's own callback can reach the next step
+        # without the scriptblock having to refer to itself by name.
+        $stepBox = @{ Next = $null }
+        $stepBox.Next = {
+            if ($pending.Count -eq 0) {
+                $saveResult = Save-ScriptsToFolder -Path $catalogPathRef -Scripts $collected
+                foreach ($problem in @($saveResult.Errors)) {
+                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] $problem`r`n"
+                }
+                $removedNote = if ($saveResult.Removed -gt 0) { ", $($saveResult.Removed) no longer in the tenant removed" } else { "" }
+                Write-DialogLogLine -LogBox $rtbLogRef -Text "[OK] Saved $($saveResult.Saved) local copy/copies$removedNote.`r`n" -MirrorToMainLog
+                $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
+                $lblStatusRef.Text = "Local copies saved: $($saveResult.Saved) script(s)."
+                & $setBusyRef $false
+                & $populateGridRef
+                return
+            }
+            $row = $pending.Dequeue()
+            $lblStatusRef.ForeColor = [System.Drawing.Color]::DimGray
+            $lblStatusRef.Text = "Reading '$($row.DisplayName)' ($($total - $pending.Count) of $total)..."
+            Start-PlatformScriptDetailFetch -ScriptId $row.Id -LogBox $rtbLogRef -OnComplete {
+                param($ok, $errMsg, $detail)
+                if ($dlgRef.IsDisposed) { return }
+                if ($ok) {
+                    # From the detail, so the body and groups are the real
+                    # ones rather than what a listing could guess.
+                    $collected.Add((ConvertTo-ScriptRecord @{
+                        id                    = $row.Id
+                        displayName           = $row.DisplayName
+                        description           = $row.Description
+                        fileName              = $row.FileName
+                        runAsAccount          = $row.RunAs
+                        runAs32Bit            = $row.RunAs32Bit
+                        enforceSignatureCheck = $row.Signature
+                        scriptContent         = [string]$detail.ScriptContent
+                        assignedGroups        = @($detail.GroupNames)
+                    }))
+                }
+                else {
+                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] '$($row.DisplayName)' couldn't be read, so it has no local copy: $errMsg`r`n"
+                }
+                & $stepBox.Next
+            }.GetNewClosure()
+        }.GetNewClosure()
+        & $stepBox.Next
+    }.GetNewClosure()
+    $btnSaveLocal.Add_Click({ & $SaveLocalCopies }.GetNewClosure())
 
     $loadList = {
         & $setBusy $true

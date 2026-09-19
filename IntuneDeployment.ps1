@@ -41,6 +41,7 @@
 $Script:RequiredPrivateFiles = @(
     "code\Private\Catalog\CatalogIO.ps1"
     "code\Private\Catalog\CatalogLogic.ps1"
+    "code\Private\Catalog\ScriptCatalog.ps1"
     "code\Private\Dialogs\Show-AddFavoriteGroupToAppsDialog.ps1"
     "code\Private\Dialogs\Show-AppEditor.ps1"
     "code\Private\Dialogs\Show-AppIdMatchDialog.ps1"
