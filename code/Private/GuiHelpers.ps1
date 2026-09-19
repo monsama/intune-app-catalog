@@ -1202,7 +1202,13 @@ function Global:Update-Grid {
     # handed row 0 when your app scrolled out of view is how the wrong app
     # gets deployed.
     if ($prevNames.Count -gt 0 -and $Global:App.Grid.Rows.Count -gt 0) {
-        $restored = @($Global:App.Grid.Rows | Where-Object { $prevNames -contains [string]$_.Cells["AppName"].Value })
+        # foreach, not a Where-Object pipeline: this runs on every refresh
+        # over every row in the grid, and -contains against a handful of
+        # remembered names is cheap next to the pipeline around it.
+        $restored = New-Object System.Collections.Generic.List[object]
+        foreach ($row in $Global:App.Grid.Rows) {
+            if ($prevNames -contains [string]$row.Cells["AppName"].Value) { [void]$restored.Add($row) }
+        }
         if ($restored.Count -gt 0) {
             # CurrentCell first, then the selection: assigning CurrentCell
             # selects its own row and drops everything else, which would
@@ -1239,9 +1245,18 @@ function Global:Update-Grid {
         }
     }
 
-    $reqTotal   = ($Global:App.Apps | ForEach-Object { @($_.requiredFor).Count } | Measure-Object -Sum).Sum
-    $availTotal = ($Global:App.Apps | ForEach-Object { @($_.availableFor).Count } | Measure-Object -Sum).Sum
-    $uninstTotal= ($Global:App.Apps | ForEach-Object { @($_.uninstallFor).Count } | Measure-Object -Sum).Sum
+    # One pass for all three totals. This was three separate pipelines over
+    # the whole catalog, each building a ForEach-Object and a Measure-Object
+    # for a running total - three walks and six pipelines per refresh, for
+    # three numbers that come out of the same single walk.
+    $reqTotal = 0
+    $availTotal = 0
+    $uninstTotal = 0
+    foreach ($app in $Global:App.Apps) {
+        $reqTotal    += @($app.requiredFor).Count
+        $availTotal  += @($app.availableFor).Count
+        $uninstTotal += @($app.uninstallFor).Count
+    }
     $dirty = if ($Global:App.UnsavedChangesBox.Value) { "  *unsaved changes*" } else { "" }
     # While a filter is on, the count has to be what you can actually see.
     # It read "120 apps" over a grid showing three of them, which is the
