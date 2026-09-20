@@ -373,18 +373,12 @@ function Global:Resolve-AppPackagePath {
     param([string]$AppName, [bool]$Uncommon)
 
     if (-not $Uncommon) {
-        # Check the expected exact location first (fast - no need to walk the
-        # whole repo in the common case where it's right where expected).
+        # The expected location, or wherever an older install left one -
+        # Get-SharedPackagePath does both, and remembers the expensive
+        # half. This used to repeat that search itself, so a catalog with
+        # no init.intunewin walked the whole app folder twice per app.
         $initPath = Get-SharedPackagePath
-        if (Test-Path $initPath) { return @{ Path = $initPath; Found = $true } }
-
-        # Not there - fall back to searching under the base path, same
-        # approach as uncommon apps below, in case it ended up nested
-        # slightly differently, before giving up.
-        $found = Get-ChildItem -Path $Global:App.RootPath -Recurse -Filter "init.intunewin" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found) { return @{ Path = $found.FullName; Found = $true } }
-
-        return @{ Path = $initPath; Found = $false }
+        return @{ Path = $initPath; Found = (Test-Path -LiteralPath $initPath) }
     }
 
     $safeName = Get-SafeFileNameForApp -Name $AppName

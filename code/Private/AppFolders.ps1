@@ -83,4 +83,7 @@ function Global:Set-AppFolder {
     [void](Get-AppFolderDefault -Kind $Kind)   # rejects an unknown kind before anything is stored
     if ([string]::IsNullOrWhiteSpace($Path)) { $Global:App.AppFolders.Remove($Kind) }
     else { $Global:App.AppFolders[$Kind] = $Path.Trim() }
+    # Pointing the Shared folder somewhere else invalidates what
+    # Get-SharedPackagePath remembers about looking for init.intunewin.
+    if ($Kind -eq 'Shared') { $Global:App.SharedPackageSearch = $null }
 }
