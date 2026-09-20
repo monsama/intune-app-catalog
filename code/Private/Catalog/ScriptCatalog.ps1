@@ -146,8 +146,23 @@ function Global:Save-ScriptsToFolder {
     try { [void][IO.Directory]::CreateDirectory($Path) }
     catch { $result.Errors.Add("Could not create $Path : $($_.Exception.Message)"); return $result }
 
+    # NOT @($Scripts). Its caller hands it a
+    # System.Collections.Generic.List[object], and unrolling one of those
+    # with @(...) throws "Argument types do not match" - reproducibly, with
+    # a single hashtable in it. Nothing here caught it, so it escaped the
+    # timer tick that was driving the save, the dialog never left its busy
+    # state, and "Save local copies" sat on "Reading 'x' (1 of 1)..."
+    # forever. The read had already succeeded; it was the save that died.
+    $items = New-Object System.Collections.Generic.List[object]
+    if ($null -ne $Scripts) {
+        if ($Scripts -is [System.Collections.IEnumerable] -and $Scripts -isnot [string]) {
+            foreach ($entry in $Scripts) { $items.Add($entry) }
+        }
+        else { $items.Add($Scripts) }
+    }
+
     $wanted = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($script in @($Scripts)) {
+    foreach ($script in $items) {
         $record = ConvertTo-ScriptRecord $script
         if (-not $record.displayName) { $result.Errors.Add("A script with no name was skipped."); continue }
         $fileName = (Get-SafeFileNameForScript -Name $record.displayName) + ".json"

@@ -1475,6 +1475,27 @@ try {
     # which is exactly why the caller has to decide.
     $emptied = Save-ScriptsToFolder -Path $scriptFolder -Scripts @()
     Assert-Equal 1 $emptied.Removed "Save-ScriptsToFolder: an empty set still prunes when pruning was asked for"
+
+    # A List[object], which is what the real caller passes - and what the
+    # tests above did NOT, which is why they passed while the app threw.
+    # @($list) on a generic list holding hashtables raises "Argument types
+    # do not match"; nothing caught it, so it escaped the timer driving
+    # the save and left the dialog stuck mid-sentence.
+    $listOfScripts = New-Object System.Collections.Generic.List[object]
+    [void]$listOfScripts.Add(@{ displayName = 'From A List'; scriptContent = 'x' })
+    $threwOnList = $false
+    $listResult = $null
+    try { $listResult = Save-ScriptsToFolder -Path $scriptFolder -Scripts $listOfScripts -NoPrune }
+    catch { $threwOnList = $true }
+    Assert-True (-not $threwOnList) "Save-ScriptsToFolder: takes a List[object], which is what its caller actually hands it"
+    Assert-Equal 1 $listResult.Saved "Save-ScriptsToFolder: and writes the script that was in the list"
+
+    # Two of them, and a single script that is not a collection at all.
+    [void]$listOfScripts.Add(@{ displayName = 'Second In List'; scriptContent = 'y' })
+    Assert-Equal 2 (Save-ScriptsToFolder -Path $scriptFolder -Scripts $listOfScripts -NoPrune).Saved `
+        "Save-ScriptsToFolder: more than one in the list is fine too"
+    Assert-Equal 1 (Save-ScriptsToFolder -Path $scriptFolder -Scripts @{ displayName = 'Just One'; scriptContent = 'z' } -NoPrune).Saved `
+        "Save-ScriptsToFolder: a lone script that is not a collection still works"
 }
 finally { Remove-Item -LiteralPath $scriptFolder -Recurse -Force -ErrorAction SilentlyContinue }
 
