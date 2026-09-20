@@ -1,5 +1,61 @@
 # Changelog
 
+## 1.4.3
+
+### Fixes
+
+- **"Save local copies" hung on the first platform script.** It read the
+  script, its assignments and its groups, and then stopped: no save, no
+  error, the status line still mid-sentence. The callback that advances
+  to the next script is nested inside another callback, and reached for
+  the queue without taking the local alias this codebase needs at that
+  depth - so it advanced nothing, and the collection it had been adding
+  each script to was not the real one either.
+- **A Winget ID entered after "Add app..." left Package and detection
+  blank.** Those tabs are built the moment the editor opens, when the
+  Winget field is still empty, so they were built for an app with no
+  Winget ID - no install command, no uninstall command, no detection
+  script, and nothing that would ever fill them. Naming the ID now
+  regenerates them, whether it was typed or picked with "Search
+  winget...", along with the package path pointing at the shared
+  init.intunewin. Anything typed by hand is left alone.
+- **"Set default values" cut off every line it listed.** The list could
+  not scroll sideways (the scrollbar it carried was never given anything
+  to scroll) and had no tooltip either, so the right-hand end of each
+  line was simply unreachable. It wraps now, and can be selected and
+  copied.
+- **Test connection called a feature available when it was not.** A
+  registration with only `DeviceManagementScripts.Read.All` was told
+  "Platform scripts: yes" - it can list them and gets a 403 on the first
+  save. Reading and changing are separate rows now, and `Group.Read.All`
+  gets the same treatment: it finds a group, it cannot assign an app to
+  one.
+
+### Fewer places to look
+
+- **Intune sync check** is the eighth tab of the Checks window rather
+  than a window of its own, and **Look up App IDs...** has gone from the
+  menu - it already did nothing but run the lookup and open that same
+  window on its App IDs tab.
+- **Platform scripts** sits beside Checks on the toolbar, and
+  **Prerequisites** beside Settings, where it belongs: it installs the
+  missing Graph module rather than reporting on anything. The "Verify"
+  submenu held only that, so it is gone.
+- **Open other folder...** has gone from the menu too - Settings >
+  Folders > Catalog does the same job and shows you where the folder
+  currently is. Switching catalogs there now asks before discarding
+  unsaved changes, which the menu entry always did and this path did not.
+- Catalog maintenance is in alphabetical order.
+
+### While in there
+
+The Checks window no longer describes its tabs as read-only, because
+three of them write: Metadata sync, App IDs and the new Sync check. Enter
+no longer dismisses it either - fine on a window that only reports, a way
+to lose your place on one with per-row action buttons. Esc still closes.
+In the app editor, "Push groups to Intune" is the same width as "Pull
+groups from Intune" above it.
+
 ## 1.4.2
 
 ### Where this app keeps things
