@@ -1,4 +1,9 @@
 function Global:Show-IntuneOnlyAppsDialog {
+    # -HostTabPage: become one tab of Show-ChecksDialog instead of a window
+    # of its own, the same way the other seven checks in there do. Every
+    # handler below is unchanged - they reference controls by variable, not
+    # by whichever container the controls happen to sit in.
+    param([System.Windows.Forms.TabPage]$HostTabPage, [System.Windows.Forms.Form]$HostForm)
     # Plain local aliases - see note in Start-IntuneAppLookup. This dialog's
     # own closures (populateGrid, the action button handler) cannot reliably
     # read or write $Script:-qualified variables directly.
@@ -522,6 +527,29 @@ function Global:Show-IntuneOnlyAppsDialog {
     }.GetNewClosure())
 
     Set-Theme -Control $dlg
+    if ($HostTabPage) {
+        $btnClose.Visible = $false
+        [void](Move-DialogToTabPage -Dialog $dlg -Page $HostTabPage)
+        # The grid is the content, stopping above the button row under it.
+        # $anyAddedBox is handed over rather than returned: a tab has no
+        # moment where it returns to a caller, so the host refreshes the
+        # catalog grid when the window closes - see Show-ChecksDialog.
+        $HostTabPage.Tag = @{
+            Fill          = $grid
+            FillStopAbove = $btnAddChecked
+            OnFirstShow   = { $btnRefresh.PerformClick() }.GetNewClosure()
+            # Same pair, same condition, as every other tab in that window:
+            # a fetch in flight is both "still working" and "do not close".
+            # $busyBox counts all three of this dialog's fetches, which is
+            # stricter than $btnRefresh.Enabled alone - the bulk add queue
+            # keeps calling Save-AppsToFile, and closing under it would
+            # leave a timer ticking against controls on a disposed form.
+            IsBusy        = { $busyBox.Count -gt 0 -or -not $btnRefresh.Enabled }.GetNewClosure()
+            BlockClose    = { $busyBox.Count -gt 0 }.GetNewClosure()
+            Changed       = $anyAddedBox
+        }
+        return
+    }
     [void]$dlg.ShowDialog($Global:App.Form)
     return $anyAddedBox.Value
 }

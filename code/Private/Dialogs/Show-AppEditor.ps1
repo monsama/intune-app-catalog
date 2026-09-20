@@ -696,7 +696,10 @@ function Global:Show-AppEditor {
     $btnAssignGroups = New-Object System.Windows.Forms.Button
     $btnAssignGroups.Text = "Push groups to Intune (single app)..."
     $btnAssignGroups.Location = New-Object System.Drawing.Point(15,856)
-    $btnAssignGroups.Size = New-Object System.Drawing.Size(430,30)
+    # Same 820 as "Pull groups from Intune..." three rows up. These two are
+    # the same idea in opposite directions and each owns its row, so a 430
+    # button with dead space beside it just made the column look unfinished.
+    $btnAssignGroups.Size = New-Object System.Drawing.Size(820,30)
     $dlg.Controls.Add($btnAssignGroups)
 
     $btnOk = New-Object System.Windows.Forms.Button

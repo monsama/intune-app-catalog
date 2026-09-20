@@ -997,13 +997,30 @@ Assert-Null (ConvertFrom-JwtPayload "header.!!!not-base64!!!.sig") "ConvertFrom-
 $liveRoles = @('Device.Read.All', 'DeviceManagementApps.ReadWrite.All', 'Directory.Read.All', 'Group.ReadWrite.All', 'User.Read.All')
 $liveReport = Get-GraphRoleReport -Roles $liveRoles
 $liveMissing = @($liveReport.Missing)
-Assert-Equal 1 $liveMissing.Count "Get-GraphRoleReport: names the one feature this token can't reach"
-Assert-Equal "Platform scripts" ([string]$liveMissing[0].Feature) "Get-GraphRoleReport: and says which feature it is"
-Assert-True (-not $liveMissing[0].Required) "Get-GraphRoleReport: platform scripts is a feature, not a blocker"
+$liveFeatures = @($liveMissing | ForEach-Object { [string]$_.Feature })
+# No scripts permission at all, so neither half of that feature works.
+Assert-Equal 2 $liveMissing.Count "Get-GraphRoleReport: names the features this token can't reach"
+Assert-True ($liveFeatures -contains "Platform scripts (read)") "Get-GraphRoleReport: says reading scripts is out of reach"
+Assert-True ($liveFeatures -contains "Platform scripts (change)") "Get-GraphRoleReport: and says changing them is too"
+Assert-True (@($liveMissing | Where-Object { $_.Required }).Count -eq 0) "Get-GraphRoleReport: platform scripts is a feature, not a blocker"
 
-# Either permission satisfies a read - the app never needs ReadWrite to look
-Assert-Equal 0 (@((Get-GraphRoleReport -Roles @('DeviceManagementApps.ReadWrite.All', 'Group.Read.All', 'DeviceManagementScripts.Read.All', 'User.Read.All')).Missing).Count) `
-    "Get-GraphRoleReport: the read-only permission counts where the app only reads"
+# The trap this split exists for, from a real 403: the tenant HAS
+# DeviceManagementScripts.Read.All, so it can list platform scripts all
+# day - and the old merged row called the whole feature available on the
+# strength of it, right up until Save returned Forbidden.
+$readOnlyScripts = @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'DeviceManagementScripts.Read.All', 'User.Read.All')
+$readOnlyFeatures = @((Get-GraphRoleReport -Roles $readOnlyScripts).Missing | ForEach-Object { [string]$_.Feature })
+Assert-True ($readOnlyFeatures -notcontains "Platform scripts (read)") `
+    "Get-GraphRoleReport: the read-only permission is enough to LIST platform scripts"
+Assert-True ($readOnlyFeatures -contains "Platform scripts (change)") `
+    "Get-GraphRoleReport: but it is not enough to create or edit one" ($readOnlyFeatures -join ', ')
+
+# Group.Read.All is the same shape: it finds a group, it cannot assign to one.
+$readOnlyGroups = @((Get-GraphRoleReport -Roles @('DeviceManagementApps.ReadWrite.All', 'Group.Read.All', 'User.Read.All')).Missing | ForEach-Object { [string]$_.Feature })
+Assert-True ($readOnlyGroups -notcontains "Finding groups") `
+    "Get-GraphRoleReport: the read-only group permission is enough to find a group"
+Assert-True ($readOnlyGroups -contains "Creating and assigning groups") `
+    "Get-GraphRoleReport: but not to create one or assign an app to it" ($readOnlyGroups -join ', ')
 Assert-True (@((Get-GraphRoleReport -Roles @()).Missing).Count -ge 2) `
     "Get-GraphRoleReport: a token with no roles is missing everything"
 

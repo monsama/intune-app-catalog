@@ -609,7 +609,7 @@ $toolbarTips.SetToolTip($btnReload, "Discard any unsaved changes and reload the 
 $toolbarTips.SetToolTip($btnOpen, "Switch to a different folder of per-app JSON files.")
 $toolbarTips.SetToolTip($Global:App.BtnLookupIds, "Search Intune by name for apps missing an App ID, and fill it in.")
 $toolbarTips.SetToolTip($btnPlatformScripts, "The PowerShell scripts Intune runs on enrolled Windows devices: list them, add one, change one, delete one.")
-$toolbarTips.SetToolTip($btnCheckIntuneOnly, "Compares Intune against this catalog: apps in Intune not yet in the catalog, catalog apps renamed in Intune since, and catalog apps whose App ID no longer exists in Intune. Read-only.")
+$toolbarTips.SetToolTip($btnCheckIntuneOnly, "Compares Intune against this catalog: apps in Intune not yet in the catalog, catalog apps renamed in Intune since, and catalog apps whose App ID no longer exists in Intune. Opens the Checks window on that tab.")
 $toolbarTips.SetToolTip($btnBatchAssign, "Add a favorite group to multiple apps at once, then preview and apply the result to Intune.")
 $toolbarTips.SetToolTip($btnBatchEdit, "Change one or more fields (architecture, min OS, requirements, restart behavior, return codes, dependencies) across multiple deployed Win32 apps at once, then push each one to Intune.")
 $toolbarTips.SetToolTip($btnBatchDeploy, "Create multiple apps in Intune, in dependency order. Uses metadata saved via 'Save for later...' where an app has it, otherwise the same defaults Deploy to Intune's own form would.")
@@ -671,9 +671,16 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
     @{ Text = $btnOpen.Text; Btn = $btnOpen }
     @{ Text = $btnFavoriteGroups.Text; Btn = $btnFavoriteGroups }
 )))
+# "Look up App IDs..." and "Intune sync check..." are deliberately NOT
+# here any more - both are tabs of the Checks window, and the lookup one
+# had already become a shortcut that ran the fetch and then opened that
+# very window on its App IDs tab. Two doors into one room, with only one
+# of them findable from the window itself.
+#
+# The buttons themselves stay: GraphFetch.ps1 uses BtnLookupIds.Enabled as
+# the "a lookup is already running" latch, and the drift warning banner
+# still has its own way in.
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Intune" -Tips $toolbarTips -Items @(
-    @{ Text = $Global:App.BtnLookupIds.Text; Btn = $Global:App.BtnLookupIds }
-    @{ Text = $btnCheckIntuneOnly.Text; Btn = $btnCheckIntuneOnly }
     @{ Text = $btnBatchEdit.Text; Btn = $btnBatchEdit }
     @{ Text = $btnDefaultValues.Text; Btn = $btnDefaultValues }
     @{ Text = $btnPlatformScripts.Text; Btn = $btnPlatformScripts }
@@ -794,7 +801,7 @@ $btnDriftWarningCheck.Location = New-Object System.Drawing.Point(650, 5)
 $btnDriftWarningCheck.Size = New-Object System.Drawing.Size(150, 28)
 $btnDriftWarningCheck.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
 $Global:App.PanelDriftWarning.Controls.Add($btnDriftWarningCheck)
-$btnDriftWarningCheck.Add_Click({ Show-IntuneOnlyAppsDialog; Update-Grid; $Global:App.PanelDriftWarning.Visible = $false })
+$btnDriftWarningCheck.Add_Click({ Show-ChecksDialog -StartTab "Sync check"; $Global:App.PanelDriftWarning.Visible = $false })
 $btnDriftWarningDismiss = New-Object System.Windows.Forms.Button
 $btnDriftWarningDismiss.Text = "Dismiss"
 $btnDriftWarningDismiss.Location = New-Object System.Drawing.Point(810, 5)
@@ -2012,9 +2019,12 @@ $btnCertSetup.Add_Click({ Show-CertificateSetupDialog; Update-CredentialWarningB
 $btnDefaultValues.Add_Click({ Show-DefaultAppSettingsDialog })
 $btnChecks.Add_Click({ Show-ChecksDialog })
 $btnPrerequisites.Add_Click({ [void](Show-PrerequisitesDialog) })
+# Opens the Checks window on the Sync check tab rather than a window of
+# its own - the tab is the same dialog, and the seven checks beside it are
+# usually the next question anyway. Refreshing the catalog grid afterwards
+# is that window's job now (its Tag.Changed contract).
 $btnCheckIntuneOnly.Add_Click({
-    $changed = Show-IntuneOnlyAppsDialog
-    if ($changed) { Update-Grid }
+    Show-ChecksDialog -StartTab "Sync check"
 })
 
 $btnBatchAssign.Add_Click({
