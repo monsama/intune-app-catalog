@@ -467,6 +467,23 @@ function Global:Show-IntuneAuditDialog {
         $closeTargetBox.Form = $HostForm
         $btnClose.Visible = $false
         [void](Move-DialogToTabPage -Dialog $dlg -Page $HostTabPage)
+        # The grid stretches to fill a taller page and the log lives under
+        # it, so without this the grid is drawn straight over the log and
+        # the Graph output has nowhere to appear.
+        #
+        # Anchored Top, not Bottom: inside a tab these controls sit in a
+        # SCROLLING panel, where "the bottom" is the bottom of the panel's
+        # content rather than of the visible page. Anchoring the log there
+        # put it at y=932, past the end of a 612px page - which is exactly
+        # why it could not be seen at all.
+        $rtbAuditLog.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor
+                              [System.Windows.Forms.AnchorStyles]::Right
+        # The grid's own Top+Bottom anchor would stretch it back over the
+        # log on the next layout pass, whatever height it is given. Top
+        # only here, and its height is set to stop above the log.
+        $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor
+                       [System.Windows.Forms.AnchorStyles]::Right
+        $HostTabPage.Tag = @{ Fill = $grid; FillStopAbove = $rtbAuditLog }
         return
     }
     [void]$dlg.ShowDialog($Global:App.Form)

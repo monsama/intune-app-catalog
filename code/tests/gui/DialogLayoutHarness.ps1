@@ -20,7 +20,7 @@
         == DONE
     and closes the app when every step has run.
 #>
-param([Parameter(Mandatory)][string]$OutDir, [string]$ShotDir)
+param([Parameter(Mandatory)][string]$OutDir, [string]$ShotDir, [string]$Only = "")
 $ErrorActionPreference = 'Continue'
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type -Namespace LayoutAudit -Name Native -MemberDefinition @'
@@ -54,10 +54,17 @@ $Global:LayoutAudit = @{
     ShotN = 0
     Seen  = @{}
     Steps = New-Object System.Collections.Queue
+    Only  = $Only
 }
 [IO.File]::WriteAllText($Global:LayoutAudit.Log, "")
 function Global:Write-LayoutAudit([string]$Line) { [IO.File]::AppendAllText($Global:LayoutAudit.Log, $Line + "`r`n") }
-function Global:Add-LayoutAuditStep([string]$Name, [scriptblock]$Run) { $Global:LayoutAudit.Steps.Enqueue([pscustomobject]@{ Name = $Name; Run = $Run }) }
+function Global:Add-LayoutAuditStep([string]$Name, [scriptblock]$Run) {
+    # -Only filters here rather than at run time, so a filtered run really
+    # does open just those windows instead of opening them all and
+    # reporting on a few.
+    if ($Global:LayoutAudit.Only -and $Name -notlike $Global:LayoutAudit.Only) { return }
+    $Global:LayoutAudit.Steps.Enqueue([pscustomobject]@{ Name = $Name; Run = $Run })
+}
 
 function Global:Measure-WrappedText($Text, $Font, [int]$Width) {
     $flags = [System.Windows.Forms.TextFormatFlags]::WordBreak -bor [System.Windows.Forms.TextFormatFlags]::TextBoxControl
@@ -65,7 +72,11 @@ function Global:Measure-WrappedText($Text, $Font, [int]$Width) {
 }
 
 function Global:Get-LayoutControlName($c) {
-    $t = [string]$c.Text
+    # Whitespace collapsed to single spaces first: a log box's own text
+    # carries newlines, and a finding that starts with one is a finding
+    # whose second half - the control it overlaps, and by how much - ends
+    # up on a line of its own that reads like a different result entirely.
+    $t = ([string]$c.Text) -replace '\s+', ' '
     $shown = if ($t.Length -gt 45) { "'$($t.Substring(0, 42))...'" } elseif ($t) { "'$t'" } else { "" }
     "$($c.GetType().Name) $shown".Trim()
 }
@@ -279,11 +290,10 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'Favorite groups' { Show-FavoriteGroupsManager }
     Add-LayoutAuditStep 'Getting started' { Show-GettingStartedGuideDialog }
     Add-LayoutAuditStep 'Group name check' { Show-GroupDriftCheckDialog }
-    Add-LayoutAuditStep 'Check against Intune (all three)' { Show-IntuneCheckDialog }
+    Add-LayoutAuditStep 'Checks (all seven)' { Show-ChecksDialog }
     # The four standalone check dialogs are audited one by one above and
     # below; this is the window that hosts them as tabs, where they have
     # to fit a shared page instead of their own form.
-    Add-LayoutAuditStep 'Checks (all four)' { Show-ChecksDialog }
     Add-LayoutAuditStep 'Group manager' { Show-GroupManagerDialog }
     Add-LayoutAuditStep 'Delete groups (bulk)' { Show-BulkDeleteGroupsDialog }
     Add-LayoutAuditStep 'Find a group' { Show-GroupOnlyPicker }

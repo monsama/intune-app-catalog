@@ -145,6 +145,7 @@ function Global:Move-DialogToTabPage {
         }
         $control.Anchor = $anchor
     }
+
     return $inner
 }
 
@@ -186,9 +187,13 @@ function Global:Expand-HostedContent {
         $fillTo = $StopAbove.Top - $BottomMargin
     }
 
-    # Only ever grows, and only into something worth having: a page shorter
-    # than the dialog would otherwise shrink its own content to nothing.
-    if ($fillTo -gt ($Control.Top + 80) -and ($fillTo - $Control.Top) -gt $Control.Height) {
+    # Fits the content to the space, in both directions. Growing is the
+    # obvious half; shrinking matters because a page can be SHORTER than
+    # the dialog was (a tab strip costs height, and it costs two rows'
+    # worth once the captions no longer fit on one), and then everything
+    # anchored to the bottom rides up into whatever is above it. The 80px
+    # floor stops a very short page from collapsing the content entirely.
+    if ($fillTo -gt ($Control.Top + 80)) {
         $Control.Height = $fillTo - $Control.Top
     }
     # Anchored to the bottom only when nothing is under it. Whatever is

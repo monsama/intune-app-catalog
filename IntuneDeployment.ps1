@@ -71,7 +71,6 @@ $Script:RequiredPrivateFiles = @(
     "code\Private\Dialogs\Show-GroupManagerDialog.ps1"
     "code\Private\Dialogs\Show-GroupOnlyPicker.ps1"
     "code\Private\Dialogs\Show-IntuneAuditDialog.ps1"
-    "code\Private\Dialogs\Show-IntuneCheckDialog.ps1"
     "code\Private\Dialogs\Show-IntuneOnlyAppsDialog.ps1"
     "code\Private\Dialogs\Show-MetadataDriftDialog.ps1"
     "code\Private\Dialogs\Show-PackagingProgressDialog.ps1"
