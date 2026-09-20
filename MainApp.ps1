@@ -297,6 +297,12 @@ $Global:App.LightPalette = @{
 
 Import-GraphSettings
 
+# The catalog folder is set above from the built-in default, because the
+# settings file had not been read yet at that point. Now it has: an
+# install that keeps its catalog somewhere else - a share, another drive -
+# opens there instead of opening the default and looking empty.
+$Global:App.LinkedFilePath = Get-AppFolder -Kind Catalog
+
 # =====================================================================
 # Embedded pipeline scripts
 # =====================================================================
@@ -1974,6 +1980,11 @@ $btnOpen.Add_Click({
             if ($r -ne "Yes") { return }
         }
         $Global:App.LinkedFilePath = $fbd.SelectedPath
+        # Remembered, so the app opens here next time too. Picking a
+        # catalog and then finding the old one again on the next start was
+        # never the intent - it just had nowhere to be written down.
+        Set-AppFolder -Kind Catalog -Path $fbd.SelectedPath
+        [void](Write-SettingsFile)
         Import-AppsFromFile -Path $Global:App.LinkedFilePath
         Update-Grid
         Start-TypeVersionBackfill
@@ -2141,7 +2152,7 @@ $btnOpenLogFolder.Text = "Open log folder"
 $btnOpenLogFolder.AutoSize = $true
 $toolbarTips.SetToolTip($btnOpenLogFolder, "Open data\logs - one file per day with everything this log has shown, including earlier sessions.")
 $btnOpenLogFolder.Add_Click({
-    $logDir = Join-Path $Global:App.RootPath "data\logs"
+    $logDir = Get-AppFolder -Kind Logs
     try {
         if ($Global:App.LogFileWriter) { $Global:App.LogFileWriter.Flush() }
         if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }

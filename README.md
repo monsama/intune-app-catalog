@@ -71,7 +71,11 @@ The platform scripts Intune runs on enrolled devices:
 - **winget** (the "App Installer" package) for the Winget features.
 - An **Entra ID app registration** with a certificate, for app-only
   sign-in. Settings... > First time? Setup guide... walks through it.
-- **IntuneWinAppUtil.exe** is downloaded automatically when packaging.
+- **IntuneWinAppUtil.exe** (Microsoft's Win32 Content Prep Tool) and
+  **init.intunewin** (the one package every Winget app deploys with).
+  Neither of them ships with this app: Settings... > Folders downloads and
+  builds them, and Deploy offers to do it when a Winget app finds the
+  shared package missing.
 
 ## Download
 
@@ -99,6 +103,12 @@ refuses to run the scripts inside.
    lists the Graph permissions the app registration needs.
 4. Use **Open other folder...** to point the catalog at your own folder, or
    start adding apps in the one that ships with it.
+5. On the **Folders** tab of that same Settings window, press **Download
+   packaging tool** and then **Build init.intunewin** - packaging and
+   Winget deployments need both. That tab is also where each folder this
+   app writes to (catalog, packages, tools, scripts, logs, backups) can be
+   pointed somewhere else; leave a box empty to keep the default beside
+   the app.
 
 ## Permissions the app registration needs
 

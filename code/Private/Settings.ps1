@@ -47,6 +47,20 @@ function Global:Import-GraphSettings {
         # same size. Applied only after it is checked against the screens
         # actually attached right now - see Restore-WindowPlacement.
         if ($settings.WindowPlacement) { $Global:App.SavedWindowPlacement = $settings.WindowPlacement }
+        # Where this install keeps things, when it doesn't keep them where
+        # the app itself lives - see AppFolders.ps1. Read into a plain
+        # hashtable because that is what Get-AppFolder looks in, and read
+        # one key at a time so a folder that no longer exists as a concept
+        # is simply ignored rather than carried around forever.
+        $Global:App.AppFolders = @{}
+        if ($settings.Folders) {
+            foreach ($spec in (Get-AppFolderKinds)) {
+                $value = $null
+                if ($settings.Folders -is [System.Collections.IDictionary]) { $value = $settings.Folders[$spec.Key] }
+                elseif ($settings.Folders.PSObject.Properties[$spec.Key]) { $value = $settings.Folders.PSObject.Properties[$spec.Key].Value }
+                if (-not [string]::IsNullOrWhiteSpace([string]$value)) { $Global:App.AppFolders[$spec.Key] = [string]$value }
+            }
+        }
         # Missing entirely (an older settings file, or one from before this
         # existed) leaves $Global:App.DefaultAppSettings at its own built-in
         # factory values, untouched - same "fall back silently" reasoning
@@ -108,6 +122,10 @@ function Global:Write-SettingsFile {
             GridSortAscending     = [bool]$Global:App.GridSortAscending
             GridColumnWidths      = (Get-GridColumnWidths)
             WindowPlacement       = (Get-WindowPlacement)
+            # Only the folders actually pointed somewhere else. A default
+            # is not written down, so changing what the default IS in a
+            # later version reaches every install that never overrode it.
+            Folders               = $(if ($Global:App.AppFolders -is [System.Collections.IDictionary]) { $Global:App.AppFolders } else { @{} })
         }
         $json = $settings | ConvertTo-Json -Depth 5
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)

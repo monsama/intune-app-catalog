@@ -61,8 +61,13 @@ function Global:Show-BatchDeployDialog {
     foreach ($eligibleApp in ($eligibleApps | Sort-Object appName)) {
         $isUncommon = Test-AppIsUncommon -App $eligibleApp
         $pkg = Resolve-AppPackagePath -AppName $eligibleApp.appName -Uncommon $isUncommon
+        # A common app has no package of its own - it shares
+        # init.intunewin - so "not built yet" there means the one shared
+        # package is missing and EVERY common app in this list is about to
+        # be skipped for the same reason. Worth saying where the fix is,
+        # rather than letting it read like each app needs packaging.
         $tag = if (-not $pkg.Found) {
-            "  [package not built yet]"
+            if ($isUncommon) { "  [package not built yet]" } else { "  [shared package missing - Settings > Folders]" }
         }
         elseif (-not $eligibleApp.metadata) {
             if ($isUncommon) { "  [no saved metadata and no Winget ID - can't default detection]" } else { "  [no saved metadata - will use defaults]" }
@@ -186,8 +191,9 @@ function Global:Show-BatchDeployDialog {
         $isUncommon = Test-AppIsUncommon -App $currentApp
         $pkg = Resolve-AppPackagePath -AppName $currentApp.appName -Uncommon $isUncommon
         if (-not $pkg.Found) {
-            Write-DialogLogLine -LogBox $rtbLog -Text "  [SKIPPED] Package not built yet: $($pkg.Path)`r`n" -MirrorToMainLog
-            $Results.Add([pscustomobject]@{ AppName = $currentApp.appName; Status = "Skipped"; Message = "Package not built yet" })
+            $why = if ($isUncommon) { "Package not built yet" } else { "Shared package missing - build it under Settings > Folders" }
+            Write-DialogLogLine -LogBox $rtbLog -Text "  [SKIPPED] $($why): $($pkg.Path)`r`n" -MirrorToMainLog
+            $Results.Add([pscustomobject]@{ AppName = $currentApp.appName; Status = "Skipped"; Message = $why })
             # $RunNextBox directly, not an alias - still the outer
             # scriptblock's own direct body at this point, not the nested
             # -OnComplete closure further below, so no alias is needed (or

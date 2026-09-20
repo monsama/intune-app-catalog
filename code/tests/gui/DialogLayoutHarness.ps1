@@ -281,6 +281,30 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'Deploy to Intune (long name)' { Show-CreateInIntuneDialog -AppName $long.appName -WingetId $long.wingetId -ExistingAppId $long.appId }.GetNewClosure()
     Add-LayoutAuditStep 'Deploy to Intune (new)' { Show-CreateInIntuneDialog -AppName $noId.appName -WingetId '' }.GetNewClosure()
     Add-LayoutAuditStep 'Edit default values' { Show-DefaultAppSettingsDialog }
+    # Same page with every field changed, so all twelve "built-in:" links
+    # are on screen at once. They are hidden while a field still matches
+    # what the app ships with, which is how the page looks above - and a
+    # hidden control is one this audit does not measure, so the layout that
+    # actually has something in those gaps needs a pass of its own.
+    Add-LayoutAuditStep 'Edit default values (all changed from built-in)' {
+        $savedDefaults = $Global:App.DefaultAppSettings
+        $Global:App.DefaultAppSettings = [pscustomobject]@{
+            Architecture              = 'x86,arm64'
+            InstallContext            = 'User'
+            MinOSKey                  = 'W11_22H2'
+            MinDiskSpaceMB            = 1024
+            MinMemoryMB               = 2048
+            MinProcessors             = 4
+            MinCpuSpeedMHz            = 2400
+            InstallTimeMinutes        = 120
+            DeviceRestartBehavior     = 'force'
+            AllowAvailableUninstall   = $true
+            ReturnCodes               = @([pscustomobject]@{ returnCode = 0; type = 'success' })
+            DefaultDependencyAppNames = @()
+        }
+        try { Show-DefaultAppSettingsDialog }
+        finally { $Global:App.DefaultAppSettings = $savedDefaults }
+    }
     Add-LayoutAuditStep 'Delete from Intune (single)' { Show-DeleteAppDialog -AppId $a0.appId -AppName $a0.appName }.GetNewClosure()
     Add-LayoutAuditStep 'Delete from Intune (long name)' { Show-DeleteAppDialog -AppId $long.appId -AppName $long.appName }.GetNewClosure()
     Add-LayoutAuditStep 'Delete local certificate' { Show-DeleteLocalCertificateDialog }
@@ -349,7 +373,10 @@ $Global:LayoutAudit.Kick.Add_Tick({
         $step = $Global:LayoutAudit.Steps.Dequeue()
         Write-LayoutAudit "== $($step.Name)"
         $Global:LayoutAudit.Closer.Interval = 2500
-        try { [void](& $step.Run) } catch { Write-LayoutAudit "    step error: $($_.Exception.Message)" }
+        # Where it threw, not just what it said: "Argument types do not
+        # match" names nothing on its own, and a step error is exactly the
+        # case where the next thing you need is the line number.
+        try { [void](& $step.Run) } catch { Write-LayoutAudit "    step error: $($_.Exception.Message) [$(Split-Path -Leaf $_.InvocationInfo.ScriptName):$($_.InvocationInfo.ScriptLineNumber)]" }
         # give a follow-up window (e.g. a message box after a dialog) time to show and be handled
         $settle = (Get-Date).AddSeconds(3)
         while ((Get-Date) -lt $settle) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 100 }

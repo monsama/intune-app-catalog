@@ -375,7 +375,7 @@ function Global:Resolve-AppPackagePath {
     if (-not $Uncommon) {
         # Check the expected exact location first (fast - no need to walk the
         # whole repo in the common case where it's right where expected).
-        $initPath = Join-Path $Global:App.RootPath "init\init.intunewin"
+        $initPath = Get-SharedPackagePath
         if (Test-Path $initPath) { return @{ Path = $initPath; Found = $true } }
 
         # Not there - fall back to searching under the base path, same
@@ -388,7 +388,7 @@ function Global:Resolve-AppPackagePath {
     }
 
     $safeName = Get-SafeFileNameForApp -Name $AppName
-    $uncommonRoot = Join-Path $Global:App.RootPath "data\app-packages"
+    $uncommonRoot = Get-AppFolder -Kind Packages
     if (Test-Path $uncommonRoot) {
         $found = Get-ChildItem -Path $uncommonRoot -Recurse -Filter "$safeName.intunewin" -File -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($found) { return @{ Path = $found.FullName; Found = $true } }

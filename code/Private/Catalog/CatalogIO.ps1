@@ -508,7 +508,7 @@ function Global:Save-AppsToFile {
     # the single-file version did, rather than one backup per app file.
     if (Test-Path $Path) {
         try {
-            $backupDir = Join-Path $Global:App.RootPath "data\backups"
+            $backupDir = Get-AppFolder -Kind Backups
             if (-not (Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
             $backupName = "app-data_" + (Get-Date -Format "yyyy-MM-dd_HHmmss")
             Copy-Item -Path $Path -Destination (Join-Path $backupDir $backupName) -Recurse -Force -ErrorAction Stop

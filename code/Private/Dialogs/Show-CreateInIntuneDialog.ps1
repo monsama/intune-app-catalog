@@ -1784,6 +1784,21 @@ function Global:Show-CreateInIntuneDialog {
         }
 
         if ($mode -eq "Create" -or $replaceContent) {
+            # A Winget app's missing package is the one case this app can
+            # fix by itself: they all deploy with the same init.intunewin,
+            # so offer to build it here rather than sending somebody to
+            # Browse... for a file that has never existed on this machine.
+            # An uncommon app's package is its own, and Package apps...
+            # is what makes it, so that one still goes to the message.
+            if (-not (Test-Path $txtPackagePath.Text) -and -not $Uncommon) {
+                if (Initialize-SharedWingetPackage -LogBox $rtbCreateLog) {
+                    $rebuilt = Resolve-AppPackagePath -AppName $AppName -Uncommon $Uncommon
+                    if ($rebuilt.Found) {
+                        $txtPackagePath.Text = $rebuilt.Path
+                        $txtPackagePath.ForeColor = [System.Drawing.Color]::Black
+                    }
+                }
+            }
             if (-not (Test-Path $txtPackagePath.Text)) {
                 [System.Windows.Forms.MessageBox]::Show("Package file not found:`n$($txtPackagePath.Text)`n`nUse Browse... to point at the correct .intunewin file.", "Package not found", "OK", "Warning") | Out-Null
                 return
