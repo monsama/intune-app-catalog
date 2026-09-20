@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.4.1
+
+### Fixes for 1.4.0
+
+- **On a 1024x768 screen, "Check against Intune" drew its metadata log on
+  top of the Sync selected button.** That window is 1320 wide and is
+  shrunk to fit a smaller screen, and 1.4.0's tidy-up of window margins
+  took 14px it could not spare. It keeps its own margins again.
+- **"Check Intune when opening Deploy" did nothing when Deploy was opened
+  from the app editor**, which is the usual way in since 1.3.3 made an app
+  one window. It armed itself on the deploy dialog, and that dialog is no
+  longer the window that opens - the editor is.
+- **"Refresh from Intune" could not be reached from the app editor at
+  all.** It was only ever revealed by the same handler above, so it stayed
+  hidden. It is always available now: wanting to re-read an app after
+  someone else has touched it has nothing to do with whether the automatic
+  check is switched on.
+
+### While in there
+
+The app editor names the app it is editing - **Edit app - 7-Zip** - and
+follows renames as you type. Five tabs in, nothing else on screen said
+which app you had open. It is also 51px taller, so the Assignments tab
+stops scrolling for its last group, and **Refresh from Intune** and
+**Compare** sit beside the status text they act on instead of above the
+buttons that close the window.
+
 ## 1.4.0
 
 ### The catalog grid keeps your place

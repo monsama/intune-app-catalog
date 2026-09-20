@@ -147,7 +147,7 @@ $Global:App.LastAuditCachePath = Join-Path $Global:App.RootPath "data\last-audit
 $Global:App.CatalogGeneration = 0
 $Global:App.LogFileWriter = $null   # opened in Initialize-Folders, written to by Write-Log, closed on FormClosing - see both below
 $Global:App.LogFlushTimer = $null   # periodic flush timer for the above - see Initialize-Folders
-$Global:App.AppVersion = "1.4.0"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance rather than by diffing the whole file
+$Global:App.AppVersion = "1.4.1"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance rather than by diffing the whole file
 
 # App-only Graph auth (certificate) - must match the values in the Assign step /
 # your Entra ID app registration. Left blank on purpose - no tenant/client
