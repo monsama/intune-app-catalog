@@ -60,7 +60,7 @@ function Global:Show-BatchDeployDialog {
     $itemLabelToApp = @{}
     foreach ($eligibleApp in ($eligibleApps | Sort-Object appName)) {
         $isUncommon = Test-AppIsUncommon -App $eligibleApp
-        $pkg = Resolve-AppPackagePath -AppName $eligibleApp.appName -Uncommon $isUncommon
+        $pkg = Resolve-AppPackagePath -AppName $eligibleApp.appName -Uncommon $isUncommon -PackagePath $eligibleApp.packagePath
         # A common app has no package of its own - it shares
         # init.intunewin - so "not built yet" there means the one shared
         # package is missing and EVERY common app in this list is about to
@@ -189,7 +189,7 @@ function Global:Show-BatchDeployDialog {
         $progressBar.Value = $QueueIndex
 
         $isUncommon = Test-AppIsUncommon -App $currentApp
-        $pkg = Resolve-AppPackagePath -AppName $currentApp.appName -Uncommon $isUncommon
+        $pkg = Resolve-AppPackagePath -AppName $currentApp.appName -Uncommon $isUncommon -PackagePath $currentApp.packagePath
         if (-not $pkg.Found) {
             $why = if ($isUncommon) { "Package not built yet" } else { "Shared package missing - build it under Settings > Folders" }
             Write-DialogLogLine -LogBox $rtbLog -Text "  [SKIPPED] $($why): $($pkg.Path)`r`n" -MirrorToMainLog

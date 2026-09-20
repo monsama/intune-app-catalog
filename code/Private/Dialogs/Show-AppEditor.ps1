@@ -305,6 +305,42 @@ function Global:Show-AppEditor {
     $lblIdStatus.Text = ""
     $lblIdStatus.Location = New-Object System.Drawing.Point(15,250)
     $lblIdStatus.Size = New-Object System.Drawing.Size(430,40)
+
+    # Where this app's own .intunewin is, for the cases the prediction
+    # from its name cannot reach: a package built elsewhere, one kept on
+    # a share, or a folder holding more than one .intunewin, which
+    # Resolve-AppPackagePath refuses to guess between.
+    #
+    # Empty is the right default and stays the common case - a derived
+    # path follows a rename, a stored one does not. So the predicted path
+    # sits in the box greyed, the same way the Folders tab shows its
+    # defaults: you can see what it resolves to without that becoming an
+    # override the moment you look at it.
+    $lblAppPackagePath = New-Object System.Windows.Forms.Label
+    $lblAppPackagePath.Text = "Package (.intunewin) - only for an app with its own package; leave empty to use the one found by name"
+    $lblAppPackagePath.Location = New-Object System.Drawing.Point(15,462)
+    $lblAppPackagePath.AutoSize = $true
+    $dlg.Controls.Add($lblAppPackagePath)
+
+    $txtAppPackagePath = New-Object System.Windows.Forms.TextBox
+    $txtAppPackagePath.Location = New-Object System.Drawing.Point(15,482)
+    $txtAppPackagePath.Size = New-Object System.Drawing.Size(700,24)
+    $txtAppPackagePath.Text = if ($ExistingApp) { [string]$ExistingApp.packagePath } else { "" }
+    $dlg.Controls.Add($txtAppPackagePath)
+
+    $btnBrowseAppPackage = New-Object System.Windows.Forms.Button
+    $btnBrowseAppPackage.Text = "Browse..."
+    $btnBrowseAppPackage.Location = New-Object System.Drawing.Point(725,481)
+    $btnBrowseAppPackage.Size = New-Object System.Drawing.Size(110,26)
+    $dlg.Controls.Add($btnBrowseAppPackage)
+    $appPackageTip = New-Object System.Windows.Forms.ToolTip
+    $appPackageTip.SetToolTip($btnBrowseAppPackage, "Pick the .intunewin file itself, or a folder containing exactly one. A Winget app does not need this - they all deploy with the shared init.intunewin.")
+    $btnBrowseAppPackage.Add_Click({
+        $ofd = New-Object System.Windows.Forms.OpenFileDialog
+        $ofd.Filter = "Intune package (*.intunewin)|*.intunewin|All files (*.*)|*.*"
+        $ofd.Title = "Select this app's .intunewin"
+        if ($ofd.ShowDialog($dlg) -eq [System.Windows.Forms.DialogResult]::OK) { $txtAppPackagePath.Text = $ofd.FileName }
+    }.GetNewClosure())
     $lblIdStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblIdStatus)
 
@@ -784,7 +820,8 @@ function Global:Show-AppEditor {
             Controls = @(
                 $lblName, $txtName,
                 $lblWinget, $txtWinget, $btnSearchWinget, $lblUncommonNote,
-                $lblId, $txtId, $btnLookupId, $lblIdStatus
+                $lblId, $txtId, $btnLookupId, $lblIdStatus,
+                $lblAppPackagePath, $txtAppPackagePath, $btnBrowseAppPackage
             )
         }
         @{
@@ -803,6 +840,26 @@ function Global:Show-AppEditor {
     $txtName.Size = New-Object System.Drawing.Size(820,24)
     $lblUncommonNote.Size = New-Object System.Drawing.Size(820,32)
     $lblIdStatus.Size = New-Object System.Drawing.Size(820,40)
+    # Straight under App ID. The editor's own log used to sit between them
+    # and moved out to the shared one at the bottom of the window, so
+    # anything placed where it was just leaves a hole on this page.
+    $lblAppPackagePath.Location = New-Object System.Drawing.Point(12,300)
+    $txtAppPackagePath.Location = New-Object System.Drawing.Point(12,320)
+    $txtAppPackagePath.Size = New-Object System.Drawing.Size(706,24)
+    $btnBrowseAppPackage.Location = New-Object System.Drawing.Point(726,319)
+    $btnBrowseAppPackage.Size = New-Object System.Drawing.Size(106,26)
+    # What it resolves to today, greyed inside the empty box - the same
+    # "here is the default you are inheriting" the Folders tab uses. Only
+    # for an app that has its own package; a Winget app deploys with the
+    # shared init.intunewin and has nothing useful to show here.
+    if ($ExistingApp -and (Test-AppIsUncommon -App $ExistingApp)) {
+        $predicted = Resolve-AppPackagePath -AppName ([string]$ExistingApp.appName) -Uncommon $true
+        $hint = if ($predicted.Found) { $predicted.Path } else { "$($predicted.Path)  (not there yet)" }
+        Set-TextBoxPlaceholder -Box $txtAppPackagePath -Text $hint
+    }
+    else {
+        Set-TextBoxPlaceholder -Box $txtAppPackagePath -Text "Not needed - a Winget app deploys with the shared init.intunewin"
+    }
 
     # The Intune side, as three more tabs of this same window. Its status
     # box, log and Deploy button come with it and sit under every tab, so
@@ -1106,6 +1163,7 @@ function Global:Show-AppEditor {
             wingetId         = $txtWinget.Text.Trim()
             intuneAppType    = $preservedIntuneAppType
             intuneAppVersion = $preservedIntuneAppVersion
+            packagePath      = $txtAppPackagePath.Text.Trim()
             requiredFor      = @($reqGroup.List.CheckedItems)
             availableFor     = @($availGroup.List.CheckedItems)
             uninstallFor     = @($uninstGroup.List.CheckedItems)
@@ -1234,6 +1292,10 @@ function Global:Show-AppEditor {
     $editorStateBox.Get = {
         @(
             $txtName.Text.Trim(), $txtWinget.Text.Trim(), $txtId.Text.Trim(),
+            # In here too, or pointing an app at its package and closing
+            # would discard it without the editor thinking anything had
+            # changed - which is the one way to lose an edit silently.
+            $txtAppPackagePath.Text.Trim(),
             (@($reqGroup.List.CheckedItems) -join "`n"),
             (@($availGroup.List.CheckedItems) -join "`n"),
             (@($uninstGroup.List.CheckedItems) -join "`n"),

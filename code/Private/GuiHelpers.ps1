@@ -1319,7 +1319,7 @@ function Global:Update-Grid {
         # Resolved once and reused for both the Status warning and the
         # Folder column below, rather than searching the filesystem twice
         # per uncommon app on every grid refresh.
-        $pkg = if ($needsPackageCheck) { Resolve-AppPackagePath -AppName $app.appName -Uncommon $true -Index $packageIndexForRefresh } else { $null }
+        $pkg = if ($needsPackageCheck) { Resolve-AppPackagePath -AppName $app.appName -Uncommon $true -Index $packageIndexForRefresh -PackagePath $app.packagePath } else { $null }
 
         # Computed once, reused for both the Status note below and the
         # separate Custom Config column - same check, no reason to run

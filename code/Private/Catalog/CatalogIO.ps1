@@ -78,6 +78,16 @@ function Global:ConvertTo-AppRecord {
         # any app this hasn't been fetched for.
         intuneAppType    = [string]$Raw.intuneAppType
         intuneAppVersion = [string]$Raw.intuneAppVersion
+        # Where this app's .intunewin actually is, when it is not where
+        # Resolve-AppPackagePath would predict from the app's name. Blank
+        # for almost every app, and blank is the right default: a derived
+        # path follows a rename, a stored one does not. It exists for the
+        # cases the prediction genuinely cannot reach - a package built
+        # elsewhere, kept on a share, or a folder holding more than one
+        # .intunewin, which that resolver refuses to guess between.
+        #
+        # Either a .intunewin file or a folder containing exactly one.
+        packagePath      = [string]$Raw.packagePath
         # Filtered, not just wrapped in @() - a missing/null field in the
         # source JSON (an older catalog entry from before groups existed,
         # or hand-edited JSON) makes $Raw.requiredFor itself $null, and
