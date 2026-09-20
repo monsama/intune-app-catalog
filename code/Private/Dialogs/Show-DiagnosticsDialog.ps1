@@ -389,13 +389,24 @@ function Global:Show-DiagnosticsDialog {
         # row by, which left the buttons stranded 70px above the edge with
         # the status line alone underneath them.
         $lblStatus.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
+        # The same shape as the other four check tabs: one row under the
+        # intro with the status on the left and the buttons that act on
+        # this check at its right, then the content filling everything
+        # below. This tab used to put both at the bottom, which made it
+        # the odd one out of five - and put "Run diagnostics" level with
+        # the other tabs' "Add to catalog", mixing a button that fetches
+        # with buttons that change things.
+        $lblStatus.Location = New-Object System.Drawing.Point(15,70)
+        $lblStatus.Size = New-Object System.Drawing.Size(360,24)
+        $btnPrereqs.Location = New-Object System.Drawing.Point(395,66)
+        $btnRun.Location = New-Object System.Drawing.Point(545,66)
         foreach ($sideButton in @($btnPrereqs, $btnRun)) {
             $sideButton.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
         }
+        $rtbLog.Location = New-Object System.Drawing.Point(15,100)
         $HostTabPage.Tag = @{
+            # Nothing below it now, so it fills all the way down.
             Fill        = $rtbLog
-            FillStopAbove = $btnPrereqs
-            FillPushDown = $true
             OnFirstShow = { $btnRun.PerformClick() }.GetNewClosure()
             # See the note on the same pair in Show-GroupDriftCheckDialog:
             # a run in progress is both "still working" and "do not close".
