@@ -77,6 +77,9 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         Assert-True (([string]$s['editorAfterAssign']) -eq '0') "assigning the ID alone generates nothing yet" $all
         Assert-True ([int]$s['editorAfterTabSwitch'] -ge 2) "switching tabs fills in the commands for a picked Winget app" $all
         Assert-True ([int]$s['editorPackagePath'] -ge 1) "and points the package at the shared init.intunewin" $all
+        # The Metadata tab's display name is built before "Add app..." has
+        # a name to build it from, so it started blank and stayed blank.
+        Assert-True ([int]$s['displayNameFollowed'] -ge 1) "the app's name fills the display name on the Metadata tab" $all
     }
     finally {
         if (-not $p.HasExited) { $p.Kill() }

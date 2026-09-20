@@ -158,11 +158,32 @@ function Global:Show-DiagnosticsDialog {
         # it's otherwise invisible from inside the app.
         $uncommonRootPath = Get-AppFolder -Kind Packages
         $expectedSafeNames = @($appsRef | Where-Object { Test-AppIsUncommon -App $_ } | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
+        # A folder an app points at DELIBERATELY is not an orphan, however
+        # it is named. Matching on names derived from the app alone
+        # reported every hand-placed package as unclaimed - including one
+        # the user had just pointed an app at - which is the opposite of
+        # what this check is for. Full paths, not leaf names, so a folder
+        # that merely shares a name with one somewhere else is not excused.
+        $claimedFolders = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::OrdinalIgnoreCase)
+        foreach ($catalogApp in $appsRef) {
+            $chosenPackage = [string]$catalogApp.packagePath
+            if (-not $chosenPackage) { continue }
+            try {
+                $claimedFolder = if (Test-Path -LiteralPath $chosenPackage -PathType Container) { $chosenPackage } else { Split-Path -Parent $chosenPackage }
+                if ($claimedFolder) { [void]$claimedFolders.Add([IO.Path]::GetFullPath($claimedFolder).TrimEnd('\')) }
+            }
+            catch { }
+        }
         $orphanFolders = @()
         if (Test-Path $uncommonRootPath) {
-            $orphanFolders = @(Get-ChildItem -Path $uncommonRootPath -Directory -ErrorAction SilentlyContinue | Where-Object { $expectedSafeNames -notcontains $_.Name })
+            $orphanFolders = @(Get-ChildItem -Path $uncommonRootPath -Directory -ErrorAction SilentlyContinue | Where-Object {
+                $expectedSafeNames -notcontains $_.Name -and -not $claimedFolders.Contains($_.FullName.TrimEnd('\'))
+            })
         }
-        & $appendLine "$(if ($orphanFolders.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($orphanFolders.Count) folder(s) under app-packages with no matching catalog entry" $(if ($orphanFolders.Count -eq 0) { $okColor } else { $infoColor })
+        # [INFO], and worded as "nothing points at them" - these are
+        # leftovers from a renamed or removed app, or build output nobody
+        # cleaned up. Harmless, just invisible from inside the app.
+        & $appendLine "$(if ($orphanFolders.Count -eq 0) { '[OK]' } else { '[INFO]' }) $($orphanFolders.Count) folder(s) under app-packages that no catalog entry points at - leftovers from a renamed or removed app, safe to delete once you have checked them" $(if ($orphanFolders.Count -eq 0) { $okColor } else { $infoColor })
         foreach ($f in $orphanFolders) { & $appendLine "    - $($f.Name)" $infoColor }
 
         if (-not $credsOk) {

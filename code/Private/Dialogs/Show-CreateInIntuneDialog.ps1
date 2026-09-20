@@ -635,6 +635,9 @@ function Global:Show-CreateInIntuneDialog {
     # further down can tell "still the value we put there" from "the user
     # typed this". Only the former is ever overwritten.
     $generatedBox = @{
+        # What the display name was last set to from the catalog name, so
+        # a name deliberately made different here stops following it.
+        Name      = [string]$AppName
         Install   = [string]$defaults.installCommand
         Uninstall = [string]$defaults.uninstallCommand
         Detection = $(if ($defaults.detectionRule) { ConvertTo-DisplayLineEndings $defaults.detectionRule.Script_Content } else { '' })
@@ -807,6 +810,24 @@ function Global:Show-CreateInIntuneDialog {
     #
     # Anything typed by hand is left exactly as typed; only a field still
     # holding the previously generated value is refreshed.
+    # The display name Intune will show, following the catalog name typed
+    # on the editor's first tab. "Add app..." builds this form before that
+    # name exists, so it started blank and stayed blank - you typed the
+    # app's name, moved to Metadata, and found the field empty.
+    #
+    # It follows only while the two still agree. A display name
+    # deliberately made different from the catalog name is a real choice -
+    # the same rule the generated commands below use.
+    $retargetAppName = {
+        param([string]$NewName)
+        $trimmedName = ([string]$NewName).Trim()
+        if (-not $trimmedName) { return }
+        if ($txtCreateName.Text.Trim() -eq $generatedBox.Name) {
+            $txtCreateName.Text = $trimmedName
+        }
+        $generatedBox.Name = $trimmedName
+    }.GetNewClosure()
+
     $retargetWingetId = {
         param([string]$NewWingetId)
         if ($isDuplicate) { return }
@@ -3439,6 +3460,8 @@ function Global:Show-CreateInIntuneDialog {
             # Called by the editor when its own Winget ID field changes -
             # these tabs were built before there was an ID to build from.
             RetargetWingetId = $retargetWingetId
+            # Same for the app's name, which fills the display name here.
+            RetargetAppName  = $retargetAppName
         }
     }
     $dlg.Add_Shown({ $txtCreateName.Focus() }.GetNewClosure())

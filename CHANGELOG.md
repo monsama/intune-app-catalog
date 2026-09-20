@@ -1,5 +1,75 @@
 # Changelog
 
+## 1.4.4
+
+### Fixes
+
+- **"Save local copies" hung, and could have deleted your local copies.**
+  Two separate faults. The save unrolled a generic list with `@(...)`,
+  which throws "Argument types do not match"; nothing caught it, so the
+  exception escaped the timer driving the save and the dialog sat on
+  "Reading 'x' (1 of 1)..." with no error and no way forward. And the
+  save *prunes* - the folder is the catalog, so files not in the set are
+  removed - which meant a failed read would have deleted the local copy
+  it had just failed to read. It now prunes only when every script was
+  read, and says so when it doesn't.
+- **A logging failure could take the app down with it.** A dialog's log
+  box arriving empty threw "The property 'SelectionStart' cannot be found
+  on this object" at the user, and took the message it was carrying with
+  it. Logging now falls back to the main log instead of throwing - and
+  the fallback cannot throw either.
+- **The package path set in the editor was never saved.** The catalog
+  writes its JSON field by field, and that field was not in the list, so
+  it read back, showed in the editor and vanished on save. The catalog
+  table also ignored it for any app with a Winget ID.
+- **"Catalog groups: N not found" counted every group, not the missing
+  ones** - a red finding for a catalog with nothing wrong with it.
+- **Packages you placed by hand were reported as orphans.** The check
+  matched folder names derived from the app and knew nothing about a
+  package path you had set.
+
+### The editor fills in what it can
+
+- **The app's name now fills the display name** on the Metadata tab, and
+  a Winget ID entered after the fact fills the install command,
+  uninstall command and detection script. Both are built before "Add
+  app..." has anything to build them from, so both used to stay blank.
+  Either stops following the moment you make it deliberately different.
+
+### Plainer answers
+
+- **Checks says what it found**, not just that it finished: "3 app(s)
+  differ", "2 group name(s) don't exist in Entra ID - those assignments
+  reach nobody". Findings carry their consequence, because a count on its
+  own does not tell you whether it matters today.
+- **Nothing runs until asked.** Opening a tab used to start its check, so
+  clicking along the strip fired off four of them. Every tab has its own
+  button, and says "Not checked yet" until it has actually run - an empty
+  grid reads as "nothing wrong" to anyone who did not watch it start.
+- **The long checks can be stopped** - winget, Sync check and the Audit.
+  What was already done is kept.
+- **One "New script..."**, with "Save locally" beside "Create in Intune"
+  in the editor, rather than two buttons that opened the same editor and
+  differed only in where the result went.
+
+### While in there
+
+Platform scripts and Prerequisites moved onto the toolbar; "Look up App
+IDs...", "Open other folder..." and the Verify submenu left it. Check
+tabs run broad to deep. Dismiss buttons are one height throughout, the
+progress bars have room around them, four file pickers open somewhere
+sensible rather than wherever Windows last was, and eight buttons whose
+consequence was not in their label gained a tooltip. Favorites are
+"groups or users", which they always were.
+
+### For maintainers
+
+`GraphContract.Tests.ps1` checks the 57 Graph properties this app depends
+on against Microsoft's published `$metadata`, weekly and on demand, so a
+rename is news from CI rather than from a failed deployment. It catches
+removals and renames; a property Graph still declares but no longer
+accepts is beyond it, and the manifest says so.
+
 ## 1.4.3
 
 ### Fixes

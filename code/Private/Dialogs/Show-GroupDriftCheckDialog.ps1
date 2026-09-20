@@ -144,8 +144,17 @@ function Global:Show-GroupDriftCheckDialog {
             [void]$grid.Rows.Add($r.Name, $status, ($usage[$r.Name] -join ", "))
         }
 
-        $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
-        $lblStatus.Text = "$($usage.Keys.Count) group name(s) referenced in the catalog - $missingCount not found in Entra ID."
+        # A count on its own tells nobody what to do about it. What it
+        # means: an app assigned to a name Entra ID does not have cannot be
+        # assigned to anybody, so that assignment silently does nothing.
+        if ($missingCount -gt 0) {
+            $lblStatus.ForeColor = [System.Drawing.Color]::Firebrick
+            $lblStatus.Text = "$missingCount of $($usage.Keys.Count) group name(s) in the catalog don't exist in Entra ID - apps assigned to them won't reach anyone. Double-click a row to see which apps use it."
+        }
+        else {
+            $lblStatus.ForeColor = [System.Drawing.Color]::SeaGreen
+            $lblStatus.Text = "All $($usage.Keys.Count) group name(s) referenced in the catalog exist in Entra ID."
+        }
     }.GetNewClosure()
 
     $btnRefresh.Add_Click({
@@ -247,7 +256,14 @@ function Global:Show-GroupDriftCheckDialog {
             BlockClose  = { -not $btnRefresh.Enabled }.GetNewClosure()
             # This grid only ever lists groups it could NOT find, so a row
             # is a finding and an empty grid is the good answer.
-            Summary     = { if ($grid.Rows.Count -gt 0) { "$($grid.Rows.Count) group(s) not found" } else { "" } }.GetNewClosure()
+            # Says what it means, not just how many. "5 groups not found"
+            # left the reader with a number and no idea what to do with
+            # it; the consequence is the part that decides whether this
+            # matters today.
+            Summary     = {
+                $missing = @($grid.Rows | Where-Object { [string]$_.Cells['Status'].Value -eq 'Not found in Entra ID' }).Count
+                if ($missing -gt 0) { "$missing group name(s) don't exist in Entra ID - those assignments reach nobody" } else { "" }
+            }.GetNewClosure()
         }
         return
     }

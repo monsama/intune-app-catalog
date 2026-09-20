@@ -114,6 +114,8 @@ function Global:Show-AppEditor {
     $dlg.Controls.Add($lblName)
 
     $txtName = New-Object System.Windows.Forms.TextBox
+    # Named for DeployDefaultsHarness, same as $txtWingetId below.
+    $txtName.Name = 'txtAppName'
     $txtName.Location = New-Object System.Drawing.Point(15,35)
     $txtName.Size = New-Object System.Drawing.Size(430,24)
     $txtName.Text = if ($ExistingApp) { $ExistingApp.appName } else { "" }
@@ -911,6 +913,23 @@ function Global:Show-AppEditor {
         # instead, because there are two ways this field changes and only
         # one of them involves the keyboard:
         $txtWinget.Add_Leave($syncWingetId)
+
+        # The app's name fills the display name on the Metadata tab, for
+        # the same reason and by the same route: that tab is built before
+        # "Add app..." has a name to build it from.
+        if ($deployHost.RetargetAppName) {
+            $retargetNameRef = $deployHost.RetargetAppName
+            $nameBoxRef = $txtName
+            $lastNameBox = @{ Value = $txtName.Text.Trim() }
+            $syncAppName = {
+                $nowName = $nameBoxRef.Text.Trim()
+                if ($nowName -eq $lastNameBox.Value) { return }
+                $lastNameBox.Value = $nowName
+                & $retargetNameRef $nowName
+            }.GetNewClosure()
+            $txtName.Add_Leave($syncAppName)
+            $editorTabs.Add_SelectedIndexChanged($syncAppName)
+        }
         # ...and "Search winget..." assigns .Text directly (see
         # $btnSearchWinget above), which raises no Leave at all - the field
         # was never focused. Switching tabs is the moment the generated
