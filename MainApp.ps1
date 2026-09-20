@@ -655,8 +655,8 @@ $Global:App.TxtSearch.AccessibleName = "Search apps in this catalog"
 # machine, the tenant, and getting this app set up - so the title answers
 # "where would that button live?" before you read the buttons.
 $gbCatalog = New-ToolbarGroup -Title "Catalog" -Buttons @($btnNew, $btnEdit, $btnReload)
-$gbIntune = New-ToolbarGroup -Title "Intune" -Buttons @($Global:App.BtnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnChecks)
-$gbSetup = New-ToolbarGroup -Title "Setup" -Buttons @($btnCertSetup, $btnGettingStarted)
+$gbIntune = New-ToolbarGroup -Title "Intune" -Buttons @($Global:App.BtnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnChecks, $btnPlatformScripts)
+$gbSetup = New-ToolbarGroup -Title "Setup" -Buttons @($btnCertSetup, $btnPrerequisites, $btnGettingStarted)
 
 # Builds one ToolStripMenuItem submenu from a list of {Text;Btn} pairs -
 # each item just PerformClick()s the real button (still fully wired, just
@@ -668,7 +668,6 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Catalog maintenance" -Tips $toolbarTips -Items @(
     @{ Text = $Global:App.BtnDelete.Text; Btn = $Global:App.BtnDelete }
     @{ Text = $Global:App.BtnSave.Text; Btn = $Global:App.BtnSave }
-    @{ Text = $btnOpen.Text; Btn = $btnOpen }
     @{ Text = $btnFavoriteGroups.Text; Btn = $btnFavoriteGroups }
 )))
 # "Look up App IDs..." and "Intune sync check..." are deliberately NOT
@@ -683,24 +682,16 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Intune" -Tips $toolbarTips -Items @(
     @{ Text = $btnBatchEdit.Text; Btn = $btnBatchEdit }
     @{ Text = $btnDefaultValues.Text; Btn = $btnDefaultValues }
-    @{ Text = $btnPlatformScripts.Text; Btn = $btnPlatformScripts }
 )))
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Entra ID" -Tips $toolbarTips -Items @(
     @{ Text = $btnGroupManager.Text; Btn = $btnGroupManager }
 )))
-# Every read-only "check something" action grouped together here,
-# regardless of which system it happens to touch - someone looking for
-# "check X" shouldn't need to already know whether X lives under
-# Catalog/Intune/Entra ID to find it. Four of the five are one window of
-# tabs now (Show-ChecksDialog), which is that same grouping where it
-# actually helps: in front of the user, not just in this menu.
-#
-# Prerequisites stays its own entry - it INSTALLS the missing module
-# rather than reporting on anything, it is what the other dialogs open
-# when they find the module missing, and the diagnostics tab links to it.
-[void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Verify" -Tips $toolbarTips -Items @(
-    @{ Text = $btnPrerequisites.Text; Btn = $btnPrerequisites }
-)))
+# No "Verify" submenu any more. Every read-only check is one window of
+# tabs (Show-ChecksDialog) reached from the Intune group, and the one
+# entry this submenu had left - Prerequisites - is beside Settings, which
+# is what it is: it INSTALLS the missing Graph module rather than
+# reporting on anything, and it is where the other dialogs send you when
+# they find the module gone.
 $btnMoreActions = New-Object System.Windows.Forms.Button
 $btnMoreActions.Text = "More actions..."
 # A plain Button doesn't show its ContextMenuStrip on a left click (that's
