@@ -1,0 +1,107 @@
+{
+  "_comment": [
+    "What this app relies on Microsoft Graph to keep providing.",
+    "",
+    "Every type and property here is one this app writes into a request",
+    "body or reads out of a response. GraphContract.Tests.ps1 checks each",
+    "of them against Graph's own published $metadata, so the day Microsoft",
+    "renames or removes one, a scheduled CI run says so - instead of a",
+    "deployment failing in somebody's tenant with a 400 nobody can place.",
+    "",
+    "What it catches: a property or type that is REMOVED or RENAMED.",
+    "",
+    "What it does not catch, and this was measured rather than assumed:",
+    "a property Graph still declares but no longer accepts.",
+    "minimumSupportedOperatingSystem is exactly that - replaced in practice",
+    "by minimumSupportedWindowsRelease, rejected by the API, and still",
+    "sitting in beta $metadata today. So is applicableArchitectures, which",
+    "the tenant refuses inside a PATCH; see the notes in",
+    "EmbeddedScripts/CreateApp.ps1. $metadata describes what is declared,",
+    "not what works, and only a live call against a real tenant can tell",
+    "you the difference.",
+    "",
+    "Adding a property here is a claim that the app would break without it.",
+    "Anything the app merely passes through untouched does not belong."
+  ],
+  "namespaces": {
+    "beta": [
+      {
+        "type": "win32LobApp",
+        "why": "The app object this tool creates and updates - CreateApp.ps1",
+        "properties": [
+          "displayName", "description", "publisher",
+          "installCommandLine", "uninstallCommandLine",
+          "detectionRules", "installExperience", "returnCodes",
+          "minimumFreeDiskSpaceInMB", "minimumMemoryInMB",
+          "minimumNumberOfProcessors", "minimumCpuSpeedInMHz",
+          "allowAvailableUninstall", "minimumSupportedWindowsRelease",
+          "committedContentVersion", "setupFilePath", "fileName"
+        ]
+      },
+      {
+        "type": "win32LobAppInstallExperience",
+        "why": "installExperience on the app above",
+        "properties": ["runAsAccount", "deviceRestartBehavior", "maxRunTimeInMinutes"]
+      },
+      {
+        "type": "win32LobAppReturnCode",
+        "why": "returnCodes on the app above",
+        "properties": ["returnCode", "type"]
+      },
+      {
+        "type": "win32LobAppProductCodeDetection",
+        "why": "MSI detection rule",
+        "properties": ["productCode", "productVersionOperator"]
+      },
+      {
+        "type": "win32LobAppFileSystemDetection",
+        "why": "File/folder detection rule",
+        "properties": ["path", "fileOrFolderName", "check32BitOn64System", "detectionType"]
+      },
+      {
+        "type": "win32LobAppRegistryDetection",
+        "why": "Registry detection rule",
+        "properties": ["keyPath", "check32BitOn64System", "detectionType"]
+      },
+      {
+        "type": "win32LobAppPowerShellScriptDetection",
+        "why": "Script detection rule - the default for every Winget app",
+        "properties": ["scriptContent", "enforceSignatureCheck", "runAs32Bit"]
+      },
+      {
+        "type": "mobileAppContentFile",
+        "why": "Uploading the .intunewin payload",
+        "properties": ["name", "size", "sizeEncrypted", "manifest", "isDependency"]
+      },
+      {
+        "type": "fileEncryptionInfo",
+        "why": "The encryption header that upload commits",
+        "properties": [
+          "encryptionKey", "macKey", "initializationVector", "mac",
+          "profileIdentifier", "fileDigest", "fileDigestAlgorithm"
+        ]
+      },
+      {
+        "type": "mobileAppDependency",
+        "why": "App-to-app dependencies",
+        "properties": ["targetId", "dependencyType"]
+      },
+      {
+        "type": "deviceManagementScript",
+        "why": "Platform scripts - listed, created, changed and saved locally",
+        "properties": [
+          "displayName", "description", "fileName", "scriptContent",
+          "runAsAccount", "runAs32Bit", "enforceSignatureCheck",
+          "lastModifiedDateTime"
+        ]
+      }
+    ],
+    "v1.0": [
+      {
+        "type": "group",
+        "why": "Resolving and creating the groups apps are assigned to",
+        "properties": ["displayName", "id", "mailNickname", "securityEnabled", "mailEnabled", "groupTypes"]
+      }
+    ]
+  }
+}

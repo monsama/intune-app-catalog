@@ -1,0 +1,31 @@
+# Does Graph still provide what this app relies on?
+#
+# Separate from tests.yml on purpose. This one reaches the internet and
+# can go red because of a change nobody in this repo made - which must
+# never be what a pull request sees. It runs on its own schedule, and its
+# failure is news rather than a regression.
+name: graph-contract
+
+on:
+  schedule:
+    # Mondays, early. A rename found at the start of the week is a week
+    # to react in; found on a Friday it is a weekend of not knowing.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+  push:
+    # ...and whenever the manifest or the check itself changes, because
+    # then it IS this repo's change and a pull request should see it.
+    paths:
+      - 'code/GraphContract.json'
+      - 'code/tests/GraphContract.Tests.ps1'
+      - '.github/workflows/graph-contract.yml'
+
+jobs:
+  contract:
+    name: Graph contract
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: GraphContract.Tests.ps1
+        shell: pwsh
+        run: ./code/tests/GraphContract.Tests.ps1
