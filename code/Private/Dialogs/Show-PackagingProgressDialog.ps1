@@ -100,7 +100,7 @@ function Global:Show-PackagingProgressDialog {
                 }
                 else {
                     $lblStatusRef2.Text = "Packaging finished with exit code $code - see the log above."
-                    $lblStatusRef2.ForeColor = [System.Drawing.Color]::Orange
+                    $lblStatusRef2.ForeColor = [System.Drawing.Color]::DarkOrange
                 }
             }
         }.GetNewClosure()

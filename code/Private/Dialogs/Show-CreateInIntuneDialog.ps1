@@ -768,7 +768,7 @@ function Global:Show-CreateInIntuneDialog {
     $lblAdvancedSeparator.Text = "Advanced (usually fine to leave as-is)"
     $lblAdvancedSeparator.Location = New-Object System.Drawing.Point(595,283)
     $lblAdvancedSeparator.AutoSize = $true
-    $lblAdvancedSeparator.ForeColor = [System.Drawing.Color]::Gray
+    $lblAdvancedSeparator.ForeColor = [System.Drawing.Color]::DimGray
     $lblAdvancedSeparator.Font = New-Object System.Drawing.Font($lblAdvancedSeparator.Font, [System.Drawing.FontStyle]::Italic)
     $scrollPanel.Controls.Add($lblAdvancedSeparator)
 
@@ -793,7 +793,7 @@ function Global:Show-CreateInIntuneDialog {
     $lblSetDefaultsHint.Text = "Resets install/uninstall/detection, architecture, min OS, requirements, and return codes to this app's standard Winget defaults - free-text fields (description, publisher, notes, ...) are left alone."
     $lblSetDefaultsHint.Location = New-Object System.Drawing.Point(825,310)
     $lblSetDefaultsHint.Size = New-Object System.Drawing.Size(445,40)
-    $lblSetDefaultsHint.ForeColor = [System.Drawing.Color]::Gray
+    $lblSetDefaultsHint.ForeColor = [System.Drawing.Color]::DimGray
     $lblSetDefaultsHint.Font = New-Object System.Drawing.Font($lblSetDefaultsHint.Font.FontFamily, 7.5)
     $lblSetDefaultsHint.Visible = (-not $Uncommon)
 

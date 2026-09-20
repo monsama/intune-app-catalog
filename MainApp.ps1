@@ -1007,7 +1007,7 @@ $Global:App.Grid.Add_CellFormatting({
             $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
         }
         elseif ($val -eq "Never audited") {
-            $e.CellStyle.ForeColor = [System.Drawing.Color]::Gray
+            $e.CellStyle.ForeColor = [System.Drawing.Color]::DimGray
             $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Italic)
         }
     }
