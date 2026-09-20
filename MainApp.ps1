@@ -580,7 +580,7 @@ $btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text =
 $btnBatchEdit = New-Object System.Windows.Forms.Button; $btnBatchEdit.Text = "Batch edit Intune fields..."
 $btnBatchDeploy = New-Object System.Windows.Forms.Button; $btnBatchDeploy.Text = "&Batch deploy..."
 $btnGroupManager = New-Object System.Windows.Forms.Button; $btnGroupManager.Text = "Group manager..."
-$btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.Text = "Favorite groups..."
+$btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.Text = "Favorite groups or users..."
 # One button for all four read-only checks (dependencies, catalog groups
 # against Entra ID, Winget IDs, diagnostics): they are tabs of one window
 # now - see Show-ChecksDialog. Each still opens standalone if called that
@@ -614,7 +614,7 @@ $toolbarTips.SetToolTip($btnBatchAssign, "Add a favorite group to multiple apps 
 $toolbarTips.SetToolTip($btnBatchEdit, "Change one or more fields (architecture, min OS, requirements, restart behavior, return codes, dependencies) across multiple deployed Win32 apps at once, then push each one to Intune.")
 $toolbarTips.SetToolTip($btnBatchDeploy, "Create multiple apps in Intune, in dependency order. Uses metadata saved via 'Save for later...' where an app has it, otherwise the same defaults Deploy to Intune's own form would.")
 $toolbarTips.SetToolTip($btnGroupManager, "Create, update, or delete an Entra ID group and manage its members.")
-$toolbarTips.SetToolTip($btnFavoriteGroups, "Pick which groups show up as ready-to-tick options in every app's Required/Available/Uninstall lists.")
+$toolbarTips.SetToolTip($btnFavoriteGroups, "Pick which groups and users show up as ready-to-tick options in every app's Required/Available/Uninstall lists.")
 $toolbarTips.SetToolTip($Global:App.BtnRunLaunch, "Build the .intunewin package(s) for the selected (or all) uncommon apps.")
 $toolbarTips.SetToolTip($btnCertSetup, "Configure the Tenant ID, Client ID, and certificate used to connect to Microsoft Graph.")
 $toolbarTips.SetToolTip($btnDefaultValues, "Change the computed defaults every new Winget app starts with (architecture, min OS, requirements, return codes, ...). Doesn't touch any app already saved or deployed.")

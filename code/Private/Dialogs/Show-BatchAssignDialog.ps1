@@ -131,7 +131,7 @@ function Global:Show-BatchAssignDialog {
     $dlg.Controls.Add($btnViewDetails)
 
     $btnAddFavoriteGroup = New-Object System.Windows.Forms.Button
-    $btnAddFavoriteGroup.Text = "+ Add favorite group..."
+    $btnAddFavoriteGroup.Text = "+ Add favorite..."
     $btnAddFavoriteGroup.Location = New-Object System.Drawing.Point(180,476)
     $btnAddFavoriteGroup.Size = New-Object System.Drawing.Size(180,32)
     $dlg.Controls.Add($btnAddFavoriteGroup)

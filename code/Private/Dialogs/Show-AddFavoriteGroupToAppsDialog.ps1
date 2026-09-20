@@ -2,7 +2,7 @@ function Global:Show-AddFavoriteGroupToAppsDialog {
     param([object[]]$CandidateApps)
 
     if ($Global:App.FavoriteGroups.Count -eq 0) {
-        [System.Windows.Forms.MessageBox]::Show("No favorite groups set yet - use `"Favorite groups...`" on the toolbar to pick some first.", "No favorite groups", "OK", "Information") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("No favorites set yet - use `"Favorite groups or users...`" on the toolbar to pick some first.", "No favorites", "OK", "Information") | Out-Null
         return $null
     }
 
@@ -12,7 +12,7 @@ function Global:Show-AddFavoriteGroupToAppsDialog {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
-    $dlg.Text = "Add favorite group to apps"
+    $dlg.Text = "Add favorite to apps"
     $dlg.ClientSize = New-Object System.Drawing.Size(460, 700)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"

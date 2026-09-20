@@ -6,7 +6,7 @@ function Global:Show-FavoriteGroupsManager {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
-    $dlg.Text = "Favorite groups"
+    $dlg.Text = "Favorite groups or users"
     $dlg.ClientSize = New-Object System.Drawing.Size(420, 400)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
@@ -145,7 +145,7 @@ function Global:Show-FavoriteGroupsManager {
         if ($discardConfirmedBox.Value) { return }
         if (& $HasUnsavedFavoriteChanges) {
             $r = [System.Windows.Forms.MessageBox]::Show($s,
-                "Your changes to the favorite groups aren't saved. Discard them?",
+                "Your changes to the favorites aren't saved. Discard them?",
                 "Discard changes?", "YesNo", "Warning", "Button2")
             if ($r -ne "Yes") { $e.Cancel = $true }
         }
