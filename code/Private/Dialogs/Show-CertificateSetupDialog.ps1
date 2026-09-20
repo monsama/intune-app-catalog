@@ -363,6 +363,7 @@ function Global:Show-CertificateSetupDialog {
     $btnGetTool.Size = New-Object System.Drawing.Size(180,28)
     $dlg.Controls.Add($btnGetTool)
     $folderControls.Add($btnGetTool)
+    $folderTips.SetToolTip($btnGetTool, "Fetches Microsoft's Win32 Content Prep Tool (IntuneWinAppUtil.exe) into the ""Packaging tool"" folder below. Packaging any app needs it, including building init.intunewin. It used to download itself the first time packaging ran, which is fine right up until the machine has no internet at the moment you press Package - so if this machine is going somewhere without a connection, press this first.")
 
     $btnBuildShared = New-Object System.Windows.Forms.Button
     $btnBuildShared.Text = "Build init.intunewin"
@@ -370,6 +371,7 @@ function Global:Show-CertificateSetupDialog {
     $btnBuildShared.Size = New-Object System.Drawing.Size(150,28)
     $dlg.Controls.Add($btnBuildShared)
     $folderControls.Add($btnBuildShared)
+    $folderTips.SetToolTip($btnBuildShared, "Builds init.intunewin - the one package every Winget app in this catalog is deployed with. None of them use its contents: Winget does the installing on the device (Winget-Install.ps1) and the detection rule asks Winget what is there. Intune simply requires a package to be uploaded, so this is that package. Build it once; without it every Winget app fails to deploy with ""Package missing"". Needs the packaging tool - this will offer to fetch that first if it isn't here yet.")
 
     # Reads what the boxes above currently say, not what was saved, so the
     # state shown matches the folder you just picked rather than the one
@@ -381,7 +383,11 @@ function Global:Show-CertificateSetupDialog {
         $sharedLine = if ($state.SharedFound) { "Shared Winget package: found" } else { "Shared Winget package: not here yet - every Winget app needs it" }
         $lblPackagingState.Text = "$toolLine`r`n$sharedLine"
         $lblPackagingState.ForeColor = if ($state.ToolFound -and $state.SharedFound) { [System.Drawing.Color]::SeaGreen } else { [System.Drawing.Color]::DarkOrange }
-        $btnBuildShared.Enabled = $state.ToolFound
+        # Deliberately NOT disabled when the tool is missing. A disabled
+        # button shows no tooltip - WinForms sends it no mouse messages -
+        # so the one explanation of what init.intunewin even is would have
+        # been unreachable in exactly the state where it is most wanted.
+        # It fetches the tool first instead; see its click handler.
     }.GetNewClosure()
 
     $btnGetTool.Add_Click({
@@ -398,9 +404,21 @@ function Global:Show-CertificateSetupDialog {
     $btnBuildShared.Add_Click({
         $btnBuildShared.Enabled = $false
         $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
-        try { [void](New-SharedWingetPackage -LogBox $rtbUploadLog) }
+        try {
+            # The tool is what builds it, so fetch that first rather than
+            # refusing - asked, because it downloads from the internet.
+            if (-not (Get-PackagingReadiness).ToolFound) {
+                $answer = [System.Windows.Forms.MessageBox]::Show(
+                    "Building init.intunewin needs Microsoft's Win32 Content Prep Tool, which isn't here yet.`r`n`r`nDownload it from github.com/microsoft and then build?",
+                    "Packaging tool needed", "YesNo", "Question")
+                if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+                if (-not (Install-PackagingTool -LogBox $rtbUploadLog).Ok) { return }
+            }
+            [void](New-SharedWingetPackage -LogBox $rtbUploadLog)
+        }
         finally {
             $dlg.Cursor = [System.Windows.Forms.Cursors]::Default
+            $btnBuildShared.Enabled = $true
             & $refreshPackagingState
         }
     }.GetNewClosure())
