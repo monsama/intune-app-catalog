@@ -1518,7 +1518,7 @@ function Global:Start-TypeVersionBackfill {
             }
             else {
                 $nextFailedCount = $FailedCountRef + 1
-                Write-Log "[FAILED] Type/Version backfill for `"$($currentAppRef.appName)`": $errMsg`r`n" ([System.Drawing.Color]::IndianRed)
+                Write-Log "[FAILED] Type/Version backfill for `"$($currentAppRef.appName)`": $errMsg`r`n" ([System.Drawing.Color]::Tomato)
             }
             & $RunBackfillQueueBoxRef.Value -Queue $QueueRef -QueueIndex ($QueueIndexRef + 1) -UpdatedCount $nextUpdatedCount -FailedCount $nextFailedCount
         }.GetNewClosure()

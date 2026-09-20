@@ -205,7 +205,7 @@ function Global:Show-PlatformScriptsDialog {
             $orphan32Bit = if ($orphan.runAs32Bit) { "Yes" } else { "No" }
             $orphanSignature = if ($orphan.enforceSignatureCheck) { "Required" } else { "Not required" }
             $index = $grid.Rows.Add($orphan.displayName, $orphan.fileName, $orphanRunAs, $orphan32Bit, $orphanSignature, "", "Local only")
-            $grid.Rows[$index].Cells[6].Style.ForeColor = [System.Drawing.Color]::MediumBlue
+            $grid.Rows[$index].Cells[6].Style.ForeColor = [System.Drawing.Color]::SteelBlue
             $grid.Rows[$index].Cells[6].ToolTipText = "This script is in the local catalog but not in this tenant. Use Edit to review it, then save to create it in Intune."
             # Marked so Edit and Delete know there is no Intune app behind it
             $grid.Rows[$index].Tag = [pscustomobject]@{

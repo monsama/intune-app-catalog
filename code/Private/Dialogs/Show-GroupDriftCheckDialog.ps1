@@ -31,6 +31,9 @@ function Global:Show-GroupDriftCheckDialog {
     $lblStatus.Location = New-Object System.Drawing.Point(15,62)
     $lblStatus.Size = New-Object System.Drawing.Size(480,20)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+    # An empty result must not read as a clean one to somebody who did
+    # not watch this open.
+    $lblStatus.Text = "Not checked yet - press Refresh from Entra ID."
     $dlg.Controls.Add($lblStatus)
 
     $btnRefresh = New-Object System.Windows.Forms.Button
@@ -235,7 +238,7 @@ function Global:Show-GroupDriftCheckDialog {
         # a timer is still ticking against these controls.
         $HostTabPage.Tag = @{
             Fill        = $grid
-            OnFirstShow = { $btnRefresh.PerformClick() }.GetNewClosure()
+            RunAll      = { $btnRefresh.PerformClick() }.GetNewClosure()
             # IsBusy is "still working" (what Run all waits on before
             # starting the next check); BlockClose is the stricter "must not
             # be interrupted". Here they are the same condition, because a

@@ -23,7 +23,7 @@ function Global:Show-ChecksDialog {
       The other four cost real time each (one reads every catalog group
       out of Entra ID, one shells out to winget per app), so those run
       when their tab is first opened - a page hands its work to this host
-      as $Page.Tag.OnFirstShow, says when it must not be interrupted as
+      as $Page.Tag.RunAll, says when it must not be interrupted as
       $Page.Tag.BlockClose, and names its content control as $Page.Tag.Fill.
 
       Each tab is still its own dialog, unchanged, moved onto a page - see
@@ -162,19 +162,17 @@ function Global:Show-ChecksDialog {
     $runAllTip = New-Object System.Windows.Forms.ToolTip
     $runAllTip.SetToolTip($btnRunAll, "Runs each of these in turn, never two at once - some of them ask Entra ID for the same thing and a second request while one is in flight is refused. The Audit is the slow one: it reads every deployed app individually.")
 
-    # Each page's check runs once, the first time that page is looked at.
-    # Keyed on the page object itself rather than an index, so reordering
-    # the tabs above can't quietly re-run one or skip another.
+    # Nothing here starts on its own. Looking at a tab used to run its
+    # check, which meant clicking along the strip to see what was in this
+    # window fired off four of them - several minutes of Graph traffic
+    # nobody asked for, and no way to take it back. Every tab has its own
+    # button; this window has "Run all checks" for the rest.
+    #
+    # Kept only to remember which tabs a Run all actually ran, so the
+    # summary at the end reports those and stays quiet about the others.
+    # Keyed on the page object rather than an index, so reordering the
+    # tabs above cannot make it report the wrong one.
     $alreadyRun = @{}
-    $runPage = {
-        param($page)
-        if (-not $page) { return }
-        $tag = $page.Tag
-        if ($tag -isnot [hashtable] -or -not $tag.OnFirstShow) { return }
-        if ($alreadyRun.ContainsKey($page)) { return }
-        $alreadyRun[$page] = $true
-        & $tag.OnFirstShow
-    }.GetNewClosure()
     # Asked for a particular tab - "Run audit..." on a grid row still lands
     # on Audit. Matched on the part after the group prefix as well as the
     # whole title, so a caller can say 'Audit' without knowing it is filed
@@ -185,7 +183,7 @@ function Global:Show-ChecksDialog {
             if ($page.Text -eq $StartTab -or $bare -eq $StartTab) { $tabs.SelectedTab = $page; break }
         }
     }
-    $tabs.Add_SelectedIndexChanged({ & $runPage $tabs.SelectedTab }.GetNewClosure())
+
     $dlg.Add_Shown({
         # Each tab's content takes the height its own dialog's hidden
         # button row used to have. Done here rather than while building,
@@ -200,7 +198,6 @@ function Global:Show-ChecksDialog {
                 Expand-HostedContent -Control $tag.Fill -Page $page -StopAbove $tag.FillStopAbove -PushDown:([bool]$tag.FillPushDown)
             }
         }
-        & $runPage $tabs.SelectedTab
     }.GetNewClosure())
 
     # "Run all checks" - one click for the whole window, for when the

@@ -133,7 +133,7 @@ function Global:Write-SettingsFile {
         return $true
     }
     catch {
-        Write-Log "[FAILED] Could not save settings: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::IndianRed)
+        Write-Log "[FAILED] Could not save settings: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
         [System.Windows.Forms.MessageBox]::Show("Could not save settings: $($_.Exception.Message)", "Save failed", "OK", "Error") | Out-Null
         return $false
     }

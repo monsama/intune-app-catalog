@@ -658,6 +658,8 @@ function Global:Show-CertificateSetupDialog {
             $sfd.Filter = "Certificate files (*.cer)|*.cer"
             $sfd.FileName = "Intune-Deployment.cer"
             $sfd.Title = "Export public certificate (upload this to Entra ID)"
+            # Beside the app, where the settings file it belongs with is.
+            if (Test-Path -LiteralPath $Global:App.RootPath) { $sfd.InitialDirectory = $Global:App.RootPath }
             if ($sfd.ShowDialog($dlg) -eq [System.Windows.Forms.DialogResult]::OK) {
                 Export-Certificate -Cert $newCert -FilePath $sfd.FileName | Out-Null
                 [System.Windows.Forms.MessageBox]::Show(
