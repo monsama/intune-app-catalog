@@ -283,7 +283,7 @@ function Global:Show-CertificateSetupDialog {
     # The folder rows start below the packaging block, which is pinned to
     # the top of the page: it is the part with something to DO on it, and
     # the part that must not be the one below the fold.
-    $folderRowY = 107
+    $folderRowY = 111
 
     $folderBoxes = @{}
     foreach ($spec in (Get-AppFolderKinds)) {
@@ -346,7 +346,10 @@ function Global:Show-CertificateSetupDialog {
     $folderControls.Add($lblPackagingHead)
     $lblPackagingState = New-Object System.Windows.Forms.Label
     $lblPackagingState.Location = New-Object System.Drawing.Point(15,61)
-    $lblPackagingState.Size = New-Object System.Drawing.Size(520,30)
+    # 38, not 30: two lines of text need more than 15px each, and at 30
+    # the second line lost the bottom of every descender - "Winget" read
+    # as "Winqet".
+    $lblPackagingState.Size = New-Object System.Drawing.Size(520,38)
     $dlg.Controls.Add($lblPackagingState)
     $folderControls.Add($lblPackagingState)
 
