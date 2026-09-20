@@ -339,7 +339,14 @@ function Global:Register-LayoutAuditSteps {
             [pscustomobject]@{ Field = 'Install command'; Local = 'powershell.exe -ExecutionPolicy Bypass -File install.ps1 -Mode Silent -LogPath C:\Windows\Temp\7zip.log'; Intune = 'install.cmd' }
             [pscustomobject]@{ Field = 'Minimum Windows'; Local = 'Windows 10 22H2'; Intune = 'Windows 11 22H2' })
     }.GetNewClosure()
-    Add-LayoutAuditStep 'Set default values (confirm)' { Show-SetDefaultsConfirmDialog -Lines @('Install context: System -> User', 'Minimum Windows: Windows 10 22H2 -> Windows 11 22H2', 'Return codes: 5 -> 6 rows') -ParentForm $Global:App.Form }
+    # One realistically long line among the short ones - an install command
+    # is the usual reason a row here is wider than the window, and a
+    # fixture of three short rows is how that went unnoticed.
+    Add-LayoutAuditStep 'Set default values (confirm)' { Show-SetDefaultsConfirmDialog -Lines @(
+        'Install context: System -> User',
+        'Install command: %SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File "C:\Program Files\Winget-AutoUpdate\Winget-Install.ps1" -AppIDs "7zip.7zip"  ->  (blank)',
+        'Minimum Windows: Windows 10 22H2 -> Windows 11 22H2',
+        'Return codes: 5 -> 6 rows') -ParentForm $Global:App.Form }
     Add-LayoutAuditStep 'Pull metadata and groups' { Show-SyncMetadataDialog -ScopedIndices @($i0) }.GetNewClosure()
     Add-LayoutAuditStep 'Assign groups' { Show-TargetedAssignDialog -AppId $a0.appId -AppName $a0.appName -RequiredGroups @($a0.requiredFor) -AvailableGroups @($a0.availableFor) -UninstallGroups @() }.GetNewClosure()
     Add-LayoutAuditStep 'Assign groups (long names)' { Show-TargetedAssignDialog -AppId $long.appId -AppName $long.appName -RequiredGroups @($longGroup) -AvailableGroups @() -UninstallGroups @() }.GetNewClosure()
