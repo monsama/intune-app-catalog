@@ -311,7 +311,7 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'Dependency overview' { Show-DependencyOverviewDialog }
     Add-LayoutAuditStep 'Diagnostics' { Show-DiagnosticsDialog }
     Add-LayoutAuditStep 'Add group or user' { Show-EntraMemberPicker }
-    Add-LayoutAuditStep 'Favorite groups' { Show-FavoriteGroupsManager }
+    Add-LayoutAuditStep 'Favorite groups or users' { Show-FavoriteGroupsManager }
     Add-LayoutAuditStep 'Getting started' { Show-GettingStartedGuideDialog }
     Add-LayoutAuditStep 'Group name check' { Show-GroupDriftCheckDialog }
     Add-LayoutAuditStep 'Checks (all seven)' { Show-ChecksDialog }
