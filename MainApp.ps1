@@ -665,10 +665,17 @@ $gbSetup = New-ToolbarGroup -Title "Setup" -Buttons @($btnCertSetup, $btnPrerequ
 # already uses.
 
 $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
+# Sorted by label rather than listed in an order: three unrelated actions
+# have no order that means anything, and alphabetical is the one a reader
+# can predict. Sorted here rather than written out in order so it stays
+# sorted when a label changes - "Force save catalog" was "Save catalog"
+# once, which moved it.
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Catalog maintenance" -Tips $toolbarTips -Items @(
-    @{ Text = $Global:App.BtnDelete.Text; Btn = $Global:App.BtnDelete }
-    @{ Text = $Global:App.BtnSave.Text; Btn = $Global:App.BtnSave }
-    @{ Text = $btnFavoriteGroups.Text; Btn = $btnFavoriteGroups }
+    @(
+        @{ Text = $Global:App.BtnDelete.Text; Btn = $Global:App.BtnDelete }
+        @{ Text = $Global:App.BtnSave.Text; Btn = $Global:App.BtnSave }
+        @{ Text = $btnFavoriteGroups.Text; Btn = $btnFavoriteGroups }
+    ) | Sort-Object { [string]$_.Text }
 )))
 # "Look up App IDs..." and "Intune sync check..." are deliberately NOT
 # here any more - both are tabs of the Checks window, and the lookup one
