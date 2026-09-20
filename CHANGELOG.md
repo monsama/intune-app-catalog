@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.4.2
+
+### Where this app keeps things
+
+**Settings... > Folders** lets each folder this app writes to be pointed
+somewhere else: the catalog, built packages, the shared Winget package,
+the packaging tool, platform script copies, logs and catalog backups.
+They were all built as `data\<something>` next to the app, at ten call
+sites, with no way to move any of them - which is wrong in both
+directions on a machine where the app lives under Program Files, or where
+the catalog belongs on a share and the logs do not. Leave a box empty and
+that folder follows its default, including if a later version moves it.
+
+### The suite brings its own packaging
+
+The two files needed before anything can be packaged have never shipped
+with this app, and neither had a button:
+
+- **Download packaging tool** fetches Microsoft's Win32 Content Prep Tool.
+  It used to download itself silently the first time packaging ran, which
+  is fine until the machine has no internet at the moment you press
+  Package.
+- **Build init.intunewin** makes the one package every Winget app deploys
+  with. A missing one failed every Winget app with "Package missing" and
+  nothing offered to fix it. **Deploy** now offers to build it - and to
+  fetch the tool first if that is missing too - at the moment a Winget app
+  finds it gone. Batch Deploy says where the fix is instead of listing
+  every common app as "package not built yet".
+
+### Edit default values says what each field shipped as
+
+The page showed the values in force but never what they started from, so
+the only way back from one changed field was **Reset to built-in
+defaults**, which threw away the other eleven as well. Anything that
+differs from the shipped value now carries a **built-in: x64** link that
+puts back just that one field. Requirements moved from four boxes across
+one row to two rows of two to make room, and the return-codes table fills
+its own width instead of sitting in the left half of it.
+
+### Fixes
+
+- **The Settings window hid its last folder row and wasted 86px under the
+  buttons.** Its log sat 60px too high, painting over the bottom of the
+  tab page below it. Both were the same mistake, measured from the top of
+  a window whose height is fixed by the smallest screen it has to fit.
+
 ## 1.4.1
 
 ### Fixes for 1.4.0
