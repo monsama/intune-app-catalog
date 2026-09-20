@@ -136,8 +136,8 @@ function Global:Show-WingetHealthCheckDialog {
 
     $btnCopy = New-Object System.Windows.Forms.Button
     $btnCopy.Text = "Copy list"
-    $btnCopy.Location = New-Object System.Drawing.Point(15, 460)
-    $btnCopy.Size = New-Object System.Drawing.Size(120, 30)
+    $btnCopy.Location = New-Object System.Drawing.Point(15,458)
+    $btnCopy.Size = New-Object System.Drawing.Size(120,32)
     $dlg.Controls.Add($btnCopy)
 
     # Knowing an ID has stopped resolving is only half an answer - the
@@ -146,8 +146,8 @@ function Global:Show-WingetHealthCheckDialog {
     # offering it. Enabled only on a row that actually needs one.
     $btnFindReplacement = New-Object System.Windows.Forms.Button
     $btnFindReplacement.Text = "Find replacement..."
-    $btnFindReplacement.Location = New-Object System.Drawing.Point(145, 460)
-    $btnFindReplacement.Size = New-Object System.Drawing.Size(160, 30)
+    $btnFindReplacement.Location = New-Object System.Drawing.Point(145,458)
+    $btnFindReplacement.Size = New-Object System.Drawing.Size(160,32)
     $btnFindReplacement.Enabled = $false
     $dlg.Controls.Add($btnFindReplacement)
     $replacementTip = New-Object System.Windows.Forms.ToolTip
@@ -183,8 +183,8 @@ function Global:Show-WingetHealthCheckDialog {
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(660, 460)
-    $btnClose.Size = New-Object System.Drawing.Size(85, 30)
+    $btnClose.Location = New-Object System.Drawing.Point(660,458)
+    $btnClose.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnClose)
 
     $stateBox = @{ Running = $false; Cancelled = $false }

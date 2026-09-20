@@ -269,8 +269,8 @@ function Global:Show-AppEditor {
     # defined right below, next to the rest of this button's own logic.
     $btnDeleteFromIntune = New-Object System.Windows.Forms.Button
     $btnDeleteFromIntune.Text = "Delete from Intune..."
-    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(170,986)
-    $btnDeleteFromIntune.Size = New-Object System.Drawing.Size(190,30)
+    $btnDeleteFromIntune.Location = New-Object System.Drawing.Point(170,984)
+    $btnDeleteFromIntune.Size = New-Object System.Drawing.Size(190,32)
     $dlg.Controls.Add($btnDeleteFromIntune)
     $appEditorTip = New-Object System.Windows.Forms.ToolTip
 
@@ -317,7 +317,7 @@ function Global:Show-AppEditor {
     # defaults: you can see what it resolves to without that becoming an
     # override the moment you look at it.
     $lblAppPackagePath = New-Object System.Windows.Forms.Label
-    $lblAppPackagePath.Text = "Package (.intunewin) - only for an app with its own package; leave empty to use the one found by name"
+    $lblAppPackagePath.Text = "Package (.intunewin) - set this and it wins, Winget ID or not. Empty means: the shared init.intunewin for a Winget app, otherwise the one found by name."
     $lblAppPackagePath.Location = New-Object System.Drawing.Point(15,462)
     $lblAppPackagePath.AutoSize = $true
     $dlg.Controls.Add($lblAppPackagePath)
@@ -757,8 +757,8 @@ function Global:Show-AppEditor {
 
     $btnOk = New-Object System.Windows.Forms.Button
     $btnOk.Text = "Save app to catalog"
-    $btnOk.Location = New-Object System.Drawing.Point(15,986)
-    $btnOk.Size = New-Object System.Drawing.Size(150,30)
+    $btnOk.Location = New-Object System.Drawing.Point(15,984)
+    $btnOk.Size = New-Object System.Drawing.Size(150,32)
     $dlg.Controls.Add($btnOk)
 
     # $btnDeleteFromIntune itself is created earlier, up next to
@@ -767,8 +767,8 @@ function Global:Show-AppEditor {
     # bottom row.
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(365,986)
-    $btnCancel.Size = New-Object System.Drawing.Size(90,30)
+    $btnCancel.Location = New-Object System.Drawing.Point(365,984)
+    $btnCancel.Size = New-Object System.Drawing.Size(90,32)
     $dlg.Controls.Add($btnCancel)
 
     # Only shown for an app actually opened from the grid (see
@@ -870,7 +870,12 @@ function Global:Show-AppEditor {
         Set-TextBoxPlaceholder -Box $txtAppPackagePath -Text $hint
     }
     else {
-        Set-TextBoxPlaceholder -Box $txtAppPackagePath -Text "Not needed - a Winget app deploys with the shared init.intunewin"
+        # A placeholder only shows while the box is EMPTY, so this says
+        # what happens when nothing is set - which for a Winget app is the
+        # shared package. Setting a path overrides that, deliberately:
+        # having a Winget ID is not the same as having no package of your
+        # own, and the label above says which wins.
+        Set-TextBoxPlaceholder -Box $txtAppPackagePath -Text "Empty - this Winget app deploys with the shared init.intunewin"
     }
 
     # The Intune side, as three more tabs of this same window. Its status
@@ -1189,6 +1194,8 @@ function Global:Show-AppEditor {
     $btnOk.Add_Click({ & $performSave }.GetNewClosure())
 
     $btnSaveAndDeployWinget.Add_Click({
+    $saveDeployTip = New-Object System.Windows.Forms.ToolTip
+    $saveDeployTip.SetToolTip($btnSaveAndDeployWinget, "Two things at once: saves this app to the catalog, then opens Deploy with the Winget defaults filled in. Nothing reaches Intune until you press Deploy there.")
         if (-not $txtWinget.Text.Trim()) {
             [System.Windows.Forms.MessageBox]::Show("A Winget ID is required to deploy with Winget defaults. Leave it blank and use `"Save app to catalog`" instead for a custom-install (uncommon) app.", "Winget ID required", "OK", "Warning") | Out-Null
             return

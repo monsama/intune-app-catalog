@@ -178,6 +178,8 @@ function Global:Show-BulkDeleteGroupsDialog {
     }.GetNewClosure())
 
     $btnDelete.Add_Click({
+    $bulkGroupDeleteTip = New-Object System.Windows.Forms.ToolTip
+    $bulkGroupDeleteTip.SetToolTip($btnDelete, "Deletes the checked groups from Entra ID itself, for every app and every other thing that uses them - not just this catalog. This cannot be undone from here.")
         $names = @($checkedBox.Value)
         if ($names.Count -eq 0) { return }
         $plan = @(Get-GroupDeletionPlan -GroupNames $names)

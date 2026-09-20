@@ -451,6 +451,8 @@ catch {
     $StartInstallBox.Value = $StartInstall
 
     $btnInstall.Add_Click({
+    $installTip = New-Object System.Windows.Forms.ToolTip
+    $installTip.SetToolTip($btnInstall, "Installs the Microsoft.Graph.Authentication module for the current user, from the PowerShell Gallery. Needs internet; nothing in Intune or the catalog is touched.")
         $queue = @($state.Rows[0] | Where-Object { -not $_.Version })
         if ($queue.Count -eq 0) { return }
         $state.Busy = $true

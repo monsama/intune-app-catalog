@@ -807,6 +807,8 @@ $btnDriftWarningDismiss.Size = New-Object System.Drawing.Size(80, 28)
 $btnDriftWarningDismiss.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
 $Global:App.PanelDriftWarning.Controls.Add($btnDriftWarningDismiss)
 $btnDriftWarningDismiss.Add_Click({ $Global:App.PanelDriftWarning.Visible = $false })
+$driftDismissTip = New-Object System.Windows.Forms.ToolTip
+$driftDismissTip.SetToolTip($btnDriftWarningDismiss, "Hides this banner for now. It changes nothing - the difference against Intune is still there, and the banner comes back the next time a check finds it.")
 $tabCatalog.Controls.Add($Global:App.PanelDriftWarning)
 
 # Same structure as PanelDriftWarning above, separate panel since the

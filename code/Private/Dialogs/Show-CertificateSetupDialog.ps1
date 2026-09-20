@@ -587,14 +587,14 @@ function Global:Show-CertificateSetupDialog {
 
     $btnSave = New-Object System.Windows.Forms.Button
     $btnSave.Text = "Save"
-    $btnSave.Location = New-Object System.Drawing.Point(745,681)
-    $btnSave.Size = New-Object System.Drawing.Size(80,30)
+    $btnSave.Location = New-Object System.Drawing.Point(745,679)
+    $btnSave.Size = New-Object System.Drawing.Size(80,32)
     $dlg.Controls.Add($btnSave)
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Close"
-    $btnCancel.Location = New-Object System.Drawing.Point(835,681)
-    $btnCancel.Size = New-Object System.Drawing.Size(80,30)
+    $btnCancel.Location = New-Object System.Drawing.Point(835,679)
+    $btnCancel.Size = New-Object System.Drawing.Size(80,32)
     $dlg.Controls.Add($btnCancel)
 
     # -Owner so Settings stays usable while the guide is open - the steps

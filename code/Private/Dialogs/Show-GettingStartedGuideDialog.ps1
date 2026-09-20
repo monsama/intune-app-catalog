@@ -103,8 +103,8 @@ function Global:Show-GettingStartedGuideDialog {
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(515,515)
-    $btnClose.Size = New-Object System.Drawing.Size(90,30)
+    $btnClose.Location = New-Object System.Drawing.Point(515,513)
+    $btnClose.Size = New-Object System.Drawing.Size(90,32)
     $dlg.Controls.Add($btnClose)
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     $dlg.CancelButton = $btnClose

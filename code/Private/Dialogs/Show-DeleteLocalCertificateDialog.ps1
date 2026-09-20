@@ -104,8 +104,8 @@ function Global:Show-DeleteLocalCertificateDialog {
 
     $btnDelete = New-Object System.Windows.Forms.Button
     $btnDelete.Text = "Delete selected..."
-    $btnDelete.Location = New-Object System.Drawing.Point(15,370)
-    $btnDelete.Size = New-Object System.Drawing.Size(150,28)
+    $btnDelete.Location = New-Object System.Drawing.Point(15,366)
+    $btnDelete.Size = New-Object System.Drawing.Size(150,32)
     $btnDelete.Anchor = "Bottom,Left"
     $btnDelete.Enabled = ($grid.SelectedRows.Count -gt 0)
     $dlg.Controls.Add($btnDelete)
@@ -114,8 +114,8 @@ function Global:Show-DeleteLocalCertificateDialog {
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(685,370)
-    $btnClose.Size = New-Object System.Drawing.Size(80,28)
+    $btnClose.Location = New-Object System.Drawing.Point(685,366)
+    $btnClose.Size = New-Object System.Drawing.Size(80,32)
     $btnClose.Anchor = "Bottom,Right"
     $dlg.Controls.Add($btnClose)
 

@@ -42,14 +42,14 @@ function Global:Show-GroupOnlyPicker {
 
     $btnSelect = New-Object System.Windows.Forms.Button
     $btnSelect.Text = "Select"
-    $btnSelect.Location = New-Object System.Drawing.Point(297,370)
-    $btnSelect.Size = New-Object System.Drawing.Size(80,30)
+    $btnSelect.Location = New-Object System.Drawing.Point(297,368)
+    $btnSelect.Size = New-Object System.Drawing.Size(80,32)
     $dlg.Controls.Add($btnSelect)
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(385,370)
-    $btnCancel.Size = New-Object System.Drawing.Size(80,30)
+    $btnCancel.Location = New-Object System.Drawing.Point(385,368)
+    $btnCancel.Size = New-Object System.Drawing.Size(80,32)
     $dlg.Controls.Add($btnCancel)
 
     $UpdateStatus = {

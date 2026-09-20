@@ -85,16 +85,16 @@ function Global:Show-AddFavoriteGroupToAppsDialog {
 
     $btnAdd = New-Object System.Windows.Forms.Button
     $btnAdd.Text = "Add to checked apps"
-    $btnAdd.Location = New-Object System.Drawing.Point(255,658)
-    $btnAdd.Size = New-Object System.Drawing.Size(190,30)
+    $btnAdd.Location = New-Object System.Drawing.Point(255,656)
+    $btnAdd.Size = New-Object System.Drawing.Size(190,32)
     $dlg.Controls.Add($btnAdd)
     $addTip = New-Object System.Windows.Forms.ToolTip
     $addTip.SetToolTip($btnAdd, "Adds the checked group(s) to the checked apps in the LOCAL CATALOG only. Push groups to Intune afterward to assign them there too.")
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(155,658)
-    $btnCancel.Size = New-Object System.Drawing.Size(90,30)
+    $btnCancel.Location = New-Object System.Drawing.Point(155,656)
+    $btnCancel.Size = New-Object System.Drawing.Size(90,32)
     $dlg.Controls.Add($btnCancel)
 
     $resultBox = @{ Count = $null }

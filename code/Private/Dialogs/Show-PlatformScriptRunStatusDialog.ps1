@@ -84,14 +84,14 @@ function Global:Show-PlatformScriptRunStatusDialog {
 
     $btnCopy = New-Object System.Windows.Forms.Button
     $btnCopy.Text = "Copy list"
-    $btnCopy.Location = New-Object System.Drawing.Point(15, 478)
-    $btnCopy.Size = New-Object System.Drawing.Size(120, 30)
+    $btnCopy.Location = New-Object System.Drawing.Point(15,476)
+    $btnCopy.Size = New-Object System.Drawing.Size(120,32)
     $dlg.Controls.Add($btnCopy)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(760, 478)
-    $btnClose.Size = New-Object System.Drawing.Size(85, 30)
+    $btnClose.Location = New-Object System.Drawing.Point(760,476)
+    $btnClose.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnClose)
 
     $rowsBox = @{ Value = @() }

@@ -103,14 +103,14 @@ function Global:Show-AppInstallStatusDialog {
 
     $btnCopy = New-Object System.Windows.Forms.Button
     $btnCopy.Text = "Copy list"
-    $btnCopy.Location = New-Object System.Drawing.Point(15, 604)
-    $btnCopy.Size = New-Object System.Drawing.Size(120, 30)
+    $btnCopy.Location = New-Object System.Drawing.Point(15,602)
+    $btnCopy.Size = New-Object System.Drawing.Size(120,32)
     $dlg.Controls.Add($btnCopy)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(760, 604)
-    $btnClose.Size = New-Object System.Drawing.Size(85, 30)
+    $btnClose.Location = New-Object System.Drawing.Point(760,602)
+    $btnClose.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnClose)
 
     # Everything fetched, before the filter is applied - so switching the

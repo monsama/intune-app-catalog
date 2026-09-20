@@ -306,6 +306,14 @@ function Global:ConvertTo-SingleAppJson {
     if ($App.intuneAppVersion) {
         $fields.Add("  `"intuneAppVersion`": $(ConvertTo-JsonStringLiteral $App.intuneAppVersion)")
     }
+    # Written only when set, like every optional field above. This file
+    # builds its JSON field by field rather than serialising the object,
+    # so a new field that is not added here is read back (ConvertTo-
+    # AppRecord knows it), held in memory, shown in the editor - and
+    # silently dropped the moment the catalog is saved.
+    if ($App.packagePath) {
+        $fields.Add("  `"packagePath`": $(ConvertTo-JsonStringLiteral $App.packagePath)")
+    }
     $fields.Add("  `"requiredFor`": $(ConvertTo-JsonStringArray -Items @($App.requiredFor) -IndentLevel 1)")
     $fields.Add("  `"availableFor`": $(ConvertTo-JsonStringArray -Items @($App.availableFor) -IndentLevel 1)")
     $fields.Add("  `"excludeFor`": $(ConvertTo-JsonStringArray -Items @($App.excludeFor) -IndentLevel 1)")

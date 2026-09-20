@@ -168,6 +168,8 @@ function Global:Show-BulkDeleteFromIntuneDialog {
         for ($ci = 0; $ci -lt $clbApps.Items.Count; $ci++) { $clbApps.SetItemChecked($ci, $false) }
     }.GetNewClosure())
     $btnRetryFailed.Add_Click({
+    $retryFailedTip = New-Object System.Windows.Forms.ToolTip
+    $retryFailedTip.SetToolTip($btnRetryFailed, "Ticks exactly the apps that failed last time, and unticks the rest - so pressing Delete again retries those without touching the ones that already went.")
         for ($ci = 0; $ci -lt $clbApps.Items.Count; $ci++) {
             $itemName = [string]$clbApps.Items[$ci]
             $clbApps.SetItemChecked($ci, ($lastFailedBox.Names -contains $itemName))

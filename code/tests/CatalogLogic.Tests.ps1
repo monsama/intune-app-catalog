@@ -110,6 +110,20 @@ $testableFunctionNames = @(
     "Get-FriendlyMinOsRelease",
     "Test-AppHasCustomConfig",
     "ConvertTo-AppRecord",
+    # The other half of that round trip. Pure string building - it writes
+    # JSON field by field rather than serialising, which is exactly why it
+    # is worth a test.
+    "ConvertTo-SingleAppJson",
+    "ConvertTo-JsonStringArray",
+    # The funnel every dialog's log line and error goes through. They
+    # touch WinForms controls, but only ones the caller hands them - and
+    # the tests below hand them $null on purpose, which is the case that
+    # used to throw.
+    "Write-DialogLogLine",
+    "Write-DialogError",
+    "Get-DialogLogLineColor",
+    "ConvertTo-FriendlyGraphError",
+    "ConvertTo-DisplayLineEndings",
     "ConvertTo-TemplateAppRecord",
     "Get-NormalizedInstallTimeMinutes",
     "Get-GroupFieldDiffs",
@@ -1360,12 +1374,71 @@ try {
 
     Assert-True (Resolve-AppPackagePath -AppName 'Seven Zip' -Uncommon $true -PackagePath '   ').Found `
         "Resolve-AppPackagePath: a blank override means 'work it out', not 'nothing'"
+
+    # It has to survive being written and read back. ConvertTo-SingleAppJson
+    # builds its JSON field by field rather than serialising the object, so
+    # a field nobody adds there is read, held in memory, shown in the
+    # editor - and dropped silently the moment the catalog is saved. Which
+    # is exactly what happened.
+    $roundTripApp = [pscustomobject]@{
+        appId = ''; appName = 'Round Trip'; wingetId = 'Some.Winget.Id'
+        intuneAppType = ''; intuneAppVersion = ''
+        requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @()
+        metadata = $null
+        packagePath = 'D:\somewhere\else\Round-Trip.intunewin'
+    }
+    $roundTripJson = ConvertTo-SingleAppJson -App $roundTripApp
+    Assert-True ($roundTripJson -like '*packagePath*') "ConvertTo-SingleAppJson: writes packagePath when it is set"
+    $readBack = ConvertTo-AppRecord -Raw ($roundTripJson | ConvertFrom-Json)
+    Assert-Equal 'D:\somewhere\else\Round-Trip.intunewin' $readBack.packagePath `
+        "ConvertTo-AppRecord: and reads back the same path - a Winget ID does not discard it"
+
+    # ...and an app without one must not grow an empty key.
+    $plainApp = [pscustomobject]@{
+        appId = ''; appName = 'Plain'; wingetId = 'x.y'
+        intuneAppType = ''; intuneAppVersion = ''
+        requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @()
+        metadata = $null; packagePath = ''
+    }
+    Assert-True ((ConvertTo-SingleAppJson -App $plainApp) -notlike '*packagePath*') `
+        "ConvertTo-SingleAppJson: leaves packagePath out entirely when unset"
 }
 finally {
     $Global:App.RootPath = $savedRootPath
     $Global:App.AppFolders = $savedAppFolders
     Remove-Item -LiteralPath $pkgTestRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# -----------------------------------------------------------------
+# Write-DialogLogLine / Write-DialogError with nothing to write to
+# -----------------------------------------------------------------
+# A -LogBox that arrives $null is this codebase's recurring closure bug
+# showing up at the call site: an alias taken one level too high comes
+# back empty. It used to throw "The property 'SelectionStart' cannot be
+# found on this object" at the user - three times in a row in one
+# report - and take the message it was carrying with it.
+#
+# These two helpers are the funnel every dialog's log goes through, so
+# guarding them turns that whole class of bug from a crash into a line
+# in the main log.
+$Global:App.LogCaptured = New-Object System.Collections.Generic.List[string]
+function Global:Write-Log {
+    param([string]$Text, $Color)
+    $Global:App.LogCaptured.Add([string]$Text)
+}
+$Global:App.LogCaptured.Clear()
+$threw = $false
+try { Write-DialogLogLine -LogBox $null -Text "[OK] still says something`r`n" } catch { $threw = $true }
+Assert-True (-not $threw) "Write-DialogLogLine: a null log box does not throw"
+Assert-True (@($Global:App.LogCaptured | Where-Object { $_ -like '*still says something*' }).Count -eq 1) `
+    "Write-DialogLogLine: and the line goes to the main log instead of being lost"
+
+$Global:App.LogCaptured.Clear()
+$threw = $false
+try { Write-DialogError -StatusLabel $null -LogBox $null -ErrorMessage "something went wrong" } catch { $threw = $true }
+Assert-True (-not $threw) "Write-DialogError: a null status label and log box do not throw"
+Assert-True (@($Global:App.LogCaptured | Where-Object { $_ -like '*something went wrong*' }).Count -eq 1) `
+    "Write-DialogError: and the failure still reaches the main log"
 
 # =================================================================
 # Report

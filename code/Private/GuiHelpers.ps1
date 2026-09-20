@@ -758,14 +758,14 @@ function Global:Show-SimpleListPicker {
 
     $btnOk = New-Object System.Windows.Forms.Button
     $btnOk.Text = "Select"
-    $btnOk.Location = New-Object System.Drawing.Point(408,275)
-    $btnOk.Size = New-Object System.Drawing.Size(85,28)
+    $btnOk.Location = New-Object System.Drawing.Point(408,271)
+    $btnOk.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnOk)
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(503,275)
-    $btnCancel.Size = New-Object System.Drawing.Size(85,28)
+    $btnCancel.Location = New-Object System.Drawing.Point(503,271)
+    $btnCancel.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnCancel)
 
     # Plain local box (not $Script:-qualified) - closures reliably capture and mutate
@@ -862,8 +862,20 @@ function Global:Write-DialogError {
     # refused permission or a stale certificate reads the same way whether
     # the call came from this process or from an embedded script.
     $ErrorMessage = ConvertTo-FriendlyGraphError $ErrorMessage
-    $StatusLabel.ForeColor = [System.Drawing.Color]::Firebrick
-    $StatusLabel.Text = "Failed - see the log below for details."
+    # $LogBox was already guarded; $StatusLabel was not, and it is reached
+    # through the same aliases from the same nested closures. A null one
+    # threw "The property 'ForeColor' cannot be found on this object" -
+    # replacing the error being reported with an error about reporting it.
+    if ($StatusLabel -and -not $StatusLabel.IsDisposed) {
+        $StatusLabel.ForeColor = [System.Drawing.Color]::Firebrick
+        $StatusLabel.Text = "Failed - see the log below for details."
+    }
+    # Whatever happens to the controls, the failure itself must not be
+    # lost - the main log always exists.
+    if (-not $LogBox -or $LogBox.IsDisposed) {
+        Write-Log "[FAILED] $ErrorMessage`r`n" ([System.Drawing.Color]::Tomato)
+        return
+    }
     if ($LogBox) {
         $LogBox.SelectionStart = $LogBox.TextLength
         $LogBox.SelectionLength = 0
@@ -936,6 +948,22 @@ function Global:Write-DialogLogLine {
     # multi-line text with a bare `n (e.g. joining PowerShell error
     # records), which this RichTextBox won't render as a line break.
     $Text = ConvertTo-DisplayLineEndings $Text
+    # A null box is not worth throwing over, and it is not worth swallowing
+    # either. It means a caller's -LogBox alias came back empty - the
+    # closure-nesting trap this codebase hits repeatedly - and what matters
+    # is that the line itself still reaches somebody. It goes to the main
+    # log instead, which every dialog's log mirrors into anyway.
+    #
+    # Before this, three of these in a row threw "The property
+    # 'SelectionStart' cannot be found on this object" at the user, and the
+    # message they were trying to read was lost with it.
+    if (-not $LogBox -or $LogBox.IsDisposed) {
+        # try/catch because the fallback must not become the new crash:
+        # Write-Log writes to the main window, which may itself be gone
+        # during shutdown. Logging is never worth taking the app down for.
+        try { Write-Log $Text $color } catch { }
+        return
+    }
     $LogBox.SelectionStart = $LogBox.TextLength
     $LogBox.SelectionLength = 0
     $LogBox.SelectionColor = $color
@@ -1315,11 +1343,16 @@ function Global:Update-Grid {
         # falls through to the normal uncommon/package check below, since
         # that's the only case where a real package IS actually expected.
         $isKnownNonWin32 = $app.intuneAppType -and $app.intuneAppType -ne "Windows app (Win32)"
-        $needsPackageCheck = $isUncommon -and -not $isKnownNonWin32
+        # A stored packagePath counts too, Winget ID or not. "Has a Winget
+        # ID" normally means "deploys with the shared init.intunewin", so
+        # this column ignored those apps entirely - which made a custom
+        # package pointed at from the editor look like it had not been
+        # saved, because nothing here ever asked about it.
+        $needsPackageCheck = ($isUncommon -or $app.packagePath) -and -not $isKnownNonWin32
         # Resolved once and reused for both the Status warning and the
         # Folder column below, rather than searching the filesystem twice
         # per uncommon app on every grid refresh.
-        $pkg = if ($needsPackageCheck) { Resolve-AppPackagePath -AppName $app.appName -Uncommon $true -Index $packageIndexForRefresh -PackagePath $app.packagePath } else { $null }
+        $pkg = if ($needsPackageCheck) { Resolve-AppPackagePath -AppName $app.appName -Uncommon $isUncommon -Index $packageIndexForRefresh -PackagePath $app.packagePath } else { $null }
 
         # Computed once, reused for both the Status note below and the
         # separate Custom Config column - same check, no reason to run

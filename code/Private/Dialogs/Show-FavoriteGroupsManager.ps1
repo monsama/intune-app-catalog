@@ -86,8 +86,8 @@ function Global:Show-FavoriteGroupsManager {
     # reasoning in Show-AppEditor's own New-GroupBox (Show-EntraMemberPicker
     # below lets you pick a USER too, not just a group).
     $btnAddGroup.Text = "+ Group/user..."
-    $btnAddGroup.Location = New-Object System.Drawing.Point(15,355)
-    $btnAddGroup.Size = New-Object System.Drawing.Size(140,30)
+    $btnAddGroup.Location = New-Object System.Drawing.Point(15,353)
+    $btnAddGroup.Size = New-Object System.Drawing.Size(140,32)
     $btnAddGroup.Add_Click({
         $picked = Show-EntraMemberPicker
         if ($picked) {
@@ -103,8 +103,8 @@ function Global:Show-FavoriteGroupsManager {
 
     $btnSave = New-Object System.Windows.Forms.Button
     $btnSave.Text = "Save"
-    $btnSave.Location = New-Object System.Drawing.Point(230,355)
-    $btnSave.Size = New-Object System.Drawing.Size(85,30)
+    $btnSave.Location = New-Object System.Drawing.Point(230,353)
+    $btnSave.Size = New-Object System.Drawing.Size(85,32)
     $btnSave.Add_Click({
         $favoriteGroupsRef.Clear()
         foreach ($item in $clb.CheckedItems) { [void]$favoriteGroupsRef.Add([string]$item) }
@@ -117,8 +117,8 @@ function Global:Show-FavoriteGroupsManager {
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(320,355)
-    $btnCancel.Size = New-Object System.Drawing.Size(85,30)
+    $btnCancel.Location = New-Object System.Drawing.Point(320,353)
+    $btnCancel.Size = New-Object System.Drawing.Size(85,32)
 
     # Compares what's checked right now against the set actually on disk -
     # catches unsaved changes on the way out, same as Show-
