@@ -144,6 +144,16 @@ try {
 
     if ($Config.Mode -eq "Delete") {
         Write-Step "Deleting the script"
+        # An empty id builds ".../deviceManagementScripts/" - a collection
+        # URL - and Graph answers "No OData route exists that match
+        # template ~/singleton/navigation with http verb DELETE", which
+        # tells the user nothing about what went wrong. Say it here
+        # instead. The caller should never send one; this is the backstop.
+        if ([string]::IsNullOrWhiteSpace($Config.ScriptId)) {
+            Write-Host "  [FAILED] No script id to delete - '$($Config.DisplayName)' has no Intune id, so there is nothing in Intune to delete." -ForegroundColor Red
+            Write-Result -Success $false -ErrorMessage "No script id to delete." -ScriptId ""
+            exit 1
+        }
         Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts/$($Config.ScriptId)" `
             -Method DELETE -StepDescription "Delete platform script" | Out-Null
         Write-Host "  [OK] Deleted '$($Config.DisplayName)' from Intune." -ForegroundColor Green

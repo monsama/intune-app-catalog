@@ -597,8 +597,41 @@ function Global:Show-PlatformScriptsDialog {
     $btnDelete.Add_Click({
         if ($grid.SelectedRows.Count -eq 0) { return }
         $selected = $grid.SelectedRows[0].Tag
+
+        # A local-only script has no Intune id, so there is nothing there
+        # to delete - it is a file. Without this the Delete went to Graph
+        # with an empty id and got back "No OData route exists that match
+        # template ~/singleton/navigation with http verb DELETE", which
+        # names nothing a user could act on. Edit already branched here;
+        # Delete did not.
+        if ($selected.LocalOnly) {
+            $localFile = Join-Path $scriptCatalogPath ((Get-SafeFileNameForScript -Name $selected.DisplayName) + ".json")
+            $answer = [System.Windows.Forms.MessageBox]::Show(
+                "Delete the local copy of '$($selected.DisplayName)'?`n`n$localFile`n`nThis script isn't in Intune, so only the file goes. Nothing is sent to Intune.",
+                "Delete local script", "YesNo", "Warning", "Button2")
+            if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+            try {
+                Remove-Item -LiteralPath $localFile -Force -ErrorAction Stop
+                Write-DialogLogLine -LogBox $rtbLog -Text "[OK] Local copy of '$($selected.DisplayName)' deleted. Nothing was sent to Intune.`r`n" -MirrorToMainLog
+                $lblStatus.ForeColor = [System.Drawing.Color]::SeaGreen
+                $lblStatus.Text = "'$($selected.DisplayName)' removed from the local folder."
+                & $populateGrid
+            }
+            catch {
+                Write-DialogLogLine -LogBox $rtbLog -Text "[FAILED] Could not delete $localFile : $($_.Exception.Message)`r`n" -MirrorToMainLog
+            }
+            return
+        }
+
+        if (-not $selected.Id) {
+            [System.Windows.Forms.MessageBox]::Show(
+                "'$($selected.DisplayName)' has no Intune id, so there is nothing in Intune to delete.",
+                "Nothing to delete", "OK", "Information") | Out-Null
+            return
+        }
+
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "Permanently delete the platform script '$($selected.DisplayName)' from Intune?`n`nDevices that already ran it keep whatever it did - deleting only stops Intune running it again. This can't be undone.",
+            "Permanently delete the platform script '$($selected.DisplayName)' from Intune?`n`nDevices that already ran it keep whatever it did - deleting only stops Intune running it again. This can't be undone.`n`nAny local copy stays on disk; it goes at the next `"Save local copies`".",
             "Delete platform script", "YesNo", "Warning", "Button2")
         if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
         & $runScriptAction @{
@@ -611,8 +644,13 @@ function Global:Show-PlatformScriptsDialog {
     $grid.Add_SelectionChanged({
         if ($busyBox.Value) { return }
         $hasSelection = $grid.SelectedRows.Count -gt 0
+        $selectedTag = if ($hasSelection) { $grid.SelectedRows[0].Tag } else { $null }
+        $selectedIsLocalOnly = [bool]($selectedTag -and $selectedTag.LocalOnly)
         $btnEdit.Enabled = $hasSelection
-        $btnRunStatus.Enabled = $hasSelection
+        # Run status asks Intune how a script went on each device. A script
+        # that only exists locally has never run anywhere, and asking with
+        # an empty id is the same bad request Delete used to send.
+        $btnRunStatus.Enabled = $hasSelection -and -not $selectedIsLocalOnly
         $btnDelete.Enabled = $hasSelection
     }.GetNewClosure())
     $grid.Add_CellDoubleClick({
