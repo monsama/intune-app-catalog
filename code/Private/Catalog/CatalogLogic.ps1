@@ -403,7 +403,29 @@ function Global:Resolve-AppPackagePath {
     # -Index: a Get-PackageFolderIndex built once by a caller resolving
     # many apps at a time. Without it this builds its own, so a single
     # call still behaves exactly as it always did.
-    param([string]$AppName, [bool]$Uncommon, $Index)
+    #
+    # -PackagePath: this app's stored override, when it has one. It wins
+    # over everything below, because somebody pointed at it deliberately
+    # and a prediction should not argue with that. A path that no longer
+    # exists is reported as not found rather than silently falling back -
+    # quietly deploying a different package than the one named would be
+    # the worst outcome available.
+    param([string]$AppName, [bool]$Uncommon, $Index, [string]$PackagePath)
+
+    if (-not [string]::IsNullOrWhiteSpace($PackagePath)) {
+        $chosen = $PackagePath.Trim()
+        if (Test-Path -LiteralPath $chosen -PathType Leaf) { return @{ Path = $chosen; Found = $true } }
+        if (Test-Path -LiteralPath $chosen -PathType Container) {
+            # A folder is allowed because that is how people think about
+            # it - "the package is in here" - and how the build output is
+            # shaped. One file in it is unambiguous; more than one is the
+            # same refusal to guess as below.
+            $inFolder = @(Get-ChildItem -LiteralPath $chosen -Filter '*.intunewin' -File -ErrorAction SilentlyContinue)
+            if ($inFolder.Count -eq 1) { return @{ Path = $inFolder[0].FullName; Found = $true } }
+            return @{ Path = $chosen; Found = $false }
+        }
+        return @{ Path = $chosen; Found = $false }
+    }
 
     if (-not $Uncommon) {
         # The expected location, or wherever an older install left one -

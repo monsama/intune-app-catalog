@@ -1337,6 +1337,29 @@ try {
         Assert-True (Resolve-AppPackagePath -AppName 'seven zip' -Uncommon $true -Index $useIndex).Found `
             "Resolve-AppPackagePath ($mode): matches case-insensitively, as the -Filter it replaced did"
     }
+
+    # A stored -PackagePath beats all of the guessing above, because
+    # somebody pointed at it deliberately.
+    $explicitFile = Join-Path $pkgDir 'odd\deeper\Nested-App.intunewin'
+    $byFile = Resolve-AppPackagePath -AppName 'Seven Zip' -Uncommon $true -PackagePath $explicitFile
+    Assert-True $byFile.Found "Resolve-AppPackagePath: a stored file path is used as given"
+    Assert-Equal $explicitFile $byFile.Path "Resolve-AppPackagePath: and it is that exact file, not the one matching the name"
+
+    $byFolder = Resolve-AppPackagePath -AppName 'Whatever' -Uncommon $true -PackagePath (Join-Path $pkgDir 'Contoso-Client')
+    Assert-True $byFolder.Found "Resolve-AppPackagePath: a stored folder holding one package resolves to it"
+
+    $ambiguousFolder = Resolve-AppPackagePath -AppName 'Whatever' -Uncommon $true -PackagePath (Join-Path $pkgDir 'Two-Files')
+    Assert-True (-not $ambiguousFolder.Found) "Resolve-AppPackagePath: a stored folder with two packages is still ambiguous"
+
+    # The important one: a path that has gone must NOT quietly fall back
+    # to a name match, or the app would deploy a different package than
+    # the one it was told to.
+    $goneOverride = Resolve-AppPackagePath -AppName 'Seven Zip' -Uncommon $true -PackagePath (Join-Path $pkgDir 'no\such\file.intunewin')
+    Assert-True (-not $goneOverride.Found) "Resolve-AppPackagePath: a stored path that no longer exists is not found..."
+    Assert-True ($goneOverride.Path -notlike '*Seven-Zip.intunewin') "Resolve-AppPackagePath: ...and does not silently fall back to the name match"
+
+    Assert-True (Resolve-AppPackagePath -AppName 'Seven Zip' -Uncommon $true -PackagePath '   ').Found `
+        "Resolve-AppPackagePath: a blank override means 'work it out', not 'nothing'"
 }
 finally {
     $Global:App.RootPath = $savedRootPath
