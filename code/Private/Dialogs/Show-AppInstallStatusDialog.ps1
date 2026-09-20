@@ -20,7 +20,7 @@ function Global:Show-AppInstallStatusDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Install status - $AppName"
-    $dlg.ClientSize = New-Object System.Drawing.Size(860, 660)
+    $dlg.ClientSize = New-Object System.Drawing.Size(860, 649)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false

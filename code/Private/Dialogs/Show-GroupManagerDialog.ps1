@@ -12,7 +12,7 @@ function Global:Show-GroupManagerDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Group manager"
-    $dlg.ClientSize = New-Object System.Drawing.Size(870, 620)
+    $dlg.ClientSize = New-Object System.Drawing.Size(870, 600)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false

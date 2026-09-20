@@ -44,13 +44,13 @@ function Global:Show-EntraMemberPicker {
 
     $btnAdd = New-Object System.Windows.Forms.Button
     $btnAdd.Text = "Add"
-    $btnAdd.Location = New-Object System.Drawing.Point(300,370)
+    $btnAdd.Location = New-Object System.Drawing.Point(297,370)
     $btnAdd.Size = New-Object System.Drawing.Size(80,30)
     $dlg.Controls.Add($btnAdd)
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(388,370)
+    $btnCancel.Location = New-Object System.Drawing.Point(385,370)
     $btnCancel.Size = New-Object System.Drawing.Size(80,30)
     $dlg.Controls.Add($btnCancel)
 

@@ -14,7 +14,7 @@ function Global:Show-DeleteLocalCertificateDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Delete Local Certificate"
-    $dlg.ClientSize = New-Object System.Drawing.Size(780, 440)
+    $dlg.ClientSize = New-Object System.Drawing.Size(780, 413)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "Sizable"
     $dlg.MinimumSize = New-Object System.Drawing.Size(640, 320)

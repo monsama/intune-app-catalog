@@ -7,7 +7,7 @@ function Global:Show-FavoriteGroupsManager {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Favorite groups"
-    $dlg.ClientSize = New-Object System.Drawing.Size(420, 415)
+    $dlg.ClientSize = New-Object System.Drawing.Size(420, 400)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false

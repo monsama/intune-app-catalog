@@ -31,7 +31,7 @@ function Global:Show-IntuneOnlyAppsDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Intune sync check"
-    $dlg.ClientSize = New-Object System.Drawing.Size(760, 534)
+    $dlg.ClientSize = New-Object System.Drawing.Size(760, 521)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
