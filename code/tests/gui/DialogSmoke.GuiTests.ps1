@@ -191,7 +191,10 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         # --- "More actions..." ---
         $groups = @(Open-MoreActionsMenu $ctx | ForEach-Object Name)
         Close-AppMenus $ctx
-        Assert-True ((@('Catalog maintenance', 'Intune', 'Entra ID', 'Verify') | Where-Object { $groups -notcontains $_ }).Count -eq 0) "'More actions...' has its four groups" "found: $($groups -join ', ')"
+        # Three, not four: "Verify" held only Prerequisites, and that sits
+        # beside Settings on the toolbar now.
+        Assert-True ((@('Catalog maintenance', 'Intune', 'Entra ID') | Where-Object { $groups -notcontains $_ }).Count -eq 0) "'More actions...' has its three groups" "found: $($groups -join ', ')"
+        Assert-True ($groups -notcontains 'Verify') "and no empty 'Verify' group left behind" "found: $($groups -join ', ')"
         foreach ($group in $groups) {
             $items = @(Open-MoreActionsMenu $ctx $group | ForEach-Object Name)
             Close-AppMenus $ctx

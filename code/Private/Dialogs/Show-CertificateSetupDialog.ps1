@@ -1127,11 +1127,33 @@ function Global:Show-CertificateSetupDialog {
         foreach ($spec in (Get-AppFolderKinds)) { Set-AppFolder -Kind $spec.Key -Path $folderBoxes[$spec.Key].Text }
         # The catalog is the one folder the main window is already holding
         # open, so it has to be told rather than found out on next start.
+        #
+        # And it replaces what is in memory, so it asks first when that
+        # would lose something - the same question "Open other folder..."
+        # asks, which matters more now that this is the way in: that entry
+        # has come off More actions, because this does the same job and
+        # says where the folder is at the same time.
         $chosenCatalog = Get-AppFolder -Kind Catalog
         if ($chosenCatalog -ne $Global:App.LinkedFilePath) {
-            $Global:App.LinkedFilePath = $chosenCatalog
-            Import-AppsFromFile -Path $chosenCatalog
-            Update-Grid
+            $switchOk = $true
+            if ($Global:App.UnsavedChangesBox.Value) {
+                $answer = [System.Windows.Forms.MessageBox]::Show(
+                    "Discard your unsaved catalog changes and open the catalog in this folder?`r`n`r`n$chosenCatalog",
+                    "Discard changes?", "YesNo", "Warning", "Button2")
+                $switchOk = ($answer -eq [System.Windows.Forms.DialogResult]::Yes)
+            }
+            if ($switchOk) {
+                $Global:App.LinkedFilePath = $chosenCatalog
+                Import-AppsFromFile -Path $chosenCatalog
+                Update-Grid
+                Start-TypeVersionBackfill
+            }
+            else {
+                # Left where it was, and the stored choice put back so the
+                # next start does not quietly switch anyway.
+                Set-AppFolder -Kind Catalog -Path $Global:App.LinkedFilePath
+                $folderBoxes['Catalog'].Text = $Global:App.LinkedFilePath
+            }
         }
 
         $saveResultBox.TenantId   = $txtTenant.Text.Trim()
