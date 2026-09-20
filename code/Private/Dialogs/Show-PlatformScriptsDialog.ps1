@@ -263,13 +263,23 @@ function Global:Show-PlatformScriptsDialog {
             $row = $pending.Dequeue()
             $lblStatusRef.ForeColor = [System.Drawing.Color]::DimGray
             $lblStatusRef.Text = "Reading '$($row.DisplayName)' ($($total - $pending.Count) of $total)..."
+            # Fresh aliases for the nested -OnComplete closure below - the
+            # same note as $loadList's own, and the reason this hung on
+            # "Reading 'x' (1 of 1)..." forever. This scriptblock is
+            # already a closure, so $stepBox and $collected reach it from
+            # the scope it captured - but a closure created INSIDE it does
+            # not see them that way, and $stepBox came back empty. The
+            # chain then ended at "& $stepBox.Next" doing nothing: no
+            # save, no error, the status label still mid-sentence.
+            $stepBoxRef = $stepBox
+            $collectedRef = $collected
             Start-PlatformScriptDetailFetch -ScriptId $row.Id -LogBox $rtbLogRef -OnComplete {
                 param($ok, $errMsg, $detail)
                 if ($dlgRef.IsDisposed) { return }
                 if ($ok) {
                     # From the detail, so the body and groups are the real
                     # ones rather than what a listing could guess.
-                    $collected.Add((ConvertTo-ScriptRecord @{
+                    $collectedRef.Add((ConvertTo-ScriptRecord @{
                         id                    = $row.Id
                         displayName           = $row.DisplayName
                         description           = $row.Description
@@ -284,7 +294,7 @@ function Global:Show-PlatformScriptsDialog {
                 else {
                     Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] '$($row.DisplayName)' couldn't be read, so it has no local copy: $errMsg`r`n"
                 }
-                & $stepBox.Next
+                & $stepBoxRef.Next
             }.GetNewClosure()
         }.GetNewClosure()
         & $stepBox.Next
