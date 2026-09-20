@@ -113,6 +113,15 @@ $testableFunctionNames = @(
     "ConvertTo-TemplateAppRecord",
     "Get-NormalizedInstallTimeMinutes",
     "Get-GroupFieldDiffs",
+    # Both touch the filesystem, which is not a WinForms or Graph
+    # dependency - the tests below give them a real temp folder to look
+    # at. Get-AppFolder comes with them because that is how they find the
+    # packages folder, and it only reads $Global:App.AppFolders.
+    "Get-PackageFolderIndex",
+    "Resolve-AppPackagePath",
+    "Get-AppFolder",
+    "Get-AppFolderDefault",
+    "Get-AppFolderKinds",
     # Lives in GuiHelpers.ps1, not Private\Catalog\ - the scan below isn't
     # hardcoded to Catalog files, so adding the name here is enough. Pure
     # string normalization, no WinForms/Graph dependency despite living
@@ -1278,6 +1287,62 @@ Assert-Equal "#microsoft.graph.exclusionGroupAssignmentTarget" (@($body.mobileAp
     "New-AppAssignmentBody: the excluded group gets an exclusion target"
 Assert-Equal 1 @((New-AppAssignmentBody -Entries @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All', 'SG-Unknown')) -GroupIdByName @{ 'SG-All' = 'id-1' }).mobileAppAssignments).Count `
     "New-AppAssignmentBody: a group with no id yet is skipped rather than sent empty"
+
+# -----------------------------------------------------------------
+# Resolve-AppPackagePath / Get-PackageFolderIndex
+# -----------------------------------------------------------------
+# Against a real folder tree, because every branch of this resolver is
+# about what is actually on disk. Each case is asserted twice - resolved
+# fresh, and resolved through a prebuilt index - because Update-Grid now
+# passes an index and the two must not be able to disagree.
+$pkgTestRoot = Join-Path ([IO.Path]::GetTempPath()) ("pkgidx-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+$savedRootPath = $Global:App.RootPath
+$savedAppFolders = $Global:App.AppFolders
+try {
+    $pkgDir = Join-Path $pkgTestRoot 'pkgs'
+    $Global:App.RootPath = $pkgTestRoot
+    $Global:App.AppFolders = @{ Packages = $pkgDir }
+
+    # named after the app, in its own folder - the normal case
+    [void](New-Item -ItemType Directory -Path (Join-Path $pkgDir 'Seven-Zip') -Force)
+    Set-Content -LiteralPath (Join-Path $pkgDir 'Seven-Zip\Seven-Zip.intunewin') -Value 'x'
+    # named after the app but nested somewhere unexpected
+    [void](New-Item -ItemType Directory -Path (Join-Path $pkgDir 'odd\deeper') -Force)
+    Set-Content -LiteralPath (Join-Path $pkgDir 'odd\deeper\Nested-App.intunewin') -Value 'x'
+    # right folder, different file name, exactly one file - packaged by
+    # something that kept the source installer's own name
+    [void](New-Item -ItemType Directory -Path (Join-Path $pkgDir 'Contoso-Client') -Force)
+    Set-Content -LiteralPath (Join-Path $pkgDir 'Contoso-Client\OriginalInstaller.intunewin') -Value 'x'
+    # right folder, two files - ambiguous, must not guess
+    [void](New-Item -ItemType Directory -Path (Join-Path $pkgDir 'Two-Files') -Force)
+    Set-Content -LiteralPath (Join-Path $pkgDir 'Two-Files\a.intunewin') -Value 'x'
+    Set-Content -LiteralPath (Join-Path $pkgDir 'Two-Files\b.intunewin') -Value 'x'
+
+    $prebuiltIndex = Get-PackageFolderIndex -Root $pkgDir
+    # Five files across four folders - Two-Files contributes both of its.
+    Assert-Equal 5 $prebuiltIndex.ByName.Count "Get-PackageFolderIndex: every .intunewin under the folder, once"
+    Assert-Equal 4 $prebuiltIndex.ByFolder.Count "Get-PackageFolderIndex: and every folder that holds one"
+    foreach ($mode in @('fresh', 'indexed')) {
+        $useIndex = if ($mode -eq 'indexed') { $prebuiltIndex } else { $null }
+        Assert-True (Resolve-AppPackagePath -AppName 'Seven Zip' -Uncommon $true -Index $useIndex).Found `
+            "Resolve-AppPackagePath ($mode): finds a package named after its app"
+        Assert-True (Resolve-AppPackagePath -AppName 'Nested App' -Uncommon $true -Index $useIndex).Found `
+            "Resolve-AppPackagePath ($mode): finds it however deeply it is nested"
+        Assert-True (Resolve-AppPackagePath -AppName 'Contoso Client' -Uncommon $true -Index $useIndex).Found `
+            "Resolve-AppPackagePath ($mode): the app's own folder holding one package is that package, whatever it is called"
+        Assert-True (-not (Resolve-AppPackagePath -AppName 'Two Files' -Uncommon $true -Index $useIndex).Found) `
+            "Resolve-AppPackagePath ($mode): two packages in the folder is ambiguous, not a guess"
+        Assert-True (-not (Resolve-AppPackagePath -AppName 'Absent App' -Uncommon $true -Index $useIndex).Found) `
+            "Resolve-AppPackagePath ($mode): says so when there is nothing there"
+        Assert-True (Resolve-AppPackagePath -AppName 'seven zip' -Uncommon $true -Index $useIndex).Found `
+            "Resolve-AppPackagePath ($mode): matches case-insensitively, as the -Filter it replaced did"
+    }
+}
+finally {
+    $Global:App.RootPath = $savedRootPath
+    $Global:App.AppFolders = $savedAppFolders
+    Remove-Item -LiteralPath $pkgTestRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 # =================================================================
 # Report

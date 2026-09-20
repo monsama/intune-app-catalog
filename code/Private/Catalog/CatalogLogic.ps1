@@ -369,8 +369,41 @@ function Global:Get-SafeFileNameForApp {
     return $safeName
 }
 
+function Global:Get-PackageFolderIndex {
+    <#
+      Every .intunewin under the packages folder, listed once, as
+      @{ Root; ByName; ByFolder } - file name to full path, and folder to
+      the files in it. Both are what Resolve-AppPackagePath asks about.
+
+      It exists because that resolver used to walk the whole packages tree
+      per app, and Update-Grid calls it per uncommon app on every rebuild -
+      which includes every keystroke in the search box. Twenty uncommon
+      apps meant twenty full recursive walks per keystroke.
+
+      Keys are lower-cased because the Get-ChildItem -Filter this replaces
+      matched case-insensitively, and a catalog app called "7-zip" must
+      still find "7-Zip.intunewin".
+    #>
+    param([string]$Root)
+    $index = @{ Root = $Root; ByName = @{}; ByFolder = @{} }
+    if (-not $Root -or -not (Test-Path -LiteralPath $Root)) { return $index }
+    foreach ($file in @(Get-ChildItem -Path $Root -Recurse -Filter '*.intunewin' -File -ErrorAction SilentlyContinue)) {
+        $nameKey = $file.Name.ToLowerInvariant()
+        if (-not $index.ByName.ContainsKey($nameKey)) { $index.ByName[$nameKey] = $file.FullName }
+        $folderKey = ([string]$file.DirectoryName).ToLowerInvariant()
+        if (-not $index.ByFolder.ContainsKey($folderKey)) {
+            $index.ByFolder[$folderKey] = New-Object System.Collections.Generic.List[string]
+        }
+        $index.ByFolder[$folderKey].Add($file.FullName)
+    }
+    return $index
+}
+
 function Global:Resolve-AppPackagePath {
-    param([string]$AppName, [bool]$Uncommon)
+    # -Index: a Get-PackageFolderIndex built once by a caller resolving
+    # many apps at a time. Without it this builds its own, so a single
+    # call still behaves exactly as it always did.
+    param([string]$AppName, [bool]$Uncommon, $Index)
 
     if (-not $Uncommon) {
         # The expected location, or wherever an older install left one -
@@ -383,9 +416,12 @@ function Global:Resolve-AppPackagePath {
 
     $safeName = Get-SafeFileNameForApp -Name $AppName
     $uncommonRoot = Get-AppFolder -Kind Packages
+    $packageIndex = if ($Index -and $Index.Root -eq $uncommonRoot) { $Index } else { Get-PackageFolderIndex -Root $uncommonRoot }
     if (Test-Path $uncommonRoot) {
-        $found = Get-ChildItem -Path $uncommonRoot -Recurse -Filter "$safeName.intunewin" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found) { return @{ Path = $found.FullName; Found = $true } }
+        $wantedName = "$safeName.intunewin".ToLowerInvariant()
+        if ($packageIndex.ByName.ContainsKey($wantedName)) {
+            return @{ Path = $packageIndex.ByName[$wantedName]; Found = $true }
+        }
 
         # The .intunewin file itself doesn't always end up named after the
         # app the way this tool's own packaging step names it - a file
@@ -399,10 +435,10 @@ function Global:Resolve-AppPackagePath {
         # regardless of what it's actually called. More than one is
         # ambiguous (which one's real?) - falls through to "not found"
         # rather than guessing wrong.
-        $expectedFolder = Join-Path $uncommonRoot $safeName
-        if (Test-Path $expectedFolder) {
-            $filesInFolder = @(Get-ChildItem -Path $expectedFolder -Filter "*.intunewin" -File -ErrorAction SilentlyContinue)
-            if ($filesInFolder.Count -eq 1) { return @{ Path = $filesInFolder[0].FullName; Found = $true } }
+        $expectedFolder = (Join-Path $uncommonRoot $safeName).ToLowerInvariant()
+        if ($packageIndex.ByFolder.ContainsKey($expectedFolder)) {
+            $filesInFolder = @($packageIndex.ByFolder[$expectedFolder])
+            if ($filesInFolder.Count -eq 1) { return @{ Path = $filesInFolder[0]; Found = $true } }
         }
     }
     # Not found under the predicted name - still return the guess so the
