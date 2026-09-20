@@ -60,7 +60,7 @@ function Global:Show-WingetHealthCheckDialog {
 
     $lblStatus = New-Object System.Windows.Forms.Label
     $lblStatus.Location = New-Object System.Drawing.Point(15, 66)
-    $lblStatus.Size = New-Object System.Drawing.Size(560, 20)
+    $lblStatus.Size = New-Object System.Drawing.Size(440, 20)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $lblStatus.Text = "Checking $($appsWithWingetId.Count) app(s)..."
     $dlg.Controls.Add($lblStatus)
@@ -71,6 +71,24 @@ function Global:Show-WingetHealthCheckDialog {
     $btnRecheck.Size = New-Object System.Drawing.Size(130, 26)
     $btnRecheck.Enabled = $false
     $dlg.Controls.Add($btnRecheck)
+
+    # A way out of a run in progress. This check walks the catalog one
+    # winget process at a time, so on a large one it is the longest wait
+    # in the window - and until now the only way out was to wait, with the
+    # host refusing to close underneath it.
+    #
+    # Anchored explicitly: Move-DialogToTabPage only right-anchors what
+    # already sits near the dialog's right edge, and this does not - it
+    # would stay put while "Check again" moved right, leaving a gap.
+    $btnCancelCheck = New-Object System.Windows.Forms.Button
+    $btnCancelCheck.Text = "Cancel"
+    $btnCancelCheck.Location = New-Object System.Drawing.Point(475, 62)
+    $btnCancelCheck.Size = New-Object System.Drawing.Size(130, 26)
+    $btnCancelCheck.Enabled = $false
+    $btnCancelCheck.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+    $dlg.Controls.Add($btnCancelCheck)
+    $cancelTip = New-Object System.Windows.Forms.ToolTip
+    $cancelTip.SetToolTip($btnCancelCheck, "Stops the run where it is. Everything already checked stays in the list - nothing is undone, because this check only reads.")
 
     $progress = New-Object System.Windows.Forms.ProgressBar
     $progress.Location = New-Object System.Drawing.Point(15, 90)
@@ -125,6 +143,7 @@ function Global:Show-WingetHealthCheckDialog {
         $stateBox.Running = $true
         $stateBox.Cancelled = $false
         $btnRecheck.Enabled = $false
+        $btnCancelCheck.Enabled = $true
         $grid.Rows.Clear()
         $progress.Value = 0
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
@@ -195,7 +214,11 @@ function Global:Show-WingetHealthCheckDialog {
         $lblStatusRef = $lblStatus
         $progressRef = $progress
         $btnRecheckRef = $btnRecheck
+        $btnCancelCheckRef = $btnCancelCheck
         $stateBoxRef = $stateBox
+        # Held so Cancel can reach the running pipeline - it is created
+        # here, inside this run, and the button was built long before it.
+        $stateBox.Ps = $ps
         $psRef = $ps
         $rsRef = $rs
         $handleRef = $handle
@@ -224,19 +247,31 @@ function Global:Show-WingetHealthCheckDialog {
             $timer.Stop()
             $timer.Dispose()
             try {
-                [void]$psRef.EndInvoke($handleRef)
-                if (-not $closed) {
-                    if ($psRef.Streams.Error.Count -gt 0) {
-                        $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                        $lblStatusRef.Text = "Could not check: $(@($psRef.Streams.Error | ForEach-Object { $_.ToString() }) -join '; ')"
+                if ($stateBoxRef.Cancelled) {
+                    # EndInvoke on a stopped pipeline throws
+                    # PipelineStoppedException, which is not news - it is
+                    # what Cancel just asked for. Everything already
+                    # checked stays in the grid; this check only reads.
+                    if (-not $closed) {
+                        $lblStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
+                        $lblStatusRef.Text = "Cancelled - $($takenBox.Count) of $totalRef checked."
                     }
-                    else {
-                        $broken = @(0..($gridRef.Rows.Count - 1) | Where-Object { $gridRef.Rows.Count -gt 0 -and [string]$gridRef.Rows[$_].Cells[2].Value -like 'NOT FOUND*' }).Count
-                        $lblStatusRef.ForeColor = if ($broken -gt 0) { [System.Drawing.Color]::Firebrick } else { [System.Drawing.Color]::SeaGreen }
-                        $lblStatusRef.Text = if ($broken -gt 0) {
-                            "$broken of $totalRef Winget ID(s) no longer exist - new devices can't install those apps."
-                        } else {
-                            "All $totalRef Winget ID(s) still exist."
+                }
+                else {
+                    [void]$psRef.EndInvoke($handleRef)
+                    if (-not $closed) {
+                        if ($psRef.Streams.Error.Count -gt 0) {
+                            $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                            $lblStatusRef.Text = "Could not check: $(@($psRef.Streams.Error | ForEach-Object { $_.ToString() }) -join '; ')"
+                        }
+                        else {
+                            $broken = @(0..($gridRef.Rows.Count - 1) | Where-Object { $gridRef.Rows.Count -gt 0 -and [string]$gridRef.Rows[$_].Cells[2].Value -like 'NOT FOUND*' }).Count
+                            $lblStatusRef.ForeColor = if ($broken -gt 0) { [System.Drawing.Color]::Firebrick } else { [System.Drawing.Color]::SeaGreen }
+                            $lblStatusRef.Text = if ($broken -gt 0) {
+                                "$broken of $totalRef Winget ID(s) no longer exist - new devices can't install those apps."
+                            } else {
+                                "All $totalRef Winget ID(s) still exist."
+                            }
                         }
                     }
                 }
@@ -252,13 +287,27 @@ function Global:Show-WingetHealthCheckDialog {
                 $rsRef.Close()
                 $rsRef.Dispose()
                 $stateBoxRef.Running = $false
-                if (-not $closed) { $btnRecheckRef.Enabled = $true }
+                $stateBoxRef.Ps = $null
+                if (-not $closed) {
+                    $btnRecheckRef.Enabled = $true
+                    $btnCancelCheckRef.Enabled = $false
+                }
             }
         }.GetNewClosure())
         $timer.Start()
     }.GetNewClosure()
 
     $btnRecheck.Add_Click({ & $runCheck }.GetNewClosure())
+    $btnCancelCheck.Add_Click({
+        if (-not $stateBox.Running) { return }
+        $stateBox.Cancelled = $true
+        $btnCancelCheck.Enabled = $false
+        $lblStatus.ForeColor = [System.Drawing.Color]::DarkOrange
+        $lblStatus.Text = "Cancelling..."
+        # Stops the pipeline mid-winget. The poll timer notices the handle
+        # complete on its next tick and reports where it got to.
+        if ($stateBox.Ps) { try { $stateBox.Ps.Stop() } catch { } }
+    }.GetNewClosure())
     $btnCopy.Add_Click({
         $lines = New-Object System.Collections.Generic.List[string]
         $lines.Add("Winget package check")
