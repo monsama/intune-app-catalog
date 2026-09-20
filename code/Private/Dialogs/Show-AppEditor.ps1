@@ -804,6 +804,21 @@ function Global:Show-AppEditor {
         -CurrentIndex $CurrentIndex -HostTabControl $editorTabs -HostForm $dlg -HostBottomY 667 `
         -OnDeployComplete $ApplyDeployResult
 
+    # The Winget ID is typed here, on this tab, after the tabs above were
+    # built - so for "Add app..." the Package and detection tab was built
+    # for an app with no Winget ID, which means no install command, no
+    # uninstall command and no detection script, and nothing that would
+    # ever fill them in. Telling it the ID changed regenerates exactly the
+    # fields still holding what it generated before.
+    if ($deployHost.RetargetWingetId) {
+        $retargetRef = $deployHost.RetargetWingetId
+        $wingetBoxRef = $txtWinget
+        # Leave, not TextChanged: regenerating a detection script on every
+        # keystroke means doing it once per character of "7zip.7zip", and
+        # the intermediate values are all wrong anyway.
+        $txtWinget.Add_Leave({ & $retargetRef $wingetBoxRef.Text }.GetNewClosure())
+    }
+
     # Its own two launch buttons were how you reached that window. There is
     # no second window now.
     $btnCreateInIntune.Visible = $false
