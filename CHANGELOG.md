@@ -11,7 +11,9 @@ They were all built as `data\<something>` next to the app, at ten call
 sites, with no way to move any of them - which is wrong in both
 directions on a machine where the app lives under Program Files, or where
 the catalog belongs on a share and the logs do not. Leave a box empty and
-that folder follows its default, including if a later version moves it.
+that folder follows its default, including if a later version moves it -
+and an empty box shows that default greyed inside it, so every row says
+where it is actually writing rather than saying nothing at all.
 
 ### The suite brings its own packaging
 

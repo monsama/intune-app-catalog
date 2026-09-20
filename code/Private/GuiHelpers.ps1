@@ -1078,6 +1078,44 @@ function Global:Set-AppGridStyle {
     $Grid.EnableHeadersVisualStyles = $false
 }
 
+function Global:Set-TextBoxPlaceholder {
+    <#
+      Grey hint text inside an empty box - what the value would be if you
+      left it alone - the way a browser shows one.
+
+      Win32's own cue banner, not WinForms' PlaceholderText: that property
+      arrived in .NET 5, and this app also runs on Windows PowerShell 5.1,
+      where the property does not exist and setting it throws.
+
+      A cue banner belongs to the window handle, not to the control, so it
+      is re-sent every time a handle is created. That is not a rare event
+      here: moving a control to another parent - which is exactly what
+      Move-DialogToTabPage and Convert-PanelToTabs do - destroys the old
+      handle and the banner with it.
+
+      The box's Text is untouched and stays empty, so "nothing entered"
+      still reads as nothing entered to everything that asks.
+    #>
+    param([System.Windows.Forms.TextBox]$Box, [string]$Text)
+    if (-not $Box) { return }
+    if (-not ('IntunePackager.NativeText' -as [type])) {
+        Add-Type -Namespace IntunePackager -Name NativeText -MemberDefinition @"
+[System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern System.IntPtr SendMessageW(System.IntPtr hWnd, int msg, System.IntPtr wParam, string lParam);
+"@
+    }
+    # EM_SETCUEBANNER. wParam 1 keeps the hint visible once the box has
+    # focus and is still empty, which is when it is most wanted - clicking
+    # into a box should not blank the only thing telling you what it does.
+    $sendBanner = {
+        if ($Box.IsHandleCreated) {
+            [void][IntunePackager.NativeText]::SendMessageW($Box.Handle, 0x1501, [IntPtr]1, [string]$Text)
+        }
+    }.GetNewClosure()
+    $Box.Add_HandleCreated($sendBanner)
+    & $sendBanner
+}
+
 function Global:New-GridColumn {
     # -Font: the grid's font, used to give the column a MinimumWidth that
     # always fits its own header text (plus cell padding and the sort

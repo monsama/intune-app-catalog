@@ -275,7 +275,7 @@ function Global:Show-CertificateSetupDialog {
     $folderTips = New-Object System.Windows.Forms.ToolTip
     $folderRowY = 15
     $lblFoldersIntro = New-Object System.Windows.Forms.Label
-    $lblFoldersIntro.Text = "Where this app keeps things. Leave a box empty for the default (hover it to see where that is). The settings file always lives beside the app."
+    $lblFoldersIntro.Text = "Where this app keeps things. An empty box uses the path shown in grey inside it. The settings file always lives beside the app."
     $lblFoldersIntro.Location = New-Object System.Drawing.Point(15,$folderRowY)
     $lblFoldersIntro.Size = New-Object System.Drawing.Size(860,17)
     $dlg.Controls.Add($lblFoldersIntro)
@@ -319,11 +319,15 @@ function Global:Show-CertificateSetupDialog {
             if ($fbd.ShowDialog($dlg) -eq [System.Windows.Forms.DialogResult]::OK) { $txtFolder.Text = $fbd.SelectedPath }
         }.GetNewClosure())
 
-        # The default path goes in a tooltip rather than on this line: it
-        # is long, it is only interesting when you are about to change it,
-        # and a second line per folder is the difference between this page
-        # fitting and this page scrolling.
-        $folderTips.SetToolTip($txtFolder, "Leave empty to use the default: $(Get-AppFolderDefault -Kind $spec.Key)")
+        # The default goes INSIDE the empty box, greyed, rather than only
+        # in a tooltip. A row that has never been touched otherwise shows
+        # an empty box and nothing else - "the default" is the true answer
+        # to what it is set to, and the least useful way to say it. A
+        # second line per folder would not fit, and a tooltip only tells
+        # somebody who already suspected there was something to hover.
+        $folderDefault = Get-AppFolderDefault -Kind $spec.Key
+        Set-TextBoxPlaceholder -Box $txtFolder -Text $folderDefault
+        $folderTips.SetToolTip($txtFolder, "Leave empty to use the default: $folderDefault")
 
         # 50 per row - one line and one box. Seven folders plus the
         # packaging section have to fit the page, because a settings page
