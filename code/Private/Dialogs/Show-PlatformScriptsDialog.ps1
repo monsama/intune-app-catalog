@@ -85,21 +85,21 @@ function Global:Show-PlatformScriptsDialog {
 
     $btnEdit = New-Object System.Windows.Forms.Button
     $btnEdit.Text = "Edit..."
-    $btnEdit.Location = New-Object System.Drawing.Point(315, 344)
+    $btnEdit.Location = New-Object System.Drawing.Point(155, 344)
     $btnEdit.Size = New-Object System.Drawing.Size(130, 30)
     $btnEdit.Enabled = $false
     $dlg.Controls.Add($btnEdit)
 
     $btnRunStatus = New-Object System.Windows.Forms.Button
     $btnRunStatus.Text = "Run status..."
-    $btnRunStatus.Location = New-Object System.Drawing.Point(455, 344)
+    $btnRunStatus.Location = New-Object System.Drawing.Point(295, 344)
     $btnRunStatus.Size = New-Object System.Drawing.Size(130, 30)
     $btnRunStatus.Enabled = $false
     $dlg.Controls.Add($btnRunStatus)
 
     $btnDelete = New-Object System.Windows.Forms.Button
     $btnDelete.Text = "Delete..."
-    $btnDelete.Location = New-Object System.Drawing.Point(595, 344)
+    $btnDelete.Location = New-Object System.Drawing.Point(435, 344)
     $btnDelete.Size = New-Object System.Drawing.Size(130, 30)
     $btnDelete.Enabled = $false
     $dlg.Controls.Add($btnDelete)
@@ -110,13 +110,10 @@ function Global:Show-PlatformScriptsDialog {
     # live, and nothing to compare against afterwards.
     $scriptCatalogPath = Get-AppFolder -Kind Scripts
 
-    $btnNewLocal = New-Object System.Windows.Forms.Button
-    $btnNewLocal.Text = "New local script..."
-    $btnNewLocal.Location = New-Object System.Drawing.Point(155, 344)
-    $btnNewLocal.Size = New-Object System.Drawing.Size(150, 30)
-    $dlg.Controls.Add($btnNewLocal)
-    $newLocalTip = New-Object System.Windows.Forms.ToolTip
-    $newLocalTip.SetToolTip($btnNewLocal, "Writes a script to the local catalog without sending anything to Intune - for preparing one before it goes live. It appears in the list as 'Local only'; Edit it and save to create it in Intune.")
+    # "New local script..." used to sit here. It opened the same editor as
+    # "New script..." and differed only in where the result went, which is
+    # a decision that belongs at the moment of saving - the editor has
+    # "Save locally" beside "Create in Intune" now.
 
     $btnSaveLocal = New-Object System.Windows.Forms.Button
     $btnSaveLocal.Text = "Save local copies"
@@ -459,9 +456,47 @@ function Global:Show-PlatformScriptsDialog {
         }.GetNewClosure()
     }.GetNewClosure()
 
+    # Writes one script into the local folder without touching the others.
+    # Defined above its first use: a closure captures what exists when it
+    # is created, so a handler built before this would capture nothing.
+    $SaveOneLocally = {
+        param($Record)
+        $existing = @((Import-ScriptsFromFolder -Path $scriptCatalogPath).Scripts |
+            Where-Object { [string]$_.displayName -ne [string]$Record.displayName })
+        $saveResult = Save-ScriptsToFolder -Path $scriptCatalogPath -Scripts (@($existing) + @($Record))
+        foreach ($problem in @($saveResult.Errors)) {
+            Write-DialogLogLine -LogBox $rtbLog -Text "[FAILED] $problem`r`n"
+        }
+        return ($saveResult.Errors.Count -eq 0)
+    }.GetNewClosure()
+
     $btnNew.Add_Click({
         $entered = Show-PlatformScriptEditorDialog
         if (-not $entered) { return }
+        # The editor says where it goes - "New script..." and "New local
+        # script..." were two buttons opening that same editor and
+        # differing only in what they did with the result. Local means
+        # nothing is sent to Intune; it shows as "Local only" and can be
+        # created there later from Edit.
+        if ($entered.Destination -eq 'Local') {
+            $record = ConvertTo-ScriptRecord @{
+                displayName           = $entered.DisplayName
+                description           = $entered.Description
+                fileName              = $entered.FileName
+                runAsAccount          = $entered.RunAsAccount
+                runAs32Bit            = $entered.RunAs32Bit
+                enforceSignatureCheck = $entered.EnforceSignatureCheck
+                scriptContent         = $entered.ScriptContent
+                assignedGroups        = @($entered.GroupNames)
+            }
+            if (& $SaveOneLocally $record) {
+                Write-DialogLogLine -LogBox $rtbLog -Text "[OK] '$($record.displayName)' saved to the local folder. Nothing was sent to Intune - use Edit on its row to create it there.`r`n" -MirrorToMainLog
+                $lblStatus.ForeColor = [System.Drawing.Color]::SeaGreen
+                $lblStatus.Text = "'$($record.displayName)' saved locally - not in Intune yet."
+                & $populateGrid
+            }
+            return
+        }
         & $runScriptAction @{
             Mode                  = "Save"
             ScriptId              = ""
@@ -477,38 +512,6 @@ function Global:Show-PlatformScriptsDialog {
         } "Creating '$($entered.DisplayName)' in Intune..."
     }.GetNewClosure())
 
-    # Writes one script into the local catalog without touching the others
-    $SaveOneLocally = {
-        param($Record)
-        $existing = @((Import-ScriptsFromFolder -Path $scriptCatalogPath).Scripts |
-            Where-Object { [string]$_.displayName -ne [string]$Record.displayName })
-        $saveResult = Save-ScriptsToFolder -Path $scriptCatalogPath -Scripts (@($existing) + @($Record))
-        foreach ($problem in @($saveResult.Errors)) {
-            Write-DialogLogLine -LogBox $rtbLog -Text "[FAILED] $problem`r`n"
-        }
-        return ($saveResult.Errors.Count -eq 0)
-    }.GetNewClosure()
-
-    $btnNewLocal.Add_Click({
-        $entered = Show-PlatformScriptEditorDialog
-        if (-not $entered) { return }
-        $record = ConvertTo-ScriptRecord @{
-            displayName           = $entered.DisplayName
-            description           = $entered.Description
-            fileName              = $entered.FileName
-            runAsAccount          = $entered.RunAsAccount
-            runAs32Bit            = $entered.RunAs32Bit
-            enforceSignatureCheck = $entered.EnforceSignatureCheck
-            scriptContent         = $entered.ScriptContent
-            assignedGroups        = @($entered.GroupNames)
-        }
-        if (& $SaveOneLocally $record) {
-            Write-DialogLogLine -LogBox $rtbLog -Text "[OK] '$($record.displayName)' saved to the local catalog. Nothing was sent to Intune - use Edit on its row to create it there.`r`n" -MirrorToMainLog
-            $lblStatus.ForeColor = [System.Drawing.Color]::SeaGreen
-            $lblStatus.Text = "'$($record.displayName)' saved locally - not in Intune yet."
-            & $populateGrid
-        }
-    }.GetNewClosure())
 
     $btnEdit.Add_Click({
         if ($grid.SelectedRows.Count -eq 0) { return }

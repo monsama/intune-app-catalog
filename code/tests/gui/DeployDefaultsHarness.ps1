@@ -99,6 +99,20 @@ $Global:Probe.Add_Tick({
                 else {
                     # Exactly what Show-WingetSearchDialog's caller does:
                     # assign the ID. No focus, no keystroke, no Leave.
+                    # The app's name fills the display name on Metadata -
+                    # that tab is built before "Add app..." has a name.
+                    $nameBox = @($form.Controls.Find('txtAppName', $true))
+                    if ($nameBox.Count -gt 0) {
+                        $nameBox[0].Text = 'Probe Named App'
+                        $tabs[0].SelectedIndex = 1
+                        [System.Windows.Forms.Application]::DoEvents()
+                        $named = @(Get-AllBoxes $tabs[0] | Where-Object { [string]$_.Text -eq 'Probe Named App' }).Count
+                        Add-Line 'displayNameFollowed' $named
+                        $tabs[0].SelectedIndex = 0
+                        [System.Windows.Forms.Application]::DoEvents()
+                    }
+                    else { Add-Line 'displayNameFollowed' 'no-name-box' }
+
                     $box[0].Text = '7zip.7zip'
                     Add-Line 'editorAfterAssign' (@(Get-AllBoxes $tabs[0] | Where-Object { $_.Text -like '*Winget-Install.ps1*' }).Count)
                     # Then switch tabs, which is when the user looks.
@@ -113,6 +127,11 @@ $Global:Probe.Add_Tick({
                     # modal MessageBox - which, from inside this tick,
                     # hangs the harness rather than failing it.
                     $box[0].Text = ''
+                    # The name too, or the editor counts itself changed and
+                    # asks "discard this unsaved app?" on close - a modal
+                    # that hangs this harness rather than failing it.
+                    $nameBoxAgain = @($form.Controls.Find('txtAppName', $true))
+                    if ($nameBoxAgain.Count -gt 0) { $nameBoxAgain[0].Text = '' }
                     $tabs[0].SelectedIndex = 0
                     [System.Windows.Forms.Application]::DoEvents()
                 }

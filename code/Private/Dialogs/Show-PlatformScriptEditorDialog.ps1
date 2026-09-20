@@ -168,16 +168,36 @@ function Global:Show-PlatformScriptEditorDialog {
 
     $lblHint = New-Object System.Windows.Forms.Label
     $lblHint.Location = New-Object System.Drawing.Point(15, 626)
-    $lblHint.Size = New-Object System.Drawing.Size(560, 36)
+    # 405, not 560: "Save locally" sits at 430 now, and this ran under it.
+    # The old wording ("nothing is sent until you click Save") also stopped
+    # being true the moment there were two save buttons - which one it
+    # meant was exactly the question. The buttons say that themselves now,
+    # so this says the thing they cannot.
+    $lblHint.Size = New-Object System.Drawing.Size(405, 36)
     $lblHint.ForeColor = [System.Drawing.Color]::DimGray
-    $lblHint.Text = "Nothing is sent to Intune until you click Save. A script Intune has already run on a device runs again after you change it here."
+    $lblHint.Text = "A script Intune has already run re-runs on every device after you change it here."
     $dlg.Controls.Add($lblHint)
+
+    # Where it goes is chosen here, not by which button opened this window.
+    # "New script..." and "New local script..." were two buttons that
+    # opened this same editor and differed only in what they did with the
+    # result - the choice belongs at the point of saving, the way the app
+    # editor separates "Save app to catalog" from deploying it.
+    $btnSaveLocal = New-Object System.Windows.Forms.Button
+    $btnSaveLocal.Text = "Save locally"
+    $btnSaveLocal.Location = New-Object System.Drawing.Point(430, 630)
+    $btnSaveLocal.Size = New-Object System.Drawing.Size(145, 32)
+    $dlg.Controls.Add($btnSaveLocal)
+    $saveLocalEditorTip = New-Object System.Windows.Forms.ToolTip
+    $saveLocalEditorTip.SetToolTip($btnSaveLocal, "Writes this to the local script folder and sends nothing to Intune - for preparing a script, or keeping a copy in git, before it goes live. It shows in the list as 'Local only' until you save it to Intune.")
 
     $btnSave = New-Object System.Windows.Forms.Button
     $btnSave.Text = if ($ScriptId) { "Save changes" } else { "Create in Intune" }
     $btnSave.Location = New-Object System.Drawing.Point(585, 630)
     $btnSave.Size = New-Object System.Drawing.Size(130, 32)
     $dlg.Controls.Add($btnSave)
+    $saveIntuneTip = New-Object System.Windows.Forms.ToolTip
+    $saveIntuneTip.SetToolTip($btnSave, $(if ($ScriptId) { "Sends these changes to Intune. Devices pick the script up again at their next check-in." } else { "Creates this script in Intune now. It runs on every device in the groups you assign, at their next check-in." }))
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
@@ -246,9 +266,20 @@ function Global:Show-PlatformScriptEditorDialog {
             EnforceSignatureCheck = [bool]$chkSignature.Checked
             GroupNames            = $checkedGroups
             AssignGroups          = $assignGroups
+            # Which button was pressed. The caller does the rest - this
+            # dialog still only collects and validates.
+            Destination           = 'Intune'
         }
         $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
         $dlg.Close()
+    }.GetNewClosure())
+
+    # Same validation, same fields, different destination - so it runs the
+    # Save handler and then overrides where the result is going, rather
+    # than growing a second copy of the checks that could drift from it.
+    $btnSaveLocal.Add_Click({
+        & $btnSave.PerformClick()
+        if ($resultBox.Value) { $resultBox.Value.Destination = 'Local' }
     }.GetNewClosure())
 
     $btnCancel.Add_Click({
