@@ -71,7 +71,7 @@ function Global:Show-DeleteAppDialog {
 
     $btnDelete = New-Object System.Windows.Forms.Button
     $btnDelete.Text = "Delete permanently"
-    $btnDelete.Location = New-Object System.Drawing.Point(345,336)
+    $btnDelete.Location = New-Object System.Drawing.Point(395,336)
     $btnDelete.Size = New-Object System.Drawing.Size(150,32)
     $btnDelete.Enabled = $false
     $dlg.Controls.Add($btnDelete)
@@ -80,7 +80,7 @@ function Global:Show-DeleteAppDialog {
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(255,336)
+    $btnCancel.Location = New-Object System.Drawing.Point(300,336)
     $btnCancel.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnCancel)
 

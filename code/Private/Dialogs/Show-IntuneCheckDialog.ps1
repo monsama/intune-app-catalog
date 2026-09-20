@@ -28,8 +28,8 @@ function Global:Show-IntuneCheckDialog {
     $dlg.MinimizeBox = $false
 
     $tabs = New-Object System.Windows.Forms.TabControl
-    $tabs.Location = New-Object System.Drawing.Point(8,8)
-    $tabs.Size = New-Object System.Drawing.Size(1304, 640)
+    $tabs.Location = New-Object System.Drawing.Point(15,12)
+    $tabs.Size = New-Object System.Drawing.Size(1290, 636)
     $tabs.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor
                    [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Bottom
     $dlg.Controls.Add($tabs)
@@ -37,7 +37,7 @@ function Global:Show-IntuneCheckDialog {
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
     $btnClose.Size = New-Object System.Drawing.Size(90,30)
-    $btnClose.Location = New-Object System.Drawing.Point(1222,656)
+    $btnClose.Location = New-Object System.Drawing.Point(1215,658)
     $btnClose.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($btnClose)
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
