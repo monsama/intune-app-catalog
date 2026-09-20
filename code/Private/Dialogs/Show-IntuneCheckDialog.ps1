@@ -28,8 +28,12 @@ function Global:Show-IntuneCheckDialog {
     $dlg.MinimizeBox = $false
 
     $tabs = New-Object System.Windows.Forms.TabControl
-    $tabs.Location = New-Object System.Drawing.Point(15,12)
-    $tabs.Size = New-Object System.Drawing.Size(1290, 636)
+    # 8px, not the 15 every other window uses: this one is 1320 wide and
+    # its three tabs are the widest content in the app. On a 1024x768
+    # screen Resize-DialogToScreen shrinks it to fit, and the 14px those
+    # margins cost pushed the metadata log onto the Sync selected button.
+    $tabs.Location = New-Object System.Drawing.Point(8,8)
+    $tabs.Size = New-Object System.Drawing.Size(1304, 640)
     $tabs.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor
                    [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Bottom
     $dlg.Controls.Add($tabs)
@@ -37,7 +41,7 @@ function Global:Show-IntuneCheckDialog {
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
     $btnClose.Size = New-Object System.Drawing.Size(90,30)
-    $btnClose.Location = New-Object System.Drawing.Point(1215,658)
+    $btnClose.Location = New-Object System.Drawing.Point(1222,656)
     $btnClose.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($btnClose)
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())

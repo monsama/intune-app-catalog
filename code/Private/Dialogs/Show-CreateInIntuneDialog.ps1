@@ -3280,16 +3280,29 @@ function Global:Show-CreateInIntuneDialog {
         }.GetNewClosure()
 
         $fetchBox.Run = $runMetadataFetch
+        # Whichever window actually opens. Hosted in the app editor this
+        # dialog is never shown - the editor is - so Add_Shown on $dlg
+        # never fires, and "Check Intune when opening Deploy" quietly
+        # stopped doing anything the moment deploy became tabs of the
+        # editor. Same trap as the winget check's poll timer asking
+        # $dlg.IsDisposed about a window that is never disposed.
+        $openTarget = if ($HostForm) { $HostForm } else { $dlg }
+        # Always offered, not only when the automatic check is switched
+        # off. It used to appear only in that case, from inside the very
+        # Add_Shown that never fired here - so in the editor there was no
+        # way to ask Intune by hand at all. Wanting to re-read after
+        # someone else has touched the app has nothing to do with whether
+        # the automatic check is on.
+        $btnRefreshFromIntune.Visible = $true
         if ($Global:App.CheckIntuneOnDeployOpen) {
-            $dlg.Add_Shown({ & $runMetadataFetch }.GetNewClosure())
+            $openTarget.Add_Shown({ & $runMetadataFetch }.GetNewClosure())
         }
         else {
             # Nothing fetched yet: say so plainly rather than letting the
             # fields look like they came from Intune.
-            $dlg.Add_Shown({
+            $openTarget.Add_Shown({
                 $lblCreateStatus.ForeColor = [System.Drawing.Color]::DimGray
                 $lblCreateStatus.Text = "Showing the values saved here - Intune hasn't been asked. It's checked automatically before any update, or press Refresh from Intune."
-                $btnRefreshFromIntune.Visible = $true
             }.GetNewClosure())
         }
     }
@@ -3345,6 +3358,10 @@ function Global:Show-CreateInIntuneDialog {
             Deploy    = $btnCreate
             Status    = $lblCreateStatus
             Log       = $rtbCreateLog
+            # The host lays these out itself - left where this dialog put
+            # them they land in the middle of the editor's own button rows.
+            Refresh   = $btnRefreshFromIntune
+            Diff      = $btnShowDiff
             BottomEnd = $btnCreate.Bottom
         }
     }

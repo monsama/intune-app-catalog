@@ -35,7 +35,8 @@ function Open-EditorForRow {
     param($Ctx, [string]$AppName)
     Select-OnlyGridRow $Ctx $AppName
     $W32::Click($Ctx.Buttons['Edit...'])
-    $ed = Wait-AppDialog $Ctx 'Edit app'
+    # 'Edit app - <name>' since the editor names the app it is editing
+    $ed = Wait-AppDialog $Ctx 'Edit app*'
     Assert-True ([bool]$ed) "Edit... opens the editor for '$AppName'" "open windows: $(@(Get-AppDialogs $Ctx | ForEach-Object { $W32::Text($_) }) -join ', ')"
     return $ed
 }
