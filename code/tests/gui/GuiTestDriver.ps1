@@ -389,10 +389,32 @@ function Close-AppDialog {
     do {
         $W32::Close($Window)
         if (-not (Wait-Condition { -not (& $isOpen) } -TimeoutSec 2)) {
-            $stopQuestion = $W32::TopLevel($appPid) | Where-Object { $W32::Cls($_) -eq '#32770' -and $W32::Text($_) -eq 'Stop and close?' } | Select-Object -First 1
-            if ($stopQuestion) {
-                $W32::Click((Get-ChildWindow $stopQuestion 'Yes'))
-                if (Wait-Condition { -not (& $isOpen) } -TimeoutSec 3) { return 'closed after Stop and close? -> Yes' }
+            # Any confirmation this close raised, not just one known title.
+            #
+            # It used to look for "Stop and close?" alone, and otherwise
+            # clicked buttons that are children of $Window - so a prompt
+            # that is its own top-level box went unanswered and the close
+            # timed out. The app editor's "discard this unsaved app?" is
+            # exactly that, and it only appears when something changed -
+            # which, with an async fetch writing into a field, depends on
+            # timing. That is why this failed on a different dialog each
+            # run while passing locally.
+            #
+            # Affirmative on purpose: this helper's whole job is "close it,
+            # whatever it asks", and it already answered Yes to one.
+            $blocking = @($W32::TopLevel($appPid) | Where-Object {
+                $W32::Cls($_) -eq '#32770' -and $_ -ne $Window -and $W32::IsWindowVisible($_)
+            })
+            foreach ($question in $blocking) {
+                $title = $W32::Text($question)
+                foreach ($answer in 'Yes', 'OK', 'Discard') {
+                    $b = Get-ChildWindow $question $answer
+                    if ($b -and $W32::IsWindowEnabled($b)) {
+                        $W32::Click($b)
+                        if (Wait-Condition { -not (& $isOpen) } -TimeoutSec 3) { return "closed after '$title' -> $answer" }
+                        break
+                    }
+                }
             }
             foreach ($label in 'No', 'Cancel', 'Close', 'OK') {
                 $b = Get-ChildWindow $Window $label
