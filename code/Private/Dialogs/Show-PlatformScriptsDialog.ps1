@@ -248,14 +248,24 @@ function Global:Show-PlatformScriptsDialog {
         $stepBox = @{ Next = $null }
         $stepBox.Next = {
             if ($pending.Count -eq 0) {
-                $saveResult = Save-ScriptsToFolder -Path $catalogPathRef -Scripts $collected
+                # Prune only when every script was read. Pruning means "this
+                # set IS the tenant, delete the rest" - and if reads failed,
+                # the set is not the tenant, it is what survived. One script
+                # failing to read would otherwise have deleted the local
+                # copy it already had, and all of them failing would have
+                # emptied the folder. A read error must never cost data.
+                $readEverything = ($collected.Count -eq $total)
+                $saveResult = Save-ScriptsToFolder -Path $catalogPathRef -Scripts $collected -NoPrune:(-not $readEverything)
                 foreach ($problem in @($saveResult.Errors)) {
                     Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] $problem`r`n"
                 }
                 $removedNote = if ($saveResult.Removed -gt 0) { ", $($saveResult.Removed) no longer in the tenant removed" } else { "" }
                 Write-DialogLogLine -LogBox $rtbLogRef -Text "[OK] Saved $($saveResult.Saved) local copy/copies$removedNote.`r`n" -MirrorToMainLog
-                $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
-                $lblStatusRef.Text = "Local copies saved: $($saveResult.Saved) script(s)."
+                if (-not $readEverything) {
+                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[WARN] $($total - $collected.Count) of $total script(s) couldn't be read, so nothing was removed - the local folder still holds copies this run could not confirm.`r`n" -MirrorToMainLog
+                }
+                $lblStatusRef.ForeColor = if ($readEverything) { [System.Drawing.Color]::SeaGreen } else { [System.Drawing.Color]::DarkOrange }
+                $lblStatusRef.Text = "Local copies saved: $($saveResult.Saved) of $total script(s)."
                 & $setBusyRef $false
                 & $populateGridRef
                 return
@@ -285,19 +295,42 @@ function Global:Show-PlatformScriptsDialog {
                 param($ok, $errMsg, $detail)
                 if ($dlgRef2.IsDisposed) { return }
                 if ($ok) {
-                    # From the detail, so the body and groups are the real
-                    # ones rather than what a listing could guess.
-                    $collectedRef.Add((ConvertTo-ScriptRecord @{
-                        id                    = $row.Id
-                        displayName           = $row.DisplayName
-                        description           = $row.Description
-                        fileName              = $row.FileName
-                        runAsAccount          = $row.RunAs
-                        runAs32Bit            = $row.RunAs32Bit
-                        enforceSignatureCheck = $row.Signature
-                        scriptContent         = [string]$detail.ScriptContent
-                        assignedGroups        = @($detail.GroupNames)
-                    }))
+                    # In its own try, and reported separately from a read
+                    # failure. The fetch invokes this handler INSIDE its own
+                    # try/catch, so anything thrown here came back out as
+                    # "couldn't be read" - blaming Graph for a fault on this
+                    # side, with no position to find it by. A tenant hit
+                    # exactly that: every GET returned OK and the script
+                    # still "couldn't be read", because the failure was here.
+                    try {
+                        # .ToArray() on the groups, never @(...): unrolling
+                        # a generic list inside a hashtable literal is what
+                        # throws "Argument types do not match" in this
+                        # codebase, and GroupNames crosses a runspace
+                        # boundary so its exact type is not ours to assume.
+                        $groupsForRecord = @()
+                        if ($null -ne $detail.GroupNames) {
+                            $groupsForRecord = [string[]]@($detail.GroupNames | ForEach-Object { [string]$_ })
+                        }
+                        $collectedRef.Add((ConvertTo-ScriptRecord @{
+                            id                    = [string]$row.Id
+                            displayName           = [string]$row.DisplayName
+                            description           = [string]$row.Description
+                            fileName              = [string]$row.FileName
+                            runAsAccount          = [string]$row.RunAs
+                            runAs32Bit            = [string]$row.RunAs32Bit
+                            enforceSignatureCheck = [string]$row.Signature
+                            scriptContent         = [string]$detail.ScriptContent
+                            assignedGroups        = $groupsForRecord
+                        }))
+                    }
+                    catch {
+                        # Named as what it is - a fault building the record,
+                        # not a failed read - and with the position, so the
+                        # next one of these does not need guesswork.
+                        $where = if ($_.InvocationInfo -and $_.InvocationInfo.PositionMessage) { " [$($_.InvocationInfo.PositionMessage.Trim())]" } else { "" }
+                        Write-DialogLogLine -LogBox $rtbLogRef2 -Text "[FAILED] '$($row.DisplayName)' was read from Intune, but its local copy couldn't be built: $($_.Exception.Message)$where`r`n" -MirrorToMainLog
+                    }
                 }
                 else {
                     Write-DialogLogLine -LogBox $rtbLogRef2 -Text "[FAILED] '$($row.DisplayName)' couldn't be read, so it has no local copy: $errMsg`r`n"
