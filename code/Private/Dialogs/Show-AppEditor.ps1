@@ -126,6 +126,11 @@ function Global:Show-AppEditor {
     $dlg.Controls.Add($lblWinget)
 
     $txtWinget = New-Object System.Windows.Forms.TextBox
+    # Named so DeployDefaultsHarness can find it by name instead of by
+    # guessing which box on the page it is. The field is the one the
+    # generated install/uninstall/detection all hang off, and the test that
+    # covers that is worth a control having a name.
+    $txtWinget.Name = 'txtWingetId'
     $txtWinget.Location = New-Object System.Drawing.Point(15,88)
     $txtWinget.Size = New-Object System.Drawing.Size(290,24)
     $txtWinget.Text = if ($ExistingApp) { $ExistingApp.wingetId } else { "" }
@@ -771,6 +776,8 @@ function Global:Show-AppEditor {
     # The catalog entry and its assignments become two tabs, so that the
     # Intune side can join them as three more (Show-CreateInIntuneDialog,
     # -HostTabControl) and an app is one window rather than two.
+    # $editorTabs.Name is set right after this call, for the same reason
+    # $txtWingetId carries one.
     $editorTabs = Convert-PanelToTabs -Dialog $dlg -Bounds (New-Object System.Drawing.Rectangle(10, 8, 880, 651)) -Pages @(
         @{
             Title = 'Catalog'
@@ -788,6 +795,7 @@ function Global:Show-AppEditor {
             )
         }
     )
+    $editorTabs.Name = 'editorTabs'
     # Its own log belongs with the actions that write to it - the App ID
     # lookup and Delete from Intune, both on Catalog.
     $rtbAppEditorLog.Location = New-Object System.Drawing.Point(12,300)
@@ -813,10 +821,28 @@ function Global:Show-AppEditor {
     if ($deployHost.RetargetWingetId) {
         $retargetRef = $deployHost.RetargetWingetId
         $wingetBoxRef = $txtWinget
-        # Leave, not TextChanged: regenerating a detection script on every
+        # Remembers what the deploy side was last told, so this is free to
+        # fire often and only does the work when the ID has really moved.
+        $lastWingetIdBox = @{ Value = $txtWinget.Text.Trim() }
+        $syncWingetId = {
+            $nowId = $wingetBoxRef.Text.Trim()
+            if ($nowId -eq $lastWingetIdBox.Value) { return }
+            $lastWingetIdBox.Value = $nowId
+            & $retargetRef $nowId
+        }.GetNewClosure()
+
+        # Not TextChanged: regenerating a detection script on every
         # keystroke means doing it once per character of "7zip.7zip", and
-        # the intermediate values are all wrong anyway.
-        $txtWinget.Add_Leave({ & $retargetRef $wingetBoxRef.Text }.GetNewClosure())
+        # every value but the last one is wrong anyway. So two moments
+        # instead, because there are two ways this field changes and only
+        # one of them involves the keyboard:
+        $txtWinget.Add_Leave($syncWingetId)
+        # ...and "Search winget..." assigns .Text directly (see
+        # $btnSearchWinget above), which raises no Leave at all - the field
+        # was never focused. Switching tabs is the moment the generated
+        # fields are about to be looked at, whichever way the ID got there,
+        # so it is the one hook that cannot be got round.
+        $editorTabs.Add_SelectedIndexChanged($syncWingetId)
     }
 
     # Its own two launch buttons were how you reached that window. There is

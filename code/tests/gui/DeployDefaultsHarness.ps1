@@ -72,12 +72,62 @@ $Global:Probe.Add_Tick({
             Add-Line 'otherFieldsFollowed' (@($others | Where-Object { $_ -like '*Mozilla.Firefox*' }).Count)
         }
         else { Add-Line 'typedSurvived' 'no-field-found' }
-        Add-Line 'ran' 'true'
     }
     catch { Add-Line 'error' $_.Exception.Message }
-    [IO.File]::WriteAllLines($StatusFile, $lines)
-    $Global:App.UnsavedChangesBox.Value = $false
-    $Global:App.Form.Close()
+
+    # Phase two, through the real editor. Phase one calls RetargetWingetId
+    # itself, which is exactly why it could not catch the editor wiring
+    # the ID up to only one of the two ways that field changes: typing
+    # raises Leave, and "Search winget..." assigning .Text does not.
+    #
+    # A WinForms Timer keeps ticking inside a modal ShowDialog's own
+    # message loop, so $Editor below runs while the editor is open and
+    # drives it from the inside.
+    $Global:EditorPhase = New-Object System.Windows.Forms.Timer
+    $Global:EditorPhase.Interval = 1200
+    $Global:EditorPhase.Add_Tick({
+        $Global:EditorPhase.Stop()
+        try {
+            $editor = @([System.Windows.Forms.Application]::OpenForms | Where-Object { $_.Text -like 'Add app*' -or $_.Text -like 'Edit app*' })
+            if ($editor.Count -eq 0) { Add-Line 'editorFound' 'false' }
+            else {
+                $form = $editor[0]
+                Add-Line 'editorFound' 'true'
+                $box = @($form.Controls.Find('txtWingetId', $true))
+                $tabs = @($form.Controls.Find('editorTabs', $true))
+                if ($box.Count -eq 0 -or $tabs.Count -eq 0) { Add-Line 'editorControls' 'missing' }
+                else {
+                    # Exactly what Show-WingetSearchDialog's caller does:
+                    # assign the ID. No focus, no keystroke, no Leave.
+                    $box[0].Text = '7zip.7zip'
+                    Add-Line 'editorAfterAssign' (@(Get-AllBoxes $tabs[0] | Where-Object { $_.Text -like '*Winget-Install.ps1*' }).Count)
+                    # Then switch tabs, which is when the user looks.
+                    $tabs[0].SelectedIndex = [Math]::Min(2, $tabs[0].TabPages.Count - 1)
+                    [System.Windows.Forms.Application]::DoEvents()
+                    $after = @(Get-AllBoxes $tabs[0] | ForEach-Object { [string]$_.Text })
+                    Add-Line 'editorAfterTabSwitch' (@($after | Where-Object { $_ -like '*Winget-Install.ps1*' }).Count)
+                    Add-Line 'editorPackagePath' (@($after | Where-Object { $_ -like '*init.intunewin*' }).Count)
+                    # Put the field back before closing. The editor asks
+                    # "discard this unsaved app?" when its catalog fields
+                    # differ from how they opened, and that question is a
+                    # modal MessageBox - which, from inside this tick,
+                    # hangs the harness rather than failing it.
+                    $box[0].Text = ''
+                    $tabs[0].SelectedIndex = 0
+                    [System.Windows.Forms.Application]::DoEvents()
+                }
+                $form.Close()
+            }
+        }
+        catch { Add-Line 'editorError' $_.Exception.Message }
+        Add-Line 'ran' 'true'
+        [IO.File]::WriteAllLines($StatusFile, $lines)
+        $Global:App.UnsavedChangesBox.Value = $false
+        $Global:App.Form.Close()
+    })
+    $Global:EditorPhase.Start()
+    # Modal - the tick above runs inside its message loop and closes it.
+    Show-AppEditor -ExistingApp $null
 })
 $Global:Probe.Start()
 
