@@ -92,6 +92,11 @@ function Global:Show-IntuneAuditDialog {
     $lblStatus.MaximumSize = New-Object System.Drawing.Size(670,0)
     $lblStatus.Margin = New-Object System.Windows.Forms.Padding(0,0,0,0)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+    # Says it has not run. This panel is bordered, so an empty label draws
+    # as a blank white box that reads like a field you could type in - and
+    # since nothing starts itself any more, that is what this tab looks
+    # like when it opens.
+    $lblStatus.Text = "Not checked yet - press Run audit. It reads every deployed app from Intune one at a time, so it is the slowest check here."
     $pnlStatusInfo.Controls.Add($lblStatus)
 
     $btnRun = New-Object System.Windows.Forms.Button
@@ -130,9 +135,11 @@ function Global:Show-IntuneAuditDialog {
                        [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($prgAudit)
 
-    $grid.Location = New-Object System.Drawing.Point(15,114)
+    $grid.Location = New-Object System.Drawing.Point(15,122)
     # Ends 10px above Close below (it used to run 14px into it).
-    $grid.Size = New-Object System.Drawing.Size(890,300)
+    # 292, not 300: the grid moved down 8 and keeps its bottom edge, so
+    # the log below it does not move.
+    $grid.Size = New-Object System.Drawing.Size(890,292)
     $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $grid.ReadOnly = $true
     $grid.AllowUserToAddRows = $false

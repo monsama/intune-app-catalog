@@ -99,7 +99,7 @@ function Global:Show-WingetHealthCheckDialog {
     $cancelTip.SetToolTip($btnCancelCheck, "Stops the run where it is. Everything already checked stays in the list - nothing is undone, because this check only reads.")
 
     $progress = New-Object System.Windows.Forms.ProgressBar
-    $progress.Location = New-Object System.Drawing.Point(15, 90)
+    $progress.Location = New-Object System.Drawing.Point(15, 96)
     $progress.Size = New-Object System.Drawing.Size(730, 8)
     $progress.Minimum = 0
     $progress.Maximum = [Math]::Max(1, $appsWithWingetId.Count)
@@ -107,8 +107,10 @@ function Global:Show-WingetHealthCheckDialog {
 
     $grid = New-Object System.Windows.Forms.DataGridView
     Set-AppGridStyle -Grid $grid
-    $grid.Location = New-Object System.Drawing.Point(15, 108)
-    $grid.Size = New-Object System.Drawing.Size(730, 340)
+    $grid.Location = New-Object System.Drawing.Point(15, 112)
+    # 336, not 340: the grid moved down 4 and its bottom edge stays where
+    # it was, clear of Copy list below.
+    $grid.Size = New-Object System.Drawing.Size(730, 336)
     $grid.AllowUserToAddRows = $false
     $grid.AllowUserToDeleteRows = $false
     $grid.AllowUserToResizeRows = $false

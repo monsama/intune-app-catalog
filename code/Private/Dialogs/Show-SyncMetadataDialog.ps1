@@ -92,7 +92,7 @@ function Global:Show-SyncMetadataDialog {
 
     $lblStatus = New-Object System.Windows.Forms.Label
     $lblStatus.Location = New-Object System.Drawing.Point(15,416)
-    $lblStatus.Size = New-Object System.Drawing.Size(590,36)
+    $lblStatus.Size = New-Object System.Drawing.Size(590,30)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblStatus)
 
@@ -103,15 +103,17 @@ function Global:Show-SyncMetadataDialog {
     # per-app progress signal streamed back - there's genuinely no "N of M"
     # to report here, just "still running" vs "done".
     $progressBar = New-Object System.Windows.Forms.ProgressBar
-    $progressBar.Location = New-Object System.Drawing.Point(15,452)
+    $progressBar.Location = New-Object System.Drawing.Point(15,454)
     $progressBar.Size = New-Object System.Drawing.Size(590,12)
     $progressBar.Style = "Marquee"
     $progressBar.MarqueeAnimationSpeed = 0
     $dlg.Controls.Add($progressBar)
 
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbLog.Location = New-Object System.Drawing.Point(15,468)
-    $rtbLog.Size = New-Object System.Drawing.Size(590,98)
+    $rtbLog.Location = New-Object System.Drawing.Point(15,474)
+    # 92, not 98: moved down 6 and keeping its bottom edge, so Sync
+    # selected below it stays where it is.
+    $rtbLog.Size = New-Object System.Drawing.Size(590,92)
     Initialize-DarkLogBox -LogBox $rtbLog
     $dlg.Controls.Add($rtbLog)
 
