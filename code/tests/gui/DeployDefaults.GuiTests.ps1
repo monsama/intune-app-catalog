@@ -60,6 +60,9 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         if ($s['ran'] -ne 'true') { continue }
 
         Assert-True ($s['handlePresent'] -eq 'True') "the deploy view hands back a way to retarget its Winget ID" $all
+        # Logging must never be the thing that takes the app down.
+        Assert-True ($s['nullLogBoxSurvived'] -eq 'True') "a log line with no box to write to does not throw" $all
+        Assert-True ($s['nullStatusSurvived'] -eq 'True') "nor does an error with no status label and no box" $all
         # The bug itself: built with no ID, so nothing was generated.
         Assert-True (([string]$s['beforeGenerated']) -eq '0') "an app with no Winget ID yet has no generated commands" $all
         Assert-True ([int]$s['afterGenerated'] -ge 2) "naming the Winget ID fills in the install and uninstall commands" $all

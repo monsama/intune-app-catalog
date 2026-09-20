@@ -115,12 +115,13 @@ $testableFunctionNames = @(
     # is worth a test.
     "ConvertTo-SingleAppJson",
     "ConvertTo-JsonStringArray",
-    # The funnel every dialog's log line and error goes through. They
-    # touch WinForms controls, but only ones the caller hands them - and
-    # the tests below hand them $null on purpose, which is the case that
-    # used to throw.
-    "Write-DialogLogLine",
-    "Write-DialogError",
+    # Write-DialogLogLine and Write-DialogError are deliberately NOT here.
+    # Their parameters are typed [System.Windows.Forms.RichTextBox] and
+    # [Label], and this suite loads no WinForms and runs on Linux - so
+    # whether they bind at all depends on the machine. They did on mine
+    # and did not on CI, which is exactly the claim this list is supposed
+    # to make. Their null-box guards are covered by DeployDefaults, which
+    # runs inside the real app.
     "Get-DialogLogLineColor",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -1425,24 +1426,11 @@ finally {
 # These two helpers are the funnel every dialog's log goes through, so
 # guarding them turns that whole class of bug from a crash into a line
 # in the main log.
-$Global:App.LogCaptured = New-Object System.Collections.Generic.List[string]
-function Global:Write-Log {
-    param([string]$Text, $Color)
-    $Global:App.LogCaptured.Add([string]$Text)
-}
-$Global:App.LogCaptured.Clear()
-$threw = $false
-try { Write-DialogLogLine -LogBox $null -Text "[OK] still says something`r`n" } catch { $threw = $true }
-Assert-True (-not $threw) "Write-DialogLogLine: a null log box does not throw"
-Assert-True (@($Global:App.LogCaptured | Where-Object { $_ -like '*still says something*' }).Count -eq 1) `
-    "Write-DialogLogLine: and the line goes to the main log instead of being lost"
-
-$Global:App.LogCaptured.Clear()
-$threw = $false
-try { Write-DialogError -StatusLabel $null -LogBox $null -ErrorMessage "something went wrong" } catch { $threw = $true }
-Assert-True (-not $threw) "Write-DialogError: a null status label and log box do not throw"
-Assert-True (@($Global:App.LogCaptured | Where-Object { $_ -like '*something went wrong*' }).Count -eq 1) `
-    "Write-DialogError: and the failure still reaches the main log"
+# Asserted in DeployDefaults instead, inside the real app: these two take
+# WinForms controls as parameters, so whether they can even be called
+# depends on WinForms being present - which it is not here, and is not on
+# the Linux leg of CI. Testing them from this suite passed locally and
+# failed everywhere else, which is the failure this list exists to stop.
 
 # -----------------------------------------------------------------
 # Save-ScriptsToFolder pruning

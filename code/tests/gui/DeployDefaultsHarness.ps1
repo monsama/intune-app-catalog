@@ -53,6 +53,19 @@ $Global:Probe.Add_Tick({
 
         Add-Line 'handlePresent' ([bool]$deployHost.RetargetWingetId)
 
+        # The log funnel, handed nothing to write to. An alias taken one
+        # closure level too high arrives $null, and that used to throw
+        # "The property 'SelectionStart' cannot be found on this object"
+        # at the user, taking the message with it. Asserted here rather
+        # than in the pure-logic suite because these take WinForms
+        # controls, and that suite has no WinForms and runs on Linux.
+        $guardThrew = $false
+        try { Write-DialogLogLine -LogBox $null -Text "[OK] guard check`r`n" } catch { $guardThrew = $true }
+        Add-Line 'nullLogBoxSurvived' (-not $guardThrew)
+        $guardThrew = $false
+        try { Write-DialogError -StatusLabel $null -LogBox $null -ErrorMessage 'guard check' } catch { $guardThrew = $true }
+        Add-Line 'nullStatusSurvived' (-not $guardThrew)
+
         $before = @(Get-AllBoxes $hostTabs | ForEach-Object { [string]$_.Text })
         Add-Line 'beforeGenerated' (@($before | Where-Object { $_ -like '*Winget-Install.ps1*' }).Count)
 
