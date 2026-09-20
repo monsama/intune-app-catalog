@@ -51,6 +51,9 @@ function Global:Show-DiagnosticsDialog {
     $lblStatus.Location = New-Object System.Drawing.Point(15,510)
     $lblStatus.Size = New-Object System.Drawing.Size(280,24)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+    # An empty result must not read as a clean one to somebody who did
+    # not watch this open.
+    $lblStatus.Text = "Not run yet - press Run diagnostics."
     $dlg.Controls.Add($lblStatus)
 
     $btnPrereqs = New-Object System.Windows.Forms.Button
@@ -407,7 +410,7 @@ function Global:Show-DiagnosticsDialog {
         $HostTabPage.Tag = @{
             # Nothing below it now, so it fills all the way down.
             Fill        = $rtbLog
-            OnFirstShow = { $btnRun.PerformClick() }.GetNewClosure()
+            RunAll      = { $btnRun.PerformClick() }.GetNewClosure()
             # See the note on the same pair in Show-GroupDriftCheckDialog:
             # a run in progress is both "still working" and "do not close".
             IsBusy      = { -not $btnRun.Enabled }.GetNewClosure()

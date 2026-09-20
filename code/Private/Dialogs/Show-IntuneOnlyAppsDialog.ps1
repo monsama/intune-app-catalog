@@ -57,6 +57,9 @@ function Global:Show-IntuneOnlyAppsDialog {
     $lblStatus.Location = New-Object System.Drawing.Point(15,68)
     $lblStatus.Size = New-Object System.Drawing.Size(570,20)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+    # An empty result must not read as a clean one to somebody who did
+    # not watch this open.
+    $lblStatus.Text = "Not checked yet - press Refresh from Intune."
     $dlg.Controls.Add($lblStatus)
 
     $btnRefresh = New-Object System.Windows.Forms.Button
@@ -577,7 +580,7 @@ function Global:Show-IntuneOnlyAppsDialog {
             Fill          = $grid
             FillStopAbove = $btnAddChecked
             FillPushDown  = $true
-            OnFirstShow   = { $btnRefresh.PerformClick() }.GetNewClosure()
+            RunAll        = { $btnRefresh.PerformClick() }.GetNewClosure()
             # Same pair, same condition, as every other tab in that window:
             # a fetch in flight is both "still working" and "do not close".
             # $busyBox counts all three of this dialog's fetches, which is

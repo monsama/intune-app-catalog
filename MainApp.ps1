@@ -2148,6 +2148,9 @@ $btnSaveLog.Add_Click({
     try {
         $sfd.Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*"
         $sfd.FileName = "intune-app-catalog-log-" + (Get-Date -Format "yyyy-MM-dd-HHmmss") + ".txt"
+        # The logs folder - where every other copy of this already is.
+        $logsFolder = Get-AppFolder -Kind Logs
+        if (Test-Path -LiteralPath $logsFolder) { $sfd.InitialDirectory = $logsFolder }
         if ($sfd.ShowDialog($Global:App.Form) -ne [System.Windows.Forms.DialogResult]::OK) { return }
         [System.IO.File]::WriteAllText($sfd.FileName, $text, (New-Object System.Text.UTF8Encoding($false)))
         Write-Log "[OK] Log saved to $($sfd.FileName)`r`n" ([System.Drawing.Color]::LightGreen)

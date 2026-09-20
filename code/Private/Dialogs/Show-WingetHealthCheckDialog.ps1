@@ -62,14 +62,22 @@ function Global:Show-WingetHealthCheckDialog {
     $lblStatus.Location = New-Object System.Drawing.Point(15, 66)
     $lblStatus.Size = New-Object System.Drawing.Size(440, 20)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
-    $lblStatus.Text = "Checking $($appsWithWingetId.Count) app(s)..."
+    # Says it has not run. An empty grid reads as "nothing wrong" to
+    # anybody who did not watch it open, which is the one wrong thing a
+    # check can say.
+    $lblStatus.Text = "Not checked yet - press Check now to ask winget about $($appsWithWingetId.Count) app(s)."
     $dlg.Controls.Add($lblStatus)
 
     $btnRecheck = New-Object System.Windows.Forms.Button
-    $btnRecheck.Text = "Check again"
+    # "Check now", not "Check again" - nothing has run when this window
+    # opens any more, and "again" before a first time is just wrong.
+    $btnRecheck.Text = "Check now"
     $btnRecheck.Location = New-Object System.Drawing.Point(615, 62)
     $btnRecheck.Size = New-Object System.Drawing.Size(130, 26)
-    $btnRecheck.Enabled = $false
+    # Enabled from the start. It used to be disabled because a run began
+    # the moment this opened, and the only way to press it was to wait
+    # for that run to end - with nothing starting itself, that made it a
+    # button that could never be pressed.
     $dlg.Controls.Add($btnRecheck)
 
     # A way out of a run in progress. This check walks the catalog one
@@ -394,7 +402,7 @@ function Global:Show-WingetHealthCheckDialog {
             Fill        = $grid
             FillStopAbove = $btnCopy
             FillPushDown = $true
-            OnFirstShow = { & $runCheck }.GetNewClosure()
+            RunAll      = { & $runCheck }.GetNewClosure()
             IsBusy      = { [bool]$stateBox.Running }.GetNewClosure()
             # "NOT FOUND..." is what the check writes into the Result
             # column for an ID winget no longer knows - the same string

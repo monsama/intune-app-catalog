@@ -191,6 +191,12 @@ function Global:Show-PlatformScriptEditorDialog {
         $ofd = New-Object System.Windows.Forms.OpenFileDialog
         try {
             $ofd.Filter = "PowerShell scripts (*.ps1)|*.ps1|All files (*.*)|*.*"
+            # The folder this app keeps its local copies of the tenant's
+            # platform scripts in - the likeliest place the one being
+            # imported came from, and better than wherever the last
+            # picker in this session happened to end up.
+            $scriptsFolder = Get-AppFolder -Kind Scripts
+            if (Test-Path -LiteralPath $scriptsFolder) { $ofd.InitialDirectory = $scriptsFolder }
             if ($ofd.ShowDialog($dlg) -ne [System.Windows.Forms.DialogResult]::OK) { return }
             $txtScript.Text = ConvertTo-DisplayLineEndings ([System.IO.File]::ReadAllText($ofd.FileName))
             if (-not $txtFileName.Text.Trim()) { $txtFileName.Text = [System.IO.Path]::GetFileName($ofd.FileName) }

@@ -339,6 +339,18 @@ function Global:Show-AppEditor {
         $ofd = New-Object System.Windows.Forms.OpenFileDialog
         $ofd.Filter = "Intune package (*.intunewin)|*.intunewin|All files (*.*)|*.*"
         $ofd.Title = "Select this app's .intunewin"
+        # Where this app's packages live, or where the box already points.
+        # Left unset a picker opens wherever Windows last left this
+        # process - which is whatever OTHER picker ran before it.
+        $startIn = $txtAppPackagePath.Text.Trim()
+        if ($startIn -and (Test-Path -LiteralPath $startIn)) {
+            if (Test-Path -LiteralPath $startIn -PathType Leaf) { $ofd.FileName = $startIn }
+            else { $ofd.InitialDirectory = $startIn }
+        }
+        else {
+            $packagesFolder = Get-AppFolder -Kind Packages
+            if (Test-Path -LiteralPath $packagesFolder) { $ofd.InitialDirectory = $packagesFolder }
+        }
         if ($ofd.ShowDialog($dlg) -eq [System.Windows.Forms.DialogResult]::OK) { $txtAppPackagePath.Text = $ofd.FileName }
     }.GetNewClosure())
     $lblIdStatus.ForeColor = [System.Drawing.Color]::DimGray
