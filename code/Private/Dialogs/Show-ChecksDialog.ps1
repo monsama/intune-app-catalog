@@ -70,15 +70,15 @@ function Global:Show-ChecksDialog {
 
     $btnRunAll = New-Object System.Windows.Forms.Button
     $btnRunAll.Text = "Run all checks"
-    $btnRunAll.Size = New-Object System.Drawing.Size(150,30)
-    $btnRunAll.Location = New-Object System.Drawing.Point(8,658)
+    $btnRunAll.Size = New-Object System.Drawing.Size(150,32)
+    $btnRunAll.Location = New-Object System.Drawing.Point(8,656)
     $btnRunAll.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
     $dlg.Controls.Add($btnRunAll)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Size = New-Object System.Drawing.Size(90,30)
-    $btnClose.Location = New-Object System.Drawing.Point(1222,658)
+    $btnClose.Size = New-Object System.Drawing.Size(90,32)
+    $btnClose.Location = New-Object System.Drawing.Point(1222,656)
     $btnClose.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($btnClose)
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())

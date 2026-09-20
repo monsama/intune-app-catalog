@@ -226,6 +226,8 @@ function Global:Show-AppIdMatchDialog {
     }.GetNewClosure())
 
     $btnApplyMatch.Add_Click({
+    $applyMatchTip = New-Object System.Windows.Forms.ToolTip
+    $applyMatchTip.SetToolTip($btnApplyMatch, "Writes the matched App IDs into the LOCAL CATALOG only. Nothing is created, changed or assigned in Intune - it links catalog entries to apps that are already there.")
         $matchGrid.EndEdit()
         $applied = 0
         foreach ($row in $matchGrid.Rows) {

@@ -382,6 +382,8 @@ function Global:Show-BatchDeployDialog {
     }.GetNewClosure()
 
     $btnDeploy.Add_Click({
+    $batchDeployTip = New-Object System.Windows.Forms.ToolTip
+    $batchDeployTip.SetToolTip($btnDeploy, "Creates every checked app in Intune, one at a time, in dependency order. Apps whose package is not built yet are skipped rather than failed.")
         $checkedLabels = @($clbApps.CheckedItems | ForEach-Object { [string]$_ })
         if ($checkedLabels.Count -eq 0) {
             [System.Windows.Forms.MessageBox]::Show("Check at least one app to deploy.", "Nothing selected", "OK", "Warning") | Out-Null

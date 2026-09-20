@@ -88,8 +88,8 @@ function Global:Show-MetadataDriftDialog {
 
     $btnAllIntune = New-Object System.Windows.Forms.Button
     $btnAllIntune.Text = "Use Intune for all"
-    $btnAllIntune.Location = New-Object System.Drawing.Point(15,428)
-    $btnAllIntune.Size = New-Object System.Drawing.Size(140,28)
+    $btnAllIntune.Location = New-Object System.Drawing.Point(15,424)
+    $btnAllIntune.Size = New-Object System.Drawing.Size(140,32)
     $btnAllIntune.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
     $dlg.Controls.Add($btnAllIntune)
     $allIntuneTip = New-Object System.Windows.Forms.ToolTip
@@ -97,8 +97,8 @@ function Global:Show-MetadataDriftDialog {
 
     $btnAllLocal = New-Object System.Windows.Forms.Button
     $btnAllLocal.Text = "Keep local for all"
-    $btnAllLocal.Location = New-Object System.Drawing.Point(160,428)
-    $btnAllLocal.Size = New-Object System.Drawing.Size(140,28)
+    $btnAllLocal.Location = New-Object System.Drawing.Point(160,424)
+    $btnAllLocal.Size = New-Object System.Drawing.Size(140,32)
     $btnAllLocal.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
     $dlg.Controls.Add($btnAllLocal)
     $allLocalTip = New-Object System.Windows.Forms.ToolTip
@@ -115,15 +115,15 @@ function Global:Show-MetadataDriftDialog {
 
     $btnOk = New-Object System.Windows.Forms.Button
     $btnOk.Text = "OK"
-    $btnOk.Location = New-Object System.Drawing.Point(615,428)
-    $btnOk.Size = New-Object System.Drawing.Size(80,28)
+    $btnOk.Location = New-Object System.Drawing.Point(615,424)
+    $btnOk.Size = New-Object System.Drawing.Size(80,32)
     $btnOk.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($btnOk)
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(705,428)
-    $btnCancel.Size = New-Object System.Drawing.Size(80,28)
+    $btnCancel.Location = New-Object System.Drawing.Point(705,424)
+    $btnCancel.Size = New-Object System.Drawing.Size(80,32)
     $btnCancel.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($btnCancel)
 

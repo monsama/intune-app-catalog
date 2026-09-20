@@ -104,14 +104,14 @@ function Global:Show-AppRegistrationGuideDialog {
 
     $btnOpenPortal = New-Object System.Windows.Forms.Button
     $btnOpenPortal.Text = "Open Entra admin center"
-    $btnOpenPortal.Location = New-Object System.Drawing.Point(15,415)
-    $btnOpenPortal.Size = New-Object System.Drawing.Size(190,30)
+    $btnOpenPortal.Location = New-Object System.Drawing.Point(15,413)
+    $btnOpenPortal.Size = New-Object System.Drawing.Size(190,32)
     $dlg.Controls.Add($btnOpenPortal)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(455,415)
-    $btnClose.Size = New-Object System.Drawing.Size(90,30)
+    $btnClose.Location = New-Object System.Drawing.Point(455,413)
+    $btnClose.Size = New-Object System.Drawing.Size(90,32)
     $dlg.Controls.Add($btnClose)
 
     $btnOpenPortal.Add_Click({

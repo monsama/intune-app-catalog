@@ -74,15 +74,15 @@ function Global:Show-CertificatePickerDialog {
 
     $btnOK = New-Object System.Windows.Forms.Button
     $btnOK.Text = "OK"
-    $btnOK.Location = New-Object System.Drawing.Point(580,378)
-    $btnOK.Size = New-Object System.Drawing.Size(80,28)
+    $btnOK.Location = New-Object System.Drawing.Point(580,374)
+    $btnOK.Size = New-Object System.Drawing.Size(80,32)
     $btnOK.Anchor = "Bottom,Right"
     $dlg.Controls.Add($btnOK)
 
     $btnCancelPick = New-Object System.Windows.Forms.Button
     $btnCancelPick.Text = "Cancel"
-    $btnCancelPick.Location = New-Object System.Drawing.Point(665,378)
-    $btnCancelPick.Size = New-Object System.Drawing.Size(80,28)
+    $btnCancelPick.Location = New-Object System.Drawing.Point(665,374)
+    $btnCancelPick.Size = New-Object System.Drawing.Size(80,32)
     $btnCancelPick.Anchor = "Bottom,Right"
     $dlg.Controls.Add($btnCancelPick)
 

@@ -348,6 +348,8 @@ function Global:Show-BatchAssignDialog {
     # Intune assignment as something "Will remove" - Apply (still a
     # separate, explicit click) is what pushes that removal to Intune.
     $btnRemoveGroup.Add_Click({
+    $removeGroupTip = New-Object System.Windows.Forms.ToolTip
+    $removeGroupTip.SetToolTip($btnRemoveGroup, "Takes a group off apps in the LOCAL CATALOG. Nothing is unassigned in Intune until the result is pushed - the preview below shows what would change.")
         $removedCount = Show-RemoveGroupFromAppsDialog -CandidateApps $candidateApps
         if ($removedCount -gt 0) { & $refreshAfterCatalogEdit }
     }.GetNewClosure())

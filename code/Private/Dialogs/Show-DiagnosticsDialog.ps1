@@ -48,7 +48,7 @@ function Global:Show-DiagnosticsDialog {
     $dlg.Controls.Add($rtbLog)
 
     $lblStatus = New-Object System.Windows.Forms.Label
-    $lblStatus.Location = New-Object System.Drawing.Point(15,510)
+    $lblStatus.Location = New-Object System.Drawing.Point(15,518)
     $lblStatus.Size = New-Object System.Drawing.Size(280,24)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     # An empty result must not read as a clean one to somebody who did
@@ -58,20 +58,20 @@ function Global:Show-DiagnosticsDialog {
 
     $btnPrereqs = New-Object System.Windows.Forms.Button
     $btnPrereqs.Text = "Prerequisites..."
-    $btnPrereqs.Location = New-Object System.Drawing.Point(305,506)
+    $btnPrereqs.Location = New-Object System.Drawing.Point(305,514)
     $btnPrereqs.Size = New-Object System.Drawing.Size(140,32)
     $dlg.Controls.Add($btnPrereqs)
     $btnPrereqs.Add_Click({ [void](Show-PrerequisitesDialog) }.GetNewClosure())
 
     $btnRun = New-Object System.Windows.Forms.Button
     $btnRun.Text = "Run diagnostics"
-    $btnRun.Location = New-Object System.Drawing.Point(455,506)
+    $btnRun.Location = New-Object System.Drawing.Point(455,514)
     $btnRun.Size = New-Object System.Drawing.Size(140,32)
     $dlg.Controls.Add($btnRun)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(605,506)
+    $btnClose.Location = New-Object System.Drawing.Point(605,514)
     $btnClose.Size = New-Object System.Drawing.Size(80,32)
     $dlg.Controls.Add($btnClose)
 
@@ -406,7 +406,7 @@ function Global:Show-DiagnosticsDialog {
         foreach ($sideButton in @($btnPrereqs, $btnRun)) {
             $sideButton.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
         }
-        $rtbLog.Location = New-Object System.Drawing.Point(15,100)
+        $rtbLog.Location = New-Object System.Drawing.Point(15,110)
         $HostTabPage.Tag = @{
             # Nothing below it now, so it fills all the way down.
             Fill        = $rtbLog

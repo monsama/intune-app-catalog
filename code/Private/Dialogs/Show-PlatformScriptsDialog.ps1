@@ -149,8 +149,8 @@ function Global:Show-PlatformScriptsDialog {
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
-    $btnClose.Location = New-Object System.Drawing.Point(940, 576)
-    $btnClose.Size = New-Object System.Drawing.Size(85, 30)
+    $btnClose.Location = New-Object System.Drawing.Point(940,574)
+    $btnClose.Size = New-Object System.Drawing.Size(85,32)
     $dlg.Controls.Add($btnClose)
 
     $rowsBox = @{ Value = @() }
@@ -273,9 +273,17 @@ function Global:Show-PlatformScriptsDialog {
             # save, no error, the status label still mid-sentence.
             $stepBoxRef = $stepBox
             $collectedRef = $collected
+            # $dlgRef and $rtbLogRef are two levels up as well - taken in
+            # $SaveLocalCopies, which is this scriptblock's enclosing
+            # closure, not this scriptblock. They were reaching the
+            # callback below as $null: the disposed-check silently never
+            # fired, and a script that failed to read wrote its [FAILED]
+            # line to nothing at all. Same aliasing, one level lower.
+            $dlgRef2 = $dlgRef
+            $rtbLogRef2 = $rtbLogRef
             Start-PlatformScriptDetailFetch -ScriptId $row.Id -LogBox $rtbLogRef -OnComplete {
                 param($ok, $errMsg, $detail)
-                if ($dlgRef.IsDisposed) { return }
+                if ($dlgRef2.IsDisposed) { return }
                 if ($ok) {
                     # From the detail, so the body and groups are the real
                     # ones rather than what a listing could guess.
@@ -292,7 +300,7 @@ function Global:Show-PlatformScriptsDialog {
                     }))
                 }
                 else {
-                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] '$($row.DisplayName)' couldn't be read, so it has no local copy: $errMsg`r`n"
+                    Write-DialogLogLine -LogBox $rtbLogRef2 -Text "[FAILED] '$($row.DisplayName)' couldn't be read, so it has no local copy: $errMsg`r`n"
                 }
                 & $stepBoxRef.Next
             }.GetNewClosure()
