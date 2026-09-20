@@ -67,6 +67,16 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         # ...without the opposite mistake.
         Assert-True ($s['typedSurvived'] -eq 'True') "a command typed by hand survives a later change of Winget ID" $all
         Assert-True ([int]$s['otherFieldsFollowed'] -ge 1) "while the fields nobody touched do follow it" $all
+
+        # Through the real editor, the way "Search winget..." does it: by
+        # assigning the field's text. No focus and no keystroke, so no
+        # Leave - which is how the first version of this fix still left
+        # Package and detection blank.
+        Assert-True ($s['editorFound'] -eq 'true') "the editor opened for a new app" $all
+        Assert-True ($s['editorControls'] -ne 'missing') "its Winget field and tabs are findable by name" $all
+        Assert-True (([string]$s['editorAfterAssign']) -eq '0') "assigning the ID alone generates nothing yet" $all
+        Assert-True ([int]$s['editorAfterTabSwitch'] -ge 2) "switching tabs fills in the commands for a picked Winget app" $all
+        Assert-True ([int]$s['editorPackagePath'] -ge 1) "and points the package at the shared init.intunewin" $all
     }
     finally {
         if (-not $p.HasExited) { $p.Kill() }
