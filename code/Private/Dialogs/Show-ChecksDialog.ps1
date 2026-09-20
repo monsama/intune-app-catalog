@@ -101,16 +101,27 @@ function Global:Show-ChecksDialog {
     # place mid-fix. Esc still closes.
 
     # Grouped by what a check talks to, and named so the tab strip says
-    # which group it is in. The three "Intune:" tabs go first because they
-    # share one read of every app in the tenant - that shared fetch is why
-    # they were a window of their own, and it is kept by building them
-    # together, in this order, exactly as that window did. The four after
-    # them each stand alone and cost nothing until opened.
+    # which group it is in. The "Intune:" tabs go first because they share
+    # one read of every app in the tenant - that shared fetch is why they
+    # were a window of their own, and it is kept by building them
+    # together. The four after them each stand alone and cost nothing
+    # until opened.
+    #
+    # Within the Intune group, in the order the questions actually get
+    # asked rather than the order these dialogs happened to be written:
+    #   Sync check     does the catalog still match the tenant at all?
+    #   App IDs        which entries have no App ID to be matched by?
+    #   Audit          and for the ones that ARE deployed, does every
+    #                  field still agree? (the deepest, and the slowest)
+    #   Metadata sync  then the way to take Intune's answer back.
+    # That last one is not a check at all - it is the bulk pull you do
+    # about what the three above told you - so it sits after them rather
+    # than in the middle of them.
     foreach ($spec in @(
+        @{ Title = 'Intune: Sync check';    Build = { param($page) Show-IntuneOnlyAppsDialog -HostTabPage $page -HostForm $dlg } }
         @{ Title = 'Intune: App IDs';       Build = { param($page) Show-AppIdMatchDialog -HostTabPage $page -HostForm $dlg } }
         @{ Title = 'Intune: Audit';         Build = { param($page) Show-IntuneAuditDialog -ScopedIndices $ScopedIndices -HostTabPage $page -HostForm $dlg } }
         @{ Title = 'Intune: Metadata sync'; Build = { param($page) Show-SyncMetadataDialog -ScopedIndices $ScopedIndices -HostTabPage $page -HostForm $dlg } }
-        @{ Title = 'Intune: Sync check';    Build = { param($page) Show-IntuneOnlyAppsDialog -HostTabPage $page -HostForm $dlg } }
         @{ Title = 'Dependencies';    Build = { param($page) Show-DependencyOverviewDialog -HostTabPage $page -HostForm $dlg } }
         @{ Title = 'Catalog groups';  Build = { param($page) Show-GroupDriftCheckDialog -HostTabPage $page -HostForm $dlg } }
         @{ Title = 'Winget packages'; Build = { param($page) Show-WingetHealthCheckDialog -HostTabPage $page -HostForm $dlg } }
@@ -133,6 +144,23 @@ function Global:Show-ChecksDialog {
             $page.Controls.Add($lblFailed)
         }
     }
+
+    # What "Run all checks" will actually run, said before it is pressed
+    # rather than hidden in a tooltip nobody hovers. The label beside the
+    # button was blank until the run started, which is a lot of empty
+    # space next to a button whose whole question is "all of what?".
+    #
+    # Named from the tabs that have something to run, so it is the truth
+    # and not a second list to keep in step - and the tabs it leaves out
+    # say so by their absence: Metadata sync is a pull, not a check, and
+    # Dependencies builds itself as it opens.
+    $willRun = @($tabs.TabPages | Where-Object {
+        $t = $_.Tag
+        $t -is [hashtable] -and ($t.RunAll -or $t.OnFirstShow)
+    } | ForEach-Object { ($_.Text -replace '^[^:]+:\s*', '') })
+    $lblRunAll.Text = if ($willRun.Count -gt 0) { "Runs " + ($willRun -join ", ") + "." } else { "" }
+    $runAllTip = New-Object System.Windows.Forms.ToolTip
+    $runAllTip.SetToolTip($btnRunAll, "Runs each of these in turn, never two at once - some of them ask Entra ID for the same thing and a second request while one is in flight is refused. The Audit is the slow one: it reads every deployed app individually.")
 
     # Each page's check runs once, the first time that page is looked at.
     # Keyed on the page object itself rather than an index, so reordering
@@ -262,6 +290,13 @@ function Global:Show-ChecksDialog {
             $tag = $page.Tag
             if ($tag -is [hashtable] -and $tag.BlockClose -and (& $tag.BlockClose)) {
                 $e.Cancel = $true
+                # Say so. Silently refusing was the worst of both: the X
+                # and Alt+F4 did nothing at all, every time, with nothing
+                # on screen explaining why - which reads as a hung window
+                # rather than a busy one.
+                [System.Windows.Forms.MessageBox]::Show(
+                    "'$($page.Text)' is still running.`r`n`r`nIts timers are still writing into this window, so closing now would pull the controls out from under them. Wait for it to finish - the tab shows how far it has got.",
+                    "Check still running", "OK", "Information") | Out-Null
                 return
             }
         }
