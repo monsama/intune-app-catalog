@@ -19,6 +19,23 @@ function Global:Show-IntuneAuditDialog {
     $deployedApps = @($candidateApps | Where-Object { $_.appId })
     if ($deployedApps.Count -eq 0) {
         $msg = if ($isScoped) { "None of the selected app(s) have an App ID yet - nothing to audit." } else { "No apps have an App ID yet - nothing to audit." }
+        # As a tab, this goes on the page. A MessageBox raised while the
+        # tab is being BUILT stops the whole Checks window mid-
+        # construction - the seven tabs after this one are not built until
+        # somebody presses OK - and then leaves this page blank, which is
+        # exactly "I clicked OK and nothing happened". No Tag either, so
+        # Run all skips a tab that has nothing to run rather than waiting
+        # on it. Show-AppIdMatchDialog already handles its own empty case
+        # this way.
+        if ($HostTabPage) {
+            $lblNothing = New-Object System.Windows.Forms.Label
+            $lblNothing.Text = $msg
+            $lblNothing.Location = New-Object System.Drawing.Point(15,15)
+            $lblNothing.Size = New-Object System.Drawing.Size(700,40)
+            $lblNothing.ForeColor = [System.Drawing.Color]::DimGray
+            $HostTabPage.Controls.Add($lblNothing)
+            return
+        }
         [System.Windows.Forms.MessageBox]::Show($msg, "Nothing to do", "OK", "Information") | Out-Null
         return
     }
@@ -483,7 +500,24 @@ function Global:Show-IntuneAuditDialog {
         # only here, and its height is set to stop above the log.
         $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor
                        [System.Windows.Forms.AnchorStyles]::Right
-        $HostTabPage.Tag = @{ Fill = $grid; FillStopAbove = $rtbAuditLog }
+        $HostTabPage.Tag = @{
+            Fill          = $grid
+            FillStopAbove = $rtbAuditLog
+            RunAll        = { $btnRun.PerformClick() }.GetNewClosure()
+            IsBusy        = { -not $btnRun.Enabled }.GetNewClosure()
+            BlockClose    = { -not $btnRun.Enabled }.GetNewClosure()
+            Summary       = {
+                $cols = @("Metadata", "Groups", "Dependencies", "Unknown")
+                $found = @($grid.Rows | Where-Object {
+                    $auditRow = $_
+                    @($cols | Where-Object {
+                        $cell = [string]$auditRow.Cells[$_].Value
+                        $cell -and $cell -ne "OK" -and $cell -ne "(not checked)"
+                    }).Count -gt 0
+                }).Count
+                if ($found -gt 0) { "$found app(s) differ" } else { "" }
+            }.GetNewClosure()
+        }
         return
     }
     [void]$dlg.ShowDialog($Global:App.Form)

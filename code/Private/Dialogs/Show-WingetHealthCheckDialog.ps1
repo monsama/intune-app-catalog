@@ -303,8 +303,16 @@ function Global:Show-WingetHealthCheckDialog {
         $HostTabPage.Tag = @{
             Fill        = $grid
             FillStopAbove = $btnCopy
+            FillPushDown = $true
             OnFirstShow = { & $runCheck }.GetNewClosure()
             IsBusy      = { [bool]$stateBox.Running }.GetNewClosure()
+            # "NOT FOUND..." is what the check writes into the Result
+            # column for an ID winget no longer knows - the same string
+            # the status line below the grid counts.
+            Summary     = {
+                $gone = @($grid.Rows | Where-Object { [string]$_.Cells[2].Value -like 'NOT FOUND*' }).Count
+                if ($gone -gt 0) { "$gone Winget ID(s) gone" } else { "" }
+            }.GetNewClosure()
         }
         return
     }

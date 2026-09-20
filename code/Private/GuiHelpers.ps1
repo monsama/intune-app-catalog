@@ -179,9 +179,28 @@ function Global:Expand-HostedContent {
         # on purpose, so there is no way to tell "hidden" from "on another
         # tab" by inspection.
         [System.Windows.Forms.Control]$StopAbove,
+        # Moves -StopAbove, and everything level with or below it, down to
+        # the bottom of the page before filling - so a trailing button row
+        # ends up ON the bottom edge and the content takes everything
+        # above it, instead of the row staying at the height the old
+        # dialog put it and leaving a band of dead space underneath.
+        #
+        # Down only. A page SHORTER than the dialog it came from has to
+        # leave the row where it is and scroll to it; dragging a row
+        # upwards is how a button ends up sitting over the log above it.
+        [switch]$PushDown,
         [int]$BottomMargin = 12
     )
     if (-not $Control -or -not $Page) { return }
+    if ($PushDown -and $StopAbove -and $StopAbove.Parent) {
+        # The whole trailing row, not just the named control: "Select all"
+        # and "Select none" sit level with it and have to travel with it.
+        $rowTop = $StopAbove.Top
+        $trailing = @($StopAbove.Parent.Controls | Where-Object { $_.Top -ge $rowTop })
+        $lowest = ($trailing | Measure-Object -Property Bottom -Maximum).Maximum
+        $delta = ($StopAbove.Parent.ClientSize.Height - $BottomMargin) - $lowest
+        if ($delta -gt 0) { foreach ($sibling in $trailing) { $sibling.Top = $sibling.Top + $delta } }
+    }
     $fillTo = $Page.ClientSize.Height - $BottomMargin
     $hasSomethingBelow = [bool]$StopAbove
     if ($StopAbove -and ($StopAbove.Top - $BottomMargin) -lt $fillTo) {
