@@ -1270,6 +1270,13 @@ function Global:Update-Grid {
     $filter = $Global:App.TxtSearch.Text.Trim().ToLower()
     $rows = New-Object System.Collections.Generic.List[Object]
 
+    # The packages folder, listed once for this whole rebuild. Every
+    # uncommon app asks Resolve-AppPackagePath where its package is, and
+    # that used to walk the entire tree per app - on every rebuild, which
+    # is every keystroke in the search box. One walk now, shared by all of
+    # them, and rebuilt next time so a package built since still shows up.
+    $packageIndexForRefresh = Get-PackageFolderIndex -Root (Get-AppFolder -Kind Packages)
+
     # What the user was looking at before this rebuild. Update-Grid runs
     # from 20-odd places - every save, deploy, sync, and every keystroke in
     # the search box - and rebinding DataSource drops the selection and
@@ -1312,7 +1319,7 @@ function Global:Update-Grid {
         # Resolved once and reused for both the Status warning and the
         # Folder column below, rather than searching the filesystem twice
         # per uncommon app on every grid refresh.
-        $pkg = if ($needsPackageCheck) { Resolve-AppPackagePath -AppName $app.appName -Uncommon $true } else { $null }
+        $pkg = if ($needsPackageCheck) { Resolve-AppPackagePath -AppName $app.appName -Uncommon $true -Index $packageIndexForRefresh } else { $null }
 
         # Computed once, reused for both the Status note below and the
         # separate Custom Config column - same check, no reason to run

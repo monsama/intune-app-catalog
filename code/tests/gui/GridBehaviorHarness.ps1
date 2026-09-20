@@ -16,6 +16,10 @@ Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 $Global:App = @{}
 . (Join-Path $RepoRoot 'code\Private\Catalog\CatalogLogic.ps1')
 . (Join-Path $RepoRoot 'code\Private\GuiHelpers.ps1')
+# Update-Grid asks where the packages folder is before it builds a row,
+# so the resolver for that has to be here too - it only reads
+# $Global:App.AppFolders, set below.
+. (Join-Path $RepoRoot 'code\Private\AppFolders.ps1')
 
 $status = New-Object System.Collections.Generic.List[string]
 function Add-Line { param([string]$Key, $Value) $status.Add("$Key=$Value") }
