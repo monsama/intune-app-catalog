@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.4.5
+
+### Fixes
+
+- **Deleting a script that only exists locally asked Intune to delete
+  it.** A local-only script has no Intune id because it is a file, so
+  the request went out with no id at all and Graph answered "No OData
+  route exists that match template ~/singleton/navigation with http verb
+  DELETE" - true, and no help at all. Delete now recognises which it is:
+  a local-only script is a file, named and removed, with nothing sent to
+  Intune.
+- **"Run status..." had the same hole** - it asks Intune how a script ran
+  on each device, which for one that has never been there is the same
+  empty request. It is disabled for local-only rows.
+- Deleting a script that IS in Intune now says what happens to its local
+  copy: it stays until the next "Save local copies".
+
 ## 1.4.4
 
 ### Fixes
