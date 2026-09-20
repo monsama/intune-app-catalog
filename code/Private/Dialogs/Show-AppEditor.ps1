@@ -89,11 +89,19 @@ function Global:Show-AppEditor {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
-    $dlg.Text = if ($ExistingApp) { "Edit app" } else { "Add app" }
+    # The app's name in the title, because five tabs in there is nothing
+    # else on screen that says which app this is - the name field itself is
+    # on the Catalog tab, four tabs away from where you might be standing.
+    # It follows renames, so the title never claims the old name.
+    $dlg.Text = if ($ExistingApp) { "Edit app - $($ExistingApp.appName)" } else { "Add app" }
     # 40px taller than before, to fit the Previous/Next row below the
     # existing Save/Delete/Cancel row without moving any of this
     # function's many other absolutely-positioned controls.
-    $dlg.ClientSize = New-Object System.Drawing.Size(900, 959)
+    # 1010, not 959: the Assignments tab holds four group boxes and still
+    # had to scroll for the last one. Everything below the tabs moves down
+    # with it - see the bottom row block further down, which measures from
+    # these same numbers.
+    $dlg.ClientSize = New-Object System.Drawing.Size(900, 1010)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -760,7 +768,7 @@ function Global:Show-AppEditor {
     # The catalog entry and its assignments become two tabs, so that the
     # Intune side can join them as three more (Show-CreateInIntuneDialog,
     # -HostTabControl) and an app is one window rather than two.
-    $editorTabs = Convert-PanelToTabs -Dialog $dlg -Bounds (New-Object System.Drawing.Rectangle(10, 8, 880, 600)) -Pages @(
+    $editorTabs = Convert-PanelToTabs -Dialog $dlg -Bounds (New-Object System.Drawing.Rectangle(10, 8, 880, 651)) -Pages @(
         @{
             Title = 'Catalog'
             Controls = @(
@@ -790,7 +798,7 @@ function Global:Show-AppEditor {
     # there is one place things are reported and one button that sends.
     $deployHost = Show-CreateInIntuneDialog -AppName $txtName.Text.Trim() -WingetId $txtWinget.Text.Trim() `
         -ExistingAppId $txtId.Text.Trim() -FromAppEditor -CallerHasExistingCatalogEntry:([bool]$ExistingApp) `
-        -CurrentIndex $CurrentIndex -HostTabControl $editorTabs -HostForm $dlg -HostBottomY 616 `
+        -CurrentIndex $CurrentIndex -HostTabControl $editorTabs -HostForm $dlg -HostBottomY 667 `
         -OnDeployComplete $ApplyDeployResult
 
     # Its own two launch buttons were how you reached that window. There is
@@ -820,19 +828,44 @@ function Global:Show-AppEditor {
     $edgeLeft = 15
     $edgeRight = $dlg.ClientSize.Width - $edgeLeft
     $gap = 10
-    $rowActions = 880
-    $rowNavigate = 918
+    $rowActions = 931
+    $rowNavigate = 969
 
     # The status lines and the log reach the same edges, so the block above
     # the buttons lines up with them instead of ending short of the window.
+    # "Refresh from Intune" (and "Compare...", when there is something to
+    # compare) belong with what they affect - the status line and the
+    # fields it describes - not down in the row of things that finish the
+    # window. They sit at the right of the status band, and the status
+    # text stops where they begin.
+    $deploySideButtons = @($deployHost.Refresh, $deployHost.Diff | Where-Object { $_ })
+    $sideButtonsWidth = 0
+    $sideX = $edgeRight
+    foreach ($btn in $deploySideButtons) {
+        $sideX = $sideX - $btn.Width
+        $btn.Location = New-Object System.Drawing.Point($sideX,667)
+        $sideX = $sideX - $gap
+        $sideButtonsWidth += $btn.Width + $gap
+    }
+
     $statusPanel = $deployHost.Status.Parent
     if ($statusPanel) {
-        $statusPanel.Location = New-Object System.Drawing.Point($edgeLeft,616)
-        $statusPanel.Size = New-Object System.Drawing.Size(($edgeRight - $edgeLeft),76)
+        $statusPanel.Location = New-Object System.Drawing.Point($edgeLeft,667)
+        $statusPanel.Size = New-Object System.Drawing.Size(($edgeRight - $edgeLeft - $sideButtonsWidth),112)
+        # The status text and the legend were built 830 wide for a window
+        # that was 870 across with nothing beside them. Narrowed by the
+        # buttons now to their right, they have to be narrowed too - left
+        # alone they run past the panel's edge and it grows a sideways
+        # scrollbar under two lines of plain text. Both then wrap onto a
+        # second line, so both get the height for two.
+        foreach ($child in $statusPanel.Controls) {
+            $child.Width = $statusPanel.ClientSize.Width - $statusPanel.Padding.Horizontal - 4
+            $child.Height = 44
+        }
     }
     if ($deployHost.Log) {
-        $deployHost.Log.Location = New-Object System.Drawing.Point($edgeLeft,700)
-        $deployHost.Log.Size = New-Object System.Drawing.Size(($edgeRight - $edgeLeft),168)
+        $deployHost.Log.Location = New-Object System.Drawing.Point($edgeLeft,787)
+        $deployHost.Log.Size = New-Object System.Drawing.Size(($edgeRight - $edgeLeft),132)
     }
 
     $btnOk.Location = New-Object System.Drawing.Point($edgeLeft,$rowActions)
@@ -1130,7 +1163,15 @@ function Global:Show-AppEditor {
             $nameWarningTip.SetToolTip($txtName, "")
         }
     }.GetNewClosure()
-    $txtName.Add_TextChanged({ & $checkDuplicateName }.GetNewClosure())
+    $txtName.Add_TextChanged({
+        & $checkDuplicateName
+        # The title follows the name as it is typed, so renaming an app
+        # never leaves the titlebar naming the app it used to be.
+        if ($ExistingApp) {
+            $typed = $txtName.Text.Trim()
+            $dlg.Text = if ($typed) { "Edit app - $typed" } else { "Edit app" }
+        }
+    }.GetNewClosure())
     & $checkDuplicateName   # catches a pre-filled duplicate (e.g. Intune sync check's prefill) immediately on open, not just after the first keystroke
 
     # Only fires when THIS editor was itself opened by Previous/Next
