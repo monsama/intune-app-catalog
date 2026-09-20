@@ -53,7 +53,7 @@ function Global:Show-WingetHealthCheckDialog {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Asks winget on THIS machine whether each catalog app's Winget ID still exists. An ID that no longer resolves keeps working on devices that already have the app, but fails to install on every new one. Read-only - nothing is installed, and Intune isn't contacted."
+    $lblIntro.Text = "Asks winget on THIS machine whether each catalog app's Winget ID still exists. An ID that no longer resolves keeps working on devices that already have the app, but fails to install on every new one. Nothing is installed and Intune is never contacted; ""Find replacement..."" is the one thing here that writes, and it writes only to the local catalog."
     $lblIntro.Location = New-Object System.Drawing.Point(15, 12)
     $lblIntro.Size = New-Object System.Drawing.Size(730, 48)
     $dlg.Controls.Add($lblIntro)
@@ -129,6 +129,47 @@ function Global:Show-WingetHealthCheckDialog {
     $btnCopy.Location = New-Object System.Drawing.Point(15, 460)
     $btnCopy.Size = New-Object System.Drawing.Size(120, 30)
     $dlg.Controls.Add($btnCopy)
+
+    # Knowing an ID has stopped resolving is only half an answer - the
+    # work is finding what it became, and this check knew the app's name
+    # and had a winget search sitting one dialog away without ever
+    # offering it. Enabled only on a row that actually needs one.
+    $btnFindReplacement = New-Object System.Windows.Forms.Button
+    $btnFindReplacement.Text = "Find replacement..."
+    $btnFindReplacement.Location = New-Object System.Drawing.Point(145, 460)
+    $btnFindReplacement.Size = New-Object System.Drawing.Size(160, 30)
+    $btnFindReplacement.Enabled = $false
+    $dlg.Controls.Add($btnFindReplacement)
+    $replacementTip = New-Object System.Windows.Forms.ToolTip
+    $replacementTip.SetToolTip($btnFindReplacement, "Searches winget for the selected app by name and writes the ID you pick into the catalog. Only the catalog changes - Intune is not contacted, and the app is not redeployed.")
+
+    $grid.Add_SelectionChanged({
+        $selectedRow = $grid.CurrentRow
+        $btnFindReplacement.Enabled = [bool]($selectedRow -and ([string]$selectedRow.Cells['Result'].Value) -like 'NOT FOUND*')
+    }.GetNewClosure())
+
+    $btnFindReplacement.Add_Click({
+        $selectedRow = $grid.CurrentRow
+        if (-not $selectedRow) { return }
+        $rowAppName = [string]$selectedRow.Cells['AppName'].Value
+        $picked = Show-WingetSearchDialog -InitialQuery $rowAppName
+        if (-not $picked) { return }
+        $targetApp = @($Global:App.Apps | Where-Object { $_.appName -eq $rowAppName }) | Select-Object -First 1
+        if (-not $targetApp) {
+            [System.Windows.Forms.MessageBox]::Show("'$rowAppName' is no longer in the catalog.", "Not found", "OK", "Warning") | Out-Null
+            return
+        }
+        $previousId = [string]$targetApp.wingetId
+        if ($previousId -eq $picked) { return }
+        $targetApp.wingetId = $picked
+        # Direct save, like every other single complete action in this app.
+        [void](Save-AppsToFile -Path $Global:App.LinkedFilePath)
+        Update-Grid
+        $selectedRow.Cells['WingetId'].Value = $picked
+        $selectedRow.Cells['Result'].Value = "Changed to $picked - press Check again to confirm it resolves"
+        $selectedRow.DefaultCellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
+        Write-Log "[OK] '$rowAppName' Winget ID changed from '$previousId' to '$picked' in the catalog.`r`n" ([System.Drawing.Color]::LightGreen)
+    }.GetNewClosure())
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
