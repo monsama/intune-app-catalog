@@ -254,20 +254,35 @@ function Global:Show-PlatformScriptsDialog {
                 # failing to read would otherwise have deleted the local
                 # copy it already had, and all of them failing would have
                 # emptied the folder. A read error must never cost data.
-                $readEverything = ($collected.Count -eq $total)
-                $saveResult = Save-ScriptsToFolder -Path $catalogPathRef -Scripts $collected -NoPrune:(-not $readEverything)
-                foreach ($problem in @($saveResult.Errors)) {
-                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] $problem`r`n"
+                # try/finally around the whole ending. Whatever goes wrong
+                # in here, the dialog has to come back out of its busy
+                # state - an exception escaping this tick is what left
+                # "Save local copies" stuck on "Reading 'x' (1 of 1)..."
+                # with the buttons disabled and no way forward.
+                try {
+                    $readEverything = ($collected.Count -eq $total)
+                    $saveResult = Save-ScriptsToFolder -Path $catalogPathRef -Scripts $collected -NoPrune:(-not $readEverything)
+                    foreach ($problem in @($saveResult.Errors)) {
+                        Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] $problem`r`n"
+                    }
+                    $removedNote = if ($saveResult.Removed -gt 0) { ", $($saveResult.Removed) no longer in the tenant removed" } else { "" }
+                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[OK] Saved $($saveResult.Saved) local copy/copies$removedNote.`r`n" -MirrorToMainLog
+                    if (-not $readEverything) {
+                        Write-DialogLogLine -LogBox $rtbLogRef -Text "[WARN] $($total - $collected.Count) of $total script(s) couldn't be read, so nothing was removed - the local folder still holds copies this run could not confirm.`r`n" -MirrorToMainLog
+                    }
+                    $lblStatusRef.ForeColor = if ($readEverything) { [System.Drawing.Color]::SeaGreen } else { [System.Drawing.Color]::DarkOrange }
+                    $lblStatusRef.Text = "Local copies saved: $($saveResult.Saved) of $total script(s)."
                 }
-                $removedNote = if ($saveResult.Removed -gt 0) { ", $($saveResult.Removed) no longer in the tenant removed" } else { "" }
-                Write-DialogLogLine -LogBox $rtbLogRef -Text "[OK] Saved $($saveResult.Saved) local copy/copies$removedNote.`r`n" -MirrorToMainLog
-                if (-not $readEverything) {
-                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[WARN] $($total - $collected.Count) of $total script(s) couldn't be read, so nothing was removed - the local folder still holds copies this run could not confirm.`r`n" -MirrorToMainLog
+                catch {
+                    $where = if ($_.InvocationInfo -and $_.InvocationInfo.PositionMessage) { " [$($_.InvocationInfo.PositionMessage.Trim())]" } else { "" }
+                    Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] Saving the local copies failed: $($_.Exception.Message)$where`r`n" -MirrorToMainLog
+                    $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                    $lblStatusRef.Text = "Saving local copies failed - see the log."
                 }
-                $lblStatusRef.ForeColor = if ($readEverything) { [System.Drawing.Color]::SeaGreen } else { [System.Drawing.Color]::DarkOrange }
-                $lblStatusRef.Text = "Local copies saved: $($saveResult.Saved) of $total script(s)."
-                & $setBusyRef $false
-                & $populateGridRef
+                finally {
+                    & $setBusyRef $false
+                    & $populateGridRef
+                }
                 return
             }
             $row = $pending.Dequeue()
