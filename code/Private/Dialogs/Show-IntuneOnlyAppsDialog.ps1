@@ -32,6 +32,11 @@ function Global:Show-IntuneOnlyAppsDialog {
     # calling Save-AppsToFile/mutating the catalog after the user believes
     # they've cancelled.
     $busyBox = @{ Count = 0 }
+    # Asked to stop. Read at the top of each turn of the bulk-add queue,
+    # which is the only long-running thing here - one Graph fetch per
+    # checked app, and on a tenant with a hundred strangers in it that is
+    # a wait with no way out of it.
+    $cancelAddBox = @{ Value = $false }
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
@@ -152,6 +157,23 @@ function Global:Show-IntuneOnlyAppsDialog {
     $dlg.Controls.Add($btnAction)
     $actionTip = New-Object System.Windows.Forms.ToolTip
     $actionTip.SetToolTip($btnAction, "Acts on the single selected row - label changes with the row's kind: opens the full editor to add it, syncs the catalog's stored name to match Intune, or clears an App ID that no longer exists in Intune.")
+
+    $btnCancelAdd = New-Object System.Windows.Forms.Button
+    $btnCancelAdd.Text = "Stop"
+    $btnCancelAdd.Location = New-Object System.Drawing.Point(570,474)
+    $btnCancelAdd.Size = New-Object System.Drawing.Size(85,32)
+    $btnCancelAdd.Enabled = $false
+    $btnCancelAdd.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
+    $dlg.Controls.Add($btnCancelAdd)
+    $cancelAddTip = New-Object System.Windows.Forms.ToolTip
+    $cancelAddTip.SetToolTip($btnCancelAdd, "Stops the bulk add after the app it is currently reading. Apps already added are saved and kept; the rest are left alone.")
+    $btnCancelAdd.Add_Click({
+        if (-not $btnCancelAdd.Enabled) { return }
+        $cancelAddBox.Value = $true
+        $btnCancelAdd.Enabled = $false
+        $lblStatus.ForeColor = [System.Drawing.Color]::DarkOrange
+        $lblStatus.Text = "Stopping after this app..."
+    }.GetNewClosure())
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
@@ -396,10 +418,16 @@ function Global:Show-IntuneOnlyAppsDialog {
     $RunAddQueueBox.Value = {
         param($Queue, $QueueIndex, $AddedCount, $FailedGroupFetchCount)
 
-        if ($QueueIndex -ge $Queue.Count) {
+        # Cancel joins the same ending rather than getting one of its own:
+        # the apps already added are real, and they have to be saved,
+        # reported, and have the grid put back exactly as a full run does.
+        # Anything else leaves them added in memory and not on disk.
+        $stoppedEarly = $cancelAddBox.Value -and $QueueIndex -lt $Queue.Count
+        if ($QueueIndex -ge $Queue.Count -or $stoppedEarly) {
             $btnAddChecked.Enabled = $true
             $btnAction.Enabled = $true
             $grid.Enabled = $true
+            $btnCancelAdd.Enabled = $false
             $busyBox.Count--
             $dlg.Cursor = [System.Windows.Forms.Cursors]::Default
             # See the note on this same pattern above (Start-AppMetadataFetch's
@@ -416,7 +444,11 @@ function Global:Show-IntuneOnlyAppsDialog {
             # per-item comment below), but it shouldn't be silent either -
             # otherwise "added N apps" reads as fully successful even when
             # some came in with blank groups because Graph hiccuped.
-            $addedMsg = "Added $AddedCount app(s) to the catalog, with their current group assignments fetched from Intune. Set Winget ID and metadata for them later from the main catalog."
+            $addedMsg = if ($stoppedEarly) {
+                "Stopped after $AddedCount of $($Queue.Count) app(s). Those are saved to the catalog with their current group assignments; the rest were not touched."
+            } else {
+                "Added $AddedCount app(s) to the catalog, with their current group assignments fetched from Intune. Set Winget ID and metadata for them later from the main catalog."
+            }
             if ($FailedGroupFetchCount -gt 0) {
                 $addedMsg += "`n`n$FailedGroupFetchCount of them could not have their group assignments fetched (Graph error) - those were added with blank groups instead."
             }
@@ -494,6 +526,8 @@ function Global:Show-IntuneOnlyAppsDialog {
         $btnAddChecked.Enabled = $false
         $btnAction.Enabled = $false
         $grid.Enabled = $false
+        $cancelAddBox.Value = $false
+        $btnCancelAdd.Enabled = $true
         $busyBox.Count++
         $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
         & $RunAddQueueBox.Value -Queue $toAdd.ToArray() -QueueIndex 0 -AddedCount 0 -FailedGroupFetchCount 0
