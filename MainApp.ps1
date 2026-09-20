@@ -212,33 +212,7 @@ $Global:App.CheckIntuneOnDeployOpen = $true
 # values..." and changes something - then persisted in the same settings
 # file as Graph credentials/Favorite groups, for the same
 # write-everything-together reason documented on Write-SettingsFile below.
-$Global:App.DefaultAppSettings = [pscustomobject]@{
-    Architecture             = "x64"
-    InstallContext           = "System"
-    # Newest Windows 10 release, not Windows 11 - a sensible default
-    # shouldn't silently require Windows 11 for every new app. See
-    # Show-CreateInIntuneDialog's own $minOsMap for the full set this can
-    # be set to.
-    MinOSKey                 = "W10_22H2"
-    MinDiskSpaceMB           = 0
-    MinMemoryMB              = 0
-    MinProcessors            = 0
-    MinCpuSpeedMHz           = 0
-    InstallTimeMinutes       = 60
-    DeviceRestartBehavior    = "basedOnReturnCode"
-    AllowAvailableUninstall  = $false
-    ReturnCodes              = @(
-        [pscustomobject]@{ returnCode = 0; type = "success" }
-        [pscustomobject]@{ returnCode = 1707; type = "success" }
-        [pscustomobject]@{ returnCode = 3010; type = "softReboot" }
-        [pscustomobject]@{ returnCode = 1641; type = "hardReboot" }
-        [pscustomobject]@{ returnCode = 1618; type = "retry" }
-    )
-    # The app(s) every OTHER app defaults to depending on, when an app by
-    # that name exists in the catalog - an empty array means "no default
-    # dependencies".
-    DefaultDependencyAppNames = @("Winget AutoUpdate")
-}
+$Global:App.DefaultAppSettings = Get-FactoryAppSettings   # one definition of the built-in values - see Get-FactoryAppSettings
 
 # Guards Start-TypeVersionBackfill (see its own definition) against
 # running more than once per catalog load - it's kicked off automatically
@@ -597,7 +571,6 @@ $Global:App.BtnLookupIds = New-Object System.Windows.Forms.Button; $Global:App.B
 $btnCheckIntuneOnly = New-Object System.Windows.Forms.Button; $btnCheckIntuneOnly.Text = "Intune sync check..."
 $btnPlatformScripts = New-Object System.Windows.Forms.Button; $btnPlatformScripts.Text = "Platform scripts..."
 $btnBatchAssign = New-Object System.Windows.Forms.Button; $btnBatchAssign.Text = "P&ush groups to Intune (multiple apps)..."
-$btnSyncMetadata = New-Object System.Windows.Forms.Button; $btnSyncMetadata.Text = "Pull metadata and groups from Intune..."
 $btnBatchEdit = New-Object System.Windows.Forms.Button; $btnBatchEdit.Text = "Batch edit Intune fields..."
 $btnBatchDeploy = New-Object System.Windows.Forms.Button; $btnBatchDeploy.Text = "&Batch deploy..."
 $btnGroupManager = New-Object System.Windows.Forms.Button; $btnGroupManager.Text = "Group manager..."
@@ -606,8 +579,7 @@ $btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.
 # against Entra ID, Winget IDs, diagnostics): they are tabs of one window
 # now - see Show-ChecksDialog. Each still opens standalone if called that
 # way, which is how the layout audit checks them one at a time.
-$btnChecks = New-Object System.Windows.Forms.Button; $btnChecks.Text = "Run checks..."
-$btnIntuneAudit = New-Object System.Windows.Forms.Button; $btnIntuneAudit.Text = "&Intune Audit..."
+$btnChecks = New-Object System.Windows.Forms.Button; $btnChecks.Text = "&Checks..."
 $Global:App.BtnRunLaunch = New-Object System.Windows.Forms.Button; $Global:App.BtnRunLaunch.Text = "&Package apps"
 $btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "&Settings..."
 $btnDefaultValues = New-Object System.Windows.Forms.Button; $btnDefaultValues.Text = "Edit default values..."
@@ -633,16 +605,14 @@ $toolbarTips.SetToolTip($Global:App.BtnLookupIds, "Search Intune by name for app
 $toolbarTips.SetToolTip($btnPlatformScripts, "The PowerShell scripts Intune runs on enrolled Windows devices: list them, add one, change one, delete one.")
 $toolbarTips.SetToolTip($btnCheckIntuneOnly, "Compares Intune against this catalog: apps in Intune not yet in the catalog, catalog apps renamed in Intune since, and catalog apps whose App ID no longer exists in Intune. Read-only.")
 $toolbarTips.SetToolTip($btnBatchAssign, "Add a favorite group to multiple apps at once, then preview and apply the result to Intune.")
-$toolbarTips.SetToolTip($btnSyncMetadata, "Pull current metadata from Intune into the local catalog for apps that already have an App ID. Read-only.")
 $toolbarTips.SetToolTip($btnBatchEdit, "Change one or more fields (architecture, min OS, requirements, restart behavior, return codes, dependencies) across multiple deployed Win32 apps at once, then push each one to Intune.")
 $toolbarTips.SetToolTip($btnBatchDeploy, "Create multiple apps in Intune, in dependency order. Uses metadata saved via 'Save for later...' where an app has it, otherwise the same defaults Deploy to Intune's own form would.")
 $toolbarTips.SetToolTip($btnGroupManager, "Create, update, or delete an Entra ID group and manage its members.")
 $toolbarTips.SetToolTip($btnFavoriteGroups, "Pick which groups show up as ready-to-tick options in every app's Required/Available/Uninstall lists.")
-$toolbarTips.SetToolTip($btnIntuneAudit, "Check every deployed app's Metadata, Groups, Dependencies, and Assignments against what's actually live in Intune, all in one grid. Read-only.")
 $toolbarTips.SetToolTip($Global:App.BtnRunLaunch, "Build the .intunewin package(s) for the selected (or all) uncommon apps.")
 $toolbarTips.SetToolTip($btnCertSetup, "Configure the Tenant ID, Client ID, and certificate used to connect to Microsoft Graph.")
 $toolbarTips.SetToolTip($btnDefaultValues, "Change the computed defaults every new Winget app starts with (architecture, min OS, requirements, return codes, ...). Doesn't touch any app already saved or deployed.")
-$toolbarTips.SetToolTip($btnChecks, "Four read-only checks in one window: dependencies between catalog apps, catalog groups against Entra ID, Winget IDs against winget, and this app's own diagnostics. Each tab runs when you open it.")
+$toolbarTips.SetToolTip($btnChecks, "Every read-only check in one window: App IDs, audit and metadata against Intune, then dependencies, catalog groups against Entra ID, Winget IDs and this app's own diagnostics. Nothing here changes anything.")
 $toolbarTips.SetToolTip($btnPrerequisites, "Check whether the Microsoft.Graph.Authentication PowerShell module this app needs is installed, and install it for your user account if it isn't.")
 
 $Global:App.TxtSearch = New-Object System.Windows.Forms.TextBox
@@ -679,7 +649,7 @@ $Global:App.TxtSearch.AccessibleName = "Search apps in this catalog"
 # machine, the tenant, and getting this app set up - so the title answers
 # "where would that button live?" before you read the buttons.
 $gbCatalog = New-ToolbarGroup -Title "Catalog" -Buttons @($btnNew, $btnEdit, $btnReload)
-$gbIntune = New-ToolbarGroup -Title "Intune" -Buttons @($Global:App.BtnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnIntuneAudit)
+$gbIntune = New-ToolbarGroup -Title "Intune" -Buttons @($Global:App.BtnRunLaunch, $btnBatchDeploy, $btnBatchAssign, $btnChecks)
 $gbSetup = New-ToolbarGroup -Title "Setup" -Buttons @($btnCertSetup, $btnGettingStarted)
 
 # Builds one ToolStripMenuItem submenu from a list of {Text;Btn} pairs -
@@ -698,7 +668,6 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Intune" -Tips $toolbarTips -Items @(
     @{ Text = $Global:App.BtnLookupIds.Text; Btn = $Global:App.BtnLookupIds }
     @{ Text = $btnCheckIntuneOnly.Text; Btn = $btnCheckIntuneOnly }
-    @{ Text = $btnSyncMetadata.Text; Btn = $btnSyncMetadata }
     @{ Text = $btnBatchEdit.Text; Btn = $btnBatchEdit }
     @{ Text = $btnDefaultValues.Text; Btn = $btnDefaultValues }
     @{ Text = $btnPlatformScripts.Text; Btn = $btnPlatformScripts }
@@ -717,7 +686,6 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
 # rather than reporting on anything, it is what the other dialogs open
 # when they find the module missing, and the diagnostics tab links to it.
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Verify" -Tips $toolbarTips -Items @(
-    @{ Text = $btnChecks.Text; Btn = $btnChecks }
     @{ Text = $btnPrerequisites.Text; Btn = $btnPrerequisites }
 )))
 $btnMoreActions = New-Object System.Windows.Forms.Button
@@ -852,7 +820,7 @@ $btnAuditWarningCheck.Location = New-Object System.Drawing.Point(650, 5)
 $btnAuditWarningCheck.Size = New-Object System.Drawing.Size(150, 28)
 $btnAuditWarningCheck.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
 $Global:App.PanelAuditWarning.Controls.Add($btnAuditWarningCheck)
-$btnAuditWarningCheck.Add_Click({ Show-IntuneAuditDialog; Update-Grid; $Global:App.PanelAuditWarning.Visible = $false })
+$btnAuditWarningCheck.Add_Click({ Show-ChecksDialog -StartTab "Audit"; Update-Grid; $Global:App.PanelAuditWarning.Visible = $false })
 $btnAuditWarningDismiss = New-Object System.Windows.Forms.Button
 $btnAuditWarningDismiss.Text = "Dismiss"
 $btnAuditWarningDismiss.Location = New-Object System.Drawing.Point(810, 5)
@@ -1796,7 +1764,7 @@ $menuItemAssign.Add_Click({
 $menuItemSyncMetadata.Add_Click({
     $indices = Get-SelectedAppIndices
     if ($indices.Count -eq 0) { return }
-    Show-SyncMetadataDialog -ScopedIndices $indices
+    Show-ChecksDialog -ScopedIndices $indices -StartTab "Metadata sync"
     Update-Grid
 })
 
@@ -1880,7 +1848,7 @@ $menuItemInstallStatus.Add_Click({
 $menuItemAudit.Add_Click({
     $indices = Get-SelectedAppIndices
     if ($indices.Count -eq 0) { return }
-    Show-IntuneAuditDialog -ScopedIndices $indices
+    Show-ChecksDialog -ScopedIndices $indices -StartTab "Audit"
     Update-Grid
 })
 
@@ -2018,7 +1986,7 @@ $Global:App.BtnLookupIds.Add_Click({
         if ($ok) {
             # One window for all three checks - the lookup that just ran
             # fills the App IDs tab, and the same fetch serves the other two.
-            Show-IntuneCheckDialog
+            Show-ChecksDialog -StartTab "App IDs"
             Update-Grid
         }
         # "Module missing" / "Not configured" already got their own
@@ -2047,16 +2015,6 @@ $btnBatchAssign.Add_Click({
     # as the identical fix just made for Sync metadata.
     Update-Grid
 })
-$btnSyncMetadata.Add_Click({
-    $selectedIndices = Get-SelectedAppIndices
-    Show-SyncMetadataDialog -ScopedIndices $selectedIndices
-    # Same reasoning as every other bulk action this session (Batch
-    # Deploy, Bulk Delete) - a sync run can change appName/Type/Version/
-    # metadata directly on disk while this dialog is open, so the main
-    # grid is stale the moment it closes regardless of how it was
-    # closed (Close button vs. the window's own X).
-    Update-Grid
-})
 $btnBatchEdit.Add_Click({
     $selectedIndices = Get-SelectedAppIndices
     Show-BatchEditMetadataDialog -ScopedIndices $selectedIndices
@@ -2069,7 +2027,6 @@ $btnBatchDeploy.Add_Click({
 $btnGroupManager.Add_Click({ Show-GroupManagerDialog })
 $btnPlatformScripts.Add_Click({ Show-PlatformScriptsDialog })
 $btnFavoriteGroups.Add_Click({ Show-FavoriteGroupsManager })
-$btnIntuneAudit.Add_Click({ Show-IntuneCheckDialog; Update-Grid })
 
 # Typing waits for you to stop before the grid is rebuilt. A rebuild is
 # not cheap: it re-derives every row, and for each app with no Winget ID

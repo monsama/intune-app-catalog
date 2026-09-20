@@ -514,6 +514,47 @@ function Global:ConvertTo-TemplateAppRecord {
     }
 }
 
+function Global:Get-FactoryAppSettings {
+    <#
+      The defaults this app ships with, as an object shaped exactly like
+      $Global:App.DefaultAppSettings.
+
+      One definition, because there were two: MainApp built these at
+      startup and "Reset to built-in defaults" set each field again by
+      hand in its own click handler. Two lists of the same twelve values
+      drift the moment one is edited and the other is not, and nothing
+      would have said so.
+
+      A fresh object every call - the caller edits what it gets back, and
+      a shared one would mean editing the factory settings themselves.
+    #>
+    return [pscustomobject]@{
+        Architecture             = "x64"
+        InstallContext           = "System"
+        # Newest Windows 10 release, not Windows 11 - a sensible default
+        # shouldn't silently require Windows 11 for every new app.
+        MinOSKey                 = "W10_22H2"
+        MinDiskSpaceMB           = 0
+        MinMemoryMB              = 0
+        MinProcessors            = 0
+        MinCpuSpeedMHz           = 0
+        InstallTimeMinutes       = 60
+        DeviceRestartBehavior    = "basedOnReturnCode"
+        AllowAvailableUninstall  = $false
+        ReturnCodes              = @(
+            [pscustomobject]@{ returnCode = 0; type = "success" }
+            [pscustomobject]@{ returnCode = 1707; type = "success" }
+            [pscustomobject]@{ returnCode = 3010; type = "softReboot" }
+            [pscustomobject]@{ returnCode = 1641; type = "hardReboot" }
+            [pscustomobject]@{ returnCode = 1618; type = "retry" }
+        )
+        # The app(s) every OTHER app defaults to depending on, when an app
+        # by that name exists in the catalog - an empty array means "no
+        # default dependencies".
+        DefaultDependencyAppNames = @("Winget AutoUpdate")
+    }
+}
+
 function Global:Get-CreateAppTemplates {
     param([string]$WingetId, [bool]$Uncommon)
 

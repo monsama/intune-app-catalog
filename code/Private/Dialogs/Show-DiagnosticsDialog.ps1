@@ -381,6 +381,12 @@ function Global:Show-DiagnosticsDialog {
         # first opened, and the host refuses to close while it is going -
         # $btnRun is disabled exactly for the duration of a run, and the
         # titlebar X doesn't go through the button.
+        # The status label sits beside the button row, but its bottom edge
+        # falls two pixels outside the tolerance Move-DialogToTabPage uses,
+        # so on a taller page the buttons move down and the label would
+        # stay behind - with the log then filling the gap it is still in.
+        # Said here rather than widening that tolerance for every dialog.
+        $lblStatus.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
         $HostTabPage.Tag = @{
             Fill        = $rtbLog
             FillStopAbove = $btnRun

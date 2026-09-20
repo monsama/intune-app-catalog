@@ -3,64 +3,82 @@ function Global:Show-ChecksDialog {
       Everything this app can check about itself and the catalog, in one
       window.
 
-      They were four: dependencies between catalog apps, catalog groups
-      against Entra ID, Winget IDs against winget, and the app's own
-      diagnostics. Four menu entries under "Verify", four windows, and no
-      way to tell from the outside which of them answers the question you
-      actually have - the menu already grouped them for that reason
-      ("someone looking for 'check X' shouldn't need to already know
-      whether X lives under Catalog/Intune/Entra ID to find it"). Tabs are
-      that same grouping, one step further.
+      They were seven, in two windows and four menu entries, and three of
+      them could also be reached from a toolbar button or the grid's
+      right-click menu. Nothing said from the outside which one answers
+      the question you actually have.
+
+      Seven tabs now, in two groups. "Intune:" for the three that ask the
+      tenant - App IDs, Audit, Metadata sync - then the four that look at
+      what is on this machine: dependencies between catalog apps, catalog
+      groups against Entra ID, Winget IDs against winget, and this app's
+      own diagnostics.
+
+      The three Intune tabs stay first and stay together because they
+      share one read of every app in the tenant. That shared fetch is why
+      they were a window of their own (Check against Intune, now gone),
+      and it survives by building them together in this order, as that
+      window did.
+
+      The other four cost real time each (one reads every catalog group
+      out of Entra ID, one shells out to winget per app), so those run
+      when their tab is first opened - a page hands its work to this host
+      as $Page.Tag.OnFirstShow, says when it must not be interrupted as
+      $Page.Tag.BlockClose, and names its content control as $Page.Tag.Fill.
 
       Each tab is still its own dialog, unchanged, moved onto a page - see
-      Move-DialogToTabPage, and Show-IntuneCheckDialog, which did this
-      first for the three Intune checks.
+      Move-DialogToTabPage.
 
-      Unlike those three, these four share no fetch, and two of them cost
-      real time (one reads every catalog group out of Entra ID, one shells
-      out to winget per app). So a tab's check runs when that tab is first
-      opened, never all four when the window opens - a page hands its
-      work to this host as $Page.Tag.OnFirstShow, and says when it must
-      not be interrupted as $Page.Tag.BlockClose.
+      -ScopedIndices narrows Audit and Metadata sync to selected catalog
+      rows, the way the grid's right-click menu asks for them.
+      -StartTab opens on a particular tab, so "Run audit..." on a row
+      still lands where it used to.
     #>
+
+    param([int[]]$ScopedIndices = @(), [string]$StartTab)
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Checks"
-    # Fits the largest tab (the dependency overview, 820x540) with room for
-    # the tab strip and the button row, and still fits a 1024x768 screen.
-    $dlg.ClientSize = New-Object System.Drawing.Size(880, 640)
+    # Sized for the widest tab, which is App IDs: it lists every app in the
+    # tenant beside every app in the catalog, and that was a 1320px window
+    # of its own before it moved in here. 8px margins for the same reason
+    # that window used them - at 1024x768 this is shrunk to fit, and the
+    # tabs need every pixel of what is left.
+    $dlg.ClientSize = New-Object System.Drawing.Size(1320, 700)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "Sizable"
-    $dlg.MinimumSize = New-Object System.Drawing.Size(700, 520)
+    $dlg.MinimumSize = New-Object System.Drawing.Size(900, 560)
     $dlg.MaximizeBox = $true
     $dlg.MinimizeBox = $false
 
     $tabs = New-Object System.Windows.Forms.TabControl
-    $tabs.Location = New-Object System.Drawing.Point(15,12)
-    $tabs.Size = New-Object System.Drawing.Size(850, 576)
+    $tabs.Location = New-Object System.Drawing.Point(8,8)
+    $tabs.Size = New-Object System.Drawing.Size(1304, 640)
     $tabs.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor
                    [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Bottom
     $dlg.Controls.Add($tabs)
 
     $lblRunAll = New-Object System.Windows.Forms.Label
-    $lblRunAll.Location = New-Object System.Drawing.Point(180,602)
-    $lblRunAll.Size = New-Object System.Drawing.Size(430,22)
+    $lblRunAll.Location = New-Object System.Drawing.Point(175,662)
+    $lblRunAll.Size = New-Object System.Drawing.Size(1037,22)
     $lblRunAll.ForeColor = [System.Drawing.Color]::DimGray
-    $lblRunAll.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
+    # Anchored on both sides: left only, it kept its full width when the
+    # window was shrunk to fit a small screen and ran out over Close.
+    $lblRunAll.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($lblRunAll)
 
     $btnRunAll = New-Object System.Windows.Forms.Button
     $btnRunAll.Text = "Run all checks"
     $btnRunAll.Size = New-Object System.Drawing.Size(150,30)
-    $btnRunAll.Location = New-Object System.Drawing.Point(15,598)
+    $btnRunAll.Location = New-Object System.Drawing.Point(8,658)
     $btnRunAll.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
     $dlg.Controls.Add($btnRunAll)
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
     $btnClose.Size = New-Object System.Drawing.Size(90,30)
-    $btnClose.Location = New-Object System.Drawing.Point(775,598)
+    $btnClose.Location = New-Object System.Drawing.Point(1222,658)
     $btnClose.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($btnClose)
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
@@ -69,9 +87,16 @@ function Global:Show-ChecksDialog {
     # read-only - none of them changes the catalog or Intune.
     $dlg.AcceptButton = $btnClose
 
-    # Catalog first, then the two outside systems it is checked against,
-    # then the app's own plumbing - narrowest question to widest.
+    # Grouped by what a check talks to, and named so the tab strip says
+    # which group it is in. The three "Intune:" tabs go first because they
+    # share one read of every app in the tenant - that shared fetch is why
+    # they were a window of their own, and it is kept by building them
+    # together, in this order, exactly as that window did. The four after
+    # them each stand alone and cost nothing until opened.
     foreach ($spec in @(
+        @{ Title = 'Intune: App IDs';       Build = { param($page) Show-AppIdMatchDialog -HostTabPage $page -HostForm $dlg } }
+        @{ Title = 'Intune: Audit';         Build = { param($page) Show-IntuneAuditDialog -ScopedIndices $ScopedIndices -HostTabPage $page -HostForm $dlg } }
+        @{ Title = 'Intune: Metadata sync'; Build = { param($page) Show-SyncMetadataDialog -ScopedIndices $ScopedIndices -HostTabPage $page -HostForm $dlg } }
         @{ Title = 'Dependencies';    Build = { param($page) Show-DependencyOverviewDialog -HostTabPage $page -HostForm $dlg } }
         @{ Title = 'Catalog groups';  Build = { param($page) Show-GroupDriftCheckDialog -HostTabPage $page -HostForm $dlg } }
         @{ Title = 'Winget packages'; Build = { param($page) Show-WingetHealthCheckDialog -HostTabPage $page -HostForm $dlg } }
@@ -81,7 +106,7 @@ function Global:Show-ChecksDialog {
         $page.Text = [string]$spec.Title
         $page.UseVisualStyleBackColor = $true
         [void]$tabs.TabPages.Add($page)
-        # One tab failing to build must not take the other three with it -
+        # One tab failing to build must not take the others with it -
         # each is a separate dialog with its own reasons to give up (an
         # empty catalog, no Winget IDs to check, no winget on the box).
         try { & $spec.Build $page }
@@ -108,6 +133,16 @@ function Global:Show-ChecksDialog {
         $alreadyRun[$page] = $true
         & $tag.OnFirstShow
     }.GetNewClosure()
+    # Asked for a particular tab - "Run audit..." on a grid row still lands
+    # on Audit. Matched on the part after the group prefix as well as the
+    # whole title, so a caller can say 'Audit' without knowing it is filed
+    # under "Intune:".
+    if ($StartTab) {
+        foreach ($page in $tabs.TabPages) {
+            $bare = ($page.Text -replace '^[^:]+:\s*', '')
+            if ($page.Text -eq $StartTab -or $bare -eq $StartTab) { $tabs.SelectedTab = $page; break }
+        }
+    }
     $tabs.Add_SelectedIndexChanged({ & $runPage $tabs.SelectedTab }.GetNewClosure())
     $dlg.Add_Shown({
         # Each tab's content takes the height its own dialog's hidden

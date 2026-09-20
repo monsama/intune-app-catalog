@@ -94,7 +94,7 @@ function Test-ToolbarWraps {
     Save-AppShot $Ctx $Ctx.Main 'main_900x600'
     $nr = New-Object GuiTest.W32+RECT; [void]$W32::GetWindowRect($Ctx.Main, [ref]$nr)
     $clipped = @()
-    foreach ($name in '+ Add app...', 'Edit...', 'Package apps', 'Batch deploy...', 'Intune Audit...', 'Reload', 'Settings...', 'Getting started...', 'More actions...') {
+    foreach ($name in '+ Add app...', 'Edit...', 'Package apps', 'Batch deploy...', 'Checks...', 'Reload', 'Settings...', 'Getting started...', 'More actions...') {
         $h = $Ctx.Buttons[$name]
         $br = New-Object GuiTest.W32+RECT; [void]$W32::GetWindowRect($h, [ref]$br)
         if ($br.R -gt $nr.R - 8) { $clipped += "$name (right edge $($br.R) > window $($nr.R))" }
@@ -152,7 +152,7 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         Save-AppShot $ctx $ctx.Main 'main_window'
         Assert-True ($W32::Text($ctx.Main) -like 'Intune App Catalog & Deployment (v*)') "main window title"
         Assert-True ((Get-AppDialogs $ctx).Count -eq 0) "no popup at startup"
-        foreach ($b in '+ Add app...', 'Edit...', 'Package apps', 'Batch deploy...', 'Intune Audit...', 'Reload', 'Settings...', 'Getting started...', 'More actions...') {
+        foreach ($b in '+ Add app...', 'Edit...', 'Package apps', 'Batch deploy...', 'Checks...', 'Reload', 'Settings...', 'Getting started...', 'More actions...') {
             Assert-True ($ctx.Buttons.ContainsKey($b)) "toolbar has '$b'"
         }
 

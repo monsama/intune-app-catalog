@@ -31,11 +31,19 @@
     pwsh -NoProfile -File code/tests/gui/DialogLayout.GuiTests.ps1 -ShotDir .\layout-shots
 .EXAMPLE
     pwsh -NoProfile -File code/tests/gui/DialogLayout.GuiTests.ps1 -Screen 1024x768
+.EXAMPLE
+    pwsh -NoProfile -File code/tests/gui/DialogLayout.GuiTests.ps1 -AppHost pwsh -Only "*Checks*"
 #>
 param(
     [string[]]$AppHost = @('pwsh', 'powershell'),
     [string]$ShotDir,
-    [ValidatePattern('^(\d+x\d+)?$')][string]$Screen = ''
+    [ValidatePattern('^(\d+x\d+)?$')][string]$Screen = '',
+    # Only the steps whose name matches this wildcard - for checking the
+    # one dialog you just changed instead of opening all fifty-odd of
+    # them. The full sweep is what CI runs and what a commit needs; this
+    # is for the edit-check-edit loop in between, where opening every
+    # window to look at one costs minutes and tells you nothing new.
+    [string]$Only = ''
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'GuiTestDriver.ps1')
@@ -48,6 +56,7 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
     $outDir = Join-Path $root 'layout-audit'
     [void][IO.Directory]::CreateDirectory($outDir)
     $harnessArgs = @('-OutDir', "`"$outDir`"")
+    if ($Only) { $harnessArgs += @('-Only', "`"$Only`"") }
     if ($ShotDir) {
         $shots = Join-Path $ShotDir $script:currentHost
         [void][IO.Directory]::CreateDirectory($shots)
@@ -94,7 +103,11 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
             elseif ($line -match '^\s{6}\S' -and $window) { $issues.Add($line) }
         }
         & $flush
-        Assert-True ($windows -ge 30) "the harness saw the app's dialogs" "only $windows window(s)"
+        # A filtered run is meant to open only a few, so this floor is for
+        # the full sweep - the thing that would otherwise pass silently is
+        # a harness that opened nothing at all.
+        $expectedWindows = if ($Only) { 1 } else { 30 }
+        Assert-True ($windows -ge $expectedWindows) "the harness saw the app's dialogs" "only $windows window(s)"
         Assert-True ($stepsWithoutWindow.Count -eq 0) "every step opened a window or a message" ($stepsWithoutWindow -join ', ')
         Write-Host "  ($windows windows checked)" -ForegroundColor DarkGray
     }
