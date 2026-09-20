@@ -378,6 +378,11 @@ function Global:Show-SyncMetadataDialog {
         $closeTargetBox.Form = $HostForm
         $btnClose.Visible = $false
         [void](Move-DialogToTabPage -Dialog $dlg -Page $HostTabPage)
+        # The app list is the content, and it stops above the Select
+        # all/none row - everything from there down (those buttons, the
+        # status line, progress bar, log and Sync) keeps the place it was
+        # laid out in.
+        $HostTabPage.Tag = @{ Fill = $clbApps; FillStopAbove = $btnSelectAll }
         return
     }
     [void]$dlg.ShowDialog($Global:App.Form)

@@ -45,6 +45,17 @@ its own width instead of sitting in the left half of it.
   buttons.** Its log sat 60px too high, painting over the bottom of the
   tab page below it. Both were the same mistake, measured from the top of
   a window whose height is fixed by the smallest screen it has to fit.
+- **On a smaller screen, Checks drew "Sync selected" on top of its own
+  log.** 1.4.1 claimed to have fixed this and had not: a dialog that
+  becomes a tab was having anything near its bottom edge re-anchored to
+  the bottom of the page, and a page can be shorter than the dialog it
+  came from - a tab strip costs height, and twice that once the captions
+  wrap. A bottom-anchored button on a short page does not scroll into
+  view, it rides up over what is above it. Tabs keep the vertical layout
+  they were built with now, and a page that wants its content to fill the
+  height says which control that is.
+- The Metadata sync tab ended in empty space, because it was the one page
+  in that window that never named its content control.
 
 ## 1.4.1
 

@@ -131,18 +131,19 @@ function Global:Move-DialogToTabPage {
                 $anchor = ($anchor -bor [System.Windows.Forms.AnchorStyles]::Right) -band (-bnot [System.Windows.Forms.AnchorStyles]::Left)
             }
         }
-        # The same question vertically, so a log box or a grid gains the
-        # height a taller window offers instead of leaving a gap under it,
-        # and a button row stays on the bottom edge where it was put.
-        $reachesBottom = ($control.Bottom -ge ($originalHeight - $edgeTolerance))
-        if ($reachesBottom) {
-            if ($control.Height -ge ($originalHeight * 0.5)) {
-                $anchor = $anchor -bor [System.Windows.Forms.AnchorStyles]::Bottom
-            }
-            else {
-                $anchor = ($anchor -bor [System.Windows.Forms.AnchorStyles]::Bottom) -band (-bnot [System.Windows.Forms.AnchorStyles]::Top)
-            }
-        }
+        # Horizontally only. The same trick vertically looks right until
+        # the page is SHORTER than the dialog was - a tab strip costs
+        # height, and two rows of captions cost it twice - and then a
+        # bottom-anchored button does not scroll into view, it rides up
+        # over the log above it. That shipped three times: the audit log
+        # landing at y=932, and "Sync selected" sitting 5px into its log on
+        # CI's screen but not on mine.
+        #
+        # Everything keeps the Top it was laid out with, so a short page
+        # scrolls, which is what the AutoScroll panel above is for. A page
+        # that wants its content to fill the height says so by name in
+        # Expand-HostedContent - one dialog, one decision, nothing inferred
+        # from where a control happens to sit.
         $control.Anchor = $anchor
     }
 
