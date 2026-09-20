@@ -7,12 +7,12 @@ function Global:Show-CertificateSetupDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     $dlg.Text = "Settings - Microsoft Graph Connection"
-    # Height trimmed from 1034 to 955 - tracing every $y increment below
-    # shows the last row of real content (Save/Close) lands at y=920 and
-    # is ~30px tall, ending around y=950; the extra 84px past that was
-    # pure dead space at the bottom of the window, confirmed against a
-    # live screenshot showing exactly that empty gap below the buttons.
-    $dlg.ClientSize = New-Object System.Drawing.Size(930, 658)
+    # 726 is as tall as this window can be: the layout tests run at
+    # 1024x768, and a fixed dialog taller than that loses its buttons off
+    # the bottom of the screen. So the parts below fit into this height
+    # rather than push it out, which is why the log and the buttons are
+    # placed from the bottom edge up and the tabs take what is left.
+    $dlg.ClientSize = New-Object System.Drawing.Size(930, 726)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -263,6 +263,141 @@ function Global:Show-CertificateSetupDialog {
     $y += 36
 
 
+    # Where this install keeps things. Every row is the same three parts -
+    # what it is, where it is now, and how to change it - built from
+    # Get-AppFolderKinds so adding a folder there adds a row here, rather
+    # than this dialog carrying its own copy of the list.
+    #
+    # Blank means "the default", so a row that was never touched follows
+    # the default if a later version moves it, instead of being pinned to
+    # wherever it happened to be the day somebody opened this page.
+    $folderControls = New-Object System.Collections.Generic.List[object]
+    $folderTips = New-Object System.Windows.Forms.ToolTip
+    $folderRowY = 15
+    $lblFoldersIntro = New-Object System.Windows.Forms.Label
+    $lblFoldersIntro.Text = "Where this app keeps things. Leave a box empty for the default (hover it to see where that is). The settings file always lives beside the app."
+    $lblFoldersIntro.Location = New-Object System.Drawing.Point(15,$folderRowY)
+    $lblFoldersIntro.Size = New-Object System.Drawing.Size(860,17)
+    $dlg.Controls.Add($lblFoldersIntro)
+    $folderControls.Add($lblFoldersIntro)
+    # The folder rows start below the packaging block, which is pinned to
+    # the top of the page: it is the part with something to DO on it, and
+    # the part that must not be the one below the fold.
+    $folderRowY = 107
+
+    $folderBoxes = @{}
+    foreach ($spec in (Get-AppFolderKinds)) {
+        # What it is and what lands there on one line. Seven folders each
+        # explained on a line of their own is a page that scrolls, and the
+        # half you came for is always the half below the fold.
+        $lblFolder = New-Object System.Windows.Forms.Label
+        $lblFolder.Text = "$($spec.Label) - $($spec.Why)"
+        $lblFolder.Location = New-Object System.Drawing.Point(15,$folderRowY)
+        $lblFolder.AutoSize = $true
+        $dlg.Controls.Add($lblFolder)
+        $folderControls.Add($lblFolder)
+
+        $txtFolder = New-Object System.Windows.Forms.TextBox
+        $txtFolder.Location = New-Object System.Drawing.Point(15,($folderRowY + 19))
+        $txtFolder.Size = New-Object System.Drawing.Size(712,24)
+        $txtFolder.Text = $(if ($Global:App.AppFolders -is [System.Collections.IDictionary] -and $Global:App.AppFolders.Contains($spec.Key)) { [string]$Global:App.AppFolders[$spec.Key] } else { '' })
+        $dlg.Controls.Add($txtFolder)
+        $folderControls.Add($txtFolder)
+        $folderBoxes[$spec.Key] = $txtFolder
+
+        $btnFolder = New-Object System.Windows.Forms.Button
+        $btnFolder.Text = "Browse..."
+        $btnFolder.Location = New-Object System.Drawing.Point(737,($folderRowY + 18))
+        $btnFolder.Size = New-Object System.Drawing.Size(150,26)
+        $dlg.Controls.Add($btnFolder)
+        $folderControls.Add($btnFolder)
+        $btnFolder.Add_Click({
+            $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
+            $fbd.Description = "Where should this app keep: $($spec.Label)?"
+            $current = $txtFolder.Text.Trim()
+            $fbd.SelectedPath = $(if ($current -and (Test-Path -LiteralPath $current)) { $current } else { Get-AppFolderDefault -Kind $spec.Key })
+            if ($fbd.ShowDialog($dlg) -eq [System.Windows.Forms.DialogResult]::OK) { $txtFolder.Text = $fbd.SelectedPath }
+        }.GetNewClosure())
+
+        # The default path goes in a tooltip rather than on this line: it
+        # is long, it is only interesting when you are about to change it,
+        # and a second line per folder is the difference between this page
+        # fitting and this page scrolling.
+        $folderTips.SetToolTip($txtFolder, "Leave empty to use the default: $(Get-AppFolderDefault -Kind $spec.Key)")
+
+        # 50 per row - one line and one box. Seven folders plus the
+        # packaging section have to fit the page, because a settings page
+        # that scrolls hides the half you came for.
+        $folderRowY += 50
+    }
+
+    # The two things packaging needs, and a way to get each of them from
+    # here. Both used to be somebody else's problem: the tool downloaded
+    # itself silently on first use, and a missing init.intunewin just made
+    # every Winget app say "Package missing" with nothing offering to
+    # build one.
+    $lblPackagingHead = New-Object System.Windows.Forms.Label
+    $lblPackagingHead.Text = "PACKAGING"
+    $lblPackagingHead.Location = New-Object System.Drawing.Point(15,41)
+    $lblPackagingHead.AutoSize = $true
+    $lblPackagingHead.Font = New-Object System.Drawing.Font($dlg.Font.FontFamily, 8, [System.Drawing.FontStyle]::Bold)
+    $lblPackagingHead.ForeColor = [System.Drawing.Color]::FromArgb(90,90,90)
+    $dlg.Controls.Add($lblPackagingHead)
+    $folderControls.Add($lblPackagingHead)
+    $lblPackagingState = New-Object System.Windows.Forms.Label
+    $lblPackagingState.Location = New-Object System.Drawing.Point(15,61)
+    $lblPackagingState.Size = New-Object System.Drawing.Size(520,30)
+    $dlg.Controls.Add($lblPackagingState)
+    $folderControls.Add($lblPackagingState)
+
+    $btnGetTool = New-Object System.Windows.Forms.Button
+    $btnGetTool.Text = "Download packaging tool"
+    $btnGetTool.Location = New-Object System.Drawing.Point(547,59)
+    $btnGetTool.Size = New-Object System.Drawing.Size(180,28)
+    $dlg.Controls.Add($btnGetTool)
+    $folderControls.Add($btnGetTool)
+
+    $btnBuildShared = New-Object System.Windows.Forms.Button
+    $btnBuildShared.Text = "Build init.intunewin"
+    $btnBuildShared.Location = New-Object System.Drawing.Point(737,59)
+    $btnBuildShared.Size = New-Object System.Drawing.Size(150,28)
+    $dlg.Controls.Add($btnBuildShared)
+    $folderControls.Add($btnBuildShared)
+
+    # Reads what the boxes above currently say, not what was saved, so the
+    # state shown matches the folder you just picked rather than the one
+    # you are about to replace.
+    $refreshPackagingState = {
+        foreach ($spec in (Get-AppFolderKinds)) { Set-AppFolder -Kind $spec.Key -Path $folderBoxes[$spec.Key].Text }
+        $state = Get-PackagingReadiness
+        $toolLine = if ($state.ToolFound) { "Packaging tool: found$(if ($state.ToolVersion) { " (version $($state.ToolVersion))" })" } else { "Packaging tool: not here yet" }
+        $sharedLine = if ($state.SharedFound) { "Shared Winget package: found" } else { "Shared Winget package: not here yet - every Winget app needs it" }
+        $lblPackagingState.Text = "$toolLine`r`n$sharedLine"
+        $lblPackagingState.ForeColor = if ($state.ToolFound -and $state.SharedFound) { [System.Drawing.Color]::SeaGreen } else { [System.Drawing.Color]::DarkOrange }
+        $btnBuildShared.Enabled = $state.ToolFound
+    }.GetNewClosure()
+
+    $btnGetTool.Add_Click({
+        $btnGetTool.Enabled = $false
+        $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        try { [void](Install-PackagingTool -LogBox $rtbUploadLog) }
+        finally {
+            $dlg.Cursor = [System.Windows.Forms.Cursors]::Default
+            $btnGetTool.Enabled = $true
+            & $refreshPackagingState
+        }
+    }.GetNewClosure())
+
+    $btnBuildShared.Add_Click({
+        $btnBuildShared.Enabled = $false
+        $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        try { [void](New-SharedWingetPackage -LogBox $rtbUploadLog) }
+        finally {
+            $dlg.Cursor = [System.Windows.Forms.Cursors]::Default
+            & $refreshPackagingState
+        }
+    }.GetNewClosure())
+
     # The three checks the app can run by itself, without being asked. They
     # were checkboxes in the main toolbar, wedged between the buttons: a
     # toolbar is for actions you take now, and each of these is a setting
@@ -338,7 +473,7 @@ function Global:Show-CertificateSetupDialog {
     # The log stays below both. Test connection lives on Connection but
     # writes the token's permissions into that log, and an answer that
     # appears on a tab you aren't looking at may as well not appear.
-    $settingsTabs = Convert-PanelToTabs -Dialog $dlg -Bounds (New-Object System.Drawing.Rectangle(10, 8, 910, 440)) -Pages @(
+    $settingsTabs = Convert-PanelToTabs -Dialog $dlg -Bounds (New-Object System.Drawing.Rectangle(10, 8, 910, 501)) -Pages @(
         @{
             Title = 'Connection'
             Controls = @(
@@ -361,7 +496,16 @@ function Global:Show-CertificateSetupDialog {
                 $lblAutoIntro, $chkDriftStart, $chkFullAudit, $chkDeployOpen, $lblDeployOpenNote
             )
         }
+        @{
+            Title = 'Folders'
+            # .ToArray(), not @(...): a List unrolled inside one hashtable
+            # of an array of hashtables makes PowerShell fail the whole
+            # literal with "Argument types do not match", which names
+            # nothing and points at the line of the brace.
+            Controls = $folderControls.ToArray()
+        }
     )
+    & $refreshPackagingState
 
     # Laid out for the page rather than for the old single column: the
     # controls were 900 wide inside a dialog 930 wide, which is wider than a
@@ -408,18 +552,23 @@ function Global:Show-CertificateSetupDialog {
     $lstCerts.Size = New-Object System.Drawing.Size(866,108)
     $btnDeleteEntraCert.Location = New-Object System.Drawing.Point(12,340)
 
-    $rtbUploadLog.Location = New-Object System.Drawing.Point(15,458)
-    $rtbUploadLog.Size = New-Object System.Drawing.Size(900,140)
+    # Bottom-up: the buttons sit 15 above the window's bottom edge, the log
+    # above them, and the tab control gets the rest. At y=458 the log was
+    # painted over the last 50px of the tab page - which is what hid the
+    # bottom folder row - while leaving 86px of dead space under the
+    # buttons. Both were the same mistake: measured from the top.
+    $rtbUploadLog.Location = New-Object System.Drawing.Point(15,521)
+    $rtbUploadLog.Size = New-Object System.Drawing.Size(900,148)
 
     $btnSave = New-Object System.Windows.Forms.Button
     $btnSave.Text = "Save"
-    $btnSave.Location = New-Object System.Drawing.Point(745,610)
+    $btnSave.Location = New-Object System.Drawing.Point(745,681)
     $btnSave.Size = New-Object System.Drawing.Size(80,30)
     $dlg.Controls.Add($btnSave)
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Close"
-    $btnCancel.Location = New-Object System.Drawing.Point(835,610)
+    $btnCancel.Location = New-Object System.Drawing.Point(835,681)
     $btnCancel.Size = New-Object System.Drawing.Size(80,30)
     $dlg.Controls.Add($btnCancel)
 
@@ -964,6 +1113,20 @@ function Global:Show-CertificateSetupDialog {
             if (-not $Quiet) { [System.Windows.Forms.MessageBox]::Show("Tenant ID, Client ID, and thumbprint are all required.", "Missing values", "OK", "Warning") | Out-Null }
             return $false
         }
+        # The folder choices go with the rest of Save, so Cancel leaves
+        # them alone the same way it leaves the connection details alone.
+        # A blank box clears the choice, which is how a row goes back to
+        # its default.
+        foreach ($spec in (Get-AppFolderKinds)) { Set-AppFolder -Kind $spec.Key -Path $folderBoxes[$spec.Key].Text }
+        # The catalog is the one folder the main window is already holding
+        # open, so it has to be told rather than found out on next start.
+        $chosenCatalog = Get-AppFolder -Kind Catalog
+        if ($chosenCatalog -ne $Global:App.LinkedFilePath) {
+            $Global:App.LinkedFilePath = $chosenCatalog
+            Import-AppsFromFile -Path $chosenCatalog
+            Update-Grid
+        }
+
         $saveResultBox.TenantId   = $txtTenant.Text.Trim()
         $saveResultBox.ClientId   = $txtClient.Text.Trim()
         $saveResultBox.Thumbprint = ($txtThumb.Text.Trim() -replace '\s', '')

@@ -108,7 +108,7 @@ function Global:Show-PlatformScriptsDialog {
     # keeps apps: one JSON per script under data\script-data. A script that
     # only ever lived in Intune had nowhere to be written before it went
     # live, and nothing to compare against afterwards.
-    $scriptCatalogPath = Join-Path $Global:App.RootPath "data\script-data"
+    $scriptCatalogPath = Get-AppFolder -Kind Scripts
 
     $btnNewLocal = New-Object System.Windows.Forms.Button
     $btnNewLocal.Text = "New local script..."

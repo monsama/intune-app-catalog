@@ -56,7 +56,7 @@ function Global:Initialize-Folders {
     # membership, granting certificate trust).
     if (-not $Global:App.LogFileWriter) {
         try {
-            $logPath = Join-Path (Join-Path $Global:App.RootPath "data\logs") ("intune-deployment-" + (Get-Date -Format "yyyy-MM-dd") + ".log")
+            $logPath = Join-Path (Get-AppFolder -Kind Logs -Create) ("intune-deployment-" + (Get-Date -Format "yyyy-MM-dd") + ".log")
             $Global:App.LogFileWriter = New-Object System.IO.StreamWriter($logPath, $true, [System.Text.Encoding]::UTF8)
             # Flushed periodically (below) rather than on every single
             # Write-Log call - AutoFlush forces a synchronous disk write on

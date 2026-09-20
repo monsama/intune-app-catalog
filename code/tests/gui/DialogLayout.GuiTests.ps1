@@ -106,7 +106,7 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         # A filtered run is meant to open only a few, so this floor is for
         # the full sweep - the thing that would otherwise pass silently is
         # a harness that opened nothing at all.
-        $expectedWindows = if ($Only) { 1 } else { 30 }
+        $expectedWindows = if ($Only) { 1 } else { 31 }
         Assert-True ($windows -ge $expectedWindows) "the harness saw the app's dialogs" "only $windows window(s)"
         Assert-True ($stepsWithoutWindow.Count -eq 0) "every step opened a window or a message" ($stepsWithoutWindow -join ', ')
         Write-Host "  ($windows windows checked)" -ForegroundColor DarkGray

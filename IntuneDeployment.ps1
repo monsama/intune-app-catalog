@@ -88,6 +88,8 @@ $Script:RequiredPrivateFiles = @(
     "code\Private\Graph\Assignments.ps1"
     "code\Private\GuiHelpers.ps1"
     "code\Private\Pipeline.ps1"
+    "code\Private\AppFolders.ps1"
+    "code\Private\Packaging.ps1"
     "code\Private\Prerequisites.ps1"
     "code\Private\QuickActions.ps1"
     "code\Private\Settings.ps1"
