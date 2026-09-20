@@ -134,7 +134,14 @@ function Global:Save-ScriptsToFolder {
 
       Returns @{ Saved; Removed; Errors }.
     #>
-    param([string]$Path, $Scripts)
+    # -NoPrune: write what is here, and leave everything else alone.
+    #
+    # Pruning is right when the caller read the tenant successfully and
+    # this set IS the tenant. It is catastrophic when the caller failed to
+    # read anything: an empty set then means "delete every local copy you
+    # have", and a transient failure takes the whole local catalog with
+    # it. The caller knows which of the two it is; this cannot.
+    param([string]$Path, $Scripts, [switch]$NoPrune)
     $result = @{ Saved = 0; Removed = 0; Errors = New-Object System.Collections.Generic.List[string] }
     try { [void][IO.Directory]::CreateDirectory($Path) }
     catch { $result.Errors.Add("Could not create $Path : $($_.Exception.Message)"); return $result }
@@ -151,6 +158,7 @@ function Global:Save-ScriptsToFolder {
         }
         catch { $result.Errors.Add("$($record.displayName): $($_.Exception.Message)") }
     }
+    if ($NoPrune) { return $result }
     foreach ($stale in @(Get-ChildItem -Path $Path -Filter "*.json" -ErrorAction SilentlyContinue)) {
         if ($wanted.Contains($stale.Name)) { continue }
         try { Remove-Item -LiteralPath $stale.FullName -Force -ErrorAction Stop; $result.Removed++ }

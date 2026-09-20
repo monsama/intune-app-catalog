@@ -123,6 +123,10 @@ $testableFunctionNames = @(
     "Write-DialogError",
     "Get-DialogLogLineColor",
     "ConvertTo-FriendlyGraphError",
+    "Save-ScriptsToFolder",
+    "ConvertTo-ScriptRecord",
+    "ConvertTo-SingleScriptJson",
+    "Get-SafeFileNameForScript",
     "ConvertTo-DisplayLineEndings",
     "ConvertTo-TemplateAppRecord",
     "Get-NormalizedInstallTimeMinutes",
@@ -1439,6 +1443,40 @@ try { Write-DialogError -StatusLabel $null -LogBox $null -ErrorMessage "somethin
 Assert-True (-not $threw) "Write-DialogError: a null status label and log box do not throw"
 Assert-True (@($Global:App.LogCaptured | Where-Object { $_ -like '*something went wrong*' }).Count -eq 1) `
     "Write-DialogError: and the failure still reaches the main log"
+
+# -----------------------------------------------------------------
+# Save-ScriptsToFolder pruning
+# -----------------------------------------------------------------
+# The folder IS the script catalog, so a save removes files for scripts
+# that are no longer in the tenant. That is right when the caller read
+# the tenant successfully. It is destructive when the caller did NOT:
+# an empty set then means "delete everything you have", and one failed
+# read would take a local copy with it.
+$scriptFolder = Join-Path ([IO.Path]::GetTempPath()) ("scriptcat-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+try {
+    [void](New-Item -ItemType Directory -Path $scriptFolder -Force)
+    $existing = Join-Path $scriptFolder 'Already-Here.json'
+    Set-Content -LiteralPath $existing -Value '{}' -Encoding UTF8
+
+    # Normal case: this set is the tenant, so what is not in it goes.
+    $pruned = Save-ScriptsToFolder -Path $scriptFolder -Scripts @(@{ displayName = 'Kept One'; scriptContent = 'x' })
+    Assert-Equal 1 $pruned.Saved "Save-ScriptsToFolder: writes the script it was given"
+    Assert-Equal 1 $pruned.Removed "Save-ScriptsToFolder: and removes one the tenant no longer has"
+    Assert-True (-not (Test-Path -LiteralPath $existing)) "Save-ScriptsToFolder: the stale file really is gone"
+
+    # The dangerous case: reads failed, so the set is not the tenant.
+    $kept = Join-Path $scriptFolder 'Kept-One.json'
+    Assert-True (Test-Path -LiteralPath $kept) "Save-ScriptsToFolder: (the written file is there to be kept)"
+    $notPruned = Save-ScriptsToFolder -Path $scriptFolder -Scripts @() -NoPrune
+    Assert-Equal 0 $notPruned.Removed "Save-ScriptsToFolder -NoPrune: removes nothing when the caller could not read the tenant"
+    Assert-True (Test-Path -LiteralPath $kept) "Save-ScriptsToFolder -NoPrune: an existing local copy survives a failed run"
+
+    # ...and without the switch, an empty set really would empty the folder,
+    # which is exactly why the caller has to decide.
+    $emptied = Save-ScriptsToFolder -Path $scriptFolder -Scripts @()
+    Assert-Equal 1 $emptied.Removed "Save-ScriptsToFolder: an empty set still prunes when pruning was asked for"
+}
+finally { Remove-Item -LiteralPath $scriptFolder -Recurse -Force -ErrorAction SilentlyContinue }
 
 # =================================================================
 # Report
