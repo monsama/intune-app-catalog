@@ -168,7 +168,9 @@ function Global:Show-ChecksDialog {
         # nothing is guessed from geometry.
         foreach ($page in $tabs.TabPages) {
             $tag = $page.Tag
-            if ($tag -is [hashtable] -and $tag.Fill) { Expand-HostedContent -Control $tag.Fill -Page $page -StopAbove $tag.FillStopAbove }
+            if ($tag -is [hashtable] -and $tag.Fill) {
+                Expand-HostedContent -Control $tag.Fill -Page $page -StopAbove $tag.FillStopAbove -PushDown:([bool]$tag.FillPushDown)
+            }
         }
         & $runPage $tabs.SelectedTab
     }.GetNewClosure())
@@ -198,7 +200,25 @@ function Global:Show-ChecksDialog {
         if ($pending.Count -eq 0) {
             $pump.Stop()
             $btnRunAll.Enabled = $true
-            $lblRunAll.Text = "All checks finished - each tab has its own result."
+            # What each check actually found, rather than "they finished".
+            # A run that ends by telling you to go and look in five tabs
+            # has done the work and left you the question.
+            $findings = New-Object System.Collections.Generic.List[string]
+            foreach ($page in $tabs.TabPages) {
+                $pageTag = $page.Tag
+                if ($pageTag -isnot [hashtable] -or -not $pageTag.Summary) { continue }
+                if (-not $alreadyRun.ContainsKey($page)) { continue }
+                $said = [string](& $pageTag.Summary)
+                if ($said) { $findings.Add("$($page.Text): $said") }
+            }
+            if ($findings.Count -gt 0) {
+                $lblRunAll.ForeColor = [System.Drawing.Color]::Firebrick
+                $lblRunAll.Text = "Found - " + ($findings -join "  |  ")
+            }
+            else {
+                $lblRunAll.ForeColor = [System.Drawing.Color]::SeaGreen
+                $lblRunAll.Text = "Nothing found by any check."
+            }
             return
         }
         $next = $pending.Dequeue()
@@ -208,7 +228,12 @@ function Global:Show-ChecksDialog {
         $tabs.SelectedTab = $next
         $lblRunAll.Text = "Running: $($next.Text) ($($pending.Count) left after this one)"
         $tag = $next.Tag
-        if ($tag -is [hashtable] -and $tag.OnFirstShow) { & $tag.OnFirstShow }
+        # RunAll when the tab has one - the audit does, because it wants to
+        # take part here without starting itself every time the tab is
+        # merely looked at.
+        if ($tag -is [hashtable]) {
+            if ($tag.RunAll) { & $tag.RunAll } elseif ($tag.OnFirstShow) { & $tag.OnFirstShow }
+        }
     }.GetNewClosure())
     $btnRunAll.Add_Click({
         if ($pump.Enabled) { return }
@@ -217,7 +242,7 @@ function Global:Show-ChecksDialog {
             # Tabs with no work to start (the dependency overview builds
             # its content as it opens) are simply already done.
             $tag = $page.Tag
-            if ($tag -is [hashtable] -and $tag.OnFirstShow) { $pending.Enqueue($page) }
+            if ($tag -is [hashtable] -and ($tag.RunAll -or $tag.OnFirstShow)) { $pending.Enqueue($page) }
         }
         if ($pending.Count -eq 0) { return }
         $btnRunAll.Enabled = $false

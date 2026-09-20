@@ -381,20 +381,37 @@ function Global:Show-DiagnosticsDialog {
         # first opened, and the host refuses to close while it is going -
         # $btnRun is disabled exactly for the duration of a run, and the
         # titlebar X doesn't go through the button.
-        # The status label sits beside the button row, but its bottom edge
-        # falls two pixels outside the tolerance Move-DialogToTabPage uses,
-        # so on a taller page the buttons move down and the label would
-        # stay behind - with the log then filling the gap it is still in.
-        # Said here rather than widening that tolerance for every dialog.
-        $lblStatus.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
+        # Top, not Bottom. This used to be bottom-anchored to keep it with
+        # a button row that the old anchoring heuristic pulled downwards.
+        # Nothing pulls anything downwards any more - Expand-HostedContent
+        # moves this whole row together, and a label already sitting at
+        # the bottom only shortened the distance it decided to move the
+        # row by, which left the buttons stranded 70px above the edge with
+        # the status line alone underneath them.
+        $lblStatus.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
+        foreach ($sideButton in @($btnPrereqs, $btnRun)) {
+            $sideButton.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+        }
         $HostTabPage.Tag = @{
             Fill        = $rtbLog
-            FillStopAbove = $btnRun
+            FillStopAbove = $btnPrereqs
+            FillPushDown = $true
             OnFirstShow = { $btnRun.PerformClick() }.GetNewClosure()
             # See the note on the same pair in Show-GroupDriftCheckDialog:
             # a run in progress is both "still working" and "do not close".
             IsBusy      = { -not $btnRun.Enabled }.GetNewClosure()
             BlockClose  = { -not $btnRun.Enabled }.GetNewClosure()
+            # Counted out of the log it just wrote, because that log IS
+            # this check's result - there is no grid to count rows of.
+            Summary     = {
+                $logText = [string]$rtbLog.Text
+                $failedCount = @([regex]::Matches($logText, '\[FAILED\]')).Count
+                $warnCount = @([regex]::Matches($logText, '\[WARN\]')).Count
+                $parts = New-Object System.Collections.Generic.List[string]
+                if ($failedCount -gt 0) { $parts.Add("$failedCount failed") }
+                if ($warnCount -gt 0) { $parts.Add("$warnCount warning(s)") }
+                ($parts -join ', ')
+            }.GetNewClosure()
         }
         return
     }

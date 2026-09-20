@@ -141,7 +141,12 @@ function Global:Show-IntuneOnlyAppsDialog {
 
     $btnAction = New-Object System.Windows.Forms.Button
     $btnAction.Text = "Add to catalog..."
-    $btnAction.Location = New-Object System.Drawing.Point(515,474)
+    # 420, not 515. The gap was there to keep this single-row action clear
+    # of the bulk buttons, with Close filling the space to its right - and
+    # as a tab, Close is hidden, so it read as a button that had come
+    # loose. 20px still separates it from "Select none"; 115 looked like a
+    # mistake.
+    $btnAction.Location = New-Object System.Drawing.Point(420,474)
     $btnAction.Size = New-Object System.Drawing.Size(140,32)
     $btnAction.Enabled = $false
     $dlg.Controls.Add($btnAction)
@@ -537,6 +542,7 @@ function Global:Show-IntuneOnlyAppsDialog {
         $HostTabPage.Tag = @{
             Fill          = $grid
             FillStopAbove = $btnAddChecked
+            FillPushDown  = $true
             OnFirstShow   = { $btnRefresh.PerformClick() }.GetNewClosure()
             # Same pair, same condition, as every other tab in that window:
             # a fetch in flight is both "still working" and "do not close".
@@ -547,6 +553,7 @@ function Global:Show-IntuneOnlyAppsDialog {
             IsBusy        = { $busyBox.Count -gt 0 -or -not $btnRefresh.Enabled }.GetNewClosure()
             BlockClose    = { $busyBox.Count -gt 0 }.GetNewClosure()
             Changed       = $anyAddedBox
+            Summary       = { if ($grid.Rows.Count -gt 0) { "$($grid.Rows.Count) difference(s)" } else { "" } }.GetNewClosure()
         }
         return
     }

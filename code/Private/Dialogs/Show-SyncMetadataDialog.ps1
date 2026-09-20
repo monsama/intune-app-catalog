@@ -21,6 +21,20 @@ function Global:Show-SyncMetadataDialog {
 
     if ($eligibleApps.Count -eq 0) {
         $msg = if ($isScoped) { "None of the selected app(s) have an App ID yet - nothing to sync." } else { "No apps have an App ID yet - nothing to sync." }
+        # Embedded, say it on the tab instead of in a popup over a window
+        # the user opened for the other checks - the same as the winget and
+        # dependency tabs already do. A MessageBox here stops the whole
+        # Checks window mid-build: the tabs after this one are not created
+        # until somebody presses OK, and this page is blank afterwards.
+        if ($HostTabPage) {
+            $lblNothing = New-Object System.Windows.Forms.Label
+            $lblNothing.Text = $msg
+            $lblNothing.Location = New-Object System.Drawing.Point(15,15)
+            $lblNothing.Size = New-Object System.Drawing.Size(700,40)
+            $lblNothing.ForeColor = [System.Drawing.Color]::DimGray
+            $HostTabPage.Controls.Add($lblNothing)
+            return
+        }
         [System.Windows.Forms.MessageBox]::Show($msg, "Nothing to do", "OK", "Information") | Out-Null
         return
     }

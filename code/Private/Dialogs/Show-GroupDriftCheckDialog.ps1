@@ -242,6 +242,9 @@ function Global:Show-GroupDriftCheckDialog {
             # fetch in flight is exactly what closing would break.
             IsBusy      = { -not $btnRefresh.Enabled }.GetNewClosure()
             BlockClose  = { -not $btnRefresh.Enabled }.GetNewClosure()
+            # This grid only ever lists groups it could NOT find, so a row
+            # is a finding and an empty grid is the good answer.
+            Summary     = { if ($grid.Rows.Count -gt 0) { "$($grid.Rows.Count) group(s) not found" } else { "" } }.GetNewClosure()
         }
         return
     }
