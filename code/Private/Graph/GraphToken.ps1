@@ -39,13 +39,24 @@ function Global:Get-GraphRoleRequirements {
       it's required for the app to be useful at all or only for one feature.
       Any one of a row's Roles is enough - Intune accepts the read-only
       permission where the app only reads.
+
+      Reading and changing are separate rows where they are separate
+      permissions, because merging them makes this report lie. A tenant
+      with only DeviceManagementScripts.Read.All used to be told "Platform
+      scripts: yes", list its scripts happily, and then take a 403 on the
+      first Save - the check had said the feature was available because
+      one of the two roles was present, and the one that was present was
+      the wrong one. Same trap for Group.Read.All, which can look up a
+      group but cannot assign an app to it.
     #>
     @(
-        @{ Feature = "Apps in Intune";       Roles = @('DeviceManagementApps.ReadWrite.All'); Required = $true }
-        @{ Feature = "Groups and assigning"; Roles = @('Group.ReadWrite.All', 'Group.Read.All'); Required = $true }
-        @{ Feature = "Install status";       Roles = @('DeviceManagementApps.Read.All', 'DeviceManagementApps.ReadWrite.All'); Required = $false }
-        @{ Feature = "Platform scripts";     Roles = @('DeviceManagementScripts.Read.All', 'DeviceManagementScripts.ReadWrite.All'); Required = $false }
-        @{ Feature = "Group members";        Roles = @('User.Read.All', 'Directory.Read.All'); Required = $false }
+        @{ Feature = "Apps in Intune";        Roles = @('DeviceManagementApps.ReadWrite.All'); Required = $true }
+        @{ Feature = "Finding groups";        Roles = @('Group.ReadWrite.All', 'Group.Read.All'); Required = $true }
+        @{ Feature = "Creating and assigning groups"; Roles = @('Group.ReadWrite.All'); Required = $false }
+        @{ Feature = "Install status";        Roles = @('DeviceManagementApps.Read.All', 'DeviceManagementApps.ReadWrite.All'); Required = $false }
+        @{ Feature = "Platform scripts (read)";   Roles = @('DeviceManagementScripts.Read.All', 'DeviceManagementScripts.ReadWrite.All'); Required = $false }
+        @{ Feature = "Platform scripts (change)"; Roles = @('DeviceManagementScripts.ReadWrite.All'); Required = $false }
+        @{ Feature = "Group members";         Roles = @('User.Read.All', 'Directory.Read.All'); Required = $false }
     )
 }
 

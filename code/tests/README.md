@@ -61,6 +61,7 @@ pwsh -NoProfile -File code/tests/gui/CatalogCrud.GuiTests.ps1
 pwsh -NoProfile -File code/tests/gui/CloseConfirmation.GuiTests.ps1
 pwsh -NoProfile -File code/tests/gui/DialogLayout.GuiTests.ps1
 pwsh -NoProfile -File code/tests/gui/GridBehavior.GuiTests.ps1
+pwsh -NoProfile -File code/tests/gui/DeployDefaults.GuiTests.ps1
 ```
 
 Both run the app under **both** PowerShell 7 and Windows PowerShell 5.1 by
@@ -110,6 +111,15 @@ window they open - handy for comparing the two hosts side by side.
   and that an app the filter hides leaves *nothing* selected rather than
   handing the selection to whichever app now sorts first. Offline, and a
   few seconds per host.
+- `DeployDefaults.GuiTests.ps1` - a Winget ID typed *after* the deploy
+  tabs were built still fills in the install command, uninstall command
+  and detection script. "Add app..." builds those tabs while the editor's
+  Winget field is still empty, so they are built for an app with no
+  Winget ID - which means nothing generated - and the ID arrives
+  afterwards. Builds that exact situation in the app's own PowerShell
+  (`DeployDefaultsHarness.ps1`) and checks both halves: the untouched
+  fields follow a new ID, and a command typed by hand survives every
+  later change of it. Offline, and a few seconds per host.
 - `Prerequisites.GuiTests.ps1` - **needs internet.** Clicks *Install missing*
   in the Prerequisites dialog and follows it through: the download, the live
   log, the status re-check, and Graph actions getting past the module check

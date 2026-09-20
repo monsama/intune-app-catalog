@@ -44,6 +44,13 @@ function Global:Show-CreateInIntuneDialog {
     # truth the rest of the app uses, rather than a second copy that could
     # drift from it.
     $Uncommon = [string]::IsNullOrWhiteSpace($WingetId)
+    # ...and whether this app has a Winget ID can change while the window
+    # is open. Embedded in the app editor, "Add app..." builds these tabs
+    # before the Winget ID field has anything in it, so $Uncommon starts
+    # true for an app that is about to be a Winget app. Handlers that run
+    # on a click read it from here instead, and $retargetWingetId below
+    # keeps it current - see that closure for what else it puts right.
+    $uncommonBox = @{ Value = $Uncommon }
 
     # Plain local aliases - see note in Start-IntuneAppLookup. Everything the
     # nested -OnComplete closure inside btnCreate's handler touches must be a
@@ -624,6 +631,16 @@ function Global:Show-CreateInIntuneDialog {
         if ($defaults.detectionRule) { $txtDetection.Text = ConvertTo-DisplayLineEndings $defaults.detectionRule.Script_Content }
     }
 
+    # What the generated fields were last filled with, so $retargetWingetId
+    # further down can tell "still the value we put there" from "the user
+    # typed this". Only the former is ever overwritten.
+    $generatedBox = @{
+        Install   = [string]$defaults.installCommand
+        Uninstall = [string]$defaults.uninstallCommand
+        Detection = $(if ($defaults.detectionRule) { ConvertTo-DisplayLineEndings $defaults.detectionRule.Script_Content } else { '' })
+        Package   = [string]$txtPackagePath.Text
+    }
+
     # --- Context / Architecture / Min OS, one row ---
     $lblContext = New-Object System.Windows.Forms.Label
     # Kept short deliberately - the full "(locked - set at creation only)"
@@ -779,6 +796,47 @@ function Global:Show-CreateInIntuneDialog {
     $lblSetDefaultsHint.ForeColor = [System.Drawing.Color]::Gray
     $lblSetDefaultsHint.Font = New-Object System.Drawing.Font($lblSetDefaultsHint.Font.FontFamily, 7.5)
     $lblSetDefaultsHint.Visible = (-not $Uncommon)
+
+    # Re-derives everything that came from the Winget ID, for when the ID
+    # arrives after this form was built. That is the normal case for "Add
+    # app...": these tabs are built while the editor's Winget field is
+    # still empty, so the install command, uninstall command and detection
+    # script were generated for an app with no Winget ID - which is to say
+    # not generated at all - and switching to Package and detection showed
+    # three blank boxes with nothing that would ever fill them.
+    #
+    # Anything typed by hand is left exactly as typed; only a field still
+    # holding the previously generated value is refreshed.
+    $retargetWingetId = {
+        param([string]$NewWingetId)
+        if ($isDuplicate) { return }
+        $trimmedId = ([string]$NewWingetId).Trim()
+        $nowUncommon = [string]::IsNullOrWhiteSpace($trimmedId)
+        $freshName = $txtCreateName.Text.Trim()
+        $fresh = Get-DefaultAppMetadata -AppName $freshName -WingetId $trimmedId -Uncommon $nowUncommon
+        $freshDetection = $(if ($fresh.detectionRule) { ConvertTo-DisplayLineEndings $fresh.detectionRule.Script_Content } else { '' })
+        if ($txtInstall.Text -eq $generatedBox.Install)     { $txtInstall.Text = [string]$fresh.installCommand }
+        if ($txtUninstall.Text -eq $generatedBox.Uninstall) { $txtUninstall.Text = [string]$fresh.uninstallCommand }
+        if ($txtDetection.Text -eq $generatedBox.Detection) { $txtDetection.Text = $freshDetection }
+        $generatedBox.Install   = [string]$fresh.installCommand
+        $generatedBox.Uninstall = [string]$fresh.uninstallCommand
+        $generatedBox.Detection = $freshDetection
+
+        # A Winget app deploys with the shared init.intunewin; an uncommon
+        # one has a package of its own. Same rule as the fields above.
+        $freshPackage = Resolve-AppPackagePath -AppName $freshName -Uncommon $nowUncommon
+        if ($txtPackagePath.Text -eq $generatedBox.Package) {
+            $txtPackagePath.Text = $freshPackage.Path
+            $txtPackagePath.ForeColor = $(if ($freshPackage.Found) { [System.Drawing.Color]::Black } else { [System.Drawing.Color]::Firebrick })
+            $generatedBox.Package = [string]$freshPackage.Path
+        }
+
+        $uncommonBox.Value = $nowUncommon
+        # "Set as defaults" is only meaningful for a Winget app - it is the
+        # shared template every other Winget app starts from.
+        $btnSetDefaults.Visible = (-not $nowUncommon)
+        $lblSetDefaultsHint.Visible = (-not $nowUncommon)
+    }.GetNewClosure()
     $scrollPanel.Controls.Add($lblSetDefaultsHint)
 
     # --- Dependencies ---
@@ -1239,7 +1297,7 @@ function Global:Show-CreateInIntuneDialog {
     # (safe here, both are defined at this same top level, no extra
     # closure nesting between them).
     $updateCustomFieldHighlights = {
-        if ($Uncommon) { return }
+        if ($uncommonBox.Value) { return }
         $customLabels = @((& $getCurrentVsDefaultChanges) | ForEach-Object { $_.Label })
         $fieldControls = @{
             "Install command"          = $lblInstall
@@ -1790,9 +1848,9 @@ function Global:Show-CreateInIntuneDialog {
             # Browse... for a file that has never existed on this machine.
             # An uncommon app's package is its own, and Package apps...
             # is what makes it, so that one still goes to the message.
-            if (-not (Test-Path $txtPackagePath.Text) -and -not $Uncommon) {
+            if (-not (Test-Path $txtPackagePath.Text) -and -not $uncommonBox.Value) {
                 if (Initialize-SharedWingetPackage -LogBox $rtbCreateLog) {
-                    $rebuilt = Resolve-AppPackagePath -AppName $AppName -Uncommon $Uncommon
+                    $rebuilt = Resolve-AppPackagePath -AppName $AppName -Uncommon $uncommonBox.Value
                     if ($rebuilt.Found) {
                         $txtPackagePath.Text = $rebuilt.Path
                         $txtPackagePath.ForeColor = [System.Drawing.Color]::Black
@@ -3378,6 +3436,9 @@ function Global:Show-CreateInIntuneDialog {
             Refresh   = $btnRefreshFromIntune
             Diff      = $btnShowDiff
             BottomEnd = $btnCreate.Bottom
+            # Called by the editor when its own Winget ID field changes -
+            # these tabs were built before there was an ID to build from.
+            RetargetWingetId = $retargetWingetId
         }
     }
     $dlg.Add_Shown({ $txtCreateName.Focus() }.GetNewClosure())

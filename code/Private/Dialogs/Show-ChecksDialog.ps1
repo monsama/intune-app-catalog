@@ -82,10 +82,23 @@ function Global:Show-ChecksDialog {
     $btnClose.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($btnClose)
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
+    # A tab that changed the catalog says so with Tag.Changed, and the main
+    # grid is refreshed once here rather than by each tab reaching across
+    # into it from inside a nested closure.
+    $dlg.Add_FormClosed({
+        foreach ($page in $tabs.TabPages) {
+            $tag = $page.Tag
+            if ($tag -is [hashtable] -and $tag.Changed -and $tag.Changed.Value) { Update-Grid; break }
+        }
+    }.GetNewClosure())
     $dlg.CancelButton = $btnClose
-    # Enter dismisses the window. Every check on the tabs inside is
-    # read-only - none of them changes the catalog or Intune.
-    $dlg.AcceptButton = $btnClose
+    # No AcceptButton. It used to be Close, on the grounds that every tab
+    # in here was read-only - which stopped being true before this window
+    # did: Metadata sync's "Sync selected" writes the catalog, App IDs
+    # applies matched IDs, and Sync check adds apps to the catalog and
+    # clears stale App IDs. Enter-to-dismiss is fine on a window that only
+    # reports; on one with per-row action buttons it is a way to lose your
+    # place mid-fix. Esc still closes.
 
     # Grouped by what a check talks to, and named so the tab strip says
     # which group it is in. The three "Intune:" tabs go first because they
@@ -97,6 +110,7 @@ function Global:Show-ChecksDialog {
         @{ Title = 'Intune: App IDs';       Build = { param($page) Show-AppIdMatchDialog -HostTabPage $page -HostForm $dlg } }
         @{ Title = 'Intune: Audit';         Build = { param($page) Show-IntuneAuditDialog -ScopedIndices $ScopedIndices -HostTabPage $page -HostForm $dlg } }
         @{ Title = 'Intune: Metadata sync'; Build = { param($page) Show-SyncMetadataDialog -ScopedIndices $ScopedIndices -HostTabPage $page -HostForm $dlg } }
+        @{ Title = 'Intune: Sync check';    Build = { param($page) Show-IntuneOnlyAppsDialog -HostTabPage $page -HostForm $dlg } }
         @{ Title = 'Dependencies';    Build = { param($page) Show-DependencyOverviewDialog -HostTabPage $page -HostForm $dlg } }
         @{ Title = 'Catalog groups';  Build = { param($page) Show-GroupDriftCheckDialog -HostTabPage $page -HostForm $dlg } }
         @{ Title = 'Winget packages'; Build = { param($page) Show-WingetHealthCheckDialog -HostTabPage $page -HostForm $dlg } }
