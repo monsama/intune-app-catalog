@@ -97,6 +97,15 @@ function Global:Show-IntuneAuditDialog {
     $btnRun = New-Object System.Windows.Forms.Button
     $btnRun.Text = "Run audit"
     $btnRun.Location = New-Object System.Drawing.Point(825,60)
+    $btnCancelAudit = New-Object System.Windows.Forms.Button
+    $btnCancelAudit.Text = "Stop"
+    $btnCancelAudit.Location = New-Object System.Drawing.Point(735,60)
+    $btnCancelAudit.Size = New-Object System.Drawing.Size(80,26)
+    $btnCancelAudit.Enabled = $false
+    $btnCancelAudit.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+    $dlg.Controls.Add($btnCancelAudit)
+    $cancelAuditTip = New-Object System.Windows.Forms.ToolTip
+    $cancelAuditTip.SetToolTip($btnCancelAudit, "Stops the audit. Rows already checked keep their result; the rest stay as they were. Nothing in Intune or the catalog is touched either way - this check only reads.")
     $btnRun.Size = New-Object System.Drawing.Size(80,26)
     $btnRun.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($btnRun)
@@ -221,9 +230,16 @@ function Global:Show-IntuneAuditDialog {
     # "audit complete" and Run audit/Close re-enable, since either fetch
     # can finish well before the other.
     $pendingBox = @{ Count = 0 }
+    # Whether the run that is finishing was stopped on purpose, so the
+    # ending can say "stopped" rather than "complete" - killing the two
+    # processes makes their -OnComplete fire exactly as a real failure
+    # would, and "Audit complete" over a half-filled grid is a lie.
+    $auditCancelledBox = @{ Value = $false }
 
     $btnRun.Add_Click({
         $btnRun.Enabled = $false
+        $btnCancelAudit.Enabled = $true
+        $auditCancelledBox.Value = $false
         $prgAudit.Visible = $true
         foreach ($rowKey in $rowByAppName.Keys) {
             foreach ($colName in $checkColumns) { $rowByAppName[$rowKey].Cells[$colName].Value = "(checking...)" }
@@ -253,6 +269,8 @@ function Global:Show-IntuneAuditDialog {
         $deployedAppsCountRef = $deployedApps.Count
         $procBox1Ref = $procBox1
         $procBox2Ref = $procBox2
+        $btnCancelAuditRef = $btnCancelAudit
+        $auditCancelledBoxRef = $auditCancelledBox
 
         $finishOne = {
             $pendingBoxRef.Count--
@@ -265,9 +283,16 @@ function Global:Show-IntuneAuditDialog {
             $gridRef.Refresh()
             if ($pendingBoxRef.Count -le 0) {
                 $btnRunRef.Enabled = $true
+                $btnCancelAuditRef.Enabled = $false
                 $prgAuditRef.Visible = $false
-                $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
-                $lblStatusRef.Text = "Audit complete - $deployedAppsCountRef app(s) checked."
+                if ($auditCancelledBoxRef.Value) {
+                    $lblStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
+                    $lblStatusRef.Text = "Audit stopped - rows already checked keep their result."
+                }
+                else {
+                    $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
+                    $lblStatusRef.Text = "Audit complete - $deployedAppsCountRef app(s) checked."
+                }
                 # Written once, here, after BOTH fetches have finished -
                 # not after each individual app's row updates - so a
                 # 49-app audit writes the cache file once, not 49 times.
@@ -446,6 +471,18 @@ function Global:Show-IntuneAuditDialog {
             $lblStatusRef.Text = "Could not start the Unknown Assignments check: $($_.Exception.Message)"
             & $finishOne
         }
+    }.GetNewClosure())
+
+    $btnCancelAudit.Add_Click({
+        $auditCancelledBox.Value = $true
+        $btnCancelAudit.Enabled = $false
+        $lblStatus.ForeColor = [System.Drawing.Color]::DarkOrange
+        $lblStatus.Text = "Stopping the audit..."
+        # Each kill makes that process's -OnComplete fire, which is what
+        # re-enables Run audit and writes the ending - so stopping goes
+        # through exactly the same path a finished run does.
+        try { if ($procBox1.Proc -and -not $procBox1.Proc.HasExited) { $procBox1.Proc.Kill() } } catch { }
+        try { if ($procBox2.Proc -and -not $procBox2.Proc.HasExited) { $procBox2.Proc.Kill() } } catch { }
     }.GetNewClosure())
 
     $btnClose.Add_Click({ $closeTargetBox.Form.Close() }.GetNewClosure())
