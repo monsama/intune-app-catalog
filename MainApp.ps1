@@ -972,11 +972,16 @@ $Global:App.PanelEmptyCatalog.Controls.Add($btnEmptyOpen)
 
 $btnEmptyGuide = New-Object System.Windows.Forms.Button
 $btnEmptyGuide.Text = "Getting started..."
-$btnEmptyGuide.Location = New-Object System.Drawing.Point(422, 160)
+$btnEmptyGuide.Location = New-Object System.Drawing.Point(612, 160)
 $btnEmptyGuide.Size = New-Object System.Drawing.Size(180, 34)
 $btnEmptyGuide.Add_Click({ $btnGettingStarted.PerformClick() }.GetNewClosure())
 $Global:App.PanelEmptyCatalog.Controls.Add($btnEmptyGuide)
 
+# Third of four, so the three ways to actually fill this catalog sit
+# together and "Getting started..." - the one that only reads - ends the
+# row. Declared after it and positioned before it, because the ordering
+# on screen is not the ordering in code and only one of them can be.
+#
 # Filling an empty catalog from a tenant that already has apps in it is
 # the one obvious starting move this screen did not offer. The sync check
 # has done it all along - it lists what is in Intune with no catalog entry
@@ -991,7 +996,7 @@ $Global:App.PanelEmptyCatalog.Controls.Add($btnEmptyGuide)
 # place rather than two that can disagree.
 $btnEmptyFromIntune = New-Object System.Windows.Forms.Button
 $btnEmptyFromIntune.Text = "Get apps from Intune..."
-$btnEmptyFromIntune.Location = New-Object System.Drawing.Point(612, 160)
+$btnEmptyFromIntune.Location = New-Object System.Drawing.Point(422, 160)
 $btnEmptyFromIntune.Size = New-Object System.Drawing.Size(180, 34)
 $btnEmptyFromIntune.Add_Click({
     # Returns whether anything was added, so the grid is rebuilt only when

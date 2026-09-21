@@ -117,18 +117,30 @@ function Global:Show-IntuneOnlyAppsDialog {
     $grid.Columns.Add($colId) | Out-Null
     $dlg.Controls.Add($grid)
 
-    # Bulk path, separate from $btnAction below - check any number of
-    # "Not in catalog" rows and add them all at once with just name and
-    # App ID, no full editor per app. $btnAction (further right) remains
+    # Bulk path, separate from $btnAction below - tick any number of
+    # "Not in catalog" rows and add them all at once with name, App ID and
+    # groups, no editor per app. $btnAction (further right) remains
     # for the single-row, full-editor add, plus the Renamed/Deleted
     # actions, which don't make sense to batch the same way.
     $btnAddChecked = New-Object System.Windows.Forms.Button
-    $btnAddChecked.Text = "Add checked to catalog"
+    $btnAddChecked.Text = "Add ticked to catalog"
     $btnAddChecked.Location = New-Object System.Drawing.Point(15,474)
     $btnAddChecked.Size = New-Object System.Drawing.Size(175,32)
     $dlg.Controls.Add($btnAddChecked)
     $addCheckedTip = New-Object System.Windows.Forms.ToolTip
-    $addCheckedTip.SetToolTip($btnAddChecked, "Bulk-adds every checked ""Not in catalog"" app using just its Intune name and App ID - no full editor per app. Renamed/deleted rows are not affected by this button.")
+    $addCheckedTip.SetToolTip($btnAddChecked, "Adds every TICKED row at once, with its name, App ID and groups - it does not open the editor. Only ""Not in catalog"" rows can be ticked. For one app with its metadata filled in, select the row and use the button to the right instead.")
+    # Says how many rows are ticked, because "checked" and "selected" are
+    # two different things in this grid and the button that acts on ticks
+    # sits next to one that acts on the highlighted row. A number is the
+    # shortest way to say which of the two you are about to use.
+    $syncAddCheckedLabel = {
+        $ticked = 0
+        foreach ($row in $grid.Rows) {
+            if ([string]$row.Cells["Type"].Value -ne "Not in catalog") { continue }
+            if ([bool]$row.Cells["Selected"].Value) { $ticked++ }
+        }
+        $btnAddChecked.Text = if ($ticked -gt 0) { "Add $ticked ticked to catalog" } else { "Add ticked to catalog" }
+    }.GetNewClosure()
 
     # Same "Select all"/"Select none" convenience the other checkbox-driven
     # bulk-pick dialogs already have (Batch Deploy, Sync Metadata, Bulk
@@ -152,7 +164,7 @@ function Global:Show-IntuneOnlyAppsDialog {
     $dlg.Controls.Add($btnSelectNoneChecked)
 
     $btnAction = New-Object System.Windows.Forms.Button
-    $btnAction.Text = "Add to catalog..."
+    $btnAction.Text = "Review and add..."
     # 420, not 515. The gap was there to keep this single-row action clear
     # of the bulk buttons, with Close filling the space to its right - and
     # as a tab, Close is hidden, so it read as a button that had come
@@ -163,7 +175,7 @@ function Global:Show-IntuneOnlyAppsDialog {
     $btnAction.Enabled = $false
     $dlg.Controls.Add($btnAction)
     $actionTip = New-Object System.Windows.Forms.ToolTip
-    $actionTip.SetToolTip($btnAction, "Acts on the single selected row - label changes with the row's kind: opens the full editor to add it, syncs the catalog's stored name to match Intune, or clears an App ID that no longer exists in Intune.")
+    $actionTip.SetToolTip($btnAction, "Acts on the ONE highlighted row, not on the ticks - its label follows that row: opens the editor with the app's metadata and groups filled in ready to save, syncs the catalog name to match Intune, or clears an App ID that no longer exists there.")
 
     $btnCancelAdd = New-Object System.Windows.Forms.Button
     $btnCancelAdd.Text = "Stop"
@@ -211,17 +223,20 @@ function Global:Show-IntuneOnlyAppsDialog {
         foreach ($o in ($missing | Sort-Object displayName)) {
             [void]$grid.Rows.Add($false, "Not in catalog", $o.displayName, "", $o.id)
         }
+        # No checkbox at all on these two kinds, not a read-only one. Bulk
+        # "add checked" only ever applies to "Not in catalog" rows, and a
+        # checkbox that cannot be ticked still draws as a checkbox - it
+        # reads as "tickable, and my click missed" rather than "this row
+        # is not part of that button". Swapping the cell for a plain empty
+        # one removes the offer instead of refusing it.
         foreach ($r in ($renamed | Sort-Object IntuneName)) {
-            # Checkbox column disabled (read-only) for these rows - bulk
-            # "add checked" below only ever applies to "Not in catalog"
-            # rows, so leaving this checkable here would silently do
-            # nothing when checked, which is worse than not offering it
-            # at all.
             $rIdx = $grid.Rows.Add($false, "Renamed in Intune", $r.IntuneName, $r.CatalogName, $r.Id)
+            $grid.Rows[$rIdx].Cells["Selected"] = New-Object System.Windows.Forms.DataGridViewTextBoxCell
             $grid.Rows[$rIdx].Cells["Selected"].ReadOnly = $true
         }
         foreach ($d in ($deletedFromIntune | Sort-Object appName)) {
             $dIdx = $grid.Rows.Add($false, "Deleted from Intune", "", $d.appName, $d.appId)
+            $grid.Rows[$dIdx].Cells["Selected"] = New-Object System.Windows.Forms.DataGridViewTextBoxCell
             $grid.Rows[$dIdx].Cells["Selected"].ReadOnly = $true
         }
 
@@ -233,6 +248,9 @@ function Global:Show-IntuneOnlyAppsDialog {
             $lblStatus.ForeColor = [System.Drawing.Color]::DarkOrange
             $lblStatus.Text = "$($cacheRef.Count) app(s) in Intune - $($missing.Count) not in catalog, $($renamed.Count) renamed since last synced, $($deletedFromIntune.Count) deleted from Intune."
         }
+        # Rebuilding the rows resets every tick, so the count on the
+        # button has to come back to zero with them.
+        & $syncAddCheckedLabel
     }.GetNewClosure()
 
     $btnRefresh.Add_Click({
@@ -276,7 +294,12 @@ function Global:Show-IntuneOnlyAppsDialog {
         }
         $btnAction.Enabled = $true
         $type = [string]$grid.SelectedRows[0].Cells["Type"].Value
-        $btnAction.Text = if ($type -eq "Renamed in Intune") { "Sync name from Intune" } elseif ($type -eq "Deleted from Intune") { "Clear stale App ID" } else { "Add to catalog..." }
+        # "Review and add...", not "Add to catalog..." - that read as a
+        # single-row twin of "Add ticked to catalog" next to it, when the
+        # two differ in what they produce as well as how many: this one
+        # opens the editor with the app's metadata and groups filled in,
+        # the bulk one writes the entry and moves on.
+        $btnAction.Text = if ($type -eq "Renamed in Intune") { "Sync name from Intune" } elseif ($type -eq "Deleted from Intune") { "Clear stale App ID" } else { "Review and add..." }
     }.GetNewClosure())
 
     $btnAction.Add_Click({
@@ -403,12 +426,24 @@ function Global:Show-IntuneOnlyAppsDialog {
         foreach ($row in $grid.Rows) {
             if ([string]$row.Cells["Type"].Value -eq "Not in catalog") { $row.Cells["Selected"].Value = $true }
         }
+        & $syncAddCheckedLabel
     }.GetNewClosure())
     $btnSelectNoneChecked.Add_Click({
         $grid.EndEdit()
         foreach ($row in $grid.Rows) {
             if ([string]$row.Cells["Type"].Value -eq "Not in catalog") { $row.Cells["Selected"].Value = $false }
         }
+        & $syncAddCheckedLabel
+    }.GetNewClosure())
+    # Wired here rather than next to the CurrentCellDirtyStateChanged
+    # handler further up, which is created before $syncAddCheckedLabel
+    # exists and so cannot see it - a closure captures what is there when
+    # it is built, not what appears later.
+    $grid.Add_CellValueChanged({
+        param($gridSender, $e)
+        if ($e.ColumnIndex -lt 0) { return }
+        if ($grid.Columns[$e.ColumnIndex].Name -ne "Selected") { return }
+        & $syncAddCheckedLabel
     }.GetNewClosure())
 
     # Self-referencing queue-runner, same pattern as Show-BatchDeployDialog's
@@ -520,7 +555,7 @@ function Global:Show-IntuneOnlyAppsDialog {
             $toAdd.Add([pscustomobject]@{ Name = [string]$row.Cells["IntuneName"].Value; Id = [string]$row.Cells["Id"].Value })
         }
         if ($toAdd.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Check at least one `"Not in catalog`" app first.", "Nothing checked", "OK", "Information") | Out-Null
+            [System.Windows.Forms.MessageBox]::Show("Tick at least one `"Not in catalog`" row first.`n`nOnly those rows have a tick box - a renamed or deleted app is fixed one at a time with the button to the right.", "Nothing ticked", "OK", "Information") | Out-Null
             return
         }
         # Still a minimal entry per app - no full editor, no metadata (see
