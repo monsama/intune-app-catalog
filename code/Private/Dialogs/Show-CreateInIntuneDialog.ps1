@@ -1661,11 +1661,12 @@ function Global:Show-CreateInIntuneDialog {
         $creating = (-not $isDuplicate) -or ($chkForceNew -and $chkForceNew.Checked)
         $pushes = if ($creating) { [bool]$Global:App.PushGroupsOnCreate } else { [bool]$Global:App.PushGroupsOnUpdate }
         if (-not $pushes) { return $base }
-        # "including groups" reads best, but "Update + Replace Content
-        # including groups" is wider than this row has to give. Measured
-        # rather than guessed, and only shortened when it genuinely does
-        # not fit.
-        $spelled = "$base including groups"
+        # "(Including groups)" reads best and is what both common cases
+        # get. "Update + Replace Content (Including groups)" is 263px
+        # against a row with 220 to give - even "(+ groups)" is 221, one
+        # pixel over - so that one case keeps the bare form at 213.
+        # Measured against this button's own font, not guessed.
+        $spelled = "$base (Including groups)"
         $needed = [System.Windows.Forms.TextRenderer]::MeasureText($spelled, $btnCreate.Font).Width + 16
         if ($needed -le $deployButtonMaxWidth) { return $spelled }
         return "$base + groups"
@@ -1691,7 +1692,7 @@ function Global:Show-CreateInIntuneDialog {
     $groupsReachable = ([bool]$Global:App.PushGroupsOnCreate) -or ($isDuplicate -and [bool]$Global:App.PushGroupsOnUpdate)
     $widestLabel = 200
     foreach ($labelBase in $labelBases) {
-        $variants = if ($groupsReachable) { @($labelBase, "$labelBase including groups", "$labelBase + groups") } else { @($labelBase) }
+        $variants = if ($groupsReachable) { @($labelBase, "$labelBase (Including groups)", "$labelBase + groups") } else { @($labelBase) }
         foreach ($variant in $variants) {
             $variantWidth = [System.Windows.Forms.TextRenderer]::MeasureText($variant, $btnCreate.Font).Width + 16
             $widestLabel = [Math]::Max($widestLabel, [Math]::Min($variantWidth, $deployButtonMaxWidth))
