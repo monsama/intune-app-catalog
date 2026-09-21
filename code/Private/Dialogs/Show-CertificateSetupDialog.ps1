@@ -536,7 +536,101 @@ function Global:Show-CertificateSetupDialog {
     $lblPushGroupsNote.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblPushGroupsNote)
 
-    # Three tabs, because these are three separate jobs: the connection
+    # --- About ---------------------------------------------------------
+    # GPL-2 section 1 asks that a copyright notice and the warranty
+    # disclaimer be published "conspicuously and appropriately" on each
+    # copy. A LICENSE file in the zip arguably does that; a screen inside
+    # the app is what somebody who only ever runs it will actually see.
+    # It is also the one place that answers "which version am I on" -
+    # until now that was the window title and a line in the startup log.
+    #
+    # Wording follows README.md's own License section rather than being
+    # written fresh, so the two cannot say different things about the same
+    # licence.
+    $lblAboutName = New-Object System.Windows.Forms.Label
+    $lblAboutName.Text = "Intune App Catalog & Deployment"
+    $lblAboutName.Location = New-Object System.Drawing.Point(15,15)
+    $lblAboutName.Size = New-Object System.Drawing.Size(600,26)
+    $lblAboutName.Font = New-Object System.Drawing.Font($dlg.Font.FontFamily, 12, [System.Drawing.FontStyle]::Bold)
+    $dlg.Controls.Add($lblAboutName)
+
+    $lblAboutVersion = New-Object System.Windows.Forms.Label
+    $lblAboutVersion.Text = "Version $($Global:App.AppVersion)"
+    $lblAboutVersion.Location = New-Object System.Drawing.Point(17,44)
+    $lblAboutVersion.Size = New-Object System.Drawing.Size(400,20)
+    $lblAboutVersion.ForeColor = [System.Drawing.Color]::DimGray
+    $dlg.Controls.Add($lblAboutVersion)
+
+    $lblAboutWhat = New-Object System.Windows.Forms.Label
+    $lblAboutWhat.Text = "A catalog of Win32 apps as one JSON file per app, and the deploying, assigning and checking that goes with them. Copyright (C) 2026 Viktor Ljuca"
+    $lblAboutWhat.Location = New-Object System.Drawing.Point(17,70)
+    $lblAboutWhat.Size = New-Object System.Drawing.Size(860,36)
+    $dlg.Controls.Add($lblAboutWhat)
+
+    $lblAboutLicenceHead = New-Object System.Windows.Forms.Label
+    $lblAboutLicenceHead.Text = "LICENSE"
+    $lblAboutLicenceHead.Location = New-Object System.Drawing.Point(17,116)
+    $lblAboutLicenceHead.Size = New-Object System.Drawing.Size(300,18)
+    $lblAboutLicenceHead.ForeColor = [System.Drawing.Color]::DimGray
+    $lblAboutLicenceHead.Font = New-Object System.Drawing.Font($dlg.Font.FontFamily, 8, [System.Drawing.FontStyle]::Bold)
+    $dlg.Controls.Add($lblAboutLicenceHead)
+
+    $lblAboutLicence = New-Object System.Windows.Forms.Label
+    $lblAboutLicence.Text = "This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License version 2, or (at your option) any later version (SPDX-License-Identifier: GPL-2.0-or-later). It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the LICENSE file next to this app for the full text."
+    $lblAboutLicence.Location = New-Object System.Drawing.Point(17,136)
+    $lblAboutLicence.Size = New-Object System.Drawing.Size(860,64)
+    $dlg.Controls.Add($lblAboutLicence)
+
+    $lblAboutLinksHead = New-Object System.Windows.Forms.Label
+    $lblAboutLinksHead.Text = "LINKS"
+    $lblAboutLinksHead.Location = New-Object System.Drawing.Point(17,210)
+    $lblAboutLinksHead.Size = New-Object System.Drawing.Size(300,18)
+    $lblAboutLinksHead.ForeColor = [System.Drawing.Color]::DimGray
+    $lblAboutLinksHead.Font = New-Object System.Drawing.Font($dlg.Font.FontFamily, 8, [System.Drawing.FontStyle]::Bold)
+    $dlg.Controls.Add($lblAboutLinksHead)
+
+    # LinkLabels rather than plain text: the addresses are no use to
+    # anybody who cannot click them, and every other "go and read this"
+    # in the app opens a browser rather than asking to be retyped.
+    $aboutLinks = @(
+        @{ Text = "Website    https://monsama.ch";                                                   Url = "https://monsama.ch" }
+        @{ Text = "Source     https://github.com/monsama/intune-app-catalog";                        Url = "https://github.com/monsama/intune-app-catalog" }
+        @{ Text = "License    https://www.gnu.org/licenses/old-licenses/gpl-2.0.html";               Url = "https://www.gnu.org/licenses/old-licenses/gpl-2.0.html" }
+    )
+    $aboutLinkControls = New-Object System.Collections.Generic.List[object]
+    $aboutLinkTop = 230
+    foreach ($linkRow in $aboutLinks) {
+        $lnk = New-Object System.Windows.Forms.LinkLabel
+        $lnk.Text = $linkRow.Text
+        $lnk.Location = New-Object System.Drawing.Point(17,$aboutLinkTop)
+        $lnk.Size = New-Object System.Drawing.Size(600,20)
+        $lnk.Tag = $linkRow.Url
+        $lnk.Add_LinkClicked({
+            param($linkSender, $linkArgs)
+            # Start-Process on a URL fails on a machine with no browser
+            # registered, which is not worth taking the dialog down for.
+            try { Start-Process ([string]$linkSender.Tag) | Out-Null } catch { }
+        })
+        $dlg.Controls.Add($lnk)
+        $aboutLinkControls.Add($lnk)
+        $aboutLinkTop += 22
+    }
+
+    $lblAboutThirdHead = New-Object System.Windows.Forms.Label
+    $lblAboutThirdHead.Text = "THIRD PARTY"
+    $lblAboutThirdHead.Location = New-Object System.Drawing.Point(17,306)
+    $lblAboutThirdHead.Size = New-Object System.Drawing.Size(300,18)
+    $lblAboutThirdHead.ForeColor = [System.Drawing.Color]::DimGray
+    $lblAboutThirdHead.Font = New-Object System.Drawing.Font($dlg.Font.FontFamily, 8, [System.Drawing.FontStyle]::Bold)
+    $dlg.Controls.Add($lblAboutThirdHead)
+
+    $lblAboutThird = New-Object System.Windows.Forms.Label
+    $lblAboutThird.Text = "Nothing is bundled. This app talks to Microsoft Intune and Microsoft Entra ID through the Microsoft Graph API, and uses the Microsoft.Graph.Authentication PowerShell module - Microsoft's own, under its own license, installed from the PowerShell Gallery by Prerequisites. IntuneWinAppUtil.exe, downloaded on demand for packaging, is Microsoft's Win32 Content Prep Tool under its own license. Winget is invoked where an app deploys from it; it is part of Windows."
+    $lblAboutThird.Location = New-Object System.Drawing.Point(17,326)
+    $lblAboutThird.Size = New-Object System.Drawing.Size(860,80)
+    $dlg.Controls.Add($lblAboutThird)
+
+    # Four tabs, because these are four separate jobs: the connection
     # details the app signs in with, looking after the certificate itself,
     # and what the app checks without being asked. Only one of them is ever
     # the reason Settings is open.
@@ -566,6 +660,19 @@ function Global:Show-CertificateSetupDialog {
             Controls = @(
                 $lblAutoIntro, $chkDriftStart, $chkFullAudit, $chkDeployOpen, $lblDeployOpenNote,
                 $lblPushGroupsSection, $chkPushOnCreate, $chkPushOnUpdate, $lblPushGroupsNote
+            )
+        }
+        @{
+            Title = 'About'
+            # .ToArray() on the links for the same reason the Folders page
+            # does it below - a List unrolled inside this literal fails the
+            # whole thing with "Argument types do not match".
+            Controls = @(
+                $lblAboutName, $lblAboutVersion, $lblAboutWhat,
+                $lblAboutLicenceHead, $lblAboutLicence,
+                $lblAboutLinksHead
+            ) + $aboutLinkControls.ToArray() + @(
+                $lblAboutThirdHead, $lblAboutThird
             )
         }
         @{
