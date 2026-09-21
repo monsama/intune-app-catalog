@@ -490,6 +490,52 @@ function Global:Show-CertificateSetupDialog {
     $lblDeployOpenNote.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblDeployOpenNote)
 
+    # Whether Deploy also pushes an app's groups. These two set what the
+    # Deploy window's own checkbox STARTS at; changing it there applies to
+    # that one deploy and is deliberately not remembered - see the note on
+    # $chkPushGroups in Show-CreateInIntuneDialog.
+    $lblPushGroupsSection = New-Object System.Windows.Forms.Label
+    $lblPushGroupsSection.Text = "After a deploy, also push the app's groups to Intune"
+    $lblPushGroupsSection.Location = New-Object System.Drawing.Point(15,186)
+    $lblPushGroupsSection.Size = New-Object System.Drawing.Size(840,20)
+    $lblPushGroupsSection.Font = New-Object System.Drawing.Font($dlg.Font, [System.Drawing.FontStyle]::Bold)
+    $dlg.Controls.Add($lblPushGroupsSection)
+
+    $chkPushOnCreate = New-Object System.Windows.Forms.CheckBox
+    $chkPushOnCreate.Text = "...when deploying a NEW app"
+    $chkPushOnCreate.AutoSize = $true
+    $chkPushOnCreate.Location = New-Object System.Drawing.Point(35,210)
+    $chkPushOnCreate.Checked = [bool]$Global:App.PushGroupsOnCreate
+    $chkTips.SetToolTip($chkPushOnCreate, "A brand-new app has no assignments in Intune yet, so there is nothing a push can overwrite - it just finishes the job. On by default.")
+    $dlg.Controls.Add($chkPushOnCreate)
+    $chkPushOnCreate.Add_CheckedChanged({
+        $Global:App.PushGroupsOnCreate = $chkPushOnCreate.Checked
+        if (Write-SettingsFile) {
+            Write-Log "[OK] Deploying a new app $(if ($chkPushOnCreate.Checked) { 'also pushes its groups.' } else { 'does not push its groups.' })`r`n" ([System.Drawing.Color]::LightGreen)
+        }
+    }.GetNewClosure())
+
+    $chkPushOnUpdate = New-Object System.Windows.Forms.CheckBox
+    $chkPushOnUpdate.Text = "...when UPDATING an existing app (replaces its assignments)"
+    $chkPushOnUpdate.AutoSize = $true
+    $chkPushOnUpdate.Location = New-Object System.Drawing.Point(35,233)
+    $chkPushOnUpdate.Checked = [bool]$Global:App.PushGroupsOnUpdate
+    $chkTips.SetToolTip($chkPushOnUpdate, "Assigning replaces an app's ENTIRE assignment list with the catalog's groups, so a group assigned in the Intune portal is removed. Off by default, and worth leaving off unless this catalog is the only thing that ever assigns these apps.")
+    $dlg.Controls.Add($chkPushOnUpdate)
+    $chkPushOnUpdate.Add_CheckedChanged({
+        $Global:App.PushGroupsOnUpdate = $chkPushOnUpdate.Checked
+        if (Write-SettingsFile) {
+            Write-Log "[OK] Updating an app $(if ($chkPushOnUpdate.Checked) { 'also pushes its groups, replacing its assignments.' } else { 'does not push its groups.' })`r`n" ([System.Drawing.Color]::LightGreen)
+        }
+    }.GetNewClosure())
+
+    $lblPushGroupsNote = New-Object System.Windows.Forms.Label
+    $lblPushGroupsNote.Text = "Deploy shows this as a checkbox too, starting from whatever is set here. Ticking it there covers that one deploy only - a push that replaces assignments should be asked for each time, not left on from weeks ago. A group missing from Entra ID is reported, never created."
+    $lblPushGroupsNote.Location = New-Object System.Drawing.Point(35,256)
+    $lblPushGroupsNote.Size = New-Object System.Drawing.Size(840,34)
+    $lblPushGroupsNote.ForeColor = [System.Drawing.Color]::DimGray
+    $dlg.Controls.Add($lblPushGroupsNote)
+
     # Three tabs, because these are three separate jobs: the connection
     # details the app signs in with, looking after the certificate itself,
     # and what the app checks without being asked. Only one of them is ever
@@ -518,7 +564,8 @@ function Global:Show-CertificateSetupDialog {
         @{
             Title = 'Automatic checks'
             Controls = @(
-                $lblAutoIntro, $chkDriftStart, $chkFullAudit, $chkDeployOpen, $lblDeployOpenNote
+                $lblAutoIntro, $chkDriftStart, $chkFullAudit, $chkDeployOpen, $lblDeployOpenNote,
+                $lblPushGroupsSection, $chkPushOnCreate, $chkPushOnUpdate, $lblPushGroupsNote
             )
         }
         @{

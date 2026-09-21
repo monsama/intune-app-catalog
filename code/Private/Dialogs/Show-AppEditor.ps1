@@ -883,10 +883,22 @@ function Global:Show-AppEditor {
     # The Intune side, as three more tabs of this same window. Its status
     # box, log and Deploy button come with it and sit under every tab, so
     # there is one place things are reported and one button that sends.
+    # Read when a deploy succeeds, not now: these are the editor's own live
+    # checkboxes, on a tab of this same window, and they can be ticked
+    # while the Deploy tab is sitting open. A snapshot taken here would
+    # push whatever was selected when the editor opened.
     $deployHost = Show-CreateInIntuneDialog -AppName $txtName.Text.Trim() -WingetId $txtWinget.Text.Trim() `
         -ExistingAppId $txtId.Text.Trim() -FromAppEditor -CallerHasExistingCatalogEntry:([bool]$ExistingApp) `
         -CurrentIndex $CurrentIndex -HostTabControl $editorTabs -HostForm $dlg -HostBottomY 667 `
-        -OnDeployComplete $ApplyDeployResult
+        -OnDeployComplete $ApplyDeployResult `
+        -GetAssignGroups {
+            @{
+                Required  = @($reqGroup.List.CheckedItems | ForEach-Object { [string]$_ })
+                Available = @($availGroup.List.CheckedItems | ForEach-Object { [string]$_ })
+                Uninstall = @($uninstGroup.List.CheckedItems | ForEach-Object { [string]$_ })
+                Exclude   = @($excludeGroup.List.CheckedItems | ForEach-Object { [string]$_ })
+            }
+        }.GetNewClosure()
 
     # The Winget ID is typed here, on this tab, after the tabs above were
     # built - so for "Add app..." the Package and detection tab was built
@@ -1001,8 +1013,16 @@ function Global:Show-AppEditor {
         }
     }
     if ($deployHost.Log) {
+        # 28px shorter than it was, to give the "also push groups"
+        # checkbox below a row of its own. The log scrolls; the gap
+        # between it and the button row was 12px, which fits nothing.
         $deployHost.Log.Location = New-Object System.Drawing.Point($edgeLeft,787)
-        $deployHost.Log.Size = New-Object System.Drawing.Size(($edgeRight - $edgeLeft),132)
+        $deployHost.Log.Size = New-Object System.Drawing.Size(($edgeRight - $edgeLeft),104)
+    }
+    if ($deployHost.PushGroups) {
+        # Between the log (ends 891) and the button row at $rowActions.
+        $deployHost.PushGroups.Location = New-Object System.Drawing.Point($edgeLeft,899)
+        $deployHost.PushGroups.Size = New-Object System.Drawing.Size(($edgeRight - $edgeLeft),20)
     }
 
     $btnOk.Location = New-Object System.Drawing.Point($edgeLeft,$rowActions)

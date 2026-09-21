@@ -31,6 +31,12 @@ function Global:Import-GraphSettings {
         # $Global:App.CheckDriftOnStartup at its own default, untouched.
         if ($settings.CheckDriftOnStartup -is [bool]) { $Global:App.CheckDriftOnStartup = $settings.CheckDriftOnStartup }
         if ($settings.DetailedGraphLog -is [bool]) { $Global:App.DetailedGraphLog = $settings.DetailedGraphLog }
+        # Same -is [bool] reasoning as CheckDriftOnStartup above, and it
+        # matters more here: PushGroupsOnCreate defaults to ON, so reading
+        # a saved $false as "missing" would turn the user's deliberate off
+        # back on at every startup.
+        if ($settings.PushGroupsOnCreate -is [bool]) { $Global:App.PushGroupsOnCreate = $settings.PushGroupsOnCreate }
+        if ($settings.PushGroupsOnUpdate -is [bool]) { $Global:App.PushGroupsOnUpdate = $settings.PushGroupsOnUpdate }
         # Same -is [bool] reasoning as CheckDriftOnStartup right above.
         if ($settings.RunFullAuditOnStartup -is [bool]) { $Global:App.RunFullAuditOnStartup = $settings.RunFullAuditOnStartup }
         # Same -is [bool] reasoning as CheckDriftOnStartup above.
@@ -114,6 +120,8 @@ function Global:Write-SettingsFile {
             RunFullAuditOnStartup = $Global:App.RunFullAuditOnStartup
             CheckIntuneOnDeployOpen = [bool]$Global:App.CheckIntuneOnDeployOpen
             DetailedGraphLog      = [bool]$Global:App.DetailedGraphLog
+            PushGroupsOnCreate    = [bool]$Global:App.PushGroupsOnCreate
+            PushGroupsOnUpdate    = [bool]$Global:App.PushGroupsOnUpdate
             # How the grid and the window were left - see the notes on the
             # reading side. Written on every save like everything else here,
             # and read back defensively, so an old settings file without
