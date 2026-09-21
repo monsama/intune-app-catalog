@@ -1013,16 +1013,8 @@ function Global:Show-AppEditor {
         }
     }
     if ($deployHost.Log) {
-        # 28px shorter than it was, to give the "also push groups"
-        # checkbox below a row of its own. The log scrolls; the gap
-        # between it and the button row was 12px, which fits nothing.
         $deployHost.Log.Location = New-Object System.Drawing.Point($edgeLeft,787)
-        $deployHost.Log.Size = New-Object System.Drawing.Size(($edgeRight - $edgeLeft),104)
-    }
-    if ($deployHost.PushGroups) {
-        # Between the log (ends 891) and the button row at $rowActions.
-        $deployHost.PushGroups.Location = New-Object System.Drawing.Point($edgeLeft,899)
-        $deployHost.PushGroups.Size = New-Object System.Drawing.Size(($edgeRight - $edgeLeft),20)
+        $deployHost.Log.Size = New-Object System.Drawing.Size(($edgeRight - $edgeLeft),132)
     }
 
     $btnOk.Location = New-Object System.Drawing.Point($edgeLeft,$rowActions)

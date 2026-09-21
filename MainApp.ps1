@@ -196,11 +196,11 @@ $Global:App.DetailedGraphLog = $false
 # would vanish because an install command was edited here. That stays off
 # unless asked for, every time.
 #
-# Both are set in Settings > Automatic checks, and are what the Deploy
-# window's own checkbox STARTS at. That checkbox does not write back:
-# ticking it covers one deploy. Pushing on an update replaces the app's
-# whole assignment list, which is the kind of thing meant once rather
-# than left quietly on for the next unrelated edit.
+# Both live in Settings > Automatic checks and nowhere else. Deploy reads
+# them when the button is pressed and has no checkbox of its own - asked
+# for deliberately: one switch is easier to reason about than a switch
+# plus a per-deploy box that has to be remembered, and the setting is
+# where someone looks when a deploy did something they did not expect.
 $Global:App.PushGroupsOnCreate = $true
 $Global:App.PushGroupsOnUpdate = $false
 

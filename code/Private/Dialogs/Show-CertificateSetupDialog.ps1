@@ -490,10 +490,10 @@ function Global:Show-CertificateSetupDialog {
     $lblDeployOpenNote.ForeColor = [System.Drawing.Color]::DimGray
     $dlg.Controls.Add($lblDeployOpenNote)
 
-    # Whether Deploy also pushes an app's groups. These two set what the
-    # Deploy window's own checkbox STARTS at; changing it there applies to
-    # that one deploy and is deliberately not remembered - see the note on
-    # $chkPushGroups in Show-CreateInIntuneDialog.
+    # Whether Deploy also pushes an app's groups. This is the only place
+    # it is decided - the Deploy window reads these when the button is
+    # pressed and offers no per-deploy override, which is what was asked
+    # for: one switch, not one switch plus a box to forget to tick.
     $lblPushGroupsSection = New-Object System.Windows.Forms.Label
     $lblPushGroupsSection.Text = "After a deploy, also push the app's groups to Intune"
     $lblPushGroupsSection.Location = New-Object System.Drawing.Point(15,186)
@@ -530,7 +530,7 @@ function Global:Show-CertificateSetupDialog {
     }.GetNewClosure())
 
     $lblPushGroupsNote = New-Object System.Windows.Forms.Label
-    $lblPushGroupsNote.Text = "Deploy shows this as a checkbox too, starting from whatever is set here. Ticking it there covers that one deploy only - a push that replaces assignments should be asked for each time, not left on from weeks ago. A group missing from Entra ID is reported, never created."
+    $lblPushGroupsNote.Text = "Applies to every deploy - Deploy has no checkbox of its own, it does whatever is set here. When it is off, the deploy says how many groups are still unassigned and which button pushes them. A group missing from Entra ID is always reported, never created."
     $lblPushGroupsNote.Location = New-Object System.Drawing.Point(35,256)
     $lblPushGroupsNote.Size = New-Object System.Drawing.Size(840,34)
     $lblPushGroupsNote.ForeColor = [System.Drawing.Color]::DimGray
