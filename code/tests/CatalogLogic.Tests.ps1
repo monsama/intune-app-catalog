@@ -102,6 +102,7 @@ $testableFunctionNames = @(
     "Get-CatalogMetadataFieldDiffs",
     "Get-ComparableDetectionRule",
     "ConvertTo-CatalogMetadataFromFetch",
+    "Get-WingetIdFromInstallCommand",
     "ConvertTo-DetectionRuleJson",
     "ConvertTo-JsonStringLiteral",
     "Merge-CatalogMetadata",
@@ -671,6 +672,44 @@ $detRealChange = [pscustomobject]@{ Type = "Script"; Script_Content = "if (Test-
 $jsonRealChange = ConvertTo-DetectionRuleJson -DetectionRule $detRealChange -IndentLevel 0
 Assert-True ($jsonLf -ne $jsonRealChange) `
     "ConvertTo-DetectionRuleJson: a genuine content change (not just trailing whitespace) still produces different JSON"
+
+# -----------------------------------------------------------------
+# Get-WingetIdFromInstallCommand
+# -----------------------------------------------------------------
+# Intune has no Winget ID field, so an imported app looked uncommon even
+# when its install command plainly said which Winget package it is.
+$wingetInstall = Get-CreateAppTemplates -WingetId '7zip.7zip' -Uncommon $false
+Assert-Equal '7zip.7zip' (Get-WingetIdFromInstallCommand -InstallCommand $wingetInstall.Install) `
+    "Get-WingetIdFromInstallCommand: reads back the ID out of this tool's OWN generated install command"
+Assert-Equal '7zip.7zip' (Get-WingetIdFromInstallCommand -InstallCommand $wingetInstall.Uninstall) `
+    "Get-WingetIdFromInstallCommand: ...and out of the uninstall command, -Uninstall switch and all"
+Assert-Equal 'Mozilla.Firefox' (Get-WingetIdFromInstallCommand -InstallCommand "powershell.exe -File Winget-Install.ps1 -AppIDs 'Mozilla.Firefox'") `
+    "Get-WingetIdFromInstallCommand: single quotes too"
+Assert-Equal 'Mozilla.Firefox' (Get-WingetIdFromInstallCommand -InstallCommand "powershell.exe -File Winget-Install.ps1 -AppIDs Mozilla.Firefox") `
+    "Get-WingetIdFromInstallCommand: and unquoted"
+Assert-Equal 'Google.Chrome' (Get-WingetIdFromInstallCommand -InstallCommand 'winget install --id Google.Chrome -e --silent') `
+    "Get-WingetIdFromInstallCommand: a plain winget command says the same thing another way"
+
+# Where guessing would be worse than not guessing - a wrong Winget ID is
+# what a later deploy would go and install.
+Assert-Equal '' (Get-WingetIdFromInstallCommand -InstallCommand 'powershell.exe -File Winget-Install.ps1 -AppIDs "One.App,Two.App"') `
+    "Get-WingetIdFromInstallCommand: several IDs in one command fills nothing - the catalog holds one"
+Assert-Equal '' (Get-WingetIdFromInstallCommand -InstallCommand 'winget install 7zip --silent') `
+    "Get-WingetIdFromInstallCommand: a bare winget search term is not an ID"
+Assert-Equal '' (Get-WingetIdFromInstallCommand -InstallCommand 'setup.exe /S /NORESTART') `
+    "Get-WingetIdFromInstallCommand: an ordinary installer command fills nothing"
+Assert-Equal '' (Get-WingetIdFromInstallCommand -InstallCommand '') `
+    "Get-WingetIdFromInstallCommand: nothing in, nothing out"
+Assert-Equal '' (Get-WingetIdFromInstallCommand -InstallCommand $null) `
+    "Get-WingetIdFromInstallCommand: null in, nothing out"
+
+# The round trip that matters: what this tool generates, it can read back
+# - so an app it deployed and then re-imported is recognised as its own.
+foreach ($roundTripId in @('7zip.7zip', 'Microsoft.VisualStudioCode', 'Notepad++.Notepad++')) {
+    $generated = Get-CreateAppTemplates -WingetId $roundTripId -Uncommon $false
+    Assert-Equal $roundTripId (Get-WingetIdFromInstallCommand -InstallCommand $generated.Install) `
+        "Get-WingetIdFromInstallCommand: round trips '$roundTripId' through the generated command"
+}
 
 # -----------------------------------------------------------------
 # ConvertTo-CatalogMetadataFromFetch

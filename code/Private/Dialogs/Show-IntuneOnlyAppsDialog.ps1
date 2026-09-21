@@ -402,6 +402,12 @@ function Global:Show-IntuneOnlyAppsDialog {
                 $prefill = [pscustomobject]@{
                     appName      = $intuneNameRef2
                     appId        = $idRef2
+                    # Same three as the bulk path - see its own note. The
+                    # editor opens with the Winget field already filled for
+                    # an app that is plainly a Winget app.
+                    wingetId     = if ($ok) { Get-WingetIdFromInstallCommand -InstallCommand ([string]$data.InstallCommandLine) } else { "" }
+                    intuneAppType    = if ($ok) { Get-FriendlyIntuneAppType -ODataType ([string]$data.OdataType) } else { "" }
+                    intuneAppVersion = if ($ok) { [string]$data.DisplayVersion } else { "" }
                     requiredFor  = if ($ok) { @($data.RequiredGroupNames) } else { @() }
                     availableFor = if ($ok) { @($data.AvailableGroupNames) } else { @() }
                     uninstallFor = if ($ok) { @($data.UninstallGroupNames) } else { @() }
@@ -579,9 +585,18 @@ function Global:Show-IntuneOnlyAppsDialog {
             $newEntry = [pscustomobject]@{
                 appId            = $currentItemRef.Id
                 appName          = $currentItemRef.Name
-                wingetId         = ""
-                intuneAppType    = ""
-                intuneAppVersion = ""
+                # Intune has no Winget ID field, but the install command
+                # usually says - an app deployed through Winget-Install.ps1
+                # carries -AppIDs "Some.App". Read back, an imported Winget
+                # app is one the catalog KNOWS is a Winget app, which
+                # decides whether it deploys from the shared package or is
+                # treated as uncommon and needs its own .intunewin.
+                wingetId         = if ($ok) { Get-WingetIdFromInstallCommand -InstallCommand ([string]$data.InstallCommandLine) } else { "" }
+                # Both came back with the fetch and were being dropped on
+                # the floor, which is why an imported app showed blank Type
+                # and Version columns until a sync was run over it.
+                intuneAppType    = if ($ok) { Get-FriendlyIntuneAppType -ODataType ([string]$data.OdataType) } else { "" }
+                intuneAppVersion = if ($ok) { [string]$data.DisplayVersion } else { "" }
                 requiredFor      = if ($ok) { @($data.RequiredGroupNames) } else { @() }
                 availableFor     = if ($ok) { @($data.AvailableGroupNames) } else { @() }
                 uninstallFor     = if ($ok) { @($data.UninstallGroupNames) } else { @() }

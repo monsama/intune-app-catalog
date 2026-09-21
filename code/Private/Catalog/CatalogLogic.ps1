@@ -172,6 +172,52 @@ function Global:Get-CatalogMetadataSimpleFields {
     )
 }
 
+function Global:Get-WingetIdFromInstallCommand {
+    <#
+      The Winget ID an install command is really installing, or "" when it
+      is not installing one.
+
+      An app imported from Intune has no Winget ID, because Intune has no
+      such field - but the command line usually says. This tool's own
+      Winget apps deploy through Winget-AutoUpdate's Winget-Install.ps1
+      with -AppIDs "Some.App" (see Get-CreateAppTemplates), and a plain
+      "winget install --id Some.App" says the same thing another way.
+      Reading it back turns an imported app that IS a Winget app into one
+      the catalog knows is a Winget app, which is the difference between
+      deploying it from the shared package and treating it as uncommon.
+
+      Deliberately conservative. A command naming SEVERAL ids returns
+      nothing: the catalog has one wingetId per app, and picking the first
+      of three would quietly describe the app as something it is not.
+      Guessing wrong here is worse than not guessing, because a wrong
+      Winget ID is what a later deploy would install.
+    #>
+    param([string]$InstallCommand)
+
+    if ([string]::IsNullOrWhiteSpace($InstallCommand)) { return "" }
+
+    # -AppIDs "X" / -AppIDs 'X' / -AppIDs X, the Winget-AutoUpdate form.
+    $appIdsMatch = [regex]::Match($InstallCommand, '(?i)-AppIDs\s+("([^"]+)"|''([^'']+)''|([^\s"'']+))')
+    if ($appIdsMatch.Success) {
+        $captured = @($appIdsMatch.Groups[2].Value, $appIdsMatch.Groups[3].Value, $appIdsMatch.Groups[4].Value) |
+            Where-Object { $_ } | Select-Object -First 1
+        if ($captured -and $captured -notmatch '[,;]') { return $captured.Trim() }
+        return ""
+    }
+
+    # winget install --id X / -e --id X, the same intent without the
+    # wrapper. "winget install X" with a bare package name is NOT matched:
+    # that argument is a search term, which Winget resolves to whatever it
+    # happens to find, and a search term is not an id.
+    $wingetMatch = [regex]::Match($InstallCommand, '(?i)\bwinget\b[^\r\n]*?\s--id\s+("([^"]+)"|''([^'']+)''|([^\s"'']+))')
+    if ($wingetMatch.Success) {
+        $captured = @($wingetMatch.Groups[2].Value, $wingetMatch.Groups[3].Value, $wingetMatch.Groups[4].Value) |
+            Where-Object { $_ } | Select-Object -First 1
+        if ($captured -and $captured -notmatch '[,;]') { return $captured.Trim() }
+    }
+    return ""
+}
+
 function Global:ConvertTo-CatalogMetadataFromFetch {
     <#
       A catalog "metadata" object from what Start-AppMetadataFetch returns.
