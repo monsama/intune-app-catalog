@@ -171,6 +171,19 @@ try {
     $allGroupNames = @(@($desiredEntries | ForEach-Object { $_.Group }) | Select-Object -Unique)
     $groupIdByName = @{}
     $createdCount = 0
+    # Creating Entra ID groups is fine when the user came here to manage
+    # assignments and can see it happening. It is NOT fine as a side effect
+    # of a deploy: a typo in a group name would quietly create a real
+    # directory object named after the typo. The deploy path therefore sets
+    # this to false and gets told what is missing instead.
+    #
+    # Absent means true, so Show-TargetedAssignDialog's own config - which
+    # does not set it - keeps behaving exactly as before.
+    $createMissingGroups = $true
+    if ($null -ne $Config.PSObject.Properties['CreateMissingGroups']) {
+        $createMissingGroups = [bool]$Config.CreateMissingGroups
+    }
+    $missingGroupNames = New-Object System.Collections.Generic.List[string]
 
     foreach ($groupName in $allGroupNames) {
         if ([string]::IsNullOrWhiteSpace($groupName)) { continue }
@@ -184,6 +197,13 @@ try {
         if ($existing.value -and $existing.value.Count -gt 0) {
             $groupIdByName[$groupName] = $existing.value[0].id
             Write-Host "  [=] Exists: $groupName" -ForegroundColor DarkGray
+        }
+        elseif (-not $createMissingGroups) {
+            # Collected, not thrown on straight away: one round trip should
+            # name every group that has to be created, not send the user
+            # back and forth once per name.
+            $missingGroupNames.Add($groupName)
+            Write-Host "  [!] Missing in Entra ID: $groupName" -ForegroundColor Yellow
         }
         else {
             $mailNickname = ($groupName -replace '[^a-zA-Z0-9]', '')
@@ -201,6 +221,15 @@ try {
             $createdCount++
             Write-Host "  [+] Created: $groupName" -ForegroundColor Green
         }
+    }
+
+    # Nothing has been changed in Intune at this point, so stopping here
+    # leaves the app exactly as the deploy left it - assigned to nothing
+    # yet, rather than assigned to some of what was asked for.
+    if ($missingGroupNames.Count -gt 0) {
+        throw ("These group(s) are in the catalog but do not exist in Entra ID: $($missingGroupNames.ToArray() -join ', '). " +
+               "Nothing was assigned. Create them (or fix the names in the app), then use `"Push groups to Intune...`" - " +
+               "that does create missing groups, because there you can see it happen.")
     }
 
     # ---- Show current assignments before changing anything ----

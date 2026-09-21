@@ -5,7 +5,17 @@ function Global:Invoke-QuickDeploy {
         [System.Windows.Forms.MessageBox]::Show("This app has no name.", "No name", "OK", "Warning") | Out-Null
         return
     }
-    $deployResult = Show-CreateInIntuneDialog -AppName $app.appName -WingetId $app.wingetId -ExistingAppId $app.appId
+    # The catalog entry itself is the source here - nothing is being edited
+    # alongside, so what it holds now is what a deploy should push.
+    $deployResult = Show-CreateInIntuneDialog -AppName $app.appName -WingetId $app.wingetId -ExistingAppId $app.appId `
+        -GetAssignGroups {
+            @{
+                Required  = @($app.requiredFor)
+                Available = @($app.availableFor)
+                Uninstall = @($app.uninstallFor)
+                Exclude   = @($app.excludeFor)
+            }
+        }.GetNewClosure()
     if ($deployResult -and $deployResult.NewAppId) {
         $Global:App.Apps[$Index].appId = $deployResult.NewAppId
         if ($deployResult.NewAppName) { $Global:App.Apps[$Index].appName = $deployResult.NewAppName }

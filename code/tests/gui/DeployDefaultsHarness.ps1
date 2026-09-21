@@ -33,6 +33,22 @@ function Get-AllBoxes($root) {
     return $found
 }
 
+# The same walk, unfiltered - the deploy view's checkboxes sit at a
+# different depth from its text boxes.
+function Get-AllControls($root) {
+    $found = New-Object System.Collections.Generic.List[object]
+    $stack = New-Object System.Collections.Generic.Stack[object]
+    $stack.Push($root)
+    while ($stack.Count -gt 0) {
+        $c = $stack.Pop()
+        foreach ($child in $c.Controls) {
+            $found.Add($child)
+            $stack.Push($child)
+        }
+    }
+    return $found
+}
+
 # Armed before the app is loaded, same as DialogLayoutHarness: the app
 # runs its own message loop, so the work happens on a tick.
 $Global:Probe = New-Object System.Windows.Forms.Timer
@@ -52,6 +68,31 @@ $Global:Probe.Add_Tick({
             -HostTabControl $hostTabs -HostForm $hostForm -HostBottomY 667
 
         Add-Line 'handlePresent' ([bool]$deployHost.RetargetWingetId)
+
+        # The "also push groups" checkbox. This view was built with an
+        # EMPTY ExistingAppId, so it is a CREATE - where pushing is on by
+        # default, because a brand-new app has no assignments to replace.
+        $pushBoxes = @(Get-AllControls $hostForm | Where-Object {
+            $_ -is [System.Windows.Forms.CheckBox] -and [string]$_.Text -like '*push*groups*'
+        })
+        Add-Line 'pushGroupsBoxCount' $pushBoxes.Count
+        if ($pushBoxes.Count -gt 0) {
+            Add-Line 'pushGroupsCheckedOnCreate' $pushBoxes[0].Checked
+            Add-Line 'pushGroupsSaysDeploying' ([string]$pushBoxes[0].Text -like '*after deploying*')
+            # Where it actually sits. NOT .Visible - this host form is
+            # never shown, so .Visible is false for every control on it
+            # regardless of layout, which says nothing. The room for this
+            # row came out of the scroll panel rather than out of the
+            # window's height, so what matters is that it lands between
+            # the log and the Deploy button without overlapping either,
+            # and inside the window.
+            $logBox = @(Get-AllControls $hostForm | Where-Object { $_ -is [System.Windows.Forms.RichTextBox] } | Select-Object -First 1)
+            Add-Line 'pushGroupsTop' $pushBoxes[0].Top
+            Add-Line 'pushGroupsBottom' ($pushBoxes[0].Top + $pushBoxes[0].Height)
+            Add-Line 'logBottom' $(if ($logBox.Count -gt 0) { $logBox[0].Top + $logBox[0].Height } else { -1 })
+            Add-Line 'deployTop' $deployHost.Deploy.Top
+            Add-Line 'hostClientHeight' $hostForm.ClientSize.Height
+        }
 
         # The log funnel, handed nothing to write to. An alias taken one
         # closure level too high arrives $null, and that used to throw

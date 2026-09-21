@@ -186,6 +186,24 @@ $Global:App.CheckDriftOnStartup = $false
 # not just writes and failures plus a read summary - see GraphLog.ps1.
 $Global:App.DetailedGraphLog = $false
 
+# Whether Deploy also pushes the app's groups to Intune afterwards.
+#
+# Two settings, not one, because the two cases are not the same risk. A
+# brand-new app has no assignments in Intune to overwrite, so pushing is
+# purely additive and is what "deploy this app" plainly means - on by
+# default. An UPDATE is different: the assign call replaces an app's
+# ENTIRE assignment list, so a group somebody added in the Intune portal
+# would vanish because an install command was edited here. That stays off
+# unless asked for, every time.
+#
+# Both are set in Settings > Automatic checks, and are what the Deploy
+# window's own checkbox STARTS at. That checkbox does not write back:
+# ticking it covers one deploy. Pushing on an update replaces the app's
+# whole assignment list, which is the kind of thing meant once rather
+# than left quietly on for the next unrelated edit.
+$Global:App.PushGroupsOnCreate = $true
+$Global:App.PushGroupsOnUpdate = $false
+
 # Separate from, and off by default independent of, CheckDriftOnStartup
 # above - that one is a single cheap "list every app in Intune" call;
 # this is "Intune Audit..."'s own full check (Metadata/Groups/

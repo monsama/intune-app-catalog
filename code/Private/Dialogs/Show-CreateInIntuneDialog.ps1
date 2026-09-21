@@ -1,6 +1,19 @@
 function Global:Show-CreateInIntuneDialog {
     param(
         [string]$AppName, [string]$WingetId, [string]$ExistingAppId, [switch]$FromAppEditor,
+        # Returns this app's groups as
+        # @{ Required=..; Available=..; Uninstall=..; Exclude=.. }, for the
+        # "push groups afterwards" step below.
+        #
+        # A scriptblock, not four arrays, deliberately: the app editor hosts
+        # this dialog as its own tabs and its group checkboxes stay live
+        # while Deploy is sitting there, so a snapshot taken when this
+        # window opened would push whatever was ticked minutes ago. Called
+        # at the moment the deploy succeeds instead.
+        #
+        # Omitted, the groups are looked up from the catalog by app name -
+        # right for every caller that deploys an app already in it.
+        [scriptblock]$GetAssignGroups,
         # NOT the same thing as -CurrentIndex below, even though they're
         # usually set together - this is [bool]$ExistingApp from the app
         # editor's own scope, true whenever ITS OWN "auto-save immediately
@@ -173,7 +186,12 @@ function Global:Show-CreateInIntuneDialog {
     # find them.
     $scrollPanel = New-Object System.Windows.Forms.Panel
     $scrollPanel.Location = New-Object System.Drawing.Point(0,0)
-    $scrollPanel.Size = New-Object System.Drawing.Size(900,640)
+    # 26px shorter than it was, to free a row above the buttons for the
+    # "push groups afterwards" checkbox without making an already-tall
+    # window taller. This is the one place in the dialog where 26px costs
+    # nothing that isn't already handled - it scrolls by design, which is
+    # exactly why the rest of the dialog was pinned outside it.
+    $scrollPanel.Size = New-Object System.Drawing.Size(900,614)
     $scrollPanel.AutoScroll = $true
     $dlg.Controls.Add($scrollPanel)
 
@@ -1441,7 +1459,7 @@ function Global:Show-CreateInIntuneDialog {
     # $lblCreateStatus is never manually repositioned or, worse,
     # overlapped when the status text changes.
     $pnlStatusInfo = New-Object System.Windows.Forms.FlowLayoutPanel
-    $pnlStatusInfo.Location = New-Object System.Drawing.Point(15,650)
+    $pnlStatusInfo.Location = New-Object System.Drawing.Point(15,624)
     $pnlStatusInfo.Size = New-Object System.Drawing.Size(870,90)
     $pnlStatusInfo.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
     $pnlStatusInfo.WrapContents = $false
@@ -1618,10 +1636,48 @@ function Global:Show-CreateInIntuneDialog {
     }.GetNewClosure()
 
     $rtbCreateLog = New-Object System.Windows.Forms.RichTextBox
-    $rtbCreateLog.Location = New-Object System.Drawing.Point(15,(698 + $statusBoxExtraHeight))
+    $rtbCreateLog.Location = New-Object System.Drawing.Point(15,(672 + $statusBoxExtraHeight))
     $rtbCreateLog.Size = New-Object System.Drawing.Size(870,110)
     Initialize-DarkLogBox -LogBox $rtbCreateLog
     $dlg.Controls.Add($rtbCreateLog)
+
+    # Deploying creates/updates the app and uploads its content; assigning
+    # is a separate Graph call that REPLACES the app's whole assignment
+    # list. For a brand-new app there is nothing to replace, so this is on
+    # by default and the deploy finishes the job. For an update it is off
+    # by default, because a group somebody added in the Intune portal
+    # should not disappear because an install command was edited here.
+    #
+    # It STARTS at the matching setting (Settings > Automatic checks) and
+    # deliberately does not write back to it. Ticking it here covers this
+    # one deploy.
+    #
+    # That asymmetry is the point, not an oversight. Pushing on an update
+    # replaces the app's whole assignment list, so it is exactly the kind
+    # of thing someone means once - "this time, also push the groups" -
+    # and would not want silently still on during an unrelated metadata
+    # fix three weeks later. A destructive opt-in that remembers itself
+    # out of sight is a trap; the durable policy lives in Settings, where
+    # changing it is a deliberate act in a place you went looking.
+    $chkPushGroups = New-Object System.Windows.Forms.CheckBox
+    $chkPushGroups.Location = New-Object System.Drawing.Point(15,(790 + $statusBoxExtraHeight))
+    $chkPushGroups.Size = New-Object System.Drawing.Size(870,20)
+    $dlg.Controls.Add($chkPushGroups)
+    $pushGroupsTip = New-Object System.Windows.Forms.ToolTip
+    $pushGroupsTip.SetToolTip($chkPushGroups, "Assigning replaces this app's ENTIRE assignment list in Intune with the catalog's groups - anything assigned outside this tool is removed. A group that does not exist in Entra ID is reported, not created; use `"Push groups to Intune...`" for that.")
+    # Follows the mode, which Force-new can flip while the window is open.
+    $syncPushGroupsCheckbox = {
+        $creating = (-not $isDuplicate) -or ($chkForceNew -and $chkForceNew.Checked)
+        if ($creating) {
+            $chkPushGroups.Text = "Also push this app's groups to Intune after deploying"
+            $chkPushGroups.Checked = [bool]$Global:App.PushGroupsOnCreate
+        }
+        else {
+            $chkPushGroups.Text = "Also push this app's groups to Intune after updating (replaces its current assignments)"
+            $chkPushGroups.Checked = [bool]$Global:App.PushGroupsOnUpdate
+        }
+    }.GetNewClosure()
+    & $syncPushGroupsCheckbox
 
     $btnCreate = New-Object System.Windows.Forms.Button
     $btnCreate.Text = if ($isDuplicate) { "Update Metadata" } else { "Deploy" }
@@ -1733,6 +1789,9 @@ function Global:Show-CreateInIntuneDialog {
                 }
             }
             $btnCreate.Text = if ($chkForceNew.Checked) { "Deploy" } elseif ($chkReplaceContent.Checked) { "Update + Replace Content" } else { "Update Metadata" }
+            # Force-new turns this update into a create, which is a
+            # different default and a different remembered setting.
+            & $syncPushGroupsCheckbox
         }.GetNewClosure())
         $chkReplaceContent.Add_Click({
             $btnCreate.Text = if ($chkForceNew.Checked) { "Deploy" } elseif ($chkReplaceContent.Checked) { "Update + Replace Content" } else { "Update Metadata" }
@@ -2207,6 +2266,15 @@ function Global:Show-CreateInIntuneDialog {
         $rtbLogRef = $rtbCreateLog
         $btnSaveForLaterRef = $btnSaveForLater
         $btnCancelRef = $btnCancel
+        # For the optional group push after a successful deploy - see the
+        # success handler below. Aliased here with everything else for the
+        # same closure-visibility reason.
+        $chkPushGroupsRef = $chkPushGroups
+        $getAssignGroupsRef = $GetAssignGroups
+        $targetedAssignScriptRef = $Global:App.EmbeddedTargetedAssignScript
+        $tenantIdRef = $Global:App.GraphTenantId
+        $clientIdRef = $Global:App.GraphClientId
+        $certThumbRef = $Global:App.GraphCertificateThumbprint
         # Added specifically so the success handler below can build and
         # save a catalog-shaped metadata object via
         # Save-AppMetadataToLocalCatalog - a real Create/Update Metadata
@@ -2370,13 +2438,36 @@ function Global:Show-CreateInIntuneDialog {
                         # so was a later audit reporting a group
                         # difference - which reads like the deploy went
                         # wrong rather than like a step still to come.
-                        $groupNote = ""
-                        $deployedCatalogApp = @($appsRefRef | Where-Object { $_.appName -eq $appNameRef }) | Select-Object -First 1
-                        if ($deployedCatalogApp) {
-                            $pendingGroups = @(@($deployedCatalogApp.requiredFor) + @($deployedCatalogApp.availableFor) + @($deployedCatalogApp.uninstallFor) | Where-Object { $_ })
-                            if ($pendingGroups.Count -gt 0) {
-                                $groupNote = "`n`nThis app's $($pendingGroups.Count) group(s) are NOT assigned in Intune yet - deploying does not assign them. Use `"Push groups to Intune (single app)...`" in the app editor, or the toolbar's multi-app version. Until then an audit will correctly report the groups as differing."
+                        # The checkbox under the log decides which of those
+                        # two this is. Ticked, the push runs below and the
+                        # note would be wrong; unticked, the note is the
+                        # only thing that says the job is half done.
+                        $assignGroups = $null
+                        if ($getAssignGroupsRef) {
+                            try { $assignGroups = & $getAssignGroupsRef }
+                            catch {
+                                Write-DialogLogLine -LogBox $rtbLogRef -Text "[WARN] Could not read this app's groups: $($_.Exception.Message)`r`n"
                             }
+                        }
+                        if (-not $assignGroups) {
+                            $deployedCatalogApp = @($appsRefRef | Where-Object { $_.appName -eq $appNameRef }) | Select-Object -First 1
+                            if ($deployedCatalogApp) {
+                                $assignGroups = @{
+                                    Required  = @($deployedCatalogApp.requiredFor)
+                                    Available = @($deployedCatalogApp.availableFor)
+                                    Uninstall = @($deployedCatalogApp.uninstallFor)
+                                    Exclude   = @($deployedCatalogApp.excludeFor)
+                                }
+                            }
+                        }
+                        $pendingGroups = @()
+                        if ($assignGroups) {
+                            $pendingGroups = @(@($assignGroups.Required) + @($assignGroups.Available) + @($assignGroups.Uninstall) | Where-Object { $_ })
+                        }
+                        $willPushGroups = $chkPushGroupsRef.Checked -and $pendingGroups.Count -gt 0
+                        $groupNote = ""
+                        if ($pendingGroups.Count -gt 0 -and -not $willPushGroups) {
+                            $groupNote = "`n`nThis app's $($pendingGroups.Count) group(s) are NOT assigned in Intune yet - deploying does not assign them unless the checkbox under the log is ticked. Use `"Push groups to Intune (single app)...`" in the app editor, or the toolbar's multi-app version. Until then an audit will correctly report the groups as differing."
                         }
                         $doneMsg = if (-not $localSaveOk) {
                             "Done. App ID: $($result.appId)`n`n...but saving this to the local catalog failed - check the Log tab. The app was still created/updated in Intune successfully."
@@ -2404,13 +2495,87 @@ function Global:Show-CreateInIntuneDialog {
                             try { & $onDeployCompleteRef $resultBoxRef }
                             catch { Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] Saving to the catalog after deploying threw: $($_.Exception.Message)`r`n" }
                         }
-                        $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
-                        $lblStatusRef.Text = "Done - App ID $($result.appId). Read the log below, then Close."
                         # Nothing left to send: another click would repeat the
                         # whole thing against Intune.
                         $btnCreateRef.Enabled = $false
                         if ($btnSaveForLaterRef) { $btnSaveForLaterRef.Enabled = $false }
-                        if ($btnCancelRef) { $btnCancelRef.Text = "Close" }
+
+                        # How the window settles, whether or not a group
+                        # push runs first. A scriptblock because the push is
+                        # another background process: with one, this runs
+                        # from its -OnComplete; without, it runs right here.
+                        $settleAfterDeploy = {
+                            param([string]$ExtraStatus, [bool]$Failed)
+                            if ($dlgRef.IsDisposed) { return }
+                            $lblStatusRef.ForeColor = if ($Failed) { [System.Drawing.Color]::Firebrick } else { [System.Drawing.Color]::SeaGreen }
+                            $lblStatusRef.Text = "Done - App ID $($result.appId).$ExtraStatus Read the log below, then Close."
+                            if ($btnCancelRef) { $btnCancelRef.Text = "Close" }
+                        }.GetNewClosure()
+
+                        if (-not $willPushGroups) {
+                            & $settleAfterDeploy "" $false
+                        }
+                        else {
+                            # -CreateMissingGroups $false: a group name that
+                            # does not exist in Entra ID is reported, not
+                            # created. Creating directory objects as a side
+                            # effect of a deploy would turn a typo into a
+                            # real group; "Push groups to Intune..." is where
+                            # that happens, in front of the user.
+                            $assignConfigPath = Join-Path $env:TEMP (".intunepkg_deployassign_config_" + [guid]::NewGuid().ToString("N") + ".json")
+                            $assignResultPath = Join-Path $env:TEMP (".intunepkg_deployassign_result_" + [guid]::NewGuid().ToString("N") + ".json")
+                            $assignConfig = [pscustomobject]@{
+                                TenantId              = $tenantIdRef
+                                ClientId              = $clientIdRef
+                                CertificateThumbprint = $certThumbRef
+                                AppId                 = $result.appId
+                                AppName               = $appNameRef
+                                RequiredGroups        = @($assignGroups.Required)
+                                AvailableGroups       = @($assignGroups.Available)
+                                UninstallGroups       = @($assignGroups.Uninstall)
+                                ExcludeGroups         = @($assignGroups.Exclude)
+                                CreateMissingGroups   = $false
+                                OutputResultPath      = $assignResultPath
+                            }
+                            $assignResultPathRef = $assignResultPath
+                            $assignConfigPathRef = $assignConfigPath
+                            $settleAfterDeployRef = $settleAfterDeploy
+                            try {
+                                $assignJson = $assignConfig | ConvertTo-Json -Depth 8 -ErrorAction Stop
+                                [System.IO.File]::WriteAllText($assignConfigPathRef, $assignJson, (New-Object System.Text.UTF8Encoding($false)))
+                                $lblStatusRef.ForeColor = [System.Drawing.Color]::DimGray
+                                $lblStatusRef.Text = "Deployed. Pushing $($pendingGroups.Count) group(s) to Intune..."
+                                Write-DialogLogLine -LogBox $rtbLogRef -Text "`r`n[INFO] Pushing this app's groups to Intune - this replaces its assignment list.`r`n"
+                                [void](Start-PipelineProcess -ScriptContent $targetedAssignScriptRef -TempScriptName ".intunepkg_embedded_deployassign.ps1" -ArgumentString "-ConfigPath `"$assignConfigPathRef`"" -ExtraLogTarget $rtbLogRef -OnComplete {
+                                    param($assignCode)
+                                    Remove-Item $assignConfigPathRef -Force -ErrorAction SilentlyContinue
+                                    $assignError = ""
+                                    if (Test-Path $assignResultPathRef) {
+                                        try {
+                                            $assignResult = Get-Content -Path $assignResultPathRef -Raw | ConvertFrom-Json
+                                            Remove-Item $assignResultPathRef -Force -ErrorAction SilentlyContinue
+                                            if (-not $assignResult.success) { $assignError = [string]$assignResult.error }
+                                        }
+                                        catch { $assignError = "could not read the result: $($_.Exception.Message)" }
+                                    }
+                                    else { $assignError = "no result written (exit code $assignCode)" }
+                                    if ($assignError) {
+                                        # The app itself IS deployed. Saying
+                                        # otherwise would send someone
+                                        # looking for a problem that is not
+                                        # there.
+                                        & $settleAfterDeployRef " The app deployed, but pushing its groups failed - see the log." $true
+                                    }
+                                    else {
+                                        & $settleAfterDeployRef " Groups pushed." $false
+                                    }
+                                }.GetNewClosure())
+                            }
+                            catch {
+                                Write-DialogLogLine -LogBox $rtbLogRef -Text "[FAILED] Could not start the group push: $($_.Exception.Message)`r`n"
+                                & $settleAfterDeploy " The app deployed, but the group push could not be started - see the log." $true
+                            }
+                        }
                     }
                     else {
                         Write-DialogError -StatusLabel $lblStatusRef -LogBox $rtbLogRef -ErrorMessage $result.error
@@ -3466,7 +3631,11 @@ function Global:Show-CreateInIntuneDialog {
         # confusion a single window was supposed to remove.
         $btnSaveForLater.Visible = $false
         $shift = $HostBottomY - $pnlStatusInfo.Top
-        foreach ($control in @($pnlStatusInfo, $rtbCreateLog, $btnCreate, $btnShowDiff, $btnRefreshFromIntune)) {
+        # $chkPushGroups comes along with them - it belongs to the Deploy
+        # button, and left behind on $dlg (which is never shown once
+        # embedded) it would simply not exist for the app editor, which is
+        # how this dialog is reached most of the time.
+        foreach ($control in @($pnlStatusInfo, $rtbCreateLog, $chkPushGroups, $btnCreate, $btnShowDiff, $btnRefreshFromIntune)) {
             if (-not $control) { continue }
             $dlg.Controls.Remove($control)
             $control.Location = New-Object System.Drawing.Point($control.Left, ($control.Top + $shift))
@@ -3486,6 +3655,11 @@ function Global:Show-CreateInIntuneDialog {
             # them they land in the middle of the editor's own button rows.
             Refresh   = $btnRefreshFromIntune
             Diff      = $btnShowDiff
+            # Same reason as Refresh/Diff: the host rebuilds this whole
+            # band, so a position set here is overwritten by a log box that
+            # is a different height there. Left unplaced it lands inside
+            # that log - which is exactly what the layout audit caught.
+            PushGroups = $chkPushGroups
             BottomEnd = $btnCreate.Bottom
             # Called by the editor when its own Winget ID field changes -
             # these tabs were built before there was an ID to build from.
