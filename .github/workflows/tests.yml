@@ -39,6 +39,16 @@ jobs:
         if: matrix.shell == 'powershell'
         shell: powershell
         run: ./code/tests/CatalogLogic.Tests.ps1
+      # Reads the dialog sources as text, so it belongs with the unit tests
+      # and not the GUI ones - it needs no desktop and runs on Linux too.
+      - name: ButtonStyle.Tests.ps1 (pwsh)
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: ./code/tests/ButtonStyle.Tests.ps1
+      - name: ButtonStyle.Tests.ps1 (Windows PowerShell)
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: ./code/tests/ButtonStyle.Tests.ps1
 
   gui:
     # Drives the real WinForms app, so it needs the runner's desktop session

@@ -137,13 +137,17 @@ function Global:Show-IntuneOnlyAppsDialog {
     # individually.
     $btnSelectAllChecked = New-Object System.Windows.Forms.Button
     $btnSelectAllChecked.Text = "Select all"
+    # Equal widths for a pair sitting side by side - 90 next to 100 is
+    # visible in a way a lone button's width never is. 32px, not the 26px
+    # the other Select all/none pairs use, because these are in the footer
+    # row with Add checked/Close rather than tucked under a list.
     $btnSelectAllChecked.Location = New-Object System.Drawing.Point(200,474)
-    $btnSelectAllChecked.Size = New-Object System.Drawing.Size(90,32)
+    $btnSelectAllChecked.Size = New-Object System.Drawing.Size(100,32)
     $dlg.Controls.Add($btnSelectAllChecked)
 
     $btnSelectNoneChecked = New-Object System.Windows.Forms.Button
     $btnSelectNoneChecked.Text = "Select none"
-    $btnSelectNoneChecked.Location = New-Object System.Drawing.Point(300,474)
+    $btnSelectNoneChecked.Location = New-Object System.Drawing.Point(310,474)
     $btnSelectNoneChecked.Size = New-Object System.Drawing.Size(100,32)
     $dlg.Controls.Add($btnSelectNoneChecked)
 

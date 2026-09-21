@@ -57,22 +57,24 @@ function Global:Show-AddFavoriteGroupToAppsDialog {
 
     $clbApps = New-Object System.Windows.Forms.CheckedListBox
     $clbApps.Location = New-Object System.Drawing.Point(15,354)
-    $clbApps.Size = New-Object System.Drawing.Size(430,260)
+    $clbApps.Size = New-Object System.Drawing.Size(430,245)
     $clbApps.CheckOnClick = $true
     $dlg.Controls.Add($clbApps)
     foreach ($candidateApp in ($CandidateApps | Sort-Object appName)) {
         [void]$clbApps.Items.Add($candidateApp.appName, $true)
     }
 
+    # Kept in step with Show-RemoveGroupFromAppsDialog, which is the same
+    # layout - see the spacing note there for what these offsets are.
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Select all"
-    $btnSelectAll.Location = New-Object System.Drawing.Point(15,620)
-    $btnSelectAll.Size = New-Object System.Drawing.Size(100,26)
+    $btnSelectAll.Location = New-Object System.Drawing.Point(15,611)
+    $btnSelectAll.Size = New-Object System.Drawing.Size(110,26)
     $dlg.Controls.Add($btnSelectAll)
 
     $btnSelectNone = New-Object System.Windows.Forms.Button
     $btnSelectNone.Text = "Select none"
-    $btnSelectNone.Location = New-Object System.Drawing.Point(125,620)
+    $btnSelectNone.Location = New-Object System.Drawing.Point(135,611)
     $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
     $dlg.Controls.Add($btnSelectNone)
 
@@ -85,7 +87,7 @@ function Global:Show-AddFavoriteGroupToAppsDialog {
 
     $btnAdd = New-Object System.Windows.Forms.Button
     $btnAdd.Text = "Add to checked apps"
-    $btnAdd.Location = New-Object System.Drawing.Point(255,656)
+    $btnAdd.Location = New-Object System.Drawing.Point(255,653)
     $btnAdd.Size = New-Object System.Drawing.Size(190,32)
     $dlg.Controls.Add($btnAdd)
     $addTip = New-Object System.Windows.Forms.ToolTip
@@ -93,7 +95,7 @@ function Global:Show-AddFavoriteGroupToAppsDialog {
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(155,656)
+    $btnCancel.Location = New-Object System.Drawing.Point(155,653)
     $btnCancel.Size = New-Object System.Drawing.Size(90,32)
     $dlg.Controls.Add($btnCancel)
 
