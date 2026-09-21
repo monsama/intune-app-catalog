@@ -939,7 +939,7 @@ $lblEmptyTitle.AutoSize = $true
 $Global:App.PanelEmptyCatalog.Controls.Add($lblEmptyTitle)
 
 $lblEmptyBody = New-Object System.Windows.Forms.Label
-$lblEmptyBody.Text = "A catalog is a folder of one JSON file per app, kept in git if you like. This one is empty - either add the first app, or point the tool at a folder that already has some."
+$lblEmptyBody.Text = "A catalog is a folder of one JSON file per app, kept in git if you like. This one is empty - add the first app, point the tool at a folder that already has some, or pull what is already deployed in Intune into it."
 $lblEmptyBody.Location = New-Object System.Drawing.Point(42, 78)
 $lblEmptyBody.Size = New-Object System.Drawing.Size(620, 44)
 $lblEmptyBody.ForeColor = [System.Drawing.Color]::FromArgb(90,90,90)
@@ -951,10 +951,11 @@ $Global:App.LblEmptyPath.Size = New-Object System.Drawing.Size(620, 20)
 $Global:App.LblEmptyPath.ForeColor = [System.Drawing.Color]::FromArgb(120,120,120)
 $Global:App.PanelEmptyCatalog.Controls.Add($Global:App.LblEmptyPath)
 
-# The same three buttons the toolbar has, not new actions - PerformClick on
-# the real ones, the convention the grid's context menu and the overflow
+# The same actions the rest of the app has, not new ones - PerformClick on
+# the real buttons, the convention the grid's context menu and the overflow
 # menu already use, so there is one handler per action however it is
-# reached.
+# reached. The exception is the Intune pull below, which has no toolbar
+# button of its own to click.
 $btnEmptyAdd = New-Object System.Windows.Forms.Button
 $btnEmptyAdd.Text = "Add the first app..."
 $btnEmptyAdd.Location = New-Object System.Drawing.Point(42, 160)
@@ -975,6 +976,32 @@ $btnEmptyGuide.Location = New-Object System.Drawing.Point(422, 160)
 $btnEmptyGuide.Size = New-Object System.Drawing.Size(180, 34)
 $btnEmptyGuide.Add_Click({ $btnGettingStarted.PerformClick() }.GetNewClosure())
 $Global:App.PanelEmptyCatalog.Controls.Add($btnEmptyGuide)
+
+# Filling an empty catalog from a tenant that already has apps in it is
+# the one obvious starting move this screen did not offer. The sync check
+# has done it all along - it lists what is in Intune with no catalog entry
+# and adds the checked ones - but it lives on a tab of the Checks window,
+# which is not where anyone looks when the question is "how do I get
+# started". Opened standalone here rather than through Checks: its other
+# two comparisons (renamed in Intune, deleted from Intune) are about a
+# catalog that has entries, so on an empty one they have nothing to say.
+#
+# No credentials check of its own - Start-IntuneAppLookup already answers
+# "Not configured" and the dialog reports it, which is one message in one
+# place rather than two that can disagree.
+$btnEmptyFromIntune = New-Object System.Windows.Forms.Button
+$btnEmptyFromIntune.Text = "Get apps from Intune..."
+$btnEmptyFromIntune.Location = New-Object System.Drawing.Point(612, 160)
+$btnEmptyFromIntune.Size = New-Object System.Drawing.Size(180, 34)
+$btnEmptyFromIntune.Add_Click({
+    # Returns whether anything was added, so the grid is rebuilt only when
+    # there is something to show - and the empty panel hides itself as part
+    # of that same refresh.
+    if (Show-IntuneOnlyAppsDialog) { Update-Grid }
+}.GetNewClosure())
+$Global:App.PanelEmptyCatalog.Controls.Add($btnEmptyFromIntune)
+$emptyPanelTips = New-Object System.Windows.Forms.ToolTip
+$emptyPanelTips.SetToolTip($btnEmptyFromIntune, "Lists every app already in Intune that this catalog has no entry for, and adds the ones you check - metadata, groups and App ID. The same check lives under Checks > Intune: Sync check once the catalog has apps in it.")
 
 $tabCatalog.Controls.Add($Global:App.PanelEmptyCatalog)
 $Global:App.PanelEmptyCatalog.BringToFront()
@@ -1015,10 +1042,11 @@ $Global:App.Grid.Add_CellFormatting({
         }
     }
     elseif ($colName -eq "IntuneAudit") {
-        # Same in-memory cache Get-LastAuditSummary reads from - never
-        # persisted, so this is only ever as fresh as the last audit or
-        # single-app fetch that happened to run THIS session (see
-        # $Global:App.LastAuditResults's own comment for why).
+        # Same cache Get-LastAuditSummary reads from. It IS persisted, to
+        # data\last-audit-cache.json, so this survives a restart and shows
+        # the result of the last audit or single-app fetch whenever that
+        # ran - not only one from this session. See
+        # $Global:App.LastAuditResults and Load-/Save-LastAuditCache.
         $val = [string]$e.Value
         if ($val -like "*issue*" -or $val -like "Check failed*") {
             $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
