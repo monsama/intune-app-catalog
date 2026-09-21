@@ -185,10 +185,15 @@ try {
     Update-Grid
     foreach ($case in $uncommonCases) {
         $cell = ''
+        $statusCell = ''
         foreach ($row in $grid.Rows) {
-            if ([string]$row.Cells['AppName'].Value -eq $case.Name) { $cell = [string]$row.Cells['Uncommon'].Value }
+            if ([string]$row.Cells['AppName'].Value -ne $case.Name) { continue }
+            $cell = [string]$row.Cells['Uncommon'].Value
+            $statusCell = [string]$row.Cells['Status'].Value
         }
-        Add-Line ('uncommonCell_' + ($case.Name -replace '\s', '')) $cell
+        $key = $case.Name -replace '\s', ''
+        Add-Line ('uncommonCell_' + $key) $cell
+        Add-Line ('uncommonStatus_' + $key) $statusCell
     }
 
     Add-Line 'ran' 'true'
