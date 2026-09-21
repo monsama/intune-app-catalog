@@ -112,10 +112,11 @@ function Global:ConvertTo-AppRecord {
 function Global:Import-AppsFromFile {
     param([string]$Path)
 
-    # Every (re)load is a fresh catalog as far as the Type/Version
-    # backfill is concerned - see Start-TypeVersionBackfill and
-    # $Global:App.TypeVersionBackfillDone.
-    $Global:App.TypeVersionBackfillDone = $false
+    # Nothing to reset here for the Type/Version backfill any more. Its
+    # flag means "a queue is running", not "this catalog has had its
+    # turn", and a queue still in flight releases that flag itself when
+    # the generation bump below tells it the catalog moved on. Clearing it
+    # here would instead let a SECOND queue start alongside the first.
     # See $Global:App.CatalogGeneration's own comment in MainApp.ps1 - this
     # invalidates any backfill queue still in flight from whatever was
     # loaded before this call.
