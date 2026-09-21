@@ -1307,6 +1307,41 @@ Assert-Equal "#microsoft.graph.exclusionGroupAssignmentTarget" (@($body.mobileAp
 Assert-Equal 1 @((New-AppAssignmentBody -Entries @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All', 'SG-Unknown')) -GroupIdByName @{ 'SG-All' = 'id-1' }).mobileAppAssignments).Count `
     "New-AppAssignmentBody: a group with no id yet is skipped rather than sent empty"
 
+# An app with nothing on one side of the comparison - no assignments in
+# Intune yet, or no groups in the catalog. Both are ordinary states, and
+# both used to end the whole multi-app preview with "Index operation
+# failed; the array index evaluated to null": these producers returned an
+# empty array, PowerShell unrolled it to $null on the way out, and
+# Get-AssignmentDiff's "@($null)" is an array holding one $null whose
+# .Key is $null - which is not a legal hashtable key.
+$emptyCurrent = ConvertTo-CurrentAssignmentEntries -Assignments @() -GroupNameById @{}
+$emptyDesired = Get-DesiredAssignmentEntries
+# Pinned, because it is the whole premise of the guard being tested and it
+# reads like a bug until you know it is how PowerShell returns an empty
+# array. If either of these ever stops being $null, the guard is still
+# correct - but these two assertions are what says so on purpose.
+Assert-True ($null -eq $emptyCurrent) "ConvertTo-CurrentAssignmentEntries: an empty result reaches the caller as null"
+Assert-True ($null -eq $emptyDesired) "Get-DesiredAssignmentEntries: an empty result reaches the caller as null"
+
+$firstPush = Get-AssignmentDiff -Current $emptyCurrent -Desired (Get-DesiredAssignmentEntries -RequiredGroups @('SG-All'))
+Assert-Equal 1 @($firstPush.ToAdd).Count "Get-AssignmentDiff: an app with no assignments in Intune yet is all adds"
+Assert-Equal 0 @($firstPush.ToRemove).Count "Get-AssignmentDiff: ...and nothing to remove"
+$strippedAll = Get-AssignmentDiff -Current (Get-DesiredAssignmentEntries -RequiredGroups @('SG-All')) -Desired $emptyDesired
+Assert-Equal 1 @($strippedAll.ToRemove).Count "Get-AssignmentDiff: an app with no groups in the catalog removes what Intune has"
+Assert-Equal 0 @($strippedAll.ToAdd).Count "Get-AssignmentDiff: ...and adds nothing"
+
+# Straight $null, and a set with a $null in it - what the embedded scripts
+# can be handed, since these functions travel to them as text and their
+# input comes back through a JSON config rather than from the code above.
+$bothNull = Get-AssignmentDiff -Current $null -Desired $null
+Assert-Equal 0 @($bothNull.ToAdd).Count "Get-AssignmentDiff: null on both sides is no change, not a crash"
+Assert-Equal 0 @($bothNull.ToRemove).Count "Get-AssignmentDiff: ...on the remove side too"
+$withHole = Get-AssignmentDiff -Current @($null) -Desired @(@(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All'))[0], $null)
+Assert-Equal 1 @($withHole.ToAdd).Count "Get-AssignmentDiff: a null among real entries is dropped, not indexed"
+Assert-Equal 0 @($withHole.ToRemove).Count "Get-AssignmentDiff: a null-only current side removes nothing"
+Assert-Equal 0 @((New-AppAssignmentBody -Entries @($null) -GroupIdByName @{ 'SG-All' = 'id-1' }).mobileAppAssignments).Count `
+    "New-AppAssignmentBody: a null entry is skipped rather than throwing on a null lookup"
+
 # -----------------------------------------------------------------
 # Resolve-AppPackagePath / Get-PackageFolderIndex
 # -----------------------------------------------------------------

@@ -58,6 +58,14 @@ function Global:Get-DesiredAssignmentEntries {
             $entries.Add([pscustomobject]@{ Intent = $intent; Mode = 'exclude'; Group = $group; Key = (Get-AssignmentKey $intent 'exclude' $group) })
         }
     }
+    # Returned unwrapped, and an EMPTY result therefore reaches the caller
+    # as $null - PowerShell unrolls a returned array into the pipeline and
+    # an empty one unrolls to nothing at all. Deliberately left that way:
+    # every caller already wraps this in @(), and ",$entries.ToArray()"
+    # would hand those callers an array nested one level deeper. The
+    # hazard it creates - "@($null)" being an array holding one $null
+    # rather than an empty array - is handled where it actually bites, in
+    # Get-AssignmentDiff and New-AppAssignmentBody below.
     return $entries.ToArray()
 }
 
@@ -93,6 +101,8 @@ function Global:ConvertTo-CurrentAssignmentEntries {
         $entries.Add([pscustomobject]@{ Intent = $intent; Mode = $mode; Group = $name; GroupId = $groupId; Key = (Get-AssignmentKey $intent $mode $name) })
     }
     if ($OtherTargets) { $OtherTargets.Value = $others.ToArray() }
+    # $null for an app with no assignments in Intune - see
+    # Get-DesiredAssignmentEntries' own note on why that is left alone.
     return $entries.ToArray()
 }
 
@@ -110,13 +120,26 @@ function Global:Get-AssignmentDiff {
       means no change.
     #>
     param($Current, $Desired)
-    $currentByKey = @{}
-    foreach ($entry in @($Current)) { $currentByKey[$entry.Key] = $entry }
-    $desiredByKey = @{}
-    foreach ($entry in @($Desired)) { $desiredByKey[$entry.Key] = $entry }
+    # Dropped before anything indexes by .Key. A $null entry's .Key is
+    # itself $null, and a hashtable assignment with a null key throws
+    # "Index operation failed; the array index evaluated to null" - which
+    # is how one app with no assignments used to take down the whole
+    # multi-app preview, since a single worker's error aborts the run.
+    # Both producers above now keep empty sets empty, but this is the
+    # place the failure actually surfaced, and it is handed to the
+    # embedded scripts as text where a null can arrive from a config file
+    # rather than from these functions. Producers above deliberately still
+    # return $null for an empty set - see their own notes.
+    $currentEntries = @(@($Current) | Where-Object { $_ -and $_.Key })
+    $desiredEntries = @(@($Desired) | Where-Object { $_ -and $_.Key })
 
-    $toAdd = @(@($Desired) | Where-Object { -not $currentByKey.ContainsKey($_.Key) } | ForEach-Object { Format-AssignmentLabel $_ })
-    $toRemove = @(@($Current) | Where-Object { -not $desiredByKey.ContainsKey($_.Key) } | ForEach-Object { Format-AssignmentLabel $_ })
+    $currentByKey = @{}
+    foreach ($entry in $currentEntries) { $currentByKey[$entry.Key] = $entry }
+    $desiredByKey = @{}
+    foreach ($entry in $desiredEntries) { $desiredByKey[$entry.Key] = $entry }
+
+    $toAdd = @($desiredEntries | Where-Object { -not $currentByKey.ContainsKey($_.Key) } | ForEach-Object { Format-AssignmentLabel $_ })
+    $toRemove = @($currentEntries | Where-Object { -not $desiredByKey.ContainsKey($_.Key) } | ForEach-Object { Format-AssignmentLabel $_ })
     return [pscustomobject]@{ ToAdd = @($toAdd | Sort-Object); ToRemove = @($toRemove | Sort-Object) }
 }
 
@@ -130,6 +153,10 @@ function Global:New-AppAssignmentBody {
     #>
     param($Entries, $GroupIdByName)
     $assignments = @(@($Entries) | ForEach-Object {
+        # Same null-entry guard as Get-AssignmentDiff, and it matters more
+        # here: this is the body of the call that REPLACES an app's whole
+        # assignment list, and Hashtable.Contains($null) throws outright.
+        if (-not $_ -or -not $_.Group) { return }
         $groupId = $null
         if ($GroupIdByName -and $GroupIdByName.Contains($_.Group)) { $groupId = [string]$GroupIdByName[$_.Group] }
         if (-not $groupId) { return }
