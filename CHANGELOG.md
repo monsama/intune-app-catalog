@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.4.8
+
+### Fixes
+
+- **An app imported from Intune now gets its Winget ID, Type and
+  Version.** Type and Version came back with the same fetch that reads
+  everything else and were being dropped, which is why an imported app
+  showed those columns blank. The Winget ID is not an Intune field at
+  all, so it is read out of the install command - an app deployed
+  through Winget-Install.ps1 carries `-AppIDs "Some.App"`. That decides
+  whether the app is treated as a Winget app or as an uncommon one
+  needing its own .intunewin, so it is worth more than a filled column.
+- **The Winget ID read back in 1.4.7 could include the command's
+  arguments.** A real command puts them inside the same quoted string -
+  `-AppIDs "Adobe.Acrobat.Reader.64-bit --scope machine --override "` -
+  and the whole string was taken as the ID. It is the first token; an
+  identifier never contains a space. **If you imported apps with 1.4.7,
+  check the Winget ID column: any value containing a space was stored
+  wrong and needs correcting by hand.**
+- **The Type/Version backfill could only run once per session.** Its
+  guard meant "already ran" and was set even when it found nothing to do,
+  so on a complete catalog - or an empty one about to be filled from
+  Intune - it was spent seconds after launch and could not run again
+  until a restart. Anything arriving afterwards without a type kept blank
+  columns: an App ID attached by "Look up App IDs", an app added in the
+  editor, an import whose fetch failed. The guard now means "a queue is
+  running", so Reload picks up whatever is still missing.
+
 ## 1.4.7
 
 ### Added
