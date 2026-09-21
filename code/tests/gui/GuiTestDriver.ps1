@@ -381,10 +381,28 @@ function Close-AppDialog {
       answered Yes, since closing it is what the caller wants. A dialog that's
       still busy otherwise may refuse for a while - keep asking for up to
       $TimeoutSec. Returns how it closed.
+
+      The budget is 60s, not the 20s it was, because a WM_CLOSE posted at a
+      dialog that is mid-work sits in the queue behind that work. Several
+      dialogs do real work the instant they are shown - Batch Assign starts
+      a Preview on Add_Shown, which writes temp scripts, builds helper text
+      out of live scriptblocks and launches a child PowerShell that imports
+      the Graph module, all on the UI thread. On a fast machine that is
+      over before the harness looks; on a loaded CI runner it is not, and
+      the suite reported WOULD NOT CLOSE for a window that had simply not
+      got round to hearing the question yet. Confirmed as environment and
+      not code: the same commit, rerun unchanged, passed.
+
+      The loop re-posts WM_CLOSE on every pass, so the extra budget costs
+      nothing in the normal case - it exits the moment the window goes -
+      and a close that does take longer than the old 20s is logged rather
+      than passing quietly, so raising the number cannot hide the thing it
+      was raised for.
     #>
-    param([IntPtr]$Window, [int]$TimeoutSec = 20)
+    param([IntPtr]$Window, [int]$TimeoutSec = 60)
     $isOpen = { $W32::IsWindow($Window) -and $W32::IsWindowVisible($Window) }
-    $end = (Get-Date).AddSeconds($TimeoutSec)
+    $startedAt = Get-Date
+    $end = $startedAt.AddSeconds($TimeoutSec)
     $appPid = $W32::ProcessOf($Window)
     do {
         $W32::Close($Window)
@@ -424,7 +442,18 @@ function Close-AppDialog {
                 }
             }
         }
-        if (-not (& $isOpen)) { return 'closed' }
+        if (-not (& $isOpen)) {
+            # Anything past the old 20s budget is said out loud rather than
+            # passing quietly. A dialog that takes half a minute to accept
+            # a close is not healthy, and this is the only place that can
+            # notice - without it, raising the budget would simply hide
+            # the thing it was raised for.
+            $took = ((Get-Date) - $startedAt).TotalSeconds
+            if ($took -gt 20) {
+                Write-Host ("      [close] '{0}' took {1:N0}s to close" -f $W32::Text($Window), $took) -ForegroundColor DarkYellow
+            }
+            return 'closed'
+        }
     } while ((Get-Date) -lt $end)
     return 'WOULD NOT CLOSE'
 }
