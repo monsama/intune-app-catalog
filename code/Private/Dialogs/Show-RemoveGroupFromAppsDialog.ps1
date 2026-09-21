@@ -62,22 +62,32 @@ function Global:Show-RemoveGroupFromAppsDialog {
 
     $clbApps = New-Object System.Windows.Forms.CheckedListBox
     $clbApps.Location = New-Object System.Drawing.Point(15,354)
-    $clbApps.Size = New-Object System.Drawing.Size(430,260)
+    $clbApps.Size = New-Object System.Drawing.Size(430,245)
     $clbApps.CheckOnClick = $true
     $dlg.Controls.Add($clbApps)
     foreach ($candidateApp in ($CandidateApps | Sort-Object appName)) {
         [void]$clbApps.Items.Add($candidateApp.appName, $true)
     }
 
+    # Two rows of buttons under the list, on the app's 15px outer margin:
+    # the list ends at 599, these sit at 611 (12px clear of it), the footer
+    # at 653, and the footer's bottom edge lands 15px off the bottom, the
+    # same margin the left and right edges use. It used to run
+    # 614/620/656/688 against a 700px client - 6px between the list and the
+    # first button, 10px between the two button rows, and 12px of bottom
+    # margin, all of which read as crowded rather than deliberate.
+    #
+    # Equal widths, because they are peers sitting side by side: 100 next
+    # to 110 is visible at a glance in a way a lone button's width never is.
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Select all"
-    $btnSelectAll.Location = New-Object System.Drawing.Point(15,620)
-    $btnSelectAll.Size = New-Object System.Drawing.Size(100,26)
+    $btnSelectAll.Location = New-Object System.Drawing.Point(15,611)
+    $btnSelectAll.Size = New-Object System.Drawing.Size(110,26)
     $dlg.Controls.Add($btnSelectAll)
 
     $btnSelectNone = New-Object System.Windows.Forms.Button
     $btnSelectNone.Text = "Select none"
-    $btnSelectNone.Location = New-Object System.Drawing.Point(125,620)
+    $btnSelectNone.Location = New-Object System.Drawing.Point(135,611)
     $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
     $dlg.Controls.Add($btnSelectNone)
 
@@ -93,7 +103,7 @@ function Global:Show-RemoveGroupFromAppsDialog {
 
     $btnRemove = New-Object System.Windows.Forms.Button
     $btnRemove.Text = "Remove from checked apps"
-    $btnRemove.Location = New-Object System.Drawing.Point(240,656)
+    $btnRemove.Location = New-Object System.Drawing.Point(240,653)
     $btnRemove.Size = New-Object System.Drawing.Size(205,32)
     $dlg.Controls.Add($btnRemove)
     $removeTip = New-Object System.Windows.Forms.ToolTip
@@ -101,7 +111,7 @@ function Global:Show-RemoveGroupFromAppsDialog {
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
-    $btnCancel.Location = New-Object System.Drawing.Point(140,656)
+    $btnCancel.Location = New-Object System.Drawing.Point(140,653)
     $btnCancel.Size = New-Object System.Drawing.Size(90,32)
     $dlg.Controls.Add($btnCancel)
 

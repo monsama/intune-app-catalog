@@ -70,12 +70,12 @@ function Global:Show-SyncMetadataDialog {
     $btnSelectAll = New-Object System.Windows.Forms.Button
     $btnSelectAll.Text = "Select all"
     $btnSelectAll.Location = New-Object System.Drawing.Point(15,382)
-    $btnSelectAll.Size = New-Object System.Drawing.Size(100,26)
+    $btnSelectAll.Size = New-Object System.Drawing.Size(110,26)
     $dlg.Controls.Add($btnSelectAll)
 
     $btnSelectNone = New-Object System.Windows.Forms.Button
     $btnSelectNone.Text = "Select none"
-    $btnSelectNone.Location = New-Object System.Drawing.Point(125,382)
+    $btnSelectNone.Location = New-Object System.Drawing.Point(135,382)
     $btnSelectNone.Size = New-Object System.Drawing.Size(110,26)
     $dlg.Controls.Add($btnSelectNone)
 
