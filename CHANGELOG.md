@@ -1,5 +1,81 @@
 # Changelog
 
+## 1.4.6
+
+### Added
+
+- **Deploy can assign the app's groups, instead of stopping at the
+  upload.** An app with groups in the catalog used to go live in Intune
+  assigned to nobody, and the second step was a separate window you had
+  to know to open. Two settings under Settings > Automatic checks decide
+  it, and they differ on purpose: a NEW app has no assignments to
+  overwrite, so this is on; an UPDATE replaces the app's entire
+  assignment list, so a group somebody added in the Intune portal would
+  disappear because an install command was edited here - off unless you
+  ask for it. The Deploy button says which it is doing ("Update Metadata
+  including groups"), so it is never a surprise.
+- Groups are assigned but never **created** this way. A name in the
+  catalog that does not exist in Entra ID is reported and nothing is
+  assigned, rather than a typo quietly becoming a real directory object.
+  "Push groups to Intune..." still creates them - there you can see it
+  happen.
+- **Diagnostics reports every Graph permission**, not only the ones that
+  run happens to need. Its checks probe what they use, so a missing
+  permission for a feature they do not touch stayed invisible until it
+  failed - platform scripts especially: everything passed, then the
+  first Save took a 403. It now reads the app registration's own token
+  and lists every feature, the same way Settings' "Test connection"
+  does.
+- The catalog's **Uncommon** column also flags an app pointed at a
+  hand-picked .intunewin. It installs from that package rather than the
+  shared winget wrapper, which is what the column exists to say, but
+  having a Winget ID used to hide it. Status says why ("Custom
+  package").
+
+### Fixes
+
+- **One app with no assignments in Intune broke the whole Unknown
+  Assignments check** with "Index operation failed; the array index
+  evaluated to null". An app with nothing assigned produces an empty
+  set, PowerShell returns an empty array as `$null`, and the comparison
+  then indexed a hashtable by a null key. A single app was enough to end
+  the run for every app in it. The same fault could have sent an empty
+  assignment body when pushing groups.
+- **A check that had stopped kept saying "(checking...)".** The audit
+  runs two fetches; if one failed it wrote its error to the status line
+  and stopped, and then the other one finished and overwrote that error
+  with a green "Audit complete" - over a column still reading
+  "(checking...)" for every row. Failures are now reported at the end,
+  every abandoned cell says what actually happened, and a run you stop
+  yourself goes back to "(not checked)" rather than claiming to have
+  failed.
+- **The audit reported a detection rule as differing when it was
+  identical.** The catalog keeps every detection field the editor has a
+  box for, so a File rule switched to "exists" still carries the
+  operator and value from before. Those two are never sent for "exists"
+  - Intune has no such concept there - so the comparison flagged two
+  fields neither side can act on, permanently, with nothing you could do
+  about it. Also affected Registry/"exists" and MSI with no version
+  operator.
+- The Checks summary counted a check that **failed** as an app that
+  **differs**, so "3 app(s) differ" could mean "3 app(s) we could not
+  ask about". Those are reported separately now.
+- Catalog groups reported every row as not found in Entra ID, rather
+  than the rows that actually were.
+- The orphan-folder check no longer flags a folder an app deliberately
+  points at.
+
+### Polish
+
+- Button sizes follow one scheme across the app, now checked by a test:
+  32px for a dialog's footer and primary actions, 30px for a wide
+  stacked button, 26px for a small one attached to a control. Seven
+  dialogs had "Select all" and "Select none" side by side at different
+  widths.
+- "Remove group from apps" and "Add favorite to apps" had 6px between
+  the app list and the first button and 12px of bottom margin, which
+  read as crowded rather than deliberate.
+
 ## 1.4.5
 
 ### Fixes
