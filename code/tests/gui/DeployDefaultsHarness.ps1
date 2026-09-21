@@ -83,6 +83,32 @@ $Global:Probe.Add_Tick({
         Add-Line 'pushOnCreateDefault' ([bool]$Global:App.PushGroupsOnCreate)
         Add-Line 'pushOnUpdateDefault' ([bool]$Global:App.PushGroupsOnUpdate)
 
+        # With no control on this window, the Deploy button's own label is
+        # the only thing on screen that says whether the groups go too -
+        # so it has to follow the setting. Built twice, once each way,
+        # because a label that happens to match the default proves nothing.
+        Add-Line 'deployLabelWhenPushOn' ([string]$deployHost.Deploy.Text)
+
+        $savedPushOnCreate = $Global:App.PushGroupsOnCreate
+        $Global:App.PushGroupsOnCreate = $false
+        $hostForm2 = New-Object System.Windows.Forms.Form
+        $hostForm2.ClientSize = New-Object System.Drawing.Size(900, 1010)
+        $hostTabs2 = New-Object System.Windows.Forms.TabControl
+        $hostTabs2.Location = New-Object System.Drawing.Point(10, 8)
+        $hostTabs2.Size = New-Object System.Drawing.Size(880, 651)
+        $hostForm2.Controls.Add($hostTabs2)
+        $deployHost2 = Show-CreateInIntuneDialog -AppName 'Probe App 2' -WingetId '' `
+            -ExistingAppId '' -FromAppEditor -CurrentIndex -1 `
+            -HostTabControl $hostTabs2 -HostForm $hostForm2 -HostBottomY 667
+        Add-Line 'deployLabelWhenPushOff' ([string]$deployHost2.Deploy.Text)
+        # Whatever it says, it has to fit - the button is sized once for
+        # the widest label it can show, and a truncated verb on the one
+        # button that changes Intune is not acceptable.
+        $labelWidth = [System.Windows.Forms.TextRenderer]::MeasureText([string]$deployHost.Deploy.Text, $deployHost.Deploy.Font).Width
+        Add-Line 'deployLabelFits' ($labelWidth -le $deployHost.Deploy.Width)
+        $hostForm2.Dispose()
+        $Global:App.PushGroupsOnCreate = $savedPushOnCreate
+
         # The log funnel, handed nothing to write to. An alias taken one
         # closure level too high arrives $null, and that used to throw
         # "The property 'SelectionStart' cannot be found on this object"

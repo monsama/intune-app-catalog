@@ -1637,12 +1637,71 @@ function Global:Show-CreateInIntuneDialog {
     $dlg.Controls.Add($rtbCreateLog)
 
     $btnCreate = New-Object System.Windows.Forms.Button
-    $btnCreate.Text = if ($isDuplicate) { "Update Metadata" } else { "Deploy" }
     $btnCreate.Location = New-Object System.Drawing.Point(595,(818 + $statusBoxExtraHeight))
     $btnCreate.Size = New-Object System.Drawing.Size(200,32)
     $dlg.Controls.Add($btnCreate)
     $createTip = New-Object System.Windows.Forms.ToolTip
-    $createTip.SetToolTip($btnCreate, $(if ($isDuplicate) { "Pushes the fields above to this existing Intune app as an update." } else { "Packages and deploys this app to Intune now." }))
+
+    # The button says what pressing it will actually do, which is two
+    # things, not one: what happens to the app, and whether the groups go
+    # with it. Whether they do is a setting (Settings > Automatic checks)
+    # with no control on this window, so without saying it here there is
+    # nothing on screen between "Deploy" and an app that either does or
+    # does not end up assigned.
+    #
+    # One place decides it. The two checkboxes below that change the mode
+    # used to each carry their own copy of the first half, which is how
+    # the halves drift apart.
+    $deployButtonMaxWidth = 220
+    $getDeployButtonLabel = {
+        $base = if (-not $isDuplicate) { "Deploy" }
+                elseif ($chkForceNew -and $chkForceNew.Checked) { "Deploy" }
+                elseif ($chkReplaceContent -and $chkReplaceContent.Checked) { "Update + Replace Content" }
+                else { "Update Metadata" }
+        $creating = (-not $isDuplicate) -or ($chkForceNew -and $chkForceNew.Checked)
+        $pushes = if ($creating) { [bool]$Global:App.PushGroupsOnCreate } else { [bool]$Global:App.PushGroupsOnUpdate }
+        if (-not $pushes) { return $base }
+        # "including groups" reads best, but "Update + Replace Content
+        # including groups" is wider than this row has to give. Measured
+        # rather than guessed, and only shortened when it genuinely does
+        # not fit.
+        $spelled = "$base including groups"
+        $needed = [System.Windows.Forms.TextRenderer]::MeasureText($spelled, $btnCreate.Font).Width + 16
+        if ($needed -le $deployButtonMaxWidth) { return $spelled }
+        return "$base + groups"
+    }.GetNewClosure()
+    $syncDeployButton = {
+        $btnCreate.Text = & $getDeployButtonLabel
+        $createTip.SetToolTip($btnCreate, $(
+            $what = if ($isDuplicate -and -not ($chkForceNew -and $chkForceNew.Checked)) {
+                "Pushes the fields above to this existing Intune app as an update."
+            } else { "Packages and deploys this app to Intune now." }
+            if ([string]$btnCreate.Text -like '*group*') {
+                "$what It then assigns the app to this catalog's groups, replacing whatever it is assigned to now - turn that off under Settings > Automatic checks."
+            } else {
+                "$what It does NOT assign the app to any group; turn that on under Settings > Automatic checks, or use `"Push groups to Intune...`" afterwards."
+            }
+        ))
+    }.GetNewClosure()
+
+    # Sized once, for the widest label this window can end up showing.
+    # The app editor positions this button by its Width, so growing it
+    # later would leave it sitting somewhere else on that layout.
+    $labelBases = if ($isDuplicate) { @("Deploy", "Update Metadata", "Update + Replace Content") } else { @("Deploy") }
+    $groupsReachable = ([bool]$Global:App.PushGroupsOnCreate) -or ($isDuplicate -and [bool]$Global:App.PushGroupsOnUpdate)
+    $widestLabel = 200
+    foreach ($labelBase in $labelBases) {
+        $variants = if ($groupsReachable) { @($labelBase, "$labelBase including groups", "$labelBase + groups") } else { @($labelBase) }
+        foreach ($variant in $variants) {
+            $variantWidth = [System.Windows.Forms.TextRenderer]::MeasureText($variant, $btnCreate.Font).Width + 16
+            $widestLabel = [Math]::Max($widestLabel, [Math]::Min($variantWidth, $deployButtonMaxWidth))
+        }
+    }
+    # Grows leftward: its right edge is where the row expects it, next to
+    # Cancel, and "Refresh from Intune" ends at 575.
+    $btnCreate.Width = $widestLabel
+    $btnCreate.Left = 795 - $widestLabel
+    & $syncDeployButton
 
     # For a new app, lets its metadata be captured and saved locally
     # without requiring the package to exist yet - so a batch of new apps
@@ -1745,10 +1804,10 @@ function Global:Show-CreateInIntuneDialog {
                     $btnCreate.Enabled = $false
                 }
             }
-            $btnCreate.Text = if ($chkForceNew.Checked) { "Deploy" } elseif ($chkReplaceContent.Checked) { "Update + Replace Content" } else { "Update Metadata" }
+            & $syncDeployButton
         }.GetNewClosure())
         $chkReplaceContent.Add_Click({
-            $btnCreate.Text = if ($chkForceNew.Checked) { "Deploy" } elseif ($chkReplaceContent.Checked) { "Update + Replace Content" } else { "Update Metadata" }
+            & $syncDeployButton
         }.GetNewClosure())
     }
 
