@@ -1390,6 +1390,15 @@ function Global:Update-Grid {
             $status = if ($status) { "$status; Custom config" } else { "Custom config" }
         }
 
+        # Why the Uncommon column says "Yes" for an app that plainly has a
+        # Winget ID: it was pointed at its own .intunewin, so it installs
+        # from that and not from the shared winget wrapper. Only worth
+        # saying for an app that WOULD otherwise use the wrapper - an
+        # uncommon app has its own package by definition.
+        if ($app.packagePath -and -not $isUncommon) {
+            $status = if ($status) { "$status; Custom package" } else { "Custom package" }
+        }
+
         $folderDisplay = ""
         if ($needsPackageCheck) {
             $folderDisplay = if ($pkg.Found) { Split-Path $pkg.Path -Parent } else { "(not found)" }
@@ -1403,11 +1412,12 @@ function Global:Update-Grid {
             WingetId  = $app.wingetId
             Type      = if ($app.intuneAppType) { $app.intuneAppType } else { "" }
             Version   = if ($app.intuneAppVersion) { $app.intuneAppVersion } else { "" }
-            # "Yes (custom package)" rather than a plain "Yes" when it's the
-            # hand-picked .intunewin that put it here: the app still has a
-            # Winget ID sitting right there in the next column, so a bare
-            # "Yes" reads as a contradiction rather than an explanation.
-            Uncommon  = if ($isUncommon) { "Yes" } elseif ($showsAsUncommon) { "Yes (custom package)" } else { "" }
+            # Plain "Yes" for both reasons. Spelling the custom-package case
+            # out here ("Yes (custom package)") needed a wider column than
+            # the grid's total width budget had left, and squeezed App ID
+            # below the floor that keeps a full GUID readable - so the WHY
+            # goes in Status, which composes notes already and has the room.
+            Uncommon  = if ($showsAsUncommon) { "Yes" } else { "" }
             # Blank (not "Yes") for an Uncommon app: Test-AppHasCustomConfig
             # returns true for every Uncommon app unconditionally (there's
             # no computed default for it to have deviated FROM), so showing

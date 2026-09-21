@@ -870,11 +870,7 @@ $Global:App.Grid.Columns.Add((New-GridColumn "WingetId" "Winget ID" -FillWeight 
 $Global:App.Grid.Columns.Add((New-GridColumn "Type" "Type" -FillWeight 13 -Font $gridFont)) | Out-Null
 # Real Win32 versions run to "140.0.7339.128" - 4 was too little even maximized.
 $Global:App.Grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 7 -Font $gridFont)) | Out-Null
-# Floored to its longest value, not just its header: an app deploying from
-# a hand-picked .intunewin reads "Yes (custom package)" here, and at the
-# header's own width that truncated to "Yes (custom p...".
-$uncommonWidth = [System.Windows.Forms.TextRenderer]::MeasureText("Yes (custom package)", $gridFont).Width + 12
-$Global:App.Grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 9 -Font $gridFont -MinimumWidth $uncommonWidth)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 6 -Font $gridFont)) | Out-Null
 $Global:App.Grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -FillWeight 7 -Font $gridFont)) | Out-Null
 # Package folder holds full filesystem paths, which routinely run longer
 # than every other column's content (including the App ID GUID) - still
@@ -980,9 +976,10 @@ $Global:App.Grid.Add_CellFormatting({
                 $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
                 $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Bold)
             }
-            elseif ([string]$e.Value -eq "Custom config") {
+            elseif ([string]$e.Value -eq "Custom config" -or [string]$e.Value -eq "Custom package") {
                 # Informational, not a warning either - a Winget app with
-                # deliberately customized install/detection/etc. isn't a
+                # deliberately customized install/detection/etc., or one
+                # deliberately pointed at its own .intunewin, isn't a
                 # problem the way a missing package or App ID is, so it gets
                 # its own neutral color rather than the same DarkOrange used
                 # for things that actually need fixing. Only when this is the
@@ -997,19 +994,6 @@ $Global:App.Grid.Add_CellFormatting({
                 $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
                 $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Bold)
             }
-        }
-    }
-    elseif ($colName -eq "Uncommon") {
-        # Only the custom-package variant is colored. A plain "Yes" is the
-        # ordinary case for a whole catalog of hand-packaged apps and would
-        # be noise; "Yes (custom package)" means this app has a Winget ID
-        # and is STILL not installing from the shared winget wrapper, which
-        # is worth catching the eye. Informational, not a warning, so it
-        # borrows the same SteelBlue italic the Status column already uses
-        # for "Custom config" rather than the orange reserved for problems.
-        if ([string]$e.Value -eq "Yes (custom package)") {
-            $e.CellStyle.ForeColor = [System.Drawing.Color]::SteelBlue
-            $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Italic)
         }
     }
     elseif ($colName -eq "IntuneAudit") {

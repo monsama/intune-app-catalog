@@ -85,7 +85,12 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         # Which package an app installs from, as the column reports it.
         Assert-True ($s['uncommonCell_UncommonCaseWinget'] -eq '') "a Winget app with no package of its own is not flagged" $all
         Assert-True ($s['uncommonCell_UncommonCasePlain'] -eq 'Yes') "an app with no Winget ID is flagged uncommon" $all
-        Assert-True ($s['uncommonCell_UncommonCaseCustom'] -eq 'Yes (custom package)') "a Winget app pointed at its own .intunewin is flagged too, and says why" $all
+        Assert-True ($s['uncommonCell_UncommonCaseCustom'] -eq 'Yes') "a Winget app pointed at its own .intunewin is flagged too" $all
+        # The column has no room to say WHY an app with a Winget ID right
+        # next to it is flagged, so Status carries that.
+        Assert-True ($s['uncommonStatus_UncommonCaseCustom'] -like '*Custom package*') "...and Status says why it is flagged" $all
+        Assert-True ($s['uncommonStatus_UncommonCaseWinget'] -notlike '*Custom package*') "a Winget app with no package of its own says nothing about one" $all
+        Assert-True ($s['uncommonStatus_UncommonCasePlain'] -notlike '*Custom package*') "nor does an app that is uncommon the ordinary way" $all
     }
     catch {
         Assert-True $false "test run completed" "$($_.Exception.Message) @ line $($_.InvocationInfo.ScriptLineNumber)"
