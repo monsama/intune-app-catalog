@@ -172,6 +172,80 @@ function Global:Get-CatalogMetadataSimpleFields {
     )
 }
 
+function Global:ConvertTo-CatalogMetadataFromFetch {
+    <#
+      A catalog "metadata" object from what Start-AppMetadataFetch returns.
+
+      That fetch already reads the WHOLE app - commands, detection rule,
+      requirements, install experience, dependencies - and the two places
+      that add an app from Intune both threw all of it away and stored
+      $null, leaving entries that had to be filled in by hand afterwards
+      for information the tool had already been handed. Same Graph round
+      trip either way; only the keeping was missing.
+
+      The shape produced here is the one SyncMetadata.ps1 writes, field for
+      field, because the catalog has one metadata shape and a second
+      almost-identical one is how they drift. The fetch hands its fields
+      back flat and PascalCase; the catalog stores them nested and camel.
+
+      Architecture and minimum-OS follow the precedence Show-
+      CreateInIntuneDialog's own auto-fetch already uses - allowed before
+      applicable, the current Windows-release property before the legacy
+      one - rather than a second opinion about the same two fields.
+    #>
+    param($Fetched)
+
+    if (-not $Fetched) { return $null }
+
+    $architecture = ""
+    if ($Fetched.AllowedArchitectures -and $Fetched.AllowedArchitectures -ne "none") {
+        $architecture = [string]$Fetched.AllowedArchitectures
+    }
+    elseif ($Fetched.ApplicableArchitectures -and $Fetched.ApplicableArchitectures -ne "none") {
+        $architecture = [string]$Fetched.ApplicableArchitectures
+    }
+
+    # The live property wins; the legacy one is only a fallback for an app
+    # never touched since Microsoft's switch. Stored raw - Get-Parsed
+    # MinOsRelease is what turns either spelling into something comparable,
+    # and it is the editor's job to match it to a dropdown entry.
+    $minOsKey = if ($Fetched.MinimumSupportedWindowsRelease) { [string]$Fetched.MinimumSupportedWindowsRelease }
+                elseif ($Fetched.MinOSPropertyName) { [string]$Fetched.MinOSPropertyName }
+                else { "" }
+
+    $returnCodes = @()
+    if (@($Fetched.ReturnCodes).Count -gt 0) {
+        $returnCodes = @(@($Fetched.ReturnCodes) | Where-Object { $_ } | ForEach-Object {
+            [pscustomobject]@{ returnCode = $_.returnCode; type = $_.type }
+        })
+    }
+
+    return [pscustomobject]@{
+        description      = [string]$Fetched.Description
+        publisher        = [string]$Fetched.Publisher
+        owner            = [string]$Fetched.Owner
+        developer        = [string]$Fetched.Developer
+        informationUrl   = [string]$Fetched.InformationUrl
+        privacyUrl       = [string]$Fetched.PrivacyInformationUrl
+        notes            = [string]$Fetched.Notes
+        installCommand   = [string]$Fetched.InstallCommandLine
+        uninstallCommand = [string]$Fetched.UninstallCommandLine
+        architecture     = $architecture
+        installContext   = [string]$Fetched.RunAsAccount
+        minOSKey         = $minOsKey
+        detectionRule    = $Fetched.DetectionRule
+        dependencies     = @($Fetched.Dependencies)
+        minDiskSpaceMB          = $Fetched.MinDiskSpaceMB
+        minMemoryMB             = $Fetched.MinMemoryMB
+        minProcessors           = $Fetched.MinProcessors
+        minCpuSpeedMHz          = $Fetched.MinCpuSpeedMHz
+        installTimeMinutes      = $Fetched.InstallTimeMinutes
+        deviceRestartBehavior   = [string]$Fetched.DeviceRestartBehavior
+        allowAvailableUninstall = $Fetched.AllowAvailableUninstall
+        returnCodes             = $returnCodes
+    }
+}
+
 function Global:Get-ComparableDetectionRule {
     <#
       A detection rule with the fields its own detection type does not use

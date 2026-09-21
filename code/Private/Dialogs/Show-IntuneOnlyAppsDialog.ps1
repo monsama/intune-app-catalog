@@ -37,6 +37,14 @@ function Global:Show-IntuneOnlyAppsDialog {
     # checked app, and on a tenant with a hundred strangers in it that is
     # a wait with no way out of it.
     $cancelAddBox = @{ Value = $false }
+    # Dependency names seen on the apps added by the run in progress, and
+    # the ones already offered across the whole session. Two lists, not
+    # one: the first is emptied at the end of each pass so the offer is
+    # about what that pass found, the second never is, so a dependency
+    # declined once is not asked about again and a dependency cycle in
+    # Intune cannot bounce the queue back and forth forever.
+    $pendingDepsBox = @{ Names = New-Object System.Collections.Generic.List[string] }
+    $offeredDepsBox = @{ Names = New-Object System.Collections.Generic.List[string] }
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
@@ -397,6 +405,11 @@ function Global:Show-IntuneOnlyAppsDialog {
                     requiredFor  = if ($ok) { @($data.RequiredGroupNames) } else { @() }
                     availableFor = if ($ok) { @($data.AvailableGroupNames) } else { @() }
                     uninstallFor = if ($ok) { @($data.UninstallGroupNames) } else { @() }
+                    # Same fetch, same waste, same fix as the bulk path -
+                    # the editor opens with this app's real values filled
+                    # in rather than blank fields for things Intune had
+                    # already told us.
+                    metadata     = if ($ok) { ConvertTo-CatalogMetadataFromFetch -Fetched $data } else { $null }
                 }
                 # Opens plain, not auto-deploying - this used to auto-open
                 # "Deploy to Intune..." the instant the editor showed, but
@@ -487,15 +500,55 @@ function Global:Show-IntuneOnlyAppsDialog {
             # otherwise "added N apps" reads as fully successful even when
             # some came in with blank groups because Graph hiccuped.
             $addedMsg = if ($stoppedEarly) {
-                "Stopped after $AddedCount of $($Queue.Count) app(s). Those are saved to the catalog with their current group assignments; the rest were not touched."
+                "Stopped after $AddedCount of $($Queue.Count) app(s). Those are saved to the catalog with their metadata and current group assignments; the rest were not touched."
             } else {
-                "Added $AddedCount app(s) to the catalog, with their current group assignments fetched from Intune. Set Winget ID and metadata for them later from the main catalog."
+                "Added $AddedCount app(s) to the catalog, with the metadata, detection rule and group assignments they have in Intune right now. Set a Winget ID for any of them that should deploy from the shared winget package."
             }
             if ($FailedGroupFetchCount -gt 0) {
-                $addedMsg += "`n`n$FailedGroupFetchCount of them could not have their group assignments fetched (Graph error) - those were added with blank groups instead."
+                $addedMsg += "`n`n$FailedGroupFetchCount of them could not be read from Intune (Graph error) - those were added with their name and App ID only, and no metadata or groups."
             }
             [System.Windows.Forms.MessageBox]::Show($addedMsg, "Added", "OK", "Information") | Out-Null
             & $populateGrid   # the just-added apps drop out of the "not in catalog" list
+
+            # An app whose dependency is missing from the catalog is a
+            # half-imported app: deploy order, the dependency overview and
+            # the audit all read that list, and every one of them is wrong
+            # about an app that is not there. The names came back with the
+            # metadata above, so this costs nothing to notice.
+            #
+            # Offered, not done silently - these are apps the user did not
+            # tick, and adding them behind their back is exactly the kind
+            # of helpfulness nobody asked for. Answering yes runs the same
+            # queue again, so dependencies OF the dependencies are caught
+            # on the next pass; $offeredDepsBox stops a cycle in Intune
+            # from turning that into a loop.
+            $stillMissing = New-Object System.Collections.Generic.List[object]
+            foreach ($depName in @($pendingDepsBox.Names.ToArray() | Sort-Object -Unique)) {
+                if (-not $depName) { continue }
+                if ($offeredDepsBox.Names -contains $depName) { continue }
+                if (@($appsRef | Where-Object { $_.appName -eq $depName }).Count -gt 0) { continue }
+                $depApp = @($cacheRef | Where-Object { [string]$_.displayName -eq $depName }) | Select-Object -First 1
+                if (-not $depApp) { continue }
+                $offeredDepsBox.Names.Add($depName)
+                $stillMissing.Add([pscustomobject]@{ Name = $depName; Id = [string]$depApp.id })
+            }
+            $pendingDepsBox.Names.Clear()
+            if ($stillMissing.Count -gt 0 -and -not $stoppedEarly) {
+                $depList = ($stillMissing.ToArray() | ForEach-Object { $_.Name }) -join "`n  - "
+                $r = [System.Windows.Forms.MessageBox]::Show(
+                    "What you just added depends on $($stillMissing.Count) app(s) that are not in this catalog:`n`n  - $depList`n`nWithout them, deploy order and the dependency overview are working from an incomplete picture. Add them too?",
+                    "Dependencies missing from the catalog", "YesNo", "Question", "Button1")
+                if ($r -eq "Yes") {
+                    $btnAddChecked.Enabled = $false
+                    $btnAction.Enabled = $false
+                    $grid.Enabled = $false
+                    $cancelAddBox.Value = $false
+                    $btnCancelAdd.Enabled = $true
+                    $busyBox.Count++
+                    $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+                    & $RunAddQueueBox.Value -Queue $stillMissing.ToArray() -QueueIndex 0 -AddedCount 0 -FailedGroupFetchCount 0
+                }
+            }
             return
         }
 
@@ -513,6 +566,7 @@ function Global:Show-IntuneOnlyAppsDialog {
         $AddedCountRef = $AddedCount
         $FailedGroupFetchCountRef = $FailedGroupFetchCount
         $RunAddQueueBoxRef = $RunAddQueueBox
+        $pendingDepsBoxRef = $pendingDepsBox
 
         Start-AppMetadataFetch -AppId $currentItem.Id -OnComplete {
             param($ok, $errMsg, $data)
@@ -531,9 +585,23 @@ function Global:Show-IntuneOnlyAppsDialog {
                 requiredFor      = if ($ok) { @($data.RequiredGroupNames) } else { @() }
                 availableFor     = if ($ok) { @($data.AvailableGroupNames) } else { @() }
                 uninstallFor     = if ($ok) { @($data.UninstallGroupNames) } else { @() }
-                metadata         = $null
+                # The fetch above already read the whole app - commands,
+                # detection rule, requirements, dependencies. This used to
+                # store $null and tell the user to fill it in by hand
+                # afterwards, for information the tool had just been
+                # handed. Still $null when the fetch FAILED, which is the
+                # one case where there is genuinely nothing to store.
+                metadata         = if ($ok) { ConvertTo-CatalogMetadataFromFetch -Fetched $data } else { $null }
             }
             [void]$appsRefRef3.Add($newEntry)
+            # Collected as each app comes back rather than re-read from the
+            # catalog at the end - the same fetch that filled the metadata
+            # above is the only place these names appear.
+            if ($ok) {
+                foreach ($depName in @($data.Dependencies)) {
+                    if ($depName) { $pendingDepsBoxRef.Names.Add([string]$depName) }
+                }
+            }
             $nextFailedCount = $FailedGroupFetchCountRef + $(if ($ok) { 0 } else { 1 })
             & $RunAddQueueBoxRef.Value -Queue $QueueRef -QueueIndex ($QueueIndexRef + 1) -AddedCount ($AddedCountRef + 1) -FailedGroupFetchCount $nextFailedCount
         }.GetNewClosure()

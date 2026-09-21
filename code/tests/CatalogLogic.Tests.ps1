@@ -101,6 +101,7 @@ $testableFunctionNames = @(
     "Get-CatalogMetadataSimpleFields",
     "Get-CatalogMetadataFieldDiffs",
     "Get-ComparableDetectionRule",
+    "ConvertTo-CatalogMetadataFromFetch",
     "ConvertTo-DetectionRuleJson",
     "ConvertTo-JsonStringLiteral",
     "Merge-CatalogMetadata",
@@ -670,6 +671,77 @@ $detRealChange = [pscustomobject]@{ Type = "Script"; Script_Content = "if (Test-
 $jsonRealChange = ConvertTo-DetectionRuleJson -DetectionRule $detRealChange -IndentLevel 0
 Assert-True ($jsonLf -ne $jsonRealChange) `
     "ConvertTo-DetectionRuleJson: a genuine content change (not just trailing whitespace) still produces different JSON"
+
+# -----------------------------------------------------------------
+# ConvertTo-CatalogMetadataFromFetch
+# -----------------------------------------------------------------
+# Adding an app from Intune fetches the whole app and used to store
+# $null, so imported entries arrived as shells and their dependencies -
+# which deploy order, the dependency overview and the audit all read -
+# were lost with everything else.
+$fetched = [pscustomobject]@{
+    Description             = "A description"
+    Publisher               = "A publisher"
+    Owner                   = "An owner"
+    Developer               = "A developer"
+    InformationUrl          = "https://example.invalid/info"
+    PrivacyInformationUrl   = "https://example.invalid/privacy"
+    Notes                   = "Some notes"
+    InstallCommandLine      = "setup.exe /S"
+    UninstallCommandLine    = "uninstall.exe /S"
+    AllowedArchitectures    = "x64"
+    ApplicableArchitectures = "x86,x64"
+    RunAsAccount            = "system"
+    MinimumSupportedWindowsRelease = "W11_22H2"
+    MinOSPropertyName       = "Windows10_1809"
+    DetectionRule           = [pscustomobject]@{ Type = "File"; File_Path = "C:\App"; File_Name = "app.exe"; File_DetectionType = "exists" }
+    Dependencies            = @("Base Runtime", "Shared Library")
+    MinDiskSpaceMB          = 100
+    MinMemoryMB             = 2048
+    MinProcessors           = 2
+    MinCpuSpeedMHz          = 1400
+    InstallTimeMinutes      = 45
+    DeviceRestartBehavior   = "basedOnReturnCode"
+    AllowAvailableUninstall = $true
+    ReturnCodes             = @([pscustomobject]@{ returnCode = 3010; type = "softReboot" })
+}
+$mapped = ConvertTo-CatalogMetadataFromFetch -Fetched $fetched
+Assert-Equal "setup.exe /S" $mapped.installCommand "ConvertTo-CatalogMetadataFromFetch: the install command survives the round trip"
+Assert-Equal "uninstall.exe /S" $mapped.uninstallCommand "ConvertTo-CatalogMetadataFromFetch: so does the uninstall command"
+Assert-Equal "https://example.invalid/privacy" $mapped.privacyUrl "ConvertTo-CatalogMetadataFromFetch: privacyInformationUrl lands on the catalog's privacyUrl"
+Assert-Equal "system" $mapped.installContext "ConvertTo-CatalogMetadataFromFetch: runAsAccount lands on installContext"
+Assert-Equal 2 @($mapped.dependencies).Count "ConvertTo-CatalogMetadataFromFetch: dependencies are kept - the whole point"
+Assert-True (@($mapped.dependencies) -contains "Base Runtime") "ConvertTo-CatalogMetadataFromFetch: ...by name, as the catalog stores them"
+Assert-Equal "exists" $mapped.detectionRule.File_DetectionType "ConvertTo-CatalogMetadataFromFetch: the detection rule comes across whole"
+Assert-Equal 3010 @($mapped.returnCodes)[0].returnCode "ConvertTo-CatalogMetadataFromFetch: return codes keep their code"
+Assert-Equal "softReboot" @($mapped.returnCodes)[0].type "ConvertTo-CatalogMetadataFromFetch: ...and their type"
+
+# Two fields where Intune offers more than one answer, and the app
+# already had a settled opinion about which wins - this mapper must not
+# invent a second one.
+Assert-Equal "x64" $mapped.architecture "ConvertTo-CatalogMetadataFromFetch: allowed architectures win over applicable"
+Assert-Equal "W11_22H2" $mapped.minOSKey "ConvertTo-CatalogMetadataFromFetch: the current Windows-release property wins over the legacy one"
+$legacyOnly = $fetched.PSObject.Copy()
+$legacyOnly | Add-Member -NotePropertyName MinimumSupportedWindowsRelease -NotePropertyValue $null -Force
+$legacyOnly | Add-Member -NotePropertyName AllowedArchitectures -NotePropertyValue "none" -Force
+$mappedLegacy = ConvertTo-CatalogMetadataFromFetch -Fetched $legacyOnly
+Assert-Equal "Windows10_1809" $mappedLegacy.minOSKey "ConvertTo-CatalogMetadataFromFetch: an app never touched since the property changed falls back to the legacy one"
+Assert-Equal "x86,x64" $mappedLegacy.architecture "ConvertTo-CatalogMetadataFromFetch: ...and 'none' allowed falls back to applicable"
+
+# The shape has to match what the catalog writer expects, or the fields
+# round-trip to disk as nothing. Checked against the writer itself rather
+# than a list copied out of it.
+$importedRecord = ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = "Imported"; appId = "id-1"; metadata = $mapped })
+Assert-Equal "setup.exe /S" $importedRecord.metadata.installCommand "ConvertTo-CatalogMetadataFromFetch: the record reader keeps the install command"
+Assert-Equal 2 @($importedRecord.metadata.dependencies).Count "ConvertTo-CatalogMetadataFromFetch: ...and the dependencies"
+
+# And an app imported this way must not then report itself as differing
+# from the Intune app it was just read from.
+$selfDiffs = @(Get-CatalogMetadataFieldDiffs -Local $mapped -Remote $mapped -OdataType 'win32LobApp')
+Assert-Equal 0 $selfDiffs.Count "ConvertTo-CatalogMetadataFromFetch: an app imported from Intune does not immediately differ from Intune"
+
+$noneFetched = ConvertTo-CatalogMetadataFromFetch -Fetched $null
+Assert-True ($null -eq $noneFetched) "ConvertTo-CatalogMetadataFromFetch: nothing fetched is nothing stored, not an empty shell"
 
 # -----------------------------------------------------------------
 # Get-ComparableDetectionRule
