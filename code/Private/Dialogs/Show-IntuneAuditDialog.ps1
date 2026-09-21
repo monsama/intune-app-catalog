@@ -242,11 +242,18 @@ function Global:Show-IntuneAuditDialog {
     # processes makes their -OnComplete fire exactly as a real failure
     # would, and "Audit complete" over a half-filled grid is a lie.
     $auditCancelledBox = @{ Value = $false }
+    # What each fetch records when it cannot deliver a result. Writing only
+    # to the status label was not enough: the OTHER fetch's -OnComplete
+    # runs afterwards and overwrote a red "... fetch failed" with a green
+    # "Audit complete", leaving that fetch's columns sitting at
+    # "(checking...)" under a message claiming everything was checked.
+    $fetchErrorBox = @{ Messages = New-Object System.Collections.Generic.List[string] }
 
     $btnRun.Add_Click({
         $btnRun.Enabled = $false
         $btnCancelAudit.Enabled = $true
         $auditCancelledBox.Value = $false
+        $fetchErrorBox.Messages.Clear()
         $prgAudit.Visible = $true
         foreach ($rowKey in $rowByAppName.Keys) {
             foreach ($colName in $checkColumns) { $rowByAppName[$rowKey].Cells[$colName].Value = "(checking...)" }
@@ -278,6 +285,7 @@ function Global:Show-IntuneAuditDialog {
         $procBox2Ref = $procBox2
         $btnCancelAuditRef = $btnCancelAudit
         $auditCancelledBoxRef = $auditCancelledBox
+        $fetchErrorBoxRef = $fetchErrorBox
 
         $finishOne = {
             $pendingBoxRef.Count--
@@ -296,6 +304,10 @@ function Global:Show-IntuneAuditDialog {
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
                     $lblStatusRef.Text = "Audit stopped - rows already checked keep their result."
                 }
+                elseif ($fetchErrorBoxRef.Messages.Count -gt 0) {
+                    $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
+                    $lblStatusRef.Text = "Audit incomplete - $($fetchErrorBoxRef.Messages.ToArray() -join ' | ')"
+                }
                 else {
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
                     $lblStatusRef.Text = "Audit complete - $deployedAppsCountRef app(s) checked."
@@ -306,6 +318,38 @@ function Global:Show-IntuneAuditDialog {
                 Save-LastAuditCache
             }
         }.GetNewClosure()
+
+        # Resolves every cell a fetch left at "(checking...)" - the state a
+        # row is put in when the run starts and only ever moved out of by a
+        # result arriving for that exact app. A fetch that fails outright,
+        # or comes back without an entry for some of the apps it was asked
+        # about, used to leave those cells reading "(checking...)" forever,
+        # which says "still working" about something that has already
+        # stopped. Called on every exit path out of both -OnComplete
+        # closures, and built here (beside $finishOne) so those closures
+        # capture it - see the aliasing note above for why.
+        $settleColumns = {
+            param([string[]]$Columns, [string]$Text, [switch]$RunFailed)
+            # Stopping on purpose kills both processes, so their -OnComplete
+            # reports exactly what a real failure does. It isn't one: those
+            # rows were simply never reached, and "Failed:" over a run the
+            # user stopped themselves would be as misleading as
+            # "(checking...)" over one that already ended.
+            $wasStopped = $auditCancelledBoxRef.Value
+            if ($RunFailed -and -not $wasStopped) { $fetchErrorBoxRef.Messages.Add($Text) }
+            if ($dlgRef.IsDisposed) { return }
+            $settled = if ($wasStopped) { "(not checked)" } else { "Failed: $Text" }
+            foreach ($rowKey in $rowByAppNameRef.Keys) {
+                $settleRow = $rowByAppNameRef[$rowKey]
+                foreach ($colName in $Columns) {
+                    if ([string]$settleRow.Cells[$colName].Value -ne "(checking...)") { continue }
+                    $settleRow.Cells[$colName].Value = $settled
+                }
+            }
+        }.GetNewClosure()
+        $settleColumnsRef = $settleColumns
+        $fetch1ColumnsRef = @("Metadata", "Groups", "Dependencies")
+        $fetch2ColumnsRef = @("Unknown")
 
         # --- Fetch 1: Metadata + Groups + Dependencies, one pass ---
         $configApps1 = New-Object System.Collections.Generic.List[object]
@@ -336,8 +380,10 @@ function Global:Show-IntuneAuditDialog {
                 if ($dlgRef.IsDisposed) { & $finishOne; return }
 
                 if (-not (Test-Path $resultPath1Ref)) {
+                    $failText1 = "Metadata/Groups/Dependencies fetch failed: no result written (exit code $code)."
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $lblStatusRef.Text = "Metadata/Groups/Dependencies fetch failed: no result written (exit code $code)."
+                    $lblStatusRef.Text = $failText1
+                    & $settleColumnsRef $fetch1ColumnsRef $failText1 -RunFailed
                     & $finishOne
                     return
                 }
@@ -347,14 +393,18 @@ function Global:Show-IntuneAuditDialog {
                     Remove-Item $resultPath1Ref -Force -ErrorAction SilentlyContinue
                 }
                 catch {
+                    $failText1 = "Metadata/Groups/Dependencies fetch failed: could not read result: $($_.Exception.Message)"
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $lblStatusRef.Text = "Metadata/Groups/Dependencies fetch failed: could not read result: $($_.Exception.Message)"
+                    $lblStatusRef.Text = $failText1
+                    & $settleColumnsRef $fetch1ColumnsRef $failText1 -RunFailed
                     & $finishOne
                     return
                 }
                 if (-not $result1.success) {
+                    $failText1 = "Metadata/Groups/Dependencies fetch failed: $($result1.error)"
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $lblStatusRef.Text = "Metadata/Groups/Dependencies fetch failed: $($result1.error)"
+                    $lblStatusRef.Text = $failText1
+                    & $settleColumnsRef $fetch1ColumnsRef $failText1 -RunFailed
                     & $finishOne
                     return
                 }
@@ -395,12 +445,18 @@ function Global:Show-IntuneAuditDialog {
                     }
                     Set-LastAuditCacheEntry -AppName $oneResult.AppName -Metadata ([string]$row.Cells['Metadata'].Value) -Groups ([string]$row.Cells['Groups'].Value) -Dependencies ([string]$row.Cells['Dependencies'].Value)
                 }
+                # A result that simply has no entry for some of the apps it
+                # was asked about leaves those rows behind - the loop above
+                # only ever writes rows it was handed.
+                & $settleColumnsRef $fetch1ColumnsRef "the check finished without a result for this app."
                 & $finishOne
             }.GetNewClosure()
         }
         catch {
+            $failStart1 = "Could not start the Metadata/Groups/Dependencies check: $($_.Exception.Message)"
             $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-            $lblStatusRef.Text = "Could not start the Metadata/Groups/Dependencies check: $($_.Exception.Message)"
+            $lblStatusRef.Text = $failStart1
+            & $settleColumnsRef $fetch1ColumnsRef $failStart1 -RunFailed
             & $finishOne
         }
 
@@ -440,8 +496,10 @@ function Global:Show-IntuneAuditDialog {
                 if ($dlgRef.IsDisposed) { & $finishOne; return }
 
                 if (-not (Test-Path $resultPath2Ref)) {
+                    $failText2 = "Unknown assignments fetch failed: no result written (exit code $code)."
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $lblStatusRef.Text = "Unknown assignments fetch failed: no result written (exit code $code)."
+                    $lblStatusRef.Text = $failText2
+                    & $settleColumnsRef $fetch2ColumnsRef $failText2 -RunFailed
                     & $finishOne
                     return
                 }
@@ -451,14 +509,18 @@ function Global:Show-IntuneAuditDialog {
                     Remove-Item $resultPath2Ref -Force -ErrorAction SilentlyContinue
                 }
                 catch {
+                    $failText2 = "Unknown assignments fetch failed: could not read result: $($_.Exception.Message)"
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $lblStatusRef.Text = "Unknown assignments fetch failed: could not read result: $($_.Exception.Message)"
+                    $lblStatusRef.Text = $failText2
+                    & $settleColumnsRef $fetch2ColumnsRef $failText2 -RunFailed
                     & $finishOne
                     return
                 }
                 if (-not $result2.success) {
+                    $failText2 = "Unknown assignments fetch failed: $($result2.error)"
                     $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $lblStatusRef.Text = "Unknown assignments fetch failed: $($result2.error)"
+                    $lblStatusRef.Text = $failText2
+                    & $settleColumnsRef $fetch2ColumnsRef $failText2 -RunFailed
                     & $finishOne
                     return
                 }
@@ -470,12 +532,16 @@ function Global:Show-IntuneAuditDialog {
                     $row.Cells['Unknown'].Value = if ($toRemove.Count -eq 0) { "OK" } else { "$($toRemove.Count) unknown: $($toRemove -join ', ')" }
                     Set-LastAuditCacheEntry -AppName $oneResult.AppName -Unknown ([string]$row.Cells['Unknown'].Value)
                 }
+                # Same as Fetch 1's - see its note.
+                & $settleColumnsRef $fetch2ColumnsRef "the check finished without a result for this app."
                 & $finishOne
             }.GetNewClosure()
         }
         catch {
+            $failStart2 = "Could not start the Unknown Assignments check: $($_.Exception.Message)"
             $lblStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-            $lblStatusRef.Text = "Could not start the Unknown Assignments check: $($_.Exception.Message)"
+            $lblStatusRef.Text = $failStart2
+            & $settleColumnsRef $fetch2ColumnsRef $failStart2 -RunFailed
             & $finishOne
         }
     }.GetNewClosure())
@@ -552,14 +618,27 @@ function Global:Show-IntuneAuditDialog {
             BlockClose    = { -not $btnRun.Enabled }.GetNewClosure()
             Summary       = {
                 $cols = @("Metadata", "Groups", "Dependencies", "Unknown")
-                $found = @($grid.Rows | Where-Object {
-                    $auditRow = $_
-                    @($cols | Where-Object {
-                        $cell = [string]$auditRow.Cells[$_].Value
-                        $cell -and $cell -ne "OK" -and $cell -ne "(not checked)"
-                    }).Count -gt 0
-                }).Count
-                if ($found -gt 0) { "$found app(s) differ" } else { "" }
+                # A column that could not be checked is not a difference -
+                # reported separately so "3 app(s) differ" never actually
+                # means "3 app(s) we failed to ask about".
+                $differ = 0
+                $unchecked = 0
+                foreach ($auditRow in $grid.Rows) {
+                    $rowDiffers = $false
+                    $rowUnchecked = $false
+                    foreach ($colName in $cols) {
+                        $cell = [string]$auditRow.Cells[$colName].Value
+                        if (-not $cell -or $cell -eq "OK" -or $cell -eq "(not checked)") { continue }
+                        if ($cell -like "Failed*" -or $cell -eq "(checking...)") { $rowUnchecked = $true }
+                        else { $rowDiffers = $true }
+                    }
+                    if ($rowDiffers) { $differ++ }
+                    if ($rowUnchecked) { $unchecked++ }
+                }
+                $parts = New-Object System.Collections.Generic.List[string]
+                if ($differ -gt 0) { $parts.Add("$differ app(s) differ") }
+                if ($unchecked -gt 0) { $parts.Add("$unchecked app(s) could not be checked") }
+                $parts.ToArray() -join ", "
             }.GetNewClosure()
         }
         return

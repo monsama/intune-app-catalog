@@ -153,6 +153,44 @@ try {
     Update-Grid
     Add-Line 'selectionWhenStillVisible' ((Get-SelectedNames) -join '|')
 
+    # 9. The Uncommon column. Appended at the end deliberately: these three
+    #    extra apps would shift the sort/scroll positions every scenario
+    #    above pins down. Each one is a different answer to the same
+    #    question - which package does this app install from?
+    $Global:App.TxtSearch.Text = ''
+    $uncommonCases = @(
+        # Winget ID, no package of its own: installs from the shared winget
+        # wrapper, so the column stays blank.
+        @{ Name = 'Uncommon Case Winget'; WingetId = 'Fixture.Winget'; PackagePath = $null },
+        # Winget ID AND a hand-picked .intunewin: that package wins, so this
+        # is the case the plain "has no Winget ID" rule used to miss
+        # entirely and the column called common.
+        @{ Name = 'Uncommon Case Custom'; WingetId = 'Fixture.Custom'; PackagePath = 'C:\fixture\packages\custom\custom.intunewin' },
+        # No Winget ID at all: uncommon the original way.
+        @{ Name = 'Uncommon Case Plain';  WingetId = '';               PackagePath = $null }
+    )
+    foreach ($case in $uncommonCases) {
+        [void]$Global:App.Apps.Add([pscustomobject]@{
+            appName          = $case.Name
+            wingetId         = $case.WingetId
+            packagePath      = $case.PackagePath
+            requiredFor      = @()
+            availableFor     = @()
+            uninstallFor     = @()
+            intuneAppType    = ''
+            intuneAppVersion = ''
+            appId            = $null
+        })
+    }
+    Update-Grid
+    foreach ($case in $uncommonCases) {
+        $cell = ''
+        foreach ($row in $grid.Rows) {
+            if ([string]$row.Cells['AppName'].Value -eq $case.Name) { $cell = [string]$row.Cells['Uncommon'].Value }
+        }
+        Add-Line ('uncommonCell_' + ($case.Name -replace '\s', '')) $cell
+    }
+
     Add-Line 'ran' 'true'
 }
 catch {

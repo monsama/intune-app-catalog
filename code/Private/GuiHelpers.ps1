@@ -1349,6 +1349,15 @@ function Global:Update-Grid {
         # package pointed at from the editor look like it had not been
         # saved, because nothing here ever asked about it.
         $needsPackageCheck = ($isUncommon -or $app.packagePath) -and -not $isKnownNonWin32
+        # What the Uncommon COLUMN shows, deliberately wider than
+        # Test-AppIsUncommon's own "has no Winget ID" rule. An app pointed
+        # at a hand-picked .intunewin installs from THAT package, not from
+        # the shared winget wrapper - which is the one thing this column
+        # exists to say at a glance, Winget ID or not. Only the display
+        # widens: Test-AppIsUncommon still decides metadata defaults,
+        # packaging and batch eligibility everywhere else, so an app that
+        # does have a Winget ID keeps its winget-shaped defaults.
+        $showsAsUncommon = $isUncommon -or [bool]$app.packagePath
         # Resolved once and reused for both the Status warning and the
         # Folder column below, rather than searching the filesystem twice
         # per uncommon app on every grid refresh.
@@ -1394,7 +1403,11 @@ function Global:Update-Grid {
             WingetId  = $app.wingetId
             Type      = if ($app.intuneAppType) { $app.intuneAppType } else { "" }
             Version   = if ($app.intuneAppVersion) { $app.intuneAppVersion } else { "" }
-            Uncommon  = if ($isUncommon) { "Yes" } else { "" }
+            # "Yes (custom package)" rather than a plain "Yes" when it's the
+            # hand-picked .intunewin that put it here: the app still has a
+            # Winget ID sitting right there in the next column, so a bare
+            # "Yes" reads as a contradiction rather than an explanation.
+            Uncommon  = if ($isUncommon) { "Yes" } elseif ($showsAsUncommon) { "Yes (custom package)" } else { "" }
             # Blank (not "Yes") for an Uncommon app: Test-AppHasCustomConfig
             # returns true for every Uncommon app unconditionally (there's
             # no computed default for it to have deviated FROM), so showing

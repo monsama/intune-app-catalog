@@ -81,6 +81,11 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         Assert-True ($s['rowsWhenFiltered'] -eq '1') "the search box filters the grid" $all
         Assert-True ($s['selectionWhenFilteredOut'] -eq '') "an app the filter hides leaves nothing selected in its place" $all
         Assert-True ($s['selectionWhenStillVisible'] -eq 'Mike App') "an app the filter keeps stays selected" $all
+
+        # Which package an app installs from, as the column reports it.
+        Assert-True ($s['uncommonCell_UncommonCaseWinget'] -eq '') "a Winget app with no package of its own is not flagged" $all
+        Assert-True ($s['uncommonCell_UncommonCasePlain'] -eq 'Yes') "an app with no Winget ID is flagged uncommon" $all
+        Assert-True ($s['uncommonCell_UncommonCaseCustom'] -eq 'Yes (custom package)') "a Winget app pointed at its own .intunewin is flagged too, and says why" $all
     }
     catch {
         Assert-True $false "test run completed" "$($_.Exception.Message) @ line $($_.InvocationInfo.ScriptLineNumber)"
