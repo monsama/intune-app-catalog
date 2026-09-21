@@ -172,6 +172,57 @@ function Global:Get-CatalogMetadataSimpleFields {
     )
 }
 
+function Global:Get-ComparableDetectionRule {
+    <#
+      A detection rule with the fields its own detection type does not use
+      blanked out, for comparing local against live.
+
+      The catalog stores every field the editor has a box for, whichever
+      type is selected - switch a File rule from "version" to "exists" and
+      the operator and value boxes keep what was in them. CreateApp.ps1
+      does NOT send those two for "exists", because Intune has no such
+      concept there, so the live app comes back without them. Comparing
+      the two raw then reports a rule that differs on fields neither side
+      can act on, over and over, with nothing the user can do about it:
+      "Intune has no File_DetectionValue 1" for an app that was deployed
+      from this very catalog seconds earlier.
+
+      The conditions below mirror CreateApp.ps1's own send conditions
+      exactly. If those ever change, these have to change with them - they
+      are two halves of one rule about which fields a detection type uses.
+
+      Comparison only. What is PERSISTED keeps every field, so switching
+      the type back and forth in the editor doesn't silently discard what
+      was typed.
+    #>
+    param($DetectionRule)
+
+    if (-not $DetectionRule) { return $null }
+    $comparable = $DetectionRule.PSObject.Copy()
+    switch ([string]$DetectionRule.Type) {
+        "Msi" {
+            # CreateApp.ps1: productVersion is sent only alongside a real
+            # operator.
+            if (-not $DetectionRule.Msi_VersionOperator -or [string]$DetectionRule.Msi_VersionOperator -eq "notConfigured") {
+                $comparable | Add-Member -NotePropertyName Msi_Version -NotePropertyValue "" -Force
+            }
+        }
+        "File" {
+            if (@("modifiedDate", "createdDate", "version", "sizeInMB") -notcontains [string]$DetectionRule.File_DetectionType) {
+                $comparable | Add-Member -NotePropertyName File_Operator -NotePropertyValue "" -Force
+                $comparable | Add-Member -NotePropertyName File_DetectionValue -NotePropertyValue "" -Force
+            }
+        }
+        "Registry" {
+            if (@("string", "integer", "version") -notcontains [string]$DetectionRule.Reg_DetectionType) {
+                $comparable | Add-Member -NotePropertyName Reg_Operator -NotePropertyValue "" -Force
+                $comparable | Add-Member -NotePropertyName Reg_DetectionValue -NotePropertyValue "" -Force
+            }
+        }
+    }
+    return $comparable
+}
+
 function Global:Get-CatalogMetadataFieldDiffs {
     # -OdataType is the live app's raw @odata.type (with or without the
     # "#microsoft.graph." prefix) - pass it whenever it's known (the bulk
@@ -240,8 +291,11 @@ function Global:Get-CatalogMetadataFieldDiffs {
         # own comment) to sometimes silently return an empty result for certain inputs,
         # which made multi-line Script detection rules (e.g. winget apps) show up as a
         # spurious "Detection rule" diff on every sync even when nothing had changed.
-        $localDetSummary = if ($Local.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $Local.detectionRule -IndentLevel 0 } else { "" }
-        $remoteDetSummary = if ($Remote.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $Remote.detectionRule -IndentLevel 0 } else { "" }
+        # Through Get-ComparableDetectionRule first - see its own note for
+        # why a raw comparison reports a permanent difference on fields the
+        # selected detection type does not use.
+        $localDetSummary = if ($Local.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule (Get-ComparableDetectionRule -DetectionRule $Local.detectionRule) -IndentLevel 0 } else { "" }
+        $remoteDetSummary = if ($Remote.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule (Get-ComparableDetectionRule -DetectionRule $Remote.detectionRule) -IndentLevel 0 } else { "" }
         if ($localDetSummary -ne $remoteDetSummary) {
             $diffs.Add([pscustomobject]@{ Field = "Detection rule"; Local = $localDetSummary; Remote = $remoteDetSummary })
         }

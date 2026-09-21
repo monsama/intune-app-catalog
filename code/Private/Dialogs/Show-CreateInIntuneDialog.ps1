@@ -2357,6 +2357,27 @@ function Global:Show-CreateInIntuneDialog {
                         # opened fresh (no existing catalog entry at all)
                         # genuinely stays staged until its own later "Save
                         # app to catalog" click.
+                        # Deploying creates/updates the app and uploads its
+                        # content. It never touches assignments - that is
+                        # "Push groups to Intune...", deliberately its own
+                        # step because assigning REPLACES an app's entire
+                        # assignment list and is not something a deploy
+                        # should do behind your back.
+                        #
+                        # The cost of that separation was silence: an app
+                        # with groups in the catalog lands in Intune
+                        # assigned to nobody, and the first thing that said
+                        # so was a later audit reporting a group
+                        # difference - which reads like the deploy went
+                        # wrong rather than like a step still to come.
+                        $groupNote = ""
+                        $deployedCatalogApp = @($appsRefRef | Where-Object { $_.appName -eq $appNameRef }) | Select-Object -First 1
+                        if ($deployedCatalogApp) {
+                            $pendingGroups = @(@($deployedCatalogApp.requiredFor) + @($deployedCatalogApp.availableFor) + @($deployedCatalogApp.uninstallFor) | Where-Object { $_ })
+                            if ($pendingGroups.Count -gt 0) {
+                                $groupNote = "`n`nThis app's $($pendingGroups.Count) group(s) are NOT assigned in Intune yet - deploying does not assign them. Use `"Push groups to Intune (single app)...`" in the app editor, or the toolbar's multi-app version. Until then an audit will correctly report the groups as differing."
+                            }
+                        }
                         $doneMsg = if (-not $localSaveOk) {
                             "Done. App ID: $($result.appId)`n`n...but saving this to the local catalog failed - check the Log tab. The app was still created/updated in Intune successfully."
                         } elseif ($fromAppEditorRef -and -not $callerHasExistingCatalogEntryRef) {
@@ -2366,6 +2387,7 @@ function Global:Show-CreateInIntuneDialog {
                         } else {
                             "Done. App ID: $($result.appId)`n`nAlready saved to disk."
                         }
+                        $doneMsg = "$doneMsg$groupNote"
                         # The window stays open on success, so the log box
                         # above can still be read (a popup whose OK also
                         # closed the whole dialog took that away). The
@@ -2819,7 +2841,9 @@ function Global:Show-CreateInIntuneDialog {
             UninstallCommand   = $txtUninstall.Text
             Architecture       = $m.architecture
             Dependencies       = @($m.dependencies)
-            DetectionSummary   = if ($m.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $m.detectionRule -IndentLevel 0 } else { "" }
+            # Compared against the live rule further down, so it is built
+            # the same way that one is - see Get-ComparableDetectionRule.
+            DetectionSummary   = if ($m.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule (Get-ComparableDetectionRule -DetectionRule $m.detectionRule) -IndentLevel 0 } else { "" }
             MinDiskSpaceMB     = $txtDiskSpace.Text
             MinMemoryMB        = $txtMemory.Text
             MinProcessors      = $txtProcessors.Text
@@ -3196,7 +3220,13 @@ function Global:Show-CreateInIntuneDialog {
                     if ((& $normalizeForCompare $data.InstallCommandLine) -ne (& $normalizeForCompare $localSnapshotRef.InstallCommand)) { $diffFields.Add("Install command") }
                     if ((& $normalizeForCompare $data.UninstallCommandLine) -ne (& $normalizeForCompare $localSnapshotRef.UninstallCommand)) { $diffFields.Add("Uninstall command") }
                     if (([string]$archSource) -ne ([string]$localSnapshotRef.Architecture)) { $diffFields.Add("Architecture") }
-                    $liveDetSummary = if ($data.DetectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $data.DetectionRule -IndentLevel 0 } else { "" }
+                    # Get-ComparableDetectionRule on both sides - the local
+                    # half is applied where DetectionSummary is built. Same
+                    # reasoning as the "0 = not required" note below: this
+                    # single-app fetch duplicates Get-CatalogMetadataFieldDiffs'
+                    # comparison inline, so a false positive fixed there has
+                    # to be fixed here too.
+                    $liveDetSummary = if ($data.DetectionRule) { ConvertTo-DetectionRuleJson -DetectionRule (Get-ComparableDetectionRule -DetectionRule $data.DetectionRule) -IndentLevel 0 } else { "" }
                     if ($liveDetSummary -ne $localSnapshotRef.DetectionSummary) { $diffFields.Add("Detection rule") }
                     # "0" (local) and blank (Intune) are the SAME thing for
                     # these four - the same "0 = not required" convention
