@@ -71,6 +71,14 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         Assert-True ($s['pushOnCreateDefault'] -eq 'True') "deploying a NEW app pushes its groups by default" $all
         Assert-True ($s['pushOnUpdateDefault'] -eq 'False') "updating one does NOT, unless asked for in Settings" $all
 
+        # The button label is the only thing on this window that says
+        # whether the groups go with the deploy, so it has to track the
+        # setting rather than being a fixed word.
+        Assert-True ($s['deployLabelWhenPushOn'] -like '*group*') "the Deploy button says it will push the groups when that is on" $all
+        Assert-True ($s['deployLabelWhenPushOff'] -notlike '*group*') "...and says nothing about groups when it is off" $all
+        Assert-True ($s['deployLabelWhenPushOff'] -eq 'Deploy') "...reading just 'Deploy' in that case" $all
+        Assert-True ($s['deployLabelFits'] -eq 'True') "the label fits inside the button it is on" $all
+
         # Logging must never be the thing that takes the app down.
         Assert-True ($s['nullLogBoxSurvived'] -eq 'True') "a log line with no box to write to does not throw" $all
         Assert-True ($s['nullStatusSurvived'] -eq 'True') "nor does an error with no status label and no box" $all
