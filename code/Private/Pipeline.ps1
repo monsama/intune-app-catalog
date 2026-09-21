@@ -286,22 +286,35 @@ function Global:Start-PipelineProcess {
             & $ReadNewLogContent
 
             $code = $proc.ExitCode
-            $finishedText = if ($code -eq 0) { "`r`n[Finished - exit code 0]`r`n`r`n" } else { "`r`n[Finished - exit code $code]`r`n`r`n" }
-            Write-Log $finishedText ([System.Drawing.Color]::LightGreen)
-            # Mirror into the caller's own inline log too - otherwise every
-            # -ExtraLogTarget dialog (Packaging, Deploy, Sync, Batch Assign,
-            # Create in Intune) ends its local log right at the embedded
-            # script's own last output line, with no visible confirmation
-            # the run actually finished.
-            if ($ExtraLogTarget) {
-                $ExtraLogTarget.AppendText($finishedText)
-                $ExtraLogTarget.SelectionStart = $ExtraLogTarget.TextLength
-                $ExtraLogTarget.ScrollToCaret()
-            }
-            Remove-Item $logFile -Force -ErrorAction SilentlyContinue
-            Remove-Item $tempScriptPath -Force -ErrorAction SilentlyContinue
-            if ($graphHelperPath) { Remove-Item -LiteralPath $graphHelperPath -Force -ErrorAction SilentlyContinue }
-            Set-PipelineButtonsEnabled $true
+            # Everything between here and -OnComplete is cosmetic: writing
+            # the ending into two log boxes and deleting three temp files.
+            # None of it is allowed to decide whether the caller is told
+            # the process finished. Un-guarded, a throw from any of it (a
+            # log box belonging to a dialog that has since been closed is
+            # the one already seen in the wild) is swallowed by WinForms'
+            # event dispatch and takes the -OnComplete call down with it -
+            # leaving the caller waiting on a process that exited minutes
+            # ago, with no error anywhere to say so.
+            try {
+                $finishedText = if ($code -eq 0) { "`r`n[Finished - exit code 0]`r`n`r`n" } else { "`r`n[Finished - exit code $code]`r`n`r`n" }
+                Write-Log $finishedText ([System.Drawing.Color]::LightGreen)
+                # Mirror into the caller's own inline log too - otherwise every
+                # -ExtraLogTarget dialog (Packaging, Deploy, Sync, Batch Assign,
+                # Create in Intune) ends its local log right at the embedded
+                # script's own last output line, with no visible confirmation
+                # the run actually finished.
+                if ($ExtraLogTarget -and -not $ExtraLogTarget.IsDisposed) {
+                    $ExtraLogTarget.AppendText($finishedText)
+                    $ExtraLogTarget.SelectionStart = $ExtraLogTarget.TextLength
+                    $ExtraLogTarget.ScrollToCaret()
+                }
+            } catch { }
+            try {
+                Remove-Item $logFile -Force -ErrorAction SilentlyContinue
+                Remove-Item $tempScriptPath -Force -ErrorAction SilentlyContinue
+                if ($graphHelperPath) { Remove-Item -LiteralPath $graphHelperPath -Force -ErrorAction SilentlyContinue }
+                Set-PipelineButtonsEnabled $true
+            } catch { }
             if ($OnComplete) { & $OnComplete $code }
         }
     }.GetNewClosure())
