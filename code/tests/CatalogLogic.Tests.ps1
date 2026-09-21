@@ -103,6 +103,7 @@ $testableFunctionNames = @(
     "Get-ComparableDetectionRule",
     "ConvertTo-CatalogMetadataFromFetch",
     "Get-WingetIdFromInstallCommand",
+    "Get-FirstWingetIdToken",
     "ConvertTo-DetectionRuleJson",
     "ConvertTo-JsonStringLiteral",
     "Merge-CatalogMetadata",
@@ -689,6 +690,19 @@ Assert-Equal 'Mozilla.Firefox' (Get-WingetIdFromInstallCommand -InstallCommand "
     "Get-WingetIdFromInstallCommand: and unquoted"
 Assert-Equal 'Google.Chrome' (Get-WingetIdFromInstallCommand -InstallCommand 'winget install --id Google.Chrome -e --silent') `
     "Get-WingetIdFromInstallCommand: a plain winget command says the same thing another way"
+
+# Quoting does not mean "all of this is the ID". A real, live command -
+# the one that caught this - puts the extra arguments inside the SAME
+# quoted string, and taking it whole produced a Winget ID with spaces and
+# switches in it. An identifier never contains a space.
+Assert-Equal 'Adobe.Acrobat.Reader.64-bit' (Get-WingetIdFromInstallCommand -InstallCommand '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File "C:\Program Files\Winget-AutoUpdate\Winget-Install.ps1" -AppIDs "Adobe.Acrobat.Reader.64-bit --scope machine --override "') `
+    "Get-WingetIdFromInstallCommand: arguments riding along inside the quotes are not part of the ID"
+Assert-Equal 'Adobe.Acrobat.Reader.64-bit' (Get-WingetIdFromInstallCommand -InstallCommand '... Winget-Install.ps1 -AppIDs "Adobe.Acrobat.Reader.64-bit --scope machine"') `
+    "Get-WingetIdFromInstallCommand: ...however many of them there are"
+Assert-Equal 'Adobe.Acrobat.Reader.64-bit' (Get-WingetIdFromInstallCommand -InstallCommand 'winget install --id Adobe.Acrobat.Reader.64-bit --scope machine --silent') `
+    "Get-WingetIdFromInstallCommand: the plain winget form stops at the ID too"
+Assert-Equal '' (Get-WingetIdFromInstallCommand -InstallCommand '... Winget-Install.ps1 -AppIDs "--scope machine"') `
+    "Get-WingetIdFromInstallCommand: a switch where the ID should be is not an ID"
 
 # Where guessing would be worse than not guessing - a wrong Winget ID is
 # what a later deploy would go and install.

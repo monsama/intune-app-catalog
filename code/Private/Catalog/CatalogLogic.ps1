@@ -201,8 +201,7 @@ function Global:Get-WingetIdFromInstallCommand {
     if ($appIdsMatch.Success) {
         $captured = @($appIdsMatch.Groups[2].Value, $appIdsMatch.Groups[3].Value, $appIdsMatch.Groups[4].Value) |
             Where-Object { $_ } | Select-Object -First 1
-        if ($captured -and $captured -notmatch '[,;]') { return $captured.Trim() }
-        return ""
+        return (Get-FirstWingetIdToken -Captured $captured)
     }
 
     # winget install --id X / -e --id X, the same intent without the
@@ -213,9 +212,35 @@ function Global:Get-WingetIdFromInstallCommand {
     if ($wingetMatch.Success) {
         $captured = @($wingetMatch.Groups[2].Value, $wingetMatch.Groups[3].Value, $wingetMatch.Groups[4].Value) |
             Where-Object { $_ } | Select-Object -First 1
-        if ($captured -and $captured -notmatch '[,;]') { return $captured.Trim() }
+        return (Get-FirstWingetIdToken -Captured $captured)
     }
     return ""
+}
+
+function Global:Get-FirstWingetIdToken {
+    <#
+      The Winget ID out of whatever was found after -AppIDs or --id.
+
+      Quoting does not mean "this is all the ID". A real, live command
+      reads -AppIDs "Adobe.Acrobat.Reader.64-bit --scope machine
+      --override " - the extra arguments ride along inside the same quoted
+      string, and taking the quoted string whole gave a "Winget ID" with
+      spaces and switches in it. A Winget package identifier never
+      contains a space, so the ID is the first token and the rest is
+      arguments.
+
+      Still nothing when the first token names several packages, and
+      nothing when it is itself a switch - "-AppIDs --scope" is a command
+      this function has no business having an opinion about.
+    #>
+    param([string]$Captured)
+
+    if ([string]::IsNullOrWhiteSpace($Captured)) { return "" }
+    $first = @($Captured.Trim() -split '\s+') | Where-Object { $_ } | Select-Object -First 1
+    if (-not $first) { return "" }
+    if ($first -match '[,;]') { return "" }
+    if ($first.StartsWith('-')) { return "" }
+    return $first
 }
 
 function Global:ConvertTo-CatalogMetadataFromFetch {
