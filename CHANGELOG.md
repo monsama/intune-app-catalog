@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.4.7
+
+### Added
+
+- **An empty catalog can be filled from Intune.** Pointing this at a
+  tenant that already has apps in it and starting from nothing is an
+  obvious first move, and the empty-catalog screen offered three buttons,
+  none of which was it. No new function - the sync check has always
+  listed what is in Intune with no catalog entry and added the ones you
+  tick; it just lived on a tab of the Checks window, which is not where
+  anyone looks when the question is "how do I start".
+- **Settings > About**, with the version, the copyright line, the
+  GPL-2-or-later notice and warranty disclaimer, links to the site,
+  source and licence text, and what is third party. The version used to
+  be answerable only from the window title.
+
+### Fixes
+
+- **An app added from Intune arrives whole.** Adding one calls the same
+  fetch that reads the ENTIRE app - description, publisher, install and
+  uninstall commands, architecture, run-as account, detection rule,
+  minimum OS, requirements, install experience, return codes, groups and
+  dependencies - and then stored none of it, telling you to fill it in
+  by hand afterwards for information the tool had just been handed. Same
+  Graph call either way; only the keeping was missing.
+- **Dependencies are no longer lost on import,** as one casualty of the
+  above, and the one that matters most: deploy order, the dependency
+  overview and the audit all read that list. An app whose dependency is
+  not in the catalog is now offered rather than left half-imported -
+  "what you added depends on 2 app(s) that are not in this catalog ...
+  add them too?" - and answering yes catches dependencies of those too.
+
+### Polish
+
+- **The two "add" buttons in the sync check no longer read as a pair.**
+  One acts on the tick boxes, the other on the highlighted row, and they
+  produce different things. The single-row one is "Review and add..."
+  (it opens the editor with the app filled in); the bulk one is "Add
+  ticked to catalog" and carries the count. Rows that cannot be ticked
+  no longer show a tick box that refuses the click.
+- The Deploy button says whether the groups go with it - "Update
+  Metadata (Including groups)".
+- On the empty-catalog screen, "Getting started..." moves to the end, so
+  the buttons that actually fill the catalog sit together.
+- A dialog that is busy when the GUI suite tries to close it is no
+  longer reported as one that refuses to - test harness only, no app
+  behaviour.
+
 ## 1.4.6
 
 ### Added
