@@ -60,19 +60,16 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         if ($s['ran'] -ne 'true') { continue }
 
         Assert-True ($s['handlePresent'] -eq 'True') "the deploy view hands back a way to retarget its Winget ID" $all
-        # Deploying an app with groups should finish the job, so the
-        # checkbox exists and is on for a CREATE. (An update defaults it
-        # off - a push there replaces assignments made outside this tool -
-        # but this harness only builds the create view.)
-        Assert-True ($s['pushGroupsBoxCount'] -eq '1') "the deploy view has exactly one 'push groups' checkbox" $all
-        Assert-True ($s['pushGroupsCheckedOnCreate'] -eq 'True') "pushing groups is on by default when deploying a NEW app" $all
-        Assert-True ($s['pushGroupsSaysDeploying'] -eq 'True') "...and it says 'after deploying', not 'after updating'" $all
-        # The row for it was taken out of the scroll panel, not out of the
-        # window's height - so it has to land in the gap, not on top of
-        # the log above it or the Deploy button below it.
-        Assert-True ([int]$s['pushGroupsTop'] -ge [int]$s['logBottom']) "the checkbox clears the log box above it" $all
-        Assert-True ([int]$s['pushGroupsBottom'] -le [int]$s['deployTop']) "...and does not overlap the Deploy button below it" $all
-        Assert-True ([int]$s['pushGroupsBottom'] -le [int]$s['hostClientHeight']) "...and is inside the window, not off the bottom" $all
+        # Whether a deploy also assigns the app's groups is a setting, and
+        # only a setting. The Deploy view having no checkbox for it is the
+        # deliberate part: one switch, in one place.
+        Assert-True ($s['pushGroupsBoxCount'] -eq '0') "the deploy view has no 'push groups' checkbox of its own" $all
+        Assert-True ($s['pushOnCreateIsBool'] -eq 'True') "there is a real PushGroupsOnCreate setting" $all
+        Assert-True ($s['pushOnUpdateIsBool'] -eq 'True') "...and a real PushGroupsOnUpdate one" $all
+        # The two defaults differ on purpose: a new app has no assignments
+        # to overwrite, an update's push replaces the whole list.
+        Assert-True ($s['pushOnCreateDefault'] -eq 'True') "deploying a NEW app pushes its groups by default" $all
+        Assert-True ($s['pushOnUpdateDefault'] -eq 'False') "updating one does NOT, unless asked for in Settings" $all
 
         # Logging must never be the thing that takes the app down.
         Assert-True ($s['nullLogBoxSurvived'] -eq 'True') "a log line with no box to write to does not throw" $all
