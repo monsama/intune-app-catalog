@@ -2819,7 +2819,9 @@ function Global:Show-CreateInIntuneDialog {
             UninstallCommand   = $txtUninstall.Text
             Architecture       = $m.architecture
             Dependencies       = @($m.dependencies)
-            DetectionSummary   = if ($m.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $m.detectionRule -IndentLevel 0 } else { "" }
+            # Compared against the live rule further down, so it is built
+            # the same way that one is - see Get-ComparableDetectionRule.
+            DetectionSummary   = if ($m.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule (Get-ComparableDetectionRule -DetectionRule $m.detectionRule) -IndentLevel 0 } else { "" }
             MinDiskSpaceMB     = $txtDiskSpace.Text
             MinMemoryMB        = $txtMemory.Text
             MinProcessors      = $txtProcessors.Text
@@ -3196,7 +3198,13 @@ function Global:Show-CreateInIntuneDialog {
                     if ((& $normalizeForCompare $data.InstallCommandLine) -ne (& $normalizeForCompare $localSnapshotRef.InstallCommand)) { $diffFields.Add("Install command") }
                     if ((& $normalizeForCompare $data.UninstallCommandLine) -ne (& $normalizeForCompare $localSnapshotRef.UninstallCommand)) { $diffFields.Add("Uninstall command") }
                     if (([string]$archSource) -ne ([string]$localSnapshotRef.Architecture)) { $diffFields.Add("Architecture") }
-                    $liveDetSummary = if ($data.DetectionRule) { ConvertTo-DetectionRuleJson -DetectionRule $data.DetectionRule -IndentLevel 0 } else { "" }
+                    # Get-ComparableDetectionRule on both sides - the local
+                    # half is applied where DetectionSummary is built. Same
+                    # reasoning as the "0 = not required" note below: this
+                    # single-app fetch duplicates Get-CatalogMetadataFieldDiffs'
+                    # comparison inline, so a false positive fixed there has
+                    # to be fixed here too.
+                    $liveDetSummary = if ($data.DetectionRule) { ConvertTo-DetectionRuleJson -DetectionRule (Get-ComparableDetectionRule -DetectionRule $data.DetectionRule) -IndentLevel 0 } else { "" }
                     if ($liveDetSummary -ne $localSnapshotRef.DetectionSummary) { $diffFields.Add("Detection rule") }
                     # "0" (local) and blank (Intune) are the SAME thing for
                     # these four - the same "0 = not required" convention

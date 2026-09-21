@@ -100,6 +100,7 @@ $testableFunctionNames = @(
     "Get-DependencyOrderedApps",
     "Get-CatalogMetadataSimpleFields",
     "Get-CatalogMetadataFieldDiffs",
+    "Get-ComparableDetectionRule",
     "ConvertTo-DetectionRuleJson",
     "ConvertTo-JsonStringLiteral",
     "Merge-CatalogMetadata",
@@ -669,6 +670,72 @@ $detRealChange = [pscustomobject]@{ Type = "Script"; Script_Content = "if (Test-
 $jsonRealChange = ConvertTo-DetectionRuleJson -DetectionRule $detRealChange -IndentLevel 0
 Assert-True ($jsonLf -ne $jsonRealChange) `
     "ConvertTo-DetectionRuleJson: a genuine content change (not just trailing whitespace) still produces different JSON"
+
+# -----------------------------------------------------------------
+# Get-ComparableDetectionRule
+# -----------------------------------------------------------------
+# An app deployed by this tool, audited straight afterwards, reported
+# "Detection rule" differing because the catalog kept the operator and
+# value boxes from before the type was switched to "exists", and
+# CreateApp.ps1 never sends those two for "exists" - so Intune had no
+# File_DetectionValue for the "1" sitting in the catalog. Nothing the
+# user could do about it, on every audit, forever.
+$fileExistsLocal = [pscustomobject]@{
+    Type = "File"; File_Path = "C:\Program Files\App"; File_Name = "app.exe"
+    File_Check32Bit = $false; File_DetectionType = "exists"
+    File_Operator = "greaterThanOrEqual"; File_DetectionValue = "1"
+}
+$fileExistsLive = [pscustomobject]@{
+    Type = "File"; File_Path = "C:\Program Files\App"; File_Name = "app.exe"
+    File_Check32Bit = $false; File_DetectionType = "exists"
+    File_Operator = $null; File_DetectionValue = $null
+}
+Assert-Equal (ConvertTo-DetectionRuleJson -DetectionRule (Get-ComparableDetectionRule -DetectionRule $fileExistsLocal) -IndentLevel 0) `
+             (ConvertTo-DetectionRuleJson -DetectionRule (Get-ComparableDetectionRule -DetectionRule $fileExistsLive) -IndentLevel 0) `
+    "Get-ComparableDetectionRule: a File/exists rule ignores the operator and value that type never sends"
+Assert-Equal 0 @(Get-CatalogMetadataFieldDiffs -Local ([pscustomobject]@{ detectionRule = $fileExistsLocal }) `
+                                               -Remote ([pscustomobject]@{ detectionRule = $fileExistsLive }) -OdataType 'win32LobApp').Count `
+    "Get-CatalogMetadataFieldDiffs: that app reports no difference at all"
+
+# The same fields still count for a type that DOES use them - the fix
+# must not blind the check to a real detection change.
+$fileVersionLocal = [pscustomobject]@{
+    Type = "File"; File_Path = "C:\Program Files\App"; File_Name = "app.exe"
+    File_Check32Bit = $false; File_DetectionType = "version"
+    File_Operator = "greaterThanOrEqual"; File_DetectionValue = "2"
+}
+$fileVersionLive = $fileVersionLocal.PSObject.Copy()
+$fileVersionLive | Add-Member -NotePropertyName File_DetectionValue -NotePropertyValue "1" -Force
+Assert-Equal 1 @(Get-CatalogMetadataFieldDiffs -Local ([pscustomobject]@{ detectionRule = $fileVersionLocal }) `
+                                               -Remote ([pscustomobject]@{ detectionRule = $fileVersionLive }) -OdataType 'win32LobApp').Count `
+    "Get-ComparableDetectionRule: a File/version rule still reports a genuinely different value"
+
+# Registry and MSI have the same shape of leftover field.
+$regExistsLocal = [pscustomobject]@{
+    Type = "Registry"; Reg_KeyPath = "HKLM:\SOFTWARE\App"; Reg_ValueName = "Installed"
+    Reg_Check32Bit = $false; Reg_DetectionType = "exists"
+    Reg_Operator = "equal"; Reg_DetectionValue = "1"
+}
+$regExistsLive = $regExistsLocal.PSObject.Copy()
+$regExistsLive | Add-Member -NotePropertyName Reg_Operator -NotePropertyValue $null -Force
+$regExistsLive | Add-Member -NotePropertyName Reg_DetectionValue -NotePropertyValue $null -Force
+Assert-Equal 0 @(Get-CatalogMetadataFieldDiffs -Local ([pscustomobject]@{ detectionRule = $regExistsLocal }) `
+                                               -Remote ([pscustomobject]@{ detectionRule = $regExistsLive }) -OdataType 'win32LobApp').Count `
+    "Get-ComparableDetectionRule: a Registry/exists rule ignores its unused operator and value too"
+
+$msiLocal = [pscustomobject]@{ Type = "Msi"; Msi_ProductCode = "{GUID}"; Msi_VersionOperator = "notConfigured"; Msi_Version = "1.2.3" }
+$msiLive = $msiLocal.PSObject.Copy()
+$msiLive | Add-Member -NotePropertyName Msi_Version -NotePropertyValue $null -Force
+Assert-Equal 0 @(Get-CatalogMetadataFieldDiffs -Local ([pscustomobject]@{ detectionRule = $msiLocal }) `
+                                               -Remote ([pscustomobject]@{ detectionRule = $msiLive }) -OdataType 'win32LobApp').Count `
+    "Get-ComparableDetectionRule: an MSI rule with no version operator ignores the version it never sends"
+
+# Comparison only - what gets written to the catalog keeps every field,
+# so switching the type back in the editor still has the old value.
+Assert-Equal "1" ([string](ConvertTo-AppRecord -Raw ([pscustomobject]@{
+        appName = "X"; metadata = [pscustomobject]@{ detectionRule = $fileExistsLocal }
+    })).metadata.detectionRule.File_DetectionValue) `
+    "Get-ComparableDetectionRule: the stored catalog record still carries the unused value"
 
 # -----------------------------------------------------------------
 # Get-CatalogMetadataFieldDiffs - same normalization extended to Notes/
