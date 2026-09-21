@@ -1418,7 +1418,9 @@ function Global:Start-PlatformScriptRunStatusFetch {
 }
 
 function Global:Start-TypeVersionBackfill {
-    if ($Global:App.TypeVersionBackfillDone) { return }
+    # One queue at a time, not one queue per session - see the flag's own
+    # note in MainApp.ps1 for what the difference cost.
+    if ($Global:App.TypeVersionBackfillRunning) { return }
 
     # Checked BEFORE Test-GraphCredentialsConfigured (which pops a blocking
     # "Not configured" MessageBox on failure) - not after, the way this used
@@ -1430,14 +1432,14 @@ function Global:Start-TypeVersionBackfill {
     # they'd even seen the app's own (deliberately non-intrusive) yellow
     # credential-warning banner further down in MainApp.ps1's startup.
     $needsBackfill = @($Global:App.Apps | Where-Object { $_.appId -and -not $_.intuneAppType })
-    if ($needsBackfill.Count -eq 0) {
-        $Global:App.TypeVersionBackfillDone = $true
-        return
-    }
+    # Nothing to do is not the same as never do this again. This used to
+    # latch the flag here, which is how a catalog that was complete (or
+    # empty) at startup could never back fill anything added later.
+    if ($needsBackfill.Count -eq 0) { return }
 
     if (-not (Test-GraphCredentialsConfigured)) { return }
 
-    $Global:App.TypeVersionBackfillDone = $true
+    $Global:App.TypeVersionBackfillRunning = $true
     Write-Log "Backfilling Type/Version for $($needsBackfill.Count) app(s) never synced before...`r`n" ([System.Drawing.Color]::Gainsboro)
     Update-StartupBusyIndicator -Delta 1
 
@@ -1458,6 +1460,10 @@ function Global:Start-TypeVersionBackfill {
 
         if ($Global:App.CatalogGeneration -ne $startGeneration) {
             Write-Log "[SKIPPED] Type/Version backfill stopped - the catalog was reloaded partway through.`r`n" ([System.Drawing.Color]::DimGray)
+            # Every way out of this queue releases the guard - a queue that
+            # ended, was abandoned on a reload, or finished normally all leave
+            # the next Reload free to pick up whatever still has no type.
+            $Global:App.TypeVersionBackfillRunning = $false
             Update-StartupBusyIndicator -Delta -1
             return
         }
@@ -1471,6 +1477,10 @@ function Global:Start-TypeVersionBackfill {
             $doneMsg = "Type/Version backfill done - $UpdatedCount app(s) updated."
             if ($FailedCount -gt 0) { $doneMsg += " $FailedCount app(s) failed - see above." }
             Write-Log "$doneMsg`r`n" $doneColor
+            # Every way out of this queue releases the guard - a queue that
+            # ended, was abandoned on a reload, or finished normally all leave
+            # the next Reload free to pick up whatever still has no type.
+            $Global:App.TypeVersionBackfillRunning = $false
             Update-StartupBusyIndicator -Delta -1
             return
         }
@@ -1501,6 +1511,10 @@ function Global:Start-TypeVersionBackfill {
             # or logged as one - the top-of-loop check already logs the
             # one summary line for this queue being abandoned.
             if ($Global:App.CatalogGeneration -ne $startGenerationRef) {
+                # Every way out of this queue releases the guard - a queue that
+                # ended, was abandoned on a reload, or finished normally all leave
+                # the next Reload free to pick up whatever still has no type.
+                $Global:App.TypeVersionBackfillRunning = $false
                 Update-StartupBusyIndicator -Delta -1
                 return
             }

@@ -232,12 +232,20 @@ $Global:App.CheckIntuneOnDeployOpen = $true
 # write-everything-together reason documented on Write-SettingsFile below.
 $Global:App.DefaultAppSettings = Get-FactoryAppSettings   # one definition of the built-in values - see Get-FactoryAppSettings
 
-# Guards Start-TypeVersionBackfill (see its own definition) against
-# running more than once per catalog load - it's kicked off automatically
-# on startup and after Reload/Open other folder, not on every grid
-# refresh (typing in the search box refreshes the grid on every
-# keystroke - firing a Graph fetch queue on each one would be absurd).
-$Global:App.TypeVersionBackfillDone = $false
+# Guards Start-TypeVersionBackfill (see its own definition) against two
+# of its fetch queues running at once. It is kicked off on startup and
+# after Reload/Open other folder, not on every grid refresh (typing in
+# the search box refreshes the grid on every keystroke - firing a Graph
+# fetch queue on each one would be absurd).
+#
+# "Running", not "already done once", which is what this used to be. The
+# old flag was set even when there was NOTHING to back fill - so on a
+# catalog where every app already had a type, or an empty one about to be
+# filled from Intune, it was set within seconds of launch and the
+# backfill could never run again that session. Any app that arrived
+# afterwards without a type kept blank Type and Version columns until the
+# next restart.
+$Global:App.TypeVersionBackfillRunning = $false
 
 # How many background startup tasks are currently in flight (Start-
 # StartupDriftCheck, Start-TypeVersionBackfill - both silent otherwise,
@@ -1084,9 +1092,9 @@ $Global:App.Grid.Add_CellFormatting({
 # App ID) that's never had them set - the main grid's own Type/Version
 # columns, populated automatically instead of only ever getting filled in
 # by "Pull metadata and groups from Intune..." or a Deploy/Update run happening to touch that
-# app. Kicked off automatically once per catalog load (startup, Reload,
-# Open other folder) rather than on every grid refresh - see the note
-# next to $Global:App.TypeVersionBackfillDone for why. Same queue-runner
+# app. Kicked off on startup, Reload and Open other folder, one queue at
+# a time, rather than on every grid refresh - see the note
+# next to $Global:App.TypeVersionBackfillRunning for why. Same queue-runner
 # pattern as every other bulk fetch in this app (one app's Graph call at
 # a time, not all in flight at once), reusing Start-AppMetadataFetch
 # since the network round-trip - not the parsing - is what actually
