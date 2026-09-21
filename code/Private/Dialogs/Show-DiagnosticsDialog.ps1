@@ -19,6 +19,11 @@ function Global:Show-DiagnosticsDialog {
     # the same instant, read back empty.
     $appsRef = $Global:App.Apps
     $certThumbRef = $Global:App.GraphCertificateThumbprint
+    # Aliased for exactly the reason spelled out above, not for tidiness:
+    # the permissions check inside $btnRun.Add_Click needs all three, and
+    # reading these two directly from that closure has the same failure.
+    $tenantIdRef = $Global:App.GraphTenantId
+    $clientIdRef = $Global:App.GraphClientId
 
     $dlg = New-Object System.Windows.Forms.Form
     # The window the busy cursor belongs to: this dialog standalone, or the
@@ -199,6 +204,46 @@ function Global:Show-DiagnosticsDialog {
 
         & $appendLine "" $infoColor
         & $appendLine "=== Live checks against Intune ===" $headerColor
+
+        # What the app registration is actually ALLOWED to do, from a fresh
+        # token's own roles - the same Get-GraphAppTokenClaims /
+        # Get-GraphRoleReport / Format-GraphRoleReport that Settings' "Test
+        # connection" uses, so both places give one answer rather than two.
+        #
+        # Worth having here and not only there: the checks below probe what
+        # they happen to need (they connect, they list apps, they read
+        # groups) and so only ever discover a missing permission for a
+        # feature they exercise. Platform scripts is the one that bites -
+        # everything passes, and the first Save takes a 403 for a
+        # permission nothing had asked about. This reports every feature's
+        # permission whether this run touches it or not.
+        #
+        # Runs on this thread on purpose: it is one token request to Entra
+        # ID, it has to finish before the async chain below starts anyway
+        # (a token problem explains every failure that follows), and the
+        # dialog is already showing a wait cursor with Close disabled. A
+        # failure to read it is never fatal - the checks below still run
+        # and report what they find.
+        $lblStatus.Text = "Reading the app registration's permissions..."
+        $busyFormBox.Form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
+        [System.Windows.Forms.Application]::DoEvents()
+        try {
+            $claims = Get-GraphAppTokenClaims -TenantId $tenantIdRef -ClientId $clientIdRef -Thumbprint $certThumbRef
+            $roleReport = Get-GraphRoleReport -Roles @($claims.roles)
+            foreach ($line in (Format-GraphRoleReport -Report $roleReport -TokenAppId ([string]$claims.appid) -SettingsClientId $clientIdRef)) {
+                $lineColor = if ($line -like '`[FAILED`]*') { $failColor }
+                             elseif ($line -like '`[WARN`]*') { $warnColor }
+                             elseif ($line -like '`[OK`]*') { $okColor }
+                             else { $infoColor }
+                & $appendLine $line $lineColor
+            }
+        }
+        catch {
+            & $appendLine "[WARN] Could not read the app registration's permissions: $($_.Exception.Message)" $warnColor
+            & $appendLine "    The checks below still run - they just can't say in advance which of them a missing permission will stop." $infoColor
+        }
+
+        & $appendLine "" $infoColor
         & $appendLine "Connecting and fetching every app from Intune..." $infoColor
         $lblStatus.Text = "Connecting to Intune..."
         # Start-IntuneAppLookup/Start-Win32AppMinOsFetch/Start-EntraDirectoryLookup
