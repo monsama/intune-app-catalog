@@ -2357,6 +2357,27 @@ function Global:Show-CreateInIntuneDialog {
                         # opened fresh (no existing catalog entry at all)
                         # genuinely stays staged until its own later "Save
                         # app to catalog" click.
+                        # Deploying creates/updates the app and uploads its
+                        # content. It never touches assignments - that is
+                        # "Push groups to Intune...", deliberately its own
+                        # step because assigning REPLACES an app's entire
+                        # assignment list and is not something a deploy
+                        # should do behind your back.
+                        #
+                        # The cost of that separation was silence: an app
+                        # with groups in the catalog lands in Intune
+                        # assigned to nobody, and the first thing that said
+                        # so was a later audit reporting a group
+                        # difference - which reads like the deploy went
+                        # wrong rather than like a step still to come.
+                        $groupNote = ""
+                        $deployedCatalogApp = @($appsRefRef | Where-Object { $_.appName -eq $appNameRef }) | Select-Object -First 1
+                        if ($deployedCatalogApp) {
+                            $pendingGroups = @(@($deployedCatalogApp.requiredFor) + @($deployedCatalogApp.availableFor) + @($deployedCatalogApp.uninstallFor) | Where-Object { $_ })
+                            if ($pendingGroups.Count -gt 0) {
+                                $groupNote = "`n`nThis app's $($pendingGroups.Count) group(s) are NOT assigned in Intune yet - deploying does not assign them. Use `"Push groups to Intune (single app)...`" in the app editor, or the toolbar's multi-app version. Until then an audit will correctly report the groups as differing."
+                            }
+                        }
                         $doneMsg = if (-not $localSaveOk) {
                             "Done. App ID: $($result.appId)`n`n...but saving this to the local catalog failed - check the Log tab. The app was still created/updated in Intune successfully."
                         } elseif ($fromAppEditorRef -and -not $callerHasExistingCatalogEntryRef) {
@@ -2366,6 +2387,7 @@ function Global:Show-CreateInIntuneDialog {
                         } else {
                             "Done. App ID: $($result.appId)`n`nAlready saved to disk."
                         }
+                        $doneMsg = "$doneMsg$groupNote"
                         # The window stays open on success, so the log box
                         # above can still be read (a popup whose OK also
                         # closed the whole dialog took that away). The
