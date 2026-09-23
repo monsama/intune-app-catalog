@@ -885,30 +885,39 @@ $Global:App.Grid.RowHeadersVisible = $false
 $Global:App.Grid.BackgroundColor = [System.Drawing.Color]::White
 
 
-# Every column gets a MinimumWidth that fits its header text (see
-# New-GridColumn) - below that total width the grid scrolls horizontally
-# instead of truncating headers to "Req"/"Ava"/"Uni".
+# Two kinds of column. Most hold something that is always about the same
+# length - a count, Yes/No, a GUID, a version, a type label - and those are
+# sized once to their widest value (-FitTo) and never grow. The rest (App
+# Name, Winget ID, Status) are the ones whose text actually varies, and
+# they share whatever width is left, so a wider window goes to them rather
+# than to padding around "Yes". Every column still has a MinimumWidth that
+# fits its header - below the total the grid scrolls sideways instead of
+# truncating headers to "Req"/"Ava"/"Uni".
 $gridFont = $Global:App.Form.Font
-# App Name is what people scan for - it keeps a readable floor even when
-# App ID's full-GUID floor below eats into a narrower window.
-$Global:App.Grid.Columns.Add((New-GridColumn "AppName" "App Name" -FillWeight 16 -Font $gridFont -MinimumWidth 170)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "WingetId" "Winget ID" -FillWeight 10 -Font $gridFont)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Type" "Type" -FillWeight 13 -Font $gridFont)) | Out-Null
-# Real Win32 versions run to "140.0.7339.128" - 4 was too little even maximized.
-$Global:App.Grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 7 -Font $gridFont)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 6 -Font $gridFont)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -FillWeight 7 -Font $gridFont)) | Out-Null
+# App Name is what people scan for - the biggest share, and a readable
+# floor even in a narrow window.
+$Global:App.Grid.Columns.Add((New-GridColumn "AppName" "App Name" -FillWeight 45 -Font $gridFont -MinimumWidth 170)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "WingetId" "Winget ID" -FillWeight 25 -Font $gridFont -MinimumWidth 120)) | Out-Null
+# Sized for the common labels. The long ones ("Microsoft 365 Apps
+# (Windows 10 and later)") are rare and show in full on hover.
+$Global:App.Grid.Columns.Add((New-GridColumn "Type" "Type" -Font $gridFont -FitTo @("Microsoft Store app (legacy)"))) | Out-Null
+# Real Win32 versions run to "140.0.7339.128".
+$Global:App.Grid.Columns.Add((New-GridColumn "Version" "Version" -Font $gridFont -FitTo @("140.0.7339.128"))) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -Font $gridFont -FitTo @("Yes"))) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -Font $gridFont -FitTo @("Yes", "No"))) | Out-Null
 # No package folder column: a full path was the widest thing in the grid
 # and the least often read. It lives in the app editor's Catalog tab now,
 # under "Package location", with a button to open it.
-$Global:App.Grid.Columns.Add((New-GridColumn "Required" "Required" -FillWeight 5 -Font $gridFont)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Available" "Available" -FillWeight 5 -Font $gridFont)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Uninstall" "Uninstall" -FillWeight 5 -Font $gridFont)) | Out-Null
-# Floor sized to a full GUID, so an App ID is never shown cut off.
-$guidWidth = [System.Windows.Forms.TextRenderer]::MeasureText("00000000-0000-0000-0000-000000000000", $gridFont).Width + 12
-$Global:App.Grid.Columns.Add((New-GridColumn "AppId" "App ID" -FillWeight 18 -Font $gridFont -MinimumWidth $guidWidth)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Status" "Status" -FillWeight 10 -Font $gridFont)) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "IntuneAudit" "Last Audit" -FillWeight 10 -Font $gridFont)) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Required" "Required" -Font $gridFont -FitTo @("999"))) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Available" "Available" -Font $gridFont -FitTo @("999"))) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Uninstall" "Uninstall" -Font $gridFont -FitTo @("999"))) | Out-Null
+# A full GUID, so an App ID is never shown cut off - and never wider.
+$Global:App.Grid.Columns.Add((New-GridColumn "AppId" "App ID" -Font $gridFont -FitTo @("00000000-0000-0000-0000-000000000000"))) | Out-Null
+$Global:App.Grid.Columns.Add((New-GridColumn "Status" "Status" -FillWeight 30 -Font $gridFont -MinimumWidth 120)) | Out-Null
+# Get-LastAuditSummary's longest shapes, measured bold - the cell
+# formatting below bolds a result that needs attention.
+$gridFontBold = New-Object System.Drawing.Font($gridFont, [System.Drawing.FontStyle]::Bold)
+$Global:App.Grid.Columns.Add((New-GridColumn "IntuneAudit" "Last Audit" -Font $gridFontBold -FitTo @("Check failed (365d ago)", "12 issues (365d ago)", "Never audited"))) | Out-Null
 # The header row is one line tall - a header that wrapped ("Custom Config")
 # drew its first line higher than every other header and clipped the rest.
 $Global:App.Grid.ColumnHeadersDefaultCellStyle.WrapMode = [System.Windows.Forms.DataGridViewTriState]::False

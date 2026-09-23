@@ -1169,7 +1169,13 @@ function Global:New-GridColumn {
     # glyph) - Fill mode alone happily squeezes a narrow column down until
     # "Required" reads "Requirec". -MinimumWidth raises that floor further,
     # for columns whose VALUES need more room than their header (App ID).
-    param($Name, $Header, $Width = 100, $FillWeight = 20, [System.Drawing.Font]$Font, [int]$MinimumWidth = 0)
+    #
+    # -FitTo: for a column whose content is always about the same length (a
+    # count, Yes/No, a GUID, a version): the widest value it will show. The
+    # column then has exactly that width, out of the Fill share-out, so
+    # widening the window gives the room to the columns whose text actually
+    # varies instead of padding "Yes" out to 150px. Needs -Font.
+    param($Name, $Header, $Width = 100, $FillWeight = 20, [System.Drawing.Font]$Font, [int]$MinimumWidth = 0, [string[]]$FitTo)
     $col = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $col.Name = $Name
     $col.HeaderText = $Header
@@ -1188,6 +1194,17 @@ function Global:New-GridColumn {
     elseif ($MinimumWidth -gt 0) {
         $col.MinimumWidth = $MinimumWidth
     }
+    if ($FitTo -and $Font) {
+        # 16 is the cell's own padding either side; the header already
+        # carries its sort-glyph allowance in MinimumWidth above.
+        $fit = $col.MinimumWidth
+        foreach ($sample in $FitTo) {
+            $fit = [Math]::Max($fit, [System.Windows.Forms.TextRenderer]::MeasureText($sample, $Font).Width + 16)
+        }
+        $col.AutoSizeMode = [System.Windows.Forms.DataGridViewAutoSizeColumnMode]::None
+        $col.MinimumWidth = $fit
+        $col.Width = $fit
+    }
     return $col
 }
 
@@ -1200,6 +1217,9 @@ function Global:Get-GridColumnWidths {
     if (-not $Global:App.Grid) { return $widths }
     foreach ($col in $Global:App.Grid.Columns) {
         if (-not $col.Visible) { continue }
+        # A -FitTo column has a width of its own and no share of the fill,
+        # so its weight means nothing and is not worth keeping.
+        if ($col.AutoSizeMode -eq [System.Windows.Forms.DataGridViewAutoSizeColumnMode]::None) { continue }
         $widths[$col.Name] = [Math]::Round([double]$col.FillWeight, 2)
     }
     return $widths
