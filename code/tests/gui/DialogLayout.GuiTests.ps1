@@ -76,6 +76,12 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         Assert-True ($lines -contains '== DONE') "the harness ran every step"
         $errors = @($lines | Where-Object { $_ -match '^\s+(step|closer) error:' })
         Assert-True ($errors.Count -eq 0) "no step failed to run" (($errors | ForEach-Object { $_.Trim() }) -join "`n    ")
+        # An exception inside a window's own event handler never reaches the
+        # step - WinForms catches it and shows its "Unhandled exception"
+        # window instead, which counted as "a window opened". The harness
+        # names those separately now; any of them is a failure.
+        $unhandled = @($lines | Where-Object { $_ -match '^\s+unhandled:' })
+        Assert-True ($unhandled.Count -eq 0) "no window threw an unhandled exception" (($unhandled | ForEach-Object { $_.Trim() }) -join "`n    ")
 
         # one assertion per window, its issues as the failure detail
         $step = ''
@@ -99,7 +105,7 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
                 & $flush; $issues.Clear()
                 $window = "'$($Matches[1])' ($step)"; $windows++; $sawSomething = $true
             }
-            elseif ($line -match '^\s+msgbox:') { $sawSomething = $true }
+            elseif ($line -match '^\s+(msgbox|unhandled):') { $sawSomething = $true }
             elseif ($line -match '^\s{6}\S' -and $window) { $issues.Add($line) }
         }
         & $flush

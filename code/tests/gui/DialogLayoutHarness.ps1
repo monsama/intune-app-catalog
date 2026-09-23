@@ -209,6 +209,24 @@ function Global:Close-LayoutAuditWindow {
     }
     $forms = @([System.Windows.Forms.Application]::OpenForms | Where-Object { -not [object]::ReferenceEquals($_, $Global:App.Form) -and $_.Visible })
     if (-not $forms) { return }
+    # WinForms' own "Unhandled exception has occurred" window is a Form
+    # like any other, so it used to be measured, found tidy, and closed -
+    # and a dialog that threw while opening passed. It is reported as what
+    # it is, with its message, before anything else here looks at it.
+    $crash = @($forms | Where-Object { $_ -is [System.Windows.Forms.ThreadExceptionDialog] }) | Select-Object -Last 1
+    if ($crash) {
+        $crashKey = $crash.GetHashCode()
+        if (-not $Global:LayoutAudit.Seen.ContainsKey($crashKey)) {
+            $Global:LayoutAudit.Seen[$crashKey] = $true
+            $crashText = @($crash.Controls | Where-Object { $_ -is [System.Windows.Forms.Label] -and $_.Text } | ForEach-Object { ([string]$_.Text) -replace '\s+', ' ' }) -join ' | '
+            Write-LayoutAudit "    unhandled: [$($crash.Text)] $crashText"
+            Save-LayoutShot $crash
+        }
+        # Continue, the way someone would: the app carries on, so the rest
+        # of the run still gets to happen.
+        $crash.Close()
+        return
+    }
     $f = $forms[-1]
     $key = $f.GetHashCode()
     if (-not $Global:LayoutAudit.Seen.ContainsKey($key)) {
