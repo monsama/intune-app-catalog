@@ -898,11 +898,9 @@ $Global:App.Grid.Columns.Add((New-GridColumn "Type" "Type" -FillWeight 13 -Font 
 $Global:App.Grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 7 -Font $gridFont)) | Out-Null
 $Global:App.Grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 6 -Font $gridFont)) | Out-Null
 $Global:App.Grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -FillWeight 7 -Font $gridFont)) | Out-Null
-# Package folder holds full filesystem paths, which routinely run longer
-# than every other column's content (including the App ID GUID) - still
-# the widest allotment here on purpose, just not so wide that it starves
-# the narrow columns next to it.
-$Global:App.Grid.Columns.Add((New-GridColumn "Folder" "Package folder" -FillWeight 28 -Font $gridFont)) | Out-Null
+# No package folder column: a full path was the widest thing in the grid
+# and the least often read. It lives in the app editor's Catalog tab now,
+# under "Package location", with a button to open it.
 $Global:App.Grid.Columns.Add((New-GridColumn "Required" "Required" -FillWeight 5 -Font $gridFont)) | Out-Null
 $Global:App.Grid.Columns.Add((New-GridColumn "Available" "Available" -FillWeight 5 -Font $gridFont)) | Out-Null
 $Global:App.Grid.Columns.Add((New-GridColumn "Uninstall" "Uninstall" -FillWeight 5 -Font $gridFont)) | Out-Null
@@ -1034,15 +1032,14 @@ $Global:App.Grid.Add_CellFormatting({
                 $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
                 $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Bold)
             }
-            elseif ([string]$e.Value -eq "Custom config" -or [string]$e.Value -eq "Custom package") {
-                # Informational, not a warning either - a Winget app with
-                # deliberately customized install/detection/etc., or one
-                # deliberately pointed at its own .intunewin, isn't a
+            elseif ([string]$e.Value -eq "Custom package") {
+                # Informational, not a warning either - a Winget app
+                # deliberately pointed at its own .intunewin isn't a
                 # problem the way a missing package or App ID is, so it gets
                 # its own neutral color rather than the same DarkOrange used
                 # for things that actually need fixing. Only when this is the
                 # WHOLE status text, though - composed with anything else
-                # (e.g. "No App ID; Custom config") falls through to
+                # (e.g. "No App ID; Custom package") falls through to
                 # the orange case below, since something else there DOES need
                 # attention.
                 $e.CellStyle.ForeColor = [System.Drawing.Color]::SteelBlue

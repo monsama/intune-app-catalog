@@ -69,7 +69,7 @@ $gridFont = $form.Font
 foreach ($c in @(
     @('AppName', 'App Name'), @('WingetId', 'Winget ID'), @('Type', 'Type'),
     @('Version', 'Version'), @('Uncommon', 'Uncommon'), @('CustomConfig', 'Custom Config'),
-    @('Folder', 'Package folder'), @('Required', 'Required'), @('Available', 'Available'),
+    @('Required', 'Required'), @('Available', 'Available'),
     @('Uninstall', 'Uninstall'), @('AppId', 'App ID'), @('Status', 'Status'),
     @('IntuneAudit', 'Last Audit'))) {
     $grid.Columns.Add((New-GridColumn $c[0] $c[1] -Font $gridFont)) | Out-Null

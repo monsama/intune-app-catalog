@@ -880,6 +880,217 @@ function Global:Show-AppEditor {
         Set-TextBoxPlaceholder -Box $txtAppPackagePath -Text "Empty - this Winget app deploys with the shared init.intunewin"
     }
 
+    # Where this app's package actually is, resolved - the answer the main
+    # grid's "Package folder" column used to give, moved here because a full
+    # path was the widest thing in that grid and the least often read. The
+    # box above says what you SET; this card says what that resolves to,
+    # whether it is there, and takes you to it.
+    $palette = $Global:App.LightPalette
+    $cardBack = [System.Drawing.Color]::FromArgb(250,251,252)
+    $pnlPackageLocation = New-Object System.Windows.Forms.Panel
+    $pnlPackageLocation.Name = 'pnlPackageLocation'
+    $pnlPackageLocation.Location = New-Object System.Drawing.Point(12,360)
+    $pnlPackageLocation.Size = New-Object System.Drawing.Size(820,124)
+    $pnlPackageLocation.BackColor = $cardBack
+    $cardBorder = $palette.BorderColor
+    $pnlPackageLocation.Add_Paint({
+        param($sender, $e)
+        $pen = New-Object System.Drawing.Pen($cardBorder)
+        $e.Graphics.DrawRectangle($pen, 0, 0, $sender.Width - 1, $sender.Height - 1)
+        $pen.Dispose()
+    }.GetNewClosure())
+    $txtAppPackagePath.Parent.Controls.Add($pnlPackageLocation)
+
+    $lblPkgHeading = New-Object System.Windows.Forms.Label
+    $lblPkgHeading.Text = "Package location"
+    $lblPkgHeading.Font = New-Object System.Drawing.Font($dlg.Font, [System.Drawing.FontStyle]::Bold)
+    $lblPkgHeading.Location = New-Object System.Drawing.Point(14,12)
+    $lblPkgHeading.AutoSize = $true
+    $pnlPackageLocation.Controls.Add($lblPkgHeading)
+
+    # A coloured pill beside the heading - the one thing to take in at a
+    # glance. Positioned from the heading's measured width, so it follows
+    # whatever font size the app runs at.
+    $lblPkgState = New-Object System.Windows.Forms.Label
+    $lblPkgState.Name = 'lblPackageState'
+    $lblPkgState.AutoSize = $true
+    $lblPkgState.Padding = New-Object System.Windows.Forms.Padding(8,2,8,2)
+    $lblPkgState.Font = New-Object System.Drawing.Font($dlg.Font.FontFamily, ($dlg.Font.Size - 0.5), [System.Drawing.FontStyle]::Bold)
+    $headingWidth = [System.Windows.Forms.TextRenderer]::MeasureText($lblPkgHeading.Text, $lblPkgHeading.Font).Width
+    $lblPkgState.Location = New-Object System.Drawing.Point((14 + $headingWidth + 10), 10)
+    $pnlPackageLocation.Controls.Add($lblPkgState)
+
+    $captionColor = [System.Drawing.Color]::FromArgb(110,115,125)
+    $lblPkgFolderCaption = New-Object System.Windows.Forms.Label
+    $lblPkgFolderCaption.Text = "Folder"
+    $lblPkgFolderCaption.ForeColor = $captionColor
+    $lblPkgFolderCaption.Location = New-Object System.Drawing.Point(14,42)
+    $lblPkgFolderCaption.Size = New-Object System.Drawing.Size(60,20)
+    $pnlPackageLocation.Controls.Add($lblPkgFolderCaption)
+
+    # AutoEllipsis rather than wrapping: a path is one line or it is
+    # unreadable. The whole of it is in the tooltip and on Copy path.
+    $lblPkgFolder = New-Object System.Windows.Forms.Label
+    $lblPkgFolder.Name = 'lblPackageFolder'
+    $lblPkgFolder.AutoEllipsis = $true
+    $lblPkgFolder.Location = New-Object System.Drawing.Point(78,42)
+    $lblPkgFolder.Size = New-Object System.Drawing.Size(600,20)
+    $pnlPackageLocation.Controls.Add($lblPkgFolder)
+
+    $lblPkgFileCaption = New-Object System.Windows.Forms.Label
+    $lblPkgFileCaption.Text = "File"
+    $lblPkgFileCaption.ForeColor = $captionColor
+    $lblPkgFileCaption.Location = New-Object System.Drawing.Point(14,66)
+    $lblPkgFileCaption.Size = New-Object System.Drawing.Size(60,20)
+    $pnlPackageLocation.Controls.Add($lblPkgFileCaption)
+
+    $lblPkgFile = New-Object System.Windows.Forms.Label
+    $lblPkgFile.Name = 'lblPackageFile'
+    $lblPkgFile.AutoEllipsis = $true
+    $lblPkgFile.Location = New-Object System.Drawing.Point(78,66)
+    $lblPkgFile.Size = New-Object System.Drawing.Size(600,20)
+    $pnlPackageLocation.Controls.Add($lblPkgFile)
+
+    $lblPkgNote = New-Object System.Windows.Forms.Label
+    $lblPkgNote.AutoEllipsis = $true
+    $lblPkgNote.ForeColor = $captionColor
+    $lblPkgNote.Location = New-Object System.Drawing.Point(14,94)
+    $lblPkgNote.Size = New-Object System.Drawing.Size(664,20)
+    $pnlPackageLocation.Controls.Add($lblPkgNote)
+
+    $btnOpenPkgFolder = New-Object System.Windows.Forms.Button
+    $btnOpenPkgFolder.Name = 'btnOpenPackageFolder'
+    $btnOpenPkgFolder.Text = "Open folder"
+    $btnOpenPkgFolder.Location = New-Object System.Drawing.Point(692,38)
+    $btnOpenPkgFolder.Size = New-Object System.Drawing.Size(114,28)
+    $pnlPackageLocation.Controls.Add($btnOpenPkgFolder)
+
+    $btnCopyPkgPath = New-Object System.Windows.Forms.Button
+    $btnCopyPkgPath.Name = 'btnCopyPackagePath'
+    $btnCopyPkgPath.Text = "Copy path"
+    $btnCopyPkgPath.Location = New-Object System.Drawing.Point(692,72)
+    $btnCopyPkgPath.Size = New-Object System.Drawing.Size(114,28)
+    $pnlPackageLocation.Controls.Add($btnCopyPkgPath)
+
+    $pkgTip = New-Object System.Windows.Forms.ToolTip
+    $pkgTip.SetToolTip($btnOpenPkgFolder, "Open this folder in Explorer, with the package selected.")
+    $pkgTip.SetToolTip($btnCopyPkgPath, "Copy the full path of the package (or of the folder it belongs in) to the clipboard.")
+
+    # What the two buttons act on - written by the refresh below, read by
+    # their handlers. A box, for the same closure reason as every other one
+    # in this function.
+    $pkgLocationBox = @{ Folder = ""; File = "" }
+    $existingIntuneType = if ($ExistingApp) { [string]$ExistingApp.intuneAppType } else { "" }
+
+    $refreshPackageLocation = {
+        $name = $txtName.Text.Trim()
+        $override = $txtAppPackagePath.Text.Trim()
+        $isUncommon = [string]::IsNullOrWhiteSpace($txtWinget.Text)
+        # The same "never a package from this tool" rule the grid's Status
+        # uses - a Store or M365 app is not missing a package, it has none.
+        $isKnownNonWin32 = $existingIntuneType -and $existingIntuneType -ne "Windows app (Win32)"
+
+        $state = ""; $stateFore = $null; $stateBack = $null
+        $folder = ""; $file = ""; $note = ""
+        $okFore = [System.Drawing.Color]::FromArgb(22,101,52);   $okBack = [System.Drawing.Color]::FromArgb(220,252,231)
+        $badFore = [System.Drawing.Color]::FromArgb(153,27,27);  $badBack = [System.Drawing.Color]::FromArgb(254,226,226)
+        $infoFore = [System.Drawing.Color]::FromArgb(30,64,175); $infoBack = [System.Drawing.Color]::FromArgb(219,234,254)
+        $offFore = [System.Drawing.Color]::FromArgb(75,85,99);   $offBack = [System.Drawing.Color]::FromArgb(229,231,235)
+
+        if ($isKnownNonWin32 -and -not $override) {
+            $state = "Not applicable"; $stateFore = $offFore; $stateBack = $offBack
+            $note = "A $existingIntuneType app - Intune does not install it from a package this tool builds."
+        }
+        elseif ($isUncommon -and -not $name -and -not $override) {
+            $state = "No name yet"; $stateFore = $offFore; $stateBack = $offBack
+            $note = "Give the app a name to see where its package is expected."
+        }
+        else {
+            $pkg = Resolve-AppPackagePath -AppName $name -Uncommon $isUncommon -PackagePath $override
+            $looksLikeFile = [IO.Path]::GetExtension([string]$pkg.Path) -ne ""
+            if ($pkg.Found) {
+                $folder = Split-Path -Parent $pkg.Path
+                $file = Split-Path -Leaf $pkg.Path
+            }
+            elseif ($looksLikeFile) {
+                $folder = Split-Path -Parent $pkg.Path
+                $file = Split-Path -Leaf $pkg.Path
+            }
+            else {
+                $folder = [string]$pkg.Path
+            }
+
+            if ($override) {
+                $note = if ($pkg.Found) { "Set in the box above - this package wins, Winget ID or not." }
+                        else { "The path in the box above has no single .intunewin - pick the file itself." }
+            }
+            elseif ($isUncommon) {
+                $note = if ($pkg.Found) { "Found by the app's name in the packages folder." }
+                        else { "Nothing there yet - package the app, or point the box above at its .intunewin." }
+            }
+            else {
+                $note = "A Winget app - it deploys with the shared init.intunewin, like every other one."
+            }
+
+            if (-not $pkg.Found) {
+                $state = "Not found"; $stateFore = $badFore; $stateBack = $badBack
+            }
+            elseif (-not $isUncommon -and -not $override) {
+                $state = "Shared package"; $stateFore = $infoFore; $stateBack = $infoBack
+            }
+            else {
+                $state = "Found"; $stateFore = $okFore; $stateBack = $okBack
+            }
+        }
+
+        $lblPkgState.Text = $state
+        $lblPkgState.ForeColor = $stateFore
+        $lblPkgState.BackColor = $stateBack
+        $lblPkgFolder.Text = if ($folder) { $folder } else { [string][char]0x2014 }
+        $lblPkgFile.Text = if ($file) { $file } else { [string][char]0x2014 }
+        $lblPkgNote.Text = $note
+        $fullPath = if ($file -and $folder) { Join-Path $folder $file } elseif ($folder) { $folder } else { $file }
+        $pkgTip.SetToolTip($lblPkgFolder, $folder)
+        $pkgTip.SetToolTip($lblPkgFile, $fullPath)
+        $pkgTip.SetToolTip($lblPkgNote, $note)
+        # The box itself, too: a long path is cut off at its right edge, and
+        # an empty box shows its greyed default, which is cut off the same
+        # way. What is typed, when something is; otherwise what it resolves to.
+        $boxTip = if ($override) { $override } elseif ($fullPath) { "$fullPath  (default)" } else { $note }
+        $pkgTip.SetToolTip($txtAppPackagePath, $boxTip)
+        $pkgLocationBox.Folder = $folder
+        $pkgLocationBox.File = if ($file -and (Test-Path -LiteralPath (Join-Path $folder $file) -PathType Leaf)) { Join-Path $folder $file } else { "" }
+        $btnOpenPkgFolder.Enabled = [bool]($folder -and (Test-Path -LiteralPath $folder -PathType Container))
+        $btnCopyPkgPath.Enabled = [bool]$folder
+    }.GetNewClosure()
+
+    $btnOpenPkgFolder.Add_Click({
+        # /select opens the folder with the package highlighted; without a
+        # file there, the folder alone.
+        if ($pkgLocationBox.File) { Start-Process explorer.exe -ArgumentList "/select,`"$($pkgLocationBox.File)`"" }
+        elseif ($pkgLocationBox.Folder) { Start-Process explorer.exe -ArgumentList "`"$($pkgLocationBox.Folder)`"" }
+    }.GetNewClosure())
+    $btnCopyPkgPath.Add_Click({
+        $toCopy = if ($pkgLocationBox.File) { $pkgLocationBox.File } else { $pkgLocationBox.Folder }
+        if ($toCopy) {
+            [System.Windows.Forms.Clipboard]::SetText($toCopy)
+            Write-DialogLogLine -LogBox $editorLogBox.Box -Text "[OK] Copied to the clipboard: $toCopy`r`n"
+        }
+    }.GetNewClosure())
+
+    # Resolving walks the packages folder, so typing a name does not do it
+    # per keystroke - the timer restarts on each change and fires once the
+    # typing stops.
+    $pkgRefreshTimer = New-Object System.Windows.Forms.Timer
+    $pkgRefreshTimer.Interval = 350
+    $pkgRefreshTimer.Add_Tick({ $pkgRefreshTimer.Stop(); & $refreshPackageLocation }.GetNewClosure())
+    $restartPkgRefresh = { $pkgRefreshTimer.Stop(); $pkgRefreshTimer.Start() }.GetNewClosure()
+    $txtName.Add_TextChanged($restartPkgRefresh)
+    $txtWinget.Add_TextChanged($restartPkgRefresh)
+    $txtAppPackagePath.Add_TextChanged($restartPkgRefresh)
+    $dlg.Add_FormClosed({ $pkgRefreshTimer.Stop(); $pkgRefreshTimer.Dispose() }.GetNewClosure())
+    & $refreshPackageLocation
+
     # The Intune side, as three more tabs of this same window. Its status
     # box, log and Deploy button come with it and sit under every tab, so
     # there is one place things are reported and one button that sends.
