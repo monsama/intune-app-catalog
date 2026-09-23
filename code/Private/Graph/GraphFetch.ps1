@@ -434,8 +434,7 @@ function Global:Start-StartupFullAuditCheck {
                             $metaDiffs = Get-CatalogMetadataFieldDiffs -Local $catalogApp.metadata -Remote $oneResult.Metadata -OdataType $oneResult.OdataType
                             $metaText = if ($metaDiffs.Count -eq 0) { "OK" } else { "$($metaDiffs.Count) field(s) differ: $(($metaDiffs | ForEach-Object { $_.Field }) -join ', ')" }
                             $groupsText = if ($oneResult.GroupFetchOk) {
-                                $groupDiffs = Get-GroupFieldDiffs -LocalApp $catalogApp -RemoteResult $oneResult
-                                if ($groupDiffs.Count -eq 0) { "OK" } else { "$($groupDiffs.Count) differ: $(($groupDiffs | ForEach-Object { $_.Field }) -join ', ')" }
+                                Format-GroupFieldDiffs -Diffs (Get-GroupFieldDiffs -LocalApp $catalogApp -RemoteResult $oneResult)
                             } else { "Failed: could not fetch live assignments" }
                             $liveDeps = @($oneResult.Metadata.dependencies) | Sort-Object
                             $localDeps = @($catalogApp.metadata.dependencies) | Sort-Object
@@ -865,6 +864,12 @@ function Global:Start-AppMetadataFetch {
         $requiredGroupNames = @()
         $availableGroupNames = @()
         $uninstallGroupNames = @()
+        # Whether the three lists above are Intune's answer or just what
+        # they started as. A failed read left them empty, which reads
+        # exactly like "assigned to nothing" - and the app editor's "Pull
+        # groups from Intune" then unticked every group to match it. Same
+        # flag, same meaning, as the bulk fetch's (SyncMetadata.ps1).
+        $groupFetchOk = $false
         try {
             $currentAssignments = Invoke-LoggedGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$TargetAppId/assignments" -Method GET -ErrorAction Stop
             foreach ($a in @($currentAssignments.value)) {
@@ -882,6 +887,7 @@ function Global:Start-AppMetadataFetch {
                     "uninstall" { $uninstallGroupNames += $groupDisplayName }
                 }
             }
+            $groupFetchOk = $true
         }
         catch { }
 
@@ -1004,6 +1010,7 @@ function Global:Start-AppMetadataFetch {
             RequiredGroupNames      = $requiredGroupNames
             AvailableGroupNames     = $availableGroupNames
             UninstallGroupNames     = $uninstallGroupNames
+            GroupFetchOk            = $groupFetchOk
         }
     }).AddArgument($Global:App.GraphTenantId).AddArgument($Global:App.GraphClientId).AddArgument($Global:App.GraphCertificateThumbprint).AddArgument($AppId)
 

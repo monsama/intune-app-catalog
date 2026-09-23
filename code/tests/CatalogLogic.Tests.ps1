@@ -136,6 +136,7 @@ $testableFunctionNames = @(
     "ConvertTo-TemplateAppRecord",
     "Get-NormalizedInstallTimeMinutes",
     "Get-GroupFieldDiffs",
+    "Format-GroupFieldDiffs",
     # Both touch the filesystem, which is not a WinForms or Graph
     # dependency - the tests below give them a real temp folder to look
     # at. Get-AppFolder comes with them because that is how they find the
@@ -602,6 +603,26 @@ Assert-Equal "New Group Name" $diffsRenamed[0].Remote "Get-GroupFieldDiffs: Remo
 
 $diffsNullInputs = @(Get-GroupFieldDiffs -LocalApp $null -RemoteResult $remoteResultNoDrift)
 Assert-Equal 0 $diffsNullInputs.Count "Get-GroupFieldDiffs: a `$null LocalApp produces zero diffs rather than throwing"
+
+# -----------------------------------------------------------------
+# Format-GroupFieldDiffs - which side has which groups, not just which
+# list differs
+# -----------------------------------------------------------------
+Assert-Equal "OK" (Format-GroupFieldDiffs -Diffs @()) "Format-GroupFieldDiffs: no differences reads OK"
+$localOnlyApp = [pscustomobject]@{ requiredFor = @(); availableFor = @("GroupB", "GroupA"); uninstallFor = @() }
+$remoteNothing = [pscustomobject]@{ RequiredGroupNames = @(); AvailableGroupNames = @(); UninstallGroupNames = @() }
+Assert-Equal "1 differ: Available for - catalog: GroupA, GroupB | Intune: (none)" `
+    (Format-GroupFieldDiffs -Diffs (Get-GroupFieldDiffs -LocalApp $localOnlyApp -RemoteResult $remoteNothing)) `
+    "Format-GroupFieldDiffs: groups only in the catalog say Intune has none"
+$remoteOnlyReq = [pscustomobject]@{ RequiredGroupNames = @("All Devices"); AvailableGroupNames = @("GroupA", "GroupB"); UninstallGroupNames = @() }
+Assert-Equal "1 differ: Required for - catalog: (none) | Intune: All Devices" `
+    (Format-GroupFieldDiffs -Diffs (Get-GroupFieldDiffs -LocalApp $localOnlyApp -RemoteResult $remoteOnlyReq)) `
+    "Format-GroupFieldDiffs: a group only in Intune says the catalog has none"
+Assert-Equal "2 differ: Required for - catalog: Old Group Name | Intune: New Group Name; Available for - catalog: (none) | Intune: X" `
+    (Format-GroupFieldDiffs -Diffs @(
+        [pscustomobject]@{ Field = "Required for"; Local = "Old Group Name"; Remote = "New Group Name" },
+        [pscustomobject]@{ Field = "Available for"; Local = ""; Remote = "X" })) `
+    "Format-GroupFieldDiffs: several lists are joined with '; '"
 
 # -----------------------------------------------------------------
 # ConvertTo-JsonStringLiteral - only ever exercised indirectly before

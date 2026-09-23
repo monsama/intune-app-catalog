@@ -218,7 +218,9 @@ function Global:Show-IntuneAuditDialog {
         $lines = New-Object System.Collections.Generic.List[string]
         foreach ($colName in $checkColumns) {
             $lines.Add("$($grid.Columns[$colName].HeaderText):")
-            $lines.Add("  $([string]$row.Cells[$colName].Value)")
+            # One group list per line - Format-GroupFieldDiffs joins them
+            # with "; " to fit a cell.
+            $lines.Add("  " + ([string]$row.Cells[$colName].Value -replace '; ', "`r`n  "))
             $lines.Add("")
         }
         [System.Windows.Forms.MessageBox]::Show(($lines -join "`r`n").TrimEnd(), "Audit detail - $([string]$row.Cells['App'].Value)", "OK", "Information") | Out-Null
@@ -373,6 +375,56 @@ function Global:Show-IntuneAuditDialog {
         & $afterFix "Push metadata done" $indices.Count
     }.GetNewClosure())
     & $updateFixButtons
+
+    # The same four actions on a right-click, the way the main grid offers
+    # its own. Each item clicks its button, so there is one handler per
+    # action and the menu can never do something the buttons would not -
+    # and each is enabled exactly when its button is.
+    $auditMenu = New-Object System.Windows.Forms.ContextMenuStrip
+    $menuPull = New-Object System.Windows.Forms.ToolStripMenuItem "Pull from Intune..."
+    $menuPull.ToolTipText = "Intune is right: update the catalog to match it."
+    $menuPushGroups = New-Object System.Windows.Forms.ToolStripMenuItem "Push groups to Intune..."
+    $menuPushGroups.ToolTipText = "The catalog is right about groups. Fixes Groups and Unknown assignments."
+    $menuPushMetadata = New-Object System.Windows.Forms.ToolStripMenuItem "Push metadata to Intune..."
+    $menuPushMetadata.ToolTipText = "The catalog is right about metadata. Fixes Metadata and Dependencies."
+    $menuSelectDiffering = New-Object System.Windows.Forms.ToolStripMenuItem "Select all that differ"
+    $auditMenu.ShowItemToolTips = $true
+    [void]$auditMenu.Items.Add($menuPull)
+    [void]$auditMenu.Items.Add($menuPushGroups)
+    [void]$auditMenu.Items.Add($menuPushMetadata)
+    [void]$auditMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+    [void]$auditMenu.Items.Add($menuSelectDiffering)
+    $grid.ContextMenuStrip = $auditMenu
+
+    $menuPull.Add_Click({ $btnPullFromIntune.PerformClick() }.GetNewClosure())
+    $menuPushGroups.Add_Click({ $btnPushGroups.PerformClick() }.GetNewClosure())
+    $menuPushMetadata.Add_Click({ $btnPushMetadata.PerformClick() }.GetNewClosure())
+    $menuSelectDiffering.Add_Click({ $btnSelectDiffering.PerformClick() }.GetNewClosure())
+    $auditMenu.Add_Opening({
+        $selCount = $grid.SelectedRows.Count
+        $suffix = if ($selCount -gt 1) { " ($selCount apps)" } else { "" }
+        $menuPull.Text = "Pull from Intune$suffix..."
+        $menuPushGroups.Text = "Push groups to Intune$suffix..."
+        $menuPushMetadata.Text = "Push metadata to Intune$suffix..."
+        $menuPull.Enabled = $btnPullFromIntune.Enabled
+        $menuPushGroups.Enabled = $btnPushGroups.Enabled
+        $menuPushMetadata.Enabled = $btnPushMetadata.Enabled
+        $menuSelectDiffering.Enabled = $btnSelectDiffering.Enabled
+    }.GetNewClosure())
+
+    # A right-click on a row that is not part of the selection makes it the
+    # selection, as Explorer does - otherwise the menu opens over one row
+    # and acts on another. Inside the selection it is left alone, so a
+    # multi-row pick survives being right-clicked.
+    $grid.Add_CellMouseDown({
+        param($gridSender, $e)
+        if ($e.Button -ne [System.Windows.Forms.MouseButtons]::Right -or $e.RowIndex -lt 0) { return }
+        $clickedRow = $grid.Rows[$e.RowIndex]
+        if (-not $clickedRow.Selected) {
+            $grid.ClearSelection()
+            $clickedRow.Selected = $true
+        }
+    }.GetNewClosure())
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
@@ -578,7 +630,8 @@ function Global:Show-IntuneAuditDialog {
 
                     if ($oneResult.GroupFetchOk) {
                         $groupDiffs = Get-GroupFieldDiffs -LocalApp $catalogApp -RemoteResult $oneResult
-                        $row.Cells['Groups'].Value = if ($groupDiffs.Count -eq 0) { "OK" } else { "$($groupDiffs.Count) differ: $(($groupDiffs | ForEach-Object { $_.Field }) -join ', ')" }
+                        # Both sides, not just which list - see Format-GroupFieldDiffs.
+                        $row.Cells['Groups'].Value = Format-GroupFieldDiffs -Diffs $groupDiffs
                     }
                     else {
                         $row.Cells['Groups'].Value = "Failed: could not fetch live assignments"

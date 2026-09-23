@@ -54,7 +54,13 @@ function Global:Show-CreateInIntuneDialog {
         # field on the catalog's value rather than Intune's (see
         # Show-MetadataDriftDialog -PreferLocal), so Update Metadata sends
         # the catalog instead of Intune's own values back to it.
-        [switch]$PreferLocal
+        [switch]$PreferLocal,
+        # Run with the fetched data each time the live values come back
+        # from Intune. This window compares metadata and dependencies with
+        # them; the fetch also carries the live group assignments, which
+        # the app editor hosting it compares against its Assignments tab -
+        # so groups are checked on the same fetch instead of a second one.
+        [scriptblock]$OnLiveFetch
     )
     $embedded = [bool]$HostTabControl
 
@@ -3094,6 +3100,7 @@ function Global:Show-CreateInIntuneDialog {
             $metadataFetchRunningBoxRef = $metadataFetchRunningBox
             $existingAppIdRef = $ExistingAppId
             $preferLocalRef = [bool]$PreferLocal
+            $onLiveFetchRef = $OnLiveFetch
             $updateCustomFieldHighlightsRef = $updateCustomFieldHighlights
             $applyKeepLocalFieldsRef = $applyKeepLocalFields
             $lastDriftBoxRef = $lastDriftBox
@@ -3176,6 +3183,14 @@ function Global:Show-CreateInIntuneDialog {
                     # there too.
                     Write-DialogLogLine -LogBox $rtbCreateLogRef -Text "`r`n[FAILED] Could not load current metadata: $errMsg`r`n"
                     return
+                }
+                # The host's own use of the same data (the editor's group
+                # check). Its failure must not stop the metadata compare
+                # below, which is what protects an update from sending a
+                # stale value - so it is contained and only logged.
+                if ($onLiveFetchRef) {
+                    try { & $onLiveFetchRef $data }
+                    catch { Write-DialogLogLine -LogBox $rtbCreateLogRef -Text "[WARN] Could not compare groups with Intune: $($_.Exception.Message)`r`n" }
                 }
                 $fetchedIntuneFactsBoxRef.OdataType = $data.OdataType
                 $fetchedIntuneFactsBoxRef.DisplayVersion = $data.DisplayVersion

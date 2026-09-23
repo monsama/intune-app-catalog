@@ -496,6 +496,24 @@ function Global:Get-GroupFieldDiffs {
     return $diffs.ToArray()
 }
 
+function Global:Format-GroupFieldDiffs {
+    # What a group difference says wherever it is shown - the audit's
+    # Groups cell, Last Audit, the app editor. "1 differ: Available for"
+    # was all any of them said, with both sides already in hand: you could
+    # not tell whether the catalog or Intune was the one with groups in it,
+    # which is the whole question when deciding between Pull and Push.
+    # "OK" for no differences, so callers can store it as they did before.
+    param($Diffs)
+    $list = @($Diffs | Where-Object { $_ })
+    if ($list.Count -eq 0) { return "OK" }
+    $parts = foreach ($d in $list) {
+        $localText = if ([string]$d.Local) { [string]$d.Local } else { "(none)" }
+        $remoteText = if ([string]$d.Remote) { [string]$d.Remote } else { "(none)" }
+        "$($d.Field) - catalog: $localText | Intune: $remoteText"
+    }
+    return "$($list.Count) differ: $($parts -join '; ')"
+}
+
 function Global:Test-AppIsUncommon {
     param($App)
     return [string]::IsNullOrWhiteSpace($App.wingetId)

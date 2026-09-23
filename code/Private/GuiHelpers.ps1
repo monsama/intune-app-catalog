@@ -1587,7 +1587,9 @@ function Global:Show-LastAuditDetail {
     [void]$grid.Columns.Add($colResult)
     foreach ($f in $fields) {
         $displayVal = if ($null -ne $f.Value) { [string]$f.Value } else { "(not checked this session)" }
-        [void]$grid.Rows.Add($f.Label, $displayVal)
+        # One group list per line (Format-GroupFieldDiffs joins them with
+        # "; " to fit a single cell elsewhere).
+        [void]$grid.Rows.Add($f.Label, ($displayVal -replace '; ', "`r`n"))
     }
     # The audit window's colours: green OK, red could-not-check, orange
     # for a difference.

@@ -1676,6 +1676,12 @@ $menuItemPackage = New-Object System.Windows.Forms.ToolStripMenuItem "Package th
 $menuItemPackage.ToolTipText = "One row selected: packages just that app. Multiple rows: packages every selected app that isn't a common/store app."
 $menuItemAssign = New-Object System.Windows.Forms.ToolStripMenuItem "Push groups to Intune (single app)..."
 $menuItemAssign.ToolTipText = "One row selected: pushes its groups directly. Multiple rows: opens the batch assign dialog, pre-scoped to your selection."
+# The metadata half of "the catalog is right": the app's update window,
+# comparing with Intune and starting every differing field on the
+# catalog's value (Invoke-QuickPushMetadata). Groups have their own item
+# above; this sends metadata and dependencies.
+$menuItemPushMetadata = New-Object System.Windows.Forms.ToolStripMenuItem "Push metadata to Intune..."
+$menuItemPushMetadata.ToolTipText = "Sends the catalog's metadata and dependencies to the app in Intune. Opens its update window, which shows what differs and sends nothing until you click Update Metadata. Several apps open one after another."
 # Already selection-aware via -ScopedIndices, same as the toolbar button
 # it reuses - was reachable only from there before, requiring a
 # pre-selection made before ever opening the toolbar dialog, when a
@@ -1710,6 +1716,7 @@ $menuItemRemoveCatalog = New-Object System.Windows.Forms.ToolStripMenuItem "Remo
 [void]$gridContextMenu.Items.Add($menuItemDeploy)
 [void]$gridContextMenu.Items.Add($menuItemPackage)
 [void]$gridContextMenu.Items.Add($menuItemAssign)
+[void]$gridContextMenu.Items.Add($menuItemPushMetadata)
 [void]$gridContextMenu.Items.Add($menuItemSyncMetadata)
 [void]$gridContextMenu.Items.Add($menuItemAudit)
 [void]$gridContextMenu.Items.Add($menuItemInstallStatus)
@@ -1757,6 +1764,11 @@ $gridContextMenu.Add_Opening({
 
     $menuItemAssign.Text = if ($isMulti) { "Push groups to Intune (multiple apps)..." } else { "Push groups to Intune (single app)..." }
     $menuItemAssign.Enabled = $hasSelection
+
+    # Only apps already in Intune have metadata there to update.
+    $pushableCount = @($selectedIndices | ForEach-Object { $Global:App.Apps[$_] } | Where-Object { $_.appId }).Count
+    $menuItemPushMetadata.Text = if ($pushableCount -gt 1) { "Push metadata to Intune ($pushableCount apps)..." } else { "Push metadata to Intune..." }
+    $menuItemPushMetadata.Enabled = $pushableCount -gt 0
 
     # Same eligibility Show-SyncMetadataDialog itself checks (an app needs
     # an App ID before there's anything in Intune to pull metadata FROM) -
@@ -1845,6 +1857,13 @@ $menuItemAssign.Add_Click({
     }
     Show-BatchAssignDialog -ScopedIndices $indices
     Update-Grid
+})
+
+$menuItemPushMetadata.Add_Click({
+    # One update window per app, in turn - there is no batch update for
+    # apps already in Intune (Batch Deploy only creates new ones).
+    $indices = @(Get-SelectedAppIndices | Where-Object { $Global:App.Apps[$_].appId })
+    foreach ($pushIndex in $indices) { Invoke-QuickPushMetadata -Index $pushIndex }
 })
 
 $menuItemSyncMetadata.Add_Click({
