@@ -82,15 +82,15 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         Assert-True ($s['selectionWhenFilteredOut'] -eq '') "an app the filter hides leaves nothing selected in its place" $all
         Assert-True ($s['selectionWhenStillVisible'] -eq 'Mike App') "an app the filter keeps stays selected" $all
 
-        # Which package an app installs from, as the column reports it.
-        Assert-True ($s['uncommonCell_UncommonCaseWinget'] -eq '') "a Winget app with no package of its own is not flagged" $all
-        Assert-True ($s['uncommonCell_UncommonCasePlain'] -eq 'Yes') "an app with no Winget ID is flagged uncommon" $all
-        Assert-True ($s['uncommonCell_UncommonCaseCustom'] -eq 'Yes') "a Winget app pointed at its own .intunewin is flagged too" $all
-        # The column has no room to say WHY an app with a Winget ID right
-        # next to it is flagged, so Status carries that.
-        Assert-True ($s['uncommonStatus_UncommonCaseCustom'] -like '*Custom package*') "...and Status says why it is flagged" $all
+        # Which package an app installs from. There is no Uncommon column any
+        # more: an empty Winget ID says it for the plain case, and Status
+        # says it for the one case nothing else on the row shows.
+        Assert-True ($s['uncommonStatus_UncommonCaseCustom'] -like '*Custom package*') "a Winget app pointed at its own .intunewin says so in Status" $all
         Assert-True ($s['uncommonStatus_UncommonCaseWinget'] -notlike '*Custom package*') "a Winget app with no package of its own says nothing about one" $all
         Assert-True ($s['uncommonStatus_UncommonCasePlain'] -notlike '*Custom package*') "nor does an app that is uncommon the ordinary way" $all
+        # Required / Available / Uninstall as one cell.
+        Assert-True ($s['groupsCell_UncommonCaseCustom'] -eq '2 / 0 / 0') "Groups shows the three counts in one cell" $all
+        Assert-True ($s['groupsCell_UncommonCasePlain'] -eq '0 / 0 / 0') "...and zeros, not blanks, for an app with none" $all
     }
     catch {
         Assert-True $false "test run completed" "$($_.Exception.Message) @ line $($_.InvocationInfo.ScriptLineNumber)"

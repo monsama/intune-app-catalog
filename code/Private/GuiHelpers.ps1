@@ -1369,15 +1369,6 @@ function Global:Update-Grid {
         # package pointed at from the editor look like it had not been
         # saved, because nothing here ever asked about it.
         $needsPackageCheck = ($isUncommon -or $app.packagePath) -and -not $isKnownNonWin32
-        # What the Uncommon COLUMN shows, deliberately wider than
-        # Test-AppIsUncommon's own "has no Winget ID" rule. An app pointed
-        # at a hand-picked .intunewin installs from THAT package, not from
-        # the shared winget wrapper - which is the one thing this column
-        # exists to say at a glance, Winget ID or not. Only the display
-        # widens: Test-AppIsUncommon still decides metadata defaults,
-        # packaging and batch eligibility everywhere else, so an app that
-        # does have a Winget ID keeps its winget-shaped defaults.
-        $showsAsUncommon = $isUncommon -or [bool]$app.packagePath
         # Only for the Status warning below - where the package is lives in
         # the app editor now (Package location), not in a column here.
         $pkg = if ($needsPackageCheck) { Resolve-AppPackagePath -AppName $app.appName -Uncommon $isUncommon -Index $packageIndexForRefresh -PackagePath $app.packagePath } else { $null }
@@ -1394,38 +1385,37 @@ function Global:Update-Grid {
             $status = "Package missing"
         }
 
-        # Why the Uncommon column says "Yes" for an app that plainly has a
-        # Winget ID: it was pointed at its own .intunewin, so it installs
-        # from that and not from the shared winget wrapper. Only worth
-        # saying for an app that WOULD otherwise use the wrapper - an
-        # uncommon app has its own package by definition.
+        # An app that plainly has a Winget ID but was pointed at its own
+        # .intunewin installs from that, not from the shared winget
+        # wrapper - nothing else on the row says so. Only worth saying for
+        # an app that WOULD otherwise use the wrapper: an app with no
+        # Winget ID has its own package by definition, and its empty
+        # Winget ID cell already shows that.
         if ($app.packagePath -and -not $isUncommon) {
             $status = if ($status) { "$status; Custom package" } else { "Custom package" }
         }
 
+        $reqCount = @($app.requiredFor).Count
+        $availCount = @($app.availableFor).Count
+        $uninstCount = @($app.uninstallFor).Count
         $rows.Add([pscustomobject]@{
             AppName   = $app.appName
             WingetId  = $app.wingetId
             Type      = if ($app.intuneAppType) { $app.intuneAppType } else { "" }
             Version   = if ($app.intuneAppVersion) { $app.intuneAppVersion } else { "" }
-            # Plain "Yes" for both reasons. Spelling the custom-package case
-            # out here ("Yes (custom package)") needed a wider column than
-            # the grid's total width budget had left, and squeezed App ID
-            # below the floor that keeps a full GUID readable - so the WHY
-            # goes in Status, which composes notes already and has the room.
-            Uncommon  = if ($showsAsUncommon) { "Yes" } else { "" }
-            # Blank (not "Yes") for an Uncommon app: Test-AppHasCustomConfig
-            # returns true for every Uncommon app unconditionally (there's
-            # no computed default for it to have deviated FROM), so showing
-            # "Yes" here just echoed the Uncommon column back with no new
-            # information. Left meaning one specific thing everywhere it's
-            # shown: a Winget app whose saved settings were hand-edited
-            # away from what this tool would otherwise default it to.
+            # Blank (not "Yes") for an app with no Winget ID:
+            # Test-AppHasCustomConfig returns true for every such app
+            # unconditionally (there's no computed default for it to have
+            # deviated FROM), so "Yes" there would say nothing. Left meaning
+            # one specific thing everywhere it's shown: a Winget app whose
+            # saved settings were hand-edited away from what this tool
+            # would otherwise default it to.
             CustomConfig = if ($isUncommon) { "" } elseif ($hasCustomConfig) { "Yes" } else { "No" }
-            Required  = @($app.requiredFor).Count
-            Available = @($app.availableFor).Count
-            Uninstall = @($app.uninstallFor).Count
-            AppId     = if ($app.appId) { $app.appId } else { "(none yet)" }
+            Groups    = "$reqCount / $availCount / $uninstCount"
+            # Not columns - what sorting the Groups column orders by.
+            Required  = $reqCount
+            Available = $availCount
+            Uninstall = $uninstCount
             Status    = $status
             IntuneAudit = if ($app.appId) { Get-LastAuditSummary -AppName $app.appName } else { "" }
             Index     = $i
@@ -1437,12 +1427,15 @@ function Global:Update-Grid {
     # the order stick through every later rebuild instead of silently
     # reverting to catalog order on the next keystroke or save.
     $sortColumn = [string]$Global:App.GridSortColumn
-    # A sort saved against a column the grid no longer has (the old
-    # "Package folder") would sort by a property no row carries.
+    # A sort saved against a column the grid no longer has (Package folder,
+    # Uncommon, App ID, the three group counts) is dropped, not applied.
     if ($sortColumn -and $Global:App.Grid -and -not $Global:App.Grid.Columns.Contains($sortColumn)) { $sortColumn = "" }
     if ($sortColumn -and $rows.Count -gt 1) {
-        $sorted = if ($Global:App.GridSortAscending) { @($rows | Sort-Object -Property $sortColumn) }
-                  else { @($rows | Sort-Object -Property $sortColumn -Descending) }
+        # "Groups" is text ("10 / 0 / 0" would sort before "2 / 0 / 0"), so
+        # it orders by the counts behind it: Required first, then the rest.
+        $sortBy = if ($sortColumn -eq 'Groups') { @('Required', 'Available', 'Uninstall') } else { $sortColumn }
+        $sorted = if ($Global:App.GridSortAscending) { @($rows | Sort-Object -Property $sortBy) }
+                  else { @($rows | Sort-Object -Property $sortBy -Descending) }
         $rows = New-Object System.Collections.Generic.List[Object]
         foreach ($r in $sorted) { $rows.Add($r) }
     }

@@ -903,16 +903,17 @@ $Global:App.Grid.Columns.Add((New-GridColumn "WingetId" "Winget ID" -FillWeight 
 $Global:App.Grid.Columns.Add((New-GridColumn "Type" "Type" -Font $gridFont -FitTo @("Microsoft Store app (legacy)"))) | Out-Null
 # Real Win32 versions run to "140.0.7339.128".
 $Global:App.Grid.Columns.Add((New-GridColumn "Version" "Version" -Font $gridFont -FitTo @("140.0.7339.128"))) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -Font $gridFont -FitTo @("Yes"))) | Out-Null
+# Columns this grid no longer has, and where their answer went:
+#  - Package folder: the app editor's Catalog tab, "Package location".
+#  - Uncommon: an empty Winget ID says it, and Status says "Custom package"
+#    for the one other case (a Winget app pointed at its own .intunewin).
+#  - App ID: the editor. A missing one is Status's "No App ID".
 $Global:App.Grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -Font $gridFont -FitTo @("Yes", "No"))) | Out-Null
-# No package folder column: a full path was the widest thing in the grid
-# and the least often read. It lives in the app editor's Catalog tab now,
-# under "Package location", with a button to open it.
-$Global:App.Grid.Columns.Add((New-GridColumn "Required" "Required" -Font $gridFont -FitTo @("999"))) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Available" "Available" -Font $gridFont -FitTo @("999"))) | Out-Null
-$Global:App.Grid.Columns.Add((New-GridColumn "Uninstall" "Uninstall" -Font $gridFont -FitTo @("999"))) | Out-Null
-# A full GUID, so an App ID is never shown cut off - and never wider.
-$Global:App.Grid.Columns.Add((New-GridColumn "AppId" "App ID" -Font $gridFont -FitTo @("00000000-0000-0000-0000-000000000000"))) | Out-Null
+# Required / Available / Uninstall as one cell, "2 / 1 / 0" - three columns
+# of small numbers were 230px for what reads fine as one.
+$colGroups = New-GridColumn "Groups" "Groups" -Font $gridFont -FitTo @("99 / 99 / 99")
+$colGroups.ToolTipText = "How many groups the app is assigned to: Required / Available / Uninstall"
+$Global:App.Grid.Columns.Add($colGroups) | Out-Null
 $Global:App.Grid.Columns.Add((New-GridColumn "Status" "Status" -FillWeight 30 -Font $gridFont -MinimumWidth 120)) | Out-Null
 # Get-LastAuditSummary's longest shapes, measured bold - the cell
 # formatting below bolds a result that needs attention.
@@ -1231,12 +1232,12 @@ $Global:App.Grid.Add_CellFormatting({
 # "common"; an app with no Winget ID needs its own individually-packaged
 # .intunewin, so it's "uncommon". One source of truth, everywhere - no
 # checkbox to fall out of sync with the actual Winget ID field.
-# The catalog COLUMN adds one case on top of that rule: an app pointed at
-# a hand-picked .intunewin (packagePath) also installs from its own
-# package rather than the shared wrapper, and reads "Yes (custom
-# package)" even though it has a Winget ID. That widening is display-only
-# - Test-AppIsUncommon itself is unchanged, so metadata defaults,
-# packaging and batch eligibility all still key off the Winget ID alone.
+# An app pointed at a hand-picked .intunewin (packagePath) also installs
+# from its own package rather than the shared wrapper; the catalog grid
+# says so in Status ("Custom package") even though it has a Winget ID.
+# That is display-only - Test-AppIsUncommon itself is unchanged, so
+# metadata defaults, packaging and batch eligibility all still key off the
+# Winget ID alone.
 
 # Maps an Intune app's raw @odata.type to the same friendly label the
 # Intune admin center's own "Type" column shows for it - the ONE place

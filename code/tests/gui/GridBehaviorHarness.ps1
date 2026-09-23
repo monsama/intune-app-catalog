@@ -68,9 +68,8 @@ $grid.RowHeadersVisible = $false
 $gridFont = $form.Font
 foreach ($c in @(
     @('AppName', 'App Name'), @('WingetId', 'Winget ID'), @('Type', 'Type'),
-    @('Version', 'Version'), @('Uncommon', 'Uncommon'), @('CustomConfig', 'Custom Config'),
-    @('Required', 'Required'), @('Available', 'Available'),
-    @('Uninstall', 'Uninstall'), @('AppId', 'App ID'), @('Status', 'Status'),
+    @('Version', 'Version'), @('CustomConfig', 'Custom Config'),
+    @('Groups', 'Groups'), @('Status', 'Status'),
     @('IntuneAudit', 'Last Audit'))) {
     $grid.Columns.Add((New-GridColumn $c[0] $c[1] -Font $gridFont)) | Out-Null
 }
@@ -153,19 +152,20 @@ try {
     Update-Grid
     Add-Line 'selectionWhenStillVisible' ((Get-SelectedNames) -join '|')
 
-    # 9. The Uncommon column. Appended at the end deliberately: these three
+    # 9. Which package an app installs from, as Status reports it - and the
+    #    Groups cell. Appended at the end deliberately: these three
     #    extra apps would shift the sort/scroll positions every scenario
     #    above pins down. Each one is a different answer to the same
     #    question - which package does this app install from?
     $Global:App.TxtSearch.Text = ''
     $uncommonCases = @(
         # Winget ID, no package of its own: installs from the shared winget
-        # wrapper, so the column stays blank.
+        # wrapper, so Status says nothing about a package.
         @{ Name = 'Uncommon Case Winget'; WingetId = 'Fixture.Winget'; PackagePath = $null },
         # Winget ID AND a hand-picked .intunewin: that package wins, so this
-        # is the case the plain "has no Winget ID" rule used to miss
-        # entirely and the column called common.
-        @{ Name = 'Uncommon Case Custom'; WingetId = 'Fixture.Custom'; PackagePath = 'C:\fixture\packages\custom\custom.intunewin' },
+        # is the case nothing else on the row shows. Two Required groups,
+        # for the Groups cell.
+        @{ Name = 'Uncommon Case Custom'; WingetId = 'Fixture.Custom'; PackagePath = 'C:\fixture\packages\custom\custom.intunewin'; Required = @('Group A', 'Group B') },
         # No Winget ID at all: uncommon the original way.
         @{ Name = 'Uncommon Case Plain';  WingetId = '';               PackagePath = $null }
     )
@@ -174,7 +174,7 @@ try {
             appName          = $case.Name
             wingetId         = $case.WingetId
             packagePath      = $case.PackagePath
-            requiredFor      = @()
+            requiredFor      = @($case.Required | Where-Object { $_ })
             availableFor     = @()
             uninstallFor     = @()
             intuneAppType    = ''
@@ -188,11 +188,11 @@ try {
         $statusCell = ''
         foreach ($row in $grid.Rows) {
             if ([string]$row.Cells['AppName'].Value -ne $case.Name) { continue }
-            $cell = [string]$row.Cells['Uncommon'].Value
+            $cell = [string]$row.Cells['Groups'].Value
             $statusCell = [string]$row.Cells['Status'].Value
         }
         $key = $case.Name -replace '\s', ''
-        Add-Line ('uncommonCell_' + $key) $cell
+        Add-Line ('groupsCell_' + $key) $cell
         Add-Line ('uncommonStatus_' + $key) $statusCell
     }
 
