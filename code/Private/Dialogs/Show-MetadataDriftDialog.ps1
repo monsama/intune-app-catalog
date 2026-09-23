@@ -8,7 +8,16 @@ function Global:Show-MetadataDriftDialog {
     # Intune's. For "Push metadata", where the catalog is the side you
     # already said is right - starting on Intune's values would quietly
     # turn a push into a pull unless every row was unticked by hand.
-    param($Rows, [string]$AppName = "", [switch]$PreferLocal)
+    #
+    # -InitialKeepLocal: the fields that start on the catalog's value,
+    # instead of all or none - reopening the compare shows what was picked
+    # last time rather than resetting it. Wins over -PreferLocal.
+    #
+    # -ResultBox: a hashtable whose .Cancelled is set when the window is
+    # closed without OK. Returning nothing on Cancel reads exactly like
+    # "keep Intune's value for every field", and a caller about to send an
+    # update has to be able to tell the two apart.
+    param($Rows, [string]$AppName = "", [switch]$PreferLocal, [string[]]$InitialKeepLocal, [hashtable]$ResultBox)
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
@@ -89,7 +98,7 @@ function Global:Show-MetadataDriftDialog {
 
     foreach ($row in @($Rows)) {
         $rIdx = $grid.Rows.Add()
-        $grid.Rows[$rIdx].Cells["UseIntune"].Value = -not $PreferLocal
+        $grid.Rows[$rIdx].Cells["UseIntune"].Value = if ($PSBoundParameters.ContainsKey('InitialKeepLocal')) { @($InitialKeepLocal) -notcontains [string]$row.Field } else { -not $PreferLocal }
         $grid.Rows[$rIdx].Cells["Field"].Value = $row.Field
         $grid.Rows[$rIdx].Cells["Local"].Value = if ([string]::IsNullOrWhiteSpace($row.Local)) { "(blank)" } else { $row.Local }
         $grid.Rows[$rIdx].Cells["Intune"].Value = if ([string]::IsNullOrWhiteSpace($row.Intune)) { "(blank)" } else { $row.Intune }
@@ -160,5 +169,7 @@ function Global:Show-MetadataDriftDialog {
 
     $result = $dlg.ShowDialog($Global:App.Form)
     if ($result -eq [System.Windows.Forms.DialogResult]::OK) { return $resultBox.Value }
+    # Cancel, Esc or the window's X - said so, for a caller that asked.
+    if ($ResultBox) { $ResultBox.Cancelled = $true }
     return @()
 }

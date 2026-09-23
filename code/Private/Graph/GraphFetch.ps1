@@ -870,6 +870,7 @@ function Global:Start-AppMetadataFetch {
         # groups from Intune" then unticked every group to match it. Same
         # flag, same meaning, as the bulk fetch's (SyncMetadata.ps1).
         $groupFetchOk = $false
+        $groupNameMissing = $false
         try {
             $currentAssignments = Invoke-LoggedGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$TargetAppId/assignments" -Method GET -ErrorAction Stop
             foreach ($a in @($currentAssignments.value)) {
@@ -880,14 +881,19 @@ function Global:Start-AppMetadataFetch {
                     $groupInfo = Invoke-LoggedGraphRequest -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -ErrorAction Stop
                     if ($groupInfo.displayName) { $groupDisplayName = $groupInfo.displayName }
                 }
-                catch { }
+                # A group whose name could not be read stays in the list as
+                # its ID - which no catalog entry names a group by, so it
+                # compared as a difference that isn't one, and Pull would
+                # have written the ID into the catalog. Such a list is not
+                # Intune's answer either (GroupFetchOk below).
+                catch { $groupNameMissing = $true }
                 switch ($a.intent) {
                     "required"  { $requiredGroupNames += $groupDisplayName }
                     "available" { $availableGroupNames += $groupDisplayName }
                     "uninstall" { $uninstallGroupNames += $groupDisplayName }
                 }
             }
-            $groupFetchOk = $true
+            $groupFetchOk = -not $groupNameMissing
         }
         catch { }
 

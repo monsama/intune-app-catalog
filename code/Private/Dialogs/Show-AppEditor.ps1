@@ -772,9 +772,23 @@ function Global:Show-AppEditor {
     # side is right is yours to say, with Pull or Push below.
     # Whether a comparison has happened (or is on its way) in this window -
     # so opening the Assignments tab starts one only when nothing else has.
-    $groupsCheckedBox = @{ Done = $false; Running = $false }
+    # Pulled: "Pull groups from Intune" has since set the lists from Intune.
+    # A compare still in flight from before then would only say "matches"
+    # over Pull's own message, which carries the "save to keep this" hint.
+    $groupsCheckedBox = @{ Done = $false; Running = $false; Pulled = $false }
+    # The Deploy side, once it exists (set right after it is built, below) -
+    # asked whether it is already reading from Intune (IsReadingLive).
+    $deployHostBox = @{ Host = $null }
     $compareGroupsWithIntune = {
         param($data)
+        # Whatever this answer is, nothing is on its way any more.
+        $groupsCheckedBox.Running = $false
+        if ($groupsCheckedBox.Pulled) { return }
+        # $null: the read itself failed (the Deploy side reports that too).
+        if ($null -eq $data) {
+            & $showGroupStatus "Could not compare with Intune - the read failed, see the log." ([System.Drawing.Color]::Firebrick)
+            return
+        }
         if (-not $data.GroupFetchOk) {
             & $showGroupStatus "Could not read this app's groups from Intune - not compared." ([System.Drawing.Color]::Firebrick)
             return
@@ -782,7 +796,10 @@ function Global:Show-AppEditor {
         $groupsCheckedBox.Done = $true
         $diffs = @(Get-GroupFieldDiffs -LocalApp (& $getTickedGroups) -RemoteResult $data)
         if ($diffs.Count -eq 0) {
-            & $showGroupStatus "Matches Intune - the groups ticked above are exactly what Intune has assigned." ([System.Drawing.Color]::SeaGreen)
+            # Required, Available and Uninstall - exclusions are not part of
+            # what Intune's assignments are compared on here, so this does
+            # not claim they match.
+            & $showGroupStatus "Required, Available and Uninstall match Intune." ([System.Drawing.Color]::SeaGreen)
         }
         else {
             $parts = foreach ($d in $diffs) {
@@ -795,11 +812,21 @@ function Global:Show-AppEditor {
             Write-DialogLogLine -LogBox $editorLogBox.Box -Text "[INFO] Intune is right: Pull groups from Intune. The groups ticked here are right: Push groups to Intune.`r`n"
         }
         # The Last Audit column is about the SAVED entry, not unsaved ticks,
-        # so that one compares what is on disk.
-        if ($ExistingApp -and $ExistingApp.appName) {
+        # so that one compares what is on disk - and only when the fetch was
+        # for that entry's own App ID, not one typed into the box since.
+        if ($ExistingApp -and $ExistingApp.appName -and $ExistingApp.appId -and $txtId.Text.Trim() -eq [string]$ExistingApp.appId) {
             Set-LastAuditCacheEntry -AppName ([string]$ExistingApp.appName) -Groups (Format-GroupFieldDiffs -Diffs (Get-GroupFieldDiffs -LocalApp $ExistingApp -RemoteResult $data))
         }
     }.GetNewClosure()
+
+    # Once compared, ticking or unticking a group makes "match" or
+    # "differs" out of date - so it says that instead of standing still.
+    # Not while Pull itself sets the ticks (Applying), which reports its own.
+    $markGroupsEdited = {
+        if (-not $groupsCheckedBox.Done -or $groupsCheckedBox.Applying) { return }
+        & $showGroupStatus "Changed here since the comparison with Intune - Push groups sends these, Pull groups takes Intune's." ([System.Drawing.Color]::DimGray)
+    }.GetNewClosure()
+    foreach ($groupList in @($reqGroup.List, $availGroup.List, $uninstGroup.List)) { $groupList.Add_ItemCheck($markGroupsEdited) }
 
     $btnAssignGroups = New-Object System.Windows.Forms.Button
     $btnAssignGroups.Text = "Push groups to Intune (single app)..."
@@ -904,6 +931,13 @@ function Global:Show-AppEditor {
         if (-not $appIdNow) { return }
         $groupsCheckedBox.Running = $true
         & $showGroupStatus "Comparing with Intune..." ([System.Drawing.Color]::DimGray)
+        # The Deploy side may be reading this same app from Intune already
+        # (it does on opening, with "Check Intune when opening Deploy" on).
+        # Its answer comes here through -OnLiveFetch - good or failed - so
+        # wait for it rather than send the same read twice. Only for the
+        # App ID it was opened with, which is the one it reads.
+        $deployHostNow = $deployHostBox.Host
+        if ($deployHostNow -and $deployHostNow.IsReadingLive -and (& $deployHostNow.IsReadingLive) -and $appIdNow -eq $deployHostBox.AppId) { return }
         # Fresh aliases for the nested -OnComplete closure.
         $groupsCheckedBoxRef = $groupsCheckedBox
         $showGroupStatusRef = $showGroupStatus
@@ -1208,6 +1242,10 @@ function Global:Show-AppEditor {
                 Exclude   = @($excludeGroup.List.CheckedItems | ForEach-Object { [string]$_ })
             }
         }.GetNewClosure()
+    # For the Assignments tab's compare (see its SelectedIndexChanged): the
+    # Deploy side, and the App ID it reads - the one it was opened with.
+    $deployHostBox.Host = $deployHost
+    $deployHostBox.AppId = $txtId.Text.Trim()
 
     # The Winget ID is typed here, on this tab, after the tabs above were
     # built - so for "Add app..." the Package and detection tab was built
@@ -1371,8 +1409,9 @@ function Global:Show-AppEditor {
             return
         }
         $btnReadGroupsFromIntune.Enabled = $false
-        $lblGroupSyncStatus.ForeColor = [System.Drawing.Color]::DimGray
-        $lblGroupSyncStatus.Text = "Reading current group assignments from Intune..."
+        # Every status here goes through $showGroupStatus, so the tooltip
+        # always matches the line - it used to keep the text before.
+        & $showGroupStatus "Reading current group assignments from Intune..." ([System.Drawing.Color]::DimGray)
         # Start-AppMetadataFetch has no cursor handling of its own - this
         # button gave no visible loading feedback beyond the status label.
         # Same fix as this same dialog's "Look up" button above.
@@ -1386,24 +1425,26 @@ function Global:Show-AppEditor {
         $availGroupRef = $availGroup
         $uninstGroupRef = $uninstGroup
         $btnReadGroupsFromIntuneRef = $btnReadGroupsFromIntune
-        $lblGroupSyncStatusRef = $lblGroupSyncStatus
-        $groupStatusTipRef = $groupStatusTip
-        $rtbAppEditorLogRef = $rtbAppEditorLog
+        $showGroupStatusRef2 = $showGroupStatus
+        $groupsCheckedBoxRef2 = $groupsCheckedBox
         # Where this window's log actually is by the time a click happens -
-        # repointed from $rtbAppEditorLog once the deploy side is hosted.
+        # repointed from $rtbAppEditorLog once the deploy side is hosted,
+        # after which that box is no longer on the form. Graph's own lines
+        # and this handler's failures used to go there, out of sight,
+        # under a status that said "see log below".
         $editorLogBoxRef = $editorLogBox
 
-        Start-AppMetadataFetch -AppId $txtId.Text.Trim() -LogBox $rtbAppEditorLogRef -OnComplete {
+        Start-AppMetadataFetch -AppId $txtId.Text.Trim() -LogBox $editorLogBox.Box -OnComplete {
             param($ok, $errMsg, $data)
             $btnReadGroupsFromIntuneRef.Enabled = $true
             $dlgRef2.Cursor = [System.Windows.Forms.Cursors]::Default
             [System.Windows.Forms.Cursor]::Current = [System.Windows.Forms.Cursors]::Default
             [System.Windows.Forms.Application]::DoEvents()
             [System.Windows.Forms.Cursor]::Position = [System.Windows.Forms.Cursor]::Position
+            if ($dlgRef2.IsDisposed) { return }
             if (-not $ok) {
-                $lblGroupSyncStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                $lblGroupSyncStatusRef.Text = "Could not read groups from Intune - see log below."
-                Write-DialogLogLine -LogBox $rtbAppEditorLogRef -Text "[FAILED] Could not read groups from Intune: $errMsg`r`n"
+                & $showGroupStatusRef2 "Could not read groups from Intune - see the log." ([System.Drawing.Color]::Firebrick)
+                Write-DialogLogLine -LogBox $editorLogBoxRef.Box -Text "[FAILED] Could not read groups from Intune: $errMsg`r`n"
                 return
             }
             # The app was read but its assignments were not. The three
@@ -1411,11 +1452,16 @@ function Global:Show-AppEditor {
             # Intune assigns nothing - applying them unticked every group
             # here and called it a match.
             if (-not $data.GroupFetchOk) {
-                $lblGroupSyncStatusRef.ForeColor = [System.Drawing.Color]::Firebrick
-                $lblGroupSyncStatusRef.Text = "Could not read this app's groups from Intune - nothing was changed here."
+                & $showGroupStatusRef2 "Could not read this app's groups from Intune - nothing was changed here." ([System.Drawing.Color]::Firebrick)
                 Write-DialogLogLine -LogBox $editorLogBoxRef.Box -Text "[FAILED] Intune returned the app but not its assignments - the groups above were left as they were.`r`n"
                 return
             }
+            # From here the lists are Intune's. A compare still on its way
+            # must not report over this, and the ticks set below are not
+            # the user's edits.
+            $groupsCheckedBoxRef2.Pulled = $true
+            $groupsCheckedBoxRef2.Done = $true
+            $groupsCheckedBoxRef2.Applying = $true
             # Sets each list to match Intune EXACTLY, not a merge - this
             # button's whole point is "show me what's actually there",
             # same as Sync metadata's own authoritative-pull philosophy
@@ -1445,23 +1491,20 @@ function Global:Show-AppEditor {
                 return ,$changes.ToArray()
             }
             $pulledChanges = @()
-            $pulledChanges += & $syncGroupList $reqGroupRef.List $data.RequiredGroupNames "Required for"
-            $pulledChanges += & $syncGroupList $availGroupRef.List $data.AvailableGroupNames "Available for"
-            $pulledChanges += & $syncGroupList $uninstGroupRef.List $data.UninstallGroupNames "Uninstall for"
+            try {
+                $pulledChanges += & $syncGroupList $reqGroupRef.List $data.RequiredGroupNames "Required for"
+                $pulledChanges += & $syncGroupList $availGroupRef.List $data.AvailableGroupNames "Available for"
+                $pulledChanges += & $syncGroupList $uninstGroupRef.List $data.UninstallGroupNames "Uninstall for"
+            }
+            finally { $groupsCheckedBoxRef2.Applying = $false }
             foreach ($change in $pulledChanges) {
                 Write-DialogLogLine -LogBox $editorLogBoxRef.Box -Text "[OK] Pulled from Intune: $change`r`n"
             }
             if ($pulledChanges.Count -gt 0) {
-                $pulledText = "Now match Intune - $($pulledChanges -join '; '). Save app to catalog to keep this."
-                $lblGroupSyncStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
-                $lblGroupSyncStatusRef.Text = $pulledText
-                $groupStatusTipRef.SetToolTip($lblGroupSyncStatusRef, $pulledText)
+                & $showGroupStatusRef2 "Now match Intune - $($pulledChanges -join '; '). Save app to catalog to keep this." ([System.Drawing.Color]::SeaGreen)
                 return
             }
-
-            $lblGroupSyncStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
-            $lblGroupSyncStatusRef.Text = "Already matched Intune - nothing to change."
-            $groupStatusTipRef.SetToolTip($lblGroupSyncStatusRef, $lblGroupSyncStatusRef.Text)
+            & $showGroupStatusRef2 "Already matched Intune - nothing to change." ([System.Drawing.Color]::SeaGreen)
         }.GetNewClosure()
     }.GetNewClosure())
 
@@ -1679,8 +1722,16 @@ function Global:Show-AppEditor {
     # right as the window appears" case in this app: doing it before the
     # window is actually realized can leave WaitCursor-equivalent UI state
     # that doesn't reliably stick.
+    #
+    # It selects the first Deploy tab. It used to PerformClick the old
+    # "Deploy to Intune" button, which has been hidden (and without a
+    # handler) since deploy became tabs of this window - PerformClick on a
+    # hidden button does nothing, so this landed on the Catalog tab.
     if ($AutoOpenDeploy) {
-        $dlg.Add_Shown({ $btnCreateInIntune.PerformClick() }.GetNewClosure())
+        $dlg.Add_Shown({
+            $firstDeployTab = @($editorTabs.TabPages | Where-Object { $_.Text -ne 'Catalog' -and $_.Text -ne 'Assignments' }) | Select-Object -First 1
+            if ($firstDeployTab) { $editorTabs.SelectedTab = $firstDeployTab }
+        }.GetNewClosure())
     }
 
     # The fields "Save app to catalog" writes, as they are now - compared

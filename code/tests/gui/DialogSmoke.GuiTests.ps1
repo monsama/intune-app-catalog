@@ -75,8 +75,10 @@ function Test-GridHeaders {
         } | ForEach-Object { "$($_.Current.Name) ($([int]$_.Current.BoundingRectangle.Width)px)" })
         # Below the columns' combined minimum width the grid scrolls
         # horizontally instead, so the rightmost headers are out of view there.
+        # 8 since Package folder, Uncommon and App ID left the grid and the
+        # three group counts became one Groups column.
         if ($size[0] -ge 1366) {
-            Assert-True ($headers.Count -ge 13) "grid shows all 13 column headers at $($size[0])x$($size[1])" "found $($headers.Count)"
+            Assert-True ($headers.Count -ge 8) "grid shows all 8 column headers at $($size[0])x$($size[1])" "found $($headers.Count)"
         }
         Assert-True ($tooNarrow.Count -eq 0) "every visible grid column header fits its text at $($size[0])x$($size[1])" ($tooNarrow -join ', ')
         Assert-True ($tops.Count -eq 1) "grid column headers share one row at $($size[0])x$($size[1])"

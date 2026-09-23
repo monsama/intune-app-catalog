@@ -671,12 +671,21 @@ function Global:Load-LastAuditCache {
                 else {
                     [datetime]$tsRaw
                 }
+                # Per-check times (see Set-LastAuditCacheEntry). A cache
+                # written before they existed has only the one Timestamp,
+                # which then stands for every check it holds.
+                $checkedIn = [ordered]@{}
+                foreach ($name in 'Metadata', 'Groups', 'Dependencies', 'Unknown') {
+                    $stamp = if ($entry.Checked -and $entry.Checked.$name) { $entry.Checked.$name } elseif ($null -ne $entry.$name) { $ts } else { $null }
+                    $checkedIn[$name] = if ($stamp) { ([datetime]$stamp).ToString("o") } else { $null }
+                }
                 $Global:App.LastAuditResults[$prop.Name] = [pscustomobject]@{
                     Timestamp    = $ts
                     Metadata     = $entry.Metadata
                     Groups       = $entry.Groups
                     Dependencies = $entry.Dependencies
                     Unknown      = $entry.Unknown
+                    Checked      = [pscustomobject]$checkedIn
                 }
             }
             catch {
@@ -722,17 +731,45 @@ function Global:Set-LastAuditCacheEntry {
     # (every field the second call's caller didn't pass got reset to "",
     # which then counted as a false "issue" in Get-LastAuditSummary below).
     $existing = if ($Global:App.LastAuditResults.ContainsKey($AppName)) { $Global:App.LastAuditResults[$AppName] } else { $null }
+
+    # When each of the four was last checked, not just the entry as a
+    # whole. One shared Timestamp, moved to "now" by any partial write,
+    # made a Groups-only check (the app editor's) show five-day-old
+    # Metadata as "just now". Timestamp stays - everything reads it - but
+    # is now the OLDEST of the four, so an age never overstates freshness.
+    #
+    # ISO-8601 strings ("o" - round-trip format), not raw [datetime]s -
+    # ConvertTo-Json's own serialization of [datetime] differs between
+    # PowerShell versions (see Load-LastAuditCache's note on this same
+    # field), so writing them as already-plain strings sidesteps that.
+    $now = (Get-Date).ToString("o")
+    $oldEntryTime = if ($existing -and $existing.Timestamp) { ([datetime]$existing.Timestamp).ToString("o") } else { $null }
+    $fields = [ordered]@{
+        Metadata     = @{ Given = $PSBoundParameters.ContainsKey('Metadata');     Value = $Metadata }
+        Groups       = @{ Given = $PSBoundParameters.ContainsKey('Groups');       Value = $Groups }
+        Dependencies = @{ Given = $PSBoundParameters.ContainsKey('Dependencies'); Value = $Dependencies }
+        Unknown      = @{ Given = $PSBoundParameters.ContainsKey('Unknown');      Value = $Unknown }
+    }
+    $values = [ordered]@{}
+    $checked = [ordered]@{}
+    foreach ($name in $fields.Keys) {
+        if ($fields[$name].Given) {
+            $values[$name] = $fields[$name].Value
+            $checked[$name] = $now
+            continue
+        }
+        $values[$name] = if ($existing) { $existing.$name } else { $null }
+        $checked[$name] = if ($null -eq $values[$name]) { $null }
+                          elseif ($existing -and $existing.Checked -and $existing.Checked.$name) { ([datetime]$existing.Checked.$name).ToString("o") }
+                          else { $oldEntryTime }
+    }
+    $oldest = @($checked.Values | Where-Object { $_ } | ForEach-Object { [datetime]$_ } | Sort-Object) | Select-Object -First 1
     $Global:App.LastAuditResults[$AppName] = [pscustomobject]@{
-        # An ISO-8601 string ("o" - round-trip format), not a raw [datetime]
-        # - ConvertTo-Json's own serialization of [datetime] differs between
-        # PowerShell versions (see Load-LastAuditCache's note on this same
-        # field), so writing it as an already-plain string here sidesteps
-        # that entirely rather than relying on the reader to know which
-        # shape the writer's PowerShell version happened to produce.
-        Timestamp    = (Get-Date).ToString("o")
-        Metadata     = if ($PSBoundParameters.ContainsKey('Metadata'))     { $Metadata }     elseif ($existing) { $existing.Metadata }     else { $null }
-        Groups       = if ($PSBoundParameters.ContainsKey('Groups'))       { $Groups }       elseif ($existing) { $existing.Groups }       else { $null }
-        Dependencies = if ($PSBoundParameters.ContainsKey('Dependencies')) { $Dependencies } elseif ($existing) { $existing.Dependencies } else { $null }
-        Unknown      = if ($PSBoundParameters.ContainsKey('Unknown'))      { $Unknown }      elseif ($existing) { $existing.Unknown }      else { $null }
+        Timestamp    = if ($oldest) { $oldest.ToString("o") } else { $now }
+        Metadata     = $values.Metadata
+        Groups       = $values.Groups
+        Dependencies = $values.Dependencies
+        Unknown      = $values.Unknown
+        Checked      = [pscustomobject]$checked
     }
 }

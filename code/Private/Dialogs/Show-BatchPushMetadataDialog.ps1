@@ -25,13 +25,19 @@ function Global:Show-BatchPushMetadataDialog {
     # Which apps can be pushed at all, and why the others cannot - listed
     # either way, so an app does not just vanish from what was selected.
     $entries = New-Object System.Collections.Generic.List[object]
+    # Results come back from Intune keyed by app name, so two selected
+    # apps with the same name cannot both be told apart - the second is
+    # listed but not compared or pushed.
+    $namesSeen = @{}
     foreach ($idx in @($ScopedIndices | Sort-Object -Unique)) {
         $app = $appsRef[$idx]
         if (-not $app) { continue }
-        $skip = ""
-        if (-not $app.appId) { $skip = "Not in Intune yet - use Deploy to Intune." }
-        elseif (-not $app.metadata) { $skip = "No saved metadata to push - Pull from Intune or open Deploy to Intune first." }
-        elseif ($app.intuneAppType -and $app.intuneAppType -ne "Windows app (Win32)") { $skip = "A $($app.intuneAppType) app - this tool only updates Win32 apps." }
+        $skip = if ($namesSeen.ContainsKey([string]$app.appName)) { "Another selected app has the same name - push this one on its own." }
+                elseif (-not $app.appId) { "Not in Intune yet - use Deploy to Intune." }
+                elseif (-not $app.metadata) { "No saved metadata to push - Pull from Intune or open Deploy to Intune first." }
+                elseif ($app.intuneAppType -and $app.intuneAppType -ne "Windows app (Win32)") { "A $($app.intuneAppType) app - this tool only updates Win32 apps." }
+                else { "" }
+        $namesSeen[[string]$app.appName] = $true
         $entries.Add([pscustomobject]@{ Index = $idx; App = $app; Skip = $skip })
     }
     if (@($entries | Where-Object { -not $_.Skip }).Count -eq 0) {
@@ -50,7 +56,7 @@ function Global:Show-BatchPushMetadataDialog {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Sends each ticked app's saved catalog metadata to Intune, replacing what Intune has - commands, detection, requirements, return codes, dependencies. Groups are not touched. Each app is first compared with Intune; the fields that differ are listed, and hovering a row shows both values."
+    $lblIntro.Text = "Sends each ticked app's saved catalog metadata to Intune - commands, detection, requirements, return codes, dependencies. Groups are not touched, and a field left blank in the catalog keeps Intune's value. Apps are compared with Intune before and after; hovering a row shows both values."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(870,48)
     $lblIntro.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
@@ -106,7 +112,8 @@ function Global:Show-BatchPushMetadataDialog {
         # A row that cannot be pushed cannot be ticked either (see
         # CellBeginEdit below).
         if ($entry.Skip) { $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Gray }
-        $rowByName[[string]$entry.App.appName] = $row
+        # The first row of a name is the one compared (see $namesSeen).
+        if (-not $rowByName.ContainsKey([string]$entry.App.appName)) { $rowByName[[string]$entry.App.appName] = $row }
     }
 
     $rtbLog = New-Object System.Windows.Forms.RichTextBox
@@ -166,6 +173,13 @@ function Global:Show-BatchPushMetadataDialog {
     # --- Step 1: compare, read-only ---
     $runCompare = {
         $toCompare = @($entries | Where-Object { -not $_.Skip })
+        # Run again after a push, too - so no row may keep what the last
+        # compare said about it while this one is out asking.
+        foreach ($r in $grid.Rows) {
+            if ($r.Tag.Skip) { continue }
+            $r.Cells['Differs'].Value = "(comparing...)"
+            $r.Cells['Differs'].ToolTipText = ""
+        }
         $busyBox.Value = $true
         $progress.Visible = $true
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
@@ -240,6 +254,17 @@ function Global:Show-BatchPushMetadataDialog {
                     $row.Cells['Differs'].Value = "Could not read from Intune: $($one.Error)"
                     continue
                 }
+                # The catalog may not know the app's type yet (never
+                # synced), but Intune does. An update is a Win32 PATCH, and
+                # sending one to a Store or M365 app only fails at Graph.
+                $liveType = Get-FriendlyIntuneAppType -ODataType ([string]$one.OdataType)
+                if ($liveType -and $liveType -ne "Windows app (Win32)") {
+                    $row.Tag.Skip = "A $liveType app in Intune - this tool only updates Win32 apps."
+                    $row.Cells['Differs'].Value = $row.Tag.Skip
+                    $row.Cells['Push'].Value = $false
+                    $row.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Gray
+                    continue
+                }
                 $diffs = New-Object System.Collections.Generic.List[object]
                 foreach ($d in @(Get-CatalogMetadataFieldDiffs -Local $catalogApp.metadata -Remote $one.Metadata -OdataType $one.OdataType)) { $diffs.Add($d) }
                 $liveDeps = @($one.Metadata.dependencies) | Sort-Object
@@ -279,11 +304,11 @@ function Global:Show-BatchPushMetadataDialog {
         if ($QueueIndex -ge $Queue.Count) {
             $busyBox.Value = $false
             $progress.Visible = $false
-            Save-LastAuditCache
-            Update-Grid
-            $lblStatus.ForeColor = if ($Failed -gt 0) { [System.Drawing.Color]::DarkOrange } else { [System.Drawing.Color]::SeaGreen }
-            $lblStatus.Text = "Done - $Pushed pushed, $Failed failed."
-            & $updatePushButton
+            Write-DialogLogLine -LogBox $rtbLog -Text "`r`n[INFO] Done - $Pushed pushed, $Failed failed. Comparing with Intune again...`r`n"
+            # Read back what Intune has now, the same read-only compare the
+            # window opened with - each row then says whether it matches,
+            # including anything a push cannot change.
+            & $runCompare
             return
         }
 
@@ -379,10 +404,11 @@ function Global:Show-BatchPushMetadataDialog {
                 catch { $message = "Could not read result: $($_.Exception.Message)" }
             }
             if ($ok) {
-                # A successful PATCH of the whole shape means Intune now has
-                # exactly the catalog's metadata - which is what Last Audit
-                # would find if it looked.
-                Set-LastAuditCacheEntry -AppName ([string]$appRef.appName) -Metadata "OK" -Dependencies "OK"
+                # Nothing is written to Last Audit here. "Pushed" is not
+                # "matches": the update leaves a field that is blank in the
+                # catalog as it is in Intune, and a dependency it could not
+                # set is a warning, not a failure. The compare that runs
+                # when the queue ends is what says whether they match now.
                 Write-DialogLogLine -LogBox $rtbLogRef -Text "  [OK] Pushed.`r`n" -MirrorToMainLog
             }
             else {

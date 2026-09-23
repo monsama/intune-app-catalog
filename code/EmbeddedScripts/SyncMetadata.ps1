@@ -347,7 +347,13 @@ try {
                     $groupInfo = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve group name"
                     if ($groupInfo.displayName) { $groupDisplayName = $groupInfo.displayName }
                 }
-                catch { }
+                # Left as its ID, the group compared as a difference that
+                # isn't one, and a Pull wrote the ID into the catalog. The
+                # lists are then not Intune's answer - same as a failed read.
+                catch {
+                    $groupFetchOk = $false
+                    $warnings.Add("Could not read the name of assigned group $gid - groups not compared: $($_.Exception.Message)")
+                }
                 switch ($a.intent) {
                     "required"  { $requiredGroupNames += $groupDisplayName }
                     "available" { $availableGroupNames += $groupDisplayName }

@@ -145,6 +145,8 @@ function Global:Show-IntuneAuditDialog {
     # Which apps the next run covers: $null for every row (Run audit), or
     # the names Re-check selected put here. Read and cleared by the run.
     $runSetBox = @{ Names = $null }
+    # Each run's "before" per row, for a run that is stopped (see Run audit).
+    $preRunBox = @{ Rows = @{} }
 
     $grid = New-Object System.Windows.Forms.DataGridView
     Set-AppGridStyle -Grid $grid
@@ -223,6 +225,13 @@ function Global:Show-IntuneAuditDialog {
     # Same bold-orange/firebrick/green convention as every other check
     # dialog in this app - applied identically across all four check
     # columns instead of one bespoke rule per column.
+    # The three fonts a cell can need, made once. This runs on every paint
+    # of every cell, and a new Font per paint was never disposed.
+    $cellFonts = @{
+        Italic     = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Italic)
+        Bold       = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+        BoldItalic = New-Object System.Drawing.Font($grid.Font, ([System.Drawing.FontStyle]::Bold -bor [System.Drawing.FontStyle]::Italic))
+    }
     $grid.Add_CellFormatting({
         param($gridSender, $e)
         $colName = $grid.Columns[$e.ColumnIndex].Name
@@ -230,9 +239,8 @@ function Global:Show-IntuneAuditDialog {
         $val = [string]$e.Value
         # A result carried over from an earlier run, not this one: italic,
         # so it reads as "last known" - its colour still says what it was.
-        if ($grid.Rows[$e.RowIndex].Tag -eq 'cached') {
-            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Italic)
-        }
+        $isCached = $grid.Rows[$e.RowIndex].Tag -eq 'cached'
+        if ($isCached) { $e.CellStyle.Font = $cellFonts.Italic }
         if ($val -eq "OK") {
             $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
         }
@@ -241,10 +249,10 @@ function Global:Show-IntuneAuditDialog {
         }
         elseif ($val -and $val -ne "(not checked)" -and $val -ne "(checking...)") {
             $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
-            $diffStyle = if ($grid.Rows[$e.RowIndex].Tag -eq 'cached') { [System.Drawing.FontStyle]::Bold -bor [System.Drawing.FontStyle]::Italic } else { [System.Drawing.FontStyle]::Bold }
-            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, $diffStyle)
+            $e.CellStyle.Font = if ($isCached) { $cellFonts.BoldItalic } else { $cellFonts.Bold }
         }
     }.GetNewClosure())
+    $dlg.Add_Disposed({ foreach ($cellFont in $cellFonts.Values) { $cellFont.Dispose() } }.GetNewClosure())
 
     $grid.Add_CellDoubleClick({
         param($gridSender, $e)
@@ -382,7 +390,12 @@ function Global:Show-IntuneAuditDialog {
         return ,$found.ToArray()
     }.GetNewClosure()
 
+    # Set while "Select all that differ" selects row after row - each of
+    # which raises SelectionChanged, and each of those used to re-check
+    # every row below. It runs once, at the end, instead.
+    $selectingBox = @{ Busy = $false }
     $updateFixButtons = {
+        if ($selectingBox.Busy) { return }
         $count = $grid.SelectedRows.Count
         $idle = $btnRun.Enabled
         $btnPullFromIntune.Enabled = $idle -and $count -gt 0
@@ -404,8 +417,13 @@ function Global:Show-IntuneAuditDialog {
     $btnRun.Add_EnabledChanged($updateFixButtons)
 
     $btnSelectDiffering.Add_Click({
-        $grid.ClearSelection()
-        foreach ($auditRow in $grid.Rows) { if (& $rowDiffers $auditRow) { $auditRow.Selected = $true } }
+        $selectingBox.Busy = $true
+        try {
+            $grid.ClearSelection()
+            foreach ($auditRow in $grid.Rows) { if (& $rowDiffers $auditRow) { $auditRow.Selected = $true } }
+        }
+        finally { $selectingBox.Busy = $false }
+        & $updateFixButtons
     }.GetNewClosure())
 
     # An audit of the selected rows only, through Run audit's own handler.
@@ -421,11 +439,10 @@ function Global:Show-IntuneAuditDialog {
     # only those, so it takes seconds, and it is only a read. Whatever the
     # fix window did (all of it, some of it, or Cancel), the rows then say
     # what is true now instead of what was true before it.
+    # (No status line of its own: the re-check replaces it at once with
+    # "Auditing N app(s)...", which says the same.)
     $afterFix = {
-        param([string]$What, [int]$Count)
         Update-Grid
-        $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
-        $lblStatus.Text = "$What for $Count app(s) - checking them again..."
         & $recheckSelected
     }.GetNewClosure()
 
@@ -433,7 +450,7 @@ function Global:Show-IntuneAuditDialog {
         $indices = & $getSelectedCatalogIndices
         if ($indices.Count -eq 0) { return }
         Show-SyncMetadataDialog -ScopedIndices $indices
-        & $afterFix "Pull from Intune done" $indices.Count
+        & $afterFix
     }.GetNewClosure())
 
     $btnPushGroups.Add_Click({
@@ -443,7 +460,7 @@ function Global:Show-IntuneAuditDialog {
         # app goes straight to its assignment window, several to batch.
         if ($indices.Count -eq 1) { Invoke-QuickAssignGroups -Index $indices[0] }
         else { Show-BatchAssignDialog -ScopedIndices $indices }
-        & $afterFix "Push groups done" $indices.Count
+        & $afterFix
     }.GetNewClosure())
 
     $btnPushMetadata.Add_Click({
@@ -454,7 +471,7 @@ function Global:Show-IntuneAuditDialog {
         # compares them all and pushes the ticked ones.
         if ($indices.Count -eq 1) { Invoke-QuickPushMetadata -Index $indices[0] }
         else { Show-BatchPushMetadataDialog -ScopedIndices $indices }
-        & $afterFix "Push metadata done" $indices.Count
+        & $afterFix
     }.GetNewClosure())
     & $updateFixButtons
 
@@ -562,9 +579,16 @@ function Global:Show-IntuneAuditDialog {
         $auditCancelledBox.Value = $false
         $fetchErrorBox.Messages.Clear()
         $prgAudit.Visible = $true
+        # What each row said before this run, for a run that is stopped -
+        # a row it never reached goes back to that, rather than losing a
+        # last-known result to "(not checked)".
+        $preRunBox.Rows = @{}
         foreach ($runApp in $runApps) {
             $runRow = $rowByAppName[[string]$runApp.appName]
             if (-not $runRow) { continue }
+            $before = @{ Tag = $runRow.Tag; Checked = $runRow.Cells['Checked'].Value }
+            foreach ($colName in $checkColumns) { $before[$colName] = $runRow.Cells[$colName].Value }
+            $preRunBox.Rows[[string]$runApp.appName] = $before
             foreach ($colName in $checkColumns) { $runRow.Cells[$colName].Value = "(checking...)" }
             # No longer a carried-over result, whatever this run finds.
             $runRow.Tag = $null
@@ -598,6 +622,7 @@ function Global:Show-IntuneAuditDialog {
         $btnCancelAuditRef = $btnCancelAudit
         $auditCancelledBoxRef = $auditCancelledBox
         $fetchErrorBoxRef = $fetchErrorBox
+        $preRunBoxRef = $preRunBox
 
         $finishOne = {
             $pendingBoxRef.Count--
@@ -653,9 +678,17 @@ function Global:Show-IntuneAuditDialog {
             $settled = if ($wasStopped) { "(not checked)" } else { "Failed: $Text" }
             foreach ($rowKey in $rowByAppNameRef.Keys) {
                 $settleRow = $rowByAppNameRef[$rowKey]
+                # Stopped before reaching this row: what it said before.
+                $before = if ($wasStopped) { $preRunBoxRef.Rows[$rowKey] } else { $null }
                 foreach ($colName in $Columns) {
                     if ([string]$settleRow.Cells[$colName].Value -ne "(checking...)") { continue }
-                    $settleRow.Cells[$colName].Value = $settled
+                    $settleRow.Cells[$colName].Value = if ($before) { $before[$colName] } else { $settled }
+                    # Its old marking too - unless this run already answered
+                    # for part of the row ("just now"), which is then fresh.
+                    if ($before -and -not [string]$settleRow.Cells['Checked'].Value) {
+                        $settleRow.Tag = $before.Tag
+                        $settleRow.Cells['Checked'].Value = $before.Checked
+                    }
                 }
             }
         }.GetNewClosure()
@@ -889,14 +922,19 @@ function Global:Show-IntuneAuditDialog {
     # still closing the dialog. Removing it matches the working convention
     # everywhere else this pattern is used.
 
-    # Deferred to Add_Shown - same reasoning as Show-GroupDriftCheckDialog's
-    # own Add_Shown: kicking off the fetch before the window is actually
-    # realized can leave a WaitCursor-equivalent UI state that doesn't
-    # reliably stick, and this dialog's whole job is telling you what's
-    # true RIGHT NOW, not showing stale results from some earlier run.
-    $dlg.Add_Shown({
-        $btnRun.PerformClick()
-    }.GetNewClosure())
+    # Standalone, with nothing known about any of these apps yet, it starts
+    # at once - an empty list has nothing to show until it runs. With last
+    # known results to show, it waits for Run audit or Re-check selected,
+    # like the Checks tab: starting anyway replaced them within a second,
+    # before they could be read. Deferred to Add_Shown - same reasoning as
+    # Show-GroupDriftCheckDialog's own Add_Shown: kicking off the fetch
+    # before the window is realized can leave a WaitCursor-equivalent UI
+    # state that doesn't reliably stick.
+    if ($cachedRowCount -eq 0) {
+        $dlg.Add_Shown({
+            $btnRun.PerformClick()
+        }.GetNewClosure())
+    }
 
     Set-Theme -Control $dlg
     # Set-ThemeRecursive's combined Panel/FlowLayoutPanel/... case
@@ -935,15 +973,10 @@ function Global:Show-IntuneAuditDialog {
         # only here, and its height is set to stop above the log.
         $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor
                        [System.Windows.Forms.AnchorStyles]::Right
-        # The Pull/Push row sits between the grid and the log, so it is
-        # Top-anchored for the same scrolling-panel reason as the log, and
-        # it - not the log - is what the grid stops above.
-        $btnSelectDiffering.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
-        $lblFixHint.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor
-                             [System.Windows.Forms.AnchorStyles]::Right
-        $btnPullFromIntune.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
-        $btnPushGroups.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
-        $btnPushMetadata.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+        # The Pull/Push row between them needs nothing more here: the loop
+        # above made it Top-anchored, and Move-DialogToTabPage gave the
+        # buttons at the right edge their Right anchor. It - not the log -
+        # is what the grid stops above (FillStopAbove).
         $HostTabPage.Tag = @{
             Fill          = $grid
             FillStopAbove = $btnSelectDiffering
@@ -958,6 +991,10 @@ function Global:Show-IntuneAuditDialog {
                 $differ = 0
                 $unchecked = 0
                 foreach ($auditRow in $grid.Rows) {
+                    # A result carried over from an earlier run is not this
+                    # run's finding - "Run all" would otherwise report a
+                    # difference nobody has looked at since last week.
+                    if ($auditRow.Tag -eq 'cached') { continue }
                     $rowDiffers = $false
                     $rowUnchecked = $false
                     foreach ($colName in $cols) {

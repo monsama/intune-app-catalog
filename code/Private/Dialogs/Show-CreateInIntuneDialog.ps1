@@ -60,6 +60,7 @@ function Global:Show-CreateInIntuneDialog {
         # them; the fetch also carries the live group assignments, which
         # the app editor hosting it compares against its Assignments tab -
         # so groups are checked on the same fetch instead of a second one.
+        # Run with $null when the read failed.
         [scriptblock]$OnLiveFetch
     )
     $embedded = [bool]$HostTabControl
@@ -1371,7 +1372,9 @@ function Global:Show-CreateInIntuneDialog {
     # demand - without this, dismissing/deciding that dialog once was the
     # only chance to see it; re-reading it meant closing and reopening this
     # whole dialog (a fresh Intune fetch) just to look again.
-    $lastDriftBox = @{ Rows = $null; LocalSnapshot = $null }
+    # KeepLocal: which fields the last compare kept on the catalog's value,
+    # so reopening it with Compare... shows that instead of resetting.
+    $lastDriftBox = @{ Rows = $null; LocalSnapshot = $null; KeepLocal = $null }
     # Whether this dialog has asked Intune for the app's current values
     # yet, and whether an update is waiting for that to happen - see
     # $runMetadataFetch further down.
@@ -1760,7 +1763,16 @@ function Global:Show-CreateInIntuneDialog {
     $showDiffTip.SetToolTip($btnShowDiff, "Show again which fields differ from Intune's live copy, and optionally keep your local value for some of them.")
     $btnShowDiff.Add_Click({
         if (-not $lastDriftBox.Rows -or $lastDriftBox.Rows.Count -eq 0) { return }
-        $keepLocalFields = @(Show-MetadataDriftDialog -Rows $lastDriftBox.Rows -PreferLocal:$PreferLocal)
+        # Opens on what was picked last time, not reset to the default -
+        # otherwise OK here quietly undid choices made in the first compare.
+        $compareResult = @{ Cancelled = $false }
+        $keepLocalFields = if ($null -ne $lastDriftBox.KeepLocal) {
+            @(Show-MetadataDriftDialog -Rows $lastDriftBox.Rows -InitialKeepLocal @($lastDriftBox.KeepLocal) -ResultBox $compareResult)
+        } else {
+            @(Show-MetadataDriftDialog -Rows $lastDriftBox.Rows -PreferLocal:$PreferLocal -ResultBox $compareResult)
+        }
+        if ($compareResult.Cancelled) { return }
+        $lastDriftBox.KeepLocal = @($keepLocalFields)
         if ($keepLocalFields.Count -gt 0) {
             & $applyKeepLocalFields -KeepLocalFields $keepLocalFields -LocalSnapshot $lastDriftBox.LocalSnapshot
         }
@@ -3163,6 +3175,10 @@ function Global:Show-CreateInIntuneDialog {
                     # already scrollable, so the FULL message always lands
                     # there too.
                     Write-DialogLogLine -LogBox $rtbCreateLogRef -Text "`r`n[FAILED] Could not load current metadata: $errMsg`r`n"
+                    # The host hears about a failed read too ($null), not
+                    # only a good one - the editor may be waiting on this
+                    # read instead of starting its own (see IsReadingLive).
+                    if ($onLiveFetchRef) { try { & $onLiveFetchRef $null } catch { } }
                     return
                 }
                 # The host's own use of the same data (the editor's group
@@ -3550,7 +3566,26 @@ function Global:Show-CreateInIntuneDialog {
                     $lastDriftBoxRef.LocalSnapshot = $localSnapshotRef
                     $btnShowDiffRef.Visible = $true
 
-                    $keepLocalFields = @(Show-MetadataDriftDialog -Rows $driftRows.ToArray() -PreferLocal:$preferLocalRef)
+                    $driftResult = @{ Cancelled = $false }
+                    $keepLocalFields = @(Show-MetadataDriftDialog -Rows $driftRows.ToArray() -PreferLocal:$preferLocalRef -ResultBox $driftResult)
+                    if ($driftResult.Cancelled) {
+                        # Closing the compare is not an answer. It used to
+                        # read as "Intune's value for every field" - and an
+                        # update waiting on this fetch then went ahead and
+                        # sent exactly that, which from Push metadata meant
+                        # Intune's own values back to Intune and, after the
+                        # editor's save, into the catalog. So: the fields
+                        # show what the window said they would (the catalog
+                        # for Push metadata, Intune otherwise), and a
+                        # waiting update does not go.
+                        $keepLocalFields = if ($preferLocalRef) { @($driftRows | ForEach-Object { [string]$_.Field }) } else { @() }
+                        if ($pendingUpdateBoxRef.Value) {
+                            $pendingUpdateBoxRef.Value = $false
+                            $lblCreateStatusRef.ForeColor = [System.Drawing.Color]::DarkOrange
+                            $lblCreateStatusRef.Text = "Nothing sent - the comparison with Intune was closed. Push again when ready."
+                        }
+                    }
+                    $lastDriftBoxRef.KeepLocal = @($keepLocalFields)
                     if ($keepLocalFields.Count -gt 0) {
                         & $applyKeepLocalFieldsRef -KeepLocalFields $keepLocalFields -LocalSnapshot $localSnapshotRef
                     }
@@ -3679,6 +3714,10 @@ function Global:Show-CreateInIntuneDialog {
             RetargetWingetId = $retargetWingetId
             # Same for the app's name, which fills the display name here.
             RetargetAppName  = $retargetAppName
+            # Whether this side is reading the app from Intune right now. Its
+            # result reaches the host through -OnLiveFetch, so the host can
+            # wait for it rather than send a second, identical read.
+            IsReadingLive    = { $metadataFetchRunningBox.Running }.GetNewClosure()
         }
     }
     $dlg.Add_Shown({ $txtCreateName.Focus() }.GetNewClosure())

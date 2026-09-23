@@ -1320,16 +1320,19 @@ function Global:Get-NavigableAppIndices {
     # all included. The editor and the deploy window each used to redo the
     # search on their own, which ignored the sort, and would have ignored
     # the filter drop-down next to the search box as well.
-    $fromGrid = New-Object System.Collections.Generic.List[int]
+    #
+    # A grid with no rows still answers: a filter that hides everything
+    # means nothing to step through, not "step through the whole catalog".
     if ($Global:App.Grid -and $Global:App.Grid.Columns.Contains('Index')) {
+        $fromGrid = New-Object System.Collections.Generic.List[int]
         foreach ($row in $Global:App.Grid.Rows) {
             $v = $row.Cells['Index'].Value
             if ($null -ne $v) { $fromGrid.Add([int]$v) }
         }
+        return ,$fromGrid.ToArray()
     }
-    if ($fromGrid.Count -gt 0) { return ,$fromGrid.ToArray() }
-    # No grid rows to go by (a test harness, or startup): the catalog in
-    # its own order, with the search applied the way the grid does.
+    # No grid at all (a test harness): the catalog in its own order, with
+    # the search applied the way the grid does.
     $navFilter = if ($Global:App.TxtSearch) { $Global:App.TxtSearch.Text.Trim().ToLower() } else { "" }
     $all = New-Object System.Collections.Generic.List[int]
     for ($vi = 0; $vi -lt $Global:App.Apps.Count; $vi++) {
@@ -1349,7 +1352,8 @@ function Global:Get-GridFilterKinds {
     return @(
         @{ Name = "All apps";            Keep = { param($row) $true } }
         @{ Name = "Has a problem";       Keep = { param($row) $row.PackageMissing -or ($row.IntuneAudit -like "*issue*") -or ($row.IntuneAudit -like "Check failed*") } }
-        @{ Name = "Differs from Intune"; Keep = { param($row) ($row.IntuneAudit -like "*issue*") -or ($row.IntuneAudit -like "Check failed*") } }
+        # A check that failed is not a difference - "Has a problem" has it.
+        @{ Name = "Differs from Intune"; Keep = { param($row) $row.IntuneAudit -like "*issue*" } }
         @{ Name = "Not deployed";        Keep = { param($row) -not $row.HasAppId } }
         @{ Name = "Package missing";     Keep = { param($row) $row.PackageMissing } }
     )
@@ -1721,12 +1725,13 @@ function Global:Show-LastAuditDetail {
     [void]$dlg.ShowDialog($Global:App.Form)
     $dlg.Dispose()
 
+    # The grid is refreshed once, whichever it was - Push metadata's editor
+    # already does its own. (No status line either: the status bar's own
+    # "Showing N of M apps" is what Update-Grid writes there, and a hint
+    # put over it was gone at the next refresh anyway.)
     switch ($pickedBox.Action) {
-        'Pull'         { Show-SyncMetadataDialog -ScopedIndices @($appIndex) }
-        'PushGroups'   { Invoke-QuickAssignGroups -Index $appIndex }
+        'Pull'         { Show-SyncMetadataDialog -ScopedIndices @($appIndex); Update-Grid }
+        'PushGroups'   { Invoke-QuickAssignGroups -Index $appIndex; Update-Grid }
         'PushMetadata' { Invoke-QuickPushMetadata -Index $appIndex }
-        default        { return }
     }
-    Update-Grid
-    Set-Status "Done with `"$AppName`" - run the audit on it again to confirm Intune and the catalog now match."
 }

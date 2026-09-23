@@ -137,6 +137,8 @@ $testableFunctionNames = @(
     "Get-NormalizedInstallTimeMinutes",
     "Get-GroupFieldDiffs",
     "Format-GroupFieldDiffs",
+    # Lives in CatalogIO.ps1 but only touches $Global:App.LastAuditResults.
+    "Set-LastAuditCacheEntry",
     # Both touch the filesystem, which is not a WinForms or Graph
     # dependency - the tests below give them a real temp folder to look
     # at. Get-AppFolder comes with them because that is how they find the
@@ -1734,6 +1736,41 @@ try {
         "Save-ScriptsToFolder: a lone script that is not a collection still works"
 }
 finally { Remove-Item -LiteralPath $scriptFolder -Recurse -Force -ErrorAction SilentlyContinue }
+
+# -----------------------------------------------------------------
+# Set-LastAuditCacheEntry - each check keeps its own time, and the
+# entry's age is the oldest of them
+# -----------------------------------------------------------------
+$savedAuditResults = $Global:App.LastAuditResults
+try {
+    $Global:App.LastAuditResults = @{}
+    $fiveDaysAgo = (Get-Date).AddDays(-5)
+    # An entry as an old cache file loads it: one Timestamp, no per-check times.
+    $Global:App.LastAuditResults['Old App'] = [pscustomobject]@{
+        Timestamp = $fiveDaysAgo; Metadata = 'OK'; Groups = 'OK'; Dependencies = 'OK'; Unknown = 'OK'
+    }
+    Set-LastAuditCacheEntry -AppName 'Old App' -Groups '1 differ: Available for - catalog: A | Intune: (none)'
+    $afterPartial = $Global:App.LastAuditResults['Old App']
+    Assert-True ([Math]::Abs(([datetime]$afterPartial.Timestamp - $fiveDaysAgo).TotalMinutes) -lt 1) `
+        "Set-LastAuditCacheEntry: a Groups-only check does not make five-day-old Metadata look fresh"
+    Assert-Equal 'OK' $afterPartial.Metadata "Set-LastAuditCacheEntry: the checks not passed keep their result"
+    Assert-True (([datetime]$afterPartial.Checked.Groups) -gt (Get-Date).AddMinutes(-1)) `
+        "Set-LastAuditCacheEntry: the check that was passed is stamped now"
+
+    # Both halves of a full audit (Metadata/Groups/Dependencies, then Unknown)
+    # bring the whole entry up to date.
+    Set-LastAuditCacheEntry -AppName 'Old App' -Metadata 'OK' -Groups 'OK' -Dependencies 'OK'
+    Set-LastAuditCacheEntry -AppName 'Old App' -Unknown 'OK'
+    Assert-True (([datetime]$Global:App.LastAuditResults['Old App'].Timestamp) -gt (Get-Date).AddMinutes(-1)) `
+        "Set-LastAuditCacheEntry: once every check has run again, the entry reads as fresh"
+
+    # A brand-new app with only part checked: its age is that part's.
+    Set-LastAuditCacheEntry -AppName 'New App' -Metadata 'OK'
+    Assert-True (([datetime]$Global:App.LastAuditResults['New App'].Timestamp) -gt (Get-Date).AddMinutes(-1)) `
+        "Set-LastAuditCacheEntry: a new entry is as old as what it holds"
+    Assert-Equal $null $Global:App.LastAuditResults['New App'].Checked.Groups "Set-LastAuditCacheEntry: an unchecked part has no time"
+}
+finally { $Global:App.LastAuditResults = $savedAuditResults }
 
 # =================================================================
 # Report
