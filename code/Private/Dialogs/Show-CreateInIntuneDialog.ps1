@@ -90,23 +90,14 @@ function Global:Show-CreateInIntuneDialog {
     $unsavedBox    = $Global:App.UnsavedChangesBox
     $linkedFilePath = $Global:App.LinkedFilePath
 
-    # Previous/Next targets - same filtered-list computation as
-    # Show-AppEditor's own (duplicated rather than shared, same reasoning
-    # as that copy's own comment: it's a two-line check, not worth
-    # threading a delegate through a function with otherwise zero
-    # dependency on the main grid's internals).
+    # Previous/Next targets - the same list Show-AppEditor steps through
+    # (Get-NavigableAppIndices): the main grid's visible rows, in its order.
     $prevAppIndex = $null
     $nextAppIndex = $null
+    # Filled one by one - see the same note in Show-AppEditor.
+    $visibleAppIndices = New-Object System.Collections.Generic.List[int]
+    foreach ($navIndex in (Get-NavigableAppIndices)) { $visibleAppIndices.Add([int]$navIndex) }
     if ($CurrentIndex -ge 0) {
-        $navFilter = $Global:App.TxtSearch.Text.Trim().ToLower()
-        $visibleAppIndices = New-Object System.Collections.Generic.List[int]
-        for ($vi = 0; $vi -lt $appsRef.Count; $vi++) {
-            if ($navFilter) {
-                $navHay = ("$($appsRef[$vi].appName) $($appsRef[$vi].wingetId)").ToLower()
-                if ($navHay -notlike "*$navFilter*") { continue }
-            }
-            $visibleAppIndices.Add($vi)
-        }
         $navPos = $visibleAppIndices.IndexOf($CurrentIndex)
         if ($navPos -gt 0) { $prevAppIndex = $visibleAppIndices[$navPos - 1] }
         if ($navPos -ge 0 -and $navPos -lt ($visibleAppIndices.Count - 1)) { $nextAppIndex = $visibleAppIndices[$navPos + 1] }
@@ -1874,18 +1865,8 @@ function Global:Show-CreateInIntuneDialog {
     $lblDeployNavPosition.Size = New-Object System.Drawing.Size(170,30)
     $lblDeployNavPosition.ForeColor = [System.Drawing.Color]::DimGray
     if ($CurrentIndex -ge 0) {
-        $navFilterForLabel = $Global:App.TxtSearch.Text.Trim().ToLower()
-        $visibleCountForLabel = 0
-        $visiblePosForLabel = 0
-        for ($li = 0; $li -lt $appsRef.Count; $li++) {
-            if ($navFilterForLabel) {
-                $liHay = ("$($appsRef[$li].appName) $($appsRef[$li].wingetId)").ToLower()
-                if ($liHay -notlike "*$navFilterForLabel*") { continue }
-            }
-            $visibleCountForLabel++
-            if ($li -eq $CurrentIndex) { $visiblePosForLabel = $visibleCountForLabel }
-        }
-        $lblDeployNavPosition.Text = if ($visiblePosForLabel -gt 0) { "$visiblePosForLabel of $visibleCountForLabel" } else { "" }
+        $visiblePosForLabel = $visibleAppIndices.IndexOf($CurrentIndex) + 1
+        $lblDeployNavPosition.Text = if ($visiblePosForLabel -gt 0) { "$visiblePosForLabel of $($visibleAppIndices.Count)" } else { "" }
     }
     $dlg.Controls.Add($lblDeployNavPosition)
 

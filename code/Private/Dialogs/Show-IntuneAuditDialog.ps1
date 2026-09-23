@@ -84,7 +84,8 @@ function Global:Show-IntuneAuditDialog {
     # CreateInIntuneDialog's own $pnlStatusInfo.
     $pnlStatusInfo = New-Object System.Windows.Forms.FlowLayoutPanel
     $pnlStatusInfo.Location = New-Object System.Drawing.Point(15,64)
-    $pnlStatusInfo.Size = New-Object System.Drawing.Size(700,40)
+    # Ends before "Re-check selected", which sits left of Stop and Run audit.
+    $pnlStatusInfo.Size = New-Object System.Drawing.Size(574,40)
     $pnlStatusInfo.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $pnlStatusInfo.FlowDirection = [System.Windows.Forms.FlowDirection]::TopDown
     $pnlStatusInfo.WrapContents = $false
@@ -96,7 +97,7 @@ function Global:Show-IntuneAuditDialog {
 
     $lblStatus = New-Object System.Windows.Forms.Label
     $lblStatus.AutoSize = $true
-    $lblStatus.MaximumSize = New-Object System.Drawing.Size(670,0)
+    $lblStatus.MaximumSize = New-Object System.Drawing.Size(544,0)
     $lblStatus.Margin = New-Object System.Windows.Forms.Padding(0,0,0,0)
     $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
     # Says it has not run. This panel is bordered, so an empty label draws
@@ -121,6 +122,23 @@ function Global:Show-IntuneAuditDialog {
     $btnRun.Size = New-Object System.Drawing.Size(80,26)
     $btnRun.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($btnRun)
+
+    # An audit of just the selected rows - after fixing a few apps, to see
+    # they now match, without re-reading every app in the catalog. Runs
+    # through Run audit's own handler (see $runSetBox), so it is the same
+    # check, just asked about fewer apps.
+    $btnRecheck = New-Object System.Windows.Forms.Button
+    $btnRecheck.Name = 'btnRecheckSelected'
+    $btnRecheck.Text = "Re-check selected"
+    $btnRecheck.Location = New-Object System.Drawing.Point(597,60)
+    $btnRecheck.Size = New-Object System.Drawing.Size(130,26)
+    $btnRecheck.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+    $btnRecheck.Enabled = $false
+    $dlg.Controls.Add($btnRecheck)
+    $cancelAuditTip.SetToolTip($btnRecheck, "Audits only the selected app(s) again - after a Pull or Push, to confirm they now match. Also happens by itself right after one.")
+    # Which apps the next run covers: $null for every row (Run audit), or
+    # the names Re-check selected put here. Read and cleared by the run.
+    $runSetBox = @{ Names = $null }
 
     $grid = New-Object System.Windows.Forms.DataGridView
     Set-AppGridStyle -Grid $grid
@@ -188,6 +206,11 @@ function Global:Show-IntuneAuditDialog {
     $colUnknown = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
     $colUnknown.Name = "Unknown"; $colUnknown.HeaderText = "Unknown assignments"; $colUnknown.FillWeight = 21
     $grid.Columns.Add($colUnknown) | Out-Null
+    # When each row's result is from: "just now" for this run, or the age
+    # of the last result this window opened with (Last Audit's own cache).
+    $colChecked = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colChecked.Name = "Checked"; $colChecked.HeaderText = "Checked"; $colChecked.FillWeight = 9
+    $grid.Columns.Add($colChecked) | Out-Null
 
     $checkColumns = @("Metadata", "Groups", "Dependencies", "Unknown")
 
@@ -199,6 +222,11 @@ function Global:Show-IntuneAuditDialog {
         $colName = $grid.Columns[$e.ColumnIndex].Name
         if ($checkColumns -notcontains $colName) { return }
         $val = [string]$e.Value
+        # A result carried over from an earlier run, not this one: italic,
+        # so it reads as "last known" - its colour still says what it was.
+        if ($grid.Rows[$e.RowIndex].Tag -eq 'cached') {
+            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Italic)
+        }
         if ($val -eq "OK") {
             $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
         }
@@ -207,7 +235,8 @@ function Global:Show-IntuneAuditDialog {
         }
         elseif ($val -and $val -ne "(not checked)" -and $val -ne "(checking...)") {
             $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
-            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, [System.Drawing.FontStyle]::Bold)
+            $diffStyle = if ($grid.Rows[$e.RowIndex].Tag -eq 'cached') { [System.Drawing.FontStyle]::Bold -bor [System.Drawing.FontStyle]::Italic } else { [System.Drawing.FontStyle]::Bold }
+            $e.CellStyle.Font = New-Object System.Drawing.Font($grid.Font, $diffStyle)
         }
     }.GetNewClosure())
 
@@ -226,10 +255,30 @@ function Global:Show-IntuneAuditDialog {
         [System.Windows.Forms.MessageBox]::Show(($lines -join "`r`n").TrimEnd(), "Audit detail - $([string]$row.Cells['App'].Value)", "OK", "Information") | Out-Null
     }.GetNewClosure())
 
+    # Each row starts on the last result Last Audit has for it, if any -
+    # the same cache the main grid's Last Audit column reads. Every run
+    # started from "(not checked)" everywhere, so acting on a difference
+    # found yesterday meant waiting for the slowest check in the app first.
+    # Carried-over rows are marked (Tag 'cached', drawn in italics) and say
+    # how old they are; any run replaces them.
     $rowByAppName = @{}
+    $cachedRowCount = 0
     foreach ($a in ($deployedApps | Sort-Object appName)) {
-        $rowIdx = $grid.Rows.Add($a.appName, "(not checked)", "(not checked)", "(not checked)", "(not checked)")
+        $cached = if ($Global:App.LastAuditResults -and $Global:App.LastAuditResults.ContainsKey($a.appName)) { $Global:App.LastAuditResults[$a.appName] } else { $null }
+        if ($cached) {
+            $cachedCell = { param($v) if ($null -ne $v -and [string]$v -ne '') { [string]$v } else { "(not checked)" } }
+            $cachedAge = try { Get-FriendlyAge -Timestamp $cached.Timestamp } catch { "earlier" }
+            $rowIdx = $grid.Rows.Add($a.appName, (& $cachedCell $cached.Metadata), (& $cachedCell $cached.Groups), (& $cachedCell $cached.Dependencies), (& $cachedCell $cached.Unknown), $cachedAge)
+            $grid.Rows[$rowIdx].Tag = 'cached'
+            $cachedRowCount++
+        }
+        else {
+            $rowIdx = $grid.Rows.Add($a.appName, "(not checked)", "(not checked)", "(not checked)", "(not checked)", "")
+        }
         $rowByAppName[$a.appName] = $grid.Rows[$rowIdx]
+    }
+    if ($cachedRowCount -gt 0) {
+        $lblStatus.Text = "Showing the last known results for $cachedRowCount app(s), in italics - the Checked column says how old. Run audit to check again, or select rows and Re-check selected."
     }
     # Binding selects the first row by itself - and with Pull/Push acting
     # on the selection, a row nobody picked must not be the one they act on.
@@ -286,7 +335,7 @@ function Global:Show-IntuneAuditDialog {
     $fixTip.SetToolTip($btnSelectDiffering, "Selects every row with a difference in any column. Rows that could not be checked are left out - there is nothing known to fix on them.")
     $fixTip.SetToolTip($btnPullFromIntune, "Intune is right: update the catalog to match it. Opens `"Pull metadata and groups from Intune`" for the selected app(s) - it shows what would change and asks first.")
     $fixTip.SetToolTip($btnPushGroups, "The catalog is right about groups: send them to Intune. Fixes Groups and Unknown assignments. Opens `"Push groups to Intune`" for the selected app(s).")
-    $fixTip.SetToolTip($btnPushMetadata, "The catalog is right about metadata: send it to Intune. Fixes Metadata and Dependencies. Opens each selected app's update window in turn - it compares with Intune, keeps the catalog's value for every field that differs, and sends nothing until you click Update Metadata.")
+    $fixTip.SetToolTip($btnPushMetadata, "The catalog is right about metadata: send it to Intune. Fixes Metadata and Dependencies. One app: its update window, which compares with Intune, keeps the catalog's value for every field that differs, and sends nothing until you click Update Metadata. Several: one window that compares them all and pushes the ones you tick.")
 
     # The rows a fix can be about: the audited ones that differ somewhere.
     # "(not checked)", "(checking...)" and "Failed..." are not differences.
@@ -318,6 +367,7 @@ function Global:Show-IntuneAuditDialog {
         $btnPullFromIntune.Enabled = $idle -and $count -gt 0
         $btnPushGroups.Enabled = $idle -and $count -gt 0
         $btnPushMetadata.Enabled = $idle -and $count -gt 0
+        $btnRecheck.Enabled = $idle -and $count -gt 0
         $anyDiffer = $false
         foreach ($auditRow in $grid.Rows) { if (& $rowDiffers $auditRow) { $anyDiffer = $true; break } }
         $btnSelectDiffering.Enabled = $idle -and $anyDiffer
@@ -337,15 +387,25 @@ function Global:Show-IntuneAuditDialog {
         foreach ($auditRow in $grid.Rows) { if (& $rowDiffers $auditRow) { $auditRow.Selected = $true } }
     }.GetNewClosure())
 
-    # Neither fix is checked here afterwards: the window it opens may have
-    # been cancelled, or changed only some of what was selected, and
-    # re-auditing every app for that is the slowest thing this app does. So
-    # it says what to do next instead of guessing.
+    # An audit of the selected rows only, through Run audit's own handler.
+    $recheckSelected = {
+        $names = @($grid.SelectedRows | ForEach-Object { [string]$_.Cells['App'].Value })
+        if ($names.Count -eq 0 -or -not $btnRun.Enabled) { return }
+        $runSetBox.Names = $names
+        $btnRun.PerformClick()
+    }.GetNewClosure()
+    $btnRecheck.Add_Click({ & $recheckSelected }.GetNewClosure())
+
+    # After a fix, the apps it was about are audited again straight away -
+    # only those, so it takes seconds, and it is only a read. Whatever the
+    # fix window did (all of it, some of it, or Cancel), the rows then say
+    # what is true now instead of what was true before it.
     $afterFix = {
         param([string]$What, [int]$Count)
         Update-Grid
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
-        $lblStatus.Text = "$What for $Count app(s) - press Run audit to confirm they now match."
+        $lblStatus.Text = "$What for $Count app(s) - checking them again..."
+        & $recheckSelected
     }.GetNewClosure()
 
     $btnPullFromIntune.Add_Click({
@@ -368,10 +428,10 @@ function Global:Show-IntuneAuditDialog {
     $btnPushMetadata.Add_Click({
         $indices = & $getSelectedCatalogIndices
         if ($indices.Count -eq 0) { return }
-        # One update window per app, in turn. There is no batch metadata
-        # update to hand several to - Batch Deploy only creates apps that
-        # are not in Intune yet - and each app's compare is its own anyway.
-        foreach ($pushIndex in $indices) { Invoke-QuickPushMetadata -Index $pushIndex }
+        # One app: its own update window. Several: one batch window that
+        # compares them all and pushes the ticked ones.
+        if ($indices.Count -eq 1) { Invoke-QuickPushMetadata -Index $indices[0] }
+        else { Show-BatchPushMetadataDialog -ScopedIndices $indices }
         & $afterFix "Push metadata done" $indices.Count
     }.GetNewClosure())
     & $updateFixButtons
@@ -388,18 +448,21 @@ function Global:Show-IntuneAuditDialog {
     $menuPushMetadata = New-Object System.Windows.Forms.ToolStripMenuItem "Push metadata to Intune..."
     $menuPushMetadata.ToolTipText = "The catalog is right about metadata. Fixes Metadata and Dependencies."
     $menuSelectDiffering = New-Object System.Windows.Forms.ToolStripMenuItem "Select all that differ"
+    $menuRecheck = New-Object System.Windows.Forms.ToolStripMenuItem "Re-check selected"
     $auditMenu.ShowItemToolTips = $true
     [void]$auditMenu.Items.Add($menuPull)
     [void]$auditMenu.Items.Add($menuPushGroups)
     [void]$auditMenu.Items.Add($menuPushMetadata)
     [void]$auditMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
     [void]$auditMenu.Items.Add($menuSelectDiffering)
+    [void]$auditMenu.Items.Add($menuRecheck)
     $grid.ContextMenuStrip = $auditMenu
 
     $menuPull.Add_Click({ $btnPullFromIntune.PerformClick() }.GetNewClosure())
     $menuPushGroups.Add_Click({ $btnPushGroups.PerformClick() }.GetNewClosure())
     $menuPushMetadata.Add_Click({ $btnPushMetadata.PerformClick() }.GetNewClosure())
     $menuSelectDiffering.Add_Click({ $btnSelectDiffering.PerformClick() }.GetNewClosure())
+    $menuRecheck.Add_Click({ $btnRecheck.PerformClick() }.GetNewClosure())
     $auditMenu.Add_Opening({
         $selCount = $grid.SelectedRows.Count
         $suffix = if ($selCount -gt 1) { " ($selCount apps)" } else { "" }
@@ -410,6 +473,7 @@ function Global:Show-IntuneAuditDialog {
         $menuPushGroups.Enabled = $btnPushGroups.Enabled
         $menuPushMetadata.Enabled = $btnPushMetadata.Enabled
         $menuSelectDiffering.Enabled = $btnSelectDiffering.Enabled
+        $menuRecheck.Enabled = $btnRecheck.Enabled
     }.GetNewClosure())
 
     # A right-click on a row that is not part of the selection makes it the
@@ -453,16 +517,39 @@ function Global:Show-IntuneAuditDialog {
     $fetchErrorBox = @{ Messages = New-Object System.Collections.Generic.List[string] }
 
     $btnRun.Add_Click({
+        # Every row, or only the ones Re-check selected asked for. Each app
+        # is looked up in the catalog afresh: a Pull or Push since this
+        # window opened may have changed the entry, and comparing Intune
+        # against the copy from before it would report the difference the
+        # fix just removed.
+        $runNames = if ($runSetBox.Names) { @($runSetBox.Names) } else { @($rowByAppName.Keys) }
+        $runSetBox.Names = $null
+        $runApps = New-Object System.Collections.Generic.List[object]
+        foreach ($runName in $runNames) {
+            $freshApp = @($appsRef | Where-Object { [string]$_.appName -eq $runName -and $_.appId }) | Select-Object -First 1
+            if ($freshApp) { $appByName[$runName] = $freshApp; $runApps.Add($freshApp) }
+        }
+        if ($runApps.Count -eq 0) {
+            $lblStatus.ForeColor = [System.Drawing.Color]::DarkOrange
+            $lblStatus.Text = "Nothing to check - the selected app(s) are no longer in the catalog with an App ID."
+            return
+        }
+
         $btnRun.Enabled = $false
         $btnCancelAudit.Enabled = $true
         $auditCancelledBox.Value = $false
         $fetchErrorBox.Messages.Clear()
         $prgAudit.Visible = $true
-        foreach ($rowKey in $rowByAppName.Keys) {
-            foreach ($colName in $checkColumns) { $rowByAppName[$rowKey].Cells[$colName].Value = "(checking...)" }
+        foreach ($runApp in $runApps) {
+            $runRow = $rowByAppName[[string]$runApp.appName]
+            if (-not $runRow) { continue }
+            foreach ($colName in $checkColumns) { $runRow.Cells[$colName].Value = "(checking...)" }
+            # No longer a carried-over result, whatever this run finds.
+            $runRow.Tag = $null
+            $runRow.Cells['Checked'].Value = ""
         }
         $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
-        $lblStatus.Text = "Auditing $($deployedApps.Count) app(s)..."
+        $lblStatus.Text = "Auditing $($runApps.Count) app(s)..."
         $pendingBox.Count = 2
 
         # Fresh aliases for the two nested -OnComplete closures below - see
@@ -483,7 +570,7 @@ function Global:Show-IntuneAuditDialog {
         $rowByAppNameRef = $rowByAppName
         $appByNameRef = $appByName
         $pendingBoxRef = $pendingBox
-        $deployedAppsCountRef = $deployedApps.Count
+        $deployedAppsCountRef = $runApps.Count
         $procBox1Ref = $procBox1
         $procBox2Ref = $procBox2
         $btnCancelAuditRef = $btnCancelAudit
@@ -556,7 +643,7 @@ function Global:Show-IntuneAuditDialog {
 
         # --- Fetch 1: Metadata + Groups + Dependencies, one pass ---
         $configApps1 = New-Object System.Collections.Generic.List[object]
-        foreach ($a in $deployedApps) { $configApps1.Add([pscustomobject]@{ AppName = $a.appName; AppId = $a.appId }) }
+        foreach ($a in $runApps) { $configApps1.Add([pscustomobject]@{ AppName = $a.appName; AppId = $a.appId }) }
         $configPath1 = Join-Path $env:TEMP (".intunepkg_audit_sync_config_" + [guid]::NewGuid().ToString("N") + ".json")
         $resultPath1 = Join-Path $env:TEMP (".intunepkg_audit_sync_result_" + [guid]::NewGuid().ToString("N") + ".json")
         $config1 = [pscustomobject]@{
@@ -616,6 +703,7 @@ function Global:Show-IntuneAuditDialog {
                     if (-not $rowByAppNameRef.ContainsKey($oneResult.AppName)) { continue }
                     $row = $rowByAppNameRef[$oneResult.AppName]
                     $catalogApp = $appByNameRef[$oneResult.AppName]
+                    $row.Cells['Checked'].Value = "just now"
 
                     if (-not $oneResult.Success) {
                         $row.Cells['Metadata'].Value = "Failed: $($oneResult.Error)"
@@ -665,7 +753,7 @@ function Global:Show-IntuneAuditDialog {
         }
 
         # --- Fetch 2: Unknown Assignments ---
-        $appsForScript2 = @($deployedApps | ForEach-Object {
+        $appsForScript2 = @($runApps | ForEach-Object {
             [pscustomobject]@{
                 AppName         = $_.appName
                 AppId           = $_.appId

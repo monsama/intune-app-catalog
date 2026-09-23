@@ -392,7 +392,13 @@ function Global:Show-IntuneOnlyAppsDialog {
                 # DarkOrange note before the editor opens, same convention
                 # as every other "degraded but continuing" fetch failure in
                 # this file.
-                if ($ok) {
+                if ($ok -and -not $data.GroupFetchOk) {
+                    # The app was read but its assignments were not - so the
+                    # empty group lists below are "unknown", not "none".
+                    $lblStatusRef2.ForeColor = [System.Drawing.Color]::DarkOrange
+                    $lblStatusRef2.Text = "Could not read this app's group assignments from Intune - opening with blank groups. Use Pull groups from Intune in the editor to try again."
+                }
+                elseif ($ok) {
                     $lblStatusRef2.Text = ""
                 }
                 else {
@@ -617,7 +623,10 @@ function Global:Show-IntuneOnlyAppsDialog {
                     if ($depName) { $pendingDepsBoxRef.Names.Add([string]$depName) }
                 }
             }
-            $nextFailedCount = $FailedGroupFetchCountRef + $(if ($ok) { 0 } else { 1 })
+            # The app can come back without its assignments (GroupFetchOk) -
+            # its groups are then blank for the same reason as a failed
+            # fetch, and belong in the same count at the end.
+            $nextFailedCount = $FailedGroupFetchCountRef + $(if ($ok -and $data.GroupFetchOk) { 0 } else { 1 })
             & $RunAddQueueBoxRef.Value -Queue $QueueRef -QueueIndex ($QueueIndexRef + 1) -AddedCount ($AddedCountRef + 1) -FailedGroupFetchCount $nextFailedCount
         }.GetNewClosure()
     }.GetNewClosure()

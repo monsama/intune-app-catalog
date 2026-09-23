@@ -24,27 +24,16 @@ function Global:Show-AppEditor {
     $appsRef = $Global:App.Apps
     $unsavedBoxRef = $Global:App.UnsavedChangesBox
 
-    # Previous/Next targets, computed once against the SAME filter the main
-    # grid itself is currently showing (Update-Grid's own "$appName
-    # $wingetId" -like "*filter*" check, duplicated here rather than
-    # shared - it's a two-line check, and sharing it would mean threading
-    # a delegate through a function that otherwise has zero dependency on
-    # the main grid's own internals) - so "Next" always matches whatever
-    # row is actually next in the grid the user just came from, filtered
-    # search included, not silently ignoring an active search and jumping
-    # to a row that's currently hidden.
+    # Previous/Next targets: whatever row is next in the grid the user just
+    # came from, in the order it shows them - search, filter and sort
+    # included (Get-NavigableAppIndices), never a row that is hidden there.
     $prevAppIndex = $null
     $nextAppIndex = $null
+    # Filled one by one: a cast of the returned array to List[int] fails
+    # in both PowerShells (it arrives wrapped once more by @()).
+    $visibleAppIndices = New-Object System.Collections.Generic.List[int]
+    foreach ($navIndex in (Get-NavigableAppIndices)) { $visibleAppIndices.Add([int]$navIndex) }
     if ($CurrentIndex -ge 0) {
-        $navFilter = $Global:App.TxtSearch.Text.Trim().ToLower()
-        $visibleAppIndices = New-Object System.Collections.Generic.List[int]
-        for ($vi = 0; $vi -lt $appsRef.Count; $vi++) {
-            if ($navFilter) {
-                $navHay = ("$($appsRef[$vi].appName) $($appsRef[$vi].wingetId)").ToLower()
-                if ($navHay -notlike "*$navFilter*") { continue }
-            }
-            $visibleAppIndices.Add($vi)
-        }
         $navPos = $visibleAppIndices.IndexOf($CurrentIndex)
         if ($navPos -gt 0) { $prevAppIndex = $visibleAppIndices[$navPos - 1] }
         if ($navPos -ge 0 -and $navPos -lt ($visibleAppIndices.Count - 1)) { $nextAppIndex = $visibleAppIndices[$navPos + 1] }
@@ -775,12 +764,16 @@ function Global:Show-AppEditor {
     # and a difference only ever showed up in the audit - without saying
     # which side had which groups. It says now, and changes nothing: which
     # side is right is yours to say, with Pull or Push below.
+    # Whether a comparison has happened (or is on its way) in this window -
+    # so opening the Assignments tab starts one only when nothing else has.
+    $groupsCheckedBox = @{ Done = $false; Running = $false }
     $compareGroupsWithIntune = {
         param($data)
         if (-not $data.GroupFetchOk) {
             & $showGroupStatus "Could not read this app's groups from Intune - not compared." ([System.Drawing.Color]::Firebrick)
             return
         }
+        $groupsCheckedBox.Done = $true
         $diffs = @(Get-GroupFieldDiffs -LocalApp (& $getTickedGroups) -RemoteResult $data)
         if ($diffs.Count -eq 0) {
             & $showGroupStatus "Matches Intune - the groups ticked above are exactly what Intune has assigned." ([System.Drawing.Color]::SeaGreen)
@@ -852,18 +845,9 @@ function Global:Show-AppEditor {
     $lblAppNavPosition.Size = New-Object System.Drawing.Size(130,30)
     $lblAppNavPosition.ForeColor = [System.Drawing.Color]::DimGray
     if ($CurrentIndex -ge 0) {
-        $navFilterForLabel = $Global:App.TxtSearch.Text.Trim().ToLower()
-        $visibleCountForLabel = 0
-        $visiblePosForLabel = 0
-        for ($li = 0; $li -lt $appsRef.Count; $li++) {
-            if ($navFilterForLabel) {
-                $liHay = ("$($appsRef[$li].appName) $($appsRef[$li].wingetId)").ToLower()
-                if ($liHay -notlike "*$navFilterForLabel*") { continue }
-            }
-            $visibleCountForLabel++
-            if ($li -eq $CurrentIndex) { $visiblePosForLabel = $visibleCountForLabel }
-        }
-        $lblAppNavPosition.Text = if ($visiblePosForLabel -gt 0) { "$visiblePosForLabel of $visibleCountForLabel" } else { "" }
+        # The same list Previous/Next use, so "3 of 12" counts what they step through.
+        $visiblePosForLabel = $visibleAppIndices.IndexOf($CurrentIndex) + 1
+        $lblAppNavPosition.Text = if ($visiblePosForLabel -gt 0) { "$visiblePosForLabel of $($visibleAppIndices.Count)" } else { "" }
     }
     $dlg.Controls.Add($lblAppNavPosition)
 
@@ -901,6 +885,35 @@ function Global:Show-AppEditor {
         }
     )
     $editorTabs.Name = 'editorTabs'
+
+    # The Assignments tab compares with Intune the first time it is opened,
+    # unless something already has in this window (the Deploy side's own
+    # fetch does, when "Check Intune when opening Deploy" is on). Without
+    # this the tab said "Not yet checked" until an unrelated button was
+    # pressed. It only reads, and only once.
+    $editorTabs.Add_SelectedIndexChanged({
+        if ($groupsCheckedBox.Done -or $groupsCheckedBox.Running) { return }
+        if (-not $editorTabs.SelectedTab -or $editorTabs.SelectedTab.Text -ne 'Assignments') { return }
+        $appIdNow = $txtId.Text.Trim()
+        if (-not $appIdNow) { return }
+        $groupsCheckedBox.Running = $true
+        & $showGroupStatus "Comparing with Intune..." ([System.Drawing.Color]::DimGray)
+        # Fresh aliases for the nested -OnComplete closure.
+        $groupsCheckedBoxRef = $groupsCheckedBox
+        $showGroupStatusRef = $showGroupStatus
+        $compareRef = $compareGroupsWithIntune
+        $dlgRef3 = $dlg
+        Start-AppMetadataFetch -AppId $appIdNow -LogBox $editorLogBox.Box -OnComplete {
+            param($ok, $errMsg, $data)
+            $groupsCheckedBoxRef.Running = $false
+            if ($dlgRef3.IsDisposed) { return }
+            if (-not $ok) {
+                & $showGroupStatusRef "Could not compare with Intune: $errMsg" ([System.Drawing.Color]::Firebrick)
+                return
+            }
+            & $compareRef $data
+        }.GetNewClosure()
+    }.GetNewClosure())
     # Its own log belongs with the actions that write to it - the App ID
     # lookup and Delete from Intune, both on Catalog.
     $rtbAppEditorLog.Location = New-Object System.Drawing.Point(12,300)
@@ -1026,7 +1039,19 @@ function Global:Show-AppEditor {
     $btnCopyPkgPath.Size = New-Object System.Drawing.Size(114,28)
     $pnlPackageLocation.Controls.Add($btnCopyPkgPath)
 
+    # Where Open folder is, in its place, when there is no package yet for
+    # an app that needs its own - the card is where that is noticed, and
+    # the packaging step was only reachable from the grid's menu.
+    $btnPackageNow = New-Object System.Windows.Forms.Button
+    $btnPackageNow.Name = 'btnPackageNow'
+    $btnPackageNow.Text = "Package now..."
+    $btnPackageNow.Location = $btnOpenPkgFolder.Location
+    $btnPackageNow.Size = $btnOpenPkgFolder.Size
+    $btnPackageNow.Visible = $false
+    $pnlPackageLocation.Controls.Add($btnPackageNow)
+
     $pkgTip = New-Object System.Windows.Forms.ToolTip
+    $pkgTip.SetToolTip($btnPackageNow, "Builds this app's .intunewin from its source folder, the same as Package this app for Intune in the grid's right-click menu.")
     $pkgTip.SetToolTip($btnOpenPkgFolder, "Open this folder in Explorer, with the package selected.")
     $pkgTip.SetToolTip($btnCopyPkgPath, "Copy the full path of the package (or of the folder it belongs in) to the clipboard.")
 
@@ -1116,6 +1141,12 @@ function Global:Show-AppEditor {
         $pkgLocationBox.File = if ($file -and (Test-Path -LiteralPath (Join-Path $folder $file) -PathType Leaf)) { Join-Path $folder $file } else { "" }
         $btnOpenPkgFolder.Enabled = [bool]($folder -and (Test-Path -LiteralPath $folder -PathType Container))
         $btnCopyPkgPath.Enabled = [bool]$folder
+        # Only for the package this tool builds itself: an app with no
+        # Winget ID, found by name, not there yet. A path typed into the
+        # box above is someone else's package to build.
+        $canPackage = ($state -eq "Not found") -and $isUncommon -and (-not $override) -and [bool]$name
+        $btnPackageNow.Visible = $canPackage
+        $btnOpenPkgFolder.Visible = -not $canPackage
     }.GetNewClosure()
 
     $btnOpenPkgFolder.Add_Click({
@@ -1123,6 +1154,13 @@ function Global:Show-AppEditor {
         # file there, the folder alone.
         if ($pkgLocationBox.File) { Start-Process explorer.exe -ArgumentList "/select,`"$($pkgLocationBox.File)`"" }
         elseif ($pkgLocationBox.Folder) { Start-Process explorer.exe -ArgumentList "`"$($pkgLocationBox.Folder)`"" }
+    }.GetNewClosure())
+    $btnPackageNow.Add_Click({
+        $packageName = $txtName.Text.Trim()
+        if (-not $packageName) { return }
+        Show-PackagingProgressDialog -SingleFolderName (Get-SafeFileNameForApp -Name $packageName)
+        # Whatever packaging did, the card says what is there now.
+        & $refreshPackageLocation
     }.GetNewClosure())
     $btnCopyPkgPath.Add_Click({
         $toCopy = if ($pkgLocationBox.File) { $pkgLocationBox.File } else { $pkgLocationBox.Folder }

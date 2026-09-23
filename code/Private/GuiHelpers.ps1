@@ -1061,8 +1061,8 @@ function Global:New-ToolbarGroup {
         $b.AutoSize = $true
         $b.Padding = New-Object System.Windows.Forms.Padding(8,3,8,3)
         $b.Margin = New-Object System.Windows.Forms.Padding(0,0,4,0)
-        if ($b -is [System.Windows.Forms.TextBox]) {
-            # a single-line text box keeps its own height - center it in the row instead
+        if ($b -is [System.Windows.Forms.TextBox] -or $b -is [System.Windows.Forms.ComboBox]) {
+            # a single-line text box (or drop-down) keeps its own height - center it in the row instead
             $b.Font = Get-AppUiFont   # measured in the font it will actually use (5.1 would inherit it only later)
             $spare = [Math]::Max(0, $rowHeight - $b.PreferredHeight)
             $top = [int][Math]::Floor($spare / 2)
@@ -1314,8 +1314,57 @@ function Global:Sort-Grid {
     Update-Grid
 }
 
+function Global:Get-NavigableAppIndices {
+    # The apps an editor's Previous/Next steps through: the main grid's
+    # rows, in the order it shows them - search, problem filter and sort
+    # all included. The editor and the deploy window each used to redo the
+    # search on their own, which ignored the sort, and would have ignored
+    # the filter drop-down next to the search box as well.
+    $fromGrid = New-Object System.Collections.Generic.List[int]
+    if ($Global:App.Grid -and $Global:App.Grid.Columns.Contains('Index')) {
+        foreach ($row in $Global:App.Grid.Rows) {
+            $v = $row.Cells['Index'].Value
+            if ($null -ne $v) { $fromGrid.Add([int]$v) }
+        }
+    }
+    if ($fromGrid.Count -gt 0) { return ,$fromGrid.ToArray() }
+    # No grid rows to go by (a test harness, or startup): the catalog in
+    # its own order, with the search applied the way the grid does.
+    $navFilter = if ($Global:App.TxtSearch) { $Global:App.TxtSearch.Text.Trim().ToLower() } else { "" }
+    $all = New-Object System.Collections.Generic.List[int]
+    for ($vi = 0; $vi -lt $Global:App.Apps.Count; $vi++) {
+        if ($navFilter) {
+            $navHay = ("$($Global:App.Apps[$vi].appName) $($Global:App.Apps[$vi].wingetId)").ToLower()
+            if ($navHay -notlike "*$navFilter*") { continue }
+        }
+        $all.Add($vi)
+    }
+    return ,$all.ToArray()
+}
+
+function Global:Get-GridFilterKinds {
+    # The problem filter beside the search box: what each choice is called,
+    # and which rows it keeps. A row here is the object Update-Grid binds,
+    # so a choice can only look at what the grid itself shows.
+    return @(
+        @{ Name = "All apps";            Keep = { param($row) $true } }
+        @{ Name = "Has a problem";       Keep = { param($row) $row.PackageMissing -or ($row.IntuneAudit -like "*issue*") -or ($row.IntuneAudit -like "Check failed*") } }
+        @{ Name = "Differs from Intune"; Keep = { param($row) ($row.IntuneAudit -like "*issue*") -or ($row.IntuneAudit -like "Check failed*") } }
+        @{ Name = "Not deployed";        Keep = { param($row) -not $row.HasAppId } }
+        @{ Name = "Package missing";     Keep = { param($row) $row.PackageMissing } }
+    )
+}
+
 function Global:Update-Grid {
     $filter = $Global:App.TxtSearch.Text.Trim().ToLower()
+    # The drop-down beside the search box (Get-GridFilterKinds). "All apps",
+    # or no drop-down at all (a test harness), keeps every row.
+    $filterKindName = [string]$Global:App.GridFilterKind
+    $keepRow = $null
+    if ($filterKindName -and $filterKindName -ne "All apps") {
+        $kind = @(Get-GridFilterKinds | Where-Object { $_.Name -eq $filterKindName }) | Select-Object -First 1
+        if ($kind) { $keepRow = $kind.Keep }
+    }
     $rows = New-Object System.Collections.Generic.List[Object]
 
     # The packages folder, listed once for this whole rebuild. Every
@@ -1398,7 +1447,7 @@ function Global:Update-Grid {
         $reqCount = @($app.requiredFor).Count
         $availCount = @($app.availableFor).Count
         $uninstCount = @($app.uninstallFor).Count
-        $rows.Add([pscustomobject]@{
+        $gridRow = [pscustomobject]@{
             AppName   = $app.appName
             WingetId  = $app.wingetId
             Type      = if ($app.intuneAppType) { $app.intuneAppType } else { "" }
@@ -1418,8 +1467,18 @@ function Global:Update-Grid {
             Uninstall = $uninstCount
             Status    = $status
             IntuneAudit = if ($app.appId) { Get-LastAuditSummary -AppName $app.appName } else { "" }
+            # Not columns - what the "Not deployed" and "Package missing"
+            # filters ask. The second is its own flag because Status only
+            # says "Package missing" once an app has an App ID; before
+            # that it says "No App ID", and the package is just as missing.
+            HasAppId  = [bool]$app.appId
+            PackageMissing = [bool]($needsPackageCheck -and -not $pkg.Found)
             Index     = $i
-        })
+        }
+        # The problem filter, on the row as it will be shown - after the
+        # Status and Last Audit it is judged by have been worked out.
+        if ($keepRow -and -not (& $keepRow $gridRow)) { continue }
+        $rows.Add($gridRow)
     }
 
     # Sorted here, before binding, rather than by the grid: a plain List
@@ -1517,7 +1576,8 @@ function Global:Update-Grid {
     # one moment that number is worth reading and the one moment it was
     # wrong. The assignment totals below stay catalog-wide on purpose -
     # they answer "what does this catalog deploy", not "what is on screen".
-    $countText = if ($filter) { "Showing $($rows.Count) of $($Global:App.Apps.Count) apps" } else { "$($Global:App.Apps.Count) apps" }
+    $countText = if ($filter -or $keepRow) { "Showing $($rows.Count) of $($Global:App.Apps.Count) apps" } else { "$($Global:App.Apps.Count) apps" }
+    if ($keepRow) { $countText += " ($filterKindName)" }
     Set-Status "$countText  |  $reqTotal required, $availTotal available, $uninstTotal uninstall assignments  |  $($Global:App.LinkedFilePath)$dirty"
 }
 

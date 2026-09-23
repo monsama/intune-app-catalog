@@ -739,7 +739,26 @@ $gbMoreActions = New-ToolbarGroup -Title "More" -Buttons @($btnMoreActions)
 # Its own titled box like the other toolbar groups (it used to float next to
 # them with a hand-tuned top margin to line up). The box title replaces the
 # old "Search:" label.
-$gbSearch = New-ToolbarGroup -Title "Search" -Buttons @($Global:App.TxtSearch)
+# The problem filter beside it: the search box finds an app you can name,
+# this finds the ones that need something done - which Status and Last
+# Audit already know, one row at a time. Choices: Get-GridFilterKinds.
+$Global:App.CmbGridFilter = New-Object System.Windows.Forms.ComboBox
+$Global:App.CmbGridFilter.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+$Global:App.CmbGridFilter.AccessibleName = "Show only apps that"
+foreach ($filterKind in (Get-GridFilterKinds)) { [void]$Global:App.CmbGridFilter.Items.Add($filterKind.Name) }
+$Global:App.CmbGridFilter.SelectedIndex = 0
+$filterWidth = 0
+foreach ($filterItem in $Global:App.CmbGridFilter.Items) {
+    $filterWidth = [Math]::Max($filterWidth, [System.Windows.Forms.TextRenderer]::MeasureText([string]$filterItem, (Get-AppUiFont)).Width)
+}
+$Global:App.CmbGridFilter.Width = $filterWidth + 30   # the drop arrow and padding
+$Global:App.GridFilterKind = "All apps"
+$Global:App.CmbGridFilter.Add_SelectedIndexChanged({
+    $Global:App.GridFilterKind = [string]$Global:App.CmbGridFilter.SelectedItem
+    Update-Grid
+})
+$toolbarTips.SetToolTip($Global:App.CmbGridFilter, "Show only the apps that need something: a missing package, a difference from Intune in the last audit, or not deployed yet. Works together with the search box.")
+$gbSearch = New-ToolbarGroup -Title "Search" -Buttons @($Global:App.TxtSearch, $Global:App.CmbGridFilter)
 # Hidden by default - shown only while Update-StartupBusyIndicator says
 # something's running (Start-StartupDriftCheck, Start-TypeVersionBackfill).
 # The busy cursor alone was easy to miss, and the backfill task in
@@ -1681,7 +1700,7 @@ $menuItemAssign.ToolTipText = "One row selected: pushes its groups directly. Mul
 # catalog's value (Invoke-QuickPushMetadata). Groups have their own item
 # above; this sends metadata and dependencies.
 $menuItemPushMetadata = New-Object System.Windows.Forms.ToolStripMenuItem "Push metadata to Intune..."
-$menuItemPushMetadata.ToolTipText = "Sends the catalog's metadata and dependencies to the app in Intune. Opens its update window, which shows what differs and sends nothing until you click Update Metadata. Several apps open one after another."
+$menuItemPushMetadata.ToolTipText = "Sends the catalog's metadata and dependencies to the app in Intune. One app: its update window, which shows what differs and sends nothing until you click Update Metadata. Several: one window that compares them all and pushes the ones you tick."
 # Already selection-aware via -ScopedIndices, same as the toolbar button
 # it reuses - was reachable only from there before, requiring a
 # pre-selection made before ever opening the toolbar dialog, when a
@@ -1706,6 +1725,11 @@ $menuItemDeleteIntune.ToolTipText = "One row selected: deletes it directly. Mult
 # Intune); saving as a template copies the selection somewhere else with
 # the App IDs stripped, so the same configuration can be deployed into
 # another tenant - or this one again - as new apps.
+# The grid has no App ID column any more, and this was the other thing
+# that column was for - pasting an ID into the Intune portal, a ticket or
+# a script without opening the editor to get at it.
+$menuItemCopyAppId = New-Object System.Windows.Forms.ToolStripMenuItem "Copy App ID"
+$menuItemCopyAppId.ToolTipText = "Copies the App ID to the clipboard. Several apps: one per line, after the app's name."
 $menuItemClearAppId = New-Object System.Windows.Forms.ToolStripMenuItem "Clear App ID..."
 $menuItemClearAppId.ToolTipText = "Forgets which Intune app this catalog entry belongs to. The app in Intune is not touched, and nothing else about the entry changes."
 $menuItemSaveTemplate = New-Object System.Windows.Forms.ToolStripMenuItem "Save as template..."
@@ -1722,6 +1746,7 @@ $menuItemRemoveCatalog = New-Object System.Windows.Forms.ToolStripMenuItem "Remo
 [void]$gridContextMenu.Items.Add($menuItemInstallStatus)
 [void]$gridContextMenu.Items.Add($menuItemDeleteIntune)
 [void]$gridContextMenu.Items.Add($menuItemSeparator)
+[void]$gridContextMenu.Items.Add($menuItemCopyAppId)
 [void]$gridContextMenu.Items.Add($menuItemClearAppId)
 [void]$gridContextMenu.Items.Add($menuItemSaveTemplate)
 [void]$gridContextMenu.Items.Add($menuItemRemoveCatalog)
@@ -1787,6 +1812,8 @@ $gridContextMenu.Add_Opening({
     $menuItemDeleteIntune.Enabled = $hasSelection
 
     $withAppId = @($selectedIndices | ForEach-Object { $Global:App.Apps[$_] } | Where-Object { $_.appId }).Count
+    $menuItemCopyAppId.Text = if ($withAppId -gt 1) { "Copy $withAppId App IDs" } else { "Copy App ID" }
+    $menuItemCopyAppId.Enabled = $withAppId -gt 0
     $menuItemClearAppId.Text = if ($withAppId -gt 1) { "Clear $withAppId App IDs..." } else { "Clear App ID..." }
     $menuItemClearAppId.Enabled = $withAppId -gt 0
     $menuItemSaveTemplate.Text = if ($isMulti) { "Save $($selectedIndices.Count) app(s) as template..." } else { "Save as template..." }
@@ -1860,10 +1887,12 @@ $menuItemAssign.Add_Click({
 })
 
 $menuItemPushMetadata.Add_Click({
-    # One update window per app, in turn - there is no batch update for
-    # apps already in Intune (Batch Deploy only creates new ones).
+    # One app: its own update window. Several: one batch window that
+    # compares them all with Intune and pushes the ticked ones.
     $indices = @(Get-SelectedAppIndices | Where-Object { $Global:App.Apps[$_].appId })
-    foreach ($pushIndex in $indices) { Invoke-QuickPushMetadata -Index $pushIndex }
+    if ($indices.Count -eq 0) { return }
+    if ($indices.Count -eq 1) { Invoke-QuickPushMetadata -Index $indices[0] }
+    else { Show-BatchPushMetadataDialog -ScopedIndices $indices }
 })
 
 $menuItemSyncMetadata.Add_Click({
@@ -1871,6 +1900,17 @@ $menuItemSyncMetadata.Add_Click({
     if ($indices.Count -eq 0) { return }
     Show-ChecksDialog -ScopedIndices $indices -StartTab "Metadata sync"
     Update-Grid
+})
+
+$menuItemCopyAppId.Add_Click({
+    $withIds = @(Get-SelectedAppIndices | ForEach-Object { $Global:App.Apps[$_] } | Where-Object { $_.appId })
+    if ($withIds.Count -eq 0) { return }
+    # One app: the bare ID, ready to paste anywhere. Several: which ID is
+    # which has to come with them.
+    $text = if ($withIds.Count -eq 1) { [string]$withIds[0].appId }
+            else { ($withIds | ForEach-Object { "$($_.appName)`t$($_.appId)" }) -join "`r`n" }
+    [System.Windows.Forms.Clipboard]::SetText($text)
+    Set-Status "Copied $($withIds.Count) App ID(s) to the clipboard."
 })
 
 $menuItemClearAppId.Add_Click({
