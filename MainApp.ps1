@@ -898,11 +898,9 @@ $Global:App.Grid.Columns.Add((New-GridColumn "Type" "Type" -FillWeight 13 -Font 
 $Global:App.Grid.Columns.Add((New-GridColumn "Version" "Version" -FillWeight 7 -Font $gridFont)) | Out-Null
 $Global:App.Grid.Columns.Add((New-GridColumn "Uncommon" "Uncommon" -FillWeight 6 -Font $gridFont)) | Out-Null
 $Global:App.Grid.Columns.Add((New-GridColumn "CustomConfig" "Custom Config" -FillWeight 7 -Font $gridFont)) | Out-Null
-# Package folder holds full filesystem paths, which routinely run longer
-# than every other column's content (including the App ID GUID) - still
-# the widest allotment here on purpose, just not so wide that it starves
-# the narrow columns next to it.
-$Global:App.Grid.Columns.Add((New-GridColumn "Folder" "Package folder" -FillWeight 28 -Font $gridFont)) | Out-Null
+# No package folder column: a full path was the widest thing in the grid
+# and the least often read. It lives in the app editor's Catalog tab now,
+# under "Package location", with a button to open it.
 $Global:App.Grid.Columns.Add((New-GridColumn "Required" "Required" -FillWeight 5 -Font $gridFont)) | Out-Null
 $Global:App.Grid.Columns.Add((New-GridColumn "Available" "Available" -FillWeight 5 -Font $gridFont)) | Out-Null
 $Global:App.Grid.Columns.Add((New-GridColumn "Uninstall" "Uninstall" -FillWeight 5 -Font $gridFont)) | Out-Null
