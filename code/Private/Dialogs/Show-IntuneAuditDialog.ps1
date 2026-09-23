@@ -106,6 +106,12 @@ function Global:Show-IntuneAuditDialog {
     # like when it opens.
     $lblStatus.Text = "Not checked yet - press Run audit. It reads every deployed app from Intune one at a time, so it is the slowest check here."
     $pnlStatusInfo.Controls.Add($lblStatus)
+    # Wraps at the box's own width, whatever that turns out to be - on a
+    # Checks tab the box stretches to twice the dialog's width, and a
+    # fixed wrap width left the text in its left half.
+    $pnlStatusInfo.Add_SizeChanged({
+        $lblStatus.MaximumSize = New-Object System.Drawing.Size([Math]::Max(100, $pnlStatusInfo.ClientSize.Width - 30), 0)
+    }.GetNewClosure())
 
     $btnRun = New-Object System.Windows.Forms.Button
     $btnRun.Text = "Run audit"
@@ -283,6 +289,21 @@ function Global:Show-IntuneAuditDialog {
     # Binding selects the first row by itself - and with Pull/Push acting
     # on the selection, a row nobody picked must not be the one they act on.
     $grid.ClearSelection()
+    # ...and so does the grid the first time it is actually shown, which on
+    # a Checks tab is long after the line above - the screenshot had the
+    # first app selected on a tab nobody had touched. Cleared once, then,
+    # after WinForms has finished doing it; later tab switches keep
+    # whatever the user picked.
+    $firstShowBox = @{ Done = $false }
+    $grid.Add_VisibleChanged({
+        if (-not $grid.Visible -or $firstShowBox.Done) { return }
+        $firstShowBox.Done = $true
+        # A fresh alias for the inner closure - two closures deep, the outer
+        # one's $grid is not reliably there (see the note at the top of
+        # Show-CreateInIntuneDialog); without it this threw on the Checks tab.
+        $gridToClear = $grid
+        [void]$grid.BeginInvoke([Action]{ $gridToClear.ClearSelection() }.GetNewClosure())
+    }.GetNewClosure())
 
     # What to do about a difference, right where it is seen. Both buttons
     # open the same windows the main grid's right-click menu does, scoped
@@ -886,6 +907,17 @@ function Global:Show-IntuneAuditDialog {
     if ($HostTabPage) {
         $closeTargetBox.Form = $HostForm
         $btnClose.Visible = $false
+        # Nothing may be anchored to the bottom while it moves. The page
+        # is 200x100 at this point - the window is not shown yet - and
+        # each control added to it is laid out against that: the grid
+        # (Top+Bottom) and the Pull/Push row (Bottom) pushed each other
+        # down as they went in, and the row ended up at y=1104, below the
+        # page, with the grid stretched over the log. Measured, not
+        # guessed. Top-only first; the page decides the grid's height
+        # once it has one (Tag.Fill below).
+        foreach ($stacked in @($grid, $btnSelectDiffering, $lblFixHint, $btnPullFromIntune, $btnPushGroups, $btnPushMetadata, $rtbAuditLog, $btnClose)) {
+            $stacked.Anchor = ($stacked.Anchor -band (-bnot [System.Windows.Forms.AnchorStyles]::Bottom)) -bor [System.Windows.Forms.AnchorStyles]::Top
+        }
         [void](Move-DialogToTabPage -Dialog $dlg -Page $HostTabPage)
         # The grid stretches to fill a taller page and the log lives under
         # it, so without this the grid is drawn straight over the log and
