@@ -58,13 +58,19 @@ function Global:Show-IntuneAuditDialog {
     $dlg.ClientSize = New-Object System.Drawing.Size(920, 620)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "Sizable"
-    $dlg.MinimumSize = New-Object System.Drawing.Size(700, 420)
+    # 500, not 420: the Pull/Push row under the list costs 42px, and at
+    # 420 the list shrank to about ten pixels.
+    $dlg.MinimumSize = New-Object System.Drawing.Size(700, 500)
     $dlg.MaximizeBox = $true
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
     $scopeText = if ($isScoped) { "the $($deployedApps.Count) selected app(s)'" } else { "every deployed app's" }
-    $lblIntro.Text = "Checks $scopeText Metadata, Groups, Dependencies, and Assignments against what's actually live in Intune right now. Read-only - never changes Intune or the catalog. Double-click a row for the full detail; findings are fixed via `"Pull metadata and groups from Intune...`" (Metadata/Groups/Dependencies) or `"Push groups to Intune (multiple apps)...`" (Unknown Assignments)."
+    # A difference has two possible fixes and the audit cannot know which
+    # side is right - so it says both, and the buttons under the list do
+    # them. It used to name Pull alone, which is exactly wrong when the
+    # catalog is the source of truth: pulling throws your change away.
+    $lblIntro.Text = "Checks $scopeText Metadata, Groups, Dependencies, and Assignments against what's live in Intune right now - the audit itself only reads. Where a row differs, decide which side is right and select it: Pull from Intune if Intune is right, Push to Intune if the catalog is. Double-click a row for the full detail."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(890,48)
     $dlg.Controls.Add($lblIntro)
@@ -136,17 +142,17 @@ function Global:Show-IntuneAuditDialog {
     $dlg.Controls.Add($prgAudit)
 
     $grid.Location = New-Object System.Drawing.Point(15,122)
-    # Ends 10px above Close below (it used to run 14px into it).
-    # 292, not 300: the grid moved down 8 and keeps its bottom edge, so
-    # the log below it does not move.
-    $grid.Size = New-Object System.Drawing.Size(890,292)
+    # Ends above the Pull/Push row, which sits between it and the log - the
+    # log itself does not move.
+    $grid.Size = New-Object System.Drawing.Size(890,250)
     $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $grid.ReadOnly = $true
     $grid.AllowUserToAddRows = $false
     $grid.AllowUserToDeleteRows = $false
     $grid.AllowUserToResizeRows = $false
     $grid.SelectionMode = "FullRowSelect"
-    $grid.MultiSelect = $false
+    # Several at once, because Pull and Push below act on the selection.
+    $grid.MultiSelect = $true
     $grid.AutoSizeColumnsMode = "Fill"
     $grid.RowHeadersVisible = $false
     $grid.AutoGenerateColumns = $false
@@ -222,6 +228,130 @@ function Global:Show-IntuneAuditDialog {
         $rowIdx = $grid.Rows.Add($a.appName, "(not checked)", "(not checked)", "(not checked)", "(not checked)")
         $rowByAppName[$a.appName] = $grid.Rows[$rowIdx]
     }
+    # Binding selects the first row by itself - and with Pull/Push acting
+    # on the selection, a row nobody picked must not be the one they act on.
+    $grid.ClearSelection()
+
+    # What to do about a difference, right where it is seen. Both buttons
+    # open the same windows the main grid's right-click menu does, scoped
+    # to the rows selected here - nothing new is pushed or pulled from this
+    # dialog directly, and each of those windows still asks before it
+    # changes anything.
+    $btnSelectDiffering = New-Object System.Windows.Forms.Button
+    $btnSelectDiffering.Name = 'btnSelectDiffering'
+    $btnSelectDiffering.Text = "Select all that differ"
+    $btnSelectDiffering.Location = New-Object System.Drawing.Point(15,380)
+    $btnSelectDiffering.Size = New-Object System.Drawing.Size(170,30)
+    $btnSelectDiffering.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
+    $dlg.Controls.Add($btnSelectDiffering)
+
+    $lblFixHint = New-Object System.Windows.Forms.Label
+    $lblFixHint.Name = 'lblFixHint'
+    $lblFixHint.AutoEllipsis = $true
+    $lblFixHint.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+    $lblFixHint.ForeColor = [System.Drawing.Color]::DimGray
+    $lblFixHint.Location = New-Object System.Drawing.Point(193,380)
+    $lblFixHint.Size = New-Object System.Drawing.Size(336,30)
+    $lblFixHint.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
+    $dlg.Controls.Add($lblFixHint)
+
+    $btnPullFromIntune = New-Object System.Windows.Forms.Button
+    $btnPullFromIntune.Name = 'btnPullFromIntune'
+    $btnPullFromIntune.Text = "Pull from Intune..."
+    $btnPullFromIntune.Location = New-Object System.Drawing.Point(537,380)
+    $btnPullFromIntune.Size = New-Object System.Drawing.Size(170,30)
+    $btnPullFromIntune.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+    $dlg.Controls.Add($btnPullFromIntune)
+
+    $btnPushToIntune = New-Object System.Windows.Forms.Button
+    $btnPushToIntune.Name = 'btnPushToIntune'
+    $btnPushToIntune.Text = "Push to Intune..."
+    $btnPushToIntune.Location = New-Object System.Drawing.Point(715,380)
+    $btnPushToIntune.Size = New-Object System.Drawing.Size(190,30)
+    $btnPushToIntune.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+    $dlg.Controls.Add($btnPushToIntune)
+
+    $fixTip = New-Object System.Windows.Forms.ToolTip
+    $fixTip.SetToolTip($btnSelectDiffering, "Selects every row with a difference in any column. Rows that could not be checked are left out - there is nothing known to fix on them.")
+    $fixTip.SetToolTip($btnPullFromIntune, "Intune is right: update the catalog to match it. Opens `"Pull metadata and groups from Intune`" for the selected app(s) - it shows what would change and asks first.")
+    $fixTip.SetToolTip($btnPushToIntune, "The catalog is right: send its groups to Intune. Fixes Groups and Unknown assignments. A Metadata or Dependencies difference needs `"Deploy to Intune`" (update) instead - groups are all this sends.")
+
+    # The rows a fix can be about: the audited ones that differ somewhere.
+    # "(not checked)", "(checking...)" and "Failed..." are not differences.
+    $rowDiffers = {
+        param($auditRow)
+        foreach ($colName in $checkColumns) {
+            $cell = [string]$auditRow.Cells[$colName].Value
+            if (-not $cell -or $cell -eq "OK" -or $cell -eq "(not checked)" -or $cell -eq "(checking...)" -or $cell -like "Failed*") { continue }
+            return $true
+        }
+        return $false
+    }.GetNewClosure()
+
+    # Catalog positions of the selected rows, by name - the audit's rows
+    # are sorted by name, the catalog is not, so a row index means nothing
+    # there.
+    $getSelectedCatalogIndices = {
+        $names = @($grid.SelectedRows | ForEach-Object { [string]$_.Cells['App'].Value })
+        $found = New-Object System.Collections.Generic.List[int]
+        for ($ci = 0; $ci -lt $appsRef.Count; $ci++) {
+            if ($names -contains [string]$appsRef[$ci].appName) { $found.Add($ci) }
+        }
+        return ,$found.ToArray()
+    }.GetNewClosure()
+
+    $updateFixButtons = {
+        $count = $grid.SelectedRows.Count
+        $idle = $btnRun.Enabled
+        $btnPullFromIntune.Enabled = $idle -and $count -gt 0
+        $btnPushToIntune.Enabled = $idle -and $count -gt 0
+        $anyDiffer = $false
+        foreach ($auditRow in $grid.Rows) { if (& $rowDiffers $auditRow) { $anyDiffer = $true; break } }
+        $btnSelectDiffering.Enabled = $idle -and $anyDiffer
+        $lblFixHint.Text = if (-not $idle) { "Wait for the audit to finish." }
+                           elseif ($count -gt 0) { "$count selected - Pull if Intune is right, Push if the catalog is." }
+                           elseif ($anyDiffer) { "Select the rows that differ, then Pull or Push." }
+                           else { "" }
+    }.GetNewClosure()
+    $grid.Add_SelectionChanged($updateFixButtons)
+    # Run audit is disabled exactly while an audit runs, and re-enabled by
+    # every way one ends - so following it covers finish, failure and Stop
+    # without touching any of those paths.
+    $btnRun.Add_EnabledChanged($updateFixButtons)
+
+    $btnSelectDiffering.Add_Click({
+        $grid.ClearSelection()
+        foreach ($auditRow in $grid.Rows) { if (& $rowDiffers $auditRow) { $auditRow.Selected = $true } }
+    }.GetNewClosure())
+
+    # Neither fix is checked here afterwards: the window it opens may have
+    # been cancelled, or changed only some of what was selected, and
+    # re-auditing every app for that is the slowest thing this app does. So
+    # it says what to do next instead of guessing.
+    $afterFix = {
+        param([string]$What, [int]$Count)
+        Update-Grid
+        $lblStatus.ForeColor = [System.Drawing.Color]::DimGray
+        $lblStatus.Text = "$What for $Count app(s) - press Run audit to confirm they now match."
+    }.GetNewClosure()
+
+    $btnPullFromIntune.Add_Click({
+        $indices = & $getSelectedCatalogIndices
+        if ($indices.Count -eq 0) { return }
+        Show-SyncMetadataDialog -ScopedIndices $indices
+        & $afterFix "Pull from Intune done" $indices.Count
+    }.GetNewClosure())
+
+    $btnPushToIntune.Add_Click({
+        $indices = & $getSelectedCatalogIndices
+        if ($indices.Count -eq 0) { return }
+        # The same split the main grid's "Push groups to Intune" makes: one
+        # app goes straight to its assignment window, several to batch.
+        if ($indices.Count -eq 1) { Invoke-QuickAssignGroups -Index $indices[0] }
+        else { Show-BatchAssignDialog -ScopedIndices $indices }
+        & $afterFix "Push to Intune done" $indices.Count
+    }.GetNewClosure())
+    & $updateFixButtons
 
     $btnClose = New-Object System.Windows.Forms.Button
     $btnClose.Text = "Close"
@@ -610,9 +740,17 @@ function Global:Show-IntuneAuditDialog {
         # only here, and its height is set to stop above the log.
         $grid.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor
                        [System.Windows.Forms.AnchorStyles]::Right
+        # The Pull/Push row sits between the grid and the log, so it is
+        # Top-anchored for the same scrolling-panel reason as the log, and
+        # it - not the log - is what the grid stops above.
+        $btnSelectDiffering.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left
+        $lblFixHint.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor
+                             [System.Windows.Forms.AnchorStyles]::Right
+        $btnPullFromIntune.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+        $btnPushToIntune.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
         $HostTabPage.Tag = @{
             Fill          = $grid
-            FillStopAbove = $rtbAuditLog
+            FillStopAbove = $btnSelectDiffering
             RunAll        = { $btnRun.PerformClick() }.GetNewClosure()
             IsBusy        = { -not $btnRun.Enabled }.GetNewClosure()
             BlockClose    = { -not $btnRun.Enabled }.GetNewClosure()
