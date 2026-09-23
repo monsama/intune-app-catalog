@@ -1054,23 +1054,28 @@ $Global:App.Grid.Add_CellFormatting({
     $colName = $Global:App.Grid.Columns[$e.ColumnIndex].Name
     if ($colName -eq "Status") {
         if ($e.Value -and [string]$e.Value) {
-            if ([string]$e.Value -eq "Metadata saved - ready to deploy") {
+            # Judged by its parts: "Metadata saved - ready to deploy; Custom
+            # package" is good news plus a note, not a warning - it only
+            # became possible once Custom package could join Status, and
+            # showed orange. Anything else among the parts still does.
+            $statusParts = @(([string]$e.Value) -split '; ')
+            $onlyGoodNews = @($statusParts | Where-Object { $_ -ne "Metadata saved - ready to deploy" -and $_ -ne "Custom package" }).Count -eq 0
+            if ($onlyGoodNews -and $statusParts -contains "Metadata saved - ready to deploy") {
                 # Good news, not a warning - distinct from the orange/bold
                 # treatment below, which is reserved for things that actually
                 # need attention (no App ID at all, a missing package).
                 $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
                 $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Bold)
             }
-            elseif ([string]$e.Value -eq "Custom package") {
-                # Informational, not a warning either - a Winget app
-                # deliberately pointed at its own .intunewin isn't a
-                # problem the way a missing package or App ID is, so it gets
-                # its own neutral color rather than the same DarkOrange used
-                # for things that actually need fixing. Only when this is the
-                # WHOLE status text, though - composed with anything else
-                # (e.g. "No App ID; Custom package") falls through to
-                # the orange case below, since something else there DOES need
-                # attention.
+            elseif ($onlyGoodNews) {
+                # "Custom package" on its own. Informational, not a warning
+                # either - a Winget app deliberately pointed at its own
+                # .intunewin isn't a problem the way a missing package or
+                # App ID is, so it gets its own neutral color rather than
+                # the same DarkOrange used for things that actually need
+                # fixing. Composed with anything that does need attention
+                # (e.g. "No App ID; Custom package") it falls through to
+                # the orange case below.
                 $e.CellStyle.ForeColor = [System.Drawing.Color]::SteelBlue
                 $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Italic)
             }
