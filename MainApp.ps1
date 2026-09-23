@@ -1032,15 +1032,14 @@ $Global:App.Grid.Add_CellFormatting({
                 $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
                 $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Bold)
             }
-            elseif ([string]$e.Value -eq "Custom config" -or [string]$e.Value -eq "Custom package") {
-                # Informational, not a warning either - a Winget app with
-                # deliberately customized install/detection/etc., or one
-                # deliberately pointed at its own .intunewin, isn't a
+            elseif ([string]$e.Value -eq "Custom package") {
+                # Informational, not a warning either - a Winget app
+                # deliberately pointed at its own .intunewin isn't a
                 # problem the way a missing package or App ID is, so it gets
                 # its own neutral color rather than the same DarkOrange used
                 # for things that actually need fixing. Only when this is the
                 # WHOLE status text, though - composed with anything else
-                # (e.g. "No App ID; Custom config") falls through to
+                # (e.g. "No App ID; Custom package") falls through to
                 # the orange case below, since something else there DOES need
                 # attention.
                 $e.CellStyle.ForeColor = [System.Drawing.Color]::SteelBlue

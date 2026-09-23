@@ -1362,9 +1362,8 @@ function Global:Update-Grid {
         # the app editor now (Package location), not in a column here.
         $pkg = if ($needsPackageCheck) { Resolve-AppPackagePath -AppName $app.appName -Uncommon $isUncommon -Index $packageIndexForRefresh -PackagePath $app.packagePath } else { $null }
 
-        # Computed once, reused for both the Status note below and the
-        # separate Custom Config column - same check, no reason to run
-        # Test-AppHasCustomConfig twice per app on every grid refresh.
+        # For the Custom Config column only. Status used to repeat it as a
+        # note, which said the same thing twice on one row.
         $hasCustomConfig = Test-AppHasCustomConfig -App $app
 
         $status = ""
@@ -1373,20 +1372,6 @@ function Global:Update-Grid {
         }
         elseif ($needsPackageCheck -and -not $pkg.Found) {
             $status = "Package missing"
-        }
-
-        # A Winget app (has a Winget ID, so NOT uncommon) whose saved
-        # metadata deviates from what this tool would default it to - a
-        # custom install/uninstall command, detection rule, requirements,
-        # etc. The separate "Custom Config" column already tracks this as
-        # a plain Yes/No, but that column has no highlighting and is easy
-        # to scroll past; surfacing it here too puts it next to every
-        # other actionable note this column already carries. Composed
-        # with whatever else Status already says (semicolon-joined)
-        # rather than replacing it, so a Winget app that's ALSO missing
-        # its App ID still shows both.
-        if (-not $isUncommon -and $hasCustomConfig) {
-            $status = if ($status) { "$status; Custom config" } else { "Custom config" }
         }
 
         # Why the Uncommon column says "Yes" for an app that plainly has a
