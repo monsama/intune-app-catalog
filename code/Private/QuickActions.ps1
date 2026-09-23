@@ -30,6 +30,38 @@ function Global:Invoke-QuickDeploy {
     }
 }
 
+function Global:Invoke-QuickPushMetadata {
+    # The catalog is right about this app's metadata and Intune has
+    # drifted. The same update window Deploy opens for an app already in
+    # Intune, told to start its compare step on the catalog's values - it
+    # still fetches what is live, shows which fields differ and waits for
+    # Update Metadata, so nothing is sent without being seen first.
+    param([int]$Index)
+    $app = $Global:App.Apps[$Index]
+    if (-not $app.appId) {
+        [System.Windows.Forms.MessageBox]::Show("This app doesn't have an App ID yet - there is nothing in Intune to update. Use Deploy to Intune first.", "No App ID", "OK", "Warning") | Out-Null
+        return
+    }
+    $deployResult = Show-CreateInIntuneDialog -AppName $app.appName -WingetId $app.wingetId -ExistingAppId $app.appId -PreferLocal `
+        -GetAssignGroups {
+            @{
+                Required  = @($app.requiredFor)
+                Available = @($app.availableFor)
+                Uninstall = @($app.uninstallFor)
+                Exclude   = @($app.excludeFor)
+            }
+        }.GetNewClosure()
+    # "Deploy as new" is still ticked-able in that window, and creates a
+    # second app - record its ID exactly as Invoke-QuickDeploy would.
+    if ($deployResult -and $deployResult.NewAppId) {
+        $Global:App.Apps[$Index].appId = $deployResult.NewAppId
+        if ($deployResult.NewAppName) { $Global:App.Apps[$Index].appName = $deployResult.NewAppName }
+        $Global:App.UnsavedChangesBox.Value = $true
+        [void](Save-AppsToFile -Path $Global:App.LinkedFilePath)
+    }
+    Update-Grid
+}
+
 function Global:Invoke-QuickAssignGroups {
     param([int]$Index)
     $app = $Global:App.Apps[$Index]

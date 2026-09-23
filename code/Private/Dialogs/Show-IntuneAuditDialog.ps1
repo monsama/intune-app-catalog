@@ -58,9 +58,10 @@ function Global:Show-IntuneAuditDialog {
     $dlg.ClientSize = New-Object System.Drawing.Size(920, 620)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "Sizable"
-    # 500, not 420: the Pull/Push row under the list costs 42px, and at
-    # 420 the list shrank to about ten pixels.
-    $dlg.MinimumSize = New-Object System.Drawing.Size(700, 500)
+    # 500 tall, not 420: the Pull/Push row under the list costs 42px, and
+    # at 420 the list shrank to about ten pixels. 820 wide, not 700: that
+    # row holds four buttons, and narrower squeezed its hint to nothing.
+    $dlg.MinimumSize = New-Object System.Drawing.Size(820, 500)
     $dlg.MaximizeBox = $true
     $dlg.MinimizeBox = $false
 
@@ -70,7 +71,7 @@ function Global:Show-IntuneAuditDialog {
     # side is right - so it says both, and the buttons under the list do
     # them. It used to name Pull alone, which is exactly wrong when the
     # catalog is the source of truth: pulling throws your change away.
-    $lblIntro.Text = "Checks $scopeText Metadata, Groups, Dependencies, and Assignments against what's live in Intune right now - the audit itself only reads. Where a row differs, decide which side is right and select it: Pull from Intune if Intune is right, Push to Intune if the catalog is. Double-click a row for the full detail."
+    $lblIntro.Text = "Checks $scopeText Metadata, Groups, Dependencies, and Assignments against what's live in Intune right now - the audit itself only reads. Where a row differs, decide which side is right and select it: Pull from Intune if Intune is right, Push groups or Push metadata if the catalog is. Double-click a row for the full detail."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(890,48)
     $dlg.Controls.Add($lblIntro)
@@ -251,30 +252,39 @@ function Global:Show-IntuneAuditDialog {
     $lblFixHint.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
     $lblFixHint.ForeColor = [System.Drawing.Color]::DimGray
     $lblFixHint.Location = New-Object System.Drawing.Point(193,380)
-    $lblFixHint.Size = New-Object System.Drawing.Size(336,30)
+    $lblFixHint.Size = New-Object System.Drawing.Size(258,30)
     $lblFixHint.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($lblFixHint)
 
     $btnPullFromIntune = New-Object System.Windows.Forms.Button
     $btnPullFromIntune.Name = 'btnPullFromIntune'
     $btnPullFromIntune.Text = "Pull from Intune..."
-    $btnPullFromIntune.Location = New-Object System.Drawing.Point(537,380)
-    $btnPullFromIntune.Size = New-Object System.Drawing.Size(170,30)
+    $btnPullFromIntune.Location = New-Object System.Drawing.Point(459,380)
+    $btnPullFromIntune.Size = New-Object System.Drawing.Size(150,30)
     $btnPullFromIntune.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
     $dlg.Controls.Add($btnPullFromIntune)
 
-    $btnPushToIntune = New-Object System.Windows.Forms.Button
-    $btnPushToIntune.Name = 'btnPushToIntune'
-    $btnPushToIntune.Text = "Push to Intune..."
-    $btnPushToIntune.Location = New-Object System.Drawing.Point(715,380)
-    $btnPushToIntune.Size = New-Object System.Drawing.Size(190,30)
-    $btnPushToIntune.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
-    $dlg.Controls.Add($btnPushToIntune)
+    $btnPushGroups = New-Object System.Windows.Forms.Button
+    $btnPushGroups.Name = 'btnPushGroups'
+    $btnPushGroups.Text = "Push groups..."
+    $btnPushGroups.Location = New-Object System.Drawing.Point(617,380)
+    $btnPushGroups.Size = New-Object System.Drawing.Size(130,30)
+    $btnPushGroups.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+    $dlg.Controls.Add($btnPushGroups)
+
+    $btnPushMetadata = New-Object System.Windows.Forms.Button
+    $btnPushMetadata.Name = 'btnPushMetadata'
+    $btnPushMetadata.Text = "Push metadata..."
+    $btnPushMetadata.Location = New-Object System.Drawing.Point(755,380)
+    $btnPushMetadata.Size = New-Object System.Drawing.Size(150,30)
+    $btnPushMetadata.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+    $dlg.Controls.Add($btnPushMetadata)
 
     $fixTip = New-Object System.Windows.Forms.ToolTip
     $fixTip.SetToolTip($btnSelectDiffering, "Selects every row with a difference in any column. Rows that could not be checked are left out - there is nothing known to fix on them.")
     $fixTip.SetToolTip($btnPullFromIntune, "Intune is right: update the catalog to match it. Opens `"Pull metadata and groups from Intune`" for the selected app(s) - it shows what would change and asks first.")
-    $fixTip.SetToolTip($btnPushToIntune, "The catalog is right: send its groups to Intune. Fixes Groups and Unknown assignments. A Metadata or Dependencies difference needs `"Deploy to Intune`" (update) instead - groups are all this sends.")
+    $fixTip.SetToolTip($btnPushGroups, "The catalog is right about groups: send them to Intune. Fixes Groups and Unknown assignments. Opens `"Push groups to Intune`" for the selected app(s).")
+    $fixTip.SetToolTip($btnPushMetadata, "The catalog is right about metadata: send it to Intune. Fixes Metadata and Dependencies. Opens each selected app's update window in turn - it compares with Intune, keeps the catalog's value for every field that differs, and sends nothing until you click Update Metadata.")
 
     # The rows a fix can be about: the audited ones that differ somewhere.
     # "(not checked)", "(checking...)" and "Failed..." are not differences.
@@ -304,7 +314,8 @@ function Global:Show-IntuneAuditDialog {
         $count = $grid.SelectedRows.Count
         $idle = $btnRun.Enabled
         $btnPullFromIntune.Enabled = $idle -and $count -gt 0
-        $btnPushToIntune.Enabled = $idle -and $count -gt 0
+        $btnPushGroups.Enabled = $idle -and $count -gt 0
+        $btnPushMetadata.Enabled = $idle -and $count -gt 0
         $anyDiffer = $false
         foreach ($auditRow in $grid.Rows) { if (& $rowDiffers $auditRow) { $anyDiffer = $true; break } }
         $btnSelectDiffering.Enabled = $idle -and $anyDiffer
@@ -342,14 +353,24 @@ function Global:Show-IntuneAuditDialog {
         & $afterFix "Pull from Intune done" $indices.Count
     }.GetNewClosure())
 
-    $btnPushToIntune.Add_Click({
+    $btnPushGroups.Add_Click({
         $indices = & $getSelectedCatalogIndices
         if ($indices.Count -eq 0) { return }
         # The same split the main grid's "Push groups to Intune" makes: one
         # app goes straight to its assignment window, several to batch.
         if ($indices.Count -eq 1) { Invoke-QuickAssignGroups -Index $indices[0] }
         else { Show-BatchAssignDialog -ScopedIndices $indices }
-        & $afterFix "Push to Intune done" $indices.Count
+        & $afterFix "Push groups done" $indices.Count
+    }.GetNewClosure())
+
+    $btnPushMetadata.Add_Click({
+        $indices = & $getSelectedCatalogIndices
+        if ($indices.Count -eq 0) { return }
+        # One update window per app, in turn. There is no batch metadata
+        # update to hand several to - Batch Deploy only creates apps that
+        # are not in Intune yet - and each app's compare is its own anyway.
+        foreach ($pushIndex in $indices) { Invoke-QuickPushMetadata -Index $pushIndex }
+        & $afterFix "Push metadata done" $indices.Count
     }.GetNewClosure())
     & $updateFixButtons
 
@@ -747,7 +768,8 @@ function Global:Show-IntuneAuditDialog {
         $lblFixHint.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor
                              [System.Windows.Forms.AnchorStyles]::Right
         $btnPullFromIntune.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
-        $btnPushToIntune.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+        $btnPushGroups.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+        $btnPushMetadata.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
         $HostTabPage.Tag = @{
             Fill          = $grid
             FillStopAbove = $btnSelectDiffering

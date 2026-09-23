@@ -48,7 +48,13 @@ function Global:Show-CreateInIntuneDialog {
         # Run after a successful create or update, with the result box.
         # The app editor used to do this work when the modal dialog
         # returned; embedded there is no such moment.
-        [scriptblock]$OnDeployComplete
+        [scriptblock]$OnDeployComplete,
+        # "Push metadata": the catalog is the side that is right. The
+        # compare step after the live fetch then starts every differing
+        # field on the catalog's value rather than Intune's (see
+        # Show-MetadataDriftDialog -PreferLocal), so Update Metadata sends
+        # the catalog instead of Intune's own values back to it.
+        [switch]$PreferLocal
     )
     $embedded = [bool]$HostTabControl
 
@@ -1757,7 +1763,7 @@ function Global:Show-CreateInIntuneDialog {
     $showDiffTip.SetToolTip($btnShowDiff, "Show again which fields differ from Intune's live copy, and optionally keep your local value for some of them.")
     $btnShowDiff.Add_Click({
         if (-not $lastDriftBox.Rows -or $lastDriftBox.Rows.Count -eq 0) { return }
-        $keepLocalFields = @(Show-MetadataDriftDialog -Rows $lastDriftBox.Rows)
+        $keepLocalFields = @(Show-MetadataDriftDialog -Rows $lastDriftBox.Rows -PreferLocal:$PreferLocal)
         if ($keepLocalFields.Count -gt 0) {
             & $applyKeepLocalFields -KeepLocalFields $keepLocalFields -LocalSnapshot $lastDriftBox.LocalSnapshot
         }
@@ -3087,6 +3093,7 @@ function Global:Show-CreateInIntuneDialog {
             $dlgRef = $dlg
             $metadataFetchRunningBoxRef = $metadataFetchRunningBox
             $existingAppIdRef = $ExistingAppId
+            $preferLocalRef = [bool]$PreferLocal
             $updateCustomFieldHighlightsRef = $updateCustomFieldHighlights
             $applyKeepLocalFieldsRef = $applyKeepLocalFields
             $lastDriftBoxRef = $lastDriftBox
@@ -3547,7 +3554,7 @@ function Global:Show-CreateInIntuneDialog {
                     $lastDriftBoxRef.LocalSnapshot = $localSnapshotRef
                     $btnShowDiffRef.Visible = $true
 
-                    $keepLocalFields = @(Show-MetadataDriftDialog -Rows $driftRows.ToArray())
+                    $keepLocalFields = @(Show-MetadataDriftDialog -Rows $driftRows.ToArray() -PreferLocal:$preferLocalRef)
                     if ($keepLocalFields.Count -gt 0) {
                         & $applyKeepLocalFieldsRef -KeepLocalFields $keepLocalFields -LocalSnapshot $localSnapshotRef
                     }

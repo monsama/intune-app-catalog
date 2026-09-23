@@ -3,7 +3,12 @@ function Global:Show-MetadataDriftDialog {
     # caller reviewing MULTIPLE apps in a row (bulk "Pull metadata and groups from Intune...")
     # make clear which app each popup is actually about, since several of
     # these can appear back to back in that flow.
-    param($Rows, [string]$AppName = "")
+    #
+    # -PreferLocal: every row starts on the catalog's value instead of
+    # Intune's. For "Push metadata", where the catalog is the side you
+    # already said is right - starting on Intune's values would quietly
+    # turn a push into a pull unless every row was unticked by hand.
+    param($Rows, [string]$AppName = "", [switch]$PreferLocal)
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
@@ -19,7 +24,11 @@ function Global:Show-MetadataDriftDialog {
 
     $lblHeader = New-Object System.Windows.Forms.Label
     $appPhrase = if ($AppName) { " for `"$AppName`"" } else { "" }
-    $lblHeader.Text = "These fields$appPhrase differ between your local catalog copy and what's actually live in Intune. Intune's value wins by default for every row - untick a row below to keep your local value for that field instead."
+    $lblHeader.Text = if ($PreferLocal) {
+        "These fields$appPhrase differ between your local catalog copy and what's actually live in Intune. You are pushing the catalog, so its value is kept for every row - tick a row below to take Intune's value for that field instead."
+    } else {
+        "These fields$appPhrase differ between your local catalog copy and what's actually live in Intune. Intune's value wins by default for every row - untick a row below to keep your local value for that field instead."
+    }
     $lblHeader.Location = New-Object System.Drawing.Point(15,12)
     $lblHeader.Size = New-Object System.Drawing.Size(770,40)
     $dlg.Controls.Add($lblHeader)
@@ -80,7 +89,7 @@ function Global:Show-MetadataDriftDialog {
 
     foreach ($row in @($Rows)) {
         $rIdx = $grid.Rows.Add()
-        $grid.Rows[$rIdx].Cells["UseIntune"].Value = $true
+        $grid.Rows[$rIdx].Cells["UseIntune"].Value = -not $PreferLocal
         $grid.Rows[$rIdx].Cells["Field"].Value = $row.Field
         $grid.Rows[$rIdx].Cells["Local"].Value = if ([string]::IsNullOrWhiteSpace($row.Local)) { "(blank)" } else { $row.Local }
         $grid.Rows[$rIdx].Cells["Intune"].Value = if ([string]::IsNullOrWhiteSpace($row.Intune)) { "(blank)" } else { $row.Intune }

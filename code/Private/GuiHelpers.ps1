@@ -1540,16 +1540,131 @@ function Global:Show-LastAuditDetail {
 
     $entry = $Global:App.LastAuditResults[$AppName]
     $age = Get-FriendlyAge -Timestamp $entry.Timestamp
-    $lines = New-Object System.Collections.Generic.List[string]
     $fields = @(
         @{ Label = "Metadata"; Value = $entry.Metadata }
         @{ Label = "Groups"; Value = $entry.Groups }
         @{ Label = "Dependencies"; Value = $entry.Dependencies }
         @{ Label = "Unknown assignments"; Value = $entry.Unknown }
     )
-    foreach ($f in $fields) {
-        $displayVal = if ($null -ne $f.Value) { $f.Value } else { "(not checked this session)" }
-        $lines.Add("$($f.Label): $displayVal")
+
+    # A window, not a MessageBox: this is where "Groups: 1 differ" is read,
+    # and a MessageBox could only say it and offer OK. The fix is one of
+    # two directions, and only you know which side is right - so both are
+    # here, the same actions the audit window and the grid's menu have.
+    $appIndex = -1
+    for ($ai = 0; $ai -lt $Global:App.Apps.Count; $ai++) {
+        if ([string]$Global:App.Apps[$ai].appName -eq $AppName) { $appIndex = $ai; break }
     }
-    [System.Windows.Forms.MessageBox]::Show(($lines -join "`r`n`r`n"), "Last audit - $AppName ($age)", "OK", "Information") | Out-Null
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Font = Get-AppUiFont
+    $dlg.Text = "Last audit - $AppName ($age)"
+    $dlg.ClientSize = New-Object System.Drawing.Size(620, 300)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+
+    $grid = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $grid
+    $grid.Location = New-Object System.Drawing.Point(15,15)
+    $grid.Size = New-Object System.Drawing.Size(590,170)
+    $grid.ReadOnly = $true
+    $grid.AllowUserToDeleteRows = $false
+    $grid.SelectionMode = "FullRowSelect"
+    $grid.MultiSelect = $false
+    $grid.ColumnHeadersVisible = $false
+    $grid.AutoSizeRowsMode = [System.Windows.Forms.DataGridViewAutoSizeRowsMode]::AllCells
+    $colCheck = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colCheck.Name = "Check"
+    $colCheck.Width = 160
+    $colCheck.DefaultCellStyle.Font = New-Object System.Drawing.Font($dlg.Font, [System.Drawing.FontStyle]::Bold)
+    [void]$grid.Columns.Add($colCheck)
+    $colResult = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colResult.Name = "Result"
+    $colResult.AutoSizeMode = [System.Windows.Forms.DataGridViewAutoSizeColumnMode]::Fill
+    $colResult.DefaultCellStyle.WrapMode = [System.Windows.Forms.DataGridViewTriState]::True
+    [void]$grid.Columns.Add($colResult)
+    foreach ($f in $fields) {
+        $displayVal = if ($null -ne $f.Value) { [string]$f.Value } else { "(not checked this session)" }
+        [void]$grid.Rows.Add($f.Label, $displayVal)
+    }
+    # The audit window's colours: green OK, red could-not-check, orange
+    # for a difference.
+    $grid.Add_CellFormatting({
+        param($gridSender, $e)
+        if ($e.ColumnIndex -ne 1) { return }
+        $val = [string]$e.Value
+        if ($val -eq "OK") { $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen }
+        elseif ($val -like "Failed*") { $e.CellStyle.ForeColor = [System.Drawing.Color]::Firebrick }
+        elseif ($val -and $val -notlike "(not checked*") { $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange }
+    }.GetNewClosure())
+    $dlg.Controls.Add($grid)
+    $dlg.Add_Shown({ $grid.ClearSelection() }.GetNewClosure())
+
+    $lblHint = New-Object System.Windows.Forms.Label
+    $lblHint.Text = "Something differs? Pull from Intune if Intune is right. If the catalog is right: Push groups for Groups and Unknown assignments, Push metadata for Metadata and Dependencies."
+    $lblHint.ForeColor = [System.Drawing.Color]::DimGray
+    $lblHint.Location = New-Object System.Drawing.Point(15,192)
+    $lblHint.Size = New-Object System.Drawing.Size(590,44)
+    $dlg.Controls.Add($lblHint)
+
+    $btnPull = New-Object System.Windows.Forms.Button
+    $btnPull.Text = "Pull from Intune..."
+    $btnPull.Location = New-Object System.Drawing.Point(15,254)
+    $btnPull.Size = New-Object System.Drawing.Size(150,32)
+    $dlg.Controls.Add($btnPull)
+
+    $btnPushGroups = New-Object System.Windows.Forms.Button
+    $btnPushGroups.Text = "Push groups..."
+    $btnPushGroups.Location = New-Object System.Drawing.Point(173,254)
+    $btnPushGroups.Size = New-Object System.Drawing.Size(130,32)
+    $dlg.Controls.Add($btnPushGroups)
+
+    $btnPushMetadata = New-Object System.Windows.Forms.Button
+    $btnPushMetadata.Text = "Push metadata..."
+    $btnPushMetadata.Location = New-Object System.Drawing.Point(311,254)
+    $btnPushMetadata.Size = New-Object System.Drawing.Size(150,32)
+    $dlg.Controls.Add($btnPushMetadata)
+
+    $btnClose = New-Object System.Windows.Forms.Button
+    $btnClose.Text = "Close"
+    $btnClose.Location = New-Object System.Drawing.Point(525,254)
+    $btnClose.Size = New-Object System.Drawing.Size(80,32)
+    $btnClose.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $dlg.Controls.Add($btnClose)
+    $dlg.CancelButton = $btnClose
+
+    $tips = New-Object System.Windows.Forms.ToolTip
+    $tips.SetToolTip($btnPull, "Intune is right: update the catalog to match it. Shows what would change and asks first.")
+    $tips.SetToolTip($btnPushGroups, "The catalog is right about groups: send them to Intune. Fixes Groups and Unknown assignments.")
+    $tips.SetToolTip($btnPushMetadata, "The catalog is right about metadata: opens the update window, which compares with Intune, keeps the catalog's value for every field that differs, and sends nothing until you click Update Metadata.")
+
+    # Gone from the catalog since it was audited - nothing to act on.
+    if ($appIndex -lt 0) {
+        $btnPull.Enabled = $false
+        $btnPushGroups.Enabled = $false
+        $btnPushMetadata.Enabled = $false
+    }
+
+    # Which action was picked, run once this window has closed - the
+    # results shown here are about to be out of date, and the action's own
+    # window should not open on top of a popup that no longer means much.
+    $pickedBox = @{ Action = $null }
+    $btnPull.Add_Click({ $pickedBox.Action = 'Pull'; $dlg.Close() }.GetNewClosure())
+    $btnPushGroups.Add_Click({ $pickedBox.Action = 'PushGroups'; $dlg.Close() }.GetNewClosure())
+    $btnPushMetadata.Add_Click({ $pickedBox.Action = 'PushMetadata'; $dlg.Close() }.GetNewClosure())
+
+    Set-Theme -Control $dlg
+    [void]$dlg.ShowDialog($Global:App.Form)
+    $dlg.Dispose()
+
+    switch ($pickedBox.Action) {
+        'Pull'         { Show-SyncMetadataDialog -ScopedIndices @($appIndex) }
+        'PushGroups'   { Invoke-QuickAssignGroups -Index $appIndex }
+        'PushMetadata' { Invoke-QuickPushMetadata -Index $appIndex }
+        default        { return }
+    }
+    Update-Grid
+    Set-Status "Done with `"$AppName`" - run the audit on it again to confirm Intune and the catalog now match."
 }
