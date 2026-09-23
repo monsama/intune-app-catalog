@@ -61,7 +61,7 @@ function Global:Invoke-QuickPushMetadata {
     # app editor, opened on its Deploy side, with the compare there
     # starting every differing field on the catalog's value. It still
     # fetches what is live, shows which fields differ and waits for
-    # Update Metadata, so nothing is sent without being seen first.
+    # Push Metadata, so nothing is sent without being seen first.
     param([int]$Index)
     $app = $Global:App.Apps[$Index]
     if (-not $app.appId) {

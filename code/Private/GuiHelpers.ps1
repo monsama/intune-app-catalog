@@ -1700,7 +1700,7 @@ function Global:Show-LastAuditDetail {
     $tips = New-Object System.Windows.Forms.ToolTip
     $tips.SetToolTip($btnPull, "Intune is right: update the catalog to match it. Shows what would change and asks first.")
     $tips.SetToolTip($btnPushGroups, "The catalog is right about groups: send them to Intune. Fixes Groups and Unknown assignments.")
-    $tips.SetToolTip($btnPushMetadata, "The catalog is right about metadata: opens the app in the editor on its Deploy side, with the catalog's value kept for every field that differs. Nothing is sent until you click Update Metadata.")
+    $tips.SetToolTip($btnPushMetadata, "The catalog is right about metadata: opens the app in the editor on its Deploy side, with the catalog's value kept for every field that differs. Nothing is sent until you click Push Metadata.")
 
     # Gone from the catalog since it was audited - nothing to act on.
     if ($appIndex -lt 0) {

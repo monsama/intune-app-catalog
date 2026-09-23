@@ -17,7 +17,7 @@ function Global:Show-CreateInIntuneDialog {
         # NOT the same thing as -CurrentIndex below, even though they're
         # usually set together - this is [bool]$ExistingApp from the app
         # editor's own scope, true whenever ITS OWN "auto-save immediately
-        # after a successful Deploy/Update Metadata" branch will fire
+        # after a successful Deploy/Push Metadata" branch will fire
         # (Show-AppEditor.ps1, $btnCreateInIntune.Add_Click). Confirmed a
         # real mismatch between the two: Show-IntuneOnlyAppsDialog's own
         # "Add to catalog..." flow opens the editor with -ExistingApp set
@@ -52,7 +52,7 @@ function Global:Show-CreateInIntuneDialog {
         # "Push metadata": the catalog is the side that is right. The
         # compare step after the live fetch then starts every differing
         # field on the catalog's value rather than Intune's (see
-        # Show-MetadataDriftDialog -PreferLocal), so Update Metadata sends
+        # Show-MetadataDriftDialog -PreferLocal), so Push Metadata sends
         # the catalog instead of Intune's own values back to it.
         [switch]$PreferLocal,
         # Run with the fetched data each time the live values come back
@@ -1660,7 +1660,7 @@ function Global:Show-CreateInIntuneDialog {
         $base = if (-not $isDuplicate) { "Deploy" }
                 elseif ($chkForceNew -and $chkForceNew.Checked) { "Deploy" }
                 elseif ($chkReplaceContent -and $chkReplaceContent.Checked) { "Update + Replace Content" }
-                else { "Update Metadata" }
+                else { "Push Metadata" }
         $creating = (-not $isDuplicate) -or ($chkForceNew -and $chkForceNew.Checked)
         $pushes = if ($creating) { [bool]$Global:App.PushGroupsOnCreate } else { [bool]$Global:App.PushGroupsOnUpdate }
         if (-not $pushes) { return $base }
@@ -1691,7 +1691,7 @@ function Global:Show-CreateInIntuneDialog {
     # Sized once, for the widest label this window can end up showing.
     # The app editor positions this button by its Width, so growing it
     # later would leave it sitting somewhere else on that layout.
-    $labelBases = if ($isDuplicate) { @("Deploy", "Update Metadata", "Update + Replace Content") } else { @("Deploy") }
+    $labelBases = if ($isDuplicate) { @("Deploy", "Push Metadata", "Update + Replace Content") } else { @("Deploy") }
     $groupsReachable = ([bool]$Global:App.PushGroupsOnCreate) -or ($isDuplicate -and [bool]$Global:App.PushGroupsOnUpdate)
     $widestLabel = 200
     foreach ($labelBase in $labelBases) {
@@ -2289,7 +2289,7 @@ function Global:Show-CreateInIntuneDialog {
         $certThumbRef = $Global:App.GraphCertificateThumbprint
         # Added specifically so the success handler below can build and
         # save a catalog-shaped metadata object via
-        # Save-AppMetadataToLocalCatalog - a real Create/Update Metadata
+        # Save-AppMetadataToLocalCatalog - a real Deploy/Push Metadata
         # previously only ever touched Intune, never the local catalog
         # file, even though "Save for later..." (right next to it, same
         # dialog) already did this correctly. $detectionRuleConfig,
@@ -2418,7 +2418,7 @@ function Global:Show-CreateInIntuneDialog {
                         }
                         catch {
                             $localSaveOk = $false
-                            Write-Log "[FAILED] Create/Update Metadata: saving to the local catalog threw: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
+                            Write-Log "[FAILED] Deploy/Push Metadata: saving to the local catalog threw: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
                         }
 
                         $lblStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
@@ -2825,7 +2825,7 @@ function Global:Show-CreateInIntuneDialog {
 
         # Opened from the App Editor (-FromAppEditor): stage this metadata
         # for that still-open editor's own "Save app to catalog" instead of
-        # writing it here - same reasoning as the Create/Update Metadata
+        # writing it here - same reasoning as the Deploy/Push Metadata
         # success handler above. Writing it here unconditionally used to
         # mean a brand-new app's editor Save afterward added a SECOND,
         # duplicate catalog entry, and Cancelling that editor couldn't undo
@@ -2844,7 +2844,7 @@ function Global:Show-CreateInIntuneDialog {
         # to persist it was pure friction, and had already caused real,
         # demonstrated confusion earlier this session (mistaking "not yet
         # written to disk" for "the save silently failed"). Routed through
-        # the same shared function the Create/Update Metadata success
+        # the same shared function the Deploy/Push Metadata success
         # handler now also uses (see Save-AppMetadataToLocalCatalog) -
         # find/create-by-name, whole-element replacement, and the actual
         # write all happen there now, not duplicated here.
@@ -3051,7 +3051,7 @@ function Global:Show-CreateInIntuneDialog {
     if ($isDuplicate) {
         # Fetches what's actually live in Intune right now and repopulates
         # the fields above (which start out holding local guesses/templates),
-        # so Update Metadata edits a real, current picture instead of
+        # so Push Metadata edits a real, current picture instead of
         # possibly overwriting a correct Intune value with a stale local
         # guess.
         #

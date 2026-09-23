@@ -1147,7 +1147,7 @@ $Global:App.Grid.Add_CellFormatting({
 
 # Saves a catalog-shaped (camelCase) metadata object into the local
 # per-app catalog file - shared by both "Save for later..." and the
-# Create/Update Metadata success handler within Show-CreateInIntuneDialog,
+# Deploy/Push Metadata success handler within Show-CreateInIntuneDialog,
 # so a real deploy persists locally exactly the same way an explicit
 # "save for later" already does, rather than only updating Intune and
 # leaving the local catalog file behind. Finds the existing entry by
@@ -1450,7 +1450,7 @@ $Global:App.Grid.Add_CellFormatting({
 # across several different apps would silently break them, not update
 # them the way changing a shared field like Min OS safely can.
 # Reuses $Global:App.EmbeddedCreateAppScript's "UpdateMetadata" mode (the same
-# one Show-CreateInIntuneDialog's own "Update Metadata" button uses for a
+# one Show-CreateInIntuneDialog's own "Push Metadata" button uses for a
 # single app), one app at a time via the same self-referencing queue-runner
 # pattern Show-BatchDeployDialog already uses - see its own $RunNextBox
 # comment for why a plain self-referencing scriptblock doesn't work here.

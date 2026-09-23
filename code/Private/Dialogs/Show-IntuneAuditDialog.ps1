@@ -356,7 +356,7 @@ function Global:Show-IntuneAuditDialog {
     $fixTip.SetToolTip($btnSelectDiffering, "Selects every row with a difference in any column. Rows that could not be checked are left out - there is nothing known to fix on them.")
     $fixTip.SetToolTip($btnPullFromIntune, "Intune is right: update the catalog to match it. Opens `"Pull metadata and groups from Intune`" for the selected app(s) - it shows what would change and asks first.")
     $fixTip.SetToolTip($btnPushGroups, "The catalog is right about groups: send them to Intune. Fixes Groups and Unknown assignments. Opens `"Push groups to Intune`" for the selected app(s).")
-    $fixTip.SetToolTip($btnPushMetadata, "The catalog is right about metadata: send it to Intune. Fixes Metadata and Dependencies. One app: opens it in the app editor on its Deploy side, with the catalog's value kept for every field that differs - nothing is sent until you click Update Metadata. Several: one window that compares them all and pushes the ones you tick.")
+    $fixTip.SetToolTip($btnPushMetadata, "The catalog is right about metadata: send it to Intune. Fixes Metadata and Dependencies. One app: opens it in the app editor on its Deploy side, with the catalog's value kept for every field that differs - nothing is sent until you click Push Metadata. Several: one window that compares them all and pushes the ones you tick.")
 
     # The rows a fix can be about: the audited ones that differ somewhere.
     # "(not checked)", "(checking...)" and "Failed..." are not differences.

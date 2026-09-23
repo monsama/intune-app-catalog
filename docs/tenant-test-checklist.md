@@ -73,7 +73,7 @@ For every step, check the dialog's log box **and** the Log tab.
 ## 4. Batch edit clears dependencies
 
 - [ ] Give the test app a dependency (Deploy to Intune..., dependencies,
-      Update Metadata). Check it in the Intune portal.
+      Push Metadata). Check it in the Intune portal.
 - [ ] **Batch edit Intune fields...**, tick only **Dependencies** with
       nothing checked, **Apply to Intune...** - the question says
       "none (existing dependencies are removed)". Answer **Yes**.
@@ -169,7 +169,7 @@ update is sent". Test it on a **test app**, not something real.
       status line changes, and the Log tab shows the `[GRAPH]` lines.
 - [ ] Close it. Change something about that app in the **Intune portal**
       (e.g. the description). Open Deploy again (still without the check),
-      and press **Update Metadata** straight away.
+      and press **Push Metadata** straight away.
       - It must first load from Intune, then show the drift dialog naming
         the description, let you keep either value, and only then run the
         update.
@@ -219,7 +219,7 @@ update is sent". Test it on a **test app**, not something real.
 - [ ] Deploy to Intune > set **Install time required** to 61 and click
       elsewhere: the field becomes 60 (Intune stores 5-minute steps).
       64 becomes 65, 5000 becomes 1440.
-- [ ] Update Metadata with it, then **Refresh from Intune**: the value
+- [ ] Push Metadata with it, then **Refresh from Intune**: the value
       matches what the field showed, and the app's catalog file agrees.
 - [ ] The audit no longer reports "Install time required" as drift for
       that app.
