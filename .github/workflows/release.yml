@@ -2,7 +2,7 @@ name: release
 
 # Tag a commit to publish a release:
 #   git tag v1.3 && git push origin v1.3
-# The zip holds exactly what's needed to run the app - no tests, no CI
+# The zip holds exactly what's needed to run the app - no tests, no docs, no CI
 # config, no screenshots - so unzipping it and running IntuneDeployment.ps1
 # is the whole install.
 on:
@@ -46,10 +46,9 @@ jobs:
         run: |
           $staging = Join-Path $env:RUNNER_TEMP 'intune-app-catalog'
           New-Item -ItemType Directory -Path $staging -Force | Out-Null
-          Copy-Item IntuneDeployment.ps1, MainApp.ps1, README.md, CHANGELOG.md $staging
+          Copy-Item IntuneDeployment.ps1, MainApp.ps1 $staging
           Copy-Item code -Destination (Join-Path $staging 'code') -Recurse
           Remove-Item (Join-Path $staging 'code\tests') -Recurse -Force
-          Copy-Item docs -Destination (Join-Path $staging 'docs') -Recurse
           $zip = Join-Path $env:RUNNER_TEMP "intune-app-catalog-${{ steps.version.outputs.version }}.zip"
           Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip -Force
           "zip=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
