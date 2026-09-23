@@ -15,7 +15,13 @@ function Global:Show-AppEditor {
         # itself, not from this editor's own Previous/Next - lets that
         # navigation land straight back in Deploy view for the next app
         # instead of stopping on the plain editor screen in between.
-        [switch]$AutoOpenDeploy
+        [switch]$AutoOpenDeploy,
+        # Opened to push this app's catalog metadata to Intune (the audit's
+        # "Push metadata"): the Deploy side's compare with Intune starts
+        # every differing field on the catalog's value instead of Intune's
+        # (Show-CreateInIntuneDialog -PreferLocal). For this app only -
+        # Previous/Next open the next one the ordinary way.
+        [switch]$PreferLocal
     )
 
     # Plain (non-$Script:) local alias - see note in Start-IntuneAppLookup.
@@ -1193,7 +1199,7 @@ function Global:Show-AppEditor {
     $deployHost = Show-CreateInIntuneDialog -AppName $txtName.Text.Trim() -WingetId $txtWinget.Text.Trim() `
         -ExistingAppId $txtId.Text.Trim() -FromAppEditor -CallerHasExistingCatalogEntry:([bool]$ExistingApp) `
         -CurrentIndex $CurrentIndex -HostTabControl $editorTabs -HostForm $dlg -HostBottomY 667 `
-        -OnDeployComplete $ApplyDeployResult -OnLiveFetch $compareGroupsWithIntune `
+        -OnDeployComplete $ApplyDeployResult -OnLiveFetch $compareGroupsWithIntune -PreferLocal:$PreferLocal `
         -GetAssignGroups {
             @{
                 Required  = @($reqGroup.List.CheckedItems | ForEach-Object { [string]$_ })

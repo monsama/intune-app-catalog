@@ -30,11 +30,37 @@ function Global:Invoke-QuickDeploy {
     }
 }
 
+function Global:Invoke-EditApp {
+    # Opens the app editor for one catalog entry and keeps what it returns
+    # - the grid's Edit button, and anything else that opens an app for
+    # editing, so they all save the same way.
+    #
+    # -OpenDeploy: straight to the Deploy side, as the editor's own
+    # Previous/Next from there does. -PreferLocal: that side's compare with
+    # Intune starts on the catalog's values (see Show-AppEditor).
+    param([int]$Index, [switch]$OpenDeploy, [switch]$PreferLocal)
+    $editorResult = Show-AppEditor -ExistingApp $Global:App.Apps[$Index] -CurrentIndex $Index -AutoOpenDeploy:$OpenDeploy -PreferLocal:$PreferLocal
+    if (-not $editorResult) { return }
+    # Not necessarily $Index anymore - Previous/Next inside the editor can
+    # navigate to (and save) a DIFFERENT app before finally returning
+    # here, and Show-AppEditor's own result always carries the index of
+    # whichever app it actually last saved (see its own comment next to
+    # this Index field). Falling back to $Index covers older in-memory
+    # result shapes/callers that never set it.
+    $targetIndex = if ($null -ne $editorResult.Index -and $editorResult.Index -ge 0) { $editorResult.Index } else { $Index }
+    $Global:App.Apps[$targetIndex] = $editorResult.App
+    $Global:App.UnsavedChangesBox.Value = $true
+    [void](Save-AppsToFile -Path $Global:App.LinkedFilePath)
+    Update-Grid
+    if ($editorResult.DeployAfterSave) { Show-BatchDeployDialog -ScopedIndices @($targetIndex) }
+}
+
 function Global:Invoke-QuickPushMetadata {
     # The catalog is right about this app's metadata and Intune has
-    # drifted. The same update window Deploy opens for an app already in
-    # Intune, told to start its compare step on the catalog's values - it
-    # still fetches what is live, shows which fields differ and waits for
+    # drifted - the audit's "Push metadata". Not a window of its own: the
+    # app editor, opened on its Deploy side, with the compare there
+    # starting every differing field on the catalog's value. It still
+    # fetches what is live, shows which fields differ and waits for
     # Update Metadata, so nothing is sent without being seen first.
     param([int]$Index)
     $app = $Global:App.Apps[$Index]
@@ -42,24 +68,7 @@ function Global:Invoke-QuickPushMetadata {
         [System.Windows.Forms.MessageBox]::Show("This app doesn't have an App ID yet - there is nothing in Intune to update. Use Deploy to Intune first.", "No App ID", "OK", "Warning") | Out-Null
         return
     }
-    $deployResult = Show-CreateInIntuneDialog -AppName $app.appName -WingetId $app.wingetId -ExistingAppId $app.appId -PreferLocal `
-        -GetAssignGroups {
-            @{
-                Required  = @($app.requiredFor)
-                Available = @($app.availableFor)
-                Uninstall = @($app.uninstallFor)
-                Exclude   = @($app.excludeFor)
-            }
-        }.GetNewClosure()
-    # "Deploy as new" is still ticked-able in that window, and creates a
-    # second app - record its ID exactly as Invoke-QuickDeploy would.
-    if ($deployResult -and $deployResult.NewAppId) {
-        $Global:App.Apps[$Index].appId = $deployResult.NewAppId
-        if ($deployResult.NewAppName) { $Global:App.Apps[$Index].appName = $deployResult.NewAppName }
-        $Global:App.UnsavedChangesBox.Value = $true
-        [void](Save-AppsToFile -Path $Global:App.LinkedFilePath)
-    }
-    Update-Grid
+    Invoke-EditApp -Index $Index -OpenDeploy -PreferLocal
 }
 
 function Global:Invoke-QuickAssignGroups {
