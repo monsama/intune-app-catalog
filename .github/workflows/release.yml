@@ -80,7 +80,7 @@ jobs:
           tag_name: ${{ steps.version.outputs.version }}
           files: ${{ env.zip }}
           body: |
-            See [CHANGELOG.md](CHANGELOG.md) for what changed.
+            See [CHANGELOG.md](https://github.com/monsama/intune-app-catalog/blob/main/CHANGELOG.md) for what changed.
 
             Download the zip, unblock it if Windows marked it as downloaded, and run `IntuneDeployment.ps1`.
           draft: false
