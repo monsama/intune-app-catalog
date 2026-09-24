@@ -219,7 +219,7 @@ function Global:Show-ChecksDialog {
         # What has been read this session, so a fix can recompute its area
         # without reading again.
         IntuneRead = $false; EntraRead = $false
-        Run = @{ Active = $false; Stopped = $false; Queue = $null; Names = $null; Procs = @{}; Winget = $null; Pending = 0; Problems = (New-Object System.Collections.Generic.List[string]) }
+        Run = @{ Id = 0; Active = $false; Stopped = $false; Queue = $null; Names = $null; Procs = @{}; Winget = $null; Pending = 0; Problems = (New-Object System.Collections.Generic.List[string]) }
         Changed = $false
         ShowFilter = "All areas"
         ActionButtons = [ordered]@{}
@@ -423,6 +423,9 @@ function Global:Show-ChecksDialog {
         if ($run.Active) { return }
         $run.Active = $true
         $run.Stopped = $false
+        # Callbacks from an earlier run (one Stop ended before its read
+        # came back) check this and stay out of the new one.
+        $run.Id++
         $run.Names = $OnlyNames
         $run.Problems.Clear()
         $run.Queue = New-Object System.Collections.Generic.Queue[string]
@@ -455,9 +458,15 @@ function Global:Show-ChecksDialog {
             return
         }
         $c = $ctx
+        $runId = $ctx.Run.Id
         Start-IntuneAppLookup -LogBox $ctx.Log -OnComplete {
             param($ok, $data)
             if ($c.Dlg.IsDisposed) { $c.Run.Active = $false; return }
+            if ($c.Run.Id -ne $runId -or -not $c.Run.Active) { return }
+            # Whatever goes wrong in here, the run moves on to its next
+            # stage - an error that skipped & $c.Next left the window
+            # "checking" forever.
+            try {
             if (-not $ok) {
                 $c.Run.Problems.Add("Intune: $data")
                 & $c.Replace -Areas @("Intune link") -New @(New-CheckFinding -Area "Intune link" -App "(Intune)" -Problem "Could not read Intune's apps: $data" -Failed)
@@ -468,13 +477,18 @@ function Global:Show-ChecksDialog {
                     $c.Run.Queue.Clear()
                     foreach ($s in $remaining) { $c.Run.Queue.Enqueue($s) }
                 }
-                & $c.Next
-                return
             }
-            $c.IntuneRead = $true
-            # A failure row from an earlier run is answered now
-            & $c.Replace -Areas @("Intune link") -Names @("")
-            & $c.RefreshLocal
+            else {
+                $c.IntuneRead = $true
+                # A failure row from an earlier run is answered now
+                & $c.Replace -Areas @("Intune link") -Names @("")
+                & $c.RefreshLocal
+            }
+            }
+            catch {
+                $c.Run.Problems.Add("Intune: $($_.Exception.Message)")
+                & $c.LogLine "[FAILED] Intune: $($_.Exception.Message)"
+            }
             & $c.Next
         }.GetNewClosure()
     }.GetNewClosure()
@@ -494,10 +508,12 @@ function Global:Show-ChecksDialog {
         $run.Pending = 2
         $c = $ctx
 
+        $runId = $ctx.Run.Id
         $detailDone = {
+            if ($c.Run.Id -ne $runId) { return }
             $c.Run.Pending--
             if ($c.Run.Pending -gt 0) { return }
-            Save-LastAuditCache
+            try { Save-LastAuditCache } catch { $c.Run.Problems.Add("Last Audit: $($_.Exception.Message)") }
             $c.Changed = $true
             & $c.Next
         }.GetNewClosure()
@@ -514,6 +530,7 @@ function Global:Show-ChecksDialog {
             $resultPathRef = $resultPath
             $onResultRef = $OnResult
             $doneRef = $detailDone
+            $runIdRef = $runId
             $cc.Run.Procs[$Label] = Start-PipelineProcess -ScriptContent $Script -TempScriptName ".intunepkg_embedded_checks_$($Label.ToLower()).ps1" `
                 -ArgumentString "-ConfigPath `"$configPath`"" -ExtraLogTarget $cc.Log -OnComplete {
                 param($code)
@@ -529,7 +546,7 @@ function Global:Show-ChecksDialog {
                     if ($result -and -not $result.success) { $problem = [string]$result.error; $result = $null }
                 }
                 Remove-Item $resultPathRef -Force -ErrorAction SilentlyContinue
-                if (-not $cc.Dlg.IsDisposed -and -not $cc.Run.Stopped) {
+                if (-not $cc.Dlg.IsDisposed -and -not $cc.Run.Stopped -and $cc.Run.Id -eq $runIdRef) {
                     try { & $onResultRef $result $problem }
                     catch { $cc.Run.Problems.Add("$($labelRef): $($_.Exception.Message)") }
                 }
@@ -601,17 +618,25 @@ function Global:Show-ChecksDialog {
     $ctx.Stages.Entra = {
         & $ctx.SetStatus "Reading Entra ID's groups..."
         $c = $ctx
+        $runId = $ctx.Run.Id
         Start-EntraDirectoryLookup -LogBox $ctx.Log -OnComplete {
             param($ok, $msg)
             if ($c.Dlg.IsDisposed) { $c.Run.Active = $false; return }
-            if (-not $ok) {
-                $c.Run.Problems.Add("Entra ID: $msg")
-                & $c.Replace -Areas @("Entra groups") -New @(New-CheckFinding -Area "Entra groups" -App "(Entra ID)" -Problem "Could not read Entra ID's groups: $msg" -Failed)
+            if ($c.Run.Id -ne $runId -or -not $c.Run.Active) { return }
+            try {
+                if (-not $ok) {
+                    $c.Run.Problems.Add("Entra ID: $msg")
+                    & $c.Replace -Areas @("Entra groups") -New @(New-CheckFinding -Area "Entra groups" -App "(Entra ID)" -Problem "Could not read Entra ID's groups: $msg" -Failed)
+                }
+                else {
+                    $c.EntraRead = $true
+                    & $c.Replace -Areas @("Entra groups") -Names @("")
+                    & $c.RefreshLocal
+                }
             }
-            else {
-                $c.EntraRead = $true
-                & $c.Replace -Areas @("Entra groups") -Names @("")
-                & $c.RefreshLocal
+            catch {
+                $c.Run.Problems.Add("Entra ID: $($_.Exception.Message)")
+                & $c.LogLine "[FAILED] Entra ID: $($_.Exception.Message)"
             }
             & $c.Next
         }.GetNewClosure()
@@ -623,6 +648,7 @@ function Global:Show-ChecksDialog {
         if ($apps.Count -eq 0) { & $ctx.Next; return }
         & $ctx.SetStatus "Asking winget about $($apps.Count) Winget ID(s)..."
         $c = $ctx
+        $runId = $ctx.Run.Id
         $results = New-Object System.Collections.Generic.List[object]
         $total = $apps.Count
         $ctx.Run.Winget = Start-WingetIdCheck -Apps @($apps | ForEach-Object { @{ AppName = $_.appName; WingetId = $_.wingetId } }) -OnResult {
@@ -631,13 +657,20 @@ function Global:Show-ChecksDialog {
             & $c.SetStatus "Asking winget: $($results.Count) of $total..."
         }.GetNewClosure() -OnComplete {
             param($ok, $errorText, $stopped)
-            $c.Run.Winget = $null
             if ($c.Dlg.IsDisposed) { $c.Run.Active = $false; return }
-            $checkedNames = @(@($results | ForEach-Object { [string]$_.AppName }) + @(""))
-            & $c.Replace -Areas @("Winget ID") -Names $checkedNames -New (Get-WingetFindings -Results $results.ToArray() -Apps $c.Apps.ToArray())
-            if (-not $ok -and -not $stopped) {
-                $c.Run.Problems.Add("winget: $errorText")
-                & $c.Replace -New @(New-CheckFinding -Area "Winget ID" -App "(winget)" -Problem "Could not ask winget: $errorText" -Failed)
+            if ($c.Run.Id -ne $runId) { return }
+            $c.Run.Winget = $null
+            try {
+                $checkedNames = @(@($results | ForEach-Object { [string]$_.AppName }) + @(""))
+                & $c.Replace -Areas @("Winget ID") -Names $checkedNames -New (Get-WingetFindings -Results $results.ToArray() -Apps $c.Apps.ToArray())
+                if (-not $ok -and -not $stopped) {
+                    $c.Run.Problems.Add("winget: $errorText")
+                    & $c.Replace -New @(New-CheckFinding -Area "Winget ID" -App "(winget)" -Problem "Could not ask winget: $errorText" -Failed)
+                }
+            }
+            catch {
+                $c.Run.Problems.Add("winget: $($_.Exception.Message)")
+                & $c.LogLine "[FAILED] winget: $($_.Exception.Message)"
             }
             & $c.Next
         }.GetNewClosure()
@@ -649,8 +682,14 @@ function Global:Show-ChecksDialog {
         $run.Stopped = $true
         $ctx.BtnStop.Enabled = $false
         & $ctx.SetStatus "Stopping..." "Warn"
-        foreach ($proc in @($run.Procs.Values)) { try { if ($proc -and -not $proc.HasExited) { $proc.Kill() } } catch { } }
-        if ($run.Winget) { & $run.Winget.Stop }
+        $waiting = $false
+        foreach ($proc in @($run.Procs.Values)) { try { if ($proc -and -not $proc.HasExited) { $proc.Kill(); $waiting = $true } } catch { } }
+        if ($run.Winget) { & $run.Winget.Stop; $waiting = $true }
+        # Nothing in the background to report back (the Intune and Entra
+        # reads can't be interrupted, and call back into a stopped run
+        # harmlessly): finish now rather than wait on a callback - so Stop
+        # always ends a run, even one a stage never handed on from.
+        if (-not $waiting) { & $ctx.Finish }
     }.GetNewClosure()
 
     $btnRun.Add_Click({ & $ctx.Start }.GetNewClosure())
