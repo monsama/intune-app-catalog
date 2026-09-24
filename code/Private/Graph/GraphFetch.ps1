@@ -183,7 +183,10 @@ function Global:Start-IntuneAppLookup {
         do {
             $result = Invoke-LoggedGraphRequest -Uri $uri -Method GET -ErrorAction Stop
             foreach ($item in $result.value) {
-                $apps.Add([pscustomobject]@{ id = $item.id; displayName = $item.displayName })
+                # The install command too: it carries the Winget ID
+                # (-AppIDs "Some.App"), which Find-IntuneMatches matches on
+                # before the name - Intune has no Winget ID field of its own.
+                $apps.Add([pscustomobject]@{ id = $item.id; displayName = $item.displayName; installCommandLine = [string]$item.installCommandLine })
             }
             $uri = $result.'@odata.nextLink'
         } while ($uri)
@@ -753,7 +756,13 @@ function Global:Start-EntraDirectoryLookup {
 }
 
 function Global:Find-IntuneMatches {
-    param([string]$Name)
+    # -WingetId: matched first, against the Winget ID in each Intune app's
+    # install command (Get-WingetIdFromInstallCommand). The catalog name
+    # and Intune's display name are often different ("7-Zip" vs "7-Zip
+    # 24.08 (x64)"), but the Winget ID is exactly what this tool deployed,
+    # so when it finds anything that answer is returned on its own and the
+    # name isn't consulted.
+    param([string]$Name, [string]$WingetId)
 
     # Build the result as an explicit List and return it with a leading comma.
     # Without the comma, PowerShell unrolls the returned array onto the output
@@ -762,6 +771,15 @@ function Global:Find-IntuneMatches {
     # $null instead of an empty array - and $null.Count silently reads back
     # as $null too, which is why this looked like "no matches anywhere."
     $results = New-Object System.Collections.Generic.List[object]
+    $wantedWingetId = ([string]$WingetId).Trim()
+    if ($wantedWingetId) {
+        foreach ($candidate in $Global:App.IntuneAppsCache) {
+            if ((Get-WingetIdFromInstallCommand -InstallCommand ([string]$candidate.installCommandLine)) -eq $wantedWingetId) {
+                $results.Add($candidate)
+            }
+        }
+        if ($results.Count -gt 0) { return ,$results.ToArray() }
+    }
     if (-not $Name) { return ,$results.ToArray() }
 
     $normalizedName = ($Name.Trim() -replace '\s+', ' ')

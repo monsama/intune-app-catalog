@@ -51,6 +51,12 @@
   without it, as did "Delete from Intune" and exporting the catalog as a
   template - so a package kept somewhere its name doesn't predict had to
   be picked again.
+- **Look up finds an app by its Winget ID, not only its name.** The
+  App ID lookup (the editor's Look up and "Look up App IDs") only
+  compared names, so a Winget app whose Intune display name differs from
+  its catalog name - "7-Zip 24.08 (x64)" for "7-Zip" - was never found.
+  It now matches the Winget ID in each Intune app's install command
+  first, and falls back to the name when that finds nothing.
 - **Deploying from the grid after changing the display name no longer
   duplicates the app in the catalog.** The result was saved under the
   display name sent to Intune rather than the catalog entry's own name,

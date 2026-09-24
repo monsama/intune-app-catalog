@@ -216,7 +216,7 @@ function Global:Show-AppEditor {
     $btnLookupId.Size = New-Object System.Drawing.Size(100,26)
     $dlg.Controls.Add($btnLookupId)
     $lookupIdTip = New-Object System.Windows.Forms.ToolTip
-    $lookupIdTip.SetToolTip($btnLookupId, "Searches Intune by this app's name and fills in App ID above if a match is found.")
+    $lookupIdTip.SetToolTip($btnLookupId, "Searches Intune for this app - by its Winget ID (read from each Intune app's install command) first, then by name - and fills in App ID above if a match is found.")
 
     $btnCreateInIntune = New-Object System.Windows.Forms.Button
     $btnCreateInIntune.Text = "Intune Deployment"
@@ -360,11 +360,19 @@ function Global:Show-AppEditor {
     $dlg.Controls.Add($lblIdStatus)
 
     $TryFillIdFromCache = {
-        $candidates = Find-IntuneMatches -Name $txtName.Text.Trim()
+        # By Winget ID first - what the app actually installs - and by
+        # name only when that finds nothing. Name alone used to be the
+        # only thing asked, so a Winget app whose Intune display name
+        # differs from its catalog name was never found.
+        $lookupWingetId = $txtWinget.Text.Trim()
+        $candidates = Find-IntuneMatches -Name $txtName.Text.Trim() -WingetId $lookupWingetId
+        $searchedFor = if ($lookupWingetId -and $txtName.Text.Trim()) { "Winget ID '$lookupWingetId' or name '$($txtName.Text.Trim())'" }
+                       elseif ($lookupWingetId) { "Winget ID '$lookupWingetId'" }
+                       else { "'$($txtName.Text.Trim())'" }
         if ($candidates.Count -eq 0) {
-            $lblIdStatus.Text = "No matching app found in Intune for '$($txtName.Text.Trim())'."
+            $lblIdStatus.Text = "No matching app found in Intune for $searchedFor."
             $lblIdStatus.ForeColor = [System.Drawing.Color]::DarkOrange
-            Write-DialogLogLine -LogBox $editorLogBox.Box -Text "[WARN] No matching app found in Intune for `"$($txtName.Text.Trim())`".`r`n"
+            Write-DialogLogLine -LogBox $editorLogBox.Box -Text "[WARN] No matching app found in Intune for $searchedFor.`r`n"
         }
         elseif ($candidates.Count -eq 1 -or $candidates[0].displayName -eq $txtName.Text.Trim()) {
             $txtId.Text = $candidates[0].id
@@ -372,7 +380,7 @@ function Global:Show-AppEditor {
             $lblIdStatus.ForeColor = [System.Drawing.Color]::SeaGreen
         }
         else {
-            $pick = Show-SimpleListPicker -Title "Multiple matches" -Prompt "Several Intune apps match '$($txtName.Text.Trim())'. Pick one:" -Items ($candidates | ForEach-Object { "$($_.displayName)  [$($_.id)]" })
+            $pick = Show-SimpleListPicker -Title "Multiple matches" -Prompt "Several Intune apps match $searchedFor. Pick one:" -Items ($candidates | ForEach-Object { "$($_.displayName)  [$($_.id)]" })
             if ($pick -and $pick -match '\[([0-9a-fA-F-]{36})\]\s*$') {
                 $txtId.Text = $Matches[1]
                 $lblIdStatus.Text = "Matched: $pick"
@@ -382,8 +390,8 @@ function Global:Show-AppEditor {
     }.GetNewClosure()
 
     $btnLookupId.Add_Click({
-        if (-not $txtName.Text.Trim()) {
-            [System.Windows.Forms.MessageBox]::Show("Enter an app name first.", "No name", "OK", "Information") | Out-Null
+        if (-not $txtName.Text.Trim() -and -not $txtWinget.Text.Trim()) {
+            [System.Windows.Forms.MessageBox]::Show("Enter an app name or a Winget ID first.", "Nothing to look up", "OK", "Information") | Out-Null
             return
         }
         if ($cache.Count -eq 0) {
