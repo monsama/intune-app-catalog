@@ -98,6 +98,20 @@ $testableFunctionNames = @(
     "Test-AppIsUncommon",
     "Get-SafeFileNameForApp",
     "Get-DependencyOrderedApps",
+    # The Checks window's one findings list (CheckFindings.ps1)
+    "Get-IntuneCatalogDrift",
+    "New-CheckFinding",
+    "Find-IntuneNameMatches",
+    "Get-IntuneLinkFindings",
+    "Get-AuditSummaryTexts",
+    "Get-AppDetailFindings",
+    "Get-CheckValueText",
+    "Get-UnknownAssignmentText",
+    "Get-UnknownAssignmentFindings",
+    "Get-DependencyFindings",
+    "Get-EntraGroupFindings",
+    "Get-WingetFindings",
+    "Get-CachedAuditFindings",
     "Get-CatalogMetadataSimpleFields",
     "Get-CatalogMetadataFieldDiffs",
     "Get-ComparableDetectionRule",
@@ -1960,6 +1974,107 @@ if ($configSupFn) {
     Assert-Equal 0 @(Get-ConfigSupersedence).Count "Get-ConfigSupersedence: none recorded sends none"
     Remove-Variable Config
 }
+
+# -----------------------------------------------------------------
+# Checks: one findings list (CheckFindings.ps1)
+# -----------------------------------------------------------------
+$chkApps = @(
+    [pscustomobject]@{ appId = 'id-7zip'; appName = '7-Zip'; wingetId = '7zip.7zip'; requiredFor = @('SG-All'); availableFor = @(); uninstallFor = @(); excludeFor = @('SG-Gone')
+        metadata = [pscustomobject]@{ description = '7-Zip'; publisher = 'Igor'; dependencies = @('Runtime') } }
+    [pscustomobject]@{ appId = 'id-old'; appName = 'Old Name'; wingetId = ''; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @(); metadata = $null }
+    [pscustomobject]@{ appId = 'id-deleted'; appName = 'Deleted App'; wingetId = ''; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @(); metadata = $null }
+    [pscustomobject]@{ appId = ''; appName = 'Firefox'; wingetId = 'Mozilla.Firefox'; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @(); metadata = $null }
+    [pscustomobject]@{ appId = ''; appName = 'Chrome'; wingetId = ''; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @(); metadata = $null }
+    [pscustomobject]@{ appId = ''; appName = 'Not Deployed'; wingetId = ''; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @(); metadata = $null }
+)
+$chkIntune = @(
+    [pscustomobject]@{ id = 'id-7zip'; displayName = '7-Zip' }
+    [pscustomobject]@{ id = 'id-old'; displayName = 'New Name' }
+    [pscustomobject]@{ id = 'id-ff'; displayName = 'Firefox' }
+    [pscustomobject]@{ id = 'id-chrome1'; displayName = 'Google Chrome' }
+    [pscustomobject]@{ id = 'id-only'; displayName = 'Intune Only App' }
+)
+$link = @(Get-IntuneLinkFindings -Apps $chkApps -IntuneApps $chkIntune)
+$byProblem = @{}; foreach ($f in $link) { $byProblem["$($f.Problem)|$($f.App)"] = $f }
+Assert-True ($byProblem.ContainsKey('In Intune, not in the catalog|Intune Only App')) "Get-IntuneLinkFindings: an Intune-only app is reported"
+Assert-Equal 'AddToCatalog' $byProblem['In Intune, not in the catalog|Intune Only App'].Actions[0] "Get-IntuneLinkFindings: ...with Add to catalog"
+Assert-True ($byProblem.ContainsKey('Renamed in Intune|Old Name')) "Get-IntuneLinkFindings: a rename in Intune is reported by the catalog name"
+Assert-Equal 'New Name' $byProblem['Renamed in Intune|Old Name'].Data.IntuneName "Get-IntuneLinkFindings: ...and knows Intune's name"
+Assert-True ($byProblem.ContainsKey('App ID not in Intune any more|Deleted App')) "Get-IntuneLinkFindings: a stale App ID is reported"
+Assert-Equal 'ClearAppId' $byProblem['App ID not in Intune any more|Deleted App'].Actions[0] "Get-IntuneLinkFindings: ...with Clear App ID"
+Assert-True ($byProblem.ContainsKey('In Intune, App ID not set|Firefox')) "Get-IntuneLinkFindings: an exact name match without App ID is reported"
+Assert-Equal 'id-ff' $byProblem['In Intune, App ID not set|Firefox'].Data.MatchedId "Get-IntuneLinkFindings: ...with the matched App ID to set"
+Assert-True ($byProblem.ContainsKey('Possibly in Intune, App ID not set|Chrome')) "Get-IntuneLinkFindings: a partial name match is offered as possible"
+Assert-Equal 0 @($link | Where-Object { $_.App -eq 'Not Deployed' }).Count "Get-IntuneLinkFindings: an app with no App ID and no match is just not deployed - no row"
+Assert-Equal 0 @($link | Where-Object { $_.App -eq 'Firefox' -and $_.Problem -like 'In Intune, not*' }).Count "Get-IntuneLinkFindings: a name-matched Intune app isn't also reported as not in the catalog"
+$scopedLink = @(Get-IntuneLinkFindings -Apps @($chkApps[1]) -IntuneApps $chkIntune -Scoped)
+Assert-Equal 0 @($scopedLink | Where-Object { $_.Problem -like 'In Intune, not*' }).Count "Get-IntuneLinkFindings: a scoped run leaves the tenant's other apps alone"
+Assert-Equal 1 @($scopedLink | Where-Object { $_.Problem -eq 'Renamed in Intune' }).Count "Get-IntuneLinkFindings: ...but still checks the scoped app"
+
+# Per-app detail from a SyncMetadata result
+$chkResultSame = [pscustomobject]@{ Success = $true; OdataType = '#microsoft.graph.win32LobApp'; GroupFetchOk = $true
+    Metadata = [pscustomobject]@{ description = '7-Zip'; publisher = 'Igor'; dependencies = @('Runtime') }
+    RequiredGroupNames = @('SG-All'); AvailableGroupNames = @(); UninstallGroupNames = @() }
+Assert-Equal 0 @(Get-AppDetailFindings -CatalogApp $chkApps[0] -Result $chkResultSame).Count "Get-AppDetailFindings: an app that matches Intune has no rows"
+$chkResultDiff = [pscustomobject]@{ Success = $true; OdataType = '#microsoft.graph.win32LobApp'; GroupFetchOk = $true
+    Metadata = [pscustomobject]@{ description = '7-Zip'; publisher = 'Someone Else'; dependencies = @() }
+    RequiredGroupNames = @('SG-Other'); AvailableGroupNames = @(); UninstallGroupNames = @() }
+$detail = @(Get-AppDetailFindings -CatalogApp $chkApps[0] -Result $chkResultDiff)
+Assert-Equal 'Metadata,Groups,Dependencies' (($detail | ForEach-Object { $_.Area }) -join ',') "Get-AppDetailFindings: one row per area that differs"
+Assert-True ($detail[0].Catalog -like '*Publisher: Igor*' -and $detail[0].Intune -like '*Publisher: Someone Else*') "Get-AppDetailFindings: shows both sides of a metadata difference"
+Assert-Equal 'Pull,PushMetadata' ($detail[0].Actions -join ',') "Get-AppDetailFindings: metadata can be pulled or pushed"
+Assert-Equal 'Pull,PushGroups' ($detail[1].Actions -join ',') "Get-AppDetailFindings: groups can be pulled or pushed"
+$texts = Get-AuditSummaryTexts -CatalogApp $chkApps[0] -Result $chkResultDiff
+Assert-Equal '1 field(s) differ: Publisher' $texts.Metadata "Get-AuditSummaryTexts: the Last Audit wording is unchanged"
+Assert-Equal 'Catalog has: Runtime | Intune has: (none)' $texts.Dependencies "Get-AuditSummaryTexts: ...for dependencies too"
+$failedDetail = @(Get-AppDetailFindings -CatalogApp $chkApps[0] -Result ([pscustomobject]@{ Success = $false; Error = 'Forbidden' }))
+Assert-True ($failedDetail.Count -eq 1 -and $failedDetail[0].Failed) "Get-AppDetailFindings: a failed read is a row, marked failed"
+$noGroups = $chkResultSame.PSObject.Copy(); $noGroups.GroupFetchOk = $false
+Assert-True (@(Get-AppDetailFindings -CatalogApp $chkApps[0] -Result $noGroups | Where-Object { $_.Area -eq 'Groups' -and $_.Failed }).Count -eq 1) "Get-AppDetailFindings: unreadable groups are a failed Groups row, not a difference"
+
+# Unknown assignments
+Assert-Equal 0 @(Get-UnknownAssignmentFindings -CatalogApp $chkApps[0] -ToRemove @()).Count "Get-UnknownAssignmentFindings: none is no row"
+$unknown = @(Get-UnknownAssignmentFindings -CatalogApp $chkApps[0] -ToRemove @('SG-Stray'))
+Assert-Equal '1 unknown: SG-Stray' $unknown[0].Problem "Get-UnknownAssignmentFindings: same wording as Last Audit"
+Assert-Equal 'PushGroups' $unknown[0].Actions[0] "Get-UnknownAssignmentFindings: pushing the catalog's groups is the fix"
+
+# Catalog dependencies
+$depApps = @(
+    [pscustomobject]@{ appName = 'A'; appId = ''; metadata = [pscustomobject]@{ dependencies = @('B') } }
+    [pscustomobject]@{ appName = 'B'; appId = ''; metadata = [pscustomobject]@{ dependencies = @('A') } }
+    [pscustomobject]@{ appName = 'C'; appId = ''; metadata = [pscustomobject]@{ dependencies = @('Nowhere') } }
+    [pscustomobject]@{ appName = 'D'; appId = ''; metadata = [pscustomobject]@{ dependencies = @('C') } }
+)
+$depFindings = @(Get-DependencyFindings -Apps $depApps)
+Assert-Equal 'A,B' ((@($depFindings | Where-Object { $_.Problem -eq 'Circular dependency' } | ForEach-Object { $_.App })) -join ',') "Get-DependencyFindings: both apps in a circle are reported"
+Assert-Equal 'C' ((@($depFindings | Where-Object { $_.Problem -like '*isn*t in the catalog' } | ForEach-Object { $_.App })) -join ',') "Get-DependencyFindings: a dependency on a missing app is reported"
+Assert-Equal 0 @($depFindings | Where-Object { $_.App -eq 'D' }).Count "Get-DependencyFindings: a good dependency is fine"
+Assert-Equal 1 @(Get-DependencyFindings -Apps $depApps -OnlyNames @('C')).Count "Get-DependencyFindings: a scoped run reports only its apps"
+
+# Entra groups
+$dir = @([pscustomobject]@{ type = 'Group'; displayName = 'SG-All' }, [pscustomobject]@{ type = 'User'; displayName = 'SG-Gone' })
+$entra = @(Get-EntraGroupFindings -Apps $chkApps -Directory $dir)
+Assert-Equal 1 $entra.Count "Get-EntraGroupFindings: only the group that doesn't exist (a user of that name doesn't count)"
+Assert-Equal 'SG-Gone' $entra[0].Data.Group "Get-EntraGroupFindings: exclusions are checked too"
+Assert-Equal '7-Zip' $entra[0].App "Get-EntraGroupFindings: names the app that uses it"
+
+# Winget
+$winget = @(Get-WingetFindings -Apps $chkApps -Results @(
+    [pscustomobject]@{ AppName = '7-Zip'; WingetId = '7zip.7zip'; Ok = $true; Result = 'Found' }
+    [pscustomobject]@{ AppName = 'Firefox'; WingetId = 'Mozilla.Firefox'; Ok = $false; Result = "NOT FOUND - winget doesn't know this ID any more" }
+    [pscustomobject]@{ AppName = 'Chrome'; WingetId = 'Google.Chrome'; Ok = $false; Result = "winget didn't answer within 30 seconds" }
+))
+Assert-Equal 2 $winget.Count "Get-WingetFindings: found IDs are fine, the rest are rows"
+Assert-Equal 'FindWingetId' $winget[0].Actions[0] "Get-WingetFindings: a gone ID offers finding its new one"
+Assert-True ($winget[1].Failed) "Get-WingetFindings: an unanswered check is failed, not a gone package"
+
+# Cached (last audit) findings
+$cache = @{ '7-Zip' = [pscustomobject]@{ Timestamp = (Get-Date).AddHours(-2); Metadata = '1 field(s) differ: Publisher'; Groups = 'OK'; Dependencies = $null; Unknown = 'Failed: x'
+    Checked = [pscustomobject]@{ Metadata = (Get-Date).AddHours(-1).ToString('o'); Groups = $null; Dependencies = $null; Unknown = $null } } }
+$cached = @(Get-CachedAuditFindings -Apps $chkApps -LastAuditResults $cache)
+Assert-Equal 2 $cached.Count "Get-CachedAuditFindings: OK and never-checked areas are no rows"
+Assert-True ($cached[0].Cached -and $cached[0].CheckedAt) "Get-CachedAuditFindings: marked as the last audit's, with its time"
+Assert-True ($cached[1].Failed -and $cached[1].Area -eq 'Unknown assignments') "Get-CachedAuditFindings: a failed check stays failed"
 
 # =================================================================
 # Report
