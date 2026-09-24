@@ -346,6 +346,10 @@ function Global:Show-BatchPushMetadataDialog {
             InformationUrl          = $m.informationUrl
             PrivacyUrl              = $m.privacyUrl
             Notes                   = $m.notes
+            AppVersion              = $m.appVersion
+            IsFeatured              = $m.isFeatured
+            # $null (never recorded) keeps Intune's supersedence on an update
+            Supersedence            = $m.supersedes
             InstallCommand          = $m.installCommand
             UninstallCommand        = $m.uninstallCommand
             DetectionRule           = $m.detectionRule

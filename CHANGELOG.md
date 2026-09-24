@@ -1,5 +1,54 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Supersedence, under Dependencies on Requirements and behaviour.** Pick
+  the Intune apps this one supersedes - usually an older version that
+  only exists in Intune, so the picker lists Intune's apps as well as the
+  catalog's - and whether it updates them or replaces them (uninstalling
+  the old app). Saved in the catalog by App ID, sent by Deploy, Push
+  Metadata and the batch windows, read back by Pull from Intune, and
+  compared by Checks and the Local vs. Intune compare. An app that has
+  never recorded its supersedence keeps whatever Intune has on an update,
+  and isn't reported as different until it does.
+
+- **App version and "Show this as a featured app in the Company Portal"**
+  - the two app-information fields Intune has that the catalog didn't.
+  Both are on the Metadata tab (App version beside Publisher), saved to
+  the catalog, sent by Deploy, Push Metadata and Batch Deploy, read back
+  by Pull from Intune, and compared by Checks and the Local vs. Intune
+  compare. Batch Edit can set Featured app on several apps at once.
+  A blank App version leaves Intune's value alone, like the other
+  optional fields. A catalog entry saved before these fields existed
+  isn't reported as different by Checks until it has them (a Pull or a
+  save fills them in), and an App version on its own doesn't mark an app
+  as Custom Config.
+
+### Fixes
+
+- **Updating an app no longer deletes its supersedence.** Intune keeps an
+  app's dependencies and supersedence in one list, and setting
+  dependencies replaces that whole list - so every Update or Push
+  Metadata from here removed any supersedence set in the Intune portal.
+  The app's current supersedence is now read first and sent back with the
+  dependencies; if it can't be read, the dependency step is skipped
+  rather than risk removing it. **If an app of yours had supersedence and
+  was pushed from an earlier version, check it in the portal - it may
+  need setting again.**
+- **Deleting an app that another app depends on keeps that other app's
+  remaining relationships intact.** Clearing the blocking dependency
+  resent every other relationship as a dependency, supersedence and
+  other apps' entries included.
+- **Closing the app editor warns about unsaved edits on its Intune
+  tabs.** Cancel, the window's X and Previous/Next only asked about the
+  Catalog tab's fields, so metadata typed on the Deploy tabs was
+  discarded without a word.
+- **Batch Edit accepts a change made only on its "Description and
+  commands" tab.** Ticking just Publisher (or any text field, or Install
+  context) was refused with "Check at least one field to change".
+
 ## 1.4.9
 
 ### Added

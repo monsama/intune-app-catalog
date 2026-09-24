@@ -845,9 +845,17 @@ function Global:Start-AppMetadataFetch {
         # empty list is a smaller, more contained failure than losing
         # every other field along with it.
         $dependencyNames = @()
+        # Supersedence comes from the same list (same shape as
+        # ConvertTo-SupersedenceEntries, which this runspace can't see).
+        # $null when the read fails - "unknown", never "none", so nothing
+        # compares or saves it as an empty list.
+        $supersedence = $null
         try {
             $rels = Invoke-LoggedGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$TargetAppId/relationships" -Method GET -ErrorAction Stop
             $dependencyNames = @($rels.value | Where-Object { $_.'@odata.type' -eq '#microsoft.graph.mobileAppDependency' -and $_.targetType -eq 'child' } | ForEach-Object { $_.targetDisplayName } | Where-Object { $_ })
+            $supersedence = @($rels.value | Where-Object { ([string]$_.'@odata.type') -like '*mobileAppSupersedence' -and (-not [string]$_.targetType -or [string]$_.targetType -eq 'child') } | ForEach-Object {
+                [pscustomobject]@{ appId = [string]$_.targetId; name = [string]$_.targetDisplayName; type = $(if ([string]$_.supersedenceType -eq 'replace') { 'replace' } else { 'update' }) }
+            })
         }
         catch { }
 
@@ -972,6 +980,7 @@ function Global:Start-AppMetadataFetch {
             InformationUrl          = $app.informationUrl
             PrivacyInformationUrl   = $app.privacyInformationUrl
             Notes                   = Repair-MojibakeText $app.notes
+            IsFeatured              = [bool]$app.isFeatured
             InstallCommandLine      = $app.installCommandLine
             UninstallCommandLine    = $app.uninstallCommandLine
             ApplicableArchitectures = $app.applicableArchitectures
@@ -1002,6 +1011,7 @@ function Global:Start-AppMetadataFetch {
             DisplayVersion  = [string]$app.displayVersion
             DetectionRule           = $detectionRule
             Dependencies            = $dependencyNames
+            Supersedence            = $supersedence
             MinDiskSpaceMB          = $app.minimumFreeDiskSpaceInMB
             MinMemoryMB             = $app.minimumMemoryInMB
             MinProcessors           = $app.minimumNumberOfProcessors

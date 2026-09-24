@@ -325,9 +325,15 @@ try {
         }
 
         $depNames = @()
+        # Same list, same shape as the app's ConvertTo-SupersedenceEntries.
+        # $null on a failed read: unknown, not "supersedes nothing".
+        $supersedence = $null
         try {
             $rels = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($AppEntry.AppId)/relationships" -Method GET -StepDescription "Fetch dependencies"
             $depNames = @($rels.value | Where-Object { $_.'@odata.type' -eq '#microsoft.graph.mobileAppDependency' -and $_.targetType -eq 'child' } | ForEach-Object { $_.targetDisplayName } | Where-Object { $_ })
+            $supersedence = @($rels.value | Where-Object { ([string]$_.'@odata.type') -like '*mobileAppSupersedence' -and (-not [string]$_.targetType -or [string]$_.targetType -eq 'child') } | ForEach-Object {
+                [pscustomobject]@{ appId = [string]$_.targetId; name = [string]$_.targetDisplayName; type = $(if ([string]$_.supersedenceType -eq 'replace') { 'replace' } else { 'update' }) }
+            })
         }
         catch {
             $warnings.Add("Could not fetch dependencies: $($_.Exception.Message)")
@@ -374,6 +380,8 @@ try {
             informationUrl   = $app.informationUrl
             privacyUrl       = $app.privacyInformationUrl
             notes            = Repair-MojibakeText $app.notes
+            appVersion       = [string]$app.displayVersion
+            isFeatured       = [bool]$app.isFeatured
             installCommand   = $app.installCommandLine
             uninstallCommand = $app.uninstallCommandLine
             architecture     = $archValue
@@ -381,6 +389,7 @@ try {
             minOSKey         = $minOsPropName
             detectionRule    = $detectionRule
             dependencies     = $depNames
+            supersedes       = $supersedence
             minDiskSpaceMB          = $app.minimumFreeDiskSpaceInMB
             minMemoryMB             = $app.minimumMemoryInMB
             minProcessors           = $app.minimumNumberOfProcessors

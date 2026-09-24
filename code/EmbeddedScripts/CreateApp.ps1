@@ -86,6 +86,56 @@ function Get-HttpErrorDetail {
 # blank field means "leave it as whatever it already is", not "clear it".
 # Sending an empty string would actually WIPE an existing value, which this
 # avoids by simply never including the key at all when there's nothing typed.
+# The supersedence an existing app already has, shaped to be sent back.
+# updateRelationships REPLACES the app's whole relationship list, and
+# dependencies and supersedence share that list - so setting dependencies
+# alone used to delete any supersedence set in the Intune portal, every
+# time the app was updated from here. Only "child" relationships (this app
+# superseding another) are the app's own; "parent" ones are other apps
+# pointing at this one and are not part of what this call sets. Throws if
+# the read fails, so the caller stops before sending anything rather than
+# guessing the list is empty.
+function Get-ExistingSupersedence {
+    param([string]$AppId)
+    $kept = New-Object System.Collections.Generic.List[object]
+    $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$AppId/relationships"
+    do {
+        $page = Invoke-GraphRequestDetailed -Uri $uri -Method GET -StepDescription "Read existing relationships"
+        foreach ($rel in @($page.value)) {
+            if (-not $rel) { continue }
+            $relType = [string]$rel.'@odata.type'
+            if ($relType -notlike '*mobileAppSupersedence') { continue }
+            if ([string]$rel.targetType -and [string]$rel.targetType -ne 'child') { continue }
+            $kept.Add(@{
+                "@odata.type"    = "#microsoft.graph.mobileAppSupersedence"
+                targetId         = [string]$rel.targetId
+                supersedenceType = [string]$rel.supersedenceType
+            })
+        }
+        $uri = $page.'@odata.nextLink'
+    } while ($uri)
+    # No leading comma: callers wrap this in @() themselves, and a comma
+    # here would hand them an empty list INSIDE a list when there is none
+    # - sent to Intune as a bogus extra relationship.
+    return $kept.ToArray()
+}
+
+# The supersedence the catalog asks for, shaped for updateRelationships.
+# Only meaningful when $Config.SupersedenceSet is true - false means the
+# catalog never recorded any, and an update keeps Intune's instead (see
+# Get-ExistingSupersedence). A flag rather than null-vs-empty, because
+# ConvertFrom-Json doesn't treat an empty array the same way on every
+# PowerShell this runs under.
+function Get-ConfigSupersedence {
+    return @(@($Config.Supersedence) | Where-Object { $_ -and $_.targetId } | ForEach-Object {
+        @{
+            "@odata.type"    = "#microsoft.graph.mobileAppSupersedence"
+            targetId         = [string]$_.targetId
+            supersedenceType = if ([string]$_.supersedenceType -eq 'replace') { 'replace' } else { 'update' }
+        }
+    })
+}
+
 function Add-OptionalStringField {
     param([hashtable]$Body, [string]$GraphKey, [string]$Value)
     if (-not [string]::IsNullOrWhiteSpace($Value)) { $Body[$GraphKey] = $Value }
@@ -598,11 +648,15 @@ try {
         Add-OptionalStringField -Body $patchBody -GraphKey "informationUrl" -Value $Config.InformationUrl
         Add-OptionalStringField -Body $patchBody -GraphKey "privacyInformationUrl" -Value $Config.PrivacyUrl
         Add-OptionalStringField -Body $patchBody -GraphKey "notes" -Value $Config.Notes
+        Add-OptionalStringField -Body $patchBody -GraphKey "displayVersion" -Value $Config.AppVersion
+        # Only when the catalog actually says - $null leaves Intune's own
+        # setting alone rather than switching a featured app off.
+        if ($null -ne $Config.IsFeatured) { $patchBody["isFeatured"] = [bool]$Config.IsFeatured }
         $patchBody = $patchBody | ConvertTo-Json -Depth 8
 
         Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.ExistingAppId)" `
             -Method PATCH -Body $patchBody -ContentType "application/json" -StepDescription "Update app metadata" | Out-Null
-        Write-Host "  [OK] Metadata updated (name, description, publisher, install/uninstall commands, detection, architecture, min OS, requirements, return codes, install experience, and any owner/developer/notes/URL fields you filled in)." -ForegroundColor Green
+        Write-Host "  [OK] Metadata updated (name, description, publisher, install/uninstall commands, detection, architecture, min OS, requirements, return codes, install experience, and any owner/developer/notes/URL/app version fields you filled in)." -ForegroundColor Green
 
         # Always runs, even with zero dependencies checked - updateRelationships
         # has REPLACE semantics (it sets the relationship list to exactly what's
@@ -612,9 +666,24 @@ try {
         # unchecks the one and only dependency an app has.
         Write-Step "Setting dependencies"
         try {
+            # The catalog's supersedence when it has recorded one; otherwise
+            # what Intune already has, read first - see
+            # Get-ExistingSupersedence. A failed read lands in the catch
+            # below and sends nothing, which leaves the app's relationships
+            # exactly as they were.
+            if ($Config.SupersedenceSet) {
+                $keptSupersedence = @(Get-ConfigSupersedence)
+                Write-Host "  Setting $($keptSupersedence.Count) supersedence relationship(s) from the catalog." -ForegroundColor Gray
+            }
+            else {
+                $keptSupersedence = @(Get-ExistingSupersedence -AppId $Config.ExistingAppId)
+                if ($keptSupersedence.Count -gt 0) {
+                    Write-Host "  Keeping $($keptSupersedence.Count) supersedence relationship(s) already set on this app." -ForegroundColor Gray
+                }
+            }
             $relationships = @($Config.DependencyAppIds | ForEach-Object {
                 @{ "@odata.type" = "#microsoft.graph.mobileAppDependency"; targetId = $_; dependencyType = "autoInstall" }
-            })
+            }) + $keptSupersedence
             $relBody = @{ relationships = $relationships } | ConvertTo-Json -Depth 8
             Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.ExistingAppId)/updateRelationships" `
                 -Method POST -Body $relBody -ContentType "application/json" -StepDescription "Set dependencies" | Out-Null
@@ -622,7 +691,7 @@ try {
         }
         catch {
             Write-Host "  [WARN] Could not set dependencies: $($_.Exception.Message)" -ForegroundColor Yellow
-            Write-Host "  The app was still updated successfully - set dependencies manually in the Intune portal if needed." -ForegroundColor Yellow
+            Write-Host "  The app was still updated successfully, and its existing dependencies and supersedence were left as they were - set dependencies manually in the Intune portal if needed." -ForegroundColor Yellow
             }
 
         if ($Config.ReplaceContent -and $Config.PackagePath) {
@@ -720,6 +789,10 @@ try {
     Add-OptionalStringField -Body $createBody -GraphKey "informationUrl" -Value $Config.InformationUrl
     Add-OptionalStringField -Body $createBody -GraphKey "privacyInformationUrl" -Value $Config.PrivacyUrl
     Add-OptionalStringField -Body $createBody -GraphKey "notes" -Value $Config.Notes
+    Add-OptionalStringField -Body $createBody -GraphKey "displayVersion" -Value $Config.AppVersion
+    # Only when the catalog actually says - $null leaves Intune's own
+    # setting alone rather than switching a featured app off.
+    if ($null -ne $Config.IsFeatured) { $createBody["isFeatured"] = [bool]$Config.IsFeatured }
     $createBody = $createBody | ConvertTo-Json -Depth 8
 
     $app = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps" `
@@ -729,21 +802,22 @@ try {
 
     Invoke-Win32AppContentUpload -AppId $appId -PackageInfo $packageInfo
 
-    # ---- Dependencies ----
-    if (@($Config.DependencyAppIds).Count -gt 0) {
-        Write-Step "Setting dependencies"
+    # ---- Dependencies and supersedence (one relationship list) ----
+    $newSupersedence = @(if ($Config.SupersedenceSet) { Get-ConfigSupersedence })
+    if (@($Config.DependencyAppIds).Count -gt 0 -or $newSupersedence.Count -gt 0) {
+        Write-Step "Setting dependencies and supersedence"
         try {
             $relationships = @($Config.DependencyAppIds | ForEach-Object {
                 @{ "@odata.type" = "#microsoft.graph.mobileAppDependency"; targetId = $_; dependencyType = "autoInstall" }
-            })
+            }) + $newSupersedence
             $relBody = @{ relationships = $relationships } | ConvertTo-Json -Depth 8
             Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$appId/updateRelationships" `
-                -Method POST -Body $relBody -ContentType "application/json" -StepDescription "Set dependencies" | Out-Null
-            Write-Host "  [OK] Set $(@($Config.DependencyAppIds).Count) dependency/dependencies." -ForegroundColor Green
+                -Method POST -Body $relBody -ContentType "application/json" -StepDescription "Set dependencies and supersedence" | Out-Null
+            Write-Host "  [OK] Set $(@($Config.DependencyAppIds).Count) dependency/dependencies and $($newSupersedence.Count) supersedence." -ForegroundColor Green
         }
         catch {
-            Write-Host "  [WARN] Could not set dependencies: $($_.Exception.Message)" -ForegroundColor Yellow
-            Write-Host "  The app and its content uploaded successfully - set dependencies manually in the Intune portal if needed." -ForegroundColor Yellow
+            Write-Host "  [WARN] Could not set dependencies/supersedence: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "  The app and its content uploaded successfully - set them manually in the Intune portal if needed." -ForegroundColor Yellow
         }
     }
 

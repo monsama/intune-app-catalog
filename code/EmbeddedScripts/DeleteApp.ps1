@@ -149,12 +149,22 @@ try {
         $existingRels = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.AppId)/relationships" -Method GET -StepDescription "Read existing dependencies"
         $matchingRel = $existingRels.value | Where-Object { $_.targetId -eq $Config.RemoveDependencyFromAppId } | Select-Object -First 1
         if ($matchingRel) {
-            $keepRels = @($existingRels.value | Where-Object { $_.targetId -ne $Config.RemoveDependencyFromAppId } | ForEach-Object {
-                @{ "@odata.type" = "#microsoft.graph.mobileAppDependency"; targetId = $_.targetId; dependencyType = $_.dependencyType }
+            # Only this app's own ("child") relationships go back, each as
+            # its own type - every one used to be resent as a dependency,
+            # supersedence and other apps' "parent" entries included.
+            $keepRels = @($existingRels.value | Where-Object {
+                $_.targetId -ne $Config.RemoveDependencyFromAppId -and (-not [string]$_.targetType -or [string]$_.targetType -eq 'child')
+            } | ForEach-Object {
+                if ([string]$_.'@odata.type' -like '*mobileAppSupersedence') {
+                    @{ "@odata.type" = "#microsoft.graph.mobileAppSupersedence"; targetId = $_.targetId; supersedenceType = $_.supersedenceType }
+                }
+                else {
+                    @{ "@odata.type" = "#microsoft.graph.mobileAppDependency"; targetId = $_.targetId; dependencyType = $_.dependencyType }
+                }
             })
             $relBody = @{ relationships = $keepRels } | ConvertTo-Json -Depth 8
             Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.AppId)/updateRelationships" -Method POST -Body $relBody -ContentType "application/json" -StepDescription "Remove dependency relationship" | Out-Null
-            Write-Host "  [OK] Dependency relationship removed - $($keepRels.Count) other dependency(ies) kept." -ForegroundColor Green
+            Write-Host "  [OK] Dependency relationship removed - $($keepRels.Count) other relationship(s) kept." -ForegroundColor Green
 
             # Graph's delete-time dependency check can briefly lag behind an
             # updateRelationships change actually taking effect - the same

@@ -107,6 +107,12 @@ $testableFunctionNames = @(
     "ConvertTo-DetectionRuleJson",
     "ConvertTo-JsonStringLiteral",
     "Merge-CatalogMetadata",
+    # Supersedence: mapping, summary, compare, catalog and config JSON
+    "ConvertTo-SupersedenceEntries",
+    "Format-SupersedenceSummary",
+    "Get-SupersedenceCompareKey",
+    "ConvertTo-SupersedenceJson",
+    "ConvertTo-CreateAppConfigJson",
     "Get-CreateAppTemplates",
     "Get-DefaultAppMetadata",
     "Get-FriendlyIntuneAppType",
@@ -549,6 +555,30 @@ $wingetAppCustomMetadata = [pscustomobject]@{ appName = "Some Winget App"; winge
 Assert-Equal $true (Test-AppHasCustomConfig -App $wingetAppCustomMetadata) `
     "Test-AppHasCustomConfig: a Winget app whose saved install command differs from the default is Yes"
 
+# App version is a fact about the package, not a setting; featured is one.
+$versionedMetadata = $defaultsForCompare.PSObject.Copy()
+$versionedMetadata.appVersion = "24.08"
+Assert-Equal $false (Test-AppHasCustomConfig -App ([pscustomobject]@{ appName = "Some Winget App"; wingetId = "some.app"; metadata = $versionedMetadata })) `
+    "Test-AppHasCustomConfig: an App version alone doesn't make an app custom"
+$featuredMetadata = $defaultsForCompare.PSObject.Copy()
+$featuredMetadata.isFeatured = $true
+Assert-Equal $true (Test-AppHasCustomConfig -App ([pscustomobject]@{ appName = "Some Winget App"; wingetId = "some.app"; metadata = $featuredMetadata })) `
+    "Test-AppHasCustomConfig: being featured is a setting, so it does"
+
+# App version / Featured app: compared once recorded, skipped while the
+# catalog entry predates them ($null), so upgrading doesn't flag every app.
+$unrecordedLocal = [pscustomobject]@{ description = "d"; appVersion = $null; isFeatured = $null }
+$liveVersioned = [pscustomobject]@{ description = "d"; appVersion = "24.08"; isFeatured = $true }
+$unrecordedDiffs = @(Get-CatalogMetadataFieldDiffs -Local $unrecordedLocal -Remote $liveVersioned | Where-Object { $_.Field -in @("App version", "Featured app") })
+Assert-Equal 0 $unrecordedDiffs.Count "Get-CatalogMetadataFieldDiffs: App version/Featured app never recorded locally are not differences"
+$recordedLocal = [pscustomobject]@{ description = "d"; appVersion = "23.01"; isFeatured = $false }
+$recordedDiffs = @(Get-CatalogMetadataFieldDiffs -Local $recordedLocal -Remote $liveVersioned | ForEach-Object { $_.Field })
+Assert-True ($recordedDiffs -contains "App version") "Get-CatalogMetadataFieldDiffs: a recorded App version that differs is flagged"
+Assert-True ($recordedDiffs -contains "Featured app") "Get-CatalogMetadataFieldDiffs: a recorded Featured app that differs is flagged"
+$merged = Merge-CatalogMetadata -Remote $liveVersioned -Local $recordedLocal -KeepLocalFields @("App version")
+Assert-Equal "23.01" $merged.appVersion "Merge-CatalogMetadata: keeping the local App version works by its label"
+Assert-Equal $true $merged.isFeatured "Merge-CatalogMetadata: ...and leaves Featured app on Intune's value"
+
 # -----------------------------------------------------------------
 # ConvertTo-AppRecord
 # -----------------------------------------------------------------
@@ -766,6 +796,8 @@ $fetched = [pscustomobject]@{
     InformationUrl          = "https://example.invalid/info"
     PrivacyInformationUrl   = "https://example.invalid/privacy"
     Notes                   = "Some notes"
+    DisplayVersion          = "24.08"
+    IsFeatured              = $true
     InstallCommandLine      = "setup.exe /S"
     UninstallCommandLine    = "uninstall.exe /S"
     AllowedArchitectures    = "x64"
@@ -789,6 +821,8 @@ Assert-Equal "setup.exe /S" $mapped.installCommand "ConvertTo-CatalogMetadataFro
 Assert-Equal "uninstall.exe /S" $mapped.uninstallCommand "ConvertTo-CatalogMetadataFromFetch: so does the uninstall command"
 Assert-Equal "https://example.invalid/privacy" $mapped.privacyUrl "ConvertTo-CatalogMetadataFromFetch: privacyInformationUrl lands on the catalog's privacyUrl"
 Assert-Equal "system" $mapped.installContext "ConvertTo-CatalogMetadataFromFetch: runAsAccount lands on installContext"
+Assert-Equal "24.08" $mapped.appVersion "ConvertTo-CatalogMetadataFromFetch: displayVersion lands on appVersion"
+Assert-Equal $true $mapped.isFeatured "ConvertTo-CatalogMetadataFromFetch: isFeatured comes across"
 Assert-Equal 2 @($mapped.dependencies).Count "ConvertTo-CatalogMetadataFromFetch: dependencies are kept - the whole point"
 Assert-True (@($mapped.dependencies) -contains "Base Runtime") "ConvertTo-CatalogMetadataFromFetch: ...by name, as the catalog stores them"
 Assert-Equal "exists" $mapped.detectionRule.File_DetectionType "ConvertTo-CatalogMetadataFromFetch: the detection rule comes across whole"
@@ -1680,6 +1714,24 @@ try {
     }
     Assert-True ((ConvertTo-SingleAppJson -App $plainApp) -notlike '*packagePath*') `
         "ConvertTo-SingleAppJson: leaves packagePath out entirely when unset"
+
+    # App version and Featured app round-trip, and "never recorded" stays
+    # null rather than turning into "" / false on the way through.
+    $metaRoundTrip = [pscustomobject]@{
+        appId = ''; appName = 'Meta Trip'; wingetId = 'x.y'
+        intuneAppType = ''; intuneAppVersion = ''
+        requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @()
+        metadata = [pscustomobject]@{ description = 'd'; appVersion = '1.2.3'; isFeatured = $true }
+    }
+    $metaBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $metaRoundTrip) | ConvertFrom-Json)
+    Assert-Equal '1.2.3' $metaBack.metadata.appVersion "ConvertTo-SingleAppJson/ConvertTo-AppRecord: App version round-trips"
+    Assert-Equal $true $metaBack.metadata.isFeatured "ConvertTo-SingleAppJson/ConvertTo-AppRecord: Featured app round-trips"
+    $metaRoundTrip.metadata = [pscustomobject]@{ description = 'd'; appVersion = $null; isFeatured = $null }
+    $metaNullBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $metaRoundTrip) | ConvertFrom-Json)
+    Assert-Null $metaNullBack.metadata.appVersion "ConvertTo-AppRecord: an unrecorded App version stays null through a save"
+    Assert-Null $metaNullBack.metadata.isFeatured "ConvertTo-AppRecord: an unrecorded Featured app stays null through a save"
+    $olderFile = ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'Old'; metadata = [pscustomobject]@{ description = 'd' } })
+    Assert-Null $olderFile.metadata.appVersion "ConvertTo-AppRecord: a file from before App version reads it as null, not blank"
 }
 finally {
     $Global:App.RootPath = $savedRootPath
@@ -1794,6 +1846,120 @@ try {
     Assert-Equal $null $Global:App.LastAuditResults['New App'].Checked.Groups "Set-LastAuditCacheEntry: an unchecked part has no time"
 }
 finally { $Global:App.LastAuditResults = $savedAuditResults }
+
+# -----------------------------------------------------------------
+# Get-ExistingSupersedence (EmbeddedScripts\CreateApp.ps1)
+# -----------------------------------------------------------------
+# Not under Private\, so loaded on its own, with Graph stubbed. What it
+# returns is what survives an update's updateRelationships - which
+# replaces the whole list, so anything it drops is deleted in Intune.
+$createAppScript = Join-Path (Split-Path $privateRoot -Parent) 'EmbeddedScripts\CreateApp.ps1'
+$createAppAst = [System.Management.Automation.Language.Parser]::ParseFile($createAppScript, [ref]$null, [ref]$null)
+$supersedenceFn = $createAppAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-ExistingSupersedence' }, $true) | Select-Object -First 1
+Assert-True ($null -ne $supersedenceFn) "Get-ExistingSupersedence: found in CreateApp.ps1"
+if ($supersedenceFn) {
+    . ([scriptblock]::Create($supersedenceFn.Extent.Text))
+    $script:relPages = @(
+        @{ value = @(
+            @{ '@odata.type' = '#microsoft.graph.mobileAppDependency'; targetId = 'dep-1'; targetType = 'child'; dependencyType = 'autoInstall' }
+            @{ '@odata.type' = '#microsoft.graph.mobileAppSupersedence'; targetId = 'old-1'; targetType = 'child'; supersedenceType = 'update' }
+            @{ '@odata.type' = '#microsoft.graph.mobileAppSupersedence'; targetId = 'newer-app'; targetType = 'parent'; supersedenceType = 'replace' }
+          ); '@odata.nextLink' = 'page2' }
+        @{ value = @(
+            @{ '@odata.type' = '#microsoft.graph.mobileAppSupersedence'; targetId = 'old-2'; targetType = 'child'; supersedenceType = 'replace' }
+          ) }
+    )
+    $script:relPageIndex = 0
+    function Invoke-GraphRequestDetailed { param($Uri, $Method, $StepDescription) $page = $script:relPages[$script:relPageIndex]; $script:relPageIndex++; return $page }
+    $keptRels = Get-ExistingSupersedence -AppId 'app-1'
+    Assert-Equal 2 @($keptRels).Count "Get-ExistingSupersedence: keeps this app's own supersedence, across pages"
+    Assert-Equal 'old-1,old-2' ((@($keptRels) | ForEach-Object { $_.targetId }) -join ',') "Get-ExistingSupersedence: ...and only those - not dependencies, not other apps' (parent) entries"
+    Assert-Equal 'update' @($keptRels)[0].supersedenceType "Get-ExistingSupersedence: the supersedence type (update/replace) is kept"
+    Assert-Equal '#microsoft.graph.mobileAppSupersedence' @($keptRels)[0].'@odata.type' "Get-ExistingSupersedence: shaped to be sent straight back"
+    $script:relPages = @(@{ value = @() }); $script:relPageIndex = 0
+    Assert-Equal 0 @(Get-ExistingSupersedence -AppId 'app-1').Count "Get-ExistingSupersedence: none is an empty list"
+    function Invoke-GraphRequestDetailed { param($Uri, $Method, $StepDescription) throw 'Forbidden' }
+    $readThrew = $false
+    try { [void](Get-ExistingSupersedence -AppId 'app-1') } catch { $readThrew = $true }
+    Assert-True $readThrew "Get-ExistingSupersedence: a failed read throws, so the update sends nothing instead of wiping the list"
+    Remove-Item Function:\Invoke-GraphRequestDetailed -ErrorAction SilentlyContinue
+}
+
+# -----------------------------------------------------------------
+# Supersedence (metadata.supersedes)
+# -----------------------------------------------------------------
+$relList = @(
+    @{ '@odata.type' = '#microsoft.graph.mobileAppDependency'; targetId = 'dep-1'; targetType = 'child'; targetDisplayName = 'Runtime' }
+    @{ '@odata.type' = '#microsoft.graph.mobileAppSupersedence'; targetId = 'old-2'; targetType = 'child'; targetDisplayName = 'Tool 1.0'; supersedenceType = 'replace' }
+    @{ '@odata.type' = '#microsoft.graph.mobileAppSupersedence'; targetId = 'newer'; targetType = 'parent'; targetDisplayName = 'Tool 3.0'; supersedenceType = 'update' }
+)
+$supEntries = @(ConvertTo-SupersedenceEntries -Relationships $relList)
+Assert-Equal 1 $supEntries.Count "ConvertTo-SupersedenceEntries: only this app's own (child) supersedence, not dependencies or parents"
+Assert-Equal 'old-2' $supEntries[0].appId "ConvertTo-SupersedenceEntries: keeps the target App ID"
+Assert-Equal 'Tool 1.0' $supEntries[0].name "ConvertTo-SupersedenceEntries: ...and its name"
+Assert-Equal 'replace' $supEntries[0].type "ConvertTo-SupersedenceEntries: ...and the type"
+Assert-Equal "(none)" (Format-SupersedenceSummary @()) "Format-SupersedenceSummary: nothing reads as (none)"
+Assert-True ((Format-SupersedenceSummary $supEntries) -like '*Tool 1.0*uninstall*') "Format-SupersedenceSummary: says Replace uninstalls the old app"
+$sameRenamed = @([pscustomobject]@{ appId = 'old-2'; name = 'Tool 1.0 (renamed)'; type = 'replace' })
+Assert-Equal (Get-SupersedenceCompareKey $supEntries) (Get-SupersedenceCompareKey $sameRenamed) "Get-SupersedenceCompareKey: a renamed app is still the same app"
+$typeChanged = @([pscustomobject]@{ appId = 'old-2'; name = 'Tool 1.0'; type = 'update' })
+Assert-True ((Get-SupersedenceCompareKey $supEntries) -ne (Get-SupersedenceCompareKey $typeChanged)) "Get-SupersedenceCompareKey: a changed type is a difference"
+
+# Compare: skipped while never recorded locally, or unreadable remotely
+$supLocalNull = [pscustomobject]@{ description = 'd'; supersedes = $null }
+$supRemote = [pscustomobject]@{ description = 'd'; supersedes = $supEntries }
+Assert-Equal 0 @(Get-CatalogMetadataFieldDiffs -Local $supLocalNull -Remote $supRemote | Where-Object { $_.Field -eq 'Supersedence' }).Count "Get-CatalogMetadataFieldDiffs: supersedence never recorded locally is not a difference"
+$supLocalEmpty = [pscustomobject]@{ description = 'd'; supersedes = @() }
+Assert-Equal 1 @(Get-CatalogMetadataFieldDiffs -Local $supLocalEmpty -Remote $supRemote | Where-Object { $_.Field -eq 'Supersedence' }).Count "Get-CatalogMetadataFieldDiffs: recorded as none while Intune has one is a difference"
+Assert-Equal 0 @(Get-CatalogMetadataFieldDiffs -Local $supLocalEmpty -Remote ([pscustomobject]@{ description = 'd'; supersedes = $null }) | Where-Object { $_.Field -eq 'Supersedence' }).Count "Get-CatalogMetadataFieldDiffs: an unreadable remote list is not a difference"
+Assert-Equal 0 @(Get-CatalogMetadataFieldDiffs -Local $supLocalEmpty -Remote $supRemote -OdataType 'winGetApp' | Where-Object { $_.Field -eq 'Supersedence' }).Count "Get-CatalogMetadataFieldDiffs: supersedence is only compared for Win32 apps"
+$supMerged = Merge-CatalogMetadata -Remote $supRemote -Local $supLocalEmpty -KeepLocalFields @('Supersedence')
+Assert-Equal 0 @($supMerged.supersedes).Count "Merge-CatalogMetadata: keeping the local supersedence works by its label"
+
+# Catalog file: entries round-trip; null and [] stay different
+$supApp = [pscustomobject]@{
+    appId = ''; appName = 'Sup Trip'; wingetId = 'x.y'; intuneAppType = ''; intuneAppVersion = ''
+    requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @()
+    metadata = [pscustomobject]@{ description = 'd'; supersedes = $supEntries }
+}
+$supBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $supApp) | ConvertFrom-Json)
+Assert-Equal 'old-2' @($supBack.metadata.supersedes)[0].appId "ConvertTo-SingleAppJson/ConvertTo-AppRecord: supersedence round-trips"
+Assert-Equal 'replace' @($supBack.metadata.supersedes)[0].type "ConvertTo-SingleAppJson/ConvertTo-AppRecord: ...with its type"
+$supApp.metadata = [pscustomobject]@{ description = 'd'; supersedes = $null }
+Assert-Null (ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $supApp) | ConvertFrom-Json)).metadata.supersedes "ConvertTo-AppRecord: never-recorded supersedence stays null through a save"
+Assert-Equal "[]" (ConvertTo-SupersedenceJson -Entries @()) "ConvertTo-SupersedenceJson: recorded as none is [], not null"
+Assert-Equal "null" (ConvertTo-SupersedenceJson -Entries $null) "ConvertTo-SupersedenceJson: never recorded is null"
+
+# Deploy config: SupersedenceSet says whether the list is the catalog's
+$cfgBase = @{ TenantId = 't'; ClientId = 'c'; CertificateThumbprint = 'x'; Mode = 'UpdateMetadata'; ExistingAppId = 'a'; AppName = 'n'
+    MinDiskSpaceMB = 0; MinMemoryMB = 0; MinProcessors = 0; MinCpuSpeedMHz = 0; InstallTimeMinutes = 60; ReturnCodes = @() }
+$cfgUnknown = [pscustomobject]($cfgBase + @{ Supersedence = $null }) | ForEach-Object { (ConvertTo-CreateAppConfigJson -Config $_) | ConvertFrom-Json }
+Assert-Equal $false $cfgUnknown.SupersedenceSet "ConvertTo-CreateAppConfigJson: unknown supersedence is not set (an update keeps Intune's)"
+$cfgNone = [pscustomobject]($cfgBase + @{ Supersedence = @() }) | ForEach-Object { (ConvertTo-CreateAppConfigJson -Config $_) | ConvertFrom-Json }
+Assert-Equal $true $cfgNone.SupersedenceSet "ConvertTo-CreateAppConfigJson: recorded as none is set (an update clears Intune's)"
+$cfgSome = [pscustomobject]($cfgBase + @{ Supersedence = $supEntries }) | ForEach-Object { (ConvertTo-CreateAppConfigJson -Config $_) | ConvertFrom-Json }
+Assert-Equal 'old-2' @($cfgSome.Supersedence)[0].targetId "ConvertTo-CreateAppConfigJson: entries go out as targetId..."
+Assert-Equal 'replace' @($cfgSome.Supersedence)[0].supersedenceType "ConvertTo-CreateAppConfigJson: ...and supersedenceType"
+
+# Custom Config counts supersedence (a real setting); the default is none
+$supDefaults = Get-DefaultAppMetadata -AppName "Some Winget App" -WingetId "some.app" -Uncommon $false
+Assert-Equal 0 @($supDefaults.supersedes).Count "Get-DefaultAppMetadata: supersedes nothing by default"
+$supCustom = $supDefaults.PSObject.Copy(); $supCustom.supersedes = $supEntries
+Assert-Equal $true (Test-AppHasCustomConfig -App ([pscustomobject]@{ appName = "Some Winget App"; wingetId = "some.app"; metadata = $supCustom })) "Test-AppHasCustomConfig: superseding an app is custom config"
+
+# Get-ConfigSupersedence (CreateApp.ps1) - what an update/create sends
+$configSupFn = $createAppAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-ConfigSupersedence' }, $true) | Select-Object -First 1
+Assert-True ($null -ne $configSupFn) "Get-ConfigSupersedence: found in CreateApp.ps1"
+if ($configSupFn) {
+    . ([scriptblock]::Create($configSupFn.Extent.Text))
+    $Config = $cfgSome
+    $sent = @(Get-ConfigSupersedence)
+    Assert-Equal 1 $sent.Count "Get-ConfigSupersedence: one entry in, one relationship out"
+    Assert-Equal '#microsoft.graph.mobileAppSupersedence' $sent[0].'@odata.type' "Get-ConfigSupersedence: shaped as a supersedence relationship"
+    $Config = $cfgNone
+    Assert-Equal 0 @(Get-ConfigSupersedence).Count "Get-ConfigSupersedence: none recorded sends none"
+    Remove-Variable Config
+}
 
 # =================================================================
 # Report

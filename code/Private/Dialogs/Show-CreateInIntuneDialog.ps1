@@ -243,7 +243,8 @@ function Global:Show-CreateInIntuneDialog {
 
     $txtPublisher = New-Object System.Windows.Forms.TextBox
     $txtPublisher.Location = New-Object System.Drawing.Point(15,(230 - $leftColumnShift))
-    $txtPublisher.Size = New-Object System.Drawing.Size(820,24)
+    # Half width: App version sits beside it, in the Intune portal's order
+    $txtPublisher.Size = New-Object System.Drawing.Size(402,24)
     if (-not $isDuplicate) { $txtPublisher.Text = $defaults.publisher }
     $scrollPanel.Controls.Add($txtPublisher)
 
@@ -311,6 +312,26 @@ function Global:Show-CreateInIntuneDialog {
     $txtNotes.Size = New-Object System.Drawing.Size(820,40)
     $txtNotes.Multiline = $true
     $scrollPanel.Controls.Add($txtNotes)
+
+    # Intune's "App version" (displayVersion) - what the Company Portal
+    # shows as the version. Blank leaves Intune's own value alone, like the
+    # other optional fields.
+    $lblAppVersion = New-Object System.Windows.Forms.Label
+    $lblAppVersion.Text = "App version (optional)"
+    $lblAppVersion.Location = New-Object System.Drawing.Point(433,(211 - $leftColumnShift))
+    $lblAppVersion.AutoSize = $true
+    $scrollPanel.Controls.Add($lblAppVersion)
+
+    $txtAppVersion = New-Object System.Windows.Forms.TextBox
+    $txtAppVersion.Location = New-Object System.Drawing.Point(433,(230 - $leftColumnShift))
+    $txtAppVersion.Size = New-Object System.Drawing.Size(402,24)
+    $scrollPanel.Controls.Add($txtAppVersion)
+
+    $chkFeatured = New-Object System.Windows.Forms.CheckBox
+    $chkFeatured.Text = "Show this as a featured app in the Company Portal"
+    $chkFeatured.Location = New-Object System.Drawing.Point(15,(433 - $leftColumnShift))
+    $chkFeatured.AutoSize = $true
+    $scrollPanel.Controls.Add($chkFeatured)
 
     $lblPackage = New-Object System.Windows.Forms.Label
     $lblPackage.Text = "Package (.intunewin) - used when creating a new app, or when replacing content on an existing one"
@@ -931,6 +952,135 @@ function Global:Show-CreateInIntuneDialog {
     }
     $scrollPanel.Controls.Add($clbDeps)
 
+    # --- Supersedence, directly under Dependencies (placed there once the
+    # tabs exist - see "Supersedence goes directly under" further down) ---
+    # Intune apps this one supersedes, by App ID: usually an older version
+    # that only exists in Intune, so the picker lists Intune's apps, not
+    # just the catalog's. Update upgrades it in place; Replace uninstalls it.
+    #
+    # Known: whether this list is really the app's supersedence. False for
+    # an existing app until the catalog, the live Intune read or a hand
+    # edit says what it is - and while it's false, a deploy sends $null,
+    # which keeps whatever Intune has instead of clearing it.
+    $supersedenceKnownBox = @{ Value = (-not $isDuplicate) }
+    $supersedenceEditedBox = @{ Value = $false }
+    $lblSupersedence = New-Object System.Windows.Forms.Label
+    $lblSupersedence.Text = "Supersedes (older apps in Intune this one replaces - Win32 apps only)"
+    $lblSupersedence.Location = New-Object System.Drawing.Point(595,460)
+    $lblSupersedence.AutoSize = $true
+    $scrollPanel.Controls.Add($lblSupersedence)
+
+    $grdSupersedence = New-Object System.Windows.Forms.DataGridView
+    Set-AppGridStyle -Grid $grdSupersedence
+    $grdSupersedence.Location = New-Object System.Drawing.Point(595,479)
+    $grdSupersedence.Size = New-Object System.Drawing.Size(690,96)
+    $grdSupersedence.AllowUserToAddRows = $false
+    $grdSupersedence.AllowUserToDeleteRows = $false
+    $grdSupersedence.RowHeadersVisible = $false
+    $grdSupersedence.SelectionMode = "FullRowSelect"
+    $grdSupersedence.MultiSelect = $false
+    $colSupName = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colSupName.Name = "SupName"; $colSupName.HeaderText = "App"; $colSupName.FillWeight = 60; $colSupName.ReadOnly = $true
+    [void]$grdSupersedence.Columns.Add($colSupName)
+    $colSupId = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+    $colSupId.Name = "SupId"; $colSupId.Visible = $false
+    [void]$grdSupersedence.Columns.Add($colSupId)
+    $colSupType = New-Object System.Windows.Forms.DataGridViewComboBoxColumn
+    $colSupType.Name = "SupType"; $colSupType.HeaderText = "Type"; $colSupType.FillWeight = 40
+    [void]$colSupType.Items.AddRange(@("Update", "Replace (uninstall it)"))
+    [void]$grdSupersedence.Columns.Add($colSupType)
+    $scrollPanel.Controls.Add($grdSupersedence)
+    $supersedenceTip = New-Object System.Windows.Forms.ToolTip
+    $supersedenceTip.SetToolTip($grdSupersedence, "Update: devices with the old app get this one as an upgrade. Replace: the old app is uninstalled first.")
+
+    $addSupersedenceRow = {
+        param([string]$AppId, [string]$Name, [string]$Type)
+        $rowIdx = $grdSupersedence.Rows.Add()
+        $grdSupersedence.Rows[$rowIdx].Cells["SupName"].Value = $(if ($Name) { $Name } else { $AppId })
+        $grdSupersedence.Rows[$rowIdx].Cells["SupId"].Value = $AppId
+        $grdSupersedence.Rows[$rowIdx].Cells["SupType"].Value = $(if ($Type -eq 'replace') { "Replace (uninstall it)" } else { "Update" })
+    }.GetNewClosure()
+    # Fills the list from catalog/Intune entries; $null (unknown) leaves it
+    # empty and not known.
+    $setSupersedenceRows = {
+        param($Entries)
+        $grdSupersedence.Rows.Clear()
+        if ($null -eq $Entries) { return }
+        foreach ($entry in @($Entries)) {
+            if ($entry -and $entry.appId) { & $addSupersedenceRow ([string]$entry.appId) ([string]$entry.name) ([string]$entry.type) }
+        }
+        $supersedenceKnownBox.Value = $true
+    }.GetNewClosure()
+    # The list as catalog entries, or $null while it isn't known.
+    $getSupersedenceEntries = {
+        if (-not $supersedenceKnownBox.Value) { return $null }
+        return ,@(@($grdSupersedence.Rows) | Where-Object { [string]$_.Cells["SupId"].Value } | ForEach-Object {
+            [pscustomobject]@{
+                appId = [string]$_.Cells["SupId"].Value
+                name  = [string]$_.Cells["SupName"].Value
+                type  = $(if ([string]$_.Cells["SupType"].Value -like 'Replace*') { 'replace' } else { 'update' })
+            }
+        })
+    }.GetNewClosure()
+    $markSupersedenceEdited = {
+        $supersedenceEditedBox.Value = $true
+        $supersedenceKnownBox.Value = $true
+    }.GetNewClosure()
+    $grdSupersedence.Add_CellBeginEdit($markSupersedenceEdited)
+
+    # Candidates: Intune's own app list (the lookup cache, read on first
+    # use) plus catalog apps that have an App ID - never this app, never
+    # one already listed.
+    $selfAppId = [string]$ExistingAppId
+    $showSupersedencePicker = {
+        $taken = @(@($grdSupersedence.Rows) | ForEach-Object { [string]$_.Cells["SupId"].Value })
+        $candidates = [ordered]@{}
+        foreach ($cached in @($Global:App.IntuneAppsCache)) {
+            if ($cached -and $cached.id -and -not $candidates.Contains([string]$cached.id)) { $candidates[[string]$cached.id] = [string]$cached.displayName }
+        }
+        foreach ($catalogApp in @($Global:App.Apps)) {
+            if ($catalogApp -and $catalogApp.appId -and -not $candidates.Contains([string]$catalogApp.appId)) { $candidates[[string]$catalogApp.appId] = [string]$catalogApp.appName }
+        }
+        $items = @($candidates.Keys | Where-Object { $_ -ne $selfAppId -and $taken -notcontains $_ } | ForEach-Object { "$($candidates[$_])  [$_]" } | Sort-Object)
+        if ($items.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("There are no other Intune apps to pick from.", "Nothing to supersede", "OK", "Information") | Out-Null
+            return
+        }
+        $pick = Show-SimpleListPicker -Title "Supersedes" -Prompt "Pick the app this one supersedes - usually an older version of it:" -Items $items
+        if ($pick -and $pick -match '^(.*)\s+\[([^\]]+)\]\s*$') {
+            & $addSupersedenceRow $Matches[2] $Matches[1].Trim() 'update'
+            & $markSupersedenceEdited
+        }
+    }.GetNewClosure()
+
+    $btnAddSupersedence = New-Object System.Windows.Forms.Button
+    $btnAddSupersedence.Text = "Add..."
+    $btnAddSupersedence.Location = New-Object System.Drawing.Point(1295,479)
+    $btnAddSupersedence.Size = New-Object System.Drawing.Size(120,26)
+    $scrollPanel.Controls.Add($btnAddSupersedence)
+    $btnAddSupersedence.Add_Click({
+        if (@($Global:App.IntuneAppsCache).Count -gt 0) { & $showSupersedencePicker; return }
+        # Intune's app list isn't loaded yet - read it, then pick
+        $pickerRef = $showSupersedencePicker
+        Start-IntuneAppLookup -OnComplete {
+            param($ok, $data)
+            if ($ok) { & $pickerRef }
+            else { [System.Windows.Forms.MessageBox]::Show("Couldn't read Intune's app list: $data", "Supersedes", "OK", "Warning") | Out-Null }
+        }.GetNewClosure()
+    }.GetNewClosure())
+
+    $btnRemoveSupersedence = New-Object System.Windows.Forms.Button
+    $btnRemoveSupersedence.Text = "Remove"
+    $btnRemoveSupersedence.Location = New-Object System.Drawing.Point(1295,509)
+    $btnRemoveSupersedence.Size = New-Object System.Drawing.Size(120,26)
+    $scrollPanel.Controls.Add($btnRemoveSupersedence)
+    $btnRemoveSupersedence.Add_Click({
+        if ($grdSupersedence.SelectedRows.Count -gt 0) {
+            $grdSupersedence.Rows.Remove($grdSupersedence.SelectedRows[0])
+            & $markSupersedenceEdited
+        }
+    }.GetNewClosure())
+
     # --- Requirements (0 = not required, matching the portal's own "No X
     # required" wording for an unset value) ---
     $lblReqs = New-Object System.Windows.Forms.Label
@@ -1115,9 +1265,11 @@ function Global:Show-CreateInIntuneDialog {
             Controls = @(
                 $chkForceNew, $chkReplaceContent,
                 $lblName, $txtCreateName, $lblDesc, $txtDesc,
-                $lblPublisher, $txtPublisher, $lblOwner, $txtOwner,
+                $lblPublisher, $txtPublisher, $lblAppVersion, $txtAppVersion,
+                $lblOwner, $txtOwner,
                 $lblDeveloper, $txtDeveloper, $lblInfoUrl, $txtInfoUrl,
-                $lblPrivacyUrl, $txtPrivacyUrl, $lblNotes, $txtNotes
+                $lblPrivacyUrl, $txtPrivacyUrl, $lblNotes, $txtNotes,
+                $chkFeatured
             )
         }
         @{
@@ -1136,6 +1288,7 @@ function Global:Show-CreateInIntuneDialog {
                 $lblMinOS, $cmbMinOS, $lblMinOSStatus,
                 $lblAdvancedSeparator, $btnSetDefaults, $lblSetDefaultsHint,
                 $lblDeps, $clbDeps,
+                $lblSupersedence, $grdSupersedence, $btnAddSupersedence, $btnRemoveSupersedence,
                 $lblReqs, $lblDiskSpace, $txtDiskSpace, $lblMemory, $txtMemory,
                 $lblProcessors, $txtProcessors, $lblCpuSpeed, $txtCpuSpeed,
                 $lblInstallTime, $txtInstallTime,
@@ -1167,6 +1320,22 @@ function Global:Show-CreateInIntuneDialog {
     # and the chosen detection panel moves with them
     $detHostBox.Panel = $packagePage
     & $UpdateDetPanel
+
+    # Supersedence goes directly under Dependencies: everything below the
+    # dependency list moves down by its height, the way the Package tab
+    # above is placed after the move rather than in the original column.
+    $supersedenceControls = @($lblSupersedence, $grdSupersedence, $btnAddSupersedence, $btnRemoveSupersedence)
+    $supersedenceTop = $clbDeps.Bottom + 8
+    $supersedenceShift = 19 + $grdSupersedence.Height + 14
+    foreach ($reqControl in @($clbDeps.Parent.Controls)) {
+        if ($supersedenceControls -contains $reqControl) { continue }
+        if ($reqControl.Top -ge $clbDeps.Bottom) { $reqControl.Top += $supersedenceShift }
+    }
+    $lblSupersedence.Location = New-Object System.Drawing.Point($clbDeps.Left, $supersedenceTop)
+    $grdSupersedence.Location = New-Object System.Drawing.Point($clbDeps.Left, ($supersedenceTop + 19))
+    $grdSupersedence.Width = $clbDeps.Width - 130
+    $btnAddSupersedence.Location = New-Object System.Drawing.Point(($grdSupersedence.Right + 10), $grdSupersedence.Top)
+    $btnRemoveSupersedence.Location = New-Object System.Drawing.Point(($grdSupersedence.Right + 10), ($grdSupersedence.Top + 30))
 
     # Requirements, return codes, and install time/restart behavior/
     # allow-uninstall are NOT locked (unlike Install context above) -
@@ -1580,6 +1749,9 @@ function Global:Show-CreateInIntuneDialog {
         if ($KeepLocalFields -contains "Information URL")       { $txtInfoUrl.Text = $LocalSnapshot.InformationUrl }
         if ($KeepLocalFields -contains "Privacy URL")           { $txtPrivacyUrl.Text = $LocalSnapshot.PrivacyUrl }
         if ($KeepLocalFields -contains "Notes")                 { $txtNotes.Text = $LocalSnapshot.Notes }
+        if ($KeepLocalFields -contains "App version")           { $txtAppVersion.Text = [string]$LocalSnapshot.AppVersion }
+        if ($KeepLocalFields -contains "Featured app")          { $chkFeatured.Checked = [bool]$LocalSnapshot.IsFeatured }
+        if ($KeepLocalFields -contains "Supersedence")          { & $setSupersedenceRows $LocalSnapshot.Supersedes }
         if ($KeepLocalFields -contains "Install command")       { $txtInstall.Text = $LocalSnapshot.InstallCommand }
         if ($KeepLocalFields -contains "Uninstall command")     { $txtUninstall.Text = $LocalSnapshot.UninstallCommand }
         if ($KeepLocalFields -contains "Architecture") {
@@ -1874,7 +2046,7 @@ function Global:Show-CreateInIntuneDialog {
     # only fire for user input.
     $userEditBox = @{ Value = $false }
     $metadataTextBoxes = @(
-        $txtDesc, $txtPublisher, $txtOwner, $txtDeveloper, $txtInfoUrl, $txtPrivacyUrl, $txtNotes,
+        $txtDesc, $txtPublisher, $txtAppVersion, $txtOwner, $txtDeveloper, $txtInfoUrl, $txtPrivacyUrl, $txtNotes,
         $txtInstall, $txtUninstall, $txtDetection, $txtMsiCode, $txtMsiVersion,
         $txtFilePath, $txtFileName, $txtFileDetValue,
         $txtRegKeyPath, $txtRegValueName, $txtRegDetValue,
@@ -1884,7 +2056,7 @@ function Global:Show-CreateInIntuneDialog {
     foreach ($editCombo in @($cmbDetectionType, $cmbMsiOperator, $cmbFileDetType, $cmbFileOperator, $cmbRegDetType, $cmbRegOperator, $cmbContext, $cmbMinOS, $cmbRestartBehavior)) {
         $editCombo.Add_SelectionChangeCommitted($markUserEdit)
     }
-    foreach ($editCheck in @($chkArchX86, $chkArchX64, $chkArchArm64, $chkFileCheck32, $chkRegCheck32, $chkAllowUninstall)) {
+    foreach ($editCheck in @($chkArchX86, $chkArchX64, $chkArchArm64, $chkFileCheck32, $chkRegCheck32, $chkAllowUninstall, $chkFeatured)) {
         $editCheck.Add_Click($markUserEdit)
     }
     # ItemCheck also fires for checks set from code - only one made while
@@ -1893,12 +2065,13 @@ function Global:Show-CreateInIntuneDialog {
     $grdReturnCodes.Add_CellBeginEdit($markUserEdit)
     $grdReturnCodes.Add_UserDeletedRow($markUserEdit)
     $hasUserEdits = {
-        $userEditBox.Value -or (@($metadataTextBoxes | Where-Object { $_.Modified }).Count -gt 0)
+        $userEditBox.Value -or $supersedenceEditedBox.Value -or (@($metadataTextBoxes | Where-Object { $_.Modified }).Count -gt 0)
     }.GetNewClosure()
     # Called once the fields' current values have been handed on (a
     # successful deploy staged them) - they're no longer unsaved edits.
     $clearUserEdits = {
         $userEditBox.Value = $false
+        $supersedenceEditedBox.Value = $false
         foreach ($editBox in $metadataTextBoxes) { $editBox.Modified = $false }
     }.GetNewClosure()
 
@@ -2191,6 +2364,10 @@ function Global:Show-CreateInIntuneDialog {
             InformationUrl        = $txtInfoUrl.Text.Trim()
             PrivacyUrl            = $txtPrivacyUrl.Text.Trim()
             Notes                 = $txtNotes.Text.Trim()
+            AppVersion            = $txtAppVersion.Text.Trim()
+            IsFeatured            = $chkFeatured.Checked
+            # $null while unknown: an update keeps Intune's supersedence
+            Supersedence          = (& $getSupersedenceEntries)
             InstallCommand        = $txtInstall.Text
             UninstallCommand      = $txtUninstall.Text
             DetectionRule         = $detectionRuleConfig
@@ -2391,6 +2568,9 @@ function Global:Show-CreateInIntuneDialog {
         $txtInfoUrlRef = $txtInfoUrl
         $txtPrivacyUrlRef = $txtPrivacyUrl
         $txtNotesRef = $txtNotes
+        $txtAppVersionRef = $txtAppVersion
+        $chkFeaturedRef = $chkFeatured
+        $getSupersedenceEntriesRef = $getSupersedenceEntries
         $txtInstallRef = $txtInstall
         $txtUninstallRef = $txtUninstall
         $cmbContextRef = $cmbContext
@@ -2433,7 +2613,10 @@ function Global:Show-CreateInIntuneDialog {
                         # a genuinely brand-new create, where Intune hasn't
                         # necessarily processed/reported a version yet.
                         $resultBoxRef.IntuneAppType = "Windows app (Win32)"
-                        $resultBoxRef.IntuneAppVersion = $fetchedIntuneFactsBoxRef.DisplayVersion
+                        # An App version just pushed is what Intune now
+                        # reports - the fetched one predates this deploy.
+                        $pushedAppVersion = $txtAppVersionRef.Text.Trim()
+                        $resultBoxRef.IntuneAppVersion = if ($pushedAppVersion) { $pushedAppVersion } else { $fetchedIntuneFactsBoxRef.DisplayVersion }
 
                         # Builds and saves a catalog-shaped metadata object
                         # now, same schema and same shared function "Save
@@ -2462,6 +2645,9 @@ function Global:Show-CreateInIntuneDialog {
                                 informationUrl   = $txtInfoUrlRef.Text.Trim()
                                 privacyUrl       = $txtPrivacyUrlRef.Text.Trim()
                                 notes            = $txtNotesRef.Text.Trim()
+                                appVersion       = $txtAppVersionRef.Text.Trim()
+                                isFeatured       = $chkFeaturedRef.Checked
+                                supersedes       = (& $getSupersedenceEntriesRef)
                                 installCommand   = $txtInstallRef.Text
                                 uninstallCommand = $txtUninstallRef.Text
                                 architecture     = ($selectedArchesRef -join ",")
@@ -2499,7 +2685,7 @@ function Global:Show-CreateInIntuneDialog {
                                 & $clearUserEditsRef
                             }
                             else {
-                                $localSaveResult = Save-AppMetadataToLocalCatalog -AppsRef $appsRefRef -LinkedFilePath $linkedFilePathRef -AppName $catalogAppNameRef -Metadata $createMetadata -NewAppId $result.appId -IntuneAppVersion $fetchedIntuneFactsBoxRef.DisplayVersion
+                                $localSaveResult = Save-AppMetadataToLocalCatalog -AppsRef $appsRefRef -LinkedFilePath $linkedFilePathRef -AppName $catalogAppNameRef -Metadata $createMetadata -NewAppId $result.appId -IntuneAppVersion $resultBoxRef.IntuneAppVersion
                                 $localSaveOk = $localSaveResult.Success
                             }
                         }
@@ -2836,6 +3022,9 @@ function Global:Show-CreateInIntuneDialog {
             $fInformationUrl = $txtInfoUrl.Text.Trim()
             $fPrivacyUrl = $txtPrivacyUrl.Text.Trim()
             $fNotes = $txtNotes.Text.Trim()
+            $fAppVersion = $txtAppVersion.Text.Trim()
+            $fIsFeatured = $chkFeatured.Checked
+            $fSupersedes = (& $getSupersedenceEntries)
             $fInstallCommand = $txtInstall.Text
             $fUninstallCommand = $txtUninstall.Text
             Write-Log "Save for later: checkpoint 1/6 (simple text fields) OK.`r`n"
@@ -2890,6 +3079,9 @@ function Global:Show-CreateInIntuneDialog {
                 informationUrl   = $fInformationUrl
                 privacyUrl       = $fPrivacyUrl
                 notes            = $fNotes
+                appVersion       = $fAppVersion
+                isFeatured       = $fIsFeatured
+                supersedes       = $fSupersedes
                 installCommand   = $fInstallCommand
                 uninstallCommand = $fUninstallCommand
                 architecture     = $fArchitecture
@@ -3014,6 +3206,9 @@ function Global:Show-CreateInIntuneDialog {
         if ($null -ne $m.informationUrl) { $txtInfoUrl.Text = $m.informationUrl }
         if ($null -ne $m.privacyUrl)     { $txtPrivacyUrl.Text = $m.privacyUrl }
         if ($null -ne $m.notes)          { $txtNotes.Text = $m.notes }
+        if ($null -ne $m.appVersion)     { $txtAppVersion.Text = $m.appVersion }
+        if ($null -ne $m.isFeatured)     { $chkFeatured.Checked = [bool]$m.isFeatured }
+        if ($null -ne $m.supersedes)     { & $setSupersedenceRows $m.supersedes }
         if ($m.installCommand)           { $txtInstall.Text = $m.installCommand }
         if ($m.uninstallCommand)         { $txtUninstall.Text = $m.uninstallCommand }
         if ($m.detectionRule) {
@@ -3112,6 +3307,10 @@ function Global:Show-CreateInIntuneDialog {
             InformationUrl     = $txtInfoUrl.Text
             PrivacyUrl         = $txtPrivacyUrl.Text
             Notes              = $txtNotes.Text
+            # $null when the catalog never recorded it - not compared then
+            AppVersion         = if ($null -ne $m.appVersion) { $txtAppVersion.Text } else { $null }
+            IsFeatured         = if ($null -ne $m.isFeatured) { $chkFeatured.Checked } else { $null }
+            Supersedes         = $m.supersedes
             InstallCommand     = $txtInstall.Text
             UninstallCommand   = $txtUninstall.Text
             Architecture       = $m.architecture
@@ -3197,6 +3396,9 @@ function Global:Show-CreateInIntuneDialog {
             $txtInfoUrlRef = $txtInfoUrl
             $txtPrivacyUrlRef = $txtPrivacyUrl
             $txtNotesRef = $txtNotes
+            $txtAppVersionRef = $txtAppVersion
+            $chkFeaturedRef = $chkFeatured
+            $setSupersedenceRowsRef = $setSupersedenceRows
             $txtInstallRef = $txtInstall
             $txtUninstallRef = $txtUninstall
             $txtDetectionRef = $txtDetection
@@ -3304,6 +3506,11 @@ function Global:Show-CreateInIntuneDialog {
                 if ($null -ne $data.InformationUrl) { $txtInfoUrlRef.Text = $data.InformationUrl }
                 if ($null -ne $data.PrivacyInformationUrl) { $txtPrivacyUrlRef.Text = $data.PrivacyInformationUrl }
                 if ($null -ne $data.Notes)          { $txtNotesRef.Text = $data.Notes }
+                if ($null -ne $data.DisplayVersion) { $txtAppVersionRef.Text = [string]$data.DisplayVersion }
+                $chkFeaturedRef.Checked = [bool]$data.IsFeatured
+                # $null = the relationships couldn't be read; the list
+                # stays as it was (and unknown, if it was)
+                if ($null -ne $data.Supersedence) { & $setSupersedenceRowsRef $data.Supersedence }
                 if ($null -ne $data.InstallCommandLine)   { $txtInstallRef.Text = $data.InstallCommandLine }
                 if ($null -ne $data.UninstallCommandLine) { $txtUninstallRef.Text = $data.UninstallCommandLine }
                 # Live Intune value replaces whatever local held, once it's
@@ -3506,6 +3713,9 @@ function Global:Show-CreateInIntuneDialog {
                     if ((& $normalizeForCompare $data.InformationUrl) -ne (& $normalizeForCompare $localSnapshotRef.InformationUrl)) { $diffFields.Add("Information URL") }
                     if ((& $normalizeForCompare $data.PrivacyInformationUrl) -ne (& $normalizeForCompare $localSnapshotRef.PrivacyUrl)) { $diffFields.Add("Privacy URL") }
                     if ((& $normalizeForCompare $data.Notes) -ne (& $normalizeForCompare $localSnapshotRef.Notes)) { $diffFields.Add("Notes") }
+                    if ($null -ne $localSnapshotRef.AppVersion -and (& $normalizeForCompare $data.DisplayVersion) -ne (& $normalizeForCompare $localSnapshotRef.AppVersion)) { $diffFields.Add("App version") }
+                    if ($null -ne $localSnapshotRef.IsFeatured -and [bool]$data.IsFeatured -ne [bool]$localSnapshotRef.IsFeatured) { $diffFields.Add("Featured app") }
+                    if ($null -ne $localSnapshotRef.Supersedes -and $null -ne $data.Supersedence -and (Get-SupersedenceCompareKey $localSnapshotRef.Supersedes) -ne (Get-SupersedenceCompareKey $data.Supersedence)) { $diffFields.Add("Supersedence") }
                     if ((& $normalizeForCompare $data.InstallCommandLine) -ne (& $normalizeForCompare $localSnapshotRef.InstallCommand)) { $diffFields.Add("Install command") }
                     if ((& $normalizeForCompare $data.UninstallCommandLine) -ne (& $normalizeForCompare $localSnapshotRef.UninstallCommand)) { $diffFields.Add("Uninstall command") }
                     if (([string]$archSource) -ne ([string]$localSnapshotRef.Architecture)) { $diffFields.Add("Architecture") }
@@ -3627,6 +3837,9 @@ function Global:Show-CreateInIntuneDialog {
                     if ($diffFields -contains "Information URL")         { $driftRows.Add([pscustomobject]@{ Field = "Information URL"; Local = $localSnapshotRef.InformationUrl; Intune = [string]$data.InformationUrl }) }
                     if ($diffFields -contains "Privacy URL")              { $driftRows.Add([pscustomobject]@{ Field = "Privacy URL"; Local = $localSnapshotRef.PrivacyUrl; Intune = [string]$data.PrivacyInformationUrl }) }
                     if ($diffFields -contains "Notes")                    { $driftRows.Add([pscustomobject]@{ Field = "Notes"; Local = $localSnapshotRef.Notes; Intune = [string]$data.Notes }) }
+                    if ($diffFields -contains "App version")              { $driftRows.Add([pscustomobject]@{ Field = "App version"; Local = [string]$localSnapshotRef.AppVersion; Intune = [string]$data.DisplayVersion }) }
+                    if ($diffFields -contains "Supersedence")             { $driftRows.Add([pscustomobject]@{ Field = "Supersedence"; Local = (Format-SupersedenceSummary $localSnapshotRef.Supersedes); Intune = (Format-SupersedenceSummary $data.Supersedence) }) }
+                    if ($diffFields -contains "Featured app")             { $driftRows.Add([pscustomobject]@{ Field = "Featured app"; Local = $(if ($localSnapshotRef.IsFeatured) { 'Yes' } else { 'No' }); Intune = $(if ($data.IsFeatured) { 'Yes' } else { 'No' }) }) }
                     if ($diffFields -contains "Install command")          { $driftRows.Add([pscustomobject]@{ Field = "Install command"; Local = $localSnapshotRef.InstallCommand; Intune = [string]$data.InstallCommandLine }) }
                     if ($diffFields -contains "Uninstall command")        { $driftRows.Add([pscustomobject]@{ Field = "Uninstall command"; Local = $localSnapshotRef.UninstallCommand; Intune = [string]$data.UninstallCommandLine }) }
                     if ($diffFields -contains "Architecture")             { $driftRows.Add([pscustomobject]@{ Field = "Architecture"; Local = $localSnapshotRef.Architecture; Intune = [string]$archSource }) }

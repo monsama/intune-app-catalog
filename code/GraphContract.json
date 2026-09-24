@@ -35,7 +35,7 @@
           "minimumFreeDiskSpaceInMB", "minimumMemoryInMB",
           "minimumNumberOfProcessors", "minimumCpuSpeedInMHz",
           "allowAvailableUninstall", "minimumSupportedWindowsRelease",
-          "committedContentVersion", "setupFilePath", "fileName"
+          "committedContentVersion", "setupFilePath", "fileName", "displayVersion"
         ]
       },
       {
