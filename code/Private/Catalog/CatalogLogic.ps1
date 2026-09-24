@@ -59,7 +59,7 @@ function Global:Save-AppMetadataToLocalCatalog {
 }
 
 function Global:Get-IntuneCatalogDrift {
-    # The exact three-way comparison Show-IntuneOnlyAppsDialog's own grid
+    # The exact three-way comparison Show-ChecksDialog's own grid
     # is built from, pulled out so the same logic can also run headless
     # (no grid, just counts) for the startup drift check - two copies of
     # this same walk quietly drifting apart over time would be worse than

@@ -336,3 +336,28 @@ function Global:Get-CachedAuditFindings {
     }
     return $findings.ToArray()
 }
+
+function Global:ConvertTo-CatalogEntryFromFetch {
+    # A catalog entry for an app that so far only exists in Intune, from
+    # Start-AppMetadataFetch's result - what "Add to catalog" adds. A failed
+    # read still gives an entry (name and App ID are known), just without
+    # metadata or groups; GroupsKnown says whether the empty group lists
+    # mean "none" or "couldn't be read".
+    param([string]$Id, [string]$Name, [bool]$Ok, $Data)
+    $groupsKnown = $Ok -and [bool]$Data.GroupFetchOk
+    return [pscustomobject]@{
+        appId            = $Id
+        appName          = $Name
+        # An imported app that is really a Winget app says so in its
+        # install command - see Get-WingetIdFromInstallCommand.
+        wingetId         = if ($Ok) { Get-WingetIdFromInstallCommand -InstallCommand ([string]$Data.InstallCommandLine) } else { "" }
+        intuneAppType    = if ($Ok) { Get-FriendlyIntuneAppType -ODataType ([string]$Data.OdataType) } else { "" }
+        intuneAppVersion = if ($Ok) { [string]$Data.DisplayVersion } else { "" }
+        requiredFor      = if ($groupsKnown) { @(@($Data.RequiredGroupNames) | Where-Object { $_ }) } else { @() }
+        availableFor     = if ($groupsKnown) { @(@($Data.AvailableGroupNames) | Where-Object { $_ }) } else { @() }
+        uninstallFor     = if ($groupsKnown) { @(@($Data.UninstallGroupNames) | Where-Object { $_ }) } else { @() }
+        excludeFor       = @()
+        metadata         = if ($Ok) { ConvertTo-CatalogMetadataFromFetch -Fetched $Data } else { $null }
+        GroupsKnown      = $groupsKnown
+    }
+}

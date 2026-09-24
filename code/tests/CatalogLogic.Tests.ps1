@@ -112,6 +112,7 @@ $testableFunctionNames = @(
     "Get-EntraGroupFindings",
     "Get-WingetFindings",
     "Get-CachedAuditFindings",
+    "ConvertTo-CatalogEntryFromFetch",
     "Get-CatalogMetadataSimpleFields",
     "Get-CatalogMetadataFieldDiffs",
     "Get-ComparableDetectionRule",
@@ -2067,6 +2068,19 @@ $winget = @(Get-WingetFindings -Apps $chkApps -Results @(
 Assert-Equal 2 $winget.Count "Get-WingetFindings: found IDs are fine, the rest are rows"
 Assert-Equal 'FindWingetId' $winget[0].Actions[0] "Get-WingetFindings: a gone ID offers finding its new one"
 Assert-True ($winget[1].Failed) "Get-WingetFindings: an unanswered check is failed, not a gone package"
+
+# Add to catalog: an entry from an Intune-only app's read
+$fetchedForAdd = [pscustomobject]@{ InstallCommandLine = 'powershell -File Winget-Install.ps1 -AppIDs "Vendor.Tool"'; OdataType = '#microsoft.graph.win32LobApp'
+    DisplayVersion = '2.0'; GroupFetchOk = $true; RequiredGroupNames = @('SG-A'); AvailableGroupNames = @(); UninstallGroupNames = @(); Description = 'Tool' }
+$added = ConvertTo-CatalogEntryFromFetch -Id 'id-tool' -Name 'Tool' -Ok $true -Data $fetchedForAdd
+Assert-Equal 'Vendor.Tool' $added.wingetId "ConvertTo-CatalogEntryFromFetch: the Winget ID comes from the install command"
+Assert-Equal 'SG-A' (@($added.requiredFor) -join ',') "ConvertTo-CatalogEntryFromFetch: groups come across"
+Assert-Equal 'Tool' $added.metadata.description "ConvertTo-CatalogEntryFromFetch: so does the metadata"
+$fetchedNoGroups = $fetchedForAdd.PSObject.Copy(); $fetchedNoGroups.GroupFetchOk = $false
+$addedNoGroups = ConvertTo-CatalogEntryFromFetch -Id 'id-tool' -Name 'Tool' -Ok $true -Data $fetchedNoGroups
+Assert-True (-not $addedNoGroups.GroupsKnown -and @($addedNoGroups.requiredFor).Count -eq 0) "ConvertTo-CatalogEntryFromFetch: unreadable groups are empty and flagged unknown"
+$addedFailed = ConvertTo-CatalogEntryFromFetch -Id 'id-x' -Name 'X' -Ok $false -Data $null
+Assert-True ($addedFailed.appId -eq 'id-x' -and $null -eq $addedFailed.metadata) "ConvertTo-CatalogEntryFromFetch: a failed read still gives name and App ID"
 
 # Cached (last audit) findings
 $cache = @{ '7-Zip' = [pscustomobject]@{ Timestamp = (Get-Date).AddHours(-2); Metadata = '1 field(s) differ: Publisher'; Groups = 'OK'; Dependencies = $null; Unknown = 'Failed: x'

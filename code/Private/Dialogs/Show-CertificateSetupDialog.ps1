@@ -143,6 +143,17 @@ function Global:Show-CertificateSetupDialog {
     $testTip.SetToolTip($btnTest, "Tries an app-only Graph sign-in with the Tenant ID, Client ID, and certificate above - confirms this exact combination actually works before you Save.")
     $y += 40
 
+    # Diagnostics is about this machine's setup - the settings file, the
+    # catalog folder, the Graph module and connection - not about the
+    # catalog, so it lives here rather than in Checks. Its own window, as
+    # it always was before it spent a while as a tab of Checks.
+    $btnDiagnostics = New-Object System.Windows.Forms.Button
+    $btnDiagnostics.Text = "Run diagnostics..."
+    $btnDiagnostics.Size = New-Object System.Drawing.Size(530,30)
+    $dlg.Controls.Add($btnDiagnostics)
+    $testTip.SetToolTip($btnDiagnostics, "Checks this machine's setup: the settings file, the catalog folder, the Graph module, and the connection to Intune. Only reads.")
+    $btnDiagnostics.Add_Click({ Show-DiagnosticsDialog }.GetNewClosure())
+
     # Directly under Test connection, so its result shows next to the button
     # (it used to sit at the very bottom of the dialog).
     # Bordered, scrollable box instead of a plain fixed-height Label -
@@ -644,7 +655,7 @@ function Global:Show-CertificateSetupDialog {
             Controls = @(
                 $lblIntro, $btnSetupGuide,
                 $lblTenant, $txtTenant, $lblClient, $txtClient, $lblThumb, $txtThumb,
-                $lblStatus, $btnTest, $pnlTestResultInfo
+                $lblStatus, $btnTest, $pnlTestResultInfo, $btnDiagnostics
             )
         }
         @{
@@ -708,6 +719,8 @@ function Global:Show-CertificateSetupDialog {
     $btnTest.Size = New-Object System.Drawing.Size(866,30)
     $pnlTestResultInfo.Location = New-Object System.Drawing.Point(12,340)
     $pnlTestResultInfo.Size = New-Object System.Drawing.Size(866,60)
+    $btnDiagnostics.Location = New-Object System.Drawing.Point(12,410)
+    $btnDiagnostics.Size = New-Object System.Drawing.Size(866,30)
     $lblTestResult.MaximumSize = New-Object System.Drawing.Size(836,0)
 
     $lblLocalSection.Location = New-Object System.Drawing.Point(12,12)

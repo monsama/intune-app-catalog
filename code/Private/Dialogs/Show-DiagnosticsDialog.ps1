@@ -477,7 +477,7 @@ function Global:Show-DiagnosticsDialog {
             # Nothing below it now, so it fills all the way down.
             Fill        = $rtbLog
             RunAll      = { $btnRun.PerformClick() }.GetNewClosure()
-            # See the note on the same pair in Show-GroupDriftCheckDialog:
+            # See the note on the same pair in Show-ChecksDialog:
             # a run in progress is both "still working" and "do not close".
             IsBusy      = { -not $btnRun.Enabled }.GetNewClosure()
             BlockClose  = { -not $btnRun.Enabled }.GetNewClosure()

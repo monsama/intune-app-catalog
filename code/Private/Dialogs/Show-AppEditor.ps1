@@ -6,7 +6,7 @@ function Global:Show-AppEditor {
         # catalog already. Powers the "Previous app"/"Next app" buttons
         # below; left at the default for the "Add app" flow (nothing to
         # navigate to/from for an app that doesn't exist yet) and for every
-        # OTHER caller of this function (Show-IntuneOnlyAppsDialog's own
+        # OTHER caller of this function (Show-ChecksDialog's own
         # "Add to catalog..." prefill, etc.) - all of them are adding a
         # brand-new entry, not editing one already at a known index.
         [int]$CurrentIndex = -1,

@@ -294,7 +294,7 @@ function Global:Start-StartupDriftCheck {
     Update-StartupBusyIndicator -Delta 1
 
     # Reuses the exact same fetch (and $Global:App.IntuneAppsCache) as the
-    # toolbar's own "Look up App IDs..." and Show-IntuneOnlyAppsDialog's
+    # toolbar's own "Look up App IDs..." and Show-ChecksDialog's
     # Refresh - no separate code path to keep in sync, just a different,
     # quiet caller. -OnComplete here runs on the main UI thread (this
     # function's own Timer.Add_Tick, not the background runspace), so
@@ -329,7 +329,7 @@ function Global:Start-StartupFullAuditCheck {
     # $Global:App.RunFullAuditOnStartup's own comment in MainApp.ps1 for
     # why this is a separate toggle: a full metadata fetch PER deployed
     # app, not one list call for the whole catalog. Headless version of
-    # Show-IntuneAuditDialog's own two-fetch logic (Metadata/Groups/
+    # Show-ChecksDialog's own two-fetch logic (Metadata/Groups/
     # Dependencies, then Unknown Assignments) - same embedded scripts,
     # same comparison functions, same LastAuditResults cache, just
     # accumulating counts for the banner below instead of grid rows, so
@@ -369,7 +369,7 @@ function Global:Start-StartupFullAuditCheck {
     $batchScript = $Global:App.EmbeddedBatchAssignScript
 
     # Same "how many app(s) have a difference in ANY category" tally
-    # Show-IntuneAuditDialog's own grid would let you eyeball at a glance
+    # Show-ChecksDialog's own grid would let you eyeball at a glance
     # (a row with anything other than "OK" in any column) - a HashSet
     # since one app can show up from both fetches below, and should only
     # count once toward the total no matter how many of its own
@@ -594,6 +594,133 @@ function Global:Start-Win32AppMinOsFetch {
         }
     }.GetNewClosure())
     $timer.Start()
+}
+
+function Global:Start-WingetIdCheck {
+    <#
+      Asks winget about each Winget ID - does the package still exist? -
+      in the background. Winget package IDs get renamed or dropped
+      upstream; devices that already have the app keep it, but every new
+      device fails to install it.
+
+      -Apps: @{ AppName; WingetId } items. -OnResult runs on the UI thread
+      for each answer as it arrives: [pscustomobject]@{ AppName; WingetId;
+      Ok; Result }. -OnComplete runs once at the end with ($ok, $errorText,
+      $stopped). Returns a state object; & $state.Stop cancels.
+
+      One runspace for the whole list rather than one per app: winget is a
+      process launch each time, and several in parallel only fight over
+      the same source cache. Versions aren't compared: the install command
+      takes whatever winget ships, and the detection rule matches the
+      package ID, not a version.
+    #>
+    param($Apps, [scriptblock]$OnResult, [scriptblock]$OnComplete)
+
+    $state = @{ Running = $true; Stopped = $false; Ps = $null; Stop = $null }
+    $rs = [runspacefactory]::CreateRunspace()
+    $rs.Open()
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript({
+        param($Apps)
+        $wingetCmd = Get-Command winget.exe -ErrorAction SilentlyContinue
+        if (-not $wingetCmd) {
+            throw "winget.exe isn't on this machine. It ships with the 'App Installer' package on Windows 10/11 - install that first."
+        }
+        foreach ($app in $Apps) {
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $wingetCmd.Source
+            $psi.Arguments = "show --id `"$($app.WingetId)`" --exact --accept-source-agreements --disable-interactivity"
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+            $proc = New-Object System.Diagnostics.Process
+            $proc.StartInfo = $psi
+            [void]$proc.Start()
+            # Both streams read before waiting - see Start-WingetSearch for
+            # why the other order deadlocks.
+            $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+            $stderrTask = $proc.StandardError.ReadToEndAsync()
+            if (-not $proc.WaitForExit(30000)) {
+                try { $proc.Kill() } catch { }
+                Write-Output ([pscustomobject]@{ AppName = $app.AppName; WingetId = $app.WingetId; Ok = $false; Result = "winget didn't answer within 30 seconds" })
+                continue
+            }
+            $stdout = $stdoutTask.GetAwaiter().GetResult()
+            $stderr = $stderrTask.GetAwaiter().GetResult()
+            $found = ($proc.ExitCode -eq 0) -and ($stdout -match '(?m)^\s*Version:')
+            $result = if ($found) {
+                $publisher = if ($stdout -match '(?m)^\s*Publisher:\s*(.+)$') { $Matches[1].Trim() } else { "" }
+                if ($publisher) { "Found ($publisher)" } else { "Found" }
+            }
+            elseif ($stdout -match 'No package found' -or $stderr -match 'No package found') {
+                "NOT FOUND - winget doesn't know this ID any more"
+            }
+            else {
+                $firstLine = (@(($stdout + "`n" + $stderr) -split "`r?`n" | Where-Object { $_.Trim() }) | Select-Object -First 1)
+                "Could not check (exit code $($proc.ExitCode)): $firstLine"
+            }
+            Write-Output ([pscustomobject]@{ AppName = $app.AppName; WingetId = $app.WingetId; Ok = $found; Result = $result })
+        }
+    }).AddArgument(@($Apps | ForEach-Object { [pscustomobject]@{ AppName = [string]$_.AppName; WingetId = [string]$_.WingetId } }))
+
+    # Results land here as the runspace writes them, so a long list reports
+    # as it goes instead of after minutes of nothing.
+    $output = New-Object System.Management.Automation.PSDataCollection[psobject]
+    $handle = $ps.BeginInvoke([System.Management.Automation.PSDataCollection[psobject]]::new(), $output)
+    $state.Ps = $ps
+    $stateRef = $state
+    $psRef = $ps
+    $rsRef = $rs
+    $handleRef = $handle
+    $outputRef = $output
+    $onResultRef = $OnResult
+    $onCompleteRef = $OnComplete
+    $takenBox = @{ Count = 0 }
+    $state.Stop = {
+        if (-not $stateRef.Running) { return }
+        $stateRef.Stopped = $true
+        try { $psRef.Stop() } catch { }
+    }.GetNewClosure()
+
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 400
+    $timer.Add_Tick({
+        while ($takenBox.Count -lt $outputRef.Count) {
+            $item = $outputRef[$takenBox.Count]
+            $takenBox.Count++
+            if ($onResultRef) { try { & $onResultRef $item } catch { } }
+        }
+        if (-not $handleRef.IsCompleted) { return }
+        $timer.Stop()
+        $timer.Dispose()
+        $ok = $true
+        $errorText = ""
+        try {
+            if (-not $stateRef.Stopped) {
+                [void]$psRef.EndInvoke($handleRef)
+                if ($psRef.Streams.Error.Count -gt 0) {
+                    $ok = $false
+                    $errorText = @($psRef.Streams.Error | ForEach-Object { $_.ToString() }) -join '; '
+                }
+            }
+        }
+        catch {
+            $ok = $false
+            $errorText = $_.Exception.Message
+        }
+        finally {
+            $psRef.Dispose()
+            $rsRef.Close()
+            $rsRef.Dispose()
+            $stateRef.Running = $false
+        }
+        if ($onCompleteRef) { & $onCompleteRef $ok $errorText ([bool]$stateRef.Stopped) }
+    }.GetNewClosure())
+    $timer.Start()
+    return $state
 }
 
 function Global:Start-EntraDirectoryLookup {

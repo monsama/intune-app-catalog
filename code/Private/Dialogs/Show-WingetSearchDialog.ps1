@@ -197,7 +197,7 @@ function Global:Show-WingetSearchDialog {
     # has actually shown/realized the window lets that cursor assignment
     # land on a not-yet-created window handle, which doesn't reliably
     # stick - same confirmed-live bug already fixed this same way in
-    # Show-GroupDriftCheckDialog/Show-IntuneOnlyAppsDialog's own Add_Shown.
+    # Show-ChecksDialog/Show-ChecksDialog's own Add_Shown.
     if ($InitialQuery) {
         $dlg.Add_Shown({
             & $runSearch
