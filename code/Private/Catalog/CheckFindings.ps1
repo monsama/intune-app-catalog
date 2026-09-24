@@ -273,7 +273,7 @@ function Global:Get-EntraGroupFindings {
     $findings = New-Object System.Collections.Generic.List[object]
     foreach ($groupName in @($usage.Keys | Sort-Object)) {
         if ($known.ContainsKey($groupName.ToLowerInvariant())) { continue }
-        $users = @($usage[$groupName])
+        $users = $usage[$groupName].ToArray()
         $appLabel = if ($users.Count -eq 1) { $users[0] } else { "$($users.Count) apps" }
         $findings.Add((New-CheckFinding -Area "Entra groups" -App $appLabel -CatalogName $(if ($users.Count -eq 1) { $users[0] } else { "" }) `
             -Problem "Group `"$groupName`" doesn't exist in Entra ID" -Catalog "Used by: $($users -join ', ')" -Intune "(not in Entra ID)" `

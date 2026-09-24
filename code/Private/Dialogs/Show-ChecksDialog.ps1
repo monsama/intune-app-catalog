@@ -213,6 +213,8 @@ function Global:Show-ChecksDialog {
         Dlg = $dlg; Grid = $grid; Status = $lblStatus; LblCount = $lblCount; Hint = $lblHint; Log = $rtbLog
         Prg = $prg; BtnRun = $btnRun; BtnStop = $btnStop; ChkSkipWinget = $chkSkipWinget; CmbShow = $cmbShow; PnlFix = $pnlFix
         Apps = $appsRef; Scoped = $isScoped; ScopeNames = $scopeNames; AreaOrder = $areaOrder
+        # Read with .ToArray(), never @(...): @() over a List[object]
+        # throws "Argument types do not match" in PowerShell.
         Findings = New-Object System.Collections.Generic.List[object]
         # What has been read this session, so a fix can recompute its area
         # without reading again.
@@ -283,7 +285,7 @@ function Global:Show-ChecksDialog {
         if ($ctx.Dlg.IsDisposed) { return }
         $grid = $ctx.Grid
         $selectedKeys = @($grid.SelectedRows | ForEach-Object { $_.Tag.Key })
-        $all = @($ctx.Findings)
+        $all = $ctx.Findings.ToArray()
 
         # The Show list: every area that has rows, with its count, plus the
         # checks that failed - rebuilt each time, keeping the choice.
@@ -354,14 +356,14 @@ function Global:Show-ChecksDialog {
     $ctx.RefreshLocal = {
         $scopeApps = & $ctx.ScopeApps
         $onlyNames = if ($ctx.Scoped) { @($ctx.ScopeNames) } else { $null }
-        & $ctx.Replace -Areas @("Catalog dependencies") -New (Get-DependencyFindings -Apps @($ctx.Apps) -OnlyNames $onlyNames)
+        & $ctx.Replace -Areas @("Catalog dependencies") -New (Get-DependencyFindings -Apps $ctx.Apps.ToArray() -OnlyNames $onlyNames)
         if ($ctx.IntuneRead -or @($Global:App.IntuneAppsCache).Count -gt 0) {
             $link = @(Get-IntuneLinkFindings -Apps $scopeApps -IntuneApps @($Global:App.IntuneAppsCache) -Scoped:$ctx.Scoped)
             if (-not $ctx.IntuneRead) { foreach ($f in $link) { $f.Cached = $true } }
             & $ctx.Replace -Areas @("Intune link") -New $link -KeepFailed
         }
         if ($ctx.EntraRead) {
-            & $ctx.Replace -Areas @("Entra groups") -New (Get-EntraGroupFindings -Apps @($ctx.Apps) -Directory @($Global:App.EntraDirectoryCache) -OnlyNames $onlyNames) -KeepFailed
+            & $ctx.Replace -Areas @("Entra groups") -New (Get-EntraGroupFindings -Apps $ctx.Apps.ToArray() -Directory @($Global:App.EntraDirectoryCache) -OnlyNames $onlyNames) -KeepFailed
         }
     }.GetNewClosure()
 
@@ -397,7 +399,7 @@ function Global:Show-ChecksDialog {
         $ctx.Prg.Visible = $false
         $ctx.BtnRun.Enabled = $true
         $ctx.BtnStop.Enabled = $false
-        $all = @($ctx.Findings)
+        $all = $ctx.Findings.ToArray()
         $problems = @($all | Where-Object { -not $_.Failed -and -not $_.Cached }).Count
         $failed = @($all | Where-Object { $_.Failed -and -not $_.Cached }).Count
         if ($run.Stopped) {
@@ -632,7 +634,7 @@ function Global:Show-ChecksDialog {
             $c.Run.Winget = $null
             if ($c.Dlg.IsDisposed) { $c.Run.Active = $false; return }
             $checkedNames = @(@($results | ForEach-Object { [string]$_.AppName }) + @(""))
-            & $c.Replace -Areas @("Winget ID") -Names $checkedNames -New (Get-WingetFindings -Results $results.ToArray() -Apps @($c.Apps))
+            & $c.Replace -Areas @("Winget ID") -Names $checkedNames -New (Get-WingetFindings -Results $results.ToArray() -Apps $c.Apps.ToArray())
             if (-not $ok -and -not $stopped) {
                 $c.Run.Problems.Add("winget: $errorText")
                 & $c.Replace -New @(New-CheckFinding -Area "Winget ID" -App "(winget)" -Problem "Could not ask winget: $errorText" -Failed)
@@ -1014,7 +1016,7 @@ function Global:Show-ChecksDialog {
     # own dependencies, and - if Intune's app list was read earlier this
     # session - how the catalog lines up with it. All marked as earlier.
     $onlyNames = if ($isScoped) { @($scopeNames) } else { $null }
-    foreach ($f in @(Get-CachedAuditFindings -Apps @($appsRef) -LastAuditResults $Global:App.LastAuditResults -OnlyNames $onlyNames)) { $ctx.Findings.Add($f) }
+    foreach ($f in @(Get-CachedAuditFindings -Apps $appsRef.ToArray() -LastAuditResults $Global:App.LastAuditResults -OnlyNames $onlyNames)) { $ctx.Findings.Add($f) }
     & $ctx.RefreshLocal
 
     # The old tab names still pick what the list shows first.
@@ -1028,7 +1030,7 @@ function Global:Show-ChecksDialog {
         default           { "All areas" }
     }
     & $ctx.Render
-    & $ctx.SetStatus $(if (@($ctx.Findings).Count -gt 0) { "Showing what is already known - rows in italics are from earlier checks. Run checks to check everything now." } else { "Not checked yet - press Run checks." })
+    & $ctx.SetStatus $(if ($ctx.Findings.ToArray().Count -gt 0) { "Showing what is already known - rows in italics are from earlier checks. Run checks to check everything now." } else { "Not checked yet - press Run checks." })
 
     if ($AutoRun) { $dlg.Add_Shown({ & $ctx.Start }.GetNewClosure()) }
 
