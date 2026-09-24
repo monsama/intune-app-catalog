@@ -300,7 +300,7 @@ function Global:Show-DiagnosticsDialog {
 
             $catalogAppIds = @($appsRefRef | ForEach-Object { [string]$_.appId } | Where-Object { $_ })
             $notInCatalogCount = @($data | Where-Object { $catalogAppIds -notcontains [string]$_.id }).Count
-            & $appendLineRef "$(if ($notInCatalogCount -eq 0) { '[OK]' } else { '[INFO]' }) $notInCatalogCount app(s) in Intune with no matching catalog entry - see `"Intune sync check...`"" $(if ($notInCatalogCount -eq 0) { $okColorRef } else { $infoColorRef })
+            & $appendLineRef "$(if ($notInCatalogCount -eq 0) { '[OK]' } else { '[INFO]' }) $notInCatalogCount app(s) in Intune with no matching catalog entry - see `"Checks...`"" $(if ($notInCatalogCount -eq 0) { $okColorRef } else { $infoColorRef })
 
             & $appendLineRef "Fetching Minimum Windows values for deployed Win32 apps..." $infoColorRef
 

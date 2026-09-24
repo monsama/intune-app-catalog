@@ -248,7 +248,7 @@ function Global:Show-DeleteAppDialog {
     $btnCancel.Add_Click({ $dlg.Close() }.GetNewClosure())
     Register-CloseConfirmation -Dialog $dlg -GetQuestion {
         if ($procBox.Proc -and -not $procBox.Proc.HasExited) {
-            "The delete is still running. Stop it and close?`n`nThe app may already be deleted from Intune - if so, its catalog entry isn't updated when you stop now. 'Intune sync check' finds it afterwards."
+            "The delete is still running. Stop it and close?`n`nThe app may already be deleted from Intune - if so, its catalog entry isn't updated when you stop now. Checks finds it afterwards."
         }
     }.GetNewClosure() -OnConfirmed { $procBox.Proc.Kill() }.GetNewClosure()
     $dlg.CancelButton = $btnCancel
