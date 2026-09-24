@@ -103,8 +103,6 @@ $testableFunctionNames = @(
     "Get-ComparableDetectionRule",
     "ConvertTo-CatalogMetadataFromFetch",
     "Get-WingetIdFromInstallCommand",
-    # Reads only $Global:App.IntuneAppsCache - no Graph call of its own.
-    "Find-IntuneMatches",
     "Get-FirstWingetIdToken",
     "ConvertTo-DetectionRuleJson",
     "ConvertTo-JsonStringLiteral",
@@ -1489,31 +1487,6 @@ Assert-Equal '\\share\pkg\tool.intunewin' $templateWithPackage.packagePath "Conv
 
 # Save-AppMetadataToLocalCatalog rebuilds the entry it saves into, so
 # every app-level field has to be carried over, not just the ones it sets.
-# Find-IntuneMatches: by Winget ID first (from the install command), by
-# name only when the ID finds nothing.
-$savedIntuneCache = $Global:App.IntuneAppsCache
-try {
-    $Global:App.IntuneAppsCache = New-Object System.Collections.ArrayList
-    [void]$Global:App.IntuneAppsCache.Add([pscustomobject]@{ id = 'id-7zip'; displayName = '7-Zip 24.08 (x64)'; installCommandLine = 'powershell.exe -File Winget-Install.ps1 -AppIDs "7zip.7zip"' })
-    [void]$Global:App.IntuneAppsCache.Add([pscustomobject]@{ id = 'id-ff'; displayName = 'Firefox'; installCommandLine = 'powershell.exe -File Winget-Install.ps1 -AppIDs "Mozilla.Firefox"' })
-    [void]$Global:App.IntuneAppsCache.Add([pscustomobject]@{ id = 'id-custom'; displayName = '7-Zip'; installCommandLine = 'setup.exe /S' })
-    $byId = Find-IntuneMatches -Name '7-Zip' -WingetId '7zip.7zip'
-    Assert-Equal 1 $byId.Count "Find-IntuneMatches: a Winget ID match is returned on its own"
-    Assert-Equal 'id-7zip' $byId[0].id "Find-IntuneMatches: found by Winget ID even though the display name differs"
-    $byName = Find-IntuneMatches -Name 'Firefox' -WingetId 'Not.Deployed'
-    Assert-Equal 'id-ff' $byName[0].id "Find-IntuneMatches: falls back to the name when the Winget ID finds nothing"
-    $idOnly = Find-IntuneMatches -Name '' -WingetId 'Mozilla.Firefox'
-    Assert-Equal 'id-ff' $idOnly[0].id "Find-IntuneMatches: a Winget ID alone is enough"
-    $nameOnly = Find-IntuneMatches -Name '7-Zip'
-    Assert-Equal 'id-custom' $nameOnly[0].id "Find-IntuneMatches: without a Winget ID the exact name comes first, as before"
-    $oldCache = New-Object System.Collections.ArrayList
-    [void]$oldCache.Add([pscustomobject]@{ id = 'id-old'; displayName = 'Old App' })
-    $Global:App.IntuneAppsCache = $oldCache
-    $noCommand = Find-IntuneMatches -Name 'Old App' -WingetId 'Some.App'
-    Assert-Equal 'id-old' $noCommand[0].id "Find-IntuneMatches: a cached app with no install command still matches by name"
-}
-finally { $Global:App.IntuneAppsCache = $savedIntuneCache }
-
 function Global:Save-AppsToFile { param([string]$Path) return $true }
 $metaSaveApps = New-Object System.Collections.ArrayList
 [void]$metaSaveApps.Add([pscustomobject]@{

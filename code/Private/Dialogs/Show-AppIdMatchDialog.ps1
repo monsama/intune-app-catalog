@@ -159,15 +159,9 @@ function Global:Show-AppIdMatchDialog {
     $changeCount = 0
     foreach ($i in $eligibleIndices) {
         $app = $appsRef[$i]
-        $candidates = Find-IntuneMatches -Name $app.appName -WingetId $app.wingetId
+        $candidates = Find-IntuneMatches -Name $app.appName
         $normAppName = ($app.appName.Trim() -replace '\s+', ' ')
         $isExact = $candidates.Count -gt 0 -and (($candidates[0].displayName.Trim() -replace '\s+', ' ') -eq $normAppName)
-        # One Intune app installing exactly this Winget ID is as sure a
-        # match as an identical name - more so, since names drift.
-        if (-not $isExact -and $app.wingetId -and $candidates.Count -eq 1 -and
-            (Get-WingetIdFromInstallCommand -InstallCommand ([string]$candidates[0].installCommandLine)) -eq ([string]$app.wingetId).Trim()) {
-            $isExact = $true
-        }
         if ($isExact) { $changeCount++ }
 
         $rowIdx = $matchGrid.Rows.Add()
