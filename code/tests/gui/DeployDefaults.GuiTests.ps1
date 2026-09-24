@@ -88,6 +88,9 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         Assert-True ([int]$s['afterNamingId'] -ge 3) "and the detection script names that Winget ID too" $all
         # ...without the opposite mistake.
         Assert-True ($s['typedSurvived'] -eq 'True') "a command typed by hand survives a later change of Winget ID" $all
+        Assert-True ([int]$s['customPackageFollowsName'] -ge 1) "a custom app's package follows the name typed after the tabs were built" $all
+        Assert-True ([int]$s['overrideReachesDeploy'] -ge 1) "the editor's package override reaches the Deploy tab" $all
+        Assert-True ($s['beforeDeployOffered'] -eq 'True') "the Deploy side offers a catch-up hook for its host" $all
         Assert-True ([int]$s['otherFieldsFollowed'] -ge 1) "while the fields nobody touched do follow it" $all
 
         # Through the real editor, the way "Search winget..." does it: by
@@ -99,6 +102,8 @@ foreach ($exe in Resolve-AppHosts $AppHost) {
         Assert-True (([string]$s['editorAfterAssign']) -eq '0') "assigning the ID alone generates nothing yet" $all
         Assert-True ([int]$s['editorAfterTabSwitch'] -ge 2) "switching tabs fills in the commands for a picked Winget app" $all
         Assert-True ([int]$s['editorPackagePath'] -ge 1) "and points the package at the shared init.intunewin" $all
+        Assert-True ([int]$s['editorCustomPackage'] -ge 1) "a new custom app's package follows the name typed in the editor" $all
+        Assert-True (([string]$s['editorPackageNotApp']) -eq '0') "instead of App.intunewin, the package of an app with no name" $all
         # The Metadata tab's display name is built before "Add app..." has
         # a name to build it from, so it started blank and stayed blank.
         Assert-True ([int]$s['displayNameFollowed'] -ge 1) "the app's name fills the display name on the Metadata tab" $all

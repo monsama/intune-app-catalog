@@ -1246,7 +1246,7 @@ function Global:Show-AppEditor {
     # checkboxes, on a tab of this same window, and they can be ticked
     # while the Deploy tab is sitting open. A snapshot taken here would
     # push whatever was selected when the editor opened.
-    $deployHost = Show-CreateInIntuneDialog -AppName $txtName.Text.Trim() -WingetId $txtWinget.Text.Trim() `
+    $deployHost = Show-CreateInIntuneDialog -AppName $txtName.Text.Trim() -WingetId $txtWinget.Text.Trim() -PackagePath $txtAppPackagePath.Text.Trim() `
         -ExistingAppId $txtId.Text.Trim() -FromAppEditor -CallerHasExistingCatalogEntry:([bool]$ExistingApp) `
         -CurrentIndex $CurrentIndex -HostTabControl $editorTabs -HostForm $dlg -HostBottomY 667 `
         -OnDeployComplete $ApplyDeployResult -OnLiveFetch $compareGroupsWithIntune -PreferLocal:$PreferLocal `
@@ -1269,6 +1269,10 @@ function Global:Show-AppEditor {
     # uninstall command and no detection script, and nothing that would
     # ever fill them in. Telling it the ID changed regenerates exactly the
     # fields still holding what it generated before.
+    # Declared, so Deploy's catch-up below never picks up a caller's
+    # variable of the same name when a hook isn't offered.
+    $syncWingetId = $null
+    $syncAppName = $null
     if ($deployHost.RetargetWingetId) {
         $retargetRef = $deployHost.RetargetWingetId
         $wingetBoxRef = $txtWinget
@@ -1312,6 +1316,35 @@ function Global:Show-AppEditor {
         # fields are about to be looked at, whichever way the ID got there,
         # so it is the one hook that cannot be got round.
         $editorTabs.Add_SelectedIndexChanged($syncWingetId)
+    }
+
+    # The package override on the Catalog tab, by the same two routes -
+    # Browse... assigns .Text, so again no Leave.
+    $syncPackagePath = $null
+    if ($deployHost.RetargetPackagePath) {
+        $retargetPkgRef = $deployHost.RetargetPackagePath
+        $pkgBoxRef = $txtAppPackagePath
+        $lastPkgBox = @{ Value = $txtAppPackagePath.Text.Trim() }
+        $syncPackagePath = {
+            $nowPkg = $pkgBoxRef.Text.Trim()
+            if ($nowPkg -eq $lastPkgBox.Value) { return }
+            $lastPkgBox.Value = $nowPkg
+            & $retargetPkgRef $nowPkg
+        }.GetNewClosure()
+        $txtAppPackagePath.Add_Leave($syncPackagePath)
+        $editorTabs.Add_SelectedIndexChanged($syncPackagePath)
+    }
+
+    # Every one of those hooks can be got round - a field set from code, or
+    # Deploy pressed without a tab switch or a Leave in between - and what
+    # that cost was a new app deploying with ...\App.intunewin, the
+    # package of an app with no name. So Deploy runs all three itself
+    # before it checks anything; each is a no-op when nothing moved.
+    if ($deployHost.BeforeDeploy) {
+        $beforeSyncs = @($syncAppName, $syncWingetId, $syncPackagePath | Where-Object { $_ })
+        $deployHost.BeforeDeploy.Run = {
+            foreach ($beforeSync in $beforeSyncs) { & $beforeSync }
+        }.GetNewClosure()
     }
 
     # Its own two launch buttons were how you reached that window. There is

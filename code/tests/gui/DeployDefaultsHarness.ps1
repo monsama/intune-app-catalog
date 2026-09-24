@@ -106,6 +106,18 @@ $Global:Probe.Add_Tick({
         # button that changes Intune is not acceptable.
         $labelWidth = [System.Windows.Forms.TextRenderer]::MeasureText([string]$deployHost.Deploy.Text, $deployHost.Deploy.Font).Width
         Add-Line 'deployLabelFits' ($labelWidth -le $deployHost.Deploy.Width)
+        # A custom app's package is found by its catalog name - and "Add
+        # app..." builds these tabs before there is one, so the name that
+        # arrives later has to move the package path too. It used to stay
+        # on ...\App.intunewin, the package of an app with no name.
+        & $deployHost2.RetargetAppName 'Custom Probe'
+        $pkgAfterName = @(Get-AllBoxes $hostTabs2 | ForEach-Object { [string]$_.Text })
+        Add-Line 'customPackageFollowsName' (@($pkgAfterName | Where-Object { $_ -like '*Custom-Probe*.intunewin' }).Count)
+        # The editor's package override wins over the prediction.
+        & $deployHost2.RetargetPackagePath 'C:\Probe\override.intunewin'
+        $pkgAfterOverride = @(Get-AllBoxes $hostTabs2 | ForEach-Object { [string]$_.Text })
+        Add-Line 'overrideReachesDeploy' (@($pkgAfterOverride | Where-Object { $_ -eq 'C:\Probe\override.intunewin' }).Count)
+        Add-Line 'beforeDeployOffered' ([bool]$deployHost2.BeforeDeploy)
         $hostForm2.Dispose()
         $Global:App.PushGroupsOnCreate = $savedPushOnCreate
 
@@ -177,6 +189,12 @@ $Global:Probe.Add_Tick({
                         [System.Windows.Forms.Application]::DoEvents()
                         $named = @(Get-AllBoxes $tabs[0] | Where-Object { [string]$_.Text -eq 'Probe Named App' }).Count
                         Add-Line 'displayNameFollowed' $named
+                        # Still no Winget ID, so a custom app: its package
+                        # is found by this name, not by the empty one the
+                        # tabs were built with ("App").
+                        $pkgTexts = @(Get-AllBoxes $tabs[0] | ForEach-Object { [string]$_.Text })
+                        Add-Line 'editorCustomPackage' (@($pkgTexts | Where-Object { $_ -like '*Probe-Named-App*.intunewin' }).Count)
+                        Add-Line 'editorPackageNotApp' (@($pkgTexts | Where-Object { $_ -like '*\App.intunewin' }).Count)
                         $tabs[0].SelectedIndex = 0
                         [System.Windows.Forms.Application]::DoEvents()
                     }

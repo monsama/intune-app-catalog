@@ -1,6 +1,9 @@
 function Global:Show-CreateInIntuneDialog {
     param(
         [string]$AppName, [string]$WingetId, [string]$ExistingAppId, [switch]$FromAppEditor,
+        # The app's stored package override (its packagePath), if any - it
+        # wins over the predicted location, same as Resolve-AppPackagePath.
+        [string]$PackagePath,
         # Returns this app's groups as
         # @{ Required=..; Available=..; Uninstall=..; Exclude=.. }, for the
         # "push groups afterwards" step below.
@@ -327,7 +330,17 @@ function Global:Show-CreateInIntuneDialog {
     $btnBrowsePackage.Size = New-Object System.Drawing.Size(90,26)
     $scrollPanel.Controls.Add($btnBrowsePackage)
 
-    $resolved = Resolve-AppPackagePath -AppName $AppName -Uncommon $Uncommon
+    # What the package path is worked out from, kept current as the host
+    # tells this dialog about a new name, Winget ID or override (see
+    # $refreshPackagePath). "Add app..." builds this before the app has a
+    # name, and an empty name resolves to "App" - so without this a new
+    # app kept pointing at ...\App.intunewin.
+    $packageSourceBox = @{ Name = [string]$AppName; Override = [string]$PackagePath }
+    # Set by a host (the app editor) to catch this dialog up on anything
+    # typed there that it hasn't heard about yet - run first thing when
+    # Deploy is pressed, so the check below sees current values.
+    $beforeDeployBox = @{ Run = $null }
+    $resolved = Resolve-AppPackagePath -AppName $AppName -Uncommon $Uncommon -PackagePath $PackagePath
     $txtPackagePath.Text = $resolved.Path
     $txtPackagePath.ForeColor = if ($resolved.Found) { [System.Drawing.Color]::Black } else { [System.Drawing.Color]::Firebrick }
 
@@ -661,6 +674,18 @@ function Global:Show-CreateInIntuneDialog {
         Package   = [string]$txtPackagePath.Text
     }
 
+    # Re-resolves the package from $packageSourceBox and $uncommonBox,
+    # replacing the box only while it still holds what was generated - a
+    # file picked with Browse... is left alone, like the fields below.
+    $refreshPackagePath = {
+        $freshPackage = Resolve-AppPackagePath -AppName $packageSourceBox.Name -Uncommon $uncommonBox.Value -PackagePath $packageSourceBox.Override
+        if ($txtPackagePath.Text -eq $generatedBox.Package) {
+            $txtPackagePath.Text = $freshPackage.Path
+            $txtPackagePath.ForeColor = $(if ($freshPackage.Found) { [System.Drawing.Color]::Black } else { [System.Drawing.Color]::Firebrick })
+        }
+        $generatedBox.Package = [string]$freshPackage.Path
+    }.GetNewClosure()
+
     # --- Context / Architecture / Min OS, one row ---
     $lblContext = New-Object System.Windows.Forms.Label
     # Kept short deliberately - the full "(locked - set at creation only)"
@@ -843,6 +868,9 @@ function Global:Show-CreateInIntuneDialog {
             $txtCreateName.Text = $trimmedName
         }
         $generatedBox.Name = $trimmedName
+        # A custom app's package is found by its catalog name
+        $packageSourceBox.Name = $trimmedName
+        & $refreshPackagePath
     }.GetNewClosure()
 
     $retargetWingetId = {
@@ -862,14 +890,8 @@ function Global:Show-CreateInIntuneDialog {
 
         # A Winget app deploys with the shared init.intunewin; an uncommon
         # one has a package of its own. Same rule as the fields above.
-        $freshPackage = Resolve-AppPackagePath -AppName $freshName -Uncommon $nowUncommon
-        if ($txtPackagePath.Text -eq $generatedBox.Package) {
-            $txtPackagePath.Text = $freshPackage.Path
-            $txtPackagePath.ForeColor = $(if ($freshPackage.Found) { [System.Drawing.Color]::Black } else { [System.Drawing.Color]::Firebrick })
-            $generatedBox.Package = [string]$freshPackage.Path
-        }
-
         $uncommonBox.Value = $nowUncommon
+        & $refreshPackagePath
         # "Set as defaults" is only meaningful for a Winget app - it is the
         # shared template every other Winget app starts from.
         $btnSetDefaults.Visible = (-not $nowUncommon)
@@ -1964,6 +1986,7 @@ function Global:Show-CreateInIntuneDialog {
     $procBox = @{ Proc = $null }   # lets btnCancel below terminate a still-running step
 
     $btnCreate.Add_Click({
+        if ($beforeDeployBox.Run) { & $beforeDeployBox.Run }
         if (-not $txtCreateName.Text.Trim() -or -not $txtInstall.Text.Trim() -or -not $txtUninstall.Text.Trim()) {
             [System.Windows.Forms.MessageBox]::Show("Name, install command, and uninstall command are all required.", "Missing values", "OK", "Warning") | Out-Null
             return
@@ -1990,9 +2013,9 @@ function Global:Show-CreateInIntuneDialog {
             # Browse... for a file that has never existed on this machine.
             # An uncommon app's package is its own, and Package apps...
             # is what makes it, so that one still goes to the message.
-            if (-not (Test-Path $txtPackagePath.Text) -and -not $uncommonBox.Value) {
+            if (-not (Test-Path $txtPackagePath.Text) -and -not $uncommonBox.Value -and -not $packageSourceBox.Override) {
                 if (Initialize-SharedWingetPackage -LogBox $rtbCreateLog) {
-                    $rebuilt = Resolve-AppPackagePath -AppName $AppName -Uncommon $uncommonBox.Value
+                    $rebuilt = Resolve-AppPackagePath -AppName $packageSourceBox.Name -Uncommon $uncommonBox.Value
                     if ($rebuilt.Found) {
                         $txtPackagePath.Text = $rebuilt.Path
                         $txtPackagePath.ForeColor = [System.Drawing.Color]::Black
@@ -3778,6 +3801,14 @@ function Global:Show-CreateInIntuneDialog {
             # stays hidden here, so that is the only way the metadata on
             # these tabs reaches the catalog. See $userEditBox.
             HasUserEdits     = $hasUserEdits
+            # The editor's own package override, whenever it changes.
+            RetargetPackagePath = {
+                param([string]$NewOverride)
+                $packageSourceBox.Override = ([string]$NewOverride).Trim()
+                & $refreshPackagePath
+            }.GetNewClosure()
+            # Set .Run to catch this side up just before Deploy runs.
+            BeforeDeploy     = $beforeDeployBox
             GetMetadata      = $collectFieldMetadata
         }
     }
