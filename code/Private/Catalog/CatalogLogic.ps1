@@ -42,6 +42,10 @@ function Global:Save-AppMetadataToLocalCatalog {
         # supplied one, never blanked out just because this particular
         # call didn't have one to offer.
         intuneAppVersion = if ($IntuneAppVersion) { $IntuneAppVersion } else { $existingApp.intuneAppVersion }
+        # Carried over like every other app-level field - left out, a
+        # package kept somewhere its name doesn't predict lost its path
+        # on every metadata save (Deploy, Push Metadata, Save local copy).
+        packagePath      = [string]$existingApp.packagePath
         requiredFor      = @($existingApp.requiredFor)
         availableFor     = @($existingApp.availableFor)
         uninstallFor     = @($existingApp.uninstallFor)
@@ -775,6 +779,8 @@ function Global:ConvertTo-TemplateAppRecord {
         wingetId         = [string]$App.wingetId
         intuneAppType    = ""
         intuneAppVersion = ""
+        # Where the package is on disk isn't tied to a tenant - it stays.
+        packagePath      = [string]$App.packagePath
         requiredFor      = @($App.requiredFor)
         availableFor     = @($App.availableFor)
         uninstallFor     = @($App.uninstallFor)

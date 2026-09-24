@@ -134,6 +134,9 @@ $testableFunctionNames = @(
     "Get-SafeFileNameForScript",
     "ConvertTo-DisplayLineEndings",
     "ConvertTo-TemplateAppRecord",
+    # Writes through Save-AppsToFile, which the test below stubs - what
+    # is under test is the entry it builds, not the write.
+    "Save-AppMetadataToLocalCatalog",
     "Get-NormalizedInstallTimeMinutes",
     "Get-GroupFieldDiffs",
     "Format-GroupFieldDiffs",
@@ -1479,6 +1482,26 @@ Assert-Equal "SG-All" (@($template.requiredFor) -join ',') "ConvertTo-TemplateAp
 Assert-Equal "SG-Contractors" (@($template.excludeFor) -join ',') "ConvertTo-TemplateAppRecord: exclusions stay"
 Assert-Equal "Igor Pavlov" $template.metadata.publisher "ConvertTo-TemplateAppRecord: the metadata stays"
 Assert-Equal '3f1c2a9e-5b7d-4e21-9a0c-8d6e4b1f2a37' $templateSource.appId "ConvertTo-TemplateAppRecord: the app it came from is untouched"
+$templateWithPackage = ConvertTo-TemplateAppRecord -App ([pscustomobject]@{ appName = 'Tool'; packagePath = '\\share\pkg\tool.intunewin'; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @() })
+Assert-Equal '\\share\pkg\tool.intunewin' $templateWithPackage.packagePath "ConvertTo-TemplateAppRecord: the package path stays - it isn't tied to a tenant"
+
+# Save-AppMetadataToLocalCatalog rebuilds the entry it saves into, so
+# every app-level field has to be carried over, not just the ones it sets.
+function Global:Save-AppsToFile { param([string]$Path) return $true }
+$metaSaveApps = New-Object System.Collections.ArrayList
+[void]$metaSaveApps.Add([pscustomobject]@{
+    appId = 'id-1'; appName = 'Tool'; wingetId = ''; intuneAppType = ''; intuneAppVersion = '1.0'
+    packagePath = '\\share\pkg\tool.intunewin'
+    requiredFor = @('SG-All'); availableFor = @(); uninstallFor = @(); excludeFor = @(); metadata = $null
+})
+$metaSaveResult = Save-AppMetadataToLocalCatalog -AppsRef $metaSaveApps -LinkedFilePath 'unused' -AppName 'Tool' -Metadata ([pscustomobject]@{ publisher = 'Contoso' })
+Assert-Equal $true $metaSaveResult.Success "Save-AppMetadataToLocalCatalog: reports the write's result"
+Assert-Equal $false $metaSaveResult.CreatedNewEntry "Save-AppMetadataToLocalCatalog: an existing entry is updated, not added"
+Assert-Equal 'Contoso' $metaSaveApps[0].metadata.publisher "Save-AppMetadataToLocalCatalog: the metadata is saved"
+Assert-Equal '\\share\pkg\tool.intunewin' $metaSaveApps[0].packagePath "Save-AppMetadataToLocalCatalog: the package path is kept"
+Assert-Equal 'SG-All' (@($metaSaveApps[0].requiredFor) -join ',') "Save-AppMetadataToLocalCatalog: groups are kept"
+Assert-Equal 'id-1' $metaSaveApps[0].appId "Save-AppMetadataToLocalCatalog: the App ID is kept when no new one is given"
+Remove-Item Function:\Save-AppsToFile
 
 # -----------------------------------------------------------------
 # Assignments, including exclusions (Assignments.ps1)

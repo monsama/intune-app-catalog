@@ -12,6 +12,20 @@
   them whenever one was changed by hand (checking them first, the same
   way "Save local copy..." does); an app nobody edited there keeps its
   metadata exactly as before.
+- **A new app found with "Search winget..." deploys as a Winget app
+  straight away.** The Intune tabs are built before a new app has a
+  Winget ID, so until they heard about the ID they treated it as a custom
+  app: no install, uninstall or detection, and its own missing
+  .intunewin instead of the shared init.intunewin. They only heard when
+  the Winget ID field lost focus or you switched tabs - and picking an ID
+  from the search does neither, so Deploy had to wait for a visit to
+  Package and detection. The search now tells them at once, and so does
+  saving with Enter from that field.
+- **Saving metadata no longer forgets an app's package path.** Deploy,
+  Push Metadata and "Save local copy..." rebuilt the catalog entry
+  without it, as did "Delete from Intune" and exporting the catalog as a
+  template - so a package kept somewhere its name doesn't predict had to
+  be picked again.
 - **An app imported from Intune now gets its Winget ID, Type and
   Version.** Type and Version came back with the same fetch that reads
   everything else and were being dropped, which is why an imported app

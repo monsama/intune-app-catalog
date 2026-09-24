@@ -82,6 +82,12 @@ function Global:Show-AppEditor {
     # above.
     $deployAfterSaveBox = @{ Value = $false }
 
+    # Tells the Deploy tabs the Winget ID changed ($syncWingetId, set once
+    # those tabs exist further down). Declared up here for the same reason
+    # as the boxes above: "Search winget..." is built before them and has
+    # to be able to call it.
+    $deploySyncBox = @{ Run = $null }
+
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     # The app's name in the title, because five tabs in there is nothing
@@ -433,7 +439,15 @@ function Global:Show-AppEditor {
         # pre-filling just meant clearing stale text before typing an actual
         # search term most of the time.
         $picked = Show-WingetSearchDialog
-        if ($picked) { $txtWinget.Text = $picked }
+        if ($picked) {
+            $txtWinget.Text = $picked
+            # Setting .Text raises no Leave, so without this the Deploy
+            # tabs kept treating a new app as a custom one - no install,
+            # uninstall or detection, and its own missing .intunewin
+            # instead of the shared init.intunewin - until you happened to
+            # switch tabs. Pressing Deploy straight away sent that.
+            if ($deploySyncBox.Run) { & $deploySyncBox.Run }
+        }
     }.GetNewClosure())
 
     # What used to run when the separate Deploy window closed. The Intune
@@ -590,6 +604,8 @@ function Global:Show-AppEditor {
                 # describe.
                 intuneAppType    = ""
                 intuneAppVersion = ""
+                # Not an Intune fact - the package is still on disk.
+                packagePath      = [string]$existingForClear.packagePath
                 requiredFor      = @($existingForClear.requiredFor)
                 availableFor     = @($existingForClear.availableFor)
                 uninstallFor     = @($existingForClear.uninstallFor)
@@ -1272,6 +1288,7 @@ function Global:Show-AppEditor {
         # instead, because there are two ways this field changes and only
         # one of them involves the keyboard:
         $txtWinget.Add_Leave($syncWingetId)
+        $deploySyncBox.Run = $syncWingetId
 
         # The app's name fills the display name on the Metadata tab, for
         # the same reason and by the same route: that tab is built before
@@ -1550,6 +1567,9 @@ function Global:Show-AppEditor {
         # since this click only ever kept the metadata already on file.
         # Only when something was actually edited, so an app with no
         # metadata doesn't gain the generated defaults just by being saved.
+        # Enter in the Winget ID field saves (AcceptButton) without that
+        # field ever raising Leave - catch the Deploy tabs up first.
+        if ($deploySyncBox.Run) { & $deploySyncBox.Run }
         $deployHostForSave = $deployHostBox.Host
         if ($deployHostForSave -and $deployHostForSave.HasUserEdits -and (& $deployHostForSave.HasUserEdits)) {
             $editedMetadata = & $deployHostForSave.GetMetadata
