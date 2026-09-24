@@ -86,6 +86,40 @@ function Get-HttpErrorDetail {
 # blank field means "leave it as whatever it already is", not "clear it".
 # Sending an empty string would actually WIPE an existing value, which this
 # avoids by simply never including the key at all when there's nothing typed.
+# The supersedence an existing app already has, shaped to be sent back.
+# updateRelationships REPLACES the app's whole relationship list, and
+# dependencies and supersedence share that list - so setting dependencies
+# alone used to delete any supersedence set in the Intune portal, every
+# time the app was updated from here. Only "child" relationships (this app
+# superseding another) are the app's own; "parent" ones are other apps
+# pointing at this one and are not part of what this call sets. Throws if
+# the read fails, so the caller stops before sending anything rather than
+# guessing the list is empty.
+function Get-ExistingSupersedence {
+    param([string]$AppId)
+    $kept = New-Object System.Collections.Generic.List[object]
+    $uri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$AppId/relationships"
+    do {
+        $page = Invoke-GraphRequestDetailed -Uri $uri -Method GET -StepDescription "Read existing relationships"
+        foreach ($rel in @($page.value)) {
+            if (-not $rel) { continue }
+            $relType = [string]$rel.'@odata.type'
+            if ($relType -notlike '*mobileAppSupersedence') { continue }
+            if ([string]$rel.targetType -and [string]$rel.targetType -ne 'child') { continue }
+            $kept.Add(@{
+                "@odata.type"    = "#microsoft.graph.mobileAppSupersedence"
+                targetId         = [string]$rel.targetId
+                supersedenceType = [string]$rel.supersedenceType
+            })
+        }
+        $uri = $page.'@odata.nextLink'
+    } while ($uri)
+    # No leading comma: callers wrap this in @() themselves, and a comma
+    # here would hand them an empty list INSIDE a list when there is none
+    # - sent to Intune as a bogus extra relationship.
+    return $kept.ToArray()
+}
+
 function Add-OptionalStringField {
     param([hashtable]$Body, [string]$GraphKey, [string]$Value)
     if (-not [string]::IsNullOrWhiteSpace($Value)) { $Body[$GraphKey] = $Value }
@@ -616,9 +650,16 @@ try {
         # unchecks the one and only dependency an app has.
         Write-Step "Setting dependencies"
         try {
+            # Read first - see Get-ExistingSupersedence. A failed read lands
+            # in the catch below and sends nothing, which leaves the app's
+            # relationships exactly as they were.
+            $keptSupersedence = @(Get-ExistingSupersedence -AppId $Config.ExistingAppId)
             $relationships = @($Config.DependencyAppIds | ForEach-Object {
                 @{ "@odata.type" = "#microsoft.graph.mobileAppDependency"; targetId = $_; dependencyType = "autoInstall" }
-            })
+            }) + $keptSupersedence
+            if ($keptSupersedence.Count -gt 0) {
+                Write-Host "  Keeping $($keptSupersedence.Count) supersedence relationship(s) already set on this app." -ForegroundColor Gray
+            }
             $relBody = @{ relationships = $relationships } | ConvertTo-Json -Depth 8
             Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.ExistingAppId)/updateRelationships" `
                 -Method POST -Body $relBody -ContentType "application/json" -StepDescription "Set dependencies" | Out-Null
@@ -626,7 +667,7 @@ try {
         }
         catch {
             Write-Host "  [WARN] Could not set dependencies: $($_.Exception.Message)" -ForegroundColor Yellow
-            Write-Host "  The app was still updated successfully - set dependencies manually in the Intune portal if needed." -ForegroundColor Yellow
+            Write-Host "  The app was still updated successfully, and its existing dependencies and supersedence were left as they were - set dependencies manually in the Intune portal if needed." -ForegroundColor Yellow
             }
 
         if ($Config.ReplaceContent -and $Config.PackagePath) {

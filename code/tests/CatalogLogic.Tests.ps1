@@ -1841,6 +1841,44 @@ try {
 }
 finally { $Global:App.LastAuditResults = $savedAuditResults }
 
+# -----------------------------------------------------------------
+# Get-ExistingSupersedence (EmbeddedScripts\CreateApp.ps1)
+# -----------------------------------------------------------------
+# Not under Private\, so loaded on its own, with Graph stubbed. What it
+# returns is what survives an update's updateRelationships - which
+# replaces the whole list, so anything it drops is deleted in Intune.
+$createAppScript = Join-Path (Split-Path $privateRoot -Parent) 'EmbeddedScripts\CreateApp.ps1'
+$createAppAst = [System.Management.Automation.Language.Parser]::ParseFile($createAppScript, [ref]$null, [ref]$null)
+$supersedenceFn = $createAppAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-ExistingSupersedence' }, $true) | Select-Object -First 1
+Assert-True ($null -ne $supersedenceFn) "Get-ExistingSupersedence: found in CreateApp.ps1"
+if ($supersedenceFn) {
+    . ([scriptblock]::Create($supersedenceFn.Extent.Text))
+    $script:relPages = @(
+        @{ value = @(
+            @{ '@odata.type' = '#microsoft.graph.mobileAppDependency'; targetId = 'dep-1'; targetType = 'child'; dependencyType = 'autoInstall' }
+            @{ '@odata.type' = '#microsoft.graph.mobileAppSupersedence'; targetId = 'old-1'; targetType = 'child'; supersedenceType = 'update' }
+            @{ '@odata.type' = '#microsoft.graph.mobileAppSupersedence'; targetId = 'newer-app'; targetType = 'parent'; supersedenceType = 'replace' }
+          ); '@odata.nextLink' = 'page2' }
+        @{ value = @(
+            @{ '@odata.type' = '#microsoft.graph.mobileAppSupersedence'; targetId = 'old-2'; targetType = 'child'; supersedenceType = 'replace' }
+          ) }
+    )
+    $script:relPageIndex = 0
+    function Invoke-GraphRequestDetailed { param($Uri, $Method, $StepDescription) $page = $script:relPages[$script:relPageIndex]; $script:relPageIndex++; return $page }
+    $keptRels = Get-ExistingSupersedence -AppId 'app-1'
+    Assert-Equal 2 @($keptRels).Count "Get-ExistingSupersedence: keeps this app's own supersedence, across pages"
+    Assert-Equal 'old-1,old-2' ((@($keptRels) | ForEach-Object { $_.targetId }) -join ',') "Get-ExistingSupersedence: ...and only those - not dependencies, not other apps' (parent) entries"
+    Assert-Equal 'update' @($keptRels)[0].supersedenceType "Get-ExistingSupersedence: the supersedence type (update/replace) is kept"
+    Assert-Equal '#microsoft.graph.mobileAppSupersedence' @($keptRels)[0].'@odata.type' "Get-ExistingSupersedence: shaped to be sent straight back"
+    $script:relPages = @(@{ value = @() }); $script:relPageIndex = 0
+    Assert-Equal 0 @(Get-ExistingSupersedence -AppId 'app-1').Count "Get-ExistingSupersedence: none is an empty list"
+    function Invoke-GraphRequestDetailed { param($Uri, $Method, $StepDescription) throw 'Forbidden' }
+    $readThrew = $false
+    try { [void](Get-ExistingSupersedence -AppId 'app-1') } catch { $readThrew = $true }
+    Assert-True $readThrew "Get-ExistingSupersedence: a failed read throws, so the update sends nothing instead of wiping the list"
+    Remove-Item Function:\Invoke-GraphRequestDetailed -ErrorAction SilentlyContinue
+}
+
 # =================================================================
 # Report
 # =================================================================

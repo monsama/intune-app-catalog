@@ -18,6 +18,19 @@
 
 ### Fixes
 
+- **Updating an app no longer deletes its supersedence.** Intune keeps an
+  app's dependencies and supersedence in one list, and setting
+  dependencies replaces that whole list - so every Update or Push
+  Metadata from here removed any supersedence set in the Intune portal.
+  The app's current supersedence is now read first and sent back with the
+  dependencies; if it can't be read, the dependency step is skipped
+  rather than risk removing it. **If an app of yours had supersedence and
+  was pushed from an earlier version, check it in the portal - it may
+  need setting again.**
+- **Deleting an app that another app depends on keeps that other app's
+  remaining relationships intact.** Clearing the blocking dependency
+  resent every other relationship as a dependency, supersedence and
+  other apps' entries included.
 - **Closing the app editor warns about unsaved edits on its Intune
   tabs.** Cancel, the window's X and Previous/Next only asked about the
   Catalog tab's fields, so metadata typed on the Deploy tabs was
