@@ -143,6 +143,40 @@ function Global:Get-LastAuditSummary {
     return "$issueCount issue$(if ($issueCount -ne 1) { 's' }) ($age)"
 }
 
+function Global:ConvertTo-SupersedenceEntries {
+    # Intune's relationship list for one app -> the catalog's supersedes
+    # entries. Only "child" relationships are this app's own (it supersedes
+    # the target); "parent" ones are other apps superseding this one.
+    param($Relationships)
+    return @(@($Relationships) | Where-Object {
+        $_ -and ([string]$_.'@odata.type') -like '*mobileAppSupersedence' -and (-not [string]$_.targetType -or [string]$_.targetType -eq 'child')
+    } | ForEach-Object {
+        [pscustomobject]@{
+            appId = [string]$_.targetId
+            name  = [string]$_.targetDisplayName
+            type  = if ([string]$_.supersedenceType -eq 'replace') { 'replace' } else { 'update' }
+        }
+    })
+}
+
+function Global:Format-SupersedenceSummary {
+    # One line for a compare row or a confirmation: "Old App (update), ...".
+    # "replace" is shown as what it does - the old app is uninstalled.
+    param($Entries)
+    $items = @(@($Entries) | Where-Object { $_ -and $_.appId })
+    if ($items.Count -eq 0) { return "(none)" }
+    return (@($items | Sort-Object { [string]$_.name } | ForEach-Object {
+        $label = if ([string]$_.name) { [string]$_.name } else { [string]$_.appId }
+        "$label ($(if ($_.type -eq 'replace') { 'replace - uninstalls it' } else { 'update' }))"
+    }) -join ", ")
+}
+
+function Global:Get-SupersedenceCompareKey {
+    # By App ID and type only - a renamed app in Intune is the same app.
+    param($Entries)
+    return ((@(@($Entries) | Where-Object { $_ -and $_.appId } | ForEach-Object { "$([string]$_.appId):$([string]$_.type)" }) | Sort-Object) -join "|")
+}
+
 function Global:Get-CatalogMetadataSimpleFields {
     return @(
         @{ Key = "description"; Label = "Description" }
@@ -319,6 +353,8 @@ function Global:ConvertTo-CatalogMetadataFromFetch {
         minOSKey         = $minOsKey
         detectionRule    = $Fetched.DetectionRule
         dependencies     = @($Fetched.Dependencies)
+        # $null when the relationships couldn't be read - not "none"
+        supersedes       = $Fetched.Supersedence
         minDiskSpaceMB          = $Fetched.MinDiskSpaceMB
         minMemoryMB             = $Fetched.MinMemoryMB
         minProcessors           = $Fetched.MinProcessors
@@ -466,6 +502,15 @@ function Global:Get-CatalogMetadataFieldDiffs {
         }
     }
 
+    # Supersedence (Win32 apps only). Skipped while the catalog never
+    # recorded any ($null), and when the other side couldn't be read
+    # ($null) - neither is a difference anyone can act on.
+    if ($isWin32 -and $null -ne $Local.supersedes -and $null -ne $Remote.supersedes) {
+        if ((Get-SupersedenceCompareKey $Local.supersedes) -ne (Get-SupersedenceCompareKey $Remote.supersedes)) {
+            $diffs.Add([pscustomobject]@{ Field = "Supersedence"; Local = (Format-SupersedenceSummary $Local.supersedes); Remote = (Format-SupersedenceSummary $Remote.supersedes) })
+        }
+    }
+
     return $diffs.ToArray()
 }
 
@@ -485,6 +530,9 @@ function Global:Merge-CatalogMetadata {
     }
     if ($KeepLocalFields -contains "Return codes") {
         $merged | Add-Member -NotePropertyName "returnCodes" -NotePropertyValue $Local.returnCodes -Force
+    }
+    if ($KeepLocalFields -contains "Supersedence") {
+        $merged | Add-Member -NotePropertyName "supersedes" -NotePropertyValue $Local.supersedes -Force
     }
     return $merged
 }
@@ -927,6 +975,9 @@ function Global:Get-DefaultAppMetadata {
         minOSKey         = $das.MinOSKey
         detectionRule    = if ($templates.Detection) { [pscustomobject]@{ Type = "Script"; Script_Content = $templates.Detection } } else { $null }
         dependencies     = $defaultDeps
+        # Nothing superseded by default. Empty, not $null: this is what a
+        # new app is created with, and what Custom Config compares against.
+        supersedes       = @()
         minDiskSpaceMB          = $das.MinDiskSpaceMB
         minMemoryMB             = $das.MinMemoryMB
         minProcessors           = $das.MinProcessors

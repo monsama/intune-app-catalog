@@ -502,6 +502,7 @@ function Global:Show-BatchEditMetadataDialog {
             minOSKey         = $m.minOSKey
             detectionRule    = $m.detectionRule
             dependencies     = @($m.dependencies)
+            supersedes       = $m.supersedes
             minDiskSpaceMB          = $m.minDiskSpaceMB
             minMemoryMB             = $m.minMemoryMB
             minProcessors           = $m.minProcessors
@@ -599,6 +600,8 @@ function Global:Show-BatchEditMetadataDialog {
             Notes                   = $newMetadata.notes
             AppVersion              = $newMetadata.appVersion
             IsFeatured              = $newMetadata.isFeatured
+            # $null (never recorded) keeps Intune's supersedence on an update
+            Supersedence            = $newMetadata.supersedes
             InstallCommand          = $newMetadata.installCommand
             UninstallCommand        = $newMetadata.uninstallCommand
             DetectionRule           = $newMetadata.detectionRule

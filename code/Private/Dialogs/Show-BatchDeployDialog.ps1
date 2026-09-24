@@ -260,6 +260,8 @@ function Global:Show-BatchDeployDialog {
             Notes                   = $effectiveMetadata.notes
             AppVersion              = $effectiveMetadata.appVersion
             IsFeatured              = $effectiveMetadata.isFeatured
+            # $null (never recorded) keeps Intune's supersedence on an update
+            Supersedence            = $effectiveMetadata.supersedes
             InstallCommand          = $effectiveMetadata.installCommand
             UninstallCommand        = $effectiveMetadata.uninstallCommand
             DetectionRule           = $effectiveMetadata.detectionRule

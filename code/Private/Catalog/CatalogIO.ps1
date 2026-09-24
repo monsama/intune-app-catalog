@@ -46,6 +46,16 @@ function Global:ConvertTo-AppRecord {
             # Resolved to actual App IDs only at batch-deploy time, once
             # dependencies have had a chance to be created first.
             dependencies     = @($Raw.metadata.dependencies)
+            # Apps this one supersedes, by Intune App ID - usually an older
+            # version that only exists in Intune, not in the catalog, which
+            # is why it isn't by name like dependencies. $null when never
+            # recorded: an update then keeps whatever Intune has, where []
+            # would clear it.
+            supersedes       = if ($null -ne $Raw.metadata.supersedes) {
+                                   @(@($Raw.metadata.supersedes) | Where-Object { $_ -and $_.appId } | ForEach-Object {
+                                       [pscustomobject]@{ appId = [string]$_.appId; name = [string]$_.name; type = $(if ([string]$_.type -eq 'replace') { 'replace' } else { 'update' }) }
+                                   })
+                               } else { $null }
             # Requirements and install-experience/return-code fields below
             # all confirmed directly against Microsoft's own win32LobApp
             # schema docs before being added - minimumFreeDiskSpaceInMB,
@@ -301,6 +311,23 @@ function Global:ConvertTo-JsonStringArray {
     return "[`r`n" + ($lines -join "`r`n") + "`r`n$pad]"
 }
 
+function Global:ConvertTo-SupersedenceJson {
+    # metadata.supersedes, hand-rolled like the rest of this file. $null
+    # (never recorded) is written as null, not [] - an empty list means
+    # "supersedes nothing" and an update would clear Intune's to match,
+    # while null means "leave Intune's alone".
+    param($Entries, [int]$IndentLevel = 0)
+    if ($null -eq $Entries) { return "null" }
+    $items = @(@($Entries) | Where-Object { $_ -and $_.appId })
+    if ($items.Count -eq 0) { return "[]" }
+    $pad = "  " * $IndentLevel
+    $lines = for ($j = 0; $j -lt $items.Count; $j++) {
+        $comma = if ($j -lt $items.Count - 1) { "," } else { "" }
+        "$pad  { `"appId`": $(ConvertTo-JsonStringLiteral ([string]$items[$j].appId)), `"name`": $(ConvertTo-JsonStringLiteral ([string]$items[$j].name)), `"type`": $(ConvertTo-JsonStringLiteral ([string]$items[$j].type)) }$comma"
+    }
+    return "[`r`n" + ($lines -join "`r`n") + "`r`n$pad]"
+}
+
 function Global:ConvertTo-SingleAppJson {
     param($App)
 
@@ -358,6 +385,7 @@ function Global:ConvertTo-SingleAppJson {
         $metaFields.Add("    `"minOSKey`": $(ConvertTo-JsonStringLiteral $m.minOSKey)")
         $metaFields.Add("    `"detectionRule`": $(ConvertTo-DetectionRuleJson -DetectionRule $m.detectionRule -IndentLevel 2)")
         $metaFields.Add("    `"dependencies`": $(ConvertTo-JsonStringArray -Items @($m.dependencies) -IndentLevel 2)")
+        $metaFields.Add("    `"supersedes`": $(ConvertTo-SupersedenceJson -Entries $m.supersedes -IndentLevel 2)")
         # Numeric fields explicitly default to "null" (valid JSON) rather
         # than interpolating $null directly, which would produce
         # "minDiskSpaceMB": , with nothing before the comma - invalid
@@ -443,6 +471,20 @@ function Global:ConvertTo-CreateAppConfigJson {
     $fields.Add("  `"MinOSVersionKey`": $(ConvertTo-JsonStringLiteral $Config.MinOSVersionKey)")
     $fields.Add("  `"PackagePath`": $(ConvertTo-JsonStringLiteral $Config.PackagePath)")
     $fields.Add("  `"DependencyAppIds`": $(ConvertTo-JsonStringArray -Items @($Config.DependencyAppIds) -IndentLevel 1)")
+    # Supersedence: SupersedenceSet false (the catalog never recorded any)
+    # keeps Intune's on an update - see CreateApp.ps1's Get-ConfigSupersedence.
+    $supersedenceItems = @(@($Config.Supersedence) | Where-Object { $_ -and $_.appId })
+    $fields.Add("  `"SupersedenceSet`": $(if ($null -ne $Config.Supersedence) { 'true' } else { 'false' })")
+    if ($supersedenceItems.Count -eq 0) {
+        $fields.Add("  `"Supersedence`": []")
+    }
+    else {
+        $supLines = for ($j = 0; $j -lt $supersedenceItems.Count; $j++) {
+            $comma = if ($j -lt $supersedenceItems.Count - 1) { "," } else { "" }
+            "    { `"targetId`": $(ConvertTo-JsonStringLiteral ([string]$supersedenceItems[$j].appId)), `"supersedenceType`": $(ConvertTo-JsonStringLiteral ([string]$supersedenceItems[$j].type)) }$comma"
+        }
+        $fields.Add("  `"Supersedence`": [`r`n" + ($supLines -join "`r`n") + "`r`n  ]")
+    }
     $fields.Add("  `"ReplaceContent`": $(if ($Config.ReplaceContent) { 'true' } else { 'false' })")
     $fields.Add("  `"MinDiskSpaceMB`": $($Config.MinDiskSpaceMB)")
     $fields.Add("  `"MinMemoryMB`": $($Config.MinMemoryMB)")

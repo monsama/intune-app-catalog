@@ -120,6 +120,22 @@ function Get-ExistingSupersedence {
     return $kept.ToArray()
 }
 
+# The supersedence the catalog asks for, shaped for updateRelationships.
+# Only meaningful when $Config.SupersedenceSet is true - false means the
+# catalog never recorded any, and an update keeps Intune's instead (see
+# Get-ExistingSupersedence). A flag rather than null-vs-empty, because
+# ConvertFrom-Json doesn't treat an empty array the same way on every
+# PowerShell this runs under.
+function Get-ConfigSupersedence {
+    return @(@($Config.Supersedence) | Where-Object { $_ -and $_.targetId } | ForEach-Object {
+        @{
+            "@odata.type"    = "#microsoft.graph.mobileAppSupersedence"
+            targetId         = [string]$_.targetId
+            supersedenceType = if ([string]$_.supersedenceType -eq 'replace') { 'replace' } else { 'update' }
+        }
+    })
+}
+
 function Add-OptionalStringField {
     param([hashtable]$Body, [string]$GraphKey, [string]$Value)
     if (-not [string]::IsNullOrWhiteSpace($Value)) { $Body[$GraphKey] = $Value }
@@ -650,16 +666,24 @@ try {
         # unchecks the one and only dependency an app has.
         Write-Step "Setting dependencies"
         try {
-            # Read first - see Get-ExistingSupersedence. A failed read lands
-            # in the catch below and sends nothing, which leaves the app's
-            # relationships exactly as they were.
-            $keptSupersedence = @(Get-ExistingSupersedence -AppId $Config.ExistingAppId)
+            # The catalog's supersedence when it has recorded one; otherwise
+            # what Intune already has, read first - see
+            # Get-ExistingSupersedence. A failed read lands in the catch
+            # below and sends nothing, which leaves the app's relationships
+            # exactly as they were.
+            if ($Config.SupersedenceSet) {
+                $keptSupersedence = @(Get-ConfigSupersedence)
+                Write-Host "  Setting $($keptSupersedence.Count) supersedence relationship(s) from the catalog." -ForegroundColor Gray
+            }
+            else {
+                $keptSupersedence = @(Get-ExistingSupersedence -AppId $Config.ExistingAppId)
+                if ($keptSupersedence.Count -gt 0) {
+                    Write-Host "  Keeping $($keptSupersedence.Count) supersedence relationship(s) already set on this app." -ForegroundColor Gray
+                }
+            }
             $relationships = @($Config.DependencyAppIds | ForEach-Object {
                 @{ "@odata.type" = "#microsoft.graph.mobileAppDependency"; targetId = $_; dependencyType = "autoInstall" }
             }) + $keptSupersedence
-            if ($keptSupersedence.Count -gt 0) {
-                Write-Host "  Keeping $($keptSupersedence.Count) supersedence relationship(s) already set on this app." -ForegroundColor Gray
-            }
             $relBody = @{ relationships = $relationships } | ConvertTo-Json -Depth 8
             Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.ExistingAppId)/updateRelationships" `
                 -Method POST -Body $relBody -ContentType "application/json" -StepDescription "Set dependencies" | Out-Null
@@ -778,21 +802,22 @@ try {
 
     Invoke-Win32AppContentUpload -AppId $appId -PackageInfo $packageInfo
 
-    # ---- Dependencies ----
-    if (@($Config.DependencyAppIds).Count -gt 0) {
-        Write-Step "Setting dependencies"
+    # ---- Dependencies and supersedence (one relationship list) ----
+    $newSupersedence = @(if ($Config.SupersedenceSet) { Get-ConfigSupersedence })
+    if (@($Config.DependencyAppIds).Count -gt 0 -or $newSupersedence.Count -gt 0) {
+        Write-Step "Setting dependencies and supersedence"
         try {
             $relationships = @($Config.DependencyAppIds | ForEach-Object {
                 @{ "@odata.type" = "#microsoft.graph.mobileAppDependency"; targetId = $_; dependencyType = "autoInstall" }
-            })
+            }) + $newSupersedence
             $relBody = @{ relationships = $relationships } | ConvertTo-Json -Depth 8
             Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$appId/updateRelationships" `
-                -Method POST -Body $relBody -ContentType "application/json" -StepDescription "Set dependencies" | Out-Null
-            Write-Host "  [OK] Set $(@($Config.DependencyAppIds).Count) dependency/dependencies." -ForegroundColor Green
+                -Method POST -Body $relBody -ContentType "application/json" -StepDescription "Set dependencies and supersedence" | Out-Null
+            Write-Host "  [OK] Set $(@($Config.DependencyAppIds).Count) dependency/dependencies and $($newSupersedence.Count) supersedence." -ForegroundColor Green
         }
         catch {
-            Write-Host "  [WARN] Could not set dependencies: $($_.Exception.Message)" -ForegroundColor Yellow
-            Write-Host "  The app and its content uploaded successfully - set dependencies manually in the Intune portal if needed." -ForegroundColor Yellow
+            Write-Host "  [WARN] Could not set dependencies/supersedence: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "  The app and its content uploaded successfully - set them manually in the Intune portal if needed." -ForegroundColor Yellow
         }
     }
 

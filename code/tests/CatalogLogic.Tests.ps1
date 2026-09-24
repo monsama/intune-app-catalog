@@ -107,6 +107,12 @@ $testableFunctionNames = @(
     "ConvertTo-DetectionRuleJson",
     "ConvertTo-JsonStringLiteral",
     "Merge-CatalogMetadata",
+    # Supersedence: mapping, summary, compare, catalog and config JSON
+    "ConvertTo-SupersedenceEntries",
+    "Format-SupersedenceSummary",
+    "Get-SupersedenceCompareKey",
+    "ConvertTo-SupersedenceJson",
+    "ConvertTo-CreateAppConfigJson",
     "Get-CreateAppTemplates",
     "Get-DefaultAppMetadata",
     "Get-FriendlyIntuneAppType",
@@ -1877,6 +1883,82 @@ if ($supersedenceFn) {
     try { [void](Get-ExistingSupersedence -AppId 'app-1') } catch { $readThrew = $true }
     Assert-True $readThrew "Get-ExistingSupersedence: a failed read throws, so the update sends nothing instead of wiping the list"
     Remove-Item Function:\Invoke-GraphRequestDetailed -ErrorAction SilentlyContinue
+}
+
+# -----------------------------------------------------------------
+# Supersedence (metadata.supersedes)
+# -----------------------------------------------------------------
+$relList = @(
+    @{ '@odata.type' = '#microsoft.graph.mobileAppDependency'; targetId = 'dep-1'; targetType = 'child'; targetDisplayName = 'Runtime' }
+    @{ '@odata.type' = '#microsoft.graph.mobileAppSupersedence'; targetId = 'old-2'; targetType = 'child'; targetDisplayName = 'Tool 1.0'; supersedenceType = 'replace' }
+    @{ '@odata.type' = '#microsoft.graph.mobileAppSupersedence'; targetId = 'newer'; targetType = 'parent'; targetDisplayName = 'Tool 3.0'; supersedenceType = 'update' }
+)
+$supEntries = @(ConvertTo-SupersedenceEntries -Relationships $relList)
+Assert-Equal 1 $supEntries.Count "ConvertTo-SupersedenceEntries: only this app's own (child) supersedence, not dependencies or parents"
+Assert-Equal 'old-2' $supEntries[0].appId "ConvertTo-SupersedenceEntries: keeps the target App ID"
+Assert-Equal 'Tool 1.0' $supEntries[0].name "ConvertTo-SupersedenceEntries: ...and its name"
+Assert-Equal 'replace' $supEntries[0].type "ConvertTo-SupersedenceEntries: ...and the type"
+Assert-Equal "(none)" (Format-SupersedenceSummary @()) "Format-SupersedenceSummary: nothing reads as (none)"
+Assert-True ((Format-SupersedenceSummary $supEntries) -like '*Tool 1.0*uninstall*') "Format-SupersedenceSummary: says Replace uninstalls the old app"
+$sameRenamed = @([pscustomobject]@{ appId = 'old-2'; name = 'Tool 1.0 (renamed)'; type = 'replace' })
+Assert-Equal (Get-SupersedenceCompareKey $supEntries) (Get-SupersedenceCompareKey $sameRenamed) "Get-SupersedenceCompareKey: a renamed app is still the same app"
+$typeChanged = @([pscustomobject]@{ appId = 'old-2'; name = 'Tool 1.0'; type = 'update' })
+Assert-True ((Get-SupersedenceCompareKey $supEntries) -ne (Get-SupersedenceCompareKey $typeChanged)) "Get-SupersedenceCompareKey: a changed type is a difference"
+
+# Compare: skipped while never recorded locally, or unreadable remotely
+$supLocalNull = [pscustomobject]@{ description = 'd'; supersedes = $null }
+$supRemote = [pscustomobject]@{ description = 'd'; supersedes = $supEntries }
+Assert-Equal 0 @(Get-CatalogMetadataFieldDiffs -Local $supLocalNull -Remote $supRemote | Where-Object { $_.Field -eq 'Supersedence' }).Count "Get-CatalogMetadataFieldDiffs: supersedence never recorded locally is not a difference"
+$supLocalEmpty = [pscustomobject]@{ description = 'd'; supersedes = @() }
+Assert-Equal 1 @(Get-CatalogMetadataFieldDiffs -Local $supLocalEmpty -Remote $supRemote | Where-Object { $_.Field -eq 'Supersedence' }).Count "Get-CatalogMetadataFieldDiffs: recorded as none while Intune has one is a difference"
+Assert-Equal 0 @(Get-CatalogMetadataFieldDiffs -Local $supLocalEmpty -Remote ([pscustomobject]@{ description = 'd'; supersedes = $null }) | Where-Object { $_.Field -eq 'Supersedence' }).Count "Get-CatalogMetadataFieldDiffs: an unreadable remote list is not a difference"
+Assert-Equal 0 @(Get-CatalogMetadataFieldDiffs -Local $supLocalEmpty -Remote $supRemote -OdataType 'winGetApp' | Where-Object { $_.Field -eq 'Supersedence' }).Count "Get-CatalogMetadataFieldDiffs: supersedence is only compared for Win32 apps"
+$supMerged = Merge-CatalogMetadata -Remote $supRemote -Local $supLocalEmpty -KeepLocalFields @('Supersedence')
+Assert-Equal 0 @($supMerged.supersedes).Count "Merge-CatalogMetadata: keeping the local supersedence works by its label"
+
+# Catalog file: entries round-trip; null and [] stay different
+$supApp = [pscustomobject]@{
+    appId = ''; appName = 'Sup Trip'; wingetId = 'x.y'; intuneAppType = ''; intuneAppVersion = ''
+    requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @()
+    metadata = [pscustomobject]@{ description = 'd'; supersedes = $supEntries }
+}
+$supBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $supApp) | ConvertFrom-Json)
+Assert-Equal 'old-2' @($supBack.metadata.supersedes)[0].appId "ConvertTo-SingleAppJson/ConvertTo-AppRecord: supersedence round-trips"
+Assert-Equal 'replace' @($supBack.metadata.supersedes)[0].type "ConvertTo-SingleAppJson/ConvertTo-AppRecord: ...with its type"
+$supApp.metadata = [pscustomobject]@{ description = 'd'; supersedes = $null }
+Assert-Null (ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $supApp) | ConvertFrom-Json)).metadata.supersedes "ConvertTo-AppRecord: never-recorded supersedence stays null through a save"
+Assert-Equal "[]" (ConvertTo-SupersedenceJson -Entries @()) "ConvertTo-SupersedenceJson: recorded as none is [], not null"
+Assert-Equal "null" (ConvertTo-SupersedenceJson -Entries $null) "ConvertTo-SupersedenceJson: never recorded is null"
+
+# Deploy config: SupersedenceSet says whether the list is the catalog's
+$cfgBase = @{ TenantId = 't'; ClientId = 'c'; CertificateThumbprint = 'x'; Mode = 'UpdateMetadata'; ExistingAppId = 'a'; AppName = 'n'
+    MinDiskSpaceMB = 0; MinMemoryMB = 0; MinProcessors = 0; MinCpuSpeedMHz = 0; InstallTimeMinutes = 60; ReturnCodes = @() }
+$cfgUnknown = [pscustomobject]($cfgBase + @{ Supersedence = $null }) | ForEach-Object { (ConvertTo-CreateAppConfigJson -Config $_) | ConvertFrom-Json }
+Assert-Equal $false $cfgUnknown.SupersedenceSet "ConvertTo-CreateAppConfigJson: unknown supersedence is not set (an update keeps Intune's)"
+$cfgNone = [pscustomobject]($cfgBase + @{ Supersedence = @() }) | ForEach-Object { (ConvertTo-CreateAppConfigJson -Config $_) | ConvertFrom-Json }
+Assert-Equal $true $cfgNone.SupersedenceSet "ConvertTo-CreateAppConfigJson: recorded as none is set (an update clears Intune's)"
+$cfgSome = [pscustomobject]($cfgBase + @{ Supersedence = $supEntries }) | ForEach-Object { (ConvertTo-CreateAppConfigJson -Config $_) | ConvertFrom-Json }
+Assert-Equal 'old-2' @($cfgSome.Supersedence)[0].targetId "ConvertTo-CreateAppConfigJson: entries go out as targetId..."
+Assert-Equal 'replace' @($cfgSome.Supersedence)[0].supersedenceType "ConvertTo-CreateAppConfigJson: ...and supersedenceType"
+
+# Custom Config counts supersedence (a real setting); the default is none
+$supDefaults = Get-DefaultAppMetadata -AppName "Some Winget App" -WingetId "some.app" -Uncommon $false
+Assert-Equal 0 @($supDefaults.supersedes).Count "Get-DefaultAppMetadata: supersedes nothing by default"
+$supCustom = $supDefaults.PSObject.Copy(); $supCustom.supersedes = $supEntries
+Assert-Equal $true (Test-AppHasCustomConfig -App ([pscustomobject]@{ appName = "Some Winget App"; wingetId = "some.app"; metadata = $supCustom })) "Test-AppHasCustomConfig: superseding an app is custom config"
+
+# Get-ConfigSupersedence (CreateApp.ps1) - what an update/create sends
+$configSupFn = $createAppAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-ConfigSupersedence' }, $true) | Select-Object -First 1
+Assert-True ($null -ne $configSupFn) "Get-ConfigSupersedence: found in CreateApp.ps1"
+if ($configSupFn) {
+    . ([scriptblock]::Create($configSupFn.Extent.Text))
+    $Config = $cfgSome
+    $sent = @(Get-ConfigSupersedence)
+    Assert-Equal 1 $sent.Count "Get-ConfigSupersedence: one entry in, one relationship out"
+    Assert-Equal '#microsoft.graph.mobileAppSupersedence' $sent[0].'@odata.type' "Get-ConfigSupersedence: shaped as a supersedence relationship"
+    $Config = $cfgNone
+    Assert-Equal 0 @(Get-ConfigSupersedence).Count "Get-ConfigSupersedence: none recorded sends none"
+    Remove-Variable Config
 }
 
 # =================================================================

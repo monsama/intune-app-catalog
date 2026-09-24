@@ -4,6 +4,16 @@
 
 ### Added
 
+- **Supersedence, under Dependencies on Requirements and behaviour.** Pick
+  the Intune apps this one supersedes - usually an older version that
+  only exists in Intune, so the picker lists Intune's apps as well as the
+  catalog's - and whether it updates them or replaces them (uninstalling
+  the old app). Saved in the catalog by App ID, sent by Deploy, Push
+  Metadata and the batch windows, read back by Pull from Intune, and
+  compared by Checks and the Local vs. Intune compare. An app that has
+  never recorded its supersedence keeps whatever Intune has on an update,
+  and isn't reported as different until it does.
+
 - **App version and "Show this as a featured app in the Company Portal"**
   - the two app-information fields Intune has that the catalog didn't.
   Both are on the Metadata tab (App version beside Publisher), saved to
