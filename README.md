@@ -4,14 +4,9 @@
 [![license: GPL-2.0-or-later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue)](LICENSE)
 [![PowerShell 5.1 and 7](https://img.shields.io/badge/PowerShell-5.1%20%7C%207-5391FE)](#requirements)
 
-A Windows desktop app (PowerShell + WinForms, no install) for keeping a
-**catalog of Win32 apps as files**, packaging them, and deploying and
-assigning them in Microsoft Intune - without clicking through the portal
-for every app, and without losing track of what an app is *supposed* to
-look like.
-
-The catalog is one JSON file per app in a folder you choose, so it can live
-in git next to everything else you version.
+A PowerShell tool for managing Intune Win32 apps. Each app is a JSON file
+in a folder you choose (it can live in git). From there you package,
+deploy and assign the apps, and check that Intune still matches.
 
 ![The app catalog](docs/images/main-window.png)
 
