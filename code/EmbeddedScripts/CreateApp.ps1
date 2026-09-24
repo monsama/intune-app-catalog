@@ -598,11 +598,15 @@ try {
         Add-OptionalStringField -Body $patchBody -GraphKey "informationUrl" -Value $Config.InformationUrl
         Add-OptionalStringField -Body $patchBody -GraphKey "privacyInformationUrl" -Value $Config.PrivacyUrl
         Add-OptionalStringField -Body $patchBody -GraphKey "notes" -Value $Config.Notes
+        Add-OptionalStringField -Body $patchBody -GraphKey "displayVersion" -Value $Config.AppVersion
+        # Only when the catalog actually says - $null leaves Intune's own
+        # setting alone rather than switching a featured app off.
+        if ($null -ne $Config.IsFeatured) { $patchBody["isFeatured"] = [bool]$Config.IsFeatured }
         $patchBody = $patchBody | ConvertTo-Json -Depth 8
 
         Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.ExistingAppId)" `
             -Method PATCH -Body $patchBody -ContentType "application/json" -StepDescription "Update app metadata" | Out-Null
-        Write-Host "  [OK] Metadata updated (name, description, publisher, install/uninstall commands, detection, architecture, min OS, requirements, return codes, install experience, and any owner/developer/notes/URL fields you filled in)." -ForegroundColor Green
+        Write-Host "  [OK] Metadata updated (name, description, publisher, install/uninstall commands, detection, architecture, min OS, requirements, return codes, install experience, and any owner/developer/notes/URL/app version fields you filled in)." -ForegroundColor Green
 
         # Always runs, even with zero dependencies checked - updateRelationships
         # has REPLACE semantics (it sets the relationship list to exactly what's
@@ -720,6 +724,10 @@ try {
     Add-OptionalStringField -Body $createBody -GraphKey "informationUrl" -Value $Config.InformationUrl
     Add-OptionalStringField -Body $createBody -GraphKey "privacyInformationUrl" -Value $Config.PrivacyUrl
     Add-OptionalStringField -Body $createBody -GraphKey "notes" -Value $Config.Notes
+    Add-OptionalStringField -Body $createBody -GraphKey "displayVersion" -Value $Config.AppVersion
+    # Only when the catalog actually says - $null leaves Intune's own
+    # setting alone rather than switching a featured app off.
+    if ($null -ne $Config.IsFeatured) { $createBody["isFeatured"] = [bool]$Config.IsFeatured }
     $createBody = $createBody | ConvertTo-Json -Depth 8
 
     $app = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps" `

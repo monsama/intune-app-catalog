@@ -346,6 +346,8 @@ function Global:Show-BatchPushMetadataDialog {
             InformationUrl          = $m.informationUrl
             PrivacyUrl              = $m.privacyUrl
             Notes                   = $m.notes
+            AppVersion              = $m.appVersion
+            IsFeatured              = $m.isFeatured
             InstallCommand          = $m.installCommand
             UninstallCommand        = $m.uninstallCommand
             DetectionRule           = $m.detectionRule

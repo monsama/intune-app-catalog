@@ -88,6 +88,11 @@ function Global:Show-AppEditor {
     # to be able to call it.
     $deploySyncBox = @{ Run = $null }
 
+    # The Deploy side, once it exists (set right after it is built, further
+    # down). Declared this early because $GetDiscardQuestion - built before
+    # those tabs - asks it whether anything was edited there.
+    $deployHostBox = @{ Host = $null }
+
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     # The app's name in the title, because five tabs in there is nothing
@@ -198,6 +203,13 @@ function Global:Show-AppEditor {
         if ($editorStateBox.Get -and ((& $editorStateBox.Get) -ne $editorStateBox.Initial)) {
             if ($ExistingApp) { return "Discard your unsaved changes to ${label}?" }
             return "$label isn't saved to the catalog yet. Discard it?"
+        }
+        # Fields edited by hand on the Deploy tabs - "Save app to catalog"
+        # saves them, so leaving without it loses them just the same.
+        $deployHostForClose = $deployHostBox.Host
+        if ($deployHostForClose -and $deployHostForClose.HasUserEdits -and (& $deployHostForClose.HasUserEdits)) {
+            if ($ExistingApp) { return "Discard your unsaved changes to ${label}'s Intune deployment fields?" }
+            return "$label isn't saved to the catalog yet. Discard it, and what you entered on the Intune tabs?"
         }
         return $null
     }.GetNewClosure()
@@ -792,9 +804,8 @@ function Global:Show-AppEditor {
     # A compare still in flight from before then would only say "matches"
     # over Pull's own message, which carries the "save to keep this" hint.
     $groupsCheckedBox = @{ Done = $false; Running = $false; Pulled = $false }
-    # The Deploy side, once it exists (set right after it is built, below) -
-    # asked whether it is already reading from Intune (IsReadingLive).
-    $deployHostBox = @{ Host = $null }
+    # $deployHostBox (declared near the top) is asked here whether the
+    # Deploy side is already reading from Intune (IsReadingLive).
     $compareGroupsWithIntune = {
         param($data)
         # Whatever this answer is, nothing is on its way any more.

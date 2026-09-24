@@ -374,6 +374,8 @@ try {
             informationUrl   = $app.informationUrl
             privacyUrl       = $app.privacyInformationUrl
             notes            = Repair-MojibakeText $app.notes
+            appVersion       = [string]$app.displayVersion
+            isFeatured       = [bool]$app.isFeatured
             installCommand   = $app.installCommandLine
             uninstallCommand = $app.uninstallCommandLine
             architecture     = $archValue

@@ -258,6 +258,8 @@ function Global:Show-BatchDeployDialog {
             InformationUrl          = $effectiveMetadata.informationUrl
             PrivacyUrl              = $effectiveMetadata.privacyUrl
             Notes                   = $effectiveMetadata.notes
+            AppVersion              = $effectiveMetadata.appVersion
+            IsFeatured              = $effectiveMetadata.isFeatured
             InstallCommand          = $effectiveMetadata.installCommand
             UninstallCommand        = $effectiveMetadata.uninstallCommand
             DetectionRule           = $effectiveMetadata.detectionRule

@@ -972,6 +972,7 @@ function Global:Start-AppMetadataFetch {
             InformationUrl          = $app.informationUrl
             PrivacyInformationUrl   = $app.privacyInformationUrl
             Notes                   = Repair-MojibakeText $app.notes
+            IsFeatured              = [bool]$app.isFeatured
             InstallCommandLine      = $app.installCommandLine
             UninstallCommandLine    = $app.uninstallCommandLine
             ApplicableArchitectures = $app.applicableArchitectures

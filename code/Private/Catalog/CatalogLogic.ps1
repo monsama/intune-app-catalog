@@ -152,6 +152,11 @@ function Global:Get-CatalogMetadataSimpleFields {
         @{ Key = "informationUrl"; Label = "Information URL" }
         @{ Key = "privacyUrl"; Label = "Privacy URL" }
         @{ Key = "notes"; Label = "Notes" }
+        # Unrecorded: skipped while the catalog entry doesn't have the
+        # field at all ($null - it predates it), rather than every app
+        # with a version or a featured flag in Intune showing as different
+        # the first time it is checked. Pull or a save fills it in.
+        @{ Key = "isFeatured"; Label = "Featured app"; Unrecorded = $true }
         # Win32Only fields below only exist as concepts on a win32LobApp -
         # Graph has no installCommandLine/architecture/requirements/
         # installExperience/returnCodes (or detection rules, handled
@@ -163,6 +168,8 @@ function Global:Get-CatalogMetadataSimpleFields {
         # permanent, unfixable "N fields differ" on every single sync for
         # every non-Win32 app in the catalog - see Get-CatalogMetadataFieldDiffs's
         # own -OdataType gating.
+        # displayVersion exists on win32LobApp, not on Store apps
+        @{ Key = "appVersion"; Label = "App version"; Win32Only = $true; Unrecorded = $true }
         @{ Key = "installCommand"; Label = "Install command"; Win32Only = $true }
         @{ Key = "uninstallCommand"; Label = "Uninstall command"; Win32Only = $true }
         @{ Key = "architecture"; Label = "Architecture"; Win32Only = $true }
@@ -303,6 +310,8 @@ function Global:ConvertTo-CatalogMetadataFromFetch {
         informationUrl   = [string]$Fetched.InformationUrl
         privacyUrl       = [string]$Fetched.PrivacyInformationUrl
         notes            = [string]$Fetched.Notes
+        appVersion       = [string]$Fetched.DisplayVersion
+        isFeatured       = [bool]$Fetched.IsFeatured
         installCommand   = [string]$Fetched.InstallCommandLine
         uninstallCommand = [string]$Fetched.UninstallCommandLine
         architecture     = $architecture
@@ -407,6 +416,7 @@ function Global:Get-CatalogMetadataFieldDiffs {
 
     foreach ($f in (Get-CatalogMetadataSimpleFields)) {
         if ($f.Win32Only -and -not $isWin32) { continue }
+        if ($f.Unrecorded -and $null -eq $Local.($f.Key)) { continue }
         $localVal = [string]$Local.($f.Key)
         $remoteVal = [string]$Remote.($f.Key)
         # Same "a line-ending/trailing-whitespace-only difference is not a
@@ -908,6 +918,8 @@ function Global:Get-DefaultAppMetadata {
         informationUrl   = ""
         privacyUrl       = ""
         notes            = ""
+        appVersion       = ""
+        isFeatured       = $false
         installCommand   = $templates.Install
         uninstallCommand = $templates.Uninstall
         architecture     = $das.Architecture
@@ -933,6 +945,8 @@ function Global:Test-AppHasCustomConfig {
     if (-not $App.metadata) { return $false }
 
     $defaults = Get-DefaultAppMetadata -AppName $App.appName -WingetId $App.wingetId -Uncommon $false
-    $diffs = Get-CatalogMetadataFieldDiffs -Local $App.metadata -Remote $defaults
-    return (@($diffs).Count -gt 0)
+    # App version is a fact about the package, not a setting - an app
+    # whose version was pulled from Intune isn't custom because of it.
+    $diffs = @(Get-CatalogMetadataFieldDiffs -Local $App.metadata -Remote $defaults | Where-Object { $_.Field -ne "App version" })
+    return ($diffs.Count -gt 0)
 }

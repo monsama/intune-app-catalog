@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **App version and "Show this as a featured app in the Company Portal"**
+  - the two app-information fields Intune has that the catalog didn't.
+  Both are on the Metadata tab (App version beside Publisher), saved to
+  the catalog, sent by Deploy, Push Metadata and Batch Deploy, read back
+  by Pull from Intune, and compared by Checks and the Local vs. Intune
+  compare. Batch Edit can set Featured app on several apps at once.
+  A blank App version leaves Intune's value alone, like the other
+  optional fields. A catalog entry saved before these fields existed
+  isn't reported as different by Checks until it has them (a Pull or a
+  save fills them in), and an App version on its own doesn't mark an app
+  as Custom Config.
+
+### Fixes
+
+- **Closing the app editor warns about unsaved edits on its Intune
+  tabs.** Cancel, the window's X and Previous/Next only asked about the
+  Catalog tab's fields, so metadata typed on the Deploy tabs was
+  discarded without a word.
+- **Batch Edit accepts a change made only on its "Description and
+  commands" tab.** Ticking just Publisher (or any text field, or Install
+  context) was refused with "Check at least one field to change".
+
 ## 1.4.9
 
 ### Added

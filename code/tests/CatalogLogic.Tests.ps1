@@ -549,6 +549,30 @@ $wingetAppCustomMetadata = [pscustomobject]@{ appName = "Some Winget App"; winge
 Assert-Equal $true (Test-AppHasCustomConfig -App $wingetAppCustomMetadata) `
     "Test-AppHasCustomConfig: a Winget app whose saved install command differs from the default is Yes"
 
+# App version is a fact about the package, not a setting; featured is one.
+$versionedMetadata = $defaultsForCompare.PSObject.Copy()
+$versionedMetadata.appVersion = "24.08"
+Assert-Equal $false (Test-AppHasCustomConfig -App ([pscustomobject]@{ appName = "Some Winget App"; wingetId = "some.app"; metadata = $versionedMetadata })) `
+    "Test-AppHasCustomConfig: an App version alone doesn't make an app custom"
+$featuredMetadata = $defaultsForCompare.PSObject.Copy()
+$featuredMetadata.isFeatured = $true
+Assert-Equal $true (Test-AppHasCustomConfig -App ([pscustomobject]@{ appName = "Some Winget App"; wingetId = "some.app"; metadata = $featuredMetadata })) `
+    "Test-AppHasCustomConfig: being featured is a setting, so it does"
+
+# App version / Featured app: compared once recorded, skipped while the
+# catalog entry predates them ($null), so upgrading doesn't flag every app.
+$unrecordedLocal = [pscustomobject]@{ description = "d"; appVersion = $null; isFeatured = $null }
+$liveVersioned = [pscustomobject]@{ description = "d"; appVersion = "24.08"; isFeatured = $true }
+$unrecordedDiffs = @(Get-CatalogMetadataFieldDiffs -Local $unrecordedLocal -Remote $liveVersioned | Where-Object { $_.Field -in @("App version", "Featured app") })
+Assert-Equal 0 $unrecordedDiffs.Count "Get-CatalogMetadataFieldDiffs: App version/Featured app never recorded locally are not differences"
+$recordedLocal = [pscustomobject]@{ description = "d"; appVersion = "23.01"; isFeatured = $false }
+$recordedDiffs = @(Get-CatalogMetadataFieldDiffs -Local $recordedLocal -Remote $liveVersioned | ForEach-Object { $_.Field })
+Assert-True ($recordedDiffs -contains "App version") "Get-CatalogMetadataFieldDiffs: a recorded App version that differs is flagged"
+Assert-True ($recordedDiffs -contains "Featured app") "Get-CatalogMetadataFieldDiffs: a recorded Featured app that differs is flagged"
+$merged = Merge-CatalogMetadata -Remote $liveVersioned -Local $recordedLocal -KeepLocalFields @("App version")
+Assert-Equal "23.01" $merged.appVersion "Merge-CatalogMetadata: keeping the local App version works by its label"
+Assert-Equal $true $merged.isFeatured "Merge-CatalogMetadata: ...and leaves Featured app on Intune's value"
+
 # -----------------------------------------------------------------
 # ConvertTo-AppRecord
 # -----------------------------------------------------------------
@@ -766,6 +790,8 @@ $fetched = [pscustomobject]@{
     InformationUrl          = "https://example.invalid/info"
     PrivacyInformationUrl   = "https://example.invalid/privacy"
     Notes                   = "Some notes"
+    DisplayVersion          = "24.08"
+    IsFeatured              = $true
     InstallCommandLine      = "setup.exe /S"
     UninstallCommandLine    = "uninstall.exe /S"
     AllowedArchitectures    = "x64"
@@ -789,6 +815,8 @@ Assert-Equal "setup.exe /S" $mapped.installCommand "ConvertTo-CatalogMetadataFro
 Assert-Equal "uninstall.exe /S" $mapped.uninstallCommand "ConvertTo-CatalogMetadataFromFetch: so does the uninstall command"
 Assert-Equal "https://example.invalid/privacy" $mapped.privacyUrl "ConvertTo-CatalogMetadataFromFetch: privacyInformationUrl lands on the catalog's privacyUrl"
 Assert-Equal "system" $mapped.installContext "ConvertTo-CatalogMetadataFromFetch: runAsAccount lands on installContext"
+Assert-Equal "24.08" $mapped.appVersion "ConvertTo-CatalogMetadataFromFetch: displayVersion lands on appVersion"
+Assert-Equal $true $mapped.isFeatured "ConvertTo-CatalogMetadataFromFetch: isFeatured comes across"
 Assert-Equal 2 @($mapped.dependencies).Count "ConvertTo-CatalogMetadataFromFetch: dependencies are kept - the whole point"
 Assert-True (@($mapped.dependencies) -contains "Base Runtime") "ConvertTo-CatalogMetadataFromFetch: ...by name, as the catalog stores them"
 Assert-Equal "exists" $mapped.detectionRule.File_DetectionType "ConvertTo-CatalogMetadataFromFetch: the detection rule comes across whole"
@@ -1680,6 +1708,24 @@ try {
     }
     Assert-True ((ConvertTo-SingleAppJson -App $plainApp) -notlike '*packagePath*') `
         "ConvertTo-SingleAppJson: leaves packagePath out entirely when unset"
+
+    # App version and Featured app round-trip, and "never recorded" stays
+    # null rather than turning into "" / false on the way through.
+    $metaRoundTrip = [pscustomobject]@{
+        appId = ''; appName = 'Meta Trip'; wingetId = 'x.y'
+        intuneAppType = ''; intuneAppVersion = ''
+        requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @()
+        metadata = [pscustomobject]@{ description = 'd'; appVersion = '1.2.3'; isFeatured = $true }
+    }
+    $metaBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $metaRoundTrip) | ConvertFrom-Json)
+    Assert-Equal '1.2.3' $metaBack.metadata.appVersion "ConvertTo-SingleAppJson/ConvertTo-AppRecord: App version round-trips"
+    Assert-Equal $true $metaBack.metadata.isFeatured "ConvertTo-SingleAppJson/ConvertTo-AppRecord: Featured app round-trips"
+    $metaRoundTrip.metadata = [pscustomobject]@{ description = 'd'; appVersion = $null; isFeatured = $null }
+    $metaNullBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $metaRoundTrip) | ConvertFrom-Json)
+    Assert-Null $metaNullBack.metadata.appVersion "ConvertTo-AppRecord: an unrecorded App version stays null through a save"
+    Assert-Null $metaNullBack.metadata.isFeatured "ConvertTo-AppRecord: an unrecorded Featured app stays null through a save"
+    $olderFile = ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'Old'; metadata = [pscustomobject]@{ description = 'd' } })
+    Assert-Null $olderFile.metadata.appVersion "ConvertTo-AppRecord: a file from before App version reads it as null, not blank"
 }
 finally {
     $Global:App.RootPath = $savedRootPath

@@ -243,7 +243,8 @@ function Global:Show-CreateInIntuneDialog {
 
     $txtPublisher = New-Object System.Windows.Forms.TextBox
     $txtPublisher.Location = New-Object System.Drawing.Point(15,(230 - $leftColumnShift))
-    $txtPublisher.Size = New-Object System.Drawing.Size(820,24)
+    # Half width: App version sits beside it, in the Intune portal's order
+    $txtPublisher.Size = New-Object System.Drawing.Size(402,24)
     if (-not $isDuplicate) { $txtPublisher.Text = $defaults.publisher }
     $scrollPanel.Controls.Add($txtPublisher)
 
@@ -311,6 +312,26 @@ function Global:Show-CreateInIntuneDialog {
     $txtNotes.Size = New-Object System.Drawing.Size(820,40)
     $txtNotes.Multiline = $true
     $scrollPanel.Controls.Add($txtNotes)
+
+    # Intune's "App version" (displayVersion) - what the Company Portal
+    # shows as the version. Blank leaves Intune's own value alone, like the
+    # other optional fields.
+    $lblAppVersion = New-Object System.Windows.Forms.Label
+    $lblAppVersion.Text = "App version (optional)"
+    $lblAppVersion.Location = New-Object System.Drawing.Point(433,(211 - $leftColumnShift))
+    $lblAppVersion.AutoSize = $true
+    $scrollPanel.Controls.Add($lblAppVersion)
+
+    $txtAppVersion = New-Object System.Windows.Forms.TextBox
+    $txtAppVersion.Location = New-Object System.Drawing.Point(433,(230 - $leftColumnShift))
+    $txtAppVersion.Size = New-Object System.Drawing.Size(402,24)
+    $scrollPanel.Controls.Add($txtAppVersion)
+
+    $chkFeatured = New-Object System.Windows.Forms.CheckBox
+    $chkFeatured.Text = "Show this as a featured app in the Company Portal"
+    $chkFeatured.Location = New-Object System.Drawing.Point(15,(433 - $leftColumnShift))
+    $chkFeatured.AutoSize = $true
+    $scrollPanel.Controls.Add($chkFeatured)
 
     $lblPackage = New-Object System.Windows.Forms.Label
     $lblPackage.Text = "Package (.intunewin) - used when creating a new app, or when replacing content on an existing one"
@@ -1115,9 +1136,11 @@ function Global:Show-CreateInIntuneDialog {
             Controls = @(
                 $chkForceNew, $chkReplaceContent,
                 $lblName, $txtCreateName, $lblDesc, $txtDesc,
-                $lblPublisher, $txtPublisher, $lblOwner, $txtOwner,
+                $lblPublisher, $txtPublisher, $lblAppVersion, $txtAppVersion,
+                $lblOwner, $txtOwner,
                 $lblDeveloper, $txtDeveloper, $lblInfoUrl, $txtInfoUrl,
-                $lblPrivacyUrl, $txtPrivacyUrl, $lblNotes, $txtNotes
+                $lblPrivacyUrl, $txtPrivacyUrl, $lblNotes, $txtNotes,
+                $chkFeatured
             )
         }
         @{
@@ -1580,6 +1603,8 @@ function Global:Show-CreateInIntuneDialog {
         if ($KeepLocalFields -contains "Information URL")       { $txtInfoUrl.Text = $LocalSnapshot.InformationUrl }
         if ($KeepLocalFields -contains "Privacy URL")           { $txtPrivacyUrl.Text = $LocalSnapshot.PrivacyUrl }
         if ($KeepLocalFields -contains "Notes")                 { $txtNotes.Text = $LocalSnapshot.Notes }
+        if ($KeepLocalFields -contains "App version")           { $txtAppVersion.Text = [string]$LocalSnapshot.AppVersion }
+        if ($KeepLocalFields -contains "Featured app")          { $chkFeatured.Checked = [bool]$LocalSnapshot.IsFeatured }
         if ($KeepLocalFields -contains "Install command")       { $txtInstall.Text = $LocalSnapshot.InstallCommand }
         if ($KeepLocalFields -contains "Uninstall command")     { $txtUninstall.Text = $LocalSnapshot.UninstallCommand }
         if ($KeepLocalFields -contains "Architecture") {
@@ -1874,7 +1899,7 @@ function Global:Show-CreateInIntuneDialog {
     # only fire for user input.
     $userEditBox = @{ Value = $false }
     $metadataTextBoxes = @(
-        $txtDesc, $txtPublisher, $txtOwner, $txtDeveloper, $txtInfoUrl, $txtPrivacyUrl, $txtNotes,
+        $txtDesc, $txtPublisher, $txtAppVersion, $txtOwner, $txtDeveloper, $txtInfoUrl, $txtPrivacyUrl, $txtNotes,
         $txtInstall, $txtUninstall, $txtDetection, $txtMsiCode, $txtMsiVersion,
         $txtFilePath, $txtFileName, $txtFileDetValue,
         $txtRegKeyPath, $txtRegValueName, $txtRegDetValue,
@@ -1884,7 +1909,7 @@ function Global:Show-CreateInIntuneDialog {
     foreach ($editCombo in @($cmbDetectionType, $cmbMsiOperator, $cmbFileDetType, $cmbFileOperator, $cmbRegDetType, $cmbRegOperator, $cmbContext, $cmbMinOS, $cmbRestartBehavior)) {
         $editCombo.Add_SelectionChangeCommitted($markUserEdit)
     }
-    foreach ($editCheck in @($chkArchX86, $chkArchX64, $chkArchArm64, $chkFileCheck32, $chkRegCheck32, $chkAllowUninstall)) {
+    foreach ($editCheck in @($chkArchX86, $chkArchX64, $chkArchArm64, $chkFileCheck32, $chkRegCheck32, $chkAllowUninstall, $chkFeatured)) {
         $editCheck.Add_Click($markUserEdit)
     }
     # ItemCheck also fires for checks set from code - only one made while
@@ -2191,6 +2216,8 @@ function Global:Show-CreateInIntuneDialog {
             InformationUrl        = $txtInfoUrl.Text.Trim()
             PrivacyUrl            = $txtPrivacyUrl.Text.Trim()
             Notes                 = $txtNotes.Text.Trim()
+            AppVersion            = $txtAppVersion.Text.Trim()
+            IsFeatured            = $chkFeatured.Checked
             InstallCommand        = $txtInstall.Text
             UninstallCommand      = $txtUninstall.Text
             DetectionRule         = $detectionRuleConfig
@@ -2391,6 +2418,8 @@ function Global:Show-CreateInIntuneDialog {
         $txtInfoUrlRef = $txtInfoUrl
         $txtPrivacyUrlRef = $txtPrivacyUrl
         $txtNotesRef = $txtNotes
+        $txtAppVersionRef = $txtAppVersion
+        $chkFeaturedRef = $chkFeatured
         $txtInstallRef = $txtInstall
         $txtUninstallRef = $txtUninstall
         $cmbContextRef = $cmbContext
@@ -2433,7 +2462,10 @@ function Global:Show-CreateInIntuneDialog {
                         # a genuinely brand-new create, where Intune hasn't
                         # necessarily processed/reported a version yet.
                         $resultBoxRef.IntuneAppType = "Windows app (Win32)"
-                        $resultBoxRef.IntuneAppVersion = $fetchedIntuneFactsBoxRef.DisplayVersion
+                        # An App version just pushed is what Intune now
+                        # reports - the fetched one predates this deploy.
+                        $pushedAppVersion = $txtAppVersionRef.Text.Trim()
+                        $resultBoxRef.IntuneAppVersion = if ($pushedAppVersion) { $pushedAppVersion } else { $fetchedIntuneFactsBoxRef.DisplayVersion }
 
                         # Builds and saves a catalog-shaped metadata object
                         # now, same schema and same shared function "Save
@@ -2462,6 +2494,8 @@ function Global:Show-CreateInIntuneDialog {
                                 informationUrl   = $txtInfoUrlRef.Text.Trim()
                                 privacyUrl       = $txtPrivacyUrlRef.Text.Trim()
                                 notes            = $txtNotesRef.Text.Trim()
+                                appVersion       = $txtAppVersionRef.Text.Trim()
+                                isFeatured       = $chkFeaturedRef.Checked
                                 installCommand   = $txtInstallRef.Text
                                 uninstallCommand = $txtUninstallRef.Text
                                 architecture     = ($selectedArchesRef -join ",")
@@ -2499,7 +2533,7 @@ function Global:Show-CreateInIntuneDialog {
                                 & $clearUserEditsRef
                             }
                             else {
-                                $localSaveResult = Save-AppMetadataToLocalCatalog -AppsRef $appsRefRef -LinkedFilePath $linkedFilePathRef -AppName $catalogAppNameRef -Metadata $createMetadata -NewAppId $result.appId -IntuneAppVersion $fetchedIntuneFactsBoxRef.DisplayVersion
+                                $localSaveResult = Save-AppMetadataToLocalCatalog -AppsRef $appsRefRef -LinkedFilePath $linkedFilePathRef -AppName $catalogAppNameRef -Metadata $createMetadata -NewAppId $result.appId -IntuneAppVersion $resultBoxRef.IntuneAppVersion
                                 $localSaveOk = $localSaveResult.Success
                             }
                         }
@@ -2836,6 +2870,8 @@ function Global:Show-CreateInIntuneDialog {
             $fInformationUrl = $txtInfoUrl.Text.Trim()
             $fPrivacyUrl = $txtPrivacyUrl.Text.Trim()
             $fNotes = $txtNotes.Text.Trim()
+            $fAppVersion = $txtAppVersion.Text.Trim()
+            $fIsFeatured = $chkFeatured.Checked
             $fInstallCommand = $txtInstall.Text
             $fUninstallCommand = $txtUninstall.Text
             Write-Log "Save for later: checkpoint 1/6 (simple text fields) OK.`r`n"
@@ -2890,6 +2926,8 @@ function Global:Show-CreateInIntuneDialog {
                 informationUrl   = $fInformationUrl
                 privacyUrl       = $fPrivacyUrl
                 notes            = $fNotes
+                appVersion       = $fAppVersion
+                isFeatured       = $fIsFeatured
                 installCommand   = $fInstallCommand
                 uninstallCommand = $fUninstallCommand
                 architecture     = $fArchitecture
@@ -3014,6 +3052,8 @@ function Global:Show-CreateInIntuneDialog {
         if ($null -ne $m.informationUrl) { $txtInfoUrl.Text = $m.informationUrl }
         if ($null -ne $m.privacyUrl)     { $txtPrivacyUrl.Text = $m.privacyUrl }
         if ($null -ne $m.notes)          { $txtNotes.Text = $m.notes }
+        if ($null -ne $m.appVersion)     { $txtAppVersion.Text = $m.appVersion }
+        if ($null -ne $m.isFeatured)     { $chkFeatured.Checked = [bool]$m.isFeatured }
         if ($m.installCommand)           { $txtInstall.Text = $m.installCommand }
         if ($m.uninstallCommand)         { $txtUninstall.Text = $m.uninstallCommand }
         if ($m.detectionRule) {
@@ -3112,6 +3152,9 @@ function Global:Show-CreateInIntuneDialog {
             InformationUrl     = $txtInfoUrl.Text
             PrivacyUrl         = $txtPrivacyUrl.Text
             Notes              = $txtNotes.Text
+            # $null when the catalog never recorded it - not compared then
+            AppVersion         = if ($null -ne $m.appVersion) { $txtAppVersion.Text } else { $null }
+            IsFeatured         = if ($null -ne $m.isFeatured) { $chkFeatured.Checked } else { $null }
             InstallCommand     = $txtInstall.Text
             UninstallCommand   = $txtUninstall.Text
             Architecture       = $m.architecture
@@ -3197,6 +3240,8 @@ function Global:Show-CreateInIntuneDialog {
             $txtInfoUrlRef = $txtInfoUrl
             $txtPrivacyUrlRef = $txtPrivacyUrl
             $txtNotesRef = $txtNotes
+            $txtAppVersionRef = $txtAppVersion
+            $chkFeaturedRef = $chkFeatured
             $txtInstallRef = $txtInstall
             $txtUninstallRef = $txtUninstall
             $txtDetectionRef = $txtDetection
@@ -3304,6 +3349,8 @@ function Global:Show-CreateInIntuneDialog {
                 if ($null -ne $data.InformationUrl) { $txtInfoUrlRef.Text = $data.InformationUrl }
                 if ($null -ne $data.PrivacyInformationUrl) { $txtPrivacyUrlRef.Text = $data.PrivacyInformationUrl }
                 if ($null -ne $data.Notes)          { $txtNotesRef.Text = $data.Notes }
+                if ($null -ne $data.DisplayVersion) { $txtAppVersionRef.Text = [string]$data.DisplayVersion }
+                $chkFeaturedRef.Checked = [bool]$data.IsFeatured
                 if ($null -ne $data.InstallCommandLine)   { $txtInstallRef.Text = $data.InstallCommandLine }
                 if ($null -ne $data.UninstallCommandLine) { $txtUninstallRef.Text = $data.UninstallCommandLine }
                 # Live Intune value replaces whatever local held, once it's
@@ -3506,6 +3553,8 @@ function Global:Show-CreateInIntuneDialog {
                     if ((& $normalizeForCompare $data.InformationUrl) -ne (& $normalizeForCompare $localSnapshotRef.InformationUrl)) { $diffFields.Add("Information URL") }
                     if ((& $normalizeForCompare $data.PrivacyInformationUrl) -ne (& $normalizeForCompare $localSnapshotRef.PrivacyUrl)) { $diffFields.Add("Privacy URL") }
                     if ((& $normalizeForCompare $data.Notes) -ne (& $normalizeForCompare $localSnapshotRef.Notes)) { $diffFields.Add("Notes") }
+                    if ($null -ne $localSnapshotRef.AppVersion -and (& $normalizeForCompare $data.DisplayVersion) -ne (& $normalizeForCompare $localSnapshotRef.AppVersion)) { $diffFields.Add("App version") }
+                    if ($null -ne $localSnapshotRef.IsFeatured -and [bool]$data.IsFeatured -ne [bool]$localSnapshotRef.IsFeatured) { $diffFields.Add("Featured app") }
                     if ((& $normalizeForCompare $data.InstallCommandLine) -ne (& $normalizeForCompare $localSnapshotRef.InstallCommand)) { $diffFields.Add("Install command") }
                     if ((& $normalizeForCompare $data.UninstallCommandLine) -ne (& $normalizeForCompare $localSnapshotRef.UninstallCommand)) { $diffFields.Add("Uninstall command") }
                     if (([string]$archSource) -ne ([string]$localSnapshotRef.Architecture)) { $diffFields.Add("Architecture") }
@@ -3627,6 +3676,8 @@ function Global:Show-CreateInIntuneDialog {
                     if ($diffFields -contains "Information URL")         { $driftRows.Add([pscustomobject]@{ Field = "Information URL"; Local = $localSnapshotRef.InformationUrl; Intune = [string]$data.InformationUrl }) }
                     if ($diffFields -contains "Privacy URL")              { $driftRows.Add([pscustomobject]@{ Field = "Privacy URL"; Local = $localSnapshotRef.PrivacyUrl; Intune = [string]$data.PrivacyInformationUrl }) }
                     if ($diffFields -contains "Notes")                    { $driftRows.Add([pscustomobject]@{ Field = "Notes"; Local = $localSnapshotRef.Notes; Intune = [string]$data.Notes }) }
+                    if ($diffFields -contains "App version")              { $driftRows.Add([pscustomobject]@{ Field = "App version"; Local = [string]$localSnapshotRef.AppVersion; Intune = [string]$data.DisplayVersion }) }
+                    if ($diffFields -contains "Featured app")             { $driftRows.Add([pscustomobject]@{ Field = "Featured app"; Local = $(if ($localSnapshotRef.IsFeatured) { 'Yes' } else { 'No' }); Intune = $(if ($data.IsFeatured) { 'Yes' } else { 'No' }) }) }
                     if ($diffFields -contains "Install command")          { $driftRows.Add([pscustomobject]@{ Field = "Install command"; Local = $localSnapshotRef.InstallCommand; Intune = [string]$data.InstallCommandLine }) }
                     if ($diffFields -contains "Uninstall command")        { $driftRows.Add([pscustomobject]@{ Field = "Uninstall command"; Local = $localSnapshotRef.UninstallCommand; Intune = [string]$data.UninstallCommandLine }) }
                     if ($diffFields -contains "Architecture")             { $driftRows.Add([pscustomobject]@{ Field = "Architecture"; Local = $localSnapshotRef.Architecture; Intune = [string]$archSource }) }

@@ -347,7 +347,7 @@ function Global:Show-BatchEditMetadataDialog {
     $chkEnableInstallContext = New-Object System.Windows.Forms.CheckBox
     $chkEnableInstallContext.Text = "Install context"
     $chkEnableInstallContext.Location = New-Object System.Drawing.Point($textX,$textY)
-    $chkEnableInstallContext.Size = New-Object System.Drawing.Size(335,20)
+    $chkEnableInstallContext.Size = New-Object System.Drawing.Size(190,20)
     $dlg.Controls.Add($chkEnableInstallContext)
     $cmbInstallContext = New-Object System.Windows.Forms.ComboBox
     $cmbInstallContext.DropDownStyle = "DropDownList"
@@ -357,6 +357,21 @@ function Global:Show-BatchEditMetadataDialog {
     [void]$cmbInstallContext.Items.Add("User")
     $cmbInstallContext.SelectedIndex = 0
     $dlg.Controls.Add($cmbInstallContext)
+
+    # Intune's "Show this as a featured app in the Company Portal" - on the
+    # same row as Install context, both being one choice rather than text.
+    $chkEnableFeatured = New-Object System.Windows.Forms.CheckBox
+    $chkEnableFeatured.Text = "Featured app"
+    $chkEnableFeatured.Location = New-Object System.Drawing.Point(($textX + 210),$textY)
+    $chkEnableFeatured.Size = New-Object System.Drawing.Size(125,20)
+    $dlg.Controls.Add($chkEnableFeatured)
+    $featuredTip = New-Object System.Windows.Forms.ToolTip
+    $featuredTip.SetToolTip($chkEnableFeatured, "Show this as a featured app in the Company Portal.")
+    $chkFeatured = New-Object System.Windows.Forms.CheckBox
+    $chkFeatured.Text = "Yes"
+    $chkFeatured.Location = New-Object System.Drawing.Point(($textX + 228),($textY + 22))
+    $chkFeatured.Size = New-Object System.Drawing.Size(60,22)
+    $dlg.Controls.Add($chkFeatured)
 
     $chkCatalogOnly = New-Object System.Windows.Forms.CheckBox
     $chkCatalogOnly.Text = "Catalog only - don't send anything to Intune"
@@ -389,7 +404,8 @@ function Global:Show-BatchEditMetadataDialog {
             Title = 'Description and commands'
             Controls = @(
                 @($textFieldControls.Values | ForEach-Object { $_.Enable; $_.Text })
-                $chkEnableInstallContext, $cmbInstallContext
+                $chkEnableInstallContext, $cmbInstallContext,
+                $chkEnableFeatured, $chkFeatured
             )
         }
     )
@@ -477,6 +493,8 @@ function Global:Show-BatchEditMetadataDialog {
             informationUrl   = $m.informationUrl
             privacyUrl       = $m.privacyUrl
             notes            = $m.notes
+            appVersion       = $m.appVersion
+            isFeatured       = $m.isFeatured
             installCommand   = $m.installCommand
             uninstallCommand = $m.uninstallCommand
             architecture     = $m.architecture
@@ -513,6 +531,7 @@ function Global:Show-BatchEditMetadataDialog {
         if ($null -ne $Changes.InstallCommand)   { $newMetadata.installCommand = $Changes.InstallCommand }
         if ($null -ne $Changes.UninstallCommand) { $newMetadata.uninstallCommand = $Changes.UninstallCommand }
         if ($null -ne $Changes.InstallContext)   { $newMetadata.installContext = $Changes.InstallContext }
+        if ($null -ne $Changes.IsFeatured)       { $newMetadata.isFeatured = $Changes.IsFeatured }
         if ($null -ne $Changes.Dependencies) {
             # An app can't depend on itself - silently dropped here rather
             # than failing the whole batch over it, same "skip just the
@@ -578,6 +597,8 @@ function Global:Show-BatchEditMetadataDialog {
             InformationUrl          = $newMetadata.informationUrl
             PrivacyUrl              = $newMetadata.privacyUrl
             Notes                   = $newMetadata.notes
+            AppVersion              = $newMetadata.appVersion
+            IsFeatured              = $newMetadata.isFeatured
             InstallCommand          = $newMetadata.installCommand
             UninstallCommand        = $newMetadata.uninstallCommand
             DetectionRule           = $newMetadata.detectionRule
@@ -680,7 +701,11 @@ function Global:Show-BatchEditMetadataDialog {
             [System.Windows.Forms.MessageBox]::Show("Check at least one app to change.", "Nothing selected", "OK", "Warning") | Out-Null
             return
         }
-        if (-not ($chkEnableArch.Checked -or $chkEnableMinOS.Checked -or $chkEnableDiskSpace.Checked -or $chkEnableMemory.Checked -or $chkEnableProcessors.Checked -or $chkEnableCpuSpeed.Checked -or $chkEnableInstallTime.Checked -or $chkEnableRestartBehavior.Checked -or $chkEnableAllowUninstall.Checked -or $chkEnableReturnCodes.Checked -or $chkEnableDependencies.Checked)) {
+        # The text fields and the second tab's choices count too - they
+        # were missing here, so ticking only Publisher (say) was refused
+        # with "check at least one field".
+        $anyTextFieldTicked = @($textFieldControls.Values | Where-Object { $_.Enable.Checked }).Count -gt 0
+        if (-not ($chkEnableArch.Checked -or $chkEnableMinOS.Checked -or $chkEnableDiskSpace.Checked -or $chkEnableMemory.Checked -or $chkEnableProcessors.Checked -or $chkEnableCpuSpeed.Checked -or $chkEnableInstallTime.Checked -or $chkEnableRestartBehavior.Checked -or $chkEnableAllowUninstall.Checked -or $chkEnableReturnCodes.Checked -or $chkEnableDependencies.Checked -or $anyTextFieldTicked -or $chkEnableInstallContext.Checked -or $chkEnableFeatured.Checked)) {
             [System.Windows.Forms.MessageBox]::Show("Check at least one field to change.", "Nothing to change", "OK", "Warning") | Out-Null
             return
         }
@@ -725,6 +750,7 @@ function Global:Show-BatchEditMetadataDialog {
             Description = $null; Publisher = $null; Owner = $null; Developer = $null
             InformationUrl = $null; PrivacyUrl = $null; Notes = $null
             InstallCommand = $null; UninstallCommand = $null; InstallContext = $null
+            IsFeatured = $null
         }
         # A ticked text field is applied exactly as typed, blank included -
         # that's how you clear a Publisher across many apps at once.
@@ -738,6 +764,10 @@ function Global:Show-BatchEditMetadataDialog {
         if ($chkEnableInstallContext.Checked) {
             $changes.InstallContext = [string]$cmbInstallContext.SelectedItem
             $changeSummary.Add("Install context -> $($changes.InstallContext)")
+        }
+        if ($chkEnableFeatured.Checked) {
+            $changes.IsFeatured = $chkFeatured.Checked
+            $changeSummary.Add("Featured app -> $(if ($chkFeatured.Checked) { 'Yes' } else { 'No' })")
         }
         if ($chkEnableArch.Checked) {
             $archList = @(@("x86","x64","arm64") | Where-Object { ($_ -eq "x86" -and $chkArchX86.Checked) -or ($_ -eq "x64" -and $chkArchX64.Checked) -or ($_ -eq "arm64" -and $chkArchArm64.Checked) })
