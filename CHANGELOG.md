@@ -51,6 +51,11 @@
   without it, as did "Delete from Intune" and exporting the catalog as a
   template - so a package kept somewhere its name doesn't predict had to
   be picked again.
+- **Deploying from the grid after changing the display name no longer
+  duplicates the app in the catalog.** The result was saved under the
+  display name sent to Intune rather than the catalog entry's own name,
+  so it landed as a second entry, and the original was then renamed to
+  match - two entries with the same name and App ID.
 - **A failed read of an app's groups no longer looks like "no groups".**
   Pull groups from Intune used to untick every group and report a match;
   a group name Intune can't resolve no longer shows as a difference or

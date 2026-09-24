@@ -2347,6 +2347,13 @@ function Global:Show-CreateInIntuneDialog {
         $configPathRef = $configPath
         $procBoxRef = $procBox
         $appNameRef = $config.AppName
+        # The CATALOG entry's name, for finding it again after the deploy.
+        # $appNameRef is the display name sent to Intune, which can be
+        # changed on the Metadata tab - looked up by that, the result was
+        # saved as a second catalog entry under the new name, and Deploy
+        # from the grid then renamed the original to match: two entries,
+        # one name, one App ID.
+        $catalogAppNameRef = if ($AppName) { $AppName } else { $config.AppName }
         $fromAppEditorRef = $FromAppEditor
         $callerHasExistingCatalogEntryRef = $CallerHasExistingCatalogEntry
         $rtbLogRef = $rtbCreateLog
@@ -2492,7 +2499,7 @@ function Global:Show-CreateInIntuneDialog {
                                 & $clearUserEditsRef
                             }
                             else {
-                                $localSaveResult = Save-AppMetadataToLocalCatalog -AppsRef $appsRefRef -LinkedFilePath $linkedFilePathRef -AppName $appNameRef -Metadata $createMetadata -NewAppId $result.appId -IntuneAppVersion $fetchedIntuneFactsBoxRef.DisplayVersion
+                                $localSaveResult = Save-AppMetadataToLocalCatalog -AppsRef $appsRefRef -LinkedFilePath $linkedFilePathRef -AppName $catalogAppNameRef -Metadata $createMetadata -NewAppId $result.appId -IntuneAppVersion $fetchedIntuneFactsBoxRef.DisplayVersion
                                 $localSaveOk = $localSaveResult.Success
                             }
                         }
@@ -2542,7 +2549,7 @@ function Global:Show-CreateInIntuneDialog {
                             }
                         }
                         if (-not $assignGroups) {
-                            $deployedCatalogApp = @($appsRefRef | Where-Object { $_.appName -eq $appNameRef }) | Select-Object -First 1
+                            $deployedCatalogApp = @($appsRefRef | Where-Object { $_.appName -eq $catalogAppNameRef }) | Select-Object -First 1
                             if ($deployedCatalogApp) {
                                 $assignGroups = @{
                                     Required  = @($deployedCatalogApp.requiredFor)
