@@ -1,6 +1,28 @@
 # Changelog
 
-## 1.4.8
+## 1.4.9
+
+### Added
+
+- **Filter the grid by problem** - Has a problem, Differs from Intune,
+  Not deployed, Package missing - beside the search box. Copy App ID is
+  on the right-click menu.
+- **Push metadata from more places.** The main grid's right-click menu,
+  the audit's results and the Last Audit window (now a small window with
+  Pull from Intune, Push groups and Push metadata, not a message box).
+  For one app it opens the app editor on its Deploy side, the compare
+  starting on the catalog's values; for several, one window compares
+  them with Intune and pushes the ticked ones.
+- **The audit says what to do about a difference, and does it.** It
+  offers both Pull and Push, with Select all that differ; Push is split
+  into Push groups and Push metadata. It opens with the last known
+  results and how old they are, and Re-check selected audits just those.
+- **Group differences say which side has which groups**, in the audit,
+  Last Audit and the app editor. The editor's Assignments tab compares
+  its groups with Intune the first time it opens.
+- **A Package location card on the app editor's Catalog tab** - the
+  resolved package, whether it was found, Open folder and Copy path -
+  replacing the grid's Package folder column.
 
 ### Fixes
 
@@ -26,6 +48,31 @@
   without it, as did "Delete from Intune" and exporting the catalog as a
   template - so a package kept somewhere its name doesn't predict had to
   be picked again.
+- **A failed read of an app's groups no longer looks like "no groups".**
+  Pull groups from Intune used to untick every group and report a match;
+  a group name Intune can't resolve no longer shows as a difference or
+  gets its ID written into the catalog.
+- **Closing the Local vs. Intune compare before an update doesn't send
+  it.** From Push metadata, Cancel used to send Intune's own values back
+  and save them into the catalog.
+- **Last Audit keeps a time per check**, so a partial check no longer
+  makes old results look fresh; batch Push metadata no longer marks
+  unchecked fields as OK.
+
+### Polish
+
+- The grid drops the Uncommon and App ID columns and counts groups in one
+  column; fixed-length columns are sized once to their longest value.
+- "Update Metadata" is called Push Metadata, as everywhere else.
+- A status with good news plus a note is no longer shown in warning
+  orange.
+- The audit's buttons stay in place on the Checks tab.
+- The release zip holds only what runs the app.
+
+## 1.4.8
+
+### Fixes
+
 - **An app imported from Intune now gets its Winget ID, Type and
   Version.** Type and Version came back with the same fetch that reads
   everything else and were being dropped, which is why an imported app
