@@ -64,7 +64,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test: [DialogSmoke, CatalogCrud, CloseConfirmation, DialogLayout, GridBehavior, DeployDefaults]
+        test: [DialogSmoke, CatalogCrud, CloseConfirmation, DialogLayout, GridBehavior, DeployDefaults, ChecksWindow]
         host: [pwsh, powershell]
     steps:
       - uses: actions/checkout@v7
