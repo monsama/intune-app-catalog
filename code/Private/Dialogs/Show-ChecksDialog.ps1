@@ -987,6 +987,16 @@ function Global:Show-ChecksDialog {
     }.GetNewClosure()
 
     $grid.Add_SelectionChanged({ & $ctx.UpdateButtons }.GetNewClosure())
+    # A DataGridView selects its first row by itself when it is first
+    # shown - which would offer fixes for an app nobody picked, and a
+    # stray click would apply one. Cleared once, after that happens.
+    $firstShowBox = @{ Done = $false }
+    $grid.Add_VisibleChanged({
+        if (-not $grid.Visible -or $firstShowBox.Done) { return }
+        $firstShowBox.Done = $true
+        $gridToClear = $grid
+        [void]$grid.BeginInvoke([Action]{ $gridToClear.ClearSelection(); $gridToClear.CurrentCell = $null }.GetNewClosure())
+    }.GetNewClosure())
     $cmbShow.Add_SelectedIndexChanged({
         if ($ctx.Rendering) { return }
         $ctx.ShowFilter = ([string]$ctx.CmbShow.SelectedItem) -replace ' \(\d+\)$', ''
