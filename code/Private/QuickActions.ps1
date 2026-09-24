@@ -7,7 +7,7 @@ function Global:Invoke-QuickDeploy {
     }
     # The catalog entry itself is the source here - nothing is being edited
     # alongside, so what it holds now is what a deploy should push.
-    $deployResult = Show-CreateInIntuneDialog -AppName $app.appName -WingetId $app.wingetId -ExistingAppId $app.appId `
+    $deployResult = Show-CreateInIntuneDialog -AppName $app.appName -WingetId $app.wingetId -ExistingAppId $app.appId -PackagePath ([string]$app.packagePath) `
         -GetAssignGroups {
             @{
                 Required  = @($app.requiredFor)

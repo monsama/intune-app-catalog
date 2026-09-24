@@ -82,6 +82,12 @@ function Global:Show-AppEditor {
     # above.
     $deployAfterSaveBox = @{ Value = $false }
 
+    # Tells the Deploy tabs the Winget ID changed ($syncWingetId, set once
+    # those tabs exist further down). Declared up here for the same reason
+    # as the boxes above: "Search winget..." is built before them and has
+    # to be able to call it.
+    $deploySyncBox = @{ Run = $null }
+
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Font = Get-AppUiFont
     # The app's name in the title, because five tabs in there is nothing
@@ -433,7 +439,15 @@ function Global:Show-AppEditor {
         # pre-filling just meant clearing stale text before typing an actual
         # search term most of the time.
         $picked = Show-WingetSearchDialog
-        if ($picked) { $txtWinget.Text = $picked }
+        if ($picked) {
+            $txtWinget.Text = $picked
+            # Setting .Text raises no Leave, so without this the Deploy
+            # tabs kept treating a new app as a custom one - no install,
+            # uninstall or detection, and its own missing .intunewin
+            # instead of the shared init.intunewin - until you happened to
+            # switch tabs. Pressing Deploy straight away sent that.
+            if ($deploySyncBox.Run) { & $deploySyncBox.Run }
+        }
     }.GetNewClosure())
 
     # What used to run when the separate Deploy window closed. The Intune
@@ -590,6 +604,8 @@ function Global:Show-AppEditor {
                 # describe.
                 intuneAppType    = ""
                 intuneAppVersion = ""
+                # Not an Intune fact - the package is still on disk.
+                packagePath      = [string]$existingForClear.packagePath
                 requiredFor      = @($existingForClear.requiredFor)
                 availableFor     = @($existingForClear.availableFor)
                 uninstallFor     = @($existingForClear.uninstallFor)
@@ -1230,7 +1246,7 @@ function Global:Show-AppEditor {
     # checkboxes, on a tab of this same window, and they can be ticked
     # while the Deploy tab is sitting open. A snapshot taken here would
     # push whatever was selected when the editor opened.
-    $deployHost = Show-CreateInIntuneDialog -AppName $txtName.Text.Trim() -WingetId $txtWinget.Text.Trim() `
+    $deployHost = Show-CreateInIntuneDialog -AppName $txtName.Text.Trim() -WingetId $txtWinget.Text.Trim() -PackagePath $txtAppPackagePath.Text.Trim() `
         -ExistingAppId $txtId.Text.Trim() -FromAppEditor -CallerHasExistingCatalogEntry:([bool]$ExistingApp) `
         -CurrentIndex $CurrentIndex -HostTabControl $editorTabs -HostForm $dlg -HostBottomY 667 `
         -OnDeployComplete $ApplyDeployResult -OnLiveFetch $compareGroupsWithIntune -PreferLocal:$PreferLocal `
@@ -1253,6 +1269,10 @@ function Global:Show-AppEditor {
     # uninstall command and no detection script, and nothing that would
     # ever fill them in. Telling it the ID changed regenerates exactly the
     # fields still holding what it generated before.
+    # Declared, so Deploy's catch-up below never picks up a caller's
+    # variable of the same name when a hook isn't offered.
+    $syncWingetId = $null
+    $syncAppName = $null
     if ($deployHost.RetargetWingetId) {
         $retargetRef = $deployHost.RetargetWingetId
         $wingetBoxRef = $txtWinget
@@ -1272,6 +1292,7 @@ function Global:Show-AppEditor {
         # instead, because there are two ways this field changes and only
         # one of them involves the keyboard:
         $txtWinget.Add_Leave($syncWingetId)
+        $deploySyncBox.Run = $syncWingetId
 
         # The app's name fills the display name on the Metadata tab, for
         # the same reason and by the same route: that tab is built before
@@ -1295,6 +1316,35 @@ function Global:Show-AppEditor {
         # fields are about to be looked at, whichever way the ID got there,
         # so it is the one hook that cannot be got round.
         $editorTabs.Add_SelectedIndexChanged($syncWingetId)
+    }
+
+    # The package override on the Catalog tab, by the same two routes -
+    # Browse... assigns .Text, so again no Leave.
+    $syncPackagePath = $null
+    if ($deployHost.RetargetPackagePath) {
+        $retargetPkgRef = $deployHost.RetargetPackagePath
+        $pkgBoxRef = $txtAppPackagePath
+        $lastPkgBox = @{ Value = $txtAppPackagePath.Text.Trim() }
+        $syncPackagePath = {
+            $nowPkg = $pkgBoxRef.Text.Trim()
+            if ($nowPkg -eq $lastPkgBox.Value) { return }
+            $lastPkgBox.Value = $nowPkg
+            & $retargetPkgRef $nowPkg
+        }.GetNewClosure()
+        $txtAppPackagePath.Add_Leave($syncPackagePath)
+        $editorTabs.Add_SelectedIndexChanged($syncPackagePath)
+    }
+
+    # Every one of those hooks can be got round - a field set from code, or
+    # Deploy pressed without a tab switch or a Leave in between - and what
+    # that cost was a new app deploying with ...\App.intunewin, the
+    # package of an app with no name. So Deploy runs all three itself
+    # before it checks anything; each is a no-op when nothing moved.
+    if ($deployHost.BeforeDeploy) {
+        $beforeSyncs = @($syncAppName, $syncWingetId, $syncPackagePath | Where-Object { $_ })
+        $deployHost.BeforeDeploy.Run = {
+            foreach ($beforeSync in $beforeSyncs) { & $beforeSync }
+        }.GetNewClosure()
     }
 
     # Its own two launch buttons were how you reached that window. There is
@@ -1544,13 +1594,32 @@ function Global:Show-AppEditor {
         # Falls back to $Global:App.Apps only if no file exists yet (a brand
         # new app that's never been saved at all).
         $preservedMetadata = $null
-        # Freshest first: metadata just staged by "Deploy to Intune..." in
+        # Freshest of all: fields edited by hand on this window's own
+        # Deploy tabs. They used to be ignored here entirely - a Publisher,
+        # Owner, Notes... typed there without deploying was lost on save,
+        # since this click only ever kept the metadata already on file.
+        # Only when something was actually edited, so an app with no
+        # metadata doesn't gain the generated defaults just by being saved.
+        # Enter in the Winget ID field saves (AcceptButton) without that
+        # field ever raising Leave - catch the Deploy tabs up first.
+        if ($deploySyncBox.Run) { & $deploySyncBox.Run }
+        $deployHostForSave = $deployHostBox.Host
+        if ($deployHostForSave -and $deployHostForSave.HasUserEdits -and (& $deployHostForSave.HasUserEdits)) {
+            $editedMetadata = & $deployHostForSave.GetMetadata
+            if ($null -eq $editedMetadata) {
+                # GetMetadata already said which field is wrong
+                $deployAfterSaveBox.Value = $false
+                return
+            }
+            $preservedMetadata = $editedMetadata
+        }
+        # Next: metadata just staged by "Deploy to Intune..." in
         # THIS still-open editing session (see $pendingDeployMetadataBox
         # above) is more current than whatever's already on disk or in
         # memory - a Create/Update or Save for later click that just ran
         # deliberately hasn't been written anywhere yet, precisely so this
         # click is the one that commits it.
-        if ($pendingDeployMetadataBox.Value) {
+        if (-not $preservedMetadata -and $pendingDeployMetadataBox.Value) {
             $preservedMetadata = $pendingDeployMetadataBox.Value
         }
         if (-not $preservedMetadata) {
