@@ -119,7 +119,7 @@ $Global:App.EntraDirectoryLookupRunning = $false   # guards against two overlapp
 $Global:App.EntraDirectoryCacheFetchedAt = $null   # when the cache above was last filled by a SUCCESSFUL lookup; only -ReuseCacheWithinSeconds callers read it
 # Populated whenever any live-vs-Intune check runs for an app - the
 # single-app auto-fetch inside Show-CreateInIntuneDialog, or
-# Show-IntuneAuditDialog's own bulk run - keyed by appName. Persisted to
+# Show-ChecksDialog's own bulk run - keyed by appName. Persisted to
 # its OWN file ($Global:App.LastAuditCachePath), deliberately NOT round-tripped
 # through ConvertTo-AppRecord/ConvertTo-SingleAppJson (both are strict,
 # hand-rolled field whitelists that exist specifically so a Git diff for
@@ -147,7 +147,7 @@ $Global:App.LastAuditCachePath = Join-Path $Global:App.RootPath "data\last-audit
 $Global:App.CatalogGeneration = 0
 $Global:App.LogFileWriter = $null   # opened in Initialize-Folders, written to by Write-Log, closed on FormClosing - see both below
 $Global:App.LogFlushTimer = $null   # periodic flush timer for the above - see Initialize-Folders
-$Global:App.AppVersion = "1.4.9"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance rather than by diffing the whole file
+$Global:App.AppVersion = "1.5.0"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance rather than by diffing the whole file
 
 # App-only Graph auth (certificate) - must match the values in the Assign step /
 # your Entra ID app registration. Left blank on purpose - no tenant/client
@@ -607,10 +607,8 @@ $btnBatchEdit = New-Object System.Windows.Forms.Button; $btnBatchEdit.Text = "Ba
 $btnBatchDeploy = New-Object System.Windows.Forms.Button; $btnBatchDeploy.Text = "&Batch deploy..."
 $btnGroupManager = New-Object System.Windows.Forms.Button; $btnGroupManager.Text = "Group manager..."
 $btnFavoriteGroups = New-Object System.Windows.Forms.Button; $btnFavoriteGroups.Text = "Favorite groups or users..."
-# One button for all four read-only checks (dependencies, catalog groups
-# against Entra ID, Winget IDs, diagnostics): they are tabs of one window
-# now - see Show-ChecksDialog. Each still opens standalone if called that
-# way, which is how the layout audit checks them one at a time.
+# One button for every check: one run and one list of what to fix - see
+# Show-ChecksDialog. Diagnostics (this machine's setup) is in Settings.
 $btnChecks = New-Object System.Windows.Forms.Button; $btnChecks.Text = "&Checks..."
 $Global:App.BtnRunLaunch = New-Object System.Windows.Forms.Button; $Global:App.BtnRunLaunch.Text = "&Package apps"
 $btnCertSetup = New-Object System.Windows.Forms.Button; $btnCertSetup.Text = "&Settings..."
@@ -635,7 +633,7 @@ $toolbarTips.SetToolTip($btnReload, "Discard any unsaved changes and reload the 
 $toolbarTips.SetToolTip($btnOpen, "Switch to a different folder of per-app JSON files.")
 $toolbarTips.SetToolTip($Global:App.BtnLookupIds, "Search Intune by name for apps missing an App ID, and fill it in.")
 $toolbarTips.SetToolTip($btnPlatformScripts, "The PowerShell scripts Intune runs on enrolled Windows devices: list them, add one, change one, delete one.")
-$toolbarTips.SetToolTip($btnCheckIntuneOnly, "Compares Intune against this catalog: apps in Intune not yet in the catalog, catalog apps renamed in Intune since, and catalog apps whose App ID no longer exists in Intune. Opens the Checks window on that tab.")
+$toolbarTips.SetToolTip($btnCheckIntuneOnly, "Compares Intune against this catalog: apps in Intune not yet in the catalog, catalog apps renamed in Intune since, and catalog apps whose App ID no longer exists in Intune. Opens the Checks window showing those rows.")
 $toolbarTips.SetToolTip($btnBatchAssign, "Add a favorite group to multiple apps at once, then preview and apply the result to Intune.")
 $toolbarTips.SetToolTip($btnBatchEdit, "Change one or more fields (architecture, min OS, requirements, restart behavior, return codes, dependencies) across multiple deployed Win32 apps at once, then push each one to Intune.")
 $toolbarTips.SetToolTip($btnBatchDeploy, "Create multiple apps in Intune, in dependency order. Uses metadata saved via 'Save for later...' where an app has it, otherwise the same defaults Deploy to Intune's own form would.")
@@ -644,7 +642,7 @@ $toolbarTips.SetToolTip($btnFavoriteGroups, "Pick which groups and users show up
 $toolbarTips.SetToolTip($Global:App.BtnRunLaunch, "Build the .intunewin package(s) for the selected (or all) uncommon apps.")
 $toolbarTips.SetToolTip($btnCertSetup, "Configure the Tenant ID, Client ID, and certificate used to connect to Microsoft Graph.")
 $toolbarTips.SetToolTip($btnDefaultValues, "Change the computed defaults every new Winget app starts with (architecture, min OS, requirements, return codes, ...). Doesn't touch any app already saved or deployed.")
-$toolbarTips.SetToolTip($btnChecks, "Every read-only check in one window: App IDs, audit and metadata against Intune, then dependencies, catalog groups against Entra ID, Winget IDs and this app's own diagnostics. Nothing here changes anything.")
+$toolbarTips.SetToolTip($btnChecks, "Checks everything in one run and lists what to fix: how the catalog lines up with the apps in Intune, each deployed app's metadata, groups, dependencies and assignments, the catalog's own dependencies, its groups against Entra ID, and its Winget IDs. The check only reads; the fixes under the list ask first.")
 $toolbarTips.SetToolTip($btnPrerequisites, "Check whether the Microsoft.Graph.Authentication PowerShell module this app needs is installed, and install it for your user account if it isn't.")
 
 $Global:App.TxtSearch = New-Object System.Windows.Forms.TextBox
@@ -704,7 +702,7 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
     ) | Sort-Object { [string]$_.Text }
 )))
 # "Look up App IDs..." and "Intune sync check..." are deliberately NOT
-# here any more - both are tabs of the Checks window, and the lookup one
+# here any more - both are part of the Checks window, and the lookup one
 # had already become a shortcut that ran the fetch and then opened that
 # very window on its App IDs tab. Two doors into one room, with only one
 # of them findable from the window itself.
@@ -719,8 +717,8 @@ $menuMoreActions = New-Object System.Windows.Forms.ContextMenuStrip
 [void]$menuMoreActions.Items.Add((New-OverflowSubmenu -Title "Entra ID" -Tips $toolbarTips -Items @(
     @{ Text = $btnGroupManager.Text; Btn = $btnGroupManager }
 )))
-# No "Verify" submenu any more. Every read-only check is one window of
-# tabs (Show-ChecksDialog) reached from the Intune group, and the one
+# No "Verify" submenu any more. Every check is one window (Show-ChecksDialog)
+# reached from the Intune group, and the one
 # entry this submenu had left - Prerequisites - is beside Settings, which
 # is what it is: it INSTALLS the missing Graph module rather than
 # reporting on anything, and it is where the other dialogs send you when
@@ -844,7 +842,7 @@ $btnDriftWarningCheck.Location = New-Object System.Drawing.Point(650, 5)
 $btnDriftWarningCheck.Size = New-Object System.Drawing.Size(150, 28)
 $btnDriftWarningCheck.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
 $Global:App.PanelDriftWarning.Controls.Add($btnDriftWarningCheck)
-$btnDriftWarningCheck.Add_Click({ Show-ChecksDialog -StartTab "Sync check"; $Global:App.PanelDriftWarning.Visible = $false })
+$btnDriftWarningCheck.Add_Click({ [void](Show-ChecksDialog -StartTab "Sync check"); $Global:App.PanelDriftWarning.Visible = $false })
 $btnDriftWarningDismiss = New-Object System.Windows.Forms.Button
 $btnDriftWarningDismiss.Text = "Dismiss"
 $btnDriftWarningDismiss.Location = New-Object System.Drawing.Point(810, 5)
@@ -878,7 +876,7 @@ $btnAuditWarningCheck.Location = New-Object System.Drawing.Point(650, 5)
 $btnAuditWarningCheck.Size = New-Object System.Drawing.Size(150, 28)
 $btnAuditWarningCheck.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
 $Global:App.PanelAuditWarning.Controls.Add($btnAuditWarningCheck)
-$btnAuditWarningCheck.Add_Click({ Show-ChecksDialog -StartTab "Audit"; Update-Grid; $Global:App.PanelAuditWarning.Visible = $false })
+$btnAuditWarningCheck.Add_Click({ [void](Show-ChecksDialog -StartTab "Audit"); Update-Grid; $Global:App.PanelAuditWarning.Visible = $false })
 $btnAuditWarningDismiss = New-Object System.Windows.Forms.Button
 $btnAuditWarningDismiss.Text = "Dismiss"
 $btnAuditWarningDismiss.Location = New-Object System.Drawing.Point(810, 5)
@@ -1037,11 +1035,13 @@ $btnEmptyFromIntune.Add_Click({
     # Returns whether anything was added, so the grid is rebuilt only when
     # there is something to show - and the empty panel hides itself as part
     # of that same refresh.
-    if (Show-IntuneOnlyAppsDialog) { Update-Grid }
+    # Opens the Checks window straight into a run, showing the apps that
+    # are in Intune but not the catalog - Add to catalog is right there.
+    [void](Show-ChecksDialog -StartTab "Sync check" -AutoRun)
 }.GetNewClosure())
 $Global:App.PanelEmptyCatalog.Controls.Add($btnEmptyFromIntune)
 $emptyPanelTips = New-Object System.Windows.Forms.ToolTip
-$emptyPanelTips.SetToolTip($btnEmptyFromIntune, "Lists every app already in Intune that this catalog has no entry for, and adds the ones you check - metadata, groups and App ID. The same check lives under Checks > Intune: Sync check once the catalog has apps in it.")
+$emptyPanelTips.SetToolTip($btnEmptyFromIntune, "Lists every app already in Intune that this catalog has no entry for, and adds the ones you check - metadata, groups and App ID. It opens the Checks window, which does the same any time later.")
 
 $tabCatalog.Controls.Add($Global:App.PanelEmptyCatalog)
 $Global:App.PanelEmptyCatalog.BringToFront()
@@ -1202,7 +1202,7 @@ $Global:App.Grid.Add_CellFormatting({
 # from both the single-app auto-fetch inside Show-CreateInIntuneDialog
 # (Metadata/Dependencies only - it has no Groups/Unknown Assignments check
 # of its own, see the note by its own Dependencies diff) and
-# Show-IntuneAuditDialog's two background fetches (every field, as each
+# Show-ChecksDialog's two background fetches (every field, as each
 # fetch completes).
 
 # Turns one app's cache entry (if any) into the main grid's "Last Audit"
@@ -1216,7 +1216,7 @@ $Global:App.Grid.Add_CellFormatting({
 # summary ("1 issue (5m ago)") - this is what double-clicking that cell
 # shows instead, breaking it back out into which of the four checks
 # actually found something, same field-by-field detail
-# Show-IntuneAuditDialog's own double-click already gives you there.
+# Show-ChecksDialog's own double-click already gives you there.
 
 # fields both Get-CatalogMetadataFieldDiffs and Merge-CatalogMetadata key
 # off of, so the two stay in sync by construction - a field added to one
@@ -1569,7 +1569,7 @@ $Global:App.Grid.Add_CellFormatting({
 # "Run audit" click.
 #
 # Deliberately does NOT also fold in the group-NAME-vs-Entra-ID check
-# (Show-GroupDriftCheckDialog) - that one is fundamentally group-centric
+# (Show-ChecksDialog) - that one is fundamentally group-centric
 # (one row per group name, "which apps reference this"), not app-centric,
 # and answers a different question ("does this group still exist at all")
 # than everything else here ("does this app's catalog entry match what
@@ -1693,10 +1693,10 @@ $menuItemSyncMetadata = New-Object System.Windows.Forms.ToolStripMenuItem "Pull 
 $menuItemSyncMetadata.ToolTipText = "Opens the sync dialog pre-scoped to your selected row(s). Read-only on the Intune side, like the toolbar version."
 # Same eligibility/scoping as $menuItemSyncMetadata right above - an app
 # needs an App ID before there's anything in Intune to audit against.
-# Reuses Show-IntuneAuditDialog's own -ScopedIndices (added specifically
+# Reuses Show-ChecksDialog's own -ScopedIndices (added specifically
 # for this), same as every other selection-aware item here.
 $menuItemAudit = New-Object System.Windows.Forms.ToolStripMenuItem "Run audit..."
-$menuItemAudit.ToolTipText = "Opens the audit dialog pre-scoped to your selected row(s), instead of every app. Read-only."
+$menuItemAudit.ToolTipText = "Checks your selected row(s) against Intune, Entra ID and winget right away, instead of every app. The check only reads."
 # What Intune reports about an app per device - read-only, one app at a
 # time (the report is per app, and a mixed list of several apps' devices
 # would say less than one app's list does).
@@ -1867,7 +1867,8 @@ $menuItemAssign.Add_Click({
 $menuItemSyncMetadata.Add_Click({
     $indices = Get-SelectedAppIndices
     if ($indices.Count -eq 0) { return }
-    Show-ChecksDialog -ScopedIndices $indices -StartTab "Metadata sync"
+    # The pull itself, not a check: it shows what would change and asks.
+    Show-SyncMetadataDialog -ScopedIndices $indices
     Update-Grid
 })
 
@@ -1962,7 +1963,7 @@ $menuItemInstallStatus.Add_Click({
 $menuItemAudit.Add_Click({
     $indices = Get-SelectedAppIndices
     if ($indices.Count -eq 0) { return }
-    Show-ChecksDialog -ScopedIndices $indices -StartTab "Audit"
+    [void](Show-ChecksDialog -ScopedIndices $indices -StartTab "Audit" -AutoRun)
     Update-Grid
 })
 
@@ -2103,9 +2104,9 @@ $Global:App.BtnLookupIds.Add_Click({
     Start-IntuneAppLookup -OnComplete {
         param($ok, $data)
         if ($ok) {
-            # One window for all three checks - the lookup that just ran
-            # fills the App IDs tab, and the same fetch serves the other two.
-            Show-ChecksDialog -StartTab "App IDs"
+            # The lookup that just ran is what the Checks window matches
+            # catalog apps without an App ID against, straight away.
+            [void](Show-ChecksDialog -StartTab "App IDs")
             Update-Grid
         }
         # "Module missing" / "Not configured" already got their own
@@ -2118,14 +2119,12 @@ $Global:App.BtnLookupIds.Add_Click({
 
 $btnCertSetup.Add_Click({ Show-CertificateSetupDialog; Update-CredentialWarningBanner })
 $btnDefaultValues.Add_Click({ Show-DefaultAppSettingsDialog })
-$btnChecks.Add_Click({ Show-ChecksDialog })
+$btnChecks.Add_Click({ [void](Show-ChecksDialog) })
 $btnPrerequisites.Add_Click({ [void](Show-PrerequisitesDialog) })
-# Opens the Checks window on the Sync check tab rather than a window of
-# its own - the tab is the same dialog, and the seven checks beside it are
-# usually the next question anyway. Refreshing the catalog grid afterwards
-# is that window's job now (its Tag.Changed contract).
+# Opens the Checks window showing how the catalog lines up with Intune.
+# Refreshing the catalog grid afterwards is that window's job.
 $btnCheckIntuneOnly.Add_Click({
-    Show-ChecksDialog -StartTab "Sync check"
+    [void](Show-ChecksDialog -StartTab "Sync check")
 })
 
 $btnBatchAssign.Add_Click({

@@ -286,7 +286,6 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'App editor (new)' { Show-AppEditor -ExistingApp $null }
     Add-LayoutAuditStep 'Add favorite group to apps' { Show-AddFavoriteGroupToAppsDialog -CandidateApps @($apps) }.GetNewClosure()
     Add-LayoutAuditStep 'Remove group from apps' { Show-RemoveGroupFromAppsDialog -CandidateApps @($apps) }.GetNewClosure()
-    Add-LayoutAuditStep 'Look up App IDs' { Show-AppIdMatchDialog }
     Add-LayoutAuditStep 'App registration guide' { Show-AppRegistrationGuideDialog }
     Add-LayoutAuditStep 'Batch assign' { Show-BatchAssignDialog -ScopedIndices $all }.GetNewClosure()
     Add-LayoutAuditStep 'Batch deploy' { Show-BatchDeployDialog -ScopedIndices @($iNoId) }.GetNewClosure()
@@ -326,21 +325,20 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'Delete from Intune (single)' { Show-DeleteAppDialog -AppId $a0.appId -AppName $a0.appName }.GetNewClosure()
     Add-LayoutAuditStep 'Delete from Intune (long name)' { Show-DeleteAppDialog -AppId $long.appId -AppName $long.appName }.GetNewClosure()
     Add-LayoutAuditStep 'Delete local certificate' { Show-DeleteLocalCertificateDialog }
-    Add-LayoutAuditStep 'Dependency overview' { Show-DependencyOverviewDialog }
     Add-LayoutAuditStep 'Diagnostics' { Show-DiagnosticsDialog }
     Add-LayoutAuditStep 'Add group or user' { Show-EntraMemberPicker }
     Add-LayoutAuditStep 'Favorite groups or users' { Show-FavoriteGroupsManager }
     Add-LayoutAuditStep 'Getting started' { Show-GettingStartedGuideDialog }
-    Add-LayoutAuditStep 'Group name check' { Show-GroupDriftCheckDialog }
-    Add-LayoutAuditStep 'Checks (all seven)' { Show-ChecksDialog }
+    # One list now - opened scoped too, where the title and the run
+    # narrow to the selected apps.
+    Add-LayoutAuditStep 'Checks' { [void](Show-ChecksDialog) }
+    Add-LayoutAuditStep 'Checks (scoped)' { [void](Show-ChecksDialog -ScopedIndices @($i0)) }.GetNewClosure()
     # The four standalone check dialogs are audited one by one above and
     # below; this is the window that hosts them as tabs, where they have
     # to fit a shared page instead of their own form.
     Add-LayoutAuditStep 'Group manager' { Show-GroupManagerDialog }
     Add-LayoutAuditStep 'Delete groups (bulk)' { Show-BulkDeleteGroupsDialog }
     Add-LayoutAuditStep 'Find a group' { Show-GroupOnlyPicker }
-    Add-LayoutAuditStep 'Intune Audit' { Show-IntuneAuditDialog }
-    Add-LayoutAuditStep 'Intune sync check' { Show-IntuneOnlyAppsDialog }
     Add-LayoutAuditStep 'Install status' { Show-AppInstallStatusDialog -AppId $a0.appId -AppName $a0.appName }.GetNewClosure()
     Add-LayoutAuditStep 'Platform scripts' { Show-PlatformScriptsDialog }
     Add-LayoutAuditStep 'Platform script run status' { Show-PlatformScriptRunStatusDialog -ScriptId 'd1e2f3a4-0000-4000-8000-000000000001' -ScriptName 'Set the time zone on every enrolled device' }
@@ -368,7 +366,6 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'Pull metadata and groups' { Show-SyncMetadataDialog -ScopedIndices @($i0) }.GetNewClosure()
     Add-LayoutAuditStep 'Assign groups' { Show-TargetedAssignDialog -AppId $a0.appId -AppName $a0.appName -RequiredGroups @($a0.requiredFor) -AvailableGroups @($a0.availableFor) -UninstallGroups @() }.GetNewClosure()
     Add-LayoutAuditStep 'Assign groups (long names)' { Show-TargetedAssignDialog -AppId $long.appId -AppName $long.appName -RequiredGroups @($longGroup) -AvailableGroups @() -UninstallGroups @() }.GetNewClosure()
-    Add-LayoutAuditStep 'Winget package check' { Show-WingetHealthCheckDialog }
     Add-LayoutAuditStep 'Search winget' { Show-WingetSearchDialog -InitialQuery '' }
     Add-LayoutAuditStep 'Multiple matches picker' {
         Show-SimpleListPicker -Title 'Multiple matches' -Prompt "Several Intune apps match '$($long.appName)'. Pick one:" -Items @("$($long.appName)  [$($long.appId)]", "Microsoft Visual C++ Redistributable  [c0ffee00-1111-4222-8333-444455556667]")

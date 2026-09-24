@@ -22,7 +22,7 @@ function Global:Show-CreateInIntuneDialog {
         # editor's own scope, true whenever ITS OWN "auto-save immediately
         # after a successful Deploy/Push Metadata" branch will fire
         # (Show-AppEditor.ps1, $btnCreateInIntune.Add_Click). Confirmed a
-        # real mismatch between the two: Show-IntuneOnlyAppsDialog's own
+        # real mismatch between the two: Show-ChecksDialog's own
         # "Add to catalog..." flow opens the editor with -ExistingApp set
         # to a pre-fill object (real appName/appId/groups from Intune) but
         # no -CurrentIndex at all, since the app isn't in $Global:App.Apps
@@ -3768,7 +3768,7 @@ function Global:Show-CreateInIntuneDialog {
                     # would, just for Metadata/Dependencies only (this
                     # dialog has no Groups/Unknown Assignments check of its
                     # own - see the note on Get-GroupFieldDiffs's usage
-                    # inside Show-IntuneAuditDialog for why that one stays
+                    # inside Show-ChecksDialog for why that one stays
                     # bulk-tooling territory).
                     $metadataOnlyDiffCount = @($diffFields | Where-Object { $_ -ne "Dependencies" }).Count
                     $metadataStatus = if ($metadataOnlyDiffCount -eq 0) { "OK" } else { "$metadataOnlyDiffCount field(s) differ" }

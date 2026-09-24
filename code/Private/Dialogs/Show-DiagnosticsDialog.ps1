@@ -300,7 +300,7 @@ function Global:Show-DiagnosticsDialog {
 
             $catalogAppIds = @($appsRefRef | ForEach-Object { [string]$_.appId } | Where-Object { $_ })
             $notInCatalogCount = @($data | Where-Object { $catalogAppIds -notcontains [string]$_.id }).Count
-            & $appendLineRef "$(if ($notInCatalogCount -eq 0) { '[OK]' } else { '[INFO]' }) $notInCatalogCount app(s) in Intune with no matching catalog entry - see `"Intune sync check...`"" $(if ($notInCatalogCount -eq 0) { $okColorRef } else { $infoColorRef })
+            & $appendLineRef "$(if ($notInCatalogCount -eq 0) { '[OK]' } else { '[INFO]' }) $notInCatalogCount app(s) in Intune with no matching catalog entry - see `"Checks...`"" $(if ($notInCatalogCount -eq 0) { $okColorRef } else { $infoColorRef })
 
             & $appendLineRef "Fetching Minimum Windows values for deployed Win32 apps..." $infoColorRef
 
@@ -477,7 +477,7 @@ function Global:Show-DiagnosticsDialog {
             # Nothing below it now, so it fills all the way down.
             Fill        = $rtbLog
             RunAll      = { $btnRun.PerformClick() }.GetNewClosure()
-            # See the note on the same pair in Show-GroupDriftCheckDialog:
+            # See the note on the same pair in Show-ChecksDialog:
             # a run in progress is both "still working" and "do not close".
             IsBusy      = { -not $btnRun.Enabled }.GetNewClosure()
             BlockClose  = { -not $btnRun.Enabled }.GetNewClosure()

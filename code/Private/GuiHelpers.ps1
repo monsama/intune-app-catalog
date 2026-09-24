@@ -830,7 +830,7 @@ function Global:Update-CredentialWarningBanner {
     # function directly here since it also pops a MessageBox on failure,
     # which this silent check must never do.
     if ([string]::IsNullOrWhiteSpace($Global:App.GraphTenantId) -or [string]::IsNullOrWhiteSpace($Global:App.GraphClientId) -or [string]::IsNullOrWhiteSpace($Global:App.GraphCertificateThumbprint)) {
-        Write-Log "No Graph connection configured yet - open 'Settings...' to set your Tenant ID, Client ID, and certificate before using anything that talks to Intune or Entra ID (App ID lookup, Deploy to Intune, Assign Groups, Intune sync check, Batch assign).`r`n" ([System.Drawing.Color]::Orange)
+        Write-Log "No Graph connection configured yet - open 'Settings...' to set your Tenant ID, Client ID, and certificate before using anything that talks to Intune or Entra ID (App ID lookup, Deploy to Intune, Assign Groups, Checks, Batch assign).`r`n" ([System.Drawing.Color]::Orange)
         # Also shown as a banner on the App Catalog tab itself, not just
         # logged - the Log tab isn't the default active one, so this is
         # otherwise easy for a new user to never see until something fails

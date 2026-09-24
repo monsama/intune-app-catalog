@@ -1,8 +1,30 @@
 # Changelog
 
-## Unreleased
+## 1.5.0
 
 ### Added
+
+- **Checks is one run and one list.** It used to be eight tabs - Sync
+  check, App IDs, Audit, Metadata sync, Dependencies, Catalog groups,
+  Winget packages, Diagnostics - most answering part of the same
+  question, each reading Intune on its own. Now "Run checks" reads
+  everything once and lists every problem in one place: how the catalog
+  lines up with the apps in Intune (not in the catalog, renamed, App ID
+  gone, App ID not set), each deployed app's metadata, groups,
+  dependencies and assignments, the catalog's own dependencies, its
+  groups against Entra ID, and its Winget IDs ("Skip Winget IDs" leaves
+  out the slow part). Each row says what the catalog has and what the
+  other side has; the buttons under the list are the fixes for what is
+  selected - Pull, Push metadata, Push groups, Add to catalog, Set,
+  Choose or Clear App ID, Use Intune's name, Open app, Find Winget ID,
+  Re-check. "Show" narrows the list to one area. It opens on what is
+  already known (the last audit, the catalog's own dependencies), in
+  italics, and still keeps the Last Audit column up to date.
+- **Diagnostics is in Settings** ("Run diagnostics..." on the Connection
+  tab) - it checks this machine's setup, not the catalog.
+- "Get apps from Intune..." on an empty catalog and the grid's "Run
+  audit..." open Checks and start straight away; "Pull metadata and
+  groups from Intune..." opens the pull itself again.
 
 - **Supersedence, under Dependencies on Requirements and behaviour.** Pick
   the Intune apps this one supersedes - usually an older version that
