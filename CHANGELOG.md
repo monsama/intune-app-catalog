@@ -4,6 +4,14 @@
 
 ### Fixes
 
+- **Metadata typed in the app editor's Deploy tabs is saved to the
+  catalog.** Publisher, Owner, Developer, the two URLs, Notes and every
+  other field there were only written by a successful deploy - "Save app
+  to catalog" kept whatever metadata was already on file and never read
+  those tabs, so values entered without deploying were lost. It now saves
+  them whenever one was changed by hand (checking them first, the same
+  way "Save local copy..." does); an app nobody edited there keeps its
+  metadata exactly as before.
 - **An app imported from Intune now gets its Winget ID, Type and
   Version.** Type and Version came back with the same fetch that reads
   everything else and were being dropped, which is why an imported app

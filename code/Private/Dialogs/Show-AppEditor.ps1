@@ -1544,13 +1544,29 @@ function Global:Show-AppEditor {
         # Falls back to $Global:App.Apps only if no file exists yet (a brand
         # new app that's never been saved at all).
         $preservedMetadata = $null
-        # Freshest first: metadata just staged by "Deploy to Intune..." in
+        # Freshest of all: fields edited by hand on this window's own
+        # Deploy tabs. They used to be ignored here entirely - a Publisher,
+        # Owner, Notes... typed there without deploying was lost on save,
+        # since this click only ever kept the metadata already on file.
+        # Only when something was actually edited, so an app with no
+        # metadata doesn't gain the generated defaults just by being saved.
+        $deployHostForSave = $deployHostBox.Host
+        if ($deployHostForSave -and $deployHostForSave.HasUserEdits -and (& $deployHostForSave.HasUserEdits)) {
+            $editedMetadata = & $deployHostForSave.GetMetadata
+            if ($null -eq $editedMetadata) {
+                # GetMetadata already said which field is wrong
+                $deployAfterSaveBox.Value = $false
+                return
+            }
+            $preservedMetadata = $editedMetadata
+        }
+        # Next: metadata just staged by "Deploy to Intune..." in
         # THIS still-open editing session (see $pendingDeployMetadataBox
         # above) is more current than whatever's already on disk or in
         # memory - a Create/Update or Save for later click that just ran
         # deliberately hasn't been written anywhere yet, precisely so this
         # click is the one that commits it.
-        if ($pendingDeployMetadataBox.Value) {
+        if (-not $preservedMetadata -and $pendingDeployMetadataBox.Value) {
             $preservedMetadata = $pendingDeployMetadataBox.Value
         }
         if (-not $preservedMetadata) {

@@ -1837,6 +1837,49 @@ function Global:Show-CreateInIntuneDialog {
     # the app that's about to close.
     $resultBox = @{ NewAppId = $null; NewAppName = $null; Metadata = $null; IntuneAppType = $null; IntuneAppVersion = $null; NavigateToIndex = $null }
 
+    # Whether the user has changed any metadata field by hand since this
+    # dialog filled them in. Hosted in the App Editor, "Save local copy..."
+    # is hidden and the editor's own "Save app to catalog" is the only save
+    # - which used to keep whatever metadata was already on file and never
+    # read these fields at all, so a Publisher/Owner/Notes/... typed here
+    # was silently dropped. The editor asks this before its save and, only
+    # when it's true, takes the fields as they stand now (see GetMetadata
+    # in the returned host object). Only hand edits count: prefill, the
+    # Intune fetch and the Winget-ID retarget all set fields from code,
+    # and an app that had no metadata must not gain some just because
+    # those ran. TextBox.Modified is exactly that for text (set by typing,
+    # cleared by any .Text assignment); the other controls use events that
+    # only fire for user input.
+    $userEditBox = @{ Value = $false }
+    $metadataTextBoxes = @(
+        $txtDesc, $txtPublisher, $txtOwner, $txtDeveloper, $txtInfoUrl, $txtPrivacyUrl, $txtNotes,
+        $txtInstall, $txtUninstall, $txtDetection, $txtMsiCode, $txtMsiVersion,
+        $txtFilePath, $txtFileName, $txtFileDetValue,
+        $txtRegKeyPath, $txtRegValueName, $txtRegDetValue,
+        $txtDiskSpace, $txtMemory, $txtProcessors, $txtCpuSpeed, $txtInstallTime
+    )
+    $markUserEdit = { $userEditBox.Value = $true }.GetNewClosure()
+    foreach ($editCombo in @($cmbDetectionType, $cmbMsiOperator, $cmbFileDetType, $cmbFileOperator, $cmbRegDetType, $cmbRegOperator, $cmbContext, $cmbMinOS, $cmbRestartBehavior)) {
+        $editCombo.Add_SelectionChangeCommitted($markUserEdit)
+    }
+    foreach ($editCheck in @($chkArchX86, $chkArchX64, $chkArchArm64, $chkFileCheck32, $chkRegCheck32, $chkAllowUninstall)) {
+        $editCheck.Add_Click($markUserEdit)
+    }
+    # ItemCheck also fires for checks set from code - only one made while
+    # the list has focus is the user's.
+    $clbDeps.Add_ItemCheck({ if ($clbDeps.Focused) { $userEditBox.Value = $true } }.GetNewClosure())
+    $grdReturnCodes.Add_CellBeginEdit($markUserEdit)
+    $grdReturnCodes.Add_UserDeletedRow($markUserEdit)
+    $hasUserEdits = {
+        $userEditBox.Value -or (@($metadataTextBoxes | Where-Object { $_.Modified }).Count -gt 0)
+    }.GetNewClosure()
+    # Called once the fields' current values have been handed on (a
+    # successful deploy staged them) - they're no longer unsaved edits.
+    $clearUserEdits = {
+        $userEditBox.Value = $false
+        foreach ($editBox in $metadataTextBoxes) { $editBox.Modified = $false }
+    }.GetNewClosure()
+
     # True for the duration of the isDuplicate auto-fetch's background
     # runspace (see Add_Shown further below) - unlike $procBox further
     # below (an external process this dialog can .Kill()), a runspace
@@ -2276,6 +2319,7 @@ function Global:Show-CreateInIntuneDialog {
         $dlgRef = $dlg
         $resultBoxRef = $resultBox
         $onDeployCompleteRef = $OnDeployComplete
+        $clearUserEditsRef = $clearUserEdits
         $resultPathRef = $resultPath
         $configPathRef = $configPath
         $procBoxRef = $procBox
@@ -2422,6 +2466,7 @@ function Global:Show-CreateInIntuneDialog {
                                 # instead lets the App Editor fold it into the
                                 # ONE save (or discard) it already owns.
                                 $resultBoxRef.Metadata = $createMetadata
+                                & $clearUserEditsRef
                             }
                             else {
                                 $localSaveResult = Save-AppMetadataToLocalCatalog -AppsRef $appsRefRef -LinkedFilePath $linkedFilePathRef -AppName $appNameRef -Metadata $createMetadata -NewAppId $result.appId -IntuneAppVersion $fetchedIntuneFactsBoxRef.DisplayVersion
@@ -2615,7 +2660,12 @@ function Global:Show-CreateInIntuneDialog {
         }.GetNewClosure()
     }.GetNewClosure())
 
-    $btnSaveForLater.Add_Click({
+    # Validates the fields and builds the catalog-shaped metadata from
+    # them - $null (after saying what's wrong) when they don't validate.
+    # Shared by "Save local copy..." below and, hosted in the App Editor,
+    # by that editor's own "Save app to catalog" (GetMetadata in the host
+    # object returned at the bottom), so both save exactly the same thing.
+    $collectFieldMetadata = {
         if (-not $txtCreateName.Text.Trim() -or -not $txtInstall.Text.Trim() -or -not $txtUninstall.Text.Trim()) {
             [System.Windows.Forms.MessageBox]::Show("Name, install command, and uninstall command are all required.", "Missing values", "OK", "Warning") | Out-Null
             return
@@ -2834,6 +2884,12 @@ function Global:Show-CreateInIntuneDialog {
             return
         }
         Write-Log "Save for later: `$newMetadata built - is `$null: $($null -eq $newMetadata), description in it: `"$($newMetadata.description)`".`r`n"
+        return $newMetadata
+    }.GetNewClosure()
+
+    $btnSaveForLater.Add_Click({
+        $newMetadata = & $collectFieldMetadata
+        if ($null -eq $newMetadata) { return }
 
         # Opened from the App Editor (-FromAppEditor): stage this metadata
         # for that still-open editor's own "Save app to catalog" instead of
@@ -3718,6 +3774,11 @@ function Global:Show-CreateInIntuneDialog {
             # result reaches the host through -OnLiveFetch, so the host can
             # wait for it rather than send a second, identical read.
             IsReadingLive    = { $metadataFetchRunningBox.Running }.GetNewClosure()
+            # For the host's "Save app to catalog" - "Save local copy..."
+            # stays hidden here, so that is the only way the metadata on
+            # these tabs reaches the catalog. See $userEditBox.
+            HasUserEdits     = $hasUserEdits
+            GetMetadata      = $collectFieldMetadata
         }
     }
     $dlg.Add_Shown({ $txtCreateName.Focus() }.GetNewClosure())
