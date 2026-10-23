@@ -1,5 +1,7 @@
 function Global:Show-BatchEditMetadataDialog {
-    param([int[]]$ScopedIndices = @())
+    # -Preset InstallMethod opens with "Install with" already ticked, on its
+    # tab - the grid's "Change install method..." comes in that way.
+    param([int[]]$ScopedIndices = @(), [string]$Preset)
 
     # Plain local aliases - see note in Start-IntuneAppLookup.
     $appsRef      = $Global:App.Apps
@@ -52,7 +54,7 @@ function Global:Show-BatchEditMetadataDialog {
     $dlg.MinimizeBox = $false
 
     $lblIntro = New-Object System.Windows.Forms.Label
-    $lblIntro.Text = "Changes only the checked field(s) on the checked apps, then pushes each straight to Intune - everything else is left as-is. Lists every eligible app, not just what's selected in the main grid (that only pre-checks rows here). Install/uninstall commands and the detection rule aren't offered - those are per-app, not safe to set to one shared value."
+    $lblIntro.Text = "Changes only the checked field(s) on the checked apps, then pushes each straight to Intune - everything else is left as-is. Lists every eligible app, not just what's selected in the main grid (that only pre-checks rows here). `"Install with`" switches Winget apps between Winget-AutoUpdate and the winget command, each with its own Winget ID; apps whose commands were edited by hand are left alone."
     $lblIntro.Location = New-Object System.Drawing.Point(15,12)
     $lblIntro.Size = New-Object System.Drawing.Size(840,74)
     $dlg.Controls.Add($lblIntro)
@@ -341,7 +343,7 @@ function Global:Show-BatchEditMetadataDialog {
         $txt.Size = New-Object System.Drawing.Size(317,24)
         $dlg.Controls.Add($txt)
         $textFieldControls[$field.Key] = @{ Enable = $chk; Text = $txt }
-        $textY += 52
+        $textY += 50
     }
 
     $chkEnableInstallContext = New-Object System.Windows.Forms.CheckBox
@@ -372,6 +374,30 @@ function Global:Show-BatchEditMetadataDialog {
     $chkFeatured.Location = New-Object System.Drawing.Point(($textX + 228),($textY + 22))
     $chkFeatured.Size = New-Object System.Drawing.Size(60,22)
     $dlg.Controls.Add($chkFeatured)
+    $textY += 50
+
+    # Rewrites each Winget app's install and uninstall commands to the other
+    # generated form, for its own Winget ID (Convert-AppWingetInstallMethod).
+    # Not one shared value like the command boxes above, which is why it can
+    # be offered for many apps at once.
+    $chkEnableInstallMethod = New-Object System.Windows.Forms.CheckBox
+    $chkEnableInstallMethod.Text = "Install with (Winget apps)"
+    $chkEnableInstallMethod.Location = New-Object System.Drawing.Point($textX,$textY)
+    $chkEnableInstallMethod.Size = New-Object System.Drawing.Size(335,20)
+    $dlg.Controls.Add($chkEnableInstallMethod)
+    $cmbInstallMethod = New-Object System.Windows.Forms.ComboBox
+    $cmbInstallMethod.DropDownStyle = "DropDownList"
+    $cmbInstallMethod.Location = New-Object System.Drawing.Point(($textX + 18),($textY + 20))
+    $cmbInstallMethod.Size = New-Object System.Drawing.Size(260,24)
+    $installMethodMap = [ordered]@{
+        "Winget-AutoUpdate (Winget-Install.ps1)" = "WAU"
+        "Winget command"                         = "Winget"
+    }
+    foreach ($k in $installMethodMap.Keys) { [void]$cmbInstallMethod.Items.Add($k) }
+    $cmbInstallMethod.SelectedIndex = 0
+    $dlg.Controls.Add($cmbInstallMethod)
+    $installMethodTip = New-Object System.Windows.Forms.ToolTip
+    $installMethodTip.SetToolTip($chkEnableInstallMethod, "Switches the install and uninstall commands of each checked Winget app to Winget-AutoUpdate's Winget-Install.ps1 or to the winget command. Only commands this tool generated are switched - an app whose commands were edited by hand keeps them, and the log says so.")
 
     $chkCatalogOnly = New-Object System.Windows.Forms.CheckBox
     $chkCatalogOnly.Text = "Catalog only - don't send anything to Intune"
@@ -405,7 +431,8 @@ function Global:Show-BatchEditMetadataDialog {
             Controls = @(
                 @($textFieldControls.Values | ForEach-Object { $_.Enable; $_.Text })
                 $chkEnableInstallContext, $cmbInstallContext,
-                $chkEnableFeatured, $chkFeatured
+                $chkEnableFeatured, $chkFeatured,
+                $chkEnableInstallMethod, $cmbInstallMethod
             )
         }
     )
@@ -533,6 +560,14 @@ function Global:Show-BatchEditMetadataDialog {
         if ($null -ne $Changes.UninstallCommand) { $newMetadata.uninstallCommand = $Changes.UninstallCommand }
         if ($null -ne $Changes.InstallContext)   { $newMetadata.installContext = $Changes.InstallContext }
         if ($null -ne $Changes.IsFeatured)       { $newMetadata.isFeatured = $Changes.IsFeatured }
+        if ($Changes.WingetInstallMethod) {
+            $converted = Convert-AppWingetInstallMethod -WingetId $currentApp.wingetId -InstallCommand $newMetadata.installCommand -UninstallCommand $newMetadata.uninstallCommand -Method $Changes.WingetInstallMethod -InstallContext $newMetadata.installContext
+            $newMetadata.installCommand = $converted.Install
+            $newMetadata.uninstallCommand = $converted.Uninstall
+            if ($converted.Status -eq "Custom") {
+                Write-DialogLogLine -LogBox $rtbLog -Text "  [KEPT] $($currentApp.appName) - its install commands were edited by hand, so they stay as they are.`r`n" -MirrorToMainLog
+            }
+        }
         if ($null -ne $Changes.Dependencies) {
             # An app can't depend on itself - silently dropped here rather
             # than failing the whole batch over it, same "skip just the
@@ -708,7 +743,7 @@ function Global:Show-BatchEditMetadataDialog {
         # were missing here, so ticking only Publisher (say) was refused
         # with "check at least one field".
         $anyTextFieldTicked = @($textFieldControls.Values | Where-Object { $_.Enable.Checked }).Count -gt 0
-        if (-not ($chkEnableArch.Checked -or $chkEnableMinOS.Checked -or $chkEnableDiskSpace.Checked -or $chkEnableMemory.Checked -or $chkEnableProcessors.Checked -or $chkEnableCpuSpeed.Checked -or $chkEnableInstallTime.Checked -or $chkEnableRestartBehavior.Checked -or $chkEnableAllowUninstall.Checked -or $chkEnableReturnCodes.Checked -or $chkEnableDependencies.Checked -or $anyTextFieldTicked -or $chkEnableInstallContext.Checked -or $chkEnableFeatured.Checked)) {
+        if (-not ($chkEnableArch.Checked -or $chkEnableMinOS.Checked -or $chkEnableDiskSpace.Checked -or $chkEnableMemory.Checked -or $chkEnableProcessors.Checked -or $chkEnableCpuSpeed.Checked -or $chkEnableInstallTime.Checked -or $chkEnableRestartBehavior.Checked -or $chkEnableAllowUninstall.Checked -or $chkEnableReturnCodes.Checked -or $chkEnableDependencies.Checked -or $anyTextFieldTicked -or $chkEnableInstallContext.Checked -or $chkEnableFeatured.Checked -or $chkEnableInstallMethod.Checked)) {
             [System.Windows.Forms.MessageBox]::Show("Check at least one field to change.", "Nothing to change", "OK", "Warning") | Out-Null
             return
         }
@@ -739,6 +774,11 @@ function Global:Show-BatchEditMetadataDialog {
             }
         }
 
+        if ($chkEnableInstallMethod.Checked -and ($textFieldControls['InstallCommand'].Enable.Checked -or $textFieldControls['UninstallCommand'].Enable.Checked)) {
+            [System.Windows.Forms.MessageBox]::Show("Tick either `"Install with`" or the install/uninstall command boxes, not both - they change the same commands.", "Two changes to the same field", "OK", "Warning") | Out-Null
+            return
+        }
+
         $checkedApps = New-Object System.Collections.Generic.List[object]
         foreach ($name in $checkedNames) {
             $matchApp = $eligibleApps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
@@ -753,7 +793,7 @@ function Global:Show-BatchEditMetadataDialog {
             Description = $null; Publisher = $null; Owner = $null; Developer = $null
             InformationUrl = $null; PrivacyUrl = $null; Notes = $null
             InstallCommand = $null; UninstallCommand = $null; InstallContext = $null
-            IsFeatured = $null
+            IsFeatured = $null; WingetInstallMethod = $null
         }
         # A ticked text field is applied exactly as typed, blank included -
         # that's how you clear a Publisher across many apps at once.
@@ -771,6 +811,19 @@ function Global:Show-BatchEditMetadataDialog {
         if ($chkEnableFeatured.Checked) {
             $changes.IsFeatured = $chkFeatured.Checked
             $changeSummary.Add("Featured app -> $(if ($chkFeatured.Checked) { 'Yes' } else { 'No' })")
+        }
+        if ($chkEnableInstallMethod.Checked) {
+            $changes.WingetInstallMethod = $installMethodMap[[string]$cmbInstallMethod.SelectedItem]
+            # What it will do to each app, so the confirmation says it up front
+            $methodCounts = @{ Switched = 0; Already = 0; Custom = 0 }
+            foreach ($app in $checkedApps) {
+                $context = if ($null -ne $changes.InstallContext) { $changes.InstallContext } else { $app.metadata.installContext }
+                $preview = Convert-AppWingetInstallMethod -WingetId $app.wingetId -InstallCommand $app.metadata.installCommand -UninstallCommand $app.metadata.uninstallCommand -Method $changes.WingetInstallMethod -InstallContext $context
+                $methodCounts[$preview.Status]++
+            }
+            $methodNote = "$($methodCounts.Switched) switch, $($methodCounts.Already) already use it"
+            if ($methodCounts.Custom -gt 0) { $methodNote += ", $($methodCounts.Custom) keep their hand-edited commands" }
+            $changeSummary.Add("Install with -> $($cmbInstallMethod.SelectedItem) ($methodNote)")
         }
         if ($chkEnableArch.Checked) {
             $archList = @(@("x86","x64","arm64") | Where-Object { ($_ -eq "x86" -and $chkArchX86.Checked) -or ($_ -eq "x64" -and $chkArchX64.Checked) -or ($_ -eq "arm64" -and $chkArchArm64.Checked) })
@@ -897,6 +950,17 @@ function Global:Show-BatchEditMetadataDialog {
         $resultsList = New-Object System.Collections.Generic.List[object]
         & $RunNextBox.Value -Queue $checkedApps.ToArray() -QueueIndex 0 -Results $resultsList -Changes $changes
     }.GetNewClosure())
+
+    if ($Preset -eq "InstallMethod") {
+        $chkEnableInstallMethod.Checked = $true
+        # Offer the switch: the other method from the one most of the
+        # pre-checked apps use now
+        $preChecked = @($eligibleApps | Where-Object { $clbApps.CheckedItems -contains $_.appName })
+        $onWau = @($preChecked | Where-Object { (Get-AppWingetInstallMethod -WingetId $_.wingetId -InstallCommand $_.metadata.installCommand -UninstallCommand $_.metadata.uninstallCommand) -eq "WAU" }).Count
+        $onWinget = @($preChecked | Where-Object { (Get-AppWingetInstallMethod -WingetId $_.wingetId -InstallCommand $_.metadata.installCommand -UninstallCommand $_.metadata.uninstallCommand) -eq "Winget" }).Count
+        $cmbInstallMethod.SelectedIndex = if ($onWau -ge $onWinget) { 1 } else { 0 }
+        $batchTabs.SelectedIndex = 1
+    }
 
     $btnClose.Add_Click({ $dlg.Close() }.GetNewClosure())
     Register-CloseConfirmation -Dialog $dlg -GetQuestion {

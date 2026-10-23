@@ -130,6 +130,8 @@ $testableFunctionNames = @(
     "ConvertTo-CreateAppConfigJson",
     "Get-CreateAppTemplates",
     "Get-WingetCommandLines",
+    "Get-AppWingetInstallMethod",
+    "Convert-AppWingetInstallMethod",
     "Get-DefaultAppMetadata",
     "Get-FriendlyIntuneAppType",
     "Get-ParsedMinOsRelease",
@@ -533,6 +535,27 @@ $userCommands = Get-WingetCommandLines -WingetId "Vendor.App" -Method "Winget" -
 Assert-True ($userCommands.Install -notlike '*--scope machine*') `
     "Get-WingetCommandLines: a User-context install doesn't force machine scope"
 $Global:App.DefaultAppSettings.WingetInstallMethod = "WAU"
+
+# Switching an existing app's install method
+Assert-Equal 'WAU' (Get-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $wauDefaults.installCommand -UninstallCommand $wauDefaults.uninstallCommand) `
+    "Get-AppWingetInstallMethod: recognises the Winget-AutoUpdate commands"
+Assert-Equal 'Winget' (Get-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $userCommands.Install -UninstallCommand $userCommands.Uninstall) `
+    "Get-AppWingetInstallMethod: recognises the winget commands, User context too"
+Assert-Equal '' (Get-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand ($wauDefaults.installCommand + ' -Override "/S"') -UninstallCommand $wauDefaults.uninstallCommand) `
+    "Get-AppWingetInstallMethod: a command with anything added is custom"
+Assert-Equal '' (Get-AppWingetInstallMethod -WingetId "Other.App" -InstallCommand $wauDefaults.installCommand -UninstallCommand $wauDefaults.uninstallCommand) `
+    "Get-AppWingetInstallMethod: commands for a different Winget ID are custom"
+$switched = Convert-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $wauDefaults.installCommand -UninstallCommand $wauDefaults.uninstallCommand -Method "Winget" -InstallContext "System"
+Assert-True ($switched.Status -eq 'Switched' -and $switched.Install -eq $wingetDefaults.installCommand -and $switched.Uninstall -eq $wingetDefaults.uninstallCommand) `
+    "Convert-AppWingetInstallMethod: switches WAU commands to winget"
+$back = Convert-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $switched.Install -UninstallCommand $switched.Uninstall -Method "WAU" -InstallContext "System"
+Assert-True ($back.Status -eq 'Switched' -and $back.Install -eq $wauDefaults.installCommand) `
+    "Convert-AppWingetInstallMethod: and back again"
+$already = Convert-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $wauDefaults.installCommand -UninstallCommand $wauDefaults.uninstallCommand -Method "WAU" -InstallContext "System"
+Assert-Equal 'Already' $already.Status "Convert-AppWingetInstallMethod: an app already on that method is left as it is"
+$custom = Convert-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand 'setup.exe /S' -UninstallCommand 'uninst.exe /S' -Method "Winget" -InstallContext "System"
+Assert-True ($custom.Status -eq 'Custom' -and $custom.Install -eq 'setup.exe /S') `
+    "Convert-AppWingetInstallMethod: custom commands are kept"
 
 # -----------------------------------------------------------------
 # Get-FriendlyIntuneAppType

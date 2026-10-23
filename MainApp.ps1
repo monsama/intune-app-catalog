@@ -1702,6 +1702,11 @@ $menuItemAudit.ToolTipText = "Checks your selected row(s) against Intune, Entra 
 # would say less than one app's list does).
 $menuItemInstallStatus = New-Object System.Windows.Forms.ToolStripMenuItem "Installation status..."
 $menuItemInstallStatus.ToolTipText = "Shows which devices and users have this app installed, and which failed with what error. Read-only."
+# Batch edit with "Install with" already ticked, for the selected apps -
+# the quick way to move existing apps between Winget-AutoUpdate and the
+# winget command.
+$menuItemInstallMethod = New-Object System.Windows.Forms.ToolStripMenuItem "Change install method..."
+$menuItemInstallMethod.ToolTipText = "Switches the selected Winget apps between Winget-AutoUpdate and the winget command. Shows what changes and asks before anything is sent to Intune."
 $menuItemDeleteIntune = New-Object System.Windows.Forms.ToolStripMenuItem "Delete from Intune..."
 $menuItemDeleteIntune.ToolTipText = "One row selected: deletes it directly. Multiple rows: opens the bulk delete dialog, pre-scoped to your selection. Intune only, same as the toolbar delete."
 # Catalog-only, both of them: nothing here touches Intune. Clearing an App
@@ -1727,6 +1732,7 @@ $menuItemRemoveCatalog = New-Object System.Windows.Forms.ToolStripMenuItem "Remo
 [void]$gridContextMenu.Items.Add($menuItemSyncMetadata)
 [void]$gridContextMenu.Items.Add($menuItemAudit)
 [void]$gridContextMenu.Items.Add($menuItemInstallStatus)
+[void]$gridContextMenu.Items.Add($menuItemInstallMethod)
 [void]$gridContextMenu.Items.Add($menuItemDeleteIntune)
 [void]$gridContextMenu.Items.Add($menuItemSeparator)
 [void]$gridContextMenu.Items.Add($menuItemCopyAppId)
@@ -1785,6 +1791,9 @@ $gridContextMenu.Add_Opening({
     # One app only, and only once it exists in Intune
     $firstSelectedApp = if ($hasSelection) { $Global:App.Apps[$selectedIndices[0]] } else { $null }
     $menuItemInstallStatus.Enabled = (-not $isMulti) -and $firstSelectedApp -and [bool]$firstSelectedApp.appId
+
+    # Batch edit's own eligibility: a Winget app with saved metadata
+    $menuItemInstallMethod.Enabled = $hasSelection -and (@($selectedIndices | ForEach-Object { $Global:App.Apps[$_] } | Where-Object { $_.metadata -and -not (Test-AppIsUncommon -App $_) }).Count -gt 0)
 
     $menuItemDeleteIntune.Text = if ($isMulti) { "Delete $($selectedIndices.Count) app(s) from Intune..." } else { "Delete from Intune..." }
     $menuItemDeleteIntune.Enabled = $hasSelection
@@ -1960,6 +1969,12 @@ $menuItemInstallStatus.Add_Click({
     Show-AppInstallStatusDialog -AppId $app.appId -AppName $app.appName
 })
 
+$menuItemInstallMethod.Add_Click({
+    $indices = Get-SelectedAppIndices
+    if ($indices.Count -eq 0) { return }
+    Show-BatchEditMetadataDialog -ScopedIndices $indices -Preset InstallMethod
+    Update-Grid
+})
 $menuItemAudit.Add_Click({
     $indices = Get-SelectedAppIndices
     if ($indices.Count -eq 0) { return }

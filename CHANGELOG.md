@@ -10,6 +10,12 @@
   needs nothing else on the device. It decides the install and
   uninstall commands a Winget app gets by default. Apps that already
   have saved commands keep them.
+- **Switch existing apps too.** Right-click apps → "Change install
+  method..." (or "Install with" in Batch edit Intune fields) moves them
+  between Winget-AutoUpdate and the winget command, each with its own
+  Winget ID, and pushes the change to Intune - or to the catalog only.
+  The confirmation says how many switch; an app whose commands were
+  edited by hand keeps them, and the log says so.
 
 ## 1.5.0
 

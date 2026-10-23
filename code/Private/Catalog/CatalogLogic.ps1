@@ -964,6 +964,46 @@ function Global:Get-WingetCommandLines {
     }
 }
 
+function Global:Get-AppWingetInstallMethod {
+    <#
+      Which generated form an app's install and uninstall commands are:
+      "WAU", "Winget", or "" when they are anything else - typed by hand,
+      tuned with extra switches, or for a different Winget ID. Only an
+      exact match counts, so a command someone edited is never mistaken
+      for one this tool may rewrite.
+    #>
+    param([string]$WingetId, [string]$InstallCommand, [string]$UninstallCommand)
+
+    if (-not $WingetId) { return "" }
+    foreach ($method in @("WAU", "Winget")) {
+        foreach ($context in @("System", "User")) {
+            $generated = Get-WingetCommandLines -WingetId $WingetId -Method $method -InstallContext $context
+            if ($InstallCommand -eq $generated.Install -and $UninstallCommand -eq $generated.Uninstall) { return $method }
+        }
+    }
+    return ""
+}
+
+function Global:Convert-AppWingetInstallMethod {
+    <#
+      An app's install and uninstall commands switched to -Method.
+
+      Status says what happened: "Switched", "Already" (it uses that method
+      now), or "Custom" (its commands aren't a generated form - see
+      Get-AppWingetInstallMethod - and are handed back unchanged, because
+      rewriting a command someone tuned by hand loses their change).
+    #>
+    param([string]$WingetId, [string]$InstallCommand, [string]$UninstallCommand, [string]$Method, [string]$InstallContext)
+
+    $current = Get-AppWingetInstallMethod -WingetId $WingetId -InstallCommand $InstallCommand -UninstallCommand $UninstallCommand
+    if (-not $current) { return @{ Status = "Custom"; Install = $InstallCommand; Uninstall = $UninstallCommand } }
+    $wanted = Get-WingetCommandLines -WingetId $WingetId -Method $Method -InstallContext $InstallContext
+    if ($wanted.Install -eq $InstallCommand -and $wanted.Uninstall -eq $UninstallCommand) {
+        return @{ Status = "Already"; Install = $InstallCommand; Uninstall = $UninstallCommand }
+    }
+    return @{ Status = "Switched"; Install = $wanted.Install; Uninstall = $wanted.Uninstall }
+}
+
 function Global:Get-DefaultAppMetadata {
     param([string]$AppName, [string]$WingetId, [bool]$Uncommon)
 
