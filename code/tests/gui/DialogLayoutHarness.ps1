@@ -290,6 +290,7 @@ function Global:Register-LayoutAuditSteps {
     Add-LayoutAuditStep 'Batch assign' { Show-BatchAssignDialog -ScopedIndices $all }.GetNewClosure()
     Add-LayoutAuditStep 'Batch deploy' { Show-BatchDeployDialog -ScopedIndices @($iNoId) }.GetNewClosure()
     Add-LayoutAuditStep 'Batch edit Intune fields' { Show-BatchEditMetadataDialog -ScopedIndices @($i0) }.GetNewClosure()
+    Add-LayoutAuditStep 'Batch edit Intune fields (install method)' { Show-BatchEditMetadataDialog -ScopedIndices @($i0) -Preset InstallMethod }.GetNewClosure()
     Add-LayoutAuditStep 'Delete from Intune (bulk)' { Show-BulkDeleteFromIntuneDialog -Indices @($i0, $iLong) }.GetNewClosure()
     Add-LayoutAuditStep 'Certificate picker' { Show-CertificatePickerDialog }
     Add-LayoutAuditStep 'Settings' { Show-CertificateSetupDialog }

@@ -129,6 +129,9 @@ $testableFunctionNames = @(
     "ConvertTo-SupersedenceJson",
     "ConvertTo-CreateAppConfigJson",
     "Get-CreateAppTemplates",
+    "Get-WingetCommandLines",
+    "Get-AppWingetInstallMethod",
+    "Convert-AppWingetInstallMethod",
     "Get-DefaultAppMetadata",
     "Get-FriendlyIntuneAppType",
     "Get-ParsedMinOsRelease",
@@ -314,6 +317,7 @@ $Global:App.DefaultAppSettings = [pscustomobject]@{
         [pscustomobject]@{ returnCode = 1618; type = "retry" }
     )
     DefaultDependencyAppNames = @("Winget AutoUpdate")
+    WingetInstallMethod      = "WAU"
 }
 
 # =================================================================
@@ -507,6 +511,51 @@ $Global:App.Apps.Clear()
 $defaultsNoWau = Get-DefaultAppMetadata -AppName "Some Other App" -WingetId "some.app" -Uncommon $false
 Assert-Equal 0 @($defaultsNoWau.dependencies).Count `
     "Get-DefaultAppMetadata: no dependency default when Winget AutoUpdate isn't in the catalog at all"
+
+# Install method: Winget-AutoUpdate by default, winget.exe when chosen
+$wauDefaults = Get-DefaultAppMetadata -AppName "Some App" -WingetId "Vendor.App" -Uncommon $false
+Assert-True ($wauDefaults.installCommand -like '*Winget-Install.ps1*-AppIDs "Vendor.App"' -and $wauDefaults.uninstallCommand -like '*-AppIDs "Vendor.App" -Uninstall') `
+    "Get-DefaultAppMetadata: the built-in install method is Winget-AutoUpdate's Winget-Install.ps1"
+$Global:App.DefaultAppSettings.WingetInstallMethod = "Winget"
+$wingetDefaults = Get-DefaultAppMetadata -AppName "Some App" -WingetId "Vendor.App" -Uncommon $false
+Assert-True ($wingetDefaults.installCommand -like "*& `$w install --id 'Vendor.App' -e*--scope machine*" -and $wingetDefaults.installCommand -notlike '*Winget-Install.ps1*') `
+    "Get-DefaultAppMetadata: with the Winget command method, install calls winget.exe itself, machine-wide in System context"
+Assert-True ($wingetDefaults.uninstallCommand -like "*& `$w uninstall --id 'Vendor.App' -e*") `
+    "Get-DefaultAppMetadata: with the Winget command method, uninstall calls winget uninstall"
+Assert-True ($wingetDefaults.installCommand.Length -le 1024 -and $wingetDefaults.uninstallCommand.Length -le 1024) `
+    "Get-WingetCommandLines: the winget commands fit Intune's 1024-character command line"
+Assert-Equal 'Vendor.App' (Get-WingetIdFromInstallCommand -InstallCommand $wingetDefaults.installCommand) `
+    "Get-WingetIdFromInstallCommand: reads the Winget ID back out of the Winget command form"
+$parseErrors = $null
+$inner = [regex]::Match($wingetDefaults.installCommand, '-Command "(.*)"$').Groups[1].Value
+[void][System.Management.Automation.Language.Parser]::ParseInput($inner, [ref]$null, [ref]$parseErrors)
+Assert-Equal 0 @($parseErrors).Count `
+    "Get-WingetCommandLines: the script inside -Command parses"
+$userCommands = Get-WingetCommandLines -WingetId "Vendor.App" -Method "Winget" -InstallContext "User"
+Assert-True ($userCommands.Install -notlike '*--scope machine*') `
+    "Get-WingetCommandLines: a User-context install doesn't force machine scope"
+$Global:App.DefaultAppSettings.WingetInstallMethod = "WAU"
+
+# Switching an existing app's install method
+Assert-Equal 'WAU' (Get-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $wauDefaults.installCommand -UninstallCommand $wauDefaults.uninstallCommand) `
+    "Get-AppWingetInstallMethod: recognises the Winget-AutoUpdate commands"
+Assert-Equal 'Winget' (Get-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $userCommands.Install -UninstallCommand $userCommands.Uninstall) `
+    "Get-AppWingetInstallMethod: recognises the winget commands, User context too"
+Assert-Equal '' (Get-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand ($wauDefaults.installCommand + ' -Override "/S"') -UninstallCommand $wauDefaults.uninstallCommand) `
+    "Get-AppWingetInstallMethod: a command with anything added is custom"
+Assert-Equal '' (Get-AppWingetInstallMethod -WingetId "Other.App" -InstallCommand $wauDefaults.installCommand -UninstallCommand $wauDefaults.uninstallCommand) `
+    "Get-AppWingetInstallMethod: commands for a different Winget ID are custom"
+$switched = Convert-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $wauDefaults.installCommand -UninstallCommand $wauDefaults.uninstallCommand -Method "Winget" -InstallContext "System"
+Assert-True ($switched.Status -eq 'Switched' -and $switched.Install -eq $wingetDefaults.installCommand -and $switched.Uninstall -eq $wingetDefaults.uninstallCommand) `
+    "Convert-AppWingetInstallMethod: switches WAU commands to winget"
+$back = Convert-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $switched.Install -UninstallCommand $switched.Uninstall -Method "WAU" -InstallContext "System"
+Assert-True ($back.Status -eq 'Switched' -and $back.Install -eq $wauDefaults.installCommand) `
+    "Convert-AppWingetInstallMethod: and back again"
+$already = Convert-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $wauDefaults.installCommand -UninstallCommand $wauDefaults.uninstallCommand -Method "WAU" -InstallContext "System"
+Assert-Equal 'Already' $already.Status "Convert-AppWingetInstallMethod: an app already on that method is left as it is"
+$custom = Convert-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand 'setup.exe /S' -UninstallCommand 'uninst.exe /S' -Method "Winget" -InstallContext "System"
+Assert-True ($custom.Status -eq 'Custom' -and $custom.Install -eq 'setup.exe /S') `
+    "Convert-AppWingetInstallMethod: custom commands are kept"
 
 # -----------------------------------------------------------------
 # Get-FriendlyIntuneAppType

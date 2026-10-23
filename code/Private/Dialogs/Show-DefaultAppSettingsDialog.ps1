@@ -189,6 +189,28 @@ function Global:Show-DefaultAppSettingsDialog {
     $chkAllowUninstall.Checked = [bool]$Global:App.DefaultAppSettings.AllowAvailableUninstall
     $dlg.Controls.Add($chkAllowUninstall)
 
+    # How the generated install and uninstall commands run winget - see
+    # Get-WingetCommandLines.
+    $lblWingetMethod = New-Object System.Windows.Forms.Label
+    $lblWingetMethod.Text = "Install with"
+    $lblWingetMethod.Location = New-Object System.Drawing.Point(320,355)
+    $lblWingetMethod.AutoSize = $true
+    $dlg.Controls.Add($lblWingetMethod)
+    $cmbWingetMethod = New-Object System.Windows.Forms.ComboBox
+    $cmbWingetMethod.Location = New-Object System.Drawing.Point(400,351)
+    $cmbWingetMethod.Size = New-Object System.Drawing.Size(220,23)
+    $cmbWingetMethod.DropDownStyle = "DropDownList"
+    $wingetMethodMap = [ordered]@{
+        "Winget-AutoUpdate"                       = "WAU"
+        "Winget command"                         = "Winget"
+    }
+    foreach ($k in $wingetMethodMap.Keys) { [void]$cmbWingetMethod.Items.Add($k) }
+    $currentMethodLabel = $wingetMethodMap.Keys | Where-Object { $wingetMethodMap[$_] -eq $Global:App.DefaultAppSettings.WingetInstallMethod } | Select-Object -First 1
+    $cmbWingetMethod.SelectedItem = if ($currentMethodLabel) { $currentMethodLabel } else { "Winget-AutoUpdate" }
+    $dlg.Controls.Add($cmbWingetMethod)
+    $wingetMethodTip = New-Object System.Windows.Forms.ToolTip
+    $wingetMethodTip.SetToolTip($cmbWingetMethod, "How a Winget app's install and uninstall commands are generated. Winget-AutoUpdate runs its Winget-Install.ps1, so WAU has to be on the device. Winget command calls winget.exe directly and needs nothing else. Apps that already have saved commands keep them.")
+
     $lblReturnCodes = New-Object System.Windows.Forms.Label
     $lblReturnCodes.Text = "Return codes"
     $lblReturnCodes.Location = New-Object System.Drawing.Point(15,384)
@@ -276,6 +298,7 @@ function Global:Show-DefaultAppSettingsDialog {
     # is one list of built-in values and it is the shipped one.
     $factory = Get-FactoryAppSettings
     $factoryMinOsLabel = $minOsMap.Keys | Where-Object { $minOsMap[$_] -eq $factory.MinOSKey } | Select-Object -First 1
+    $factoryMethodLabel = $wingetMethodMap.Keys | Where-Object { $wingetMethodMap[$_] -eq $factory.WingetInstallMethod } | Select-Object -First 1
     $factoryRestartLabel = $restartBehaviorMap.Keys | Where-Object { $restartBehaviorMap[$_] -eq $factory.DeviceRestartBehavior } | Select-Object -First 1
     $factoryReturnCodes = (@($factory.ReturnCodes) | ForEach-Object { "$($_.returnCode)=$($_.type)" }) -join ', '
     $factoryDeps = (@($factory.DefaultDependencyAppNames) | Sort-Object) -join ', '
@@ -331,6 +354,10 @@ function Global:Show-DefaultAppSettingsDialog {
             Now = { $restartBehaviorMap[[string]$cmbRestartBehavior.SelectedItem] }.GetNewClosure()
             Was = { $factory.DeviceRestartBehavior }.GetNewClosure()
             Put = { if ($factoryRestartLabel) { $cmbRestartBehavior.SelectedItem = $factoryRestartLabel } }.GetNewClosure() }
+        @{  Key = 'WingetInstallMethod'; At = @(628, 355); Show = 'Winget-AutoUpdate'
+            Now = { $wingetMethodMap[[string]$cmbWingetMethod.SelectedItem] }.GetNewClosure()
+            Was = { $factory.WingetInstallMethod }.GetNewClosure()
+            Put = { if ($factoryMethodLabel) { $cmbWingetMethod.SelectedItem = $factoryMethodLabel } }.GetNewClosure() }
         @{  Key = 'AllowAvailableUninstall'; At = @(180, 353); Show = $(if ($factory.AllowAvailableUninstall) { 'ticked' } else { 'unticked' })
             Now = { [string][bool]$chkAllowUninstall.Checked }.GetNewClosure()
             Was = { [string][bool]$factory.AllowAvailableUninstall }.GetNewClosure()
@@ -488,6 +515,7 @@ function Global:Show-DefaultAppSettingsDialog {
         $Global:App.DefaultAppSettings.InstallTimeMinutes        = (Get-NormalizedInstallTimeMinutes $txtInstallTime.Text)
         $Global:App.DefaultAppSettings.DeviceRestartBehavior     = $restartBehaviorMap[[string]$cmbRestartBehavior.SelectedItem]
         $Global:App.DefaultAppSettings.AllowAvailableUninstall   = $chkAllowUninstall.Checked
+        $Global:App.DefaultAppSettings.WingetInstallMethod       = $wingetMethodMap[[string]$cmbWingetMethod.SelectedItem]
         $Global:App.DefaultAppSettings.ReturnCodes               = $returnCodesConfig.ToArray()
         $Global:App.DefaultAppSettings.DefaultDependencyAppNames = @($clbDefaultDeps.CheckedItems | ForEach-Object { [string]$_ })
 
