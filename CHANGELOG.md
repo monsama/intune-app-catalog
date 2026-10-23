@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Choose how Winget apps install.** "Edit default values" has an
+  "Install with" setting: Winget-AutoUpdate (Winget-Install.ps1, as
+  before) or the Winget command, which calls winget.exe directly and
+  needs nothing else on the device. It decides the install and
+  uninstall commands a Winget app gets by default. Apps that already
+  have saved commands keep them.
+
 ## 1.5.0
 
 ### Added

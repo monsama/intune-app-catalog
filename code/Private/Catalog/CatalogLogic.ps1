@@ -885,15 +885,21 @@ function Global:Get-FactoryAppSettings {
         # by that name exists in the catalog - an empty array means "no
         # default dependencies".
         DefaultDependencyAppNames = @("Winget AutoUpdate")
+        # How a Winget app's generated install and uninstall commands run
+        # winget: "WAU" through Winget-AutoUpdate's Winget-Install.ps1
+        # (needs WAU on the device), "Winget" by calling winget.exe itself.
+        WingetInstallMethod      = "WAU"
     }
 }
 
 function Global:Get-CreateAppTemplates {
-    param([string]$WingetId, [bool]$Uncommon)
+    param([string]$WingetId, [bool]$Uncommon, [string]$Method)
 
     if (-not $Uncommon -and $WingetId) {
-        $install = "%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File `"C:\Program Files\Winget-AutoUpdate\Winget-Install.ps1`" -AppIDs `"$WingetId`""
-        $uninstall = "%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File `"C:\Program Files\Winget-AutoUpdate\Winget-Install.ps1`" -AppIDs `"$WingetId`" -Uninstall"
+        if (-not $Method) { $Method = [string]$Global:App.DefaultAppSettings.WingetInstallMethod }
+        $commands = Get-WingetCommandLines -WingetId $WingetId -Method $Method -InstallContext ([string]$Global:App.DefaultAppSettings.InstallContext)
+        $install = $commands.Install
+        $uninstall = $commands.Uninstall
         $detection = @"
 `$AppToDetect = "$WingetId"
 
@@ -926,6 +932,35 @@ if (`$Apps) { return "Installed!" }
         $install = "%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File install.ps1"
         $uninstall = "%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File uninstall.ps1"
         return @{ Install = $install; Uninstall = $uninstall; Detection = "" }
+    }
+}
+
+function Global:Get-WingetCommandLines {
+    <#
+      The install and uninstall command lines for a Winget app.
+
+      "WAU" (also what anything else falls back to) runs Winget-AutoUpdate's
+      Winget-Install.ps1, so the device needs WAU installed. "Winget" calls
+      winget.exe itself: under SYSTEM it isn't on PATH, so the command finds
+      it in the App Installer package folder first, and falls back to plain
+      "winget" for a user install, which can't list that folder.
+    #>
+    param([string]$WingetId, [string]$Method, [string]$InstallContext)
+
+    $ps = "%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile"
+    if ($Method -eq "Winget") {
+        $scope = if ($InstallContext -eq "User") { "" } else { " --scope machine" }
+        # Newest App Installer first: there can be more than one version
+        # side by side, and a plain name sort puts 1.9 after 1.21.
+        $find = "`$w = Get-Item `$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_8wekyb3d8bbwe\winget.exe -ErrorAction SilentlyContinue | Sort-Object { `$_.VersionInfo.FileVersionRaw } | Select-Object -Last 1 -ExpandProperty FullName; if (-not `$w) { `$w = 'winget' }"
+        return @{
+            Install   = "$ps -Command `"$find; & `$w install --id '$WingetId' -e --source winget$scope --silent --accept-package-agreements --accept-source-agreements; exit `$LASTEXITCODE`""
+            Uninstall = "$ps -Command `"$find; & `$w uninstall --id '$WingetId' -e --source winget$scope --silent --accept-source-agreements; exit `$LASTEXITCODE`""
+        }
+    }
+    return @{
+        Install   = "$ps -File `"C:\Program Files\Winget-AutoUpdate\Winget-Install.ps1`" -AppIDs `"$WingetId`""
+        Uninstall = "$ps -File `"C:\Program Files\Winget-AutoUpdate\Winget-Install.ps1`" -AppIDs `"$WingetId`" -Uninstall"
     }
 }
 
