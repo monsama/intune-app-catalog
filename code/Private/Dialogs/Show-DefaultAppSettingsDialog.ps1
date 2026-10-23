@@ -201,12 +201,12 @@ function Global:Show-DefaultAppSettingsDialog {
     $cmbWingetMethod.Size = New-Object System.Drawing.Size(220,23)
     $cmbWingetMethod.DropDownStyle = "DropDownList"
     $wingetMethodMap = [ordered]@{
-        "Winget-AutoUpdate (Winget-Install.ps1)" = "WAU"
+        "Winget-AutoUpdate"                       = "WAU"
         "Winget command"                         = "Winget"
     }
     foreach ($k in $wingetMethodMap.Keys) { [void]$cmbWingetMethod.Items.Add($k) }
     $currentMethodLabel = $wingetMethodMap.Keys | Where-Object { $wingetMethodMap[$_] -eq $Global:App.DefaultAppSettings.WingetInstallMethod } | Select-Object -First 1
-    $cmbWingetMethod.SelectedItem = if ($currentMethodLabel) { $currentMethodLabel } else { "Winget-AutoUpdate (Winget-Install.ps1)" }
+    $cmbWingetMethod.SelectedItem = if ($currentMethodLabel) { $currentMethodLabel } else { "Winget-AutoUpdate" }
     $dlg.Controls.Add($cmbWingetMethod)
     $wingetMethodTip = New-Object System.Windows.Forms.ToolTip
     $wingetMethodTip.SetToolTip($cmbWingetMethod, "How a Winget app's install and uninstall commands are generated. Winget-AutoUpdate runs its Winget-Install.ps1, so WAU has to be on the device. Winget command calls winget.exe directly and needs nothing else. Apps that already have saved commands keep them.")

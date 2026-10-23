@@ -390,7 +390,7 @@ function Global:Show-BatchEditMetadataDialog {
     $cmbInstallMethod.Location = New-Object System.Drawing.Point(($textX + 18),($textY + 20))
     $cmbInstallMethod.Size = New-Object System.Drawing.Size(260,24)
     $installMethodMap = [ordered]@{
-        "Winget-AutoUpdate (Winget-Install.ps1)" = "WAU"
+        "Winget-AutoUpdate"                       = "WAU"
         "Winget command"                         = "Winget"
     }
     foreach ($k in $installMethodMap.Keys) { [void]$cmbInstallMethod.Items.Add($k) }
