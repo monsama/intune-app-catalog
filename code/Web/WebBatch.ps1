@@ -154,7 +154,8 @@ function Global:Invoke-WebBatchGroups {
     if ($apps.Count -eq 0) { return @{ ok = $false; error = 'Choose one or more apps first.' } }
     $any = $false
     foreach ($field in (Get-WebGroupRoles).Keys) {
-        foreach ($g in @($Data.roles.$field)) {
+        # A role that wasn't sent comes through as $null - nothing to add there, not an empty name.
+        foreach ($g in @($Data.roles.$field | Where-Object { $null -ne $_ -and ([string]$_).Trim() })) {
             $problem = Test-WebGroupName ([string]$g)
             if ($problem) { return @{ ok = $false; error = $problem } }
             $any = $true
