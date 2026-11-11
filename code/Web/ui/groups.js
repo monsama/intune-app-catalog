@@ -30,7 +30,12 @@ $('btnGroupNew').addEventListener('click', () => {
   if (n) openGroup(n);
 });
 
-function setGroupBusy(on) { for (const id of ['btnGroupRename', 'btnGroupDelete', 'btnGroupSave', 'btnGroupFind']) $(id).disabled = on || (id !== 'btnGroupSave' && id !== 'btnGroupFind' && !(group && group.found)); }
+function setGroupBusy(on) {
+  for (const id of ['btnGroupRename', 'btnGroupDelete', 'btnGroupSave', 'btnGroupFind']) {
+    const needsGroup = id !== 'btnGroupSave' && id !== 'btnGroupFind';
+    setEnabled($(id), !on && !(needsGroup && !(group && group.found)), on ? 'Working...' : 'This group doesn\'t exist in Entra ID yet - Create it first.');
+  }
+}
 async function openGroup(name) {
   $('groupEmpty').hidden = true; $('groupDetail').hidden = false; $('groupLog').hidden = true;
   group = { name, found: false }; toAdd = new Map(); renderAdd(); $('gHits').replaceChildren(); $('gFindNote').textContent = '';

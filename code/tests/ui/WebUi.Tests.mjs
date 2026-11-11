@@ -85,6 +85,10 @@ try {
         const bad = await page.evaluate(() => [...document.querySelectorAll('button, [role=menuitem]')]
           .filter(b => b.offsetParent !== null && !(b.textContent.trim() || b.getAttribute('aria-label') || b.title)).map(b => b.id || b.outerHTML.slice(0, 60)));
         check(bad.length === 0, `${label}: ${view} has no button without a name`, bad.join(', '));
+        // A greyed-out button says why on hover.
+        const mute = await page.evaluate(() => [...document.querySelectorAll('button:disabled')]
+          .filter(b => b.offsetParent !== null && !b.title).map(b => b.id || b.textContent.trim()));
+        check(mute.length === 0, `${label}: ${view} - every disabled button has a tooltip`, mute.join(', '));
       };
 
       // Apps: an unconfigured app opens on Settings; the Apps list is empty but explained.
