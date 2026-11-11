@@ -43,7 +43,11 @@ try {
   for (const theme of ['light', 'dark']) {
     for (const size of [{ width: 1440, height: 900 }, { width: 820, height: 900 }]) {
       const label = `${theme} ${size.width}px`;
-      const ctx = await browser.newContext({ viewport: size, colorScheme: theme });
+      // bypassCSP: the page's own policy (script-src 'self') also forbids the
+      // string evaluation Playwright's waitForFunction uses. The page is still
+      // served with it - WebServer.Tests.ps1 checks the header and that there
+      // is no inline script.
+      const ctx = await browser.newContext({ viewport: size, colorScheme: theme, bypassCSP: true });
       const page = await ctx.newPage();
       const errors = [];
       page.on('pageerror', e => errors.push('page: ' + e.message));
