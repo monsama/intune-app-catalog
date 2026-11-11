@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intune App Catalog</title>
+<link rel="icon" href="icon.svg">
+<link rel="stylesheet" href="app.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><img src="icon.svg" alt="" width="22" height="22"><span>Intune App Catalog</span><span class="ver" id="ver"></span></div>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-view="apps" id="tabApps">Apps</button>
+    <button class="tab" role="tab" data-view="settings" id="tabSettings">Settings</button>
+  </nav>
+  <div class="topright">
+    <span class="conn" id="connBadge" title="Graph connection"></span>
+    <button class="btn ghost" id="btnClassic" title="The classic window has everything not moved here yet: editing, deploying, assigning, checks.">Open classic window</button>
+    <button class="btn ghost" id="btnTheme" title="Switch between light and dark">Dark mode</button>
+  </div>
+</header>
+
+<div class="banner warn" id="setupBanner" hidden>
+  <span>No Graph connection set up yet - Intune and Entra ID features won't work until it is.</span>
+  <button class="btn small" id="bannerSettings">Open Settings</button>
+</div>
+
+<main>
+  <!-- ============ Apps ============ -->
+  <section class="view" id="viewApps">
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="Search apps or Winget IDs" autocomplete="off" spellcheck="false">
+      <select id="filter" aria-label="Show">
+        <option value="all">All apps</option>
+        <option value="attention">Needs attention</option>
+        <option value="notdeployed">Not deployed</option>
+        <option value="pkgmissing">Package missing</option>
+        <option value="winget">Winget apps</option>
+        <option value="custom">Own package</option>
+      </select>
+      <span class="count" id="count"></span>
+      <span class="spacer"></span>
+      <button class="btn" id="btnReload">Reload</button>
+      <button class="btn" id="btnCatalogFolder">Open catalog folder</button>
+    </div>
+    <div class="tablewrap">
+      <table class="grid" id="grid">
+        <thead><tr>
+          <th data-sort="name">App</th>
+          <th data-sort="wingetId">Winget ID</th>
+          <th data-sort="type">Type</th>
+          <th data-sort="version">Version</th>
+          <th data-sort="groups" title="Required / Available / Uninstall">Groups</th>
+          <th data-sort="status">Status</th>
+          <th data-sort="audit">Last audit</th>
+        </tr></thead>
+        <tbody id="gridBody"></tbody>
+      </table>
+      <div class="empty" id="emptyState" hidden>
+        <h2>No apps in this catalog yet</h2>
+        <p>A catalog is a folder of one JSON file per app. Add apps in the classic window, or point the app at a folder that already has some.</p>
+        <p class="path" id="emptyPath"></p>
+      </div>
+    </div>
+    <p class="hint">Select an app and open the classic window to edit, deploy or assign it - those screens move here next.</p>
+  </section>
+
+  <!-- ============ Settings ============ -->
+  <section class="view" id="viewSettings" hidden>
+    <div class="cols">
+      <div class="col">
+        <article class="card">
+          <h2>Connection</h2>
+          <p class="sub">The Entra ID app registration this app signs in with (app-only, with a certificate).</p>
+          <label>Tenant ID<input id="fTenant" spellcheck="false" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000"></label>
+          <label>Client (Application) ID<input id="fClient" spellcheck="false" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000"></label>
+          <label>Certificate thumbprint
+            <span class="inputrow"><input id="fThumb" spellcheck="false" autocomplete="off"><button class="btn" id="btnPickCert">Choose...</button></span>
+          </label>
+          <p class="certstatus" id="certStatus"></p>
+          <div class="actions">
+            <button class="btn primary" id="btnTest">Test connection</button>
+            <button class="btn" id="btnSave">Save</button>
+            <span class="dirty" id="dirtyNote" hidden>Not saved</span>
+          </div>
+          <div class="result" id="testResult" hidden></div>
+        </article>
+
+        <article class="card" id="checklistCard" hidden>
+          <h2>Setup checklist</h2>
+          <ol class="checklist" id="checklist"></ol>
+          <div class="report" id="report"></div>
+        </article>
+      </div>
+
+      <div class="col">
+        <article class="card">
+          <h2>Certificate</h2>
+          <p class="sub">On this machine</p>
+          <div class="actions">
+            <button class="btn" id="btnNewCert">Create new certificate...</button>
+            <button class="btn ghost" id="btnCertFolder">Open certificates folder</button>
+          </div>
+          <p class="sub">In Entra ID <span class="muted">(signs you in with your own account)</span></p>
+          <div class="actions">
+            <button class="btn" id="btnCheckCerts">Check certificates</button>
+            <button class="btn" id="btnUpload">Upload this certificate</button>
+          </div>
+          <ul class="entracerts" id="entraCerts"></ul>
+        </article>
+
+        <article class="card">
+          <h2>API permissions</h2>
+          <p class="sub">Microsoft Graph application permissions this app uses.</p>
+          <div class="actions">
+            <button class="btn primary" id="btnAddPerms">Add required permissions...</button>
+            <button class="btn" id="btnOpenEntra">Open in Entra (grant consent)</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2>Activity</h2>
+          <pre class="log" id="jobLog" aria-live="polite">Everything the app does appears here: Test connection, saving, and the certificate and permission actions.</pre>
+        </article>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ============ dialogs ============ -->
+<dialog id="dlgPickCert">
+  <h2>Choose a certificate</h2>
+  <p class="sub">Certificates on this machine with a private key that hasn't expired.</p>
+  <ul class="picklist" id="certList"></ul>
+  <div class="actions end"><button class="btn" data-close>Cancel</button></div>
+</dialog>
+
+<dialog id="dlgNewCert">
+  <h2>Create a certificate</h2>
+  <label>Subject<input id="fSubject" value="Intune Deployment" spellcheck="false"></label>
+  <p class="sub">Self-signed, 2 years, private key not exportable. Its public .cer is saved to the certificates folder - upload it next.</p>
+  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnNewCertGo">Create</button></div>
+</dialog>
+
+<dialog id="dlgPerms">
+  <h2>Add required permissions</h2>
+  <p class="sub">Added to the app registration as Application permissions. Anything already listed is kept. Afterwards Entra opens so an admin can grant consent.</p>
+  <ul class="permlist" id="permList"></ul>
+  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnPermsGo">Add and open Entra</button></div>
+</dialog>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<div class="deadnote" id="deadNote" hidden>The app's server has stopped. Start IntuneDeployment.ps1 -Web again.</div>
+</body>
+</html>

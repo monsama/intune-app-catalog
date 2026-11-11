@@ -1404,6 +1404,98 @@ function Global:Get-GridFilterKinds {
     )
 }
 
+function Global:Get-CatalogRow {
+    <#
+      One catalog app as a list row: Type, Version, Custom Config, Groups,
+      Status, Last Audit and the flags the filters ask. Shared by the
+      classic window's grid (Update-Grid) and the web interface's list, so
+      both always say the same thing about an app.
+      -PackageIndex: Get-PackageFolderIndex, built once per list.
+    #>
+    param($App, [int]$Index, $PackageIndex)
+    $app = $App
+    $isUncommon = Test-AppIsUncommon -App $app
+    # A blank Winget ID alone (what Test-AppIsUncommon actually checks)
+    # doesn't distinguish "an uncommon WIN32 app that genuinely needs
+    # its own .intunewin built" from "a non-Win32 app type (Company
+    # Portal - Microsoft Store app (new), Microsoft 365 Apps, ...) that
+    # never needs a package from this tool at all" - this app only ever
+    # PACKAGES/DEPLOYS win32LobApp objects, so an app already known
+    # (from a prior sync) to be some other Intune type was showing a
+    # permanent, unfixable "Package missing" for something that isn't
+    # actually missing - there was never going to be a package for it.
+    # Same "Windows app (Win32)" friendly-label check already used
+    # elsewhere (Get-FriendlyIntuneAppType collapses win32LobApp/
+    # win32CatalogApp/windowsMobileMSI to this one string) - blank
+    # intuneAppType (never synced, or genuinely not deployed yet) still
+    # falls through to the normal uncommon/package check below, since
+    # that's the only case where a real package IS actually expected.
+    $isKnownNonWin32 = $app.intuneAppType -and $app.intuneAppType -ne "Windows app (Win32)"
+    # A stored packagePath counts too, Winget ID or not. "Has a Winget
+    # ID" normally means "deploys with the shared init.intunewin", so
+    # this column ignored those apps entirely - which made a custom
+    # package pointed at from the editor look like it had not been
+    # saved, because nothing here ever asked about it.
+    $needsPackageCheck = ($isUncommon -or $app.packagePath) -and -not $isKnownNonWin32
+    # Only for the Status warning below - where the package is lives in
+    # the app editor now (Package location), not in a column here.
+    $pkg = if ($needsPackageCheck) { Resolve-AppPackagePath -AppName $app.appName -Uncommon $isUncommon -Index $PackageIndex -PackagePath $app.packagePath } else { $null }
+
+    # For the Custom Config column only. Status used to repeat it as a
+    # note, which said the same thing twice on one row.
+    $hasCustomConfig = Test-AppHasCustomConfig -App $app
+
+    $status = ""
+    if (-not $app.appId) {
+        $status = if ($app.metadata) { "Metadata saved - ready to deploy" } else { "No App ID" }
+    }
+    elseif ($needsPackageCheck -and -not $pkg.Found) {
+        $status = "Package missing"
+    }
+
+    # An app that plainly has a Winget ID but was pointed at its own
+    # .intunewin installs from that, not from the shared winget
+    # wrapper - nothing else on the row says so. Only worth saying for
+    # an app that WOULD otherwise use the wrapper: an app with no
+    # Winget ID has its own package by definition, and its empty
+    # Winget ID cell already shows that.
+    if ($app.packagePath -and -not $isUncommon) {
+        $status = if ($status) { "$status; Custom package" } else { "Custom package" }
+    }
+
+    $reqCount = @($app.requiredFor).Count
+    $availCount = @($app.availableFor).Count
+    $uninstCount = @($app.uninstallFor).Count
+    return [pscustomobject]@{
+        AppName   = $app.appName
+        WingetId  = $app.wingetId
+        Type      = if ($app.intuneAppType) { $app.intuneAppType } else { "" }
+        Version   = if ($app.intuneAppVersion) { $app.intuneAppVersion } else { "" }
+        # Blank (not "Yes") for an app with no Winget ID:
+        # Test-AppHasCustomConfig returns true for every such app
+        # unconditionally (there's no computed default for it to have
+        # deviated FROM), so "Yes" there would say nothing. Left meaning
+        # one specific thing everywhere it's shown: a Winget app whose
+        # saved settings were hand-edited away from what this tool
+        # would otherwise default it to.
+        CustomConfig = if ($isUncommon) { "" } elseif ($hasCustomConfig) { "Yes" } else { "No" }
+        Groups    = "$reqCount / $availCount / $uninstCount"
+        # Not columns - what sorting the Groups column orders by.
+        Required  = $reqCount
+        Available = $availCount
+        Uninstall = $uninstCount
+        Status    = $status
+        IntuneAudit = if ($app.appId) { Get-LastAuditSummary -AppName $app.appName } else { "" }
+        # Not columns - what the "Not deployed" and "Package missing"
+        # filters ask. The second is its own flag because Status only
+        # says "Package missing" once an app has an App ID; before
+        # that it says "No App ID", and the package is just as missing.
+        HasAppId  = [bool]$app.appId
+        PackageMissing = [bool]($needsPackageCheck -and -not $pkg.Found)
+        Index     = $Index
+    }
+}
+
 function Global:Update-Grid {
     $filter = $Global:App.TxtSearch.Text.Trim().ToLower()
     # The drop-down beside the search box (Get-GridFilterKinds). "All apps",
@@ -1444,86 +1536,7 @@ function Global:Update-Grid {
             $hay = ("$($app.appName) $($app.wingetId)").ToLower()
             if ($hay -notlike "*$filter*") { continue }
         }
-        $isUncommon = Test-AppIsUncommon -App $app
-        # A blank Winget ID alone (what Test-AppIsUncommon actually checks)
-        # doesn't distinguish "an uncommon WIN32 app that genuinely needs
-        # its own .intunewin built" from "a non-Win32 app type (Company
-        # Portal - Microsoft Store app (new), Microsoft 365 Apps, ...) that
-        # never needs a package from this tool at all" - this app only ever
-        # PACKAGES/DEPLOYS win32LobApp objects, so an app already known
-        # (from a prior sync) to be some other Intune type was showing a
-        # permanent, unfixable "Package missing" for something that isn't
-        # actually missing - there was never going to be a package for it.
-        # Same "Windows app (Win32)" friendly-label check already used
-        # elsewhere (Get-FriendlyIntuneAppType collapses win32LobApp/
-        # win32CatalogApp/windowsMobileMSI to this one string) - blank
-        # intuneAppType (never synced, or genuinely not deployed yet) still
-        # falls through to the normal uncommon/package check below, since
-        # that's the only case where a real package IS actually expected.
-        $isKnownNonWin32 = $app.intuneAppType -and $app.intuneAppType -ne "Windows app (Win32)"
-        # A stored packagePath counts too, Winget ID or not. "Has a Winget
-        # ID" normally means "deploys with the shared init.intunewin", so
-        # this column ignored those apps entirely - which made a custom
-        # package pointed at from the editor look like it had not been
-        # saved, because nothing here ever asked about it.
-        $needsPackageCheck = ($isUncommon -or $app.packagePath) -and -not $isKnownNonWin32
-        # Only for the Status warning below - where the package is lives in
-        # the app editor now (Package location), not in a column here.
-        $pkg = if ($needsPackageCheck) { Resolve-AppPackagePath -AppName $app.appName -Uncommon $isUncommon -Index $packageIndexForRefresh -PackagePath $app.packagePath } else { $null }
-
-        # For the Custom Config column only. Status used to repeat it as a
-        # note, which said the same thing twice on one row.
-        $hasCustomConfig = Test-AppHasCustomConfig -App $app
-
-        $status = ""
-        if (-not $app.appId) {
-            $status = if ($app.metadata) { "Metadata saved - ready to deploy" } else { "No App ID" }
-        }
-        elseif ($needsPackageCheck -and -not $pkg.Found) {
-            $status = "Package missing"
-        }
-
-        # An app that plainly has a Winget ID but was pointed at its own
-        # .intunewin installs from that, not from the shared winget
-        # wrapper - nothing else on the row says so. Only worth saying for
-        # an app that WOULD otherwise use the wrapper: an app with no
-        # Winget ID has its own package by definition, and its empty
-        # Winget ID cell already shows that.
-        if ($app.packagePath -and -not $isUncommon) {
-            $status = if ($status) { "$status; Custom package" } else { "Custom package" }
-        }
-
-        $reqCount = @($app.requiredFor).Count
-        $availCount = @($app.availableFor).Count
-        $uninstCount = @($app.uninstallFor).Count
-        $gridRow = [pscustomobject]@{
-            AppName   = $app.appName
-            WingetId  = $app.wingetId
-            Type      = if ($app.intuneAppType) { $app.intuneAppType } else { "" }
-            Version   = if ($app.intuneAppVersion) { $app.intuneAppVersion } else { "" }
-            # Blank (not "Yes") for an app with no Winget ID:
-            # Test-AppHasCustomConfig returns true for every such app
-            # unconditionally (there's no computed default for it to have
-            # deviated FROM), so "Yes" there would say nothing. Left meaning
-            # one specific thing everywhere it's shown: a Winget app whose
-            # saved settings were hand-edited away from what this tool
-            # would otherwise default it to.
-            CustomConfig = if ($isUncommon) { "" } elseif ($hasCustomConfig) { "Yes" } else { "No" }
-            Groups    = "$reqCount / $availCount / $uninstCount"
-            # Not columns - what sorting the Groups column orders by.
-            Required  = $reqCount
-            Available = $availCount
-            Uninstall = $uninstCount
-            Status    = $status
-            IntuneAudit = if ($app.appId) { Get-LastAuditSummary -AppName $app.appName } else { "" }
-            # Not columns - what the "Not deployed" and "Package missing"
-            # filters ask. The second is its own flag because Status only
-            # says "Package missing" once an app has an App ID; before
-            # that it says "No App ID", and the package is just as missing.
-            HasAppId  = [bool]$app.appId
-            PackageMissing = [bool]($needsPackageCheck -and -not $pkg.Found)
-            Index     = $i
-        }
+        $gridRow = Get-CatalogRow -App $app -Index $i -PackageIndex $packageIndexForRefresh
         # The problem filter, on the row as it will be shown - after the
         # Status and Last Audit it is judged by have been worked out.
         if ($keepRow -and -not (& $keepRow $gridRow)) { continue }

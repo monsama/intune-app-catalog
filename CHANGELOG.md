@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **New web interface (preview).** Start it with
+  `IntuneDeployment.ps1 -Web`. It works like the NOBS apps:
+  - a small local server answers only on 127.0.0.1, and the token
+    changes on every start;
+  - the interface opens maximised in an Edge or Chrome app window, a
+    normal window you can move, snap, minimise, maximise and close.
+
+  This first step has:
+  - **Apps:** the catalog with search, filters (needs attention, not
+    deployed, package missing, ...), sorting and coloured status.
+  - **Settings:** connection fields, Test connection with the setup
+    checklist and permission report, choosing or creating a certificate,
+    checking, uploading and deleting certificates in Entra, "Add required
+    permissions", and opening Entra for consent.
+  - **Activity:** one log of everything, including the output of each
+    Entra action.
+  - Light and dark mode.
+
+  "Open classic window" opens everything that hasn't moved yet, such as
+  editing, deploying, assigning and checks. The classic window is still
+  what `IntuneDeployment.ps1` opens by default.
+
+### Changed
+
+- App state setup is now shared by both interfaces
+  (`code/Private/AppState.ps1`), and so is the catalog list row
+  (`Get-CatalogRow`). The app version now lives in `AppState.ps1`.
+
 ## 1.9.0
 
 ### Added
