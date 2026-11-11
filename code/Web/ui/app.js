@@ -369,7 +369,7 @@ for (const b of document.querySelectorAll('dialog [data-close]')) b.addEventList
 
 // jobs: Entra actions that sign the user in, in a console window of their own
 let jobRunning = false;
-function jobButtons(on) { for (const id of ['btnCheckCerts', 'btnUpload', 'btnAddPerms', 'btnDeployGo', 'btnPushGo', 'btnScriptIntune', 'btnScriptLocal', 'btnGroupSave', 'btnGroupsDeleteGo']) $(id).disabled = !on; if (on) updateActions(); }
+function jobButtons(on) { for (const id of ['btnCheckCerts', 'btnUpload', 'btnAddPerms', 'btnDeployGo', 'btnPushGo', 'btnScriptIntune', 'btnScriptLocal', 'btnGroupSave', 'btnGroupsDeleteGo']) $(id).disabled = !on; if (on) { updateActions(); updateCheckActions(); } }
 async function runJob(body, onDone, opts = {}) {
   if (jobRunning) { toast('Another action is still running - wait for it to finish.', true); return false; }
   const start = await api(opts.path || '/api/job-start', opts.path ? body : { ...fields(), ...body });
@@ -524,8 +524,9 @@ $('btnDeployGo').addEventListener('click', async () => {
 
 // ---------------------------------------------------------------- push groups
 let pushNames = [];
-$('btnPush').addEventListener('click', async () => {
-  pushNames = [...selected];
+$('btnPush').addEventListener('click', () => openPushGroups([...selected]));
+async function openPushGroups(names) {
+  pushNames = names;
   $('pushRows').replaceChildren(el('tr', {}, el('td', { colspan: 3, class: 'muted', text: 'Reading the current assignments in Intune...' })));
   $('pushLog').textContent = '';
   $('btnPushGo').disabled = true;
@@ -544,7 +545,7 @@ $('btnPush').addEventListener('click', async () => {
     $('btnPushGo').disabled = changes === 0;
     $('btnPushGo').textContent = changes === 0 ? 'Nothing to change' : 'Apply';
   }, { path: '/api/push-start', log: 'pushLog', startText: 'Comparing with Intune...' });
-});
+}
 $('btnPushGo').addEventListener('click', async () => {
   $('btnPushGo').disabled = true;
   await runJob({ names: pushNames, mode: 'Apply' }, ok => {
@@ -554,57 +555,273 @@ $('btnPushGo').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- checks
-let findings = [];
-function fixButtons(f) {
-  const out = [];
-  const fix = async (action, value) => {
-    const r = await api('/api/checks-fix', { action, catalogName: f.catalogName || f.app, value });
+let findings = [], checkSel = new Set(), checksRunning = false;
+const checkLog = t => { const l = $('checkLog'); l.textContent += t.endsWith('\n') ? t : t + '\n'; l.scrollTop = l.scrollHeight; activity(t); };
+const keyOf = f => f.key || `${f.area}|${f.catalogName || f.app}|${f.appId}`;
+// A stage's fresh findings replace what that stage said before about the same apps (the last audit's cached rows included).
+function mergeFindings(r) {
+  const names = new Set(r.names || []), areas = new Set(r.areas || []);
+  findings = findings.filter(f => !(areas.has(f.area) && names.has(f.catalogName || f.app))).concat(r.findings || []);
+}
+function setCheckAreas() {
+  const cur = $('checkFilter').value, areas = [...new Set(findings.map(f => f.area))].sort();
+  $('checkFilter').replaceChildren(el('option', { value: '', text: 'All areas' }), ...areas.map(a => el('option', { value: a, text: a })));
+  if (areas.includes(cur)) $('checkFilter').value = cur;
+}
+// One stage that is a job (details, assignments): resolves when it has ended.
+function checkJob(path, body, label) {
+  return new Promise(resolve => {
+    runJob(body, (ok, res, after) => resolve(ok && after && after.ok ? after : null), { path, log: 'checkLog', startText: label }).then(started => { if (!started) resolve(null); });
+  });
+}
+async function runChecks(names) {
+  if (checksRunning) return;
+  checksRunning = true; updateCheckActions();
+  const b = $('btnRunChecks'); b.disabled = true; b.textContent = 'Checking...';
+  $('checkLogBox').open = true; $('checkLog').textContent = '';
+  const only = names && names.length ? { names } : {};
+  try {
+    $('checkNotes').textContent = 'Reading the catalog, Intune and Entra ID...';
+    const r = await api('/api/checks-run', only);
     if (!r.ok) { toast(r.error, true); return; }
-    toast('Fixed in the catalog.');
-    findings = findings.filter(x => x.key !== f.key); renderChecks(); loadApps();
+    if (names && names.length) {
+      const set = new Set(names);
+      findings = findings.filter(f => !set.has(f.catalogName || f.app)).concat(r.findings || []);
+    } else findings = r.findings || [];
+    const notes = [...(r.notes || [])];
+    checkLog(`${stamp()} ${notes.join(' ')}`);
+    renderChecks();
+    if ($('chkDetails').checked && r.connected && r.deployed > 0) {
+      $('checkNotes').textContent = `Reading ${r.deployed} deployed app(s) from Intune in detail - the slowest part...`;
+      const d = await checkJob('/api/checks-details', only, 'Reading the deployed apps in detail...');
+      if (d) { mergeFindings(d); renderChecks(); } else notes.push('The detailed check of the deployed apps did not finish - see the log.');
+      const a = await checkJob('/api/checks-assign', only, 'Comparing the assignments...');
+      if (a) { mergeFindings(a); renderChecks(); } else notes.push('The assignments could not be compared - see the log.');
+    }
+    if ($('chkWinget').checked && r.winget > 0) {
+      $('checkNotes').textContent = `Asking winget about ${r.winget} Winget ID(s)...`;
+      checkLog(`${stamp()} Asking winget about ${r.winget} Winget ID(s)...`);
+      const w = await api('/api/checks-winget', only);
+      if (w.ok) { mergeFindings(w); checkLog(`${stamp()} winget: ${(w.findings || []).length} problem(s).`); }
+      else { notes.push(w.error); checkLog(`${stamp()} [WARN] ${w.error}`); }
+    }
+    $('checkNotes').textContent = notes.join(' ');
+    $('checkEmptyTitle').textContent = 'Nothing to fix';
+    $('checkEmptyText').textContent = 'The catalog, Intune and Entra ID agree.';
+    checkLog(`${stamp()} [OK] Checks finished: ${findings.length} finding(s).`);
+  } finally {
+    checksRunning = false; b.disabled = false; b.textContent = 'Run checks';
+    setCheckAreas(); renderChecks();
+  }
+}
+$('btnRunChecks').addEventListener('click', () => runChecks());
+
+const selFindings = () => findings.filter(f => checkSel.has(keyOf(f)));
+const namesWith = (list, action) => [...new Set(list.filter(f => (f.actions || []).includes(action)).map(f => f.catalogName || f.app))];
+function updateCheckActions() {
+  const sel = selFindings();
+  const count = a => namesWith(sel, a).length;
+  const set = (id, a, label) => { const n = count(a); $(id).disabled = checksRunning || jobRunning || n === 0; $(id).textContent = n > 1 ? `${label} (${n})` : label; };
+  set('btnFixPull', 'Pull', 'Pull'); set('btnFixPushSettings', 'PushMetadata', 'Push settings'); set('btnFixPushGroups', 'PushGroups', 'Push groups');
+  $('btnFixAdd').disabled = checksRunning || jobRunning || !sel.some(f => (f.actions || []).includes('AddToCatalog'));
+  $('btnFixRecheck').disabled = checksRunning || jobRunning || sel.length === 0;
+  $('checkSelCount').textContent = sel.length ? `${sel.length} selected` : '';
+}
+$('btnFixPull').addEventListener('click', () => openPull(namesWith(selFindings(), 'Pull')));
+$('btnFixPushSettings').addEventListener('click', () => pushSettings(namesWith(selFindings(), 'PushMetadata')));
+$('btnFixPushGroups').addEventListener('click', () => openPushGroups(namesWith(selFindings(), 'PushGroups')));
+$('btnFixAdd').addEventListener('click', () => addFromIntune(selFindings().filter(f => (f.actions || []).includes('AddToCatalog'))));
+$('btnFixRecheck').addEventListener('click', () => runChecks([...new Set(selFindings().map(f => f.catalogName || f.app).filter(Boolean))]));
+$('checkAll').addEventListener('change', e => {
+  const area = $('checkFilter').value;
+  for (const f of findings.filter(f => !area || f.area === area)) { if (e.target.checked) checkSel.add(keyOf(f)); else checkSel.delete(keyOf(f)); }
+  renderChecks();
+});
+
+function dropFinding(f) { findings = findings.filter(x => keyOf(x) !== keyOf(f)); checkSel.delete(keyOf(f)); renderChecks(); }
+function fixButtons(f) {
+  const out = [], name = f.catalogName || f.app;
+  const btn = (text, onclick, title) => out.push(el('button', { class: 'btn small', text, title: title || '', onclick }));
+  const fix = async (action, value) => {
+    const r = await api('/api/checks-fix', { action, catalogName: name, value });
+    if (!r.ok) { toast(r.error, true); return false; }
+    toast('Fixed in the catalog.'); dropFinding(f); loadApps(); return true;
   };
   for (const a of f.actions || []) {
-    if (a === 'RenameFromIntune' && f.data && f.data.IntuneName) out.push(el('button', { class: 'btn small', text: 'Use Intune’s name', title: f.data.IntuneName, onclick: () => fix(a, f.data.IntuneName) }));
-    else if (a === 'SetAppId' && f.data && f.data.MatchedId) out.push(el('button', { class: 'btn small', text: 'Link to ' + (f.data.MatchedName || 'match'), onclick: () => fix(a, f.data.MatchedId) }));
+    if (a === 'RenameFromIntune' && f.data && f.data.IntuneName) btn('Use Intune’s name', () => fix(a, f.data.IntuneName), f.data.IntuneName);
+    else if (a === 'SetAppId' && f.data && f.data.MatchedId) btn('Link to ' + (f.data.MatchedName || 'match'), () => fix(a, f.data.MatchedId));
     else if (a === 'ChooseAppId' && f.data && f.data.Candidates && f.data.Candidates.length && !(f.data.MatchedId)) {
-      const sel = el('select', {}, ...f.data.Candidates.map(c => el('option', { value: c.id, text: c.displayName })));
-      out.push(sel, el('button', { class: 'btn small', text: 'Link', onclick: () => fix('SetAppId', sel.value) }));
+      const sel = el('select', { 'aria-label': 'Intune app' }, ...f.data.Candidates.map(c => el('option', { value: c.id, text: c.displayName })));
+      out.push(sel); btn('Link', () => fix('SetAppId', sel.value));
     }
-    else if (a === 'ClearAppId') out.push(el('button', { class: 'btn small', text: 'Clear App ID', onclick: () => { if (confirm(`Clear ${f.app}'s App ID? It points at an app that no longer exists in Intune.`)) fix(a); } }));
-    else if (a === 'EditApp') out.push(el('button', { class: 'btn small', text: 'Edit', onclick: () => openEditor(f.catalogName || f.app) }));
-    else if (a === 'PushGroups') out.push(el('button', { class: 'btn small', text: 'Push groups', onclick: () => { selected.clear(); selected.add(f.catalogName || f.app); $('btnPush').disabled = false; $('btnPush').click(); } }));
+    else if (a === 'ClearAppId') btn('Clear App ID', () => { if (confirm(`Clear ${f.app}'s App ID? It points at an app that no longer exists in Intune.`)) fix(a); });
+    else if (a === 'EditApp') btn('Edit', () => openEditor(name));
+    else if (a === 'Pull') btn('Pull', () => openPull([name]), 'Intune is right: take its settings and groups into the catalog');
+    else if (a === 'PushMetadata') btn('Push settings', () => pushSettings([name]), 'The catalog is right: send its settings to Intune');
+    else if (a === 'PushGroups') btn('Push groups', () => openPushGroups([name]), 'The catalog is right: send its groups to Intune');
+    else if (a === 'AddToCatalog') btn('Add to catalog', () => addFromIntune([f]));
+    else if (a === 'FindWingetId') btn('Find Winget ID', () => openWinget(f.app, async id => { if (await fix('SetWingetId', id)) runChecks([name]); }));
+    else if (a === 'Recheck') btn('Re-check', () => runChecks([name]));
   }
-  const rest = (f.actions || []).filter(a => !['RenameFromIntune', 'SetAppId', 'ChooseAppId', 'ClearAppId', 'EditApp', 'PushGroups'].includes(a));
-  if (rest.length && !out.length) out.push(el('span', { class: 'muted', text: 'In the classic window' }));
   return el('div', { class: 'fixes' }, ...out);
 }
 function renderChecks() {
   const area = $('checkFilter').value;
   const list = findings.filter(f => !area || f.area === area);
-  $('checkBody').replaceChildren(...list.map(f => el('tr', {},
-    el('td', {}, el('span', { class: 'pill ' + (f.failed ? 'err' : 'warn'), text: f.area })),
-    el('td', { class: 'name', text: f.app }),
-    el('td', {}, f.problem, f.cached ? el('span', { class: 'muted', text: ` (last audit${f.checkedAt ? ', ' + f.checkedAt : ''})` }) : ''),
-    el('td', { class: 'cmp', text: f.catalog }), el('td', { class: 'cmp', text: f.intune }),
-    el('td', {}, fixButtons(f)))));
+  $('checkBody').replaceChildren(...list.map(f => {
+    const k = keyOf(f);
+    const box = el('input', { type: 'checkbox', 'aria-label': 'Select', checked: checkSel.has(k) });
+    box.addEventListener('change', () => { if (box.checked) checkSel.add(k); else checkSel.delete(k); updateCheckActions(); });
+    return el('tr', { 'aria-selected': String(checkSel.has(k)) },
+      el('td', { class: 'sel' }, box),
+      el('td', {}, el('span', { class: 'pill ' + (f.failed ? 'err' : 'warn'), text: f.area })),
+      el('td', { class: 'name', text: f.app }),
+      el('td', {}, f.problem, f.cached ? el('span', { class: 'muted', text: ` (last audit${f.checkedAt ? ', ' + f.checkedAt : ''})` }) : ''),
+      el('td', { class: 'cmp', text: f.catalog }), el('td', { class: 'cmp', text: f.intune }),
+      el('td', {}, fixButtons(f)));
+  }));
+  $('checkAll').checked = list.length > 0 && list.every(f => checkSel.has(keyOf(f)));
   $('checkCount').textContent = findings.length ? `${list.length} finding(s)` : '';
   $('checkGrid').hidden = findings.length === 0;
   $('checkEmpty').hidden = findings.length > 0;
+  updateCheckActions();
 }
 $('checkFilter').addEventListener('change', renderChecks);
-$('btnRunChecks').addEventListener('click', async () => {
-  const b = $('btnRunChecks'); b.disabled = true; b.textContent = 'Checking...';
-  $('checkNotes').textContent = 'Reading the catalog, Intune and Entra ID...';
-  const r = await api('/api/checks-run');
-  b.disabled = false; b.textContent = 'Run checks';
-  if (!r.ok) { toast(r.error, true); return; }
-  findings = r.findings || [];
-  $('checkNotes').textContent = (r.notes || []).join(' ');
-  const areas = [...new Set(findings.map(f => f.area))].sort();
-  $('checkFilter').replaceChildren(el('option', { value: '', text: 'All areas' }), ...areas.map(a => el('option', { value: a, text: a })));
-  $('checkEmptyTitle').textContent = 'Nothing to fix';
-  $('checkEmptyText').textContent = 'The catalog, Intune and Entra ID agree.';
-  renderChecks();
+
+// Add to catalog: reads the Intune-only apps' settings and groups and adds them.
+function addFromIntune(list) {
+  const items = list.map(f => ({ id: f.appId, name: f.app }));
+  if (!items.length) return;
+  if (!confirm(`Add ${items.length === 1 ? `"${items[0].name}"` : items.length + ' apps'} from Intune to the catalog?\n\nEach one's settings and groups are read from Intune first. Nothing in Intune changes.`)) return;
+  runDialog('Add to catalog', items.map(i => i.name).join(', '));
+  runJob({ apps: items }, (ok, res, after) => {
+    if (!ok || !after) return;
+    const parts = [`Added ${after.added.length} app(s).`];
+    if (after.skipped.length) parts.push(`Skipped: ${after.skipped.join('; ')}.`);
+    if (after.noGroups.length) parts.push(`Groups couldn't be read for ${after.noGroups.join(', ')} - left empty.`);
+    toast(parts.join(' '), !after.added.length);
+    for (const f of list) if (after.added.includes(f.app)) dropFinding(f);
+    loadApps();
+  }, { path: '/api/add-from-intune', log: 'runLog', startText: 'Reading from Intune...' });
+}
+
+// Runs one job per name, one after another, in the Run dialog; resolves with the names that worked.
+async function runEach(names, body, opts) {
+  const done = [];
+  for (const name of names) {
+    const ok = await new Promise(resolve => {
+      runJob(body(name), ok => resolve(ok), { ...opts, startText: (opts.startText || '') + name + '...' }).then(started => { if (!started) resolve(false); });
+    });
+    if (ok) done.push(name);
+  }
+  return done;
+}
+async function pushSettings(names) {
+  if (!names.length) return;
+  if (!confirm(`Send the catalog's settings for ${names.length === 1 ? `"${names[0]}"` : names.length + ' apps'} to Intune?\n\nDescription, commands, detection rule, requirements, return codes and dependencies are replaced with the catalog's. No package is uploaded; groups aren't touched.`)) return;
+  runDialog('Push settings to Intune', names.join(', '));
+  const done = await runEach(names, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'runLog', startText: 'Pushing ' });
+  toast(`Settings pushed for ${done.length} of ${names.length} app(s).`, done.length < names.length);
+  for (const f of findings.filter(f => done.includes(f.catalogName) && (f.actions || []).includes('PushMetadata'))) dropFinding(f);
+  loadApps();
+}
+
+// ---------------------------------------------------------------- winget search (Find Winget ID, Add app)
+let wingetPick = null;
+function openWinget(query, onPick) {
+  wingetPick = onPick;
+  $('wgQuery').value = query || ''; $('wgRows').replaceChildren(); $('wgNote').textContent = 'Searches winget’s sources. Pick the package to use its ID.';
+  $('dlgWinget').showModal();
+  if (query) searchWinget();
+}
+async function searchWinget() {
+  const q = $('wgQuery').value.trim();
+  if (q.length < 2) { $('wgNote').textContent = 'Type at least 2 characters.'; return; }
+  $('wgNote').textContent = 'Asking winget...'; $('btnWgSearch').disabled = true;
+  const r = await api('/api/winget-search', { q });
+  $('btnWgSearch').disabled = false;
+  if (!r.ok) { $('wgNote').textContent = r.error; return; }
+  $('wgNote').textContent = r.rows.length ? `${r.rows.length} package(s). Pick one to use its ID.` : 'winget found nothing - try a shorter name or the publisher.';
+  $('wgRows').replaceChildren(...r.rows.map(x => el('tr', {}, el('td', { text: x.name }), el('td', { class: 'chg', text: x.id }), el('td', { text: x.version }), el('td', { text: x.source }),
+    el('td', {}, el('button', { class: 'btn small', text: 'Use', onclick: () => { $('dlgWinget').close(); if (wingetPick) wingetPick(x.id, x); } })))));
+}
+$('btnWgSearch').addEventListener('click', searchWinget);
+$('btnFindWinget').addEventListener('click', () => openWinget($('aName').value.trim() || $('aWinget').value.trim(), (id, x) => {
+  $('aWinget').value = id;
+  if (!$('aName').value.trim()) $('aName').value = x.name;
+  if (!$('mPublisher').value.trim() && id.includes('.')) $('mPublisher').value = id.split('.')[0];
+}));
+$('wgQuery').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchWinget(); } });
+
+// ---------------------------------------------------------------- batch edit, add/remove groups
+function openBatch(names) {
+  batchNames = names;
+  $('batchTitle').textContent = `Batch edit - ${names.length} app(s)`;
+  $('batchText').textContent = `Tick the fields to change on ${names.join(', ')}. Everything else stays as each app has it.`;
+  for (const c of document.querySelectorAll('[data-bf]')) c.checked = false;
+  $('bMinOs').replaceChildren(...((prefs && prefs.minOsChoices) || [{ value: 'W10_22H2', label: 'Windows 10 22H2' }]).map(o => el('option', { value: o.value, text: o.label || o.value })));
+  $('bMinOs').value = 'W10_22H2';
+  $('bDeps').replaceChildren(...apps.map(a => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-bdep': a.name }), a.name)));
+  $('batchErr').hidden = true; $('batchLog').hidden = true; $('batchLog').textContent = '';
+  $('btnBatchGo').disabled = false;
+  $('dlgBatch').showModal();
+}
+let batchNames = [];
+for (const box of document.querySelectorAll('.bfield')) box.addEventListener('input', e => { if (!e.target.matches('[data-bf]')) { const c = box.querySelector('[data-bf]'); if (c) c.checked = true; } });
+function readBatch() {
+  const v = {
+    architecture: () => [...document.querySelectorAll('[data-barch]')].filter(c => c.checked).map(c => c.dataset.barch),
+    minOSKey: () => $('bMinOs').value, installContext: () => $('bContext').value, installTimeMinutes: () => $('bTime').value.trim(),
+    minDiskSpaceMB: () => $('bDisk').value.trim(), minMemoryMB: () => $('bMem').value.trim(), minProcessors: () => $('bCpus').value.trim(), minCpuSpeedMHz: () => $('bSpeed').value.trim(),
+    deviceRestartBehavior: () => $('bRestart').value, allowAvailableUninstall: () => $('bUninstall').value === '1', isFeatured: () => $('bFeatured').value === '1',
+    wingetInstallMethod: () => $('bMethod').value, publisher: () => $('bPublisher').value, owner: () => $('bOwner').value, developer: () => $('bDeveloper').value,
+    informationUrl: () => $('bInfoUrl').value, privacyUrl: () => $('bPrivacyUrl').value, notes: () => $('bNotes').value,
+    returnCodes: () => lines('bCodes').map(l => { const m = /^(-?\d+)\s*[=:]\s*(\w+)$/.exec(l); return m ? { returnCode: m[1], type: m[2] } : { returnCode: l, type: '' }; }),
+    dependencies: () => [...document.querySelectorAll('[data-bdep]')].filter(c => c.checked).map(c => c.dataset.bdep),
+  };
+  const changes = {};
+  for (const c of document.querySelectorAll('[data-bf]')) if (c.checked) changes[c.dataset.bf] = v[c.dataset.bf]();
+  return changes;
+}
+$('btnBatchGo').addEventListener('click', async () => {
+  $('batchErr').hidden = true;
+  const r = await api('/api/batch-edit', { names: batchNames, changes: readBatch() });
+  if (!r.ok) { $('batchErr').textContent = r.error; $('batchErr').hidden = false; return; }
+  loadApps();
+  const msg = `Changed ${r.changed.length} app(s) in the catalog.` + (r.kept.length ? ` Install commands edited by hand were kept on ${r.kept.join(', ')}.` : '');
+  if (!$('bPush').checked || !r.deployed.length) { toast(msg); $('dlgBatch').close(); return; }
+  $('btnBatchGo').disabled = true; $('batchLog').hidden = false;
+  const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'batchLog', startText: 'Pushing ' });
+  toast(`${msg} Settings pushed for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length);
+});
+
+let gbMode = 'add', gbNames = [];
+function openGroupsBatch(mode, names) {
+  gbMode = mode; gbNames = names;
+  const sel = names.map(n => apps.find(a => a.name === n)).filter(Boolean);
+  $('gbTitle').textContent = mode === 'add' ? 'Add groups' : 'Remove groups';
+  $('gbText').textContent = (mode === 'add' ? 'Adds these groups to ' : 'Removes these groups from ') + `${names.join(', ')} - in the catalog. Push groups sends them to Intune.`;
+  const roles = [['requiredFor', 'Required'], ['availableFor', 'Available'], ['uninstallFor', 'Uninstall'], ['excludeFor', 'Excluded']];
+  const favs = (prefs && prefs.favoriteGroups) || [];
+  $('gbRoles').replaceChildren(...roles.map(([field, label]) => {
+    const choices = mode === 'add' ? favs : [...new Set(sel.flatMap(a => a[field] || []))].sort();
+    return el('fieldset', { class: 'gbrole' }, el('legend', { text: label }),
+      ...(choices.length ? choices.map(g => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-gbr': field, value: g }), g)) : [el('span', { class: 'muted', text: mode === 'add' ? 'No favourites yet.' : 'None of these apps has one.' })]),
+      mode === 'add' ? el('input', { 'data-gbx': field, placeholder: 'Other group name', spellcheck: 'false' }) : null);
+  }));
+  $('gbErr').hidden = true; $('gbLog').hidden = true; $('gbLog').textContent = ''; $('btnGbGo').disabled = false;
+  $('dlgGroupsBatch').showModal();
+}
+$('btnGbGo').addEventListener('click', async () => {
+  const roles = {};
+  for (const c of document.querySelectorAll('[data-gbr]:checked')) (roles[c.dataset.gbr] = roles[c.dataset.gbr] || []).push(c.value);
+  for (const t of document.querySelectorAll('[data-gbx]')) if (t.value.trim()) (roles[t.dataset.gbx] = roles[t.dataset.gbx] || []).push(t.value.trim());
+  const r = await api('/api/batch-groups', { mode: gbMode, names: gbNames, roles });
+  if (!r.ok) { $('gbErr').textContent = r.error; $('gbErr').hidden = false; return; }
+  loadApps();
+  $('dlgGroupsBatch').close();
+  toast(`${r.changed.length} app(s) changed in the catalog.`);
+  if ($('gbPush').checked && r.deployed.length) openPushGroups(r.deployed);
 });
 
 // ---------------------------------------------------------------- more menu (also on right-click)
@@ -614,7 +831,8 @@ function openMenu(x, y) {
   const one = oneSelected();
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
-  const enable = { package: !any || sel.some(a => !a.wingetId), pull: anyId, status: !!(one && one.hasAppId), copyid: !!(one && one.hasAppId), clearid: !!(one && one.hasAppId), delete: !!(one && one.hasAppId), remove: !!one };
+  const enable = { package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
+    copyid: !!(one && one.hasAppId), clearid: !!(one && one.hasAppId), delete: anyId, remove: !!one };
   for (const b of menu.querySelectorAll('button')) b.disabled = !enable[b.dataset.act];
   menu.querySelector('[data-act=package]').textContent = !any ? 'Package every app with its own installer' : enable.package ? `Package ${sel.length > 1 ? 'the selected apps' : 'this app'} (build .intunewin)` : 'Package (Winget apps use the shared package)';
   menu.hidden = false;
@@ -641,7 +859,7 @@ function runDialog(title, text) {
 menu.addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   closeMenu();
-  const names = [...selected], one = oneSelected();
+  const names = [...selected], one = oneSelected(), sel = () => names.map(n => apps.find(a => a.name === n)).filter(Boolean);
   switch (b.dataset.act) {
     case 'package':
       runDialog('Package', names.length ? `Building the .intunewin for ${names.length} app(s) with their own installer.` : 'Building every app with its own installer.');
@@ -649,6 +867,10 @@ menu.addEventListener('click', async e => {
         { path: '/api/package-start', log: 'runLog', startText: 'Packaging...' });
       break;
     case 'pull': openPull(names); break;
+    case 'pushsettings': pushSettings(sel().filter(a => a.hasAppId).map(a => a.name)); break;
+    case 'batchedit': if (!prefs) await loadPrefs(); openBatch(names); break;
+    case 'addgroups': if (!prefs) await loadPrefs(); openGroupsBatch('add', names); break;
+    case 'removegroups': openGroupsBatch('remove', names); break;
     case 'status': openStatus(one.name); break;
     case 'copyid':
       try { await navigator.clipboard.writeText(one.appId); toast('Copied ' + one.appId); } catch (err) { toast('Could not copy: ' + one.appId, true); }
@@ -657,12 +879,14 @@ menu.addEventListener('click', async e => {
       if (!confirm(`Clear ${one.name}'s App ID in the catalog?\n\nOnly the catalog changes; the app stays in Intune.`)) return;
       { const r = await api('/api/clear-appid', { name: one.name }); toast(r.ok ? 'App ID cleared.' : r.error, !r.ok); loadApps(); }
       break;
-    case 'delete':
-      if (!confirm(`Delete "${one.name}" from Intune?\n\nIts assignments go with it - devices that have it keep it installed, but Intune stops managing it. The catalog entry stays, without its App ID.`)) return;
-      runDialog('Delete from Intune', one.name);
-      runJob({ name: one.name }, ok => { toast(ok ? `${one.name} was deleted from Intune.` : 'Delete failed - see the log.', !ok); loadApps(); },
-        { path: '/api/delete-intune', log: 'runLog', startText: `Deleting ${one.name}...` });
+    case 'delete': {
+      const del = sel().filter(a => a.hasAppId).map(a => a.name);
+      if (!confirm(`Delete ${del.length === 1 ? `"${del[0]}"` : `these ${del.length} apps`} from Intune?\n\n${del.length > 1 ? del.join('\n') + '\n\n' : ''}Their assignments go with them - devices that have them keep them installed, but Intune stops managing them. The catalog entries stay, without an App ID.`)) return;
+      runDialog('Delete from Intune', del.join(', '));
+      const done = await runEach(del, name => ({ name }), { path: '/api/delete-intune', log: 'runLog', startText: 'Deleting ' });
+      toast(`Deleted ${done.length} of ${del.length} app(s) from Intune.`, done.length < del.length); loadApps();
       break;
+    }
     case 'remove':
       if (!confirm(`Remove "${one.name}" from the catalog?\n\nOnly the catalog changes - nothing in Intune. A copy of its file goes to the Backups folder.`)) return;
       { const r = await api('/api/app-remove', { name: one.name }); toast(r.ok ? 'Removed from the catalog.' : r.error, !r.ok); selected.delete(one.name); loadApps(); }

@@ -20,7 +20,7 @@
   </nav>
   <div class="topright">
     <span class="conn" id="connBadge" title="Graph connection"></span>
-    <button class="btn ghost" id="btnClassic" title="The classic window still has what is not here yet: the group manager, batch edit and some Checks fixes.">Open classic window</button>
+    <button class="btn ghost" id="btnClassic" title="The classic window still has what is not here yet: Diagnostics, the setup guides and the prerequisites check.">Open classic window</button>
     <button class="btn ghost" id="btnTheme" title="Switch between light and dark">Dark mode</button>
   </div>
 </header>
@@ -79,17 +79,27 @@
   <section class="view" id="viewChecks" hidden>
     <div class="toolbar">
       <button class="btn primary" id="btnRunChecks">Run checks</button>
+      <label class="chk inline" title="Reads every deployed app from Intune - settings, groups, dependencies and assignments the catalog doesn't have. The slowest part."><input type="checkbox" id="chkDetails" checked>Deployed apps in detail</label>
+      <label class="chk inline" title="Asks winget whether each Winget ID still exists."><input type="checkbox" id="chkWinget" checked>Ask winget</label>
       <select id="checkFilter" aria-label="Show"><option value="">All areas</option></select>
       <span class="count" id="checkCount"></span>
+      <span class="spacer"></span>
+      <span class="muted" id="checkSelCount"></span>
+      <button class="btn" id="btnFixPull" disabled title="Intune is right: take its settings and groups into the catalog">Pull</button>
+      <button class="btn" id="btnFixPushSettings" disabled title="The catalog is right about settings or dependencies: send them to Intune">Push settings</button>
+      <button class="btn" id="btnFixPushGroups" disabled title="The catalog is right about groups: send them to Intune">Push groups</button>
+      <button class="btn" id="btnFixAdd" disabled title="Add the Intune-only apps to the catalog, with their settings and groups">Add to catalog</button>
+      <button class="btn" id="btnFixRecheck" disabled>Re-check</button>
     </div>
     <p class="sub" id="checkNotes">Compares the catalog with Intune and Entra ID, checks its dependencies, and shows what the last audit found. Only reads - every fix is a button you press.</p>
     <div class="tablewrap">
       <table class="grid" id="checkGrid" hidden>
-        <thead><tr><th>Area</th><th>App</th><th>Problem</th><th>Catalog</th><th>Intune</th><th>Fix</th></tr></thead>
+        <thead><tr><th class="sel"><input type="checkbox" id="checkAll" aria-label="Select all shown"></th><th>Area</th><th>App</th><th>Problem</th><th>Catalog</th><th>Intune</th><th>Fix</th></tr></thead>
         <tbody id="checkBody"></tbody>
       </table>
       <div class="empty" id="checkEmpty"><h2 id="checkEmptyTitle">Not run yet</h2><p id="checkEmptyText">Run checks to see what needs attention.</p></div>
     </div>
+    <details class="logbox" id="checkLogBox"><summary>Log</summary><pre class="log" id="checkLog"></pre></details>
   </section>
 
   <!-- ============ Groups ============ -->
@@ -322,7 +332,7 @@
       <section>
         <h3>General</h3>
         <label>Name<input id="aName" required autocomplete="off"></label>
-        <label>Winget ID <span class="muted">(empty for an app with its own package)</span><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip"></label>
+        <label>Winget ID <span class="muted">(empty for an app with its own package)</span><span class="inputrow"><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip"><button type="button" class="btn" id="btnFindWinget" title="Search winget for the package">Find...</button></span></label>
         <label>App ID in Intune <span class="muted">(empty until it's deployed)</span><input id="aAppId" autocomplete="off" spellcheck="false"></label>
         <h3>Assignments <span class="muted">(one group per line)</span></h3>
         <div class="groups4">
@@ -414,7 +424,12 @@
 <div class="menu" id="appMenu" role="menu" hidden>
   <button role="menuitem" data-act="package">Package (build .intunewin)</button>
   <button role="menuitem" data-act="pull">Pull from Intune...</button>
+  <button role="menuitem" data-act="pushsettings" title="Send the catalog's settings to Intune, without uploading a package">Push settings to Intune...</button>
   <button role="menuitem" data-act="status">Install status...</button>
+  <hr>
+  <button role="menuitem" data-act="batchedit">Batch edit...</button>
+  <button role="menuitem" data-act="addgroups">Add groups...</button>
+  <button role="menuitem" data-act="removegroups">Remove groups...</button>
   <hr>
   <button role="menuitem" data-act="copyid">Copy App ID</button>
   <button role="menuitem" data-act="clearid">Clear App ID</button>
@@ -492,6 +507,66 @@
   <label>More group names <span class="muted">(one per line)</span><textarea id="gDelMore" rows="3" class="monotext" spellcheck="false"></textarea></label>
   <pre class="log" id="gDelLog" hidden></pre>
   <div class="actions end"><button class="btn" data-close>Close</button><button class="btn danger" id="btnGroupsDeleteGo">Delete</button></div>
+</dialog>
+
+<dialog id="dlgBatch" class="wide">
+  <h2 id="batchTitle">Batch edit</h2>
+  <p class="sub" id="batchText">Tick the fields to change. Everything else stays as each app has it.</p>
+  <div class="formgrid">
+    <section>
+      <h3>Requirements</h3>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="architecture">Architecture</label>
+        <div class="checks"><label class="chk"><input type="checkbox" data-barch="x64" checked>x64</label><label class="chk"><input type="checkbox" data-barch="x86">x86</label><label class="chk"><input type="checkbox" data-barch="arm64">arm64</label></div></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minOSKey">Minimum OS</label><select id="bMinOs"></select></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="installContext">Install for</label><select id="bContext"><option>System</option><option>User</option></select></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="installTimeMinutes">Install time (min)</label><input id="bTime" inputmode="numeric" value="60"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minDiskSpaceMB">Min. disk space (MB)</label><input id="bDisk" inputmode="numeric" value="0"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minMemoryMB">Min. memory (MB)</label><input id="bMem" inputmode="numeric" value="0"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minProcessors">Min. CPUs</label><input id="bCpus" inputmode="numeric" value="0"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minCpuSpeedMHz">Min. CPU speed (MHz)</label><input id="bSpeed" inputmode="numeric" value="0"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="deviceRestartBehavior">Restart</label><select id="bRestart"><option value="basedOnReturnCode">Based on return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="allowAvailableUninstall">Uninstall from Company Portal</label><select id="bUninstall"><option value="1">Allowed</option><option value="0">Not allowed</option></select></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="isFeatured">Featured in Company Portal</label><select id="bFeatured"><option value="1">Yes</option><option value="0">No</option></select></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="wingetInstallMethod">Install with (Winget apps)</label><select id="bMethod"><option value="WAU">Winget-AutoUpdate</option><option value="Winget">winget command</option></select></div>
+    </section>
+    <section>
+      <h3>Details</h3>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="publisher">Publisher</label><input id="bPublisher"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="owner">Owner</label><input id="bOwner"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="developer">Developer</label><input id="bDeveloper"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="informationUrl">Information URL</label><input id="bInfoUrl" placeholder="https://"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="privacyUrl">Privacy URL</label><input id="bPrivacyUrl" placeholder="https://"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="notes">Notes</label><input id="bNotes"></div>
+      <div class="bfield wide"><label class="chk"><input type="checkbox" data-bf="returnCodes">Return codes <span class="muted">(replaces the list; code = type)</span></label><textarea id="bCodes" rows="4" class="monotext">0 = success
+1707 = success
+3010 = softReboot
+1641 = hardReboot
+1618 = retry</textarea></div>
+      <div class="bfield wide"><label class="chk"><input type="checkbox" data-bf="dependencies">Dependencies <span class="muted">(replaces the list)</span></label><div class="deplist" id="bDeps"></div></div>
+    </section>
+  </div>
+  <label class="chk"><input type="checkbox" id="bPush" checked>Then push the settings of the apps already in Intune</label>
+  <p class="formerror" id="batchErr" hidden></p>
+  <pre class="log" id="batchLog" hidden></pre>
+  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnBatchGo">Apply</button></div>
+</dialog>
+
+<dialog id="dlgGroupsBatch">
+  <h2 id="gbTitle">Add groups</h2>
+  <p class="sub" id="gbText"></p>
+  <div class="groups4" id="gbRoles"></div>
+  <label class="chk"><input type="checkbox" id="gbPush" checked>Then push groups for the apps already in Intune</label>
+  <p class="formerror" id="gbErr" hidden></p>
+  <pre class="log" id="gbLog" hidden></pre>
+  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnGbGo">Apply</button></div>
+</dialog>
+
+<dialog id="dlgWinget" class="wide">
+  <h2>Find a Winget package</h2>
+  <div class="toolbar tight"><input type="search" id="wgQuery" placeholder="App or publisher name" autocomplete="off" spellcheck="false"><button class="btn" id="btnWgSearch">Search</button></div>
+  <p class="sub" id="wgNote">Searches winget's sources. Pick the package to use its ID.</p>
+  <div class="tablewrap short"><table class="plan"><thead><tr><th>Name</th><th>Winget ID</th><th>Version</th><th>Source</th><th></th></tr></thead><tbody id="wgRows"></tbody></table></div>
+  <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
 
 <div class="toast" id="toast" role="status" hidden></div>

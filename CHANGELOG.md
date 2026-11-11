@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.13.0
+
+### Added
+
+Web interface, step 3c (`IntuneDeployment.ps1 -Web`):
+
+- **Checks: every check the classic window runs.**
+  - The deployed apps in detail: settings, groups and dependencies against
+    Intune, and assignments in Intune the catalog doesn't have. The last
+    audit (the Apps list's Last audit column) is updated as before.
+  - Winget IDs that winget no longer knows.
+  - Two switches choose whether to run the slow parts.
+  - A log of the run.
+- **Checks: every fix.** Pull, Push settings, Push groups, Add to catalog,
+  Find Winget ID and Re-check. Tick several rows to fix them in one go.
+- **Several apps at once** (More menu, also on right-click):
+  - Batch edit: change only the ticked fields, then optionally push the
+    settings of the apps already in Intune.
+  - Push settings to Intune: the catalog's settings, without uploading a
+    package.
+  - Add groups (from your favourites or by name) and Remove groups, then
+    optionally push groups.
+  - Delete from Intune.
+- **Find on winget** in the app editor, next to the Winget ID.
+
+### Changed
+
+- Find Winget ID also updates the app's install and uninstall commands
+  when they name the old ID. Before, they kept installing the old
+  package.
+- Deploy's reasons for skipping an app point to the web interface's own
+  Package, Settings > Packaging and Deploy settings.
+
 ## 1.12.0
 
 ### Added

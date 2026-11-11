@@ -25,6 +25,8 @@ foreach ($assembly in 'System.Drawing', 'System.Security', 'System.Windows.Forms
 . (Join-Path $PSScriptRoot 'WebApi.ps1')
 . (Join-Path $PSScriptRoot 'WebScripts.ps1')
 . (Join-Path $PSScriptRoot 'WebGroups.ps1')
+. (Join-Path $PSScriptRoot 'WebChecks.ps1')
+. (Join-Path $PSScriptRoot 'WebBatch.ps1')
 
 Initialize-AppState -RootPath $RootPath
 $Global:App.WebLog = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))

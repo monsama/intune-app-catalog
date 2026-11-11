@@ -205,6 +205,21 @@ textarea.monotext, .formgrid label > textarea.monotext { font-family: var(--mono
 .deplist { display: flex; flex-wrap: wrap; gap: 4px 16px; max-height: 140px; overflow: auto; }
 .deplist label.chk { margin: 4px 0 0; }
 
+/* ---- 3c: checks selection, batch, winget ---- */
+.inputrow { display: flex; gap: 6px; margin-top: 4px; }
+.inputrow > input { flex: 1; min-width: 0; margin-top: 0 !important; }
+.grid th.sel, .grid td.sel { width: 32px; text-align: center; }
+label.chk.inline { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; white-space: nowrap; }
+.logbox summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.logbox .log { max-height: 180px; margin-top: 6px; }
+.bfield { display: grid; grid-template-columns: minmax(170px, 40%) 1fr; gap: 8px; align-items: center; margin: 6px 0; }
+.bfield.wide { grid-template-columns: 1fr; }
+.bfield > label.chk { margin: 0; }
+.bfield .checks { margin: 0; }
+.gbrole { border: 1px solid var(--bd2); border-radius: var(--r-m); padding: 6px 10px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 2px; }
+.gbrole legend { font-size: 12px; font-weight: 600; padding: 0 4px; }
+.gbrole input[data-gbx] { margin-top: 6px; }
+
 /* ---- groups ---- */
 .gsplit { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(240px, 320px) 1fr; gap: 12px; }
 .panel { background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); box-shadow: var(--shadow); padding: 12px 14px; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
