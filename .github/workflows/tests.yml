@@ -59,6 +59,25 @@ jobs:
         run: ./code/tests/WebGraph.Tests.ps1
 
 
+  lint:
+    # PSScriptAnalyzer with the bug-catching rules in
+    # code/tests/PSScriptAnalyzerSettings.psd1 - over all of code/, not only
+    # what the tests happen to run.
+    name: lint (PSScriptAnalyzer)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module PSScriptAnalyzer -RequiredVersion 1.23.0 -Scope CurrentUser -Force
+      - name: Analyze code/
+        shell: pwsh
+        run: |
+          $found = @(Invoke-ScriptAnalyzer -Path code -Recurse -Settings code/tests/PSScriptAnalyzerSettings.psd1)
+          $found | Sort-Object ScriptName, Line | ForEach-Object { "{0}:{1} [{2}] {3}" -f ($_.ScriptPath -replace [regex]::Escape("$PWD/"), ''), $_.Line, $_.RuleName, $_.Message }
+          "$($found.Count) finding(s)"
+          if ($found.Count) { exit 1 }
+
   ui:
     # The web interface in a real browser against the real server: every
     # page in light and dark mode, wide and narrow - no errors, no failed
