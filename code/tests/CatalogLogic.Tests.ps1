@@ -1396,10 +1396,13 @@ Assert-True ($noRoleText -like "*DeviceManagementApps.ReadWrite.All*required*" -
 Assert-Equal 1 ([regex]::Matches($noRoleText, '(?m)^\s+Group\.ReadWrite\.All\s').Count) `
     "Format-GraphRoleReport: a permission two features need is listed once" $noRoleText
 Assert-True ($noRoleText -like "*Client ID x*") "Format-GraphRoleReport: names the registration by its Client ID"
+$linkText = (Format-GraphRoleReport -Report (Get-GraphRoleReport -Roles @()) -TokenAppId 'c0ffee00-1111-4222-8333-444455556666' -SettingsClientId 'c0ffee00-1111-4222-8333-444455556666') -join "`n"
+Assert-True ($linkText -like '*https://entra.microsoft.com/*/appId/c0ffee00-1111-4222-8333-444455556666/*' -and $linkText -like '*Add required permissions...*') "Format-GraphRoleReport: links straight to the registration's API permissions page, and names the button that adds them" $linkText
+Assert-True ($noRoleText -notlike '*entra.microsoft.com/#view*') "Format-GraphRoleReport: no link built from a Client ID that isn't a GUID"
 Assert-True (($liveLines -contains '[OK] Apps in Intune') -and (($liveLines -join "`n") -like "*DeviceManagementScripts.ReadWrite.All*optional*")) `
     "Format-GraphRoleReport: shows what works and only adds what's missing" ($liveLines -join "`n")
 $allLines = @(Format-GraphRoleReport -Report (Get-GraphRoleReport -Roles @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Directory.Read.All', 'DeviceManagementScripts.ReadWrite.All')) -TokenAppId 'x' -SettingsClientId 'x')
-Assert-True ((($allLines -join "`n") -like "*Everything this app uses is covered*") -and -not (($allLines -join "`n") -like "*How to fix*")) `
+Assert-True ((($allLines -join "`n") -like "*Everything this app uses is covered*") -and -not (($allLines -join "`n") -like "*Quickest fix*")) `
     "Format-GraphRoleReport: nothing to fix, no fix instructions"
 
 # -----------------------------------------------------------------
@@ -2255,7 +2258,7 @@ Assert-True ($notUploaded -like '*`[--`] Required API permissions*') "Format-Set
 Assert-Equal 1 ([regex]::Matches($notUploaded, 'Next:').Count) "Format-SetupChecklist: one next step, for the first thing that's not done" $notUploaded
 
 $noRoles = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = $future; SignInOk = $true; Report = (Get-GraphRoleReport -Roles @()); Saved = $true }) -join "`n"
-Assert-True ($noRoles -match '(?s)\[FAILED\] Required API permissions.*Next: Add the API permissions.*Application, not Delegated') "Format-SetupChecklist: signed in without permissions says what's next" $noRoles
+Assert-True ($noRoles -match '(?s)\[FAILED\] Required API permissions.*Next: Certificate tab > Add required permissions.*Application, not Delegated') "Format-SetupChecklist: signed in without permissions says what's next" $noRoles
 
 $unsaved = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = $future; SignInOk = $true; Report = $fullReport; Saved = $false }) -join "`n"
 Assert-True ($unsaved -match '(?s)\[FAILED\] Settings saved.*Next: Click Save') "Format-SetupChecklist: a working but unsaved connection says to save" $unsaved

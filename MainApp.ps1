@@ -147,7 +147,7 @@ $Global:App.LastAuditCachePath = Join-Path $Global:App.RootPath "data\last-audit
 $Global:App.CatalogGeneration = 0
 $Global:App.LogFileWriter = $null   # opened in Initialize-Folders, written to by Write-Log, closed on FormClosing - see both below
 $Global:App.LogFlushTimer = $null   # periodic flush timer for the above - see Initialize-Folders
-$Global:App.AppVersion = "1.8.0"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance rather than by diffing the whole file
+$Global:App.AppVersion = "1.9.0"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance rather than by diffing the whole file
 
 # App-only Graph auth (certificate) - must match the values in the Assign step /
 # your Entra ID app registration. Left blank on purpose - no tenant/client
@@ -282,6 +282,13 @@ $Global:App.LightPalette = @{
     BorderColor    = [System.Drawing.Color]::FromArgb(216,219,224)
     SelectionBack  = [System.Drawing.Color]::FromArgb(37,99,235)
     SelectionFore  = [System.Drawing.Color]::White
+    # Status text colors, picked to stay readable on white and on the grid's
+    # alternating rows (at least 4.5:1 contrast) - the named colors used
+    # before (DarkOrange, SeaGreen, SteelBlue) were well under that.
+    StatusGood     = [System.Drawing.Color]::FromArgb(21,128,61)
+    StatusWarn     = [System.Drawing.Color]::FromArgb(180,83,9)
+    StatusInfo     = [System.Drawing.Color]::FromArgb(29,78,216)
+    StatusMuted    = [System.Drawing.Color]::FromArgb(100,106,115)
 }
 
 # Applies the current theme to a control and everything nested inside it,
@@ -911,6 +918,17 @@ $Global:App.Grid.BackgroundColor = [System.Drawing.Color]::White
 # fits its header - below the total the grid scrolls sideways instead of
 # truncating headers to "Req"/"Ava"/"Uni".
 $gridFont = $Global:App.Form.Font
+# Made once, here. The cell formatting handler below used to create a new
+# Font for every styled cell on every repaint - thousands of GDI objects
+# while scrolling a big catalog, each only freed whenever the garbage
+# collector got round to it.
+$Global:App.GridFontBold = New-Object System.Drawing.Font($gridFont, [System.Drawing.FontStyle]::Bold)
+$Global:App.GridFontItalic = New-Object System.Drawing.Font($gridFont, [System.Drawing.FontStyle]::Italic)
+# Double buffered: without it, scrolling and filtering a long list visibly
+# flickers. DataGridView only exposes this through reflection.
+try {
+    [System.Windows.Forms.DataGridView].GetProperty('DoubleBuffered', [System.Reflection.BindingFlags]'Instance,NonPublic').SetValue($Global:App.Grid, $true, $null)
+} catch { }
 # App Name is what people scan for - the biggest share, and a readable
 # floor even in a narrow window.
 $Global:App.Grid.Columns.Add((New-GridColumn "AppName" "App Name" -FillWeight 45 -Font $gridFont -MinimumWidth 170)) | Out-Null
@@ -1064,8 +1082,8 @@ $Global:App.Grid.Add_CellFormatting({
                 # Good news, not a warning - distinct from the orange/bold
                 # treatment below, which is reserved for things that actually
                 # need attention (no App ID at all, a missing package).
-                $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
-                $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Bold)
+                $e.CellStyle.ForeColor = $Global:App.LightPalette.StatusGood
+                $e.CellStyle.Font = $Global:App.GridFontBold
             }
             elseif ($onlyGoodNews) {
                 # "Custom package" on its own. Informational, not a warning
@@ -1076,12 +1094,12 @@ $Global:App.Grid.Add_CellFormatting({
                 # fixing. Composed with anything that does need attention
                 # (e.g. "No App ID; Custom package") it falls through to
                 # the orange case below.
-                $e.CellStyle.ForeColor = [System.Drawing.Color]::SteelBlue
-                $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Italic)
+                $e.CellStyle.ForeColor = $Global:App.LightPalette.StatusInfo
+                $e.CellStyle.Font = $Global:App.GridFontItalic
             }
             else {
-                $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
-                $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Bold)
+                $e.CellStyle.ForeColor = $Global:App.LightPalette.StatusWarn
+                $e.CellStyle.Font = $Global:App.GridFontBold
             }
         }
     }
@@ -1093,15 +1111,15 @@ $Global:App.Grid.Add_CellFormatting({
         # $Global:App.LastAuditResults and Load-/Save-LastAuditCache.
         $val = [string]$e.Value
         if ($val -like "*issue*" -or $val -like "Check failed*") {
-            $e.CellStyle.ForeColor = [System.Drawing.Color]::DarkOrange
-            $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Bold)
+            $e.CellStyle.ForeColor = $Global:App.LightPalette.StatusWarn
+            $e.CellStyle.Font = $Global:App.GridFontBold
         }
         elseif ($val -like "OK (*") {
-            $e.CellStyle.ForeColor = [System.Drawing.Color]::SeaGreen
+            $e.CellStyle.ForeColor = $Global:App.LightPalette.StatusGood
         }
         elseif ($val -eq "Never audited") {
-            $e.CellStyle.ForeColor = [System.Drawing.Color]::DimGray
-            $e.CellStyle.Font = New-Object System.Drawing.Font($Global:App.Grid.Font, [System.Drawing.FontStyle]::Italic)
+            $e.CellStyle.ForeColor = $Global:App.LightPalette.StatusMuted
+            $e.CellStyle.Font = $Global:App.GridFontItalic
         }
     }
 })

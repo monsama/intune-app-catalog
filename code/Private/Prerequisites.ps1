@@ -266,6 +266,7 @@ function Global:Show-PrerequisitesDialog {
         $missingCount = @($state.Rows | Where-Object { -not $_.Version }).Count
         $state.AllInstalled = ($missingCount -eq 0)
         if ($state.AllInstalled) { $Global:App.GraphModuleConfirmed = $true }
+        $Global:App.GraphModuleAssemblyMapCache = $null   # a newly installed version ships other DLLs
         # Installing only ever targets this window's own PowerShell (row 0) -
         # see the note at the top of this file.
         $btnInstall.Enabled = (-not $state.Busy) -and ($state.Rows.Count -gt 0) -and (-not $state.Rows[0].Version)

@@ -914,7 +914,7 @@ function Global:Start-AppMetadataFetch {
     # -LogBox: see Start-IntuneAppLookup
     param([string]$AppId, [scriptblock]$OnComplete, [System.Windows.Forms.RichTextBox]$LogBox)
 
-    if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
+    if (-not (Test-GraphModuleHere)) {
         if ($OnComplete) { & $OnComplete $false "Microsoft.Graph.Authentication module isn't installed." $null }
         return
     }
@@ -1695,7 +1695,7 @@ function Global:Start-GroupMembersFetch {
     # -LogBox: see Start-IntuneAppLookup
     param([string]$GroupName, [scriptblock]$OnComplete, [System.Windows.Forms.RichTextBox]$LogBox)
 
-    if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
+    if (-not (Test-GraphModuleHere)) {
         if ($OnComplete) { & $OnComplete $false "Microsoft.Graph.Authentication module isn't installed." $null }
         return
     }

@@ -195,7 +195,7 @@ try {
     $clientGuid = [guid]::Empty
     if (-not [guid]::TryParse([string]$Config.ClientId, [ref]$clientGuid)) { throw "The Client ID '$($Config.ClientId)' isn't a GUID - check it in Settings." }
     $encodedFilter = [Uri]::EscapeDataString("appId eq '$clientGuid'")
-    $appLookup = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/applications?`$filter=$encodedFilter&`$select=id,displayName,keyCredentials" -Method GET -StepDescription "Look up app registration"
+    $appLookup = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/applications?`$filter=$encodedFilter&`$select=id,displayName,keyCredentials,requiredResourceAccess" -Method GET -StepDescription "Look up app registration"
     if (-not $appLookup.value -or $appLookup.value.Count -eq 0) {
         throw "No app registration found with Application (client) ID '$($Config.ClientId)' in this tenant. Double check the Client ID in Settings, and that you signed into the right tenant just now."
     }
@@ -235,6 +235,62 @@ try {
         }
         Write-Step "Done"
         Write-Result -Success $true -ErrorMessage "" -Certificates $certList.ToArray()
+        exit 0
+    }
+
+    if ($Config.Mode -eq "AddPermissions") {
+        # Adds the Microsoft Graph APPLICATION permissions this app uses to
+        # the registration's "API permissions" list. Additive: everything
+        # already listed (other APIs, delegated permissions, other Graph
+        # roles) is kept - requiredResourceAccess is replaced as a whole by a
+        # PATCH, so it's read, merged and written back complete.
+        # Admin consent is a separate step this can't do with these rights;
+        # the app opens the API permissions page in Entra for that.
+        Write-Step "Looking up the Microsoft Graph permission IDs"
+        $graphAppId = '00000003-0000-0000-c000-000000000000'
+        $graphSp = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/servicePrincipals?`$filter=$([Uri]::EscapeDataString("appId eq '$graphAppId'"))&`$select=appRoles" -Method GET -StepDescription "Read Microsoft Graph's permissions"
+        $roles = @($graphSp.value[0].appRoles)
+        if ($roles.Count -eq 0) { throw "Couldn't read Microsoft Graph's permission list in this tenant." }
+
+        $wanted = @($Config.Permissions | ForEach-Object { [string]$_ } | Where-Object { $_ })
+        $resourceAccess = New-Object System.Collections.Generic.List[object]
+        foreach ($name in $wanted) {
+            $role = $roles | Where-Object { $_.value -eq $name } | Select-Object -First 1
+            if (-not $role) { Write-Host "  [!] $name isn't a Microsoft Graph application permission - skipped." -ForegroundColor Yellow; continue }
+            $resourceAccess.Add([pscustomobject]@{ id = $role.id; type = 'Role'; Name = $name })
+        }
+
+        $existingAccess = @($appLookup.value[0].requiredResourceAccess)
+        $merged = New-Object System.Collections.Generic.List[object]
+        $graphEntry = $null
+        foreach ($entry in $existingAccess) {
+            if ($entry.resourceAppId -eq $graphAppId) { $graphEntry = $entry } else { $merged.Add($entry) }
+        }
+        $graphAccess = New-Object System.Collections.Generic.List[object]
+        if ($graphEntry) { foreach ($a in @($graphEntry.resourceAccess)) { $graphAccess.Add([pscustomobject]@{ id = $a.id; type = $a.type }) } }
+        $added = New-Object System.Collections.Generic.List[string]
+        foreach ($r in $resourceAccess) {
+            if (@($graphAccess | Where-Object { $_.id -eq $r.id -and $_.type -eq 'Role' }).Count -gt 0) {
+                Write-Host "  Already listed: $($r.Name)" -ForegroundColor Gray
+                continue
+            }
+            $graphAccess.Add([pscustomobject]@{ id = $r.id; type = 'Role' })
+            $added.Add($r.Name)
+        }
+        if ($added.Count -eq 0) {
+            Write-Step "Done"
+            Write-Host "[OK] Every permission was already listed. Grant admin consent on the page that opens next if it isn't granted yet." -ForegroundColor Green
+            Write-Result -Success $true -ErrorMessage ""
+            exit 0
+        }
+        $merged.Add([pscustomobject]@{ resourceAppId = $graphAppId; resourceAccess = $graphAccess.ToArray() })
+
+        Write-Step "Adding $($added.Count) permission(s): $($added -join ', ')"
+        $patchBody = @{ requiredResourceAccess = $merged.ToArray() } | ConvertTo-Json -Depth 10
+        Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/applications/$objectId" -Method PATCH -Body $patchBody -ContentType "application/json" -StepDescription "Add API permissions" | Out-Null
+        Write-Step "Done"
+        Write-Host "[OK] Added. They don't work until an admin grants consent - the API permissions page opens next: click 'Grant admin consent'." -ForegroundColor Green
+        Write-Result -Success $true -ErrorMessage ""
         exit 0
     }
 
