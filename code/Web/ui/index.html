@@ -13,6 +13,7 @@
   <div class="brand"><img src="icon.svg" alt="" width="22" height="22"><span>Intune App Catalog</span><span class="ver" id="ver"></span></div>
   <nav class="tabs" role="tablist">
     <button class="tab" role="tab" data-view="apps" id="tabApps">Apps</button>
+    <button class="tab" role="tab" data-view="checks" id="tabChecks">Checks</button>
     <button class="tab" role="tab" data-view="settings" id="tabSettings">Settings</button>
   </nav>
   <div class="topright">
@@ -69,6 +70,23 @@
       </div>
     </div>
     <p class="hint">Click to select, Ctrl/Shift+click for several, double-click to edit.</p>
+  </section>
+
+  <!-- ============ Checks ============ -->
+  <section class="view" id="viewChecks" hidden>
+    <div class="toolbar">
+      <button class="btn primary" id="btnRunChecks">Run checks</button>
+      <select id="checkFilter" aria-label="Show"><option value="">All areas</option></select>
+      <span class="count" id="checkCount"></span>
+    </div>
+    <p class="sub" id="checkNotes">Compares the catalog with Intune and Entra ID, checks its dependencies, and shows what the last audit found. Only reads - every fix is a button you press.</p>
+    <div class="tablewrap">
+      <table class="grid" id="checkGrid" hidden>
+        <thead><tr><th>Area</th><th>App</th><th>Problem</th><th>Catalog</th><th>Intune</th><th>Fix</th></tr></thead>
+        <tbody id="checkBody"></tbody>
+      </table>
+      <div class="empty" id="checkEmpty"><h2 id="checkEmptyTitle">Not run yet</h2><p id="checkEmptyText">Run checks to see what needs attention.</p></div>
+    </div>
   </section>
 
   <!-- ============ Settings ============ -->
@@ -200,6 +218,22 @@
       <button type="submit" class="btn primary" id="btnSaveApp">Save</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="dlgDeploy" class="wide">
+  <h2>Deploy to Intune</h2>
+  <p class="sub">New apps are created; apps that already have an App ID get their settings updated. In dependency order, one after another. The App ID is saved to the catalog as each one finishes.</p>
+  <table class="plan"><thead><tr><th>App</th><th>Action</th><th>Status</th></tr></thead><tbody id="deployRows"></tbody></table>
+  <pre class="log" id="deployLog"></pre>
+  <div class="actions end"><button class="btn" data-close id="btnDeployClose">Close</button><button class="btn primary" id="btnDeployGo">Deploy</button></div>
+</dialog>
+
+<dialog id="dlgPush" class="wide">
+  <h2>Push groups to Intune</h2>
+  <p class="sub">Intune gets exactly the catalog's groups for these apps: what's below is added, assignments not in the catalog are removed. Groups that don't exist yet are created.</p>
+  <table class="plan"><thead><tr><th>App</th><th>Added in Intune</th><th>Removed from Intune</th></tr></thead><tbody id="pushRows"></tbody></table>
+  <pre class="log" id="pushLog"></pre>
+  <div class="actions end"><button class="btn" data-close id="btnPushClose">Close</button><button class="btn primary" id="btnPushGo" disabled>Apply</button></div>
 </dialog>
 
 <div class="toast" id="toast" role="status" hidden></div>

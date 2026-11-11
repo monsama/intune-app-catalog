@@ -93,6 +93,7 @@ $('btnTheme').addEventListener('click', () => {
 function showView(v) {
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.view === v));
   $('viewApps').hidden = v !== 'apps';
+  $('viewChecks').hidden = v !== 'checks';
   $('viewSettings').hidden = v !== 'settings';
   try { localStorage.setItem('view', v); } catch (e) { }
 }
@@ -360,28 +361,31 @@ for (const b of document.querySelectorAll('dialog [data-close]')) b.addEventList
 
 // jobs: Entra actions that sign the user in, in a console window of their own
 let jobRunning = false;
-function jobButtons(on) { for (const id of ['btnCheckCerts', 'btnUpload', 'btnAddPerms']) $(id).disabled = !on; }
-async function runJob(body, onDone) {
-  if (jobRunning) { toast('Another Entra action is still running.', true); return; }
-  const start = await api('/api/job-start', { ...fields(), ...body });
-  if (!start.ok) { toast(start.error, true); return; }
+function jobButtons(on) { for (const id of ['btnCheckCerts', 'btnUpload', 'btnAddPerms', 'btnDeployGo', 'btnPushGo']) $(id).disabled = !on; if (on) updateActions(); }
+async function runJob(body, onDone, opts = {}) {
+  if (jobRunning) { toast('Another action is still running - wait for it to finish.', true); return false; }
+  const start = await api(opts.path || '/api/job-start', opts.path ? body : { ...fields(), ...body });
+  if (!start.ok) { toast(start.error, true); if (onDone) onDone(false, { error: start.error }); return false; }
   jobRunning = true; jobButtons(false);
-  activity(`${stamp()} Sign in in the window that opens...`);
+  const extra = opts.log ? $(opts.log) : null;
+  const both = t => { activity(t); if (extra) { extra.textContent += t.endsWith('\n') ? t : t + '\n'; extra.scrollTop = extra.scrollHeight; } };
+  both(`${stamp()} ${opts.startText || 'Sign in in the window that opens...'}`);
   let offset = 0;
   const tick = async () => {
     const r = await api('/api/job-poll', { job: start.job, offset });
     if (!r.ok) { jobRunning = false; jobButtons(true); toast(r.error, true); return; }
-    if (r.text) { activity(r.text); offset = r.offset; }
+    if (r.text) { both(r.text); offset = r.offset; }
     if (r.done && !r.text) {
       jobRunning = false; jobButtons(true);
       const ok = r.result && r.result.success;
       if (!ok) toast((r.result && r.result.error) || 'It did not finish - see Activity.', true);
-      if (onDone) onDone(ok, r.result);
+      if (onDone) onDone(ok, r.result, r.after);
       return;
     }
     setTimeout(tick, r.done ? 50 : 700);
   };
   tick();
+  return true;
 }
 
 function renderEntraCerts(certs) {
@@ -418,6 +422,134 @@ $('btnPermsGo').addEventListener('click', () => {
 $('btnOpenEntra').addEventListener('click', async () => {
   const r = await api('/api/open', { target: 'entra-permissions', clientId: fields().clientId });
   if (!r.ok) toast(r.error, true);
+});
+
+// ---------------------------------------------------------------- deploy
+let deployPlan = [];
+function setDeployStatus(name, cls, text) {
+  const row = [...$('deployRows').children].find(r => r.dataset.name === name);
+  if (row) row.lastChild.replaceChildren(el('span', { class: 'pill ' + cls, text }));
+}
+$('btnDeploy').addEventListener('click', async () => {
+  const r = await api('/api/deploy-plan', { names: [...selected] });
+  if (!r.ok) { toast(r.error, true); return; }
+  deployPlan = r.apps;
+  $('deployRows').replaceChildren(...deployPlan.map(a => el('tr', { 'data-name': a.name },
+    el('td', { text: a.name }), el('td', { text: a.update ? 'Update settings' : 'Create' }),
+    el('td', {}, a.ready ? el('span', { class: 'pill muted', text: 'Waiting' }) : el('span', { class: 'pill warn', text: 'Skipped: ' + a.reason })))));
+  if (r.circular && r.circular.length) toast('These depend on each other in a circle: ' + r.circular.join(', '), true);
+  $('deployLog').textContent = '';
+  const n = deployPlan.filter(a => a.ready).length;
+  $('btnDeployGo').textContent = n === 1 ? 'Deploy 1 app' : `Deploy ${n} apps`;
+  $('btnDeployGo').disabled = n === 0;
+  $('dlgDeploy').showModal();
+});
+$('btnDeployGo').addEventListener('click', async () => {
+  const queue = deployPlan.filter(a => a.ready).map(a => a.name);
+  $('btnDeployGo').disabled = true;
+  let okCount = 0;
+  const next = async () => {
+    const name = queue.shift();
+    if (!name) { $('btnDeployGo').disabled = true; $('btnDeployGo').textContent = 'Done'; toast(`Deploy finished: ${okCount} of ${deployPlan.filter(a => a.ready).length} succeeded.`, okCount === 0); loadApps(); return; }
+    setDeployStatus(name, 'info', 'Running...');
+    await runJob({ name }, async (ok, result, after) => {
+      setDeployStatus(name, ok ? 'ok' : 'err', ok ? 'Done' : 'Failed');
+      if (ok) okCount++;
+      if (ok && after && after.pushGroups) {
+        setDeployStatus(name, 'info', 'Pushing groups...');
+        await runJob({ names: [name], mode: 'AfterDeploy' }, ok2 => { setDeployStatus(name, ok2 ? 'ok' : 'warn', ok2 ? 'Done, groups pushed' : 'Done, groups failed'); next(); },
+          { path: '/api/push-start', log: 'deployLog', startText: `Pushing ${name}'s groups...` });
+        return;
+      }
+      next();
+    }, { path: '/api/deploy-start', log: 'deployLog', startText: `Deploying ${name}...` });
+  };
+  next();
+});
+
+// ---------------------------------------------------------------- push groups
+let pushNames = [];
+$('btnPush').addEventListener('click', async () => {
+  pushNames = [...selected];
+  $('pushRows').replaceChildren(el('tr', {}, el('td', { colspan: 3, class: 'muted', text: 'Reading the current assignments in Intune...' })));
+  $('pushLog').textContent = '';
+  $('btnPushGo').disabled = true;
+  $('dlgPush').showModal();
+  await runJob({ names: pushNames, mode: 'Preview' }, (ok, result) => {
+    if (!ok) { $('pushRows').replaceChildren(el('tr', {}, el('td', { colspan: 3, class: 'muted', text: 'Preview failed - see the log below.' }))); return; }
+    const data = (result && result.data) || [];
+    let changes = 0;
+    $('pushRows').replaceChildren(...data.map(d => {
+      const add = d.ToAdd || [], rem = d.ToRemove || [];
+      changes += add.length + rem.length;
+      return el('tr', {}, el('td', { text: d.AppName }),
+        el('td', { class: 'chg add' }, add.length ? add.join('\n') : el('span', { class: 'muted', text: '-' })),
+        el('td', { class: 'chg rem' }, rem.length ? rem.join('\n') : el('span', { class: 'muted', text: '-' })));
+    }));
+    $('btnPushGo').disabled = changes === 0;
+    $('btnPushGo').textContent = changes === 0 ? 'Nothing to change' : 'Apply';
+  }, { path: '/api/push-start', log: 'pushLog', startText: 'Comparing with Intune...' });
+});
+$('btnPushGo').addEventListener('click', async () => {
+  $('btnPushGo').disabled = true;
+  await runJob({ names: pushNames, mode: 'Apply' }, ok => {
+    toast(ok ? 'Groups pushed to Intune.' : 'Push groups failed - see the log.', !ok);
+    if (ok) { $('btnPushGo').textContent = 'Done'; loadApps(); }
+  }, { path: '/api/push-start', log: 'pushLog', startText: 'Applying...' });
+});
+
+// ---------------------------------------------------------------- checks
+let findings = [];
+function fixButtons(f) {
+  const out = [];
+  const fix = async (action, value) => {
+    const r = await api('/api/checks-fix', { action, catalogName: f.catalogName || f.app, value });
+    if (!r.ok) { toast(r.error, true); return; }
+    toast('Fixed in the catalog.');
+    findings = findings.filter(x => x.key !== f.key); renderChecks(); loadApps();
+  };
+  for (const a of f.actions || []) {
+    if (a === 'RenameFromIntune' && f.data && f.data.IntuneName) out.push(el('button', { class: 'btn small', text: 'Use Intune’s name', title: f.data.IntuneName, onclick: () => fix(a, f.data.IntuneName) }));
+    else if (a === 'SetAppId' && f.data && f.data.MatchedId) out.push(el('button', { class: 'btn small', text: 'Link to ' + (f.data.MatchedName || 'match'), onclick: () => fix(a, f.data.MatchedId) }));
+    else if (a === 'ChooseAppId' && f.data && f.data.Candidates && f.data.Candidates.length && !(f.data.MatchedId)) {
+      const sel = el('select', {}, ...f.data.Candidates.map(c => el('option', { value: c.id, text: c.displayName })));
+      out.push(sel, el('button', { class: 'btn small', text: 'Link', onclick: () => fix('SetAppId', sel.value) }));
+    }
+    else if (a === 'ClearAppId') out.push(el('button', { class: 'btn small', text: 'Clear App ID', onclick: () => { if (confirm(`Clear ${f.app}'s App ID? It points at an app that no longer exists in Intune.`)) fix(a); } }));
+    else if (a === 'EditApp') out.push(el('button', { class: 'btn small', text: 'Edit', onclick: () => openEditor(f.catalogName || f.app) }));
+    else if (a === 'PushGroups') out.push(el('button', { class: 'btn small', text: 'Push groups', onclick: () => { selected.clear(); selected.add(f.catalogName || f.app); $('btnPush').disabled = false; $('btnPush').click(); } }));
+  }
+  const rest = (f.actions || []).filter(a => !['RenameFromIntune', 'SetAppId', 'ChooseAppId', 'ClearAppId', 'EditApp', 'PushGroups'].includes(a));
+  if (rest.length && !out.length) out.push(el('span', { class: 'muted', text: 'In the classic window' }));
+  return el('div', { class: 'fixes' }, ...out);
+}
+function renderChecks() {
+  const area = $('checkFilter').value;
+  const list = findings.filter(f => !area || f.area === area);
+  $('checkBody').replaceChildren(...list.map(f => el('tr', {},
+    el('td', {}, el('span', { class: 'pill ' + (f.failed ? 'err' : 'warn'), text: f.area })),
+    el('td', { class: 'name', text: f.app }),
+    el('td', {}, f.problem, f.cached ? el('span', { class: 'muted', text: ` (last audit${f.checkedAt ? ', ' + f.checkedAt : ''})` }) : ''),
+    el('td', { class: 'cmp', text: f.catalog }), el('td', { class: 'cmp', text: f.intune }),
+    el('td', {}, fixButtons(f)))));
+  $('checkCount').textContent = findings.length ? `${list.length} finding(s)` : '';
+  $('checkGrid').hidden = findings.length === 0;
+  $('checkEmpty').hidden = findings.length > 0;
+}
+$('checkFilter').addEventListener('change', renderChecks);
+$('btnRunChecks').addEventListener('click', async () => {
+  const b = $('btnRunChecks'); b.disabled = true; b.textContent = 'Checking...';
+  $('checkNotes').textContent = 'Reading the catalog, Intune and Entra ID...';
+  const r = await api('/api/checks-run');
+  b.disabled = false; b.textContent = 'Run checks';
+  if (!r.ok) { toast(r.error, true); return; }
+  findings = r.findings || [];
+  $('checkNotes').textContent = (r.notes || []).join(' ');
+  const areas = [...new Set(findings.map(f => f.area))].sort();
+  $('checkFilter').replaceChildren(el('option', { value: '', text: 'All areas' }), ...areas.map(a => el('option', { value: a, text: a })));
+  $('checkEmptyTitle').textContent = 'Nothing to fix';
+  $('checkEmptyText').textContent = 'The catalog, Intune and Entra ID agree.';
+  renderChecks();
 });
 
 // ---------------------------------------------------------------- start

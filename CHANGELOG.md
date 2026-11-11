@@ -22,9 +22,34 @@
     Entra action.
   - Light and dark mode.
 
-  "Open classic window" opens everything that hasn't moved yet, such as
-  editing, deploying, assigning and checks. The classic window is still
-  what `IntuneDeployment.ps1` opens by default.
+  It also has:
+  - **The app editor:** add, edit and remove apps (name, Winget ID, App
+    ID, the four assignment lists and the Intune details). Every save
+    backs up the app's file first. Names, file names, App IDs and Winget
+    IDs are checked before anything is written.
+  - **Deploy:** one or more apps, in dependency order. Apps that can't
+    be deployed are listed with the reason. Each App ID is saved to the
+    catalog as soon as that app is done, and its groups are pushed
+    afterwards when the setting says so.
+  - **Push groups:** a preview of what will be added and removed in
+    Intune, then Apply.
+  - **Checks:** catalog dependencies, how the catalog lines up with
+    Intune (renamed, not linked, App ID gone, not in the catalog),
+    groups missing in Entra ID, and the last audit's findings. One-click
+    fixes take Intune's name, link the matching app, clear a stale App
+    ID, open the editor or push groups.
+
+  "Open classic window" opens what hasn't moved yet: packaging, the full
+  deploy form, metadata sync, platform scripts, groups and the
+  remaining fixes. `IntuneDeployment.ps1` still opens the classic window
+  by default.
+
+### Fixed
+
+- **Batch Deploy dropped supersedence.** The classic Batch Deploy wrote
+  the step's settings in a format the step didn't read for supersedence,
+  so it was silently left out. The web Deploy writes it correctly; the
+  classic Batch Deploy is unchanged in this release.
 
 ### Changed
 
