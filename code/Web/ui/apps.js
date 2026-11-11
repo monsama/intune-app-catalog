@@ -201,7 +201,43 @@ $('btnCatalogFolder').addEventListener('click', () => api('/api/open', { target:
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && !$('viewApps').hidden) { e.preventDefault(); $('search').focus(); }
   if (e.key === 'F5') { e.preventDefault(); loadApps(); loadState(); }
+  // Ctrl+S in the app editor saves it (the form's own submit, with its checks).
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && $('dlgApp').open) { e.preventDefault(); $('appForm').requestSubmit(); return; }
+  listKeys(e);
 });
+// The Apps list by keyboard - only while nothing else has the keys: no
+// dialog or menu open, and no field focused (typing is never taken over).
+function listKeys(e) {
+  if ($('viewApps').hidden || document.querySelector('dialog[open]') || !menu.hidden) return;
+  if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;
+  if (!visible.length) return;
+  const ctrl = e.ctrlKey || e.metaKey;
+  const show = n => { const r = [...$('gridBody').children].find(t => t.dataset.name === n); if (r) r.scrollIntoView({ block: 'nearest' }); };
+  const select = (n, extend) => {
+    if (!extend) selected.clear();
+    if (extend && lastClicked && visible.includes(lastClicked)) {
+      const anchor = visible.indexOf(lastClicked), to = visible.indexOf(n);
+      selected.clear();
+      for (const x of visible.slice(Math.min(anchor, to), Math.max(anchor, to) + 1)) selected.add(x);
+    } else { selected.add(n); lastClicked = n; }
+    for (const r of $('gridBody').children) r.classList.toggle('sel', selected.has(r.dataset.name));
+    updateActions(); show(n); cursor = n;
+  };
+  const at = visible.indexOf(cursor && visible.includes(cursor) ? cursor : (lastClicked && visible.includes(lastClicked) ? lastClicked : visible[0]));
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const next = selected.size === 0 ? 0 : Math.max(0, Math.min(visible.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)));
+    select(visible[next], e.shiftKey);
+  }
+  else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); select(visible[e.key === 'Home' ? 0 : visible.length - 1], e.shiftKey); }
+  else if (ctrl && e.key.toLowerCase() === 'a') {
+    e.preventDefault(); selected.clear(); for (const n of visible) selected.add(n);
+    for (const r of $('gridBody').children) r.classList.toggle('sel', true); updateActions();
+  }
+  else if (e.key === 'Enter' && selected.size === 1) { e.preventDefault(); openEditor([...selected][0]); }
+  else if (e.key === 'Delete' && selected.size === 1) { e.preventDefault(); menuAction('remove'); }
+}
+let cursor = null;
 
 // ---------------------------------------------------------------- editor: deploy settings
 let editorApps = [], editorMinOs = [], deployTouched = false;
@@ -435,11 +471,15 @@ function runDialog(title, text) {
   $('runTitle').textContent = title; $('runText').textContent = text || ''; $('runLog').textContent = '';
   $('dlgRun').showModal();
 }
-menu.addEventListener('click', async e => {
+menu.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   closeMenu();
+  menuAction(b.dataset.act);
+});
+// One More-menu action on the selected apps (also the Delete key: 'remove').
+async function menuAction(act) {
   const names = [...selected], one = oneSelected(), sel = () => names.map(n => apps.find(a => a.name === n)).filter(Boolean);
-  switch (b.dataset.act) {
+  switch (act) {
     case 'package':
       runDialog('Package', names.length ? `Building the .intunewin for ${names.length} app(s) with their own installer.` : 'Building every app with its own installer.');
       runJob({ names }, (ok, res, after) => { toast(ok ? (after && after.failed ? `Packaging finished - ${after.failed} failed, see the log.` : 'Packaging finished.') : 'Packaging failed - see the log.', !ok || (after && after.failed)); loadApps(); },
@@ -471,7 +511,7 @@ menu.addEventListener('click', async e => {
       { const r = await api('/api/app-remove', { name: one.name }); toast(r.ok ? 'Removed from the catalog.' : r.error, !r.ok); selected.delete(one.name); loadApps(); }
       break;
   }
-});
+}
 
 // ---------------------------------------------------------------- pull from Intune
 let pullPending = '';
