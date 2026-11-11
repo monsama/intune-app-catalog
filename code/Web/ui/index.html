@@ -27,7 +27,7 @@
 
 <div class="banner warn" id="setupBanner" hidden>
   <span>No Graph connection set up yet - Intune and Entra ID features won't work until it is.</span>
-  <button class="btn small" id="bannerSettings">Open Settings</button>
+  <button class="btn small" id="bannerSettings">Open Settings and the setup guide</button>
 </div>
 
 <main>
@@ -198,6 +198,31 @@
           <div class="result" id="testResult" hidden></div>
         </article>
 
+        <article class="card" id="guideCard">
+          <h2>Setup guide</h2>
+          <details id="guideReg">
+            <summary>First time: the Entra ID app registration</summary>
+            <p class="sub">Once per tenant. An administrator does it in the Entra admin center - deliberately by hand, through the portal's own review screens.</p>
+            <ol class="guide">
+              <li>In <b>App registrations</b>, create a registration (or use one your organization approved for this).</li>
+              <li>Copy its <b>Application (client) ID</b> and <b>Directory (tenant) ID</b> into Connection above.</li>
+              <li><b>Certificate:</b> Create new certificate (or Choose an existing one), then <b>Upload this certificate</b> - or upload the .cer from the certificates folder in the portal yourself.</li>
+              <li><b>API permissions:</b> Add required permissions adds them as <i>Application</i> permissions (not Delegated). Then an admin presses <b>Grant admin consent</b> in Entra.</li>
+              <li><b>Test connection</b> - the checklist says what is still missing.</li>
+            </ol>
+            <div class="actions"><button class="btn" id="btnGuideEntra">Open the Entra admin center</button></div>
+          </details>
+          <details id="guideStart">
+            <summary>Getting started: catalog and Intune</summary>
+            <p class="sub">The catalog is a folder of one JSON file per app. It and Intune match once you make them match:</p>
+            <ul class="guide">
+              <li><b>Intune has apps, the catalog is empty:</b> Checks lists every app in Intune that isn't in the catalog - tick them and <b>Add to catalog</b>. Their settings and groups come along.</li>
+              <li><b>The catalog has apps, Intune doesn't:</b> <b>Add app</b> (Find... looks up the Winget ID), set the groups, then <b>Deploy</b> - several at once, in dependency order. An app with its own installer needs More &gt; Package and a detection rule (the editor's Deploy settings) first.</li>
+              <li><b>Keeping them in step:</b> Checks finds every difference - renamed apps, settings, groups, dependencies, unknown assignments, Winget IDs - each with its fix: <b>Pull</b> if Intune is right, <b>Push</b> if the catalog is.</li>
+            </ul>
+          </details>
+        </article>
+
         <article class="card" id="checklistCard" hidden>
           <h2>Setup checklist</h2>
           <ol class="checklist" id="checklist"></ol>
@@ -232,6 +257,24 @@
           <p class="formerror" id="defaultsError" hidden></p>
           <div class="actions"><button class="btn primary" id="btnSaveDefaults">Save default values</button></div>
         </article>
+        <article class="card">
+          <h2>Prerequisites</h2>
+          <p class="sub" id="prereqText">The Microsoft.Graph.Authentication PowerShell module, in each PowerShell this app uses.</p>
+          <ul class="prereqs" id="prereqRows"></ul>
+          <div class="actions">
+            <button class="btn" id="btnPrereqCheck">Check</button>
+            <button class="btn primary" id="btnPrereqInstall" hidden>Install missing</button>
+          </div>
+          <p class="sub">Installs from the PowerShell Gallery for your user account only - no admin rights, but internet access.</p>
+        </article>
+
+        <article class="card">
+          <h2>Diagnostics</h2>
+          <p class="sub">This machine's setup, the catalog itself, and how it lines up with Intune. Only reads.</p>
+          <div class="actions"><button class="btn" id="btnDiag">Run diagnostics</button></div>
+          <pre class="log diag" id="diagLog" hidden></pre>
+        </article>
+
       </div>
 
       <div class="col">
@@ -241,6 +284,7 @@
           <div class="actions">
             <button class="btn" id="btnNewCert">Create new certificate...</button>
             <button class="btn ghost" id="btnCertFolder">Open certificates folder</button>
+            <button class="btn ghost" id="btnCertsLocal">Delete one...</button>
           </div>
           <p class="sub">In Entra ID <span class="muted">(signs you in with your own account)</span></p>
           <div class="actions">
@@ -566,6 +610,13 @@
   <div class="toolbar tight"><input type="search" id="wgQuery" placeholder="App or publisher name" autocomplete="off" spellcheck="false"><button class="btn" id="btnWgSearch">Search</button></div>
   <p class="sub" id="wgNote">Searches winget's sources. Pick the package to use its ID.</p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>Name</th><th>Winget ID</th><th>Version</th><th>Source</th><th></th></tr></thead><tbody id="wgRows"></tbody></table></div>
+  <div class="actions end"><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgCertsLocal" class="wide">
+  <h2>Certificates on this machine</h2>
+  <p class="sub">CurrentUser\My and LocalMachine\My. Deleting removes the certificate and its private key from this machine only - Entra ID keeps its copy (Check certificates there deletes that).</p>
+  <div class="tablewrap short"><table class="plan"><thead><tr><th>Subject</th><th>Store</th><th>Thumbprint</th><th>Expires</th><th></th></tr></thead><tbody id="certsLocalRows"></tbody></table></div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
 
