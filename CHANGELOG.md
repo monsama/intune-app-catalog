@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.11.0
+
+### Added
+
+Web interface, step 3a (`IntuneDeployment.ps1 -Web`):
+
+- **More menu, also on right-click:**
+  - Package (builds the .intunewin for apps with their own installer)
+  - Pull from Intune
+  - Install status
+  - Copy and Clear App ID
+  - Delete from Intune
+  - Remove from catalog
+- **Pull from Intune:** each app's settings and groups come from Intune.
+  An app that differs from the catalog is shown field by field, and you
+  tick what keeps the catalog's value.
+- **Install status:** every device's state for an app, with counts.
+- **Delete from Intune:** deletes the app in Intune and clears its App
+  ID in the catalog. The catalog entry stays.
+- **Settings:**
+  - Packaging: tool status, Download packaging tool, Build
+    init.intunewin.
+  - Automatic checks and pushes.
+  - Folders.
+  - Default values for new apps, with the same checks as the classic
+    dialog.
+  - Favourite groups.
+
+### Fixed
+
+- **Saving settings from the web interface wiped the classic window's
+  column widths and window position.** They are now kept, and a failed
+  save no longer tries to show a classic message box.
+
 ## 1.10.0
 
 ### Added

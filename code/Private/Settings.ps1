@@ -129,8 +129,11 @@ function Global:Write-SettingsFile {
             # them (or one written by hand) costs nothing.
             GridSortColumn        = [string]$Global:App.GridSortColumn
             GridSortAscending     = [bool]$Global:App.GridSortAscending
-            GridColumnWidths      = (Get-GridColumnWidths)
-            WindowPlacement       = (Get-WindowPlacement)
+            # Without a grid or window (the web interface saving), what was
+            # read from the file is written back - not an empty table and
+            # $null, which wiped the classic window's widths and placement.
+            GridColumnWidths      = $(if ($Global:App.Grid) { Get-GridColumnWidths } else { $Global:App.SavedGridColumnWidths })
+            WindowPlacement       = $(if ($Global:App.Form) { Get-WindowPlacement } else { $Global:App.SavedWindowPlacement })
             # Only the folders actually pointed somewhere else. A default
             # is not written down, so changing what the default IS in a
             # later version reaches every install that never overrode it.
@@ -143,7 +146,7 @@ function Global:Write-SettingsFile {
     }
     catch {
         Write-Log "[FAILED] Could not save settings: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
-        [System.Windows.Forms.MessageBox]::Show("Could not save settings: $($_.Exception.Message)", "Save failed", "OK", "Error") | Out-Null
+        if ($Global:App.Form) { [System.Windows.Forms.MessageBox]::Show("Could not save settings: $($_.Exception.Message)", "Save failed", "OK", "Error") | Out-Null }
         return $false
     }
 }

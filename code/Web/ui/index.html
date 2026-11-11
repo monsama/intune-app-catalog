@@ -47,6 +47,7 @@
       <button class="btn" id="btnEditApp" disabled>Edit</button>
       <button class="btn" id="btnDeploy" disabled title="Create or update the selected apps in Intune">Deploy</button>
       <button class="btn" id="btnPush" disabled title="Push the selected apps' groups to Intune">Push groups</button>
+      <button class="btn" id="btnMore" aria-haspopup="menu" title="More actions for the selected apps">More &#9662;</button>
       <button class="btn" id="btnReload">Reload</button>
       <button class="btn" id="btnCatalogFolder">Open catalog folder</button>
     </div>
@@ -69,7 +70,7 @@
         <p class="path" id="emptyPath"></p>
       </div>
     </div>
-    <p class="hint">Click to select, Ctrl/Shift+click for several, double-click to edit.</p>
+    <p class="hint">Click to select, Ctrl/Shift+click for several, double-click to edit, right-click for more.</p>
   </section>
 
   <!-- ============ Checks ============ -->
@@ -115,6 +116,35 @@
           <ol class="checklist" id="checklist"></ol>
           <div class="report" id="report"></div>
         </article>
+
+        <article class="card">
+          <h2>Default values for new apps</h2>
+          <p class="sub">What an app gets when it's deployed without its own settings. Apps that already have settings keep them.</p>
+          <div class="formgrid tight">
+            <div>
+              <label>Architecture</label>
+              <div class="checks"><label class="chk"><input type="checkbox" data-arch="x64">x64</label><label class="chk"><input type="checkbox" data-arch="x86">x86</label><label class="chk"><input type="checkbox" data-arch="arm64">arm64</label></div>
+              <label>Install for<select id="dContext"><option>System</option><option>User</option></select></label>
+              <label>Minimum OS<select id="dMinOs"></select></label>
+              <label>Winget apps install with<select id="dWinget"><option value="WAU">Winget-AutoUpdate (Winget-Install.ps1)</option><option value="Winget">The winget command</option></select></label>
+              <label>Default dependencies <span class="muted">(app names, one per line)</span><textarea id="dDeps" rows="2"></textarea></label>
+            </div>
+            <div>
+              <div class="two">
+                <label>Install time (min)<input id="dTime" inputmode="numeric"></label>
+                <label>Min. disk space (MB)<input id="dDisk" inputmode="numeric"></label>
+                <label>Min. memory (MB)<input id="dMem" inputmode="numeric"></label>
+                <label>Min. CPUs<input id="dCpus" inputmode="numeric"></label>
+                <label>Min. CPU speed (MHz)<input id="dSpeed" inputmode="numeric"></label>
+                <label>Restart<select id="dRestart"><option value="basedOnReturnCode">Based on return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></label>
+              </div>
+              <label class="chk"><input type="checkbox" id="dUninstall">Allow uninstall from Company Portal</label>
+              <label>Return codes <span class="muted">(code = type, one per line)</span><textarea id="dCodes" rows="5" class="monotext"></textarea></label>
+            </div>
+          </div>
+          <p class="formerror" id="defaultsError" hidden></p>
+          <div class="actions"><button class="btn primary" id="btnSaveDefaults">Save default values</button></div>
+        </article>
       </div>
 
       <div class="col">
@@ -140,6 +170,41 @@
             <button class="btn primary" id="btnAddPerms">Add required permissions...</button>
             <button class="btn" id="btnOpenEntra">Open in Entra (grant consent)</button>
           </div>
+        </article>
+
+        <article class="card">
+          <h2>Packaging</h2>
+          <p class="certstatus" id="pkgTool"></p>
+          <p class="certstatus" id="pkgShared"></p>
+          <div class="actions">
+            <button class="btn" id="btnGetTool">Download packaging tool</button>
+            <button class="btn" id="btnBuildShared">Build init.intunewin</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <h2>Automatic checks and pushes</h2>
+          <label class="chk"><input type="checkbox" data-check="checkDriftOnStartup">Compare the catalog with Intune at startup (classic window)</label>
+          <label class="chk"><input type="checkbox" data-check="runFullAuditOnStartup">Run a full audit at startup (classic window)</label>
+          <label class="chk"><input type="checkbox" data-check="checkIntuneOnDeployOpen">Check Intune when the deploy form opens (classic window)</label>
+          <label class="chk"><input type="checkbox" data-check="pushGroupsOnCreate">Push groups after creating an app</label>
+          <label class="chk"><input type="checkbox" data-check="pushGroupsOnUpdate">Push groups after updating an app</label>
+          <label class="chk"><input type="checkbox" data-check="detailedGraphLog">Detailed Graph log (every request)</label>
+          <div class="actions"><button class="btn" id="btnSaveChecks">Save</button></div>
+        </article>
+
+        <article class="card">
+          <h2>Folders</h2>
+          <p class="sub">Leave a box empty to use the default (shown greyed out).</p>
+          <div id="folderList"></div>
+          <div class="actions"><button class="btn" id="btnSaveFolders">Save folders</button></div>
+        </article>
+
+        <article class="card">
+          <h2>Favourite groups</h2>
+          <p class="sub">Offered first wherever a group is chosen. One per line.</p>
+          <textarea id="favGroups" rows="4" class="full"></textarea>
+          <div class="actions"><button class="btn" id="btnSaveFavs">Save favourites</button></div>
         </article>
 
         <article class="card">
@@ -234,6 +299,40 @@
   <table class="plan"><thead><tr><th>App</th><th>Added in Intune</th><th>Removed from Intune</th></tr></thead><tbody id="pushRows"></tbody></table>
   <pre class="log" id="pushLog"></pre>
   <div class="actions end"><button class="btn" data-close id="btnPushClose">Close</button><button class="btn primary" id="btnPushGo" disabled>Apply</button></div>
+</dialog>
+
+<div class="menu" id="appMenu" role="menu" hidden>
+  <button role="menuitem" data-act="package">Package (build .intunewin)</button>
+  <button role="menuitem" data-act="pull">Pull from Intune...</button>
+  <button role="menuitem" data-act="status">Install status...</button>
+  <hr>
+  <button role="menuitem" data-act="copyid">Copy App ID</button>
+  <button role="menuitem" data-act="clearid">Clear App ID</button>
+  <hr>
+  <button role="menuitem" data-act="delete" class="danger">Delete from Intune...</button>
+  <button role="menuitem" data-act="remove" class="danger">Remove from catalog...</button>
+</div>
+
+<dialog id="dlgRun" class="wide">
+  <h2 id="runTitle">Working</h2>
+  <p class="sub" id="runText"></p>
+  <pre class="log" id="runLog"></pre>
+  <div class="actions end"><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgPull" class="wide">
+  <h2>Pull from Intune</h2>
+  <p class="sub" id="pullText">Reading the apps from Intune...</p>
+  <div id="pullReview"></div>
+  <pre class="log" id="pullLog"></pre>
+  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnPullApply" hidden>Apply</button></div>
+</dialog>
+
+<dialog id="dlgStatus" class="wide">
+  <h2 id="statusTitle">Install status</h2>
+  <p class="sub" id="statusSummary">Reading Intune's install status report...</p>
+  <div class="tablewrap short"><table class="plan"><thead><tr><th>Device</th><th>User</th><th>State</th><th>Detail</th><th>Error</th><th>Version</th><th>Last seen</th></tr></thead><tbody id="statusRows"></tbody></table></div>
+  <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
 
 <div class="toast" id="toast" role="status" hidden></div>

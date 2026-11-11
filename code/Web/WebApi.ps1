@@ -287,7 +287,9 @@ function Global:Start-WebStepJob {
       person in (WAM needs a window). -After: what to do with the result
       once it has succeeded (see Complete-WebJob).
     #>
-    param([string]$ScriptContent, [string]$Name, [string]$ConfigJson, [string]$ResultPath, [string]$Kind, [switch]$ShowWindow, [hashtable]$After = @{})
+    param([string]$ScriptContent, [string]$Name, [string]$ConfigJson, [string]$ResultPath, [string]$Kind, [switch]$ShowWindow, [hashtable]$After = @{},
+        # A step that takes its own parameters (Package.ps1) instead of -ConfigPath.
+        [hashtable]$Parameters = $null)
     $tag = [guid]::NewGuid().ToString('N')
     $configPath = Join-Path $env:TEMP ".intunepkg_$($Name)_config_$tag.json"
     $scriptPath = Join-Path $Global:App.RootPath ".intunepkg_embedded_$($Name)_$tag.ps1"
@@ -295,11 +297,12 @@ function Global:Start-WebStepJob {
     $logPath = Join-Path $env:TEMP "intunepkg_$tag.log"
     $utf8 = New-Object System.Text.UTF8Encoding($false)
     try {
-        [System.IO.File]::WriteAllText($configPath, $ConfigJson, $utf8)
+        if ($ConfigJson) { [System.IO.File]::WriteAllText($configPath, $ConfigJson, $utf8) }
         [System.IO.File]::WriteAllText($scriptPath, $ScriptContent, $utf8)
         [System.IO.File]::WriteAllText($helperPath, ((Get-GraphLogScriptHelpers) + "`n`n" + (Get-AssignmentScriptHelpers)), $utf8)
         [System.IO.File]::WriteAllText($logPath, '')
-        $psi = New-AppStepStartInfo -Spec @{ Script = $scriptPath; Parameters = @{ ConfigPath = $configPath }; GraphHelper = $helperPath; LogFile = $logPath }
+        $stepParams = if ($Parameters) { $Parameters } else { @{ ConfigPath = $configPath } }
+        $psi = New-AppStepStartInfo -Spec @{ Script = $scriptPath; Parameters = $stepParams; GraphHelper = $helperPath; LogFile = $logPath }
         Set-WindowsPowerShellEnvironment -StartInfo $psi
         $psi.EnvironmentVariables['INTUNEPACKAGER_GRAPH_LOG'] = $(if ($Global:App.DetailedGraphLog) { 'detailed' } else { 'summary' })
         $psi.CreateNoWindow = -not $ShowWindow
@@ -337,8 +340,24 @@ function Global:Complete-WebJob {
       Deploy - the App ID (and the defaults it was deployed with, for an app
       that had none) saved to the catalog, and whether groups should follow.
     #>
-    param([hashtable]$After, $Result)
+    param([hashtable]$After, $Result, [string]$LogPath)
     switch ($After.Kind) {
+        'deleted' {
+            $n = $After.AppName
+            [void](Update-WebCatalogApp -Name $n -Change { param($a) $a.appId = ''; $a.intuneAppType = ''; $a.intuneAppVersion = '' })
+            Write-Log "[OK] Deleted $n from Intune; its App ID is cleared in the catalog."
+            return @{ ok = $true }
+        }
+        'pull' { return (Complete-WebPull -Result $Result) }
+        'package' {
+            # Package.ps1 ends with a summary ("Failed: N") but no exit code for
+            # a single app failing - read it from the log.
+            $text = ''
+            try { $text = Get-Content -LiteralPath $LogPath -Raw -Encoding UTF8 } catch { }
+            $failed = if ($text -match '(?m)Failed:\s*(\d+)') { [int]$Matches[1] } else { 0 }
+            Write-Log "$(if ($failed) { '[WARN]' } else { '[OK]' }) Packaging finished$(if ($failed) { " - $failed failed, see the log" })."
+            return @{ ok = $true; failed = $failed }
+        }
         'deploy' {
             $newId = [string]$Result.appId
             $defaults = $After.Defaults
@@ -556,6 +575,281 @@ function Global:Invoke-WebCheckFix {
     }
 }
 
+function Global:Get-WebPackaging {
+    # What packaging needs and whether it's there: the tool, and the shared Winget package.
+    $r = Get-PackagingReadiness
+    return @{ ok = $true; toolPath = [string]$r.ToolPath; toolFound = [bool]$r.ToolFound; toolVersion = [string]$r.ToolVersion
+        sharedPath = [string]$r.SharedPath; sharedFound = [bool]$r.SharedFound; packagesFolder = (Get-AppFolder -Kind Packages) }
+}
+
+function Global:Invoke-WebPackagingSetup {
+    # Downloads the packaging tool, or builds init.intunewin (downloading the tool first if needed).
+    param($Data)
+    switch ([string]$Data.what) {
+        'tool' { $r = Install-PackagingTool -LogBox $null }
+        'shared' {
+            if (-not (Get-PackagingReadiness).ToolFound) {
+                $t = Install-PackagingTool -LogBox $null
+                if (-not $t.Ok) { return @{ ok = $false; error = [string]$t.Message } }
+            }
+            $r = New-SharedWingetPackage -LogBox $null
+        }
+        default { return @{ ok = $false; error = 'Unknown setup step.' } }
+    }
+    return @{ ok = [bool]$r.Ok; error = $(if (-not $r.Ok) { [string]$r.Message } else { '' }); message = [string]$r.Message; state = (Get-WebPackaging) }
+}
+
+function Global:Start-WebPackage {
+    <#
+      Builds .intunewin packages (Package.ps1) for apps with their own
+      installer - one, several, or every one when -names is empty. Winget
+      apps all deploy the shared init.intunewin and are skipped.
+    #>
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $names = @($Data.names | ForEach-Object { [string]$_ } | Where-Object { $_ })
+    $own = @($catalog.Apps | Where-Object { Test-AppIsUncommon -App $_ })
+    if ($names.Count) { $own = @($own | Where-Object { $names -contains $_.appName }) }
+    if ($names.Count -and $own.Count -eq 0) { return @{ ok = $false; error = 'None of the chosen apps has its own installer to package - Winget apps use the shared package.' } }
+    $params = @{ InputFolder = (Get-AppFolder -Kind Packages -Create); Force = $true; ToolPath = (Get-PackagingToolPath) }
+    $folders = @($own | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
+    if ($names.Count -eq 1) { $params.SingleFolderName = $folders[0] }
+    elseif ($names.Count -gt 1) { $params.FolderNames = ($folders -join ',') }
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedPackageScript -Name 'package' -ConfigJson '' -ResultPath '' -Kind 'Package' -Parameters $params -After @{ Kind = 'package' }
+    if ($started.ok) { Write-Log "[INFO] Packaging $(if ($names.Count) { "$($own.Count) app(s)" } else { 'every app with its own installer' })..." }
+    return $started
+}
+
+function Global:Start-WebPull {
+    # Pull from Intune: reads each chosen app's settings and groups (SyncMetadata - only reads).
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $names = @($Data.names | ForEach-Object { [string]$_ })
+    $apps = @($catalog.Apps | Where-Object { $names -contains $_.appName -and $_.appId })
+    if ($apps.Count -eq 0) { return @{ ok = $false; error = 'None of the chosen apps is in Intune yet (no App ID).' } }
+    $resultPath = Join-Path $env:TEMP (".intunepkg_sync_result_" + [guid]::NewGuid().ToString('N') + ".json")
+    $config = @{
+        TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
+        Apps = @($apps | ForEach-Object { @{ AppName = $_.appName; AppId = $_.appId } }); OutputResultPath = $resultPath
+    }
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedSyncMetadataScript -Name 'syncmeta' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind "Pull ($($apps.Count) app(s))" -After @{ Kind = 'pull' }
+    if ($started.ok) { Write-Log "[INFO] Reading $($apps.Count) app(s) from Intune..." }
+    return $started
+}
+
+function Global:Complete-WebPull {
+    <#
+      What Pull found, the classic way: an app whose catalog entry matches
+      Intune (or has no settings yet) takes Intune's at once; one that
+      differs is kept back for the user to choose, field by field.
+    #>
+    param($Result)
+    $applied = New-Object System.Collections.Generic.List[string]
+    $failed = New-Object System.Collections.Generic.List[string]
+    $review = New-Object System.Collections.Generic.List[object]
+    $pending = @{}
+    foreach ($r in @($Result.results)) {
+        if (-not $r.Success) { $failed.Add("$($r.AppName): $($r.Error)"); continue }
+        $app = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $r.AppName } | Select-Object -First 1
+        if (-not $app) { continue }
+        $fieldDiffs = @(Get-CatalogMetadataFieldDiffs -Local $app.metadata -Remote $r.Metadata -OdataType $r.OdataType)
+        $groupDiffs = if ($r.GroupFetchOk) { @(Get-GroupFieldDiffs -LocalApp $app -RemoteResult $r) } else { @() }
+        if (($app.metadata -and $fieldDiffs.Count -gt 0) -or $groupDiffs.Count -gt 0) {
+            $pending[$r.AppName] = $r
+            $review.Add([ordered]@{ app = $r.AppName; diffs = @(@($fieldDiffs) + @($groupDiffs) | ForEach-Object { [ordered]@{ field = [string]$_.Field; local = (Get-CheckValueText $_.Local); intune = (Get-CheckValueText $_.Remote) } }) })
+        }
+        else {
+            $rr = $r
+            [void](Update-WebCatalogApp -Name $r.AppName -Change {
+                param($a)
+                $a.intuneAppType = Get-FriendlyIntuneAppType -ODataType $rr.OdataType
+                $a.intuneAppVersion = [string]$rr.DisplayVersion
+                $a.metadata = $rr.Metadata
+            }.GetNewClosure())
+            $applied.Add($r.AppName)
+        }
+    }
+    $id = [guid]::NewGuid().ToString('N')
+    if ($review.Count) { $Global:App.WebPending[$id] = $pending }
+    Write-Log "[OK] Pulled from Intune: $($applied.Count) updated$(if ($review.Count) { ", $($review.Count) to review" })$(if ($failed.Count) { ", $($failed.Count) failed" })."
+    return @{ ok = $true; pending = $(if ($review.Count) { $id } else { '' }); applied = $applied.ToArray(); review = $review.ToArray(); failed = $failed.ToArray() }
+}
+
+function Global:Invoke-WebPullApply {
+    # The user's choice per reviewed app: which fields keep the catalog's value; the rest take Intune's.
+    param($Data)
+    $id = [string]$Data.pending
+    if (-not $id -or -not $Global:App.WebPending.ContainsKey($id)) { return @{ ok = $false; error = 'Nothing waiting to be applied (run Pull again).' } }
+    $pending = $Global:App.WebPending[$id]
+    $done = New-Object System.Collections.Generic.List[string]
+    foreach ($name in @($pending.Keys)) {
+        $r = $pending[$name]
+        $keep = @($Data.keep.$name | ForEach-Object { [string]$_ })
+        [void](Update-WebCatalogApp -Name $name -Change {
+            param($a)
+            $a.intuneAppType = Get-FriendlyIntuneAppType -ODataType $r.OdataType
+            $a.intuneAppVersion = [string]$r.DisplayVersion
+            $a.metadata = if ($a.metadata) { Merge-CatalogMetadata -Remote $r.Metadata -Local $a.metadata -KeepLocalFields $keep } else { $r.Metadata }
+            if ($r.GroupFetchOk) {
+                if ($keep -notcontains 'Required for') { $a.requiredFor = @($r.RequiredGroupNames) }
+                if ($keep -notcontains 'Available for') { $a.availableFor = @($r.AvailableGroupNames) }
+                if ($keep -notcontains 'Uninstall for') { $a.uninstallFor = @($r.UninstallGroupNames) }
+            }
+        }.GetNewClosure())
+        $done.Add($name)
+    }
+    [void]$Global:App.WebPending.Remove($id)
+    Write-Log "[OK] Applied the pull for: $($done -join ', ')."
+    return @{ ok = $true; applied = $done.ToArray() }
+}
+
+function Global:Get-WebMinOsChoices {
+    # The minimum OS values the deploy form offers, with readable labels.
+    @('W10_1607', 'W10_1703', 'W10_1709', 'W10_1803', 'W10_1809', 'W10_1903', 'W10_1909', 'W10_2004', 'W10_20H2', 'W10_21H1', 'W10_21H2', 'W10_22H2', 'W11_21H2', 'W11_22H2') |
+        ForEach-Object { [ordered]@{ value = $_; label = (Get-FriendlyMinOsRelease -RawValue $_) } }
+}
+
+function Global:ConvertTo-WebDefaultSettings {
+    <#
+      Pure: the "default values" form, checked the way the classic dialog
+      checks it, as @{ Settings; Error }. Error is '' when it's fine.
+    #>
+    param($Form)
+    $arch = @(@($Form.architecture) | ForEach-Object { [string]$_ } | Where-Object { $_ -in 'x86', 'x64', 'arm64' } | Select-Object -Unique)
+    if ($arch.Count -eq 0) { return @{ Error = 'Choose at least one architecture.' } }
+    $ints = @{}
+    foreach ($k in 'minDiskSpaceMB', 'minMemoryMB', 'minProcessors', 'minCpuSpeedMHz', 'installTimeMinutes') {
+        $v = [string]$Form.$k
+        if ($v -notmatch '^\d{1,9}$') { return @{ Error = "$k must be a whole number of 0 or more." } }
+        $ints[$k] = [int]$v
+    }
+    $codes = @(@($Form.returnCodes) | Where-Object { $_ } | ForEach-Object {
+        if ([string]$_.returnCode -notmatch '^-?\d{1,10}$' -or [string]$_.type -notin 'success', 'softReboot', 'hardReboot', 'retry', 'failed') { $null }
+        else { [pscustomobject]@{ returnCode = [int][string]$_.returnCode; type = [string]$_.type } }
+    })
+    if ($codes.Count -eq 0 -or @($codes | Where-Object { $null -eq $_ }).Count) { return @{ Error = 'Every return code needs a number and a type, and there must be at least one.' } }
+    if ([string]$Form.installContext -notin 'System', 'User') { return @{ Error = 'Install for must be System or User.' } }
+    if ([string]$Form.deviceRestartBehavior -notin 'basedOnReturnCode', 'allow', 'suppress', 'force') { return @{ Error = 'Unknown restart behaviour.' } }
+    if ([string]$Form.minOSKey -notmatch '^W1[01]_\w+$') { return @{ Error = 'Unknown minimum OS.' } }
+    return @{ Error = ''; Settings = [pscustomobject]@{
+        Architecture = ($arch -join ','); InstallContext = [string]$Form.installContext; MinOSKey = [string]$Form.minOSKey
+        MinDiskSpaceMB = $ints.minDiskSpaceMB; MinMemoryMB = $ints.minMemoryMB; MinProcessors = $ints.minProcessors; MinCpuSpeedMHz = $ints.minCpuSpeedMHz
+        InstallTimeMinutes = (Get-NormalizedInstallTimeMinutes $ints.installTimeMinutes)
+        DeviceRestartBehavior = [string]$Form.deviceRestartBehavior; AllowAvailableUninstall = [bool]$Form.allowAvailableUninstall
+        ReturnCodes = $codes
+        DefaultDependencyAppNames = @(@($Form.defaultDependencyAppNames) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
+        WingetInstallMethod = $(if ([string]$Form.wingetInstallMethod -eq 'Winget') { 'Winget' } else { 'WAU' })
+    } }
+}
+
+function Global:Get-WebPrefs {
+    $d = $Global:App.DefaultAppSettings
+    return @{
+        ok = $true
+        checks = [ordered]@{
+            checkDriftOnStartup = [bool]$Global:App.CheckDriftOnStartup; runFullAuditOnStartup = [bool]$Global:App.RunFullAuditOnStartup
+            checkIntuneOnDeployOpen = [bool]$Global:App.CheckIntuneOnDeployOpen; pushGroupsOnCreate = [bool]$Global:App.PushGroupsOnCreate
+            pushGroupsOnUpdate = [bool]$Global:App.PushGroupsOnUpdate; detailedGraphLog = [bool]$Global:App.DetailedGraphLog
+        }
+        folders = @(Get-AppFolderKinds | ForEach-Object {
+            $chosen = if ($Global:App.AppFolders -is [System.Collections.IDictionary] -and $Global:App.AppFolders.Contains($_.Key)) { [string]$Global:App.AppFolders[$_.Key] } else { '' }
+            [ordered]@{ key = $_.Key; label = $_.Label; why = $_.Why; chosen = $chosen; default = (Get-AppFolderDefault -Kind $_.Key) }
+        })
+        defaults = [ordered]@{
+            architecture = @(([string]$d.Architecture) -split ',' | Where-Object { $_ }); installContext = [string]$d.InstallContext; minOSKey = [string]$d.MinOSKey
+            minDiskSpaceMB = [int]$d.MinDiskSpaceMB; minMemoryMB = [int]$d.MinMemoryMB; minProcessors = [int]$d.MinProcessors; minCpuSpeedMHz = [int]$d.MinCpuSpeedMHz
+            installTimeMinutes = [int]$d.InstallTimeMinutes; deviceRestartBehavior = [string]$d.DeviceRestartBehavior; allowAvailableUninstall = [bool]$d.AllowAvailableUninstall
+            returnCodes = @($d.ReturnCodes | ForEach-Object { [ordered]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })
+            defaultDependencyAppNames = @($d.DefaultDependencyAppNames); wingetInstallMethod = [string]$d.WingetInstallMethod
+        }
+        minOsChoices = @(Get-WebMinOsChoices)
+        favoriteGroups = @($Global:App.FavoriteGroups)
+    }
+}
+
+function Global:Save-WebPrefs {
+    param($Data)
+    if ($Data.defaults) {
+        $converted = ConvertTo-WebDefaultSettings $Data.defaults
+        if ($converted.Error) { return @{ ok = $false; error = $converted.Error } }
+    }
+    if ($Data.checks) {
+        $c = $Data.checks
+        $Global:App.CheckDriftOnStartup = [bool]$c.checkDriftOnStartup; $Global:App.RunFullAuditOnStartup = [bool]$c.runFullAuditOnStartup
+        $Global:App.CheckIntuneOnDeployOpen = [bool]$c.checkIntuneOnDeployOpen; $Global:App.PushGroupsOnCreate = [bool]$c.pushGroupsOnCreate
+        $Global:App.PushGroupsOnUpdate = [bool]$c.pushGroupsOnUpdate; $Global:App.DetailedGraphLog = [bool]$c.detailedGraphLog
+    }
+    if ($Data.folders) {
+        foreach ($p in $Data.folders.PSObject.Properties) { Set-AppFolder -Kind $p.Name -Path ([string]$p.Value) }
+    }
+    if ($Data.defaults) { $Global:App.DefaultAppSettings = $converted.Settings }
+    if ($null -ne $Data.favoriteGroups) {
+        $Global:App.FavoriteGroups = New-Object System.Collections.Generic.List[string]
+        foreach ($g in @($Data.favoriteGroups | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)) { $Global:App.FavoriteGroups.Add($g) }
+    }
+    if (-not (Write-SettingsFile)) { return @{ ok = $false; error = "Couldn't write the settings file." } }
+    Write-Log '[OK] Settings saved.'
+    return (Get-WebPrefs)
+}
+
+function Global:Start-WebDeleteFromIntune {
+    <#
+      Deletes ONE app from Intune (DeleteApp - removes it as a dependency of
+      another app first when -dependentOf says so), then clears its App ID
+      in the catalog. The catalog entry itself stays.
+    #>
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $name = [string]$Data.name
+    $a = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $a -or -not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune (no App ID)." } }
+    $resultPath = Join-Path $env:TEMP (".intunepkg_delete_result_" + [guid]::NewGuid().ToString('N') + ".json")
+    $config = @{
+        TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
+        AppId = $a.appId; AppName = $a.appName; RemoveDependencyFromAppId = ''; OutputResultPath = $resultPath
+    }
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedDeleteAppScript -Name 'deleteapp' -ConfigJson ($config | ConvertTo-Json -Depth 4) -ResultPath $resultPath -Kind "Delete $name from Intune" -After @{ Kind = 'deleted'; AppName = $a.appName }
+    if ($started.ok) { Write-Log "[INFO] Deleting $name from Intune..." }
+    return $started
+}
+
+function Global:Clear-WebAppId {
+    # Forgets the Intune link in the catalog (App ID, Intune's type and version). Intune isn't touched.
+    param($Data)
+    $name = [string]$Data.name
+    try { [void](Update-WebCatalogApp -Name $name -Change { param($a) $a.appId = ''; $a.intuneAppType = ''; $a.intuneAppVersion = '' }) }
+    catch { return @{ ok = $false; error = $_.Exception.Message } }
+    Write-Log "[OK] Cleared $name's App ID in the catalog."
+    return @{ ok = $true }
+}
+
+function Global:Get-WebInstallStatus {
+    # Every device's install state for one app, from Intune's install status report.
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $name = [string]$Data.name
+    $a = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $a -or -not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune (no App ID)." } }
+    if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Set up the connection in Settings first.' } }
+    try {
+        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+        Connect-MgGraph -TenantId $Global:App.GraphTenantId -ClientId $Global:App.GraphClientId -CertificateThumbprint $Global:App.GraphCertificateThumbprint -NoWelcome -ErrorAction Stop
+        try {
+            $report = Get-AppInstallStatusRows -AppId $a.appId -Invoke {
+                param($Uri, $Method, $Body)
+                $response = Invoke-MgGraphRequest -Uri $Uri -Method $Method -Body $Body -ContentType 'application/json' -OutputType HttpResponseMessage -ErrorAction Stop
+                $text = if ($response.Content) { $response.Content.ReadAsStringAsync().GetAwaiter().GetResult() } else { '' }
+                if (-not $response.IsSuccessStatusCode) { throw "$([int]$response.StatusCode) $($response.ReasonPhrase): $text" }
+                if ($text) { $text | ConvertFrom-Json } else { $null }
+            }
+        }
+        finally { try { Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null } catch { } }
+    }
+    catch { return @{ ok = $false; error = (ConvertTo-FriendlyGraphError (Get-InnermostErrorMessage $_.Exception)) } }
+    $rows = @($report.Rows | ForEach-Object { [ordered]@{ device = [string]$_.DeviceName; user = [string]$_.UserName; state = [string]$_.State; detail = [string]$_.Detail; error = [string]$_.ErrorCode; version = [string]$_.Version; lastSeen = [string]$_.LastSeen } })
+    return @{ ok = $true; app = $name; rows = $rows; truncated = [bool]$report.Truncated }
+}
+
 function Global:Get-WebJobPoll {
     # New output since -offset, and the result once the step has ended.
     param($Data)
@@ -581,17 +875,21 @@ function Global:Get-WebJobPoll {
         $response.done = $true
         $response.exitCode = $job.Process.ExitCode
         $response.result = $null
-        if (Test-Path -LiteralPath $job.Result) {
+        if ($job.Result -and (Test-Path -LiteralPath $job.Result)) {
             try { $response.result = Get-Content -LiteralPath $job.Result -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+        }
+        elseif (-not $job.Result) {
+            # A step without a result file (Package.ps1) - its exit code says it.
+            $response.result = [pscustomobject]@{ success = ($job.Process.ExitCode -eq 0); error = $(if ($job.Process.ExitCode -ne 0) { "Exit code $($job.Process.ExitCode) - see the log." } else { '' }) }
         }
         # Cleaned up only once the page has read everything (an empty read
         # after the exit); until then the log stays for the next poll.
         if (-not $text) {
             if ($response.result -and $response.result.success -and $job.After -and $job.After.Count) {
-                try { $response.after = Complete-WebJob -After $job.After -Result $response.result }
+                try { $response.after = Complete-WebJob -After $job.After -Result $response.result -LogPath $job.Log }
                 catch { $response.after = @{ ok = $false; error = $_.Exception.Message }; Write-Log "[WARN] $($_.Exception.Message)" }
             }
-            Remove-Item -LiteralPath (@($job.Cleanup) + $job.Log + $job.Result) -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath (@($job.Cleanup) + $job.Log + @($job.Result | Where-Object { $_ })) -Force -ErrorAction SilentlyContinue
             [void]$Global:App.WebJobs.Remove($id)
             Write-Log "$(if ($response.result -and $response.result.success) { '[OK]' } else { '[WARN]' }) Finished: $($job.Mode)."
         }
@@ -869,6 +1167,16 @@ function Global:Invoke-WebApi {
         '/api/deploy-start'     { return (Start-WebDeploy $Data) }
         '/api/push-start'       { return (Start-WebPushGroups $Data) }
         '/api/checks-run'       { return (Invoke-WebChecks) }
+        '/api/packaging'        { return (Get-WebPackaging) }
+        '/api/packaging-setup'  { return (Invoke-WebPackagingSetup $Data) }
+        '/api/package-start'    { return (Start-WebPackage $Data) }
+        '/api/pull-start'       { return (Start-WebPull $Data) }
+        '/api/pull-apply'       { return (Invoke-WebPullApply $Data) }
+        '/api/prefs'            { return (Get-WebPrefs) }
+        '/api/prefs-save'       { return (Save-WebPrefs $Data) }
+        '/api/delete-intune'    { return (Start-WebDeleteFromIntune $Data) }
+        '/api/clear-appid'      { return (Clear-WebAppId $Data) }
+        '/api/install-status'   { return (Get-WebInstallStatus $Data) }
         '/api/checks-fix'       { return (Invoke-WebCheckFix $Data) }
         default                 { return @{ ok = $false; error = 'unknown' } }
     }
