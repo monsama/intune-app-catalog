@@ -1,8 +1,8 @@
 /* Intune App Catalog - web interface. Same colour language as the NOBS apps. */
 :root {
-  --bg: #f5f6f8; --surface: #fff; --fg: #1c1f24; --muted: #646a73; --bd: #d9dde3; --bd2: #e9ecf0;
+  --bg: #f5f6f8; --surface: #fff; --fg: #1c1f24; --muted: #5d636b; --bd: #d9dde3; --bd2: #e9ecf0;
   --accent: #1565c0; --accent-fg: #fff; --accent-soft: #e8f0fb; --hover: #eef4fc;
-  --ok: #15803d; --ok-bg: #e7f6ec; --warn: #b45309; --warn-bg: #fdf3e2; --err: #c62828; --err-bg: #fdecec;
+  --ok: #166534; --ok-bg: #e7f6ec; --warn: #b45309; --warn-bg: #fdf3e2; --err: #c62828; --err-bg: #fdecec;
   --info: #1d4ed8; --row-alt: #fafbfc; --sel: #dbe8fa;
   --log: #1e1e1e; --log-fg: #d4d4d4;
   --r-s: 4px; --r-m: 6px; --r-l: 10px;
@@ -12,8 +12,8 @@
   color-scheme: light;
 }
 :root[data-theme="dark"] {
-  --bg: #16181c; --surface: #1f2228; --fg: #e6e8eb; --muted: #9aa1ab; --bd: #363b44; --bd2: #2b2f36;
-  --accent: #4f8fe0; --accent-fg: #fff; --accent-soft: #1f3350; --hover: #26303d;
+  --bg: #16181c; --surface: #1f2228; --fg: #e6e8eb; --muted: #aab1bb; --bd: #363b44; --bd2: #2b2f36;
+  --accent: #4f8fe0; --accent-fg: #0b1a2e; --accent-soft: #1f3350; --hover: #26303d;
   --ok: #4ade80; --ok-bg: #16301f; --warn: #fbbf24; --warn-bg: #352a12; --err: #f87171; --err-bg: #3a1c1c;
   --info: #7aa7f5; --row-alt: #22262c; --sel: #24406a;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4);
@@ -29,7 +29,7 @@ h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
 
 /* ---- top bar ---- */
 .topbar { display: flex; align-items: center; gap: 24px; padding: 0 16px; height: 52px; background: var(--surface); border-bottom: 1px solid var(--bd); flex: none; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; white-space: nowrap; }
+.brand { margin: 0; display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; white-space: nowrap; }
 .brand .ver { color: var(--muted); font-weight: 400; font-size: 12px; }
 .tabs { display: flex; gap: 4px; height: 100%; }
 .tab { border: 0; background: none; color: var(--muted); font: inherit; font-weight: 500; padding: 0 14px; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
@@ -250,7 +250,7 @@ label.chk.inline { display: inline-flex; align-items: center; gap: 6px; margin: 
 .glist li:hover { background: var(--hover); }
 .glist li[aria-selected="true"] { background: var(--sel); }
 .glist li .n { flex: 1; overflow-wrap: anywhere; }
-aside.panel .actions .btn { flex: 1 1 auto; }
+.panel.side .actions .btn { flex: 1 1 auto; }
 .glist li .c { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .ghead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ghead h2 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
@@ -273,3 +273,6 @@ aside.panel .actions .btn { flex: 1 1 auto; }
   .cols { grid-template-columns: 1fr; }
   .view { padding: 12px; }
 }
+
+/* Text for screen readers only. */
+.sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

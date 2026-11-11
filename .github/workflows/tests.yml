@@ -62,7 +62,8 @@ jobs:
   ui:
     # The web interface in a real browser against the real server: every
     # page in light and dark mode, wide and narrow - no errors, no failed
-    # requests, no unnamed buttons, nothing wider than the window. The
+    # requests, no unnamed buttons, nothing wider than the window, no
+    # accessibility rule broken (axe-core), the main dialogs used. The
     # screenshots are kept, to look at what changed.
     name: UI (Chromium)
     runs-on: ubuntu-latest
@@ -70,7 +71,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install Playwright and Chromium
         run: |
-          npm install --no-save --no-audit --no-fund playwright@1.48.2
+          npm install --no-save --no-audit --no-fund playwright@1.48.2 axe-core@4.10.2
           npx playwright install --with-deps chromium
       - name: WebUi.Tests.mjs
         run: node code/tests/ui/WebUi.Tests.mjs --shots "$RUNNER_TEMP/ui-shots"

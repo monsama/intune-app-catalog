@@ -75,11 +75,14 @@ is an error.
 The real server and the real page in Chromium, in light and dark mode, at
 1440 and 820 pixels wide: every tab, the app editor, Checks, Diagnostics.
 Fails on an error in the page, a failed request, a button without a name,
-or a page wider than the window. `--shots <folder>` keeps a screenshot of
-each page; CI uploads them.
+a page wider than the window, or a broken accessibility rule - axe-core's
+WCAG 2.1 A/AA and best-practice rules, on every page and the main dialogs.
+It also adds an app through the editor (with a Winget search), changes it
+with Batch edit and Add groups, checks both arrived, and removes it again.
+`--shots <folder>` keeps a screenshot of each page; CI uploads them.
 
 ```
-npm install --no-save playwright@1.48.2
+npm install --no-save playwright@1.48.2 axe-core@4.10.2
 npx playwright install chromium
 node code/tests/ui/WebUi.Tests.mjs --shots ./shots
 ```

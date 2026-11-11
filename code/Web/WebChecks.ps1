@@ -67,7 +67,9 @@ function Global:Invoke-WebChecks {
                 param([string]$Uri)
                 $items = New-Object System.Collections.Generic.List[object]
                 while ($Uri) { $page = & $Graph $Uri; foreach ($v in @($page.value)) { $items.Add($v) }; $Uri = [string]$page.'@odata.nextLink' }
-                , $items.ToArray()
+                # One item at a time: the callers pipe this into ForEach-Object,
+                # which would otherwise get the whole list as a single item.
+                $items.ToArray()
             }
             $intuneApps = @(& $pages 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$select=id,displayName&$top=999' |
                 ForEach-Object { [pscustomobject]@{ id = [string]$_.id; displayName = [string]$_.displayName } })
