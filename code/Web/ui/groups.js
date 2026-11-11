@@ -19,7 +19,7 @@ function renderGroupList() {
       el('span', { class: 'n', text: g.name }), el('span', { class: 'c', text: g.apps === 1 ? '1 app' : g.apps + ' apps' }));
     li.addEventListener('click', () => openGroup(g.name));
     return li;
-  }) : [el('li', { class: 'muted', text: groups.length ? 'No match - Open looks the name up in Entra ID.' : 'No app is assigned to a group yet.' })]));
+  }) : [el('li', { class: 'muted', role: 'option', 'aria-disabled': 'true', 'aria-selected': 'false', text: groups.length ? 'No match - Open looks the name up in Entra ID.' : 'No app is assigned to a group yet.' })]));
 }
 $('groupSearch').addEventListener('input', renderGroupList);
 $('groupSearch').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('btnGroupOpen').click(); } });
@@ -54,7 +54,7 @@ async function openGroup(name) {
   $('gMembers').replaceChildren(...(r.members.length ? r.members.map(m => el('tr', {}, el('td', { text: m.name }), el('td', { text: m.type }), el('td', { class: 'chg', text: m.upn }),
     el('td', {}, (() => { const b = el('button', { class: 'btn small danger', text: 'Remove' }); b.addEventListener('click', () => removeMember(m)); return b; })())))
     : [el('tr', {}, el('td', { class: 'muted', colspan: '4', text: r.found ? 'No members.' : '-' }))]));
-  $('gUses').replaceChildren(...(r.uses.length ? r.uses.map(u => el('li', { text: `${u.app} - ${u.role}` })) : [el('li', { class: 'muted', text: 'No app in the catalog uses this group.' })]));
+  $('gUses').replaceChildren(...(r.uses.length ? r.uses.map(u => el('li', { text: `${u.app} - ${u.role}` })) : [el('li', { class: 'muted', role: 'option', 'aria-disabled': 'true', 'aria-selected': 'false', text: 'No app in the catalog uses this group.' })]));
   $('btnGroupSave').textContent = r.found ? 'Update group' : 'Create group';
   setGroupBusy(false);
 }
@@ -63,7 +63,7 @@ function renderAdd() {
   $('gAdd').replaceChildren(...(toAdd.size ? [...toAdd.values()].map(m => {
     const b = el('button', { class: 'btn small', text: 'Remove' }); b.addEventListener('click', () => { toAdd.delete(m.id); renderAdd(); });
     return el('li', {}, el('span', { class: 'n', text: m.name + (m.upn ? ` (${m.upn})` : '') }), el('span', { class: 'muted', text: m.type }), b);
-  }) : [el('li', { class: 'muted', text: 'Nobody yet - search above and Add.' })]));
+  }) : [el('li', { class: 'muted', role: 'option', 'aria-disabled': 'true', 'aria-selected': 'false', text: 'Nobody yet - search above and Add.' })]));
 }
 async function findMembers() {
   const q = $('gFind').value.trim();
