@@ -78,6 +78,7 @@ $Script:RequiredPrivateFiles = @(
     "code\Private\Dialogs\Show-WingetSearchDialog.ps1"
     "code\Private\Graph\GraphFetch.ps1"
     "code\Private\Graph\GraphLog.ps1"
+    "code\Private\Graph\GraphModuleConflict.ps1"
     "code\Private\Graph\GraphReports.ps1"
     "code\Private\Graph\GraphToken.ps1"
     "code\Private\Graph\PlatformScripts.ps1"

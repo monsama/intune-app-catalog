@@ -2365,6 +2365,9 @@ $Global:App.Form.Add_FormClosing({
     if (-not $closingArgs.Cancel) {
         try { [void](Write-SettingsFile) } catch { }
     }
+    # A restart (Request-AppRestart) that the user just called off with
+    # Cancel above isn't still waiting to happen on some later close.
+    else { $Global:App.RestartOnClose = $false }
 })
 
 $Global:App.Form.Add_FormClosed({
@@ -2384,6 +2387,8 @@ $Global:App.Form.Add_FormClosed({
     # closes, so closing/reopening Settings mid-session doesn't force a
     # fresh sign-in. See the note on Clear-DelegatedSignInCache.
     Clear-DelegatedSignInCache
+    # Last, once everything above has let go of the log and settings files.
+    Start-PendingAppRestart
 })
 
 Set-Theme -Control $Global:App.Form

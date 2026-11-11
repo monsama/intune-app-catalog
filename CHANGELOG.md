@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **PowerShell module conflicts are named, with a restart.** When a
+  module already loaded in the app's window (usually Az,
+  ExchangeOnlineManagement, PnP or an older Microsoft.Graph, from the
+  PowerShell profile) brings different versions of the libraries
+  Microsoft Graph needs, sign-in used to end in a .NET error such as
+  "RefreshCacheAsync ... does not have an implementation". Test
+  connection now checks for this first. Any Graph sign-in in the window
+  that fails this way also gets the check. It names the module in the
+  way and offers to restart the app without the profile.
+- **Error and status texts can be copied.** Right-click any text in a
+  window, such as the result under Test connection or a check's status,
+  and choose Copy.
+
+### Changed
+
+- **Clearer certificate sign-in errors.** A certificate that isn't on
+  this machine any more, and one that Entra ID doesn't accept (usually
+  not uploaded to the app registration yet), each get their own
+  plain-language explanation and not the raw .NET error.
+
 ## 1.6.0
 
 ### Added

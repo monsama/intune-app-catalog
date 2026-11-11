@@ -179,6 +179,7 @@ function Global:Show-CertificateSetupDialog {
     $lblTestResult.Margin = New-Object System.Windows.Forms.Padding(0,0,0,0)
     $lblTestResult.Text = "Test connection shows its result here."
     $lblTestResult.ForeColor = [System.Drawing.Color]::DimGray
+    $testTip.SetToolTip($lblTestResult, "Right-click to copy this text.")
     $pnlTestResultInfo.Controls.Add($lblTestResult)
     $y += 58
 
@@ -1138,6 +1139,14 @@ function Global:Show-CertificateSetupDialog {
             return
         }
 
+        # Something already loaded in this window that will break the Graph
+        # sign-in (see GraphModuleConflict.ps1)? Say so first, and offer the
+        # restart, rather than let it end in a .NET error. Declined, the
+        # test still runs - it may yet work.
+        if (Test-GraphAssemblyConflict -Owner $dlg) {
+            if ($Global:App.RestartOnClose) { return }
+        }
+
         $lblTestResult.ForeColor = [System.Drawing.Color]::DimGray
         $lblTestResult.Text = "Connecting..."
         $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
@@ -1203,8 +1212,12 @@ function Global:Show-CertificateSetupDialog {
             try {
                 $raw = @($ps.EndInvoke($handle))
                 if ($ps.Streams.Error.Count -gt 0) {
+                    $failure = Get-GraphErrorRecordMessage $ps.Streams.Error[0]
                     $lblTestResultRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $lblTestResultRef.Text = "Failed: $($ps.Streams.Error[0].ToString())"
+                    $lblTestResultRef.Text = "Failed: $(ConvertTo-FriendlyGraphError $failure)"
+                    if (Test-GraphAssemblyConflictText $failure) {
+                        [void](Show-GraphAssemblyConflictPrompt -Owner $dlgRef -ErrorText $failure -Force)
+                    }
                 }
                 elseif ($raw.Count -eq 0) {
                     $lblTestResultRef.ForeColor = [System.Drawing.Color]::Firebrick
@@ -1236,8 +1249,12 @@ function Global:Show-CertificateSetupDialog {
                 }
             }
             catch {
+                $failure = Get-InnermostErrorMessage $_.Exception
                 $lblTestResultRef.ForeColor = [System.Drawing.Color]::Firebrick
-                $lblTestResultRef.Text = "Failed: $($_.Exception.Message)"
+                $lblTestResultRef.Text = "Failed: $(ConvertTo-FriendlyGraphError $failure)"
+                if (Test-GraphAssemblyConflictText $failure) {
+                    [void](Show-GraphAssemblyConflictPrompt -Owner $dlgRef -ErrorText $failure -Force)
+                }
             }
             finally {
                 $ps.Dispose(); $rs.Close(); $rs.Dispose()

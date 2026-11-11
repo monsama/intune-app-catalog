@@ -189,6 +189,12 @@ $testableFunctionNames = @(
     # Plain-language Graph errors (GuiHelpers.ps1)
     "Get-GraphPermissionHint",
     "ConvertTo-FriendlyGraphError",
+    # Graph module vs. another module's libraries (GraphModuleConflict.ps1)
+    "Test-GraphAssemblyConflictText",
+    "Get-ModuleNameFromAssemblyPath",
+    "Get-GraphAssemblyConflicts",
+    "Test-SessionStartedWithoutProfile",
+    "Format-GraphAssemblyConflictText",
     # Graph request log formatting (GraphLog.ps1) - pure string work
     "Get-GraphRequestPath",
     "Get-GraphRequestId",
@@ -2138,6 +2144,59 @@ $cached = @(Get-CachedAuditFindings -Apps $chkApps -LastAuditResults $cache)
 Assert-Equal 2 $cached.Count "Get-CachedAuditFindings: OK and never-checked areas are no rows"
 Assert-True ($cached[0].Cached -and $cached[0].CheckedAt) "Get-CachedAuditFindings: marked as the last audit's, with its time"
 Assert-True ($cached[1].Failed -and $cached[1].Area -eq 'Unknown assignments') "Get-CachedAuditFindings: a failed check stays failed"
+
+# =================================================================
+# Graph module conflicts (GraphModuleConflict.ps1)
+# =================================================================
+$deConflict = 'Ausnahme beim Aufrufen von "EndInvoke" mit 1 Argument(en): "Die Methode "RefreshCacheAsync" im Typ "Microsoft.Graph.PowerShell.Authentication.Core.TokenCache.InMemoryTokenCacheOptions" der Assembly "Microsoft.Graph.Authentication.Core, Version=2.41.2.0" hat keine Implementierung."'
+$enConflict = "Method 'RefreshCacheAsync' in type 'Microsoft.Graph.PowerShell.Authentication.Core.TokenCache.InMemoryTokenCacheOptions' from assembly 'Microsoft.Graph.Authentication.Core, Version=2.41.2.0' does not have an implementation."
+Assert-True (Test-GraphAssemblyConflictText $deConflict) "Test-GraphAssemblyConflictText: the German .NET Framework message"
+Assert-True (Test-GraphAssemblyConflictText $enConflict) "Test-GraphAssemblyConflictText: the English one"
+Assert-True (Test-GraphAssemblyConflictText "Could not load file or assembly 'Azure.Core, Version=1.44.1.0'") "Test-GraphAssemblyConflictText: a missing Azure.Core version"
+Assert-True (-not (Test-GraphAssemblyConflictText "ClientCertificateCredential authentication failed: .")) "Test-GraphAssemblyConflictText: a certificate failure isn't one"
+Assert-True (-not (Test-GraphAssemblyConflictText "Could not load file or assembly 'Contoso.Widgets'")) "Test-GraphAssemblyConflictText: an unrelated assembly isn't one"
+Assert-True (-not (Test-GraphAssemblyConflictText "")) "Test-GraphAssemblyConflictText: empty"
+Assert-True ((ConvertTo-FriendlyGraphError $deConflict) -like "PowerShell module conflict*-NoProfile*") "ConvertTo-FriendlyGraphError: a module conflict says to restart without the profile"
+Assert-True ((ConvertTo-FriendlyGraphError "ClientCertificateCredential authentication failed: .") -like "*uploaded to the app registration*") "ConvertTo-FriendlyGraphError: an empty certificate failure points at Entra"
+Assert-True ((ConvertTo-FriendlyGraphError "Certificate with thumbprint '09DD' was not found in certificate store or has expired.") -like "*isn't on this machine*") "ConvertTo-FriendlyGraphError: a missing certificate says so"
+
+Assert-Equal 'Az.Accounts 2.12.1' (Get-ModuleNameFromAssemblyPath 'C:\Program Files\WindowsPowerShell\Modules\Az.Accounts\2.12.1\PreloadAssemblies\Azure.Core.dll') "Get-ModuleNameFromAssemblyPath: module and version"
+Assert-Equal 'ExchangeOnlineManagement' (Get-ModuleNameFromAssemblyPath 'C:\Users\x\Documents\WindowsPowerShell\Modules\ExchangeOnlineManagement\netFramework\Azure.Core.dll') "Get-ModuleNameFromAssemblyPath: module without a version folder"
+Assert-Equal '' (Get-ModuleNameFromAssemblyPath 'C:\Windows\Microsoft.NET\assembly\GAC_MSIL\Azure.Core.dll') "Get-ModuleNameFromAssemblyPath: not a module"
+
+$graphBase = 'C:\Program Files\WindowsPowerShell\Modules\Microsoft.Graph.Authentication\2.41.2'
+$shipped = @{ 'Azure.Core' = '1.44.1.0'; 'Azure.Identity' = '1.13.1.0'; 'Microsoft.Identity.Client' = '4.66.1.0' }
+$loadedAsm = @(
+    [pscustomobject]@{ Name = 'Azure.Core'; Version = '1.38.0.0'; Location = 'C:\Program Files\WindowsPowerShell\Modules\Az.Accounts\2.12.1\lib\Azure.Core.dll' }
+    [pscustomobject]@{ Name = 'Azure.Core'; Version = '1.38.0.0'; Location = 'C:\Program Files\WindowsPowerShell\Modules\Az.Accounts\2.12.1\lib\Azure.Core.dll' }
+    [pscustomobject]@{ Name = 'Azure.Identity'; Version = '1.13.1.0'; Location = 'C:\elsewhere\Azure.Identity.dll' }
+    [pscustomobject]@{ Name = 'Microsoft.Identity.Client'; Version = '4.50.0.0'; Location = "$graphBase\Dependencies\Microsoft.Identity.Client.dll" }
+    [pscustomobject]@{ Name = 'System.Xml'; Version = '4.0.0.0'; Location = 'C:\Windows\System.Xml.dll' }
+)
+$found = @(Get-GraphAssemblyConflicts -ModuleAssemblies $shipped -ModuleBase $graphBase -LoadedAssemblies $loadedAsm)
+Assert-Equal 1 $found.Count "Get-GraphAssemblyConflicts: one collision - same version and the module's own copy don't count, duplicates are one row"
+Assert-True ($found[0].Name -eq 'Azure.Core' -and $found[0].Loaded -eq '1.38.0.0' -and $found[0].Expected -eq '1.44.1.0' -and $found[0].Owner -eq 'Az.Accounts 2.12.1') "Get-GraphAssemblyConflicts: names what's loaded, what Graph needs and who brought it"
+Assert-True (-not $found[0].SameModule) "Get-GraphAssemblyConflicts: Az isn't another Graph version"
+$olderGraph = @([pscustomobject]@{ Name = 'Azure.Core'; Version = '1.35.0.0'; Location = 'C:\Program Files\WindowsPowerShell\Modules\Microsoft.Graph.Authentication\2.10.0\Dependencies\Azure.Core.dll' })
+Assert-True (@(Get-GraphAssemblyConflicts -ModuleAssemblies $shipped -ModuleBase $graphBase -LoadedAssemblies $olderGraph)[0].SameModule) "Get-GraphAssemblyConflicts: an older Graph version is flagged as such"
+Assert-Equal 0 @(Get-GraphAssemblyConflicts -ModuleAssemblies @{} -ModuleBase $graphBase -LoadedAssemblies $loadedAsm).Count "Get-GraphAssemblyConflicts: nothing known about the module, nothing claimed"
+$twoCopies = @{ 'Azure.Core' = @('1.44.1.0', '1.45.0.0'); 'System.Memory' = '4.0.1.2' }
+$runtimeLoaded = @(
+    [pscustomobject]@{ Name = 'Azure.Core'; Version = '1.45.0.0'; Location = 'C:\x\Azure.Core.dll' }
+    [pscustomobject]@{ Name = 'System.Memory'; Version = '8.0.0.0'; Location = 'C:\Program Files\PowerShell\7\System.Memory.dll' }
+)
+Assert-Equal 0 @(Get-GraphAssemblyConflicts -ModuleAssemblies $twoCopies -ModuleBase $graphBase -LoadedAssemblies $runtimeLoaded).Count "Get-GraphAssemblyConflicts: either shipped copy's version is fine, and PowerShell's own System.* never counts"
+
+Assert-True (Test-SessionStartedWithoutProfile -Arguments @('powershell.exe', '-NoProfile', '-File', 'x.ps1')) "Test-SessionStartedWithoutProfile: -NoProfile"
+Assert-True (Test-SessionStartedWithoutProfile -Arguments @('pwsh', '-nop')) "Test-SessionStartedWithoutProfile: -nop"
+Assert-True (-not (Test-SessionStartedWithoutProfile -Arguments @('powershell.exe', '-NoLogo', '-File', 'x.ps1'))) "Test-SessionStartedWithoutProfile: -NoLogo isn't it"
+
+$conflictText = Format-GraphAssemblyConflictText -Conflicts $found -LoadedModules @('Az.Accounts 2.12.1') -ErrorText $enConflict -NoProfile $false -GraphVersion '2.41.2'
+Assert-True ($conflictText -like '*Azure.Core 1.38.0.0 (Graph needs 1.44.1.0) from Az.Accounts 2.12.1*') "Format-GraphAssemblyConflictText: lists the collision"
+Assert-True ($conflictText -like '*-NoProfile*' -and $conflictText -like '*RefreshCacheAsync*') "Format-GraphAssemblyConflictText: the restart command and the original error"
+Assert-True (-not ($conflictText -like '*Uninstall-Module*')) "Format-GraphAssemblyConflictText: no uninstall advice when it isn't another Graph version"
+$sameText = Format-GraphAssemblyConflictText -Conflicts @(Get-GraphAssemblyConflicts -ModuleAssemblies $shipped -ModuleBase $graphBase -LoadedAssemblies $olderGraph) -NoProfile $true
+Assert-True ($sameText -like '*Uninstall-Module*' -and $sameText -like '*already started without a PowerShell profile*') "Format-GraphAssemblyConflictText: two Graph versions - uninstall advice, and no false promise from a restart"
 
 # =================================================================
 # Report
