@@ -9,17 +9,6 @@
 # covered by CatalogLogic.Tests.ps1. Start-AppInstallStatusFetch
 # (GraphFetch.ps1) does the actual fetching.
 
-function Global:Get-ReportHelperScriptText {
-    # The functions below as script text, so a background runspace can
-    # dot-source them - same approach as Get-GraphLogScriptHelpers.
-    param([string[]]$Names)
-    $parts = New-Object System.Collections.Generic.List[string]
-    foreach ($name in $Names) {
-        $parts.Add("function global:$name {`n$((Get-Command $name).ScriptBlock.ToString())`n}")
-    }
-    return ($parts -join "`n`n")
-}
-
 function Global:ConvertFrom-GraphReportTable {
     <#
       { Schema = @({ Column = "DeviceName" }, ...); Values = @(@("PC-1", ...), ...) }

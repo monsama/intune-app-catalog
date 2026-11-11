@@ -131,94 +131,6 @@ function Global:ConvertTo-AppRecord {
     }
 }
 
-function Global:Import-AppsFromFile {
-    param([string]$Path)
-
-    # Nothing to reset here for the Type/Version backfill any more. Its
-    # flag means "a queue is running", not "this catalog has had its
-    # turn", and a queue still in flight releases that flag itself when
-    # the generation bump below tells it the catalog moved on. Clearing it
-    # here would instead let a SECOND queue start alongside the first.
-    # See $Global:App.CatalogGeneration's own comment in MainApp.ps1 - this
-    # invalidates any backfill queue still in flight from whatever was
-    # loaded before this call.
-    $Global:App.CatalogGeneration++
-
-    if (-not (Test-Path $Path)) {
-        [System.Windows.Forms.MessageBox]::Show(
-            "No app data found at:`n$Path`n`nStarting with an empty catalog. Use Save to create it.",
-            "No data found", "OK", "Warning") | Out-Null
-        $Global:App.Apps.Clear()
-        return
-    }
-
-    try {
-        $files = @(Get-ChildItem -Path $Path -Filter "*.json" -ErrorAction SilentlyContinue)
-        $Global:App.Apps.Clear()
-        # One bad file no longer takes down the whole catalog load - each
-        # app's file is now completely independent of every other one,
-        # unlike the old single-array format where a single syntax error
-        # anywhere broke loading everything, not just the one entry near it.
-        $failedFiles = New-Object System.Collections.Generic.List[string]
-        foreach ($file in $files) {
-            try {
-                # -Encoding UTF8 explicitly, not left to Get-Content's own
-                # default - these files are always written BOM-less UTF-8
-                # (see Save-AppsToFile's $utf8NoBom), but under Windows
-                # PowerShell 5.1 (not pwsh 7, where UTF-8 is already the
-                # no-BOM default), Get-Content falls back to the system's
-                # ANSI codepage for any file with no BOM. That silently
-                # re-corrupted every non-ASCII character (curly quotes, em
-                # dashes, accented names) on EVERY load, even for text that
-                # was perfectly clean on disk - confirmed as the actual
-                # cause of a live report where "Sync metadata..." fixed a
-                # field's mojibake, the very next audit in the same session
-                # showed it fixed, and then it came back exactly as before
-                # after simply restarting the app (no editing in between) -
-                # this read-time corruption, not the write path, was reintroducing it.
-                $rawText = Get-Content -Path $file.FullName -Raw -Encoding UTF8
-                try {
-                    $raw = $rawText | ConvertFrom-Json
-                }
-                catch {
-                    # Self-heals the one specific corruption pattern the
-                    # $null-pipe returnCodes bug above used to write to disk
-                    # before it was fixed: "returnCode": , (nothing before
-                    # the comma) instead of valid JSON. Files already saved
-                    # with this corruption (typically non-Win32 apps like
-                    # "Microsoft Store app (new)", which Graph never returns
-                    # returnCodes for) would otherwise stay permanently
-                    # unparseable and silently vanish from the catalog on
-                    # every load, even after the writer itself was fixed -
-                    # only fixing new writes doesn't help a file already
-                    # broken on disk. Re-throws the original error if this
-                    # single targeted repair doesn't make the text valid, so
-                    # any other, unrelated parse failure still surfaces
-                    # normally as a skipped file below.
-                    $repairedText = $rawText -replace '"returnCode"\s*:\s*,', '"returnCode": null,'
-                    $raw = $repairedText | ConvertFrom-Json
-                    [System.IO.File]::WriteAllText($file.FullName, $repairedText, (New-Object System.Text.UTF8Encoding($false)))
-                }
-                [void]$Global:App.Apps.Add((ConvertTo-AppRecord $raw))
-            }
-            catch {
-                $failedFiles.Add($file.Name)
-            }
-        }
-        $Global:App.UnsavedChangesBox.Value = $false
-        if ($failedFiles.Count -gt 0) {
-            [System.Windows.Forms.MessageBox]::Show(
-                "Loaded $($Global:App.Apps.Count) app(s) successfully, but these file(s) could not be parsed and were skipped:`n$($failedFiles -join "`n")",
-                "Some files failed to load", "OK", "Warning") | Out-Null
-        }
-    }
-    catch {
-        [System.Windows.Forms.MessageBox]::Show(
-            "Could not read app data from $Path`n`n$($_.Exception.Message)",
-            "Load failed", "OK", "Error") | Out-Null
-    }
-}
-
 function Global:ConvertTo-JsonStringLiteral {
     param([string]$Value)
     if ($null -eq $Value) { return '""' }
@@ -518,160 +430,6 @@ function Global:ConvertTo-CreateAppConfigJson {
     return "{`r`n" + ($fields -join ",`r`n") + "`r`n}"
 }
 
-function Global:Save-AppsToFile {
-    param([string]$Path)
-
-    $dupIds = $Global:App.Apps | Where-Object { $_.appId } | Group-Object appId | Where-Object { $_.Count -gt 1 }
-    # These questions can come up in the middle of another action that saves
-    # (delete, rename, ...) - answering No leaves that change unsaved, which
-    # the Log tab says, since the action itself doesn't.
-    $notSavedNote = "[WARN] Catalog not saved - your latest change is kept in memory only. Fix the duplicates and click Save.`r`n"
-    if ($dupIds) {
-        $names = ($dupIds | ForEach-Object { "'" + (($_.Group | ForEach-Object { $_.appName }) -join "' and '") + "' (App ID $($_.Name))" }) -join "`n"
-        $r = [System.Windows.Forms.MessageBox]::Show(
-            "Some apps share the same App ID:`n`n$names`n`nEach app should have its own. Save anyway?",
-            "Duplicate App IDs", "YesNo", "Warning", "Button2")
-        if ($r -ne "Yes") { Write-Log $notSavedNote ([System.Drawing.Color]::Orange); return $false }
-    }
-
-    # Case-insensitive, whitespace-normalized - two entries that differ only
-    # by casing or extra spaces still look identical everywhere this app
-    # matches by name (Group Manager, App ID lookup, the drift check), and
-    # would also collide on the derived package folder name for uncommon
-    # apps, since that's computed directly from the name.
-    $dupNames = $Global:App.Apps | Where-Object { $_.appName } | Group-Object { ($_.appName.Trim() -replace '\s+', ' ').ToLowerInvariant() } | Where-Object { $_.Count -gt 1 }
-    if ($dupNames) {
-        $names = ($dupNames | ForEach-Object { $_.Group[0].appName }) -join ", "
-        $r2 = [System.Windows.Forms.MessageBox]::Show(
-            "These app names are used by more than one entry:`n$names`n`nSave anyway?",
-            "Duplicate app names", "YesNo", "Warning", "Button2")
-        if ($r2 -ne "Yes") { Write-Log $notSavedNote ([System.Drawing.Color]::Orange); return $false }
-    }
-
-    # NOT just a warning like the two checks above - this one BLOCKS
-    # outright, no "save anyway" option. Two apps with different real
-    # names can still collide on the same derived FILENAME once unsafe
-    # characters are stripped (e.g. "MyApp/Test" and "MyApp Test" both
-    # become "MyApp-Test") - with one file per app now, that's not a
-    # display inconsistency, it's one app's file silently overwriting the
-    # other's on disk.
-    $dupFileNames = $Global:App.Apps | Where-Object { $_.appName } | Group-Object { Get-SafeFileNameForApp -Name $_.appName } | Where-Object { $_.Count -gt 1 }
-    if ($dupFileNames) {
-        $collisionText = ($dupFileNames | ForEach-Object { "`"" + (($_.Group | ForEach-Object { $_.appName }) -join "`" and `"") + "`" both -> $($_.Name).json" }) -join "`n"
-        [System.Windows.Forms.MessageBox]::Show(
-            "These app names would collide on the same saved filename, once unsafe characters are stripped:`n`n$collisionText`n`nOne would silently overwrite the other's file. Rename one of them first, then save again.",
-            "Filename collision - not saved", "OK", "Error") | Out-Null
-        return $false
-    }
-
-    # A real, specific safety net - if the in-memory catalog is somehow
-    # empty (a bug, or "Open other folder..." pointed somewhere unexpected)
-    # while the target folder already holds real per-app files, saving
-    # would otherwise delete every one of them as "no longer in the
-    # catalog" (see the orphan cleanup below). That's not a save, it's
-    # silently wiping out an entire existing catalog.
-    if ($Global:App.Apps.Count -eq 0 -and (Test-Path $Path)) {
-        $existingCount = @(Get-ChildItem -Path $Path -Filter "*.json" -ErrorAction SilentlyContinue).Count
-        if ($existingCount -gt 0) {
-            $r3 = [System.Windows.Forms.MessageBox]::Show(
-                "The catalog is empty, but this folder still has $existingCount app file(s):`n$Path`n`nSaving now deletes all of them (a backup is made first). Save anyway?",
-                "Empty catalog - confirm", "YesNo", "Warning", "Button2")
-            if ($r3 -ne "Yes") { Write-Log "[WARN] Catalog not saved - the app files in $Path are unchanged.`r`n" ([System.Drawing.Color]::Orange); return $false }
-        }
-    }
-
-    # A backup of the WHOLE FOLDER as it was BEFORE this save, not a
-    # safeguard against this specific save - if this save turns out to be
-    # wrong, the backup is what lets you recover the version before it,
-    # rather than the mistake being the only copy of the catalog that
-    # still exists. One backup covers every app's file together, same as
-    # the single-file version did, rather than one backup per app file.
-    if (Test-Path $Path) {
-        try {
-            $backupDir = Get-AppFolder -Kind Backups
-            if (-not (Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
-            $backupName = "app-data_" + (Get-Date -Format "yyyy-MM-dd_HHmmss")
-            Copy-Item -Path $Path -Destination (Join-Path $backupDir $backupName) -Recurse -Force -ErrorAction Stop
-
-            # Keep the last 20 - enough recovery headroom without letting
-            # the backups folder grow without bound over months of use.
-            $existingBackups = Get-ChildItem -Path $backupDir -Filter "app-data_*" -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending
-            if ($existingBackups.Count -gt 20) {
-                $existingBackups | Select-Object -Skip 20 | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-            }
-        }
-        catch {
-            # A failed backup shouldn't block the actual save - it's a
-            # safety net, not a prerequisite for saving.
-        }
-    }
-
-    try {
-        if (-not (Test-Path $Path)) { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
-
-        # Write UTF-8 without a BOM explicitly, since Set-Content -Encoding UTF8 adds a
-        # BOM on Windows PowerShell 5.1 but not on PowerShell 7+ - this keeps each file's
-        # encoding identical (and Git diffs clean) regardless of which one runs this script.
-        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-        $currentFileNames = New-Object System.Collections.Generic.HashSet[string]
-
-        # Each app's write isolated in its own try/catch, not one shared
-        # try around the whole loop - the same principle already applied
-        # in Import-AppsFromFile: one app's data being unable to serialize
-        # shouldn't block every OTHER app in the catalog from being saved
-        # correctly. Failed apps are collected and reported clearly
-        # afterward, rather than either silently skipping them or letting
-        # one bad app take the whole save down with it.
-        $failedSaveApps = New-Object System.Collections.Generic.List[string]
-        foreach ($app in $Global:App.Apps) {
-            $fileName = (Get-SafeFileNameForApp -Name $app.appName) + ".json"
-            [void]$currentFileNames.Add($fileName)
-            $filePath = Join-Path $Path $fileName
-            try {
-                $json = ConvertTo-SingleAppJson -App $app
-                [System.IO.File]::WriteAllText($filePath, $json, $utf8NoBom)
-            }
-            catch {
-                $failedSaveApps.Add("$($app.appName): $($_.Exception.Message)")
-            }
-        }
-
-        # Removes files for apps no longer in the in-memory catalog -
-        # otherwise a deleted or renamed app's old file would be left
-        # behind forever, silently reappearing as a phantom entry the next
-        # time the folder gets loaded.
-        $existingFiles = Get-ChildItem -Path $Path -Filter "*.json" -ErrorAction SilentlyContinue
-        foreach ($existingFile in $existingFiles) {
-            if (-not $currentFileNames.Contains($existingFile.Name)) {
-                Remove-Item -Path $existingFile.FullName -Force -ErrorAction SilentlyContinue
-            }
-        }
-
-        # Always reported, and reported clearly, if even one app's save
-        # failed - a caller checking only the boolean return must not see
-        # a plain success when even one app's data didn't actually
-        # persist. Returning $false here on any failure, not just when
-        # every app fails, so the caller's own existing "save failed"
-        # handling takes over correctly instead of also reporting success
-        # right alongside this warning.
-        if ($failedSaveApps.Count -gt 0) {
-            [System.Windows.Forms.MessageBox]::Show(
-                "$($Global:App.Apps.Count - $failedSaveApps.Count) of $($Global:App.Apps.Count) app(s) saved. These failed and were left unchanged on disk:`n`n$($failedSaveApps -join "`n")",
-                "Some apps failed to save", "OK", "Warning") | Out-Null
-            return $false
-        }
-
-        $Global:App.UnsavedChangesBox.Value = $false
-        return $true
-    }
-    catch {
-        [System.Windows.Forms.MessageBox]::Show(
-            "Could not save to $Path`n`n$($_.Exception.Message)",
-            "Save failed", "OK", "Error") | Out-Null
-        return $false
-    }
-}
-
 function Global:Get-AllKnownGroups {
     $set = New-Object System.Collections.Generic.HashSet[string]
     foreach ($app in $Global:App.Apps) {
@@ -754,17 +512,13 @@ function Global:Load-LastAuditCache {
             }
         }
         if ($skipped -gt 0) {
-            Write-Log "[WARN] Skipped $skipped unreadable entr$(if ($skipped -eq 1) { 'y' } else { 'ies' }) in the last-audit cache - re-run an audit for those app(s).`r`n" ([System.Drawing.Color]::Orange)
+            Write-Log "[WARN] Skipped $skipped unreadable entr$(if ($skipped -eq 1) { 'y' } else { 'ies' }) in the last-audit cache - re-run an audit for those app(s).`r`n"
         }
     }
     catch {
-        # Previously silent - a load failure here looked EXACTLY like "the
-        # audit cache just doesn't persist across a restart", with nothing
-        # anywhere to say why. Logged, not a MessageBox - called once during
-        # ordinary startup (after the main window and its Log tab already
-        # exist - see MainApp.ps1's own startup sequence), and a failure
-        # here isn't worth interrupting startup over.
-        Write-Log "[WARN] Could not load the last-audit cache ($($Global:App.LastAuditCachePath)): $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Orange)
+        # Logged, not silent: a load failure looked exactly like "the audit
+        # cache doesn't persist across a restart", with nothing to say why.
+        Write-Log "[WARN] Could not load the last-audit cache ($($Global:App.LastAuditCachePath)): $($_.Exception.Message)`r`n"
     }
 }
 
@@ -774,7 +528,7 @@ function Global:Save-LastAuditCache {
     }
     catch {
         # See the matching note in Load-LastAuditCache above - same reasoning.
-        Write-Log "[WARN] Could not save the last-audit cache ($($Global:App.LastAuditCachePath)): $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Orange)
+        Write-Log "[WARN] Could not save the last-audit cache ($($Global:App.LastAuditCachePath)): $($_.Exception.Message)`r`n"
     }
 }
 

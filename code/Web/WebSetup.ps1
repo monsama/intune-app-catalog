@@ -5,8 +5,7 @@
 <#
 .SYNOPSIS
     The web interface's setup and help: Diagnostics, the prerequisites
-    (the Graph module), and certificates on this machine - what the classic
-    Diagnostics, Prerequisites and Delete local certificate dialogs do.
+    (the Graph module), and certificates on this machine.
 #>
 
 function Global:Get-WebDiagnostics {
@@ -21,7 +20,7 @@ function Global:Get-WebDiagnostics {
     $setup.Add((& $line $(if ($credsOk) { 'ok' } else { 'failed' }) "Tenant ID, Client ID and certificate thumbprint $(if ($credsOk) { 'filled in' } else { 'not all filled in (Settings > Connection)' })"))
     if ($credsOk) {
         $cert = Get-CertificateStatusText -Thumbprint $Global:App.GraphCertificateThumbprint
-        $lvl = switch (Get-WebStatusLevel $cert.Color) { 'ok' { 'ok' } 'warn' { 'warn' } default { 'failed' } }
+        $lvl = switch ([string]$cert.Level) { 'ok' { 'ok' } 'warn' { 'warn' } default { 'failed' } }
         $setup.Add((& $line $lvl "Certificate: $($cert.Text)"))
     }
     $sections.Add([ordered]@{ title = 'This machine'; lines = $setup.ToArray() })

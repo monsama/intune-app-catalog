@@ -20,7 +20,6 @@
   </nav>
   <div class="topright">
     <span class="conn" id="connBadge" title="Graph connection"></span>
-    <button class="btn ghost" id="btnClassic" title="The classic window still has what is not here yet: Diagnostics, the setup guides and the prerequisites check.">Open classic window</button>
     <button class="btn ghost" id="btnTheme" title="Switch between light and dark">Dark mode</button>
   </div>
 </header>
@@ -68,7 +67,7 @@
       </table>
       <div class="empty" id="emptyState" hidden>
         <h2>No apps in this catalog yet</h2>
-        <p>A catalog is a folder of one JSON file per app. Add apps in the classic window, or point the app at a folder that already has some.</p>
+        <p>A catalog is a folder of one JSON file per app. <b>Add app</b> to start one, or run <b>Checks</b> to add the apps already in Intune - or point Settings &gt; Folders at a catalog that already has some.</p>
         <p class="path" id="emptyPath"></p>
       </div>
     </div>
@@ -315,9 +314,9 @@
 
         <article class="card">
           <h2>Automatic checks and pushes</h2>
-          <label class="chk"><input type="checkbox" data-check="checkDriftOnStartup">Compare the catalog with Intune at startup (classic window)</label>
-          <label class="chk"><input type="checkbox" data-check="runFullAuditOnStartup">Run a full audit at startup (classic window)</label>
-          <label class="chk"><input type="checkbox" data-check="checkIntuneOnDeployOpen">Check Intune when the deploy form opens (classic window)</label>
+          <label class="chk"><input type="checkbox" data-check="checkDriftOnStartup">Run Checks when the app opens (the quick part)</label>
+          <label class="chk"><input type="checkbox" data-check="runFullAuditOnStartup">... and read every deployed app in detail (slower)</label>
+          <label class="chk"><input type="checkbox" data-check="checkIntuneOnDeployOpen">Before deploying a new app, look for one of the same name in Intune</label>
           <label class="chk"><input type="checkbox" data-check="pushGroupsOnCreate">Push groups after creating an app</label>
           <label class="chk"><input type="checkbox" data-check="pushGroupsOnUpdate">Push groups after updating an app</label>
           <label class="chk"><input type="checkbox" data-check="detailedGraphLog">Detailed Graph log (every request)</label>

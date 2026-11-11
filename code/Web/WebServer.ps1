@@ -153,10 +153,9 @@ function Global:Start-WebAppWindow {
 
 function Global:Write-Log {
     <#
-      The web interface's Write-Log. The classic window's (Pipeline.ps1)
-      writes into its log box; this one keeps the lines for the page's log
-      panel (/api/log) and the daily log file. Same signature, so every
-      shared function that logs works unchanged.
+      The app's log: the lines go to the page's Activity box (/api/log)
+      and the daily log file. -Color is accepted and ignored, so older
+      callers that pass one keep working.
     #>
     param([string]$Text, $Color = $null)
     $line = ($Text -replace "`r`n", "`n").TrimEnd("`n")

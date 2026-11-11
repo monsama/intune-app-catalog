@@ -7,8 +7,8 @@ function Global:Import-GraphSettings {
         # system ANSI codepage under Windows PowerShell 5.1 without this.
         $settings = Get-Content -Path $Global:App.SettingsFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
         # Trimmed and whitespace-checked here, not just truthiness-checked -
-        # the Settings dialog's own save path already strips whitespace
-        # before writing (see btnSave's Trim() / -replace '\s',''), but a
+        # the Settings page's save already strips whitespace before
+        # writing, but a
         # value that reached this file some other way (an older version of
         # this app, a manual edit) might not be. Loading a whitespace-only
         # value as if it were "set" is exactly what made
@@ -41,18 +41,6 @@ function Global:Import-GraphSettings {
         if ($settings.RunFullAuditOnStartup -is [bool]) { $Global:App.RunFullAuditOnStartup = $settings.RunFullAuditOnStartup }
         # Same -is [bool] reasoning as CheckDriftOnStartup above.
         if ($settings.CheckIntuneOnDeployOpen -is [bool]) { $Global:App.CheckIntuneOnDeployOpen = $settings.CheckIntuneOnDeployOpen }
-        # How the catalog grid was left: which column it was sorted by and
-        # which way, and how wide its columns were dragged. Nothing here is
-        # load-bearing - a missing or nonsense value just means the grid
-        # opens in catalog order at its default widths, which is where it
-        # was before any of this was remembered.
-        if ($settings.GridSortColumn -is [string]) { $Global:App.GridSortColumn = $settings.GridSortColumn }
-        if ($settings.GridSortAscending -is [bool]) { $Global:App.GridSortAscending = $settings.GridSortAscending }
-        if ($settings.GridColumnWidths) { $Global:App.SavedGridColumnWidths = $settings.GridColumnWidths }
-        # Where the window was, so it comes back on the same monitor at the
-        # same size. Applied only after it is checked against the screens
-        # actually attached right now - see Restore-WindowPlacement.
-        if ($settings.WindowPlacement) { $Global:App.SavedWindowPlacement = $settings.WindowPlacement }
         # Where this install keeps things, when it doesn't keep them where
         # the app itself lives - see AppFolders.ps1. Read into a plain
         # hashtable because that is what Get-AppFolder looks in, and read
@@ -105,7 +93,7 @@ function Global:Import-GraphSettings {
     }
     catch {
         # Bad/corrupt settings file - fall back to the built-in defaults silently;
-        # the Settings dialog will show whatever's actually active.
+        # the Settings page shows whatever's actually active.
     }
 }
 
@@ -123,17 +111,6 @@ function Global:Write-SettingsFile {
             DetailedGraphLog      = [bool]$Global:App.DetailedGraphLog
             PushGroupsOnCreate    = [bool]$Global:App.PushGroupsOnCreate
             PushGroupsOnUpdate    = [bool]$Global:App.PushGroupsOnUpdate
-            # How the grid and the window were left - see the notes on the
-            # reading side. Written on every save like everything else here,
-            # and read back defensively, so an old settings file without
-            # them (or one written by hand) costs nothing.
-            GridSortColumn        = [string]$Global:App.GridSortColumn
-            GridSortAscending     = [bool]$Global:App.GridSortAscending
-            # Without a grid or window (the web interface saving), what was
-            # read from the file is written back - not an empty table and
-            # $null, which wiped the classic window's widths and placement.
-            GridColumnWidths      = $(if ($Global:App.Grid) { Get-GridColumnWidths } else { $Global:App.SavedGridColumnWidths })
-            WindowPlacement       = $(if ($Global:App.Form) { Get-WindowPlacement } else { $Global:App.SavedWindowPlacement })
             # Only the folders actually pointed somewhere else. A default
             # is not written down, so changing what the default IS in a
             # later version reaches every install that never overrode it.
@@ -145,8 +122,7 @@ function Global:Write-SettingsFile {
         return $true
     }
     catch {
-        Write-Log "[FAILED] Could not save settings: $($_.Exception.Message)`r`n" ([System.Drawing.Color]::Tomato)
-        if ($Global:App.Form) { [System.Windows.Forms.MessageBox]::Show("Could not save settings: $($_.Exception.Message)", "Save failed", "OK", "Error") | Out-Null }
+        Write-Log "[FAILED] Could not save settings: $($_.Exception.Message)`r`n"
         return $false
     }
 }
@@ -163,40 +139,9 @@ function Global:Save-GraphSettings {
     return (Write-SettingsFile)
 }
 
-function Global:Save-FavoriteGroups {
-    return (Write-SettingsFile)
-}
-
-function Global:Get-DelegatedSignInCachePaths {
-    # Microsoft Graph PowerShell's token cache - shared by EVERY Graph
-    # PowerShell session of this Windows user, not just this app's.
-    $msalCacheDir = Join-Path $env:LOCALAPPDATA ".IdentityService"
-    @("mg.msal.cache.cae", "mg.msal.cache.nocae") | ForEach-Object { Join-Path $msalCacheDir $_ }
-}
-
-function Global:Save-DelegatedSignInCacheSnapshot {
-    # Called once at startup: which cache files already existed before this
-    # app could have signed anyone in (see Clear-DelegatedSignInCache).
-    $Global:App.PreexistingSignInCacheFiles = @(Get-DelegatedSignInCachePaths | Where-Object { Test-Path -LiteralPath $_ })
-}
-
-function Global:Clear-DelegatedSignInCache {
-    # Removes the cached delegated sign-in (certificate Check/Upload) when the
-    # app closes - but only a cache file this session created. A file that
-    # was already there belongs to the user's own Connect-MgGraph sessions
-    # (other scripts, other tools), and deleting it signed all of those out.
-    try {
-        $keep = @($Global:App.PreexistingSignInCacheFiles)
-        foreach ($cachePath in Get-DelegatedSignInCachePaths) {
-            if ($keep -contains $cachePath) { continue }
-            if (Test-Path -LiteralPath $cachePath) { Remove-Item -LiteralPath $cachePath -Force -ErrorAction SilentlyContinue }
-        }
-    } catch { }
-}
-
 function Global:Test-GraphCredentialsConfigured {
-    # -Quiet skips the "Not configured" MessageBox, for callers that report
-    # the result themselves (Diagnostics lists it as a [FAILED] line).
+    # -Quiet is kept for the callers that pass it; nothing is shown either way -
+    # each caller says in its own words what is missing.
     param([switch]$Quiet)
     # -not [string]::IsNullOrWhiteSpace(...), not plain PowerShell truthiness
     # ($Global:App.GraphTenantId -and ...) - a value that's present but only
@@ -210,10 +155,6 @@ function Global:Test-GraphCredentialsConfigured {
     if ((-not [string]::IsNullOrWhiteSpace($Global:App.GraphTenantId)) -and
         (-not [string]::IsNullOrWhiteSpace($Global:App.GraphClientId)) -and
         (-not [string]::IsNullOrWhiteSpace($Global:App.GraphCertificateThumbprint))) { return $true }
-    if ($Quiet) { return $false }
-    [System.Windows.Forms.MessageBox]::Show(
-        "No Graph connection is configured yet. Open 'More actions...' -> 'Settings...' and fill in your Tenant ID, Client ID, and certificate first.",
-        "Not configured", "OK", "Warning") | Out-Null
     return $false
 }
 
@@ -221,7 +162,7 @@ function Global:Get-CertificateStatusText {
     param([string]$Thumbprint)
 
     if ([string]::IsNullOrWhiteSpace($Thumbprint)) {
-        return @{ Text = "No thumbprint set."; Color = [System.Drawing.Color]::DarkOrange }
+        return @{ Text = "No thumbprint set."; Level = 'warn' }
     }
     $clean = $Thumbprint -replace '\s', ''
     $cert = $null
@@ -232,16 +173,16 @@ function Global:Get-CertificateStatusText {
         } catch { }
     }
     if (-not $cert) {
-        return @{ Text = "Not found in CurrentUser\My or LocalMachine\My on this machine."; Color = [System.Drawing.Color]::Firebrick }
+        return @{ Text = "Not found in CurrentUser\My or LocalMachine\My on this machine."; Level = 'error' }
     }
     $daysLeft = ($cert.NotAfter - (Get-Date)).Days
     if ($daysLeft -lt 0) {
-        return @{ Text = "Found - EXPIRED on $($cert.NotAfter.ToString('yyyy-MM-dd')). Subject: $($cert.Subject)"; Color = [System.Drawing.Color]::Firebrick }
+        return @{ Text = "Found - EXPIRED on $($cert.NotAfter.ToString('yyyy-MM-dd')). Subject: $($cert.Subject)"; Level = 'error' }
     }
     elseif ($daysLeft -lt 30) {
-        return @{ Text = "Found - expires in $daysLeft day(s) ($($cert.NotAfter.ToString('yyyy-MM-dd'))). Subject: $($cert.Subject)"; Color = [System.Drawing.Color]::DarkOrange }
+        return @{ Text = "Found - expires in $daysLeft day(s) ($($cert.NotAfter.ToString('yyyy-MM-dd'))). Subject: $($cert.Subject)"; Level = 'warn' }
     }
     else {
-        return @{ Text = "Found - valid until $($cert.NotAfter.ToString('yyyy-MM-dd')). Subject: $($cert.Subject)"; Color = [System.Drawing.Color]::SeaGreen }
+        return @{ Text = "Found - valid until $($cert.NotAfter.ToString('yyyy-MM-dd')). Subject: $($cert.Subject)"; Level = 'ok' }
     }
 }

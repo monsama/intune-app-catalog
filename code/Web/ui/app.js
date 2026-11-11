@@ -91,6 +91,7 @@ $('btnTheme').addEventListener('click', () => {
 
 // ---------------------------------------------------------------- views
 function showView(v) {
+  if (v === 'checks') delete $('tabChecks').dataset.count;
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.view === v));
   $('viewApps').hidden = v !== 'apps';
   $('viewChecks').hidden = v !== 'checks';
@@ -103,10 +104,6 @@ function showView(v) {
 }
 for (const b of document.querySelectorAll('.tab')) b.addEventListener('click', () => showView(b.dataset.view));
 $('bannerSettings').addEventListener('click', () => { showView('settings'); $('guideReg').open = true; $('guideCard').scrollIntoView({ block: 'start' }); });
-$('btnClassic').addEventListener('click', async () => {
-  const r = await api('/api/open', { target: 'classic' });
-  toast(r.ok ? 'Opening the classic window...' : r.error, !r.ok);
-});
 
 // ---------------------------------------------------------------- state
 let state = null;
@@ -493,7 +490,7 @@ $('btnDeploy').addEventListener('click', async () => {
     el('td', { text: a.name }), el('td', { text: a.update ? 'Update settings' : 'Create' }),
     el('td', {}, a.ready ? el('span', { class: 'pill muted', text: 'Waiting' }) : el('span', { class: 'pill warn', text: 'Skipped: ' + a.reason })))));
   if (r.circular && r.circular.length) toast('These depend on each other in a circle: ' + r.circular.join(', '), true);
-  $('deployLog').textContent = '';
+  $('deployLog').textContent = r.note ? r.note + '\n' : '';
   const n = deployPlan.filter(a => a.ready).length;
   $('btnDeployGo').textContent = n === 1 ? 'Deploy 1 app' : `Deploy ${n} apps`;
   $('btnDeployGo').disabled = n === 0;
@@ -1319,6 +1316,14 @@ $('btnBuildShared').addEventListener('click', () => packagingSetup('shared', 'bt
   await pollServerLog();
   await loadState();
   if (state && !state.configured) showView('settings');
-  loadApps();
+  await loadApps();
   loadPrefs();
+  // Settings > Automatic checks: Checks runs once when the app opens; the tab
+  // shows how many findings there are, and the page stays where it was.
+  if (state && state.configured && state.startup && state.startup.drift) {
+    $('chkDetails').checked = !!state.startup.fullAudit;
+    await runChecks();
+    if (findings.length) $('tabChecks').dataset.count = findings.length;
+    if (findings.length) activity(`${stamp()} Checks at start: ${findings.length} finding(s) - see Checks.`);
+  }
 })();

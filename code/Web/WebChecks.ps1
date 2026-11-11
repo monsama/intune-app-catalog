@@ -4,8 +4,8 @@
 
 <#
 .SYNOPSIS
-    The web interface's Checks page: every check the classic Checks window
-    runs, and the fixes for what they find. The findings come from the same
+    The web interface's Checks page: every check, and the fixes for what
+    they find. The findings come from the same
     functions (code\Private\Catalog\CheckFindings.ps1).
 
     Stages:

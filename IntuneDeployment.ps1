@@ -10,99 +10,46 @@
 
 <#
 .SYNOPSIS
-    Intune App Catalog & Deployment GUI - entry point.
+    Intune App Catalog & Deployment - start here.
 .DESCRIPTION
-    Loads every function this app defines (grouped by area under .\code\Private\,
-    plus one file per dialog under .\code\Private\Dialogs\), then runs the actual
-    GUI-building code in .\MainApp.ps1. See MainApp.ps1's own header comment
-    for the full app description, and .\code\EmbeddedScripts\ for the embedded
-    pipeline step scripts.
+    Loads the app's functions (code\Private), then starts the web interface
+    (code\Web): a small server on 127.0.0.1 and an Edge or Chrome app window.
+    Closing that window stops the app. The deployment steps themselves are
+    separate scripts under code\EmbeddedScripts, run through
+    code\Runner\Invoke-AppStep.ps1.
 
-    All of .\code\Private\*.ps1 are dot-sourced BEFORE MainApp.ps1 runs, so every
-    function exists before any of MainApp.ps1's top-level code (which
-    actually builds and shows the window) can reach it - confirmed this is
-    required, not just convention: PowerShell does NOT hoist function
-    definitions the way some languages do; a function must already be
-    defined by the time normal (non-deferred) code reaches a call to it.
-    Order among the files below doesn't matter, since none of them call
-    each other at their OWN definition time - only from inside a function
-    body, which isn't executed until something later calls it.
-
-    Each file is checked with Test-Path before being dot-sourced. This
-    matters because dot-sourcing a path that doesn't exist ". <missing path>"
-    does NOT stop the script - PowerShell treats the missing path as an
-    unrecognized command name, writes a non-terminating error, and keeps
-    going. Left unchecked, a single missing/incompletely-extracted file
-    here would silently skip that file's functions and only surface much
-    later as a confusing "CommandNotFoundException" from whatever dialog
-    happens to call one of them.
+    Every file is checked before it is loaded: dot-sourcing a missing path
+    does NOT stop PowerShell - it writes an error and carries on, and the
+    gap would only show up later as "command not found" somewhere else.
 #>
 
 param(
-    # The web interface (code\Web): a local server on 127.0.0.1 and an
-    # Edge/Chrome app window. -Classic opens the classic window instead.
-    [switch]$Web,
-    [switch]$Classic,
-    # With -Web: don't open a browser window (tests, or to open the printed
-    # address yourself).
-    [switch]$NoBrowser
+    # Don't open a browser window - for tests, or to open the printed address yourself.
+    [switch]$NoBrowser,
+    # Accepted so older shortcuts keep working; the web interface is the only one now.
+    [switch]$Web
 )
 
 $Script:RequiredPrivateFiles = @(
+    "code\Private\AppFolders.ps1"
+    "code\Private\AppState.ps1"
     "code\Private\Catalog\CatalogIO.ps1"
     "code\Private\Catalog\CatalogLogic.ps1"
     "code\Private\Catalog\CheckFindings.ps1"
     "code\Private\Catalog\ScriptCatalog.ps1"
-    "code\Private\Dialogs\Show-AddFavoriteGroupToAppsDialog.ps1"
-    "code\Private\Dialogs\Show-AppEditor.ps1"
-    "code\Private\Dialogs\Show-AppInstallStatusDialog.ps1"
-    "code\Private\Dialogs\Show-PlatformScriptEditorDialog.ps1"
-    "code\Private\Dialogs\Show-PlatformScriptRunStatusDialog.ps1"
-    "code\Private\Dialogs\Show-PlatformScriptsDialog.ps1"
-    "code\Private\Dialogs\Show-AppRegistrationGuideDialog.ps1"
-    "code\Private\Dialogs\Show-BatchAssignDialog.ps1"
-    "code\Private\Dialogs\Show-BatchDeployDialog.ps1"
-    "code\Private\Dialogs\Show-BatchEditMetadataDialog.ps1"
-    "code\Private\Dialogs\Show-BatchPushMetadataDialog.ps1"
-    "code\Private\Dialogs\Show-BulkDeleteFromIntuneDialog.ps1"
-    "code\Private\Dialogs\Show-BulkDeleteGroupsDialog.ps1"
-    "code\Private\Dialogs\Show-CertificatePickerDialog.ps1"
-    "code\Private\Dialogs\Show-CertificateSetupDialog.ps1"
-    "code\Private\Dialogs\Show-ChecksDialog.ps1"
-    "code\Private\Dialogs\Show-CreateInIntuneDialog.ps1"
-    "code\Private\Dialogs\Show-DefaultAppSettingsDialog.ps1"
-    "code\Private\Dialogs\Show-DeleteAppDialog.ps1"
-    "code\Private\Dialogs\Show-DeleteLocalCertificateDialog.ps1"
-    "code\Private\Dialogs\Show-DiagnosticsDialog.ps1"
-    "code\Private\Dialogs\Show-EntraMemberPicker.ps1"
-    "code\Private\Dialogs\Show-FavoriteGroupsManager.ps1"
-    "code\Private\Dialogs\Show-GettingStartedGuideDialog.ps1"
-    "code\Private\Dialogs\Show-GroupManagerDialog.ps1"
-    "code\Private\Dialogs\Show-GroupOnlyPicker.ps1"
-    "code\Private\Dialogs\Show-MetadataDriftDialog.ps1"
-    "code\Private\Dialogs\Show-PackagingProgressDialog.ps1"
-    "code\Private\Dialogs\Show-RemoveGroupFromAppsDialog.ps1"
-    "code\Private\Dialogs\Show-SetDefaultsConfirmDialog.ps1"
-    "code\Private\Dialogs\Show-SyncMetadataDialog.ps1"
-    "code\Private\Dialogs\Show-TargetedAssignDialog.ps1"
-    "code\Private\Dialogs\Show-WingetSearchDialog.ps1"
-    "code\Private\Graph\GraphFetch.ps1"
+    "code\Private\Diagnostics.ps1"
+    "code\Private\Graph\Assignments.ps1"
     "code\Private\Graph\GraphLog.ps1"
     "code\Private\Graph\GraphModuleConflict.ps1"
     "code\Private\Graph\GraphReports.ps1"
     "code\Private\Graph\GraphToken.ps1"
     "code\Private\Graph\PlatformScripts.ps1"
-    "code\Private\Graph\Assignments.ps1"
-    "code\Private\GuiHelpers.ps1"
-    "code\Private\Pipeline.ps1"
-    "code\Private\AppFolders.ps1"
-    "code\Private\AppState.ps1"
+    "code\Private\Helpers.ps1"
     "code\Private\Packaging.ps1"
+    "code\Private\Pipeline.ps1"
     "code\Private\Prerequisites.ps1"
-    "code\Private\QuickActions.ps1"
     "code\Private\Settings.ps1"
     "code\Private\Winget.ps1"
-    "code\Private\Diagnostics.ps1"
 )
 
 $Script:MissingPrivateFiles = @()
@@ -168,18 +115,8 @@ if ($Script:FailedPrivateFiles.Count -gt 0) {
     throw "Startup aborted: $($Script:FailedPrivateFiles.Count) required file(s) under code\Private\ failed to load. See error(s) above."
 }
 
-if ($Web -and -not $Classic) {
-    $Script:WebAppPath = Join-Path $PSScriptRoot "code\Web\Start-WebApp.ps1"
-    if (-not (Test-Path -LiteralPath $Script:WebAppPath -PathType Leaf)) {
-        throw "Startup aborted: code\Web\Start-WebApp.ps1 was not found next to IntuneDeployment.ps1."
-    }
-    . $Script:WebAppPath -RootPath $PSScriptRoot -NoBrowser:$NoBrowser
-    return
+$Script:WebAppPath = Join-Path $PSScriptRoot "code\Web\Start-WebApp.ps1"
+if (-not (Test-Path -LiteralPath $Script:WebAppPath -PathType Leaf)) {
+    throw "Startup aborted: code\Web\Start-WebApp.ps1 was not found next to IntuneDeployment.ps1."
 }
-
-$Script:MainAppPath = Join-Path $PSScriptRoot "MainApp.ps1"
-if (-not (Test-Path -LiteralPath $Script:MainAppPath -PathType Leaf)) {
-    throw "Startup aborted: MainApp.ps1 was not found next to IntuneDeployment.ps1 (expected at: $Script:MainAppPath)."
-}
-
-. $Script:MainAppPath
+. $Script:WebAppPath -RootPath $PSScriptRoot -NoBrowser:$NoBrowser

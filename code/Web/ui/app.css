@@ -220,6 +220,8 @@ label.chk.inline { display: inline-flex; align-items: center; gap: 6px; margin: 
 .gbrole legend { font-size: 12px; font-weight: 600; padding: 0 4px; }
 .gbrole input[data-gbx] { margin-top: 6px; }
 
+.tab[data-count]::after { content: attr(data-count); margin-left: 6px; display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--warn-bg); color: var(--warn); font-size: 11px; font-weight: 600; text-align: center; }
+
 /* ---- 3d: setup and help ---- */
 .guide { margin: 6px 0 0; padding-left: 20px; font-size: 13px; }
 .guide li { margin: 4px 0; }

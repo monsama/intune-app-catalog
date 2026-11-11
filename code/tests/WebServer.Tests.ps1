@@ -21,12 +21,14 @@ function Check([bool]$Condition, [string]$Name, [string]$Detail = '') {
 $hostExe = (Get-Process -Id $PID).Path
 $entry = Join-Path $repoRoot 'IntuneDeployment.ps1'
 $outFile = Join-Path ([System.IO.Path]::GetTempPath()) ("websrv-" + [guid]::NewGuid().ToString('N') + ".out")
-# A settings file as the classic window leaves it, with column widths and a
-# window position - saving from the web must keep both (it used to wipe them).
+# A settings file with a folder chosen earlier - saving other settings from
+# the web must keep it (a save once wrote back only what it knew about).
 $settingsPath = Join-Path $repoRoot "data\intune-deployment-settings.json"
 $settingsBackup = if (Test-Path -LiteralPath $settingsPath) { Get-Content -LiteralPath $settingsPath -Raw } else { $null }
 [void](New-Item -ItemType Directory -Path (Split-Path $settingsPath -Parent) -Force)
-Set-Content -LiteralPath $settingsPath -Value '{ "GridColumnWidths": { "AppName": 31 }, "WindowPlacement": { "X": 10, "Y": 20, "Width": 900, "Height": 700, "Maximized": false } }' -Encoding UTF8
+$seedLogs = Join-Path ([IO.Path]::GetTempPath()) ("webtest-logs-" + [guid]::NewGuid().ToString('N').Substring(0, 6))
+[void](New-Item -ItemType Directory -Path $seedLogs -Force)
+Set-Content -LiteralPath $settingsPath -Value (@{ Folders = @{ Logs = $seedLogs } } | ConvertTo-Json -Compress) -Encoding UTF8
 
 $startArgs = @{
     FilePath               = $hostExe
@@ -250,7 +252,7 @@ try {
     Check ($goodDefaults.ok -and $goodDefaults.defaults.installTimeMinutes -eq 60 -and (@($goodDefaults.defaults.architecture) -join ',') -eq 'x64,arm64' -and $goodDefaults.defaults.wingetInstallMethod -eq 'Winget') 'prefs: default values saved, install time snapped to Intune''s 5-minute steps' ($goodDefaults.defaults | ConvertTo-Json -Compress)
     Check ($goodDefaults.checks.pushGroupsOnUpdate -and -not $goodDefaults.checks.pushGroupsOnCreate -and @($goodDefaults.favoriteGroups).Count -eq 2) 'prefs: switches and favourites saved (duplicates dropped)'
     $saved = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
-    Check ($saved.GridColumnWidths.AppName -eq 31 -and $saved.WindowPlacement.Width -eq 900) 'settings: saving from the web keeps the classic window''s column widths and position' (Get-Content -LiteralPath $settingsPath -Raw)
+    Check ($saved.Folders.Logs -eq $seedLogs) 'settings: saving keeps a folder chosen earlier' (Get-Content -LiteralPath $settingsPath -Raw)
     [void](Invoke-Api '/api/checks-fix' @{ action = 'SetAppId'; catalogName = "$testName renamed"; value = 'c0ffee00-1111-4222-8333-444455556666' })
     $cleared = Invoke-Api '/api/clear-appid' @{ name = "$testName renamed" }
     Check ($cleared.ok -and -not (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.appId) 'clear App ID: the catalog forgets the Intune link'
