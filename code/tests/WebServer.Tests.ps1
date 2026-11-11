@@ -99,6 +99,18 @@ try {
     Check ((Invoke-Raw -Method POST -Path '/api/state' -ContentType 'text/plain' -Body "{`"token`":`"$token`"}").Status -eq 403) 'an API call that is not JSON is refused (a cross-site form can''t send JSON)'
     Check ((Invoke-Raw -Method GET -Path '/api/state').Status -eq 403) 'an API GET is refused'
     Check ((Invoke-Api '/api/state' -Token ('0' * 32)).error -eq 'bad token') 'a wrong token gets nothing'
+    # Headers that never end: refused once they pass 64 KB, and the server goes on.
+    $port0 = [int]($url -replace '.*:(\d+)$', '$1')
+    $flood = New-Object System.Net.Sockets.TcpClient('127.0.0.1', $port0)
+    try {
+        $junk = [Text.Encoding]::ASCII.GetBytes("GET / HTTP/1.1`r`nHost: 127.0.0.1:$port0`r`nX-Pad: " + ('a' * 70000))
+        $fs = $flood.GetStream(); $fs.Write($junk, 0, $junk.Length); $fs.Flush(); $fs.ReadTimeout = 15000
+        $floodAnswer = (New-Object System.IO.StreamReader($fs)).ReadToEnd()
+    }
+    catch { $floodAnswer = '' }
+    finally { $flood.Close() }
+    Check ($floodAnswer -notmatch '200 OK') 'headers over 64 KB are not answered' ($floodAnswer.Substring(0, [Math]::Min(80, $floodAnswer.Length)))
+    Check ((Invoke-Raw -Path '/').Status -eq 200) '... and the server still answers afterwards'
     Check ((Invoke-Api '/api/state' -Token '').error -eq 'bad token') 'no token gets nothing'
 
     # Answers
@@ -291,6 +303,12 @@ try {
     $goodDefaults = Invoke-Api '/api/prefs-save' @{ checks = @{ pushGroupsOnCreate = $false; pushGroupsOnUpdate = $true }; defaults = @{ architecture = @('x64', 'arm64'); installContext = 'User'; minOSKey = 'W11_22H2'; minDiskSpaceMB = '10'; minMemoryMB = '0'; minProcessors = '0'; minCpuSpeedMHz = '0'; installTimeMinutes = '61'; deviceRestartBehavior = 'suppress'; allowAvailableUninstall = $true; returnCodes = @(@{ returnCode = '0'; type = 'success' }, @{ returnCode = '3010'; type = 'softReboot' }); defaultDependencyAppNames = @('A', 'A'); wingetInstallMethod = 'Winget' }; favoriteGroups = @('SG-1', ' SG-1 ', 'SG-2') }
     Check ($goodDefaults.ok -and $goodDefaults.defaults.installTimeMinutes -eq 60 -and (@($goodDefaults.defaults.architecture) -join ',') -eq 'x64,arm64' -and $goodDefaults.defaults.wingetInstallMethod -eq 'Winget') 'prefs: default values saved, install time snapped to Intune''s 5-minute steps' ($goodDefaults.defaults | ConvertTo-Json -Compress)
     Check ($goodDefaults.checks.pushGroupsOnUpdate -and -not $goodDefaults.checks.pushGroupsOnCreate -and @($goodDefaults.favoriteGroups).Count -eq 2) 'prefs: switches and favourites saved (duplicates dropped)'
+    $relFolder = Invoke-Api '/api/prefs-save' @{ folders = @{ Logs = 'data\elsewhere' } }
+    Check (-not $relFolder.ok -and $relFolder.error -like '*full path*') 'prefs: a relative folder is refused' ($relFolder | ConvertTo-Json -Compress)
+    $quoteFolder = Invoke-Api '/api/prefs-save' @{ folders = @{ Logs = 'C:\x" & calc' } }
+    Check (-not $quoteFolder.ok -and $quoteFolder.error -like '*quotes*') 'prefs: a folder with a quote is refused' ($quoteFolder | ConvertTo-Json -Compress)
+    $badKind = Invoke-Api '/api/prefs-save' @{ folders = @{ Windows = 'C:\Windows' } }
+    Check (-not $badKind.ok -and $badKind.error -like '*Unknown folder*') 'prefs: an unknown folder kind is refused, not an error' ($badKind | ConvertTo-Json -Compress)
     $saved = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
     Check ($saved.Folders.Logs -eq $seedLogs) 'settings: saving keeps a folder chosen earlier' (Get-Content -LiteralPath $settingsPath -Raw)
     [void](Invoke-Api '/api/checks-fix' @{ action = 'SetAppId'; catalogName = "$testName renamed"; value = 'c0ffee00-1111-4222-8333-444455556666' })

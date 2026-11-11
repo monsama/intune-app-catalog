@@ -69,6 +69,25 @@ function Global:Get-AppFolder {
     return $path
 }
 
+function Global:Test-AppFolderPath {
+    <#
+      Pure: '' when -Path may be chosen as a folder, otherwise why not.
+      Empty means "use the default" and is fine. Otherwise it must be a
+      full path - a drive (C:\...) or a share (\\server\share\...) - so it
+      can't depend on the folder the app happened to start in, and free of
+      control characters, quotes and wildcards (it is handed to Explorer and
+      to file commands as it is).
+    #>
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+    $p = $Path.Trim()
+    if ($p.Length -gt 240) { return 'That path is too long (240 characters at most).' }
+    if ($p -match '[\x00-\x1f"<>|?*]') { return 'A folder path cannot contain control characters, quotes, <, >, |, ? or *.' }
+    if ($p -notmatch '^[A-Za-z]:\\' -and $p -notmatch '^\\\\[^\\/]+\\[^\\/]+') { return 'Use a full path: a drive (C:\...) or a share (\\server\share\...).' }
+    if ($p -match '(^|\\)\.\.(\\|$)') { return 'A folder path cannot contain "..".' }
+    return ''
+}
+
 function Global:Set-AppFolder {
     <#
       Chooses a folder, or clears the choice when given nothing - a blank

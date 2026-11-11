@@ -258,3 +258,21 @@ function Global:Get-CatalogRow {
     }
 }
 
+function Global:Protect-LogText {
+    <#
+      Pure: the text with anything shaped like a secret blanked out, before
+      it reaches the Activity log, the log file or the page. A second line
+      of defence - the steps already avoid writing these:
+        - a signed URL's signature (sig=...), e.g. an Azure Storage upload address
+        - "Bearer <token>" and any JSON Web Token (eyJ...eyJ...)
+        - client_secret= / password= / access_token= values
+    #>
+    param([string]$Text)
+    if (-not $Text) { return $Text }
+    $t = $Text -replace '(?i)([?&]sig=)[^&\s"''<>]+', '$1[hidden]'
+    $t = $t -replace '(?i)\b(Bearer)\s+[A-Za-z0-9\-._~+/]+=*', '$1 [hidden]'
+    $t = $t -replace '\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*', '[token hidden]'
+    $t = $t -replace '(?i)\b(client_secret|password|access_token|refresh_token)(["'']?\s*[=:]\s*["'']?)[^&\s"'',;]+', '$1$2[hidden]'
+    return $t
+}
+

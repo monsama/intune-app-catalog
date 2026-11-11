@@ -98,6 +98,9 @@ function Global:Import-GraphSettings {
 }
 
 function Global:Write-SettingsFile {
+    # Graph test mode fills in made-up connection IDs in memory - they must
+    # never reach the real settings file.
+    if ($Global:App.TestGraph) { Write-Log '[WARN] Test mode: the settings file is not written.'; return $false }
     try {
         $settings = [pscustomobject]@{
             TenantId              = $Global:App.GraphTenantId

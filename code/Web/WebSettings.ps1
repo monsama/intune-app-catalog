@@ -323,6 +323,14 @@ function Global:Save-WebPrefs {
         $converted = ConvertTo-WebDefaultSettings $Data.defaults
         if ($converted.Error) { return @{ ok = $false; error = $converted.Error } }
     }
+    if ($Data.folders) {
+        $kinds = @(Get-AppFolderKinds | ForEach-Object { $_.Key })
+        foreach ($p in $Data.folders.PSObject.Properties) {
+            if ($kinds -notcontains $p.Name) { return @{ ok = $false; error = "Unknown folder '$($p.Name)'." } }
+            $why = Test-AppFolderPath ([string]$p.Value)
+            if ($why) { return @{ ok = $false; error = "$(@(Get-AppFolderKinds | Where-Object { $_.Key -eq $p.Name })[0].Label): $why" } }
+        }
+    }
     if ($Data.checks) {
         $c = $Data.checks
         $Global:App.CheckDriftOnStartup = [bool]$c.checkDriftOnStartup; $Global:App.RunFullAuditOnStartup = [bool]$c.runFullAuditOnStartup

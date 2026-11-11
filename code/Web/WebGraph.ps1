@@ -117,6 +117,6 @@ function Global:Invoke-WebGraph {
             $kind = if ($Permission -match ' and ') { 'application permissions' } else { 'application permission' }
             $friendly = "$friendly`nThis needs the $Permission $kind, with admin consent (Settings > API permissions > Add required permissions...)."
         }
-        return @{ ok = $false; error = $friendly }
+        return @{ ok = $false; error = (Protect-LogText $friendly) }
     }
 }

@@ -1,5 +1,49 @@
 # Changelog
 
+## 2.0.3
+
+A security sweep. Every finding needed the page's start token or a local
+program first, so these are hardening fixes, not open holes.
+
+### Security
+
+- **Deleting a certificate on this machine now deletes its private key
+  too.** Before, Windows removed the certificate and left the key file
+  behind.
+- **Winget search text** is passed as `--query` with correct Windows
+  quoting:
+  - text that looks like an option (`--help`) can no longer act as one;
+  - a trailing backslash can no longer run into the next argument.
+- **Folder settings** must be full paths (a drive or `\\server\share`)
+  without quotes, wildcards, control characters or `..`. An unknown folder
+  kind gets a clear refusal instead of an error.
+- **Logs and errors** are filtered for anything shaped like a secret
+  before they reach the Activity log, the log file or the page:
+  - signed-URL signatures;
+  - bearer tokens and JSON Web Tokens;
+  - `client_secret`, password and access token values.
+
+  The steps already avoided writing them; this is the second layer.
+- **The local server** stops reading request headers past 64 KB and
+  handles at most 64 requests at once, so another program can't make it
+  use memory without end.
+- **Test mode** (`INTUNE_CATALOG_TEST_GRAPH`) now shows a TEST MODE badge
+  and banner in the page, not only in the console. Its made-up connection
+  IDs are never written to the settings file.
+
+### Documentation
+
+- `SECURITY.md`: what the app exposes, what it keeps and what it never
+  does, and how to report a problem.
+
+### Tests
+
+- Unit tests for the quoting, the secret filter and the folder rules.
+- **Server tests:**
+  - oversized headers;
+  - refused folder paths and an unknown folder kind;
+  - test mode visible and never writing the settings file.
+
 ## 2.0.2
 
 ### Changed
