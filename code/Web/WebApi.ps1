@@ -343,6 +343,9 @@ function Global:Complete-WebJob {
     param([hashtable]$After, $Result, [string]$LogPath)
     switch ($After.Kind) {
         'grouprename' { return (Complete-WebGroupRename -After $After) }
+        'checkdetails' { return (Complete-WebCheckDetails -After $After -Result $Result) }
+        'checkassign' { return (Complete-WebCheckAssign -After $After -Result $Result) }
+        'addtocatalog' { return (Complete-WebAddFromIntune -After $After -Result $Result) }
         'deleted' {
             $n = $After.AppName
             [void](Update-WebCatalogApp -Name $n -Change { param($a) $a.appId = ''; $a.intuneAppType = ''; $a.intuneAppVersion = '' })
@@ -398,9 +401,9 @@ function Global:Get-WebDeployPlan {
         $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $unc -Index $index -PackagePath $a.packagePath
         $reason = ''
         if (-not $pkg.Found) {
-            $reason = if ($unc) { "No package (.intunewin) yet - build it with Package in the classic window." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Folders in the classic window builds it." }
+            $reason = if ($unc) { "No package (.intunewin) yet - build it with More > Package." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging builds it." }
         }
-        elseif ($unc -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = 'No detection rule yet - an app with its own package needs one (classic window: Deploy to Intune).' }
+        elseif ($unc -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = "No detection rule yet - an app with its own package needs one (the editor's Deploy settings)." }
         [ordered]@{ name = $a.appName; update = [bool]$a.appId; ready = (-not $reason); reason = $reason }
     }
     return @{ ok = $true; apps = @($plan); circular = @($order.CircularNames) }
@@ -414,12 +417,22 @@ function Global:Start-WebDeploy {
     $a = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
     if (-not $a) { return @{ ok = $false; error = "'$name' is no longer in the catalog." } }
     $unc = Test-AppIsUncommon -App $a
-    $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $unc -PackagePath $a.packagePath
-    if (-not $pkg.Found) { return @{ ok = $false; error = "$name has no package to upload." } }
+    # -metadataOnly: Push settings - the catalog's settings to an app already in
+    # Intune, without uploading a package (the classic Push metadata).
+    $metadataOnly = [bool]$Data.metadataOnly
+    if ($metadataOnly) {
+        if (-not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune yet - Deploy it first." } }
+        if (-not $a.metadata) { return @{ ok = $false; error = "$name has no settings of its own yet - Pull them from Intune, or set them in the editor, first." } }
+        $pkg = @{ Found = $true; Path = '' }
+    }
+    else {
+        $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $unc -PackagePath $a.packagePath
+        if (-not $pkg.Found) { return @{ ok = $false; error = "$name has no package to upload." } }
+    }
     $defaults = $null
     $m = $a.metadata
     if (-not $m) { $defaults = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon $unc; $m = $defaults }
-    if (-not $m.detectionRule) { return @{ ok = $false; error = "$name has no detection rule." } }
+    if (-not $m.detectionRule) { return @{ ok = $false; error = "$name has no detection rule - set one in the editor's Deploy settings." } }
     # Dependencies by name -> the App IDs they have now; one not deployed yet is left out (as Batch Deploy does).
     $depIds = @(@($m.dependencies) | Where-Object { $_ } | ForEach-Object {
         $depName = [string]$_
@@ -439,9 +452,9 @@ function Global:Start-WebDeploy {
         InstallTimeMinutes = $(if ($m.installTimeMinutes) { [int]$m.installTimeMinutes } else { 60 }); DeviceRestartBehavior = $m.deviceRestartBehavior
         AllowAvailableUninstall = [bool]$m.allowAvailableUninstall; ReturnCodes = @($m.returnCodes); OutputResultPath = $resultPath
     }
-    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "Deploy $name" `
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "$(if ($metadataOnly) { 'Push settings' } else { 'Deploy' }) $name" `
         -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $defaults; WasUpdate = [bool]$a.appId }
-    if ($started.ok) { Write-Log "[INFO] Deploying $name ($($config.Mode))..." }
+    if ($started.ok) { Write-Log "[INFO] $(if ($metadataOnly) { "Pushing $name's settings to Intune" } else { "Deploying $name ($($config.Mode))" })..." }
     return $started
 }
 
@@ -480,100 +493,6 @@ function Global:Start-WebPushGroups {
     $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedBatchAssignScript -Name 'batchassign' -ConfigJson ($config | ConvertTo-Json -Depth 8) -ResultPath $resultPath -Kind "Push groups ($mode, $($apps.Count) app(s))"
     if ($started.ok) { Write-Log "[INFO] Push groups - $(if ($mode -eq 'Apply') { 'applying' } else { 'previewing' }) for $($apps.Count) app(s)..." }
     return $started
-}
-
-function Global:Get-WebGraphPages {
-    # Every page of a Graph list (app-only session already connected).
-    param([string]$Uri)
-    $items = New-Object System.Collections.Generic.List[object]
-    while ($Uri) {
-        $page = Invoke-MgGraphRequest -Method GET -Uri $Uri -ErrorAction Stop
-        foreach ($v in @($page.value)) { $items.Add($v) }
-        $Uri = $page.'@odata.nextLink'
-    }
-    return $items.ToArray()
-}
-
-function Global:Invoke-WebChecks {
-    <#
-      Checks, the parts that need no step script: the catalog's own
-      dependencies, how the catalog lines up with the apps in Intune (not
-      in the catalog, renamed, App ID gone, App ID missing), groups that
-      don't exist in Entra ID, and what the last audit found. The same
-      finding functions as the classic Checks window.
-    #>
-    $catalog = Read-WebCatalogRecords
-    $apps = @($catalog.Apps)
-    $findings = New-Object System.Collections.Generic.List[object]
-    $notes = New-Object System.Collections.Generic.List[string]
-    foreach ($f in @(Get-DependencyFindings -Apps $apps)) { $findings.Add($f) }
-    try { Load-LastAuditCache } catch { }
-    foreach ($f in @(Get-CachedAuditFindings -Apps $apps -LastAuditResults $Global:App.LastAuditResults)) { $findings.Add($f) }
-
-    if (-not (Test-GraphCredentialsConfigured -Quiet)) { $notes.Add('Intune and Entra ID were not checked: no connection set up (Settings).') }
-    elseif (-not (Test-GraphModuleHere)) { $notes.Add("Intune and Entra ID were not checked: the Microsoft.Graph.Authentication module isn't installed.") }
-    else {
-        try {
-            Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
-            Connect-MgGraph -TenantId $Global:App.GraphTenantId -ClientId $Global:App.GraphClientId -CertificateThumbprint $Global:App.GraphCertificateThumbprint -NoWelcome -ErrorAction Stop
-            try {
-                $intuneApps = @(Get-WebGraphPages 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$select=id,displayName&$top=999' |
-                    ForEach-Object { [pscustomobject]@{ id = [string]$_.id; displayName = [string]$_.displayName } })
-                foreach ($f in @(Get-IntuneLinkFindings -Apps $apps -IntuneApps $intuneApps)) { $findings.Add($f) }
-                $directory = New-Object System.Collections.Generic.List[object]
-                foreach ($g in @(Get-WebGraphPages 'https://graph.microsoft.com/v1.0/groups?$select=id,displayName&$top=999')) { $directory.Add([pscustomobject]@{ displayName = [string]$g.displayName; type = 'Group'; id = [string]$g.id; upn = '' }) }
-                foreach ($u in @(Get-WebGraphPages 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999')) { $directory.Add([pscustomobject]@{ displayName = [string]$u.displayName; type = 'User'; id = [string]$u.id; upn = [string]$u.userPrincipalName }) }
-                foreach ($f in @(Get-EntraGroupFindings -Apps $apps -Directory $directory.ToArray())) { $findings.Add($f) }
-                $notes.Add("Compared with $($intuneApps.Count) app(s) in Intune and $($directory.Count) groups and users in Entra ID.")
-            }
-            finally { try { Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null } catch { } }
-        }
-        catch { $notes.Add("Intune and Entra ID could not be checked: $(ConvertTo-FriendlyGraphError (Get-InnermostErrorMessage $_.Exception))") }
-    }
-    $rows = foreach ($f in $findings) {
-        [ordered]@{
-            key = [string]$f.Key; area = [string]$f.Area; app = [string]$f.App; catalogName = [string]$f.CatalogName; appId = [string]$f.AppId
-            problem = [string]$f.Problem; catalog = (Get-CheckValueText $f.Catalog); intune = (Get-CheckValueText $f.Intune)
-            actions = @($f.Actions); failed = [bool]$f.Failed; cached = [bool]$f.Cached
-            checkedAt = $(if ($f.CheckedAt) { ([datetime]$f.CheckedAt).ToString('yyyy-MM-dd HH:mm') } else { '' })
-            data = $f.Data
-        }
-    }
-    Write-Log "[INFO] Checks: $(@($rows).Count) finding(s). $($notes -join ' ')"
-    return @{ ok = $true; findings = @($rows); notes = $notes.ToArray() }
-}
-
-function Global:Invoke-WebCheckFix {
-    # The fixes that change only the catalog: take Intune's name, set or clear the App ID.
-    param($Data)
-    $name = [string]$Data.catalogName
-    $action = [string]$Data.action
-    switch ($action) {
-        'RenameFromIntune' {
-            $newName = ([string]$Data.value).Trim()
-            if (-not $newName) { return @{ ok = $false; error = 'No name to take.' } }
-            $catalog = Read-WebCatalogRecords
-            $existing = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
-            if (-not $existing) { return @{ ok = $false; error = "'$name' is no longer in the catalog." } }
-            $edit = Get-WebAppEditable $existing
-            $edit.appName = $newName
-            return (Save-WebApp ([pscustomobject]@{ originalName = $name; app = [pscustomobject]$edit }))
-        }
-        'SetAppId' {
-            $id = [guid]::Empty
-            if (-not [guid]::TryParse([string]$Data.value, [ref]$id)) { return @{ ok = $false; error = 'Not an App ID.' } }
-            $idText = $id.ToString()
-            [void](Update-WebCatalogApp -Name $name -Change { param($app) $app.appId = $idText }.GetNewClosure())
-            Write-Log "[OK] $name now points at the Intune app $idText."
-            return @{ ok = $true }
-        }
-        'ClearAppId' {
-            [void](Update-WebCatalogApp -Name $name -Change { param($app) $app.appId = '' })
-            Write-Log "[OK] Cleared $name's App ID (it no longer exists in Intune)."
-            return @{ ok = $true }
-        }
-        default { return @{ ok = $false; error = "'$action' isn't available here yet - use the classic window's Checks." } }
-    }
 }
 
 function Global:Get-WebPackaging {
@@ -1276,7 +1195,14 @@ function Global:Invoke-WebApi {
         '/api/deploy-plan'      { return (Get-WebDeployPlan $Data) }
         '/api/deploy-start'     { return (Start-WebDeploy $Data) }
         '/api/push-start'       { return (Start-WebPushGroups $Data) }
-        '/api/checks-run'       { return (Invoke-WebChecks) }
+        '/api/checks-run'       { return (Invoke-WebChecks $Data) }
+        '/api/checks-details'   { return (Start-WebCheckDetails $Data) }
+        '/api/checks-assign'    { return (Start-WebCheckAssign $Data) }
+        '/api/checks-winget'    { return (Invoke-WebCheckWinget $Data) }
+        '/api/winget-search'    { return (Find-WebWinget $Data) }
+        '/api/add-from-intune'  { return (Start-WebAddFromIntune $Data) }
+        '/api/batch-edit'       { return (Invoke-WebBatchEdit $Data) }
+        '/api/batch-groups'     { return (Invoke-WebBatchGroups $Data) }
         '/api/packaging'        { return (Get-WebPackaging) }
         '/api/packaging-setup'  { return (Invoke-WebPackagingSetup $Data) }
         '/api/package-start'    { return (Start-WebPackage $Data) }

@@ -96,6 +96,9 @@ $privateFiles = Get-ChildItem -Path $privateRoot -Filter "*.ps1" -Recurse
 # and NO live Graph dependency; verify that before adding one.
 $testableFunctionNames = @(
     "Test-AppIsUncommon",
+    # winget output (Winget.ps1)
+    "ConvertFrom-WingetSearchOutput",
+    "Get-WingetShowVerdict",
     "Get-SafeFileNameForApp",
     "Get-DependencyOrderedApps",
     # The Checks window's one findings list (CheckFindings.ps1)
@@ -2333,6 +2336,32 @@ finally {
 $encodedLaunches = @(Get-ChildItem -Path (Join-Path $repoRoot "code\Private"), (Join-Path $repoRoot "MainApp.ps1") -Recurse -Filter *.ps1 |
     Select-String -Pattern '-EncodedCommand\s*"?\s*\+|-EncodedCommand \$' | ForEach-Object { "$($_.Filename):$($_.LineNumber)" })
 Assert-Equal 0 $encodedLaunches.Count "No -EncodedCommand launches left in the app" ($encodedLaunches -join ', ')
+
+
+# =================================================================
+# winget output (Winget.ps1)
+# =================================================================
+$wingetTable = @"
+   - \ |
+Name                          Id                          Version      Match            Source
+------------------------------------------------------------------------------------------------
+Notepad++                     Notepad++.Notepad++         8.6.9        Tag: notepad     winget
+Visual Studio Code            Microsoft.VisualStudioCode  1.95.3       Moniker: vscode  winget
+Some App With A Very Long Nam Vendor.LongName             2.0                           winget
+"@
+$wingetRows = @(ConvertFrom-WingetSearchOutput $wingetTable)
+Assert-Equal 3 $wingetRows.Count "winget search: one row per package, header, rule and spinner skipped"
+Assert-Equal "Microsoft.VisualStudioCode" $wingetRows[1].Id "winget search: the ID column, found by the header's position"
+Assert-Equal "Visual Studio Code" $wingetRows[1].Name "winget search: names with spaces stay whole"
+Assert-Equal "1.95.3" $wingetRows[1].Version "winget search: version stops where Match begins"
+Assert-Equal "winget" $wingetRows[2].Source "winget search: a row without a Match value still has its source"
+Assert-Equal 0 @(ConvertFrom-WingetSearchOutput "No package found matching input criteria.").Count "winget search: no table, no rows"
+$found = Get-WingetShowVerdict -ExitCode 0 -StdOut "Found Notepad++ [Notepad++.Notepad++]`nVersion: 8.6.9`nPublisher: Notepad++ Team`n" -StdErr ""
+Assert-True ($found.Ok -and $found.Result -eq "Found (Notepad++ Team)") "winget show: a known ID, with its publisher"
+$gone = Get-WingetShowVerdict -ExitCode -1978335212 -StdOut "No package found matching input criteria." -StdErr ""
+Assert-True ((-not $gone.Ok) -and $gone.Result -like "NOT FOUND*") "winget show: an unknown ID reads NOT FOUND (what Get-WingetFindings looks for)"
+$odd = Get-WingetShowVerdict -ExitCode 5 -StdOut "  - \`nSource agreement required" -StdErr ""
+Assert-True ((-not $odd.Ok) -and $odd.Result -like "Could not check (exit code 5): Source agreement required") "winget show: anything else says it couldn't check, with winget's first real line"
 
 # =================================================================
 # Report

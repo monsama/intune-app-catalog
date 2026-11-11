@@ -184,6 +184,32 @@ try {
     Check (-not $gg.ok -and $gg.error -like '*connection*') 'groups: reading Entra ID says the connection is missing' ($gg | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/directory-search' @{ q = 'a' }).ok) 'groups: a one-letter search is refused'
     Check (-not (Invoke-Api '/api/group-job' @{ mode = 'Save'; name = 'SG-A' }).ok) 'groups: changes refused without a connection'
+    # 3c: checks stages, fixes and batch actions (no tenant in CI)
+    $cr = Invoke-Api '/api/checks-run' @{ names = @($rn) }
+    Check ($cr.ok -and -not $cr.connected -and @($cr.findings | Where-Object { $_.catalogName -and $_.catalogName -ne $rn }).Count -eq 0) 'checks: narrowed to the named apps' ($cr | ConvertTo-Json -Compress -Depth 5)
+    Check (-not (Invoke-Api '/api/checks-details' @{ names = @($rn) }).ok) 'checks: the detailed check needs a deployed app and a connection'
+    $cw = Invoke-Api '/api/checks-winget' @{ names = @($rn) }
+    Check ($cw.ok -or $cw.error -like '*winget*') 'checks: winget is asked, or says it is missing' ($cw | ConvertTo-Json -Compress -Depth 5)
+    Check (-not (Invoke-Api '/api/winget-search' @{ q = 'a' }).ok) 'winget search: a one-letter search is refused'
+    Check (-not (Invoke-Api '/api/checks-fix' @{ action = 'SetWingetId'; catalogName = $rn; value = 'bad id"; calc' }).ok) 'checks fix: a Winget ID winget would not accept is refused'
+    $before = (Invoke-Api '/api/app-get' @{ name = $rn }).app
+    $sw = Invoke-Api '/api/checks-fix' @{ action = 'SetWingetId'; catalogName = $rn; value = 'Vendor.WebTestNew' }
+    $after = (Invoke-Api '/api/app-get' @{ name = $rn }).app
+    Check ($sw.ok -and $after.wingetId -eq 'Vendor.WebTestNew' -and ($before.metadata.installCommand -notlike '*Vendor.WebTest*' -or $after.metadata.installCommand -like '*Vendor.WebTestNew*')) 'checks fix: Set Winget ID, the install command follows' ($after | ConvertTo-Json -Compress -Depth 4)
+    Check (-not (Invoke-Api '/api/add-from-intune' @{ apps = @(@{ id = 'nope'; name = 'X' }) }).ok) 'add to catalog: an id that is not a GUID is refused'
+    Check (-not (Invoke-Api '/api/deploy-start' @{ name = $rn; metadataOnly = $true }).ok) 'push settings: refused for an app not in Intune'
+    Check (-not (Invoke-Api '/api/batch-edit' @{ names = @($rn); changes = @{} }).ok) 'batch edit: nothing ticked is refused'
+    Check (-not (Invoke-Api '/api/batch-edit' @{ names = @($rn); changes = @{ appId = 'x' } }).ok) 'batch edit: a field it does not offer is refused'
+    Check (-not (Invoke-Api '/api/batch-edit' @{ names = @($rn); changes = @{ dependencies = @('No Such App') } }).ok) 'batch edit: an unknown dependency is refused'
+    $be = Invoke-Api '/api/batch-edit' @{ names = @($rn); changes = @{ owner = ' IT Workplace '; installTimeMinutes = '62'; architecture = @('x64', 'arm64'); dependencies = @($rn) } }
+    $bm = (Invoke-Api '/api/app-get' @{ name = $rn }).app
+    Check ($be.ok -and $bm.metadata.owner -eq 'IT Workplace' -and $bm.deploy.installTimeMinutes -eq 60 -and (@($bm.deploy.architecture) -join ',') -eq 'x64,arm64' -and @($bm.deploy.dependencies).Count -eq 0 -and $bm.deploy.detection.type -eq 'File') 'batch edit: ticked fields changed (time snapped, self-dependency dropped), the rest kept' ($bm | ConvertTo-Json -Compress -Depth 5)
+    Check (-not (Invoke-Api '/api/batch-groups' @{ mode = 'add'; names = @($rn); roles = @{} }).ok) 'batch groups: no group is refused'
+    $ga = Invoke-Api '/api/batch-groups' @{ mode = 'add'; names = @($rn); roles = @{ availableFor = @('SG-B'); excludeFor = @('SG-X', 'sg-x') } }
+    $gm = (Invoke-Api '/api/app-get' @{ name = $rn }).app
+    Check ($ga.ok -and @($gm.availableFor) -contains 'SG-B' -and @($gm.excludeFor).Count -eq 1 -and @($gm.requiredFor) -contains 'SG-A') 'batch groups: added (no duplicates), the other lists kept' ($gm | ConvertTo-Json -Compress -Depth 4)
+    $gr = Invoke-Api '/api/batch-groups' @{ mode = 'remove'; names = @($rn); roles = @{ availableFor = @('sg-b') } }
+    Check ($gr.ok -and @((Invoke-Api '/api/app-get' @{ name = $rn }).app.availableFor).Count -eq 0) 'batch groups: removed (case does not matter)'
     $badUrl = Invoke-Api '/api/app-save' @{ originalName = $rn; app = @{ appName = $rn; wingetId = 'Vendor.WebTest'; appId = ''; metadata = @{ informationUrl = 'javascript:alert(1)' } } }
     Check (-not $badUrl.ok -and $badUrl.error -like '*http*') 'editor: a URL that is not http(s) is refused'
     # Deploy, push and checks without a connection set up (CI has none): clear answers, nothing started.

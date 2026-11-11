@@ -101,6 +101,7 @@ $Script:RequiredPrivateFiles = @(
     "code\Private\Prerequisites.ps1"
     "code\Private\QuickActions.ps1"
     "code\Private\Settings.ps1"
+    "code\Private\Winget.ps1"
 )
 
 $Script:MissingPrivateFiles = @()
