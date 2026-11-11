@@ -57,6 +57,15 @@ jobs:
         if: matrix.shell == 'powershell'
         shell: powershell
         run: ./code/tests/WebGraph.Tests.ps1
+      # 500 generated apps: the requests that read the whole catalog, timed.
+      - name: Scale.Tests.ps1 (pwsh)
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: ./code/tests/Scale.Tests.ps1
+      - name: Scale.Tests.ps1 (Windows PowerShell)
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: ./code/tests/Scale.Tests.ps1
 
 
   lint:

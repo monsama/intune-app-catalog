@@ -28,6 +28,8 @@ $appBlocked = 'aaaaaaaa-0000-4000-8000-000000000004'
 $blockedName = 'ZZ Graph Blocked'
 $groupId = 'bbbbbbbb-0000-4000-8000-000000000001'
 $scriptId = 'cccccccc-0000-4000-8000-000000000001'
+$newGroupId = 'bbbbbbbb-0000-4000-8000-000000000002'
+$oldGroupId = 'bbbbbbbb-0000-4000-8000-000000000003'
 $linkedName = 'ZZ Graph Linked'
 $sameName = 'ZZ Graph Same Name'
 $scriptName = 'ZZ Graph Script'
@@ -56,6 +58,13 @@ $answers = [ordered]@{
     "DELETE beta/deviceAppManagement/mobileApps/$appBlocked" = @{ __status = 400; __body = @{ error = @{ code = 'BadRequest'; message = "Unable to delete: this app is the parent of another app: $appSameName" } } }
     "GET beta/deviceAppManagement/mobileApps/$appSameName" = @{ id = $appSameName; displayName = $sameName }
     "PATCH v1.0/groups/$groupId" = $null
+    # Push groups (Apply): one group exists, one is created, an old assignment goes.
+    "GET v1.0/groups?`$filter=displayName eq 'SG-ZZ-Exists'&`$select=id,displayName" = @{ value = @(@{ id = $groupId; displayName = 'SG-ZZ-Exists' }) }
+    "GET v1.0/groups?`$filter=displayName eq 'SG-ZZ-Missing'&`$select=id,displayName" = @{ value = @() }
+    'POST v1.0/groups' = @{ id = $newGroupId; displayName = 'SG-ZZ-Missing' }
+    "GET beta/deviceAppManagement/mobileApps/$appLinked/assignments" = @{ value = @(@{ id = 'as1'; intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.groupAssignmentTarget'; groupId = $oldGroupId } }) }
+    "GET v1.0/groups/$oldGroupId" = @{ displayName = 'SG-ZZ-Old' }
+    "POST beta/deviceAppManagement/mobileApps/$appLinked/assign" = $null
 
     # Platform scripts
     'GET beta/deviceManagement/deviceManagementScripts?$select=id,displayName,description,fileName,runAsAccount,runAs32Bit,enforceSignatureCheck,lastModifiedDateTime' = @{
@@ -222,6 +231,15 @@ try {
         }
         $callsFile = "$answersFile.calls"
         $calls = { @(if (Test-Path -LiteralPath $callsFile) { Get-Content -LiteralPath $callsFile -Encoding UTF8 | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json } }) }
+
+        $push = Invoke-Api '/api/push-start' @{ names = @($linkedName); mode = 'Apply' }
+        $pushDone = Wait-TestJob $push.job
+        Check ($push.ok -and $pushDone.Poll.result.success) 'step: Push groups (Apply) succeeds' "$($pushDone.Poll.result | ConvertTo-Json -Compress -Depth 5) $($pushDone.Log)"
+        $madeGroups = @(& $calls | Where-Object { $_.method -eq 'POST' -and $_.uri -like '*/v1.0/groups' })
+        Check ($madeGroups.Count -eq 1 -and ($madeGroups[0].body | ConvertFrom-Json).displayName -eq 'SG-ZZ-Missing') 'step: ... creating the one group that was missing' ((& $calls | ConvertTo-Json -Compress))
+        $assign = @(& $calls | Where-Object { $_.method -eq 'POST' -and $_.uri -like "*/mobileApps/$appLinked/assign" }) | Select-Object -First 1
+        $targets = @(if ($assign) { @(($assign.body | ConvertFrom-Json).mobileAppAssignments) | ForEach-Object { "$($_.intent):$($_.target.groupId)" } })
+        Check ($assign -and ($targets -contains "required:$groupId") -and ($targets -contains "available:$newGroupId") -and -not ($targets -like "*$oldGroupId")) 'step: ... and Intune gets exactly the catalog''s groups (old assignment dropped)' ($targets -join ', ')
 
         $del = Invoke-Api '/api/delete-intune' @{ name = $linkedName }
         $delDone = Wait-TestJob $del.job

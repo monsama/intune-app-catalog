@@ -1,15 +1,16 @@
 # Tests
 
-Four suites, each a plain script - no test framework to install.
+Five suites, each a plain script - no test framework to install.
 
 ```
 pwsh -NoProfile -File code/tests/CatalogLogic.Tests.ps1   # pure logic
 pwsh -NoProfile -File code/tests/WebServer.Tests.ps1      # the real server, over HTTP
 pwsh -NoProfile -File code/tests/WebGraph.Tests.ps1       # the pages that read Graph, without a tenant
+pwsh -NoProfile -File code/tests/Scale.Tests.ps1          # 500 apps: how long the whole-catalog requests take
 node code/tests/ui/WebUi.Tests.mjs                        # every page in Chromium
 ```
 
-Every push runs the first three on Linux (PowerShell 7) and Windows
+Every push runs the four PowerShell suites on Linux (PowerShell 7) and Windows
 (PowerShell 7 and Windows PowerShell 5.1), and the browser test on Linux -
 see `.github/workflows/tests.yml`.
 
@@ -83,6 +84,28 @@ query), relative to `https://graph.microsoft.com/`, to the JSON Graph would
 send. A list is answered in order; `{ "__status": 403, "__body": {...} }`
 is an error.
 
+## Scale.Tests.ps1 - a large catalog
+
+500 generated apps (two-thirds of them with groups, every tenth with a
+dependency) in a temporary catalog folder, the server pointed at it, and
+the requests that read the whole catalog timed: the Apps list, Checks,
+opening and saving one app, Diagnostics, Groups. Each has a generous limit
+(CI machines vary) and the timings are printed, so a slow change shows in
+the log before it reaches one.
+
+## Lint - PSScriptAnalyzer
+
+CI runs PSScriptAnalyzer over `code/` with the bug-catching rules in
+`code/tests/PSScriptAnalyzerSettings.psd1`: `$null` on the wrong side of a
+comparison, `=` where `-eq` was meant, `>` as a comparison, a variable
+assigned and never read, syntax Windows PowerShell 5.1 can't parse, and a
+few more. Style rules are left out on purpose.
+
+```
+Install-Module PSScriptAnalyzer -Scope CurrentUser
+Invoke-ScriptAnalyzer -Path code -Recurse -Settings code/tests/PSScriptAnalyzerSettings.psd1
+```
+
 ## ui/WebUi.Tests.mjs - the page
 
 The real server and the real page in Chromium, in light and dark mode, at
@@ -105,7 +128,8 @@ node code/tests/ui/WebUi.Tests.mjs --shots ./shots
 Checks every Graph type and property the app relies on
 (`code\GraphContract.json`) against Microsoft's published `$metadata`. Needs
 the internet and can fail because Microsoft changed something, so it isn't
-part of the push run.
+part of the push run: `.github/workflows/graph-contract.yml` runs it every
+Monday, and whenever the manifest or the check changes.
 
 ## What none of this covers
 
