@@ -118,6 +118,7 @@ if (-not $NoBrowser) {
 
 $inFlight = New-Object System.Collections.Generic.List[object]
 $run = $true
+$lastOrphanCheck = Get-Date
 while ($run) {
     $pending = $false
     try { $pending = $listener.Server.Poll(200000, [System.Net.Sockets.SelectMode]::SelectRead) } catch { Start-Sleep -Milliseconds 50 }
@@ -143,6 +144,8 @@ while ($run) {
         else { $still.Add($item) }
     }
     $inFlight = $still
+    # A step that ended while no page polled it (reload, closed tab) is finished here.
+    if (((Get-Date) - $lastOrphanCheck).TotalSeconds -ge 5) { $lastOrphanCheck = Get-Date; try { Complete-WebOrphanJobs } catch { } }
     if ($shared.Quit) { $run = $false }
     elseif ($browser -and $browser.HasExited) { $run = $false }
     elseif (((Get-Date) - $shared.LastPing).TotalHours -gt 6) { $run = $false }
@@ -152,6 +155,12 @@ foreach ($item in $inFlight) {
     try { [void]$item.Handle.AsyncWaitHandle.WaitOne(2000); [void]$item.PS.EndInvoke($item.Handle) } catch { }
     $item.PS.Dispose()
 }
+
+# Steps still running when the window closed (a deploy, a push, a pull) go on
+# in their own process - wait for them and finish them as the page would have,
+# or a created app's App ID would never reach the catalog and the next Deploy
+# would create it a second time.
+Complete-WebJobsAtExit
 try { $pool.Close(); $pool.Dispose() } catch { }
 try { $listener.Stop() } catch { }
 Write-Host "Stopped."

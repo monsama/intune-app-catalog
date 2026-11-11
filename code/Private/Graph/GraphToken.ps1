@@ -293,7 +293,9 @@ function Global:Format-SetupChecklist {
             $nextShown = $true
         }
     }
-    $optional = if ($report) { @(@($report.Missing) | Where-Object { -not $_.Required }) } else { @() }
+    # @() around the whole if: the value of an if statement is unrolled, so one
+    # optional row on its own would lose .Count in Windows PowerShell 5.1.
+    $optional = @(if ($report) { @($report.Missing) | Where-Object { -not $_.Required } })
     if (-not $nextShown) {
         if ($optional.Count -gt 0) { $lines.Add("[OK] Setup complete. $($optional.Count) optional feature(s) still need a permission - see above.") }
         else { $lines.Add("[OK] Setup complete - every step is done.") }

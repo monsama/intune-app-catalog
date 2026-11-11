@@ -603,7 +603,7 @@ function Global:Get-PackageFolderIndex {
     param([string]$Root)
     $index = @{ Root = $Root; ByName = @{}; ByFolder = @{} }
     if (-not $Root -or -not (Test-Path -LiteralPath $Root)) { return $index }
-    foreach ($file in @(Get-ChildItem -Path $Root -Recurse -Filter '*.intunewin' -File -ErrorAction SilentlyContinue)) {
+    foreach ($file in @(Get-ChildItem -LiteralPath $Root -Recurse -Filter '*.intunewin' -File -ErrorAction SilentlyContinue)) {
         $nameKey = $file.Name.ToLowerInvariant()
         if (-not $index.ByName.ContainsKey($nameKey)) { $index.ByName[$nameKey] = $file.FullName }
         $folderKey = ([string]$file.DirectoryName).ToLowerInvariant()
@@ -655,7 +655,7 @@ function Global:Resolve-AppPackagePath {
     $safeName = Get-SafeFileNameForApp -Name $AppName
     $uncommonRoot = Get-AppFolder -Kind Packages
     $packageIndex = if ($Index -and $Index.Root -eq $uncommonRoot) { $Index } else { Get-PackageFolderIndex -Root $uncommonRoot }
-    if (Test-Path $uncommonRoot) {
+    if (Test-Path -LiteralPath $uncommonRoot) {
         $wantedName = "$safeName.intunewin".ToLowerInvariant()
         if ($packageIndex.ByName.ContainsKey($wantedName)) {
             return @{ Path = $packageIndex.ByName[$wantedName]; Found = $true }

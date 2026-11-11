@@ -82,7 +82,7 @@ function Global:Send-WebResponse {
 
 function Global:Send-WebJson {
     param($Client, $Object)
-    $json = if ($Object -is [string]) { $Object } else { $Object | ConvertTo-Json -Depth 8 -Compress }
+    $json = if ($Object -is [string]) { $Object } else { $Object | ConvertTo-Json -Depth 12 -Compress }
     Send-WebResponse $Client '200 OK' 'application/json; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes($json))
 }
 

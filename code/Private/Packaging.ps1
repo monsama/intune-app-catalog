@@ -34,7 +34,7 @@ function Global:Get-SharedPackagePath {
         if ($Global:App.SharedPackageSearch.Found) { return $Global:App.SharedPackageSearch.Found }
         return $preferred
     }
-    $found = Get-ChildItem -Path $Global:App.RootPath -Recurse -Filter 'init.intunewin' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    $found = Get-ChildItem -LiteralPath $Global:App.RootPath -Recurse -Filter 'init.intunewin' -File -ErrorAction SilentlyContinue | Select-Object -First 1
     $Global:App.SharedPackageSearch = @{ For = $preferred; Found = $(if ($found) { $found.FullName } else { $null }) }
     if ($found) { return $found.FullName }
     return $preferred
@@ -89,7 +89,7 @@ function Global:Install-PackagingTool {
         finally { $ProgressPreference = $previous }
 
         Expand-Archive -Path $zip -DestinationPath $extract -Force -ErrorAction Stop
-        $exe = Get-ChildItem -Path $extract -Filter 'IntuneWinAppUtil.exe' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        $exe = Get-ChildItem -LiteralPath $extract -Filter 'IntuneWinAppUtil.exe' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
         if (-not $exe) { throw "The download did not contain IntuneWinAppUtil.exe." }
         # Downloaded from a branch, not a pinned release, and run with your
         # rights on every package - so only a file Microsoft signed is kept.

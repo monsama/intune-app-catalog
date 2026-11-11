@@ -45,7 +45,7 @@ function Write-Step {
 function Write-Result {
     param([bool]$Success, [string]$ErrorMessage, [array]$Certificates = @())
     $result = [pscustomobject]@{ success = $Success; error = $ErrorMessage; certificates = $Certificates }
-    $result | ConvertTo-Json -Depth 6 | Set-Content -Path $Config.OutputResultPath -Encoding UTF8
+    $result | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $Config.OutputResultPath -Encoding UTF8
 }
 
 function Get-HttpErrorDetail {
@@ -136,11 +136,11 @@ function ConvertTo-Iso8601String {
 }
 
 Write-Step "Loading configuration"
-if (-not (Test-Path $ConfigPath)) {
+if (-not (Test-Path -LiteralPath $ConfigPath)) {
     Write-Host "[FAILED] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$Config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  App (client) ID: $($Config.ClientId)" -ForegroundColor Gray
 # Check mode never sends CertSubject/CertThumbprint at all - it only signs
 # in and lists what's already trusted in Entra, with no local certificate
