@@ -219,7 +219,7 @@ try {
     # in Windows PowerShell, so only on Windows.
     if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') {
         function Wait-TestJob([string]$Job) {
-            $offset = 0; $last = $null; $deadline = (Get-Date).AddSeconds(120); $log = ''
+            $offset = 0; $deadline = (Get-Date).AddSeconds(120); $log = ''
             while ((Get-Date) -lt $deadline) {
                 $p = Invoke-Api '/api/job-poll' @{ job = $Job; offset = $offset }
                 if (-not $p.ok) { return @{ Poll = $p; Log = $log } }

@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.0.7
+
+### Added
+
+- **Keyboard use in the Apps list:**
+  - ↑/↓ move the selection, and Shift extends it;
+  - Home/End jump to the ends, and Ctrl+A selects everything shown;
+  - Enter opens the editor, and Delete asks to remove the app from the
+    catalog;
+  - Ctrl+S saves in the editor.
+
+  None of these react while you type in a field or a dialog is open.
+
+### Tests and checks
+
+- **Push groups (Apply) is tested without a tenant**, on Windows:
+  - the one missing group is created;
+  - Intune gets exactly the catalog's groups;
+  - an old assignment the catalog no longer has is dropped.
+- **Large catalog:** `Scale.Tests.ps1` generates 500 apps and times the
+  Apps list, Checks, opening and saving an app, Diagnostics and Groups
+  against generous limits. It runs in CI on all three shells.
+- **Code checker:** CI runs PSScriptAnalyzer over `code/` with the rules
+  that catch real bugs; its settings are in
+  `code/tests/PSScriptAnalyzerSettings.psd1`. It found five things, all
+  fixed:
+  - Packaging assigned to `$Args`, a variable PowerShell fills in itself.
+    It works, but one refactor away from passing the wrong arguments.
+  - An unused path in the certificate actions.
+  - Three in the tests.
+- The tests README covers the scale test, the code checker and the weekly
+  Graph check.
+
 ## 2.0.6
 
 ### Added

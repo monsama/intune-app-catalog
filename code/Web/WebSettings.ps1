@@ -181,7 +181,6 @@ function Global:Start-WebCertJob {
     if (-not (Test-GraphModuleHere)) { return @{ ok = $false; error = "The Microsoft.Graph.Authentication module isn't installed yet." } }
 
     $tag = [guid]::NewGuid().ToString('N')
-    $configPath = Join-Path $env:TEMP ".intunepkg_certupload_config_$tag.json"
     $resultPath = Join-Path $env:TEMP ".intunepkg_certupload_result_$tag.json"
     $config = [ordered]@{ Mode = $mode; TenantId = $tenant; ClientId = $client; OutputResultPath = $resultPath }
     if ($mode -eq 'Upload') {

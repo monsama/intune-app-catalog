@@ -539,7 +539,7 @@ foreach ($App in $AppsToProcess) {
         }
         
         # Build arguments for IntuneWinAppUtil - use temp output folder
-        $Args = @(
+        $ToolArgs = @(
             "-c", "`"$PackageSourceFolder`"",
             "-s", "`"$SetupFile`"",
             "-o", "`"$TempOutputFolder`"",
@@ -556,7 +556,7 @@ foreach ($App in $AppsToProcess) {
         # Run packaging tool - its own output is only shown when it fails
         $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
         $ProcessInfo.FileName = $ToolFullPath
-        $ProcessInfo.Arguments = $Args -join " "
+        $ProcessInfo.Arguments = $ToolArgs -join " "
         $ProcessInfo.RedirectStandardError = $true
         $ProcessInfo.RedirectStandardOutput = $true
         $ProcessInfo.UseShellExecute = $false

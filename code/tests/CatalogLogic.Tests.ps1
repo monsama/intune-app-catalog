@@ -248,7 +248,7 @@ foreach ($file in $privateFiles) {
         foreach ($e in $parseErrors) { Write-Host "  Line $($e.Extent.StartLineNumber): $($e.Message)" -ForegroundColor Red }
         exit 1
     }
-    $matches = $ast.FindAll({
+    $found = $ast.FindAll({
         param($node)
         # Every top-level Private\ function is declared as "function
         # Global:Name" (see IntuneDeployment.ps1's header comment for why),
@@ -256,7 +256,7 @@ foreach ($file in $privateFiles) {
         # it before comparing against the plain names below.
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $testableFunctionNames -contains ($node.Name -replace '^[A-Za-z]+:', '')
     }, $true)
-    foreach ($m in $matches) { $funcAsts.Add($m) }
+    foreach ($m in $found) { $funcAsts.Add($m) }
 }
 
 $foundNames = @($funcAsts | ForEach-Object { $_.Name -replace '^[A-Za-z]+:', '' })
@@ -1971,11 +1971,11 @@ $configSupFn = $createAppAst.FindAll({ param($n) $n -is [System.Management.Autom
 Assert-True ($null -ne $configSupFn) "Get-ConfigSupersedence: found in CreateApp.ps1"
 if ($configSupFn) {
     . ([scriptblock]::Create($configSupFn.Extent.Text))
-    $Config = $cfgSome
+    Set-Variable -Name Config -Value $cfgSome   # read by the dot-sourced function
     $sent = @(Get-ConfigSupersedence)
     Assert-Equal 1 $sent.Count "Get-ConfigSupersedence: one entry in, one relationship out"
     Assert-Equal '#microsoft.graph.mobileAppSupersedence' $sent[0].'@odata.type' "Get-ConfigSupersedence: shaped as a supersedence relationship"
-    $Config = $cfgNone
+    Set-Variable -Name Config -Value $cfgNone
     Assert-Equal 0 @(Get-ConfigSupersedence).Count "Get-ConfigSupersedence: none recorded sends none"
     Remove-Variable Config
 }
