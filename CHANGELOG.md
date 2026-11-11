@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.14.0
+
+### Added
+
+Web interface, step 3d (`IntuneDeployment.ps1 -Web`) - Settings:
+
+- **Setup guide:** the Entra ID app registration step by step, and getting
+  the catalog and Intune to match.
+- **Prerequisites:** whether the Microsoft.Graph.Authentication module is
+  installed in each PowerShell the app uses, and **Install missing** (for
+  your user account, from the PowerShell Gallery).
+- **Diagnostics:** this machine's setup, the catalog itself (apps with
+  nothing to deploy, deployed apps assigned to nobody, duplicate names and
+  App IDs, package folders no app uses) and how it lines up with Intune.
+- **Certificates on this machine:** every certificate in the two personal
+  stores, marked when it is in use, expired or has no private key, with
+  **Delete**.
+
 ## 1.13.0
 
 ### Added
