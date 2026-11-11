@@ -89,6 +89,9 @@ function Global:Show-CertificateSetupDialog {
     $origTenant = $txtTenant.Text
     $origClient = $txtClient.Text
     $origThumb  = $txtThumb.Text
+    # What counts as "saved" - updated when Diagnostics saves on the way in
+    # (see $btnDiagnostics below), so closing afterwards doesn't ask again.
+    $origBox = @{ Tenant = $origTenant; Client = $origClient; Thumb = $origThumb }
 
     $lblStatus = New-Object System.Windows.Forms.Label
     $lblStatus.Location = New-Object System.Drawing.Point(15,$y)
@@ -152,7 +155,7 @@ function Global:Show-CertificateSetupDialog {
     $btnDiagnostics.Size = New-Object System.Drawing.Size(530,30)
     $dlg.Controls.Add($btnDiagnostics)
     $testTip.SetToolTip($btnDiagnostics, "Checks this machine's setup: the settings file, the catalog folder, the Graph module, and the connection to Intune. Only reads.")
-    $btnDiagnostics.Add_Click({ Show-DiagnosticsDialog }.GetNewClosure())
+    # Its click handler is further down, next to $HasUnsavedConnectionChanges.
 
     # Directly under Test connection, so its result shows next to the button
     # (it used to sit at the very bottom of the dialog).
@@ -179,6 +182,7 @@ function Global:Show-CertificateSetupDialog {
     $lblTestResult.Margin = New-Object System.Windows.Forms.Padding(0,0,0,0)
     $lblTestResult.Text = "Test connection shows its result here."
     $lblTestResult.ForeColor = [System.Drawing.Color]::DimGray
+    $testTip.SetToolTip($lblTestResult, "Right-click to copy this text.")
     $pnlTestResultInfo.Controls.Add($lblTestResult)
     $y += 58
 
@@ -1138,6 +1142,14 @@ function Global:Show-CertificateSetupDialog {
             return
         }
 
+        # Something already loaded in this window that will break the Graph
+        # sign-in (see GraphModuleConflict.ps1)? Say so first, and offer the
+        # restart, rather than let it end in a .NET error. Declined, the
+        # test still runs - it may yet work.
+        if (Test-GraphAssemblyConflict -Owner $dlg) {
+            if ($Global:App.RestartOnClose) { return }
+        }
+
         $lblTestResult.ForeColor = [System.Drawing.Color]::DimGray
         $lblTestResult.Text = "Connecting..."
         $dlg.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
@@ -1175,6 +1187,12 @@ function Global:Show-CertificateSetupDialog {
             $claimsError = ''
             try { $claims = Get-GraphAppTokenClaims -TenantId $TenantId -ClientId $ClientId -Thumbprint $CertThumb }
             catch { $claimsError = $_.Exception.Message }
+            # Don't leave this sign-in behind as the app's Graph session. It
+            # may predate a permission being granted (the next step after a
+            # test, often), and the lookups reuse whatever session there is -
+            # with a token that still lacks the new permission, for up to an
+            # hour. Dropped here, the next lookup signs in fresh.
+            try { Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null } catch { }
             [pscustomobject]@{
                 AppName     = $ctx.AppName
                 AuthType    = $ctx.AuthType
@@ -1203,8 +1221,12 @@ function Global:Show-CertificateSetupDialog {
             try {
                 $raw = @($ps.EndInvoke($handle))
                 if ($ps.Streams.Error.Count -gt 0) {
+                    $failure = Get-GraphErrorRecordMessage $ps.Streams.Error[0]
                     $lblTestResultRef.ForeColor = [System.Drawing.Color]::Firebrick
-                    $lblTestResultRef.Text = "Failed: $($ps.Streams.Error[0].ToString())"
+                    $lblTestResultRef.Text = "Failed: $(ConvertTo-FriendlyGraphError $failure)"
+                    if (Test-GraphAssemblyConflictText $failure) {
+                        [void](Show-GraphAssemblyConflictPrompt -Owner $dlgRef -ErrorText $failure -Force)
+                    }
                 }
                 elseif ($raw.Count -eq 0) {
                     $lblTestResultRef.ForeColor = [System.Drawing.Color]::Firebrick
@@ -1219,8 +1241,9 @@ function Global:Show-CertificateSetupDialog {
                                                   else { [System.Drawing.Color]::SeaGreen }
                     $signedIn = "Signed in as '$($result.AppName)' ($($result.AuthType))"
                     $lblTestResultRef.Text = if ($result.ClaimsError) { "$signedIn - couldn't read the permissions, see the log below." }
-                                             elseif ($blocked -gt 0) { "$signedIn, but it's missing a permission the app needs - see the log below." }
-                                             elseif (@($report.Missing).Count -gt 0) { "$signedIn. Some features are missing a permission - see the log below." }
+                                             elseif (@($report.Have).Count -eq 0) { "$signedIn, but the app registration has no API permissions granted yet. The log below lists exactly which to add and where." }
+                                             elseif ($blocked -gt 0) { "$signedIn, but it's missing a permission the app needs. The log below lists which to add and where." }
+                                             elseif (@($report.Missing).Count -gt 0) { "$signedIn. Some optional features are missing a permission - the log below says which to add." }
                                              else { "$signedIn, with every permission this app uses." }
                     if ($rtbUploadLogRef) {
                         Write-DialogLogLine -LogBox $rtbUploadLogRef -Text "`r`n[INFO] Test connection: $signedIn.`r`n"
@@ -1236,8 +1259,12 @@ function Global:Show-CertificateSetupDialog {
                 }
             }
             catch {
+                $failure = Get-InnermostErrorMessage $_.Exception
                 $lblTestResultRef.ForeColor = [System.Drawing.Color]::Firebrick
-                $lblTestResultRef.Text = "Failed: $($_.Exception.Message)"
+                $lblTestResultRef.Text = "Failed: $(ConvertTo-FriendlyGraphError $failure)"
+                if (Test-GraphAssemblyConflictText $failure) {
+                    [void](Show-GraphAssemblyConflictPrompt -Owner $dlgRef -ErrorText $failure -Force)
+                }
             }
             finally {
                 $ps.Dispose(); $rs.Close(); $rs.Dispose()
@@ -1280,10 +1307,43 @@ function Global:Show-CertificateSetupDialog {
     }.GetNewClosure()
 
     $HasUnsavedConnectionChanges = {
-        ($txtTenant.Text.Trim() -ne $origTenant.Trim()) -or
-        ($txtClient.Text.Trim() -ne $origClient.Trim()) -or
-        (($txtThumb.Text.Trim() -replace '\s', '') -ne ($origThumb.Trim() -replace '\s', ''))
+        ($txtTenant.Text.Trim() -ne ([string]$origBox.Tenant).Trim()) -or
+        ($txtClient.Text.Trim() -ne ([string]$origBox.Client).Trim()) -or
+        (($txtThumb.Text.Trim() -replace '\s', '') -ne (([string]$origBox.Thumb).Trim() -replace '\s', ''))
     }.GetNewClosure()
+
+    # Diagnostics checks the SAVED connection - the one every other part of
+    # the app uses - not what's typed here. Opened from Settings with
+    # changes still unsaved, it used to check the old certificate and say
+    # it was gone, which reads like the new one doesn't work. So: ask, and
+    # save here (without closing Settings) if the answer is yes.
+    $btnDiagnostics.Add_Click({
+        if (& $HasUnsavedConnectionChanges) {
+            $savedThumb = [string]$Global:App.GraphCertificateThumbprint
+            $typedThumb = ($txtThumb.Text.Trim() -replace '\s', '')
+            $thumbNote = if ($savedThumb -ne $typedThumb) { "`r`n`r`nSaved certificate: $(if ($savedThumb) { $savedThumb } else { '(none)' })`r`nHere: $typedThumb" } else { '' }
+            $answer = [System.Windows.Forms.MessageBox]::Show($dlg,
+                "Diagnostics checks the saved connection settings, not the changes made here.$thumbNote`r`n`r`nSave these settings first?",
+                "Save before Diagnostics?", "YesNoCancel", "Question")
+            if ($answer -eq [System.Windows.Forms.DialogResult]::Cancel) { return }
+            if ($answer -eq [System.Windows.Forms.DialogResult]::Yes) {
+                $tenant = $txtTenant.Text.Trim(); $client = $txtClient.Text.Trim()
+                if (-not $tenant -or -not $client -or -not $typedThumb) {
+                    [System.Windows.Forms.MessageBox]::Show($dlg, "Tenant ID, Client ID, and thumbprint are all required.", "Missing values", "OK", "Warning") | Out-Null
+                    return
+                }
+                if (-not (Save-GraphSettings -TenantId $tenant -ClientId $client -CertificateThumbprint $typedThumb)) { return }
+                $Global:App.GraphTenantId = $tenant
+                $Global:App.GraphClientId = $client
+                $Global:App.GraphCertificateThumbprint = $typedThumb
+                $Global:App.IntuneAppsCache.Clear()
+                Reset-GraphSession
+                $origBox.Tenant = $tenant; $origBox.Client = $client; $origBox.Thumb = $typedThumb
+                Write-Log "[OK] Settings saved. Client: $client, Tenant: $tenant.`r`n" ([System.Drawing.Color]::LightGreen)
+            }
+        }
+        Show-DiagnosticsDialog
+    }.GetNewClosure())
 
     # Set by Cancel's own click handler once it has already asked and the
     # user chose to discard - stops FormClosing (fired by $dlg.Close()
@@ -1425,6 +1485,7 @@ function Global:Show-CertificateSetupDialog {
             $Global:App.GraphClientId = $saveResultBox.ClientId
             $Global:App.GraphCertificateThumbprint = $saveResultBox.Thumbprint
             $Global:App.IntuneAppsCache.Clear()   # old cache may have been fetched under a different identity
+            Reset-GraphSession                    # and the same for the sign-in the lookups reuse
             # No confirmation popup here, deliberately - the only place in
             # this app that had one after a successful save. The dialog
             # already closed and this line is already in the persistent

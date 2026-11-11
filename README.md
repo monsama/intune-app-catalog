@@ -91,8 +91,13 @@ refuses to run the scripts inside.
    Windows marked it as downloaded.
 2. Run `IntuneDeployment.ps1` - double-click it, or:
    ```powershell
-   pwsh -ExecutionPolicy Bypass -File .\IntuneDeployment.ps1
+   pwsh -NoProfile -ExecutionPolicy Bypass -File .\IntuneDeployment.ps1
    ```
+   `-NoProfile` keeps modules from your PowerShell profile (Az,
+   ExchangeOnlineManagement, ...) out of the app's window, where they
+   can clash with the Microsoft Graph module. Endpoint protection such as
+   Cortex XDR may block scripts started from the Downloads folder, so
+   unpack the zip somewhere else.
 3. Open **Settings...** and fill in Tenant ID, Client ID and certificate,
    then **Test connection** and **Save**. The setup guide in that window
    lists the Graph permissions the app registration needs.

@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.7.0
+
+### Added
+
+- **PowerShell module conflicts are named, with a restart.** When a
+  module already loaded in the app's window (usually Az,
+  ExchangeOnlineManagement, PnP or an older Microsoft.Graph, from the
+  PowerShell profile) brings different versions of the libraries
+  Microsoft Graph needs, sign-in used to end in a .NET error such as
+  "RefreshCacheAsync ... does not have an implementation". Test
+  connection now checks for this first. Any Graph sign-in in the window
+  that fails this way also gets the check. It names the module in the
+  way and offers to restart the app without the profile.
+- **Error and status texts can be copied.** Right-click any text in a
+  window, such as the result under Test connection or a check's status,
+  and choose Copy.
+
+### Fixed
+
+- **Diagnostics opened from Settings checked the old connection.** With
+  a new certificate or Client ID not yet saved, it checked the old one
+  and reported it missing. It now offers to save the changes first.
+- **A sign-in from before granting permissions kept being used.** The
+  app's lookups reuse one Graph sign-in. After Test connection ran
+  without permissions, that sign-in stayed in use with a token that had
+  no permissions, for up to an hour, and Intune answered 401. Test
+  connection no longer leaves its sign-in behind. Saving settings,
+  running Diagnostics and changing the certificate all start a fresh
+  sign-in, and a 401 now names the missing permission.
+
+### Changed
+
+- **Missing permissions come with the fix.** Test connection and
+  Diagnostics list what already works and each permission still to add,
+  marked as required or optional with what it's for. They also give the
+  path in the Entra admin center (Application, not Delegated), the
+  admin consent step, and what to check when a permission shows as
+  granted but still doesn't work.
+- **Clearer certificate sign-in errors.** A certificate that isn't on
+  this machine any more, and one that Entra ID doesn't accept (usually
+  not uploaded to the app registration yet), each get their own
+  plain-language explanation and not the raw .NET error.
+
 ## 1.6.0
 
 ### Added

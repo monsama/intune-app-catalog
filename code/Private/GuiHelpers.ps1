@@ -52,14 +52,25 @@ function Global:ConvertTo-FriendlyGraphError {
     # summary and the reader gets the same sentence twice, nested.
     if ($RawMessage -like '*(Raw error:*') { return $RawMessage }
     $summary = $null
-    if ($RawMessage -match 'ClientCertificateCredential authentication failed|Cannot find the certificate|certificate.*not found|No certificate found') {
-        $summary = "Could not sign in with the configured certificate - it may have been replaced, expired, or removed from this machine since Settings was last saved. Open Settings, Test connection, and Save once it succeeds."
+    if (Test-GraphAssemblyConflictText $RawMessage) {
+        $summary = "PowerShell module conflict: another module in this window (often Az, ExchangeOnlineManagement or an older Microsoft.Graph, loaded by the PowerShell profile) brought different versions of the libraries Microsoft Graph needs. Nothing in Settings or the tenant is wrong - restart the app without the profile: powershell -NoProfile -ExecutionPolicy Bypass -File .\IntuneDeployment.ps1"
+    }
+    elseif ($RawMessage -match "Certificate with thumbprint '?[0-9A-Fa-f]+'? was not found|Cannot find the certificate|certificate.*not found|No certificate found|No certificate with thumbprint") {
+        $summary = "The certificate in Settings isn't on this machine any more (or has expired) - it may have been replaced or deleted since Settings was last saved. Pick or generate one in Settings, make sure it's uploaded to the app registration in Entra (Certificate tab), Test connection, and Save once it succeeds."
+    }
+    elseif ($RawMessage -match 'ClientCertificateCredential authentication failed') {
+        $summary = "Entra ID didn't accept the certificate sign-in. Usually this certificate isn't uploaded to the app registration yet (Settings > Certificate > Check certificates in Entra / Upload certificate; allow a few minutes after uploading), or Windows won't hand out its private key. Also check Tenant ID and Client ID."
     }
     elseif ($RawMessage -match 'AADSTS700027|invalid_client|AADSTS70021') {
         $summary = "Microsoft Entra ID rejected this app's credentials. Double-check the Tenant ID, Client ID, and certificate in Settings."
     }
     elseif ($RawMessage -match '\bunauthorized\b|\b401\b') {
-        $summary = "Microsoft Graph rejected this request as unauthorized - the configured credentials may be stale. Try Settings > Test connection."
+        # Intune answers a missing permission with 401 (and "Forbidden" in
+        # the body), not 403 - so this is usually a permission, and the
+        # reader needs to be told which.
+        $permission = Get-GraphPermissionHint $RawMessage
+        $add = if ($permission) { "add $permission" } else { "add the permission it needs" }
+        $summary = "Microsoft Graph refused this request (401 Unauthorized). Usually the app registration is missing a permission - $add and grant admin consent. If you've only just granted it, run Settings > Test connection again: that refreshes the sign-in, which may still be from before."
     }
     elseif ($RawMessage -match '\bforbidden\b|\b403\b|insufficient privileges|Authorization_RequestDenied') {
         $permission = Get-GraphPermissionHint $RawMessage
@@ -399,6 +410,12 @@ function Global:Get-GraphRunspaceErrorMessage {
         $where = $_.InvocationInfo.PositionMessage
         if ($where) { "$line [$($where.Trim())]" } else { $line }
     }) -join "`n"
+    # The module-conflict failure can't be fixed from any dialog - offer
+    # the restart (once per session), after the caller has shown its error.
+    if ((Test-GraphAssemblyConflictText $raw) -and -not $Global:App.GraphConflictPrompted -and $Global:App.Form -and $Global:App.Form.IsHandleCreated) {
+        $conflictRaw = $raw
+        [void]$Global:App.Form.BeginInvoke([Action]{ [void](Show-GraphAssemblyConflictPrompt -Owner ([System.Windows.Forms.Form]::ActiveForm) -ErrorText $conflictRaw) }.GetNewClosure())
+    }
     return ConvertTo-FriendlyGraphError $raw
 }
 
@@ -433,6 +450,29 @@ function Global:ConvertTo-CanonicalLineEndings {
     param([string]$Text)
     if (-not $Text) { return $Text }
     return ($Text -replace "`r`n", "`n")
+}
+
+function Global:Get-LabelCopyMenu {
+    # One shared right-click menu for every Label: "Copy" puts the label's
+    # current text on the clipboard. Hidden for a label with no text.
+    if ($Global:App.LabelCopyMenu) { return $Global:App.LabelCopyMenu }
+    $menu = New-Object System.Windows.Forms.ContextMenuStrip
+    $item = New-Object System.Windows.Forms.ToolStripMenuItem
+    $item.Text = "Copy"
+    [void]$menu.Items.Add($item)
+    $menu.Add_Opening({
+        param($sender, $e)
+        if (-not $sender.SourceControl -or [string]::IsNullOrWhiteSpace($sender.SourceControl.Text)) { $e.Cancel = $true }
+    })
+    $item.Add_Click({
+        param($sender, $e)
+        $source = $sender.Owner.SourceControl
+        if ($source -and $source.Text) {
+            try { [System.Windows.Forms.Clipboard]::SetText(($source.Text -replace "(?<!`r)`n", "`r`n")) } catch { }
+        }
+    })
+    $Global:App.LabelCopyMenu = $menu
+    return $menu
 }
 
 function Global:Set-Theme {
@@ -572,6 +612,11 @@ function Global:Set-ThemeRecursive {
             # Firebrick for a warning, ...) keeps it instead of being
             # silently flattened to plain body text the moment this runs.
             if ($Ctrl.ForeColor -eq [System.Drawing.SystemColors]::ControlText) { $Ctrl.ForeColor = $Palette.ControlFore }
+            # A Label's text can't be selected, and the ones that matter
+            # most - an error under Test connection, a failed check - are
+            # exactly what gets pasted into a ticket or a search. Right-click
+            # copies whatever the label says at that moment.
+            if (-not $Ctrl.ContextMenuStrip) { $Ctrl.ContextMenuStrip = Get-LabelCopyMenu }
         }
         { $_ -in @("TextBox","ComboBox") } {
             $Ctrl.BackColor = $Palette.FieldBack
