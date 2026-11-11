@@ -216,6 +216,7 @@ $testableFunctionNames = @(
     "Get-GraphRoleRequirements",
     "Get-GraphRoleReport",
     "Format-GraphRoleReport",
+    "Format-SetupChecklist",
     "Get-GraphErrorBodyMessage",
     "Get-GraphErrorRecordMessage",
     "Get-GraphRunspaceErrorMessage",
@@ -2213,6 +2214,33 @@ Assert-True ($conflictText -like '*-NoProfile*' -and $conflictText -like '*Refre
 Assert-True (-not ($conflictText -like '*Uninstall-Module*')) "Format-GraphAssemblyConflictText: no uninstall advice when it isn't another Graph version"
 $sameText = Format-GraphAssemblyConflictText -Conflicts @(Get-GraphAssemblyConflicts -ModuleAssemblies $shipped -ModuleBase $graphBase -LoadedAssemblies $olderGraph) -NoProfile $true
 Assert-True ($sameText -like '*Uninstall-Module*' -and $sameText -like '*already started without a PowerShell profile*') "Format-GraphAssemblyConflictText: two Graph versions - uninstall advice, and no false promise from a restart"
+
+# =================================================================
+# Setup checklist after Test connection (GraphToken.ps1)
+# =================================================================
+$future = (Get-Date).AddYears(1)
+$fullReport = Get-GraphRoleReport -Roles @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Directory.Read.All', 'DeviceManagementScripts.ReadWrite.All')
+$doneText = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = $future; SignInOk = $true; Report = $fullReport; Saved = $true }) -join "`n"
+Assert-True ($doneText -like '*Setup complete - every step is done*' -and $doneText -notlike '*FAILED*' -and $doneText -notlike '*Next:*') "Format-SetupChecklist: everything done says so" $doneText
+
+# Today's case: reissued certificate, not uploaded yet, not saved
+$notUploaded = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = $future; SignInOk = $false; SignInError = 'ClientCertificateCredential authentication failed: .'; Saved = $false }) -join "`n"
+Assert-True ($notUploaded -match '(?s)\[FAILED\] Entra ID accepts the certificate.*Next: Upload this certificate') "Format-SetupChecklist: a refused certificate points at the upload" $notUploaded
+Assert-True ($notUploaded -like '*`[--`] Required API permissions*') "Format-SetupChecklist: permissions can't be known yet" $notUploaded
+Assert-Equal 1 ([regex]::Matches($notUploaded, 'Next:').Count) "Format-SetupChecklist: one next step, for the first thing that's not done" $notUploaded
+
+$noRoles = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = $future; SignInOk = $true; Report = (Get-GraphRoleReport -Roles @()); Saved = $true }) -join "`n"
+Assert-True ($noRoles -match '(?s)\[FAILED\] Required API permissions.*Next: Add the API permissions.*Application, not Delegated') "Format-SetupChecklist: signed in without permissions says what's next" $noRoles
+
+$unsaved = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = $future; SignInOk = $true; Report = $fullReport; Saved = $false }) -join "`n"
+Assert-True ($unsaved -match '(?s)\[FAILED\] Settings saved.*Next: Click Save') "Format-SetupChecklist: a working but unsaved connection says to save" $unsaved
+
+$noKey = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $false; SignInOk = $null; Saved = $true }) -join "`n"
+Assert-True ($noKey -like '*no private key*' -and $noKey -like '*`[--`] Entra ID accepts*') "Format-SetupChecklist: a certificate without its key stops there" $noKey
+$expired = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = (Get-Date).AddDays(-1); Saved = $true }) -join "`n"
+Assert-True ($expired -like '*has expired*') "Format-SetupChecklist: an expired certificate says so" $expired
+$wrongClient = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = $future; SignInOk = $false; SignInError = 'AADSTS700016: Application with identifier x was not found in the directory'; Saved = $true }) -join "`n"
+Assert-True ($wrongClient -like '*Check Tenant ID and Client ID*') "Format-SetupChecklist: an unknown Client ID isn't blamed on the certificate" $wrongClient
 
 # =================================================================
 # Step runner (code\Runner\Invoke-AppStep.ps1) - run for real, in a child

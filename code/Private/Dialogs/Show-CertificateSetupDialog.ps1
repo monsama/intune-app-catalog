@@ -1168,6 +1168,30 @@ function Global:Show-CertificateSetupDialog {
         $rtbUploadLogRef = $rtbUploadLog
         $testClientRef = $testClient
 
+        # The setup checklist written to the log once the test ends - what's
+        # known now, filled in with the sign-in's outcome below.
+        $cleanThumb = $testThumb -replace '\s', ''
+        $localCert = Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
+            Where-Object { $_.Thumbprint -eq $cleanThumb } | Select-Object -First 1
+        $checkState = @{
+            ModuleOk     = $true
+            FieldsOk     = $true
+            CertFound    = [bool]$localCert
+            CertHasKey   = [bool]($localCert -and $localCert.HasPrivateKey)
+            CertNotAfter = $(if ($localCert) { $localCert.NotAfter } else { $null })
+            SignInOk     = $null
+            SignInError  = ''
+            Report       = $null
+            Saved        = ($testTenant -eq ([string]$origBox.Tenant).Trim() -and $testClient -eq ([string]$origBox.Client).Trim() -and
+                            $cleanThumb -eq (([string]$origBox.Thumb).Trim() -replace '\s', ''))
+        }
+        $writeChecklist = {
+            if (-not $rtbUploadLogRef) { return }
+            foreach ($line in (Format-SetupChecklist -State $checkState)) {
+                Write-DialogLogLine -LogBox $rtbUploadLogRef -Text "$line`r`n"
+            }
+        }.GetNewClosure()
+
         $rs = [runspacefactory]::CreateRunspace()
         $rs.Open()
         $ps = [powershell]::Create()
@@ -1224,6 +1248,8 @@ function Global:Show-CertificateSetupDialog {
                     $failure = Get-GraphErrorRecordMessage $ps.Streams.Error[0]
                     $lblTestResultRef.ForeColor = [System.Drawing.Color]::Firebrick
                     $lblTestResultRef.Text = "Failed: $(ConvertTo-FriendlyGraphError $failure)"
+                    $checkState.SignInOk = $false; $checkState.SignInError = $failure
+                    & $writeChecklist
                     if (Test-GraphAssemblyConflictText $failure) {
                         [void](Show-GraphAssemblyConflictPrompt -Owner $dlgRef -ErrorText $failure -Force)
                     }
@@ -1235,6 +1261,8 @@ function Global:Show-CertificateSetupDialog {
                 else {
                     $result = $raw[0]
                     $report = Get-GraphRoleReport -Roles @($result.Roles)
+                    $checkState.SignInOk = $true
+                    if (-not $result.ClaimsError) { $checkState.Report = $report }
                     $blocked = @(@($report.Missing) | Where-Object { $_.Required }).Count
                     $lblTestResultRef.ForeColor = if ($blocked -gt 0) { [System.Drawing.Color]::Firebrick }
                                                   elseif (@($report.Missing).Count -gt 0) { [System.Drawing.Color]::DarkOrange }
@@ -1255,6 +1283,7 @@ function Global:Show-CertificateSetupDialog {
                                 Write-DialogLogLine -LogBox $rtbUploadLogRef -Text "$line`r`n"
                             }
                         }
+                        & $writeChecklist
                     }
                 }
             }
@@ -1262,6 +1291,8 @@ function Global:Show-CertificateSetupDialog {
                 $failure = Get-InnermostErrorMessage $_.Exception
                 $lblTestResultRef.ForeColor = [System.Drawing.Color]::Firebrick
                 $lblTestResultRef.Text = "Failed: $(ConvertTo-FriendlyGraphError $failure)"
+                $checkState.SignInOk = $false; $checkState.SignInError = $failure
+                try { & $writeChecklist } catch { }
                 if (Test-GraphAssemblyConflictText $failure) {
                     [void](Show-GraphAssemblyConflictPrompt -Owner $dlgRef -ErrorText $failure -Force)
                 }

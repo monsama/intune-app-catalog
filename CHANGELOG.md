@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Added
+
+- **Setup checklist after Test connection.** The log now shows each
+  step of the first-time setup as done, failed or not checked yet:
+  - the Graph module
+  - the connection details
+  - the certificate on this machine, with its private key and not
+    expired
+  - Entra accepting the certificate
+  - the required permissions with admin consent
+  - the settings saved
+
+  Under the first step that isn't done, it says what to do next.
+
 ### Changed
 
 - **Background steps no longer look like malware to endpoint
