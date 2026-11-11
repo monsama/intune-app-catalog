@@ -215,7 +215,7 @@ function updateActions() {
 const lines = id => $(id).value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
 const metaIds = { description: 'mDescription', publisher: 'mPublisher', appVersion: 'mAppVersion', owner: 'mOwner', developer: 'mDeveloper',
   informationUrl: 'mInformationUrl', privacyUrl: 'mPrivacyUrl', installCommand: 'mInstallCommand', uninstallCommand: 'mUninstallCommand',
-  installContext: 'mInstallContext', notes: 'mNotes' };
+  notes: 'mNotes' };
 let editingName = '';
 function fillEditor(a) {
   $('aName').value = a.appName || ''; $('aWinget').value = a.wingetId || ''; $('aAppId').value = a.appId || '';
@@ -223,6 +223,7 @@ function fillEditor(a) {
   $('gUninstall').value = (a.uninstallFor || []).join('\n'); $('gExclude').value = (a.excludeFor || []).join('\n');
   for (const [k, id] of Object.entries(metaIds)) $(id).value = (a.metadata && a.metadata[k]) || '';
   $('metaNote').textContent = a.hasMetadata ? '' : '(not set yet - the defaults are used when it is deployed)';
+  fillDeploy(a.deploy);
   $('appError').hidden = true;
 }
 async function openEditor(name) {
@@ -230,11 +231,13 @@ async function openEditor(name) {
   if (name) {
     const r = await api('/api/app-get', { name });
     if (!r.ok) { toast(r.error, true); return; }
+    editorApps = r.appNames || []; editorMinOs = r.minOsChoices || [];
     fillEditor(r.app);
     $('knownGroups').textContent = r.knownGroups.length ? 'Groups used in this catalog: ' + r.knownGroups.join(', ') : '';
     $('appTitle').textContent = 'Edit ' + name;
   } else {
-    fillEditor({ hasMetadata: false });
+    editorApps = apps.map(a => a.name); editorMinOs = (prefs && prefs.minOsChoices) || [];
+    fillEditor({ hasMetadata: false, deploy: prefs && prefs.defaults ? { ...prefs.defaults, detection: { type: '' }, dependencies: prefs.defaults.defaultDependencyAppNames || [] } : null });
     $('knownGroups').textContent = '';
     $('appTitle').textContent = 'Add an app';
   }
@@ -251,6 +254,7 @@ $('appForm').addEventListener('submit', async e => {
     requiredFor: lines('gRequired'), availableFor: lines('gAvailable'), uninstallFor: lines('gUninstall'), excludeFor: lines('gExclude'),
     metadata: Object.fromEntries(Object.entries(metaIds).map(([k, id]) => [k, $(id).value])),
   };
+  if (deployTouched) app.deploy = readDeploy();
   const r = await api('/api/app-save', { originalName: editingName, app });
   if (!r.ok) { const p = $('appError'); p.textContent = r.error; p.hidden = false; return; }
   $('dlgApp').close();
@@ -423,6 +427,53 @@ $('btnOpenEntra').addEventListener('click', async () => {
   const r = await api('/api/open', { target: 'entra-permissions', clientId: fields().clientId });
   if (!r.ok) toast(r.error, true);
 });
+
+// ---------------------------------------------------------------- editor: deploy settings
+let editorApps = [], editorMinOs = [], deployTouched = false;
+function showDetFields() {
+  const t = $('xType').value;
+  for (const d of document.querySelectorAll('[data-det]')) d.hidden = !d.dataset.det.split(' ').includes(t);
+}
+$('xType').addEventListener('change', showDetFields);
+function fillDeploy(d) {
+  deployTouched = false;
+  $('deploySec').open = false;
+  if (!d) d = { detection: { type: '' }, architecture: ['x64'], installContext: 'System', minOSKey: 'W10_22H2', installTimeMinutes: 60, deviceRestartBehavior: 'basedOnReturnCode', returnCodes: [], dependencies: [] };
+  const x = d.detection || { type: '' };
+  $('xType').value = x.type || ''; $('xScript').value = x.script || ''; $('xProductCode').value = x.productCode || '';
+  $('xPath').value = x.path || ''; $('xName').value = x.name || ''; $('xKey').value = x.keyPath || ''; $('xValueName').value = x.valueName || '';
+  $('xOperator').value = x.operator || 'notConfigured'; $('xValue').value = x.value || ''; $('x32').checked = !!x.check32Bit;
+  $('xFileType').value = x.type === 'File' ? (x.detectionType || 'exists') : 'exists';
+  $('xRegType').value = x.type === 'Registry' ? (x.detectionType || 'exists') : 'exists';
+  showDetFields();
+  for (const c of document.querySelectorAll('[data-xarch]')) c.checked = (d.architecture || []).includes(c.dataset.xarch);
+  $('xContext').value = d.installContext === 'User' ? 'User' : 'System';
+  $('xMinOs').replaceChildren(...editorMinOs.map(o => el('option', { value: o.value, text: o.label || o.value })));
+  if (d.minOSKey && ![...$('xMinOs').options].some(o => o.value === d.minOSKey)) $('xMinOs').append(el('option', { value: d.minOSKey, text: d.minOSKey }));
+  $('xMinOs').value = d.minOSKey || 'W10_22H2';
+  $('xTime').value = d.installTimeMinutes ?? 60; $('xRestart').value = d.deviceRestartBehavior || 'basedOnReturnCode';
+  $('xDisk').value = d.minDiskSpaceMB ?? 0; $('xMem').value = d.minMemoryMB ?? 0; $('xCpus').value = d.minProcessors ?? 0; $('xSpeed').value = d.minCpuSpeedMHz ?? 0;
+  $('xUninstall').checked = !!d.allowAvailableUninstall;
+  $('xCodes').value = (d.returnCodes || []).map(c => `${c.returnCode} = ${c.type}`).join('\n');
+  const deps = new Set(d.dependencies || []);
+  $('xDeps').replaceChildren(...(editorApps.length ? editorApps.map(n => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-dep': n, checked: deps.has(n) }), n)) : [el('span', { class: 'muted', text: 'No other apps in the catalog.' })]));
+}
+$('deploySec').addEventListener('input', () => { deployTouched = true; });
+$('deploySec').addEventListener('change', () => { deployTouched = true; });
+function readDeploy() {
+  const t = $('xType').value;
+  return {
+    detection: { type: t, script: $('xScript').value, productCode: $('xProductCode').value, operator: $('xOperator').value, value: $('xValue').value,
+      path: $('xPath').value, name: $('xName').value, keyPath: $('xKey').value, valueName: $('xValueName').value, check32Bit: $('x32').checked,
+      detectionType: t === 'File' ? $('xFileType').value : t === 'Registry' ? $('xRegType').value : '' },
+    architecture: [...document.querySelectorAll('[data-xarch]')].filter(c => c.checked).map(c => c.dataset.xarch),
+    installContext: $('xContext').value, minOSKey: $('xMinOs').value, installTimeMinutes: $('xTime').value.trim(), deviceRestartBehavior: $('xRestart').value,
+    minDiskSpaceMB: $('xDisk').value.trim(), minMemoryMB: $('xMem').value.trim(), minProcessors: $('xCpus').value.trim(), minCpuSpeedMHz: $('xSpeed').value.trim(),
+    allowAvailableUninstall: $('xUninstall').checked,
+    returnCodes: lines('xCodes').map(l => { const m = /^(-?\d+)\s*[=:]\s*(\w+)$/.exec(l); return m ? { returnCode: m[1], type: m[2] } : { returnCode: l, type: '' }; }),
+    dependencies: [...document.querySelectorAll('[data-dep]')].filter(c => c.checked).map(c => c.dataset.dep),
+  };
+}
 
 // ---------------------------------------------------------------- deploy
 let deployPlan = [];

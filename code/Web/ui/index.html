@@ -269,12 +269,45 @@
         <label>Privacy URL<input id="mPrivacyUrl" spellcheck="false"></label>
         <label>Install command<input id="mInstallCommand" class="mono" spellcheck="false"></label>
         <label>Uninstall command<input id="mUninstallCommand" class="mono" spellcheck="false"></label>
-        <label>Install for
-          <select id="mInstallContext"><option value="">(default)</option><option value="system">System</option><option value="user">User</option></select>
-        </label>
         <label>Notes<textarea id="mNotes" rows="2"></textarea></label>
       </section>
     </div>
+    <details class="deploysec" id="deploySec">
+      <summary>Deploy settings <span class="muted">- detection rule, requirements, return codes, dependencies</span></summary>
+      <div class="formgrid">
+        <section>
+          <h3>Detection rule</h3>
+          <label>Type<select id="xType"><option value="">(none - an app with its own package needs one)</option><option value="Script">Script</option><option value="Msi">MSI product code</option><option value="File">File or folder</option><option value="Registry">Registry</option></select></label>
+          <div data-det="Script"><label>Detection script <span class="muted">(writes output and exits 0 when installed)</span><textarea id="xScript" rows="8" class="monotext" spellcheck="false"></textarea></label></div>
+          <div data-det="Msi"><label>Product code<input id="xProductCode" class="mono" spellcheck="false" placeholder="{00000000-0000-0000-0000-000000000000}"></label></div>
+          <div data-det="File"><div class="two"><label>Folder<input id="xPath" class="mono" spellcheck="false" placeholder="C:\Program Files\Vendor"></label><label>File or folder name<input id="xName" class="mono" spellcheck="false"></label></div>
+            <label>Detect by<select id="xFileType"><option value="exists">Exists</option><option value="doesNotExist">Doesn't exist</option><option value="version">Version</option><option value="modifiedDate">Date modified</option><option value="createdDate">Date created</option><option value="sizeInMB">Size in MB</option></select></label></div>
+          <div data-det="Registry"><label>Key path<input id="xKey" class="mono" spellcheck="false" placeholder="HKEY_LOCAL_MACHINE\SOFTWARE\Vendor"></label><label>Value name<input id="xValueName" class="mono" spellcheck="false"></label>
+            <label>Detect by<select id="xRegType"><option value="exists">Exists</option><option value="doesNotExist">Doesn't exist</option><option value="string">String</option><option value="integer">Integer</option><option value="version">Version</option></select></label></div>
+          <div data-det="Msi File Registry"><div class="two"><label>Operator<select id="xOperator"><option value="notConfigured">(not configured)</option><option value="equal">Equals</option><option value="notEqual">Not equal</option><option value="greaterThan">Greater than</option><option value="greaterThanOrEqual">Greater than or equal</option><option value="lessThan">Less than</option><option value="lessThanOrEqual">Less than or equal</option></select></label><label>Value<input id="xValue" class="mono" spellcheck="false"></label></div></div>
+          <div data-det="File Registry"><label class="chk"><input type="checkbox" id="x32">Check the 32-bit location on 64-bit Windows</label></div>
+          <h3>Dependencies <span class="muted">(installed first)</span></h3>
+          <div class="deplist" id="xDeps"></div>
+        </section>
+        <section>
+          <h3>Requirements</h3>
+          <label>Architecture</label>
+          <div class="checks"><label class="chk"><input type="checkbox" data-xarch="x64">x64</label><label class="chk"><input type="checkbox" data-xarch="x86">x86</label><label class="chk"><input type="checkbox" data-xarch="arm64">arm64</label></div>
+          <div class="two">
+            <label>Install for<select id="xContext"><option>System</option><option>User</option></select></label>
+            <label>Minimum OS<select id="xMinOs"></select></label>
+            <label>Install time (min)<input id="xTime" inputmode="numeric"></label>
+            <label>Restart<select id="xRestart"><option value="basedOnReturnCode">Based on return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></label>
+            <label>Min. disk space (MB)<input id="xDisk" inputmode="numeric"></label>
+            <label>Min. memory (MB)<input id="xMem" inputmode="numeric"></label>
+            <label>Min. CPUs<input id="xCpus" inputmode="numeric"></label>
+            <label>Min. CPU speed (MHz)<input id="xSpeed" inputmode="numeric"></label>
+          </div>
+          <label class="chk"><input type="checkbox" id="xUninstall">Allow uninstall from Company Portal</label>
+          <label>Return codes <span class="muted">(code = type: success, softReboot, hardReboot, retry, failed)</span><textarea id="xCodes" rows="5" class="monotext"></textarea></label>
+        </section>
+      </div>
+    </details>
     <p class="formerror" id="appError" hidden></p>
     <div class="actions split">
       <button type="button" class="btn danger" id="btnRemoveApp">Remove from catalog...</button>

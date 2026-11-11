@@ -732,7 +732,7 @@ function Global:ConvertTo-WebDefaultSettings {
     if ([string]$Form.deviceRestartBehavior -notin 'basedOnReturnCode', 'allow', 'suppress', 'force') { return @{ Error = 'Unknown restart behaviour.' } }
     if ([string]$Form.minOSKey -notmatch '^W1[01]_\w+$') { return @{ Error = 'Unknown minimum OS.' } }
     return @{ Error = ''; Settings = [pscustomobject]@{
-        Architecture = ($arch -join ','); InstallContext = [string]$Form.installContext; MinOSKey = [string]$Form.minOSKey
+        Architecture = ($arch -join ','); InstallContext = $(if ([string]$Form.installContext -eq 'User') { 'User' } else { 'System' }); MinOSKey = [string]$Form.minOSKey
         MinDiskSpaceMB = $ints.minDiskSpaceMB; MinMemoryMB = $ints.minMemoryMB; MinProcessors = $ints.minProcessors; MinCpuSpeedMHz = $ints.minCpuSpeedMHz
         InstallTimeMinutes = (Get-NormalizedInstallTimeMinutes $ints.installTimeMinutes)
         DeviceRestartBehavior = [string]$Form.deviceRestartBehavior; AllowAvailableUninstall = [bool]$Form.allowAvailableUninstall
@@ -1013,13 +1013,100 @@ function Global:Get-WebAppEditable {
     }
 }
 
+function Global:ConvertTo-WebDeploySettings {
+    <#
+      Pure: the editor's "Deploy settings" section, checked the way the
+      classic deploy form checks it, as @{ Error; Values } - Values are
+      catalog metadata properties, ready to set. Error is '' when fine.
+      -AppNames: the catalog's apps (a dependency must be one of them, and
+      not the app itself, -Self).
+    #>
+    param($Form, [string[]]$AppNames = @(), [string]$Self = '')
+    $ops = 'notConfigured', 'equal', 'notEqual', 'greaterThan', 'greaterThanOrEqual', 'lessThan', 'lessThanOrEqual'
+    $d = $Form.detection
+    $rule = $null
+    switch ([string]$d.type) {
+        'Script' {
+            if (-not ([string]$d.script).Trim()) { return @{ Error = 'The detection script is empty.' } }
+            $rule = [pscustomobject]@{ Type = 'Script'; Script_Content = (ConvertTo-CanonicalLineEndings ([string]$d.script)).TrimEnd() }
+        }
+        'Msi' {
+            if (-not ([string]$d.productCode).Trim()) { return @{ Error = 'An MSI detection rule needs the product code.' } }
+            if ([string]$d.operator -notin $ops) { return @{ Error = 'Unknown version operator.' } }
+            $rule = [pscustomobject]@{ Type = 'Msi'; Msi_ProductCode = ([string]$d.productCode).Trim(); Msi_VersionOperator = [string]$d.operator; Msi_Version = ([string]$d.value).Trim() }
+        }
+        'File' {
+            if (-not ([string]$d.path).Trim() -or -not ([string]$d.name).Trim()) { return @{ Error = 'A file detection rule needs the folder and the file name.' } }
+            if ([string]$d.detectionType -notin 'exists', 'doesNotExist', 'modifiedDate', 'createdDate', 'version', 'sizeInMB') { return @{ Error = 'Unknown file detection type.' } }
+            if ([string]$d.operator -notin $ops) { return @{ Error = 'Unknown operator.' } }
+            $rule = [pscustomobject]@{ Type = 'File'; File_Path = ([string]$d.path).Trim(); File_Name = ([string]$d.name).Trim(); File_Check32Bit = [bool]$d.check32Bit
+                File_DetectionType = [string]$d.detectionType; File_Operator = [string]$d.operator; File_DetectionValue = ([string]$d.value).Trim() }
+        }
+        'Registry' {
+            if (-not ([string]$d.keyPath).Trim()) { return @{ Error = 'A registry detection rule needs the key path.' } }
+            if ([string]$d.detectionType -notin 'exists', 'doesNotExist', 'string', 'integer', 'version') { return @{ Error = 'Unknown registry detection type.' } }
+            if ([string]$d.operator -notin $ops) { return @{ Error = 'Unknown operator.' } }
+            $rule = [pscustomobject]@{ Type = 'Registry'; Reg_KeyPath = ([string]$d.keyPath).Trim(); Reg_ValueName = ([string]$d.valueName).Trim(); Reg_Check32Bit = [bool]$d.check32Bit
+                Reg_DetectionType = [string]$d.detectionType; Reg_Operator = [string]$d.operator; Reg_DetectionValue = ([string]$d.value).Trim() }
+        }
+        '' { $rule = $null }
+        default { return @{ Error = 'Unknown detection rule type.' } }
+    }
+    # The requirement fields are the same as the default values' - one checker.
+    $base = ConvertTo-WebDefaultSettings $Form
+    if ($base.Error) { return @{ Error = $base.Error } }
+    $deps = @(@($Form.dependencies) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
+    foreach ($dep in $deps) {
+        if ($dep -eq $Self) { return @{ Error = "An app can't depend on itself." } }
+        if ($AppNames -notcontains $dep) { return @{ Error = "Dependency '$dep' isn't an app in this catalog." } }
+    }
+    $b = $base.Settings
+    return @{ Error = ''; Values = [ordered]@{
+        detectionRule = $rule; architecture = $b.Architecture; minOSKey = $b.MinOSKey
+        minDiskSpaceMB = $b.MinDiskSpaceMB; minMemoryMB = $b.MinMemoryMB; minProcessors = $b.MinProcessors; minCpuSpeedMHz = $b.MinCpuSpeedMHz
+        installTimeMinutes = $b.InstallTimeMinutes; deviceRestartBehavior = $b.DeviceRestartBehavior; allowAvailableUninstall = $b.AllowAvailableUninstall
+        returnCodes = @($b.ReturnCodes); dependencies = $deps
+    } }
+}
+
+function Global:Get-WebDeployEditable {
+    # Pure: an app's metadata as the editor's "Deploy settings" section.
+    param($Metadata)
+    $m = $Metadata
+    $r = if ($m) { $m.detectionRule } else { $null }
+    $det = [ordered]@{ type = ''; script = ''; productCode = ''; operator = 'notConfigured'; value = ''; path = ''; name = ''; check32Bit = $false; detectionType = 'exists'; keyPath = ''; valueName = '' }
+    if ($r) {
+        $det.type = [string]$r.Type
+        switch ([string]$r.Type) {
+            'Script' { $det.script = [string]$r.Script_Content }
+            'Msi' { $det.productCode = [string]$r.Msi_ProductCode; $det.operator = [string]$r.Msi_VersionOperator; $det.value = [string]$r.Msi_Version }
+            'File' { $det.path = [string]$r.File_Path; $det.name = [string]$r.File_Name; $det.check32Bit = [bool]$r.File_Check32Bit; $det.detectionType = [string]$r.File_DetectionType; $det.operator = [string]$r.File_Operator; $det.value = [string]$r.File_DetectionValue }
+            'Registry' { $det.keyPath = [string]$r.Reg_KeyPath; $det.valueName = [string]$r.Reg_ValueName; $det.check32Bit = [bool]$r.Reg_Check32Bit; $det.detectionType = [string]$r.Reg_DetectionType; $det.operator = [string]$r.Reg_Operator; $det.value = [string]$r.Reg_DetectionValue }
+        }
+        if (-not $det.operator) { $det.operator = 'notConfigured' }
+    }
+    return [ordered]@{
+        detection = $det
+        architecture = @(([string]$(if ($m) { $m.architecture })) -split ',' | Where-Object { $_ }); installContext = $(if ($m -and [string]$m.installContext -eq 'User') { 'User' } else { 'System' })
+        minOSKey = [string]$(if ($m) { $m.minOSKey }); minDiskSpaceMB = [int]$(if ($m) { $m.minDiskSpaceMB }); minMemoryMB = [int]$(if ($m) { $m.minMemoryMB })
+        minProcessors = [int]$(if ($m) { $m.minProcessors }); minCpuSpeedMHz = [int]$(if ($m) { $m.minCpuSpeedMHz }); installTimeMinutes = [int]$(if ($m -and $m.installTimeMinutes) { $m.installTimeMinutes } else { 60 })
+        deviceRestartBehavior = [string]$(if ($m -and $m.deviceRestartBehavior) { $m.deviceRestartBehavior } else { 'basedOnReturnCode' }); allowAvailableUninstall = [bool]$(if ($m) { $m.allowAvailableUninstall })
+        returnCodes = @($(if ($m) { $m.returnCodes }) | Where-Object { $_ } | ForEach-Object { [ordered]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })
+        dependencies = @($(if ($m) { $m.dependencies }) | Where-Object { $_ } | ForEach-Object { [string]$_ })
+    }
+}
+
 function Global:Get-WebApp {
     param($Data)
     $catalog = Read-WebCatalogRecords
     $name = [string]$Data.name
     $app = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
     if (-not $app) { return @{ ok = $false; error = "No app called '$name' in the catalog (it may have been renamed or removed - Reload)." } }
-    return @{ ok = $true; app = (Get-WebAppEditable $app); knownGroups = @(Get-AllKnownGroups | Sort-Object -Unique) }
+    $editable = Get-WebAppEditable $app
+    $meta = if ($app.metadata) { $app.metadata } else { try { Get-DefaultAppMetadata -AppName $app.appName -WingetId $app.wingetId -Uncommon (-not $app.wingetId) } catch { $null } }
+    $editable.deploy = Get-WebDeployEditable $meta
+    return @{ ok = $true; app = $editable; knownGroups = @(Get-AllKnownGroups | Sort-Object -Unique)
+        appNames = @($catalog.Apps | ForEach-Object { $_.appName } | Where-Object { $_ -ne $name } | Sort-Object); minOsChoices = @(Get-WebMinOsChoices) }
 }
 
 function Global:Merge-WebAppEdit {
@@ -1036,7 +1123,8 @@ function Global:Merge-WebAppEdit {
         @(@($list) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
     }
     $metaEdit = $Edit.metadata
-    $metaFields = 'description', 'publisher', 'owner', 'developer', 'informationUrl', 'privacyUrl', 'notes', 'appVersion', 'installCommand', 'uninstallCommand', 'installContext'
+    # installContext is in the Deploy settings section (ConvertTo-WebDeploySettings).
+    $metaFields = 'description', 'publisher', 'owner', 'developer', 'informationUrl', 'privacyUrl', 'notes', 'appVersion', 'installCommand', 'uninstallCommand'
     $metadata = if ($Existing -and $Existing.metadata) { $Existing.metadata.PSObject.Copy() } else { $null }
     $anyMetaFilled = $metaEdit -and @($metaFields | Where-Object { [string]$metaEdit.$_ }).Count -gt 0
     if (-not $metadata -and $anyMetaFilled -and $Defaults) { $metadata = $Defaults.PSObject.Copy() }
@@ -1112,6 +1200,26 @@ function Global:Save-WebApp {
     $record = Merge-WebAppEdit -Existing $existing -Edit $edit -Defaults $defaults
     $problem = Test-WebAppEdit -Record $record -OriginalName $original -Others @($catalog.Apps)
     if ($problem) { return @{ ok = $false; error = $problem } }
+    foreach ($urlField in 'informationUrl', 'privacyUrl') {
+        $u = [string]$edit.metadata.$urlField
+        if ($u -and $u -notmatch '^https?://\S+$') { return @{ ok = $false; error = "The $(if ($urlField -eq 'informationUrl') { 'information' } else { 'privacy' }) URL must start with http:// or https://." } }
+    }
+    if ($edit.deploy) {
+        $deploy = ConvertTo-WebDeploySettings -Form $edit.deploy -AppNames @($catalog.Apps | ForEach-Object { $_.appName }) -Self $record.appName
+        if ($deploy.Error) { return @{ ok = $false; error = $deploy.Error } }
+        # Deploy settings make an app's metadata exist, defaults underneath, like the classic deploy form does.
+        if (-not $record.metadata) {
+            $base = if ($defaults) { $defaults } else { try { Get-DefaultAppMetadata -AppName $record.appName -WingetId $record.wingetId -Uncommon (-not $record.wingetId) } catch { $null } }
+            if ($base) { $record.metadata = $base.PSObject.Copy() }
+        }
+        if ($record.metadata) {
+            foreach ($k in $deploy.Values.Keys) {
+                if ($record.metadata.PSObject.Properties.Name -contains $k) { $record.metadata.$k = $deploy.Values[$k] }
+                else { $record.metadata | Add-Member -NotePropertyName $k -NotePropertyValue $deploy.Values[$k] }
+            }
+            $record.metadata.installContext = $(if ([string]$edit.deploy.installContext -eq 'User') { 'User' } else { 'System' })
+        }
+    }
 
     $folder = Get-AppFolder -Kind Catalog -Create
     $newFile = Join-Path $folder ((Get-SafeFileNameForApp -Name $record.appName) + '.json')

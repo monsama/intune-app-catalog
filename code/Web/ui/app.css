@@ -197,6 +197,11 @@ textarea.monotext { font-family: var(--mono); font-size: 12px; }
 .pullapp td.v { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
 .tablewrap.short { max-height: 55vh; flex: none; }
 
+.deploysec { margin-top: 16px; border: 1px solid var(--bd2); border-radius: var(--r-m); padding: 8px 14px 14px; }
+.deploysec summary { cursor: pointer; font-weight: 600; font-size: 13px; padding: 4px 0; }
+.deplist { display: flex; flex-wrap: wrap; gap: 4px 16px; max-height: 140px; overflow: auto; }
+.deplist label.chk { margin: 4px 0 0; }
+
 /* ---- toast ---- */
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 9px 16px; border-radius: var(--r-m); font-size: 13px; box-shadow: var(--shadow); max-width: 80vw; }
 .toast.err { background: var(--err); color: #fff; }
