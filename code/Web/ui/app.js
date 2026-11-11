@@ -120,7 +120,9 @@ async function loadState() {
 }
 
 // ---------------------------------------------------------------- apps
-let apps = [], sortKey = 'name', sortDesc = false, selected = null;
+let apps = [], sortKey = 'name', sortDesc = false, lastClicked = null;
+const selected = new Set();
+let visible = [];
 
 function statusPill(row) {
   const s = row.status || '';
@@ -160,9 +162,11 @@ function renderApps() {
     const c = typeof a === 'number' ? a - b : a.localeCompare(b, undefined, { numeric: true });
     return sortDesc ? -c : c;
   });
+  visible = list.map(a => a.name);
+  for (const n of [...selected]) if (!apps.some(a => a.name === n)) selected.delete(n);
   const body = $('gridBody');
   body.replaceChildren(...list.map(a => {
-    const tr = el('tr', { 'data-name': a.name, class: a.name === selected ? 'sel' : '', title: a.appId ? 'App ID ' + a.appId : 'Not in Intune yet' },
+    const tr = el('tr', { 'data-name': a.name, class: selected.has(a.name) ? 'sel' : '', title: a.appId ? 'App ID ' + a.appId : 'Not in Intune yet' },
       el('td', { class: 'name', text: a.name }),
       el('td', { class: 'mono', text: a.wingetId || '-' }),
       el('td', { text: a.type || '' }),
@@ -170,7 +174,8 @@ function renderApps() {
       el('td', { class: 'num', title: 'Required / Available / Uninstall', text: `${a.required} / ${a.available} / ${a.uninstall}` }),
       el('td', {}, statusPill(a)),
       el('td', {}, auditPill(a.audit)));
-    tr.addEventListener('click', () => { selected = a.name; for (const r of body.children) r.classList.toggle('sel', r === tr); });
+    tr.addEventListener('click', e => selectRow(a.name, e));
+    tr.addEventListener('dblclick', () => openEditor(a.name));
     return tr;
   }));
   $('count').textContent = list.length === apps.length ? `${apps.length} apps` : `${list.length} of ${apps.length} apps`;
@@ -178,9 +183,86 @@ function renderApps() {
     th.classList.toggle('sorted', th.dataset.sort === sortKey);
     th.classList.toggle('desc', th.dataset.sort === sortKey && sortDesc);
   }
+  updateActions();
   $('emptyState').hidden = apps.length > 0;
   $('grid').hidden = apps.length === 0;
 }
+function selectRow(name, e) {
+  if (e.shiftKey && lastClicked && visible.includes(lastClicked)) {
+    const [i, j] = [visible.indexOf(lastClicked), visible.indexOf(name)].sort((x, y) => x - y);
+    if (!e.ctrlKey && !e.metaKey) selected.clear();
+    for (const n of visible.slice(i, j + 1)) selected.add(n);
+  } else if (e.ctrlKey || e.metaKey) {
+    if (selected.has(name)) selected.delete(name); else selected.add(name);
+    lastClicked = name;
+  } else {
+    selected.clear(); selected.add(name); lastClicked = name;
+  }
+  for (const r of $('gridBody').children) r.classList.toggle('sel', selected.has(r.dataset.name));
+  updateActions();
+}
+function updateActions() {
+  const n = selected.size;
+  $('btnEditApp').disabled = n !== 1;
+  $('btnDeploy').disabled = n === 0;
+  $('btnPush').disabled = n === 0 || [...selected].some(s => !(apps.find(a => a.name === s) || {}).hasAppId);
+  $('btnDeploy').textContent = n > 1 ? `Deploy (${n})` : 'Deploy';
+  $('btnPush').textContent = n > 1 ? `Push groups (${n})` : 'Push groups';
+}
+
+// ---------------------------------------------------------------- app editor
+const lines = id => $(id).value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+const metaIds = { description: 'mDescription', publisher: 'mPublisher', appVersion: 'mAppVersion', owner: 'mOwner', developer: 'mDeveloper',
+  informationUrl: 'mInformationUrl', privacyUrl: 'mPrivacyUrl', installCommand: 'mInstallCommand', uninstallCommand: 'mUninstallCommand',
+  installContext: 'mInstallContext', notes: 'mNotes' };
+let editingName = '';
+function fillEditor(a) {
+  $('aName').value = a.appName || ''; $('aWinget').value = a.wingetId || ''; $('aAppId').value = a.appId || '';
+  $('gRequired').value = (a.requiredFor || []).join('\n'); $('gAvailable').value = (a.availableFor || []).join('\n');
+  $('gUninstall').value = (a.uninstallFor || []).join('\n'); $('gExclude').value = (a.excludeFor || []).join('\n');
+  for (const [k, id] of Object.entries(metaIds)) $(id).value = (a.metadata && a.metadata[k]) || '';
+  $('metaNote').textContent = a.hasMetadata ? '' : '(not set yet - the defaults are used when it is deployed)';
+  $('appError').hidden = true;
+}
+async function openEditor(name) {
+  editingName = name || '';
+  if (name) {
+    const r = await api('/api/app-get', { name });
+    if (!r.ok) { toast(r.error, true); return; }
+    fillEditor(r.app);
+    $('knownGroups').textContent = r.knownGroups.length ? 'Groups used in this catalog: ' + r.knownGroups.join(', ') : '';
+    $('appTitle').textContent = 'Edit ' + name;
+  } else {
+    fillEditor({ hasMetadata: false });
+    $('knownGroups').textContent = '';
+    $('appTitle').textContent = 'Add an app';
+  }
+  $('btnRemoveApp').hidden = !name;
+  $('dlgApp').showModal();
+  $('aName').focus();
+}
+$('btnAddApp').addEventListener('click', () => openEditor(''));
+$('btnEditApp').addEventListener('click', () => { if (selected.size === 1) openEditor([...selected][0]); });
+$('appForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const app = {
+    appName: $('aName').value, wingetId: $('aWinget').value, appId: $('aAppId').value,
+    requiredFor: lines('gRequired'), availableFor: lines('gAvailable'), uninstallFor: lines('gUninstall'), excludeFor: lines('gExclude'),
+    metadata: Object.fromEntries(Object.entries(metaIds).map(([k, id]) => [k, $(id).value])),
+  };
+  const r = await api('/api/app-save', { originalName: editingName, app });
+  if (!r.ok) { const p = $('appError'); p.textContent = r.error; p.hidden = false; return; }
+  $('dlgApp').close();
+  selected.clear(); selected.add(r.name); lastClicked = r.name;
+  await loadApps();
+});
+$('btnRemoveApp').addEventListener('click', async () => {
+  if (!confirm(`Remove "${editingName}" from the catalog?\n\nOnly the catalog changes - nothing in Intune. A copy of its file goes to the Backups folder.`)) return;
+  const r = await api('/api/app-remove', { name: editingName });
+  if (!r.ok) { toast(r.error, true); return; }
+  $('dlgApp').close(); selected.delete(editingName); await loadApps();
+});
+
 async function loadApps() {
   const r = await api('/api/catalog');
   if (!r.ok) { toast(r.error || 'Could not read the catalog.', true); return; }

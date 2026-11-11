@@ -42,6 +42,10 @@
       </select>
       <span class="count" id="count"></span>
       <span class="spacer"></span>
+      <button class="btn primary" id="btnAddApp">Add app</button>
+      <button class="btn" id="btnEditApp" disabled>Edit</button>
+      <button class="btn" id="btnDeploy" disabled title="Create or update the selected apps in Intune">Deploy</button>
+      <button class="btn" id="btnPush" disabled title="Push the selected apps' groups to Intune">Push groups</button>
       <button class="btn" id="btnReload">Reload</button>
       <button class="btn" id="btnCatalogFolder">Open catalog folder</button>
     </div>
@@ -64,7 +68,7 @@
         <p class="path" id="emptyPath"></p>
       </div>
     </div>
-    <p class="hint">Select an app and open the classic window to edit, deploy or assign it - those screens move here next.</p>
+    <p class="hint">Click to select, Ctrl/Shift+click for several, double-click to edit.</p>
   </section>
 
   <!-- ============ Settings ============ -->
@@ -149,6 +153,53 @@
   <p class="sub">Added to the app registration as Application permissions. Anything already listed is kept. Afterwards Entra opens so an admin can grant consent.</p>
   <ul class="permlist" id="permList"></ul>
   <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnPermsGo">Add and open Entra</button></div>
+</dialog>
+
+<dialog id="dlgApp" class="wide">
+  <form id="appForm" method="dialog">
+    <h2 id="appTitle">Edit app</h2>
+    <div class="formgrid">
+      <section>
+        <h3>General</h3>
+        <label>Name<input id="aName" required autocomplete="off"></label>
+        <label>Winget ID <span class="muted">(empty for an app with its own package)</span><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip"></label>
+        <label>App ID in Intune <span class="muted">(empty until it's deployed)</span><input id="aAppId" autocomplete="off" spellcheck="false"></label>
+        <h3>Assignments <span class="muted">(one group per line)</span></h3>
+        <div class="groups4">
+          <label>Required<textarea id="gRequired" rows="4" spellcheck="false"></textarea></label>
+          <label>Available<textarea id="gAvailable" rows="4" spellcheck="false"></textarea></label>
+          <label>Uninstall<textarea id="gUninstall" rows="4" spellcheck="false"></textarea></label>
+          <label>Excluded<textarea id="gExclude" rows="4" spellcheck="false"></textarea></label>
+        </div>
+        <p class="sub" id="knownGroups"></p>
+      </section>
+      <section>
+        <h3>Intune details <span class="muted" id="metaNote"></span></h3>
+        <label>Description<textarea id="mDescription" rows="3"></textarea></label>
+        <div class="two">
+          <label>Publisher<input id="mPublisher"></label>
+          <label>App version<input id="mAppVersion"></label>
+          <label>Owner<input id="mOwner"></label>
+          <label>Developer<input id="mDeveloper"></label>
+        </div>
+        <label>Information URL<input id="mInformationUrl" spellcheck="false"></label>
+        <label>Privacy URL<input id="mPrivacyUrl" spellcheck="false"></label>
+        <label>Install command<input id="mInstallCommand" class="mono" spellcheck="false"></label>
+        <label>Uninstall command<input id="mUninstallCommand" class="mono" spellcheck="false"></label>
+        <label>Install for
+          <select id="mInstallContext"><option value="">(default)</option><option value="system">System</option><option value="user">User</option></select>
+        </label>
+        <label>Notes<textarea id="mNotes" rows="2"></textarea></label>
+      </section>
+    </div>
+    <p class="formerror" id="appError" hidden></p>
+    <div class="actions split">
+      <button type="button" class="btn danger" id="btnRemoveApp">Remove from catalog...</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="submit" class="btn primary" id="btnSaveApp">Save</button>
+    </div>
+  </form>
 </dialog>
 
 <div class="toast" id="toast" role="status" hidden></div>

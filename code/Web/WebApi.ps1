@@ -48,16 +48,12 @@ function Global:Get-WebCatalog {
       window may be open on the same folder, and a copy kept here would go
       stale the moment it saved something.
     #>
-    $path = Get-AppFolder -Kind Catalog
+    $catalog = Read-WebCatalogRecords
+    $path = $catalog.Path
+    $apps = $catalog.Apps
+    $failed = $catalog.Failed
     $rows = New-Object System.Collections.Generic.List[object]
-    $failed = New-Object System.Collections.Generic.List[string]
     if (Test-Path -LiteralPath $path) {
-        $files = @(Get-ChildItem -LiteralPath $path -Filter '*.json' -File -ErrorAction SilentlyContinue | Sort-Object Name)
-        $apps = New-Object System.Collections.Generic.List[object]
-        foreach ($file in $files) {
-            try { $apps.Add((ConvertTo-AppRecord (Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json))) }
-            catch { $failed.Add($file.Name) }
-        }
         try { Load-LastAuditCache } catch { }
         $index = Get-PackageFolderIndex -Root (Get-AppFolder -Kind Packages)
         for ($i = 0; $i -lt $apps.Count; $i++) {
@@ -79,7 +75,7 @@ function Global:Get-WebCatalog {
             })
         }
     }
-    return @{ ok = $true; path = $path; exists = (Test-Path -LiteralPath $path); apps = $rows.ToArray(); failed = $failed.ToArray() }
+    return @{ ok = $true; path = $path; exists = (Test-Path -LiteralPath $path); apps = $rows.ToArray(); failed = @($failed) }
 }
 
 function Global:Save-WebSettings {
@@ -406,6 +402,194 @@ function Global:Get-WebLog {
     return @{ ok = $true; next = $all.Count; lines = @($all | Select-Object -Skip $from) }
 }
 
+function Global:Read-WebCatalogRecords {
+    <#
+      Every app in the catalog folder as an app record, and the same list
+      put into $Global:App.Apps - the shared functions that look at "the
+      catalog" (default dependencies, known groups) read it from there.
+      Read fresh each time: the classic window may have saved since.
+    #>
+    $path = Get-AppFolder -Kind Catalog
+    $apps = New-Object System.Collections.ArrayList
+    $failed = New-Object System.Collections.Generic.List[string]
+    if (Test-Path -LiteralPath $path) {
+        foreach ($file in @(Get-ChildItem -LiteralPath $path -Filter '*.json' -File -ErrorAction SilentlyContinue | Sort-Object Name)) {
+            try { [void]$apps.Add((ConvertTo-AppRecord (Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json))) }
+            catch { $failed.Add($file.Name) }
+        }
+    }
+    $Global:App.Apps = $apps
+    return @{ Path = $path; Apps = $apps; Failed = $failed.ToArray() }
+}
+
+function Global:Test-WebWingetId {
+    # Pure: a Winget ID as winget itself allows them (letters, digits, . _ + -).
+    param([string]$Id)
+    if (-not $Id) { return $true }
+    return ($Id -match '^[A-Za-z0-9][A-Za-z0-9._+\-]{0,127}$')
+}
+
+function Global:Get-WebAppEditable {
+    # Pure: an app record as the editor's JSON - every field it shows.
+    param($App)
+    $m = $App.metadata
+    return [ordered]@{
+        appName      = [string]$App.appName
+        wingetId     = [string]$App.wingetId
+        appId        = [string]$App.appId
+        intuneAppType = [string]$App.intuneAppType
+        requiredFor  = @($App.requiredFor | ForEach-Object { [string]$_ })
+        availableFor = @($App.availableFor | ForEach-Object { [string]$_ })
+        uninstallFor = @($App.uninstallFor | ForEach-Object { [string]$_ })
+        excludeFor   = @($App.excludeFor | ForEach-Object { [string]$_ })
+        hasMetadata  = [bool]$m
+        metadata     = [ordered]@{
+            description      = [string]$(if ($m) { $m.description })
+            publisher        = [string]$(if ($m) { $m.publisher })
+            owner            = [string]$(if ($m) { $m.owner })
+            developer        = [string]$(if ($m) { $m.developer })
+            informationUrl   = [string]$(if ($m) { $m.informationUrl })
+            privacyUrl       = [string]$(if ($m) { $m.privacyUrl })
+            notes            = [string]$(if ($m) { $m.notes })
+            appVersion       = [string]$(if ($m) { $m.appVersion })
+            installCommand   = [string]$(if ($m) { $m.installCommand })
+            uninstallCommand = [string]$(if ($m) { $m.uninstallCommand })
+            installContext   = [string]$(if ($m) { $m.installContext })
+        }
+    }
+}
+
+function Global:Get-WebApp {
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $name = [string]$Data.name
+    $app = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $app) { return @{ ok = $false; error = "No app called '$name' in the catalog (it may have been renamed or removed - Reload)." } }
+    return @{ ok = $true; app = (Get-WebAppEditable $app); knownGroups = @(Get-AllKnownGroups | Sort-Object -Unique) }
+}
+
+function Global:Merge-WebAppEdit {
+    <#
+      Pure: the app record after the editor's changes - everything the
+      editor doesn't show (detection rule, dependencies, supersedence,
+      package path, Intune's type and version, ...) carried over untouched.
+      Metadata is only created for an app that had none when a metadata
+      field was actually filled in, from the computed defaults.
+    #>
+    param($Existing, $Edit, $Defaults)
+    $groups = {
+        param($list)
+        @(@($list) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
+    }
+    $metaEdit = $Edit.metadata
+    $metaFields = 'description', 'publisher', 'owner', 'developer', 'informationUrl', 'privacyUrl', 'notes', 'appVersion', 'installCommand', 'uninstallCommand', 'installContext'
+    $metadata = if ($Existing -and $Existing.metadata) { $Existing.metadata.PSObject.Copy() } else { $null }
+    $anyMetaFilled = $metaEdit -and @($metaFields | Where-Object { [string]$metaEdit.$_ }).Count -gt 0
+    if (-not $metadata -and $anyMetaFilled -and $Defaults) { $metadata = $Defaults.PSObject.Copy() }
+    if ($metadata -and $metaEdit) {
+        foreach ($f in $metaFields) {
+            if ($metadata.PSObject.Properties.Name -contains $f) { $metadata.$f = [string]$metaEdit.$f }
+            else { $metadata | Add-Member -NotePropertyName $f -NotePropertyValue ([string]$metaEdit.$f) }
+        }
+        if (-not $metadata.appVersion) { $metadata.appVersion = $null }
+    }
+    return [pscustomobject]@{
+        appId            = ([string]$Edit.appId).Trim()
+        appName          = (([string]$Edit.appName).Trim() -replace '\s+', ' ')
+        wingetId         = ([string]$Edit.wingetId).Trim()
+        intuneAppType    = $(if ($Existing) { [string]$Existing.intuneAppType } else { '' })
+        intuneAppVersion = $(if ($Existing) { [string]$Existing.intuneAppVersion } else { '' })
+        packagePath      = $(if ($Existing) { [string]$Existing.packagePath } else { '' })
+        requiredFor      = & $groups $Edit.requiredFor
+        availableFor     = & $groups $Edit.availableFor
+        uninstallFor     = & $groups $Edit.uninstallFor
+        excludeFor       = & $groups $Edit.excludeFor
+        metadata         = $metadata
+    }
+}
+
+function Global:Test-WebAppEdit {
+    <#
+      Pure: why an edited app can't be saved ('' when it can) - the same
+      rules the classic window's save applies, decided here instead of in
+      a message box: a name, unique by name and by file name, a GUID or no
+      App ID, a Winget ID winget would accept.
+    #>
+    param($Record, [string]$OriginalName, [object[]]$Others)
+    if (-not $Record.appName) { return 'The app needs a name.' }
+    if ($Record.appId -and $Record.appId -notmatch '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$') { return "The App ID must be a GUID (or empty for an app that isn't in Intune yet)." }
+    if (-not (Test-WebWingetId $Record.wingetId)) { return "'$($Record.wingetId)' isn't a Winget ID winget accepts (letters, digits, . _ + -)." }
+    $key = $Record.appName.ToLowerInvariant()
+    $file = Get-SafeFileNameForApp -Name $Record.appName
+    foreach ($o in @($Others)) {
+        if (-not $o -or $o.appName -eq $OriginalName) { continue }
+        if (($o.appName.Trim() -replace '\s+', ' ').ToLowerInvariant() -eq $key) { return "Another app is already called '$($o.appName)'." }
+        if ((Get-SafeFileNameForApp -Name $o.appName) -eq $file) { return "'$($Record.appName)' and '$($o.appName)' would be saved to the same file ($file.json). Choose a different name." }
+        if ($Record.appId -and $o.appId -eq $Record.appId) { return "'$($o.appName)' already has App ID $($Record.appId)." }
+    }
+    return ''
+}
+
+function Global:Backup-WebAppFile {
+    # A copy of one app's file in the Backups folder before it's overwritten or removed.
+    param([string]$FilePath)
+    if (-not (Test-Path -LiteralPath $FilePath)) { return }
+    try {
+        $dir = Join-Path (Get-AppFolder -Kind Backups -Create) ("app-edit_" + (Get-Date -Format 'yyyy-MM-dd'))
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        Copy-Item -LiteralPath $FilePath -Destination (Join-Path $dir ((Get-Date -Format 'HHmmss') + '_' + (Split-Path $FilePath -Leaf))) -Force
+    }
+    catch { }
+}
+
+function Global:Save-WebApp {
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $original = [string]$Data.originalName
+    $existing = if ($original) { $catalog.Apps | Where-Object { $_.appName -eq $original } | Select-Object -First 1 } else { $null }
+    if ($original -and -not $existing) { return @{ ok = $false; error = "'$original' is no longer in the catalog (renamed or removed elsewhere?). Reload and try again." } }
+    $edit = $Data.app
+    $defaults = $null
+    if (-not ($existing -and $existing.metadata)) {
+        $name = ([string]$edit.appName).Trim()
+        $wid = ([string]$edit.wingetId).Trim()
+        try { $defaults = Get-DefaultAppMetadata -AppName $name -WingetId $wid -Uncommon (-not $wid) } catch { $defaults = $null }
+    }
+    $record = Merge-WebAppEdit -Existing $existing -Edit $edit -Defaults $defaults
+    $problem = Test-WebAppEdit -Record $record -OriginalName $original -Others @($catalog.Apps)
+    if ($problem) { return @{ ok = $false; error = $problem } }
+
+    $folder = Get-AppFolder -Kind Catalog -Create
+    $newFile = Join-Path $folder ((Get-SafeFileNameForApp -Name $record.appName) + '.json')
+    $oldFile = if ($existing) { Join-Path $folder ((Get-SafeFileNameForApp -Name $existing.appName) + '.json') } else { $null }
+    Backup-WebAppFile $newFile
+    try {
+        [System.IO.File]::WriteAllText($newFile, (ConvertTo-SingleAppJson -App $record), (New-Object System.Text.UTF8Encoding($false)))
+    }
+    catch { return @{ ok = $false; error = "Couldn't write $newFile`: $($_.Exception.Message)" } }
+    if ($oldFile -and $oldFile -ne $newFile -and (Test-Path -LiteralPath $oldFile)) {
+        Backup-WebAppFile $oldFile
+        Remove-Item -LiteralPath $oldFile -Force -ErrorAction SilentlyContinue
+    }
+    Write-Log "[OK] $(if ($existing) { 'Saved' } else { 'Added' }): $($record.appName)$(if ($existing -and $existing.appName -ne $record.appName) { " (was $($existing.appName))" })."
+    return @{ ok = $true; name = $record.appName }
+}
+
+function Global:Remove-WebApp {
+    # Removes an app from the catalog only - nothing in Intune changes.
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $name = [string]$Data.name
+    $app = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $app) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
+    $file = Join-Path (Get-AppFolder -Kind Catalog) ((Get-SafeFileNameForApp -Name $app.appName) + '.json')
+    Backup-WebAppFile $file
+    try { Remove-Item -LiteralPath $file -Force -ErrorAction Stop }
+    catch { return @{ ok = $false; error = "Couldn't remove $file`: $($_.Exception.Message)" } }
+    Write-Log "[OK] Removed from the catalog: $name (a copy is in the Backups folder; nothing in Intune changed)."
+    return @{ ok = $true }
+}
+
 function Global:Invoke-WebApi {
     # The route table. $Data is the token-checked request body.
     param([string]$Path, $Data)
@@ -422,6 +606,9 @@ function Global:Invoke-WebApi {
         '/api/permission-choice' { return (Get-WebPermissionChoice) }
         '/api/open'             { return (Open-WebTarget $Data) }
         '/api/log'              { return (Get-WebLog $Data) }
+        '/api/app-get'          { return (Get-WebApp $Data) }
+        '/api/app-save'         { return (Save-WebApp $Data) }
+        '/api/app-remove'       { return (Remove-WebApp $Data) }
         default                 { return @{ ok = $false; error = 'unknown' } }
     }
 }
