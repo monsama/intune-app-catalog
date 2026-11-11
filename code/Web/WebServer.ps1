@@ -31,6 +31,9 @@ function Global:Read-WebRequest {
         while ($true) {
             $read = $ns.Read($buf, 0, $buf.Length); if ($read -le 0) { break }
             $ms.Write($buf, 0, $read); $arr = $ms.ToArray()
+            # Headers end within 64 KB or the request isn't answered - a client
+            # that never ends them would otherwise grow this buffer forever.
+            if ($headerEnd -lt 0 -and $arr.Length -gt 64KB -and -not (Test-WebHeaderEnd $arr)) { return $null }
             for ($i = [Math]::Max(0, $arr.Length - $read - 3); $i -le $arr.Length - 4; $i++) {
                 if ($arr[$i] -eq 13 -and $arr[$i + 1] -eq 10 -and $arr[$i + 2] -eq 13 -and $arr[$i + 3] -eq 10) { $headerEnd = $i; break }
             }
@@ -43,6 +46,7 @@ function Global:Read-WebRequest {
                 $arr = $ms.ToArray(); $body = ''
                 if ($contentLength -gt 0) { $body = [Text.Encoding]::UTF8.GetString($arr, $bodyStart, [Math]::Min($contentLength, $arr.Length - $bodyStart)) }
                 $parts = (($headerText -split "`r`n")[0]) -split ' '
+                if ($parts.Count -lt 3 -or [string]$parts[1] -notmatch '^/') { return $null }
                 $hostHeader = if ($headerText -match '(?im)^Host:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { '' }
                 $originHeader = if ($headerText -match '(?im)^Origin:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { $null }
                 $typeHeader = if ($headerText -match '(?im)^Content-Type:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { '' }
@@ -54,6 +58,15 @@ function Global:Read-WebRequest {
     }
     catch { }
     return $null
+}
+
+function Global:Test-WebHeaderEnd {
+    # Whether the bytes hold the blank line that ends HTTP headers.
+    param([byte[]]$Bytes)
+    for ($i = 0; $i -le $Bytes.Length - 4; $i++) {
+        if ($Bytes[$i] -eq 13 -and $Bytes[$i + 1] -eq 10 -and $Bytes[$i + 2] -eq 13 -and $Bytes[$i + 3] -eq 10) { return $true }
+    }
+    return $false
 }
 
 function Global:Send-WebResponse {
@@ -164,7 +177,7 @@ function Global:Write-Log {
       callers that pass one keep working.
     #>
     param([string]$Text, $Color = $null)
-    $line = ($Text -replace "`r`n", "`n").TrimEnd("`n")
+    $line = (Protect-LogText ($Text -replace "`r`n", "`n")).TrimEnd("`n")
     if (-not $line) { return }
     $level = if ($line -match '^\s*\[(FAILED|ERROR)\]') { 'error' } elseif ($line -match '^\s*\[(WARN)\]') { 'warn' } elseif ($line -match '^\s*\[OK\]') { 'ok' } else { 'info' }
     # $null check, not truthiness: an empty list is $false in PowerShell, so the

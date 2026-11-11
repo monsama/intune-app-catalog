@@ -27,6 +27,8 @@ function Global:Get-WebState {
         }
         cert        = @{ text = [string]$cert.Text; level = ([string]$cert.Level) }
         configured  = [bool](Test-GraphCredentialsConfigured -Quiet)
+        # Graph answers come from a file (INTUNE_CATALOG_TEST_GRAPH) - the page says so.
+        testMode    = [bool]$Global:App.TestGraph
         moduleOk    = [bool](Test-GraphModuleHere)
         # Settings > Automatic checks: what the page runs when it opens.
         startup     = @{ drift = [bool]$Global:App.CheckDriftOnStartup; fullAudit = [bool]$Global:App.RunFullAuditOnStartup }
@@ -215,7 +217,7 @@ function Global:Get-WebJobPoll {
         finally { $fs.Dispose() }
     }
     catch { }
-    $response = [ordered]@{ ok = $true; text = $text; offset = $offset; done = $false }
+    $response = [ordered]@{ ok = $true; text = (Protect-LogText $text); offset = $offset; done = $false }
     if ($exited) {
         $response.done = $true
         $response.exitCode = $job.Process.ExitCode

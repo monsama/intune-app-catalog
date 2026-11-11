@@ -85,6 +85,10 @@ $testableFunctionNames = @(
     "Test-AppIsUncommon",
     # winget output (Winget.ps1)
     "ConvertFrom-WingetSearchOutput",
+    "ConvertTo-WindowsArgument",
+    # Security: secrets out of logs, folder paths (Helpers.ps1, AppFolders.ps1)
+    "Protect-LogText",
+    "Test-AppFolderPath",
     "Get-WingetShowVerdict",
     # Diagnostics (Diagnostics.ps1)
     "Get-CatalogDiagnosticLines",
@@ -2307,6 +2311,38 @@ Assert-True ($diag[4].Level -eq 'failed') "Diagnostics: names that differ only i
 Assert-True ($diag[5].Level -eq 'failed') "Diagnostics: App IDs that differ only in case are duplicates"
 Assert-True ($diag[6].Level -eq 'info' -and (@($diag[6].Items) -join ',') -eq 'Old-App') "Diagnostics: only the package folder no app uses (by name or by its package path) is a leftover"
 Assert-Equal 'ok' (@(Get-CatalogDiagnosticLines -Apps @() -PackageFolders @()))[0].Level "Diagnostics: an empty catalog has nothing to warn about"
+
+
+# =================================================================
+# Security: quoting, secrets in logs, folder paths
+# =================================================================
+Assert-Equal '"abc"' (ConvertTo-WindowsArgument 'abc') "Windows argument: plain text is quoted"
+Assert-Equal '"a b"' (ConvertTo-WindowsArgument 'a b') "Windows argument: a space stays inside one argument"
+Assert-Equal '"x\\"' (ConvertTo-WindowsArgument 'x\') "Windows argument: a trailing backslash can't escape the closing quote"
+Assert-Equal '"say \"hi\""' (ConvertTo-WindowsArgument 'say "hi"') "Windows argument: quotes are escaped, not dropped"
+Assert-Equal '"a\\\"b"' (ConvertTo-WindowsArgument 'a\"b') "Windows argument: backslashes before a quote are doubled"
+Assert-Equal '"C:\dir\x"' (ConvertTo-WindowsArgument 'C:\dir\x') "Windows argument: backslashes elsewhere stay as they are"
+Assert-Equal '""' (ConvertTo-WindowsArgument '') "Windows argument: empty is an empty argument"
+
+$sasLine = 'PUT https://x.blob.core.windows.net/c/f?sv=2024-01-01&se=2026&sig=AbC%2Fdef123%3D&sp=w failed'
+$hidden = Protect-LogText $sasLine
+Assert-True ($hidden -notmatch 'AbC' -and $hidden -like '*sig=`[hidden`]&sp=w failed*') "Log text: a signed URL's signature is hidden, the rest kept" $hidden
+Assert-True ((Protect-LogText 'Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOi.abc') -notmatch 'eyJ0eXAi') "Log text: a bearer token is hidden"
+$jwt = 'token eyJhbGciOiJSUzI1NiJ9.eyJhdWQiOiJodHRwczovL2dyYXBo.c2lnbmF0dXJlLXBhcnQ end'
+Assert-Equal 'token [token hidden] end' (Protect-LogText $jwt) "Log text: a JSON Web Token on its own is hidden"
+Assert-True ((Protect-LogText 'client_secret=s3cr3t&x=1') -eq 'client_secret=[hidden]&x=1') "Log text: client_secret values are hidden"
+Assert-True ((Protect-LogText '{"password": "hunter2"}') -notmatch 'hunter2') "Log text: a password in JSON is hidden"
+Assert-Equal '[OK] Deployed 7-Zip (App ID 0f0e)' (Protect-LogText '[OK] Deployed 7-Zip (App ID 0f0e)') "Log text: ordinary lines are untouched"
+
+Assert-Equal '' (Test-AppFolderPath '') "Folder path: empty means the default"
+Assert-Equal '' (Test-AppFolderPath 'D:\intune\packages') "Folder path: a drive path is fine"
+Assert-Equal '' (Test-AppFolderPath '\\fileserver\share\catalog') "Folder path: a share is fine"
+Assert-True ([bool](Test-AppFolderPath 'data\apps')) "Folder path: a relative path is refused"
+Assert-True ([bool](Test-AppFolderPath 'C:\a" & calc')) "Folder path: a quote is refused"
+Assert-True ([bool](Test-AppFolderPath 'C:\apps\*')) "Folder path: a wildcard is refused"
+Assert-True ([bool](Test-AppFolderPath "C:\apps`nX")) "Folder path: a control character is refused"
+Assert-True ([bool](Test-AppFolderPath 'C:\apps\..\Windows')) "Folder path: .. is refused"
+Assert-True ([bool](Test-AppFolderPath ('C:\' + ('x' * 300)))) "Folder path: a path that is too long is refused"
 
 # =================================================================
 # Report

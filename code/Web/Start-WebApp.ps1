@@ -102,7 +102,7 @@ $handler = {
         else { Send-WebResponse $Client '404 Not Found' 'text/plain' ([Text.Encoding]::UTF8.GetBytes('not found')) }
     }
     catch {
-        try { Send-WebJson $Client @{ ok = $false; error = $_.Exception.Message } } catch { }
+        try { Send-WebJson $Client @{ ok = $false; error = (Protect-LogText $_.Exception.Message) } } catch { }
     }
     finally { try { $Client.Close() } catch { } }
 }
@@ -124,6 +124,9 @@ while ($run) {
     if ($pending) {
         $client = $null
         try { $client = $listener.AcceptTcpClient() } catch { $client = $null }
+        # At most 64 requests at once: a local program opening connections
+        # without end would otherwise queue up runspaces without end.
+        if ($client -and $inFlight.Count -ge 64) { try { $client.Close() } catch { }; $client = $null }
         if ($client) {
             $ps = [powershell]::Create()
             $ps.RunspacePool = $pool

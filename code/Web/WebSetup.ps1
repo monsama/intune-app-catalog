@@ -105,7 +105,9 @@ function Global:Remove-WebLocalCertificate {
     if ($store -notin 'CurrentUser', 'LocalMachine') { return @{ ok = $false; error = 'Unknown certificate store.' } }
     $path = "Cert:\$store\My\$thumb"
     if (-not (Test-Path -LiteralPath $path)) { return @{ ok = $false; error = "No certificate $thumb in $store\My." } }
-    try { Remove-Item -LiteralPath $path -Force -ErrorAction Stop }
+    # -DeleteKey: the private key goes too - without it Windows removes the
+    # certificate and leaves its key file behind.
+    try { Remove-Item -LiteralPath $path -DeleteKey -Force -ErrorAction Stop }
     catch {
         $hint = if ($store -eq 'LocalMachine') { ' Deleting from LocalMachine\My usually needs the app started as administrator.' } else { '' }
         return @{ ok = $false; error = "Couldn't delete it: $($_.Exception.Message)$hint" }

@@ -123,10 +123,12 @@ async function loadState() {
   $('ver').textContent = 'v' + r.version;
   document.title = 'Intune App Catalog ' + r.version;
   const badge = $('connBadge');
-  badge.textContent = r.configured ? 'Connection set up' : 'Not connected';
-  badge.className = 'conn ' + (r.configured ? 'ok' : 'warn');
-  badge.title = r.configured ? 'Tenant ID, Client ID and certificate are filled in - Settings > Test connection checks that they work.' : 'Fill in the connection in Settings - until then nothing is read from or sent to Intune.';
+  badge.textContent = r.testMode ? 'TEST MODE' : r.configured ? 'Connection set up' : 'Not connected';
+  badge.className = 'conn ' + (r.testMode ? 'warn' : r.configured ? 'ok' : 'warn');
+  if (r.testMode) badge.title = 'Graph answers come from a test file, not from a tenant. Started with INTUNE_CATALOG_TEST_GRAPH set - restart the app without it.';
+  else badge.title = r.configured ? 'Tenant ID, Client ID and certificate are filled in - Settings > Test connection checks that they work.' : 'Fill in the connection in Settings - until then nothing is read from or sent to Intune.';
   $('setupBanner').hidden = r.configured;
+  $('testBanner').hidden = !r.testMode;
   setFields(r.settings);
   setCertStatus(r.cert);
 }

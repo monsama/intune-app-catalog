@@ -65,6 +65,30 @@ function Global:Get-WingetShowVerdict {
     return @{ Ok = $false; Result = "Could not check (exit code $ExitCode): $first" }
 }
 
+function Global:ConvertTo-WindowsArgument {
+    <#
+      Pure: one argument quoted for a Windows command line, the way
+      CommandLineToArgvW reads it back - always as one argument, whatever
+      it holds. Backslashes before a quote (or the closing quote) are
+      doubled, quotes are escaped; without that a search text ending in
+      "\" would swallow the closing quote and run into the next argument.
+    #>
+    param([string]$Value)
+    if ($null -eq $Value) { $Value = '' }
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append('"')
+    $slashes = 0
+    foreach ($c in $Value.ToCharArray()) {
+        if ($c -eq '\') { $slashes++; continue }
+        if ($c -eq '"') { [void]$sb.Append('\' * (2 * $slashes + 1)); [void]$sb.Append('"') }
+        else { if ($slashes) { [void]$sb.Append('\' * $slashes) }; [void]$sb.Append($c) }
+        $slashes = 0
+    }
+    if ($slashes) { [void]$sb.Append('\' * (2 * $slashes)) }
+    [void]$sb.Append('"')
+    return $sb.ToString()
+}
+
 function Global:Invoke-Winget {
     # Runs winget with -Arguments and waits (at most -TimeoutSeconds): @{ ExitCode; StdOut; StdErr }.
     param([string[]]$Arguments, [int]$TimeoutSeconds = 30)
@@ -72,8 +96,9 @@ function Global:Invoke-Winget {
     if (-not $cmd) { throw "winget.exe isn't on this machine. It comes with the 'App Installer' package on Windows 10 and 11 - install that from the Microsoft Store." }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $cmd.Source
-    # Each argument quoted on its own: a search text is the user's, and must stay one argument.
-    $psi.Arguments = (@($Arguments | ForEach-Object { if ($_ -match '^--?[a-z-]+$') { $_ } else { '"' + ($_ -replace '"', '') + '"' } }) -join ' ')
+    # Every argument quoted on its own (ConvertTo-WindowsArgument): a search
+    # text is the user's, and must stay exactly one argument - never an option.
+    $psi.Arguments = (@($Arguments | ForEach-Object { ConvertTo-WindowsArgument ([string]$_) }) -join ' ')
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
@@ -92,7 +117,7 @@ function Global:Invoke-Winget {
 function Global:Find-WingetPackage {
     # winget search, as rows (ConvertFrom-WingetSearchOutput).
     param([string]$Query)
-    $r = Invoke-Winget -Arguments @('search', $Query, '--accept-source-agreements', '--disable-interactivity')
+    $r = Invoke-Winget -Arguments @('search', '--query', $Query, '--accept-source-agreements', '--disable-interactivity')
     $rows = @(ConvertFrom-WingetSearchOutput $r.StdOut)
     if ($r.ExitCode -ne 0 -and $rows.Count -eq 0 -and $r.StdOut -notmatch 'No package found') {
         throw "winget search failed (exit code $($r.ExitCode)): $(([string]$r.StdErr).Trim())"

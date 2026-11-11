@@ -144,6 +144,8 @@ refuses a request, the app says which of these is likely missing.
 ## Documentation
 
 - [CHANGELOG.md](CHANGELOG.md) - what changed per version.
+- [SECURITY.md](SECURITY.md) - what the app exposes and keeps, and how to
+  report a problem.
 - [docs/tenant-test-checklist.md](docs/tenant-test-checklist.md) - a pass
   through a **test tenant** for the parts that can only be verified live.
 - [code/tests/README.md](code/tests/README.md) - the test suites, what they
