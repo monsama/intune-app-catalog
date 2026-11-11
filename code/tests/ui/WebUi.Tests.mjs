@@ -78,8 +78,10 @@ try {
       await page.waitForSelector('#dlgApp[open]');
       await page.click('#deploySec summary');
       await unnamed('the app editor'); await shot('editor');
+      // The name is a required field: the browser itself says so and the save never leaves the page.
       await page.click('#btnSaveApp');
-      check(await page.isVisible('#appError'), `${label}: saving an app without a name says why`);
+      const blocked = await page.evaluate(() => document.getElementById('aName').validity.valueMissing && document.getElementById('dlgApp').open);
+      check(blocked, `${label}: saving an app without a name is stopped, and the editor stays open`);
       await page.keyboard.press('Escape');
       check(!(await page.isVisible('#dlgApp[open]')), `${label}: Escape closes the editor`);
 
