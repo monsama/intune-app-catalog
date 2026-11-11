@@ -133,7 +133,11 @@ function Global:Set-WebBatchGroups {
     param($App, [ValidateSet('add', 'remove')][string]$Mode, $Roles)
     $changed = $false
     foreach ($field in (Get-WebGroupRoles).Keys) {
-        $want = @(@($Roles.$field) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+        # Case-insensitive, like Entra ID's group names: SG-X and sg-x are one group.
+        $want = New-Object System.Collections.Generic.List[string]
+        foreach ($g in @(@($Roles.$field) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })) {
+            if (-not @($want | Where-Object { $_ -ieq $g }).Count) { $want.Add($g) }
+        }
         if (-not $want.Count) { continue }
         $current = @($App.$field | Where-Object { $_ })
         $next = if ($Mode -eq 'add') { @(@($current) + @($want | Where-Object { $g = $_; -not @($current | Where-Object { [string]$_ -ieq $g }).Count })) }
