@@ -140,15 +140,15 @@ try {
     $by = { param($problem) @($rows | Where-Object { $_.problem -like $problem }) }
     Check ($checks.ok -and $checks.connected) 'checks: Intune and Entra ID were read' ($checks | ConvertTo-Json -Compress -Depth 6)
     Check ((@($checks.notes) -join ' ') -like '*3 app(s) in Intune*') 'checks: every page of Intune''s apps was read (nextLink followed)' (@($checks.notes) -join ' | ')
-    $renamed = & $by 'Renamed in Intune'
+    $renamed = @(& $by 'Renamed in Intune')
     Check ($renamed.Count -eq 1 -and $renamed[0].catalogName -eq $linkedName -and @($renamed[0].actions) -contains 'RenameFromIntune') 'checks: an app renamed in Intune'
-    $missing = & $by 'In Intune, not in the catalog'
+    $missing = @(& $by 'In Intune, not in the catalog')
     $onlyIntune = @($missing | Where-Object { $_.intune -like '*Only In Intune*' })
     Check ($onlyIntune.Count -eq 1 -and @($onlyIntune[0].actions) -contains 'AddToCatalog' -and @($missing | Where-Object { $_.intune -like "*$linkedName*" }).Count -eq 0) 'checks: an app only in Intune, to add to the catalog (and not the linked one)'
-    $unlinked = & $by 'In Intune, App ID not set'
+    $unlinked = @(& $by 'In Intune, App ID not set')
     Check ($unlinked.Count -eq 1 -and $unlinked[0].catalogName -eq $sameName -and $unlinked[0].data.MatchedId -eq $appSameName) 'checks: a catalog app with the same name in Intune, to link'
-    $group = & $by '*SG-ZZ-Missing*'
-    Check ($group.Count -eq 1 -and (& $by '*SG-ZZ-Exists*').Count -eq 0) 'checks: a group missing in Entra ID (and not the one that exists)'
+    $group = @(& $by '*SG-ZZ-Missing*')
+    Check ($group.Count -eq 1 -and @(& $by '*SG-ZZ-Exists*').Count -eq 0) 'checks: a group missing in Entra ID (and not the one that exists)'
     Check ((@($checks.notes) -join ' ') -notlike '*Users couldn''t be read*') 'checks: users were read too'
 
     # Diagnostics

@@ -109,11 +109,17 @@ function Global:Get-WebStaticFile {
     #>
     param([string]$Path, [string]$UiRoot)
     $files = @{
-        '/'           = @('index.html', 'text/html; charset=utf-8')
-        '/index.html' = @('index.html', 'text/html; charset=utf-8')
-        '/app.js'     = @('app.js', 'text/javascript; charset=utf-8')
-        '/app.css'    = @('app.css', 'text/css; charset=utf-8')
-        '/icon.svg'   = @('icon.svg', 'image/svg+xml')
+        '/'            = @('index.html', 'text/html; charset=utf-8')
+        '/index.html'  = @('index.html', 'text/html; charset=utf-8')
+        '/core.js'     = @('core.js', 'text/javascript; charset=utf-8')
+        '/apps.js'     = @('apps.js', 'text/javascript; charset=utf-8')
+        '/checks.js'   = @('checks.js', 'text/javascript; charset=utf-8')
+        '/groups.js'   = @('groups.js', 'text/javascript; charset=utf-8')
+        '/scripts.js'  = @('scripts.js', 'text/javascript; charset=utf-8')
+        '/settings.js' = @('settings.js', 'text/javascript; charset=utf-8')
+        '/app.js'      = @('app.js', 'text/javascript; charset=utf-8')
+        '/app.css'     = @('app.css', 'text/css; charset=utf-8')
+        '/icon.svg'    = @('icon.svg', 'image/svg+xml')
     }
     if (-not $files.ContainsKey($Path)) { return $null }
     $file = Join-Path $UiRoot $files[$Path][0]

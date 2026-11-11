@@ -18,6 +18,9 @@ try { Add-Type -AssemblyName System.Security -ErrorAction Stop } catch { }
 
 . (Join-Path $PSScriptRoot 'WebServer.ps1')
 . (Join-Path $PSScriptRoot 'WebApi.ps1')
+. (Join-Path $PSScriptRoot 'WebEditor.ps1')
+. (Join-Path $PSScriptRoot 'WebDeploy.ps1')
+. (Join-Path $PSScriptRoot 'WebSettings.ps1')
 . (Join-Path $PSScriptRoot 'WebGraph.ps1')
 . (Join-Path $PSScriptRoot 'WebScripts.ps1')
 . (Join-Path $PSScriptRoot 'WebGroups.ps1')

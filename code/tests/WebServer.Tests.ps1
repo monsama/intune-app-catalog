@@ -86,7 +86,9 @@ try {
     Check ($page.Status -eq 200 -and $page.Body -like '*<script src="app.js"*') 'the page is served'
     Check ($page.Headers -match 'Content-Security-Policy: default-src ''self''' -and $page.Headers -match 'X-Frame-Options: DENY' -and $page.Headers -match 'Cache-Control: no-store') 'every response carries the security headers' $page.Headers
     Check ($page.Body -notmatch '<script>[^<]') 'no inline script (the CSP allows none)'
-    Check ((Invoke-Raw -Path '/app.js').Status -eq 200) 'app.js is served'
+    foreach ($js in 'core.js', 'apps.js', 'checks.js', 'groups.js', 'scripts.js', 'settings.js', 'app.js') {
+        Check ((Invoke-Raw -Path "/$js").Status -eq 200 -and $page.Body -like "*<script src=`"$js`" defer>*") "$js is served and loaded by the page"
+    }
     Check ((Invoke-Raw -Path '/app.css').Status -eq 200) 'app.css is served'
     Check ((Invoke-Raw -Path '/../IntuneDeployment.ps1').Status -eq 404) 'nothing outside the fixed file list'
     Check ((Invoke-Raw -Path '/code/Web/WebApi.ps1').Status -eq 404) 'not even the app''s own files'

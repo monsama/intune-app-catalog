@@ -162,7 +162,7 @@ try {
         check(await page.isChecked('[data-bf="owner"]'), `${label}: typing in a Batch edit field ticks it`);
         await page.uncheck('#bPush');
         await page.click('#btnBatchGo');
-        await page.waitForSelector('#dlgBatch:not([open])');
+        await page.waitForFunction(() => !document.getElementById('dlgBatch').open);
 
         await page.click(`#gridBody tr[data-name="${testApp}"]`);
         await page.click('#btnMore');
@@ -172,7 +172,7 @@ try {
         await page.fill('[data-gbx="requiredFor"]', 'SG-ZZ-UI');
         await page.uncheck('#gbPush');
         await page.click('#btnGbGo');
-        await page.waitForSelector('#dlgGroupsBatch:not([open])');
+        await page.waitForFunction(() => !document.getElementById('dlgGroupsBatch').open);
 
         await page.dblclick(`#gridBody tr[data-name="${testApp}"]`);
         await page.waitForSelector('#dlgApp[open]');
