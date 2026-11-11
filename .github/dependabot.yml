@@ -1,0 +1,8 @@
+# The workflows' actions are pinned to exact commits (supply-chain safety);
+# Dependabot proposes the update as a pull request when a new version comes out.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

@@ -172,6 +172,8 @@ label.filebtn { display: inline-block; width: auto; margin-top: 6px; cursor: poi
 .plan { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
 .plan th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--bd); }
 .plan td { padding: 7px 8px; border-bottom: 1px solid var(--bd2); vertical-align: top; }
+/* A row with a button: text centred on the button, not above it. */
+.plan tr:has(td > .btn) > td { vertical-align: middle; }
 .plan .chg { font-family: var(--mono); font-size: 12px; white-space: pre-line; }
 .plan .add { color: var(--ok); } .plan .rem { color: var(--err); }
 dialog .log { max-height: 220px; }

@@ -124,6 +124,8 @@ try {
     Check ((Invoke-Api '/api/open' @{ target = 'calc.exe' }).ok -eq $false) 'open: only its fixed targets'
     Check ((Invoke-Api '/api/job-start' @{ mode = 'Anything'; tenantId = 'x'; clientId = 'y' }).ok -eq $false) 'job-start: only the known actions'
     Check ((Invoke-Api '/api/no-such-thing').error -eq 'unknown') 'an unknown route says so'
+    $jobs = Invoke-Api '/api/jobs'
+    Check ($jobs.ok -and @($jobs.jobs).Count -eq 0) 'jobs: none running at start (a reloaded page asks for these)' ($jobs | ConvertTo-Json -Compress)
     # Platform scripts - the local copies (no tenant in CI)
     $scriptName = "Web test script $([guid]::NewGuid().ToString('N').Substring(0, 6))"
     $scriptForm = @{ id = ''; displayName = $scriptName; description = 'from the test'; fileName = ''; runAsAccount = 'system'; runAs32Bit = $false; enforceSignatureCheck = $false
@@ -208,6 +210,21 @@ try {
     $pool.Close()
     $after = Invoke-Api '/api/app-get' @{ name = $testName }
     Check (@($answers | Where-Object { $_.ok }).Count -eq 10 -and $after.ok -and $after.app.wingetId -match '^Vendor\.WebTest\d+$') 'editor: ten changes at once all go through, one after another' ("$(@($answers | ConvertTo-Json -Compress)) / $($after.app.wingetId)")
+    [void](Invoke-Api '/api/app-save' @{ originalName = $testName; app = @{ appName = $testName; wingetId = 'Vendor.WebTest'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'from the test' } } })
+    # Earlier versions: every save above kept a copy; one goes back.
+    $hist = Invoke-Api '/api/app-backups' @{ name = $testName }
+    $older = @($hist.backups | Where-Object { @($_.changed).Count -gt 0 }) | Select-Object -First 1
+    Check ($hist.ok -and @($hist.backups).Count -ge 1 -and $older) 'history: earlier versions of the app are listed, with what differs' ($hist | ConvertTo-Json -Compress -Depth 4)
+    if ($older) {
+        $before = (Invoke-Api '/api/app-get' @{ name = $testName }).app
+        $restored = Invoke-Api '/api/app-restore' @{ name = $testName; id = $older.id }
+        $afterRestore = (Invoke-Api '/api/app-get' @{ name = $testName }).app
+        Check ($restored.ok -and ($afterRestore | ConvertTo-Json -Compress -Depth 6) -ne ($before | ConvertTo-Json -Compress -Depth 6)) 'history: a restore puts that version back' ($restored | ConvertTo-Json -Compress)
+        $hist2 = Invoke-Api '/api/app-backups' @{ name = $testName }
+        Check (@($hist2.backups).Count -gt @($hist.backups).Count) 'history: ... and keeps the version before the restore as a copy too'
+    }
+    Check (-not (Invoke-Api '/api/app-restore' @{ name = $testName; id = '../../settings.json' }).ok) 'history: an id that is not a backup is refused'
+    Check (-not (Invoke-Api '/api/app-restore' @{ name = $testName; id = 'app-edit_2020-01-01/000000_Other-App.json' }).ok) 'history: a backup of another app is refused'
     [void](Invoke-Api '/api/app-save' @{ originalName = $testName; app = @{ appName = $testName; wingetId = 'Vendor.WebTest'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'from the test' } } })
     $bad = Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $testName; wingetId = ''; appId = '' } }
     Check (-not $bad.ok -and $bad.error -like '*already called*') 'editor: a second app with the same name is refused' ($bad | ConvertTo-Json -Compress)

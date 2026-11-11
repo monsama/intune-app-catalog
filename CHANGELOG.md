@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.0.6
+
+### Added
+
+- **Earlier versions in the app editor.** A copy of an app's file has
+  always been kept on every save. Now the editor's **Earlier versions...**
+  lists them with what differs from now (name, App ID, groups, settings),
+  and **Restore** puts one back. The current version is kept as a copy
+  too, so a restore can itself be undone.
+  - Two saves within the same second no longer share one copy.
+- **A running step shows again after a page reload.** The page asks the
+  server what's still running and follows it in the Working dialog.
+
+### Tests and release
+
+- **Steps that change Intune are tested without a tenant**, on Windows.
+  Test mode now reaches the steps' own Windows PowerShell:
+  - Delete from Intune;
+  - a delete blocked by a dependency;
+  - renaming a group.
+
+  The test checks what each step sent, and what the catalog does after.
+- **Restore:** the server test lists earlier versions, restores one, keeps
+  the version before the restore, and refuses an ID that isn't a copy of
+  this app.
+- **Release workflow:** the GitHub Actions it uses are pinned to exact
+  commits, and Dependabot proposes updates. `SECURITY.md` says so.
+- README screenshots updated.
+
 ## 2.0.5
 
 Usability and speed.

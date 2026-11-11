@@ -65,6 +65,19 @@ awkward cases: a second page (`@odata.nextLink`), a refused `$expand`, the
 beta report falling back to v1.0, and a refused request naming the
 permission that page needs.
 
+**The steps too.** On Windows, the steps that change Intune run as well,
+in their own Windows PowerShell. In test mode their helper defines
+stand-ins for `Import-Module` (Graph only), `Get-MgContext`,
+`Connect-MgGraph` and `Invoke-MgGraphRequest`; a function wins over a
+cmdlet of the same name. The stand-ins answer from the same file and
+write every request to `<file>.calls`, so the test checks what a step
+would have sent:
+- Delete from Intune sends one DELETE and clears the App ID;
+- a delete blocked by a dependency names the app that depends on it;
+- Rename sends the new name, and the catalog follows.
+
+On Linux these are skipped: there is no Windows PowerShell there.
+
 The answers file maps `"METHOD path?query"` (or `"METHOD path"` for any
 query), relative to `https://graph.microsoft.com/`, to the JSON Graph would
 send. A list is answered in order; `{ "__status": 403, "__body": {...} }`
