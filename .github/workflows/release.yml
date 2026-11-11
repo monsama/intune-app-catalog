@@ -72,6 +72,14 @@ jobs:
             if (-not (Test-Path (Join-Path $check $needed))) { throw "$needed is missing from the zip" }
           }
           "The zip parses and has what it needs"
+          # And it really starts: the server prints its address, then is stopped again.
+          $out = Join-Path $env:RUNNER_TEMP 'start.txt'
+          $app = Start-Process pwsh -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $check 'IntuneDeployment.ps1')`"", '-NoBrowser' -RedirectStandardOutput $out -PassThru -WindowStyle Hidden
+          $started = $false
+          foreach ($i in 1..60) { Start-Sleep -Seconds 1; if ((Test-Path $out) -and ((Get-Content $out -Raw) -match 'Open:\s+http://127\.0\.0\.1:\d+/')) { $started = $true; break } }
+          try { $app.Kill() } catch { }
+          if (-not $started) { Get-Content $out -ErrorAction SilentlyContinue; throw "The app from the zip didn't start its server within 60 seconds" }
+          "The app from the zip starts"
 
       - name: Publish the release
         uses: softprops/action-gh-release@v3
