@@ -49,14 +49,24 @@ function Global:Get-GraphRoleRequirements {
       the wrong one. Same trap for Group.Read.All, which can look up a
       group but cannot assign an app to it.
     #>
+    # Grant: the one permission to add when the feature is missing - the
+    # one that covers the most (ReadWrite over Read). Purpose: what it's
+    # for, in the words of the app's own buttons.
     @(
-        @{ Feature = "Apps in Intune";        Roles = @('DeviceManagementApps.ReadWrite.All'); Required = $true }
-        @{ Feature = "Finding groups";        Roles = @('Group.ReadWrite.All', 'Group.Read.All'); Required = $true }
-        @{ Feature = "Creating and assigning groups"; Roles = @('Group.ReadWrite.All'); Required = $false }
-        @{ Feature = "Install status";        Roles = @('DeviceManagementApps.Read.All', 'DeviceManagementApps.ReadWrite.All'); Required = $false }
-        @{ Feature = "Platform scripts (read)";   Roles = @('DeviceManagementScripts.Read.All', 'DeviceManagementScripts.ReadWrite.All'); Required = $false }
-        @{ Feature = "Platform scripts (change)"; Roles = @('DeviceManagementScripts.ReadWrite.All'); Required = $false }
-        @{ Feature = "Group members";         Roles = @('User.Read.All', 'Directory.Read.All'); Required = $false }
+        @{ Feature = "Apps in Intune";        Roles = @('DeviceManagementApps.ReadWrite.All'); Required = $true
+           Grant = 'DeviceManagementApps.ReadWrite.All'; Purpose = 'deploy, update, assign and delete apps' }
+        @{ Feature = "Finding groups";        Roles = @('Group.ReadWrite.All', 'Group.Read.All'); Required = $true
+           Grant = 'Group.ReadWrite.All'; Purpose = 'find, create and manage assignment groups (Group.Read.All is enough if you only assign to existing groups)' }
+        @{ Feature = "Creating and assigning groups"; Roles = @('Group.ReadWrite.All'); Required = $false
+           Grant = 'Group.ReadWrite.All'; Purpose = 'find, create and manage assignment groups (Group.Read.All is enough if you only assign to existing groups)' }
+        @{ Feature = "Install status";        Roles = @('DeviceManagementApps.Read.All', 'DeviceManagementApps.ReadWrite.All'); Required = $false
+           Grant = 'DeviceManagementApps.ReadWrite.All'; Purpose = 'deploy, update, assign and delete apps' }
+        @{ Feature = "Platform scripts (read)";   Roles = @('DeviceManagementScripts.Read.All', 'DeviceManagementScripts.ReadWrite.All'); Required = $false
+           Grant = 'DeviceManagementScripts.ReadWrite.All'; Purpose = 'Platform scripts... only' }
+        @{ Feature = "Platform scripts (change)"; Roles = @('DeviceManagementScripts.ReadWrite.All'); Required = $false
+           Grant = 'DeviceManagementScripts.ReadWrite.All'; Purpose = 'Platform scripts... only' }
+        @{ Feature = "Group members";         Roles = @('User.Read.All', 'Directory.Read.All'); Required = $false
+           Grant = 'Directory.Read.All'; Purpose = 'show and pick users and devices as group members' }
     )
 }
 
@@ -81,32 +91,61 @@ function Global:Get-GraphRoleReport {
 
 function Global:Format-GraphRoleReport {
     <#
-      The role report as the lines Test connection shows. One line per
-      feature the token can't reach, naming the permission to add - that
-      being the whole point of looking.
+      The role report as the lines Test connection and Diagnostics show:
+      what works, what doesn't, and - the point of looking - exactly which
+      permissions to add, where, and what to click after. Written for
+      someone who has never opened API permissions before.
     #>
     param($Report, [string]$TokenAppId, [string]$SettingsClientId)
     $lines = New-Object System.Collections.Generic.List[string]
     if ($TokenAppId -and $SettingsClientId -and $TokenAppId -ne $SettingsClientId) {
-        $lines.Add("[WARN] The token is for app $TokenAppId, but Settings names $SettingsClientId.")
+        $lines.Add("[WARN] The token is for app $TokenAppId, but Settings names $SettingsClientId - permissions granted to one don't count for the other.")
     }
     $have = @($Report.Have)
-    if ($have.Count -eq 0) {
-        $lines.Add("[FAILED] The sign-in works, but the token carries no application permissions at all.")
-        $lines.Add("[INFO] Add them under App registrations > API permissions > Application permissions, then Grant admin consent.")
-        return $lines.ToArray()
-    }
-    $lines.Add("[INFO] Permissions in the token ($($have.Count)): $(($have | Sort-Object) -join ', ')")
     $missing = @($Report.Missing)
-    if ($missing.Count -eq 0) {
-        $lines.Add("[OK] Everything this app uses is covered.")
-        return $lines.ToArray()
+    $appRef = if ($SettingsClientId) { "the app registration with Client ID $SettingsClientId" } else { "this app's registration" }
+
+    if ($have.Count -eq 0) {
+        $lines.Add("[FAILED] The sign-in works, but the token carries no application permissions at all - nothing in Intune will work yet.")
     }
-    foreach ($row in $missing) {
-        $tag = if ($row.Required) { '[FAILED]' } else { '[WARN]' }
-        $lines.Add("$tag $($row.Feature) needs $((@($row.Roles)) -join ' or ') - not in the token.")
+    else {
+        $lines.Add("[INFO] Permissions in the token ($($have.Count)): $(($have | Sort-Object) -join ', ')")
+        $missingFeatures = @($missing | ForEach-Object { $_.Feature })
+        foreach ($requirement in Get-GraphRoleRequirements) {
+            if ($missingFeatures -notcontains $requirement.Feature) { $lines.Add("[OK] $($requirement.Feature)") }
+        }
+        foreach ($row in $missing) {
+            $tag = if ($row.Required) { '[FAILED]' } else { '[WARN]' }
+            $lines.Add("$tag $($row.Feature) needs $((@($row.Roles)) -join ' or ') - not in the token.")
+        }
+        if ($missing.Count -eq 0) {
+            $lines.Add("[OK] Everything this app uses is covered.")
+            return $lines.ToArray()
+        }
     }
-    $lines.Add("[INFO] Add the missing ones as Application permissions and Grant admin consent. A permission already showing as granted but missing here belongs to a different app registration.")
+
+    # One line per permission to add, required ones first, each once.
+    $toAdd = New-Object System.Collections.Generic.List[object]
+    foreach ($row in @($missing | Sort-Object { -not $_.Required })) {
+        $existing = @($toAdd | Where-Object { $_.Name -eq $row.Grant })
+        if ($existing.Count -gt 0) { if ($row.Required) { $existing[0].Required = $true }; continue }
+        $toAdd.Add([pscustomobject]@{ Name = $row.Grant; Required = [bool]$row.Required; Purpose = $row.Purpose })
+    }
+    $width = ($toAdd | ForEach-Object { $_.Name.Length } | Measure-Object -Maximum).Maximum
+    $lines.Add("")
+    $lines.Add("[INFO] How to fix - in the Microsoft Entra admin center (entra.microsoft.com):")
+    $lines.Add("  1. App registrations > All applications > $appRef > API permissions")
+    $lines.Add("  2. + Add a permission > Microsoft Graph > Application permissions (not Delegated), and add:")
+    foreach ($p in $toAdd) {
+        $need = if ($p.Required) { 'required' } else { 'optional' }
+        $lines.Add("       $($p.Name.PadRight($width))  $need - $($p.Purpose)")
+    }
+    $lines.Add("  3. Grant admin consent for your tenant (needs Global Administrator or Privileged Role Administrator).")
+    $lines.Add("     Every row should then say Type: Application, Status: Granted.")
+    $lines.Add("  4. Test connection again. New permissions can take a minute or two to reach the token.")
+    if ($have.Count -gt 0) {
+        $lines.Add("[INFO] Already listed as Granted but still missing here? Then it was added as Delegated, or to a different app registration.")
+    }
     return $lines.ToArray()
 }
 

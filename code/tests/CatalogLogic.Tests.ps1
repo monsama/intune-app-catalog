@@ -1386,6 +1386,19 @@ Assert-True (($otherAppLines -join "`n") -like "*token is for app aaaa1111*") `
 $noRoleLines = @(Format-GraphRoleReport -Report (Get-GraphRoleReport -Roles @()) -TokenAppId 'x' -SettingsClientId 'x')
 Assert-True (($noRoleLines -join "`n") -like "*no application permissions at all*") `
     "Format-GraphRoleReport: says plainly when the token carries nothing"
+$noRoleText = $noRoleLines -join "`n"
+Assert-True ($noRoleText -like "*Application permissions (not Delegated)*" -and $noRoleText -like "*Grant admin consent*") `
+    "Format-GraphRoleReport: says where to add them and to consent" $noRoleText
+Assert-True ($noRoleText -like "*DeviceManagementApps.ReadWrite.All*required*" -and $noRoleText -like "*Directory.Read.All*optional*" -and $noRoleText -like "*DeviceManagementScripts.ReadWrite.All*optional*") `
+    "Format-GraphRoleReport: lists each permission to add, required or optional" $noRoleText
+Assert-Equal 1 ([regex]::Matches($noRoleText, '(?m)^\s+Group\.ReadWrite\.All\s').Count) `
+    "Format-GraphRoleReport: a permission two features need is listed once" $noRoleText
+Assert-True ($noRoleText -like "*Client ID x*") "Format-GraphRoleReport: names the registration by its Client ID"
+Assert-True (($liveLines -contains '[OK] Apps in Intune') -and (($liveLines -join "`n") -like "*DeviceManagementScripts.ReadWrite.All*optional*")) `
+    "Format-GraphRoleReport: shows what works and only adds what's missing" ($liveLines -join "`n")
+$allLines = @(Format-GraphRoleReport -Report (Get-GraphRoleReport -Roles @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Directory.Read.All', 'DeviceManagementScripts.ReadWrite.All')) -TokenAppId 'x' -SettingsClientId 'x')
+Assert-True ((($allLines -join "`n") -like "*Everything this app uses is covered*") -and -not (($allLines -join "`n") -like "*How to fix*")) `
+    "Format-GraphRoleReport: nothing to fix, no fix instructions"
 
 # -----------------------------------------------------------------
 # Which permission a refused request needs (GuiHelpers.ps1)

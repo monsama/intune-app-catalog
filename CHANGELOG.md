@@ -19,6 +19,12 @@
 
 ### Changed
 
+- **Missing permissions come with the fix.** Test connection and
+  Diagnostics list what already works and each permission still to add,
+  marked as required or optional with what it's for. They also give the
+  path in the Entra admin center (Application, not Delegated), the
+  admin consent step, and what to check when a permission shows as
+  granted but still doesn't work.
 - **Clearer certificate sign-in errors.** A certificate that isn't on
   this machine any more, and one that Entra ID doesn't accept (usually
   not uploaded to the app registration yet), each get their own

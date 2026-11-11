@@ -1232,8 +1232,9 @@ function Global:Show-CertificateSetupDialog {
                                                   else { [System.Drawing.Color]::SeaGreen }
                     $signedIn = "Signed in as '$($result.AppName)' ($($result.AuthType))"
                     $lblTestResultRef.Text = if ($result.ClaimsError) { "$signedIn - couldn't read the permissions, see the log below." }
-                                             elseif ($blocked -gt 0) { "$signedIn, but it's missing a permission the app needs - see the log below." }
-                                             elseif (@($report.Missing).Count -gt 0) { "$signedIn. Some features are missing a permission - see the log below." }
+                                             elseif (@($report.Have).Count -eq 0) { "$signedIn, but the app registration has no API permissions granted yet. The log below lists exactly which to add and where." }
+                                             elseif ($blocked -gt 0) { "$signedIn, but it's missing a permission the app needs. The log below lists which to add and where." }
+                                             elseif (@($report.Missing).Count -gt 0) { "$signedIn. Some optional features are missing a permission - the log below says which to add." }
                                              else { "$signedIn, with every permission this app uses." }
                     if ($rtbUploadLogRef) {
                         Write-DialogLogLine -LogBox $rtbUploadLogRef -Text "`r`n[INFO] Test connection: $signedIn.`r`n"
