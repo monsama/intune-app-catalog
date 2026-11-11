@@ -342,6 +342,7 @@ function Global:Complete-WebJob {
     #>
     param([hashtable]$After, $Result, [string]$LogPath)
     switch ($After.Kind) {
+        'grouprename' { return (Complete-WebGroupRename -After $After) }
         'deleted' {
             $n = $After.AppName
             [void](Update-WebCatalogApp -Name $n -Change { param($a) $a.appId = ''; $a.intuneAppType = ''; $a.intuneAppVersion = '' })
@@ -1293,6 +1294,10 @@ function Global:Invoke-WebApi {
         '/api/script-delete'    { return (Remove-WebScript $Data) }
         '/api/script-runstatus' { return (Get-WebScriptRunStatus $Data) }
         '/api/scripts-save-local' { return (Save-WebScriptCopies) }
+        '/api/groups'           { return (Get-WebGroups) }
+        '/api/group-get'        { return (Get-WebGroupDetail $Data) }
+        '/api/directory-search' { return (Find-WebDirectory $Data) }
+        '/api/group-job'        { return (Start-WebGroupJob $Data) }
         default                 { return @{ ok = $false; error = 'unknown' } }
     }
 }

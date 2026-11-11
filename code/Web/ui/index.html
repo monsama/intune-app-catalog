@@ -14,6 +14,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab" role="tab" data-view="apps" id="tabApps">Apps</button>
     <button class="tab" role="tab" data-view="checks" id="tabChecks">Checks</button>
+    <button class="tab" role="tab" data-view="groups" id="tabGroups">Groups</button>
     <button class="tab" role="tab" data-view="scripts" id="tabScripts">Platform scripts</button>
     <button class="tab" role="tab" data-view="settings" id="tabSettings">Settings</button>
   </nav>
@@ -88,6 +89,56 @@
         <tbody id="checkBody"></tbody>
       </table>
       <div class="empty" id="checkEmpty"><h2 id="checkEmptyTitle">Not run yet</h2><p id="checkEmptyText">Run checks to see what needs attention.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ Groups ============ -->
+  <section class="view" id="viewGroups" hidden>
+    <div class="gsplit">
+      <aside class="panel">
+        <div class="toolbar tight">
+          <input type="search" id="groupSearch" placeholder="Filter or type a group name" autocomplete="off" spellcheck="false">
+          <button class="btn" id="btnGroupOpen" title="Open this exact group name from Entra ID">Open</button>
+        </div>
+        <ul class="glist" id="groupList" role="listbox" aria-label="Groups used by the catalog"></ul>
+        <div class="actions">
+          <button class="btn" id="btnGroupNew">New group</button>
+          <button class="btn" id="btnGroupsDelete">Delete several...</button>
+          <button class="btn" id="btnGroupsReload">Reload</button>
+        </div>
+      </aside>
+      <section class="panel" id="groupPane">
+        <div class="empty" id="groupEmpty"><h2>Pick a group</h2><p>The groups your apps are assigned to are listed on the left. Pick one to see its members in Entra ID, or type any group name and Open it.</p></div>
+        <div id="groupDetail" hidden>
+          <div class="ghead">
+            <h2 id="gName"></h2>
+            <span class="pill" id="gState"></span>
+            <span class="spacer"></span>
+            <button class="btn" id="btnGroupRename" disabled>Rename...</button>
+            <button class="btn danger" id="btnGroupDelete" disabled>Delete group...</button>
+          </div>
+          <p class="sub" id="gNote"></p>
+          <div class="formgrid">
+            <section>
+              <label>Description <span class="muted">(optional)</span><input id="gDesc" maxlength="1024"></label>
+              <h3>Members <span class="muted" id="gCount"></span></h3>
+              <div class="tablewrap short"><table class="plan"><thead><tr><th>Name</th><th>Type</th><th>Sign-in name</th><th></th></tr></thead><tbody id="gMembers"></tbody></table></div>
+              <h3>Used by</h3>
+              <ul class="uses" id="gUses"></ul>
+            </section>
+            <section>
+              <h3>Add members</h3>
+              <div class="toolbar tight"><input type="search" id="gFind" placeholder="Search users and groups (at least 2 letters)" autocomplete="off" spellcheck="false"><button class="btn" id="btnGroupFind">Search</button></div>
+              <p class="muted note" id="gFindNote"></p>
+              <ul class="hits" id="gHits"></ul>
+              <h3>To add <span class="muted" id="gAddCount"></span></h3>
+              <ul class="hits" id="gAdd"></ul>
+              <div class="actions end"><button class="btn primary" id="btnGroupSave">Create / update group</button></div>
+            </section>
+          </div>
+          <pre class="log" id="groupLog" hidden></pre>
+        </div>
+      </section>
     </div>
   </section>
 
@@ -432,6 +483,15 @@
   <p class="sub" id="sStatusSummary"></p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>Device</th><th>User</th><th>State</th><th>Output</th><th>Error</th><th>Last run</th></tr></thead><tbody id="sStatusRows"></tbody></table></div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgGroupsDelete">
+  <h2>Delete several groups</h2>
+  <p class="sub">Deletes these security groups from Entra ID. Apps assigned to them lose those assignments in Intune. The catalog still names them until you change the apps.</p>
+  <div class="deplist tall" id="gDelList"></div>
+  <label>More group names <span class="muted">(one per line)</span><textarea id="gDelMore" rows="3" class="monotext" spellcheck="false"></textarea></label>
+  <pre class="log" id="gDelLog" hidden></pre>
+  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn danger" id="btnGroupsDeleteGo">Delete</button></div>
 </dialog>
 
 <div class="toast" id="toast" role="status" hidden></div>
