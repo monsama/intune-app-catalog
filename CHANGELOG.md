@@ -17,6 +17,19 @@
   window, such as the result under Test connection or a check's status,
   and choose Copy.
 
+### Fixed
+
+- **Diagnostics opened from Settings checked the old connection.** With
+  a new certificate or Client ID not yet saved, it checked the old one
+  and reported it missing. It now offers to save the changes first.
+- **A sign-in from before granting permissions kept being used.** The
+  app's lookups reuse one Graph sign-in. After Test connection ran
+  without permissions, that sign-in stayed in use with a token that had
+  no permissions, for up to an hour, and Intune answered 401. Test
+  connection no longer leaves its sign-in behind. Saving settings,
+  running Diagnostics and changing the certificate all start a fresh
+  sign-in, and a 401 now names the missing permission.
+
 ### Changed
 
 - **Missing permissions come with the fix.** Test connection and

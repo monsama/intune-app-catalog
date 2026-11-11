@@ -65,7 +65,12 @@ function Global:ConvertTo-FriendlyGraphError {
         $summary = "Microsoft Entra ID rejected this app's credentials. Double-check the Tenant ID, Client ID, and certificate in Settings."
     }
     elseif ($RawMessage -match '\bunauthorized\b|\b401\b') {
-        $summary = "Microsoft Graph rejected this request as unauthorized - the configured credentials may be stale. Try Settings > Test connection."
+        # Intune answers a missing permission with 401 (and "Forbidden" in
+        # the body), not 403 - so this is usually a permission, and the
+        # reader needs to be told which.
+        $permission = Get-GraphPermissionHint $RawMessage
+        $add = if ($permission) { "add $permission" } else { "add the permission it needs" }
+        $summary = "Microsoft Graph refused this request (401 Unauthorized). Usually the app registration is missing a permission - $add and grant admin consent. If you've only just granted it, run Settings > Test connection again: that refreshes the sign-in, which may still be from before."
     }
     elseif ($RawMessage -match '\bforbidden\b|\b403\b|insufficient privileges|Authorization_RequestDenied') {
         $permission = Get-GraphPermissionHint $RawMessage

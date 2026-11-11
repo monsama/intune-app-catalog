@@ -200,3 +200,28 @@ function Global:Get-GraphAppTokenClaims {
     if (-not $claims) { throw "Entra ID returned a token this app couldn't read." }
     return $claims
 }
+
+function Global:Reset-GraphSession {
+    <#
+      Drops the Microsoft Graph sign-in this window's lookups share, so the
+      next one signs in fresh. The Graph module keeps ONE session per
+      process, and every lookup reuses it while it's for the same app - so
+      after the certificate or the permissions change, the old token (no new
+      permission, or an old certificate) would otherwise keep being used for
+      up to an hour. Cheap when there's nothing to drop: only runs when the
+      module is actually loaded in this process.
+    #>
+    $loaded = [AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq 'Microsoft.Graph.Authentication' } | Select-Object -First 1
+    if (-not $loaded) { return }
+    $ps = $null
+    try {
+        $ps = [powershell]::Create()
+        [void]$ps.AddScript({
+            Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+            if (Get-MgContext -ErrorAction SilentlyContinue) { Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null }
+        })
+        [void]$ps.Invoke()
+    }
+    catch { }
+    finally { if ($ps) { $ps.Dispose() } }
+}

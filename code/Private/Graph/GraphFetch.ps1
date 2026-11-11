@@ -172,7 +172,7 @@ function Global:Start-IntuneAppLookup {
         param($TenantId, $ClientId, $CertThumb)
         Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
         $ctx = Get-MgContext -ErrorAction SilentlyContinue
-        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId -or ($CertThumb -and $ctx.CertificateThumbprint -and $ctx.CertificateThumbprint -ne $CertThumb)) {
             Connect-MgGraph -TenantId $TenantId -ClientId $ClientId `
                 -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
         }
@@ -521,7 +521,7 @@ function Global:Start-Win32AppMinOsFetch {
         param($TenantId, $ClientId, $CertThumb)
         Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
         $ctx = Get-MgContext -ErrorAction SilentlyContinue
-        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId -or ($CertThumb -and $ctx.CertificateThumbprint -and $ctx.CertificateThumbprint -ne $CertThumb)) {
             Connect-MgGraph -TenantId $TenantId -ClientId $ClientId `
                 -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
         }
@@ -791,7 +791,7 @@ function Global:Start-EntraDirectoryLookup {
         param($TenantId, $ClientId, $CertThumb)
         Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
         $ctx = Get-MgContext -ErrorAction SilentlyContinue
-        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId -or ($CertThumb -and $ctx.CertificateThumbprint -and $ctx.CertificateThumbprint -ne $CertThumb)) {
             Connect-MgGraph -TenantId $TenantId -ClientId $ClientId `
                 -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
         }
@@ -931,7 +931,7 @@ function Global:Start-AppMetadataFetch {
         param($TenantId, $ClientId, $CertThumb, $TargetAppId)
         Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
         $ctx = Get-MgContext -ErrorAction SilentlyContinue
-        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId -or ($CertThumb -and $ctx.CertificateThumbprint -and $ctx.CertificateThumbprint -ne $CertThumb)) {
             Connect-MgGraph -TenantId $TenantId -ClientId $ClientId `
                 -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
         }
@@ -1251,7 +1251,7 @@ function Global:Start-AppInstallStatusFetch {
         param($TenantId, $ClientId, $CertThumb, $TargetAppId, $ReportHelperText)
         Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
         $ctx = Get-MgContext -ErrorAction SilentlyContinue
-        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId -or ($CertThumb -and $ctx.CertificateThumbprint -and $ctx.CertificateThumbprint -ne $CertThumb)) {
             Connect-MgGraph -TenantId $TenantId -ClientId $ClientId `
                 -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
         }
@@ -1331,7 +1331,7 @@ function Global:Start-PlatformScriptListFetch {
         param($TenantId, $ClientId, $CertThumb, $HelperText)
         Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
         $ctx = Get-MgContext -ErrorAction SilentlyContinue
-        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId -or ($CertThumb -and $ctx.CertificateThumbprint -and $ctx.CertificateThumbprint -ne $CertThumb)) {
             Connect-MgGraph -TenantId $TenantId -ClientId $ClientId `
                 -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
         }
@@ -1407,7 +1407,7 @@ function Global:Start-PlatformScriptDetailFetch {
         param($TenantId, $ClientId, $CertThumb, $TargetScriptId, $HelperText)
         Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
         $ctx = Get-MgContext -ErrorAction SilentlyContinue
-        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId -or ($CertThumb -and $ctx.CertificateThumbprint -and $ctx.CertificateThumbprint -ne $CertThumb)) {
             Connect-MgGraph -TenantId $TenantId -ClientId $ClientId `
                 -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
         }
@@ -1506,7 +1506,7 @@ function Global:Start-PlatformScriptRunStatusFetch {
         param($TenantId, $ClientId, $CertThumb, $TargetScriptId, $HelperText)
         Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
         $ctx = Get-MgContext -ErrorAction SilentlyContinue
-        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId -or ($CertThumb -and $ctx.CertificateThumbprint -and $ctx.CertificateThumbprint -ne $CertThumb)) {
             Connect-MgGraph -TenantId $TenantId -ClientId $ClientId `
                 -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
         }
@@ -1712,7 +1712,7 @@ function Global:Start-GroupMembersFetch {
         param($TenantId, $ClientId, $CertThumb, $TargetGroupName)
         Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
         $ctx = Get-MgContext -ErrorAction SilentlyContinue
-        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId -or ($CertThumb -and $ctx.CertificateThumbprint -and $ctx.CertificateThumbprint -ne $CertThumb)) {
             Connect-MgGraph -TenantId $TenantId -ClientId $ClientId `
                 -CertificateThumbprint $CertThumb -NoWelcome -ErrorAction Stop
         }

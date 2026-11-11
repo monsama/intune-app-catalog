@@ -2172,6 +2172,9 @@ Assert-True (-not (Test-GraphAssemblyConflictText "")) "Test-GraphAssemblyConfli
 Assert-True ((ConvertTo-FriendlyGraphError $deConflict) -like "PowerShell module conflict*-NoProfile*") "ConvertTo-FriendlyGraphError: a module conflict says to restart without the profile"
 Assert-True ((ConvertTo-FriendlyGraphError "ClientCertificateCredential authentication failed: .") -like "*uploaded to the app registration*") "ConvertTo-FriendlyGraphError: an empty certificate failure points at Entra"
 Assert-True ((ConvertTo-FriendlyGraphError "Certificate with thumbprint '09DD' was not found in certificate store or has expired.") -like "*isn't on this machine*") "ConvertTo-FriendlyGraphError: a missing certificate says so"
+# Intune answers a missing permission with 401, "Forbidden" in the body - from a live run
+$intune401 = ConvertTo-FriendlyGraphError 'GET https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$top=999 HTTP/1.1 401 Unauthorized {"error":{"code":"UnknownError","message":"{\"ErrorCode\":\"Forbidden\"}"}}'
+Assert-True ($intune401 -like "*DeviceManagementApps.ReadWrite.All*" -and $intune401 -like "*Test connection again*") "ConvertTo-FriendlyGraphError: an Intune 401 names the permission and the stale sign-in" $intune401
 
 Assert-Equal 'Az.Accounts 2.12.1' (Get-ModuleNameFromAssemblyPath 'C:\Program Files\WindowsPowerShell\Modules\Az.Accounts\2.12.1\PreloadAssemblies\Azure.Core.dll') "Get-ModuleNameFromAssemblyPath: module and version"
 Assert-Equal 'ExchangeOnlineManagement' (Get-ModuleNameFromAssemblyPath 'C:\Users\x\Documents\WindowsPowerShell\Modules\ExchangeOnlineManagement\netFramework\Azure.Core.dll') "Get-ModuleNameFromAssemblyPath: module without a version folder"

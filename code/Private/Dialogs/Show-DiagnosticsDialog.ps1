@@ -243,6 +243,11 @@ function Global:Show-DiagnosticsDialog {
             & $appendLine "    The checks below still run - they just can't say in advance which of them a missing permission will stop." $infoColor
         }
 
+        # A fresh sign-in, not the window's shared one: that may be from
+        # before a permission was granted or the certificate replaced, and
+        # Diagnostics is exactly where that question gets asked.
+        Reset-GraphSession
+
         & $appendLine "" $infoColor
         & $appendLine "Connecting and fetching every app from Intune..." $infoColor
         $lblStatus.Text = "Connecting to Intune..."
