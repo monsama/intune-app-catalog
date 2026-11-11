@@ -135,6 +135,7 @@ async function openEditor(name) {
     $('appTitle').textContent = 'Add an app';
   }
   $('btnRemoveApp').hidden = !name;
+  $('btnAppHistory').hidden = !name;
   $('dlgApp').showModal();
   $('aName').focus();
 }
@@ -153,6 +154,25 @@ $('appForm').addEventListener('submit', async e => {
   $('dlgApp').close();
   selected.clear(); selected.add(r.name); lastClicked = r.name;
   await loadApps();
+});
+const fieldLabel = { appName: 'name', appId: 'App ID', wingetId: 'Winget ID', requiredFor: 'Required', availableFor: 'Available', uninstallFor: 'Uninstall', excludeFor: 'Excluded', settings: 'Intune details or deploy settings' };
+$('btnAppHistory').addEventListener('click', async () => {
+  const name = editingName;
+  const r = await api('/api/app-backups', { name });
+  if (!r.ok) { toast(r.error, true); return; }
+  $('histTitle').textContent = `Earlier versions of ${name}`;
+  $('histNote').textContent = r.backups.length ? '' : 'No earlier version kept yet - one is kept the next time this app is saved.';
+  $('histRows').replaceChildren(...r.backups.map(b => el('tr', {},
+    el('td', { text: b.when }),
+    el('td', { text: b.changed.length ? b.changed.map(c => fieldLabel[c] || c).join(', ') : 'nothing - same as now' }),
+    el('td', {}, el('button', { class: 'btn small', text: 'Restore', title: 'Put this version back as the app\'s file', disabled: !b.changed.length, onclick: async () => {
+      if (!(await ask(`Restore ${name} as it was on ${b.when}?\n\nOnly the catalog changes - Deploy or Push sends it to Intune. The current version is kept as a copy, so this can be undone the same way.`, { ok: 'Restore', danger: false }))) return;
+      const x = await api('/api/app-restore', { name, id: b.id });
+      if (!x.ok) { toast(x.error, true); return; }
+      toast(`${name} restored to ${b.when}.`);
+      $('dlgHistory').close(); $('dlgApp').close(); await loadApps(); openEditor(x.name);
+    } })))));
+  $('dlgHistory').showModal();
 });
 $('btnRemoveApp').addEventListener('click', async () => {
   if (!(await ask(`Remove "${editingName}" from the catalog?\n\nOnly the catalog changes - nothing in Intune. A copy of its file goes to the Backups folder.`))) return;

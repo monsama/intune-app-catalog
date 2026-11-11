@@ -382,6 +382,8 @@ function Global:Invoke-WebApi {
         '/api/app-get'          { return (Get-WebApp $Data) }
         '/api/app-save'         { return (Invoke-WithCatalogLock { Save-WebApp $Data }) }
         '/api/app-remove'       { return (Invoke-WithCatalogLock { Remove-WebApp $Data }) }
+        '/api/app-backups'      { return (Get-WebAppBackups $Data) }
+        '/api/app-restore'      { return (Invoke-WithCatalogLock { Restore-WebAppBackup $Data }) }
         '/api/deploy-plan'      { return (Get-WebDeployPlan $Data) }
         '/api/deploy-start'     { return (Start-WebDeploy $Data) }
         '/api/push-start'       { return (Start-WebPushGroups $Data) }

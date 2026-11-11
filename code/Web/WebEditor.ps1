@@ -223,7 +223,12 @@ function Global:Backup-WebAppFile {
     try {
         $dir = Join-Path (Get-AppFolder -Kind Backups -Create) ("app-edit_" + (Get-Date -Format 'yyyy-MM-dd'))
         if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
-        Copy-Item -LiteralPath $FilePath -Destination (Join-Path $dir ((Get-Date -Format 'HHmmss') + '_' + (Split-Path $FilePath -Leaf))) -Force
+        # HHmmss_<file>, or HHmmss-2_<file> and on for further saves within the
+        # same second - each copy is a version someone may want back.
+        $stamp = Get-Date -Format 'HHmmss'; $leaf = Split-Path $FilePath -Leaf
+        $target = Join-Path $dir "$($stamp)_$leaf"; $n = 1
+        while (Test-Path -LiteralPath $target) { $n++; $target = Join-Path $dir "$stamp-$($n)_$leaf" }
+        Copy-Item -LiteralPath $FilePath -Destination $target
     }
     catch { }
 }
@@ -298,3 +303,75 @@ function Global:Remove-WebApp {
     Write-Log "[OK] Removed from the catalog: $name (a copy is in the Backups folder; nothing in Intune changed)."
     return @{ ok = $true }
 }
+
+function Global:Get-WebAppBackups {
+    <#
+      The copies Backup-WebAppFile kept of one app's file, newest first:
+      Backups\app-edit_<date>\<HHmmss>_<file>.json. Each with its time and
+      what differs from the app as it is now (the field names), so a person
+      can tell which one to go back to.
+    #>
+    param($Data)
+    $name = [string]$Data.name
+    $catalog = Read-WebCatalogRecords
+    $app = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $app) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
+    $leaf = (Get-SafeFileNameForApp -Name $app.appName) + '.json'
+    $root = Get-AppFolder -Kind Backups
+    $rows = New-Object System.Collections.Generic.List[object]
+    if (Test-Path -LiteralPath $root) {
+        foreach ($dir in @(Get-ChildItem -LiteralPath $root -Directory -Filter 'app-edit_*' -ErrorAction SilentlyContinue)) {
+            if ($dir.Name -notmatch '^app-edit_(\d{4}-\d{2}-\d{2})$') { continue }
+            $day = $Matches[1]
+            foreach ($f in @(Get-ChildItem -LiteralPath $dir.FullName -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(\d{6})(-\d+)?_(.+)$' -and $Matches[3] -eq $leaf })) {
+                $time = $f.Name.Substring(0, 6)
+                $seq = if ($f.Name -match '^\d{6}-(\d+)_') { [int]$Matches[1] } else { 1 }
+                $changed = @()
+                try {
+                    $old = ConvertTo-AppRecord (Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json)
+                    foreach ($k in 'appName', 'appId', 'wingetId', 'requiredFor', 'availableFor', 'uninstallFor', 'excludeFor') {
+                        if ((@($old.$k) -join '|') -ne (@($app.$k) -join '|')) { $changed += $k }
+                    }
+                    $oldMeta = if ($old.metadata) { $old.metadata | ConvertTo-Json -Depth 8 -Compress } else { '' }
+                    $nowMeta = if ($app.metadata) { $app.metadata | ConvertTo-Json -Depth 8 -Compress } else { '' }
+                    if ($oldMeta -ne $nowMeta) { $changed += 'settings' }
+                }
+                catch { $changed = @('(unreadable)') }
+                $rows.Add([ordered]@{ id = "$($dir.Name)/$($f.Name)"; when = "$day $($time.Substring(0,2)):$($time.Substring(2,2)):$($time.Substring(4,2))$(if ($seq -gt 1) { " ($seq)" })"; order = "$day $time $('{0:D4}' -f $seq)"; changed = $changed })
+            }
+        }
+    }
+    return @{ ok = $true; app = $app.appName; backups = @($rows | Sort-Object { $_.order } -Descending) }
+}
+
+function Global:Restore-WebAppBackup {
+    <#
+      Puts one kept copy back as the app's file - the current file is kept
+      as a copy first, so a restore can itself be undone. -id must be one
+      Get-WebAppBackups listed for this app (a name inside the Backups
+      folder, never a path).
+    #>
+    param($Data)
+    $name = [string]$Data.name
+    $id = [string]$Data.id
+    if ($id -notmatch '^app-edit_\d{4}-\d{2}-\d{2}/\d{6}(-\d+)?_[^\\/:*?"<>|]+\.json$') { return @{ ok = $false; error = 'That is not a backup of this app.' } }
+    $catalog = Read-WebCatalogRecords
+    $app = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $app) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
+    $leaf = (Get-SafeFileNameForApp -Name $app.appName) + '.json'
+    if (-not $id.EndsWith("_$leaf")) { return @{ ok = $false; error = 'That backup is of another app.' } }
+    $source = Join-Path (Get-AppFolder -Kind Backups) ($id -replace '/', [IO.Path]::DirectorySeparatorChar)
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { return @{ ok = $false; error = 'That backup is gone.' } }
+    try { $old = ConvertTo-AppRecord (Get-Content -LiteralPath $source -Raw -Encoding UTF8 | ConvertFrom-Json) }
+    catch { return @{ ok = $false; error = "That backup can't be read: $($_.Exception.Message)" } }
+    if ((Get-SafeFileNameForApp -Name $old.appName) + '.json' -ne $leaf) { return @{ ok = $false; error = "That copy is of '$($old.appName)' - rename the app back first." } }
+    $problem = Test-WebAppEdit -Record $old -OriginalName $app.appName -Others @($catalog.Apps)
+    if ($problem) { return @{ ok = $false; error = "It can't go back as it was: $problem" } }
+    $file = Join-Path (Get-AppFolder -Kind Catalog) $leaf
+    Backup-WebAppFile $file
+    try { [System.IO.File]::WriteAllText($file, (ConvertTo-SingleAppJson -App $old), (New-Object System.Text.UTF8Encoding($false))) }
+    catch { return @{ ok = $false; error = "Couldn't write $file`: $($_.Exception.Message)" } }
+    Write-Log "[OK] $($app.appName): restored the copy from $($id.Split('/')[0] -replace 'app-edit_', '') (the version before the restore is kept too)."
+    return @{ ok = $true; name = $old.appName }
+}
+
