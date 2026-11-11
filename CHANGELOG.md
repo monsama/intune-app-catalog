@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.12.0
+
+### Added
+
+Web interface, step 3b (`IntuneDeployment.ps1 -Web`):
+
+- **Deploy settings in the app editor:** a collapsible section with the
+  detection rule (script, MSI product code, file or folder, registry),
+  architecture, install context, minimum OS, install time, disk, memory
+  and CPU requirements, restart behaviour, Company Portal uninstall,
+  return codes and dependencies. Checked like the classic deploy form.
+  Install context moved here from the general fields.
+- **Groups page:**
+  - The groups the catalog assigns apps to, with which apps use each
+    one and how.
+  - A group's members in Entra ID. Search users and groups to add them,
+    remove members, and set the description.
+  - Create a group, rename it (the catalog and favourites follow), delete
+    one, or delete several at once.
+- **Platform scripts page:**
+  - Intune's platform scripts beside the local copies, marked Saved,
+    Differs, Not saved here or Local only.
+  - Edit, create, save locally or to Intune with groups, and delete.
+  - Run status for each device, and Save local copies.
+
+### Fixed
+
+- Renaming a group in the classic group manager also renames it where
+  apps exclude it. Before, an exclusion kept the old name.
+- The editor refuses information and privacy URLs that aren't http or
+  https.
+
 ## 1.11.0
 
 ### Added

@@ -94,6 +94,10 @@ function showView(v) {
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.view === v));
   $('viewApps').hidden = v !== 'apps';
   $('viewChecks').hidden = v !== 'checks';
+  $('viewScripts').hidden = v !== 'scripts';
+  $('viewGroups').hidden = v !== 'groups';
+  if (v === 'groups' && !groupsLoaded) loadGroups();
+  if (v === 'scripts' && !scriptsLoaded) loadScripts();
   $('viewSettings').hidden = v !== 'settings';
   try { localStorage.setItem('view', v); } catch (e) { }
 }
@@ -215,7 +219,7 @@ function updateActions() {
 const lines = id => $(id).value.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
 const metaIds = { description: 'mDescription', publisher: 'mPublisher', appVersion: 'mAppVersion', owner: 'mOwner', developer: 'mDeveloper',
   informationUrl: 'mInformationUrl', privacyUrl: 'mPrivacyUrl', installCommand: 'mInstallCommand', uninstallCommand: 'mUninstallCommand',
-  installContext: 'mInstallContext', notes: 'mNotes' };
+  notes: 'mNotes' };
 let editingName = '';
 function fillEditor(a) {
   $('aName').value = a.appName || ''; $('aWinget').value = a.wingetId || ''; $('aAppId').value = a.appId || '';
@@ -223,6 +227,7 @@ function fillEditor(a) {
   $('gUninstall').value = (a.uninstallFor || []).join('\n'); $('gExclude').value = (a.excludeFor || []).join('\n');
   for (const [k, id] of Object.entries(metaIds)) $(id).value = (a.metadata && a.metadata[k]) || '';
   $('metaNote').textContent = a.hasMetadata ? '' : '(not set yet - the defaults are used when it is deployed)';
+  fillDeploy(a.deploy);
   $('appError').hidden = true;
 }
 async function openEditor(name) {
@@ -230,11 +235,13 @@ async function openEditor(name) {
   if (name) {
     const r = await api('/api/app-get', { name });
     if (!r.ok) { toast(r.error, true); return; }
+    editorApps = r.appNames || []; editorMinOs = r.minOsChoices || [];
     fillEditor(r.app);
     $('knownGroups').textContent = r.knownGroups.length ? 'Groups used in this catalog: ' + r.knownGroups.join(', ') : '';
     $('appTitle').textContent = 'Edit ' + name;
   } else {
-    fillEditor({ hasMetadata: false });
+    editorApps = apps.map(a => a.name); editorMinOs = (prefs && prefs.minOsChoices) || [];
+    fillEditor({ hasMetadata: false, deploy: prefs && prefs.defaults ? { ...prefs.defaults, detection: { type: '' }, dependencies: prefs.defaults.defaultDependencyAppNames || [] } : null });
     $('knownGroups').textContent = '';
     $('appTitle').textContent = 'Add an app';
   }
@@ -251,6 +258,7 @@ $('appForm').addEventListener('submit', async e => {
     requiredFor: lines('gRequired'), availableFor: lines('gAvailable'), uninstallFor: lines('gUninstall'), excludeFor: lines('gExclude'),
     metadata: Object.fromEntries(Object.entries(metaIds).map(([k, id]) => [k, $(id).value])),
   };
+  if (deployTouched) app.deploy = readDeploy();
   const r = await api('/api/app-save', { originalName: editingName, app });
   if (!r.ok) { const p = $('appError'); p.textContent = r.error; p.hidden = false; return; }
   $('dlgApp').close();
@@ -361,7 +369,7 @@ for (const b of document.querySelectorAll('dialog [data-close]')) b.addEventList
 
 // jobs: Entra actions that sign the user in, in a console window of their own
 let jobRunning = false;
-function jobButtons(on) { for (const id of ['btnCheckCerts', 'btnUpload', 'btnAddPerms', 'btnDeployGo', 'btnPushGo']) $(id).disabled = !on; if (on) updateActions(); }
+function jobButtons(on) { for (const id of ['btnCheckCerts', 'btnUpload', 'btnAddPerms', 'btnDeployGo', 'btnPushGo', 'btnScriptIntune', 'btnScriptLocal', 'btnGroupSave', 'btnGroupsDeleteGo']) $(id).disabled = !on; if (on) updateActions(); }
 async function runJob(body, onDone, opts = {}) {
   if (jobRunning) { toast('Another action is still running - wait for it to finish.', true); return false; }
   const start = await api(opts.path || '/api/job-start', opts.path ? body : { ...fields(), ...body });
@@ -423,6 +431,53 @@ $('btnOpenEntra').addEventListener('click', async () => {
   const r = await api('/api/open', { target: 'entra-permissions', clientId: fields().clientId });
   if (!r.ok) toast(r.error, true);
 });
+
+// ---------------------------------------------------------------- editor: deploy settings
+let editorApps = [], editorMinOs = [], deployTouched = false;
+function showDetFields() {
+  const t = $('xType').value;
+  for (const d of document.querySelectorAll('[data-det]')) d.hidden = !d.dataset.det.split(' ').includes(t);
+}
+$('xType').addEventListener('change', showDetFields);
+function fillDeploy(d) {
+  deployTouched = false;
+  $('deploySec').open = false;
+  if (!d) d = { detection: { type: '' }, architecture: ['x64'], installContext: 'System', minOSKey: 'W10_22H2', installTimeMinutes: 60, deviceRestartBehavior: 'basedOnReturnCode', returnCodes: [], dependencies: [] };
+  const x = d.detection || { type: '' };
+  $('xType').value = x.type || ''; $('xScript').value = x.script || ''; $('xProductCode').value = x.productCode || '';
+  $('xPath').value = x.path || ''; $('xName').value = x.name || ''; $('xKey').value = x.keyPath || ''; $('xValueName').value = x.valueName || '';
+  $('xOperator').value = x.operator || 'notConfigured'; $('xValue').value = x.value || ''; $('x32').checked = !!x.check32Bit;
+  $('xFileType').value = x.type === 'File' ? (x.detectionType || 'exists') : 'exists';
+  $('xRegType').value = x.type === 'Registry' ? (x.detectionType || 'exists') : 'exists';
+  showDetFields();
+  for (const c of document.querySelectorAll('[data-xarch]')) c.checked = (d.architecture || []).includes(c.dataset.xarch);
+  $('xContext').value = d.installContext === 'User' ? 'User' : 'System';
+  $('xMinOs').replaceChildren(...editorMinOs.map(o => el('option', { value: o.value, text: o.label || o.value })));
+  if (d.minOSKey && ![...$('xMinOs').options].some(o => o.value === d.minOSKey)) $('xMinOs').append(el('option', { value: d.minOSKey, text: d.minOSKey }));
+  $('xMinOs').value = d.minOSKey || 'W10_22H2';
+  $('xTime').value = d.installTimeMinutes ?? 60; $('xRestart').value = d.deviceRestartBehavior || 'basedOnReturnCode';
+  $('xDisk').value = d.minDiskSpaceMB ?? 0; $('xMem').value = d.minMemoryMB ?? 0; $('xCpus').value = d.minProcessors ?? 0; $('xSpeed').value = d.minCpuSpeedMHz ?? 0;
+  $('xUninstall').checked = !!d.allowAvailableUninstall;
+  $('xCodes').value = (d.returnCodes || []).map(c => `${c.returnCode} = ${c.type}`).join('\n');
+  const deps = new Set(d.dependencies || []);
+  $('xDeps').replaceChildren(...(editorApps.length ? editorApps.map(n => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-dep': n, checked: deps.has(n) }), n)) : [el('span', { class: 'muted', text: 'No other apps in the catalog.' })]));
+}
+$('deploySec').addEventListener('input', () => { deployTouched = true; });
+$('deploySec').addEventListener('change', () => { deployTouched = true; });
+function readDeploy() {
+  const t = $('xType').value;
+  return {
+    detection: { type: t, script: $('xScript').value, productCode: $('xProductCode').value, operator: $('xOperator').value, value: $('xValue').value,
+      path: $('xPath').value, name: $('xName').value, keyPath: $('xKey').value, valueName: $('xValueName').value, check32Bit: $('x32').checked,
+      detectionType: t === 'File' ? $('xFileType').value : t === 'Registry' ? $('xRegType').value : '' },
+    architecture: [...document.querySelectorAll('[data-xarch]')].filter(c => c.checked).map(c => c.dataset.xarch),
+    installContext: $('xContext').value, minOSKey: $('xMinOs').value, installTimeMinutes: $('xTime').value.trim(), deviceRestartBehavior: $('xRestart').value,
+    minDiskSpaceMB: $('xDisk').value.trim(), minMemoryMB: $('xMem').value.trim(), minProcessors: $('xCpus').value.trim(), minCpuSpeedMHz: $('xSpeed').value.trim(),
+    allowAvailableUninstall: $('xUninstall').checked,
+    returnCodes: lines('xCodes').map(l => { const m = /^(-?\d+)\s*[=:]\s*(\w+)$/.exec(l); return m ? { returnCode: m[1], type: m[2] } : { returnCode: l, type: '' }; }),
+    dependencies: [...document.querySelectorAll('[data-dep]')].filter(c => c.checked).map(c => c.dataset.dep),
+  };
+}
 
 // ---------------------------------------------------------------- deploy
 let deployPlan = [];
@@ -660,6 +715,262 @@ async function openStatus(name) {
   $('statusRows').replaceChildren(...r.rows.map(x => el('tr', {}, el('td', { text: x.device }), el('td', { text: x.user }),
     el('td', {}, el('span', { class: 'pill ' + (/fail/i.test(x.state) ? 'err' : /install/i.test(x.state) && !/not/i.test(x.state) ? 'ok' : 'muted'), text: x.state })),
     el('td', { text: x.detail }), el('td', { class: 'chg', text: x.error }), el('td', { text: x.version }), el('td', { text: x.lastSeen }))));
+}
+
+// ---------------------------------------------------------------- groups
+let groups = [], groupsLoaded = false, group = null, toAdd = new Map();
+async function loadGroups() {
+  groupsLoaded = true;
+  const r = await api('/api/groups');
+  if (!r.ok) { toast(r.error, true); return; }
+  groups = r.groups || [];
+  renderGroupList();
+}
+function renderGroupList() {
+  const q = $('groupSearch').value.trim().toLowerCase();
+  const rows = groups.filter(g => !q || g.name.toLowerCase().includes(q));
+  $('groupList').replaceChildren(...(rows.length ? rows.map(g => {
+    const li = el('li', { role: 'option', 'aria-selected': String(!!group && group.name.toLowerCase() === g.name.toLowerCase()), title: g.uses.map(u => `${u.app} (${u.role})`).join('\n') },
+      el('span', { class: 'n', text: g.name }), el('span', { class: 'c', text: g.apps === 1 ? '1 app' : g.apps + ' apps' }));
+    li.addEventListener('click', () => openGroup(g.name));
+    return li;
+  }) : [el('li', { class: 'muted', text: groups.length ? 'No match - Open looks the name up in Entra ID.' : 'No app is assigned to a group yet.' })]));
+}
+$('groupSearch').addEventListener('input', renderGroupList);
+$('groupSearch').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('btnGroupOpen').click(); } });
+$('btnGroupOpen').addEventListener('click', () => { const n = $('groupSearch').value.trim(); if (n) openGroup(n); else toast('Type a group name first.', true); });
+$('btnGroupsReload').addEventListener('click', () => { loadGroups(); if (group) openGroup(group.name); });
+$('btnGroupNew').addEventListener('click', () => {
+  const n = (prompt('Name of the new security group:') || '').trim();
+  if (n) openGroup(n);
+});
+
+function setGroupBusy(on) { for (const id of ['btnGroupRename', 'btnGroupDelete', 'btnGroupSave', 'btnGroupFind']) $(id).disabled = on || (id !== 'btnGroupSave' && id !== 'btnGroupFind' && !(group && group.found)); }
+async function openGroup(name) {
+  $('groupEmpty').hidden = true; $('groupDetail').hidden = false; $('groupLog').hidden = true;
+  group = { name, found: false }; toAdd = new Map(); renderAdd(); $('gHits').replaceChildren(); $('gFindNote').textContent = '';
+  renderGroupList();
+  $('gName').textContent = name; $('gState').className = 'pill muted'; $('gState').textContent = 'Reading...';
+  $('gNote').textContent = ''; $('gDesc').value = ''; $('gMembers').replaceChildren(); $('gCount').textContent = ''; $('gUses').replaceChildren();
+  setGroupBusy(true);
+  const r = await api('/api/group-get', { name });
+  if (!group || group.name !== name) return;
+  if (!r.ok) {
+    $('gState').className = 'pill err'; $('gState').textContent = 'Not read';
+    $('gNote').textContent = r.error; $('btnGroupSave').disabled = true; return;
+  }
+  group = r;
+  $('gState').className = 'pill ' + (r.found ? 'ok' : 'warn');
+  $('gState').textContent = r.found ? 'In Entra ID' : 'Not in Entra ID';
+  $('gNote').textContent = !r.found ? 'No group with this exact name exists yet - Create / update group creates it as a security group.'
+    : r.duplicates > 1 ? `${r.duplicates} groups have this exact name - this shows the first. Intune can't tell them apart by name; rename the others in Entra ID.` : `Object ID ${r.id}`;
+  $('gDesc').value = r.description || '';
+  $('gCount').textContent = r.found ? `(${r.members.length})` : '';
+  $('gMembers').replaceChildren(...(r.members.length ? r.members.map(m => el('tr', {}, el('td', { text: m.name }), el('td', { text: m.type }), el('td', { class: 'chg', text: m.upn }),
+    el('td', {}, (() => { const b = el('button', { class: 'btn small danger', text: 'Remove' }); b.addEventListener('click', () => removeMember(m)); return b; })())))
+    : [el('tr', {}, el('td', { class: 'muted', colspan: '4', text: r.found ? 'No members.' : '-' }))]));
+  $('gUses').replaceChildren(...(r.uses.length ? r.uses.map(u => el('li', { text: `${u.app} - ${u.role}` })) : [el('li', { class: 'muted', text: 'No app in the catalog uses this group.' })]));
+  $('btnGroupSave').textContent = r.found ? 'Update group' : 'Create group';
+  setGroupBusy(false);
+}
+function renderAdd() {
+  $('gAddCount').textContent = toAdd.size ? `(${toAdd.size})` : '';
+  $('gAdd').replaceChildren(...(toAdd.size ? [...toAdd.values()].map(m => {
+    const b = el('button', { class: 'btn small', text: 'Remove' }); b.addEventListener('click', () => { toAdd.delete(m.id); renderAdd(); });
+    return el('li', {}, el('span', { class: 'n', text: m.name + (m.upn ? ` (${m.upn})` : '') }), el('span', { class: 'muted', text: m.type }), b);
+  }) : [el('li', { class: 'muted', text: 'Nobody yet - search above and Add.' })]));
+}
+async function findMembers() {
+  const q = $('gFind').value.trim();
+  if (q.length < 2) { $('gFindNote').textContent = 'Type at least 2 letters.'; return; }
+  $('gFindNote').textContent = 'Searching...';
+  const r = await api('/api/directory-search', { q });
+  if (!r.ok) { $('gFindNote').textContent = r.error; return; }
+  const have = new Set((group.members || []).map(m => m.id));
+  $('gFindNote').textContent = (r.hits.length ? '' : 'Nothing found. ') + (r.notes || []).join(' ');
+  $('gHits').replaceChildren(...r.hits.map(h => {
+    const b = el('button', { class: 'btn small', text: have.has(h.id) ? 'Member' : toAdd.has(h.id) ? 'Added' : 'Add' });
+    b.disabled = have.has(h.id) || toAdd.has(h.id) || (group.id && h.id === group.id);
+    b.addEventListener('click', () => { toAdd.set(h.id, h); b.textContent = 'Added'; b.disabled = true; renderAdd(); });
+    return el('li', {}, el('span', { class: 'n', text: h.name + (h.upn ? ` (${h.upn})` : '') }), el('span', { class: 'muted', text: h.type }), b);
+  }));
+}
+$('btnGroupFind').addEventListener('click', findMembers);
+$('gFind').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); findMembers(); } });
+
+function groupJob(body, title, onOk) {
+  $('groupLog').hidden = false; $('groupLog').textContent = '';
+  return runJob(body, (ok, res, after) => { if (ok) onOk(after); }, { path: '/api/group-job', log: 'groupLog', startText: title });
+}
+$('btnGroupSave').addEventListener('click', () => {
+  if (!group) return;
+  const name = group.name;
+  groupJob({ mode: 'Save', name, description: $('gDesc').value, memberIds: [...toAdd.keys()] }, `${group.found ? 'Updating' : 'Creating'} ${name}...`,
+    () => { toast(`${name} is ready.`); loadGroups(); openGroup(name); });
+});
+function removeMember(m) {
+  if (!confirm(`Remove ${m.name} from ${group.name}?\n\nApps assigned to this group stop applying to it.`)) return;
+  const name = group.name;
+  groupJob({ mode: 'RemoveMember', name, groupId: group.id, memberId: m.id }, `Removing ${m.name}...`, () => { toast('Removed.'); openGroup(name); });
+}
+$('btnGroupRename').addEventListener('click', () => {
+  if (!group || !group.found) return;
+  const old = group.name;
+  const nn = (prompt(`New name for "${old}":\n\nEntra ID renames the group (same group, same members), then every app in the catalog that names it follows.`, old) || '').trim();
+  if (!nn || nn === old) return;
+  groupJob({ mode: 'Rename', name: old, groupId: group.id, newName: nn }, `Renaming ${old}...`, after => {
+    const n = after && after.updated ? after.updated.length : 0;
+    toast(`Renamed to ${nn}; ${n} app(s) in the catalog updated.`); $('groupSearch').value = ''; loadGroups(); loadApps(); openGroup(nn);
+  });
+});
+$('btnGroupDelete').addEventListener('click', () => {
+  if (!group || !group.found) return;
+  const name = group.name, uses = (group.uses || []).length;
+  if (!confirm(`Delete the group "${name}" from Entra ID?\n\n${uses ? `${uses} catalog assignment(s) name it - those apps lose this assignment in Intune, and the catalog keeps naming a group that is gone.` : 'No app in the catalog uses it.'} This can't be undone here.`)) return;
+  groupJob({ mode: 'Delete', name }, `Deleting ${name}...`, () => { toast(`${name} was deleted.`); group = null; $('groupDetail').hidden = true; $('groupEmpty').hidden = false; loadGroups(); });
+});
+$('btnGroupsDelete').addEventListener('click', () => {
+  $('gDelLog').hidden = true; $('gDelLog').textContent = ''; $('gDelMore').value = '';
+  $('gDelList').replaceChildren(...(groups.length ? groups.map(g => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-gdel': g.name }), `${g.name} `, el('span', { class: 'muted', text: `(${g.apps} app${g.apps === 1 ? '' : 's'})` })))
+    : [el('span', { class: 'muted', text: 'No catalog groups - type names below.' })]));
+  $('dlgGroupsDelete').showModal();
+});
+$('btnGroupsDeleteGo').addEventListener('click', () => {
+  const names = [...new Set([...document.querySelectorAll('[data-gdel]')].filter(c => c.checked).map(c => c.dataset.gdel).concat(lines('gDelMore')))];
+  if (!names.length) { toast('Tick or type at least one group.', true); return; }
+  if (!confirm(`Delete ${names.length} group(s) from Entra ID?\n\n${names.join('\n')}\n\nApps assigned to them lose those assignments. This can't be undone here.`)) return;
+  $('gDelLog').hidden = false;
+  runJob({ mode: 'DeleteMany', names }, ok => { toast(ok ? `Deleted ${names.length} group(s).` : 'Not every group was deleted - see the log.', !ok); loadGroups(); },
+    { path: '/api/group-job', log: 'gDelLog', startText: `Deleting ${names.length} group(s)...` });
+});
+
+// ---------------------------------------------------------------- platform scripts
+let scripts = [], scriptsLoaded = false, scriptSel = null, scriptOrig = null;
+async function loadScripts() {
+  scriptsLoaded = true;
+  $('scriptNote').textContent = 'Reading the scripts...';
+  const r = await api('/api/scripts');
+  if (!r.ok) { $('scriptNote').textContent = r.error; return; }
+  scripts = r.rows || [];
+  const notes = [r.tenantRead ? 'PowerShell scripts Intune runs on enrolled Windows devices, with the local copies kept beside the catalog.' : r.tenantError];
+  if (r.localErrors && r.localErrors.length) notes.push('Unreadable local files: ' + r.localErrors.join('; '));
+  $('scriptNote').textContent = notes.join(' ');
+  $('scriptNote').className = 'sub' + (r.tenantRead ? '' : ' warntext');
+  $('btnScriptsSave').disabled = !r.tenantRead;
+  if (scriptSel && !scripts.some(x => x.displayName === scriptSel.displayName && x.id === scriptSel.id)) scriptSel = null;
+  renderScripts();
+}
+function renderScripts() {
+  const q = $('scriptSearch').value.trim().toLowerCase();
+  const rows = scripts.filter(x => !q || (x.displayName + ' ' + x.fileName + ' ' + x.description).toLowerCase().includes(q));
+  const pill = t => el('span', { class: 'pill ' + (t === 'Saved' ? 'ok' : /^Differs/.test(t) ? 'warn' : /^Local/.test(t) ? 'info' : 'muted'), text: t });
+  $('scriptBody').replaceChildren(...rows.map(x => {
+    const tr = el('tr', { 'aria-selected': String(scriptSel === x), title: x.description || x.displayName },
+      el('td', { text: x.displayName }), el('td', { class: 'mono', text: x.fileName }), el('td', { text: x.runAs }), el('td', { text: x.runAs32Bit }),
+      el('td', { text: x.signature }), el('td', { text: x.modified }), el('td', {}, pill(x.local)));
+    tr.addEventListener('click', () => { scriptSel = x; renderScripts(); });
+    tr.addEventListener('dblclick', () => { scriptSel = x; openScript(x); });
+    return tr;
+  }));
+  $('scriptCount').textContent = `${rows.length} of ${scripts.length}`;
+  $('scriptEmpty').hidden = scripts.length > 0;
+  $('btnScriptEdit').disabled = !scriptSel;
+  $('btnScriptDelete').disabled = !scriptSel;
+  $('btnScriptStatus').disabled = !scriptSel || !scriptSel.id;
+}
+$('scriptSearch').addEventListener('input', renderScripts);
+$('btnScriptsReload').addEventListener('click', loadScripts);
+$('btnScriptsFolder').addEventListener('click', async () => { const r = await api('/api/open', { target: 'scripts-folder' }); if (!r.ok) toast(r.error, true); });
+$('btnScriptNew').addEventListener('click', () => openScript(null));
+$('btnScriptEdit').addEventListener('click', () => scriptSel && openScript(scriptSel));
+$('btnScriptStatus').addEventListener('click', () => scriptSel && openScriptStatus(scriptSel));
+$('btnScriptsSave').addEventListener('click', async () => {
+  const b = $('btnScriptsSave'); b.disabled = true; toast('Reading every script in full...');
+  const r = await api('/api/scripts-save-local');
+  b.disabled = false;
+  if (!r.ok) { toast(r.error, true); return; }
+  toast(r.message + (r.failed && r.failed.length ? ` ${r.failed.length} could not be read - see Activity.` : ''), r.failed && r.failed.length);
+  loadScripts();
+});
+$('btnScriptDelete').addEventListener('click', async () => {
+  const x = scriptSel; if (!x) return;
+  if (!x.id) {
+    if (!confirm(`Delete the local copy of "${x.displayName}"?\n\nThis script isn't in Intune${x.local === 'Local copy' ? ' (or Intune was not read)' : ''}, so only the file goes.`)) return;
+    const r = await api('/api/script-delete', { name: x.displayName });
+    toast(r.ok ? 'Local copy deleted.' : r.error, !r.ok); scriptSel = null; loadScripts(); return;
+  }
+  if (!confirm(`Permanently delete the platform script "${x.displayName}" from Intune?\n\nDevices that already ran it keep whatever it did - Intune only stops running it. Any local copy stays.`)) return;
+  runDialog('Delete platform script', x.displayName);
+  runJob({ id: x.id, name: x.displayName }, ok => { toast(ok ? `${x.displayName} was deleted from Intune.` : 'Delete failed - see the log.', !ok); scriptSel = null; loadScripts(); },
+    { path: '/api/script-delete', log: 'runLog', startText: `Deleting ${x.displayName}...` });
+});
+
+function fillScript(s) {
+  $('sName').value = s.displayName || ''; $('sDescription').value = s.description || ''; $('sFile').value = s.fileName || '';
+  $('sRunAs').value = s.runAsAccount === 'user' ? 'user' : 'system'; $('s32').checked = !!s.runAs32Bit; $('sSig').checked = !!s.enforceSignatureCheck;
+  $('sGroups').value = (s.groups || []).join('\n'); $('sContent').value = s.scriptContent || '';
+  // Groups that couldn't be read must not be sent as "none" - that would remove every assignment.
+  $('sAssign').checked = s.groupsKnown !== false && !!(s.groups && s.groups.length);
+  $('sAssign').disabled = s.groupsKnown === false;
+  $('sAssignNote').textContent = s.groupsKnown === false ? "The script's groups couldn't be read, so they can't be sent - fix the Group.Read.All permission, then reopen." : "Replaces the script's assignments in Intune - an empty list removes them all.";
+}
+async function openScript(row) {
+  $('scriptErr').hidden = true; $('scriptLog').hidden = true; $('scriptLog').textContent = '';
+  scriptOrig = row ? { id: row.id, name: row.displayName } : { id: '', name: '' };
+  $('scriptTitle').textContent = row ? row.displayName : 'New platform script';
+  $('scriptWhere').textContent = row ? (row.id ? 'In Intune' + (row.local !== 'Not saved here' ? ' - a local copy is kept too.' : '.') : 'Only a local copy - Save to Intune creates it there.') : 'Save locally to keep it as a draft, or Save to Intune to create it there.';
+  $('btnScriptIntune').textContent = row && row.id ? 'Save to Intune' : 'Create in Intune';
+  fillScript({ runAsAccount: 'system' });
+  $('dlgScript').showModal();
+  if (row) {
+    $('sContent').value = 'Loading...';
+    const r = await api('/api/script-get', row.id ? { id: row.id } : { name: row.displayName });
+    if (!r.ok) { $('sContent').value = ''; $('scriptErr').textContent = 'Could not load the script: ' + r.error; $('scriptErr').hidden = false; return; }
+    fillScript(r.script);
+  }
+}
+$('sLoad').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  if (f.size > 200000) { toast('That file is larger than the 200 KB Intune accepts.', true); return; }
+  $('sContent').value = (await f.text()).replace(/^﻿/, '');
+  if (!$('sFile').value) $('sFile').value = f.name;
+  e.target.value = '';
+});
+function readScript() {
+  return { id: scriptOrig.id, displayName: $('sName').value, description: $('sDescription').value, fileName: $('sFile').value, runAsAccount: $('sRunAs').value,
+    runAs32Bit: $('s32').checked, enforceSignatureCheck: $('sSig').checked, scriptContent: $('sContent').value, groups: lines('sGroups') };
+}
+async function saveScript(destination) {
+  $('scriptErr').hidden = true;
+  const body = { script: readScript(), originalName: scriptOrig.name, destination, assignGroups: $('sAssign').checked && !$('sAssign').disabled };
+  if (destination === 'Intune' && body.assignGroups && !body.script.groups.length && !confirm('The group list is empty - saving removes every assignment this script has in Intune. Continue?')) return;
+  if (destination === 'Local') {
+    const r = await api('/api/script-save', body);
+    if (!r.ok) { $('scriptErr').textContent = r.error; $('scriptErr').hidden = false; return; }
+    toast('Saved locally - nothing was sent to Intune.'); $('dlgScript').close(); loadScripts(); return;
+  }
+  $('scriptLog').hidden = false; $('scriptLog').textContent = '';
+  const started = await runJob(body, (ok, res) => {
+    if (ok) { toast(`${body.script.displayName} saved to Intune.`); $('dlgScript').close(); }
+    else { $('scriptErr').textContent = (res && res.error) || 'It did not finish - see the log.'; $('scriptErr').hidden = false; }
+    loadScripts();
+  }, { path: '/api/script-save', log: 'scriptLog', startText: 'Sending to Intune...' });
+  if (!started) $('scriptLog').hidden = true;
+}
+$('btnScriptLocal').addEventListener('click', () => saveScript('Local'));
+$('btnScriptIntune').addEventListener('click', () => saveScript('Intune'));
+
+async function openScriptStatus(x) {
+  $('sStatusTitle').textContent = 'Run status - ' + x.displayName;
+  $('sStatusSummary').textContent = 'Reading how the script went on each device...';
+  $('sStatusRows').replaceChildren();
+  $('dlgScriptStatus').showModal();
+  const r = await api('/api/script-runstatus', { id: x.id });
+  if (!r.ok) { $('sStatusSummary').textContent = r.error; return; }
+  $('sStatusSummary').textContent = r.summary;
+  $('sStatusRows').replaceChildren(...r.rows.map(y => el('tr', {}, el('td', { text: y.device }), el('td', { text: y.user }),
+    el('td', {}, el('span', { class: 'pill ' + (y.state === 'Success' ? 'ok' : y.state === 'Failed' ? 'err' : 'muted'), text: y.state })),
+    el('td', { class: 'v', text: y.result }), el('td', { class: 'chg', text: y.error }), el('td', { text: y.lastRun }))));
 }
 
 // ---------------------------------------------------------------- settings: packaging, checks, folders, defaults, favourites

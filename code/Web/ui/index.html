@@ -14,11 +14,13 @@
   <nav class="tabs" role="tablist">
     <button class="tab" role="tab" data-view="apps" id="tabApps">Apps</button>
     <button class="tab" role="tab" data-view="checks" id="tabChecks">Checks</button>
+    <button class="tab" role="tab" data-view="groups" id="tabGroups">Groups</button>
+    <button class="tab" role="tab" data-view="scripts" id="tabScripts">Platform scripts</button>
     <button class="tab" role="tab" data-view="settings" id="tabSettings">Settings</button>
   </nav>
   <div class="topright">
     <span class="conn" id="connBadge" title="Graph connection"></span>
-    <button class="btn ghost" id="btnClassic" title="The classic window has everything not moved here yet: editing, deploying, assigning, checks.">Open classic window</button>
+    <button class="btn ghost" id="btnClassic" title="The classic window still has what is not here yet: the group manager, batch edit and some Checks fixes.">Open classic window</button>
     <button class="btn ghost" id="btnTheme" title="Switch between light and dark">Dark mode</button>
   </div>
 </header>
@@ -88,6 +90,81 @@
       </table>
       <div class="empty" id="checkEmpty"><h2 id="checkEmptyTitle">Not run yet</h2><p id="checkEmptyText">Run checks to see what needs attention.</p></div>
     </div>
+  </section>
+
+  <!-- ============ Groups ============ -->
+  <section class="view" id="viewGroups" hidden>
+    <div class="gsplit">
+      <aside class="panel">
+        <div class="toolbar tight">
+          <input type="search" id="groupSearch" placeholder="Filter or type a group name" autocomplete="off" spellcheck="false">
+          <button class="btn" id="btnGroupOpen" title="Open this exact group name from Entra ID">Open</button>
+        </div>
+        <ul class="glist" id="groupList" role="listbox" aria-label="Groups used by the catalog"></ul>
+        <div class="actions">
+          <button class="btn" id="btnGroupNew">New group</button>
+          <button class="btn" id="btnGroupsDelete">Delete several...</button>
+          <button class="btn" id="btnGroupsReload">Reload</button>
+        </div>
+      </aside>
+      <section class="panel" id="groupPane">
+        <div class="empty" id="groupEmpty"><h2>Pick a group</h2><p>The groups your apps are assigned to are listed on the left. Pick one to see its members in Entra ID, or type any group name and Open it.</p></div>
+        <div id="groupDetail" hidden>
+          <div class="ghead">
+            <h2 id="gName"></h2>
+            <span class="pill" id="gState"></span>
+            <span class="spacer"></span>
+            <button class="btn" id="btnGroupRename" disabled>Rename...</button>
+            <button class="btn danger" id="btnGroupDelete" disabled>Delete group...</button>
+          </div>
+          <p class="sub" id="gNote"></p>
+          <div class="formgrid">
+            <section>
+              <label>Description <span class="muted">(optional)</span><input id="gDesc" maxlength="1024"></label>
+              <h3>Members <span class="muted" id="gCount"></span></h3>
+              <div class="tablewrap short"><table class="plan"><thead><tr><th>Name</th><th>Type</th><th>Sign-in name</th><th></th></tr></thead><tbody id="gMembers"></tbody></table></div>
+              <h3>Used by</h3>
+              <ul class="uses" id="gUses"></ul>
+            </section>
+            <section>
+              <h3>Add members</h3>
+              <div class="toolbar tight"><input type="search" id="gFind" placeholder="Search users and groups (at least 2 letters)" autocomplete="off" spellcheck="false"><button class="btn" id="btnGroupFind">Search</button></div>
+              <p class="muted note" id="gFindNote"></p>
+              <ul class="hits" id="gHits"></ul>
+              <h3>To add <span class="muted" id="gAddCount"></span></h3>
+              <ul class="hits" id="gAdd"></ul>
+              <div class="actions end"><button class="btn primary" id="btnGroupSave">Create / update group</button></div>
+            </section>
+          </div>
+          <pre class="log" id="groupLog" hidden></pre>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <!-- ============ Platform scripts ============ -->
+  <section class="view" id="viewScripts" hidden>
+    <div class="toolbar">
+      <input type="search" id="scriptSearch" placeholder="Search scripts" autocomplete="off" spellcheck="false">
+      <span class="count" id="scriptCount"></span>
+      <span class="spacer"></span>
+      <button class="btn primary" id="btnScriptNew">New script</button>
+      <button class="btn" id="btnScriptEdit" disabled>Edit</button>
+      <button class="btn" id="btnScriptStatus" disabled title="How the script went on each device">Run status</button>
+      <button class="btn" id="btnScriptDelete" disabled>Delete</button>
+      <button class="btn" id="btnScriptsSave" title="Reads every script in Intune in full - body and groups - and keeps a local copy of each. Only reads Intune.">Save local copies</button>
+      <button class="btn" id="btnScriptsReload">Reload</button>
+      <button class="btn" id="btnScriptsFolder">Open folder</button>
+    </div>
+    <p class="sub" id="scriptNote">PowerShell scripts Intune runs on enrolled Windows devices, with the local copies kept beside the catalog.</p>
+    <div class="tablewrap">
+      <table class="grid" id="scriptGrid">
+        <thead><tr><th>Script</th><th>File</th><th>Runs as</th><th>32-bit</th><th>Signature</th><th>Modified</th><th>Local copy</th></tr></thead>
+        <tbody id="scriptBody"></tbody>
+      </table>
+      <div class="empty" id="scriptEmpty" hidden><h2>No platform scripts</h2><p id="scriptEmptyText">None in Intune and none saved locally. New script writes one.</p></div>
+    </div>
+    <p class="hint">Click to select, double-click to edit.</p>
   </section>
 
   <!-- ============ Settings ============ -->
@@ -269,12 +346,45 @@
         <label>Privacy URL<input id="mPrivacyUrl" spellcheck="false"></label>
         <label>Install command<input id="mInstallCommand" class="mono" spellcheck="false"></label>
         <label>Uninstall command<input id="mUninstallCommand" class="mono" spellcheck="false"></label>
-        <label>Install for
-          <select id="mInstallContext"><option value="">(default)</option><option value="system">System</option><option value="user">User</option></select>
-        </label>
         <label>Notes<textarea id="mNotes" rows="2"></textarea></label>
       </section>
     </div>
+    <details class="deploysec" id="deploySec">
+      <summary>Deploy settings <span class="muted">- detection rule, requirements, return codes, dependencies</span></summary>
+      <div class="formgrid">
+        <section>
+          <h3>Detection rule</h3>
+          <label>Type<select id="xType"><option value="">(none - an app with its own package needs one)</option><option value="Script">Script</option><option value="Msi">MSI product code</option><option value="File">File or folder</option><option value="Registry">Registry</option></select></label>
+          <div data-det="Script"><label>Detection script <span class="muted">(writes output and exits 0 when installed)</span><textarea id="xScript" rows="8" class="monotext" spellcheck="false"></textarea></label></div>
+          <div data-det="Msi"><label>Product code<input id="xProductCode" class="mono" spellcheck="false" placeholder="{00000000-0000-0000-0000-000000000000}"></label></div>
+          <div data-det="File"><div class="two"><label>Folder<input id="xPath" class="mono" spellcheck="false" placeholder="C:\Program Files\Vendor"></label><label>File or folder name<input id="xName" class="mono" spellcheck="false"></label></div>
+            <label>Detect by<select id="xFileType"><option value="exists">Exists</option><option value="doesNotExist">Doesn't exist</option><option value="version">Version</option><option value="modifiedDate">Date modified</option><option value="createdDate">Date created</option><option value="sizeInMB">Size in MB</option></select></label></div>
+          <div data-det="Registry"><label>Key path<input id="xKey" class="mono" spellcheck="false" placeholder="HKEY_LOCAL_MACHINE\SOFTWARE\Vendor"></label><label>Value name<input id="xValueName" class="mono" spellcheck="false"></label>
+            <label>Detect by<select id="xRegType"><option value="exists">Exists</option><option value="doesNotExist">Doesn't exist</option><option value="string">String</option><option value="integer">Integer</option><option value="version">Version</option></select></label></div>
+          <div data-det="Msi File Registry"><div class="two"><label>Operator<select id="xOperator"><option value="notConfigured">(not configured)</option><option value="equal">Equals</option><option value="notEqual">Not equal</option><option value="greaterThan">Greater than</option><option value="greaterThanOrEqual">Greater than or equal</option><option value="lessThan">Less than</option><option value="lessThanOrEqual">Less than or equal</option></select></label><label>Value<input id="xValue" class="mono" spellcheck="false"></label></div></div>
+          <div data-det="File Registry"><label class="chk"><input type="checkbox" id="x32">Check the 32-bit location on 64-bit Windows</label></div>
+          <h3>Dependencies <span class="muted">(installed first)</span></h3>
+          <div class="deplist" id="xDeps"></div>
+        </section>
+        <section>
+          <h3>Requirements</h3>
+          <label>Architecture</label>
+          <div class="checks"><label class="chk"><input type="checkbox" data-xarch="x64">x64</label><label class="chk"><input type="checkbox" data-xarch="x86">x86</label><label class="chk"><input type="checkbox" data-xarch="arm64">arm64</label></div>
+          <div class="two">
+            <label>Install for<select id="xContext"><option>System</option><option>User</option></select></label>
+            <label>Minimum OS<select id="xMinOs"></select></label>
+            <label>Install time (min)<input id="xTime" inputmode="numeric"></label>
+            <label>Restart<select id="xRestart"><option value="basedOnReturnCode">Based on return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></label>
+            <label>Min. disk space (MB)<input id="xDisk" inputmode="numeric"></label>
+            <label>Min. memory (MB)<input id="xMem" inputmode="numeric"></label>
+            <label>Min. CPUs<input id="xCpus" inputmode="numeric"></label>
+            <label>Min. CPU speed (MHz)<input id="xSpeed" inputmode="numeric"></label>
+          </div>
+          <label class="chk"><input type="checkbox" id="xUninstall">Allow uninstall from Company Portal</label>
+          <label>Return codes <span class="muted">(code = type: success, softReboot, hardReboot, retry, failed)</span><textarea id="xCodes" rows="5" class="monotext"></textarea></label>
+        </section>
+      </div>
+    </details>
     <p class="formerror" id="appError" hidden></p>
     <div class="actions split">
       <button type="button" class="btn danger" id="btnRemoveApp">Remove from catalog...</button>
@@ -333,6 +443,55 @@
   <p class="sub" id="statusSummary">Reading Intune's install status report...</p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>Device</th><th>User</th><th>State</th><th>Detail</th><th>Error</th><th>Version</th><th>Last seen</th></tr></thead><tbody id="statusRows"></tbody></table></div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgScript" class="wide">
+  <h2 id="scriptTitle">Platform script</h2>
+  <p class="sub" id="scriptWhere"></p>
+  <div class="formgrid">
+    <section>
+      <label>Name<input id="sName" maxlength="256" spellcheck="false"></label>
+      <label>Description<textarea id="sDescription" rows="2"></textarea></label>
+      <label>File name <span class="muted">(made from the name when empty)</span><input id="sFile" class="mono" spellcheck="false" placeholder="Set-Something.ps1"></label>
+      <div class="two">
+        <label>Run as<select id="sRunAs"><option value="system">System</option><option value="user">Signed-in user</option></select></label>
+        <span></span>
+      </div>
+      <label class="chk"><input type="checkbox" id="s32">Run in 32-bit PowerShell on 64-bit Windows</label>
+      <label class="chk"><input type="checkbox" id="sSig">Require a signature</label>
+      <h3>Groups</h3>
+      <label>One group per line<textarea id="sGroups" rows="4" class="monotext" spellcheck="false"></textarea></label>
+      <label class="chk"><input type="checkbox" id="sAssign">Send these groups to Intune when saving there</label>
+      <p class="muted note" id="sAssignNote">Replaces the script's assignments in Intune - an empty list removes them all.</p>
+    </section>
+    <section>
+      <label>Script <span class="muted">(at most 200 KB)</span><textarea id="sContent" rows="22" class="monotext" spellcheck="false"></textarea></label>
+      <label class="filebtn btn small">Load a .ps1 file...<input type="file" id="sLoad" accept=".ps1,.txt" hidden></label>
+    </section>
+  </div>
+  <p class="formerror" id="scriptErr" hidden></p>
+  <pre class="log" id="scriptLog" hidden></pre>
+  <div class="actions end">
+    <button class="btn" data-close>Close</button>
+    <button class="btn" id="btnScriptLocal" title="Only the local folder - nothing is sent to Intune">Save locally</button>
+    <button class="btn primary" id="btnScriptIntune">Save to Intune</button>
+  </div>
+</dialog>
+
+<dialog id="dlgScriptStatus" class="wide">
+  <h2 id="sStatusTitle">Run status</h2>
+  <p class="sub" id="sStatusSummary"></p>
+  <div class="tablewrap short"><table class="plan"><thead><tr><th>Device</th><th>User</th><th>State</th><th>Output</th><th>Error</th><th>Last run</th></tr></thead><tbody id="sStatusRows"></tbody></table></div>
+  <div class="actions end"><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgGroupsDelete">
+  <h2>Delete several groups</h2>
+  <p class="sub">Deletes these security groups from Entra ID. Apps assigned to them lose those assignments in Intune. The catalog still names them until you change the apps.</p>
+  <div class="deplist tall" id="gDelList"></div>
+  <label>More group names <span class="muted">(one per line)</span><textarea id="gDelMore" rows="3" class="monotext" spellcheck="false"></textarea></label>
+  <pre class="log" id="gDelLog" hidden></pre>
+  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn danger" id="btnGroupsDeleteGo">Delete</button></div>
 </dialog>
 
 <div class="toast" id="toast" role="status" hidden></div>

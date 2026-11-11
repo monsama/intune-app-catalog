@@ -68,7 +68,7 @@ jobs:
             if ($parseErrors.Count -gt 0) { $errors += $parseErrors.Count; Write-Host "$($_.Name): $($parseErrors[0].Message)" }
           }
           if ($errors -gt 0) { throw "$errors parse error(s) in the zip" }
-          foreach ($needed in 'IntuneDeployment.ps1', 'MainApp.ps1', 'code\Private\GuiHelpers.ps1', 'code\EmbeddedScripts\CreateApp.ps1', 'code\Runner\Invoke-AppStep.ps1', 'code\Web\Start-WebApp.ps1', 'code\Web\ui\index.html', 'code\Web\ui\app.js') {
+          foreach ($needed in 'IntuneDeployment.ps1', 'MainApp.ps1', 'code\Private\GuiHelpers.ps1', 'code\EmbeddedScripts\CreateApp.ps1', 'code\Runner\Invoke-AppStep.ps1', 'code\Web\Start-WebApp.ps1', 'code\Web\WebScripts.ps1', 'code\Web\WebGroups.ps1', 'code\Web\ui\index.html', 'code\Web\ui\app.js') {
             if (-not (Test-Path (Join-Path $check $needed))) { throw "$needed is missing from the zip" }
           }
           "The zip parses and has what it needs"

@@ -108,6 +108,32 @@ try {
     Check ((Invoke-Api '/api/open' @{ target = 'calc.exe' }).ok -eq $false) 'open: only its fixed targets'
     Check ((Invoke-Api '/api/job-start' @{ mode = 'Anything'; tenantId = 'x'; clientId = 'y' }).ok -eq $false) 'job-start: only the known actions'
     Check ((Invoke-Api '/api/no-such-thing').error -eq 'unknown') 'an unknown route says so'
+    # Platform scripts - the local copies (no tenant in CI)
+    $scriptName = "Web test script $([guid]::NewGuid().ToString('N').Substring(0, 6))"
+    $scriptForm = @{ id = ''; displayName = $scriptName; description = 'from the test'; fileName = ''; runAsAccount = 'system'; runAs32Bit = $false; enforceSignatureCheck = $false
+        scriptContent = "Write-Output 'hello'`r`nexit 0"; groups = @('SG-A', 'SG-A', ' ') }
+    $emptyScript = Invoke-Api '/api/script-save' @{ destination = 'Local'; originalName = ''; script = @{ displayName = $scriptName; scriptContent = '  '; runAsAccount = 'system' } }
+    Check (-not $emptyScript.ok -and $emptyScript.error -like '*empty*') 'scripts: an empty script is refused' ($emptyScript | ConvertTo-Json -Compress)
+    $badRunAs = Invoke-Api '/api/script-save' @{ destination = 'Local'; originalName = ''; script = @{ displayName = $scriptName; scriptContent = 'x'; runAsAccount = 'admin' } }
+    Check (-not $badRunAs.ok) 'scripts: an unknown run-as account is refused'
+    $savedScript = Invoke-Api '/api/script-save' @{ destination = 'Local'; originalName = ''; script = $scriptForm }
+    Check ($savedScript.ok -and $savedScript.local) 'scripts: saved locally' ($savedScript | ConvertTo-Json -Compress)
+    $listed = Invoke-Api '/api/scripts'
+    $row = @($listed.rows) | Where-Object { $_.displayName -eq $scriptName }
+    Check ($listed.ok -and -not $listed.tenantRead -and $listed.tenantError -and $row -and $row.local -eq 'Local copy' -and $row.fileName -eq (($scriptName -replace ' ', '-') + '.ps1')) 'scripts: listed as a local copy, file name made from the name, and says Intune was not read' ($listed | ConvertTo-Json -Compress -Depth 4)
+    $detail = Invoke-Api '/api/script-get' @{ name = $scriptName }
+    Check ($detail.ok -and $detail.script.scriptContent -eq "Write-Output 'hello'`nexit 0" -and @($detail.script.groups).Count -eq 1) 'scripts: reads back (line endings normalised, groups cleaned)' ($detail | ConvertTo-Json -Compress -Depth 4)
+    $form2 = $scriptForm.Clone(); $form2.displayName = "$scriptName 2"
+    $renamedScript = Invoke-Api '/api/script-save' @{ destination = 'Local'; originalName = $scriptName; script = $form2 }
+    $names2 = @((Invoke-Api '/api/scripts').rows.displayName)
+    Check ($renamedScript.ok -and $names2 -contains "$scriptName 2" -and $names2 -notcontains $scriptName) 'scripts: a rename replaces the old local file' ($names2 -join ', ')
+    Check (-not (Invoke-Api '/api/script-save' @{ destination = 'Intune'; originalName = "$scriptName 2"; script = $scriptForm }).ok) 'scripts: Save to Intune refused without a connection'
+    Check (@((Invoke-Api '/api/scripts').rows.displayName) -contains "$scriptName 2") 'scripts: ... and the refused save left the local copy as it was'
+    Check (-not (Invoke-Api '/api/script-get' @{ id = '../../users' }).ok) 'scripts: an id that is not a GUID is refused'
+    Check (-not (Invoke-Api '/api/script-runstatus' @{ id = '' }).ok) 'scripts: no run status for a script not in Intune'
+    $delScript = Invoke-Api '/api/script-delete' @{ name = "$scriptName 2" }
+    Check ($delScript.ok -and @((Invoke-Api '/api/scripts').rows.displayName) -notcontains "$scriptName 2") 'scripts: the local copy is deleted'
+    Check (-not (Invoke-Api '/api/script-delete' @{ name = "$scriptName 2" }).ok) 'scripts: deleting it again says there is none'
     $log = Invoke-Api '/api/log' @{ from = 0 }
     Check ($log.ok -and (@($log.lines.Text) -join "`n") -like '*Web interface started*') 'log: the server''s own lines for the Activity box'
 
@@ -128,6 +154,38 @@ try {
     $renamed = Invoke-Api '/api/app-save' @{ originalName = $testName; app = @{ appName = "$testName renamed"; wingetId = 'Vendor.WebTest'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'from the test' } } }
     $names = @((Invoke-Api '/api/catalog').apps.name)
     Check ($renamed.ok -and $names -contains "$testName renamed" -and $names -notcontains $testName) 'editor: a rename replaces the old file' ($names -join ', ')
+    $rn = "$testName renamed"
+    $deployBase = @{ architecture = @('x64'); installContext = 'User'; minOSKey = 'W10_22H2'; installTimeMinutes = '60'; deviceRestartBehavior = 'basedOnReturnCode'
+        minDiskSpaceMB = '0'; minMemoryMB = '0'; minProcessors = '0'; minCpuSpeedMHz = '0'; allowAvailableUninstall = $true
+        returnCodes = @(@{ returnCode = '0'; type = 'success' }, @{ returnCode = '3010'; type = 'softReboot' }); dependencies = @() }
+    function New-DeployEdit($Deploy) { @{ originalName = $rn; app = @{ appName = $rn; wingetId = 'Vendor.WebTest'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'from the test' }; deploy = $Deploy } } }
+    $d = $deployBase.Clone(); $d.detection = @{ type = 'Registry'; keyPath = ' '; detectionType = 'exists'; operator = 'notConfigured' }
+    $noKey = Invoke-Api '/api/app-save' (New-DeployEdit $d)
+    Check (-not $noKey.ok -and $noKey.error -like '*key path*') 'deploy settings: a registry rule without a key path is refused' ($noKey | ConvertTo-Json -Compress)
+    $d = $deployBase.Clone(); $d.detection = @{ type = '' }; $d.dependencies = @($rn)
+    $selfDep = Invoke-Api '/api/app-save' (New-DeployEdit $d)
+    Check (-not $selfDep.ok -and $selfDep.error -like '*itself*') 'deploy settings: an app depending on itself is refused' ($selfDep | ConvertTo-Json -Compress)
+    $d = $deployBase.Clone(); $d.detection = @{ type = '' }; $d.dependencies = @('No Such App')
+    $badDep = Invoke-Api '/api/app-save' (New-DeployEdit $d)
+    Check (-not $badDep.ok -and $badDep.error -like '*catalog*') 'deploy settings: a dependency that is not in the catalog is refused'
+    $d = $deployBase.Clone(); $d.detection = @{ type = 'File'; path = 'C:\Program Files\Vendor'; name = 'app.exe'; detectionType = 'version'; operator = 'greaterThanOrEqual'; value = '1.2'; check32Bit = $false }
+    $okDeploy = Invoke-Api '/api/app-save' (New-DeployEdit $d)
+    $back = (Invoke-Api '/api/app-get' @{ name = $rn }).app.deploy
+    Check ($okDeploy.ok -and $back.detection.type -eq 'File' -and $back.detection.name -eq 'app.exe' -and $back.detection.operator -eq 'greaterThanOrEqual') 'deploy settings: a file detection rule is saved and reads back' ($back | ConvertTo-Json -Compress -Depth 5)
+    Check ($back.installContext -eq 'User' -and @($back.returnCodes).Count -eq 2 -and (@($back.returnCodes | Where-Object { $_.returnCode -eq 3010 }).type -eq 'softReboot')) 'deploy settings: install context and return codes saved' ($back | ConvertTo-Json -Compress -Depth 5)
+    $keep = Invoke-Api '/api/app-save' @{ originalName = $rn; app = @{ appName = $rn; wingetId = 'Vendor.WebTest'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'changed' } } }
+    Check ($keep.ok -and (Invoke-Api '/api/app-get' @{ name = $rn }).app.deploy.detection.type -eq 'File') 'deploy settings: a save without them keeps them'
+    # Groups (no tenant in CI): what the catalog uses, and the refusals
+    $gl = Invoke-Api '/api/groups'
+    $sga = @($gl.groups) | Where-Object { $_.name -eq 'SG-A' }
+    Check ($gl.ok -and $sga -and @($sga.uses | Where-Object { $_.app -eq $rn -and $_.role -eq 'Required' }).Count -eq 1) 'groups: the catalog''s groups, with which app uses them and how' ($gl | ConvertTo-Json -Compress -Depth 5)
+    Check (-not (Invoke-Api '/api/group-get' @{ name = '' }).ok) 'groups: an empty name is refused'
+    $gg = Invoke-Api '/api/group-get' @{ name = 'SG-A' }
+    Check (-not $gg.ok -and $gg.error -like '*connection*') 'groups: reading Entra ID says the connection is missing' ($gg | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/directory-search' @{ q = 'a' }).ok) 'groups: a one-letter search is refused'
+    Check (-not (Invoke-Api '/api/group-job' @{ mode = 'Save'; name = 'SG-A' }).ok) 'groups: changes refused without a connection'
+    $badUrl = Invoke-Api '/api/app-save' @{ originalName = $rn; app = @{ appName = $rn; wingetId = 'Vendor.WebTest'; appId = ''; metadata = @{ informationUrl = 'javascript:alert(1)' } } }
+    Check (-not $badUrl.ok -and $badUrl.error -like '*http*') 'editor: a URL that is not http(s) is refused'
     # Deploy, push and checks without a connection set up (CI has none): clear answers, nothing started.
     $plan = Invoke-Api '/api/deploy-plan' @{ names = @("$testName renamed") }
     Check (-not $plan.ok -and $plan.error -like '*connection*') 'deploy plan: says the connection is missing' ($plan | ConvertTo-Json -Compress)

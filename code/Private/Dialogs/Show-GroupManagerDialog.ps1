@@ -615,6 +615,12 @@ function Global:Show-GroupManagerDialog {
                             for ($gi = 0; $gi -lt $appEntry.uninstallFor.Count; $gi++) {
                                 if ($appEntry.uninstallFor[$gi] -eq $oldNameRef) { $appEntry.uninstallFor[$gi] = $newNameRef; $changed = $true }
                             }
+                            # Excluded groups name the group too - a rename that skipped them left the exclusion pointing at a name that no longer exists.
+                            if ($null -ne $appEntry.excludeFor) {
+                                for ($gi = 0; $gi -lt $appEntry.excludeFor.Count; $gi++) {
+                                    if ($appEntry.excludeFor[$gi] -eq $oldNameRef) { $appEntry.excludeFor[$gi] = $newNameRef; $changed = $true }
+                                }
+                            }
                             if ($changed) { $updatedCount++; $updatedNames.Add($appEntry.appName) }
                         }
                         if ($updatedCount -gt 0) {
