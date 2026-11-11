@@ -128,7 +128,9 @@ function Global:Get-GraphModuleStatus {
         Version = if ($here) { [string]$here.Version } else { "" }
         Problem = ""
     })
-    if ($isCore) {
+    # Only on Windows: elsewhere there is no Windows PowerShell to ask ($IsWindows
+    # doesn't exist in 5.1, where this branch doesn't run anyway).
+    if ($isCore -and $IsWindows) {
         # Imported for real, not just listed - a module that's only visible
         # there but can't load under .NET Framework would still fail every step.
         $answer = Invoke-HiddenPowerShell -Exe (Get-WindowsPowerShellPath) -TimeoutMs 60000 -Command "if (-not (Get-Module -ListAvailable -Name $moduleName)) { 'RESULT=missing' } else { try { Import-Module $moduleName -ErrorAction Stop; 'RESULT=ok ' + (Get-Module $moduleName).Version } catch { 'RESULT=error ' + `$_.Exception.Message } }"
