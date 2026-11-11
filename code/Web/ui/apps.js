@@ -165,7 +165,7 @@ $('btnAppHistory').addEventListener('click', async () => {
   $('histRows').replaceChildren(...r.backups.map(b => el('tr', {},
     el('td', { text: b.when }),
     el('td', { text: b.changed.length ? b.changed.map(c => fieldLabel[c] || c).join(', ') : 'nothing - same as now' }),
-    el('td', {}, el('button', { class: 'btn small', text: 'Restore', title: 'Put this version back as the app\'s file', disabled: !b.changed.length, onclick: async () => {
+    el('td', {}, el('button', { class: 'btn small', text: 'Restore', title: b.changed.length ? 'Put this version back as the app\'s file' : 'Same as the app is now - nothing to restore', disabled: !b.changed.length, onclick: async () => {
       if (!(await ask(`Restore ${name} as it was on ${b.when}?\n\nOnly the catalog changes - Deploy or Push sends it to Intune. The current version is kept as a copy, so this can be undone the same way.`, { ok: 'Restore', danger: false }))) return;
       const x = await api('/api/app-restore', { name, id: b.id });
       if (!x.ok) { toast(x.error, true); return; }
