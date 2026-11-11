@@ -391,6 +391,12 @@
   <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnPermsGo" title="Add the ticked permissions to the app registration, then open Entra for consent">Add and open Entra</button></div>
 </dialog>
 
+<dialog id="dlgAsk" class="ask" aria-labelledby="askTitle">
+  <h2 id="askTitle"></h2>
+  <p class="asktext" id="askText"></p>
+  <input id="askInput" aria-labelledby="askTitle" autocomplete="off" spellcheck="false" hidden>
+  <div class="actions end"><button class="btn" id="askCancel">Cancel</button><button class="btn primary" id="askOk">OK</button></div>
+</dialog>
 <dialog id="dlgApp" class="wide">
   <form id="appForm" method="dialog">
     <h2 id="appTitle">Edit app</h2>

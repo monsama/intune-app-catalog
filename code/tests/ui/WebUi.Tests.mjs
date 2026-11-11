@@ -61,6 +61,8 @@ try {
       page.on('pageerror', e => errors.push('page: ' + e.message));
       page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
       page.on('response', r => { if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.url().replace(/#.*/, '')}`); });
+      // The app asks in its own dialog (ask() in core.js), never with the browser's confirm()/prompt().
+      page.on('dialog', d => { errors.push(`native ${d.type()} popup: ${d.message().slice(0, 60)}`); d.dismiss(); });
       await page.addInitScript(t => { try { localStorage.setItem('theme', t); localStorage.setItem('view', 'apps'); } catch (e) { } }, theme);
       await page.goto(url);
       await page.waitForFunction(() => document.getElementById('ver').textContent.startsWith('v'));
@@ -183,8 +185,12 @@ try {
         await page.waitForFunction(() => document.getElementById('aName').value !== '');
         check(await page.inputValue('#mOwner') === 'ZZ Owner', `${label}: Batch edit saved the owner`, await page.inputValue('#mOwner'));
         check((await page.inputValue('#gRequired')).split('\n').includes('SG-ZZ-UI'), `${label}: Add groups saved the group`, await page.inputValue('#gRequired'));
-        page.once('dialog', d => d.accept());
         await page.click('#btnRemoveApp');
+        await page.waitForSelector('#dlgAsk[open]');
+        check(await page.evaluate(() => document.activeElement.id === 'askCancel' && document.getElementById('askOk').classList.contains('dangerous')),
+          `${label}: removing asks in the app's own dialog, red button, Cancel focused`);
+        await unnamed('the question dialog'); await a11y('the question dialog');
+        await page.click('#askOk');
         await page.waitForSelector(`#gridBody tr[data-name="${testApp}"]`, { state: 'detached' });
         check(!(await page.isVisible(`#gridBody tr[data-name="${testApp}"]`)), `${label}: the app is removed again`);
       }

@@ -64,6 +64,12 @@ relying on a release. About 45 minutes.
 - [ ] Select another new app with the same name as something already in
       Intune and press Deploy - it is skipped with "already in Intune -
       link it" instead of creating a second one.
+- [ ] Deploy another test app and **close the app window while it runs**.
+      The console says it waits for the running step; once it has
+      finished, start the app again - the app has its App ID in the
+      catalog, and Activity says its groups weren't pushed.
+- [ ] Deploy one more and **reload the page (F5)** while it runs - within
+      about 20 seconds of the step ending, the app shows as Deployed.
 
 ## 4. Deploy settings and an app with its own package
 

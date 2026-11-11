@@ -105,7 +105,7 @@ function fixButtons(f) {
       const sel = el('select', { 'aria-label': 'Intune app' }, ...f.data.Candidates.map(c => el('option', { value: c.id, text: c.displayName })));
       out.push(sel); btn('Link', () => fix('SetAppId', sel.value));
     }
-    else if (a === 'ClearAppId') btn('Clear App ID', () => { if (confirm(`Clear ${f.app}'s App ID? It points at an app that no longer exists in Intune.`)) fix(a); });
+    else if (a === 'ClearAppId') btn('Clear App ID', async () => { if (await ask(`Clear ${f.app}'s App ID? It points at an app that no longer exists in Intune.`)) fix(a); });
     else if (a === 'EditApp') btn('Edit', () => openEditor(name));
     else if (a === 'Pull') btn('Pull', () => openPull([name]), 'Intune is right: take its settings and groups into the catalog');
     else if (a === 'PushMetadata') btn('Push settings', () => pushSettings([name]), 'The catalog is right: send its settings to Intune');
@@ -140,10 +140,10 @@ function renderChecks() {
 $('checkFilter').addEventListener('change', renderChecks);
 
 // Add to catalog: reads the Intune-only apps' settings and groups and adds them.
-function addFromIntune(list) {
+async function addFromIntune(list) {
   const items = list.map(f => ({ id: f.appId, name: f.app }));
   if (!items.length) return;
-  if (!confirm(`Add ${items.length === 1 ? `"${items[0].name}"` : items.length + ' apps'} from Intune to the catalog?\n\nEach one's settings and groups are read from Intune first. Nothing in Intune changes.`)) return;
+  if (!(await ask(`Add ${items.length === 1 ? `"${items[0].name}"` : items.length + ' apps'} from Intune to the catalog?\n\nEach one's settings and groups are read from Intune first. Nothing in Intune changes.`))) return;
   runDialog('Add to catalog', items.map(i => i.name).join(', '));
   runJob({ apps: items }, (ok, res, after) => {
     if (!ok || !after) return;
@@ -169,7 +169,7 @@ async function runEach(names, body, opts) {
 }
 async function pushSettings(names) {
   if (!names.length) return;
-  if (!confirm(`Send the catalog's settings for ${names.length === 1 ? `"${names[0]}"` : names.length + ' apps'} to Intune?\n\nDescription, commands, detection rule, requirements, return codes and dependencies are replaced with the catalog's. No package is uploaded; groups aren't touched.`)) return;
+  if (!(await ask(`Send the catalog's settings for ${names.length === 1 ? `"${names[0]}"` : names.length + ' apps'} to Intune?\n\nDescription, commands, detection rule, requirements, return codes and dependencies are replaced with the catalog's. No package is uploaded; groups aren't touched.`))) return;
   runDialog('Push settings to Intune', names.join(', '));
   const done = await runEach(names, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'runLog', startText: 'Pushing ' });
   toast(`Settings pushed for ${done.length} of ${names.length} app(s).`, done.length < names.length);

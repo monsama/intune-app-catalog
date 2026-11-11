@@ -38,8 +38,8 @@ $answers = [ordered]@{
         '@odata.nextLink' = 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$skiptoken=page2'
     }
     'GET beta/deviceAppManagement/mobileApps?$skiptoken=page2' = @{ value = @(@{ id = $appSameName; displayName = $sameName }) }
-    'GET v1.0/groups?$select=id,displayName&$top=999' = @{ value = @(@{ id = $groupId; displayName = 'SG-ZZ-Exists' }) }
-    'GET v1.0/users?$select=id,displayName,userPrincipalName&$top=999' = @{ value = @() }
+    # Checks looks up only the groups the catalog uses, by name.
+    "GET v1.0/groups?`$filter=displayName in ('SG-ZZ-Exists','SG-ZZ-Missing')&`$select=id,displayName&`$top=999" = @{ value = @(@{ id = $groupId; displayName = 'SG-ZZ-Exists' }) }
 
     # Install status: beta refuses, v1.0 answers - the fallback.
     'POST beta/deviceManagement/reports/retrieveDeviceAppInstallationStatusReport' = @{ __status = 400; __body = @{ error = @{ code = 'BadRequest'; message = 'not here' } } }
@@ -154,7 +154,7 @@ try {
     Check ($unlinked.Count -eq 1 -and $unlinked[0].catalogName -eq $sameName -and $unlinked[0].data.MatchedId -eq $appSameName) 'checks: a catalog app with the same name in Intune, to link'
     $group = @(& $by '*SG-ZZ-Missing*')
     Check ($group.Count -eq 1 -and @(& $by '*SG-ZZ-Exists*').Count -eq 0) 'checks: a group missing in Entra ID (and not the one that exists)'
-    Check ((@($checks.notes) -join ' ') -notlike '*Users couldn''t be read*') 'checks: users were read too'
+    Check ((@($checks.notes) -join ' ') -like '*1 of the 2 group(s) the catalog uses found*') 'checks: only the catalog''s groups were looked up, by name (no full group or user listing)' (@($checks.notes) -join ' | ')
 
     # Diagnostics
     $dg = Invoke-Api '/api/diagnostics'

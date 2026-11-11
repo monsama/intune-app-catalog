@@ -155,7 +155,7 @@ $('appForm').addEventListener('submit', async e => {
   await loadApps();
 });
 $('btnRemoveApp').addEventListener('click', async () => {
-  if (!confirm(`Remove "${editingName}" from the catalog?\n\nOnly the catalog changes - nothing in Intune. A copy of its file goes to the Backups folder.`)) return;
+  if (!(await ask(`Remove "${editingName}" from the catalog?\n\nOnly the catalog changes - nothing in Intune. A copy of its file goes to the Backups folder.`))) return;
   const r = await api('/api/app-remove', { name: editingName });
   if (!r.ok) { toast(r.error, true); return; }
   $('dlgApp').close(); selected.delete(editingName); await loadApps();
@@ -435,19 +435,19 @@ menu.addEventListener('click', async e => {
       try { await navigator.clipboard.writeText(one.appId); toast('Copied ' + one.appId); } catch (err) { toast('Could not copy: ' + one.appId, true); }
       break;
     case 'clearid':
-      if (!confirm(`Clear ${one.name}'s App ID in the catalog?\n\nOnly the catalog changes; the app stays in Intune.`)) return;
+      if (!(await ask(`Clear ${one.name}'s App ID in the catalog?\n\nOnly the catalog changes; the app stays in Intune.`))) return;
       { const r = await api('/api/clear-appid', { name: one.name }); toast(r.ok ? 'App ID cleared.' : r.error, !r.ok); loadApps(); }
       break;
     case 'delete': {
       const del = sel().filter(a => a.hasAppId).map(a => a.name);
-      if (!confirm(`Delete ${del.length === 1 ? `"${del[0]}"` : `these ${del.length} apps`} from Intune?\n\n${del.length > 1 ? del.join('\n') + '\n\n' : ''}Their assignments go with them - devices that have them keep them installed, but Intune stops managing them. The catalog entries stay, without an App ID.`)) return;
+      if (!(await ask(`Delete ${del.length === 1 ? `"${del[0]}"` : `these ${del.length} apps`} from Intune?\n\n${del.length > 1 ? del.join('\n') + '\n\n' : ''}Their assignments go with them - devices that have them keep them installed, but Intune stops managing them. The catalog entries stay, without an App ID.`))) return;
       runDialog('Delete from Intune', del.join(', '));
       const done = await runEach(del, name => ({ name }), { path: '/api/delete-intune', log: 'runLog', startText: 'Deleting ' });
       toast(`Deleted ${done.length} of ${del.length} app(s) from Intune.`, done.length < del.length); loadApps();
       break;
     }
     case 'remove':
-      if (!confirm(`Remove "${one.name}" from the catalog?\n\nOnly the catalog changes - nothing in Intune. A copy of its file goes to the Backups folder.`)) return;
+      if (!(await ask(`Remove "${one.name}" from the catalog?\n\nOnly the catalog changes - nothing in Intune. A copy of its file goes to the Backups folder.`))) return;
       { const r = await api('/api/app-remove', { name: one.name }); toast(r.ok ? 'Removed from the catalog.' : r.error, !r.ok); selected.delete(one.name); loadApps(); }
       break;
   }

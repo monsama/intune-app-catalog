@@ -53,11 +53,11 @@ $('btnScriptsSave').addEventListener('click', async () => {
 $('btnScriptDelete').addEventListener('click', async () => {
   const x = scriptSel; if (!x) return;
   if (!x.id) {
-    if (!confirm(`Delete the local copy of "${x.displayName}"?\n\nThis script isn't in Intune${x.local === 'Local copy' ? ' (or Intune was not read)' : ''}, so only the file goes.`)) return;
+    if (!(await ask(`Delete the local copy of "${x.displayName}"?\n\nThis script isn't in Intune${x.local === 'Local copy' ? ' (or Intune was not read)' : ''}, so only the file goes.`))) return;
     const r = await api('/api/script-delete', { name: x.displayName });
     toast(r.ok ? 'Local copy deleted.' : r.error, !r.ok); scriptSel = null; loadScripts(); return;
   }
-  if (!confirm(`Permanently delete the platform script "${x.displayName}" from Intune?\n\nDevices that already ran it keep whatever it did - Intune only stops running it. Any local copy stays.`)) return;
+  if (!(await ask(`Permanently delete the platform script "${x.displayName}" from Intune?\n\nDevices that already ran it keep whatever it did - Intune only stops running it. Any local copy stays.`))) return;
   runDialog('Delete platform script', x.displayName);
   runJob({ id: x.id, name: x.displayName }, ok => { toast(ok ? `${x.displayName} was deleted from Intune.` : 'Delete failed - see the log.', !ok); scriptSel = null; loadScripts(); },
     { path: '/api/script-delete', log: 'runLog', startText: `Deleting ${x.displayName}...` });
@@ -101,7 +101,7 @@ function readScript() {
 async function saveScript(destination) {
   $('scriptErr').hidden = true;
   const body = { script: readScript(), originalName: scriptOrig.name, destination, assignGroups: $('sAssign').checked && !$('sAssign').disabled };
-  if (destination === 'Intune' && body.assignGroups && !body.script.groups.length && !confirm('The group list is empty - saving removes every assignment this script has in Intune. Continue?')) return;
+  if (destination === 'Intune' && body.assignGroups && !body.script.groups.length && !(await ask('The group list is empty\n\nSaving removes every assignment this script has in Intune.', { ok: 'Save and remove them', danger: true }))) return;
   if (destination === 'Local') {
     const r = await api('/api/script-save', body);
     if (!r.ok) { $('scriptErr').textContent = r.error; $('scriptErr').hidden = false; return; }
