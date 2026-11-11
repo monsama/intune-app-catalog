@@ -133,7 +133,12 @@ function Global:Format-GraphRoleReport {
     }
     $width = ($toAdd | ForEach-Object { $_.Name.Length } | Measure-Object -Maximum).Maximum
     $lines.Add("")
-    $lines.Add("[INFO] How to fix - in the Microsoft Entra admin center (entra.microsoft.com):")
+    $lines.Add("[INFO] Quickest fix: Settings > Certificate > Add required permissions... adds them for you and opens Entra for the admin consent.")
+    $clientGuid = [guid]::Empty
+    if ([guid]::TryParse([string]$SettingsClientId, [ref]$clientGuid)) {
+        $lines.Add("[INFO] This app registration's API permissions page: https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/$clientGuid/isMSAApp~/false")
+    }
+    $lines.Add("[INFO] Or by hand, in the Microsoft Entra admin center (entra.microsoft.com):")
     $lines.Add("  1. App registrations > All applications > $appRef > API permissions")
     $lines.Add("  2. + Add a permission > Microsoft Graph > Application permissions (not Delegated), and add:")
     foreach ($p in $toAdd) {
@@ -270,8 +275,8 @@ function Global:Format-SetupChecklist {
                   elseif (@($report.Have).Count -eq 0) { 'FAILED' }
                   elseif (@(@($report.Missing) | Where-Object { $_.Required }).Count -gt 0) { 'FAILED' }
                   else { 'OK' }
-    $permNext = if ($report -and @($report.Have).Count -eq 0) { 'Add the API permissions listed above (Application, not Delegated) and grant admin consent.' }
-                else { 'Add the missing permissions listed above and grant admin consent.' }
+    $permNext = if ($report -and @($report.Have).Count -eq 0) { 'Certificate tab > Add required permissions... (or add the ones listed above by hand: Application, not Delegated), then grant admin consent.' }
+                else { 'Certificate tab > Add required permissions... adds the missing ones; then grant admin consent.' }
     & $add 'Required API permissions granted, with admin consent' $permStatus $permNext
 
     & $add 'Settings saved' $(if ($State.Saved) { 'OK' } else { 'FAILED' }) 'Click Save - until then the rest of the app keeps using the previously saved connection.'

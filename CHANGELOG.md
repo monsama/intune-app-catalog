@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Add required permissions with one button.** Settings > Certificate >
+  "Add required permissions..." signs you in once and adds the Microsoft
+  Graph application permissions this app uses to the app registration:
+  the required ones, and the optional ones if you choose. Anything
+  already listed there is kept. It then opens the registration's API
+  permissions page in Entra, where an admin clicks "Grant admin consent".
+  "Open API permissions in Entra" goes straight to that page at any
+  time.
+- The permission report and the setup checklist name that button and
+  include a clickable link to the registration's API permissions page.
+
+### Changed
+
+- **Faster Test connection and lookups.** The Graph module is looked up
+  once per session. Before, every Test connection and some lookups
+  searched every module folder on the machine.
+- **Smoother catalog list.** The list is double buffered, so it no
+  longer flickers when scrolling or filtering. It also no longer creates
+  a new font object for every styled cell on every repaint.
+- **Readable status colours.** Green, amber, blue and grey status text in
+  the list now has at least 4.5:1 contrast. The old DarkOrange and
+  SeaGreen were well under that.
+- The Settings log says what will appear in it, instead of opening as an
+  empty black box.
+
+### Security
+
+- Links in the Settings log only open `https://` addresses. The log
+  shows text from Graph error responses, and a `file://` link in one
+  could otherwise have started a program.
+
 ## 1.8.0
 
 ### Security

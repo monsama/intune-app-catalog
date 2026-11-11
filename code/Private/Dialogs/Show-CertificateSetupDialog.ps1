@@ -249,8 +249,15 @@ function Global:Show-CertificateSetupDialog {
     $rtbUploadLog.DetectUrls = $true
     $rtbUploadLog.Add_LinkClicked({
         param($s, $e)
-        try { Start-Process $e.LinkText } catch { }
+        # Web links only. The log also shows text from Graph's error
+        # responses, and DetectUrls makes file:// links clickable too -
+        # Start-Process on one of those would run whatever it points at.
+        if ([string]$e.LinkText -match '^https://') {
+            try { Start-Process $e.LinkText } catch { }
+        }
     })
+    # Not an empty black box on first open.
+    Write-DialogLogLine -LogBox $rtbUploadLog -Text "Results of Test connection and the certificate and permission actions appear here.`r`n"
     $dlg.Controls.Add($rtbUploadLog)
     $y += 178
 
@@ -276,6 +283,32 @@ function Global:Show-CertificateSetupDialog {
     $deleteEntraTip = New-Object System.Windows.Forms.ToolTip
     $deleteEntraTip.SetToolTip($btnDeleteEntraCert, "Removes the certificate selected below from Entra ID's trust list - does not touch anything on this machine.")
     $y += 36
+
+    # The API permissions, done from here: the list of Graph application
+    # permissions this app uses written into the app registration, then
+    # Entra's own API permissions page opened for the one click only an
+    # admin can make (Grant admin consent).
+    $lblPermSection = New-Object System.Windows.Forms.Label
+    $lblPermSection.Text = "API PERMISSIONS"
+    $lblPermSection.AutoSize = $true
+    $lblPermSection.Font = New-Object System.Drawing.Font($dlg.Font.FontFamily, 8, [System.Drawing.FontStyle]::Bold)
+    $lblPermSection.ForeColor = [System.Drawing.Color]::FromArgb(90,90,90)
+    $dlg.Controls.Add($lblPermSection)
+    $sepPerm = New-Object System.Windows.Forms.Panel
+    $sepPerm.Height = 1
+    $sepPerm.BackColor = [System.Drawing.Color]::FromArgb(216,219,224)
+    $dlg.Controls.Add($sepPerm)
+
+    $btnAddPermissions = New-Object System.Windows.Forms.Button
+    $btnAddPermissions.Text = "Add required permissions..."
+    $dlg.Controls.Add($btnAddPermissions)
+    $permTip = New-Object System.Windows.Forms.ToolTip
+    $permTip.SetToolTip($btnAddPermissions, "Adds the Microsoft Graph application permissions this app uses to the app registration (signs you in; needs Application Administrator or owner of the app registration). Keeps everything already listed. Then opens Entra so an admin can grant consent.")
+
+    $btnOpenApiPermissions = New-Object System.Windows.Forms.Button
+    $btnOpenApiPermissions.Text = "Open API permissions in Entra (grant consent)"
+    $dlg.Controls.Add($btnOpenApiPermissions)
+    $permTip.SetToolTip($btnOpenApiPermissions, "Opens this app registration's API permissions page in the Entra admin center, where 'Grant admin consent' is.")
 
 
     # Where this install keeps things. Every row is the same three parts -
@@ -667,7 +700,8 @@ function Global:Show-CertificateSetupDialog {
             Controls = @(
                 $lblLocalSection, $sepLocal, $btnPick, $btnGenerate, $btnDeleteLocal,
                 $lblEntraSection, $sepEntra, $btnCheckCerts, $btnUpload, $lblUploadStatus,
-                $lblCertList, $lstCerts, $btnDeleteEntraCert
+                $lblCertList, $lstCerts, $btnDeleteEntraCert,
+                $lblPermSection, $sepPerm, $btnAddPermissions, $btnOpenApiPermissions
             )
         }
         @{
@@ -747,6 +781,13 @@ function Global:Show-CertificateSetupDialog {
     $lstCerts.Location = New-Object System.Drawing.Point(12,224)
     $lstCerts.Size = New-Object System.Drawing.Size(866,108)
     $btnDeleteEntraCert.Location = New-Object System.Drawing.Point(12,340)
+    $lblPermSection.Location = New-Object System.Drawing.Point(12,382)
+    $sepPerm.Location = New-Object System.Drawing.Point(180,390)
+    $sepPerm.Size = New-Object System.Drawing.Size(698,1)
+    $btnAddPermissions.Location = New-Object System.Drawing.Point(12,404)
+    $btnAddPermissions.Size = New-Object System.Drawing.Size(430,30)
+    $btnOpenApiPermissions.Location = New-Object System.Drawing.Point(448,404)
+    $btnOpenApiPermissions.Size = New-Object System.Drawing.Size(430,30)
 
     # Bottom-up: the buttons sit 15 above the window's bottom edge, the log
     # above them, and the tab control gets the rest. At y=458 the log was
@@ -1031,6 +1072,96 @@ function Global:Show-CertificateSetupDialog {
             }
             else {
                 Write-DialogError -StatusLabel $lblUploadStatusRef -LogBox $rtbUploadLogRef -ErrorMessage "No result written (exit code $code). See progress above."
+            }
+        }.GetNewClosure()
+    }.GetNewClosure())
+
+    $openApiPermissions = {
+        param([string]$ClientId)
+        $client = $ClientId.Trim()
+        $parsed = [guid]::Empty
+        if (-not [guid]::TryParse($client, [ref]$parsed)) {
+            [System.Windows.Forms.MessageBox]::Show("Fill in the Client (Application) ID on the Connection tab first.", "Client ID missing", "OK", "Warning") | Out-Null
+            return
+        }
+        Start-Process "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/$parsed/isMSAApp~/false"
+    }
+
+    $btnOpenApiPermissions.Add_Click({ & $openApiPermissions $txtClient.Text }.GetNewClosure())
+
+    $btnAddPermissions.Add_Click({
+        $permTenant = $txtTenant.Text.Trim()
+        $permClient = $txtClient.Text.Trim()
+        if (-not $permTenant -or -not $permClient) {
+            [System.Windows.Forms.MessageBox]::Show("Fill in Tenant ID and Client ID first.", "Missing fields", "OK", "Warning") | Out-Null
+            return
+        }
+        # Required first, then the optional ones - one per feature, each once.
+        $requirements = @(Get-GraphRoleRequirements)
+        $required = @($requirements | Where-Object { $_.Required } | ForEach-Object { $_.Grant } | Select-Object -Unique)
+        $optional = @($requirements | Where-Object { -not $_.Required } | ForEach-Object { $_.Grant } | Where-Object { $required -notcontains $_ } | Select-Object -Unique)
+        $answer = [System.Windows.Forms.MessageBox]::Show(
+            "This adds Microsoft Graph application permissions to the app registration $permClient (anything already listed is kept):`n`nRequired:`n  $($required -join "`n  ")`n`nOptional:`n  $($optional -join "`n  ")`n`nYes = add required and optional`nNo = add only the required ones`n`nYou sign in with your own account (Application Administrator, or owner of this app registration). Afterwards Entra opens so an admin can grant consent.",
+            "Add required permissions", "YesNoCancel", "Question")
+        if ($answer -eq [System.Windows.Forms.DialogResult]::Cancel) { return }
+        $toAdd = if ($answer -eq [System.Windows.Forms.DialogResult]::Yes) { @($required) + @($optional) } else { @($required) }
+
+        $btnAddPermissions.Enabled = $false
+        $btnUpload.Enabled = $false
+        $btnCheckCerts.Enabled = $false
+        $lblUploadStatus.ForeColor = [System.Drawing.Color]::DimGray
+        $lblUploadStatus.Text = "Starting sign-in..."
+        $rtbUploadLog.Clear()
+
+        $configPath = Join-Path $env:TEMP (".intunepkg_certupload_config_" + [guid]::NewGuid().ToString("N") + ".json")
+        $resultPath = Join-Path $env:TEMP (".intunepkg_certupload_result_" + [guid]::NewGuid().ToString("N") + ".json")
+        $config = [pscustomobject]@{
+            Mode             = "AddPermissions"
+            TenantId         = $permTenant
+            ClientId         = $permClient
+            Permissions      = @($toAdd)
+            OutputResultPath = $resultPath
+        }
+        try {
+            [System.IO.File]::WriteAllText($configPath, ($config | ConvertTo-Json -Depth 8 -ErrorAction Stop), (New-Object System.Text.UTF8Encoding($false)))
+        }
+        catch {
+            $btnAddPermissions.Enabled = $true; $btnUpload.Enabled = $true; $btnCheckCerts.Enabled = $true
+            Show-ConfigWriteFailedError -ErrorMessage $_.Exception.Message
+            return
+        }
+
+        $btnAddPermissionsRef = $btnAddPermissions
+        $btnUploadRef = $btnUpload
+        $btnCheckCertsRef = $btnCheckCerts
+        $lblUploadStatusRef = $lblUploadStatus
+        $rtbUploadLogRef = $rtbUploadLog
+        $resultPathRef = $resultPath
+        $configPathRef = $configPath
+        $openApiPermissionsRef = $openApiPermissions
+        $permClientRef = $permClient
+
+        Start-PipelineProcess -ScriptContent $certUploadScript -TempScriptName ".intunepkg_embedded_certupload.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbUploadLog -ShowConsoleWindow -OnComplete {
+            param($code)
+            $btnAddPermissionsRef.Enabled = $true
+            $btnUploadRef.Enabled = $true
+            $btnCheckCertsRef.Enabled = $true
+            Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue
+            $ok = $false
+            if (Test-Path $resultPathRef) {
+                try {
+                    $result = Get-Content -Path $resultPathRef -Raw | ConvertFrom-Json
+                    Remove-Item $resultPathRef -Force -ErrorAction SilentlyContinue
+                    if ($result.success) { $ok = $true }
+                    else { Write-DialogError -StatusLabel $lblUploadStatusRef -LogBox $rtbUploadLogRef -ErrorMessage $result.error }
+                }
+                catch { Write-DialogError -StatusLabel $lblUploadStatusRef -LogBox $rtbUploadLogRef -ErrorMessage "Could not read result (exit code $code)." }
+            }
+            else { Write-DialogError -StatusLabel $lblUploadStatusRef -LogBox $rtbUploadLogRef -ErrorMessage "No result written (exit code $code). See progress above." }
+            if ($ok) {
+                $lblUploadStatusRef.ForeColor = [System.Drawing.Color]::SeaGreen
+                $lblUploadStatusRef.Text = "Permissions added. Entra opens next: click 'Grant admin consent for <your tenant>', then Test connection."
+                & $openApiPermissionsRef $permClientRef
             }
         }.GetNewClosure()
     }.GetNewClosure())
@@ -1334,7 +1465,7 @@ function Global:Show-CertificateSetupDialog {
     # blocked with "An operation is still running") from the moment it
     # opened, confirmed live.
     $anyCertOpRunning = {
-        (-not $btnCheckCerts.Enabled) -or (-not $btnUpload.Enabled) -or (-not $btnTest.Enabled)
+        (-not $btnCheckCerts.Enabled) -or (-not $btnUpload.Enabled) -or (-not $btnTest.Enabled) -or (-not $btnAddPermissions.Enabled)
     }.GetNewClosure()
 
     $HasUnsavedConnectionChanges = {

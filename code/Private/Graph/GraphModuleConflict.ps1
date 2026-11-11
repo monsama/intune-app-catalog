@@ -177,10 +177,13 @@ function Global:Get-GraphModuleAssemblyMap {
       session (keyed by folder) - the module folder doesn't change under a
       running app, and this reads a few dozen files.
     #>
+    # Cached as a whole: Get-Module -ListAvailable walks every module folder
+    # on the machine (seconds, with a big PSModulePath or OneDrive), and
+    # this runs before every Test connection. Installing the module from
+    # Prerequisites... clears it.
+    if ($Global:App.GraphModuleAssemblyMapCache) { return $Global:App.GraphModuleAssemblyMapCache }
     $module = Get-Module -ListAvailable -Name (Get-GraphModuleName) | Sort-Object Version -Descending | Select-Object -First 1
     if (-not $module) { return $null }
-    $cache = $Global:App.GraphModuleAssemblyMapCache
-    if ($cache -and $cache.ModuleBase -eq $module.ModuleBase) { return $cache }
     $map = @{}
     foreach ($dll in @(Get-ChildItem -LiteralPath $module.ModuleBase -Filter '*.dll' -Recurse -File -ErrorAction SilentlyContinue)) {
         try {
