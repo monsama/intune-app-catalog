@@ -14,11 +14,12 @@
   <nav class="tabs" role="tablist">
     <button class="tab" role="tab" data-view="apps" id="tabApps">Apps</button>
     <button class="tab" role="tab" data-view="checks" id="tabChecks">Checks</button>
+    <button class="tab" role="tab" data-view="scripts" id="tabScripts">Platform scripts</button>
     <button class="tab" role="tab" data-view="settings" id="tabSettings">Settings</button>
   </nav>
   <div class="topright">
     <span class="conn" id="connBadge" title="Graph connection"></span>
-    <button class="btn ghost" id="btnClassic" title="The classic window has everything not moved here yet: editing, deploying, assigning, checks.">Open classic window</button>
+    <button class="btn ghost" id="btnClassic" title="The classic window still has what is not here yet: the group manager, batch edit and some Checks fixes.">Open classic window</button>
     <button class="btn ghost" id="btnTheme" title="Switch between light and dark">Dark mode</button>
   </div>
 </header>
@@ -88,6 +89,31 @@
       </table>
       <div class="empty" id="checkEmpty"><h2 id="checkEmptyTitle">Not run yet</h2><p id="checkEmptyText">Run checks to see what needs attention.</p></div>
     </div>
+  </section>
+
+  <!-- ============ Platform scripts ============ -->
+  <section class="view" id="viewScripts" hidden>
+    <div class="toolbar">
+      <input type="search" id="scriptSearch" placeholder="Search scripts" autocomplete="off" spellcheck="false">
+      <span class="count" id="scriptCount"></span>
+      <span class="spacer"></span>
+      <button class="btn primary" id="btnScriptNew">New script</button>
+      <button class="btn" id="btnScriptEdit" disabled>Edit</button>
+      <button class="btn" id="btnScriptStatus" disabled title="How the script went on each device">Run status</button>
+      <button class="btn" id="btnScriptDelete" disabled>Delete</button>
+      <button class="btn" id="btnScriptsSave" title="Reads every script in Intune in full - body and groups - and keeps a local copy of each. Only reads Intune.">Save local copies</button>
+      <button class="btn" id="btnScriptsReload">Reload</button>
+      <button class="btn" id="btnScriptsFolder">Open folder</button>
+    </div>
+    <p class="sub" id="scriptNote">PowerShell scripts Intune runs on enrolled Windows devices, with the local copies kept beside the catalog.</p>
+    <div class="tablewrap">
+      <table class="grid" id="scriptGrid">
+        <thead><tr><th>Script</th><th>File</th><th>Runs as</th><th>32-bit</th><th>Signature</th><th>Modified</th><th>Local copy</th></tr></thead>
+        <tbody id="scriptBody"></tbody>
+      </table>
+      <div class="empty" id="scriptEmpty" hidden><h2>No platform scripts</h2><p id="scriptEmptyText">None in Intune and none saved locally. New script writes one.</p></div>
+    </div>
+    <p class="hint">Click to select, double-click to edit.</p>
   </section>
 
   <!-- ============ Settings ============ -->
@@ -365,6 +391,46 @@
   <h2 id="statusTitle">Install status</h2>
   <p class="sub" id="statusSummary">Reading Intune's install status report...</p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>Device</th><th>User</th><th>State</th><th>Detail</th><th>Error</th><th>Version</th><th>Last seen</th></tr></thead><tbody id="statusRows"></tbody></table></div>
+  <div class="actions end"><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgScript" class="wide">
+  <h2 id="scriptTitle">Platform script</h2>
+  <p class="sub" id="scriptWhere"></p>
+  <div class="formgrid">
+    <section>
+      <label>Name<input id="sName" maxlength="256" spellcheck="false"></label>
+      <label>Description<textarea id="sDescription" rows="2"></textarea></label>
+      <label>File name <span class="muted">(made from the name when empty)</span><input id="sFile" class="mono" spellcheck="false" placeholder="Set-Something.ps1"></label>
+      <div class="two">
+        <label>Run as<select id="sRunAs"><option value="system">System</option><option value="user">Signed-in user</option></select></label>
+        <span></span>
+      </div>
+      <label class="chk"><input type="checkbox" id="s32">Run in 32-bit PowerShell on 64-bit Windows</label>
+      <label class="chk"><input type="checkbox" id="sSig">Require a signature</label>
+      <h3>Groups</h3>
+      <label>One group per line<textarea id="sGroups" rows="4" class="monotext" spellcheck="false"></textarea></label>
+      <label class="chk"><input type="checkbox" id="sAssign">Send these groups to Intune when saving there</label>
+      <p class="muted note" id="sAssignNote">Replaces the script's assignments in Intune - an empty list removes them all.</p>
+    </section>
+    <section>
+      <label>Script <span class="muted">(at most 200 KB)</span><textarea id="sContent" rows="22" class="monotext" spellcheck="false"></textarea></label>
+      <label class="filebtn btn small">Load a .ps1 file...<input type="file" id="sLoad" accept=".ps1,.txt" hidden></label>
+    </section>
+  </div>
+  <p class="formerror" id="scriptErr" hidden></p>
+  <pre class="log" id="scriptLog" hidden></pre>
+  <div class="actions end">
+    <button class="btn" data-close>Close</button>
+    <button class="btn" id="btnScriptLocal" title="Only the local folder - nothing is sent to Intune">Save locally</button>
+    <button class="btn primary" id="btnScriptIntune">Save to Intune</button>
+  </div>
+</dialog>
+
+<dialog id="dlgScriptStatus" class="wide">
+  <h2 id="sStatusTitle">Run status</h2>
+  <p class="sub" id="sStatusSummary"></p>
+  <div class="tablewrap short"><table class="plan"><thead><tr><th>Device</th><th>User</th><th>State</th><th>Output</th><th>Error</th><th>Last run</th></tr></thead><tbody id="sStatusRows"></tbody></table></div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
 

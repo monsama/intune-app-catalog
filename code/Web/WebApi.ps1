@@ -933,6 +933,7 @@ function Global:Open-WebTarget {
             Start-Process $url
         }
         'catalog-folder' { Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$(Get-AppFolder -Kind Catalog -Create)`"" }
+        'scripts-folder' { Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$(Get-AppFolder -Kind Scripts -Create)`"" }
         'certificates-folder' {
             $folder = Join-Path $Global:App.RootPath 'data\certificates'
             if (-not (Test-Path -LiteralPath $folder)) { [void](New-Item -ItemType Directory -Path $folder -Force) }
@@ -1286,6 +1287,12 @@ function Global:Invoke-WebApi {
         '/api/clear-appid'      { return (Clear-WebAppId $Data) }
         '/api/install-status'   { return (Get-WebInstallStatus $Data) }
         '/api/checks-fix'       { return (Invoke-WebCheckFix $Data) }
+        '/api/scripts'          { return (Get-WebScripts) }
+        '/api/script-get'       { return (Get-WebScriptDetail $Data) }
+        '/api/script-save'      { return (Save-WebScript $Data) }
+        '/api/script-delete'    { return (Remove-WebScript $Data) }
+        '/api/script-runstatus' { return (Get-WebScriptRunStatus $Data) }
+        '/api/scripts-save-local' { return (Save-WebScriptCopies) }
         default                 { return @{ ok = $false; error = 'unknown' } }
     }
 }
