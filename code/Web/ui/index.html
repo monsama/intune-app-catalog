@@ -32,7 +32,7 @@
 
 <div class="banner warn" id="setupBanner" role="region" aria-label="Setup" hidden>
   <span>No Graph connection set up yet - Intune and Entra ID features won't work until it is.</span>
-  <button class="btn small" id="bannerSettings">Open Settings and the setup guide</button>
+  <button class="btn small" id="bannerSettings" title="Fill in the connection and follow the setup guide">Open Settings and the setup guide</button>
 </div>
 
 <main>
@@ -50,24 +50,24 @@
       </select>
       <span class="count" id="count"></span>
       <span class="spacer"></span>
-      <button class="btn primary" id="btnAddApp">Add app</button>
-      <button class="btn" id="btnEditApp" disabled>Edit</button>
+      <button class="btn primary" id="btnAddApp" title="Add an app to the catalog - nothing changes in Intune until you Deploy it">Add app</button>
+      <button class="btn" id="btnEditApp" disabled title="Edit the selected app in the catalog (double-click a row does the same)">Edit</button>
       <button class="btn" id="btnDeploy" disabled title="Create or update the selected apps in Intune">Deploy</button>
       <button class="btn" id="btnPush" disabled title="Push the selected apps' groups to Intune">Push groups</button>
       <button class="btn" id="btnMore" aria-haspopup="menu" title="More actions for the selected apps">More &#9662;</button>
-      <button class="btn" id="btnReload">Reload</button>
-      <button class="btn" id="btnCatalogFolder">Open catalog folder</button>
+      <button class="btn" id="btnReload" title="Read the catalog folder again - for changes made outside the app">Reload</button>
+      <button class="btn" id="btnCatalogFolder" title="Open the folder with one JSON file per app in Explorer">Open catalog folder</button>
     </div>
     <div class="tablewrap">
       <table class="grid" id="grid">
         <thead><tr>
-          <th data-sort="name">App</th>
-          <th data-sort="wingetId">Winget ID</th>
-          <th data-sort="type">Type</th>
-          <th data-sort="version">Version</th>
+          <th data-sort="name" title="The app's name in the catalog (and in Intune). Click a header to sort.">App</th>
+          <th data-sort="wingetId" title="The winget package the app installs. Empty: it has its own installer (.intunewin).">Winget ID</th>
+          <th data-sort="type" title="Intune's app type, once deployed">Type</th>
+          <th data-sort="version" title="The version in the app's settings">Version</th>
           <th data-sort="groups" title="Required / Available / Uninstall">Groups</th>
-          <th data-sort="status">Status</th>
-          <th data-sort="audit">Last audit</th>
+          <th data-sort="status" title="Whether it is in Intune and ready to deploy - hover a status for what it means">Status</th>
+          <th data-sort="audit" title="What the last detailed check against Intune found">Last audit</th>
         </tr></thead>
         <tbody id="gridBody"></tbody>
       </table>
@@ -83,7 +83,7 @@
   <!-- ============ Checks ============ -->
   <section class="view" id="viewChecks" hidden>
     <div class="toolbar">
-      <button class="btn primary" id="btnRunChecks">Run checks</button>
+      <button class="btn primary" id="btnRunChecks" title="Compare the catalog with Intune and Entra ID - reads only, changes nothing">Run checks</button>
       <label class="chk inline" title="Reads every deployed app from Intune - settings, groups, dependencies and assignments the catalog doesn't have. The slowest part."><input type="checkbox" id="chkDetails" checked>Deployed apps in detail</label>
       <label class="chk inline" title="Asks winget whether each Winget ID still exists."><input type="checkbox" id="chkWinget" checked>Ask winget</label>
       <select id="checkFilter" aria-label="Show"><option value="">All areas</option></select>
@@ -94,12 +94,12 @@
       <button class="btn" id="btnFixPushSettings" disabled title="The catalog is right about settings or dependencies: send them to Intune">Push settings</button>
       <button class="btn" id="btnFixPushGroups" disabled title="The catalog is right about groups: send them to Intune">Push groups</button>
       <button class="btn" id="btnFixAdd" disabled title="Add the Intune-only apps to the catalog, with their settings and groups">Add to catalog</button>
-      <button class="btn" id="btnFixRecheck" disabled>Re-check</button>
+      <button class="btn" id="btnFixRecheck" disabled title="Check the ticked findings again against Intune">Re-check</button>
     </div>
     <p class="sub" id="checkNotes">Compares the catalog with Intune and Entra ID, checks its dependencies, and shows what the last audit found. Only reads - every fix is a button you press.</p>
     <div class="tablewrap">
       <table class="grid" id="checkGrid" hidden>
-        <thead><tr><th class="sel"><input type="checkbox" id="checkAll" aria-label="Select all shown"></th><th>Area</th><th>App</th><th>Problem</th><th>Catalog</th><th>Intune</th><th>Fix</th></tr></thead>
+        <thead><tr><th class="sel"><input type="checkbox" id="checkAll" aria-label="Select all shown"></th><th title="What kind of check found it">Area</th><th>App</th><th>Problem</th><th title="What the catalog has">Catalog</th><th title="What Intune or Entra ID has">Intune</th><th title="What can be done about it - each button says whether it changes the catalog or Intune">Fix</th></tr></thead>
         <tbody id="checkBody"></tbody>
       </table>
       <div class="empty" id="checkEmpty"><h2 id="checkEmptyTitle">Not run yet</h2><p id="checkEmptyText">Run checks to see what needs attention.</p></div>
@@ -117,9 +117,9 @@
         </div>
         <ul class="glist" id="groupList" role="listbox" aria-label="Groups used by the catalog"></ul>
         <div class="actions">
-          <button class="btn" id="btnGroupNew">New group</button>
-          <button class="btn" id="btnGroupsDelete">Delete several...</button>
-          <button class="btn" id="btnGroupsReload">Reload</button>
+          <button class="btn" id="btnGroupNew" title="Create a security group in Entra ID">New group</button>
+          <button class="btn" id="btnGroupsDelete" title="Delete several groups from Entra ID at once - asked first">Delete several...</button>
+          <button class="btn" id="btnGroupsReload" title="Read the groups and their members again">Reload</button>
         </div>
       </div>
       <section class="panel" id="groupPane">
@@ -129,8 +129,8 @@
             <h2 id="gName"></h2>
             <span class="pill" id="gState"></span>
             <span class="spacer"></span>
-            <button class="btn" id="btnGroupRename" disabled>Rename...</button>
-            <button class="btn danger" id="btnGroupDelete" disabled>Delete group...</button>
+            <button class="btn" id="btnGroupRename" disabled title="Rename the group in Entra ID - every catalog app using it follows">Rename...</button>
+            <button class="btn danger" id="btnGroupDelete" disabled title="Delete this group from Entra ID - asked first">Delete group...</button>
           </div>
           <p class="sub" id="gNote"></p>
           <div class="formgrid">
@@ -143,12 +143,12 @@
             </section>
             <section>
               <h3>Add members</h3>
-              <div class="toolbar tight"><input type="search" id="gFind" placeholder="Search users and groups (at least 2 letters)" autocomplete="off" spellcheck="false"><button class="btn" id="btnGroupFind">Search</button></div>
+              <div class="toolbar tight"><input type="search" id="gFind" placeholder="Search users and groups (at least 2 letters)" autocomplete="off" spellcheck="false"><button class="btn" id="btnGroupFind" title="Search users and groups in Entra ID to add as members">Search</button></div>
               <p class="muted note" id="gFindNote"></p>
               <ul class="hits" id="gHits"></ul>
               <h3>To add <span class="muted" id="gAddCount"></span></h3>
               <ul class="hits" id="gAdd"></ul>
-              <div class="actions end"><button class="btn primary" id="btnGroupSave">Create / update group</button></div>
+              <div class="actions end"><button class="btn primary" id="btnGroupSave" title="Create the group, or update its description and members, in Entra ID">Create / update group</button></div>
             </section>
           </div>
           <pre class="log" id="groupLog" tabindex="0" role="log" hidden></pre>
@@ -163,18 +163,18 @@
       <input type="search" id="scriptSearch" placeholder="Search scripts" autocomplete="off" spellcheck="false">
       <span class="count" id="scriptCount"></span>
       <span class="spacer"></span>
-      <button class="btn primary" id="btnScriptNew">New script</button>
-      <button class="btn" id="btnScriptEdit" disabled>Edit</button>
+      <button class="btn primary" id="btnScriptNew" title="Write a new platform script - saved locally or created in Intune">New script</button>
+      <button class="btn" id="btnScriptEdit" disabled title="Open the selected script (double-click a row does the same)">Edit</button>
       <button class="btn" id="btnScriptStatus" disabled title="How the script went on each device">Run status</button>
-      <button class="btn" id="btnScriptDelete" disabled>Delete</button>
+      <button class="btn" id="btnScriptDelete" disabled title="Delete the selected script - from Intune, or the local copy if it is only local">Delete</button>
       <button class="btn" id="btnScriptsSave" title="Reads every script in Intune in full - body and groups - and keeps a local copy of each. Only reads Intune.">Save local copies</button>
-      <button class="btn" id="btnScriptsReload">Reload</button>
-      <button class="btn" id="btnScriptsFolder">Open folder</button>
+      <button class="btn" id="btnScriptsReload" title="Read the scripts from Intune and the local folder again">Reload</button>
+      <button class="btn" id="btnScriptsFolder" title="Open the folder with the local copies in Explorer">Open folder</button>
     </div>
     <p class="sub" id="scriptNote">PowerShell scripts Intune runs on enrolled Windows devices, with the local copies kept beside the catalog.</p>
     <div class="tablewrap">
       <table class="grid" id="scriptGrid">
-        <thead><tr><th>Script</th><th>File</th><th>Runs as</th><th>32-bit</th><th>Signature</th><th>Modified</th><th>Local copy</th></tr></thead>
+        <thead><tr><th>Script</th><th>File</th><th>Runs as</th><th title="Whether it runs in 32-bit PowerShell on 64-bit Windows">32-bit</th><th title="Whether Intune requires the script to be signed">Signature</th><th>Modified</th><th title="Whether data\script-data has a copy of this script, and whether it matches Intune">Local copy</th></tr></thead>
         <tbody id="scriptBody"></tbody>
       </table>
       <div class="empty" id="scriptEmpty" hidden><h2>No platform scripts</h2><p id="scriptEmptyText">None in Intune and none saved locally. New script writes one.</p></div>
@@ -192,12 +192,12 @@
           <label>Tenant ID<input id="fTenant" spellcheck="false" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000"></label>
           <label>Client (Application) ID<input id="fClient" spellcheck="false" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000"></label>
           <label>Certificate thumbprint
-            <span class="inputrow"><input id="fThumb" spellcheck="false" autocomplete="off"><button class="btn" id="btnPickCert">Choose...</button></span>
+            <span class="inputrow"><input id="fThumb" spellcheck="false" autocomplete="off"><button class="btn" id="btnPickCert" title="Pick a certificate from this machine's certificate store">Choose...</button></span>
           </label>
           <p class="certstatus" id="certStatus"></p>
           <div class="actions">
-            <button class="btn primary" id="btnTest">Test connection</button>
-            <button class="btn" id="btnSave">Save</button>
+            <button class="btn primary" id="btnTest" title="Sign in with these values and check permissions - nothing is saved or changed">Test connection</button>
+            <button class="btn" id="btnSave" title="Save the connection settings">Save</button>
             <span class="dirty" id="dirtyNote" hidden>Not saved</span>
           </div>
           <div class="result" id="testResult" hidden></div>
@@ -215,7 +215,7 @@
               <li><b>API permissions:</b> Add required permissions adds them as <i>Application</i> permissions (not Delegated). Then an admin presses <b>Grant admin consent</b> in Entra.</li>
               <li><b>Test connection</b> - the checklist says what is still missing.</li>
             </ol>
-            <div class="actions"><button class="btn" id="btnGuideEntra">Open the Entra admin center</button></div>
+            <div class="actions"><button class="btn" id="btnGuideEntra" title="Open entra.microsoft.com in your browser">Open the Entra admin center</button></div>
           </details>
           <details id="guideStart">
             <summary>Getting started: catalog and Intune</summary>
@@ -241,34 +241,34 @@
             <div>
               <label>Architecture</label>
               <div class="checks"><label class="chk"><input type="checkbox" data-arch="x64">x64</label><label class="chk"><input type="checkbox" data-arch="x86">x86</label><label class="chk"><input type="checkbox" data-arch="arm64">arm64</label></div>
-              <label>Install for<select id="dContext"><option>System</option><option>User</option></select></label>
-              <label>Minimum OS<select id="dMinOs"></select></label>
-              <label>Winget apps install with<select id="dWinget"><option value="WAU">Winget-AutoUpdate (Winget-Install.ps1)</option><option value="Winget">The winget command</option></select></label>
+              <label title="System installs for every user of the device; User installs for the signed-in user only (and needs no admin rights).">Install for<select id="dContext"><option>System</option><option>User</option></select></label>
+              <label title="Devices older than this don't get the app.">Minimum OS<select id="dMinOs"></select></label>
+              <label title="Winget-AutoUpdate keeps Winget apps updated afterwards; the winget command only installs them.">Winget apps install with<select id="dWinget"><option value="WAU">Winget-AutoUpdate (Winget-Install.ps1)</option><option value="Winget">The winget command</option></select></label>
               <label>Default dependencies <span class="muted">(app names, one per line)</span><textarea id="dDeps" rows="2"></textarea></label>
             </div>
             <div>
               <div class="two">
-                <label>Install time (min)<input id="dTime" inputmode="numeric"></label>
+                <label title="How long Intune waits for the install before it counts as failed. Intune uses steps of 5 minutes.">Install time (min)<input id="dTime" inputmode="numeric"></label>
                 <label>Min. disk space (MB)<input id="dDisk" inputmode="numeric"></label>
                 <label>Min. memory (MB)<input id="dMem" inputmode="numeric"></label>
                 <label>Min. CPUs<input id="dCpus" inputmode="numeric"></label>
                 <label>Min. CPU speed (MHz)<input id="dSpeed" inputmode="numeric"></label>
-                <label>Restart<select id="dRestart"><option value="basedOnReturnCode">Based on return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></label>
+                <label title="What Intune does after the install: follow the return code, allow a restart, suppress it, or force one.">Restart<select id="dRestart"><option value="basedOnReturnCode">By return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></label>
               </div>
               <label class="chk"><input type="checkbox" id="dUninstall">Allow uninstall from Company Portal</label>
-              <label>Return codes <span class="muted">(code = type, one per line)</span><textarea id="dCodes" rows="5" class="monotext"></textarea></label>
+              <label title="The installer's exit codes and what Intune makes of them: success, softReboot (restart later), hardReboot (restart now), retry, failed.">Return codes <span class="muted">(code = type, one per line)</span><textarea id="dCodes" rows="5" class="monotext"></textarea></label>
             </div>
           </div>
           <p class="formerror" id="defaultsError" hidden></p>
-          <div class="actions"><button class="btn primary" id="btnSaveDefaults">Save default values</button></div>
+          <div class="actions"><button class="btn primary" id="btnSaveDefaults" title="Save the defaults new apps get when deployed without their own settings">Save default values</button></div>
         </article>
         <article class="card">
           <h2>Prerequisites</h2>
           <p class="sub" id="prereqText">The Microsoft.Graph.Authentication PowerShell module, in each PowerShell this app uses.</p>
           <ul class="prereqs" id="prereqRows"></ul>
           <div class="actions">
-            <button class="btn" id="btnPrereqCheck">Check</button>
-            <button class="btn primary" id="btnPrereqInstall" hidden>Install missing</button>
+            <button class="btn" id="btnPrereqCheck" title="Look for the Microsoft Graph module in each PowerShell again">Check</button>
+            <button class="btn primary" id="btnPrereqInstall" hidden title="Install the Microsoft Graph module where it is missing (current user, from the PowerShell Gallery)">Install missing</button>
           </div>
           <p class="sub">Installs from the PowerShell Gallery for your user account only - no admin rights, but internet access.</p>
         </article>
@@ -276,7 +276,7 @@
         <article class="card">
           <h2>Diagnostics</h2>
           <p class="sub">This machine's setup, the catalog itself, and how it lines up with Intune. Only reads.</p>
-          <div class="actions"><button class="btn" id="btnDiag">Run diagnostics</button></div>
+          <div class="actions"><button class="btn" id="btnDiag" title="Check this machine, the catalog and the link to Intune - reads only">Run diagnostics</button></div>
           <pre class="log diag" id="diagLog" tabindex="0" role="log" hidden></pre>
         </article>
 
@@ -287,14 +287,14 @@
           <h2>Certificate</h2>
           <p class="sub">On this machine</p>
           <div class="actions">
-            <button class="btn" id="btnNewCert">Create new certificate...</button>
-            <button class="btn ghost" id="btnCertFolder">Open certificates folder</button>
-            <button class="btn ghost" id="btnCertsLocal">Delete one...</button>
+            <button class="btn" id="btnNewCert" title="Create a self-signed certificate on this machine for the app registration">Create new certificate...</button>
+            <button class="btn ghost" id="btnCertFolder" title="Open the folder with the exported .cer files in Explorer">Open certificates folder</button>
+            <button class="btn ghost" id="btnCertsLocal" title="List this machine's certificates and delete one you no longer need">Delete one...</button>
           </div>
           <p class="sub">In Entra ID <span class="muted">(signs you in with your own account)</span></p>
           <div class="actions">
-            <button class="btn" id="btnCheckCerts">Check certificates</button>
-            <button class="btn" id="btnUpload">Upload this certificate</button>
+            <button class="btn" id="btnCheckCerts" title="List the certificates the app registration has in Entra ID (you sign in)">Check certificates</button>
+            <button class="btn" id="btnUpload" title="Add this certificate to the app registration in Entra ID (you sign in)">Upload this certificate</button>
           </div>
           <ul class="entracerts" id="entraCerts"></ul>
         </article>
@@ -303,8 +303,8 @@
           <h2>API permissions</h2>
           <p class="sub">Microsoft Graph application permissions this app uses.</p>
           <div class="actions">
-            <button class="btn primary" id="btnAddPerms">Add required permissions...</button>
-            <button class="btn" id="btnOpenEntra">Open in Entra (grant consent)</button>
+            <button class="btn primary" id="btnAddPerms" title="Add the Graph application permissions to the app registration (you sign in); an admin then grants consent">Add required permissions...</button>
+            <button class="btn" id="btnOpenEntra" title="Open the app registration's API permissions page to grant admin consent">Open in Entra (grant consent)</button>
           </div>
         </article>
 
@@ -313,8 +313,8 @@
           <p class="certstatus" id="pkgTool"></p>
           <p class="certstatus" id="pkgShared"></p>
           <div class="actions">
-            <button class="btn" id="btnGetTool">Download packaging tool</button>
-            <button class="btn" id="btnBuildShared">Build init.intunewin</button>
+            <button class="btn" id="btnGetTool" title="Download IntuneWinAppUtil.exe from Microsoft (its signature is checked)">Download packaging tool</button>
+            <button class="btn" id="btnBuildShared" title="Build the shared package every Winget app deploys with">Build init.intunewin</button>
           </div>
         </article>
 
@@ -326,21 +326,21 @@
           <label class="chk"><input type="checkbox" data-check="pushGroupsOnCreate">Push groups after creating an app</label>
           <label class="chk"><input type="checkbox" data-check="pushGroupsOnUpdate">Push groups after updating an app</label>
           <label class="chk"><input type="checkbox" data-check="detailedGraphLog">Detailed Graph log (every request)</label>
-          <div class="actions"><button class="btn" id="btnSaveChecks">Save</button></div>
+          <div class="actions"><button class="btn" id="btnSaveChecks" title="Save the automatic checks and pushes">Save</button></div>
         </article>
 
         <article class="card">
           <h2>Folders</h2>
           <p class="sub">Leave a box empty to use the default (shown greyed out).</p>
           <div id="folderList"></div>
-          <div class="actions"><button class="btn" id="btnSaveFolders">Save folders</button></div>
+          <div class="actions"><button class="btn" id="btnSaveFolders" title="Save the folders - empty boxes use the default">Save folders</button></div>
         </article>
 
         <article class="card">
           <h2>Favourite groups</h2>
           <p class="sub" id="favGroupsHint">Offered first wherever a group is chosen. One per line.</p>
           <textarea id="favGroups" aria-labelledby="favGroupsHint" rows="4" class="full"></textarea>
-          <div class="actions"><button class="btn" id="btnSaveFavs">Save favourites</button></div>
+          <div class="actions"><button class="btn" id="btnSaveFavs" title="Save the favourite groups">Save favourites</button></div>
         </article>
 
         <article class="card">
@@ -351,20 +351,20 @@
     </div>
   </section>
 <div class="menu" id="appMenu" role="menu" hidden>
-  <button role="menuitem" data-act="package">Package (build .intunewin)</button>
-  <button role="menuitem" data-act="pull">Pull from Intune...</button>
+  <button role="menuitem" data-act="package" title="Build the .intunewin for apps with their own installer">Package (build .intunewin)</button>
+  <button role="menuitem" data-act="pull" title="Read the apps' settings and groups from Intune into the catalog - you choose per field">Pull from Intune...</button>
   <button role="menuitem" data-act="pushsettings" title="Send the catalog's settings to Intune, without uploading a package">Push settings to Intune...</button>
-  <button role="menuitem" data-act="status">Install status...</button>
+  <button role="menuitem" data-act="status" title="Every device's install state for this app, from Intune">Install status...</button>
   <hr>
-  <button role="menuitem" data-act="batchedit">Batch edit...</button>
-  <button role="menuitem" data-act="addgroups">Add groups...</button>
-  <button role="menuitem" data-act="removegroups">Remove groups...</button>
+  <button role="menuitem" data-act="batchedit" title="Change the same fields on all selected apps in the catalog">Batch edit...</button>
+  <button role="menuitem" data-act="addgroups" title="Add groups to all selected apps in the catalog">Add groups...</button>
+  <button role="menuitem" data-act="removegroups" title="Remove groups from all selected apps in the catalog">Remove groups...</button>
   <hr>
-  <button role="menuitem" data-act="copyid">Copy App ID</button>
-  <button role="menuitem" data-act="clearid">Clear App ID</button>
+  <button role="menuitem" data-act="copyid" title="Copy the app's Intune App ID">Copy App ID</button>
+  <button role="menuitem" data-act="clearid" title="Forget the link to Intune - the app in Intune stays">Clear App ID</button>
   <hr>
-  <button role="menuitem" data-act="delete" class="danger">Delete from Intune...</button>
-  <button role="menuitem" data-act="remove" class="danger">Remove from catalog...</button>
+  <button role="menuitem" data-act="delete" class="danger" title="Delete the selected apps from Intune - the catalog keeps them; asked first">Delete from Intune...</button>
+  <button role="menuitem" data-act="remove" class="danger" title="Remove the app from the catalog only - Intune keeps it">Remove from catalog...</button>
 </div>
 </main>
 
@@ -380,14 +380,14 @@
   <h2>Create a certificate</h2>
   <label>Subject<input id="fSubject" value="Intune Deployment" spellcheck="false"></label>
   <p class="sub">Self-signed, 2 years, private key not exportable. Its public .cer is saved to the certificates folder - upload it next.</p>
-  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnNewCertGo">Create</button></div>
+  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnNewCertGo" title="Create the certificate in the chosen store and export its .cer">Create</button></div>
 </dialog>
 
 <dialog id="dlgPerms">
   <h2>Add required permissions</h2>
   <p class="sub">Added to the app registration as Application permissions. Anything already listed is kept. Afterwards Entra opens so an admin can grant consent.</p>
   <ul class="permlist" id="permList"></ul>
-  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnPermsGo">Add and open Entra</button></div>
+  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnPermsGo" title="Add the ticked permissions to the app registration, then open Entra for consent">Add and open Entra</button></div>
 </dialog>
 
 <dialog id="dlgApp" class="wide">
@@ -397,14 +397,14 @@
       <section>
         <h3>General</h3>
         <label>Name<input id="aName" required autocomplete="off"></label>
-        <label>Winget ID <span class="muted">(empty for an app with its own package)</span><span class="inputrow"><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip"><button type="button" class="btn" id="btnFindWinget" title="Search winget for the package">Find...</button></span></label>
-        <label>App ID in Intune <span class="muted">(empty until it's deployed)</span><input id="aAppId" autocomplete="off" spellcheck="false"></label>
+        <label title="The winget package ID, e.g. 7zip.7zip. Empty for an app with its own installer. Find... searches winget.">Winget ID <span class="muted">(empty for an app with its own package)</span><span class="inputrow"><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip"><button type="button" class="btn" id="btnFindWinget" title="Search winget for the package">Find...</button></span></label>
+        <label title="The Intune app this catalog entry is linked to. Set by Deploy, or by Checks when it links an existing app.">App ID in Intune <span class="muted">(empty until it's deployed)</span><input id="aAppId" autocomplete="off" spellcheck="false"></label>
         <h3>Assignments <span class="muted">(one group per line)</span></h3>
         <div class="groups4">
-          <label>Required<textarea id="gRequired" rows="4" spellcheck="false"></textarea></label>
-          <label>Available<textarea id="gAvailable" rows="4" spellcheck="false"></textarea></label>
-          <label>Uninstall<textarea id="gUninstall" rows="4" spellcheck="false"></textarea></label>
-          <label>Excluded<textarea id="gExclude" rows="4" spellcheck="false"></textarea></label>
+          <label title="Installed automatically on these groups' devices.">Required<textarea id="gRequired" rows="4" spellcheck="false"></textarea></label>
+          <label title="Offered in the Company Portal for these groups to install themselves.">Available<textarea id="gAvailable" rows="4" spellcheck="false"></textarea></label>
+          <label title="Removed from these groups' devices.">Uninstall<textarea id="gUninstall" rows="4" spellcheck="false"></textarea></label>
+          <label title="Groups that never get the app, whatever else they are assigned to.">Excluded<textarea id="gExclude" rows="4" spellcheck="false"></textarea></label>
         </div>
         <p class="sub" id="knownGroups"></p>
       </section>
@@ -420,7 +420,7 @@
         <label>Information URL<input id="mInformationUrl" spellcheck="false"></label>
         <label>Privacy URL<input id="mPrivacyUrl" spellcheck="false"></label>
         <label>Install command<input id="mInstallCommand" class="mono" spellcheck="false"></label>
-        <label>Uninstall command<input id="mUninstallCommand" class="mono" spellcheck="false"></label>
+        <label title="Removed from these groups' devices.">Uninstall command<input id="mUninstallCommand" class="mono" spellcheck="false"></label>
         <label>Notes<textarea id="mNotes" rows="2"></textarea></label>
       </section>
     </div>
@@ -433,9 +433,9 @@
           <div data-det="Script"><label>Detection script <span class="muted">(writes output and exits 0 when installed)</span><textarea id="xScript" rows="8" class="monotext" spellcheck="false"></textarea></label></div>
           <div data-det="Msi"><label>Product code<input id="xProductCode" class="mono" spellcheck="false" placeholder="{00000000-0000-0000-0000-000000000000}"></label></div>
           <div data-det="File"><div class="two"><label>Folder<input id="xPath" class="mono" spellcheck="false" placeholder="C:\Program Files\Vendor"></label><label>File or folder name<input id="xName" class="mono" spellcheck="false"></label></div>
-            <label>Detect by<select id="xFileType"><option value="exists">Exists</option><option value="doesNotExist">Doesn't exist</option><option value="version">Version</option><option value="modifiedDate">Date modified</option><option value="createdDate">Date created</option><option value="sizeInMB">Size in MB</option></select></label></div>
+            <label title="How Intune decides the app is installed: the file or key exists, or its version / value compares as set.">Detect by<select id="xFileType"><option value="exists">Exists</option><option value="doesNotExist">Doesn't exist</option><option value="version">Version</option><option value="modifiedDate">Date modified</option><option value="createdDate">Date created</option><option value="sizeInMB">Size in MB</option></select></label></div>
           <div data-det="Registry"><label>Key path<input id="xKey" class="mono" spellcheck="false" placeholder="HKEY_LOCAL_MACHINE\SOFTWARE\Vendor"></label><label>Value name<input id="xValueName" class="mono" spellcheck="false"></label>
-            <label>Detect by<select id="xRegType"><option value="exists">Exists</option><option value="doesNotExist">Doesn't exist</option><option value="string">String</option><option value="integer">Integer</option><option value="version">Version</option></select></label></div>
+            <label title="How Intune decides the app is installed: the file or key exists, or its version / value compares as set.">Detect by<select id="xRegType"><option value="exists">Exists</option><option value="doesNotExist">Doesn't exist</option><option value="string">String</option><option value="integer">Integer</option><option value="version">Version</option></select></label></div>
           <div data-det="Msi File Registry"><div class="two"><label>Operator<select id="xOperator"><option value="notConfigured">(not configured)</option><option value="equal">Equals</option><option value="notEqual">Not equal</option><option value="greaterThan">Greater than</option><option value="greaterThanOrEqual">Greater than or equal</option><option value="lessThan">Less than</option><option value="lessThanOrEqual">Less than or equal</option></select></label><label>Value<input id="xValue" class="mono" spellcheck="false"></label></div></div>
           <div data-det="File Registry"><label class="chk"><input type="checkbox" id="x32">Check the 32-bit location on 64-bit Windows</label></div>
           <h3>Dependencies <span class="muted">(installed first)</span></h3>
@@ -446,26 +446,26 @@
           <label>Architecture</label>
           <div class="checks"><label class="chk"><input type="checkbox" data-xarch="x64">x64</label><label class="chk"><input type="checkbox" data-xarch="x86">x86</label><label class="chk"><input type="checkbox" data-xarch="arm64">arm64</label></div>
           <div class="two">
-            <label>Install for<select id="xContext"><option>System</option><option>User</option></select></label>
-            <label>Minimum OS<select id="xMinOs"></select></label>
-            <label>Install time (min)<input id="xTime" inputmode="numeric"></label>
-            <label>Restart<select id="xRestart"><option value="basedOnReturnCode">Based on return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></label>
+            <label title="System installs for every user of the device; User installs for the signed-in user only (and needs no admin rights).">Install for<select id="xContext"><option>System</option><option>User</option></select></label>
+            <label title="Devices older than this don't get the app.">Minimum OS<select id="xMinOs"></select></label>
+            <label title="How long Intune waits for the install before it counts as failed. Intune uses steps of 5 minutes.">Install time (min)<input id="xTime" inputmode="numeric"></label>
+            <label title="What Intune does after the install: follow the return code, allow a restart, suppress it, or force one.">Restart<select id="xRestart"><option value="basedOnReturnCode">By return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></label>
             <label>Min. disk space (MB)<input id="xDisk" inputmode="numeric"></label>
             <label>Min. memory (MB)<input id="xMem" inputmode="numeric"></label>
             <label>Min. CPUs<input id="xCpus" inputmode="numeric"></label>
             <label>Min. CPU speed (MHz)<input id="xSpeed" inputmode="numeric"></label>
           </div>
           <label class="chk"><input type="checkbox" id="xUninstall">Allow uninstall from Company Portal</label>
-          <label>Return codes <span class="muted">(code = type: success, softReboot, hardReboot, retry, failed)</span><textarea id="xCodes" rows="5" class="monotext"></textarea></label>
+          <label title="The installer's exit codes and what Intune makes of them: success, softReboot (restart later), hardReboot (restart now), retry, failed.">Return codes <span class="muted">(code = type: success, softReboot, hardReboot, retry, failed)</span><textarea id="xCodes" rows="5" class="monotext"></textarea></label>
         </section>
       </div>
     </details>
     <p class="formerror" id="appError" hidden></p>
     <div class="actions split">
-      <button type="button" class="btn danger" id="btnRemoveApp">Remove from catalog...</button>
+      <button type="button" class="btn danger" id="btnRemoveApp" title="Remove this app from the catalog only - Intune keeps it; a copy goes to Backups">Remove from catalog...</button>
       <span class="spacer"></span>
       <button type="button" class="btn" data-close>Cancel</button>
-      <button type="submit" class="btn primary" id="btnSaveApp">Save</button>
+      <button type="submit" class="btn primary" id="btnSaveApp" title="Save to the catalog - Deploy or Push sends it to Intune">Save</button>
     </div>
   </form>
 </dialog>
@@ -475,15 +475,15 @@
   <p class="sub">New apps are created; apps that already have an App ID get their settings updated. In dependency order, one after another. The App ID is saved to the catalog as each one finishes.</p>
   <table class="plan"><thead><tr><th>App</th><th>Action</th><th>Status</th></tr></thead><tbody id="deployRows"></tbody></table>
   <pre class="log" id="deployLog" tabindex="0" role="log"></pre>
-  <div class="actions end"><button class="btn" data-close id="btnDeployClose">Close</button><button class="btn primary" id="btnDeployGo">Deploy</button></div>
+  <div class="actions end"><button class="btn" data-close id="btnDeployClose">Close</button><button class="btn primary" id="btnDeployGo" title="Create or update the ready apps in Intune, in this order">Deploy</button></div>
 </dialog>
 
 <dialog id="dlgPush" class="wide">
   <h2>Push groups to Intune</h2>
   <p class="sub">Intune gets exactly the catalog's groups for these apps: what's below is added, assignments not in the catalog are removed. Groups that don't exist yet are created.</p>
-  <table class="plan"><thead><tr><th>App</th><th>Added in Intune</th><th>Removed from Intune</th></tr></thead><tbody id="pushRows"></tbody></table>
+  <table class="plan"><thead><tr><th>App</th><th title="Assignments Intune gets">Added in Intune</th><th title="Assignments Intune has that the catalog doesn't - they are removed">Removed from Intune</th></tr></thead><tbody id="pushRows"></tbody></table>
   <pre class="log" id="pushLog" tabindex="0" role="log"></pre>
-  <div class="actions end"><button class="btn" data-close id="btnPushClose">Close</button><button class="btn primary" id="btnPushGo" disabled>Apply</button></div>
+  <div class="actions end"><button class="btn" data-close id="btnPushClose">Close</button><button class="btn primary" id="btnPushGo" disabled title="Apply these assignment changes in Intune">Apply</button></div>
 </dialog>
 
 
@@ -499,7 +499,7 @@
   <p class="sub" id="pullText">Reading the apps from Intune...</p>
   <div id="pullReview"></div>
   <pre class="log" id="pullLog" tabindex="0" role="log"></pre>
-  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnPullApply" hidden>Apply</button></div>
+  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnPullApply" hidden title="Write the chosen values into the catalog - Intune does not change">Apply</button></div>
 </dialog>
 
 <dialog id="dlgStatus" class="wide">
@@ -538,7 +538,7 @@
   <div class="actions end">
     <button class="btn" data-close>Close</button>
     <button class="btn" id="btnScriptLocal" title="Only the local folder - nothing is sent to Intune">Save locally</button>
-    <button class="btn primary" id="btnScriptIntune">Save to Intune</button>
+    <button class="btn primary" id="btnScriptIntune" title="Create or update the script in Intune, and keep a local copy">Save to Intune</button>
   </div>
 </dialog>
 
@@ -555,7 +555,7 @@
   <div class="deplist tall" id="gDelList"></div>
   <label>More group names <span class="muted">(one per line)</span><textarea id="gDelMore" rows="3" class="monotext" spellcheck="false"></textarea></label>
   <pre class="log" id="gDelLog" tabindex="0" role="log" hidden></pre>
-  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn danger" id="btnGroupsDeleteGo">Delete</button></div>
+  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn danger" id="btnGroupsDeleteGo" title="Delete the ticked groups from Entra ID">Delete</button></div>
 </dialog>
 
 <dialog id="dlgBatch" class="wide">
@@ -573,7 +573,7 @@
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minMemoryMB">Min. memory (MB)</label><input id="bMem" aria-label="Min. memory (MB)" inputmode="numeric" value="0"></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minProcessors">Min. CPUs</label><input id="bCpus" aria-label="Min. CPUs" inputmode="numeric" value="0"></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minCpuSpeedMHz">Min. CPU speed (MHz)</label><input id="bSpeed" aria-label="Min. CPU speed (MHz)" inputmode="numeric" value="0"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="deviceRestartBehavior">Restart</label><select id="bRestart" aria-label="Restart"><option value="basedOnReturnCode">Based on return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="deviceRestartBehavior">Restart</label><select id="bRestart" aria-label="Restart"><option value="basedOnReturnCode">By return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="allowAvailableUninstall">Uninstall from Company Portal</label><select id="bUninstall" aria-label="Uninstall from Company Portal"><option value="1">Allowed</option><option value="0">Not allowed</option></select></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="isFeatured">Featured in Company Portal</label><select id="bFeatured" aria-label="Featured in Company Portal"><option value="1">Yes</option><option value="0">No</option></select></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="wingetInstallMethod">Install with (Winget apps)</label><select id="bMethod" aria-label="Install with (Winget apps)"><option value="WAU">Winget-AutoUpdate</option><option value="Winget">winget command</option></select></div>
@@ -597,7 +597,7 @@
   <label class="chk"><input type="checkbox" id="bPush" checked>Then push the settings of the apps already in Intune</label>
   <p class="formerror" id="batchErr" hidden></p>
   <pre class="log" id="batchLog" tabindex="0" role="log" hidden></pre>
-  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnBatchGo">Apply</button></div>
+  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnBatchGo" title="Change the ticked fields on every selected app in the catalog">Apply</button></div>
 </dialog>
 
 <dialog id="dlgGroupsBatch">
@@ -607,12 +607,12 @@
   <label class="chk"><input type="checkbox" id="gbPush" checked>Then push groups for the apps already in Intune</label>
   <p class="formerror" id="gbErr" hidden></p>
   <pre class="log" id="gbLog" tabindex="0" role="log" hidden></pre>
-  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnGbGo">Apply</button></div>
+  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnGbGo" title="Change the groups in the catalog - Push groups sends them to Intune">Apply</button></div>
 </dialog>
 
 <dialog id="dlgWinget" class="wide">
   <h2>Find a Winget package</h2>
-  <div class="toolbar tight"><input type="search" id="wgQuery" placeholder="App or publisher name" autocomplete="off" spellcheck="false"><button class="btn" id="btnWgSearch">Search</button></div>
+  <div class="toolbar tight"><input type="search" id="wgQuery" placeholder="App or publisher name" autocomplete="off" spellcheck="false"><button class="btn" id="btnWgSearch" title="Search winget's sources (needs winget on this machine)">Search</button></div>
   <p class="sub" id="wgNote">Searches winget's sources. Pick the package to use its ID.</p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>Name</th><th>Winget ID</th><th>Version</th><th>Source</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="wgRows"></tbody></table></div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>

@@ -7,6 +7,13 @@
 'use strict';
 
 const $ = id => document.getElementById(id);
+// Enables or disables a button; disabled, its tooltip says why first, then
+// what it does. The usual tooltip is kept in data-tip.
+function setEnabled(b, on, why) {
+  if (b.dataset.tip === undefined) b.dataset.tip = b.title || '';
+  b.disabled = !on;
+  b.title = on || !why ? b.dataset.tip : why + (b.dataset.tip ? '\n' + b.dataset.tip : '');
+}
 const TOKEN = (() => {
   let t = '';
   try {
@@ -118,6 +125,7 @@ async function loadState() {
   const badge = $('connBadge');
   badge.textContent = r.configured ? 'Connection set up' : 'Not connected';
   badge.className = 'conn ' + (r.configured ? 'ok' : 'warn');
+  badge.title = r.configured ? 'Tenant ID, Client ID and certificate are filled in - Settings > Test connection checks that they work.' : 'Fill in the connection in Settings - until then nothing is read from or sent to Intune.';
   $('setupBanner').hidden = r.configured;
   setFields(r.settings);
   setCertStatus(r.cert);

@@ -7,19 +7,27 @@ let apps = [], sortKey = 'name', sortDesc = false, lastClicked = null;
 const selected = new Set();
 let visible = [];
 
+// What each status means and what to do about it, for the pill's tooltip.
+const statusHelp = {
+  'Deployed': 'In Intune - the catalog has its App ID.',
+  'No App ID': 'Not in Intune yet, and no settings of its own: Deploy uses the default values. If it is already in Intune, Checks offers to link it.',
+  'Metadata saved - ready to deploy': 'Not in Intune yet. Its own settings are saved - Deploy creates it with them.',
+  'Package missing': 'Its .intunewin isn\'t in the packages folder - More > Package builds it, or Settings > Packaging for Winget apps.',
+  'Custom package': 'Has a Winget ID but deploys its own .intunewin instead of the shared Winget package.',
+};
 function statusPill(row) {
   const s = row.status || '';
-  if (!s) return el('span', { class: 'pill ok', text: 'Deployed' });
+  if (!s) return el('span', { class: 'pill ok', text: 'Deployed', title: statusHelp.Deployed });
   const parts = s.split('; ');
   const good = parts.every(p => p === 'Metadata saved - ready to deploy' || p === 'Custom package');
   const cls = good ? (parts.includes('Metadata saved - ready to deploy') ? 'ok' : 'info') : 'warn';
-  return el('span', { class: 'pill ' + cls, text: s });
+  return el('span', { class: 'pill ' + cls, text: s, title: parts.map(p => statusHelp[p]).filter(Boolean).join('\n') });
 }
 function auditPill(text) {
   if (!text) return '';
-  if (/issue|Check failed/.test(text)) return el('span', { class: 'pill warn', text });
-  if (/^OK/.test(text)) return el('span', { class: 'pill ok', text });
-  return el('span', { class: 'pill muted', text });
+  if (/issue|Check failed/.test(text)) return el('span', { class: 'pill warn', text, title: 'The last time Checks read this app in detail, the catalog and Intune differed - Checks shows what and offers the fix.' });
+  if (/^OK/.test(text)) return el('span', { class: 'pill ok', text, title: 'The last detailed check found the catalog and Intune the same.' });
+  return el('span', { class: 'pill muted', text, title: 'Checks with "read every deployed app in detail" compares this app field by field.' });
 }
 function needsAttention(a) {
   return (a.status && !/^(Metadata saved - ready to deploy|Custom package)(; Custom package)?$/.test(a.status)) || /issue|Check failed/.test(a.audit || '');
@@ -86,9 +94,10 @@ function selectRow(name, e) {
 }
 function updateActions() {
   const n = selected.size;
-  $('btnEditApp').disabled = n !== 1;
-  $('btnDeploy').disabled = n === 0;
-  $('btnPush').disabled = n === 0 || [...selected].some(s => !(apps.find(a => a.name === s) || {}).hasAppId);
+  const notInIntune = [...selected].filter(s => !(apps.find(a => a.name === s) || {}).hasAppId);
+  setEnabled($('btnEditApp'), n === 1, n === 0 ? 'Select an app first.' : 'Select exactly one app to edit.');
+  setEnabled($('btnDeploy'), n > 0, 'Select one or more apps first.');
+  setEnabled($('btnPush'), n > 0 && notInIntune.length === 0, n === 0 ? 'Select one or more apps first.' : `Only apps already in Intune - deploy ${notInIntune.length === 1 ? notInIntune[0] : notInIntune.length + ' of the selected apps'} first.`);
   $('btnDeploy').textContent = n > 1 ? `Deploy (${n})` : 'Deploy';
   $('btnPush').textContent = n > 1 ? `Push groups (${n})` : 'Push groups';
 }
@@ -376,7 +385,14 @@ function openMenu(x, y) {
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
   const enable = { package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
     copyid: !!(one && one.hasAppId), clearid: !!(one && one.hasAppId), delete: anyId, remove: !!one };
-  for (const b of menu.querySelectorAll('button')) b.disabled = !enable[b.dataset.act];
+  const why = {
+    package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
+    pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
+    batchedit: 'Select one or more apps first.', addgroups: 'Select one or more apps first.', removegroups: 'Select one or more apps first.',
+    copyid: one ? 'This app has no App ID yet.' : 'Select exactly one app.', clearid: one ? 'This app has no App ID.' : 'Select exactly one app.',
+    delete: 'None of the selected apps is in Intune.', remove: 'Select exactly one app.',
+  };
+  for (const b of menu.querySelectorAll('button')) setEnabled(b, !!enable[b.dataset.act], why[b.dataset.act]);
   menu.querySelector('[data-act=package]').textContent = !any ? 'Package every app with its own installer' : enable.package ? `Package ${sel.length > 1 ? 'the selected apps' : 'this app'} (build .intunewin)` : 'Package (Winget apps use the shared package)';
   menu.hidden = false;
   const r = menu.getBoundingClientRect();

@@ -14,7 +14,7 @@ async function loadScripts() {
   if (r.localErrors && r.localErrors.length) notes.push('Unreadable local files: ' + r.localErrors.join('; '));
   $('scriptNote').textContent = notes.join(' ');
   $('scriptNote').className = 'sub' + (r.tenantRead ? '' : ' warntext');
-  $('btnScriptsSave').disabled = !r.tenantRead;
+  setEnabled($('btnScriptsSave'), !!r.tenantRead, 'Intune couldn\'t be read - set up the connection first.');
   if (scriptSel && !scripts.some(x => x.displayName === scriptSel.displayName && x.id === scriptSel.id)) scriptSel = null;
   renderScripts();
 }
@@ -32,9 +32,9 @@ function renderScripts() {
   }));
   $('scriptCount').textContent = `${rows.length} of ${scripts.length}`;
   $('scriptEmpty').hidden = scripts.length > 0;
-  $('btnScriptEdit').disabled = !scriptSel;
-  $('btnScriptDelete').disabled = !scriptSel;
-  $('btnScriptStatus').disabled = !scriptSel || !scriptSel.id;
+  setEnabled($('btnScriptEdit'), !!scriptSel, 'Select a script first.');
+  setEnabled($('btnScriptDelete'), !!scriptSel, 'Select a script first.');
+  setEnabled($('btnScriptStatus'), !!(scriptSel && scriptSel.id), scriptSel ? 'This script is only a local copy - it has never run anywhere.' : 'Select a script that is in Intune.');
 }
 $('scriptSearch').addEventListener('input', renderScripts);
 $('btnScriptsReload').addEventListener('click', loadScripts);

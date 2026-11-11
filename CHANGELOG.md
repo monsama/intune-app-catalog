@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.0.2
+
+### Changed
+
+- **Tooltips.** About 60 buttons got one, saying what they do and whether
+  they change the catalog, Intune or Entra ID - Delete from Intune and
+  Remove from catalog, Pull and Push, Upload, Build, Apply.
+- **Disabled buttons say why** when you hover them: "Select exactly one app
+  to edit", "Only apps already in Intune - deploy X first", "This script is
+  only a local copy". This covers the Apps toolbar, the More menu, the
+  Checks fixes, Groups and Platform scripts.
+- **Status labels:**
+  - Every status on the Apps list explains itself and what to do: No App
+    ID, Package missing, Custom package, ready to deploy.
+  - So does every Last audit result and the connection badge.
+- **Column headers** in Apps, Checks, Platform scripts and Push groups
+  explain what they show.
+- **Fields that are easy to get wrong** explain themselves in the editor,
+  the default values and Batch edit: install context, restart, install
+  time, detection, return codes, the four assignment kinds and the
+  Winget ID.
+- The Restart choice "Based on return code" is now "By return code": the
+  longer text was cut off in the default values. The saved value is the
+  same.
+
+### Tests
+
+- The browser test checks that every greyed-out button has a tooltip.
+- **Layout check,** against a mock API in light and dark mode at 1440 and
+  820 pixels: buttons in a row line up, nothing overlaps, no text is cut
+  off and paddings are consistent. The only problem it found was the
+  Restart choice above.
+
 ## 2.0.1
 
 ### Fixed

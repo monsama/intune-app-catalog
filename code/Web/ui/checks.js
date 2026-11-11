@@ -69,10 +69,11 @@ const namesWith = (list, action) => [...new Set(list.filter(f => (f.actions || [
 function updateCheckActions() {
   const sel = selFindings();
   const count = a => namesWith(sel, a).length;
-  const set = (id, a, label) => { const n = count(a); $(id).disabled = checksRunning || jobRunning || n === 0; $(id).textContent = n > 1 ? `${label} (${n})` : label; };
+  const set = (id, a, label) => { const n = count(a); setEnabled($(id), !(checksRunning || jobRunning) && n > 0, checksRunning || jobRunning ? 'Wait for the running check or job to finish.' : `Tick findings that offer ${label}.`); $(id).textContent = n > 1 ? `${label} (${n})` : label; };
   set('btnFixPull', 'Pull', 'Pull'); set('btnFixPushSettings', 'PushMetadata', 'Push settings'); set('btnFixPushGroups', 'PushGroups', 'Push groups');
-  $('btnFixAdd').disabled = checksRunning || jobRunning || !sel.some(f => (f.actions || []).includes('AddToCatalog'));
-  $('btnFixRecheck').disabled = checksRunning || jobRunning || sel.length === 0;
+  const busy = checksRunning || jobRunning ? 'Wait for the running check or job to finish.' : '';
+  setEnabled($('btnFixAdd'), !busy && sel.some(f => (f.actions || []).includes('AddToCatalog')), busy || 'Tick findings that are "In Intune, not in the catalog".');
+  setEnabled($('btnFixRecheck'), !busy && sel.length > 0, busy || 'Tick one or more findings first.');
   $('checkSelCount').textContent = sel.length ? `${sel.length} selected` : '';
 }
 $('btnFixPull').addEventListener('click', () => openPull(namesWith(selFindings(), 'Pull')));
