@@ -129,6 +129,7 @@ $testableFunctionNames = @(
     "ConvertTo-SupersedenceJson",
     "ConvertTo-CreateAppConfigJson",
     "Get-CreateAppTemplates",
+    "ConvertTo-PsSingleQuotedContent",
     "Get-WingetCommandLines",
     "Get-AppWingetInstallMethod",
     "Convert-AppWingetInstallMethod",
@@ -2216,6 +2217,30 @@ $sameText = Format-GraphAssemblyConflictText -Conflicts @(Get-GraphAssemblyConfl
 Assert-True ($sameText -like '*Uninstall-Module*' -and $sameText -like '*already started without a PowerShell profile*') "Format-GraphAssemblyConflictText: two Graph versions - uninstall advice, and no false promise from a restart"
 
 # =================================================================
+# Hardening: values that end up in code, addresses or file names
+# =================================================================
+$rq = [string][char]0x2019
+Assert-Equal "a''b" (ConvertTo-PsSingleQuotedContent "a'b") "ConvertTo-PsSingleQuotedContent: a plain quote is doubled"
+Assert-Equal "a$rq${rq}b" (ConvertTo-PsSingleQuotedContent "a${rq}b") "ConvertTo-PsSingleQuotedContent: so is a typographic one, which PowerShell also ends a string on"
+Assert-Equal 'ab' (ConvertTo-PsSingleQuotedContent "a`"`r`nb") "ConvertTo-PsSingleQuotedContent: double quotes and line breaks are removed"
+Assert-Equal '7zip.7zip' (ConvertTo-PsSingleQuotedContent '7zip.7zip') "ConvertTo-PsSingleQuotedContent: a normal Winget ID is untouched"
+$evilId = 'Foo.Bar$(Start-Process calc)'
+$evilDetection = (Get-CreateAppTemplates -WingetId $evilId -Uncommon $false -Method 'WAU').Detection
+Assert-True ($evilDetection.Contains("`$AppToDetect = 'Foo.Bar`$(Start-Process calc)'")) "Get-CreateAppTemplates: the Winget ID is a single-quoted literal in the detection script, so `$(...) in it never runs" $evilDetection
+$quoteCmd = (Get-WingetCommandLines -WingetId "Foo'Bar`"x" -Method 'Winget' -InstallContext 'System').Install
+Assert-True ($quoteCmd.Contains("--id 'Foo''Barx'")) "Get-WingetCommandLines: a quote in the ID can't close the string, a double quote can't close the command line" $quoteCmd
+
+Assert-Equal 'CON_' (Get-SafeFileNameForApp -Name 'CON') "Get-SafeFileNameForApp: a reserved device name gets a suffix"
+Assert-Equal 'Lpt1_' (Get-SafeFileNameForApp -Name 'Lpt1') "Get-SafeFileNameForApp: in any letter case"
+Assert-Equal 'Console' (Get-SafeFileNameForApp -Name 'Console') "Get-SafeFileNameForApp: a name that only starts like one is fine"
+Assert-Equal 'ab' (Get-SafeFileNameForApp -Name "a`tb".Replace("`t", [string][char]1)) "Get-SafeFileNameForApp: control characters are removed"
+
+$guidId = 'c0ffee00-1111-4222-8333-444455556666'
+Assert-Equal $guidId (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'A'; appId = $guidId })).appId "ConvertTo-AppRecord: a GUID App ID is kept"
+Assert-Equal $guidId (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'A'; appId = "{$guidId}" })).appId "ConvertTo-AppRecord: braces around it are dropped"
+Assert-Equal '' (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'A'; appId = "../../../v1.0/groups/$guidId" })).appId "ConvertTo-AppRecord: an App ID that's really a path is not kept"
+
+# =================================================================
 # Setup checklist after Test connection (GraphToken.ps1)
 # =================================================================
 $future = (Get-Date).AddYears(1)
@@ -2263,15 +2288,27 @@ try {
     $helperPath = Join-Path $runnerDir "helper.ps1"
     Set-Content -LiteralPath $helperPath -Value 'function Write-GraphReadSummary { "[GRAPH] summary" }'
     $logPath = Join-Path $runnerDir "step.log"
-    $spec = & $writeSpec @{ Script = $stepPath; Arguments = '-ConfigPath "C:\with space\x.json"'; GraphHelper = $helperPath; LogFile = $logPath }
+    $spec = & $writeSpec @{ Script = $stepPath; Parameters = @{ ConfigPath = 'C:\with space\x.json' }; GraphHelper = $helperPath; LogFile = $logPath }
     & $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $runnerPath -Spec $spec | Out-Null
     $stepExit = $LASTEXITCODE
     $stepLog = Get-Content -LiteralPath $logPath -Raw
     Assert-Equal 3 $stepExit "Invoke-AppStep: the step's own exit code is the process's"
-    Assert-True ($stepLog -like '*got C:\with space\x.json*') "Invoke-AppStep: arguments reach the step as PowerShell parses them" $stepLog
+    Assert-True ($stepLog -like '*got C:\with space\x.json*') "Invoke-AppStep: parameters reach the step as values" $stepLog
     Assert-True ($stepLog -like '*careful*') "Invoke-AppStep: warnings land in the log too" $stepLog
     Assert-True ($stepLog -like '*`[GRAPH`] summary*') "Invoke-AppStep: the Graph helper's summary runs after the step" $stepLog
     Assert-True (-not (Test-Path -LiteralPath $spec)) "Invoke-AppStep: the spec file is deleted once read"
+
+    # The injection this replaced: a typographic quote in an app name closed
+    # the quoted value and ran what followed. As a value, it's just text.
+    $rq = [string][char]0x2019
+    $evilName = "x$rq;exit 7;$rq"
+    $echoPath = Join-Path $runnerDir "echo.ps1"
+    Set-Content -LiteralPath $echoPath -Value 'param([string]$SingleFolderName, [switch]$Force) "name=$SingleFolderName force=$Force"; exit 0'
+    $evilLog = Join-Path $runnerDir "evil.log"
+    $evilSpec = & $writeSpec @{ Script = $echoPath; Parameters = @{ SingleFolderName = $evilName; Force = $true }; LogFile = $evilLog }
+    & $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $runnerPath -Spec $evilSpec | Out-Null
+    Assert-Equal 0 $LASTEXITCODE "Invoke-AppStep: a typographic quote in a parameter doesn't break out and run code"
+    Assert-True ((Get-Content -LiteralPath $evilLog -Raw -Encoding UTF8).Contains("name=$evilName force=True")) "Invoke-AppStep: the value arrives unchanged and a switch is set" (Get-Content -LiteralPath $evilLog -Raw)
 
     $cmdSpec = & $writeSpec @{ Command = "'first'; 'RESULT=ok 1.2'" }
     $cmdOut = @(& $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $runnerPath -Spec $cmdSpec)

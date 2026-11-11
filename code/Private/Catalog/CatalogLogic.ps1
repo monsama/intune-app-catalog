@@ -639,12 +639,15 @@ function Global:Get-FriendlyMinOsRelease {
 
 function Global:Get-SafeFileNameForApp {
     param([string]$Name)
-    $safeName = $Name -replace '[<>:"/\\|?*]', ''
+    $safeName = $Name -replace '[<>:"/\\|?*\x00-\x1f]', ''
     $safeName = $safeName -replace '\s+', ' '
     $safeName = $safeName -replace '\s', '-'
     $safeName = $safeName -replace '[.-]+', '-'
     $safeName = $safeName.Trim('-')
     if ([string]::IsNullOrWhiteSpace($safeName)) { $safeName = "App" }
+    # Windows' reserved device names can't be folder names (a folder "CON"
+    # can't be created or deleted normally).
+    if ($safeName -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$') { $safeName += "_" }
     return $safeName
 }
 
@@ -892,6 +895,22 @@ function Global:Get-FactoryAppSettings {
     }
 }
 
+function Global:ConvertTo-PsSingleQuotedContent {
+    <#
+      Pure: text made safe to put between single quotes in PowerShell code
+      that runs somewhere else - every kind of single quote doubled, which
+      includes the typographic ones (U+2018 to U+201B) PowerShell also ends a
+      string on, and the characters that would break the command line it
+      sits in (double quote, line breaks) removed. Used for the Winget ID in
+      the generated install, uninstall and detection scripts, which run as
+      SYSTEM on every targeted device.
+    #>
+    param([string]$Text)
+    if ($null -eq $Text) { return '' }
+    $clean = $Text -replace '["\r\n\x00-\x1f]', ''
+    return ($clean -replace "['\u2018\u2019\u201A\u201B]", '$0$0')
+}
+
 function Global:Get-CreateAppTemplates {
     param([string]$WingetId, [bool]$Uncommon, [string]$Method)
 
@@ -901,7 +920,7 @@ function Global:Get-CreateAppTemplates {
         $install = $commands.Install
         $uninstall = $commands.Uninstall
         $detection = @"
-`$AppToDetect = "$WingetId"
+`$AppToDetect = '$(ConvertTo-PsSingleQuotedContent $WingetId)'
 
 Function Get-WingetCmd {
     `$WingetCmd = `$null
@@ -948,6 +967,10 @@ function Global:Get-WingetCommandLines {
     param([string]$WingetId, [string]$Method, [string]$InstallContext)
 
     $ps = "%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile"
+    # The ID ends up in code and command lines that run as SYSTEM on the
+    # devices - escaped for its single quotes, and anything that would close
+    # the surrounding double quotes removed (see ConvertTo-PsSingleQuotedContent).
+    $WingetId = ConvertTo-PsSingleQuotedContent $WingetId
     if ($Method -eq "Winget") {
         $scope = if ($InstallContext -eq "User") { "" } else { " --scope machine" }
         # Newest App Installer first: there can be more than one version

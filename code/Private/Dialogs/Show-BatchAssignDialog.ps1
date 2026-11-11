@@ -225,7 +225,7 @@ function Global:Show-BatchAssignDialog {
         $modeRef = $Mode
         $rtbLogRef = $rtbLog
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $batchScript -TempScriptName ".intunepkg_embedded_batchassign.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $batchScript -TempScriptName ".intunepkg_embedded_batchassign.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
             Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue

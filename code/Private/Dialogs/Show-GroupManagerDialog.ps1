@@ -341,7 +341,7 @@ function Global:Show-GroupManagerDialog {
         $lstMembersRef = $lstMembers
         $pendingMemberIdsRef = $pendingMemberIds
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".intunepkg_embedded_groupmanager.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".intunepkg_embedded_groupmanager.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $btnRunRef.Enabled = $true
             $btnDeleteGroupRef.Enabled = $true
@@ -446,7 +446,7 @@ function Global:Show-GroupManagerDialog {
         $currentMemberIdsRef = $currentMemberIds
         $currentGroupIdBoxRef = $currentGroupIdBox
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".intunepkg_embedded_groupmanager.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".intunepkg_embedded_groupmanager.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $btnRunRef.Enabled = $true
             $btnDeleteGroupRef.Enabled = $true
@@ -573,7 +573,7 @@ function Global:Show-GroupManagerDialog {
         $unsavedBoxRefRef = $unsavedBoxRef
         $loadCurrentMembersRef = $LoadCurrentMembers
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".intunepkg_embedded_groupmanager.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".intunepkg_embedded_groupmanager.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $btnRunRef.Enabled = $true
             $btnDeleteGroupRef.Enabled = $true
@@ -709,7 +709,7 @@ function Global:Show-GroupManagerDialog {
         $rtbLogRef = $rtbLog
         $loadCurrentMembersRef = $LoadCurrentMembers
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".intunepkg_embedded_groupmanager.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $gmScript -TempScriptName ".intunepkg_embedded_groupmanager.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $btnRunRef.Enabled = $true
             $btnDeleteGroupRef.Enabled = $true

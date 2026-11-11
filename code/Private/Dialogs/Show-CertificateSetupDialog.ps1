@@ -819,7 +819,7 @@ function Global:Show-CertificateSetupDialog {
 
         try {
             $newCert = New-SelfSignedCertificate -Subject $subject -CertStoreLocation "Cert:\CurrentUser\My" `
-                -KeyExportPolicy Exportable -KeySpec Signature -KeyLength 2048 -KeyAlgorithm RSA `
+                -KeyExportPolicy NonExportable -KeySpec Signature -KeyLength 2048 -KeyAlgorithm RSA `
                 -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(2)
 
             $txtThumb.Text = $newCert.Thumbprint
@@ -908,7 +908,7 @@ function Global:Show-CertificateSetupDialog {
         $lstCertsRef = $lstCerts
         $certKeyIdsRef = $certKeyIds
 
-        Start-PipelineProcess -ScriptContent $certUploadScript -TempScriptName ".intunepkg_embedded_certupload.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbUploadLog -ShowConsoleWindow -OnComplete {
+        Start-PipelineProcess -ScriptContent $certUploadScript -TempScriptName ".intunepkg_embedded_certupload.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbUploadLog -ShowConsoleWindow -OnComplete {
             param($code)
             $btnCheckCertsRef.Enabled = $true
             $btnUploadRef.Enabled = $true
@@ -1007,7 +1007,7 @@ function Global:Show-CertificateSetupDialog {
         $configPathRef = $configPath
         $rtbUploadLogRef = $rtbUploadLog
 
-        Start-PipelineProcess -ScriptContent $certUploadScript -TempScriptName ".intunepkg_embedded_certupload.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbUploadLog -ShowConsoleWindow -OnComplete {
+        Start-PipelineProcess -ScriptContent $certUploadScript -TempScriptName ".intunepkg_embedded_certupload.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbUploadLog -ShowConsoleWindow -OnComplete {
             param($code)
             $btnUploadRef.Enabled = $true
             $btnCheckCertsRef.Enabled = $true
@@ -1093,7 +1093,7 @@ function Global:Show-CertificateSetupDialog {
         $configPathRef = $configPath
         $rtbUploadLogRef = $rtbUploadLog
 
-        Start-PipelineProcess -ScriptContent $certUploadScript -TempScriptName ".intunepkg_embedded_certupload.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbUploadLog -ShowConsoleWindow -OnComplete {
+        Start-PipelineProcess -ScriptContent $certUploadScript -TempScriptName ".intunepkg_embedded_certupload.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbUploadLog -ShowConsoleWindow -OnComplete {
             param($code)
             $btnCheckCertsRef.Enabled = $true
             $btnUploadRef.Enabled = $true

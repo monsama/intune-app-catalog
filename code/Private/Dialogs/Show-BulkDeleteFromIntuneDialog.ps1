@@ -304,7 +304,7 @@ function Global:Show-BulkDeleteFromIntuneDialog {
         $deletedAnyBoxRef = $deletedAnyBox
         $RunNextBoxRef = $RunNextBox
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $deleteScript -TempScriptName ".intunepkg_embedded_bulkdelete.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLogRef -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $deleteScript -TempScriptName ".intunepkg_embedded_bulkdelete.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbLogRef -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
             Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue

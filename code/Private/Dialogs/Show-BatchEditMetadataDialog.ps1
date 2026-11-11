@@ -683,7 +683,7 @@ function Global:Show-BatchEditMetadataDialog {
         $linkedFilePathRef = $linkedFilePath
         $unsavedBoxRef = $unsavedBox
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".intunepkg_embedded_batchedit.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLogRef -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".intunepkg_embedded_batchedit.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbLogRef -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
             Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue

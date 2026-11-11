@@ -233,7 +233,7 @@ function Global:Show-BulkDeleteGroupsDialog {
         $updateCountRef = $UpdateCount
         $deletedNames = @($plan | ForEach-Object { $_.Name })
 
-        $procBox.Proc = Start-PipelineProcess -ScriptContent $Global:App.EmbeddedGroupManagerScript -TempScriptName ".intunepkg_embedded_groupdelete.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBox.Proc = Start-PipelineProcess -ScriptContent $Global:App.EmbeddedGroupManagerScript -TempScriptName ".intunepkg_embedded_groupdelete.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
             Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue

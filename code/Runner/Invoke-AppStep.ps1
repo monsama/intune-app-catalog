@@ -22,7 +22,9 @@
     as soon as it's read):
       Script       path of a step script to run with & (its own exit code
                    becomes this process's exit code)
-      Arguments    text appended to that call, e.g. -ConfigPath "C:\x.json"
+      Parameters   the step's parameters as values ({"ConfigPath": "C:\x.json"}),
+                   splatted - never parsed as PowerShell, so nothing in them
+                   can turn into code
       GraphHelper  optional: a helper file dot-sourced first; its
                    Write-GraphReadSummary runs after the step
       Command      instead of Script: PowerShell text to run
@@ -55,11 +57,19 @@ function Write-StepLine {
 if ($specData.Script) {
     $scriptPath = [string]$specData.Script
     $helper = [string]$specData.GraphHelper
-    # Arguments are PowerShell syntax built by the app (paths it quoted
-    # itself), so they're parsed as such - the same text the step was
-    # always called with.
-    $call = [scriptblock]::Create("param(`$__step, `$__helper) if (`$__helper) { . `$__helper }; try { & `$__step $([string]$specData.Arguments) } finally { if (`$__helper -and (Get-Command Write-GraphReadSummary -ErrorAction SilentlyContinue)) { Write-GraphReadSummary } }")
-    & $call $scriptPath $helper *>&1 | ForEach-Object { Write-StepLine $_ }
+    $stepParams = @{}
+    if ($specData.Parameters) {
+        foreach ($p in $specData.Parameters.PSObject.Properties) { $stepParams[$p.Name] = $p.Value }
+    }
+    $call = {
+        param($__step, $__helper, $__params)
+        if ($__helper) { . $__helper }
+        try { & $__step @__params }
+        finally {
+            if ($__helper -and (Get-Command Write-GraphReadSummary -ErrorAction SilentlyContinue)) { Write-GraphReadSummary }
+        }
+    }
+    & $call $scriptPath $helper $stepParams *>&1 | ForEach-Object { Write-StepLine $_ }
     exit $LASTEXITCODE
 }
 elseif ($specData.Command) {

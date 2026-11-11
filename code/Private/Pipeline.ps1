@@ -123,7 +123,10 @@ function Global:Start-PipelineProcess {
     param(
         [string]$ScriptContent,
         [string]$TempScriptName,
-        [string]$ArgumentString,
+        # The step script's parameters, as values - splatted by the runner,
+        # never turned into PowerShell source text, so nothing in them (an
+        # app name with a typographic quote in it, a $ in a path) can become code.
+        [hashtable]$Parameters = @{},
         [scriptblock]$OnComplete,
         # Optional - lets a caller (like Show-CreateInIntuneDialog, which is
         # modal and blocks the main window entirely) show live output locally
@@ -160,7 +163,9 @@ function Global:Start-PipelineProcess {
     # The temp file has to live inside $Global:App.RootPath (not $env:TEMP), because
     # both embedded scripts use $PSScriptRoot internally to find input.json /
     # IntuneWinAppUtil.exe - see the note above $Global:App.EmbeddedPackageScript.
-    $tempScriptPath = Join-Path $Global:App.RootPath $TempScriptName
+    # A GUID in the name: two runs of the same step at once (two Group
+    # manager windows) used to overwrite each other's script.
+    $tempScriptPath = Join-Path $Global:App.RootPath ([System.IO.Path]::GetFileNameWithoutExtension($TempScriptName) + "_" + [guid]::NewGuid().ToString("N") + ".ps1")
     try {
         # No BOM, matching how the catalog file itself is written.
         $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -208,7 +213,7 @@ function Global:Start-PipelineProcess {
     try {
         $psi = New-AppStepStartInfo -Spec @{
             Script      = $tempScriptPath
-            Arguments   = $ArgumentString
+            Parameters  = $Parameters
             GraphHelper = $(if ($graphHelperPath) { $graphHelperPath } else { '' })
             LogFile     = $logFile
         }
@@ -356,25 +361,12 @@ function Global:Invoke-LaunchStep {
     else {
         Write-Log "=== Package all apps (app-packages) ===`r`n" ([System.Drawing.Color]::DeepSkyBlue)
     }
-    $argStr = "-InputFolder '$((Join-Path $rootPath 'data\app-packages') -replace "'", "''")' -Force"
-    # Single quotes doubled (PowerShell's own escaping for a literal ' inside
-    # a single-quoted string) - same idiom already used throughout this file
-    # for OData filter values (see e.g. Resolve-GroupId's $GroupName.Replace("'",
-    # "''")). $SingleFolderName/$FolderNames come from Get-SafeFileNameForApp,
-    # which strips Windows-illegal filename characters but NOT a single quote
-    # (a perfectly legal filename character) - left unescaped, an app display
-    # name containing one would break out of the quoted -SingleFolderName/
-    # -FolderNames value here and inject arbitrary PowerShell into $argStr,
-    # which the step runner (code\Runner\Invoke-AppStep.ps1) parses as PowerShell.
-    # Since a display name can come from Intune itself (synced in by anyone
-    # with rights to create/rename an app there, not just this tool's own
-    # user), this was a real code-execution path, not just a theoretical one.
-    if ($SingleFolderName) {
-        $argStr += " -SingleFolderName '$($SingleFolderName -replace "'", "''")'"
-    }
-    elseif ($FolderNames.Count -gt 0) {
-        $safeFolderNames = @($FolderNames | ForEach-Object { $_ -replace "'", "''" })
-        $argStr += " -FolderNames '$($safeFolderNames -join ',')'"
-    }
-    Start-PipelineProcess -ScriptContent $Global:App.EmbeddedPackageScript -TempScriptName ".intunepkg_embedded_launch.ps1" -ArgumentString $argStr -OnComplete $OnComplete -ExtraLogTarget $ExtraLogTarget
+    # Passed as values and splatted by the step runner - an app name is never
+    # pasted into PowerShell source. (It used to be, with ' doubled; that
+    # missed the typographic quotes (U+2018 to U+201B), which PowerShell also
+    # reads as single quotes, so a crafted app name ran its own code on Package.)
+    $stepParams = @{ InputFolder = (Join-Path $rootPath 'data\app-packages'); Force = $true }
+    if ($SingleFolderName) { $stepParams.SingleFolderName = $SingleFolderName }
+    elseif ($FolderNames.Count -gt 0) { $stepParams.FolderNames = ($FolderNames -join ',') }
+    Start-PipelineProcess -ScriptContent $Global:App.EmbeddedPackageScript -TempScriptName ".intunepkg_embedded_launch.ps1" -Parameters $stepParams -OnComplete $OnComplete -ExtraLogTarget $ExtraLogTarget
 }
