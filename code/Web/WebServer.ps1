@@ -162,7 +162,9 @@ function Global:Write-Log {
     $line = ($Text -replace "`r`n", "`n").TrimEnd("`n")
     if (-not $line) { return }
     $level = if ($line -match '^\s*\[(FAILED|ERROR)\]') { 'error' } elseif ($line -match '^\s*\[(WARN)\]') { 'warn' } elseif ($line -match '^\s*\[OK\]') { 'ok' } else { 'info' }
-    if ($Global:App.WebLog) {
+    # $null check, not truthiness: an empty list is $false in PowerShell, so the
+    # first line would never get in.
+    if ($null -ne $Global:App.WebLog) {
         [void]$Global:App.WebLog.Add([pscustomobject]@{ Time = (Get-Date).ToString('HH:mm:ss'); Level = $level; Text = $line })
         while ($Global:App.WebLog.Count -gt 2000) { $Global:App.WebLog.RemoveAt(0) }
     }
