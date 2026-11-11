@@ -147,7 +147,7 @@ Write-Host "  Apps: $(@($Config.Apps).Count)" -ForegroundColor Gray
 try {
     Write-Step "Connecting to Microsoft Graph (app-only, certificate)"
     if (-not $Config.TenantId -or -not $Config.ClientId -or -not $Config.CertificateThumbprint) {
-        throw "No Graph connection is configured. Open 'Settings...' in the GUI and fill in your Tenant ID, Client ID, and certificate first."
+        throw "No Graph connection is configured. Set up the connection in the app's Settings (Tenant ID, Client ID, certificate) first."
     }
     Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
     $ctx = Get-MgContext -ErrorAction SilentlyContinue
@@ -183,7 +183,7 @@ try {
             throw "This script is missing the shared assignment helpers. Run it from the app (it supplies them), not on its own."
         }
         # Handed to each worker as text - a runspace of its own doesn't
-        # inherit the functions Start-PipelineProcess dot-sourced here.
+        # inherit the functions the step runner dot-sourced here.
         $assignmentHelperText = (@(
             'Get-AssignmentKey', 'Get-DesiredAssignmentEntries', 'ConvertTo-CurrentAssignmentEntries',
             'Format-AssignmentLabel', 'Get-AssignmentDiff', 'New-AppAssignmentBody'

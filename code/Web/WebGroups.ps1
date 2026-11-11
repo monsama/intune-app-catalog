@@ -5,8 +5,7 @@
 <#
 .SYNOPSIS
     The web interface's Groups page: the Entra ID security groups the
-    catalog assigns apps to - what Show-GroupManagerDialog and
-    Show-BulkDeleteGroupsDialog do in the classic window.
+    catalog assigns apps to.
 
     Reads go to Graph from the request (Invoke-WebGraph, WebScripts.ps1);
     changes run the GroupManager step (code\EmbeddedScripts\GroupManager.ps1)

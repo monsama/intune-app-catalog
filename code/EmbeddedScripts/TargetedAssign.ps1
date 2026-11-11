@@ -148,7 +148,7 @@ Write-Host "  Excluded groups : $(@($Config.ExcludeGroups).Count)" -ForegroundCo
 try {
     Write-Step "Connecting to Microsoft Graph (app-only, certificate)"
     if (-not $Config.TenantId -or -not $Config.ClientId -or -not $Config.CertificateThumbprint) {
-        throw "No Graph connection is configured. Open 'Settings...' in the GUI and fill in your Tenant ID, Client ID, and certificate first."
+        throw "No Graph connection is configured. Set up the connection in the app's Settings (Tenant ID, Client ID, certificate) first."
     }
     Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
     $ctx = Get-MgContext -ErrorAction SilentlyContinue
@@ -161,7 +161,7 @@ try {
     # ---- Ensure every referenced group exists ----
     Write-Step "Ensuring groups exist"
     # The shared assignment logic (Assignments.ps1) is dot-sourced into this
-    # process by Start-PipelineProcess - without it, exclusions would be
+    # process by the step runner - without it, exclusions would be
     # silently dropped, which would unassign people instead of excluding them.
     if (-not (Get-Command Get-DesiredAssignmentEntries -ErrorAction SilentlyContinue)) {
         throw "This script is missing the shared assignment helpers. Run it from the app (it supplies them), not on its own."
@@ -177,7 +177,7 @@ try {
     # directory object named after the typo. The deploy path therefore sets
     # this to false and gets told what is missing instead.
     #
-    # Absent means true, so Show-TargetedAssignDialog's own config - which
+    # Absent means true, so a caller's config - which
     # does not set it - keeps behaving exactly as before.
     $createMissingGroups = $true
     if ($null -ne $Config.PSObject.Properties['CreateMissingGroups']) {

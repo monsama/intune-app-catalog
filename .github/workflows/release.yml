@@ -46,7 +46,7 @@ jobs:
         run: |
           $staging = Join-Path $env:RUNNER_TEMP 'intune-app-catalog'
           New-Item -ItemType Directory -Path $staging -Force | Out-Null
-          Copy-Item IntuneDeployment.ps1, MainApp.ps1 $staging
+          Copy-Item IntuneDeployment.ps1 $staging
           Copy-Item code -Destination (Join-Path $staging 'code') -Recurse
           Remove-Item (Join-Path $staging 'code\tests') -Recurse -Force
           $zip = Join-Path $env:RUNNER_TEMP "intune-app-catalog-${{ steps.version.outputs.version }}.zip"
@@ -68,10 +68,18 @@ jobs:
             if ($parseErrors.Count -gt 0) { $errors += $parseErrors.Count; Write-Host "$($_.Name): $($parseErrors[0].Message)" }
           }
           if ($errors -gt 0) { throw "$errors parse error(s) in the zip" }
-          foreach ($needed in 'IntuneDeployment.ps1', 'MainApp.ps1', 'code\Private\GuiHelpers.ps1', 'code\EmbeddedScripts\CreateApp.ps1', 'code\Runner\Invoke-AppStep.ps1', 'code\Web\Start-WebApp.ps1', 'code\Web\WebScripts.ps1', 'code\Web\WebGroups.ps1', 'code\Web\WebChecks.ps1', 'code\Web\WebBatch.ps1', 'code\Web\WebSetup.ps1', 'code\Web\ui\index.html', 'code\Web\ui\app.js') {
+          foreach ($needed in 'IntuneDeployment.ps1', 'code\Private\Helpers.ps1', 'code\Private\Winget.ps1', 'code\Private\Diagnostics.ps1', 'code\EmbeddedScripts\CreateApp.ps1', 'code\Runner\Invoke-AppStep.ps1', 'code\Web\Start-WebApp.ps1', 'code\Web\WebScripts.ps1', 'code\Web\WebGroups.ps1', 'code\Web\WebChecks.ps1', 'code\Web\WebBatch.ps1', 'code\Web\WebSetup.ps1', 'code\Web\ui\index.html', 'code\Web\ui\app.js') {
             if (-not (Test-Path (Join-Path $check $needed))) { throw "$needed is missing from the zip" }
           }
           "The zip parses and has what it needs"
+          # And it really starts: the server prints its address, then is stopped again.
+          $out = Join-Path $env:RUNNER_TEMP 'start.txt'
+          $app = Start-Process pwsh -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $check 'IntuneDeployment.ps1')`"", '-NoBrowser' -RedirectStandardOutput $out -PassThru -WindowStyle Hidden
+          $started = $false
+          foreach ($i in 1..60) { Start-Sleep -Seconds 1; if ((Test-Path $out) -and ((Get-Content $out -Raw) -match 'Open:\s+http://127\.0\.0\.1:\d+/')) { $started = $true; break } }
+          try { $app.Kill() } catch { }
+          if (-not $started) { Get-Content $out -ErrorAction SilentlyContinue; throw "The app from the zip didn't start its server within 60 seconds" }
+          "The app from the zip starts"
 
       - name: Publish the release
         uses: softprops/action-gh-release@v3

@@ -12,7 +12,7 @@
     Connect-MgGraph below for why -UseDeviceCode is deliberately avoided
     despite being the more obviously reliable choice for a hidden
     background process). This also means the caller must pass
-    -ShowConsoleWindow to Start-PipelineProcess for this script specifically
+    -ShowWindow to Start-WebStepJob for this script specifically
     - Windows' WAM authentication broker needs an actual parent window
     handle to attach its sign-in prompt to, and fails outright ("A window
     handle must be configured") without one. Every other embedded script in

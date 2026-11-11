@@ -5,9 +5,7 @@
 <#
 .SYNOPSIS
     The web interface's actions on several apps at once: batch edit,
-    adding and removing groups, and pushing settings to Intune - what the
-    classic Batch edit, Push metadata, Add favorite to apps and Remove group
-    from apps dialogs do.
+    adding and removing groups, and pushing settings to Intune.
 #>
 
 function Global:Get-WebBatchFields {

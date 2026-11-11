@@ -32,10 +32,16 @@ h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; white-space: nowrap; }
 .brand .ver { color: var(--muted); font-weight: 400; font-size: 12px; }
 .tabs { display: flex; gap: 4px; height: 100%; }
-.tab { border: 0; background: none; color: var(--muted); font: inherit; font-weight: 500; padding: 0 14px; cursor: pointer; border-bottom: 2px solid transparent; }
+.tab { border: 0; background: none; color: var(--muted); font: inherit; font-weight: 500; padding: 0 14px; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
 .tab:hover { color: var(--fg); }
 .tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
-.topright { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.topright { margin-left: auto; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+/* A narrower window: the bar gets a second row instead of pushing buttons off the edge. */
+@media (max-width: 1100px) {
+  .topbar { flex-wrap: wrap; height: auto; gap: 0 16px; padding-top: 6px; }
+  .tabs { order: 3; width: 100%; height: 40px; overflow-x: auto; }
+  .tab { padding: 0 10px; }
+}
 .conn { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--bd2); color: var(--muted); white-space: nowrap; }
 .conn.ok { background: var(--ok-bg); color: var(--ok); }
 .conn.warn { background: var(--warn-bg); color: var(--warn); }
@@ -219,6 +225,8 @@ label.chk.inline { display: inline-flex; align-items: center; gap: 6px; margin: 
 .gbrole { border: 1px solid var(--bd2); border-radius: var(--r-m); padding: 6px 10px 10px; margin: 6px 0; display: flex; flex-direction: column; gap: 2px; }
 .gbrole legend { font-size: 12px; font-weight: 600; padding: 0 4px; }
 .gbrole input[data-gbx] { margin-top: 6px; }
+
+.tab[data-count]::after { content: attr(data-count); margin-left: 6px; display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--warn-bg); color: var(--warn); font-size: 11px; font-weight: 600; text-align: center; }
 
 /* ---- 3d: setup and help ---- */
 .guide { margin: 6px 0 0; padding-left: 20px; font-size: 13px; }

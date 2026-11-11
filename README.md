@@ -8,112 +8,119 @@ A PowerShell tool for managing Intune Win32 apps. Each app is a JSON file
 in a folder you choose (it can live in git). From there you package,
 deploy and assign the apps, and check that Intune still matches.
 
-![The app catalog](docs/images/main-window.png)
+It runs on your own machine: a small local server on `127.0.0.1` and an
+Edge or Chrome app window. Nothing is hosted anywhere, and only the window
+it opens can talk to it.
+
+![The app catalog](docs/images/apps.png)
 
 ## What it does
 
 **Catalog**
 - One file per app: name, Winget ID, App ID, groups, and the full Intune
-  metadata (install/uninstall commands, detection rule, requirements,
+  settings (install/uninstall commands, detection rule, requirements,
   return codes, dependencies).
 - Winget apps get their install command, uninstall command and detection
-  rule generated, so a new app is usually just a name and a Winget ID.
-- Backups on every save, and a check that two apps can never overwrite each
-  other's file.
+  rule generated, so a new app is usually just a name and a Winget ID -
+  **Find...** looks the ID up on winget.
+- A backup before every change, and a check that two apps can never
+  overwrite each other's file.
 
 **Intune**
-- Deploy a single app or a batch, update metadata, replace package content.
-- Assign groups per app - Required, Available, Uninstall, plus **Excluded
-  from**, with a preview of exactly what will change before anything is
-  pushed.
-- Pull metadata and groups back from Intune, and an audit that lists every
-  app whose live settings have drifted from the catalog.
-- Installation status per app: which devices and users have it, and which
+- Deploy one app or several, in dependency order. Push settings without
+  uploading a package.
+- Assign groups per app - Required, Available, Uninstall, plus **Excluded**,
+  with a preview of exactly what will change before anything is pushed.
+- Batch edit settings, and add or remove groups, on several apps at once.
+- Pull settings and groups back from Intune, field by field.
+- **Checks**: every way the catalog and Intune can disagree - apps renamed
+  in Intune, App IDs that no longer exist, apps only in Intune, settings,
+  groups, dependencies, assignments the catalog doesn't know, groups that
+  don't exist in Entra ID, Winget IDs winget no longer knows - each with its
+  fix.
+- Install status per app: which devices and users have it, and which
   failed with what error.
 - Platform scripts: list, add, change, delete the PowerShell scripts Intune
-  runs on enrolled devices, with their run status per device.
-- Delete from Intune, single or bulk, with the app's dependencies handled.
+  runs on enrolled devices, keep local copies, and see how each ran.
+- Delete from Intune.
 
 **Entra ID**
-- Create, rename and delete groups, manage their members, and check that
-  every group the catalog references still exists.
+- Groups: members, description, create, rename (the catalog follows),
+  delete one or several.
 
 **Everything it sends**
-- Lines starting with `[GRAPH]` in the log show every change sent to
-  Microsoft Graph, a summary of the reads, and every failure with Graph's
-  request-id. `[RUN]` lines show the winget and packaging commands.
+- Lines starting with `[GRAPH]` in the Activity log show every change sent
+  to Microsoft Graph, a summary of the reads, and every failure with
+  Graph's request-id.
 - Tokens, headers and request bodies are never logged.
 
-One app, as the catalog stores it - name, Winget ID, App ID, and the groups
-it's required for, available to, uninstalled from, and excluded from:
+One app, with its groups and the settings Intune gets:
 
 ![The app editor](docs/images/app-editor.png)
+
+![Deploy settings](docs/images/deploy-settings.png)
+
+Checks, with a fix for each finding:
+
+![Checks](docs/images/checks.png)
+
+Groups, and the platform scripts Intune runs on enrolled devices:
+
+![Groups](docs/images/groups.png)
+
+![Platform scripts](docs/images/platform-scripts.png)
 
 Who actually has an app, and which devices failed:
 
 ![Install status](docs/images/install-status.png)
 
-The platform scripts Intune runs on enrolled devices:
-
-![Platform scripts](docs/images/platform-scripts.png)
-
 ## Requirements
 
 - Windows 10/11 with **PowerShell 7** or **Windows PowerShell 5.1** (both
-  are supported and tested).
-- The **Microsoft.Graph.Authentication** module - the app offers to install
-  it for you (More actions... > Verify > Prerequisites...).
+  are supported and tested), and **Edge** or **Chrome** for the window.
+- The **Microsoft.Graph.Authentication** module - Settings > Prerequisites
+  installs it for you.
 - **winget** (the "App Installer" package) for the Winget features.
 - An **Entra ID app registration** with a certificate, for app-only
-  sign-in. Settings... > First time? Setup guide... walks through it.
+  sign-in. Settings > Setup guide walks through it.
 - **IntuneWinAppUtil.exe** (Microsoft's Win32 Content Prep Tool) and
   **init.intunewin** (the one package every Winget app deploys with).
-  Neither of them ships with this app: Settings... > Folders downloads and
-  builds them, and Deploy offers to do it when a Winget app finds the
-  shared package missing.
+  Neither ships with this app: Settings > Packaging downloads and builds
+  them.
 
 ## Download
 
 Take the zip from the [latest release](https://github.com/monsama/intune-app-catalog/releases/latest):
 it holds just what's needed to run, without the tests and CI files.
 
-**Code > Download ZIP** on the repository page works too, and gives you the
-whole repository including the test suites - handy if you want to run them,
-noise if you don't.
-
-Either way, Windows marks a downloaded zip as blocked. Unblock it before
-unpacking (right-click the zip > Properties > Unblock), or PowerShell
-refuses to run the scripts inside.
+Windows marks a downloaded zip as blocked. Unblock it before unpacking
+(right-click the zip > Properties > Unblock), or PowerShell refuses to run
+the scripts inside.
 
 ## Getting started
 
-1. Download the zip (see above) or clone this repo, and unblock it if
-   Windows marked it as downloaded.
+1. Unpack the zip somewhere other than Downloads - endpoint protection such
+   as Cortex XDR blocks scripts started from there.
 2. Run `IntuneDeployment.ps1` - double-click it, or:
    ```powershell
    pwsh -NoProfile -ExecutionPolicy Bypass -File .\IntuneDeployment.ps1
    ```
    `-NoProfile` keeps modules from your PowerShell profile (Az,
-   ExchangeOnlineManagement, ...) out of the app's window, where they
-   can clash with the Microsoft Graph module. Endpoint protection such as
-   Cortex XDR may block scripts started from the Downloads folder, so
-   unpack the zip somewhere else.
-   Or try the new web interface (preview), which opens in an Edge/Chrome
-   app window:
-   ```powershell
-   pwsh -NoProfile -ExecutionPolicy Bypass -File .\IntuneDeployment.ps1 -Web
-   ```
-3. Open **Settings...** and fill in Tenant ID, Client ID and certificate,
-   then **Test connection** and **Save**. The setup guide in that window
-   lists the Graph permissions the app registration needs.
-4. Use **Open other folder...** to point the catalog at your own folder, or
-   start adding apps in the one that ships with it.
-5. On the **Folders** tab of that same Settings window, press **Download
-   packaging tool** and then **Build init.intunewin** - packaging and
-   Winget deployments need both. That tab is also where each folder this
-   app writes to (catalog, packages, tools, scripts, logs, backups) can be
-   pointed somewhere else; leave a box empty to keep the default beside
-   the app.
+   ExchangeOnlineManagement, ...) away from the Microsoft Graph module they
+   can clash with. The app window opens; closing it stops the app.
+3. **Settings > Connection**: fill in Tenant ID, Client ID and a
+   certificate (Create new certificate makes one), **Upload this
+   certificate**, **Add required permissions**, then have an admin grant
+   consent in Entra, and **Test connection**. The setup guide on that page
+   has the steps.
+4. **Settings > Packaging**: **Download packaging tool**, then **Build
+   init.intunewin**.
+5. **Checks** lists the apps already in Intune - tick them and **Add to
+   catalog**. Or **Add app** to start from scratch.
+
+Settings > Folders points the catalog, packages, tools, scripts, logs and
+backups somewhere else; leave a box empty to keep the default beside the
+app.
 
 ## Permissions the app registration needs
 
@@ -126,8 +133,8 @@ Application permissions, with admin consent:
 | `User.Read.All`, `Device.Read.All`, `Directory.Read.All` | Resolving users, devices and groups by name |
 | `DeviceManagementScripts.ReadWrite.All` | Platform scripts only |
 
-When Graph refuses a request, the app says which of these is likely
-missing.
+**Add required permissions** in Settings adds them for you. When Graph
+refuses a request, the app says which of these is likely missing.
 
 ## Documentation
 
@@ -140,12 +147,13 @@ missing.
 ## Tests
 
 ```powershell
-pwsh -NoProfile -File code/tests/CatalogLogic.Tests.ps1        # pure logic, runs anywhere
-pwsh -NoProfile -File code/tests/gui/DialogSmoke.GuiTests.ps1  # drives the real app (Windows)
+pwsh -NoProfile -File code/tests/CatalogLogic.Tests.ps1   # pure logic, runs anywhere
+pwsh -NoProfile -File code/tests/WebServer.Tests.ps1      # the real server, over HTTP
+node code/tests/ui/WebUi.Tests.mjs                        # every page in Chromium
 ```
 
-Every push runs the unit tests on Linux, PowerShell 7 and Windows
-PowerShell 5.1, plus the GUI suites on Windows, under both PowerShells.
+Every push runs the logic and server tests on Linux, PowerShell 7 and
+Windows PowerShell 5.1, and the browser test on Linux.
 
 ## License
 

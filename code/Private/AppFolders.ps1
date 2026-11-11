@@ -60,7 +60,7 @@ function Global:Get-AppFolder {
         catch {
             $fallback = Get-AppFolderDefault -Kind $Kind
             if ($fallback -ne $path) {
-                Write-Log "[WARN] Could not use the $Kind folder '$path' ($($_.Exception.Message)) - falling back to $fallback.`r`n" ([System.Drawing.Color]::Orange)
+                Write-Log "[WARN] Could not use the $Kind folder '$path' ($($_.Exception.Message)) - falling back to $fallback.`r`n"
                 $path = $fallback
                 try { [void](New-Item -ItemType Directory -Path $path -Force -ErrorAction Stop) } catch { }
             }

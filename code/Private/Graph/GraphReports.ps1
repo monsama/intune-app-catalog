@@ -5,20 +5,9 @@
 # app install status report, whose exact column set differs between tenants
 # and changes with the beta API.
 #
-# Pure string/table handling only - no WinForms, no Graph call - so it's
-# covered by CatalogLogic.Tests.ps1. Start-AppInstallStatusFetch
-# (GraphFetch.ps1) does the actual fetching.
-
-function Global:Get-ReportHelperScriptText {
-    # The functions below as script text, so a background runspace can
-    # dot-source them - same approach as Get-GraphLogScriptHelpers.
-    param([string[]]$Names)
-    $parts = New-Object System.Collections.Generic.List[string]
-    foreach ($name in $Names) {
-        $parts.Add("function global:$name {`n$((Get-Command $name).ScriptBlock.ToString())`n}")
-    }
-    return ($parts -join "`n`n")
-}
+# Pure string/table handling only - no Graph call - so it's
+# covered by CatalogLogic.Tests.ps1. Get-WebInstallStatus (code\Web)
+# does the actual fetching.
 
 function Global:ConvertFrom-GraphReportTable {
     <#
@@ -231,7 +220,7 @@ function Global:Format-InstallStatusSummary {
 }
 
 function Global:Test-InstallStatusRowMatchesFilter {
-    # The dialog's state filter: "All" or the exact state text of a row
+    # A state filter: "All" or the exact state text of a row
     param($Row, [string]$Filter)
     if (-not $Filter -or $Filter -eq 'All') { return $true }
     if ($Filter -eq 'Failed only') { return ([string]$Row.State -like '*fail*') }

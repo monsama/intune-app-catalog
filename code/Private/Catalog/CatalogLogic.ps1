@@ -1,69 +1,6 @@
-function Global:Save-AppMetadataToLocalCatalog {
-    param($AppsRef, $LinkedFilePath, $AppName, $Metadata, $NewAppId = $null, $IntuneAppVersion = $null)
-
-    $targetIndex = -1
-    for ($si = 0; $si -lt $AppsRef.Count; $si++) {
-        if ($AppsRef[$si].appName -eq $AppName) { $targetIndex = $si; break }
-    }
-    $createdNewEntry = $false
-    if ($targetIndex -lt 0) {
-        $newEntry = [pscustomobject]@{
-            appId            = ""
-            appName          = $AppName
-            wingetId         = ""
-            intuneAppType    = ""
-            intuneAppVersion = ""
-            requiredFor      = @()
-            availableFor     = @()
-            uninstallFor     = @()
-            excludeFor       = @()
-            metadata         = $null
-        }
-        [void]$AppsRef.Add($newEntry)
-        $targetIndex = $AppsRef.Count - 1
-        $createdNewEntry = $true
-    }
-
-    $existingApp = $AppsRef[$targetIndex]
-    $updatedApp = [pscustomobject]@{
-        appId            = if ($NewAppId) { $NewAppId } else { $existingApp.appId }
-        appName          = $existingApp.appName
-        wingetId         = $existingApp.wingetId
-        # A NewAppId means this call is reporting a just-succeeded Intune
-        # creation, not just staging local metadata - and this tool only
-        # ever creates win32LobApp objects, so the type is a known fact,
-        # not something that needs fetching.
-        intuneAppType    = if ($NewAppId) { "Windows app (Win32)" } else { $existingApp.intuneAppType }
-        # Same reasoning as intuneAppType above, but version genuinely
-        # ISN'T a known fact the way the type is - it comes from whatever
-        # the caller fetched live from Intune (blank for a brand-new
-        # create, where Intune hasn't necessarily processed/reported a
-        # version yet), so it's only overwritten when the caller actually
-        # supplied one, never blanked out just because this particular
-        # call didn't have one to offer.
-        intuneAppVersion = if ($IntuneAppVersion) { $IntuneAppVersion } else { $existingApp.intuneAppVersion }
-        # Carried over like every other app-level field - left out, a
-        # package kept somewhere its name doesn't predict lost its path
-        # on every metadata save (Deploy, Push Metadata, Save local copy).
-        packagePath      = [string]$existingApp.packagePath
-        requiredFor      = @($existingApp.requiredFor)
-        availableFor     = @($existingApp.availableFor)
-        uninstallFor     = @($existingApp.uninstallFor)
-        excludeFor       = @($existingApp.excludeFor)
-        metadata         = $Metadata
-    }
-    $AppsRef[$targetIndex] = $updatedApp
-
-    $saveSucceeded = Save-AppsToFile -Path $LinkedFilePath
-    return @{ Success = $saveSucceeded; CreatedNewEntry = $createdNewEntry }
-}
-
 function Global:Get-IntuneCatalogDrift {
-    # The exact three-way comparison Show-ChecksDialog's own grid
-    # is built from, pulled out so the same logic can also run headless
-    # (no grid, just counts) for the startup drift check - two copies of
-    # this same walk quietly drifting apart over time would be worse than
-    # the small extra param-passing this costs.
+    # The three-way comparison of the catalog with Intune's apps that the
+    # Intune link findings (Get-IntuneLinkFindings) are built from.
     param([array]$Apps, [array]$IntuneApps)
 
     $catalogByNormName = @{}
@@ -431,9 +368,7 @@ function Global:Get-CatalogMetadataFieldDiffs {
     $diffs = New-Object System.Collections.Generic.List[object]
     if (-not $Local) { return $diffs.ToArray() }
 
-    # Same set already used elsewhere in this app (see the "not a Win32
-    # app" guard in Show-CreateInIntuneDialog's own auto-fetch) to decide
-    # whether this tool's Win32-shaped deploy flow applies to a given live
+    # The set of app types that decides whether this tool's Win32-shaped deploy flow applies to a given live
     # Intune app - types that behave like a Win32 app for the Win32Only
     # fields below.
     $win32LikeOdataTypes = @("win32LobApp", "win32CatalogApp", "windowsMobileMSI")
@@ -617,8 +552,7 @@ function Global:Get-ParsedMinOsRelease {
     }
     if ($RawValue -match '^(?i)v10_(.+)$') {
         # Same digit-swapped "20H2" quirk as the legacy property's own
-        # v10_2H20 - see the note next to $minOsMap in
-        # Show-CreateInIntuneDialog.
+        # v10_2H20.
         $release = $Matches[1].ToUpperInvariant()
         if ($release -eq "2H20") { $release = "20H2" }
         return @{ Major = "10"; Release = $release }
@@ -855,11 +789,8 @@ function Global:Get-FactoryAppSettings {
       The defaults this app ships with, as an object shaped exactly like
       $Global:App.DefaultAppSettings.
 
-      One definition, because there were two: MainApp built these at
-      startup and "Reset to built-in defaults" set each field again by
-      hand in its own click handler. Two lists of the same twelve values
-      drift the moment one is edited and the other is not, and nothing
-      would have said so.
+      One definition: app start and resetting to the built-in defaults
+      both use it, so the two can't drift apart.
 
       A fresh object every call - the caller edits what it gets back, and
       a shared one would mean editing the factory settings themselves.

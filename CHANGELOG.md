@@ -1,5 +1,46 @@
 # Changelog
 
+## 2.0.0
+
+The web interface is now the app. `IntuneDeployment.ps1` opens it directly;
+the WinForms window is gone.
+
+### Changed
+
+- **One interface.** Everything the classic window did is in the web
+  interface: Apps, Checks, Groups, Platform scripts and Settings. Starting
+  the app opens an Edge or Chrome app window on a server bound to
+  127.0.0.1; closing the window stops it. `-NoBrowser` prints the address
+  instead. `-Web` is still accepted, so existing shortcuts keep working.
+- **Settings > Automatic checks now does something in the web interface:**
+  - "Run Checks when the app opens" runs Checks once when the app opens,
+    optionally with every deployed app in detail. The Checks tab shows how
+    many findings there are.
+  - "Before deploying a new app, look for one of the same name in Intune"
+    skips such an app in the deploy plan instead of creating a second one.
+- The settings file no longer holds the classic window's column widths,
+  sort order and window position. A file that has them still loads; they're
+  just not written back.
+
+### Removed
+
+- `MainApp.ps1`, every WinForms dialog (`code/Private/Dialogs`), the
+  background fetches built on WinForms timers (`GraphFetch.ps1`) and the
+  toolbar quick actions - about 28,000 lines. The functions that both
+  interfaces shared stay in `code/Private`, with no WinForms left in them:
+  `GuiHelpers.ps1` is now `Helpers.ps1`, packaging logs to the Activity log,
+  and the certificate status returns a level instead of a colour.
+- The WinForms GUI test suites and their CI jobs.
+
+### Added
+
+- A browser test (`code/tests/ui/WebUi.Tests.mjs`). It runs the real
+  server and opens every page in Chromium, in light and dark mode, wide and
+  narrow, and fails on page errors, failed requests, unnamed buttons, or a
+  page wider than the window. CI keeps the screenshots.
+- The README, its screenshots, the test documentation and the tenant test
+  checklist describe the web interface.
+
 ## 1.14.0
 
 ### Added

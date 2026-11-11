@@ -4,22 +4,17 @@
 
 <#
 .SYNOPSIS
-    Runs the web interface: IntuneDeployment.ps1 -Web dot-sources this after
-    loading code\Private, the same functions the classic window uses.
+    Runs the app: IntuneDeployment.ps1 dot-sources this after loading
+    code\Private.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$RootPath,
     [switch]$NoBrowser
 )
 
-# Windows-only assemblies some shared functions use for types (colors,
-# certificate dialogs). Absent on Linux, where the server still runs for CI.
-# System.Windows.Forms too: shared functions name its types in their
-# parameters (an optional log box), and PowerShell resolves those when the
-# function is called, even when nothing is passed. Nothing is shown.
-foreach ($assembly in 'System.Drawing', 'System.Security', 'System.Windows.Forms') {
-    try { Add-Type -AssemblyName $assembly -ErrorAction Stop } catch { }
-}
+# Certificate dialogs and X509 helpers (New-WebCertificate, the certificate
+# checks) - absent on Linux, where the server still runs for CI.
+try { Add-Type -AssemblyName System.Security -ErrorAction Stop } catch { }
 
 . (Join-Path $PSScriptRoot 'WebServer.ps1')
 . (Join-Path $PSScriptRoot 'WebApi.ps1')

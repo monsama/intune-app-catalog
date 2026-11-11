@@ -5,7 +5,7 @@
 # data into the same kind of row here, so a single list can hold them all
 # and a single set of buttons can fix them.
 #
-# Pure: no WinForms, no Graph. The window does the reading and hands the
+# Pure: no Graph. The Checks page (WebChecks.ps1) does the reading and hands the
 # results in; these only decide what is a problem, how to say it, and
 # which fixes apply. That is also what makes them testable without Intune.
 #

@@ -6,7 +6,7 @@
 .SYNOPSIS
     The web interface's Platform scripts page: Intune's PowerShell scripts
     for Windows devices, with the local copies in data\script-data beside
-    them - what Show-PlatformScriptsDialog does in the classic window.
+    them.
 
     Reads go to Graph from the request (Invoke-WebGraph); changes run the
     PlatformScripts step (code\EmbeddedScripts\PlatformScripts.ps1) as a job,
@@ -15,8 +15,8 @@
 
 function Global:Invoke-WebGraph {
     <#
-      Runs -Action with Graph connected app-only, the way the classic
-      background fetches connect (reusing a matching connection). -Action
+      Runs -Action with Graph connected app-only (reusing a matching
+      connection). -Action
       gets one argument: a scriptblock (Uri, Method, Body) that calls Graph
       and returns the parsed JSON, throwing "<status> <reason>: <body>".
       Returns @{ ok; value } or @{ ok = $false; error } with the error made

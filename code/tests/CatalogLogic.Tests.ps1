@@ -72,21 +72,8 @@ function Assert-Null {
 # Extract the pure functions under test straight from the real source
 # files under .\Private\ (never a hand-copied duplicate)
 # ---------------------------------------------------------------
-# Scans every .\Private\**\*.ps1 file, not just IntuneDeployment.ps1
-# directly - since the module rebuild, IntuneDeployment.ps1 itself is
-# just a thin entry point that dot-sources those files (plus
-# MainApp.ps1) and no longer contains any function BODIES of its own to
-# extract an AST from. All 16 functions this suite targets currently
-# live in Private\Catalog\, but this deliberately isn't hardcoded to
-# just those two files - it's robust to a function moving to a
-# different Private\ file later without this suite needing an update
-# just to keep finding it.
-# Two levels up, not one - this file lives at code\tests\, not tests\
-# directly under the repo root (moved there along with Private\ and
-# EmbeddedScripts\ under code\). $PSScriptRoot\.. alone already broke
-# the moment Private\ itself moved to code\Private\ (confirmed: it still
-# failed loudly - "expected function(s) not found under .../Private" -
-# just pointing at a Private\ that no longer exists at the repo root).
+# Scans every code\Private\**\*.ps1 file, so a function can move between
+# files without this suite needing an update to keep finding it.
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 $privateRoot = Join-Path $repoRoot "code\Private"
 $privateFiles = Get-ChildItem -Path $privateRoot -Filter "*.ps1" -Recurse
@@ -149,14 +136,6 @@ $testableFunctionNames = @(
     # is worth a test.
     "ConvertTo-SingleAppJson",
     "ConvertTo-JsonStringArray",
-    # Write-DialogLogLine and Write-DialogError are deliberately NOT here.
-    # Their parameters are typed [System.Windows.Forms.RichTextBox] and
-    # [Label], and this suite loads no WinForms and runs on Linux - so
-    # whether they bind at all depends on the machine. They did on mine
-    # and did not on CI, which is exactly the claim this list is supposed
-    # to make. Their null-box guards are covered by DeployDefaults, which
-    # runs inside the real app.
-    "Get-DialogLogLineColor",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
     "ConvertTo-ScriptRecord",
@@ -164,9 +143,6 @@ $testableFunctionNames = @(
     "Get-SafeFileNameForScript",
     "ConvertTo-DisplayLineEndings",
     "ConvertTo-TemplateAppRecord",
-    # Writes through Save-AppsToFile, which the test below stubs - what
-    # is under test is the entry it builds, not the write.
-    "Save-AppMetadataToLocalCatalog",
     "Get-NormalizedInstallTimeMinutes",
     "Get-GroupFieldDiffs",
     "Format-GroupFieldDiffs",
@@ -181,7 +157,7 @@ $testableFunctionNames = @(
     "Get-AppFolder",
     "Get-AppFolderDefault",
     "Get-AppFolderKinds",
-    # Lives in GuiHelpers.ps1, not Private\Catalog\ - the scan below isn't
+    # Lives in Helpers.ps1, not Private\Catalog\ - the scan below isn't
     # hardcoded to Catalog files, so adding the name here is enough. Pure
     # string normalization, no WinForms/Graph dependency despite living
     # next to code that has both. ConvertTo-DetectionRuleJson (and, via
@@ -192,7 +168,7 @@ $testableFunctionNames = @(
     # test failure, so it was never actually exercising the fix it was
     # meant to be able to cover.
     "ConvertTo-CanonicalLineEndings",
-    # Plain-language Graph errors (GuiHelpers.ps1)
+    # Plain-language Graph errors (Helpers.ps1)
     "Get-GraphPermissionHint",
     "ConvertTo-FriendlyGraphError",
     # Graph module vs. another module's libraries (GraphModuleConflict.ps1)
@@ -212,9 +188,7 @@ $testableFunctionNames = @(
     "ConvertTo-SingleScriptJson",
     "Save-ScriptsToFolder",
     "Import-ScriptsFromFolder",
-    # Moving a group of controls onto its own tab (GuiHelpers.ps1) - pure maths
-    "Get-ControlGroupOrigin",
-    # Deleting several groups at once (GuiHelpers.ps1) - pure planning work
+    # Deleting several groups at once (Helpers.ps1) - pure planning work
     "Get-GroupDeletionPlan",
     "Format-GroupDeletionWarning",
     # What the token is allowed to do (GraphToken.ps1) - pure claim work
@@ -225,7 +199,6 @@ $testableFunctionNames = @(
     "Format-SetupChecklist",
     "Get-GraphErrorBodyMessage",
     "Get-GraphErrorRecordMessage",
-    "Get-GraphRunspaceErrorMessage",
     "Get-InnermostErrorMessage",
     "ConvertTo-GraphLogLine",
     "ConvertTo-GraphReadSummary",
@@ -1293,21 +1266,7 @@ Assert-Equal 0 (@((Import-ScriptsFromFolder -Path (Join-Path ([IO.Path]::GetTemp
     "Import-ScriptsFromFolder: a folder that isn't there is empty, not an error"
 
 # -----------------------------------------------------------------
-# Moving a group of controls onto its own tab (GuiHelpers.ps1)
-# -----------------------------------------------------------------
-# A group that sat 600px down a tall panel has to start at the top of its
-# own page, which means subtracting where the group actually began.
-$origin = Get-ControlGroupOrigin -Points @(@{ X = 595; Y = 612 }, @{ X = 15; Y = 275 }, @{ X = 995; Y = 941 })
-Assert-Equal 15 $origin.X "Get-ControlGroupOrigin: the leftmost edge of the group"
-Assert-Equal 275 $origin.Y "Get-ControlGroupOrigin: the topmost edge of the group"
-$emptyOrigin = Get-ControlGroupOrigin -Points @()
-Assert-Equal 0 $emptyOrigin.X "Get-ControlGroupOrigin: an empty group starts at zero, not an error"
-Assert-Equal 0 $emptyOrigin.Y "Get-ControlGroupOrigin: an empty group starts at zero, not an error"
-$oneOrigin = Get-ControlGroupOrigin -Points @(@{ X = 42; Y = 7 })
-Assert-Equal 42 $oneOrigin.X "Get-ControlGroupOrigin: one control is its own origin"
-
-# -----------------------------------------------------------------
-# Deleting several groups at once (GuiHelpers.ps1)
+# Deleting several groups at once (Helpers.ps1)
 # -----------------------------------------------------------------
 # The catalog side is faked: deleting a group the catalog still assigns
 # apps to breaks those assignments silently, so the plan has to find them.
@@ -1411,7 +1370,7 @@ Assert-True ((($allLines -join "`n") -like "*Everything this app uses is covered
     "Format-GraphRoleReport: nothing to fix, no fix instructions"
 
 # -----------------------------------------------------------------
-# Which permission a refused request needs (GuiHelpers.ps1)
+# Which permission a refused request needs (Helpers.ps1)
 # -----------------------------------------------------------------
 Assert-Equal "DeviceManagementScripts.ReadWrite.All (application)" `
     (Get-GraphPermissionHint "POST https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts failed: Forbidden") `
@@ -1447,9 +1406,6 @@ Assert-True ($recordMessage -like "*DeviceManagementScripts.Read.All*") `
     "Get-GraphErrorRecordMessage: adds Graph's body to it" $recordMessage
 Assert-Equal 1 ([regex]::Matches($recordMessage, '_version').Count) `
     "Get-GraphErrorRecordMessage: the body appears once, not twice"
-$fromStreams = Get-GraphRunspaceErrorMessage @($forbiddenRecord)
-Assert-True ($fromStreams -like "*Add DeviceManagementScripts.Read.All or DeviceManagementScripts.ReadWrite.All*") `
-    "Get-GraphRunspaceErrorMessage: a refused read names the scopes to add" $fromStreams
 
 # Through an actual runspace, the way every Graph fetch in this app runs.
 # ErrorDetails does NOT survive that crossing - EndInvoke re-wraps the
@@ -1612,23 +1568,6 @@ Assert-Equal '3f1c2a9e-5b7d-4e21-9a0c-8d6e4b1f2a37' $templateSource.appId "Conve
 $templateWithPackage = ConvertTo-TemplateAppRecord -App ([pscustomobject]@{ appName = 'Tool'; packagePath = '\\share\pkg\tool.intunewin'; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @() })
 Assert-Equal '\\share\pkg\tool.intunewin' $templateWithPackage.packagePath "ConvertTo-TemplateAppRecord: the package path stays - it isn't tied to a tenant"
 
-# Save-AppMetadataToLocalCatalog rebuilds the entry it saves into, so
-# every app-level field has to be carried over, not just the ones it sets.
-function Global:Save-AppsToFile { param([string]$Path) return $true }
-$metaSaveApps = New-Object System.Collections.ArrayList
-[void]$metaSaveApps.Add([pscustomobject]@{
-    appId = 'id-1'; appName = 'Tool'; wingetId = ''; intuneAppType = ''; intuneAppVersion = '1.0'
-    packagePath = '\\share\pkg\tool.intunewin'
-    requiredFor = @('SG-All'); availableFor = @(); uninstallFor = @(); excludeFor = @(); metadata = $null
-})
-$metaSaveResult = Save-AppMetadataToLocalCatalog -AppsRef $metaSaveApps -LinkedFilePath 'unused' -AppName 'Tool' -Metadata ([pscustomobject]@{ publisher = 'Contoso' })
-Assert-Equal $true $metaSaveResult.Success "Save-AppMetadataToLocalCatalog: reports the write's result"
-Assert-Equal $false $metaSaveResult.CreatedNewEntry "Save-AppMetadataToLocalCatalog: an existing entry is updated, not added"
-Assert-Equal 'Contoso' $metaSaveApps[0].metadata.publisher "Save-AppMetadataToLocalCatalog: the metadata is saved"
-Assert-Equal '\\share\pkg\tool.intunewin' $metaSaveApps[0].packagePath "Save-AppMetadataToLocalCatalog: the package path is kept"
-Assert-Equal 'SG-All' (@($metaSaveApps[0].requiredFor) -join ',') "Save-AppMetadataToLocalCatalog: groups are kept"
-Assert-Equal 'id-1' $metaSaveApps[0].appId "Save-AppMetadataToLocalCatalog: the App ID is kept when no new one is given"
-Remove-Item Function:\Save-AppsToFile
 
 # -----------------------------------------------------------------
 # Assignments, including exclusions (Assignments.ps1)
@@ -1712,7 +1651,7 @@ Assert-Equal 0 @((New-AppAssignmentBody -Entries @($null) -GroupIdByName @{ 'SG-
 # -----------------------------------------------------------------
 # Against a real folder tree, because every branch of this resolver is
 # about what is actually on disk. Each case is asserted twice - resolved
-# fresh, and resolved through a prebuilt index - because Update-Grid now
+# fresh, and resolved through a prebuilt index - because the catalog list
 # passes an index and the two must not be able to disagree.
 $pkgTestRoot = Join-Path ([IO.Path]::GetTempPath()) ("pkgidx-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $savedRootPath = $Global:App.RootPath
@@ -1831,24 +1770,6 @@ finally {
     $Global:App.AppFolders = $savedAppFolders
     Remove-Item -LiteralPath $pkgTestRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
-
-# -----------------------------------------------------------------
-# Write-DialogLogLine / Write-DialogError with nothing to write to
-# -----------------------------------------------------------------
-# A -LogBox that arrives $null is this codebase's recurring closure bug
-# showing up at the call site: an alias taken one level too high comes
-# back empty. It used to throw "The property 'SelectionStart' cannot be
-# found on this object" at the user - three times in a row in one
-# report - and take the message it was carrying with it.
-#
-# These two helpers are the funnel every dialog's log goes through, so
-# guarding them turns that whole class of bug from a crash into a line
-# in the main log.
-# Asserted in DeployDefaults instead, inside the real app: these two take
-# WinForms controls as parameters, so whether they can even be called
-# depends on WinForms being present - which it is not here, and is not on
-# the Linux leg of CI. Testing them from this suite passed locally and
-# failed everywhere else, which is the failure this list exists to stop.
 
 # -----------------------------------------------------------------
 # Save-ScriptsToFolder pruning
@@ -2335,7 +2256,7 @@ finally {
     Remove-Item -LiteralPath $runnerDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 # And nothing in the app starts PowerShell the old way any more.
-$encodedLaunches = @(Get-ChildItem -Path (Join-Path $repoRoot "code\Private"), (Join-Path $repoRoot "MainApp.ps1") -Recurse -Filter *.ps1 |
+$encodedLaunches = @(Get-ChildItem -Path (Join-Path $repoRoot "code\Private"), (Join-Path $repoRoot "code\Web") -Recurse -Filter *.ps1 |
     Select-String -Pattern '-EncodedCommand\s*"?\s*\+|-EncodedCommand \$' | ForEach-Object { "$($_.Filename):$($_.LineNumber)" })
 Assert-Equal 0 $encodedLaunches.Count "No -EncodedCommand launches left in the app" ($encodedLaunches -join ', ')
 

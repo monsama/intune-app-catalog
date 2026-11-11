@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 # A new push to the same branch replaces the run that's still going - there's
-# no point finishing a 15-minute GUI audit of code that has already moved on.
+# no point finishing a run for code that has already moved on.
 concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: true
@@ -39,16 +39,6 @@ jobs:
         if: matrix.shell == 'powershell'
         shell: powershell
         run: ./code/tests/CatalogLogic.Tests.ps1
-      # Reads the dialog sources as text, so it belongs with the unit tests
-      # and not the GUI ones - it needs no desktop and runs on Linux too.
-      - name: ButtonStyle.Tests.ps1 (pwsh)
-        if: matrix.shell == 'pwsh'
-        shell: pwsh
-        run: ./code/tests/ButtonStyle.Tests.ps1
-      - name: ButtonStyle.Tests.ps1 (Windows PowerShell)
-        if: matrix.shell == 'powershell'
-        shell: powershell
-        run: ./code/tests/ButtonStyle.Tests.ps1
       # Starts the web interface's real server and talks to it over HTTP.
       - name: WebServer.Tests.ps1 (pwsh)
         if: matrix.shell == 'pwsh'
@@ -59,34 +49,26 @@ jobs:
         shell: powershell
         run: ./code/tests/WebServer.Tests.ps1
 
-  gui:
-    # Drives the real WinForms app, so it needs the runner's desktop session
-    # (hosted runners have one, at 1024x768).
-    #
-    # One runner per test file and per PowerShell, all at the same time: run
-    # end to end on a single runner this is about a quarter of an hour, and
-    # the longest single leg (the layout audit under one host) is about five
-    # minutes. The unit tests aren't a gate for the same reason - waiting for
-    # them would add their queue time to every GUI run.
-    name: GUI ${{ matrix.test }} (${{ matrix.host }})
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        test: [DialogSmoke, CatalogCrud, CloseConfirmation, DialogLayout, GridBehavior, DeployDefaults, ChecksWindow]
-        host: [pwsh, powershell]
+
+  ui:
+    # The web interface in a real browser against the real server: every
+    # page in light and dark mode, wide and narrow - no errors, no failed
+    # requests, no unnamed buttons, nothing wider than the window. The
+    # screenshots are kept, to look at what changed.
+    name: UI (Chromium)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: ${{ matrix.test }}.GuiTests.ps1
-        shell: pwsh
-        run: >
-          ./code/tests/gui/${{ matrix.test }}.GuiTests.ps1
-          -AppHost ${{ matrix.host }}
-          -ShotDir "$env:RUNNER_TEMP/gui-shots/${{ matrix.test }}"
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.48.2
+          npx playwright install --with-deps chromium
+      - name: WebUi.Tests.mjs
+        run: node code/tests/ui/WebUi.Tests.mjs --shots "$RUNNER_TEMP/ui-shots"
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: gui-screenshots-${{ matrix.test }}-${{ matrix.host }}
-          path: ${{ runner.temp }}/gui-shots
+          name: ui-screenshots
+          path: ${{ runner.temp }}/ui-shots
           if-no-files-found: ignore

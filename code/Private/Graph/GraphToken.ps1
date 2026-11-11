@@ -251,7 +251,7 @@ function Global:Format-SetupChecklist {
     $rows = New-Object System.Collections.Generic.List[object]
     $add = { param($Name, $Status, $Next) $rows.Add([pscustomobject]@{ Name = $Name; Status = $Status; Next = $Next }) }
 
-    & $add 'Microsoft.Graph.Authentication module' $(if ($State.ModuleOk) { 'OK' } else { 'FAILED' }) 'More actions > Verify > Prerequisites... installs it.'
+    & $add 'Microsoft.Graph.Authentication module' $(if ($State.ModuleOk) { 'OK' } else { 'FAILED' }) 'Settings > Prerequisites installs it.'
     & $add 'Tenant ID, Client ID and certificate thumbprint filled in' $(if ($State.FieldsOk) { 'OK' } else { 'FAILED' }) 'Fill in all three on the Connection tab. The setup guide shows where each one is in Entra.'
 
     $certStatus = if (-not $State.FieldsOk) { 'SKIP' }
