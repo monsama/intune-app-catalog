@@ -109,6 +109,15 @@ if (-not (Test-Path $ConfigPath)) {
     exit 1
 }
 $Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+# The App ID goes into the DELETE address as is. Anything but a GUID could
+# point it somewhere else ("../../v1.0/groups/<id>" deletes a group), so
+# nothing else is accepted.
+$parsedAppId = [guid]::Empty
+if (-not [guid]::TryParse([string]$Config.AppId, [ref]$parsedAppId)) {
+    Write-Host "[FAILED] '$($Config.AppId)' isn't an Intune App ID (a GUID) - nothing was deleted." -ForegroundColor Red
+    exit 1
+}
+$Config.AppId = $parsedAppId.ToString()
 Write-Host "  App: $($Config.AppName)" -ForegroundColor Gray
 Write-Host "  App ID: $($Config.AppId)" -ForegroundColor Gray
 

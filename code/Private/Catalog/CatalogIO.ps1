@@ -82,7 +82,10 @@ function Global:ConvertTo-AppRecord {
         }
     }
     [pscustomobject]@{
-        appId        = [string]$Raw.appId
+        # A GUID or nothing. The ID is put into Graph addresses as is (the
+        # delete step's included), so a catalog file with "../../groups/<id>"
+        # here could aim them at something else entirely.
+        appId        = $(if ([string]$Raw.appId -match '^[{(]?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}[)}]?$') { ([string]$Raw.appId).Trim('{', '}', '(', ')') } else { '' })
         appName      = [string]$Raw.appName
         wingetId     = [string]$Raw.wingetId
         # "uncommon" is no longer a stored field - see Test-AppIsUncommon.

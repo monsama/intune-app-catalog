@@ -428,7 +428,7 @@ function Global:Show-PlatformScriptsDialog {
         $resultPathRef = $resultPath
 
         $procBox.Proc = Start-PipelineProcess -ScriptContent $scriptSource -TempScriptName ".intunepkg_embedded_platformscript.ps1" `
-            -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+            -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
             Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue

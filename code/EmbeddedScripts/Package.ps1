@@ -70,8 +70,11 @@ function Download-IntuneWinAppUtil {
     }
     
     $DownloadUrl = "https://github.com/microsoft/Microsoft-Win32-Content-Prep-Tool/archive/refs/heads/master.zip"
-    $ZipPath = Join-Path $env:TEMP "IntuneWinAppUtil.zip"
-    $ExtractPath = Join-Path $env:TEMP "IntuneWinAppUtil_Extract"
+    # Unique names: fixed ones in %TEMP% could be prepared in advance by
+    # anything else running as this user.
+    $tempTag = [guid]::NewGuid().ToString("N")
+    $ZipPath = Join-Path $env:TEMP "IntuneWinAppUtil_$tempTag.zip"
+    $ExtractPath = Join-Path $env:TEMP "IntuneWinAppUtil_Extract_$tempTag"
     
     try {
         Write-Host "  Downloading from GitHub..." -ForegroundColor Gray
@@ -96,6 +99,12 @@ function Download-IntuneWinAppUtil {
         
         if (-not $ExeFile) {
             throw "IntuneWinAppUtil.exe not found in downloaded package"
+        }
+        # Downloaded from a branch, not a pinned release, and run on every
+        # package - only a file Microsoft signed is kept.
+        $Signature = Get-AuthenticodeSignature -LiteralPath $ExeFile.FullName
+        if ($Signature.Status -ne 'Valid' -or $Signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+            throw "The downloaded IntuneWinAppUtil.exe isn't validly signed by Microsoft (signature: $($Signature.Status)). Download it yourself from github.com/microsoft/Microsoft-Win32-Content-Prep-Tool and put it at $DestinationPath."
         }
         
         Write-Host "  Installing to: $DestinationPath" -ForegroundColor Gray

@@ -532,7 +532,7 @@ function Global:Show-ChecksDialog {
             $doneRef = $detailDone
             $runIdRef = $runId
             $cc.Run.Procs[$Label] = Start-PipelineProcess -ScriptContent $Script -TempScriptName ".intunepkg_embedded_checks_$($Label.ToLower()).ps1" `
-                -ArgumentString "-ConfigPath `"$configPath`"" -ExtraLogTarget $cc.Log -OnComplete {
+                -Parameters @{ ConfigPath = $configPath } -ExtraLogTarget $cc.Log -OnComplete {
                 param($code)
                 $cc.Run.Procs.Remove($labelRef)
                 Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue

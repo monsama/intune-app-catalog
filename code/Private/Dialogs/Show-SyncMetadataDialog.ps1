@@ -215,7 +215,7 @@ function Global:Show-SyncMetadataDialog {
         $btnRetryFailedRef = $btnRetryFailed
         $progressBarRef = $progressBar
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".intunepkg_embedded_syncmeta.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".intunepkg_embedded_syncmeta.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
             $progressBarRef.MarqueeAnimationSpeed = 0

@@ -415,7 +415,7 @@ function Global:Start-StartupFullAuditCheck {
     try {
         $configJsonText1 = $config1 | ConvertTo-Json -Depth 10 -ErrorAction Stop
         [System.IO.File]::WriteAllText($configPath1, $configJsonText1, (New-Object System.Text.UTF8Encoding($false)))
-        [void](Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".intunepkg_embedded_startupaudit_sync.ps1" -ArgumentString "-ConfigPath `"$configPath1`"" -OnComplete {
+        [void](Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".intunepkg_embedded_startupaudit_sync.ps1" -Parameters @{ ConfigPath = $configPath1 } -OnComplete {
             param($code)
             Remove-Item $configPath1 -Force -ErrorAction SilentlyContinue
             if (Test-Path $resultPath1) {
@@ -482,7 +482,7 @@ function Global:Start-StartupFullAuditCheck {
     try {
         $configJsonText2 = $config2 | ConvertTo-Json -Depth 8 -ErrorAction Stop
         [System.IO.File]::WriteAllText($configPath2, $configJsonText2, (New-Object System.Text.UTF8Encoding($false)))
-        [void](Start-PipelineProcess -ScriptContent $batchScript -TempScriptName ".intunepkg_embedded_startupaudit_assign.ps1" -ArgumentString "-ConfigPath `"$configPath2`"" -OnComplete {
+        [void](Start-PipelineProcess -ScriptContent $batchScript -TempScriptName ".intunepkg_embedded_startupaudit_assign.ps1" -Parameters @{ ConfigPath = $configPath2 } -OnComplete {
             param($code)
             Remove-Item $configPath2 -Force -ErrorAction SilentlyContinue
             if (Test-Path $resultPath2) {

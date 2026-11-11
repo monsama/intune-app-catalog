@@ -142,7 +142,7 @@ function Global:Show-TargetedAssignDialog {
         $procBoxRef = $procBox
         $rtbLogRef = $rtbLog
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $targetedScript -TempScriptName ".intunepkg_embedded_targetedassign.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $targetedScript -TempScriptName ".intunepkg_embedded_targetedassign.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $btnRunRef.Enabled = $true
             $procBoxRef.Proc = $null

@@ -1,5 +1,67 @@
 # Changelog
 
+## 1.8.0
+
+### Security
+
+- **App names can't run code during packaging.** Folder names were
+  pasted into PowerShell code with `'` doubled. PowerShell also ends a
+  string on the typographic quotes `‘ ’ ‚ ‛`, so a crafted app name (from
+  a catalog file, or copied over from Intune) could run its own code on
+  Package. Step parameters are now passed as values and never parsed as
+  code.
+- **Winget IDs can't inject into device scripts.** The generated
+  detection script and install and uninstall commands run as SYSTEM on
+  every targeted device. A Winget ID is now always a single-quoted,
+  escaped literal in them, and a `$(...)` in one is never run.
+- **App IDs must be GUIDs.** An App ID from a catalog file goes straight
+  into Graph addresses, so a value like `../../v1.0/groups/<id>` could
+  aim Delete at a group. The catalog now drops App IDs that aren't
+  GUIDs, and the delete step refuses them.
+- **The downloaded packaging tool must be signed by Microsoft.**
+  IntuneWinAppUtil.exe comes from a GitHub branch and runs on every
+  package. It's only kept if it has a valid Microsoft Authenticode
+  signature, and its temp files have unique names.
+- **Generated certificates have non-exportable private keys.** Only the
+  public .cer is ever needed.
+- **Certificate upload no longer leaves your sign-in behind.** That
+  sign-in carries Application.ReadWrite.All on your own account. It now
+  only lasts for the one operation, and isn't cached in your profile.
+- **No storage SAS signature in the log.** A failed upload logs the
+  address without its signed query.
+- Windows' reserved names (`CON`, `NUL`, `COM1`, ...) and control
+  characters are kept out of app folder names. Each background step gets
+  its own uniquely named script, so two runs of the same step at once
+  can't overwrite each other.
+
+### Added
+
+- **Setup checklist after Test connection.** The log now shows each
+  step of the first-time setup as done, failed or not checked yet:
+  - the Graph module
+  - the connection details
+  - the certificate on this machine, with its private key and not
+    expired
+  - Entra accepting the certificate
+  - the required permissions with admin consent
+  - the settings saved
+
+  Under the first step that isn't done, it says what to do next.
+
+### Changed
+
+- **Background steps no longer look like malware to endpoint
+  protection.** Every background PowerShell started with an
+  unreadable `-EncodedCommand <base64>` command line, which Cortex XDR,
+  Defender ASR and similar tools block or report. This covered pipeline
+  steps, module checks and the module installer. They now run
+  `powershell.exe -File <app folder>\code\Runner\Invoke-AppStep.ps1
+  -Spec <file>.json`, a file that ships with the app. The JSON file says
+  in plain text what to run and is deleted as soon as it's read. No
+  script runs from `%TEMP%` any more: the Graph helper sits next to the
+  step script in the app folder, and the module installer is no longer
+  written to a file at all.
+
 ## 1.7.0
 
 ### Added

@@ -317,7 +317,7 @@ function Global:Show-BatchDeployDialog {
         $usedDefaultsRef = $usedDefaults
         $effectiveMetadataRef = $effectiveMetadata
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".intunepkg_embedded_batchdeploy.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbLogRef -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".intunepkg_embedded_batchdeploy.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbLogRef -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
             Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue

@@ -96,6 +96,12 @@ function Global:Install-PackagingTool {
         Expand-Archive -Path $zip -DestinationPath $extract -Force -ErrorAction Stop
         $exe = Get-ChildItem -Path $extract -Filter 'IntuneWinAppUtil.exe' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
         if (-not $exe) { throw "The download did not contain IntuneWinAppUtil.exe." }
+        # Downloaded from a branch, not a pinned release, and run with your
+        # rights on every package - so only a file Microsoft signed is kept.
+        $signature = Get-AuthenticodeSignature -LiteralPath $exe.FullName
+        if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+            throw "The downloaded IntuneWinAppUtil.exe isn't validly signed by Microsoft (signature: $($signature.Status); signer: $($signature.SignerCertificate.Subject)). It was not saved. Download it yourself from github.com/microsoft/Microsoft-Win32-Content-Prep-Tool and put it in $folder."
+        }
         Copy-Item -LiteralPath $exe.FullName -Destination $target -Force -ErrorAction Stop
         & $say "[OK] Packaging tool saved to $target" ([System.Drawing.Color]::LightGreen)
         return @{ Ok = $true; Message = "Saved to $target" }

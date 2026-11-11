@@ -2591,7 +2591,7 @@ function Global:Show-CreateInIntuneDialog {
         $depNameByLabelRef = $depNameByLabel
         $fetchedIntuneFactsBoxRef = $fetchedIntuneFactsBox
 
-        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".intunepkg_embedded_createapp.ps1" -ArgumentString "-ConfigPath `"$configPathRef`"" -ExtraLogTarget $rtbCreateLog -OnComplete {
+        $procBoxRef.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".intunepkg_embedded_createapp.ps1" -Parameters @{ ConfigPath = $configPathRef } -ExtraLogTarget $rtbCreateLog -OnComplete {
             param($code)
             $btnCreateRef.Enabled = $true
             $procBoxRef.Proc = $null
@@ -2831,7 +2831,7 @@ function Global:Show-CreateInIntuneDialog {
                                 $lblStatusRef.ForeColor = [System.Drawing.Color]::DimGray
                                 $lblStatusRef.Text = "Deployed. Pushing $($pendingGroups.Count) group(s) to Intune..."
                                 Write-DialogLogLine -LogBox $rtbLogRef -Text "`r`n[INFO] Pushing this app's groups to Intune - this replaces its assignment list.`r`n"
-                                [void](Start-PipelineProcess -ScriptContent $targetedAssignScriptRef -TempScriptName ".intunepkg_embedded_deployassign.ps1" -ArgumentString "-ConfigPath `"$assignConfigPathRef`"" -ExtraLogTarget $rtbLogRef -OnComplete {
+                                [void](Start-PipelineProcess -ScriptContent $targetedAssignScriptRef -TempScriptName ".intunepkg_embedded_deployassign.ps1" -Parameters @{ ConfigPath = $assignConfigPathRef } -ExtraLogTarget $rtbLogRef -OnComplete {
                                     param($assignCode)
                                     Remove-Item $assignConfigPathRef -Force -ErrorAction SilentlyContinue
                                     $assignError = ""

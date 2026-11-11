@@ -218,7 +218,7 @@ function Global:Show-BatchPushMetadataDialog {
         $configPathRef = $configPath
         $resultPathRef = $resultPath
 
-        $procBox.Proc = Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".intunepkg_embedded_pushmeta_compare.ps1" -ArgumentString "-ConfigPath `"$configPath`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBox.Proc = Start-PipelineProcess -ScriptContent $syncScript -TempScriptName ".intunepkg_embedded_pushmeta_compare.ps1" -Parameters @{ ConfigPath = $configPath } -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
             $busyBoxRef.Value = $false
@@ -393,7 +393,7 @@ function Global:Show-BatchPushMetadataDialog {
         $dlgRef = $dlg
         $RunNextBoxRef = $RunNextBox
 
-        $procBox.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".intunepkg_embedded_pushmeta.ps1" -ArgumentString "-ConfigPath `"$configPath`"" -ExtraLogTarget $rtbLog -OnComplete {
+        $procBox.Proc = Start-PipelineProcess -ScriptContent $createScript -TempScriptName ".intunepkg_embedded_pushmeta.ps1" -Parameters @{ ConfigPath = $configPath } -ExtraLogTarget $rtbLog -OnComplete {
             param($code)
             $procBoxRef.Proc = $null
             Remove-Item $configPathRef -Force -ErrorAction SilentlyContinue

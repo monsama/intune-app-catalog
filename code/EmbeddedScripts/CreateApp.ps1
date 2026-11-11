@@ -254,8 +254,10 @@ function Invoke-WebRequestDetailed {
     }
     catch {
         $detail = Get-HttpErrorDetail -ErrorRecord $_
-        # (not logged as [GRAPH]: this is the Azure Storage upload, and its URL carries a SAS signature)
-        $msg = "$StepDescription failed [$Method $Uri]: $($_.Exception.Message)"
+        # (not logged as [GRAPH]: this is the Azure Storage upload, and its URL carries a SAS signature -
+        # so the message names the address without its query, where the signature is)
+        $shownUri = try { ([Uri]$Uri).GetLeftPart([UriPartial]::Path) } catch { '(storage upload address)' }
+        $msg = "$StepDescription failed [$Method $shownUri]: $($_.Exception.Message)"
         if ($detail) { $msg += "`nResponse body: $detail" }
         throw $msg
     }

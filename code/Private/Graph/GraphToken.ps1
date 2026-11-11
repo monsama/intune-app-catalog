@@ -225,3 +225,73 @@ function Global:Reset-GraphSession {
     catch { }
     finally { if ($ps) { $ps.Dispose() } }
 }
+
+function Global:Format-SetupChecklist {
+    <#
+      Pure: the whole first-time setup as one checklist, each step [OK],
+      [FAILED] or [--] (not checked yet, because an earlier step failed),
+      with what to do next for the first step that isn't done. Shown after
+      Test connection, so someone setting this up for the first time sees
+      where they are in the whole process, not just the latest error.
+      -State keys (missing ones count as unknown):
+        ModuleOk, FieldsOk                                 [bool]
+        CertFound, CertHasKey                              [bool]
+        CertNotAfter                                       [datetime]
+        SignInOk                                           [bool] ($null: not tried)
+        SignInError                                        [string]
+        Report                                             Get-GraphRoleReport result
+        Saved                                              [bool]
+    #>
+    param([hashtable]$State, [datetime]$Now = (Get-Date))
+    $rows = New-Object System.Collections.Generic.List[object]
+    $add = { param($Name, $Status, $Next) $rows.Add([pscustomobject]@{ Name = $Name; Status = $Status; Next = $Next }) }
+
+    & $add 'Microsoft.Graph.Authentication module' $(if ($State.ModuleOk) { 'OK' } else { 'FAILED' }) 'More actions > Verify > Prerequisites... installs it.'
+    & $add 'Tenant ID, Client ID and certificate thumbprint filled in' $(if ($State.FieldsOk) { 'OK' } else { 'FAILED' }) 'Fill in all three on the Connection tab. The setup guide shows where each one is in Entra.'
+
+    $certStatus = if (-not $State.FieldsOk) { 'SKIP' }
+                  elseif (-not $State.CertFound) { 'FAILED' }
+                  elseif (-not $State.CertHasKey) { 'FAILED' }
+                  elseif ($State.CertNotAfter -and $State.CertNotAfter -lt $Now) { 'FAILED' }
+                  else { 'OK' }
+    $certNext = if (-not $State.CertFound) { 'Certificate tab: pick the certificate you uploaded to Entra, or generate a new one (then upload it).' }
+                elseif (-not $State.CertHasKey) { 'This certificate has no private key on this machine. Import it with its key (.pfx), or generate a new one and upload it.' }
+                else { 'The certificate has expired. Generate a new one on the Certificate tab and upload it.' }
+    & $add 'Certificate on this machine, with its private key, not expired' $certStatus $certNext
+
+    $signStatus = if ($certStatus -ne 'OK' -or $null -eq $State.SignInOk) { 'SKIP' } elseif ($State.SignInOk) { 'OK' } else { 'FAILED' }
+    $signNext = if ([string]$State.SignInError -match 'AADSTS700016|was not found in the directory') { 'Entra doesn''t know this Client ID in this tenant. Check Tenant ID and Client ID.' }
+                elseif ([string]$State.SignInError -match 'AADSTS90002|AADSTS900023|Tenant .* not found') { 'The Tenant ID is wrong.' }
+                else { 'Upload this certificate to the app registration: Certificate tab > Upload certificate (or Entra > App registrations > your app > Certificates & secrets). Allow a few minutes after uploading.' }
+    & $add 'Entra ID accepts the certificate (uploaded to the app registration)' $signStatus $signNext
+
+    $report = $State.Report
+    $permStatus = if ($signStatus -ne 'OK' -or -not $report) { 'SKIP' }
+                  elseif (@($report.Have).Count -eq 0) { 'FAILED' }
+                  elseif (@(@($report.Missing) | Where-Object { $_.Required }).Count -gt 0) { 'FAILED' }
+                  else { 'OK' }
+    $permNext = if ($report -and @($report.Have).Count -eq 0) { 'Add the API permissions listed above (Application, not Delegated) and grant admin consent.' }
+                else { 'Add the missing permissions listed above and grant admin consent.' }
+    & $add 'Required API permissions granted, with admin consent' $permStatus $permNext
+
+    & $add 'Settings saved' $(if ($State.Saved) { 'OK' } else { 'FAILED' }) 'Click Save - until then the rest of the app keeps using the previously saved connection.'
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add("")
+    $lines.Add("[INFO] Setup checklist:")
+    $nextShown = $false
+    foreach ($row in $rows) {
+        $tag = switch ($row.Status) { 'OK' { '[OK]' } 'FAILED' { '[FAILED]' } default { '[--]' } }
+        $lines.Add("  $tag $($row.Name)")
+        if ($row.Status -eq 'FAILED' -and -not $nextShown) {
+            $lines.Add("         Next: $($row.Next)")
+            $nextShown = $true
+        }
+    }
+    $optional = if ($report) { @(@($report.Missing) | Where-Object { -not $_.Required }) } else { @() }
+    if (-not $nextShown) {
+        if ($optional.Count -gt 0) { $lines.Add("[OK] Setup complete. $($optional.Count) optional feature(s) still need a permission - see above.") }
+        else { $lines.Add("[OK] Setup complete - every step is done.") }
+    }
+    return $lines.ToArray()
+}

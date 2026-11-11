@@ -129,6 +129,7 @@ $testableFunctionNames = @(
     "ConvertTo-SupersedenceJson",
     "ConvertTo-CreateAppConfigJson",
     "Get-CreateAppTemplates",
+    "ConvertTo-PsSingleQuotedContent",
     "Get-WingetCommandLines",
     "Get-AppWingetInstallMethod",
     "Convert-AppWingetInstallMethod",
@@ -216,6 +217,7 @@ $testableFunctionNames = @(
     "Get-GraphRoleRequirements",
     "Get-GraphRoleReport",
     "Format-GraphRoleReport",
+    "Format-SetupChecklist",
     "Get-GraphErrorBodyMessage",
     "Get-GraphErrorRecordMessage",
     "Get-GraphRunspaceErrorMessage",
@@ -2213,6 +2215,121 @@ Assert-True ($conflictText -like '*-NoProfile*' -and $conflictText -like '*Refre
 Assert-True (-not ($conflictText -like '*Uninstall-Module*')) "Format-GraphAssemblyConflictText: no uninstall advice when it isn't another Graph version"
 $sameText = Format-GraphAssemblyConflictText -Conflicts @(Get-GraphAssemblyConflicts -ModuleAssemblies $shipped -ModuleBase $graphBase -LoadedAssemblies $olderGraph) -NoProfile $true
 Assert-True ($sameText -like '*Uninstall-Module*' -and $sameText -like '*already started without a PowerShell profile*') "Format-GraphAssemblyConflictText: two Graph versions - uninstall advice, and no false promise from a restart"
+
+# =================================================================
+# Hardening: values that end up in code, addresses or file names
+# =================================================================
+$rq = [string][char]0x2019
+Assert-Equal "a''b" (ConvertTo-PsSingleQuotedContent "a'b") "ConvertTo-PsSingleQuotedContent: a plain quote is doubled"
+Assert-Equal "a$rq${rq}b" (ConvertTo-PsSingleQuotedContent "a${rq}b") "ConvertTo-PsSingleQuotedContent: so is a typographic one, which PowerShell also ends a string on"
+Assert-Equal 'ab' (ConvertTo-PsSingleQuotedContent "a`"`r`nb") "ConvertTo-PsSingleQuotedContent: double quotes and line breaks are removed"
+Assert-Equal '7zip.7zip' (ConvertTo-PsSingleQuotedContent '7zip.7zip') "ConvertTo-PsSingleQuotedContent: a normal Winget ID is untouched"
+$evilId = 'Foo.Bar$(Start-Process calc)'
+$evilDetection = (Get-CreateAppTemplates -WingetId $evilId -Uncommon $false -Method 'WAU').Detection
+Assert-True ($evilDetection.Contains("`$AppToDetect = 'Foo.Bar`$(Start-Process calc)'")) "Get-CreateAppTemplates: the Winget ID is a single-quoted literal in the detection script, so `$(...) in it never runs" $evilDetection
+$quoteCmd = (Get-WingetCommandLines -WingetId "Foo'Bar`"x" -Method 'Winget' -InstallContext 'System').Install
+Assert-True ($quoteCmd.Contains("--id 'Foo''Barx'")) "Get-WingetCommandLines: a quote in the ID can't close the string, a double quote can't close the command line" $quoteCmd
+
+Assert-Equal 'CON_' (Get-SafeFileNameForApp -Name 'CON') "Get-SafeFileNameForApp: a reserved device name gets a suffix"
+Assert-Equal 'Lpt1_' (Get-SafeFileNameForApp -Name 'Lpt1') "Get-SafeFileNameForApp: in any letter case"
+Assert-Equal 'Console' (Get-SafeFileNameForApp -Name 'Console') "Get-SafeFileNameForApp: a name that only starts like one is fine"
+Assert-Equal 'ab' (Get-SafeFileNameForApp -Name "a`tb".Replace("`t", [string][char]1)) "Get-SafeFileNameForApp: control characters are removed"
+
+$guidId = 'c0ffee00-1111-4222-8333-444455556666'
+Assert-Equal $guidId (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'A'; appId = $guidId })).appId "ConvertTo-AppRecord: a GUID App ID is kept"
+Assert-Equal $guidId (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'A'; appId = "{$guidId}" })).appId "ConvertTo-AppRecord: braces around it are dropped"
+Assert-Equal '' (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'A'; appId = "../../../v1.0/groups/$guidId" })).appId "ConvertTo-AppRecord: an App ID that's really a path is not kept"
+
+# =================================================================
+# Setup checklist after Test connection (GraphToken.ps1)
+# =================================================================
+$future = (Get-Date).AddYears(1)
+$fullReport = Get-GraphRoleReport -Roles @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Directory.Read.All', 'DeviceManagementScripts.ReadWrite.All')
+$doneText = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = $future; SignInOk = $true; Report = $fullReport; Saved = $true }) -join "`n"
+Assert-True ($doneText -like '*Setup complete - every step is done*' -and $doneText -notlike '*FAILED*' -and $doneText -notlike '*Next:*') "Format-SetupChecklist: everything done says so" $doneText
+
+# Today's case: reissued certificate, not uploaded yet, not saved
+$notUploaded = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = $future; SignInOk = $false; SignInError = 'ClientCertificateCredential authentication failed: .'; Saved = $false }) -join "`n"
+Assert-True ($notUploaded -match '(?s)\[FAILED\] Entra ID accepts the certificate.*Next: Upload this certificate') "Format-SetupChecklist: a refused certificate points at the upload" $notUploaded
+Assert-True ($notUploaded -like '*`[--`] Required API permissions*') "Format-SetupChecklist: permissions can't be known yet" $notUploaded
+Assert-Equal 1 ([regex]::Matches($notUploaded, 'Next:').Count) "Format-SetupChecklist: one next step, for the first thing that's not done" $notUploaded
+
+$noRoles = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = $future; SignInOk = $true; Report = (Get-GraphRoleReport -Roles @()); Saved = $true }) -join "`n"
+Assert-True ($noRoles -match '(?s)\[FAILED\] Required API permissions.*Next: Add the API permissions.*Application, not Delegated') "Format-SetupChecklist: signed in without permissions says what's next" $noRoles
+
+$unsaved = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = $future; SignInOk = $true; Report = $fullReport; Saved = $false }) -join "`n"
+Assert-True ($unsaved -match '(?s)\[FAILED\] Settings saved.*Next: Click Save') "Format-SetupChecklist: a working but unsaved connection says to save" $unsaved
+
+$noKey = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $false; SignInOk = $null; Saved = $true }) -join "`n"
+Assert-True ($noKey -like '*no private key*' -and $noKey -like '*`[--`] Entra ID accepts*') "Format-SetupChecklist: a certificate without its key stops there" $noKey
+$expired = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = (Get-Date).AddDays(-1); Saved = $true }) -join "`n"
+Assert-True ($expired -like '*has expired*') "Format-SetupChecklist: an expired certificate says so" $expired
+$wrongClient = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = $future; SignInOk = $false; SignInError = 'AADSTS700016: Application with identifier x was not found in the directory'; Saved = $true }) -join "`n"
+Assert-True ($wrongClient -like '*Check Tenant ID and Client ID*') "Format-SetupChecklist: an unknown Client ID isn't blamed on the certificate" $wrongClient
+
+# =================================================================
+# Step runner (code\Runner\Invoke-AppStep.ps1) - run for real, in a child
+# PowerShell, the way the app starts every background step
+# =================================================================
+$runnerPath = [System.IO.Path]::Combine("$repoRoot", "code", "Runner", "Invoke-AppStep.ps1")
+$hostExe = (Get-Process -Id $PID).Path
+$runnerDir = Join-Path ([System.IO.Path]::GetTempPath()) ("runner-test-" + [guid]::NewGuid().ToString("N"))
+[void](New-Item -ItemType Directory -Path $runnerDir -Force)
+try {
+    $writeSpec = {
+        param([hashtable]$Data)
+        $path = Join-Path $runnerDir ([guid]::NewGuid().ToString("N") + ".json")
+        [System.IO.File]::WriteAllText($path, ($Data | ConvertTo-Json -Depth 4))
+        return $path
+    }
+    # A step script with a parameter, output and its own exit code
+    $stepPath = Join-Path $runnerDir "step's.ps1"
+    Set-Content -LiteralPath $stepPath -Value 'param([string]$ConfigPath) "got $ConfigPath"; Write-Warning "careful"; exit 3'
+    $helperPath = Join-Path $runnerDir "helper.ps1"
+    Set-Content -LiteralPath $helperPath -Value 'function Write-GraphReadSummary { "[GRAPH] summary" }'
+    $logPath = Join-Path $runnerDir "step.log"
+    $spec = & $writeSpec @{ Script = $stepPath; Parameters = @{ ConfigPath = 'C:\with space\x.json' }; GraphHelper = $helperPath; LogFile = $logPath }
+    & $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $runnerPath -Spec $spec | Out-Null
+    $stepExit = $LASTEXITCODE
+    $stepLog = Get-Content -LiteralPath $logPath -Raw
+    Assert-Equal 3 $stepExit "Invoke-AppStep: the step's own exit code is the process's"
+    Assert-True ($stepLog -like '*got C:\with space\x.json*') "Invoke-AppStep: parameters reach the step as values" $stepLog
+    Assert-True ($stepLog -like '*careful*') "Invoke-AppStep: warnings land in the log too" $stepLog
+    Assert-True ($stepLog -like '*`[GRAPH`] summary*') "Invoke-AppStep: the Graph helper's summary runs after the step" $stepLog
+    Assert-True (-not (Test-Path -LiteralPath $spec)) "Invoke-AppStep: the spec file is deleted once read"
+
+    # The injection this replaced: a typographic quote in an app name closed
+    # the quoted value and ran what followed. As a value, it's just text.
+    $rq = [string][char]0x2019
+    $evilName = "x$rq;exit 7;$rq"
+    $echoPath = Join-Path $runnerDir "echo.ps1"
+    Set-Content -LiteralPath $echoPath -Value 'param([string]$SingleFolderName, [switch]$Force) "name=$SingleFolderName force=$Force"; exit 0'
+    $evilLog = Join-Path $runnerDir "evil.log"
+    $evilSpec = & $writeSpec @{ Script = $echoPath; Parameters = @{ SingleFolderName = $evilName; Force = $true }; LogFile = $evilLog }
+    & $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $runnerPath -Spec $evilSpec | Out-Null
+    Assert-Equal 0 $LASTEXITCODE "Invoke-AppStep: a typographic quote in a parameter doesn't break out and run code"
+    Assert-True ((Get-Content -LiteralPath $evilLog -Raw -Encoding UTF8).Contains("name=$evilName force=True")) "Invoke-AppStep: the value arrives unchanged and a switch is set" (Get-Content -LiteralPath $evilLog -Raw)
+
+    $cmdSpec = & $writeSpec @{ Command = "'first'; 'RESULT=ok 1.2'" }
+    $cmdOut = @(& $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $runnerPath -Spec $cmdSpec)
+    Assert-Equal 'RESULT=ok 1.2' ([string]$cmdOut[-1]) "Invoke-AppStep: a command without a log file answers on stdout"
+
+    $exitSpec = & $writeSpec @{ Command = "'[OK] done'; exit 0"; LogFile = (Join-Path $runnerDir "cmd.log") }
+    & $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $runnerPath -Spec $exitSpec | Out-Null
+    Assert-Equal 0 $LASTEXITCODE "Invoke-AppStep: a command's exit code comes through"
+    Assert-True ((Get-Content -LiteralPath (Join-Path $runnerDir "cmd.log") -Raw) -like '*`[OK`] done*') "Invoke-AppStep: a command's output goes to its log file"
+
+    $emptySpec = & $writeSpec @{ LogFile = (Join-Path $runnerDir "empty.log") }
+    & $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $runnerPath -Spec $emptySpec | Out-Null
+    Assert-Equal 1 $LASTEXITCODE "Invoke-AppStep: a spec with nothing to run fails"
+}
+finally {
+    Remove-Item -LiteralPath $runnerDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+# And nothing in the app starts PowerShell the old way any more.
+$encodedLaunches = @(Get-ChildItem -Path (Join-Path $repoRoot "code\Private"), (Join-Path $repoRoot "MainApp.ps1") -Recurse -Filter *.ps1 |
+    Select-String -Pattern '-EncodedCommand\s*"?\s*\+|-EncodedCommand \$' | ForEach-Object { "$($_.Filename):$($_.LineNumber)" })
+Assert-Equal 0 $encodedLaunches.Count "No -EncodedCommand launches left in the app" ($encodedLaunches -join ', ')
 
 # =================================================================
 # Report

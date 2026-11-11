@@ -182,12 +182,19 @@ try {
     # object." The same report confirms regular interactive sign-in doesn't
     # have this problem, so that's what's used instead despite the
     # trade-off, until that SDK bug is fixed upstream.
-    Connect-MgGraph -TenantId $Config.TenantId -Scopes $signInScope -NoWelcome -ErrorAction Stop
+    # -ContextScope Process: this sign-in (Application.ReadWrite.All on
+    # YOUR account - enough to add credentials to any app registration)
+    # lives only as long as this process. The default (CurrentUser) leaves
+    # it cached in your profile, where any later script running as you
+    # could pick it up silently. Each Check/Upload/Delete asks again.
+    Connect-MgGraph -TenantId $Config.TenantId -Scopes $signInScope -ContextScope Process -NoWelcome -ErrorAction Stop
     $ctx = Get-MgContext -ErrorAction Stop
     Write-Host "  [OK] Signed in as $($ctx.Account)." -ForegroundColor Green
 
     Write-Step "Finding the app registration"
-    $encodedFilter = [Uri]::EscapeDataString("appId eq '$($Config.ClientId)'")
+    $clientGuid = [guid]::Empty
+    if (-not [guid]::TryParse([string]$Config.ClientId, [ref]$clientGuid)) { throw "The Client ID '$($Config.ClientId)' isn't a GUID - check it in Settings." }
+    $encodedFilter = [Uri]::EscapeDataString("appId eq '$clientGuid'")
     $appLookup = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/applications?`$filter=$encodedFilter&`$select=id,displayName,keyCredentials" -Method GET -StepDescription "Look up app registration"
     if (-not $appLookup.value -or $appLookup.value.Count -eq 0) {
         throw "No app registration found with Application (client) ID '$($Config.ClientId)' in this tenant. Double check the Client ID in Settings, and that you signed into the right tenant just now."
