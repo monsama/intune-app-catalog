@@ -88,6 +88,7 @@ $testableFunctionNames = @(
     "ConvertTo-WindowsArgument",
     # Security: secrets out of logs, folder paths (Helpers.ps1, AppFolders.ps1)
     "Protect-LogText",
+    "Get-GroupLookupUris",
     "Test-AppFolderPath",
     "Get-WingetShowVerdict",
     # Diagnostics (Diagnostics.ps1)
@@ -2351,6 +2352,15 @@ Assert-True ([bool](Test-AppFolderPath 'C:\apps\*')) "Folder path: a wildcard is
 Assert-True ([bool](Test-AppFolderPath "C:\apps`nX")) "Folder path: a control character is refused"
 Assert-True ([bool](Test-AppFolderPath 'C:\apps\..\Windows')) "Folder path: .. is refused"
 Assert-True ([bool](Test-AppFolderPath ('C:\' + ('x' * 300)))) "Folder path: a path that is too long is refused"
+
+# Group lookups by name (Checks)
+$lookup = @(Get-GroupLookupUris -Names @(1..20 | ForEach-Object { "SG-$_" }))
+Assert-Equal 2 $lookup.Count "Group lookup: 20 names in requests of 15"
+$firstFilter = [Uri]::UnescapeDataString(($lookup[0] -split '\$filter=')[1].Split('&')[0])
+Assert-True ($firstFilter -like "displayName in ('SG-1','SG-2',*'SG-15')") "Group lookup: the names in an OData in-list" $firstFilter
+$quoted = [Uri]::UnescapeDataString(@(Get-GroupLookupUris -Names @("O'Brien Team"))[0])
+Assert-True ($quoted -like "*('O''Brien Team')*") "Group lookup: a quote in a name is doubled for OData" $quoted
+Assert-Equal 0 @(Get-GroupLookupUris -Names @()).Count "Group lookup: no names, no requests"
 
 # =================================================================
 # Report

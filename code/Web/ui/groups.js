@@ -25,8 +25,8 @@ $('groupSearch').addEventListener('input', renderGroupList);
 $('groupSearch').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('btnGroupOpen').click(); } });
 $('btnGroupOpen').addEventListener('click', () => { const n = $('groupSearch').value.trim(); if (n) openGroup(n); else toast('Type a group name first.', true); });
 $('btnGroupsReload').addEventListener('click', () => { loadGroups(); if (group) openGroup(group.name); });
-$('btnGroupNew').addEventListener('click', () => {
-  const n = (prompt('Name of the new security group:') || '').trim();
+$('btnGroupNew').addEventListener('click', async () => {
+  const n = ((await askText('Name of the new security group', '', 'Open')) || '').trim();
   if (n) openGroup(n);
 });
 
@@ -98,25 +98,25 @@ $('btnGroupSave').addEventListener('click', () => {
   groupJob({ mode: 'Save', name, description: $('gDesc').value, memberIds: [...toAdd.keys()] }, `${group.found ? 'Updating' : 'Creating'} ${name}...`,
     () => { toast(`${name} is ready.`); loadGroups(); openGroup(name); });
 });
-function removeMember(m) {
-  if (!confirm(`Remove ${m.name} from ${group.name}?\n\nApps assigned to this group stop applying to it.`)) return;
+async function removeMember(m) {
+  if (!(await ask(`Remove ${m.name} from ${group.name}?\n\nApps assigned to this group stop applying to it.`))) return;
   const name = group.name;
   groupJob({ mode: 'RemoveMember', name, groupId: group.id, memberId: m.id }, `Removing ${m.name}...`, () => { toast('Removed.'); openGroup(name); });
 }
-$('btnGroupRename').addEventListener('click', () => {
+$('btnGroupRename').addEventListener('click', async () => {
   if (!group || !group.found) return;
   const old = group.name;
-  const nn = (prompt(`New name for "${old}":\n\nEntra ID renames the group (same group, same members), then every app in the catalog that names it follows.`, old) || '').trim();
+  const nn = ((await askText(`New name for "${old}"\n\nEntra ID renames the group (same group, same members), then every app in the catalog that names it follows.`, old, 'Rename')) || '').trim();
   if (!nn || nn === old) return;
   groupJob({ mode: 'Rename', name: old, groupId: group.id, newName: nn }, `Renaming ${old}...`, after => {
     const n = after && after.updated ? after.updated.length : 0;
     toast(`Renamed to ${nn}; ${n} app(s) in the catalog updated.`); $('groupSearch').value = ''; loadGroups(); loadApps(); openGroup(nn);
   });
 });
-$('btnGroupDelete').addEventListener('click', () => {
+$('btnGroupDelete').addEventListener('click', async () => {
   if (!group || !group.found) return;
   const name = group.name, uses = (group.uses || []).length;
-  if (!confirm(`Delete the group "${name}" from Entra ID?\n\n${uses ? `${uses} catalog assignment(s) name it - those apps lose this assignment in Intune, and the catalog keeps naming a group that is gone.` : 'No app in the catalog uses it.'} This can't be undone here.`)) return;
+  if (!(await ask(`Delete the group "${name}" from Entra ID?\n\n${uses ? `${uses} catalog assignment(s) name it - those apps lose this assignment in Intune, and the catalog keeps naming a group that is gone.` : 'No app in the catalog uses it.'} This can't be undone here.`))) return;
   groupJob({ mode: 'Delete', name }, `Deleting ${name}...`, () => { toast(`${name} was deleted.`); group = null; $('groupDetail').hidden = true; $('groupEmpty').hidden = false; loadGroups(); });
 });
 $('btnGroupsDelete').addEventListener('click', () => {
@@ -125,10 +125,10 @@ $('btnGroupsDelete').addEventListener('click', () => {
     : [el('span', { class: 'muted', text: 'No catalog groups - type names below.' })]));
   $('dlgGroupsDelete').showModal();
 });
-$('btnGroupsDeleteGo').addEventListener('click', () => {
+$('btnGroupsDeleteGo').addEventListener('click', async () => {
   const names = [...new Set([...document.querySelectorAll('[data-gdel]')].filter(c => c.checked).map(c => c.dataset.gdel).concat(lines('gDelMore')))];
   if (!names.length) { toast('Tick or type at least one group.', true); return; }
-  if (!confirm(`Delete ${names.length} group(s) from Entra ID?\n\n${names.join('\n')}\n\nApps assigned to them lose those assignments. This can't be undone here.`)) return;
+  if (!(await ask(`Delete ${names.length} group(s) from Entra ID?\n\n${names.join('\n')}\n\nApps assigned to them lose those assignments. This can't be undone here.`))) return;
   $('gDelLog').hidden = false;
   runJob({ mode: 'DeleteMany', names }, ok => { toast(ok ? `Deleted ${names.length} group(s).` : 'Not every group was deleted - see the log.', !ok); loadGroups(); },
     { path: '/api/group-job', log: 'gDelLog', startText: `Deleting ${names.length} group(s)...` });

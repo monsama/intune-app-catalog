@@ -7,6 +7,40 @@
 'use strict';
 
 const $ = id => document.getElementById(id);
+// The app's own question dialog, in place of the browser's confirm() and
+// prompt() - those carry the page's address as their title, look like an
+// error, and the browser may start suppressing them. The first paragraph of
+// the text is the heading. The button says what happens (taken from the
+// question's first word unless -ok is given); a destructive question gets a
+// red button, and Cancel has the focus.
+function ask(text, { ok = '', danger = null, input = null } = {}) {
+  const [head, ...rest] = String(text).split('\n\n');
+  const first = (head.match(/^\w+/) || [''])[0];
+  const verb = first === 'Permanently' ? 'Delete' : first;
+  const isDanger = danger === null ? /^(Delete|Permanently|Remove)$/.test(first) : danger;
+  const dlg = $('dlgAsk'), okBtn = $('askOk'), field = $('askInput');
+  $('askTitle').textContent = head;
+  $('askText').textContent = rest.join('\n\n');
+  $('askText').hidden = rest.length === 0;
+  okBtn.textContent = ok || (/^(Remove|Delete|Clear|Add|Send|Rename|Create)$/.test(verb) ? verb : 'OK');
+  okBtn.classList.toggle('dangerous', isDanger);
+  field.hidden = input === null;
+  field.value = input === null ? '' : input;
+  return new Promise(resolve => {
+    const done = v => { dlg.removeEventListener('close', onClose); okBtn.onclick = null; $('askCancel').onclick = null; field.onkeydown = null; if (dlg.open) dlg.close(); resolve(v); };
+    const onClose = () => done(input === null ? false : null);
+    dlg.addEventListener('close', onClose);
+    okBtn.onclick = () => done(input === null ? true : field.value);
+    $('askCancel').onclick = () => done(input === null ? false : null);
+    field.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); okBtn.click(); } };
+    dlg.showModal();
+    (input !== null ? field : isDanger ? $('askCancel') : okBtn).focus();
+    if (input !== null) field.select();
+  });
+}
+// Asks for a line of text: the text, or null when cancelled.
+const askText = (text, value = '', ok = '') => ask(text, { input: value, ok, danger: false });
+
 // Enables or disables a button; disabled, its tooltip says why first, then
 // what it does. The usual tooltip is kept in data-tip.
 function setEnabled(b, on, why) {

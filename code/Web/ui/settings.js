@@ -109,8 +109,8 @@ function renderEntraCerts(certs) {
   $('entraCerts').replaceChildren(...(certs.length ? certs.map(c => el('li', { class: c.Thumbprint === thumb ? 'match' : '' },
     el('span', { class: 'grow' }, c.DisplayName || '(no name)', ' ', el('span', { class: 't', text: c.Thumbprint })),
     el('span', { class: 'muted', text: 'expires ' + c.Expiry }),
-    el('button', { class: 'btn small', text: 'Delete...', onclick: () => {
-      if (!confirm(`Remove "${c.DisplayName}" (${c.Thumbprint}) from the app registration in Entra?\n\nAnything still signing in with it stops working.`)) return;
+    el('button', { class: 'btn small', text: 'Delete...', onclick: async () => {
+      if (!(await ask(`Remove "${c.DisplayName}" (${c.Thumbprint}) from the app registration in Entra?\n\nAnything still signing in with it stops working.`))) return;
       runJob({ mode: 'DeleteCert', keyId: c.KeyId }, ok => { if (ok) $('btnCheckCerts').click(); });
     } }))) : [el('li', { text: 'No certificates in Entra yet - upload this one.' })]));
 }
@@ -189,7 +189,7 @@ async function loadCertsLocal() {
     el('td', { text: c.store }), el('td', { class: 'chg', text: c.thumbprint }),
     el('td', {}, el('span', { class: c.expired ? 'pill err' : '', text: c.notAfter })),
     el('td', {}, el('button', { class: 'btn small danger', text: 'Delete', onclick: async () => {
-      if (!confirm(`Permanently delete this certificate, with its private key, from ${c.store}\\My?\n\n${c.subject}\n${c.thumbprint}${c.inUse ? '\n\nThis is the certificate the app signs in with - without it nothing reaches Intune until you choose another.' : ''}\n\nEntra ID keeps its copy.`)) return;
+      if (!(await ask(`Permanently delete this certificate, with its private key, from ${c.store}\\My?\n\n${c.subject}\n${c.thumbprint}${c.inUse ? '\n\nThis is the certificate the app signs in with - without it nothing reaches Intune until you choose another.' : ''}\n\nEntra ID keeps its copy.`))) return;
       const d = await api('/api/cert-delete-local', { thumbprint: c.thumbprint, store: c.store });
       toast(d.ok ? 'Certificate deleted.' : d.error, !d.ok); if (d.ok) { loadCertsLocal(); loadState(); }
     } }))))

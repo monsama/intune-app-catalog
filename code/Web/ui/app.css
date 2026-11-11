@@ -276,3 +276,11 @@ label.chk.inline { display: inline-flex; align-items: center; gap: 6px; margin: 
 
 /* Text for screen readers only. */
 .sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* The app's own question dialog (ask() in core.js). */
+dialog.ask { max-width: 520px; }
+dialog.ask h2 { font-size: 15px; line-height: 1.4; }
+.asktext { white-space: pre-line; color: var(--fg); font-size: 13px; line-height: 1.5; margin: 8px 0 0; max-height: 50vh; overflow: auto; }
+#askInput { display: block; width: 100%; margin-top: 12px; }
+#askInput[hidden] { display: none; }
+.btn.primary.dangerous { background: var(--err); border-color: var(--err); color: var(--surface); }
+

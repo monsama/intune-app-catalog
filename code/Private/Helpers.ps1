@@ -276,3 +276,18 @@ function Global:Protect-LogText {
     return $t
 }
 
+function Global:Get-GroupLookupUris {
+    <#
+      Pure: Graph addresses that look up groups by exact name, -ChunkSize
+      names per request (displayName in ('a','b',...)) - the names escaped
+      for OData (' doubled) and the filter for the URL.
+    #>
+    param([string[]]$Names, [int]$ChunkSize = 15)
+    $list = @($Names | Where-Object { $_ })
+    for ($i = 0; $i -lt $list.Count; $i += $ChunkSize) {
+        $chunk = @($list[$i..([Math]::Min($i + $ChunkSize, $list.Count) - 1)])
+        $inList = ($chunk | ForEach-Object { "'" + ([string]$_).Replace("'", "''") + "'" }) -join ','
+        "https://graph.microsoft.com/v1.0/groups?`$filter=$([Uri]::EscapeDataString("displayName in ($inList)"))&`$select=id,displayName&`$top=999"
+    }
+}
+

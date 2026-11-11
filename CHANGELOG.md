@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.0.5
+
+Usability and speed.
+
+### Changed
+
+- **Questions in the app's own dialog.** All 17 browser popups (`confirm`
+  and `prompt`) are gone. Those showed the page's address as their title,
+  looked like an error, and Chrome can suppress them after a few. Now:
+  - the question is the heading;
+  - the button says what happens: Delete, Remove, Clear, Add, Rename,
+    Create;
+  - destructive questions have a red button, and Cancel has the focus;
+  - Escape cancels, and Enter confirms a typed name (New group, Rename).
+- **Checks is much faster in a big tenant.** It used to read every group
+  and every user in Entra ID on each run, hundreds of pages in a large
+  tenant. The users were never needed at all.
+  - It now looks up only the groups the catalog names, 15 names per
+    request.
+  - A tenant that refuses that lookup gets the full group list as before.
+  - The notes say how many of the catalog's groups were found.
+
+### Tests
+
+- The browser test fails if any browser popup appears, and checks the
+  remove question (red button, Cancel focused, accessibility rules).
+- The Graph test checks that Checks asks for the catalog's groups by name
+  and reads no users.
+- Unit tests for the by-name lookup: requests of 15, OData quoting.
+- The tenant checklist covers closing the window and reloading the page
+  during a deploy (2.0.4).
+
 ## 2.0.4
 
 A bug sweep.

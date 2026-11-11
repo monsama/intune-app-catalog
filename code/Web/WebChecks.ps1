@@ -41,6 +41,19 @@ function Global:Get-WebCheckApps {
     return $apps
 }
 
+function Global:Get-WebCatalogGroupNames {
+    # Pure: every group name the apps use, in any role, once (case-insensitively), sorted.
+    param($Apps)
+    $seen = @{}
+    foreach ($a in @($Apps)) {
+        foreach ($g in @(@($a.requiredFor) + @($a.availableFor) + @($a.uninstallFor) + @($a.excludeFor))) {
+            $n = ([string]$g).Trim() -replace '\s+', ' '
+            if ($n -and -not $seen.ContainsKey($n.ToLowerInvariant())) { $seen[$n.ToLowerInvariant()] = $n }
+        }
+    }
+    return @($seen.Values | Sort-Object)
+}
+
 function Global:Invoke-WebChecks {
     <#
       The checks that need no step script. -names narrows them to some apps
@@ -73,20 +86,30 @@ function Global:Invoke-WebChecks {
             }
             $intuneApps = @(& $pages 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$select=id,displayName&$top=999' |
                 ForEach-Object { [pscustomobject]@{ id = [string]$_.id; displayName = [string]$_.displayName } })
+            # Only the groups the catalog names, 15 to a request - not every group
+            # and user in the tenant, which in a big one is hundreds of pages.
+            # A tenant that refuses the "in" filter gets the full list instead.
             $directory = New-Object System.Collections.Generic.List[object]
-            foreach ($g in @(& $pages 'https://graph.microsoft.com/v1.0/groups?$select=id,displayName&$top=999')) { $directory.Add([pscustomobject]@{ displayName = [string]$g.displayName; type = 'Group'; id = [string]$g.id; upn = '' }) }
-            $usersOk = $true
-            try { foreach ($u in @(& $pages 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999')) { $directory.Add([pscustomobject]@{ displayName = [string]$u.displayName; type = 'User'; id = [string]$u.id; upn = [string]$u.userPrincipalName }) } }
-            catch { $usersOk = $false }
-            @{ IntuneApps = $intuneApps; Directory = $directory.ToArray(); UsersOk = $usersOk }
+            $wanted = @(Get-WebCatalogGroupNames -Apps $apps)
+            $byName = $true
+            try {
+                foreach ($uri in @(Get-GroupLookupUris -Names $wanted)) {
+                    foreach ($g in @(& $pages $uri)) { $directory.Add([pscustomobject]@{ displayName = [string]$g.displayName; type = 'Group'; id = [string]$g.id; upn = '' }) }
+                }
+            }
+            catch {
+                $byName = $false
+                $directory.Clear()
+                foreach ($g in @(& $pages 'https://graph.microsoft.com/v1.0/groups?$select=id,displayName&$top=999')) { $directory.Add([pscustomobject]@{ displayName = [string]$g.displayName; type = 'Group'; id = [string]$g.id; upn = '' }) }
+            }
+            @{ IntuneApps = $intuneApps; Directory = $directory.ToArray(); Wanted = $wanted.Count; ByName = $byName }
         }
         if ($read.ok) {
             foreach ($f in @(Get-IntuneLinkFindings -Apps $all -IntuneApps $read.value.IntuneApps)) {
                 if (-not $names.Count -or -not $f.CatalogName -or $names -contains [string]$f.CatalogName) { $findings.Add($f) }
             }
             foreach ($f in @(Get-EntraGroupFindings -Apps $apps -Directory $read.value.Directory)) { $findings.Add($f) }
-            $notes.Add("Compared with $(@($read.value.IntuneApps).Count) app(s) in Intune and $(@($read.value.Directory).Count) groups and users in Entra ID.")
-            if (-not $read.value.UsersOk) { $notes.Add("Users couldn't be read (User.Read.All), so a user named as a group shows up as a missing group.") }
+            $notes.Add("Compared with $(@($read.value.IntuneApps).Count) app(s) in Intune; $(@($read.value.Directory).Count) of the $($read.value.Wanted) group(s) the catalog uses found in Entra ID$(if (-not $read.value.ByName) { ' (read in full - this tenant refused a lookup by name)' }).")
         }
         else { $notes.Add("Intune and Entra ID could not be checked: $($read.error)") }
     }
