@@ -1,9 +1,6 @@
 function Global:Get-IntuneCatalogDrift {
-    # The exact three-way comparison Show-ChecksDialog's own grid
-    # is built from, pulled out so the same logic can also run headless
-    # (no grid, just counts) for the startup drift check - two copies of
-    # this same walk quietly drifting apart over time would be worse than
-    # the small extra param-passing this costs.
+    # The three-way comparison of the catalog with Intune's apps that the
+    # Intune link findings (Get-IntuneLinkFindings) are built from.
     param([array]$Apps, [array]$IntuneApps)
 
     $catalogByNormName = @{}
@@ -371,9 +368,7 @@ function Global:Get-CatalogMetadataFieldDiffs {
     $diffs = New-Object System.Collections.Generic.List[object]
     if (-not $Local) { return $diffs.ToArray() }
 
-    # Same set already used elsewhere in this app (see the "not a Win32
-    # app" guard in Show-CreateInIntuneDialog's own auto-fetch) to decide
-    # whether this tool's Win32-shaped deploy flow applies to a given live
+    # The set of app types that decides whether this tool's Win32-shaped deploy flow applies to a given live
     # Intune app - types that behave like a Win32 app for the Win32Only
     # fields below.
     $win32LikeOdataTypes = @("win32LobApp", "win32CatalogApp", "windowsMobileMSI")
@@ -557,8 +552,7 @@ function Global:Get-ParsedMinOsRelease {
     }
     if ($RawValue -match '^(?i)v10_(.+)$') {
         # Same digit-swapped "20H2" quirk as the legacy property's own
-        # v10_2H20 - see the note next to $minOsMap in
-        # Show-CreateInIntuneDialog.
+        # v10_2H20.
         $release = $Matches[1].ToUpperInvariant()
         if ($release -eq "2H20") { $release = "20H2" }
         return @{ Major = "10"; Release = $release }

@@ -100,7 +100,7 @@ function Invoke-GraphRequestDetailed {
             # this script needs two different ones (scripts, groups).
             if ("$($_.Exception.Message) $detail" -match '\bforbidden\b|\b403\b|insufficient privileges|Authorization_RequestDenied') {
                 $needed = if ($Uri -match 'deviceManagementScripts') { "DeviceManagementScripts.ReadWrite.All" } else { "Group.Read.All" }
-                $message += "`nThis usually means the app registration is missing the $needed application permission (with admin consent). Settings > First time? Setup guide... walks through adding it."
+                $message += "`nThis usually means the app registration is missing the $needed application permission (with admin consent). Settings > API permissions > Add required permissions... adds it."
             }
             throw $message
         }
@@ -115,7 +115,7 @@ function Resolve-GroupId {
     $found = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=$encodedFilter&`$select=id,displayName" `
         -Method GET -StepDescription "Look up group '$GroupName'"
     if (-not $found.value -or @($found.value).Count -eq 0) {
-        throw "No group named '$GroupName' exists in Entra ID. Create it first (Group manager...), or correct the name."
+        throw "No group named '$GroupName' exists in Entra ID. Create it first (Groups page), or correct the name."
     }
     return @($found.value)[0].id
 }
@@ -132,7 +132,7 @@ Write-Host "  Script: $($Config.DisplayName)" -ForegroundColor Gray
 try {
     Write-Step "Connecting to Microsoft Graph (app-only, certificate)"
     if (-not $Config.TenantId -or -not $Config.ClientId -or -not $Config.CertificateThumbprint) {
-        throw "No Graph connection is configured. Open 'Settings...' in the GUI and fill in your Tenant ID, Client ID, and certificate first."
+        throw "No Graph connection is configured. Set up the connection in the app's Settings (Tenant ID, Client ID, certificate) first."
     }
     Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
     $ctx = Get-MgContext -ErrorAction SilentlyContinue

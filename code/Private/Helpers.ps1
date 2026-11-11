@@ -63,9 +63,9 @@ function Global:ConvertTo-FriendlyGraphError {
     elseif ($RawMessage -match '\bforbidden\b|\b403\b|insufficient privileges|Authorization_RequestDenied') {
         $permission = Get-GraphPermissionHint $RawMessage
         $summary = if ($permission) {
-            "Microsoft Graph refused this request: the app registration is missing a permission. Add $permission to it and grant admin consent, then try again (Settings > First time? Setup guide... walks through it)."
+            "Microsoft Graph refused this request: the app registration is missing a permission. Add $permission to it and grant admin consent, then try again (Settings > API permissions > Add required permissions... adds it)."
         } else {
-            "Microsoft Graph refused this request - the app registration is likely missing a required permission (see Settings > First time? Setup guide...)."
+            "Microsoft Graph refused this request - the app registration is likely missing a required permission (Settings > API permissions > Add required permissions... adds them)."
         }
     }
     if (-not $summary) { return $RawMessage }
@@ -126,7 +126,7 @@ function Global:Format-GroupDeletionWarning {
 }
 
 function Global:ConvertTo-DisplayLineEndings {
-    # WinForms Multiline TextBox/RichTextBox controls only ever render a
+    # Windows multi-line text boxes only ever render a
     # bare `n as a line break inconsistently - they need real `r`n. This
     # repo's own source files use LF-only line endings, so any here-string
     # template (like the winget detection script below) carries bare `n

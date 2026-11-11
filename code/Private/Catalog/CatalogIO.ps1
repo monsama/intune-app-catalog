@@ -119,7 +119,7 @@ function Global:ConvertTo-AppRecord {
         # @($_.requiredFor).Count to 1 for an app with genuinely zero
         # groups (miscounting it as "has a group" in every eligibility
         # check that relies on that Count), and reaching
-        # CheckedListBox.Items.Add($null, ...) in Show-RemoveGroupFromAppsDialog's
+        # a group list (CheckedListBox.Items.Add($null, ...) in the old window's
         # New-GroupRemovalBox, which throws ArgumentNullException outright.
         requiredFor  = @(@($Raw.requiredFor)  | Where-Object { $null -ne $_ })
         availableFor = @(@($Raw.availableFor) | Where-Object { $null -ne $_ })
@@ -152,7 +152,7 @@ function Global:ConvertTo-DetectionRuleJson {
             # Normalized to `n here, not left as whatever the caller
             # happened to pass - this function serves BOTH the catalog
             # file's own actual persisted JSON (self-healing any stray
-            # `r`n forward, e.g. from a WinForms TextBox round-trip) and
+            # `r`n forward, e.g. from a Windows text box round-trip) and
             # every metadata-drift comparison in the app (Show-
             # CreateInIntuneDialog, CatalogLogic.ps1's own Get-
             # CatalogMetadataFieldDiffs) - a line-ending-only difference

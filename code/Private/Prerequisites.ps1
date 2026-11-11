@@ -1,19 +1,16 @@
 # The one PowerShell module this app depends on - Microsoft.Graph.Authentication
-# (Connect-MgGraph / Invoke-MgGraphRequest) - and the in-app way to install it,
-# instead of a MessageBox telling the user to go run Install-Module by hand.
+# (Connect-MgGraph / Invoke-MgGraphRequest) - and the in-app way to install it
+# (Settings > Prerequisites), instead of telling the user to run Install-Module
+# by hand.
 #
 # Two places load it:
-#   - the PowerShell running this GUI - every Graph lookup runs in a runspace
-#   - Windows PowerShell 5.1 - Start-PipelineProcess always launches the
-#     embedded deployment/assignment scripts with powershell.exe
-# Installing into the GUI's own PowerShell covers both: every 5.1 child gets
+#   - the PowerShell running the app's server - the reads the page asks for
+#   - Windows PowerShell 5.1 - Start-WebStepJob runs the deployment and
+#     assignment steps with powershell.exe
+# Installing into the app's own PowerShell covers both: every 5.1 step gets
 # Get-WindowsPowerShellModulePath, which adds the folder this PowerShell loads
 # the module from. The 5.1 side is still checked separately, by actually
 # importing the module there the way a step would.
-
-# This file's own path - Show-PrerequisitesDialog loads it into a background
-# runspace to run the (slow) status check off the UI thread.
-$Global:IntunePackagerPrerequisitesScript = $PSCommandPath
 
 function Global:Get-GraphModuleName { "Microsoft.Graph.Authentication" }
 
@@ -71,7 +68,7 @@ function Global:Set-WindowsPowerShellEnvironment {
 
 function Global:Invoke-HiddenPowerShell {
     # Runs a short command in a separate, windowless PowerShell - with the same
-    # environment Start-PipelineProcess gives its steps, so the answer matches
+    # environment Start-WebStepJob gives its steps, so the answer matches
     # what those steps will actually see. Returns the last line of output, or
     # $null on failure/timeout.
     param([string]$Exe, [string]$Command, [int]$TimeoutMs = 30000)
@@ -114,7 +111,7 @@ function Global:Get-GraphModuleStatus {
       "not installed"). Row 0 is always the PowerShell running this window -
       the one Install missing installs into.
       The Windows PowerShell row starts a separate powershell.exe and imports
-      the module there - a few seconds; Show-PrerequisitesDialog runs this
+      the module there - a few seconds; Settings > Prerequisites runs this
       off the UI thread.
     #>
     $moduleName = Get-GraphModuleName

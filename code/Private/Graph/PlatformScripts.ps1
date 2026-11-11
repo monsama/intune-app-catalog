@@ -1,12 +1,10 @@
 # Intune "Platform scripts" - the PowerShell scripts Intune runs on enrolled
 # Windows devices (Graph: /beta/deviceManagement/deviceManagementScripts).
 #
-# Pure logic only - building the request body, validating what the dialog
-# collected, turning a listed script into a grid row - so it's covered by
-# CatalogLogic.Tests.ps1. The dialogs are Show-PlatformScriptsDialog and
-# Show-PlatformScriptEditorDialog; the Graph calls themselves happen in
-# Start-PlatformScriptListFetch (read) and EmbeddedScripts\PlatformScripts.ps1
-# (create/update/delete/assign).
+# Pure logic only - building the request body, validating what the editor
+# sent, turning a listed script into a list row - so it's covered by
+# CatalogLogic.Tests.ps1. The page is code\Web\WebScripts.ps1; reads go to
+# Graph from there, changes run EmbeddedScripts\PlatformScripts.ps1.
 
 function Global:ConvertTo-PlatformScriptBase64 {
     # Graph takes the script as base64 of its UTF-8 bytes, no BOM - a BOM
@@ -108,7 +106,7 @@ function Global:New-PlatformScriptAssignBody {
 
 function Global:ConvertTo-PlatformScriptRow {
     <#
-      A listed script as the dialog's grid shows it. Takes what Graph
+      A listed script as the Platform scripts list shows it. Takes what Graph
       returns (a hashtable from Invoke-MgGraphRequest, or an object).
     #>
     param($Script)
@@ -133,7 +131,7 @@ function Global:ConvertTo-PlatformScriptRow {
 
 function Global:ConvertTo-ScriptRunStateRow {
     <#
-      One device's run of a platform script, as the dialog shows it.
+      One device's run of a platform script, as Run status shows it.
       Graph's deviceRunStates carry the device under managedDevice when
       the call asked for it ($expand); without it there's only the id.
     #>

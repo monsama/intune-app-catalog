@@ -644,7 +644,9 @@ function fixButtons(f) {
     if (!r.ok) { toast(r.error, true); return false; }
     toast('Fixed in the catalog.'); dropFinding(f); loadApps(); return true;
   };
-  for (const a of f.actions || []) {
+  // One order on every row, so the same fix is always in the same place.
+  const order = ['RenameFromIntune', 'SetAppId', 'ChooseAppId', 'ClearAppId', 'AddToCatalog', 'Pull', 'PushMetadata', 'PushGroups', 'FindWingetId', 'EditApp', 'Recheck'];
+  for (const a of order.filter(x => (f.actions || []).includes(x))) {
     if (a === 'RenameFromIntune' && f.data && f.data.IntuneName) btn('Use Intune’s name', () => fix(a, f.data.IntuneName), f.data.IntuneName);
     else if (a === 'SetAppId' && f.data && f.data.MatchedId) btn('Link to ' + (f.data.MatchedName || 'match'), () => fix(a, f.data.MatchedId));
     else if (a === 'ChooseAppId' && f.data && f.data.Candidates && f.data.Candidates.length && !(f.data.MatchedId)) {
@@ -930,9 +932,7 @@ async function openStatus(name) {
   $('dlgStatus').showModal();
   const r = await api('/api/install-status', { name });
   if (!r.ok) { $('statusSummary').textContent = r.error; return; }
-  const counts = {};
-  for (const x of r.rows) counts[x.state || '?'] = (counts[x.state || '?'] || 0) + 1;
-  $('statusSummary').textContent = r.rows.length ? `${r.rows.length} device(s): ` + Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} ${k}`).join(', ') + (r.truncated ? ' (first 5000 shown)' : '') : 'No devices have reported for this app yet.';
+  $('statusSummary').textContent = r.summary + (r.truncated ? ' (only the first rows are shown)' : '');
   $('statusRows').replaceChildren(...r.rows.map(x => el('tr', {}, el('td', { text: x.device }), el('td', { text: x.user }),
     el('td', {}, el('span', { class: 'pill ' + (/fail/i.test(x.state) ? 'err' : /install/i.test(x.state) && !/not/i.test(x.state) ? 'ok' : 'muted'), text: x.state })),
     el('td', { text: x.detail }), el('td', { class: 'chg', text: x.error }), el('td', { text: x.version }), el('td', { text: x.lastSeen }))));

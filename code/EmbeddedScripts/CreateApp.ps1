@@ -143,7 +143,7 @@ function Add-OptionalStringField {
 
 # $Config.MinOSVersionKey arrives in the IntuneWin32App module's own
 # convention ("W10_1607", "W11_21H2", ...) - the GUI's $minOsRawValues list
-# in Show-CreateInIntuneDialog is sourced directly from that module's
+# in the app is sourced directly from that module's
 # ValidateSet, and this raw value is also what gets stored in the local
 # catalog JSON. Confirmed live against the tenant, though, that Graph
 # itself rejects that spelling outright on write ("Unknown
@@ -479,7 +479,7 @@ Write-Host "  Mode: $($Config.Mode)" -ForegroundColor Gray
 try {
     Write-Step "Connecting to Microsoft Graph (app-only, certificate)"
     if (-not $Config.TenantId -or -not $Config.ClientId -or -not $Config.CertificateThumbprint) {
-        throw "No Graph connection is configured. Open 'Settings...' in the GUI and fill in your Tenant ID, Client ID, and certificate first."
+        throw "No Graph connection is configured. Set up the connection in the app's Settings (Tenant ID, Client ID, certificate) first."
     }
     Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
     $ctx = Get-MgContext -ErrorAction SilentlyContinue

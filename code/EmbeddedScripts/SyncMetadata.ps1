@@ -137,7 +137,7 @@ Write-Host "  Apps to sync: $($appList.Count)" -ForegroundColor Gray
 try {
     Write-Step "Connecting to Microsoft Graph (app-only, certificate)"
     if (-not $Config.TenantId -or -not $Config.ClientId -or -not $Config.CertificateThumbprint) {
-        throw "No Graph connection is configured. Open 'Settings...' in the GUI and fill in your Tenant ID, Client ID, and certificate first."
+        throw "No Graph connection is configured. Set up the connection in the app's Settings (Tenant ID, Client ID, certificate) first."
     }
     Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
     $ctx = Get-MgContext -ErrorAction SilentlyContinue
@@ -154,7 +154,7 @@ try {
     # 40+ app catalog audit/sync used to mean 40+ sequential rounds of
     # metadata + dependencies + group-assignment Graph calls, each waiting
     # on the network latency of the one before it. Windows PowerShell 5.1
-    # (this embedded script's own host - see Start-PipelineProcess, which
+    # (this embedded script's own host - see Start-WebStepJob, which
     # launches powershell.exe, not pwsh) has no ForEach-Object -Parallel, so
     # a runspace pool is the compatible equivalent; capped at 6 concurrent
     # so this doesn't push Graph hard enough to trigger throttling beyond

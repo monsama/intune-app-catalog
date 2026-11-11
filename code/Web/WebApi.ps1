@@ -755,24 +755,12 @@ function Global:Get-WebInstallStatus {
     $name = [string]$Data.name
     $a = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
     if (-not $a -or -not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune (no App ID)." } }
-    if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Set up the connection in Settings first.' } }
-    try {
-        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
-        Connect-MgGraph -TenantId $Global:App.GraphTenantId -ClientId $Global:App.GraphClientId -CertificateThumbprint $Global:App.GraphCertificateThumbprint -NoWelcome -ErrorAction Stop
-        try {
-            $report = Get-AppInstallStatusRows -AppId $a.appId -Invoke {
-                param($Uri, $Method, $Body)
-                $response = Invoke-MgGraphRequest -Uri $Uri -Method $Method -Body $Body -ContentType 'application/json' -OutputType HttpResponseMessage -ErrorAction Stop
-                $text = if ($response.Content) { $response.Content.ReadAsStringAsync().GetAwaiter().GetResult() } else { '' }
-                if (-not $response.IsSuccessStatusCode) { throw "$([int]$response.StatusCode) $($response.ReasonPhrase): $text" }
-                if ($text) { $text | ConvertFrom-Json } else { $null }
-            }
-        }
-        finally { try { Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null } catch { } }
-    }
-    catch { return @{ ok = $false; error = (ConvertTo-FriendlyGraphError (Get-InnermostErrorMessage $_.Exception)) } }
+    $id = [string]$a.appId
+    $read = Invoke-WebGraph -Action { param($Graph) Get-AppInstallStatusRows -AppId $id -Invoke $Graph }
+    if (-not $read.ok) { return $read }
+    $report = $read.value
     $rows = @($report.Rows | ForEach-Object { [ordered]@{ device = [string]$_.DeviceName; user = [string]$_.UserName; state = [string]$_.State; detail = [string]$_.Detail; error = [string]$_.ErrorCode; version = [string]$_.Version; lastSeen = [string]$_.LastSeen } })
-    return @{ ok = $true; app = $name; rows = $rows; truncated = [bool]$report.Truncated }
+    return @{ ok = $true; app = $name; rows = $rows; truncated = [bool]$report.Truncated; summary = (Format-InstallStatusSummary @($report.Rows)) }
 }
 
 function Global:Get-WebJobPoll {

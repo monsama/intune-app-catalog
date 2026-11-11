@@ -1,24 +1,17 @@
-# What this app sends to Microsoft Graph, shown in the log boxes:
+# What this app sends to Microsoft Graph, shown in the Activity log:
 #   - every write (POST/PATCH/PUT/DELETE) as its own line, always
 #   - reads (GET) summarized ("[GRAPH] 12 read request(s) (1.4 s)"), or one
-#     line each when "Detailed Graph log" is on (Log tab)
+#     line each when "Detailed Graph log" is on (Settings > Automatic checks)
 #   - every failed request with its status text and Graph's request-id -
 #     what Microsoft support asks for
 # Only method, address and outcome are logged - never tokens, headers or
 # request bodies.
 #
-# Two places make Graph requests, and both report through the same format:
-#   - the embedded deployment scripts (separate powershell.exe processes,
-#     see Start-PipelineProcess): their Invoke-GraphRequestDetailed calls
-#     Write-GraphRequestLog, which Start-PipelineProcess dot-sources from
-#     Get-GraphLogScriptHelpers before running the script. Output flows
-#     into the dialog's log box and the Log tab like everything else the
-#     script prints.
-#   - this app's own background lookups (GraphFetch.ps1 runspaces): they
-#     call Invoke-LoggedGraphRequest (Initialize-GraphLogRunspace), which
-#     records each request on the runspace's Information stream;
-#     Write-GraphLogFromStreams turns those into Log tab lines when the
-#     lookup finishes.
+# The step scripts (separate powershell.exe processes, see Start-WebStepJob)
+# make the Graph requests: their Invoke-GraphRequestDetailed calls
+# Write-GraphRequestLog, which the step runner dot-sources from
+# Get-GraphLogScriptHelpers before running the script. Their output reaches
+# the dialog's log box and the Activity log like everything else they print.
 
 function Global:Get-GraphRequestPath {
     # "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/x" -> "/beta/deviceAppManagement/mobileApps/x"
@@ -176,7 +169,7 @@ function Global:ConvertTo-RunLogLine {
 # ---------------------------------------------------------------------------
 function Global:Get-GraphLogScriptHelpers {
     <#
-      Script text Start-PipelineProcess dot-sources in the child process
+      Script text the step runner dot-sources in the child process
       before the embedded script runs: the formatting functions above plus
       Write-GraphRequestLog / Write-GraphReadSummary, which the scripts'
       Invoke-GraphRequestDetailed calls. Scripts still run fine on their
