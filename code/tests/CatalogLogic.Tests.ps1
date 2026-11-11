@@ -99,6 +99,8 @@ $testableFunctionNames = @(
     # winget output (Winget.ps1)
     "ConvertFrom-WingetSearchOutput",
     "Get-WingetShowVerdict",
+    # Diagnostics (Diagnostics.ps1)
+    "Get-CatalogDiagnosticLines",
     "Get-SafeFileNameForApp",
     "Get-DependencyOrderedApps",
     # The Checks window's one findings list (CheckFindings.ps1)
@@ -2362,6 +2364,28 @@ $gone = Get-WingetShowVerdict -ExitCode -1978335212 -StdOut "No package found ma
 Assert-True ((-not $gone.Ok) -and $gone.Result -like "NOT FOUND*") "winget show: an unknown ID reads NOT FOUND (what Get-WingetFindings looks for)"
 $odd = Get-WingetShowVerdict -ExitCode 5 -StdOut "  - \`nSource agreement required" -StdErr ""
 Assert-True ((-not $odd.Ok) -and $odd.Result -like "Could not check (exit code 5): Source agreement required") "winget show: anything else says it couldn't check, with winget's first real line"
+
+
+# =================================================================
+# Diagnostics (Diagnostics.ps1)
+# =================================================================
+$diagApps = @(
+    [pscustomobject]@{ appName = 'Fresh'; wingetId = 'A.B'; appId = ''; metadata = $null; intuneAppType = ''; requiredFor = @(); availableFor = @(); uninstallFor = @(); packagePath = '' }
+    [pscustomobject]@{ appName = 'Own Tool'; wingetId = ''; appId = ''; metadata = $null; intuneAppType = ''; requiredFor = @(); availableFor = @(); uninstallFor = @(); packagePath = '' }
+    [pscustomobject]@{ appName = 'Live'; wingetId = 'C.D'; appId = 'id-1'; metadata = [pscustomobject]@{}; intuneAppType = ''; requiredFor = @(); availableFor = @(); uninstallFor = @(); packagePath = '' }
+    [pscustomobject]@{ appName = 'live '; wingetId = 'E.F'; appId = 'ID-1'; metadata = [pscustomobject]@{}; intuneAppType = 'Win32'; requiredFor = @('SG'); availableFor = @(); uninstallFor = @(); packagePath = 'D:\pkgs\Custom\x.intunewin' }
+)
+$diagFolders = @(@{ Name = 'Own-Tool'; FullName = 'C:\p\Own-Tool' }, @{ Name = 'Old-App'; FullName = 'C:\p\Old-App' }, @{ Name = 'Custom'; FullName = 'D:\pkgs\Custom' })
+$diag = @(Get-CatalogDiagnosticLines -Apps $diagApps -PackageFolders $diagFolders)
+Assert-Equal 7 $diag.Count "Diagnostics: one line per catalog check"
+Assert-True ($diag[0].Level -eq 'warn' -and @($diag[0].Items).Count -eq 2) "Diagnostics: apps with nothing to deploy are listed"
+Assert-True ($diag[1].Level -eq 'warn' -and @($diag[1].Items) -contains 'Own Tool') "Diagnostics: an app with its own package and no settings is named"
+Assert-True ($diag[2].Level -eq 'info' -and @($diag[2].Items) -contains 'Live') "Diagnostics: a deployed app never read back is info, not a problem"
+Assert-True ($diag[3].Level -eq 'warn' -and @($diag[3].Items) -contains 'Live' -and @($diag[3].Items) -notcontains 'live ') "Diagnostics: a deployed app assigned to nobody"
+Assert-True ($diag[4].Level -eq 'failed') "Diagnostics: names that differ only in case and spacing are duplicates"
+Assert-True ($diag[5].Level -eq 'failed') "Diagnostics: App IDs that differ only in case are duplicates"
+Assert-True ($diag[6].Level -eq 'info' -and (@($diag[6].Items) -join ',') -eq 'Old-App') "Diagnostics: only the package folder no app uses (by name or by its package path) is a leftover"
+Assert-Equal 'ok' (@(Get-CatalogDiagnosticLines -Apps @() -PackageFolders @()))[0].Level "Diagnostics: an empty catalog has nothing to warn about"
 
 # =================================================================
 # Report

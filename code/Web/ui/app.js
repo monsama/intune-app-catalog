@@ -102,7 +102,7 @@ function showView(v) {
   try { localStorage.setItem('view', v); } catch (e) { }
 }
 for (const b of document.querySelectorAll('.tab')) b.addEventListener('click', () => showView(b.dataset.view));
-$('bannerSettings').addEventListener('click', () => showView('settings'));
+$('bannerSettings').addEventListener('click', () => { showView('settings'); $('guideReg').open = true; $('guideCard').scrollIntoView({ block: 'start' }); });
 $('btnClassic').addEventListener('click', async () => {
   const r = await api('/api/open', { target: 'classic' });
   toast(r.ok ? 'Opening the classic window...' : r.error, !r.ok);
@@ -1196,6 +1196,63 @@ async function openScriptStatus(x) {
     el('td', {}, el('span', { class: 'pill ' + (y.state === 'Success' ? 'ok' : y.state === 'Failed' ? 'err' : 'muted'), text: y.state })),
     el('td', { class: 'v', text: y.result }), el('td', { class: 'chg', text: y.error }), el('td', { text: y.lastRun }))));
 }
+
+// ---------------------------------------------------------------- settings: guide, prerequisites, diagnostics, local certificates
+$('btnGuideEntra').addEventListener('click', async () => { const r = await api('/api/open', { target: 'entra-home' }); if (!r.ok) toast(r.error, true); });
+let prereqRows = [];
+async function checkPrereqs() {
+  $('btnPrereqCheck').disabled = true; $('prereqText').textContent = 'Checking each PowerShell (a few seconds)...';
+  const r = await api('/api/prereqs');
+  $('btnPrereqCheck').disabled = false;
+  if (!r.ok) { $('prereqText').textContent = r.error; return; }
+  prereqRows = r.rows;
+  $('prereqText').textContent = r.allInstalled ? `${r.module} is installed everywhere this app needs it.` : `${r.module} is missing in ${r.rows.filter(x => !x.version).length} PowerShell(s).`;
+  $('prereqRows').replaceChildren(...r.rows.map(x => el('li', {}, el('span', { class: 'pill ' + (x.version ? 'ok' : 'err'), text: x.version ? x.version : 'missing' }), el('span', { text: x.name + (x.problem ? ' - ' + x.problem : '') }))));
+  $('btnPrereqInstall').hidden = r.allInstalled;
+}
+$('btnPrereqCheck').addEventListener('click', checkPrereqs);
+$('btnPrereqInstall').addEventListener('click', async () => {
+  const missing = prereqRows.filter(x => !x.version);
+  $('btnPrereqInstall').disabled = true;
+  const done = await runEach(missing.map(x => x.exe), exe => ({ exe }), { path: '/api/prereq-install', startText: 'Installing into ' });
+  $('btnPrereqInstall').disabled = false;
+  toast(done.length === missing.length ? 'Installed.' : 'Not everything could be installed - see Activity.', done.length < missing.length);
+  checkPrereqs(); loadState();
+});
+$('btnDiag').addEventListener('click', async () => {
+  const b = $('btnDiag'); b.disabled = true; b.textContent = 'Running...';
+  const log = $('diagLog'); log.hidden = false; log.replaceChildren(el('span', { class: 'info', text: 'Reading...' }));
+  const r = await api('/api/diagnostics');
+  b.disabled = false; b.textContent = 'Run diagnostics';
+  if (!r.ok) { log.replaceChildren(el('span', { class: 'failed', text: r.error })); return; }
+  const tag = { ok: '[OK]', warn: '[WARN]', failed: '[FAILED]', info: '[INFO]' };
+  const out = [];
+  for (const sec of r.sections) {
+    out.push(el('span', { class: 'h', text: `=== ${sec.title} ===\n` }));
+    for (const l of sec.lines) {
+      out.push(el('span', { class: l.level, text: `${tag[l.level] || ''} ${l.text}\n` }));
+      for (const i of l.items || []) out.push(el('span', { class: 'item', text: `    - ${i}\n` }));
+    }
+    out.push('\n');
+  }
+  log.replaceChildren(...out);
+  activity(`${stamp()} Diagnostics run.`);
+});
+async function loadCertsLocal() {
+  const r = await api('/api/certs-all');
+  if (!r.ok) { toast(r.error, true); return; }
+  $('certsLocalRows').replaceChildren(...(r.certificates.length ? r.certificates.map(c => el('tr', {},
+    el('td', {}, c.subject, c.inUse ? el('span', { class: 'pill ok', text: 'in use' }) : '', !c.hasKey ? el('span', { class: 'pill muted', text: 'no private key' }) : ''),
+    el('td', { text: c.store }), el('td', { class: 'chg', text: c.thumbprint }),
+    el('td', {}, el('span', { class: c.expired ? 'pill err' : '', text: c.notAfter })),
+    el('td', {}, el('button', { class: 'btn small danger', text: 'Delete', onclick: async () => {
+      if (!confirm(`Permanently delete this certificate, with its private key, from ${c.store}\\My?\n\n${c.subject}\n${c.thumbprint}${c.inUse ? '\n\nThis is the certificate the app signs in with - without it nothing reaches Intune until you choose another.' : ''}\n\nEntra ID keeps its copy.`)) return;
+      const d = await api('/api/cert-delete-local', { thumbprint: c.thumbprint, store: c.store });
+      toast(d.ok ? 'Certificate deleted.' : d.error, !d.ok); if (d.ok) { loadCertsLocal(); loadState(); }
+    } }))))
+    : [el('tr', {}, el('td', { colspan: '5', class: 'muted', text: 'No certificates on this machine.' }))]));
+}
+$('btnCertsLocal').addEventListener('click', () => { $('dlgCertsLocal').showModal(); loadCertsLocal(); });
 
 // ---------------------------------------------------------------- settings: packaging, checks, folders, defaults, favourites
 let prefs = null;

@@ -288,8 +288,10 @@ function Global:Start-WebStepJob {
       once it has succeeded (see Complete-WebJob).
     #>
     param([string]$ScriptContent, [string]$Name, [string]$ConfigJson, [string]$ResultPath, [string]$Kind, [switch]$ShowWindow, [hashtable]$After = @{},
-        # A step that takes its own parameters (Package.ps1) instead of -ConfigPath.
-        [hashtable]$Parameters = $null)
+        # A step that takes its own parameters (Package.ps1) instead of -ConfigPath; @{} for none.
+        [hashtable]$Parameters = $null,
+        # Another PowerShell than the default one the steps use (installing the Graph module into each).
+        [string]$Exe = '')
     $tag = [guid]::NewGuid().ToString('N')
     $configPath = Join-Path $env:TEMP ".intunepkg_$($Name)_config_$tag.json"
     $scriptPath = Join-Path $Global:App.RootPath ".intunepkg_embedded_$($Name)_$tag.ps1"
@@ -301,8 +303,9 @@ function Global:Start-WebStepJob {
         [System.IO.File]::WriteAllText($scriptPath, $ScriptContent, $utf8)
         [System.IO.File]::WriteAllText($helperPath, ((Get-GraphLogScriptHelpers) + "`n`n" + (Get-AssignmentScriptHelpers)), $utf8)
         [System.IO.File]::WriteAllText($logPath, '')
-        $stepParams = if ($Parameters) { $Parameters } else { @{ ConfigPath = $configPath } }
-        $psi = New-AppStepStartInfo -Spec @{ Script = $scriptPath; Parameters = $stepParams; GraphHelper = $helperPath; LogFile = $logPath }
+        $stepParams = if ($null -ne $Parameters) { $Parameters } else { @{ ConfigPath = $configPath } }
+        $spec = @{ Script = $scriptPath; Parameters = $stepParams; GraphHelper = $helperPath; LogFile = $logPath }
+        $psi = if ($Exe) { New-AppStepStartInfo -Exe $Exe -Spec $spec } else { New-AppStepStartInfo -Spec $spec }
         Set-WindowsPowerShellEnvironment -StartInfo $psi
         $psi.EnvironmentVariables['INTUNEPACKAGER_GRAPH_LOG'] = $(if ($Global:App.DetailedGraphLog) { 'detailed' } else { 'summary' })
         $psi.CreateNoWindow = -not $ShowWindow
@@ -853,6 +856,7 @@ function Global:Open-WebTarget {
             Start-Process $url
         }
         'catalog-folder' { Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$(Get-AppFolder -Kind Catalog -Create)`"" }
+        'entra-home' { Start-Process 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade/quickStartType~/null/sourceType/Microsoft_AAD_IAM' }
         'scripts-folder' { Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$(Get-AppFolder -Kind Scripts -Create)`"" }
         'certificates-folder' {
             $folder = Join-Path $Global:App.RootPath 'data\certificates'
@@ -1203,6 +1207,11 @@ function Global:Invoke-WebApi {
         '/api/add-from-intune'  { return (Start-WebAddFromIntune $Data) }
         '/api/batch-edit'       { return (Invoke-WebBatchEdit $Data) }
         '/api/batch-groups'     { return (Invoke-WebBatchGroups $Data) }
+        '/api/diagnostics'      { return (Get-WebDiagnostics) }
+        '/api/prereqs'          { return (Get-WebPrerequisites) }
+        '/api/prereq-install'   { return (Start-WebPrerequisiteInstall $Data) }
+        '/api/certs-all'        { return (Get-WebAllLocalCertificates) }
+        '/api/cert-delete-local' { return (Remove-WebLocalCertificate $Data) }
         '/api/packaging'        { return (Get-WebPackaging) }
         '/api/packaging-setup'  { return (Invoke-WebPackagingSetup $Data) }
         '/api/package-start'    { return (Start-WebPackage $Data) }

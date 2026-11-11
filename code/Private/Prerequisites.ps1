@@ -128,7 +128,9 @@ function Global:Get-GraphModuleStatus {
         Version = if ($here) { [string]$here.Version } else { "" }
         Problem = ""
     })
-    if ($isCore) {
+    # Only on Windows: elsewhere there is no Windows PowerShell to ask ($IsWindows
+    # doesn't exist in 5.1, where this branch doesn't run anyway).
+    if ($isCore -and $IsWindows) {
         # Imported for real, not just listed - a module that's only visible
         # there but can't load under .NET Framework would still fail every step.
         $answer = Invoke-HiddenPowerShell -Exe (Get-WindowsPowerShellPath) -TimeoutMs 60000 -Command "if (-not (Get-Module -ListAvailable -Name $moduleName)) { 'RESULT=missing' } else { try { Import-Module $moduleName -ErrorAction Stop; 'RESULT=ok ' + (Get-Module $moduleName).Version } catch { 'RESULT=error ' + `$_.Exception.Message } }"
@@ -173,6 +175,43 @@ function Global:Test-GraphModuleAvailable {
     if (-not $ok) { $Global:App.GraphModulePromptDeclined = $true }
     return $ok
 }
+function Global:Get-GraphModuleInstallScript {
+    # The installer for the Graph module, run in each PowerShell that's missing it (the classic Prerequisites dialog, the web Settings page).
+    $moduleName = Get-GraphModuleName
+    return @'
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    if ($PSVersionTable.PSEdition -ne 'Core') {
+        $nuget = Get-PackageProvider -ListAvailable -Name NuGet -ErrorAction SilentlyContinue | Where-Object { $_.Version -ge [version]'2.8.5.201' }
+        if (-not $nuget) {
+            '[INFO] Installing the NuGet package provider for your user account...'
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null
+        }
+    }
+    '[INFO] Downloading __MODULE__ from the PowerShell Gallery...'
+    if ($env:INTUNEPACKAGER_TEST_MODULE_DIR) {
+        # GUI tests only: same download, into a throwaway folder instead of
+        # the user profile (that folder is on the test app's PSModulePath).
+        Save-Module -Name __MODULE__ -Path $env:INTUNEPACKAGER_TEST_MODULE_DIR -Repository PSGallery -Force
+        $env:PSModulePath = "$env:INTUNEPACKAGER_TEST_MODULE_DIR;$env:PSModulePath"
+    }
+    else {
+        Install-Module -Name __MODULE__ -Scope CurrentUser -Repository PSGallery -Force -AllowClobber
+    }
+    $m = Get-Module -ListAvailable -Name __MODULE__ | Sort-Object Version -Descending | Select-Object -First 1
+    if (-not $m) { throw 'Install-Module finished, but the module still isn''t found.' }
+    "[OK] __MODULE__ $($m.Version) installed ($($m.ModuleBase))"
+    exit 0
+}
+catch {
+    "[FAILED] $($_.Exception.Message)"
+    exit 1
+}
+'@.Replace("__MODULE__", $moduleName)
+}
+
 function Global:Show-PrerequisitesDialog {
     <#
       Shows where the Graph module is / isn't installed and installs what's
@@ -326,38 +365,7 @@ function Global:Show-PrerequisitesDialog {
     # goes to a log file this dialog polls, same approach as
     # Start-PipelineProcess (a hidden child's stdout can't be read from the
     # UI thread without blocking it).
-    $installScript = @'
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-try {
-    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    if ($PSVersionTable.PSEdition -ne 'Core') {
-        $nuget = Get-PackageProvider -ListAvailable -Name NuGet -ErrorAction SilentlyContinue | Where-Object { $_.Version -ge [version]'2.8.5.201' }
-        if (-not $nuget) {
-            '[INFO] Installing the NuGet package provider for your user account...'
-            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null
-        }
-    }
-    '[INFO] Downloading __MODULE__ from the PowerShell Gallery...'
-    if ($env:INTUNEPACKAGER_TEST_MODULE_DIR) {
-        # GUI tests only: same download, into a throwaway folder instead of
-        # the user profile (that folder is on the test app's PSModulePath).
-        Save-Module -Name __MODULE__ -Path $env:INTUNEPACKAGER_TEST_MODULE_DIR -Repository PSGallery -Force
-        $env:PSModulePath = "$env:INTUNEPACKAGER_TEST_MODULE_DIR;$env:PSModulePath"
-    }
-    else {
-        Install-Module -Name __MODULE__ -Scope CurrentUser -Repository PSGallery -Force -AllowClobber
-    }
-    $m = Get-Module -ListAvailable -Name __MODULE__ | Sort-Object Version -Descending | Select-Object -First 1
-    if (-not $m) { throw 'Install-Module finished, but the module still isn''t found.' }
-    "[OK] __MODULE__ $($m.Version) installed ($($m.ModuleBase))"
-    exit 0
-}
-catch {
-    "[FAILED] $($_.Exception.Message)"
-    exit 1
-}
-'@.Replace("__MODULE__", $moduleName)
+    $installScript = Get-GraphModuleInstallScript
 
     $StartInstallBox = @{ Value = $null }
     $StartInstall = {

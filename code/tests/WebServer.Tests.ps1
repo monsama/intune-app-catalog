@@ -134,6 +134,16 @@ try {
     $delScript = Invoke-Api '/api/script-delete' @{ name = "$scriptName 2" }
     Check ($delScript.ok -and @((Invoke-Api '/api/scripts').rows.displayName) -notcontains "$scriptName 2") 'scripts: the local copy is deleted'
     Check (-not (Invoke-Api '/api/script-delete' @{ name = "$scriptName 2" }).ok) 'scripts: deleting it again says there is none'
+    # 3d: setup and help
+    $dg = Invoke-Api '/api/diagnostics'
+    Check ($dg.ok -and @($dg.sections).Count -eq 3 -and @($dg.sections[1].lines).Count -ge 7) 'diagnostics: this machine, the catalog and Intune' ($dg | ConvertTo-Json -Compress -Depth 6)
+    Check ((@($dg.sections[2].lines.text) -join ' ') -like '*Skipped*') 'diagnostics: Intune is skipped without a connection'
+    $pq = Invoke-Api '/api/prereqs'
+    Check ($pq.ok -and @($pq.rows).Count -ge 1 -and $pq.module -eq 'Microsoft.Graph.Authentication') 'prerequisites: the module in each PowerShell' ($pq | ConvertTo-Json -Compress -Depth 4)
+    Check (-not (Invoke-Api '/api/prereq-install' @{ exe = 'C:\Windows\System32\calc.exe' }).ok) 'prerequisites: installs only into a PowerShell it listed as missing the module'
+    Check ((Invoke-Api '/api/certs-all').ok) 'certificates: the list on this machine (empty where there is no certificate store)'
+    Check (-not (Invoke-Api '/api/cert-delete-local' @{ thumbprint = '..\..\x'; store = 'CurrentUser' }).ok) 'certificates: a thumbprint that is not one is refused'
+    Check (-not (Invoke-Api '/api/cert-delete-local' @{ thumbprint = ('A' * 40); store = 'Root' }).ok) 'certificates: only the two personal stores'
     $log = Invoke-Api '/api/log' @{ from = 0 }
     Check ($log.ok -and (@($log.lines.Text) -join "`n") -like '*Web interface started*') 'log: the server''s own lines for the Activity box'
 
