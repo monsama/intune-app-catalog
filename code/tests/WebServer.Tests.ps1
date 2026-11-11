@@ -75,7 +75,7 @@ try {
     }
     function Invoke-Api([string]$Path, [hashtable]$Data = @{}, [string]$Token = $token) {
         $Data.token = $Token
-        $r = Invoke-Raw -Method POST -Path $Path -ContentType 'application/json' -Body ($Data | ConvertTo-Json -Compress)
+        $r = Invoke-Raw -Method POST -Path $Path -ContentType 'application/json' -Body ($Data | ConvertTo-Json -Compress -Depth 10)
         return ($r.Body | ConvertFrom-Json)
     }
 
