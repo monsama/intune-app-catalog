@@ -21,6 +21,13 @@ function Check([bool]$Condition, [string]$Name, [string]$Detail = '') {
 $hostExe = (Get-Process -Id $PID).Path
 $entry = Join-Path $repoRoot 'IntuneDeployment.ps1'
 $outFile = Join-Path ([System.IO.Path]::GetTempPath()) ("websrv-" + [guid]::NewGuid().ToString('N') + ".out")
+# A settings file as the classic window leaves it, with column widths and a
+# window position - saving from the web must keep both (it used to wipe them).
+$settingsPath = Join-Path $repoRoot "data\intune-deployment-settings.json"
+$settingsBackup = if (Test-Path -LiteralPath $settingsPath) { Get-Content -LiteralPath $settingsPath -Raw } else { $null }
+[void](New-Item -ItemType Directory -Path (Split-Path $settingsPath -Parent) -Force)
+Set-Content -LiteralPath $settingsPath -Value '{ "GridColumnWidths": { "AppName": 31 }, "WindowPlacement": { "X": 10, "Y": 20, "Width": 900, "Height": 700, "Maximized": false } }' -Encoding UTF8
+
 $startArgs = @{
     FilePath               = $hostExe
     ArgumentList           = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$entry`"", '-Web', '-NoBrowser')
@@ -68,7 +75,7 @@ try {
     }
     function Invoke-Api([string]$Path, [hashtable]$Data = @{}, [string]$Token = $token) {
         $Data.token = $Token
-        $r = Invoke-Raw -Method POST -Path $Path -ContentType 'application/json' -Body ($Data | ConvertTo-Json -Compress)
+        $r = Invoke-Raw -Method POST -Path $Path -ContentType 'application/json' -Body ($Data | ConvertTo-Json -Compress -Depth 10)
         return ($r.Body | ConvertFrom-Json)
     }
 
@@ -136,6 +143,27 @@ try {
     $fixClear = Invoke-Api '/api/checks-fix' @{ action = 'ClearAppId'; catalogName = "$testName renamed" }
     Check ($fixClear.ok -and -not (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.appId) 'checks fix: Clear App ID'
 
+    # 3a: packaging, settings pages, clear App ID, pull/delete/status without Intune
+    $pk = Invoke-Api '/api/packaging'
+    Check ($pk.ok -and $pk.PSObject.Properties.Name -contains 'toolFound' -and $pk.PSObject.Properties.Name -contains 'sharedFound') 'packaging: says whether the tool and shared package are there'
+    $pkgWinget = Invoke-Api '/api/package-start' @{ names = @("$testName renamed") }
+    Check (-not $pkgWinget.ok -and $pkgWinget.error -like '*Winget*') 'package: a Winget app has nothing of its own to package' ($pkgWinget | ConvertTo-Json -Compress)
+    $prefs = Invoke-Api '/api/prefs'
+    Check ($prefs.ok -and @($prefs.folders.key) -contains 'Catalog' -and $prefs.defaults.installContext) 'prefs: checks, folders and default values'
+    $badDefaults = Invoke-Api '/api/prefs-save' @{ defaults = @{ architecture = @(); installContext = 'System'; minOSKey = 'W10_22H2'; minDiskSpaceMB = '0'; minMemoryMB = '0'; minProcessors = '0'; minCpuSpeedMHz = '0'; installTimeMinutes = '60'; deviceRestartBehavior = 'allow'; returnCodes = @(@{ returnCode = '0'; type = 'success' }) } }
+    Check (-not $badDefaults.ok -and $badDefaults.error -like '*architecture*') 'prefs: default values without an architecture are refused'
+    $goodDefaults = Invoke-Api '/api/prefs-save' @{ checks = @{ pushGroupsOnCreate = $false; pushGroupsOnUpdate = $true }; defaults = @{ architecture = @('x64', 'arm64'); installContext = 'User'; minOSKey = 'W11_22H2'; minDiskSpaceMB = '10'; minMemoryMB = '0'; minProcessors = '0'; minCpuSpeedMHz = '0'; installTimeMinutes = '61'; deviceRestartBehavior = 'suppress'; allowAvailableUninstall = $true; returnCodes = @(@{ returnCode = '0'; type = 'success' }, @{ returnCode = '3010'; type = 'softReboot' }); defaultDependencyAppNames = @('A', 'A'); wingetInstallMethod = 'Winget' }; favoriteGroups = @('SG-1', ' SG-1 ', 'SG-2') }
+    Check ($goodDefaults.ok -and $goodDefaults.defaults.installTimeMinutes -eq 60 -and (@($goodDefaults.defaults.architecture) -join ',') -eq 'x64,arm64' -and $goodDefaults.defaults.wingetInstallMethod -eq 'Winget') 'prefs: default values saved, install time snapped to Intune''s 5-minute steps' ($goodDefaults.defaults | ConvertTo-Json -Compress)
+    Check ($goodDefaults.checks.pushGroupsOnUpdate -and -not $goodDefaults.checks.pushGroupsOnCreate -and @($goodDefaults.favoriteGroups).Count -eq 2) 'prefs: switches and favourites saved (duplicates dropped)'
+    $saved = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+    Check ($saved.GridColumnWidths.AppName -eq 31 -and $saved.WindowPlacement.Width -eq 900) 'settings: saving from the web keeps the classic window''s column widths and position' (Get-Content -LiteralPath $settingsPath -Raw)
+    [void](Invoke-Api '/api/checks-fix' @{ action = 'SetAppId'; catalogName = "$testName renamed"; value = 'c0ffee00-1111-4222-8333-444455556666' })
+    $cleared = Invoke-Api '/api/clear-appid' @{ name = "$testName renamed" }
+    Check ($cleared.ok -and -not (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.appId) 'clear App ID: the catalog forgets the Intune link'
+    Check (-not (Invoke-Api '/api/pull-start' @{ names = @("$testName renamed") }).ok) 'pull: nothing to pull for an app not in Intune'
+    Check (-not (Invoke-Api '/api/delete-intune' @{ name = "$testName renamed" }).ok) 'delete from Intune: refused for an app not in Intune'
+    Check (-not (Invoke-Api '/api/install-status' @{ name = "$testName renamed" }).ok) 'install status: refused for an app not in Intune'
+
     $removed = Invoke-Api '/api/app-remove' @{ name = "$testName renamed" }
     Check ($removed.ok -and @((Invoke-Api '/api/catalog').apps.name) -notcontains "$testName renamed") 'editor: remove takes it out of the catalog'
 
@@ -145,6 +173,7 @@ try {
 }
 finally {
     if (-not $proc.HasExited) { try { $proc.Kill() } catch { } }
+    if ($null -ne $settingsBackup) { Set-Content -LiteralPath $settingsPath -Value $settingsBackup -Encoding UTF8 } else { Remove-Item -LiteralPath $settingsPath -Force -ErrorAction SilentlyContinue }
     Remove-Item -LiteralPath $outFile -Force -ErrorAction SilentlyContinue
 }
 

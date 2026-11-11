@@ -552,6 +552,174 @@ $('btnRunChecks').addEventListener('click', async () => {
   renderChecks();
 });
 
+// ---------------------------------------------------------------- more menu (also on right-click)
+const menu = $('appMenu');
+function oneSelected() { return selected.size === 1 ? apps.find(a => a.name === [...selected][0]) : null; }
+function openMenu(x, y) {
+  const one = oneSelected();
+  const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
+  const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
+  const enable = { package: !any || sel.some(a => !a.wingetId), pull: anyId, status: !!(one && one.hasAppId), copyid: !!(one && one.hasAppId), clearid: !!(one && one.hasAppId), delete: !!(one && one.hasAppId), remove: !!one };
+  for (const b of menu.querySelectorAll('button')) b.disabled = !enable[b.dataset.act];
+  menu.querySelector('[data-act=package]').textContent = !any ? 'Package every app with its own installer' : enable.package ? `Package ${sel.length > 1 ? 'the selected apps' : 'this app'} (build .intunewin)` : 'Package (Winget apps use the shared package)';
+  menu.hidden = false;
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.min(x, innerWidth - r.width - 8) + 'px';
+  menu.style.top = Math.min(y, innerHeight - r.height - 8) + 'px';
+  const first = menu.querySelector('button:not(:disabled)'); if (first) first.focus();
+}
+function closeMenu() { menu.hidden = true; }
+$('btnMore').addEventListener('click', e => { e.stopPropagation(); const r = $('btnMore').getBoundingClientRect(); openMenu(r.left, r.bottom + 4); });
+$('gridBody').addEventListener('contextmenu', e => {
+  const tr = e.target.closest('tr'); if (!tr) return;
+  e.preventDefault();
+  if (!selected.has(tr.dataset.name)) selectRow(tr.dataset.name, {});
+  openMenu(e.clientX, e.clientY);
+});
+document.addEventListener('click', e => { if (!menu.contains(e.target)) closeMenu(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
+
+function runDialog(title, text) {
+  $('runTitle').textContent = title; $('runText').textContent = text || ''; $('runLog').textContent = '';
+  $('dlgRun').showModal();
+}
+menu.addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b || b.disabled) return;
+  closeMenu();
+  const names = [...selected], one = oneSelected();
+  switch (b.dataset.act) {
+    case 'package':
+      runDialog('Package', names.length ? `Building the .intunewin for ${names.length} app(s) with their own installer.` : 'Building every app with its own installer.');
+      runJob({ names }, (ok, res, after) => { toast(ok ? (after && after.failed ? `Packaging finished - ${after.failed} failed, see the log.` : 'Packaging finished.') : 'Packaging failed - see the log.', !ok || (after && after.failed)); loadApps(); },
+        { path: '/api/package-start', log: 'runLog', startText: 'Packaging...' });
+      break;
+    case 'pull': openPull(names); break;
+    case 'status': openStatus(one.name); break;
+    case 'copyid':
+      try { await navigator.clipboard.writeText(one.appId); toast('Copied ' + one.appId); } catch (err) { toast('Could not copy: ' + one.appId, true); }
+      break;
+    case 'clearid':
+      if (!confirm(`Clear ${one.name}'s App ID in the catalog?\n\nOnly the catalog changes; the app stays in Intune.`)) return;
+      { const r = await api('/api/clear-appid', { name: one.name }); toast(r.ok ? 'App ID cleared.' : r.error, !r.ok); loadApps(); }
+      break;
+    case 'delete':
+      if (!confirm(`Delete "${one.name}" from Intune?\n\nIts assignments go with it - devices that have it keep it installed, but Intune stops managing it. The catalog entry stays, without its App ID.`)) return;
+      runDialog('Delete from Intune', one.name);
+      runJob({ name: one.name }, ok => { toast(ok ? `${one.name} was deleted from Intune.` : 'Delete failed - see the log.', !ok); loadApps(); },
+        { path: '/api/delete-intune', log: 'runLog', startText: `Deleting ${one.name}...` });
+      break;
+    case 'remove':
+      if (!confirm(`Remove "${one.name}" from the catalog?\n\nOnly the catalog changes - nothing in Intune. A copy of its file goes to the Backups folder.`)) return;
+      { const r = await api('/api/app-remove', { name: one.name }); toast(r.ok ? 'Removed from the catalog.' : r.error, !r.ok); selected.delete(one.name); loadApps(); }
+      break;
+  }
+});
+
+// ---------------------------------------------------------------- pull from Intune
+let pullPending = '';
+function openPull(names) {
+  $('pullText').textContent = `Reading ${names.length} app(s) from Intune. Apps whose catalog entry matches Intune (or has no settings yet) take Intune's right away; anything different is shown here to choose.`;
+  $('pullReview').replaceChildren(); $('pullLog').textContent = ''; $('btnPullApply').hidden = true; pullPending = '';
+  $('dlgPull').showModal();
+  runJob({ names }, (ok, res, after) => {
+    if (!ok || !after) { $('pullText').textContent = 'Pull failed - see the log below.'; return; }
+    const msg = [];
+    if (after.applied && after.applied.length) msg.push(`Updated from Intune: ${after.applied.join(', ')}.`);
+    if (after.failed && after.failed.length) msg.push(`Could not read: ${after.failed.join('; ')}.`);
+    if (after.review && after.review.length) msg.push('These differ from Intune. Tick what should keep the catalog’s value - everything else takes Intune’s:');
+    else msg.push('Nothing to review.');
+    $('pullText').textContent = msg.join(' ');
+    pullPending = after.pending || '';
+    $('pullReview').replaceChildren(...(after.review || []).map(r => el('div', { class: 'pullapp', 'data-app': r.app },
+      el('h3', { text: r.app }),
+      el('table', {}, el('tr', {}, el('td', { class: 'muted', text: 'Keep catalog' }), el('td', { class: 'muted', text: 'Field' }), el('td', { class: 'muted', text: 'Catalog' }), el('td', { class: 'muted', text: 'Intune' })),
+        ...r.diffs.map(d => el('tr', {}, el('td', {}, el('input', { type: 'checkbox', 'data-field': d.field })), el('td', { text: d.field }), el('td', { class: 'v', text: d.local }), el('td', { class: 'v', text: d.intune })))))));
+    $('btnPullApply').hidden = !pullPending;
+    loadApps();
+  }, { path: '/api/pull-start', log: 'pullLog', startText: 'Reading from Intune...' });
+}
+$('btnPullApply').addEventListener('click', async () => {
+  const keep = {};
+  for (const box of document.querySelectorAll('#pullReview .pullapp')) keep[box.dataset.app] = [...box.querySelectorAll('input:checked')].map(c => c.dataset.field);
+  const r = await api('/api/pull-apply', { pending: pullPending, keep });
+  if (!r.ok) { toast(r.error, true); return; }
+  $('dlgPull').close(); toast('Applied.'); loadApps();
+});
+
+// ---------------------------------------------------------------- install status
+async function openStatus(name) {
+  $('statusTitle').textContent = 'Install status - ' + name;
+  $('statusSummary').textContent = 'Reading Intune’s install status report...';
+  $('statusRows').replaceChildren();
+  $('dlgStatus').showModal();
+  const r = await api('/api/install-status', { name });
+  if (!r.ok) { $('statusSummary').textContent = r.error; return; }
+  const counts = {};
+  for (const x of r.rows) counts[x.state || '?'] = (counts[x.state || '?'] || 0) + 1;
+  $('statusSummary').textContent = r.rows.length ? `${r.rows.length} device(s): ` + Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} ${k}`).join(', ') + (r.truncated ? ' (first 5000 shown)' : '') : 'No devices have reported for this app yet.';
+  $('statusRows').replaceChildren(...r.rows.map(x => el('tr', {}, el('td', { text: x.device }), el('td', { text: x.user }),
+    el('td', {}, el('span', { class: 'pill ' + (/fail/i.test(x.state) ? 'err' : /install/i.test(x.state) && !/not/i.test(x.state) ? 'ok' : 'muted'), text: x.state })),
+    el('td', { text: x.detail }), el('td', { class: 'chg', text: x.error }), el('td', { text: x.version }), el('td', { text: x.lastSeen }))));
+}
+
+// ---------------------------------------------------------------- settings: packaging, checks, folders, defaults, favourites
+let prefs = null;
+function setPkgState(p) {
+  $('pkgTool').textContent = p.toolFound ? `Packaging tool found${p.toolVersion ? ' (version ' + p.toolVersion + ')' : ''}.` : 'Packaging tool (IntuneWinAppUtil.exe) not downloaded yet.';
+  $('pkgTool').className = 'certstatus ' + (p.toolFound ? 'ok' : 'warn');
+  $('pkgShared').textContent = p.sharedFound ? 'Shared Winget package (init.intunewin) built.' : 'Shared Winget package (init.intunewin) not built yet - every Winget app deploys with it.';
+  $('pkgShared').className = 'certstatus ' + (p.sharedFound ? 'ok' : 'warn');
+}
+async function loadPrefs() {
+  const [p, k] = await Promise.all([api('/api/prefs'), api('/api/packaging')]);
+  if (k.ok) setPkgState(k);
+  if (!p.ok) return;
+  prefs = p;
+  for (const c of document.querySelectorAll('[data-check]')) c.checked = !!p.checks[c.dataset.check];
+  $('folderList').replaceChildren(...p.folders.map(f => el('div', { class: 'folder' },
+    el('label', { text: f.label }), el('div', { class: 'why', text: f.why }),
+    el('input', { 'data-folder': f.key, value: f.chosen, placeholder: f.default, spellcheck: 'false' }))));
+  const d = p.defaults;
+  for (const c of document.querySelectorAll('[data-arch]')) c.checked = d.architecture.includes(c.dataset.arch);
+  $('dContext').value = d.installContext; $('dWinget').value = d.wingetInstallMethod || 'WAU';
+  $('dMinOs').replaceChildren(...p.minOsChoices.map(o => el('option', { value: o.value, text: o.label || o.value })));
+  if (![...$('dMinOs').options].some(o => o.value === d.minOSKey)) $('dMinOs').append(el('option', { value: d.minOSKey, text: d.minOSKey }));
+  $('dMinOs').value = d.minOSKey;
+  $('dTime').value = d.installTimeMinutes; $('dDisk').value = d.minDiskSpaceMB; $('dMem').value = d.minMemoryMB; $('dCpus').value = d.minProcessors; $('dSpeed').value = d.minCpuSpeedMHz;
+  $('dRestart').value = d.deviceRestartBehavior; $('dUninstall').checked = d.allowAvailableUninstall;
+  $('dCodes').value = d.returnCodes.map(c => `${c.returnCode} = ${c.type}`).join('\n');
+  $('dDeps').value = (d.defaultDependencyAppNames || []).join('\n');
+  $('favGroups').value = (p.favoriteGroups || []).join('\n');
+}
+async function savePrefs(part, okText, errEl) {
+  const r = await api('/api/prefs-save', part);
+  if (!r.ok) { if (errEl) { $(errEl).textContent = r.error; $(errEl).hidden = false; } else toast(r.error, true); return; }
+  if (errEl) $(errEl).hidden = true;
+  toast(okText); loadPrefs();
+}
+$('btnSaveChecks').addEventListener('click', () => savePrefs({ checks: Object.fromEntries([...document.querySelectorAll('[data-check]')].map(c => [c.dataset.check, c.checked])) }, 'Saved.'));
+$('btnSaveFolders').addEventListener('click', () => savePrefs({ folders: Object.fromEntries([...document.querySelectorAll('[data-folder]')].map(i => [i.dataset.folder, i.value.trim()])) }, 'Folders saved.'));
+$('btnSaveFavs').addEventListener('click', () => savePrefs({ favoriteGroups: lines('favGroups') }, 'Favourites saved.'));
+$('btnSaveDefaults').addEventListener('click', () => {
+  const codes = lines('dCodes').map(l => { const m = /^(-?\d+)\s*[=:]\s*(\w+)$/.exec(l); return m ? { returnCode: m[1], type: m[2] } : { returnCode: l, type: '' }; });
+  savePrefs({ defaults: {
+    architecture: [...document.querySelectorAll('[data-arch]')].filter(c => c.checked).map(c => c.dataset.arch),
+    installContext: $('dContext').value, minOSKey: $('dMinOs').value, wingetInstallMethod: $('dWinget').value,
+    installTimeMinutes: $('dTime').value.trim(), minDiskSpaceMB: $('dDisk').value.trim(), minMemoryMB: $('dMem').value.trim(), minProcessors: $('dCpus').value.trim(), minCpuSpeedMHz: $('dSpeed').value.trim(),
+    deviceRestartBehavior: $('dRestart').value, allowAvailableUninstall: $('dUninstall').checked, returnCodes: codes, defaultDependencyAppNames: lines('dDeps'),
+  } }, 'Default values saved.', 'defaultsError');
+});
+async function packagingSetup(what, btn) {
+  const b = $(btn); b.disabled = true; const t = b.textContent; b.textContent = 'Working...';
+  activity(`${stamp()} ${what === 'tool' ? 'Downloading the packaging tool...' : 'Building init.intunewin...'}`);
+  const r = await api('/api/packaging-setup', { what });
+  b.disabled = false; b.textContent = t;
+  toast(r.ok ? (r.message || 'Done.') : r.error, !r.ok);
+  if (r.state) setPkgState(r.state);
+}
+$('btnGetTool').addEventListener('click', () => packagingSetup('tool', 'btnGetTool'));
+$('btnBuildShared').addEventListener('click', () => packagingSetup('shared', 'btnBuildShared'));
+
 // ---------------------------------------------------------------- start
 (async function start() {
   let v = 'apps'; try { v = localStorage.getItem('view') || 'apps'; } catch (e) { }
@@ -560,4 +728,5 @@ $('btnRunChecks').addEventListener('click', async () => {
   await loadState();
   if (state && !state.configured) showView('settings');
   loadApps();
+  loadPrefs();
 })();

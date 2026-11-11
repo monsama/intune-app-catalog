@@ -14,7 +14,10 @@ param(
 
 # Windows-only assemblies some shared functions use for types (colors,
 # certificate dialogs). Absent on Linux, where the server still runs for CI.
-foreach ($assembly in 'System.Drawing', 'System.Security') {
+# System.Windows.Forms too: shared functions name its types in their
+# parameters (an optional log box), and PowerShell resolves those when the
+# function is called, even when nothing is passed. Nothing is shown.
+foreach ($assembly in 'System.Drawing', 'System.Security', 'System.Windows.Forms') {
     try { Add-Type -AssemblyName $assembly -ErrorAction Stop } catch { }
 }
 
@@ -24,6 +27,7 @@ foreach ($assembly in 'System.Drawing', 'System.Security') {
 Initialize-AppState -RootPath $RootPath
 $Global:App.WebLog = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
 $Global:App.WebJobs = [hashtable]::Synchronized(@{})
+$Global:App.WebPending = [hashtable]::Synchronized(@{})
 try {
     $logFolder = Get-AppFolder -Kind Logs -Create
     $Global:App.WebLogFile = Join-Path $logFolder ("intune-deployment-" + (Get-Date).ToString('yyyy-MM-dd') + ".log")

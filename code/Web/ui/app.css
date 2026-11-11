@@ -173,6 +173,30 @@ dialog .log:empty { display: none; }
 #checkGrid td { font-size: 13px; }
 #checkGrid td.cmp { font-family: var(--mono); font-size: 11px; color: var(--muted); max-width: 220px; overflow-wrap: anywhere; }
 
+.menu { position: fixed; z-index: 50; background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-m); box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 4px; min-width: 220px; }
+.menu button { display: block; width: 100%; text-align: left; border: 0; background: none; color: var(--fg); font: inherit; font-size: 13px; padding: 7px 12px; border-radius: var(--r-s); cursor: pointer; }
+.menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--hover); }
+.menu button:disabled { color: var(--muted); cursor: default; }
+.menu button.danger { color: var(--err); }
+.menu hr { border: 0; border-top: 1px solid var(--bd2); margin: 4px 0; }
+label.chk { display: flex; align-items: center; gap: 8px; color: var(--fg); font-size: 13px; margin: 8px 0 0; }
+label.chk > input, .formgrid label.chk > input, .formgrid.tight label.chk > input { display: inline-block; width: auto; margin: 0; flex: none; }
+.checks { display: flex; gap: 16px; }
+.formgrid.tight { gap: 16px; }
+.formgrid.tight label > input, .formgrid.tight label > select, .formgrid.tight label > textarea { width: 100%; }
+textarea.full { width: 100%; font-family: var(--mono); font-size: 12px; }
+textarea.monotext { font-family: var(--mono); font-size: 12px; }
+.folder { margin-top: 10px; }
+.folder label { margin: 0; }
+.folder .why { font-size: 11px; color: var(--muted); }
+.folder input { width: 100%; font-family: var(--mono); font-size: 12px; margin-top: 4px; }
+.pullapp { border: 1px solid var(--bd2); border-radius: var(--r-m); padding: 8px 12px; margin-top: 8px; }
+.pullapp h3 { font-size: 13px; margin: 0 0 4px; }
+.pullapp table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.pullapp td { padding: 4px 6px; border-top: 1px solid var(--bd2); vertical-align: top; }
+.pullapp td.v { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
+.tablewrap.short { max-height: 55vh; flex: none; }
+
 /* ---- toast ---- */
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 9px 16px; border-radius: var(--r-m); font-size: 13px; box-shadow: var(--shadow); max-width: 80vw; }
 .toast.err { background: var(--err); color: #fff; }
