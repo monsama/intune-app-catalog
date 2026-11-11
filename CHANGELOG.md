@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Background steps no longer look like malware to endpoint
+  protection.** Every background PowerShell started with an
+  unreadable `-EncodedCommand <base64>` command line, which Cortex XDR,
+  Defender ASR and similar tools block or report. This covered pipeline
+  steps, module checks and the module installer. They now run
+  `powershell.exe -File <app folder>\code\Runner\Invoke-AppStep.ps1
+  -Spec <file>.json`, a file that ships with the app. The JSON file says
+  in plain text what to run and is deleted as soon as it's read. No
+  script runs from `%TEMP%` any more: the Graph helper sits next to the
+  step script in the app folder, and the module installer is no longer
+  written to a file at all.
+
 ## 1.7.0
 
 ### Added

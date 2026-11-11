@@ -2215,6 +2215,58 @@ $sameText = Format-GraphAssemblyConflictText -Conflicts @(Get-GraphAssemblyConfl
 Assert-True ($sameText -like '*Uninstall-Module*' -and $sameText -like '*already started without a PowerShell profile*') "Format-GraphAssemblyConflictText: two Graph versions - uninstall advice, and no false promise from a restart"
 
 # =================================================================
+# Step runner (code\Runner\Invoke-AppStep.ps1) - run for real, in a child
+# PowerShell, the way the app starts every background step
+# =================================================================
+$runnerPath = [System.IO.Path]::Combine("$repoRoot", "code", "Runner", "Invoke-AppStep.ps1")
+$hostExe = (Get-Process -Id $PID).Path
+$runnerDir = Join-Path ([System.IO.Path]::GetTempPath()) ("runner-test-" + [guid]::NewGuid().ToString("N"))
+[void](New-Item -ItemType Directory -Path $runnerDir -Force)
+try {
+    $writeSpec = {
+        param([hashtable]$Data)
+        $path = Join-Path $runnerDir ([guid]::NewGuid().ToString("N") + ".json")
+        [System.IO.File]::WriteAllText($path, ($Data | ConvertTo-Json -Depth 4))
+        return $path
+    }
+    # A step script with a parameter, output and its own exit code
+    $stepPath = Join-Path $runnerDir "step's.ps1"
+    Set-Content -LiteralPath $stepPath -Value 'param([string]$ConfigPath) "got $ConfigPath"; Write-Warning "careful"; exit 3'
+    $helperPath = Join-Path $runnerDir "helper.ps1"
+    Set-Content -LiteralPath $helperPath -Value 'function Write-GraphReadSummary { "[GRAPH] summary" }'
+    $logPath = Join-Path $runnerDir "step.log"
+    $spec = & $writeSpec @{ Script = $stepPath; Arguments = '-ConfigPath "C:\with space\x.json"'; GraphHelper = $helperPath; LogFile = $logPath }
+    & $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $runnerPath -Spec $spec | Out-Null
+    $stepExit = $LASTEXITCODE
+    $stepLog = Get-Content -LiteralPath $logPath -Raw
+    Assert-Equal 3 $stepExit "Invoke-AppStep: the step's own exit code is the process's"
+    Assert-True ($stepLog -like '*got C:\with space\x.json*') "Invoke-AppStep: arguments reach the step as PowerShell parses them" $stepLog
+    Assert-True ($stepLog -like '*careful*') "Invoke-AppStep: warnings land in the log too" $stepLog
+    Assert-True ($stepLog -like '*`[GRAPH`] summary*') "Invoke-AppStep: the Graph helper's summary runs after the step" $stepLog
+    Assert-True (-not (Test-Path -LiteralPath $spec)) "Invoke-AppStep: the spec file is deleted once read"
+
+    $cmdSpec = & $writeSpec @{ Command = "'first'; 'RESULT=ok 1.2'" }
+    $cmdOut = @(& $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $runnerPath -Spec $cmdSpec)
+    Assert-Equal 'RESULT=ok 1.2' ([string]$cmdOut[-1]) "Invoke-AppStep: a command without a log file answers on stdout"
+
+    $exitSpec = & $writeSpec @{ Command = "'[OK] done'; exit 0"; LogFile = (Join-Path $runnerDir "cmd.log") }
+    & $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $runnerPath -Spec $exitSpec | Out-Null
+    Assert-Equal 0 $LASTEXITCODE "Invoke-AppStep: a command's exit code comes through"
+    Assert-True ((Get-Content -LiteralPath (Join-Path $runnerDir "cmd.log") -Raw) -like '*`[OK`] done*') "Invoke-AppStep: a command's output goes to its log file"
+
+    $emptySpec = & $writeSpec @{ LogFile = (Join-Path $runnerDir "empty.log") }
+    & $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $runnerPath -Spec $emptySpec | Out-Null
+    Assert-Equal 1 $LASTEXITCODE "Invoke-AppStep: a spec with nothing to run fails"
+}
+finally {
+    Remove-Item -LiteralPath $runnerDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+# And nothing in the app starts PowerShell the old way any more.
+$encodedLaunches = @(Get-ChildItem -Path (Join-Path $repoRoot "code\Private"), (Join-Path $repoRoot "MainApp.ps1") -Recurse -Filter *.ps1 |
+    Select-String -Pattern '-EncodedCommand\s*"?\s*\+|-EncodedCommand \$' | ForEach-Object { "$($_.Filename):$($_.LineNumber)" })
+Assert-Equal 0 $encodedLaunches.Count "No -EncodedCommand launches left in the app" ($encodedLaunches -join ', ')
+
+# =================================================================
 # Report
 # =================================================================
 Write-Host ""

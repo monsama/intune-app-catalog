@@ -76,10 +76,8 @@ function Global:Invoke-HiddenPowerShell {
     # $null on failure/timeout.
     param([string]$Exe, [string]$Command, [int]$TimeoutMs = 30000)
     try {
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $Exe
-        $psi.Arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes("`$ProgressPreference = 'SilentlyContinue'; " + $Command))
-        $psi.UseShellExecute = $false
+        # Through the step runner, not -EncodedCommand - see New-AppStepStartInfo.
+        $psi = New-AppStepStartInfo -Exe $Exe -NonInteractive -Spec @{ Command = "`$ProgressPreference = 'SilentlyContinue'; " + $Command }
         $psi.CreateNoWindow = $true
         # Both streams captured - an inherited stderr would put the child's
         # progress/CLIXML noise into this app's own error output.
@@ -384,18 +382,18 @@ catch {
         Write-DialogLogLine -LogBox $rtbLog -Text "[INFO] $($target.Name):`r`n" -MirrorToMainLog
 
         $tag = [guid]::NewGuid().ToString("N")
-        $scriptPath = Join-Path $env:TEMP ".intunepkg_prereq_$tag.ps1"
         $logPath = Join-Path $env:TEMP ".intunepkg_prereq_$tag.log"
-        [System.IO.File]::WriteAllText($scriptPath, $installScript, (New-Object System.Text.UTF8Encoding($false)))
         [System.IO.File]::WriteAllText($logPath, "")
-        $escScript = $scriptPath -replace "'", "''"
-        $escLog = $logPath -replace "'", "''"
-        $inner = "& '$escScript' *>&1 | ForEach-Object { Add-Content -LiteralPath '$escLog' -Value `$_ -Encoding UTF8 }; exit `$LASTEXITCODE"
-
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = $target.Exe
-        $psi.Arguments = "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($inner))
-        $psi.UseShellExecute = $false
+        # The installer runs as plain text through the step runner - no
+        # script file in %TEMP% and no -EncodedCommand, both of which
+        # endpoint protection flags (see New-AppStepStartInfo).
+        try { $psi = New-AppStepStartInfo -Exe $target.Exe -NonInteractive -Spec @{ Command = $installScript; LogFile = $logPath } }
+        catch {
+            Write-DialogLogLine -LogBox $rtbLog -Text "[FAILED] $($_.Exception.Message)`r`n" -MirrorToMainLog
+            Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
+            & $StartInstallBox.Value -Queue $Queue -Index ($Index + 1)
+            return
+        }
         $psi.CreateNoWindow = $true
         # Everything worth showing goes to the log file; the raw streams are
         # captured and dropped so they don't land in this app's own output.
@@ -442,7 +440,7 @@ catch {
                 if ($proc.ExitCode -ne 0) {
                     Write-DialogLogLine -LogBox $logBoxRef -Text "[FAILED] Installer exited with code $($proc.ExitCode).`r`n" -MirrorToMainLog
                 }
-                Remove-Item -LiteralPath $scriptPath, $logPath -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $logPath -Force -ErrorAction SilentlyContinue
                 & $startBoxRef.Value -Queue $queueRef -Index ($indexRef + 1)
             }
         }.GetNewClosure())

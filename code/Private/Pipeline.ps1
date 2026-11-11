@@ -94,6 +94,31 @@ function Global:Initialize-Folders {
     }
 }
 
+function Global:New-AppStepStartInfo {
+    <#
+      A ProcessStartInfo that runs one background step through
+      code\Runner\Invoke-AppStep.ps1 - a readable "-File <app script>"
+      command line instead of "-EncodedCommand <base64>", which endpoint
+      protection (Cortex XDR, Defender ASR, ...) blocks or flags as malware.
+      What to run goes into a small JSON spec in %TEMP% that the runner
+      reads and deletes straight away. -Spec keys: see the runner's header.
+    #>
+    param(
+        [string]$Exe = "powershell.exe",
+        [hashtable]$Spec,
+        [switch]$NonInteractive
+    )
+    $runner = Join-Path $Global:App.RootPath "code\Runner\Invoke-AppStep.ps1"
+    if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) { throw "The step runner is missing: $runner. Re-extract the app's folder." }
+    $specPath = Join-Path $env:TEMP (".intunepkg_step_" + [guid]::NewGuid().ToString("N") + ".json")
+    [System.IO.File]::WriteAllText($specPath, ($Spec | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $Exe
+    $psi.Arguments = "-NoLogo -NoProfile$(if ($NonInteractive) { ' -NonInteractive' }) -ExecutionPolicy Bypass -File `"$runner`" -Spec `"$specPath`""
+    $psi.UseShellExecute = $false
+    return $psi
+}
+
 function Global:Start-PipelineProcess {
     param(
         [string]$ScriptContent,
@@ -156,7 +181,6 @@ function Global:Start-PipelineProcess {
     $logFile = Join-Path $env:TEMP ("intunepkg_" + [guid]::NewGuid().ToString("N") + ".log")
     New-Item -Path $logFile -ItemType File -Force | Out-Null
 
-    $escapedScript = $tempScriptPath -replace "'", "''"
 
     # Graph request logging (GraphLog.ps1): steps that talk to Graph get the
     # helper functions dot-sourced first, and print the pending read summary
@@ -169,45 +193,35 @@ function Global:Start-PipelineProcess {
     $usesGraph = $ScriptContent -match 'Import-Module\s+Microsoft\.Graph\.Authentication'
     $graphHelperPath = $null
     if ($usesGraph) {
-        $graphHelperPath = Join-Path $env:TEMP (".intunepkg_graphlog_" + [guid]::NewGuid().ToString("N") + ".ps1")
+        # Next to the step script in the app's folder, not %TEMP%: code that
+        # runs from %TEMP% is another thing endpoint protection flags.
+        $graphHelperPath = Join-Path $Global:App.RootPath (".intunepkg_graphlog_" + [guid]::NewGuid().ToString("N") + ".ps1")
         try {
             $helperText = (Get-GraphLogScriptHelpers) + "`n`n" + (Get-AssignmentScriptHelpers)
             [System.IO.File]::WriteAllText($graphHelperPath, $helperText, (New-Object System.Text.UTF8Encoding($false)))
         }
         catch { $graphHelperPath = $null }
     }
-    # Add-Content (not Tee-Object) deliberately - Tee-Object keeps an internal
-    # buffered writer open for the whole pipeline and doesn't reliably flush to
-    # disk as output is produced, only in unpredictable bursts. That left our
-    # polling reader seeing wildly incomplete output on some runs. Add-Content
-    # opens, writes, and fully closes the file handle on every single call, so
-    # each line is guaranteed to be on disk (and visible to our reader) the
-    # moment it's written, at the cost of only-trivial per-line overhead.
-    #
-    # Wrapped in a short retry loop - the reader side (below) explicitly opens
-    # with FileShare.ReadWrite specifically to avoid locking out the writer,
-    # but that only controls how OUR reader behaves; Add-Content's own
-    # internal file handle isn't something this app can configure directly,
-    # and it can occasionally land in the same instant the reader has the
-    # file open, throwing "being used by another process." That's expected
-    # to be rare and momentary (the other side always closes its handle
-    # quickly), so a few short retries resolve it silently instead of
-    # dropping that line of output and surfacing a visible error for what's
-    # really just a timing collision, not a real failure.
-    $appendToLog = "ForEach-Object { `$line = `$_; `$ok = `$false; for (`$i = 0; `$i -lt 5 -and -not `$ok; `$i++) { try { Add-Content -LiteralPath '$logFile' -Value `$line -Encoding UTF8 -ErrorAction Stop; `$ok = `$true } catch { Start-Sleep -Milliseconds 150 } } }"
-    if ($graphHelperPath) {
-        $escapedHelper = $graphHelperPath -replace "'", "''"
-        $innerCommand = "& { . '$escapedHelper'; try { & '$escapedScript' $ArgumentString } finally { Write-GraphReadSummary }; exit `$LASTEXITCODE } *>&1 | $appendToLog"
+    # The runner appends each output line to $logFile as it's produced
+    # (Add-Content with a short retry - see code\Runner\Invoke-AppStep.ps1),
+    # and the timer below reads it back while the step runs.
+    try {
+        $psi = New-AppStepStartInfo -Spec @{
+            Script      = $tempScriptPath
+            Arguments   = $ArgumentString
+            GraphHelper = $(if ($graphHelperPath) { $graphHelperPath } else { '' })
+            LogFile     = $logFile
+        }
     }
-    else {
-        $innerCommand = "& '$escapedScript' $ArgumentString *>&1 | $appendToLog"
+    catch {
+        $errText = "[FAILED] Could not prepare the step: $($_.Exception.Message)`r`n"
+        Write-Log $errText ([System.Drawing.Color]::Tomato)
+        if ($ExtraLogTarget) { $ExtraLogTarget.AppendText($errText) }
+        Remove-Item -LiteralPath $tempScriptPath -Force -ErrorAction SilentlyContinue
+        if ($graphHelperPath) { Remove-Item -LiteralPath $graphHelperPath -Force -ErrorAction SilentlyContinue }
+        if ($OnComplete) { & $OnComplete -1 }
+        return
     }
-    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($innerCommand))
-
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "powershell.exe"
-    $psi.Arguments = "-NoLogo -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded"
-    $psi.UseShellExecute = $false
     # Windows PowerShell's own module path (plus wherever this window loads
     # the Graph module from), not whatever this process happens to have -
     # see Get-WindowsPowerShellModulePath.
@@ -342,7 +356,7 @@ function Global:Invoke-LaunchStep {
     else {
         Write-Log "=== Package all apps (app-packages) ===`r`n" ([System.Drawing.Color]::DeepSkyBlue)
     }
-    $argStr = "-InputFolder '$(Join-Path $rootPath 'data\app-packages')' -Force"
+    $argStr = "-InputFolder '$((Join-Path $rootPath 'data\app-packages') -replace "'", "''")' -Force"
     # Single quotes doubled (PowerShell's own escaping for a literal ' inside
     # a single-quoted string) - same idiom already used throughout this file
     # for OData filter values (see e.g. Resolve-GroupId's $GroupName.Replace("'",
@@ -351,7 +365,7 @@ function Global:Invoke-LaunchStep {
     # (a perfectly legal filename character) - left unescaped, an app display
     # name containing one would break out of the quoted -SingleFolderName/
     # -FolderNames value here and inject arbitrary PowerShell into $argStr,
-    # which Start-PipelineProcess runs via `powershell.exe -EncodedCommand`.
+    # which the step runner (code\Runner\Invoke-AppStep.ps1) parses as PowerShell.
     # Since a display name can come from Intune itself (synced in by anyone
     # with rights to create/rename an app there, not just this tool's own
     # user), this was a real code-execution path, not just a theoretical one.
