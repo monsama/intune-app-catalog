@@ -1,0 +1,875 @@
+# Intune App Catalog & Deployment
+# Copyright (C) 2026 Viktor Ljuca <https://monsama.ch>
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+<#
+  What the web interface's /api/ routes do. Each takes the request's JSON
+  body (already token-checked) and returns a hashtable that is sent back
+  as JSON: always "ok", and "error" when it isn't.
+
+  Everything here reuses the app's own functions - catalog reading, the
+  list row, the certificate status, the permission report, the setup
+  checklist, the step runner - so the web interface and the classic window
+  give the same answers.
+#>
+
+function Global:Get-WebStatusLevel {
+    # Get-CertificateStatusText answers with a color; the page wants a word.
+    param($Color)
+    $name = if ($Color) { [string]$Color.Name } else { '' }
+    switch ($name) {
+        'Firebrick' { 'error' }
+        'DarkOrange' { 'warn' }
+        'SeaGreen' { 'ok' }
+        default { 'info' }
+    }
+}
+
+function Global:Get-WebState {
+    $cert = Get-CertificateStatusText -Thumbprint $Global:App.GraphCertificateThumbprint
+    return @{
+        ok          = $true
+        version     = $Global:App.AppVersion
+        catalogPath = (Get-AppFolder -Kind Catalog)
+        settings    = @{
+            tenantId   = [string]$Global:App.GraphTenantId
+            clientId   = [string]$Global:App.GraphClientId
+            thumbprint = [string]$Global:App.GraphCertificateThumbprint
+        }
+        cert        = @{ text = [string]$cert.Text; level = (Get-WebStatusLevel $cert.Color) }
+        configured  = [bool](Test-GraphCredentialsConfigured -Quiet)
+        moduleOk    = [bool](Test-GraphModuleHere)
+    }
+}
+
+function Global:Get-WebCatalog {
+    <#
+      The catalog as list rows, read from disk on every call - the classic
+      window may be open on the same folder, and a copy kept here would go
+      stale the moment it saved something.
+    #>
+    $catalog = Read-WebCatalogRecords
+    $path = $catalog.Path
+    $apps = $catalog.Apps
+    $failed = $catalog.Failed
+    $rows = New-Object System.Collections.Generic.List[object]
+    if (Test-Path -LiteralPath $path) {
+        try { Load-LastAuditCache } catch { }
+        $index = Get-PackageFolderIndex -Root (Get-AppFolder -Kind Packages)
+        for ($i = 0; $i -lt $apps.Count; $i++) {
+            $row = Get-CatalogRow -App $apps[$i] -Index $i -PackageIndex $index
+            $rows.Add([ordered]@{
+                name         = [string]$row.AppName
+                wingetId     = [string]$row.WingetId
+                appId        = [string]$apps[$i].appId
+                type         = [string]$row.Type
+                version      = [string]$row.Version
+                customConfig = [string]$row.CustomConfig
+                required     = [int]$row.Required
+                available    = [int]$row.Available
+                uninstall    = [int]$row.Uninstall
+                status       = [string]$row.Status
+                audit        = [string]$row.IntuneAudit
+                hasAppId     = [bool]$row.HasAppId
+                packageMissing = [bool]$row.PackageMissing
+            })
+        }
+    }
+    return @{ ok = $true; path = $path; exists = (Test-Path -LiteralPath $path); apps = $rows.ToArray(); failed = @($failed) }
+}
+
+function Global:Save-WebSettings {
+    param($Data)
+    $tenant = ([string]$Data.tenantId).Trim()
+    $client = ([string]$Data.clientId).Trim()
+    $thumb = ([string]$Data.thumbprint).Trim() -replace '\s', ''
+    if (-not $tenant -or -not $client -or -not $thumb) { return @{ ok = $false; error = 'Tenant ID, Client ID and certificate thumbprint are all required.' } }
+    if (-not (Save-GraphSettings -TenantId $tenant -ClientId $client -CertificateThumbprint $thumb)) { return @{ ok = $false; error = "Couldn't write the settings file." } }
+    # A sign-in made with the old values must not be reused - see Reset-GraphSession.
+    Reset-GraphSession
+    Write-Log "[OK] Settings saved. Client: $client, Tenant: $tenant."
+    return @{ ok = $true; state = (Get-WebState) }
+}
+
+function Global:Get-WebCertStatus {
+    param($Data)
+    $cert = Get-CertificateStatusText -Thumbprint ([string]$Data.thumbprint)
+    return @{ ok = $true; text = [string]$cert.Text; level = (Get-WebStatusLevel $cert.Color) }
+}
+
+function Global:Get-WebLocalCertificates {
+    # Certificates on this machine that could sign in: with a private key, not expired.
+    $now = Get-Date
+    $list = foreach ($store in 'CurrentUser', 'LocalMachine') {
+        Get-ChildItem -Path "Cert:\$store\My" -ErrorAction SilentlyContinue |
+            Where-Object { $_.HasPrivateKey -and $_.NotAfter -gt $now } |
+            ForEach-Object {
+                [ordered]@{ subject = $_.Subject; thumbprint = $_.Thumbprint; notAfter = $_.NotAfter.ToString('yyyy-MM-dd'); store = $store }
+            }
+    }
+    return @{ ok = $true; certificates = @($list) }
+}
+
+function Global:New-WebCertificate {
+    <#
+      A new self-signed certificate in CurrentUser\My - the same settings as
+      the classic window's "Generate certificate..." (non-exportable key) -
+      and its public .cer saved to the app's certificates folder, which is
+      the file Entra wants.
+    #>
+    param($Data)
+    $subject = ([string]$Data.subject).Trim()
+    if (-not $subject) { $subject = 'Intune Deployment' }
+    if ($subject -notmatch '^CN=') { $subject = "CN=$subject" }
+    try {
+        $cert = New-SelfSignedCertificate -Subject $subject -CertStoreLocation 'Cert:\CurrentUser\My' `
+            -KeyExportPolicy NonExportable -KeySpec Signature -KeyLength 2048 -KeyAlgorithm RSA `
+            -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(2) -ErrorAction Stop
+    }
+    catch { return @{ ok = $false; error = "Couldn't create the certificate: $($_.Exception.Message)" } }
+    $folder = Join-Path $Global:App.RootPath 'data\certificates'
+    $cerPath = $null
+    try {
+        if (-not (Test-Path -LiteralPath $folder)) { [void](New-Item -ItemType Directory -Path $folder -Force) }
+        $cerPath = Join-Path $folder "$($cert.Thumbprint).cer"
+        [System.IO.File]::WriteAllBytes($cerPath, $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+    }
+    catch { $cerPath = $null }
+    Write-Log "[OK] Certificate created: $subject ($($cert.Thumbprint))."
+    return @{ ok = $true; thumbprint = $cert.Thumbprint; subject = $subject; notAfter = $cert.NotAfter.ToString('yyyy-MM-dd'); cerPath = $cerPath }
+}
+
+function Global:Get-SetupChecklistRows {
+    # The checklist as rows for the page - Format-SetupChecklist's own
+    # lines, parsed back, so there's still one place that decides them.
+    param([hashtable]$State)
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($line in (Format-SetupChecklist -State $State)) {
+        if ($line -match '^\s+\[(OK|FAILED|--)\]\s+(.+)$') {
+            $rows.Add([ordered]@{ status = $(switch ($Matches[1]) { 'OK' { 'ok' } 'FAILED' { 'failed' } default { 'skip' } }); name = $Matches[2]; next = '' })
+        }
+        elseif ($line -match '^\s+Next:\s+(.+)$' -and $rows.Count -gt 0) { $rows[$rows.Count - 1].next = $Matches[1] }
+    }
+    return $rows.ToArray()
+}
+
+function Global:Invoke-WebTestConnection {
+    <#
+      Test connection: an app-only sign-in with the values on the page
+      (saved or not), the token's permissions, and the setup checklist.
+      The sign-in is dropped again afterwards, as the classic window does,
+      so a token from before a consent is never reused.
+    #>
+    param($Data)
+    $tenant = ([string]$Data.tenantId).Trim()
+    $client = ([string]$Data.clientId).Trim()
+    $thumb = ([string]$Data.thumbprint).Trim() -replace '\s', ''
+    $moduleOk = [bool](Test-GraphModuleHere)
+    $localCert = if ($thumb) {
+        Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
+            Where-Object { $_.Thumbprint -eq $thumb } | Select-Object -First 1
+    }
+    $state = @{
+        ModuleOk     = $moduleOk
+        FieldsOk     = [bool]($tenant -and $client -and $thumb)
+        CertFound    = [bool]$localCert
+        CertHasKey   = [bool]($localCert -and $localCert.HasPrivateKey)
+        CertNotAfter = $(if ($localCert) { $localCert.NotAfter } else { $null })
+        SignInOk     = $null
+        SignInError  = ''
+        Report       = $null
+        Saved        = ($tenant -eq [string]$Global:App.GraphTenantId -and $client -eq [string]$Global:App.GraphClientId -and $thumb -eq [string]$Global:App.GraphCertificateThumbprint)
+    }
+    $result = [ordered]@{ ok = $true; signedIn = $false; summary = ''; level = 'error'; report = @(); checklist = @(); conflict = '' }
+    if (-not $moduleOk -or -not $state.FieldsOk) {
+        $result.summary = if (-not $moduleOk) { "The Microsoft.Graph.Authentication module isn't installed yet." } else { 'Fill in Tenant ID, Client ID and certificate thumbprint first.' }
+        $result.checklist = Get-SetupChecklistRows -State $state
+        return $result
+    }
+    $conflicts = Get-GraphAssemblyConflictReport
+    if (@($conflicts.Conflicts).Count -gt 0) {
+        $result.conflict = Format-GraphAssemblyConflictText -Conflicts @($conflicts.Conflicts) -LoadedModules @($conflicts.LoadedModules) -NoProfile ([bool]$conflicts.NoProfile) -GraphVersion $conflicts.GraphVersion
+    }
+    try {
+        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+        Connect-MgGraph -TenantId $tenant -ClientId $client -CertificateThumbprint $thumb -NoWelcome -ErrorAction Stop
+        $ctx = Get-MgContext -ErrorAction Stop
+        $claims = $null; $claimsError = ''
+        try { $claims = Get-GraphAppTokenClaims -TenantId $tenant -ClientId $client -Thumbprint $thumb }
+        catch { $claimsError = $_.Exception.Message }
+        try { Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null } catch { }
+
+        $state.SignInOk = $true
+        $result.signedIn = $true
+        $signedIn = "Signed in as '$($ctx.AppName)' ($($ctx.AuthType))"
+        if ($claimsError) {
+            $result.summary = "$signedIn, but the token's permissions couldn't be read: $claimsError"
+            $result.level = 'warn'
+        }
+        else {
+            $report = Get-GraphRoleReport -Roles @($claims.roles)
+            $state.Report = $report
+            $blocked = @(@($report.Missing) | Where-Object { $_.Required }).Count
+            $result.report = @(Format-GraphRoleReport -Report $report -TokenAppId ([string]$claims.appid) -SettingsClientId $client | ForEach-Object {
+                $lvl = if ($_ -like '`[FAILED`]*') { 'error' } elseif ($_ -like '`[WARN`]*') { 'warn' } elseif ($_ -like '`[OK`]*') { 'ok' } else { 'info' }
+                [ordered]@{ level = $lvl; text = [string]$_ }
+            })
+            if (@($report.Have).Count -eq 0) { $result.summary = "$signedIn, but the app registration has no API permissions granted yet."; $result.level = 'error' }
+            elseif ($blocked -gt 0) { $result.summary = "$signedIn, but it's missing a permission the app needs."; $result.level = 'error' }
+            elseif (@($report.Missing).Count -gt 0) { $result.summary = "$signedIn. Some optional features are missing a permission."; $result.level = 'warn' }
+            else { $result.summary = "$signedIn, with every permission this app uses."; $result.level = 'ok' }
+        }
+        Write-Log "[INFO] Test connection: $($result.summary)"
+    }
+    catch {
+        $failure = Get-InnermostErrorMessage $_.Exception
+        $state.SignInOk = $false
+        $state.SignInError = $failure
+        $result.summary = "Failed: $(ConvertTo-FriendlyGraphError $failure)"
+        if (-not $result.conflict -and (Test-GraphAssemblyConflictText $failure)) {
+            $result.conflict = Format-GraphAssemblyConflictText -ErrorText $failure -NoProfile (Test-SessionStartedWithoutProfile)
+        }
+        Write-Log "[FAILED] Test connection: $failure"
+    }
+    $result.checklist = Get-SetupChecklistRows -State $state
+    return $result
+}
+
+function Global:Start-WebCertJob {
+    <#
+      Check / Upload / Delete certificate and Add permissions: the same
+      CertUpload step the classic window runs, through the step runner, with
+      a console window (the interactive sign-in needs one). The page polls
+      /api/job-poll for its output and result.
+    #>
+    param($Data)
+    $mode = [string]$Data.mode
+    if ($mode -notin 'Check', 'Upload', 'DeleteCert', 'AddPermissions') { return @{ ok = $false; error = "Unknown action '$mode'." } }
+    $tenant = ([string]$Data.tenantId).Trim()
+    $client = ([string]$Data.clientId).Trim()
+    if (-not $tenant -or -not $client) { return @{ ok = $false; error = 'Fill in Tenant ID and Client ID first.' } }
+    if (-not (Test-GraphModuleHere)) { return @{ ok = $false; error = "The Microsoft.Graph.Authentication module isn't installed yet." } }
+
+    $tag = [guid]::NewGuid().ToString('N')
+    $configPath = Join-Path $env:TEMP ".intunepkg_certupload_config_$tag.json"
+    $resultPath = Join-Path $env:TEMP ".intunepkg_certupload_result_$tag.json"
+    $config = [ordered]@{ Mode = $mode; TenantId = $tenant; ClientId = $client; OutputResultPath = $resultPath }
+    if ($mode -eq 'Upload') {
+        $thumb = ([string]$Data.thumbprint).Trim() -replace '\s', ''
+        $cert = Get-ChildItem Cert:\CurrentUser\My -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $thumb } | Select-Object -First 1
+        if (-not $cert) { return @{ ok = $false; error = "No certificate with thumbprint $thumb in CurrentUser\My. Pick or create one first." } }
+        $config.CertThumbprint = $thumb
+        $config.CertSubject = $cert.Subject
+        $config.CertBase64 = [Convert]::ToBase64String($cert.RawData)
+        $config.CertNotBefore = $cert.NotBefore.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        $config.CertNotAfter = $cert.NotAfter.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    }
+    elseif ($mode -eq 'DeleteCert') {
+        $keyId = [guid]::Empty
+        if (-not [guid]::TryParse([string]$Data.keyId, [ref]$keyId)) { return @{ ok = $false; error = 'Pick the certificate to delete first.' } }
+        $config.KeyIdToDelete = $keyId.ToString()
+    }
+    elseif ($mode -eq 'AddPermissions') {
+        $config.Permissions = @($Data.permissions | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^[A-Za-z]+(\.[A-Za-z]+)+$' })
+        if (@($config.Permissions).Count -eq 0) { return @{ ok = $false; error = 'No permissions chosen.' } }
+    }
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCertUploadScript -Name 'certupload' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind $mode -ShowWindow
+    if ($started.ok) { Write-Log "[INFO] Started: $mode (sign in in the window that opens)." }
+    return $started
+}
+
+function Global:Start-WebStepJob {
+    <#
+      Runs one of the app's step scripts (code\EmbeddedScripts) the way the
+      classic window does - through the step runner, with the Graph and
+      assignment helpers dot-sourced first - and registers it as a job the
+      page polls (/api/job-poll). -ShowWindow for the steps that sign a
+      person in (WAM needs a window). -After: what to do with the result
+      once it has succeeded (see Complete-WebJob).
+    #>
+    param([string]$ScriptContent, [string]$Name, [string]$ConfigJson, [string]$ResultPath, [string]$Kind, [switch]$ShowWindow, [hashtable]$After = @{})
+    $tag = [guid]::NewGuid().ToString('N')
+    $configPath = Join-Path $env:TEMP ".intunepkg_$($Name)_config_$tag.json"
+    $scriptPath = Join-Path $Global:App.RootPath ".intunepkg_embedded_$($Name)_$tag.ps1"
+    $helperPath = Join-Path $Global:App.RootPath ".intunepkg_graphlog_$tag.ps1"
+    $logPath = Join-Path $env:TEMP "intunepkg_$tag.log"
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    try {
+        [System.IO.File]::WriteAllText($configPath, $ConfigJson, $utf8)
+        [System.IO.File]::WriteAllText($scriptPath, $ScriptContent, $utf8)
+        [System.IO.File]::WriteAllText($helperPath, ((Get-GraphLogScriptHelpers) + "`n`n" + (Get-AssignmentScriptHelpers)), $utf8)
+        [System.IO.File]::WriteAllText($logPath, '')
+        $psi = New-AppStepStartInfo -Spec @{ Script = $scriptPath; Parameters = @{ ConfigPath = $configPath }; GraphHelper = $helperPath; LogFile = $logPath }
+        Set-WindowsPowerShellEnvironment -StartInfo $psi
+        $psi.EnvironmentVariables['INTUNEPACKAGER_GRAPH_LOG'] = $(if ($Global:App.DetailedGraphLog) { 'detailed' } else { 'summary' })
+        $psi.CreateNoWindow = -not $ShowWindow
+        if ($ShowWindow) { $psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Minimized }
+        $psi.WorkingDirectory = $Global:App.RootPath
+        $proc = [System.Diagnostics.Process]::Start($psi)
+    }
+    catch {
+        Remove-Item -LiteralPath $scriptPath, $helperPath, $logPath, $configPath -Force -ErrorAction SilentlyContinue
+        return @{ ok = $false; error = "Couldn't start the step: $($_.Exception.Message)" }
+    }
+    $Global:App.WebJobs[$tag] = @{
+        Process = $proc; Log = $logPath; Result = $ResultPath
+        Cleanup = @($scriptPath, $helperPath, $configPath); Mode = $Kind; Done = $false; After = $After
+    }
+    return @{ ok = $true; job = $tag }
+}
+
+function Global:Update-WebCatalogApp {
+    # Changes one app's saved file: reads it, lets -Change edit the record, writes it back (with a backup).
+    param([string]$Name, [scriptblock]$Change)
+    $catalog = Read-WebCatalogRecords
+    $app = $catalog.Apps | Where-Object { $_.appName -eq $Name } | Select-Object -First 1
+    if (-not $app) { throw "'$Name' is no longer in the catalog." }
+    & $Change $app
+    $file = Join-Path (Get-AppFolder -Kind Catalog -Create) ((Get-SafeFileNameForApp -Name $app.appName) + '.json')
+    Backup-WebAppFile $file
+    [System.IO.File]::WriteAllText($file, (ConvertTo-SingleAppJson -App $app), (New-Object System.Text.UTF8Encoding($false)))
+    return $app
+}
+
+function Global:Complete-WebJob {
+    <#
+      After a step succeeded: what the classic window does next.
+      Deploy - the App ID (and the defaults it was deployed with, for an app
+      that had none) saved to the catalog, and whether groups should follow.
+    #>
+    param([hashtable]$After, $Result)
+    switch ($After.Kind) {
+        'deploy' {
+            $newId = [string]$Result.appId
+            $defaults = $After.Defaults
+            [void](Update-WebCatalogApp -Name $After.AppName -Change {
+                param($app)
+                if ($newId) { $app.appId = $newId }
+                $app.intuneAppType = 'Windows app (Win32)'
+                if (-not $app.metadata -and $defaults) { $app.metadata = $defaults }
+            }.GetNewClosure())
+            Write-Log "[OK] Deployed $($After.AppName)$(if ($newId) { " (App ID $newId)" }) - saved to the catalog."
+            $catalog = Read-WebCatalogRecords
+            $app = $catalog.Apps | Where-Object { $_.appName -eq $After.AppName } | Select-Object -First 1
+            $hasGroups = $app -and (@($app.requiredFor).Count + @($app.availableFor).Count + @($app.uninstallFor).Count) -gt 0
+            $wanted = if ($After.WasUpdate) { [bool]$Global:App.PushGroupsOnUpdate } else { [bool]$Global:App.PushGroupsOnCreate }
+            return @{ ok = $true; pushGroups = [bool]($hasGroups -and $wanted -and $app.appId) }
+        }
+        default { return @{ ok = $true } }
+    }
+}
+
+function Global:Get-WebDeployPlan {
+    <#
+      What Deploy would do for the chosen apps, before anything runs: in
+      dependency order, each app ready or skipped with the reason - the
+      classic Batch Deploy's own checks.
+    #>
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $names = @($Data.names | ForEach-Object { [string]$_ })
+    $chosen = @($catalog.Apps | Where-Object { $names -contains $_.appName })
+    if ($chosen.Count -eq 0) { return @{ ok = $false; error = 'Choose one or more apps first.' } }
+    if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Set up the connection in Settings first.' } }
+    $order = Get-DependencyOrderedApps -Apps $chosen
+    $index = Get-PackageFolderIndex -Root (Get-AppFolder -Kind Packages)
+    $plan = foreach ($a in @($order.Ordered)) {
+        $unc = Test-AppIsUncommon -App $a
+        $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $unc -Index $index -PackagePath $a.packagePath
+        $reason = ''
+        if (-not $pkg.Found) {
+            $reason = if ($unc) { "No package (.intunewin) yet - build it with Package in the classic window." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Folders in the classic window builds it." }
+        }
+        elseif ($unc -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = 'No detection rule yet - an app with its own package needs one (classic window: Deploy to Intune).' }
+        [ordered]@{ name = $a.appName; update = [bool]$a.appId; ready = (-not $reason); reason = $reason }
+    }
+    return @{ ok = $true; apps = @($plan); circular = @($order.CircularNames) }
+}
+
+function Global:Start-WebDeploy {
+    # Deploys ONE app (the page runs the plan's apps one after another).
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $name = [string]$Data.name
+    $a = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "'$name' is no longer in the catalog." } }
+    $unc = Test-AppIsUncommon -App $a
+    $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $unc -PackagePath $a.packagePath
+    if (-not $pkg.Found) { return @{ ok = $false; error = "$name has no package to upload." } }
+    $defaults = $null
+    $m = $a.metadata
+    if (-not $m) { $defaults = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon $unc; $m = $defaults }
+    if (-not $m.detectionRule) { return @{ ok = $false; error = "$name has no detection rule." } }
+    # Dependencies by name -> the App IDs they have now; one not deployed yet is left out (as Batch Deploy does).
+    $depIds = @(@($m.dependencies) | Where-Object { $_ } | ForEach-Object {
+        $depName = [string]$_
+        $dep = $catalog.Apps | Where-Object { $_.appName -eq $depName } | Select-Object -First 1
+        if ($dep -and $dep.appId) { $dep.appId }
+    })
+    $resultPath = Join-Path $env:TEMP (".intunepkg_createapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
+    $config = [pscustomobject]@{
+        TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
+        Mode = $(if ($a.appId) { 'UpdateMetadata' } else { 'Create' }); ExistingAppId = [string]$a.appId
+        AppName = $a.appName; Description = $m.description; Publisher = $m.publisher; Owner = $m.owner; Developer = $m.developer
+        InformationUrl = $m.informationUrl; PrivacyUrl = $m.privacyUrl; Notes = $m.notes; AppVersion = $m.appVersion; IsFeatured = $m.isFeatured
+        InstallCommand = $m.installCommand; UninstallCommand = $m.uninstallCommand; DetectionRule = $m.detectionRule
+        InstallContext = $m.installContext; Architecture = $m.architecture; MinOSVersionKey = $m.minOSKey; PackagePath = $pkg.Path
+        DependencyAppIds = $depIds; Supersedence = $m.supersedes; ReplaceContent = $false
+        MinDiskSpaceMB = [int]$m.minDiskSpaceMB; MinMemoryMB = [int]$m.minMemoryMB; MinProcessors = [int]$m.minProcessors; MinCpuSpeedMHz = [int]$m.minCpuSpeedMHz
+        InstallTimeMinutes = $(if ($m.installTimeMinutes) { [int]$m.installTimeMinutes } else { 60 }); DeviceRestartBehavior = $m.deviceRestartBehavior
+        AllowAvailableUninstall = [bool]$m.allowAvailableUninstall; ReturnCodes = @($m.returnCodes); OutputResultPath = $resultPath
+    }
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "Deploy $name" `
+        -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $defaults; WasUpdate = [bool]$a.appId }
+    if ($started.ok) { Write-Log "[INFO] Deploying $name ($($config.Mode))..." }
+    return $started
+}
+
+function Global:Start-WebPushGroups {
+    <#
+      Push groups for the chosen apps: Mode Preview lists what would be added
+      and removed in Intune, Mode Apply does it (BatchAssign - Intune gets
+      exactly the catalog's groups; missing groups are created). -single
+      after a deploy pushes one app the way the single deploy does
+      (TargetedAssign, no groups created).
+    #>
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $names = @($Data.names | ForEach-Object { [string]$_ })
+    $apps = @($catalog.Apps | Where-Object { $names -contains $_.appName -and $_.appId })
+    if ($apps.Count -eq 0) { return @{ ok = $false; error = 'None of the chosen apps is in Intune yet (no App ID).' } }
+    $resultPath = Join-Path $env:TEMP (".intunepkg_assign_result_" + [guid]::NewGuid().ToString('N') + ".json")
+    $creds = @{ TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint }
+    if ([string]$Data.mode -eq 'AfterDeploy') {
+        $a = $apps[0]
+        $config = @{
+            TenantId = $creds.TenantId; ClientId = $creds.ClientId; CertificateThumbprint = $creds.CertificateThumbprint
+            AppId = $a.appId; AppName = $a.appName
+            RequiredGroups = @($a.requiredFor); AvailableGroups = @($a.availableFor); UninstallGroups = @($a.uninstallFor); ExcludeGroups = @($a.excludeFor)
+            CreateMissingGroups = $false; OutputResultPath = $resultPath
+        }
+        return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind "Push groups $($a.appName)")
+    }
+    $mode = if ([string]$Data.mode -eq 'Apply') { 'Apply' } else { 'Preview' }
+    $config = @{
+        TenantId = $creds.TenantId; ClientId = $creds.ClientId; CertificateThumbprint = $creds.CertificateThumbprint
+        Mode = $mode
+        Apps = @($apps | ForEach-Object { @{ AppName = $_.appName; AppId = $_.appId; RequiredGroups = @($_.requiredFor); AvailableGroups = @($_.availableFor); UninstallGroups = @($_.uninstallFor); ExcludeGroups = @($_.excludeFor) } })
+        OutputResultPath = $resultPath
+    }
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedBatchAssignScript -Name 'batchassign' -ConfigJson ($config | ConvertTo-Json -Depth 8) -ResultPath $resultPath -Kind "Push groups ($mode, $($apps.Count) app(s))"
+    if ($started.ok) { Write-Log "[INFO] Push groups - $(if ($mode -eq 'Apply') { 'applying' } else { 'previewing' }) for $($apps.Count) app(s)..." }
+    return $started
+}
+
+function Global:Get-WebGraphPages {
+    # Every page of a Graph list (app-only session already connected).
+    param([string]$Uri)
+    $items = New-Object System.Collections.Generic.List[object]
+    while ($Uri) {
+        $page = Invoke-MgGraphRequest -Method GET -Uri $Uri -ErrorAction Stop
+        foreach ($v in @($page.value)) { $items.Add($v) }
+        $Uri = $page.'@odata.nextLink'
+    }
+    return $items.ToArray()
+}
+
+function Global:Invoke-WebChecks {
+    <#
+      Checks, the parts that need no step script: the catalog's own
+      dependencies, how the catalog lines up with the apps in Intune (not
+      in the catalog, renamed, App ID gone, App ID missing), groups that
+      don't exist in Entra ID, and what the last audit found. The same
+      finding functions as the classic Checks window.
+    #>
+    $catalog = Read-WebCatalogRecords
+    $apps = @($catalog.Apps)
+    $findings = New-Object System.Collections.Generic.List[object]
+    $notes = New-Object System.Collections.Generic.List[string]
+    foreach ($f in @(Get-DependencyFindings -Apps $apps)) { $findings.Add($f) }
+    try { Load-LastAuditCache } catch { }
+    foreach ($f in @(Get-CachedAuditFindings -Apps $apps -LastAuditResults $Global:App.LastAuditResults)) { $findings.Add($f) }
+
+    if (-not (Test-GraphCredentialsConfigured -Quiet)) { $notes.Add('Intune and Entra ID were not checked: no connection set up (Settings).') }
+    elseif (-not (Test-GraphModuleHere)) { $notes.Add("Intune and Entra ID were not checked: the Microsoft.Graph.Authentication module isn't installed.") }
+    else {
+        try {
+            Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+            Connect-MgGraph -TenantId $Global:App.GraphTenantId -ClientId $Global:App.GraphClientId -CertificateThumbprint $Global:App.GraphCertificateThumbprint -NoWelcome -ErrorAction Stop
+            try {
+                $intuneApps = @(Get-WebGraphPages 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$select=id,displayName&$top=999' |
+                    ForEach-Object { [pscustomobject]@{ id = [string]$_.id; displayName = [string]$_.displayName } })
+                foreach ($f in @(Get-IntuneLinkFindings -Apps $apps -IntuneApps $intuneApps)) { $findings.Add($f) }
+                $directory = New-Object System.Collections.Generic.List[object]
+                foreach ($g in @(Get-WebGraphPages 'https://graph.microsoft.com/v1.0/groups?$select=id,displayName&$top=999')) { $directory.Add([pscustomobject]@{ displayName = [string]$g.displayName; type = 'Group'; id = [string]$g.id; upn = '' }) }
+                foreach ($u in @(Get-WebGraphPages 'https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName&$top=999')) { $directory.Add([pscustomobject]@{ displayName = [string]$u.displayName; type = 'User'; id = [string]$u.id; upn = [string]$u.userPrincipalName }) }
+                foreach ($f in @(Get-EntraGroupFindings -Apps $apps -Directory $directory.ToArray())) { $findings.Add($f) }
+                $notes.Add("Compared with $($intuneApps.Count) app(s) in Intune and $($directory.Count) groups and users in Entra ID.")
+            }
+            finally { try { Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null } catch { } }
+        }
+        catch { $notes.Add("Intune and Entra ID could not be checked: $(ConvertTo-FriendlyGraphError (Get-InnermostErrorMessage $_.Exception))") }
+    }
+    $rows = foreach ($f in $findings) {
+        [ordered]@{
+            key = [string]$f.Key; area = [string]$f.Area; app = [string]$f.App; catalogName = [string]$f.CatalogName; appId = [string]$f.AppId
+            problem = [string]$f.Problem; catalog = (Get-CheckValueText $f.Catalog); intune = (Get-CheckValueText $f.Intune)
+            actions = @($f.Actions); failed = [bool]$f.Failed; cached = [bool]$f.Cached
+            checkedAt = $(if ($f.CheckedAt) { ([datetime]$f.CheckedAt).ToString('yyyy-MM-dd HH:mm') } else { '' })
+            data = $f.Data
+        }
+    }
+    Write-Log "[INFO] Checks: $(@($rows).Count) finding(s). $($notes -join ' ')"
+    return @{ ok = $true; findings = @($rows); notes = $notes.ToArray() }
+}
+
+function Global:Invoke-WebCheckFix {
+    # The fixes that change only the catalog: take Intune's name, set or clear the App ID.
+    param($Data)
+    $name = [string]$Data.catalogName
+    $action = [string]$Data.action
+    switch ($action) {
+        'RenameFromIntune' {
+            $newName = ([string]$Data.value).Trim()
+            if (-not $newName) { return @{ ok = $false; error = 'No name to take.' } }
+            $catalog = Read-WebCatalogRecords
+            $existing = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+            if (-not $existing) { return @{ ok = $false; error = "'$name' is no longer in the catalog." } }
+            $edit = Get-WebAppEditable $existing
+            $edit.appName = $newName
+            return (Save-WebApp ([pscustomobject]@{ originalName = $name; app = [pscustomobject]$edit }))
+        }
+        'SetAppId' {
+            $id = [guid]::Empty
+            if (-not [guid]::TryParse([string]$Data.value, [ref]$id)) { return @{ ok = $false; error = 'Not an App ID.' } }
+            $idText = $id.ToString()
+            [void](Update-WebCatalogApp -Name $name -Change { param($app) $app.appId = $idText }.GetNewClosure())
+            Write-Log "[OK] $name now points at the Intune app $idText."
+            return @{ ok = $true }
+        }
+        'ClearAppId' {
+            [void](Update-WebCatalogApp -Name $name -Change { param($app) $app.appId = '' })
+            Write-Log "[OK] Cleared $name's App ID (it no longer exists in Intune)."
+            return @{ ok = $true }
+        }
+        default { return @{ ok = $false; error = "'$action' isn't available here yet - use the classic window's Checks." } }
+    }
+}
+
+function Global:Get-WebJobPoll {
+    # New output since -offset, and the result once the step has ended.
+    param($Data)
+    $id = [string]$Data.job
+    if (-not $id -or -not $Global:App.WebJobs.ContainsKey($id)) { return @{ ok = $false; error = 'No such job.' } }
+    $job = $Global:App.WebJobs[$id]
+    $offset = [int64]$Data.offset
+    $exited = $job.Process.HasExited
+    $text = ''
+    try {
+        $fs = [System.IO.File]::Open($job.Log, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        try {
+            [void]$fs.Seek([Math]::Min($offset, $fs.Length), [System.IO.SeekOrigin]::Begin)
+            $reader = New-Object System.IO.StreamReader($fs)
+            $text = $reader.ReadToEnd()
+            $offset = $fs.Position
+        }
+        finally { $fs.Dispose() }
+    }
+    catch { }
+    $response = [ordered]@{ ok = $true; text = $text; offset = $offset; done = $false }
+    if ($exited) {
+        $response.done = $true
+        $response.exitCode = $job.Process.ExitCode
+        $response.result = $null
+        if (Test-Path -LiteralPath $job.Result) {
+            try { $response.result = Get-Content -LiteralPath $job.Result -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+        }
+        # Cleaned up only once the page has read everything (an empty read
+        # after the exit); until then the log stays for the next poll.
+        if (-not $text) {
+            if ($response.result -and $response.result.success -and $job.After -and $job.After.Count) {
+                try { $response.after = Complete-WebJob -After $job.After -Result $response.result }
+                catch { $response.after = @{ ok = $false; error = $_.Exception.Message }; Write-Log "[WARN] $($_.Exception.Message)" }
+            }
+            Remove-Item -LiteralPath (@($job.Cleanup) + $job.Log + $job.Result) -Force -ErrorAction SilentlyContinue
+            [void]$Global:App.WebJobs.Remove($id)
+            Write-Log "$(if ($response.result -and $response.result.success) { '[OK]' } else { '[WARN]' }) Finished: $($job.Mode)."
+        }
+    }
+    return $response
+}
+
+function Global:Get-WebPermissionChoice {
+    # What "Add required permissions" offers, from the same list the report uses.
+    $requirements = @(Get-GraphRoleRequirements)
+    $required = @($requirements | Where-Object { $_.Required } | ForEach-Object { $_.Grant } | Select-Object -Unique)
+    $optional = @($requirements | Where-Object { -not $_.Required } | ForEach-Object { $_.Grant } | Where-Object { $required -notcontains $_ } | Select-Object -Unique)
+    $purpose = @{}
+    foreach ($r in $requirements) { if (-not $purpose.ContainsKey($r.Grant)) { $purpose[$r.Grant] = $r.Purpose } }
+    return @{
+        ok       = $true
+        required = @($required | ForEach-Object { [ordered]@{ name = $_; purpose = $purpose[$_] } })
+        optional = @($optional | ForEach-Object { [ordered]@{ name = $_; purpose = $purpose[$_] } })
+    }
+}
+
+function Global:Get-WebEntraPermissionsUrl {
+    # Pure: the app registration's API permissions page, or '' for a Client ID that isn't a GUID.
+    param([string]$ClientId)
+    $parsed = [guid]::Empty
+    if (-not [guid]::TryParse(([string]$ClientId).Trim(), [ref]$parsed)) { return '' }
+    return "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/$parsed/isMSAApp~/false"
+}
+
+function Global:Open-WebTarget {
+    <#
+      Opens something outside the browser window: Entra's API permissions
+      page, the catalog or certificates folder, or the classic window. A
+      fixed list - nothing from the request is started as given.
+    #>
+    param($Data)
+    switch ([string]$Data.target) {
+        'entra-permissions' {
+            $url = Get-WebEntraPermissionsUrl -ClientId ([string]$Data.clientId)
+            if (-not $url) { return @{ ok = $false; error = 'Fill in the Client (Application) ID first.' } }
+            Start-Process $url
+        }
+        'catalog-folder' { Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$(Get-AppFolder -Kind Catalog -Create)`"" }
+        'certificates-folder' {
+            $folder = Join-Path $Global:App.RootPath 'data\certificates'
+            if (-not (Test-Path -LiteralPath $folder)) { [void](New-Item -ItemType Directory -Path $folder -Force) }
+            Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$folder`""
+        }
+        'classic' {
+            $exe = (Get-Process -Id $PID).Path
+            $entry = Join-Path $Global:App.RootPath 'IntuneDeployment.ps1'
+            Start-Process -FilePath $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$entry`" -Classic" -WorkingDirectory $Global:App.RootPath
+        }
+        default { return @{ ok = $false; error = 'Unknown target.' } }
+    }
+    return @{ ok = $true }
+}
+
+function Global:Get-WebLog {
+    param($Data)
+    $from = [int]$Data.from
+    $all = @($Global:App.WebLog.ToArray())
+    $from = [Math]::Max(0, [Math]::Min($from, $all.Count))
+    return @{ ok = $true; next = $all.Count; lines = @($all | Select-Object -Skip $from) }
+}
+
+function Global:Read-WebCatalogRecords {
+    <#
+      Every app in the catalog folder as an app record, and the same list
+      put into $Global:App.Apps - the shared functions that look at "the
+      catalog" (default dependencies, known groups) read it from there.
+      Read fresh each time: the classic window may have saved since.
+    #>
+    $path = Get-AppFolder -Kind Catalog
+    $apps = New-Object System.Collections.ArrayList
+    $failed = New-Object System.Collections.Generic.List[string]
+    if (Test-Path -LiteralPath $path) {
+        foreach ($file in @(Get-ChildItem -LiteralPath $path -Filter '*.json' -File -ErrorAction SilentlyContinue | Sort-Object Name)) {
+            try { [void]$apps.Add((ConvertTo-AppRecord (Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json))) }
+            catch { $failed.Add($file.Name) }
+        }
+    }
+    $Global:App.Apps = $apps
+    return @{ Path = $path; Apps = $apps; Failed = $failed.ToArray() }
+}
+
+function Global:Test-WebWingetId {
+    # Pure: a Winget ID as winget itself allows them (letters, digits, . _ + -).
+    param([string]$Id)
+    if (-not $Id) { return $true }
+    return ($Id -match '^[A-Za-z0-9][A-Za-z0-9._+\-]{0,127}$')
+}
+
+function Global:Get-WebAppEditable {
+    # Pure: an app record as the editor's JSON - every field it shows.
+    param($App)
+    $m = $App.metadata
+    return [ordered]@{
+        appName      = [string]$App.appName
+        wingetId     = [string]$App.wingetId
+        appId        = [string]$App.appId
+        intuneAppType = [string]$App.intuneAppType
+        requiredFor  = @($App.requiredFor | ForEach-Object { [string]$_ })
+        availableFor = @($App.availableFor | ForEach-Object { [string]$_ })
+        uninstallFor = @($App.uninstallFor | ForEach-Object { [string]$_ })
+        excludeFor   = @($App.excludeFor | ForEach-Object { [string]$_ })
+        hasMetadata  = [bool]$m
+        metadata     = [ordered]@{
+            description      = [string]$(if ($m) { $m.description })
+            publisher        = [string]$(if ($m) { $m.publisher })
+            owner            = [string]$(if ($m) { $m.owner })
+            developer        = [string]$(if ($m) { $m.developer })
+            informationUrl   = [string]$(if ($m) { $m.informationUrl })
+            privacyUrl       = [string]$(if ($m) { $m.privacyUrl })
+            notes            = [string]$(if ($m) { $m.notes })
+            appVersion       = [string]$(if ($m) { $m.appVersion })
+            installCommand   = [string]$(if ($m) { $m.installCommand })
+            uninstallCommand = [string]$(if ($m) { $m.uninstallCommand })
+            installContext   = [string]$(if ($m) { $m.installContext })
+        }
+    }
+}
+
+function Global:Get-WebApp {
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $name = [string]$Data.name
+    $app = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $app) { return @{ ok = $false; error = "No app called '$name' in the catalog (it may have been renamed or removed - Reload)." } }
+    return @{ ok = $true; app = (Get-WebAppEditable $app); knownGroups = @(Get-AllKnownGroups | Sort-Object -Unique) }
+}
+
+function Global:Merge-WebAppEdit {
+    <#
+      Pure: the app record after the editor's changes - everything the
+      editor doesn't show (detection rule, dependencies, supersedence,
+      package path, Intune's type and version, ...) carried over untouched.
+      Metadata is only created for an app that had none when a metadata
+      field was actually filled in, from the computed defaults.
+    #>
+    param($Existing, $Edit, $Defaults)
+    $groups = {
+        param($list)
+        @(@($list) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
+    }
+    $metaEdit = $Edit.metadata
+    $metaFields = 'description', 'publisher', 'owner', 'developer', 'informationUrl', 'privacyUrl', 'notes', 'appVersion', 'installCommand', 'uninstallCommand', 'installContext'
+    $metadata = if ($Existing -and $Existing.metadata) { $Existing.metadata.PSObject.Copy() } else { $null }
+    $anyMetaFilled = $metaEdit -and @($metaFields | Where-Object { [string]$metaEdit.$_ }).Count -gt 0
+    if (-not $metadata -and $anyMetaFilled -and $Defaults) { $metadata = $Defaults.PSObject.Copy() }
+    if ($metadata -and $metaEdit) {
+        foreach ($f in $metaFields) {
+            if ($metadata.PSObject.Properties.Name -contains $f) { $metadata.$f = [string]$metaEdit.$f }
+            else { $metadata | Add-Member -NotePropertyName $f -NotePropertyValue ([string]$metaEdit.$f) }
+        }
+        if (-not $metadata.appVersion) { $metadata.appVersion = $null }
+    }
+    return [pscustomobject]@{
+        appId            = ([string]$Edit.appId).Trim()
+        appName          = (([string]$Edit.appName).Trim() -replace '\s+', ' ')
+        wingetId         = ([string]$Edit.wingetId).Trim()
+        intuneAppType    = $(if ($Existing) { [string]$Existing.intuneAppType } else { '' })
+        intuneAppVersion = $(if ($Existing) { [string]$Existing.intuneAppVersion } else { '' })
+        packagePath      = $(if ($Existing) { [string]$Existing.packagePath } else { '' })
+        requiredFor      = & $groups $Edit.requiredFor
+        availableFor     = & $groups $Edit.availableFor
+        uninstallFor     = & $groups $Edit.uninstallFor
+        excludeFor       = & $groups $Edit.excludeFor
+        metadata         = $metadata
+    }
+}
+
+function Global:Test-WebAppEdit {
+    <#
+      Pure: why an edited app can't be saved ('' when it can) - the same
+      rules the classic window's save applies, decided here instead of in
+      a message box: a name, unique by name and by file name, a GUID or no
+      App ID, a Winget ID winget would accept.
+    #>
+    param($Record, [string]$OriginalName, [object[]]$Others)
+    if (-not $Record.appName) { return 'The app needs a name.' }
+    if ($Record.appId -and $Record.appId -notmatch '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$') { return "The App ID must be a GUID (or empty for an app that isn't in Intune yet)." }
+    if (-not (Test-WebWingetId $Record.wingetId)) { return "'$($Record.wingetId)' isn't a Winget ID winget accepts (letters, digits, . _ + -)." }
+    $key = $Record.appName.ToLowerInvariant()
+    $file = Get-SafeFileNameForApp -Name $Record.appName
+    foreach ($o in @($Others)) {
+        if (-not $o -or $o.appName -eq $OriginalName) { continue }
+        if (($o.appName.Trim() -replace '\s+', ' ').ToLowerInvariant() -eq $key) { return "Another app is already called '$($o.appName)'." }
+        if ((Get-SafeFileNameForApp -Name $o.appName) -eq $file) { return "'$($Record.appName)' and '$($o.appName)' would be saved to the same file ($file.json). Choose a different name." }
+        if ($Record.appId -and $o.appId -eq $Record.appId) { return "'$($o.appName)' already has App ID $($Record.appId)." }
+    }
+    return ''
+}
+
+function Global:Backup-WebAppFile {
+    # A copy of one app's file in the Backups folder before it's overwritten or removed.
+    param([string]$FilePath)
+    if (-not (Test-Path -LiteralPath $FilePath)) { return }
+    try {
+        $dir = Join-Path (Get-AppFolder -Kind Backups -Create) ("app-edit_" + (Get-Date -Format 'yyyy-MM-dd'))
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        Copy-Item -LiteralPath $FilePath -Destination (Join-Path $dir ((Get-Date -Format 'HHmmss') + '_' + (Split-Path $FilePath -Leaf))) -Force
+    }
+    catch { }
+}
+
+function Global:Save-WebApp {
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $original = [string]$Data.originalName
+    $existing = if ($original) { $catalog.Apps | Where-Object { $_.appName -eq $original } | Select-Object -First 1 } else { $null }
+    if ($original -and -not $existing) { return @{ ok = $false; error = "'$original' is no longer in the catalog (renamed or removed elsewhere?). Reload and try again." } }
+    $edit = $Data.app
+    $defaults = $null
+    if (-not ($existing -and $existing.metadata)) {
+        $name = ([string]$edit.appName).Trim()
+        $wid = ([string]$edit.wingetId).Trim()
+        try { $defaults = Get-DefaultAppMetadata -AppName $name -WingetId $wid -Uncommon (-not $wid) } catch { $defaults = $null }
+    }
+    $record = Merge-WebAppEdit -Existing $existing -Edit $edit -Defaults $defaults
+    $problem = Test-WebAppEdit -Record $record -OriginalName $original -Others @($catalog.Apps)
+    if ($problem) { return @{ ok = $false; error = $problem } }
+
+    $folder = Get-AppFolder -Kind Catalog -Create
+    $newFile = Join-Path $folder ((Get-SafeFileNameForApp -Name $record.appName) + '.json')
+    $oldFile = if ($existing) { Join-Path $folder ((Get-SafeFileNameForApp -Name $existing.appName) + '.json') } else { $null }
+    Backup-WebAppFile $newFile
+    try {
+        [System.IO.File]::WriteAllText($newFile, (ConvertTo-SingleAppJson -App $record), (New-Object System.Text.UTF8Encoding($false)))
+    }
+    catch { return @{ ok = $false; error = "Couldn't write $newFile`: $($_.Exception.Message)" } }
+    if ($oldFile -and $oldFile -ne $newFile -and (Test-Path -LiteralPath $oldFile)) {
+        Backup-WebAppFile $oldFile
+        Remove-Item -LiteralPath $oldFile -Force -ErrorAction SilentlyContinue
+    }
+    Write-Log "[OK] $(if ($existing) { 'Saved' } else { 'Added' }): $($record.appName)$(if ($existing -and $existing.appName -ne $record.appName) { " (was $($existing.appName))" })."
+    return @{ ok = $true; name = $record.appName }
+}
+
+function Global:Remove-WebApp {
+    # Removes an app from the catalog only - nothing in Intune changes.
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $name = [string]$Data.name
+    $app = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $app) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
+    $file = Join-Path (Get-AppFolder -Kind Catalog) ((Get-SafeFileNameForApp -Name $app.appName) + '.json')
+    Backup-WebAppFile $file
+    try { Remove-Item -LiteralPath $file -Force -ErrorAction Stop }
+    catch { return @{ ok = $false; error = "Couldn't remove $file`: $($_.Exception.Message)" } }
+    Write-Log "[OK] Removed from the catalog: $name (a copy is in the Backups folder; nothing in Intune changed)."
+    return @{ ok = $true }
+}
+
+function Global:Invoke-WebApi {
+    # The route table. $Data is the token-checked request body.
+    param([string]$Path, $Data)
+    switch ($Path) {
+        '/api/state'            { return (Get-WebState) }
+        '/api/catalog'          { return (Get-WebCatalog) }
+        '/api/settings-save'    { return (Save-WebSettings $Data) }
+        '/api/cert-status'      { return (Get-WebCertStatus $Data) }
+        '/api/certs-local'      { return (Get-WebLocalCertificates) }
+        '/api/cert-new'         { return (New-WebCertificate $Data) }
+        '/api/test-connection'  { return (Invoke-WebTestConnection $Data) }
+        '/api/job-start'        { return (Start-WebCertJob $Data) }
+        '/api/job-poll'         { return (Get-WebJobPoll $Data) }
+        '/api/permission-choice' { return (Get-WebPermissionChoice) }
+        '/api/open'             { return (Open-WebTarget $Data) }
+        '/api/log'              { return (Get-WebLog $Data) }
+        '/api/app-get'          { return (Get-WebApp $Data) }
+        '/api/app-save'         { return (Save-WebApp $Data) }
+        '/api/app-remove'       { return (Remove-WebApp $Data) }
+        '/api/deploy-plan'      { return (Get-WebDeployPlan $Data) }
+        '/api/deploy-start'     { return (Start-WebDeploy $Data) }
+        '/api/push-start'       { return (Start-WebPushGroups $Data) }
+        '/api/checks-run'       { return (Invoke-WebChecks) }
+        '/api/checks-fix'       { return (Invoke-WebCheckFix $Data) }
+        default                 { return @{ ok = $false; error = 'unknown' } }
+    }
+}

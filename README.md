@@ -98,6 +98,11 @@ refuses to run the scripts inside.
    can clash with the Microsoft Graph module. Endpoint protection such as
    Cortex XDR may block scripts started from the Downloads folder, so
    unpack the zip somewhere else.
+   Or try the new web interface (preview), which opens in an Edge/Chrome
+   app window:
+   ```powershell
+   pwsh -NoProfile -ExecutionPolicy Bypass -File .\IntuneDeployment.ps1 -Web
+   ```
 3. Open **Settings...** and fill in Tenant ID, Client ID and certificate,
    then **Test connection** and **Save**. The setup guide in that window
    lists the Graph permissions the app registration needs.

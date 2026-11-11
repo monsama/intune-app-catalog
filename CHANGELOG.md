@@ -1,5 +1,62 @@
 # Changelog
 
+## 1.10.0
+
+### Added
+
+- **New web interface (preview).** Start it with
+  `IntuneDeployment.ps1 -Web`. It works like the NOBS apps:
+  - a small local server answers only on 127.0.0.1, and the token
+    changes on every start;
+  - the interface opens maximised in an Edge or Chrome app window, a
+    normal window you can move, snap, minimise, maximise and close.
+
+  This first step has:
+  - **Apps:** the catalog with search, filters (needs attention, not
+    deployed, package missing, ...), sorting and coloured status.
+  - **Settings:** connection fields, Test connection with the setup
+    checklist and permission report, choosing or creating a certificate,
+    checking, uploading and deleting certificates in Entra, "Add required
+    permissions", and opening Entra for consent.
+  - **Activity:** one log of everything, including the output of each
+    Entra action.
+  - Light and dark mode.
+
+  It also has:
+  - **The app editor:** add, edit and remove apps (name, Winget ID, App
+    ID, the four assignment lists and the Intune details). Every save
+    backs up the app's file first. Names, file names, App IDs and Winget
+    IDs are checked before anything is written.
+  - **Deploy:** one or more apps, in dependency order. Apps that can't
+    be deployed are listed with the reason. Each App ID is saved to the
+    catalog as soon as that app is done, and its groups are pushed
+    afterwards when the setting says so.
+  - **Push groups:** a preview of what will be added and removed in
+    Intune, then Apply.
+  - **Checks:** catalog dependencies, how the catalog lines up with
+    Intune (renamed, not linked, App ID gone, not in the catalog),
+    groups missing in Entra ID, and the last audit's findings. One-click
+    fixes take Intune's name, link the matching app, clear a stale App
+    ID, open the editor or push groups.
+
+  "Open classic window" opens what hasn't moved yet: packaging, the full
+  deploy form, metadata sync, platform scripts, groups and the
+  remaining fixes. `IntuneDeployment.ps1` still opens the classic window
+  by default.
+
+### Fixed
+
+- **Batch Deploy dropped supersedence.** The classic Batch Deploy wrote
+  the step's settings in a format the step didn't read for supersedence,
+  so it was silently left out. The web Deploy writes it correctly; the
+  classic Batch Deploy is unchanged in this release.
+
+### Changed
+
+- App state setup is now shared by both interfaces
+  (`code/Private/AppState.ps1`), and so is the catalog list row
+  (`Get-CatalogRow`). The app version now lives in `AppState.ps1`.
+
 ## 1.9.0
 
 ### Added

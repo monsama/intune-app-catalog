@@ -49,6 +49,15 @@ jobs:
         if: matrix.shell == 'powershell'
         shell: powershell
         run: ./code/tests/ButtonStyle.Tests.ps1
+      # Starts the web interface's real server and talks to it over HTTP.
+      - name: WebServer.Tests.ps1 (pwsh)
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: ./code/tests/WebServer.Tests.ps1
+      - name: WebServer.Tests.ps1 (Windows PowerShell)
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: ./code/tests/WebServer.Tests.ps1
 
   gui:
     # Drives the real WinForms app, so it needs the runner's desktop session

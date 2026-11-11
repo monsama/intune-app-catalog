@@ -38,6 +38,16 @@
     happens to call one of them.
 #>
 
+param(
+    # The web interface (code\Web): a local server on 127.0.0.1 and an
+    # Edge/Chrome app window. -Classic opens the classic window instead.
+    [switch]$Web,
+    [switch]$Classic,
+    # With -Web: don't open a browser window (tests, or to open the printed
+    # address yourself).
+    [switch]$NoBrowser
+)
+
 $Script:RequiredPrivateFiles = @(
     "code\Private\Catalog\CatalogIO.ps1"
     "code\Private\Catalog\CatalogLogic.ps1"
@@ -86,6 +96,7 @@ $Script:RequiredPrivateFiles = @(
     "code\Private\GuiHelpers.ps1"
     "code\Private\Pipeline.ps1"
     "code\Private\AppFolders.ps1"
+    "code\Private\AppState.ps1"
     "code\Private\Packaging.ps1"
     "code\Private\Prerequisites.ps1"
     "code\Private\QuickActions.ps1"
@@ -153,6 +164,15 @@ if ($Script:FailedPrivateFiles.Count -gt 0) {
         Write-Host ""
     }
     throw "Startup aborted: $($Script:FailedPrivateFiles.Count) required file(s) under code\Private\ failed to load. See error(s) above."
+}
+
+if ($Web -and -not $Classic) {
+    $Script:WebAppPath = Join-Path $PSScriptRoot "code\Web\Start-WebApp.ps1"
+    if (-not (Test-Path -LiteralPath $Script:WebAppPath -PathType Leaf)) {
+        throw "Startup aborted: code\Web\Start-WebApp.ps1 was not found next to IntuneDeployment.ps1."
+    }
+    . $Script:WebAppPath -RootPath $PSScriptRoot -NoBrowser:$NoBrowser
+    return
 }
 
 $Script:MainAppPath = Join-Path $PSScriptRoot "MainApp.ps1"

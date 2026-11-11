@@ -133,7 +133,7 @@ function Global:Format-GraphRoleReport {
     }
     $width = ($toAdd | ForEach-Object { $_.Name.Length } | Measure-Object -Maximum).Maximum
     $lines.Add("")
-    $lines.Add("[INFO] Quickest fix: Settings > Certificate > Add required permissions... adds them for you and opens Entra for the admin consent.")
+    $lines.Add("[INFO] Quickest fix: 'Add required permissions...' in Settings adds them for you and opens Entra for the admin consent.")
     $clientGuid = [guid]::Empty
     if ([guid]::TryParse([string]$SettingsClientId, [ref]$clientGuid)) {
         $lines.Add("[INFO] This app registration's API permissions page: https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationMenuBlade/~/CallAnAPI/appId/$clientGuid/isMSAApp~/false")
@@ -267,7 +267,7 @@ function Global:Format-SetupChecklist {
     $signStatus = if ($certStatus -ne 'OK' -or $null -eq $State.SignInOk) { 'SKIP' } elseif ($State.SignInOk) { 'OK' } else { 'FAILED' }
     $signNext = if ([string]$State.SignInError -match 'AADSTS700016|was not found in the directory') { 'Entra doesn''t know this Client ID in this tenant. Check Tenant ID and Client ID.' }
                 elseif ([string]$State.SignInError -match 'AADSTS90002|AADSTS900023|Tenant .* not found') { 'The Tenant ID is wrong.' }
-                else { 'Upload this certificate to the app registration: Certificate tab > Upload certificate (or Entra > App registrations > your app > Certificates & secrets). Allow a few minutes after uploading.' }
+                else { 'Upload this certificate to the app registration with Upload in Settings (or in Entra > App registrations > your app > Certificates & secrets). Allow a few minutes after uploading.' }
     & $add 'Entra ID accepts the certificate (uploaded to the app registration)' $signStatus $signNext
 
     $report = $State.Report
@@ -275,8 +275,8 @@ function Global:Format-SetupChecklist {
                   elseif (@($report.Have).Count -eq 0) { 'FAILED' }
                   elseif (@(@($report.Missing) | Where-Object { $_.Required }).Count -gt 0) { 'FAILED' }
                   else { 'OK' }
-    $permNext = if ($report -and @($report.Have).Count -eq 0) { 'Certificate tab > Add required permissions... (or add the ones listed above by hand: Application, not Delegated), then grant admin consent.' }
-                else { 'Certificate tab > Add required permissions... adds the missing ones; then grant admin consent.' }
+    $permNext = if ($report -and @($report.Have).Count -eq 0) { 'Use Add required permissions... in Settings (or add the ones listed above by hand: Application, not Delegated), then grant admin consent.' }
+                else { 'Use Add required permissions... in Settings to add the missing ones, then grant admin consent.' }
     & $add 'Required API permissions granted, with admin consent' $permStatus $permNext
 
     & $add 'Settings saved' $(if ($State.Saved) { 'OK' } else { 'FAILED' }) 'Click Save - until then the rest of the app keeps using the previously saved connection.'
