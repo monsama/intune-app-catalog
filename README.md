@@ -97,6 +97,11 @@ Windows marks a downloaded zip as blocked. Unblock it before unpacking
 (right-click the zip > Properties > Unblock), or PowerShell refuses to run
 the scripts inside.
 
+Releases are signed when the repository has a code-signing certificate
+(the `CODE_SIGNING_PFX_BASE64` and `CODE_SIGNING_PFX_PASSWORD` secrets);
+otherwise the scripts are unsigned. A policy of `AllSigned` won't run the
+app either way: it writes its step helpers at run time.
+
 ## Getting started
 
 1. Unpack the zip somewhere other than Downloads - endpoint protection such

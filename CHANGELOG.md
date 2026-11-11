@@ -1,5 +1,57 @@
 # Changelog
 
+## 2.0.1
+
+### Fixed
+
+- **Checks compared Intune as one app.** With a connection set up, Checks
+  handed every app in Intune (and every group in Entra ID) to the
+  comparison as a single item, so the Intune and group findings were wrong.
+- **A save no longer undoes another change.** Changes to an app's file now
+  wait for each other, so a deploy saving its App ID while the editor saves
+  the same app no longer loses one of the two. The editor also refuses a
+  save when the app was changed since it was opened, instead of writing its
+  older copy back over the new App ID.
+- **Permission hints name the right permission.** A refused request on the
+  Groups page, Checks or Install status said Platform scripts needed
+  `DeviceManagementScripts.ReadWrite.All`. Each page now names the
+  permission it needs.
+- The deploy plan reports an app of the same name already in Intune before
+  a missing package, so building the package doesn't lead to a duplicate.
+- Messages and Prerequisites no longer talk about "this window" where they
+  mean the PowerShell running the app.
+
+### Accessibility
+
+Checked with axe-core against WCAG 2.1 AA:
+
+- Contrast of green and grey text in light mode, and of the primary
+  buttons and grey text in dark mode.
+- A level-one heading.
+- Log boxes can be scrolled with the keyboard.
+- Labels for every Batch edit field and the favourite groups.
+- Named table headers.
+
+### Tests and release
+
+- **Graph test mode:** with `INTUNE_CATALOG_TEST_GRAPH` naming a file of
+  stored answers, Graph calls are answered from it and nothing signs in.
+  `WebGraph.Tests.ps1` uses it to check every page that reads Graph:
+  - paging;
+  - fallbacks;
+  - refused requests.
+
+  It found the Checks bug above.
+- **The browser test** runs the accessibility rules on every page and the
+  main dialogs. It also adds an app through the editor, changes it with
+  Batch edit and Add groups, and removes it again.
+- **The server test** checks the stale-save refusal and ten changes to one
+  app at once.
+- **Signing:** releases are signed when the repository has a code-signing
+  certificate as secrets.
+- **Code layout:** the page script and `WebApi.ps1` are split per page. The
+  code is unchanged.
+
 ## 2.0.0
 
 The web interface is now the app. `IntuneDeployment.ps1` opens it directly;
