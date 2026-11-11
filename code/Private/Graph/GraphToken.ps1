@@ -62,9 +62,9 @@ function Global:Get-GraphRoleRequirements {
         @{ Feature = "Install status";        Roles = @('DeviceManagementApps.Read.All', 'DeviceManagementApps.ReadWrite.All'); Required = $false
            Grant = 'DeviceManagementApps.ReadWrite.All'; Purpose = 'deploy, update, assign and delete apps' }
         @{ Feature = "Platform scripts (read)";   Roles = @('DeviceManagementScripts.Read.All', 'DeviceManagementScripts.ReadWrite.All'); Required = $false
-           Grant = 'DeviceManagementScripts.ReadWrite.All'; Purpose = 'Platform scripts... only' }
+           Grant = 'DeviceManagementScripts.ReadWrite.All'; Purpose = 'the Platform scripts page only' }
         @{ Feature = "Platform scripts (change)"; Roles = @('DeviceManagementScripts.ReadWrite.All'); Required = $false
-           Grant = 'DeviceManagementScripts.ReadWrite.All'; Purpose = 'Platform scripts... only' }
+           Grant = 'DeviceManagementScripts.ReadWrite.All'; Purpose = 'the Platform scripts page only' }
         @{ Feature = "Group members";         Roles = @('User.Read.All', 'Directory.Read.All'); Required = $false
            Grant = 'Directory.Read.All'; Purpose = 'show and pick users and devices as group members' }
     )
@@ -208,7 +208,7 @@ function Global:Get-GraphAppTokenClaims {
 
 function Global:Reset-GraphSession {
     <#
-      Drops the Microsoft Graph sign-in this window's lookups share, so the
+      Drops the Microsoft Graph sign-in the app's pages share, so the
       next one signs in fresh. The Graph module keeps ONE session per
       process, and every lookup reuses it while it's for the same app - so
       after the certificate or the permissions change, the old token (no new

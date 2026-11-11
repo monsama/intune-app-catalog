@@ -20,6 +20,12 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    env:
+      # Optional: a code-signing certificate as repository secrets (the .pfx
+      # base64-encoded, and its password). Without them the scripts are
+      # released unsigned, as before.
+      SIGNING_PFX_BASE64: ${{ secrets.CODE_SIGNING_PFX_BASE64 }}
+      SIGNING_PFX_PASSWORD: ${{ secrets.CODE_SIGNING_PFX_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
 
@@ -41,7 +47,7 @@ jobs:
           }
           "Version $appVersion"
 
-      - name: Build the zip
+      - name: Gather the files
         shell: pwsh
         run: |
           $staging = Join-Path $env:RUNNER_TEMP 'intune-app-catalog'
@@ -49,6 +55,34 @@ jobs:
           Copy-Item IntuneDeployment.ps1 $staging
           Copy-Item code -Destination (Join-Path $staging 'code') -Recurse
           Remove-Item (Join-Path $staging 'code\tests') -Recurse -Force
+          "staging=$staging" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Sign the scripts
+        if: env.SIGNING_PFX_BASE64 != ''
+        shell: pwsh
+        run: |
+          # Authenticode signatures with a timestamp, so they stay valid after
+          # the certificate expires. Helps with RemoteSigned and endpoint
+          # protection; AllSigned still won't run the app, which writes its
+          # step helpers at run time.
+          $pfx = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
+          try {
+            $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($pfx, $env:SIGNING_PFX_PASSWORD)
+            if (-not $cert.HasPrivateKey) { throw 'The signing certificate has no private key.' }
+            $files = Get-ChildItem $env:staging -Recurse -Include *.ps1, *.psm1, *.psd1
+            foreach ($f in $files) {
+              $sig = Set-AuthenticodeSignature -FilePath $f.FullName -Certificate $cert -HashAlgorithm SHA256 -TimestampServer 'http://timestamp.digicert.com'
+              if ($sig.Status -in 'NotSigned', 'HashMismatch' -or -not $sig.SignerCertificate) { throw "Signing $($f.Name) failed: $($sig.StatusMessage)" }
+            }
+            "Signed $($files.Count) script(s) as $($cert.Subject)"
+          }
+          finally { Remove-Item $pfx -Force -ErrorAction SilentlyContinue }
+
+      - name: Build the zip
+        shell: pwsh
+        run: |
+          $staging = $env:staging
           $zip = Join-Path $env:RUNNER_TEMP "intune-app-catalog-${{ steps.version.outputs.version }}.zip"
           Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip -Force
           "zip=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -68,7 +102,7 @@ jobs:
             if ($parseErrors.Count -gt 0) { $errors += $parseErrors.Count; Write-Host "$($_.Name): $($parseErrors[0].Message)" }
           }
           if ($errors -gt 0) { throw "$errors parse error(s) in the zip" }
-          foreach ($needed in 'IntuneDeployment.ps1', 'code\Private\Helpers.ps1', 'code\Private\Winget.ps1', 'code\Private\Diagnostics.ps1', 'code\EmbeddedScripts\CreateApp.ps1', 'code\Runner\Invoke-AppStep.ps1', 'code\Web\Start-WebApp.ps1', 'code\Web\WebScripts.ps1', 'code\Web\WebGroups.ps1', 'code\Web\WebChecks.ps1', 'code\Web\WebBatch.ps1', 'code\Web\WebSetup.ps1', 'code\Web\ui\index.html', 'code\Web\ui\app.js') {
+          foreach ($needed in 'IntuneDeployment.ps1', 'code\Private\Helpers.ps1', 'code\Private\Winget.ps1', 'code\Private\Diagnostics.ps1', 'code\EmbeddedScripts\CreateApp.ps1', 'code\Runner\Invoke-AppStep.ps1', 'code\Web\Start-WebApp.ps1', 'code\Web\WebApi.ps1', 'code\Web\WebEditor.ps1', 'code\Web\WebDeploy.ps1', 'code\Web\WebSettings.ps1', 'code\Web\WebServer.ps1', 'code\Web\WebGraph.ps1', 'code\Web\WebScripts.ps1', 'code\Web\WebGroups.ps1', 'code\Web\WebChecks.ps1', 'code\Web\WebBatch.ps1', 'code\Web\WebSetup.ps1', 'code\Web\ui\index.html', 'code\Web\ui\core.js', 'code\Web\ui\apps.js', 'code\Web\ui\checks.js', 'code\Web\ui\groups.js', 'code\Web\ui\scripts.js', 'code\Web\ui\settings.js', 'code\Web\ui\app.js') {
             if (-not (Test-Path (Join-Path $check $needed))) { throw "$needed is missing from the zip" }
           }
           "The zip parses and has what it needs"

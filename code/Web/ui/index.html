@@ -6,11 +6,17 @@
 <title>Intune App Catalog</title>
 <link rel="icon" href="icon.svg">
 <link rel="stylesheet" href="app.css">
+<script src="core.js" defer></script>
+<script src="apps.js" defer></script>
+<script src="checks.js" defer></script>
+<script src="groups.js" defer></script>
+<script src="scripts.js" defer></script>
+<script src="settings.js" defer></script>
 <script src="app.js" defer></script>
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><img src="icon.svg" alt="" width="22" height="22"><span>Intune App Catalog</span><span class="ver" id="ver"></span></div>
+  <h1 class="brand"><img src="icon.svg" alt="" width="22" height="22"><span>Intune App Catalog</span><span class="ver" id="ver"></span></h1>
   <nav class="tabs" role="tablist">
     <button class="tab" role="tab" data-view="apps" id="tabApps">Apps</button>
     <button class="tab" role="tab" data-view="checks" id="tabChecks">Checks</button>
@@ -24,7 +30,7 @@
   </div>
 </header>
 
-<div class="banner warn" id="setupBanner" hidden>
+<div class="banner warn" id="setupBanner" role="region" aria-label="Setup" hidden>
   <span>No Graph connection set up yet - Intune and Entra ID features won't work until it is.</span>
   <button class="btn small" id="bannerSettings">Open Settings and the setup guide</button>
 </div>
@@ -98,13 +104,13 @@
       </table>
       <div class="empty" id="checkEmpty"><h2 id="checkEmptyTitle">Not run yet</h2><p id="checkEmptyText">Run checks to see what needs attention.</p></div>
     </div>
-    <details class="logbox" id="checkLogBox"><summary>Log</summary><pre class="log" id="checkLog"></pre></details>
+    <details class="logbox" id="checkLogBox"><summary>Log</summary><pre class="log" id="checkLog" tabindex="0" role="log"></pre></details>
   </section>
 
   <!-- ============ Groups ============ -->
   <section class="view" id="viewGroups" hidden>
     <div class="gsplit">
-      <aside class="panel">
+      <div class="panel side">
         <div class="toolbar tight">
           <input type="search" id="groupSearch" placeholder="Filter or type a group name" autocomplete="off" spellcheck="false">
           <button class="btn" id="btnGroupOpen" title="Open this exact group name from Entra ID">Open</button>
@@ -115,7 +121,7 @@
           <button class="btn" id="btnGroupsDelete">Delete several...</button>
           <button class="btn" id="btnGroupsReload">Reload</button>
         </div>
-      </aside>
+      </div>
       <section class="panel" id="groupPane">
         <div class="empty" id="groupEmpty"><h2>Pick a group</h2><p>The groups your apps are assigned to are listed on the left. Pick one to see its members in Entra ID, or type any group name and Open it.</p></div>
         <div id="groupDetail" hidden>
@@ -131,7 +137,7 @@
             <section>
               <label>Description <span class="muted">(optional)</span><input id="gDesc" maxlength="1024"></label>
               <h3>Members <span class="muted" id="gCount"></span></h3>
-              <div class="tablewrap short"><table class="plan"><thead><tr><th>Name</th><th>Type</th><th>Sign-in name</th><th></th></tr></thead><tbody id="gMembers"></tbody></table></div>
+              <div class="tablewrap short"><table class="plan"><thead><tr><th>Name</th><th>Type</th><th>Sign-in name</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="gMembers"></tbody></table></div>
               <h3>Used by</h3>
               <ul class="uses" id="gUses"></ul>
             </section>
@@ -145,7 +151,7 @@
               <div class="actions end"><button class="btn primary" id="btnGroupSave">Create / update group</button></div>
             </section>
           </div>
-          <pre class="log" id="groupLog" hidden></pre>
+          <pre class="log" id="groupLog" tabindex="0" role="log" hidden></pre>
         </div>
       </section>
     </div>
@@ -271,7 +277,7 @@
           <h2>Diagnostics</h2>
           <p class="sub">This machine's setup, the catalog itself, and how it lines up with Intune. Only reads.</p>
           <div class="actions"><button class="btn" id="btnDiag">Run diagnostics</button></div>
-          <pre class="log diag" id="diagLog" hidden></pre>
+          <pre class="log diag" id="diagLog" tabindex="0" role="log" hidden></pre>
         </article>
 
       </div>
@@ -332,18 +338,34 @@
 
         <article class="card">
           <h2>Favourite groups</h2>
-          <p class="sub">Offered first wherever a group is chosen. One per line.</p>
-          <textarea id="favGroups" rows="4" class="full"></textarea>
+          <p class="sub" id="favGroupsHint">Offered first wherever a group is chosen. One per line.</p>
+          <textarea id="favGroups" aria-labelledby="favGroupsHint" rows="4" class="full"></textarea>
           <div class="actions"><button class="btn" id="btnSaveFavs">Save favourites</button></div>
         </article>
 
         <article class="card">
           <h2>Activity</h2>
-          <pre class="log" id="jobLog" aria-live="polite">Everything the app does appears here: Test connection, saving, and the certificate and permission actions.</pre>
+          <pre class="log" id="jobLog" tabindex="0" role="log" aria-live="polite">Everything the app does appears here: Test connection, saving, and the certificate and permission actions.</pre>
         </article>
       </div>
     </div>
   </section>
+<div class="menu" id="appMenu" role="menu" hidden>
+  <button role="menuitem" data-act="package">Package (build .intunewin)</button>
+  <button role="menuitem" data-act="pull">Pull from Intune...</button>
+  <button role="menuitem" data-act="pushsettings" title="Send the catalog's settings to Intune, without uploading a package">Push settings to Intune...</button>
+  <button role="menuitem" data-act="status">Install status...</button>
+  <hr>
+  <button role="menuitem" data-act="batchedit">Batch edit...</button>
+  <button role="menuitem" data-act="addgroups">Add groups...</button>
+  <button role="menuitem" data-act="removegroups">Remove groups...</button>
+  <hr>
+  <button role="menuitem" data-act="copyid">Copy App ID</button>
+  <button role="menuitem" data-act="clearid">Clear App ID</button>
+  <hr>
+  <button role="menuitem" data-act="delete" class="danger">Delete from Intune...</button>
+  <button role="menuitem" data-act="remove" class="danger">Remove from catalog...</button>
+</div>
 </main>
 
 <!-- ============ dialogs ============ -->
@@ -452,7 +474,7 @@
   <h2>Deploy to Intune</h2>
   <p class="sub">New apps are created; apps that already have an App ID get their settings updated. In dependency order, one after another. The App ID is saved to the catalog as each one finishes.</p>
   <table class="plan"><thead><tr><th>App</th><th>Action</th><th>Status</th></tr></thead><tbody id="deployRows"></tbody></table>
-  <pre class="log" id="deployLog"></pre>
+  <pre class="log" id="deployLog" tabindex="0" role="log"></pre>
   <div class="actions end"><button class="btn" data-close id="btnDeployClose">Close</button><button class="btn primary" id="btnDeployGo">Deploy</button></div>
 </dialog>
 
@@ -460,31 +482,15 @@
   <h2>Push groups to Intune</h2>
   <p class="sub">Intune gets exactly the catalog's groups for these apps: what's below is added, assignments not in the catalog are removed. Groups that don't exist yet are created.</p>
   <table class="plan"><thead><tr><th>App</th><th>Added in Intune</th><th>Removed from Intune</th></tr></thead><tbody id="pushRows"></tbody></table>
-  <pre class="log" id="pushLog"></pre>
+  <pre class="log" id="pushLog" tabindex="0" role="log"></pre>
   <div class="actions end"><button class="btn" data-close id="btnPushClose">Close</button><button class="btn primary" id="btnPushGo" disabled>Apply</button></div>
 </dialog>
 
-<div class="menu" id="appMenu" role="menu" hidden>
-  <button role="menuitem" data-act="package">Package (build .intunewin)</button>
-  <button role="menuitem" data-act="pull">Pull from Intune...</button>
-  <button role="menuitem" data-act="pushsettings" title="Send the catalog's settings to Intune, without uploading a package">Push settings to Intune...</button>
-  <button role="menuitem" data-act="status">Install status...</button>
-  <hr>
-  <button role="menuitem" data-act="batchedit">Batch edit...</button>
-  <button role="menuitem" data-act="addgroups">Add groups...</button>
-  <button role="menuitem" data-act="removegroups">Remove groups...</button>
-  <hr>
-  <button role="menuitem" data-act="copyid">Copy App ID</button>
-  <button role="menuitem" data-act="clearid">Clear App ID</button>
-  <hr>
-  <button role="menuitem" data-act="delete" class="danger">Delete from Intune...</button>
-  <button role="menuitem" data-act="remove" class="danger">Remove from catalog...</button>
-</div>
 
 <dialog id="dlgRun" class="wide">
   <h2 id="runTitle">Working</h2>
   <p class="sub" id="runText"></p>
-  <pre class="log" id="runLog"></pre>
+  <pre class="log" id="runLog" tabindex="0" role="log"></pre>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
 
@@ -492,7 +498,7 @@
   <h2>Pull from Intune</h2>
   <p class="sub" id="pullText">Reading the apps from Intune...</p>
   <div id="pullReview"></div>
-  <pre class="log" id="pullLog"></pre>
+  <pre class="log" id="pullLog" tabindex="0" role="log"></pre>
   <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnPullApply" hidden>Apply</button></div>
 </dialog>
 
@@ -528,7 +534,7 @@
     </section>
   </div>
   <p class="formerror" id="scriptErr" hidden></p>
-  <pre class="log" id="scriptLog" hidden></pre>
+  <pre class="log" id="scriptLog" tabindex="0" role="log" hidden></pre>
   <div class="actions end">
     <button class="btn" data-close>Close</button>
     <button class="btn" id="btnScriptLocal" title="Only the local folder - nothing is sent to Intune">Save locally</button>
@@ -548,7 +554,7 @@
   <p class="sub">Deletes these security groups from Entra ID. Apps assigned to them lose those assignments in Intune. The catalog still names them until you change the apps.</p>
   <div class="deplist tall" id="gDelList"></div>
   <label>More group names <span class="muted">(one per line)</span><textarea id="gDelMore" rows="3" class="monotext" spellcheck="false"></textarea></label>
-  <pre class="log" id="gDelLog" hidden></pre>
+  <pre class="log" id="gDelLog" tabindex="0" role="log" hidden></pre>
   <div class="actions end"><button class="btn" data-close>Close</button><button class="btn danger" id="btnGroupsDeleteGo">Delete</button></div>
 </dialog>
 
@@ -560,27 +566,27 @@
       <h3>Requirements</h3>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="architecture">Architecture</label>
         <div class="checks"><label class="chk"><input type="checkbox" data-barch="x64" checked>x64</label><label class="chk"><input type="checkbox" data-barch="x86">x86</label><label class="chk"><input type="checkbox" data-barch="arm64">arm64</label></div></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minOSKey">Minimum OS</label><select id="bMinOs"></select></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="installContext">Install for</label><select id="bContext"><option>System</option><option>User</option></select></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="installTimeMinutes">Install time (min)</label><input id="bTime" inputmode="numeric" value="60"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minDiskSpaceMB">Min. disk space (MB)</label><input id="bDisk" inputmode="numeric" value="0"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minMemoryMB">Min. memory (MB)</label><input id="bMem" inputmode="numeric" value="0"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minProcessors">Min. CPUs</label><input id="bCpus" inputmode="numeric" value="0"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minCpuSpeedMHz">Min. CPU speed (MHz)</label><input id="bSpeed" inputmode="numeric" value="0"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="deviceRestartBehavior">Restart</label><select id="bRestart"><option value="basedOnReturnCode">Based on return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="allowAvailableUninstall">Uninstall from Company Portal</label><select id="bUninstall"><option value="1">Allowed</option><option value="0">Not allowed</option></select></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="isFeatured">Featured in Company Portal</label><select id="bFeatured"><option value="1">Yes</option><option value="0">No</option></select></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="wingetInstallMethod">Install with (Winget apps)</label><select id="bMethod"><option value="WAU">Winget-AutoUpdate</option><option value="Winget">winget command</option></select></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minOSKey">Minimum OS</label><select id="bMinOs" aria-label="Minimum OS"></select></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="installContext">Install for</label><select id="bContext" aria-label="Install for"><option>System</option><option>User</option></select></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="installTimeMinutes">Install time (min)</label><input id="bTime" aria-label="Install time (min)" inputmode="numeric" value="60"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minDiskSpaceMB">Min. disk space (MB)</label><input id="bDisk" aria-label="Min. disk space (MB)" inputmode="numeric" value="0"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minMemoryMB">Min. memory (MB)</label><input id="bMem" aria-label="Min. memory (MB)" inputmode="numeric" value="0"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minProcessors">Min. CPUs</label><input id="bCpus" aria-label="Min. CPUs" inputmode="numeric" value="0"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minCpuSpeedMHz">Min. CPU speed (MHz)</label><input id="bSpeed" aria-label="Min. CPU speed (MHz)" inputmode="numeric" value="0"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="deviceRestartBehavior">Restart</label><select id="bRestart" aria-label="Restart"><option value="basedOnReturnCode">Based on return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="allowAvailableUninstall">Uninstall from Company Portal</label><select id="bUninstall" aria-label="Uninstall from Company Portal"><option value="1">Allowed</option><option value="0">Not allowed</option></select></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="isFeatured">Featured in Company Portal</label><select id="bFeatured" aria-label="Featured in Company Portal"><option value="1">Yes</option><option value="0">No</option></select></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="wingetInstallMethod">Install with (Winget apps)</label><select id="bMethod" aria-label="Install with (Winget apps)"><option value="WAU">Winget-AutoUpdate</option><option value="Winget">winget command</option></select></div>
     </section>
     <section>
       <h3>Details</h3>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="publisher">Publisher</label><input id="bPublisher"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="owner">Owner</label><input id="bOwner"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="developer">Developer</label><input id="bDeveloper"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="informationUrl">Information URL</label><input id="bInfoUrl" placeholder="https://"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="privacyUrl">Privacy URL</label><input id="bPrivacyUrl" placeholder="https://"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="notes">Notes</label><input id="bNotes"></div>
-      <div class="bfield wide"><label class="chk"><input type="checkbox" data-bf="returnCodes">Return codes <span class="muted">(replaces the list; code = type)</span></label><textarea id="bCodes" rows="4" class="monotext">0 = success
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="publisher">Publisher</label><input id="bPublisher" aria-label="Publisher"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="owner">Owner</label><input id="bOwner" aria-label="Owner"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="developer">Developer</label><input id="bDeveloper" aria-label="Developer"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="informationUrl">Information URL</label><input id="bInfoUrl" aria-label="Information URL" placeholder="https://"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="privacyUrl">Privacy URL</label><input id="bPrivacyUrl" aria-label="Privacy URL" placeholder="https://"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="notes">Notes</label><input id="bNotes" aria-label="Notes"></div>
+      <div class="bfield wide"><label class="chk"><input type="checkbox" data-bf="returnCodes">Return codes <span class="muted">(replaces the list; code = type)</span></label><textarea id="bCodes" aria-label="Return codes (replaces the list; code = type)" rows="4" class="monotext">0 = success
 1707 = success
 3010 = softReboot
 1641 = hardReboot
@@ -590,7 +596,7 @@
   </div>
   <label class="chk"><input type="checkbox" id="bPush" checked>Then push the settings of the apps already in Intune</label>
   <p class="formerror" id="batchErr" hidden></p>
-  <pre class="log" id="batchLog" hidden></pre>
+  <pre class="log" id="batchLog" tabindex="0" role="log" hidden></pre>
   <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnBatchGo">Apply</button></div>
 </dialog>
 
@@ -600,7 +606,7 @@
   <div class="groups4" id="gbRoles"></div>
   <label class="chk"><input type="checkbox" id="gbPush" checked>Then push groups for the apps already in Intune</label>
   <p class="formerror" id="gbErr" hidden></p>
-  <pre class="log" id="gbLog" hidden></pre>
+  <pre class="log" id="gbLog" tabindex="0" role="log" hidden></pre>
   <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnGbGo">Apply</button></div>
 </dialog>
 
@@ -608,14 +614,14 @@
   <h2>Find a Winget package</h2>
   <div class="toolbar tight"><input type="search" id="wgQuery" placeholder="App or publisher name" autocomplete="off" spellcheck="false"><button class="btn" id="btnWgSearch">Search</button></div>
   <p class="sub" id="wgNote">Searches winget's sources. Pick the package to use its ID.</p>
-  <div class="tablewrap short"><table class="plan"><thead><tr><th>Name</th><th>Winget ID</th><th>Version</th><th>Source</th><th></th></tr></thead><tbody id="wgRows"></tbody></table></div>
+  <div class="tablewrap short"><table class="plan"><thead><tr><th>Name</th><th>Winget ID</th><th>Version</th><th>Source</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="wgRows"></tbody></table></div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
 
 <dialog id="dlgCertsLocal" class="wide">
   <h2>Certificates on this machine</h2>
   <p class="sub">CurrentUser\My and LocalMachine\My. Deleting removes the certificate and its private key from this machine only - Entra ID keeps its copy (Check certificates there deletes that).</p>
-  <div class="tablewrap short"><table class="plan"><thead><tr><th>Subject</th><th>Store</th><th>Thumbprint</th><th>Expires</th><th></th></tr></thead><tbody id="certsLocalRows"></tbody></table></div>
+  <div class="tablewrap short"><table class="plan"><thead><tr><th>Subject</th><th>Store</th><th>Thumbprint</th><th>Expires</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="certsLocalRows"></tbody></table></div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
 

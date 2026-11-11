@@ -1,9 +1,9 @@
 <#
-  Microsoft.Graph.Authentication sharing this window's process with a
+  Microsoft.Graph.Authentication sharing the app's PowerShell process with a
   module that brought its own copy of the same .NET libraries.
 
-  Every sign-in this window makes itself (Test connection, the lookups and
-  pickers) imports the Graph module into a runspace of THIS process. .NET
+  Every sign-in the app makes itself (Test connection, the pages that read
+  Graph) imports the Graph module into a runspace of THIS process. .NET
   loads one version of an assembly per process, so when something already
   loaded Azure.Identity / Azure.Core / MSAL in a different version - Az,
   ExchangeOnlineManagement, PnP.PowerShell, MicrosoftTeams or an older
@@ -124,7 +124,7 @@ function Global:Test-SessionStartedWithoutProfile {
 function Global:Format-GraphAssemblyConflictText {
     <#
       Pure: the explanation shown to the user, as plain text (so it can be
-      copied straight out of the message box with Ctrl+C).
+      copied straight out of the page).
     #>
     param(
         [object[]]$Conflicts,
@@ -134,11 +134,11 @@ function Global:Format-GraphAssemblyConflictText {
         [string]$GraphVersion
     )
     $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add("Microsoft Graph sign-in can't work in this window: another PowerShell module already loaded different versions of the libraries the Graph module$(if ($GraphVersion) { " $GraphVersion" }) needs. .NET can only hold one version per process, so nothing in Settings or the tenant can fix this - only a fresh PowerShell process can.")
+    $lines.Add("Microsoft Graph sign-in can't work in the PowerShell running this app: another PowerShell module already loaded different versions of the libraries the Graph module$(if ($GraphVersion) { " $GraphVersion" }) needs. .NET can only hold one version per process, so nothing in Settings or the tenant can fix this - only a fresh PowerShell process can.")
     $lines.Add("")
     $conflicts = @($Conflicts | Where-Object { $_ })
     if ($conflicts.Count -gt 0) {
-        $lines.Add("Already loaded in this window:")
+        $lines.Add("Already loaded in the app's PowerShell:")
         foreach ($c in $conflicts) {
             $from = if ($c.Owner) { "from $($c.Owner)" } elseif ($c.Location) { "from $($c.Location)" } else { "" }
             $lines.Add("  - $($c.Name) $($c.Loaded) (Graph needs $($c.Expected)) $from".TrimEnd())
@@ -147,7 +147,7 @@ function Global:Format-GraphAssemblyConflictText {
     }
     $modules = @($LoadedModules | Where-Object { $_ })
     if ($modules.Count -gt 0) {
-        $lines.Add("Modules loaded in this window that commonly cause this: $($modules -join ', ')")
+        $lines.Add("Modules loaded in the app's PowerShell that commonly cause this: $($modules -join ', ')")
         $lines.Add("")
     }
     $sameModule = @($conflicts | Where-Object { $_.SameModule }).Count -gt 0
@@ -157,7 +157,7 @@ function Global:Format-GraphAssemblyConflictText {
         $lines.Add("")
     }
     if ($NoProfile) {
-        $lines.Add("This window was already started without a PowerShell profile, so a restart only helps if the module above was imported by something else in this session. If it comes back, remove the conflicting module version or start the app from a new console.")
+        $lines.Add("The app was already started without a PowerShell profile, so a restart only helps if the module above was imported by something else in this session. If it comes back, remove the conflicting module version or start the app from a new console.")
     }
     else {
         $lines.Add("Usually the PowerShell profile imported the other module. Restarting the app without the profile avoids it:")

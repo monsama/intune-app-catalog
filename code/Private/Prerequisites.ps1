@@ -93,7 +93,7 @@ function Global:Invoke-HiddenPowerShell {
 }
 
 function Global:Test-GraphModuleHere {
-    # Installed in the PowerShell running this window? A yes is remembered for
+    # Installed in the PowerShell running the app? A yes is remembered for
     # the session (nothing here uninstalls); a no is re-checked every time, in
     # case the user installed it some other way meanwhile.
     if ($Global:App.GraphModuleHereConfirmed) { return $true }
@@ -108,7 +108,7 @@ function Global:Get-GraphModuleStatus {
     <#
       One row per PowerShell this app loads the module in: Name (for
       display), Version ('' when unusable there), Problem (why, if not just
-      "not installed"). Row 0 is always the PowerShell running this window -
+      "not installed"). Row 0 is always the PowerShell running the app -
       the one Install missing installs into.
       The Windows PowerShell row starts a separate powershell.exe and imports
       the module there - a few seconds; Settings > Prerequisites runs this
@@ -118,7 +118,7 @@ function Global:Get-GraphModuleStatus {
     $rows = New-Object System.Collections.Generic.List[object]
     $isCore = $PSVersionTable.PSEdition -eq "Core"
     $here = Get-Module -ListAvailable -Name $moduleName | Sort-Object Version -Descending | Select-Object -First 1
-    $hereName = if ($isCore) { "PowerShell $($PSVersionTable.PSVersion.Major).$($PSVersionTable.PSVersion.Minor) - this window" } else { "Windows PowerShell $($PSVersionTable.PSVersion.Major).$($PSVersionTable.PSVersion.Minor) - this window and deployment steps" }
+    $hereName = if ($isCore) { "PowerShell $($PSVersionTable.PSVersion.Major).$($PSVersionTable.PSVersion.Minor) - runs this app" } else { "Windows PowerShell $($PSVersionTable.PSVersion.Major).$($PSVersionTable.PSVersion.Minor) - runs this app and the deployment steps" }
     $rows.Add([pscustomobject]@{
         Name    = $hereName
         Exe     = (Get-Process -Id $PID).Path

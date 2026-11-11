@@ -1,14 +1,15 @@
 # Tests
 
-Three suites, each a plain script - no test framework to install.
+Four suites, each a plain script - no test framework to install.
 
 ```
 pwsh -NoProfile -File code/tests/CatalogLogic.Tests.ps1   # pure logic
 pwsh -NoProfile -File code/tests/WebServer.Tests.ps1      # the real server, over HTTP
+pwsh -NoProfile -File code/tests/WebGraph.Tests.ps1       # the pages that read Graph, without a tenant
 node code/tests/ui/WebUi.Tests.mjs                        # every page in Chromium
 ```
 
-Every push runs the first two on Linux (PowerShell 7) and Windows
+Every push runs the first three on Linux (PowerShell 7) and Windows
 (PowerShell 7 and Windows PowerShell 5.1), and the browser test on Linux -
 see `.github/workflows/tests.yml`.
 
@@ -50,16 +51,38 @@ tenant - everything that would stops at "Set up the connection first", and
 the test checks that it does. What it creates in the catalog and the script
 folder it removes again, and the settings file is put back as it was.
 
+## WebGraph.Tests.ps1 - the pages that read Graph
+
+Starts the server in **test mode**: the environment variable
+`INTUNE_CATALOG_TEST_GRAPH` names a JSON file of stored Graph answers
+(`code\Web\WebGraph.ps1`), every Graph call is answered from it, and
+nothing signs in. The console says `TEST MODE` in red. The test checks what
+each page makes of those answers: Checks (renamed, only in Intune, not
+linked, a missing group), Diagnostics, the deploy plan holding back an app
+of the same name, install status, platform scripts (list, text, groups, run
+status, local copies), groups and members, the directory search - and the
+awkward cases: a second page (`@odata.nextLink`), a refused `$expand`, the
+beta report falling back to v1.0, and a refused request naming the
+permission that page needs.
+
+The answers file maps `"METHOD path?query"` (or `"METHOD path"` for any
+query), relative to `https://graph.microsoft.com/`, to the JSON Graph would
+send. A list is answered in order; `{ "__status": 403, "__body": {...} }`
+is an error.
+
 ## ui/WebUi.Tests.mjs - the page
 
 The real server and the real page in Chromium, in light and dark mode, at
 1440 and 820 pixels wide: every tab, the app editor, Checks, Diagnostics.
 Fails on an error in the page, a failed request, a button without a name,
-or a page wider than the window. `--shots <folder>` keeps a screenshot of
-each page; CI uploads them.
+a page wider than the window, or a broken accessibility rule - axe-core's
+WCAG 2.1 A/AA and best-practice rules, on every page and the main dialogs.
+It also adds an app through the editor (with a Winget search), changes it
+with Batch edit and Add groups, checks both arrived, and removes it again.
+`--shots <folder>` keeps a screenshot of each page; CI uploads them.
 
 ```
-npm install --no-save playwright@1.48.2
+npm install --no-save playwright@1.48.2 axe-core@4.10.2
 npx playwright install chromium
 node code/tests/ui/WebUi.Tests.mjs --shots ./shots
 ```

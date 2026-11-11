@@ -8,49 +8,11 @@
     for Windows devices, with the local copies in data\script-data beside
     them.
 
-    Reads go to Graph from the request (Invoke-WebGraph); changes run the
-    PlatformScripts step (code\EmbeddedScripts\PlatformScripts.ps1) as a job,
-    like every other change the web interface makes.
+    Reads go to Graph from the request (Invoke-WebGraph, WebGraph.ps1);
+    changes run the PlatformScripts step
+    (code\EmbeddedScripts\PlatformScripts.ps1) as a job, like every other
+    change the web interface makes.
 #>
-
-function Global:Invoke-WebGraph {
-    <#
-      Runs -Action with Graph connected app-only (reusing a matching
-      connection). -Action
-      gets one argument: a scriptblock (Uri, Method, Body) that calls Graph
-      and returns the parsed JSON, throwing "<status> <reason>: <body>".
-      Returns @{ ok; value } or @{ ok = $false; error } with the error made
-      readable.
-    #>
-    param([scriptblock]$Action)
-    if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Set up the connection in Settings first.' } }
-    try {
-        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
-        $ctx = Get-MgContext -ErrorAction SilentlyContinue
-        $thumb = $Global:App.GraphCertificateThumbprint
-        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $Global:App.GraphClientId -or ($thumb -and $ctx.CertificateThumbprint -and $ctx.CertificateThumbprint -ne $thumb)) {
-            Connect-MgGraph -TenantId $Global:App.GraphTenantId -ClientId $Global:App.GraphClientId -CertificateThumbprint $thumb -NoWelcome -ErrorAction Stop
-        }
-        $call = {
-            param([string]$Uri, [string]$Method = 'GET', $Body = $null)
-            $p = @{ Uri = $Uri; Method = $Method; OutputType = 'HttpResponseMessage'; ErrorAction = 'Stop' }
-            if ($null -ne $Body) { $p.Body = $Body; $p.ContentType = 'application/json' }
-            $response = Invoke-MgGraphRequest @p
-            $text = if ($response.Content) { $response.Content.ReadAsStringAsync().GetAwaiter().GetResult() } else { '' }
-            if (-not $response.IsSuccessStatusCode) { throw "$([int]$response.StatusCode) $($response.ReasonPhrase): $text" }
-            if ($text) { $text | ConvertFrom-Json } else { $null }
-        }
-        return @{ ok = $true; value = (& $Action $call) }
-    }
-    catch {
-        $msg = Get-InnermostErrorMessage $_.Exception
-        $friendly = ConvertTo-FriendlyGraphError $msg
-        if ("$msg" -match '\b403\b|Forbidden|Authorization_RequestDenied') {
-            $friendly = "$friendly`nPlatform scripts need the DeviceManagementScripts.ReadWrite.All application permission (Settings > API permissions > Add required permissions...)."
-        }
-        return @{ ok = $false; error = $friendly }
-    }
-}
 
 function Global:ConvertTo-WebScriptRow {
     # Pure: one row of the Platform scripts list, from Intune's listing
@@ -88,7 +50,7 @@ function Global:Get-WebScripts {
     foreach ($s in @($imported.Scripts)) { if ($s.displayName) { $localByName[[string]$s.displayName] = $s } }
     $tenant = $null; $tenantError = ''
     if (Test-GraphCredentialsConfigured -Quiet) {
-        $read = Invoke-WebGraph -Action {
+        $read = Invoke-WebGraph -Permission 'DeviceManagementScripts.ReadWrite.All' -Action {
             param($Graph)
             $rows = New-Object System.Collections.Generic.List[object]
             # No scriptContent in the listing: a script can be 200 KB.
@@ -125,7 +87,7 @@ function Global:Get-WebScriptDetail {
     $id = [string]$Data.id
     if ($id) {
         if ($id -notmatch '^[0-9a-fA-F-]{36}$') { return @{ ok = $false; error = 'That is not a script id.' } }
-        $read = Invoke-WebGraph -Action {
+        $read = Invoke-WebGraph -Permission 'DeviceManagementScripts.ReadWrite.All' -Action {
             param($Graph)
             $s = & $Graph "https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts/$id"
             $groupNames = @(); $groupsKnown = $true
@@ -255,7 +217,7 @@ function Global:Get-WebScriptRunStatus {
     param($Data)
     $id = [string]$Data.id
     if ($id -notmatch '^[0-9a-fA-F-]{36}$') { return @{ ok = $false; error = 'This script is not in Intune, so it has never run anywhere.' } }
-    $read = Invoke-WebGraph -Action {
+    $read = Invoke-WebGraph -Permission 'DeviceManagementScripts.ReadWrite.All' -Action {
         param($Graph)
         $rows = New-Object System.Collections.Generic.List[object]
         $uri = "https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts/$id/deviceRunStates?`$expand=managedDevice"
@@ -286,7 +248,7 @@ function Global:Save-WebScriptCopies {
       local copies. Removes copies of scripts no longer in Intune only when
       every read worked - a failed read must never cost a local copy.
     #>
-    $read = Invoke-WebGraph -Action {
+    $read = Invoke-WebGraph -Permission 'DeviceManagementScripts.ReadWrite.All' -Action {
         param($Graph)
         $ids = New-Object System.Collections.Generic.List[string]
         $uri = "https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts?`$select=id"

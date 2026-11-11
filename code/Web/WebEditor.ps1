@@ -1,0 +1,300 @@
+# Intune App Catalog & Deployment
+# Copyright (C) 2026 Viktor Ljuca <https://monsama.ch>
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+<#
+.SYNOPSIS
+    The app editor: one app for the form and its deploy settings, checking
+    and saving the edit (refused when the file changed since it was opened),
+    removing an app from the catalog. The routes are in WebApi.ps1.
+#>
+
+function Global:Get-WebAppFileVersion {
+    # A fingerprint of one app's saved file ('' when there is none), so a
+    # save can tell whether the file changed since the editor opened it.
+    param([string]$Name)
+    $folder = Get-AppFolder -Kind Catalog
+    if (-not $folder -or -not $Name) { return '' }
+    $file = Join-Path $folder ((Get-SafeFileNameForApp -Name $Name) + '.json')
+    if (-not (Test-Path -LiteralPath $file)) { return '' }
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash([System.IO.File]::ReadAllBytes($file))) -replace '-', '') }
+    finally { $sha.Dispose() }
+}
+
+function Global:Test-WebWingetId {
+    # Pure: a Winget ID as winget itself allows them (letters, digits, . _ + -).
+    param([string]$Id)
+    if (-not $Id) { return $true }
+    return ($Id -match '^[A-Za-z0-9][A-Za-z0-9._+\-]{0,127}$')
+}
+
+function Global:Get-WebAppEditable {
+    # Pure: an app record as the editor's JSON - every field it shows.
+    param($App)
+    $m = $App.metadata
+    return [ordered]@{
+        appName      = [string]$App.appName
+        wingetId     = [string]$App.wingetId
+        appId        = [string]$App.appId
+        intuneAppType = [string]$App.intuneAppType
+        requiredFor  = @($App.requiredFor | ForEach-Object { [string]$_ })
+        availableFor = @($App.availableFor | ForEach-Object { [string]$_ })
+        uninstallFor = @($App.uninstallFor | ForEach-Object { [string]$_ })
+        excludeFor   = @($App.excludeFor | ForEach-Object { [string]$_ })
+        hasMetadata  = [bool]$m
+        metadata     = [ordered]@{
+            description      = [string]$(if ($m) { $m.description })
+            publisher        = [string]$(if ($m) { $m.publisher })
+            owner            = [string]$(if ($m) { $m.owner })
+            developer        = [string]$(if ($m) { $m.developer })
+            informationUrl   = [string]$(if ($m) { $m.informationUrl })
+            privacyUrl       = [string]$(if ($m) { $m.privacyUrl })
+            notes            = [string]$(if ($m) { $m.notes })
+            appVersion       = [string]$(if ($m) { $m.appVersion })
+            installCommand   = [string]$(if ($m) { $m.installCommand })
+            uninstallCommand = [string]$(if ($m) { $m.uninstallCommand })
+            installContext   = [string]$(if ($m) { $m.installContext })
+        }
+    }
+}
+
+function Global:ConvertTo-WebDeploySettings {
+    <#
+      Pure: the editor's "Deploy settings" section, checked, as
+      @{ Error; Values } - Values are
+      catalog metadata properties, ready to set. Error is '' when fine.
+      -AppNames: the catalog's apps (a dependency must be one of them, and
+      not the app itself, -Self).
+    #>
+    param($Form, [string[]]$AppNames = @(), [string]$Self = '')
+    $ops = 'notConfigured', 'equal', 'notEqual', 'greaterThan', 'greaterThanOrEqual', 'lessThan', 'lessThanOrEqual'
+    $d = $Form.detection
+    $rule = $null
+    switch ([string]$d.type) {
+        'Script' {
+            if (-not ([string]$d.script).Trim()) { return @{ Error = 'The detection script is empty.' } }
+            $rule = [pscustomobject]@{ Type = 'Script'; Script_Content = (ConvertTo-CanonicalLineEndings ([string]$d.script)).TrimEnd() }
+        }
+        'Msi' {
+            if (-not ([string]$d.productCode).Trim()) { return @{ Error = 'An MSI detection rule needs the product code.' } }
+            if ([string]$d.operator -notin $ops) { return @{ Error = 'Unknown version operator.' } }
+            $rule = [pscustomobject]@{ Type = 'Msi'; Msi_ProductCode = ([string]$d.productCode).Trim(); Msi_VersionOperator = [string]$d.operator; Msi_Version = ([string]$d.value).Trim() }
+        }
+        'File' {
+            if (-not ([string]$d.path).Trim() -or -not ([string]$d.name).Trim()) { return @{ Error = 'A file detection rule needs the folder and the file name.' } }
+            if ([string]$d.detectionType -notin 'exists', 'doesNotExist', 'modifiedDate', 'createdDate', 'version', 'sizeInMB') { return @{ Error = 'Unknown file detection type.' } }
+            if ([string]$d.operator -notin $ops) { return @{ Error = 'Unknown operator.' } }
+            $rule = [pscustomobject]@{ Type = 'File'; File_Path = ([string]$d.path).Trim(); File_Name = ([string]$d.name).Trim(); File_Check32Bit = [bool]$d.check32Bit
+                File_DetectionType = [string]$d.detectionType; File_Operator = [string]$d.operator; File_DetectionValue = ([string]$d.value).Trim() }
+        }
+        'Registry' {
+            if (-not ([string]$d.keyPath).Trim()) { return @{ Error = 'A registry detection rule needs the key path.' } }
+            if ([string]$d.detectionType -notin 'exists', 'doesNotExist', 'string', 'integer', 'version') { return @{ Error = 'Unknown registry detection type.' } }
+            if ([string]$d.operator -notin $ops) { return @{ Error = 'Unknown operator.' } }
+            $rule = [pscustomobject]@{ Type = 'Registry'; Reg_KeyPath = ([string]$d.keyPath).Trim(); Reg_ValueName = ([string]$d.valueName).Trim(); Reg_Check32Bit = [bool]$d.check32Bit
+                Reg_DetectionType = [string]$d.detectionType; Reg_Operator = [string]$d.operator; Reg_DetectionValue = ([string]$d.value).Trim() }
+        }
+        '' { $rule = $null }
+        default { return @{ Error = 'Unknown detection rule type.' } }
+    }
+    # The requirement fields are the same as the default values' - one checker.
+    $base = ConvertTo-WebDefaultSettings $Form
+    if ($base.Error) { return @{ Error = $base.Error } }
+    $deps = @(@($Form.dependencies) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
+    foreach ($dep in $deps) {
+        if ($dep -eq $Self) { return @{ Error = "An app can't depend on itself." } }
+        if ($AppNames -notcontains $dep) { return @{ Error = "Dependency '$dep' isn't an app in this catalog." } }
+    }
+    $b = $base.Settings
+    return @{ Error = ''; Values = [ordered]@{
+        detectionRule = $rule; architecture = $b.Architecture; minOSKey = $b.MinOSKey
+        minDiskSpaceMB = $b.MinDiskSpaceMB; minMemoryMB = $b.MinMemoryMB; minProcessors = $b.MinProcessors; minCpuSpeedMHz = $b.MinCpuSpeedMHz
+        installTimeMinutes = $b.InstallTimeMinutes; deviceRestartBehavior = $b.DeviceRestartBehavior; allowAvailableUninstall = $b.AllowAvailableUninstall
+        returnCodes = @($b.ReturnCodes); dependencies = $deps
+    } }
+}
+
+function Global:Get-WebDeployEditable {
+    # Pure: an app's metadata as the editor's "Deploy settings" section.
+    param($Metadata)
+    $m = $Metadata
+    $r = if ($m) { $m.detectionRule } else { $null }
+    $det = [ordered]@{ type = ''; script = ''; productCode = ''; operator = 'notConfigured'; value = ''; path = ''; name = ''; check32Bit = $false; detectionType = 'exists'; keyPath = ''; valueName = '' }
+    if ($r) {
+        $det.type = [string]$r.Type
+        switch ([string]$r.Type) {
+            'Script' { $det.script = [string]$r.Script_Content }
+            'Msi' { $det.productCode = [string]$r.Msi_ProductCode; $det.operator = [string]$r.Msi_VersionOperator; $det.value = [string]$r.Msi_Version }
+            'File' { $det.path = [string]$r.File_Path; $det.name = [string]$r.File_Name; $det.check32Bit = [bool]$r.File_Check32Bit; $det.detectionType = [string]$r.File_DetectionType; $det.operator = [string]$r.File_Operator; $det.value = [string]$r.File_DetectionValue }
+            'Registry' { $det.keyPath = [string]$r.Reg_KeyPath; $det.valueName = [string]$r.Reg_ValueName; $det.check32Bit = [bool]$r.Reg_Check32Bit; $det.detectionType = [string]$r.Reg_DetectionType; $det.operator = [string]$r.Reg_Operator; $det.value = [string]$r.Reg_DetectionValue }
+        }
+        if (-not $det.operator) { $det.operator = 'notConfigured' }
+    }
+    return [ordered]@{
+        detection = $det
+        architecture = @(([string]$(if ($m) { $m.architecture })) -split ',' | Where-Object { $_ }); installContext = $(if ($m -and [string]$m.installContext -eq 'User') { 'User' } else { 'System' })
+        minOSKey = [string]$(if ($m) { $m.minOSKey }); minDiskSpaceMB = [int]$(if ($m) { $m.minDiskSpaceMB }); minMemoryMB = [int]$(if ($m) { $m.minMemoryMB })
+        minProcessors = [int]$(if ($m) { $m.minProcessors }); minCpuSpeedMHz = [int]$(if ($m) { $m.minCpuSpeedMHz }); installTimeMinutes = [int]$(if ($m -and $m.installTimeMinutes) { $m.installTimeMinutes } else { 60 })
+        deviceRestartBehavior = [string]$(if ($m -and $m.deviceRestartBehavior) { $m.deviceRestartBehavior } else { 'basedOnReturnCode' }); allowAvailableUninstall = [bool]$(if ($m) { $m.allowAvailableUninstall })
+        returnCodes = @($(if ($m) { $m.returnCodes }) | Where-Object { $_ } | ForEach-Object { [ordered]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })
+        dependencies = @($(if ($m) { $m.dependencies }) | Where-Object { $_ } | ForEach-Object { [string]$_ })
+    }
+}
+
+function Global:Get-WebApp {
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $name = [string]$Data.name
+    $app = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $app) { return @{ ok = $false; error = "No app called '$name' in the catalog (it may have been renamed or removed - Reload)." } }
+    $editable = Get-WebAppEditable $app
+    $meta = if ($app.metadata) { $app.metadata } else { try { Get-DefaultAppMetadata -AppName $app.appName -WingetId $app.wingetId -Uncommon (-not $app.wingetId) } catch { $null } }
+    $editable.deploy = Get-WebDeployEditable $meta
+    return @{ ok = $true; app = $editable; version = (Get-WebAppFileVersion $app.appName); knownGroups = @(Get-AllKnownGroups | Sort-Object -Unique)
+        appNames = @($catalog.Apps | ForEach-Object { $_.appName } | Where-Object { $_ -ne $name } | Sort-Object); minOsChoices = @(Get-WebMinOsChoices) }
+}
+
+function Global:Merge-WebAppEdit {
+    <#
+      Pure: the app record after the editor's changes - everything the
+      editor doesn't show (detection rule, dependencies, supersedence,
+      package path, Intune's type and version, ...) carried over untouched.
+      Metadata is only created for an app that had none when a metadata
+      field was actually filled in, from the computed defaults.
+    #>
+    param($Existing, $Edit, $Defaults)
+    $groups = {
+        param($list)
+        @(@($list) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
+    }
+    $metaEdit = $Edit.metadata
+    # installContext is in the Deploy settings section (ConvertTo-WebDeploySettings).
+    $metaFields = 'description', 'publisher', 'owner', 'developer', 'informationUrl', 'privacyUrl', 'notes', 'appVersion', 'installCommand', 'uninstallCommand'
+    $metadata = if ($Existing -and $Existing.metadata) { $Existing.metadata.PSObject.Copy() } else { $null }
+    $anyMetaFilled = $metaEdit -and @($metaFields | Where-Object { [string]$metaEdit.$_ }).Count -gt 0
+    if (-not $metadata -and $anyMetaFilled -and $Defaults) { $metadata = $Defaults.PSObject.Copy() }
+    if ($metadata -and $metaEdit) {
+        foreach ($f in $metaFields) {
+            if ($metadata.PSObject.Properties.Name -contains $f) { $metadata.$f = [string]$metaEdit.$f }
+            else { $metadata | Add-Member -NotePropertyName $f -NotePropertyValue ([string]$metaEdit.$f) }
+        }
+        if (-not $metadata.appVersion) { $metadata.appVersion = $null }
+    }
+    return [pscustomobject]@{
+        appId            = ([string]$Edit.appId).Trim()
+        appName          = (([string]$Edit.appName).Trim() -replace '\s+', ' ')
+        wingetId         = ([string]$Edit.wingetId).Trim()
+        intuneAppType    = $(if ($Existing) { [string]$Existing.intuneAppType } else { '' })
+        intuneAppVersion = $(if ($Existing) { [string]$Existing.intuneAppVersion } else { '' })
+        packagePath      = $(if ($Existing) { [string]$Existing.packagePath } else { '' })
+        requiredFor      = & $groups $Edit.requiredFor
+        availableFor     = & $groups $Edit.availableFor
+        uninstallFor     = & $groups $Edit.uninstallFor
+        excludeFor       = & $groups $Edit.excludeFor
+        metadata         = $metadata
+    }
+}
+
+function Global:Test-WebAppEdit {
+    <#
+      Pure: why an edited app can't be saved ('' when it can): a name, unique by name and by file name, a GUID or no
+      App ID, a Winget ID winget would accept.
+    #>
+    param($Record, [string]$OriginalName, [object[]]$Others)
+    if (-not $Record.appName) { return 'The app needs a name.' }
+    if ($Record.appId -and $Record.appId -notmatch '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$') { return "The App ID must be a GUID (or empty for an app that isn't in Intune yet)." }
+    if (-not (Test-WebWingetId $Record.wingetId)) { return "'$($Record.wingetId)' isn't a Winget ID winget accepts (letters, digits, . _ + -)." }
+    $key = $Record.appName.ToLowerInvariant()
+    $file = Get-SafeFileNameForApp -Name $Record.appName
+    foreach ($o in @($Others)) {
+        if (-not $o -or $o.appName -eq $OriginalName) { continue }
+        if (($o.appName.Trim() -replace '\s+', ' ').ToLowerInvariant() -eq $key) { return "Another app is already called '$($o.appName)'." }
+        if ((Get-SafeFileNameForApp -Name $o.appName) -eq $file) { return "'$($Record.appName)' and '$($o.appName)' would be saved to the same file ($file.json). Choose a different name." }
+        if ($Record.appId -and $o.appId -eq $Record.appId) { return "'$($o.appName)' already has App ID $($Record.appId)." }
+    }
+    return ''
+}
+
+function Global:Backup-WebAppFile {
+    # A copy of one app's file in the Backups folder before it's overwritten or removed.
+    param([string]$FilePath)
+    if (-not (Test-Path -LiteralPath $FilePath)) { return }
+    try {
+        $dir = Join-Path (Get-AppFolder -Kind Backups -Create) ("app-edit_" + (Get-Date -Format 'yyyy-MM-dd'))
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        Copy-Item -LiteralPath $FilePath -Destination (Join-Path $dir ((Get-Date -Format 'HHmmss') + '_' + (Split-Path $FilePath -Leaf))) -Force
+    }
+    catch { }
+}
+
+function Global:Save-WebApp {
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $original = [string]$Data.originalName
+    $existing = if ($original) { $catalog.Apps | Where-Object { $_.appName -eq $original } | Select-Object -First 1 } else { $null }
+    if ($original -and -not $existing) { return @{ ok = $false; error = "'$original' is no longer in the catalog (renamed or removed elsewhere?). Reload and try again." } }
+    if ($existing -and $Data.version -and [string]$Data.version -ne (Get-WebAppFileVersion $existing.appName)) {
+        return @{ ok = $false; stale = $true; error = "'$original' was changed since you opened it (a deploy, a pull or a fix saved it). Nothing was saved - close the editor, open the app again and redo your changes." }
+    }
+    $edit = $Data.app
+    $defaults = $null
+    if (-not ($existing -and $existing.metadata)) {
+        $name = ([string]$edit.appName).Trim()
+        $wid = ([string]$edit.wingetId).Trim()
+        try { $defaults = Get-DefaultAppMetadata -AppName $name -WingetId $wid -Uncommon (-not $wid) } catch { $defaults = $null }
+    }
+    $record = Merge-WebAppEdit -Existing $existing -Edit $edit -Defaults $defaults
+    $problem = Test-WebAppEdit -Record $record -OriginalName $original -Others @($catalog.Apps)
+    if ($problem) { return @{ ok = $false; error = $problem } }
+    foreach ($urlField in 'informationUrl', 'privacyUrl') {
+        $u = [string]$edit.metadata.$urlField
+        if ($u -and $u -notmatch '^https?://\S+$') { return @{ ok = $false; error = "The $(if ($urlField -eq 'informationUrl') { 'information' } else { 'privacy' }) URL must start with http:// or https://." } }
+    }
+    if ($edit.deploy) {
+        $deploy = ConvertTo-WebDeploySettings -Form $edit.deploy -AppNames @($catalog.Apps | ForEach-Object { $_.appName }) -Self $record.appName
+        if ($deploy.Error) { return @{ ok = $false; error = $deploy.Error } }
+        # Deploy settings make an app's metadata exist, with the defaults underneath.
+        if (-not $record.metadata) {
+            $base = if ($defaults) { $defaults } else { try { Get-DefaultAppMetadata -AppName $record.appName -WingetId $record.wingetId -Uncommon (-not $record.wingetId) } catch { $null } }
+            if ($base) { $record.metadata = $base.PSObject.Copy() }
+        }
+        if ($record.metadata) {
+            foreach ($k in $deploy.Values.Keys) {
+                if ($record.metadata.PSObject.Properties.Name -contains $k) { $record.metadata.$k = $deploy.Values[$k] }
+                else { $record.metadata | Add-Member -NotePropertyName $k -NotePropertyValue $deploy.Values[$k] }
+            }
+            $record.metadata.installContext = $(if ([string]$edit.deploy.installContext -eq 'User') { 'User' } else { 'System' })
+        }
+    }
+
+    $folder = Get-AppFolder -Kind Catalog -Create
+    $newFile = Join-Path $folder ((Get-SafeFileNameForApp -Name $record.appName) + '.json')
+    $oldFile = if ($existing) { Join-Path $folder ((Get-SafeFileNameForApp -Name $existing.appName) + '.json') } else { $null }
+    Backup-WebAppFile $newFile
+    try {
+        [System.IO.File]::WriteAllText($newFile, (ConvertTo-SingleAppJson -App $record), (New-Object System.Text.UTF8Encoding($false)))
+    }
+    catch { return @{ ok = $false; error = "Couldn't write $newFile`: $($_.Exception.Message)" } }
+    if ($oldFile -and $oldFile -ne $newFile -and (Test-Path -LiteralPath $oldFile)) {
+        Backup-WebAppFile $oldFile
+        Remove-Item -LiteralPath $oldFile -Force -ErrorAction SilentlyContinue
+    }
+    Write-Log "[OK] $(if ($existing) { 'Saved' } else { 'Added' }): $($record.appName)$(if ($existing -and $existing.appName -ne $record.appName) { " (was $($existing.appName))" })."
+    return @{ ok = $true; name = $record.appName }
+}
+
+function Global:Remove-WebApp {
+    # Removes an app from the catalog only - nothing in Intune changes.
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $name = [string]$Data.name
+    $app = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $app) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
+    $file = Join-Path (Get-AppFolder -Kind Catalog) ((Get-SafeFileNameForApp -Name $app.appName) + '.json')
+    Backup-WebAppFile $file
+    try { Remove-Item -LiteralPath $file -Force -ErrorAction Stop }
+    catch { return @{ ok = $false; error = "Couldn't remove $file`: $($_.Exception.Message)" } }
+    Write-Log "[OK] Removed from the catalog: $name (a copy is in the Backups folder; nothing in Intune changed)."
+    return @{ ok = $true }
+}

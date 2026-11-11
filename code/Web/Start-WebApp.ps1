@@ -18,6 +18,10 @@ try { Add-Type -AssemblyName System.Security -ErrorAction Stop } catch { }
 
 . (Join-Path $PSScriptRoot 'WebServer.ps1')
 . (Join-Path $PSScriptRoot 'WebApi.ps1')
+. (Join-Path $PSScriptRoot 'WebEditor.ps1')
+. (Join-Path $PSScriptRoot 'WebDeploy.ps1')
+. (Join-Path $PSScriptRoot 'WebSettings.ps1')
+. (Join-Path $PSScriptRoot 'WebGraph.ps1')
 . (Join-Path $PSScriptRoot 'WebScripts.ps1')
 . (Join-Path $PSScriptRoot 'WebGroups.ps1')
 . (Join-Path $PSScriptRoot 'WebChecks.ps1')
@@ -28,11 +32,18 @@ Initialize-AppState -RootPath $RootPath
 $Global:App.WebLog = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
 $Global:App.WebJobs = [hashtable]::Synchronized(@{})
 $Global:App.WebPending = [hashtable]::Synchronized(@{})
+# Held while a request changes an app's file (Invoke-WithCatalogLock).
+$Global:App.CatalogLock = New-Object System.Object
 try {
     $logFolder = Get-AppFolder -Kind Logs -Create
     $Global:App.WebLogFile = Join-Path $logFolder ("intune-deployment-" + (Get-Date).ToString('yyyy-MM-dd') + ".log")
 }
 catch { $Global:App.WebLogFile = $null }
+
+if (Enable-WebTestGraph) {
+    Write-Host "  TEST MODE: Graph answers come from $env:INTUNE_CATALOG_TEST_GRAPH - nothing reaches a tenant." -ForegroundColor Red
+    Write-Log "[WARN] Test mode: Graph answers come from $env:INTUNE_CATALOG_TEST_GRAPH."
+}
 
 $uiRoot = Join-Path $PSScriptRoot 'ui'
 $token = [guid]::NewGuid().ToString('N')
