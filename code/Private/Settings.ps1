@@ -1,11 +1,11 @@
 function Global:Import-GraphSettings {
-    if (-not (Test-Path $Global:App.SettingsFilePath)) { return }
+    if (-not (Test-Path -LiteralPath $Global:App.SettingsFilePath)) { return }
     try {
         # -Encoding UTF8 explicitly - same reasoning as Import-AppsFromFile's
         # own per-app file read: this file is written BOM-less UTF8
         # (Write-SettingsFile), which Get-Content silently misreads as the
         # system ANSI codepage under Windows PowerShell 5.1 without this.
-        $settings = Get-Content -Path $Global:App.SettingsFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $settings = Get-Content -LiteralPath $Global:App.SettingsFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
         # Trimmed and whitespace-checked here, not just truthiness-checked -
         # the Settings page's save already strips whitespace before
         # writing, but a
@@ -171,7 +171,7 @@ function Global:Get-CertificateStatusText {
     $cert = $null
     foreach ($location in @("Cert:\CurrentUser\My", "Cert:\LocalMachine\My")) {
         try {
-            $found = Get-ChildItem -Path $location -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $clean } | Select-Object -First 1
+            $found = Get-ChildItem -LiteralPath $location -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $clean } | Select-Object -First 1
             if ($found) { $cert = $found; break }
         } catch { }
     }

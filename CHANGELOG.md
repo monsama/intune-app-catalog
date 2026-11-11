@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.0.4
+
+A bug sweep.
+
+### Fixed
+
+- **Closing the window during a deploy no longer loses the App ID.** The
+  server used to stop at once. The step went on in its own process and
+  created the app in Intune, but its App ID never reached the catalog, so
+  the next Deploy would create a second copy.
+  - Now the app waits for running steps before it stops, and finishes them
+    as the page would have. The console says so; Ctrl+C stops without
+    waiting.
+  - What the page would have started next (pushing groups after a deploy)
+    is written to the Activity log instead.
+- **Reloading the page during a step** no longer leaves it unfinished
+  until the app stops. A step that has ended and isn't being watched is
+  finished by the server after 15 seconds.
+- **Brackets in folder and app names.** File commands read `[` and `]` as
+  wildcards, so a package folder like `Tool [x64]`, or the app installed
+  under such a folder, was silently not found. Every file command now
+  takes the path literally, and a unit test keeps it that way.
+- **Single results in Windows PowerShell 5.1.** In some places a list with
+  exactly one entry became a single object without a count:
+  - **Pull from Intune:** an app whose only difference was one group
+    wasn't offered for review.
+  - **The setup checklist:** it miscounted a single missing optional
+    permission.
+  - **Add to catalog:** an app with one group in a role got it as text
+    instead of a list.
+  - **Packaging:** a folder with one installer.
+- API answers are serialized deep enough for every nested result (12
+  levels instead of 8).
+
 ## 2.0.3
 
 A security sweep. Every finding needed the page's start token or a local

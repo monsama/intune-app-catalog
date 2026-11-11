@@ -2264,6 +2264,14 @@ $encodedLaunches = @(Get-ChildItem -Path (Join-Path $repoRoot "code\Private"), (
     Select-String -Pattern '-EncodedCommand\s*"?\s*\+|-EncodedCommand \$' | ForEach-Object { "$($_.Filename):$($_.LineNumber)" })
 Assert-Equal 0 $encodedLaunches.Count "No -EncodedCommand launches left in the app" ($encodedLaunches -join ', ')
 
+# A path held in a variable goes to file commands as -LiteralPath: with -Path
+# (or none), [ and ] in a folder or app name are wildcards and the file is
+# silently not found.
+$wildcardPaths = @(Get-ChildItem -Path (Join-Path $repoRoot "code") -Recurse -Filter *.ps1 | Where-Object { $_.FullName -notmatch '[\\/]tests[\\/]' } |
+    Select-String -Pattern '\b(Test-Path|Get-Item|Remove-Item|Get-Content|Set-Content|Add-Content|Get-ChildItem|Copy-Item|Move-Item)\s+(-Path\s+)?\$\w' |
+    ForEach-Object { "$($_.Filename):$($_.LineNumber)" })
+Assert-Equal 0 $wildcardPaths.Count "File commands take variable paths as -LiteralPath" ($wildcardPaths -join ', ')
+
 
 # =================================================================
 # winget output (Winget.ps1)

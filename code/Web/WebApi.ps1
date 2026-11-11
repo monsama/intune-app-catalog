@@ -112,7 +112,7 @@ function Global:Start-WebStepJob {
     }
     $Global:App.WebJobs[$tag] = @{
         Process = $proc; Log = $logPath; Result = $ResultPath
-        Cleanup = @($scriptPath, $helperPath, $configPath); Mode = $Kind; Done = $false; After = $After
+        Cleanup = @($scriptPath, $helperPath, $configPath); Mode = $Kind; Done = $false; After = $After; LastPoll = Get-Date
     }
     return @{ ok = $true; job = $tag }
 }
@@ -147,6 +147,50 @@ function Global:Update-WebCatalogApp {
     Backup-WebAppFile $file
     [System.IO.File]::WriteAllText($file, (ConvertTo-SingleAppJson -App $app), (New-Object System.Text.UTF8Encoding($false)))
     return $app
+}
+
+function Global:Complete-WebOrphanJobs {
+    <#
+      Steps that ended while no page was polling them (the page was
+      reloaded or closed): completed here after -GraceSeconds, so a
+      deploy's App ID still reaches the catalog. Called from the server's
+      main loop.
+    #>
+    param([int]$GraceSeconds = 15)
+    foreach ($id in @($Global:App.WebJobs.Keys)) {
+        $job = $Global:App.WebJobs[$id]
+        if (-not $job -or -not $job.Process.HasExited) { continue }
+        if (((Get-Date) - [datetime]$job.LastPoll).TotalSeconds -lt $GraceSeconds) { continue }
+        try {
+            $r = Get-WebJobPoll ([pscustomobject]@{ job = $id; offset = [int64]::MaxValue })
+            if ($r.after -and $r.after.pushGroups) { Write-Log "[WARN] $($job.Mode): finished while the page wasn't watching, so its groups weren't pushed - use Push groups." }
+        }
+        catch { Write-Log "[WARN] Couldn't finish $($job.Mode): $($_.Exception.Message)" }
+    }
+}
+
+function Global:Complete-WebJobsAtExit {
+    <#
+      When the app stops while steps are running: waits for each (Ctrl+C
+      stops waiting) and completes it like the page's last poll does -
+      App ID saved, groups renamed, results read. What the page would have
+      started next (pushing groups after a deploy) is logged instead.
+    #>
+    param([int]$TimeoutMinutes = 60)
+    $ids = @($Global:App.WebJobs.Keys)
+    if ($ids.Count -eq 0) { return }
+    Write-Host "  Waiting for $($ids.Count) running step(s) to finish before stopping (Ctrl+C stops without waiting)..." -ForegroundColor Yellow
+    $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+    foreach ($id in $ids) {
+        $job = $Global:App.WebJobs[$id]
+        if (-not $job) { continue }
+        while (-not $job.Process.HasExited -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+        if (-not $job.Process.HasExited) { Write-Log "[WARN] Stopped without waiting for: $($job.Mode)."; continue }
+        # Past the end of the log: nothing left to read, so this poll completes it.
+        $r = Get-WebJobPoll ([pscustomobject]@{ job = $id; offset = [int64]::MaxValue })
+        if ($r.after -and $r.after.pushGroups) { Write-Log "[WARN] $($job.Mode): the app window was closed, so its groups weren't pushed - use Push groups." }
+        Write-Host "  Finished: $($job.Mode)" -ForegroundColor DarkGray
+    }
 }
 
 function Global:Complete-WebJob {
@@ -203,6 +247,7 @@ function Global:Get-WebJobPoll {
     $id = [string]$Data.job
     if (-not $id -or -not $Global:App.WebJobs.ContainsKey($id)) { return @{ ok = $false; error = 'No such job.' } }
     $job = $Global:App.WebJobs[$id]
+    $job.LastPoll = Get-Date
     $offset = [int64]$Data.offset
     $exited = $job.Process.HasExited
     $text = ''

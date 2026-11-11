@@ -38,7 +38,7 @@ function Write-Result {
         error   = $ErrorMessage
         data    = $Data
     }
-    $result | ConvertTo-Json -Depth 10 | Set-Content -Path $Config.OutputResultPath -Encoding UTF8
+    $result | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $Config.OutputResultPath -Encoding UTF8
 }
 
 function Get-HttpErrorDetail {
@@ -136,11 +136,11 @@ function Invoke-GraphRequestDetailed {
 }
 
 Write-Step "Loading configuration"
-if (-not (Test-Path $ConfigPath)) {
+if (-not (Test-Path -LiteralPath $ConfigPath)) {
     Write-Host "[FAILED] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$Config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  Mode: $($Config.Mode)" -ForegroundColor Gray
 Write-Host "  Apps: $(@($Config.Apps).Count)" -ForegroundColor Gray
 

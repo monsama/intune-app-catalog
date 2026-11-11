@@ -55,7 +55,7 @@ function Write-Result {
         appId   = $AppId
         error   = $ErrorMessage
     }
-    $result | ConvertTo-Json | Set-Content -Path $Config.OutputResultPath -Encoding UTF8
+    $result | ConvertTo-Json | Set-Content -LiteralPath $Config.OutputResultPath -Encoding UTF8
 }
 
 # Pulls the actual error detail out of a failed web/Graph call. The default
@@ -273,7 +273,7 @@ function Get-IntuneWinPackageInfo {
     param([Parameter(Mandatory=$true)][string]$PackagePath)
 
     Write-Step "Reading package: $PackagePath"
-    if (-not (Test-Path $PackagePath)) {
+    if (-not (Test-Path -LiteralPath $PackagePath)) {
         throw "Package file not found: $PackagePath"
     }
 
@@ -315,7 +315,7 @@ function Get-IntuneWinPackageInfo {
 
         $tempEncryptedPath = Join-Path $env:TEMP ("intunepkg_upload_" + [guid]::NewGuid().ToString("N") + ".bin")
         [System.IO.Compression.ZipFileExtensions]::ExtractToFile($contentEntry, $tempEncryptedPath)
-        $encryptedSize = (Get-Item $tempEncryptedPath).Length
+        $encryptedSize = (Get-Item -LiteralPath $tempEncryptedPath).Length
         Write-Host "  Encrypted size  : $encryptedSize bytes" -ForegroundColor Gray
     }
     finally {
@@ -440,7 +440,7 @@ function Invoke-Win32AppContentUpload {
     Invoke-WebRequestDetailed -Uri $commitBlocksUri -Method PUT -Body $blockListXml -ContentType "text/plain" -StepDescription "Commit block list to storage" | Out-Null
     Write-Host "  [OK] All $totalBlocks block(s) uploaded and committed to storage." -ForegroundColor Green
 
-    Remove-Item $PackageInfo.TempEncryptedPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $PackageInfo.TempEncryptedPath -Force -ErrorAction SilentlyContinue
 
     Write-Step "Committing file"
     $commitBody = @{ fileEncryptionInfo = $PackageInfo.FileEncryptionInfo } | ConvertTo-Json -Depth 8
@@ -468,11 +468,11 @@ function Invoke-Win32AppContentUpload {
 }
 
 Write-Step "Loading configuration"
-if (-not (Test-Path $ConfigPath)) {
+if (-not (Test-Path -LiteralPath $ConfigPath)) {
     Write-Host "[FAILED] Config file not found: $ConfigPath" -ForegroundColor Red
     exit 1
 }
-$Config = Get-Content -Path $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$Config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Write-Host "  App: $($Config.AppName)" -ForegroundColor Gray
 Write-Host "  Mode: $($Config.Mode)" -ForegroundColor Gray
 

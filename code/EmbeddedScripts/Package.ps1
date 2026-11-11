@@ -65,7 +65,7 @@ function Download-IntuneWinAppUtil {
     Write-Host "IntuneWinAppUtil.exe not found. Downloading..." -ForegroundColor Yellow
     
     $ToolFolder = Split-Path $DestinationPath -Parent
-    if (-not (Test-Path $ToolFolder)) {
+    if (-not (Test-Path -LiteralPath $ToolFolder)) {
         New-Item -ItemType Directory -Path $ToolFolder -Force | Out-Null
     }
     
@@ -83,19 +83,19 @@ function Download-IntuneWinAppUtil {
         Invoke-WebRequest -Uri $DownloadUrl -OutFile $ZipPath -UseBasicParsing
         $ProgressPreference = 'Continue'
         
-        if (-not (Test-Path $ZipPath)) {
+        if (-not (Test-Path -LiteralPath $ZipPath)) {
             throw "Download failed - zip file not found"
         }
         
         Write-Host "  Extracting..." -ForegroundColor Gray
         
-        if (Test-Path $ExtractPath) {
-            Remove-Item $ExtractPath -Recurse -Force
+        if (Test-Path -LiteralPath $ExtractPath) {
+            Remove-Item -LiteralPath $ExtractPath -Recurse -Force
         }
         
         Expand-Archive -Path $ZipPath -DestinationPath $ExtractPath -Force
         
-        $ExeFile = Get-ChildItem -Path $ExtractPath -Filter "IntuneWinAppUtil.exe" -Recurse | Select-Object -First 1
+        $ExeFile = Get-ChildItem -LiteralPath $ExtractPath -Filter "IntuneWinAppUtil.exe" -Recurse | Select-Object -First 1
         
         if (-not $ExeFile) {
             throw "IntuneWinAppUtil.exe not found in downloaded package"
@@ -108,12 +108,12 @@ function Download-IntuneWinAppUtil {
         }
         
         Write-Host "  Installing to: $DestinationPath" -ForegroundColor Gray
-        Copy-Item -Path $ExeFile.FullName -Destination $DestinationPath -Force
+        Copy-Item -LiteralPath $ExeFile.FullName -Destination $DestinationPath -Force
         
-        Remove-Item $ZipPath -Force -ErrorAction SilentlyContinue
-        Remove-Item $ExtractPath -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $ZipPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $ExtractPath -Recurse -Force -ErrorAction SilentlyContinue
         
-        if (Test-Path $DestinationPath) {
+        if (Test-Path -LiteralPath $DestinationPath) {
             Write-Host "  Successfully installed!" -ForegroundColor Green
             return $true
         } else {
@@ -122,8 +122,8 @@ function Download-IntuneWinAppUtil {
     }
     catch {
         Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
-        if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force -ErrorAction SilentlyContinue }
-        if (Test-Path $ExtractPath) { Remove-Item $ExtractPath -Recurse -Force -ErrorAction SilentlyContinue }
+        if (Test-Path -LiteralPath $ZipPath) { Remove-Item -LiteralPath $ZipPath -Force -ErrorAction SilentlyContinue }
+        if (Test-Path -LiteralPath $ExtractPath) { Remove-Item -LiteralPath $ExtractPath -Recurse -Force -ErrorAction SilentlyContinue }
         return $false
     }
 }
@@ -133,9 +133,9 @@ function Download-IntuneWinAppUtil {
 function Find-BestInstaller {
     param([string]$FolderPath)
     
-    $Installers = Get-ChildItem -Path $FolderPath -File | Where-Object {
+    $Installers = @(Get-ChildItem -LiteralPath $FolderPath -File | Where-Object {
         $_.Extension -match '\.(exe|msi)$'
-    }
+    })
     
     if ($Installers.Count -eq 0) { return $null }
     if ($Installers.Count -eq 1) { return $Installers[0] }
@@ -193,7 +193,7 @@ function Get-AppNameFromScript {
     param([string]$ScriptPath)
     
     try {
-        $Content = Get-Content -Path $ScriptPath -Raw -ErrorAction SilentlyContinue
+        $Content = Get-Content -LiteralPath $ScriptPath -Raw -ErrorAction SilentlyContinue
         
         # Try to extract AppName from $AppConfig
         if ($Content -match '\$AppConfig\s*=\s*@\{[^}]*AppName\s*=\s*[''"]([^''"]+)[''"]') {
@@ -223,7 +223,7 @@ function Get-AppScope {
     param([string]$InstallScriptPath)
     
     try {
-        $Content = Get-Content -Path $InstallScriptPath -Raw -ErrorAction SilentlyContinue
+        $Content = Get-Content -LiteralPath $InstallScriptPath -Raw -ErrorAction SilentlyContinue
         
         if ($Content -match '\$AppConfig\s*=\s*@\{[^}]*Scope\s*=\s*[''"]([^''"]*)[''"]') {
             $Scope = $Matches[1]
@@ -245,13 +245,13 @@ function Get-AppScope {
 function Test-ScriptValidity {
     param([string]$ScriptPath)
     
-    if (-not (Test-Path $ScriptPath)) {
+    if (-not (Test-Path -LiteralPath $ScriptPath)) {
         return $false
     }
     
     try {
         $Errors = $null
-        $Content = Get-Content -Path $ScriptPath -Raw
+        $Content = Get-Content -LiteralPath $ScriptPath -Raw
         $null = [System.Management.Automation.PSParser]::Tokenize($Content, [ref]$Errors)
         return ($Errors.Count -eq 0)
     }
@@ -295,7 +295,7 @@ Write-Host "================================================================" -F
 Write-Host ""
 
 # Ensure IntuneWinAppUtil.exe is available
-if (-not (Test-Path $ToolPath)) {
+if (-not (Test-Path -LiteralPath $ToolPath)) {
     if (-not (Download-IntuneWinAppUtil -DestinationPath $ToolPath)) {
         Write-Host ""
         Write-Host "Failed to download IntuneWinAppUtil.exe automatically." -ForegroundColor Red
@@ -307,7 +307,7 @@ if (-not (Test-Path $ToolPath)) {
 }
 
 # Validate input folder
-if (-not (Test-Path $InputFolder)) {
+if (-not (Test-Path -LiteralPath $InputFolder)) {
     Write-Host "Error: Input folder not found: $InputFolder" -ForegroundColor Red
     exit 1
 }
@@ -317,7 +317,7 @@ $UseCentralOutput = -not [string]::IsNullOrWhiteSpace($OutputFolder)
 
 if ($UseCentralOutput) {
     # Create central output folder if needed
-    if (-not (Test-Path $OutputFolder)) {
+    if (-not (Test-Path -LiteralPath $OutputFolder)) {
         New-Item -ItemType Directory -Path $OutputFolder -Force | Out-Null
         Write-Host "Created output folder: $OutputFolder" -ForegroundColor Green
         Write-Host ""
@@ -342,9 +342,9 @@ Write-Host "Scanning for apps..." -ForegroundColor Cyan
 $AppsToProcess = @()
 
 if ($Recursive) {
-    $AllFolders = Get-ChildItem -Path $InputFolder -Recurse -Directory
+    $AllFolders = Get-ChildItem -LiteralPath $InputFolder -Recurse -Directory
 } else {
-    $AllFolders = Get-ChildItem -Path $InputFolder -Directory
+    $AllFolders = Get-ChildItem -LiteralPath $InputFolder -Directory
 }
 
 if ($SingleFolderName) {
@@ -365,7 +365,7 @@ elseif ($FolderNames) {
 
 foreach ($Folder in $AllFolders) {
     # Check for PowerShell script (install.ps1)
-    $InstallScript = Get-ChildItem -Path $Folder.FullName -File -Filter "install.ps1" -ErrorAction SilentlyContinue
+    $InstallScript = Get-ChildItem -LiteralPath $Folder.FullName -File -Filter "install.ps1" -ErrorAction SilentlyContinue
     
     if ($InstallScript) {
         # PowerShell-based WinGet app
@@ -377,8 +377,8 @@ foreach ($Folder in $AllFolders) {
         
         $Scope = Get-AppScope -InstallScriptPath $InstallScript.FullName
         
-        $UninstallScript = Get-ChildItem -Path $Folder.FullName -File -Filter "uninstall.ps1" -ErrorAction SilentlyContinue
-        $DetectScript = Get-ChildItem -Path $Folder.FullName -File -Filter "detect.ps1" -ErrorAction SilentlyContinue
+        $UninstallScript = Get-ChildItem -LiteralPath $Folder.FullName -File -Filter "uninstall.ps1" -ErrorAction SilentlyContinue
+        $DetectScript = Get-ChildItem -LiteralPath $Folder.FullName -File -Filter "detect.ps1" -ErrorAction SilentlyContinue
         
         $AppsToProcess += [PSCustomObject]@{
             Type             = "Script"
@@ -497,8 +497,8 @@ foreach ($App in $AppsToProcess) {
     }
     
     # Check if package already exists
-    if ((Test-Path $FinalOutputPath) -and $SkipExisting -and -not $Force) {
-        $ExistingFile = Get-Item $FinalOutputPath
+    if ((Test-Path -LiteralPath $FinalOutputPath) -and $SkipExisting -and -not $Force) {
+        $ExistingFile = Get-Item -LiteralPath $FinalOutputPath
         $SourceModified = $App.SourceFile.LastWriteTime
         
         if ($SourceModified -le $ExistingFile.LastWriteTime) {
@@ -510,7 +510,7 @@ foreach ($App in $AppsToProcess) {
         Write-Host "  Repackaging (source newer than package)" -ForegroundColor Yellow
     }
     
-    if ((Test-Path $FinalOutputPath) -and -not $Force -and -not $SkipExisting) {
+    if ((Test-Path -LiteralPath $FinalOutputPath) -and -not $Force -and -not $SkipExisting) {
         Write-Host "  WARNING: Package exists, use -Force to overwrite" -ForegroundColor Yellow
         $SkipCount++
         Write-Host ""
@@ -528,7 +528,7 @@ foreach ($App in $AppsToProcess) {
         if ($App.Type -eq "Installer") {
             $TempSourceFolder = Join-Path $env:TEMP ("IntunePackaging_Source_" + (Get-Random))
             New-Item -ItemType Directory -Path $TempSourceFolder -Force | Out-Null
-            Copy-Item -Path $App.SourceFile.FullName -Destination $TempSourceFolder -Force
+            Copy-Item -LiteralPath $App.SourceFile.FullName -Destination $TempSourceFolder -Force
             $PackageSourceFolder = $TempSourceFolder
             $SetupFile = $App.SourceFileName
         }
@@ -586,27 +586,27 @@ foreach ($App in $AppsToProcess) {
         }
         
         # Clean up temp source folder for installers
-        if ($App.Type -eq "Installer" -and (Test-Path $TempSourceFolder)) {
-            Remove-Item $TempSourceFolder -Recurse -Force -ErrorAction SilentlyContinue
+        if ($App.Type -eq "Installer" -and (Test-Path -LiteralPath $TempSourceFolder)) {
+            Remove-Item -LiteralPath $TempSourceFolder -Recurse -Force -ErrorAction SilentlyContinue
         }
         
         if ($ExitCode -eq 0) {
             # IntuneWinAppUtil creates "<setupfile>.intunewin" in the temp output folder
-            $CreatedFile = Get-ChildItem -Path $TempOutputFolder -Filter "*.intunewin" -File | Select-Object -First 1
+            $CreatedFile = Get-ChildItem -LiteralPath $TempOutputFolder -Filter "*.intunewin" -File | Select-Object -First 1
 
             if ($CreatedFile) {
                 # Remove existing file if it exists
-                if (Test-Path $FinalOutputPath) {
-                    Remove-Item $FinalOutputPath -Force
+                if (Test-Path -LiteralPath $FinalOutputPath) {
+                    Remove-Item -LiteralPath $FinalOutputPath -Force
                 }
                 
                 # Move to final location with correct name
-                Move-Item -Path $CreatedFile.FullName -Destination $FinalOutputPath -Force
+                Move-Item -LiteralPath $CreatedFile.FullName -Destination $FinalOutputPath -Force
                 
                 # Clean up temp output folder
-                Remove-Item $TempOutputFolder -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $TempOutputFolder -Recurse -Force -ErrorAction SilentlyContinue
                 
-                $Size = [math]::Round((Get-Item $FinalOutputPath).Length / 1KB, 2)
+                $Size = [math]::Round((Get-Item -LiteralPath $FinalOutputPath).Length / 1KB, 2)
                 
                 # Show relative path if in app folder, otherwise full path
                 if ($UseCentralOutput) {
@@ -636,8 +636,8 @@ foreach ($App in $AppsToProcess) {
                 Write-Host "  Failed: Output file not created" -ForegroundColor Red
                 
                 # Clean up temp folder
-                if (Test-Path $TempOutputFolder) {
-                    Remove-Item $TempOutputFolder -Recurse -Force -ErrorAction SilentlyContinue
+                if (Test-Path -LiteralPath $TempOutputFolder) {
+                    Remove-Item -LiteralPath $TempOutputFolder -Recurse -Force -ErrorAction SilentlyContinue
                 }
                 
                 $FailCount++
@@ -660,8 +660,8 @@ foreach ($App in $AppsToProcess) {
             Write-Host "  Failed (Exit code: $ExitCode)" -ForegroundColor Red
             
             # Clean up temp folder
-            if (Test-Path $TempOutputFolder) {
-                Remove-Item $TempOutputFolder -Recurse -Force -ErrorAction SilentlyContinue
+            if (Test-Path -LiteralPath $TempOutputFolder) {
+                Remove-Item -LiteralPath $TempOutputFolder -Recurse -Force -ErrorAction SilentlyContinue
             }
             
             $FailCount++

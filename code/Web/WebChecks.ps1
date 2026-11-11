@@ -50,7 +50,7 @@ function Global:Invoke-WebChecks {
     param($Data)
     $names = @($Data.names | ForEach-Object { [string]$_ } | Where-Object { $_ })
     $all = @((Read-WebCatalogRecords).Apps)
-    $apps = if ($names.Count) { @($all | Where-Object { $names -contains [string]$_.appName }) } else { $all }
+    $apps = @(if ($names.Count) { $all | Where-Object { $names -contains [string]$_.appName } } else { $all })
     $findings = New-Object System.Collections.Generic.List[object]
     $notes = New-Object System.Collections.Generic.List[string]
     foreach ($f in @(Get-DependencyFindings -Apps $all)) { if (-not $names.Count -or $names -contains [string]$f.CatalogName) { $findings.Add($f) } }

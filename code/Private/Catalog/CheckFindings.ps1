@@ -353,9 +353,9 @@ function Global:ConvertTo-CatalogEntryFromFetch {
         wingetId         = if ($Ok) { Get-WingetIdFromInstallCommand -InstallCommand ([string]$Data.InstallCommandLine) } else { "" }
         intuneAppType    = if ($Ok) { Get-FriendlyIntuneAppType -ODataType ([string]$Data.OdataType) } else { "" }
         intuneAppVersion = if ($Ok) { [string]$Data.DisplayVersion } else { "" }
-        requiredFor      = if ($groupsKnown) { @(@($Data.RequiredGroupNames) | Where-Object { $_ }) } else { @() }
-        availableFor     = if ($groupsKnown) { @(@($Data.AvailableGroupNames) | Where-Object { $_ }) } else { @() }
-        uninstallFor     = if ($groupsKnown) { @(@($Data.UninstallGroupNames) | Where-Object { $_ }) } else { @() }
+        requiredFor      = @(if ($groupsKnown) { @($Data.RequiredGroupNames) | Where-Object { $_ } })
+        availableFor     = @(if ($groupsKnown) { @($Data.AvailableGroupNames) | Where-Object { $_ } })
+        uninstallFor     = @(if ($groupsKnown) { @($Data.UninstallGroupNames) | Where-Object { $_ } })
         excludeFor       = @()
         metadata         = if ($Ok) { ConvertTo-CatalogMetadataFromFetch -Fetched $Data } else { $null }
         GroupsKnown      = $groupsKnown

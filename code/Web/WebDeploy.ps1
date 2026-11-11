@@ -192,7 +192,9 @@ function Global:Complete-WebPull {
         $app = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $r.AppName } | Select-Object -First 1
         if (-not $app) { continue }
         $fieldDiffs = @(Get-CatalogMetadataFieldDiffs -Local $app.metadata -Remote $r.Metadata -OdataType $r.OdataType)
-        $groupDiffs = if ($r.GroupFetchOk) { @(Get-GroupFieldDiffs -LocalApp $app -RemoteResult $r) } else { @() }
+        # @() around the whole if: one difference on its own would otherwise be
+        # unrolled to a single object without .Count (Windows PowerShell 5.1).
+        $groupDiffs = @(if ($r.GroupFetchOk) { Get-GroupFieldDiffs -LocalApp $app -RemoteResult $r })
         if (($app.metadata -and $fieldDiffs.Count -gt 0) -or $groupDiffs.Count -gt 0) {
             $pending[$r.AppName] = $r
             $review.Add([ordered]@{ app = $r.AppName; diffs = @(@($fieldDiffs) + @($groupDiffs) | ForEach-Object { [ordered]@{ field = [string]$_.Field; local = (Get-CheckValueText $_.Local); intune = (Get-CheckValueText $_.Remote) } }) })

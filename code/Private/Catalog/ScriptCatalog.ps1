@@ -174,7 +174,7 @@ function Global:Save-ScriptsToFolder {
         catch { $result.Errors.Add("$($record.displayName): $($_.Exception.Message)") }
     }
     if ($NoPrune) { return $result }
-    foreach ($stale in @(Get-ChildItem -Path $Path -Filter "*.json" -ErrorAction SilentlyContinue)) {
+    foreach ($stale in @(Get-ChildItem -LiteralPath $Path -Filter "*.json" -ErrorAction SilentlyContinue)) {
         if ($wanted.Contains($stale.Name)) { continue }
         try { Remove-Item -LiteralPath $stale.FullName -Force -ErrorAction Stop; $result.Removed++ }
         catch { $result.Errors.Add("$($stale.Name): $($_.Exception.Message)") }
@@ -194,7 +194,7 @@ function Global:Import-ScriptsFromFolder {
     $scripts = New-Object System.Collections.Generic.List[object]
     $errors = New-Object System.Collections.Generic.List[string]
     if (-not (Test-Path -LiteralPath $Path)) { return @{ Scripts = $scripts.ToArray(); Errors = $errors.ToArray() } }
-    foreach ($file in @(Get-ChildItem -Path $Path -Filter "*.json" -ErrorAction SilentlyContinue | Sort-Object Name)) {
+    foreach ($file in @(Get-ChildItem -LiteralPath $Path -Filter "*.json" -ErrorAction SilentlyContinue | Sort-Object Name)) {
         try {
             # -Encoding UTF8 explicitly, same reasoning as the app catalog's
             # own read: these are written BOM-less and Windows PowerShell

@@ -441,14 +441,14 @@ function Global:Get-AllKnownGroups {
 }
 
 function Global:Load-LastAuditCache {
-    if (-not (Test-Path $Global:App.LastAuditCachePath)) { return }
+    if (-not (Test-Path -LiteralPath $Global:App.LastAuditCachePath)) { return }
     try {
         # -Encoding UTF8 explicitly, same reasoning as Import-AppsFromFile/
         # Import-GraphSettings - Save-LastAuditCache's own Set-Content
         # -Encoding UTF8 writes a BOM under Windows PowerShell 5.1, which
         # happens to make auto-detection work today, but that's the writer's
         # accident to rely on, not this reader's guarantee.
-        $raw = Get-Content -Path $Global:App.LastAuditCachePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $raw = Get-Content -LiteralPath $Global:App.LastAuditCachePath -Raw -Encoding UTF8 | ConvertFrom-Json
         $skipped = 0
         foreach ($prop in $raw.PSObject.Properties) {
             # Wrapped in its OWN try/catch, per entry - this used to be one
@@ -524,7 +524,7 @@ function Global:Load-LastAuditCache {
 
 function Global:Save-LastAuditCache {
     try {
-        $Global:App.LastAuditResults | ConvertTo-Json -Depth 5 | Set-Content -Path $Global:App.LastAuditCachePath -Encoding UTF8 -ErrorAction Stop
+        $Global:App.LastAuditResults | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $Global:App.LastAuditCachePath -Encoding UTF8 -ErrorAction Stop
     }
     catch {
         # See the matching note in Load-LastAuditCache above - same reasoning.
