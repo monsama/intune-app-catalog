@@ -199,6 +199,10 @@ function Global:Save-WebScript {
     $record = $checked.Record
     $id = [string]$Data.script.id
     if ($id -and $id -notmatch '^[0-9a-fA-F-]{36}$') { return @{ ok = $false; error = 'That is not a script id.' } }
+    $destination = [string]$Data.destination
+    if ($destination -notin 'Local', 'Intune') { return @{ ok = $false; error = 'Save where?' } }
+    # Before anything is written: a save to Intune that can't happen must not change the local copy either.
+    if ($destination -eq 'Intune' -and -not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Set up the connection in Settings first.' } }
     $oldName = [string]$Data.originalName
     $folder = Get-WebScriptsFolder
     $haveLocal = Test-Path -LiteralPath (Join-Path $folder ((Get-SafeFileNameForScript -Name $(if ($oldName) { $oldName } else { $record.displayName })) + '.json'))
@@ -210,8 +214,6 @@ function Global:Save-WebScript {
             return @{ ok = $true; local = $true }
         }
     }
-    if ([string]$Data.destination -ne 'Intune') { return @{ ok = $false; error = 'Save where?' } }
-    if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Set up the connection in Settings first.' } }
     $resultPath = Join-Path $env:TEMP ".intunepkg_platformscript_result_$([guid]::NewGuid().ToString('N')).json"
     $config = [ordered]@{
         TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
