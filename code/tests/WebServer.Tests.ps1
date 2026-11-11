@@ -157,6 +157,44 @@ try {
     $got = Invoke-Api '/api/app-get' @{ name = $testName }
     Check ($got.ok -and $got.app.wingetId -eq 'Vendor.WebTest' -and @($got.app.requiredFor).Count -eq 1) 'editor: it reads back, groups cleaned (blank and duplicate dropped)' ($got | ConvertTo-Json -Compress -Depth 5)
     Check ($got.app.metadata.description -eq 'from the test' -and $got.app.hasMetadata) 'editor: metadata created from the defaults plus what was typed'
+    Check ($got.version -match '^[0-9A-F]{64}$') 'editor: the app comes with a fingerprint of its file' ([string]$got.version)
+    # Something else (a deploy saving its App ID) changes the file while the editor is open.
+    $changedId = '11111111-2222-3333-4444-555555555555'
+    $fix = Invoke-Api '/api/checks-fix' @{ catalogName = $testName; action = 'SetAppId'; value = $changedId }
+    Check ($fix.ok) 'editor: the file changes while the editor is open' ($fix | ConvertTo-Json -Compress)
+    $stale = Invoke-Api '/api/app-save' @{ originalName = $testName; version = $got.version; app = @{ appName = $testName; wingetId = 'Vendor.WebTest'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'from the test' } } }
+    Check (-not $stale.ok -and $stale.stale -and $stale.error -like '*changed since you opened it*') 'editor: a save from before that change is refused' ($stale | ConvertTo-Json -Compress)
+    $kept = Invoke-Api '/api/app-get' @{ name = $testName }
+    Check ($kept.app.appId -eq $changedId -and $kept.version -ne $got.version) 'editor: ... and the App ID saved meanwhile is kept' ($kept.app | ConvertTo-Json -Compress -Depth 3)
+    $fresh = Invoke-Api '/api/app-save' @{ originalName = $testName; version = $kept.version; app = @{ appName = $testName; wingetId = 'Vendor.WebTest'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'from the test' } } }
+    Check ($fresh.ok) 'editor: a save from the current file goes through' ($fresh | ConvertTo-Json -Compress)
+    # Ten saves of one app at the same time: each completes, the file stays valid JSON.
+    # Runspaces rather than Start-ThreadJob, which Windows PowerShell 5.1 doesn't have.
+    $port = [int]($url -replace '.*:(\d+)$', '$1')
+    $send = {
+        param($port, $body)
+        $client = New-Object System.Net.Sockets.TcpClient('127.0.0.1', $port)
+        try {
+            $bytes = [Text.Encoding]::UTF8.GetBytes($body)
+            $head = [Text.Encoding]::ASCII.GetBytes("POST /api/checks-fix HTTP/1.1`r`nHost: 127.0.0.1:$port`r`nContent-Type: application/json`r`nContent-Length: $($bytes.Length)`r`nConnection: close`r`n`r`n")
+            $stream = $client.GetStream(); $stream.Write($head, 0, $head.Length); $stream.Write($bytes, 0, $bytes.Length); $stream.Flush()
+            $text = (New-Object System.IO.StreamReader($stream)).ReadToEnd()
+            $text.Substring($text.IndexOf("`r`n`r`n") + 4) | ConvertFrom-Json
+        }
+        finally { $client.Close() }
+    }
+    $pool = [runspacefactory]::CreateRunspacePool(1, 10); $pool.Open()
+    $running = foreach ($n in 1..10) {
+        $ps = [powershell]::Create(); $ps.RunspacePool = $pool
+        $body = @{ token = $token; catalogName = $testName; action = 'SetWingetId'; value = "Vendor.WebTest$n" } | ConvertTo-Json -Compress
+        [void]$ps.AddScript($send).AddArgument($port).AddArgument($body)
+        @{ PS = $ps; Handle = $ps.BeginInvoke() }
+    }
+    $answers = foreach ($r in $running) { try { $r.PS.EndInvoke($r.Handle) } finally { $r.PS.Dispose() } }
+    $pool.Close()
+    $after = Invoke-Api '/api/app-get' @{ name = $testName }
+    Check (@($answers | Where-Object { $_.ok }).Count -eq 10 -and $after.ok -and $after.app.wingetId -match '^Vendor\.WebTest\d+$') 'editor: ten changes at once all go through, one after another' ("$(@($answers | ConvertTo-Json -Compress)) / $($after.app.wingetId)")
+    [void](Invoke-Api '/api/app-save' @{ originalName = $testName; app = @{ appName = $testName; wingetId = 'Vendor.WebTest'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'from the test' } } })
     $bad = Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $testName; wingetId = ''; appId = '' } }
     Check (-not $bad.ok -and $bad.error -like '*already called*') 'editor: a second app with the same name is refused' ($bad | ConvertTo-Json -Compress)
     $badId = Invoke-Api '/api/app-save' @{ originalName = $testName; app = @{ appName = $testName; wingetId = 'Vendor.WebTest'; appId = '../../groups/x' } }

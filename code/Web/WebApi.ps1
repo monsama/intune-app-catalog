@@ -312,6 +312,38 @@ function Global:Start-WebStepJob {
     return @{ ok = $true; job = $tag }
 }
 
+function Global:Invoke-WithCatalogLock {
+    <#
+      Runs -Action holding the catalog lock. Requests run in parallel
+      runspaces, and every change to an app's file is read - change - write:
+      without the lock, a deploy saving its App ID while the editor saves
+      the same app would lose one of the two changes.
+    #>
+    param([scriptblock]$Action)
+    $lock = $Global:App.CatalogLock
+    if ($null -eq $lock) { return (& $Action) }
+    $taken = $false
+    try {
+        $taken = [System.Threading.Monitor]::TryEnter($lock, 30000)
+        if (-not $taken) { return @{ ok = $false; error = 'The catalog is busy with another change - try again in a moment.' } }
+        return (& $Action)
+    }
+    finally { if ($taken) { [System.Threading.Monitor]::Exit($lock) } }
+}
+
+function Global:Get-WebAppFileVersion {
+    # A fingerprint of one app's saved file ('' when there is none), so a
+    # save can tell whether the file changed since the editor opened it.
+    param([string]$Name)
+    $folder = Get-AppFolder -Kind Catalog
+    if (-not $folder -or -not $Name) { return '' }
+    $file = Join-Path $folder ((Get-SafeFileNameForApp -Name $Name) + '.json')
+    if (-not (Test-Path -LiteralPath $file)) { return '' }
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash([System.IO.File]::ReadAllBytes($file))) -replace '-', '') }
+    finally { $sha.Dispose() }
+}
+
 function Global:Update-WebCatalogApp {
     # Changes one app's saved file: reads it, lets -Change edit the record, writes it back (with a backup).
     param([string]$Name, [scriptblock]$Change)
@@ -391,7 +423,7 @@ function Global:Get-WebDeployPlan {
     $inIntune = @{}
     $note = ''
     if ($Global:App.CheckIntuneOnDeployOpen -and @($chosen | Where-Object { -not $_.appId }).Count) {
-        $read = Invoke-WebGraph -Action {
+        $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action {
             param($Graph)
             $names = New-Object System.Collections.Generic.List[object]
             $uri = 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$select=id,displayName&$top=999'
@@ -405,11 +437,12 @@ function Global:Get-WebDeployPlan {
         $unc = Test-AppIsUncommon -App $a
         $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $unc -Index $index -PackagePath $a.packagePath
         $reason = ''
-        if (-not $pkg.Found) {
+        # A same-name app in Intune first: building a package would only lead to a duplicate.
+        if (-not $a.appId -and $inIntune.ContainsKey(([string]$a.appName).Trim().ToLowerInvariant())) { $reason = 'An app with this name is already in Intune - link it (Checks > Link) instead of creating a second one.' }
+        elseif (-not $pkg.Found) {
             $reason = if ($unc) { "No package (.intunewin) yet - build it with More > Package." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging builds it." }
         }
         elseif ($unc -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = "No detection rule yet - an app with its own package needs one (the editor's Deploy settings)." }
-        elseif (-not $a.appId -and $inIntune.ContainsKey(([string]$a.appName).Trim().ToLowerInvariant())) { $reason = 'An app with this name is already in Intune - link it (Checks > Link) instead of creating a second one.' }
         [ordered]@{ name = $a.appName; update = [bool]$a.appId; ready = (-not $reason); reason = $reason }
     }
     return @{ ok = $true; apps = @($plan); circular = @($order.CircularNames); note = $note }
@@ -756,7 +789,7 @@ function Global:Get-WebInstallStatus {
     $a = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
     if (-not $a -or -not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune (no App ID)." } }
     $id = [string]$a.appId
-    $read = Invoke-WebGraph -Action { param($Graph) Get-AppInstallStatusRows -AppId $id -Invoke $Graph }
+    $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) Get-AppInstallStatusRows -AppId $id -Invoke $Graph }
     if (-not $read.ok) { return $read }
     $report = $read.value
     $rows = @($report.Rows | ForEach-Object { [ordered]@{ device = [string]$_.DeviceName; user = [string]$_.UserName; state = [string]$_.State; detail = [string]$_.Detail; error = [string]$_.ErrorCode; version = [string]$_.Version; lastSeen = [string]$_.LastSeen } })
@@ -798,13 +831,23 @@ function Global:Get-WebJobPoll {
         # Cleaned up only once the page has read everything (an empty read
         # after the exit); until then the log stays for the next poll.
         if (-not $text) {
-            if ($response.result -and $response.result.success -and $job.After -and $job.After.Count) {
-                try { $response.after = Complete-WebJob -After $job.After -Result $response.result -LogPath $job.Log }
-                catch { $response.after = @{ ok = $false; error = $_.Exception.Message }; Write-Log "[WARN] $($_.Exception.Message)" }
+            # Under the catalog lock: the completion writes app files, and two
+            # polls arriving together must not complete the same job twice.
+            $after = Invoke-WithCatalogLock {
+                if (-not $Global:App.WebJobs.ContainsKey($id)) { return @{ finished = $false } }
+                [void]$Global:App.WebJobs.Remove($id)
+                $done = $null
+                if ($response.result -and $response.result.success -and $job.After -and $job.After.Count) {
+                    try { $done = Complete-WebJob -After $job.After -Result $response.result -LogPath $job.Log }
+                    catch { $done = @{ ok = $false; error = $_.Exception.Message }; Write-Log "[WARN] $($_.Exception.Message)" }
+                }
+                return @{ finished = $true; after = $done }
             }
-            Remove-Item -LiteralPath (@($job.Cleanup) + $job.Log + @($job.Result | Where-Object { $_ })) -Force -ErrorAction SilentlyContinue
-            [void]$Global:App.WebJobs.Remove($id)
-            Write-Log "$(if ($response.result -and $response.result.success) { '[OK]' } else { '[WARN]' }) Finished: $($job.Mode)."
+            if ($after.finished) {
+                if ($null -ne $after.after) { $response.after = $after.after }
+                Remove-Item -LiteralPath (@($job.Cleanup) + $job.Log + @($job.Result | Where-Object { $_ })) -Force -ErrorAction SilentlyContinue
+                Write-Log "$(if ($response.result -and $response.result.success) { '[OK]' } else { '[WARN]' }) Finished: $($job.Mode)."
+            }
         }
     }
     return $response
@@ -1015,7 +1058,7 @@ function Global:Get-WebApp {
     $editable = Get-WebAppEditable $app
     $meta = if ($app.metadata) { $app.metadata } else { try { Get-DefaultAppMetadata -AppName $app.appName -WingetId $app.wingetId -Uncommon (-not $app.wingetId) } catch { $null } }
     $editable.deploy = Get-WebDeployEditable $meta
-    return @{ ok = $true; app = $editable; knownGroups = @(Get-AllKnownGroups | Sort-Object -Unique)
+    return @{ ok = $true; app = $editable; version = (Get-WebAppFileVersion $app.appName); knownGroups = @(Get-AllKnownGroups | Sort-Object -Unique)
         appNames = @($catalog.Apps | ForEach-Object { $_.appName } | Where-Object { $_ -ne $name } | Sort-Object); minOsChoices = @(Get-WebMinOsChoices) }
 }
 
@@ -1098,6 +1141,9 @@ function Global:Save-WebApp {
     $original = [string]$Data.originalName
     $existing = if ($original) { $catalog.Apps | Where-Object { $_.appName -eq $original } | Select-Object -First 1 } else { $null }
     if ($original -and -not $existing) { return @{ ok = $false; error = "'$original' is no longer in the catalog (renamed or removed elsewhere?). Reload and try again." } }
+    if ($existing -and $Data.version -and [string]$Data.version -ne (Get-WebAppFileVersion $existing.appName)) {
+        return @{ ok = $false; stale = $true; error = "'$original' was changed since you opened it (a deploy, a pull or a fix saved it). Nothing was saved - close the editor, open the app again and redo your changes." }
+    }
     $edit = $Data.app
     $defaults = $null
     if (-not ($existing -and $existing.metadata)) {
@@ -1177,8 +1223,8 @@ function Global:Invoke-WebApi {
         '/api/open'             { return (Open-WebTarget $Data) }
         '/api/log'              { return (Get-WebLog $Data) }
         '/api/app-get'          { return (Get-WebApp $Data) }
-        '/api/app-save'         { return (Save-WebApp $Data) }
-        '/api/app-remove'       { return (Remove-WebApp $Data) }
+        '/api/app-save'         { return (Invoke-WithCatalogLock { Save-WebApp $Data }) }
+        '/api/app-remove'       { return (Invoke-WithCatalogLock { Remove-WebApp $Data }) }
         '/api/deploy-plan'      { return (Get-WebDeployPlan $Data) }
         '/api/deploy-start'     { return (Start-WebDeploy $Data) }
         '/api/push-start'       { return (Start-WebPushGroups $Data) }
@@ -1188,8 +1234,8 @@ function Global:Invoke-WebApi {
         '/api/checks-winget'    { return (Invoke-WebCheckWinget $Data) }
         '/api/winget-search'    { return (Find-WebWinget $Data) }
         '/api/add-from-intune'  { return (Start-WebAddFromIntune $Data) }
-        '/api/batch-edit'       { return (Invoke-WebBatchEdit $Data) }
-        '/api/batch-groups'     { return (Invoke-WebBatchGroups $Data) }
+        '/api/batch-edit'       { return (Invoke-WithCatalogLock { Invoke-WebBatchEdit $Data }) }
+        '/api/batch-groups'     { return (Invoke-WithCatalogLock { Invoke-WebBatchGroups $Data }) }
         '/api/diagnostics'      { return (Get-WebDiagnostics) }
         '/api/prereqs'          { return (Get-WebPrerequisites) }
         '/api/prereq-install'   { return (Start-WebPrerequisiteInstall $Data) }
@@ -1199,13 +1245,13 @@ function Global:Invoke-WebApi {
         '/api/packaging-setup'  { return (Invoke-WebPackagingSetup $Data) }
         '/api/package-start'    { return (Start-WebPackage $Data) }
         '/api/pull-start'       { return (Start-WebPull $Data) }
-        '/api/pull-apply'       { return (Invoke-WebPullApply $Data) }
+        '/api/pull-apply'       { return (Invoke-WithCatalogLock { Invoke-WebPullApply $Data }) }
         '/api/prefs'            { return (Get-WebPrefs) }
         '/api/prefs-save'       { return (Save-WebPrefs $Data) }
         '/api/delete-intune'    { return (Start-WebDeleteFromIntune $Data) }
-        '/api/clear-appid'      { return (Clear-WebAppId $Data) }
+        '/api/clear-appid'      { return (Invoke-WithCatalogLock { Clear-WebAppId $Data }) }
         '/api/install-status'   { return (Get-WebInstallStatus $Data) }
-        '/api/checks-fix'       { return (Invoke-WebCheckFix $Data) }
+        '/api/checks-fix'       { return (Invoke-WithCatalogLock { Invoke-WebCheckFix $Data }) }
         '/api/scripts'          { return (Get-WebScripts) }
         '/api/script-get'       { return (Get-WebScriptDetail $Data) }
         '/api/script-save'      { return (Save-WebScript $Data) }

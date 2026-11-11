@@ -1,4 +1,4 @@
-# The one list the Checks window shows. Every check this app runs - how
+# The one list the Checks page shows. Every check this app runs - how
 # the catalog lines up with the tenant's apps, each deployed app's
 # metadata/groups/dependencies/assignments against Intune, the catalog's
 # own dependencies, its groups against Entra ID, its Winget IDs - turns its
@@ -9,7 +9,7 @@
 # results in; these only decide what is a problem, how to say it, and
 # which fixes apply. That is also what makes them testable without Intune.
 #
-# Actions are keys the window knows how to carry out, most useful first:
+# Actions are keys the page knows how to carry out, most useful first:
 #   Pull            take Intune's metadata and groups into the catalog
 #   PushMetadata    send the catalog's metadata to Intune
 #   PushGroups      send the catalog's groups to Intune
@@ -127,9 +127,9 @@ function Global:Get-IntuneLinkFindings {
 }
 
 function Global:Get-AuditSummaryTexts {
-    # The one-line answers the Last Audit column and its detail window
-    # have always shown, from one app's SyncMetadata result - kept word for
-    # word, since Get-LastAuditSummary and Show-LastAuditDetail read them.
+    # The one-line answers of the Last Audit cache, from one app's
+    # SyncMetadata result - kept word for word, since Get-LastAuditSummary
+    # (the Apps list's audit column) reads them back.
     param($CatalogApp, $Result)
     if (-not $Result.Success) {
         $failed = "Failed: $($Result.Error)"
@@ -302,10 +302,10 @@ function Global:Get-WingetFindings {
 }
 
 function Global:Get-CachedAuditFindings {
-    # What the last audit found, for opening the window on something other
-    # than a blank list - the same Last Audit cache the grid's column
-    # reads. Marked Cached, with the time of that check, so the window can
-    # show them as not fresh.
+    # What the last audit found, so Checks opens on something other than a
+    # blank list - the same Last Audit cache the Apps list's column reads.
+    # Marked Cached, with the time of that check, so the page can show them
+    # as not fresh.
     param($Apps, $LastAuditResults, [string[]]$OnlyNames)
     $findings = New-Object System.Collections.Generic.List[object]
     if (-not $LastAuditResults) { return $findings.ToArray() }

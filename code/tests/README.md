@@ -1,14 +1,15 @@
 # Tests
 
-Three suites, each a plain script - no test framework to install.
+Four suites, each a plain script - no test framework to install.
 
 ```
 pwsh -NoProfile -File code/tests/CatalogLogic.Tests.ps1   # pure logic
 pwsh -NoProfile -File code/tests/WebServer.Tests.ps1      # the real server, over HTTP
+pwsh -NoProfile -File code/tests/WebGraph.Tests.ps1       # the pages that read Graph, without a tenant
 node code/tests/ui/WebUi.Tests.mjs                        # every page in Chromium
 ```
 
-Every push runs the first two on Linux (PowerShell 7) and Windows
+Every push runs the first three on Linux (PowerShell 7) and Windows
 (PowerShell 7 and Windows PowerShell 5.1), and the browser test on Linux -
 see `.github/workflows/tests.yml`.
 
@@ -49,6 +50,25 @@ does:
 tenant - everything that would stops at "Set up the connection first", and
 the test checks that it does. What it creates in the catalog and the script
 folder it removes again, and the settings file is put back as it was.
+
+## WebGraph.Tests.ps1 - the pages that read Graph
+
+Starts the server in **test mode**: the environment variable
+`INTUNE_CATALOG_TEST_GRAPH` names a JSON file of stored Graph answers
+(`code\Web\WebGraph.ps1`), every Graph call is answered from it, and
+nothing signs in. The console says `TEST MODE` in red. The test checks what
+each page makes of those answers: Checks (renamed, only in Intune, not
+linked, a missing group), Diagnostics, the deploy plan holding back an app
+of the same name, install status, platform scripts (list, text, groups, run
+status, local copies), groups and members, the directory search - and the
+awkward cases: a second page (`@odata.nextLink`), a refused `$expand`, the
+beta report falling back to v1.0, and a refused request naming the
+permission that page needs.
+
+The answers file maps `"METHOD path?query"` (or `"METHOD path"` for any
+query), relative to `https://graph.microsoft.com/`, to the JSON Graph would
+send. A list is answered in order; `{ "__status": 403, "__body": {...} }`
+is an error.
 
 ## ui/WebUi.Tests.mjs - the page
 

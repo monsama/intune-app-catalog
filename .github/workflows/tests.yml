@@ -48,6 +48,15 @@ jobs:
         if: matrix.shell == 'powershell'
         shell: powershell
         run: ./code/tests/WebServer.Tests.ps1
+      # The pages that read Graph, against stored answers instead of a tenant.
+      - name: WebGraph.Tests.ps1 (pwsh)
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: ./code/tests/WebGraph.Tests.ps1
+      - name: WebGraph.Tests.ps1 (Windows PowerShell)
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: ./code/tests/WebGraph.Tests.ps1
 
 
   ui:

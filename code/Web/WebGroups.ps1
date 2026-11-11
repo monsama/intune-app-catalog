@@ -7,7 +7,7 @@
     The web interface's Groups page: the Entra ID security groups the
     catalog assigns apps to.
 
-    Reads go to Graph from the request (Invoke-WebGraph, WebScripts.ps1);
+    Reads go to Graph from the request (Invoke-WebGraph, WebGraph.ps1);
     changes run the GroupManager step (code\EmbeddedScripts\GroupManager.ps1)
     as a job.
 #>
@@ -71,7 +71,7 @@ function Global:Get-WebGroupDetail {
     $name = ([string]$Data.name).Trim()
     $problem = Test-WebGroupName $name
     if ($problem) { return @{ ok = $false; error = $problem } }
-    $read = Invoke-WebGraph -Action {
+    $read = Invoke-WebGraph -Permission 'Group.ReadWrite.All' -Action {
         param($Graph)
         $filter = [Uri]::EscapeDataString("displayName eq '$($name.Replace("'", "''"))'")
         $found = @((& $Graph "https://graph.microsoft.com/v1.0/groups?`$filter=$filter&`$select=id,displayName,description").value)
@@ -104,7 +104,7 @@ function Global:Find-WebDirectory {
     if ($q.Length -lt 2) { return @{ ok = $false; error = 'Type at least 2 characters.' } }
     if ($q.Length -gt 100) { return @{ ok = $false; error = 'That is too long to search for.' } }
     $e = $q.Replace("'", "''")
-    $read = Invoke-WebGraph -Action {
+    $read = Invoke-WebGraph -Permission 'Group.Read.All and User.Read.All' -Action {
         param($Graph)
         $hits = New-Object System.Collections.Generic.List[object]
         $notes = New-Object System.Collections.Generic.List[string]

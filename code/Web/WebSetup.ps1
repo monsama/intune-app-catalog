@@ -36,7 +36,7 @@ function Global:Get-WebDiagnostics {
     $live = New-Object System.Collections.Generic.List[object]
     if (-not $credsOk -or -not $moduleOk) { $live.Add((& $line 'info' 'Skipped - the connection isn''t set up.')) }
     else {
-        $read = Invoke-WebGraph -Action {
+        $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action {
             param($Graph)
             $items = New-Object System.Collections.Generic.List[object]
             $uri = 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$select=id,displayName&$top=999'

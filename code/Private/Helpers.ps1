@@ -41,7 +41,7 @@ function Global:ConvertTo-FriendlyGraphError {
     if ($RawMessage -like '*(Raw error:*') { return $RawMessage }
     $summary = $null
     if (Test-GraphAssemblyConflictText $RawMessage) {
-        $summary = "PowerShell module conflict: another module in this window (often Az, ExchangeOnlineManagement or an older Microsoft.Graph, loaded by the PowerShell profile) brought different versions of the libraries Microsoft Graph needs. Nothing in Settings or the tenant is wrong - restart the app without the profile: powershell -NoProfile -ExecutionPolicy Bypass -File .\IntuneDeployment.ps1"
+        $summary = "PowerShell module conflict: another module in the PowerShell running the app (often Az, ExchangeOnlineManagement or an older Microsoft.Graph, loaded by the PowerShell profile) brought different versions of the libraries Microsoft Graph needs. Nothing in Settings or the tenant is wrong - restart the app without the profile: powershell -NoProfile -ExecutionPolicy Bypass -File .\IntuneDeployment.ps1"
     }
     elseif ($RawMessage -match "Certificate with thumbprint '?[0-9A-Fa-f]+'? was not found|Cannot find the certificate|certificate.*not found|No certificate found|No certificate with thumbprint") {
         $summary = "The certificate in Settings isn't on this machine any more (or has expired) - it may have been replaced or deleted since Settings was last saved. Pick or generate one in Settings, make sure it's uploaded to the app registration in Entra (Certificate tab), Test connection, and Save once it succeeds."

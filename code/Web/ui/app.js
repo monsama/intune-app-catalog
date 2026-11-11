@@ -227,12 +227,14 @@ function fillEditor(a) {
   fillDeploy(a.deploy);
   $('appError').hidden = true;
 }
+let editingVersion = '';
 async function openEditor(name) {
-  editingName = name || '';
+  editingName = name || ''; editingVersion = '';
   if (name) {
     const r = await api('/api/app-get', { name });
     if (!r.ok) { toast(r.error, true); return; }
     editorApps = r.appNames || []; editorMinOs = r.minOsChoices || [];
+    editingVersion = r.version || '';
     fillEditor(r.app);
     $('knownGroups').textContent = r.knownGroups.length ? 'Groups used in this catalog: ' + r.knownGroups.join(', ') : '';
     $('appTitle').textContent = 'Edit ' + name;
@@ -256,7 +258,7 @@ $('appForm').addEventListener('submit', async e => {
     metadata: Object.fromEntries(Object.entries(metaIds).map(([k, id]) => [k, $(id).value])),
   };
   if (deployTouched) app.deploy = readDeploy();
-  const r = await api('/api/app-save', { originalName: editingName, app });
+  const r = await api('/api/app-save', { originalName: editingName, version: editingVersion, app });
   if (!r.ok) { const p = $('appError'); p.textContent = r.error; p.hidden = false; return; }
   $('dlgApp').close();
   selected.clear(); selected.add(r.name); lastClicked = r.name;

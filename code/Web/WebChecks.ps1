@@ -61,7 +61,7 @@ function Global:Invoke-WebChecks {
     if (-not (Test-GraphCredentialsConfigured -Quiet)) { $notes.Add('Intune and Entra ID were not checked: no connection set up (Settings).') }
     elseif (-not (Test-GraphModuleHere)) { $notes.Add("Intune and Entra ID were not checked: the Microsoft.Graph.Authentication module isn't installed.") }
     else {
-        $read = Invoke-WebGraph -Action {
+        $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All and Group.Read.All' -Action {
             param($Graph)
             $pages = {
                 param([string]$Uri)
