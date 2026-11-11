@@ -24,6 +24,8 @@ function Check([bool]$Condition, [string]$Name, [string]$Detail = '') {
 $appLinked = 'aaaaaaaa-0000-4000-8000-000000000001'
 $appOnlyIntune = 'aaaaaaaa-0000-4000-8000-000000000002'
 $appSameName = 'aaaaaaaa-0000-4000-8000-000000000003'
+$appBlocked = 'aaaaaaaa-0000-4000-8000-000000000004'
+$blockedName = 'ZZ Graph Blocked'
 $groupId = 'bbbbbbbb-0000-4000-8000-000000000001'
 $scriptId = 'cccccccc-0000-4000-8000-000000000001'
 $linkedName = 'ZZ Graph Linked'
@@ -47,6 +49,13 @@ $answers = [ordered]@{
         Schema = @(@{ Column = 'DeviceName' }, @{ Column = 'UserPrincipalName' }, @{ Column = 'AppInstallState_loc' })
         Values = @(, @('PC-ZZ-1', 'one@example.test', 'Installed')) + @(, @('PC-ZZ-2', 'two@example.test', 'Failed'))
     }
+
+    # Steps (Windows only - they run in Windows PowerShell): what they send is
+    # recorded in <answers file>.calls.
+    "DELETE beta/deviceAppManagement/mobileApps/$appLinked" = $null
+    "DELETE beta/deviceAppManagement/mobileApps/$appBlocked" = @{ __status = 400; __body = @{ error = @{ code = 'BadRequest'; message = "Unable to delete: this app is the parent of another app: $appSameName" } } }
+    "GET beta/deviceAppManagement/mobileApps/$appSameName" = @{ id = $appSameName; displayName = $sameName }
+    "PATCH v1.0/groups/$groupId" = $null
 
     # Platform scripts
     'GET beta/deviceManagement/deviceManagementScripts?$select=id,displayName,description,fileName,runAsAccount,runAs32Bit,enforceSignatureCheck,lastModifiedDateTime' = @{
@@ -197,6 +206,44 @@ try {
     $search = Invoke-Api '/api/directory-search' @{ q = 'ZZ' }
     Check ($search.ok -and @($search.hits).Count -eq 1 -and (@($search.notes) -join ' ') -like '*Users couldn''t be searched*') 'directory search: groups found, users refused with a note' ($search | ConvertTo-Json -Compress -Depth 4)
 
+    # The steps that change Intune, against the same stored answers - they run
+    # in Windows PowerShell, so only on Windows.
+    if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') {
+        function Wait-TestJob([string]$Job) {
+            $offset = 0; $last = $null; $deadline = (Get-Date).AddSeconds(120); $log = ''
+            while ((Get-Date) -lt $deadline) {
+                $p = Invoke-Api '/api/job-poll' @{ job = $Job; offset = $offset }
+                if (-not $p.ok) { return @{ Poll = $p; Log = $log } }
+                $offset = $p.offset; $log += [string]$p.text
+                if ($p.done -and -not $p.text) { return @{ Poll = $p; Log = $log } }
+                Start-Sleep -Milliseconds 400
+            }
+            return @{ Poll = $null; Log = $log }
+        }
+        $callsFile = "$answersFile.calls"
+        $calls = { @(if (Test-Path -LiteralPath $callsFile) { Get-Content -LiteralPath $callsFile -Encoding UTF8 | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json } }) }
+
+        $del = Invoke-Api '/api/delete-intune' @{ name = $linkedName }
+        $delDone = Wait-TestJob $del.job
+        Check ($del.ok -and $delDone.Poll.result.success) 'step: Delete from Intune succeeds' "$($delDone.Poll | ConvertTo-Json -Compress -Depth 4) $($delDone.Log)"
+        Check (@(& $calls | Where-Object { $_.method -eq 'DELETE' -and $_.uri -like "*/mobileApps/$appLinked" }).Count -eq 1) 'step: ... sending exactly one DELETE for that app' ((& $calls | ConvertTo-Json -Compress))
+        Check (-not (Invoke-Api '/api/app-get' @{ name = $linkedName }).app.appId) 'step: ... and the catalog forgets its App ID afterwards'
+
+        Check ((Add-TestApp @{ appName = $blockedName; appId = $appBlocked }).ok) 'a second linked app is added'
+        $blk = Invoke-Api '/api/delete-intune' @{ name = $blockedName }
+        $blkDone = Wait-TestJob $blk.job
+        Check ($blk.ok -and -not $blkDone.Poll.result.success -and ([string]$blkDone.Poll.result.error) -like "*dependency*$sameName*") 'step: a delete blocked by a dependency names the app that depends on it' "$($blkDone.Poll.result | ConvertTo-Json -Compress)"
+        Check ((Invoke-Api '/api/app-get' @{ name = $blockedName }).app.appId -eq $appBlocked) 'step: ... and the catalog keeps its App ID'
+
+        $ren = Invoke-Api '/api/group-job' @{ mode = 'Rename'; name = 'SG-ZZ-Exists'; groupId = $groupId; newName = 'SG-ZZ-Renamed' }
+        $renDone = Wait-TestJob $ren.job
+        $patch = @(& $calls | Where-Object { $_.method -eq 'PATCH' -and $_.uri -like "*/groups/$groupId" }) | Select-Object -First 1
+        Check ($ren.ok -and $renDone.Poll.result.success -and $patch -and ($patch.body | ConvertFrom-Json).displayName -eq 'SG-ZZ-Renamed') 'step: Rename sends the new name to Entra ID' "$($ren | ConvertTo-Json -Compress) $($renDone.Log)"
+        Check (@((Invoke-Api '/api/app-get' @{ name = $linkedName }).app.requiredFor) -contains 'SG-ZZ-Renamed') 'step: ... and the catalog apps that used the group follow'
+        Remove-Item -LiteralPath $callsFile -Force -ErrorAction SilentlyContinue
+    }
+    else { Write-Host '(Steps that change Intune: skipped - they run in Windows PowerShell.)' -ForegroundColor DarkGray }
+
     foreach ($n in @($created)) {
         $r = Invoke-Api '/api/app-remove' @{ name = $n }
         Check ($r.ok) "the test app '$n' is removed again" ($r | ConvertTo-Json -Compress)
@@ -211,7 +258,7 @@ finally {
         try { $proc.Kill() } catch { }
     }
     if ($null -ne $settingsBackup) { Set-Content -LiteralPath $settingsPath -Value $settingsBackup -Encoding UTF8 } else { Remove-Item -LiteralPath $settingsPath -Force -ErrorAction SilentlyContinue }
-    Remove-Item -LiteralPath $outFile, $answersFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $outFile, $answersFile, "$answersFile.calls" -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host ""

@@ -82,13 +82,18 @@ async function runJob(body, onDone, opts = {}) {
   if (jobRunning) { toast('Another action is still running - wait for it to finish.', true); return false; }
   const start = await api(opts.path || '/api/job-start', opts.path ? body : { ...fields(), ...body });
   if (!start.ok) { toast(start.error, true); if (onDone) onDone(false, { error: start.error }); return false; }
+  return followJob(start.job, onDone, opts);
+}
+// Shows a running step's output until it ends, then hands over its result -
+// for a step just started, and for one still running from before a reload.
+function followJob(job, onDone, opts = {}) {
   jobRunning = true; jobButtons(false);
   const extra = opts.log ? $(opts.log) : null;
   const both = t => { activity(t); if (extra) { extra.textContent += t.endsWith('\n') ? t : t + '\n'; extra.scrollTop = extra.scrollHeight; } };
   both(`${stamp()} ${opts.startText || 'Sign in in the window that opens...'}`);
   let offset = 0;
   const tick = async () => {
-    const r = await api('/api/job-poll', { job: start.job, offset });
+    const r = await api('/api/job-poll', { job, offset });
     if (!r.ok) { jobRunning = false; jobButtons(true); toast(r.error, true); return; }
     if (r.text) { both(r.text); offset = r.offset; }
     if (r.done && !r.text) {

@@ -112,7 +112,7 @@ function Global:Start-WebStepJob {
     }
     $Global:App.WebJobs[$tag] = @{
         Process = $proc; Log = $logPath; Result = $ResultPath
-        Cleanup = @($scriptPath, $helperPath, $configPath); Mode = $Kind; Done = $false; After = $After; LastPoll = Get-Date
+        Cleanup = @($scriptPath, $helperPath, $configPath); Mode = $Kind; Done = $false; After = $After; LastPoll = Get-Date; Started = Get-Date
     }
     return @{ ok = $true; job = $tag }
 }
@@ -147,6 +147,15 @@ function Global:Update-WebCatalogApp {
     Backup-WebAppFile $file
     [System.IO.File]::WriteAllText($file, (ConvertTo-SingleAppJson -App $app), (New-Object System.Text.UTF8Encoding($false)))
     return $app
+}
+
+function Global:Get-WebRunningJobs {
+    # Steps the server knows about that haven't been completed yet, oldest first - for a page opened while they run.
+    $list = foreach ($id in @($Global:App.WebJobs.Keys)) {
+        $j = $Global:App.WebJobs[$id]
+        if ($j) { [ordered]@{ job = $id; kind = [string]$j.Mode; started = $(if ($j.Started) { ([datetime]$j.Started).ToString('o') } else { '' }) } }
+    }
+    return @{ ok = $true; jobs = @($list | Sort-Object { $_.started }) }
 }
 
 function Global:Complete-WebOrphanJobs {
@@ -366,6 +375,7 @@ function Global:Invoke-WebApi {
         '/api/test-connection'  { return (Invoke-WebTestConnection $Data) }
         '/api/job-start'        { return (Start-WebCertJob $Data) }
         '/api/job-poll'         { return (Get-WebJobPoll $Data) }
+        '/api/jobs'             { return (Get-WebRunningJobs) }
         '/api/permission-choice' { return (Get-WebPermissionChoice) }
         '/api/open'             { return (Open-WebTarget $Data) }
         '/api/log'              { return (Get-WebLog $Data) }

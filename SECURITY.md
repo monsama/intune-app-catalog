@@ -75,6 +75,13 @@ user already has over your files and your sign-ins.
 - **Folder settings** must be full paths (a drive or `\\server\share`)
   without quotes, wildcards or control characters.
 
+## Releases
+
+The release zip is built by GitHub Actions from the tagged commit. Every
+action the workflows use is pinned to an exact commit, not a movable tag,
+and Dependabot proposes updates as pull requests. The scripts are signed
+when the repository has a code-signing certificate (see the README).
+
 ## Test mode
 
 `INTUNE_CATALOG_TEST_GRAPH` exists for the automated tests. When it names

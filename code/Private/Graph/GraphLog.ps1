@@ -213,6 +213,55 @@ function global:Write-GraphLogFromInformation {
     }
 }
 '@)
+    # Graph test mode (INTUNE_CATALOG_TEST_GRAPH, WebGraph.ps1): the step talks
+    # to stand-ins instead of Microsoft Graph - functions win over cmdlets of
+    # the same name. They answer from the test file and write every request
+    # to <file>.calls, so a test can check what the step would have sent.
+    # Only ever added when the app itself runs in test mode.
+    if ($Global:App.TestGraph -and (Get-Command Get-WebTestGraphAnswer -ErrorAction SilentlyContinue)) {
+        $parts.Add("function global:Get-WebTestGraphAnswer {`n$((Get-Command Get-WebTestGraphAnswer).ScriptBlock.ToString())`n}")
+        $parts.Add(@'
+$global:TestGraphState = @{
+    Answers  = (Get-Content -LiteralPath $env:INTUNE_CATALOG_TEST_GRAPH -Raw -Encoding UTF8 | ConvertFrom-Json)
+    Counters = @{}
+    Calls    = $env:INTUNE_CATALOG_TEST_GRAPH + '.calls'
+}
+function global:ConvertTo-TestGraphHashtable {
+    # Invoke-MgGraphRequest hands back hashtables, not objects.
+    param($Value)
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [System.Management.Automation.PSCustomObject]) {
+        $h = @{}
+        foreach ($p in $Value.PSObject.Properties) { $h[$p.Name] = ConvertTo-TestGraphHashtable $p.Value }
+        return $h
+    }
+    if ($Value -is [System.Array]) { return , @($Value | ForEach-Object { ConvertTo-TestGraphHashtable $_ }) }
+    return $Value
+}
+function global:Import-Module {
+    [CmdletBinding()]
+    param([Parameter(Position = 0)][string[]]$Name, [Parameter(ValueFromRemainingArguments = $true)]$Rest)
+    if (@($Name | Where-Object { $_ -like 'Microsoft.Graph*' }).Count) { return }
+    $p = @{} + $PSBoundParameters; [void]$p.Remove('Rest')
+    Microsoft.PowerShell.Core\Import-Module @p
+}
+function global:Get-MgContext { [CmdletBinding()] param() return $null }
+function global:Connect-MgGraph { [CmdletBinding()] param([Parameter(ValueFromRemainingArguments = $true)]$Rest) }
+function global:Disconnect-MgGraph { [CmdletBinding()] param() }
+function global:Invoke-MgGraphRequest {
+    [CmdletBinding()]
+    param([string]$Uri, [string]$Method = 'GET', $Body, [string]$ContentType, [string]$OutputType, $Headers)
+    $state = $global:TestGraphState
+    $bodyText = if ($null -eq $Body) { '' } elseif ($Body -is [string]) { $Body } else { $Body | ConvertTo-Json -Depth 20 -Compress }
+    $call = @{ method = $Method.ToUpperInvariant(); uri = $Uri; body = $bodyText } | ConvertTo-Json -Compress
+    Add-Content -LiteralPath $state.Calls -Value $call -Encoding UTF8
+    $answer = Get-WebTestGraphAnswer -Answers $state.Answers -Method $Method.ToUpperInvariant() -Uri $Uri -Counters $state.Counters
+    if ($answer.Status -ge 300) { throw "Response status code does not indicate success: $($answer.Status) ($($answer.Reason)). $($answer.Text)" }
+    if (-not $answer.Text) { return $null }
+    return (ConvertTo-TestGraphHashtable ($answer.Text | ConvertFrom-Json))
+}
+'@)
+    }
     return ($parts -join "`n`n")
 }
 
