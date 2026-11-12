@@ -43,6 +43,7 @@ function Global:Get-WebAppEditable {
         uninstallFor = @($App.uninstallFor | ForEach-Object { [string]$_ })
         excludeFor   = @($App.excludeFor | ForEach-Object { [string]$_ })
         hasMetadata  = [bool]$m
+        icon         = $(if ($App.icon -and $App.icon.value) { [ordered]@{ type = [string]$App.icon.type; value = [string]$App.icon.value } } else { $null })
         metadata     = [ordered]@{
             description      = [string]$(if ($m) { $m.description })
             publisher        = [string]$(if ($m) { $m.publisher })
@@ -67,7 +68,7 @@ function Global:ConvertTo-WebDeploySettings {
       -AppNames: the catalog's apps (a dependency must be one of them, and
       not the app itself, -Self).
     #>
-    param($Form, [string[]]$AppNames = @(), [string]$Self = '')
+    param($Form, [string[]]$AppNames = @(), [string]$Self = '', [string]$SelfAppId = '')
     $ops = 'notConfigured', 'equal', 'notEqual', 'greaterThan', 'greaterThanOrEqual', 'lessThan', 'lessThanOrEqual'
     $d = $Form.detection
     $rule = $null
@@ -106,13 +107,34 @@ function Global:ConvertTo-WebDeploySettings {
         if ($dep -eq $Self) { return @{ Error = "An app can't depend on itself." } }
         if ($AppNames -notcontains $dep) { return @{ Error = "Dependency '$dep' isn't an app in this catalog." } }
     }
+    # Supersedence: sent only by an editor that shows it. supersedesSet false
+    # means "leave Intune's as it is" (null in the catalog); true, exactly these.
+    $sup = $null; $supGiven = $false
+    $formKeys = if ($Form -is [System.Collections.IDictionary]) { @($Form.Keys) } else { @($Form.PSObject.Properties.Name) }
+    if ($formKeys -contains 'supersedesSet') {
+        $supGiven = $true
+        if ($Form.supersedesSet) {
+            $list = New-Object System.Collections.Generic.List[object]
+            foreach ($s in @($Form.supersedes | Where-Object { $_ })) {
+                $sid = ([string]$s.appId).Trim()
+                if ($sid -notmatch '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$') { return @{ Error = 'Every superseded app needs an Intune App ID (a GUID).' } }
+                if ($SelfAppId -and $sid -eq $SelfAppId) { return @{ Error = "An app can't supersede itself." } }
+                if (@($list | Where-Object { $_.appId -eq $sid }).Count) { continue }
+                $list.Add([pscustomobject]@{ appId = $sid; name = ([string]$s.name).Trim(); type = $(if ([string]$s.type -eq 'replace') { 'replace' } else { 'update' }) })
+            }
+            if ($list.Count -gt 10) { return @{ Error = 'Intune allows at most 10 superseded apps.' } }
+            $sup = $list.ToArray()
+        }
+    }
     $b = $base.Settings
-    return @{ Error = ''; Values = [ordered]@{
+    $values = [ordered]@{
         detectionRule = $rule; architecture = $b.Architecture; minOSKey = $b.MinOSKey
         minDiskSpaceMB = $b.MinDiskSpaceMB; minMemoryMB = $b.MinMemoryMB; minProcessors = $b.MinProcessors; minCpuSpeedMHz = $b.MinCpuSpeedMHz
         installTimeMinutes = $b.InstallTimeMinutes; deviceRestartBehavior = $b.DeviceRestartBehavior; allowAvailableUninstall = $b.AllowAvailableUninstall
         returnCodes = @($b.ReturnCodes); dependencies = $deps
-    } }
+    }
+    if ($supGiven) { $values.supersedes = $sup }
+    return @{ Error = ''; Values = $values }
 }
 
 function Global:Get-WebDeployEditable {
@@ -139,6 +161,8 @@ function Global:Get-WebDeployEditable {
         deviceRestartBehavior = [string]$(if ($m -and $m.deviceRestartBehavior) { $m.deviceRestartBehavior } else { 'basedOnReturnCode' }); allowAvailableUninstall = [bool]$(if ($m) { $m.allowAvailableUninstall })
         returnCodes = @($(if ($m) { $m.returnCodes }) | Where-Object { $_ } | ForEach-Object { [ordered]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })
         dependencies = @($(if ($m) { $m.dependencies }) | Where-Object { $_ } | ForEach-Object { [string]$_ })
+        supersedesSet = [bool]($m -and $null -ne $m.supersedes)
+        supersedes = @($(if ($m) { $m.supersedes }) | Where-Object { $_ -and $_.appId } | ForEach-Object { [ordered]@{ appId = [string]$_.appId; name = [string]$_.name; type = [string]$_.type } })
     }
 }
 
@@ -152,7 +176,8 @@ function Global:Get-WebApp {
     $meta = if ($app.metadata) { $app.metadata } else { try { Get-DefaultAppMetadata -AppName $app.appName -WingetId $app.wingetId -Uncommon (-not $app.wingetId) } catch { $null } }
     $editable.deploy = Get-WebDeployEditable $meta
     return @{ ok = $true; app = $editable; version = (Get-WebAppFileVersion $app.appName); knownGroups = @(Get-AllKnownGroups | Sort-Object -Unique)
-        appNames = @($catalog.Apps | ForEach-Object { $_.appName } | Where-Object { $_ -ne $name } | Sort-Object); minOsChoices = @(Get-WebMinOsChoices) }
+        appNames = @($catalog.Apps | ForEach-Object { $_.appName } | Where-Object { $_ -ne $name } | Sort-Object); minOsChoices = @(Get-WebMinOsChoices)
+        intuneApps = @($catalog.Apps | Where-Object { $_.appId -and $_.appName -ne $name } | Sort-Object appName | ForEach-Object { [ordered]@{ name = [string]$_.appName; appId = [string]$_.appId } }) }
 }
 
 function Global:Merge-WebAppEdit {
@@ -188,6 +213,8 @@ function Global:Merge-WebAppEdit {
         intuneAppType    = $(if ($Existing) { [string]$Existing.intuneAppType } else { '' })
         intuneAppVersion = $(if ($Existing) { [string]$Existing.intuneAppVersion } else { '' })
         packagePath      = $(if ($Existing) { [string]$Existing.packagePath } else { '' })
+        # iconChange: 'set' (with icon), 'remove', or anything else to keep the one it has.
+        icon             = $(switch ([string]$Edit.iconChange) { 'set' { ConvertTo-AppIcon $Edit.icon } 'remove' { $null } default { if ($Existing) { $Existing.icon } else { $null } } })
         requiredFor      = & $groups $Edit.requiredFor
         availableFor     = & $groups $Edit.availableFor
         uninstallFor     = & $groups $Edit.uninstallFor
@@ -253,12 +280,13 @@ function Global:Save-WebApp {
     $record = Merge-WebAppEdit -Existing $existing -Edit $edit -Defaults $defaults
     $problem = Test-WebAppEdit -Record $record -OriginalName $original -Others @($catalog.Apps)
     if ($problem) { return @{ ok = $false; error = $problem } }
+    if ([string]$edit.iconChange -eq 'set' -and -not $record.icon) { return @{ ok = $false; error = 'The icon must be a PNG or JPEG of at most 750 KB.' } }
     foreach ($urlField in 'informationUrl', 'privacyUrl') {
         $u = [string]$edit.metadata.$urlField
         if ($u -and $u -notmatch '^https?://\S+$') { return @{ ok = $false; error = "The $(if ($urlField -eq 'informationUrl') { 'information' } else { 'privacy' }) URL must start with http:// or https://." } }
     }
     if ($edit.deploy) {
-        $deploy = ConvertTo-WebDeploySettings -Form $edit.deploy -AppNames @($catalog.Apps | ForEach-Object { $_.appName }) -Self $record.appName
+        $deploy = ConvertTo-WebDeploySettings -Form $edit.deploy -AppNames @($catalog.Apps | ForEach-Object { $_.appName }) -Self $record.appName -SelfAppId $record.appId
         if ($deploy.Error) { return @{ ok = $false; error = $deploy.Error } }
         # Deploy settings make an app's metadata exist, with the defaults underneath.
         if (-not $record.metadata) {

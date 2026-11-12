@@ -211,9 +211,41 @@ function Global:Invoke-WebCheckWinget {
     if ($apps.Count -eq 0) { return @{ ok = $true; areas = @('Winget ID'); names = @(); findings = @() } }
     if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) { return @{ ok = $false; error = "winget.exe isn't on this machine, so Winget IDs can't be checked. It comes with the 'App Installer' package on Windows 10 and 11." } }
     $results = @($apps | ForEach-Object { Test-WingetPackageId -AppName $_.appName -WingetId $_.wingetId })
+    # The newest version winget offers, kept for the Apps list ("Newer on winget") until the app restarts.
+    if (-not $Global:App.WingetLatest) { $Global:App.WingetLatest = [hashtable]::Synchronized(@{}) }
+    foreach ($r in $results) { if ($r.Ok -and $r.Version) { $Global:App.WingetLatest[([string]$r.WingetId).ToLowerInvariant()] = [string]$r.Version } }
     $new = @(Get-WingetFindings -Results $results -Apps @((Read-WebCatalogRecords).Apps))
     Write-Log "[INFO] winget: asked about $($apps.Count) Winget ID(s), $($new.Count) problem(s)."
-    return @{ ok = $true; areas = @('Winget ID'); names = @($apps | ForEach-Object { [string]$_.appName }); findings = @($new | ForEach-Object { ConvertTo-WebFindingRow $_ }) }
+    return @{ ok = $true; areas = @('Winget ID'); names = @($apps | ForEach-Object { [string]$_.appName }); findings = @($new | ForEach-Object { ConvertTo-WebFindingRow $_ })
+        versions = @($results | Where-Object { $_.Version } | ForEach-Object { [ordered]@{ app = [string]$_.AppName; version = [string]$_.Version } }) }
+}
+
+function Global:Set-WebWingetVersions {
+    <#
+      Takes winget's newest version (from the last ask, Invoke-WebCheckWinget)
+      as the catalog's App version of the named apps - with Undo. The
+      install command doesn't change: Winget apps always install winget's
+      latest; the version is what Intune and the Company Portal show.
+    #>
+    param($Data)
+    $names = @($Data.names | Where-Object { $_ } | ForEach-Object { [string]$_ })
+    if (-not $names.Count) { return @{ ok = $false; error = 'Choose one or more apps first.' } }
+    $latest = $Global:App.WingetLatest
+    $undo = New-WebUndo "Take winget's version"
+    $changed = New-Object System.Collections.Generic.List[string]
+    $skipped = New-Object System.Collections.Generic.List[string]
+    foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { $names -contains $_.appName })) {
+        $v = if ($latest -and $a.wingetId) { [string]$latest[([string]$a.wingetId).ToLowerInvariant()] } else { '' }
+        if (-not $v) { $skipped.Add("$($a.appName) (winget not asked yet)"); continue }
+        if (-not $a.metadata) { $a.metadata = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon (Test-AppIsUncommon -App $a) }
+        if ([string]$a.metadata.appVersion -eq $v) { continue }
+        if ($a.metadata.PSObject.Properties.Name -contains 'appVersion') { $a.metadata.appVersion = $v } else { $a.metadata | Add-Member -NotePropertyName appVersion -NotePropertyValue $v }
+        Write-WebAppFile -App $a -Undo $undo
+        $changed.Add($a.appName)
+    }
+    Save-WebUndo $undo
+    Write-Log "[OK] Took winget's version for $($changed.Count) app(s) in the catalog$(if ($changed.Count) { ': ' + ($changed -join ', ') })."
+    return @{ ok = $true; changed = $changed.ToArray(); skipped = $skipped.ToArray(); deployed = @((Read-WebCatalogRecords).Apps | Where-Object { $_.appId -and $changed -contains $_.appName } | ForEach-Object { $_.appName }) }
 }
 
 function Global:Find-WebWinget {

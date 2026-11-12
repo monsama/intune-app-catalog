@@ -92,6 +92,7 @@ $testableFunctionNames = @(
     "Get-AppWindowPreferencesJson",
     "Test-AppFolderPath",
     "Get-WingetShowVerdict",
+    "Compare-AppVersionText",
     # Diagnostics (Diagnostics.ps1)
     "Get-CatalogDiagnosticLines",
     "Get-SafeFileNameForApp",
@@ -141,6 +142,7 @@ $testableFunctionNames = @(
     # JSON field by field rather than serialising, which is exactly why it
     # is worth a test.
     "ConvertTo-SingleAppJson",
+    "ConvertTo-AppIcon",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -1764,6 +1766,13 @@ try {
     $metaBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $metaRoundTrip) | ConvertFrom-Json)
     Assert-Equal '1.2.3' $metaBack.metadata.appVersion "ConvertTo-SingleAppJson/ConvertTo-AppRecord: App version round-trips"
     Assert-Equal $true $metaBack.metadata.isFeatured "ConvertTo-SingleAppJson/ConvertTo-AppRecord: Featured app round-trips"
+    $png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+    $iconApp = ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'Icon App'; icon = [pscustomobject]@{ type = 'image/png'; value = $png } })
+    $iconBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $iconApp) | ConvertFrom-Json)
+    Assert-Equal $png $iconBack.icon.value "ConvertTo-SingleAppJson/ConvertTo-AppRecord: the icon round-trips"
+    Assert-True ($null -eq (ConvertTo-AppIcon ([pscustomobject]@{ type = 'image/svg+xml'; value = $png }))) "ConvertTo-AppIcon: only PNG or JPEG"
+    Assert-True ($null -eq (ConvertTo-AppIcon ([pscustomobject]@{ type = 'image/png'; value = 'not base64!' }))) "ConvertTo-AppIcon: only base64"
+    Assert-True ((ConvertTo-SingleAppJson -App $metaBack) -notlike '*"icon"*') "ConvertTo-SingleAppJson: no icon field when there is none"
     $metaRoundTrip.metadata = [pscustomobject]@{ description = 'd'; appVersion = $null; isFeatured = $null }
     $metaNullBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $metaRoundTrip) | ConvertFrom-Json)
     Assert-Null $metaNullBack.metadata.appVersion "ConvertTo-AppRecord: an unrecorded App version stays null through a save"
@@ -2297,6 +2306,12 @@ Assert-Equal "winget" $wingetRows[2].Source "winget search: a row without a Matc
 Assert-Equal 0 @(ConvertFrom-WingetSearchOutput "No package found matching input criteria.").Count "winget search: no table, no rows"
 $found = Get-WingetShowVerdict -ExitCode 0 -StdOut "Found Notepad++ [Notepad++.Notepad++]`nVersion: 8.6.9`nPublisher: Notepad++ Team`n" -StdErr ""
 Assert-True ($found.Ok -and $found.Result -eq "Found (Notepad++ Team)") "winget show: a known ID, with its publisher"
+Assert-Equal "8.6.9" $found.Version "winget show: the version winget offers"
+Assert-Equal 1 (Compare-AppVersionText '24.9' '24.10') "Compare-AppVersionText: 24.10 is newer than 24.9 (numbers, not text)"
+Assert-Equal 0 (Compare-AppVersionText '8.6' '8.6.0') "Compare-AppVersionText: 8.6 and 8.6.0 are the same"
+Assert-Equal -1 (Compare-AppVersionText '131.0.2' '131.0.1') "Compare-AppVersionText: an older winget version"
+Assert-True ($null -eq (Compare-AppVersionText '' '1.0')) "Compare-AppVersionText: no catalog version - unknown"
+Assert-Equal 1 (Compare-AppVersionText '1.0-beta' '1.0-rc') "Compare-AppVersionText: text parts compared as text"
 $gone = Get-WingetShowVerdict -ExitCode -1978335212 -StdOut "No package found matching input criteria." -StdErr ""
 Assert-True ((-not $gone.Ok) -and $gone.Result -like "NOT FOUND*") "winget show: an unknown ID reads NOT FOUND (what Get-WingetFindings looks for)"
 $odd = Get-WingetShowVerdict -ExitCode 5 -StdOut "  - \`nSource agreement required" -StdErr ""

@@ -1,5 +1,49 @@
 # Changelog
 
+## 2.0.14
+
+### Added
+
+- **Set up this tenant** (Catalog menu, and the banner when App IDs don't
+  match the tenant). One window lists what the connected tenant still needs
+  for the catalog, in order:
+  1. clear App IDs from another tenant;
+  2. create the groups Entra ID doesn't have;
+  3. deploy the apps not in Intune;
+  4. push the deployed apps' groups.
+
+  Each step names the apps or groups and opens the usual question or
+  preview. The list reads the tenant again after each step.
+- **Install status of every app** (Catalog menu): installed, failed,
+  pending, not installed and not applicable devices for every deployed app.
+  It reads one report, falling back to each app's own summary. Worst first,
+  with a filter for failures and **Devices...** for one app's devices.
+- **App icons:**
+  - in the editor: **Choose image...** (PNG or JPEG; larger than 512 px is
+    scaled down; at most 750 KB), **From Intune**, **Remove**;
+  - kept in the app's own file, so renames, backups and Undo carry it;
+  - shown in the Apps list, and sent to Intune on deploy and on push
+    settings. No icon leaves Intune's own alone.
+- **Newer on winget:**
+  - **Catalog > Check winget for new versions** asks winget for every Winget
+    app (Checks' winget stage does too);
+  - the Version column shows "→ newer" with a **Newer on winget** filter;
+  - **More > Take winget's version** sets the App version, with Undo, then
+    offers to push settings.
+- **Supersedence in the editor** (Deploy settings): the older apps this one
+  updates or replaces (uninstalling the old one), at most 10. These can be
+  catalog apps, or any Intune app by App ID. Unticked, Intune's own
+  supersedence is left alone, as before.
+- **Earlier versions: Compare.** Shows what the save at that time changed
+  (before and after), and that version next to the app as it is now.
+
+### Changed
+
+- **Retries:** steps also retry Graph's 502 and 504 gateway errors, and the
+  package upload to Azure Storage retries a block that times out, is
+  dropped or throttled. Up to 4 tries, waiting 5, 15 and 30 seconds. Before,
+  one dropped block failed the deploy.
+
 ## 2.0.13
 
 ### Added

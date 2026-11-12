@@ -37,6 +37,13 @@ it opens can talk to it.
 - **Export to CSV / Import from CSV** (Catalog menu): edit many apps in
   Excel; the import shows every change first and is checked like the editor.
 - Saved views in the Apps list, and `group:name` in the search box.
+- **Set up this tenant** (Catalog menu, or the banner after copying a
+  catalog): stale App IDs, missing groups, apps to deploy and groups to
+  push, step by step.
+- **Install status of every app** at once, worst first.
+- App **icons**, sent to Intune and the Company Portal; **supersedence** in
+  the editor; **newer versions on winget** flagged in the list.
+- **Earlier versions** show what each save changed.
 - Pull settings and groups back from Intune, field by field.
 - **Checks**: every way the catalog and Intune can disagree - apps renamed
   in Intune, App IDs that no longer exist, apps only in Intune, settings,

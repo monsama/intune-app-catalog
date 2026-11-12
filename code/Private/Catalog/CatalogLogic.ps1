@@ -780,6 +780,7 @@ function Global:ConvertTo-TemplateAppRecord {
         availableFor     = @($App.availableFor)
         uninstallFor     = @($App.uninstallFor)
         excludeFor       = @($App.excludeFor)
+        icon             = $App.icon
         metadata         = $App.metadata
     }
 }

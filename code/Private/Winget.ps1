@@ -56,7 +56,8 @@ function Global:Get-WingetShowVerdict {
     param([int]$ExitCode, [string]$StdOut, [string]$StdErr)
     if ($ExitCode -eq 0 -and $StdOut -match '(?m)^\s*Version:') {
         $publisher = if ($StdOut -match '(?m)^\s*Publisher:\s*(.+)$') { $Matches[1].Trim() } else { '' }
-        return @{ Ok = $true; Result = $(if ($publisher) { "Found ($publisher)" } else { 'Found' }) }
+        $version = if ($StdOut -match '(?m)^\s*Version:\s*(\S+)') { $Matches[1].Trim() } else { '' }
+        return @{ Ok = $true; Result = $(if ($publisher) { "Found ($publisher)" } else { 'Found' }); Version = $version }
     }
     if ($StdOut -match 'No package found' -or $StdErr -match 'No package found') {
         return @{ Ok = $false; Result = "NOT FOUND - winget doesn't know this ID any more" }
@@ -133,5 +134,28 @@ function Global:Test-WingetPackageId {
         $v = Get-WingetShowVerdict -ExitCode $r.ExitCode -StdOut $r.StdOut -StdErr $r.StdErr
     }
     catch { $v = @{ Ok = $false; Result = "Could not check: $($_.Exception.Message)" } }
-    return [pscustomobject]@{ AppName = $AppName; WingetId = $WingetId; Ok = [bool]$v.Ok; Result = [string]$v.Result }
+    return [pscustomobject]@{ AppName = $AppName; WingetId = $WingetId; Ok = [bool]$v.Ok; Result = [string]$v.Result; Version = [string]$v.Version }
+}
+
+function Global:Compare-AppVersionText {
+    <#
+      Pure: is version -Other newer (1), the same (0) or older (-1) than
+      -Mine? Numbers are compared as numbers part by part (24.10 is newer
+      than 24.9), other parts as text; $null when either is empty or
+      "Unknown".
+    #>
+    param([string]$Mine, [string]$Other)
+    $a = ([string]$Mine).Trim(); $b = ([string]$Other).Trim()
+    if (-not $a -or -not $b -or $a -eq 'Unknown' -or $b -eq 'Unknown') { return $null }
+    $pa = @($a -split '[.\-+_ ]' | Where-Object { $_ -ne '' }); $pb = @($b -split '[.\-+_ ]' | Where-Object { $_ -ne '' })
+    for ($i = 0; $i -lt [Math]::Max($pa.Count, $pb.Count); $i++) {
+        $x = if ($i -lt $pa.Count) { $pa[$i] } else { '0' }
+        $y = if ($i -lt $pb.Count) { $pb[$i] } else { '0' }
+        if ($x -match '^\d+$' -and $y -match '^\d+$') {
+            $c = ([decimal]$y).CompareTo([decimal]$x)
+            if ($c) { return [Math]::Sign($c) }
+        }
+        elseif ($x -ne $y) { return [Math]::Sign([string]::CompareOrdinal($y.ToLowerInvariant(), $x.ToLowerInvariant())) }
+    }
+    return 0
 }

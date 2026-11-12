@@ -10,7 +10,7 @@
   This file has the route table (Invoke-WebApi) and what every page
   shares: reading the catalog, the catalog lock, step jobs and their
   completion, the Activity log. The pages: WebEditor.ps1, WebDeploy.ps1,
-  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebGroups.ps1,
+  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebTenant.ps1, WebGroups.ps1,
   WebScripts.ps1, WebSetup.ps1; Graph reads go through WebGraph.ps1.
 #>
 
@@ -61,6 +61,10 @@ function Global:Get-WebCatalog {
                 required     = [int]$row.Required
                 available    = [int]$row.Available
                 uninstall    = [int]$row.Uninstall
+                wingetVersion = [string]$(if ($Global:App.WingetLatest -and $apps[$i].wingetId) { $Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()] })
+                newerOnWinget = [bool]($Global:App.WingetLatest -and $apps[$i].wingetId -and $apps[$i].metadata -and (Compare-AppVersionText ([string]$apps[$i].metadata.appVersion) ([string]$Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()])) -eq 1)
+                hasIcon      = [bool]($apps[$i].icon -and $apps[$i].icon.value)
+                iconTag      = $(if ($apps[$i].icon -and $apps[$i].icon.value) { "$($apps[$i].icon.value.Length):$($apps[$i].icon.value.Substring([Math]::Max(0, $apps[$i].icon.value.Length - 12)))" } else { '' })
                 groups       = @(@($apps[$i].requiredFor) + @($apps[$i].availableFor) + @($apps[$i].uninstallFor) + @($apps[$i].excludeFor) | Where-Object { $_ } | ForEach-Object { [string]$_ } | Select-Object -Unique)
                 status       = [string]$row.Status
                 audit        = [string]$row.IntuneAudit
@@ -449,6 +453,12 @@ function Global:Invoke-WebApi {
         '/api/batch-groups'     { return (Invoke-WithCatalogLock { Invoke-WebBatchGroups $Data }) }
         '/api/replace-group'    { return (Invoke-WithCatalogLock { Invoke-WebReplaceGroup $Data }) }
         '/api/undo-info'        { return (Get-WebUndoInfo) }
+        '/api/winget-take-version' { return (Invoke-WithCatalogLock { Set-WebWingetVersions $Data }) }
+        '/api/tenant-setup'     { return (Get-WebTenantSetup) }
+        '/api/install-overview' { return (Get-WebInstallOverview) }
+        '/api/app-icons'        { return (Get-WebAppIcons $Data) }
+        '/api/app-icon-intune'  { return (Get-WebIntuneIcon $Data) }
+        '/api/app-compare'      { return (Get-WebAppVersionCompare $Data) }
         '/api/undo-last'        { return (Invoke-WithCatalogLock { Invoke-WebUndo }) }
         '/api/csv-export'       { return (Export-WebCatalogCsv) }
         '/api/csv-import'       { return $(if ($Data.preview) { Import-WebCatalogCsv $Data } else { Invoke-WithCatalogLock { Import-WebCatalogCsv $Data } }) }
