@@ -38,7 +38,7 @@ function renderScripts() {
 }
 $('scriptSearch').addEventListener('input', renderScripts);
 $('btnScriptsReload').addEventListener('click', loadScripts);
-$('btnScriptsFolder').addEventListener('click', async () => { const r = await api('/api/open', { target: 'scripts-folder' }); if (!r.ok) toast(r.error, true); });
+$('btnScriptsFolder').addEventListener('click', () => openFolder('scripts-folder'));
 $('btnScriptNew').addEventListener('click', () => openScript(null));
 $('btnScriptEdit').addEventListener('click', () => scriptSel && openScript(scriptSel));
 $('btnScriptStatus').addEventListener('click', () => scriptSel && openScriptStatus(scriptSel));

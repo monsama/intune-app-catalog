@@ -308,6 +308,55 @@ function Global:Get-WebJobPoll {
     return $response
 }
 
+function Global:Open-WebFolder {
+    <#
+      Shows a folder in Explorer, in front. Started by this server - a
+      background process - Explorer's window would otherwise open behind the
+      app window (Windows doesn't let a background process take the
+      foreground), and the button looks like it did nothing. A window already
+      showing the folder is reused. Returns @{ ok; error }.
+    #>
+    param([string]$Path)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Container)) { return @{ ok = $false; error = "The folder doesn't exist: $Path" } }
+    $full = (Resolve-Path -LiteralPath $Path).ProviderPath.TrimEnd('\')
+    if (-not ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop')) { return @{ ok = $false; error = "Opening folders needs Windows Explorer. The folder is $full" } }
+    try {
+        if (-not ('Iac.Foreground' -as [type])) {
+            Add-Type -Namespace 'Iac' -Name 'Foreground' -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+'@
+        }
+        $shell = New-Object -ComObject Shell.Application
+        $find = {
+            foreach ($w in @($shell.Windows())) {
+                try { if ($w.Document -and $w.Document.Folder -and ([string]$w.Document.Folder.Self.Path).TrimEnd('\') -ieq $full) { return $w } } catch { }
+            }
+            return $null
+        }
+        $window = & $find
+        if (-not $window) {
+            Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$full`""
+            for ($i = 0; $i -lt 30 -and -not $window; $i++) { Start-Sleep -Milliseconds 100; $window = & $find }
+        }
+        if ($window) {
+            $hwnd = [IntPtr]([int64]$window.HWND)
+            if ([Iac.Foreground]::IsIconic($hwnd)) { [void][Iac.Foreground]::ShowWindow($hwnd, 9) }   # SW_RESTORE
+            # A key press (Alt, down and up) is what lets a background process hand the foreground over.
+            [Iac.Foreground]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [Iac.Foreground]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
+            [void][Iac.Foreground]::SetForegroundWindow($hwnd)
+        }
+        return @{ ok = $true; path = $full }
+    }
+    catch {
+        # Explorer can still open it the plain way, even if bringing it forward failed.
+        try { Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$full`""; return @{ ok = $true; path = $full } }
+        catch { return @{ ok = $false; error = "Couldn't open $full`: $($_.Exception.Message)" } }
+    }
+}
+
 function Global:Open-WebTarget {
     <#
       Opens something outside the browser window: Entra's API permissions
@@ -321,13 +370,14 @@ function Global:Open-WebTarget {
             if (-not $url) { return @{ ok = $false; error = 'Fill in the Client (Application) ID first.' } }
             Start-Process $url
         }
-        'catalog-folder' { Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$(Get-AppFolder -Kind Catalog -Create)`"" }
+        'catalog-folder' { return (Open-WebFolder (Get-AppFolder -Kind Catalog -Create)) }
         'entra-home' { Start-Process 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade/quickStartType~/null/sourceType/Microsoft_AAD_IAM' }
-        'scripts-folder' { Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$(Get-AppFolder -Kind Scripts -Create)`"" }
+        'coffee' { Start-Process 'https://buymeacoffee.com/monsama' }
+        'scripts-folder' { return (Open-WebFolder (Get-AppFolder -Kind Scripts -Create)) }
         'certificates-folder' {
             $folder = Join-Path $Global:App.RootPath 'data\certificates'
             if (-not (Test-Path -LiteralPath $folder)) { [void](New-Item -ItemType Directory -Path $folder -Force) }
-            Start-Process -FilePath 'explorer.exe' -ArgumentList "`"$folder`""
+            return (Open-WebFolder $folder)
         }
         default { return @{ ok = $false; error = 'Unknown target.' } }
     }

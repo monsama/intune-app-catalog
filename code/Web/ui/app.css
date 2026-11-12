@@ -287,4 +287,32 @@ dialog.ask h2 { font-size: 15px; line-height: 1.4; }
 #askInput { display: block; width: 100%; margin-top: 12px; }
 #askInput[hidden] { display: none; }
 .btn.primary.dangerous { background: var(--err); border-color: var(--err); color: var(--surface); }
+/* Setup guide: a stepper whose steps tick themselves off, and start tiles. */
+.guidestate { margin-left: 8px; font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 999px; background: var(--bd2); color: var(--muted); }
+.guidestate.ok { background: var(--ok-bg); color: var(--ok); }
+.steps { list-style: none; padding: 0; margin: 12px 0 4px; counter-reset: none; }
+.step { display: grid; grid-template-columns: 28px 1fr; gap: 0 14px; position: relative; padding-bottom: 16px; }
+.step:not(:last-child)::before { content: ''; position: absolute; left: 13px; top: 30px; bottom: 2px; width: 2px; background: var(--bd); }
+.step.done:not(:last-child)::before { background: var(--ok); }
+.step .num { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 600; background: var(--surface); border: 2px solid var(--bd); color: var(--muted); }
+.step.done .num { background: var(--ok); border-color: var(--ok); color: var(--surface); }
+.step.current .num { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.step h3 { margin: 4px 0 2px; font-size: 14px; font-weight: 600; }
+.step.done h3 { color: var(--muted); }
+.step p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.step .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.step.done .acts { display: none; }
+.tiles { display: grid; gap: 10px; margin: 10px 0 4px; }
+/* One row per situation: icon, what it is, its button on the right. */
+.tile { display: grid; grid-template-columns: 30px 1fr auto; grid-template-areas: 'ico title btn' 'ico text btn'; gap: 2px 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--bd2); border-radius: var(--r-l); background: var(--bg); }
+.tile h3 { grid-area: title; margin: 0; font-size: 14px; font-weight: 600; }
+.tile .ico { grid-area: ico; align-self: start; width: 30px; height: 30px; border-radius: var(--r-m); display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-size: 16px; }
+.tile p { grid-area: text; margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.tile .btn { grid-area: btn; white-space: nowrap; }
+@media (max-width: 700px) { .tile { grid-template-columns: 30px 1fr; grid-template-areas: 'ico title' 'ico text' '. btn'; } .tile .btn { justify-self: start; margin-top: 6px; } }
+/* An icon-only button in the top bar (Buy me a coffee). */
+.iconbtn { padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; }
+/* The top bar's buttons share one height, icon or text. */
+.topright .btn { height: 32px; display: inline-flex; align-items: center; padding-top: 0; padding-bottom: 0; }
+.iconbtn svg { display: block; }
 

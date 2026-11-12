@@ -197,7 +197,7 @@ let searchTimer = null;
 $('search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(renderApps, 120); });
 $('filter').addEventListener('change', renderApps);
 $('btnReload').addEventListener('click', () => { loadApps(); loadState(); });
-$('btnCatalogFolder').addEventListener('click', () => api('/api/open', { target: 'catalog-folder' }));
+$('btnCatalogFolder').addEventListener('click', () => openFolder('catalog-folder'));
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && !$('viewApps').hidden) { e.preventDefault(); $('search').focus(); }
   if (e.key === 'F5') { e.preventDefault(); loadApps(); loadState(); }

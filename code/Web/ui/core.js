@@ -41,6 +41,15 @@ function ask(text, { ok = '', danger = null, input = null } = {}) {
 // Asks for a line of text: the text, or null when cancelled.
 const askText = (text, value = '', ok = '') => ask(text, { input: value, ok, danger: false });
 
+// Buy me a coffee: in the person's own browser, not the app window.
+$('btnCoffee').addEventListener('click', async () => { const r = await api('/api/open', { target: 'coffee' }); if (!r.ok) toast(r.error || 'Could not open the browser.', true); });
+
+// Opens one of the app's folders in Explorer and says so - or why not.
+async function openFolder(target) {
+  const r = await api('/api/open', { target });
+  toast(r.ok ? (r.path ? `Opened ${r.path} in Explorer.` : 'Opened.') : (r.error || 'Could not open the folder.'), !r.ok);
+}
+
 // Enables or disables a button; disabled, its tooltip says why first, then
 // what it does. The usual tooltip is kept in data-tip.
 function setEnabled(b, on, why) {
