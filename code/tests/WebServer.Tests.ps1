@@ -342,6 +342,8 @@ try {
     $bulk = Invoke-Api '/api/clear-appids' @{ names = @("$testName renamed") }
     Check ($bulk.ok -and @($bulk.cleared).Count -eq 1 -and -not (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.appId) 'clear App IDs: several at once (a catalog copied from another tenant)' ($bulk | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/clear-appids' @{ names = @() }).ok) 'clear App IDs: nothing chosen is refused'
+    $gs = Invoke-Api '/api/groups-status'
+    Check ($gs.ok -and $gs.state -eq 'none') 'groups status: without a connection Entra ID is not asked' ($gs | ConvertTo-Json -Compress)
     $ids = Invoke-Api '/api/intune-apps'
     Check (-not $ids.ok -and $ids.state -eq 'none') 'intune apps: without a connection the list says so instead of guessing' ($ids | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/delete-intune' @{ name = "$testName renamed" }).ok) 'delete from Intune: refused for an app not in Intune'

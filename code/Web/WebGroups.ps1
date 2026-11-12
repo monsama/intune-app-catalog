@@ -65,6 +65,36 @@ function Global:Get-WebGroups {
     return @{ ok = $true; groups = @(Get-WebGroupUsage $catalog.Apps); favorites = @($Global:App.FavoriteGroups | Where-Object { $_ }) }
 }
 
+function Global:Get-WebGroupsStatus {
+    <#
+      Which of the catalog's groups exist in Entra ID: looked up by exact
+      name, 15 per request (Get-GroupLookupUris). state none (no connection),
+      ok (with found: the names Entra ID has, as the catalog spells them, and
+      their ids) or error.
+    #>
+    $names = @(Get-WebCatalogGroupNames -Apps (Read-WebCatalogRecords).Apps)
+    if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $true; state = 'none'; found = @() } }
+    if ($names.Count -eq 0) { return @{ ok = $true; state = 'ok'; found = @() } }
+    $read = Invoke-WebGraph -Permission 'Group.Read.All' -Action {
+        param($Graph)
+        $hits = New-Object System.Collections.Generic.List[object]
+        foreach ($uri in @(Get-GroupLookupUris -Names $names)) {
+            while ($uri) {
+                $page = & $Graph $uri
+                foreach ($g in @($page.value)) { $hits.Add([ordered]@{ name = [string]$g.displayName; id = [string]$g.id }) }
+                $uri = [string]$page.'@odata.nextLink'
+            }
+        }
+        $hits.ToArray()
+    }
+    if (-not $read.ok) { return @{ ok = $true; state = 'error'; error = [string]$read.error; found = @() } }
+    $found = foreach ($n in $names) {
+        $hit = @($read.value | Where-Object { $_.name -ieq $n }) | Select-Object -First 1
+        if ($hit) { [ordered]@{ name = $n; id = $hit.id } }
+    }
+    return @{ ok = $true; state = 'ok'; found = @($found) }
+}
+
 function Global:Get-WebGroupDetail {
     # One group from Entra ID by its exact name: id, description, members.
     param($Data)

@@ -70,12 +70,17 @@ function updateCheckActions() {
   const sel = selFindings();
   const count = a => namesWith(sel, a).length;
   const set = (id, a, label) => { const n = count(a); setEnabled($(id), !(checksRunning || jobRunning) && n > 0, checksRunning || jobRunning ? 'Wait for the running check or job to finish.' : `Tick findings that offer ${label}.`); $(id).textContent = n > 1 ? `${label} (${n})` : label; };
+  { const n = groupsOf(sel).length; setEnabled($('btnFixCreateGroups'), !(checksRunning || jobRunning) && n > 0, checksRunning || jobRunning ? 'Wait for the running check or job to finish.' : 'Tick findings about groups that don\'t exist in Entra ID.'); $('btnFixCreateGroups').textContent = n > 1 ? `Create groups (${n})` : 'Create group'; }
   set('btnFixPull', 'Pull', 'Pull'); set('btnFixPushSettings', 'PushMetadata', 'Push settings'); set('btnFixPushGroups', 'PushGroups', 'Push groups');
   const busy = checksRunning || jobRunning ? 'Wait for the running check or job to finish.' : '';
   setEnabled($('btnFixAdd'), !busy && sel.some(f => (f.actions || []).includes('AddToCatalog')), busy || 'Tick findings that are "In Intune, not in the catalog".');
   setEnabled($('btnFixRecheck'), !busy && sel.length > 0, busy || 'Tick one or more findings first.');
   $('checkSelCount').textContent = sel.length ? `${sel.length} selected` : '';
 }
+// The missing groups named by findings that offer CreateGroup.
+const groupsOf = list => [...new Set(list.filter(f => (f.actions || []).includes('CreateGroup') && f.data && f.data.Group).map(f => f.data.Group))];
+const dropGroupFindings = made => { for (const f of findings.filter(f => f.data && made.some(g => g.toLowerCase() === String(f.data.Group || '').toLowerCase()))) dropFinding(f); };
+$('btnFixCreateGroups').addEventListener('click', () => createGroups(groupsOf(selFindings()), dropGroupFindings));
 $('btnFixPull').addEventListener('click', () => openPull(namesWith(selFindings(), 'Pull')));
 $('btnFixPushSettings').addEventListener('click', () => pushSettings(namesWith(selFindings(), 'PushMetadata')));
 $('btnFixPushGroups').addEventListener('click', () => openPushGroups(namesWith(selFindings(), 'PushGroups')));
@@ -97,7 +102,7 @@ function fixButtons(f) {
     toast('Fixed in the catalog.'); dropFinding(f); loadApps(); return true;
   };
   // One order on every row, so the same fix is always in the same place.
-  const order = ['RenameFromIntune', 'SetAppId', 'ChooseAppId', 'ClearAppId', 'AddToCatalog', 'Pull', 'PushMetadata', 'PushGroups', 'FindWingetId', 'EditApp', 'Recheck'];
+  const order = ['RenameFromIntune', 'SetAppId', 'ChooseAppId', 'ClearAppId', 'AddToCatalog', 'CreateGroup', 'OpenGroup', 'Pull', 'PushMetadata', 'PushGroups', 'FindWingetId', 'EditApp', 'Recheck'];
   for (const a of order.filter(x => (f.actions || []).includes(x))) {
     if (a === 'RenameFromIntune' && f.data && f.data.IntuneName) btn('Use Intune’s name', () => fix(a, f.data.IntuneName), f.data.IntuneName);
     else if (a === 'SetAppId' && f.data && f.data.MatchedId) btn('Link to ' + (f.data.MatchedName || 'match'), () => fix(a, f.data.MatchedId));
@@ -106,6 +111,8 @@ function fixButtons(f) {
       out.push(sel); btn('Link', () => fix('SetAppId', sel.value));
     }
     else if (a === 'ClearAppId') btn('Clear App ID', async () => { if (await ask(`Clear ${f.app}'s App ID? It points at an app that no longer exists in Intune.`)) fix(a); });
+    else if (a === 'CreateGroup' && f.data && f.data.Group) btn('Create group', () => createGroups([f.data.Group], dropGroupFindings), `Create "${f.data.Group}" in Entra ID as a security group`);
+    else if (a === 'OpenGroup' && f.data && f.data.Group) btn('Open in Groups', () => { showView('groups'); openGroup(f.data.Group); }, 'See which apps use this group, and its members');
     else if (a === 'EditApp') btn('Edit', () => openEditor(name));
     else if (a === 'Pull') btn('Pull', () => openPull([name]), 'Intune is right: take its settings and groups into the catalog');
     else if (a === 'PushMetadata') btn('Push settings', () => pushSettings([name]), 'The catalog is right: send its settings to Intune');

@@ -218,6 +218,9 @@ try {
     Check ($nf.ok -and -not $nf.found) 'groups: a name with no group in Entra ID says so' ($nf | ConvertTo-Json -Compress -Depth 4)
     $denied = Invoke-Api '/api/group-get' @{ name = 'SG-ZZ-Forbidden' }
     Check (-not $denied.ok -and $denied.error -like '*Group.ReadWrite.All*' -and $denied.error -notlike '*DeviceManagementScripts*') 'groups: a refused request names the permission this page needs' ($denied | ConvertTo-Json -Compress)
+    $gs = Invoke-Api '/api/groups-status'
+    $gsNames = @(@($gs.found) | ForEach-Object { $_.name })
+    Check ($gs.ok -and $gs.state -eq 'ok' -and $gsNames -contains 'SG-ZZ-Exists' -and $gsNames -notcontains 'SG-ZZ-Missing' -and (@($gs.found) | Where-Object { $_.name -eq 'SG-ZZ-Exists' }).id -eq $groupId) 'groups status: which catalog groups Entra ID has, looked up by name' ($gs | ConvertTo-Json -Compress -Depth 4)
     $search = Invoke-Api '/api/directory-search' @{ q = 'ZZ' }
     Check ($search.ok -and @($search.hits).Count -eq 1 -and (@($search.notes) -join ' ') -like '*Users couldn''t be searched*') 'directory search: groups found, users refused with a note' ($search | ConvertTo-Json -Compress -Depth 4)
 

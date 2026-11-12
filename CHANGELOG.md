@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.0.12
+
+### Changed
+
+- **Groups page.** Built for a catalog that's new to a tenant:
+  - **Entra ID status in the list:** a dot per group (green in Entra ID,
+    amber not), "x of y not in Entra ID", and a filter for either.
+  - **Several groups at once:** Ctrl+click and Shift+click select, Ctrl+A
+    selects all. A bar offers Create and Delete for the selection.
+  - **Right-click menu:**
+    - Open, Copy name, Assign apps;
+    - Create in Entra ID, Rename;
+    - Remove from all apps (the catalog only; Entra ID keeps the group);
+    - Delete from Entra ID.
+
+    The keyboard works too: arrows, the menu key, Delete and Escape.
+  - **Apps in the catalog** is a table. Each row shows how the app is
+    assigned, whether it's in the tenant, and a Remove button; the app name
+    opens the editor. Counts per assignment sit on top, with **Assign
+    apps...** (pick the assignment, tick the apps) and **Push groups...**
+    for the deployed ones.
+  - **A group not in Entra ID** says how many assignments reach nobody,
+    with **Create group** right there.
+  - Apps and members side by side; "Delete several..." is now "Delete by
+    name..." for groups the catalog doesn't use.
+- **Checks: Create group.** "Group doesn't exist in Entra ID" findings get
+  **Create group** and **Open in Groups**, and the toolbar creates the
+  groups of every ticked finding at once.
+
 ## 2.0.11
 
 ### Changed

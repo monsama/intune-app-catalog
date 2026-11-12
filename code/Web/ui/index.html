@@ -104,6 +104,7 @@
       <button class="btn" id="btnFixPull" disabled title="Intune is right: take its settings and groups into the catalog">Pull</button>
       <button class="btn" id="btnFixPushSettings" disabled title="The catalog is right about settings or dependencies: send them to Intune">Push settings</button>
       <button class="btn" id="btnFixPushGroups" disabled title="The catalog is right about groups: send them to Intune">Push groups</button>
+      <button class="btn" id="btnFixCreateGroups" disabled title="Create the missing groups of the ticked findings in Entra ID, as security groups">Create groups</button>
       <button class="btn" id="btnFixAdd" disabled title="Add the Intune-only apps to the catalog, with their settings and groups">Add to catalog</button>
       <button class="btn" id="btnFixRecheck" disabled title="Check the ticked findings again against Intune">Re-check</button>
     </div>
@@ -123,38 +124,64 @@
     <div class="gsplit">
       <div class="panel side">
         <div class="toolbar tight">
-          <input type="search" id="groupSearch" placeholder="Filter or type a group name" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+          <input type="search" id="groupSearch" placeholder="Filter or type a group name" aria-label="Filter the groups, or type a group name to open" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
           <button class="btn" id="btnGroupOpen" title="Open this exact group name from Entra ID">Open</button>
         </div>
-        <ul class="glist" id="groupList" role="listbox" aria-label="Groups used by the catalog"></ul>
+        <div class="gfilter">
+          <select id="groupShow" aria-label="Which groups to show" title="Show every group the catalog uses, or only those Entra ID has or lacks">
+            <option value="">All groups</option><option value="missing">Not in Entra ID</option><option value="found">In Entra ID</option>
+          </select>
+          <span class="muted" id="groupStatusNote" aria-live="polite"></span>
+        </div>
+        <div class="gselbar" id="groupSelBar" hidden>
+          <span id="groupSelCount"></span>
+          <span class="spacer"></span>
+          <button class="btn small" id="btnGroupSelCreate" title="Create the selected groups that aren't in Entra ID yet, as security groups">Create</button>
+          <button class="btn small danger" id="btnGroupSelDelete" title="Delete the selected groups from Entra ID - asked first">Delete...</button>
+          <button class="btn small" id="btnGroupSelClear" title="Clear the selection (Escape)">Clear</button>
+        </div>
+        <ul class="glist" id="groupList" role="listbox" aria-multiselectable="true" tabindex="0" aria-label="Groups used by the catalog"></ul>
+        <p class="hint">Ctrl+click or Shift+click selects several; right-click for actions.</p>
         <div class="actions">
           <button class="btn" id="btnGroupNew" title="Create a security group in Entra ID">New group</button>
-          <button class="btn" id="btnGroupsDelete" title="Delete several groups from Entra ID at once - asked first">Delete several...</button>
-          <button class="btn" id="btnGroupsReload" title="Read the groups and their members again">Reload</button>
+          <button class="btn" id="btnGroupsDelete" title="Delete groups from Entra ID by name, including groups the catalog doesn't use - asked first">Delete by name...</button>
+          <button class="btn" id="btnGroupsReload" title="Read the groups, their status in Entra ID and the open group's members again">Reload</button>
         </div>
       </div>
       <section class="panel" id="groupPane">
-        <div class="empty" id="groupEmpty"><h2>Pick a group</h2><p>The groups your apps are assigned to are listed on the left. Pick one to see its members in Entra ID, or type any group name and Open it.</p></div>
+        <div class="empty" id="groupEmpty"><h2>Pick a group</h2><p>The groups your apps are assigned to are listed on the left, with whether Entra ID has them. Pick one to see its apps and members, or type any group name and Open it.</p></div>
         <div id="groupDetail" hidden>
           <div class="ghead">
             <h2 id="gName"></h2>
             <span class="pill" id="gState"></span>
             <span class="spacer"></span>
+            <button class="btn" id="btnGroupCopy" title="Copy the group's name">Copy name</button>
             <button class="btn" id="btnGroupRename" disabled title="Rename the group in Entra ID - every catalog app using it follows">Rename...</button>
             <button class="btn danger" id="btnGroupDelete" disabled title="Delete this group from Entra ID - asked first">Delete group...</button>
           </div>
           <p class="sub" id="gNote"></p>
-          <div class="formgrid">
-            <section>
-              <label>Description <span class="muted">(optional)</span><input autocomplete="off" id="gDesc" maxlength="1024" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-              <h3>Members <span class="muted" id="gCount"></span></h3>
-              <div class="tablewrap short"><table class="plan"><thead><tr><th>Name</th><th>Type</th><th>Sign-in name</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="gMembers"></tbody></table></div>
-              <h3>Used by</h3>
-              <ul class="uses" id="gUses"></ul>
+          <div class="gmissing" id="gMissing" role="region" aria-label="Group not in Entra ID" hidden>
+            <span id="gMissingText"></span>
+            <button class="btn primary" id="btnGroupCreate" title="Create this security group in Entra ID, with the description and the people under To add">Create group</button>
+          </div>
+          <div class="gcols">
+            <section class="gcard" aria-labelledby="gAppsHead">
+              <div class="gcardhead">
+                <h3 id="gAppsHead">Apps in the catalog <span class="muted" id="gAppsCount"></span></h3>
+                <span class="spacer"></span>
+                <button class="btn small" id="btnGroupAssign" title="Assign more catalog apps to this group - the catalog only; Push groups sends it to Intune">Assign apps...</button>
+              </div>
+              <div class="groles" id="gRoles"></div>
+              <input type="search" id="gUsesFilter" placeholder="Filter the apps" aria-label="Filter the apps assigned to this group" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+              <div class="tablewrap gtable"><table class="plan"><thead><tr><th>App</th><th title="How the app is assigned to this group">Assignment</th><th title="Whether the app is in the connected tenant">Intune</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="gUses"></tbody></table></div>
+              <div class="gpush"><span class="muted" id="gPushNote"></span><button class="btn small" id="btnGroupPush" title="Send the catalog's groups for the deployed apps above to Intune - shows the changes first">Push groups...</button></div>
             </section>
-            <section>
+            <section class="gcard" aria-labelledby="gMembersHead">
+              <div class="gcardhead"><h3 id="gMembersHead">Members <span class="muted" id="gCount"></span></h3></div>
+              <label>Description <span class="muted">(optional)</span><input id="gDesc" maxlength="1024" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+              <div class="tablewrap gtable"><table class="plan"><thead><tr><th>Name</th><th>Type</th><th>Sign-in name</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="gMembers"></tbody></table></div>
               <h3>Add members</h3>
-              <div class="toolbar tight"><input type="search" id="gFind" placeholder="Search users and groups (at least 2 letters)" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><button class="btn" id="btnGroupFind" title="Search users and groups in Entra ID to add as members">Search</button></div>
+              <div class="toolbar tight"><input type="search" id="gFind" placeholder="Search users and groups (at least 2 letters)" aria-label="Search users and groups to add" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><button class="btn" id="btnGroupFind" title="Search users and groups in Entra ID to add as members">Search</button></div>
               <p class="muted note" id="gFindNote"></p>
               <ul class="hits" id="gHits"></ul>
               <h3>To add <span class="muted" id="gAddCount"></span></h3>
@@ -383,6 +410,17 @@
   <button role="menuitem" data-act="delete" class="danger" title="Delete the selected apps from Intune - the catalog keeps them; asked first">Delete from Intune...</button>
   <button role="menuitem" data-act="remove" class="danger" title="Remove the app from the catalog only - Intune keeps it">Remove from catalog...</button>
 </div>
+<div class="menu" id="groupMenu" role="menu" hidden>
+  <button role="menuitem" data-gact="open" title="Show the group's apps and members">Open</button>
+  <button role="menuitem" data-gact="copy" title="Copy the group names">Copy name</button>
+  <button role="menuitem" data-gact="assign" title="Assign catalog apps to this group">Assign apps...</button>
+  <hr>
+  <button role="menuitem" data-gact="create" title="Create the groups that aren't in Entra ID yet, as security groups">Create in Entra ID</button>
+  <button role="menuitem" data-gact="rename" title="Rename the group in Entra ID - the catalog follows">Rename...</button>
+  <hr>
+  <button role="menuitem" data-gact="unassign" class="danger" title="Take these groups off every app in the catalog - Entra ID keeps them; Push groups sends it to Intune">Remove from all apps...</button>
+  <button role="menuitem" data-gact="delete" class="danger" title="Delete the groups from Entra ID - asked first">Delete from Entra ID...</button>
+</div>
 </main>
 
 <!-- ============ dialogs ============ -->
@@ -581,8 +619,16 @@
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
 
+<dialog id="dlgGroupAssign" class="wide">
+  <h2 id="gaTitle">Assign apps</h2>
+  <p class="sub">Adds the group to the ticked apps in the catalog. Intune changes when you push groups.</p>
+  <label class="inline">Assignment <select id="gaRole"><option value="requiredFor">Required</option><option value="availableFor">Available</option><option value="uninstallFor">Uninstall</option><option value="excludeFor">Excluded</option></select></label>
+  <div class="depbox tall" id="gaPick"></div>
+  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnGroupAssignGo" title="Add the group to the ticked apps in the catalog">Assign</button></div>
+</dialog>
+
 <dialog id="dlgGroupsDelete">
-  <h2>Delete several groups</h2>
+  <h2>Delete groups by name</h2>
   <p class="sub">Deletes these security groups from Entra ID. Apps assigned to them lose those assignments in Intune. The catalog still names them until you change the apps.</p>
   <div class="deplist tall" id="gDelList"></div>
   <label>More group names <span class="muted">(one per line)</span><textarea autocomplete="off" id="gDelMore" rows="3" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>

@@ -277,7 +277,7 @@ function Global:Get-EntraGroupFindings {
         $appLabel = if ($users.Count -eq 1) { $users[0] } else { "$($users.Count) apps" }
         $findings.Add((New-CheckFinding -Area "Entra groups" -App $appLabel -CatalogName $(if ($users.Count -eq 1) { $users[0] } else { "" }) `
             -Problem "Group `"$groupName`" doesn't exist in Entra ID" -Catalog "Used by: $($users -join ', ')" -Intune "(not in Entra ID)" `
-            -Actions $(if ($users.Count -eq 1) { @("EditApp") } else { @() }) -Data ([pscustomobject]@{ Group = $groupName; Apps = $users })))
+            -Actions $(if ($users.Count -eq 1) { @("CreateGroup", "OpenGroup", "EditApp") } else { @("CreateGroup", "OpenGroup") }) -Data ([pscustomobject]@{ Group = $groupName; Apps = $users })))
     }
     return $findings.ToArray()
 }
