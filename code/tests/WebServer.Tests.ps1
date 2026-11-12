@@ -297,6 +297,45 @@ try {
     Check ($ga.ok -and @($gm.availableFor) -contains 'SG-B' -and @($gm.excludeFor).Count -eq 1 -and @($gm.requiredFor) -contains 'SG-A') 'batch groups: added (no duplicates), the other lists kept' ($gm | ConvertTo-Json -Compress -Depth 4)
     $gr = Invoke-Api '/api/batch-groups' @{ mode = 'remove'; names = @($rn); roles = @{ availableFor = @('sg-b') } }
     Check ($gr.ok -and @((Invoke-Api '/api/app-get' @{ name = $rn }).app.availableFor).Count -eq 0) 'batch groups: removed (case does not matter)'
+    # Batch edit preview: says what changes, writes nothing.
+    $pv = Invoke-Api '/api/batch-edit' @{ names = @($rn); changes = @{ owner = 'Preview Owner'; publisher = (Invoke-Api '/api/app-get' @{ name = $rn }).app.metadata.publisher }; preview = $true }
+    $pvOwner = @($pv.changes | Where-Object { $_.field -eq 'owner' })
+    Check ($pv.ok -and $pv.preview -and $pvOwner.Count -eq 1 -and $pvOwner[0].old -eq 'IT Workplace' -and $pvOwner[0].new -eq 'Preview Owner' -and -not @($pv.changes | Where-Object { $_.field -eq 'publisher' }).Count) 'batch edit preview: only the fields that differ, old and new' ($pv | ConvertTo-Json -Compress -Depth 4)
+    Check ((Invoke-Api '/api/app-get' @{ name = $rn }).app.metadata.owner -eq 'IT Workplace') 'batch edit preview: nothing written'
+    Check (-not (Invoke-Api '/api/batch-edit' @{ names = @($rn); changes = @{ dependencies = @(); dependenciesMode = 'add' } }).ok) 'batch edit: adding no dependencies is refused'
+    Check (-not (Invoke-Api '/api/batch-edit' @{ names = @($rn); changes = @{ dependencies = @(); dependenciesMode = 'merge' } }).ok) 'batch edit: an unknown dependencies mode is refused'
+    # Replace a group in the catalog, then undo it.
+    Check (-not (Invoke-Api '/api/replace-group' @{ old = 'SG-Nobody-Uses'; new = 'SG-New' }).ok) 'replace group: a group no app uses is refused'
+    $rp = Invoke-Api '/api/replace-group' @{ old = 'sg-a'; new = 'SG-A2'; names = @($rn) }
+    $rpApp = (Invoke-Api '/api/app-get' @{ name = $rn }).app
+    Check ($rp.ok -and @($rpApp.requiredFor) -contains 'SG-A2' -and @($rpApp.requiredFor) -notcontains 'SG-A') 'replace group: the app names the new group (old name matched without case)' ($rpApp.requiredFor | ConvertTo-Json -Compress)
+    $ui = Invoke-Api '/api/undo-info'
+    Check ($ui.ok -and $ui.undo.label -like 'Replace*' -and $ui.undo.count -eq 1) 'undo: the last bulk change is named' ($ui | ConvertTo-Json -Compress -Depth 4)
+    $un = Invoke-Api '/api/undo-last'
+    Check ($un.ok -and @($un.restored) -contains $rn -and @((Invoke-Api '/api/app-get' @{ name = $rn }).app.requiredFor) -contains 'SG-A') 'undo: the group is back' ($un | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/undo-last').ok) 'undo: only once'
+    [void](Invoke-Api '/api/replace-group' @{ old = 'SG-A'; new = 'SG-A3'; names = @($rn) })
+    [void](Invoke-Api '/api/batch-groups' @{ mode = 'add'; names = @($rn); roles = @{ uninstallFor = @('SG-Unrelated') } })
+    [void](Invoke-Api '/api/replace-group' @{ old = 'SG-A3'; new = 'SG-A'; names = @($rn) })
+    $edited = (Invoke-Api '/api/app-get' @{ name = $rn })
+    [void](Invoke-Api '/api/app-save' @{ originalName = $rn; version = $edited.version; app = @{ appName = $rn; wingetId = $edited.app.wingetId; appId = ''; requiredFor = @($edited.app.requiredFor); uninstallFor = @(); metadata = @{ description = 'changed after the bulk change' } } })
+    $un2 = Invoke-Api '/api/undo-last'
+    Check ($un2.ok -and @($un2.skipped).Count -eq 1 -and @((Invoke-Api '/api/app-get' @{ name = $rn }).app.requiredFor) -contains 'SG-A') 'undo: a file changed since is left alone' ($un2 | ConvertTo-Json -Compress)
+    # CSV: export, import with a preview, refused rows, apply, undo.
+    $ex = Invoke-Api '/api/csv-export'
+    Check ($ex.ok -and $ex.text -like 'sep=;*' -and $ex.text -like "*`"$rn`"*" -and $ex.text -like '*"requiredFor"*') 'csv export: one row per app, semicolons' (([string]$ex.text).Substring(0, [Math]::Min(300, ([string]$ex.text).Length)))
+    $csv = "appName;owner;requiredFor;nonsense`r`n`"$rn`";CSV Owner;SG-A | SG-C;x`r`nNo Such App;x;;`r`n"
+    $ip = Invoke-Api '/api/csv-import' @{ text = $csv; preview = $true }
+    Check ($ip.ok -and @($ip.changes).Count -eq 2 -and @($ip.notFound) -contains 'No Such App' -and @($ip.ignoredColumns) -contains 'nonsense' -and (Invoke-Api '/api/app-get' @{ name = $rn }).app.metadata.owner -ne 'CSV Owner') 'csv import preview: two changes, unknown app and column named, nothing written' ($ip | ConvertTo-Json -Compress -Depth 4)
+    $bad = Invoke-Api '/api/csv-import' @{ text = "appName,installContext`n`"$rn`",Nobody`n"; preview = $true }
+    Check ($bad.ok -and @($bad.errors).Count -eq 1) 'csv import: a value the editor would refuse is named (comma file read too)' ($bad | ConvertTo-Json -Compress -Depth 4)
+    Check (-not (Invoke-Api '/api/csv-import' @{ text = "appName,installContext`n`"$rn`",Nobody`n" }).ok) 'csv import: refused while a row is wrong'
+    Check (-not (Invoke-Api '/api/csv-import' @{ text = "name;owner`nx;y`n"; preview = $true }).ok) 'csv import: a file without appName is refused'
+    $ia = Invoke-Api '/api/csv-import' @{ text = $csv }
+    $iaApp = (Invoke-Api '/api/app-get' @{ name = $rn }).app
+    Check ($ia.ok -and $iaApp.metadata.owner -eq 'CSV Owner' -and @($iaApp.requiredFor) -contains 'SG-C' -and (Invoke-Api '/api/undo-info').undo.label -eq 'CSV import') 'csv import: applied, and can be undone' ($iaApp | ConvertTo-Json -Compress -Depth 4)
+    [void](Invoke-Api '/api/undo-last')
+    Check (@((Invoke-Api '/api/app-get' @{ name = $rn }).app.requiredFor) -notcontains 'SG-C') 'csv import: undone'
     $badUrl = Invoke-Api '/api/app-save' @{ originalName = $rn; app = @{ appName = $rn; wingetId = 'Vendor.WebTest'; appId = ''; metadata = @{ informationUrl = 'javascript:alert(1)' } } }
     Check (-not $badUrl.ok -and $badUrl.error -like '*http*') 'editor: a URL that is not http(s) is refused'
     # Deploy, push and checks without a connection set up (CI has none): clear answers, nothing started.

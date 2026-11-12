@@ -17,6 +17,7 @@ function Global:Get-WebBatchFields {
         returnCodes = 'codes'; dependencies = 'deps'
         description = 'text'; publisher = 'text'; owner = 'text'; developer = 'text'; notes = 'text'
         informationUrl = 'url'; privacyUrl = 'url'; wingetInstallMethod = 'method'
+        installCommand = 'cmd'; uninstallCommand = 'cmd'
     }
 }
 
@@ -29,7 +30,12 @@ function Global:ConvertTo-WebBatchChanges {
     $fields = Get-WebBatchFields
     $changes = [ordered]@{}
     $given = if ($Form -is [System.Collections.IDictionary]) { @($Form.Keys) } else { @($Form.PSObject.Properties.Name) }
+    $depMode = 'set'
     foreach ($k in $given) {
+        if ($k -eq 'dependenciesMode') {
+            if ([string]$Form.$k -notin 'set', 'add', 'remove') { return @{ Error = 'Dependencies: set, add or remove?' } }
+            $depMode = [string]$Form.$k; continue
+        }
         if (-not $fields.Contains($k)) { return @{ Error = "Batch edit can't change '$k'." } }
         $v = $Form.$k
         switch ($fields[$k]) {
@@ -66,9 +72,18 @@ function Global:ConvertTo-WebBatchChanges {
                 $changes[$k] = $u
             }
             'method' { if ([string]$v -notin 'WAU', 'Winget') { return @{ Error = 'Install with must be WAU or Winget.' } }; $changes[$k] = [string]$v }
+            'cmd' {
+                $c = ([string]$v).Trim()
+                if (-not $c) { return @{ Error = "$k can't be empty." } }
+                $changes[$k] = $c
+            }
         }
     }
     if ($changes.Count -eq 0) { return @{ Error = 'Tick at least one field to change.' } }
+    if ($changes.Contains('dependencies')) {
+        if ($depMode -ne 'set' -and -not @($changes.dependencies).Count) { return @{ Error = "Tick the apps to $depMode as dependencies." } }
+        $changes.dependenciesMode = $depMode
+    }
     return @{ Error = ''; Changes = $changes }
 }
 
@@ -82,10 +97,19 @@ function Global:Set-WebBatchChanges {
     $m = $Metadata.PSObject.Copy()
     $kept = $false
     foreach ($k in $Changes.Keys) {
-        if ($k -eq 'wingetInstallMethod') { continue }
+        if ($k -eq 'wingetInstallMethod' -or $k -eq 'dependenciesMode') { continue }
         $value = $Changes[$k]
-        # An app can't depend on itself - dropped for that one app, not refused for all.
-        if ($k -eq 'dependencies') { $value = @($value | Where-Object { $_ -ne $App.appName }) }
+        if ($k -eq 'dependencies') {
+            # set: exactly these; add: these as well; remove: all but these.
+            $now = @($m.dependencies | Where-Object { $_ } | ForEach-Object { [string]$_ })
+            $value = switch ([string]$Changes.dependenciesMode) {
+                'add' { @($now + @($value | Where-Object { $now -notcontains $_ })) }
+                'remove' { @($now | Where-Object { @($value) -notcontains $_ }) }
+                default { @($value) }
+            }
+            # An app can't depend on itself - dropped for that one app, not refused for all.
+            $value = @($value | Where-Object { $_ -ne $App.appName })
+        }
         if ($m.PSObject.Properties.Name -contains $k) { $m.$k = $value } else { $m | Add-Member -NotePropertyName $k -NotePropertyValue $value }
     }
     if ($Changes.Contains('wingetInstallMethod') -and $App.wingetId) {
@@ -106,21 +130,47 @@ function Global:Invoke-WebBatchEdit {
     if ($apps.Count -eq 0) { return @{ ok = $false; error = 'Choose one or more apps first.' } }
     $checked = ConvertTo-WebBatchChanges -Form $Data.changes -AppNames @($all | ForEach-Object { $_.appName })
     if ($checked.Error) { return @{ ok = $false; error = $checked.Error } }
-    $folder = Get-AppFolder -Kind Catalog -Create
     $changed = New-Object System.Collections.Generic.List[string]
     $kept = New-Object System.Collections.Generic.List[string]
+    $diffs = New-Object System.Collections.Generic.List[object]
+    $undo = New-WebUndo 'Batch edit'
     foreach ($a in $apps) {
         $base = if ($a.metadata) { $a.metadata } else { Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon (Test-AppIsUncommon -App $a) }
         $r = Set-WebBatchChanges -App $a -Metadata $base -Changes $checked.Changes
+        # What actually differs for this app (a field it already has as asked isn't a change).
+        $fieldsSeen = @($checked.Changes.Keys | Where-Object { $_ -notin 'wingetInstallMethod', 'dependenciesMode' })
+        if ($checked.Changes.Contains('wingetInstallMethod')) { $fieldsSeen += 'installCommand', 'uninstallCommand' }
+        $appDiffs = @(foreach ($f in $fieldsSeen) {
+            $o = Get-WebBatchValueText $base.$f; $n = Get-WebBatchValueText $r.Metadata.$f
+            if ($o -cne $n) { [ordered]@{ app = $a.appName; field = $f; old = $o; new = $n } }
+        })
+        foreach ($d in $appDiffs) { $diffs.Add($d) }
+        if ($Data.preview) { continue }
+        if (-not $appDiffs.Count) { continue }
         $a.metadata = $r.Metadata
         if ($r.Kept) { $kept.Add($a.appName) }
-        $file = Join-Path $folder ((Get-SafeFileNameForApp -Name $a.appName) + '.json')
-        Backup-WebAppFile $file
-        [System.IO.File]::WriteAllText($file, (ConvertTo-SingleAppJson -App $a), (New-Object System.Text.UTF8Encoding($false)))
+        Write-WebAppFile -App $a -Undo $undo
         $changed.Add($a.appName)
     }
+    if ($Data.preview) {
+        $touched = @($diffs | ForEach-Object { $_.app } | Select-Object -Unique)
+        return @{ ok = $true; preview = $true; changes = $diffs.ToArray(); unchanged = @($apps | Where-Object { $touched -notcontains $_.appName } | ForEach-Object { $_.appName }) }
+    }
+    Save-WebUndo $undo
     Write-Log "[OK] Batch edit: $(@($checked.Changes.Keys) -join ', ') changed on $($changed.Count) app(s)$(if ($kept.Count) { "; install commands edited by hand kept on $($kept -join ', ')" })."
-    return @{ ok = $true; changed = $changed.ToArray(); kept = $kept.ToArray(); deployed = @($apps | Where-Object { $_.appId } | ForEach-Object { $_.appName }) }
+    return @{ ok = $true; changed = $changed.ToArray(); kept = $kept.ToArray(); deployed = @($apps | Where-Object { $_.appId -and $changed -contains $_.appName } | ForEach-Object { $_.appName }) }
+}
+
+function Global:Get-WebBatchValueText {
+    # Pure: a metadata value as one line for a preview - lists joined, return codes as code=type, booleans as Yes/No.
+    param($Value)
+    if ($null -eq $Value) { return '' }
+    if ($Value -is [bool]) { return $(if ($Value) { 'Yes' } else { 'No' }) }
+    if ($Value -is [string]) { return $Value }
+    if ($Value -is [System.Collections.IEnumerable]) {
+        return ((@($Value) | ForEach-Object { if ($null -ne $_.returnCode) { "$($_.returnCode)=$($_.type)" } else { [string]$_ } }) -join ', ')
+    }
+    return [string]$Value
 }
 
 function Global:Set-WebBatchGroups {
@@ -164,15 +214,14 @@ function Global:Invoke-WebBatchGroups {
         }
     }
     if (-not $any) { return @{ ok = $false; error = 'Choose at least one group.' } }
-    $folder = Get-AppFolder -Kind Catalog -Create
     $changed = New-Object System.Collections.Generic.List[string]
+    $undo = New-WebUndo $(if ($mode -eq 'add') { 'Add groups' } else { 'Remove groups' })
     foreach ($a in $apps) {
         if (-not (Set-WebBatchGroups -App $a -Mode $mode -Roles $Data.roles)) { continue }
-        $file = Join-Path $folder ((Get-SafeFileNameForApp -Name $a.appName) + '.json')
-        Backup-WebAppFile $file
-        [System.IO.File]::WriteAllText($file, (ConvertTo-SingleAppJson -App $a), (New-Object System.Text.UTF8Encoding($false)))
+        Write-WebAppFile -App $a -Undo $undo
         $changed.Add($a.appName)
     }
+    Save-WebUndo $undo
     Write-Log "[OK] Groups $(if ($mode -eq 'add') { 'added to' } else { 'removed from' }) $($changed.Count) app(s) in the catalog$(if ($changed.Count) { ': ' + ($changed -join ', ') })."
     return @{ ok = $true; changed = $changed.ToArray(); deployed = @($apps | Where-Object { $_.appId -and $changed -contains $_.appName } | ForEach-Object { $_.appName }) }
 }

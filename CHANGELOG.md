@@ -1,5 +1,57 @@
 # Changelog
 
+## 2.0.13
+
+### Added
+
+- **Preview before Batch edit.** The first click shows every field that
+  changes, per app, old and new; a second click applies it. A field an app
+  already has as asked doesn't count, and that app's file isn't rewritten.
+- **Undo the last bulk change.** Batch edit, Add, Remove or Replace groups,
+  clearing App IDs and CSV import keep a record. A banner over the Apps list
+  names the change, with **Undo** (also in the Catalog menu).
+  - Each file gets back its copy from before.
+  - A file changed since (an editor save, a deploy's App ID) is left alone
+    and named.
+- **Replace a group:** one group swapped for another in every role, on all
+  apps (Catalog menu), on the selected ones (More), or from the Groups
+  page's right-click menu. Catalog only; Rename on the Groups page still
+  renames a group in Entra ID.
+- **Dependencies in Batch edit:** add the ticked apps, remove them, or set
+  exactly them. Before, it could only replace the whole list.
+- **CSV export and import** (Catalog menu):
+  - **Export** writes one row per app (semicolons, readable by Excel).
+    Groups, dependencies, details, requirements and commands are columns;
+    lists are separated with `|`.
+  - **Import** shows every change first. Values are checked like the editor
+    (one wrong row stops the whole import), apps not in the catalog are
+    skipped, and appId and wingetId are never changed.
+  - After an import, it offers to push settings and groups for deployed
+    apps.
+- **Deploy queue:**
+  - a progress bar and counts;
+  - a failure's reason on its row;
+  - an app whose dependency failed is skipped, saying which;
+  - **Stop after this app**, and **Retry** for whatever failed, was skipped
+    or didn't start.
+- **Apps list:**
+  - **Saved views:** a search and filter kept under a name.
+  - New filters: **Deployed** and **Assigned to no group**.
+  - `group:name` in the search shows the apps assigned to a group.
+- **Several apps at once:** Copy App IDs, Clear App IDs and Remove from
+  catalog now take a multi-selection.
+- **Groups:** favourites can be added or removed from the right-click
+  menu, and are starred in the list.
+
+### Changed
+
+- **Catalog menu:** Reload and Open catalog folder moved there from the
+  Apps toolbar, beside CSV, Replace a group and Undo.
+- **Settings in four sections:** Connection (with certificate, permissions
+  and prerequisites), Defaults (default values, automatic checks,
+  favourite groups), Packaging & folders, and Diagnostics (with Activity).
+  It used to be one long page with connection parts in both columns.
+
 ## 2.0.12
 
 ### Changed

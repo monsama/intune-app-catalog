@@ -128,11 +128,20 @@ try {
 
       // Settings: diagnostics, prerequisites, the guide.
       await page.click('#tabSettings');
+      await page.click('#stab-connection');
       await page.click('#guideReg summary');
+      await noOverflow('Settings'); await unnamed('Settings'); await a11y('Settings'); await shot('settings');
+      for (const sec of ['defaults', 'packaging']) {
+        await page.click(`#stab-${sec}`);
+        check(await page.isVisible(`#sec-${sec}`) && !(await page.isVisible('#sec-connection')), `${label}: Settings > ${sec} shows only its own cards`);
+        await noOverflow(`Settings ${sec}`); await unnamed(`Settings ${sec}`); await a11y(`Settings ${sec}`);
+      }
+      await page.click('#stab-diagnostics');
       await page.click('#btnDiag');
       await page.waitForSelector('#diagLog .h');
       check((await page.textContent('#diagLog')).includes('Skipped'), `${label}: Diagnostics skips Intune without a connection`);
-      await noOverflow('Settings'); await unnamed('Settings'); await a11y('Settings'); await shot('settings');
+      await noOverflow('Settings diagnostics'); await unnamed('Settings diagnostics'); await a11y('Settings diagnostics');
+      await page.click('#stab-connection');
 
       if (size.width === 1440) {
         // Certificates on this machine (none on Linux - the dialog says so).
@@ -168,6 +177,10 @@ try {
         check(await page.isChecked('[data-bf="owner"]'), `${label}: typing in a Batch edit field ticks it`);
         await page.uncheck('#bPush');
         await page.click('#btnBatchGo');
+        await page.waitForSelector('#batchPreview:not([hidden])');
+        check((await page.textContent('#batchPreview')).includes('ZZ Owner'), `${label}: Batch edit shows what changes before applying`, await page.textContent('#batchPreview'));
+        await a11y('the Batch edit preview');
+        await page.click('#btnBatchGo');
         await page.waitForFunction(() => !document.getElementById('dlgBatch').open);
 
         await page.click(`#gridBody tr[data-name="${testApp}"]`);
@@ -185,6 +198,20 @@ try {
         await page.waitForFunction(() => document.getElementById('aName').value !== '');
         check(await page.inputValue('#mOwner') === 'ZZ Owner', `${label}: Batch edit saved the owner`, await page.inputValue('#mOwner'));
         check((await page.inputValue('#gRequired')).split('\n').includes('SG-ZZ-UI'), `${label}: Add groups saved the group`, await page.inputValue('#gRequired'));
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => !document.getElementById('dlgApp').open);
+
+        // Undo the last bulk change (Add groups): the group is gone again, the owner from Batch edit stays.
+        await page.waitForSelector('#undoBanner:not([hidden])');
+        check(/Add groups/.test(await page.textContent('#undoText')), `${label}: the undo banner names the last bulk change`, await page.textContent('#undoText'));
+        await page.click('#btnUndo');
+        await page.waitForSelector('#dlgAsk[open]');
+        await page.click('#askOk');
+        await page.waitForSelector('#undoBanner', { state: 'hidden' });
+        await page.dblclick(`#gridBody tr[data-name="${testApp}"]`);
+        await page.waitForSelector('#dlgApp[open]');
+        await page.waitForFunction(() => document.getElementById('aName').value !== '');
+        check(!(await page.inputValue('#gRequired')).split('\n').includes('SG-ZZ-UI') && await page.inputValue('#mOwner') === 'ZZ Owner', `${label}: Undo took Add groups back and kept Batch edit`, await page.inputValue('#gRequired'));
         await page.click('#btnRemoveApp');
         await page.waitForSelector('#dlgAsk[open]');
         check(await page.evaluate(() => document.activeElement.id === 'askCancel' && document.getElementById('askOk').classList.contains('dangerous')),

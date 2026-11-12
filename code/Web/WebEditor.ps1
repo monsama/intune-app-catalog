@@ -218,7 +218,7 @@ function Global:Test-WebAppEdit {
 
 function Global:Backup-WebAppFile {
     # A copy of one app's file in the Backups folder before it's overwritten or removed.
-    param([string]$FilePath)
+    param([string]$FilePath, [switch]$PassThru)
     if (-not (Test-Path -LiteralPath $FilePath)) { return }
     try {
         $dir = Join-Path (Get-AppFolder -Kind Backups -Create) ("app-edit_" + (Get-Date -Format 'yyyy-MM-dd'))
@@ -229,6 +229,7 @@ function Global:Backup-WebAppFile {
         $target = Join-Path $dir "$($stamp)_$leaf"; $n = 1
         while (Test-Path -LiteralPath $target) { $n++; $target = Join-Path $dir "$stamp-$($n)_$leaf" }
         Copy-Item -LiteralPath $FilePath -Destination $target
+        if ($PassThru) { return $target }
     }
     catch { }
 }

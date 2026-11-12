@@ -157,10 +157,30 @@ function showView(v) {
   if (v === 'groups' && !groupsLoaded) loadGroups();
   if (v === 'scripts' && !scriptsLoaded) loadScripts();
   $('viewSettings').hidden = v !== 'settings';
+  if (v === 'settings') showSettings();
   try { localStorage.setItem('view', v); } catch (e) { }
 }
+// Settings has four sections: Connection, Defaults, Packaging & folders, Diagnostics. -sec: one of them, or the last one shown.
+let settingsSec = (() => { try { return localStorage.getItem('settingsSec') || 'connection'; } catch (e) { return 'connection'; } })();
+function showSettings(sec) {
+  if (sec) settingsSec = sec;
+  if (!$('sec-' + settingsSec)) settingsSec = 'connection';
+  if (!$('viewSettings').hidden || sec) showViewOnly('settings');
+  for (const b of document.querySelectorAll('.subtab')) { const on = b.dataset.sec === settingsSec; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; }
+  for (const p of document.querySelectorAll('.setsec')) p.hidden = p.dataset.sec !== settingsSec;
+  try { localStorage.setItem('settingsSec', settingsSec); } catch (e) { }
+}
+// Switches to the Settings tab without going through showView again.
+function showViewOnly(v) { if ($('viewSettings').hidden) showView(v); }
+for (const b of document.querySelectorAll('.subtab')) b.addEventListener('click', () => showSettings(b.dataset.sec));
+document.querySelector('.subtabs').addEventListener('keydown', e => {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+  const tabs = [...document.querySelectorAll('.subtab')], i = tabs.findIndex(t => t.dataset.sec === settingsSec);
+  const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+  showSettings(next.dataset.sec); next.focus();
+});
 for (const b of document.querySelectorAll('.tab')) b.addEventListener('click', () => showView(b.dataset.view));
-$('bannerSettings').addEventListener('click', () => { showView('settings'); $('guideReg').open = true; $('guideCard').scrollIntoView({ block: 'start' }); });
+$('bannerSettings').addEventListener('click', () => { showSettings('connection'); $('guideReg').open = true; $('guideCard').scrollIntoView({ block: 'start' }); });
 
 // ---------------------------------------------------------------- state
 let state = null;
@@ -178,7 +198,7 @@ async function checkConnection() {
   if (!r.ok) { setBadge('error', 'Connection problem', r.error || ''); return; }
   setBadge(r.state === 'none' ? 'none' : r.state, r.text, r.detail);
 }
-$('connBadge').addEventListener('click', () => { showView('settings'); $('fTenant').closest('.card').scrollIntoView({ block: 'start' }); $('btnTest').focus(); });
+$('connBadge').addEventListener('click', () => { showSettings('connection'); $('fTenant').closest('.card').scrollIntoView({ block: 'start' }); $('btnTest').focus(); });
 
 async function loadState() {
   const r = await api('/api/state');
