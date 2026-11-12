@@ -48,6 +48,7 @@ function Global:Get-WebInstallOverview {
       apps install summary report; apps it doesn't list are read one by
       one from their installSummary.
     #>
+    if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Set up the connection in Settings first.' } }
     $apps = @((Read-WebCatalogRecords).Apps | Where-Object { $_.appId })
     if (-not $apps.Count) { return @{ ok = $true; rows = @(); note = 'No app in the catalog is in Intune yet.' } }
     $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action {

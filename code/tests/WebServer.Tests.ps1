@@ -263,7 +263,9 @@ try {
     $keep = Invoke-Api '/api/app-save' @{ originalName = $rn; app = @{ appName = $rn; wingetId = 'Vendor.WebTest'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'changed' } } }
     Check ($keep.ok -and (Invoke-Api '/api/app-get' @{ name = $rn }).app.deploy.detection.type -eq 'File') 'deploy settings: a save without them keeps them'
     # Supersedence through the editor
-    $d = $deployBase.Clone(); $d.detection = @{ type = '' }; $d.supersedesSet = $true; $d.supersedes = @(@{ appId = 'not-a-guid'; type = 'update' })
+    # (with the file detection rule saved above - later tests expect it kept)
+    $d = $deployBase.Clone(); $d.detection = @{ type = 'File'; path = 'C:\Program Files\Vendor'; name = 'app.exe'; detectionType = 'version'; operator = 'greaterThanOrEqual'; value = '1.2'; check32Bit = $false }
+    $d.supersedesSet = $true; $d.supersedes = @(@{ appId = 'not-a-guid'; type = 'update' })
     $badSup = Invoke-Api '/api/app-save' (New-DeployEdit $d)
     Check (-not $badSup.ok -and $badSup.error -like '*GUID*') 'supersedence: an App ID that is not a GUID is refused' ($badSup | ConvertTo-Json -Compress)
     $d.supersedes = @(@{ appId = '0b0b0b0b-1111-4222-8333-444455556666'; name = 'Old Tool'; type = 'replace' })
