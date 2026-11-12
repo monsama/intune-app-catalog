@@ -142,8 +142,10 @@ main { flex: 1; min-height: 0; display: flex; }
 dialog { border: 1px solid var(--bd); border-radius: var(--r-l); background: var(--surface); color: var(--fg); padding: 18px 20px; width: min(560px, calc(100vw - 32px)); box-shadow: 0 12px 40px rgba(0, 0, 0, .25); }
 dialog::backdrop { background: rgba(15, 20, 30, .45); }
 .picklist, .permlist { list-style: none; padding: 0; margin: 8px 0 0; max-height: 50vh; overflow: auto; }
-.picklist li { padding: 8px 10px; border: 1px solid var(--bd2); border-radius: var(--r-m); margin-top: 6px; cursor: pointer; font-size: 13px; }
-.picklist li:hover { background: var(--hover); border-color: var(--accent); }
+.picklist li { margin-top: 6px; font-size: 13px; }
+.picklist li.muted { padding: 8px 2px; }
+.picklist .pick { display: block; width: 100%; text-align: left; padding: 8px 10px; border: 1px solid var(--bd2); border-radius: var(--r-m); background: var(--surface); color: var(--fg); font: inherit; cursor: pointer; }
+.picklist .pick:hover, .picklist .pick:focus-visible { background: var(--hover); border-color: var(--accent); }
 .picklist li .t { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .permlist li { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-bottom: 1px solid var(--bd2); font-size: 13px; }
 .permlist li .n { font-family: var(--mono); font-size: 12px; }

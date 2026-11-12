@@ -290,6 +290,7 @@
           <h2>Certificate</h2>
           <p class="sub">On this machine</p>
           <div class="actions">
+            <button class="btn" id="btnUseCert" title="Pick a certificate that is already in your user store or the machine store">Use an existing one...</button>
             <button class="btn" id="btnNewCert" title="Create a self-signed certificate on this machine for the app registration">Create new certificate...</button>
             <button class="btn ghost" id="btnCertFolder" title="Open the folder with the exported .cer files in Explorer">Open certificates folder</button>
             <button class="btn ghost" id="btnCertsLocal" title="List this machine's certificates and delete one you no longer need">Delete one...</button>
@@ -374,8 +375,9 @@
 <!-- ============ dialogs ============ -->
 <dialog id="dlgPickCert">
   <h2>Choose a certificate</h2>
-  <p class="sub">Certificates on this machine with a private key that hasn't expired.</p>
+  <p class="sub">From your user store (CurrentUser\My) and the machine store (LocalMachine\My) - those with a private key that haven't expired, because only those can sign in.</p>
   <ul class="picklist" id="certList"></ul>
+  <p class="sub" id="certHidden" hidden></p>
   <div class="actions end"><button class="btn" data-close>Cancel</button></div>
 </dialog>
 

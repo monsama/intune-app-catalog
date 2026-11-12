@@ -29,16 +29,21 @@ function Global:Get-WebCertStatus {
 }
 
 function Global:Get-WebLocalCertificates {
-    # Certificates on this machine that could sign in: with a private key, not expired.
+    # Certificates on this machine that could sign in: with a private key, not
+    # expired - from the user's store and the machine's. How many were left
+    # out, and why, so an empty list explains itself.
     $now = Get-Date
-    $list = foreach ($store in 'CurrentUser', 'LocalMachine') {
-        Get-ChildItem -Path "Cert:\$store\My" -ErrorAction SilentlyContinue |
-            Where-Object { $_.HasPrivateKey -and $_.NotAfter -gt $now } |
-            ForEach-Object {
-                [ordered]@{ subject = $_.Subject; thumbprint = $_.Thumbprint; notAfter = $_.NotAfter.ToString('yyyy-MM-dd'); store = $store }
-            }
+    $list = New-Object System.Collections.Generic.List[object]
+    $expired = 0; $noKey = 0
+    foreach ($store in 'CurrentUser', 'LocalMachine') {
+        foreach ($c in @(Get-ChildItem -Path "Cert:\$store\My" -ErrorAction SilentlyContinue)) {
+            if (-not $c.HasPrivateKey) { $noKey++; continue }
+            if ($c.NotAfter -le $now) { $expired++; continue }
+            $list.Add([ordered]@{ subject = $c.Subject; thumbprint = $c.Thumbprint; notAfter = $c.NotAfter.ToString('yyyy-MM-dd')
+                store = $(if ($store -eq 'CurrentUser') { 'your user store' } else { 'the machine store' }) })
+        }
     }
-    return @{ ok = $true; certificates = @($list) }
+    return @{ ok = $true; certificates = $list.ToArray(); expired = $expired; noKey = $noKey }
 }
 
 function Global:New-WebCertificate {

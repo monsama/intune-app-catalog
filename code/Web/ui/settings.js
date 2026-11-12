@@ -55,15 +55,23 @@ $('btnTest').addEventListener('click', async () => {
 });
 
 // certificate picker
-$('btnPickCert').addEventListener('click', async () => {
+async function pickCertificate() {
   const r = await api('/api/certs-local');
   if (!r.ok) { toast(r.error, true); return; }
   const list = $('certList');
-  list.replaceChildren(...(r.certificates.length ? r.certificates.map(c => el('li', {
-    onclick: () => { $('fThumb').value = c.thumbprint; $('fThumb').dispatchEvent(new Event('input')); $('dlgPickCert').close(); }
-  }, c.subject + '  ·  valid until ' + c.notAfter + ' (' + c.store + ')', el('span', { class: 't', text: c.thumbprint }))) : [el('li', { text: 'None found. Create one first.' })]));
+  list.replaceChildren(...(r.certificates.length ? r.certificates.map(c => el('li', {},
+    el('button', { type: 'button', class: 'pick', title: 'Use this certificate for the connection (Save keeps it)', onclick: () => {
+      $('fThumb').value = c.thumbprint; $('fThumb').dispatchEvent(new Event('input')); $('dlgPickCert').close();
+      toast('Certificate chosen - Test connection, then Save.');
+    } }, c.subject + '  ·  valid until ' + c.notAfter + ' (' + c.store + ')', el('span', { class: 't', text: c.thumbprint })))) :
+    [el('li', { class: 'muted', text: 'None that can sign in. Create one, or import yours into your user store (certmgr.msc > Personal) with its private key.' })]));
+  const hidden = [r.expired ? `${r.expired} expired` : '', r.noKey ? `${r.noKey} without a private key` : ''].filter(Boolean);
+  $('certHidden').textContent = hidden.length ? `Not shown: ${hidden.join(', ')} - Delete one... lists every certificate.` : '';
+  $('certHidden').hidden = !hidden.length;
   $('dlgPickCert').showModal();
-});
+}
+$('btnPickCert').addEventListener('click', pickCertificate);
+$('btnUseCert').addEventListener('click', pickCertificate);
 $('btnNewCert').addEventListener('click', () => $('dlgNewCert').showModal());
 $('btnNewCertGo').addEventListener('click', async () => {
   const r = await api('/api/cert-new', { subject: $('fSubject').value });

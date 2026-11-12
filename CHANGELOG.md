@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.9
+
+### Changed
+
+- **Using a certificate you already have is easier to find.** Settings >
+  Certificate has **Use an existing one...** next to "Create new
+  certificate...". It opens the same picker as Choose... in Connection.
+  - The picker lists certificates from your user store (CurrentUser\My)
+    and the machine store (LocalMachine\My) that can sign in: with a
+    private key, and not expired.
+  - It also says how many it left out and why (expired, no private key),
+    so an empty list explains itself.
+  - The choices are proper buttons, so the keyboard works too.
+
 ## 2.0.8
 
 ### Fixed

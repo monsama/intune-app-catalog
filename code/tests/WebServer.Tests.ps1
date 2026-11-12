@@ -160,6 +160,8 @@ try {
     Check ($pq.ok -and @($pq.rows).Count -ge 1 -and $pq.module -eq 'Microsoft.Graph.Authentication') 'prerequisites: the module in each PowerShell' ($pq | ConvertTo-Json -Compress -Depth 4)
     Check (-not (Invoke-Api '/api/prereq-install' @{ exe = 'C:\Windows\System32\calc.exe' }).ok) 'prerequisites: installs only into a PowerShell it listed as missing the module'
     Check ((Invoke-Api '/api/certs-all').ok) 'certificates: the list on this machine (empty where there is no certificate store)'
+    $usable = Invoke-Api '/api/certs-local'
+    Check ($usable.ok -and $usable.PSObject.Properties.Name -contains 'expired' -and $usable.PSObject.Properties.Name -contains 'noKey') 'certificates: the picker says how many it left out, and why' ($usable | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/cert-delete-local' @{ thumbprint = '..\..\x'; store = 'CurrentUser' }).ok) 'certificates: a thumbprint that is not one is refused'
     Check (-not (Invoke-Api '/api/cert-delete-local' @{ thumbprint = ('A' * 40); store = 'Root' }).ok) 'certificates: only the two personal stores'
     $log = Invoke-Api '/api/log' @{ from = 0 }
