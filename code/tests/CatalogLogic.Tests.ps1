@@ -2370,7 +2370,8 @@ Assert-True ($fresh.autofill.enabled -eq $false -and $fresh.autofill.profile_ena
 Assert-True ($fresh.browser.enable_spellchecking -eq $false -and $fresh.spellcheck.use_spelling_service -eq $false) "Window preferences: spelling correction off"
 $kept = Get-AppWindowPreferencesJson -Existing '{"profile":{"name":"X","password_manager_enabled":true},"extensions":{"ui":1},"translate":"odd"}' | ConvertFrom-Json
 Assert-True ($kept.profile.name -eq 'X' -and $kept.extensions.ui -eq 1 -and $kept.profile.password_manager_enabled -eq $false -and $kept.translate.enabled -eq $false) "Window preferences: what the browser stored stays, ours is set (even over an odd value)"
-Assert-True ((Get-AppWindowPreferencesJson -Existing '{not json') | ConvertFrom-Json).translate.enabled -eq $false "Window preferences: an unreadable file is replaced, not a failure"
+$unreadable = Get-AppWindowPreferencesJson -Existing '{not json' | ConvertFrom-Json
+Assert-True ($unreadable.translate.enabled -eq $false) "Window preferences: an unreadable file is replaced, not a failure"
 
 # =================================================================
 # Report
