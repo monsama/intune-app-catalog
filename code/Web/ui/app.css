@@ -72,6 +72,7 @@ label > input { display: block; width: 100%; margin-top: 4px; font-family: var(-
 /* ---- banner ---- */
 .banner { display: flex; align-items: center; gap: 12px; padding: 8px 16px; font-size: 13px; border-bottom: 1px solid var(--bd); }
 .banner.warn { background: var(--warn-bg); color: var(--warn); }
+.banner.info { background: var(--accent-soft); color: var(--fg); }
 
 /* ---- layout ---- */
 main { flex: 1; min-height: 0; display: flex; }
@@ -107,6 +108,11 @@ main { flex: 1; min-height: 0; display: flex; }
 .hint { margin: 0; color: var(--muted); font-size: 12px; }
 
 /* ---- settings ---- */
+.subtabs { display: flex; gap: 4px; margin: 0 0 14px; border-bottom: 1px solid var(--bd); }
+.subtab { border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; padding: 8px 14px; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; }
+.subtab:hover { color: var(--fg); }
+.subtab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.subtab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-s); }
 .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; align-items: start; }
 .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .card { background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); padding: 16px 18px; box-shadow: var(--shadow); }
@@ -273,6 +279,7 @@ label.chk.inline { display: inline-flex; align-items: center; gap: 6px; margin: 
 #dlgGroupsDelete > label { display: block; margin-top: 12px; font-size: 12px; color: var(--muted); }
 #dlgGroupsDelete > label > textarea { display: block; width: 100%; margin-top: 4px; }
 .deplist.tall { max-height: 40vh; flex-direction: column; flex-wrap: nowrap; }
+.glist li .fav { color: var(--warn); font-size: 12px; }
 .gdot { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; background: var(--bd); }
 .gdot.ok { background: var(--ok); } .gdot.warn { background: var(--warn); }
 .gfilter { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; min-width: 0; }
@@ -371,3 +378,21 @@ dialog.ask h2 { font-size: 15px; line-height: 1.4; }
 .depbox .deprows label > input { display: inline-block; width: auto; margin: 0; flex: none; }
 .depbox .deprows label > span { flex: 1; min-width: 0; }
 
+
+/* ---- batch preview, deploy queue, saved views ---- */
+.preview { margin-top: 12px; }
+.preview .plan tr.first td { border-top: 1px solid var(--bd); }
+.preview .plan td.name { font-weight: 600; }
+.preview .chg.rem { color: var(--muted); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 50%, transparent); }
+.preview .chg.add { color: var(--fg); }
+.bhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bhead select { width: auto; }
+.progress { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; font-size: 13px; }
+.progress .bar { flex: 1; height: 6px; border-radius: 999px; background: var(--bd2); overflow: hidden; }
+.progress .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+#deployRows td .why { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
+#dlgDeploy .actions .spacer { flex: 1; }
+#dlgReplace label { display: block; margin-top: 10px; font-size: 12px; color: var(--muted); }
+#dlgReplace label select, #dlgReplace label input { display: block; width: 100%; margin-top: 4px; }
+#dlgCsv input[type="file"] { flex: 1; }
+optgroup[hidden] { display: none; }

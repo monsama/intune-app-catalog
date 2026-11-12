@@ -7,7 +7,7 @@
   showView(v);
   await pollServerLog();
   await loadState();
-  if (state && !state.configured) showView('settings');
+  if (state && !state.configured) showSettings('connection');
   await loadApps();
   loadPrefs();
   // Steps still running from before a reload (or another tab): shown again,

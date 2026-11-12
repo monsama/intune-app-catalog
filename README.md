@@ -31,7 +31,12 @@ it opens can talk to it.
   uploading a package.
 - Assign groups per app - Required, Available, Uninstall, plus **Excluded**,
   with a preview of exactly what will change before anything is pushed.
-- Batch edit settings, and add or remove groups, on several apps at once.
+- Batch edit settings, and add, remove or replace groups, on several apps
+  at once - with a preview of every change before it's written, and
+  **Undo** for the last bulk change.
+- **Export to CSV / Import from CSV** (Catalog menu): edit many apps in
+  Excel; the import shows every change first and is checked like the editor.
+- Saved views in the Apps list, and `group:name` in the search box.
 - Pull settings and groups back from Intune, field by field.
 - **Checks**: every way the catalog and Intune can disagree - apps renamed
   in Intune, App IDs that no longer exist, apps only in Intune, settings,
@@ -78,15 +83,15 @@ Who actually has an app, and which devices failed:
 
 - Windows 10/11 with **PowerShell 7** or **Windows PowerShell 5.1** (both
   are supported and tested), and **Edge** or **Chrome** for the window.
-- The **Microsoft.Graph.Authentication** module - Settings > Prerequisites
-  installs it for you.
+- The **Microsoft.Graph.Authentication** module - Settings > Connection >
+  Prerequisites installs it for you.
 - **winget** (the "App Installer" package) for the Winget features.
 - An **Entra ID app registration** with a certificate, for app-only
   sign-in. Settings > Setup guide walks through it.
 - **IntuneWinAppUtil.exe** (Microsoft's Win32 Content Prep Tool) and
   **init.intunewin** (the one package every Winget app deploys with).
-  Neither ships with this app: Settings > Packaging downloads and builds
-  them.
+  Neither ships with this app: Settings > Packaging & folders downloads and
+  builds them.
 
 ## Download
 
@@ -118,12 +123,12 @@ app either way: it writes its step helpers at run time.
    certificate**, **Add required permissions**, then have an admin grant
    consent in Entra, and **Test connection**. The setup guide on that page
    has the steps.
-4. **Settings > Packaging**: **Download packaging tool**, then **Build
-   init.intunewin**.
+4. **Settings > Packaging & folders**: **Download packaging tool**, then
+   **Build init.intunewin**.
 5. **Checks** lists the apps already in Intune - tick them and **Add to
    catalog**. Or **Add app** to start from scratch.
 
-Settings > Folders points the catalog, packages, tools, scripts, logs and
+Settings > Packaging & folders > Folders points the catalog, packages, tools, scripts, logs and
 backups somewhere else; leave a box empty to keep the default beside the
 app.
 

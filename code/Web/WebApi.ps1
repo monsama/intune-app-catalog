@@ -10,7 +10,7 @@
   This file has the route table (Invoke-WebApi) and what every page
   shares: reading the catalog, the catalog lock, step jobs and their
   completion, the Activity log. The pages: WebEditor.ps1, WebDeploy.ps1,
-  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebGroups.ps1,
+  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebGroups.ps1,
   WebScripts.ps1, WebSetup.ps1; Graph reads go through WebGraph.ps1.
 #>
 
@@ -61,6 +61,7 @@ function Global:Get-WebCatalog {
                 required     = [int]$row.Required
                 available    = [int]$row.Available
                 uninstall    = [int]$row.Uninstall
+                groups       = @(@($apps[$i].requiredFor) + @($apps[$i].availableFor) + @($apps[$i].uninstallFor) + @($apps[$i].excludeFor) | Where-Object { $_ } | ForEach-Object { [string]$_ } | Select-Object -Unique)
                 status       = [string]$row.Status
                 audit        = [string]$row.IntuneAudit
                 hasAppId     = [bool]$row.HasAppId
@@ -138,14 +139,12 @@ function Global:Invoke-WithCatalogLock {
 
 function Global:Update-WebCatalogApp {
     # Changes one app's saved file: reads it, lets -Change edit the record, writes it back (with a backup).
-    param([string]$Name, [scriptblock]$Change)
+    param([string]$Name, [scriptblock]$Change, $Undo = $null)
     $catalog = Read-WebCatalogRecords
     $app = $catalog.Apps | Where-Object { $_.appName -eq $Name } | Select-Object -First 1
     if (-not $app) { throw "'$Name' is no longer in the catalog." }
     & $Change $app
-    $file = Join-Path (Get-AppFolder -Kind Catalog -Create) ((Get-SafeFileNameForApp -Name $app.appName) + '.json')
-    Backup-WebAppFile $file
-    [System.IO.File]::WriteAllText($file, (ConvertTo-SingleAppJson -App $app), (New-Object System.Text.UTF8Encoding($false)))
+    Write-WebAppFile -App $app -Undo $Undo
     return $app
 }
 
@@ -448,6 +447,11 @@ function Global:Invoke-WebApi {
         '/api/add-from-intune'  { return (Start-WebAddFromIntune $Data) }
         '/api/batch-edit'       { return (Invoke-WithCatalogLock { Invoke-WebBatchEdit $Data }) }
         '/api/batch-groups'     { return (Invoke-WithCatalogLock { Invoke-WebBatchGroups $Data }) }
+        '/api/replace-group'    { return (Invoke-WithCatalogLock { Invoke-WebReplaceGroup $Data }) }
+        '/api/undo-info'        { return (Get-WebUndoInfo) }
+        '/api/undo-last'        { return (Invoke-WithCatalogLock { Invoke-WebUndo }) }
+        '/api/csv-export'       { return (Export-WebCatalogCsv) }
+        '/api/csv-import'       { return $(if ($Data.preview) { Import-WebCatalogCsv $Data } else { Invoke-WithCatalogLock { Import-WebCatalogCsv $Data } }) }
         '/api/diagnostics'      { return (Get-WebDiagnostics) }
         '/api/prereqs'          { return (Get-WebPrerequisites) }
         '/api/prereq-install'   { return (Start-WebPrerequisiteInstall $Data) }

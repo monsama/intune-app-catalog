@@ -47,7 +47,7 @@ function Global:Get-WebDeployPlan {
             $reason = if ($unc) { "No package (.intunewin) yet - build it with More > Package." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging builds it." }
         }
         elseif ($unc -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = "No detection rule yet - an app with its own package needs one (the editor's Deploy settings)." }
-        [ordered]@{ name = $a.appName; update = [bool]$a.appId; ready = (-not $reason); reason = $reason }
+        [ordered]@{ name = $a.appName; update = [bool]$a.appId; ready = (-not $reason); reason = $reason; deps = @($(if ($a.metadata) { @($a.metadata.dependencies) | Where-Object { $_ } | ForEach-Object { [string]$_ } })) }
     }
     return @{ ok = $true; apps = @($plan); circular = @($order.CircularNames); note = $note }
 }
@@ -276,10 +276,12 @@ function Global:Clear-WebAppIds {
     if ($names.Count -eq 0) { return @{ ok = $false; error = 'Choose one or more apps first.' } }
     $cleared = New-Object System.Collections.Generic.List[string]
     $failed = New-Object System.Collections.Generic.List[string]
+    $undo = New-WebUndo "Clear $($names.Count) App ID(s)"
     foreach ($n in $names) {
-        try { [void](Update-WebCatalogApp -Name $n -Change { param($a) $a.appId = ''; $a.intuneAppType = ''; $a.intuneAppVersion = '' }); $cleared.Add($n) }
+        try { [void](Update-WebCatalogApp -Name $n -Change { param($a) $a.appId = ''; $a.intuneAppType = ''; $a.intuneAppVersion = '' } -Undo $undo); $cleared.Add($n) }
         catch { $failed.Add("$n`: $($_.Exception.Message)") }
     }
+    Save-WebUndo $undo
     $Global:App.IntuneAppsCache = $null
     Write-Log "[OK] Cleared the App ID of $($cleared.Count) app(s) in the catalog (Intune unchanged).$(if ($failed.Count) { " Failed: $($failed -join '; ')" })"
     return @{ ok = ($failed.Count -eq 0); cleared = $cleared.ToArray(); failed = $failed.ToArray(); error = $(if ($failed.Count) { "Not cleared: $($failed -join '; ')" } else { '' }) }

@@ -6,16 +6,18 @@
 // groups: the catalog's groups; entra: name (lower case) -> id for those Entra ID has, or null while unknown.
 // gSel: the names selected in the list (several with Ctrl/Shift); group: the one open on the right.
 let groups = [], groupsLoaded = false, group = null, toAdd = new Map();
-let entra = null, entraNote = '', gSel = new Set(), gLast = null;
+let entra = null, entraNote = '', gSel = new Set(), gLast = null, favs = [];
 const ROLES = { requiredFor: 'Required', availableFor: 'Available', uninstallFor: 'Uninstall', excludeFor: 'Excluded' };
 const roleField = role => Object.keys(ROLES).find(k => ROLES[k] === role);
 const lc = s => String(s).toLowerCase();
+const isFav = name => favs.some(f => lc(f) === lc(name));
 const inEntra = name => entra ? entra.has(lc(name)) : null;
 async function loadGroups() {
   groupsLoaded = true;
   const r = await api('/api/groups');
   if (!r.ok) { toast(r.error, true); return; }
   groups = r.groups || [];
+  favs = r.favorites || [];
   const keep = new Set(groups.map(g => lc(g.name)));
   for (const n of [...gSel]) if (!keep.has(lc(n))) gSel.delete(n);
   renderGroupList();
@@ -48,7 +50,7 @@ function renderGroupList() {
     const roles = {}; for (const u of g.uses) roles[u.role] = (roles[u.role] || 0) + 1;
     const li = el('li', { role: 'option', 'data-g': g.name, class: lc(g.name) === open ? 'open' : '', 'aria-selected': String(isSel(g.name)),
       title: `${g.name}\n${st === null ? '' : st ? 'In Entra ID' : 'Not in Entra ID'}\n${Object.entries(roles).map(([r, n]) => `${r}: ${n}`).join(', ')}` },
-      dot, el('span', { class: 'sr', text: st === null ? '' : st ? 'In Entra ID: ' : 'Not in Entra ID: ' }), el('span', { class: 'n', text: g.name }), el('span', { class: 'c', text: g.apps === 1 ? '1 app' : g.apps + ' apps' }));
+      dot, el('span', { class: 'sr', text: st === null ? '' : st ? 'In Entra ID: ' : 'Not in Entra ID: ' }), el('span', { class: 'n', text: g.name }), isFav(g.name) ? el('span', { class: 'fav', title: 'A favourite - offered first wherever a group is chosen', text: '★' }) : '', el('span', { class: 'c', text: g.apps === 1 ? '1 app' : g.apps + ' apps' }));
     li.addEventListener('click', e => clickGroup(g.name, e));
     li.addEventListener('contextmenu', e => { e.preventDefault(); if (!isSel(g.name)) { gSel = new Set([g.name]); gLast = g.name; renderGroupList(); } openGroupMenu(e.clientX, e.clientY); });
     return li;
@@ -126,11 +128,15 @@ function openGroupMenu(x, y) {
   const used = sel.filter(n => groups.some(g => lc(g.name) === lc(n)));
   const b = act => gMenu.querySelector(`[data-gact=${act}]`);
   setEnabled(b('open'), !!one, 'Select exactly one group.');
+  const allFav = sel.length && sel.every(isFav);
+  b('fav').textContent = allFav ? (sel.length > 1 ? 'Remove from favourites' : 'Remove from favourites') : (sel.length > 1 ? `Add ${sel.length} to favourites` : 'Add to favourites');
+  b('fav').dataset.mode = allFav ? 'remove' : 'add';
   b('copy').textContent = sel.length > 1 ? `Copy ${sel.length} names` : 'Copy name';
   setEnabled(b('assign'), !!one, 'Select exactly one group.');
   setEnabled(b('create'), missing.length > 0, entra ? (sel.length > 1 ? 'Every selected group is in Entra ID already.' : 'This group is in Entra ID already.') : 'Entra ID not checked - connect first.');
   b('create').textContent = missing.length > 1 ? `Create ${missing.length} in Entra ID` : 'Create in Entra ID';
   setEnabled(b('rename'), !!one && (!entra || entra.has(lc(one))), one ? 'This group isn\'t in Entra ID - rename it in the apps instead (Batch edit).' : 'Select exactly one group.');
+  setEnabled(b('replace'), !!one && used.length > 0, one ? 'No app in the catalog uses this group.' : 'Select exactly one group.');
   setEnabled(b('unassign'), used.length > 0, 'No app in the catalog uses these groups.');
   b('unassign').textContent = used.length > 1 ? `Remove ${used.length} groups from all apps...` : 'Remove from all apps...';
   setEnabled(b('delete'), found.length > 0, sel.length > 1 ? 'None of the selected groups is in Entra ID.' : 'This group isn\'t in Entra ID.');
@@ -143,12 +149,6 @@ function openGroupMenu(x, y) {
 }
 document.addEventListener('click', e => { if (!gMenu.contains(e.target)) gMenu.hidden = true; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !gMenu.hidden) { gMenu.hidden = true; $('groupList').focus(); } });
-gMenu.addEventListener('keydown', e => {
-  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-  e.preventDefault();
-  const items = [...gMenu.querySelectorAll('button:not(:disabled)')], i = items.indexOf(document.activeElement);
-  items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
-});
 gMenu.addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   gMenu.hidden = true;
@@ -159,6 +159,15 @@ gMenu.addEventListener('click', async e => {
     case 'assign': if (!group || lc(group.name) !== lc(sel[0])) await openGroup(sel[0]); openAssign(); break;
     case 'create': createGroups(sel.filter(n => entra && !entra.has(lc(n)))); break;
     case 'rename': if (!group || lc(group.name) !== lc(sel[0])) await openGroup(sel[0]); $('btnGroupRename').click(); break;
+    case 'replace': openReplace({ old: sel[0] }); break;
+    case 'fav': {
+      const next = b.dataset.mode === 'remove' ? favs.filter(f => !sel.some(n => lc(n) === lc(f))) : favs.concat(sel.filter(n => !isFav(n)));
+      const r = await api('/api/prefs-save', { favoriteGroups: next });
+      if (!r.ok) { toast(r.error, true); break; }
+      favs = next; loadPrefs(); renderGroupList();
+      toast(b.dataset.mode === 'remove' ? 'Removed from the favourites.' : 'Added to the favourites - offered first wherever a group is chosen.');
+      break;
+    }
     case 'unassign': unassignGroups(sel.filter(n => groups.some(g => lc(g.name) === lc(n)))); break;
     case 'delete': deleteGroups(sel.filter(n => !entra || entra.has(lc(n)))); break;
   }
