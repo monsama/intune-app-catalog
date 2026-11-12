@@ -91,7 +91,7 @@ function Invoke-GraphRequestDetailed {
             # to carry the status as readable text (e.g. "BadRequest (Bad
             # Request)") rather than a reliably-populated .Response object.
             $isThrottled = $_.Exception.Message -match '429|TooManyRequests|Too Many Requests'
-            $isTransient = $_.Exception.Message -match '503|ServiceUnavailable|Service Unavailable'
+            $isTransient = $_.Exception.Message -match '502|503|504|BadGateway|Bad Gateway|ServiceUnavailable|Service Unavailable|GatewayTimeout|Gateway Timeout'
             # 429 always means the request was rejected BEFORE any
             # processing happened, so retrying it is always safe. 503 is
             # different specifically for POST - the server may have already

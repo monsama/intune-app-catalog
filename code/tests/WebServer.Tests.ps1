@@ -262,6 +262,42 @@ try {
     Check ($back.installContext -eq 'User' -and @($back.returnCodes).Count -eq 2 -and (@($back.returnCodes | Where-Object { $_.returnCode -eq 3010 }).type -eq 'softReboot')) 'deploy settings: install context and return codes saved' ($back | ConvertTo-Json -Compress -Depth 5)
     $keep = Invoke-Api '/api/app-save' @{ originalName = $rn; app = @{ appName = $rn; wingetId = 'Vendor.WebTest'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'changed' } } }
     Check ($keep.ok -and (Invoke-Api '/api/app-get' @{ name = $rn }).app.deploy.detection.type -eq 'File') 'deploy settings: a save without them keeps them'
+    # Supersedence through the editor
+    # (with the file detection rule saved above - later tests expect it kept)
+    $d = $deployBase.Clone(); $d.detection = @{ type = 'File'; path = 'C:\Program Files\Vendor'; name = 'app.exe'; detectionType = 'version'; operator = 'greaterThanOrEqual'; value = '1.2'; check32Bit = $false }
+    $d.supersedesSet = $true; $d.supersedes = @(@{ appId = 'not-a-guid'; type = 'update' })
+    $badSup = Invoke-Api '/api/app-save' (New-DeployEdit $d)
+    Check (-not $badSup.ok -and $badSup.error -like '*GUID*') 'supersedence: an App ID that is not a GUID is refused' ($badSup | ConvertTo-Json -Compress)
+    $d.supersedes = @(@{ appId = '0b0b0b0b-1111-4222-8333-444455556666'; name = 'Old Tool'; type = 'replace' })
+    $okSup = Invoke-Api '/api/app-save' (New-DeployEdit $d)
+    $supBack = (Invoke-Api '/api/app-get' @{ name = $rn }).app.deploy
+    Check ($okSup.ok -and $supBack.supersedesSet -and @($supBack.supersedes).Count -eq 1 -and @($supBack.supersedes)[0].type -eq 'replace' -and @($supBack.supersedes)[0].name -eq 'Old Tool') 'supersedence: saved and read back' ($supBack | ConvertTo-Json -Compress -Depth 5)
+    $d.supersedesSet = $false
+    $offSup = Invoke-Api '/api/app-save' (New-DeployEdit $d)
+    Check ($offSup.ok -and -not (Invoke-Api '/api/app-get' @{ name = $rn }).app.deploy.supersedesSet) 'supersedence: unticked leaves Intune''s alone (nothing recorded)'
+    # The app's icon
+    $png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+    $iconEdit = { param($change, $icon) @{ originalName = $rn; app = @{ appName = $rn; wingetId = 'Vendor.WebTest'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'from the test' }; iconChange = $change; icon = $icon } } }
+    $badIcon = Invoke-Api '/api/app-save' (& $iconEdit 'set' @{ type = 'image/svg+xml'; value = $png })
+    Check (-not $badIcon.ok -and $badIcon.error -like '*PNG*') 'icon: only PNG or JPEG' ($badIcon | ConvertTo-Json -Compress)
+    $setIcon = Invoke-Api '/api/app-save' (& $iconEdit 'set' @{ type = 'image/png'; value = $png })
+    $icons = Invoke-Api '/api/app-icons' @{ names = @($rn) }
+    $row = @((Invoke-Api '/api/catalog').apps) | Where-Object { $_.name -eq $rn }
+    Check ($setIcon.ok -and (Invoke-Api '/api/app-get' @{ name = $rn }).app.icon.value -eq $png -and $icons.icons.$rn -like 'data:image/png;base64,*' -and $row.hasIcon) 'icon: saved, read back, listed' ($icons | ConvertTo-Json -Compress)
+    [void](Invoke-Api '/api/app-save' (& $iconEdit 'keep' $null))
+    Check ((Invoke-Api '/api/app-get' @{ name = $rn }).app.icon.value -eq $png) 'icon: a save that does not touch it keeps it'
+    [void](Invoke-Api '/api/app-save' (& $iconEdit 'remove' $null))
+    Check ($null -eq (Invoke-Api '/api/app-get' @{ name = $rn }).app.icon) 'icon: removed'
+    # History: what one save changed, and that version next to now
+    $bks = Invoke-Api '/api/app-backups' @{ name = $rn }
+    $cmp = Invoke-Api '/api/app-compare' @{ name = $rn; id = @($bks.backups)[0].id }
+    Check ($cmp.ok -and @($cmp.thatSave | Where-Object { $_.field -eq 'icon' }).Count -eq 1) 'history: the newest copy shows the icon removal as what that save changed' ($cmp | ConvertTo-Json -Compress -Depth 4)
+    Check (-not (Invoke-Api '/api/app-compare' @{ name = $rn; id = 'app-edit_2000-01-01/000000_nope.json' }).ok) 'history: a copy that is not this app''s is refused'
+    # Winget versions: nothing to take before winget was asked
+    $tv = Invoke-Api '/api/winget-take-version' @{ names = @($rn) }
+    Check ($tv.ok -and @($tv.changed).Count -eq 0 -and @($tv.skipped).Count -eq 1) 'winget version: not taken before winget was asked' ($tv | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/tenant-setup').ok) 'tenant setup: needs a connection'
+    Check (-not (Invoke-Api '/api/install-overview').ok) 'install overview: needs a connection'
     # Groups (no tenant in CI): what the catalog uses, and the refusals
     $gl = Invoke-Api '/api/groups'
     $sga = @($gl.groups) | Where-Object { $_.name -eq 'SG-A' }

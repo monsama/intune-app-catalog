@@ -42,6 +42,12 @@ $answers = [ordered]@{
         '@odata.nextLink' = 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$skiptoken=page2'
     }
     'GET beta/deviceAppManagement/mobileApps?$skiptoken=page2' = @{ value = @(@{ id = $appSameName; displayName = $sameName }) }
+    # The install overview's report (one row) and one app's icon.
+    'POST beta/deviceManagement/reports/getAppsInstallSummaryReport' = @{
+        Schema = @(@{ Column = 'ApplicationId' }, @{ Column = 'DisplayName' }, @{ Column = 'InstalledDeviceCount' }, @{ Column = 'FailedDeviceCount' }, @{ Column = 'PendingInstallDeviceCount' }, @{ Column = 'NotInstalledDeviceCount' }, @{ Column = 'NotApplicableDeviceCount' })
+        Values = @(, @($appLinked, 'ZZ Graph Linked', 5, 2, 1, 0, 0))
+    }
+    "GET beta/deviceAppManagement/mobileApps/$appLinked`?`$select=id,largeIcon" = @{ id = $appLinked; largeIcon = @{ '@odata.type' = '#microsoft.graph.mimeContent'; type = 'image/png'; value = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' } }
     # The badge's connection check: one app's id.
     'GET beta/deviceAppManagement/mobileApps?$select=id&$top=1' = @{ value = @(@{ id = $appLinked }) }
     # Checks looks up only the groups the catalog uses, by name.
@@ -162,6 +168,16 @@ try {
     Check (-not $favSave.ok -and $settingsAfter -eq $settingsBefore) 'test mode never writes the settings file (its made-up IDs stay in memory)' ($favSave | ConvertTo-Json -Compress)
     Check ((Add-TestApp @{ appName = $linkedName; appId = $appLinked; requiredFor = @('SG-ZZ-Exists'); availableFor = @('SG-ZZ-Missing') }).ok) 'a linked app is added'
     Check ((Add-TestApp @{ appName = $sameName }).ok) 'an app not linked yet is added'
+
+    # Set up this tenant: what it still needs
+    $ts = Invoke-Api '/api/tenant-setup'
+    Check ($ts.ok -and @($ts.missingGroups) -contains 'SG-ZZ-Missing' -and @($ts.missingGroups) -notcontains 'SG-ZZ-Exists' -and @($ts.notDeployed) -contains $sameName -and @($ts.stale).Count -eq 0 -and @($ts.pushGroups) -contains $linkedName) 'tenant setup: missing groups, apps to deploy, groups to push' ($ts | ConvertTo-Json -Compress -Depth 4)
+    $ov = Invoke-Api '/api/install-overview'
+    $ovLinked = @($ov.rows) | Where-Object { $_.name -eq $linkedName }
+    Check ($ov.ok -and $ovLinked.known -and $ovLinked.installed -eq 5 -and $ovLinked.failed -eq 2 -and $ovLinked.pending -eq 1) 'install overview: counts per app from the summary report' ($ov | ConvertTo-Json -Compress -Depth 4)
+    $ic = Invoke-Api '/api/app-icon-intune' @{ name = $linkedName }
+    Check ($ic.ok -and $ic.icon.type -eq 'image/png' -and $ic.icon.value -like 'iVBOR*') 'icon: read from Intune' ($ic | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/app-icon-intune' @{ name = $sameName }).ok) 'icon: an app not in Intune has none to read'
 
     # Checks: Intune (two pages) and Entra ID
     $checks = Invoke-Api '/api/checks-run'

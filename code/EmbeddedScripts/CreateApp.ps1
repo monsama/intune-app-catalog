@@ -197,7 +197,7 @@ function Invoke-GraphRequestDetailed {
             # to carry the status as readable text (e.g. "BadRequest (Bad
             # Request)") rather than a reliably-populated .Response object.
             $isThrottled = $_.Exception.Message -match '429|TooManyRequests|Too Many Requests'
-            $isTransient = $_.Exception.Message -match '503|ServiceUnavailable|Service Unavailable'
+            $isTransient = $_.Exception.Message -match '502|503|504|BadGateway|Bad Gateway|ServiceUnavailable|Service Unavailable|GatewayTimeout|Gateway Timeout'
             # 429 always means the request was rejected BEFORE any
             # processing happened, so retrying it is always safe. 503 is
             # different specifically for POST - the server may have already
@@ -250,7 +250,21 @@ function Invoke-WebRequestDetailed {
         if ($null -ne $Body) { $params.Body = $Body }
         if ($Headers) { $params.Headers = $Headers }
         if ($ContentType) { $params.ContentType = $ContentType }
-        return Invoke-WebRequest @params
+        # Azure Storage drops or throttles the odd block on a slow or busy
+        # line. Every request here is a PUT of the same bytes to the same
+        # address, so repeating it is safe: up to 4 tries, waiting 5, 15
+        # and 30 seconds, for timeouts, dropped connections, 408/429/5xx.
+        for ($try = 1; ; $try++) {
+            try { return Invoke-WebRequest @params }
+            catch {
+                $text = [string]$_.Exception.Message
+                $retryable = $text -match '\b(408|429|500|502|503|504)\b|timed out|timeout|connection was closed|forcibly closed|underlying connection|Unable to read data|ServerBusy|OperationTimedOut|InternalError'
+                if (-not $retryable -or $try -ge 4) { throw }
+                $wait = @(5, 15, 30)[$try - 1]
+                Write-Host "  [!] $StepDescription didn't go through ($($text.Split([char]10)[0])) - trying again in ${wait}s ($($try + 1) of 4)..." -ForegroundColor Yellow
+                Start-Sleep -Seconds $wait
+            }
+        }
     }
     catch {
         $detail = Get-HttpErrorDetail -ErrorRecord $_
@@ -654,6 +668,8 @@ try {
         # Only when the catalog actually says - $null leaves Intune's own
         # setting alone rather than switching a featured app off.
         if ($null -ne $Config.IsFeatured) { $patchBody["isFeatured"] = [bool]$Config.IsFeatured }
+        # The catalog's icon, when it has one; none leaves Intune's own alone.
+        if ($Config.LargeIcon -and $Config.LargeIcon.value) { $patchBody["largeIcon"] = @{ "@odata.type" = "#microsoft.graph.mimeContent"; type = [string]$Config.LargeIcon.type; value = [string]$Config.LargeIcon.value } }
         $patchBody = $patchBody | ConvertTo-Json -Depth 8
 
         Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.ExistingAppId)" `
@@ -795,6 +811,8 @@ try {
     # Only when the catalog actually says - $null leaves Intune's own
     # setting alone rather than switching a featured app off.
     if ($null -ne $Config.IsFeatured) { $createBody["isFeatured"] = [bool]$Config.IsFeatured }
+    # The catalog's icon, when it has one; none leaves Intune's own alone.
+    if ($Config.LargeIcon -and $Config.LargeIcon.value) { $createBody["largeIcon"] = @{ "@odata.type" = "#microsoft.graph.mimeContent"; type = [string]$Config.LargeIcon.type; value = [string]$Config.LargeIcon.value } }
     $createBody = $createBody | ConvertTo-Json -Depth 8
 
     $app = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps" `

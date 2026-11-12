@@ -127,6 +127,10 @@ function Global:ConvertTo-AppRecord {
         # Groups that must NOT get this app, whichever of the three lists
         # above would otherwise have covered them ("everyone in X except Y")
         excludeFor   = @(@($Raw.excludeFor)   | Where-Object { $null -ne $_ })
+        # The app's icon for Intune and the Company Portal (PNG or JPEG,
+        # base64) - kept in the app's own file so a rename, a backup and
+        # Undo carry it along. Anything else in the field is dropped.
+        icon         = (ConvertTo-AppIcon $Raw.icon)
         metadata     = $metadata
     }
 }
@@ -226,6 +230,16 @@ function Global:ConvertTo-JsonStringArray {
     return "[`r`n" + ($lines -join "`r`n") + "`r`n$pad]"
 }
 
+function Global:ConvertTo-AppIcon {
+    # Pure: an icon as @{ type; value } when it is a PNG or JPEG in base64 of at most 750 KB, else $null.
+    param($Icon)
+    if (-not $Icon) { return $null }
+    $type = [string]$Icon.type; $value = ([string]$Icon.value) -replace '\s', ''
+    if ($type -notin 'image/png', 'image/jpeg') { return $null }
+    if (-not $value -or $value.Length -gt 1000000 -or $value -notmatch '^[A-Za-z0-9+/]+={0,2}$') { return $null }
+    return [pscustomobject]@{ type = $type; value = $value }
+}
+
 function Global:ConvertTo-SupersedenceJson {
     # metadata.supersedes, hand-rolled like the rest of this file. $null
     # (never recorded) is written as null, not [] - an empty list means
@@ -265,6 +279,9 @@ function Global:ConvertTo-SingleAppJson {
     # silently dropped the moment the catalog is saved.
     if ($App.packagePath) {
         $fields.Add("  `"packagePath`": $(ConvertTo-JsonStringLiteral $App.packagePath)")
+    }
+    if ($App.icon -and $App.icon.value) {
+        $fields.Add("  `"icon`": { `"type`": $(ConvertTo-JsonStringLiteral ([string]$App.icon.type)), `"value`": $(ConvertTo-JsonStringLiteral ([string]$App.icon.value)) }")
     }
     $fields.Add("  `"requiredFor`": $(ConvertTo-JsonStringArray -Items @($App.requiredFor) -IndentLevel 1)")
     $fields.Add("  `"availableFor`": $(ConvertTo-JsonStringArray -Items @($App.availableFor) -IndentLevel 1)")
@@ -401,6 +418,11 @@ function Global:ConvertTo-CreateAppConfigJson {
         $fields.Add("  `"Supersedence`": [`r`n" + ($supLines -join "`r`n") + "`r`n  ]")
     }
     $fields.Add("  `"ReplaceContent`": $(if ($Config.ReplaceContent) { 'true' } else { 'false' })")
+    $iconJson = 'null'
+    if ($Config.LargeIcon -and $Config.LargeIcon.value) {
+        $iconJson = '{ "type": ' + (ConvertTo-JsonStringLiteral ([string]$Config.LargeIcon.type)) + ', "value": ' + (ConvertTo-JsonStringLiteral ([string]$Config.LargeIcon.value)) + ' }'
+    }
+    $fields.Add("  `"LargeIcon`": $iconJson")
     $fields.Add("  `"MinDiskSpaceMB`": $($Config.MinDiskSpaceMB)")
     $fields.Add("  `"MinMemoryMB`": $($Config.MinMemoryMB)")
     $fields.Add("  `"MinProcessors`": $($Config.MinProcessors)")

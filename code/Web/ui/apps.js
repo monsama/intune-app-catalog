@@ -40,6 +40,28 @@ function appPicker(box, names, chosen, attr, emptyText, label = 'Installed first
   showChips();
 }
 
+// App icons: fetched once per icon (iconTag changes when the icon does), shown in the list.
+const iconCache = new Map();
+let iconsWanted = new Set(), iconTimer = null;
+function iconFor(a) {
+  if (!a.hasIcon) return el('span', { class: 'appicon none', 'aria-hidden': 'true' });
+  const c = iconCache.get(a.name);
+  if (c && c.tag === a.iconTag) return el('img', { class: 'appicon', src: c.url, alt: '' });
+  iconsWanted.add(a.name); clearTimeout(iconTimer); iconTimer = setTimeout(loadIcons, 50);
+  return el('span', { class: 'appicon none', 'aria-hidden': 'true' });
+}
+async function loadIcons() {
+  const names = [...iconsWanted]; iconsWanted = new Set();
+  if (!names.length) return;
+  const r = await api('/api/app-icons', { names });
+  if (!r.ok) return;
+  for (const n of names) { const a = apps.find(x => x.name === n); if (a && r.icons[n]) iconCache.set(n, { tag: a.iconTag, url: r.icons[n] }); }
+  for (const tr of $('gridBody').children) {
+    const c = iconCache.get(tr.dataset.name), span = tr.firstChild && tr.firstChild.firstChild;
+    if (c && span && span.classList && span.classList.contains('none')) span.replaceWith(el('img', { class: 'appicon', src: c.url, alt: '' }));
+  }
+}
+
 // The ids of the apps in the connected tenant (lower case), or null while not known.
 let intuneIds = null;
 function tenantState(a) {
@@ -83,6 +105,7 @@ const filters = {
   pkgmissing: a => a.packageMissing,
   winget: a => !!a.wingetId,
   custom: a => !a.wingetId,
+  newer: a => !!a.newerOnWinget,
 };
 function sortValue(a, k) {
   if (k === 'groups') return a.required * 10000 + a.available * 100 + a.uninstall;
@@ -109,10 +132,10 @@ function renderApps() {
   const body = $('gridBody');
   body.replaceChildren(...list.map(a => {
     const tr = el('tr', { 'data-name': a.name, class: selected.has(a.name) ? 'sel' : '', title: a.appId ? 'App ID ' + a.appId : 'Not in Intune yet' },
-      el('td', { class: 'name', text: a.name }),
+      el('td', { class: 'name' }, iconFor(a), a.name),
       el('td', { class: 'mono', text: a.wingetId || '-' }),
       el('td', { text: a.type || '' }),
-      el('td', { class: 'num', text: a.version || '' }),
+      el('td', { class: 'num' }, a.version || '', a.newerOnWinget ? el('span', { class: 'pill info newer', text: '→ ' + a.wingetVersion, title: `winget offers ${a.wingetVersion}. More > Take winget's version uses it as the App version.` }) : ''),
       el('td', { class: 'num', title: 'Required / Available / Uninstall', text: `${a.required} / ${a.available} / ${a.uninstall}` }),
       el('td', {}, statusPill(a)),
       el('td', {}, auditPill(a.audit)));
@@ -166,7 +189,96 @@ function fillEditor(a) {
   for (const [k, id] of Object.entries(metaIds)) $(id).value = (a.metadata && a.metadata[k]) || '';
   $('metaNote').textContent = a.hasMetadata ? '' : '(not set yet - the defaults are used when it is deployed)';
   fillDeploy(a.deploy);
+  setEditorIcon(a.icon || null, 'keep');
   $('appError').hidden = true;
+}
+
+// ---------------------------------------------------------------- the app's icon (editor)
+let editorIcon = null, iconChange = 'keep';
+function setEditorIcon(icon, change) {
+  editorIcon = icon; iconChange = change;
+  $('aIcon').hidden = !icon; $('aIconNone').hidden = !!icon;
+  if (icon) $('aIcon').src = `data:${icon.type};base64,${icon.value}`; else $('aIcon').removeAttribute('src');
+  setEnabled($('btnIconRemove'), !!icon, 'This app has no icon in the catalog.');
+  setEnabled($('btnIconIntune'), !!editingName && !!$('aAppId').value.trim() && !!(state && state.configured), !editingName ? 'Save the app first.' : 'Only for an app that is in Intune (with an App ID) and a connection.');
+}
+// A picked image: anything larger than 512 px is scaled down (PNG), so the file stays small; at most 750 KB.
+function readIconFile(f) {
+  return new Promise((resolve, reject) => {
+    if (!/^image\/(png|jpeg)$/.test(f.type)) { reject(new Error('Choose a PNG or JPEG image.')); return; }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('The file could not be read.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('That is not an image the browser can read.'));
+      img.onload = () => {
+        let url = reader.result, type = f.type;
+        if (img.width > 512 || img.height > 512) {
+          const k = 512 / Math.max(img.width, img.height), c = document.createElement('canvas');
+          c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          url = c.toDataURL('image/png'); type = 'image/png';
+        }
+        const value = url.slice(url.indexOf(',') + 1);
+        if (value.length * 3 / 4 > 750 * 1024) { reject(new Error('The image is larger than 750 KB - use a smaller one.')); return; }
+        resolve({ type, value });
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(f);
+  });
+}
+$('btnIconPick').addEventListener('click', () => $('aIconFile').click());
+$('aIconFile').addEventListener('change', async () => {
+  const f = $('aIconFile').files[0]; $('aIconFile').value = '';
+  if (!f) return;
+  try { setEditorIcon(await readIconFile(f), 'set'); } catch (e) { toast(e.message, true); }
+});
+$('btnIconIntune').addEventListener('click', async () => {
+  const r = await api('/api/app-icon-intune', { name: editingName });
+  if (!r.ok) { toast(r.error, true); return; }
+  setEditorIcon(r.icon, 'set'); toast('Took the icon from Intune - Save keeps it.');
+});
+$('btnIconRemove').addEventListener('click', () => setEditorIcon(null, 'remove'));
+
+// ---------------------------------------------------------------- supersedence (editor, Deploy settings)
+let editorIntuneApps = [];
+function supRow(s = { appId: '', name: '', type: 'update' }) {
+  const known = editorIntuneApps.some(a => a.appId.toLowerCase() === (s.appId || '').toLowerCase());
+  const sel = el('select', { 'aria-label': 'The app this one supersedes', 'data-sup': '' },
+    el('option', { value: '', text: 'Choose an app...' }),
+    ...editorIntuneApps.map(a => el('option', { value: a.appId, text: a.name })),
+    s.appId && !known ? el('option', { value: s.appId, text: `${s.name || s.appId} (not in the catalog)` }) : '',
+    el('option', { value: '__other', text: 'Another app in Intune - type its App ID...' }));
+  sel.value = s.appId ? (known ? editorIntuneApps.find(a => a.appId.toLowerCase() === s.appId.toLowerCase()).appId : s.appId) : '';
+  const other = el('input', { placeholder: 'App ID (GUID) from Intune', 'aria-label': 'App ID of the superseded app', class: 'mono', hidden: true, 'data-supid': '' });
+  sel.addEventListener('change', () => { other.hidden = sel.value !== '__other'; if (!other.hidden) other.focus(); });
+  const type = el('select', { 'aria-label': 'What happens to the old app', 'data-suptype': '', title: 'Update: devices with the old app get this one. Replace: the old app is uninstalled first.' },
+    el('option', { value: 'update', text: 'Update it' }), el('option', { value: 'replace', text: 'Replace it (uninstall the old one)' }));
+  type.value = s.type === 'replace' ? 'replace' : 'update';
+  const rm = el('button', { type: 'button', class: 'btn small', text: 'Remove', title: 'This app no longer supersedes it' });
+  const row = el('div', { class: 'suprow' }, sel, other, type, rm);
+  row.dataset.name = s.name || '';
+  rm.addEventListener('click', () => { row.remove(); deployTouched = true; showSupState(); });
+  return row;
+}
+function showSupState() {
+  const on = $('xSupSet').checked;
+  $('xSup').hidden = !on;
+  setEnabled($('btnSupAdd'), on && $('xSup').children.length < 10, on ? 'Intune allows at most 10.' : 'Tick "Set supersedence from the catalog" first.');
+  if (on && !$('xSup').children.length) $('xSup').replaceChildren(el('p', { class: 'muted', text: 'Supersedes nothing - saving clears what Intune has. Add an app, or untick to leave Intune\'s alone.' }));
+}
+$('xSupSet').addEventListener('change', showSupState);
+$('btnSupAdd').addEventListener('click', () => {
+  const p = $('xSup').querySelector('p'); if (p) p.remove();
+  const r = supRow(); $('xSup').append(r); r.querySelector('select').focus(); deployTouched = true; showSupState();
+});
+function readSupersedence() {
+  return [...$('xSup').querySelectorAll('.suprow')].map(r => {
+    const sel = r.querySelector('[data-sup]'), id = sel.value === '__other' ? r.querySelector('[data-supid]').value.trim() : sel.value;
+    const name = sel.value === '__other' ? '' : (editorIntuneApps.find(a => a.appId === sel.value) || {}).name || r.dataset.name;
+    return { appId: id, name, type: r.querySelector('[data-suptype]').value };
+  }).filter(s => s.appId);
 }
 let editingVersion = '';
 async function openEditor(name) {
@@ -174,13 +286,14 @@ async function openEditor(name) {
   if (name) {
     const r = await api('/api/app-get', { name });
     if (!r.ok) { toast(r.error, true); return; }
-    editorApps = r.appNames || []; editorMinOs = r.minOsChoices || [];
+    editorApps = r.appNames || []; editorMinOs = r.minOsChoices || []; editorIntuneApps = r.intuneApps || [];
     editingVersion = r.version || '';
     fillEditor(r.app);
     $('knownGroups').textContent = r.knownGroups.length ? 'Groups used in this catalog: ' + r.knownGroups.join(', ') : '';
     $('appTitle').textContent = 'Edit ' + name;
   } else {
     editorApps = apps.map(a => a.name); editorMinOs = (prefs && prefs.minOsChoices) || [];
+    editorIntuneApps = apps.filter(a => a.hasAppId).map(a => ({ name: a.name, appId: a.appId }));
     fillEditor({ hasMetadata: false, deploy: prefs && prefs.defaults ? { ...prefs.defaults, detection: { type: '' }, dependencies: prefs.defaults.defaultDependencyAppNames || [] } : null });
     $('knownGroups').textContent = '';
     $('appTitle').textContent = 'Add an app';
@@ -200,6 +313,7 @@ $('appForm').addEventListener('submit', async e => {
     metadata: Object.fromEntries(Object.entries(metaIds).map(([k, id]) => [k, $(id).value])),
   };
   if (deployTouched) app.deploy = readDeploy();
+  app.iconChange = iconChange; if (iconChange === 'set') app.icon = editorIcon;
   const r = await api('/api/app-save', { originalName: editingName, version: editingVersion, app });
   if (!r.ok) { const p = $('appError'); p.textContent = r.error; p.hidden = false; return; }
   $('dlgApp').close();
@@ -216,15 +330,28 @@ $('btnAppHistory').addEventListener('click', async () => {
   $('histRows').replaceChildren(...r.backups.map(b => el('tr', {},
     el('td', { text: b.when }),
     el('td', { text: b.changed.length ? b.changed.map(c => fieldLabel[c] || c).join(', ') : 'nothing - same as now' }),
-    el('td', {}, el('button', { class: 'btn small', text: 'Restore', title: b.changed.length ? 'Put this version back as the app\'s file' : 'Same as the app is now - nothing to restore', disabled: !b.changed.length, onclick: async () => {
+    el('td', { class: 'act' }, el('button', { class: 'btn small', text: 'Compare', title: 'What the save at that time changed, and that version next to now', onclick: () => compareVersion(name, b) }), ' ', el('button', { class: 'btn small', text: 'Restore', title: b.changed.length ? 'Put this version back as the app\'s file' : 'Same as the app is now - nothing to restore', disabled: !b.changed.length, onclick: async () => {
       if (!(await ask(`Restore ${name} as it was on ${b.when}?\n\nOnly the catalog changes - Deploy or Push sends it to Intune. The current version is kept as a copy, so this can be undone the same way.`, { ok: 'Restore', danger: false }))) return;
       const x = await api('/api/app-restore', { name, id: b.id });
       if (!x.ok) { toast(x.error, true); return; }
       toast(`${name} restored to ${b.when}.`);
       $('dlgHistory').close(); $('dlgApp').close(); await loadApps(); openEditor(x.name);
     } })))));
+  $('histCompare').hidden = true;
   $('dlgHistory').showModal();
 });
+async function compareVersion(name, b) {
+  const r = await api('/api/app-compare', { name, id: b.id });
+  if (!r.ok) { toast(r.error, true); return; }
+  const rows = list => list.map(c => ({ app: '', field: c.field, old: c.old, new: c.new }));
+  $('histCmpTitle').textContent = `What the save on ${r.when} changed`;
+  previewTable($('histSave'), rows(r.thatSave), 'Nothing - that save left the file as it was.', { ...fieldNames, appName: 'Name', appId: 'App ID', wingetId: 'Winget ID', icon: 'Icon', supersedes: 'Supersedence', detectionRule: 'Detection rule', appVersion: 'App version', isFeatured: 'Featured' });
+  previewTable($('histNow'), rows(r.versusNow).map(x => ({ ...x })), 'The same as now.', { ...fieldNames, appName: 'Name', appId: 'App ID', wingetId: 'Winget ID', icon: 'Icon', supersedes: 'Supersedence', detectionRule: 'Detection rule', appVersion: 'App version', isFeatured: 'Featured' });
+  for (const th of $('histNow').querySelectorAll('th')) { if (th.textContent === 'Now') th.textContent = 'That version'; else if (th.textContent === 'New') th.textContent = 'Now'; }
+  for (const th of $('histSave').querySelectorAll('th')) { if (th.textContent === 'Now') th.textContent = 'Before'; else if (th.textContent === 'New') th.textContent = 'After'; }
+  $('histCompare').hidden = false;
+  $('histCompare').scrollIntoView({ block: 'nearest' });
+}
 $('btnRemoveApp').addEventListener('click', async () => {
   if (!(await ask(`Remove "${editingName}" from the catalog?\n\nOnly the catalog changes - nothing in Intune. A copy of its file goes to the Backups folder.`))) return;
   const r = await api('/api/app-remove', { name: editingName });
@@ -322,6 +449,10 @@ $('btnCatalog').addEventListener('click', async e => {
   setEnabled(catMenu.querySelector('[data-cact=undo]'), !!undoInfo, 'Nothing to undo - no bulk change since the app started.');
   setEnabled(catMenu.querySelector('[data-cact=replace]'), apps.some(a => (a.groups || []).length), 'No app is assigned to a group.');
   setEnabled(catMenu.querySelector('[data-cact=export]'), apps.length > 0, 'The catalog is empty.');
+  const conn = !!(state && state.configured);
+  setEnabled(catMenu.querySelector('[data-cact=tenantsetup]'), conn && apps.length > 0, conn ? 'The catalog is empty.' : 'Set up the connection in Settings first.');
+  setEnabled(catMenu.querySelector('[data-cact=overview]'), conn && apps.some(a => a.hasAppId), conn ? 'No app in the catalog is in Intune yet.' : 'Set up the connection in Settings first.');
+  setEnabled(catMenu.querySelector('[data-cact=wingetcheck]'), apps.some(a => a.wingetId), 'No app in the catalog has a Winget ID.');
   const r = $('btnCatalog').getBoundingClientRect();
   placeMenu(catMenu, r.right - 240, r.bottom + 4);
 });
@@ -330,7 +461,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !catMenu.h
 catMenu.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   catMenu.hidden = true;
-  ({ export: exportCsv, import: openCsvImport, replace: () => openReplace({}), undo: undoLast,
+  ({ export: exportCsv, import: openCsvImport, replace: () => openReplace({}), undo: undoLast, tenantsetup: openTenantSetup, overview: openOverview, wingetcheck: checkWingetVersions,
     reload: () => { loadApps(); loadState(); }, folder: () => openFolder('catalog-folder') })[b.dataset.cact]();
 });
 // Apps whose App ID the connected tenant doesn't know: a banner says so, with one button for all of them.
@@ -433,6 +564,9 @@ function fillDeploy(d) {
   $('xCodes').value = (d.returnCodes || []).map(c => `${c.returnCode} = ${c.type}`).join('\n');
   const deps = new Set(d.dependencies || []);
   appPicker($('xDeps'), editorApps, deps, 'data-dep', 'None - this app installs on its own.');
+  $('xSupSet').checked = !!d.supersedesSet;
+  $('xSup').replaceChildren(...(d.supersedes || []).map(s => supRow(s)));
+  showSupState();
 }
 $('deploySec').addEventListener('input', () => { deployTouched = true; });
 $('deploySec').addEventListener('change', () => { deployTouched = true; });
@@ -448,6 +582,7 @@ function readDeploy() {
     allowAvailableUninstall: $('xUninstall').checked,
     returnCodes: lines('xCodes').map(l => { const m = /^(-?\d+)\s*[=:]\s*(\w+)$/.exec(l); return m ? { returnCode: m[1], type: m[2] } : { returnCode: l, type: '' }; }),
     dependencies: [...document.querySelectorAll('[data-dep]')].filter(c => c.checked).map(c => c.dataset.dep),
+    supersedesSet: $('xSupSet').checked, supersedes: readSupersedence(),
   };
 }
 
@@ -465,8 +600,9 @@ function deployProgress() {
   $('deployBar').style.width = (ready.length ? Math.round(100 * res.length / ready.length) : 0) + '%';
   $('deployProgressText').textContent = `${res.length} of ${ready.length}` + [[n('ok'), 'done'], [n('failed'), 'failed'], [n('skipped'), 'skipped'], [n('stopped'), 'not started']].filter(x => x[0]).map(x => ` - ${x[0]} ${x[1]}`).join('');
 }
-$('btnDeploy').addEventListener('click', async () => {
-  const r = await api('/api/deploy-plan', { names: [...selected] });
+$('btnDeploy').addEventListener('click', () => openDeploy([...selected]));
+async function openDeploy(names) {
+  const r = await api('/api/deploy-plan', { names });
   if (!r.ok) { toast(r.error, true); return; }
   deployPlan = r.apps; deployResults = {};
   $('deployRows').replaceChildren(...deployPlan.map(a => el('tr', { 'data-name': a.name },
@@ -479,7 +615,7 @@ $('btnDeploy').addEventListener('click', async () => {
   $('btnDeployGo').textContent = n === 1 ? 'Deploy 1 app' : `Deploy ${n} apps`;
   $('btnDeployGo').disabled = n === 0;
   $('dlgDeploy').showModal();
-});
+}
 // One app: deploy, then push its groups when the step asks for it. Resolves with whether the deploy worked.
 function deployOne(name) {
   return new Promise(resolve => {
@@ -599,11 +735,11 @@ const fieldNames = { requiredFor: 'Required', availableFor: 'Available', uninsta
 function previewTable(box, changes, empty, labels = fieldNames) {
   if (!changes.length) { box.replaceChildren(el('p', { class: 'muted', text: empty })); box.hidden = false; return; }
   let last = '';
-  const shown = changes.slice(0, 400);
+  const shown = changes.slice(0, 400), withApp = changes.some(c => c.app);
   box.replaceChildren(el('div', { class: 'tablewrap short' }, el('table', { class: 'plan' },
-    el('thead', {}, el('tr', {}, el('th', { text: 'App' }), el('th', { text: 'Field' }), el('th', { text: 'Now' }), el('th', { text: 'New' }))),
-    el('tbody', {}, ...shown.map(c => { const first = c.app !== last; last = c.app; return el('tr', { class: first ? 'first' : '' },
-      el('td', { class: 'name', text: first ? c.app : '' }), el('td', { text: labels[c.field] || c.field }),
+    el('thead', {}, el('tr', {}, withApp ? el('th', { text: 'App' }) : '', el('th', { text: 'Field' }), el('th', { text: 'Now' }), el('th', { text: 'New' }))),
+    el('tbody', {}, ...shown.map(c => { const first = withApp && c.app !== last; last = c.app; return el('tr', { class: first ? 'first' : '' },
+      withApp ? el('td', { class: 'name', text: first ? c.app : '' }) : '', el('td', { text: labels[c.field] || c.field }),
       el('td', { class: 'chg rem', text: c.old || '(empty)' }), el('td', { class: 'chg add', text: c.new || '(empty)' })); })))),
     changes.length > shown.length ? el('p', { class: 'muted', text: `... and ${changes.length - shown.length} more changes.` }) : '');
   box.hidden = false;
@@ -687,7 +823,8 @@ function openMenu(x, y) {
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
   const enable = { package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
-    replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any };
+    replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any,
+    takeversion: sel.some(a => a.wingetVersion && a.newerOnWinget) };
   const why = {
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
@@ -695,6 +832,7 @@ function openMenu(x, y) {
     replacegroup: any ? 'None of the selected apps is assigned to a group.' : 'Select one or more apps first.',
     copyid: 'None of the selected apps has an App ID.', clearid: 'None of the selected apps has an App ID.',
     delete: 'None of the selected apps is in Intune.', remove: 'Select one or more apps first.',
+    takeversion: apps.some(a => a.wingetVersion) ? 'winget offers nothing newer for the selected apps.' : 'Ask winget first: Catalog > Check winget for new versions.',
   };
   for (const b of menu.querySelectorAll('button')) setEnabled(b, !!enable[b.dataset.act], why[b.dataset.act]);
   menu.querySelector('[data-act=package]').textContent = !any ? 'Package every app with its own installer' : enable.package ? `Package ${sel.length > 1 ? 'the selected apps' : 'this app'} (build .intunewin)` : 'Package (Winget apps use the shared package)';
@@ -741,6 +879,16 @@ async function menuAction(act) {
     case 'removegroups': openGroupsBatch('remove', names); break;
     case 'status': openStatus(one.name); break;
     case 'replacegroup': openReplace({ names }); break;
+    case 'takeversion': {
+      const take = sel().filter(a => a.newerOnWinget);
+      if (!(await ask(`Take winget's version for ${take.length} app${take.length === 1 ? '' : 's'}?\n\n${take.map(a => `${a.name}: ${a.version || '(none)'} → ${a.wingetVersion}`).join('\n')}\n\nThe App version in the catalog changes - what Intune and the Company Portal show once you push settings. Winget apps always install winget's newest anyway. Undo takes it back.`, { ok: 'Take version', danger: false }))) return;
+      const r = await api('/api/winget-take-version', { names: take.map(a => a.name) });
+      if (!r.ok) { toast(r.error, true); return; }
+      toast(`App version updated on ${r.changed.length} app(s).${r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : ''}`);
+      await loadApps();
+      if (r.deployed.length && await ask(`Push the settings of the ${r.deployed.length} deployed app(s) now?\n\n${r.deployed.join('\n')}`, { ok: 'Push settings', danger: false })) pushSettings(r.deployed);
+      break;
+    }
     case 'copyid': {
       const ids = sel().filter(a => a.hasAppId).map(a => a.appId);
       try { await navigator.clipboard.writeText(ids.join('\n')); toast(ids.length > 1 ? `Copied ${ids.length} App IDs.` : 'Copied ' + ids[0]); } catch (err) { toast('Could not copy: ' + ids.join(', '), true); }
@@ -908,3 +1056,88 @@ $('btnCsvGo').addEventListener('click', async () => {
   $('btnCsvGo').textContent = 'Done';
   if (grp.length && await ask(`Push groups for the ${grp.length} deployed app(s) whose groups changed?\n\n${grp.join('\n')}`, { ok: 'Push groups', danger: false })) { $('dlgCsv').close(); openPushGroups(grp); }
 });
+
+// ---------------------------------------------------------------- winget: newest versions
+async function checkWingetVersions() {
+  const n = apps.filter(a => a.wingetId).length;
+  toast(`Asking winget about ${n} app(s) - about a second each...`);
+  const r = await api('/api/checks-winget', {});
+  if (!r.ok) { toast(r.error, true); return; }
+  await loadApps();
+  const newer = apps.filter(a => a.newerOnWinget).length;
+  toast(newer ? `winget offers a newer version for ${newer} app(s) - showing them.` : 'No app has a newer version on winget than the catalog records.');
+  if (newer) { $('filter').value = 'newer'; renderApps(); updateViewButtons(); }
+}
+
+// ---------------------------------------------------------------- set up this tenant
+let tsData = null;
+async function openTenantSetup() {
+  if (!$('dlgTenantSetup').open) $('dlgTenantSetup').showModal();
+  $('tsSteps').replaceChildren(el('li', { class: 'muted', text: 'Reading the tenant...' }));
+  const r = await api('/api/tenant-setup');
+  if (!r.ok) { $('tsSteps').replaceChildren(el('li', { class: 'formerror', text: r.error })); return; }
+  tsData = r;
+  const list = names => names.length ? el('details', {}, el('summary', { text: names.length > 1 ? `the ${names.length} apps` : names[0] }), el('p', { class: 'muted', text: names.join(', ') })) : '';
+  const glist = names => names.length ? el('details', {}, el('summary', { text: `the ${names.length} group${names.length === 1 ? '' : 's'}` }), el('p', { class: 'muted', text: names.join(', ') })) : '';
+  const step = (n, title, todo, doneText, text, more, btnText, btnTitle, action) => {
+    const b = todo ? el('button', { class: 'btn' + (n === firstTodo ? ' primary' : ''), text: btnText, title: btnTitle, onclick: action }) : '';
+    return el('li', { class: 'ts ' + (todo ? (n === firstTodo ? 'next' : 'todo') : 'done') },
+      el('span', { class: 'tsmark', 'aria-hidden': 'true', text: todo ? String(n) : '✓' }),
+      el('div', { class: 'tsbody' }, el('h3', {}, title, el('span', { class: 'sr', text: todo ? ' - to do' : ' - done' })), el('p', { class: 'sub', text: todo ? text : doneText }), todo ? more : ''),
+      el('div', { class: 'tsact' }, b));
+  };
+  const todo = [r.stale.length, r.missingGroups.length, r.notDeployed.length, r.pushGroups.length];
+  const firstTodo = todo.findIndex(x => x > 0) + 1;
+  $('tsText').textContent = firstTodo ? `${r.apps} apps in the catalog. What the connected tenant still needs, in order - each step asks or previews before it changes anything.` : `All ${r.apps} apps are set up in this tenant.`;
+  $('tsSteps').replaceChildren(
+    step(1, 'Clear App IDs from another tenant', r.stale.length, 'No App ID points at an app this tenant doesn\'t have.',
+      `${r.stale.length} app${r.stale.length === 1 ? ' has an App ID' : 's have App IDs'} this tenant doesn't know. Clearing them (catalog only, Undo works) lets them be deployed here.`, list(r.stale),
+      `Clear ${r.stale.length} App ID${r.stale.length === 1 ? '' : 's'}`, 'Clear these App IDs in the catalog - Intune isn\'t touched', async () => {
+        if (!(await ask(`Clear ${r.stale.length} App ID(s) in the catalog?\n\nThey point at apps this tenant doesn't have. Settings, groups and packages stay. Undo takes it back.`, { ok: 'Clear App IDs', danger: false }))) return;
+        const x = await api('/api/clear-appids', { names: r.stale }); toast(x.ok ? `Cleared ${x.cleared.length} App ID(s).` : x.error, !x.ok); await loadApps(); openTenantSetup();
+      }),
+    step(2, 'Create the groups in Entra ID', r.missingGroups.length, r.groupsNote || 'Every group the catalog assigns to exists in Entra ID.',
+      `${r.missingGroups.length} group${r.missingGroups.length === 1 ? '' : 's'} the apps are assigned to ${r.missingGroups.length === 1 ? "doesn't" : "don't"} exist yet - an assignment to one reaches nobody.${r.groupsNote ? ' ' + r.groupsNote : ''}`, glist(r.missingGroups),
+      `Create ${r.missingGroups.length} group${r.missingGroups.length === 1 ? '' : 's'}`, 'Create them as empty security groups - add members on the Groups page', () => createGroups(r.missingGroups, () => openTenantSetup())),
+    step(3, 'Deploy the apps', r.notDeployed.length, 'Every app in the catalog is in Intune.',
+      `${r.notDeployed.length} app${r.notDeployed.length === 1 ? ' isn\'t' : 's aren\'t'} in Intune yet. Deploy shows which are ready (package, detection rule) and runs them in dependency order.`, list(r.notDeployed),
+      `Deploy ${r.notDeployed.length} app${r.notDeployed.length === 1 ? '' : 's'}...`, 'Opens Deploy for these apps - nothing starts until you confirm there', () => openDeploy(r.notDeployed)),
+    step(4, 'Push the groups', r.pushGroups.length, 'No deployed app has groups to push.',
+      `${r.pushGroups.length} deployed app${r.pushGroups.length === 1 ? ' has' : 's have'} groups in the catalog. Push groups shows what changes in Intune first - deploys that already pushed show "nothing to change".`, list(r.pushGroups),
+      'Push groups...', 'Compare the catalog\'s groups with Intune, then apply', () => openPushGroups(r.pushGroups)));
+}
+$('btnTsRefresh').addEventListener('click', openTenantSetup);
+$('btnTenantSetup').addEventListener('click', openTenantSetup);
+for (const d of ['dlgDeploy', 'dlgPush', 'dlgRun']) $(d).addEventListener('close', () => { if ($('dlgTenantSetup').open) openTenantSetup(); });
+
+// ---------------------------------------------------------------- install status of every app
+let ovRows = [];
+async function openOverview() {
+  if (!$('dlgOverview').open) $('dlgOverview').showModal();
+  $('ovRows').replaceChildren(el('tr', {}, el('td', { colspan: 8, class: 'muted', text: 'Reading Intune\'s install report...' })));
+  const r = await api('/api/install-overview');
+  if (!r.ok) { $('ovRows').replaceChildren(el('tr', {}, el('td', { colspan: 8, class: 'formerror', text: r.error }))); return; }
+  ovRows = r.rows.sort((a, b) => b.failed - a.failed || b.pending - a.pending || a.name.localeCompare(b.name));
+  const tot = k => ovRows.reduce((n, x) => n + x[k], 0);
+  $('ovNote').textContent = `${ovRows.length} deployed apps, read at ${r.at}: ${tot('installed')} installed, ${tot('failed')} failed, ${tot('pending')} pending (devices).${r.note ? ' ' + r.note : ''}`;
+  renderOverview();
+}
+function renderOverview() {
+  const q = $('ovFilter').value.trim().toLowerCase(), failedOnly = $('ovFailedOnly').checked;
+  const rows = ovRows.filter(x => (!q || x.name.toLowerCase().includes(q)) && (!failedOnly || x.failed > 0));
+  $('ovCount').textContent = `${rows.length} of ${ovRows.length}`;
+  const num = (v, cls) => el('td', { class: 'num' + (v && cls ? ' ' + cls : ''), text: String(v) });
+  $('ovRows').replaceChildren(...(rows.length ? rows.map(x => {
+    const all = x.installed + x.failed + x.pending + x.notInstalled;
+    // Widths through the DOM: the page's CSP refuses style attributes.
+    const seg = (v, cls) => { if (!all || !v) return ''; const s = el('span', { class: cls }); s.style.width = (100 * v / all).toFixed(1) + '%'; return s; };
+    return el('tr', {}, el('td', { class: 'name', text: x.name }),
+      ...(x.known ? [num(x.installed, 'ok'), num(x.failed, 'err'), num(x.pending, 'info'), num(x.notInstalled), num(x.notApplicable)]
+        : [el('td', { colspan: 5, class: 'muted', text: 'Intune had no counts for this app.' })]),
+      el('td', {}, x.known && all ? el('span', { class: 'ovbar', title: `${x.installed} installed, ${x.failed} failed, ${x.pending} pending, ${x.notInstalled} not installed` }, seg(x.installed, 'ok'), seg(x.failed, 'err'), seg(x.pending, 'info'), seg(x.notInstalled, 'none')) : ''),
+      el('td', { class: 'act' }, el('button', { class: 'btn small', text: 'Devices...', title: 'Every device\'s state for this app', onclick: () => openStatus(x.name) })));
+  }) : [el('tr', {}, el('td', { colspan: 8, class: 'muted', text: ovRows.length ? 'No app matches.' : 'No deployed app.' }))]));
+}
+$('ovFilter').addEventListener('input', renderOverview);
+$('ovFailedOnly').addEventListener('change', renderOverview);
+$('btnOvRefresh').addEventListener('click', openOverview);

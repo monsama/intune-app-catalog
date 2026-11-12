@@ -107,7 +107,7 @@ function Invoke-GraphRequestDetailed {
         }
         catch {
             $isThrottled = $_.Exception.Message -match '429|TooManyRequests|Too Many Requests'
-            $isTransient = $_.Exception.Message -match '503|ServiceUnavailable|Service Unavailable'
+            $isTransient = $_.Exception.Message -match '502|503|504|BadGateway|Bad Gateway|ServiceUnavailable|Service Unavailable|GatewayTimeout|Gateway Timeout'
             $safeToRetryTransient = $isTransient -and $Method -ne "POST"
             if (($isThrottled -or $safeToRetryTransient) -and $attempt -lt $maxAttempts) {
                 $waitSeconds = $attempt * $attempt * 3
@@ -216,7 +216,7 @@ try {
                 }
                 catch {
                     $isThrottled = $_.Exception.Message -match '429|TooManyRequests|Too Many Requests'
-                    $isTransient = $_.Exception.Message -match '503|ServiceUnavailable|Service Unavailable'
+                    $isTransient = $_.Exception.Message -match '502|503|504|BadGateway|Bad Gateway|ServiceUnavailable|Service Unavailable|GatewayTimeout|Gateway Timeout'
                     $safeToRetryTransient = $isTransient -and $Method -ne "POST"
                     if (($isThrottled -or $safeToRetryTransient) -and $attempt -lt $maxAttempts) {
                         Start-Sleep -Seconds ($attempt * $attempt * 3)

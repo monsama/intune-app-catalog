@@ -55,6 +55,7 @@
           <option value="pkgmissing">Package missing</option>
           <option value="winget">Winget apps</option>
           <option value="custom">Own package</option>
+          <option value="newer">Newer on winget</option>
         </optgroup>
         <optgroup label="Saved views" id="savedViews"></optgroup>
       </select>
@@ -72,6 +73,7 @@
     <div class="banner warn" id="tenantBanner" role="region" aria-label="App IDs not in this tenant" hidden>
       <span id="tenantBannerText"></span>
       <span class="spacer"></span>
+      <button class="btn small" id="btnTenantSetup" title="Clear the old App IDs, create the groups, deploy and push groups - step by step">Set up this tenant...</button>
       <button class="btn small" id="btnTenantShow" title="Show only the apps whose App ID this tenant doesn't know">Show them</button>
       <button class="btn small" id="btnTenantClear" title="Clear their App IDs in the catalog - Intune isn't touched; they can then be deployed here">Clear their App IDs</button>
     </div>
@@ -433,6 +435,7 @@
   <button role="menuitem" data-act="status" title="Every device's install state for this app, from Intune">Install status...</button>
   <hr>
   <button role="menuitem" data-act="batchedit" title="Change the same fields on all selected apps in the catalog">Batch edit...</button>
+  <button role="menuitem" data-act="takeversion" title="Use the version winget offers as the App version (from the last Check winget for new versions)">Take winget's version</button>
   <button role="menuitem" data-act="addgroups" title="Add groups to all selected apps in the catalog">Add groups...</button>
   <button role="menuitem" data-act="removegroups" title="Remove groups from all selected apps in the catalog">Remove groups...</button>
   <button role="menuitem" data-act="replacegroup" title="Swap one group for another on the selected apps, in every role">Replace a group...</button>
@@ -444,6 +447,10 @@
   <button role="menuitem" data-act="remove" class="danger" title="Remove the app from the catalog only - Intune keeps it">Remove from catalog...</button>
 </div>
 <div class="menu" id="catalogMenu" role="menu" hidden>
+  <button role="menuitem" data-cact="tenantsetup" title="What the connected tenant still needs for the catalog - groups, deploys, group pushes - step by step">Set up this tenant...</button>
+  <button role="menuitem" data-cact="overview" title="Installed, failed and pending devices for every deployed app, from Intune">Install status of every app...</button>
+  <button role="menuitem" data-cact="wingetcheck" title="Ask winget for the newest version of every Winget app - then filter Newer on winget">Check winget for new versions</button>
+  <hr>
   <button role="menuitem" data-cact="export" title="Every app as one row - open it in Excel, change cells, import it again">Export to CSV</button>
   <button role="menuitem" data-cact="import" title="Read a CSV edited in Excel: shows every change first, then applies it to the catalog">Import from CSV...</button>
   <hr>
@@ -494,8 +501,14 @@
 <dialog id="dlgHistory" class="wide">
   <h2 id="histTitle">Earlier versions</h2>
   <p class="sub">A copy is kept every time the app's file is saved or removed (Settings &gt; Folders &gt; Catalog backups). Restoring keeps the current version as a copy too.</p>
-  <div class="tablewrap short"><table class="plan"><thead><tr><th>Saved</th><th title="What is different in that copy compared with the app as it is now">Differs in</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="histRows"></tbody></table></div>
+  <div class="tablewrap short"><table class="plan"><thead><tr><th>Saved</th><th title="What is different in that copy compared with the app as it is now">Differs from now in</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="histRows"></tbody></table></div>
   <p class="sub" id="histNote"></p>
+  <div id="histCompare" hidden>
+    <h3 id="histCmpTitle"></h3>
+    <div class="preview" id="histSave"></div>
+    <h3>That version compared with now</h3>
+    <div class="preview" id="histNow"></div>
+  </div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
 <dialog id="dlgAsk" class="ask" aria-labelledby="askTitle">
@@ -513,6 +526,15 @@
         <label>Name<input id="aName" required autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label title="The winget package ID, e.g. 7zip.7zip. Empty for an app with its own installer. Find... searches winget.">Winget ID <span class="muted">(empty for an app with its own package)</span><span class="inputrow"><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip" autocorrect="off" autocapitalize="off"><button type="button" class="btn" id="btnFindWinget" title="Search winget for the package">Find...</button></span></label>
         <label title="The Intune app this catalog entry is linked to. Set by Deploy, or by Checks when it links an existing app.">App ID in Intune <span class="muted">(empty until it's deployed)</span><input id="aAppId" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <div class="iconrow" role="group" aria-labelledby="aIconLabel">
+          <span class="lbl" id="aIconLabel">Icon <span class="muted">(Intune and the Company Portal)</span></span>
+          <img id="aIcon" class="appicon big" alt="The app's icon" hidden>
+          <span class="noicon" id="aIconNone" aria-hidden="true">?</span>
+          <button type="button" class="btn small" id="btnIconPick" title="A PNG or JPEG of at most 750 KB - square, 256 x 256 or larger, looks best">Choose image...</button>
+          <button type="button" class="btn small" id="btnIconIntune" title="Take the icon this app has in Intune">From Intune</button>
+          <button type="button" class="btn small" id="btnIconRemove" title="No icon in the catalog - Intune keeps the one it has">Remove</button>
+          <input type="file" id="aIconFile" accept="image/png,image/jpeg" hidden>
+        </div>
         <h3>Assignments <span class="muted">(one group per line)</span></h3>
         <div class="groups4">
           <label title="Installed automatically on these groups' devices.">Required<textarea autocomplete="off" id="gRequired" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
@@ -539,7 +561,7 @@
       </section>
     </div>
     <details class="deploysec" id="deploySec">
-      <summary>Deploy settings <span class="muted">- detection rule, requirements, return codes, dependencies</span></summary>
+      <summary>Deploy settings <span class="muted">- detection rule, requirements, return codes, dependencies, supersedence</span></summary>
       <div class="formgrid">
         <section>
           <h3>Detection rule</h3>
@@ -554,6 +576,10 @@
           <div data-det="File Registry"><label class="chk"><input type="checkbox" id="x32">Check the 32-bit location on 64-bit Windows</label></div>
           <h3>Dependencies <span class="muted">(installed first)</span></h3>
           <div class="depbox" id="xDeps"></div>
+          <h3>Supersedence <span class="muted">(older apps this one replaces)</span></h3>
+          <label class="chk" title="Unticked, the catalog leaves whatever Intune has for this app alone"><input type="checkbox" id="xSupSet">Set supersedence from the catalog</label>
+          <div class="suplist" id="xSup"></div>
+          <button type="button" class="btn small" id="btnSupAdd" title="One more app this one supersedes (at most 10)">Add an app</button>
         </section>
         <section>
           <h3>Requirements</h3>
@@ -668,6 +694,25 @@
   <p class="sub" id="sStatusSummary"></p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>Device</th><th>User</th><th>State</th><th>Output</th><th>Error</th><th>Last run</th></tr></thead><tbody id="sStatusRows"></tbody></table></div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgTenantSetup" class="wide">
+  <h2>Set up this tenant</h2>
+  <p class="sub" id="tsText">What the connected tenant still needs for the catalog, in the order to do it. Each step asks or previews before it changes anything.</p>
+  <ol class="tsteps" id="tsSteps"></ol>
+  <div class="actions end"><button class="btn" id="btnTsRefresh" title="Read the tenant again">Check again</button><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgOverview" class="wide">
+  <h2>Install status of every app</h2>
+  <p class="sub" id="ovNote">Devices per deployed app, from Intune's install report.</p>
+  <div class="toolbar tight">
+    <input type="search" id="ovFilter" placeholder="Filter apps" aria-label="Filter the apps" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+    <label class="chk inline"><input type="checkbox" id="ovFailedOnly">Only apps with failures</label>
+    <span class="count" id="ovCount"></span>
+  </div>
+  <div class="tablewrap short"><table class="plan ov"><thead><tr><th>App</th><th class="num" title="Devices where the app is installed">Installed</th><th class="num" title="Devices where installing failed">Failed</th><th class="num" title="Devices waiting to install">Pending</th><th class="num" title="Devices it is assigned to but not installed on, without an error">Not installed</th><th class="num" title="Devices the requirements rule out">Not applicable</th><th><span class="sr">Share</span></th><th><span class="sr">Actions</span></th></tr></thead><tbody id="ovRows"></tbody></table></div>
+  <div class="actions end"><button class="btn" id="btnOvRefresh" title="Read the report from Intune again">Read again</button><button class="btn" data-close>Close</button></div>
 </dialog>
 
 <dialog id="dlgReplace">
