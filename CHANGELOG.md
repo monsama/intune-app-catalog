@@ -1,5 +1,49 @@
 # Changelog
 
+## 2.0.9
+
+### Fixed
+
+- **The "Open ... folder" buttons seemed to do nothing.** Explorer opened,
+  but behind the app window: Windows doesn't let a background process, the
+  app's server, bring a new window to the front.
+  - Now the folder is opened through Windows' Shell and its Explorer window
+    is brought forward; one already showing the folder is reused.
+  - Every folder button says what it opened, or why it couldn't. Two of
+    them used to ignore errors.
+
+### Added
+
+- **Buy me a coffee:** a small coffee-cup button at the top right, like the
+  one in NOBS. It opens https://buymeacoffee.com/monsama in your own
+  browser.
+
+### Changed
+
+- **The setup guide is a stepper.**
+  - **Five steps** that tick themselves off: app registration, IDs,
+    certificate, permissions, Test connection.
+  - **Progress:** the next open step is highlighted, and the heading shows
+    "2 of 5 done", or "Setup complete".
+  - **Each step has its own button:** Open App registrations, Go to
+    Connection, Use an existing one / Create new / Upload, Add required
+    permissions, Test connection.
+  - **How a step counts as done:** from the filled-in fields, the
+    certificate on this machine, and the last Test connection (remembered
+    in this browser).
+  - **"Getting started"** shows the three situations as rows, each with its
+    own button: Run Checks, Add app, Open Checks.
+
+- **Using a certificate you already have is easier to find.** Settings >
+  Certificate has **Use an existing one...** next to "Create new
+  certificate...". It opens the same picker as Choose... in Connection.
+  - The picker lists certificates from your user store (CurrentUser\My)
+    and the machine store (LocalMachine\My) that can sign in: with a
+    private key, and not expired.
+  - It also says how many it left out and why (expired, no private key),
+    so an empty list explains itself.
+  - The choices are proper buttons, so the keyboard works too.
+
 ## 2.0.8
 
 ### Fixed

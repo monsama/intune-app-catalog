@@ -28,6 +28,7 @@
   </nav>
   <div class="topright">
     <span class="conn" id="connBadge" title="Graph connection"></span>
+    <button class="btn ghost iconbtn" id="btnCoffee" aria-label="Buy me a coffee" title="Buy me a coffee, if Intune App Catalog saved you some time"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M17 11h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M8 3v3M12 3v3"/></svg></button>
     <button class="btn ghost" id="btnTheme" title="Switch between light and dark">Dark mode</button>
   </div>
 </header>
@@ -209,25 +210,30 @@
         <article class="card" id="guideCard">
           <h2>Setup guide</h2>
           <details id="guideReg">
-            <summary>First time: the Entra ID app registration</summary>
-            <p class="sub">Once per tenant. An administrator does it in the Entra admin center - deliberately by hand, through the portal's own review screens.</p>
-            <ol class="guide">
-              <li>In <b>App registrations</b>, create a registration (or use one your organization approved for this).</li>
-              <li>Copy its <b>Application (client) ID</b> and <b>Directory (tenant) ID</b> into Connection above.</li>
-              <li><b>Certificate:</b> Create new certificate (or Choose an existing one), then <b>Upload this certificate</b> - or upload the .cer from the certificates folder in the portal yourself.</li>
-              <li><b>API permissions:</b> Add required permissions adds them as <i>Application</i> permissions (not Delegated). Then an admin presses <b>Grant admin consent</b> in Entra.</li>
-              <li><b>Test connection</b> - the checklist says what is still missing.</li>
-            </ol>
-            <div class="actions"><button class="btn" id="btnGuideEntra" title="Open entra.microsoft.com in your browser">Open the Entra admin center</button></div>
+            <summary>First time: the Entra ID app registration <span class="guidestate" id="guideState"></span></summary>
+            <p class="sub">Once per tenant, by an administrator, by hand in the Entra admin center - each step has its button here.</p>
+            <ol class="steps" id="setupSteps"></ol>
           </details>
           <details id="guideStart">
             <summary>Getting started: catalog and Intune</summary>
-            <p class="sub">The catalog is a folder of one JSON file per app. It and Intune match once you make them match:</p>
-            <ul class="guide">
-              <li><b>Intune has apps, the catalog is empty:</b> Checks lists every app in Intune that isn't in the catalog - tick them and <b>Add to catalog</b>. Their settings and groups come along.</li>
-              <li><b>The catalog has apps, Intune doesn't:</b> <b>Add app</b> (Find... looks up the Winget ID), set the groups, then <b>Deploy</b> - several at once, in dependency order. An app with its own installer needs More &gt; Package and a detection rule (the editor's Deploy settings) first.</li>
-              <li><b>Keeping them in step:</b> Checks finds every difference - renamed apps, settings, groups, dependencies, unknown assignments, Winget IDs - each with its fix: <b>Pull</b> if Intune is right, <b>Push</b> if the catalog is.</li>
-            </ul>
+            <p class="sub">The catalog is a folder of one JSON file per app. Pick where you start:</p>
+            <div class="tiles">
+              <section class="tile">
+                <span class="ico" aria-hidden="true">&#8681;</span><h3>Intune has apps, the catalog is empty</h3>
+                <p>Checks lists every app in Intune that isn't in the catalog - tick them and <b>Add to catalog</b>. Their settings and groups come along.</p>
+                <button class="btn" id="tileChecks" title="Open Checks and compare the catalog with Intune">Run Checks</button>
+              </section>
+              <section class="tile">
+                <span class="ico" aria-hidden="true">&#8679;</span><h3>The catalog has apps, Intune doesn't</h3>
+                <p><b>Add app</b> (Find... looks up the Winget ID), set the groups, then <b>Deploy</b> - several at once, in dependency order. Apps with their own installer need More &gt; Package and a detection rule first.</p>
+                <button class="btn" id="tileAdd" title="Open the app editor for a new app">Add app</button>
+              </section>
+              <section class="tile">
+                <span class="ico" aria-hidden="true">&#8644;</span><h3>Keeping them in step</h3>
+                <p>Checks finds every difference - renamed apps, settings, groups, dependencies, unknown assignments, Winget IDs - each with its fix: <b>Pull</b> if Intune is right, <b>Push</b> if the catalog is.</p>
+                <button class="btn" id="tileDiff" title="Open the Checks page">Open Checks</button>
+              </section>
+            </div>
           </details>
         </article>
 
@@ -290,6 +296,7 @@
           <h2>Certificate</h2>
           <p class="sub">On this machine</p>
           <div class="actions">
+            <button class="btn" id="btnUseCert" title="Pick a certificate that is already in your user store or the machine store">Use an existing one...</button>
             <button class="btn" id="btnNewCert" title="Create a self-signed certificate on this machine for the app registration">Create new certificate...</button>
             <button class="btn ghost" id="btnCertFolder" title="Open the folder with the exported .cer files in Explorer">Open certificates folder</button>
             <button class="btn ghost" id="btnCertsLocal" title="List this machine's certificates and delete one you no longer need">Delete one...</button>
@@ -374,8 +381,9 @@
 <!-- ============ dialogs ============ -->
 <dialog id="dlgPickCert">
   <h2>Choose a certificate</h2>
-  <p class="sub">Certificates on this machine with a private key that hasn't expired.</p>
+  <p class="sub">From your user store (CurrentUser\My) and the machine store (LocalMachine\My) - those with a private key that haven't expired, because only those can sign in.</p>
   <ul class="picklist" id="certList"></ul>
+  <p class="sub" id="certHidden" hidden></p>
   <div class="actions end"><button class="btn" data-close>Cancel</button></div>
 </dialog>
 

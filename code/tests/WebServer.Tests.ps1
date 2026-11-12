@@ -122,6 +122,8 @@ try {
     $choice = Invoke-Api '/api/permission-choice'
     Check ($choice.ok -and @($choice.required.name) -contains 'DeviceManagementApps.ReadWrite.All') 'permission choice: the required permissions'
     Check ((Invoke-Api '/api/open' @{ target = 'calc.exe' }).ok -eq $false) 'open: only its fixed targets'
+    $folderOpen = Invoke-Api '/api/open' @{ target = 'scripts-folder' }
+    Check (($folderOpen.ok -and $folderOpen.path) -or (-not $folderOpen.ok -and $folderOpen.error -like '*Explorer*')) 'open: a folder button answers with the folder it opened, or why it could not - never silence' ($folderOpen | ConvertTo-Json -Compress)
     Check ((Invoke-Api '/api/job-start' @{ mode = 'Anything'; tenantId = 'x'; clientId = 'y' }).ok -eq $false) 'job-start: only the known actions'
     Check ((Invoke-Api '/api/no-such-thing').error -eq 'unknown') 'an unknown route says so'
     $jobs = Invoke-Api '/api/jobs'
@@ -160,6 +162,8 @@ try {
     Check ($pq.ok -and @($pq.rows).Count -ge 1 -and $pq.module -eq 'Microsoft.Graph.Authentication') 'prerequisites: the module in each PowerShell' ($pq | ConvertTo-Json -Compress -Depth 4)
     Check (-not (Invoke-Api '/api/prereq-install' @{ exe = 'C:\Windows\System32\calc.exe' }).ok) 'prerequisites: installs only into a PowerShell it listed as missing the module'
     Check ((Invoke-Api '/api/certs-all').ok) 'certificates: the list on this machine (empty where there is no certificate store)'
+    $usable = Invoke-Api '/api/certs-local'
+    Check ($usable.ok -and $usable.PSObject.Properties.Name -contains 'expired' -and $usable.PSObject.Properties.Name -contains 'noKey') 'certificates: the picker says how many it left out, and why' ($usable | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/cert-delete-local' @{ thumbprint = '..\..\x'; store = 'CurrentUser' }).ok) 'certificates: a thumbprint that is not one is refused'
     Check (-not (Invoke-Api '/api/cert-delete-local' @{ thumbprint = ('A' * 40); store = 'Root' }).ok) 'certificates: only the two personal stores'
     $log = Invoke-Api '/api/log' @{ from = 0 }

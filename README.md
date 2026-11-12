@@ -114,7 +114,7 @@ app either way: it writes its step helpers at run time.
    ExchangeOnlineManagement, ...) away from the Microsoft Graph module they
    can clash with. The app window opens; closing it stops the app.
 3. **Settings > Connection**: fill in Tenant ID, Client ID and a
-   certificate (Create new certificate makes one), **Upload this
+   certificate (Use an existing one... picks one from your user or machine store; Create new certificate... makes one), **Upload this
    certificate**, **Add required permissions**, then have an admin grant
    consent in Entra, and **Test connection**. The setup guide on that page
    has the steps.

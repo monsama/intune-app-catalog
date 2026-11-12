@@ -10,7 +10,7 @@ function updateDirty() {
   const f = fields(), s = state.settings;
   $('dirtyNote').hidden = f.tenantId === (s.tenantId || '') && f.clientId === (s.clientId || '') && f.thumbprint === (s.thumbprint || '');
 }
-function setCertStatus(c) { const p = $('certStatus'); p.textContent = c ? c.text : ''; p.className = 'certstatus ' + (c ? c.level : ''); }
+function setCertStatus(c) { const p = $('certStatus'); p.textContent = c ? c.text : ''; p.className = 'certstatus ' + (c ? c.level : ''); if (typeof renderSetupSteps === 'function') renderSetupSteps(); }
 let certTimer = null;
 $('fThumb').addEventListener('input', () => {
   updateDirty(); clearTimeout(certTimer);
@@ -45,6 +45,7 @@ $('btnTest').addEventListener('click', async () => {
   if (!r.ok) { res.className = 'result error'; res.textContent = r.error; return; }
   res.className = 'result ' + r.level;
   res.textContent = r.summary + (r.conflict ? '\n\n' + r.conflict : '');
+  rememberTest(r);
   $('checklistCard').hidden = false;
   $('checklist').replaceChildren(...(r.checklist || []).map(c => el('li', { class: c.status },
     el('span', { class: 'mark', text: c.status === 'ok' ? '✓' : c.status === 'failed' ? '✕' : '–' }),
@@ -55,15 +56,23 @@ $('btnTest').addEventListener('click', async () => {
 });
 
 // certificate picker
-$('btnPickCert').addEventListener('click', async () => {
+async function pickCertificate() {
   const r = await api('/api/certs-local');
   if (!r.ok) { toast(r.error, true); return; }
   const list = $('certList');
-  list.replaceChildren(...(r.certificates.length ? r.certificates.map(c => el('li', {
-    onclick: () => { $('fThumb').value = c.thumbprint; $('fThumb').dispatchEvent(new Event('input')); $('dlgPickCert').close(); }
-  }, c.subject + '  ·  valid until ' + c.notAfter + ' (' + c.store + ')', el('span', { class: 't', text: c.thumbprint }))) : [el('li', { text: 'None found. Create one first.' })]));
+  list.replaceChildren(...(r.certificates.length ? r.certificates.map(c => el('li', {},
+    el('button', { type: 'button', class: 'pick', title: 'Use this certificate for the connection (Save keeps it)', onclick: () => {
+      $('fThumb').value = c.thumbprint; $('fThumb').dispatchEvent(new Event('input')); $('dlgPickCert').close();
+      toast('Certificate chosen - Test connection, then Save.');
+    } }, c.subject + '  ·  valid until ' + c.notAfter + ' (' + c.store + ')', el('span', { class: 't', text: c.thumbprint })))) :
+    [el('li', { class: 'muted', text: 'None that can sign in. Create one, or import yours into your user store (certmgr.msc > Personal) with its private key.' })]));
+  const hidden = [r.expired ? `${r.expired} expired` : '', r.noKey ? `${r.noKey} without a private key` : ''].filter(Boolean);
+  $('certHidden').textContent = hidden.length ? `Not shown: ${hidden.join(', ')} - Delete one... lists every certificate.` : '';
+  $('certHidden').hidden = !hidden.length;
   $('dlgPickCert').showModal();
-});
+}
+$('btnPickCert').addEventListener('click', pickCertificate);
+$('btnUseCert').addEventListener('click', pickCertificate);
 $('btnNewCert').addEventListener('click', () => $('dlgNewCert').showModal());
 $('btnNewCertGo').addEventListener('click', async () => {
   const r = await api('/api/cert-new', { subject: $('fSubject').value });
@@ -72,7 +81,7 @@ $('btnNewCertGo').addEventListener('click', async () => {
   $('fThumb').value = r.thumbprint; $('fThumb').dispatchEvent(new Event('input'));
   toast('Certificate created. Upload it to Entra next, then Save.');
 });
-$('btnCertFolder').addEventListener('click', () => api('/api/open', { target: 'certificates-folder' }));
+$('btnCertFolder').addEventListener('click', () => openFolder('certificates-folder'));
 for (const b of document.querySelectorAll('dialog [data-close]')) b.addEventListener('click', () => b.closest('dialog').close());
 
 // jobs: Entra actions that sign the user in, in a console window of their own
@@ -146,7 +155,45 @@ $('btnOpenEntra').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- settings: guide, prerequisites, diagnostics, local certificates
-$('btnGuideEntra').addEventListener('click', async () => { const r = await api('/api/open', { target: 'entra-home' }); if (!r.ok) toast(r.error, true); });
+// ---- Setup guide: five steps that tick themselves off from what the app
+// knows - the fields, the certificate on this machine, and the last Test
+// connection (remembered per browser: it's guidance, not state).
+let lastTest = null;
+try { lastTest = JSON.parse(localStorage.getItem('lastTest') || 'null'); } catch (e) { lastTest = null; }
+function rememberTest(r) {
+  const rows = r.checklist || [], row = re => rows.find(c => re.test(c.name));
+  const ok = c => !!(c && c.status === 'ok');
+  lastTest = { at: Date.now(), entra: ok(row(/Entra ID accepts/i)), perms: ok(row(/permissions/i)), all: rows.length > 0 && rows.every(c => c.status === 'ok') };
+  try { localStorage.setItem('lastTest', JSON.stringify(lastTest)); } catch (e) { }
+  renderSetupSteps();
+}
+function renderSetupSteps() {
+  const f = fields(), certOk = $('certStatus').classList.contains('ok'), t = lastTest || {};
+  const btn = (text, id, title) => el('button', { type: 'button', class: 'btn', text, title, onclick: () => $(id).click() });
+  const steps = [
+    { title: 'Create the app registration', text: 'In Entra ID > App registrations: a new registration, or one your organization approved for this.', done: !!(f.tenantId && f.clientId),
+      acts: [el('button', { type: 'button', class: 'btn', text: 'Open App registrations', title: 'Open the Entra admin center in your browser', onclick: async () => { const r = await api('/api/open', { target: 'entra-home' }); if (!r.ok) toast(r.error, true); } })] },
+    { title: 'Copy its IDs into Connection', text: 'The Application (client) ID and the Directory (tenant) ID.', done: !!(f.tenantId && f.clientId),
+      acts: [el('button', { type: 'button', class: 'btn', text: 'Go to Connection', title: 'Jump to the Tenant ID field', onclick: () => { $('fTenant').scrollIntoView({ block: 'center' }); $('fTenant').focus(); } })] },
+    { title: 'Give it a certificate', text: 'Use one from your user or machine store, or create one - then upload it to the app registration.', done: certOk && !!t.entra,
+      acts: [btn('Use an existing one...', 'btnUseCert', 'Pick a certificate from your user or machine store'), btn('Create new...', 'btnNewCert', 'Create a self-signed certificate on this machine'), btn('Upload to Entra', 'btnUpload', 'Add the chosen certificate to the app registration (you sign in)')] },
+    { title: 'Add the API permissions', text: 'As Application permissions (not Delegated) - then an admin presses Grant admin consent in Entra.', done: !!t.perms,
+      acts: [btn('Add required permissions...', 'btnAddPerms', 'Add the permissions to the app registration (you sign in)')] },
+    { title: 'Test the connection', text: 'Signs in with the settings above and lists anything still missing.', done: !!t.all,
+      acts: [btn('Test connection', 'btnTest', 'Sign in and check the permissions - nothing is changed')] },
+  ];
+  const current = steps.findIndex(s => !s.done);
+  $('setupSteps').replaceChildren(...steps.map((s, i) => el('li', { class: 'step' + (s.done ? ' done' : '') + (i === current ? ' current' : ''), 'aria-current': i === current ? 'step' : false },
+    el('span', { class: 'num', 'aria-hidden': 'true', text: s.done ? '✓' : String(i + 1) }),
+    el('div', {}, el('h3', {}, s.title, s.done ? el('span', { class: 'sr', text: ' (done)' }) : null), el('p', { text: s.text }), el('div', { class: 'acts' }, s.acts)))));
+  const doneCount = steps.filter(s => s.done).length;
+  $('guideState').textContent = doneCount === steps.length ? 'Setup complete' : `${doneCount} of ${steps.length} done`;
+  $('guideState').className = 'guidestate' + (doneCount === steps.length ? ' ok' : '');
+}
+for (const id of ['fTenant', 'fClient', 'fThumb']) $(id).addEventListener('input', () => setTimeout(renderSetupSteps, 0));
+$('tileChecks').addEventListener('click', () => { showView('checks'); $('btnRunChecks').click(); });
+$('tileAdd').addEventListener('click', () => { showView('apps'); $('btnAddApp').click(); });
+$('tileDiff').addEventListener('click', () => showView('checks'));
 let prereqRows = [];
 async function checkPrereqs() {
   $('btnPrereqCheck').disabled = true; $('prereqText').textContent = 'Checking each PowerShell (a few seconds)...';
