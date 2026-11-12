@@ -321,4 +321,20 @@ dialog.ask h2 { font-size: 15px; line-height: 1.4; }
 /* The top bar's buttons share one height, icon or text. */
 .topright .btn { height: 32px; display: inline-flex; align-items: center; padding-top: 0; padding-bottom: 0; }
 .iconbtn svg { display: block; }
+/* Picking apps (dependencies): chosen ones as chips, a filter, one app per row. */
+.depbox { border: 1px solid var(--bd); border-radius: var(--r-m); background: var(--surface); margin-top: 6px; overflow: hidden; }
+.depchips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; min-height: 40px; border-bottom: 1px solid var(--bd2); font-size: 13px; }
+.deplabel { font-size: 12px; color: var(--muted); margin-right: 2px; }
+.depchip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 2px 2px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--fg); font-size: 12px; }
+.depchip button { width: 20px; height: 20px; border: 0; border-radius: 50%; background: none; color: var(--muted); font: inherit; font-size: 14px; line-height: 1; cursor: pointer; }
+.depchip button:hover, .depchip button:focus-visible { background: var(--hover); color: var(--fg); }
+.depbox .depfilter { display: block; width: calc(100% - 20px); margin: 8px 10px; }
+.deprows { list-style: none; margin: 0; padding: 0 0 6px; max-height: 220px; overflow: auto; border-top: 1px solid var(--bd2); }
+.deprows li[hidden] { display: none; }
+.deprows label { display: flex; align-items: center; gap: 10px; margin: 0; padding: 6px 12px; font-size: 13px; color: var(--fg); cursor: pointer; }
+.deprows li:nth-child(even) label { background: var(--row-alt); }
+.deprows label:hover { background: var(--hover); }
+/* Not the editor's full-width field rule (.formgrid label > input): a checkbox at the start of the row. */
+.depbox .deprows label > input { display: inline-block; width: auto; margin: 0; flex: none; }
+.depbox .deprows label > span { flex: 1; min-width: 0; }
 

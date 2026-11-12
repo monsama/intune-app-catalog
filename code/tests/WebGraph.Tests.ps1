@@ -152,6 +152,8 @@ try {
     $state = Invoke-Api '/api/state'
     Check ($state.ok -and $state.configured) 'test mode counts as connected' ($state | ConvertTo-Json -Compress -Depth 3)
     Check ($state.testMode) 'the page is told it is test mode (badge and banner)'
+    $tenantApps = Invoke-Api '/api/intune-apps' @{ force = $true }
+    Check ($tenantApps.ok -and @($tenantApps.ids).Count -eq 3 -and (@($tenantApps.ids) -contains $appLinked.ToLowerInvariant())) 'intune apps: every app id in the tenant, both pages (the Apps list checks App IDs against them)' ($tenantApps | ConvertTo-Json -Compress)
     $conn = Invoke-Api '/api/connection-status'
     Check ($conn.ok -and $conn.state -eq 'ok' -and $conn.text -eq 'Connected' -and $conn.detail -like '*Intune answered*') 'connection status: one read from Intune works, so the badge says Connected' ($conn | ConvertTo-Json -Compress)
     $settingsBefore = if (Test-Path -LiteralPath $settingsPath) { Get-Content -LiteralPath $settingsPath -Raw } else { $null }

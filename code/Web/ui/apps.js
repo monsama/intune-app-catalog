@@ -9,14 +9,55 @@ let visible = [];
 
 // What each status means and what to do about it, for the pill's tooltip.
 const statusHelp = {
-  'Deployed': 'In Intune - the catalog has its App ID.',
+  'Deployed': 'In Intune - this tenant has an app with its App ID.',
+  'Not in this tenant': 'The catalog has an App ID, but the tenant you are connected to has no such app - the catalog was copied from another tenant, or the app was deleted in Intune. Clear the App ID (banner above, or More > Clear App ID) and Deploy it here.',
+  'Has App ID': 'The catalog has an App ID - not yet checked against Intune (no connection, or Intune could not be read).',
   'No App ID': 'Not in Intune yet, and no settings of its own: Deploy uses the default values. If it is already in Intune, Checks offers to link it.',
   'Metadata saved - ready to deploy': 'Not in Intune yet. Its own settings are saved - Deploy creates it with them.',
   'Package missing': 'Its .intunewin isn\'t in the packages folder - More > Package builds it, or Settings > Packaging for Winget apps.',
   'Custom package': 'Has a Winget ID but deploys its own .intunewin instead of the shared Winget package.',
 };
+// A list to pick apps from (dependencies): the chosen ones as chips on top
+// (x removes one), a filter, one app per row. The checkboxes keep their
+// data attribute, so whoever reads the choice doesn't change.
+function appPicker(box, names, chosen, attr, emptyText) {
+  const chips = el('div', { class: 'depchips', 'aria-live': 'polite' });
+  const filter = el('input', { type: 'search', class: 'depfilter', placeholder: `Filter ${names.length} apps`, 'aria-label': 'Filter the apps' });
+  const rows = names.map(n => {
+    const cb = el('input', { type: 'checkbox', [attr]: n, checked: chosen.has(n) });
+    return { n, li: el('li', {}, el('label', {}, cb, el('span', { text: n }))), cb };
+  });
+  const showChips = () => {
+    const on = rows.filter(r => r.cb.checked);
+    chips.replaceChildren(...(on.length ? [el('span', { class: 'deplabel', text: 'Installed first:' }), ...on.map(r => el('span', { class: 'depchip' }, r.n,
+      el('button', { type: 'button', 'aria-label': `Remove ${r.n}`, title: `Remove ${r.n}`, text: '×', onclick: () => { r.cb.checked = false; r.cb.dispatchEvent(new Event('change', { bubbles: true })); } })))]
+      : [el('span', { class: 'muted', text: emptyText })]));
+  };
+  for (const r of rows) r.cb.addEventListener('change', showChips);
+  filter.addEventListener('input', () => { const q = filter.value.trim().toLowerCase(); for (const r of rows) r.li.hidden = !!q && !r.n.toLowerCase().includes(q); });
+  if (!names.length) { box.replaceChildren(el('span', { class: 'muted', text: 'No other apps in the catalog.' })); return; }
+  box.replaceChildren(chips, filter, el('ul', { class: 'deprows' }, rows.map(r => r.li)));
+  showChips();
+}
+
+// The ids of the apps in the connected tenant (lower case), or null while not known.
+let intuneIds = null;
+function tenantState(a) {
+  if (!a.hasAppId) return '';
+  if (!intuneIds) return 'unchecked';
+  return intuneIds.has(String(a.appId).toLowerCase()) ? 'present' : 'missing';
+}
+async function loadIntuneIds(force) {
+  if (!state || !state.configured) { intuneIds = null; renderApps(); return; }
+  const r = await api('/api/intune-apps', { force: !!force });
+  intuneIds = r.ok ? new Set((r.ids || []).map(x => String(x).toLowerCase())) : null;
+  renderApps();
+}
 function statusPill(row) {
   const s = row.status || '';
+  const t = tenantState(row);
+  if (t === 'missing') return el('span', { class: 'pill warn', text: 'Not in this tenant' + (s ? '; ' + s : ''), title: statusHelp['Not in this tenant'] });
+  if (!s && t === 'unchecked') return el('span', { class: 'pill muted', text: 'Has App ID', title: statusHelp['Has App ID'] });
   if (!s) return el('span', { class: 'pill ok', text: 'Deployed', title: statusHelp.Deployed });
   const parts = s.split('; ');
   const good = parts.every(p => p === 'Metadata saved - ready to deploy' || p === 'Custom package');
@@ -30,12 +71,13 @@ function auditPill(text) {
   return el('span', { class: 'pill muted', text, title: 'Checks with "read every deployed app in detail" compares this app field by field.' });
 }
 function needsAttention(a) {
-  return (a.status && !/^(Metadata saved - ready to deploy|Custom package)(; Custom package)?$/.test(a.status)) || /issue|Check failed/.test(a.audit || '');
+  return tenantState(a) === 'missing' || (a.status && !/^(Metadata saved - ready to deploy|Custom package)(; Custom package)?$/.test(a.status)) || /issue|Check failed/.test(a.audit || '');
 }
 const filters = {
   all: () => true,
   attention: needsAttention,
   notdeployed: a => !a.hasAppId,
+  notintenant: a => tenantState(a) === 'missing',
   pkgmissing: a => a.packageMissing,
   winget: a => !!a.wingetId,
   custom: a => !a.wingetId,
@@ -76,7 +118,7 @@ function renderApps() {
   }
   updateActions();
   $('emptyState').hidden = apps.length > 0;
-  $('grid').hidden = apps.length === 0;
+  $('grid').hidden = apps.length === 0;  updateTenantBanner();
 }
 function selectRow(name, e) {
   if (e.shiftKey && lastClicked && visible.includes(lastClicked)) {
@@ -188,7 +230,26 @@ async function loadApps() {
   $('emptyPath').textContent = r.path || '';
   if (r.failed && r.failed.length) toast(`${r.failed.length} file(s) in the catalog could not be read: ${r.failed.join(', ')}`, true);
   renderApps();
+  loadIntuneIds(false);
 }
+// Apps whose App ID the connected tenant doesn't know: a banner says so, with one button for all of them.
+function updateTenantBanner() {
+  const missing = apps.filter(a => tenantState(a) === 'missing');
+  $('tenantBanner').hidden = missing.length === 0;
+  $('tenantBannerText').textContent = missing.length === apps.filter(a => a.hasAppId).length && missing.length > 1
+    ? `None of the ${missing.length} App IDs in this catalog exist in the tenant you're connected to - was the catalog copied from another tenant?`
+    : `${missing.length} app${missing.length === 1 ? ' has an App ID' : 's have App IDs'} this tenant doesn't know - copied from another tenant, or deleted in Intune.`;
+}
+$('btnTenantShow').addEventListener('click', () => { $('filter').value = 'notintenant'; renderApps(); });
+$('btnTenantClear').addEventListener('click', async () => {
+  const names = apps.filter(a => tenantState(a) === 'missing').map(a => a.name);
+  if (!names.length) return;
+  if (!(await ask(`Clear the App ID of ${names.length} app${names.length === 1 ? '' : 's'}?\n\nOnly the catalog changes - their settings, groups and packages stay, and they read "ready to deploy". Deploy then creates them in this tenant. Each file is kept as a copy first (Earlier versions...).`, { ok: 'Clear App IDs', danger: false }))) return;
+  const r = await api('/api/clear-appids', { names });
+  toast(r.ok ? `Cleared ${r.cleared.length} App ID(s).` : r.error, !r.ok);
+  if ($('filter').value === 'notintenant') $('filter').value = 'all';
+  await loadApps();
+});
 for (const th of document.querySelectorAll('.grid th')) th.addEventListener('click', () => {
   if (sortKey === th.dataset.sort) sortDesc = !sortDesc; else { sortKey = th.dataset.sort; sortDesc = false; }
   renderApps();
@@ -267,7 +328,7 @@ function fillDeploy(d) {
   $('xUninstall').checked = !!d.allowAvailableUninstall;
   $('xCodes').value = (d.returnCodes || []).map(c => `${c.returnCode} = ${c.type}`).join('\n');
   const deps = new Set(d.dependencies || []);
-  $('xDeps').replaceChildren(...(editorApps.length ? editorApps.map(n => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-dep': n, checked: deps.has(n) }), n)) : [el('span', { class: 'muted', text: 'No other apps in the catalog.' })]));
+  appPicker($('xDeps'), editorApps, deps, 'data-dep', 'None - this app installs on its own.');
 }
 $('deploySec').addEventListener('input', () => { deployTouched = true; });
 $('deploySec').addEventListener('change', () => { deployTouched = true; });
@@ -369,13 +430,13 @@ function openBatch(names) {
   for (const c of document.querySelectorAll('[data-bf]')) c.checked = false;
   $('bMinOs').replaceChildren(...((prefs && prefs.minOsChoices) || [{ value: 'W10_22H2', label: 'Windows 10 22H2' }]).map(o => el('option', { value: o.value, text: o.label || o.value })));
   $('bMinOs').value = 'W10_22H2';
-  $('bDeps').replaceChildren(...apps.map(a => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-bdep': a.name }), a.name)));
+  appPicker($('bDeps'), apps.map(a => a.name), new Set(), 'data-bdep', 'None - tick the apps to install first.');
   $('batchErr').hidden = true; $('batchLog').hidden = true; $('batchLog').textContent = '';
   $('btnBatchGo').disabled = false;
   $('dlgBatch').showModal();
 }
 let batchNames = [];
-for (const box of document.querySelectorAll('.bfield')) box.addEventListener('input', e => { if (!e.target.matches('[data-bf]')) { const c = box.querySelector('[data-bf]'); if (c) c.checked = true; } });
+for (const box of document.querySelectorAll('.bfield')) box.addEventListener('input', e => { if (!e.target.matches('[data-bf], .depfilter')) { const c = box.querySelector('[data-bf]'); if (c) c.checked = true; } });
 function readBatch() {
   const v = {
     architecture: () => [...document.querySelectorAll('[data-barch]')].filter(c => c.checked).map(c => c.dataset.barch),

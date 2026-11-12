@@ -209,6 +209,8 @@ function Global:Complete-WebJob {
       that had none) saved to the catalog, and whether groups should follow.
     #>
     param([hashtable]$After, $Result, [string]$LogPath)
+    # A deploy or a delete changes which apps the tenant has - the Apps list reads them again.
+    if ($After.Kind -in 'deploy', 'deleted', 'addtocatalog') { $Global:App.IntuneAppsCache = $null }
     switch ($After.Kind) {
         'grouprename' { return (Complete-WebGroupRename -After $After) }
         'checkdetails' { return (Complete-WebCheckDetails -After $After -Result $Result) }
@@ -460,6 +462,8 @@ function Global:Invoke-WebApi {
         '/api/prefs-save'       { return (Save-WebPrefs $Data) }
         '/api/delete-intune'    { return (Start-WebDeleteFromIntune $Data) }
         '/api/clear-appid'      { return (Invoke-WithCatalogLock { Clear-WebAppId $Data }) }
+        '/api/clear-appids'     { return (Invoke-WithCatalogLock { Clear-WebAppIds $Data }) }
+        '/api/intune-apps'      { return (Get-WebIntuneApps $Data) }
         '/api/install-status'   { return (Get-WebInstallStatus $Data) }
         '/api/checks-fix'       { return (Invoke-WithCatalogLock { Invoke-WebCheckFix $Data }) }
         '/api/scripts'          { return (Get-WebScripts) }
