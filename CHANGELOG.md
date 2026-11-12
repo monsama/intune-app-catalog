@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.0.10
+
+### Changed
+
+- **The badge at the top right says whether the connection really
+  works.** It used to say "Connection set up" as soon as the three fields
+  were filled in, even if signing in would fail. Now:
+  - When the app opens and after Save, it reads one app from Intune with
+    the saved settings. It shows **● Connected** in green, **● Connection
+    problem** in red, or **Checking connection...** while it runs. The
+    tooltip says what it signed in as, the tenant and the time, or the
+    error.
+  - Test connection updates it straight away.
+  - **Not connected** still means nothing is set up yet.
+  - Clicking the badge goes to Settings > Connection, with Test connection
+    focused.
+
 ## 2.0.9
 
 ### Fixed

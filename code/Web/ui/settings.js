@@ -46,6 +46,9 @@ $('btnTest').addEventListener('click', async () => {
   res.className = 'result ' + r.level;
   res.textContent = r.summary + (r.conflict ? '\n\n' + r.conflict : '');
   rememberTest(r);
+  // The badge follows the test: connected only when it fully worked.
+  if (r.level === 'ok') setBadge('ok', 'Connected', r.summary + ' (tested ' + new Date().toTimeString().slice(0, 5) + ')');
+  else setBadge('error', 'Connection problem', r.summary);
   $('checklistCard').hidden = false;
   $('checklist').replaceChildren(...(r.checklist || []).map(c => el('li', { class: c.status },
     el('span', { class: 'mark', text: c.status === 'ok' ? '✓' : c.status === 'failed' ? '✕' : '–' }),
