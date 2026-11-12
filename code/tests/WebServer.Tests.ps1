@@ -126,6 +126,8 @@ try {
     Check (($folderOpen.ok -and $folderOpen.path) -or (-not $folderOpen.ok -and $folderOpen.error -like '*Explorer*')) 'open: a folder button answers with the folder it opened, or why it could not - never silence' ($folderOpen | ConvertTo-Json -Compress)
     Check ((Invoke-Api '/api/job-start' @{ mode = 'Anything'; tenantId = 'x'; clientId = 'y' }).ok -eq $false) 'job-start: only the known actions'
     Check ((Invoke-Api '/api/no-such-thing').error -eq 'unknown') 'an unknown route says so'
+    $conn = Invoke-Api '/api/connection-status'
+    Check ($conn.ok -and $conn.state -eq 'none' -and $conn.text -eq 'Not connected') 'connection status: nothing set up says Not connected (the badge), without trying Graph' ($conn | ConvertTo-Json -Compress)
     $jobs = Invoke-Api '/api/jobs'
     Check ($jobs.ok -and @($jobs.jobs).Count -eq 0) 'jobs: none running at start (a reloaded page asks for these)' ($jobs | ConvertTo-Json -Compress)
     # Platform scripts - the local copies (no tenant in CI)

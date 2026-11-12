@@ -42,6 +42,8 @@ $answers = [ordered]@{
         '@odata.nextLink' = 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$skiptoken=page2'
     }
     'GET beta/deviceAppManagement/mobileApps?$skiptoken=page2' = @{ value = @(@{ id = $appSameName; displayName = $sameName }) }
+    # The badge's connection check: one app's id.
+    'GET beta/deviceAppManagement/mobileApps?$select=id&$top=1' = @{ value = @(@{ id = $appLinked }) }
     # Checks looks up only the groups the catalog uses, by name.
     "GET v1.0/groups?`$filter=displayName in ('SG-ZZ-Exists','SG-ZZ-Missing')&`$select=id,displayName&`$top=999" = @{ value = @(@{ id = $groupId; displayName = 'SG-ZZ-Exists' }) }
 
@@ -150,6 +152,8 @@ try {
     $state = Invoke-Api '/api/state'
     Check ($state.ok -and $state.configured) 'test mode counts as connected' ($state | ConvertTo-Json -Compress -Depth 3)
     Check ($state.testMode) 'the page is told it is test mode (badge and banner)'
+    $conn = Invoke-Api '/api/connection-status'
+    Check ($conn.ok -and $conn.state -eq 'ok' -and $conn.text -eq 'Connected' -and $conn.detail -like '*Intune answered*') 'connection status: one read from Intune works, so the badge says Connected' ($conn | ConvertTo-Json -Compress)
     $settingsBefore = if (Test-Path -LiteralPath $settingsPath) { Get-Content -LiteralPath $settingsPath -Raw } else { $null }
     $favSave = Invoke-Api '/api/prefs-save' @{ favoriteGroups = @('SG-ZZ-Test') }
     $settingsAfter = if (Test-Path -LiteralPath $settingsPath) { Get-Content -LiteralPath $settingsPath -Raw } else { $null }

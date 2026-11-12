@@ -212,6 +212,34 @@ function Global:Start-WebCertJob {
     return $started
 }
 
+function Global:Get-WebConnectionStatus {
+    <#
+      Is the connection really working - not just filled in? One small read
+      from Intune (one app's id) with the saved settings. For the badge at
+      the top: state none / ok / error, a short text and the detail.
+    #>
+    if (-not (Test-GraphCredentialsConfigured -Quiet)) {
+        return @{ ok = $true; state = 'none'; text = 'Not connected'; detail = 'Fill in the connection in Settings - until then nothing is read from or sent to Intune.' }
+    }
+    if (-not $Global:App.TestGraph -and -not (Test-GraphModuleHere)) {
+        return @{ ok = $true; state = 'error'; text = 'Connection problem'; detail = "The Microsoft.Graph.Authentication module isn't installed - Settings > Prerequisites installs it." }
+    }
+    $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action {
+        param($Graph)
+        [void](& $Graph 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$select=id&$top=1')
+        $ctx = if (Get-Command Get-MgContext -ErrorAction SilentlyContinue) { Get-MgContext -ErrorAction SilentlyContinue } else { $null }
+        [string]$(if ($ctx -and $ctx.AppName) { $ctx.AppName })
+    }
+    $at = (Get-Date).ToString('HH:mm')
+    if ($read.ok) {
+        $who = if ($read.value) { "as '$($read.value)' " } else { '' }
+        return @{ ok = $true; state = 'ok'; text = 'Connected'; detail = "Signed in $($who)to tenant $($Global:App.GraphTenantId) - Intune answered at $at." }
+    }
+    $first = (([string]$read.error) -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
+    Write-Log "[WARN] Connection check at $at failed: $first"
+    return @{ ok = $true; state = 'error'; text = 'Connection problem'; detail = "Intune didn't answer at $($at): $first - Settings > Test connection shows what is missing." }
+}
+
 function Global:Get-WebPermissionChoice {
     # What "Add required permissions" offers, from the same list the report uses.
     $requirements = @(Get-GraphRoleRequirements)

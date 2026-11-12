@@ -164,17 +164,31 @@ $('bannerSettings').addEventListener('click', () => { showView('settings'); $('g
 
 // ---------------------------------------------------------------- state
 let state = null;
+// The badge at the top says whether the connection really works: one small
+// read from Intune when the app opens and after Save; Test connection sets it too.
+function setBadge(state, text, detail) {
+  const b = $('connBadge');
+  b.className = 'conn ' + state; b.textContent = text;
+  b.title = (detail ? detail + '\n' : '') + 'Click for Settings > Connection.';
+  b.setAttribute('aria-label', text + (detail ? ' - ' + detail : ''));
+}
+async function checkConnection() {
+  setBadge('busy', 'Checking connection...', 'Reading one app from Intune with the saved settings.');
+  const r = await api('/api/connection-status');
+  if (!r.ok) { setBadge('error', 'Connection problem', r.error || ''); return; }
+  setBadge(r.state === 'none' ? 'none' : r.state, r.text, r.detail);
+}
+$('connBadge').addEventListener('click', () => { showView('settings'); $('fTenant').closest('.card').scrollIntoView({ block: 'start' }); $('btnTest').focus(); });
+
 async function loadState() {
   const r = await api('/api/state');
   if (!r.ok) { toast(r.error || 'Could not read the app state.', true); return; }
   state = r;
   $('ver').textContent = 'v' + r.version;
   document.title = 'Intune App Catalog ' + r.version;
-  const badge = $('connBadge');
-  badge.textContent = r.testMode ? 'TEST MODE' : r.configured ? 'Connection set up' : 'Not connected';
-  badge.className = 'conn ' + (r.testMode ? 'warn' : r.configured ? 'ok' : 'warn');
-  if (r.testMode) badge.title = 'Graph answers come from a test file, not from a tenant. Started with INTUNE_CATALOG_TEST_GRAPH set - restart the app without it.';
-  else badge.title = r.configured ? 'Tenant ID, Client ID and certificate are filled in - Settings > Test connection checks that they work.' : 'Fill in the connection in Settings - until then nothing is read from or sent to Intune.';
+  if (r.testMode) setBadge('warn', 'TEST MODE', 'Graph answers come from a test file, not from a tenant. Started with INTUNE_CATALOG_TEST_GRAPH set - restart the app without it.');
+  else if (!r.configured) setBadge('none', 'Not connected', 'Fill in the connection in Settings - until then nothing is read from or sent to Intune.');
+  else checkConnection();
   $('setupBanner').hidden = r.configured;
   $('testBanner').hidden = !r.testMode;
   setFields(r.settings);

@@ -423,6 +423,7 @@ function Global:Invoke-WebApi {
         '/api/certs-local'      { return (Get-WebLocalCertificates) }
         '/api/cert-new'         { return (New-WebCertificate $Data) }
         '/api/test-connection'  { return (Invoke-WebTestConnection $Data) }
+        '/api/connection-status' { return (Get-WebConnectionStatus) }
         '/api/job-start'        { return (Start-WebCertJob $Data) }
         '/api/job-poll'         { return (Get-WebJobPoll $Data) }
         '/api/jobs'             { return (Get-WebRunningJobs) }
