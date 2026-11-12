@@ -265,6 +265,26 @@ function Global:Start-WebDeleteFromIntune {
     return $started
 }
 
+function Global:Clear-WebAppIds {
+    <#
+      Clears the App ID of several apps at once - after copying a catalog
+      from another tenant, every App ID points at apps this tenant doesn't
+      have. Intune isn't touched. Under the catalog lock (route table).
+    #>
+    param($Data)
+    $names = @($Data.names | ForEach-Object { [string]$_ } | Where-Object { $_ } | Select-Object -Unique)
+    if ($names.Count -eq 0) { return @{ ok = $false; error = 'Choose one or more apps first.' } }
+    $cleared = New-Object System.Collections.Generic.List[string]
+    $failed = New-Object System.Collections.Generic.List[string]
+    foreach ($n in $names) {
+        try { [void](Update-WebCatalogApp -Name $n -Change { param($a) $a.appId = ''; $a.intuneAppType = ''; $a.intuneAppVersion = '' }); $cleared.Add($n) }
+        catch { $failed.Add("$n`: $($_.Exception.Message)") }
+    }
+    $Global:App.IntuneAppsCache = $null
+    Write-Log "[OK] Cleared the App ID of $($cleared.Count) app(s) in the catalog (Intune unchanged).$(if ($failed.Count) { " Failed: $($failed -join '; ')" })"
+    return @{ ok = ($failed.Count -eq 0); cleared = $cleared.ToArray(); failed = $failed.ToArray(); error = $(if ($failed.Count) { "Not cleared: $($failed -join '; ')" } else { '' }) }
+}
+
 function Global:Clear-WebAppId {
     # Forgets the Intune link in the catalog (App ID, Intune's type and version). Intune isn't touched.
     param($Data)

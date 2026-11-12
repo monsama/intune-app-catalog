@@ -48,6 +48,7 @@
         <option value="all">All apps</option>
         <option value="attention">Needs attention</option>
         <option value="notdeployed">Not deployed</option>
+        <option value="notintenant">Not in this tenant</option>
         <option value="pkgmissing">Package missing</option>
         <option value="winget">Winget apps</option>
         <option value="custom">Own package</option>
@@ -62,7 +63,13 @@
       <button class="btn" id="btnReload" title="Read the catalog folder again - for changes made outside the app">Reload</button>
       <button class="btn" id="btnCatalogFolder" title="Open the folder with one JSON file per app in Explorer">Open catalog folder</button>
     </div>
-    <div class="tablewrap">
+    <div class="banner warn" id="tenantBanner" role="region" aria-label="App IDs not in this tenant" hidden>
+      <span id="tenantBannerText"></span>
+      <span class="spacer"></span>
+      <button class="btn small" id="btnTenantShow" title="Show only the apps whose App ID this tenant doesn't know">Show them</button>
+      <button class="btn small" id="btnTenantClear" title="Clear their App IDs in the catalog - Intune isn't touched; they can then be deployed here">Clear their App IDs</button>
+    </div>
+    <div class="tablewrap" tabindex="0" aria-label="Apps in the catalog">
       <table class="grid" id="grid">
         <thead><tr>
           <th data-sort="name" title="The app's name in the catalog (and in Intune). Click a header to sort.">App</th>
@@ -463,7 +470,7 @@
           <div data-det="Msi File Registry"><div class="two"><label>Operator<select id="xOperator"><option value="notConfigured">(not configured)</option><option value="equal">Equals</option><option value="notEqual">Not equal</option><option value="greaterThan">Greater than</option><option value="greaterThanOrEqual">Greater than or equal</option><option value="lessThan">Less than</option><option value="lessThanOrEqual">Less than or equal</option></select></label><label>Value<input autocomplete="off" id="xValue" class="mono" spellcheck="false" autocorrect="off" autocapitalize="off"></label></div></div>
           <div data-det="File Registry"><label class="chk"><input type="checkbox" id="x32">Check the 32-bit location on 64-bit Windows</label></div>
           <h3>Dependencies <span class="muted">(installed first)</span></h3>
-          <div class="deplist" id="xDeps"></div>
+          <div class="depbox" id="xDeps"></div>
         </section>
         <section>
           <h3>Requirements</h3>
@@ -616,7 +623,7 @@
 3010 = softReboot
 1641 = hardReboot
 1618 = retry</textarea></div>
-      <div class="bfield wide"><label class="chk"><input type="checkbox" data-bf="dependencies">Dependencies <span class="muted">(replaces the list)</span></label><div class="deplist" id="bDeps"></div></div>
+      <div class="bfield wide"><label class="chk"><input type="checkbox" data-bf="dependencies">Dependencies <span class="muted">(replaces the list)</span></label><div class="depbox" id="bDeps"></div></div>
     </section>
   </div>
   <label class="chk"><input type="checkbox" id="bPush" checked>Then push the settings of the apps already in Intune</label>

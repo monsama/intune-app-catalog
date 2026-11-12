@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.0.11
+
+### Changed
+
+- **"Deployed" means deployed in the tenant you're connected to.** Status
+  used to say Deployed for any app whose catalog file had an App ID. After
+  copying a catalog from another tenant, that was every app. The Apps list
+  now checks its App IDs against the connected tenant (read once, kept for
+  five minutes):
+  - **Deployed:** the tenant has an app with that ID.
+  - **Not in this tenant:** the ID is unknown there. The catalog was
+    copied from another tenant, or the app was deleted in Intune.
+  - **Has App ID:** not checked yet, because there's no connection.
+
+  A banner names how many apps are affected, with **Show them** and
+  **Clear their App IDs** (one question for all). Cleared apps keep their
+  settings, groups and packages, read "ready to deploy", and Deploy creates
+  them in this tenant. "Needs attention" and a new "Not in this tenant"
+  filter include them.
+- **Dependencies are a list.** In the app editor and Batch edit:
+  - the chosen apps show as chips on top, and × removes one;
+  - a filter field narrows the list;
+  - every app is a full row with its checkbox, in a box that scrolls on
+    its own.
+
+### Fixed
+
+- **Keyboard:** the Apps table can be scrolled with the keyboard when it is
+  taller than the window.
+
 ## 2.0.10
 
 ### Changed

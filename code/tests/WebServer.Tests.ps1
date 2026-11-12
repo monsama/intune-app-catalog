@@ -338,6 +338,12 @@ try {
     $cleared = Invoke-Api '/api/clear-appid' @{ name = "$testName renamed" }
     Check ($cleared.ok -and -not (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.appId) 'clear App ID: the catalog forgets the Intune link'
     Check (-not (Invoke-Api '/api/pull-start' @{ names = @("$testName renamed") }).ok) 'pull: nothing to pull for an app not in Intune'
+    [void](Invoke-Api '/api/checks-fix' @{ action = 'SetAppId'; catalogName = "$testName renamed"; value = 'c0ffee00-1111-4222-8333-444455556666' })
+    $bulk = Invoke-Api '/api/clear-appids' @{ names = @("$testName renamed") }
+    Check ($bulk.ok -and @($bulk.cleared).Count -eq 1 -and -not (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.appId) 'clear App IDs: several at once (a catalog copied from another tenant)' ($bulk | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/clear-appids' @{ names = @() }).ok) 'clear App IDs: nothing chosen is refused'
+    $ids = Invoke-Api '/api/intune-apps'
+    Check (-not $ids.ok -and $ids.state -eq 'none') 'intune apps: without a connection the list says so instead of guessing' ($ids | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/delete-intune' @{ name = "$testName renamed" }).ok) 'delete from Intune: refused for an app not in Intune'
     Check (-not (Invoke-Api '/api/install-status' @{ name = "$testName renamed" }).ok) 'install status: refused for an app not in Intune'
 

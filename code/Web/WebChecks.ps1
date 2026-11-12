@@ -41,6 +41,32 @@ function Global:Get-WebCheckApps {
     return $apps
 }
 
+function Global:Get-WebIntuneApps {
+    <#
+      The ids of every app in the connected tenant, for the Apps list to
+      tell "Deployed" from an App ID this tenant doesn't know (a catalog
+      copied from another tenant, an app deleted in Intune). Kept for five
+      minutes per connection; -force reads again.
+    #>
+    param($Data)
+    if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; state = 'none'; error = 'Not connected.' } }
+    $key = "$($Global:App.GraphTenantId)|$($Global:App.GraphClientId)"
+    $cache = $Global:App.IntuneAppsCache
+    if (-not $Data.force -and $cache -and $cache.Key -eq $key -and ((Get-Date) - $cache.At).TotalMinutes -lt 5) {
+        return @{ ok = $true; ids = $cache.Ids; at = $cache.At.ToString('HH:mm'); cached = $true }
+    }
+    $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action {
+        param($Graph)
+        $ids = New-Object System.Collections.Generic.List[string]
+        $uri = 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$select=id,displayName&$top=999'
+        while ($uri) { $page = & $Graph $uri; foreach ($v in @($page.value)) { $ids.Add(([string]$v.id).ToLowerInvariant()) }; $uri = [string]$page.'@odata.nextLink' }
+        , $ids.ToArray()
+    }
+    if (-not $read.ok) { return @{ ok = $false; state = 'error'; error = $read.error } }
+    $Global:App.IntuneAppsCache = @{ Key = $key; At = (Get-Date); Ids = @($read.value) }
+    return @{ ok = $true; ids = @($read.value); at = (Get-Date).ToString('HH:mm'); cached = $false }
+}
+
 function Global:Get-WebCatalogGroupNames {
     # Pure: every group name the apps use, in any role, once (case-insensitively), sorted.
     param($Apps)
