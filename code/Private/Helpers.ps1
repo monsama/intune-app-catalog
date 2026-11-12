@@ -291,3 +291,43 @@ function Global:Get-GroupLookupUris {
     }
 }
 
+function Global:Get-AppWindowPreferencesJson {
+    <#
+      Pure: the app window's browser profile settings (its own profile, never
+      the person's normal browser) with translation, the password manager,
+      autofill, spelling correction and sync prompts switched off - merged into what the browser
+      already keeps in that profile's Preferences file (-Existing, '' for none).
+      Chromium and Edge read these keys at start.
+    #>
+    param([string]$Existing)
+    $prefs = $null
+    if ($Existing) { try { $prefs = $Existing | ConvertFrom-Json } catch { $prefs = $null } }
+    if ($null -eq $prefs -or $prefs -isnot [System.Management.Automation.PSCustomObject]) { $prefs = [pscustomobject]@{} }
+    $set = {
+        param($Object, [string[]]$Path, $Value)
+        $node = $Object
+        for ($i = 0; $i -lt $Path.Count - 1; $i++) {
+            $child = $node.PSObject.Properties[$Path[$i]]
+            if (-not $child -or $child.Value -isnot [System.Management.Automation.PSCustomObject]) {
+                if ($child) { $node.PSObject.Properties.Remove($Path[$i]) }
+                $node | Add-Member -NotePropertyName $Path[$i] -NotePropertyValue ([pscustomobject]@{})
+            }
+            $node = $node.PSObject.Properties[$Path[$i]].Value
+        }
+        $leaf = $Path[$Path.Count - 1]
+        if ($node.PSObject.Properties[$leaf]) { $node.$leaf = $Value } else { $node | Add-Member -NotePropertyName $leaf -NotePropertyValue $Value }
+    }
+    & $set $prefs @('translate', 'enabled') $false                 # no "translate this page?"
+    & $set $prefs @('credentials_enable_service') $false           # no password manager
+    & $set $prefs @('profile', 'password_manager_enabled') $false
+    & $set $prefs @('autofill', 'enabled') $false                  # no address / card / form autofill
+    & $set $prefs @('autofill', 'profile_enabled') $false
+    & $set $prefs @('autofill', 'credit_card_enabled') $false
+    & $set $prefs @('browser', 'has_seen_welcome_page') $true      # no first-run pages
+    & $set $prefs @('sync', 'requested') $false                    # no "we're syncing your data"
+    & $set $prefs @('browser', 'enable_spellchecking') $false      # no spelling correction
+    & $set $prefs @('spellcheck', 'dictionaries') @()
+    & $set $prefs @('spellcheck', 'use_spelling_service') $false
+    return ($prefs | ConvertTo-Json -Depth 50 -Compress)
+}
+

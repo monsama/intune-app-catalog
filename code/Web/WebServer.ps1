@@ -161,11 +161,27 @@ function Global:Start-WebAppWindow {
     $exe = $candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
     if (-not $exe) { return $null }
     $browserProfile = Join-Path $env:LOCALAPPDATA 'IntuneAppCatalog\browser'
-    if (-not (Test-Path -LiteralPath $browserProfile)) { [void](New-Item -ItemType Directory -Path $browserProfile -Force) }
+    # The window's own profile: no translation offer, password manager,
+    # autofill or sync prompt (Get-AppWindowPreferencesJson). Written before
+    # every start, keeping whatever else the browser stored there.
+    $prefsFile = Join-Path $browserProfile 'Default\Preferences'
+    try {
+        [void](New-Item -ItemType Directory -Path (Split-Path $prefsFile -Parent) -Force)
+        $existing = if (Test-Path -LiteralPath $prefsFile) { [System.IO.File]::ReadAllText($prefsFile) } else { '' }
+        [System.IO.File]::WriteAllText($prefsFile, (Get-AppWindowPreferencesJson -Existing $existing), (New-Object System.Text.UTF8Encoding($false)))
+    }
+    catch { Write-Log "[WARN] Couldn't set the app window's browser preferences: $($_.Exception.Message)" }
     $arguments = @(
         "--app=$Url", "--user-data-dir=`"$browserProfile`"", '--no-first-run', '--no-default-browser-check',
-        '--disable-extensions', '--disable-save-password-bubble', '--disable-session-crashed-bubble',
-        '--disable-features=AutofillServerCommunication,Translate', '--start-maximized'
+        '--disable-extensions', '--disable-save-password-bubble', '--disable-session-crashed-bubble', '--disable-sync',
+        # Unknown feature names are ignored, so Edge's and Chrome's own names can both be listed:
+        # translation, password and form autofill, Edge's automatic sign-in with the Windows account,
+        # text predictions, the menu on selected text, the sidebar/Copilot, shopping and hub suggestions.
+        ('--disable-features=' + (@('AutofillServerCommunication', 'Translate', 'msEdgeTranslate', 'PasswordManagerOnboarding',
+            'msImplicitSignin', 'msEdgeImplicitSignin', 'msEdgeTextPrediction', 'msTextPrediction', 'msEdgeMiniMenu', 'msMiniMenu',
+            'msEdgeSidebar', 'msEdgeSidebarV2', 'msUndersideButton', 'msEdgeShopping', 'msShoppingTrigger', 'msHubAppsSuggestions') -join ',')),
+        '--disable-spell-checking', '--disable-background-networking', '--disable-component-update',
+        '--start-maximized'
     )
     return (Start-Process -FilePath $exe -ArgumentList $arguments -PassThru)
 }

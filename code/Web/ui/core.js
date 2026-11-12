@@ -71,6 +71,11 @@ async function api(path, body = {}) {
 
 function el(tag, attrs = {}, ...kids) {
   const n = document.createElement(tag);
+  // No browser autofill or password suggestions in the app's own fields.
+  // ... and no spelling correction or capitalisation: IDs, group names and commands must stay exactly as typed.
+  if (tag === 'input' || tag === 'textarea') {
+    for (const [k, v] of [['autocomplete', 'off'], ['spellcheck', 'false'], ['autocorrect', 'off'], ['autocapitalize', 'off']]) if (!(k in attrs)) n.setAttribute(k, v);
+  }
   for (const [k, v] of Object.entries(attrs)) {
     if (k === 'class') n.className = v;
     else if (k === 'text') n.textContent = v;
