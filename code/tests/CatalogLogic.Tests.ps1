@@ -2063,6 +2063,8 @@ $entra = @(Get-EntraGroupFindings -Apps $chkApps -Directory $dir)
 Assert-Equal 1 $entra.Count "Get-EntraGroupFindings: only the group that doesn't exist (a user of that name doesn't count)"
 Assert-Equal 'SG-Gone' $entra[0].Data.Group "Get-EntraGroupFindings: exclusions are checked too"
 Assert-Equal '7-Zip' $entra[0].App "Get-EntraGroupFindings: names the app that uses it"
+$entraActions = @($entra[0].Actions)
+Assert-True ($entraActions -contains 'CreateGroup' -and $entraActions -contains 'OpenGroup') "Get-EntraGroupFindings: offers to create the group and to open it"
 
 # Winget
 $winget = @(Get-WingetFindings -Apps $chkApps -Results @(

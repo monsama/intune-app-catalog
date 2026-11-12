@@ -473,6 +473,7 @@ function Global:Invoke-WebApi {
         '/api/script-runstatus' { return (Get-WebScriptRunStatus $Data) }
         '/api/scripts-save-local' { return (Save-WebScriptCopies) }
         '/api/groups'           { return (Get-WebGroups) }
+        '/api/groups-status'    { return (Get-WebGroupsStatus) }
         '/api/group-get'        { return (Get-WebGroupDetail $Data) }
         '/api/directory-search' { return (Find-WebDirectory $Data) }
         '/api/group-job'        { return (Start-WebGroupJob $Data) }

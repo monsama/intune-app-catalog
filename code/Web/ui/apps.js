@@ -20,7 +20,7 @@ const statusHelp = {
 // A list to pick apps from (dependencies): the chosen ones as chips on top
 // (x removes one), a filter, one app per row. The checkboxes keep their
 // data attribute, so whoever reads the choice doesn't change.
-function appPicker(box, names, chosen, attr, emptyText) {
+function appPicker(box, names, chosen, attr, emptyText, label = 'Installed first:') {
   const chips = el('div', { class: 'depchips', 'aria-live': 'polite' });
   const filter = el('input', { type: 'search', class: 'depfilter', placeholder: `Filter ${names.length} apps`, 'aria-label': 'Filter the apps' });
   const rows = names.map(n => {
@@ -29,7 +29,7 @@ function appPicker(box, names, chosen, attr, emptyText) {
   });
   const showChips = () => {
     const on = rows.filter(r => r.cb.checked);
-    chips.replaceChildren(...(on.length ? [el('span', { class: 'deplabel', text: 'Installed first:' }), ...on.map(r => el('span', { class: 'depchip' }, r.n,
+    chips.replaceChildren(...(on.length ? [el('span', { class: 'deplabel', text: label }), ...on.map(r => el('span', { class: 'depchip' }, r.n,
       el('button', { type: 'button', 'aria-label': `Remove ${r.n}`, title: `Remove ${r.n}`, text: '×', onclick: () => { r.cb.checked = false; r.cb.dispatchEvent(new Event('change', { bubbles: true })); } })))]
       : [el('span', { class: 'muted', text: emptyText })]));
   };
