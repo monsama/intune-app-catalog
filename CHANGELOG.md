@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.0.8
+
+### Fixed
+
+- **Starting from a zip that wasn't unblocked.** Windows marks downloaded
+  files, and with the usual RemoteSigned policy PowerShell refused every
+  file under `code\` with "not digitally signed", once per file.
+  - Now the app notices the mark when it starts, says what it means, and
+    offers to unblock its own files (`IntuneDeployment.ps1` and `code\`
+    only).
+  - If the policy still refuses them, it shows one explanation with the
+    exact command.
+  - Where a group policy requires signed scripts (AllSigned), it says that
+    unblocking can't help.
+- **Browser features that got in the way in the app window.** The window
+  has its own browser profile, and the app now sets that profile up before
+  each start; your normal Edge or Chrome isn't touched. Switched off:
+  - "Translate this page?";
+  - the password manager and form autofill;
+  - spelling correction and capitalisation;
+  - sync and the "we're syncing your data" sign-in notice.
+
+  The page itself says it is English and shouldn't be translated, and
+  every field turns off autofill, spellcheck, autocorrect and
+  autocapitalise. Edge's text predictions, the menu on selected text, the
+  sidebar and shopping suggestions are switched off by name.
+- **Groups page:** the "Used by" and "To add" lists no longer give their
+  placeholder line a list-option role. That was an accessibility error,
+  added in 2.0.1 by mistake.
+
 ## 2.0.7
 
 ### Added

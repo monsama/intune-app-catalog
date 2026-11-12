@@ -52,6 +52,36 @@ $Script:RequiredPrivateFiles = @(
     "code\Private\Winget.ps1"
 )
 
+# Files Windows marked as downloaded from the internet (the zip wasn't
+# unblocked before it was unpacked): with the usual RemoteSigned policy
+# PowerShell refuses to load them ("is not digitally signed"). This script
+# already runs, so the person trusts this folder - offer to unblock the
+# app's own files instead of failing on each one.
+if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') {
+    # Only the app's own code - never the data folder, which can hold thousands of packages.
+    $Script:MarkedFiles = @(@(Get-Item -LiteralPath $PSCommandPath) + @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'code') -Recurse -File -ErrorAction SilentlyContinue) |
+        Where-Object { $_ -and (Get-Item -LiteralPath $_.FullName -Stream Zone.Identifier -ErrorAction SilentlyContinue) })
+    if ($Script:MarkedFiles.Count -gt 0) {
+        Write-Host ""
+        Write-Host " $($Script:MarkedFiles.Count) of this app's files are marked as downloaded from the internet" -ForegroundColor Yellow
+        Write-Host " (the zip wasn't unblocked before it was unpacked). PowerShell won't load" -ForegroundColor Yellow
+        Write-Host " them under the usual RemoteSigned policy." -ForegroundColor Yellow
+        Write-Host ""
+        # Ask only where someone can answer (not in a scheduled or redirected run).
+        $canAsk = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
+        $answer = if ($canAsk) { Read-Host " Unblock the app's own files (IntuneDeployment.ps1 and code\) now? [Y/n]" } else { 'n' }
+        if ($answer -match '^(|y|yes|j|ja)$') {
+            $Script:MarkedFiles | Unblock-File -ErrorAction SilentlyContinue
+            Write-Host " Unblocked." -ForegroundColor Green
+        }
+        else {
+            Write-Host " Left as they are. To do it yourself:" -ForegroundColor Yellow
+            Write-Host "   Get-ChildItem -LiteralPath '$PSScriptRoot' -Recurse -File | Unblock-File" -ForegroundColor White
+        }
+        Write-Host ""
+    }
+}
+
 $Script:MissingPrivateFiles = @()
 $Script:FailedPrivateFiles = @()
 foreach ($relativePath in $Script:RequiredPrivateFiles) {
@@ -72,8 +102,10 @@ foreach ($relativePath in $Script:RequiredPrivateFiles) {
     }
     catch {
         $Script:FailedPrivateFiles += [PSCustomObject]@{
-            Path  = $relativePath
-            Error = $_.Exception.Message
+            Path     = $relativePath
+            Error    = $_.Exception.Message
+            # PSSecurityException: refused by the execution policy, not broken
+            Security = ($_.Exception -is [System.Management.Automation.PSSecurityException] -or $_.FullyQualifiedErrorId -like 'UnauthorizedAccess*')
         }
     }
     finally {
@@ -99,6 +131,34 @@ if ($Script:MissingPrivateFiles.Count -gt 0) {
     Write-Host " run this script again." -ForegroundColor Yellow
     Write-Host ""
     throw "Startup aborted: $($Script:MissingPrivateFiles.Count) required file(s) under code\Private\ were not found. See list above."
+}
+
+if ($Script:FailedPrivateFiles.Count -gt 0 -and @($Script:FailedPrivateFiles | Where-Object { -not $_.Security }).Count -eq 0) {
+    # Every file was refused by the execution policy - one explanation, not one per file.
+    $policies = @(Get-ExecutionPolicy -List | Where-Object { $_.ExecutionPolicy -ne 'Undefined' } | ForEach-Object { "$($_.Scope)=$($_.ExecutionPolicy)" })
+    $byGroupPolicy = @(Get-ExecutionPolicy -List | Where-Object { $_.Scope -in 'MachinePolicy', 'UserPolicy' -and $_.ExecutionPolicy -eq 'AllSigned' }).Count -gt 0
+    Write-Host ""
+    Write-Host "=================================================================" -ForegroundColor Red
+    Write-Host " Cannot start: PowerShell's execution policy refused the app's files." -ForegroundColor Red
+    Write-Host "=================================================================" -ForegroundColor Red
+    Write-Host ""
+    Write-Host " Execution policy: $($policies -join ', ')" -ForegroundColor Yellow
+    Write-Host " First refusal: $($Script:FailedPrivateFiles[0].Error)" -ForegroundColor DarkGray
+    Write-Host ""
+    if ($byGroupPolicy) {
+        Write-Host " A group policy requires every script to be signed (AllSigned). Unblocking" -ForegroundColor Yellow
+        Write-Host " doesn't help: this needs a signed release - see README > Download - or an" -ForegroundColor Yellow
+        Write-Host " exception from whoever manages the policy." -ForegroundColor Yellow
+    }
+    else {
+        Write-Host " The files are most likely still marked as downloaded from the internet." -ForegroundColor Yellow
+        Write-Host " Unblock them, then start the app again:" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "   Get-ChildItem -LiteralPath '$PSScriptRoot' -Recurse -File | Unblock-File" -ForegroundColor White
+        Write-Host "   .\IntuneDeployment.ps1" -ForegroundColor White
+    }
+    Write-Host ""
+    throw "Startup aborted: the execution policy refused $($Script:FailedPrivateFiles.Count) of the app's files. See above."
 }
 
 if ($Script:FailedPrivateFiles.Count -gt 0) {

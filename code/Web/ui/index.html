@@ -1,7 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" translate="no">
 <head>
 <meta charset="utf-8">
+<!-- English on purpose: no "translate this page?" offer. -->
+<meta name="google" content="notranslate">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Intune App Catalog</title>
 <link rel="icon" href="icon.svg">
@@ -40,7 +42,7 @@
   <!-- ============ Apps ============ -->
   <section class="view" id="viewApps">
     <div class="toolbar">
-      <input type="search" id="search" placeholder="Search apps or Winget IDs" autocomplete="off" spellcheck="false">
+      <input type="search" id="search" placeholder="Search apps or Winget IDs" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
       <select id="filter" aria-label="Show">
         <option value="all">All apps</option>
         <option value="attention">Needs attention</option>
@@ -113,7 +115,7 @@
     <div class="gsplit">
       <div class="panel side">
         <div class="toolbar tight">
-          <input type="search" id="groupSearch" placeholder="Filter or type a group name" autocomplete="off" spellcheck="false">
+          <input type="search" id="groupSearch" placeholder="Filter or type a group name" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
           <button class="btn" id="btnGroupOpen" title="Open this exact group name from Entra ID">Open</button>
         </div>
         <ul class="glist" id="groupList" role="listbox" aria-label="Groups used by the catalog"></ul>
@@ -136,7 +138,7 @@
           <p class="sub" id="gNote"></p>
           <div class="formgrid">
             <section>
-              <label>Description <span class="muted">(optional)</span><input id="gDesc" maxlength="1024"></label>
+              <label>Description <span class="muted">(optional)</span><input autocomplete="off" id="gDesc" maxlength="1024" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
               <h3>Members <span class="muted" id="gCount"></span></h3>
               <div class="tablewrap short"><table class="plan"><thead><tr><th>Name</th><th>Type</th><th>Sign-in name</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="gMembers"></tbody></table></div>
               <h3>Used by</h3>
@@ -144,7 +146,7 @@
             </section>
             <section>
               <h3>Add members</h3>
-              <div class="toolbar tight"><input type="search" id="gFind" placeholder="Search users and groups (at least 2 letters)" autocomplete="off" spellcheck="false"><button class="btn" id="btnGroupFind" title="Search users and groups in Entra ID to add as members">Search</button></div>
+              <div class="toolbar tight"><input type="search" id="gFind" placeholder="Search users and groups (at least 2 letters)" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><button class="btn" id="btnGroupFind" title="Search users and groups in Entra ID to add as members">Search</button></div>
               <p class="muted note" id="gFindNote"></p>
               <ul class="hits" id="gHits"></ul>
               <h3>To add <span class="muted" id="gAddCount"></span></h3>
@@ -161,7 +163,7 @@
   <!-- ============ Platform scripts ============ -->
   <section class="view" id="viewScripts" hidden>
     <div class="toolbar">
-      <input type="search" id="scriptSearch" placeholder="Search scripts" autocomplete="off" spellcheck="false">
+      <input type="search" id="scriptSearch" placeholder="Search scripts" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
       <span class="count" id="scriptCount"></span>
       <span class="spacer"></span>
       <button class="btn primary" id="btnScriptNew" title="Write a new platform script - saved locally or created in Intune">New script</button>
@@ -190,10 +192,10 @@
         <article class="card">
           <h2>Connection</h2>
           <p class="sub">The Entra ID app registration this app signs in with (app-only, with a certificate).</p>
-          <label>Tenant ID<input id="fTenant" spellcheck="false" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000"></label>
-          <label>Client (Application) ID<input id="fClient" spellcheck="false" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000"></label>
+          <label>Tenant ID<input id="fTenant" spellcheck="false" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000" autocorrect="off" autocapitalize="off"></label>
+          <label>Client (Application) ID<input id="fClient" spellcheck="false" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000" autocorrect="off" autocapitalize="off"></label>
           <label>Certificate thumbprint
-            <span class="inputrow"><input id="fThumb" spellcheck="false" autocomplete="off"><button class="btn" id="btnPickCert" title="Pick a certificate from this machine's certificate store">Choose...</button></span>
+            <span class="inputrow"><input id="fThumb" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"><button class="btn" id="btnPickCert" title="Pick a certificate from this machine's certificate store">Choose...</button></span>
           </label>
           <p class="certstatus" id="certStatus"></p>
           <div class="actions">
@@ -245,19 +247,19 @@
               <label title="System installs for every user of the device; User installs for the signed-in user only (and needs no admin rights).">Install for<select id="dContext"><option>System</option><option>User</option></select></label>
               <label title="Devices older than this don't get the app.">Minimum OS<select id="dMinOs"></select></label>
               <label title="Winget-AutoUpdate keeps Winget apps updated afterwards; the winget command only installs them.">Winget apps install with<select id="dWinget"><option value="WAU">Winget-AutoUpdate (Winget-Install.ps1)</option><option value="Winget">The winget command</option></select></label>
-              <label>Default dependencies <span class="muted">(app names, one per line)</span><textarea id="dDeps" rows="2"></textarea></label>
+              <label>Default dependencies <span class="muted">(app names, one per line)</span><textarea autocomplete="off" id="dDeps" rows="2" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
             </div>
             <div>
               <div class="two">
-                <label title="How long Intune waits for the install before it counts as failed. Intune uses steps of 5 minutes.">Install time (min)<input id="dTime" inputmode="numeric"></label>
-                <label>Min. disk space (MB)<input id="dDisk" inputmode="numeric"></label>
-                <label>Min. memory (MB)<input id="dMem" inputmode="numeric"></label>
-                <label>Min. CPUs<input id="dCpus" inputmode="numeric"></label>
-                <label>Min. CPU speed (MHz)<input id="dSpeed" inputmode="numeric"></label>
+                <label title="How long Intune waits for the install before it counts as failed. Intune uses steps of 5 minutes.">Install time (min)<input autocomplete="off" id="dTime" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+                <label>Min. disk space (MB)<input autocomplete="off" id="dDisk" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+                <label>Min. memory (MB)<input autocomplete="off" id="dMem" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+                <label>Min. CPUs<input autocomplete="off" id="dCpus" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+                <label>Min. CPU speed (MHz)<input autocomplete="off" id="dSpeed" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
                 <label title="What Intune does after the install: follow the return code, allow a restart, suppress it, or force one.">Restart<select id="dRestart"><option value="basedOnReturnCode">By return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></label>
               </div>
               <label class="chk"><input type="checkbox" id="dUninstall">Allow uninstall from Company Portal</label>
-              <label title="The installer's exit codes and what Intune makes of them: success, softReboot (restart later), hardReboot (restart now), retry, failed.">Return codes <span class="muted">(code = type, one per line)</span><textarea id="dCodes" rows="5" class="monotext"></textarea></label>
+              <label title="The installer's exit codes and what Intune makes of them: success, softReboot (restart later), hardReboot (restart now), retry, failed.">Return codes <span class="muted">(code = type, one per line)</span><textarea autocomplete="off" id="dCodes" rows="5" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
             </div>
           </div>
           <p class="formerror" id="defaultsError" hidden></p>
@@ -340,7 +342,7 @@
         <article class="card">
           <h2>Favourite groups</h2>
           <p class="sub" id="favGroupsHint">Offered first wherever a group is chosen. One per line.</p>
-          <textarea id="favGroups" aria-labelledby="favGroupsHint" rows="4" class="full"></textarea>
+          <textarea autocomplete="off" id="favGroups" aria-labelledby="favGroupsHint" rows="4" class="full" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
           <div class="actions"><button class="btn" id="btnSaveFavs" title="Save the favourite groups">Save favourites</button></div>
         </article>
 
@@ -379,7 +381,7 @@
 
 <dialog id="dlgNewCert">
   <h2>Create a certificate</h2>
-  <label>Subject<input id="fSubject" value="Intune Deployment" spellcheck="false"></label>
+  <label>Subject<input autocomplete="off" id="fSubject" value="Intune Deployment" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
   <p class="sub">Self-signed, 2 years, private key not exportable. Its public .cer is saved to the certificates folder - upload it next.</p>
   <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnNewCertGo" title="Create the certificate in the chosen store and export its .cer">Create</button></div>
 </dialog>
@@ -401,41 +403,41 @@
 <dialog id="dlgAsk" class="ask" aria-labelledby="askTitle">
   <h2 id="askTitle"></h2>
   <p class="asktext" id="askText"></p>
-  <input id="askInput" aria-labelledby="askTitle" autocomplete="off" spellcheck="false" hidden>
+  <input id="askInput" aria-labelledby="askTitle" autocomplete="off" spellcheck="false" hidden autocorrect="off" autocapitalize="off">
   <div class="actions end"><button class="btn" id="askCancel">Cancel</button><button class="btn primary" id="askOk">OK</button></div>
 </dialog>
 <dialog id="dlgApp" class="wide">
-  <form id="appForm" method="dialog">
+  <form autocomplete="off" id="appForm" method="dialog">
     <h2 id="appTitle">Edit app</h2>
     <div class="formgrid">
       <section>
         <h3>General</h3>
-        <label>Name<input id="aName" required autocomplete="off"></label>
-        <label title="The winget package ID, e.g. 7zip.7zip. Empty for an app with its own installer. Find... searches winget.">Winget ID <span class="muted">(empty for an app with its own package)</span><span class="inputrow"><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip"><button type="button" class="btn" id="btnFindWinget" title="Search winget for the package">Find...</button></span></label>
-        <label title="The Intune app this catalog entry is linked to. Set by Deploy, or by Checks when it links an existing app.">App ID in Intune <span class="muted">(empty until it's deployed)</span><input id="aAppId" autocomplete="off" spellcheck="false"></label>
+        <label>Name<input id="aName" required autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label title="The winget package ID, e.g. 7zip.7zip. Empty for an app with its own installer. Find... searches winget.">Winget ID <span class="muted">(empty for an app with its own package)</span><span class="inputrow"><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip" autocorrect="off" autocapitalize="off"><button type="button" class="btn" id="btnFindWinget" title="Search winget for the package">Find...</button></span></label>
+        <label title="The Intune app this catalog entry is linked to. Set by Deploy, or by Checks when it links an existing app.">App ID in Intune <span class="muted">(empty until it's deployed)</span><input id="aAppId" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <h3>Assignments <span class="muted">(one group per line)</span></h3>
         <div class="groups4">
-          <label title="Installed automatically on these groups' devices.">Required<textarea id="gRequired" rows="4" spellcheck="false"></textarea></label>
-          <label title="Offered in the Company Portal for these groups to install themselves.">Available<textarea id="gAvailable" rows="4" spellcheck="false"></textarea></label>
-          <label title="Removed from these groups' devices.">Uninstall<textarea id="gUninstall" rows="4" spellcheck="false"></textarea></label>
-          <label title="Groups that never get the app, whatever else they are assigned to.">Excluded<textarea id="gExclude" rows="4" spellcheck="false"></textarea></label>
+          <label title="Installed automatically on these groups' devices.">Required<textarea autocomplete="off" id="gRequired" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
+          <label title="Offered in the Company Portal for these groups to install themselves.">Available<textarea autocomplete="off" id="gAvailable" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
+          <label title="Removed from these groups' devices.">Uninstall<textarea autocomplete="off" id="gUninstall" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
+          <label title="Groups that never get the app, whatever else they are assigned to.">Excluded<textarea autocomplete="off" id="gExclude" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
         </div>
         <p class="sub" id="knownGroups"></p>
       </section>
       <section>
         <h3>Intune details <span class="muted" id="metaNote"></span></h3>
-        <label>Description<textarea id="mDescription" rows="3"></textarea></label>
+        <label>Description<textarea autocomplete="off" id="mDescription" rows="3" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
         <div class="two">
-          <label>Publisher<input id="mPublisher"></label>
-          <label>App version<input id="mAppVersion"></label>
-          <label>Owner<input id="mOwner"></label>
-          <label>Developer<input id="mDeveloper"></label>
+          <label>Publisher<input autocomplete="off" id="mPublisher" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          <label>App version<input autocomplete="off" id="mAppVersion" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          <label>Owner<input autocomplete="off" id="mOwner" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          <label>Developer<input autocomplete="off" id="mDeveloper" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         </div>
-        <label>Information URL<input id="mInformationUrl" spellcheck="false"></label>
-        <label>Privacy URL<input id="mPrivacyUrl" spellcheck="false"></label>
-        <label>Install command<input id="mInstallCommand" class="mono" spellcheck="false"></label>
-        <label title="Removed from these groups' devices.">Uninstall command<input id="mUninstallCommand" class="mono" spellcheck="false"></label>
-        <label>Notes<textarea id="mNotes" rows="2"></textarea></label>
+        <label>Information URL<input autocomplete="off" id="mInformationUrl" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label>Privacy URL<input autocomplete="off" id="mPrivacyUrl" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label>Install command<input autocomplete="off" id="mInstallCommand" class="mono" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label title="Removed from these groups' devices.">Uninstall command<input autocomplete="off" id="mUninstallCommand" class="mono" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label>Notes<textarea autocomplete="off" id="mNotes" rows="2" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
       </section>
     </div>
     <details class="deploysec" id="deploySec">
@@ -444,13 +446,13 @@
         <section>
           <h3>Detection rule</h3>
           <label>Type<select id="xType"><option value="">(none - an app with its own package needs one)</option><option value="Script">Script</option><option value="Msi">MSI product code</option><option value="File">File or folder</option><option value="Registry">Registry</option></select></label>
-          <div data-det="Script"><label>Detection script <span class="muted">(writes output and exits 0 when installed)</span><textarea id="xScript" rows="8" class="monotext" spellcheck="false"></textarea></label></div>
-          <div data-det="Msi"><label>Product code<input id="xProductCode" class="mono" spellcheck="false" placeholder="{00000000-0000-0000-0000-000000000000}"></label></div>
-          <div data-det="File"><div class="two"><label>Folder<input id="xPath" class="mono" spellcheck="false" placeholder="C:\Program Files\Vendor"></label><label>File or folder name<input id="xName" class="mono" spellcheck="false"></label></div>
+          <div data-det="Script"><label>Detection script <span class="muted">(writes output and exits 0 when installed)</span><textarea autocomplete="off" id="xScript" rows="8" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label></div>
+          <div data-det="Msi"><label>Product code<input autocomplete="off" id="xProductCode" class="mono" spellcheck="false" placeholder="{00000000-0000-0000-0000-000000000000}" autocorrect="off" autocapitalize="off"></label></div>
+          <div data-det="File"><div class="two"><label>Folder<input autocomplete="off" id="xPath" class="mono" spellcheck="false" placeholder="C:\Program Files\Vendor" autocorrect="off" autocapitalize="off"></label><label>File or folder name<input autocomplete="off" id="xName" class="mono" spellcheck="false" autocorrect="off" autocapitalize="off"></label></div>
             <label title="How Intune decides the app is installed: the file or key exists, or its version / value compares as set.">Detect by<select id="xFileType"><option value="exists">Exists</option><option value="doesNotExist">Doesn't exist</option><option value="version">Version</option><option value="modifiedDate">Date modified</option><option value="createdDate">Date created</option><option value="sizeInMB">Size in MB</option></select></label></div>
-          <div data-det="Registry"><label>Key path<input id="xKey" class="mono" spellcheck="false" placeholder="HKEY_LOCAL_MACHINE\SOFTWARE\Vendor"></label><label>Value name<input id="xValueName" class="mono" spellcheck="false"></label>
+          <div data-det="Registry"><label>Key path<input autocomplete="off" id="xKey" class="mono" spellcheck="false" placeholder="HKEY_LOCAL_MACHINE\SOFTWARE\Vendor" autocorrect="off" autocapitalize="off"></label><label>Value name<input autocomplete="off" id="xValueName" class="mono" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
             <label title="How Intune decides the app is installed: the file or key exists, or its version / value compares as set.">Detect by<select id="xRegType"><option value="exists">Exists</option><option value="doesNotExist">Doesn't exist</option><option value="string">String</option><option value="integer">Integer</option><option value="version">Version</option></select></label></div>
-          <div data-det="Msi File Registry"><div class="two"><label>Operator<select id="xOperator"><option value="notConfigured">(not configured)</option><option value="equal">Equals</option><option value="notEqual">Not equal</option><option value="greaterThan">Greater than</option><option value="greaterThanOrEqual">Greater than or equal</option><option value="lessThan">Less than</option><option value="lessThanOrEqual">Less than or equal</option></select></label><label>Value<input id="xValue" class="mono" spellcheck="false"></label></div></div>
+          <div data-det="Msi File Registry"><div class="two"><label>Operator<select id="xOperator"><option value="notConfigured">(not configured)</option><option value="equal">Equals</option><option value="notEqual">Not equal</option><option value="greaterThan">Greater than</option><option value="greaterThanOrEqual">Greater than or equal</option><option value="lessThan">Less than</option><option value="lessThanOrEqual">Less than or equal</option></select></label><label>Value<input autocomplete="off" id="xValue" class="mono" spellcheck="false" autocorrect="off" autocapitalize="off"></label></div></div>
           <div data-det="File Registry"><label class="chk"><input type="checkbox" id="x32">Check the 32-bit location on 64-bit Windows</label></div>
           <h3>Dependencies <span class="muted">(installed first)</span></h3>
           <div class="deplist" id="xDeps"></div>
@@ -462,15 +464,15 @@
           <div class="two">
             <label title="System installs for every user of the device; User installs for the signed-in user only (and needs no admin rights).">Install for<select id="xContext"><option>System</option><option>User</option></select></label>
             <label title="Devices older than this don't get the app.">Minimum OS<select id="xMinOs"></select></label>
-            <label title="How long Intune waits for the install before it counts as failed. Intune uses steps of 5 minutes.">Install time (min)<input id="xTime" inputmode="numeric"></label>
+            <label title="How long Intune waits for the install before it counts as failed. Intune uses steps of 5 minutes.">Install time (min)<input autocomplete="off" id="xTime" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
             <label title="What Intune does after the install: follow the return code, allow a restart, suppress it, or force one.">Restart<select id="xRestart"><option value="basedOnReturnCode">By return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></label>
-            <label>Min. disk space (MB)<input id="xDisk" inputmode="numeric"></label>
-            <label>Min. memory (MB)<input id="xMem" inputmode="numeric"></label>
-            <label>Min. CPUs<input id="xCpus" inputmode="numeric"></label>
-            <label>Min. CPU speed (MHz)<input id="xSpeed" inputmode="numeric"></label>
+            <label>Min. disk space (MB)<input autocomplete="off" id="xDisk" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <label>Min. memory (MB)<input autocomplete="off" id="xMem" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <label>Min. CPUs<input autocomplete="off" id="xCpus" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <label>Min. CPU speed (MHz)<input autocomplete="off" id="xSpeed" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
           </div>
           <label class="chk"><input type="checkbox" id="xUninstall">Allow uninstall from Company Portal</label>
-          <label title="The installer's exit codes and what Intune makes of them: success, softReboot (restart later), hardReboot (restart now), retry, failed.">Return codes <span class="muted">(code = type: success, softReboot, hardReboot, retry, failed)</span><textarea id="xCodes" rows="5" class="monotext"></textarea></label>
+          <label title="The installer's exit codes and what Intune makes of them: success, softReboot (restart later), hardReboot (restart now), retry, failed.">Return codes <span class="muted">(code = type: success, softReboot, hardReboot, retry, failed)</span><textarea autocomplete="off" id="xCodes" rows="5" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
         </section>
       </div>
     </details>
@@ -529,9 +531,9 @@
   <p class="sub" id="scriptWhere"></p>
   <div class="formgrid">
     <section>
-      <label>Name<input id="sName" maxlength="256" spellcheck="false"></label>
-      <label>Description<textarea id="sDescription" rows="2"></textarea></label>
-      <label>File name <span class="muted">(made from the name when empty)</span><input id="sFile" class="mono" spellcheck="false" placeholder="Set-Something.ps1"></label>
+      <label>Name<input autocomplete="off" id="sName" maxlength="256" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+      <label>Description<textarea autocomplete="off" id="sDescription" rows="2" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
+      <label>File name <span class="muted">(made from the name when empty)</span><input autocomplete="off" id="sFile" class="mono" spellcheck="false" placeholder="Set-Something.ps1" autocorrect="off" autocapitalize="off"></label>
       <div class="two">
         <label>Run as<select id="sRunAs"><option value="system">System</option><option value="user">Signed-in user</option></select></label>
         <span></span>
@@ -539,13 +541,13 @@
       <label class="chk"><input type="checkbox" id="s32">Run in 32-bit PowerShell on 64-bit Windows</label>
       <label class="chk"><input type="checkbox" id="sSig">Require a signature</label>
       <h3>Groups</h3>
-      <label>One group per line<textarea id="sGroups" rows="4" class="monotext" spellcheck="false"></textarea></label>
+      <label>One group per line<textarea autocomplete="off" id="sGroups" rows="4" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
       <label class="chk"><input type="checkbox" id="sAssign">Send these groups to Intune when saving there</label>
       <p class="muted note" id="sAssignNote">Replaces the script's assignments in Intune - an empty list removes them all.</p>
     </section>
     <section>
-      <label>Script <span class="muted">(at most 200 KB)</span><textarea id="sContent" rows="22" class="monotext" spellcheck="false"></textarea></label>
-      <label class="filebtn btn small">Load a .ps1 file...<input type="file" id="sLoad" accept=".ps1,.txt" hidden></label>
+      <label>Script <span class="muted">(at most 200 KB)</span><textarea autocomplete="off" id="sContent" rows="22" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
+      <label class="filebtn btn small">Load a .ps1 file...<input autocomplete="off" type="file" id="sLoad" accept=".ps1,.txt" hidden spellcheck="false" autocorrect="off" autocapitalize="off"></label>
     </section>
   </div>
   <p class="formerror" id="scriptErr" hidden></p>
@@ -568,7 +570,7 @@
   <h2>Delete several groups</h2>
   <p class="sub">Deletes these security groups from Entra ID. Apps assigned to them lose those assignments in Intune. The catalog still names them until you change the apps.</p>
   <div class="deplist tall" id="gDelList"></div>
-  <label>More group names <span class="muted">(one per line)</span><textarea id="gDelMore" rows="3" class="monotext" spellcheck="false"></textarea></label>
+  <label>More group names <span class="muted">(one per line)</span><textarea autocomplete="off" id="gDelMore" rows="3" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
   <pre class="log" id="gDelLog" tabindex="0" role="log" hidden></pre>
   <div class="actions end"><button class="btn" data-close>Close</button><button class="btn danger" id="btnGroupsDeleteGo" title="Delete the ticked groups from Entra ID">Delete</button></div>
 </dialog>
@@ -583,11 +585,11 @@
         <div class="checks"><label class="chk"><input type="checkbox" data-barch="x64" checked>x64</label><label class="chk"><input type="checkbox" data-barch="x86">x86</label><label class="chk"><input type="checkbox" data-barch="arm64">arm64</label></div></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minOSKey">Minimum OS</label><select id="bMinOs" aria-label="Minimum OS"></select></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="installContext">Install for</label><select id="bContext" aria-label="Install for"><option>System</option><option>User</option></select></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="installTimeMinutes">Install time (min)</label><input id="bTime" aria-label="Install time (min)" inputmode="numeric" value="60"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minDiskSpaceMB">Min. disk space (MB)</label><input id="bDisk" aria-label="Min. disk space (MB)" inputmode="numeric" value="0"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minMemoryMB">Min. memory (MB)</label><input id="bMem" aria-label="Min. memory (MB)" inputmode="numeric" value="0"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minProcessors">Min. CPUs</label><input id="bCpus" aria-label="Min. CPUs" inputmode="numeric" value="0"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minCpuSpeedMHz">Min. CPU speed (MHz)</label><input id="bSpeed" aria-label="Min. CPU speed (MHz)" inputmode="numeric" value="0"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="installTimeMinutes">Install time (min)</label><input autocomplete="off" id="bTime" aria-label="Install time (min)" inputmode="numeric" value="60" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minDiskSpaceMB">Min. disk space (MB)</label><input autocomplete="off" id="bDisk" aria-label="Min. disk space (MB)" inputmode="numeric" value="0" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minMemoryMB">Min. memory (MB)</label><input autocomplete="off" id="bMem" aria-label="Min. memory (MB)" inputmode="numeric" value="0" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minProcessors">Min. CPUs</label><input autocomplete="off" id="bCpus" aria-label="Min. CPUs" inputmode="numeric" value="0" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minCpuSpeedMHz">Min. CPU speed (MHz)</label><input autocomplete="off" id="bSpeed" aria-label="Min. CPU speed (MHz)" inputmode="numeric" value="0" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="deviceRestartBehavior">Restart</label><select id="bRestart" aria-label="Restart"><option value="basedOnReturnCode">By return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="allowAvailableUninstall">Uninstall from Company Portal</label><select id="bUninstall" aria-label="Uninstall from Company Portal"><option value="1">Allowed</option><option value="0">Not allowed</option></select></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="isFeatured">Featured in Company Portal</label><select id="bFeatured" aria-label="Featured in Company Portal"><option value="1">Yes</option><option value="0">No</option></select></div>
@@ -595,13 +597,13 @@
     </section>
     <section>
       <h3>Details</h3>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="publisher">Publisher</label><input id="bPublisher" aria-label="Publisher"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="owner">Owner</label><input id="bOwner" aria-label="Owner"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="developer">Developer</label><input id="bDeveloper" aria-label="Developer"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="informationUrl">Information URL</label><input id="bInfoUrl" aria-label="Information URL" placeholder="https://"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="privacyUrl">Privacy URL</label><input id="bPrivacyUrl" aria-label="Privacy URL" placeholder="https://"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="notes">Notes</label><input id="bNotes" aria-label="Notes"></div>
-      <div class="bfield wide"><label class="chk"><input type="checkbox" data-bf="returnCodes">Return codes <span class="muted">(replaces the list; code = type)</span></label><textarea id="bCodes" aria-label="Return codes (replaces the list; code = type)" rows="4" class="monotext">0 = success
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="publisher">Publisher</label><input autocomplete="off" id="bPublisher" aria-label="Publisher" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="owner">Owner</label><input autocomplete="off" id="bOwner" aria-label="Owner" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="developer">Developer</label><input autocomplete="off" id="bDeveloper" aria-label="Developer" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="informationUrl">Information URL</label><input autocomplete="off" id="bInfoUrl" aria-label="Information URL" placeholder="https://" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="privacyUrl">Privacy URL</label><input autocomplete="off" id="bPrivacyUrl" aria-label="Privacy URL" placeholder="https://" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="notes">Notes</label><input autocomplete="off" id="bNotes" aria-label="Notes" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+      <div class="bfield wide"><label class="chk"><input type="checkbox" data-bf="returnCodes">Return codes <span class="muted">(replaces the list; code = type)</span></label><textarea autocomplete="off" id="bCodes" aria-label="Return codes (replaces the list; code = type)" rows="4" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off">0 = success
 1707 = success
 3010 = softReboot
 1641 = hardReboot
@@ -627,7 +629,7 @@
 
 <dialog id="dlgWinget" class="wide">
   <h2>Find a Winget package</h2>
-  <div class="toolbar tight"><input type="search" id="wgQuery" placeholder="App or publisher name" autocomplete="off" spellcheck="false"><button class="btn" id="btnWgSearch" title="Search winget's sources (needs winget on this machine)">Search</button></div>
+  <div class="toolbar tight"><input type="search" id="wgQuery" placeholder="App or publisher name" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><button class="btn" id="btnWgSearch" title="Search winget's sources (needs winget on this machine)">Search</button></div>
   <p class="sub" id="wgNote">Searches winget's sources. Pick the package to use its ID.</p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>Name</th><th>Winget ID</th><th>Version</th><th>Source</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="wgRows"></tbody></table></div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>

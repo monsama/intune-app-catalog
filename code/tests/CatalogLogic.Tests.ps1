@@ -89,6 +89,7 @@ $testableFunctionNames = @(
     # Security: secrets out of logs, folder paths (Helpers.ps1, AppFolders.ps1)
     "Protect-LogText",
     "Get-GroupLookupUris",
+    "Get-AppWindowPreferencesJson",
     "Test-AppFolderPath",
     "Get-WingetShowVerdict",
     # Diagnostics (Diagnostics.ps1)
@@ -2361,6 +2362,15 @@ Assert-True ($firstFilter -like "displayName in ('SG-1','SG-2',*'SG-15')") "Grou
 $quoted = [Uri]::UnescapeDataString(@(Get-GroupLookupUris -Names @("O'Brien Team"))[0])
 Assert-True ($quoted -like "*('O''Brien Team')*") "Group lookup: a quote in a name is doubled for OData" $quoted
 Assert-Equal 0 @(Get-GroupLookupUris -Names @()).Count "Group lookup: no names, no requests"
+
+# The app window's browser profile settings
+$fresh = Get-AppWindowPreferencesJson -Existing '' | ConvertFrom-Json
+Assert-True ($fresh.translate.enabled -eq $false -and $fresh.credentials_enable_service -eq $false -and $fresh.profile.password_manager_enabled -eq $false) "Window preferences: translation and the password manager off"
+Assert-True ($fresh.autofill.enabled -eq $false -and $fresh.autofill.profile_enabled -eq $false -and $fresh.sync.requested -eq $false) "Window preferences: autofill and sync off"
+Assert-True ($fresh.browser.enable_spellchecking -eq $false -and $fresh.spellcheck.use_spelling_service -eq $false) "Window preferences: spelling correction off"
+$kept = Get-AppWindowPreferencesJson -Existing '{"profile":{"name":"X","password_manager_enabled":true},"extensions":{"ui":1},"translate":"odd"}' | ConvertFrom-Json
+Assert-True ($kept.profile.name -eq 'X' -and $kept.extensions.ui -eq 1 -and $kept.profile.password_manager_enabled -eq $false -and $kept.translate.enabled -eq $false) "Window preferences: what the browser stored stays, ours is set (even over an odd value)"
+Assert-True ((Get-AppWindowPreferencesJson -Existing '{not json') | ConvertFrom-Json).translate.enabled -eq $false "Window preferences: an unreadable file is replaced, not a failure"
 
 # =================================================================
 # Report
