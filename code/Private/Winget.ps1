@@ -141,16 +141,22 @@ function Global:Compare-AppVersionText {
     <#
       Pure: is version -Other newer (1), the same (0) or older (-1) than
       -Mine? Numbers are compared as numbers part by part (24.10 is newer
-      than 24.9), other parts as text; $null when either is empty or
-      "Unknown".
+      than 24.9, at any length), other parts as text; a leading "v" is
+      ignored, and a pre-release ("1.0-beta") is older than its release
+      ("1.0"). No version of our own counts as older than any; $null when
+      winget's is empty or either is "Unknown".
     #>
     param([string]$Mine, [string]$Other)
-    $a = ([string]$Mine).Trim(); $b = ([string]$Other).Trim()
-    if (-not $a -or -not $b -or $a -eq 'Unknown' -or $b -eq 'Unknown') { return $null }
+    $a = ([string]$Mine).Trim() -replace '^[vV](?=\d)', ''; $b = ([string]$Other).Trim() -replace '^[vV](?=\d)', ''
+    if (-not $b -or $a -eq 'Unknown' -or $b -eq 'Unknown') { return $null }
+    if (-not $a) { return 1 }
     $pa = @($a -split '[.\-+_ ]' | Where-Object { $_ -ne '' }); $pb = @($b -split '[.\-+_ ]' | Where-Object { $_ -ne '' })
     for ($i = 0; $i -lt [Math]::Max($pa.Count, $pb.Count); $i++) {
-        $x = if ($i -lt $pa.Count) { $pa[$i] } else { '0' }
-        $y = if ($i -lt $pb.Count) { $pb[$i] } else { '0' }
+        $x = if ($i -lt $pa.Count) { $pa[$i] } else { $null }
+        $y = if ($i -lt $pb.Count) { $pb[$i] } else { $null }
+        # One side has run out: a further number (1.0 vs 1.0.1) is newer, a further word (1.0 vs 1.0-beta) is a pre-release - older.
+        if ($null -eq $x) { if ($y -match '^\d+$') { if ($y.TrimStart('0')) { return 1 } else { continue } } else { return -1 } }
+        if ($null -eq $y) { if ($x -match '^\d+$') { if ($x.TrimStart('0')) { return -1 } else { continue } } else { return 1 } }
         if ($x -match '^\d+$' -and $y -match '^\d+$') {
             # As digit strings (leading zeros dropped, then length, then
             # digits): any length, where [decimal] would overflow.

@@ -19,14 +19,15 @@ function setCheckAreas() {
 // One stage that is a job (details, assignments): resolves when it has ended.
 function checkJob(path, body, label) {
   return new Promise(resolve => {
-    runJob(body, (ok, res, after) => resolve(ok && after && after.ok ? after : null), { path, log: 'checkLog', startText: label }).then(started => { if (!started) resolve(null); });
+    // The log opens by itself only when a stage fails - otherwise it stays folded, and the findings get the room.
+    runJob(body, (ok, res, after) => { if (!(ok && after && after.ok)) $('checkLogBox').open = true; resolve(ok && after && after.ok ? after : null); }, { path, log: 'checkLog', startText: label }).then(started => { if (!started) resolve(null); });
   });
 }
 async function runChecks(names) {
   if (checksRunning) return;
   checksRunning = true; updateCheckActions();
   const b = $('btnRunChecks'); b.disabled = true; b.textContent = 'Checking...';
-  $('checkLogBox').open = true; $('checkLog').textContent = '';
+  $('checkLogBox').open = false; $('checkLog').textContent = '';
   const only = names && names.length ? { names } : {};
   try {
     $('checkNotes').textContent = 'Reading the catalog, Intune and Entra ID...';

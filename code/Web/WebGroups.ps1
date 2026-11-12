@@ -42,7 +42,9 @@ function Global:Rename-WebGroupInApps {
             if ($null -eq $a.$field) { continue }
             $list = @($a.$field)
             if (@($list | Where-Object { [string]$_ -ieq $Old }).Count -eq 0) { continue }
-            $a.$field = @($list | ForEach-Object { if ([string]$_ -ieq $Old) { $New } else { $_ } } | Select-Object -Unique)
+            # Without case, like Entra ID: an app that had both names keeps one.
+            $seen = @{}
+            $a.$field = @($list | ForEach-Object { if ([string]$_ -ieq $Old) { $New } else { $_ } } | Where-Object { $k = ([string]$_).ToLowerInvariant(); if ($seen.ContainsKey($k)) { $false } else { $seen[$k] = $true; $true } })
             $hit = $true
         }
         if ($hit) { $changed.Add([string]$a.appName) }

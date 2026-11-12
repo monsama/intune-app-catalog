@@ -62,7 +62,7 @@ function Global:Get-WebCatalog {
                 available    = [int]$row.Available
                 uninstall    = [int]$row.Uninstall
                 wingetVersion = [string]$(if ($Global:App.WingetLatest -and $apps[$i].wingetId) { $Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()] })
-                newerOnWinget = [bool]($Global:App.WingetLatest -and $apps[$i].wingetId -and $apps[$i].metadata -and (Compare-AppVersionText ([string]$apps[$i].metadata.appVersion) ([string]$Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()])) -eq 1)
+                newerOnWinget = [bool]($Global:App.WingetLatest -and $apps[$i].wingetId -and (Compare-AppVersionText ([string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })) ([string]$Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()])) -eq 1)
                 hasIcon      = [bool]($apps[$i].icon -and $apps[$i].icon.value)
                 iconTag      = $(if ($apps[$i].icon -and $apps[$i].icon.value) { "$($apps[$i].icon.value.Length):$($apps[$i].icon.value.Substring([Math]::Max(0, $apps[$i].icon.value.Length - 12)))" } else { '' })
                 groups       = @(@($apps[$i].requiredFor) + @($apps[$i].availableFor) + @($apps[$i].uninstallFor) + @($apps[$i].excludeFor) | Where-Object { $_ } | ForEach-Object { [string]$_ } | Select-Object -Unique)
@@ -168,7 +168,7 @@ function Global:Complete-WebOrphanJobs {
       deploy's App ID still reaches the catalog. Called from the server's
       main loop.
     #>
-    param([int]$GraceSeconds = 15)
+    param([int]$GraceSeconds = 120)
     foreach ($id in @($Global:App.WebJobs.Keys)) {
         $job = $Global:App.WebJobs[$id]
         if (-not $job -or -not $job.Process.HasExited) { continue }
@@ -315,6 +315,8 @@ function Global:Get-WebJobPoll {
                 }
                 return @{ finished = $true; after = $done }
             }
+            # The catalog lock couldn't be had (Invoke-WithCatalogLock gave up): not finished yet - the next poll tries again.
+            if ($after -and $after.ok -eq $false -and $null -eq $after.finished) { $response.done = $false }
             if ($after.finished) {
                 if ($null -ne $after.after) { $response.after = $after.after }
                 Remove-Item -LiteralPath (@($job.Cleanup) + $job.Log + @($job.Result | Where-Object { $_ })) -Force -ErrorAction SilentlyContinue

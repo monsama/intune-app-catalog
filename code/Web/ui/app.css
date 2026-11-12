@@ -430,3 +430,18 @@ td .pill.newer { margin-left: 6px; }
 .ovbar span { display: block; height: 100%; }
 .ovbar .ok { background: var(--ok); } .ovbar .err { background: var(--err); } .ovbar .info { background: var(--info); } .ovbar .none { background: var(--muted); opacity: .4; }
 #histCompare h3 { margin: 16px 0 0; font-size: 14px; }
+
+/* ---- sweep: sticky editor buttons, setup states, group description ---- */
+#dlgApp .actions.split { position: sticky; bottom: -18px; z-index: 3; background: var(--surface); margin: 16px -20px -18px; padding: 12px 20px 18px; border-top: 1px solid var(--bd2); }
+.ts.unknown .tsmark { background: var(--warn-bg); color: var(--warn); }
+.ts.check .tsmark { background: var(--accent-soft); color: var(--fg); }
+.tsreasons { margin: 6px 0 0; padding-left: 18px; font-size: 12px; }
+.tsreasons li { margin: 2px 0; }
+.tsact { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+label.gdesc { display: block; font-size: 12px; color: var(--muted); }
+label.gdesc > input { display: block; width: 100%; margin-top: 4px; }
+#groupSelCount { flex-basis: 100%; }
+/* Apps toolbar: the search and filter give way first, so the action buttons stay on one row down to ~1100 px. */
+#viewApps > .toolbar #search { flex: 0 1 320px; min-width: 150px; width: auto; }
+#viewApps > .toolbar #filter { flex: 0 1 auto; min-width: 120px; max-width: 190px; }
+@media (min-width: 1000px) { #viewApps > .toolbar { flex-wrap: nowrap; } #viewApps > .toolbar .count { white-space: nowrap; } }

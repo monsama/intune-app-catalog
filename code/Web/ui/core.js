@@ -72,6 +72,9 @@ async function api(path, body = {}) {
     const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, token: TOKEN }) });
     const j = await r.json();
     if (j && j.error === 'bad token') showDead();
+    // "deployed": the apps an answer offers to push to. One whose App ID the
+    // connected tenant doesn't have (a copied catalog) would only fail there.
+    if (j && Array.isArray(j.deployed) && typeof tenantState === 'function') j.deployed = j.deployed.filter(n => { const a = apps.find(x => x.name === n); return !a || tenantState(a) !== 'missing'; });
     return j;
   } catch (e) {
     return { ok: false, error: 'The app\'s server did not answer (' + e.message + ').' };

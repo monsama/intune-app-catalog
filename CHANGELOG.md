@@ -1,5 +1,95 @@
 # Changelog
 
+## 2.0.15
+
+A security, bug and usability sweep.
+
+### Security
+
+- **CSV export:** a value Excel would run as a formula (starting with `=`,
+  `+`, `-` or `@`) is written as text, and comes back unchanged on import.
+- **Packaging tool:** IntuneWinAppUtil.exe's Microsoft signature is checked
+  before every use, not only after download, and the signer must be exactly
+  "Microsoft Corporation". This matters when the Tools folder is a share
+  others can write to.
+- **Activity log:** a step's output reaches the page in whole lines, so the
+  secret filter always sees a token or signature in one piece.
+
+### Fixed
+
+- **Deploy:**
+  - "Done" deployed everything again when clicked; it is now disabled.
+  - A missed status poll left the queue stuck with a dialog that wouldn't
+    close; polls are retried, and a lost step ends the wait with a message.
+  - A step finished while the window was minimised is no longer completed
+    by the server after 15 s (now 2 minutes).
+- **Steps:** two quick clicks could start two of them.
+- **Lost changes:**
+  - "Supersedes nothing" was read back as "leave Intune's alone".
+  - Updating an app with no settings of its own cleared Intune's
+    supersedence and its Featured flag.
+- **Copying a catalog to a new tenant:**
+  - Deploy refuses an App ID the connected tenant doesn't have, saying why,
+    instead of failing on every app.
+  - Clearing App IDs also drops supersedence that points at the old
+    tenant's apps.
+  - The "push settings / push groups afterwards" choices leave out apps that
+    aren't in this tenant.
+- **Version comparison:**
+  - a pre-release ("1.0-beta") counts as older than its release;
+  - a leading "v" is ignored;
+  - very long numbers no longer stop the Apps list from loading;
+  - an app without a version can take winget's.
+- **CSV:**
+  - no "sep=" line, so Excel keeps umlauts and accents;
+  - a file Excel saved in its own encoding is read correctly;
+  - a duplicate row is a warning, not a blocker;
+  - group names with `|` survive.
+- **Smaller fixes:**
+  - Replace a group no longer leaves both "SG-A" and "sg-a" on an app.
+  - The icon size limit is the same in the editor and the server.
+  - A failed group read no longer leaves its buttons disabled.
+
+### Changed
+
+- **Set up this tenant:**
+  - Step 3 says how many apps are ready, lists why the others aren't, and
+    links to Packaging when the shared Winget package is missing.
+  - Step 2 says the groups are created empty, links to the Groups page, and
+    shows "not checked" when Entra ID couldn't be read, instead of a tick.
+  - Step 4 is a check you can run again, not a step that is never "done".
+- **Apps list:**
+  - **Statuses:** "Not deployed" (grey) and "Not deployed - own settings"
+    replace "No App ID" and "Metadata saved - ready to deploy". Neither
+    counts as needing attention any more. "Custom package" reads
+    "Winget ID + own package".
+  - **Last audit:** an audit from another tenant shows as "Other tenant".
+  - **Type:** short ("Win32", "Store"), with the full name on hover.
+  - **Groups column:** headed "R / A / U".
+  - **Toolbar:** stays on one row down to about 1100 px.
+- **Tenant banner:** **Set up this tenant...** is the main button. "Clear
+  their App IDs" is gone, since it is step 1 there.
+- **Keyboard:** Enter or Delete on a button, link or menu no longer opens or
+  removes the selected app.
+- **App editor:**
+  - Escape or Cancel asks before discarding changes.
+  - The Save/Cancel row stays visible while scrolling.
+  - The Uninstall command's tooltip is fixed.
+- **Wording and buttons:**
+  - Deploy's action for an app in Intune is "Push settings", and apps it
+    can't run are "Not ready".
+  - Replace a group says "in these apps" or "in all apps".
+  - Batch edit, Add groups and CSV import have Cancel until something is
+    applied.
+  - Clear App IDs explains what stays.
+  - New group's button is "Next".
+  - The group save button says what it does ("Add 2 members and save",
+    "Save description"), and the description sits above the two cards.
+- **Smaller changes:**
+  - Batch edit doesn't offer the selected apps as their own dependencies.
+  - Checks keeps its log folded unless a stage fails.
+  - The undo banner shows the date when it isn't today.
+
 ## 2.0.14
 
 ### Added

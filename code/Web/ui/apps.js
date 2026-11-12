@@ -75,25 +75,31 @@ async function loadIntuneIds(force) {
   intuneIds = r.ok ? new Set((r.ids || []).map(x => String(x).toLowerCase())) : null;
   renderApps();
 }
+// Intune's app types, short for the list (the full name is the cell's tooltip).
+const shortType = t => ({ 'Windows app (Win32)': 'Win32', 'Microsoft Store app (new)': 'Store', 'Microsoft 365 Apps (Windows 10 and later)': 'Microsoft 365' })[t] || t || '';
+// What the server's status words are shown as - the same meaning, in the words the rest of the page uses.
+const statusLabel = { 'No App ID': 'Not deployed', 'Metadata saved - ready to deploy': 'Not deployed - own settings', 'Custom package': 'Winget ID + own package' };
 function statusPill(row) {
   const s = row.status || '';
   const t = tenantState(row);
-  if (t === 'missing') return el('span', { class: 'pill warn', text: 'Not in this tenant' + (s ? '; ' + s : ''), title: statusHelp['Not in this tenant'] });
+  if (t === 'missing') return el('span', { class: 'pill warn', text: 'Not in this tenant' + (s ? '; ' + s.split('; ').map(p => statusLabel[p] || p).join('; ') : ''), title: statusHelp['Not in this tenant'] });
   if (!s && t === 'unchecked') return el('span', { class: 'pill muted', text: 'Has App ID', title: statusHelp['Has App ID'] });
   if (!s) return el('span', { class: 'pill ok', text: 'Deployed', title: statusHelp.Deployed });
   const parts = s.split('; ');
-  const good = parts.every(p => p === 'Metadata saved - ready to deploy' || p === 'Custom package');
-  const cls = good ? (parts.includes('Metadata saved - ready to deploy') ? 'ok' : 'info') : 'warn';
-  return el('span', { class: 'pill ' + cls, text: s, title: parts.map(p => statusHelp[p]).filter(Boolean).join('\n') });
+  const plain = parts.every(p => p === 'No App ID' || p === 'Metadata saved - ready to deploy' || p === 'Custom package');
+  const cls = !plain ? 'warn' : parts.includes('No App ID') ? 'muted' : 'info';
+  return el('span', { class: 'pill ' + cls, text: parts.map(p => statusLabel[p] || p).join('; '), title: parts.map(p => statusHelp[p]).filter(Boolean).join('\n') });
 }
-function auditPill(text) {
+function auditPill(text, row) {
   if (!text) return '';
+  if (row && tenantState(row) === 'missing') return el('span', { class: 'pill muted', text: 'Other tenant', title: `${text} - from the tenant this App ID belongs to, not the one connected now.` });
   if (/issue|Check failed/.test(text)) return el('span', { class: 'pill warn', text, title: 'The last time Checks read this app in detail, the catalog and Intune differed - Checks shows what and offers the fix.' });
   if (/^OK/.test(text)) return el('span', { class: 'pill ok', text, title: 'The last detailed check found the catalog and Intune the same.' });
   return el('span', { class: 'pill muted', text, title: 'Checks with "read every deployed app in detail" compares this app field by field.' });
 }
 function needsAttention(a) {
-  return tenantState(a) === 'missing' || (a.status && !/^(Metadata saved - ready to deploy|Custom package)(; Custom package)?$/.test(a.status)) || /issue|Check failed/.test(a.audit || '');
+  // Not being deployed yet isn't a problem in itself ("No App ID"); a stale App ID, a missing package or an audit finding is.
+  return tenantState(a) === 'missing' || (a.status && !a.status.split('; ').every(p => ['No App ID', 'Metadata saved - ready to deploy', 'Custom package'].includes(p))) || (tenantState(a) !== 'missing' && /issue|Check failed/.test(a.audit || ''));
 }
 const filters = {
   all: () => true,
@@ -134,11 +140,11 @@ function renderApps() {
     const tr = el('tr', { 'data-name': a.name, class: selected.has(a.name) ? 'sel' : '', title: a.appId ? 'App ID ' + a.appId : 'Not in Intune yet' },
       el('td', { class: 'name' }, iconFor(a), a.name),
       el('td', { class: 'mono', text: a.wingetId || '-' }),
-      el('td', { text: a.type || '' }),
+      el('td', { text: shortType(a.type), title: a.type || '' }),
       el('td', { class: 'num' }, a.version || '', a.newerOnWinget ? el('span', { class: 'pill info newer', text: '→ ' + a.wingetVersion, title: `winget offers ${a.wingetVersion}. More > Take winget's version uses it as the App version.` }) : ''),
       el('td', { class: 'num', title: 'Required / Available / Uninstall', text: `${a.required} / ${a.available} / ${a.uninstall}` }),
       el('td', {}, statusPill(a)),
-      el('td', {}, auditPill(a.audit)));
+      el('td', {}, auditPill(a.audit, a)));
     tr.addEventListener('click', e => selectRow(a.name, e));
     tr.addEventListener('dblclick', () => openEditor(a.name));
     return tr;
@@ -193,6 +199,17 @@ function fillEditor(a) {
   $('appError').hidden = true;
 }
 
+// ---------------------------------------------------------------- unsaved changes (editor)
+// Escape or Cancel with changes asks first; saving or removing closes it without asking.
+let editorSnapshot = '';
+const editorState = () => [...$('appForm').querySelectorAll('input, textarea, select')].map(e => e.type === 'checkbox' ? e.checked : e.value).join('\u0001') + '\u0001' + iconChange;
+async function closeEditorAsking() {
+  if (editorState() !== editorSnapshot && !(await ask(`Discard your changes to ${editingName || 'the new app'}?\n\nNothing you changed in this dialog is saved.`, { ok: 'Discard', danger: true }))) return;
+  $('dlgApp').close();
+}
+$('dlgApp').addEventListener('cancel', e => { e.preventDefault(); if (!$('dlgAsk').open) closeEditorAsking(); });
+$('btnAppCancel').addEventListener('click', closeEditorAsking);
+
 // ---------------------------------------------------------------- the app's icon (editor)
 let editorIcon = null, iconChange = 'keep';
 function setEditorIcon(icon, change) {
@@ -220,7 +237,7 @@ function readIconFile(f) {
           url = c.toDataURL('image/png'); type = 'image/png';
         }
         const value = url.slice(url.indexOf(',') + 1);
-        if (value.length * 3 / 4 > 750 * 1024) { reject(new Error('The image is larger than 750 KB - use a smaller one.')); return; }
+        if (value.length * 3 / 4 > 750000) { reject(new Error('The image is larger than 750 KB - use a smaller one.')); return; }
         resolve({ type, value });
       };
       img.src = reader.result;
@@ -248,7 +265,7 @@ function supRow(s = { appId: '', name: '', type: 'update' }) {
   const sel = el('select', { 'aria-label': 'The app this one supersedes', 'data-sup': '' },
     el('option', { value: '', text: 'Choose an app...' }),
     ...editorIntuneApps.map(a => el('option', { value: a.appId, text: a.name })),
-    s.appId && !known ? el('option', { value: s.appId, text: `${s.name || s.appId} (not in the catalog)` }) : '',
+    s.appId && !known ? el('option', { value: s.appId, text: `${s.name || s.appId} (${intuneIds && !intuneIds.has(s.appId.toLowerCase()) ? 'not in this tenant' : 'by App ID'})` }) : '',
     el('option', { value: '__other', text: 'Another app in Intune - type its App ID...' }));
   sel.value = s.appId ? (known ? editorIntuneApps.find(a => a.appId.toLowerCase() === s.appId.toLowerCase()).appId : s.appId) : '';
   const other = el('input', { placeholder: 'App ID (GUID) from Intune', 'aria-label': 'App ID of the superseded app', class: 'mono', hidden: true, 'data-supid': '' });
@@ -301,6 +318,7 @@ async function openEditor(name) {
   $('btnRemoveApp').hidden = !name;
   $('btnAppHistory').hidden = !name;
   $('dlgApp').showModal();
+  editorSnapshot = editorState();
   $('aName').focus();
 }
 $('btnAddApp').addEventListener('click', () => openEditor(''));
@@ -473,7 +491,7 @@ function updateTenantBanner() {
     : `${missing.length} app${missing.length === 1 ? ' has an App ID' : 's have App IDs'} this tenant doesn't know - copied from another tenant, or deleted in Intune.`;
 }
 $('btnTenantShow').addEventListener('click', () => { $('filter').value = 'notintenant'; renderApps(); });
-$('btnTenantClear').addEventListener('click', async () => {
+$('btnTenantClear') && $('btnTenantClear').addEventListener('click', async () => {
   const names = apps.filter(a => tenantState(a) === 'missing').map(a => a.name);
   if (!names.length) return;
   if (!(await ask(`Clear the App ID of ${names.length} app${names.length === 1 ? '' : 's'}?\n\nOnly the catalog changes - their settings, groups and packages stay, and they read "ready to deploy". Deploy then creates them in this tenant. Each file is kept as a copy first (Earlier versions...).`, { ok: 'Clear App IDs', danger: false }))) return;
@@ -505,7 +523,8 @@ document.addEventListener('keydown', e => {
 // dialog or menu open, and no field focused (typing is never taken over).
 function listKeys(e) {
   if ($('viewApps').hidden || document.querySelector('dialog[open]') || document.querySelector('.menu:not([hidden])')) return;
-  if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;
+  // ... nor a button, link or summary - Enter and Delete there mean that control, not the list.
+  if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable], button, a, summary, .menu, .banner')) return;
   if (!visible.length) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const show = n => { const r = [...$('gridBody').children].find(t => t.dataset.name === n); if (r) r.scrollIntoView({ block: 'nearest' }); };
@@ -606,8 +625,8 @@ async function openDeploy(names) {
   if (!r.ok) { toast(r.error, true); return; }
   deployPlan = r.apps; deployResults = {};
   $('deployRows').replaceChildren(...deployPlan.map(a => el('tr', { 'data-name': a.name },
-    el('td', { text: a.name }), el('td', { text: a.update ? 'Update settings' : 'Create' }),
-    el('td', {}, a.ready ? el('span', { class: 'pill muted', text: 'Waiting' }) : el('span', { class: 'pill warn', text: 'Skipped', title: a.reason }), a.ready ? '' : el('span', { class: 'why', text: a.reason })))));
+    el('td', { text: a.name }), el('td', { text: a.update ? 'Push settings' : 'Create' }),
+    el('td', {}, a.ready ? el('span', { class: 'pill muted', text: 'Waiting' }) : el('span', { class: 'pill warn', text: 'Not ready', title: a.reason }), a.ready ? '' : el('span', { class: 'why', text: a.reason })))));
   if (r.circular && r.circular.length) toast('These depend on each other in a circle: ' + r.circular.join(', '), true);
   $('deployLog').textContent = r.note ? r.note + '\n' : '';
   $('deployProgress').hidden = true; $('btnDeployStop').hidden = true; $('btnDeployRetry').hidden = true;
@@ -658,13 +677,13 @@ async function runDeployQueue(names) {
   const retry = ready.filter(n => ['failed', 'skipped', 'stopped'].includes(deployResults[n]));
   $('btnDeployRetry').hidden = !retry.length;
   $('btnDeployRetry').textContent = retry.length ? `Retry ${retry.length}` : 'Retry failed';
-  $('btnDeployGo').textContent = 'Done';
+  $('btnDeployGo').textContent = 'Done'; $('btnDeployGo').disabled = true;
   const okN = ready.filter(n => deployResults[n] === 'ok').length;
   toast(`Deploy finished: ${okN} of ${ready.length} done${retry.length ? `, ${retry.length} to retry` : ''}.`, okN < ready.length);
   loadApps();
 }
-$('btnDeployGo').addEventListener('click', () => runDeployQueue(deployPlan.filter(a => a.ready).map(a => a.name)));
-$('btnDeployRetry').addEventListener('click', () => runDeployQueue(deployPlan.filter(a => a.ready && ['failed', 'skipped', 'stopped'].includes(deployResults[a.name])).map(a => a.name)));
+$('btnDeployGo').addEventListener('click', () => { if (!deployRunning && $('btnDeployGo').textContent !== 'Done') runDeployQueue(deployPlan.filter(a => a.ready).map(a => a.name)); });
+$('btnDeployRetry').addEventListener('click', () => !deployRunning && runDeployQueue(deployPlan.filter(a => a.ready && ['failed', 'skipped', 'stopped'].includes(deployResults[a.name])).map(a => a.name)));
 $('btnDeployStop').addEventListener('click', () => { deployStop = true; $('btnDeployStop').disabled = true; toast('Stopping after the app that is running.'); });
 $('dlgDeploy').addEventListener('cancel', e => { if (deployRunning) { e.preventDefault(); toast('Deploying - use "Stop after this app" first, or wait.', true); } });
 $('btnDeployClose').addEventListener('click', e => { if (deployRunning) { e.stopImmediatePropagation(); toast('Deploying - use "Stop after this app" first, or wait.', true); } }, true);
@@ -710,7 +729,7 @@ function openBatch(names) {
   $('bDepMode').value = 'add';
   $('bMinOs').replaceChildren(...((prefs && prefs.minOsChoices) || [{ value: 'W10_22H2', label: 'Windows 10 22H2' }]).map(o => el('option', { value: o.value, text: o.label || o.value })));
   $('bMinOs').value = 'W10_22H2';
-  appPicker($('bDeps'), apps.map(a => a.name), new Set(), 'data-bdep', 'None - tick the apps to install first.');
+  appPicker($('bDeps'), apps.map(a => a.name).filter(n => !names.includes(n)), new Set(), 'data-bdep', 'None - tick the apps to install first.');
   $('batchErr').hidden = true; $('batchLog').hidden = true; $('batchLog').textContent = '';
   $('btnBatchGo').disabled = false;
   batchReset();
@@ -896,7 +915,7 @@ async function menuAction(act) {
     }
     case 'clearid': {
       const ids = sel().filter(a => a.hasAppId).map(a => a.name);
-      if (!(await ask(`Clear ${ids.length === 1 ? `${ids[0]}'s App ID` : `the App IDs of ${ids.length} apps`} in the catalog?\n\nOnly the catalog changes; the app${ids.length === 1 ? ' stays' : 's stay'} in Intune. Undo takes it back.`))) return;
+      if (!(await ask(`Clear ${ids.length === 1 ? `${ids[0]}'s App ID` : `the App IDs of ${ids.length} apps`} in the catalog?\n\nOnly the catalog changes - Intune isn't touched. Settings, groups and packages stay, and the app can be deployed again (here or in another tenant). Undo takes it back.`, { ok: 'Clear App IDs', danger: false }))) return;
       const r = await api('/api/clear-appids', { names: ids }); toast(r.ok ? `Cleared ${r.cleared.length} App ID(s).` : r.error, !r.ok); loadApps();
       break;
     }
@@ -1010,7 +1029,7 @@ function openCsvImport() {
   csvText = ''; csvChanges = [];
   $('csvFile').value = ''; $('csvName').textContent = '';
   $('csvPreview').hidden = true; $('csvErr').hidden = true; $('csvNote').textContent = ''; $('csvLog').hidden = true; $('csvLog').textContent = ''; $('csvPushRow').hidden = true;
-  $('btnCsvGo').disabled = true; $('btnCsvGo').textContent = 'Apply';
+  $('btnCsvGo').disabled = true; $('btnCsvGo').textContent = 'Apply'; $('btnCsvClose').textContent = 'Cancel';
   $('dlgCsv').showModal();
 }
 $('csvFile').addEventListener('change', async () => {
@@ -1018,7 +1037,9 @@ $('csvFile').addEventListener('change', async () => {
   $('csvErr').hidden = true; $('btnCsvGo').disabled = true; $('csvPreview').hidden = true;
   if (!f) return;
   if (f.size > 5 * 1024 * 1024) { $('csvErr').textContent = 'The file is too large for a catalog (over 5 MB).'; $('csvErr').hidden = false; return; }
-  csvText = await f.text();
+  // UTF-8 (what Export writes); a file Excel re-saved in its default "CSV" (Windows-1252) is read as that instead of turning umlauts into �.
+  const buf = await f.arrayBuffer();
+  try { csvText = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { csvText = new TextDecoder('windows-1252').decode(buf); }
   $('csvName').textContent = 'Reading...';
   const r = await api('/api/csv-import', { text: csvText, preview: true });
   $('csvName').textContent = '';
@@ -1028,6 +1049,7 @@ $('csvFile').addEventListener('change', async () => {
   $('csvNote').textContent = '';
   if (r.errors.length) notes.push('Fix these rows first: ' + r.errors.join('; '));
   if (r.notFound.length) notes.push(`Not in the catalog, skipped: ${r.notFound.join(', ')}.`);
+  for (const w of r.warnings || []) notes.push(w);
   if (r.ignoredColumns.length) notes.push(`Columns that aren't read: ${r.ignoredColumns.join(', ')}.`);
   previewTable($('csvPreview'), r.changes, 'Nothing differs from the catalog.');
   $('csvNote').textContent = notes.filter(n => !n.startsWith('Fix')).join(' ');
@@ -1043,6 +1065,7 @@ $('btnCsvGo').addEventListener('click', async () => {
   const r = await api('/api/csv-import', { text: csvText });
   if (!r.ok) { $('csvErr').textContent = r.error; $('csvErr').hidden = false; return; }
   toast(`Imported ${r.changes.length} change(s) on ${r.apps.length} app(s). Undo takes it back.`);
+  $('btnCsvClose').textContent = 'Close';
   await loadApps();
   if (groupsLoaded) loadGroups();
   const groupFields = ['requiredFor', 'availableFor', 'uninstallFor', 'excludeFor'];
@@ -1079,32 +1102,40 @@ async function openTenantSetup() {
   tsData = r;
   const list = names => names.length ? el('details', {}, el('summary', { text: names.length > 1 ? `the ${names.length} apps` : names[0] }), el('p', { class: 'muted', text: names.join(', ') })) : '';
   const glist = names => names.length ? el('details', {}, el('summary', { text: `the ${names.length} group${names.length === 1 ? '' : 's'}` }), el('p', { class: 'muted', text: names.join(', ') })) : '';
-  const step = (n, title, todo, doneText, text, more, btnText, btnTitle, action) => {
-    const b = todo ? el('button', { class: 'btn' + (n === firstTodo ? ' primary' : ''), text: btnText, title: btnTitle, onclick: action }) : '';
-    return el('li', { class: 'ts ' + (todo ? (n === firstTodo ? 'next' : 'todo') : 'done') },
-      el('span', { class: 'tsmark', 'aria-hidden': 'true', text: todo ? String(n) : '✓' }),
-      el('div', { class: 'tsbody' }, el('h3', {}, title, el('span', { class: 'sr', text: todo ? ' - to do' : ' - done' })), el('p', { class: 'sub', text: todo ? text : doneText }), todo ? more : ''),
-      el('div', { class: 'tsact' }, b));
+  // state: 'todo', 'done', 'unknown' (couldn't be checked) or 'check' (always worth running, never "done").
+  const step = (n, title, state, doneText, text, more, buttons) => {
+    const isNext = n === firstTodo;
+    return el('li', { class: 'ts ' + (state === 'todo' ? (isNext ? 'next' : 'todo') : state) },
+      el('span', { class: 'tsmark', 'aria-hidden': 'true', text: state === 'done' ? '✓' : state === 'unknown' ? '?' : String(n) }),
+      el('div', { class: 'tsbody' }, el('h3', {}, title, el('span', { class: 'sr', text: { todo: ' - to do', done: ' - done', unknown: ' - not checked', check: '' }[state] })),
+        el('p', { class: 'sub', text: state === 'done' ? doneText : text }), state === 'done' ? '' : more),
+      el('div', { class: 'tsact' }, ...(state === 'done' ? [] : buttons.map((b, k) => el('button', { class: 'btn' + (isNext && k === 0 ? ' primary' : ''), text: b[0], title: b[1], onclick: b[2] })))));
   };
-  const todo = [r.stale.length, r.missingGroups.length, r.notDeployed.length, r.pushGroups.length];
-  const firstTodo = todo.findIndex(x => x > 0) + 1;
-  $('tsText').textContent = firstTodo ? `${r.apps} apps in the catalog. What the connected tenant still needs, in order - each step asks or previews before it changes anything.` : `All ${r.apps} apps are set up in this tenant.`;
+  const ready = r.notDeployed.filter(n => !r.notReady.some(x => x.name === n));
+  const states = [r.stale.length ? 'todo' : 'done', r.groupsNote ? 'unknown' : r.missingGroups.length ? 'todo' : 'done', r.notDeployed.length ? 'todo' : 'done', r.pushGroups.length ? 'check' : 'done'];
+  const firstTodo = states.findIndex(x => x === 'todo') + 1;
+  const reasons = r.notReady.length ? el('details', {}, el('summary', { text: `${r.notReady.length} not ready yet - why` }), el('ul', { class: 'tsreasons' }, ...r.notReady.map(x => el('li', {}, el('b', { text: x.name }), ' - ' + x.reason)))) : '';
+  $('tsText').textContent = firstTodo ? `${r.apps} apps in the catalog. What the connected tenant still needs, in order - each step asks or previews before it changes anything.` : `The ${r.apps} apps are set up in this tenant${r.pushGroups.length ? ' - push groups any time to check the assignments' : ''}.`;
   $('tsSteps').replaceChildren(
-    step(1, 'Clear App IDs from another tenant', r.stale.length, 'No App ID points at an app this tenant doesn\'t have.',
-      `${r.stale.length} app${r.stale.length === 1 ? ' has an App ID' : 's have App IDs'} this tenant doesn't know. Clearing them (catalog only, Undo works) lets them be deployed here.`, list(r.stale),
-      `Clear ${r.stale.length} App ID${r.stale.length === 1 ? '' : 's'}`, 'Clear these App IDs in the catalog - Intune isn\'t touched', async () => {
+    step(1, 'Clear App IDs from another tenant', states[0], 'No App ID points at an app this tenant doesn\'t have.',
+      `${r.stale.length} app${r.stale.length === 1 ? ' has an App ID' : 's have App IDs'} this tenant doesn't know. Clearing them (catalog only, Undo works) lets them be deployed here; supersedence pointing at the old tenant's apps goes with them.`, list(r.stale),
+      [[`Clear ${r.stale.length} App ID${r.stale.length === 1 ? '' : 's'}`, 'Clear these App IDs in the catalog - Intune isn\'t touched', async () => {
         if (!(await ask(`Clear ${r.stale.length} App ID(s) in the catalog?\n\nThey point at apps this tenant doesn't have. Settings, groups and packages stay. Undo takes it back.`, { ok: 'Clear App IDs', danger: false }))) return;
         const x = await api('/api/clear-appids', { names: r.stale }); toast(x.ok ? `Cleared ${x.cleared.length} App ID(s).` : x.error, !x.ok); await loadApps(); openTenantSetup();
-      }),
-    step(2, 'Create the groups in Entra ID', r.missingGroups.length, r.groupsNote || 'Every group the catalog assigns to exists in Entra ID.',
-      `${r.missingGroups.length} group${r.missingGroups.length === 1 ? '' : 's'} the apps are assigned to ${r.missingGroups.length === 1 ? "doesn't" : "don't"} exist yet - an assignment to one reaches nobody.${r.groupsNote ? ' ' + r.groupsNote : ''}`, glist(r.missingGroups),
-      `Create ${r.missingGroups.length} group${r.missingGroups.length === 1 ? '' : 's'}`, 'Create them as empty security groups - add members on the Groups page', () => createGroups(r.missingGroups, () => openTenantSetup())),
-    step(3, 'Deploy the apps', r.notDeployed.length, 'Every app in the catalog is in Intune.',
-      `${r.notDeployed.length} app${r.notDeployed.length === 1 ? ' isn\'t' : 's aren\'t'} in Intune yet. Deploy shows which are ready (package, detection rule) and runs them in dependency order.`, list(r.notDeployed),
-      `Deploy ${r.notDeployed.length} app${r.notDeployed.length === 1 ? '' : 's'}...`, 'Opens Deploy for these apps - nothing starts until you confirm there', () => openDeploy(r.notDeployed)),
-    step(4, 'Push the groups', r.pushGroups.length, 'No deployed app has groups to push.',
-      `${r.pushGroups.length} deployed app${r.pushGroups.length === 1 ? ' has' : 's have'} groups in the catalog. Push groups shows what changes in Intune first - deploys that already pushed show "nothing to change".`, list(r.pushGroups),
-      'Push groups...', 'Compare the catalog\'s groups with Intune, then apply', () => openPushGroups(r.pushGroups)));
+      }]]),
+    step(2, 'Create the groups in Entra ID', states[1], 'Every group the catalog assigns to exists in Entra ID.',
+      r.groupsNote ? `Not checked - ${r.groupsNote}` : `${r.missingGroups.length} group${r.missingGroups.length === 1 ? '' : 's'} the apps are assigned to ${r.missingGroups.length === 1 ? "doesn't" : "don't"} exist yet. They are created empty - add members (or nested groups) on the Groups page afterwards, or the assignments still reach nobody.`, glist(r.missingGroups),
+      r.groupsNote ? [['Check again', 'Read Entra ID again', () => openTenantSetup()]] : [
+        [`Create ${r.missingGroups.length} group${r.missingGroups.length === 1 ? '' : 's'}`, 'Create them as empty security groups', () => createGroups(r.missingGroups, () => openTenantSetup())],
+        ['Open Groups', 'The Groups page, showing the groups Entra ID doesn\'t have - to create them one by one and add members', () => { $('dlgTenantSetup').close(); showView('groups'); $('groupShow').value = 'missing'; if (groupsLoaded) renderGroupList(); }]]),
+    step(3, 'Deploy the apps', states[2], 'Every app in the catalog is in Intune.',
+      `${r.notDeployed.length} app${r.notDeployed.length === 1 ? ' isn\'t' : 's aren\'t'} in Intune yet - ${ready.length} ready to deploy${r.notReady.length ? `, ${r.notReady.length} not ready` : ''}. Deploy runs them in dependency order.${r.sharedMissing ? ' The shared Winget package isn\'t built yet: Settings > Packaging & folders builds it - every Winget app needs it.' : ''}`,
+      el('div', {}, list(r.notDeployed), reasons),
+      [[`Deploy ${ready.length} app${ready.length === 1 ? '' : 's'}...`, 'Opens Deploy for the apps that are ready - nothing starts until you confirm there', () => openDeploy(ready.length ? ready : r.notDeployed)],
+        ...(r.sharedMissing ? [['Open Packaging', 'Settings > Packaging & folders: download the packaging tool and build the shared Winget package', () => { $('dlgTenantSetup').close(); showSettings('packaging'); }]] : [])]),
+    step(4, 'Push the groups', states[3], 'No deployed app has groups to push.',
+      `${r.pushGroups.length} deployed app${r.pushGroups.length === 1 ? ' has' : 's have'} groups in the catalog. Deploys push them already (Settings > Defaults); Push groups compares the catalog with Intune and shows what would change - "nothing to change" means it's done.`, list(r.pushGroups),
+      [['Push groups...', 'Compare the catalog\'s groups with Intune, then apply', () => openPushGroups(r.pushGroups)]]));
 }
 $('btnTsRefresh').addEventListener('click', openTenantSetup);
 $('btnTenantSetup').addEventListener('click', openTenantSetup);

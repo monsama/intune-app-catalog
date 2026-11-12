@@ -89,11 +89,25 @@ for (const b of document.querySelectorAll('dialog [data-close]')) b.addEventList
 
 // jobs: Entra actions that sign the user in, in a console window of their own
 let jobRunning = false;
-function jobButtons(on) { for (const id of ['btnCheckCerts', 'btnUpload', 'btnAddPerms', 'btnDeployGo', 'btnPushGo', 'btnScriptIntune', 'btnScriptLocal', 'btnGroupSave', 'btnGroupsDeleteGo']) $(id).disabled = !on; if (on) { updateActions(); updateCheckActions(); } }
+// While a step runs, the buttons that start another are off; afterwards each
+// gets back the state it had before - a button its dialog had switched off
+// (Deploy's "Done", Apply before a preview) stays off.
+const jobButtonIds = ['btnCheckCerts', 'btnUpload', 'btnAddPerms', 'btnDeployGo', 'btnPushGo', 'btnScriptIntune', 'btnScriptLocal', 'btnGroupSave', 'btnGroupsDeleteGo'];
+function jobButtons(on) {
+  for (const id of jobButtonIds) {
+    const b = $(id);
+    if (!on) { if (b.dataset.jobWas === undefined) b.dataset.jobWas = b.disabled ? '1' : '0'; b.disabled = true; }
+    else { if (b.dataset.jobWas !== undefined) { b.disabled = b.dataset.jobWas === '1'; delete b.dataset.jobWas; } }
+  }
+  if (on) { updateActions(); updateCheckActions(); }
+}
 async function runJob(body, onDone, opts = {}) {
-  if (jobRunning) { toast('Another action is still running - wait for it to finish.', true); return false; }
+  const busy = 'Another action is still running - wait for it to finish.';
+  if (jobRunning) { toast(busy, true); if (onDone) onDone(false, { error: busy }); return false; }
+  // Taken before the request: two quick clicks must not start two steps.
+  jobRunning = true;
   const start = await api(opts.path || '/api/job-start', opts.path ? body : { ...fields(), ...body });
-  if (!start.ok) { toast(start.error, true); if (onDone) onDone(false, { error: start.error }); return false; }
+  if (!start.ok) { jobRunning = false; toast(start.error, true); if (onDone) onDone(false, { error: start.error }); return false; }
   return followJob(start.job, onDone, opts);
 }
 // Shows a running step's output until it ends, then hands over its result -
@@ -103,10 +117,19 @@ function followJob(job, onDone, opts = {}) {
   const extra = opts.log ? $(opts.log) : null;
   const both = t => { activity(t); if (extra) { extra.textContent += t.endsWith('\n') ? t : t + '\n'; extra.scrollTop = extra.scrollHeight; } };
   both(`${stamp()} ${opts.startText || 'Sign in in the window that opens...'}`);
-  let offset = 0;
+  let offset = 0, fails = 0;
   const tick = async () => {
     const r = await api('/api/job-poll', { job, offset });
-    if (!r.ok) { jobRunning = false; jobButtons(true); toast(r.error, true); return; }
+    if (!r.ok) {
+      // A missed answer is retried; a job the server no longer knows (or five misses in a row) ends here - and says so to whoever waits for it.
+      if (r.error !== 'No such job.' && ++fails < 5) { setTimeout(tick, 1500); return; }
+      jobRunning = false; jobButtons(true);
+      const error = r.error === 'No such job.' ? 'The page lost track of this step - the server finished it on its own; see Activity.' : r.error;
+      toast(error, true);
+      if (onDone) onDone(false, { error });
+      return;
+    }
+    fails = 0;
     if (r.text) { both(r.text); offset = r.offset; }
     if (r.done && !r.text) {
       jobRunning = false; jobButtons(true);

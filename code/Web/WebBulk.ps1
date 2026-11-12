@@ -47,7 +47,8 @@ function Global:Save-WebUndo {
 function Global:Get-WebUndoInfo {
     $u = $Global:App.LastUndo
     if (-not $u -or -not $u.items.Count) { return @{ ok = $true; undo = $null } }
-    return @{ ok = $true; undo = @{ label = [string]$u.label; time = ([datetime]$u.time).ToString('HH:mm'); count = $u.items.Count; apps = @($u.items | ForEach-Object { $_.name }) } }
+    $at = [datetime]$u.time
+    return @{ ok = $true; undo = @{ label = [string]$u.label; time = $(if ($at.Date -eq (Get-Date).Date) { $at.ToString('HH:mm') } else { $at.ToString('yyyy-MM-dd HH:mm') }); count = $u.items.Count; apps = @($u.items | ForEach-Object { $_.name }) } }
 }
 
 function Global:Invoke-WebUndo {
@@ -147,7 +148,7 @@ function Global:Split-WebCellList {
 }
 
 function Global:Export-WebCatalogCsv {
-    # The catalog as CSV text (semicolons, as Excel expects in most of Europe; "sep=;" tells Excel elsewhere).
+    # The catalog as CSV text (semicolons, as Excel expects in Switzerland, Germany and most of Europe).
     $catalog = Read-WebCatalogRecords
     $cols = Get-WebCsvColumns
     $rows = foreach ($a in @($catalog.Apps | Sort-Object appName)) {
@@ -158,7 +159,8 @@ function Global:Export-WebCatalogCsv {
     }
     $csv = @($rows | ConvertTo-Csv -Delimiter ';' -NoTypeInformation)
     if (-not $csv.Count) { $csv = @((($cols.Keys | ForEach-Object { '"' + $_ + '"' }) -join ';')) }
-    return @{ ok = $true; text = ("sep=;`r`n" + ($csv -join "`r`n") + "`r`n"); count = @($rows).Count }
+    # No "sep=;" line: with it Excel ignores the byte-order mark the page adds and garbles accents and umlauts.
+    return @{ ok = $true; text = (($csv -join "`r`n") + "`r`n"); count = @($rows).Count }
 }
 
 function Global:ConvertFrom-WebCsvText {
@@ -199,13 +201,14 @@ function Global:Import-WebCatalogCsv {
     $changes = New-Object System.Collections.Generic.List[object]
     $errors = New-Object System.Collections.Generic.List[string]
     $notFound = New-Object System.Collections.Generic.List[string]
+    $warnings = New-Object System.Collections.Generic.List[string]
     $pending = New-Object System.Collections.Generic.List[object]
     $seen = @{}
     foreach ($r in @($rows)) {
         foreach ($prop in @($r.PSObject.Properties)) { $prop.Value = Unprotect-WebCsvCell ([string]$prop.Value) }
         $name = ([string]$r.appName).Trim()
         if (-not $name) { continue }
-        if ($seen.ContainsKey($name.ToLowerInvariant())) { $errors.Add("$name`: in the file twice - only the first row counts."); continue }
+        if ($seen.ContainsKey($name.ToLowerInvariant())) { $warnings.Add("$name is in the file twice - only its first row is read."); continue }
         $seen[$name.ToLowerInvariant()] = $true
         $a = $all | Where-Object { $_.appName -ieq $name } | Select-Object -First 1
         if (-not $a) { $notFound.Add($name); continue }
@@ -239,7 +242,7 @@ function Global:Import-WebCatalogCsv {
         $pending.Add(@{ App = $a; Base = $base; Changes = $checked.Changes; Groups = $groupSets })
     }
     $result = @{ ok = $true; preview = [bool]$Data.preview; changes = $changes.ToArray(); apps = @($pending | ForEach-Object { $_.App.appName })
-        errors = $errors.ToArray(); notFound = $notFound.ToArray(); ignoredColumns = @($unknown) }
+        errors = $errors.ToArray(); warnings = $warnings.ToArray(); notFound = $notFound.ToArray(); ignoredColumns = @($unknown) }
     if ($Data.preview) { return $result }
     if ($errors.Count) { return @{ ok = $false; error = "Fix these rows first (nothing was changed): $($errors -join '; ')" } }
     $undo = New-WebUndo 'CSV import'

@@ -1773,6 +1773,10 @@ try {
     Assert-True ($null -eq (ConvertTo-AppIcon ([pscustomobject]@{ type = 'image/svg+xml'; value = $png }))) "ConvertTo-AppIcon: only PNG or JPEG"
     Assert-True ($null -eq (ConvertTo-AppIcon ([pscustomobject]@{ type = 'image/png'; value = 'not base64!' }))) "ConvertTo-AppIcon: only base64"
     Assert-True ((ConvertTo-SingleAppJson -App $metaBack) -notlike '*"icon"*') "ConvertTo-SingleAppJson: no icon field when there is none"
+    $noSup = ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'No Sup'; metadata = [pscustomobject]@{ description = 'x'; supersedes = @() } })
+    Assert-True ($null -ne $noSup.metadata.supersedes -and @($noSup.metadata.supersedes).Count -eq 0) "ConvertTo-AppRecord: an empty supersedence list stays empty (supersedes nothing), not null (leave Intune's)"
+    $noSupBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $noSup) | ConvertFrom-Json)
+    Assert-True ($null -ne $noSupBack.metadata.supersedes) "ConvertTo-SingleAppJson/ConvertTo-AppRecord: an empty supersedence list round-trips"
     $metaRoundTrip.metadata = [pscustomobject]@{ description = 'd'; appVersion = $null; isFeatured = $null }
     $metaNullBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $metaRoundTrip) | ConvertFrom-Json)
     Assert-Null $metaNullBack.metadata.appVersion "ConvertTo-AppRecord: an unrecorded App version stays null through a save"
@@ -2310,7 +2314,11 @@ Assert-Equal "8.6.9" $found.Version "winget show: the version winget offers"
 Assert-Equal 1 (Compare-AppVersionText '24.9' '24.10') "Compare-AppVersionText: 24.10 is newer than 24.9 (numbers, not text)"
 Assert-Equal 0 (Compare-AppVersionText '8.6' '8.6.0') "Compare-AppVersionText: 8.6 and 8.6.0 are the same"
 Assert-Equal -1 (Compare-AppVersionText '131.0.2' '131.0.1') "Compare-AppVersionText: an older winget version"
-Assert-True ($null -eq (Compare-AppVersionText '' '1.0')) "Compare-AppVersionText: no catalog version - unknown"
+Assert-Equal 1 (Compare-AppVersionText '' '1.0') "Compare-AppVersionText: no catalog version - winget's counts as newer"
+Assert-True ($null -eq (Compare-AppVersionText '1.0' '')) "Compare-AppVersionText: no winget version - unknown"
+Assert-Equal 1 (Compare-AppVersionText '1.0-beta' '1.0') "Compare-AppVersionText: the release is newer than its pre-release"
+Assert-Equal 0 (Compare-AppVersionText 'v1.2' '1.2') "Compare-AppVersionText: a leading v is ignored"
+Assert-Equal 1 (Compare-AppVersionText '1.99999999999999999999999999999' '1.100000000000000000000000000000') "Compare-AppVersionText: very long numbers don't overflow"
 Assert-Equal 1 (Compare-AppVersionText '1.0-beta' '1.0-rc') "Compare-AppVersionText: text parts compared as text"
 $gone = Get-WingetShowVerdict -ExitCode -1978335212 -StdOut "No package found matching input criteria." -StdErr ""
 Assert-True ((-not $gone.Ok) -and $gone.Result -like "NOT FOUND*") "winget show: an unknown ID reads NOT FOUND (what Get-WingetFindings looks for)"

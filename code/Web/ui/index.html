@@ -73,9 +73,8 @@
     <div class="banner warn" id="tenantBanner" role="region" aria-label="App IDs not in this tenant" hidden>
       <span id="tenantBannerText"></span>
       <span class="spacer"></span>
-      <button class="btn small" id="btnTenantSetup" title="Clear the old App IDs, create the groups, deploy and push groups - step by step">Set up this tenant...</button>
       <button class="btn small" id="btnTenantShow" title="Show only the apps whose App ID this tenant doesn't know">Show them</button>
-      <button class="btn small" id="btnTenantClear" title="Clear their App IDs in the catalog - Intune isn't touched; they can then be deployed here">Clear their App IDs</button>
+      <button class="btn small primary" id="btnTenantSetup" title="Clear the old App IDs, create the groups, deploy and push groups - step by step">Set up this tenant...</button>
     </div>
     <div class="banner info" id="undoBanner" role="region" aria-label="Last bulk change" hidden>
       <span id="undoText"></span>
@@ -90,7 +89,7 @@
           <th data-sort="wingetId" title="The winget package the app installs. Empty: it has its own installer (.intunewin).">Winget ID</th>
           <th data-sort="type" title="Intune's app type, once deployed">Type</th>
           <th data-sort="version" title="The version in the app's settings">Version</th>
-          <th data-sort="groups" title="Required / Available / Uninstall">Groups</th>
+          <th data-sort="groups" title="How many groups get it Required / Available / Uninstall">Groups <span class="muted">R / A / U</span></th>
           <th data-sort="status" title="Whether it is in Intune and ready to deploy - hover a status for what it means">Status</th>
           <th data-sort="audit" title="What the last detailed check against Intune found">Last audit</th>
         </tr></thead>
@@ -178,6 +177,7 @@
             <span id="gMissingText"></span>
             <button class="btn primary" id="btnGroupCreate" title="Create this security group in Entra ID, with the description and the people under To add">Create group</button>
           </div>
+          <label class="gdesc">Description <span class="muted">(optional - saved with the button under Add members)</span><input id="gDesc" maxlength="1024" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
           <div class="gcols">
             <section class="gcard" aria-labelledby="gAppsHead">
               <div class="gcardhead">
@@ -192,7 +192,6 @@
             </section>
             <section class="gcard" aria-labelledby="gMembersHead">
               <div class="gcardhead"><h3 id="gMembersHead">Members <span class="muted" id="gCount"></span></h3></div>
-              <label>Description <span class="muted">(optional)</span><input id="gDesc" maxlength="1024" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
               <div class="tablewrap gtable"><table class="plan"><thead><tr><th>Name</th><th>Type</th><th>Sign-in name</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="gMembers"></tbody></table></div>
               <h3>Add members</h3>
               <div class="toolbar tight"><input type="search" id="gFind" placeholder="Search users and groups (at least 2 letters)" aria-label="Search users and groups to add" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><button class="btn" id="btnGroupFind" title="Search users and groups in Entra ID to add as members">Search</button></div>
@@ -438,7 +437,7 @@
   <button role="menuitem" data-act="takeversion" title="Use the version winget offers as the App version (from the last Check winget for new versions)">Take winget's version</button>
   <button role="menuitem" data-act="addgroups" title="Add groups to all selected apps in the catalog">Add groups...</button>
   <button role="menuitem" data-act="removegroups" title="Remove groups from all selected apps in the catalog">Remove groups...</button>
-  <button role="menuitem" data-act="replacegroup" title="Swap one group for another on the selected apps, in every role">Replace a group...</button>
+  <button role="menuitem" data-act="replacegroup" title="Swap one group for another on the selected apps, in every role">Replace a group in these apps...</button>
   <hr>
   <button role="menuitem" data-act="copyid" title="Copy the app's Intune App ID">Copy App ID</button>
   <button role="menuitem" data-act="clearid" title="Forget the link to Intune - the app in Intune stays">Clear App ID</button>
@@ -454,7 +453,7 @@
   <button role="menuitem" data-cact="export" title="Every app as one row - open it in Excel, change cells, import it again">Export to CSV</button>
   <button role="menuitem" data-cact="import" title="Read a CSV edited in Excel: shows every change first, then applies it to the catalog">Import from CSV...</button>
   <hr>
-  <button role="menuitem" data-cact="replace" title="Swap one group for another on every app, in every role - the catalog only">Replace a group...</button>
+  <button role="menuitem" data-cact="replace" title="Swap one group for another on every app, in every role - the catalog only">Replace a group in all apps...</button>
   <button role="menuitem" data-cact="undo" title="Take back the last batch edit, group change, App ID clearing or CSV import">Undo last bulk change...</button>
   <hr>
   <button role="menuitem" data-cact="reload" title="Read the catalog folder again - for changes made outside the app">Reload</button>
@@ -468,7 +467,7 @@
   <hr>
   <button role="menuitem" data-gact="create" title="Create the groups that aren't in Entra ID yet, as security groups">Create in Entra ID</button>
   <button role="menuitem" data-gact="rename" title="Rename the group in Entra ID - the catalog follows">Rename...</button>
-  <button role="menuitem" data-gact="replace" title="Swap this group for another on every app in the catalog - Entra ID isn't touched">Replace in apps...</button>
+  <button role="menuitem" data-gact="replace" title="Swap this group for another on every app in the catalog - Entra ID isn't touched">Replace in all apps...</button>
   <hr>
   <button role="menuitem" data-gact="unassign" class="danger" title="Take these groups off every app in the catalog - Entra ID keeps them; Push groups sends it to Intune">Remove from all apps...</button>
   <button role="menuitem" data-gact="delete" class="danger" title="Delete the groups from Entra ID - asked first">Delete from Entra ID...</button>
@@ -556,7 +555,7 @@
         <label>Information URL<input autocomplete="off" id="mInformationUrl" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label>Privacy URL<input autocomplete="off" id="mPrivacyUrl" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label>Install command<input autocomplete="off" id="mInstallCommand" class="mono" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-        <label title="Removed from these groups' devices.">Uninstall command<input autocomplete="off" id="mUninstallCommand" class="mono" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label title="The command Intune runs to uninstall the app (for the Uninstall assignment and Company Portal uninstalls).">Uninstall command<input autocomplete="off" id="mUninstallCommand" class="mono" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label>Notes<textarea autocomplete="off" id="mNotes" rows="2" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
       </section>
     </div>
@@ -605,7 +604,7 @@
       <button type="button" class="btn danger" id="btnRemoveApp" title="Remove this app from the catalog only - Intune keeps it; a copy goes to Backups">Remove from catalog...</button>
       <button type="button" class="btn ghost" id="btnAppHistory" title="Earlier versions of this app's file, kept every time it was saved - put one back">Earlier versions...</button>
       <span class="spacer"></span>
-      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="button" class="btn" id="btnAppCancel">Cancel</button>
       <button type="submit" class="btn primary" id="btnSaveApp" title="Save to the catalog - Deploy or Push sends it to Intune">Save</button>
     </div>
   </form>
@@ -735,7 +734,7 @@
   <label class="chk" id="csvPushRow" hidden><input type="checkbox" id="csvPush" checked>Then push the settings of the changed apps already in Intune</label>
   <p class="formerror" id="csvErr" hidden></p>
   <pre class="log" id="csvLog" tabindex="0" role="log" hidden></pre>
-  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnCsvGo" disabled title="Apply the changes shown above to the catalog">Apply</button></div>
+  <div class="actions end"><button class="btn" data-close id="btnCsvClose">Cancel</button><button class="btn primary" id="btnCsvGo" disabled title="Apply the changes shown above to the catalog">Apply</button></div>
 </dialog>
 
 <dialog id="dlgGroupAssign" class="wide">
@@ -795,7 +794,7 @@
   <label class="chk"><input type="checkbox" id="bPush" checked>Then push the settings of the apps already in Intune</label>
   <p class="formerror" id="batchErr" hidden></p>
   <pre class="log" id="batchLog" tabindex="0" role="log" hidden></pre>
-  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnBatchGo" title="Shows what changes on each app first; a second click applies it">Preview changes</button></div>
+  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnBatchGo" title="Shows what changes on each app first; a second click applies it">Preview changes</button></div>
 </dialog>
 
 <dialog id="dlgGroupsBatch">
@@ -805,7 +804,7 @@
   <label class="chk"><input type="checkbox" id="gbPush" checked>Then push groups for the apps already in Intune</label>
   <p class="formerror" id="gbErr" hidden></p>
   <pre class="log" id="gbLog" tabindex="0" role="log" hidden></pre>
-  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn primary" id="btnGbGo" title="Change the groups in the catalog - Push groups sends them to Intune">Apply</button></div>
+  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnGbGo" title="Change the groups in the catalog - Push groups sends them to Intune">Apply</button></div>
 </dialog>
 
 <dialog id="dlgWinget" class="wide">
