@@ -91,7 +91,7 @@ $('groupSearch').addEventListener('keydown', e => { if (e.key === 'Enter') { e.p
 $('btnGroupOpen').addEventListener('click', () => { const n = $('groupSearch').value.trim(); if (n) { gSel = new Set([n]); openGroup(n); } else toast('Type a group name first.', true); });
 $('btnGroupsReload').addEventListener('click', () => { loadGroups(); if (group) openGroup(group.name); });
 $('btnGroupNew').addEventListener('click', async () => {
-  const n = ((await askText('Name of the new security group', '', 'Open')) || '').trim();
+  const n = ((await askText('Name of the new security group\n\nNext shows it here first: add members and a description, then Create group creates it in Entra ID.', '', 'Next')) || '').trim();
   if (n) openGroup(n);
 });
 $('btnGroupSelClear').addEventListener('click', () => { gSel = group ? new Set([group.name]) : new Set(); renderGroupList(); });
@@ -230,6 +230,7 @@ async function openGroup(name) {
   if (!group || group.name !== name) return;
   if (!r.ok) {
     $('gState').className = 'pill err'; $('gState').textContent = 'Not read';
+    setGroupBusy(false);
     $('gNote').textContent = r.error; setEnabled($('btnGroupSave'), false, r.error); setEnabled($('btnGroupCreate'), false, r.error); return;
   }
   group = r;
@@ -249,7 +250,7 @@ async function openGroup(name) {
     el('td', {}, (() => { const b = el('button', { class: 'btn small danger', text: 'Remove', title: `Remove ${m.name} from this group in Entra ID` }); b.addEventListener('click', () => removeMember(m)); return b; })())))
     : [el('tr', {}, el('td', { class: 'muted', colspan: '4', text: r.found ? 'No members yet - search below to add people, devices or groups.' : 'Not created yet. People you add below become members when it is created.' }))]));
   renderUses(r.uses);
-  $('btnGroupSave').textContent = r.found ? 'Update group' : 'Create group';
+  saveLabel();
   $('btnGroupSave').hidden = !r.found && !toAdd.size;
   setGroupBusy(false);
 }
@@ -312,8 +313,16 @@ $('btnGroupAssignGo').addEventListener('click', async () => {
 });
 $('btnGroupCopy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(group.name); toast('Copied ' + group.name); } catch (e) { toast('Could not copy.', true); } });
 $('btnGroupCreate').addEventListener('click', () => $('btnGroupSave').click());
+// The save button says what it will do: create, add N members, or save the description.
+function saveLabel() {
+  if (!group) return;
+  const n = toAdd.size, m = `${n} member${n === 1 ? '' : 's'}`;
+  $('btnGroupSave').textContent = !group.found ? (n ? `Create group with ${m}` : 'Create group') : n ? `Add ${m} and save` : 'Save description';
+}
+$('gDesc').addEventListener('input', saveLabel);
 function renderAdd() {
   if (group && !group.found) $('btnGroupSave').hidden = !toAdd.size;
+  saveLabel();
   $('gAddCount').textContent = toAdd.size ? `(${toAdd.size})` : '';
   $('gAdd').replaceChildren(...(toAdd.size ? [...toAdd.values()].map(m => {
     const b = el('button', { class: 'btn small', text: 'Remove' }); b.addEventListener('click', () => { toAdd.delete(m.id); renderAdd(); });

@@ -359,7 +359,7 @@ try {
     Check ($un2.ok -and @($un2.skipped).Count -eq 1 -and @((Invoke-Api '/api/app-get' @{ name = $rn }).app.requiredFor) -contains 'SG-A') 'undo: a file changed since is left alone' ($un2 | ConvertTo-Json -Compress)
     # CSV: export, import with a preview, refused rows, apply, undo.
     $ex = Invoke-Api '/api/csv-export'
-    Check ($ex.ok -and $ex.text -like 'sep=;*' -and $ex.text -like "*`"$rn`"*" -and $ex.text -like '*"requiredFor"*') 'csv export: one row per app, semicolons' (([string]$ex.text).Substring(0, [Math]::Min(300, ([string]$ex.text).Length)))
+    Check ($ex.ok -and $ex.text -like '"appName";*' -and $ex.text -like "*`"$rn`"*" -and $ex.text -like '*"requiredFor"*') 'csv export: one row per app, semicolons' (([string]$ex.text).Substring(0, [Math]::Min(300, ([string]$ex.text).Length)))
     $csv = "appName;owner;requiredFor;nonsense`r`n`"$rn`";CSV Owner;SG-A | SG-C;x`r`nNo Such App;x;;`r`n"
     $ip = Invoke-Api '/api/csv-import' @{ text = $csv; preview = $true }
     Check ($ip.ok -and @($ip.changes).Count -eq 2 -and @($ip.notFound) -contains 'No Such App' -and @($ip.ignoredColumns) -contains 'nonsense' -and (Invoke-Api '/api/app-get' @{ name = $rn }).app.metadata.owner -ne 'CSV Owner') 'csv import preview: two changes, unknown app and column named, nothing written' ($ip | ConvertTo-Json -Compress -Depth 4)
@@ -372,6 +372,13 @@ try {
     Check ($ia.ok -and $iaApp.metadata.owner -eq 'CSV Owner' -and @($iaApp.requiredFor) -contains 'SG-C' -and (Invoke-Api '/api/undo-info').undo.label -eq 'CSV import') 'csv import: applied, and can be undone' ($iaApp | ConvertTo-Json -Compress -Depth 4)
     [void](Invoke-Api '/api/undo-last')
     Check (@((Invoke-Api '/api/app-get' @{ name = $rn }).app.requiredFor) -notcontains 'SG-C') 'csv import: undone'
+    # A value Excel would run as a formula goes out as text, and comes back unchanged.
+    [void](Invoke-Api '/api/batch-edit' @{ names = @($rn); changes = @{ notes = '=HYPERLINK("https://example.invalid","x")' } })
+    $fx = Invoke-Api '/api/csv-export'
+    Check ($fx.text -like "*`"'=HYPERLINK(*") 'csv export: a formula-like value is written as text (leading '')' (([string]$fx.text) -split "`n" | Where-Object { $_ -like "*$rn*" } | Select-Object -First 1)
+    $fxBack = Invoke-Api '/api/csv-import' @{ text = $fx.text; preview = $true }
+    Check ($fxBack.ok -and -not @($fxBack.changes | Where-Object { $_.app -eq $rn }).Count) 'csv import: the guarded value reads back as it was - nothing to change' ($fxBack | ConvertTo-Json -Compress -Depth 4)
+    [void](Invoke-Api '/api/undo-last')
     $badUrl = Invoke-Api '/api/app-save' @{ originalName = $rn; app = @{ appName = $rn; wingetId = 'Vendor.WebTest'; appId = ''; metadata = @{ informationUrl = 'javascript:alert(1)' } } }
     Check (-not $badUrl.ok -and $badUrl.error -like '*http*') 'editor: a URL that is not http(s) is refused'
     # Deploy, push and checks without a connection set up (CI has none): clear answers, nothing started.

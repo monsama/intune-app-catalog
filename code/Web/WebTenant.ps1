@@ -35,8 +35,18 @@ function Global:Get-WebTenantSetup {
     $notDeployed = @($apps | Where-Object { -not $_.appId } | ForEach-Object { $_.appName })
     $deployed = @($apps | Where-Object { $_.appId -and $ids.ContainsKey(([string]$_.appId).ToLowerInvariant()) })
     $withGroups = @($deployed | Where-Object { @(@($_.requiredFor) + @($_.availableFor) + @($_.uninstallFor) + @($_.excludeFor) | Where-Object { $_ }).Count } | ForEach-Object { $_.appName })
+    # What Deploy would say about the apps not in Intune: ready, or why not (no package, no detection rule, the shared Winget package missing).
+    $notReady = @()
+    $sharedMissing = $false
+    if ($notDeployed.Count) {
+        $plan = Get-WebDeployPlan @{ names = $notDeployed }
+        if ($plan.ok) {
+            $notReady = @($plan.apps | Where-Object { -not $_.ready } | ForEach-Object { [ordered]@{ name = [string]$_.name; reason = [string]$_.reason } })
+            $sharedMissing = [bool](@($notReady | Where-Object { $_.reason -like '*init.intunewin*' }).Count)
+        }
+    }
     return @{ ok = $true; apps = $apps.Count; stale = $stale; missingGroups = $missingGroups; groupsNote = $groupsNote
-        notDeployed = $notDeployed; deployed = @($deployed | ForEach-Object { $_.appName }); pushGroups = $withGroups }
+        notDeployed = $notDeployed; notReady = $notReady; sharedMissing = $sharedMissing; deployed = @($deployed | ForEach-Object { $_.appName }); pushGroups = $withGroups }
 }
 
 # ---------------------------------------------------------------- install status of every app

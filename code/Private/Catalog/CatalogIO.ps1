@@ -51,8 +51,10 @@ function Global:ConvertTo-AppRecord {
             # is why it isn't by name like dependencies. $null when never
             # recorded: an update then keeps whatever Intune has, where []
             # would clear it.
+            # The comma keeps [] an empty list: an if statement's output
+            # would otherwise unroll it to $null ("never recorded").
             supersedes       = if ($null -ne $Raw.metadata.supersedes) {
-                                   @(@($Raw.metadata.supersedes) | Where-Object { $_ -and $_.appId } | ForEach-Object {
+                                   , @(@($Raw.metadata.supersedes) | Where-Object { $_ -and $_.appId } | ForEach-Object {
                                        [pscustomobject]@{ appId = [string]$_.appId; name = [string]$_.name; type = $(if ([string]$_.type -eq 'replace') { 'replace' } else { 'update' }) }
                                    })
                                } else { $null }

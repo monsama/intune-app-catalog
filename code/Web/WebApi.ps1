@@ -62,7 +62,7 @@ function Global:Get-WebCatalog {
                 available    = [int]$row.Available
                 uninstall    = [int]$row.Uninstall
                 wingetVersion = [string]$(if ($Global:App.WingetLatest -and $apps[$i].wingetId) { $Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()] })
-                newerOnWinget = [bool]($Global:App.WingetLatest -and $apps[$i].wingetId -and $apps[$i].metadata -and (Compare-AppVersionText ([string]$apps[$i].metadata.appVersion) ([string]$Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()])) -eq 1)
+                newerOnWinget = [bool]($Global:App.WingetLatest -and $apps[$i].wingetId -and (Compare-AppVersionText ([string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })) ([string]$Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()])) -eq 1)
                 hasIcon      = [bool]($apps[$i].icon -and $apps[$i].icon.value)
                 iconTag      = $(if ($apps[$i].icon -and $apps[$i].icon.value) { "$($apps[$i].icon.value.Length):$($apps[$i].icon.value.Substring([Math]::Max(0, $apps[$i].icon.value.Length - 12)))" } else { '' })
                 groups       = @(@($apps[$i].requiredFor) + @($apps[$i].availableFor) + @($apps[$i].uninstallFor) + @($apps[$i].excludeFor) | Where-Object { $_ } | ForEach-Object { [string]$_ } | Select-Object -Unique)
@@ -168,7 +168,7 @@ function Global:Complete-WebOrphanJobs {
       deploy's App ID still reaches the catalog. Called from the server's
       main loop.
     #>
-    param([int]$GraceSeconds = 15)
+    param([int]$GraceSeconds = 120)
     foreach ($id in @($Global:App.WebJobs.Keys)) {
         $job = $Global:App.WebJobs[$id]
         if (-not $job -or -not $job.Process.HasExited) { continue }
@@ -268,10 +268,22 @@ function Global:Get-WebJobPoll {
     try {
         $fs = [System.IO.File]::Open($job.Log, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
         try {
-            [void]$fs.Seek([Math]::Min($offset, $fs.Length), [System.IO.SeekOrigin]::Begin)
-            $reader = New-Object System.IO.StreamReader($fs)
-            $text = $reader.ReadToEnd()
-            $offset = $fs.Position
+            # Whole lines only while the step runs: the secret filter
+            # (Protect-LogText) must see a token or signature in one piece,
+            # never split across two polls. The rest waits for the next poll.
+            $from = [Math]::Min($offset, $fs.Length)
+            [void]$fs.Seek($from, [System.IO.SeekOrigin]::Begin)
+            $bytes = New-Object byte[] ([int]($fs.Length - $from))
+            $read = 0
+            while ($read -lt $bytes.Length) { $n = $fs.Read($bytes, $read, $bytes.Length - $read); if ($n -le 0) { break }; $read += $n }
+            $start = if ($from -eq 0 -and $read -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { 3 } else { 0 }
+            $end = $read
+            if (-not $exited) {
+                $nl = if ($read -gt 0) { [Array]::LastIndexOf($bytes, [byte]10) } else { -1 }
+                $end = if ($nl -ge $start) { $nl + 1 } else { $start }
+            }
+            $text = [System.Text.Encoding]::UTF8.GetString($bytes, $start, [Math]::Max(0, $end - $start))
+            $offset = $from + $end
         }
         finally { $fs.Dispose() }
     }
@@ -303,6 +315,8 @@ function Global:Get-WebJobPoll {
                 }
                 return @{ finished = $true; after = $done }
             }
+            # The catalog lock couldn't be had (Invoke-WithCatalogLock gave up): not finished yet - the next poll tries again.
+            if ($after -and $after.ok -eq $false -and $null -eq $after.finished) { $response.done = $false }
             if ($after.finished) {
                 if ($null -ne $after.after) { $response.after = $after.after }
                 Remove-Item -LiteralPath (@($job.Cleanup) + $job.Log + @($job.Result | Where-Object { $_ })) -Force -ErrorAction SilentlyContinue

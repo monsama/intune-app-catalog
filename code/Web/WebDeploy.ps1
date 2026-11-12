@@ -22,6 +22,12 @@ function Global:Get-WebDeployPlan {
     if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Set up the connection in Settings first.' } }
     $order = Get-DependencyOrderedApps -Apps $chosen
     $index = Get-PackageFolderIndex -Root (Get-AppFolder -Kind Packages)
+    # App IDs the connected tenant doesn't have (a catalog copied from another tenant): an update would fail.
+    $tenantIds = $null
+    if (@($chosen | Where-Object { $_.appId }).Count) {
+        $t = Get-WebIntuneApps @{}
+        if ($t.ok) { $tenantIds = @{}; foreach ($i in @($t.ids)) { $tenantIds[[string]$i] = $true } }
+    }
     # Settings > Automatic checks: before creating an app, look for one of the
     # same name already in Intune - creating a second is the mistake to stop.
     $inIntune = @{}
@@ -41,8 +47,9 @@ function Global:Get-WebDeployPlan {
         $unc = Test-AppIsUncommon -App $a
         $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $unc -Index $index -PackagePath $a.packagePath
         $reason = ''
+        if ($a.appId -and $tenantIds -and -not $tenantIds.ContainsKey(([string]$a.appId).ToLowerInvariant())) { $reason = "Its App ID isn't in this tenant (copied from another?) - clear it first: Catalog > Set up this tenant." }
         # A same-name app in Intune first: building a package would only lead to a duplicate.
-        if (-not $a.appId -and $inIntune.ContainsKey(([string]$a.appName).Trim().ToLowerInvariant())) { $reason = 'An app with this name is already in Intune - link it (Checks > Link) instead of creating a second one.' }
+        elseif (-not $a.appId -and $inIntune.ContainsKey(([string]$a.appName).Trim().ToLowerInvariant())) { $reason = 'An app with this name is already in Intune - link it (Checks > Link) instead of creating a second one.' }
         elseif (-not $pkg.Found) {
             $reason = if ($unc) { "No package (.intunewin) yet - build it with More > Package." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging builds it." }
         }
@@ -87,10 +94,12 @@ function Global:Start-WebDeploy {
         TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
         Mode = $(if ($a.appId) { 'UpdateMetadata' } else { 'Create' }); ExistingAppId = [string]$a.appId
         AppName = $a.appName; Description = $m.description; Publisher = $m.publisher; Owner = $m.owner; Developer = $m.developer
-        InformationUrl = $m.informationUrl; PrivacyUrl = $m.privacyUrl; Notes = $m.notes; AppVersion = $m.appVersion; IsFeatured = $m.isFeatured
+        InformationUrl = $m.informationUrl; PrivacyUrl = $m.privacyUrl; Notes = $m.notes; AppVersion = $m.appVersion; IsFeatured = $(if ($defaults -and $a.appId) { $null } else { $m.isFeatured })
         InstallCommand = $m.installCommand; UninstallCommand = $m.uninstallCommand; DetectionRule = $m.detectionRule
         InstallContext = $m.installContext; Architecture = $m.architecture; MinOSVersionKey = $m.minOSKey; PackagePath = $pkg.Path
-        DependencyAppIds = $depIds; Supersedence = $m.supersedes; ReplaceContent = $false; LargeIcon = $a.icon
+        DependencyAppIds = $depIds; ReplaceContent = $false; LargeIcon = $a.icon
+        # An app with no settings of its own, already in Intune: the defaults say nothing about supersedence or Featured - leave Intune's.
+        Supersedence = $(if ($defaults -and $a.appId) { $null } else { $m.supersedes })
         MinDiskSpaceMB = [int]$m.minDiskSpaceMB; MinMemoryMB = [int]$m.minMemoryMB; MinProcessors = [int]$m.minProcessors; MinCpuSpeedMHz = [int]$m.minCpuSpeedMHz
         InstallTimeMinutes = $(if ($m.installTimeMinutes) { [int]$m.installTimeMinutes } else { 60 }); DeviceRestartBehavior = $m.deviceRestartBehavior
         AllowAvailableUninstall = [bool]$m.allowAvailableUninstall; ReturnCodes = @($m.returnCodes); OutputResultPath = $resultPath
@@ -277,8 +286,22 @@ function Global:Clear-WebAppIds {
     $cleared = New-Object System.Collections.Generic.List[string]
     $failed = New-Object System.Collections.Generic.List[string]
     $undo = New-WebUndo "Clear $($names.Count) App ID(s)"
+    # Supersedence pointing at apps this tenant doesn't have came along with the copy too - dropped with the App IDs.
+    $t = Get-WebIntuneApps @{}
+    $tenantIds = $null
+    if ($t.ok) { $tenantIds = @{}; foreach ($i in @($t.ids)) { $tenantIds[[string]$i] = $true } }
     foreach ($n in $names) {
-        try { [void](Update-WebCatalogApp -Name $n -Change { param($a) $a.appId = ''; $a.intuneAppType = ''; $a.intuneAppVersion = '' } -Undo $undo); $cleared.Add($n) }
+        try {
+            [void](Update-WebCatalogApp -Name $n -Change {
+                    param($a)
+                    $a.appId = ''; $a.intuneAppType = ''; $a.intuneAppVersion = ''
+                    if ($tenantIds -and $a.metadata -and $null -ne $a.metadata.supersedes) {
+                        $keep = @(@($a.metadata.supersedes) | Where-Object { $_ -and $tenantIds.ContainsKey(([string]$_.appId).ToLowerInvariant()) })
+                        if ($keep.Count -ne @($a.metadata.supersedes).Count) { $a.metadata.supersedes = $(if ($keep.Count) { $keep } else { $null }) }
+                    }
+                } -Undo $undo)
+            $cleared.Add($n)
+        }
         catch { $failed.Add("$n`: $($_.Exception.Message)") }
     }
     Save-WebUndo $undo
