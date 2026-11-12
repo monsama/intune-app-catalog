@@ -418,7 +418,11 @@ function Global:ConvertTo-CreateAppConfigJson {
         $fields.Add("  `"Supersedence`": [`r`n" + ($supLines -join "`r`n") + "`r`n  ]")
     }
     $fields.Add("  `"ReplaceContent`": $(if ($Config.ReplaceContent) { 'true' } else { 'false' })")
-    $fields.Add("  `"LargeIcon`": $(if ($Config.LargeIcon -and $Config.LargeIcon.value) { "{ `"type`": $(ConvertTo-JsonStringLiteral ([string]$Config.LargeIcon.type)), `"value`": $(ConvertTo-JsonStringLiteral ([string]$Config.LargeIcon.value)) }" } else { 'null' })")
+    $iconJson = 'null'
+    if ($Config.LargeIcon -and $Config.LargeIcon.value) {
+        $iconJson = '{ "type": ' + (ConvertTo-JsonStringLiteral ([string]$Config.LargeIcon.type)) + ', "value": ' + (ConvertTo-JsonStringLiteral ([string]$Config.LargeIcon.value)) + ' }'
+    }
+    $fields.Add("  `"LargeIcon`": $iconJson")
     $fields.Add("  `"MinDiskSpaceMB`": $($Config.MinDiskSpaceMB)")
     $fields.Add("  `"MinMemoryMB`": $($Config.MinMemoryMB)")
     $fields.Add("  `"MinProcessors`": $($Config.MinProcessors)")
