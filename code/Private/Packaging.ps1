@@ -94,7 +94,7 @@ function Global:Install-PackagingTool {
         # Downloaded from a branch, not a pinned release, and run with your
         # rights on every package - so only a file Microsoft signed is kept.
         $signature = Get-AuthenticodeSignature -LiteralPath $exe.FullName
-        if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+        if (-not (Test-MicrosoftSignature $signature)) {
             throw "The downloaded IntuneWinAppUtil.exe isn't validly signed by Microsoft (signature: $($signature.Status); signer: $($signature.SignerCertificate.Subject)). It was not saved. Download it yourself from github.com/microsoft/Microsoft-Win32-Content-Prep-Tool and put it in $folder."
         }
         Copy-Item -LiteralPath $exe.FullName -Destination $target -Force -ErrorAction Stop
@@ -109,6 +109,13 @@ function Global:Install-PackagingTool {
         Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+
+function Global:Test-MicrosoftSignature {
+    # Pure: a valid Authenticode signature whose signer's organisation is exactly "Microsoft Corporation".
+    param($Signature)
+    if (-not $Signature -or [string]$Signature.Status -ne 'Valid' -or -not $Signature.SignerCertificate) { return $false }
+    return ([string]$Signature.SignerCertificate.Subject -match '(?:^|,\s*)O=("?)Microsoft Corporation\1\s*(?:,|$)')
 }
 
 function Global:New-SharedWingetPackage {
@@ -130,6 +137,11 @@ function Global:New-SharedWingetPackage {
     if (-not (Test-Path -LiteralPath $tool)) {
         & $say "[FAILED] The packaging tool isn't here yet - use 'Download packaging tool' first."
         return @{ Ok = $false; Message = 'IntuneWinAppUtil.exe not found' }
+    }
+    # Checked before every use, not only at download: the Tools folder can be a share others write to.
+    if (-not (Test-MicrosoftSignature (Get-AuthenticodeSignature -LiteralPath $tool))) {
+        & $say "[FAILED] $tool isn't validly signed by Microsoft - not run. Delete it and use 'Download packaging tool' again."
+        return @{ Ok = $false; Message = 'The packaging tool is not signed by Microsoft' }
     }
     $source = Join-Path ([IO.Path]::GetTempPath()) "init-source-$([guid]::NewGuid().ToString('N').Substring(0,8))"
     $outDir = Get-AppFolder -Kind Shared -Create

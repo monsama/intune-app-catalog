@@ -372,6 +372,13 @@ try {
     Check ($ia.ok -and $iaApp.metadata.owner -eq 'CSV Owner' -and @($iaApp.requiredFor) -contains 'SG-C' -and (Invoke-Api '/api/undo-info').undo.label -eq 'CSV import') 'csv import: applied, and can be undone' ($iaApp | ConvertTo-Json -Compress -Depth 4)
     [void](Invoke-Api '/api/undo-last')
     Check (@((Invoke-Api '/api/app-get' @{ name = $rn }).app.requiredFor) -notcontains 'SG-C') 'csv import: undone'
+    # A value Excel would run as a formula goes out as text, and comes back unchanged.
+    [void](Invoke-Api '/api/batch-edit' @{ names = @($rn); changes = @{ notes = '=HYPERLINK("https://example.invalid","x")' } })
+    $fx = Invoke-Api '/api/csv-export'
+    Check ($fx.text -like "*`"'=HYPERLINK(*") 'csv export: a formula-like value is written as text (leading '')' (([string]$fx.text) -split "`n" | Where-Object { $_ -like "*$rn*" } | Select-Object -First 1)
+    $fxBack = Invoke-Api '/api/csv-import' @{ text = $fx.text; preview = $true }
+    Check ($fxBack.ok -and -not @($fxBack.changes | Where-Object { $_.app -eq $rn }).Count) 'csv import: the guarded value reads back as it was - nothing to change' ($fxBack | ConvertTo-Json -Compress -Depth 4)
+    [void](Invoke-Api '/api/undo-last')
     $badUrl = Invoke-Api '/api/app-save' @{ originalName = $rn; app = @{ appName = $rn; wingetId = 'Vendor.WebTest'; appId = ''; metadata = @{ informationUrl = 'javascript:alert(1)' } } }
     Check (-not $badUrl.ok -and $badUrl.error -like '*http*') 'editor: a URL that is not http(s) is refused'
     # Deploy, push and checks without a connection set up (CI has none): clear answers, nothing started.

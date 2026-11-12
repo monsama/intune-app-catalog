@@ -103,7 +103,7 @@ function Download-IntuneWinAppUtil {
         # Downloaded from a branch, not a pinned release, and run on every
         # package - only a file Microsoft signed is kept.
         $Signature = Get-AuthenticodeSignature -LiteralPath $ExeFile.FullName
-        if ($Signature.Status -ne 'Valid' -or $Signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+        if ($Signature.Status -ne 'Valid' -or [string]$Signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=("?)Microsoft Corporation\1\s*(?:,|$)') {
             throw "The downloaded IntuneWinAppUtil.exe isn't validly signed by Microsoft (signature: $($Signature.Status)). Download it yourself from github.com/microsoft/Microsoft-Win32-Content-Prep-Tool and put it at $DestinationPath."
         }
         
@@ -551,6 +551,11 @@ foreach ($App in $AppsToProcess) {
             $ToolFullPath = Join-Path $PSScriptRoot $ToolPath
         } else {
             $ToolFullPath = $ToolPath
+        }
+        # Checked before every use, not only at download: the Tools folder can be a share others write to.
+        $ToolSignature = Get-AuthenticodeSignature -LiteralPath $ToolFullPath
+        if ($ToolSignature.Status -ne 'Valid' -or [string]$ToolSignature.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=("?)Microsoft Corporation\1\s*(?:,|$)') {
+            throw "$ToolFullPath isn't validly signed by Microsoft (signature: $($ToolSignature.Status)) - not run. Delete it and download the packaging tool again."
         }
         
         # Run packaging tool - its own output is only shown when it fails

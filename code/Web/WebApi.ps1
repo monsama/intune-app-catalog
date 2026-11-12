@@ -268,10 +268,22 @@ function Global:Get-WebJobPoll {
     try {
         $fs = [System.IO.File]::Open($job.Log, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
         try {
-            [void]$fs.Seek([Math]::Min($offset, $fs.Length), [System.IO.SeekOrigin]::Begin)
-            $reader = New-Object System.IO.StreamReader($fs)
-            $text = $reader.ReadToEnd()
-            $offset = $fs.Position
+            # Whole lines only while the step runs: the secret filter
+            # (Protect-LogText) must see a token or signature in one piece,
+            # never split across two polls. The rest waits for the next poll.
+            $from = [Math]::Min($offset, $fs.Length)
+            [void]$fs.Seek($from, [System.IO.SeekOrigin]::Begin)
+            $bytes = New-Object byte[] ([int]($fs.Length - $from))
+            $read = 0
+            while ($read -lt $bytes.Length) { $n = $fs.Read($bytes, $read, $bytes.Length - $read); if ($n -le 0) { break }; $read += $n }
+            $start = if ($from -eq 0 -and $read -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { 3 } else { 0 }
+            $end = $read
+            if (-not $exited) {
+                $nl = if ($read -gt 0) { [Array]::LastIndexOf($bytes, [byte]10) } else { -1 }
+                $end = if ($nl -ge $start) { $nl + 1 } else { $start }
+            }
+            $text = [System.Text.Encoding]::UTF8.GetString($bytes, $start, [Math]::Max(0, $end - $start))
+            $offset = $from + $end
         }
         finally { $fs.Dispose() }
     }

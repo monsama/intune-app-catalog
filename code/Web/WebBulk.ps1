@@ -120,11 +120,26 @@ function Global:Get-WebCellText {
     return [string]$Value
 }
 
+function Global:Protect-WebCsvCell {
+    # Pure: a cell Excel would run as a formula (= + - @, tab, CR first) gets a leading ' - shown as text, and taken off again on import.
+    param([string]$Text)
+    if ($Text -match '^[=+\-@\t\r]') { return "'" + $Text }
+    return $Text
+}
+
+function Global:Unprotect-WebCsvCell {
+    # Pure: undoes Protect-WebCsvCell - the ' only where it guarded a formula character.
+    param([string]$Text)
+    if ($Text -match "^'[=+\-@\t\r]") { return $Text.Substring(1) }
+    return $Text
+}
+
 function Global:Split-WebCellList {
     # Pure: a list cell back to its items (" | " or line breaks between them), trimmed, without empties or repeats.
     param([string]$Text)
     $out = New-Object System.Collections.Generic.List[string]
-    foreach ($p in @(([string]$Text) -split '\s*\|\s*|\r?\n')) {
+    # " | " with the spaces (what Export writes) or a line break: a group name with a bare | in it stays whole.
+    foreach ($p in @(([string]$Text) -split ' \| |\r?\n')) {
         $t = $p.Trim()
         if ($t -and -not @($out | Where-Object { $_ -ieq $t }).Count) { $out.Add($t) }
     }
@@ -138,7 +153,7 @@ function Global:Export-WebCatalogCsv {
     $rows = foreach ($a in @($catalog.Apps | Sort-Object appName)) {
         $m = if ($a.metadata) { $a.metadata } else { Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon (Test-AppIsUncommon -App $a) }
         $o = [ordered]@{}
-        foreach ($c in $cols.Keys) { $o[$c] = Get-WebCellText $(if ($cols[$c] -eq 'meta') { $m.$c } else { $a.$c }) }
+        foreach ($c in $cols.Keys) { $o[$c] = Protect-WebCsvCell (Get-WebCellText $(if ($cols[$c] -eq 'meta') { $m.$c } else { $a.$c })) }
         [pscustomobject]$o
     }
     $csv = @($rows | ConvertTo-Csv -Delimiter ';' -NoTypeInformation)
@@ -187,6 +202,7 @@ function Global:Import-WebCatalogCsv {
     $pending = New-Object System.Collections.Generic.List[object]
     $seen = @{}
     foreach ($r in @($rows)) {
+        foreach ($prop in @($r.PSObject.Properties)) { $prop.Value = Unprotect-WebCsvCell ([string]$prop.Value) }
         $name = ([string]$r.appName).Trim()
         if (-not $name) { continue }
         if ($seen.ContainsKey($name.ToLowerInvariant())) { $errors.Add("$name`: in the file twice - only the first row counts."); continue }

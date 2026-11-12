@@ -152,7 +152,11 @@ function Global:Compare-AppVersionText {
         $x = if ($i -lt $pa.Count) { $pa[$i] } else { '0' }
         $y = if ($i -lt $pb.Count) { $pb[$i] } else { '0' }
         if ($x -match '^\d+$' -and $y -match '^\d+$') {
-            $c = ([decimal]$y).CompareTo([decimal]$x)
+            # As digit strings (leading zeros dropped, then length, then
+            # digits): any length, where [decimal] would overflow.
+            $xs = $x.TrimStart('0'); $ys = $y.TrimStart('0')
+            if ($xs.Length -ne $ys.Length) { return [Math]::Sign($ys.Length - $xs.Length) }
+            $c = [string]::CompareOrdinal($ys, $xs)
             if ($c) { return [Math]::Sign($c) }
         }
         elseif ($x -ne $y) { return [Math]::Sign([string]::CompareOrdinal($y.ToLowerInvariant(), $x.ToLowerInvariant())) }
