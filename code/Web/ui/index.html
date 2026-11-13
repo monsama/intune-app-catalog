@@ -378,6 +378,7 @@
           </div>
           <label class="chk" title="The nightly run releases a newer winget version to the pilot groups by itself"><input type="checkbox" id="rpAutoRelease">Release new winget versions to pilot automatically (nightly run)</label>
           <label class="chk" title="The nightly run promotes a pilot release once the rule above says it's ready - otherwise it holds it and says why"><input type="checkbox" id="rpAutoPromote">Promote automatically when ready (nightly run)</label>
+          <label class="chk" title="Superseded versions have no assignments; the newest one is kept so you can roll back"><input type="checkbox" id="rpCleanup">Delete older superseded versions from Intune, keeping one for rollback (nightly run)</label>
           <div class="actions"><button class="btn" id="btnSavePilot" title="Save the pilot groups and the release rule">Save</button></div>
           <h3>Nightly run</h3>
           <p class="sub" id="runSchedule">Checks every managed app: promotes or holds pilot releases by the rule above, and releases new winget versions - each only when its switch above is on; otherwise it reports what it would do.</p>
@@ -466,6 +467,8 @@
   <button role="menuitem" data-act="release" title="Release a new version to the pilot groups first - a new app in Intune that supersedes the current one">Release new version...</button>
   <button role="menuitem" data-act="promote" title="Give the pilot release to everyone - the current one is kept in Intune as superseded">Promote pilot release...</button>
   <button role="menuitem" data-act="withdraw" title="Take the pilot release back - its app is deleted from Intune; pilot devices keep the newer version">Withdraw pilot release...</button>
+  <button role="menuitem" data-act="rollback" title="Give the catalog's groups back to the previous version - devices that have the newer one keep it">Roll back to previous version...</button>
+  <button role="menuitem" data-act="cleanup" title="Delete superseded versions from Intune, keeping the newest one for rollback">Delete old versions from Intune...</button>
   <button role="menuitem" data-act="managed" title="Turn managed updates on or off for the selected Winget apps">Managed updates on...</button>
   <button role="menuitem" data-act="takeversion" title="Use the version winget offers as the App version (from the last Check winget for new versions)">Take winget's version</button>
   <hr>

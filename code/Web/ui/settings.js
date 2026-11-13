@@ -306,7 +306,7 @@ async function loadPrefs() {
   $('pilotGroups').value = (p.pilotGroups || []).join('\n');
   const rp = p.releasePolicy || {};
   $('rpDays').value = rp.Days ?? 3; $('rpFailed').value = rp.MaxFailedPercent ?? 5; $('rpMin').value = rp.MinInstalled ?? 1;
-  $('rpAutoRelease').checked = !!rp.AutoRelease; $('rpAutoPromote').checked = !!rp.AutoPromote;
+  $('rpAutoRelease').checked = !!rp.AutoRelease; $('rpAutoPromote').checked = !!rp.AutoPromote; $('rpCleanup').checked = !!rp.CleanupOld;
 }
 async function savePrefs(part, okText, errEl) {
   const r = await api('/api/prefs-save', part);
@@ -316,7 +316,7 @@ async function savePrefs(part, okText, errEl) {
 }
 $('btnSaveChecks').addEventListener('click', () => savePrefs({ checks: Object.fromEntries([...document.querySelectorAll('[data-check]')].map(c => [c.dataset.check, c.checked])) }, 'Saved.'));
 $('btnSaveFolders').addEventListener('click', () => savePrefs({ folders: Object.fromEntries([...document.querySelectorAll('[data-folder]')].map(i => [i.dataset.folder, i.value.trim()])) }, 'Folders saved.'));
-$('btnSavePilot').addEventListener('click', () => savePrefs({ pilotGroups: lines('pilotGroups'), releasePolicy: { Days: $('rpDays').value, MaxFailedPercent: $('rpFailed').value, MinInstalled: $('rpMin').value, AutoRelease: $('rpAutoRelease').checked, AutoPromote: $('rpAutoPromote').checked, RunAt: (prefs && prefs.releasePolicy && prefs.releasePolicy.RunAt) || '03:00' } }, 'Managed updates saved.'));
+$('btnSavePilot').addEventListener('click', () => savePrefs({ pilotGroups: lines('pilotGroups'), releasePolicy: { Days: $('rpDays').value, MaxFailedPercent: $('rpFailed').value, MinInstalled: $('rpMin').value, AutoRelease: $('rpAutoRelease').checked, AutoPromote: $('rpAutoPromote').checked, CleanupOld: $('rpCleanup').checked, RunAt: (prefs && prefs.releasePolicy && prefs.releasePolicy.RunAt) || '03:00' } }, 'Managed updates saved.'));
 $('btnSaveFavs').addEventListener('click', () => savePrefs({ favoriteGroups: lines('favGroups') }, 'Favourites saved.'));
 $('btnSaveDefaults').addEventListener('click', () => {
   const codes = lines('dCodes').map(l => { const m = /^(-?\d+)\s*[=:]\s*(\w+)$/.exec(l); return m ? { returnCode: m[1], type: m[2] } : { returnCode: l, type: '' }; });
@@ -349,7 +349,7 @@ async function loadUpdateRuns() {
   setEnabled($('btnSchedule'), !!sch.supported, 'Scheduled tasks need Windows.');
   setEnabled($('btnUnschedule'), !!sch.exists, 'There is no scheduled task.');
   $('btnSchedule').textContent = sch.exists ? 'Change' : 'Schedule';
-  const cls = { promoted: 'ok', released: 'ok', failed: 'err', hold: 'warn', ready: 'info', available: 'info' };
+  const cls = { promoted: 'ok', released: 'ok', cleaned: 'ok', failed: 'err', hold: 'warn', ready: 'info', available: 'info', cleanup: 'info' };
   $('runList').replaceChildren(...(r.running ? [el('p', { class: 'muted', text: 'A run is going now - Reload shows it when it ends.' })] : []),
     ...(r.runs.length ? r.runs.map(run => {
       const shown = run.items.filter(i => !['current', 'none', 'wait'].includes(i.outcome));

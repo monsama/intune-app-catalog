@@ -64,6 +64,7 @@ function Global:Get-WebCatalog {
                 wingetVersion = [string]$(if ($Global:App.WingetLatest -and $apps[$i].wingetId) { $Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()] })
                 newerOnWinget = [bool]($Global:App.WingetLatest -and $apps[$i].wingetId -and (Compare-AppVersionText ([string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })) ([string]$Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()])) -eq 1)
                 managed      = [bool]$apps[$i].managedUpdates
+                previousVersions = @(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'previous' } | Sort-Object { [string]$_.at } | ForEach-Object { [string]$_.version })
                 pilotVersion = [string]$(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'pilot' } | Select-Object -First 1 -ExpandProperty version)
                 hasIcon      = [bool]($apps[$i].icon -and $apps[$i].icon.value)
                 iconTag      = $(if ($apps[$i].icon -and $apps[$i].icon.value) { "$($apps[$i].icon.value.Length):$($apps[$i].icon.value.Substring([Math]::Max(0, $apps[$i].icon.value.Length - 12)))" } else { '' })
@@ -475,6 +476,8 @@ function Global:Invoke-WebApi {
         '/api/release-start'    { return (Start-WebRelease $Data) }
         '/api/release-assign'   { return (Start-WebReleaseAssign $Data) }
         '/api/release-promoted' { return (Invoke-WithCatalogLock { Complete-WebPromotion $Data }) }
+        '/api/release-rolledback' { return (Invoke-WithCatalogLock { Complete-WebRollback $Data }) }
+        '/api/release-cleanup'  { return (Remove-WebOldReleases $Data) }
         '/api/release-withdrawn' { return (Invoke-WithCatalogLock { Complete-WebWithdrawal $Data }) }
         '/api/update-runs'      { return (Get-WebUpdateRuns) }
         '/api/update-run'       { return (Start-WebUpdateRun $Data) }
