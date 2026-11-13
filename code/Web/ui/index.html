@@ -118,9 +118,14 @@
       <button class="btn" id="btnUpdReload" title="Read the counts from Intune again">Reload</button>
     </div>
     <div id="updTiles"></div>
+    <section class="trend" id="updTrend" aria-labelledby="updTrendTitle" hidden>
+      <h2 id="updTrendTitle">Devices on the current version, last 30 days</h2>
+      <div class="trendplot" id="updTrendPlot"></div>
+      <details><summary>Show as a table</summary><table class="grid compact" id="updTrendTable"><thead><tr><th>Day</th><th>On the current version</th><th>Devices</th></tr></thead><tbody></tbody></table></details>
+    </section>
     <div class="tablewrap" tabindex="0" aria-label="Apps with managed updates">
       <table class="grid" id="updGrid">
-        <thead><tr><th>App</th><th title="The version everyone gets">Current</th><th title="Devices with the current release installed, of those it is assigned to">Devices on it</th><th title="The version released to the pilot groups, and what the release rule says">Pilot</th><th title="A newer version: winget's, or the installer in an own package's folder">Available</th><th title="Earlier releases kept in Intune for rollback">Superseded</th><th><span class="sr">Actions</span></th></tr></thead>
+        <thead><tr><th>App</th><th title="The version everyone gets">Current</th><th title="Devices with the current release installed, of those it is assigned to">Devices on it</th><th title="The new version being released: its ring (or fast track), and what the release rule says">In release</th><th title="A newer version: winget's, or the installer in an own package's folder">Available</th><th title="Devices Intune's inventory finds with an older version of the app - installed by Intune or by hand">On older versions</th><th title="Earlier releases kept in Intune for rollback">Superseded</th><th><span class="sr">Actions</span></th></tr></thead>
         <tbody id="updBody"></tbody>
       </table>
       <div class="empty" id="updEmpty" hidden><h2>No app has managed updates yet</h2><p id="updEmptyText">Select apps on the Apps tab and use More &gt; Managed updates on - Settings &gt; Defaults &gt; Managed updates has the pilot groups and the release rule.</p></div>
@@ -391,12 +396,21 @@
           <h2>Managed updates</h2>
           <p class="sub" id="pilotGroupsHint">Apps with managed updates install a fixed version. A new version is released to these groups first (Required), and to everyone when it's promoted. One group per line - created in Entra ID if missing.</p>
           <textarea id="pilotGroups" aria-labelledby="pilotGroupsHint" rows="3" class="full" placeholder="e.g. SG-Intune-Pilot" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
-          <h3>When a pilot release is ready for everyone</h3>
+          <p class="sub" id="ringsHint">Release rings after the pilot groups <span class="muted">(optional)</span>: a release that passes the rule in one ring goes on to the next, then to everyone. One ring per line, "Name: group, group".</p>
+          <textarea id="releaseRings" aria-labelledby="ringsHint" rows="2" class="full" placeholder="e.g. Early adopters: SG-Intune-Early, SG-IT" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
+          <h3>When a release is ready for the next ring</h3>
           <div class="policy">
-            <label>In pilot at least <span class="muted">(days)</span><input id="rpDays" type="number" min="0" max="99" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <label>In each ring at least <span class="muted">(days)</span><input id="rpDays" type="number" min="0" max="99" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
             <label>Failed at most <span class="muted">(% of pilot devices)</span><input id="rpFailed" type="number" min="0" max="100" step="0.5" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
             <label>Installed on at least <span class="muted">(pilot devices)</span><input id="rpMin" type="number" min="0" max="9999" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
           </div>
+          <h3>Fast track and installation</h3>
+          <div class="policy">
+            <label title="A release marked urgent (a security fix): judged after these hours instead of the days above, then given to everyone - every ring skipped">Fast track: in pilot <span class="muted">(hours)</span><input id="rpFastHours" type="number" min="1" max="72" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <label title="Required installs get a deadline this many days after a release reaches a group: users can install it earlier from the Company Portal, and it's forced at the deadline. 0: as soon as possible">Install deadline <span class="muted">(days, 0 = at once)</span><input id="rpDeadline" type="number" min="0" max="30" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <label title="When the installer asks for a restart: how long the user may put it off. 0: Intune's default">Restart grace period <span class="muted">(minutes, 0 = default)</span><input id="rpGrace" type="number" min="0" max="20160" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          </div>
+          <label class="inline">Notifications on the device <select id="rpNotif"><option value="showAll">Show all</option><option value="showReboot">Only restarts</option><option value="hideAll">Hide all</option></select></label>
           <label class="chk" title="The nightly run releases a newer winget version to the pilot groups by itself"><input type="checkbox" id="rpAutoRelease">Release new winget versions to pilot automatically (nightly run)</label>
           <label class="chk" title="The nightly run promotes a pilot release once the rule above says it's ready - otherwise it holds it and says why"><input type="checkbox" id="rpAutoPromote">Promote automatically when ready (nightly run)</label>
           <label class="chk" title="Superseded versions have no assignments; the newest one is kept so you can roll back"><input type="checkbox" id="rpCleanup">Delete older superseded versions from Intune, keeping one for rollback (nightly run)</label>
@@ -415,6 +429,19 @@
             <button class="btn ghost" id="btnReports" title="Open the folder with every run's report (HTML and JSON)">Open reports folder</button>
           </div>
           <div id="runList" class="runlist" aria-live="polite"></div>
+          <h3>Alerts</h3>
+          <p class="sub" id="alertHint">After each run, a message to a Teams channel (a Workflows webhook: in the channel, ... &gt; Workflows &gt; "Post to a channel when a webhook request is received") and/or an email, sent with Graph from a mailbox you name (the app registration needs Mail.Send).</p>
+          <label class="inline">Send <select id="alLevel"><option value="off">no alerts</option><option value="attention">when something needs a look - failed, on hold, ready, released or promoted</option><option value="always">after every run</option></select></label>
+          <label class="full" title="Saved on this PC and never shown again - paste a new one to change it">Teams webhook address <input id="alWebhook" type="password" class="full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          <label class="chk"><input type="checkbox" id="alClearHook">Remove the saved webhook</label>
+          <div class="policy two">
+            <label>Email from <span class="muted">(mailbox)</span><input id="alFrom" type="email" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. intune-reports@contoso.com"></label>
+            <label>Email to <span class="muted">(comma between)</span><input id="alTo" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. it-team@contoso.com"></label>
+          </div>
+          <div class="actions">
+            <button class="btn" id="btnAlertTest" title="Send a test message with what is saved">Send a test</button>
+            <button class="btn" id="btnSaveAlerts" title="Save the alert settings">Save alerts</button>
+          </div>
         </article>
       </div>
       <div class="col">
@@ -584,6 +611,15 @@
         <label>Name<input id="aName" required autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label title="The winget package ID, e.g. 7zip.7zip. Empty for an app with its own installer. Find... searches winget.">Winget ID <span class="muted">(empty for an app with its own package)</span><span class="inputrow"><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip" autocorrect="off" autocapitalize="off"><button type="button" class="btn" id="btnFindWinget" title="Search winget for the package">Find...</button></span></label>
         <label class="chk" title="Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Defaults > Managed updates"><input type="checkbox" id="aManaged">Managed updates <span class="muted" id="aManagedNote"></span></label>
+        <fieldset class="ownrule" id="aRuleBox" hidden>
+          <legend>This app's release rule <span class="muted">(empty: Settings' rule)</span></legend>
+          <div class="policy">
+            <label>In each ring at least <span class="muted">(days)</span><input id="arDays" type="number" min="0" max="99" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <label>Failed at most <span class="muted">(%)</span><input id="arFailed" type="number" min="0" max="100" step="0.5" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <label>Installed on at least <span class="muted">(devices)</span><input id="arMin" type="number" min="0" max="9999" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          </div>
+          <label title="How the app is named in Intune's inventory of apps on devices (Apps > Monitor > Discovered apps), when that isn't the catalog's name - the Updates page counts older versions on devices by it">Name on devices <span class="muted">(empty: the catalog's name)</span><input id="arDetected" maxlength="100" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. 7-Zip"></label>
+        </fieldset>
         <label title="The Intune app this catalog entry is linked to. Set by Deploy, or by Checks when it links an existing app.">App ID in Intune <span class="muted">(empty until it's deployed)</span><input id="aAppId" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <div class="iconrow" role="group" aria-labelledby="aIconLabel">
           <span class="lbl" id="aIconLabel">Icon <span class="muted">(Intune and the Company Portal)</span></span>
@@ -780,6 +816,7 @@
   <p class="formerror" id="relProblem" hidden></p>
   <label class="chk" id="relBuildRow" hidden title="Package.ps1 builds the .intunewin from the app's folder before the release"><input type="checkbox" id="relBuild" checked>Build the package from its folder first <span class="muted" id="relFolder"></span></label>
   <label>Version to release<input id="relVersion" class="mono" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+  <label class="chk" title="For an urgent fix: judged after a few hours instead of days, downloaded in the foreground, then given to everyone - the release rings are skipped, and the nightly task promotes it even with automatic promotion off"><input type="checkbox" id="relFast">Fast track (a security fix) <span class="muted" id="relFastNote"></span></label>
   <p class="muted note" id="relGroups"></p>
   <p class="formerror" id="relErr" hidden></p>
   <pre class="log" id="relLog" tabindex="0" role="log" hidden></pre>

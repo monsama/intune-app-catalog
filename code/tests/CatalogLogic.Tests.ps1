@@ -151,6 +151,15 @@ $testableFunctionNames = @(
     "Set-DetectionRuleVersion",
     "Get-ReleaseDecision",
     "ConvertTo-ReleasePolicy",
+    "Format-ReleaseSpan",
+    "Get-EffectiveReleaseRule",
+    "Get-ReleaseRingGroups",
+    "ConvertFrom-ReleaseRingText",
+    "Get-ReleaseAssignmentSettings",
+    "Get-ManagedRunAlert",
+    "ConvertTo-AppReleaseRule",
+    "ConvertTo-ReleaseRings",
+    "ConvertTo-AlertSettings",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -592,6 +601,49 @@ Assert-Equal 'wait' (Get-ReleaseDecision -ReleasedAt $t0 -Now $t0.AddDays(4) -Co
 Assert-Equal 'hold' (Get-ReleaseDecision -ReleasedAt $t0 -Now $t0.AddDays(7) -Counts @{ installed = 0; failed = 0 } -Policy $pol).Action "Get-ReleaseDecision: holds when nothing installed it for twice the pilot time"
 $badPol = ConvertTo-ReleasePolicy ([pscustomobject]@{ Days = 'x'; MaxFailedPercent = 400; RunAt = '25:00'; AutoPromote = $true })
 Assert-True ($badPol.Days -eq 3 -and $badPol.MaxFailedPercent -eq 5 -and $badPol.RunAt -eq '03:00' -and $badPol.AutoPromote) "ConvertTo-ReleasePolicy: wrong values fall back to the defaults, good ones are kept"
+$pol2 = ConvertTo-ReleasePolicy ([pscustomobject]@{ FastTrackHours = 6; DeadlineDays = 2; RestartGraceMinutes = 90; Notifications = 'hideAll' })
+Assert-True ($pol2.FastTrackHours -eq 6 -and $pol2.DeadlineDays -eq 2 -and $pol2.RestartGraceMinutes -eq 90 -and $pol2.Notifications -eq 'hideAll') "ConvertTo-ReleasePolicy: fast track, deadline, restart grace and notifications"
+$pol3 = ConvertTo-ReleasePolicy ([pscustomobject]@{ FastTrackHours = 0; DeadlineDays = 99; Notifications = 'loud' })
+Assert-True ($pol3.FastTrackHours -eq 4 -and $pol3.DeadlineDays -eq 0 -and $pol3.Notifications -eq 'showAll') "ConvertTo-ReleasePolicy: out-of-range fast track, deadline and notifications fall back"
+
+# Release rings, an app's own rule, fast track
+Assert-Equal 'advance' (Get-ReleaseDecision -ReleasedAt $t0 -Now $t0.AddDays(3.5) -Counts @{ installed = 9; failed = 0 } -Policy $pol -Ring 0 -RingCount 3).Action "Get-ReleaseDecision: ready in ring 1 of 3 - on to the next ring"
+Assert-Equal 'promote' (Get-ReleaseDecision -ReleasedAt $t0 -Now $t0.AddDays(3.5) -Counts @{ installed = 9; failed = 0 } -Policy $pol -Ring 2 -RingCount 3).Action "Get-ReleaseDecision: ready in the last ring - to everyone"
+$fastRule = Get-EffectiveReleaseRule -Policy (ConvertTo-ReleasePolicy $null) -App $null -Release ([pscustomobject]@{ fastTrack = $true })
+$fastWait = Get-ReleaseDecision -ReleasedAt $t0 -Now $t0.AddHours(2) -Counts @{ installed = 3; failed = 0 } -Policy $fastRule
+$fastGo = Get-ReleaseDecision -ReleasedAt $t0 -Now $t0.AddHours(5) -Counts @{ installed = 3; failed = 0 } -Policy $fastRule
+Assert-True ($fastRule.FastTrack -and $fastWait.Action -eq 'wait' -and $fastWait.Reason -like '*2 hours of 4 hours*' -and $fastGo.Action -eq 'promote') "Get-EffectiveReleaseRule: a fast-track release is judged in hours"
+$ownRule = Get-EffectiveReleaseRule -Policy (ConvertTo-ReleasePolicy $null) -App ([pscustomobject]@{ releaseRule = (ConvertTo-AppReleaseRule ([pscustomobject]@{ days = '1'; minInstalled = '' })) }) -Release $null
+Assert-True ($ownRule.Own -and $ownRule.Days -eq 1 -and $ownRule.MaxFailedPercent -eq 5 -and $ownRule.MinInstalled -eq 1) "Get-EffectiveReleaseRule: the app's own days over the policy, the rest from the policy"
+Assert-Null (ConvertTo-AppReleaseRule ([pscustomobject]@{ days = ''; maxFailedPercent = 'x'; minInstalled = '-1' })) "ConvertTo-AppReleaseRule: nothing valid set - no own rule"
+$ringText = ConvertFrom-ReleaseRingText "Early adopters: SG-A, SG-B`r`n`r`nBroad: SG-C, SG-A"
+Assert-True (-not $ringText.Error -and @($ringText.Rings).Count -eq 2 -and $ringText.Rings[0].Name -eq 'Early adopters' -and @($ringText.Rings[0].Groups).Count -eq 2) "ConvertFrom-ReleaseRingText: one ring per line, blank lines skipped"
+Assert-True ((ConvertFrom-ReleaseRingText 'just a group').Error -like 'Line 1*') "ConvertFrom-ReleaseRingText: a line without a name says which line"
+$rings = @(@{ Name = 'Pilot'; Groups = @('SG-P') }) + @($ringText.Rings)
+Assert-Equal 'SG-P,SG-A,SG-B' ((Get-ReleaseRingGroups -Rings $rings -Ring 1) -join ',') "Get-ReleaseRingGroups: a ring's groups and every ring's before it"
+Assert-Equal 'SG-P,SG-A,SG-B,SG-C' ((Get-ReleaseRingGroups -Rings $rings -Ring 2) -join ',') "Get-ReleaseRingGroups: each group once"
+Assert-Equal 1 @(ConvertTo-ReleaseRings @(@{ Name = 'X'; Groups = @('SG-1') }, @{ Name = ''; Groups = @('SG-2') }, @{ Name = 'Y'; Groups = @() })).Count "ConvertTo-ReleaseRings: rings without a name or a group are dropped"
+
+# Assignment settings for a release
+$now = [datetime]::new(2026, 11, 13, 10, 0, 0, [DateTimeKind]::Utc)
+Assert-Null (Get-ReleaseAssignmentSettings -Policy (ConvertTo-ReleasePolicy $null) -FastTrack $false -NowUtc $now) "Get-ReleaseAssignmentSettings: Intune's defaults - no settings sent"
+$set = Get-ReleaseAssignmentSettings -Policy $pol2 -FastTrack $false -NowUtc $now
+Assert-True ($set.installTimeSettings.deadlineDateTime -eq '2026-11-15T10:00:00Z' -and $set.restartSettings.gracePeriodInMinutes -eq 90 -and $set.notifications -eq 'hideAll' -and $set.deliveryOptimizationPriority -eq 'notConfigured') "Get-ReleaseAssignmentSettings: deadline, restart grace and notifications"
+$fastSet = Get-ReleaseAssignmentSettings -Policy $pol2 -FastTrack $true -NowUtc $now
+Assert-True ($null -eq $fastSet.installTimeSettings -and $fastSet.deliveryOptimizationPriority -eq 'foreground') "Get-ReleaseAssignmentSettings: a fast-track release installs at once, in the foreground"
+$withSettings = New-AppAssignmentBody -Entries @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All') -AvailableGroups @('SG-Self') -ExcludeGroups @('SG-No')) -GroupIdByName @{ 'SG-All' = 'id-1'; 'SG-Self' = 'id-2'; 'SG-No' = 'id-3' } -RequiredSettings $set
+$req = @($withSettings.mobileAppAssignments | Where-Object { $_.intent -eq 'required' -and $_.target.'@odata.type' -like '*groupAssignmentTarget' -and $_.target.'@odata.type' -notlike '*exclusion*' })
+$others = @($withSettings.mobileAppAssignments | Where-Object { $_.ContainsKey('settings') })
+Assert-True ($req.Count -eq 1 -and $others.Count -eq 1 -and $req[0].settings.notifications -eq 'hideAll') "New-AppAssignmentBody: the settings go on the Required inclusions only"
+
+# Alerts
+$rep = @{ failed = 0; planOnly = $false; items = @(@{ app = 'A'; outcome = 'current'; text = 'fine' }, @{ app = 'B'; outcome = 'hold'; text = 'too many failed' }) }
+$alAtt = Get-ManagedRunAlert -Report $rep -Level 'attention'
+Assert-True ($alAtt.Send -and @($alAtt.Lines).Count -eq 1 -and $alAtt.Lines[0] -like 'B - hold*' -and $alAtt.Title -like '*1 to look at*') "Get-ManagedRunAlert: 'attention' sends what needs a look, only that"
+Assert-True (-not (Get-ManagedRunAlert -Report @{ failed = 0; items = @(@{ app = 'A'; outcome = 'current'; text = 'fine' }) } -Level 'attention').Send) "Get-ManagedRunAlert: nothing to look at - no alert"
+Assert-True (-not (Get-ManagedRunAlert -Report $rep -Level 'off').Send -and @((Get-ManagedRunAlert -Report $rep -Level 'always').Lines).Count -eq 2) "Get-ManagedRunAlert: off sends nothing; always sends every item"
+$alCfg = ConvertTo-AlertSettings ([pscustomobject]@{ Level = 'loud'; WebhookUrl = 'http://example.com/x'; MailFrom = 'reports@contoso.com'; MailTo = @('a@contoso.com', 'not an address', 'a@contoso.com') })
+Assert-True ($alCfg.Level -eq 'off' -and -not $alCfg.WebhookUrl -and $alCfg.MailFrom -eq 'reports@contoso.com' -and @($alCfg.MailTo).Count -eq 1) "ConvertTo-AlertSettings: only https webhooks and real addresses are kept"
 
 # Switching an existing app's install method
 Assert-Equal 'WAU' (Get-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $wauDefaults.installCommand -UninstallCommand $wauDefaults.uninstallCommand) `

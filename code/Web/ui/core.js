@@ -156,7 +156,7 @@ function showView(v) {
   $('viewApps').hidden = v !== 'apps';
   $('viewChecks').hidden = v !== 'checks';
   $('viewUpdates').hidden = v !== 'updates';
-  if (v === 'updates') loadUpdates();
+  if (v === 'updates') loadUpdates(false);
   $('viewScripts').hidden = v !== 'scripts';
   $('viewGroups').hidden = v !== 'groups';
   if (v === 'groups' && !groupsLoaded) loadGroups();

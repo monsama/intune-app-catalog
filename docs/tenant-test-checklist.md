@@ -184,6 +184,36 @@ group with another device.
       automatically", release nothing yourself, and wait. The run releases
       the newest winget version to pilot, and Settings lists the run.
       Then **Remove** the task.
+- [ ] **Release rings:** Settings > Managed updates > rings
+      `Second: ZZ-Test-B`. Release a new version: the Updates page shows
+      "ring 1 of 2 - Pilot". **Next ring...** - the pilot app is now
+      assigned Required to `ZZ-Test-A` *and* `ZZ-Test-B`; the row says
+      ring 2 of 2. Promote, then clear the rings again.
+- [ ] **Install deadline and restart:** set Install deadline 2 days and
+      Restart grace period 60. Release a version - in the portal, the pilot
+      app's Required assignment shows the deadline (two days on) and the
+      restart grace period. Set both back to 0.
+- [ ] **Fast track:** Release new version... with **Fast track** ticked.
+      The assignment's Delivery optimization priority is "Content download
+      in foreground". With the schedule on, the "Intune App Catalog -
+      fast-track updates" task exists; once the fast-track hours are over
+      and the pilot device installed it, that task promotes it (even with
+      automatic promotion off).
+- [ ] **App's own rule:** in the editor, Managed updates > this app's rule
+      "In each ring at least 0 days". The Updates page marks it "own rule",
+      and the verdict says "This app's own rule".
+- [ ] **Older versions on devices:** on a device, install an older 7-Zip by
+      hand. A day later (inventory runs about daily) the Updates page's
+      "On older versions" counts it - with the permission
+      DeviceManagementManagedDevices.Read.All; without it, the page says
+      so.
+- [ ] **Alerts:** in a Teams channel, ... > Workflows > "Post to a channel
+      when a webhook request is received"; paste its address in Settings >
+      Alerts, Send: when something needs a look; Save; **Send a test** - the
+      card appears in the channel. With an email (from a mailbox, to you,
+      and Mail.Send granted), the test email arrives too.
+- [ ] **Trend:** after two nightly runs, the Updates page shows the line
+      "Devices on the current version, last 30 days".
 - [ ] Optional, own package: an app with its own MSI, detection by MSI
       product code. Tick Managed updates, put a newer MSI in its folder,
       **Release new version...** The version and product code are read

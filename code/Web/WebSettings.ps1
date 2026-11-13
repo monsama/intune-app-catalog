@@ -348,6 +348,9 @@ function Global:Get-WebPrefs {
         favoriteGroups = @($Global:App.FavoriteGroups)
         pilotGroups    = @($Global:App.PilotGroups)
         releasePolicy  = $Global:App.ReleasePolicy
+        releaseRings   = @($Global:App.ReleaseRings | ForEach-Object { [ordered]@{ name = $_.Name; groups = @($_.Groups) } })
+        # The webhook URL is a secret (anyone with it can post to the channel): the page only learns whether one is saved.
+        alerts         = [ordered]@{ level = $Global:App.Alerts.Level; webhookSet = [bool]$Global:App.Alerts.WebhookUrl; mailFrom = $Global:App.Alerts.MailFrom; mailTo = @($Global:App.Alerts.MailTo) }
     }
 }
 
@@ -378,6 +381,23 @@ function Global:Save-WebPrefs {
     if ($null -ne $Data.releasePolicy) {
         $rp = ConvertTo-ReleasePolicy $Data.releasePolicy
         foreach ($k in @($rp.Keys)) { $Global:App.ReleasePolicy[$k] = $rp[$k] }
+    }
+    if ($null -ne $Data.releaseRingsText) {
+        $rr = ConvertFrom-ReleaseRingText ([string]$Data.releaseRingsText)
+        if ($rr.Error) { return @{ ok = $false; error = "Release rings: $($rr.Error)" } }
+        foreach ($ring in @($rr.Rings)) { foreach ($g in @($ring.Groups)) { $problem = Test-WebGroupName $g; if ($problem) { return @{ ok = $false; error = "Release rings ($($ring.Name)): $problem" } } } }
+        $Global:App.ReleaseRings = @(ConvertTo-ReleaseRings $rr.Rings)
+    }
+    if ($null -ne $Data.alerts) {
+        $al = $Data.alerts
+        $url = ([string]$al.webhookUrl).Trim()
+        $next = ConvertTo-AlertSettings @{ Level = [string]$al.level; WebhookUrl = $(if ($al.clearWebhook) { '' } elseif ($url) { $url } else { $Global:App.Alerts.WebhookUrl }); MailFrom = [string]$al.mailFrom; MailTo = @($al.mailTo) }
+        if ($url -and -not $al.clearWebhook -and -not $next.WebhookUrl) { return @{ ok = $false; error = 'Alerts: the webhook address must start with https://.' } }
+        if (([string]$al.mailFrom).Trim() -and -not $next.MailFrom) { return @{ ok = $false; error = "Alerts: '$($al.mailFrom)' isn't an email address." } }
+        $badTo = @(@($al.mailTo) | Where-Object { ([string]$_).Trim() -and @($next.MailTo) -notcontains ([string]$_).Trim() })
+        if ($badTo.Count) { return @{ ok = $false; error = "Alerts: '$($badTo[0])' isn't an email address." } }
+        if ($next.MailTo.Count -and -not $next.MailFrom) { return @{ ok = $false; error = 'Alerts: say which mailbox the email is sent from.' } }
+        $Global:App.Alerts = $next
     }
     if ($null -ne $Data.pilotGroups) {
         $pilot = @($Data.pilotGroups | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)

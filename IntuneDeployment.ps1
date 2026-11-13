@@ -31,7 +31,9 @@ param(
     # The unattended managed-updates run (the nightly scheduled task) - no window, a report in Logs\reports.
     [switch]$RunUpdates,
     # With -RunUpdates: decide and report, change nothing.
-    [switch]$PlanOnly
+    [switch]$PlanOnly,
+    # With -RunUpdates: only the fast-track (urgent) releases - the second scheduled task, every two hours.
+    [switch]$FastTrackOnly
 )
 
 $Script:RequiredPrivateFiles = @(
@@ -183,4 +185,4 @@ $Script:WebAppPath = Join-Path $PSScriptRoot "code\Web\Start-WebApp.ps1"
 if (-not (Test-Path -LiteralPath $Script:WebAppPath -PathType Leaf)) {
     throw "Startup aborted: code\Web\Start-WebApp.ps1 was not found next to IntuneDeployment.ps1."
 }
-. $Script:WebAppPath -RootPath $PSScriptRoot -NoBrowser:$NoBrowser -RunUpdates:$RunUpdates -PlanOnly:$PlanOnly
+. $Script:WebAppPath -RootPath $PSScriptRoot -NoBrowser:$NoBrowser -RunUpdates:$RunUpdates -PlanOnly:$PlanOnly -FastTrackOnly:$FastTrackOnly

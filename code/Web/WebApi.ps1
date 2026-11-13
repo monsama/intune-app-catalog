@@ -478,6 +478,9 @@ function Global:Invoke-WebApi {
         '/api/release-promoted' { return (Invoke-WithCatalogLock { Complete-WebPromotion $Data }) }
         '/api/release-rolledback' { return (Invoke-WithCatalogLock { Complete-WebRollback $Data }) }
         '/api/release-cleanup'  { return (Remove-WebOldReleases $Data) }
+        '/api/release-advanced' { return (Invoke-WithCatalogLock { Complete-WebAdvance $Data }) }
+        '/api/alert-test'       { return (Send-WebTestAlert) }
+        '/api/updates-trend'    { return (Get-WebUpdatesTrend) }
         '/api/release-withdrawn' { return (Invoke-WithCatalogLock { Complete-WebWithdrawal $Data }) }
         '/api/update-runs'      { return (Get-WebUpdateRuns) }
         '/api/update-run'       { return (Start-WebUpdateRun $Data) }

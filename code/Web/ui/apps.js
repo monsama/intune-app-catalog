@@ -200,6 +200,10 @@ function fillEditor(a) {
   fillDeploy(a.deploy);
   setEditorIcon(a.icon || null, 'keep');
   $('aManaged').checked = !!a.managedUpdates;
+  const own = a.releaseRule || {};
+  $('arDays').value = own.days ?? ''; $('arFailed').value = own.maxFailedPercent ?? ''; $('arMin').value = own.minInstalled ?? ''; $('arDetected').value = a.detectedName || '';
+  const pol = (prefs && prefs.releasePolicy) || {};
+  $('arDays').placeholder = pol.Days ?? 3; $('arFailed').placeholder = pol.MaxFailedPercent ?? 5; $('arMin').placeholder = pol.MinInstalled ?? 1;
   const rel = a.releases || [], pilot = rel.find(r => r.state === 'pilot'), prev = rel.filter(r => r.state === 'previous');
   $('aManagedNote').textContent = [pilot ? `- ${pilot.version} in pilot` : '', prev.length ? `- superseded: ${prev.map(r => r.version).join(', ')}` : ''].filter(Boolean).join(' ');
   showManagedState();
@@ -209,10 +213,12 @@ function fillEditor(a) {
 // Managed updates need a Winget ID; while one is ticked, the install commands and detection follow the App version.
 function showManagedState() {
   const has = !!$('aWinget').value.trim();
+  $('aRuleBox').hidden = !$('aManaged').checked;
   $('aManaged').parentElement.title = has ? 'Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Defaults > Managed updates'
     : 'Release new versions of this package to the pilot groups first. Needs a detection rule that compares a version (MSI, or file/registry by version) - a release updates it to the new version.';
 }
 $('aWinget').addEventListener('input', showManagedState);
+$('aManaged').addEventListener('change', showManagedState);
 
 // ---------------------------------------------------------------- unsaved changes (editor)
 // Escape or Cancel with changes asks first; saving or removing closes it without asking.
@@ -348,6 +354,8 @@ $('appForm').addEventListener('submit', async e => {
   if (deployTouched) app.deploy = readDeploy();
   app.iconChange = iconChange; if (iconChange === 'set') app.icon = editorIcon;
   app.managedUpdates = $('aManaged').checked;
+  app.releaseRule = { days: $('arDays').value.trim(), maxFailedPercent: $('arFailed').value.trim(), minInstalled: $('arMin').value.trim() };
+  app.detectedName = $('arDetected').value.trim();
   const r = await api('/api/app-save', { originalName: editingName, version: editingVersion, app });
   if (!r.ok) { const p = $('appError'); p.textContent = r.error; p.hidden = false; return; }
   $('dlgApp').close();
@@ -1231,7 +1239,8 @@ async function openRelease(name) {
   $('relVersion').value = suggest && suggest !== r.current ? suggest : '';
   $('relBuildRow').hidden = !pkg; $('relFolder').textContent = pkg ? `(${inst.folder})` : '';
   $('relProblem').textContent = r.detectionProblem || ''; $('relProblem').hidden = !r.detectionProblem;
-  $('relGroups').textContent = r.pilotGroups.length ? `Pilot groups: ${r.pilotGroups.join(', ')}` : 'No pilot groups yet - set them in Settings > Defaults > Managed updates.';
+  $('relGroups').textContent = r.pilotGroups.length ? `Pilot groups: ${r.pilotGroups.join(', ')}.${(r.rings || []).length > 1 ? ` Then ${r.rings.slice(1).map(x => x.name).join(', then ')}, then everyone.` : ''}` : 'No pilot groups yet - set them in Settings > Defaults > Managed updates.';
+  $('relFast').checked = false; $('relFastNote').textContent = `(pilot for ${r.fastTrackHours || 4} hours, then everyone)`;
   $('relErr').hidden = true; $('relLog').hidden = true; $('relLog').textContent = '';
   $('btnRelGo').disabled = !r.pilotGroups.length || !!r.detectionProblem; $('btnRelGo').textContent = 'Release to pilot'; $('btnRelClose').textContent = 'Cancel';
   $('dlgRelease').showModal(); $('relVersion').focus();
@@ -1251,7 +1260,7 @@ $('btnRelGo').addEventListener('click', async () => {
     if (!built.ok) { $('relErr').textContent = built.error || 'Building the package failed - see the log.'; $('relErr').hidden = false; $('btnRelGo').disabled = false; return; }
   }
   const productCode = relInfo && relInfo.kind === 'package' && relInfo.installer ? relInfo.installer.productCode || '' : '';
-  const made = await releaseStep({ name, version, productCode }, '/api/release-start', 'relLog', `Creating ${name} ${version} in Intune...`);
+  const made = await releaseStep({ name, version, productCode, fastTrack: $('relFast').checked }, '/api/release-start', 'relLog', `Creating ${name} ${version} in Intune...`);
   if (!made.ok) { $('relErr').textContent = made.error || 'The release failed - see the log.'; $('relErr').hidden = false; $('btnRelGo').disabled = false; loadApps(); return; }
   const assigned = await releaseStep({ name, step: 'pilot' }, '/api/release-assign', 'relLog', 'Assigning it to the pilot groups...');
   $('btnRelClose').textContent = 'Close'; $('btnRelGo').textContent = 'Done';
@@ -1262,7 +1271,7 @@ async function promoteRelease(name) {
   const a = apps.find(x => x.name === name);
   const info = await api('/api/release-info', { name });
   const st = info.ok && info.pilotStatus;
-  const verdict = st && st.ok ? `Pilot: ${st.reason}${st.action === 'promote' ? ' The release rule says it is ready.' : st.action === 'hold' ? ' The release rule says: hold.' : ' The release rule says: wait.'}\n\n` : '';
+  const verdict = st && st.ok ? `Pilot: ${st.reason}${st.action === 'promote' ? ' The release rule says it is ready.' : st.action === 'advance' ? ' The release rule says it is ready for the next ring - promoting now skips the remaining rings.' : st.action === 'hold' ? ' The release rule says: hold.' : ' The release rule says: wait.'}\n\n` : '';
   if (!(await ask(`Promote ${name} ${a.pilotVersion} to everyone?\n\n${verdict}The pilot release gets the catalog's groups and becomes the current one (named "${name}" in Intune); ${a.version || 'the current version'} loses its assignments and is kept in Intune as superseded. Devices that have it are updated to ${a.pilotVersion}.\n\nCheck its install status on the pilot devices first (More > Install status...).`, { ok: 'Promote', danger: false }))) return;
   runDialog(`Promote ${name} ${a.pilotVersion}`, 'Assigning the new release to the catalog\'s groups, then taking them off the old one.');
   const p1 = await releaseStep({ name, step: 'promote' }, '/api/release-assign', 'runLog', `Assigning ${a.pilotVersion} to the catalog's groups...`);

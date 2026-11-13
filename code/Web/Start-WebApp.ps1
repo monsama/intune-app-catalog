@@ -11,7 +11,8 @@ param(
     [Parameter(Mandatory = $true)][string]$RootPath,
     [switch]$NoBrowser,
     [switch]$RunUpdates,
-    [switch]$PlanOnly
+    [switch]$PlanOnly,
+    [switch]$FastTrackOnly
 )
 
 # Certificate dialogs and X509 helpers (New-WebCertificate, the certificate
@@ -53,7 +54,7 @@ if (Enable-WebTestGraph) {
 
 # The unattended run: no server, no window - the same functions the page's buttons use, then the process ends.
 if ($RunUpdates) {
-    $exitCode = Invoke-ManagedUpdateRun -PlanOnly:$PlanOnly
+    $exitCode = Invoke-ManagedUpdateRun -PlanOnly:$PlanOnly -FastTrackOnly:$FastTrackOnly
     exit $exitCode
 }
 

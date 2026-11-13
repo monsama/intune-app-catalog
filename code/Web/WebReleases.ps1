@@ -35,6 +35,27 @@ function Global:Get-WebAppRelease {
     return (@($App.releases) | Where-Object { $_ -and $_.state -eq 'pilot' } | Select-Object -First 1)
 }
 
+function Global:Get-WebReleaseRings {
+    # The release rings: the pilot groups first, then Settings' further rings - @(@{ Name; Groups }).
+    return @(@([ordered]@{ Name = 'Pilot'; Groups = @($Global:App.PilotGroups) }) + @($Global:App.ReleaseRings))
+}
+
+function Global:Get-WebReleaseDecision {
+    # What the release rule says about an app's pilot release, given its install counts: @{ Action; Reason; Rule; Ring; RingCount; RingName }.
+    param($App, $Pilot, $Counts)
+    $rings = @(Get-WebReleaseRings)
+    $rule = Get-EffectiveReleaseRule -Policy $Global:App.ReleasePolicy -App $App -Release $Pilot
+    $ring = [Math]::Min([int]$Pilot.ring, $rings.Count - 1)
+    $since = if ($Pilot.ringAt) { [string]$Pilot.ringAt } else { [string]$Pilot.at }
+    $at = [datetime]::MinValue
+    if (-not [datetime]::TryParseExact($since, 'yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$at)) { $at = Get-Date }
+    # A fast-track release skips the rings: one stage, then everyone.
+    $count = if ($rule.FastTrack) { 1 } else { $rings.Count }
+    $d = Get-ReleaseDecision -ReleasedAt $at -Now (Get-Date) -Counts $Counts -Policy $rule -Ring $(if ($rule.FastTrack) { 0 } else { $ring }) -RingCount $count
+    $prefix = @($(if ($rule.FastTrack) { 'Fast track.' }), $(if ($rule.Own) { "This app's own rule." })) -join ' '
+    return @{ Action = $d.Action; Reason = ($(if ($prefix.Trim()) { $prefix.Trim() + ' ' }) + $d.Reason); Rule = $rule; Ring = $ring; RingCount = $rings.Count; RingName = [string]$rings[$ring].Name }
+}
+
 function Global:Get-WebReleaseInfo {
     # What the Release dialog shows for one app.
     param($Data)
@@ -44,14 +65,15 @@ function Global:Get-WebReleaseInfo {
     $latest = if ($Global:App.WingetLatest -and $a.wingetId) { [string]$Global:App.WingetLatest[([string]$a.wingetId).ToLowerInvariant()] } else { '' }
     $own = -not $a.wingetId
     $installer = if ($own) { Get-WebInstallerInfo $a.appName } else { $null }
-    $status = if ($pilot) { Get-WebPilotStatus $pilot } else { $null }
+    $status = if ($pilot) { Get-WebPilotStatus $pilot -App $a } else { $null }
     return @{ ok = $true; name = $a.appName; managed = [bool]$a.managedUpdates; wingetId = [string]$a.wingetId; appId = [string]$a.appId
         kind = $(if ($own) { 'package' } else { 'winget' }); installer = $installer; pilotStatus = $status
         detectionProblem = $(if ($own) { Test-VersionDetectionRule $(if ($a.metadata) { $a.metadata.detectionRule }) } else { '' })
         current = [string]$(if ($a.metadata) { $a.metadata.appVersion }); latest = $latest
-        pilot = $(if ($pilot) { @{ version = $pilot.version; appId = $pilot.appId; at = $pilot.at } } else { $null })
+        pilot = $(if ($pilot) { @{ version = $pilot.version; appId = $pilot.appId; at = $pilot.at; ring = [int]$pilot.ring; fastTrack = [bool]$pilot.fastTrack } } else { $null })
         previous = @(Get-WebPreviousReleases $a | ForEach-Object { @{ version = $_.version; appId = $_.appId; at = $_.at } })
-        pilotGroups = @($Global:App.PilotGroups) }
+        pilotGroups = @($Global:App.PilotGroups); rings = @(Get-WebReleaseRings | ForEach-Object { [ordered]@{ name = $_.Name; groups = @($_.Groups) } })
+        fastTrackHours = [int]$Global:App.ReleasePolicy.FastTrackHours }
 }
 
 function Global:Start-WebRelease {
@@ -88,8 +110,8 @@ function Global:Start-WebRelease {
     $config.Supersedence = @([pscustomobject]@{ appId = [string]$a.appId; type = 'update' })
     $config.IsFeatured = $null
     $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "Release $name $version" `
-        -After @{ Kind = 'release'; AppName = $a.appName; Version = $version; ProductCode = $(if ($own) { [string]$next.metadata.detectionRule.Msi_ProductCode } else { '' }) }
-    if ($started.ok) { Write-Log "[INFO] Releasing $name $version to pilot (a new app superseding $current)..." }
+        -After @{ Kind = 'release'; AppName = $a.appName; Version = $version; FastTrack = [bool]$Data.fastTrack; ProductCode = $(if ($own) { [string]$next.metadata.detectionRule.Msi_ProductCode } else { '' }) }
+    if ($started.ok) { Write-Log "[INFO] Releasing $name $version to pilot$(if ($Data.fastTrack) { ' on the fast track' }) (a new app superseding $current)..." }
     return $started
 }
 
@@ -100,9 +122,11 @@ function Global:Complete-WebRelease {
     if ($newId -notmatch '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$') { return @{ ok = $false; error = 'The release step did not report the new app''s ID.' } }
     $version = [string]$After.Version
     $code = [string]$After.ProductCode
+    $fast = [bool]$After.FastTrack
     [void](Update-WebCatalogApp -Name $After.AppName -Change {
             param($app)
-            $app.releases = @(@($app.releases) | Where-Object { $_.state -ne 'pilot' }) + @([pscustomobject]@{ version = $version; appId = $newId; state = 'pilot'; at = (Get-Date).ToString('yyyy-MM-dd HH:mm'); productCode = $code })
+            $now = (Get-Date).ToString('yyyy-MM-dd HH:mm')
+            $app.releases = @(@($app.releases) | Where-Object { $_.state -ne 'pilot' }) + @([pscustomobject]@{ version = $version; appId = $newId; state = 'pilot'; at = $now; productCode = $code; ring = 0; ringAt = $now; fastTrack = $fast })
         }.GetNewClosure())
     Write-Log "[OK] $($After.AppName) $version is in Intune as a pilot release (App ID $newId)."
     return @{ ok = $true; assignPilot = $true; appId = $newId }
@@ -111,7 +135,8 @@ function Global:Complete-WebRelease {
 function Global:Start-WebReleaseAssign {
     <#
       Assignments for a release step (TargetedAssign - exactly these groups):
-        pilot     the pilot app: Required to the pilot groups
+        pilot     the pilot app: Required to the groups of its ring (the pilot groups, and the rings before)
+        advance   the pilot app: Required to the next ring's groups too (Complete-WebAdvance records it)
         promote   the pilot app: the catalog's groups
         retire    the current app: none (its devices are now the pilot app's)
         withdraw  the pilot app: none
@@ -122,9 +147,16 @@ function Global:Start-WebReleaseAssign {
     if (-not $a) { return @{ ok = $false; error = "'$($Data.name)' is no longer in the catalog." } }
     $pilot = Get-WebAppRelease $a
     $step = [string]$Data.step
+    $rings = @(Get-WebReleaseRings)
     $none = @{ Required = @(); Available = @(); Uninstall = @(); Exclude = @() }
     switch ($step) {
-        'pilot' { if (-not $pilot) { return @{ ok = $false; error = "$($a.appName) has no pilot release." } }; $id = $pilot.appId; $g = @{ Required = @($Global:App.PilotGroups); Available = @(); Uninstall = @(); Exclude = @($a.excludeFor) }; $label = "Assign $($a.appName) $($pilot.version) to pilot" }
+        'pilot' { if (-not $pilot) { return @{ ok = $false; error = "$($a.appName) has no pilot release." } }; $id = $pilot.appId; $g = @{ Required = @(Get-ReleaseRingGroups -Rings $rings -Ring ([int]$pilot.ring)); Available = @(); Uninstall = @(); Exclude = @($a.excludeFor) }; $label = "Assign $($a.appName) $($pilot.version) to pilot" }
+        'advance' {
+            if (-not $pilot) { return @{ ok = $false; error = "$($a.appName) has no pilot release." } }
+            $nextRing = [int]$pilot.ring + 1
+            if ($nextRing -ge $rings.Count) { return @{ ok = $false; error = "$($a.appName) $($pilot.version) is in the last ring - promote it to everyone." } }
+            $id = $pilot.appId; $g = @{ Required = @(Get-ReleaseRingGroups -Rings $rings -Ring $nextRing); Available = @(); Uninstall = @(); Exclude = @($a.excludeFor) }; $label = "Give $($a.appName) $($pilot.version) to $($rings[$nextRing].Name)"
+        }
         'promote' { if (-not $pilot) { return @{ ok = $false; error = "$($a.appName) has no pilot release." } }; $id = $pilot.appId; $g = @{ Required = @($a.requiredFor); Available = @($a.availableFor); Uninstall = @($a.uninstallFor); Exclude = @($a.excludeFor) }; $label = "Promote $($a.appName) $($pilot.version)" }
         'retire' { if (-not $a.appId) { return @{ ok = $false; error = "$($a.appName) has no current release." } }; $id = $a.appId; $g = $none; $label = "Retire $($a.appName) $(if ($a.metadata) { $a.metadata.appVersion })" }
         'rollback' {
@@ -141,9 +173,26 @@ function Global:Start-WebReleaseAssign {
         TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
         AppId = $id; AppName = $a.appName
         RequiredGroups = @($g.Required); AvailableGroups = @($g.Available); UninstallGroups = @($g.Uninstall); ExcludeGroups = @($g.Exclude)
-        CreateMissingGroups = ($step -eq 'pilot'); OutputResultPath = $resultPath
+        CreateMissingGroups = ($step -in 'pilot', 'advance'); OutputResultPath = $resultPath
+        # Install deadline, restart grace period, notifications (Settings > Managed updates) on the Required assignments.
+        RequiredSettings = $(if ($step -in 'pilot', 'advance', 'promote', 'rollback') { Get-ReleaseAssignmentSettings -Policy $Global:App.ReleasePolicy -FastTrack ([bool]($pilot -and $pilot.fastTrack -and $step -ne 'rollback')) -NowUtc ([datetime]::UtcNow) } else { $null })
     }
     return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind $label)
+}
+
+function Global:Complete-WebAdvance {
+    # After 'advance': the pilot release is in the next ring from now (the rule's days count again from here).
+    param($Data)
+    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "'$($Data.name)' is no longer in the catalog." } }
+    $pilot = Get-WebAppRelease $a
+    if (-not $pilot) { return @{ ok = $false; error = "$($a.appName) has no pilot release." } }
+    $rings = @(Get-WebReleaseRings)
+    $next = [Math]::Min([int]$pilot.ring + 1, $rings.Count - 1)
+    $pilot.ring = $next; $pilot.ringAt = (Get-Date).ToString('yyyy-MM-dd HH:mm')
+    Write-WebAppFile -App $a
+    Write-Log "[OK] $($a.appName) $($pilot.version) is in ring $($next + 1) of $($rings.Count) ($($rings[$next].Name)) now."
+    return @{ ok = $true; ring = $next; ringName = [string]$rings[$next].Name; version = [string]$pilot.version }
 }
 
 function Global:Rename-WebIntuneApp {
@@ -281,16 +330,14 @@ function Global:Get-WebInstallerInfo {
 
 function Global:Get-WebPilotStatus {
     # A pilot release's install counts in Intune and what the release policy says to do now (Get-ReleaseDecision).
-    param($Pilot)
+    param($Pilot, $App)
     $id = [string]$Pilot.appId
     $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) & $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$id/installSummary" }
     if (-not $read.ok) { return @{ ok = $false; error = [string]$read.error } }
     $s = $read.value
     $counts = @{ installed = [int]$s.installedDeviceCount; failed = [int]$s.failedDeviceCount; pending = [int]$s.pendingInstallDeviceCount; notInstalled = [int]$s.notInstalledDeviceCount }
-    $at = [datetime]::MinValue
-    if (-not [datetime]::TryParseExact([string]$Pilot.at, 'yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$at)) { $at = Get-Date }
-    $decision = Get-ReleaseDecision -ReleasedAt $at -Now (Get-Date) -Counts $counts -Policy $Global:App.ReleasePolicy
-    return @{ ok = $true; counts = $counts; action = $decision.Action; reason = $decision.Reason }
+    $decision = Get-WebReleaseDecision -App $App -Pilot $Pilot -Counts $counts
+    return @{ ok = $true; counts = $counts; action = $decision.Action; reason = $decision.Reason; ring = $decision.Ring; ringCount = $decision.RingCount; ringName = $decision.RingName; fastTrack = [bool]$decision.Rule.FastTrack }
 }
 
 # ---------------------------------------------------------------- rollback and clean-up

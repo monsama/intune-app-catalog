@@ -22,6 +22,8 @@ function Global:Import-GraphSettings {
             $rp = ConvertTo-ReleasePolicy $settings.ReleasePolicy
             foreach ($k in @($rp.Keys)) { $Global:App.ReleasePolicy[$k] = $rp[$k] }
         }
+        if ($settings.ReleaseRings) { $Global:App.ReleaseRings = @(ConvertTo-ReleaseRings $settings.ReleaseRings) }
+        if ($settings.Alerts) { $Global:App.Alerts = ConvertTo-AlertSettings $settings.Alerts }
         if ($settings.PilotGroups) {
             $Global:App.PilotGroups.Clear()
             foreach ($g in @($settings.PilotGroups)) { [void]$Global:App.PilotGroups.Add([string]$g) }
@@ -117,6 +119,8 @@ function Global:Write-SettingsFile {
             FavoriteGroups        = @($Global:App.FavoriteGroups)
             PilotGroups           = @($Global:App.PilotGroups)
             ReleasePolicy         = $Global:App.ReleasePolicy
+            ReleaseRings          = @($Global:App.ReleaseRings)
+            Alerts                = $Global:App.Alerts
             DefaultAppSettings    = $Global:App.DefaultAppSettings
             CheckDriftOnStartup   = $Global:App.CheckDriftOnStartup
             RunFullAuditOnStartup = $Global:App.RunFullAuditOnStartup
@@ -203,8 +207,13 @@ function Global:Get-CertificateStatusText {
 function Global:ConvertTo-ReleasePolicy {
     # Pure: the managed-updates policy from a settings file or the page, each value checked; anything missing or wrong is the default.
     param($Raw)
-    $p = [ordered]@{ Days = 3; MaxFailedPercent = 5; MinInstalled = 1; AutoRelease = $false; AutoPromote = $false; CleanupOld = $false; RunAt = '03:00' }
+    $p = [ordered]@{ Days = 3; MaxFailedPercent = 5; MinInstalled = 1; AutoRelease = $false; AutoPromote = $false; CleanupOld = $false; RunAt = '03:00'
+        FastTrackHours = 4; DeadlineDays = 0; RestartGraceMinutes = 0; Notifications = 'showAll' }
     if (-not $Raw) { return $p }
+    if ([string]$Raw.FastTrackHours -match '^\d{1,2}$' -and [int][string]$Raw.FastTrackHours -ge 1 -and [int][string]$Raw.FastTrackHours -le 72) { $p.FastTrackHours = [int][string]$Raw.FastTrackHours }
+    if ([string]$Raw.DeadlineDays -match '^\d{1,2}$' -and [int][string]$Raw.DeadlineDays -le 30) { $p.DeadlineDays = [int][string]$Raw.DeadlineDays }
+    if ([string]$Raw.RestartGraceMinutes -match '^\d{1,5}$' -and [int][string]$Raw.RestartGraceMinutes -le 20160) { $p.RestartGraceMinutes = [int][string]$Raw.RestartGraceMinutes }
+    if ([string]$Raw.Notifications -in 'showAll', 'showReboot', 'hideAll') { $p.Notifications = [string]$Raw.Notifications }
     if ([string]$Raw.Days -match '^\d{1,2}$') { $p.Days = [int][string]$Raw.Days }
     if ([string]$Raw.MaxFailedPercent -match '^\d{1,3}(\.\d+)?$' -and [double][string]$Raw.MaxFailedPercent -le 100) { $p.MaxFailedPercent = [double][string]$Raw.MaxFailedPercent }
     if ([string]$Raw.MinInstalled -match '^\d{1,4}$') { $p.MinInstalled = [int][string]$Raw.MinInstalled }
@@ -213,4 +222,31 @@ function Global:ConvertTo-ReleasePolicy {
     if ($null -ne $Raw.CleanupOld) { $p.CleanupOld = [bool]$Raw.CleanupOld }
     if ([string]$Raw.RunAt -match '^([01]\d|2[0-3]):[0-5]\d$') { $p.RunAt = [string]$Raw.RunAt }
     return $p
+}
+
+function Global:ConvertTo-ReleaseRings {
+    # Pure: the release rings from a settings file or the page - at most five, each with a name and its groups; anything else is dropped.
+    param($Raw)
+    return @(@($Raw) | Where-Object { $_ -and ([string]$_.Name).Trim() -and @($_.Groups | Where-Object { ([string]$_).Trim() }).Count } | Select-Object -First 5 | ForEach-Object {
+        [ordered]@{ Name = ([string]$_.Name).Trim(); Groups = @(@($_.Groups) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique) }
+    })
+}
+
+function Global:ConvertTo-AlertSettings {
+    <#
+      Pure: the nightly run's alert settings, each value checked; anything
+      wrong is left empty. Level: off, attention or always. WebhookUrl: an
+      https URL (a Teams "Workflows" webhook). MailFrom: the mailbox the
+      email is sent from (needs Mail.Send); MailTo: addresses.
+    #>
+    param($Raw)
+    $a = [ordered]@{ Level = 'off'; WebhookUrl = ''; MailFrom = ''; MailTo = @() }
+    if (-not $Raw) { return $a }
+    if ([string]$Raw.Level -in 'off', 'attention', 'always') { $a.Level = [string]$Raw.Level }
+    $url = ([string]$Raw.WebhookUrl).Trim()
+    if ($url -match '^https://[A-Za-z0-9.-]+(:\d+)?/[^\s"<>]*$' -and $url.Length -le 2000) { $a.WebhookUrl = $url }
+    $mail = '^[A-Za-z0-9._%+''-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+    if (([string]$Raw.MailFrom).Trim() -match $mail) { $a.MailFrom = ([string]$Raw.MailFrom).Trim() }
+    $a.MailTo = @(@($Raw.MailTo) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -match $mail } | Select-Object -Unique -First 20)
+    return $a
 }
