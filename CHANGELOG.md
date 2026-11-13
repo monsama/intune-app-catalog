@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.3.1
+
+### Added
+
+- **docs/managed-updates.md:** how managed updates work (current, pilot and
+  superseded releases), how to set them up, what the nightly run does with
+  each switch, and what to do when something goes wrong.
+- **Tenant test checklist, section 10 "Managed updates":** release,
+  promote, roll back, delete old versions, withdraw, Plan only, the
+  scheduled task and an own MSI package, checked against a test tenant step
+  by step.
+
+### Changed
+
+- The checklist's Settings paths follow the four Settings sections.
+- **Browser test:** checks the Managed updates card and nightly-run list in
+  Settings, and that Release new version is off (and says why) for an app
+  without managed updates.
+
 ## 2.3.0
 
 ### Added

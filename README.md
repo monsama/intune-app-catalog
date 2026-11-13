@@ -48,7 +48,8 @@ it opens can talk to it.
   a new one is released to a pilot group first (a new Intune app that
   supersedes the current one), then promoted to everyone - or withdrawn.
   Intune reports every device's state per version. Own packages too: the
-  version comes from the installer in the app's folder.
+  version comes from the installer in the app's folder. See
+  [docs/managed-updates.md](docs/managed-updates.md).
 - **Nightly run** (`IntuneDeployment.ps1 -RunUpdates`, scheduled from
   Settings): promotes pilot releases by a rule (days, failure %, installs),
   releases new winget versions to pilot, and writes a report.
