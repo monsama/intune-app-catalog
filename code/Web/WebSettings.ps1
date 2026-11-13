@@ -347,6 +347,7 @@ function Global:Get-WebPrefs {
         minOsChoices = @(Get-WebMinOsChoices)
         favoriteGroups = @($Global:App.FavoriteGroups)
         pilotGroups    = @($Global:App.PilotGroups)
+        releasePolicy  = $Global:App.ReleasePolicy
     }
 }
 
@@ -374,6 +375,10 @@ function Global:Save-WebPrefs {
         foreach ($p in $Data.folders.PSObject.Properties) { Set-AppFolder -Kind $p.Name -Path ([string]$p.Value) }
     }
     if ($Data.defaults) { $Global:App.DefaultAppSettings = $converted.Settings }
+    if ($null -ne $Data.releasePolicy) {
+        $rp = ConvertTo-ReleasePolicy $Data.releasePolicy
+        foreach ($k in @($rp.Keys)) { $Global:App.ReleasePolicy[$k] = $rp[$k] }
+    }
     if ($null -ne $Data.pilotGroups) {
         $pilot = @($Data.pilotGroups | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
         foreach ($g in $pilot) { $problem = Test-WebGroupName $g; if ($problem) { return @{ ok = $false; error = "Pilot groups: $problem" } } }

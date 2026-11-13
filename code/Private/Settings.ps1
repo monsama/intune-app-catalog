@@ -18,6 +18,10 @@ function Global:Import-GraphSettings {
         if (-not [string]::IsNullOrWhiteSpace($settings.TenantId))  { $Global:App.GraphTenantId = ([string]$settings.TenantId).Trim() }
         if (-not [string]::IsNullOrWhiteSpace($settings.ClientId))  { $Global:App.GraphClientId = ([string]$settings.ClientId).Trim() }
         if (-not [string]::IsNullOrWhiteSpace($settings.CertificateThumbprint)) { $Global:App.GraphCertificateThumbprint = ([string]$settings.CertificateThumbprint) -replace '\s', '' }
+        if ($settings.ReleasePolicy) {
+            $rp = ConvertTo-ReleasePolicy $settings.ReleasePolicy
+            foreach ($k in @($rp.Keys)) { $Global:App.ReleasePolicy[$k] = $rp[$k] }
+        }
         if ($settings.PilotGroups) {
             $Global:App.PilotGroups.Clear()
             foreach ($g in @($settings.PilotGroups)) { [void]$Global:App.PilotGroups.Add([string]$g) }
@@ -112,6 +116,7 @@ function Global:Write-SettingsFile {
             CertificateThumbprint = $Global:App.GraphCertificateThumbprint
             FavoriteGroups        = @($Global:App.FavoriteGroups)
             PilotGroups           = @($Global:App.PilotGroups)
+            ReleasePolicy         = $Global:App.ReleasePolicy
             DefaultAppSettings    = $Global:App.DefaultAppSettings
             CheckDriftOnStartup   = $Global:App.CheckDriftOnStartup
             RunFullAuditOnStartup = $Global:App.RunFullAuditOnStartup
@@ -193,4 +198,18 @@ function Global:Get-CertificateStatusText {
     else {
         return @{ Text = "Found - valid until $($cert.NotAfter.ToString('yyyy-MM-dd')). Subject: $($cert.Subject)"; Level = 'ok' }
     }
+}
+
+function Global:ConvertTo-ReleasePolicy {
+    # Pure: the managed-updates policy from a settings file or the page, each value checked; anything missing or wrong is the default.
+    param($Raw)
+    $p = [ordered]@{ Days = 3; MaxFailedPercent = 5; MinInstalled = 1; AutoRelease = $false; AutoPromote = $false; RunAt = '03:00' }
+    if (-not $Raw) { return $p }
+    if ([string]$Raw.Days -match '^\d{1,2}$') { $p.Days = [int][string]$Raw.Days }
+    if ([string]$Raw.MaxFailedPercent -match '^\d{1,3}(\.\d+)?$' -and [double][string]$Raw.MaxFailedPercent -le 100) { $p.MaxFailedPercent = [double][string]$Raw.MaxFailedPercent }
+    if ([string]$Raw.MinInstalled -match '^\d{1,4}$') { $p.MinInstalled = [int][string]$Raw.MinInstalled }
+    if ($null -ne $Raw.AutoRelease) { $p.AutoRelease = [bool]$Raw.AutoRelease }
+    if ($null -ne $Raw.AutoPromote) { $p.AutoPromote = [bool]$Raw.AutoPromote }
+    if ([string]$Raw.RunAt -match '^([01]\d|2[0-3]):[0-5]\d$') { $p.RunAt = [string]$Raw.RunAt }
+    return $p
 }

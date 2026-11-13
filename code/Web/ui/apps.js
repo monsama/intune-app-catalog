@@ -209,8 +209,8 @@ function fillEditor(a) {
 // Managed updates need a Winget ID; while one is ticked, the install commands and detection follow the App version.
 function showManagedState() {
   const has = !!$('aWinget').value.trim();
-  setEnabled($('aManaged'), has, 'Only Winget apps - an app with its own package is updated by releasing a new package.');
-  if (!has) $('aManaged').checked = false;
+  $('aManaged').parentElement.title = has ? 'Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Defaults > Managed updates'
+    : 'Release new versions of this package to the pilot groups first. Needs a detection rule that compares a version (MSI, or file/registry by version) - a release updates it to the new version.';
 }
 $('aWinget').addEventListener('input', showManagedState);
 
@@ -861,7 +861,7 @@ function openMenu(x, y) {
     replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any,
     takeversion: sel.some(a => a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
     release: !!(one && one.managed && one.hasAppId && !one.pilotVersion), promote: !!(one && one.pilotVersion), withdraw: !!(one && one.pilotVersion),
-    managed: sel.some(a => a.wingetId) };
+    managed: any };
   const why = {
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
@@ -872,11 +872,11 @@ function openMenu(x, y) {
     takeversion: sel.some(a => a.managed && a.hasAppId) ? 'Deployed apps with managed updates get a new version through Release new version.' : apps.some(a => a.wingetVersion) ? 'winget offers nothing newer for the selected apps.' : 'Ask winget first: Catalog > Check winget for new versions.',
     release: !one ? 'Select exactly one app.' : !one.managed ? 'Turn managed updates on first (More > Managed updates on).' : !one.hasAppId ? 'Deploy it first - that is its first release.' : 'A version is in pilot already - promote or withdraw it first.',
     promote: one ? 'No version of this app is in pilot.' : 'Select exactly one app.', withdraw: one ? 'No version of this app is in pilot.' : 'Select exactly one app.',
-    managed: 'Only Winget apps can have managed updates.',
+    managed: 'Select one or more apps first.',
   };
   for (const b of menu.querySelectorAll('button')) setEnabled(b, !!enable[b.dataset.act], why[b.dataset.act]);
   menu.querySelector('[data-act=package]').textContent = !any ? 'Package every app with its own installer' : enable.package ? `Package ${sel.length > 1 ? 'the selected apps' : 'this app'} (build .intunewin)` : 'Package (Winget apps use the shared package)';
-  const allManaged = sel.length && sel.filter(a => a.wingetId).every(a => a.managed);
+  const allManaged = sel.length && sel.every(a => a.managed);
   menu.querySelector('[data-act=managed]').textContent = allManaged ? 'Managed updates off...' : 'Managed updates on...';
   menu.querySelector('[data-act=managed]').dataset.on = allManaged ? '0' : '1';
   const ids = sel.filter(a => a.hasAppId).length;
@@ -926,8 +926,8 @@ async function menuAction(act) {
     case 'promote': promoteRelease(one.name); break;
     case 'withdraw': withdrawRelease(one.name); break;
     case 'managed': {
-      const on = menu.querySelector('[data-act=managed]').dataset.on === '1', ws = sel().filter(a => a.wingetId).map(a => a.name);
-      if (!(await ask(`Managed updates ${on ? 'on' : 'off'} for ${ws.length} app${ws.length === 1 ? '' : 's'}?\n\n${on ? 'Each installs exactly its App version (the install command and detection rule follow it), and new versions go to the pilot groups first (More > Release new version). Apps without an App version get one before their first deploy (More > Take winget\'s version). Push settings sends the change to apps already in Intune.' : 'Their commands stay pinned to the current version until you change the install method (Batch edit > Install with).'} Undo takes it back.`, { ok: on ? 'Turn on' : 'Turn off', danger: false }))) return;
+      const on = menu.querySelector('[data-act=managed]').dataset.on === '1', ws = sel().map(a => a.name);
+      if (!(await ask(`Managed updates ${on ? 'on' : 'off'} for ${ws.length} app${ws.length === 1 ? '' : 's'}?\n\n${on ? 'Each installs exactly its App version, and new versions go to the pilot groups first (More > Release new version). Winget apps: the install command and detection rule follow the App version (set one with More > Take winget\'s version before the first deploy). Own packages: their detection rule must compare a version - a release updates it. Push settings sends the change to apps already in Intune.' : 'Their commands stay pinned to the current version until you change the install method (Batch edit > Install with).'} Undo takes it back.`, { ok: on ? 'Turn on' : 'Turn off', danger: false }))) return;
       const r = await api('/api/managed-updates', { names: ws, on });
       toast(r.ok ? `Managed updates ${on ? 'on' : 'off'} for ${r.changed.length} app(s).${r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : ''}` : r.error, !r.ok); loadApps();
       break;
@@ -1208,17 +1208,21 @@ $('ovFailedOnly').addEventListener('change', renderOverview);
 $('btnOvRefresh').addEventListener('click', openOverview);
 
 // ---------------------------------------------------------------- managed updates: release, promote, withdraw
-let relName = '';
+let relName = '', relInfo = null;
 async function openRelease(name) {
   const r = await api('/api/release-info', { name });
   if (!r.ok) { toast(r.error, true); return; }
-  relName = name;
+  relName = name; relInfo = r;
+  const pkg = r.kind === 'package', inst = r.installer || {};
   $('relTitle').textContent = `Release a new version of ${name}`;
-  $('relText').textContent = `Now: ${r.current || '(no version)'} for everyone.${r.latest ? ` winget offers ${r.latest}.` : ' Catalog > Check winget for new versions finds the newest.'} The new version becomes its own app in Intune ("${name} <version> (pilot)") that updates devices which have ${r.current || 'the current one'}, assigned Required to the pilot groups only. Promote gives it to everyone; Withdraw takes it back.`;
-  $('relVersion').value = r.latest && r.latest !== r.current ? r.latest : '';
+  $('relText').textContent = `Now: ${r.current || '(no version)'} for everyone.${pkg ? (inst.found ? ` The installer in its folder is ${inst.file}${inst.version ? ', version ' + inst.version : ''}.` : ` Put the new installer in ${inst.folder} first.`) : (r.latest ? ` winget offers ${r.latest}.` : ' Catalog > Check winget for new versions finds the newest.')} The new version becomes its own app in Intune ("${name} <version> (pilot)") that updates devices which have ${r.current || 'the current one'}, assigned Required to the pilot groups only. Promote gives it to everyone; Withdraw takes it back.${pkg ? ' Its detection rule is set to the new version' + (inst.productCode ? ' and the MSI\'s product code' : '') + '.' : ''}`;
+  const suggest = pkg ? inst.version : r.latest;
+  $('relVersion').value = suggest && suggest !== r.current ? suggest : '';
+  $('relBuildRow').hidden = !pkg; $('relFolder').textContent = pkg ? `(${inst.folder})` : '';
+  $('relProblem').textContent = r.detectionProblem || ''; $('relProblem').hidden = !r.detectionProblem;
   $('relGroups').textContent = r.pilotGroups.length ? `Pilot groups: ${r.pilotGroups.join(', ')}` : 'No pilot groups yet - set them in Settings > Defaults > Managed updates.';
   $('relErr').hidden = true; $('relLog').hidden = true; $('relLog').textContent = '';
-  $('btnRelGo').disabled = !r.pilotGroups.length; $('btnRelGo').textContent = 'Release to pilot'; $('btnRelClose').textContent = 'Cancel';
+  $('btnRelGo').disabled = !r.pilotGroups.length || !!r.detectionProblem; $('btnRelGo').textContent = 'Release to pilot'; $('btnRelClose').textContent = 'Cancel';
   $('dlgRelease').showModal(); $('relVersion').focus();
 }
 // Runs one release step as a job and resolves with its outcome (like deployOne).
@@ -1231,7 +1235,12 @@ $('btnRelGo').addEventListener('click', async () => {
   const version = $('relVersion').value.trim(), name = relName;
   if (!version) { $('relErr').textContent = 'Type the version to release.'; $('relErr').hidden = false; return; }
   $('relErr').hidden = true; $('relLog').hidden = false; $('btnRelGo').disabled = true;
-  const made = await releaseStep({ name, version }, '/api/release-start', 'relLog', `Creating ${name} ${version} in Intune...`);
+  if (relInfo && relInfo.kind === 'package' && $('relBuild').checked) {
+    const built = await releaseStep({ names: [name] }, '/api/package-start', 'relLog', `Building ${name}'s package...`);
+    if (!built.ok) { $('relErr').textContent = built.error || 'Building the package failed - see the log.'; $('relErr').hidden = false; $('btnRelGo').disabled = false; return; }
+  }
+  const productCode = relInfo && relInfo.kind === 'package' && relInfo.installer ? relInfo.installer.productCode || '' : '';
+  const made = await releaseStep({ name, version, productCode }, '/api/release-start', 'relLog', `Creating ${name} ${version} in Intune...`);
   if (!made.ok) { $('relErr').textContent = made.error || 'The release failed - see the log.'; $('relErr').hidden = false; $('btnRelGo').disabled = false; loadApps(); return; }
   const assigned = await releaseStep({ name, step: 'pilot' }, '/api/release-assign', 'relLog', 'Assigning it to the pilot groups...');
   $('btnRelClose').textContent = 'Close'; $('btnRelGo').textContent = 'Done';
@@ -1240,7 +1249,10 @@ $('btnRelGo').addEventListener('click', async () => {
 });
 async function promoteRelease(name) {
   const a = apps.find(x => x.name === name);
-  if (!(await ask(`Promote ${name} ${a.pilotVersion} to everyone?\n\nThe pilot release gets the catalog's groups and becomes the current one (named "${name}" in Intune); ${a.version || 'the current version'} loses its assignments and is kept in Intune as superseded. Devices that have it are updated to ${a.pilotVersion}.\n\nCheck its install status on the pilot devices first (More > Install status...).`, { ok: 'Promote', danger: false }))) return;
+  const info = await api('/api/release-info', { name });
+  const st = info.ok && info.pilotStatus;
+  const verdict = st && st.ok ? `Pilot: ${st.reason}${st.action === 'promote' ? ' The release rule says it is ready.' : st.action === 'hold' ? ' The release rule says: hold.' : ' The release rule says: wait.'}\n\n` : '';
+  if (!(await ask(`Promote ${name} ${a.pilotVersion} to everyone?\n\n${verdict}The pilot release gets the catalog's groups and becomes the current one (named "${name}" in Intune); ${a.version || 'the current version'} loses its assignments and is kept in Intune as superseded. Devices that have it are updated to ${a.pilotVersion}.\n\nCheck its install status on the pilot devices first (More > Install status...).`, { ok: 'Promote', danger: false }))) return;
   runDialog(`Promote ${name} ${a.pilotVersion}`, 'Assigning the new release to the catalog\'s groups, then taking them off the old one.');
   const p1 = await releaseStep({ name, step: 'promote' }, '/api/release-assign', 'runLog', `Assigning ${a.pilotVersion} to the catalog's groups...`);
   if (!p1.ok) { toast(`Promoting failed - nothing else was changed. ${p1.error || ''}`, true); return; }

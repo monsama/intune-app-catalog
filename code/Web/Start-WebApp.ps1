@@ -9,7 +9,9 @@
 #>
 param(
     [Parameter(Mandatory = $true)][string]$RootPath,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$RunUpdates,
+    [switch]$PlanOnly
 )
 
 # Certificate dialogs and X509 helpers (New-WebCertificate, the certificate
@@ -29,6 +31,7 @@ try { Add-Type -AssemblyName System.Security -ErrorAction Stop } catch { }
 . (Join-Path $PSScriptRoot 'WebBulk.ps1')
 . (Join-Path $PSScriptRoot 'WebTenant.ps1')
 . (Join-Path $PSScriptRoot 'WebReleases.ps1')
+. (Join-Path $PSScriptRoot 'WebAutomation.ps1')
 . (Join-Path $PSScriptRoot 'WebSetup.ps1')
 
 Initialize-AppState -RootPath $RootPath
@@ -46,6 +49,12 @@ catch { $Global:App.WebLogFile = $null }
 if (Enable-WebTestGraph) {
     Write-Host "  TEST MODE: Graph answers come from $env:INTUNE_CATALOG_TEST_GRAPH - nothing reaches a tenant." -ForegroundColor Red
     Write-Log "[WARN] Test mode: Graph answers come from $env:INTUNE_CATALOG_TEST_GRAPH."
+}
+
+# The unattended run: no server, no window - the same functions the page's buttons use, then the process ends.
+if ($RunUpdates) {
+    $exitCode = Invoke-ManagedUpdateRun -PlanOnly:$PlanOnly
+    exit $exitCode
 }
 
 $uiRoot = Join-Path $PSScriptRoot 'ui'

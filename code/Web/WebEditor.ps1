@@ -216,7 +216,7 @@ function Global:Merge-WebAppEdit {
         intuneAppVersion = $(if ($Existing) { [string]$Existing.intuneAppVersion } else { '' })
         packagePath      = $(if ($Existing) { [string]$Existing.packagePath } else { '' })
         # Managed updates: what the editor says (only a Winget app can have them), else what the app had - or, for a new app, the default install method.
-        managedUpdates   = $(if (-not ([string]$Edit.wingetId).Trim()) { $false } elseif ($null -ne $Edit.managedUpdates) { [bool]$Edit.managedUpdates } elseif ($Existing) { [bool]$Existing.managedUpdates } else { [string]$Global:App.DefaultAppSettings.WingetInstallMethod -eq 'Managed' })
+        managedUpdates   = $(if ($null -ne $Edit.managedUpdates) { [bool]$Edit.managedUpdates } elseif ($Existing) { [bool]$Existing.managedUpdates } else { ([string]$Edit.wingetId).Trim() -and [string]$Global:App.DefaultAppSettings.WingetInstallMethod -eq 'Managed' })
         releases         = @($(if ($Existing) { $Existing.releases }))
         # iconChange: 'set' (with icon), 'remove', or anything else to keep the one it has.
         icon             = $(switch ([string]$Edit.iconChange) { 'set' { ConvertTo-AppIcon $Edit.icon } 'remove' { $null } default { if ($Existing) { $Existing.icon } else { $null } } })

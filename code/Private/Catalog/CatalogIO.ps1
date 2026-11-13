@@ -242,7 +242,7 @@ function Global:ConvertTo-AppReleases {
     param($Releases)
     $guid = '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
     return @(@($Releases) | Where-Object { $_ -and [string]$_.appId -match $guid -and (Test-ReleaseVersionText ([string]$_.version)) -and [string]$_.state -in 'pilot', 'previous' } | ForEach-Object {
-        [pscustomobject]@{ version = [string]$_.version; appId = [string]$_.appId; state = [string]$_.state; at = [string]$_.at }
+        [pscustomobject]@{ version = [string]$_.version; appId = [string]$_.appId; state = [string]$_.state; at = [string]$_.at; productCode = $(if ([string]$_.productCode -match '^\{[0-9A-Fa-f-]{36}\}$') { [string]$_.productCode } else { '' }) }
     })
 }
 
@@ -301,7 +301,13 @@ function Global:ConvertTo-SingleAppJson {
     if ($relItems.Count) {
         $relLines = for ($j = 0; $j -lt $relItems.Count; $j++) {
             $r = $relItems[$j]
-            "    { `"version`": $(ConvertTo-JsonStringLiteral ([string]$r.version)), `"appId`": $(ConvertTo-JsonStringLiteral ([string]$r.appId)), `"state`": $(ConvertTo-JsonStringLiteral ([string]$r.state)), `"at`": $(ConvertTo-JsonStringLiteral ([string]$r.at)) }$(if ($j -lt $relItems.Count - 1) { ',' })"
+            # Built with + rather than one interpolated string: a quoted string nested inside $() inside another doesn't parse.
+            $line = '    { "version": ' + (ConvertTo-JsonStringLiteral ([string]$r.version)) + ', "appId": ' + (ConvertTo-JsonStringLiteral ([string]$r.appId)) +
+                ', "state": ' + (ConvertTo-JsonStringLiteral ([string]$r.state)) + ', "at": ' + (ConvertTo-JsonStringLiteral ([string]$r.at))
+            if ($r.productCode) { $line += ', "productCode": ' + (ConvertTo-JsonStringLiteral ([string]$r.productCode)) }
+            $line += ' }'
+            if ($j -lt $relItems.Count - 1) { $line += ',' }
+            $line
         }
         $fields.Add("  `"releases`": [`r`n" + ($relLines -join "`r`n") + "`r`n  ]")
     }

@@ -49,6 +49,7 @@ $answers = [ordered]@{
     'GET beta/deviceAppManagement/mobileApps?$skiptoken=page2' = @{ value = @(@{ id = $appSameName; displayName = $sameName }) }
     # Managed updates: renaming the releases on promotion, deleting a withdrawn pilot.
     "PATCH beta/deviceAppManagement/mobileApps/$relPilot" = $null
+    "GET beta/deviceAppManagement/mobileApps/$relPilot/installSummary" = @{ installedDeviceCount = 4; failedDeviceCount = 1; pendingInstallDeviceCount = 2 }
     "PATCH beta/deviceAppManagement/mobileApps/$relCurrent" = $null
     "DELETE beta/deviceAppManagement/mobileApps/$relPilot2" = $null
     # The install overview's report (one row) and one app's icon.
@@ -308,7 +309,19 @@ try {
     }
     $info = Invoke-Api '/api/release-info' @{ name = $relName }
     Check ($info.ok -and $info.managed -and $info.pilot.version -eq '2.0' -and $info.current -eq '1.0') 'release: the app''s pilot and current versions' ($info | ConvertTo-Json -Compress -Depth 4)
+    Check ($info.pilotStatus.ok -and $info.pilotStatus.counts.installed -eq 4 -and $info.pilotStatus.counts.failed -eq 1 -and $info.pilotStatus.action -eq 'hold') 'release: pilot status from Intune - 20 % failed is more than the 5 % allowed, so hold' ($info.pilotStatus | ConvertTo-Json -Compress -Depth 4)
     Check (-not (Invoke-Api '/api/release-start' @{ name = $relName; version = '3.0' }).ok) 'release: refused while a version is in pilot'
+    # The unattended run (-RunUpdates -PlanOnly) on the same test answers: decides, reports, changes nothing.
+    $env:INTUNE_CATALOG_TEST_GRAPH = $answersFile
+    try { $runOut = (& $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $entry -RunUpdates -PlanOnly 2>&1 | Out-String) }
+    finally { Remove-Item Env:\INTUNE_CATALOG_TEST_GRAPH -ErrorAction SilentlyContinue }
+    $reportHtml = [regex]::Match($runOut, 'Report: (.+?\.html)').Groups[1].Value.Trim()
+    $runReport = if ($reportHtml -and (Test-Path -LiteralPath ($reportHtml -replace '\.html$', '.json'))) { Get-Content -LiteralPath ($reportHtml -replace '\.html$', '.json') -Raw | ConvertFrom-Json } else { $null }
+    $runItem = if ($runReport) { @($runReport.items) | Where-Object { $_.app -eq $relName } | Select-Object -First 1 } else { $null }
+    Check ($runReport -and $runReport.planOnly -and $runItem.outcome -eq 'hold' -and (Test-Path -LiteralPath $reportHtml)) 'nightly run (plan only): reports the pilot release as held, in HTML and JSON' $runOut
+    Check ((Invoke-Api '/api/app-get' @{ name = $relName }).app.appId -eq $relCurrent) 'nightly run (plan only): nothing changed'
+    $runs = Invoke-Api '/api/update-runs'
+    Check ($runs.ok -and @($runs.runs).Count -ge 1 -and -not $runs.running) 'nightly run: listed for Settings, not running any more' ($runs | ConvertTo-Json -Compress -Depth 3)
     $row = @((Invoke-Api '/api/catalog').apps) | Where-Object { $_.name -eq $relName }
     Check ($row.managed -and $row.pilotVersion -eq '2.0') 'release: the Apps list shows the pilot version'
     $prom = Invoke-Api '/api/release-promoted' @{ name = $relName }

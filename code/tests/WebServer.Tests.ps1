@@ -443,6 +443,10 @@ try {
     Check (-not (Invoke-Api '/api/release-start' @{ name = "$testName renamed"; version = '3.3' }).ok) 'release: refused without a connection'
     Check (-not (Invoke-Api '/api/release-assign' @{ name = "$testName renamed"; step = 'pilot' }).ok) 'release: assigning refused without a connection'
     Check (-not (Invoke-Api '/api/release-promoted' @{ name = "$testName renamed" }).ok) 'release: nothing to promote without a pilot release'
+    $ur = Invoke-Api '/api/update-runs'
+    Check ($ur.ok -and $null -ne $ur.schedule) 'nightly run: its runs and schedule can be read' ($ur | ConvertTo-Json -Compress -Depth 3)
+    Check (-not (Invoke-Api '/api/update-run' @{ planOnly = $true }).ok) 'nightly run: Run now refused without a connection'
+    Check (-not (Invoke-Api '/api/update-schedule' @{ on = $true; runAt = '25:99' }).ok) 'nightly run: a time that is not HH:mm is refused (or no scheduled tasks here)'
     $muOff = Invoke-Api '/api/managed-updates' @{ names = @("$testName renamed"); on = $false }
     Check ($muOff.ok -and -not (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.managedUpdates) 'managed updates: turned off again'
 

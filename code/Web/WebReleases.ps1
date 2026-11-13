@@ -42,7 +42,12 @@ function Global:Get-WebReleaseInfo {
     if (-not $a) { return @{ ok = $false; error = "No app called '$($Data.name)' in the catalog." } }
     $pilot = Get-WebAppRelease $a
     $latest = if ($Global:App.WingetLatest -and $a.wingetId) { [string]$Global:App.WingetLatest[([string]$a.wingetId).ToLowerInvariant()] } else { '' }
+    $own = -not $a.wingetId
+    $installer = if ($own) { Get-WebInstallerInfo $a.appName } else { $null }
+    $status = if ($pilot) { Get-WebPilotStatus $pilot } else { $null }
     return @{ ok = $true; name = $a.appName; managed = [bool]$a.managedUpdates; wingetId = [string]$a.wingetId; appId = [string]$a.appId
+        kind = $(if ($own) { 'package' } else { 'winget' }); installer = $installer; pilotStatus = $status
+        detectionProblem = $(if ($own) { Test-VersionDetectionRule $(if ($a.metadata) { $a.metadata.detectionRule }) } else { '' })
         current = [string]$(if ($a.metadata) { $a.metadata.appVersion }); latest = $latest
         pilot = $(if ($pilot) { @{ version = $pilot.version; appId = $pilot.appId; at = $pilot.at } } else { $null })
         previous = @(@($a.releases) | Where-Object { $_.state -eq 'previous' } | ForEach-Object { @{ version = $_.version; appId = $_.appId; at = $_.at } })
@@ -58,21 +63,23 @@ function Global:Start-WebRelease {
     $version = ([string]$Data.version).Trim()
     $a = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
     if (-not $a) { return @{ ok = $false; error = "'$name' is no longer in the catalog." } }
-    if (-not ($a.managedUpdates -and $a.wingetId)) { return @{ ok = $false; error = "$name doesn't have managed updates - turn them on first (More > Managed updates)." } }
+    if (-not $a.managedUpdates) { return @{ ok = $false; error = "$name doesn't have managed updates - turn them on first (More > Managed updates)." } }
+    $own = -not $a.wingetId
     if (-not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune yet - Deploy it first; that is its first release." } }
     if (Get-WebAppRelease $a) { return @{ ok = $false; error = "$name already has a version in pilot - promote or withdraw it first." } }
     if (-not (Test-ReleaseVersionText $version)) { return @{ ok = $false; error = "'$version' isn't a version a release can pin (letters, digits and . - + _)." } }
     $current = [string]$(if ($a.metadata) { $a.metadata.appVersion })
     if ($version -eq $current) { return @{ ok = $false; error = "$name is at $version already." } }
     if (-not @($Global:App.PilotGroups).Count) { return @{ ok = $false; error = 'Set the pilot groups first: Settings > Defaults > Managed updates.' } }
-    $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $false -PackagePath $a.packagePath
-    if (-not $pkg.Found) { return @{ ok = $false; error = "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging & folders builds it." } }
+    $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $own -PackagePath $a.packagePath
+    if (-not $pkg.Found) { return @{ ok = $false; error = $(if ($own) { "$name has no package to upload - put the new installer in its folder and build it (the release dialog does both)." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging & folders builds it." }) } }
     $defaults = $null
     $m = $a.metadata
-    if (-not $m) { $defaults = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon $false; $m = $defaults }
+    if (-not $m) { $defaults = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon $own; $m = $defaults }
+    if ($own) { $why = Test-VersionDetectionRule $m.detectionRule; if ($why) { return @{ ok = $false; error = "${name}: $why" } } }
     $next = [pscustomobject]@{ managedUpdates = $true; wingetId = $a.wingetId; metadata = $m.PSObject.Copy() }
     $next.metadata.appVersion = $version
-    [void](Set-ManagedAppPin $next)
+    [void](Set-ManagedAppPin $next -ProductCode ([string]$Data.productCode))
     $resultPath = Join-Path $env:TEMP (".intunepkg_createapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
     $config = New-WebCreateAppConfig -Catalog $catalog -App $a -Metadata $next.metadata -Defaults $null -PackagePath $pkg.Path -ResultPath $resultPath
     $config.Mode = 'Create'; $config.ExistingAppId = ''
@@ -81,7 +88,7 @@ function Global:Start-WebRelease {
     $config.Supersedence = @([pscustomobject]@{ appId = [string]$a.appId; type = 'update' })
     $config.IsFeatured = $null
     $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "Release $name $version" `
-        -After @{ Kind = 'release'; AppName = $a.appName; Version = $version }
+        -After @{ Kind = 'release'; AppName = $a.appName; Version = $version; ProductCode = $(if ($own) { [string]$next.metadata.detectionRule.Msi_ProductCode } else { '' }) }
     if ($started.ok) { Write-Log "[INFO] Releasing $name $version to pilot (a new app superseding $current)..." }
     return $started
 }
@@ -92,9 +99,10 @@ function Global:Complete-WebRelease {
     $newId = [string]$Result.appId
     if ($newId -notmatch '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$') { return @{ ok = $false; error = 'The release step did not report the new app''s ID.' } }
     $version = [string]$After.Version
+    $code = [string]$After.ProductCode
     [void](Update-WebCatalogApp -Name $After.AppName -Change {
             param($app)
-            $app.releases = @(@($app.releases) | Where-Object { $_.state -ne 'pilot' }) + @([pscustomobject]@{ version = $version; appId = $newId; state = 'pilot'; at = (Get-Date).ToString('yyyy-MM-dd HH:mm') })
+            $app.releases = @(@($app.releases) | Where-Object { $_.state -ne 'pilot' }) + @([pscustomobject]@{ version = $version; appId = $newId; state = 'pilot'; at = (Get-Date).ToString('yyyy-MM-dd HH:mm'); productCode = $code })
         }.GetNewClosure())
     Write-Log "[OK] $($After.AppName) $version is in Intune as a pilot release (App ID $newId)."
     return @{ ok = $true; assignPilot = $true; appId = $newId }
@@ -168,7 +176,7 @@ function Global:Complete-WebPromotion {
     $undo = New-WebUndo "Promote $($a.appName) $($pilot.version)"
     if (-not $a.metadata) { $a.metadata = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon $false }
     $a.metadata.appVersion = [string]$pilot.version
-    [void](Set-ManagedAppPin $a)
+    [void](Set-ManagedAppPin $a -ProductCode ([string]$pilot.productCode))
     $kept = @(@($a.releases) | Where-Object { $_.state -ne 'pilot' })
     if ($oldId) { $kept += [pscustomobject]@{ version = $oldVersion; appId = $oldId; state = 'previous'; at = (Get-Date).ToString('yyyy-MM-dd HH:mm') } }
     $a.releases = $kept
@@ -206,7 +214,10 @@ function Global:Set-WebManagedUpdates {
     $changed = New-Object System.Collections.Generic.List[string]
     $skipped = New-Object System.Collections.Generic.List[string]
     foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { $names -contains $_.appName })) {
-        if (-not $a.wingetId) { $skipped.Add("$($a.appName) (no Winget ID)"); continue }
+        if ($on -and -not $a.wingetId) {
+            $why = Test-VersionDetectionRule $(if ($a.metadata) { $a.metadata.detectionRule })
+            if ($why) { $skipped.Add("$($a.appName) (its detection rule doesn't compare a version)"); continue }
+        }
         if (-not $on -and (Get-WebAppRelease $a)) { $skipped.Add("$($a.appName) (a version is in pilot)"); continue }
         if ([bool]$a.managedUpdates -eq $on) { continue }
         $a.managedUpdates = $on
@@ -220,4 +231,58 @@ function Global:Set-WebManagedUpdates {
     Save-WebUndo $undo
     Write-Log "[OK] Managed updates $(if ($on) { 'on' } else { 'off' }) for $($changed.Count) app(s)$(if ($skipped.Count) { "; skipped: $($skipped -join ', ')" })."
     return @{ ok = $true; changed = $changed.ToArray(); skipped = $skipped.ToArray() }
+}
+
+function Global:Get-WebInstallerInfo {
+    <#
+      The installer in an own-package app's folder (Packages\<app>): the
+      newest .msi - its ProductVersion and ProductCode, read with Windows
+      Installer - or else the newest .exe's product/file version.
+      @{ folder; found; file; version; productCode }.
+    #>
+    param([string]$AppName)
+    $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $AppName)
+    $info = [ordered]@{ folder = $folder; found = $false; file = ''; version = ''; productCode = '' }
+    if (-not (Test-Path -LiteralPath $folder -PathType Container)) { return $info }
+    $msi = Get-ChildItem -LiteralPath $folder -Filter '*.msi' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $exe = Get-ChildItem -LiteralPath $folder -Filter '*.exe' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($msi) {
+        $info.found = $true; $info.file = $msi.Name
+        try {
+            $wi = New-Object -ComObject WindowsInstaller.Installer
+            $db = $wi.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $wi, @($msi.FullName, 0))
+            foreach ($prop in 'ProductVersion', 'ProductCode') {
+                $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db, @("SELECT Value FROM Property WHERE Property='$prop'"))
+                [void]$view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
+                $rec = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+                $val = if ($rec) { [string]$rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, 1) } else { '' }
+                [void]$view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null)
+                if ($prop -eq 'ProductVersion') { $info.version = $val } else { $info.productCode = $val }
+            }
+            [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($db); [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($wi)
+        }
+        catch { }
+    }
+    elseif ($exe) {
+        $info.found = $true; $info.file = $exe.Name
+        $vi = $exe.VersionInfo
+        $v = ([string]$vi.ProductVersion).Trim(); if (-not $v) { $v = ([string]$vi.FileVersion).Trim() }
+        $info.version = ($v -replace '[^0-9A-Za-z.\-+_].*$', '')
+    }
+    if ($info.version -and -not (Test-ReleaseVersionText $info.version)) { $info.version = '' }
+    return $info
+}
+
+function Global:Get-WebPilotStatus {
+    # A pilot release's install counts in Intune and what the release policy says to do now (Get-ReleaseDecision).
+    param($Pilot)
+    $id = [string]$Pilot.appId
+    $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) & $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$id/installSummary" }
+    if (-not $read.ok) { return @{ ok = $false; error = [string]$read.error } }
+    $s = $read.value
+    $counts = @{ installed = [int]$s.installedDeviceCount; failed = [int]$s.failedDeviceCount; pending = [int]$s.pendingInstallDeviceCount; notInstalled = [int]$s.notInstalledDeviceCount }
+    $at = [datetime]::MinValue
+    if (-not [datetime]::TryParseExact([string]$Pilot.at, 'yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$at)) { $at = Get-Date }
+    $decision = Get-ReleaseDecision -ReleasedAt $at -Now (Get-Date) -Counts $counts -Policy $Global:App.ReleasePolicy
+    return @{ ok = $true; counts = $counts; action = $decision.Action; reason = $decision.Reason }
 }
