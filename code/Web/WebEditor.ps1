@@ -43,6 +43,8 @@ function Global:Get-WebAppEditable {
         uninstallFor = @($App.uninstallFor | ForEach-Object { [string]$_ })
         excludeFor   = @($App.excludeFor | ForEach-Object { [string]$_ })
         hasMetadata  = [bool]$m
+        managedUpdates = [bool]$App.managedUpdates
+        releases     = @(@($App.releases) | ForEach-Object { [ordered]@{ version = [string]$_.version; appId = [string]$_.appId; state = [string]$_.state; at = [string]$_.at } })
         icon         = $(if ($App.icon -and $App.icon.value) { [ordered]@{ type = [string]$App.icon.type; value = [string]$App.icon.value } } else { $null })
         metadata     = [ordered]@{
             description      = [string]$(if ($m) { $m.description })
@@ -213,6 +215,9 @@ function Global:Merge-WebAppEdit {
         intuneAppType    = $(if ($Existing) { [string]$Existing.intuneAppType } else { '' })
         intuneAppVersion = $(if ($Existing) { [string]$Existing.intuneAppVersion } else { '' })
         packagePath      = $(if ($Existing) { [string]$Existing.packagePath } else { '' })
+        # Managed updates: what the editor says (only a Winget app can have them), else what the app had - or, for a new app, the default install method.
+        managedUpdates   = $(if (-not ([string]$Edit.wingetId).Trim()) { $false } elseif ($null -ne $Edit.managedUpdates) { [bool]$Edit.managedUpdates } elseif ($Existing) { [bool]$Existing.managedUpdates } else { [string]$Global:App.DefaultAppSettings.WingetInstallMethod -eq 'Managed' })
+        releases         = @($(if ($Existing) { $Existing.releases }))
         # iconChange: 'set' (with icon), 'remove', or anything else to keep the one it has.
         icon             = $(switch ([string]$Edit.iconChange) { 'set' { ConvertTo-AppIcon $Edit.icon } 'remove' { $null } default { if ($Existing) { $Existing.icon } else { $null } } })
         requiredFor      = & $groups $Edit.requiredFor
@@ -301,6 +306,8 @@ function Global:Save-WebApp {
             $record.metadata.installContext = $(if ([string]$edit.deploy.installContext -eq 'User') { 'User' } else { 'System' })
         }
     }
+    # A managed app's commands and detection follow its App version (pinned).
+    [void](Set-ManagedAppPin $record)
 
     $folder = Get-AppFolder -Kind Catalog -Create
     $newFile = Join-Path $folder ((Get-SafeFileNameForApp -Name $record.appName) + '.json')

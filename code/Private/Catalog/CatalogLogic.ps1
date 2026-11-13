@@ -5,10 +5,15 @@ function Global:Get-IntuneCatalogDrift {
 
     $catalogByNormName = @{}
     $catalogByAppId = @{}
+    # A managed app's pilot and superseded releases are its own apps in Intune, under other names - not drift.
+    $releaseIds = @{}
     foreach ($app in $Apps) {
         $normName = ($app.appName.Trim() -replace '\s+', ' ')
         $catalogByNormName[$normName] = $true
         if ($app.appId) { $catalogByAppId[$app.appId] = $app }
+        foreach ($r in @($app.releases)) {
+            if ($r -and $r.appId) { $relKey = [string]$r.appId; $releaseIds[$relKey] = $true }
+        }
     }
 
     # Every ID actually live in Intune right now, for the third comparison
@@ -20,7 +25,8 @@ function Global:Get-IntuneCatalogDrift {
 
     $missing = New-Object System.Collections.Generic.List[object]
     $renamed = New-Object System.Collections.Generic.List[object]
-    foreach ($ia in $IntuneApps) {
+    $notReleases = @($IntuneApps | Where-Object { $relId = [string]$_.id; -not $releaseIds.ContainsKey($relId) })
+    foreach ($ia in $notReleases) {
         $normIntuneName = ($ia.displayName.Trim() -replace '\s+', ' ')
         if ($catalogByAppId.ContainsKey($ia.id)) {
             # Known App ID - check whether the catalog's name still matches
@@ -781,6 +787,9 @@ function Global:ConvertTo-TemplateAppRecord {
         uninstallFor     = @($App.uninstallFor)
         excludeFor       = @($App.excludeFor)
         icon             = $App.icon
+        # Managed stays; its releases are this tenant's apps - dropped.
+        managedUpdates   = [bool]$App.managedUpdates
+        releases         = @()
         metadata         = $App.metadata
     }
 }
@@ -896,20 +905,28 @@ function Global:Get-WingetCommandLines {
       it in the App Installer package folder first, and falls back to plain
       "winget" for a user install, which can't list that folder.
     #>
-    param([string]$WingetId, [string]$Method, [string]$InstallContext)
+    param([string]$WingetId, [string]$Method, [string]$InstallContext, [string]$Version)
 
     $ps = "%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile"
     # The ID ends up in code and command lines that run as SYSTEM on the
     # devices - escaped for its single quotes, and anything that would close
     # the surrounding double quotes removed (see ConvertTo-PsSingleQuotedContent).
     $WingetId = ConvertTo-PsSingleQuotedContent $WingetId
+    # "Managed": winget itself, pinned to -Version - a release of exactly that
+    # version (Get-ManagedWingetDetection checks for it or newer). Without a
+    # version yet it is the plain winget form.
+    $pin = ""
+    if ($Method -eq "Managed") {
+        $Method = "Winget"
+        if ($Version -and (Test-ReleaseVersionText $Version)) { $pin = " --version '$(ConvertTo-PsSingleQuotedContent $Version)'" }
+    }
     if ($Method -eq "Winget") {
         $scope = if ($InstallContext -eq "User") { "" } else { " --scope machine" }
         # Newest App Installer first: there can be more than one version
         # side by side, and a plain name sort puts 1.9 after 1.21.
         $find = "`$w = Get-Item `$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_8wekyb3d8bbwe\winget.exe -ErrorAction SilentlyContinue | Sort-Object { `$_.VersionInfo.FileVersionRaw } | Select-Object -Last 1 -ExpandProperty FullName; if (-not `$w) { `$w = 'winget' }"
         return @{
-            Install   = "$ps -Command `"$find; & `$w install --id '$WingetId' -e --source winget$scope --silent --accept-package-agreements --accept-source-agreements; exit `$LASTEXITCODE`""
+            Install   = "$ps -Command `"$find; & `$w install --id '$WingetId' -e$pin --source winget$scope --silent --accept-package-agreements --accept-source-agreements; exit `$LASTEXITCODE`""
             Uninstall = "$ps -Command `"$find; & `$w uninstall --id '$WingetId' -e --source winget$scope --silent --accept-source-agreements; exit `$LASTEXITCODE`""
         }
     }
@@ -930,6 +947,15 @@ function Global:Get-AppWingetInstallMethod {
     param([string]$WingetId, [string]$InstallCommand, [string]$UninstallCommand)
 
     if (-not $WingetId) { return "" }
+    # A pinned winget command is the managed form, whatever version it pins.
+    if ($InstallCommand -match " --version '((?:[^']|'')+)'") {
+        $pinned = $Matches[1] -replace "''", "'"
+        foreach ($context in @("System", "User")) {
+            $generated = Get-WingetCommandLines -WingetId $WingetId -Method "Managed" -InstallContext $context -Version $pinned
+            if ($InstallCommand -eq $generated.Install -and $UninstallCommand -eq $generated.Uninstall) { return "Managed" }
+        }
+        return ""
+    }
     foreach ($method in @("WAU", "Winget")) {
         foreach ($context in @("System", "User")) {
             $generated = Get-WingetCommandLines -WingetId $WingetId -Method $method -InstallContext $context
@@ -1030,4 +1056,86 @@ function Global:Test-AppHasCustomConfig {
     # whose version was pulled from Intune isn't custom because of it.
     $diffs = @(Get-CatalogMetadataFieldDiffs -Local $App.metadata -Remote $defaults | Where-Object { $_.Field -ne "App version" })
     return ($diffs.Count -gt 0)
+}
+
+function Global:Test-ReleaseVersionText {
+    # Pure: a version a release can pin - letters, digits and . - + _ only, at most 64 characters (it goes into a command line).
+    param([string]$Version)
+    return [bool]($Version -match '^[0-9A-Za-z][0-9A-Za-z.\-+_]{0,63}$')
+}
+
+function Global:Get-ManagedWingetDetection {
+    <#
+      Pure: the detection script of a managed release - installed when
+      winget lists -WingetId at -Version or newer. Newer counts too: a
+      device a later release (or the app itself) already updated must not
+      get the older version again.
+    #>
+    param([string]$WingetId, [string]$Version)
+    $id = ConvertTo-PsSingleQuotedContent $WingetId
+    $v = ConvertTo-PsSingleQuotedContent $Version
+    return @"
+`$AppToDetect = '$id'
+`$Wanted = '$v'
+
+Function Get-WingetCmd {
+    `$WingetCmd = `$null
+    try {
+        `$WingetInfo = (Get-Item "`$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_8wekyb3d8bbwe\winget.exe").VersionInfo | Sort-Object -Property FileVersionRaw
+        `$WingetCmd = `$WingetInfo[-1].FileName
+    }
+    catch {
+        if (Test-Path "`$env:LocalAppData\Microsoft\WindowsApps\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\winget.exe") {
+            `$WingetCmd = "`$env:LocalAppData\Microsoft\WindowsApps\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\winget.exe"
+        }
+    }
+    return `$WingetCmd
+}
+
+# 1 when `$b is newer than `$a, 0 the same, -1 older: numbers as numbers, part by part.
+Function Compare-Version([string]`$a, [string]`$b) {
+    `$pa = @(`$a -split '[.\-+_ ]' | Where-Object { `$_ -ne '' }); `$pb = @(`$b -split '[.\-+_ ]' | Where-Object { `$_ -ne '' })
+    for (`$i = 0; `$i -lt [Math]::Max(`$pa.Count, `$pb.Count); `$i++) {
+        `$x = if (`$i -lt `$pa.Count) { `$pa[`$i] } else { '0' }; `$y = if (`$i -lt `$pb.Count) { `$pb[`$i] } else { '0' }
+        if (`$x -match '^\d+$' -and `$y -match '^\d+$') {
+            `$xs = `$x.TrimStart('0'); `$ys = `$y.TrimStart('0')
+            if (`$xs.Length -ne `$ys.Length) { return [Math]::Sign(`$ys.Length - `$xs.Length) }
+            `$c = [string]::CompareOrdinal(`$ys, `$xs); if (`$c) { return [Math]::Sign(`$c) }
+        }
+        elseif (`$x -ne `$y) { return [Math]::Sign([string]::CompareOrdinal(`$y.ToLowerInvariant(), `$x.ToLowerInvariant())) }
+    }
+    return 0
+}
+
+`$winget   = Get-WingetCmd
+`$JsonFile = "`$env:TEMP\InstalledApps-`$([guid]::NewGuid().ToString('N')).json"
+& `$winget export -o `$JsonFile --include-versions --accept-source-agreements | Out-Null
+`$Json     = Get-Content `$JsonFile -Raw | ConvertFrom-Json
+Remove-Item `$JsonFile -Force -ErrorAction SilentlyContinue
+`$Apps = @(`$Json.Sources.Packages | Where-Object { `$_.PackageIdentifier -eq `$AppToDetect })
+foreach (`$App in `$Apps) {
+    if (`$App.Version -and (Compare-Version `$Wanted ([string]`$App.Version)) -ge 0) { return "Installed!" }
+}
+"@
+}
+
+function Global:Set-ManagedAppPin {
+    <#
+      Pure apart from changing -App: a managed app's install and uninstall
+      commands and detection rule, pinned to its App version (metadata.appVersion).
+      Commands someone edited by hand (neither generated form) are left
+      alone. Returns whether anything changed.
+    #>
+    param($App)
+    if (-not $App.managedUpdates -or -not $App.wingetId -or -not $App.metadata) { return $false }
+    $m = $App.metadata
+    $version = [string]$m.appVersion
+    if (-not (Test-ReleaseVersionText $version)) { return $false }
+    if (-not (Get-AppWingetInstallMethod -WingetId $App.wingetId -InstallCommand $m.installCommand -UninstallCommand $m.uninstallCommand) -and $m.installCommand) { return $false }
+    $c = Get-WingetCommandLines -WingetId $App.wingetId -Method "Managed" -InstallContext $m.installContext -Version $version
+    $detect = Get-ManagedWingetDetection -WingetId $App.wingetId -Version $version
+    $changed = ($m.installCommand -ne $c.Install) -or ($m.uninstallCommand -ne $c.Uninstall) -or -not ($m.detectionRule -and $m.detectionRule.Type -eq 'Script' -and $m.detectionRule.Script_Content -eq $detect)
+    $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall
+    $m.detectionRule = [pscustomobject]@{ Type = 'Script'; Script_Content = $detect }
+    return $changed
 }

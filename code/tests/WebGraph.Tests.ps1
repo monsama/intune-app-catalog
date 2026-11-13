@@ -33,6 +33,11 @@ $oldGroupId = 'bbbbbbbb-0000-4000-8000-000000000003'
 $linkedName = 'ZZ Graph Linked'
 $sameName = 'ZZ Graph Same Name'
 $scriptName = 'ZZ Graph Script'
+$relName = 'ZZ Graph Managed'
+$relWithdrawName = 'ZZ Graph Managed Withdraw'
+$relCurrent = 'eeeeeeee-0000-4000-8000-000000000001'
+$relPilot = 'dddddddd-0000-4000-8000-000000000001'
+$relPilot2 = 'dddddddd-0000-4000-8000-000000000002'
 $scriptText = "Write-Output 'hi'"
 
 $answers = [ordered]@{
@@ -42,6 +47,10 @@ $answers = [ordered]@{
         '@odata.nextLink' = 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$skiptoken=page2'
     }
     'GET beta/deviceAppManagement/mobileApps?$skiptoken=page2' = @{ value = @(@{ id = $appSameName; displayName = $sameName }) }
+    # Managed updates: renaming the releases on promotion, deleting a withdrawn pilot.
+    "PATCH beta/deviceAppManagement/mobileApps/$relPilot" = $null
+    "PATCH beta/deviceAppManagement/mobileApps/$relCurrent" = $null
+    "DELETE beta/deviceAppManagement/mobileApps/$relPilot2" = $null
     # The install overview's report (one row) and one app's icon.
     'POST beta/deviceManagement/reports/getAppsInstallSummaryReport' = @{
         Schema = @(@{ Column = 'ApplicationId' }, @{ Column = 'DisplayName' }, @{ Column = 'InstalledDeviceCount' }, @{ Column = 'FailedDeviceCount' }, @{ Column = 'PendingInstallDeviceCount' }, @{ Column = 'NotInstalledDeviceCount' }, @{ Column = 'NotApplicableDeviceCount' })
@@ -286,6 +295,28 @@ try {
         Remove-Item -LiteralPath $callsFile -Force -ErrorAction SilentlyContinue
     }
     else { Write-Host '(Steps that change Intune: skipped - they run in Windows PowerShell.)' -ForegroundColor DarkGray }
+
+    # Managed updates: an app with a version in pilot (written as the release step would leave it), promoted and withdrawn.
+    $catDir = (Invoke-Api '/api/state').catalogPath
+    $relApp = { param($n, $pilotId) [ordered]@{ appId = $relCurrent; appName = $n; wingetId = 'Vendor.ZZManaged'; managedUpdates = $true
+            releases = @(@{ version = '2.0'; appId = $pilotId; state = 'pilot'; at = '2026-11-13 10:00' }); requiredFor = @('SG-ZZ-Exists'); availableFor = @(); excludeFor = @(); uninstallFor = @()
+            metadata = @{ description = 'managed'; appVersion = '1.0'; installCommand = ''; uninstallCommand = ''; installContext = 'System' } } }
+    foreach ($pair in @(@($relName, $relPilot), @($relWithdrawName, $relPilot2))) {
+        $file = Join-Path $catDir ($pair[0].Replace(' ', '-') + '.json')
+        [System.IO.File]::WriteAllText($file, ((& $relApp $pair[0] $pair[1]) | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+        $created.Add($pair[0])
+    }
+    $info = Invoke-Api '/api/release-info' @{ name = $relName }
+    Check ($info.ok -and $info.managed -and $info.pilot.version -eq '2.0' -and $info.current -eq '1.0') 'release: the app''s pilot and current versions' ($info | ConvertTo-Json -Compress -Depth 4)
+    Check (-not (Invoke-Api '/api/release-start' @{ name = $relName; version = '3.0' }).ok) 'release: refused while a version is in pilot'
+    $row = @((Invoke-Api '/api/catalog').apps) | Where-Object { $_.name -eq $relName }
+    Check ($row.managed -and $row.pilotVersion -eq '2.0') 'release: the Apps list shows the pilot version'
+    $prom = Invoke-Api '/api/release-promoted' @{ name = $relName }
+    $promApp = (Invoke-Api '/api/app-get' @{ name = $relName }).app
+    Check ($prom.ok -and $promApp.appId -eq $relPilot -and $promApp.metadata.appVersion -eq '2.0' -and $promApp.metadata.installCommand -like "*--version '2.0'*" -and (@($promApp.releases | Where-Object { $_.state -eq 'previous' -and $_.appId -eq $relCurrent }).Count -eq 1) -and -not @($promApp.releases | Where-Object { $_.state -eq 'pilot' }).Count) 'release: promoted - the pilot app is current, pinned to 2.0, the old one kept as previous' ($promApp | ConvertTo-Json -Compress -Depth 5)
+    $wd = Invoke-Api '/api/release-withdrawn' @{ name = $relWithdrawName }
+    $wdApp = (Invoke-Api '/api/app-get' @{ name = $relWithdrawName }).app
+    Check ($wd.ok -and $wd.deleted -and $wdApp.appId -eq $relCurrent -and -not @($wdApp.releases).Count) 'release: withdrawn - deleted from Intune, the current release stays' ($wd | ConvertTo-Json -Compress)
 
     foreach ($n in @($created)) {
         $r = Invoke-Api '/api/app-remove' @{ name = $n }

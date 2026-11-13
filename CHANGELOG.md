@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.1.0
+
+### Added
+
+- **Managed updates (Winget apps).** An alternative to Winget-AutoUpdate,
+  with rings and reporting in Intune:
+  - **A fixed version:** an app with managed updates installs exactly its
+    App version (`winget install --version`), and its detection rule
+    checks for that version *or newer*. The install command and detection
+    follow the App version, so changing the version re-pins them.
+  - **Release new version...** (More menu) creates the new version as a
+    separate Intune app, "*App 24.09 (pilot)*". It supersedes the current
+    one (update) and is assigned Required to the **pilot groups** only
+    (Settings > Defaults > Managed updates), so everyone else stays on the
+    current version.
+  - **Promote pilot release...** gives it the catalog's groups and takes
+    them off the old one. It is renamed to the app's name, and the old one
+    is kept in Intune as "*App 24.08 (superseded)*".
+  - **Withdraw pilot release...** deletes the pilot app; pilot devices keep
+    the newer version.
+  - **Turning it on:** **Managed updates on/off** (More menu, several apps
+    at once), the editor's checkbox, or "Winget apps install with: Managed
+    updates" as the default for new apps.
+  - **Apps list:** a "pilot x.y" tag, and filters for **Managed updates**
+    and **In pilot**. Checks knows a release's apps in Intune, so they
+    aren't "not in the catalog".
+  - Take winget's version still sets the version of a managed app that
+    isn't deployed yet. Once deployed, new versions go through Release.
+
 ## 2.0.15
 
 A security, bug and usability sweep.

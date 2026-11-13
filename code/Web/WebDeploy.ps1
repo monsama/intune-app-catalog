@@ -53,6 +53,7 @@ function Global:Get-WebDeployPlan {
         elseif (-not $pkg.Found) {
             $reason = if ($unc) { "No package (.intunewin) yet - build it with More > Package." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging builds it." }
         }
+        elseif ($a.managedUpdates -and $a.wingetId -and -not (Test-ReleaseVersionText ([string]$(if ($a.metadata) { $a.metadata.appVersion })))) { $reason = "Managed updates deploy a fixed version - set its App version first (More > Take winget's version)." }
         elseif ($unc -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = "No detection rule yet - an app with its own package needs one (the editor's Deploy settings)." }
         [ordered]@{ name = $a.appName; update = [bool]$a.appId; ready = (-not $reason); reason = $reason; deps = @($(if ($a.metadata) { @($a.metadata.dependencies) | Where-Object { $_ } | ForEach-Object { [string]$_ } })) }
     }
@@ -82,32 +83,46 @@ function Global:Start-WebDeploy {
     $defaults = $null
     $m = $a.metadata
     if (-not $m) { $defaults = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon $unc; $m = $defaults }
+    # Managed: deployed pinned to its App version, whatever the file's commands say.
+    if ($a.managedUpdates -and $a.wingetId) {
+        if (-not (Test-ReleaseVersionText ([string]$m.appVersion))) { return @{ ok = $false; error = "$name has managed updates, so it is deployed at a fixed version - set its App version first (or More > Take winget's version)." } }
+        $pinned = [pscustomobject]@{ managedUpdates = $true; wingetId = $a.wingetId; metadata = $m.PSObject.Copy() }
+        [void](Set-ManagedAppPin $pinned)
+        $m = $pinned.metadata
+    }
     if (-not $m.detectionRule) { return @{ ok = $false; error = "$name has no detection rule - set one in the editor's Deploy settings." } }
+    $resultPath = Join-Path $env:TEMP (".intunepkg_createapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
+    $config = New-WebCreateAppConfig -Catalog $catalog -App $a -Metadata $m -Defaults $defaults -PackagePath $pkg.Path -ResultPath $resultPath
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "$(if ($metadataOnly) { 'Push settings' } else { 'Deploy' }) $name" `
+        -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $defaults; WasUpdate = [bool]$a.appId }
+    if ($started.ok) { Write-Log "[INFO] $(if ($metadataOnly) { "Pushing $name's settings to Intune" } else { "Deploying $name ($($config.Mode))" })..." }
+    return $started
+}
+
+function Global:New-WebCreateAppConfig {
+    # The CreateApp step's settings for one app (-Metadata: its settings, pinned for a managed app); Deploy and Release change what they need after.
+    param($Catalog, $App, $Metadata, $Defaults, [string]$PackagePath, [string]$ResultPath)
+    $a = $App; $m = $Metadata; $defaults = $Defaults
     # Dependencies by name -> the App IDs they have now; one not deployed yet is left out (as Batch Deploy does).
     $depIds = @(@($m.dependencies) | Where-Object { $_ } | ForEach-Object {
         $depName = [string]$_
-        $dep = $catalog.Apps | Where-Object { $_.appName -eq $depName } | Select-Object -First 1
+        $dep = $Catalog.Apps | Where-Object { $_.appName -eq $depName } | Select-Object -First 1
         if ($dep -and $dep.appId) { $dep.appId }
     })
-    $resultPath = Join-Path $env:TEMP (".intunepkg_createapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
-    $config = [pscustomobject]@{
+    return [pscustomobject]@{
         TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
         Mode = $(if ($a.appId) { 'UpdateMetadata' } else { 'Create' }); ExistingAppId = [string]$a.appId
         AppName = $a.appName; Description = $m.description; Publisher = $m.publisher; Owner = $m.owner; Developer = $m.developer
         InformationUrl = $m.informationUrl; PrivacyUrl = $m.privacyUrl; Notes = $m.notes; AppVersion = $m.appVersion; IsFeatured = $(if ($defaults -and $a.appId) { $null } else { $m.isFeatured })
         InstallCommand = $m.installCommand; UninstallCommand = $m.uninstallCommand; DetectionRule = $m.detectionRule
-        InstallContext = $m.installContext; Architecture = $m.architecture; MinOSVersionKey = $m.minOSKey; PackagePath = $pkg.Path
+        InstallContext = $m.installContext; Architecture = $m.architecture; MinOSVersionKey = $m.minOSKey; PackagePath = $PackagePath
         DependencyAppIds = $depIds; ReplaceContent = $false; LargeIcon = $a.icon
         # An app with no settings of its own, already in Intune: the defaults say nothing about supersedence or Featured - leave Intune's.
         Supersedence = $(if ($defaults -and $a.appId) { $null } else { $m.supersedes })
         MinDiskSpaceMB = [int]$m.minDiskSpaceMB; MinMemoryMB = [int]$m.minMemoryMB; MinProcessors = [int]$m.minProcessors; MinCpuSpeedMHz = [int]$m.minCpuSpeedMHz
         InstallTimeMinutes = $(if ($m.installTimeMinutes) { [int]$m.installTimeMinutes } else { 60 }); DeviceRestartBehavior = $m.deviceRestartBehavior
-        AllowAvailableUninstall = [bool]$m.allowAvailableUninstall; ReturnCodes = @($m.returnCodes); OutputResultPath = $resultPath
+        AllowAvailableUninstall = [bool]$m.allowAvailableUninstall; ReturnCodes = @($m.returnCodes); OutputResultPath = $ResultPath
     }
-    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "$(if ($metadataOnly) { 'Push settings' } else { 'Deploy' }) $name" `
-        -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $defaults; WasUpdate = [bool]$a.appId }
-    if ($started.ok) { Write-Log "[INFO] $(if ($metadataOnly) { "Pushing $name's settings to Intune" } else { "Deploying $name ($($config.Mode))" })..." }
-    return $started
 }
 
 function Global:Start-WebPushGroups {
@@ -295,6 +310,8 @@ function Global:Clear-WebAppIds {
             [void](Update-WebCatalogApp -Name $n -Change {
                     param($a)
                     $a.appId = ''; $a.intuneAppType = ''; $a.intuneAppVersion = ''
+                    # Its pilot and superseded releases are the other tenant's apps too.
+                    $a.releases = @()
                     if ($tenantIds -and $a.metadata -and $null -ne $a.metadata.supersedes) {
                         $keep = @(@($a.metadata.supersedes) | Where-Object { $_ -and $tenantIds.ContainsKey(([string]$_.appId).ToLowerInvariant()) })
                         if ($keep.Count -ne @($a.metadata.supersedes).Count) { $a.metadata.supersedes = $(if ($keep.Count) { $keep } else { $null }) }

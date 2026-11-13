@@ -18,6 +18,10 @@ function Global:Import-GraphSettings {
         if (-not [string]::IsNullOrWhiteSpace($settings.TenantId))  { $Global:App.GraphTenantId = ([string]$settings.TenantId).Trim() }
         if (-not [string]::IsNullOrWhiteSpace($settings.ClientId))  { $Global:App.GraphClientId = ([string]$settings.ClientId).Trim() }
         if (-not [string]::IsNullOrWhiteSpace($settings.CertificateThumbprint)) { $Global:App.GraphCertificateThumbprint = ([string]$settings.CertificateThumbprint) -replace '\s', '' }
+        if ($settings.PilotGroups) {
+            $Global:App.PilotGroups.Clear()
+            foreach ($g in @($settings.PilotGroups)) { [void]$Global:App.PilotGroups.Add([string]$g) }
+        }
         if ($settings.FavoriteGroups) {
             $Global:App.FavoriteGroups.Clear()
             foreach ($g in @($settings.FavoriteGroups)) { [void]$Global:App.FavoriteGroups.Add([string]$g) }
@@ -74,7 +78,7 @@ function Global:Import-GraphSettings {
             if ($null -ne $das.InstallTimeMinutes)         { $Global:App.DefaultAppSettings.InstallTimeMinutes = [int]$das.InstallTimeMinutes }
             if ($null -ne $das.DeviceRestartBehavior)      { $Global:App.DefaultAppSettings.DeviceRestartBehavior = [string]$das.DeviceRestartBehavior }
             if ($null -ne $das.AllowAvailableUninstall)    { $Global:App.DefaultAppSettings.AllowAvailableUninstall = [bool]$das.AllowAvailableUninstall }
-            if ($das.WingetInstallMethod -in @("WAU", "Winget")) { $Global:App.DefaultAppSettings.WingetInstallMethod = [string]$das.WingetInstallMethod }
+            if ($das.WingetInstallMethod -in @("WAU", "Winget", "Managed")) { $Global:App.DefaultAppSettings.WingetInstallMethod = [string]$das.WingetInstallMethod }
             if (@($das.ReturnCodes).Count -gt 0) {
                 $Global:App.DefaultAppSettings.ReturnCodes = @($das.ReturnCodes | ForEach-Object { [pscustomobject]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })
             }
@@ -107,6 +111,7 @@ function Global:Write-SettingsFile {
             ClientId              = $Global:App.GraphClientId
             CertificateThumbprint = $Global:App.GraphCertificateThumbprint
             FavoriteGroups        = @($Global:App.FavoriteGroups)
+            PilotGroups           = @($Global:App.PilotGroups)
             DefaultAppSettings    = $Global:App.DefaultAppSettings
             CheckDriftOnStartup   = $Global:App.CheckDriftOnStartup
             RunFullAuditOnStartup = $Global:App.RunFullAuditOnStartup

@@ -133,6 +133,11 @@ function Global:ConvertTo-AppRecord {
         # base64) - kept in the app's own file so a rename, a backup and
         # Undo carry it along. Anything else in the field is dropped.
         icon         = (ConvertTo-AppIcon $Raw.icon)
+        # Managed updates (Winget apps): the version is pinned and new ones
+        # are released to a pilot group first. releases: the pilot release
+        # and the superseded ones still in Intune, each by its App ID.
+        managedUpdates = [bool]$Raw.managedUpdates
+        releases     = @(ConvertTo-AppReleases $Raw.releases)
         metadata     = $metadata
     }
 }
@@ -232,6 +237,15 @@ function Global:ConvertTo-JsonStringArray {
     return "[`r`n" + ($lines -join "`r`n") + "`r`n$pad]"
 }
 
+function Global:ConvertTo-AppReleases {
+    # Pure: an app's release list - entries with a GUID App ID, a version a release can pin, and state pilot or previous; anything else is dropped.
+    param($Releases)
+    $guid = '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+    return @(@($Releases) | Where-Object { $_ -and [string]$_.appId -match $guid -and (Test-ReleaseVersionText ([string]$_.version)) -and [string]$_.state -in 'pilot', 'previous' } | ForEach-Object {
+        [pscustomobject]@{ version = [string]$_.version; appId = [string]$_.appId; state = [string]$_.state; at = [string]$_.at }
+    })
+}
+
 function Global:ConvertTo-AppIcon {
     # Pure: an icon as @{ type; value } when it is a PNG or JPEG in base64 of at most 750 KB, else $null.
     param($Icon)
@@ -281,6 +295,15 @@ function Global:ConvertTo-SingleAppJson {
     # silently dropped the moment the catalog is saved.
     if ($App.packagePath) {
         $fields.Add("  `"packagePath`": $(ConvertTo-JsonStringLiteral $App.packagePath)")
+    }
+    if ($App.managedUpdates) { $fields.Add("  `"managedUpdates`": true") }
+    $relItems = @(@($App.releases) | Where-Object { $_ -and $_.appId })
+    if ($relItems.Count) {
+        $relLines = for ($j = 0; $j -lt $relItems.Count; $j++) {
+            $r = $relItems[$j]
+            "    { `"version`": $(ConvertTo-JsonStringLiteral ([string]$r.version)), `"appId`": $(ConvertTo-JsonStringLiteral ([string]$r.appId)), `"state`": $(ConvertTo-JsonStringLiteral ([string]$r.state)), `"at`": $(ConvertTo-JsonStringLiteral ([string]$r.at)) }$(if ($j -lt $relItems.Count - 1) { ',' })"
+        }
+        $fields.Add("  `"releases`": [`r`n" + ($relLines -join "`r`n") + "`r`n  ]")
     }
     if ($App.icon -and $App.icon.value) {
         $fields.Add("  `"icon`": { `"type`": $(ConvertTo-JsonStringLiteral ([string]$App.icon.type)), `"value`": $(ConvertTo-JsonStringLiteral ([string]$App.icon.value)) }")

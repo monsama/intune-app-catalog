@@ -431,6 +431,21 @@ try {
     Check (-not (Invoke-Api '/api/delete-intune' @{ name = "$testName renamed" }).ok) 'delete from Intune: refused for an app not in Intune'
     Check (-not (Invoke-Api '/api/install-status' @{ name = "$testName renamed" }).ok) 'install status: refused for an app not in Intune'
 
+    # Managed updates: on pins the commands to the App version; a release needs a connection and a deployed app.
+    $mu = Invoke-Api '/api/managed-updates' @{ names = @("$testName renamed"); on = $true }
+    $muApp = (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app
+    Check ($mu.ok -and $muApp.managedUpdates) 'managed updates: turned on' ($mu | ConvertTo-Json -Compress)
+    $pin = Invoke-Api '/api/app-save' @{ originalName = "$testName renamed"; app = @{ appName = "$testName renamed"; wingetId = $muApp.wingetId; appId = ''; managedUpdates = $true; metadata = @{ description = 'pinned'; appVersion = '3.2.1' } } }
+    $pinApp = (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app
+    Check ($pin.ok -and $pinApp.metadata.installCommand -like "*--version '3.2.1'*") 'managed updates: the install command follows the App version' $pinApp.metadata.installCommand
+    $ri = Invoke-Api '/api/release-info' @{ name = "$testName renamed" }
+    Check ($ri.ok -and $ri.managed -and $ri.current -eq '3.2.1' -and $null -eq $ri.pilot) 'release info: managed, at 3.2.1, nothing in pilot' ($ri | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/release-start' @{ name = "$testName renamed"; version = '3.3' }).ok) 'release: refused without a connection'
+    Check (-not (Invoke-Api '/api/release-assign' @{ name = "$testName renamed"; step = 'pilot' }).ok) 'release: assigning refused without a connection'
+    Check (-not (Invoke-Api '/api/release-promoted' @{ name = "$testName renamed" }).ok) 'release: nothing to promote without a pilot release'
+    $muOff = Invoke-Api '/api/managed-updates' @{ names = @("$testName renamed"); on = $false }
+    Check ($muOff.ok -and -not (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.managedUpdates) 'managed updates: turned off again'
+
     $removed = Invoke-Api '/api/app-remove' @{ name = "$testName renamed" }
     Check ($removed.ok -and @((Invoke-Api '/api/catalog').apps.name) -notcontains "$testName renamed") 'editor: remove takes it out of the catalog'
 

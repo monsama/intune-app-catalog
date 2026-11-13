@@ -28,6 +28,7 @@ try { Add-Type -AssemblyName System.Security -ErrorAction Stop } catch { }
 . (Join-Path $PSScriptRoot 'WebBatch.ps1')
 . (Join-Path $PSScriptRoot 'WebBulk.ps1')
 . (Join-Path $PSScriptRoot 'WebTenant.ps1')
+. (Join-Path $PSScriptRoot 'WebReleases.ps1')
 . (Join-Path $PSScriptRoot 'WebSetup.ps1')
 
 Initialize-AppState -RootPath $RootPath
