@@ -133,6 +133,11 @@ try {
       await noOverflow('Settings'); await unnamed('Settings'); await a11y('Settings'); await shot('settings');
       for (const sec of ['defaults', 'packaging']) {
         await page.click(`#stab-${sec}`);
+        if (sec === 'defaults') {
+          // Managed updates: the card, and the nightly run's list (no run yet on a fresh test machine).
+          await page.waitForFunction(() => /No run yet|run is going|plan only/i.test(document.getElementById('runList').textContent));
+          check(await page.isVisible('#pilotGroups') && await page.isVisible('#rpDays') && await page.isVisible('#btnRunPlan'), `${label}: Settings > Defaults has managed updates and the nightly run`);
+        }
         check(await page.isVisible(`#sec-${sec}`) && !(await page.isVisible('#sec-connection')), `${label}: Settings > ${sec} shows only its own cards`);
         await noOverflow(`Settings ${sec}`); await unnamed(`Settings ${sec}`); await a11y(`Settings ${sec}`);
       }
@@ -168,6 +173,11 @@ try {
         await page.waitForSelector(`#gridBody tr[data-name="${testApp}"]`);
         check(!(await page.isVisible('#dlgApp[open]')), `${label}: the new app is saved and listed`);
 
+        await page.click(`#gridBody tr[data-name="${testApp}"]`);
+        await page.click('#btnMore');
+        const relTip = await page.getAttribute('[data-act="release"]', 'title');
+        check(await page.isDisabled('[data-act="release"]') && /managed updates on/i.test(relTip || ''), `${label}: Release new version is off for an app without managed updates, and says why`, relTip);
+        await page.keyboard.press('Escape');
         await page.click(`#gridBody tr[data-name="${testApp}"]`);
         await page.click('#btnMore');
         await page.click('[data-act="batchedit"]');

@@ -3,7 +3,8 @@
 The automated tests never sign in to Microsoft Graph: they check the page,
 the server and the logic, and stop at "Set up the connection first". Run
 through this once against a **test tenant** (never production) before
-relying on a release. About 45 minutes.
+relying on a release. About 45 minutes, plus about 30 for managed updates
+(section 10).
 
 ## Setup
 
@@ -11,10 +12,10 @@ relying on a release. About 45 minutes.
   guide walks through it.
 - Two throwaway groups, e.g. `ZZ-Test-A` and `ZZ-Test-B` (you'll create
   them in section 6 if they don't exist).
-- Work on a copy of your catalog (Settings > Folders > Catalog), or remove
+- Work on a copy of your catalog (Settings > Packaging & folders > Folders), or remove
   the test apps afterwards.
 - Keep an eye on **Settings > Activity** and the black log box of each
-  dialog. Settings > Automatic checks > **Detailed Graph log** stays off
+  dialog. Settings > Defaults > Automatic checks > **Detailed Graph log** stays off
   until section 1 says otherwise.
 
 ## 1. Connection, certificate, permissions
@@ -132,12 +133,66 @@ relying on a release. About 45 minutes.
 
 ## 9. Start-up checks
 
-- [ ] Settings > Automatic checks: tick "Run Checks when the app opens",
+- [ ] Settings > Defaults > Automatic checks: tick "Run Checks when the app opens",
       Save, close the app window and start the app again - the Checks tab
       shows a count, and Activity says how many findings.
 
-## 10. Clean up
+## 10. Managed updates
 
-- [ ] Delete the test apps from Intune and the catalog, the test groups,
-      and the `ZZ-Test-Script` platform script and its local copy.
+Use a small Winget app with an older version still in winget (e.g.
+`7zip.7zip`), one pilot group with one test device in it, and a second
+group with another device.
+
+- [ ] Settings > Defaults > Managed updates: pilot group `ZZ-Test-A`, rule
+      "0 days, 50 %, 1 installed", all three automatic switches **off**.
+      Save.
+- [ ] Add the app, tick **Managed updates**, App version = an *older*
+      version than winget's newest (e.g. `23.01`). Required for
+      `ZZ-Test-B`. The editor's install command ends with `--version
+      '23.01'`; Deploy settings > detection is the generated script.
+- [ ] **Deploy** - one app in Intune under the catalog's name. On the
+      `ZZ-Test-B` device, that exact version installs and Intune reports it
+      installed (the detection script works under SYSTEM).
+- [ ] Catalog > **Check winget for new versions** - the app shows
+      "-> newest".
+- [ ] **More > Release new version...** with the newest version - a second
+      app "*name version (pilot)*" appears in the portal. It supersedes the
+      first (Properties > Supersedence) and is assigned Required to
+      `ZZ-Test-A` only. The list shows "pilot x.y".
+- [ ] On the pilot device the new version installs (an update, not a
+      second install). The `ZZ-Test-B` device stays on the old one.
+- [ ] **More > Promote pilot release...** shows the pilot counts and "the
+      release rule says it is ready". Promote: the pilot app is renamed to
+      the app's name and assigned to `ZZ-Test-B`. The old one is renamed
+      "*(superseded)*", without assignments. The catalog's App ID is the new
+      app's.
+- [ ] The `ZZ-Test-B` device updates to the new version.
+- [ ] **More > Roll back to previous version...** - the old app gets
+      `ZZ-Test-B` again and its name back, and the new one is "*(rolled
+      back)*". Devices keep the newer version (nothing is uninstalled).
+- [ ] Release and promote once more, so there are two superseded versions.
+      **More > Delete old versions from Intune...** - the older one is gone
+      from the portal; the newest superseded one is still there, and its
+      supersedence to the deleted one is gone.
+- [ ] Release once more, then **More > Withdraw pilot release...** - the
+      pilot app is deleted from the portal.
+- [ ] Settings > Managed updates > **Plan only** - a report under Logs\reports
+      (Open reports folder) lists the app with what the run would do;
+      nothing changes in the portal.
+- [ ] **Schedule** at a time two minutes from now - the task "Intune App
+      Catalog - managed updates" is in Task Scheduler. Turn on "release
+      automatically", release nothing yourself, and wait. The run releases
+      the newest winget version to pilot, and Settings lists the run.
+      Then **Remove** the task.
+- [ ] Optional, own package: an app with its own MSI, detection by MSI
+      product code. Tick Managed updates, put a newer MSI in its folder,
+      **Release new version...** The version and product code are read
+      from the MSI, the package is rebuilt, and the pilot app's detection
+      shows the new version and product code.
+
+## 11. Clean up
+
+- [ ] Delete the test apps from Intune and the catalog (with every
+      superseded or pilot release of the managed one), the test groups, and
+      the `ZZ-Test-Script` platform script and its local copy.
 - [ ] Put back anything you changed on a real app while testing.
