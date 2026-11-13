@@ -237,9 +237,12 @@ function Global:Set-WebWingetVersions {
     foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { $names -contains $_.appName })) {
         $v = if ($latest -and $a.wingetId) { [string]$latest[([string]$a.wingetId).ToLowerInvariant()] } else { '' }
         if (-not $v) { $skipped.Add("$($a.appName) (winget not asked yet)"); continue }
+        # A deployed managed app gets a new version only through a release (pilot first).
+        if ($a.managedUpdates -and $a.appId) { $skipped.Add("$($a.appName) (managed - use Release new version)"); continue }
         if (-not $a.metadata) { $a.metadata = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon (Test-AppIsUncommon -App $a) }
         if ([string]$a.metadata.appVersion -eq $v) { continue }
         if ($a.metadata.PSObject.Properties.Name -contains 'appVersion') { $a.metadata.appVersion = $v } else { $a.metadata | Add-Member -NotePropertyName appVersion -NotePropertyValue $v }
+        [void](Set-ManagedAppPin $a)
         Write-WebAppFile -App $a -Undo $undo
         $changed.Add($a.appName)
     }

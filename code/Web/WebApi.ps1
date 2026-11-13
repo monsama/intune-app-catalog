@@ -10,7 +10,7 @@
   This file has the route table (Invoke-WebApi) and what every page
   shares: reading the catalog, the catalog lock, step jobs and their
   completion, the Activity log. The pages: WebEditor.ps1, WebDeploy.ps1,
-  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebTenant.ps1, WebGroups.ps1,
+  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebTenant.ps1, WebReleases.ps1, WebGroups.ps1,
   WebScripts.ps1, WebSetup.ps1; Graph reads go through WebGraph.ps1.
 #>
 
@@ -63,6 +63,8 @@ function Global:Get-WebCatalog {
                 uninstall    = [int]$row.Uninstall
                 wingetVersion = [string]$(if ($Global:App.WingetLatest -and $apps[$i].wingetId) { $Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()] })
                 newerOnWinget = [bool]($Global:App.WingetLatest -and $apps[$i].wingetId -and (Compare-AppVersionText ([string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })) ([string]$Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()])) -eq 1)
+                managed      = [bool]$apps[$i].managedUpdates
+                pilotVersion = [string]$(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'pilot' } | Select-Object -First 1 -ExpandProperty version)
                 hasIcon      = [bool]($apps[$i].icon -and $apps[$i].icon.value)
                 iconTag      = $(if ($apps[$i].icon -and $apps[$i].icon.value) { "$($apps[$i].icon.value.Length):$($apps[$i].icon.value.Substring([Math]::Max(0, $apps[$i].icon.value.Length - 12)))" } else { '' })
                 groups       = @(@($apps[$i].requiredFor) + @($apps[$i].availableFor) + @($apps[$i].uninstallFor) + @($apps[$i].excludeFor) | Where-Object { $_ } | ForEach-Object { [string]$_ } | Select-Object -Unique)
@@ -235,6 +237,7 @@ function Global:Complete-WebJob {
             Write-Log "$(if ($failed) { '[WARN]' } else { '[OK]' }) Packaging finished$(if ($failed) { " - $failed failed, see the log" })."
             return @{ ok = $true; failed = $failed }
         }
+        'release' { return (Complete-WebRelease -After $After -Result $Result) }
         'deploy' {
             $newId = [string]$Result.appId
             $defaults = $After.Defaults
@@ -467,6 +470,12 @@ function Global:Invoke-WebApi {
         '/api/batch-groups'     { return (Invoke-WithCatalogLock { Invoke-WebBatchGroups $Data }) }
         '/api/replace-group'    { return (Invoke-WithCatalogLock { Invoke-WebReplaceGroup $Data }) }
         '/api/undo-info'        { return (Get-WebUndoInfo) }
+        '/api/release-info'     { return (Get-WebReleaseInfo $Data) }
+        '/api/release-start'    { return (Start-WebRelease $Data) }
+        '/api/release-assign'   { return (Start-WebReleaseAssign $Data) }
+        '/api/release-promoted' { return (Invoke-WithCatalogLock { Complete-WebPromotion $Data }) }
+        '/api/release-withdrawn' { return (Invoke-WithCatalogLock { Complete-WebWithdrawal $Data }) }
+        '/api/managed-updates'  { return (Invoke-WithCatalogLock { Set-WebManagedUpdates $Data }) }
         '/api/winget-take-version' { return (Invoke-WithCatalogLock { Set-WebWingetVersions $Data }) }
         '/api/tenant-setup'     { return (Get-WebTenantSetup) }
         '/api/install-overview' { return (Get-WebInstallOverview) }

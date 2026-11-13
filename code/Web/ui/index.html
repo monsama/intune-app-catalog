@@ -56,6 +56,8 @@
           <option value="winget">Winget apps</option>
           <option value="custom">Own package</option>
           <option value="newer">Newer on winget</option>
+          <option value="managed">Managed updates</option>
+          <option value="pilot">In pilot</option>
         </optgroup>
         <optgroup label="Saved views" id="savedViews"></optgroup>
       </select>
@@ -345,7 +347,7 @@
               <div class="checks"><label class="chk"><input type="checkbox" data-arch="x64">x64</label><label class="chk"><input type="checkbox" data-arch="x86">x86</label><label class="chk"><input type="checkbox" data-arch="arm64">arm64</label></div>
               <label title="System installs for every user of the device; User installs for the signed-in user only (and needs no admin rights).">Install for<select id="dContext"><option>System</option><option>User</option></select></label>
               <label title="Devices older than this don't get the app.">Minimum OS<select id="dMinOs"></select></label>
-              <label title="Winget-AutoUpdate keeps Winget apps updated afterwards; the winget command only installs them.">Winget apps install with<select id="dWinget"><option value="WAU">Winget-AutoUpdate (Winget-Install.ps1)</option><option value="Winget">The winget command</option></select></label>
+              <label title="Winget-AutoUpdate keeps Winget apps updated afterwards; the winget command only installs them.">Winget apps install with<select id="dWinget"><option value="Managed">Managed updates (pinned version, pilot first)</option><option value="WAU">Winget-AutoUpdate (Winget-Install.ps1)</option><option value="Winget">The winget command (latest)</option></select></label>
               <label>Default dependencies <span class="muted">(app names, one per line)</span><textarea autocomplete="off" id="dDeps" rows="2" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
             </div>
             <div>
@@ -381,6 +383,12 @@
           <p class="sub" id="favGroupsHint">Offered first wherever a group is chosen. One per line.</p>
           <textarea autocomplete="off" id="favGroups" aria-labelledby="favGroupsHint" rows="4" class="full" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
           <div class="actions"><button class="btn" id="btnSaveFavs" title="Save the favourite groups">Save favourites</button></div>
+        </article>
+        <article class="card">
+          <h2>Managed updates</h2>
+          <p class="sub" id="pilotGroupsHint">Winget apps with managed updates install a fixed version. A new version is released to these groups first (Required), and to everyone when you promote it. One group per line - created in Entra ID if missing.</p>
+          <textarea id="pilotGroups" aria-labelledby="pilotGroupsHint" rows="3" class="full" placeholder="e.g. SG-Intune-Pilot" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
+          <div class="actions"><button class="btn" id="btnSavePilot" title="Save the pilot groups">Save pilot groups</button></div>
         </article>
       </div>
     </div>
@@ -433,8 +441,13 @@
   <button role="menuitem" data-act="pushsettings" title="Send the catalog's settings to Intune, without uploading a package">Push settings to Intune...</button>
   <button role="menuitem" data-act="status" title="Every device's install state for this app, from Intune">Install status...</button>
   <hr>
-  <button role="menuitem" data-act="batchedit" title="Change the same fields on all selected apps in the catalog">Batch edit...</button>
+  <button role="menuitem" data-act="release" title="Release a new version to the pilot groups first - a new app in Intune that supersedes the current one">Release new version...</button>
+  <button role="menuitem" data-act="promote" title="Give the pilot release to everyone - the current one is kept in Intune as superseded">Promote pilot release...</button>
+  <button role="menuitem" data-act="withdraw" title="Take the pilot release back - its app is deleted from Intune; pilot devices keep the newer version">Withdraw pilot release...</button>
+  <button role="menuitem" data-act="managed" title="Turn managed updates on or off for the selected Winget apps">Managed updates on...</button>
   <button role="menuitem" data-act="takeversion" title="Use the version winget offers as the App version (from the last Check winget for new versions)">Take winget's version</button>
+  <hr>
+  <button role="menuitem" data-act="batchedit" title="Change the same fields on all selected apps in the catalog">Batch edit...</button>
   <button role="menuitem" data-act="addgroups" title="Add groups to all selected apps in the catalog">Add groups...</button>
   <button role="menuitem" data-act="removegroups" title="Remove groups from all selected apps in the catalog">Remove groups...</button>
   <button role="menuitem" data-act="replacegroup" title="Swap one group for another on the selected apps, in every role">Replace a group in these apps...</button>
@@ -524,6 +537,7 @@
         <h3>General</h3>
         <label>Name<input id="aName" required autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label title="The winget package ID, e.g. 7zip.7zip. Empty for an app with its own installer. Find... searches winget.">Winget ID <span class="muted">(empty for an app with its own package)</span><span class="inputrow"><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip" autocorrect="off" autocapitalize="off"><button type="button" class="btn" id="btnFindWinget" title="Search winget for the package">Find...</button></span></label>
+        <label class="chk" title="Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Defaults > Managed updates"><input type="checkbox" id="aManaged">Managed updates <span class="muted" id="aManagedNote"></span></label>
         <label title="The Intune app this catalog entry is linked to. Set by Deploy, or by Checks when it links an existing app.">App ID in Intune <span class="muted">(empty until it's deployed)</span><input id="aAppId" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <div class="iconrow" role="group" aria-labelledby="aIconLabel">
           <span class="lbl" id="aIconLabel">Icon <span class="muted">(Intune and the Company Portal)</span></span>
@@ -712,6 +726,16 @@
   </div>
   <div class="tablewrap short"><table class="plan ov"><thead><tr><th>App</th><th class="num" title="Devices where the app is installed">Installed</th><th class="num" title="Devices where installing failed">Failed</th><th class="num" title="Devices waiting to install">Pending</th><th class="num" title="Devices it is assigned to but not installed on, without an error">Not installed</th><th class="num" title="Devices the requirements rule out">Not applicable</th><th><span class="sr">Share</span></th><th><span class="sr">Actions</span></th></tr></thead><tbody id="ovRows"></tbody></table></div>
   <div class="actions end"><button class="btn" id="btnOvRefresh" title="Read the report from Intune again">Read again</button><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgRelease">
+  <h2 id="relTitle">Release a new version</h2>
+  <p class="sub" id="relText"></p>
+  <label>Version to release<input id="relVersion" class="mono" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+  <p class="muted note" id="relGroups"></p>
+  <p class="formerror" id="relErr" hidden></p>
+  <pre class="log" id="relLog" tabindex="0" role="log" hidden></pre>
+  <div class="actions end"><button class="btn" data-close id="btnRelClose">Cancel</button><button class="btn primary" id="btnRelGo" title="Create the new version in Intune, superseding the current one, and assign it to the pilot groups">Release to pilot</button></div>
 </dialog>
 
 <dialog id="dlgReplace">

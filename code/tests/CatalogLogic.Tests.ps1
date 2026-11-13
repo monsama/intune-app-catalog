@@ -143,6 +143,10 @@ $testableFunctionNames = @(
     # is worth a test.
     "ConvertTo-SingleAppJson",
     "ConvertTo-AppIcon",
+    "ConvertTo-AppReleases",
+    "Test-ReleaseVersionText",
+    "Get-ManagedWingetDetection",
+    "Set-ManagedAppPin",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -529,6 +533,34 @@ $userCommands = Get-WingetCommandLines -WingetId "Vendor.App" -Method "Winget" -
 Assert-True ($userCommands.Install -notlike '*--scope machine*') `
     "Get-WingetCommandLines: a User-context install doesn't force machine scope"
 $Global:App.DefaultAppSettings.WingetInstallMethod = "WAU"
+
+# Managed updates: a pinned version, detection of it or newer, releases
+$managedCmd = Get-WingetCommandLines -WingetId "Vendor.App" -Method "Managed" -InstallContext "System" -Version "24.09"
+Assert-True ($managedCmd.Install -like "*install --id 'Vendor.App' -e --version '24.09' --source winget*" -and $managedCmd.Install.Length -le 1024) "Get-WingetCommandLines: Managed pins the version with --version"
+$inner = [regex]::Match($managedCmd.Install, '-Command "(.*)"$').Groups[1].Value
+$parseErrors = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($inner, [ref]$null, [ref]$parseErrors)
+Assert-Equal 0 @($parseErrors).Count "Get-WingetCommandLines: the pinned command's script parses"
+Assert-Equal 'Managed' (Get-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $managedCmd.Install -UninstallCommand $managedCmd.Uninstall) "Get-AppWingetInstallMethod: recognises the pinned (managed) form"
+Assert-True ((Get-WingetCommandLines -WingetId "Vendor.App" -Method "Managed" -InstallContext "System" -Version "1.0'; calc").Install -notlike '*--version*') "Get-WingetCommandLines: a version with a quote is never pinned (it would go into the command line)"
+Assert-True ((Test-ReleaseVersionText '131.0.6778.86') -and (Test-ReleaseVersionText '1.0-beta+2') -and -not (Test-ReleaseVersionText '') -and -not (Test-ReleaseVersionText '1.0 && x')) "Test-ReleaseVersionText: versions, not commands"
+$det = Get-ManagedWingetDetection -WingetId "Vendor.App" -Version "24.09"
+$parseErrors = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($det, [ref]$null, [ref]$parseErrors)
+Assert-True ($det -like "*'Vendor.App'*" -and $det -like "*'24.09'*" -and $det -like '*--include-versions*' -and @($parseErrors).Count -eq 0) "Get-ManagedWingetDetection: checks this ID at this version or newer, and parses"
+$pinApp = [pscustomobject]@{ managedUpdates = $true; wingetId = 'Vendor.App'; metadata = [pscustomobject]@{ appVersion = '5.1'; installCommand = $wingetDefaults.installCommand; uninstallCommand = $wingetDefaults.uninstallCommand; installContext = 'System'; detectionRule = $null } }
+Assert-True ((Set-ManagedAppPin $pinApp) -and $pinApp.metadata.installCommand -like "*--version '5.1'*" -and $pinApp.metadata.detectionRule.Script_Content -like "*'5.1'*") "Set-ManagedAppPin: commands and detection follow the App version"
+Assert-True (-not (Set-ManagedAppPin $pinApp)) "Set-ManagedAppPin: nothing to change the second time"
+$handApp = [pscustomobject]@{ managedUpdates = $true; wingetId = 'Vendor.App'; metadata = [pscustomobject]@{ appVersion = '5.1'; installCommand = 'setup.exe /custom'; uninstallCommand = 'x'; installContext = 'System'; detectionRule = $null } }
+Assert-True (-not (Set-ManagedAppPin $handApp) -and $handApp.metadata.installCommand -eq 'setup.exe /custom') "Set-ManagedAppPin: commands edited by hand are left alone"
+$rels = @(ConvertTo-AppReleases @([pscustomobject]@{ version = '2.0'; appId = 'dddddddd-0000-4000-8000-000000000001'; state = 'pilot' }, [pscustomobject]@{ version = '1.0'; appId = '../x'; state = 'previous' }, [pscustomobject]@{ version = '0.9'; appId = 'dddddddd-0000-4000-8000-000000000002'; state = 'weird' }))
+Assert-True ($rels.Count -eq 1 -and $rels[0].state -eq 'pilot') "ConvertTo-AppReleases: only GUID App IDs, pinnable versions and known states"
+$relRecord = ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'Rel App'; managedUpdates = $true; releases = @([pscustomobject]@{ version = '2.0'; appId = 'dddddddd-0000-4000-8000-000000000001'; state = 'pilot'; at = 'x' }) })
+$relBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $relRecord) | ConvertFrom-Json)
+Assert-True ($relBack.managedUpdates -and @($relBack.releases).Count -eq 1 -and $relBack.releases[0].version -eq '2.0') "ConvertTo-SingleAppJson/ConvertTo-AppRecord: managed updates and releases round-trip"
+Assert-True ((ConvertTo-SingleAppJson -App (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'Plain' }))) -notlike '*managedUpdates*') "ConvertTo-SingleAppJson: no managed fields for an unmanaged app"
+$tpl = ConvertTo-TemplateAppRecord -App $relBack
+Assert-True ($tpl.managedUpdates -and @($tpl.releases).Count -eq 0) "ConvertTo-TemplateAppRecord: keeps managed updates, drops this tenant's releases"
+$driftRel = Get-IntuneCatalogDrift -Apps @($relBack) -IntuneApps @([pscustomobject]@{ id = 'dddddddd-0000-4000-8000-000000000001'; displayName = 'Rel App 2.0 (pilot)' })
+Assert-Equal 0 @($driftRel.Missing).Count "Get-IntuneCatalogDrift: a release's app in Intune isn't 'not in the catalog'"
 
 # Switching an existing app's install method
 Assert-Equal 'WAU' (Get-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $wauDefaults.installCommand -UninstallCommand $wauDefaults.uninstallCommand) `

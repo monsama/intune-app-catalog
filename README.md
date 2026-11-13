@@ -44,6 +44,10 @@ it opens can talk to it.
 - App **icons**, sent to Intune and the Company Portal; **supersedence** in
   the editor; **newer versions on winget** flagged in the list.
 - **Earlier versions** show what each save changed.
+- **Managed updates** for Winget apps: each app installs a fixed version;
+  a new one is released to a pilot group first (a new Intune app that
+  supersedes the current one), then promoted to everyone - or withdrawn.
+  Intune reports every device's state per version.
 - Pull settings and groups back from Intune, field by field.
 - **Checks**: every way the catalog and Intune can disagree - apps renamed
   in Intune, App IDs that no longer exist, apps only in Intune, settings,

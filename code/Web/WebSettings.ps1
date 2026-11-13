@@ -320,7 +320,7 @@ function Global:ConvertTo-WebDefaultSettings {
         DeviceRestartBehavior = [string]$Form.deviceRestartBehavior; AllowAvailableUninstall = [bool]$Form.allowAvailableUninstall
         ReturnCodes = $codes
         DefaultDependencyAppNames = @(@($Form.defaultDependencyAppNames) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
-        WingetInstallMethod = $(if ([string]$Form.wingetInstallMethod -eq 'Winget') { 'Winget' } else { 'WAU' })
+        WingetInstallMethod = $(if ([string]$Form.wingetInstallMethod -in 'Winget', 'Managed') { [string]$Form.wingetInstallMethod } else { 'WAU' })
     } }
 }
 
@@ -346,6 +346,7 @@ function Global:Get-WebPrefs {
         }
         minOsChoices = @(Get-WebMinOsChoices)
         favoriteGroups = @($Global:App.FavoriteGroups)
+        pilotGroups    = @($Global:App.PilotGroups)
     }
 }
 
@@ -373,6 +374,12 @@ function Global:Save-WebPrefs {
         foreach ($p in $Data.folders.PSObject.Properties) { Set-AppFolder -Kind $p.Name -Path ([string]$p.Value) }
     }
     if ($Data.defaults) { $Global:App.DefaultAppSettings = $converted.Settings }
+    if ($null -ne $Data.pilotGroups) {
+        $pilot = @($Data.pilotGroups | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
+        foreach ($g in $pilot) { $problem = Test-WebGroupName $g; if ($problem) { return @{ ok = $false; error = "Pilot groups: $problem" } } }
+        $Global:App.PilotGroups = New-Object System.Collections.Generic.List[string]
+        foreach ($g in $pilot) { $Global:App.PilotGroups.Add($g) }
+    }
     if ($null -ne $Data.favoriteGroups) {
         $Global:App.FavoriteGroups = New-Object System.Collections.Generic.List[string]
         foreach ($g in @($Data.favoriteGroups | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)) { $Global:App.FavoriteGroups.Add($g) }
