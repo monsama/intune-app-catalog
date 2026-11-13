@@ -27,7 +27,11 @@ param(
     # Don't open a browser window - for tests, or to open the printed address yourself.
     [switch]$NoBrowser,
     # Accepted so older shortcuts keep working; the web interface is the only one now.
-    [switch]$Web
+    [switch]$Web,
+    # The unattended managed-updates run (the nightly scheduled task) - no window, a report in Logs\reports.
+    [switch]$RunUpdates,
+    # With -RunUpdates: decide and report, change nothing.
+    [switch]$PlanOnly
 )
 
 $Script:RequiredPrivateFiles = @(
@@ -179,4 +183,4 @@ $Script:WebAppPath = Join-Path $PSScriptRoot "code\Web\Start-WebApp.ps1"
 if (-not (Test-Path -LiteralPath $Script:WebAppPath -PathType Leaf)) {
     throw "Startup aborted: code\Web\Start-WebApp.ps1 was not found next to IntuneDeployment.ps1."
 }
-. $Script:WebAppPath -RootPath $PSScriptRoot -NoBrowser:$NoBrowser
+. $Script:WebAppPath -RootPath $PSScriptRoot -NoBrowser:$NoBrowser -RunUpdates:$RunUpdates -PlanOnly:$PlanOnly

@@ -171,6 +171,7 @@ function showSettings(sec) {
   if (!$('viewSettings').hidden || sec) showViewOnly('settings');
   for (const b of document.querySelectorAll('.subtab')) { const on = b.dataset.sec === settingsSec; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; }
   for (const p of document.querySelectorAll('.setsec')) p.hidden = p.dataset.sec !== settingsSec;
+  if (settingsSec === 'defaults' && typeof loadUpdateRuns === 'function') loadUpdateRuns();
   try { localStorage.setItem('settingsSec', settingsSec); } catch (e) { }
 }
 // Switches to the Settings tab without going through showView again.

@@ -450,3 +450,9 @@ label.gdesc > input { display: block; width: 100%; margin-top: 4px; }
 .policy input { display: block; width: 100%; margin-top: 4px; }
 #dlgRelease > label:not(.chk) { display: block; margin-top: 10px; font-size: 12px; color: var(--muted); }
 #dlgRelease > label:not(.chk) input { display: block; width: 100%; margin-top: 4px; }
+.runlist { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.runlist details.run summary { cursor: pointer; }
+.runlist ul { margin: 6px 0 8px; padding-left: 18px; }
+.runlist li { margin: 3px 0; }
+label.inline { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+label.inline input[type="time"] { width: auto; }

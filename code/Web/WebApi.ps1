@@ -10,7 +10,7 @@
   This file has the route table (Invoke-WebApi) and what every page
   shares: reading the catalog, the catalog lock, step jobs and their
   completion, the Activity log. The pages: WebEditor.ps1, WebDeploy.ps1,
-  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebTenant.ps1, WebReleases.ps1, WebGroups.ps1,
+  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebTenant.ps1, WebReleases.ps1, WebAutomation.ps1, WebGroups.ps1,
   WebScripts.ps1, WebSetup.ps1; Graph reads go through WebGraph.ps1.
 #>
 
@@ -393,6 +393,7 @@ function Global:Open-WebTarget {
             Start-Process $url
         }
         'catalog-folder' { return (Open-WebFolder (Get-AppFolder -Kind Catalog -Create)) }
+        'reports-folder' { $rd = Join-Path (Get-AppFolder -Kind Logs -Create) 'reports'; if (-not (Test-Path -LiteralPath $rd)) { [void](New-Item -ItemType Directory -Path $rd -Force) }; return (Open-WebFolder $rd) }
         'entra-home' { Start-Process 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade/quickStartType~/null/sourceType/Microsoft_AAD_IAM' }
         'coffee' { Start-Process 'https://buymeacoffee.com/monsama' }
         'scripts-folder' { return (Open-WebFolder (Get-AppFolder -Kind Scripts -Create)) }
@@ -475,6 +476,9 @@ function Global:Invoke-WebApi {
         '/api/release-assign'   { return (Start-WebReleaseAssign $Data) }
         '/api/release-promoted' { return (Invoke-WithCatalogLock { Complete-WebPromotion $Data }) }
         '/api/release-withdrawn' { return (Invoke-WithCatalogLock { Complete-WebWithdrawal $Data }) }
+        '/api/update-runs'      { return (Get-WebUpdateRuns) }
+        '/api/update-run'       { return (Start-WebUpdateRun $Data) }
+        '/api/update-schedule'  { return (Set-WebUpdateSchedule $Data) }
         '/api/managed-updates'  { return (Invoke-WithCatalogLock { Set-WebManagedUpdates $Data }) }
         '/api/winget-take-version' { return (Invoke-WithCatalogLock { Set-WebWingetVersions $Data }) }
         '/api/tenant-setup'     { return (Get-WebTenantSetup) }

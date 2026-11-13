@@ -366,6 +366,34 @@
           <p class="formerror" id="defaultsError" hidden></p>
           <div class="actions"><button class="btn primary" id="btnSaveDefaults" title="Save the defaults new apps get when deployed without their own settings">Save default values</button></div>
         </article>
+        <article class="card">
+          <h2>Managed updates</h2>
+          <p class="sub" id="pilotGroupsHint">Apps with managed updates install a fixed version. A new version is released to these groups first (Required), and to everyone when it's promoted. One group per line - created in Entra ID if missing.</p>
+          <textarea id="pilotGroups" aria-labelledby="pilotGroupsHint" rows="3" class="full" placeholder="e.g. SG-Intune-Pilot" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
+          <h3>When a pilot release is ready for everyone</h3>
+          <div class="policy">
+            <label>In pilot at least <span class="muted">(days)</span><input id="rpDays" type="number" min="0" max="99" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <label>Failed at most <span class="muted">(% of pilot devices)</span><input id="rpFailed" type="number" min="0" max="100" step="0.5" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <label>Installed on at least <span class="muted">(pilot devices)</span><input id="rpMin" type="number" min="0" max="9999" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          </div>
+          <label class="chk" title="The nightly run releases a newer winget version to the pilot groups by itself"><input type="checkbox" id="rpAutoRelease">Release new winget versions to pilot automatically (nightly run)</label>
+          <label class="chk" title="The nightly run promotes a pilot release once the rule above says it's ready - otherwise it holds it and says why"><input type="checkbox" id="rpAutoPromote">Promote automatically when ready (nightly run)</label>
+          <div class="actions"><button class="btn" id="btnSavePilot" title="Save the pilot groups and the release rule">Save</button></div>
+          <h3>Nightly run</h3>
+          <p class="sub" id="runSchedule">Checks every managed app: promotes or holds pilot releases by the rule above, and releases new winget versions - each only when its switch above is on; otherwise it reports what it would do.</p>
+          <div class="toolbar tight">
+            <label class="inline">Every day at <input id="runAt" type="time" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <button class="btn" id="btnSchedule" title="Create or change the Windows scheduled task that runs IntuneDeployment.ps1 -RunUpdates every day (as you)">Schedule</button>
+            <button class="btn" id="btnUnschedule" title="Remove the scheduled task">Remove</button>
+          </div>
+          <div class="actions">
+            <button class="btn" id="btnRunPlan" title="Decide and report what would happen - changes nothing">Plan only</button>
+            <button class="btn" id="btnRunNow" title="Run it now, as the nightly task would - may release and promote, if those switches are on">Run now</button>
+            <button class="btn" id="btnRunReload" title="Read the last runs again">Reload</button>
+            <button class="btn ghost" id="btnReports" title="Open the folder with every run's report (HTML and JSON)">Open reports folder</button>
+          </div>
+          <div id="runList" class="runlist" aria-live="polite"></div>
+        </article>
       </div>
       <div class="col">
         <article class="card">
@@ -383,20 +411,6 @@
           <p class="sub" id="favGroupsHint">Offered first wherever a group is chosen. One per line.</p>
           <textarea autocomplete="off" id="favGroups" aria-labelledby="favGroupsHint" rows="4" class="full" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
           <div class="actions"><button class="btn" id="btnSaveFavs" title="Save the favourite groups">Save favourites</button></div>
-        </article>
-        <article class="card">
-          <h2>Managed updates</h2>
-          <p class="sub" id="pilotGroupsHint">Apps with managed updates install a fixed version. A new version is released to these groups first (Required), and to everyone when it's promoted. One group per line - created in Entra ID if missing.</p>
-          <textarea id="pilotGroups" aria-labelledby="pilotGroupsHint" rows="3" class="full" placeholder="e.g. SG-Intune-Pilot" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
-          <h3>When a pilot release is ready for everyone</h3>
-          <div class="policy">
-            <label>In pilot at least <span class="muted">(days)</span><input id="rpDays" type="number" min="0" max="99" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-            <label>Failed at most <span class="muted">(% of pilot devices)</span><input id="rpFailed" type="number" min="0" max="100" step="0.5" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-            <label>Installed on at least <span class="muted">(pilot devices)</span><input id="rpMin" type="number" min="0" max="9999" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-          </div>
-          <label class="chk" title="The nightly run releases a newer winget version to the pilot groups by itself"><input type="checkbox" id="rpAutoRelease">Release new winget versions to pilot automatically (nightly run)</label>
-          <label class="chk" title="The nightly run promotes a pilot release once the rule above says it's ready - otherwise it holds it and says why"><input type="checkbox" id="rpAutoPromote">Promote automatically when ready (nightly run)</label>
-          <div class="actions"><button class="btn" id="btnSavePilot" title="Save the pilot groups and the release rule">Save</button></div>
         </article>
       </div>
     </div>
