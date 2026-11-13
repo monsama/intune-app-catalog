@@ -329,6 +329,11 @@ try {
     Check ($info.ok -and $info.managed -and $info.pilot.version -eq '2.0' -and $info.current -eq '1.0') 'release: the app''s pilot and current versions' ($info | ConvertTo-Json -Compress -Depth 4)
     Check ($info.pilotStatus.ok -and $info.pilotStatus.counts.installed -eq 4 -and $info.pilotStatus.counts.failed -eq 1 -and $info.pilotStatus.action -eq 'hold') 'release: pilot status from Intune - 20 % failed is more than the 5 % allowed, so hold' ($info.pilotStatus | ConvertTo-Json -Compress -Depth 4)
     Check (-not (Invoke-Api '/api/release-start' @{ name = $relName; version = '3.0' }).ok) 'release: refused while a version is in pilot'
+    $uo = Invoke-Api '/api/updates-overview'
+    $uoRow = @($uo.rows) | Where-Object { $_.name -eq $relName } | Select-Object -First 1
+    $uoOld = @($uo.rows) | Where-Object { $_.name -eq $relOldName } | Select-Object -First 1
+    Check ($uo.ok -and $uo.connected -and $uoRow.current -eq '1.0' -and $uoRow.pilot.version -eq '2.0' -and $uoRow.pilot.installed -eq 4 -and $uoRow.pilot.action -eq 'hold' -and $uo.summary.inPilot -ge 2 -and $uo.summary.held -ge 1) 'updates page: the pilot release with its counts and the release rule''s verdict' ($uo | ConvertTo-Json -Compress -Depth 5)
+    Check ($uoOld -and -not $uoOld.pilot -and (@($uoOld.previous) -join ',') -eq '1.0,1.5' -and @($uo.rows | Where-Object { $_.name -eq $linkedName }).Count -eq 0) 'updates page: superseded versions listed; apps without managed updates left out' ($uoOld | ConvertTo-Json -Compress -Depth 4)
     # The unattended run (-RunUpdates -PlanOnly) on the same test answers: decides, reports, changes nothing.
     $env:INTUNE_CATALOG_TEST_GRAPH = $answersFile
     try { $runOut = (& $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $entry -RunUpdates -PlanOnly 2>&1 | Out-String) }

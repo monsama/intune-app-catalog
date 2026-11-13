@@ -128,6 +128,7 @@ function Global:Get-WebStaticFile {
         '/apps.js'     = @('apps.js', 'text/javascript; charset=utf-8')
         '/checks.js'   = @('checks.js', 'text/javascript; charset=utf-8')
         '/groups.js'   = @('groups.js', 'text/javascript; charset=utf-8')
+        '/updates.js'  = @('updates.js', 'text/javascript; charset=utf-8')
         '/scripts.js'  = @('scripts.js', 'text/javascript; charset=utf-8')
         '/settings.js' = @('settings.js', 'text/javascript; charset=utf-8')
         '/app.js'      = @('app.js', 'text/javascript; charset=utf-8')

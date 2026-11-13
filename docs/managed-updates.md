@@ -61,6 +61,21 @@ version...**:
 If the install command names the installer file, keep the file name the
 same, or change the command first.
 
+## The Updates page
+
+The **Updates** tab shows every app with managed updates on one page:
+
+| Column | What it says |
+|---|---|
+| **Current** | The version everyone gets. |
+| **Devices on it** | Devices with the current release installed, of those it is assigned to (failed ones are flagged). |
+| **Pilot** | The version in pilot, and the release rule's verdict: *ready*, *waiting* or *on hold*, with the reason. |
+| **Available** | A newer version: winget's (after **Check winget for new versions**), or the installer in an own package's folder. |
+| **Superseded** | Earlier releases kept in Intune for rollback. |
+
+Release, Promote, Withdraw and Roll back are on each row. **Export CSV**
+saves the table, for an audit or a report.
+
 ## The nightly run
 
 **Settings > Defaults > Managed updates > Schedule** creates a Windows
