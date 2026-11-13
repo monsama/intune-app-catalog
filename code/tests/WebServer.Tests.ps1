@@ -86,7 +86,7 @@ try {
     Check ($page.Status -eq 200 -and $page.Body -like '*<script src="app.js"*') 'the page is served'
     Check ($page.Headers -match 'Content-Security-Policy: default-src ''self''' -and $page.Headers -match 'X-Frame-Options: DENY' -and $page.Headers -match 'Cache-Control: no-store') 'every response carries the security headers' $page.Headers
     Check ($page.Body -notmatch '<script>[^<]') 'no inline script (the CSP allows none)'
-    foreach ($js in 'core.js', 'apps.js', 'checks.js', 'groups.js', 'scripts.js', 'settings.js', 'app.js') {
+    foreach ($js in 'core.js', 'apps.js', 'checks.js', 'groups.js', 'updates.js', 'scripts.js', 'settings.js', 'app.js') {
         Check ((Invoke-Raw -Path "/$js").Status -eq 200 -and $page.Body -like "*<script src=`"$js`" defer>*") "$js is served and loaded by the page"
     }
     Check ((Invoke-Raw -Path '/app.css').Status -eq 200) 'app.css is served'
@@ -298,6 +298,8 @@ try {
     Check ($tv.ok -and @($tv.changed).Count -eq 0 -and @($tv.skipped).Count -eq 1) 'winget version: not taken before winget was asked' ($tv | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/tenant-setup').ok) 'tenant setup: needs a connection'
     Check (-not (Invoke-Api '/api/install-overview').ok) 'install overview: needs a connection'
+    $uoff = Invoke-Api '/api/updates-overview'
+    Check ($uoff.ok -and -not $uoff.connected -and $null -ne $uoff.summary -and @($uoff.rows | Where-Object { $null -ne $_.installed }).Count -eq 0) 'updates page: without a connection, the catalog''s side only - no counts' ($uoff | ConvertTo-Json -Compress -Depth 4)
     # Groups (no tenant in CI): what the catalog uses, and the refusals
     $gl = Invoke-Api '/api/groups'
     $sga = @($gl.groups) | Where-Object { $_.name -eq 'SG-A' }

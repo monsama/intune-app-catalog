@@ -51,52 +51,123 @@ function Global:Get-WebTenantSetup {
 
 # ---------------------------------------------------------------- install status of every app
 
+function Global:Get-WebInstallCounts {
+    <#
+      Install counts (devices) for Intune apps by App ID: the apps install
+      summary report once, then each app the report doesn't list from its
+      own installSummary. Runs inside Invoke-WebGraph (-Graph is its call).
+      @{ Counts = @{ id -> @{ installed; failed; pending; notInstalled; notApplicable } or $null }; Note }.
+    #>
+    param([scriptblock]$Graph, [string[]]$Ids)
+    $byId = @{}
+    $note = ''
+    try {
+        $skip = 0
+        while ($true) {
+            $body = @{ select = @('ApplicationId', 'DisplayName', 'InstalledDeviceCount', 'FailedDeviceCount', 'PendingInstallDeviceCount', 'NotInstalledDeviceCount', 'NotApplicableDeviceCount'); skip = $skip; top = 500 }
+            $page = & $Graph 'https://graph.microsoft.com/beta/deviceManagement/reports/getAppsInstallSummaryReport' 'POST' $body
+            $rows = @(ConvertFrom-GraphReportTable $page)
+            foreach ($r in $rows) { if ($r.ApplicationId) { $byId[([string]$r.ApplicationId).ToLowerInvariant()] = $r } }
+            if ($rows.Count -lt 500 -or $skip -ge 5000) { break }
+            $skip += 500
+        }
+    }
+    catch { $note = "The summary report wasn't available ($(Get-InnermostErrorMessage $_.Exception)) - read app by app." }
+    $counts = @{}
+    foreach ($raw in @($Ids | Where-Object { $_ } | Select-Object -Unique)) {
+        $id = ([string]$raw).ToLowerInvariant()
+        $r = $byId[$id]
+        if ($r) { $counts[$id] = @{ installed = [int]$r.InstalledDeviceCount; failed = [int]$r.FailedDeviceCount; pending = [int]$r.PendingInstallDeviceCount; notInstalled = [int]$r.NotInstalledDeviceCount; notApplicable = [int]$r.NotApplicableDeviceCount }; continue }
+        try {
+            $sum = & $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$id/installSummary"
+            $counts[$id] = @{ installed = [int]$sum.installedDeviceCount; failed = [int]$sum.failedDeviceCount; pending = [int]$sum.pendingInstallDeviceCount; notInstalled = [int]$sum.notInstalledDeviceCount; notApplicable = [int]$sum.notApplicableDeviceCount }
+        }
+        catch { $counts[$id] = $null }
+    }
+    return @{ Counts = $counts; Note = $note }
+}
+
 function Global:Get-WebInstallOverview {
     <#
       Install counts for every deployed catalog app at once: installed,
-      failed, pending, not installed, not applicable (devices). From the
-      apps install summary report; apps it doesn't list are read one by
-      one from their installSummary.
+      failed, pending, not installed, not applicable (devices).
     #>
     if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Set up the connection in Settings first.' } }
     $apps = @((Read-WebCatalogRecords).Apps | Where-Object { $_.appId })
     if (-not $apps.Count) { return @{ ok = $true; rows = @(); note = 'No app in the catalog is in Intune yet.' } }
-    $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action {
-        param($Graph)
-        $byId = @{}
-        $note = ''
-        try {
-            $skip = 0
-            while ($true) {
-                $body = @{ select = @('ApplicationId', 'DisplayName', 'InstalledDeviceCount', 'FailedDeviceCount', 'PendingInstallDeviceCount', 'NotInstalledDeviceCount', 'NotApplicableDeviceCount'); skip = $skip; top = 500 }
-                $page = & $Graph 'https://graph.microsoft.com/beta/deviceManagement/reports/getAppsInstallSummaryReport' 'POST' $body
-                $rows = @(ConvertFrom-GraphReportTable $page)
-                foreach ($r in $rows) { if ($r.ApplicationId) { $byId[([string]$r.ApplicationId).ToLowerInvariant()] = $r } }
-                if ($rows.Count -lt 500 -or $skip -ge 5000) { break }
-                $skip += 500
-            }
-        }
-        catch { $note = "The summary report wasn't available ($(Get-InnermostErrorMessage $_.Exception)) - read app by app." }
-        $out = foreach ($a in $apps) {
-            $id = ([string]$a.appId).ToLowerInvariant()
-            $r = $byId[$id]
-            $counts = $null
-            if ($r) { $counts = @{ installed = [int]$r.InstalledDeviceCount; failed = [int]$r.FailedDeviceCount; pending = [int]$r.PendingInstallDeviceCount; notInstalled = [int]$r.NotInstalledDeviceCount; notApplicable = [int]$r.NotApplicableDeviceCount } }
-            else {
-                try {
-                    $s = & $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$id/installSummary"
-                    $counts = @{ installed = [int]$s.installedDeviceCount; failed = [int]$s.failedDeviceCount; pending = [int]$s.pendingInstallDeviceCount; notInstalled = [int]$s.notInstalledDeviceCount; notApplicable = [int]$s.notApplicableDeviceCount }
-                }
-                catch { $counts = $null }
-            }
-            [ordered]@{ name = [string]$a.appName; appId = $id; known = ($null -ne $counts)
-                installed = $(if ($counts) { $counts.installed } else { 0 }); failed = $(if ($counts) { $counts.failed } else { 0 }); pending = $(if ($counts) { $counts.pending } else { 0 })
-                notInstalled = $(if ($counts) { $counts.notInstalled } else { 0 }); notApplicable = $(if ($counts) { $counts.notApplicable } else { 0 }) }
-        }
-        @{ Rows = @($out); Note = $note }
-    }
+    $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) Get-WebInstallCounts -Graph $Graph -Ids @($apps | ForEach-Object { [string]$_.appId }) }
     if (-not $read.ok) { return $read }
-    return @{ ok = $true; rows = @($read.value.Rows); note = [string]$read.value.Note; at = (Get-Date).ToString('HH:mm') }
+    $rows = foreach ($a in $apps) {
+        $id = ([string]$a.appId).ToLowerInvariant()
+        $c = $read.value.Counts[$id]
+        [ordered]@{ name = [string]$a.appName; appId = $id; known = ($null -ne $c)
+            installed = $(if ($c) { $c.installed } else { 0 }); failed = $(if ($c) { $c.failed } else { 0 }); pending = $(if ($c) { $c.pending } else { 0 })
+            notInstalled = $(if ($c) { $c.notInstalled } else { 0 }); notApplicable = $(if ($c) { $c.notApplicable } else { 0 }) }
+    }
+    return @{ ok = $true; rows = @($rows); note = [string]$read.value.Note; at = (Get-Date).ToString('HH:mm') }
+}
+
+function Global:Get-WebUpdatesOverview {
+    <#
+      The Updates page: every app with managed updates - its current
+      version and how many devices have it, the version in pilot and what
+      the release rule says, the newest version available (winget, or the
+      installer in an own package's folder), the superseded versions - and
+      totals over all of them.
+    #>
+    $all = @((Read-WebCatalogRecords).Apps)
+    $managed = @($all | Where-Object { $_.managedUpdates })
+    $connected = [bool](Test-GraphCredentialsConfigured -Quiet)
+    $counts = @{}; $note = ''
+    if ($connected -and $managed.Count) {
+        $ids = @($managed | ForEach-Object { $_.appId; (Get-WebAppRelease $_).appId } | Where-Object { $_ })
+        if ($ids.Count) {
+            $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) Get-WebInstallCounts -Graph $Graph -Ids $ids }
+            if ($read.ok) { $counts = $read.value.Counts; $note = [string]$read.value.Note } else { $note = "Install counts couldn't be read: $($read.error)" }
+        }
+    }
+    $policy = $Global:App.ReleasePolicy
+    $rows = foreach ($a in $managed) {
+        $current = [string]$(if ($a.metadata) { $a.metadata.appVersion })
+        $curKey = ([string]$a.appId).ToLowerInvariant()
+        $cur = if ($a.appId) { $counts[$curKey] } else { $null }
+        $pilot = Get-WebAppRelease $a
+        $pilotKey = if ($pilot) { ([string]$pilot.appId).ToLowerInvariant() } else { '' }
+        $pc = if ($pilot) { $counts[$pilotKey] } else { $null }
+        $decision = $null
+        if ($pilot -and $pc) {
+            $at = [datetime]::MinValue
+            if (-not [datetime]::TryParseExact([string]$pilot.at, 'yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$at)) { $at = Get-Date }
+            $decision = Get-ReleaseDecision -ReleasedAt $at -Now (Get-Date) -Counts $pc -Policy $policy
+        }
+        $available = ''
+        if ($a.wingetId) {
+            $wKey = ([string]$a.wingetId).ToLowerInvariant()
+            $latest = if ($Global:App.WingetLatest) { [string]$Global:App.WingetLatest[$wKey] } else { '' }
+            if ($latest -and (Compare-AppVersionText $current $latest) -eq 1) { $available = $latest }
+        }
+        else {
+            $inst = Get-WebInstallerInfo $a.appName
+            if ($inst.version -and (Compare-AppVersionText $current $inst.version) -eq 1) { $available = $inst.version }
+        }
+        $tried = if ($cur) { $cur.installed + $cur.failed + $cur.pending + $cur.notInstalled } else { 0 }
+        [ordered]@{ name = [string]$a.appName; kind = $(if ($a.wingetId) { 'winget' } else { 'package' }); deployed = [bool]$a.appId; current = $current
+            installed = $(if ($cur) { $cur.installed } else { $null }); failed = $(if ($cur) { $cur.failed } else { $null }); pending = $(if ($cur) { $cur.pending } else { $null })
+            notInstalled = $(if ($cur) { $cur.notInstalled } else { $null }); onCurrentPercent = $(if ($tried) { [Math]::Round(100.0 * $cur.installed / $tried, 1) } else { $null })
+            pilot = $(if ($pilot) { [ordered]@{ version = [string]$pilot.version; at = [string]$pilot.at; installed = $(if ($pc) { $pc.installed } else { $null }); failed = $(if ($pc) { $pc.failed } else { $null }); pending = $(if ($pc) { $pc.pending } else { $null })
+                        action = $(if ($decision) { $decision.Action } else { '' }); reason = $(if ($decision) { $decision.Reason } else { '' }) } } else { $null })
+            available = $available; previous = @(Get-WebPreviousReleases $a | ForEach-Object { [string]$_.version }) }
+    }
+    $rows = @($rows)
+    $withCounts = @($rows | Where-Object { $null -ne $_.installed })
+    $installed = ($withCounts | ForEach-Object { [int]$_.installed } | Measure-Object -Sum).Sum
+    $total = ($withCounts | ForEach-Object { [int]$_.installed + [int]$_.failed + [int]$_.pending + [int]$_.notInstalled } | Measure-Object -Sum).Sum
+    return @{ ok = $true; connected = $connected; note = $note; at = (Get-Date).ToString('HH:mm'); rows = $rows
+        notManaged = @($all | Where-Object { -not $_.managedUpdates }).Count
+        summary = [ordered]@{ managed = $rows.Count; inPilot = @($rows | Where-Object { $_.pilot }).Count
+            ready = @($rows | Where-Object { $_.pilot -and $_.pilot.action -eq 'promote' }).Count; held = @($rows | Where-Object { $_.pilot -and $_.pilot.action -eq 'hold' }).Count
+            available = @($rows | Where-Object { $_.available -and -not $_.pilot }).Count
+            onCurrentPercent = $(if ($total) { [Math]::Round(100.0 * $installed / $total, 1) } else { $null }); devices = [int]$total } }
 }
 
 # ---------------------------------------------------------------- icons

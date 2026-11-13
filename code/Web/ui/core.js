@@ -155,6 +155,8 @@ function showView(v) {
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.view === v));
   $('viewApps').hidden = v !== 'apps';
   $('viewChecks').hidden = v !== 'checks';
+  $('viewUpdates').hidden = v !== 'updates';
+  if (v === 'updates') loadUpdates();
   $('viewScripts').hidden = v !== 'scripts';
   $('viewGroups').hidden = v !== 'groups';
   if (v === 'groups' && !groupsLoaded) loadGroups();

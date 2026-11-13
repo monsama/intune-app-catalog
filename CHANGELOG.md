@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.4.0
+
+### Added
+
+- **Updates page** (a tab between Apps and Checks): every app with managed
+  updates in one table - the current version and how many devices have it,
+  the version in pilot with its install counts and the release rule's
+  verdict (ready, waiting, on hold, and why), the newer version available
+  (winget's, or the installer in an own package's folder) and the
+  superseded versions kept for rollback.
+  - Tiles on top: apps with managed updates, in pilot (ready / on hold),
+    newer versions available, and the share of devices on the current
+    version.
+  - Each row's actions: Release, Promote, Withdraw, Roll back - the same
+    dialogs as on the Apps tab; the page reads Intune again when they close.
+  - **Check winget for new versions** and **Export CSV** (for an audit or a
+    report; cells that would start a formula are quoted).
+  - Without a connection, the page shows the catalog's side and says the
+    counts are missing.
+
+### Changed
+
+- The install overview and the Updates page read install counts the same
+  way: the apps install summary report once, then app by app for any the
+  report doesn't list.
+
 ## 2.3.1
 
 ### Added

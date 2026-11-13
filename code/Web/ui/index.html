@@ -12,6 +12,7 @@
 <script src="apps.js" defer></script>
 <script src="checks.js" defer></script>
 <script src="groups.js" defer></script>
+<script src="updates.js" defer></script>
 <script src="scripts.js" defer></script>
 <script src="settings.js" defer></script>
 <script src="app.js" defer></script>
@@ -21,6 +22,7 @@
   <h1 class="brand"><img src="icon.svg" alt="" width="22" height="22"><span>Intune App Catalog</span><span class="ver" id="ver"></span></h1>
   <nav class="tabs" role="tablist">
     <button class="tab" role="tab" data-view="apps" id="tabApps">Apps</button>
+    <button class="tab" role="tab" data-view="updates" id="tabUpdates">Updates</button>
     <button class="tab" role="tab" data-view="checks" id="tabChecks">Checks</button>
     <button class="tab" role="tab" data-view="groups" id="tabGroups">Groups</button>
     <button class="tab" role="tab" data-view="scripts" id="tabScripts">Platform scripts</button>
@@ -104,6 +106,25 @@
       </div>
     </div>
     <p class="hint">Click to select, Ctrl/Shift+click for several, double-click to edit, right-click for more. Keys: &uarr;/&darr; (Shift for several), Ctrl+A, Enter to edit, Delete to remove from the catalog, Ctrl+S to save in the editor.</p>
+  </section>
+
+  <!-- ============ Updates ============ -->
+  <section class="view" id="viewUpdates" hidden>
+    <div class="toolbar">
+      <p class="sub" id="updNote">Apps with managed updates: what version everyone has, what is in pilot, and what's new.</p>
+      <span class="spacer"></span>
+      <button class="btn" id="btnUpdWinget" title="Ask winget for the newest version of every Winget app">Check winget for new versions</button>
+      <button class="btn" id="btnUpdExport" title="This table as a CSV file - for an audit or a report">Export CSV</button>
+      <button class="btn" id="btnUpdReload" title="Read the counts from Intune again">Reload</button>
+    </div>
+    <div id="updTiles"></div>
+    <div class="tablewrap" tabindex="0" aria-label="Apps with managed updates">
+      <table class="grid" id="updGrid">
+        <thead><tr><th>App</th><th title="The version everyone gets">Current</th><th title="Devices with the current release installed, of those it is assigned to">Devices on it</th><th title="The version released to the pilot groups, and what the release rule says">Pilot</th><th title="A newer version: winget's, or the installer in an own package's folder">Available</th><th title="Earlier releases kept in Intune for rollback">Superseded</th><th><span class="sr">Actions</span></th></tr></thead>
+        <tbody id="updBody"></tbody>
+      </table>
+      <div class="empty" id="updEmpty" hidden><h2>No app has managed updates yet</h2><p id="updEmptyText">Select apps on the Apps tab and use More &gt; Managed updates on - Settings &gt; Defaults &gt; Managed updates has the pilot groups and the release rule.</p></div>
+    </div>
   </section>
 
   <!-- ============ Checks ============ -->

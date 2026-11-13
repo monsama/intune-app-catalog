@@ -110,6 +110,12 @@ try {
       await page.keyboard.press('Escape');
       check(!(await page.isVisible('#dlgApp[open]')), `${label}: Escape closes the editor`);
 
+      // Updates: no app has managed updates yet - the page says how to start.
+      await page.click('#tabUpdates');
+      await page.waitForFunction(() => !/Reading/.test(document.getElementById('updNote').textContent));
+      check(await page.isVisible('#updEmpty') && /Not connected/i.test(await page.textContent('#updNote')), `${label}: Updates explains the empty page and that there are no counts without a connection`, await page.textContent('#updNote'));
+      await noOverflow('Updates'); await unnamed('Updates'); await a11y('Updates'); await shot('updates');
+
       // Checks: runs, and says Intune wasn't checked.
       await page.click('#tabChecks');
       await page.click('#btnRunChecks');

@@ -486,6 +486,7 @@ function Global:Invoke-WebApi {
         '/api/winget-take-version' { return (Invoke-WithCatalogLock { Set-WebWingetVersions $Data }) }
         '/api/tenant-setup'     { return (Get-WebTenantSetup) }
         '/api/install-overview' { return (Get-WebInstallOverview) }
+        '/api/updates-overview' { return (Get-WebUpdatesOverview) }
         '/api/app-icons'        { return (Get-WebAppIcons $Data) }
         '/api/app-icon-intune'  { return (Get-WebIntuneIcon $Data) }
         '/api/app-compare'      { return (Get-WebAppVersionCompare $Data) }
