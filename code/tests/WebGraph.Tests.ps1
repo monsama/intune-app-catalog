@@ -38,6 +38,10 @@ $relWithdrawName = 'ZZ Graph Managed Withdraw'
 $relCurrent = 'eeeeeeee-0000-4000-8000-000000000001'
 $relPilot = 'dddddddd-0000-4000-8000-000000000001'
 $relPilot2 = 'dddddddd-0000-4000-8000-000000000002'
+$relOldName = 'ZZ Graph Managed Old'
+$relCur3 = 'eeeeeeee-0000-4000-8000-000000000003'
+$relPrevA = 'cccccccc-1111-4000-8000-00000000000a'
+$relPrevB = 'cccccccc-1111-4000-8000-00000000000b'
 $scriptText = "Write-Output 'hi'"
 
 $answers = [ordered]@{
@@ -52,6 +56,14 @@ $answers = [ordered]@{
     "GET beta/deviceAppManagement/mobileApps/$relPilot/installSummary" = @{ installedDeviceCount = 4; failedDeviceCount = 1; pendingInstallDeviceCount = 2 }
     "PATCH beta/deviceAppManagement/mobileApps/$relCurrent" = $null
     "DELETE beta/deviceAppManagement/mobileApps/$relPilot2" = $null
+    # Clean-up: B superseded A; A's relationship is taken off B, then A is deleted. Rollback renames B and the current one.
+    "GET beta/deviceAppManagement/mobileApps/$relPrevB/relationships" = @{ value = @(
+            @{ '@odata.type' = '#microsoft.graph.mobileAppSupersedence'; targetId = $relPrevA; targetType = 'child'; supersedenceType = 'update' },
+            @{ '@odata.type' = '#microsoft.graph.mobileAppDependency'; targetId = $appLinked; targetType = 'child'; dependencyType = 'autoInstall' }) }
+    "POST beta/deviceAppManagement/mobileApps/$relPrevB/updateRelationships" = $null
+    "DELETE beta/deviceAppManagement/mobileApps/$relPrevA" = $null
+    "PATCH beta/deviceAppManagement/mobileApps/$relPrevB" = $null
+    "PATCH beta/deviceAppManagement/mobileApps/$relCur3" = $null
     # The install overview's report (one row) and one app's icon.
     'POST beta/deviceManagement/reports/getAppsInstallSummaryReport' = @{
         Schema = @(@{ Column = 'ApplicationId' }, @{ Column = 'DisplayName' }, @{ Column = 'InstalledDeviceCount' }, @{ Column = 'FailedDeviceCount' }, @{ Column = 'PendingInstallDeviceCount' }, @{ Column = 'NotInstalledDeviceCount' }, @{ Column = 'NotApplicableDeviceCount' })
@@ -307,6 +319,12 @@ try {
         [System.IO.File]::WriteAllText($file, ((& $relApp $pair[0] $pair[1]) | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
         $created.Add($pair[0])
     }
+    # Two superseded versions of a third app: 1.0 (oldest) and 1.5, current 2.0.
+    $oldApp = & $relApp $relOldName $relPilot
+    $oldApp.appId = $relCur3; $oldApp.metadata.appVersion = '2.0'
+    $oldApp.releases = @(@{ version = '1.5'; appId = $relPrevB; state = 'previous'; at = '2026-11-01 10:00' }, @{ version = '1.0'; appId = $relPrevA; state = 'previous'; at = '2026-10-01 10:00' })
+    [System.IO.File]::WriteAllText((Join-Path $catDir ($relOldName.Replace(' ', '-') + '.json')), ($oldApp | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+    $created.Add($relOldName)
     $info = Invoke-Api '/api/release-info' @{ name = $relName }
     Check ($info.ok -and $info.managed -and $info.pilot.version -eq '2.0' -and $info.current -eq '1.0') 'release: the app''s pilot and current versions' ($info | ConvertTo-Json -Compress -Depth 4)
     Check ($info.pilotStatus.ok -and $info.pilotStatus.counts.installed -eq 4 -and $info.pilotStatus.counts.failed -eq 1 -and $info.pilotStatus.action -eq 'hold') 'release: pilot status from Intune - 20 % failed is more than the 5 % allowed, so hold' ($info.pilotStatus | ConvertTo-Json -Compress -Depth 4)
@@ -320,6 +338,8 @@ try {
     $runItem = if ($runReport) { @($runReport.items) | Where-Object { $_.app -eq $relName } | Select-Object -First 1 } else { $null }
     Check ($runReport -and $runReport.planOnly -and $runItem.outcome -eq 'hold' -and (Test-Path -LiteralPath $reportHtml)) 'nightly run (plan only): reports the pilot release as held, in HTML and JSON' $runOut
     Check ((Invoke-Api '/api/app-get' @{ name = $relName }).app.appId -eq $relCurrent) 'nightly run (plan only): nothing changed'
+    $cleanItem = if ($runReport) { @($runReport.items) | Where-Object { $_.app -eq $relOldName -and $_.outcome -eq 'cleanup' } | Select-Object -First 1 } else { $null }
+    Check ($cleanItem -and $cleanItem.text -like '*1.0*' -and $cleanItem.text -like '*1.5 is kept*') 'nightly run (plan only): reports the old superseded version for clean-up, keeping the newest' $runOut
     $runs = Invoke-Api '/api/update-runs'
     Check ($runs.ok -and @($runs.runs).Count -ge 1 -and -not $runs.running) 'nightly run: listed for Settings, not running any more' ($runs | ConvertTo-Json -Compress -Depth 3)
     $row = @((Invoke-Api '/api/catalog').apps) | Where-Object { $_.name -eq $relName }
@@ -327,6 +347,13 @@ try {
     $prom = Invoke-Api '/api/release-promoted' @{ name = $relName }
     $promApp = (Invoke-Api '/api/app-get' @{ name = $relName }).app
     Check ($prom.ok -and $promApp.appId -eq $relPilot -and $promApp.metadata.appVersion -eq '2.0' -and $promApp.metadata.installCommand -like "*--version '2.0'*" -and (@($promApp.releases | Where-Object { $_.state -eq 'previous' -and $_.appId -eq $relCurrent }).Count -eq 1) -and -not @($promApp.releases | Where-Object { $_.state -eq 'pilot' }).Count) 'release: promoted - the pilot app is current, pinned to 2.0, the old one kept as previous' ($promApp | ConvertTo-Json -Compress -Depth 5)
+    $cl = Invoke-Api '/api/release-cleanup' @{ name = $relOldName }
+    $clApp = (Invoke-Api '/api/app-get' @{ name = $relOldName }).app
+    Check ($cl.ok -and @($cl.removed) -contains '1.0' -and @($cl.kept) -contains '1.5' -and @($clApp.releases).Count -eq 1 -and $clApp.releases[0].appId -eq $relPrevB) 'clean-up: 1.0 taken out of 1.5''s supersedence and deleted; 1.5 kept for rollback' ($cl | ConvertTo-Json -Compress)
+    $rb = Invoke-Api '/api/release-rolledback' @{ name = $relOldName }
+    $rbApp = (Invoke-Api '/api/app-get' @{ name = $relOldName }).app
+    Check ($rb.ok -and $rbApp.appId -eq $relPrevB -and $rbApp.metadata.appVersion -eq '1.5' -and $rbApp.metadata.installCommand -like "*--version '1.5'*" -and @($rbApp.releases | Where-Object { $_.appId -eq $relCur3 -and $_.state -eq 'previous' }).Count -eq 1) 'rollback: 1.5 is current again, pinned; 2.0 kept as superseded' ($rbApp | ConvertTo-Json -Compress -Depth 5)
+    Check (-not (Invoke-Api '/api/release-cleanup' @{ name = $relOldName }).removed.Count) 'clean-up: nothing more to delete with one superseded version'
     $wd = Invoke-Api '/api/release-withdrawn' @{ name = $relWithdrawName }
     $wdApp = (Invoke-Api '/api/app-get' @{ name = $relWithdrawName }).app
     Check ($wd.ok -and $wd.deleted -and $wdApp.appId -eq $relCurrent -and -not @($wdApp.releases).Count) 'release: withdrawn - deleted from Intune, the current release stays' ($wd | ConvertTo-Json -Compress)

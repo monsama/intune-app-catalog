@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.3.0
+
+### Added
+
+- **Roll back to previous version...** (More menu, apps with managed
+  updates):
+  - The catalog's groups go back to the newest superseded release, which
+    becomes the current one again: its name in Intune, its App ID and
+    version in the catalog, and the install command and detection rule
+    pinned to it.
+  - The release rolled back from stays in Intune as "*App x.y (rolled
+    back)*".
+  - Devices that already have the newer version keep it; nothing is
+    uninstalled.
+- **Delete old versions from Intune...** (More menu) deletes an app's
+  superseded releases except the newest, which is kept for rollback.
+  - Intune won't delete an app another app supersedes, so each one is first
+    taken out of the newer release's relationships; that release's other
+    relationships, such as dependencies, stay.
+  - **The nightly run** does this too when **delete older superseded
+    versions** is on (Settings > Defaults > Managed updates). Otherwise its
+    report lists what could go.
+
+### Tests
+
+- On Windows, the server test creates the real scheduled task at a given
+  time, reads it back and removes it. It also reads a real EXE's version
+  from an own package's folder.
+- The Graph test covers clean-up (relationship removed, older version
+  deleted, newest kept) and rollback, and checks that the plan-only nightly
+  run reports the clean-up.
+
 ## 2.2.0
 
 ### Added

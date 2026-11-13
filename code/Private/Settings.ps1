@@ -203,13 +203,14 @@ function Global:Get-CertificateStatusText {
 function Global:ConvertTo-ReleasePolicy {
     # Pure: the managed-updates policy from a settings file or the page, each value checked; anything missing or wrong is the default.
     param($Raw)
-    $p = [ordered]@{ Days = 3; MaxFailedPercent = 5; MinInstalled = 1; AutoRelease = $false; AutoPromote = $false; RunAt = '03:00' }
+    $p = [ordered]@{ Days = 3; MaxFailedPercent = 5; MinInstalled = 1; AutoRelease = $false; AutoPromote = $false; CleanupOld = $false; RunAt = '03:00' }
     if (-not $Raw) { return $p }
     if ([string]$Raw.Days -match '^\d{1,2}$') { $p.Days = [int][string]$Raw.Days }
     if ([string]$Raw.MaxFailedPercent -match '^\d{1,3}(\.\d+)?$' -and [double][string]$Raw.MaxFailedPercent -le 100) { $p.MaxFailedPercent = [double][string]$Raw.MaxFailedPercent }
     if ([string]$Raw.MinInstalled -match '^\d{1,4}$') { $p.MinInstalled = [int][string]$Raw.MinInstalled }
     if ($null -ne $Raw.AutoRelease) { $p.AutoRelease = [bool]$Raw.AutoRelease }
     if ($null -ne $Raw.AutoPromote) { $p.AutoPromote = [bool]$Raw.AutoPromote }
+    if ($null -ne $Raw.CleanupOld) { $p.CleanupOld = [bool]$Raw.CleanupOld }
     if ([string]$Raw.RunAt -match '^([01]\d|2[0-3]):[0-5]\d$') { $p.RunAt = [string]$Raw.RunAt }
     return $p
 }

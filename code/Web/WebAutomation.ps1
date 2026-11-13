@@ -116,6 +116,19 @@ function Global:Invoke-ManagedUpdateRun {
                 else { & $say $a.appName 'current' "$current - no newer installer in its folder." }
             }
         }
+        # Superseded releases beyond the newest one (kept for rollback): deleted from Intune when the switch is on.
+        if (Test-GraphCredentialsConfigured -Quiet) {
+            foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { $_.managedUpdates -and @(Get-WebPreviousReleases $_).Count -gt 1 })) {
+                if ($PlanOnly -or -not $policy.CleanupOld) {
+                    $plan = Remove-WebOldReleases @{ name = $a.appName; planOnly = $true }
+                    & $say $a.appName 'cleanup' "Superseded release(s) $(@($plan.plan) -join ', ') could be deleted from Intune ($(@($plan.kept) -join ', ') is kept for rollback)$(if (-not $policy.CleanupOld) { ' - automatic clean-up is off.' } else { '.' })"
+                    continue
+                }
+                $c = Remove-WebOldReleases @{ name = $a.appName }
+                if (@($c.removed).Count) { & $say $a.appName 'cleaned' "Deleted superseded release(s) $(@($c.removed) -join ', ') from Intune; kept $(@($c.kept) -join ', ') for rollback." }
+                if (@($c.failed).Count) { & $say $a.appName 'failed' "Couldn't delete: $(@($c.failed) -join '; ')"; $failed++ }
+            }
+        }
     }
     catch { & $say '(run)' 'failed' "The run stopped: $($_.Exception.Message)"; $failed++ }
     finally { Remove-Item -LiteralPath $lockFile -Force -ErrorAction SilentlyContinue }
@@ -139,7 +152,7 @@ function Global:ConvertTo-ManagedUpdateReportHtml {
     # Pure: a run's report as a self-contained HTML page (no scripts, no outside files).
     param($Report)
     $enc = { param($t) [System.Net.WebUtility]::HtmlEncode([string]$t) }
-    $colors = @{ promoted = '#1b7f3b'; released = '#1b7f3b'; failed = '#b42318'; hold = '#b54708'; ready = '#175cd3'; available = '#175cd3'; wait = '#475467'; current = '#475467'; none = '#475467' }
+    $colors = @{ promoted = '#1b7f3b'; released = '#1b7f3b'; cleaned = '#1b7f3b'; cleanup = '#175cd3'; failed = '#b42318'; hold = '#b54708'; ready = '#175cd3'; available = '#175cd3'; wait = '#475467'; current = '#475467'; none = '#475467' }
     $rows = foreach ($i in @($Report.items)) {
         $c = if ($colors.ContainsKey([string]$i.outcome)) { $colors[[string]$i.outcome] } else { '#475467' }
         "<tr><td>$(& $enc $i.app)</td><td style=""color:$c;font-weight:600"">$(& $enc $i.outcome)</td><td>$(& $enc $i.text)</td></tr>"
@@ -150,7 +163,7 @@ function Global:ConvertTo-ManagedUpdateReportHtml {
 <style>body{font:14px system-ui,Segoe UI,sans-serif;margin:24px;color:#101828}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:6px 10px;border-bottom:1px solid #eaecf0;vertical-align:top}th{color:#475467;font-size:12px}</style></head>
 <body><h1>Managed updates</h1>
 <p>$(& $enc $Report.started) to $(& $enc $Report.finished)$(if ($Report.planOnly) { ' - plan only, nothing was changed' }) - $(@($Report.items).Count) item(s), $(& $enc $Report.failed) failure(s).</p>
-<p>Release rule: at least $(& $enc $p.Days) days in pilot, at most $(& $enc $p.MaxFailedPercent) % failed, at least $(& $enc $p.MinInstalled) installed. Automatic release: $(if ($p.AutoRelease) { 'on' } else { 'off' }); automatic promotion: $(if ($p.AutoPromote) { 'on' } else { 'off' }).</p>
+<p>Release rule: at least $(& $enc $p.Days) days in pilot, at most $(& $enc $p.MaxFailedPercent) % failed, at least $(& $enc $p.MinInstalled) installed. Automatic release: $(if ($p.AutoRelease) { 'on' } else { 'off' }); automatic promotion: $(if ($p.AutoPromote) { 'on' } else { 'off' }); clean-up of old versions: $(if ($p.CleanupOld) { 'on' } else { 'off' }).</p>
 <table><thead><tr><th>App</th><th>Outcome</th><th>What happened</th></tr></thead><tbody>
 $($rows -join "`n")
 </tbody></table></body></html>

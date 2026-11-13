@@ -447,6 +447,23 @@ try {
     Check ($ur.ok -and $null -ne $ur.schedule) 'nightly run: its runs and schedule can be read' ($ur | ConvertTo-Json -Compress -Depth 3)
     Check (-not (Invoke-Api '/api/update-run' @{ planOnly = $true }).ok) 'nightly run: Run now refused without a connection'
     Check (-not (Invoke-Api '/api/update-schedule' @{ on = $true; runAt = '25:99' }).ok) 'nightly run: a time that is not HH:mm is refused (or no scheduled tasks here)'
+    if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') {
+        # The real scheduled task: created at a time, read back, removed.
+        $sch = Invoke-Api '/api/update-schedule' @{ on = $true; runAt = '04:17' }
+        Check ($sch.ok -and $sch.schedule.exists -and $sch.schedule.runAt -eq '04:17') 'nightly run: the scheduled task is created at the time given' ($sch | ConvertTo-Json -Compress -Depth 3)
+        $unsch = Invoke-Api '/api/update-schedule' @{ on = $false }
+        Check ($unsch.ok -and -not $unsch.schedule.exists) 'nightly run: the scheduled task is removed again' ($unsch | ConvertTo-Json -Compress -Depth 3)
+        # An own package's installer: its version read from the file in the app's folder.
+        $ownName = 'ZZ Own Package ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+        [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $ownName; wingetId = ''; appId = ''; metadata = @{ description = 'own' } } })
+        $ownDir = Join-Path $repoRoot ('data\app-packages\' + $ownName.Replace(' ', '-'))
+        [void](New-Item -ItemType Directory -Path $ownDir -Force)
+        Copy-Item -LiteralPath (Get-Process -Id $PID).Path -Destination (Join-Path $ownDir 'setup.exe')
+        $oi = Invoke-Api '/api/release-info' @{ name = $ownName }
+        Check ($oi.ok -and $oi.kind -eq 'package' -and $oi.installer.found -and $oi.installer.file -eq 'setup.exe' -and $oi.installer.version -match '^\d+\.\d+') 'own package: the installer''s version is read from its folder' ($oi | ConvertTo-Json -Compress -Depth 4)
+        [void](Invoke-Api '/api/app-remove' @{ name = $ownName })
+        Remove-Item -LiteralPath $ownDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
     $muOff = Invoke-Api '/api/managed-updates' @{ names = @("$testName renamed"); on = $false }
     Check ($muOff.ok -and -not (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.managedUpdates) 'managed updates: turned off again'
 

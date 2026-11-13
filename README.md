@@ -52,6 +52,8 @@ it opens can talk to it.
 - **Nightly run** (`IntuneDeployment.ps1 -RunUpdates`, scheduled from
   Settings): promotes pilot releases by a rule (days, failure %, installs),
   releases new winget versions to pilot, and writes a report.
+- **Roll back** to the previous version, and **delete old versions** from
+  Intune (one is always kept for rollback) - by hand or in the nightly run.
 - Pull settings and groups back from Intune, field by field.
 - **Checks**: every way the catalog and Intune can disagree - apps renamed
   in Intune, App IDs that no longer exist, apps only in Intune, settings,

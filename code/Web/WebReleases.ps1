@@ -50,7 +50,7 @@ function Global:Get-WebReleaseInfo {
         detectionProblem = $(if ($own) { Test-VersionDetectionRule $(if ($a.metadata) { $a.metadata.detectionRule }) } else { '' })
         current = [string]$(if ($a.metadata) { $a.metadata.appVersion }); latest = $latest
         pilot = $(if ($pilot) { @{ version = $pilot.version; appId = $pilot.appId; at = $pilot.at } } else { $null })
-        previous = @(@($a.releases) | Where-Object { $_.state -eq 'previous' } | ForEach-Object { @{ version = $_.version; appId = $_.appId; at = $_.at } })
+        previous = @(Get-WebPreviousReleases $a | ForEach-Object { @{ version = $_.version; appId = $_.appId; at = $_.at } })
         pilotGroups = @($Global:App.PilotGroups) }
 }
 
@@ -127,6 +127,12 @@ function Global:Start-WebReleaseAssign {
         'pilot' { if (-not $pilot) { return @{ ok = $false; error = "$($a.appName) has no pilot release." } }; $id = $pilot.appId; $g = @{ Required = @($Global:App.PilotGroups); Available = @(); Uninstall = @(); Exclude = @($a.excludeFor) }; $label = "Assign $($a.appName) $($pilot.version) to pilot" }
         'promote' { if (-not $pilot) { return @{ ok = $false; error = "$($a.appName) has no pilot release." } }; $id = $pilot.appId; $g = @{ Required = @($a.requiredFor); Available = @($a.availableFor); Uninstall = @($a.uninstallFor); Exclude = @($a.excludeFor) }; $label = "Promote $($a.appName) $($pilot.version)" }
         'retire' { if (-not $a.appId) { return @{ ok = $false; error = "$($a.appName) has no current release." } }; $id = $a.appId; $g = $none; $label = "Retire $($a.appName) $(if ($a.metadata) { $a.metadata.appVersion })" }
+        'rollback' {
+            if ($pilot) { return @{ ok = $false; error = "$($a.appName) has a version in pilot - promote or withdraw it first." } }
+            $back = @(Get-WebPreviousReleases $a) | Select-Object -Last 1
+            if (-not $back) { return @{ ok = $false; error = "$($a.appName) has no earlier release to go back to." } }
+            $id = $back.appId; $g = @{ Required = @($a.requiredFor); Available = @($a.availableFor); Uninstall = @($a.uninstallFor); Exclude = @($a.excludeFor) }; $label = "Roll $($a.appName) back to $($back.version)"
+        }
         'withdraw' { if (-not $pilot) { return @{ ok = $false; error = "$($a.appName) has no pilot release." } }; $id = $pilot.appId; $g = $none; $label = "Withdraw $($a.appName) $($pilot.version)" }
         default { return @{ ok = $false; error = 'Unknown release step.' } }
     }
@@ -285,4 +291,100 @@ function Global:Get-WebPilotStatus {
     if (-not [datetime]::TryParseExact([string]$Pilot.at, 'yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$at)) { $at = Get-Date }
     $decision = Get-ReleaseDecision -ReleasedAt $at -Now (Get-Date) -Counts $counts -Policy $Global:App.ReleasePolicy
     return @{ ok = $true; counts = $counts; action = $decision.Action; reason = $decision.Reason }
+}
+
+# ---------------------------------------------------------------- rollback and clean-up
+
+function Global:Get-WebPreviousReleases {
+    # Pure: an app's superseded releases, oldest first ("at" sorts as text: yyyy-MM-dd HH:mm).
+    param($App)
+    return @(@($App.releases) | Where-Object { $_ -and $_.state -eq 'previous' } | Sort-Object { [string]$_.at }, { [string]$_.version })
+}
+
+function Global:Complete-WebRollback {
+    <#
+      After 'rollback' (the newest superseded release gets the catalog's
+      groups) and 'retire' (the current one loses its own): that release is
+      the current one again - named as the catalog names the app, its App ID
+      and version in the catalog - and the one rolled back from is kept as
+      superseded, renamed "<name> <version> (rolled back)". Devices that
+      have the newer version keep it (nothing is uninstalled); new devices
+      get the older one.
+    #>
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $a = $catalog.Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "'$($Data.name)' is no longer in the catalog." } }
+    $prev = @(Get-WebPreviousReleases $a) | Select-Object -Last 1
+    if (-not $prev) { return @{ ok = $false; error = "$($a.appName) has no earlier release to go back to." } }
+    $oldId = [string]$a.appId
+    $oldVersion = [string]$(if ($a.metadata) { $a.metadata.appVersion })
+    $notes = New-Object System.Collections.Generic.List[string]
+    $why = Rename-WebIntuneApp -AppId $prev.appId -Name $a.appName
+    if ($why) { $notes.Add("The restored release keeps its old name in Intune ($why).") }
+    $why = Rename-WebIntuneApp -AppId $oldId -Name "$($a.appName) $oldVersion (rolled back)"
+    if ($why) { $notes.Add("The release rolled back from keeps its name in Intune ($why).") }
+    $undo = New-WebUndo "Roll $($a.appName) back to $($prev.version)"
+    if (-not $a.metadata) { $a.metadata = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon (-not $a.wingetId) }
+    $a.metadata.appVersion = [string]$prev.version
+    [void](Set-ManagedAppPin $a -ProductCode ([string]$prev.productCode))
+    $a.releases = @(@($a.releases) | Where-Object { [string]$_.appId -ne [string]$prev.appId }) + @([pscustomobject]@{ version = $oldVersion; appId = $oldId; state = 'previous'; at = (Get-Date).ToString('yyyy-MM-dd HH:mm'); productCode = '' })
+    $a.appId = [string]$prev.appId
+    Write-WebAppFile -App $a -Undo $undo
+    Save-WebUndo $undo
+    $Global:App.IntuneAppsCache = $null
+    Write-Log "[OK] $($a.appName) rolled back to $($prev.version) (App ID $($prev.appId)); $oldVersion is kept as superseded."
+    return @{ ok = $true; version = $prev.version; notes = $notes.ToArray() }
+}
+
+function Global:Remove-WebOldReleases {
+    <#
+      Deletes an app's superseded releases from Intune except the newest one
+      (kept for rollback), oldest first. Intune won't delete an app another
+      app supersedes, so each one is first taken out of the relationships of
+      the release that superseded it (the next newer one). -planOnly: only
+      says which. @{ ok; removed; failed; kept }.
+    #>
+    param($Data)
+    $catalog = Read-WebCatalogRecords
+    $a = $catalog.Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "'$($Data.name)' is no longer in the catalog." } }
+    $prev = @(Get-WebPreviousReleases $a)
+    if ($prev.Count -le 1) { return @{ ok = $true; removed = @(); failed = @(); kept = @($prev | ForEach-Object { $_.version }) } }
+    $old = @($prev | Select-Object -First ($prev.Count - 1))
+    if ($Data.planOnly) { return @{ ok = $true; plan = @($old | ForEach-Object { $_.version }); removed = @(); failed = @(); kept = @($prev[-1].version) } }
+    $removed = New-Object System.Collections.Generic.List[string]
+    $failed = New-Object System.Collections.Generic.List[string]
+    for ($i = 0; $i -lt $old.Count; $i++) {
+        $target = [string]$old[$i].appId
+        $parent = [string]$prev[$i + 1].appId
+        $res = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action {
+            param($Graph)
+            $rels = @((& $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$parent/relationships").value)
+            $keep = @($rels | Where-Object { $_ -and ([string]$_.targetType -eq 'child' -or -not $_.targetType) -and [string]$_.targetId -ne $target } | ForEach-Object {
+                    $r = @{ '@odata.type' = [string]$_.'@odata.type'; targetId = [string]$_.targetId }
+                    if ([string]$_.'@odata.type' -like '*Supersedence') { $r.supersedenceType = [string]$_.supersedenceType } else { $r.dependencyType = [string]$_.dependencyType }
+                    $r
+                })
+            if (@($rels | Where-Object { [string]$_.targetId -eq $target }).Count) {
+                [void](& $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$parent/updateRelationships" 'POST' @{ relationships = @($keep) })
+            }
+            [void](& $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$target" 'DELETE')
+            $true
+        }
+        if ($res.ok) { $removed.Add([string]$old[$i].version) } else { $failed.Add("$($old[$i].version): $($res.error)") }
+    }
+    if ($removed.Count) {
+        Invoke-WithCatalogLock {
+            $fresh = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $a.appName } | Select-Object -First 1
+            if ($fresh) {
+                $gone = @($old | Where-Object { $removed -contains [string]$_.version } | ForEach-Object { [string]$_.appId })
+                $fresh.releases = @(@($fresh.releases) | Where-Object { $gone -notcontains [string]$_.appId })
+                Write-WebAppFile -App $fresh
+            }
+        } | Out-Null
+        $Global:App.IntuneAppsCache = $null
+    }
+    Write-Log "[$(if ($failed.Count) { 'WARN' } else { 'OK' })] $($a.appName): deleted superseded release(s) $($removed -join ', ') from Intune$(if ($failed.Count) { "; not deleted: $($failed -join '; ')" }); kept $($prev[-1].version) for rollback."
+    return @{ ok = ($failed.Count -eq 0); removed = $removed.ToArray(); failed = $failed.ToArray(); kept = @($prev[-1].version); error = $(if ($failed.Count) { "Not deleted: $($failed -join '; ')" } else { '' }) }
 }

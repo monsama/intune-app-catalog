@@ -861,7 +861,8 @@ function openMenu(x, y) {
     replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any,
     takeversion: sel.some(a => a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
     release: !!(one && one.managed && one.hasAppId && !one.pilotVersion), promote: !!(one && one.pilotVersion), withdraw: !!(one && one.pilotVersion),
-    managed: any };
+    managed: any,
+    rollback: !!(one && one.managed && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && (one.previousVersions || []).length > 1) };
   const why = {
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
@@ -873,6 +874,8 @@ function openMenu(x, y) {
     release: !one ? 'Select exactly one app.' : !one.managed ? 'Turn managed updates on first (More > Managed updates on).' : !one.hasAppId ? 'Deploy it first - that is its first release.' : 'A version is in pilot already - promote or withdraw it first.',
     promote: one ? 'No version of this app is in pilot.' : 'Select exactly one app.', withdraw: one ? 'No version of this app is in pilot.' : 'Select exactly one app.',
     managed: 'Select one or more apps first.',
+    rollback: !one ? 'Select exactly one app.' : one.pilotVersion ? 'A version is in pilot - promote or withdraw it first.' : 'No earlier release of this app is kept in Intune.',
+    cleanup: !one ? 'Select exactly one app.' : 'Only one superseded version (or none) - it is kept for rollback.',
   };
   for (const b of menu.querySelectorAll('button')) setEnabled(b, !!enable[b.dataset.act], why[b.dataset.act]);
   menu.querySelector('[data-act=package]').textContent = !any ? 'Package every app with its own installer' : enable.package ? `Package ${sel.length > 1 ? 'the selected apps' : 'this app'} (build .intunewin)` : 'Package (Winget apps use the shared package)';
@@ -925,6 +928,14 @@ async function menuAction(act) {
     case 'release': openRelease(one.name); break;
     case 'promote': promoteRelease(one.name); break;
     case 'withdraw': withdrawRelease(one.name); break;
+    case 'rollback': rollbackRelease(one.name); break;
+    case 'cleanup': {
+      const keep = one.previousVersions.slice(-1)[0], del = one.previousVersions.slice(0, -1);
+      if (!(await ask(`Delete ${del.length} superseded version${del.length === 1 ? '' : 's'} of ${one.name} from Intune?\n\n${del.join(', ')}\n\nThey have no assignments; devices keep what they have installed. ${keep} is kept so you can roll back.`))) return;
+      const r = await api('/api/release-cleanup', { name: one.name });
+      toast(r.ok ? `Deleted ${r.removed.join(', ')} from Intune; kept ${r.kept.join(', ')}.` : r.error, !r.ok); loadApps();
+      break;
+    }
     case 'managed': {
       const on = menu.querySelector('[data-act=managed]').dataset.on === '1', ws = sel().map(a => a.name);
       if (!(await ask(`Managed updates ${on ? 'on' : 'off'} for ${ws.length} app${ws.length === 1 ? '' : 's'}?\n\n${on ? 'Each installs exactly its App version, and new versions go to the pilot groups first (More > Release new version). Winget apps: the install command and detection rule follow the App version (set one with More > Take winget\'s version before the first deploy). Own packages: their detection rule must compare a version - a release updates it. Push settings sends the change to apps already in Intune.' : 'Their commands stay pinned to the current version until you change the install method (Batch edit > Install with).'} Undo takes it back.`, { ok: on ? 'Turn on' : 'Turn off', danger: false }))) return;
@@ -1269,5 +1280,17 @@ async function withdrawRelease(name) {
   if (!w.ok) { toast(`Withdrawing failed. ${w.error || ''}`, true); return; }
   const r = await api('/api/release-withdrawn', { name });
   toast(r.ok ? (r.deleted ? `${name} ${a.pilotVersion} withdrawn and deleted from Intune.` : `${name} ${a.pilotVersion} withdrawn, but not deleted from Intune: ${r.error}`) : r.error, !r.ok || !r.deleted);
+  loadApps();
+}
+
+async function rollbackRelease(name) {
+  const a = apps.find(x => x.name === name), back = (a.previousVersions || []).slice(-1)[0];
+  if (!(await ask(`Roll ${name} back to ${back}?\n\nThe catalog's groups go back to ${back}, and ${a.version || 'the current version'} loses them (it stays in Intune as superseded). Devices that already have ${a.version || 'the newer version'} keep it - nothing is uninstalled; devices that don't have it yet get ${back}.`, { ok: 'Roll back', danger: false }))) return;
+  runDialog(`Roll ${name} back to ${back}`, '');
+  const r1 = await releaseStep({ name, step: 'rollback' }, '/api/release-assign', 'runLog', `Assigning ${back} to the catalog's groups...`);
+  if (!r1.ok) { toast(`Rolling back failed - nothing else was changed. ${r1.error || ''}`, true); return; }
+  const r2 = await releaseStep({ name, step: 'retire' }, '/api/release-assign', 'runLog', `Taking the groups off ${a.version || 'the current release'}...`);
+  const r = await api('/api/release-rolledback', { name });
+  toast(r.ok ? `${name} is back on ${r.version}.${r2.ok ? '' : ' The newer release still has its assignments - remove them in Intune.'}${(r.notes || []).length ? ' ' + r.notes.join(' ') : ''}` : r.error, !r.ok || !r2.ok);
   loadApps();
 }
