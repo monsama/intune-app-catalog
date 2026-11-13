@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.2.0
+
+### Added
+
+- **Managed updates for your own packages.** An app with its own installer
+  can have managed updates too:
+  - **Release new version...** reads the version from the installer in
+    the app's folder (Packages\<app>): an MSI's ProductVersion and
+    ProductCode, or an EXE's version.
+  - It builds the `.intunewin` from that folder and releases it to the
+    pilot groups, like a Winget app.
+  - The detection rule is set to the new version (and the new MSI product
+    code), so devices on the old version get the update.
+  - The app needs a detection rule that compares a version: MSI, or a file
+    or registry rule by version. Managed updates explain when it doesn't.
+- **Release rule** (Settings > Defaults > Managed updates). A pilot release
+  is ready for everyone after N days in pilot, with at most X % of pilot
+  devices failed and at least M installed. It is put on hold as soon as
+  too many fail, or when nothing installed it for twice the pilot time.
+- **Pilot status before promoting:** Promote shows the pilot devices'
+  installed / failed / pending counts from Intune, and what the rule says.
+- Two switches for the nightly run (next release): **release new winget
+  versions to pilot automatically** and **promote automatically when
+  ready**.
+
 ## 2.1.0
 
 ### Added

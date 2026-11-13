@@ -1126,11 +1126,18 @@ function Global:Set-ManagedAppPin {
       Commands someone edited by hand (neither generated form) are left
       alone. Returns whether anything changed.
     #>
-    param($App)
-    if (-not $App.managedUpdates -or -not $App.wingetId -or -not $App.metadata) { return $false }
+    param($App, [string]$ProductCode)
+    if (-not $App.managedUpdates -or -not $App.metadata) { return $false }
     $m = $App.metadata
     $version = [string]$m.appVersion
     if (-not (Test-ReleaseVersionText $version)) { return $false }
+    # An app with its own package: the version is in its detection rule (and an MSI's product code, which a new MSI usually changes).
+    if (-not $App.wingetId) {
+        $rule = Set-DetectionRuleVersion -Rule $m.detectionRule -Version $version -ProductCode $ProductCode
+        if (-not $rule.Changed) { return $false }
+        $m.detectionRule = $rule.Rule
+        return $true
+    }
     if (-not (Get-AppWingetInstallMethod -WingetId $App.wingetId -InstallCommand $m.installCommand -UninstallCommand $m.uninstallCommand) -and $m.installCommand) { return $false }
     $c = Get-WingetCommandLines -WingetId $App.wingetId -Method "Managed" -InstallContext $m.installContext -Version $version
     $detect = Get-ManagedWingetDetection -WingetId $App.wingetId -Version $version
@@ -1138,4 +1145,64 @@ function Global:Set-ManagedAppPin {
     $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall
     $m.detectionRule = [pscustomobject]@{ Type = 'Script'; Script_Content = $detect }
     return $changed
+}
+
+function Global:Test-VersionDetectionRule {
+    # Pure: why -Rule can't follow a new version ('' when it can) - an MSI rule, or a file or registry rule that compares a version.
+    param($Rule)
+    if (-not $Rule) { return 'It has no detection rule.' }
+    switch ([string]$Rule.Type) {
+        'Msi' { return '' }
+        'File' { if ([string]$Rule.File_DetectionType -eq 'version') { return '' } }
+        'Registry' { if ([string]$Rule.Reg_DetectionType -eq 'version') { return '' } }
+    }
+    return "Its detection rule doesn't compare a version (an MSI rule, or a file or registry rule detecting by version) - a release couldn't tell the new version from the old one. Change it in the editor's Deploy settings."
+}
+
+function Global:Set-DetectionRuleVersion {
+    <#
+      Pure: a copy of -Rule that detects -Version or newer: the MSI version
+      (and -ProductCode when given), or the file / registry version. The
+      operator becomes "greater than or equal" when it was not a version
+      comparison. @{ Rule; Changed }; an unsuitable rule comes back as it was.
+    #>
+    param($Rule, [string]$Version, [string]$ProductCode)
+    if (Test-VersionDetectionRule $Rule) { return @{ Rule = $Rule; Changed = $false } }
+    $r = $Rule.PSObject.Copy()
+    $before = ($Rule | ConvertTo-Json -Compress -Depth 4)
+    $ops = 'greaterThanOrEqual', 'greaterThan', 'equal'
+    switch ([string]$r.Type) {
+        'Msi' {
+            $r.Msi_Version = $Version
+            if ([string]$r.Msi_VersionOperator -notin $ops) { $r.Msi_VersionOperator = 'greaterThanOrEqual' }
+            if ($ProductCode -match '^\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}$') { $r.Msi_ProductCode = $ProductCode.ToUpperInvariant() }
+        }
+        'File' { $r.File_DetectionValue = $Version; if ([string]$r.File_Operator -notin $ops) { $r.File_Operator = 'greaterThanOrEqual' } }
+        'Registry' { $r.Reg_DetectionValue = $Version; if ([string]$r.Reg_Operator -notin $ops) { $r.Reg_Operator = 'greaterThanOrEqual' } }
+    }
+    return @{ Rule = $r; Changed = (($r | ConvertTo-Json -Compress -Depth 4) -ne $before) }
+}
+
+function Global:Get-ReleaseDecision {
+    <#
+      Pure: what to do with a pilot release now. -Counts: the pilot app's
+      installed / failed / pending devices (Intune's install summary).
+      -Policy: Days (pilot at least this long), MaxFailedPercent (of
+      installed + failed), MinInstalled (devices).
+      Action: promote, wait, or hold (something is wrong - a person looks).
+    #>
+    param([datetime]$ReleasedAt, [datetime]$Now, $Counts, $Policy)
+    $days = [int]$Policy.Days; $max = [double]$Policy.MaxFailedPercent; $min = [int]$Policy.MinInstalled
+    $age = ($Now - $ReleasedAt).TotalDays
+    $installed = [int]$Counts.installed; $failed = [int]$Counts.failed
+    $tried = $installed + $failed
+    $pct = if ($tried) { [Math]::Round(100.0 * $failed / $tried, 1) } else { 0 }
+    $summary = "$installed installed, $failed failed$(if ([int]$Counts.pending) { ", $([int]$Counts.pending) pending" }) on pilot devices"
+    if ($tried -and $pct -gt $max) { return @{ Action = 'hold'; Reason = "$summary - $pct % failed, more than the $max % allowed. Look at Install status, then promote or withdraw it." } }
+    if ($age -lt $days) { return @{ Action = 'wait'; Reason = "$summary - in pilot for $([Math]::Floor($age)) of $days days." } }
+    if ($installed -lt $min) {
+        if ($age -ge 2 * [Math]::Max($days, 1)) { return @{ Action = 'hold'; Reason = "$summary - fewer than $min after $([Math]::Floor($age)) days. Check the pilot groups have devices." } }
+        return @{ Action = 'wait'; Reason = "$summary - waiting for at least $min." }
+    }
+    return @{ Action = 'promote'; Reason = "$summary$(if ($tried) { " ($pct % failed)" }) after $([Math]::Floor($age)) days." }
 }

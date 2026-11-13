@@ -386,9 +386,17 @@
         </article>
         <article class="card">
           <h2>Managed updates</h2>
-          <p class="sub" id="pilotGroupsHint">Winget apps with managed updates install a fixed version. A new version is released to these groups first (Required), and to everyone when you promote it. One group per line - created in Entra ID if missing.</p>
+          <p class="sub" id="pilotGroupsHint">Apps with managed updates install a fixed version. A new version is released to these groups first (Required), and to everyone when it's promoted. One group per line - created in Entra ID if missing.</p>
           <textarea id="pilotGroups" aria-labelledby="pilotGroupsHint" rows="3" class="full" placeholder="e.g. SG-Intune-Pilot" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
-          <div class="actions"><button class="btn" id="btnSavePilot" title="Save the pilot groups">Save pilot groups</button></div>
+          <h3>When a pilot release is ready for everyone</h3>
+          <div class="policy">
+            <label>In pilot at least <span class="muted">(days)</span><input id="rpDays" type="number" min="0" max="99" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <label>Failed at most <span class="muted">(% of pilot devices)</span><input id="rpFailed" type="number" min="0" max="100" step="0.5" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <label>Installed on at least <span class="muted">(pilot devices)</span><input id="rpMin" type="number" min="0" max="9999" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          </div>
+          <label class="chk" title="The nightly run releases a newer winget version to the pilot groups by itself"><input type="checkbox" id="rpAutoRelease">Release new winget versions to pilot automatically (nightly run)</label>
+          <label class="chk" title="The nightly run promotes a pilot release once the rule above says it's ready - otherwise it holds it and says why"><input type="checkbox" id="rpAutoPromote">Promote automatically when ready (nightly run)</label>
+          <div class="actions"><button class="btn" id="btnSavePilot" title="Save the pilot groups and the release rule">Save</button></div>
         </article>
       </div>
     </div>
@@ -731,6 +739,8 @@
 <dialog id="dlgRelease">
   <h2 id="relTitle">Release a new version</h2>
   <p class="sub" id="relText"></p>
+  <p class="formerror" id="relProblem" hidden></p>
+  <label class="chk" id="relBuildRow" hidden title="Package.ps1 builds the .intunewin from the app's folder before the release"><input type="checkbox" id="relBuild" checked>Build the package from its folder first <span class="muted" id="relFolder"></span></label>
   <label>Version to release<input id="relVersion" class="mono" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
   <p class="muted note" id="relGroups"></p>
   <p class="formerror" id="relErr" hidden></p>

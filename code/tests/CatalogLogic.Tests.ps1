@@ -147,6 +147,10 @@ $testableFunctionNames = @(
     "Test-ReleaseVersionText",
     "Get-ManagedWingetDetection",
     "Set-ManagedAppPin",
+    "Test-VersionDetectionRule",
+    "Set-DetectionRuleVersion",
+    "Get-ReleaseDecision",
+    "ConvertTo-ReleasePolicy",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -564,6 +568,30 @@ $relIntune.Add([pscustomobject]@{ id = 'dddddddd-0000-4000-8000-000000000001'; d
 $relIntune.Add([pscustomobject]@{ id = 'dddddddd-0000-4000-8000-0000000000ff'; displayName = 'Something Else' })
 $relFindings = @(Get-IntuneLinkFindings -Apps @($relBack) -IntuneApps $relIntune.ToArray() | Where-Object { $_.Problem -eq 'In Intune, not in the catalog' } | ForEach-Object { [string]$_.App })
 Assert-True (($relFindings -contains 'Something Else') -and ($relFindings -notcontains 'Rel App 2.0 (pilot)')) "Get-IntuneLinkFindings: a release's app in Intune isn't 'not in the catalog' (another app still is)"
+
+# Managed updates for own packages: the detection rule follows the version
+$msiRule = [pscustomobject]@{ Type = 'Msi'; Msi_ProductCode = '{11111111-1111-1111-1111-111111111111}'; Msi_VersionOperator = 'notConfigured'; Msi_Version = '' }
+$msiNew = Set-DetectionRuleVersion -Rule $msiRule -Version '2.5.0' -ProductCode '{22222222-2222-2222-2222-222222222222}'
+Assert-True ($msiNew.Changed -and $msiNew.Rule.Msi_Version -eq '2.5.0' -and $msiNew.Rule.Msi_VersionOperator -eq 'greaterThanOrEqual' -and $msiNew.Rule.Msi_ProductCode -eq '{22222222-2222-2222-2222-222222222222}' -and $msiRule.Msi_Version -eq '') "Set-DetectionRuleVersion: MSI version, operator and product code - on a copy"
+$fileRule = [pscustomobject]@{ Type = 'File'; File_Path = 'C:\x'; File_Name = 'a.exe'; File_DetectionType = 'version'; File_Operator = 'equal'; File_DetectionValue = '1.0' }
+$fileNew = Set-DetectionRuleVersion -Rule $fileRule -Version '1.1'
+Assert-True ($fileNew.Changed -and $fileNew.Rule.File_DetectionValue -eq '1.1' -and $fileNew.Rule.File_Operator -eq 'equal') "Set-DetectionRuleVersion: a file version rule keeps its version operator"
+$scriptRule = [pscustomobject]@{ Type = 'Script'; Script_Content = 'x' }
+Assert-True ((Test-VersionDetectionRule $scriptRule) -and -not (Set-DetectionRuleVersion -Rule $scriptRule -Version '1.1').Changed) "Test-VersionDetectionRule: a script rule can't follow a version"
+Assert-True ((Test-VersionDetectionRule ([pscustomobject]@{ Type = 'File'; File_DetectionType = 'exists' })) -ne '') "Test-VersionDetectionRule: a file-exists rule can't either"
+$ownApp = [pscustomobject]@{ managedUpdates = $true; wingetId = ''; metadata = [pscustomobject]@{ appVersion = '3.0'; detectionRule = $fileRule } }
+Assert-True ((Set-ManagedAppPin $ownApp) -and $ownApp.metadata.detectionRule.File_DetectionValue -eq '3.0') "Set-ManagedAppPin: an own package's detection rule follows the App version"
+
+# When a pilot release is ready for everyone
+$pol = ConvertTo-ReleasePolicy ([pscustomobject]@{ Days = 3; MaxFailedPercent = 10; MinInstalled = 2 })
+$t0 = [datetime]'2026-11-01 08:00'
+Assert-Equal 'wait' (Get-ReleaseDecision -ReleasedAt $t0 -Now $t0.AddDays(1) -Counts @{ installed = 5; failed = 0 } -Policy $pol).Action "Get-ReleaseDecision: waits out the pilot days"
+Assert-Equal 'promote' (Get-ReleaseDecision -ReleasedAt $t0 -Now $t0.AddDays(3.5) -Counts @{ installed = 9; failed = 1 } -Policy $pol).Action "Get-ReleaseDecision: promotes after the days with failures at the limit"
+Assert-Equal 'hold' (Get-ReleaseDecision -ReleasedAt $t0 -Now $t0.AddDays(1) -Counts @{ installed = 3; failed = 2 } -Policy $pol).Action "Get-ReleaseDecision: holds as soon as too many failed"
+Assert-Equal 'wait' (Get-ReleaseDecision -ReleasedAt $t0 -Now $t0.AddDays(4) -Counts @{ installed = 1; failed = 0 } -Policy $pol).Action "Get-ReleaseDecision: waits for enough installs"
+Assert-Equal 'hold' (Get-ReleaseDecision -ReleasedAt $t0 -Now $t0.AddDays(7) -Counts @{ installed = 0; failed = 0 } -Policy $pol).Action "Get-ReleaseDecision: holds when nothing installed it for twice the pilot time"
+$badPol = ConvertTo-ReleasePolicy ([pscustomobject]@{ Days = 'x'; MaxFailedPercent = 400; RunAt = '25:00'; AutoPromote = $true })
+Assert-True ($badPol.Days -eq 3 -and $badPol.MaxFailedPercent -eq 5 -and $badPol.RunAt -eq '03:00' -and $badPol.AutoPromote) "ConvertTo-ReleasePolicy: wrong values fall back to the defaults, good ones are kept"
 
 # Switching an existing app's install method
 Assert-Equal 'WAU' (Get-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $wauDefaults.installCommand -UninstallCommand $wauDefaults.uninstallCommand) `

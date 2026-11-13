@@ -49,6 +49,7 @@ $answers = [ordered]@{
     'GET beta/deviceAppManagement/mobileApps?$skiptoken=page2' = @{ value = @(@{ id = $appSameName; displayName = $sameName }) }
     # Managed updates: renaming the releases on promotion, deleting a withdrawn pilot.
     "PATCH beta/deviceAppManagement/mobileApps/$relPilot" = $null
+    "GET beta/deviceAppManagement/mobileApps/$relPilot/installSummary" = @{ installedDeviceCount = 4; failedDeviceCount = 1; pendingInstallDeviceCount = 2 }
     "PATCH beta/deviceAppManagement/mobileApps/$relCurrent" = $null
     "DELETE beta/deviceAppManagement/mobileApps/$relPilot2" = $null
     # The install overview's report (one row) and one app's icon.
@@ -308,6 +309,7 @@ try {
     }
     $info = Invoke-Api '/api/release-info' @{ name = $relName }
     Check ($info.ok -and $info.managed -and $info.pilot.version -eq '2.0' -and $info.current -eq '1.0') 'release: the app''s pilot and current versions' ($info | ConvertTo-Json -Compress -Depth 4)
+    Check ($info.pilotStatus.ok -and $info.pilotStatus.counts.installed -eq 4 -and $info.pilotStatus.counts.failed -eq 1 -and $info.pilotStatus.action -eq 'hold') 'release: pilot status from Intune - 20 % failed is more than the 5 % allowed, so hold' ($info.pilotStatus | ConvertTo-Json -Compress -Depth 4)
     Check (-not (Invoke-Api '/api/release-start' @{ name = $relName; version = '3.0' }).ok) 'release: refused while a version is in pilot'
     $row = @((Invoke-Api '/api/catalog').apps) | Where-Object { $_.name -eq $relName }
     Check ($row.managed -and $row.pilotVersion -eq '2.0') 'release: the Apps list shows the pilot version'

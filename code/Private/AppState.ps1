@@ -9,7 +9,7 @@ function Global:Initialize-AppState {
     # Paths & state
     # =====================================================================
     $Global:App.RootPath   = $RootPath
-    $Global:App.AppVersion = "2.1.0"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
+    $Global:App.AppVersion = "2.2.0"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
     # The catalog as last read (Read-WebCatalogRecords) - the shared
     # functions that look at "the catalog" (default dependencies, known
     # groups) read it from here.
@@ -33,6 +33,8 @@ function Global:Initialize-AppState {
     $Global:App.FavoriteGroups = New-Object System.Collections.Generic.List[string]
     # Managed updates: new releases go Required to these groups first (Settings > Defaults).
     $Global:App.PilotGroups = New-Object System.Collections.Generic.List[string]
+    # When a pilot release goes to everyone (Get-ReleaseDecision), and whether the nightly run releases and promotes by itself.
+    $Global:App.ReleasePolicy = [ordered]@{ Days = 3; MaxFailedPercent = 5; MinInstalled = 1; AutoRelease = $false; AutoPromote = $false; RunAt = '03:00' }
 
     # Settings > Automatic checks. Off by default: they need a connection to be
     # of any use, and the full audit reads every deployed app.

@@ -304,6 +304,9 @@ async function loadPrefs() {
   $('dDeps').value = (d.defaultDependencyAppNames || []).join('\n');
   $('favGroups').value = (p.favoriteGroups || []).join('\n');
   $('pilotGroups').value = (p.pilotGroups || []).join('\n');
+  const rp = p.releasePolicy || {};
+  $('rpDays').value = rp.Days ?? 3; $('rpFailed').value = rp.MaxFailedPercent ?? 5; $('rpMin').value = rp.MinInstalled ?? 1;
+  $('rpAutoRelease').checked = !!rp.AutoRelease; $('rpAutoPromote').checked = !!rp.AutoPromote;
 }
 async function savePrefs(part, okText, errEl) {
   const r = await api('/api/prefs-save', part);
@@ -313,7 +316,7 @@ async function savePrefs(part, okText, errEl) {
 }
 $('btnSaveChecks').addEventListener('click', () => savePrefs({ checks: Object.fromEntries([...document.querySelectorAll('[data-check]')].map(c => [c.dataset.check, c.checked])) }, 'Saved.'));
 $('btnSaveFolders').addEventListener('click', () => savePrefs({ folders: Object.fromEntries([...document.querySelectorAll('[data-folder]')].map(i => [i.dataset.folder, i.value.trim()])) }, 'Folders saved.'));
-$('btnSavePilot').addEventListener('click', () => savePrefs({ pilotGroups: lines('pilotGroups') }, 'Pilot groups saved.'));
+$('btnSavePilot').addEventListener('click', () => savePrefs({ pilotGroups: lines('pilotGroups'), releasePolicy: { Days: $('rpDays').value, MaxFailedPercent: $('rpFailed').value, MinInstalled: $('rpMin').value, AutoRelease: $('rpAutoRelease').checked, AutoPromote: $('rpAutoPromote').checked, RunAt: (prefs && prefs.releasePolicy && prefs.releasePolicy.RunAt) || '03:00' } }, 'Managed updates saved.'));
 $('btnSaveFavs').addEventListener('click', () => savePrefs({ favoriteGroups: lines('favGroups') }, 'Favourites saved.'));
 $('btnSaveDefaults').addEventListener('click', () => {
   const codes = lines('dCodes').map(l => { const m = /^(-?\d+)\s*[=:]\s*(\w+)$/.exec(l); return m ? { returnCode: m[1], type: m[2] } : { returnCode: l, type: '' }; });
