@@ -298,6 +298,13 @@ try {
     Check ($tv.ok -and @($tv.changed).Count -eq 0 -and @($tv.skipped).Count -eq 1) 'winget version: not taken before winget was asked' ($tv | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/tenant-setup').ok) 'tenant setup: needs a connection'
     Check (-not (Invoke-Api '/api/install-overview').ok) 'install overview: needs a connection'
+    Check (-not (Invoke-Api '/api/alert-test').ok) 'alerts: a test needs a webhook or an email first'
+    $badRings = Invoke-Api '/api/prefs-save' @{ releaseRingsText = 'Early adopters SG-1' }
+    Check (-not $badRings.ok -and $badRings.error -like 'Release rings*Line 1*') 'release rings: a line without "Name:" is refused, saying which' ($badRings | ConvertTo-Json -Compress)
+    $badAlert = Invoke-Api '/api/prefs-save' @{ alerts = @{ level = 'always'; webhookUrl = 'http://not-https.example/x' } }
+    Check (-not $badAlert.ok -and $badAlert.error -like '*https*') 'alerts: a webhook that is not https is refused' ($badAlert | ConvertTo-Json -Compress)
+    $tr = Invoke-Api '/api/updates-trend'
+    Check ($tr.ok -and @($tr.points).Count -eq 0) 'updates trend: no nightly run yet - no points'
     $uoff = Invoke-Api '/api/updates-overview'
     Check ($uoff.ok -and -not $uoff.connected -and $null -ne $uoff.summary -and @($uoff.rows | Where-Object { $null -ne $_.installed }).Count -eq 0) 'updates page: without a connection, the catalog''s side only - no counts' ($uoff | ConvertTo-Json -Compress -Depth 4)
     # Groups (no tenant in CI): what the catalog uses, and the refusals

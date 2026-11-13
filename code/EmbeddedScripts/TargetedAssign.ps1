@@ -306,7 +306,13 @@ try {
     # inclusion intent already exists for group id: ..."), failing the
     # ENTIRE app's assignment even though the preview had reported "no
     # change".
-    $assignBodyObject = New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdByName
+    $assignBodyObject = New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdByName -RequiredSettings $Config.RequiredSettings
+    if ($Config.RequiredSettings) {
+        $rs = $Config.RequiredSettings
+        Write-Host ("  Required installs: " + $(if ($rs.installTimeSettings) { "deadline $($rs.installTimeSettings.deadlineDateTime) (UTC)" } else { 'as soon as possible' }) +
+            $(if ($rs.restartSettings) { ", restart grace period $($rs.restartSettings.gracePeriodInMinutes) min" } else { '' }) + ", notifications: $($rs.notifications)" +
+            $(if ($rs.deliveryOptimizationPriority -eq 'foreground') { ', downloaded in the foreground (fast track)' } else { '' })) -ForegroundColor Gray
+    }
     $assignments = @($assignBodyObject.mobileAppAssignments)
 
     Write-Host "  Applying $($assignments.Count) assignment(s)..." -ForegroundColor Gray

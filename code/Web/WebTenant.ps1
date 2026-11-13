@@ -112,21 +112,30 @@ function Global:Get-WebUpdatesOverview {
       The Updates page: every app with managed updates - its current
       version and how many devices have it, the version in pilot and what
       the release rule says, the newest version available (winget, or the
-      installer in an own package's folder), the superseded versions - and
-      totals over all of them.
+      installer in an own package's folder), the superseded versions, the
+      devices Intune's inventory finds with an older version - and totals
+      over all of them. -NoInventory: without the inventory (the nightly
+      run's trend needs only the counts).
     #>
+    param([switch]$NoInventory)
     $all = @((Read-WebCatalogRecords).Apps)
     $managed = @($all | Where-Object { $_.managedUpdates })
     $connected = [bool](Test-GraphCredentialsConfigured -Quiet)
-    $counts = @{}; $note = ''
+    $counts = @{}; $note = ''; $older = @{}; $invNote = ''
     if ($connected -and $managed.Count) {
         $ids = @($managed | ForEach-Object { $_.appId; (Get-WebAppRelease $_).appId } | Where-Object { $_ })
         if ($ids.Count) {
             $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) Get-WebInstallCounts -Graph $Graph -Ids $ids }
             if ($read.ok) { $counts = $read.value.Counts; $note = [string]$read.value.Note } else { $note = "Install counts couldn't be read: $($read.error)" }
         }
+        if (-not $NoInventory) {
+            $deployed = @($managed | Where-Object { $_.appId -and $_.metadata -and $_.metadata.appVersion })
+            if ($deployed.Count) {
+                $inv = Invoke-WebGraph -Permission 'DeviceManagementManagedDevices.Read.All' -Action { param($Graph) Get-WebOlderOnDevices -Graph $Graph -Apps $deployed }
+                if ($inv.ok) { if ($inv.value -is [hashtable]) { $older = $inv.value } } else { $invNote = "Older versions on devices couldn't be read: $($inv.error)" }
+            }
+        }
     }
-    $policy = $Global:App.ReleasePolicy
     $rows = foreach ($a in $managed) {
         $current = [string]$(if ($a.metadata) { $a.metadata.appVersion })
         $curKey = ([string]$a.appId).ToLowerInvariant()
@@ -134,12 +143,10 @@ function Global:Get-WebUpdatesOverview {
         $pilot = Get-WebAppRelease $a
         $pilotKey = if ($pilot) { ([string]$pilot.appId).ToLowerInvariant() } else { '' }
         $pc = if ($pilot) { $counts[$pilotKey] } else { $null }
-        $decision = $null
-        if ($pilot -and $pc) {
-            $at = [datetime]::MinValue
-            if (-not [datetime]::TryParseExact([string]$pilot.at, 'yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$at)) { $at = Get-Date }
-            $decision = Get-ReleaseDecision -ReleasedAt $at -Now (Get-Date) -Counts $pc -Policy $policy
-        }
+        $decision = if ($pilot -and $pc) { Get-WebReleaseDecision -App $a -Pilot $pilot -Counts $pc } else { $null }
+        $nameKey = [string]$a.appName
+        $rings = @(Get-WebReleaseRings)
+        $ringNo = if ($pilot) { [Math]::Min([int]$pilot.ring, $rings.Count - 1) } else { 0 }
         $available = ''
         if ($a.wingetId) {
             $wKey = ([string]$a.wingetId).ToLowerInvariant()
@@ -155,19 +162,89 @@ function Global:Get-WebUpdatesOverview {
             installed = $(if ($cur) { $cur.installed } else { $null }); failed = $(if ($cur) { $cur.failed } else { $null }); pending = $(if ($cur) { $cur.pending } else { $null })
             notInstalled = $(if ($cur) { $cur.notInstalled } else { $null }); onCurrentPercent = $(if ($tried) { [Math]::Round(100.0 * $cur.installed / $tried, 1) } else { $null })
             pilot = $(if ($pilot) { [ordered]@{ version = [string]$pilot.version; at = [string]$pilot.at; installed = $(if ($pc) { $pc.installed } else { $null }); failed = $(if ($pc) { $pc.failed } else { $null }); pending = $(if ($pc) { $pc.pending } else { $null })
-                        action = $(if ($decision) { $decision.Action } else { '' }); reason = $(if ($decision) { $decision.Reason } else { '' }) } } else { $null })
+                        action = $(if ($decision) { $decision.Action } else { '' }); reason = $(if ($decision) { $decision.Reason } else { '' })
+                        fastTrack = [bool]$pilot.fastTrack; ring = $ringNo; ringCount = $rings.Count; ringName = [string]$rings[$ringNo].Name } } else { $null })
+            ownRule = [bool]$a.releaseRule
+            older = $(if ($older.ContainsKey($nameKey)) { $older[$nameKey] } else { $null })
             available = $available; previous = @(Get-WebPreviousReleases $a | ForEach-Object { [string]$_.version }) }
     }
     $rows = @($rows)
     $withCounts = @($rows | Where-Object { $null -ne $_.installed })
     $installed = ($withCounts | ForEach-Object { [int]$_.installed } | Measure-Object -Sum).Sum
     $total = ($withCounts | ForEach-Object { [int]$_.installed + [int]$_.failed + [int]$_.pending + [int]$_.notInstalled } | Measure-Object -Sum).Sum
-    return @{ ok = $true; connected = $connected; note = $note; at = (Get-Date).ToString('HH:mm'); rows = $rows
+    $olderDevices = (@($rows | Where-Object { $_.older } | ForEach-Object { [int]$_.older.devices }) | Measure-Object -Sum).Sum
+    return @{ ok = $true; connected = $connected; note = (@($note, $invNote) | Where-Object { $_ }) -join ' '; at = (Get-Date).ToString('HH:mm'); rows = $rows
+        rings = @(Get-WebReleaseRings | ForEach-Object { [ordered]@{ name = $_.Name; groups = @($_.Groups) } }); inventory = [bool]($connected -and -not $NoInventory -and -not $invNote)
         notManaged = @($all | Where-Object { -not $_.managedUpdates }).Count
         summary = [ordered]@{ managed = $rows.Count; inPilot = @($rows | Where-Object { $_.pilot }).Count
             ready = @($rows | Where-Object { $_.pilot -and $_.pilot.action -eq 'promote' }).Count; held = @($rows | Where-Object { $_.pilot -and $_.pilot.action -eq 'hold' }).Count
             available = @($rows | Where-Object { $_.available -and -not $_.pilot }).Count
-            onCurrentPercent = $(if ($total) { [Math]::Round(100.0 * $installed / $total, 1) } else { $null }); devices = [int]$total } }
+            onCurrentPercent = $(if ($total) { [Math]::Round(100.0 * $installed / $total, 1) } else { $null }); devices = [int]$total; olderDevices = [int]$olderDevices } }
+}
+
+function Global:Get-WebOlderOnDevices {
+    <#
+      Intune's inventory of apps on devices (detectedApps) for each managed
+      app - by its name on devices (detectedName, else the catalog's name),
+      the entries whose version is older than the app's current one: those
+      devices still have an old version, whether Intune installed it or
+      someone did by hand. Runs inside Invoke-WebGraph.
+      @{ appName -> @{ devices; versions = @(@{ version; devices }) } }.
+    #>
+    param([scriptblock]$Graph, $Apps)
+    $out = @{}
+    foreach ($a in @($Apps)) {
+        $name = if ($a.detectedName) { [string]$a.detectedName } else { [string]$a.appName }
+        $current = [string]$a.metadata.appVersion
+        $filter = [Uri]::EscapeDataString("startswith(displayName,'" + $name.Replace("'", "''") + "')")
+        $uri = "https://graph.microsoft.com/beta/deviceManagement/detectedApps?`$filter=$filter&`$select=id,displayName,version,deviceCount&`$top=999"
+        $found = New-Object System.Collections.Generic.List[object]
+        $pages = 0
+        try {
+            while ($uri -and $pages -lt 10) {
+                $page = & $Graph $uri
+                foreach ($d in @($page.value)) { if ($d) { $found.Add($d) } }
+                $uri = [string]$page.'@odata.nextLink'; $pages++
+            }
+        }
+        # A missing permission is everyone's problem - said once, by the caller; anything else skips just this app.
+        catch { if ("$($_.Exception.Message)" -match '^(401|403)\b') { throw }; continue }
+        $byVersion = @{}
+        # The name itself, or followed by a version or "(x64)" - not "<name> Meeting Add-in", another product.
+        $same = '^' + [regex]::Escape($name) + '(\s+(v?\d[\w.\-]*|\([^)]*\)))*\s*$'
+        foreach ($d in $found) {
+            if ([string]$d.displayName -notmatch $same) { continue }
+            $v = ([string]$d.version).Trim()
+            if (-not $v -or (Compare-AppVersionText $v $current) -ne 1) { continue }
+            $byVersion[$v] = [int]$byVersion[$v] + [int]$d.deviceCount
+        }
+        if ($byVersion.Count) {
+            $versions = @($byVersion.Keys | Sort-Object { $byVersion[$_] } -Descending | ForEach-Object { [ordered]@{ version = $_; devices = $byVersion[$_] } })
+            $appKey = [string]$a.appName
+            $out[$appKey] = [ordered]@{ devices = ($byVersion.Values | Measure-Object -Sum).Sum; versions = $versions }
+        }
+    }
+    return $out
+}
+
+function Global:Get-WebUpdatesTrend {
+    <#
+      The Updates page's trend: from the nightly runs' reports (the last 60
+      are kept), the share of devices on the current version - one point a
+      day (that day's last run), overall and per app.
+    #>
+    $dir = Join-Path (Get-AppFolder -Kind Logs) 'reports'
+    $byDay = [ordered]@{}
+    if (Test-Path -LiteralPath $dir) {
+        foreach ($f in @(Get-ChildItem -LiteralPath $dir -Filter 'managed-updates-*.json' -File | Sort-Object Name)) {
+            try { $r = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json } catch { continue }
+            if (-not $r.trend -or $null -eq $r.trend.onCurrentPercent) { continue }
+            $day = ([string]$r.started).Substring(0, [Math]::Min(10, ([string]$r.started).Length))
+            $byDay[$day] = [ordered]@{ day = $day; percent = [double]$r.trend.onCurrentPercent; devices = [int]$r.trend.devices
+                apps = @(@($r.trend.apps) | ForEach-Object { [ordered]@{ app = [string]$_.app; version = [string]$_.version; percent = [double]$_.percent } }) }
+        }
+    }
+    return @{ ok = $true; points = @($byDay.Values | Select-Object -Last 30) }
 }
 
 # ---------------------------------------------------------------- icons

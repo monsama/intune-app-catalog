@@ -64,6 +64,13 @@ $answers = [ordered]@{
     "DELETE beta/deviceAppManagement/mobileApps/$relPrevA" = $null
     "PATCH beta/deviceAppManagement/mobileApps/$relPrevB" = $null
     "PATCH beta/deviceAppManagement/mobileApps/$relCur3" = $null
+    # The Updates page: Intune's inventory for the app with two superseded versions (current 2.0) -
+    # older versions under its name count, a newer or same version and another product ("... Helper") don't.
+    "GET beta/deviceManagement/detectedApps?`$filter=startswith(displayName,'$relOldName')&`$select=id,displayName,version,deviceCount&`$top=999" = @{ value = @(
+            @{ displayName = $relOldName; version = '1.5'; deviceCount = 3 }, @{ displayName = "$relOldName 1.0 (x64)"; version = '1.0'; deviceCount = 2 },
+            @{ displayName = "$relOldName Helper"; version = '0.1'; deviceCount = 9 }, @{ displayName = $relOldName; version = '2.0'; deviceCount = 50 }) }
+    # Alerts: the email, sent with Graph.
+    'POST v1.0/users/reports@contoso.com/sendMail' = $null
     # The install overview's report (one row) and one app's icon.
     'POST beta/deviceManagement/reports/getAppsInstallSummaryReport' = @{
         Schema = @(@{ Column = 'ApplicationId' }, @{ Column = 'DisplayName' }, @{ Column = 'InstalledDeviceCount' }, @{ Column = 'FailedDeviceCount' }, @{ Column = 'PendingInstallDeviceCount' }, @{ Column = 'NotInstalledDeviceCount' }, @{ Column = 'NotApplicableDeviceCount' })
@@ -334,6 +341,20 @@ try {
     $uoOld = @($uo.rows) | Where-Object { $_.name -eq $relOldName } | Select-Object -First 1
     Check ($uo.ok -and $uo.connected -and $uoRow.current -eq '1.0' -and $uoRow.pilot.version -eq '2.0' -and $uoRow.pilot.installed -eq 4 -and $uoRow.pilot.action -eq 'hold' -and $uo.summary.inPilot -ge 2 -and $uo.summary.held -ge 1) 'updates page: the pilot release with its counts and the release rule''s verdict' ($uo | ConvertTo-Json -Compress -Depth 5)
     Check ($uoOld -and -not $uoOld.pilot -and (@($uoOld.previous) -join ',') -eq '1.0,1.5' -and @($uo.rows | Where-Object { $_.name -eq $linkedName }).Count -eq 0) 'updates page: superseded versions listed; apps without managed updates left out' ($uoOld | ConvertTo-Json -Compress -Depth 4)
+    Check ($uoOld.older.devices -eq 5 -and @($uoOld.older.versions).Count -eq 2 -and $uo.summary.olderDevices -eq 5) 'updates page: devices on older versions from the inventory - not newer ones, not another product' ($uoOld.older | ConvertTo-Json -Compress -Depth 4)
+    # Release rings (test mode keeps settings in memory only): the release is judged as ring 1 of 2.
+    [void](Invoke-Api '/api/prefs-save' @{ releaseRingsText = 'Early adopters: SG-ZZ-Exists' })
+    $ri2 = Invoke-Api '/api/release-info' @{ name = $relName }
+    Check (@($ri2.rings).Count -eq 2 -and $ri2.rings[1].name -eq 'Early adopters' -and $ri2.pilotStatus.ringCount -eq 2 -and $ri2.pilotStatus.action -eq 'hold') 'release rings: listed, and the release is judged in ring 1 of 2 (still held: too many failed)' ($ri2 | ConvertTo-Json -Compress -Depth 5)
+    Check (-not (Invoke-Api '/api/prefs-save' @{ releaseRingsText = 'no colon here' }).ok) 'release rings: a line without "Name:" is refused'
+    [void](Invoke-Api '/api/prefs-save' @{ releaseRingsText = '' })
+    # Alerts: a test to Teams (kept in memory in test mode) and an email through Graph.
+    [void](Invoke-Api '/api/prefs-save' @{ alerts = @{ level = 'attention'; webhookUrl = 'https://example.invalid/workflows/abc'; mailFrom = 'reports@contoso.com'; mailTo = @('it@contoso.com') } })
+    $prefsNow = Invoke-Api '/api/prefs'
+    Check ($prefsNow.alerts.webhookSet -and -not ($prefsNow | ConvertTo-Json -Depth 6 -Compress).Contains('example.invalid')) 'alerts: the page learns a webhook is saved, never its address'
+    $at = Invoke-Api '/api/alert-test'
+    Check ($at.ok -and $at.message -like '*Teams*' -and $at.message -like '*email*') 'alerts: the test goes to Teams and by email' ($at | ConvertTo-Json -Compress)
+    [void](Invoke-Api '/api/prefs-save' @{ alerts = @{ level = 'off'; clearWebhook = $true; mailFrom = ''; mailTo = @() } })
     # The unattended run (-RunUpdates -PlanOnly) on the same test answers: decides, reports, changes nothing.
     $env:INTUNE_CATALOG_TEST_GRAPH = $answersFile
     try { $runOut = (& $hostExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $entry -RunUpdates -PlanOnly 2>&1 | Out-String) }

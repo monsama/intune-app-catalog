@@ -50,7 +50,10 @@ it opens can talk to it.
   Intune reports every device's state per version. Own packages too: the
   version comes from the installer in the app's folder. The **Updates**
   tab shows them all: versions, pilot verdicts, devices on the current
-  version, a CSV export. See [docs/managed-updates.md](docs/managed-updates.md).
+  version (and a 30-day trend), older versions found on devices, a CSV
+  export. Release rings, a fast track for security fixes, per-app rules,
+  install deadlines, and Teams / email alerts from the nightly run. See
+  [docs/managed-updates.md](docs/managed-updates.md).
 - **Nightly run** (`IntuneDeployment.ps1 -RunUpdates`, scheduled from
   Settings): promotes pilot releases by a rule (days, failure %, installs),
   releases new winget versions to pilot, and writes a report.

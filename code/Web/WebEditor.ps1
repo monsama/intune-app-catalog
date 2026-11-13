@@ -44,6 +44,8 @@ function Global:Get-WebAppEditable {
         excludeFor   = @($App.excludeFor | ForEach-Object { [string]$_ })
         hasMetadata  = [bool]$m
         managedUpdates = [bool]$App.managedUpdates
+        releaseRule  = $(if ($App.releaseRule) { [ordered]@{ days = $App.releaseRule.days; maxFailedPercent = $App.releaseRule.maxFailedPercent; minInstalled = $App.releaseRule.minInstalled } } else { $null })
+        detectedName = [string]$App.detectedName
         releases     = @(@($App.releases) | ForEach-Object { [ordered]@{ version = [string]$_.version; appId = [string]$_.appId; state = [string]$_.state; at = [string]$_.at } })
         icon         = $(if ($App.icon -and $App.icon.value) { [ordered]@{ type = [string]$App.icon.type; value = [string]$App.icon.value } } else { $null })
         metadata     = [ordered]@{
@@ -218,6 +220,9 @@ function Global:Merge-WebAppEdit {
         # Managed updates: what the editor says (only a Winget app can have them), else what the app had - or, for a new app, the default install method.
         managedUpdates   = $(if ($null -ne $Edit.managedUpdates) { [bool]$Edit.managedUpdates } elseif ($Existing) { [bool]$Existing.managedUpdates } else { ([string]$Edit.wingetId).Trim() -and [string]$Global:App.DefaultAppSettings.WingetInstallMethod -eq 'Managed' })
         releases         = @($(if ($Existing) { $Existing.releases }))
+        # The app's own release rule: what the editor sends (empty fields: Settings' rule), else what it had.
+        releaseRule      = $(if ($null -ne $Edit.releaseRule) { ConvertTo-AppReleaseRule $Edit.releaseRule } elseif ($Existing) { $Existing.releaseRule } else { $null })
+        detectedName     = $(if ($null -ne $Edit.detectedName) { $dn = ([string]$Edit.detectedName).Trim(); if ($dn.Length -le 100) { $dn } else { $dn.Substring(0, 100) } } elseif ($Existing) { [string]$Existing.detectedName } else { '' })
         # iconChange: 'set' (with icon), 'remove', or anything else to keep the one it has.
         icon             = $(switch ([string]$Edit.iconChange) { 'set' { ConvertTo-AppIcon $Edit.icon } 'remove' { $null } default { if ($Existing) { $Existing.icon } else { $null } } })
         requiredFor      = & $groups $Edit.requiredFor

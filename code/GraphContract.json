@@ -94,6 +94,26 @@
           "runAsAccount", "runAs32Bit", "enforceSignatureCheck",
           "lastModifiedDateTime"
         ]
+      },
+      {
+        "type": "win32LobAppAssignmentSettings",
+        "why": "Managed updates: a release's Required assignments - install deadline, restart grace period, notifications (TargetedAssign.ps1)",
+        "properties": ["notifications", "deliveryOptimizationPriority", "installTimeSettings", "restartSettings"]
+      },
+      {
+        "type": "mobileAppInstallTimeSettings",
+        "why": "Managed updates: the install deadline",
+        "properties": ["useLocalTime", "startDateTime", "deadlineDateTime"]
+      },
+      {
+        "type": "win32LobAppRestartSettings",
+        "why": "Managed updates: the restart grace period",
+        "properties": ["gracePeriodInMinutes", "countdownDisplayBeforeRestartInMinutes", "restartNotificationSnoozeDurationInMinutes"]
+      },
+      {
+        "type": "detectedApp",
+        "why": "The Updates page: older versions found on devices (Intune's inventory)",
+        "properties": ["displayName", "version", "deviceCount"]
       }
     ],
     "v1.0": [

@@ -465,3 +465,21 @@ label.inline input[type="time"] { width: auto; }
 #viewUpdates .toolbar .sub { margin: 0; }
 #updGrid td .why { font-size: 12px; color: var(--muted); margin-top: 3px; max-width: 420px; }
 #updGrid td.act { width: 1%; white-space: nowrap; }
+.ownrule { border: 1px solid var(--bd2); border-radius: var(--r-m); padding: 8px 12px 10px; margin: 4px 0 10px; }
+.ownrule legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
+.ownrule > label { font-size: 12px; color: var(--muted); display: block; }
+.ownrule > label input { display: block; width: 100%; margin-top: 4px; }
+.policy.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+label.full { display: block; font-size: 12px; color: var(--muted); margin: 6px 0; }
+label.full input { margin-top: 4px; }
+#updTrend { background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); padding: 12px 14px; margin: 0 0 12px; box-shadow: var(--shadow); }
+#updTrend h2 { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+#updTrend details { margin-top: 6px; font-size: 12px; }
+.trendplot { position: relative; }
+.trendplot svg { display: block; width: 100%; height: auto; }
+.trendplot .grid { stroke: var(--bd2); stroke-width: 1; }
+.trendplot .axis { fill: var(--muted); font-size: 11px; }
+.trendplot .line { fill: none; stroke: var(--info); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.trendplot .dot { fill: var(--info); stroke: var(--surface); stroke-width: 2; }
+.trendplot .cross { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.charttip { position: absolute; background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-m); padding: 4px 8px; font-size: 12px; box-shadow: var(--shadow); pointer-events: none; white-space: nowrap; }

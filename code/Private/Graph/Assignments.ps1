@@ -149,9 +149,11 @@ function Global:New-AppAssignmentBody {
       group-name -> id lookup. A group with no id known is skipped (the
       caller creates or resolves them first). Sending this replaces the
       app's whole assignment list, which is why the entries have to be
-      complete, exclusions included.
+      complete, exclusions included. -RequiredSettings: assignment settings
+      (install deadline, restart grace period, notifications) for every
+      Required inclusion - $null sends none, Intune's defaults.
     #>
-    param($Entries, $GroupIdByName)
+    param($Entries, $GroupIdByName, $RequiredSettings = $null)
     $assignments = @(@($Entries) | ForEach-Object {
         # Same null-entry guard as Get-AssignmentDiff, and it matters more
         # here: this is the body of the call that REPLACES an app's whole
@@ -161,11 +163,13 @@ function Global:New-AppAssignmentBody {
         if ($GroupIdByName -and $GroupIdByName.Contains($_.Group)) { $groupId = [string]$GroupIdByName[$_.Group] }
         if (-not $groupId) { return }
         $targetType = if ($_.Mode -eq 'exclude') { "#microsoft.graph.exclusionGroupAssignmentTarget" } else { "#microsoft.graph.groupAssignmentTarget" }
-        @{
+        $one = @{
             "@odata.type" = "#microsoft.graph.mobileAppAssignment"
             intent        = $_.Intent
             target        = @{ "@odata.type" = $targetType; groupId = $groupId }
         }
+        if ($RequiredSettings -and $_.Intent -eq 'required' -and $_.Mode -ne 'exclude') { $one.settings = $RequiredSettings }
+        $one
     })
     return @{ mobileAppAssignments = @($assignments) }
 }

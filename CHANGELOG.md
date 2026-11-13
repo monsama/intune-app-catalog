@@ -1,5 +1,46 @@
 # Changelog
 
+## 2.5.0
+
+### Added
+
+- **Alerts from the nightly run:** a card in a Teams channel (a Workflows
+  webhook) and/or an email sent with Graph (Mail.Send), after every run or
+  only when something needs a look - failed, on hold, ready, released,
+  promoted. **Send a test** in Settings. The webhook address is kept on
+  this PC and never shown again on the page; an error names only its host.
+- **Fast track** for security fixes: a release ticked "Fast track" is
+  judged after a few hours (Settings: 4 by default) instead of days,
+  downloads in the foreground, skips the release rings and goes to
+  everyone. A second scheduled task looks at fast-track releases every two
+  hours and promotes them when ready, even with automatic promotion off.
+- **An app's own release rule** (editor > Managed updates): its own days,
+  failure limit and minimum installs over Settings' rule.
+- **Release rings:** further stages after the pilot groups (Settings, one
+  per line, "Name: group, group"). A release that passes the rule in one
+  ring goes on to the next (**Next ring...**, or the nightly run), then to
+  everyone; the days count again in each ring.
+- **Install deadline, restart grace period and notifications** on a
+  release's Required assignments (Settings > Managed updates). Users can
+  install early from the Company Portal; it's forced at the deadline.
+- **Older versions on devices** (Updates page): from Intune's inventory of
+  apps on devices - also versions installed by hand - per app, with a tile
+  for the total. Matched by name (exactly, or with a version or "(x64)"
+  after it); **Name on devices** in the editor when it differs. Needs
+  DeviceManagementManagedDevices.Read.All.
+- **Trend** (Updates page): the share of devices on the current version
+  over the last 30 days, from the nightly reports, with a hover read-out
+  and a table view.
+
+### Changed
+
+- The Updates page reuses its counts for a minute when you switch tabs
+  (Reload reads them again), and a refresh asked for while it is loading
+  runs once that load ends - after Promote, say, the page no longer shows
+  the old state.
+- The column "Pilot" is "In release": the ring (or fast track) and the
+  rule's verdict, "ready for next ring" included.
+
 ## 2.4.0
 
 ### Added

@@ -28,6 +28,53 @@ the portal.
 Nothing is ever uninstalled: a device that has a newer version keeps it,
 because every release counts "this version or newer" as installed.
 
+## Release rings
+
+With only pilot groups, a release goes pilot -> everyone. **Settings >
+Defaults > Managed updates > Release rings** adds stages in between, one per
+line:
+
+```
+Early adopters: SG-Intune-Early, SG-IT
+Broad: SG-Intune-Broad
+```
+
+A release that passes the rule in one ring gets the next ring's groups too
+(**Next ring...**, or the nightly run with automatic promotion on), and
+everyone after the last. The rule's days count again in each ring. **Promote**
+skips the remaining rings.
+
+## Fast track
+
+For a security fix: tick **Fast track** in Release new version. The release
+is judged after *Fast track: in pilot (hours)* (4 by default) instead of
+days, downloads in the foreground, skips the rings, and goes to everyone.
+The nightly task promotes it once it's ready even with automatic promotion
+off - ticking Fast track is the decision. A second scheduled task ("...
+fast-track updates") looks at fast-track releases every two hours.
+
+## An app's own rule
+
+In the editor, under **Managed updates**, an app can have its own days,
+failure limit and minimum installs: say 1 day for a browser, 7 for a
+line-of-business tool. Empty fields use Settings' rule.
+
+## Install deadline, restart, notifications
+
+Settings > Managed updates > *Fast track and installation*:
+
+- **Install deadline (days):** the Required assignment of a release gets a
+  deadline this many days after it reaches a group. Users can install it
+  earlier from the Company Portal; at the deadline it's installed. 0 (the
+  default): as soon as possible.
+- **Restart grace period (minutes):** when the installer asks for a
+  restart, how long the user may put it off.
+- **Notifications on the device:** show all, only restarts, or none.
+
+These are set when a release is assigned (pilot, next ring, promote, roll
+back). **Push groups** sets assignments without them, so after a push the
+app's assignments use Intune's defaults again.
+
 ## Setting it up
 
 1. **Settings > Defaults > Managed updates**: the pilot groups (a few IT
@@ -71,10 +118,14 @@ The **Updates** tab shows every app with managed updates on one page:
 | **Devices on it** | Devices with the current release installed, of those it is assigned to (failed ones are flagged). |
 | **Pilot** | The version in pilot, and the release rule's verdict: *ready*, *waiting* or *on hold*, with the reason. |
 | **Available** | A newer version: winget's (after **Check winget for new versions**), or the installer in an own package's folder. |
+| **On older versions** | Devices that Intune's inventory (Apps > Monitor > Discovered apps) finds with an older version - also ones installed by hand. Needs DeviceManagementManagedDevices.Read.All. The app is found by its name; if it's listed differently on devices, set **Name on devices** in the editor. |
 | **Superseded** | Earlier releases kept in Intune for rollback. |
 
-Release, Promote, Withdraw and Roll back are on each row. **Export CSV**
-saves the table, for an audit or a report.
+Release, Next ring, Promote, Withdraw and Roll back are on each row.
+**Export CSV** saves the table, for an audit or a report. After two nightly
+runs, a line shows the share of devices on the current version over the
+last 30 days (from the runs' reports). The page reuses its counts for a
+minute when you switch tabs; **Reload** reads them again.
 
 ## The nightly run
 
@@ -98,6 +149,21 @@ With a switch off, the run reports what it would have done. **Plan only**
 does the same for everything and changes nothing. That's a good way to
 start: run Plan only for a few days, read the reports, then turn the
 switches on one at a time.
+
+### Alerts
+
+**Settings > Defaults > Managed updates > Alerts** sends a message after a
+run: always, or only when something needs a look (failed, on hold, ready,
+released, promoted, advanced).
+
+- **Teams:** in the channel, *... > Workflows > Post to a channel when a
+  webhook request is received*; paste its address. It's saved on this PC
+  and never shown again.
+- **Email:** a mailbox to send from and the addresses to send to. The app
+  registration needs the application permission **Mail.Send** (consider an
+  application access policy that limits it to that mailbox).
+
+**Send a test** checks both.
 
 Every run writes a report (HTML and JSON) to Logs\\reports. Settings
 lists the last ten, and **Open reports folder** has them all (the last 60

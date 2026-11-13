@@ -138,6 +138,10 @@ function Global:ConvertTo-AppRecord {
         # and the superseded ones still in Intune, each by its App ID.
         managedUpdates = [bool]$Raw.managedUpdates
         releases     = @(ConvertTo-AppReleases $Raw.releases)
+        # The app's own release rule (over Settings' one), and the name it has
+        # in Intune's inventory of apps on devices, when not the catalog's.
+        releaseRule  = (ConvertTo-AppReleaseRule $Raw.releaseRule)
+        detectedName = $(if ([string]$Raw.detectedName -and ([string]$Raw.detectedName).Length -le 100) { ([string]$Raw.detectedName).Trim() } else { '' })
         metadata     = $metadata
     }
 }
@@ -242,8 +246,23 @@ function Global:ConvertTo-AppReleases {
     param($Releases)
     $guid = '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
     return @(@($Releases) | Where-Object { $_ -and [string]$_.appId -match $guid -and (Test-ReleaseVersionText ([string]$_.version)) -and [string]$_.state -in 'pilot', 'previous' } | ForEach-Object {
-        [pscustomobject]@{ version = [string]$_.version; appId = [string]$_.appId; state = [string]$_.state; at = [string]$_.at; productCode = $(if ([string]$_.productCode -match '^\{[0-9A-Fa-f-]{36}\}$') { [string]$_.productCode } else { '' }) }
+        [pscustomobject]@{ version = [string]$_.version; appId = [string]$_.appId; state = [string]$_.state; at = [string]$_.at; productCode = $(if ([string]$_.productCode -match '^\{[0-9A-Fa-f-]{36}\}$') { [string]$_.productCode } else { '' })
+            # Release rings (pilot only): the ring it is in (0 = the pilot groups) and since when; fastTrack: judged in hours, then straight to everyone.
+            ring = $(if ([string]$_.ring -match '^[0-5]$') { [int][string]$_.ring } else { 0 }); ringAt = $(if ([string]$_.ringAt -match '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$') { [string]$_.ringAt } else { '' })
+            fastTrack = [bool]$_.fastTrack }
     })
+}
+
+function Global:ConvertTo-AppReleaseRule {
+    # Pure: an app's own release rule - only the values it sets (days, maxFailedPercent, minInstalled), each checked; $null when it sets none.
+    param($Raw)
+    if (-not $Raw) { return $null }
+    $r = [ordered]@{}
+    if ([string]$Raw.days -match '^\d{1,2}$') { $r.days = [int][string]$Raw.days }
+    if ([string]$Raw.maxFailedPercent -match '^\d{1,3}(\.\d+)?$' -and [double][string]$Raw.maxFailedPercent -le 100) { $r.maxFailedPercent = [double][string]$Raw.maxFailedPercent }
+    if ([string]$Raw.minInstalled -match '^\d{1,4}$') { $r.minInstalled = [int][string]$Raw.minInstalled }
+    if (-not $r.Count) { return $null }
+    return [pscustomobject]$r
 }
 
 function Global:ConvertTo-AppIcon {
@@ -305,12 +324,20 @@ function Global:ConvertTo-SingleAppJson {
             $line = '    { "version": ' + (ConvertTo-JsonStringLiteral ([string]$r.version)) + ', "appId": ' + (ConvertTo-JsonStringLiteral ([string]$r.appId)) +
                 ', "state": ' + (ConvertTo-JsonStringLiteral ([string]$r.state)) + ', "at": ' + (ConvertTo-JsonStringLiteral ([string]$r.at))
             if ($r.productCode) { $line += ', "productCode": ' + (ConvertTo-JsonStringLiteral ([string]$r.productCode)) }
+            if ([int]$r.ring) { $line += ', "ring": ' + [int]$r.ring }
+            if ($r.ringAt) { $line += ', "ringAt": ' + (ConvertTo-JsonStringLiteral ([string]$r.ringAt)) }
+            if ($r.fastTrack) { $line += ', "fastTrack": true' }
             $line += ' }'
             if ($j -lt $relItems.Count - 1) { $line += ',' }
             $line
         }
         $fields.Add("  `"releases`": [`r`n" + ($relLines -join "`r`n") + "`r`n  ]")
     }
+    if ($App.releaseRule) {
+        $ruleParts = @(foreach ($k in 'days', 'maxFailedPercent', 'minInstalled') { if ($null -ne $App.releaseRule.$k) { '"' + $k + '": ' + ([string]$App.releaseRule.$k).Replace(',', '.') } })
+        if ($ruleParts.Count) { $fields.Add('  "releaseRule": { ' + ($ruleParts -join ', ') + ' }') }
+    }
+    if ($App.detectedName) { $fields.Add("  `"detectedName`": $(ConvertTo-JsonStringLiteral ([string]$App.detectedName))") }
     if ($App.icon -and $App.icon.value) {
         $fields.Add("  `"icon`": { `"type`": $(ConvertTo-JsonStringLiteral ([string]$App.icon.type)), `"value`": $(ConvertTo-JsonStringLiteral ([string]$App.icon.value)) }")
     }

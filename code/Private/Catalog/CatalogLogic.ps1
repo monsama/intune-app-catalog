@@ -789,6 +789,8 @@ function Global:ConvertTo-TemplateAppRecord {
         icon             = $App.icon
         # Managed stays; its releases are this tenant's apps - dropped.
         managedUpdates   = [bool]$App.managedUpdates
+        releaseRule      = $App.releaseRule
+        detectedName     = [string]$App.detectedName
         releases         = @()
         metadata         = $App.metadata
     }
@@ -1183,26 +1185,129 @@ function Global:Set-DetectionRuleVersion {
     return @{ Rule = $r; Changed = (($r | ConvertTo-Json -Compress -Depth 4) -ne $before) }
 }
 
+function Global:Format-ReleaseSpan {
+    # Pure: a pilot's length for the reasons - hours below a day (a fast-track release), days otherwise.
+    param([double]$Days)
+    if ($Days -lt 1) { $h = [Math]::Floor($Days * 24); return "$h hour$(if ($h -ne 1) { 's' })" }
+    $d = [Math]::Floor($Days); return "$d day$(if ($d -ne 1) { 's' })"
+}
+
 function Global:Get-ReleaseDecision {
     <#
       Pure: what to do with a pilot release now. -Counts: the pilot app's
       installed / failed / pending devices (Intune's install summary).
-      -Policy: Days (pilot at least this long), MaxFailedPercent (of
-      installed + failed), MinInstalled (devices).
-      Action: promote, wait, or hold (something is wrong - a person looks).
+      -Policy: Days (in this ring at least this long - a fraction for a
+      fast-track release counted in hours), MaxFailedPercent (of installed
+      + failed), MinInstalled (devices). -Ring / -RingCount: which release
+      ring the release is in (0 = the pilot groups) and how many there are.
+      Action: promote (to everyone), advance (to the next ring), wait, or
+      hold (something is wrong - a person looks).
     #>
-    param([datetime]$ReleasedAt, [datetime]$Now, $Counts, $Policy)
-    $days = [int]$Policy.Days; $max = [double]$Policy.MaxFailedPercent; $min = [int]$Policy.MinInstalled
+    param([datetime]$ReleasedAt, [datetime]$Now, $Counts, $Policy, [int]$Ring = 0, [int]$RingCount = 1)
+    $days = [double]$Policy.Days; $max = [double]$Policy.MaxFailedPercent; $min = [int]$Policy.MinInstalled
     $age = ($Now - $ReleasedAt).TotalDays
     $installed = [int]$Counts.installed; $failed = [int]$Counts.failed
     $tried = $installed + $failed
     $pct = if ($tried) { [Math]::Round(100.0 * $failed / $tried, 1) } else { 0 }
-    $summary = "$installed installed, $failed failed$(if ([int]$Counts.pending) { ", $([int]$Counts.pending) pending" }) on pilot devices"
+    $where = if ($RingCount -gt 1) { "ring $($Ring + 1) of $RingCount" } else { 'pilot' }
+    $summary = "$installed installed, $failed failed$(if ([int]$Counts.pending) { ", $([int]$Counts.pending) pending" }) on $(if ($RingCount -gt 1) { 'release-ring' } else { 'pilot' }) devices"
+    $span = if ($days -lt 1) { Format-ReleaseSpan $age } else { "$([Math]::Floor($age))" }
     if ($tried -and $pct -gt $max) { return @{ Action = 'hold'; Reason = "$summary - $pct % failed, more than the $max % allowed. Look at Install status, then promote or withdraw it." } }
-    if ($age -lt $days) { return @{ Action = 'wait'; Reason = "$summary - in pilot for $([Math]::Floor($age)) of $days days." } }
+    if ($age -lt $days) { return @{ Action = 'wait'; Reason = "$summary - in $where for $span of $(Format-ReleaseSpan $days)." } }
     if ($installed -lt $min) {
-        if ($age -ge 2 * [Math]::Max($days, 1)) { return @{ Action = 'hold'; Reason = "$summary - fewer than $min after $([Math]::Floor($age)) days. Check the pilot groups have devices." } }
+        if ($age -ge 2 * [Math]::Max($days, 1)) { return @{ Action = 'hold'; Reason = "$summary - fewer than $min after $(Format-ReleaseSpan $age). Check the groups have devices." } }
         return @{ Action = 'wait'; Reason = "$summary - waiting for at least $min." }
     }
-    return @{ Action = 'promote'; Reason = "$summary$(if ($tried) { " ($pct % failed)" }) after $([Math]::Floor($age)) days." }
+    $how = "$summary$(if ($tried) { " ($pct % failed)" }) after $(Format-ReleaseSpan $age)"
+    if ($Ring -lt $RingCount - 1) { return @{ Action = 'advance'; Reason = "$how in $where - ready for the next ring." } }
+    return @{ Action = 'promote'; Reason = "$how." }
+}
+
+function Global:Get-EffectiveReleaseRule {
+    <#
+      Pure: the rule a pilot release is judged by - the release policy,
+      with the app's own values (releaseRule) over it; a fast-track
+      release waits FastTrackHours instead of the days.
+    #>
+    param($Policy, $App, $Release)
+    $rule = @{ Days = [double]$Policy.Days; MaxFailedPercent = [double]$Policy.MaxFailedPercent; MinInstalled = [int]$Policy.MinInstalled; Own = $false; FastTrack = $false }
+    $own = if ($App) { $App.releaseRule } else { $null }
+    if ($own) {
+        if ($null -ne $own.days) { $rule.Days = [double]$own.days; $rule.Own = $true }
+        if ($null -ne $own.maxFailedPercent) { $rule.MaxFailedPercent = [double]$own.maxFailedPercent; $rule.Own = $true }
+        if ($null -ne $own.minInstalled) { $rule.MinInstalled = [int]$own.minInstalled; $rule.Own = $true }
+    }
+    if ($Release -and $Release.fastTrack) {
+        $hours = [int]$Policy.FastTrackHours; if ($hours -lt 1) { $hours = 4 }
+        $rule.Days = $hours / 24.0; $rule.FastTrack = $true
+    }
+    return $rule
+}
+
+function Global:Get-ReleaseRingGroups {
+    # Pure: the groups a release in ring -Ring is assigned to - the pilot groups and every ring up to this one.
+    param($Rings, [int]$Ring)
+    $out = New-Object System.Collections.Generic.List[string]
+    $list = @($Rings)
+    for ($i = 0; $i -le $Ring -and $i -lt $list.Count; $i++) { foreach ($g in @($list[$i].Groups)) { if ($g -and -not $out.Contains([string]$g)) { $out.Add([string]$g) } } }
+    return , $out.ToArray()
+}
+
+function Global:ConvertFrom-ReleaseRingText {
+    <#
+      Pure: the release rings after the pilot groups, from Settings' text -
+      one ring per line, "Name: group, group". @{ Rings; Error }.
+    #>
+    param([string]$Text)
+    $rings = New-Object System.Collections.Generic.List[object]
+    $n = 0
+    foreach ($line in @(([string]$Text) -split "`r?`n")) {
+        $n++
+        $t = $line.Trim(); if (-not $t) { continue }
+        $m = [regex]::Match($t, '^([^:]{1,60}):\s*(.+)$')
+        if (-not $m.Success) { return @{ Rings = @(); Error = "Line ${n}: write it as ""Name: group, group""." } }
+        $groups = @($m.Groups[2].Value -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Unique)
+        if (-not $groups.Count) { return @{ Rings = @(); Error = "Line ${n}: no group." } }
+        $rings.Add([ordered]@{ Name = $m.Groups[1].Value.Trim(); Groups = $groups })
+    }
+    if ($rings.Count -gt 5) { return @{ Rings = @(); Error = 'At most five rings after the pilot groups.' } }
+    return @{ Rings = $rings.ToArray(); Error = '' }
+}
+
+function Global:Get-ReleaseAssignmentSettings {
+    <#
+      Pure: the settings for a release's Required assignments (Win32):
+      the install deadline (DeadlineDays after now; a fast-track release
+      installs as soon as possible, in the foreground), the restart grace
+      period and the notifications. $null when every one is Intune's
+      default - the assignments are then sent without settings, as before.
+    #>
+    param($Policy, [bool]$FastTrack, [datetime]$NowUtc)
+    $deadlineDays = if ($FastTrack) { 0 } else { [int]$Policy.DeadlineDays }
+    $grace = [int]$Policy.RestartGraceMinutes
+    $notif = [string]$Policy.Notifications; if ($notif -notin 'showAll', 'showReboot', 'hideAll') { $notif = 'showAll' }
+    if (-not $FastTrack -and -not $deadlineDays -and -not $grace -and $notif -eq 'showAll') { return $null }
+    $s = [ordered]@{ '@odata.type' = '#microsoft.graph.win32LobAppAssignmentSettings'; notifications = $notif
+        deliveryOptimizationPriority = $(if ($FastTrack) { 'foreground' } else { 'notConfigured' }); installTimeSettings = $null; restartSettings = $null }
+    if ($deadlineDays) { $s.installTimeSettings = [ordered]@{ useLocalTime = $false; startDateTime = $null; deadlineDateTime = $NowUtc.AddDays($deadlineDays).ToString('yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture) } }
+    if ($grace) { $s.restartSettings = [ordered]@{ gracePeriodInMinutes = $grace; countdownDisplayBeforeRestartInMinutes = [Math]::Min(15, $grace); restartNotificationSnoozeDurationInMinutes = [Math]::Min(240, $grace) } }
+    return $s
+}
+
+function Global:Get-ManagedRunAlert {
+    <#
+      Pure: whether a run's report is worth an alert, and its text.
+      -Level: off, attention (something failed, is on hold, is ready for a
+      person, or was released / promoted / advanced), or always.
+      @{ Send; Title; Lines }.
+    #>
+    param($Report, [string]$Level)
+    $items = @($Report.items)
+    $loud = @('failed', 'hold', 'ready', 'promoted', 'released', 'advanced', 'advance')
+    $hits = @($items | Where-Object { $loud -contains [string]$_.outcome })
+    $send = switch ($Level) { 'always' { $true } 'attention' { $hits.Count -gt 0 } default { $false } }
+    $failed = [int]$Report.failed
+    $title = "Managed updates: " + $(if ($failed) { "$failed failed" } elseif ($hits.Count) { "$($hits.Count) to look at" } else { 'nothing to do' }) + $(if ($Report.planOnly) { ' (plan only)' })
+    $lines = @($(if ($Level -eq 'always') { $items } else { $hits }) | ForEach-Object { "$($_.app) - $($_.outcome): $($_.text)" })
+    return @{ Send = $send; Title = $title; Lines = $lines }
 }
