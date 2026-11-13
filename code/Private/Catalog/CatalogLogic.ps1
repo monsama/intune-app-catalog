@@ -11,7 +11,9 @@ function Global:Get-IntuneCatalogDrift {
         $normName = ($app.appName.Trim() -replace '\s+', ' ')
         $catalogByNormName[$normName] = $true
         if ($app.appId) { $catalogByAppId[$app.appId] = $app }
-        foreach ($r in @($app.releases)) { if ($r -and $r.appId) { $releaseIds[[string]$r.appId] = $true } }
+        foreach ($r in @($app.releases)) {
+            if ($r -and $r.appId) { $relKey = [string]$r.appId; $releaseIds[$relKey] = $true }
+        }
     }
 
     # Every ID actually live in Intune right now, for the third comparison
@@ -23,10 +25,8 @@ function Global:Get-IntuneCatalogDrift {
 
     $missing = New-Object System.Collections.Generic.List[object]
     $renamed = New-Object System.Collections.Generic.List[object]
-    # (A release's app is skipped with a filter, not "continue": the
-    # function is compiled after its first calls, and that compile has
-    # refused a continue here - "Argument types do not match".)
-    foreach ($ia in @($IntuneApps | Where-Object { -not $releaseIds.ContainsKey([string]$_.id) })) {
+    $notReleases = @($IntuneApps | Where-Object { $relId = [string]$_.id; -not $releaseIds.ContainsKey($relId) })
+    foreach ($ia in $notReleases) {
         $normIntuneName = ($ia.displayName.Trim() -replace '\s+', ' ')
         if ($catalogByAppId.ContainsKey($ia.id)) {
             # Known App ID - check whether the catalog's name still matches

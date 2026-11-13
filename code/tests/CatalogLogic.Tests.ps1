@@ -559,8 +559,11 @@ Assert-True ($relBack.managedUpdates -and @($relBack.releases).Count -eq 1 -and 
 Assert-True ((ConvertTo-SingleAppJson -App (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'Plain' }))) -notlike '*managedUpdates*') "ConvertTo-SingleAppJson: no managed fields for an unmanaged app"
 $tpl = ConvertTo-TemplateAppRecord -App $relBack
 Assert-True ($tpl.managedUpdates -and @($tpl.releases).Count -eq 0) "ConvertTo-TemplateAppRecord: keeps managed updates, drops this tenant's releases"
-$driftRel = Get-IntuneCatalogDrift -Apps @($relBack) -IntuneApps @([pscustomobject]@{ id = 'dddddddd-0000-4000-8000-000000000001'; displayName = 'Rel App 2.0 (pilot)' })
-Assert-Equal 0 @($driftRel.Missing).Count "Get-IntuneCatalogDrift: a release's app in Intune isn't 'not in the catalog'"
+$relIntune = New-Object System.Collections.Generic.List[object]
+$relIntune.Add([pscustomobject]@{ id = 'dddddddd-0000-4000-8000-000000000001'; displayName = 'Rel App 2.0 (pilot)' })
+$relIntune.Add([pscustomobject]@{ id = 'dddddddd-0000-4000-8000-0000000000ff'; displayName = 'Something Else' })
+$relFindings = @(Get-IntuneLinkFindings -Apps @($relBack) -IntuneApps $relIntune.ToArray() | Where-Object { $_.Problem -eq 'In Intune, not in the catalog' } | ForEach-Object { [string]$_.App })
+Assert-True (($relFindings -contains 'Something Else') -and ($relFindings -notcontains 'Rel App 2.0 (pilot)')) "Get-IntuneLinkFindings: a release's app in Intune isn't 'not in the catalog' (another app still is)"
 
 # Switching an existing app's install method
 Assert-Equal 'WAU' (Get-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $wauDefaults.installCommand -UninstallCommand $wauDefaults.uninstallCommand) `
