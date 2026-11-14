@@ -225,6 +225,11 @@ async function loadHome() {
 }
 $('btnHomeReload').addEventListener('click', loadHome);
 $('btnHomeAdd').addEventListener('click', () => openAdd());
+$('btnHomeCheck').addEventListener('click', async () => {
+  const b = $('btnHomeCheck'); b.disabled = true;
+  try { $('chkDetails').checked = true; await runChecks(); await loadApps(); toast(findings.length ? `${findings.length} difference(s) between the catalog and Intune.` : 'The catalog and Intune match.', false, findings.length ? [{ label: 'See them', run: () => showView('checks') }] : []); loadHome(); }
+  finally { b.disabled = false; }
+});
 
 // ---------------------------------------------------------------- Ctrl+K
 let palItems = [], palActive = 0;
@@ -243,7 +248,7 @@ function palCommands() {
     { label: 'Toggle dark mode', hint: 'Action', run: () => $('btnTheme').click() },
     ...apps.map(a => ({ label: a.name, hint: a.hasAppId ? 'App' : 'App - not deployed', run: () => { showView('apps'); selected.clear(); selected.add(a.name); lastClicked = a.name; renderApps(); updateViewButtons(); openEditor(a.name); } })),
     ...apps.filter(a => a.managed && a.hasAppId).map(a => ({ label: `Release ${a.name}`, hint: 'Managed updates', run: () => openRelease(a.name) })),
-    ...apps.map(a => ({ label: `Deploy ${a.name}`, hint: 'Action', run: () => openDeploy([a.name]) }))];
+    ...apps.map(a => ({ label: `Send ${a.name}`, hint: 'Action', run: () => openDeploy([a.name]) }))];
 }
 function palScore(label, q) {
   const l = label.toLowerCase(); if (!q) return 1;
@@ -305,7 +310,7 @@ $('btnMxSave').addEventListener('click', async () => {
   const r = await api('/api/assignments-set', { changes });
   if (!r.ok) { toast(r.error, true); return; }
   toast(`${changes.length} change(s) saved to ${r.apps.length} app(s) in the catalog.`, false, [
-    { label: 'Push groups', run: () => { const names = r.apps.filter(n => (apps.find(a => a.name === n) || {}).hasAppId); if (names.length) { showView('apps'); selected.clear(); names.forEach(n => selected.add(n)); renderApps(); $('btnPush').click(); } else toast('None of them is in Intune yet - Deploy them.'); } },
+    { label: 'Send groups', run: () => { const names = r.apps.filter(n => (apps.find(a => a.name === n) || {}).hasAppId); if (names.length) { showView('apps'); selected.clear(); names.forEach(n => selected.add(n)); renderApps(); $('btnPush').click(); } else toast('None of them is in Intune yet - Send them to Intune.'); } },
     { label: 'Undo', run: () => undoLast() }]);
   await loadApps(); await openMatrix();
 });
@@ -335,5 +340,5 @@ async function takeVersionsForManaged() {
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps(); loadHome();
   const inIntune = (r.deployed || []);
-  toast(`${r.changed.length} app(s) now start from winget's current version${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}.${inIntune.length ? ` Deploy ${inIntune.length} of them again so Intune installs that version: ${inIntune.join(', ')}.` : ''}`);
+  toast(`${r.changed.length} app(s) now start from winget's current version${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}.${inIntune.length ? ` Send ${inIntune.length} of them to Intune again so Intune installs that version: ${inIntune.join(', ')}.` : ''}`);
 }

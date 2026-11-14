@@ -214,7 +214,7 @@ try {
 
         await page.click(`#gridBody tr[data-name="${testApp}"]`);
         await page.waitForSelector('#appPanel:not([hidden]) .pfacts');
-        check(/Ready to deploy|Draft/.test(await page.textContent(`#gridBody tr[data-name="${testApp}"]`)) && await page.isVisible('#btnNext'), `${label}: a new app shows its stage and the next step (in the row and on the toolbar)`, await page.textContent(`#gridBody tr[data-name="${testApp}"]`));
+        check(/Ready to send|Draft/.test(await page.textContent(`#gridBody tr[data-name="${testApp}"]`)) && await page.isVisible('#btnNext'), `${label}: a new app shows its stage and the next step (in the row and on the toolbar)`, await page.textContent(`#gridBody tr[data-name="${testApp}"]`));
         await noOverflow('Apps with the side panel'); await unnamed('Apps with the side panel'); await a11y('Apps with the side panel');
         await page.click('#btnMore');
         const relTip = await page.getAttribute('[data-act="release"]', 'title');

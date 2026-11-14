@@ -670,3 +670,14 @@ label > .chipbox input.chipinput { margin-top: 0; }
 .where .wnote { font-size: 12px; color: var(--muted); }
 .grid tbody tr.ghost td { color: var(--muted); background: repeating-linear-gradient(135deg, transparent 0 8px, var(--row-alt) 8px 16px); }
 .grid tbody tr.ghost td.name { font-style: italic; }
+/* ---- one row above the list: catalog vs Intune, other tenant, undo ---- */
+.appsbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.appsbar .where { flex: 1 1 auto; }
+.banner.slim { margin: 0; padding: 5px 6px 5px 12px; gap: 8px; border-radius: var(--r-l); font-size: 13px; flex: 0 1 auto; }
+.banner.slim .btn { padding: 3px 9px; }
+/* ---- the editor's section tabs ---- */
+.edtabs { position: sticky; top: -16px; z-index: 5; display: flex; flex-wrap: wrap; gap: 2px; margin: 0 0 12px; padding: 6px 0; background: var(--surface); border-bottom: 1px solid var(--bd); }
+.edtab { border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; padding: 6px 12px; border-radius: var(--r-m); cursor: pointer; }
+.edtab:hover { color: var(--fg); background: var(--hover); }
+.edtab[aria-current="true"] { color: var(--info); background: var(--accent-soft); font-weight: 600; }
+td.src { font-size: 12px; color: var(--muted); }
