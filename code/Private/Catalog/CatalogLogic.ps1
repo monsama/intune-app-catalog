@@ -1771,7 +1771,8 @@ function Global:Get-PermissionReport {
     foreach ($p in @($g | Where-Object { $known -notcontains $_ } | Sort-Object)) {
         & $row $p 'unused' 'Not used by this app' $(if ($p -match $broad) { 'A broad permission this app never needs - remove it: the certificate could otherwise change far more than apps.' } elseif ($p -in 'Directory.Read.All', 'Device.Read.All') { 'User.Read.All and Group.ReadWrite.All cover what this app reads.' } else { 'Not used by this app.' })
     }
-    return , $rows.ToArray()
+    # One row per pipeline object (callers wrap it in @()); there's always at least the apps row.
+    return $rows.ToArray()
 }
 
 function Global:Set-PsadtTemplateValues {
