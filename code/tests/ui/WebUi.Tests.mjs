@@ -123,9 +123,10 @@ try {
       await page.keyboard.press('Escape');
       check(!(await page.isVisible('#dlgApp[open]')), `${label}: Escape closes the editor`);
 
-      // Home: what needs a look; Ctrl+K finds pages and actions.
+      // Home: getting started (nothing set up here), what needs a look; Ctrl+K finds pages and actions.
       await page.click('#tabHome');
       await page.waitForFunction(() => !/Looking/.test(document.getElementById('homeNote').textContent));
+      check(await page.isVisible('#homeSetup') && /Connect to Intune/.test(await page.textContent('#setupList li.now')), `${label}: Home's getting started points at the first step - connecting`, await page.textContent('#homeSetup'));
       check(/Not connected/.test(await page.textContent('#homeList')), `${label}: Home says the app isn't connected`, await page.textContent('#homeList'));
       await noOverflow('Home'); await unnamed('Home'); await a11y('Home'); await shot('home');
       await page.keyboard.press('Control+k');
@@ -163,12 +164,14 @@ try {
       await page.click('#stab-connection');
       await page.click('#guideReg summary');
       await noOverflow('Settings'); await unnamed('Settings'); await a11y('Settings'); await shot('settings');
-      for (const sec of ['defaults', 'packaging']) {
+      for (const sec of ['defaults', 'updates', 'automation', 'packaging']) {
         await page.click(`#stab-${sec}`);
-        if (sec === 'defaults') {
-          // Managed updates: the card, and the nightly run's list (no run yet on a fresh test machine).
+        if (sec === 'defaults') check(await page.isVisible('#dWinget') && await page.isVisible('#profRows'), `${label}: Settings > Apps & defaults has the default values and the profiles`);
+        if (sec === 'updates') check(await page.isVisible('#pilotGroupsChips') && await page.isVisible('#rpDays') && await page.isVisible('#rpFastHours'), `${label}: Settings > Updates has the pilot groups and the release rule`);
+        if (sec === 'automation') {
+          // The nightly run's list (no run yet on a fresh test machine), and alerts.
           await page.waitForFunction(() => /No run yet|run is going|plan only/i.test(document.getElementById('runList').textContent));
-          check(await page.isVisible('#pilotGroups') && await page.isVisible('#rpDays') && await page.isVisible('#btnRunPlan'), `${label}: Settings > Defaults has managed updates and the nightly run`);
+          check(await page.isVisible('#btnRunPlan') && await page.isVisible('#alLevel'), `${label}: Settings > Nightly run & alerts has the nightly run and the alerts`);
         }
         check(await page.isVisible(`#sec-${sec}`) && !(await page.isVisible('#sec-connection')), `${label}: Settings > ${sec} shows only its own cards`);
         await noOverflow(`Settings ${sec}`); await unnamed(`Settings ${sec}`); await a11y(`Settings ${sec}`);
@@ -210,6 +213,9 @@ try {
         check(!(await page.isVisible('#dlgApp[open]')), `${label}: the new app is saved and listed`);
 
         await page.click(`#gridBody tr[data-name="${testApp}"]`);
+        await page.waitForSelector('#appPanel:not([hidden]) .pfacts');
+        check(/Ready to deploy|Draft/.test(await page.textContent(`#gridBody tr[data-name="${testApp}"]`)) && await page.isVisible('#btnNext'), `${label}: a new app shows its stage and the next step (in the row and on the toolbar)`, await page.textContent(`#gridBody tr[data-name="${testApp}"]`));
+        await noOverflow('Apps with the side panel'); await unnamed('Apps with the side panel'); await a11y('Apps with the side panel');
         await page.click('#btnMore');
         const relTip = await page.getAttribute('[data-act="release"]', 'title');
         check(await page.isDisabled('[data-act="release"]') && /managed updates on/i.test(relTip || ''), `${label}: Release new version is off for an app without managed updates, and says why`, relTip);

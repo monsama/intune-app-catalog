@@ -15,7 +15,7 @@ relying on a release. About 45 minutes, plus about 30 for managed updates
 - Work on a copy of your catalog (Settings > Packaging & folders > Folders), or remove
   the test apps afterwards.
 - Keep an eye on **Settings > Activity** and the black log box of each
-  dialog. Settings > Defaults > Automatic checks > **Detailed Graph log** stays off
+  dialog. Settings > Apps & defaults > Automatic checks > **Detailed Graph log** stays off
   until section 1 says otherwise.
 
 ## 1. Connection, certificate, permissions
@@ -133,7 +133,7 @@ relying on a release. About 45 minutes, plus about 30 for managed updates
 
 ## 9. Start-up checks
 
-- [ ] Settings > Defaults > Automatic checks: tick "Run Checks when the app opens",
+- [ ] Settings > Apps & defaults > Automatic checks: tick "Run Checks when the app opens",
       Save, close the app window and start the app again - the Checks tab
       shows a count, and Activity says how many findings.
 
@@ -143,7 +143,7 @@ Use a small Winget app with an older version still in winget (e.g.
 `7zip.7zip`), one pilot group with one test device in it, and a second
 group with another device.
 
-- [ ] Settings > Defaults > Managed updates: pilot group `ZZ-Test-A`, rule
+- [ ] Settings > Updates: pilot group `ZZ-Test-A`, rule
       "0 days, 50 %, 1 installed", all three automatic switches **off**.
       Save.
 - [ ] Add the app, tick **Managed updates**, App version = an *older*
@@ -176,7 +176,7 @@ group with another device.
       supersedence to the deleted one is gone.
 - [ ] Release once more, then **More > Withdraw pilot release...** - the
       pilot app is deleted from the portal.
-- [ ] Settings > Managed updates > **Plan only** - a report under Logs\reports
+- [ ] Settings > Nightly run & alerts > **Plan only** - a report under Logs\reports
       (Open reports folder) lists the app with what the run would do;
       nothing changes in the portal.
 - [ ] **Schedule** at a time two minutes from now - the task "Intune App
@@ -184,7 +184,7 @@ group with another device.
       automatically", release nothing yourself, and wait. The run releases
       the newest winget version to pilot, and Settings lists the run.
       Then **Remove** the task.
-- [ ] **Release rings:** Settings > Managed updates > rings
+- [ ] **Release rings:** Settings > Updates > rings
       `Second: ZZ-Test-B`. Release a new version: the Updates page shows
       "ring 1 of 2 - Pilot". **Next ring...** - the pilot app is now
       assigned Required to `ZZ-Test-A` *and* `ZZ-Test-B`; the row says

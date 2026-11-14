@@ -86,7 +86,7 @@ try {
     Check ($page.Status -eq 200 -and $page.Body -like '*<script src="app.js"*') 'the page is served'
     Check ($page.Headers -match 'Content-Security-Policy: default-src ''self''' -and $page.Headers -match 'X-Frame-Options: DENY' -and $page.Headers -match 'Cache-Control: no-store') 'every response carries the security headers' $page.Headers
     Check ($page.Body -notmatch '<script>[^<]') 'no inline script (the CSP allows none)'
-    foreach ($js in 'core.js', 'apps.js', 'checks.js', 'groups.js', 'updates.js', 'add.js', 'convenience.js', 'scripts.js', 'settings.js', 'app.js') {
+    foreach ($js in 'core.js', 'apps.js', 'checks.js', 'groups.js', 'updates.js', 'add.js', 'convenience.js', 'guide.js', 'chips.js', 'scripts.js', 'settings.js', 'app.js') {
         Check ((Invoke-Raw -Path "/$js").Status -eq 200 -and $page.Body -like "*<script src=`"$js`" defer>*") "$js is served and loaded by the page"
     }
     Check ((Invoke-Raw -Path '/app.css').Status -eq 200) 'app.css is served'
@@ -526,6 +526,7 @@ try {
     Check ($md.ok -and (Invoke-Api '/api/prefs').defaults.wingetInstallMethod -eq 'Managed') 'managed updates: the default for new Winget apps' ($md | ConvertTo-Json -Compress)
     $att = Invoke-Api '/api/attention'
     Check ($att.ok -and @($att.items | Where-Object { $_.title -eq 'Not connected' }).Count -eq 1 -and $att.apps -ge 1) 'home: says it is not connected, counts the apps' ($att | ConvertTo-Json -Compress -Depth 3)
+    Check (@($att.setup).Count -eq 7 -and -not $att.setup[0].done -and $att.setup[0].title -eq 'Connect to Intune' -and $att.setup[4].done) 'home: getting started - connecting not done, apps added' ($att.setup | ConvertTo-Json -Compress -Depth 3)
     $pl = Invoke-Api '/api/package-list' @{ json = '{"Sources":[{"Packages":[{"PackageIdentifier":"Vendor.ZZNew"},{"PackageIdentifier":"Mozilla.Firefox"}]}]}' }
     Check ($pl.ok -and @($pl.items).Count -eq 2 -and @($pl.items | Where-Object { $_.id -eq 'Vendor.ZZNew' -and -not $_.inCatalog }).Count -eq 1) 'from a list: a winget export file''s packages, each marked in the catalog or not' ($pl | ConvertTo-Json -Compress -Depth 3)
     Check ((Invoke-Api '/api/installed-apps').ok) 'detection from this PC: the installed apps can be listed (empty off Windows)'

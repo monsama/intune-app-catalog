@@ -63,7 +63,7 @@ async function loadIcons() {
 }
 
 // The ids of the apps in the connected tenant (lower case), or null while not known.
-let intuneIds = null;
+let intuneIds = null, intuneApps = null, intuneAt = '';
 function tenantState(a) {
   if (!a.hasAppId) return '';
   if (!intuneIds) return 'unchecked';
@@ -73,6 +73,7 @@ async function loadIntuneIds(force) {
   if (!state || !state.configured) { intuneIds = null; renderApps(); return; }
   const r = await api('/api/intune-apps', { force: !!force });
   intuneIds = r.ok ? new Set((r.ids || []).map(x => String(x).toLowerCase())) : null;
+  intuneApps = r.ok ? (r.apps || []) : null; intuneAt = r.ok ? r.at : '';
   renderApps();
 }
 // Intune's app types, short for the list (the full name is the cell's tooltip).
@@ -138,7 +139,7 @@ function renderApps() {
   visible = list.map(a => a.name);
   for (const n of [...selected]) if (!apps.some(a => a.name === n)) selected.delete(n);
   const body = $('gridBody');
-  body.replaceChildren(...list.map(a => {
+  body.replaceChildren(...[...list.map(a => {
     const tr = el('tr', { 'data-name': a.name, class: selected.has(a.name) ? 'sel' : '', title: a.appId ? 'App ID ' + a.appId : 'Not in Intune yet' },
       el('td', { class: 'name' }, iconFor(a), a.name),
       el('td', { class: 'mono', text: a.wingetId || '-' }),
@@ -146,12 +147,13 @@ function renderApps() {
       el('td', { class: 'num' }, a.version || '', a.pilotVersion ? el('span', { class: 'pill warn newer', text: 'pilot ' + a.pilotVersion, title: `${a.pilotVersion} is released to the pilot groups. More > Promote pilot release gives it to everyone.` })
         : a.newerOnWinget ? el('span', { class: 'pill info newer', text: '→ ' + a.wingetVersion, title: a.managed && a.hasAppId ? `winget offers ${a.wingetVersion}. More > Release new version sends it to the pilot groups first.` : `winget offers ${a.wingetVersion}. More > Take winget's version uses it as the App version.` }) : ''),
       el('td', { class: 'num', title: 'Required / Available / Uninstall', text: `${a.required} / ${a.available} / ${a.uninstall}` }),
-      el('td', {}, statusPill(a)),
+      el('td', {}, stageCell(a)),
       el('td', {}, auditPill(a.audit, a)));
     tr.addEventListener('click', e => selectRow(a.name, e));
     tr.addEventListener('dblclick', () => openEditor(a.name));
     return tr;
-  }));
+  }), ...(typeof intuneOnlyRows === 'function' ? intuneOnlyRows(q) : [])]);
+  if (typeof renderWhere === 'function') renderWhere();
   $('count').textContent = list.length === apps.length ? `${apps.length} apps` : `${list.length} of ${apps.length} apps`;
   for (const th of document.querySelectorAll('.grid th')) {
     th.classList.toggle('sorted', th.dataset.sort === sortKey);
@@ -176,6 +178,7 @@ function selectRow(name, e) {
   updateActions();
 }
 function updateActions() {
+  if (typeof updatePanel === 'function') updatePanel();
   const n = selected.size;
   const notInIntune = [...selected].filter(s => !(apps.find(a => a.name === s) || {}).hasAppId);
   setEnabled($('btnEditApp'), n === 1, n === 0 ? 'Select an app first.' : 'Select exactly one app to edit.');
@@ -208,6 +211,7 @@ function fillEditor(a) {
   $('aManagedNote').textContent = [pilot ? `- ${pilot.version} in pilot` : '', prev.length ? `- superseded: ${prev.map(r => r.version).join(', ')}` : ''].filter(Boolean).join(' ');
   showManagedState();
   $('appError').hidden = true;
+  if (typeof updateReady === 'function') setTimeout(updateReady, 0);
 }
 
 // Managed updates need a Winget ID; while one is ticked, the install commands and detection follow the App version.
@@ -215,7 +219,7 @@ function showManagedState() {
   const has = !!$('aWinget').value.trim();
   $('aRuleBox').hidden = !$('aManaged').checked;
   $('arAutoRow').hidden = has; $('arUrlRow').hidden = has;
-  $('aManaged').parentElement.title = has ? 'Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Defaults > Managed updates'
+  $('aManaged').parentElement.title = has ? 'Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Updates'
     : 'Release new versions of this package to the pilot groups first. Needs a detection rule that compares a version (MSI, or file/registry by version) - a release updates it to the new version.';
 }
 $('aWinget').addEventListener('input', showManagedState);
@@ -913,7 +917,8 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu();
 
 function runDialog(title, text) {
   $('runTitle').textContent = title; $('runText').textContent = text || ''; $('runLog').textContent = '';
-  $('dlgRun').showModal();
+  // A tray in the corner, not a modal: keep working while it runs (Hide - the button at the top brings it back).
+  if (!$('dlgRun').open) $('dlgRun').show();
 }
 menu.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
@@ -1191,7 +1196,7 @@ async function openTenantSetup() {
       [[`Deploy ${ready.length} app${ready.length === 1 ? '' : 's'}...`, 'Opens Deploy for the apps that are ready - nothing starts until you confirm there', () => openDeploy(ready.length ? ready : r.notDeployed)],
         ...(r.sharedMissing ? [['Open Packaging', 'Settings > Packaging & folders: download the packaging tool and build the shared Winget package', () => { $('dlgTenantSetup').close(); showSettings('packaging'); }]] : [])]),
     step(4, 'Push the groups', states[3], 'No deployed app has groups to push.',
-      `${r.pushGroups.length} deployed app${r.pushGroups.length === 1 ? ' has' : 's have'} groups in the catalog. Deploys push them already (Settings > Defaults); Push groups compares the catalog with Intune and shows what would change - "nothing to change" means it's done.`, list(r.pushGroups),
+      `${r.pushGroups.length} deployed app${r.pushGroups.length === 1 ? ' has' : 's have'} groups in the catalog. Deploys push them already (Settings > Apps & defaults); Push groups compares the catalog with Intune and shows what would change - "nothing to change" means it's done.`, list(r.pushGroups),
       [['Push groups...', 'Compare the catalog\'s groups with Intune, then apply', () => openPushGroups(r.pushGroups)]]));
 }
 $('btnTsRefresh').addEventListener('click', openTenantSetup);
@@ -1243,7 +1248,7 @@ async function openRelease(name) {
   $('relVersion').value = suggest && suggest !== r.current ? suggest : '';
   $('relBuildRow').hidden = !pkg; $('relFolder').textContent = pkg ? `(${inst.folder})` : '';
   $('relProblem').textContent = r.detectionProblem || ''; $('relProblem').hidden = !r.detectionProblem;
-  $('relGroups').textContent = r.pilotGroups.length ? `Pilot groups: ${r.pilotGroups.join(', ')}.${(r.rings || []).length > 1 ? ` Then ${r.rings.slice(1).map(x => x.name).join(', then ')}, then everyone.` : ''}` : 'No pilot groups yet - set them in Settings > Defaults > Managed updates.';
+  $('relGroups').textContent = r.pilotGroups.length ? `Pilot groups: ${r.pilotGroups.join(', ')}.${(r.rings || []).length > 1 ? ` Then ${r.rings.slice(1).map(x => x.name).join(', then ')}, then everyone.` : ''}` : 'No pilot groups yet - set them in Settings > Updates.';
   $('relFast').checked = false; $('relFastNote').textContent = `(pilot for ${r.fastTrackHours || 4} hours, then everyone)`;
   $('relErr').hidden = true; $('relLog').hidden = true; $('relLog').textContent = '';
   $('btnRelGo').disabled = !r.pilotGroups.length || !!r.detectionProblem; $('btnRelGo').textContent = 'Release to pilot'; $('btnRelClose').textContent = 'Cancel';

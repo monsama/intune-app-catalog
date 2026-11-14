@@ -265,10 +265,10 @@ function Global:Get-WebAttention {
     if ($managedWinget.Count -and -not (Test-Path -LiteralPath (Get-SharedPackagePath))) { & $add 'warn' 'Shared Winget package missing' 'Build init.intunewin - Winget apps can''t be deployed without it.' 'settings:packaging' }
     $runs = Get-WebUpdateRuns
     $last = @($runs.runs) | Select-Object -First 1
-    if ($last -and $last.failed) { & $add 'err' "The last nightly run had $($last.failed) problem(s)" ((@($last.items | Where-Object { $_.outcome -eq 'failed' } | Select-Object -First 3 | ForEach-Object { "$($_.app): $($_.text)" }) -join ' / ')) 'settings:defaults' }
+    if ($last -and $last.failed) { & $add 'err' "The last nightly run had $($last.failed) problem(s)" ((@($last.items | Where-Object { $_.outcome -eq 'failed' } | Select-Object -First 3 | ForEach-Object { "$($_.app): $($_.text)" }) -join ' / ')) 'settings:automation' }
     $drift = @($last.items | Where-Object { $_.outcome -eq 'drift' })
     if ($drift.Count) { & $add 'warn' "$($drift.Count) app(s) differ from Intune" ((@($drift | Select-Object -First 5 | ForEach-Object { $_.app }) -join ', ') + ' (last night) - Checks has the details.') 'checks' }
-    if (@($apps | Where-Object { $_.managedUpdates }).Count -and -not (Get-WebUpdateSchedule).exists -and (Get-WebUpdateSchedule).supported) { & $add 'info' 'Nightly run not scheduled' 'Managed updates only move when someone clicks - schedule the nightly run.' 'settings:defaults' }
+    if (@($apps | Where-Object { $_.managedUpdates }).Count -and -not (Get-WebUpdateSchedule).exists -and (Get-WebUpdateSchedule).supported) { & $add 'info' 'Nightly run not scheduled' 'Managed updates only move when someone clicks - schedule the nightly run.' 'settings:automation' }
     $summary = $null
     if ($configured -and @($apps | Where-Object { $_.managedUpdates }).Count) {
         try {
@@ -284,8 +284,20 @@ function Global:Get-WebAttention {
         }
         catch { }
     }
+    # Getting started: the setup steps in order - Home shows them until every one is done.
+    $tool = Get-PackagingToolPath
+    $sch = Get-WebUpdateSchedule
+    $setup = @(
+        [ordered]@{ done = $configured; title = 'Connect to Intune'; text = 'The app registration, its certificate and a test sign-in.'; go = 'settings:connection' }
+        [ordered]@{ done = [bool]($tool -and (Test-Path -LiteralPath $tool)); title = 'Download the packaging tool'; text = 'IntuneWinAppUtil.exe builds the packages Intune takes.'; go = 'settings:packaging' }
+        [ordered]@{ done = [bool](Test-Path -LiteralPath (Get-SharedPackagePath)); title = 'Build the shared Winget package'; text = 'One package every Winget app deploys with.'; go = 'settings:packaging' }
+        [ordered]@{ done = [bool]@($Global:App.PilotGroups).Count; title = 'Choose the pilot groups'; text = 'A few test devices that get new versions first.'; go = 'settings:updates' }
+        [ordered]@{ done = [bool]$apps.Count; title = 'Add your first apps'; text = 'From winget, an installer or a script - or the apps already in Intune (Checks).'; go = 'add' }
+        [ordered]@{ done = [bool]@($apps | Where-Object { $_.appId }).Count; title = 'Deploy them'; text = 'Select apps on the Apps page and Deploy.'; go = 'apps:notdeployed' }
+        [ordered]@{ done = [bool]($sch.exists -or -not $sch.supported); title = 'Schedule the nightly run'; text = 'It releases, promotes and checks by itself.'; go = 'settings:automation' }
+    )
     $order = @{ err = 0; warn = 1; ok = 2; info = 3 }
-    return @{ ok = $true; items = @($items | Sort-Object { $order[$_.level] }); apps = $apps.Count; deployed = @($apps | Where-Object { $_.appId }).Count
+    return @{ ok = $true; items = @($items | Sort-Object { $order[$_.level] }); setup = $setup; apps = $apps.Count; deployed = @($apps | Where-Object { $_.appId }).Count
         managed = @($apps | Where-Object { $_.managedUpdates }).Count; summary = $summary; lastRun = $(if ($last) { $last.started } else { '' }) }
 }
 

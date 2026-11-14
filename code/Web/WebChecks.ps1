@@ -53,18 +53,20 @@ function Global:Get-WebIntuneApps {
     $key = "$($Global:App.GraphTenantId)|$($Global:App.GraphClientId)"
     $cache = $Global:App.IntuneAppsCache
     if (-not $Data.force -and $cache -and $cache.Key -eq $key -and ((Get-Date) - $cache.At).TotalMinutes -lt 5) {
-        return @{ ok = $true; ids = $cache.Ids; at = $cache.At.ToString('HH:mm'); cached = $true }
+        return @{ ok = $true; ids = $cache.Ids; apps = $cache.Apps; at = $cache.At.ToString('HH:mm'); cached = $true }
     }
     $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action {
         param($Graph)
-        $ids = New-Object System.Collections.Generic.List[string]
+        $list = New-Object System.Collections.Generic.List[object]
         $uri = 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$select=id,displayName&$top=999'
-        while ($uri) { $page = & $Graph $uri; foreach ($v in @($page.value)) { $ids.Add(([string]$v.id).ToLowerInvariant()) }; $uri = [string]$page.'@odata.nextLink' }
-        , $ids.ToArray()
+        while ($uri) { $page = & $Graph $uri; foreach ($v in @($page.value)) { $list.Add([ordered]@{ id = ([string]$v.id).ToLowerInvariant(); name = [string]$v.displayName; type = ([string]$v.'@odata.type') -replace '^#microsoft\.graph\.', '' }) }; $uri = [string]$page.'@odata.nextLink' }
+        , $list.ToArray()
     }
     if (-not $read.ok) { return @{ ok = $false; state = 'error'; error = $read.error } }
-    $Global:App.IntuneAppsCache = @{ Key = $key; At = (Get-Date); Ids = @($read.value) }
-    return @{ ok = $true; ids = @($read.value); at = (Get-Date).ToString('HH:mm'); cached = $false }
+    # Every app in the tenant: its id for "is this App ID here", its name and type for "only in Intune" on the Apps page.
+    $appsNow = @($read.value)
+    $Global:App.IntuneAppsCache = @{ Key = $key; At = (Get-Date); Ids = @($appsNow | ForEach-Object { $_.id }); Apps = $appsNow }
+    return @{ ok = $true; ids = @($appsNow | ForEach-Object { $_.id }); apps = $appsNow; at = (Get-Date).ToString('HH:mm'); cached = $false }
 }
 
 function Global:Get-WebCatalogGroupNames {
