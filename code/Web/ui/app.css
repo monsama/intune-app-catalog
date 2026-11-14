@@ -532,7 +532,7 @@ dialog.addapps { width: min(1100px, calc(100vw - 32px)); }
 .addgroups > label { font-size: 12px; color: var(--muted); }
 .addgroups textarea { display: block; width: 100%; margin-top: 4px; }
 .favchips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
-.chip { font: inherit; font-size: 12px; border: 1px solid var(--bd); background: var(--surface); color: var(--fg); border-radius: 999px; padding: 2px 10px; cursor: pointer; }
+.chip { font: inherit; font-size: 12px; border: 1px solid var(--bd); background: var(--surface); color: var(--fg); border-radius: var(--r-s); padding: 2px 10px; cursor: pointer; }
 .chip:hover { border-color: var(--accent); }
 @media (max-width: 800px) { .awsplit, .formgrid.two, .formgrid.three, .addgroups { grid-template-columns: 1fr; } }
 textarea.mono { font-family: var(--mono); font-size: 12px; }
@@ -602,7 +602,7 @@ table.mx th.corner { position: sticky; left: 0; z-index: 3; text-align: left; co
 .apppanel .kv { display: grid; grid-template-columns: 90px 1fr; gap: 8px; overflow-wrap: anywhere; }
 .apppanel .kv .k { color: var(--muted); }
 .apppanel .pacts { display: flex; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--bd2); padding-top: 10px; }
-.chip.static { cursor: default; display: inline-block; margin: 0 4px 4px 0; }
+.chip.static { cursor: default; display: inline-block; margin: 0 4px 4px 0; max-width: 100%; overflow-wrap: anywhere; }
 @media (max-width: 1100px) { .appsplit:has(> .apppanel:not([hidden])) { grid-template-columns: minmax(0, 1fr); } .apppanel { max-height: 50vh; } }
 /* ---- release timeline ---- */
 .timeline { list-style: none; display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 0; margin: 2px 0; font-size: 11px; vertical-align: middle; }
@@ -701,3 +701,81 @@ td.src { font-size: 12px; color: var(--muted); }
 #histChanges .new { overflow-wrap: anywhere; }
 #histVersions summary { cursor: pointer; font-weight: 600; margin: 8px 0; }
 .retsteps { margin: 8px 0; padding-left: 22px; } .retsteps li { margin: 3px 0; }
+
+/* ==== 2.15 refresh: softer surfaces, clearer hierarchy, calmer controls ====
+   One block on top of the rules above, so every page and dialog changes together. */
+:root {
+  --r-s: 6px; --r-m: 8px; --r-l: 14px;
+  --field: #f9fafb; --field-hover: #f3f5f8;
+  --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+  --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 1px 3px rgba(16, 24, 40, .06);
+  --shadow-lg: 0 24px 64px -16px rgba(16, 24, 40, .28), 0 8px 24px -8px rgba(16, 24, 40, .12);
+}
+:root[data-theme="dark"] {
+  --field: #191c21; --field-hover: #1c2026;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  --shadow-lg: 0 24px 64px -12px rgba(0, 0, 0, .7), 0 0 0 1px rgba(255, 255, 255, .03);
+}
+body { -webkit-font-smoothing: antialiased; }
+h2 { letter-spacing: -.01em; }
+
+/* Fields: filled, a quiet border, a soft focus ring instead of an outline. */
+input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]), select, textarea {
+  background: var(--field); border-color: var(--bd); border-radius: var(--r-m); padding: 7px 10px;
+  transition: border-color .12s, box-shadow .12s, background-color .12s;
+}
+input:not([type=checkbox]):not([type=radio]):hover, select:hover, textarea:hover { background: var(--field-hover); }
+input:not([type=checkbox]):not([type=radio]):focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); background: var(--surface); }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; }
+input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; }
+input[type=checkbox]:focus-visible, input[type=radio]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--muted) 75%, transparent); }
+label { font-weight: 500; }
+label .muted { font-weight: 400; }
+.chipbox { background: var(--field); border-radius: var(--r-m); padding: 5px 6px; transition: border-color .12s, box-shadow .12s; }
+.chipbox:focus-within { box-shadow: var(--ring); background: var(--surface); }
+.chip.tag { border-radius: var(--r-s); padding: 2px 4px 2px 9px; font-weight: 500; }
+
+/* Buttons: calmer hover (no accent border on every button), a lift on the primary one. */
+.btn { border-radius: var(--r-m); font-weight: 500; transition: background-color .12s, border-color .12s, box-shadow .12s, filter .12s; }
+.btn:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--bd)); }
+.btn.primary { box-shadow: 0 1px 2px rgba(16, 24, 40, .18), inset 0 1px 0 rgba(255, 255, 255, .12); }
+.btn.primary:hover { border-color: var(--accent); }
+.btn.danger:hover { border-color: color-mix(in srgb, var(--err) 50%, var(--bd)); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+
+/* Dialogs: rounder, a deeper shadow, the page behind blurred a little. */
+dialog { border-color: var(--bd2); box-shadow: var(--shadow-lg); }
+dialog::backdrop { background: rgba(12, 16, 24, .42); backdrop-filter: blur(3px); }
+dialog > h2:first-child, dialog form > h2:first-child { font-size: 17px; margin-bottom: 8px; }
+@media (prefers-reduced-motion: no-preference) {
+  dialog[open] { animation: dlgin .16s ease-out; }
+  @keyframes dlgin { from { transform: translateY(6px) scale(.99); } }
+}
+
+/* Cards and tables. */
+.card { border-color: var(--bd2); }
+.grid th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.grid tbody tr { transition: background-color .08s; }
+
+/* The editor: each column a card, headings with room, the tabs as an underline bar. */
+#dlgApp .formgrid { gap: 16px; }
+#dlgApp .formgrid > section { border: 1px solid var(--bd2); border-radius: var(--r-l); padding: 14px 16px 16px; background: color-mix(in srgb, var(--bg) 35%, var(--surface)); min-width: 0; }
+#dlgApp .formgrid > section > h3 { font-size: 14px; margin: 22px 0 4px; padding-top: 16px; border-top: 1px solid var(--bd2); }
+#dlgApp .formgrid > section > h3:first-child, #dlgApp .formgrid > section > .ready + h3 { margin-top: 2px; padding-top: 0; border-top: 0; }
+#dlgApp .formgrid > section > .ready + h3 { margin-top: 14px; }
+.edtabs { gap: 0; padding: 0; border-bottom-color: var(--bd2); }
+.edtab { border-radius: 0; padding: 10px 14px; border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 500; }
+.edtab:hover { background: none; color: var(--fg); }
+.edtab[aria-current="true"] { background: none; color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.ready { border: 1px solid color-mix(in srgb, var(--warn) 30%, var(--bd2)); border-left-width: 1px; background: color-mix(in srgb, var(--warn-bg) 55%, var(--surface)); border-radius: var(--r-l); padding: 12px 14px; }
+.ready.allok { border-color: color-mix(in srgb, var(--ok) 30%, var(--bd2)); background: color-mix(in srgb, var(--ok-bg) 55%, var(--surface)); }
+.ready li.ok { color: var(--fg); opacity: .85; }
+.ready li .mark { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 10px; }
+.ready li.ok .mark { background: color-mix(in srgb, var(--ok) 18%, transparent); }
+.ready li.todo .mark { background: color-mix(in srgb, var(--warn) 18%, transparent); }
+#dlgApp .actions.split { background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(6px); }
+#knownGroups, #filterNote { font-size: 11.5px; }
+
+/* Side panel and group lists: square chips that wrap long names. */
+.chip.static { padding: 3px 9px; background: var(--field); border-color: var(--bd2); }

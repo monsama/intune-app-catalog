@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.15.0
+
+A visual refresh across every page and dialog:
+
+- Fields are filled, with a soft focus ring instead of an outline. Labels
+  are a little stronger, and placeholders are quieter.
+- Group chips have square corners everywhere: the side panel, the editor's
+  group boxes and favourites. Long group names wrap instead of stretching
+  the chip.
+- Buttons have a calmer hover, and the primary button has a slight lift.
+  Dialogs have rounder corners, a deeper shadow, a lightly blurred page
+  behind them and a short slide-in. The slide-in is off when the system asks
+  for reduced motion.
+- The editor shows each column as a card and separates its sections with
+  dividers. Its tabs are an underline bar. The *Ready to send* box is
+  tinted, with round check marks.
+- Table headings are small capitals.
+
 ## 2.14.0
 
 - **Assignment filters**: an app's *Who gets it* takes an Intune
