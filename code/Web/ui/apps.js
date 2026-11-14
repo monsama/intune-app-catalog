@@ -403,7 +403,7 @@ $('btnAppHistory').addEventListener('click', async () => {
 // The change history: one line per change, newest first.
 const histField = f => f.startsWith('metadata.') ? (({ description: 'Description', publisher: 'Publisher', appVersion: 'App version', owner: 'Owner', developer: 'Developer', informationUrl: 'Information URL', privacyUrl: 'Privacy URL',
   installCommand: 'Install command', uninstallCommand: 'Uninstall command', notes: 'Notes', detectionRule: 'Detection rule', returnCodes: 'Return codes', dependencies: 'Dependencies', supersedes: 'Supersedence', isFeatured: 'Featured' })[f.slice(9)] || f.slice(9))
-  : (fieldLabel[f] || ({ assignmentFilter: 'Assignment filter', assignmentFilterMode: 'Filter mode', managedUpdates: 'Managed updates', releases: 'Releases', releaseRule: 'Release rule', icon: 'Icon', autoRelease: 'Release by itself', downloadUrl: 'Download URL', retiringSince: 'Retiring since' })[f] || f);
+  : (f === 'appName' ? 'Name' : fieldLabel[f] || ({ assignmentFilter: 'Assignment filter', assignmentFilterMode: 'Filter mode', managedUpdates: 'Managed updates', releases: 'Releases', releaseRule: 'Release rule', icon: 'Icon', autoRelease: 'Release by itself', downloadUrl: 'Download URL', retiringSince: 'Retiring since' })[f] || f);
 async function loadChanges(name) {
   $('histChanges').replaceChildren(); $('histChangesNote').textContent = 'Reading the history...';
   const r = await api('/api/app-history', { name });

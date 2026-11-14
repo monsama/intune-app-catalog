@@ -125,10 +125,10 @@ Who actually has an app, and which devices failed:
 - **winget** (the "App Installer" package) for the Winget features.
 - An **Entra ID app registration** with a certificate, for app-only
   sign-in. Settings > Setup guide walks through it.
-- **IntuneWinAppUtil.exe** (Microsoft's Win32 Content Prep Tool) and
-  **init.intunewin** (the one package every Winget app deploys with).
-  Neither ships with this app: Settings > Packaging & folders downloads and
-  builds them.
+- **init.intunewin** (the one package every Winget app deploys with) -
+  Settings > Packaging & folders builds it. Packages are built by the app
+  itself; Microsoft's **IntuneWinAppUtil.exe** is optional (the same
+  settings page downloads it, and *Build packages with* chooses).
 
 ## Download
 
@@ -183,6 +183,7 @@ Application permissions, with admin consent:
 | `DeviceManagementScripts.ReadWrite.All` | Platform scripts only |
 | `DeviceManagementManagedDevices.Read.All` | Detected apps (older versions still on devices) only |
 | `Mail.Send` | Email alerts only |
+| `DeviceManagementConfiguration.Read.All` | Assignment filters only (looked up by name) |
 
 **Add required permissions** in Settings adds them for you. When Graph
 refuses a request, the app says which of these is likely missing.
@@ -226,8 +227,8 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 It talks to Microsoft Intune and Microsoft Entra ID through the Microsoft
 Graph API and uses the `Microsoft.Graph.Authentication` PowerShell module,
 which is Microsoft's own and carries its own license. IntuneWinAppUtil.exe
-(downloaded on demand when packaging) is Microsoft's Win32 Content Prep
-Tool, under its own license.
+(downloaded only when you choose it for packaging) is Microsoft's Win32
+Content Prep Tool, under its own license.
 
 ## What it is not
 
