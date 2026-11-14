@@ -750,7 +750,7 @@ dialog::backdrop { background: rgba(12, 16, 24, .42); backdrop-filter: blur(3px)
 dialog > h2:first-child, dialog form > h2:first-child { font-size: 17px; margin-bottom: 8px; }
 @media (prefers-reduced-motion: no-preference) {
   dialog[open] { animation: dlgin .16s ease-out; }
-  @keyframes dlgin { from { opacity: 0; transform: translateY(6px) scale(.99); } }
+  @keyframes dlgin { from { transform: translateY(6px) scale(.99); } }
 }
 
 /* Cards and tables. */

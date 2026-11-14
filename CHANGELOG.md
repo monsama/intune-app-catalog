@@ -11,7 +11,7 @@ A visual refresh across every page and dialog:
   the chip.
 - Buttons have a calmer hover, and the primary button has a slight lift.
   Dialogs have rounder corners, a deeper shadow, a lightly blurred page
-  behind them and a short fade-in. The fade-in is off when the system asks
+  behind them and a short slide-in. The slide-in is off when the system asks
   for reduced motion.
 - The editor shows each column as a card and separates its sections with
   dividers. Its tabs are an underline bar. The *Ready to send* box is
