@@ -1651,7 +1651,8 @@ function Global:ConvertTo-DetectionTestScript {
     param($Rule)
     $q = { param($s) "'" + ([string]$s).Replace("'", "''") + "'" }
     $cmp = { param($have, $op, $want) "`$ok = `$false; try { `$h = [version](($have) -replace '[^0-9.].*$', ''); `$w = [version]($(& $q $want) -replace '[^0-9.].*$', ''); `$ok = switch ($(& $q $op)) { 'equal' { `$h -eq `$w } 'notEqual' { `$h -ne `$w } 'greaterThan' { `$h -gt `$w } 'greaterThanOrEqual' { `$h -ge `$w } 'lessThan' { `$h -lt `$w } 'lessThanOrEqual' { `$h -le `$w } default { `$true } } } catch { `$ok = (($have) -eq $(& $q $want)) }; `$ok" }
-    $expand = { param($p) "[Environment]::ExpandEnvironmentVariables($(& $q $p))" }
+    # In parentheses: as a command argument, [Environment]::... would be passed as text.
+    $expand = { param($p) "([Environment]::ExpandEnvironmentVariables($(& $q $p)))" }
     switch ([string]$Rule.Type) {
         'Msi' {
             $code = [string]$Rule.Msi_ProductCode
