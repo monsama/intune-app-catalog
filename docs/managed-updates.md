@@ -77,6 +77,11 @@ app's assignments use Intune's defaults again.
 
 ## Setting it up
 
+Managed updates are the default for new apps (since 2.9.0). For a
+catalog that started earlier, **Home** lists what's left: making it the
+default, turning it on for the Winget apps without it, and giving managed
+apps without a version winget's current one.
+
 1. **Settings > Defaults > Managed updates**: the pilot groups (a few IT
    devices, then perhaps a wider early-adopter group) and the release rule:
    - **In pilot at least N days.**

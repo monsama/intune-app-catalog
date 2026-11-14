@@ -294,7 +294,7 @@ async function loadPrefs() {
     el('input', { 'data-folder': f.key, value: f.chosen, placeholder: f.default, spellcheck: 'false' }))));
   const d = p.defaults;
   for (const c of document.querySelectorAll('[data-arch]')) c.checked = d.architecture.includes(c.dataset.arch);
-  $('dContext').value = d.installContext; $('dWinget').value = d.wingetInstallMethod || 'WAU';
+  $('dContext').value = d.installContext; $('dWinget').value = d.wingetInstallMethod || 'Managed';
   $('dMinOs').replaceChildren(...p.minOsChoices.map(o => el('option', { value: o.value, text: o.label || o.value })));
   if (![...$('dMinOs').options].some(o => o.value === d.minOSKey)) $('dMinOs').append(el('option', { value: d.minOSKey, text: d.minOSKey }));
   $('dMinOs').value = d.minOSKey;

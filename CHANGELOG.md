@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.9.0
+
+### Changed
+
+- **Managed updates are the default.** New Winget apps install a pinned
+  version and get new ones through the pilot groups (Settings > Defaults >
+  Default values, "Winget apps install with", is *Managed updates* unless
+  you chose otherwise). Add apps ticks it for winget packages, for MSIs
+  (detected by product code and version) and for script apps (detected by
+  their version marker).
+- **Home** helps switch over: *Make it the default* when your settings
+  still say otherwise, *Turn on for all* for Winget apps without managed
+  updates, and *Take winget's versions* for managed apps that have no
+  version yet - also ones already in Intune (their first version; deploy
+  them again so Intune installs it).
+
 ## 2.8.0
 
 ### Added

@@ -502,7 +502,7 @@ try {
     $addS = Invoke-Api '/api/add-script' @{ name = $scName; publisher = 'IT'; version = '2.0'; install = $tpls.templates[1].install; uninstall = $tpls.templates[1].uninstall }
     $scApp = (Invoke-Api '/api/app-get' @{ name = $scName }).app
     $scDir = [string]$addS.folder
-    Check ($addS.ok -and $scApp.deploy.detection.type -eq 'Registry' -and $scApp.deploy.detection.value -eq '2.0' -and $scApp.metadata.installCommand -like '*-File .\Install.ps1' -and (Test-Path -LiteralPath (Join-Path $scDir 'Install.ps1'))) 'add apps: a script app - Install.ps1 in its folder, detected by its version marker' ($addS | ConvertTo-Json -Compress)
+    Check ($addS.ok -and $scApp.deploy.detection.type -eq 'Registry' -and $scApp.deploy.detection.value -eq '2.0' -and $scApp.metadata.installCommand -like '*-File .\Install.ps1' -and (Test-Path -LiteralPath (Join-Path $scDir 'Install.ps1')) -and $scApp.managedUpdates) 'add apps: a script app - Install.ps1 in its folder, detected by its version marker, managed updates on' ($addS | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/add-script' @{ name = $scName; version = '2.0'; install = $tpls.templates[1].install; uninstall = 'x' }).ok) 'add apps: a name already in the catalog is refused'
     [void](Invoke-Api '/api/app-remove' @{ name = $scName }); Remove-Item -LiteralPath $scDir -Recurse -Force -ErrorAction SilentlyContinue
 
@@ -522,6 +522,8 @@ try {
     [void](Invoke-Api '/api/assignments-set' @{ changes = @(@{ name = "$testName renamed"; group = 'SG-ZZ-Grid'; role = '' }) })
     Check (@((Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.availableFor) -notcontains 'SG-ZZ-Grid') 'groups and apps grid: a cell set to none takes the group off'
     Check (-not (Invoke-Api '/api/assignments-set' @{ changes = @(@{ name = "$testName renamed"; group = 'SG-ZZ-Grid'; role = 'owner' }) }).ok) 'groups and apps grid: an unknown role is refused'
+    $md = Invoke-Api '/api/managed-default' @{}
+    Check ($md.ok -and (Invoke-Api '/api/prefs').defaults.wingetInstallMethod -eq 'Managed') 'managed updates: the default for new Winget apps' ($md | ConvertTo-Json -Compress)
     $att = Invoke-Api '/api/attention'
     Check ($att.ok -and @($att.items | Where-Object { $_.title -eq 'Not connected' }).Count -eq 1 -and $att.apps -ge 1) 'home: says it is not connected, counts the apps' ($att | ConvertTo-Json -Compress -Depth 3)
     $pl = Invoke-Api '/api/package-list' @{ json = '{"Sources":[{"Packages":[{"PackageIdentifier":"Vendor.ZZNew"},{"PackageIdentifier":"Mozilla.Firefox"}]}]}' }

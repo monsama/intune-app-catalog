@@ -203,7 +203,8 @@ async function loadHome() {
     ...(s && s.onCurrentPercent !== null ? [stat(s.onCurrentPercent + ' %', `of ${s.devices} devices on the current version`, s.onCurrentPercent < 90 ? 'warn' : 'ok')] : []));
   const where = { 'settings:connection': ['Settings', () => showSettings('connection')], 'settings:defaults': ['Settings', () => showSettings('defaults')], 'settings:packaging': ['Settings', () => showSettings('packaging')],
     'apps:notdeployed': ['Show them', () => { showView('apps'); $('filter').value = 'notdeployed'; renderApps(); updateViewButtons(); }], 'apps:all': ['Apps', () => showView('apps')],
-    updates: ['Updates', () => showView('updates')], checks: ['Checks', () => showView('checks')] };
+    updates: ['Updates', () => showView('updates')], checks: ['Checks', () => showView('checks')],
+    'do:manageddefault': ['Make it the default', makeManagedDefault], 'do:managedall': ['Turn on for all', managedForAll], 'do:takeversions': ["Take winget's versions", takeVersionsForManaged] };
   const pill = { err: ['err', 'Problem'], warn: ['warn', 'Look'], ok: ['ok', 'Ready'], info: ['info', 'To do'] };
   $('homeList').replaceChildren(...(r.items.length ? r.items.map(i => { const w = where[i.go], p = pill[i.level] || pill.info;
     return el('li', { class: 'att ' + i.level }, el('span', { class: 'pill ' + p[0], text: p[1] }), el('div', { class: 'body' }, el('b', { text: i.title }), el('span', { class: 'muted', text: i.text })),
@@ -294,3 +295,30 @@ $('btnMxSave').addEventListener('click', async () => {
   await loadApps(); await openMatrix();
 });
 $('dlgMatrix').addEventListener('cancel', async e => { if (mxChanges.size) { e.preventDefault(); if (await ask(`Discard ${mxChanges.size} change(s) in the grid?`, { ok: 'Discard', danger: true })) { mxChanges.clear(); $('dlgMatrix').close(); } } });
+
+// ---------------------------------------------------------------- managed updates as the default (Home's buttons)
+async function makeManagedDefault() {
+  const r = await api('/api/managed-default', {});
+  toast(r.ok ? 'Managed updates are the default for new Winget apps.' : r.error, !r.ok);
+  await loadPrefs(); loadHome();
+}
+async function managedForAll() {
+  const names = apps.filter(a => a.wingetId && !a.managed).map(a => a.name);
+  if (!names.length) return;
+  if (!(await ask(`Turn managed updates on for ${names.length} Winget app(s)?\n\n${names.slice(0, 12).join(', ')}${names.length > 12 ? ', ...' : ''}\n\nEach installs a fixed version from then on, and new versions go to the pilot groups first. Their install commands follow the App version - apps without one take winget's current version next (Home asks).`, { ok: 'Turn on', danger: false }))) return;
+  const r = await api('/api/managed-updates', { names, on: true });
+  toast(r.ok ? `Managed updates on for ${r.changed.length} app(s)${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}. Undo takes it back.` : r.error, !r.ok);
+  await loadApps(); loadHome();
+}
+async function takeVersionsForManaged() {
+  const names = apps.filter(a => a.wingetId && a.managed && !a.version).map(a => a.name);
+  if (!names.length) return;
+  toast(`Asking winget for the current version of ${names.length} app(s)...`);
+  const w = await api('/api/checks-winget', {});
+  if (!w.ok) { toast(w.error, true); return; }
+  const r = await api('/api/winget-take-version', { names });
+  if (!r.ok) { toast(r.error, true); return; }
+  await loadApps(); loadHome();
+  const inIntune = (r.deployed || []);
+  toast(`${r.changed.length} app(s) now start from winget's current version${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}.${inIntune.length ? ` Deploy ${inIntune.length} of them again so Intune installs that version: ${inIntune.join(', ')}.` : ''}`);
+}

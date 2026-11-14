@@ -299,7 +299,9 @@ function Global:Add-WebScriptApp {
     $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
     if (-not $r.ok) { return $r }
     $rule = if ($useMarker) { Get-ScriptAppMarkerRule -Name $name -Version $version } else { [ordered]@{ Type = 'Script'; Script_Content = (ConvertTo-CanonicalLineEndings ([string]$Data.detectScript)).TrimEnd() } }
-    [void](Update-WebCatalogApp -Name $r.name -Change { param($app) $app.metadata.detectionRule = [pscustomobject]$rule }.GetNewClosure())
+    # Managed updates by default when the version marker detects it (a version-comparing rule), unless turned off.
+    $managed = $useMarker -and [bool]$version -and $Data.managed -ne $false
+    [void](Update-WebCatalogApp -Name $r.name -Change { param($app) $app.metadata.detectionRule = [pscustomobject]$rule; if ($managed) { $app.managedUpdates = $true } }.GetNewClosure())
     Write-Log "[OK] Added the script app $($r.name) - Install.ps1 and Uninstall.ps1 are in $folder."
     return @{ ok = $true; name = $r.name; folder = $folder }
 }

@@ -836,7 +836,8 @@ function Global:Get-FactoryAppSettings {
         # How a Winget app's generated install and uninstall commands run
         # winget: "WAU" through Winget-AutoUpdate's Winget-Install.ps1
         # (needs WAU on the device), "Winget" by calling winget.exe itself.
-        WingetInstallMethod      = "WAU"
+        # New Winget apps: a pinned version, new ones released through the pilot groups (managed updates).
+        WingetInstallMethod      = "Managed"
     }
 }
 

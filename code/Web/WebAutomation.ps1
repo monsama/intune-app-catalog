@@ -699,3 +699,11 @@ function Global:Get-WebHealth {
     # Settings > Managed updates > Check health now.
     return @{ ok = $true; checks = @(Get-WebHealthChecks) }
 }
+
+function Global:Set-WebManagedDefault {
+    # Home > "Make managed updates the default": new Winget apps get a pinned version and the pilot ring.
+    $Global:App.DefaultAppSettings.WingetInstallMethod = 'Managed'
+    if (-not (Write-SettingsFile)) { return @{ ok = $false; error = "Couldn't write the settings file." } }
+    Write-Log '[OK] Managed updates are the default for new Winget apps.'
+    return @{ ok = $true }
+}

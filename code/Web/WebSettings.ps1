@@ -320,7 +320,7 @@ function Global:ConvertTo-WebDefaultSettings {
         DeviceRestartBehavior = [string]$Form.deviceRestartBehavior; AllowAvailableUninstall = [bool]$Form.allowAvailableUninstall
         ReturnCodes = $codes
         DefaultDependencyAppNames = @(@($Form.defaultDependencyAppNames) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
-        WingetInstallMethod = $(if ([string]$Form.wingetInstallMethod -in 'Winget', 'Managed') { [string]$Form.wingetInstallMethod } else { 'WAU' })
+        WingetInstallMethod = $(if ([string]$Form.wingetInstallMethod -in 'WAU', 'Winget') { [string]$Form.wingetInstallMethod } else { 'Managed' })
     } }
 }
 
