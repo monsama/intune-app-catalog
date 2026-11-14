@@ -177,6 +177,8 @@ try {
         // An app added through the editor, then Batch edit and Add groups on it.
         await page.click('#tabApps');
         await page.click('#btnAddApp');
+        await page.waitForSelector('#dlgAdd[open]');
+        await page.click('#btnAddBlank');
         await page.waitForSelector('#dlgApp[open]');
         await page.fill('#aName', testApp);
         await page.fill('#aWinget', 'Vendor.ZZUiTest');

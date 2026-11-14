@@ -31,9 +31,9 @@ function showAddSrc(src) {
 for (const t of document.querySelectorAll('[data-asrc]')) t.addEventListener('click', () => showAddSrc(t.dataset.asrc));
 function updateAddButton() {
   const b = $('btnAddGo');
-  if (addSrc === 'winget') { b.textContent = awPicked.size ? `Add ${awPicked.size} app${awPicked.size === 1 ? '' : 's'}` : 'Add'; b.disabled = !awPicked.size; }
-  else if (addSrc === 'installer') { b.textContent = 'Add'; b.disabled = !aiInfo; }
-  else { b.textContent = 'Add'; b.disabled = !$('asName').value.trim(); }
+  if (addSrc === 'winget') { b.textContent = awPicked.size ? `Add ${awPicked.size} app${awPicked.size === 1 ? '' : 's'}` : 'Add'; setEnabled(b, awPicked.size > 0, 'Tick one or more packages first.'); }
+  else if (addSrc === 'installer') { b.textContent = 'Add'; setEnabled(b, !!aiInfo, 'Drop or choose an installer first.'); }
+  else { b.textContent = 'Add'; setEnabled(b, !!$('asName').value.trim(), 'Give the app a name first.'); }
 }
 $('btnAddBlank').addEventListener('click', () => { $('dlgAdd').close(); openEditor(''); });
 $('btnAddCancel').addEventListener('click', () => $('dlgAdd').close());
