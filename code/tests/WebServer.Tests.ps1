@@ -86,7 +86,7 @@ try {
     Check ($page.Status -eq 200 -and $page.Body -like '*<script src="app.js"*') 'the page is served'
     Check ($page.Headers -match 'Content-Security-Policy: default-src ''self''' -and $page.Headers -match 'X-Frame-Options: DENY' -and $page.Headers -match 'Cache-Control: no-store') 'every response carries the security headers' $page.Headers
     Check ($page.Body -notmatch '<script>[^<]') 'no inline script (the CSP allows none)'
-    foreach ($js in 'core.js', 'apps.js', 'checks.js', 'groups.js', 'updates.js', 'scripts.js', 'settings.js', 'app.js') {
+    foreach ($js in 'core.js', 'apps.js', 'checks.js', 'groups.js', 'updates.js', 'add.js', 'scripts.js', 'settings.js', 'app.js') {
         Check ((Invoke-Raw -Path "/$js").Status -eq 200 -and $page.Body -like "*<script src=`"$js`" defer>*") "$js is served and loaded by the page"
     }
     Check ((Invoke-Raw -Path '/app.css').Status -eq 200) 'app.css is served'
@@ -479,6 +479,33 @@ try {
         [void](Invoke-Api '/api/app-remove' @{ name = $ownName })
         Remove-Item -LiteralPath $ownDir -Recurse -Force -ErrorAction SilentlyContinue
     }
+    # Add apps: an installer uploaded in pieces, a script app - and what is refused.
+    Check (-not (Invoke-Api '/api/upload-start' @{ fileName = 'notes.zip'; size = 10 }).ok) 'add apps: only an .msi or .exe can be uploaded'
+    $setup = [Text.Encoding]::ASCII.GetBytes('MZ fake setup - Nullsoft Install System v3.09 ' + ('x' * 5000))
+    $up = Invoke-Api '/api/upload-start' @{ fileName = 'zz-tool-setup.exe'; size = $setup.Length }
+    $first = Invoke-Api '/api/upload-chunk' @{ uploadId = $up.uploadId; offset = 0; data = [Convert]::ToBase64String($setup, 0, 3000) }
+    Check ($up.ok -and $first.ok -and $first.received -eq 3000 -and -not (Invoke-Api '/api/upload-chunk' @{ uploadId = $up.uploadId; offset = 4000; data = 'AAAA' }).ok) 'add apps: an upload arrives piece by piece, in order'
+    [void](Invoke-Api '/api/upload-chunk' @{ uploadId = $up.uploadId; offset = 3000; data = [Convert]::ToBase64String($setup, 3000, $setup.Length - 3000) })
+    $fin = Invoke-Api '/api/upload-finish' @{ uploadId = $up.uploadId }
+    Check ($fin.ok -and $fin.kind -eq 'exe' -and $fin.exeKind -eq 'nsis' -and $fin.installCommand -eq '"zz-tool-setup.exe" /S' -and $fin.detection -eq 'Script') 'add apps: the installer is read - an NSIS setup, its silent switch, detection by what Windows lists' ($fin | ConvertTo-Json -Compress)
+    $upName = 'ZZ Upload ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    $addI = Invoke-Api '/api/add-installer' @{ uploadId = $up.uploadId; name = $upName; publisher = 'ZZ Vendor'; version = '1.2.3'; requiredFor = @('SG-ZZ-Up'); availableFor = @() }
+    $upApp = (Invoke-Api '/api/app-get' @{ name = $upName }).app
+    $upDir = [string]$addI.folder
+    Check ($addI.ok -and $upApp.metadata.installCommand -eq '"zz-tool-setup.exe" /S' -and $upApp.metadata.uninstallCommand -like '*Uninstall.ps1' -and $upApp.deploy.detection.type -eq 'Script' -and @($upApp.requiredFor) -contains 'SG-ZZ-Up' -and $upApp.metadata.publisher -eq 'ZZ Vendor' -and
+        (Test-Path -LiteralPath (Join-Path $upDir 'zz-tool-setup.exe')) -and (Test-Path -LiteralPath (Join-Path $upDir 'Uninstall.ps1'))) 'add apps: the installer becomes an own package - commands, detection, groups, the file and Uninstall.ps1 in its folder' ($addI | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/add-installer' @{ uploadId = $up.uploadId; name = 'again' }).ok) 'add apps: an upload is added once'
+    [void](Invoke-Api '/api/app-remove' @{ name = $upName }); Remove-Item -LiteralPath $upDir -Recurse -Force -ErrorAction SilentlyContinue
+    $scName = 'ZZ Script ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    $tpls = Invoke-Api '/api/script-templates' @{ name = $scName; version = '2.0' }
+    Check (-not (Invoke-Api '/api/add-script' @{ name = $scName; version = '2.0'; install = 'Write-Output hi'; uninstall = 'Write-Output bye' }).ok) 'add apps: a script app without the version marker or a detection script is refused'
+    $addS = Invoke-Api '/api/add-script' @{ name = $scName; publisher = 'IT'; version = '2.0'; install = $tpls.templates[1].install; uninstall = $tpls.templates[1].uninstall }
+    $scApp = (Invoke-Api '/api/app-get' @{ name = $scName }).app
+    $scDir = [string]$addS.folder
+    Check ($addS.ok -and $scApp.deploy.detection.type -eq 'Registry' -and $scApp.deploy.detection.value -eq '2.0' -and $scApp.metadata.installCommand -like '*-File .\Install.ps1' -and (Test-Path -LiteralPath (Join-Path $scDir 'Install.ps1'))) 'add apps: a script app - Install.ps1 in its folder, detected by its version marker' ($addS | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/add-script' @{ name = $scName; version = '2.0'; install = $tpls.templates[1].install; uninstall = 'x' }).ok) 'add apps: a name already in the catalog is refused'
+    [void](Invoke-Api '/api/app-remove' @{ name = $scName }); Remove-Item -LiteralPath $scDir -Recurse -Force -ErrorAction SilentlyContinue
+
     $muOff = Invoke-Api '/api/managed-updates' @{ names = @("$testName renamed"); on = $false }
     Check ($muOff.ok -and -not (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.managedUpdates) 'managed updates: turned off again'
 

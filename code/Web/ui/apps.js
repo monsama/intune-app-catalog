@@ -343,7 +343,7 @@ async function openEditor(name) {
   editorSnapshot = editorState();
   $('aName').focus();
 }
-$('btnAddApp').addEventListener('click', () => openEditor(''));
+$('btnAddApp').addEventListener('click', () => openAdd());
 $('btnEditApp').addEventListener('click', () => { if (selected.size === 1) openEditor([...selected][0]); });
 $('appForm').addEventListener('submit', async e => {
   e.preventDefault();

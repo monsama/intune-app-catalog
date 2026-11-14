@@ -167,6 +167,13 @@ $testableFunctionNames = @(
     "Get-InventorySuggestions",
     "Get-GateVersion",
     "Get-MonthlyReportData",
+    "ConvertFrom-WingetShowOutput",
+    "Get-InstallerKind",
+    "Get-InstallerProposal",
+    "New-InstalledAppDetectionScript",
+    "New-InstalledAppUninstallScript",
+    "Get-ScriptAppTemplates",
+    "Get-ScriptAppMarkerRule",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -678,6 +685,27 @@ $mreps = @(@{ started = '2026-10-01 03:00'; items = @(@{ app = 'A'; outcome = 'r
     @{ started = '2026-11-01 03:00'; items = @(@{ app = 'C'; outcome = 'released'; text = 'other month' }) })
 $md = Get-MonthlyReportData -Reports $mreps -Month '2026-10'
 Assert-True ($md.runs -eq 2 -and $md.released -eq 1 -and $md.promoted -eq 1 -and $md.startPercent -eq 80 -and $md.endPercent -eq 92 -and @($md.events).Count -eq 2) "Get-MonthlyReportData: the month's runs, what happened, and the trend from start to end"
+
+# Adding apps: winget details, installers, script apps
+$show = "Found 7-Zip [7zip.7zip]`r`nVersion: 24.08`r`nPublisher: Igor Pavlov`r`nPublisher Url: https://www.7-zip.org/`r`nDescription:`r`n  Free and open source file archiver`r`n  with a high compression ratio.`r`nHomepage: https://www.7-zip.org/`r`nLicense: LGPL-2.1-or-later`r`nPrivacy Url: https://www.7-zip.org/privacy`r`nTags:`r`n  7zip`r`n  archiver`r`nInstaller:`r`n  Installer Type: exe`r`n  Installer Url: https://example.test/7z.exe"
+$sd = ConvertFrom-WingetShowOutput $show
+Assert-True ($sd.Id -eq '7zip.7zip' -and $sd.Name -eq '7-Zip' -and $sd.Version -eq '24.08' -and $sd.Publisher -eq 'Igor Pavlov' -and $sd.Description -eq 'Free and open source file archiver with a high compression ratio.' -and $sd.Homepage -eq 'https://www.7-zip.org/' -and $sd.PrivacyUrl -like '*privacy' -and (@($sd.Tags) -join ',') -eq '7zip,archiver') "ConvertFrom-WingetShowOutput: name, ID, publisher, a description over two lines, URLs and tags - not the installer's keys"
+Assert-Equal 'inno' (Get-InstallerKind 'xx Inno Setup Setup Data (6.2.0) xx') "Get-InstallerKind: Inno Setup"
+Assert-Equal 'nsis' (Get-InstallerKind 'Nullsoft Install System v3.09') "Get-InstallerKind: NSIS"
+Assert-Equal '' (Get-InstallerKind 'just a program') "Get-InstallerKind: unknown"
+$msiP = Get-InstallerProposal @{ Kind = 'msi'; FileName = 'Agent.msi'; ProductName = 'Contoso Agent'; Manufacturer = 'Contoso'; ProductVersion = '3.2.1'; ProductCode = '{1c2d3e4f-1111-2222-3333-444455556666}' }
+Assert-True ($msiP.Name -eq 'Contoso Agent' -and $msiP.InstallCommand -eq 'msiexec /i "Agent.msi" /qn /norestart' -and $msiP.UninstallCommand -eq 'msiexec /x {1C2D3E4F-1111-2222-3333-444455556666} /qn /norestart' -and $msiP.Detection.Type -eq 'Msi' -and $msiP.Detection.Msi_VersionOperator -eq 'greaterThanOrEqual' -and $msiP.ManagedOk -and -not (Test-VersionDetectionRule ([pscustomobject]$msiP.Detection))) "Get-InstallerProposal: an MSI - msiexec, its product code, by version (managed updates possible)"
+$exeP = Get-InstallerProposal @{ Kind = 'exe'; FileName = 'tool-setup.exe'; ProductName = 'Tool'; Manufacturer = 'Vendor'; ProductVersion = '2.1.0.5'; ExeKind = 'inno' }
+Assert-True ($exeP.InstallCommand -eq '"tool-setup.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-' -and $exeP.UninstallCommand -like '*-File .\Uninstall.ps1' -and $exeP.NeedsUninstallScript -and $exeP.Detection.Type -eq 'Script' -and -not $exeP.ManagedOk) "Get-InstallerProposal: an Inno Setup EXE - its silent switch, an uninstall script, detection by what Windows lists"
+$unkP = Get-InstallerProposal @{ Kind = 'exe'; FileName = 'Contoso_Viewer_v4.2_x64.exe'; ProductName = ''; ProductVersion = '' ; ExeKind = '' }
+Assert-True ($unkP.Name -eq 'Contoso Viewer' -and $unkP.InstallCommand -eq '"Contoso_Viewer_v4.2_x64.exe"' -and @($unkP.Notes | Where-Object { $_ -like '*silent switch*' }).Count -eq 1) "Get-InstallerProposal: an unknown EXE - a name from the file, and a note to add the silent switch"
+$parseErr = { param($t) $e = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($t, [ref]$null, [ref]$e); @($e).Count }
+Assert-Equal 0 (& $parseErr (New-InstalledAppDetectionScript -DisplayName "O'Brien Tool" -Version '2.1')) "New-InstalledAppDetectionScript: valid PowerShell, even with a quote in the name"
+Assert-Equal 0 (& $parseErr (New-InstalledAppUninstallScript -DisplayName "O'Brien Tool" -ExeKind 'nsis')) "New-InstalledAppUninstallScript: valid PowerShell"
+$tpl = @(Get-ScriptAppTemplates -Name "Contoso's printers" -Version '1.0')
+Assert-True ($tpl.Count -eq 4 -and @($tpl | Where-Object { (& $parseErr $_.install) -or (& $parseErr $_.uninstall) -or $_.install -notmatch 'IntuneAppCatalog\\Apps' }).Count -eq 0) "Get-ScriptAppTemplates: four templates, each valid PowerShell and writing the version marker"
+$mk = Get-ScriptAppMarkerRule -Name 'Contoso printers' -Version '1.0'
+Assert-True ($mk.Type -eq 'Registry' -and $mk.Reg_DetectionValue -eq '1.0' -and -not (Test-VersionDetectionRule ([pscustomobject]$mk))) "Get-ScriptAppMarkerRule: a registry rule by version - managed updates can follow it"
 
 # Alerts
 $rep = @{ failed = 0; planOnly = $false; items = @(@{ app = 'A'; outcome = 'current'; text = 'fine' }, @{ app = 'B'; outcome = 'hold'; text = 'too many failed' }) }

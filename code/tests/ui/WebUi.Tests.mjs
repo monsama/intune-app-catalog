@@ -99,7 +99,20 @@ try {
       check(await page.isVisible('#setupBanner'), `${label}: the "no connection" banner shows`);
       await noOverflow('Apps'); await unnamed('Apps'); await a11y('Apps'); await shot('apps');
 
+      // Add apps: three ways in; the empty form is one click further.
       await page.click('#btnAddApp');
+      await page.waitForSelector('#dlgAdd[open]');
+      check(await page.isVisible('#awQuery') && await page.isDisabled('#btnAddGo'), `${label}: Add apps opens on the winget search, Add off until something is picked`);
+      await unnamed('Add apps (winget)'); await a11y('Add apps (winget)'); await shot('add-winget');
+      await page.click('#atab-installer');
+      check(await page.isVisible('#aiDrop'), `${label}: Add apps has a drop zone for an installer`);
+      await a11y('Add apps (installer)');
+      await page.click('#atab-script');
+      await page.waitForFunction(() => document.getElementById('asTemplate').options.length > 0 && /IntuneAppCatalog/.test(document.getElementById('asInstall').value));
+      await page.fill('#asName', 'ZZ UI script');
+      check(!(await page.isDisabled('#btnAddGo')), `${label}: a script app can be added once it has a name - the template writes the version marker`);
+      await unnamed('Add apps (script)'); await a11y('Add apps (script)'); await shot('add-script');
+      await page.click('#btnAddBlank');
       await page.waitForSelector('#dlgApp[open]');
       await page.click('#deploySec summary');
       await unnamed('the app editor'); await a11y('the app editor'); await shot('editor');
@@ -164,6 +177,8 @@ try {
         // An app added through the editor, then Batch edit and Add groups on it.
         await page.click('#tabApps');
         await page.click('#btnAddApp');
+        await page.waitForSelector('#dlgAdd[open]');
+        await page.click('#btnAddBlank');
         await page.waitForSelector('#dlgApp[open]');
         await page.fill('#aName', testApp);
         await page.fill('#aWinget', 'Vendor.ZZUiTest');
