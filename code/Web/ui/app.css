@@ -490,3 +490,40 @@ label.full input { margin-top: 4px; }
 .healthlist { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; font-size: 13px; }
 .healthlist li { display: flex; gap: 8px; align-items: baseline; }
 #unattNote code { font-size: 12px; word-break: break-all; }
+/* ---- Add apps ---- */
+dialog.addapps { width: min(1100px, calc(100vw - 32px)); }
+.addhead { display: flex; align-items: center; gap: 8px; }
+.addhead h2 { margin: 0; }
+.asec { min-height: 360px; }
+.wgsearch { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.wgsearch input { font-size: 15px; padding: 9px 12px; }
+.awsplit { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; }
+.awsplit .tablewrap { max-height: 340px; overflow: auto; }
+#awGrid th.chk, #awGrid td.chk { width: 34px; text-align: center; }
+#awGrid tbody tr { cursor: pointer; }
+#awGrid tbody tr.dim td { color: var(--muted); cursor: default; }
+.awdetail { border: 1px solid var(--bd); border-radius: var(--r-l); padding: 10px 14px; background: var(--surface); max-height: 340px; overflow: auto; font-size: 13px; }
+.awdetail h3 { margin: 0 0 6px; font-size: 14px; }
+.awdetail p { margin: 0 0 8px; }
+.awdetail .kv { display: grid; grid-template-columns: 90px 1fr; gap: 8px; padding: 3px 0; overflow-wrap: anywhere; }
+.awdetail .kv .k { color: var(--muted); }
+.dropzone { border: 2px dashed var(--bd); border-radius: var(--r-l); padding: 40px 20px; text-align: center; display: flex; flex-direction: column; gap: 6px; cursor: pointer; background: var(--surface); }
+.dropzone strong { font-size: 15px; }
+.dropzone:hover, .dropzone.over, .dropzone:focus-visible { border-color: var(--accent); background: var(--accent-soft); outline: none; }
+.upbar { display: flex; flex-direction: column; gap: 6px; margin: 20px 0; }
+.upbar .bar { height: 8px; border-radius: 999px; background: var(--bd2); overflow: hidden; }
+.upbar .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.formgrid.two { grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+.formgrid.three { grid-template-columns: 2fr 2fr 1fr; gap: 10px 16px; }
+.formgrid.two > label, .formgrid.three > label { font-size: 12px; color: var(--muted); }
+.formgrid.two > label input, .formgrid.two > label textarea, .formgrid.three > label input { display: block; width: 100%; margin-top: 4px; }
+#asec-script textarea.mono, #asec-installer input.mono { font-size: 12px; }
+#aiReview ul.notes { margin: 8px 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
+.addgroups { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin-top: 12px; border-top: 1px solid var(--bd2); padding-top: 10px; }
+.addgroups > label { font-size: 12px; color: var(--muted); }
+.addgroups textarea { display: block; width: 100%; margin-top: 4px; }
+.favchips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
+.chip { font: inherit; font-size: 12px; border: 1px solid var(--bd); background: var(--surface); color: var(--fg); border-radius: 999px; padding: 2px 10px; cursor: pointer; }
+.chip:hover { border-color: var(--accent); }
+@media (max-width: 800px) { .awsplit, .formgrid.two, .formgrid.three, .addgroups { grid-template-columns: 1fr; } }
+textarea.mono { font-family: var(--mono); font-size: 12px; }

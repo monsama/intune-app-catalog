@@ -1437,3 +1437,173 @@ function Global:Get-MonthlyReportData {
         startPercent = $(if ($trend.Count) { $trend[0].trend.onCurrentPercent } else { $null }); endPercent = $(if ($trend.Count) { $trend[-1].trend.onCurrentPercent } else { $null })
         events = $events.ToArray() }
 }
+
+# ---------------------------------------------------------------- adding apps: winget details, installers, script apps
+
+function Global:ConvertFrom-WingetShowOutput {
+    <#
+      Pure: "winget show --id X --exact" as @{ Name; Id; Version; Publisher;
+      PublisherUrl; Description; Homepage; License; PrivacyUrl; Tags }. Keys
+      are at the start of a line ("Key: value"); a value can continue on
+      indented lines (a long description, the tags).
+    #>
+    param([string]$Text)
+    $out = [ordered]@{ Name = ''; Id = ''; Version = ''; Publisher = ''; PublisherUrl = ''; Description = ''; Homepage = ''; License = ''; PrivacyUrl = ''; Tags = @() }
+    $map = @{ 'Version' = 'Version'; 'Publisher' = 'Publisher'; 'Publisher Url' = 'PublisherUrl'; 'Description' = 'Description'; 'Short Description' = 'Description'; 'Homepage' = 'Homepage'; 'License' = 'License'; 'Privacy Url' = 'PrivacyUrl'; 'Tags' = 'Tags' }
+    $key = ''
+    foreach ($raw in @(([string]$Text) -split "`r?`n")) {
+        $line = $raw -replace '[\x00-\x08\x0B\x0C\x0E-\x1F]', ''
+        $m = [regex]::Match($line, '^Found (.+) \[([^\]]+)\]\s*$')
+        if ($m.Success) { $out.Name = $m.Groups[1].Value.Trim(); $out.Id = $m.Groups[2].Value.Trim(); $key = ''; continue }
+        $m = [regex]::Match($line, '^([A-Za-z][A-Za-z ]*?):\s*(.*)$')
+        if ($m.Success) {
+            $k = $m.Groups[1].Value
+            $key = if ($map.ContainsKey($k)) { $map[$k] } else { '' }
+            if ($key -eq 'Description' -and $out.Description -and $k -eq 'Short Description') { $key = ''; continue }
+            if ($key -eq 'Tags') { if ($m.Groups[2].Value.Trim()) { $out.Tags = @($m.Groups[2].Value.Trim()) } }
+            elseif ($key) { $out[$key] = $m.Groups[2].Value.Trim() }
+            continue
+        }
+        if ($key -and $line -match '^\s+\S') {
+            $v = $line.Trim()
+            if ($key -eq 'Tags') { $out.Tags = @($out.Tags) + $v }
+            elseif ($key -eq 'Description') { $out.Description = ($out.Description + ' ' + $v).Trim() }
+            continue
+        }
+        if ($line -notmatch '^\s') { $key = '' }
+    }
+    return $out
+}
+
+function Global:Get-InstallerKind {
+    # Pure: an .exe installer's maker from strings in its first megabytes - inno, nsis, installshield, burn (WiX bundle), advanced (Advanced Installer), or '' when unknown.
+    param([string]$Sample)
+    if ($Sample -match 'Inno Setup') { return 'inno' }
+    if ($Sample -match 'Nullsoft|NSIS Error') { return 'nsis' }
+    if ($Sample -match 'WixBundle|\.wixburn|WiX Toolset') { return 'burn' }
+    if ($Sample -match 'InstallShield') { return 'installshield' }
+    if ($Sample -match 'Advanced Installer') { return 'advanced' }
+    return ''
+}
+
+function Global:Get-InstallerProposal {
+    <#
+      Pure: how to deploy an installer, from what was read from it -
+      -Info: @{ Kind = msi|exe; FileName; ProductName; Manufacturer;
+      ProductVersion; ProductCode; ExeKind }. @{ Name; Publisher; Version;
+      InstallCommand; UninstallCommand; Detection; NeedsUninstallScript;
+      Notes = @(); ManagedOk }. MSI: msiexec, the product code and a
+      version check (managed updates possible). EXE: the maker's silent
+      switch, an uninstall script that finds the app's own uninstaller,
+      and a detection script by the name and version Windows lists.
+    #>
+    param($Info)
+    $file = [string]$Info.FileName
+    $name = ([string]$Info.ProductName).Trim()
+    if (-not $name) { $name = ([System.IO.Path]::GetFileNameWithoutExtension($file) -replace '[_\-.]+(x64|x86|amd64|win64|win32|setup|installer|install)$', '' -replace '[_]+', ' ' -replace '\s+v?\d[\d.]*$', '').Trim() }
+    $version = ([string]$Info.ProductVersion).Trim() -replace '[^0-9A-Za-z.\-+_].*$', ''
+    $notes = New-Object System.Collections.Generic.List[string]
+    $p = [ordered]@{ Name = $name; Publisher = ([string]$Info.Manufacturer).Trim(); Version = $version; InstallCommand = ''; UninstallCommand = ''; Detection = $null; NeedsUninstallScript = $false; Notes = $null; ManagedOk = $false }
+    $ps = '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File'
+    if ([string]$Info.Kind -eq 'msi') {
+        $p.InstallCommand = "msiexec /i `"$file`" /qn /norestart"
+        $code = [string]$Info.ProductCode
+        if ($code -match '^\{[0-9A-Fa-f-]{36}\}$') {
+            $p.UninstallCommand = "msiexec /x $($code.ToUpperInvariant()) /qn /norestart"
+            $p.Detection = [ordered]@{ Type = 'Msi'; Msi_ProductCode = $code.ToUpperInvariant(); Msi_VersionOperator = $(if ($version) { 'greaterThanOrEqual' } else { 'notConfigured' }); Msi_Version = $version }
+            $p.ManagedOk = [bool]$version
+        }
+        else { $notes.Add("The MSI's product code couldn't be read - set the uninstall command and the detection rule in the editor.") }
+        $p.Notes = $notes.ToArray()
+        return $p
+    }
+    $switches = switch ([string]$Info.ExeKind) {
+        'inno' { '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-' }
+        'nsis' { '/S' }
+        'burn' { '/quiet /norestart' }
+        'installshield' { '/s /v"/qn REBOOT=ReallySuppress"' }
+        'advanced' { '/exenoui /qn /norestart' }
+        default { '' }
+    }
+    $p.InstallCommand = "`"$file`"$(if ($switches) { " $switches" })"
+    if (-not $switches) { $notes.Add("The installer's maker wasn't recognised - add its silent switch to the install command (the vendor's documentation, or try /S, /quiet or /silent).") }
+    $p.UninstallCommand = "$ps .\Uninstall.ps1"
+    $p.NeedsUninstallScript = $true
+    $label = if ($name) { $name } else { $file }
+    $p.Detection = [ordered]@{ Type = 'Script'; Script_Content = (New-InstalledAppDetectionScript -DisplayName $label -Version $version) }
+    $notes.Add("Detected by the name and version Windows lists under Apps ('$label' $(if ($version) { "$version or newer" } else { 'any version' })) - check that name after a test install. For managed updates, switch to a file rule by version.")
+    $p.Notes = $notes.ToArray()
+    return $p
+}
+
+function Global:New-InstalledAppDetectionScript {
+    # Pure: a detection script - the app is installed when Windows lists it (Uninstall keys, both views) by -DisplayName with -Version or newer.
+    param([string]$DisplayName, [string]$Version)
+    $n = $DisplayName.Replace("'", "''"); $v = ([string]$Version).Replace("'", "''")
+    return @"
+`$name = '$n'; `$want = '$v'
+`$keys = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+foreach (`$e in @(Get-ItemProperty -Path `$keys -ErrorAction SilentlyContinue | Where-Object { `$_.DisplayName -like "`$name*" })) {
+    if (-not `$want) { Write-Output 'Installed'; exit 0 }
+    try { if ([version](`$e.DisplayVersion -replace '[^0-9.].*$', '') -ge [version](`$want -replace '[^0-9.].*$', '')) { Write-Output 'Installed'; exit 0 } } catch { if (`$e.DisplayVersion -eq `$want) { Write-Output 'Installed'; exit 0 } }
+}
+exit 0
+"@
+}
+
+function Global:New-InstalledAppUninstallScript {
+    # Pure: Uninstall.ps1 for an .exe app - runs the uninstaller Windows lists for -DisplayName, silently (the maker's switch when it's known).
+    param([string]$DisplayName, [string]$ExeKind)
+    $n = $DisplayName.Replace("'", "''")
+    $sw = switch ($ExeKind) { 'inno' { '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' } 'nsis' { '/S' } 'burn' { '/uninstall /quiet /norestart' } 'installshield' { '/s' } default { '/S' } }
+    return @"
+# Uninstalls '$n': the uninstaller Windows lists for it, silently. Written by Intune App Catalog.
+`$name = '$n'
+`$keys = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+`$entry = @(Get-ItemProperty -Path `$keys -ErrorAction SilentlyContinue | Where-Object { `$_.DisplayName -like "`$name*" }) | Select-Object -First 1
+if (-not `$entry) { Write-Output "`$name is not installed."; exit 0 }
+if (`$entry.PSChildName -match '^\{[0-9A-Fa-f-]{36}\}$' -and `$entry.UninstallString -match 'msiexec') {
+    `$p = Start-Process msiexec.exe -ArgumentList "/x `$(`$entry.PSChildName) /qn /norestart" -Wait -PassThru; exit `$p.ExitCode
+}
+`$cmd = if (`$entry.QuietUninstallString) { [string]`$entry.QuietUninstallString } else { [string]`$entry.UninstallString + ' $sw' }
+`$m = [regex]::Match(`$cmd, '^\s*"([^"]+)"\s*(.*)$')
+if (-not `$m.Success) { `$m = [regex]::Match(`$cmd, '^\s*(\S+\.exe)\s*(.*)$') }
+if (-not `$m.Success) { Write-Output "Can't read the uninstall command: `$cmd"; exit 1 }
+`$p = Start-Process -FilePath `$m.Groups[1].Value -ArgumentList `$m.Groups[2].Value -Wait -PassThru
+exit `$p.ExitCode
+"@
+}
+
+function Global:Get-ScriptAppTemplates {
+    # Pure: the starting points for a script app: @(@{ id; label; install; uninstall }), with the app's name and version filled in. Each install writes the version marker the detection rule reads.
+    param([string]$Name, [string]$Version)
+    $n = $Name.Replace("'", "''"); $v = ([string]$Version).Replace("'", "''")
+    $marker = @"
+# The version marker Intune's detection rule reads (HKLM\SOFTWARE\IntuneAppCatalog\Apps\<name>, Version) - keep it last.
+New-Item -Path 'HKLM:\SOFTWARE\IntuneAppCatalog\Apps\$n' -Force | Out-Null
+Set-ItemProperty -Path 'HKLM:\SOFTWARE\IntuneAppCatalog\Apps\$n' -Name Version -Value '$v'
+"@
+    $unmarker = "Remove-Item -Path 'HKLM:\SOFTWARE\IntuneAppCatalog\Apps\$n' -Recurse -Force -ErrorAction SilentlyContinue"
+    $head = "`$ErrorActionPreference = 'Stop'`r`n# Runs as SYSTEM from the package folder (every file you put in Packages\<app> is next to it).`r`n"
+    return @(
+        [ordered]@{ id = 'installer'; label = 'Run an installer with arguments'
+            install = $head + "`$p = Start-Process -FilePath (Join-Path `$PSScriptRoot 'setup.exe') -ArgumentList '/S' -Wait -PassThru`r`nif (`$p.ExitCode -notin 0, 3010) { exit `$p.ExitCode }`r`n" + $marker + "`r`nexit `$p.ExitCode"
+            uninstall = $head + "`$p = Start-Process -FilePath `"`$env:ProgramFiles\$n\uninstall.exe`" -ArgumentList '/S' -Wait -PassThru`r`n$unmarker`r`nexit `$p.ExitCode" },
+        [ordered]@{ id = 'files'; label = 'Copy files to Program Files'
+            install = $head + "`$target = Join-Path `$env:ProgramFiles '$n'`r`nNew-Item -ItemType Directory -Path `$target -Force | Out-Null`r`nCopy-Item -Path (Join-Path `$PSScriptRoot 'files\*') -Destination `$target -Recurse -Force`r`n" + $marker
+            uninstall = $head + "Remove-Item -Path (Join-Path `$env:ProgramFiles '$n') -Recurse -Force -ErrorAction SilentlyContinue`r`n$unmarker" },
+        [ordered]@{ id = 'settings'; label = 'Set registry values (a configuration)'
+            install = $head + "New-Item -Path 'HKLM:\SOFTWARE\Policies\Vendor\App' -Force | Out-Null`r`nSet-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Vendor\App' -Name 'Setting' -Value 1 -Type DWord`r`n" + $marker
+            uninstall = $head + "Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Vendor\App' -Name 'Setting' -ErrorAction SilentlyContinue`r`n$unmarker" },
+        [ordered]@{ id = 'blank'; label = 'Empty script'
+            install = $head + "# Your install steps here.`r`n" + $marker
+            uninstall = $head + "# Your uninstall steps here.`r`n$unmarker" }
+    )
+}
+
+function Global:Get-ScriptAppMarkerRule {
+    # Pure: the detection rule for a script app - its version marker, this version or newer (so managed updates can follow it).
+    param([string]$Name, [string]$Version)
+    return [ordered]@{ Type = 'Registry'; Reg_KeyPath = "HKEY_LOCAL_MACHINE\SOFTWARE\IntuneAppCatalog\Apps\$Name"; Reg_ValueName = 'Version'; Reg_Check32Bit = $false
+        Reg_DetectionType = $(if ($Version) { 'version' } else { 'exists' }); Reg_Operator = $(if ($Version) { 'greaterThanOrEqual' } else { 'notConfigured' }); Reg_DetectionValue = [string]$Version }
+}

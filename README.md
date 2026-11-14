@@ -34,6 +34,12 @@ it opens can talk to it.
 - Batch edit settings, and add, remove or replace groups, on several apps
   at once - with a preview of every change before it's written, and
   **Undo** for the last bulk change.
+- **Add apps** three ways: **winget** (search as you type, pick several,
+  each added with winget's publisher, description and links), an
+  **installer** dropped on the page (an MSI's name, version and product
+  code, an EXE's maker and silent switch - commands and detection worked
+  out, the file put in its packages folder), or a **PowerShell script** app
+  from a template, detected by a version marker.
 - **Export to CSV / Import from CSV** (Catalog menu): edit many apps in
   Excel; the import shows every change first and is checked like the editor.
 - Saved views in the Apps list, and `group:name` in the search box.
@@ -150,7 +156,9 @@ app either way: it writes its step helpers at run time.
 4. **Settings > Packaging & folders**: **Download packaging tool**, then
    **Build init.intunewin**.
 5. **Checks** lists the apps already in Intune - tick them and **Add to
-   catalog**. Or **Add app** to start from scratch.
+   catalog**. Or **Add app**: search winget and pick several, drop an MSI
+   or EXE, or write a PowerShell script app (see
+   [docs/adding-apps.md](docs/adding-apps.md)).
 
 Settings > Packaging & folders > Folders points the catalog, packages, tools, scripts, logs and
 backups somewhere else; leave a box empty to keep the default beside the

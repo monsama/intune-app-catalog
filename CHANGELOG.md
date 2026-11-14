@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.7.0
+
+### Added
+
+- **Add apps** (the Apps tab's Add button, or drop an installer on the
+  list) - three ways in, each ending in an app that's ready to deploy:
+  - **Winget:** search as you type, tick several packages, add them at
+    once. Each gets what `winget show` knows - publisher, description,
+    homepage, privacy URL, license - the groups you give, and managed
+    updates when ticked. Packages already in the catalog are marked and
+    can't be picked twice. A side panel shows the package you clicked.
+  - **Installer (MSI / EXE):** drop the file (or choose it). It's uploaded
+    in pieces and read: an MSI's ProductName, ProductVersion, Manufacturer
+    and ProductCode; an EXE's version information, its maker (Inno Setup,
+    NSIS, WiX bundle, InstallShield, Advanced Installer) and signature.
+    The install and uninstall commands and the detection rule are worked
+    out - msiexec and the product code by version for an MSI (managed
+    updates possible); the maker's silent switch, an Uninstall.ps1 that
+    runs the uninstaller Windows lists, and detection by name and version
+    for an EXE. Everything can be changed before adding. The file goes
+    into the app's packages folder, and the package can be built straight
+    away.
+  - **PowerShell script:** Install.ps1 and Uninstall.ps1 from a template
+    (run an installer, copy files, set registry values, empty), checked
+    for syntax, run as SYSTEM with 64-bit PowerShell. Detected by a version
+    marker the install script writes - a registry rule by version, so
+    managed updates can follow it - or by your own detection script.
+  - Groups for all of them in one place, with your favourite groups one
+    click away. **Empty form...** still opens the full editor.
+
 ## 2.6.0
 
 ### Added

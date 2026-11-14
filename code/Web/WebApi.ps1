@@ -10,7 +10,7 @@
   This file has the route table (Invoke-WebApi) and what every page
   shares: reading the catalog, the catalog lock, step jobs and their
   completion, the Activity log. The pages: WebEditor.ps1, WebDeploy.ps1,
-  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebTenant.ps1, WebReleases.ps1, WebAutomation.ps1, WebGroups.ps1,
+  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebTenant.ps1, WebReleases.ps1, WebAutomation.ps1, WebAdd.ps1, WebGroups.ps1,
   WebScripts.ps1, WebSetup.ps1; Graph reads go through WebGraph.ps1.
 #>
 
@@ -482,6 +482,15 @@ function Global:Invoke-WebApi {
         '/api/release-advanced' { return (Invoke-WithCatalogLock { Complete-WebAdvance $Data }) }
         '/api/alert-test'       { return (Send-WebTestAlert) }
         '/api/health'           { return (Get-WebHealth) }
+        '/api/winget-details'   { return (Get-WebWingetDetails $Data) }
+        '/api/add-winget'       { return (Invoke-WithCatalogLock { Add-WebWingetApps $Data }) }
+        '/api/upload-start'     { return (Start-WebUpload $Data) }
+        '/api/upload-chunk'     { return (Add-WebUploadChunk $Data) }
+        '/api/upload-finish'    { return (Complete-WebUpload $Data) }
+        '/api/upload-cancel'    { return (Remove-WebUpload $Data) }
+        '/api/add-installer'    { return (Invoke-WithCatalogLock { Add-WebInstallerApp $Data }) }
+        '/api/script-templates' { return (Get-WebScriptTemplates $Data) }
+        '/api/add-script'       { return (Invoke-WithCatalogLock { Add-WebScriptApp $Data }) }
         '/api/inventory-suggestions' { return (Get-WebInventorySuggestions) }
         '/api/unattended-status' { return (Get-WebUnattendedStatus) }
         '/api/unattended-script' { return (New-WebUnattendedScript) }

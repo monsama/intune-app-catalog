@@ -13,6 +13,7 @@
 <script src="checks.js" defer></script>
 <script src="groups.js" defer></script>
 <script src="updates.js" defer></script>
+<script src="add.js" defer></script>
 <script src="scripts.js" defer></script>
 <script src="settings.js" defer></script>
 <script src="app.js" defer></script>
@@ -818,6 +819,83 @@
   <p class="sub" id="sStatusSummary"></p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>Device</th><th>User</th><th>State</th><th>Output</th><th>Error</th><th>Last run</th></tr></thead><tbody id="sStatusRows"></tbody></table></div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgAdd" class="wide addapps" aria-labelledby="addTitle">
+  <div class="addhead">
+    <h2 id="addTitle">Add apps</h2>
+    <span class="spacer"></span>
+    <button class="btn ghost small" id="btnAddBlank" title="The full editor with nothing filled in">Empty form...</button>
+  </div>
+  <nav class="subtabs" role="tablist" aria-label="Where the app comes from">
+    <button class="subtab" role="tab" id="atab-winget" data-asrc="winget" aria-controls="asec-winget" aria-selected="true">Winget</button>
+    <button class="subtab" role="tab" id="atab-installer" data-asrc="installer" aria-controls="asec-installer" aria-selected="false">Installer (MSI / EXE)</button>
+    <button class="subtab" role="tab" id="atab-script" data-asrc="script" aria-controls="asec-script" aria-selected="false">PowerShell script</button>
+  </nav>
+
+  <section class="asec" id="asec-winget" role="tabpanel" aria-labelledby="atab-winget">
+    <div class="wgsearch">
+      <input type="search" id="awQuery" class="full" placeholder="Search winget - name, publisher or ID (e.g. 7-Zip, Mozilla, Notepad++)" aria-label="Search winget" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+      <span class="muted" id="awNote" aria-live="polite">Type to search - results appear as you type.</span>
+    </div>
+    <div class="awsplit">
+      <div class="tablewrap" tabindex="0" aria-label="Winget packages">
+        <table class="grid" id="awGrid"><thead><tr><th class="chk"><span class="sr">Pick</span></th><th>Package</th><th>ID</th><th>Version</th></tr></thead><tbody id="awRows"></tbody></table>
+      </div>
+      <aside class="awdetail" id="awDetail" aria-live="polite"><p class="muted">Pick a package to see what winget says about it.</p></aside>
+    </div>
+    <label class="chk" title="Install a fixed version (winget's current one) and release new versions to the pilot groups first"><input type="checkbox" id="awManaged">Managed updates (pin winget's current version)</label>
+  </section>
+
+  <section class="asec" id="asec-installer" role="tabpanel" aria-labelledby="atab-installer" hidden>
+    <div class="dropzone" id="aiDrop" tabindex="0" role="button" aria-describedby="aiDropText">
+      <strong>Drop an .msi or .exe here</strong>
+      <span id="aiDropText" class="muted">or <u>choose a file</u> - it's read for its name, publisher, version and silent switches, and copied into the app's packages folder.</span>
+      <input type="file" id="aiFile" accept=".msi,.exe" hidden>
+    </div>
+    <div class="upbar" id="aiProgress" hidden><div class="bar"><span id="aiBar"></span></div><span class="muted" id="aiProgressText"></span></div>
+    <div id="aiReview" hidden>
+      <p class="sub" id="aiFacts"></p>
+      <div class="formgrid two">
+        <label>Name<input id="aiName" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label>Publisher<input id="aiPublisher" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label>Version<input id="aiVersion" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label>Detected by<input id="aiDetection" readonly autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+      </div>
+      <label class="full">Install command<input id="aiInstall" class="mono full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+      <label class="full">Uninstall command<input id="aiUninstall" class="mono full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+      <ul class="notes" id="aiNotes"></ul>
+      <label class="chk" id="aiManagedRow" title="Release new versions of this MSI to the pilot groups first - the detection rule follows the version"><input type="checkbox" id="aiManaged">Managed updates</label>
+      <label class="chk" title="Build the .intunewin from the app's folder right after adding it (needs the packaging tool)"><input type="checkbox" id="aiBuild" checked>Build the package now</label>
+    </div>
+  </section>
+
+  <section class="asec" id="asec-script" role="tabpanel" aria-labelledby="atab-script" hidden>
+    <div class="formgrid three">
+      <label>Name<input id="asName" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. Contoso printer setup"></label>
+      <label>Publisher<input id="asPublisher" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+      <label>Version<input id="asVersion" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="1.0"></label>
+    </div>
+    <label class="inline">Start from <select id="asTemplate" aria-label="Template"></select></label>
+    <div class="formgrid two">
+      <label>Install.ps1<textarea id="asInstall" class="mono" rows="10" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
+      <label>Uninstall.ps1<textarea id="asUninstall" class="mono" rows="10" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
+    </div>
+    <fieldset class="ownrule"><legend>Detection</legend>
+      <label class="chk"><input type="radio" name="asDetect" value="marker" checked>The version marker Install.ps1 writes (recommended - managed updates can follow it)</label>
+      <label class="chk"><input type="radio" name="asDetect" value="script">A detection script of my own</label>
+      <textarea id="asDetectScript" class="mono full" rows="5" aria-label="Detection script" hidden autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="if (Test-Path 'C:\Program Files\Contoso\app.exe') { Write-Output 'Installed' }"></textarea>
+    </fieldset>
+    <p class="muted note">Both scripts run as SYSTEM with 64-bit PowerShell from the package folder (Packages\&lt;app&gt;) - put any files they need there too.</p>
+  </section>
+
+  <div class="addgroups">
+    <label>Required for <span class="muted">(one group per line)</span><textarea id="adRequired" rows="2" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
+    <label>Available for <span class="muted">(one group per line)</span><textarea id="adAvailable" rows="2" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
+    <div class="favchips" id="adFavs" aria-label="Favourite groups"></div>
+  </div>
+  <p class="formerror" id="addError" hidden></p>
+  <div class="actions end"><button class="btn" id="btnAddCancel">Cancel</button><button class="btn primary" id="btnAddGo" disabled>Add</button></div>
 </dialog>
 
 <dialog id="dlgSuggest" class="wide" aria-labelledby="sgTitle">
