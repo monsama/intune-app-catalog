@@ -303,6 +303,12 @@ try {
     Check (-not $badRings.ok -and $badRings.error -like 'Release rings*Line 1*') 'release rings: a line without "Name:" is refused, saying which' ($badRings | ConvertTo-Json -Compress)
     $badAlert = Invoke-Api '/api/prefs-save' @{ alerts = @{ level = 'always'; webhookUrl = 'http://not-https.example/x' } }
     Check (-not $badAlert.ok -and $badAlert.error -like '*https*') 'alerts: a webhook that is not https is refused' ($badAlert | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/inventory-suggestions').ok) 'apps worth adding: needs a connection'
+    $hc0 = Invoke-Api '/api/health'
+    Check ($hc0.ok -and @($hc0.checks | Where-Object { $_.level -eq 'failed' -and $_.text -like '*connection*' }).Count -eq 1) 'health: no connection is a problem, said plainly' ($hc0 | ConvertTo-Json -Compress -Depth 4)
+    $us = Invoke-Api '/api/unattended-status'
+    Check ($us.ok -and -not $us.ready) 'running unattended: not ready without a task and the certificate' ($us | ConvertTo-Json -Compress -Depth 4)
+    Check (-not (Invoke-Api '/api/unattended-script' @{}).ok) 'running unattended: no script before the task exists (or off Windows)'
     $tr = Invoke-Api '/api/updates-trend'
     Check ($tr.ok -and @($tr.points).Count -eq 0) 'updates trend: no nightly run yet - no points'
     $uoff = Invoke-Api '/api/updates-overview'

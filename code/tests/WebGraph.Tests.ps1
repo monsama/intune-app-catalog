@@ -69,6 +69,10 @@ $answers = [ordered]@{
     "GET beta/deviceManagement/detectedApps?`$filter=startswith(displayName,'$relOldName')&`$select=id,displayName,version,deviceCount&`$top=999" = @{ value = @(
             @{ displayName = $relOldName; version = '1.5'; deviceCount = 3 }, @{ displayName = "$relOldName 1.0 (x64)"; version = '1.0'; deviceCount = 2 },
             @{ displayName = "$relOldName Helper"; version = '0.1'; deviceCount = 9 }, @{ displayName = $relOldName; version = '2.0'; deviceCount = 50 }) }
+    # Apps worth adding: the whole inventory - one app the catalog lacks, one it has.
+    'GET beta/deviceManagement/detectedApps?$select=id,displayName,version,deviceCount&$top=999' = @{ value = @(
+            @{ displayName = 'ZZ Suggest Me'; version = '1.0'; deviceCount = 4 }, @{ displayName = 'ZZ Suggest Me (x64)'; version = '1.1'; deviceCount = 2 },
+            @{ displayName = $linkedName; version = '1.0'; deviceCount = 8 }, @{ displayName = 'Windows PC Health Check'; version = '3.6'; deviceCount = 30 }) }
     # Alerts: the email, sent with Graph.
     'POST v1.0/users/reports@contoso.com/sendMail' = $null
     # The install overview's report (one row) and one app's icon.
@@ -341,6 +345,14 @@ try {
     $uoOld = @($uo.rows) | Where-Object { $_.name -eq $relOldName } | Select-Object -First 1
     Check ($uo.ok -and $uo.connected -and $uoRow.current -eq '1.0' -and $uoRow.pilot.version -eq '2.0' -and $uoRow.pilot.installed -eq 4 -and $uoRow.pilot.action -eq 'hold' -and $uo.summary.inPilot -ge 2 -and $uo.summary.held -ge 1) 'updates page: the pilot release with its counts and the release rule''s verdict' ($uo | ConvertTo-Json -Compress -Depth 5)
     Check ($uoOld -and -not $uoOld.pilot -and (@($uoOld.previous) -join ',') -eq '1.0,1.5' -and @($uo.rows | Where-Object { $_.name -eq $linkedName }).Count -eq 0) 'updates page: superseded versions listed; apps without managed updates left out' ($uoOld | ConvertTo-Json -Compress -Depth 4)
+    Check ($uoRow.pilot.reason -like '*Why: 1 device*') 'updates page: a held release says why - the failed devices from the install status report' ($uoRow.pilot | ConvertTo-Json -Compress -Depth 4)
+    $sg = Invoke-Api '/api/inventory-suggestions'
+    $sgMe = @($sg.suggestions) | Where-Object { $_.name -eq 'ZZ Suggest Me' } | Select-Object -First 1
+    Check ($sg.ok -and $sgMe.devices -eq 6 -and @($sg.suggestions | Where-Object { $_.name -eq $linkedName -or $_.name -like 'Windows*' }).Count -eq 0) 'apps worth adding: from the inventory, without catalog apps and parts of Windows' ($sg | ConvertTo-Json -Compress -Depth 4)
+    $hc = Invoke-Api '/api/health'
+    Check ($hc.ok -and @($hc.checks | Where-Object { $_.level -eq 'ok' -and $_.text -like 'Signing in to Microsoft Graph works*' }).Count -eq 1) 'health: signing in to Graph is checked' ($hc | ConvertTo-Json -Compress -Depth 4)
+    $mr = Invoke-Api '/api/monthly-report' @{ month = '2026-01' }
+    Check ($mr.ok -and $mr.month -eq '2026-01' -and (Test-Path -LiteralPath $mr.path) -and -not $mr.error -and @($mr.sent).Count -eq 0) 'monthly report: written to the reports folder; nothing sent without alerts' ($mr | ConvertTo-Json -Compress)
     Check ($uoOld.older.devices -eq 5 -and @($uoOld.older.versions).Count -eq 2 -and $uo.summary.olderDevices -eq 5) 'updates page: devices on older versions from the inventory - not newer ones, not another product' ($uoOld.older | ConvertTo-Json -Compress -Depth 4)
     # Release rings (test mode keeps settings in memory only): the release is judged as ring 1 of 2.
     [void](Invoke-Api '/api/prefs-save' @{ releaseRingsText = 'Early adopters: SG-ZZ-Exists' })

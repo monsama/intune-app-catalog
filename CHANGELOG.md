@@ -1,5 +1,54 @@
 # Changelog
 
+## 2.6.0
+
+### Added
+
+- **Health checks** first in every nightly run: the connection certificate
+  (found, has its private key, warned from 30 days before it expires),
+  signing in to Graph, the shared Winget package and the packaging tool
+  when apps need them, free disk space. Problems are in the report and
+  the alerts. **Check health now** in Settings.
+- **Drift every night:** every deployed app against Intune - settings,
+  groups, dependencies, assignments the catalog doesn't have - reported
+  and alerted. Optionally, the catalog's groups are pushed back when
+  assignments drifted.
+- **Release window:** the days the nightly run may release and promote by
+  itself, and "not in the last week of the month". Fast-track releases and
+  your own clicks don't wait.
+- **Why a release is on hold:** the failed devices' error codes from the
+  install status report, most common first - in the report, the alert and
+  the Updates page.
+- **Automatic withdraw:** at a failure share you set (at least three
+  devices), the nightly run withdraws the release by itself, any day.
+- **Own packages released automatically** (per app): a newer installer in
+  the app's folder is built and released to pilot by the nightly run.
+  Optionally it is downloaded first from an https address - used only with
+  a valid digital signature from the same publisher as the installer
+  already there, and kept under the folder's file name.
+- **Apps worth adding** (Catalog menu): apps Intune's inventory finds on
+  three or more devices that the catalog doesn't have - parts of Windows
+  and drivers left out. **Add...** opens a new app with winget searched.
+- **Catalog backup** every night: a zip of the app files (the last 30
+  kept), and a commit when the catalog folder is a git repository.
+- **Run while nobody is signed in:** Settings shows what's missing and
+  writes a script to run once as administrator - the certificate copied
+  to the computer's store, its private key readable by you, both tasks set
+  to run whether you are signed in or not (no password stored).
+- **Monthly report:** on the first run of a month, last month's
+  releases, promotions, withdrawals, holds and the devices on the current
+  version - as HTML in Logs\\reports, and by email / Teams when alerts are
+  set up. **Create last month's report** in Settings.
+- **Test tenant first:** with a test tenant's catalog folder set, Winget
+  apps here are released automatically only in a version that is
+  promoted there. The Updates page says what the test tenant has.
+
+### Changed
+
+- Install counts the summary report doesn't have, and the inventory of
+  apps on devices, are read with Graph's batch requests - 20 apps a call
+  instead of one.
+
 ## 2.5.0
 
 ### Added

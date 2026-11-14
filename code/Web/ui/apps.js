@@ -201,7 +201,7 @@ function fillEditor(a) {
   setEditorIcon(a.icon || null, 'keep');
   $('aManaged').checked = !!a.managedUpdates;
   const own = a.releaseRule || {};
-  $('arDays').value = own.days ?? ''; $('arFailed').value = own.maxFailedPercent ?? ''; $('arMin').value = own.minInstalled ?? ''; $('arDetected').value = a.detectedName || '';
+  $('arDays').value = own.days ?? ''; $('arFailed').value = own.maxFailedPercent ?? ''; $('arMin').value = own.minInstalled ?? ''; $('arDetected').value = a.detectedName || ''; $('arAuto').checked = !!a.autoRelease; $('arUrl').value = a.downloadUrl || '';
   const pol = (prefs && prefs.releasePolicy) || {};
   $('arDays').placeholder = pol.Days ?? 3; $('arFailed').placeholder = pol.MaxFailedPercent ?? 5; $('arMin').placeholder = pol.MinInstalled ?? 1;
   const rel = a.releases || [], pilot = rel.find(r => r.state === 'pilot'), prev = rel.filter(r => r.state === 'previous');
@@ -214,6 +214,7 @@ function fillEditor(a) {
 function showManagedState() {
   const has = !!$('aWinget').value.trim();
   $('aRuleBox').hidden = !$('aManaged').checked;
+  $('arAutoRow').hidden = has; $('arUrlRow').hidden = has;
   $('aManaged').parentElement.title = has ? 'Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Defaults > Managed updates'
     : 'Release new versions of this package to the pilot groups first. Needs a detection rule that compares a version (MSI, or file/registry by version) - a release updates it to the new version.';
 }
@@ -356,6 +357,7 @@ $('appForm').addEventListener('submit', async e => {
   app.managedUpdates = $('aManaged').checked;
   app.releaseRule = { days: $('arDays').value.trim(), maxFailedPercent: $('arFailed').value.trim(), minInstalled: $('arMin').value.trim() };
   app.detectedName = $('arDetected').value.trim();
+  app.autoRelease = $('arAuto').checked && !$('aWinget').value.trim(); app.downloadUrl = $('arUrl').value.trim();
   const r = await api('/api/app-save', { originalName: editingName, version: editingVersion, app });
   if (!r.ok) { const p = $('appError'); p.textContent = r.error; p.hidden = false; return; }
   $('dlgApp').close();
@@ -503,7 +505,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !catMenu.h
 catMenu.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   catMenu.hidden = true;
-  ({ export: exportCsv, import: openCsvImport, replace: () => openReplace({}), undo: undoLast, tenantsetup: openTenantSetup, overview: openOverview, wingetcheck: checkWingetVersions,
+  ({ export: exportCsv, import: openCsvImport, replace: () => openReplace({}), undo: undoLast, tenantsetup: openTenantSetup, overview: openOverview, suggest: openSuggest, wingetcheck: checkWingetVersions,
     reload: () => { loadApps(); loadState(); }, folder: () => openFolder('catalog-folder') })[b.dataset.cact]();
 });
 // Apps whose App ID the connected tenant doesn't know: a banner says so, with one button for all of them.
@@ -1303,3 +1305,23 @@ async function rollbackRelease(name) {
   toast(r.ok ? `${name} is back on ${r.version}.${r2.ok ? '' : ' The newer release still has its assignments - remove them in Intune.'}${(r.notes || []).length ? ' ' + r.notes.join(' ') : ''}` : r.error, !r.ok || !r2.ok);
   loadApps();
 }
+
+// ---------------------------------------------------------------- apps worth adding (Intune's inventory)
+async function openSuggest() {
+  if (!$('dlgSuggest').open) $('dlgSuggest').showModal();
+  $('sgRows').replaceChildren(el('tr', {}, el('td', { colspan: 4, class: 'muted', text: 'Reading the inventory of apps on devices...' })));
+  const r = await api('/api/inventory-suggestions');
+  if (!r.ok) { $('sgRows').replaceChildren(el('tr', {}, el('td', { colspan: 4, class: 'muted', text: r.error }))); return; }
+  $('sgNote').textContent = `${r.suggestions.length} app(s) on at least three devices that the catalog doesn't have, from ${r.scanned} inventory entries${r.more ? ' (the first 20 pages)' : ''}. Parts of Windows and drivers are left out.`;
+  $('sgRows').replaceChildren(...(r.suggestions.length ? r.suggestions.map(s => el('tr', {},
+    el('td', { class: 'name', text: s.name }), el('td', { class: 'num', text: String(s.devices) }), el('td', { class: 'mono', text: s.versions.join(', ') }),
+    el('td', { class: 'act' }, el('button', { class: 'btn small', text: 'Add...', title: `Add ${s.name} to the catalog - winget is searched for it`, onclick: () => addSuggested(s.name) }))))
+    : [el('tr', {}, el('td', { colspan: 4, class: 'muted', text: 'Nothing to suggest - every app on several devices is in the catalog.' }))]));
+}
+async function addSuggested(name) {
+  $('dlgSuggest').close();
+  await openEditor('');
+  $('aName').value = name;
+  $('btnFindWinget').click();
+}
+$('btnSgRefresh').addEventListener('click', openSuggest);

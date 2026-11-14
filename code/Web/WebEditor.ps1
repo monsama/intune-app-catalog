@@ -46,6 +46,8 @@ function Global:Get-WebAppEditable {
         managedUpdates = [bool]$App.managedUpdates
         releaseRule  = $(if ($App.releaseRule) { [ordered]@{ days = $App.releaseRule.days; maxFailedPercent = $App.releaseRule.maxFailedPercent; minInstalled = $App.releaseRule.minInstalled } } else { $null })
         detectedName = [string]$App.detectedName
+        autoRelease  = [bool]$App.autoRelease
+        downloadUrl  = [string]$App.downloadUrl
         releases     = @(@($App.releases) | ForEach-Object { [ordered]@{ version = [string]$_.version; appId = [string]$_.appId; state = [string]$_.state; at = [string]$_.at } })
         icon         = $(if ($App.icon -and $App.icon.value) { [ordered]@{ type = [string]$App.icon.type; value = [string]$App.icon.value } } else { $null })
         metadata     = [ordered]@{
@@ -222,6 +224,8 @@ function Global:Merge-WebAppEdit {
         releases         = @($(if ($Existing) { $Existing.releases }))
         # The app's own release rule: what the editor sends (empty fields: Settings' rule), else what it had.
         releaseRule      = $(if ($null -ne $Edit.releaseRule) { ConvertTo-AppReleaseRule $Edit.releaseRule } elseif ($Existing) { $Existing.releaseRule } else { $null })
+        autoRelease      = $(if ($null -ne $Edit.autoRelease) { [bool]$Edit.autoRelease } elseif ($Existing) { [bool]$Existing.autoRelease } else { $false })
+        downloadUrl      = $(if ($null -ne $Edit.downloadUrl) { $u = ([string]$Edit.downloadUrl).Trim(); if ($u -match '^https://[^\s"<>]+$' -and $u.Length -le 2000) { $u } else { '' } } elseif ($Existing) { [string]$Existing.downloadUrl } else { '' })
         detectedName     = $(if ($null -ne $Edit.detectedName) { $dn = ([string]$Edit.detectedName).Trim(); if ($dn.Length -le 100) { $dn } else { $dn.Substring(0, 100) } } elseif ($Existing) { [string]$Existing.detectedName } else { '' })
         # iconChange: 'set' (with icon), 'remove', or anything else to keep the one it has.
         icon             = $(switch ([string]$Edit.iconChange) { 'set' { ConvertTo-AppIcon $Edit.icon } 'remove' { $null } default { if ($Existing) { $Existing.icon } else { $null } } })
@@ -291,6 +295,8 @@ function Global:Save-WebApp {
     $problem = Test-WebAppEdit -Record $record -OriginalName $original -Others @($catalog.Apps)
     if ($problem) { return @{ ok = $false; error = $problem } }
     if ([string]$edit.iconChange -eq 'set' -and -not $record.icon) { return @{ ok = $false; error = 'The icon must be a PNG or JPEG of at most 750 KB.' } }
+    if (([string]$edit.downloadUrl).Trim() -and -not $record.downloadUrl) { return @{ ok = $false; error = 'The installer download address must start with https://.' } }
+    if ($record.autoRelease -and ($record.wingetId -or -not $record.managedUpdates)) { $record.autoRelease = $false }
     foreach ($urlField in 'informationUrl', 'privacyUrl') {
         $u = [string]$edit.metadata.$urlField
         if ($u -and $u -notmatch '^https?://\S+$') { return @{ ok = $false; error = "The $(if ($urlField -eq 'informationUrl') { 'information' } else { 'privacy' }) URL must start with http:// or https://." } }

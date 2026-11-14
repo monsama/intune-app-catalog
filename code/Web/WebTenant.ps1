@@ -74,15 +74,25 @@ function Global:Get-WebInstallCounts {
     }
     catch { $note = "The summary report wasn't available ($(Get-InnermostErrorMessage $_.Exception)) - read app by app." }
     $counts = @{}
+    $missing = New-Object System.Collections.Generic.List[string]
     foreach ($raw in @($Ids | Where-Object { $_ } | Select-Object -Unique)) {
         $id = ([string]$raw).ToLowerInvariant()
         $r = $byId[$id]
-        if ($r) { $counts[$id] = @{ installed = [int]$r.InstalledDeviceCount; failed = [int]$r.FailedDeviceCount; pending = [int]$r.PendingInstallDeviceCount; notInstalled = [int]$r.NotInstalledDeviceCount; notApplicable = [int]$r.NotApplicableDeviceCount }; continue }
-        try {
-            $sum = & $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$id/installSummary"
-            $counts[$id] = @{ installed = [int]$sum.installedDeviceCount; failed = [int]$sum.failedDeviceCount; pending = [int]$sum.pendingInstallDeviceCount; notInstalled = [int]$sum.notInstalledDeviceCount; notApplicable = [int]$sum.notApplicableDeviceCount }
+        if ($r) { $counts[$id] = @{ installed = [int]$r.InstalledDeviceCount; failed = [int]$r.FailedDeviceCount; pending = [int]$r.PendingInstallDeviceCount; notInstalled = [int]$r.NotInstalledDeviceCount; notApplicable = [int]$r.NotApplicableDeviceCount } }
+        else { $missing.Add($id) }
+    }
+    # The ones the report doesn't list: their installSummary, 20 to a $batch call.
+    if ($missing.Count) {
+        $batch = @{}
+        try { $batch = Invoke-WebGraphBatch -Graph $Graph -Requests @($missing | ForEach-Object { @{ id = $_; url = "/deviceAppManagement/mobileApps/$_/installSummary" } }) } catch { $batch = @{} }
+        foreach ($id in $missing) {
+            $one = $batch[$id]
+            if ($one -and $one.status -eq 200 -and $one.body) {
+                $sum = $one.body
+                $counts[$id] = @{ installed = [int]$sum.installedDeviceCount; failed = [int]$sum.failedDeviceCount; pending = [int]$sum.pendingInstallDeviceCount; notInstalled = [int]$sum.notInstalledDeviceCount; notApplicable = [int]$sum.notApplicableDeviceCount }
+            }
+            else { $counts[$id] = $null }
         }
-        catch { $counts[$id] = $null }
     }
     return @{ Counts = $counts; Note = $note }
 }
@@ -136,6 +146,7 @@ function Global:Get-WebUpdatesOverview {
             }
         }
     }
+    $gateApps = if ($Global:App.ReleasePolicy.GatePath) { Read-WebCatalogFolder $Global:App.ReleasePolicy.GatePath } else { $null }
     $rows = foreach ($a in $managed) {
         $current = [string]$(if ($a.metadata) { $a.metadata.appVersion })
         $curKey = ([string]$a.appId).ToLowerInvariant()
@@ -144,6 +155,10 @@ function Global:Get-WebUpdatesOverview {
         $pilotKey = if ($pilot) { ([string]$pilot.appId).ToLowerInvariant() } else { '' }
         $pc = if ($pilot) { $counts[$pilotKey] } else { $null }
         $decision = if ($pilot -and $pc) { Get-WebReleaseDecision -App $a -Pilot $pilot -Counts $pc } else { $null }
+        # On hold: why the devices failed, from the install status report.
+        if ($decision -and $decision.Action -eq 'hold' -and -not $NoInventory) { $why = Get-WebHoldReason $pilot; if ($why) { $decision.Reason = "$($decision.Reason) Why: $why" } }
+        $gateText = ''
+        if ($null -ne $gateApps -and $a.wingetId) { $gateText = (Get-GateVersion -App $a -GateApps $gateApps).Reason }
         $nameKey = [string]$a.appName
         $rings = @(Get-WebReleaseRings)
         $ringNo = if ($pilot) { [Math]::Min([int]$pilot.ring, $rings.Count - 1) } else { 0 }
@@ -164,7 +179,7 @@ function Global:Get-WebUpdatesOverview {
             pilot = $(if ($pilot) { [ordered]@{ version = [string]$pilot.version; at = [string]$pilot.at; installed = $(if ($pc) { $pc.installed } else { $null }); failed = $(if ($pc) { $pc.failed } else { $null }); pending = $(if ($pc) { $pc.pending } else { $null })
                         action = $(if ($decision) { $decision.Action } else { '' }); reason = $(if ($decision) { $decision.Reason } else { '' })
                         fastTrack = [bool]$pilot.fastTrack; ring = $ringNo; ringCount = $rings.Count; ringName = [string]$rings[$ringNo].Name } } else { $null })
-            ownRule = [bool]$a.releaseRule
+            ownRule = [bool]$a.releaseRule; autoRelease = [bool]$a.autoRelease; gate = $gateText
             older = $(if ($older.ContainsKey($nameKey)) { $older[$nameKey] } else { $null })
             available = $available; previous = @(Get-WebPreviousReleases $a | ForEach-Object { [string]$_.version }) }
     }
@@ -193,13 +208,22 @@ function Global:Get-WebOlderOnDevices {
     #>
     param([scriptblock]$Graph, $Apps)
     $out = @{}
-    foreach ($a in @($Apps)) {
+    $list = @($Apps)
+    $relUrl = { param($a) $n = if ($a.detectedName) { [string]$a.detectedName } else { [string]$a.appName }
+        "/deviceManagement/detectedApps?`$filter=" + [Uri]::EscapeDataString("startswith(displayName,'" + $n.Replace("'", "''") + "')") + "&`$select=id,displayName,version,deviceCount&`$top=999" }
+    # Every app's first page in $batch calls of 20; further pages (rare) one by one.
+    $first = Invoke-WebGraphBatch -Graph $Graph -Requests @(for ($k = 0; $k -lt $list.Count; $k++) { @{ id = "$k"; url = (& $relUrl $list[$k]) } })
+    for ($k = 0; $k -lt $list.Count; $k++) {
+        $a = $list[$k]
         $name = if ($a.detectedName) { [string]$a.detectedName } else { [string]$a.appName }
         $current = [string]$a.metadata.appVersion
-        $filter = [Uri]::EscapeDataString("startswith(displayName,'" + $name.Replace("'", "''") + "')")
-        $uri = "https://graph.microsoft.com/beta/deviceManagement/detectedApps?`$filter=$filter&`$select=id,displayName,version,deviceCount&`$top=999"
         $found = New-Object System.Collections.Generic.List[object]
-        $pages = 0
+        $one = $first["$k"]
+        # A missing permission is everyone's problem - said once, by the caller; anything else skips just this app.
+        if ($one.status -in 401, 403) { throw "$($one.status) Forbidden: $(if ($one.body -and $one.body.error) { $one.body.error.message } else { 'no permission to read the inventory of apps on devices' })" }
+        if ($one.status -ne 200 -or -not $one.body) { continue }
+        foreach ($d in @($one.body.value)) { if ($d) { $found.Add($d) } }
+        $uri = [string]$one.body.'@odata.nextLink'; $pages = 1
         try {
             while ($uri -and $pages -lt 10) {
                 $page = & $Graph $uri
@@ -207,8 +231,7 @@ function Global:Get-WebOlderOnDevices {
                 $uri = [string]$page.'@odata.nextLink'; $pages++
             }
         }
-        # A missing permission is everyone's problem - said once, by the caller; anything else skips just this app.
-        catch { if ("$($_.Exception.Message)" -match '^(401|403)\b') { throw }; continue }
+        catch { if ("$($_.Exception.Message)" -match '^(401|403)\b') { throw } }
         $byVersion = @{}
         # The name itself, or followed by a version or "(x64)" - not "<name> Meeting Add-in", another product.
         $same = '^' + [regex]::Escape($name) + '(\s+(v?\d[\w.\-]*|\([^)]*\)))*\s*$'
@@ -322,4 +345,25 @@ function Global:Get-WebAppVersionCompare {
     # Backups are newest first: the copy kept by the next save is at $i - 1.
     $after = if ($i -gt 0) { try { & $read $ids[$i - 1] } catch { $null } } else { $now }
     return @{ ok = $true; when = $list.backups[$i].when; versusNow = @(Compare-WebAppVersions $old $now); thatSave = @(Compare-WebAppVersions $old $after) }
+}
+
+function Global:Get-WebInventorySuggestions {
+    <#
+      Apps worth adding to the catalog: Intune's inventory of apps on
+      devices (detectedApps, up to 20 pages of 999), grouped by name, on at
+      least three devices, minus the catalog's own apps and parts of
+      Windows (Get-InventorySuggestions).
+    #>
+    if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Set up the connection in Settings first.' } }
+    $read = Invoke-WebGraph -Permission 'DeviceManagementManagedDevices.Read.All' -Action {
+        param($Graph)
+        $all = New-Object System.Collections.Generic.List[object]
+        $uri = 'https://graph.microsoft.com/beta/deviceManagement/detectedApps?$select=id,displayName,version,deviceCount&$top=999'
+        $pages = 0
+        while ($uri -and $pages -lt 20) { $page = & $Graph $uri; foreach ($d in @($page.value)) { if ($d) { $all.Add($d) } }; $uri = [string]$page.'@odata.nextLink'; $pages++ }
+        @{ Items = $all.ToArray(); More = [bool]$uri }
+    }
+    if (-not $read.ok) { return $read }
+    $s = @(Get-InventorySuggestions -Detected @($read.value.Items) -Apps @((Read-WebCatalogRecords).Apps))
+    return @{ ok = $true; suggestions = $s; scanned = @($read.value.Items).Count; more = [bool]$read.value.More }
 }

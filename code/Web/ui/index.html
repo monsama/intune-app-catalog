@@ -411,10 +411,24 @@
             <label title="When the installer asks for a restart: how long the user may put it off. 0: Intune's default">Restart grace period <span class="muted">(minutes, 0 = default)</span><input id="rpGrace" type="number" min="0" max="20160" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
           </div>
           <label class="inline">Notifications on the device <select id="rpNotif"><option value="showAll">Show all</option><option value="showReboot">Only restarts</option><option value="hideAll">Hide all</option></select></label>
+          <h3>Release window <span class="muted">(automatic releases and promotions only)</span></h3>
+          <div class="daypick" role="group" aria-label="Days the nightly run may release and promote">
+            <label class="chk"><input type="checkbox" data-rday="1">Mon</label><label class="chk"><input type="checkbox" data-rday="2">Tue</label><label class="chk"><input type="checkbox" data-rday="3">Wed</label><label class="chk"><input type="checkbox" data-rday="4">Thu</label><label class="chk"><input type="checkbox" data-rday="5">Fri</label><label class="chk"><input type="checkbox" data-rday="6">Sat</label><label class="chk"><input type="checkbox" data-rday="0">Sun</label>
+          </div>
+          <label class="chk" title="Month-end is busy: nothing is released or promoted by itself in a month's last seven days"><input type="checkbox" id="rpSkipLast">Not in the last week of the month</label>
+          <div class="policy">
+            <label title="When this share of the devices that tried a release failed (at least three devices), the nightly run withdraws it by itself - any day. 0: never">Withdraw automatically at <span class="muted">(% failed, 0 = never)</span><input id="rpWithdraw" type="number" min="0" max="100" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          </div>
           <label class="chk" title="The nightly run releases a newer winget version to the pilot groups by itself"><input type="checkbox" id="rpAutoRelease">Release new winget versions to pilot automatically (nightly run)</label>
           <label class="chk" title="The nightly run promotes a pilot release once the rule above says it's ready - otherwise it holds it and says why"><input type="checkbox" id="rpAutoPromote">Promote automatically when ready (nightly run)</label>
           <label class="chk" title="Superseded versions have no assignments; the newest one is kept so you can roll back"><input type="checkbox" id="rpCleanup">Delete older superseded versions from Intune, keeping one for rollback (nightly run)</label>
-          <div class="actions"><button class="btn" id="btnSavePilot" title="Save the pilot groups and the release rule">Save</button></div>
+          <h3>Every night, too</h3>
+          <label class="chk" title="Each deployed app against Intune - settings, groups, dependencies, assignments the catalog doesn't have - reported (and alerted) when something changed in the portal"><input type="checkbox" id="rpDrift">Check every app against Intune (drift)</label>
+          <label class="chk" title="When an app's assignments drifted, Push groups puts the catalog's back - Intune's own changes are overwritten"><input type="checkbox" id="rpDriftFix">... and put the catalog's groups back when assignments drifted</label>
+          <label class="chk" title="A zip of the catalog's app files in the Backups folder, the last 30 kept - and a commit when the catalog folder is a git repository"><input type="checkbox" id="rpBackup">Back up the catalog</label>
+          <label class="chk" title="On the first run of a month: last month's report (released, promoted, withdrawn, held; devices on the current version) in Logs\reports, sent by email / Teams when alerts are set up"><input type="checkbox" id="rpMonthly">Monthly report</label>
+          <label class="full" title="A test tenant's catalog folder (a share both PCs reach): Winget apps here are released by themselves only in a version that is promoted there. Empty: no test tenant">Test tenant's catalog folder <span class="muted">(optional)</span><input id="rpGate" class="full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. \\fileserver\intune-test\app-data"></label>
+          <div class="actions"><button class="btn" id="btnSavePilot" title="Save the pilot groups, the release rule and the nightly run's settings">Save</button></div>
           <h3>Nightly run</h3>
           <p class="sub" id="runSchedule">Checks every managed app: promotes or holds pilot releases by the rule above, and releases new winget versions - each only when its switch above is on; otherwise it reports what it would do.</p>
           <div class="toolbar tight">
@@ -429,6 +443,18 @@
             <button class="btn ghost" id="btnReports" title="Open the folder with every run's report (HTML and JSON)">Open reports folder</button>
           </div>
           <div id="runList" class="runlist" aria-live="polite"></div>
+          <div class="actions">
+            <button class="btn" id="btnHealth" title="What the nightly run checks first: the certificate, signing in, the packages, disk space">Check health now</button>
+            <button class="btn" id="btnMonthly" title="Last month's report, from the nightly runs - saved in Logs\reports and sent when alerts are set up">Create last month's report</button>
+          </div>
+          <ul id="healthList" class="healthlist" aria-live="polite" hidden></ul>
+          <h3>Run while nobody is signed in</h3>
+          <ul id="unattSteps" class="healthlist"></ul>
+          <div class="actions">
+            <button class="btn" id="btnUnattScript" title="Writes a script that copies the certificate to the computer's store and sets the tasks to run whether you are signed in or not - you run it as administrator">Create the setup script</button>
+            <button class="btn ghost" id="btnUnattReload" title="Check again">Check again</button>
+          </div>
+          <p class="sub" id="unattNote" hidden></p>
           <h3>Alerts</h3>
           <p class="sub" id="alertHint">After each run, a message to a Teams channel (a Workflows webhook: in the channel, ... &gt; Workflows &gt; "Post to a channel when a webhook request is received") and/or an email, sent with Graph from a mailbox you name (the app registration needs Mail.Send).</p>
           <label class="inline">Send <select id="alLevel"><option value="off">no alerts</option><option value="attention">when something needs a look - failed, on hold, ready, released or promoted</option><option value="always">after every run</option></select></label>
@@ -534,6 +560,7 @@
 <div class="menu" id="catalogMenu" role="menu" hidden>
   <button role="menuitem" data-cact="tenantsetup" title="What the connected tenant still needs for the catalog - groups, deploys, group pushes - step by step">Set up this tenant...</button>
   <button role="menuitem" data-cact="overview" title="Installed, failed and pending devices for every deployed app, from Intune">Install status of every app...</button>
+  <button role="menuitem" data-cact="suggest" title="Apps on many devices (Intune's inventory) that the catalog doesn't have yet - add one with its winget ID looked up">Apps worth adding...</button>
   <button role="menuitem" data-cact="wingetcheck" title="Ask winget for the newest version of every Winget app - then filter Newer on winget">Check winget for new versions</button>
   <hr>
   <button role="menuitem" data-cact="export" title="Every app as one row - open it in Excel, change cells, import it again">Export to CSV</button>
@@ -618,6 +645,8 @@
             <label>Failed at most <span class="muted">(%)</span><input id="arFailed" type="number" min="0" max="100" step="0.5" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
             <label>Installed on at least <span class="muted">(devices)</span><input id="arMin" type="number" min="0" max="9999" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
           </div>
+          <label class="chk" id="arAutoRow" title="The nightly run builds and releases a newer installer by itself - one put in the app's folder, or downloaded from the address below"><input type="checkbox" id="arAuto">Release a newer installer automatically (nightly run)</label>
+          <label id="arUrlRow" title="Optional. The nightly run downloads the installer from here; it is used only if it carries a valid digital signature - from the same publisher as the installer already in the folder">Download the installer from <span class="muted">(https, optional)</span><input id="arUrl" type="url" maxlength="2000" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="https://vendor.example/latest/setup.msi"></label>
           <label title="How the app is named in Intune's inventory of apps on devices (Apps > Monitor > Discovered apps), when that isn't the catalog's name - the Updates page counts older versions on devices by it">Name on devices <span class="muted">(empty: the catalog's name)</span><input id="arDetected" maxlength="100" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. 7-Zip"></label>
         </fieldset>
         <label title="The Intune app this catalog entry is linked to. Set by Deploy, or by Checks when it links an existing app.">App ID in Intune <span class="muted">(empty until it's deployed)</span><input id="aAppId" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
@@ -789,6 +818,15 @@
   <p class="sub" id="sStatusSummary"></p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>Device</th><th>User</th><th>State</th><th>Output</th><th>Error</th><th>Last run</th></tr></thead><tbody id="sStatusRows"></tbody></table></div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgSuggest" class="wide" aria-labelledby="sgTitle">
+  <h2 id="sgTitle">Apps worth adding</h2>
+  <p class="sub" id="sgNote">Apps Intune's inventory finds on at least three devices that the catalog doesn't have - parts of Windows and drivers left out.</p>
+  <div class="tablewrap" tabindex="0" aria-label="Apps worth adding">
+    <table class="grid"><thead><tr><th>App on devices</th><th>Devices</th><th>Versions</th><th><span class="sr">Add</span></th></tr></thead><tbody id="sgRows"></tbody></table>
+  </div>
+  <div class="actions end"><button class="btn" id="btnSgRefresh" title="Read the inventory again">Read again</button><button class="btn" data-close>Close</button></div>
 </dialog>
 
 <dialog id="dlgTenantSetup" class="wide">

@@ -214,6 +214,30 @@ group with another device.
       and Mail.Send granted), the test email arrives too.
 - [ ] **Trend:** after two nightly runs, the Updates page shows the line
       "Devices on the current version, last 30 days".
+- [ ] **Health:** Settings > **Check health now** - the certificate's expiry
+      and "Signing in to Microsoft Graph works".
+- [ ] **Release window:** untick today's weekday, turn on automatic
+      release, **Run now** - the report says "waiting for the release
+      window". Tick it again.
+- [ ] **Hold reason and automatic withdraw:** release a version whose
+      install fails on the pilot device (e.g. a wrong install command);
+      the Updates page shows "on hold ... Why: 1 device: 0x...". With
+      *Withdraw automatically at* 30 % and three failed devices, the next
+      run withdraws it.
+- [ ] **Drift:** change an app's assignment in the portal, **Run now** -
+      the report and alert list it. With *put the catalog's groups back*,
+      the next run restores the catalog's groups.
+- [ ] **Backup:** after a full run, Backups has `catalog-<date>.zip`.
+- [ ] **Apps worth adding:** Catalog > Apps worth adding... lists apps from
+      the devices; **Add...** opens a new app with winget searched.
+- [ ] **Unattended:** **Create the setup script**, run it as administrator,
+      **Check again** - all three steps OK. Sign out; the next run still
+      writes a report.
+- [ ] **Monthly report:** **Create last month's report** - an HTML file in
+      Logs\\reports (and an email / Teams card with alerts set up).
+- [ ] **Test tenant first:** point *Test tenant's catalog folder* at the
+      test tenant's catalog; a Winget app newer on winget but not promoted
+      there is reported, not released.
 - [ ] Optional, own package: an app with its own MSI, detection by MSI
       product code. Tick Managed updates, put a newer MSI in its folder,
       **Release new version...** The version and product code are read

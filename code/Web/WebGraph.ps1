@@ -86,6 +86,15 @@ function Global:Invoke-WebGraph {
         if ($test) {
             $call = {
                 param([string]$Uri, [string]$Method = 'GET', $Body = $null)
+                # A $batch call is answered request by request from the same answers, as Graph would.
+                if ($Method -eq 'POST' -and $Uri -match '^https://graph\.microsoft\.com/(beta|v1\.0)/\$batch$') {
+                    $ver = $Matches[1]
+                    $responses = foreach ($r in @($Body.requests)) {
+                        $one = Get-WebTestGraphAnswer -Answers $test.Answers -Method ([string]$r.method) -Uri ("https://graph.microsoft.com/$ver" + [string]$r.url) -Counters $test.Counters
+                        [pscustomobject]@{ id = [string]$r.id; status = [int]$one.Status; body = $(if ($one.Text) { $one.Text | ConvertFrom-Json } else { $null }) }
+                    }
+                    return [pscustomobject]@{ responses = @($responses) }
+                }
                 $answer = Get-WebTestGraphAnswer -Answers $test.Answers -Method $Method -Uri $Uri -Counters $test.Counters
                 if ($answer.Status -ge 300) { throw "$($answer.Status) $($answer.Reason): $($answer.Text)" }
                 if ($answer.Text) { $answer.Text | ConvertFrom-Json } else { $null }
@@ -119,4 +128,34 @@ function Global:Invoke-WebGraph {
         }
         return @{ ok = $false; error = (Protect-LogText $friendly) }
     }
+}
+
+function Global:Invoke-WebGraphBatch {
+    <#
+      GET requests through Graph's $batch, 20 to a call (inside
+      Invoke-WebGraph: -Graph is its call). -Requests: @(@{ id; url }) with
+      url relative to the version, e.g. "/deviceAppManagement/mobileApps/<id>".
+      Returns @{ <id> = @{ status; body } }. A request Graph throttled (429)
+      is tried once more on its own.
+    #>
+    param([scriptblock]$Graph, $Requests, [string]$Version = 'beta')
+    $out = @{}
+    $list = @($Requests)
+    for ($i = 0; $i -lt $list.Count; $i += 20) {
+        $chunk = @($list[$i..([Math]::Min($i + 19, $list.Count - 1))])
+        $body = @{ requests = @($chunk | ForEach-Object { @{ id = [string]$_.id; method = 'GET'; url = [string]$_.url } }) }
+        $res = & $Graph "https://graph.microsoft.com/$Version/`$batch" 'POST' $body
+        foreach ($r in @($res.responses)) {
+            $rid = [string]$r.id
+            $out[$rid] = @{ status = [int]$r.status; body = $r.body }
+        }
+        foreach ($c in $chunk) {
+            $cid = [string]$c.id
+            if (-not $out.ContainsKey($cid) -or $out[$cid].status -eq 429) {
+                try { $out[$cid] = @{ status = 200; body = (& $Graph ("https://graph.microsoft.com/$Version" + [string]$c.url)) } }
+                catch { $code = if ("$($_.Exception.Message)" -match '^(\d{3})') { [int]$Matches[1] } else { 500 }; $out[$cid] = @{ status = $code; body = $null } }
+            }
+        }
+    }
+    return $out
 }

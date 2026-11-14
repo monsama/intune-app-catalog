@@ -791,6 +791,8 @@ function Global:ConvertTo-TemplateAppRecord {
         managedUpdates   = [bool]$App.managedUpdates
         releaseRule      = $App.releaseRule
         detectedName     = [string]$App.detectedName
+        autoRelease      = [bool]$App.autoRelease
+        downloadUrl      = [string]$App.downloadUrl
         releases         = @()
         metadata         = $App.metadata
     }
@@ -1303,11 +1305,135 @@ function Global:Get-ManagedRunAlert {
     #>
     param($Report, [string]$Level)
     $items = @($Report.items)
-    $loud = @('failed', 'hold', 'ready', 'promoted', 'released', 'advanced', 'advance')
+    $loud = @('failed', 'hold', 'ready', 'promoted', 'released', 'advanced', 'advance', 'withdrawn', 'drift', 'fixed', 'health')
     $hits = @($items | Where-Object { $loud -contains [string]$_.outcome })
     $send = switch ($Level) { 'always' { $true } 'attention' { $hits.Count -gt 0 } default { $false } }
     $failed = [int]$Report.failed
     $title = "Managed updates: " + $(if ($failed) { "$failed failed" } elseif ($hits.Count) { "$($hits.Count) to look at" } else { 'nothing to do' }) + $(if ($Report.planOnly) { ' (plan only)' })
     $lines = @($(if ($Level -eq 'always') { $items } else { $hits }) | ForEach-Object { "$($_.app) - $($_.outcome): $($_.text)" })
     return @{ Send = $send; Title = $title; Lines = $lines }
+}
+
+function Global:Test-ReleaseWindow {
+    <#
+      Pure: may the nightly run release, advance or promote now? -Policy:
+      ReleaseDays (weekday numbers, 0 = Sunday ... 6 = Saturday) and
+      SkipLastWeek (not in a month's last seven days). @{ Open; Reason }.
+      Fast-track releases and a person's own clicks don't ask.
+    #>
+    param([datetime]$Now, $Policy)
+    $names = @('Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
+    $days = @(@($Policy.ReleaseDays) | Where-Object { "$_" -match '^[0-6]$' } | ForEach-Object { [int]"$_" })
+    if ($days.Count -and $days -notcontains [int]$Now.DayOfWeek) { return @{ Open = $false; Reason = "no releases on $($names[[int]$Now.DayOfWeek])s (release window: $(($days | Sort-Object | ForEach-Object { $names[$_].Substring(0, 3) }) -join ', '))" } }
+    if ($Policy.SkipLastWeek -and $Now.Day -gt [DateTime]::DaysInMonth($Now.Year, $Now.Month) - 7) { return @{ Open = $false; Reason = "no releases in the last week of the month" } }
+    return @{ Open = $true; Reason = '' }
+}
+
+function Global:Get-InstallErrorSummary {
+    <#
+      Pure: why devices failed, from install status rows (State, ErrorCode,
+      Detail) - the failed ones grouped by error code, most common first.
+      @{ Failed; Top = @(@{ code; detail; devices }); Text }.
+    #>
+    param($Rows, [int]$Top = 3)
+    $failed = @(@($Rows) | Where-Object { $_ -and ([string]$_.State -match 'fail|error' -or ([string]$_.ErrorCode -and [string]$_.ErrorCode -notmatch '^(0|0x0+)$')) -and [string]$_.State -notmatch '^installed$' })
+    $groups = @($failed | Group-Object { if ([string]$_.ErrorCode) { [string]$_.ErrorCode } else { '(no code)' } } | Sort-Object @{ Expression = 'Count'; Descending = $true }, @{ Expression = 'Name'; Descending = $false })
+    $topList = @($groups | Select-Object -First $Top | ForEach-Object {
+            $detail = @($_.Group | ForEach-Object { [string]$_.Detail } | Where-Object { $_ } | Select-Object -First 1)
+            [ordered]@{ code = $_.Name; detail = $(if ($detail.Count) { $detail[0] } else { '' }); devices = $_.Count } })
+    $text = if ($failed.Count) { (@($topList | ForEach-Object { "$($_.devices) device$(if ($_.devices -ne 1) { 's' }): $($_.code)$(if ($_.detail) { " ($($_.detail))" })" }) -join '; ') + $(if ($groups.Count -gt $Top) { "; $($groups.Count - $Top) other error(s)" }) } else { '' }
+    return @{ Failed = $failed.Count; Top = $topList; Text = $text }
+}
+
+function Global:Test-AutoWithdraw {
+    # Pure: should the nightly run withdraw a release by itself - failed at least -Percent (0 = never) of at least three devices that tried?
+    param($Counts, [double]$Percent)
+    if ($Percent -le 0) { return $false }
+    $installed = [int]$Counts.installed; $failed = [int]$Counts.failed
+    $tried = $installed + $failed
+    return [bool]($tried -ge 3 -and (100.0 * $failed / $tried) -ge $Percent)
+}
+
+function Global:Get-CertificateHealth {
+    # Pure: the connection certificate's state from its expiry - @{ Level = ok|warn|failed; Text }. Warns from 30 days ahead.
+    param($NotAfter, [datetime]$Now)
+    if (-not $NotAfter) { return @{ Level = 'failed'; Text = 'The connection certificate is not on this PC (CurrentUser\My or LocalMachine\My) - every Intune step fails.' } }
+    $left = [Math]::Floor(([datetime]$NotAfter - $Now).TotalDays)
+    $when = ([datetime]$NotAfter).ToString('yyyy-MM-dd')
+    if ($left -lt 0) { return @{ Level = 'failed'; Text = "The connection certificate expired on $when - every Intune step fails. Make a new one (Settings > Connection) and upload it to the app registration." } }
+    if ($left -le 30) { return @{ Level = 'warn'; Text = "The connection certificate expires in $left day$(if ($left -ne 1) { 's' }) ($when). Make a new one (Settings > Connection) and upload it to the app registration before then." } }
+    return @{ Level = 'ok'; Text = "The connection certificate is valid until $when." }
+}
+
+function Global:Get-InventorySuggestions {
+    <#
+      Pure: apps worth adding to the catalog - Intune's inventory of apps on
+      devices (displayName, version, deviceCount) grouped by name, on at
+      least -MinDevices devices, not already in the catalog (its names and
+      names on devices, also followed by a version or "(x64)"), and not
+      parts of Windows or drivers. Most devices first.
+    #>
+    param($Detected, $Apps, [int]$MinDevices = 3, [int]$Max = 40)
+    $known = @(@($Apps) | ForEach-Object { [string]$_.appName; [string]$_.detectedName } | Where-Object { $_ } | ForEach-Object { '^' + [regex]::Escape($_) + '(\s+(v?\d[\w.\-]*|\([^)]*\)))*\s*$' })
+    $system = '^(Microsoft (Visual C\+\+|Edge( Update| WebView2)?|Update Health Tools|\.NET|Windows Desktop Runtime|ASP\.NET|Intune Management Extension|Teams Meeting Add-in|OneDrive|GameInput|Policy Platform)|Windows |Update for |Security Update|Hotfix|Intel\(R\)|Realtek|NVIDIA|AMD |Dell |HP |Lenovo )'
+    $byName = @{}
+    foreach ($d in @($Detected)) {
+        $name = ([string]$d.displayName).Trim()
+        if (-not $name -or $name -match $system) { continue }
+        $base = ($name -replace '(\s+(v?\d[\w.\-]*|\([^)]*\)))+\s*$', '').Trim()
+        if (-not $base) { $base = $name }
+        $hit = $false; foreach ($k in $known) { if ($name -match $k -or $base -match $k) { $hit = $true; break } }
+        if ($hit) { continue }
+        if (-not $byName.ContainsKey($base)) { $byName[$base] = @{ devices = 0; versions = New-Object System.Collections.Generic.List[string] } }
+        $byName[$base].devices += [int]$d.deviceCount
+        $v = [string]$d.version; if ($v -and -not $byName[$base].versions.Contains($v)) { $byName[$base].versions.Add($v) }
+    }
+    return @($byName.Keys | Where-Object { $byName[$_].devices -ge $MinDevices } | Sort-Object @{ Expression = { $byName[$_].devices }; Descending = $true }, @{ Expression = { $_ }; Descending = $false } | Select-Object -First $Max | ForEach-Object {
+            [ordered]@{ name = $_; devices = $byName[$_].devices; versions = @($byName[$_].versions | Select-Object -First 5) } })
+}
+
+function Global:Get-GateVersion {
+    <#
+      Pure: the newest version a production catalog may release, when a
+      test tenant's catalog gates it: the test catalog's current version of
+      the same app (same Winget ID, else the same name) - only once it's
+      newer than ours. @{ Version; Reason }; Version '' = nothing to release.
+    #>
+    param($App, $GateApps)
+    $mine = [string]$(if ($App.metadata) { $App.metadata.appVersion })
+    $twin = @(@($GateApps) | Where-Object { $_ -and (($App.wingetId -and [string]$_.wingetId -eq [string]$App.wingetId) -or (-not $App.wingetId -and [string]$_.appName -eq [string]$App.appName)) }) | Select-Object -First 1
+    if (-not $twin) { return @{ Version = ''; Reason = 'not in the test catalog - nothing is released here until it is tested there' } }
+    $theirs = [string]$(if ($twin.metadata) { $twin.metadata.appVersion })
+    if (-not $theirs -or -not $twin.appId) { return @{ Version = ''; Reason = 'not deployed in the test tenant yet' } }
+    if ((Compare-AppVersionText $mine $theirs) -ne 1) { return @{ Version = ''; Reason = "the test tenant is at $theirs - nothing newer approved" } }
+    return @{ Version = $theirs; Reason = "$theirs is promoted in the test tenant" }
+}
+
+function Global:Get-MonthlyReportData {
+    <#
+      Pure: a month's managed-updates summary from the nightly reports
+      (started, items, trend): what was released, promoted, advanced,
+      withdrawn, held or failed, per app, and the share of devices on the
+      current version at the start and end of the month.
+    #>
+    param($Reports, [string]$Month)
+    $inMonth = @(@($Reports) | Where-Object { $_ -and ([string]$_.started).StartsWith($Month) } | Sort-Object { [string]$_.started })
+    $events = New-Object System.Collections.Generic.List[object]
+    $kinds = @('released', 'promoted', 'advanced', 'withdrawn', 'hold', 'failed', 'drift', 'health')
+    $seen = @{}
+    foreach ($r in $inMonth) {
+        foreach ($i in @($r.items)) {
+            if ($kinds -notcontains [string]$i.outcome) { continue }
+            $key = "$($i.app)|$($i.outcome)|$($i.text)"
+            if ($seen.ContainsKey($key)) { continue }
+            $seen[$key] = $true
+            $events.Add([ordered]@{ at = ([string]$r.started); app = [string]$i.app; outcome = [string]$i.outcome; text = [string]$i.text })
+        }
+    }
+    $trend = @($inMonth | Where-Object { $_.trend -and $null -ne $_.trend.onCurrentPercent })
+    $count = { param($o) @($events | Where-Object { $_.outcome -eq $o }).Count }
+    return [ordered]@{ month = $Month; runs = $inMonth.Count
+        released = (& $count 'released'); promoted = (& $count 'promoted'); withdrawn = (& $count 'withdrawn'); held = (& $count 'hold'); failed = (& $count 'failed')
+        startPercent = $(if ($trend.Count) { $trend[0].trend.onCurrentPercent } else { $null }); endPercent = $(if ($trend.Count) { $trend[-1].trend.onCurrentPercent } else { $null })
+        events = $events.ToArray() }
 }

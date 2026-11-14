@@ -160,6 +160,13 @@ $testableFunctionNames = @(
     "ConvertTo-AppReleaseRule",
     "ConvertTo-ReleaseRings",
     "ConvertTo-AlertSettings",
+    "Test-ReleaseWindow",
+    "Get-InstallErrorSummary",
+    "Test-AutoWithdraw",
+    "Get-CertificateHealth",
+    "Get-InventorySuggestions",
+    "Get-GateVersion",
+    "Get-MonthlyReportData",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -635,6 +642,42 @@ $withSettings = New-AppAssignmentBody -Entries @(Get-DesiredAssignmentEntries -R
 $req = @($withSettings.mobileAppAssignments | Where-Object { $_.intent -eq 'required' -and $_.target.'@odata.type' -like '*groupAssignmentTarget' -and $_.target.'@odata.type' -notlike '*exclusion*' })
 $others = @($withSettings.mobileAppAssignments | Where-Object { $_.ContainsKey('settings') })
 Assert-True ($req.Count -eq 1 -and $others.Count -eq 1 -and $req[0].settings.notifications -eq 'hideAll') "New-AppAssignmentBody: the settings go on the Required inclusions only"
+
+# The nightly run's other work
+$winPol = ConvertTo-ReleasePolicy ([pscustomobject]@{ ReleaseDays = @(1, 2, 3, 4); SkipLastWeek = $true; AutoWithdrawPercent = 30; DriftFix = $true; GatePath = '\\srv\test\app-data' })
+Assert-True ((@($winPol.ReleaseDays) -join ',') -eq '1,2,3,4' -and $winPol.SkipLastWeek -and $winPol.AutoWithdrawPercent -eq 30 -and $winPol.DriftCheck -and $winPol.DriftFix -and $winPol.BackupCatalog -and $winPol.GatePath -eq '\\srv\test\app-data') "ConvertTo-ReleasePolicy: release window, withdraw, drift, backup and the test tenant's folder"
+Assert-Equal '' (ConvertTo-ReleasePolicy ([pscustomobject]@{ GatePath = 'relative\folder' })).GatePath "ConvertTo-ReleasePolicy: a relative test-tenant folder is refused"
+Assert-True ((Test-ReleaseWindow -Now ([datetime]'2026-11-12 03:00') -Policy $winPol).Open) "Test-ReleaseWindow: a Thursday in the middle of the month is open"
+$fri = Test-ReleaseWindow -Now ([datetime]'2026-11-13 03:00') -Policy $winPol
+Assert-True (-not $fri.Open -and $fri.Reason -like '*Fridays*') "Test-ReleaseWindow: a Friday is closed, and says so"
+Assert-True (-not (Test-ReleaseWindow -Now ([datetime]'2026-11-26 03:00') -Policy $winPol).Open) "Test-ReleaseWindow: a Thursday in the month's last week is closed"
+Assert-True ((Test-ReleaseWindow -Now ([datetime]'2026-11-29 03:00') -Policy (ConvertTo-ReleasePolicy $null)).Open) "Test-ReleaseWindow: by default every day is open"
+$errRows = @([pscustomobject]@{ State = 'Failed'; ErrorCode = '0x80070643'; Detail = 'Fatal error during installation' }, [pscustomobject]@{ State = 'Failed'; ErrorCode = '0x80070643'; Detail = '' },
+    [pscustomobject]@{ State = 'Failed'; ErrorCode = '0x87D1041C'; Detail = 'not detected' }, [pscustomobject]@{ State = 'Installed'; ErrorCode = '0'; Detail = '' })
+$es = Get-InstallErrorSummary -Rows $errRows
+Assert-True ($es.Failed -eq 3 -and $es.Top[0].code -eq '0x80070643' -and $es.Top[0].devices -eq 2 -and $es.Text -like '2 devices: 0x80070643 (Fatal error during installation)*') "Get-InstallErrorSummary: failed devices by error code, most common first"
+Assert-Equal '' (Get-InstallErrorSummary -Rows @($errRows[3])).Text "Get-InstallErrorSummary: nothing failed - no text"
+Assert-True ((Test-AutoWithdraw -Counts @{ installed = 2; failed = 2 } -Percent 30) -and -not (Test-AutoWithdraw -Counts @{ installed = 1; failed = 1 } -Percent 30) -and -not (Test-AutoWithdraw -Counts @{ installed = 0; failed = 9 } -Percent 0)) "Test-AutoWithdraw: at the limit with three or more devices tried; never when off"
+$nowH = [datetime]'2026-11-14'
+Assert-Equal 'warn' (Get-CertificateHealth -NotAfter $nowH.AddDays(12) -Now $nowH).Level "Get-CertificateHealth: 12 days left - a warning"
+Assert-Equal 'failed' (Get-CertificateHealth -NotAfter $nowH.AddDays(-1) -Now $nowH).Level "Get-CertificateHealth: expired - a failure"
+Assert-Equal 'ok' (Get-CertificateHealth -NotAfter $nowH.AddDays(200) -Now $nowH).Level "Get-CertificateHealth: half a year left - fine"
+Assert-Equal 'failed' (Get-CertificateHealth -NotAfter $null -Now $nowH).Level "Get-CertificateHealth: not found - a failure"
+$det = @(@{ displayName = 'Notepad++ (64-bit x64)'; version = '8.6'; deviceCount = 7 }, @{ displayName = 'Notepad++'; version = '8.5'; deviceCount = 2 }, @{ displayName = '7-Zip 24.08 (x64)'; version = '24.08'; deviceCount = 40 },
+    @{ displayName = 'Microsoft Visual C++ 2015-2022 Redistributable (x64)'; version = '14.40'; deviceCount = 90 }, @{ displayName = 'Rare Tool'; version = '1.0'; deviceCount = 1 })
+$sug = @(Get-InventorySuggestions -Detected $det -Apps @([pscustomobject]@{ appName = '7-Zip'; detectedName = '' }))
+Assert-True ($sug.Count -eq 1 -and $sug[0].name -eq 'Notepad++' -and $sug[0].devices -eq 9 -and @($sug[0].versions).Count -eq 2) "Get-InventorySuggestions: grouped by name; catalog apps, Windows parts and rare apps left out"
+$prodApp = [pscustomobject]@{ appName = 'Chrome'; wingetId = 'Google.Chrome'; metadata = [pscustomobject]@{ appVersion = '130.0' } }
+$testApps = @([pscustomobject]@{ appName = 'Google Chrome'; wingetId = 'Google.Chrome'; appId = 'x'; metadata = [pscustomobject]@{ appVersion = '131.0' } })
+Assert-Equal '131.0' (Get-GateVersion -App $prodApp -GateApps $testApps).Version "Get-GateVersion: the test tenant's promoted version, matched by Winget ID"
+Assert-Equal '' (Get-GateVersion -App $prodApp -GateApps @()).Version "Get-GateVersion: not in the test catalog - nothing to release"
+$prodApp.metadata.appVersion = '131.0'
+Assert-True ((Get-GateVersion -App $prodApp -GateApps $testApps).Reason -like '*nothing newer*') "Get-GateVersion: same version as the test tenant - nothing newer"
+$mreps = @(@{ started = '2026-10-01 03:00'; items = @(@{ app = 'A'; outcome = 'released'; text = '2.0 released' }); trend = @{ onCurrentPercent = 80 } },
+    @{ started = '2026-10-05 03:00'; items = @(@{ app = 'A'; outcome = 'promoted'; text = '2.0 promoted' }, @{ app = 'B'; outcome = 'current'; text = 'fine' }); trend = @{ onCurrentPercent = 92 } },
+    @{ started = '2026-11-01 03:00'; items = @(@{ app = 'C'; outcome = 'released'; text = 'other month' }) })
+$md = Get-MonthlyReportData -Reports $mreps -Month '2026-10'
+Assert-True ($md.runs -eq 2 -and $md.released -eq 1 -and $md.promoted -eq 1 -and $md.startPercent -eq 80 -and $md.endPercent -eq 92 -and @($md.events).Count -eq 2) "Get-MonthlyReportData: the month's runs, what happened, and the trend from start to end"
 
 # Alerts
 $rep = @{ failed = 0; planOnly = $false; items = @(@{ app = 'A'; outcome = 'current'; text = 'fine' }, @{ app = 'B'; outcome = 'hold'; text = 'too many failed' }) }

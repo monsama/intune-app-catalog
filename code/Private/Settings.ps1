@@ -208,8 +208,23 @@ function Global:ConvertTo-ReleasePolicy {
     # Pure: the managed-updates policy from a settings file or the page, each value checked; anything missing or wrong is the default.
     param($Raw)
     $p = [ordered]@{ Days = 3; MaxFailedPercent = 5; MinInstalled = 1; AutoRelease = $false; AutoPromote = $false; CleanupOld = $false; RunAt = '03:00'
-        FastTrackHours = 4; DeadlineDays = 0; RestartGraceMinutes = 0; Notifications = 'showAll' }
+        FastTrackHours = 4; DeadlineDays = 0; RestartGraceMinutes = 0; Notifications = 'showAll'
+        # The nightly run's other work: release window, automatic withdraw, drift, backup, monthly report, the test tenant's catalog.
+        ReleaseDays = @(0, 1, 2, 3, 4, 5, 6); SkipLastWeek = $false; AutoWithdrawPercent = 0; DriftCheck = $true; DriftFix = $false
+        BackupCatalog = $true; MonthlyReport = $false; GatePath = '' }
     if (-not $Raw) { return $p }
+    if ($null -ne $Raw.ReleaseDays) {
+        $d = @(@($Raw.ReleaseDays) | Where-Object { "$_" -match '^[0-6]$' } | ForEach-Object { [int]"$_" } | Sort-Object -Unique)
+        if ($d.Count) { $p.ReleaseDays = $d }
+    }
+    if ($null -ne $Raw.SkipLastWeek) { $p.SkipLastWeek = [bool]$Raw.SkipLastWeek }
+    if ([string]$Raw.AutoWithdrawPercent -match '^\d{1,3}$' -and [int][string]$Raw.AutoWithdrawPercent -le 100) { $p.AutoWithdrawPercent = [int][string]$Raw.AutoWithdrawPercent }
+    if ($null -ne $Raw.DriftCheck) { $p.DriftCheck = [bool]$Raw.DriftCheck }
+    if ($null -ne $Raw.DriftFix) { $p.DriftFix = [bool]$Raw.DriftFix }
+    if ($null -ne $Raw.BackupCatalog) { $p.BackupCatalog = [bool]$Raw.BackupCatalog }
+    if ($null -ne $Raw.MonthlyReport) { $p.MonthlyReport = [bool]$Raw.MonthlyReport }
+    $gate = ([string]$Raw.GatePath).Trim()
+    if ($gate -and $gate.Length -le 260 -and $gate -notmatch '[*?"<>|]' -and ($gate -match '^[A-Za-z]:\\' -or $gate -match '^\\\\[^\\]+\\' -or $gate -match '^/')) { $p.GatePath = $gate }
     if ([string]$Raw.FastTrackHours -match '^\d{1,2}$' -and [int][string]$Raw.FastTrackHours -ge 1 -and [int][string]$Raw.FastTrackHours -le 72) { $p.FastTrackHours = [int][string]$Raw.FastTrackHours }
     if ([string]$Raw.DeadlineDays -match '^\d{1,2}$' -and [int][string]$Raw.DeadlineDays -le 30) { $p.DeadlineDays = [int][string]$Raw.DeadlineDays }
     if ([string]$Raw.RestartGraceMinutes -match '^\d{1,5}$' -and [int][string]$Raw.RestartGraceMinutes -le 20160) { $p.RestartGraceMinutes = [int][string]$Raw.RestartGraceMinutes }

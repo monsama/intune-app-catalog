@@ -52,11 +52,11 @@ function renderUpdates() {
       : el('span', { title: `${x.installed} installed, ${x.failed} failed, ${x.pending} pending, ${x.notInstalled} not installed` }, `${x.installed}`, el('span', { class: 'muted', text: ` of ${x.installed + x.failed + x.pending + x.notInstalled}` }), x.failed ? el('span', { class: 'pill err newer', text: `${x.failed} failed` }) : '');
     const where = p ? (p.fastTrack ? 'fast track' : p.ringCount > 1 ? `ring ${p.ring + 1} of ${p.ringCount} - ${p.ringName}` : 'pilot') : '';
     return el('tr', {},
-      el('td', { class: 'name' }, x.name, el('span', { class: 'muted', text: (x.kind === 'package' ? ' (own package)' : '') + (x.ownRule ? ' - own rule' : '') })),
+      el('td', { class: 'name' }, x.name, el('span', { class: 'muted', text: (x.kind === 'package' ? ' (own package)' : '') + (x.ownRule ? ' - own rule' : '') + (x.autoRelease ? ' - released automatically' : '') })),
       el('td', { class: 'num', text: x.current || '-' }),
       el('td', {}, devices),
       el('td', {}, p ? [el('span', { class: 'mono', text: p.version }), ' ', el('span', { class: 'pill ' + (p.fastTrack ? 'warn' : 'muted'), text: where }), ' ', verdict ? el('span', { class: 'pill ' + verdict[0], text: verdict[1], title: p.reason }) : el('span', { class: 'muted', text: '(no counts yet)' }), el('div', { class: 'why', text: p.reason || `since ${p.at}` })] : el('span', { class: 'muted', text: '-' })),
-      el('td', {}, x.available ? el('span', { class: 'pill info', text: x.available }) : el('span', { class: 'muted', text: '-' })),
+      el('td', {}, x.available ? el('span', { class: 'pill info', text: x.available }) : el('span', { class: 'muted', text: '-' }), x.gate ? el('div', { class: 'why', text: `Test tenant: ${x.gate}` }) : ''),
       el('td', {}, x.older ? el('span', { title: x.older.versions.map(v => `${v.version}: ${v.devices}`).join('\n') }, `${x.older.devices} device${x.older.devices === 1 ? '' : 's'}`, el('div', { class: 'why', text: x.older.versions.slice(0, 3).map(v => `${v.version} (${v.devices})`).join(', ') + (x.older.versions.length > 3 ? ', ...' : '') })) : el('span', { class: 'muted', text: '-' })),
       el('td', { class: 'mono', text: x.previous.length ? x.previous.join(', ') : '-' }),
       el('td', { class: 'act' }, el('div', { class: 'fixes' }, ...acts)));
