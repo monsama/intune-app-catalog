@@ -9,7 +9,7 @@ function Global:Initialize-AppState {
     # Paths & state
     # =====================================================================
     $Global:App.RootPath   = $RootPath
-    $Global:App.AppVersion = "2.12.0"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
+    $Global:App.AppVersion = "2.13.0"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
     # The catalog as last read (Read-WebCatalogRecords) - the shared
     # functions that look at "the catalog" (default dependencies, known
     # groups) read it from here.
@@ -76,6 +76,7 @@ function Global:Initialize-AppState {
     # folders relative to themselves) and runs it through the step runner.
     $Global:App.EmbeddedPackageScript = Get-Content -Path (Join-Path $RootPath "code\EmbeddedScripts\Package.ps1") -Raw -Encoding UTF8
     $Global:App.EmbeddedCreateAppScript = Get-Content -Path (Join-Path $RootPath "code\EmbeddedScripts\CreateApp.ps1") -Raw -Encoding UTF8
+    $Global:App.EmbeddedCreateStoreAppScript = Get-Content -Path (Join-Path $RootPath "code\EmbeddedScripts\CreateStoreApp.ps1") -Raw -Encoding UTF8
     $Global:App.EmbeddedTargetedAssignScript = Get-Content -Path (Join-Path $RootPath "code\EmbeddedScripts\TargetedAssign.ps1") -Raw -Encoding UTF8
     $Global:App.EmbeddedBatchAssignScript = Get-Content -Path (Join-Path $RootPath "code\EmbeddedScripts\BatchAssign.ps1") -Raw -Encoding UTF8
     $Global:App.EmbeddedDeleteAppScript = Get-Content -Path (Join-Path $RootPath "code\EmbeddedScripts\DeleteApp.ps1") -Raw -Encoding UTF8

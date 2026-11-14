@@ -178,7 +178,9 @@ function Global:Complete-WebCheckDetails {
     foreach ($one in @($Result.results)) {
         $app = @($catalog | Where-Object { [string]$_.appName -eq [string]$one.AppName }) | Select-Object -First 1
         if (-not $app) { continue }
-        foreach ($f in @(Get-AppDetailFindings -CatalogApp $app -Result $one)) { $new.Add($f) }
+        # A Microsoft Store app has no install commands or detection in Intune to compare - its settings aren't checked.
+        $isStore = Test-StoreProductId ([string]$app.wingetId)
+        foreach ($f in @(Get-AppDetailFindings -CatalogApp $app -Result $one)) { if ($isStore -and [string]$f.Area -eq 'Metadata') { continue }; $new.Add($f) }
         $texts = Get-AuditSummaryTexts -CatalogApp $app -Result $one
         Set-LastAuditCacheEntry -AppName ([string]$one.AppName) -Metadata $texts.Metadata -Groups $texts.Groups -Dependencies $texts.Dependencies
     }

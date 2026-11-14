@@ -79,12 +79,13 @@ function Global:Add-WebWingetApps {
         if (Test-WebAddName $name $apps) { $name = "$name ($id)" }
         $why = Test-WebAddName $name $apps
         if ($why) { $skipped.Add("$id ($why)"); continue }
-        $managed = [bool]$Data.managed
+        $isStore = Test-StoreProductId $id
+        $managed = [bool]$Data.managed -and -not $isStore
         $edit = [pscustomobject]@{ appName = $name; wingetId = $id; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = @()
             managedUpdates = $managed
             metadata = [pscustomobject]@{ description = $(if ($d.Description) { ([string]$d.Description).Substring(0, [Math]::Min(([string]$d.Description).Length, 2000)) } else { $name }); publisher = [string]$d.Publisher
                 informationUrl = (Get-WebHttpUrl $(if ($d.Homepage) { $d.Homepage } else { $d.PublisherUrl })); privacyUrl = (Get-WebHttpUrl $d.PrivacyUrl)
-                appVersion = $(if ($managed -and (Test-ReleaseVersionText ([string]$d.Version))) { [string]$d.Version } else { '' }); owner = ''; developer = ''; notes = $(if ($d.License) { "License: $($d.License)" } else { '' })
+                appVersion = $(if ($managed -and (Test-ReleaseVersionText ([string]$d.Version))) { [string]$d.Version } else { '' }); owner = ''; developer = ''; notes = (@($(if ($isStore) { 'A Microsoft Store app: sent to Intune as its Store type - the Store installs and updates it.' }), $(if ($d.License) { "License: $($d.License)" })) | Where-Object { $_ }) -join ' '
                 installCommand = ''; uninstallCommand = '' } }
         # The commands are the Winget defaults (the editor fills them the same way).
         $defaults = Get-DefaultAppMetadata -AppName $name -WingetId $id -Uncommon $false
@@ -304,4 +305,74 @@ function Global:Add-WebScriptApp {
     [void](Update-WebCatalogApp -Name $r.name -Change { param($app) $app.metadata.detectionRule = [pscustomobject]$rule; if ($managed) { $app.managedUpdates = $true } }.GetNewClosure())
     Write-Log "[OK] Added the script app $($r.name) - Install.ps1 and Uninstall.ps1 are in $folder."
     return @{ ok = $true; name = $r.name; folder = $folder }
+}
+
+# ---------------------------------------------------------------- a PSADT (PowerShell App Deployment Toolkit) app
+
+function Global:Save-WebPsadtTemplate {
+    # The PSADT 4 template from its GitHub release into -Folder (https, 60 MB at most). '' when it worked, else why not.
+    param([string]$Folder)
+    if ($Global:App.TestGraph) { return 'Test mode: nothing is downloaded.' }
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ('psadt-' + [guid]::NewGuid().ToString('N'))
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $p = @{ Uri = 'https://api.github.com/repos/PSAppDeployToolkit/PSAppDeployToolkit/releases/latest'; Headers = @{ 'User-Agent' = 'IntuneAppCatalog'; Accept = 'application/vnd.github+json' }; TimeoutSec = 15; ErrorAction = 'Stop' }
+        if ($PSVersionTable.PSEdition -eq 'Desktop') { $p.UseBasicParsing = $true }
+        $rel = Invoke-RestMethod @p
+        $asset = @($rel.assets | Where-Object { [string]$_.name -match '^PSAppDeployToolkit_Template_v4\.zip$' }) | Select-Object -First 1
+        if (-not $asset) { $asset = @($rel.assets | Where-Object { [string]$_.name -match 'Template.*\.zip$' }) | Select-Object -First 1 }
+        if (-not $asset) { return "The PSADT release $($rel.tag_name) has no template zip - download it by hand from GitHub (PSAppDeployToolkit) into $Folder." }
+        [void](New-Item -ItemType Directory -Path $tmp -Force)
+        $zip = Join-Path $tmp 'template.zip'
+        Invoke-WebHttpsGet -Uri ([string]$asset.browser_download_url) -MaxBytes 60MB -OutFile $zip -TimeoutSec 120
+        $out = Join-Path $tmp 'x'
+        Expand-Archive -LiteralPath $zip -DestinationPath $out -Force
+        $main = Get-ChildItem -LiteralPath $out -Filter 'Invoke-AppDeployToolkit.ps1' -File -Recurse | Select-Object -First 1
+        if (-not $main) { return 'The downloaded template has no Invoke-AppDeployToolkit.ps1.' }
+        Copy-Item -Path (Join-Path $main.DirectoryName '*') -Destination $Folder -Recurse -Force
+        Write-Log "[OK] PSADT $($rel.tag_name) template put in $Folder."
+        return ''
+    }
+    catch { return "The PSADT template couldn't be downloaded: $($_.Exception.Message)" }
+    finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+function Global:Add-WebPsadtApp {
+    <#
+      Adds an app packaged with the PowerShell App Deployment Toolkit 4: the
+      template in Packages\<app> (downloaded, or already put there), its
+      Invoke-AppDeployToolkit.ps1 filled in with the vendor, name and version
+      and the version marker; installed and uninstalled with the toolkit's
+      own commands, detected by the marker (managed updates can follow it).
+    #>
+    param($Data)
+    $name = ([string]$Data.name).Trim() -replace '\s+', ' '
+    $why = Test-WebAddName $name @((Read-WebCatalogRecords).Apps)
+    if ($why) { return @{ ok = $false; error = $why } }
+    $version = ([string]$Data.version).Trim()
+    if (-not (Test-ReleaseVersionText $version)) { return @{ ok = $false; error = 'Give the version you are packaging (letters, digits and . - + _) - the detection rule checks for it.' } }
+    $folder = Join-Path (Get-AppFolder -Kind Packages -Create) (Get-SafeFileNameForApp -Name $name)
+    if (-not (Test-Path -LiteralPath $folder)) { [void](New-Item -ItemType Directory -Path $folder -Force) }
+    $main = Join-Path $folder 'Invoke-AppDeployToolkit.ps1'
+    if (-not (Test-Path -LiteralPath $main)) {
+        if (-not $Data.download) { return @{ ok = $false; error = "Put the PSADT 4 template in $folder (Invoke-AppDeployToolkit.ps1 and the PSAppDeployToolkit folder), or tick Download." } }
+        $err = Save-WebPsadtTemplate $folder
+        if ($err) { return @{ ok = $false; error = $err } }
+    }
+    $fill = Set-PsadtTemplateValues -Text (Get-Content -LiteralPath $main -Raw -Encoding UTF8) -Name $name -Vendor ([string]$Data.publisher) -Version $version
+    [System.IO.File]::WriteAllText($main, $fill.Text, (New-Object System.Text.UTF8Encoding($true)))
+    $exe = Test-Path -LiteralPath (Join-Path $folder 'Invoke-AppDeployToolkit.exe')
+    $run = if ($exe) { 'Invoke-AppDeployToolkit.exe' } else { '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File Invoke-AppDeployToolkit.ps1' }
+    $groups = Get-WebAddGroupLists $Data
+    $edit = [pscustomobject]@{ appName = $name; wingetId = ''; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = @(); managedUpdates = $false
+        metadata = [pscustomobject]@{ description = $(if ([string]$Data.description) { [string]$Data.description } else { $name }); publisher = ([string]$Data.publisher).Trim(); appVersion = $version
+            installCommand = "$run -DeploymentType Install -DeployMode Silent"; uninstallCommand = "$run -DeploymentType Uninstall -DeployMode Silent"
+            owner = ''; developer = ''; informationUrl = ''; privacyUrl = ''; notes = 'Packaged with the PowerShell App Deployment Toolkit 4 - edit Invoke-AppDeployToolkit.ps1 in its packages folder.' } }
+    $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
+    if (-not $r.ok) { return $r }
+    $rule = Get-ScriptAppMarkerRule -Name $name -Version $version
+    $markerOk = @($fill.Missing | Where-Object { $_ -like 'marker*' }).Count -eq 0
+    [void](Update-WebCatalogApp -Name $r.name -Change { param($app) $app.metadata.detectionRule = [pscustomobject]$rule; if ($markerOk) { $app.managedUpdates = $true } }.GetNewClosure())
+    Write-Log "[OK] Added the PSADT app $($r.name) - edit Invoke-AppDeployToolkit.ps1 in $folder."
+    return @{ ok = $true; name = $r.name; folder = $folder; filled = @($fill.Filled); missing = @($fill.Missing) }
 }

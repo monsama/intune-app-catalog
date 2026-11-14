@@ -402,3 +402,26 @@ function Global:Get-WebAppUpdate {
     $Global:App.AppUpdateCache = @{ At = (Get-Date); Answer = $answer }
     return $answer
 }
+
+# ---------------------------------------------------------------- permissions: granted vs used
+
+function Global:Get-WebPermissionCheck {
+    # Settings > Diagnostics > Check permissions: the app registration's Graph permissions (from the sign-in itself) against what is used here.
+    if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Set up the connection in Settings first.' } }
+    if ($Global:App.TestGraph) { $roles = @($Global:App.TestGraph.Answers.'TOKEN roles') }
+    else {
+        $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) @((Get-MgContext).Scopes) }
+        if (-not $read.ok) { return $read }
+        $roles = @($read.value)
+    }
+    $scriptsDir = Get-AppFolder -Kind Scripts
+    $usage = @{
+        Scripts    = [bool](@(Get-ChildItem -LiteralPath $scriptsDir -Filter '*.ps1' -File -ErrorAction SilentlyContinue).Count)
+        Inventory  = [bool](@((Read-WebCatalogRecords).Apps | Where-Object { $_.managedUpdates }).Count)
+        Mail       = [bool]($Global:App.Alerts.MailFrom -and @($Global:App.Alerts.MailTo).Count)
+        GroupsPage = $true
+    }
+    $rows = @(Get-PermissionReport -Granted $roles -Usage $usage)
+    return @{ ok = $true; granted = @($roles); rows = $rows
+        missing = @($rows | Where-Object { $_.status -in 'missing', 'partly' }).Count; unused = @($rows | Where-Object { $_.status -eq 'unused' }).Count }
+}

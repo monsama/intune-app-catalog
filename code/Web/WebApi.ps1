@@ -297,7 +297,7 @@ function Global:Complete-WebJob {
             [void](Update-WebCatalogApp -Name $After.AppName -Change {
                 param($app)
                 if ($newId) { $app.appId = $newId }
-                $app.intuneAppType = 'Windows app (Win32)'
+                $app.intuneAppType = $(if ($After.Store) { 'Microsoft Store app (new)' } else { 'Windows app (Win32)' })
                 if (-not $app.metadata -and $defaults) { $app.metadata = $defaults }
             }.GetNewClosure())
             Write-Log "[OK] Deployed $($After.AppName)$(if ($newId) { " (App ID $newId)" }) - saved to the catalog."
@@ -453,6 +453,13 @@ function Global:Open-WebTarget {
         'coffee' { Start-Process 'https://buymeacoffee.com/monsama' }
         'release' { $repo = [string]$Global:App.ReleaseRepo; if ($repo -notmatch '^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$') { return @{ ok = $false; error = 'No release repository set.' } }; Start-Process "https://github.com/$repo/releases/latest" }
         'scripts-folder' { return (Open-WebFolder (Get-AppFolder -Kind Scripts -Create)) }
+        'package-folder' {
+            $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
+            if (-not $a) { return @{ ok = $false; error = 'No such app.' } }
+            $pf = Join-Path (Get-AppFolder -Kind Packages -Create) (Get-SafeFileNameForApp -Name $a.appName)
+            if (-not (Test-Path -LiteralPath $pf)) { return @{ ok = $false; error = "$pf doesn't exist." } }
+            return (Open-WebFolder $pf)
+        }
         'sandbox-folder' {
             if ([string]$Data.id -notmatch '^\d{8}-\d{6}-[0-9a-f]{4}$') { return @{ ok = $false; error = 'Unknown test.' } }
             $sf = Join-Path (Get-WebSandboxRoot) ([string]$Data.id)
@@ -554,6 +561,7 @@ function Global:Invoke-WebApi {
         '/api/release-advanced' { return (Invoke-WithCatalogLock { Complete-WebAdvance $Data }) }
         '/api/alert-test'       { return (Send-WebTestAlert) }
         '/api/health'           { return (Get-WebHealth) }
+        '/api/permission-check' { return (Get-WebPermissionCheck) }
         '/api/group-suggest'    { return (Find-WebGroupSuggestions $Data) }
         '/api/group-check'      { return (Test-WebGroupNames $Data) }
         '/api/icon-find'        { return (Find-WebAppIcon $Data) }
@@ -575,6 +583,7 @@ function Global:Invoke-WebApi {
         '/api/add-installer'    { return (Invoke-WithCatalogLock { Add-WebInstallerApp $Data }) }
         '/api/script-templates' { return (Get-WebScriptTemplates $Data) }
         '/api/add-script'       { return (Invoke-WithCatalogLock { Add-WebScriptApp $Data }) }
+        '/api/add-psadt'        { return (Invoke-WithCatalogLock { Add-WebPsadtApp $Data }) }
         '/api/inventory-suggestions' { return (Get-WebInventorySuggestions) }
         '/api/unattended-status' { return (Get-WebUnattendedStatus) }
         '/api/unattended-script' { return (New-WebUnattendedScript) }

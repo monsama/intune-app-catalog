@@ -1,6 +1,6 @@
 # Adding apps
 
-**Apps > Add** opens *Add apps*, with three ways in. Every one ends in an
+**Apps > Add** opens *Add apps*, with several ways in. Every one ends in an
 app in the catalog that's ready to deploy; the editor (double-click the
 app) changes anything afterwards. Groups for the new apps go in the boxes
 at the bottom - click a favourite group to add it (Shift-click: to
@@ -19,6 +19,11 @@ right) and **Add**. Each app gets:
 
 Packages already in the catalog are marked *in the catalog* and can't be
 picked again.
+
+**Microsoft Store apps** (IDs like `9NBLGGH4NNS1` or `XP...`, marked
+*Store*) are sent to Intune as native *Microsoft Store app (new)* apps -
+no package to build, Intune installs them from the Store and the Store
+keeps them up to date, so managed updates stay off for them.
 
 ## An installer (MSI or EXE)
 
@@ -58,3 +63,21 @@ when you add the app.
   Install.ps1 too. Or choose *A detection script of my own*.
 
 Then **Package** the app and **Deploy** it, as any other.
+
+## PSADT (PowerShell App Deployment Toolkit 4)
+
+For installers that need more than a silent switch: closing running apps,
+asking the user, deferrals, logging. Give a name, vendor and version and
+**Add**. The app gets:
+
+- the PSADT 4 template, downloaded from its GitHub release into
+  Packages\*App-Name* (untick the box if the template is already there);
+- the vendor, name and version filled into Invoke-AppDeployToolkit.ps1,
+  and a version marker written after the install (removed after the
+  uninstall) - the detection rule reads it, so managed updates can follow;
+- the toolkit's own commands:
+  `Invoke-AppDeployToolkit.exe -DeploymentType Install -DeployMode Silent`.
+
+Put the installer in the folder's Files subfolder, write the install steps
+in Invoke-AppDeployToolkit.ps1, then build the package and send it to
+Intune.

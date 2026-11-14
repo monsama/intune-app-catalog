@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.13.0
+
+- **Check permissions** (Settings > Diagnostics): the Graph permissions
+  the app registration has, against what the features in use need - what
+  to add, what's only partly there (Group.Read.All instead of
+  ReadWrite), and what to remove; broad ones it never uses are called out.
+- **Microsoft Store apps** (9N... / XP... IDs) go to Intune as native
+  *Microsoft Store app (new)* apps: no package, the Store keeps them
+  current, so managed updates and the metadata checks skip them.
+- **PSADT 4**: a new tab in *Add apps* downloads the PowerShell App
+  Deployment Toolkit 4 template, fills in vendor, name and version, adds a
+  version marker for detection, and sets the toolkit's install and
+  uninstall commands - managed updates on.
+- README lists the two feature-only permissions (detected apps, email
+  alerts).
+
 ## 2.12.0
 
 ### Security

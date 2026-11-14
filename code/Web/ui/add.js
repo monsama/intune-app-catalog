@@ -26,15 +26,16 @@ function addGroup(id, g) { const l = addLines(id); if (!l.includes(g)) $(id).val
 function showAddSrc(src) {
   addSrc = src;
   for (const t of document.querySelectorAll('[data-asrc]')) t.setAttribute('aria-selected', String(t.dataset.asrc === src));
-  for (const s of ['winget', 'installer', 'script', 'list']) $('asec-' + s).hidden = s !== src;
+  for (const s of ['winget', 'installer', 'script', 'psadt', 'list']) $('asec-' + s).hidden = s !== src;
   updateAddButton();
-  (src === 'winget' ? $('awQuery') : src === 'installer' ? $('aiDrop') : src === 'list' ? $('btnAlFile') : $('asName')).focus();
+  (src === 'winget' ? $('awQuery') : src === 'installer' ? $('aiDrop') : src === 'list' ? $('btnAlFile') : src === 'psadt' ? $('apName') : $('asName')).focus();
 }
 for (const t of document.querySelectorAll('[data-asrc]')) t.addEventListener('click', () => showAddSrc(t.dataset.asrc));
 function updateAddButton() {
   const b = $('btnAddGo');
   if (addSrc === 'winget') { b.textContent = awPicked.size ? `Add ${awPicked.size} app${awPicked.size === 1 ? '' : 's'}` : 'Add'; setEnabled(b, awPicked.size > 0, 'Tick one or more packages first.'); }
   else if (addSrc === 'installer') { b.textContent = 'Add'; setEnabled(b, !!aiInfo, 'Drop or choose an installer first.'); }
+  else if (addSrc === 'psadt') { b.textContent = 'Add'; setEnabled(b, !!($('apName').value.trim() && $('apVersion').value.trim()), 'Give the app a name and the version you are packaging.'); }
   else if (addSrc === 'list') { b.textContent = alPicked.size ? `Add ${alPicked.size} app${alPicked.size === 1 ? '' : 's'}` : 'Add'; setEnabled(b, alPicked.size > 0, 'Read a list and tick the packages first.'); }
   else { b.textContent = 'Add'; setEnabled(b, !!$('asName').value.trim(), 'Give the app a name first.'); }
 }
@@ -61,7 +62,7 @@ async function searchAdd() {
     box.checked = awPicked.has(x.id);
     const tr = el('tr', { class: inCat ? 'dim' : '' },
       el('td', { class: 'chk' }, box),
-      el('td', {}, x.name, inCat ? el('span', { class: 'pill muted newer', text: 'in the catalog', title: `Already in the catalog as ${inCat}` }) : ''),
+      el('td', {}, x.name, isStoreId(x.id) ? el('span', { class: 'pill info newer', text: 'Store', title: 'A Microsoft Store app: Intune\'s own Store type - no package, the Store installs and updates it' }) : '', inCat ? el('span', { class: 'pill muted newer', text: 'in the catalog', title: `Already in the catalog as ${inCat}` }) : ''),
       el('td', { class: 'mono', text: x.id }), el('td', { text: x.version }));
     const pick = on => { if (inCat) return; if (on) awPicked.set(x.id, x); else awPicked.delete(x.id); box.checked = on; tr.classList.toggle('sel', on); updateAddButton(); };
     box.addEventListener('change', () => { pick(box.checked); showWingetDetail(x); });
@@ -141,6 +142,7 @@ $('asTemplate').addEventListener('change', applyTemplate);
 let asTimer = 0, asTouched = false;
 $('asInstall').addEventListener('input', () => { asTouched = true; });
 // The template follows the name and version until the scripts are edited by hand.
+for (const id of ['apName', 'apVersion']) $(id).addEventListener('input', updateAddButton);
 for (const id of ['asName', 'asVersion']) $(id).addEventListener('input', () => { updateAddButton(); if (!asTouched) { clearTimeout(asTimer); asTimer = setTimeout(() => loadScriptTemplates(false), 300); } });
 for (const r of document.querySelectorAll('input[name="asDetect"]')) r.addEventListener('change', () => { $('asDetectScript').hidden = document.querySelector('input[name="asDetect"]:checked').value !== 'script'; });
 
@@ -173,6 +175,14 @@ $('btnAddGo').addEventListener('click', async () => {
       $('dlgAdd').close(); await afterAdd([r.name]);
       toast(`${r.name} added - its installer is in ${r.folder}.`, false, build || publish ? [] : [{ label: 'Build', run: () => buildAdded(r.name) }]);
       if (build || publish) { if (!(await buildAdded(r.name))) return; }
+    }
+    else if (addSrc === 'psadt') {
+      $('addError').hidden = false; $('addError').textContent = $('apDownload').checked ? 'Downloading the PSADT template...' : 'Adding...'; $('addError').classList.add('muted');
+      const r = await api('/api/add-psadt', { name: $('apName').value.trim(), publisher: $('apVendor').value.trim(), version: $('apVersion').value.trim(), download: $('apDownload').checked, ...groups });
+      $('addError').classList.remove('muted');
+      if (!r.ok) { showAddError(r.error); return; }
+      $('dlgAdd').close(); await afterAdd([r.name]);
+      toast(`${r.name} added - edit Invoke-AppDeployToolkit.ps1 in ${r.folder}${r.missing.length ? ` (couldn't fill in: ${r.missing.join(', ')} - do that by hand)` : ''}.`, !!r.missing.length, [{ label: 'Open the folder', run: () => api('/api/open', { target: 'package-folder', name: r.name }) }, { label: 'Build', run: () => buildAdded(r.name) }]);
     }
     else {
       const custom = document.querySelector('input[name="asDetect"]:checked').value === 'script';

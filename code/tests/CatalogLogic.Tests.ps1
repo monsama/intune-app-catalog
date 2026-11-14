@@ -181,6 +181,9 @@ $testableFunctionNames = @(
     "Get-AppUpdateOffer",
     "ConvertTo-PsLiteral",
     "Get-InstalledNamePattern",
+    "Test-StoreProductId",
+    "Get-PermissionReport",
+    "Set-PsadtTemplateValues",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -750,6 +753,18 @@ Assert-Equal 0 @($tplEvil | Where-Object { $e = $null; [void][System.Management.
 $pat = Get-InstalledNamePattern 'Microsoft Teams'
 Assert-True ('Microsoft Teams' -match $pat -and 'Microsoft Teams 24.1 (x64)' -match $pat -and 'Microsoft Teams Meeting Add-in' -notmatch $pat -and 'Microsoft Teams classic' -notmatch $pat) "Get-InstalledNamePattern: the product, with a version or (x64) - not a sibling product"
 Assert-True ('Tool [beta]' -match (Get-InstalledNamePattern 'Tool [beta]')) "Get-InstalledNamePattern: brackets in a name are matched as text"
+
+# Microsoft Store apps, the permissions report, PSADT
+Assert-True ((Test-StoreProductId '9NBLGGH4NNS1') -and (Test-StoreProductId 'XP89DCGQ3K6VLD') -and -not (Test-StoreProductId '7zip.7zip') -and -not (Test-StoreProductId '9nblggh4nns1')) "Test-StoreProductId: 9N... and XP... product IDs, not winget IDs"
+$permA = @(Get-PermissionReport -Granted @('DeviceManagementApps.ReadWrite.All', 'Group.Read.All', 'Directory.ReadWrite.All', 'Mail.Send') -Usage @{ Scripts = $false; Inventory = $true; Mail = $false; GroupsPage = $true })
+$st = @{}; foreach ($r in $permA) { $st[$r.name] = $r.status }
+Assert-True ($st['DeviceManagementApps.ReadWrite.All'] -eq 'ok' -and $st['Group.ReadWrite.All'] -eq 'partly' -and $st['DeviceManagementManagedDevices.Read.All'] -eq 'missing' -and $st['Mail.Send'] -eq 'unused' -and $st['Directory.ReadWrite.All'] -eq 'unused' -and $st['DeviceManagementScripts.ReadWrite.All'] -eq 'optional') "Get-PermissionReport: what's there, partly there, missing, not needed and optional - by the features in use"
+Assert-True (@($permA | Where-Object { $_.name -eq 'Directory.ReadWrite.All' })[0].why -like '*broad*') "Get-PermissionReport: a broad permission the app never needs is called out"
+$psadtIn = "`$adtSession = @{`r`n    AppVendor = ''`r`n    AppName = ''`r`n    AppVersion = ''`r`n}`r`n    ## <Perform Post-Installation tasks here>`r`n`r`n    ## <Perform Post-Uninstallation tasks here>`r`n"
+$psadt = Set-PsadtTemplateValues -Text $psadtIn -Name ("Bob" + [char]0x2019 + "s CAD") -Vendor 'Contoso' -Version '2025.1'
+$pe = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($psadt.Text, [ref]$null, [ref]$pe)
+Assert-True (@($psadt.Missing).Count -eq 0 -and $psadt.Text -match "AppVendor = 'Contoso'" -and $psadt.Text -match "AppVersion = '2025\.1'" -and $psadt.Text -match 'Set-ItemProperty -LiteralPath' -and $psadt.Text -match 'Remove-Item -LiteralPath' -and @($pe).Count -eq 0) "Set-PsadtTemplateValues: vendor, name and version filled in, the marker after install and uninstall - still valid PowerShell"
+Assert-True (@((Set-PsadtTemplateValues -Text 'nothing here' -Name 'X' -Vendor 'Y' -Version '1').Missing).Count -eq 5) "Set-PsadtTemplateValues: says what it couldn't fill in"
 
 # A newer release of this app
 $offer = Get-AppUpdateOffer -Current '2.11.0' -Tag 'v2.12.0' -Body "## Added`n- **Faster** catalog`n`n- Lock file"

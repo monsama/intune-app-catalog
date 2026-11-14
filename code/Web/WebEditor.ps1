@@ -220,7 +220,7 @@ function Global:Merge-WebAppEdit {
         intuneAppVersion = $(if ($Existing) { [string]$Existing.intuneAppVersion } else { '' })
         packagePath      = $(if ($Existing) { [string]$Existing.packagePath } else { '' })
         # Managed updates: what the editor says (only a Winget app can have them), else what the app had - or, for a new app, the default install method.
-        managedUpdates   = $(if ($null -ne $Edit.managedUpdates) { [bool]$Edit.managedUpdates } elseif ($Existing) { [bool]$Existing.managedUpdates } else { ([string]$Edit.wingetId).Trim() -and [string]$Global:App.DefaultAppSettings.WingetInstallMethod -eq 'Managed' })
+        managedUpdates   = $(if ($null -ne $Edit.managedUpdates) { [bool]$Edit.managedUpdates } elseif ($Existing) { [bool]$Existing.managedUpdates } else { ([string]$Edit.wingetId).Trim() -and -not (Test-StoreProductId ([string]$Edit.wingetId).Trim()) -and [string]$Global:App.DefaultAppSettings.WingetInstallMethod -eq 'Managed' })
         releases         = @($(if ($Existing) { $Existing.releases }))
         # The app's own release rule: what the editor sends (empty fields: Settings' rule), else what it had.
         releaseRule      = $(if ($null -ne $Edit.releaseRule) { ConvertTo-AppReleaseRule $Edit.releaseRule } elseif ($Existing) { $Existing.releaseRule } else { $null })
@@ -297,6 +297,8 @@ function Global:Save-WebApp {
     if ([string]$edit.iconChange -eq 'set' -and -not $record.icon) { return @{ ok = $false; error = 'The icon must be a PNG or JPEG of at most 750 KB.' } }
     if (([string]$edit.downloadUrl).Trim() -and -not $record.downloadUrl) { return @{ ok = $false; error = 'The installer download address must start with https://.' } }
     if ($record.autoRelease -and ($record.wingetId -or -not $record.managedUpdates)) { $record.autoRelease = $false }
+    # The Store updates its own apps: no managed updates for a Microsoft Store app.
+    if ($record.managedUpdates -and (Test-StoreProductId ([string]$record.wingetId))) { $record.managedUpdates = $false }
     foreach ($urlField in 'informationUrl', 'privacyUrl') {
         $u = [string]$edit.metadata.$urlField
         if ($u -and $u -notmatch '^https?://\S+$') { return @{ ok = $false; error = "The $(if ($urlField -eq 'informationUrl') { 'information' } else { 'privacy' }) URL must start with http:// or https://." } }

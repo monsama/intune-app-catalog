@@ -569,6 +569,12 @@
     <div class="cols">
       <div class="col">
         <article class="card">
+          <h2>Permissions</h2>
+          <p class="sub" id="permNote">The Graph permissions the app registration has, against what this catalog uses - what to add, and what to remove (the fewer, the less the certificate can do).</p>
+          <div class="actions"><button class="btn" id="btnPermCheck" title="Read the permissions from the sign-in and compare them with the features in use">Check permissions</button></div>
+          <div class="tablewrap short" id="permWrap" hidden><table class="grid"><thead><tr><th>Permission</th><th>Status</th><th>For</th></tr></thead><tbody id="permRows"></tbody></table></div>
+        </article>
+        <article class="card">
           <h2>Diagnostics</h2>
           <p class="sub">This machine's setup, the catalog itself, and how it lines up with Intune. Only reads.</p>
           <div class="actions"><button class="btn" id="btnDiag" title="Check this machine, the catalog and the link to Intune - reads only">Run diagnostics</button></div>
@@ -895,6 +901,7 @@
     <button class="subtab" role="tab" id="atab-winget" data-asrc="winget" aria-controls="asec-winget" aria-selected="true">Winget</button>
     <button class="subtab" role="tab" id="atab-installer" data-asrc="installer" aria-controls="asec-installer" aria-selected="false">Installer (MSI / EXE)</button>
     <button class="subtab" role="tab" id="atab-script" data-asrc="script" aria-controls="asec-script" aria-selected="false">PowerShell script</button>
+    <button class="subtab" role="tab" id="atab-psadt" data-asrc="psadt" aria-controls="asec-psadt" aria-selected="false">PSADT</button>
     <button class="subtab" role="tab" id="atab-list" data-asrc="list" aria-controls="asec-list" aria-selected="false">From a list</button>
   </nav>
 
@@ -952,6 +959,20 @@
       <textarea id="asDetectScript" class="mono full" rows="5" aria-label="Detection script" hidden autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="if (Test-Path 'C:\Program Files\Contoso\app.exe') { Write-Output 'Installed' }"></textarea>
     </fieldset>
     <p class="muted note">Both scripts run as SYSTEM with 64-bit PowerShell from the package folder (Packages\&lt;app&gt;) - put any files they need there too.</p>
+  </section>
+
+  <section class="asec" id="asec-psadt" role="tabpanel" aria-labelledby="atab-psadt" hidden>
+    <p class="sub">The <b>PowerShell App Deployment Toolkit</b> (PSADT 4) - the usual way to package installers that need more than a silent switch: closing running apps, asking the user, deferrals, logging. You add the install steps to its Invoke-AppDeployToolkit.ps1; Intune runs it with the toolkit's own commands.</p>
+    <div class="formgrid three">
+      <label>Name<input id="apName" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. Contoso CAD"></label>
+      <label>Vendor<input id="apVendor" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+      <label>Version<input id="apVersion" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. 2025.1"></label>
+    </div>
+    <label class="chk" title="The PSADT 4 template from its GitHub release, into the app's packages folder. Untick it when you have put the template there yourself."><input type="checkbox" id="apDownload" checked>Download the PSADT 4 template into the app's folder (GitHub)</label>
+    <ul class="notes muted">
+      <li>The vendor, name and version are filled into Invoke-AppDeployToolkit.ps1, and a version marker is added after the install (removed after the uninstall) - the detection rule reads it, and managed updates can follow it.</li>
+      <li>Then put your installer in the folder's Files subfolder, write the install steps in Invoke-AppDeployToolkit.ps1, build the package and send it to Intune.</li>
+    </ul>
   </section>
 
   <section class="asec" id="asec-list" role="tabpanel" aria-labelledby="atab-list" hidden>

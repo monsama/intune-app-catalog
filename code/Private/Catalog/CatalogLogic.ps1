@@ -1727,3 +1727,75 @@ function Global:Get-AppUpdateOffer {
     if ($notes.Length -gt 400) { $notes = $notes.Substring(0, 400) + '...' }
     return @{ Newer = [bool]$newer; Version = $v; Notes = $notes }
 }
+
+
+function Global:Test-StoreProductId {
+    # Pure: is -Id a Microsoft Store product ID ("9N..." 12 or "XP..." 14 letters and digits) - winget's msstore source, Intune's "Microsoft Store app (new)"?
+    param([string]$Id)
+    return [bool]([string]$Id -cmatch '^(9[0-9A-Z]{11}|XP[0-9A-Z]{12})$')
+}
+
+function Global:Get-PermissionReport {
+    <#
+      Pure: the Graph application permissions the app registration has
+      (-Granted) against what this app uses, by feature (-Usage: Scripts,
+      Inventory, Mail, GroupsPage as booleans). Rows @{ name; status = ok |
+      missing | partly | unused | optional; for; why }: missing and partly are
+      to add; unused is granted but not needed - removing it shrinks what the
+      certificate can do.
+    #>
+    param([string[]]$Granted, $Usage)
+    $g = @($Granted | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+    $has = { param($n) $g -contains $n }
+    $rows = New-Object System.Collections.Generic.List[object]
+    $row = { param($name, $status, $for, $why) $rows.Add([ordered]@{ name = $name; status = $status; for = $for; why = $why }) }
+    & $row 'DeviceManagementApps.ReadWrite.All' $(if (& $has 'DeviceManagementApps.ReadWrite.All') { 'ok' } else { 'missing' }) 'Apps: send to Intune, assign, release, install status' 'Everything about apps needs it.'
+    if (& $has 'Group.ReadWrite.All') { & $row 'Group.ReadWrite.All' 'ok' 'Groups: create missing ones, rename, members' '' }
+    elseif (& $has 'Group.Read.All') { & $row 'Group.ReadWrite.All' 'partly' 'Groups: create missing ones, rename, members' 'Group.Read.All finds groups, but missing groups can''t be created and the Groups page can''t change them.' }
+    else { & $row 'Group.ReadWrite.All' 'missing' 'Groups: find, create, rename' 'Assignments name groups - they are looked up and created with it.' }
+    $feat = @(
+        @('DeviceManagementScripts.ReadWrite.All', [bool]$Usage.Scripts, 'Platform scripts', 'There are platform scripts in the scripts folder.'),
+        @('DeviceManagementManagedDevices.Read.All', [bool]$Usage.Inventory, 'Apps on devices: older versions, apps worth adding', 'Apps have managed updates - the Updates page reads the inventory.'),
+        @('Mail.Send', [bool]$Usage.Mail, 'Email alerts from the nightly run', 'Email alerts are set up.'),
+        @('User.Read.All', [bool]$Usage.GroupsPage, 'The Groups page: finding users to add as members', 'The Groups page adds users to groups.')
+    )
+    foreach ($f in $feat) {
+        $isGranted = & $has $f[0]
+        if ($f[1]) { & $row $f[0] $(if ($isGranted) { 'ok' } else { 'missing' }) $f[2] $f[3] }
+        elseif ($isGranted) { & $row $f[0] 'unused' $f[2] $(if ($f[0] -eq 'Mail.Send') { 'No email alerts are set up - and Mail.Send can send as any mailbox: remove it, or limit it with an application access policy.' } else { 'Nothing here uses it yet.' }) }
+        else { & $row $f[0] 'optional' $f[2] 'Only when you use it.' }
+    }
+    $known = @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Group.Read.All', 'DeviceManagementScripts.ReadWrite.All', 'DeviceManagementManagedDevices.Read.All', 'Mail.Send', 'User.Read.All')
+    if ((& $has 'Group.Read.All') -and (& $has 'Group.ReadWrite.All')) { & $row 'Group.Read.All' 'unused' 'Reading groups' 'Group.ReadWrite.All covers it.' }
+    $broad = '^(Directory\.ReadWrite\.All|Application\.ReadWrite\.All|AppRoleAssignment\.ReadWrite\.All|RoleManagement\.ReadWrite\.Directory|DeviceManagementConfiguration\.ReadWrite\.All|DeviceManagementRBAC\.ReadWrite\.All|Sites\.FullControl\.All|Mail\.ReadWrite|Files\.ReadWrite\.All|User\.ReadWrite\.All)$'
+    foreach ($p in @($g | Where-Object { $known -notcontains $_ } | Sort-Object)) {
+        & $row $p 'unused' 'Not used by this app' $(if ($p -match $broad) { 'A broad permission this app never needs - remove it: the certificate could otherwise change far more than apps.' } elseif ($p -in 'Directory.Read.All', 'Device.Read.All') { 'User.Read.All and Group.ReadWrite.All cover what this app reads.' } else { 'Not used by this app.' })
+    }
+    return , $rows.ToArray()
+}
+
+function Global:Set-PsadtTemplateValues {
+    <#
+      Pure: a PSADT 4 Invoke-AppDeployToolkit.ps1 with this app filled in -
+      AppVendor, AppName, AppVersion in $adtSession, and the version marker
+      (the detection rule's) written after the install and removed after the
+      uninstall, at the template's "Perform Post-Installation /
+      Post-Uninstallation tasks here" lines. @{ Text; Filled = @(...); Missing = @(...) }.
+    #>
+    param([string]$Text, [string]$Name, [string]$Vendor, [string]$Version)
+    $filled = New-Object System.Collections.Generic.List[string]; $missing = New-Object System.Collections.Generic.List[string]
+    $t = [string]$Text
+    foreach ($pair in @(@('AppVendor', $Vendor), @('AppName', $Name), @('AppVersion', $Version))) {
+        $rx = '(?m)^(\s*' + $pair[0] + '\s*=\s*)''[^''\r\n]*'''
+        if ($t -match $rx) { $lit = (ConvertTo-PsLiteral $pair[1]).Replace('$', '$$'); $t = [regex]::Replace($t, $rx, ('${1}' + $lit), 1); $filled.Add($pair[0]) } else { $missing.Add($pair[0]) }
+    }
+    $key = ConvertTo-PsLiteral ("HKLM:\SOFTWARE\IntuneAppCatalog\Apps\" + ([string]$Name -replace '[\\/]', '-'))
+    $ver = ConvertTo-PsLiteral $Version
+    $add = "`r`n    ## The version marker Intune's detection rule reads (added by Intune App Catalog) - keep it.`r`n    New-Item -Path $key -Force | Out-Null`r`n    Set-ItemProperty -LiteralPath $key -Name Version -Value $ver`r`n"
+    $remove = "`r`n    ## The version marker (added by Intune App Catalog).`r`n    Remove-Item -LiteralPath $key -Recurse -Force -ErrorAction SilentlyContinue`r`n"
+    $rxIn = '(?m)^(\s*## <Perform Post-Installation tasks here>[^\r\n]*)'
+    if ($t -match $rxIn) { $t = [regex]::Replace($t, $rxIn, ('${1}' + $add.Replace('$', '$$')), 1); $filled.Add('marker after install') } else { $missing.Add('marker after install') }
+    $rxUn = '(?m)^(\s*## <Perform Post-Uninstallation tasks here>[^\r\n]*)'
+    if ($t -match $rxUn) { $t = [regex]::Replace($t, $rxUn, ('${1}' + $remove.Replace('$', '$$')), 1); $filled.Add('marker after uninstall') } else { $missing.Add('marker after uninstall') }
+    return @{ Text = $t; Filled = $filled.ToArray(); Missing = $missing.ToArray() }
+}

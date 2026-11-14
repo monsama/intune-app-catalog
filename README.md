@@ -181,9 +181,14 @@ Application permissions, with admin consent:
 | `Group.ReadWrite.All` | Creating and managing the groups apps are assigned to |
 | `User.Read.All`, `Device.Read.All`, `Directory.Read.All` | Resolving users, devices and groups by name |
 | `DeviceManagementScripts.ReadWrite.All` | Platform scripts only |
+| `DeviceManagementManagedDevices.Read.All` | Detected apps (older versions still on devices) only |
+| `Mail.Send` | Email alerts only |
 
 **Add required permissions** in Settings adds them for you. When Graph
 refuses a request, the app says which of these is likely missing.
+**Settings > Diagnostics > Check permissions** compares what the
+registration has with the features you use: what to add, and what to
+remove - the fewer it has, the less its certificate can do.
 
 ## Documentation
 
