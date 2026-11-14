@@ -315,7 +315,7 @@ label.chk.inline { display: inline-flex; align-items: center; gap: 6px; margin: 
 
 /* ---- toast ---- */
 .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 9px 16px; border-radius: var(--r-m); font-size: 13px; box-shadow: var(--shadow); max-width: 80vw; }
-.toast.err { background: var(--err); color: #fff; }
+.toast.err { background: var(--err-bg); color: var(--err); border: 1px solid var(--err); }
 .deadnote { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(15, 20, 30, .6); color: #fff; font-size: 16px; }
 
 @media (max-width: 720px) {

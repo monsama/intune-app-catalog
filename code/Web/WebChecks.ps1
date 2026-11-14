@@ -59,7 +59,16 @@ function Global:Get-WebIntuneApps {
         param($Graph)
         $list = New-Object System.Collections.Generic.List[object]
         $uri = 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$select=id,displayName&$top=999'
-        while ($uri) { $page = & $Graph $uri; foreach ($v in @($page.value)) { $list.Add([ordered]@{ id = ([string]$v.id).ToLowerInvariant(); name = [string]$v.displayName; type = ([string]$v.'@odata.type') -replace '^#microsoft\.graph\.', '' }) }; $uri = [string]$page.'@odata.nextLink' }
+        while ($uri) {
+            $page = & $Graph $uri
+            foreach ($v in @($page.value)) {
+                # Built first, then added: [ordered] straight inside a method call doesn't parse in Windows PowerShell.
+                $odataType = [string]$v.'@odata.type'
+                $one = [ordered]@{ id = ([string]$v.id).ToLowerInvariant(); name = [string]$v.displayName; type = ($odataType -replace '^#microsoft\.graph\.', '') }
+                $list.Add($one)
+            }
+            $uri = [string]$page.'@odata.nextLink'
+        }
         , $list.ToArray()
     }
     if (-not $read.ok) { return @{ ok = $false; state = 'error'; error = $read.error } }
