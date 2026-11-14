@@ -53,7 +53,18 @@ async function fillPanel(a) {
   if (seq !== panelSeq) return;
   const app = r.ok ? r.app : {};
   const fact = (k, v) => v ? el('div', { class: 'kv' }, el('span', { class: 'k', text: k }), el('span', { text: v })) : '';
-  const groups = (k, list) => (list || []).length ? el('div', { class: 'kv' }, el('span', { class: 'k', text: k }), el('span', {}, ...list.map(g => el('span', { class: 'chip static', text: g })))) : '';
+  // Quick edits right here: a group added or taken off, the version - saved at once (the editor isn't needed).
+  const quick = async body => { const x = await api('/api/app-quick', { name: a.name, ...body }); if (!x.ok) { toast(x.error, true); return false; } toast('Saved.'); await loadApps(); return true; };
+  const inline = (btn, label, value, save) => {
+    const inp = el('input', { class: 'qedit', value: value || '', 'aria-label': label, placeholder: label, list: 'qGroupList',
+      onkeydown: async e => { if (e.key === 'Enter') { e.preventDefault(); if (await save(inp.value.trim())) return; } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inp.replaceWith(btn); btn.focus(); } } });
+    inp.addEventListener('blur', () => setTimeout(() => { if (inp.isConnected && !inp.value.trim()) inp.replaceWith(btn); }, 150));
+    btn.replaceWith(inp); inp.focus(); inp.select();
+  };
+  const groups = (k, field, list, always) => (list || []).length || always ? el('div', { class: 'kv' }, el('span', { class: 'k', text: k }), el('span', { class: 'gedit' },
+    ...(list || []).map(g => el('span', { class: 'chip static editable' }, g, el('button', { type: 'button', class: 'x', text: '×', 'aria-label': `Take ${g} off ${k}`, title: `Take ${g} off ${k}`, onclick: () => quick({ field, remove: g }) }))),
+    (() => { const b = el('button', { type: 'button', class: 'chip addchip', text: '+ Add', 'aria-label': `Add a group to ${k}`, title: `Add a group to ${k}`, onclick: () => inline(b, `Group for ${k}`, '', v => v ? quick({ field, add: v }) : false) }); return b; })())) : '';
+  const known = [...new Set(apps.flatMap(x => x.groups || []))].sort();
   const btn = (text, title, run, primary) => el('button', { class: 'btn small' + (primary ? ' primary' : ''), text, title, onclick: run });
   const pilot = (app.releases || []).find(x => x.state === 'pilot');
   p.replaceChildren(
@@ -62,12 +73,17 @@ async function fillPanel(a) {
     s.next ? el('div', { class: 'pnext' }, btn(s.next.label, s.next.title, s.next.run, true), el('span', { class: 'muted', text: 'Next step' })) : '',
     app.managedUpdates ? releaseTimeline(pilot ? pilot.ring : (a.hasAppId ? 99 : -1), !!(pilot && pilot.fastTrack)) : '',
     el('div', { class: 'pfacts' },
-      fact('Version', [a.version || '(none)', a.pilotVersion ? `pilot ${a.pilotVersion}` : '', a.newerOnWinget ? `winget has ${a.wingetVersion}` : '', (a.previousVersions || []).length ? `kept: ${a.previousVersions.join(', ')}` : ''].filter(Boolean).join(' - ')),
+      (() => {
+        const text = [a.version || '(none)', a.pilotVersion ? `pilot ${a.pilotVersion}` : '', a.newerOnWinget ? `winget has ${a.wingetVersion}` : '', (a.previousVersions || []).length ? `kept: ${a.previousVersions.join(', ')}` : ''].filter(Boolean).join(' - ');
+        const canEdit = app.hasMetadata && !(app.managedUpdates && a.hasAppId);
+        const b = canEdit ? el('button', { type: 'button', class: 'btn small ghost', text: 'Change', 'aria-label': 'Change the version', title: 'Change the App version here', onclick: () => inline(b, 'App version', a.version, v => quick({ field: 'appVersion', value: v })) }) : '';
+        return el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Version' }), el('span', {}, text, ' ', b));
+      })(),
       fact('Source', a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
       fact('Updates', app.managedUpdates ? 'managed - pilot first' : 'winget\'s latest, untested'),
       fact('In Intune', a.hasAppId ? (a.type || 'yes') : 'not yet'),
-      groups('Required', app.requiredFor), groups('Available', app.availableFor), groups('Uninstall', app.uninstallFor), groups('Excluded', app.excludeFor),
-      !(app.requiredFor || []).length && !(app.availableFor || []).length ? fact('Groups', 'none - nobody gets it yet') : '',
+      groups('Required', 'requiredFor', app.requiredFor, true), groups('Available', 'availableFor', app.availableFor, true), groups('Uninstall', 'uninstallFor', app.uninstallFor), groups('Excluded', 'excludeFor', app.excludeFor),
+      el('datalist', { id: 'qGroupList' }, ...known.map(g => el('option', { value: g }))),
       fact('Last check', a.audit)),
     el('div', { class: 'pacts' }, btn('Edit', 'Open it in the editor', () => openEditor(a.name)),
       a.hasAppId ? btn('Install status', 'Every device\'s install state', () => openStatus(a.name)) : '',
@@ -104,7 +120,7 @@ function updateReady() {
   $('readyBox').classList.toggle('allok', done === items.length);
   $('readyList').replaceChildren(...items.map(([ok, text, field]) => el('li', { class: ok ? 'ok' : 'todo' },
     el('span', { class: 'mark', 'aria-hidden': 'true', text: ok ? '✓' : '!' }),
-    field && !ok ? el('button', { type: 'button', class: 'linkish', text, title: 'Go to the field', onclick: () => { if (field === 'xType') $('deploySec').open = true; $(field).focus(); } }) : el('span', { text: (ok ? '' : 'Missing: ') + text }))));
+    field && !ok ? el('button', { type: 'button', class: 'linkish', text, title: 'Go to the field', onclick: () => { edPageFor($(field)); $(field).focus(); } }) : el('span', { text: (ok ? '' : 'Missing: ') + text }))));
 }
 $('appForm').addEventListener('input', () => updateReady());
 $('appForm').addEventListener('change', () => updateReady());
@@ -152,10 +168,13 @@ function renderSetup(steps) {
   $('setupTitle').textContent = `Getting started - ${done} of ${steps.length} done`;
   $('setupBar').style.width = Math.round(100 * done / steps.length) + '%';
   const first = steps.findIndex(s => !s.done);
-  $('setupList').replaceChildren(...steps.map((s, i) => el('li', { class: s.done ? 'done' : i === first ? 'now' : '' },
-    el('span', { class: 'mark', 'aria-hidden': 'true', text: s.done ? '✓' : String(i + 1) }),
-    el('div', { class: 'body' }, el('b', { text: s.title }), el('span', { class: 'muted', text: s.done ? 'Done.' : s.text })),
-    !s.done && go[s.go] ? el('button', { class: 'btn small' + (i === first ? ' primary' : ''), text: i === first ? 'Do it' : 'Go', onclick: go[s.go] }) : '')));
+  // Only the steps still open, in full; the done ones as one short line under them.
+  $('setupList').replaceChildren(...steps.map((s, i) => s.done ? null : el('li', { class: i === first ? 'now' : '' },
+    el('span', { class: 'mark', 'aria-hidden': 'true', text: String(i + 1) }),
+    el('div', { class: 'body' }, el('b', { text: s.title }), el('span', { class: 'muted', text: s.text })),
+    go[s.go] ? el('button', { class: 'btn small' + (i === first ? ' primary' : ''), text: i === first ? 'Do it' : 'Go', onclick: go[s.go] }) : '')).filter(Boolean));
+  const doneSteps = steps.filter(s => s.done);
+  $('setupDone').replaceChildren(...(doneSteps.length ? [el('span', { class: 'muted', text: 'Done: ' }), ...doneSteps.map(s => el('span', { class: 'donechip', text: '✓ ' + s.title }))] : []));
 }
 
 // ---------------------------------------------------------------- the catalog and Intune, side by side
@@ -194,34 +213,44 @@ function renderWhere() {
 }
 
 
-// ---------------------------------------------------------------- the editor's sections, as tabs
-// A bar at the top of the editor: one click to each part (the deploy settings open by themselves);
-// the part in view is highlighted. Everything stays in one form, so nothing is hidden from Save.
-(function editorTabs() {
-  const form = $('appForm'), dlg = $('dlgApp');
-  const parts = [['Basics', () => $('aName')], ['Who gets it', () => $('gRequired').closest('section').querySelector('h3.withtool')], ['Details', () => $('metaNote').closest('h3')],
-    ['Install & detection', () => $('xType').closest('section')], ['Requirements', () => $('xMinOs').closest('section')], ['Replaces', () => $('xSup')]];
-  const bar = el('nav', { class: 'edtabs', 'aria-label': 'Parts of the app' }, ...parts.map(([name, target], i) => el('button', { type: 'button', class: 'edtab', 'data-i': i, text: name, onclick: () => {
-    const t = target(); if (!t) return;
-    if (t.closest('#deploySec')) $('deploySec').open = true;
-    t.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    const f = t.matches('input, select, textarea') ? t : t.parentElement.querySelector('input:not([hidden]):not([type=checkbox]), select, .chipinput');
-    if (f) setTimeout(() => f.focus({ preventScroll: true }), 250);
-    mark(i); quietUntil = Date.now() + 900;
+// ---------------------------------------------------------------- the editor's parts, as pages
+// A tab bar at the top of the editor; each tab shows its part only. Everything stays in one form,
+// so Save still saves every part - a required field on another page brings that page up.
+(function editorPages() {
+  const form = $('appForm'), dlg = $('dlgApp'), dsec = $('deploySec');
+  const [left, right] = form.querySelectorAll(':scope > .formgrid > section');
+  const [dLeft, dRight] = dsec.querySelectorAll(':scope > .formgrid > section');
+  const names = ['Basics', 'Who gets it', 'Details', 'Install & detection', 'Requirements', 'Dependencies'];
+  const pageOf = new Map();
+  const assign = (section, start, switches) => { let p = start; for (const c of section.children) { const sw = switches.find(([test]) => test(c)); if (sw) p = sw[1]; pageOf.set(c, p); } };
+  assign(left, 0, [[c => c.matches('h3.withtool'), 1]]);
+  assign(right, 2, [[c => c.matches('.ready'), 0], [c => c.tagName === 'H3', 2]]);
+  assign(dLeft, 3, [[c => c.tagName === 'H3' && /Detection rule/.test(c.textContent), 3], [c => c.tagName === 'H3' && /Dependencies/.test(c.textContent), 5]]);
+  for (const c of dRight.children) pageOf.set(c, 4);
+  let cur = 0;
+  const bar = el('nav', { class: 'edtabs', 'aria-label': 'Parts of the app' }, ...names.map((name, i) => el('button', { type: 'button', class: 'edtab', 'data-i': i, text: name, onclick: () => {
+    setPage(i);
+    const f = [...pageOf].find(([c, p]) => p === i && !c.matches('.ready, h3') && c.querySelector('input:not([type=checkbox]):not([hidden]), select, textarea, .chipinput'));
+    const field = f && f[0].querySelector('input:not([type=checkbox]):not([hidden]), select, textarea, .chipinput');
+    if (field) setTimeout(() => field.focus({ preventScroll: true }), 30);
   } })));
-  let quietUntil = 0;
   const mark = i => [...bar.children].forEach((b, k) => b.setAttribute('aria-current', k === i ? 'true' : 'false'));
+  function setPage(i) {
+    cur = i;
+    for (const [c, p] of pageOf) c.classList.toggle('offpage', p !== i);
+    for (const s of [left, right, dLeft, dRight]) {
+      s.classList.toggle('offpage', ![...s.children].some(c => pageOf.get(c) === i));
+      [...s.children].forEach(c => c.classList.remove('pgfirst'));
+      const first = [...s.children].find(c => pageOf.get(c) === i); if (first) first.classList.add('pgfirst');
+    }
+    dsec.classList.toggle('offpage', i < 3);
+    if (i >= 3) dsec.open = true;
+    mark(i); dlg.scrollTop = 0;
+  }
+  // The page a field is on, brought up - for "go to the field" links and a required field left empty.
+  window.edPageFor = elm => { let n = elm; while (n && !pageOf.has(n)) n = n.parentElement; if (n && pageOf.get(n) !== cur) setPage(pageOf.get(n)); };
+  form.addEventListener('invalid', e => edPageFor(e.target), true);
   form.insertBefore(bar, form.querySelector('.formgrid'));
-  // The part nearest the top while scrolling.
-  const scroller = dlg;
-  scroller.addEventListener('scroll', () => {
-    if (Date.now() < quietUntil) return;
-    const top = bar.getBoundingClientRect().bottom + 48;
-    // The lowest part that has reached the top; of two side by side, the first.
-    let cur = 0, best = -Infinity;
-    parts.forEach(([, target], i) => { const t = target(); if (!t || t.offsetParent === null) return; const y = Math.round(t.getBoundingClientRect().top); if (y <= top && y > best) { best = y; cur = i; } });
-    mark(cur);
-  }, { passive: true });
-  dlg.addEventListener('close', () => mark(0));
-  mark(0);
+  dlg.addEventListener('close', () => setPage(0));
+  setPage(0);
 })();

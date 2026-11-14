@@ -142,15 +142,31 @@ async function pollServerLog() {
 setInterval(pollServerLog, 2000);
 
 // ---------------------------------------------------------------- theme
-function applyTheme(t) { document.documentElement.dataset.theme = t; $('btnTheme').textContent = t === 'dark' ? 'Light mode' : 'Dark mode'; }
+// Light, dark, or automatic - following Windows (and changing with it while the app is open).
+const themeDark = matchMedia('(prefers-color-scheme: dark)');
+const themeIcons = {
+  auto: '<path d="M12 3a9 9 0 1 0 0 18z" fill="currentColor"/><circle cx="12" cy="12" r="9"/>',
+  light: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  dark: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
+};
+const themeNames = { auto: 'Automatic (follows Windows)', light: 'Light', dark: 'Dark' };
+let themePref = 'auto';
+function applyTheme(pref) {
+  themePref = ['light', 'dark'].includes(pref) ? pref : 'auto';
+  document.documentElement.dataset.theme = themePref === 'auto' ? (themeDark.matches ? 'dark' : 'light') : themePref;
+  const b = $('btnTheme');
+  b.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${themeIcons[themePref]}</svg>`;
+  b.setAttribute('aria-label', `Theme: ${themeNames[themePref]}`);
+  b.title = `Theme: ${themeNames[themePref]} - click for ${themeNames[{ auto: 'light', light: 'dark', dark: 'auto' }[themePref]].toLowerCase()}`;
+}
 (function initTheme() {
   let t = null;
   try { t = localStorage.getItem('theme'); } catch (e) { }
-  if (!t) t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  applyTheme(t);
+  applyTheme(t || 'auto');
 })();
+themeDark.addEventListener('change', () => { if (themePref === 'auto') applyTheme('auto'); });
 $('btnTheme').addEventListener('click', () => {
-  const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  const t = { auto: 'light', light: 'dark', dark: 'auto' }[themePref];
   applyTheme(t); try { localStorage.setItem('theme', t); } catch (e) { }
 });
 
@@ -226,4 +242,52 @@ async function loadState() {
   $('testBanner').hidden = !r.testMode;
   setFields(r.settings);
   setCertStatus(r.cert);
+}
+
+// ---------------------------------------------------------------- row actions: one main button, the rest behind "⋯"
+let rowMenuEl = null, rowMenuAnchor = null;
+function closeRowMenu(refocus) {
+  if (!rowMenuEl) return;
+  rowMenuEl.remove(); rowMenuEl = null;
+  if (rowMenuAnchor) { rowMenuAnchor.setAttribute('aria-expanded', 'false'); if (refocus) rowMenuAnchor.focus(); }
+  rowMenuAnchor = null;
+}
+function openRowMenu(anchor, items) {
+  const same = rowMenuAnchor === anchor;
+  closeRowMenu();
+  if (same) return;
+  rowMenuEl = el('div', { class: 'menu rowmenu', role: 'menu' }, ...items.map(b => el('button', { type: 'button', role: 'menuitem', text: b.textContent, title: b.title || '', disabled: b.disabled,
+    onclick: e => { e.stopPropagation(); closeRowMenu(); b.click(); } })));
+  rowMenuEl.addEventListener('keydown', e => {
+    const list = [...rowMenuEl.querySelectorAll('button:not(:disabled)')], i = list.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.preventDefault(); closeRowMenu(true); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); list[(i - 1 + list.length) % list.length].focus(); }
+  });
+  document.body.append(rowMenuEl);
+  rowMenuAnchor = anchor; anchor.setAttribute('aria-expanded', 'true');
+  const a = anchor.getBoundingClientRect(), m = rowMenuEl.getBoundingClientRect();
+  rowMenuEl.style.left = Math.max(8, Math.min(a.right - m.width, innerWidth - m.width - 8)) + 'px';
+  rowMenuEl.style.top = (a.bottom + 4 + m.height > innerHeight - 8 ? Math.max(8, a.top - 4 - m.height) : a.bottom + 4) + 'px';
+  const first = rowMenuEl.querySelector('button:not(:disabled)'); if (first) first.focus();
+}
+document.addEventListener('click', () => closeRowMenu());
+addEventListener('scroll', () => closeRowMenu(), true);
+// The first button stays as it is; any others go into a "⋯" menu next to it.
+function rowActions(acts) {
+  const list = acts.filter(Boolean), btns = list.filter(a => a.tagName === 'BUTTON');
+  if (btns.length <= 1) return list;
+  const [main, ...rest] = btns;
+  const more = el('button', { type: 'button', class: 'btn small moreacts', 'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-label': 'More actions: ' + rest.map(b => b.textContent.replace(/\.\.\.$/, '')).join(', '),
+    title: rest.map(b => b.textContent.replace(/\.\.\.$/, '')).join(', '), text: '⋯', onclick: e => { e.stopPropagation(); openRowMenu(more, rest); } });
+  return [main, more];
+}
+
+// ---------------------------------------------------------------- loading placeholders
+// Grey shimmering rows in a table body (or list) while its content is read - the layout doesn't jump when it arrives.
+function skeleton(target, cols = 4, rows = 5) {
+  if (!target) return;
+  const bar = i => el('span', { class: 'sk w' + (i % 4) });
+  if (target.tagName === 'TBODY') target.replaceChildren(...Array.from({ length: rows }, (_, r) => el('tr', { class: 'skel', 'aria-hidden': 'true' }, ...Array.from({ length: cols }, (_, c) => el('td', {}, bar(r + c))))));
+  else target.replaceChildren(...Array.from({ length: rows }, (_, r) => el('li', { class: 'skel', 'aria-hidden': 'true' }, bar(r), el('span', { class: 'sk w3' }))));
 }

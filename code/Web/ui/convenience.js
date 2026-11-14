@@ -198,7 +198,7 @@ async function useInstalled(a) {
   $('xType').value = d.type; $('xProductCode').value = d.productCode; $('xPath').value = d.path; $('xName').value = d.name; $('xKey').value = d.keyPath; $('xValueName').value = d.valueName;
   $('xOperator').value = d.operator || 'notConfigured'; $('xValue').value = d.value; $('x32').checked = !!d.check32Bit;
   if (d.type === 'File') $('xFileType').value = d.detectionType; if (d.type === 'Registry') $('xRegType').value = d.detectionType;
-  showDetFields(); deployTouched = true; $('deploySec').open = true;
+  showDetFields(); deployTouched = true; $('deploySec').open = true; edPageFor($('xType'));
   $('dlgInstalled').close();
   toast(`Detection: ${r.text}. Save to keep it.`);
 }
@@ -206,6 +206,7 @@ async function useInstalled(a) {
 // ---------------------------------------------------------------- Home
 async function loadHome() {
   $('homeNote').textContent = 'Looking...';
+  if (!$('homeList').children.length) skeleton($('homeList'), 1, 3);
   const r = await api('/api/attention');
   if (!r.ok) { $('homeNote').textContent = r.error; return; }
   renderSetup(r.setup);
@@ -245,7 +246,7 @@ function palCommands() {
     cat('Groups and apps grid', 'matrix'), cat('Apps worth adding', 'suggest'), cat('Check winget for new versions', 'wingetcheck'), cat('Install status of every app', 'overview'),
     cat('Set up this tenant', 'tenantsetup'), cat('Export to CSV', 'export'), cat('Import from CSV', 'import'), cat('Undo last bulk change', 'undo'),
     { label: 'Run checks', hint: 'Action', run: () => { showView('checks'); $('btnRunChecks').click(); } },
-    { label: 'Toggle dark mode', hint: 'Action', run: () => $('btnTheme').click() },
+    { label: 'Switch theme (automatic, light, dark)', hint: 'Action', run: () => $('btnTheme').click() },
     ...apps.map(a => ({ label: a.name, hint: a.hasAppId ? 'App' : 'App - not deployed', run: () => { showView('apps'); selected.clear(); selected.add(a.name); lastClicked = a.name; renderApps(); updateViewButtons(); openEditor(a.name); } })),
     ...apps.filter(a => a.managed && a.hasAppId).map(a => ({ label: `Release ${a.name}`, hint: 'Managed updates', run: () => openRelease(a.name) })),
     ...apps.map(a => ({ label: `Send ${a.name}`, hint: 'Action', run: () => openDeploy([a.name]) }))];

@@ -166,7 +166,7 @@ for (const d of ['dlgDeploy', 'dlgPush', 'dlgRun']) $(d).addEventListener('close
 let ovRows = [];
 async function openOverview() {
   if (!$('dlgOverview').open) $('dlgOverview').showModal();
-  $('ovRows').replaceChildren(el('tr', {}, el('td', { colspan: 8, class: 'muted', text: 'Reading Intune\'s install report...' })));
+  skeleton($('ovRows'), 8, 5);
   const r = await api('/api/install-overview');
   if (!r.ok) { $('ovRows').replaceChildren(el('tr', {}, el('td', { colspan: 8, class: 'formerror', text: r.error }))); return; }
   ovRows = r.rows.sort((a, b) => b.failed - a.failed || b.pending - a.pending || a.name.localeCompare(b.name));

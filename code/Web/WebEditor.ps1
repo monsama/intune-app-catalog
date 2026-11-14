@@ -444,7 +444,7 @@ function Global:Get-WebChangeSource {
     # Pure: where a change came from, by the request that made it - shown in the history.
     param([string]$Path)
     switch -Wildcard ($Path) {
-        '/api/app-save' { 'Editor' } '/api/app-restore' { 'Earlier versions (restore)' } '/api/history-undo' { 'History (undo)' }
+        '/api/app-save' { 'Editor' } '/api/app-quick' { 'Side panel' } '/api/app-restore' { 'Earlier versions (restore)' } '/api/history-undo' { 'History (undo)' }
         '/api/batch-*' { 'Batch edit' } '/api/replace-group' { 'Replace group' } '/api/assignments-set' { 'Groups x apps' } '/api/undo-last' { 'Undo' }
         '/api/pull-apply' { 'Pull from Intune' } '/api/csv-import' { 'CSV import' } '/api/add-*' { 'Add apps' } '/api/checks-fix' { 'Checks (fix)' }
         '/api/release-*' { 'Updates' } '/api/managed-*' { 'Managed updates' } '/api/winget-take-version' { 'Updates' } '/api/job-poll' { 'Step result' }
@@ -562,4 +562,40 @@ function Global:Undo-WebHistoryChange {
     Save-WebAppJson -File $file -App $app -Text "Undid the change of $when"
     Write-Log "[OK] $name`: undid the change of $when ($($done -join ', '))."
     return @{ ok = $true; undone = $done.ToArray(); skipped = $skipped.ToArray() }
+}
+
+function Global:Update-WebAppQuick {
+    <#
+      A small change from the Apps page's side panel, without the editor:
+      -field requiredFor | availableFor | uninstallFor | excludeFor with -add
+      or -remove (one group), or appVersion with -value. A deployed app with
+      managed updates gets a new version through Release new version, not here.
+    #>
+    param($Data)
+    $name = [string]$Data.name; $field = [string]$Data.field
+    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
+    if ($field -in 'requiredFor', 'availableFor', 'uninstallFor', 'excludeFor') {
+        $add = ([string]$Data.add).Trim(); $remove = ([string]$Data.remove).Trim()
+        if ($add) { $problem = Test-WebGroupName $add; if ($problem) { return @{ ok = $false; error = $problem } } }
+        if (-not $add -and -not $remove) { return @{ ok = $false; error = 'Which group?' } }
+        $list = @(@($a.$field) | ForEach-Object { [string]$_ } | Where-Object { $_ -and $_ -ne $remove })
+        if ($add -and $list -notcontains $add) { $list += $add }
+        [void](Update-WebCatalogApp -Name $name -Change { param($x) $x.$field = $list }.GetNewClosure())
+        return @{ ok = $true; groups = $list }
+    }
+    if ($field -eq 'appVersion') {
+        $v = ([string]$Data.value).Trim()
+        if ($v.Length -gt 100) { return @{ ok = $false; error = 'That version is too long.' } }
+        if (-not $a.metadata) { return @{ ok = $false; error = "$name has no Intune details yet - set its version in the editor (Details)." } }
+        if ($a.managedUpdates -and $a.appId) { return @{ ok = $false; error = "$name has managed updates and is in Intune - a new version goes through Release new version (More)." } }
+        if ($a.managedUpdates -and $v -and -not (Test-ReleaseVersionText $v)) { return @{ ok = $false; error = "'$v' isn't a version managed updates can pin (digits and dots, e.g. 24.08)." } }
+        [void](Update-WebCatalogApp -Name $name -Change {
+            param($x)
+            if ($x.metadata.PSObject.Properties['appVersion']) { $x.metadata.appVersion = $(if ($v) { $v } else { $null }) } else { $x.metadata | Add-Member -NotePropertyName appVersion -NotePropertyValue $v }
+            [void](Set-ManagedAppPin $x)
+        }.GetNewClosure())
+        return @{ ok = $true }
+    }
+    return @{ ok = $false; error = 'That field cannot be changed here.' }
 }
