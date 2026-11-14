@@ -530,7 +530,7 @@ function Global:Invoke-WebApi {
     # The route table. $Data is the token-checked request body.
     param([string]$Path, $Data)
     # Where catalog changes made by this request come from, for the change history (per runspace - each request has its own).
-    $Global:WebChangeSource = Get-WebChangeSource $Path
+    Set-Variable -Name WebChangeSource -Scope Global -Value (Get-WebChangeSource $Path)
     switch ($Path) {
         '/api/state'            { return (Get-WebState) }
         '/api/catalog'          { return (Get-WebCatalog) }

@@ -1930,11 +1930,13 @@ function Global:Set-AppRecordFieldJson {
     param($Record, [string]$Field, [string]$Json)
     if (-not (Test-AppRecordFieldRevertable $Field)) { return $false }
     $t = ([string]$Json).Trim()
-    $value = if ($t -eq 'null' -or -not $t) { $null }
-        elseif ($t -eq '[]') { @() }
-        elseif ($t.StartsWith('"')) { [regex]::Unescape($t.Substring(1, $t.Length - 2)) }
-        elseif ($t.StartsWith('[')) { @(ConvertFrom-Json -InputObject $t) }
-        else { ConvertFrom-Json -InputObject $t }
+    # Assigned in each branch, not as "$value = if ...": that goes through the
+    # pipeline, which turns a one-item list into the item and an empty one into $null.
+    $value = $null
+    if ($t -eq '[]') { $value = @() }
+    elseif ($t.StartsWith('"')) { $value = [regex]::Unescape($t.Substring(1, $t.Length - 2)) }
+    elseif ($t.StartsWith('[')) { $value = @(ConvertFrom-Json -InputObject $t) }
+    elseif ($t -and $t -ne 'null') { $value = ConvertFrom-Json -InputObject $t }
     $target = $Record; $name = $Field
     if ($Field -like 'metadata.*') {
         $name = $Field.Substring(9)
