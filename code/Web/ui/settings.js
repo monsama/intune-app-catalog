@@ -303,6 +303,7 @@ async function loadPrefs() {
   $('dCodes').value = d.returnCodes.map(c => `${c.returnCode} = ${c.type}`).join('\n');
   $('dDeps').value = (d.defaultDependencyAppNames || []).join('\n');
   $('favGroups').value = (p.favoriteGroups || []).join('\n');
+  fillProfiles(p);
   $('pilotGroups').value = (p.pilotGroups || []).join('\n');
   const rp = p.releasePolicy || {};
   $('rpDays').value = rp.Days ?? 3; $('rpFailed').value = rp.MaxFailedPercent ?? 5; $('rpMin').value = rp.MinInstalled ?? 1;

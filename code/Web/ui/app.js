@@ -3,7 +3,7 @@
 
 // ---------------------------------------------------------------- start
 (async function start() {
-  let v = 'apps'; try { v = localStorage.getItem('view') || 'apps'; } catch (e) { }
+  let v = 'home'; try { v = localStorage.getItem('view') || 'home'; } catch (e) { }
   showView(v);
   await pollServerLog();
   await loadState();

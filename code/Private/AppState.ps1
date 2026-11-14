@@ -9,7 +9,7 @@ function Global:Initialize-AppState {
     # Paths & state
     # =====================================================================
     $Global:App.RootPath   = $RootPath
-    $Global:App.AppVersion = "2.7.0"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
+    $Global:App.AppVersion = "2.8.0"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
     # The catalog as last read (Read-WebCatalogRecords) - the shared
     # functions that look at "the catalog" (default dependencies, known
     # groups) read it from here.
@@ -39,6 +39,8 @@ function Global:Initialize-AppState {
     $Global:App.ReleaseRings = @()
     # Alerts from the nightly run: a Teams (Workflows) webhook and/or an email sent with Graph.
     $Global:App.Alerts = ConvertTo-AlertSettings $null
+    # Assignment profiles: named sets of groups (Required, Available, Excluded), applied in one click.
+    $Global:App.AssignmentProfiles = @()
 
     # Settings > Automatic checks. Off by default: they need a connection to be
     # of any use, and the full audit reads every deployed app.

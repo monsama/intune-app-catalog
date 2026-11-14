@@ -123,6 +123,19 @@ try {
       await page.keyboard.press('Escape');
       check(!(await page.isVisible('#dlgApp[open]')), `${label}: Escape closes the editor`);
 
+      // Home: what needs a look; Ctrl+K finds pages and actions.
+      await page.click('#tabHome');
+      await page.waitForFunction(() => !/Looking/.test(document.getElementById('homeNote').textContent));
+      check(/Not connected/.test(await page.textContent('#homeList')), `${label}: Home says the app isn't connected`, await page.textContent('#homeList'));
+      await noOverflow('Home'); await unnamed('Home'); await a11y('Home'); await shot('home');
+      await page.keyboard.press('Control+k');
+      await page.waitForSelector('#dlgPalette[open]');
+      await page.keyboard.type('updates');
+      check(/Updates/.test(await page.textContent('#palList li:first-child')), `${label}: Ctrl+K finds the Updates page`, await page.textContent('#palList'));
+      await a11y('the Ctrl+K palette');
+      await page.keyboard.press('Escape');
+      check(!(await page.isVisible('#dlgPalette[open]')), `${label}: Escape closes the Ctrl+K palette`);
+
       // Updates: no app has managed updates yet - the page says how to start.
       await page.click('#tabUpdates');
       await page.waitForFunction(() => !/Reading/.test(document.getElementById('updNote').textContent));

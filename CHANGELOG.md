@@ -1,5 +1,48 @@
 # Changelog
 
+## 2.8.0
+
+### Added
+
+- **Home** (the first tab): what needs a look, worst first, each with the
+  button that fixes it - releases on hold or ready, failed installs,
+  apps that differ from Intune (last night), certificate expiry, apps not
+  deployed or own packages not built, a missing shared package, the
+  nightly run unscheduled or with problems - and the catalog at a glance.
+- **Group picker:** every "one group per line" box suggests groups as you
+  type - favourites first, then the catalog's, then Entra ID's (when
+  connected) - arrow keys and Enter to pick. Leaving the box names the
+  groups Entra ID doesn't have yet ("a typo?").
+- **Assignment profiles** (Settings > Defaults): named sets of Required,
+  Available and Excluded groups; *Apply a profile* in the editor and in
+  Add apps fills them in.
+- **Test in Windows Sandbox** (More menu, own packages and script apps):
+  installs the app with its install command in a throwaway Windows,
+  checks the detection rule, uninstalls it and checks again - then says
+  "ready to deploy" or which step failed, with the log.
+- **Detection from an app on this PC** (editor > Deploy settings): pick
+  the app from the ones installed here - an MSI by its product code and
+  version, an EXE app by its program file's version, else its Uninstall
+  entry.
+- **Find an icon** (editor): the installer's own icon (an .exe in the
+  packages folder), else the homepage's (its Information URL - https,
+  PNG or JPEG).
+- **Deploy right after adding** (Add apps): own packages are built, then
+  the Deploy dialog opens for the new apps.
+- **Add apps > From a list:** a `winget export` file from another PC, or
+  this PC's own apps - tick and add many at once (five at a time, with
+  progress).
+- **Ctrl+K:** jump to any app, page, Settings section or action - Add
+  apps, the grid, Check winget, Deploy or Release an app, dark mode.
+- **Groups and apps grid** (Catalog menu): every app against every group;
+  click a cell to go through Required, Available, Uninstall, Excluded and
+  none; filters for both; saved with one Undo.
+
+### Fixed
+
+- Opening Settings no longer takes the Add apps tabs out of the keyboard
+  order (the Settings tabs and the dialog's shared a class).
+
 ## 2.7.0
 
 ### Added

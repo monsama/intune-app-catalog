@@ -34,6 +34,13 @@ it opens can talk to it.
 - Batch edit settings, and add, remove or replace groups, on several apps
   at once - with a preview of every change before it's written, and
   **Undo** for the last bulk change.
+- **Home**: what needs a look, with the button that fixes it. **Ctrl+K**
+  finds any app, page or action.
+- **Group picker** with suggestions from favourites, the catalog and Entra
+  ID; **assignment profiles**; a **groups and apps grid** for every
+  assignment at once.
+- **Test in Windows Sandbox** before deploying, and **detection from an app
+  installed on this PC**.
 - **Add apps** three ways: **winget** (search as you type, pick several,
   each added with winget's publisher, description and links), an
   **installer** dropped on the page (an MSI's name, version and product

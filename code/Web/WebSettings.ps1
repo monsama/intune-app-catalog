@@ -348,6 +348,7 @@ function Global:Get-WebPrefs {
         favoriteGroups = @($Global:App.FavoriteGroups)
         pilotGroups    = @($Global:App.PilotGroups)
         releasePolicy  = $Global:App.ReleasePolicy
+        profiles       = @($Global:App.AssignmentProfiles | ForEach-Object { [ordered]@{ name = $_.Name; required = @($_.Required); available = @($_.Available); exclude = @($_.Exclude) } })
         releaseRings   = @($Global:App.ReleaseRings | ForEach-Object { [ordered]@{ name = $_.Name; groups = @($_.Groups) } })
         # The webhook URL is a secret (anyone with it can post to the channel): the page only learns whether one is saved.
         alerts         = [ordered]@{ level = $Global:App.Alerts.Level; webhookSet = [bool]$Global:App.Alerts.WebhookUrl; mailFrom = $Global:App.Alerts.MailFrom; mailTo = @($Global:App.Alerts.MailTo) }
@@ -381,6 +382,14 @@ function Global:Save-WebPrefs {
     if ($null -ne $Data.releasePolicy) {
         $rp = ConvertTo-ReleasePolicy $Data.releasePolicy
         foreach ($k in @($rp.Keys)) { $Global:App.ReleasePolicy[$k] = $rp[$k] }
+    }
+    # An empty list clears them - so "is it there", not "is it not null" (@() -ne $null is empty, so false).
+    if (@($Data.PSObject.Properties.Name) -contains 'profiles') {
+        $raw = @(@($Data.profiles) | ForEach-Object { @{ Name = [string]$_.name; Required = @($_.required); Available = @($_.available); Exclude = @($_.exclude) } })
+        foreach ($p in $raw) { foreach ($g in @($p.Required) + @($p.Available) + @($p.Exclude)) { if (([string]$g).Trim()) { $problem = Test-WebGroupName ([string]$g).Trim(); if ($problem) { return @{ ok = $false; error = "Profile '$($p.Name)': $problem" } } } } }
+        if (@($raw | Where-Object { -not ([string]$_.Name).Trim() }).Count) { return @{ ok = $false; error = 'Every profile needs a name.' } }
+        if (@($raw | Group-Object { ([string]$_.Name).Trim() } | Where-Object { $_.Count -gt 1 }).Count) { return @{ ok = $false; error = 'Two profiles have the same name.' } }
+        $Global:App.AssignmentProfiles = @(ConvertTo-AssignmentProfiles $raw)
     }
     if ($null -ne $Data.releaseRingsText) {
         $rr = ConvertFrom-ReleaseRingText ([string]$Data.releaseRingsText)

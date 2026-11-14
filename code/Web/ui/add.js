@@ -2,6 +2,7 @@
 // Loaded after apps.js (openEditor, loadApps, releaseStep, runDialog live there).
 'use strict';
 
+let alItems = [], alPicked = new Set();
 let addSrc = 'winget', awPicked = new Map(), awTimer = 0, awSeq = 0, aiUpload = null, aiInfo = null, asTemplates = [];
 const addLines = id => $(id).value.split('\n').map(s => s.trim()).filter(Boolean);
 
@@ -13,7 +14,8 @@ function openAdd(src, file) {
   resetInstaller();
   for (const id of ['asName', 'asPublisher', 'asVersion']) $(id).value = '';
   $('asVersion').value = '1.0'; loadScriptTemplates(true);
-  $('adRequired').value = ''; $('adAvailable').value = '';
+  $('adRequired').value = ''; $('adAvailable').value = ''; $('adPublish').checked = false;
+  alItems = []; alPicked.clear(); $('alRows').replaceChildren(); $('alNote').textContent = ''; $('alAll').checked = false;
   const favs = (prefs && prefs.favoriteGroups) || [];
   $('adFavs').replaceChildren(...(favs.length ? [el('span', { class: 'muted', text: 'Favourites:' }), ...favs.map(g => el('button', { type: 'button', class: 'chip', text: g, title: `Add ${g} to Required for (Shift: Available for)`, onclick: e => addGroup(e.shiftKey ? 'adAvailable' : 'adRequired', g) }))] : []));
   if (!$('dlgAdd').open) $('dlgAdd').showModal();
@@ -24,15 +26,16 @@ function addGroup(id, g) { const l = addLines(id); if (!l.includes(g)) $(id).val
 function showAddSrc(src) {
   addSrc = src;
   for (const t of document.querySelectorAll('[data-asrc]')) t.setAttribute('aria-selected', String(t.dataset.asrc === src));
-  for (const s of ['winget', 'installer', 'script']) $('asec-' + s).hidden = s !== src;
+  for (const s of ['winget', 'installer', 'script', 'list']) $('asec-' + s).hidden = s !== src;
   updateAddButton();
-  (src === 'winget' ? $('awQuery') : src === 'installer' ? $('aiDrop') : $('asName')).focus();
+  (src === 'winget' ? $('awQuery') : src === 'installer' ? $('aiDrop') : src === 'list' ? $('btnAlFile') : $('asName')).focus();
 }
 for (const t of document.querySelectorAll('[data-asrc]')) t.addEventListener('click', () => showAddSrc(t.dataset.asrc));
 function updateAddButton() {
   const b = $('btnAddGo');
   if (addSrc === 'winget') { b.textContent = awPicked.size ? `Add ${awPicked.size} app${awPicked.size === 1 ? '' : 's'}` : 'Add'; setEnabled(b, awPicked.size > 0, 'Tick one or more packages first.'); }
   else if (addSrc === 'installer') { b.textContent = 'Add'; setEnabled(b, !!aiInfo, 'Drop or choose an installer first.'); }
+  else if (addSrc === 'list') { b.textContent = alPicked.size ? `Add ${alPicked.size} app${alPicked.size === 1 ? '' : 's'}` : 'Add'; setEnabled(b, alPicked.size > 0, 'Read a list and tick the packages first.'); }
   else { b.textContent = 'Add'; setEnabled(b, !!$('asName').value.trim(), 'Give the app a name first.'); }
 }
 $('btnAddBlank').addEventListener('click', () => { $('dlgAdd').close(); openEditor(''); });
@@ -145,13 +148,21 @@ for (const r of document.querySelectorAll('input[name="asDetect"]')) r.addEventL
 $('btnAddGo').addEventListener('click', async () => {
   const b = $('btnAddGo'); b.disabled = true; $('addError').hidden = true;
   const groups = { requiredFor: addLines('adRequired'), availableFor: addLines('adAvailable') };
+  const publish = $('adPublish').checked;
   try {
-    if (addSrc === 'winget') {
-      $('awNote').textContent = `Adding ${awPicked.size} app(s) - reading each one's details from winget...`;
-      const r = await api('/api/add-winget', { items: [...awPicked.values()].map(x => ({ id: x.id, name: x.name, version: x.version })), managed: $('awManaged').checked, ...groups });
-      if (!r.ok) { showAddError(r.error); return; }
-      $('dlgAdd').close(); await afterAdd(r.added);
-      toast(`${r.added.length} app(s) added${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}.`, !r.added.length);
+    if (addSrc === 'winget' || addSrc === 'list') {
+      const items = addSrc === 'winget' ? [...awPicked.values()].map(x => ({ id: x.id, name: x.name, version: x.version })) : [...alPicked].map(id => ({ id }));
+      const note = addSrc === 'winget' ? 'awNote' : 'alNote', added = [], skipped = [];
+      // Five at a time: each asks winget for its details, and the page shows how far it got.
+      for (let i = 0; i < items.length; i += 5) {
+        $(note).textContent = `Adding ${Math.min(i + 5, items.length)} of ${items.length} - reading each one's details from winget...`;
+        const r = await api('/api/add-winget', { items: items.slice(i, i + 5), managed: addSrc === 'winget' && $('awManaged').checked, ...groups });
+        if (!r.ok) { showAddError(r.error); break; }
+        added.push(...r.added); skipped.push(...r.skipped);
+      }
+      if (!added.length && !skipped.length) return;
+      $('dlgAdd').close(); await afterAdd(added);
+      toast(`${added.length} app(s) added${skipped.length ? ' - skipped: ' + skipped.join('; ') : ''}.`, !added.length);
     }
     else if (addSrc === 'installer') {
       const r = await api('/api/add-installer', { uploadId: aiUpload.id, name: $('aiName').value.trim(), publisher: $('aiPublisher').value.trim(), version: $('aiVersion').value.trim(),
@@ -161,7 +172,7 @@ $('btnAddGo').addEventListener('click', async () => {
       const build = $('aiBuild').checked;
       $('dlgAdd').close(); await afterAdd([r.name]);
       toast(`${r.name} added - its installer is in ${r.folder}.`);
-      if (build) { runDialog(`Build ${r.name}`, 'Packaging the installer as an .intunewin for Intune.'); const p = await releaseStep({ names: [r.name] }, '/api/package-start', 'runLog', `Building ${r.name}'s package...`); toast(p.ok ? `${r.name}'s package is built - Deploy is next.` : `Building the package failed: ${p.error || 'see the log'}`, !p.ok); loadApps(); }
+      if (build || publish) { if (!(await buildAdded(r.name))) return; }
     }
     else {
       const custom = document.querySelector('input[name="asDetect"]:checked').value === 'script';
@@ -169,14 +180,49 @@ $('btnAddGo').addEventListener('click', async () => {
         install: $('asInstall').value, uninstall: $('asUninstall').value, detectScript: custom ? $('asDetectScript').value : '', ...groups });
       if (!r.ok) { showAddError(r.error); return; }
       $('dlgAdd').close(); await afterAdd([r.name]);
-      toast(`${r.name} added - Install.ps1 and Uninstall.ps1 are in ${r.folder}. Build its package, then Deploy.`);
+      toast(`${r.name} added - Install.ps1 and Uninstall.ps1 are in ${r.folder}.${publish ? '' : ' Build its package, then Deploy.'}`);
+      if (publish && !(await buildAdded(r.name))) return;
     }
   } finally { updateAddButton(); }
 });
 async function afterAdd(names) {
   await loadApps();
   if (names.length) { selected.clear(); for (const n of names) selected.add(n); lastClicked = names[names.length - 1]; renderApps(); updateViewButtons(); }
+  // Deploy right after adding: the Deploy dialog for them (own packages are built first, by their flow).
+  if (names.length && $('adPublish').checked && addSrc !== 'installer' && addSrc !== 'script') setTimeout(() => openDeploy(names), 300);
 }
+// Builds an own package just added; with "Deploy right after adding", the Deploy dialog follows. Resolves with whether it built.
+async function buildAdded(name) {
+  runDialog(`Build ${name}`, 'Packaging it as an .intunewin for Intune.');
+  const p = await releaseStep({ names: [name] }, '/api/package-start', 'runLog', `Building ${name}'s package...`);
+  toast(p.ok ? `${name}'s package is built${$('adPublish').checked ? '' : ' - Deploy is next'}.` : `Building the package failed: ${p.error || 'see the log'}`, !p.ok);
+  await loadApps();
+  if (p.ok && $('adPublish').checked) { $('dlgRun').close(); openDeploy([name]); }
+  return p.ok;
+}
+
+// ---- from a list: a winget export file, or this PC's apps
+async function readList(body) {
+  $('alNote').textContent = body.thisPc ? 'Running winget export here - this can take a minute...' : 'Reading the list...';
+  const r = await api('/api/package-list', body);
+  if (!r.ok) { $('alNote').textContent = r.error; return; }
+  alItems = r.items; alPicked = new Set(r.items.filter(x => !x.inCatalog).map(x => x.id));
+  $('alNote').textContent = `${r.items.length} package(s) - ${r.items.filter(x => x.inCatalog).length} already in the catalog.`;
+  $('alAll').checked = alPicked.size > 0;
+  renderList(); updateAddButton();
+}
+function renderList() {
+  $('alRows').replaceChildren(...alItems.map(x => {
+    const box = el('input', { type: 'checkbox', 'aria-label': `Pick ${x.id}`, disabled: !!x.inCatalog });
+    box.checked = alPicked.has(x.id);
+    box.addEventListener('change', () => { if (box.checked) alPicked.add(x.id); else alPicked.delete(x.id); updateAddButton(); });
+    return el('tr', { class: x.inCatalog ? 'dim' : '' }, el('td', { class: 'chk' }, box), el('td', { class: 'mono', text: x.id }), el('td', { text: x.inCatalog || '-' }));
+  }));
+}
+$('alAll').addEventListener('change', () => { alPicked = new Set($('alAll').checked ? alItems.filter(x => !x.inCatalog).map(x => x.id) : []); renderList(); updateAddButton(); });
+$('btnAlFile').addEventListener('click', () => $('alFile').click());
+$('alFile').addEventListener('change', async () => { const f = $('alFile').files[0]; if (!f) return; if (f.size > 5 * 1048576) { $('alNote').textContent = 'That file is too large.'; return; } readList({ json: await f.text() }); $('alFile').value = ''; });
+$('btnAlThisPc').addEventListener('click', () => readList({ thisPc: true }));
 
 // Dropping an installer anywhere on the Apps page starts Add apps with it.
 document.addEventListener('dragover', e => { if (!$('viewApps').hidden && [...(e.dataTransfer.items || [])].some(i => i.kind === 'file')) e.preventDefault(); });

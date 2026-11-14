@@ -505,7 +505,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !catMenu.h
 catMenu.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   catMenu.hidden = true;
-  ({ export: exportCsv, import: openCsvImport, replace: () => openReplace({}), undo: undoLast, tenantsetup: openTenantSetup, overview: openOverview, suggest: openSuggest, wingetcheck: checkWingetVersions,
+  ({ export: exportCsv, import: openCsvImport, replace: () => openReplace({}), undo: undoLast, tenantsetup: openTenantSetup, overview: openOverview, suggest: openSuggest, matrix: openMatrix, wingetcheck: checkWingetVersions,
     reload: () => { loadApps(); loadState(); }, folder: () => openFolder('catalog-folder') })[b.dataset.cact]();
 });
 // Apps whose App ID the connected tenant doesn't know: a banner says so, with one button for all of them.
@@ -867,13 +867,14 @@ function openMenu(x, y) {
   const one = oneSelected();
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
-  const enable = { package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
+  const enable = { sandbox: !!(one && !one.wingetId), package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
     replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any,
     takeversion: sel.some(a => a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
     release: !!(one && one.managed && one.hasAppId && !one.pilotVersion), promote: !!(one && one.pilotVersion), withdraw: !!(one && one.pilotVersion),
     managed: any,
     rollback: !!(one && one.managed && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && (one.previousVersions || []).length > 1) };
   const why = {
+    sandbox: one ? 'Windows Sandbox has no winget - test a Winget app on a pilot device.' : 'Select exactly one app.',
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
     batchedit: 'Select one or more apps first.', addgroups: 'Select one or more apps first.', removegroups: 'Select one or more apps first.',
@@ -934,6 +935,7 @@ async function menuAction(act) {
     case 'addgroups': if (!prefs) await loadPrefs(); openGroupsBatch('add', names); break;
     case 'removegroups': openGroupsBatch('remove', names); break;
     case 'status': openStatus(one.name); break;
+    case 'sandbox': openSandbox(one.name); break;
     case 'replacegroup': openReplace({ names }); break;
     case 'release': openRelease(one.name); break;
     case 'promote': promoteRelease(one.name); break;

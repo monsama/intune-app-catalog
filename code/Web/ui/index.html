@@ -14,6 +14,7 @@
 <script src="groups.js" defer></script>
 <script src="updates.js" defer></script>
 <script src="add.js" defer></script>
+<script src="convenience.js" defer></script>
 <script src="scripts.js" defer></script>
 <script src="settings.js" defer></script>
 <script src="app.js" defer></script>
@@ -22,6 +23,7 @@
 <header class="topbar">
   <h1 class="brand"><img src="icon.svg" alt="" width="22" height="22"><span>Intune App Catalog</span><span class="ver" id="ver"></span></h1>
   <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-view="home" id="tabHome">Home</button>
     <button class="tab" role="tab" data-view="apps" id="tabApps">Apps</button>
     <button class="tab" role="tab" data-view="updates" id="tabUpdates">Updates</button>
     <button class="tab" role="tab" data-view="checks" id="tabChecks">Checks</button>
@@ -107,6 +109,19 @@
       </div>
     </div>
     <p class="hint">Click to select, Ctrl/Shift+click for several, double-click to edit, right-click for more. Keys: &uarr;/&darr; (Shift for several), Ctrl+A, Enter to edit, Delete to remove from the catalog, Ctrl+S to save in the editor.</p>
+  </section>
+
+  <!-- ============ Home ============ -->
+  <section class="view" id="viewHome" hidden>
+    <div class="toolbar">
+      <p class="sub" id="homeNote">What needs a look, and where to fix it.</p>
+      <span class="spacer"></span>
+      <button class="btn" id="btnHomeAdd" title="Add apps from winget, an installer or a script">Add apps...</button>
+      <button class="btn" id="btnHomeReload" title="Look again">Reload</button>
+    </div>
+    <div id="homeStats"></div>
+    <ul class="attention" id="homeList" aria-live="polite"></ul>
+    <p class="muted note">Tip: <kbd>Ctrl</kbd>+<kbd>K</kbd> finds any app, page or action.</p>
   </section>
 
   <!-- ============ Updates ============ -->
@@ -488,6 +503,12 @@
           <textarea autocomplete="off" id="favGroups" aria-labelledby="favGroupsHint" rows="4" class="full" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
           <div class="actions"><button class="btn" id="btnSaveFavs" title="Save the favourite groups">Save favourites</button></div>
         </article>
+        <article class="card">
+          <h2>Assignment profiles</h2>
+          <p class="sub">Named sets of groups - "Apply a profile" in the editor and in Add apps fills them in at once. Groups separated by commas.</p>
+          <div id="profRows" class="profrows"></div>
+          <div class="actions"><button class="btn" id="btnProfAdd" title="Another profile">Add a profile</button><button class="btn" id="btnProfSave" title="Save the profiles">Save profiles</button></div>
+        </article>
       </div>
     </div>
     </div>
@@ -538,6 +559,7 @@
   <button role="menuitem" data-act="pull" title="Read the apps' settings and groups from Intune into the catalog - you choose per field">Pull from Intune...</button>
   <button role="menuitem" data-act="pushsettings" title="Send the catalog's settings to Intune, without uploading a package">Push settings to Intune...</button>
   <button role="menuitem" data-act="status" title="Every device's install state for this app, from Intune">Install status...</button>
+  <button role="menuitem" data-act="sandbox" title="Install, detect and uninstall it in Windows Sandbox - a throwaway Windows - before it goes to any device">Test in Windows Sandbox...</button>
   <hr>
   <button role="menuitem" data-act="release" title="Release a new version to the pilot groups first - a new app in Intune that supersedes the current one">Release new version...</button>
   <button role="menuitem" data-act="promote" title="Give the pilot release to everyone - the current one is kept in Intune as superseded">Promote pilot release...</button>
@@ -561,6 +583,7 @@
 <div class="menu" id="catalogMenu" role="menu" hidden>
   <button role="menuitem" data-cact="tenantsetup" title="What the connected tenant still needs for the catalog - groups, deploys, group pushes - step by step">Set up this tenant...</button>
   <button role="menuitem" data-cact="overview" title="Installed, failed and pending devices for every deployed app, from Intune">Install status of every app...</button>
+  <button role="menuitem" data-cact="matrix" title="Which group gets which app - one grid, change cells and save">Groups and apps grid...</button>
   <button role="menuitem" data-cact="suggest" title="Apps on many devices (Intune's inventory) that the catalog doesn't have yet - add one with its winget ID looked up">Apps worth adding...</button>
   <button role="menuitem" data-cact="wingetcheck" title="Ask winget for the newest version of every Winget app - then filter Newer on winget">Check winget for new versions</button>
   <hr>
@@ -657,10 +680,11 @@
           <span class="noicon" id="aIconNone" aria-hidden="true">?</span>
           <button type="button" class="btn small" id="btnIconPick" title="A PNG or JPEG of at most 750 KB - square, 256 x 256 or larger, looks best">Choose image...</button>
           <button type="button" class="btn small" id="btnIconIntune" title="Take the icon this app has in Intune">From Intune</button>
+          <button type="button" class="btn small" id="btnIconFind" title="An icon from the installer in its packages folder, or from the app's homepage (its Information URL)">Find one</button>
           <button type="button" class="btn small" id="btnIconRemove" title="No icon in the catalog - Intune keeps the one it has">Remove</button>
           <input type="file" id="aIconFile" accept="image/png,image/jpeg" hidden>
         </div>
-        <h3>Assignments <span class="muted">(one group per line)</span></h3>
+        <h3 class="withtool">Assignments <span class="muted">(one group per line)</span> <select id="aProfile" class="small" aria-label="Apply an assignment profile"><option value="">Apply a profile...</option></select></h3>
         <div class="groups4">
           <label title="Installed automatically on these groups' devices.">Required<textarea autocomplete="off" id="gRequired" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
           <label title="Offered in the Company Portal for these groups to install themselves.">Available<textarea autocomplete="off" id="gAvailable" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
@@ -690,6 +714,7 @@
       <div class="formgrid">
         <section>
           <h3>Detection rule</h3>
+          <button type="button" class="btn small" id="btnDetFromPc" title="Pick the app from the ones installed on this PC - its MSI product code, its program file's version, or its Uninstall entry">From an app on this PC...</button>
           <label>Type<select id="xType"><option value="">(none - an app with its own package needs one)</option><option value="Script">Script</option><option value="Msi">MSI product code</option><option value="File">File or folder</option><option value="Registry">Registry</option></select></label>
           <div data-det="Script"><label>Detection script <span class="muted">(writes output and exits 0 when installed)</span><textarea autocomplete="off" id="xScript" rows="8" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label></div>
           <div data-det="Msi"><label>Product code<input autocomplete="off" id="xProductCode" class="mono" spellcheck="false" placeholder="{00000000-0000-0000-0000-000000000000}" autocorrect="off" autocapitalize="off"></label></div>
@@ -831,6 +856,7 @@
     <button class="subtab" role="tab" id="atab-winget" data-asrc="winget" aria-controls="asec-winget" aria-selected="true">Winget</button>
     <button class="subtab" role="tab" id="atab-installer" data-asrc="installer" aria-controls="asec-installer" aria-selected="false">Installer (MSI / EXE)</button>
     <button class="subtab" role="tab" id="atab-script" data-asrc="script" aria-controls="asec-script" aria-selected="false">PowerShell script</button>
+    <button class="subtab" role="tab" id="atab-list" data-asrc="list" aria-controls="asec-list" aria-selected="false">From a list</button>
   </nav>
 
   <section class="asec" id="asec-winget" role="tabpanel" aria-labelledby="atab-winget">
@@ -889,13 +915,62 @@
     <p class="muted note">Both scripts run as SYSTEM with 64-bit PowerShell from the package folder (Packages\&lt;app&gt;) - put any files they need there too.</p>
   </section>
 
+  <section class="asec" id="asec-list" role="tabpanel" aria-labelledby="atab-list" hidden>
+    <p class="sub">Add many Winget apps at once: from a <code>winget export</code> file (another PC's apps - <code>winget export -o apps.json</code> there), or from the apps on this PC.</p>
+    <div class="toolbar tight">
+      <button class="btn" id="btnAlFile" title="A JSON file made by winget export">Choose an export file...</button>
+      <button class="btn" id="btnAlThisPc" title="Runs winget export here and lists what it finds">Read this PC's apps</button>
+      <input type="file" id="alFile" accept=".json,application/json" hidden>
+      <span class="muted" id="alNote" aria-live="polite"></span>
+    </div>
+    <div class="tablewrap" tabindex="0" aria-label="Packages in the list">
+      <table class="grid" id="alGrid"><thead><tr><th class="chk"><input type="checkbox" id="alAll" aria-label="Pick every package not in the catalog"></th><th>Winget ID</th><th>In the catalog</th></tr></thead><tbody id="alRows"></tbody></table>
+    </div>
+  </section>
+
   <div class="addgroups">
+    <label class="inline profrow">Profile <select id="adProfile" aria-label="Apply an assignment profile"><option value="">(none)</option></select></label>
     <label>Required for <span class="muted">(one group per line)</span><textarea id="adRequired" rows="2" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
     <label>Available for <span class="muted">(one group per line)</span><textarea id="adAvailable" rows="2" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
     <div class="favchips" id="adFavs" role="group" aria-label="Favourite groups"></div>
   </div>
   <p class="formerror" id="addError" hidden></p>
-  <div class="actions end"><button class="btn" id="btnAddCancel">Cancel</button><button class="btn primary" id="btnAddGo" disabled>Add</button></div>
+  <div class="actions end"><label class="chk inline" title="Right after adding: the Deploy dialog for the new apps (installers and scripts are built first)"><input type="checkbox" id="adPublish">Deploy right after adding</label><span class="spacer"></span><button class="btn" id="btnAddCancel">Cancel</button><button class="btn primary" id="btnAddGo" disabled>Add</button></div>
+</dialog>
+
+<dialog id="dlgSandbox" class="wide" aria-labelledby="sbTitle">
+  <h2 id="sbTitle">Test in Windows Sandbox</h2>
+  <p class="sub" id="sbText"></p>
+  <ol class="sbsteps" id="sbSteps"></ol>
+  <pre class="log" id="sbLog" aria-label="The test's log"></pre>
+  <div class="actions end"><button class="btn" id="btnSbFolder" title="The test folder: run.ps1, the .wsb file, the log">Open the test folder</button><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgInstalled" class="wide" aria-labelledby="inTitle">
+  <h2 id="inTitle">Detection from an app on this PC</h2>
+  <p class="sub">Pick the app as Windows lists it here. Its detection rule is filled into the editor - check it, then save.</p>
+  <input type="search" id="inFilter" class="full" placeholder="Filter by name or publisher" aria-label="Filter the installed apps" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+  <div class="tablewrap" tabindex="0" aria-label="Apps installed on this PC">
+    <table class="grid"><thead><tr><th>App</th><th>Version</th><th>Publisher</th><th><span class="sr">Use</span></th></tr></thead><tbody id="inRows"></tbody></table>
+  </div>
+  <div class="actions end"><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgMatrix" class="wide matrix" aria-labelledby="mxTitle">
+  <h2 id="mxTitle">Groups and apps</h2>
+  <p class="sub">Click a cell to go through Required, Available, Uninstall, Excluded and none. Saved to the catalog with one Undo - <b>Push groups</b> sends it to Intune.</p>
+  <div class="toolbar tight">
+    <input type="search" id="mxApps" placeholder="Filter apps" aria-label="Filter apps" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+    <input type="search" id="mxGroups" placeholder="Filter groups" aria-label="Filter groups" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+    <span class="legend"><span class="cell r">R</span> Required <span class="cell a">A</span> Available <span class="cell u">U</span> Uninstall <span class="cell x">X</span> Excluded</span>
+  </div>
+  <div class="tablewrap mxwrap" tabindex="0" aria-label="Groups and apps grid"><table class="mx" id="mxGrid"></table></div>
+  <div class="actions end"><span class="muted" id="mxNote" aria-live="polite"></span><span class="spacer"></span><button class="btn" data-close>Close</button><button class="btn primary" id="btnMxSave" disabled title="Change some cells first">Save</button></div>
+</dialog>
+
+<dialog id="dlgPalette" class="palette" aria-label="Find an app, page or action">
+  <input type="search" id="palQuery" class="full" placeholder="Find an app, page or action..." aria-label="Find an app, page or action" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+  <ul id="palList" role="listbox" aria-label="Results"></ul>
 </dialog>
 
 <dialog id="dlgSuggest" class="wide" aria-labelledby="sgTitle">

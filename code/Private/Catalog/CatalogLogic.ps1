@@ -1607,3 +1607,90 @@ function Global:Get-ScriptAppMarkerRule {
     return [ordered]@{ Type = 'Registry'; Reg_KeyPath = "HKEY_LOCAL_MACHINE\SOFTWARE\IntuneAppCatalog\Apps\$Name"; Reg_ValueName = 'Version'; Reg_Check32Bit = $false
         Reg_DetectionType = $(if ($Version) { 'version' } else { 'exists' }); Reg_Operator = $(if ($Version) { 'greaterThanOrEqual' } else { 'notConfigured' }); Reg_DetectionValue = [string]$Version }
 }
+
+# ---------------------------------------------------------------- convenience: profiles, installed apps, sandbox tests, lists
+
+function Global:ConvertTo-AssignmentProfiles {
+    # Pure: assignment profiles from settings or the page - at most 30, each with a name and at least one group; groups trimmed and unique.
+    param($Raw)
+    $clean = { param($l) @(@($l) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique) }
+    return @(@($Raw) | Where-Object { $_ -and ([string]$_.Name).Trim() } | ForEach-Object {
+            [ordered]@{ Name = ([string]$_.Name).Trim().Substring(0, [Math]::Min(([string]$_.Name).Trim().Length, 60)); Required = (& $clean $_.Required); Available = (& $clean $_.Available); Exclude = (& $clean $_.Exclude) }
+        } | Where-Object { ($_.Required.Count + $_.Available.Count + $_.Exclude.Count) -gt 0 } | Select-Object -First 30)
+}
+
+function Global:ConvertTo-DetectionFromInstalled {
+    <#
+      Pure: a detection rule for an app as Windows lists it (an Uninstall
+      key: Key = its name, WindowsInstaller, DisplayVersion, InstallLocation,
+      DisplayIcon; Hive = HKLM / HKLM-WOW / HKCU; MainExe = the program's
+      file and its version, when found). An MSI: its product code, this
+      version or newer. Otherwise the program's file by version, or the
+      Uninstall key's DisplayVersion. @{ Rule; Text }.
+    #>
+    param($Entry)
+    $ver = ([string]$Entry.DisplayVersion).Trim()
+    if ([string]$Entry.Key -match '^\{[0-9A-Fa-f-]{36}\}$' -and [int]$Entry.WindowsInstaller -eq 1) {
+        return @{ Rule = [ordered]@{ Type = 'Msi'; Msi_ProductCode = ([string]$Entry.Key).ToUpperInvariant(); Msi_VersionOperator = $(if ($ver) { 'greaterThanOrEqual' } else { 'notConfigured' }); Msi_Version = $ver }; Text = "MSI product code $(([string]$Entry.Key).ToUpperInvariant())$(if ($ver) { ", $ver or newer" })" }
+    }
+    if ($Entry.MainExe -and $Entry.MainExe.Path -and $Entry.MainExe.Version) {
+        $p = [string]$Entry.MainExe.Path
+        # A Windows path, split by hand (the System.IO helpers don't know "\" off Windows).
+        $cut = $p.LastIndexOf('\')
+        $file = $p.Substring($cut + 1)
+        $folder = $p.Substring(0, [Math]::Max($cut, 0)) -replace '^C:\\Program Files \(x86\)', '%ProgramFiles(x86)%' -replace '^C:\\Program Files', '%ProgramFiles%'
+        return @{ Rule = [ordered]@{ Type = 'File'; File_Path = $folder; File_Name = $file; File_Check32Bit = $false; File_DetectionType = 'version'; File_Operator = 'greaterThanOrEqual'; File_DetectionValue = [string]$Entry.MainExe.Version }; Text = "$file in $folder, version $($Entry.MainExe.Version) or newer" }
+    }
+    $root = switch ([string]$Entry.Hive) { 'HKCU' { 'HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' } 'HKLM-WOW' { 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' } default { 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' } }
+    $key = "$root\$($Entry.Key)"
+    return @{ Rule = [ordered]@{ Type = 'Registry'; Reg_KeyPath = $key; Reg_ValueName = 'DisplayVersion'; Reg_Check32Bit = ([string]$Entry.Hive -eq 'HKLM-WOW'); Reg_DetectionType = $(if ($ver) { 'version' } else { 'exists' }); Reg_Operator = $(if ($ver) { 'greaterThanOrEqual' } else { 'notConfigured' }); Reg_DetectionValue = $ver }; Text = "the Uninstall key $($Entry.Key)$(if ($ver) { ", DisplayVersion $ver or newer" })" }
+}
+
+function Global:ConvertTo-DetectionTestScript {
+    <#
+      Pure: PowerShell that says whether -Rule detects the app here - for a
+      test in Windows Sandbox. Writes $true or $false.
+    #>
+    param($Rule)
+    $q = { param($s) "'" + ([string]$s).Replace("'", "''") + "'" }
+    $cmp = { param($have, $op, $want) "`$ok = `$false; try { `$h = [version](($have) -replace '[^0-9.].*$', ''); `$w = [version]($(& $q $want) -replace '[^0-9.].*$', ''); `$ok = switch ($(& $q $op)) { 'equal' { `$h -eq `$w } 'notEqual' { `$h -ne `$w } 'greaterThan' { `$h -gt `$w } 'greaterThanOrEqual' { `$h -ge `$w } 'lessThan' { `$h -lt `$w } 'lessThanOrEqual' { `$h -le `$w } default { `$true } } } catch { `$ok = (($have) -eq $(& $q $want)) }; `$ok" }
+    # In parentheses: as a command argument, [Environment]::... would be passed as text.
+    $expand = { param($p) "([Environment]::ExpandEnvironmentVariables($(& $q $p)))" }
+    switch ([string]$Rule.Type) {
+        'Msi' {
+            $code = [string]$Rule.Msi_ProductCode
+            $find = "`$e = @(Get-ItemProperty -Path ('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\' + $(& $q $code)), ('HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\' + $(& $q $code)) -ErrorAction SilentlyContinue) | Select-Object -First 1"
+            if ([string]$Rule.Msi_VersionOperator -in '', 'notConfigured') { return "$find; [bool]`$e" }
+            return "$find; if (-not `$e) { `$false } else { $(& $cmp '[string]$e.DisplayVersion' $Rule.Msi_VersionOperator $Rule.Msi_Version) }"
+        }
+        'File' {
+            $path = "(Join-Path $(& $expand $Rule.File_Path) $(& $q $Rule.File_Name))"
+            switch ([string]$Rule.File_DetectionType) {
+                'doesNotExist' { return "-not (Test-Path -LiteralPath $path)" }
+                'version' { return "`$f = $path; if (-not (Test-Path -LiteralPath `$f)) { `$false } else { $(& $cmp '[string](Get-Item -LiteralPath $f).VersionInfo.FileVersion' $Rule.File_Operator $Rule.File_DetectionValue) }" }
+                default { return "Test-Path -LiteralPath $path" }
+            }
+        }
+        'Registry' {
+            $k = 'Registry::' + ([string]$Rule.Reg_KeyPath)
+            $name = [string]$Rule.Reg_ValueName
+            switch ([string]$Rule.Reg_DetectionType) {
+                'doesNotExist' { return "-not (Test-Path -LiteralPath $(& $q $k))" }
+                'exists' { if ($name) { return "`$null -ne (Get-ItemProperty -LiteralPath $(& $q $k) -Name $(& $q $name) -ErrorAction SilentlyContinue)" }; return "Test-Path -LiteralPath $(& $q $k)" }
+                'version' { return "`$v = (Get-ItemProperty -LiteralPath $(& $q $k) -ErrorAction SilentlyContinue).$name; if (-not `$v) { `$false } else { $(& $cmp '[string]$v' $Rule.Reg_Operator $Rule.Reg_DetectionValue) }" }
+                default { return "`$v = (Get-ItemProperty -LiteralPath $(& $q $k) -ErrorAction SilentlyContinue).$name; [string]`$v -eq $(& $q $Rule.Reg_DetectionValue)" }
+            }
+        }
+        'Script' { return "`$out = & { $([string]$Rule.Script_Content) } 2>`$null; [bool](@(`$out) | Where-Object { `$_ })" }
+    }
+    return '$false'
+}
+
+function Global:ConvertFrom-WingetExportJson {
+    # Pure: the package IDs in a "winget export" file (Sources[].Packages[].PackageIdentifier), each once.
+    param([string]$Json)
+    try { $o = $Json | ConvertFrom-Json } catch { return @{ Ids = @(); Error = "That isn't a winget export file (JSON)." } }
+    $ids = @(@($o.Sources) | ForEach-Object { @($_.Packages) } | ForEach-Object { [string]$_.PackageIdentifier } | Where-Object { $_ -match '^[A-Za-z0-9][A-Za-z0-9.\-_+]{0,127}$' } | Select-Object -Unique)
+    if (-not $ids.Count) { return @{ Ids = @(); Error = 'No winget package in that file - make it with "winget export -o apps.json".' } }
+    return @{ Ids = $ids; Error = '' }
+}

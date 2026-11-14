@@ -24,6 +24,7 @@ function Global:Import-GraphSettings {
         }
         if ($settings.ReleaseRings) { $Global:App.ReleaseRings = @(ConvertTo-ReleaseRings $settings.ReleaseRings) }
         if ($settings.Alerts) { $Global:App.Alerts = ConvertTo-AlertSettings $settings.Alerts }
+        if ($settings.AssignmentProfiles) { $Global:App.AssignmentProfiles = @(ConvertTo-AssignmentProfiles $settings.AssignmentProfiles) }
         if ($settings.PilotGroups) {
             $Global:App.PilotGroups.Clear()
             foreach ($g in @($settings.PilotGroups)) { [void]$Global:App.PilotGroups.Add([string]$g) }
@@ -121,6 +122,7 @@ function Global:Write-SettingsFile {
             ReleasePolicy         = $Global:App.ReleasePolicy
             ReleaseRings          = @($Global:App.ReleaseRings)
             Alerts                = $Global:App.Alerts
+            AssignmentProfiles    = @($Global:App.AssignmentProfiles)
             DefaultAppSettings    = $Global:App.DefaultAppSettings
             CheckDriftOnStartup   = $Global:App.CheckDriftOnStartup
             RunFullAuditOnStartup = $Global:App.RunFullAuditOnStartup
