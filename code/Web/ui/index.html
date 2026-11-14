@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="app.css">
 <script src="core.js" defer></script>
 <script src="apps.js" defer></script>
+<script src="tools.js" defer></script>
 <script src="checks.js" defer></script>
 <script src="groups.js" defer></script>
 <script src="updates.js" defer></script>
@@ -428,6 +429,7 @@
           <label class="chk"><input type="checkbox" data-check="pushGroupsOnCreate">Send groups after creating an app</label>
           <label class="chk"><input type="checkbox" data-check="pushGroupsOnUpdate">Send groups after updating an app</label>
           <label class="chk"><input type="checkbox" data-check="detailedGraphLog">Detailed Graph log (every request)</label>
+          <label class="chk" title="Asks GitHub at most twice a day - Home says when a newer version of this app is out"><input type="checkbox" data-check="checkForUpdates">Tell me when a new version of this app is out</label>
           <div class="actions"><button class="btn" id="btnSaveChecks" title="Save the automatic checks and pushes">Save</button></div>
         </article>
         <article class="card">

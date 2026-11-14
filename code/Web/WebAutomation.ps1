@@ -355,7 +355,7 @@ function Global:Invoke-WebCatalogBackup {
     if ((Test-Path -LiteralPath (Join-Path $cat '.git')) -and (Get-Command git -ErrorAction SilentlyContinue)) {
         $changes = & git -C $cat status --porcelain 2>$null
         if ($changes) {
-            & git -C $cat add -A 2>$null | Out-Null
+            & git -C $cat add -A -- '*.json' 2>$null | Out-Null
             & git -C $cat commit -q -m "Catalog as of $((Get-Date).ToString('yyyy-MM-dd HH:mm')) (nightly run)" 2>$null | Out-Null
             $text += $(if ($LASTEXITCODE -eq 0) { ' Committed the changes to the catalog''s git repository.' } else { ' The git commit failed - see git status in the catalog folder.' })
         }

@@ -208,6 +208,15 @@ try {
         check(await page.isVisible('#dlgApp[open]'), `${label}: closing the Winget search goes back to the editor`);
         check(await page.isChecked('#aManaged'), `${label}: a new Winget app has managed updates by default`);
         await page.uncheck('#aManaged');   // this one stays unmanaged: Release is checked below to be off, and to say why
+        // Groups are chips: typed and Enter adds one, x takes it off again; return codes are rows.
+        await page.click('#gAvailableChips'); await page.keyboard.type('SG-ZZ-Chip'); await page.waitForTimeout(400); await page.keyboard.press('Enter');
+        const chipAdded = (await page.inputValue('#gAvailable')).split('\n').includes('SG-ZZ-Chip');
+        await page.click('#gAvailableBox .chip.tag .x');
+        check(chipAdded && !(await page.inputValue('#gAvailable')).includes('SG-ZZ-Chip'), `${label}: a group is added as a chip and removed with its x`, await page.inputValue('#gAvailable'));
+        await page.click('#deploySec summary');
+        await page.click('#xCodesRows > button');
+        await page.fill('#xCodesRows .coderow:last-of-type input', '1707');
+        check((await page.inputValue('#xCodes')).split('\n').includes('1707 = success'), `${label}: a return code is added as a row`, await page.inputValue('#xCodes'));
         await page.click('#btnSaveApp');
         await page.waitForSelector(`#gridBody tr[data-name="${testApp}"]`);
         check(!(await page.isVisible('#dlgApp[open]')), `${label}: the new app is saved and listed`);

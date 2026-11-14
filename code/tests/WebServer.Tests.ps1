@@ -86,7 +86,7 @@ try {
     Check ($page.Status -eq 200 -and $page.Body -like '*<script src="app.js"*') 'the page is served'
     Check ($page.Headers -match 'Content-Security-Policy: default-src ''self''' -and $page.Headers -match 'X-Frame-Options: DENY' -and $page.Headers -match 'Cache-Control: no-store') 'every response carries the security headers' $page.Headers
     Check ($page.Body -notmatch '<script>[^<]') 'no inline script (the CSP allows none)'
-    foreach ($js in 'core.js', 'apps.js', 'checks.js', 'groups.js', 'updates.js', 'add.js', 'convenience.js', 'guide.js', 'chips.js', 'scripts.js', 'settings.js', 'app.js') {
+    foreach ($js in 'core.js', 'apps.js', 'tools.js', 'checks.js', 'groups.js', 'updates.js', 'add.js', 'convenience.js', 'guide.js', 'chips.js', 'scripts.js', 'settings.js', 'app.js') {
         Check ((Invoke-Raw -Path "/$js").Status -eq 200 -and $page.Body -like "*<script src=`"$js`" defer>*") "$js is served and loaded by the page"
     }
     Check ((Invoke-Raw -Path '/app.css').Status -eq 200) 'app.css is served'
@@ -522,6 +522,11 @@ try {
     [void](Invoke-Api '/api/assignments-set' @{ changes = @(@{ name = "$testName renamed"; group = 'SG-ZZ-Grid'; role = '' }) })
     Check (@((Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.availableFor) -notcontains 'SG-ZZ-Grid') 'groups and apps grid: a cell set to none takes the group off'
     Check (-not (Invoke-Api '/api/assignments-set' @{ changes = @(@{ name = "$testName renamed"; group = 'SG-ZZ-Grid'; role = 'owner' }) }).ok) 'groups and apps grid: an unknown role is refused'
+    # The catalog's lock file is held only while a change is written - after it, another process can take it.
+    $lockPath = Join-Path (Invoke-Api '/api/state').catalogPath '.catalog-write.lock'
+    $lockFree = $false
+    if (Test-Path -LiteralPath $lockPath) { try { $fs = [System.IO.File]::Open($lockPath, 'Open', 'ReadWrite', 'None'); $fs.Dispose(); $lockFree = $true } catch { } }
+    Check ((Test-Path -LiteralPath $lockPath) -and $lockFree) 'catalog lock: a lock file in the catalog folder, released after each change'
     $md = Invoke-Api '/api/managed-default' @{}
     Check ($md.ok -and (Invoke-Api '/api/prefs').defaults.wingetInstallMethod -eq 'Managed') 'managed updates: the default for new Winget apps' ($md | ConvertTo-Json -Compress)
     $att = Invoke-Api '/api/attention'

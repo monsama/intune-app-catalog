@@ -296,6 +296,8 @@ function Global:Get-WebAttention {
         [ordered]@{ done = [bool]@($apps | Where-Object { $_.appId }).Count; title = 'Deploy them'; text = 'Select apps on the Apps page and Deploy.'; go = 'apps:notdeployed' }
         [ordered]@{ done = [bool]($sch.exists -or -not $sch.supported); title = 'Schedule the nightly run'; text = 'It releases, promotes and checks by itself.'; go = 'settings:automation' }
     )
+    $upd = Get-WebAppUpdate
+    if ($upd.ok -and $upd.newer) { & $add 'info' "Intune App Catalog $($upd.version) is out (you have $($Global:App.AppVersion))" $(if ($upd.notes) { $upd.notes } else { 'See what is new on GitHub.' }) 'open:release' }
     $order = @{ err = 0; warn = 1; ok = 2; info = 3 }
     return @{ ok = $true; items = @($items | Sort-Object { $order[$_.level] }); setup = $setup; apps = $apps.Count; deployed = @($apps | Where-Object { $_.appId }).Count
         managed = @($apps | Where-Object { $_.managedUpdates }).Count; summary = $summary; lastRun = $(if ($last) { $last.started } else { '' }) }
@@ -370,4 +372,31 @@ function Global:Read-WebPackageList {
     if ($p.Error) { return @{ ok = $false; error = $p.Error } }
     $have = @{}; foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { $_.wingetId })) { $have[([string]$a.wingetId).ToLowerInvariant()] = [string]$a.appName }
     return @{ ok = $true; items = @($p.Ids | ForEach-Object { $k = $_.ToLowerInvariant(); [ordered]@{ id = $_; inCatalog = $(if ($have.ContainsKey($k)) { $have[$k] } else { '' }) } }) }
+}
+
+# ---------------------------------------------------------------- a newer version of this app
+
+function Global:Get-WebAppUpdate {
+    <#
+      Is a newer release of this app out? Asks GitHub's API for the latest
+      release (its tag and notes - nothing about this PC is sent beyond the
+      request itself), at most twice a day; off in Settings or in test
+      mode. @{ ok; newer; version; notes; url }.
+    #>
+    if (-not $Global:App.CheckForUpdates -or $Global:App.TestGraph) { return @{ ok = $true; newer = $false; off = $true } }
+    $c = $Global:App.AppUpdateCache
+    if ($c -and ((Get-Date) - $c.At).TotalHours -lt 12) { return $c.Answer }
+    $repo = [string]$Global:App.ReleaseRepo
+    if ($repo -notmatch '^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$') { return @{ ok = $false; error = 'No release repository set.' } }
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $p = @{ Uri = "https://api.github.com/repos/$repo/releases/latest"; Headers = @{ 'User-Agent' = 'IntuneAppCatalog'; Accept = 'application/vnd.github+json' }; TimeoutSec = 10; ErrorAction = 'Stop' }
+        if ($PSVersionTable.PSEdition -eq 'Desktop') { $p.UseBasicParsing = $true }
+        $r = Invoke-RestMethod @p
+        $o = Get-AppUpdateOffer -Current ([string]$Global:App.AppVersion) -Tag ([string]$r.tag_name) -Body ([string]$r.body)
+        $answer = @{ ok = $true; newer = $o.Newer; version = $o.Version; notes = $o.Notes; url = "https://github.com/$repo/releases/latest" }
+    }
+    catch { $answer = @{ ok = $false; error = "GitHub couldn't be asked: $($_.Exception.Message)" } }
+    $Global:App.AppUpdateCache = @{ At = (Get-Date); Answer = $answer }
+    return $answer
 }

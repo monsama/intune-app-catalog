@@ -41,6 +41,7 @@ function Global:Import-GraphSettings {
         # by accident. Doesn't exist at all (older settings file) leaves
         # $Global:App.CheckDriftOnStartup at its own default, untouched.
         if ($settings.CheckDriftOnStartup -is [bool]) { $Global:App.CheckDriftOnStartup = $settings.CheckDriftOnStartup }
+        if ($settings.CheckForUpdates -is [bool]) { $Global:App.CheckForUpdates = $settings.CheckForUpdates }
         if ($settings.DetailedGraphLog -is [bool]) { $Global:App.DetailedGraphLog = $settings.DetailedGraphLog }
         # Same -is [bool] reasoning as CheckDriftOnStartup above, and it
         # matters more here: PushGroupsOnCreate defaults to ON, so reading
@@ -125,6 +126,7 @@ function Global:Write-SettingsFile {
             AssignmentProfiles    = @($Global:App.AssignmentProfiles)
             DefaultAppSettings    = $Global:App.DefaultAppSettings
             CheckDriftOnStartup   = $Global:App.CheckDriftOnStartup
+            CheckForUpdates       = [bool]$Global:App.CheckForUpdates
             RunFullAuditOnStartup = $Global:App.RunFullAuditOnStartup
             CheckIntuneOnDeployOpen = [bool]$Global:App.CheckIntuneOnDeployOpen
             DetailedGraphLog      = [bool]$Global:App.DetailedGraphLog

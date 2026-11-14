@@ -1695,3 +1695,15 @@ function Global:ConvertFrom-WingetExportJson {
     if (-not $ids.Count) { return @{ Ids = @(); Error = 'No winget package in that file - make it with "winget export -o apps.json".' } }
     return @{ Ids = $ids; Error = '' }
 }
+
+
+function Global:Get-AppUpdateOffer {
+    # Pure: whether a GitHub release (tag "vX.Y.Z", its notes) is newer than -Current - @{ Newer; Version; Notes (the first lines, as plain text) }.
+    param([string]$Current, [string]$Tag, [string]$Body)
+    $v = ([string]$Tag).Trim() -replace '^[vV]', ''
+    if ($v -notmatch '^\d+(\.\d+){1,3}$') { return @{ Newer = $false; Version = ''; Notes = '' } }
+    $newer = (Compare-AppVersionText $Current $v) -eq 1
+    $notes = @(([string]$Body -split "`r?`n") | ForEach-Object { ($_ -replace '[#*`>\[\]]', '').Trim() } | Where-Object { $_ } | Select-Object -First 6) -join ' / '
+    if ($notes.Length -gt 400) { $notes = $notes.Substring(0, 400) + '...' }
+    return @{ Newer = [bool]$newer; Version = $v; Notes = $notes }
+}

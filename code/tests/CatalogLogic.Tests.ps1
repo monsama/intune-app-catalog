@@ -178,6 +178,7 @@ $testableFunctionNames = @(
     "ConvertTo-DetectionFromInstalled",
     "ConvertTo-DetectionTestScript",
     "ConvertFrom-WingetExportJson",
+    "Get-AppUpdateOffer",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -733,6 +734,12 @@ Assert-Equal 0 @($allTypes | Where-Object { $e = $null; [void][System.Management
 $exp = ConvertFrom-WingetExportJson '{"Sources":[{"Packages":[{"PackageIdentifier":"7zip.7zip"},{"PackageIdentifier":"Mozilla.Firefox"},{"PackageIdentifier":"7zip.7zip"},{"PackageIdentifier":"bad id;"}]}]}'
 Assert-True (-not $exp.Error -and (@($exp.Ids) -join ',') -eq '7zip.7zip,Mozilla.Firefox') "ConvertFrom-WingetExportJson: each package once, bad IDs dropped"
 Assert-True ([bool](ConvertFrom-WingetExportJson 'not json').Error) "ConvertFrom-WingetExportJson: not JSON is refused"
+
+# A newer release of this app
+$offer = Get-AppUpdateOffer -Current '2.11.0' -Tag 'v2.12.0' -Body "## Added`n- **Faster** catalog`n`n- Lock file"
+Assert-True ($offer.Newer -and $offer.Version -eq '2.12.0' -and $offer.Notes -like 'Added / - Faster catalog*') "Get-AppUpdateOffer: a newer tag is offered, its notes as plain text"
+Assert-True (-not (Get-AppUpdateOffer -Current '2.11.0' -Tag 'v2.11.0' -Body '').Newer -and -not (Get-AppUpdateOffer -Current '2.11.0' -Tag 'v2.9.9' -Body '').Newer) "Get-AppUpdateOffer: the same or an older release isn't"
+Assert-True (-not (Get-AppUpdateOffer -Current '2.11.0' -Tag 'nightly' -Body '').Newer) "Get-AppUpdateOffer: a tag that isn't a version is ignored"
 
 # Alerts
 $rep = @{ failed = 0; planOnly = $false; items = @(@{ app = 'A'; outcome = 'current'; text = 'fine' }, @{ app = 'B'; outcome = 'hold'; text = 'too many failed' }) }
