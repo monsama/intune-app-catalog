@@ -1047,12 +1047,15 @@ $('btnPullApply').addEventListener('click', async () => {
 async function openStatus(name) {
   $('statusTitle').textContent = 'Install status - ' + name;
   $('statusSummary').textContent = 'Reading Intune’s install status report...';
-  $('statusRows').replaceChildren();
+  $('statusRows').replaceChildren(); $('statusErrors').hidden = true;
   $('dlgStatus').showModal();
   const r = await api('/api/install-status', { name });
   if (!r.ok) { $('statusSummary').textContent = r.error; return; }
   $('statusSummary').textContent = r.summary + (r.truncated ? ' (only the first rows are shown)' : '');
+  const top = r.topErrors || [];
+  $('statusErrors').hidden = !top.length;
+  $('statusErrList').replaceChildren(...top.map(e => el('li', {}, el('strong', { text: `${e.count} × ${e.hex}` }), ` ${e.meaning} `, el('span', { class: 'muted', text: e.fix }))));
   $('statusRows').replaceChildren(...r.rows.map(x => el('tr', {}, el('td', { text: x.device }), el('td', { text: x.user }),
     el('td', {}, el('span', { class: 'pill ' + (/fail/i.test(x.state) ? 'err' : /install/i.test(x.state) && !/not/i.test(x.state) ? 'ok' : 'muted'), text: x.state })),
-    el('td', { text: x.detail }), el('td', { class: 'chg', text: x.error }), el('td', { text: x.version }), el('td', { text: x.lastSeen }))));
+    el('td', { text: x.detail }), el('td', { class: 'chg', text: x.error, title: x.meaning ? `${x.meaning}\n\n${x.fix}` : '' }, x.meaning ? el('div', { class: 'muted small', text: x.meaning }) : ''), el('td', { text: x.version }), el('td', { text: x.lastSeen }))));
 }

@@ -366,6 +366,11 @@ function Global:Get-WebInstallStatus {
     $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) Get-AppInstallStatusRows -AppId $id -Invoke $Graph }
     if (-not $read.ok) { return $read }
     $report = $read.value
-    $rows = @($report.Rows | ForEach-Object { [ordered]@{ device = [string]$_.DeviceName; user = [string]$_.UserName; state = [string]$_.State; detail = [string]$_.Detail; error = [string]$_.ErrorCode; version = [string]$_.Version; lastSeen = [string]$_.LastSeen } })
-    return @{ ok = $true; app = $name; rows = $rows; truncated = [bool]$report.Truncated; summary = (Format-InstallStatusSummary @($report.Rows)) }
+    $rows = @($report.Rows | ForEach-Object {
+        $why = Get-InstallErrorInfo $_.ErrorCode
+        [ordered]@{ device = [string]$_.DeviceName; user = [string]$_.UserName; state = [string]$_.State; detail = [string]$_.Detail; error = [string]$_.ErrorCode; version = [string]$_.Version; lastSeen = [string]$_.LastSeen
+            meaning = $(if ($why) { [string]$why.meaning } else { '' }); fix = $(if ($why) { [string]$why.fix } else { '' }) } })
+    return @{ ok = $true; app = $name; rows = $rows; truncated = [bool]$report.Truncated; summary = (Format-InstallStatusSummary @($report.Rows))
+        # The most common errors, explained - what to fix first.
+        topErrors = @(Get-InstallErrorSummary -Rows @($report.Rows) -Top 5) }
 }

@@ -185,6 +185,8 @@ $testableFunctionNames = @(
     "Get-PermissionReport",
     "Set-PsadtTemplateValues",
     "New-IntuneWinPackage",
+    "Get-InstallErrorInfo",
+    "Get-InstallErrorSummary",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -785,6 +787,14 @@ $psadt = Set-PsadtTemplateValues -Text $psadtIn -Name ("Bob" + [char]0x2019 + "s
 $pe = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($psadt.Text, [ref]$null, [ref]$pe)
 Assert-True (@($psadt.Missing).Count -eq 0 -and $psadt.Text -match "AppVendor = 'Contoso'" -and $psadt.Text -match "AppVersion = '2025\.1'" -and $psadt.Text -match 'Set-ItemProperty -LiteralPath' -and $psadt.Text -match 'Remove-Item -LiteralPath' -and @($pe).Count -eq 0) "Set-PsadtTemplateValues: vendor, name and version filled in, the marker after install and uninstall - still valid PowerShell"
 Assert-True (@((Set-PsadtTemplateValues -Text 'nothing here' -Name 'X' -Vendor 'Y' -Version '1').Missing).Count -eq 5) "Set-PsadtTemplateValues: says what it couldn't fill in"
+
+# Install errors explained
+$e1 = Get-InstallErrorInfo -2016345060
+Assert-True ($e1.hex -eq '0x87D1041C' -and $e1.meaning -like '*detected*' -and $e1.fix -like '*detection rule*') "Get-InstallErrorInfo: 0x87D1041C (as the report's signed decimal) - not detected after install, check the detection rule"
+Assert-True ((Get-InstallErrorInfo '0x87D1041C (-2016345060)').hex -eq '0x87D1041C' -and (Get-InstallErrorInfo 2147944003).hex -eq '0x80070643' -and $null -eq (Get-InstallErrorInfo 0) -and $null -eq (Get-InstallErrorInfo '')) "Get-InstallErrorInfo: hex as the app formats it, unsigned decimal; no error for 0 and blank"
+Assert-True ((Get-InstallErrorInfo '0x80070BC2').fix -like '*Soft reboot*' -and (Get-InstallErrorInfo '0x80070659').meaning -eq 'Windows Installer error 1625.' -and (Get-InstallErrorInfo '0x87D30001').meaning -like '*Intune Management Extension*' -and (Get-InstallErrorInfo 1234).meaning -eq 'The installer exited with 1234.') "Get-InstallErrorInfo: 3010 is a restart, not a failure; unknown codes by family (MSI, agent, exit code)"
+$eTop = @(Get-InstallErrorSummary -Rows @(@{ ErrorCode = '-2016345060' }, @{ ErrorCode = '0x87D1041C (-2016345060)' }, @{ ErrorCode = '-2147023293' }, @{ ErrorCode = '0' }, @{ ErrorCode = '' }) -Top 5)
+Assert-True ($eTop.Count -eq 2 -and $eTop[0].hex -eq '0x87D1041C' -and $eTop[0].count -eq 2 -and $eTop[1].count -eq 1) "Get-InstallErrorSummary: errors counted by code, most common first; no-error rows left out"
 
 # A newer release of this app
 $offer = Get-AppUpdateOffer -Current '2.11.0' -Tag 'v2.12.0' -Body "## Added`n- **Faster** catalog`n`n- Lock file"

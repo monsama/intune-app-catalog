@@ -1805,3 +1805,70 @@ function Global:Set-PsadtTemplateValues {
     if ($t -match $rxUn) { $t = [regex]::Replace($t, $rxUn, ('${1}' + $remove.Replace('$', '$$')), 1); $filled.Add('marker after uninstall') } else { $missing.Add('marker after uninstall') }
     return @{ Text = $t; Filled = $filled.ToArray(); Missing = $missing.ToArray() }
 }
+
+function Global:Get-InstallErrorInfo {
+    <#
+      Pure: what an install error code from Intune's install status report
+      means and what usually fixes it - @{ hex; meaning; fix }, $null for no
+      error. The code as the report gives it (decimal, signed or not) or as
+      hex ("0x87D1041C"). Codes it doesn't know get the general reading of
+      their family (a Windows / Windows Installer error, an Intune agent
+      error) and the hex to search for.
+    #>
+    param($Code)
+    $text = ([string]$Code).Trim()
+    if (-not $text) { return $null }
+    $n = 0L
+    if ($text -match '^0x([0-9A-Fa-f]{1,8})') { $n = [Convert]::ToInt64($Matches[1], 16) }
+    elseif ($text -match '^(-?\d+)') { $n = [long]$Matches[1] } else { return $null }
+    $u = [uint32]($n -band 0xFFFFFFFFL)
+    if ($u -eq 0) { return $null }
+    $hex = '0x{0:X8}' -f $u
+    $known = @{
+        '0x87D1041C' = @('The installer finished, but the app wasn''t detected afterwards.', 'The detection rule doesn''t match what the installer leaves behind: check the rule (path, registry key, MSI product code, version marker) - for a newer version, the version it checks for.')
+        '0x80070643' = @('The installer failed (Windows Installer error 1603, a fatal error during installation).', 'Usually something the installer needs: a prerequisite, a running copy of the app, or a path SYSTEM can''t reach. Install it by hand as SYSTEM (psexec -s) with logging (/l*v) to see why.')
+        '0x80070652' = @('Another installation was already running (Windows Installer error 1618).', 'Intune tries again by itself. If it keeps happening, add 1618 as a Retry return code.')
+        '0x80070666' = @('Another version of the product is already installed (Windows Installer error 1638).', 'Uninstall the old version first: supersede it with this app (uninstall the previous one), or add the old version''s uninstall to the install script.')
+        '0x80070667' = @('The installer''s command line is invalid (Windows Installer error 1639).', 'Check the install command''s switches and quoting.')
+        '0x80070642' = @('The installation was cancelled (Windows Installer error 1602).', 'Someone cancelled it, or the installer showed a prompt. Make the install command silent (/qn, /S) and run it as SYSTEM.')
+        '0x80070641' = @('The Windows Installer service couldn''t be reached (error 1601).', 'Usually passes on the next try; repeated, the device''s Windows Installer needs repair.')
+        '0x80070645' = @('This only works for an installed product (Windows Installer error 1605).', 'Typically an uninstall of something that isn''t there - check the uninstall command''s product code.')
+        '0x8007064C' = @('The installer''s source isn''t available (Windows Installer error 1612).', 'The installer needs files that aren''t in the package - put them into the app''s package folder and rebuild it.')
+        '0x80070BC2' = @('Installed, but a restart is needed (exit code 3010).', 'Not a real failure: add 3010 as a Soft reboot return code so Intune reports it as success.')
+        '0x80070BC9' = @('Installed, but a restart is needed to finish (exit code 3017).', 'Add 3017 as a Soft reboot return code, or let the device restart.')
+        '0x80070002' = @('A file wasn''t found (Windows error 2).', 'The install command names a file that isn''t in the package (or the wrong path) - check it against the package folder, and rebuild the package.')
+        '0x80070003' = @('A path wasn''t found (Windows error 3).', 'The install command uses a folder that doesn''t exist on the device - check paths and quoting.')
+        '0x80070005' = @('Access denied (Windows error 5).', 'The install ran without the rights it needs: install for the system, not the user, or check that nothing (antivirus, policies) blocks it.')
+        '0x800705B4' = @('The installation timed out.', 'The installer took longer than the maximum install time - often a hidden prompt waiting for an answer. Make it silent, or raise the install time in the app''s deploy settings.')
+        '0x80070001' = @('The installer returned 1 (incorrect function / generic failure).', 'Exit code 1 is the installer''s own "failed" - run it by hand as SYSTEM to see why; for scripts, check the script''s errors.')
+    }
+    if ($known.ContainsKey($hex)) { return [ordered]@{ hex = $hex; meaning = $known[$hex][0]; fix = $known[$hex][1] } }
+    if (($u -band 0xFFFF0000L) -eq 0x80070000L) {
+        $w = [int]($u -band 0xFFFF)
+        if ($w -ge 1600 -and $w -le 1650) { return [ordered]@{ hex = $hex; meaning = "Windows Installer error $w."; fix = "Look up MSI error $w; run the installer by hand as SYSTEM with logging (/l*v) to see the cause." } }
+        return [ordered]@{ hex = $hex; meaning = "Windows error $w (or exit code $w from the installer)."; fix = "Search for $hex; if it is the installer's own exit code, its vendor documents it - add it to the return codes if it means success." }
+    }
+    if (($u -band 0xFFF00000L) -eq 0x87D00000L) { return [ordered]@{ hex = $hex; meaning = 'An error of the Intune Management Extension (the agent that installs Win32 apps).'; fix = "Search for $hex; the device's IntuneManagementExtension.log has the details." } }
+    if ($u -lt 0x10000L) { return [ordered]@{ hex = $hex; meaning = "The installer exited with $u."; fix = "An exit code Intune doesn't know as success: the installer's documentation says what $u means - add it to the return codes if it means success." } }
+    return [ordered]@{ hex = $hex; meaning = 'An error Intune reported.'; fix = "Search for $hex." }
+}
+
+function Global:Get-InstallErrorSummary {
+    <#
+      Pure: the most common install errors in an install status report's
+      rows (each with ErrorCode), most frequent first -
+      @(@{ hex; count; meaning; fix }), at most -Top.
+    #>
+    param($Rows, [int]$Top = 5)
+    $byHex = @{}
+    foreach ($r in @($Rows)) {
+        if (-not $r) { continue }
+        $code = if ($r -is [System.Collections.IDictionary]) { $r['ErrorCode'] } else { $r.ErrorCode }
+        # The report's ErrorCode can come formatted ("0x87D1041C (-2016345060)") - the hex is first.
+        $info = Get-InstallErrorInfo $code
+        if (-not $info) { continue }
+        if (-not $byHex.ContainsKey($info.hex)) { $byHex[$info.hex] = [ordered]@{ hex = $info.hex; count = 0; meaning = $info.meaning; fix = $info.fix } }
+        $byHex[$info.hex].count++
+    }
+    return @($byHex.Values | Sort-Object @{ Expression = { $_.count }; Descending = $true }, @{ Expression = { $_.hex } } | Select-Object -First $Top)
+}
