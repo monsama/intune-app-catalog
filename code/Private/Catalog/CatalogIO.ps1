@@ -129,6 +129,10 @@ function Global:ConvertTo-AppRecord {
         # Groups that must NOT get this app, whichever of the three lists
         # above would otherwise have covered them ("everyone in X except Y")
         excludeFor   = @(@($Raw.excludeFor)   | Where-Object { $null -ne $_ })
+        # An Intune assignment filter (by name) on every inclusion of the
+        # app, and whether it includes or excludes the devices it matches.
+        assignmentFilter     = $(if ([string]$Raw.assignmentFilter -and ([string]$Raw.assignmentFilter).Length -le 200) { ([string]$Raw.assignmentFilter).Trim() } else { '' })
+        assignmentFilterMode = $(if ([string]$Raw.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' })
         # The app's icon for Intune and the Company Portal (PNG or JPEG,
         # base64) - kept in the app's own file so a rename, a backup and
         # Undo carry it along. Anything else in the field is dropped.
@@ -350,6 +354,10 @@ function Global:ConvertTo-SingleAppJson {
     $fields.Add("  `"availableFor`": $(ConvertTo-JsonStringArray -Items @($App.availableFor) -IndentLevel 1)")
     $fields.Add("  `"excludeFor`": $(ConvertTo-JsonStringArray -Items @($App.excludeFor) -IndentLevel 1)")
     $fields.Add("  `"uninstallFor`": $(ConvertTo-JsonStringArray -Items @($App.uninstallFor) -IndentLevel 1)")
+    if ($App.assignmentFilter) {
+        $fields.Add("  `"assignmentFilter`": $(ConvertTo-JsonStringLiteral ([string]$App.assignmentFilter))")
+        $fields.Add("  `"assignmentFilterMode`": $(ConvertTo-JsonStringLiteral $(if ([string]$App.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' }))")
+    }
     if ($App.metadata) {
         # Fully hand-rolled now, matching this whole file's style
         # throughout, rather than routing metadata through ConvertTo-Json

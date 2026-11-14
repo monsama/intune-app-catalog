@@ -172,6 +172,8 @@ dialog.wide { width: min(1100px, calc(100vw - 32px)); max-height: calc(100vh - 3
 .formgrid label > input.mono, .formgrid #aWinget, .formgrid #aAppId, .groups4 textarea { font-family: var(--mono); font-size: 12px; }
 textarea { font: inherit; font-size: 13px; color: var(--fg); background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-m); padding: 6px 9px; resize: vertical; }
 .groups4 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.filterrow { display: grid; grid-template-columns: 2fr 1fr; gap: 0 12px; margin-top: 6px; }
+@media (max-width: 640px) { .filterrow { grid-template-columns: 1fr; } }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 .sub.warntext { color: var(--warn); }
 .muted.note { font-size: 12px; margin: 2px 0 0; }

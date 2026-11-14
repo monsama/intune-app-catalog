@@ -661,6 +661,25 @@ $req = @($withSettings.mobileAppAssignments | Where-Object { $_.intent -eq 'requ
 $others = @($withSettings.mobileAppAssignments | Where-Object { $_.ContainsKey('settings') })
 Assert-True ($req.Count -eq 1 -and $others.Count -eq 1 -and $req[0].settings.notifications -eq 'hideAll') "New-AppAssignmentBody: the settings go on the Required inclusions only"
 
+# Assignment filters: on every inclusion (Intune takes none on exclusions), part of the identity, sent by id.
+$fDesired = @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All') -ExcludeGroups @('SG-No') -FilterName 'Corp laptops' -FilterMode 'include')
+$fInc = @($fDesired | Where-Object { $_.Mode -eq 'include' })[0]; $fExc = @($fDesired | Where-Object { $_.Mode -eq 'exclude' })[0]
+Assert-True ($fInc.Filter -eq 'include:Corp laptops' -and $fInc.Key -eq 'required|include|SG-All|include:Corp laptops' -and -not $fExc.Filter -and $fExc.Key -eq 'required|exclude|SG-No') "Get-DesiredAssignmentEntries: the filter on inclusions only, and in the key"
+Assert-True ((Format-AssignmentLabel $fInc) -eq '[required] SG-All (filter: Corp laptops)' -and (Format-AssignmentLabel ([pscustomobject]@{ Intent = 'available'; Mode = 'include'; Group = 'G'; Filter = 'exclude:Kiosks' })) -eq '[available] G (filter: not Kiosks)') "Format-AssignmentLabel: says which filter, and 'not' for an excluding one"
+$fCurrent = @(ConvertTo-CurrentAssignmentEntries -Assignments @(
+    @{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.groupAssignmentTarget'; groupId = 'id-1'; deviceAndAppManagementAssignmentFilterId = 'f-1'; deviceAndAppManagementAssignmentFilterType = 'include' } },
+    @{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.exclusionGroupAssignmentTarget'; groupId = 'id-3'; deviceAndAppManagementAssignmentFilterId = '00000000-0000-0000-0000-000000000000'; deviceAndAppManagementAssignmentFilterType = 'none' } }
+) -GroupNameById @{ 'id-1' = 'SG-All'; 'id-3' = 'SG-No' } -FilterNameById @{ 'f-1' = 'Corp laptops' })
+$fDiff = Get-AssignmentDiff -Current $fCurrent -Desired $fDesired
+Assert-True (@($fDiff.ToAdd).Count -eq 0 -and @($fDiff.ToRemove).Count -eq 0) "ConvertTo-CurrentAssignmentEntries: Intune's filter read back by name - the same assignments, no change"
+$fChanged = Get-AssignmentDiff -Current $fCurrent -Desired @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All') -ExcludeGroups @('SG-No') -FilterName 'Corp laptops' -FilterMode 'exclude')
+$fGone = Get-AssignmentDiff -Current $fCurrent -Desired @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All') -ExcludeGroups @('SG-No'))
+Assert-True (@($fChanged.ToAdd).Count -eq 1 -and @($fChanged.ToRemove).Count -eq 1 -and @($fGone.ToAdd) -contains '[required] SG-All' -and @($fGone.ToRemove) -contains '[required] SG-All (filter: Corp laptops)') "Get-AssignmentDiff: a changed or removed filter is a change"
+$fBody = New-AppAssignmentBody -Entries $fDesired -GroupIdByName @{ 'SG-All' = 'id-1'; 'SG-No' = 'id-3' } -FilterIdByName @{ 'Corp laptops' = 'f-1' }
+$fbInc = @($fBody.mobileAppAssignments | Where-Object { $_.target.'@odata.type' -eq '#microsoft.graph.groupAssignmentTarget' })[0]
+$fbExc = @($fBody.mobileAppAssignments | Where-Object { $_.target.'@odata.type' -like '*exclusion*' })[0]
+Assert-True ($fbInc.target.deviceAndAppManagementAssignmentFilterId -eq 'f-1' -and $fbInc.target.deviceAndAppManagementAssignmentFilterType -eq 'include' -and -not $fbExc.target.ContainsKey('deviceAndAppManagementAssignmentFilterId')) "New-AppAssignmentBody: the filter's id and type on the inclusion, none on the exclusion"
+
 # The nightly run's other work
 $winPol = ConvertTo-ReleasePolicy ([pscustomobject]@{ ReleaseDays = @(1, 2, 3, 4); SkipLastWeek = $true; AutoWithdrawPercent = 30; DriftFix = $true; GatePath = '\\srv\test\app-data' })
 Assert-True ((@($winPol.ReleaseDays) -join ',') -eq '1,2,3,4' -and $winPol.SkipLastWeek -and $winPol.AutoWithdrawPercent -eq 30 -and $winPol.DriftCheck -and $winPol.DriftFix -and $winPol.BackupCatalog -and $winPol.GatePath -eq '\\srv\test\app-data') "ConvertTo-ReleasePolicy: release window, withdraw, drift, backup and the test tenant's folder"

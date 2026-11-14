@@ -173,6 +173,7 @@ function Global:Start-WebReleaseAssign {
         TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
         AppId = $id; AppName = $a.appName
         RequiredGroups = @($g.Required); AvailableGroups = @($g.Available); UninstallGroups = @($g.Uninstall); ExcludeGroups = @($g.Exclude)
+        FilterName = [string]$a.assignmentFilter; FilterMode = [string]$a.assignmentFilterMode
         CreateMissingGroups = ($step -in 'pilot', 'advance'); OutputResultPath = $resultPath
         # Install deadline, restart grace period, notifications (Settings > Managed updates) on the Required assignments.
         RequiredSettings = $(if ($step -in 'pilot', 'advance', 'promote', 'rollback') { Get-ReleaseAssignmentSettings -Policy $Global:App.ReleasePolicy -FastTrack ([bool]($pilot -and $pilot.fastTrack -and $step -ne 'rollback')) -NowUtc ([datetime]::UtcNow) } else { $null })

@@ -403,6 +403,24 @@ function Global:Get-WebAppUpdate {
     return $answer
 }
 
+# ---------------------------------------------------------------- assignment filters
+
+function Global:Get-WebAssignmentFilters {
+    # The tenant's assignment filters (Windows ones first) for the editor's filter box - @{ ok; filters = @(@{ name; platform; rule }) }.
+    if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $true; filters = @(); note = 'Not connected - type the filter''s name.' } }
+    $read = Invoke-WebGraph -Permission 'DeviceManagementConfiguration.Read.All' -Action {
+        param($Graph)
+        $all = New-Object System.Collections.Generic.List[object]
+        $uri = "https://graph.microsoft.com/beta/deviceManagement/assignmentFilters?`$select=id,displayName,platform,rule"
+        while ($uri) { $page = & $Graph $uri; foreach ($f in @($page.value)) { $all.Add($f) }; $uri = [string]$page.'@odata.nextLink' }
+        , $all.ToArray()
+    }
+    if (-not $read.ok) { return @{ ok = $true; filters = @(); note = "Filters couldn't be read: $($read.error)" } }
+    $rows = @(@($read.value) | Where-Object { $_ } | ForEach-Object { [ordered]@{ name = [string]$_.displayName; platform = [string]$_.platform; rule = [string]$_.rule } } |
+        Sort-Object @{ Expression = { $_.platform -ne 'windows10AndLater' } }, @{ Expression = { $_.name } })
+    return @{ ok = $true; filters = $rows }
+}
+
 # ---------------------------------------------------------------- permissions: granted vs used
 
 function Global:Get-WebPermissionCheck {
@@ -418,6 +436,7 @@ function Global:Get-WebPermissionCheck {
     $usage = @{
         Scripts    = [bool](@(Get-ChildItem -LiteralPath $scriptsDir -Filter '*.ps1' -File -ErrorAction SilentlyContinue).Count)
         Inventory  = [bool](@((Read-WebCatalogRecords).Apps | Where-Object { $_.managedUpdates }).Count)
+        Filters    = [bool](@((Read-WebCatalogRecords).Apps | Where-Object { $_.assignmentFilter }).Count)
         Mail       = [bool]($Global:App.Alerts.MailFrom -and @($Global:App.Alerts.MailTo).Count)
         GroupsPage = $true
     }

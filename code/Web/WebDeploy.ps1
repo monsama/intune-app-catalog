@@ -162,6 +162,7 @@ function Global:Start-WebPushGroups {
             TenantId = $creds.TenantId; ClientId = $creds.ClientId; CertificateThumbprint = $creds.CertificateThumbprint
             AppId = $a.appId; AppName = $a.appName
             RequiredGroups = @($a.requiredFor); AvailableGroups = @($a.availableFor); UninstallGroups = @($a.uninstallFor); ExcludeGroups = @($a.excludeFor)
+            FilterName = [string]$a.assignmentFilter; FilterMode = [string]$a.assignmentFilterMode
             CreateMissingGroups = $false; OutputResultPath = $resultPath
         }
         return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind "Push groups $($a.appName)")
@@ -170,7 +171,7 @@ function Global:Start-WebPushGroups {
     $config = @{
         TenantId = $creds.TenantId; ClientId = $creds.ClientId; CertificateThumbprint = $creds.CertificateThumbprint
         Mode = $mode
-        Apps = @($apps | ForEach-Object { @{ AppName = $_.appName; AppId = $_.appId; RequiredGroups = @($_.requiredFor); AvailableGroups = @($_.availableFor); UninstallGroups = @($_.uninstallFor); ExcludeGroups = @($_.excludeFor) } })
+        Apps = @($apps | ForEach-Object { @{ AppName = $_.appName; AppId = $_.appId; RequiredGroups = @($_.requiredFor); AvailableGroups = @($_.availableFor); UninstallGroups = @($_.uninstallFor); ExcludeGroups = @($_.excludeFor); FilterName = [string]$_.assignmentFilter; FilterMode = [string]$_.assignmentFilterMode } })
         OutputResultPath = $resultPath
     }
     $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedBatchAssignScript -Name 'batchassign' -ConfigJson ($config | ConvertTo-Json -Depth 8) -ResultPath $resultPath -Kind "Push groups ($mode, $($apps.Count) app(s))"

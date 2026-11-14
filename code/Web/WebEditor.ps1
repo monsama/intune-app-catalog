@@ -42,6 +42,8 @@ function Global:Get-WebAppEditable {
         availableFor = @($App.availableFor | ForEach-Object { [string]$_ })
         uninstallFor = @($App.uninstallFor | ForEach-Object { [string]$_ })
         excludeFor   = @($App.excludeFor | ForEach-Object { [string]$_ })
+        assignmentFilter     = [string]$App.assignmentFilter
+        assignmentFilterMode = $(if ([string]$App.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' })
         hasMetadata  = [bool]$m
         managedUpdates = [bool]$App.managedUpdates
         releaseRule  = $(if ($App.releaseRule) { [ordered]@{ days = $App.releaseRule.days; maxFailedPercent = $App.releaseRule.maxFailedPercent; minInstalled = $App.releaseRule.minInstalled } } else { $null })
@@ -233,6 +235,9 @@ function Global:Merge-WebAppEdit {
         availableFor     = & $groups $Edit.availableFor
         uninstallFor     = & $groups $Edit.uninstallFor
         excludeFor       = & $groups $Edit.excludeFor
+        # The assignment filter: what the editor sends, else what the app had.
+        assignmentFilter     = $(if ($null -ne $Edit.assignmentFilter) { $af = ([string]$Edit.assignmentFilter).Trim(); if ($af.Length -le 200) { $af } else { '' } } elseif ($Existing) { [string]$Existing.assignmentFilter } else { '' })
+        assignmentFilterMode = $(if ($null -ne $Edit.assignmentFilterMode) { if ([string]$Edit.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' } } elseif ($Existing -and [string]$Existing.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' })
         metadata         = $metadata
     }
 }

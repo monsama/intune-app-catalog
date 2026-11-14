@@ -740,6 +740,14 @@
           <label title="Removed from these groups' devices.">Uninstall<textarea autocomplete="off" id="gUninstall" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
           <label title="Groups that never get the app, whatever else they are assigned to.">Excluded<textarea autocomplete="off" id="gExclude" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
         </div>
+        <div class="filterrow">
+          <label title="An Intune assignment filter narrows every group above (not Excluded) to the devices it matches - e.g. only corporate laptops. Leave empty for none.">Assignment filter
+            <input autocomplete="off" id="aFilter" list="filterList" placeholder="None" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          <datalist id="filterList"></datalist>
+          <label>Devices the filter matches
+            <select id="aFilterMode"><option value="include">get the app (include)</option><option value="exclude">don't get the app (exclude)</option></select></label>
+        </div>
+        <p class="sub" id="filterNote"></p>
         <p class="sub" id="knownGroups"></p>
       </section>
       <section>

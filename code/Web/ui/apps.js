@@ -197,6 +197,7 @@ function fillEditor(a) {
   $('aName').value = a.appName || ''; $('aWinget').value = a.wingetId || ''; $('aAppId').value = a.appId || '';
   $('gRequired').value = (a.requiredFor || []).join('\n'); $('gAvailable').value = (a.availableFor || []).join('\n');
   $('gUninstall').value = (a.uninstallFor || []).join('\n'); $('gExclude').value = (a.excludeFor || []).join('\n');
+  $('aFilter').value = a.assignmentFilter || ''; $('aFilterMode').value = a.assignmentFilterMode === 'exclude' ? 'exclude' : 'include'; $('filterNote').textContent = '';
   for (const [k, id] of Object.entries(metaIds)) $(id).value = (a.metadata && a.metadata[k]) || '';
   $('metaNote').textContent = a.hasMetadata ? '' : '(not set yet - the defaults are used when it is deployed)';
   fillDeploy(a.deploy);
@@ -346,6 +347,15 @@ async function openEditor(name) {
   editorSnapshot = editorState();
   $('aName').focus();
 }
+// Assignment filters: the tenant's, loaded once when the box is first used.
+let filtersLoaded = false;
+$('aFilter').addEventListener('focus', async () => {
+  if (filtersLoaded) return; filtersLoaded = true;
+  const r = await api('/api/filters');
+  const list = (r.ok && r.filters) || [];
+  $('filterList').replaceChildren(...list.map(f => el('option', { value: f.name, text: `${f.platform === 'windows10AndLater' ? 'Windows' : f.platform}${f.rule ? ' - ' + f.rule.slice(0, 80) : ''}` })));
+  if (r.note) $('filterNote').textContent = r.note; else if (!list.length) $('filterNote').textContent = 'No assignment filters in Intune yet (Tenant administration > Filters).';
+});
 $('btnAddApp').addEventListener('click', () => openAdd());
 $('btnEditApp').addEventListener('click', () => { if (selected.size === 1) openEditor([...selected][0]); });
 $('appForm').addEventListener('submit', async e => {
@@ -353,6 +363,7 @@ $('appForm').addEventListener('submit', async e => {
   const app = {
     appName: $('aName').value, wingetId: $('aWinget').value, appId: $('aAppId').value,
     requiredFor: lines('gRequired'), availableFor: lines('gAvailable'), uninstallFor: lines('gUninstall'), excludeFor: lines('gExclude'),
+    assignmentFilter: $('aFilter').value.trim(), assignmentFilterMode: $('aFilterMode').value,
     metadata: Object.fromEntries(Object.entries(metaIds).map(([k, id]) => [k, $(id).value])),
   };
   if (deployTouched) app.deploy = readDeploy();

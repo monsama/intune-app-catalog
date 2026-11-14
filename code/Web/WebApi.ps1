@@ -562,6 +562,7 @@ function Global:Invoke-WebApi {
         '/api/alert-test'       { return (Send-WebTestAlert) }
         '/api/health'           { return (Get-WebHealth) }
         '/api/permission-check' { return (Get-WebPermissionCheck) }
+        '/api/filters' { return (Get-WebAssignmentFilters) }
         '/api/group-suggest'    { return (Find-WebGroupSuggestions $Data) }
         '/api/group-check'      { return (Test-WebGroupNames $Data) }
         '/api/icon-find'        { return (Find-WebAppIcon $Data) }

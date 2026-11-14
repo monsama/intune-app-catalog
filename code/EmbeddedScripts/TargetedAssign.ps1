@@ -167,7 +167,22 @@ try {
         throw "This script is missing the shared assignment helpers. Run it from the app (it supplies them), not on its own."
     }
     $desiredEntries = Get-DesiredAssignmentEntries -RequiredGroups @($Config.RequiredGroups) -AvailableGroups @($Config.AvailableGroups) `
-        -UninstallGroups @($Config.UninstallGroups) -ExcludeGroups @($Config.ExcludeGroups)
+        -UninstallGroups @($Config.UninstallGroups) -ExcludeGroups @($Config.ExcludeGroups) -FilterName ([string]$Config.FilterName) -FilterMode ([string]$Config.FilterMode)
+    # The assignment filter, looked up by name - only when the app has one
+    # (reading filters needs DeviceManagementConfiguration.Read.All).
+    $filterIdByName = @{}; $filterNameById = @{}
+    if (([string]$Config.FilterName).Trim()) {
+        Write-Step "Looking up the assignment filter"
+        $filterUri = "https://graph.microsoft.com/beta/deviceManagement/assignmentFilters?`$select=id,displayName"
+        while ($filterUri) {
+            $fl = Invoke-GraphRequestDetailed -Uri $filterUri -Method GET -StepDescription "Read assignment filters"
+            foreach ($f in @($fl.value)) { $filterIdByName[[string]$f.displayName] = [string]$f.id; $filterNameById[[string]$f.id] = [string]$f.displayName }
+            $filterUri = [string]$fl.'@odata.nextLink'
+        }
+        if (-not $filterIdByName.Contains(([string]$Config.FilterName).Trim())) {
+            throw "The assignment filter '$(([string]$Config.FilterName).Trim())' doesn't exist in Intune. Nothing was assigned. Pick another in the app's Assignments, or create it in Intune (Tenant administration > Filters)."
+        }
+    }
     $allGroupNames = @(@($desiredEntries | ForEach-Object { $_.Group }) | Select-Object -Unique)
     $groupIdByName = @{}
     $createdCount = 0
@@ -245,7 +260,7 @@ try {
         } catch { }
     }
     $otherTargets = @()
-    $currentEntries = ConvertTo-CurrentAssignmentEntries -Assignments @($currentAssignments.value) -GroupNameById $currentGroupNameById -OtherTargets ([ref]$otherTargets)
+    $currentEntries = ConvertTo-CurrentAssignmentEntries -Assignments @($currentAssignments.value) -GroupNameById $currentGroupNameById -OtherTargets ([ref]$otherTargets) -FilterNameById $filterNameById
     foreach ($entry in $currentEntries) { Write-Host "  currently: $(Format-AssignmentLabel $entry)" -ForegroundColor Gray }
     foreach ($other in $otherTargets) {
         # All devices / All users can't be expressed in the catalog, and this
@@ -306,7 +321,7 @@ try {
     # inclusion intent already exists for group id: ..."), failing the
     # ENTIRE app's assignment even though the preview had reported "no
     # change".
-    $assignBodyObject = New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdByName -RequiredSettings $Config.RequiredSettings
+    $assignBodyObject = New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdByName -RequiredSettings $Config.RequiredSettings -FilterIdByName $filterIdByName
     if ($Config.RequiredSettings) {
         $rs = $Config.RequiredSettings
         Write-Host ("  Required installs: " + $(if ($rs.installTimeSettings) { "deadline $($rs.installTimeSettings.deadlineDateTime) (UTC)" } else { 'as soon as possible' }) +

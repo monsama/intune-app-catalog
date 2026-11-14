@@ -197,7 +197,7 @@ function Global:Start-WebCheckAssign {
     $resultPath = Join-Path $env:TEMP (".intunepkg_checks_result_" + [guid]::NewGuid().ToString('N') + ".json")
     $config = @{ TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
         Mode = 'Preview'; OutputResultPath = $resultPath
-        Apps = @($apps | ForEach-Object { @{ AppName = $_.appName; AppId = $_.appId; RequiredGroups = @($_.requiredFor); AvailableGroups = @($_.availableFor); UninstallGroups = @($_.uninstallFor); ExcludeGroups = @($_.excludeFor) } }) }
+        Apps = @($apps | ForEach-Object { @{ AppName = $_.appName; AppId = $_.appId; RequiredGroups = @($_.requiredFor); AvailableGroups = @($_.availableFor); UninstallGroups = @($_.uninstallFor); ExcludeGroups = @($_.excludeFor); FilterName = [string]$_.assignmentFilter; FilterMode = [string]$_.assignmentFilterMode } }) }
     return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedBatchAssignScript -Name 'checksassign' -ConfigJson ($config | ConvertTo-Json -Depth 8) -ResultPath $resultPath `
         -Kind "Check $($apps.Count) app(s)' assignments" -After @{ Kind = 'checkassign'; Names = @($apps | ForEach-Object { [string]$_.appName }) })
 }

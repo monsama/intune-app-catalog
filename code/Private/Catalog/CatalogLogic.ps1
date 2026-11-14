@@ -786,6 +786,8 @@ function Global:ConvertTo-TemplateAppRecord {
         availableFor     = @($App.availableFor)
         uninstallFor     = @($App.uninstallFor)
         excludeFor       = @($App.excludeFor)
+        assignmentFilter     = [string]$App.assignmentFilter
+        assignmentFilterMode = [string]$App.assignmentFilterMode
         icon             = $App.icon
         # Managed stays; its releases are this tenant's apps - dropped.
         managedUpdates   = [bool]$App.managedUpdates
@@ -1757,15 +1759,18 @@ function Global:Get-PermissionReport {
         @('DeviceManagementScripts.ReadWrite.All', [bool]$Usage.Scripts, 'Platform scripts', 'There are platform scripts in the scripts folder.'),
         @('DeviceManagementManagedDevices.Read.All', [bool]$Usage.Inventory, 'Apps on devices: older versions, apps worth adding', 'Apps have managed updates - the Updates page reads the inventory.'),
         @('Mail.Send', [bool]$Usage.Mail, 'Email alerts from the nightly run', 'Email alerts are set up.'),
-        @('User.Read.All', [bool]$Usage.GroupsPage, 'The Groups page: finding users to add as members', 'The Groups page adds users to groups.')
+        @('User.Read.All', [bool]$Usage.GroupsPage, 'The Groups page: finding users to add as members', 'The Groups page adds users to groups.'),
+        @('DeviceManagementConfiguration.Read.All', [bool]$Usage.Filters, 'Assignment filters', 'Apps have an assignment filter - it is looked up by name.')
     )
     foreach ($f in $feat) {
-        $isGranted = & $has $f[0]
+        $isGranted = (& $has $f[0]) -or ($f[0] -eq 'DeviceManagementConfiguration.Read.All' -and (& $has 'DeviceManagementConfiguration.ReadWrite.All'))
         if ($f[1]) { & $row $f[0] $(if ($isGranted) { 'ok' } else { 'missing' }) $f[2] $f[3] }
         elseif ($isGranted) { & $row $f[0] 'unused' $f[2] $(if ($f[0] -eq 'Mail.Send') { 'No email alerts are set up - and Mail.Send can send as any mailbox: remove it, or limit it with an application access policy.' } else { 'Nothing here uses it yet.' }) }
         else { & $row $f[0] 'optional' $f[2] 'Only when you use it.' }
     }
-    $known = @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Group.Read.All', 'DeviceManagementScripts.ReadWrite.All', 'DeviceManagementManagedDevices.Read.All', 'Mail.Send', 'User.Read.All')
+    $known = @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Group.Read.All', 'DeviceManagementScripts.ReadWrite.All', 'DeviceManagementManagedDevices.Read.All', 'Mail.Send', 'User.Read.All', 'DeviceManagementConfiguration.Read.All')
+    # ReadWrite stands in for Read.All when filters are used; otherwise it's a broad one never needed (below).
+    if ($Usage.Filters -and -not (& $has 'DeviceManagementConfiguration.Read.All')) { $known += 'DeviceManagementConfiguration.ReadWrite.All' }
     if ((& $has 'Group.Read.All') -and (& $has 'Group.ReadWrite.All')) { & $row 'Group.Read.All' 'unused' 'Reading groups' 'Group.ReadWrite.All covers it.' }
     $broad = '^(Directory\.ReadWrite\.All|Application\.ReadWrite\.All|AppRoleAssignment\.ReadWrite\.All|RoleManagement\.ReadWrite\.Directory|DeviceManagementConfiguration\.ReadWrite\.All|DeviceManagementRBAC\.ReadWrite\.All|Sites\.FullControl\.All|Mail\.ReadWrite|Files\.ReadWrite\.All|User\.ReadWrite\.All)$'
     foreach ($p in @($g | Where-Object { $known -notcontains $_ } | Sort-Object)) {

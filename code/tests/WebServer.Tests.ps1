@@ -505,6 +505,14 @@ try {
     Check ($addS.ok -and $scApp.deploy.detection.type -eq 'Registry' -and $scApp.deploy.detection.value -eq '2.0' -and $scApp.metadata.installCommand -like '*-File .\Install.ps1' -and (Test-Path -LiteralPath (Join-Path $scDir 'Install.ps1')) -and $scApp.managedUpdates) 'add apps: a script app - Install.ps1 in its folder, detected by its version marker, managed updates on' ($addS | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/add-script' @{ name = $scName; version = '2.0'; install = $tpls.templates[1].install; uninstall = 'x' }).ok) 'add apps: a name already in the catalog is refused'
     [void](Invoke-Api '/api/app-remove' @{ name = $scName }); Remove-Item -LiteralPath $scDir -Recurse -Force -ErrorAction SilentlyContinue
+    # An assignment filter round-trips through the catalog file and the editor.
+    $flName = 'ZZ Filter ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $flName; wingetId = 'Contoso.Filter'; appId = ''; requiredFor = @('SG-A'); assignmentFilter = ' Corp laptops '; assignmentFilterMode = 'exclude'; metadata = @{ description = 'f' } } })
+    $flApp = (Invoke-Api '/api/app-get' @{ name = $flName }).app
+    Check ($flApp.assignmentFilter -eq 'Corp laptops' -and $flApp.assignmentFilterMode -eq 'exclude') 'filter: saved by name (trimmed) with its mode, read back in the editor'
+    [void](Invoke-Api '/api/app-remove' @{ name = $flName })
+    $fl = Invoke-Api '/api/filters'
+    Check ($fl.ok -and @($fl.filters).Count -eq 0 -and $fl.note) 'filters: not connected - an empty list and a note, so the name can still be typed'
     # A Microsoft Store app: never managed updates (the Store updates it).
     $stName = 'ZZ Store ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
     [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $stName; wingetId = '9NBLGGH4NNS1'; appId = ''; managedUpdates = $true; metadata = @{ description = 'store' } } })
