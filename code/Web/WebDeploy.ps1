@@ -45,7 +45,9 @@ function Global:Get-WebDeployPlan {
     }
     $plan = foreach ($a in @($order.Ordered)) {
         $unc = Test-AppIsUncommon -App $a
-        $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $unc -Index $index -PackagePath $a.packagePath
+        # A Microsoft Store app: Intune's own Store type - no package, no detection rule, no version to pin.
+        $store = Test-StoreProductId ([string]$a.wingetId)
+        $pkg = if ($store) { @{ Found = $true } } else { Resolve-AppPackagePath -AppName $a.appName -Uncommon $unc -Index $index -PackagePath $a.packagePath }
         $reason = ''
         if ($a.appId -and $tenantIds -and -not $tenantIds.ContainsKey(([string]$a.appId).ToLowerInvariant())) { $reason = "Its App ID isn't in this tenant (copied from another?) - clear it first: Catalog > Set up this tenant." }
         # A same-name app in Intune first: building a package would only lead to a duplicate.
@@ -53,7 +55,7 @@ function Global:Get-WebDeployPlan {
         elseif (-not $pkg.Found) {
             $reason = if ($unc) { "No package (.intunewin) yet - build it with More > Package." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging builds it." }
         }
-        elseif ($a.managedUpdates -and $a.wingetId -and -not (Test-ReleaseVersionText ([string]$(if ($a.metadata) { $a.metadata.appVersion })))) { $reason = "Managed updates deploy a fixed version - set its App version first (More > Take winget's version)." }
+        elseif (-not $store -and $a.managedUpdates -and $a.wingetId -and -not (Test-ReleaseVersionText ([string]$(if ($a.metadata) { $a.metadata.appVersion })))) { $reason = "Managed updates deploy a fixed version - set its App version first (More > Take winget's version)." }
         elseif ($unc -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = "No detection rule yet - an app with its own package needs one (the editor's Deploy settings)." }
         [ordered]@{ name = $a.appName; update = [bool]$a.appId; ready = (-not $reason); reason = $reason; deps = @($(if ($a.metadata) { @($a.metadata.dependencies) | Where-Object { $_ } | ForEach-Object { [string]$_ } })) }
     }
@@ -68,6 +70,20 @@ function Global:Start-WebDeploy {
     $a = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
     if (-not $a) { return @{ ok = $false; error = "'$name' is no longer in the catalog." } }
     $unc = Test-AppIsUncommon -App $a
+    # A Microsoft Store app: created (or updated) as Intune's own Store type - the Store installs and updates it.
+    if (Test-StoreProductId ([string]$a.wingetId)) {
+        if ($Data.metadataOnly -and -not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune yet - send it first." } }
+        $m = $a.metadata
+        $resultPath = Join-Path $env:TEMP (".intunepkg_storeapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
+        $config = @{ TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
+            AppName = $a.appName; AppId = [string]$a.appId; PackageIdentifier = [string]$a.wingetId
+            Description = [string]$(if ($m) { $m.description }); Publisher = [string]$(if ($m) { $m.publisher }); InformationUrl = [string]$(if ($m) { $m.informationUrl }); PrivacyUrl = [string]$(if ($m) { $m.privacyUrl })
+            RunAsAccount = $(if ($m -and [string]$m.installContext -eq 'User') { 'user' } else { 'system' }); OutputResultPath = $resultPath }
+        $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateStoreAppScript -Name 'createstoreapp' -ConfigJson ($config | ConvertTo-Json -Depth 4) -ResultPath $resultPath -Kind "$(if ($a.appId) { 'Update' } else { 'Create' }) $name (Microsoft Store app)" `
+            -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $null; WasUpdate = [bool]$a.appId; Store = $true; SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }) }
+        if ($started.ok) { Write-Log "[INFO] Sending $name to Intune as a Microsoft Store app ($($a.wingetId))..." }
+        return $started
+    }
     # -metadataOnly: Push settings - the catalog's settings to an app already in
     # Intune, without uploading a package.
     $metadataOnly = [bool]$Data.metadataOnly

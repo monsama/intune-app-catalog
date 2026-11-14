@@ -73,6 +73,8 @@ $answers = [ordered]@{
     'GET beta/deviceManagement/detectedApps?$select=id,displayName,version,deviceCount&$top=999' = @{ value = @(
             @{ displayName = 'ZZ Suggest Me'; version = '1.0'; deviceCount = 4 }, @{ displayName = 'ZZ Suggest Me (x64)'; version = '1.1'; deviceCount = 2 },
             @{ displayName = $linkedName; version = '1.0'; deviceCount = 8 }, @{ displayName = 'Windows PC Health Check'; version = '3.6'; deviceCount = 30 }) }
+    # Permissions check: the roles the sign-in has (test mode reads them from here).
+    'TOKEN roles' = @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Directory.ReadWrite.All')
     # Alerts: the email, sent with Graph.
     'POST v1.0/users/reports@contoso.com/sendMail' = $null
     # The install overview's report (one row) and one app's icon.
@@ -350,6 +352,9 @@ try {
     $sg = Invoke-Api '/api/inventory-suggestions'
     $sgMe = @($sg.suggestions) | Where-Object { $_.name -eq 'ZZ Suggest Me' } | Select-Object -First 1
     Check ($sg.ok -and $sgMe.devices -eq 6 -and @($sg.suggestions | Where-Object { $_.name -eq $linkedName -or $_.name -like 'Windows*' }).Count -eq 0) 'apps worth adding: from the inventory, without catalog apps and parts of Windows' ($sg | ConvertTo-Json -Compress -Depth 4)
+    $pc = Invoke-Api '/api/permission-check'
+    $pcDir = @($pc.rows | Where-Object { $_.name -eq 'Directory.ReadWrite.All' })[0]
+    Check ($pc.ok -and $pcDir.status -eq 'unused' -and @($pc.rows | Where-Object { $_.name -eq 'Group.ReadWrite.All' -and $_.status -eq 'ok' }).Count -eq 1) 'permissions: granted against used - a broad one not needed' ($pc | ConvertTo-Json -Compress -Depth 4)
     $hc = Invoke-Api '/api/health'
     Check ($hc.ok -and @($hc.checks | Where-Object { $_.level -eq 'ok' -and $_.text -like 'Signing in to Microsoft Graph works*' }).Count -eq 1) 'health: signing in to Graph is checked' ($hc | ConvertTo-Json -Compress -Depth 4)
     $mr = Invoke-Api '/api/monthly-report' @{ month = '2026-01' }

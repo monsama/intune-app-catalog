@@ -112,6 +112,8 @@ const stamp = () => new Date().toTimeString().slice(0, 8);
 
 let toastTimer = null;
 // -actions: the next steps as buttons in the message, e.g. [{ label: 'Send to Intune', run: () => ... }] - it then stays longer.
+// A Microsoft Store product ID (winget's msstore source) - sent to Intune as its own Store app type.
+const isStoreId = id => /^(9[0-9A-Z]{11}|XP[0-9A-Z]{12})$/.test(String(id || ''));
 function toast(msg, isErr, actions) {
   activity(`${stamp()} ${isErr ? '[FAILED] ' : ''}${msg}`);
   const t = $('toast');

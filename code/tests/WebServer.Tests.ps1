@@ -505,6 +505,23 @@ try {
     Check ($addS.ok -and $scApp.deploy.detection.type -eq 'Registry' -and $scApp.deploy.detection.value -eq '2.0' -and $scApp.metadata.installCommand -like '*-File .\Install.ps1' -and (Test-Path -LiteralPath (Join-Path $scDir 'Install.ps1')) -and $scApp.managedUpdates) 'add apps: a script app - Install.ps1 in its folder, detected by its version marker, managed updates on' ($addS | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/add-script' @{ name = $scName; version = '2.0'; install = $tpls.templates[1].install; uninstall = 'x' }).ok) 'add apps: a name already in the catalog is refused'
     [void](Invoke-Api '/api/app-remove' @{ name = $scName }); Remove-Item -LiteralPath $scDir -Recurse -Force -ErrorAction SilentlyContinue
+    # A Microsoft Store app: never managed updates (the Store updates it).
+    $stName = 'ZZ Store ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $stName; wingetId = '9NBLGGH4NNS1'; appId = ''; managedUpdates = $true; metadata = @{ description = 'store' } } })
+    Check (-not (Invoke-Api '/api/app-get' @{ name = $stName }).app.managedUpdates) 'store app: managed updates stay off - the Store updates it'
+    [void](Invoke-Api '/api/app-remove' @{ name = $stName })
+    # PSADT: refused without the template (and no download); with the template in its folder, filled in and added.
+    $psName = 'ZZ PSADT ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    Check (-not (Invoke-Api '/api/add-psadt' @{ name = $psName; version = '1.0'; download = $false }).ok) 'psadt: without the template in its folder (and no download) it is refused'
+    $psDir = Join-Path (Split-Path $scDir -Parent) $psName.Replace(' ', '-')
+    [void](New-Item -ItemType Directory -Path $psDir -Force)
+    Set-Content -LiteralPath (Join-Path $psDir 'Invoke-AppDeployToolkit.ps1') -Value "`$adtSession = @{`r`n    AppVendor = ''`r`n    AppName = ''`r`n    AppVersion = ''`r`n}`r`n    ## <Perform Post-Installation tasks here>`r`n    ## <Perform Post-Uninstallation tasks here>" -Encoding UTF8
+    $ps = Invoke-Api '/api/add-psadt' @{ name = $psName; publisher = 'Contoso'; version = '2.0'; download = $false }
+    $psApp = (Invoke-Api '/api/app-get' @{ name = $psName }).app
+    Check ($ps.ok -and @($ps.missing).Count -eq 0 -and $psApp.metadata.installCommand -like '*Invoke-AppDeployToolkit*-DeploymentType Install*' -and $psApp.deploy.detection.type -eq 'Registry' -and $psApp.managedUpdates -and
+        (Get-Content -LiteralPath (Join-Path $psDir 'Invoke-AppDeployToolkit.ps1') -Raw) -match "AppVendor = 'Contoso'") 'psadt: the template filled in, the toolkit''s commands, detected by its version marker' ($ps | ConvertTo-Json -Compress)
+    [void](Invoke-Api '/api/app-remove' @{ name = $psName }); Remove-Item -LiteralPath $psDir -Recurse -Force -ErrorAction SilentlyContinue
+    Check (-not (Invoke-Api '/api/permission-check').ok) 'permissions: the check needs a connection'
 
     # Conveniences: group suggestions, profiles, the grid, Home, lists, Sandbox, icons.
     $gsug = Invoke-Api '/api/group-suggest' @{ q = 'SG' }

@@ -142,7 +142,8 @@ function renderApps() {
   body.replaceChildren(...[...list.map(a => {
     const tr = el('tr', { 'data-name': a.name, class: selected.has(a.name) ? 'sel' : '', title: a.appId ? 'App ID ' + a.appId : 'Not in Intune yet' },
       el('td', { class: 'name' }, iconFor(a), a.name),
-      el('td', { class: 'mono src', text: a.wingetId || 'own installer', title: a.wingetId ? `winget package ${a.wingetId}` : 'Its own installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') }),
+      el('td', { class: 'mono src', text: !a.wingetId ? 'own installer' : isStoreId(a.wingetId) ? `${a.wingetId} (Store)` : a.wingetId,
+        title: !a.wingetId ? 'Its own installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') : isStoreId(a.wingetId) ? 'A Microsoft Store app - Intune\'s own Store type: no package, the Store installs and updates it' : `winget package ${a.wingetId}` }),
       el('td', { class: 'num' }, a.version || '', a.pilotVersion ? el('span', { class: 'pill warn newer', text: 'pilot ' + a.pilotVersion, title: `${a.pilotVersion} is released to the pilot groups. More > Promote version in pilot gives it to everyone.` })
         : a.newerOnWinget ? el('span', { class: 'pill info newer', text: '→ ' + a.wingetVersion, title: a.managed && a.hasAppId ? `winget offers ${a.wingetVersion}. More > Release new version sends it to the pilot groups first.` : `winget offers ${a.wingetVersion}. More > Take winget's version uses it as the App version.` }) : ''),
       el('td', { title: `Required: ${a.required}, Available: ${a.available}, Uninstall: ${a.uninstall}`, class: a.required + a.available ? '' : 'muted', text: a.required + a.available + a.uninstall ? `${(a.groups || []).length} group${(a.groups || []).length === 1 ? '' : 's'}` : 'nobody yet' }),
