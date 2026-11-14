@@ -1602,9 +1602,9 @@ function Global:Get-ScriptAppTemplates {
     $marker = @"
 # The version marker Intune's detection rule reads (HKLM\SOFTWARE\IntuneAppCatalog\Apps\<name>, Version) - keep it last.
 New-Item -Path $key -Force | Out-Null
-Set-ItemProperty -Path $key -Name Version -Value $ver
+Set-ItemProperty -LiteralPath $key -Name Version -Value $ver
 "@
-    $unmarker = "Remove-Item -Path $key -Recurse -Force -ErrorAction SilentlyContinue"
+    $unmarker = "Remove-Item -LiteralPath $key -Recurse -Force -ErrorAction SilentlyContinue"
     $head = "`$ErrorActionPreference = 'Stop'`r`n# Runs as SYSTEM from the package folder (every file you put in Packages\<app> is next to it).`r`n"
     return @(
         [ordered]@{ id = 'installer'; label = 'Run an installer with arguments'
