@@ -72,7 +72,7 @@ function updateCheckActions() {
   const count = a => namesWith(sel, a).length;
   const set = (id, a, label) => { const n = count(a); setEnabled($(id), !(checksRunning || jobRunning) && n > 0, checksRunning || jobRunning ? 'Wait for the running check or job to finish.' : `Tick findings that offer ${label}.`); $(id).textContent = n > 1 ? `${label} (${n})` : label; };
   { const n = groupsOf(sel).length; setEnabled($('btnFixCreateGroups'), !(checksRunning || jobRunning) && n > 0, checksRunning || jobRunning ? 'Wait for the running check or job to finish.' : 'Tick findings about groups that don\'t exist in Entra ID.'); $('btnFixCreateGroups').textContent = n > 1 ? `Create groups (${n})` : 'Create group'; }
-  set('btnFixPull', 'Pull', 'Pull'); set('btnFixPushSettings', 'PushMetadata', 'Push settings'); set('btnFixPushGroups', 'PushGroups', 'Push groups');
+  set('btnFixPull', 'Pull', 'Pull'); set('btnFixPushSettings', 'PushMetadata', 'Push settings'); set('btnFixPushGroups', 'PushGroups', 'Send groups');
   const busy = checksRunning || jobRunning ? 'Wait for the running check or job to finish.' : '';
   setEnabled($('btnFixAdd'), !busy && sel.some(f => (f.actions || []).includes('AddToCatalog')), busy || 'Tick findings that are "In Intune, not in the catalog".');
   setEnabled($('btnFixRecheck'), !busy && sel.length > 0, busy || 'Tick one or more findings first.');
@@ -117,7 +117,7 @@ function fixButtons(f) {
     else if (a === 'EditApp') btn('Edit', () => openEditor(name));
     else if (a === 'Pull') btn('Pull', () => openPull([name]), 'Intune is right: take its settings and groups into the catalog');
     else if (a === 'PushMetadata') btn('Push settings', () => pushSettings([name]), 'The catalog is right: send its settings to Intune');
-    else if (a === 'PushGroups') btn('Push groups', () => openPushGroups([name]), 'The catalog is right: send its groups to Intune');
+    else if (a === 'PushGroups') btn('Send groups', () => openPushGroups([name]), 'The catalog is right: send its groups to Intune');
     else if (a === 'AddToCatalog') btn('Add to catalog', () => addFromIntune([f]));
     else if (a === 'FindWingetId') btn('Find Winget ID', () => openWinget(f.app, async id => { if (await fix('SetWingetId', id)) runChecks([name]); }));
     else if (a === 'Recheck') btn('Re-check', () => runChecks([name]));

@@ -386,7 +386,7 @@ async function loadUpdateRuns() {
 $('btnRunReload').addEventListener('click', loadUpdateRuns);
 $('btnReports').addEventListener('click', () => openFolder('reports-folder'));
 for (const [id, planOnly] of [['btnRunNow', false], ['btnRunPlan', true]]) $(id).addEventListener('click', async () => {
-  if (!planOnly && !(await ask('Run managed updates now?\n\nAs the nightly run: promotes ready pilot releases and releases new winget versions - each only if its switch is on. It runs in its own window-less process; Reload shows the report.', { ok: 'Run now', danger: false }))) return;
+  if (!planOnly && !(await ask('Run managed updates now?\n\nAs the nightly run: promotes ready version in pilots and releases new winget versions - each only if its switch is on. It runs in its own window-less process; Reload shows the report.', { ok: 'Run now', danger: false }))) return;
   const r = await api('/api/update-run', { planOnly });
   toast(r.ok ? `${planOnly ? 'Plan-only run' : 'Run'} started - Reload in a minute for its report.` : r.error, !r.ok);
   if (r.ok) setTimeout(loadUpdateRuns, 4000);

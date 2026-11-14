@@ -199,14 +199,14 @@ async function deleteGroups(names) {
 async function unassignGroups(names) {
   if (!names.length) return;
   const users = [...new Set(groups.filter(g => names.some(n => lc(n) === lc(g.name))).flatMap(g => g.uses.map(u => u.app)))];
-  if (!(await ask(`Remove ${names.length === 1 ? `"${names[0]}"` : names.length + ' groups'} from ${users.length} app(s) in the catalog?\n\n${names.length > 1 ? names.join('\n') + '\n\n' : ''}Every assignment to ${names.length === 1 ? 'it' : 'them'} goes: Required, Available, Uninstall and Excluded. Entra ID keeps the group${names.length === 1 ? '' : 's'}; Intune changes when you push groups. Each app's file is backed up first.`))) return;
+  if (!(await ask(`Remove ${names.length === 1 ? `"${names[0]}"` : names.length + ' groups'} from ${users.length} app(s) in the catalog?\n\n${names.length > 1 ? names.join('\n') + '\n\n' : ''}Every assignment to ${names.length === 1 ? 'it' : 'them'} goes: Required, Available, Uninstall and Excluded. Entra ID keeps the group${names.length === 1 ? '' : 's'}; Intune changes when you send groups. Each app's file is backed up first.`))) return;
   const roles = {}; for (const k of Object.keys(ROLES)) roles[k] = names;
   const r = await api('/api/batch-groups', { mode: 'remove', names: users, roles });
   if (!r.ok) { toast(r.error, true); return; }
   toast(`Removed from ${r.changed.length} app(s) in the catalog.${r.deployed.length ? ` ${r.deployed.length} of them are in Intune - push their groups.` : ''}`);
   gSel.clear(); loadApps(); await loadGroups();
   if (group) openGroup(group.name);
-  if (r.deployed.length && await ask(`Push groups for the ${r.deployed.length} deployed app(s) now?\n\n${r.deployed.join('\n')}`, { ok: 'Push groups', danger: false })) openPushGroups(r.deployed);
+  if (r.deployed.length && await ask(`Send groups for the ${r.deployed.length} deployed app(s) now?\n\n${r.deployed.join('\n')}`, { ok: 'Send groups', danger: false })) openPushGroups(r.deployed);
 }
 
 // ---------------------------------------------------------------- one group
@@ -284,7 +284,7 @@ function renderUses(uses) {
 $('gUsesFilter').addEventListener('input', () => group && renderUses(group.uses || []));
 async function unassignOne(u) {
   const name = group.name, field = roleField(u.role);
-  if (!(await ask(`Remove ${name} from ${u.app}?\n\nOnly its ${u.role} assignment in the catalog changes. Intune changes when you push groups.`))) return;
+  if (!(await ask(`Remove ${name} from ${u.app}?\n\nOnly its ${u.role} assignment in the catalog changes. Intune changes when you send groups.`))) return;
   const r = await api('/api/batch-groups', { mode: 'remove', names: [u.app], roles: { [field]: [name] } });
   if (!r.ok) { toast(r.error, true); return; }
   toast(r.deployed.length ? `Removed. ${u.app} is in Intune - push its groups to apply.` : 'Removed from the app in the catalog.');

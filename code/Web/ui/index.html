@@ -73,38 +73,36 @@
       <button class="btn small" id="btnDeleteView" hidden title="Forget this saved view">Delete view</button>
       <span class="count" id="count"></span>
       <span class="spacer"></span>
-      <button class="btn primary" id="btnAddApp" title="Add an app to the catalog - nothing changes in Intune until you Deploy it">Add app</button>
+      <button class="btn primary" id="btnAddApp" title="Add apps to the catalog - nothing changes in Intune until you send them">Add apps</button>
       <button class="btn primary" id="btnNext" hidden title="The next step for the selected app">Next step</button>
-      <button class="btn" id="btnEditApp" disabled title="Edit the selected app in the catalog (double-click a row does the same)">Edit</button>
-      <button class="btn" id="btnDeploy" disabled title="Create or update the selected apps in Intune">Deploy</button>
-      <button class="btn" id="btnPush" disabled title="Push the selected apps' groups to Intune">Push groups</button>
+      <button class="btn" id="btnEditApp" disabled hidden title="Edit the selected app in the catalog (double-click a row does the same)">Edit</button>
+      <button class="btn" id="btnDeploy" disabled title="Create or update the selected apps in Intune - settings, package and groups">Send to Intune</button>
+      <button class="btn" id="btnPush" disabled hidden title="Send only the selected apps' groups to Intune">Send groups</button>
       <button class="btn" id="btnMore" aria-haspopup="menu" title="More actions for the selected apps">More &#9662;</button>
       <button class="btn" id="btnCatalog" aria-haspopup="menu" title="Actions on the whole catalog: CSV, replace a group, undo, reload, folder">Catalog &#9662;</button>
     </div>
-    <div class="banner warn" id="tenantBanner" role="region" aria-label="App IDs not in this tenant" hidden>
+    <div class="appsbar">
+      <div class="where" id="whereBar" role="group" aria-label="The catalog and Intune" hidden></div>
+    <div class="banner warn slim" id="tenantBanner" role="region" aria-label="App IDs not in this tenant" hidden>
       <span id="tenantBannerText"></span>
-      <span class="spacer"></span>
       <button class="btn small" id="btnTenantShow" title="Show only the apps whose App ID this tenant doesn't know">Show them</button>
-      <button class="btn small primary" id="btnTenantSetup" title="Clear the old App IDs, create the groups, deploy and push groups - step by step">Set up this tenant...</button>
+      <button class="btn small primary" id="btnTenantSetup" title="Clear the old App IDs, create the groups, deploy and send groups - step by step">Set up this tenant...</button>
     </div>
-    <div class="banner info" id="undoBanner" role="region" aria-label="Last bulk change" hidden>
+    <div class="banner info slim" id="undoBanner" role="region" aria-label="Last bulk change" hidden>
       <span id="undoText"></span>
-      <span class="spacer"></span>
       <button class="btn small" id="btnUndo" title="Put back each app file as it was before this change - files changed since are left alone">Undo</button>
       <button class="btn small" id="btnUndoHide" title="Hide this until the next bulk change">Hide</button>
     </div>
-    <div class="where" id="whereBar" role="group" aria-label="The catalog and Intune" hidden></div>
+    </div>
     <div class="appsplit">
     <div class="tablewrap" tabindex="0" aria-label="Apps in the catalog">
       <table class="grid" id="grid">
         <thead><tr>
           <th data-sort="name" title="The app's name in the catalog (and in Intune). Click a header to sort.">App</th>
-          <th data-sort="wingetId" title="The winget package the app installs. Empty: it has its own installer (.intunewin).">Winget ID</th>
-          <th data-sort="type" title="Intune's app type, once deployed">Type</th>
+          <th data-sort="wingetId" title="Where it installs from: a winget package, or its own installer">Source</th>
           <th data-sort="version" title="The version in the app's settings">Version</th>
-          <th data-sort="groups" title="How many groups get it Required / Available / Uninstall">Groups <span class="muted">R / A / U</span></th>
+          <th data-sort="groups" title="Who gets it - hover for the groups by role">Who gets it</th>
           <th data-sort="status" title="Where the app is: Draft, Ready to deploy, In Intune, In pilot, Everyone - or Needs a look. The button is its next step.">Stage</th>
-          <th data-sort="audit" title="What the last detailed check against Intune found">Last audit</th>
         </tr></thead>
         <tbody id="gridBody"></tbody>
       </table>
@@ -124,6 +122,7 @@
     <div class="toolbar">
       <p class="sub" id="homeNote">What needs a look, and where to fix it.</p>
       <span class="spacer"></span>
+      <button class="btn" id="btnHomeCheck" title="Compare every app with Intune now - what differs shows here, on the apps (Needs a look) and in Checks">Check everything now</button>
       <button class="btn" id="btnHomeAdd" title="Add apps from winget, an installer or a script">Add apps...</button>
       <button class="btn" id="btnHomeReload" title="Look again">Reload</button>
     </div>
@@ -169,7 +168,7 @@
       <span class="muted" id="checkSelCount"></span>
       <button class="btn" id="btnFixPull" disabled title="Intune is right: take its settings and groups into the catalog">Pull</button>
       <button class="btn" id="btnFixPushSettings" disabled title="The catalog is right about settings or dependencies: send them to Intune">Push settings</button>
-      <button class="btn" id="btnFixPushGroups" disabled title="The catalog is right about groups: send them to Intune">Push groups</button>
+      <button class="btn" id="btnFixPushGroups" disabled title="The catalog is right about groups: send them to Intune">Send groups</button>
       <button class="btn" id="btnFixCreateGroups" disabled title="Create the missing groups of the ticked findings in Entra ID, as security groups">Create groups</button>
       <button class="btn" id="btnFixAdd" disabled title="Add the Intune-only apps to the catalog, with their settings and groups">Add to catalog</button>
       <button class="btn" id="btnFixRecheck" disabled title="Check the ticked findings again against Intune">Re-check</button>
@@ -236,12 +235,12 @@
               <div class="gcardhead">
                 <h3 id="gAppsHead">Apps in the catalog <span class="muted" id="gAppsCount"></span></h3>
                 <span class="spacer"></span>
-                <button class="btn small" id="btnGroupAssign" title="Assign more catalog apps to this group - the catalog only; Push groups sends it to Intune">Assign apps...</button>
+                <button class="btn small" id="btnGroupAssign" title="Assign more catalog apps to this group - the catalog only; Send groups sends it to Intune">Assign apps...</button>
               </div>
               <div class="groles" id="gRoles"></div>
               <input type="search" id="gUsesFilter" placeholder="Filter the apps" aria-label="Filter the apps assigned to this group" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
               <div class="tablewrap gtable"><table class="plan"><thead><tr><th>App</th><th title="How the app is assigned to this group">Assignment</th><th title="Whether the app is in the connected tenant">Intune</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="gUses"></tbody></table></div>
-              <div class="gpush"><span class="muted" id="gPushNote"></span><button class="btn small" id="btnGroupPush" title="Send the catalog's groups for the deployed apps above to Intune - shows the changes first">Push groups...</button></div>
+              <div class="gpush"><span class="muted" id="gPushNote"></span><button class="btn small" id="btnGroupPush" title="Send the catalog's groups for the deployed apps above to Intune - shows the changes first">Send groups...</button></div>
             </section>
             <section class="gcard" aria-labelledby="gMembersHead">
               <div class="gcardhead"><h3 id="gMembersHead">Members <span class="muted" id="gCount"></span></h3></div>
@@ -333,7 +332,7 @@
               </section>
               <section class="tile">
                 <span class="ico" aria-hidden="true">&#8679;</span><h3>The catalog has apps, Intune doesn't</h3>
-                <p><b>Add app</b> (Find... looks up the Winget ID), set the groups, then <b>Deploy</b> - several at once, in dependency order. Apps with their own installer need More &gt; Package and a detection rule first.</p>
+                <p><b>Add app</b> (Find... looks up the Winget ID), set the groups, then <b>Send to Intune</b> - several at once, in dependency order. Apps with their own installer need More &gt; Package and a detection rule first.</p>
                 <button class="btn" id="tileAdd" title="Open the app editor for a new app">Add app</button>
               </section>
               <section class="tile">
@@ -426,8 +425,8 @@
           <label class="chk"><input type="checkbox" data-check="checkDriftOnStartup">Run Checks when the app opens (the quick part)</label>
           <label class="chk"><input type="checkbox" data-check="runFullAuditOnStartup">... and read every deployed app in detail (slower)</label>
           <label class="chk"><input type="checkbox" data-check="checkIntuneOnDeployOpen">Before deploying a new app, look for one of the same name in Intune</label>
-          <label class="chk"><input type="checkbox" data-check="pushGroupsOnCreate">Push groups after creating an app</label>
-          <label class="chk"><input type="checkbox" data-check="pushGroupsOnUpdate">Push groups after updating an app</label>
+          <label class="chk"><input type="checkbox" data-check="pushGroupsOnCreate">Send groups after creating an app</label>
+          <label class="chk"><input type="checkbox" data-check="pushGroupsOnUpdate">Send groups after updating an app</label>
           <label class="chk"><input type="checkbox" data-check="detailedGraphLog">Detailed Graph log (every request)</label>
           <div class="actions"><button class="btn" id="btnSaveChecks" title="Save the automatic checks and pushes">Save</button></div>
         </article>
@@ -477,7 +476,7 @@
             <label title="When this share of the devices that tried a release failed (at least three devices), the nightly run withdraws it by itself - any day. 0: never">Withdraw automatically at <span class="muted">(% failed, 0 = never)</span><input id="rpWithdraw" type="number" min="0" max="100" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
           </div>
           <label class="chk" title="The nightly run releases a newer winget version to the pilot groups by itself"><input type="checkbox" id="rpAutoRelease">Release new winget versions to pilot automatically (nightly run)</label>
-          <label class="chk" title="The nightly run promotes a pilot release once the rule above says it's ready - otherwise it holds it and says why"><input type="checkbox" id="rpAutoPromote">Promote automatically when ready (nightly run)</label>
+          <label class="chk" title="The nightly run promotes a version in pilot once the rule above says it's ready - otherwise it holds it and says why"><input type="checkbox" id="rpAutoPromote">Promote automatically when ready (nightly run)</label>
           <label class="chk" title="Superseded versions have no assignments; the newest one is kept so you can roll back"><input type="checkbox" id="rpCleanup">Delete older superseded versions from Intune, keeping one for rollback (nightly run)</label>
           <div class="actions"><button class="btn" id="btnSavePilot" title="Save the pilot groups and the release rule">Save</button></div>
         </article>
@@ -489,7 +488,7 @@
       <div class="col">
         <article class="card">
           <h2>Nightly run</h2>
-          <p class="sub" id="runSchedule">Checks every managed app: promotes or holds pilot releases by the rule above, and releases new winget versions - each only when its switch above is on; otherwise it reports what it would do.</p>
+          <p class="sub" id="runSchedule">Checks every managed app: promotes or holds version in pilots by the rule above, and releases new winget versions - each only when its switch above is on; otherwise it reports what it would do.</p>
           <div class="toolbar tight">
             <label class="inline">Every day at <input id="runAt" type="time" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
             <button class="btn" id="btnSchedule" title="Create or change the Windows scheduled task that runs IntuneDeployment.ps1 -RunUpdates every day (as you)">Schedule</button>
@@ -516,7 +515,7 @@
           <p class="sub" id="unattNote" hidden></p>
           <h3>Every night, too</h3>
           <label class="chk" title="Each deployed app against Intune - settings, groups, dependencies, assignments the catalog doesn't have - reported (and alerted) when something changed in the portal"><input type="checkbox" id="rpDrift">Check every app against Intune (drift)</label>
-          <label class="chk" title="When an app's assignments drifted, Push groups puts the catalog's back - Intune's own changes are overwritten"><input type="checkbox" id="rpDriftFix">... and put the catalog's groups back when assignments drifted</label>
+          <label class="chk" title="When an app's assignments drifted, Send groups puts the catalog's back - Intune's own changes are overwritten"><input type="checkbox" id="rpDriftFix">... and put the catalog's groups back when assignments drifted</label>
           <label class="chk" title="A zip of the catalog's app files in the Backups folder, the last 30 kept - and a commit when the catalog folder is a git repository"><input type="checkbox" id="rpBackup">Back up the catalog</label>
           <label class="chk" title="On the first run of a month: last month's report (released, promoted, withdrawn, held; devices on the current version) in Logs\reports, sent by email / Teams when alerts are set up"><input type="checkbox" id="rpMonthly">Monthly report</label>
           <label class="full" title="A test tenant's catalog folder (a share both PCs reach): Winget apps here are released by themselves only in a version that is promoted there. Empty: no test tenant">Test tenant's catalog folder <span class="muted">(optional)</span><input id="rpGate" class="full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. \\fileserver\intune-test\app-data"></label>
@@ -584,16 +583,18 @@
   </section>
 <div class="menu" id="appMenu" role="menu" hidden>
   <div class="mhead" role="presentation">Package &amp; Intune</div>
+  <button role="menuitem" data-act="edit" title="Open the app in the editor (double-click a row does the same)">Edit...</button>
+  <button role="menuitem" data-act="pushgroups" title="Send only the groups (assignments) to Intune - not the settings or the package">Send groups only</button>
   <button role="menuitem" data-act="package" title="Build the .intunewin for apps with their own installer">Package (build .intunewin)</button>
   <button role="menuitem" data-act="pull" title="Read the apps' settings and groups from Intune into the catalog - you choose per field">Read from Intune...</button>
-  <button role="menuitem" data-act="pushsettings" title="Send the catalog's settings to Intune, without uploading a package">Send settings to Intune...</button>
+  <button role="menuitem" data-act="pushsettings" title="Send the catalog's settings to Intune, without uploading a package">Send settings only...</button>
   <button role="menuitem" data-act="status" title="Every device's install state for this app, from Intune">Install status...</button>
   <button role="menuitem" data-act="sandbox" title="Install, detect and uninstall it in Windows Sandbox - a throwaway Windows - before it goes to any device">Test in Windows Sandbox...</button>
   <hr>
   <div class="mhead" role="presentation">Releases</div>
   <button role="menuitem" data-act="release" title="Release a new version to the pilot groups first - a new app in Intune that supersedes the current one">Release new version...</button>
-  <button role="menuitem" data-act="promote" title="Give the pilot release to everyone - the current one is kept in Intune as superseded">Promote pilot release...</button>
-  <button role="menuitem" data-act="withdraw" title="Take the pilot release back - its app is deleted from Intune; pilot devices keep the newer version">Withdraw pilot release...</button>
+  <button role="menuitem" data-act="promote" title="Give the version in pilot to everyone - the current one is kept in Intune as superseded">Promote version in pilot...</button>
+  <button role="menuitem" data-act="withdraw" title="Take the version in pilot back - its app is deleted from Intune; pilot devices keep the newer version">Withdraw version in pilot...</button>
   <button role="menuitem" data-act="rollback" title="Give the catalog's groups back to the previous version - devices that have the newer one keep it">Roll back to previous version...</button>
   <button role="menuitem" data-act="cleanup" title="Delete superseded versions from Intune, keeping the newest one for rollback">Delete old versions from Intune...</button>
   <button role="menuitem" data-act="managed" title="Turn managed updates on or off for the selected Winget apps">Managed updates on...</button>
@@ -639,7 +640,7 @@
   <button role="menuitem" data-gact="rename" title="Rename the group in Entra ID - the catalog follows">Rename...</button>
   <button role="menuitem" data-gact="replace" title="Swap this group for another on every app in the catalog - Entra ID isn't touched">Replace in all apps...</button>
   <hr>
-  <button role="menuitem" data-gact="unassign" class="danger" title="Take these groups off every app in the catalog - Entra ID keeps them; Push groups sends it to Intune">Remove from all apps...</button>
+  <button role="menuitem" data-gact="unassign" class="danger" title="Take these groups off every app in the catalog - Entra ID keeps them; Send groups sends it to Intune">Remove from all apps...</button>
   <button role="menuitem" data-gact="delete" class="danger" title="Delete the groups from Entra ID - asked first">Delete from Entra ID...</button>
 </div>
 </main>
@@ -706,7 +707,7 @@
           <label id="arUrlRow" title="Optional. The nightly run downloads the installer from here; it is used only if it carries a valid digital signature - from the same publisher as the installer already in the folder">Download the installer from <span class="muted">(https, optional)</span><input id="arUrl" type="url" maxlength="2000" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="https://vendor.example/latest/setup.msi"></label>
           <label title="How the app is named in Intune's inventory of apps on devices (Apps > Monitor > Discovered apps), when that isn't the catalog's name - the Updates page counts older versions on devices by it">Name on devices <span class="muted">(empty: the catalog's name)</span><input id="arDetected" maxlength="100" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. 7-Zip"></label>
         </fieldset>
-        <label title="The Intune app this catalog entry is linked to. Set by Deploy, or by Checks when it links an existing app.">App ID in Intune <span class="muted">(empty until it's deployed)</span><input id="aAppId" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label title="The Intune app this catalog entry is linked to. Set by Send to Intune, or by Checks when it links an existing app.">App ID in Intune <span class="muted">(empty until it's deployed)</span><input id="aAppId" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <div class="iconrow" role="group" aria-labelledby="aIconLabel">
           <span class="lbl" id="aIconLabel">Icon <span class="muted">(Intune and the Company Portal)</span></span>
           <img id="aIcon" class="appicon big" alt="The app's icon" hidden>
@@ -727,7 +728,7 @@
         <p class="sub" id="knownGroups"></p>
       </section>
       <section>
-        <div class="ready" id="readyBox" aria-live="polite"><h3>Ready to deploy?</h3><ul id="readyList"></ul></div>
+        <div class="ready" id="readyBox" aria-live="polite"><h3>Ready to send?</h3><ul id="readyList"></ul></div>
         <h3>Intune details <span class="muted" id="metaNote"></span></h3>
         <label>Description<textarea autocomplete="off" id="mDescription" rows="3" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
         <div class="two">
@@ -790,13 +791,13 @@
       <button type="button" class="btn ghost" id="btnAppHistory" title="Earlier versions of this app's file, kept every time it was saved - put one back">Earlier versions...</button>
       <span class="spacer"></span>
       <button type="button" class="btn" id="btnAppCancel">Cancel</button>
-      <button type="submit" class="btn primary" id="btnSaveApp" title="Save to the catalog - Deploy or Push sends it to Intune">Save</button>
+      <button type="submit" class="btn primary" id="btnSaveApp" title="Save to the catalog - Send to Intune sends it therene">Save</button>
     </div>
   </form>
 </dialog>
 
 <dialog id="dlgDeploy" class="wide">
-  <h2>Deploy to Intune</h2>
+  <h2>Send to Intune</h2>
   <p class="sub">New apps are created; apps that already have an App ID get their settings updated. In dependency order, one after another. The App ID is saved to the catalog as each one finishes.</p>
   <div class="progress" id="deployProgress" aria-live="polite" hidden><div class="bar"><span id="deployBar"></span></div><span id="deployProgressText"></span></div>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>App</th><th>Action</th><th>Status</th></tr></thead><tbody id="deployRows"></tbody></table></div>
@@ -804,13 +805,14 @@
   <div class="actions end">
     <button class="btn" id="btnDeployStop" hidden title="Finish the app that is running, then stop - the rest stay as they are">Stop after this app</button>
     <button class="btn" id="btnDeployRetry" hidden title="Run the apps that failed again, and those skipped because of them">Retry failed</button>
+    <label class="chk inline" title="After each app: its groups (Required, Available, Uninstall, Excluded) to Intune as well"><input type="checkbox" id="dpGroups" checked>Send their groups too</label>
     <span class="spacer"></span>
-    <button class="btn" data-close id="btnDeployClose">Close</button><button class="btn primary" id="btnDeployGo" title="Create or update the ready apps in Intune, in this order">Deploy</button>
+    <button class="btn" data-close id="btnDeployClose">Close</button><button class="btn primary" id="btnDeployGo" title="Create or update the ready apps in Intune, in this order">Send</button>
   </div>
 </dialog>
 
 <dialog id="dlgPush" class="wide">
-  <h2>Push groups to Intune</h2>
+  <h2>Send groups to Intune</h2>
   <p class="sub">Intune gets exactly the catalog's groups for these apps: what's below is added, assignments not in the catalog are removed. Groups that don't exist yet are created.</p>
   <table class="plan"><thead><tr><th>App</th><th title="Assignments Intune gets">Added in Intune</th><th title="Assignments Intune has that the catalog doesn't - they are removed">Removed from Intune</th></tr></thead><tbody id="pushRows"></tbody></table>
   <pre class="log" id="pushLog" tabindex="0" role="log"></pre>
@@ -969,7 +971,7 @@
     <div class="favchips" id="adFavs" role="group" aria-label="Favourite groups"></div>
   </div>
   <p class="formerror" id="addError" hidden></p>
-  <div class="actions end"><label class="chk inline" title="Right after adding: the Deploy dialog for the new apps (installers and scripts are built first)"><input type="checkbox" id="adPublish">Deploy right after adding</label><span class="spacer"></span><button class="btn" id="btnAddCancel">Cancel</button><button class="btn primary" id="btnAddGo" disabled>Add</button></div>
+  <div class="actions end"><label class="chk inline" title="Right after adding: the Send to Intune dialog for the new apps (installers and scripts are built first)"><input type="checkbox" id="adPublish">Send to Intune right after adding</label><span class="spacer"></span><button class="btn" id="btnAddCancel">Cancel</button><button class="btn primary" id="btnAddGo" disabled>Add</button></div>
 </dialog>
 
 <dialog id="dlgSandbox" class="wide" aria-labelledby="sbTitle">
@@ -992,7 +994,7 @@
 
 <dialog id="dlgMatrix" class="wide matrix" aria-labelledby="mxTitle">
   <h2 id="mxTitle">Groups and apps</h2>
-  <p class="sub">Click a cell to go through Required, Available, Uninstall, Excluded and none. Saved to the catalog with one Undo - <b>Push groups</b> sends it to Intune.</p>
+  <p class="sub">Click a cell to go through Required, Available, Uninstall, Excluded and none. Saved to the catalog with one Undo - <b>Send groups</b> sends it to Intune.</p>
   <div class="toolbar tight">
     <input type="search" id="mxApps" placeholder="Filter apps" aria-label="Filter apps" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
     <input type="search" id="mxGroups" placeholder="Filter groups" aria-label="Filter groups" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
@@ -1056,7 +1058,7 @@
   <datalist id="rpKnown"></datalist>
   <p class="muted note" id="rpCount"></p>
   <p class="formerror" id="rpErr" hidden></p>
-  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnReplaceGo" title="Replace the group on these apps in the catalog - Push groups sends it to Intune">Replace</button></div>
+  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnReplaceGo" title="Replace the group on these apps in the catalog - Send groups sends it to Intune">Replace</button></div>
 </dialog>
 
 <dialog id="dlgCsv" class="wide">
@@ -1073,7 +1075,7 @@
 
 <dialog id="dlgGroupAssign" class="wide">
   <h2 id="gaTitle">Assign apps</h2>
-  <p class="sub">Adds the group to the ticked apps in the catalog. Intune changes when you push groups.</p>
+  <p class="sub">Adds the group to the ticked apps in the catalog. Intune changes when you send groups.</p>
   <label class="inline">Assignment <select id="gaRole"><option value="requiredFor">Required</option><option value="availableFor">Available</option><option value="uninstallFor">Uninstall</option><option value="excludeFor">Excluded</option></select></label>
   <div class="depbox tall" id="gaPick"></div>
   <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnGroupAssignGo" title="Add the group to the ticked apps in the catalog">Assign</button></div>
@@ -1135,10 +1137,10 @@
   <h2 id="gbTitle">Add groups</h2>
   <p class="sub" id="gbText"></p>
   <div class="groups4" id="gbRoles"></div>
-  <label class="chk"><input type="checkbox" id="gbPush" checked>Then push groups for the apps already in Intune</label>
+  <label class="chk"><input type="checkbox" id="gbPush" checked>Then send groups for the apps already in Intune</label>
   <p class="formerror" id="gbErr" hidden></p>
   <pre class="log" id="gbLog" tabindex="0" role="log" hidden></pre>
-  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnGbGo" title="Change the groups in the catalog - Push groups sends them to Intune">Apply</button></div>
+  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnGbGo" title="Change the groups in the catalog - Send groups sends them to Intune">Apply</button></div>
 </dialog>
 
 <dialog id="dlgWinget" class="wide">

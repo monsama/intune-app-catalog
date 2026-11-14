@@ -111,7 +111,7 @@ function activity(text) {
 const stamp = () => new Date().toTimeString().slice(0, 8);
 
 let toastTimer = null;
-// -actions: the next steps as buttons in the message, e.g. [{ label: 'Deploy', run: () => ... }] - it then stays longer.
+// -actions: the next steps as buttons in the message, e.g. [{ label: 'Send to Intune', run: () => ... }] - it then stays longer.
 function toast(msg, isErr, actions) {
   activity(`${stamp()} ${isErr ? '[FAILED] ' : ''}${msg}`);
   const t = $('toast');

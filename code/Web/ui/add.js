@@ -162,7 +162,7 @@ $('btnAddGo').addEventListener('click', async () => {
       }
       if (!added.length && !skipped.length) return;
       $('dlgAdd').close(); await afterAdd(added);
-      toast(`${added.length} app(s) added${skipped.length ? ' - skipped: ' + skipped.join('; ') : ''}.`, !added.length, added.length && !$('adPublish').checked ? [{ label: added.length === 1 ? 'Deploy it' : `Deploy ${added.length}`, run: () => openDeploy(added) }] : []);
+      toast(`${added.length} app(s) added${skipped.length ? ' - skipped: ' + skipped.join('; ') : ''}.`, !added.length, added.length && !$('adPublish').checked ? [{ label: added.length === 1 ? 'Send to Intune' : `Send ${added.length}`, run: () => openDeploy(added) }] : []);
     }
     else if (addSrc === 'installer') {
       const r = await api('/api/add-installer', { uploadId: aiUpload.id, name: $('aiName').value.trim(), publisher: $('aiPublisher').value.trim(), version: $('aiVersion').value.trim(),
@@ -188,15 +188,15 @@ $('btnAddGo').addEventListener('click', async () => {
 async function afterAdd(names) {
   await loadApps();
   if (names.length) { selected.clear(); for (const n of names) selected.add(n); lastClicked = names[names.length - 1]; renderApps(); updateViewButtons(); }
-  // Deploy right after adding: the Deploy dialog for them (own packages are built first, by their flow).
+  // Send to Intune right after adding: the Send to Intune dialog for them (own packages are built first, by their flow).
   if (names.length && $('adPublish').checked && addSrc !== 'installer' && addSrc !== 'script') setTimeout(() => openDeploy(names), 300);
 }
-// Builds an own package just added; with "Deploy right after adding", the Deploy dialog follows. Resolves with whether it built.
+// Builds an own package just added; with "Send to Intune right after adding", the Send to Intune dialog follows. Resolves with whether it built.
 async function buildAdded(name) {
   runDialog(`Build ${name}`, 'Packaging it as an .intunewin for Intune.');
   const p = await releaseStep({ names: [name] }, '/api/package-start', 'runLog', `Building ${name}'s package...`);
   toast(p.ok ? `${name}'s package is built.` : `Building the package failed: ${p.error || 'see the log'}`, !p.ok,
-    p.ok && !$('adPublish').checked ? [{ label: 'Test in Sandbox', run: () => openSandbox(name) }, { label: 'Deploy', run: () => openDeploy([name]) }] : []);
+    p.ok && !$('adPublish').checked ? [{ label: 'Test in Sandbox', run: () => openSandbox(name) }, { label: 'Send to Intune', run: () => openDeploy([name]) }] : []);
   await loadApps();
   if (p.ok && $('adPublish').checked) { $('dlgRun').close(); openDeploy([name]); }
   return p.ok;

@@ -1,4 +1,4 @@
-// Intune App Catalog - web interface: the Apps list, the app editor and its deploy settings, Deploy, Push groups, Batch edit and the More menu.
+// Intune App Catalog - web interface: the Apps list, the app editor and its deploy settings, Deploy, Send groups, Batch edit and the More menu.
 // Loaded after core.js (shared helpers and state); app.js starts the page.
 'use strict';
 
@@ -10,10 +10,10 @@ let visible = [];
 // What each status means and what to do about it, for the pill's tooltip.
 const statusHelp = {
   'Deployed': 'In Intune - this tenant has an app with its App ID.',
-  'Not in this tenant': 'The catalog has an App ID, but the tenant you are connected to has no such app - the catalog was copied from another tenant, or the app was deleted in Intune. Clear the App ID (banner above, or More > Clear App ID) and Deploy it here.',
+  'Not in this tenant': 'The catalog has an App ID, but the tenant you are connected to has no such app - the catalog was copied from another tenant, or the app was deleted in Intune. Clear the App ID (banner above, or More > Clear App ID) and Send it to Intune here.',
   'Has App ID': 'The catalog has an App ID - not yet checked against Intune (no connection, or Intune could not be read).',
-  'No App ID': 'Not in Intune yet, and no settings of its own: Deploy uses the default values. If it is already in Intune, Checks offers to link it.',
-  'Metadata saved - ready to deploy': 'Not in Intune yet. Its own settings are saved - Deploy creates it with them.',
+  'No App ID': 'Not in Intune yet, and no settings of its own: Send to Intune uses the default values. If it is already in Intune, Checks offers to link it.',
+  'Metadata saved - ready to deploy': 'Not in Intune yet. Its own settings are saved - Send to Intune creates it with them.',
   'Package missing': 'Its .intunewin isn\'t in the packages folder - More > Package builds it, or Settings > Packaging for Winget apps.',
   'Custom package': 'Has a Winget ID but deploys its own .intunewin instead of the shared Winget package.',
 };
@@ -142,13 +142,11 @@ function renderApps() {
   body.replaceChildren(...[...list.map(a => {
     const tr = el('tr', { 'data-name': a.name, class: selected.has(a.name) ? 'sel' : '', title: a.appId ? 'App ID ' + a.appId : 'Not in Intune yet' },
       el('td', { class: 'name' }, iconFor(a), a.name),
-      el('td', { class: 'mono', text: a.wingetId || '-' }),
-      el('td', { text: shortType(a.type), title: a.type || '' }),
-      el('td', { class: 'num' }, a.version || '', a.pilotVersion ? el('span', { class: 'pill warn newer', text: 'pilot ' + a.pilotVersion, title: `${a.pilotVersion} is released to the pilot groups. More > Promote pilot release gives it to everyone.` })
+      el('td', { class: 'mono src', text: a.wingetId || 'own installer', title: a.wingetId ? `winget package ${a.wingetId}` : 'Its own installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') }),
+      el('td', { class: 'num' }, a.version || '', a.pilotVersion ? el('span', { class: 'pill warn newer', text: 'pilot ' + a.pilotVersion, title: `${a.pilotVersion} is released to the pilot groups. More > Promote version in pilot gives it to everyone.` })
         : a.newerOnWinget ? el('span', { class: 'pill info newer', text: '→ ' + a.wingetVersion, title: a.managed && a.hasAppId ? `winget offers ${a.wingetVersion}. More > Release new version sends it to the pilot groups first.` : `winget offers ${a.wingetVersion}. More > Take winget's version uses it as the App version.` }) : ''),
-      el('td', { class: 'num', title: 'Required / Available / Uninstall', text: `${a.required} / ${a.available} / ${a.uninstall}` }),
-      el('td', {}, stageCell(a)),
-      el('td', {}, auditPill(a.audit, a)));
+      el('td', { title: `Required: ${a.required}, Available: ${a.available}, Uninstall: ${a.uninstall}`, class: a.required + a.available ? '' : 'muted', text: a.required + a.available + a.uninstall ? `${(a.groups || []).length} group${(a.groups || []).length === 1 ? '' : 's'}` : 'nobody yet' }),
+      el('td', {}, stageCell(a)));
     tr.addEventListener('click', e => selectRow(a.name, e));
     tr.addEventListener('dblclick', () => openEditor(a.name));
     return tr;
@@ -184,8 +182,8 @@ function updateActions() {
   setEnabled($('btnEditApp'), n === 1, n === 0 ? 'Select an app first.' : 'Select exactly one app to edit.');
   setEnabled($('btnDeploy'), n > 0, 'Select one or more apps first.');
   setEnabled($('btnPush'), n > 0 && notInIntune.length === 0, n === 0 ? 'Select one or more apps first.' : `Only apps already in Intune - deploy ${notInIntune.length === 1 ? notInIntune[0] : notInIntune.length + ' of the selected apps'} first.`);
-  $('btnDeploy').textContent = n > 1 ? `Deploy (${n})` : 'Deploy';
-  $('btnPush').textContent = n > 1 ? `Push groups (${n})` : 'Push groups';
+  $('btnDeploy').textContent = n > 1 ? `Send ${n} to Intune` : 'Send to Intune';
+  $('btnPush').textContent = n > 1 ? `Send groups (${n})` : 'Send groups';
 }
 
 // ---------------------------------------------------------------- app editor
@@ -379,7 +377,7 @@ $('btnAppHistory').addEventListener('click', async () => {
     el('td', { text: b.when }),
     el('td', { text: b.changed.length ? b.changed.map(c => fieldLabel[c] || c).join(', ') : 'nothing - same as now' }),
     el('td', { class: 'act' }, el('button', { class: 'btn small', text: 'Compare', title: 'What the save at that time changed, and that version next to now', onclick: () => compareVersion(name, b) }), ' ', el('button', { class: 'btn small', text: 'Restore', title: b.changed.length ? 'Put this version back as the app\'s file' : 'Same as the app is now - nothing to restore', disabled: !b.changed.length, onclick: async () => {
-      if (!(await ask(`Restore ${name} as it was on ${b.when}?\n\nOnly the catalog changes - Deploy or Push sends it to Intune. The current version is kept as a copy, so this can be undone the same way.`, { ok: 'Restore', danger: false }))) return;
+      if (!(await ask(`Restore ${name} as it was on ${b.when}?\n\nOnly the catalog changes - Send to Intune sends it therene. The current version is kept as a copy, so this can be undone the same way.`, { ok: 'Restore', danger: false }))) return;
       const x = await api('/api/app-restore', { name, id: b.id });
       if (!x.ok) { toast(x.error, true); return; }
       toast(`${name} restored to ${b.when}.`);
@@ -524,7 +522,7 @@ $('btnTenantShow').addEventListener('click', () => { $('filter').value = 'notint
 $('btnTenantClear') && $('btnTenantClear').addEventListener('click', async () => {
   const names = apps.filter(a => tenantState(a) === 'missing').map(a => a.name);
   if (!names.length) return;
-  if (!(await ask(`Clear the App ID of ${names.length} app${names.length === 1 ? '' : 's'}?\n\nOnly the catalog changes - their settings, groups and packages stay, and they read "ready to deploy". Deploy then creates them in this tenant. Each file is kept as a copy first (Earlier versions...).`, { ok: 'Clear App IDs', danger: false }))) return;
+  if (!(await ask(`Clear the App ID of ${names.length} app${names.length === 1 ? '' : 's'}?\n\nOnly the catalog changes - their settings, groups and packages stay, and they read "ready to deploy". Send to Intune then creates them in this tenant. Each file is kept as a copy first (Earlier versions...).`, { ok: 'Clear App IDs', danger: false }))) return;
   const r = await api('/api/clear-appids', { names });
   toast(r.ok ? `Cleared ${r.cleared.length} App ID(s).` : r.error, !r.ok);
   if ($('filter').value === 'notintenant') $('filter').value = 'all';
@@ -661,14 +659,14 @@ async function openDeploy(names) {
   $('deployLog').textContent = r.note ? r.note + '\n' : '';
   $('deployProgress').hidden = true; $('btnDeployStop').hidden = true; $('btnDeployRetry').hidden = true;
   const n = deployPlan.filter(a => a.ready).length;
-  $('btnDeployGo').textContent = n === 1 ? 'Deploy 1 app' : `Deploy ${n} apps`;
+  $('btnDeployGo').textContent = n === 1 ? 'Send 1 app' : `Send ${n} apps`;
   $('btnDeployGo').disabled = n === 0;
   $('dlgDeploy').showModal();
 }
 // One app: deploy, then push its groups when the step asks for it. Resolves with whether the deploy worked.
 function deployOne(name) {
   return new Promise(resolve => {
-    runJob({ name }, async (ok, result, after) => {
+    runJob({ name, sendGroups: $('dpGroups').checked }, async (ok, result, after) => {
       if (!ok) { resolve({ ok: false, error: (result && result.error) || 'see the log' }); return; }
       if (after && after.pushGroups) {
         setDeployStatus(name, 'info', 'Pushing groups...');
@@ -698,7 +696,7 @@ async function runDeployQueue(names) {
     const r = await deployOne(name);
     deployResults[name] = r.ok ? 'ok' : 'failed';
     if (!r.ok) setDeployStatus(name, 'err', 'Failed', r.error);
-    else setDeployStatus(name, r.groups === false ? 'warn' : 'ok', r.groups === true ? 'Done, groups pushed' : r.groups === false ? 'Done, groups failed' : 'Done', r.groups === false ? 'Push groups again from the toolbar.' : '');
+    else setDeployStatus(name, r.groups === false ? 'warn' : 'ok', r.groups === true ? 'Done, groups pushed' : r.groups === false ? 'Done, groups failed' : 'Done', r.groups === false ? 'Send groups again from the toolbar.' : '');
     deployProgress();
   }
   deployRunning = false;
@@ -709,7 +707,7 @@ async function runDeployQueue(names) {
   $('btnDeployRetry').textContent = retry.length ? `Retry ${retry.length}` : 'Retry failed';
   $('btnDeployGo').textContent = 'Done'; $('btnDeployGo').disabled = true;
   const okN = ready.filter(n => deployResults[n] === 'ok').length;
-  toast(`Deploy finished: ${okN} of ${ready.length} done${retry.length ? `, ${retry.length} to retry` : ''}.`, okN < ready.length);
+  toast(`Send to Intune finished: ${okN} of ${ready.length} done${retry.length ? `, ${retry.length} to retry` : ''}.`, okN < ready.length);
   loadApps();
 }
 $('btnDeployGo').addEventListener('click', () => { if (!deployRunning && $('btnDeployGo').textContent !== 'Done') runDeployQueue(deployPlan.filter(a => a.ready).map(a => a.name)); });
@@ -718,7 +716,7 @@ $('btnDeployStop').addEventListener('click', () => { deployStop = true; $('btnDe
 $('dlgDeploy').addEventListener('cancel', e => { if (deployRunning) { e.preventDefault(); toast('Deploying - use "Stop after this app" first, or wait.', true); } });
 $('btnDeployClose').addEventListener('click', e => { if (deployRunning) { e.stopImmediatePropagation(); toast('Deploying - use "Stop after this app" first, or wait.', true); } }, true);
 
-// ---------------------------------------------------------------- push groups
+// ---------------------------------------------------------------- send groups
 let pushNames = [];
 $('btnPush').addEventListener('click', () => openPushGroups([...selected]));
 async function openPushGroups(names) {
@@ -745,7 +743,7 @@ async function openPushGroups(names) {
 $('btnPushGo').addEventListener('click', async () => {
   $('btnPushGo').disabled = true;
   await runJob({ names: pushNames, mode: 'Apply' }, ok => {
-    toast(ok ? 'Groups pushed to Intune.' : 'Push groups failed - see the log.', !ok);
+    toast(ok ? 'Groups pushed to Intune.' : 'Send groups failed - see the log.', !ok);
     if (ok) { $('btnPushGo').textContent = 'Done'; loadApps(); }
   }, { path: '/api/push-start', log: 'pushLog', startText: 'Applying...' });
 });
@@ -840,7 +838,7 @@ function openGroupsBatch(mode, names) {
   gbMode = mode; gbNames = names;
   const sel = names.map(n => apps.find(a => a.name === n)).filter(Boolean);
   $('gbTitle').textContent = mode === 'add' ? 'Add groups' : 'Remove groups';
-  $('gbText').textContent = (mode === 'add' ? 'Adds these groups to ' : 'Removes these groups from ') + `${names.join(', ')} - in the catalog. Push groups sends them to Intune.`;
+  $('gbText').textContent = (mode === 'add' ? 'Adds these groups to ' : 'Removes these groups from ') + `${names.join(', ')} - in the catalog. Send groups sends them to Intune.`;
   const roles = [['requiredFor', 'Required'], ['availableFor', 'Available'], ['uninstallFor', 'Uninstall'], ['excludeFor', 'Excluded']];
   const favs = (prefs && prefs.favoriteGroups) || [];
   $('gbRoles').replaceChildren(...roles.map(([field, label]) => {
@@ -871,13 +869,14 @@ function openMenu(x, y) {
   const one = oneSelected();
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
-  const enable = { sandbox: !!(one && !one.wingetId), package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
+  const enable = { edit: !!one, pushgroups: anyId, sandbox: !!(one && !one.wingetId), package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
     replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any,
     takeversion: sel.some(a => a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
     release: !!(one && one.managed && one.hasAppId && !one.pilotVersion), promote: !!(one && one.pilotVersion), withdraw: !!(one && one.pilotVersion),
     managed: any,
     rollback: !!(one && one.managed && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && (one.previousVersions || []).length > 1) };
   const why = {
+    edit: 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
     sandbox: one ? 'Windows Sandbox has no winget - test a Winget app on a pilot device.' : 'Select exactly one app.',
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
@@ -886,7 +885,7 @@ function openMenu(x, y) {
     copyid: 'None of the selected apps has an App ID.', clearid: 'None of the selected apps has an App ID.',
     delete: 'None of the selected apps is in Intune.', remove: 'Select one or more apps first.',
     takeversion: sel.some(a => a.managed && a.hasAppId) ? 'Deployed apps with managed updates get a new version through Release new version.' : apps.some(a => a.wingetVersion) ? 'winget offers nothing newer for the selected apps.' : 'Ask winget first: Catalog > Check winget for new versions.',
-    release: !one ? 'Select exactly one app.' : !one.managed ? 'Turn managed updates on first (More > Managed updates on).' : !one.hasAppId ? 'Deploy it first - that is its first release.' : 'A version is in pilot already - promote or withdraw it first.',
+    release: !one ? 'Select exactly one app.' : !one.managed ? 'Turn managed updates on first (More > Managed updates on).' : !one.hasAppId ? 'Send it to Intune first - that is its first release.' : 'A version is in pilot already - promote or withdraw it first.',
     promote: one ? 'No version of this app is in pilot.' : 'Select exactly one app.', withdraw: one ? 'No version of this app is in pilot.' : 'Select exactly one app.',
     managed: 'Select one or more apps first.',
     rollback: !one ? 'Select exactly one app.' : one.pilotVersion ? 'A version is in pilot - promote or withdraw it first.' : 'No earlier release of this app is kept in Intune.',
@@ -941,6 +940,8 @@ async function menuAction(act) {
     case 'removegroups': openGroupsBatch('remove', names); break;
     case 'status': openStatus(one.name); break;
     case 'sandbox': openSandbox(one.name); break;
+    case 'edit': openEditor(one.name); break;
+    case 'pushgroups': openPushGroups(names); break;
     case 'replacegroup': openReplace({ names }); break;
     case 'release': openRelease(one.name); break;
     case 'promote': promoteRelease(one.name); break;
@@ -1052,7 +1053,7 @@ function openReplace({ names = [], old = '' }) {
   const used = [...new Set(pool.flatMap(a => a.groups || []))].sort((a, b) => a.localeCompare(b));
   if (!used.length) { toast('None of these apps is assigned to a group.', true); return; }
   $('rpTitle').textContent = names.length ? `Replace a group on ${names.length} app${names.length === 1 ? '' : 's'}` : 'Replace a group';
-  $('rpText').textContent = 'Every assignment to the old group - Required, Available, Uninstall and Excluded - names the new one instead, in the catalog. Entra ID isn\'t touched (Rename on the Groups page renames a group there). Push groups sends it to Intune.';
+  $('rpText').textContent = 'Every assignment to the old group - Required, Available, Uninstall and Excluded - names the new one instead, in the catalog. Entra ID isn\'t touched (Rename on the Groups page renames a group there). Send groups sends it to Intune.';
   $('rpOld').replaceChildren(...used.map(g => el('option', { value: g, text: g })));
   if (old && used.some(g => g.toLowerCase() === old.toLowerCase())) $('rpOld').value = used.find(g => g.toLowerCase() === old.toLowerCase());
   const known = [...new Set(apps.flatMap(a => a.groups || []).concat((prefs && prefs.favoriteGroups) || []))].sort();
@@ -1072,7 +1073,7 @@ $('btnReplaceGo').addEventListener('click', async () => {
   toast(`Replaced ${oldName} with ${newName} on ${r.changed.length} app(s) in the catalog.`);
   await loadApps();
   if (groupsLoaded) { await loadGroups(); if (group && group.name.toLowerCase() === oldName.toLowerCase()) openGroup(newName); }
-  if (r.deployed.length && await ask(`Push groups for the ${r.deployed.length} deployed app(s) now?\n\n${r.deployed.join('\n')}`, { ok: 'Push groups', danger: false })) openPushGroups(r.deployed);
+  if (r.deployed.length && await ask(`Send groups for the ${r.deployed.length} deployed app(s) now?\n\n${r.deployed.join('\n')}`, { ok: 'Send groups', danger: false })) openPushGroups(r.deployed);
 });
 
 // ---------------------------------------------------------------- CSV export and import
@@ -1139,7 +1140,7 @@ $('btnCsvGo').addEventListener('click', async () => {
     toast(`Settings pushed for ${done.length} of ${meta.length} app(s).`, done.length < meta.length);
   }
   $('btnCsvGo').textContent = 'Done';
-  if (grp.length && await ask(`Push groups for the ${grp.length} deployed app(s) whose groups changed?\n\n${grp.join('\n')}`, { ok: 'Push groups', danger: false })) { $('dlgCsv').close(); openPushGroups(grp); }
+  if (grp.length && await ask(`Send groups for the ${grp.length} deployed app(s) whose groups changed?\n\n${grp.join('\n')}`, { ok: 'Send groups', danger: false })) { $('dlgCsv').close(); openPushGroups(grp); }
 });
 
 // ---------------------------------------------------------------- winget: newest versions
@@ -1177,7 +1178,7 @@ async function openTenantSetup() {
   const states = [r.stale.length ? 'todo' : 'done', r.groupsNote ? 'unknown' : r.missingGroups.length ? 'todo' : 'done', r.notDeployed.length ? 'todo' : 'done', r.pushGroups.length ? 'check' : 'done'];
   const firstTodo = states.findIndex(x => x === 'todo') + 1;
   const reasons = r.notReady.length ? el('details', {}, el('summary', { text: `${r.notReady.length} not ready yet - why` }), el('ul', { class: 'tsreasons' }, ...r.notReady.map(x => el('li', {}, el('b', { text: x.name }), ' - ' + x.reason)))) : '';
-  $('tsText').textContent = firstTodo ? `${r.apps} apps in the catalog. What the connected tenant still needs, in order - each step asks or previews before it changes anything.` : `The ${r.apps} apps are set up in this tenant${r.pushGroups.length ? ' - push groups any time to check the assignments' : ''}.`;
+  $('tsText').textContent = firstTodo ? `${r.apps} apps in the catalog. What the connected tenant still needs, in order - each step asks or previews before it changes anything.` : `The ${r.apps} apps are set up in this tenant${r.pushGroups.length ? ' - send groups any time to check the assignments' : ''}.`;
   $('tsSteps').replaceChildren(
     step(1, 'Clear App IDs from another tenant', states[0], 'No App ID points at an app this tenant doesn\'t have.',
       `${r.stale.length} app${r.stale.length === 1 ? ' has an App ID' : 's have App IDs'} this tenant doesn't know. Clearing them (catalog only, Undo works) lets them be deployed here; supersedence pointing at the old tenant's apps goes with them.`, list(r.stale),
@@ -1190,14 +1191,14 @@ async function openTenantSetup() {
       r.groupsNote ? [['Check again', 'Read Entra ID again', () => openTenantSetup()]] : [
         [`Create ${r.missingGroups.length} group${r.missingGroups.length === 1 ? '' : 's'}`, 'Create them as empty security groups', () => createGroups(r.missingGroups, () => openTenantSetup())],
         ['Open Groups', 'The Groups page, showing the groups Entra ID doesn\'t have - to create them one by one and add members', () => { $('dlgTenantSetup').close(); showView('groups'); $('groupShow').value = 'missing'; if (groupsLoaded) renderGroupList(); }]]),
-    step(3, 'Deploy the apps', states[2], 'Every app in the catalog is in Intune.',
-      `${r.notDeployed.length} app${r.notDeployed.length === 1 ? ' isn\'t' : 's aren\'t'} in Intune yet - ${ready.length} ready to deploy${r.notReady.length ? `, ${r.notReady.length} not ready` : ''}. Deploy runs them in dependency order.${r.sharedMissing ? ' The shared Winget package isn\'t built yet: Settings > Packaging & folders builds it - every Winget app needs it.' : ''}`,
+    step(3, 'Send the apps to Intune', states[2], 'Every app in the catalog is in Intune.',
+      `${r.notDeployed.length} app${r.notDeployed.length === 1 ? ' isn\'t' : 's aren\'t'} in Intune yet - ${ready.length} ready to deploy${r.notReady.length ? `, ${r.notReady.length} not ready` : ''}. Send to Intune runs them in dependency order.${r.sharedMissing ? ' The shared Winget package isn\'t built yet: Settings > Packaging & folders builds it - every Winget app needs it.' : ''}`,
       el('div', {}, list(r.notDeployed), reasons),
-      [[`Deploy ${ready.length} app${ready.length === 1 ? '' : 's'}...`, 'Opens Deploy for the apps that are ready - nothing starts until you confirm there', () => openDeploy(ready.length ? ready : r.notDeployed)],
+      [[`Send ${ready.length} app${ready.length === 1 ? '' : 's'}...`, 'Opens Send to Intune for the apps that are ready - nothing starts until you confirm there', () => openDeploy(ready.length ? ready : r.notDeployed)],
         ...(r.sharedMissing ? [['Open Packaging', 'Settings > Packaging & folders: download the packaging tool and build the shared Winget package', () => { $('dlgTenantSetup').close(); showSettings('packaging'); }]] : [])]),
     step(4, 'Push the groups', states[3], 'No deployed app has groups to push.',
-      `${r.pushGroups.length} deployed app${r.pushGroups.length === 1 ? ' has' : 's have'} groups in the catalog. Deploys push them already (Settings > Apps & defaults); Push groups compares the catalog with Intune and shows what would change - "nothing to change" means it's done.`, list(r.pushGroups),
-      [['Push groups...', 'Compare the catalog\'s groups with Intune, then apply', () => openPushGroups(r.pushGroups)]]));
+      `${r.pushGroups.length} deployed app${r.pushGroups.length === 1 ? ' has' : 's have'} groups in the catalog. Deploys push them already (Settings > Apps & defaults); Send groups compares the catalog with Intune and shows what would change - "nothing to change" means it's done.`, list(r.pushGroups),
+      [['Send groups...', 'Compare the catalog\'s groups with Intune, then apply', () => openPushGroups(r.pushGroups)]]));
 }
 $('btnTsRefresh').addEventListener('click', openTenantSetup);
 $('btnTenantSetup').addEventListener('click', openTenantSetup);
@@ -1281,7 +1282,7 @@ async function promoteRelease(name) {
   const info = await api('/api/release-info', { name });
   const st = info.ok && info.pilotStatus;
   const verdict = st && st.ok ? `Pilot: ${st.reason}${st.action === 'promote' ? ' The release rule says it is ready.' : st.action === 'advance' ? ' The release rule says it is ready for the next ring - promoting now skips the remaining rings.' : st.action === 'hold' ? ' The release rule says: hold.' : ' The release rule says: wait.'}\n\n` : '';
-  if (!(await ask(`Promote ${name} ${a.pilotVersion} to everyone?\n\n${verdict}The pilot release gets the catalog's groups and becomes the current one (named "${name}" in Intune); ${a.version || 'the current version'} loses its assignments and is kept in Intune as superseded. Devices that have it are updated to ${a.pilotVersion}.\n\nCheck its install status on the pilot devices first (More > Install status...).`, { ok: 'Promote', danger: false }))) return;
+  if (!(await ask(`Promote ${name} ${a.pilotVersion} to everyone?\n\n${verdict}The version in pilot gets the catalog's groups and becomes the current one (named "${name}" in Intune); ${a.version || 'the current version'} loses its assignments and is kept in Intune as superseded. Devices that have it are updated to ${a.pilotVersion}.\n\nCheck its install status on the pilot devices first (More > Install status...).`, { ok: 'Promote', danger: false }))) return;
   runDialog(`Promote ${name} ${a.pilotVersion}`, 'Assigning the new release to the catalog\'s groups, then taking them off the old one.');
   const p1 = await releaseStep({ name, step: 'promote' }, '/api/release-assign', 'runLog', `Assigning ${a.pilotVersion} to the catalog's groups...`);
   if (!p1.ok) { toast(`Promoting failed - nothing else was changed. ${p1.error || ''}`, true); return; }

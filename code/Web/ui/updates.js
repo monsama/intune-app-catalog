@@ -46,7 +46,7 @@ function renderUpdates() {
       acts.push(btn('Release...', x.available ? `Release ${x.available} to the pilot groups` : 'Release a new version to the pilot groups', () => openRelease(x.name)));
       if (x.previous.length) acts.push(btn('Roll back...', `Back to ${x.previous[x.previous.length - 1]}`, () => rollbackRelease(x.name)));
     }
-    else acts.push(el('span', { class: 'muted', text: 'Deploy it first' }));
+    else acts.push(el('span', { class: 'muted', text: 'Send it to Intune first' }));
     const verdict = p && pillFor[p.action];
     const devices = x.installed === null ? el('span', { class: 'muted', text: x.deployed ? '-' : 'not deployed' })
       : el('span', { title: `${x.installed} installed, ${x.failed} failed, ${x.pending} pending, ${x.notInstalled} not installed` }, `${x.installed}`, el('span', { class: 'muted', text: ` of ${x.installed + x.failed + x.pending + x.notInstalled}` }), x.failed ? el('span', { class: 'pill err newer', text: `${x.failed} failed` }) : '');

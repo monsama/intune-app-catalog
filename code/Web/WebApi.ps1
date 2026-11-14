@@ -253,7 +253,8 @@ function Global:Complete-WebJob {
             $catalog = Read-WebCatalogRecords
             $app = $catalog.Apps | Where-Object { $_.appName -eq $After.AppName } | Select-Object -First 1
             $hasGroups = $app -and (@($app.requiredFor).Count + @($app.availableFor).Count + @($app.uninstallFor).Count) -gt 0
-            $wanted = if ($After.WasUpdate) { [bool]$Global:App.PushGroupsOnUpdate } else { [bool]$Global:App.PushGroupsOnCreate }
+            # Send to Intune says whether the groups go too; otherwise Settings' automatic pushes decide.
+            $wanted = if ($null -ne $After.SendGroups) { [bool]$After.SendGroups } elseif ($After.WasUpdate) { [bool]$Global:App.PushGroupsOnUpdate } else { [bool]$Global:App.PushGroupsOnCreate }
             return @{ ok = $true; pushGroups = [bool]($hasGroups -and $wanted -and $app.appId) }
         }
         default { return @{ ok = $true } }

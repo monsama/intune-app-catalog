@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.11.0
+
+### Changed
+
+- **One "Send to Intune"** instead of Deploy, Push groups and Push
+  settings: it creates or updates the selected apps - settings, package -
+  and, with *Send their groups too* (on by default), their assignments.
+  *Send groups only* and *Send settings only* are in the More menu.
+- **A slimmer Apps list:** App, Source (winget package or "own
+  installer"), Version, *Who gets it* ("3 groups" - the roles on hover)
+  and Stage. Type and Last audit are gone - Stage says *Needs a look*
+  when a check found something. The toolbar is **Add apps**, the selected
+  app's **next step**, **Send to Intune**, **More** and **Catalog**; Edit
+  is in the side panel, the More menu and a double-click.
+- **One row above the list** instead of three banners: the catalog vs
+  Intune counts, the other-tenant note and the last bulk change's Undo.
+- **The editor's parts as tabs** - Basics, Who gets it, Details, Install
+  & detection, Requirements, Replaces: one click to each (the deploy
+  settings open by themselves), the part in view highlighted.
+- **Check everything now** on Home: what differs shows on Home, on the
+  apps (*Needs a look*) and in Checks, which is the detail view.
+- **One word per idea:** *Send to Intune* / *Read from Intune*, *Send
+  groups*, *version in pilot*, *Ready to send*, *Everyone*, *Only in
+  Intune* - in buttons, menus, messages and tooltips.
+
 ## 2.10.0
 
 ### Added
