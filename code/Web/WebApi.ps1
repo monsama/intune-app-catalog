@@ -66,6 +66,7 @@ function Global:Get-WebCatalog {
                 managed      = [bool]$apps[$i].managedUpdates
                 previousVersions = @(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'previous' } | Sort-Object { [string]$_.at } | ForEach-Object { [string]$_.version })
                 releaseIds   = @(@($apps[$i].releases) | Where-Object { $_ -and $_.appId } | ForEach-Object { ([string]$_.appId).ToLowerInvariant() })
+                retiringSince = [string]$apps[$i].retiringSince
                 pilotVersion = [string]$(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'pilot' } | Select-Object -First 1 -ExpandProperty version)
                 hasIcon      = [bool]($apps[$i].icon -and $apps[$i].icon.value)
                 iconTag      = $(if ($apps[$i].icon -and $apps[$i].icon.value) { "$($apps[$i].icon.value.Length):$($apps[$i].icon.value.Substring([Math]::Max(0, $apps[$i].icon.value.Length - 12)))" } else { '' })
@@ -275,6 +276,8 @@ function Global:Complete-WebJob {
     if ($After.Kind -in 'deploy', 'deleted', 'addtocatalog') { $Global:App.IntuneAppsCache = $null }
     switch ($After.Kind) {
         'grouprename' { return (Complete-WebGroupRename -After $After) }
+        'retire' { return (Complete-WebRetire -After $After) }
+        'retired' { $Global:App.IntuneAppsCache = $null; return (Complete-WebRetireFinish -Name ([string]$After.AppName)) }
         'checkdetails' { return (Complete-WebCheckDetails -After $After -Result $Result) }
         'checkassign' { return (Complete-WebCheckAssign -After $After -Result $Result) }
         'addtocatalog' { return (Complete-WebAddFromIntune -After $After -Result $Result) }
@@ -574,6 +577,11 @@ function Global:Invoke-WebApi {
         '/api/health'           { return (Get-WebHealth) }
         '/api/permission-check' { return (Get-WebPermissionCheck) }
         '/api/filters' { return (Get-WebAssignmentFilters) }
+        '/api/retire-start'     { return (Start-WebRetire $Data) }
+        '/api/retire-status'    { return (Get-WebRetireStatus $Data) }
+        '/api/retire-finish'    { return (Start-WebRetireFinish $Data) }
+        '/api/retired-list'     { return (Get-WebRetiredApps) }
+        '/api/retired-restore'  { return (Invoke-WithCatalogLock { Restore-WebRetiredApp $Data }) }
         '/api/group-suggest'    { return (Find-WebGroupSuggestions $Data) }
         '/api/group-check'      { return (Test-WebGroupNames $Data) }
         '/api/icon-find'        { return (Find-WebAppIcon $Data) }

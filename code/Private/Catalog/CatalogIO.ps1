@@ -133,6 +133,9 @@ function Global:ConvertTo-AppRecord {
         # app, and whether it includes or excludes the devices it matches.
         assignmentFilter     = $(if ([string]$Raw.assignmentFilter -and ([string]$Raw.assignmentFilter).Length -le 200) { ([string]$Raw.assignmentFilter).Trim() } else { '' })
         assignmentFilterMode = $(if ([string]$Raw.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' })
+        # Being retired: its groups were switched to Uninstall on this date
+        # (ISO); Finish retirement deletes it from Intune and archives it.
+        retiringSince = $(if ([string]$Raw.retiringSince -match '^\d{4}-\d{2}-\d{2}') { [string]$Raw.retiringSince } else { '' })
         # The app's icon for Intune and the Company Portal (PNG or JPEG,
         # base64) - kept in the app's own file so a rename, a backup and
         # Undo carry it along. Anything else in the field is dropped.
@@ -354,6 +357,7 @@ function Global:ConvertTo-SingleAppJson {
     $fields.Add("  `"availableFor`": $(ConvertTo-JsonStringArray -Items @($App.availableFor) -IndentLevel 1)")
     $fields.Add("  `"excludeFor`": $(ConvertTo-JsonStringArray -Items @($App.excludeFor) -IndentLevel 1)")
     $fields.Add("  `"uninstallFor`": $(ConvertTo-JsonStringArray -Items @($App.uninstallFor) -IndentLevel 1)")
+    if ($App.retiringSince) { $fields.Add("  `"retiringSince`": $(ConvertTo-JsonStringLiteral ([string]$App.retiringSince))") }
     if ($App.assignmentFilter) {
         $fields.Add("  `"assignmentFilter`": $(ConvertTo-JsonStringLiteral ([string]$App.assignmentFilter))")
         $fields.Add("  `"assignmentFilterMode`": $(ConvertTo-JsonStringLiteral $(if ([string]$App.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' }))")

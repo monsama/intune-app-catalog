@@ -192,6 +192,8 @@ $testableFunctionNames = @(
     "Test-AppRecordFieldRevertable",
     "Set-AppRecordFieldJson",
     "Format-AppHistoryValue",
+    "Get-RetireGroups",
+    "Get-RetireProgress",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -807,6 +809,12 @@ $okDesc = Set-AppRecordFieldJson -Record $hRec -Field 'metadata.description' -Js
 $okEmpty = Set-AppRecordFieldJson -Record $hRec -Field 'excludeFor' -Json '[]'
 Assert-True ($okReq -and $okDesc -and $okEmpty -and @($hRec.requiredFor).Count -eq 1 -and $hRec.requiredFor[0] -eq 'SG-A' -and $hRec.metadata.description -eq "New `"quoted`" O'Neil" -and @($hRec.excludeFor).Count -eq 0) "Set-AppRecordFieldJson: a list, text with quotes, an empty list - put back as they were"
 Assert-True (-not (Set-AppRecordFieldJson -Record $hRec -Field 'appName' -Json '"Other"') -and -not (Test-AppRecordFieldRevertable 'icon') -and -not (Test-AppRecordFieldRevertable 'releases') -and (Test-AppRecordFieldRevertable 'metadata.installCommand') -and $hRec.appName -eq 'App') "Set-AppRecordFieldJson: no rename, icon or Intune link undone on its own"
+
+# Retiring an app
+Assert-True (((Get-RetireGroups ([pscustomobject]@{ requiredFor = @('SG-A', ' SG-B '); availableFor = @('SG-A', 'SG-C'); uninstallFor = @(); excludeFor = @('SG-C') })) -join ',') -eq 'SG-A,SG-B') "Get-RetireGroups: every group it was given, once, minus its exclusions"
+$rp = Get-RetireProgress @([pscustomobject]@{ State = 'Installed' }, [pscustomobject]@{ State = 'Uninstalled' }, [pscustomobject]@{ State = 'Not installed' }, [pscustomobject]@{ State = 'Failed' }, [pscustomobject]@{ State = 'Pending' })
+Assert-True ($rp.total -eq 5 -and $rp.still -eq 1 -and $rp.removed -eq 2 -and $rp.failed -eq 1 -and $rp.other -eq 1 -and -not $rp.done -and $rp.text -like '1 of 5 device(s) still have it*failed on 1*') "Get-RetireProgress: still installed, removed, failed and pending counted"
+Assert-True ((Get-RetireProgress @([pscustomobject]@{ State = 'Uninstalled' })).done -and (Get-RetireProgress @()).done) "Get-RetireProgress: done when no device has it (or none reports it)"
 
 # Install errors explained
 $e1 = Get-InstallErrorInfo -2016345060

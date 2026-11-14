@@ -522,6 +522,27 @@ try {
     Check (@($hr.entries).Count -eq 4 -and @($hr.entries[0].changes | Where-Object { $_.field -eq 'appName' }).Count -eq 1 -and $hr.entries[-1].app -eq $hName) 'history: a rename keeps what happened under the old name' ($hr | ConvertTo-Json -Compress -Depth 6)
     Check (-not (Invoke-Api '/api/history-undo' @{ name = "$hName R"; id = '../x' }).ok) 'history: an id that isn''t one is refused'
     [void](Invoke-Api '/api/app-remove' @{ name = "$hName R" })
+    # Retiring: refused without an App ID or groups; an app not in Intune is archived and removed at once; Restore brings it back without groups.
+    $rtName = 'ZZ Retire ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $rtName; wingetId = 'Contoso.Retire'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'r' } } })
+    Check (-not (Invoke-Api '/api/retire-start' @{ name = $rtName }).ok) 'retire: an app not in Intune has nothing to uninstall - refused'
+    $rts = Invoke-Api '/api/retire-status' @{ name = $rtName }
+    Check ($rts.ok -and -not $rts.inIntune -and -not $rts.retiringSince -and @($rts.groups) -contains 'SG-A') 'retire: the status says what would be uninstalled'
+    $rtf = Invoke-Api '/api/retire-finish' @{ name = $rtName }
+    $rtl = Invoke-Api '/api/retired-list'
+    $rtEntry = @($rtl.apps | Where-Object { $_.name -eq $rtName })[0]
+    Check ($rtf.ok -and -not (Invoke-Api '/api/app-get' @{ name = $rtName }).ok -and $rtEntry) 'retire: finished - archived and out of the catalog' ($rtl | ConvertTo-Json -Compress -Depth 4)
+    $rtr = Invoke-Api '/api/retired-restore' @{ id = $rtEntry.id }
+    $rtApp = (Invoke-Api '/api/app-get' @{ name = $rtName }).app
+    Check ($rtr.ok -and $rtApp -and @($rtApp.requiredFor).Count -eq 0 -and -not $rtApp.appId -and $rtApp.metadata.description -eq 'r') 'retire: restored - its settings back, not in Intune, without groups'
+    Check (-not (Invoke-Api '/api/retired-restore' @{ id = $rtEntry.id }).ok -and -not (Invoke-Api '/api/retired-restore' @{ id = '..\x.json' }).ok) 'retire: restoring it twice, or a name that is not one, is refused'
+    $rth = Invoke-Api '/api/app-history' @{ name = $rtName }
+    Check (@($rth.entries | Where-Object { $_.text -like 'Retired*' }).Count -eq 1 -and $rth.entries[0].text -like 'Restored*') 'retire: retiring and restoring are in its history'
+    [void](Invoke-Api '/api/app-remove' @{ name = $rtName })
+    $rtGuid = [guid]::NewGuid().ToString()
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = "$rtName 2"; wingetId = 'Contoso.Retire'; appId = $rtGuid; metadata = @{ description = 'r' } } })
+    Check (-not (Invoke-Api '/api/retire-start' @{ name = "$rtName 2" }).ok) 'retire: an app without groups has nothing to uninstall - refused (finish deletes it)'
+    [void](Invoke-Api '/api/app-remove' @{ name = "$rtName 2" })
     # An assignment filter round-trips through the catalog file and the editor.
     $flName = 'ZZ Filter ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
     [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $flName; wingetId = 'Contoso.Filter'; appId = ''; requiredFor = @('SG-A'); assignmentFilter = ' Corp laptops '; assignmentFilterMode = 'exclude'; metadata = @{ description = 'f' } } })

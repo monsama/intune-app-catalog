@@ -92,7 +92,7 @@ function Global:Invoke-ManagedUpdateRun {
                 if ($null -eq $gateApps) { & $say '(test tenant)' 'failed' "The test tenant's catalog folder ($($policy.GatePath)) can't be read - nothing is released automatically."; $failed++; $gateApps = @() }
             }
             $catalog = Read-WebCatalogRecords
-            $managed = @($catalog.Apps | Where-Object { $_.managedUpdates -and $_.appId })
+            $managed = @($catalog.Apps | Where-Object { $_.managedUpdates -and $_.appId -and -not $_.retiringSince })
             if ($FastTrackOnly) { $managed = @($managed | Where-Object { $p = Get-WebAppRelease $_; $p -and $p.fastTrack }) }
             if (-not $managed.Count -and -not $FastTrackOnly) { & $say '(all)' 'none' 'No deployed app has managed updates.' }
             # The newest winget versions, for the Winget apps with nothing in pilot.

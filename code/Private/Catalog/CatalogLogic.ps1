@@ -1961,3 +1961,33 @@ function Global:Format-AppHistoryValue {
     if ($text.Length -gt $Max) { $text = $text.Substring(0, $Max) + '...' }
     return $text
 }
+
+function Global:Get-RetireGroups {
+    # Pure: the groups an app being retired gets an Uninstall for - every group it was given, minus its exclusions.
+    param($App)
+    $excluded = @(@($App.excludeFor) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+    return @(@(@($App.requiredFor) + @($App.availableFor) + @($App.uninstallFor)) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -and $excluded -notcontains $_ } | Select-Object -Unique)
+}
+
+function Global:Get-RetireProgress {
+    <#
+      Pure: how far an app's retirement is, from its install status rows
+      (State as the report shows it) - @{ total; still; removed; failed; other; done; text }.
+      done: no device reports it installed any more.
+    #>
+    param($Rows)
+    $still = 0; $removed = 0; $failed = 0; $other = 0
+    foreach ($r in @($Rows)) {
+        if (-not $r) { continue }
+        $s = ([string]$r.State).Trim()
+        if ($s -match '^installed$') { $still++ }
+        elseif ($s -match 'uninstall|not installed|not applicable') { $removed++ }
+        elseif ($s -match 'fail|error') { $failed++ }
+        else { $other++ }
+    }
+    $total = $still + $removed + $failed + $other
+    $text = if (-not $total) { 'No device reports this app - nothing left to uninstall.' }
+        elseif (-not $still -and -not $failed) { "Gone from all $total device(s) that reported it." }
+        else { "$still of $total device(s) still have it$(if ($failed) { "; the uninstall failed on $failed" })$(if ($other) { "; $other pending or unknown" })." }
+    return [ordered]@{ total = $total; still = $still; removed = $removed; failed = $failed; other = $other; done = [bool](-not $still -and -not $failed); text = $text }
+}

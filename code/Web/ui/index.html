@@ -626,6 +626,7 @@
   <button role="menuitem" data-act="clearid" title="Forget the link to Intune - the app in Intune stays">Clear App ID</button>
   <hr>
   <div class="mhead" role="presentation">Remove</div>
+  <button role="menuitem" data-act="retire" class="danger" title="Take the app out of use: uninstall it from its groups' devices, then delete it from Intune and archive it - step by step">Retire...</button>
   <button role="menuitem" data-act="delete" class="danger" title="Delete the selected apps from Intune - the catalog keeps them; asked first">Delete from Intune...</button>
   <button role="menuitem" data-act="remove" class="danger" title="Remove the app from the catalog only - Intune keeps it">Remove from catalog...</button>
 </div>
@@ -641,6 +642,7 @@
   <hr>
   <button role="menuitem" data-cact="replace" title="Swap one group for another on every app, in every role - the catalog only">Replace a group in all apps...</button>
   <button role="menuitem" data-cact="undo" title="Take back the last batch edit, group change, App ID clearing or CSV import">Undo last bulk change...</button>
+  <button role="menuitem" data-cact="retired" title="Apps retired from Intune and archived - bring one back into the catalog">Retired apps...</button>
   <hr>
   <button role="menuitem" data-cact="reload" title="Read the catalog folder again - for changes made outside the app">Reload</button>
   <button role="menuitem" data-cact="folder" title="Open the folder with one JSON file per app in Explorer">Open catalog folder</button>
@@ -700,6 +702,29 @@
     <div class="preview" id="histNow"></div>
   </div>
   </details>
+  <div class="actions end"><button class="btn" data-close>Close</button></div>
+</dialog>
+<dialog id="dlgRetire" aria-labelledby="retireTitle">
+  <h2 id="retireTitle">Retire</h2>
+  <ol class="steps">
+    <li><strong>Uninstall</strong> - every group the app was given gets it as Uninstall (the catalog's groups follow), so it is removed from their devices.</li>
+    <li><strong>Wait</strong> - until the devices report it gone (the install status, below).</li>
+    <li><strong>Finish</strong> - it is deleted from Intune, archived (Catalog &gt; Retired apps) and removed from the catalog.</li>
+  </ol>
+  <p class="sub" id="retireGroups"></p>
+  <p id="retireProgress" aria-live="polite"></p>
+  <div class="actions end">
+    <button class="btn" data-close>Close</button>
+    <button class="btn" id="btnRetireRefresh" hidden>Refresh</button>
+    <button class="btn danger" id="btnRetireStart">Uninstall from its groups</button>
+    <button class="btn danger" id="btnRetireFinish" hidden>Finish: delete from Intune</button>
+  </div>
+</dialog>
+<dialog id="dlgRetired" aria-labelledby="retiredTitle">
+  <h2 id="retiredTitle">Retired apps</h2>
+  <p class="sub">Apps retired from Intune, as they were in the catalog. Restore brings one back - not in Intune and without groups (its History shows them).</p>
+  <div class="tablewrap short"><table class="plan"><thead><tr><th>App</th><th>Retired</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="retiredRows"></tbody></table></div>
+  <p class="sub" id="retiredNote"></p>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
 <dialog id="dlgAsk" class="ask" aria-labelledby="askTitle">
