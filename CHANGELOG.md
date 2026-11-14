@@ -1,5 +1,61 @@
 # Changelog
 
+## 2.10.0
+
+### Added
+
+- **The catalog and Intune, side by side** (Apps page): a strip above the
+  list - *in the catalog*, *of them in Intune*, *only in the catalog* (not
+  deployed yet), *only in Intune* (Windows apps made in the portal). Each
+  is a filter; *only in Intune* adds those apps to the list, greyed, with
+  **Add to catalog**. The catalog is the source of truth - anything only
+  in Intune should be added to it, or deleted there.
+- **Stage and next step:** every app shows where it is - *Draft*, *Ready
+  to deploy*, *In Intune*, *In pilot x*, *Everyone*, *Needs a look*, *Other
+  tenant* - and the one button that moves it on (Build, Set version,
+  Deploy, Promote, Release, Checks, Clear App ID). The toolbar's primary
+  button is the selected app's next step (or "Deploy N apps").
+- **Side panel:** select one app for its stage, next step, versions,
+  source, update mode, groups by role, release timeline and last check -
+  with Edit, Install status, Test in Sandbox and More.
+- **Groups as chips:** every group box (the editor's four roles, Add apps,
+  pilot groups, favourites, profiles, release rings, platform scripts) is
+  a row of group chips with an "Add a group" field - suggestions as you
+  type, Enter (or comma, or a pasted list) to add, x to remove, Backspace
+  for the last one. Alert recipients and default dependencies are chips
+  too.
+- **Return codes as rows:** an exit code and what it means (Success,
+  restart later, restart now, Retry, Failed), Add / Remove - in the
+  editor, the defaults and batch edit.
+- **Release rings as rows:** a name and its group chips per ring.
+- **Ready to deploy?** in the editor: name, installer or Winget ID,
+  install command, detection rule, version (managed updates), groups -
+  each missing one links to its field.
+- **Getting started** on Home: seven steps from connecting to the
+  nightly run, done ones ticked, "Do it" on the next.
+- **"?" explanations** for managed updates, detection rules, the four
+  assignment roles, release rings, fast track and supersedence.
+- **Release timeline** (Updates page, side panel): Pilot > rings >
+  Everyone, the current stage highlighted.
+- **Next steps in messages:** after adding apps (Deploy, Build, Test in
+  Sandbox), building, saving the grid (Push groups, Undo) or turning
+  managed updates on (Undo).
+
+### Changed
+
+- **Settings** in five sections: *Connection*, *Apps & defaults*
+  (default values, profiles, favourites, automatic checks), *Updates*
+  (pilot groups, rings, release rule, fast track, window), *Nightly run &
+  alerts* (schedule, runs, what else it does, health, running unattended,
+  alerts), *Packaging & folders*, *Diagnostics*.
+- **Actions run in a tray** in the corner, not a window you wait in -
+  *Hide* it and keep working; the "Working..." button at the top shows it
+  again.
+- **The More menu** has headings (Package & Intune, Releases, Groups, App
+  ID, Remove); *Pull from Intune* is **Read from Intune**, *Push settings
+  to Intune* is **Send settings to Intune**.
+- The **Status** column is **Stage**.
+
 ## 2.9.0
 
 ### Changed

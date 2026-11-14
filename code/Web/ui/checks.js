@@ -178,7 +178,7 @@ async function runEach(names, body, opts) {
 async function pushSettings(names) {
   if (!names.length) return;
   if (!(await ask(`Send the catalog's settings for ${names.length === 1 ? `"${names[0]}"` : names.length + ' apps'} to Intune?\n\nDescription, commands, detection rule, requirements, return codes and dependencies are replaced with the catalog's. No package is uploaded; groups aren't touched.`))) return;
-  runDialog('Push settings to Intune', names.join(', '));
+  runDialog('Send settings to Intune', names.join(', '));
   const done = await runEach(names, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'runLog', startText: 'Pushing ' });
   toast(`Settings pushed for ${done.length} of ${names.length} app(s).`, done.length < names.length);
   for (const f of findings.filter(f => done.includes(f.catalogName) && (f.actions || []).includes('PushMetadata'))) dropFinding(f);

@@ -6,11 +6,13 @@
 // ---------------------------------------------------------------- group picker
 // Every "one group per line" box: suggestions for the line being typed (favourites, the
 // catalog's groups, Entra ID's), arrow keys and Enter to pick; groups Entra doesn't have yet are named.
-const gpBoxes = ['gRequired', 'gAvailable', 'gUninstall', 'gExclude', 'adRequired', 'adAvailable', 'pilotGroups'];
+// The chip boxes' "Add a group" fields (chips.js), else the text box itself.
+const gpBoxes = ['gRequired', 'gAvailable', 'gUninstall', 'gExclude', 'adRequired', 'adAvailable', 'pilotGroups', 'favGroups', 'sGroups'];
 const gpList = el('ul', { id: 'gpList', class: 'gplist', role: 'listbox', 'aria-label': 'Group suggestions', hidden: true });
 document.body.append(gpList);
 let gpBox = null, gpItems = [], gpActive = -1, gpTimer = 0, gpSeq = 0;
 function gpLine(ta) {
+  if (ta.tagName === 'INPUT') return { start: 0, end: ta.value.length, text: ta.value.trim() };
   const v = ta.value, pos = ta.selectionStart, start = v.lastIndexOf('\n', pos - 1) + 1, endI = v.indexOf('\n', pos), end = endI < 0 ? v.length : endI;
   return { start, end, text: v.slice(start, end).trim() };
 }
@@ -40,6 +42,7 @@ function gpMove(d) {
 }
 function gpPick(i) {
   const ta = gpBox, g = gpItems[i]; if (!ta || !g) return;
+  if (ta._addChip) { ta._addChip(g.name); gpHide(); ta.focus(); return; }
   const l = gpLine(ta), v = ta.value;
   const before = v.slice(0, l.start), after = v.slice(l.end);
   // The picked group replaces the line being typed; a group already in the box isn't listed twice.
@@ -55,21 +58,23 @@ async function gpSuggest(ta) {
   const l = gpLine(ta), seq = ++gpSeq;
   const r = await api('/api/group-suggest', { q: l.text });
   if (seq !== gpSeq || document.activeElement !== ta) return;
-  const have = new Set(ta.value.split('\n').map(s => s.trim().toLowerCase()));
+  const have = new Set((ta._source || ta).value.split('\n').map(s => s.trim().toLowerCase()));
   gpShow(ta, r.ok ? r.groups.filter(g => !have.has(g.name.toLowerCase()) || g.name.toLowerCase() === l.text.toLowerCase()).filter(g => g.name.toLowerCase() !== l.text.toLowerCase()).slice(0, 12) : []);
 }
 async function gpCheck(ta) {
-  let warn = ta.parentElement.querySelector('.gpwarn');
-  const names = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+  const src = ta._source || ta, anchor = ta._source ? ta.parentElement : ta;
+  let warn = anchor.parentElement.querySelector('.gpwarn');
+  const names = src.value.split('\n').map(s => s.trim()).filter(Boolean);
   if (!names.length) { if (warn) warn.hidden = true; return; }
   const r = await api('/api/group-check', { names });
   if (!r.ok || !r.checked) { if (warn) warn.hidden = true; return; }
-  if (!warn) { warn = el('span', { class: 'gpwarn' }); ta.after(warn); }
+  if (!warn) { warn = el('span', { class: 'gpwarn' }); anchor.after(warn); }
   warn.hidden = !r.missing.length;
   warn.textContent = r.missing.length ? `Not in Entra ID yet: ${r.missing.join(', ')} - created when the groups are pushed. A typo?` : '';
 }
-for (const id of gpBoxes) {
-  const ta = $(id); if (!ta) continue;
+// Suggestions for one group field (a chip box's input, or a text box); chips.js calls it for boxes it makes later.
+function gpAttach(ta) {
+  if (!ta || ta.dataset.gp) return; ta.dataset.gp = '1';
   ta.setAttribute('aria-autocomplete', 'list'); ta.setAttribute('aria-controls', 'gpList');
   ta.addEventListener('input', e => { if (e.isTrusted === false && !gpList.hidden) return; clearTimeout(gpTimer); gpTimer = setTimeout(() => gpSuggest(ta), 200); });
   ta.addEventListener('focus', () => { clearTimeout(gpTimer); gpTimer = setTimeout(() => gpSuggest(ta), 150); });
@@ -80,14 +85,16 @@ for (const id of gpBoxes) {
     else if ((e.key === 'Enter' || e.key === 'Tab') && gpActive >= 0 && gpLine(ta).text) { e.preventDefault(); gpPick(gpActive); }
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); gpHide(); }
   });
-  ta.addEventListener('blur', () => { setTimeout(() => { if (document.activeElement !== ta) gpHide(); }, 150); gpCheck(ta); });
+  ta.addEventListener('blur', () => { setTimeout(() => { if (document.activeElement !== ta) gpHide(); gpCheck(ta); }, 260); });
 }
+for (const id of gpBoxes) gpAttach($(id + 'Chips') || $(id));
+for (const inp of document.querySelectorAll('.chipinput[data-kind="group"]')) gpAttach(inp);
 
 // ---------------------------------------------------------------- assignment profiles
 const profiles = () => (prefs && prefs.profiles) || [];
 function fillProfileSelect(sel, first) {
   sel.replaceChildren(el('option', { value: '', text: first }), ...profiles().map((p, i) => el('option', { value: String(i), text: p.name })));
-  sel.disabled = !profiles().length; sel.title = profiles().length ? 'Fill in a profile\'s groups' : 'No assignment profiles yet - Settings > Defaults > Assignment profiles';
+  sel.disabled = !profiles().length; sel.title = profiles().length ? 'Fill in a profile\'s groups' : 'No assignment profiles yet - Settings > Apps & defaults > Assignment profiles';
 }
 const mergeLines = (id, add) => { const have = $(id).value.split('\n').map(s => s.trim()).filter(Boolean); for (const g of add) if (!have.some(h => h.toLowerCase() === g.toLowerCase())) have.push(g); $(id).value = have.join('\n'); };
 $('aProfile').addEventListener('focus', () => fillProfileSelect($('aProfile'), 'Apply a profile...'));
@@ -103,19 +110,23 @@ $('adProfile').addEventListener('change', () => {
   if (p.exclude.length) toast(`"${p.name}" also excludes ${p.exclude.join(', ')} - add that in the editor afterwards.`);
   $('adProfile').value = '';
 });
+let profN = 0;
 function profRow(p) {
-  const inp = (v, ph, lbl) => el('input', { value: v || '', placeholder: ph, 'aria-label': lbl });
+  // Each role a chip box (chips.js) over a hidden text box, one group per line.
+  const part = (list, label) => { const t = el('textarea', { id: `prof${++profN}`, 'aria-label': label, rows: 1 }); t.value = (list || []).join('\n'); return el('label', { class: 'pfield' }, label, t); };
   const row = el('div', { class: 'profrow2' },
-    inp(p.name, 'Name, e.g. Standard', 'Profile name'), inp((p.required || []).join(', '), 'Required for', 'Required for'), inp((p.available || []).join(', '), 'Available for', 'Available for'), inp((p.exclude || []).join(', '), 'Excluded', 'Excluded'),
-    el('button', { class: 'btn small ghost', text: 'Remove', title: 'Remove this profile', onclick: () => row.remove() }));
+    el('label', { class: 'pfield' }, 'Name', el('input', { value: p.name || '', placeholder: 'e.g. Standard', 'aria-label': 'Profile name' })),
+    part(p.required, 'Required for'), part(p.available, 'Available for'), part(p.exclude, 'Excluded'),
+    el('button', { class: 'btn small ghost', text: 'Remove', title: 'Remove this profile', 'aria-label': `Remove the profile ${p.name || ''}`.trim(), onclick: () => row.remove() }));
+  for (const t of row.querySelectorAll('textarea')) chipify(t);
   return row;
 }
 function fillProfiles(p) {
   fillProfileSelect($('aProfile'), 'Apply a profile...'); fillProfileSelect($('adProfile'), '(none)'); $('profRows').replaceChildren(...((p && p.profiles) || []).map(profRow)); if (!$('profRows').children.length) $('profRows').append(profRow({})); }
 $('btnProfAdd').addEventListener('click', () => { const r = profRow({}); $('profRows').append(r); r.querySelector('input').focus(); });
 $('btnProfSave').addEventListener('click', () => {
-  const split = s => s.split(',').map(x => x.trim()).filter(Boolean);
-  const list = [...$('profRows').children].map(r => { const v = [...r.querySelectorAll('input')].map(i => i.value.trim()); return { name: v[0], required: split(v[1]), available: split(v[2]), exclude: split(v[3]) }; })
+  const lines = t => t.value.split('\n').map(x => x.trim()).filter(Boolean);
+  const list = [...$('profRows').children].map(r => { const t = [...r.querySelectorAll('textarea')]; return { name: r.querySelector('input').value.trim(), required: lines(t[0]), available: lines(t[1]), exclude: lines(t[2]) }; })
     .filter(p => p.name || p.required.length || p.available.length || p.exclude.length);
   savePrefs({ profiles: list }, 'Assignment profiles saved.');
 });
@@ -197,11 +208,12 @@ async function loadHome() {
   $('homeNote').textContent = 'Looking...';
   const r = await api('/api/attention');
   if (!r.ok) { $('homeNote').textContent = r.error; return; }
+  renderSetup(r.setup);
   $('homeNote').textContent = r.items.length ? `${r.items.length} thing${r.items.length === 1 ? '' : 's'} to look at${r.lastRun ? ` - last nightly run ${r.lastRun}` : ''}.` : 'Nothing needs a look right now.';
   const s = r.summary, stat = (n, l, cls) => el('div', { class: 'stat ' + (cls || '') }, el('span', { class: 'n', text: n }), el('span', { class: 'l', text: l }));
   $('homeStats').replaceChildren(stat(String(r.apps), 'apps in the catalog'), stat(String(r.deployed), 'in Intune'), stat(String(r.managed), 'with managed updates'),
     ...(s && s.onCurrentPercent !== null ? [stat(s.onCurrentPercent + ' %', `of ${s.devices} devices on the current version`, s.onCurrentPercent < 90 ? 'warn' : 'ok')] : []));
-  const where = { 'settings:connection': ['Settings', () => showSettings('connection')], 'settings:defaults': ['Settings', () => showSettings('defaults')], 'settings:packaging': ['Settings', () => showSettings('packaging')],
+  const where = { 'settings:connection': ['Settings', () => showSettings('connection')], 'settings:defaults': ['Settings', () => showSettings('defaults')], 'settings:updates': ['Settings', () => showSettings('updates')], 'settings:automation': ['Settings', () => showSettings('automation')], 'settings:packaging': ['Settings', () => showSettings('packaging')],
     'apps:notdeployed': ['Show them', () => { showView('apps'); $('filter').value = 'notdeployed'; renderApps(); updateViewButtons(); }], 'apps:all': ['Apps', () => showView('apps')],
     updates: ['Updates', () => showView('updates')], checks: ['Checks', () => showView('checks')],
     'do:manageddefault': ['Make it the default', makeManagedDefault], 'do:managedall': ['Turn on for all', managedForAll], 'do:takeversions': ["Take winget's versions", takeVersionsForManaged] };
@@ -220,7 +232,8 @@ function palCommands() {
   const v = (name, view) => ({ label: name, hint: 'Page', run: () => showView(view) });
   const cat = (label, act) => ({ label, hint: 'Catalog', run: () => { showView('apps'); document.querySelector(`[data-cact="${act}"]`).click(); } });
   return [v('Home', 'home'), v('Apps', 'apps'), v('Updates', 'updates'), v('Checks', 'checks'), v('Groups', 'groups'), v('Platform scripts', 'scripts'),
-    { label: 'Settings: Connection', hint: 'Page', run: () => showSettings('connection') }, { label: 'Settings: Defaults, managed updates, alerts', hint: 'Page', run: () => showSettings('defaults') },
+    { label: 'Settings: Connection', hint: 'Page', run: () => showSettings('connection') }, { label: 'Settings: Apps & defaults, profiles, favourites', hint: 'Page', run: () => showSettings('defaults') },
+    { label: 'Settings: Updates - pilot groups, rings, release rule', hint: 'Page', run: () => showSettings('updates') }, { label: 'Settings: Nightly run & alerts', hint: 'Page', run: () => showSettings('automation') },
     { label: 'Settings: Packaging & folders', hint: 'Page', run: () => showSettings('packaging') }, { label: 'Settings: Diagnostics', hint: 'Page', run: () => showSettings('diagnostics') },
     { label: 'Add apps', hint: 'Action', run: () => openAdd() }, { label: 'Add an installer (MSI / EXE)', hint: 'Action', run: () => openAdd('installer') },
     { label: 'Add a PowerShell script app', hint: 'Action', run: () => openAdd('script') }, { label: 'Add apps from a list (winget export)', hint: 'Action', run: () => openAdd('list') },
@@ -291,7 +304,9 @@ $('btnMxSave').addEventListener('click', async () => {
   const changes = [...mxChanges].map(([k, role]) => { const [name, group] = k.split('\u0001'); return { name, group, role }; });
   const r = await api('/api/assignments-set', { changes });
   if (!r.ok) { toast(r.error, true); return; }
-  toast(`${changes.length} change(s) saved to ${r.apps.length} app(s). Push groups sends them to Intune (Undo takes them back).`);
+  toast(`${changes.length} change(s) saved to ${r.apps.length} app(s) in the catalog.`, false, [
+    { label: 'Push groups', run: () => { const names = r.apps.filter(n => (apps.find(a => a.name === n) || {}).hasAppId); if (names.length) { showView('apps'); selected.clear(); names.forEach(n => selected.add(n)); renderApps(); $('btnPush').click(); } else toast('None of them is in Intune yet - Deploy them.'); } },
+    { label: 'Undo', run: () => undoLast() }]);
   await loadApps(); await openMatrix();
 });
 $('dlgMatrix').addEventListener('cancel', async e => { if (mxChanges.size) { e.preventDefault(); if (await ask(`Discard ${mxChanges.size} change(s) in the grid?`, { ok: 'Discard', danger: true })) { mxChanges.clear(); $('dlgMatrix').close(); } } });
@@ -307,7 +322,7 @@ async function managedForAll() {
   if (!names.length) return;
   if (!(await ask(`Turn managed updates on for ${names.length} Winget app(s)?\n\n${names.slice(0, 12).join(', ')}${names.length > 12 ? ', ...' : ''}\n\nEach installs a fixed version from then on, and new versions go to the pilot groups first. Their install commands follow the App version - apps without one take winget's current version next (Home asks).`, { ok: 'Turn on', danger: false }))) return;
   const r = await api('/api/managed-updates', { names, on: true });
-  toast(r.ok ? `Managed updates on for ${r.changed.length} app(s)${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}. Undo takes it back.` : r.error, !r.ok);
+  toast(r.ok ? `Managed updates on for ${r.changed.length} app(s)${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}.` : r.error, !r.ok, r.ok ? [{ label: 'Undo', run: () => undoLast() }] : []);
   await loadApps(); loadHome();
 }
 async function takeVersionsForManaged() {

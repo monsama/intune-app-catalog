@@ -111,11 +111,14 @@ function activity(text) {
 const stamp = () => new Date().toTimeString().slice(0, 8);
 
 let toastTimer = null;
-function toast(msg, isErr) {
+// -actions: the next steps as buttons in the message, e.g. [{ label: 'Deploy', run: () => ... }] - it then stays longer.
+function toast(msg, isErr, actions) {
   activity(`${stamp()} ${isErr ? '[FAILED] ' : ''}${msg}`);
   const t = $('toast');
-  t.textContent = msg; t.className = 'toast' + (isErr ? ' err' : ''); t.hidden = false;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, isErr ? 8000 : 4000);
+  const acts = (actions || []).filter(Boolean);
+  t.replaceChildren(el('span', { text: msg }), ...acts.map(a => el('button', { class: 'btn small', text: a.label, onclick: () => { t.hidden = true; a.run(); } })));
+  t.className = 'toast' + (isErr ? ' err' : '') + (acts.length ? ' withacts' : ''); t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, acts.length ? 12000 : isErr ? 8000 : 4000);
 }
 
 // ---------------------------------------------------------------- liveness
@@ -175,7 +178,7 @@ function showSettings(sec) {
   if (!$('viewSettings').hidden || sec) showViewOnly('settings');
   for (const b of document.querySelectorAll('.subtab[data-sec]')) { const on = b.dataset.sec === settingsSec; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; }
   for (const p of document.querySelectorAll('.setsec')) p.hidden = p.dataset.sec !== settingsSec;
-  if (settingsSec === 'defaults' && typeof loadUpdateRuns === 'function') loadUpdateRuns();
+  if (settingsSec === 'automation' && typeof loadUpdateRuns === 'function') loadUpdateRuns();
   try { localStorage.setItem('settingsSec', settingsSec); } catch (e) { }
 }
 // Switches to the Settings tab without going through showView again.

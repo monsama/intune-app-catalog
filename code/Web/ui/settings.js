@@ -94,6 +94,7 @@ let jobRunning = false;
 // (Deploy's "Done", Apply before a preview) stays off.
 const jobButtonIds = ['btnCheckCerts', 'btnUpload', 'btnAddPerms', 'btnDeployGo', 'btnPushGo', 'btnScriptIntune', 'btnScriptLocal', 'btnGroupSave', 'btnGroupsDeleteGo'];
 function jobButtons(on) {
+  const chip = $('jobChip'); if (chip) chip.hidden = on;
   for (const id of jobButtonIds) {
     const b = $(id);
     if (!on) { if (b.dataset.jobWas === undefined) b.dataset.jobWas = b.disabled ? '1' : '0'; b.disabled = true; }
@@ -327,11 +328,13 @@ async function savePrefs(part, okText, errEl) {
 }
 $('btnSaveChecks').addEventListener('click', () => savePrefs({ checks: Object.fromEntries([...document.querySelectorAll('[data-check]')].map(c => [c.dataset.check, c.checked])) }, 'Saved.'));
 $('btnSaveFolders').addEventListener('click', () => savePrefs({ folders: Object.fromEntries([...document.querySelectorAll('[data-folder]')].map(i => [i.dataset.folder, i.value.trim()])) }, 'Folders saved.'));
-$('btnSavePilot').addEventListener('click', () => savePrefs({ pilotGroups: lines('pilotGroups'), releaseRingsText: $('releaseRings').value, releasePolicy: { Days: $('rpDays').value, MaxFailedPercent: $('rpFailed').value, MinInstalled: $('rpMin').value,
+const savePolicy = okText => savePrefs({ pilotGroups: lines('pilotGroups'), releaseRingsText: $('releaseRings').value, releasePolicy: { Days: $('rpDays').value, MaxFailedPercent: $('rpFailed').value, MinInstalled: $('rpMin').value,
   FastTrackHours: $('rpFastHours').value,
   ReleaseDays: [...document.querySelectorAll('[data-rday]')].filter(c => c.checked).map(c => +c.dataset.rday), SkipLastWeek: $('rpSkipLast').checked, AutoWithdrawPercent: $('rpWithdraw').value,
   DriftCheck: $('rpDrift').checked, DriftFix: $('rpDriftFix').checked, BackupCatalog: $('rpBackup').checked, MonthlyReport: $('rpMonthly').checked, GatePath: $('rpGate').value.trim(), DeadlineDays: $('rpDeadline').value, RestartGraceMinutes: $('rpGrace').value, Notifications: $('rpNotif').value,
-  AutoRelease: $('rpAutoRelease').checked, AutoPromote: $('rpAutoPromote').checked, CleanupOld: $('rpCleanup').checked, RunAt: (prefs && prefs.releasePolicy && prefs.releasePolicy.RunAt) || '03:00' } }, 'Managed updates saved.'));
+  AutoRelease: $('rpAutoRelease').checked, AutoPromote: $('rpAutoPromote').checked, CleanupOld: $('rpCleanup').checked, RunAt: (prefs && prefs.releasePolicy && prefs.releasePolicy.RunAt) || '03:00' } }, okText);
+$('btnSavePilot').addEventListener('click', () => savePolicy('Managed updates saved.'));
+$('btnSaveNightly').addEventListener('click', () => savePolicy('Nightly run saved.'));
 const alertPart = () => ({ alerts: { level: $('alLevel').value, webhookUrl: $('alWebhook').value.trim(), clearWebhook: $('alClearHook').checked, mailFrom: $('alFrom').value.trim(), mailTo: $('alTo').value.split(/[,;\s]+/).filter(Boolean) } });
 $('btnSaveAlerts').addEventListener('click', () => savePrefs(alertPart(), 'Alerts saved.'));
 $('btnAlertTest').addEventListener('click', async () => {

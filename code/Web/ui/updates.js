@@ -4,7 +4,7 @@
 
 // Reading the counts asks Intune, so a tab switch reuses them for a minute (Reload always asks).
 // A load asked for while one is running isn't dropped: it runs once that one ends.
-let updRows = [], updLoading = false, updAgain = false, updLoadedAt = 0;
+let updRings = null, updRows = [], updLoading = false, updAgain = false, updLoadedAt = 0;
 async function loadUpdates(force) {
   if (updLoading) { updAgain = updAgain || force !== false; return; }
   if (!force && updLoadedAt && Date.now() - updLoadedAt < 60000) return;
@@ -13,7 +13,7 @@ async function loadUpdates(force) {
   try {
     const r = await api('/api/updates-overview');
     if (!r.ok) { $('updNote').textContent = r.error; return; }
-    updRows = r.rows; updLoadedAt = Date.now();
+    updRows = r.rows; updLoadedAt = Date.now(); updRings = (r.rings || []).map(x => x.name);
     const rings = (r.rings || []).length > 1 ? ` Release rings: ${r.rings.map(x => x.name).join(' > ')} > everyone.` : '';
     $('updNote').textContent = `${r.rows.length} app${r.rows.length === 1 ? '' : 's'} with managed updates${r.notManaged ? `, ${r.notManaged} without` : ''}.${r.connected ? ` Counts read at ${r.at}.` : ' Not connected - no counts from Intune.'}${rings}${r.note ? ' ' + r.note : ''}`;
     const s = r.summary;
@@ -50,12 +50,12 @@ function renderUpdates() {
     const verdict = p && pillFor[p.action];
     const devices = x.installed === null ? el('span', { class: 'muted', text: x.deployed ? '-' : 'not deployed' })
       : el('span', { title: `${x.installed} installed, ${x.failed} failed, ${x.pending} pending, ${x.notInstalled} not installed` }, `${x.installed}`, el('span', { class: 'muted', text: ` of ${x.installed + x.failed + x.pending + x.notInstalled}` }), x.failed ? el('span', { class: 'pill err newer', text: `${x.failed} failed` }) : '');
-    const where = p ? (p.fastTrack ? 'fast track' : p.ringCount > 1 ? `ring ${p.ring + 1} of ${p.ringCount} - ${p.ringName}` : 'pilot') : '';
+    const where = p ? releaseTimeline(p.ring, p.fastTrack, updRings) : '';
     return el('tr', {},
       el('td', { class: 'name' }, x.name, el('span', { class: 'muted', text: (x.kind === 'package' ? ' (own package)' : '') + (x.ownRule ? ' - own rule' : '') + (x.autoRelease ? ' - released automatically' : '') })),
       el('td', { class: 'num', text: x.current || '-' }),
       el('td', {}, devices),
-      el('td', {}, p ? [el('span', { class: 'mono', text: p.version }), ' ', el('span', { class: 'pill ' + (p.fastTrack ? 'warn' : 'muted'), text: where }), ' ', verdict ? el('span', { class: 'pill ' + verdict[0], text: verdict[1], title: p.reason }) : el('span', { class: 'muted', text: '(no counts yet)' }), el('div', { class: 'why', text: p.reason || `since ${p.at}` })] : el('span', { class: 'muted', text: '-' })),
+      el('td', {}, p ? [el('span', { class: 'mono', text: p.version }), ' ', where, verdict ? el('span', { class: 'pill ' + verdict[0], text: verdict[1], title: p.reason }) : el('span', { class: 'muted', text: '(no counts yet)' }), el('div', { class: 'why', text: p.reason || `since ${p.at}` })] : el('span', { class: 'muted', text: '-' })),
       el('td', {}, x.available ? el('span', { class: 'pill info', text: x.available }) : el('span', { class: 'muted', text: '-' }), x.gate ? el('div', { class: 'why', text: `Test tenant: ${x.gate}` }) : ''),
       el('td', {}, x.older ? el('span', { title: x.older.versions.map(v => `${v.version}: ${v.devices}`).join('\n') }, `${x.older.devices} device${x.older.devices === 1 ? '' : 's'}`, el('div', { class: 'why', text: x.older.versions.slice(0, 3).map(v => `${v.version} (${v.devices})`).join(', ') + (x.older.versions.length > 3 ? ', ...' : '') })) : el('span', { class: 'muted', text: '-' })),
       el('td', { class: 'mono', text: x.previous.length ? x.previous.join(', ') : '-' }),

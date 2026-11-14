@@ -162,7 +162,7 @@ $('btnAddGo').addEventListener('click', async () => {
       }
       if (!added.length && !skipped.length) return;
       $('dlgAdd').close(); await afterAdd(added);
-      toast(`${added.length} app(s) added${skipped.length ? ' - skipped: ' + skipped.join('; ') : ''}.`, !added.length);
+      toast(`${added.length} app(s) added${skipped.length ? ' - skipped: ' + skipped.join('; ') : ''}.`, !added.length, added.length && !$('adPublish').checked ? [{ label: added.length === 1 ? 'Deploy it' : `Deploy ${added.length}`, run: () => openDeploy(added) }] : []);
     }
     else if (addSrc === 'installer') {
       const r = await api('/api/add-installer', { uploadId: aiUpload.id, name: $('aiName').value.trim(), publisher: $('aiPublisher').value.trim(), version: $('aiVersion').value.trim(),
@@ -171,7 +171,7 @@ $('btnAddGo').addEventListener('click', async () => {
       aiUpload.added = true;
       const build = $('aiBuild').checked;
       $('dlgAdd').close(); await afterAdd([r.name]);
-      toast(`${r.name} added - its installer is in ${r.folder}.`);
+      toast(`${r.name} added - its installer is in ${r.folder}.`, false, build || publish ? [] : [{ label: 'Build', run: () => buildAdded(r.name) }]);
       if (build || publish) { if (!(await buildAdded(r.name))) return; }
     }
     else {
@@ -180,7 +180,7 @@ $('btnAddGo').addEventListener('click', async () => {
         install: $('asInstall').value, uninstall: $('asUninstall').value, detectScript: custom ? $('asDetectScript').value : '', ...groups });
       if (!r.ok) { showAddError(r.error); return; }
       $('dlgAdd').close(); await afterAdd([r.name]);
-      toast(`${r.name} added - Install.ps1 and Uninstall.ps1 are in ${r.folder}.${publish ? '' : ' Build its package, then Deploy.'}`);
+      toast(`${r.name} added - Install.ps1 and Uninstall.ps1 are in ${r.folder}.`, false, publish ? [] : [{ label: 'Build', run: () => buildAdded(r.name) }]);
       if (publish && !(await buildAdded(r.name))) return;
     }
   } finally { updateAddButton(); }
@@ -195,7 +195,8 @@ async function afterAdd(names) {
 async function buildAdded(name) {
   runDialog(`Build ${name}`, 'Packaging it as an .intunewin for Intune.');
   const p = await releaseStep({ names: [name] }, '/api/package-start', 'runLog', `Building ${name}'s package...`);
-  toast(p.ok ? `${name}'s package is built${$('adPublish').checked ? '' : ' - Deploy is next'}.` : `Building the package failed: ${p.error || 'see the log'}`, !p.ok);
+  toast(p.ok ? `${name}'s package is built.` : `Building the package failed: ${p.error || 'see the log'}`, !p.ok,
+    p.ok && !$('adPublish').checked ? [{ label: 'Test in Sandbox', run: () => openSandbox(name) }, { label: 'Deploy', run: () => openDeploy([name]) }] : []);
   await loadApps();
   if (p.ok && $('adPublish').checked) { $('dlgRun').close(); openDeploy([name]); }
   return p.ok;

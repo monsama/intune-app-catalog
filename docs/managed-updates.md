@@ -61,7 +61,7 @@ line-of-business tool. Empty fields use Settings' rule.
 
 ## Install deadline, restart, notifications
 
-Settings > Managed updates > *Fast track and installation*:
+Settings > Updates > *Fast track and installation*:
 
 - **Install deadline (days):** the Required assignment of a release gets a
   deadline this many days after it reaches a group. Users can install it
@@ -82,12 +82,12 @@ catalog that started earlier, **Home** lists what's left: making it the
 default, turning it on for the Winget apps without it, and giving managed
 apps without a version winget's current one.
 
-1. **Settings > Defaults > Managed updates**: the pilot groups (a few IT
+1. **Settings > Updates**: the pilot groups (a few IT
    devices, then perhaps a wider early-adopter group) and the release rule:
    - **In pilot at least N days.**
    - **Failed at most X %** of the pilot devices that tried.
    - **Installed on at least M** pilot devices.
-2. **Settings > Defaults > Default values**: "Winget apps install with:
+2. **Settings > Apps & defaults > Default values**: "Winget apps install with:
    Managed updates" for new apps. Take *Winget AutoUpdate* out of the
    default dependencies. A managed app doesn't need it.
 3. For existing apps: select them, **More > Managed updates on...**
@@ -134,7 +134,7 @@ minute when you switch tabs; **Reload** reads them again.
 
 ## The nightly run
 
-**Settings > Defaults > Managed updates > Schedule** creates a Windows
+**Settings > Nightly run & alerts > Schedule** creates a Windows
 scheduled task, "Intune App Catalog - managed updates". It runs
 `IntuneDeployment.ps1 -RunUpdates` every day as you, on this PC, while
 you're signed in. For an always-on server, open the task in Task Scheduler
@@ -188,7 +188,7 @@ backup and the monthly report.
 ### Running while nobody is signed in
 
 A task that runs without a signed-in user can't use your own private
-keys. **Settings > Managed updates > Run while nobody is signed in** shows
+keys. **Settings > Nightly run & alerts > Run while nobody is signed in** shows
 what's missing; **Create the setup script** writes
 `Logs\\unattended-setup.ps1`. Run it once in PowerShell started with *Run
 as administrator*: it copies the certificate into the computer's store,
@@ -198,7 +198,7 @@ next run's report.
 
 ### Alerts
 
-**Settings > Defaults > Managed updates > Alerts** sends a message after a
+**Settings > Nightly run & alerts > Alerts** sends a message after a
 run: always, or only when something needs a look (failed, on hold, ready,
 released, promoted, advanced).
 

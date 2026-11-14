@@ -48,7 +48,7 @@ function Global:Get-WebAppEditable {
         detectedName = [string]$App.detectedName
         autoRelease  = [bool]$App.autoRelease
         downloadUrl  = [string]$App.downloadUrl
-        releases     = @(@($App.releases) | ForEach-Object { [ordered]@{ version = [string]$_.version; appId = [string]$_.appId; state = [string]$_.state; at = [string]$_.at } })
+        releases     = @(@($App.releases) | ForEach-Object { [ordered]@{ version = [string]$_.version; appId = [string]$_.appId; state = [string]$_.state; at = [string]$_.at; ring = [int]$_.ring; fastTrack = [bool]$_.fastTrack } })
         icon         = $(if ($App.icon -and $App.icon.value) { [ordered]@{ type = [string]$App.icon.type; value = [string]$App.icon.value } } else { $null })
         metadata     = [ordered]@{
             description      = [string]$(if ($m) { $m.description })
