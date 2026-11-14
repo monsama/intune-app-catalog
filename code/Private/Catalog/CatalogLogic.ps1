@@ -841,6 +841,25 @@ function Global:Get-FactoryAppSettings {
     }
 }
 
+function Global:ConvertTo-PsLiteral {
+    <#
+      Pure: -Text as a whole single-quoted PowerShell string, for scripts this
+      app writes (detection, uninstall, templates, test scripts): every kind
+      of single quote doubled - PowerShell also ends a string on U+2018 to
+      U+201B - and line breaks and other control characters removed, so a
+      name from an installer can't end the string or a comment line. Double
+      quotes stay (a command line needs them).
+    #>
+    param([string]$Text)
+    return "'" + ((([string]$Text) -replace '[\x00-\x1f\x7f]', '') -replace "['\u2018\u2019\u201A\u201B]", '$0$0') + "'"
+}
+
+function Global:Get-InstalledNamePattern {
+    # Pure: a regex for a product's name as Windows lists it - the name itself, or followed by a version or "(x64)" - not "<name> Meeting Add-in", another product.
+    param([string]$Name)
+    return '^' + [regex]::Escape(([string]$Name).Trim()) + '(\s+(v?\d[\w.\-]*|\([^)]*\)))*\s*$'
+}
+
 function Global:ConvertTo-PsSingleQuotedContent {
     <#
       Pure: text made safe to put between single quotes in PowerShell code
@@ -1538,31 +1557,31 @@ function Global:Get-InstallerProposal {
 }
 
 function Global:New-InstalledAppDetectionScript {
-    # Pure: a detection script - the app is installed when Windows lists it (Uninstall keys, both views) by -DisplayName with -Version or newer.
+    # Pure: a detection script - the app is installed when Windows lists it (Uninstall keys, both views) by -DisplayName (exactly, or with a version or "(x64)" after it) with -Version or newer.
     param([string]$DisplayName, [string]$Version)
-    $n = $DisplayName.Replace("'", "''"); $v = ([string]$Version).Replace("'", "''")
+    $pat = ConvertTo-PsLiteral (Get-InstalledNamePattern $DisplayName); $v = ConvertTo-PsLiteral $Version
     return @"
-`$name = '$n'; `$want = '$v'
+`$pattern = $pat; `$want = $v
 `$keys = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
-foreach (`$e in @(Get-ItemProperty -Path `$keys -ErrorAction SilentlyContinue | Where-Object { `$_.DisplayName -like "`$name*" })) {
+foreach (`$e in @(Get-ItemProperty -Path `$keys -ErrorAction SilentlyContinue | Where-Object { [string]`$_.DisplayName -match `$pattern })) {
     if (-not `$want) { Write-Output 'Installed'; exit 0 }
-    try { if ([version](`$e.DisplayVersion -replace '[^0-9.].*$', '') -ge [version](`$want -replace '[^0-9.].*$', '')) { Write-Output 'Installed'; exit 0 } } catch { if (`$e.DisplayVersion -eq `$want) { Write-Output 'Installed'; exit 0 } }
+    try { if ([version]([string]`$e.DisplayVersion -replace '[^0-9.].*$', '') -ge [version](`$want -replace '[^0-9.].*$', '')) { Write-Output 'Installed'; exit 0 } } catch { if ([string]`$e.DisplayVersion -eq `$want) { Write-Output 'Installed'; exit 0 } }
 }
 exit 0
 "@
 }
 
 function Global:New-InstalledAppUninstallScript {
-    # Pure: Uninstall.ps1 for an .exe app - runs the uninstaller Windows lists for -DisplayName, silently (the maker's switch when it's known).
+    # Pure: Uninstall.ps1 for an .exe app - runs the uninstaller Windows lists for -DisplayName (exactly, or with a version or "(x64)" after it), silently.
     param([string]$DisplayName, [string]$ExeKind)
-    $n = $DisplayName.Replace("'", "''")
+    $pat = ConvertTo-PsLiteral (Get-InstalledNamePattern $DisplayName)
     $sw = switch ($ExeKind) { 'inno' { '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' } 'nsis' { '/S' } 'burn' { '/uninstall /quiet /norestart' } 'installshield' { '/s' } default { '/S' } }
     return @"
-# Uninstalls '$n': the uninstaller Windows lists for it, silently. Written by Intune App Catalog.
-`$name = '$n'
+# Uninstalls the app: the uninstaller Windows lists for it, silently. Written by Intune App Catalog.
+`$pattern = $pat
 `$keys = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
-`$entry = @(Get-ItemProperty -Path `$keys -ErrorAction SilentlyContinue | Where-Object { `$_.DisplayName -like "`$name*" }) | Select-Object -First 1
-if (-not `$entry) { Write-Output "`$name is not installed."; exit 0 }
+`$entry = @(Get-ItemProperty -Path `$keys -ErrorAction SilentlyContinue | Where-Object { [string]`$_.DisplayName -match `$pattern }) | Select-Object -First 1
+if (-not `$entry) { Write-Output 'Not installed.'; exit 0 }
 if (`$entry.PSChildName -match '^\{[0-9A-Fa-f-]{36}\}$' -and `$entry.UninstallString -match 'msiexec') {
     `$p = Start-Process msiexec.exe -ArgumentList "/x `$(`$entry.PSChildName) /qn /norestart" -Wait -PassThru; exit `$p.ExitCode
 }
@@ -1578,21 +1597,22 @@ exit `$p.ExitCode
 function Global:Get-ScriptAppTemplates {
     # Pure: the starting points for a script app: @(@{ id; label; install; uninstall }), with the app's name and version filled in. Each install writes the version marker the detection rule reads.
     param([string]$Name, [string]$Version)
-    $n = $Name.Replace("'", "''"); $v = ([string]$Version).Replace("'", "''")
+    # Quoted for PowerShell (ConvertTo-PsLiteral): a name or version can't end a string in the scripts.
+    $key = ConvertTo-PsLiteral ("HKLM:\SOFTWARE\IntuneAppCatalog\Apps\" + ([string]$Name -replace '[\\/]', '-')); $ver = ConvertTo-PsLiteral $Version; $folderName = ConvertTo-PsLiteral ([string]$Name -replace '[\\/:*?"<>|]', '-')
     $marker = @"
 # The version marker Intune's detection rule reads (HKLM\SOFTWARE\IntuneAppCatalog\Apps\<name>, Version) - keep it last.
-New-Item -Path 'HKLM:\SOFTWARE\IntuneAppCatalog\Apps\$n' -Force | Out-Null
-Set-ItemProperty -Path 'HKLM:\SOFTWARE\IntuneAppCatalog\Apps\$n' -Name Version -Value '$v'
+New-Item -Path $key -Force | Out-Null
+Set-ItemProperty -Path $key -Name Version -Value $ver
 "@
-    $unmarker = "Remove-Item -Path 'HKLM:\SOFTWARE\IntuneAppCatalog\Apps\$n' -Recurse -Force -ErrorAction SilentlyContinue"
+    $unmarker = "Remove-Item -Path $key -Recurse -Force -ErrorAction SilentlyContinue"
     $head = "`$ErrorActionPreference = 'Stop'`r`n# Runs as SYSTEM from the package folder (every file you put in Packages\<app> is next to it).`r`n"
     return @(
         [ordered]@{ id = 'installer'; label = 'Run an installer with arguments'
             install = $head + "`$p = Start-Process -FilePath (Join-Path `$PSScriptRoot 'setup.exe') -ArgumentList '/S' -Wait -PassThru`r`nif (`$p.ExitCode -notin 0, 3010) { exit `$p.ExitCode }`r`n" + $marker + "`r`nexit `$p.ExitCode"
-            uninstall = $head + "`$p = Start-Process -FilePath `"`$env:ProgramFiles\$n\uninstall.exe`" -ArgumentList '/S' -Wait -PassThru`r`n$unmarker`r`nexit `$p.ExitCode" },
+            uninstall = $head + "`$p = Start-Process -FilePath (Join-Path (Join-Path `$env:ProgramFiles $folderName) 'uninstall.exe') -ArgumentList '/S' -Wait -PassThru`r`n$unmarker`r`nexit `$p.ExitCode" },
         [ordered]@{ id = 'files'; label = 'Copy files to Program Files'
-            install = $head + "`$target = Join-Path `$env:ProgramFiles '$n'`r`nNew-Item -ItemType Directory -Path `$target -Force | Out-Null`r`nCopy-Item -Path (Join-Path `$PSScriptRoot 'files\*') -Destination `$target -Recurse -Force`r`n" + $marker
-            uninstall = $head + "Remove-Item -Path (Join-Path `$env:ProgramFiles '$n') -Recurse -Force -ErrorAction SilentlyContinue`r`n$unmarker" },
+            install = $head + "`$target = Join-Path `$env:ProgramFiles $folderName`r`nNew-Item -ItemType Directory -Path `$target -Force | Out-Null`r`nCopy-Item -Path (Join-Path `$PSScriptRoot 'files\*') -Destination `$target -Recurse -Force`r`n" + $marker
+            uninstall = $head + "Remove-Item -Path (Join-Path `$env:ProgramFiles $folderName) -Recurse -Force -ErrorAction SilentlyContinue`r`n$unmarker" },
         [ordered]@{ id = 'settings'; label = 'Set registry values (a configuration)'
             install = $head + "New-Item -Path 'HKLM:\SOFTWARE\Policies\Vendor\App' -Force | Out-Null`r`nSet-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Vendor\App' -Name 'Setting' -Value 1 -Type DWord`r`n" + $marker
             uninstall = $head + "Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Vendor\App' -Name 'Setting' -ErrorAction SilentlyContinue`r`n$unmarker" },
@@ -1605,7 +1625,7 @@ Set-ItemProperty -Path 'HKLM:\SOFTWARE\IntuneAppCatalog\Apps\$n' -Name Version -
 function Global:Get-ScriptAppMarkerRule {
     # Pure: the detection rule for a script app - its version marker, this version or newer (so managed updates can follow it).
     param([string]$Name, [string]$Version)
-    return [ordered]@{ Type = 'Registry'; Reg_KeyPath = "HKEY_LOCAL_MACHINE\SOFTWARE\IntuneAppCatalog\Apps\$Name"; Reg_ValueName = 'Version'; Reg_Check32Bit = $false
+    return [ordered]@{ Type = 'Registry'; Reg_KeyPath = "HKEY_LOCAL_MACHINE\SOFTWARE\IntuneAppCatalog\Apps\$($Name -replace '[\\/]', '-')"; Reg_ValueName = 'Version'; Reg_Check32Bit = $false
         Reg_DetectionType = $(if ($Version) { 'version' } else { 'exists' }); Reg_Operator = $(if ($Version) { 'greaterThanOrEqual' } else { 'notConfigured' }); Reg_DetectionValue = [string]$Version }
 }
 
@@ -1653,7 +1673,7 @@ function Global:ConvertTo-DetectionTestScript {
       test in Windows Sandbox. Writes $true or $false.
     #>
     param($Rule)
-    $q = { param($s) "'" + ([string]$s).Replace("'", "''") + "'" }
+    $q = { param($s) ConvertTo-PsLiteral $s }
     $cmp = { param($have, $op, $want) "`$ok = `$false; try { `$h = [version](($have) -replace '[^0-9.].*$', ''); `$w = [version]($(& $q $want) -replace '[^0-9.].*$', ''); `$ok = switch ($(& $q $op)) { 'equal' { `$h -eq `$w } 'notEqual' { `$h -ne `$w } 'greaterThan' { `$h -gt `$w } 'greaterThanOrEqual' { `$h -ge `$w } 'lessThan' { `$h -lt `$w } 'lessThanOrEqual' { `$h -le `$w } default { `$true } } } catch { `$ok = (($have) -eq $(& $q $want)) }; `$ok" }
     # In parentheses: as a command argument, [Environment]::... would be passed as text.
     $expand = { param($p) "([Environment]::ExpandEnvironmentVariables($(& $q $p)))" }
@@ -1678,8 +1698,8 @@ function Global:ConvertTo-DetectionTestScript {
             switch ([string]$Rule.Reg_DetectionType) {
                 'doesNotExist' { return "-not (Test-Path -LiteralPath $(& $q $k))" }
                 'exists' { if ($name) { return "`$null -ne (Get-ItemProperty -LiteralPath $(& $q $k) -Name $(& $q $name) -ErrorAction SilentlyContinue)" }; return "Test-Path -LiteralPath $(& $q $k)" }
-                'version' { return "`$v = (Get-ItemProperty -LiteralPath $(& $q $k) -ErrorAction SilentlyContinue).$name; if (-not `$v) { `$false } else { $(& $cmp '[string]$v' $Rule.Reg_Operator $Rule.Reg_DetectionValue) }" }
-                default { return "`$v = (Get-ItemProperty -LiteralPath $(& $q $k) -ErrorAction SilentlyContinue).$name; [string]`$v -eq $(& $q $Rule.Reg_DetectionValue)" }
+                'version' { return "`$v = (Get-ItemProperty -LiteralPath $(& $q $k) -Name $(& $q $name) -ErrorAction SilentlyContinue).PSObject.Properties[$(& $q $name)].Value; if (-not `$v) { `$false } else { $(& $cmp '[string]$v' $Rule.Reg_Operator $Rule.Reg_DetectionValue) }" }
+                default { return "`$v = (Get-ItemProperty -LiteralPath $(& $q $k) -Name $(& $q $name) -ErrorAction SilentlyContinue).PSObject.Properties[$(& $q $name)].Value; [string]`$v -eq $(& $q $Rule.Reg_DetectionValue)" }
             }
         }
         'Script' { return "`$out = & { $([string]$Rule.Script_Content) } 2>`$null; [bool](@(`$out) | Where-Object { `$_ })" }

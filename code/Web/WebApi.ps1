@@ -455,7 +455,7 @@ function Global:Open-WebTarget {
         'scripts-folder' { return (Open-WebFolder (Get-AppFolder -Kind Scripts -Create)) }
         'sandbox-folder' {
             if ([string]$Data.id -notmatch '^\d{8}-\d{6}-[0-9a-f]{4}$') { return @{ ok = $false; error = 'Unknown test.' } }
-            $sf = Join-Path (Join-Path (Get-AppFolder -Kind Logs) 'sandbox') ([string]$Data.id)
+            $sf = Join-Path (Get-WebSandboxRoot) ([string]$Data.id)
             if (-not (Test-Path -LiteralPath $sf)) { return @{ ok = $false; error = 'That test folder is gone.' } }
             return (Open-WebFolder $sf)
         }

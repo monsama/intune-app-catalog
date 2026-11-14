@@ -179,6 +179,8 @@ $testableFunctionNames = @(
     "ConvertTo-DetectionTestScript",
     "ConvertFrom-WingetExportJson",
     "Get-AppUpdateOffer",
+    "ConvertTo-PsLiteral",
+    "Get-InstalledNamePattern",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -734,6 +736,20 @@ Assert-Equal 0 @($allTypes | Where-Object { $e = $null; [void][System.Management
 $exp = ConvertFrom-WingetExportJson '{"Sources":[{"Packages":[{"PackageIdentifier":"7zip.7zip"},{"PackageIdentifier":"Mozilla.Firefox"},{"PackageIdentifier":"7zip.7zip"},{"PackageIdentifier":"bad id;"}]}]}'
 Assert-True (-not $exp.Error -and (@($exp.Ids) -join ',') -eq '7zip.7zip,Mozilla.Firefox') "ConvertFrom-WingetExportJson: each package once, bad IDs dropped"
 Assert-True ([bool](ConvertFrom-WingetExportJson 'not json').Error) "ConvertFrom-WingetExportJson: not JSON is refused"
+
+# Scripts built from an installer's name can't be broken out of (security review 2.12.0)
+$evil = "Bob" + [char]0x2019 + "s Tool" + [char]13 + [char]10 + "Write-Output pwned; " + [char]0x2018
+$lit = ConvertTo-PsLiteral $evil
+$e1 = $null; [void][System.Management.Automation.Language.Parser]::ParseInput("`$x = $lit", [ref]$null, [ref]$e1)
+Assert-True (@($e1).Count -eq 0 -and (Invoke-Expression $lit) -eq ("Bob" + [char]0x2019 + "s ToolWrite-Output pwned; " + [char]0x2018)) "ConvertTo-PsLiteral: typographic quotes stay text, line breaks go - the string can't be ended"
+$e2 = $null; [void][System.Management.Automation.Language.Parser]::ParseInput((New-InstalledAppDetectionScript -DisplayName $evil -Version '1.0'), [ref]$null, [ref]$e2)
+$e3 = $null; $un = New-InstalledAppUninstallScript -DisplayName $evil -ExeKind 'nsis'; [void][System.Management.Automation.Language.Parser]::ParseInput($un, [ref]$null, [ref]$e3)
+Assert-True (@($e2).Count -eq 0 -and @($e3).Count -eq 0 -and $un -notmatch "(?m)^Write-Output pwned") "New-InstalledApp*Script: a hostile product name gives valid scripts with nothing of it run"
+$tplEvil = @(Get-ScriptAppTemplates -Name $evil -Version "1.0'; Write-Output x; '")
+Assert-Equal 0 @($tplEvil | Where-Object { $e = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($_.install + "`n" + $_.uninstall, [ref]$null, [ref]$e); @($e).Count }).Count "Get-ScriptAppTemplates: a hostile name or version still gives valid scripts"
+$pat = Get-InstalledNamePattern 'Microsoft Teams'
+Assert-True ('Microsoft Teams' -match $pat -and 'Microsoft Teams 24.1 (x64)' -match $pat -and 'Microsoft Teams Meeting Add-in' -notmatch $pat -and 'Microsoft Teams classic' -notmatch $pat) "Get-InstalledNamePattern: the product, with a version or (x64) - not a sibling product"
+Assert-True ('Tool [beta]' -match (Get-InstalledNamePattern 'Tool [beta]')) "Get-InstalledNamePattern: brackets in a name are matched as text"
 
 # A newer release of this app
 $offer = Get-AppUpdateOffer -Current '2.11.0' -Tag 'v2.12.0' -Body "## Added`n- **Faster** catalog`n`n- Lock file"

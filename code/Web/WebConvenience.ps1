@@ -88,13 +88,11 @@ function Global:Find-WebAppIcon {
     if ($site -notmatch '^https://') { return @{ ok = $false; error = 'No icon found - the app needs an https Information URL (its homepage), or an .exe in its packages folder.' } }
     if ($Global:App.TestGraph) { return @{ ok = $false; error = 'Test mode: no homepage is read.' } }
     try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-        $p = @{ Uri = $site; TimeoutSec = 15; MaximumRedirection = 3; ErrorAction = 'Stop' }
-        if ($PSVersionTable.PSEdition -eq 'Desktop') { $p.UseBasicParsing = $true }
-        $page = Invoke-WebRequest @p
+        # https only, a megabyte at most - the page and each icon (Invoke-WebHttpsGet).
+        $html = [System.Text.Encoding]::UTF8.GetString((Invoke-WebHttpsGet -Uri $site -MaxBytes 1MB -TimeoutSec 15))
         $base = [Uri]$site
         $cands = New-Object System.Collections.Generic.List[string]
-        foreach ($m in [regex]::Matches([string]$page.Content, '<link[^>]+>', 'IgnoreCase')) {
+        foreach ($m in [regex]::Matches($html, '<link[^>]+>', 'IgnoreCase')) {
             $tag = $m.Value
             if ($tag -match 'rel\s*=\s*"?[^">]*(apple-touch-icon|icon)' -and $tag -match 'href\s*=\s*"([^"]+)"') {
                 $href = $Matches[1]; $u = New-Object Uri($base, [System.Net.WebUtility]::HtmlDecode($href))
@@ -102,14 +100,11 @@ function Global:Find-WebAppIcon {
             }
         }
         $cands.Add((New-Object Uri($base, '/apple-touch-icon.png')).AbsoluteUri)
-        foreach ($c in @($cands | Select-Object -Unique -First 5)) {
+        foreach ($c2 in @($cands | Select-Object -Unique -First 5)) {
             try {
-                $p2 = @{ Uri = $c; TimeoutSec = 15; MaximumRedirection = 3; ErrorAction = 'Stop' }
-                if ($PSVersionTable.PSEdition -eq 'Desktop') { $p2.UseBasicParsing = $true }
-                $r = Invoke-WebRequest @p2
-                $bytes = [byte[]]$r.Content
+                $bytes = [byte[]](Invoke-WebHttpsGet -Uri $c2 -MaxBytes 750KB -TimeoutSec 15)
                 $type = if ($bytes.Length -gt 8 -and $bytes[0] -eq 0x89 -and $bytes[1] -eq 0x50) { 'image/png' } elseif ($bytes.Length -gt 3 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xD8) { 'image/jpeg' } else { '' }
-                if ($type -and $bytes.Length -le 750KB -and $bytes.Length -ge 200) { return @{ ok = $true; icon = @{ type = $type; value = [Convert]::ToBase64String($bytes) }; from = $c } }
+                if ($type -and $bytes.Length -ge 200) { return @{ ok = $true; icon = @{ type = $type; value = [Convert]::ToBase64String($bytes) }; from = $c2 } }
             }
             catch { }
         }
@@ -155,6 +150,12 @@ function Global:Get-WebDetectionFromInstalled {
 
 # ---------------------------------------------------------------- a test install in Windows Sandbox
 
+function Global:Get-WebSandboxRoot {
+    # Where Sandbox tests are prepared: this user's local app data (only they and administrators can write it).
+    $base = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [System.IO.Path]::GetTempPath() }
+    return (Join-Path (Join-Path $base 'IntuneAppCatalog') 'sandbox')
+}
+
 function Global:Start-WebSandboxTest {
     <#
       Tests an own package (or script app) in Windows Sandbox: its folder
@@ -175,16 +176,17 @@ function Global:Start-WebSandboxTest {
     $src = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $a.appName)
     if (-not (Test-Path -LiteralPath $src)) { return @{ ok = $false; error = "The app's packages folder ($src) doesn't exist." } }
     $id = (Get-Date).ToString('yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0, 4)
-    $root = Join-Path (Join-Path (Get-AppFolder -Kind Logs -Create) 'sandbox') $id
+    # In this user's own profile, not the Logs folder (which can be a share someone else writes): the .wsb runs run.ps1.
+    $root = Join-Path (Get-WebSandboxRoot) $id
     $pkg = Join-Path $root 'package'
     [void](New-Item -ItemType Directory -Path $pkg -Force)
     Copy-Item -Path (Join-Path $src '*') -Destination $pkg -Recurse -Force
     # 64-bit inside the Sandbox: sysnative (for Intune's 32-bit agent) is System32 here.
     $fix = { param($c) ([string]$c) -replace '(?i)%SystemRoot%\\sysnative\\', '%SystemRoot%\System32\' }
-    $q = { param($s) "'" + ([string]$s).Replace("'", "''") + "'" }
+    $q = { param($s) ConvertTo-PsLiteral $s }
     $detect = ConvertTo-DetectionTestScript $m.detectionRule
     $run = @"
-# Test of $($a.appName) in Windows Sandbox - written by Intune App Catalog.
+# A test in Windows Sandbox - written by Intune App Catalog.
 `$out = 'C:\Test'
 `$log = Join-Path `$out 'log.txt'
 function Say(`$t) { Add-Content -LiteralPath `$log -Value ((Get-Date).ToString('HH:mm:ss') + ' ' + `$t) }
@@ -221,7 +223,7 @@ function Global:Get-WebSandboxResult {
     param($Data)
     $id = [string]$Data.id
     if ($id -notmatch '^\d{8}-\d{6}-[0-9a-f]{4}$') { return @{ ok = $false; error = 'Unknown test.' } }
-    $root = Join-Path (Join-Path (Get-AppFolder -Kind Logs) 'sandbox') $id
+    $root = Join-Path (Get-WebSandboxRoot) $id
     $log = if (Test-Path -LiteralPath (Join-Path $root 'log.txt')) { Get-Content -LiteralPath (Join-Path $root 'log.txt') -Raw } else { '' }
     $file = Join-Path $root 'result.json'
     if (-not (Test-Path -LiteralPath $file)) { return @{ ok = $true; done = $false; log = $log } }

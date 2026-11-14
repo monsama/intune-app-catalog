@@ -311,7 +311,7 @@ async function loadPrefs() {
   const rdays = rp.ReleaseDays || [0, 1, 2, 3, 4, 5, 6];
   for (const c of document.querySelectorAll('[data-rday]')) c.checked = rdays.includes(+c.dataset.rday);
   $('rpSkipLast').checked = !!rp.SkipLastWeek; $('rpWithdraw').value = rp.AutoWithdrawPercent ?? 0;
-  $('rpDrift').checked = rp.DriftCheck !== false; $('rpDriftFix').checked = !!rp.DriftFix; $('rpBackup').checked = rp.BackupCatalog !== false; $('rpMonthly').checked = !!rp.MonthlyReport; $('rpGate').value = rp.GatePath || '';
+  $('rpDrift').checked = rp.DriftCheck !== false; $('rpDriftFix').checked = !!rp.DriftFix; $('rpBackup').checked = rp.BackupCatalog !== false; $('rpBackupGit').checked = !!rp.BackupGit; $('rpMonthly').checked = !!rp.MonthlyReport; $('rpGate').value = rp.GatePath || '';
   $('rpFastHours').value = rp.FastTrackHours ?? 4; $('rpDeadline').value = rp.DeadlineDays ?? 0; $('rpGrace').value = rp.RestartGraceMinutes ?? 0; $('rpNotif').value = rp.Notifications || 'showAll';
   $('releaseRings').value = (p.releaseRings || []).map(r => `${r.name}: ${r.groups.join(', ')}`).join('\n');
   const al = p.alerts || {};
@@ -331,7 +331,7 @@ $('btnSaveFolders').addEventListener('click', () => savePrefs({ folders: Object.
 const savePolicy = okText => savePrefs({ pilotGroups: lines('pilotGroups'), releaseRingsText: $('releaseRings').value, releasePolicy: { Days: $('rpDays').value, MaxFailedPercent: $('rpFailed').value, MinInstalled: $('rpMin').value,
   FastTrackHours: $('rpFastHours').value,
   ReleaseDays: [...document.querySelectorAll('[data-rday]')].filter(c => c.checked).map(c => +c.dataset.rday), SkipLastWeek: $('rpSkipLast').checked, AutoWithdrawPercent: $('rpWithdraw').value,
-  DriftCheck: $('rpDrift').checked, DriftFix: $('rpDriftFix').checked, BackupCatalog: $('rpBackup').checked, MonthlyReport: $('rpMonthly').checked, GatePath: $('rpGate').value.trim(), DeadlineDays: $('rpDeadline').value, RestartGraceMinutes: $('rpGrace').value, Notifications: $('rpNotif').value,
+  DriftCheck: $('rpDrift').checked, DriftFix: $('rpDriftFix').checked, BackupCatalog: $('rpBackup').checked, BackupGit: $('rpBackupGit').checked, MonthlyReport: $('rpMonthly').checked, GatePath: $('rpGate').value.trim(), DeadlineDays: $('rpDeadline').value, RestartGraceMinutes: $('rpGrace').value, Notifications: $('rpNotif').value,
   AutoRelease: $('rpAutoRelease').checked, AutoPromote: $('rpAutoPromote').checked, CleanupOld: $('rpCleanup').checked, RunAt: (prefs && prefs.releasePolicy && prefs.releasePolicy.RunAt) || '03:00' } }, okText);
 $('btnSavePilot').addEventListener('click', () => savePolicy('Managed updates saved.'));
 $('btnSaveNightly').addEventListener('click', () => savePolicy('Nightly run saved.'));
