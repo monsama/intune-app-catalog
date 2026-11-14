@@ -341,6 +341,28 @@ function Global:Get-WebHoldReason {
     return [string](Get-InstallErrorSummary -Rows @($read.value.Rows)).Text
 }
 
+function Global:Test-WebGitRepoSafe {
+    <#
+      Why the catalog folder's git repository mustn't be run ('' when it may):
+      its .git owned by someone other than this user, a filter (which runs a
+      command on add) in its .gitattributes or config, or an fsmonitor.
+    #>
+    param([string]$Folder)
+    $gitDir = Join-Path $Folder '.git'
+    try {
+        $owner = (Get-Acl -LiteralPath $gitDir).Owner
+        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        if ($owner -and $me -and $owner -ne $me -and $owner -notmatch '\\Administrators$') { return "its .git belongs to $owner, not you." }
+    }
+    catch { }
+    foreach ($f in @((Join-Path $Folder '.gitattributes'), (Join-Path $gitDir 'info\attributes'))) {
+        if ((Test-Path -LiteralPath $f) -and ((Get-Content -LiteralPath $f -Raw) -match 'filter\s*=')) { return "$f sets a filter." }
+    }
+    $cfg = Join-Path $gitDir 'config'
+    if ((Test-Path -LiteralPath $cfg) -and ((Get-Content -LiteralPath $cfg -Raw) -match '(?im)^\s*\[filter|^\s*fsmonitor\s*=|^\s*hookspath\s*=')) { return 'its config sets a filter, an fsmonitor or a hooks path.' }
+    return ''
+}
+
 function Global:Invoke-WebCatalogBackup {
     # A zip of the catalog's app files in the Backups folder (the last 30 kept); a commit too when the catalog folder is a git repository.
     $cat = Get-AppFolder -Kind Catalog
@@ -352,13 +374,22 @@ function Global:Invoke-WebCatalogBackup {
     catch { return @{ ok = $false; text = "The catalog backup failed: $($_.Exception.Message)" } }
     @(Get-ChildItem -LiteralPath $dir -Filter 'catalog-*.zip' -File | Sort-Object Name -Descending | Select-Object -Skip 30) | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
     $text = "Backed up $($files.Count) app file(s) to $zip."
-    if ((Test-Path -LiteralPath (Join-Path $cat '.git')) -and (Get-Command git -ErrorAction SilentlyContinue)) {
-        $changes = & git -C $cat status --porcelain 2>$null
+    $gitDir = Join-Path $cat '.git'
+    if ($Global:App.ReleasePolicy.BackupGit -and (Test-Path -LiteralPath $gitDir) -and (Get-Command git -ErrorAction SilentlyContinue)) {
+        # Only a repository this user owns, with no hooks, fsmonitor or filters of its own: on a share, someone
+        # else could otherwise put a command in its .git that runs here, as the user who holds the certificate.
+        $why = Test-WebGitRepoSafe $cat
+        if ($why) { return @{ ok = $true; text = "$text The changes weren't committed: $why" } }
+        $hooks = Join-Path ([System.IO.Path]::GetTempPath()) ('intunecat-nohooks-' + [guid]::NewGuid().ToString('N'))
+        [void](New-Item -ItemType Directory -Path $hooks -Force)
+        $safe = @('-c', 'core.fsmonitor=false', '-c', "core.hooksPath=$hooks", '-c', 'core.untrackedCache=false')
+        $changes = & git -C $cat @safe status --porcelain -- '*.json' 2>$null
         if ($changes) {
-            & git -C $cat add -A 2>$null | Out-Null
-            & git -C $cat commit -q -m "Catalog as of $((Get-Date).ToString('yyyy-MM-dd HH:mm')) (nightly run)" 2>$null | Out-Null
+            & git -C $cat @safe add -- '*.json' 2>$null | Out-Null
+            & git -C $cat @safe commit --no-verify -q -m "Catalog as of $((Get-Date).ToString('yyyy-MM-dd HH:mm')) (nightly run)" 2>$null | Out-Null
             $text += $(if ($LASTEXITCODE -eq 0) { ' Committed the changes to the catalog''s git repository.' } else { ' The git commit failed - see git status in the catalog folder.' })
         }
+        Remove-Item -LiteralPath $hooks -Recurse -Force -ErrorAction SilentlyContinue
     }
     return @{ ok = $true; text = $text }
 }
@@ -370,6 +401,45 @@ function Global:Read-WebCatalogFolder {
     return @(Get-ChildItem -LiteralPath $Path -Filter '*.json' -File -ErrorAction SilentlyContinue | ForEach-Object {
             try { ConvertTo-AppRecord (Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { }
         })
+}
+
+function Global:Invoke-WebHttpsGet {
+    <#
+      A GET that stays on https (a redirect elsewhere is refused) and stops at
+      -MaxBytes - read into memory, or into -OutFile. Returns the bytes (no
+      -OutFile) or $null; throws with the reason.
+    #>
+    param([string]$Uri, [long]$MaxBytes, [string]$OutFile, [int]$TimeoutSec = 60)
+    if ($Uri -notmatch '^https://') { throw 'Only https addresses are read.' }
+    Add-Type -AssemblyName System.Net.Http
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $handler = New-Object System.Net.Http.HttpClientHandler
+    $handler.AllowAutoRedirect = $true; $handler.MaxAutomaticRedirections = 5
+    $client = New-Object System.Net.Http.HttpClient($handler)
+    $client.Timeout = [TimeSpan]::FromSeconds($TimeoutSec)
+    [void]$client.DefaultRequestHeaders.UserAgent.TryParseAdd('IntuneAppCatalog')
+    try {
+        $resp = $client.GetAsync($Uri, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        $final = $resp.RequestMessage.RequestUri
+        if ($final.Scheme -ne 'https') { throw "It was redirected off https ($($final.Host))." }
+        if (-not $resp.IsSuccessStatusCode) { throw "$([int]$resp.StatusCode) $($resp.ReasonPhrase)" }
+        $len = $resp.Content.Headers.ContentLength
+        if ($len -and $len -gt $MaxBytes) { throw "It is larger than $([Math]::Round($MaxBytes / 1MB)) MB." }
+        $in = $resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $out = if ($OutFile) { [System.IO.File]::Create($OutFile) } else { New-Object System.IO.MemoryStream }
+        try {
+            $buf = New-Object byte[] 81920; $total = 0
+            while (($n = $in.Read($buf, 0, $buf.Length)) -gt 0) {
+                $total += $n
+                if ($total -gt $MaxBytes) { throw "It is larger than $([Math]::Round($MaxBytes / 1MB)) MB." }
+                $out.Write($buf, 0, $n)
+            }
+            if (-not $OutFile) { return , $out.ToArray() }
+            return $null
+        }
+        finally { $out.Dispose(); $in.Dispose() }
+    }
+    finally { $client.Dispose() }
 }
 
 function Global:Save-WebInstallerDownload {
@@ -392,18 +462,17 @@ function Global:Save-WebInstallerDownload {
     if ($ext -notin '.msi', '.exe') { return @{ ok = $false; changed = $false; text = "The download address doesn't name an .msi or .exe, and the folder has no installer to take the name from." } }
     $tmp = Join-Path $env:TEMP ("intunecat-dl-" + [guid]::NewGuid().ToString('N') + $ext)
     try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-        $p = @{ Uri = $url; OutFile = $tmp; TimeoutSec = 900; MaximumRedirection = 5; ErrorAction = 'Stop' }
-        if ($PSVersionTable.PSEdition -eq 'Desktop') { $p.UseBasicParsing = $true }
-        Invoke-WebRequest @p
+        # Released by itself to devices as SYSTEM: only from a publisher already trusted for this app - the signer
+        # (subject and issuer) of a validly signed installer already in its folder. No such installer: nothing is downloaded.
+        if (-not $old) { return @{ ok = $false; changed = $false; text = 'Put a signed installer from this vendor in the app''s folder first - downloads must be signed by the same publisher.' } }
+        $oldSig = Get-AuthenticodeSignature -LiteralPath $old.FullName
+        if ($oldSig.Status -ne 'Valid') { return @{ ok = $false; changed = $false; text = "The installer in the app's folder ($($old.Name)) isn't validly signed, so a download can't be checked against it - not downloaded." } }
+        Invoke-WebHttpsGet -Uri $url -MaxBytes 8GB -OutFile $tmp -TimeoutSec 900
         $sig = Get-AuthenticodeSignature -LiteralPath $tmp
         if ($sig.Status -ne 'Valid') { return @{ ok = $false; changed = $false; text = "The downloaded installer isn't validly signed ($($sig.Status)) - not used." } }
-        if ($old) {
-            $oldSig = Get-AuthenticodeSignature -LiteralPath $old.FullName
-            if ($oldSig.Status -eq 'Valid' -and $oldSig.SignerCertificate.Subject -ne $sig.SignerCertificate.Subject) { return @{ ok = $false; changed = $false; text = "The downloaded installer is signed by '$($sig.SignerCertificate.Subject)', not '$($oldSig.SignerCertificate.Subject)' like the one in the folder - not used." } }
-            if ((Get-FileHash -LiteralPath $tmp).Hash -eq (Get-FileHash -LiteralPath $old.FullName).Hash) { return @{ ok = $true; changed = $false; text = 'The download is the installer already in the folder.' } }
-        }
-        $target = if ($old) { $old.FullName } else { Join-Path $folder $urlName }
+        if ($oldSig.SignerCertificate.Subject -ne $sig.SignerCertificate.Subject -or $oldSig.SignerCertificate.Issuer -ne $sig.SignerCertificate.Issuer) { return @{ ok = $false; changed = $false; text = "The downloaded installer is signed by '$($sig.SignerCertificate.Subject)' (issuer '$($sig.SignerCertificate.Issuer)'), not like the one in the folder - not used." } }
+        if ((Get-FileHash -LiteralPath $tmp).Hash -eq (Get-FileHash -LiteralPath $old.FullName).Hash) { return @{ ok = $true; changed = $false; text = 'The download is the installer already in the folder.' } }
+        $target = $old.FullName
         Move-Item -LiteralPath $tmp -Destination $target -Force
         return @{ ok = $true; changed = $true; text = "Downloaded a new installer ($([System.IO.Path]::GetFileName($target)), signed by $($sig.SignerCertificate.Subject))." }
     }
@@ -464,7 +533,8 @@ function Global:Send-ManagedUpdateAlert {
     if (-not $msg.Send) { return @{ sent = @(); error = '' } }
     $mail = [bool]($al.MailFrom -and @($al.MailTo).Count)
     if (-not $al.WebhookUrl -and -not $mail) { return @{ sent = @(); error = $(if ($Force) { 'Set a Teams webhook or an email first, and save.' } else { '' }) } }
-    $lines = @($msg.Lines)
+    # Teams renders markdown: brackets become parentheses, so a name or an error can't make a link in the channel.
+    $lines = @($msg.Lines | ForEach-Object { ([string]$_) -replace '\[', '(' -replace '\]', ')' })
     $shown = @($lines | Select-Object -First 30)
     if ($lines.Count -gt $shown.Count) { $shown += "... and $($lines.Count - $shown.Count) more - see the report." }
     if ($al.WebhookUrl) {
@@ -649,7 +719,7 @@ function Global:New-WebUnattendedScript {
     if (-not $thumb) { return @{ ok = $false; error = 'Set up the connection first.' } }
     $user = "$env:USERDOMAIN\$env:USERNAME"
     $tasks = @((Get-WebUpdateTaskName), (Get-WebFastTrackTaskName))
-    $q = { param($s) "'" + ([string]$s).Replace("'", "''") + "'" }
+    $q = { param($s) ConvertTo-PsLiteral $s }
     $script = @"
 # Intune App Catalog - run the nightly tasks while nobody is signed in.
 # Written by the app on $((Get-Date).ToString('yyyy-MM-dd HH:mm')). Run it once, in PowerShell started with "Run as administrator".
@@ -689,10 +759,14 @@ foreach (`$t in `$tasks) {
 }
 Write-Host 'Done. Check it once: sign out, wait for the next run (or start the task from Task Scheduler), then look at Settings > Managed updates.'
 "@
-    $path = Join-Path (Get-AppFolder -Kind Logs -Create) 'unattended-setup.ps1'
+    # In this user's own profile - not the Logs folder, which can be a share: an administrator runs this file.
+    $dir = Join-Path $(if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [System.IO.Path]::GetTempPath() }) 'IntuneAppCatalog'
+    if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+    $path = Join-Path $dir 'unattended-setup.ps1'
     [System.IO.File]::WriteAllText($path, $script, (New-Object System.Text.UTF8Encoding($true)))
-    Write-Log "[INFO] Wrote $path - run it as administrator to let the nightly tasks run while nobody is signed in."
-    return @{ ok = $true; path = $path }
+    $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+    Write-Log "[INFO] Wrote $path (SHA256 $hash) - run it as administrator to let the nightly tasks run while nobody is signed in."
+    return @{ ok = $true; path = $path; sha256 = $hash }
 }
 
 function Global:Get-WebHealth {

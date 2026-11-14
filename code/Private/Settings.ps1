@@ -41,6 +41,7 @@ function Global:Import-GraphSettings {
         # by accident. Doesn't exist at all (older settings file) leaves
         # $Global:App.CheckDriftOnStartup at its own default, untouched.
         if ($settings.CheckDriftOnStartup -is [bool]) { $Global:App.CheckDriftOnStartup = $settings.CheckDriftOnStartup }
+        if ($settings.CheckForUpdates -is [bool]) { $Global:App.CheckForUpdates = $settings.CheckForUpdates }
         if ($settings.DetailedGraphLog -is [bool]) { $Global:App.DetailedGraphLog = $settings.DetailedGraphLog }
         # Same -is [bool] reasoning as CheckDriftOnStartup above, and it
         # matters more here: PushGroupsOnCreate defaults to ON, so reading
@@ -125,6 +126,7 @@ function Global:Write-SettingsFile {
             AssignmentProfiles    = @($Global:App.AssignmentProfiles)
             DefaultAppSettings    = $Global:App.DefaultAppSettings
             CheckDriftOnStartup   = $Global:App.CheckDriftOnStartup
+            CheckForUpdates       = [bool]$Global:App.CheckForUpdates
             RunFullAuditOnStartup = $Global:App.RunFullAuditOnStartup
             CheckIntuneOnDeployOpen = [bool]$Global:App.CheckIntuneOnDeployOpen
             DetailedGraphLog      = [bool]$Global:App.DetailedGraphLog
@@ -213,7 +215,7 @@ function Global:ConvertTo-ReleasePolicy {
         FastTrackHours = 4; DeadlineDays = 0; RestartGraceMinutes = 0; Notifications = 'showAll'
         # The nightly run's other work: release window, automatic withdraw, drift, backup, monthly report, the test tenant's catalog.
         ReleaseDays = @(0, 1, 2, 3, 4, 5, 6); SkipLastWeek = $false; AutoWithdrawPercent = 0; DriftCheck = $true; DriftFix = $false
-        BackupCatalog = $true; MonthlyReport = $false; GatePath = '' }
+        BackupCatalog = $true; BackupGit = $false; MonthlyReport = $false; GatePath = '' }
     if (-not $Raw) { return $p }
     if ($null -ne $Raw.ReleaseDays) {
         $d = @(@($Raw.ReleaseDays) | Where-Object { "$_" -match '^[0-6]$' } | ForEach-Object { [int]"$_" } | Sort-Object -Unique)
@@ -224,6 +226,7 @@ function Global:ConvertTo-ReleasePolicy {
     if ($null -ne $Raw.DriftCheck) { $p.DriftCheck = [bool]$Raw.DriftCheck }
     if ($null -ne $Raw.DriftFix) { $p.DriftFix = [bool]$Raw.DriftFix }
     if ($null -ne $Raw.BackupCatalog) { $p.BackupCatalog = [bool]$Raw.BackupCatalog }
+    if ($null -ne $Raw.BackupGit) { $p.BackupGit = [bool]$Raw.BackupGit }
     if ($null -ne $Raw.MonthlyReport) { $p.MonthlyReport = [bool]$Raw.MonthlyReport }
     $gate = ([string]$Raw.GatePath).Trim()
     if ($gate -and $gate.Length -le 260 -and $gate -notmatch '[*?"<>|]' -and ($gate -match '^[A-Za-z]:\\' -or $gate -match '^\\\\[^\\]+\\' -or $gate -match '^/')) { $p.GatePath = $gate }

@@ -5,8 +5,8 @@
 (async function start() {
   let v = 'home'; try { v = localStorage.getItem('view') || 'home'; } catch (e) { }
   showView(v);
-  await pollServerLog();
-  await loadState();
+  // The log and the state at once - the page is usable as soon as both are in.
+  await Promise.all([pollServerLog(), loadState()]);
   if (state && !state.configured) showSettings('connection');
   await loadApps();
   loadPrefs();

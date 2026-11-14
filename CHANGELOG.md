@@ -1,5 +1,54 @@
 # Changelog
 
+## 2.12.0
+
+### Security
+
+Findings of a review of what was added since 2.5.0, all fixed:
+
+- **The nightly git backup** no longer commits by itself: it's a switch of
+  its own (off), runs git with its hooks, fsmonitor and untracked cache off,
+  and refuses a repository whose .git belongs to someone else or sets a
+  filter - on a share, someone else's .git could otherwise run a command
+  as the user who holds the connection's certificate.
+- **Downloaded installers** (own packages released by themselves) are used
+  only when signed by the same publisher - subject and issuer - as a
+  validly signed installer already in the app's folder; with none there,
+  nothing is downloaded. Redirects off https are refused, and the size is
+  capped.
+- **Generated scripts** (detection and uninstall for an EXE, script-app
+  templates, Sandbox tests, the unattended setup script) quote every name
+  and value safely - typographic quotes doubled, line breaks removed - so a
+  crafted product name can't end a string or a comment.
+- **Uninstall.ps1 and detection for an EXE** match the product exactly (or
+  with a version or "(x64)" after it), not by prefix - "Microsoft Teams"
+  no longer matches "Microsoft Teams Meeting Add-in".
+- **The unattended setup script and Sandbox tests** are written to your
+  own local app data, not the Logs folder (which can be a share); the
+  script's SHA256 is in the Activity log.
+- **Teams alerts** can't carry links from app names or error texts.
+- **Icons from homepages:** https only, a megabyte at most per page and
+  icon.
+- **The local server** doesn't read the body of a request it will refuse
+  (another host or origin, not an API call).
+
+### Added
+
+- **Catalog lock across processes and PCs:** a lock file in the catalog
+  folder while a change is written - the nightly run and other PCs using
+  the same folder (a share) wait their turn; a long wait names who holds
+  it.
+- **A newer version of this app** shows on Home (GitHub, at most twice a
+  day; *Settings > Apps & defaults > Tell me when a new version is out*).
+
+### Changed
+
+- **Faster with a big catalog** (especially on a share): each app file's
+  text is kept until its time or size changes.
+- **Start-up** asks for the log and the state at once.
+- The Catalog menu's tools and the managed-update actions moved from
+  apps.js to tools.js; browser tests for group chips and return-code rows.
+
 ## 2.11.0
 
 ### Changed

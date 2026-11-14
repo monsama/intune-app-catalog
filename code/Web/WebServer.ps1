@@ -41,6 +41,13 @@ function Global:Read-WebRequest {
                 $headerText = [Text.Encoding]::ASCII.GetString($arr, 0, $headerEnd); $contentLength = 0
                 if ($headerText -match '(?im)^Content-Length:\s*(\d+)') { $contentLength = [int]$Matches[1] }
                 if ($contentLength -gt 10MB) { return $null }
+                # A request that will be refused anyway (another host or origin, or not an API call) isn't read past
+                # its headers - a web page sending many large bodies would otherwise make this hold them all.
+                $firstLine = (($headerText -split "`r`n")[0])
+                $hdrHost = if ($headerText -match '(?im)^Host:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { '' }
+                $hdrOrigin = if ($headerText -match '(?im)^Origin:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { $null }
+                $local = '^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$'
+                if ($hdrHost -notmatch $local -or ($null -ne $hdrOrigin -and $hdrOrigin -notmatch '^http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$') -or $firstLine -notmatch '^POST /api/') { $contentLength = 0 }
                 $bodyStart = $headerEnd + 4; $have = $arr.Length - $bodyStart
                 while ($have -lt $contentLength) { $read = $ns.Read($buf, 0, $buf.Length); if ($read -le 0) { break }; $ms.Write($buf, 0, $read); $have += $read }
                 $arr = $ms.ToArray(); $body = ''
@@ -126,6 +133,7 @@ function Global:Get-WebStaticFile {
         '/index.html'  = @('index.html', 'text/html; charset=utf-8')
         '/core.js'     = @('core.js', 'text/javascript; charset=utf-8')
         '/apps.js'     = @('apps.js', 'text/javascript; charset=utf-8')
+        '/tools.js'    = @('tools.js', 'text/javascript; charset=utf-8')
         '/checks.js'   = @('checks.js', 'text/javascript; charset=utf-8')
         '/groups.js'   = @('groups.js', 'text/javascript; charset=utf-8')
         '/updates.js'  = @('updates.js', 'text/javascript; charset=utf-8')

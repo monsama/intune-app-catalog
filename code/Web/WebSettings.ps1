@@ -331,7 +331,7 @@ function Global:Get-WebPrefs {
         checks = [ordered]@{
             checkDriftOnStartup = [bool]$Global:App.CheckDriftOnStartup; runFullAuditOnStartup = [bool]$Global:App.RunFullAuditOnStartup
             checkIntuneOnDeployOpen = [bool]$Global:App.CheckIntuneOnDeployOpen; pushGroupsOnCreate = [bool]$Global:App.PushGroupsOnCreate
-            pushGroupsOnUpdate = [bool]$Global:App.PushGroupsOnUpdate; detailedGraphLog = [bool]$Global:App.DetailedGraphLog
+            pushGroupsOnUpdate = [bool]$Global:App.PushGroupsOnUpdate; detailedGraphLog = [bool]$Global:App.DetailedGraphLog; checkForUpdates = [bool]$Global:App.CheckForUpdates
         }
         folders = @(Get-AppFolderKinds | ForEach-Object {
             $chosen = if ($Global:App.AppFolders -is [System.Collections.IDictionary] -and $Global:App.AppFolders.Contains($_.Key)) { [string]$Global:App.AppFolders[$_.Key] } else { '' }
@@ -374,6 +374,7 @@ function Global:Save-WebPrefs {
         $Global:App.CheckDriftOnStartup = [bool]$c.checkDriftOnStartup; $Global:App.RunFullAuditOnStartup = [bool]$c.runFullAuditOnStartup
         $Global:App.CheckIntuneOnDeployOpen = [bool]$c.checkIntuneOnDeployOpen; $Global:App.PushGroupsOnCreate = [bool]$c.pushGroupsOnCreate
         $Global:App.PushGroupsOnUpdate = [bool]$c.pushGroupsOnUpdate; $Global:App.DetailedGraphLog = [bool]$c.detailedGraphLog
+        if ($null -ne $c.checkForUpdates) { $Global:App.CheckForUpdates = [bool]$c.checkForUpdates }
     }
     if ($Data.folders) {
         foreach ($p in $Data.folders.PSObject.Properties) { Set-AppFolder -Kind $p.Name -Path ([string]$p.Value) }

@@ -136,13 +136,64 @@ function Global:Invoke-WithCatalogLock {
     param([scriptblock]$Action)
     $lock = $Global:App.CatalogLock
     if ($null -eq $lock) { return (& $Action) }
-    $taken = $false
+    $taken = $false; $file = $null
     try {
         $taken = [System.Threading.Monitor]::TryEnter($lock, 30000)
         if (-not $taken) { return @{ ok = $false; error = 'The catalog is busy with another change - try again in a moment.' } }
+        # Across processes too: the nightly run, or another PC using the same catalog folder (a share).
+        $file = Enter-CatalogFileLock
+        if ($file -is [string]) { return @{ ok = $false; error = $file } }
         return (& $Action)
     }
-    finally { if ($taken) { [System.Threading.Monitor]::Exit($lock) } }
+    finally {
+        if ($file -and $file -isnot [string]) { Exit-CatalogFileLock $file }
+        if ($taken) { [System.Threading.Monitor]::Exit($lock) }
+    }
+}
+
+function Global:Enter-CatalogFileLock {
+    <#
+      The catalog folder's lock file (.catalog-write.lock), open with no
+      sharing while a change is written - so the nightly run and other PCs
+      using the same folder wait their turn. Re-entrant on one thread (a
+      change inside a change). Returns the held lock, $null when there's
+      nothing to hold (no folder yet, or it can't be written - then the
+      in-process lock alone guards), or a string: why it couldn't be had.
+    #>
+    $tid = [System.Threading.Thread]::CurrentThread.ManagedThreadId
+    $held = $Global:App.CatalogFileLock
+    if ($held -and $held.Thread -eq $tid) { $held.Depth++; return $held }
+    $folder = Get-AppFolder -Kind Catalog
+    if (-not (Test-Path -LiteralPath $folder -PathType Container)) { return $null }
+    $path = Join-Path $folder '.catalog-write.lock'
+    $deadline = (Get-Date).AddSeconds(20)
+    while ($true) {
+        try {
+            $fs = [System.IO.File]::Open($path, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+            $note = [Text.Encoding]::UTF8.GetBytes("$env:COMPUTERNAME $env:USERNAME $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))")
+            $fs.SetLength(0); $fs.Write($note, 0, $note.Length); $fs.Flush()
+            $one = @{ Stream = $fs; Thread = $tid; Depth = 1 }
+            $Global:App.CatalogFileLock = $one
+            return $one
+        }
+        catch [System.IO.IOException] {
+            if ((Get-Date) -gt $deadline) {
+                $who = try { [System.IO.File]::ReadAllText($path) } catch { 'another process' }
+                return "The catalog is being changed elsewhere ($(if ($who) { $who.Trim() } else { 'another process' })) - try again in a moment."
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        catch { return $null }
+    }
+}
+
+function Global:Exit-CatalogFileLock {
+    param($Held)
+    if (-not $Held) { return }
+    $Held.Depth--
+    if ($Held.Depth -gt 0) { return }
+    try { $Held.Stream.Dispose() } catch { }
+    if ($Global:App.CatalogFileLock -eq $Held) { $Global:App.CatalogFileLock = $null }
 }
 
 function Global:Update-WebCatalogApp {
@@ -400,10 +451,11 @@ function Global:Open-WebTarget {
         'reports-folder' { $rd = Join-Path (Get-AppFolder -Kind Logs -Create) 'reports'; if (-not (Test-Path -LiteralPath $rd)) { [void](New-Item -ItemType Directory -Path $rd -Force) }; return (Open-WebFolder $rd) }
         'entra-home' { Start-Process 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade/quickStartType~/null/sourceType/Microsoft_AAD_IAM' }
         'coffee' { Start-Process 'https://buymeacoffee.com/monsama' }
+        'release' { $repo = [string]$Global:App.ReleaseRepo; if ($repo -notmatch '^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$') { return @{ ok = $false; error = 'No release repository set.' } }; Start-Process "https://github.com/$repo/releases/latest" }
         'scripts-folder' { return (Open-WebFolder (Get-AppFolder -Kind Scripts -Create)) }
         'sandbox-folder' {
             if ([string]$Data.id -notmatch '^\d{8}-\d{6}-[0-9a-f]{4}$') { return @{ ok = $false; error = 'Unknown test.' } }
-            $sf = Join-Path (Join-Path (Get-AppFolder -Kind Logs) 'sandbox') ([string]$Data.id)
+            $sf = Join-Path (Get-WebSandboxRoot) ([string]$Data.id)
             if (-not (Test-Path -LiteralPath $sf)) { return @{ ok = $false; error = 'That test folder is gone.' } }
             return (Open-WebFolder $sf)
         }
@@ -436,10 +488,22 @@ function Global:Read-WebCatalogRecords {
     $apps = New-Object System.Collections.ArrayList
     $failed = New-Object System.Collections.Generic.List[string]
     if (Test-Path -LiteralPath $path) {
+        # Each file's text is kept until its time or size changes - on a network share, reading
+        # every file for every request is what makes a big catalog slow. Records are made fresh
+        # each time, so a caller changing one never changes what another sees.
+        if (-not $Global:App.CatalogTextCache) { $Global:App.CatalogTextCache = [hashtable]::Synchronized(@{}) }
+        $textCache = $Global:App.CatalogTextCache
+        $seen = @{}
         foreach ($file in @(Get-ChildItem -LiteralPath $path -Filter '*.json' -File -ErrorAction SilentlyContinue | Sort-Object Name)) {
-            try { [void]$apps.Add((ConvertTo-AppRecord (Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json))) }
+            try {
+                $key = $file.FullName.ToLowerInvariant(); $stamp = "$($file.LastWriteTimeUtc.Ticks)|$($file.Length)"; $seen[$key] = $true
+                $hit = $textCache[$key]
+                $text = if ($hit -and $hit.Stamp -eq $stamp) { $hit.Text } else { $t = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8; $textCache[$key] = @{ Stamp = $stamp; Text = $t }; $t }
+                [void]$apps.Add((ConvertTo-AppRecord ($text | ConvertFrom-Json)))
+            }
             catch { $failed.Add($file.Name) }
         }
+        foreach ($k in @($textCache.Keys)) { if ($k.StartsWith($path.ToLowerInvariant()) -and -not $seen.ContainsKey($k)) { $textCache.Remove($k) } }
     }
     $Global:App.Apps = $apps
     return @{ Path = $path; Apps = $apps; Failed = $failed.ToArray() }

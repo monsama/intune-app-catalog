@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="app.css">
 <script src="core.js" defer></script>
 <script src="apps.js" defer></script>
+<script src="tools.js" defer></script>
 <script src="checks.js" defer></script>
 <script src="groups.js" defer></script>
 <script src="updates.js" defer></script>
@@ -428,6 +429,7 @@
           <label class="chk"><input type="checkbox" data-check="pushGroupsOnCreate">Send groups after creating an app</label>
           <label class="chk"><input type="checkbox" data-check="pushGroupsOnUpdate">Send groups after updating an app</label>
           <label class="chk"><input type="checkbox" data-check="detailedGraphLog">Detailed Graph log (every request)</label>
+          <label class="chk" title="Asks GitHub at most twice a day - Home says when a newer version of this app is out"><input type="checkbox" data-check="checkForUpdates">Tell me when a new version of this app is out</label>
           <div class="actions"><button class="btn" id="btnSaveChecks" title="Save the automatic checks and pushes">Save</button></div>
         </article>
         <article class="card">
@@ -516,7 +518,8 @@
           <h3>Every night, too</h3>
           <label class="chk" title="Each deployed app against Intune - settings, groups, dependencies, assignments the catalog doesn't have - reported (and alerted) when something changed in the portal"><input type="checkbox" id="rpDrift">Check every app against Intune (drift)</label>
           <label class="chk" title="When an app's assignments drifted, Send groups puts the catalog's back - Intune's own changes are overwritten"><input type="checkbox" id="rpDriftFix">... and put the catalog's groups back when assignments drifted</label>
-          <label class="chk" title="A zip of the catalog's app files in the Backups folder, the last 30 kept - and a commit when the catalog folder is a git repository"><input type="checkbox" id="rpBackup">Back up the catalog</label>
+          <label class="chk" title="A zip of the catalog's app files in the Backups folder, the last 30 kept"><input type="checkbox" id="rpBackup">Back up the catalog</label>
+          <label class="chk" title="Only for a git repository you created yourself in the catalog folder: it's run with its hooks, fsmonitor and filters off, and not at all when its .git belongs to someone else"><input type="checkbox" id="rpBackupGit">... and commit the app files to the catalog folder's git repository</label>
           <label class="chk" title="On the first run of a month: last month's report (released, promoted, withdrawn, held; devices on the current version) in Logs\reports, sent by email / Teams when alerts are set up"><input type="checkbox" id="rpMonthly">Monthly report</label>
           <label class="full" title="A test tenant's catalog folder (a share both PCs reach): Winget apps here are released by themselves only in a version that is promoted there. Empty: no test tenant">Test tenant's catalog folder <span class="muted">(optional)</span><input id="rpGate" class="full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. \\fileserver\intune-test\app-data"></label>
           <div class="actions"><button class="btn" id="btnSaveNightly" title="Save what the nightly run does besides releases">Save</button></div>
