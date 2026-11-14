@@ -290,7 +290,7 @@ function Global:Get-WebHealthChecks {
     if (@($apps | Where-Object { $_.wingetId }).Count -and -not (Test-Path -LiteralPath (Get-SharedPackagePath))) { & $add 'warn' "The shared Winget package (init.intunewin) is missing - Winget releases can't be created. Settings > Packaging & folders builds it." }
     if (@($apps | Where-Object { -not $_.wingetId -and $_.autoRelease }).Count) {
         $tool = Get-PackagingToolPath
-        if (-not $tool -or -not (Test-Path -LiteralPath $tool)) { & $add 'warn' "The packaging tool (IntuneWinAppUtil.exe) is missing - own packages can't be built. Settings > Packaging & folders downloads it." }
+        if ((Get-PackagerChoice) -eq 'tool' -and (-not $tool -or -not (Test-Path -LiteralPath $tool))) { & $add 'warn' "The packaging tool (IntuneWinAppUtil.exe) is missing - own packages can't be built. Settings > Packaging & folders downloads it, or switch to the built-in packager." }
     }
     try {
         $root = [System.IO.Path]::GetPathRoot((Get-AppFolder -Kind Catalog))

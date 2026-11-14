@@ -103,7 +103,7 @@ function Global:Start-WebStepJob {
     try {
         if ($ConfigJson) { [System.IO.File]::WriteAllText($configPath, $ConfigJson, $utf8) }
         [System.IO.File]::WriteAllText($scriptPath, $ScriptContent, $utf8)
-        [System.IO.File]::WriteAllText($helperPath, ((Get-GraphLogScriptHelpers) + "`n`n" + (Get-AssignmentScriptHelpers)), $utf8)
+        [System.IO.File]::WriteAllText($helperPath, ((Get-GraphLogScriptHelpers) + "`n`n" + (Get-AssignmentScriptHelpers) + "`n`n" + (Get-PackagingScriptHelpers)), $utf8)
         [System.IO.File]::WriteAllText($logPath, '')
         $stepParams = if ($null -ne $Parameters) { $Parameters } else { @{ ConfigPath = $configPath } }
         $spec = @{ Script = $scriptPath; Parameters = $stepParams; GraphHelper = $helperPath; LogFile = $logPath }

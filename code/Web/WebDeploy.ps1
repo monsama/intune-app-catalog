@@ -191,6 +191,7 @@ function Global:Start-WebPackage {
     if ($names.Count) { $own = @($own | Where-Object { $names -contains $_.appName }) }
     if ($names.Count -and $own.Count -eq 0) { return @{ ok = $false; error = 'None of the chosen apps has its own installer to package - Winget apps use the shared package.' } }
     $params = @{ InputFolder = (Get-AppFolder -Kind Packages -Create); Force = $true; ToolPath = (Get-PackagingToolPath) }
+    if ((Get-PackagerChoice) -eq 'builtin') { $params.BuiltIn = $true }
     $folders = @($own | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
     if ($names.Count -eq 1) { $params.SingleFolderName = $folders[0] }
     elseif ($names.Count -gt 1) { $params.FolderNames = ($folders -join ',') }

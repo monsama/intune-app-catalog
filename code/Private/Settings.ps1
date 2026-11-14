@@ -42,6 +42,7 @@ function Global:Import-GraphSettings {
         # $Global:App.CheckDriftOnStartup at its own default, untouched.
         if ($settings.CheckDriftOnStartup -is [bool]) { $Global:App.CheckDriftOnStartup = $settings.CheckDriftOnStartup }
         if ($settings.CheckForUpdates -is [bool]) { $Global:App.CheckForUpdates = $settings.CheckForUpdates }
+        if ([string]$settings.Packager -in 'auto', 'builtin', 'tool') { $Global:App.Packager = [string]$settings.Packager }
         if ($settings.DetailedGraphLog -is [bool]) { $Global:App.DetailedGraphLog = $settings.DetailedGraphLog }
         # Same -is [bool] reasoning as CheckDriftOnStartup above, and it
         # matters more here: PushGroupsOnCreate defaults to ON, so reading
@@ -127,6 +128,7 @@ function Global:Write-SettingsFile {
             DefaultAppSettings    = $Global:App.DefaultAppSettings
             CheckDriftOnStartup   = $Global:App.CheckDriftOnStartup
             CheckForUpdates       = [bool]$Global:App.CheckForUpdates
+            Packager              = [string]$Global:App.Packager
             RunFullAuditOnStartup = $Global:App.RunFullAuditOnStartup
             CheckIntuneOnDeployOpen = [bool]$Global:App.CheckIntuneOnDeployOpen
             DetailedGraphLog      = [bool]$Global:App.DetailedGraphLog

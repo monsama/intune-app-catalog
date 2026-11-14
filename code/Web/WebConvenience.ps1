@@ -291,7 +291,7 @@ function Global:Get-WebAttention {
     $sch = Get-WebUpdateSchedule
     $setup = @(
         [ordered]@{ done = $configured; title = 'Connect to Intune'; text = 'The app registration, its certificate and a test sign-in.'; go = 'settings:connection' }
-        [ordered]@{ done = [bool]($tool -and (Test-Path -LiteralPath $tool)); title = 'Download the packaging tool'; text = 'IntuneWinAppUtil.exe builds the packages Intune takes.'; go = 'settings:packaging' }
+        [ordered]@{ done = [bool](((Get-PackagerChoice) -eq 'builtin') -or ($tool -and (Test-Path -LiteralPath $tool))); title = 'Packaging'; text = 'Packages are built in; IntuneWinAppUtil.exe is optional (Settings > Packaging).'; go = 'settings:packaging' }
         [ordered]@{ done = [bool](Test-Path -LiteralPath (Get-SharedPackagePath)); title = 'Build the shared Winget package'; text = 'One package every Winget app deploys with.'; go = 'settings:packaging' }
         [ordered]@{ done = [bool]@($Global:App.PilotGroups).Count; title = 'Choose the pilot groups'; text = 'A few test devices that get new versions first.'; go = 'settings:updates' }
         [ordered]@{ done = [bool]$apps.Count; title = 'Add your first apps'; text = 'From winget, an installer or a script - or the apps already in Intune (Checks).'; go = 'add' }

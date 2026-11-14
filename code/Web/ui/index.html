@@ -548,6 +548,12 @@
         <article class="card">
           <h2>Packaging</h2>
           <p class="certstatus" id="pkgTool"></p>
+          <div class="row"><label for="pkgPackager">Build packages with</label>
+            <select id="pkgPackager" title="Built in needs no download; IntuneWinAppUtil.exe is Microsoft's tool">
+              <option value="auto">Automatic - IntuneWinAppUtil.exe when it's there, built in otherwise</option>
+              <option value="builtin">Built in (no download)</option>
+              <option value="tool">IntuneWinAppUtil.exe (Microsoft's tool)</option>
+            </select></div>
           <p class="certstatus" id="pkgShared"></p>
           <div class="actions">
             <button class="btn" id="btnGetTool" title="Download IntuneWinAppUtil.exe from Microsoft (its signature is checked)">Download packaging tool</button>

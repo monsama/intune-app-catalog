@@ -184,6 +184,7 @@ $testableFunctionNames = @(
     "Test-StoreProductId",
     "Get-PermissionReport",
     "Set-PsadtTemplateValues",
+    "New-IntuneWinPackage",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -2648,6 +2649,49 @@ $kept = Get-AppWindowPreferencesJson -Existing '{"profile":{"name":"X","password
 Assert-True ($kept.profile.name -eq 'X' -and $kept.extensions.ui -eq 1 -and $kept.profile.password_manager_enabled -eq $false -and $kept.translate.enabled -eq $false) "Window preferences: what the browser stored stays, ours is set (even over an odd value)"
 $unreadable = Get-AppWindowPreferencesJson -Existing '{not json' | ConvertFrom-Json
 Assert-True ($unreadable.translate.enabled -eq $false) "Window preferences: an unreadable file is replaced, not a failure"
+
+# -----------------------------------------------------------------
+# The built-in packager: a package it builds is read by the upload code
+# (CreateApp.ps1's Get-IntuneWinPackageInfo) and decrypts - MAC, digest and
+# size as Detection.xml says - back to the source folder.
+$iwFn = $createAppAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-IntuneWinPackageInfo' }, $true) | Select-Object -First 1
+Assert-True ($null -ne $iwFn) "Get-IntuneWinPackageInfo: found in CreateApp.ps1"
+if ($iwFn) {
+    if (-not $env:TEMP) { $env:TEMP = [System.IO.Path]::GetTempPath() }
+    function Write-Step { param($t) }
+    . ([scriptblock]::Create($iwFn.Extent.Text))
+    $iwSrc = Join-Path ([System.IO.Path]::GetTempPath()) ('iwsrc_' + [guid]::NewGuid().ToString('N'))
+    [void](New-Item -ItemType Directory -Path (Join-Path $iwSrc 'Files') -Force)
+    Set-Content -LiteralPath (Join-Path $iwSrc 'Install.ps1') -Value 'Write-Output "install"' -Encoding UTF8
+    [System.IO.File]::WriteAllBytes((Join-Path (Join-Path $iwSrc 'Files') 'data.bin'), [byte[]](0..255 + 0..255))
+    $iwOut = Join-Path ([System.IO.Path]::GetTempPath()) ('iwout_' + [guid]::NewGuid().ToString('N') + '.intunewin')
+    try {
+        [void](New-IntuneWinPackage -SourceFolder $iwSrc -SetupFile 'Install.ps1' -OutputPath $iwOut)
+        $iw = Get-IntuneWinPackageInfo -PackagePath $iwOut
+        $fei = $iw.FileEncryptionInfo
+        $enc = [System.IO.File]::ReadAllBytes($iw.TempEncryptedPath)
+        $hm = New-Object System.Security.Cryptography.HMACSHA256 -ArgumentList (, [System.Convert]::FromBase64String($fei.macKey))
+        $macNow = $hm.ComputeHash($enc, 32, $enc.Length - 32)
+        $macOk = ([System.Convert]::ToBase64String($macNow) -eq $fei.mac) -and ([System.Convert]::ToBase64String($enc, 0, 32) -eq $fei.mac) -and ([System.Convert]::ToBase64String($enc, 32, 16) -eq $fei.initializationVector)
+        $aesT = [System.Security.Cryptography.Aes]::Create(); $aesT.Key = [System.Convert]::FromBase64String($fei.encryptionKey); $aesT.IV = [System.Convert]::FromBase64String($fei.initializationVector)
+        $plain = $aesT.CreateDecryptor().TransformFinalBlock($enc, 48, $enc.Length - 48)
+        $digestOk = [System.Convert]::ToBase64String(([System.Security.Cryptography.SHA256]::Create()).ComputeHash($plain)) -eq $fei.fileDigest
+        Assert-True ($macOk -and $digestOk -and $plain.Length -eq $iw.UnencryptedSize -and $iw.SetupFile -eq 'Install.ps1' -and $fei.profileIdentifier -eq 'ProfileVersion1' -and $fei.fileDigestAlgorithm -eq 'SHA256' -and
+            ([System.Convert]::FromBase64String($fei.encryptionKey)).Length -eq 32) "New-IntuneWinPackage: read by the upload code; MAC, IV, digest and size match Detection.xml"
+        $innerZip = Join-Path ([System.IO.Path]::GetTempPath()) ('iwin_' + [guid]::NewGuid().ToString('N') + '.zip')
+        [System.IO.File]::WriteAllBytes($innerZip, $plain)
+        $za = [System.IO.Compression.ZipFile]::OpenRead($innerZip)
+        try { $names = @($za.Entries | ForEach-Object { $_.FullName -replace '\\', '/' }) } finally { $za.Dispose() }
+        Remove-Item -LiteralPath $innerZip, $iw.TempEncryptedPath -Force -ErrorAction SilentlyContinue
+        Assert-True (($names -contains 'Install.ps1') -and ($names -contains 'Files/data.bin')) "New-IntuneWinPackage: the content is the source folder, subfolders included"
+        $oz = [System.IO.Compression.ZipFile]::OpenRead($iwOut)
+        try { $outer = @($oz.Entries | ForEach-Object { $_.FullName }) } finally { $oz.Dispose() }
+        Assert-True (($outer -contains 'IntuneWinPackage/Contents/IntunePackage.intunewin') -and ($outer -contains 'IntuneWinPackage/Metadata/Detection.xml') -and $outer.Count -eq 2) "New-IntuneWinPackage: the layout IntuneWinAppUtil uses"
+        $threw = $false; try { [void](New-IntuneWinPackage -SourceFolder $iwSrc -SetupFile 'Missing.exe' -OutputPath $iwOut) } catch { $threw = $true }
+        Assert-True $threw "New-IntuneWinPackage: a setup file that isn't in the folder is refused"
+    }
+    finally { Remove-Item -LiteralPath $iwSrc, $iwOut -Recurse -Force -ErrorAction SilentlyContinue }
+}
 
 # =================================================================
 # Report

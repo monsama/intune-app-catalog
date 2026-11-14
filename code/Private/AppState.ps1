@@ -45,6 +45,7 @@ function Global:Initialize-AppState {
     # Settings > Automatic checks. Off by default: they need a connection to be
     # of any use, and the full audit reads every deployed app.
     $Global:App.CheckDriftOnStartup = $false       # Checks' quick part when the app opens
+    $Global:App.Packager = 'auto'                  # 'auto' (IntuneWinAppUtil.exe when it's there, built in otherwise), 'builtin' or 'tool'
     $Global:App.CheckForUpdates = $true            # ask GitHub (at most twice a day) whether a newer version of this app is out
     $Global:App.ReleaseRepo = 'monsama/intune-app-catalog'
     $Global:App.RunFullAuditOnStartup = $false     # every deployed app in detail when the app opens
