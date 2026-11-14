@@ -181,7 +181,8 @@ try {
         finally { $client.Close() }
     }
     function Add-TestApp([hashtable]$App) {
-        $base = @{ appId = ''; wingetId = 'Vendor.ZZGraph'; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @(); metadata = @{ description = 'from the test' } }
+        # Unmanaged unless a test says otherwise (managed updates are the default for new Winget apps since 2.9.0; these tests aren't about them).
+        $base = @{ appId = ''; wingetId = 'Vendor.ZZGraph'; managedUpdates = $false; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @(); metadata = @{ description = 'from the test' } }
         foreach ($k in $App.Keys) { $base[$k] = $App[$k] }
         $r = Invoke-Api '/api/app-save' @{ originalName = ''; app = $base }
         if ($r.ok) { $created.Add($r.name) }

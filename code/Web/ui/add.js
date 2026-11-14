@@ -121,7 +121,7 @@ async function startUpload(file) {
   $('aiInstall').value = f.installCommand; $('aiUninstall').value = f.uninstallCommand;
   $('aiDetection').value = f.detection === 'Msi' ? `MSI product code ${f.productCode}${f.version ? ', version ' + f.version + ' or newer' : ''}` : f.detection === 'Script' ? 'A script: the name and version Windows lists' : 'Nothing yet - set it in the editor';
   $('aiNotes').replaceChildren(...[...(f.nameProblem ? [f.nameProblem + ' Change the name.'] : []), ...f.notes].map(n => el('li', { text: n })));
-  $('aiManagedRow').hidden = !f.managedOk; $('aiManaged').checked = false;
+  $('aiManagedRow').hidden = !f.managedOk; $('aiManaged').checked = !!f.managedOk;
   updateAddButton(); $('aiName').focus();
 }
 function showAddError(t) { $('addError').textContent = t; $('addError').hidden = false; }

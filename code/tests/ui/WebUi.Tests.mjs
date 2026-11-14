@@ -203,6 +203,8 @@ try {
         await unnamed('the Winget search'); await a11y('the Winget search');
         await page.keyboard.press('Escape');
         check(await page.isVisible('#dlgApp[open]'), `${label}: closing the Winget search goes back to the editor`);
+        check(await page.isChecked('#aManaged'), `${label}: a new Winget app has managed updates by default`);
+        await page.uncheck('#aManaged');   // this one stays unmanaged: Release is checked below to be off, and to say why
         await page.click('#btnSaveApp');
         await page.waitForSelector(`#gridBody tr[data-name="${testApp}"]`);
         check(!(await page.isVisible('#dlgApp[open]')), `${label}: the new app is saved and listed`);

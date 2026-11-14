@@ -496,6 +496,7 @@ function Global:Invoke-WebApi {
         '/api/sandbox-start'    { return (Start-WebSandboxTest $Data) }
         '/api/sandbox-result'   { return (Get-WebSandboxResult $Data) }
         '/api/attention'        { return (Get-WebAttention) }
+        '/api/managed-default'  { return (Set-WebManagedDefault) }
         '/api/assignment-matrix' { return (Get-WebAssignmentMatrix) }
         '/api/assignments-set'  { return (Invoke-WithCatalogLock { Set-WebAssignments $Data }) }
         '/api/package-list'     { return (Read-WebPackageList $Data) }
