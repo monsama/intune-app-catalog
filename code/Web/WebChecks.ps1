@@ -323,7 +323,7 @@ function Global:Complete-WebAddFromIntune {
         if (-not $r.GroupFetchOk) { $noGroups.Add($name) }
         $file = Join-Path $folder ((Get-SafeFileNameForApp -Name $entry.appName) + '.json')
         if (Test-Path -LiteralPath $file) { $skipped.Add("$name (a file with its name exists)"); continue }
-        [System.IO.File]::WriteAllText($file, (ConvertTo-SingleAppJson -App $entry), (New-Object System.Text.UTF8Encoding($false)))
+        Save-WebAppJson -File $file -App $entry -Text 'Added from Intune'
         $added.Add($name); $existing += $name.ToLowerInvariant()
     }
     Write-Log "[OK] Added from Intune: $($added.Count)$(if ($skipped.Count) { "; skipped: $($skipped -join ', ')" })$(if ($noGroups.Count) { "; groups couldn't be read for: $($noGroups -join ', ')" })."

@@ -34,7 +34,7 @@ function Global:Write-WebAppFile {
     param($App, $Undo)
     $file = Join-Path (Get-AppFolder -Kind Catalog -Create) ((Get-SafeFileNameForApp -Name $App.appName) + '.json')
     $backup = Backup-WebAppFile $file -PassThru
-    [System.IO.File]::WriteAllText($file, (ConvertTo-SingleAppJson -App $App), (New-Object System.Text.UTF8Encoding($false)))
+    Save-WebAppJson -File $file -App $App
     if ($Undo -and $backup) { $Undo.items.Add(@{ name = [string]$App.appName; file = $file; backup = [string]$backup; hash = (Get-WebFileHash $file) }) }
 }
 

@@ -505,6 +505,23 @@ try {
     Check ($addS.ok -and $scApp.deploy.detection.type -eq 'Registry' -and $scApp.deploy.detection.value -eq '2.0' -and $scApp.metadata.installCommand -like '*-File .\Install.ps1' -and (Test-Path -LiteralPath (Join-Path $scDir 'Install.ps1')) -and $scApp.managedUpdates) 'add apps: a script app - Install.ps1 in its folder, detected by its version marker, managed updates on' ($addS | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/add-script' @{ name = $scName; version = '2.0'; install = $tpls.templates[1].install; uninstall = 'x' }).ok) 'add apps: a name already in the catalog is refused'
     [void](Invoke-Api '/api/app-remove' @{ name = $scName }); Remove-Item -LiteralPath $scDir -Recurse -Force -ErrorAction SilentlyContinue
+    # The change history: an editor save is recorded field by field, from the Editor; undo puts one change back; a rename keeps the history.
+    $hName = 'ZZ History ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $hName; wingetId = 'Contoso.History'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'first' } } })
+    [void](Invoke-Api '/api/app-save' @{ originalName = $hName; app = @{ appName = $hName; wingetId = 'Contoso.History'; appId = ''; requiredFor = @('SG-A', 'SG-B'); metadata = @{ description = 'second' } } })
+    $h = Invoke-Api '/api/app-history' @{ name = $hName }
+    $hLast = $h.entries[0]
+    Check ($h.ok -and @($h.entries).Count -eq 2 -and $hLast.source -eq 'Editor' -and $hLast.canUndo -and @($hLast.changes | Where-Object { $_.field -eq 'requiredFor' -and $_.after -eq 'SG-A, SG-B' }).Count -eq 1 -and
+        @($hLast.changes | Where-Object { $_.field -eq 'metadata.description' -and $_.before -eq 'first' }).Count -eq 1 -and $h.entries[1].text -eq 'Added to the catalog') 'history: an editor save, field by field, from the Editor' ($h | ConvertTo-Json -Compress -Depth 6)
+    $hu = Invoke-Api '/api/history-undo' @{ name = $hName; id = $hLast.id }
+    $hApp = (Invoke-Api '/api/app-get' @{ name = $hName }).app
+    Check ($hu.ok -and @($hApp.requiredFor).Count -eq 1 -and $hApp.metadata.description -eq 'first') 'history: undo puts that change''s fields back' ($hu | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/history-undo' @{ name = $hName; id = $hLast.id }).ok) 'history: undoing it twice does nothing (the fields were changed since)'
+    [void](Invoke-Api '/api/app-save' @{ originalName = $hName; app = @{ appName = "$hName R"; wingetId = 'Contoso.History'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'first' } } })
+    $hr = Invoke-Api '/api/app-history' @{ name = "$hName R" }
+    Check (@($hr.entries).Count -eq 4 -and @($hr.entries[0].changes | Where-Object { $_.field -eq 'appName' }).Count -eq 1 -and $hr.entries[-1].app -eq $hName) 'history: a rename keeps what happened under the old name' ($hr | ConvertTo-Json -Compress -Depth 6)
+    Check (-not (Invoke-Api '/api/history-undo' @{ name = "$hName R"; id = '../x' }).ok) 'history: an id that isn''t one is refused'
+    [void](Invoke-Api '/api/app-remove' @{ name = "$hName R" })
     # An assignment filter round-trips through the catalog file and the editor.
     $flName = 'ZZ Filter ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
     [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $flName; wingetId = 'Contoso.Filter'; appId = ''; requiredFor = @('SG-A'); assignmentFilter = ' Corp laptops '; assignmentFilterMode = 'exclude'; metadata = @{ description = 'f' } } })

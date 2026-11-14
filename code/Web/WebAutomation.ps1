@@ -59,6 +59,7 @@ function Global:Invoke-ManagedUpdateRun {
     #>
     param([switch]$PlanOnly, [switch]$FastTrackOnly)
     $started = Get-Date
+    $Global:WebChangeSource = $(if ($FastTrackOnly) { 'Fast-track run' } else { 'Nightly run' })
     $policy = $Global:App.ReleasePolicy
     $items = New-Object System.Collections.Generic.List[object]
     $say = { param($App, $Outcome, $Text) $items.Add([ordered]@{ app = [string]$App; outcome = [string]$Outcome; text = [string]$Text }); Write-Log "[$(if ($Outcome -eq 'failed') { 'WARN' } else { 'INFO' })] Managed updates: $App - $Text" }

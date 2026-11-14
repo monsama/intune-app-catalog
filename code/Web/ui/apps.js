@@ -383,7 +383,8 @@ $('btnAppHistory').addEventListener('click', async () => {
   const name = editingName;
   const r = await api('/api/app-backups', { name });
   if (!r.ok) { toast(r.error, true); return; }
-  $('histTitle').textContent = `Earlier versions of ${name}`;
+  $('histTitle').textContent = `History of ${name}`;
+  loadChanges(name);
   $('histNote').textContent = r.backups.length ? '' : 'No earlier version kept yet - one is kept the next time this app is saved.';
   $('histRows').replaceChildren(...r.backups.map(b => el('tr', {},
     el('td', { text: b.when }),
@@ -398,6 +399,29 @@ $('btnAppHistory').addEventListener('click', async () => {
   $('histCompare').hidden = true;
   $('dlgHistory').showModal();
 });
+// The change history: one line per change, newest first.
+const histField = f => f.startsWith('metadata.') ? (({ description: 'Description', publisher: 'Publisher', appVersion: 'App version', owner: 'Owner', developer: 'Developer', informationUrl: 'Information URL', privacyUrl: 'Privacy URL',
+  installCommand: 'Install command', uninstallCommand: 'Uninstall command', notes: 'Notes', detectionRule: 'Detection rule', returnCodes: 'Return codes', dependencies: 'Dependencies', supersedes: 'Supersedence', isFeatured: 'Featured' })[f.slice(9)] || f.slice(9))
+  : (fieldLabel[f] || ({ assignmentFilter: 'Assignment filter', assignmentFilterMode: 'Filter mode', managedUpdates: 'Managed updates', releases: 'Releases', releaseRule: 'Release rule', icon: 'Icon', autoRelease: 'Release by itself', downloadUrl: 'Download URL', retiringSince: 'Retiring since' })[f] || f);
+async function loadChanges(name) {
+  $('histChanges').replaceChildren(); $('histChangesNote').textContent = 'Reading the history...';
+  const r = await api('/api/app-history', { name });
+  if (!r.ok) { $('histChangesNote').textContent = r.error; return; }
+  $('histChangesNote').textContent = r.entries.length ? '' : 'Nothing recorded yet - changes are recorded from this version of the app on.';
+  $('histChanges').replaceChildren(...r.entries.map(e => el('li', { class: e.kind === 'intune' ? 'intune' : '' },
+    el('div', { class: 'thead' }, el('time', { text: new Date(e.at).toLocaleString() }), el('span', { class: 'pill ' + (e.kind === 'intune' ? 'info' : 'muted'), text: e.kind === 'intune' ? 'Intune' : 'Catalog' }),
+      el('span', { class: 'muted', text: e.source }), e.app !== name ? el('span', { class: 'muted', text: `(as ${e.app})` }) : '',
+      e.canUndo ? el('button', { class: 'btn small', text: 'Undo', title: 'Put the fields this change changed back - only those not changed again since', onclick: async () => {
+        if (!(await ask(`Undo this change to ${name}?\n\n${e.changes.filter(c => c.revertable).map(c => `${histField(c.field)}: back to ${c.before || '(empty)'}`).join('\n')}\n\nOnly the catalog changes - Send to Intune sends it there.`, { ok: 'Undo' }))) return;
+        const x = await api('/api/history-undo', { name, id: e.id });
+        if (!x.ok) { toast(x.error, true); return; }
+        toast(`Undone: ${x.undone.map(histField).join(', ')}${x.skipped.length ? ` - left alone: ${x.skipped.join('; ')}` : ''}`);
+        $('dlgHistory').close(); $('dlgApp').close(); await loadApps(); openEditor(name);
+      } }) : ''),
+    e.text ? el('div', { text: e.text }) : '',
+    e.changes.length ? el('ul', { class: 'changes' }, ...e.changes.map(c => el('li', {}, el('strong', { text: histField(c.field) + ': ' }),
+      el('span', { class: 'old', text: c.before || '(empty)' }), ' → ', el('span', { class: 'new', text: c.after || '(empty)' })))) : '')));
+}
 async function compareVersion(name, b) {
   const r = await api('/api/app-compare', { name, id: b.id });
   if (!r.ok) { toast(r.error, true); return; }

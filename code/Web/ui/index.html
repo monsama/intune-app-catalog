@@ -684,7 +684,12 @@
 </dialog>
 
 <dialog id="dlgHistory" class="wide">
-  <h2 id="histTitle">Earlier versions</h2>
+  <h2 id="histTitle">History</h2>
+  <h3>Changes</h3>
+  <p class="sub">Every change to the app in the catalog - which field, from what to what, and where it came from - and every step that changed it in Intune. Undo puts one change back.</p>
+  <ol id="histChanges"></ol>
+  <p class="sub" id="histChangesNote"></p>
+  <details id="histVersions"><summary>Earlier versions (whole files)</summary>
   <p class="sub">A copy is kept every time the app's file is saved or removed (Settings &gt; Folders &gt; Catalog backups). Restoring keeps the current version as a copy too.</p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>Saved</th><th title="What is different in that copy compared with the app as it is now">Differs from now in</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="histRows"></tbody></table></div>
   <p class="sub" id="histNote"></p>
@@ -694,6 +699,7 @@
     <h3>That version compared with now</h3>
     <div class="preview" id="histNow"></div>
   </div>
+  </details>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
 <dialog id="dlgAsk" class="ask" aria-labelledby="askTitle">
@@ -811,7 +817,7 @@
     <p class="formerror" id="appError" hidden></p>
     <div class="actions split">
       <button type="button" class="btn danger" id="btnRemoveApp" title="Remove this app from the catalog only - Intune keeps it; a copy goes to Backups">Remove from catalog...</button>
-      <button type="button" class="btn ghost" id="btnAppHistory" title="Earlier versions of this app's file, kept every time it was saved - put one back">Earlier versions...</button>
+      <button type="button" class="btn ghost" id="btnAppHistory" title="What changed, when and from where - in the catalog and in Intune; undo a change, or put an earlier version back">History...</button>
       <span class="spacer"></span>
       <button type="button" class="btn" id="btnAppCancel">Cancel</button>
       <button type="submit" class="btn primary" id="btnSaveApp" title="Save to the catalog - Send to Intune sends it therene">Save</button>

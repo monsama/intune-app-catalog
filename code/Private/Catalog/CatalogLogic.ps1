@@ -1853,7 +1853,7 @@ function Global:Get-InstallErrorInfo {
     return [ordered]@{ hex = $hex; meaning = 'An error Intune reported.'; fix = "Search for $hex." }
 }
 
-function Global:Get-InstallErrorSummary {
+function Global:Get-InstallErrorTop {
     <#
       Pure: the most common install errors in an install status report's
       rows (each with ErrorCode), most frequent first -
@@ -1871,4 +1871,93 @@ function Global:Get-InstallErrorSummary {
         $byHex[$info.hex].count++
     }
     return @($byHex.Values | Sort-Object @{ Expression = { $_.count }; Descending = $true }, @{ Expression = { $_.hex } } | Select-Object -First $Top)
+}
+
+function Global:Get-AppRecordFieldValues {
+    <#
+      Pure: an app record's fields as field -> compact JSON, for the change
+      history: 'metadata.<name>' for each Intune detail, the icon only as a
+      fingerprint (an image isn't history text).
+    #>
+    param($Record)
+    $out = [ordered]@{}
+    if (-not $Record) { return $out }
+    $pairs = if ($Record -is [System.Collections.IDictionary]) { @($Record.Keys | ForEach-Object { @{ Name = [string]$_; Value = $Record[$_] } }) } else { @($Record.PSObject.Properties | ForEach-Object { @{ Name = $_.Name; Value = $_.Value } }) }
+    foreach ($p in $pairs) {
+        if ($p.Name -eq 'metadata') {
+            $m = $p.Value
+            if ($m) {
+                $mp = if ($m -is [System.Collections.IDictionary]) { @($m.Keys | ForEach-Object { @{ Name = [string]$_; Value = $m[$_] } }) } else { @($m.PSObject.Properties | ForEach-Object { @{ Name = $_.Name; Value = $_.Value } }) }
+                foreach ($q in $mp) { $out["metadata.$($q.Name)"] = ConvertTo-Json -InputObject $q.Value -Compress -Depth 12 }
+            }
+            continue
+        }
+        if ($p.Name -eq 'icon') {
+            $v = if ($p.Value) { [string]$p.Value.value } else { '' }
+            $out['icon'] = $(if ($v) { $sha = [System.Security.Cryptography.SHA256]::Create(); try { '"image ' + ([System.BitConverter]::ToString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($v)), 0, 6) -replace '-', '') + '"' } finally { $sha.Dispose() } } else { 'null' })
+            continue
+        }
+        $out[$p.Name] = ConvertTo-Json -InputObject $p.Value -Compress -Depth 12
+    }
+    return $out
+}
+
+function Global:Get-AppRecordChanges {
+    # Pure: the fields that differ between two versions of an app record, @(@{ field; before; after }) with the values as compact JSON.
+    param($Before, $After)
+    $a = Get-AppRecordFieldValues $Before; $b = Get-AppRecordFieldValues $After
+    $empty = @('null', '""', '[]')
+    $keys = @(@($a.Keys) + @($b.Keys) | Select-Object -Unique)
+    return @(foreach ($k in $keys) {
+        $x = if ($a.Contains($k)) { [string]$a[$k] } else { 'null' }
+        $y = if ($b.Contains($k)) { [string]$b[$k] } else { 'null' }
+        # Missing, null, empty text and an empty list all mean "not set" - not a change.
+        if ($x -cne $y -and -not ($empty -contains $x -and $empty -contains $y)) { [ordered]@{ field = $k; before = $x; after = $y } }
+    })
+}
+
+function Global:Test-AppRecordFieldRevertable {
+    # Pure: whether the history can put a field back by itself - not the name (a rename), the icon, nor what ties the app to Intune.
+    param([string]$Field)
+    return -not ($Field -in 'appName', 'icon', 'appId', 'intuneAppType', 'intuneAppVersion', 'releases', 'packagePath')
+}
+
+function Global:Set-AppRecordFieldJson {
+    <#
+      Sets one field of an app record (as Get-AppRecordFieldValues names it)
+      from compact JSON. $false for one the history doesn't put back.
+    #>
+    param($Record, [string]$Field, [string]$Json)
+    if (-not (Test-AppRecordFieldRevertable $Field)) { return $false }
+    $t = ([string]$Json).Trim()
+    $value = if ($t -eq 'null' -or -not $t) { $null }
+        elseif ($t -eq '[]') { @() }
+        elseif ($t.StartsWith('"')) { [regex]::Unescape($t.Substring(1, $t.Length - 2)) }
+        elseif ($t.StartsWith('[')) { @(ConvertFrom-Json -InputObject $t) }
+        else { ConvertFrom-Json -InputObject $t }
+    $target = $Record; $name = $Field
+    if ($Field -like 'metadata.*') {
+        $name = $Field.Substring(9)
+        $target = if ($Record -is [System.Collections.IDictionary]) { $Record['metadata'] } else { $Record.metadata }
+        if (-not $target) { return $false }
+    }
+    if ($target -is [System.Collections.IDictionary]) { $target[$name] = $value }
+    elseif ($target.PSObject.Properties[$name]) { $target.$name = $value }
+    else { $target | Add-Member -NotePropertyName $name -NotePropertyValue $value }
+    return $true
+}
+
+function Global:Format-AppHistoryValue {
+    # Pure: a history value (compact JSON) as short text - a list as "a, b", text as itself, '' for not set.
+    param([string]$Json, [int]$Max = 300)
+    $t = ([string]$Json).Trim()
+    $text = if ($t -in 'null', '""', '[]', '') { '' }
+        elseif ($t.StartsWith('"')) { [regex]::Unescape($t.Substring(1, $t.Length - 2)) }
+        elseif ($t.StartsWith('[')) {
+            $items = @(try { ConvertFrom-Json -InputObject $t } catch { })
+            if ($items.Count -and -not @($items | Where-Object { $_ -isnot [string] }).Count) { $items -join ', ' } else { $t }
+        }
+        else { $t }
+    if ($text.Length -gt $Max) { $text = $text.Substring(0, $Max) + '...' }
+    return $text
 }

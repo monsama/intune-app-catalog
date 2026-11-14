@@ -186,7 +186,12 @@ $testableFunctionNames = @(
     "Set-PsadtTemplateValues",
     "New-IntuneWinPackage",
     "Get-InstallErrorInfo",
-    "Get-InstallErrorSummary",
+    "Get-InstallErrorTop",
+    "Get-AppRecordFieldValues",
+    "Get-AppRecordChanges",
+    "Test-AppRecordFieldRevertable",
+    "Set-AppRecordFieldJson",
+    "Format-AppHistoryValue",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -788,13 +793,28 @@ $pe = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($p
 Assert-True (@($psadt.Missing).Count -eq 0 -and $psadt.Text -match "AppVendor = 'Contoso'" -and $psadt.Text -match "AppVersion = '2025\.1'" -and $psadt.Text -match 'Set-ItemProperty -LiteralPath' -and $psadt.Text -match 'Remove-Item -LiteralPath' -and @($pe).Count -eq 0) "Set-PsadtTemplateValues: vendor, name and version filled in, the marker after install and uninstall - still valid PowerShell"
 Assert-True (@((Set-PsadtTemplateValues -Text 'nothing here' -Name 'X' -Vendor 'Y' -Version '1').Missing).Count -eq 5) "Set-PsadtTemplateValues: says what it couldn't fill in"
 
+# The change history: field by field, typed values, undo of one field
+$hBefore = [pscustomobject]@{ appName = 'App'; appId = ''; requiredFor = @('SG-A'); excludeFor = @(); icon = $null; metadata = [pscustomobject]@{ description = 'Old'; notes = '' } }
+$hAfter = [pscustomobject]@{ appName = 'App'; appId = ''; requiredFor = @('SG-A', 'SG-B'); excludeFor = $null; icon = [pscustomobject]@{ type = 'image/png'; value = 'AAAA' }; metadata = [pscustomobject]@{ description = "New `"quoted`" O'Neil"; notes = $null } }
+$hc = @(Get-AppRecordChanges -Before $hBefore -After $hAfter)
+$hf = @($hc | ForEach-Object { $_.field })
+Assert-True ($hc.Count -eq 3 -and $hf -contains 'requiredFor' -and $hf -contains 'metadata.description' -and $hf -contains 'icon' -and $hf -notcontains 'excludeFor' -and $hf -notcontains 'metadata.notes') "Get-AppRecordChanges: what changed, field by field - empty list, null and empty text are all 'not set'"
+$hDesc = @($hc | Where-Object { $_.field -eq 'metadata.description' })[0]
+Assert-True ((Format-AppHistoryValue $hDesc.after) -eq "New `"quoted`" O'Neil" -and (Format-AppHistoryValue '["SG-A","SG-B"]') -eq 'SG-A, SG-B' -and (Format-AppHistoryValue '[]') -eq '' -and (Format-AppHistoryValue '{"a":1}') -eq '{"a":1}') "Format-AppHistoryValue: text as itself, a list as 'a, b', objects as JSON"
+$hRec = [pscustomobject]@{ appName = 'App'; requiredFor = @('SG-A', 'SG-B'); metadata = [pscustomobject]@{ description = 'x' } }
+$okReq = Set-AppRecordFieldJson -Record $hRec -Field 'requiredFor' -Json '["SG-A"]'
+$okDesc = Set-AppRecordFieldJson -Record $hRec -Field 'metadata.description' -Json $hDesc.after
+$okEmpty = Set-AppRecordFieldJson -Record $hRec -Field 'excludeFor' -Json '[]'
+Assert-True ($okReq -and $okDesc -and $okEmpty -and @($hRec.requiredFor).Count -eq 1 -and $hRec.requiredFor[0] -eq 'SG-A' -and $hRec.metadata.description -eq "New `"quoted`" O'Neil" -and @($hRec.excludeFor).Count -eq 0) "Set-AppRecordFieldJson: a list, text with quotes, an empty list - put back as they were"
+Assert-True (-not (Set-AppRecordFieldJson -Record $hRec -Field 'appName' -Json '"Other"') -and -not (Test-AppRecordFieldRevertable 'icon') -and -not (Test-AppRecordFieldRevertable 'releases') -and (Test-AppRecordFieldRevertable 'metadata.installCommand') -and $hRec.appName -eq 'App') "Set-AppRecordFieldJson: no rename, icon or Intune link undone on its own"
+
 # Install errors explained
 $e1 = Get-InstallErrorInfo -2016345060
 Assert-True ($e1.hex -eq '0x87D1041C' -and $e1.meaning -like '*detected*' -and $e1.fix -like '*detection rule*') "Get-InstallErrorInfo: 0x87D1041C (as the report's signed decimal) - not detected after install, check the detection rule"
 Assert-True ((Get-InstallErrorInfo '0x87D1041C (-2016345060)').hex -eq '0x87D1041C' -and (Get-InstallErrorInfo 2147944003).hex -eq '0x80070643' -and $null -eq (Get-InstallErrorInfo 0) -and $null -eq (Get-InstallErrorInfo '')) "Get-InstallErrorInfo: hex as the app formats it, unsigned decimal; no error for 0 and blank"
 Assert-True ((Get-InstallErrorInfo '0x80070BC2').fix -like '*Soft reboot*' -and (Get-InstallErrorInfo '0x80070659').meaning -eq 'Windows Installer error 1625.' -and (Get-InstallErrorInfo '0x87D30001').meaning -like '*Intune Management Extension*' -and (Get-InstallErrorInfo 1234).meaning -eq 'The installer exited with 1234.') "Get-InstallErrorInfo: 3010 is a restart, not a failure; unknown codes by family (MSI, agent, exit code)"
-$eTop = @(Get-InstallErrorSummary -Rows @(@{ ErrorCode = '-2016345060' }, @{ ErrorCode = '0x87D1041C (-2016345060)' }, @{ ErrorCode = '-2147023293' }, @{ ErrorCode = '0' }, @{ ErrorCode = '' }) -Top 5)
-Assert-True ($eTop.Count -eq 2 -and $eTop[0].hex -eq '0x87D1041C' -and $eTop[0].count -eq 2 -and $eTop[1].count -eq 1) "Get-InstallErrorSummary: errors counted by code, most common first; no-error rows left out"
+$eTop = @(Get-InstallErrorTop -Rows @(@{ ErrorCode = '-2016345060' }, @{ ErrorCode = '0x87D1041C (-2016345060)' }, @{ ErrorCode = '-2147023293' }, @{ ErrorCode = '0' }, @{ ErrorCode = '' }) -Top 5)
+Assert-True ($eTop.Count -eq 2 -and $eTop[0].hex -eq '0x87D1041C' -and $eTop[0].count -eq 2 -and $eTop[1].count -eq 1) "Get-InstallErrorTop: errors counted by code and explained, most common first; no-error rows left out"
 
 # A newer release of this app
 $offer = Get-AppUpdateOffer -Current '2.11.0' -Tag 'v2.12.0' -Body "## Added`n- **Faster** catalog`n`n- Lock file"

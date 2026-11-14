@@ -93,7 +93,9 @@ function Global:Start-WebStepJob {
         # A step that takes its own parameters (Package.ps1) instead of -ConfigPath; @{} for none.
         [hashtable]$Parameters = $null,
         # Another PowerShell than the default one the steps use (installing the Graph module into each).
-        [string]$Exe = '')
+        [string]$Exe = '',
+        # The apps a step changes in Intune - its success goes into their change history (-After's AppName when not given).
+        [string[]]$Apps = @())
     $tag = [guid]::NewGuid().ToString('N')
     $configPath = Join-Path $env:TEMP ".intunepkg_$($Name)_config_$tag.json"
     $scriptPath = Join-Path $Global:App.RootPath ".intunepkg_embedded_$($Name)_$tag.ps1"
@@ -122,6 +124,8 @@ function Global:Start-WebStepJob {
     $Global:App.WebJobs[$tag] = @{
         Process = $proc; Log = $logPath; Result = $ResultPath
         Cleanup = @($scriptPath, $helperPath, $configPath); Mode = $Kind; Done = $false; After = $After; LastPoll = Get-Date; Started = Get-Date
+        HistoryApps = @($(if ($Apps.Count) { $Apps } elseif ($After.AppName -and $After.Kind -in 'deploy', 'deleted', 'release') { [string]$After.AppName }) | Where-Object { $_ })
+        HistorySource = [string]$Global:WebChangeSource
     }
     return @{ ok = $true; job = $tag }
 }
@@ -370,6 +374,9 @@ function Global:Get-WebJobPoll {
                     try { $done = Complete-WebJob -After $job.After -Result $response.result -LogPath $job.Log }
                     catch { $done = @{ ok = $false; error = $_.Exception.Message }; Write-Log "[WARN] $($_.Exception.Message)" }
                 }
+                if ($response.result -and $response.result.success) {
+                    foreach ($n in @($job.HistoryApps)) { Add-WebHistoryEntry -App $n -Kind 'intune' -Text ([string]$job.Mode) -Source $(if ($job.HistorySource) { [string]$job.HistorySource } else { 'This app' }) }
+                }
                 return @{ finished = $true; after = $done }
             }
             # The catalog lock couldn't be had (Invoke-WithCatalogLock gave up): not finished yet - the next poll tries again.
@@ -519,6 +526,8 @@ function Global:Read-WebCatalogRecords {
 function Global:Invoke-WebApi {
     # The route table. $Data is the token-checked request body.
     param([string]$Path, $Data)
+    # Where catalog changes made by this request come from, for the change history (per runspace - each request has its own).
+    $Global:WebChangeSource = Get-WebChangeSource $Path
     switch ($Path) {
         '/api/state'            { return (Get-WebState) }
         '/api/catalog'          { return (Get-WebCatalog) }
@@ -538,6 +547,8 @@ function Global:Invoke-WebApi {
         '/api/app-save'         { return (Invoke-WithCatalogLock { Save-WebApp $Data }) }
         '/api/app-remove'       { return (Invoke-WithCatalogLock { Remove-WebApp $Data }) }
         '/api/app-backups'      { return (Get-WebAppBackups $Data) }
+        '/api/app-history'      { return (Get-WebAppHistory $Data) }
+        '/api/history-undo'     { return (Invoke-WithCatalogLock { Undo-WebHistoryChange $Data }) }
         '/api/app-restore'      { return (Invoke-WithCatalogLock { Restore-WebAppBackup $Data }) }
         '/api/deploy-plan'      { return (Get-WebDeployPlan $Data) }
         '/api/deploy-start'     { return (Start-WebDeploy $Data) }

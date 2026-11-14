@@ -165,7 +165,7 @@ function Global:Start-WebPushGroups {
             FilterName = [string]$a.assignmentFilter; FilterMode = [string]$a.assignmentFilterMode
             CreateMissingGroups = $false; OutputResultPath = $resultPath
         }
-        return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind "Push groups $($a.appName)")
+        return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind "Push groups $($a.appName)" -Apps @([string]$a.appName))
     }
     $mode = if ([string]$Data.mode -eq 'Apply') { 'Apply' } else { 'Preview' }
     $config = @{
@@ -174,7 +174,7 @@ function Global:Start-WebPushGroups {
         Apps = @($apps | ForEach-Object { @{ AppName = $_.appName; AppId = $_.appId; RequiredGroups = @($_.requiredFor); AvailableGroups = @($_.availableFor); UninstallGroups = @($_.uninstallFor); ExcludeGroups = @($_.excludeFor); FilterName = [string]$_.assignmentFilter; FilterMode = [string]$_.assignmentFilterMode } })
         OutputResultPath = $resultPath
     }
-    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedBatchAssignScript -Name 'batchassign' -ConfigJson ($config | ConvertTo-Json -Depth 8) -ResultPath $resultPath -Kind "Push groups ($mode, $($apps.Count) app(s))"
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedBatchAssignScript -Name 'batchassign' -ConfigJson ($config | ConvertTo-Json -Depth 8) -ResultPath $resultPath -Kind "Push groups ($mode, $($apps.Count) app(s))" -Apps $(if ($mode -eq 'Apply') { @($apps | ForEach-Object { [string]$_.appName }) } else { @() })
     if ($started.ok) { Write-Log "[INFO] Push groups - $(if ($mode -eq 'Apply') { 'applying' } else { 'previewing' }) for $($apps.Count) app(s)..." }
     return $started
 }
@@ -372,5 +372,5 @@ function Global:Get-WebInstallStatus {
             meaning = $(if ($why) { [string]$why.meaning } else { '' }); fix = $(if ($why) { [string]$why.fix } else { '' }) } })
     return @{ ok = $true; app = $name; rows = $rows; truncated = [bool]$report.Truncated; summary = (Format-InstallStatusSummary @($report.Rows))
         # The most common errors, explained - what to fix first.
-        topErrors = @(Get-InstallErrorSummary -Rows @($report.Rows) -Top 5) }
+        topErrors = @(Get-InstallErrorTop -Rows @($report.Rows) -Top 5) }
 }

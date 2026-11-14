@@ -178,7 +178,7 @@ function Global:Start-WebReleaseAssign {
         # Install deadline, restart grace period, notifications (Settings > Managed updates) on the Required assignments.
         RequiredSettings = $(if ($step -in 'pilot', 'advance', 'promote', 'rollback') { Get-ReleaseAssignmentSettings -Policy $Global:App.ReleasePolicy -FastTrack ([bool]($pilot -and $pilot.fastTrack -and $step -ne 'rollback')) -NowUtc ([datetime]::UtcNow) } else { $null })
     }
-    return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind $label)
+    return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind $label -Apps @([string]$a.appName))
 }
 
 function Global:Complete-WebAdvance {
