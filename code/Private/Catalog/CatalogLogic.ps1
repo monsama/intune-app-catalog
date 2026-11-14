@@ -1888,7 +1888,7 @@ function Global:Get-AppRecordFieldValues {
             $m = $p.Value
             if ($m) {
                 $mp = if ($m -is [System.Collections.IDictionary]) { @($m.Keys | ForEach-Object { @{ Name = [string]$_; Value = $m[$_] } }) } else { @($m.PSObject.Properties | ForEach-Object { @{ Name = $_.Name; Value = $_.Value } }) }
-                foreach ($q in $mp) { $out["metadata.$($q.Name)"] = ConvertTo-Json -InputObject $q.Value -Compress -Depth 12 }
+                foreach ($q in $mp) { $j = ConvertTo-Json -InputObject $q.Value -Compress -Depth 12; $out["metadata.$($q.Name)"] = $(if ($j) { [string]$j } else { 'null' }) }
             }
             continue
         }
@@ -1897,7 +1897,9 @@ function Global:Get-AppRecordFieldValues {
             $out['icon'] = $(if ($v) { $sha = [System.Security.Cryptography.SHA256]::Create(); try { '"image ' + ([System.BitConverter]::ToString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($v)), 0, 6) -replace '-', '') + '"' } finally { $sha.Dispose() } } else { 'null' })
             continue
         }
-        $out[$p.Name] = ConvertTo-Json -InputObject $p.Value -Compress -Depth 12
+        # Windows PowerShell's ConvertTo-Json gives nothing for $null - 'null', as everywhere else.
+        $j = ConvertTo-Json -InputObject $p.Value -Compress -Depth 12
+        $out[$p.Name] = $(if ($j) { [string]$j } else { 'null' })
     }
     return $out
 }
@@ -1906,7 +1908,8 @@ function Global:Get-AppRecordChanges {
     # Pure: the fields that differ between two versions of an app record, @(@{ field; before; after }) with the values as compact JSON.
     param($Before, $After)
     $a = Get-AppRecordFieldValues $Before; $b = Get-AppRecordFieldValues $After
-    $empty = @('null', '""', '[]')
+    # '' too: Windows PowerShell's ConvertTo-Json gives nothing at all for $null.
+    $empty = @('null', '""', '[]', '')
     $keys = @(@($a.Keys) + @($b.Keys) | Select-Object -Unique)
     return @(foreach ($k in $keys) {
         $x = if ($a.Contains($k)) { [string]$a[$k] } else { 'null' }
@@ -1935,7 +1938,8 @@ function Global:Set-AppRecordFieldJson {
     $value = $null
     if ($t -eq '[]') { $value = @() }
     elseif ($t.StartsWith('"')) { $value = [regex]::Unescape($t.Substring(1, $t.Length - 2)) }
-    elseif ($t.StartsWith('[')) { $value = @(ConvertFrom-Json -InputObject $t) }
+    # Piped, so the list is enumerated - Windows PowerShell's ConvertFrom-Json hands a JSON list over as one object.
+    elseif ($t.StartsWith('[')) { $parsed = ConvertFrom-Json -InputObject $t; $value = @($parsed | ForEach-Object { $_ }) }
     elseif ($t -and $t -ne 'null') { $value = ConvertFrom-Json -InputObject $t }
     $target = $Record; $name = $Field
     if ($Field -like 'metadata.*') {
@@ -1953,10 +1957,10 @@ function Global:Format-AppHistoryValue {
     # Pure: a history value (compact JSON) as short text - a list as "a, b", text as itself, '' for not set.
     param([string]$Json, [int]$Max = 300)
     $t = ([string]$Json).Trim()
-    $text = if ($t -in 'null', '""', '[]', '') { '' }
+    $text = if ($t -in 'null', '""', '[]', '') { '' }  # '' - Windows PowerShell's JSON for $null
         elseif ($t.StartsWith('"')) { [regex]::Unescape($t.Substring(1, $t.Length - 2)) }
         elseif ($t.StartsWith('[')) {
-            $items = @(try { ConvertFrom-Json -InputObject $t } catch { })
+            $items = @(try { $parsed = ConvertFrom-Json -InputObject $t; $parsed | ForEach-Object { $_ } } catch { })
             if ($items.Count -and -not @($items | Where-Object { $_ -isnot [string] }).Count) { $items -join ', ' } else { $t }
         }
         else { $t }

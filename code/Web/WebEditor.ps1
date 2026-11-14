@@ -547,7 +547,7 @@ function Global:Undo-WebHistoryChange {
     if (-not $app) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
     $now = Get-AppRecordFieldValues $app
     $done = New-Object System.Collections.Generic.List[string]; $skipped = New-Object System.Collections.Generic.List[string]
-    $empty = @('null', '""', '[]')
+    $empty = @('null', '""', '[]', '')
     foreach ($c in @($entry.changes)) {
         $f = [string]$c.field
         if (-not (Test-AppRecordFieldRevertable $f) -or $c.long) { $skipped.Add("$f (not undone on its own - use Earlier versions)"); continue }
