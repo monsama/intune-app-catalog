@@ -166,6 +166,23 @@ try {
     $totalApps = $appList.Count
     $appIndex = 0
 
+    # Assignment filters, looked up once by name - only when an app has one
+    # (reading filters needs DeviceManagementConfiguration.Read.All). A
+    # filter that doesn't exist stops the run before anything changes.
+    $filterIdByName = @{}; $filterNameById = @{}
+    $wantFilters = @(@($appList) | ForEach-Object { ([string]$_.FilterName).Trim() } | Where-Object { $_ } | Select-Object -Unique)
+    if ($wantFilters.Count) {
+        Write-Step "Looking up assignment filters"
+        $filterUri = "https://graph.microsoft.com/beta/deviceManagement/assignmentFilters?`$select=id,displayName"
+        while ($filterUri) {
+            $fl = Invoke-GraphRequestDetailed -Uri $filterUri -Method GET -StepDescription "Read assignment filters"
+            foreach ($f in @($fl.value)) { $filterIdByName[[string]$f.displayName] = [string]$f.id; $filterNameById[[string]$f.id] = [string]$f.displayName }
+            $filterUri = [string]$fl.'@odata.nextLink'
+        }
+        $missingFilters = @($wantFilters | Where-Object { -not $filterIdByName.Contains($_) })
+        if ($missingFilters.Count) { throw "These assignment filter(s) don't exist in Intune: $($missingFilters -join ', '). Nothing was changed." }
+    }
+
     if ($Config.Mode -eq "Preview") {
         # Preview is fully read-only (no group creation, no assignment
         # writes - see the Apply-only branch below) with no shared mutable
@@ -192,7 +209,7 @@ try {
         Write-Host "  Checking $($appList.Count) app(s), up to $maxConcurrency at a time..." -ForegroundColor Gray
 
         $perAppPreview = {
-            param($App, $TenantId, $ClientId, $CertThumbprint, $AssignmentHelperText)
+            param($App, $TenantId, $ClientId, $CertThumbprint, $AssignmentHelperText, $FilterNameById)
             . ([scriptblock]::Create($AssignmentHelperText))
 
             function Get-HttpErrorDetail {
@@ -267,9 +284,9 @@ try {
                 } catch { }
             }
             $otherTargets = @()
-            $currentEntries = ConvertTo-CurrentAssignmentEntries -Assignments @($currentAssignments.value) -GroupNameById $groupNameById -OtherTargets ([ref]$otherTargets)
+            $currentEntries = ConvertTo-CurrentAssignmentEntries -Assignments @($currentAssignments.value) -GroupNameById $groupNameById -OtherTargets ([ref]$otherTargets) -FilterNameById $FilterNameById
             $desiredEntries = Get-DesiredAssignmentEntries -RequiredGroups @($App.RequiredGroups) -AvailableGroups @($App.AvailableGroups) `
-                -UninstallGroups @($App.UninstallGroups) -ExcludeGroups @($App.ExcludeGroups)
+                -UninstallGroups @($App.UninstallGroups) -ExcludeGroups @($App.ExcludeGroups) -FilterName ([string]$App.FilterName) -FilterMode ([string]$App.FilterMode)
             $diff = Get-AssignmentDiff -Current $currentEntries -Desired $desiredEntries
 
             return [pscustomobject]@{
@@ -289,7 +306,7 @@ try {
             foreach ($app in $appList) {
                 $ps = [powershell]::Create()
                 $ps.RunspacePool = $pool
-                [void]$ps.AddScript($perAppPreview).AddParameter('App', $app).AddParameter('TenantId', $Config.TenantId).AddParameter('ClientId', $Config.ClientId).AddParameter('CertThumbprint', $Config.CertificateThumbprint).AddParameter('AssignmentHelperText', $assignmentHelperText)
+                [void]$ps.AddScript($perAppPreview).AddParameter('App', $app).AddParameter('TenantId', $Config.TenantId).AddParameter('ClientId', $Config.ClientId).AddParameter('CertThumbprint', $Config.CertificateThumbprint).AddParameter('AssignmentHelperText', $assignmentHelperText).AddParameter('FilterNameById', $filterNameById)
                 $jobs.Add([pscustomobject]@{ Ps = $ps; Handle = $ps.BeginInvoke(); App = $app })
             }
 
@@ -397,9 +414,9 @@ try {
                 } catch { }
             }
             $otherTargets = @()
-            $currentEntries = ConvertTo-CurrentAssignmentEntries -Assignments @($currentAssignments.value) -GroupNameById $groupNameById -OtherTargets ([ref]$otherTargets)
+            $currentEntries = ConvertTo-CurrentAssignmentEntries -Assignments @($currentAssignments.value) -GroupNameById $groupNameById -OtherTargets ([ref]$otherTargets) -FilterNameById $filterNameById
             $desiredEntries = Get-DesiredAssignmentEntries -RequiredGroups @($app.RequiredGroups) -AvailableGroups @($app.AvailableGroups) `
-                -UninstallGroups @($app.UninstallGroups) -ExcludeGroups @($app.ExcludeGroups)
+                -UninstallGroups @($app.UninstallGroups) -ExcludeGroups @($app.ExcludeGroups) -FilterName ([string]$app.FilterName) -FilterMode ([string]$app.FilterMode)
             $diff = Get-AssignmentDiff -Current $currentEntries -Desired $desiredEntries
             $toRemove = @(@($diff.ToRemove) + @($otherTargets))
             $toAdd = @($diff.ToAdd)
@@ -420,7 +437,7 @@ try {
             foreach ($gName in @(@($desiredEntries | ForEach-Object { $_.Group }) | Select-Object -Unique)) {
                 Resolve-GroupId -GroupName $gName -CreateIfMissing $true | Out-Null
             }
-            $assignments = @((New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdCache).mobileAppAssignments)
+            $assignments = @((New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdCache -FilterIdByName $filterIdByName).mobileAppAssignments)
 
             $assignBody = [string](@{ mobileAppAssignments = @($assignments) } | ConvertTo-Json -Depth 10)
             try {

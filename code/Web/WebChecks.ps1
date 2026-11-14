@@ -197,7 +197,7 @@ function Global:Start-WebCheckAssign {
     $resultPath = Join-Path $env:TEMP (".intunepkg_checks_result_" + [guid]::NewGuid().ToString('N') + ".json")
     $config = @{ TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
         Mode = 'Preview'; OutputResultPath = $resultPath
-        Apps = @($apps | ForEach-Object { @{ AppName = $_.appName; AppId = $_.appId; RequiredGroups = @($_.requiredFor); AvailableGroups = @($_.availableFor); UninstallGroups = @($_.uninstallFor); ExcludeGroups = @($_.excludeFor) } }) }
+        Apps = @($apps | ForEach-Object { @{ AppName = $_.appName; AppId = $_.appId; RequiredGroups = @($_.requiredFor); AvailableGroups = @($_.availableFor); UninstallGroups = @($_.uninstallFor); ExcludeGroups = @($_.excludeFor); FilterName = [string]$_.assignmentFilter; FilterMode = [string]$_.assignmentFilterMode } }) }
     return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedBatchAssignScript -Name 'checksassign' -ConfigJson ($config | ConvertTo-Json -Depth 8) -ResultPath $resultPath `
         -Kind "Check $($apps.Count) app(s)' assignments" -After @{ Kind = 'checkassign'; Names = @($apps | ForEach-Object { [string]$_.appName }) })
 }
@@ -323,7 +323,7 @@ function Global:Complete-WebAddFromIntune {
         if (-not $r.GroupFetchOk) { $noGroups.Add($name) }
         $file = Join-Path $folder ((Get-SafeFileNameForApp -Name $entry.appName) + '.json')
         if (Test-Path -LiteralPath $file) { $skipped.Add("$name (a file with its name exists)"); continue }
-        [System.IO.File]::WriteAllText($file, (ConvertTo-SingleAppJson -App $entry), (New-Object System.Text.UTF8Encoding($false)))
+        Save-WebAppJson -File $file -App $entry -Text 'Added from Intune'
         $added.Add($name); $existing += $name.ToLowerInvariant()
     }
     Write-Log "[OK] Added from Intune: $($added.Count)$(if ($skipped.Count) { "; skipped: $($skipped -join ', ')" })$(if ($noGroups.Count) { "; groups couldn't be read for: $($noGroups -join ', ')" })."

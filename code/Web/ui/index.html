@@ -548,6 +548,12 @@
         <article class="card">
           <h2>Packaging</h2>
           <p class="certstatus" id="pkgTool"></p>
+          <div class="row"><label for="pkgPackager">Build packages with</label>
+            <select id="pkgPackager" title="Built in needs no download; IntuneWinAppUtil.exe is Microsoft's tool">
+              <option value="auto">Automatic - IntuneWinAppUtil.exe when it's there, built in otherwise</option>
+              <option value="builtin">Built in (no download)</option>
+              <option value="tool">IntuneWinAppUtil.exe (Microsoft's tool)</option>
+            </select></div>
           <p class="certstatus" id="pkgShared"></p>
           <div class="actions">
             <button class="btn" id="btnGetTool" title="Download IntuneWinAppUtil.exe from Microsoft (its signature is checked)">Download packaging tool</button>
@@ -620,6 +626,7 @@
   <button role="menuitem" data-act="clearid" title="Forget the link to Intune - the app in Intune stays">Clear App ID</button>
   <hr>
   <div class="mhead" role="presentation">Remove</div>
+  <button role="menuitem" data-act="retire" class="danger" title="Take the app out of use: uninstall it from its groups' devices, then delete it from Intune and archive it - step by step">Retire...</button>
   <button role="menuitem" data-act="delete" class="danger" title="Delete the selected apps from Intune - the catalog keeps them; asked first">Delete from Intune...</button>
   <button role="menuitem" data-act="remove" class="danger" title="Remove the app from the catalog only - Intune keeps it">Remove from catalog...</button>
 </div>
@@ -635,6 +642,7 @@
   <hr>
   <button role="menuitem" data-cact="replace" title="Swap one group for another on every app, in every role - the catalog only">Replace a group in all apps...</button>
   <button role="menuitem" data-cact="undo" title="Take back the last batch edit, group change, App ID clearing or CSV import">Undo last bulk change...</button>
+  <button role="menuitem" data-cact="retired" title="Apps retired from Intune and archived - bring one back into the catalog">Retired apps...</button>
   <hr>
   <button role="menuitem" data-cact="reload" title="Read the catalog folder again - for changes made outside the app">Reload</button>
   <button role="menuitem" data-cact="folder" title="Open the folder with one JSON file per app in Explorer">Open catalog folder</button>
@@ -678,7 +686,12 @@
 </dialog>
 
 <dialog id="dlgHistory" class="wide">
-  <h2 id="histTitle">Earlier versions</h2>
+  <h2 id="histTitle">History</h2>
+  <h3>Changes</h3>
+  <p class="sub">Every change to the app in the catalog - which field, from what to what, and where it came from - and every step that changed it in Intune. Undo puts one change back.</p>
+  <ol id="histChanges"></ol>
+  <p class="sub" id="histChangesNote"></p>
+  <details id="histVersions"><summary>Earlier versions (whole files)</summary>
   <p class="sub">A copy is kept every time the app's file is saved or removed (Settings &gt; Folders &gt; Catalog backups). Restoring keeps the current version as a copy too.</p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>Saved</th><th title="What is different in that copy compared with the app as it is now">Differs from now in</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="histRows"></tbody></table></div>
   <p class="sub" id="histNote"></p>
@@ -688,6 +701,30 @@
     <h3>That version compared with now</h3>
     <div class="preview" id="histNow"></div>
   </div>
+  </details>
+  <div class="actions end"><button class="btn" data-close>Close</button></div>
+</dialog>
+<dialog id="dlgRetire" aria-labelledby="retireTitle">
+  <h2 id="retireTitle">Retire</h2>
+  <ol class="retsteps">
+    <li><strong>Uninstall</strong> - every group the app was given gets it as Uninstall (the catalog's groups follow), so it is removed from their devices.</li>
+    <li><strong>Wait</strong> - until the devices report it gone (the install status, below).</li>
+    <li><strong>Finish</strong> - it is deleted from Intune, archived (Catalog &gt; Retired apps) and removed from the catalog.</li>
+  </ol>
+  <p class="sub" id="retireGroups"></p>
+  <p id="retireProgress" aria-live="polite"></p>
+  <div class="actions end">
+    <button class="btn" data-close>Close</button>
+    <button class="btn" id="btnRetireRefresh" hidden>Refresh</button>
+    <button class="btn danger" id="btnRetireStart">Uninstall from its groups</button>
+    <button class="btn danger" id="btnRetireFinish" hidden>Finish: delete from Intune</button>
+  </div>
+</dialog>
+<dialog id="dlgRetired" aria-labelledby="retiredTitle">
+  <h2 id="retiredTitle">Retired apps</h2>
+  <p class="sub">Apps retired from Intune, as they were in the catalog. Restore brings one back - not in Intune and without groups (its History shows them).</p>
+  <div class="tablewrap short"><table class="plan"><thead><tr><th>App</th><th>Retired</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="retiredRows"></tbody></table></div>
+  <p class="sub" id="retiredNote"></p>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
 <dialog id="dlgAsk" class="ask" aria-labelledby="askTitle">
@@ -734,6 +771,14 @@
           <label title="Removed from these groups' devices.">Uninstall<textarea autocomplete="off" id="gUninstall" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
           <label title="Groups that never get the app, whatever else they are assigned to.">Excluded<textarea autocomplete="off" id="gExclude" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
         </div>
+        <div class="filterrow">
+          <label title="An Intune assignment filter narrows every group above (not Excluded) to the devices it matches - e.g. only corporate laptops. Leave empty for none.">Assignment filter
+            <input autocomplete="off" id="aFilter" list="filterList" placeholder="None" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          <datalist id="filterList"></datalist>
+          <label>Devices the filter matches
+            <select id="aFilterMode"><option value="include">get the app (include)</option><option value="exclude">don't get the app (exclude)</option></select></label>
+        </div>
+        <p class="sub" id="filterNote"></p>
         <p class="sub" id="knownGroups"></p>
       </section>
       <section>
@@ -797,7 +842,7 @@
     <p class="formerror" id="appError" hidden></p>
     <div class="actions split">
       <button type="button" class="btn danger" id="btnRemoveApp" title="Remove this app from the catalog only - Intune keeps it; a copy goes to Backups">Remove from catalog...</button>
-      <button type="button" class="btn ghost" id="btnAppHistory" title="Earlier versions of this app's file, kept every time it was saved - put one back">Earlier versions...</button>
+      <button type="button" class="btn ghost" id="btnAppHistory" title="What changed, when and from where - in the catalog and in Intune; undo a change, or put an earlier version back">History...</button>
       <span class="spacer"></span>
       <button type="button" class="btn" id="btnAppCancel">Cancel</button>
       <button type="submit" class="btn primary" id="btnSaveApp" title="Save to the catalog - Send to Intune sends it therene">Save</button>
@@ -847,6 +892,7 @@
 <dialog id="dlgStatus" class="wide">
   <h2 id="statusTitle">Install status</h2>
   <p class="sub" id="statusSummary">Reading Intune's install status report...</p>
+  <div id="statusErrors" class="errsum" hidden><h3>Why installs fail</h3><ul id="statusErrList"></ul></div>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>Device</th><th>User</th><th>State</th><th>Detail</th><th>Error</th><th>Version</th><th>Last seen</th></tr></thead><tbody id="statusRows"></tbody></table></div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>

@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.14.0
+
+- **Assignment filters**: an app's *Who gets it* takes an Intune
+  assignment filter (picked from the tenant's) and whether the devices it
+  matches get the app or not. It goes on every included group (Intune
+  takes none on exclusions), in pushes, releases and retirements, and the
+  drift check sees a changed or removed filter. Reading filters needs
+  DeviceManagementConfiguration.Read.All - Check permissions says so when
+  an app uses one.
+- **Install errors explained**: the install status shows what each error
+  code means and what usually fixes it (not detected after install,
+  Windows Installer errors, a restart needed, a timeout, file not found and
+  more; others by family), and *Why installs fail* lists the most common
+  ones. The *N failed* count on the Updates page opens it.
+- **Retire an app** (More > Retire...): its groups get it as Uninstall
+  (the catalog's groups follow), the dialog counts the devices that still
+  have it, and Finish deletes it from Intune, archives it and removes it
+  from the catalog. **Catalog > Retired apps** restores one. The nightly
+  run leaves an app being retired alone.
+- **History** (the editor's History...): every change to an app in the
+  catalog, field by field from what to what, with where it came from
+  (Editor, Batch edit, Nightly run, Pull from Intune...), and every step
+  that changed it in Intune - following renames. **Undo** puts one change
+  back (only fields not changed again since). Earlier versions (whole
+  files) are below it as before.
+- **Built-in packaging**: .intunewin packages are built by the app itself
+  (zipped, AES-256 encrypted, HMAC and digest as Intune expects) - no
+  IntuneWinAppUtil.exe download needed. Settings > Packaging & folders >
+  *Build packages with*: Automatic (the tool when it's there, built in
+  otherwise), Built in, or IntuneWinAppUtil.exe. Tested by building a
+  package and reading it back with the upload code.
+
 ## 2.13.0
 
 - **Check permissions** (Settings > Diagnostics): the Graph permissions

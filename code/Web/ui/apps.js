@@ -81,6 +81,7 @@ const shortType = t => ({ 'Windows app (Win32)': 'Win32', 'Microsoft Store app (
 // What the server's status words are shown as - the same meaning, in the words the rest of the page uses.
 const statusLabel = { 'No App ID': 'Not deployed', 'Metadata saved - ready to deploy': 'Not deployed - own settings', 'Custom package': 'Winget ID + own package' };
 function statusPill(row) {
+  if (row.retiringSince) return el('span', { class: 'pill err', text: 'Retiring', title: `Being uninstalled from its groups since ${row.retiringSince} - More > Retire shows how far, and finishes it.` });
   const s = row.status || '';
   const t = tenantState(row);
   if (t === 'missing') return el('span', { class: 'pill warn', text: 'Not in this tenant' + (s ? '; ' + s.split('; ').map(p => statusLabel[p] || p).join('; ') : ''), title: statusHelp['Not in this tenant'] });
@@ -197,6 +198,7 @@ function fillEditor(a) {
   $('aName').value = a.appName || ''; $('aWinget').value = a.wingetId || ''; $('aAppId').value = a.appId || '';
   $('gRequired').value = (a.requiredFor || []).join('\n'); $('gAvailable').value = (a.availableFor || []).join('\n');
   $('gUninstall').value = (a.uninstallFor || []).join('\n'); $('gExclude').value = (a.excludeFor || []).join('\n');
+  $('aFilter').value = a.assignmentFilter || ''; $('aFilterMode').value = a.assignmentFilterMode === 'exclude' ? 'exclude' : 'include'; $('filterNote').textContent = '';
   for (const [k, id] of Object.entries(metaIds)) $(id).value = (a.metadata && a.metadata[k]) || '';
   $('metaNote').textContent = a.hasMetadata ? '' : '(not set yet - the defaults are used when it is deployed)';
   fillDeploy(a.deploy);
@@ -346,6 +348,15 @@ async function openEditor(name) {
   editorSnapshot = editorState();
   $('aName').focus();
 }
+// Assignment filters: the tenant's, loaded once when the box is first used.
+let filtersLoaded = false;
+$('aFilter').addEventListener('focus', async () => {
+  if (filtersLoaded) return; filtersLoaded = true;
+  const r = await api('/api/filters');
+  const list = (r.ok && r.filters) || [];
+  $('filterList').replaceChildren(...list.map(f => el('option', { value: f.name, text: `${f.platform === 'windows10AndLater' ? 'Windows' : f.platform}${f.rule ? ' - ' + f.rule.slice(0, 80) : ''}` })));
+  if (r.note) $('filterNote').textContent = r.note; else if (!list.length) $('filterNote').textContent = 'No assignment filters in Intune yet (Tenant administration > Filters).';
+});
 $('btnAddApp').addEventListener('click', () => openAdd());
 $('btnEditApp').addEventListener('click', () => { if (selected.size === 1) openEditor([...selected][0]); });
 $('appForm').addEventListener('submit', async e => {
@@ -353,6 +364,7 @@ $('appForm').addEventListener('submit', async e => {
   const app = {
     appName: $('aName').value, wingetId: $('aWinget').value, appId: $('aAppId').value,
     requiredFor: lines('gRequired'), availableFor: lines('gAvailable'), uninstallFor: lines('gUninstall'), excludeFor: lines('gExclude'),
+    assignmentFilter: $('aFilter').value.trim(), assignmentFilterMode: $('aFilterMode').value,
     metadata: Object.fromEntries(Object.entries(metaIds).map(([k, id]) => [k, $(id).value])),
   };
   if (deployTouched) app.deploy = readDeploy();
@@ -372,7 +384,8 @@ $('btnAppHistory').addEventListener('click', async () => {
   const name = editingName;
   const r = await api('/api/app-backups', { name });
   if (!r.ok) { toast(r.error, true); return; }
-  $('histTitle').textContent = `Earlier versions of ${name}`;
+  $('histTitle').textContent = `History of ${name}`;
+  loadChanges(name);
   $('histNote').textContent = r.backups.length ? '' : 'No earlier version kept yet - one is kept the next time this app is saved.';
   $('histRows').replaceChildren(...r.backups.map(b => el('tr', {},
     el('td', { text: b.when }),
@@ -387,6 +400,29 @@ $('btnAppHistory').addEventListener('click', async () => {
   $('histCompare').hidden = true;
   $('dlgHistory').showModal();
 });
+// The change history: one line per change, newest first.
+const histField = f => f.startsWith('metadata.') ? (({ description: 'Description', publisher: 'Publisher', appVersion: 'App version', owner: 'Owner', developer: 'Developer', informationUrl: 'Information URL', privacyUrl: 'Privacy URL',
+  installCommand: 'Install command', uninstallCommand: 'Uninstall command', notes: 'Notes', detectionRule: 'Detection rule', returnCodes: 'Return codes', dependencies: 'Dependencies', supersedes: 'Supersedence', isFeatured: 'Featured' })[f.slice(9)] || f.slice(9))
+  : (f === 'appName' ? 'Name' : fieldLabel[f] || ({ assignmentFilter: 'Assignment filter', assignmentFilterMode: 'Filter mode', managedUpdates: 'Managed updates', releases: 'Releases', releaseRule: 'Release rule', icon: 'Icon', autoRelease: 'Release by itself', downloadUrl: 'Download URL', retiringSince: 'Retiring since' })[f] || f);
+async function loadChanges(name) {
+  $('histChanges').replaceChildren(); $('histChangesNote').textContent = 'Reading the history...';
+  const r = await api('/api/app-history', { name });
+  if (!r.ok) { $('histChangesNote').textContent = r.error; return; }
+  $('histChangesNote').textContent = r.entries.length ? '' : 'Nothing recorded yet - changes are recorded from this version of the app on.';
+  $('histChanges').replaceChildren(...r.entries.map(e => el('li', { class: e.kind === 'intune' ? 'intune' : '' },
+    el('div', { class: 'thead' }, el('time', { text: new Date(e.at).toLocaleString() }), el('span', { class: 'pill ' + (e.kind === 'intune' ? 'info' : 'muted'), text: e.kind === 'intune' ? 'Intune' : 'Catalog' }),
+      el('span', { class: 'muted', text: e.source }), e.app !== name ? el('span', { class: 'muted', text: `(as ${e.app})` }) : '',
+      e.canUndo ? el('button', { class: 'btn small', text: 'Undo', title: 'Put the fields this change changed back - only those not changed again since', onclick: async () => {
+        if (!(await ask(`Undo this change to ${name}?\n\n${e.changes.filter(c => c.revertable).map(c => `${histField(c.field)}: back to ${c.before || '(empty)'}`).join('\n')}\n\nOnly the catalog changes - Send to Intune sends it there.`, { ok: 'Undo' }))) return;
+        const x = await api('/api/history-undo', { name, id: e.id });
+        if (!x.ok) { toast(x.error, true); return; }
+        toast(`Undone: ${x.undone.map(histField).join(', ')}${x.skipped.length ? ` - left alone: ${x.skipped.join('; ')}` : ''}`);
+        $('dlgHistory').close(); $('dlgApp').close(); await loadApps(); openEditor(name);
+      } }) : ''),
+    e.text ? el('div', { text: e.text }) : '',
+    e.changes.length ? el('ul', { class: 'changes' }, ...e.changes.map(c => el('li', {}, el('strong', { text: histField(c.field) + ': ' }),
+      el('span', { class: 'old', text: c.before || '(empty)' }), ' → ', el('span', { class: 'new', text: c.after || '(empty)' })))) : '')));
+}
 async function compareVersion(name, b) {
   const r = await api('/api/app-compare', { name, id: b.id });
   if (!r.ok) { toast(r.error, true); return; }
@@ -508,7 +544,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !catMenu.h
 catMenu.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   catMenu.hidden = true;
-  ({ export: exportCsv, import: openCsvImport, replace: () => openReplace({}), undo: undoLast, tenantsetup: openTenantSetup, overview: openOverview, suggest: openSuggest, matrix: openMatrix, wingetcheck: checkWingetVersions,
+  ({ export: exportCsv, import: openCsvImport, replace: () => openReplace({}), undo: undoLast, tenantsetup: openTenantSetup, overview: openOverview, retired: openRetired, suggest: openSuggest, matrix: openMatrix, wingetcheck: checkWingetVersions,
     reload: () => { loadApps(); loadState(); }, folder: () => openFolder('catalog-folder') })[b.dataset.cact]();
 });
 // Apps whose App ID the connected tenant doesn't know: a banner says so, with one button for all of them.
@@ -871,7 +907,7 @@ function openMenu(x, y) {
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
   const enable = { edit: !!one, pushgroups: anyId, sandbox: !!(one && !one.wingetId), package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
-    replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any,
+    replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any, retire: !!(one && (one.hasAppId || one.retiringSince)),
     takeversion: sel.some(a => a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
     release: !!(one && one.managed && one.hasAppId && !one.pilotVersion), promote: !!(one && one.pilotVersion), withdraw: !!(one && one.pilotVersion),
     managed: any,
@@ -885,6 +921,7 @@ function openMenu(x, y) {
     replacegroup: any ? 'None of the selected apps is assigned to a group.' : 'Select one or more apps first.',
     copyid: 'None of the selected apps has an App ID.', clearid: 'None of the selected apps has an App ID.',
     delete: 'None of the selected apps is in Intune.', remove: 'Select one or more apps first.',
+    retire: one ? 'This app isn\'t in Intune - Remove from catalog is enough.' : 'Select exactly one app.',
     takeversion: sel.some(a => a.managed && a.hasAppId) ? 'Deployed apps with managed updates get a new version through Release new version.' : apps.some(a => a.wingetVersion) ? 'winget offers nothing newer for the selected apps.' : 'Ask winget first: Catalog > Check winget for new versions.',
     release: !one ? 'Select exactly one app.' : !one.managed ? 'Turn managed updates on first (More > Managed updates on).' : !one.hasAppId ? 'Send it to Intune first - that is its first release.' : 'A version is in pilot already - promote or withdraw it first.',
     promote: one ? 'No version of this app is in pilot.' : 'Select exactly one app.', withdraw: one ? 'No version of this app is in pilot.' : 'Select exactly one app.',
@@ -940,6 +977,7 @@ async function menuAction(act) {
     case 'addgroups': if (!prefs) await loadPrefs(); openGroupsBatch('add', names); break;
     case 'removegroups': openGroupsBatch('remove', names); break;
     case 'status': openStatus(one.name); break;
+    case 'retire': openRetire(one.name); break;
     case 'sandbox': openSandbox(one.name); break;
     case 'edit': openEditor(one.name); break;
     case 'pushgroups': openPushGroups(names); break;
@@ -1032,16 +1070,78 @@ $('btnPullApply').addEventListener('click', async () => {
   $('dlgPull').close(); toast('Applied.'); loadApps();
 });
 
+// ---------------------------------------------------------------- retiring an app
+let retiring = '';
+async function openRetire(name) {
+  retiring = name;
+  $('retireTitle').textContent = `Retire ${name}`;
+  $('retireGroups').textContent = ''; $('retireProgress').textContent = 'Reading...';
+  for (const id of ['btnRetireStart', 'btnRetireFinish', 'btnRetireRefresh']) $(id).hidden = true;
+  if (!$('dlgRetire').open) $('dlgRetire').showModal();
+  const r = await api('/api/retire-status', { name });
+  if (!r.ok) { $('retireProgress').textContent = r.error; return; }
+  const g = r.groups || [];
+  if (!r.retiringSince) {
+    $('retireGroups').textContent = g.length ? `Uninstalled from: ${g.join(', ')}.` : 'It has no groups - nothing to uninstall.';
+    $('retireProgress').textContent = r.inIntune ? '' : 'It isn\'t in Intune.';
+    $('btnRetireStart').hidden = !g.length || !r.inIntune; $('btnRetireFinish').hidden = !!g.length && r.inIntune;
+    return;
+  }
+  $('retireGroups').textContent = `Being retired since ${r.retiringSince} - uninstalled from: ${g.join(', ') || 'no groups'}.`;
+  const p = r.progress;
+  $('retireProgress').textContent = r.note || (p ? p.text : '');
+  $('retireProgress').className = p && p.done ? 'ok' : '';
+  $('btnRetireRefresh').hidden = false; $('btnRetireFinish').hidden = false;
+}
+$('btnRetireRefresh').addEventListener('click', () => openRetire(retiring));
+$('btnRetireStart').addEventListener('click', async () => {
+  const name = retiring;
+  if (!(await ask(`Uninstall ${name} from every device of its groups?\n\n${$('retireGroups').textContent}\n\nIts groups in the catalog become Uninstall too. Nothing is deleted yet.`, { ok: 'Uninstall', danger: true }))) return;
+  $('dlgRetire').close();
+  runDialog(`Retire ${name}`, 'Its groups get it as Uninstall.');
+  runJob({ name }, ok => { toast(ok ? `${name} is being uninstalled - finish the retirement once the devices report it gone (More > Retire).` : `Retiring ${name} failed - nothing changed. See the log.`, !ok); loadApps(); },
+    { path: '/api/retire-start', log: 'runLog', startText: 'Retiring...' });
+});
+$('btnRetireFinish').addEventListener('click', async () => {
+  const name = retiring, a = apps.find(x => x.name === name);
+  const still = /still have it/.test($('retireProgress').textContent);
+  if (!(await ask(`Delete ${name} from Intune and remove it from the catalog?\n\n${still ? 'Some devices still have it - deleting it now leaves it on them, unmanaged.\n\n' : ''}A copy is archived (Catalog > Retired apps).`, { ok: 'Delete and archive', danger: true }))) return;
+  $('dlgRetire').close();
+  if (!a || !a.hasAppId) {
+    const r = await api('/api/retire-finish', { name });
+    toast(r.ok ? `${name} is retired and archived.` : r.error, !r.ok); loadApps(); return;
+  }
+  runDialog(`Finish retiring ${name}`, 'Deleting it from Intune, then archiving it.');
+  runJob({ name }, ok => { toast(ok ? `${name} is retired: deleted from Intune and archived.` : `Deleting ${name} from Intune failed - it stays in the catalog. See the log.`, !ok); loadApps(); },
+    { path: '/api/retire-finish', log: 'runLog', startText: 'Deleting...' });
+});
+async function openRetired() {
+  $('retiredRows').replaceChildren(); $('retiredNote').textContent = 'Reading...';
+  $('dlgRetired').showModal();
+  const r = await api('/api/retired-list');
+  if (!r.ok) { $('retiredNote').textContent = r.error; return; }
+  $('retiredNote').textContent = r.apps.length ? '' : 'No app has been retired yet (More > Retire).';
+  $('retiredRows').replaceChildren(...r.apps.map(x => el('tr', {}, el('td', { text: x.name || x.id }), el('td', { text: x.retired }),
+    el('td', { class: 'act' }, el('button', { class: 'btn small', text: 'Restore', onclick: async () => {
+      const y = await api('/api/retired-restore', { id: x.id });
+      if (!y.ok) { toast(y.error, true); return; }
+      $('dlgRetired').close(); toast(`${y.name} is back in the catalog - set its groups and send it to Intune to use it again.`); await loadApps(); openEditor(y.name);
+    } })))));
+}
+
 // ---------------------------------------------------------------- install status
 async function openStatus(name) {
   $('statusTitle').textContent = 'Install status - ' + name;
   $('statusSummary').textContent = 'Reading Intune’s install status report...';
-  $('statusRows').replaceChildren();
+  $('statusRows').replaceChildren(); $('statusErrors').hidden = true;
   $('dlgStatus').showModal();
   const r = await api('/api/install-status', { name });
   if (!r.ok) { $('statusSummary').textContent = r.error; return; }
   $('statusSummary').textContent = r.summary + (r.truncated ? ' (only the first rows are shown)' : '');
+  const top = r.topErrors || [];
+  $('statusErrors').hidden = !top.length;
+  $('statusErrList').replaceChildren(...top.map(e => el('li', {}, el('strong', { text: `${e.count} × ${e.hex}` }), ` ${e.meaning} `, el('span', { class: 'muted', text: e.fix }))));
   $('statusRows').replaceChildren(...r.rows.map(x => el('tr', {}, el('td', { text: x.device }), el('td', { text: x.user }),
     el('td', {}, el('span', { class: 'pill ' + (/fail/i.test(x.state) ? 'err' : /install/i.test(x.state) && !/not/i.test(x.state) ? 'ok' : 'muted'), text: x.state })),
-    el('td', { text: x.detail }), el('td', { class: 'chg', text: x.error }), el('td', { text: x.version }), el('td', { text: x.lastSeen }))));
+    el('td', { text: x.detail }), el('td', { class: 'chg', text: x.error, title: x.meaning ? `${x.meaning}\n\n${x.fix}` : '' }, x.meaning ? el('div', { class: 'muted small', text: x.meaning }) : ''), el('td', { text: x.version }), el('td', { text: x.lastSeen }))));
 }

@@ -219,7 +219,7 @@ function Global:Complete-WebGroupRename {
         $a = $catalog.Apps | Where-Object { $_.appName -eq $n } | Select-Object -First 1
         $file = Join-Path $folder ((Get-SafeFileNameForApp -Name $a.appName) + '.json')
         Backup-WebAppFile $file
-        [System.IO.File]::WriteAllText($file, (ConvertTo-SingleAppJson -App $a), (New-Object System.Text.UTF8Encoding($false)))
+        Save-WebAppJson -File $file -App $a -Text "Group renamed: $($After.OldName) -> $($After.NewName)"
     }
     $fav = @($Global:App.FavoriteGroups)
     if (@($fav | Where-Object { [string]$_ -ieq $After.OldName }).Count) {

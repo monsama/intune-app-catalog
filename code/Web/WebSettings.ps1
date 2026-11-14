@@ -266,7 +266,8 @@ function Global:Get-WebPackaging {
     # What packaging needs and whether it's there: the tool, and the shared Winget package.
     $r = Get-PackagingReadiness
     return @{ ok = $true; toolPath = [string]$r.ToolPath; toolFound = [bool]$r.ToolFound; toolVersion = [string]$r.ToolVersion
-        sharedPath = [string]$r.SharedPath; sharedFound = [bool]$r.SharedFound; packagesFolder = (Get-AppFolder -Kind Packages) }
+        sharedPath = [string]$r.SharedPath; sharedFound = [bool]$r.SharedFound; packagesFolder = (Get-AppFolder -Kind Packages)
+        packager = $(if ([string]$Global:App.Packager -in 'builtin', 'tool') { [string]$Global:App.Packager } else { 'auto' }); packagerInUse = (Get-PackagerChoice) }
 }
 
 function Global:Invoke-WebPackagingSetup {
@@ -275,7 +276,7 @@ function Global:Invoke-WebPackagingSetup {
     switch ([string]$Data.what) {
         'tool' { $r = Install-PackagingTool }
         'shared' {
-            if (-not (Get-PackagingReadiness).ToolFound) {
+            if ((Get-PackagerChoice) -eq 'tool' -and -not (Get-PackagingReadiness).ToolFound) {
                 $t = Install-PackagingTool
                 if (-not $t.Ok) { return @{ ok = $false; error = [string]$t.Message } }
             }
@@ -375,6 +376,10 @@ function Global:Save-WebPrefs {
         $Global:App.CheckIntuneOnDeployOpen = [bool]$c.checkIntuneOnDeployOpen; $Global:App.PushGroupsOnCreate = [bool]$c.pushGroupsOnCreate
         $Global:App.PushGroupsOnUpdate = [bool]$c.pushGroupsOnUpdate; $Global:App.DetailedGraphLog = [bool]$c.detailedGraphLog
         if ($null -ne $c.checkForUpdates) { $Global:App.CheckForUpdates = [bool]$c.checkForUpdates }
+    }
+    if ($null -ne $Data.packager) {
+        if ([string]$Data.packager -notin 'auto', 'builtin', 'tool') { return @{ ok = $false; error = 'Unknown packager.' } }
+        $Global:App.Packager = [string]$Data.packager
     }
     if ($Data.folders) {
         foreach ($p in $Data.folders.PSObject.Properties) { Set-AppFolder -Kind $p.Name -Path ([string]$p.Value) }

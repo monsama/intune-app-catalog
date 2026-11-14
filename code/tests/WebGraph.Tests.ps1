@@ -74,6 +74,9 @@ $answers = [ordered]@{
             @{ displayName = 'ZZ Suggest Me'; version = '1.0'; deviceCount = 4 }, @{ displayName = 'ZZ Suggest Me (x64)'; version = '1.1'; deviceCount = 2 },
             @{ displayName = $linkedName; version = '1.0'; deviceCount = 8 }, @{ displayName = 'Windows PC Health Check'; version = '3.6'; deviceCount = 30 }) }
     # Permissions check: the roles the sign-in has (test mode reads them from here).
+    "GET beta/deviceManagement/assignmentFilters?`$select=id,displayName,platform,rule" = @{ value = @(
+        @{ id = 'f-2'; displayName = 'iPads'; platform = 'iOS'; rule = '(device.model -eq "iPad")' },
+        @{ id = 'f-1'; displayName = 'Corp laptops'; platform = 'windows10AndLater'; rule = '(device.deviceOwnership -eq "Corporate")' }) }
     'TOKEN roles' = @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Directory.ReadWrite.All')
     # Alerts: the email, sent with Graph.
     'POST v1.0/users/reports@contoso.com/sendMail' = $null
@@ -352,6 +355,8 @@ try {
     $sg = Invoke-Api '/api/inventory-suggestions'
     $sgMe = @($sg.suggestions) | Where-Object { $_.name -eq 'ZZ Suggest Me' } | Select-Object -First 1
     Check ($sg.ok -and $sgMe.devices -eq 6 -and @($sg.suggestions | Where-Object { $_.name -eq $linkedName -or $_.name -like 'Windows*' }).Count -eq 0) 'apps worth adding: from the inventory, without catalog apps and parts of Windows' ($sg | ConvertTo-Json -Compress -Depth 4)
+    $flt = Invoke-Api '/api/filters'
+    Check ($flt.ok -and @($flt.filters).Count -eq 2 -and $flt.filters[0].name -eq 'Corp laptops') 'filters: the tenant''s, Windows ones first' ($flt | ConvertTo-Json -Compress -Depth 4)
     $pc = Invoke-Api '/api/permission-check'
     $pcDir = @($pc.rows | Where-Object { $_.name -eq 'Directory.ReadWrite.All' })[0]
     Check ($pc.ok -and $pcDir.status -eq 'unused' -and @($pc.rows | Where-Object { $_.name -eq 'Group.ReadWrite.All' -and $_.status -eq 'ok' }).Count -eq 1) 'permissions: granted against used - a broad one not needed' ($pc | ConvertTo-Json -Compress -Depth 4)

@@ -505,6 +505,52 @@ try {
     Check ($addS.ok -and $scApp.deploy.detection.type -eq 'Registry' -and $scApp.deploy.detection.value -eq '2.0' -and $scApp.metadata.installCommand -like '*-File .\Install.ps1' -and (Test-Path -LiteralPath (Join-Path $scDir 'Install.ps1')) -and $scApp.managedUpdates) 'add apps: a script app - Install.ps1 in its folder, detected by its version marker, managed updates on' ($addS | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/add-script' @{ name = $scName; version = '2.0'; install = $tpls.templates[1].install; uninstall = 'x' }).ok) 'add apps: a name already in the catalog is refused'
     [void](Invoke-Api '/api/app-remove' @{ name = $scName }); Remove-Item -LiteralPath $scDir -Recurse -Force -ErrorAction SilentlyContinue
+    # The change history: an editor save is recorded field by field, from the Editor; undo puts one change back; a rename keeps the history.
+    $hName = 'ZZ History ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $hName; wingetId = 'Contoso.History'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'first' } } })
+    [void](Invoke-Api '/api/app-save' @{ originalName = $hName; app = @{ appName = $hName; wingetId = 'Contoso.History'; appId = ''; requiredFor = @('SG-A', 'SG-B'); metadata = @{ description = 'second' } } })
+    $h = Invoke-Api '/api/app-history' @{ name = $hName }
+    $hLast = $h.entries[0]
+    Check ($h.ok -and @($h.entries).Count -eq 2 -and $hLast.source -eq 'Editor' -and $hLast.canUndo -and @($hLast.changes | Where-Object { $_.field -eq 'requiredFor' -and $_.after -eq 'SG-A, SG-B' }).Count -eq 1 -and
+        @($hLast.changes | Where-Object { $_.field -eq 'metadata.description' -and $_.before -eq 'first' }).Count -eq 1 -and $h.entries[1].text -eq 'Added to the catalog') 'history: an editor save, field by field, from the Editor' ($h | ConvertTo-Json -Compress -Depth 6)
+    $hu = Invoke-Api '/api/history-undo' @{ name = $hName; id = $hLast.id }
+    $hApp = (Invoke-Api '/api/app-get' @{ name = $hName }).app
+    Check ($hu.ok -and @($hApp.requiredFor).Count -eq 1 -and $hApp.metadata.description -eq 'first') 'history: undo puts that change''s fields back' ($hu | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/history-undo' @{ name = $hName; id = $hLast.id }).ok) 'history: undoing it twice does nothing (the fields were changed since)'
+    [void](Invoke-Api '/api/app-save' @{ originalName = $hName; app = @{ appName = "$hName R"; wingetId = 'Contoso.History'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'first' } } })
+    $hr = Invoke-Api '/api/app-history' @{ name = "$hName R" }
+    Check (@($hr.entries).Count -eq 4 -and @($hr.entries[0].changes | Where-Object { $_.field -eq 'appName' }).Count -eq 1 -and $hr.entries[-1].app -eq $hName) 'history: a rename keeps what happened under the old name' ($hr | ConvertTo-Json -Compress -Depth 6)
+    Check (-not (Invoke-Api '/api/history-undo' @{ name = "$hName R"; id = '../x' }).ok) 'history: an id that isn''t one is refused'
+    [void](Invoke-Api '/api/app-remove' @{ name = "$hName R" })
+    # Retiring: refused without an App ID or groups; an app not in Intune is archived and removed at once; Restore brings it back without groups.
+    $rtName = 'ZZ Retire ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $rtName; wingetId = 'Contoso.Retire'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'r' } } })
+    Check (-not (Invoke-Api '/api/retire-start' @{ name = $rtName }).ok) 'retire: an app not in Intune has nothing to uninstall - refused'
+    $rts = Invoke-Api '/api/retire-status' @{ name = $rtName }
+    Check ($rts.ok -and -not $rts.inIntune -and -not $rts.retiringSince -and @($rts.groups) -contains 'SG-A') 'retire: the status says what would be uninstalled'
+    $rtf = Invoke-Api '/api/retire-finish' @{ name = $rtName }
+    $rtl = Invoke-Api '/api/retired-list'
+    $rtEntry = @($rtl.apps | Where-Object { $_.name -eq $rtName })[0]
+    Check ($rtf.ok -and -not (Invoke-Api '/api/app-get' @{ name = $rtName }).ok -and $rtEntry) 'retire: finished - archived and out of the catalog' ($rtl | ConvertTo-Json -Compress -Depth 4)
+    $rtr = Invoke-Api '/api/retired-restore' @{ id = $rtEntry.id }
+    $rtApp = (Invoke-Api '/api/app-get' @{ name = $rtName }).app
+    Check ($rtr.ok -and $rtApp -and @($rtApp.requiredFor).Count -eq 0 -and -not $rtApp.appId -and $rtApp.metadata.description -eq 'r') 'retire: restored - its settings back, not in Intune, without groups'
+    Check (-not (Invoke-Api '/api/retired-restore' @{ id = $rtEntry.id }).ok -and -not (Invoke-Api '/api/retired-restore' @{ id = '..\x.json' }).ok) 'retire: restoring it twice, or a name that is not one, is refused'
+    $rth = Invoke-Api '/api/app-history' @{ name = $rtName }
+    Check (@($rth.entries | Where-Object { $_.text -like 'Retired*' }).Count -eq 1 -and $rth.entries[0].text -like 'Restored*') 'retire: retiring and restoring are in its history'
+    [void](Invoke-Api '/api/app-remove' @{ name = $rtName })
+    $rtGuid = [guid]::NewGuid().ToString()
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = "$rtName 2"; wingetId = 'Contoso.Retire'; appId = $rtGuid; metadata = @{ description = 'r' } } })
+    Check (-not (Invoke-Api '/api/retire-start' @{ name = "$rtName 2" }).ok) 'retire: an app without groups has nothing to uninstall - refused (finish deletes it)'
+    [void](Invoke-Api '/api/app-remove' @{ name = "$rtName 2" })
+    # An assignment filter round-trips through the catalog file and the editor.
+    $flName = 'ZZ Filter ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $flName; wingetId = 'Contoso.Filter'; appId = ''; requiredFor = @('SG-A'); assignmentFilter = ' Corp laptops '; assignmentFilterMode = 'exclude'; metadata = @{ description = 'f' } } })
+    $flApp = (Invoke-Api '/api/app-get' @{ name = $flName }).app
+    Check ($flApp.assignmentFilter -eq 'Corp laptops' -and $flApp.assignmentFilterMode -eq 'exclude') 'filter: saved by name (trimmed) with its mode, read back in the editor'
+    [void](Invoke-Api '/api/app-remove' @{ name = $flName })
+    $fl = Invoke-Api '/api/filters'
+    Check ($fl.ok -and @($fl.filters).Count -eq 0 -and $fl.note) 'filters: not connected - an empty list and a note, so the name can still be typed'
     # A Microsoft Store app: never managed updates (the Store updates it).
     $stName = 'ZZ Store ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
     [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $stName; wingetId = '9NBLGGH4NNS1'; appId = ''; managedUpdates = $true; metadata = @{ description = 'store' } } })

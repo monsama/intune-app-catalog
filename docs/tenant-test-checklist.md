@@ -130,6 +130,27 @@ relying on a release. About 45 minutes, plus about 30 for managed updates
       counts match the portal's "Device install status".
 - [ ] Select two test apps, **More > Delete from Intune** - asked once,
       both gone from the portal, their App IDs cleared in the catalog.
+- [ ] On a failed device's row, the **Error** column explains the code, and
+      *Why installs fail* above the table lists the most common ones.
+- [ ] **More > Retire...** on a test app with groups: its assignments in
+      the portal become Uninstall for the same groups, the list says
+      *Retiring*, and the dialog counts the devices that still have it.
+      **Finish** deletes it from the portal, and **Catalog > Retired
+      apps** lists it; **Restore** brings it back without App ID or groups.
+
+## 8b. Assignment filters, history, built-in packages
+
+- [ ] Create a filter in Intune (Tenant administration > Filters). In an
+      app's *Who gets it*, pick it (the list offers the tenant's filters),
+      save, **Send groups only**: in the portal, every included group has
+      the filter, the excluded group none. Checks reports no difference;
+      change the filter mode to *exclude* and it reports one.
+- [ ] Settings > Packaging & folders, *Build packages with: Built in*.
+      Package an app with its own installer, send it to Intune: the
+      upload commits and the app installs on a test device.
+- [ ] An app's **History...**: the edits above are listed field by field
+      (from the Editor), the group push as an Intune step. **Undo** on one
+      change puts those fields back.
 
 ## 9. Start-up checks
 

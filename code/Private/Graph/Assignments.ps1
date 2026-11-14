@@ -15,8 +15,11 @@
 # to the embedded scripts as text by Get-AssignmentScriptHelpers.
 
 function Global:Get-AssignmentKey {
-    # "required|include|SG-Sales" - the identity of one assignment
-    param([string]$Intent, [string]$Mode, [string]$Group)
+    # "required|include|SG-Sales" - the identity of one assignment; with an
+    # assignment filter "required|include|SG-Sales|include:Corporate laptops",
+    # so a changed filter is a change.
+    param([string]$Intent, [string]$Mode, [string]$Group, [string]$Filter = '')
+    if ($Filter) { return "$Intent|$Mode|$Group|$Filter" }
     return "$Intent|$Mode|$Group"
 }
 
@@ -30,8 +33,13 @@ function Global:Get-DesiredAssignmentEntries {
         [string[]]$RequiredGroups = @(),
         [string[]]$AvailableGroups = @(),
         [string[]]$UninstallGroups = @(),
-        [string[]]$ExcludeGroups = @()
+        [string[]]$ExcludeGroups = @(),
+        # An Intune assignment filter (by name) on every inclusion - Intune
+        # doesn't take filters on exclusions. -FilterMode: include | exclude.
+        [string]$FilterName = '',
+        [string]$FilterMode = 'include'
     )
+    $filter = if (([string]$FilterName).Trim()) { "$(if ($FilterMode -eq 'exclude') { 'exclude' } else { 'include' }):$(([string]$FilterName).Trim())" } else { '' }
     $clean = {
         param($Names)
         @(@($Names) | Where-Object { $null -ne $_ -and "$_".Trim() } | ForEach-Object { "$_".Trim() } | Select-Object -Unique)
@@ -48,14 +56,14 @@ function Global:Get-DesiredAssignmentEntries {
         if ($included.Count -eq 0) { continue }
         $usedIntents.Add($pair.Intent)
         foreach ($group in $included) {
-            $entries.Add([pscustomobject]@{ Intent = $pair.Intent; Mode = 'include'; Group = $group; Key = (Get-AssignmentKey $pair.Intent 'include' $group) })
+            $entries.Add([pscustomobject]@{ Intent = $pair.Intent; Mode = 'include'; Group = $group; Filter = $filter; Key = (Get-AssignmentKey $pair.Intent 'include' $group $filter) })
         }
     }
     # An exclusion only means something next to an inclusion of the same
     # intent, so nothing is excluded for an intent this app doesn't use.
     foreach ($intent in $usedIntents) {
         foreach ($group in $excluded) {
-            $entries.Add([pscustomobject]@{ Intent = $intent; Mode = 'exclude'; Group = $group; Key = (Get-AssignmentKey $intent 'exclude' $group) })
+            $entries.Add([pscustomobject]@{ Intent = $intent; Mode = 'exclude'; Group = $group; Filter = ''; Key = (Get-AssignmentKey $intent 'exclude' $group) })
         }
     }
     # Returned unwrapped, and an EMPTY result therefore reaches the caller
@@ -78,7 +86,7 @@ function Global:ConvertTo-CurrentAssignmentEntries {
       users) are reported separately by -OtherTargets, since this app's
       catalog has no way to express them and must not silently drop them.
     #>
-    param($Assignments, $GroupNameById, [ref]$OtherTargets)
+    param($Assignments, $GroupNameById, [ref]$OtherTargets, $FilterNameById = $null)
     $entries = New-Object System.Collections.Generic.List[object]
     $others = New-Object System.Collections.Generic.List[string]
     foreach ($assignment in @($Assignments)) {
@@ -98,7 +106,16 @@ function Global:ConvertTo-CurrentAssignmentEntries {
         }
         $name = $groupId
         if ($GroupNameById -and $GroupNameById.Contains($groupId) -and $GroupNameById[$groupId]) { $name = [string]$GroupNameById[$groupId] }
-        $entries.Add([pscustomobject]@{ Intent = $intent; Mode = $mode; Group = $name; GroupId = $groupId; Key = (Get-AssignmentKey $intent $mode $name) })
+        # The assignment filter, by name where it's known (its id otherwise).
+        $filterId = if ($target -is [System.Collections.IDictionary]) { [string]$target['deviceAndAppManagementAssignmentFilterId'] } else { [string]$target.deviceAndAppManagementAssignmentFilterId }
+        $filterType = if ($target -is [System.Collections.IDictionary]) { [string]$target['deviceAndAppManagementAssignmentFilterType'] } else { [string]$target.deviceAndAppManagementAssignmentFilterType }
+        $filter = ''
+        if ($mode -eq 'include' -and $filterId -and $filterId -ne '00000000-0000-0000-0000-000000000000' -and $filterType -in 'include', 'exclude') {
+            $filterName = $filterId
+            if ($FilterNameById -and $FilterNameById.Contains($filterId) -and $FilterNameById[$filterId]) { $filterName = [string]$FilterNameById[$filterId] }
+            $filter = "$($filterType):$filterName"
+        }
+        $entries.Add([pscustomobject]@{ Intent = $intent; Mode = $mode; Group = $name; GroupId = $groupId; Filter = $filter; Key = (Get-AssignmentKey $intent $mode $name $filter) })
     }
     if ($OtherTargets) { $OtherTargets.Value = $others.ToArray() }
     # $null for an app with no assignments in Intune - see
@@ -110,6 +127,10 @@ function Global:Format-AssignmentLabel {
     # "[required] SG-Sales" / "[required] EXCLUDE SG-Contractors"
     param($Entry)
     if ($Entry.Mode -eq 'exclude') { return "[$($Entry.Intent)] EXCLUDE $($Entry.Group)" }
+    if ($Entry.Filter) {
+        $f = ([string]$Entry.Filter) -split ':', 2
+        return "[$($Entry.Intent)] $($Entry.Group) (filter: $(if ($f[0] -eq 'exclude') { 'not ' } else { '' })$($f[1]))"
+    }
     return "[$($Entry.Intent)] $($Entry.Group)"
 }
 
@@ -153,7 +174,9 @@ function Global:New-AppAssignmentBody {
       (install deadline, restart grace period, notifications) for every
       Required inclusion - $null sends none, Intune's defaults.
     #>
-    param($Entries, $GroupIdByName, $RequiredSettings = $null)
+    param($Entries, $GroupIdByName, $RequiredSettings = $null,
+        # Assignment filter name -> id, for entries with a filter (one whose id isn't known is sent without it - the caller checks first).
+        $FilterIdByName = $null)
     $assignments = @(@($Entries) | ForEach-Object {
         # Same null-entry guard as Get-AssignmentDiff, and it matters more
         # here: this is the body of the call that REPLACES an app's whole
@@ -163,10 +186,18 @@ function Global:New-AppAssignmentBody {
         if ($GroupIdByName -and $GroupIdByName.Contains($_.Group)) { $groupId = [string]$GroupIdByName[$_.Group] }
         if (-not $groupId) { return }
         $targetType = if ($_.Mode -eq 'exclude') { "#microsoft.graph.exclusionGroupAssignmentTarget" } else { "#microsoft.graph.groupAssignmentTarget" }
+        $target = @{ "@odata.type" = $targetType; groupId = $groupId }
+        if ($_.Mode -ne 'exclude' -and $_.Filter) {
+            $f = ([string]$_.Filter) -split ':', 2
+            if ($FilterIdByName -and $FilterIdByName.Contains($f[1]) -and $FilterIdByName[$f[1]]) {
+                $target.deviceAndAppManagementAssignmentFilterId = [string]$FilterIdByName[$f[1]]
+                $target.deviceAndAppManagementAssignmentFilterType = $f[0]
+            }
+        }
         $one = @{
             "@odata.type" = "#microsoft.graph.mobileAppAssignment"
             intent        = $_.Intent
-            target        = @{ "@odata.type" = $targetType; groupId = $groupId }
+            target        = $target
         }
         if ($RequiredSettings -and $_.Intent -eq 'required' -and $_.Mode -ne 'exclude') { $one.settings = $RequiredSettings }
         $one

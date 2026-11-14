@@ -53,7 +53,12 @@ param(
     [string]$SingleFolderName = "",
 
     [Parameter(Mandatory=$false)]
-    [string]$FolderNames = ""
+    [string]$FolderNames = "",
+
+    # Build the packages with the app's own packager (New-IntuneWinPackage,
+    # dot-sourced with the step helpers) instead of IntuneWinAppUtil.exe.
+    [Parameter(Mandatory=$false)]
+    [switch]$BuiltIn
 )
 
 $ErrorActionPreference = "Stop"
@@ -294,8 +299,13 @@ Write-Host "  Handles: Installers (.exe, .msi) & PowerShell Scripts" -Foreground
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Ensure IntuneWinAppUtil.exe is available
-if (-not (Test-Path -LiteralPath $ToolPath)) {
+if ($BuiltIn -and -not (Get-Command New-IntuneWinPackage -ErrorAction SilentlyContinue)) {
+    Write-Host "The built-in packager isn't loaded - packaging with IntuneWinAppUtil.exe instead." -ForegroundColor Yellow
+    $BuiltIn = $false
+}
+# Otherwise IntuneWinAppUtil.exe has to be there.
+if ($BuiltIn) { Write-Host "Packager: built in (no IntuneWinAppUtil.exe needed)" -ForegroundColor DarkGray; Write-Host "" }
+elseif (-not (Test-Path -LiteralPath $ToolPath)) {
     if (-not (Download-IntuneWinAppUtil -DestinationPath $ToolPath)) {
         Write-Host ""
         Write-Host "Failed to download IntuneWinAppUtil.exe automatically." -ForegroundColor Red
@@ -538,6 +548,20 @@ foreach ($App in $AppsToProcess) {
             $SetupFile = $App.SourceFileName
         }
         
+        if ($BuiltIn) {
+            # The app's own packager - same output as the tool: <setupfile>.intunewin in the temp output folder.
+            $ToolTimer = [System.Diagnostics.Stopwatch]::StartNew()
+            try {
+                [void](New-IntuneWinPackage -SourceFolder $PackageSourceFolder -SetupFile $SetupFile -OutputPath (Join-Path $TempOutputFolder ([System.IO.Path]::GetFileNameWithoutExtension($SetupFile) + '.intunewin')))
+                $ExitCode = 0
+                Write-Host "  [BUILT-IN] $SetupFile -> OK ($($ToolTimer.ElapsedMilliseconds) ms)" -ForegroundColor DarkGray
+            }
+            catch {
+                $ExitCode = 1
+                Write-Host "  [BUILT-IN] $SetupFile -> FAILED: $($_.Exception.Message)" -ForegroundColor Red
+            }
+        }
+        else {
         # Build arguments for IntuneWinAppUtil - use temp output folder
         $ToolArgs = @(
             "-c", "`"$PackageSourceFolder`"",
@@ -588,6 +612,7 @@ foreach ($App in $AppsToProcess) {
             Write-Host "  [RUN] $ToolCommand -> FAILED ($ToolTook): exit code $ExitCode" -ForegroundColor Red
             $ToolOutput = @(("$($ToolStdout.GetAwaiter().GetResult())`n$($ToolStderr.GetAwaiter().GetResult())" -split "`r?`n") | Where-Object { $_.Trim() })
             foreach ($ToolLine in ($ToolOutput | Select-Object -Last 15)) { Write-Host "    $ToolLine" -ForegroundColor Gray }
+        }
         }
         
         # Clean up temp source folder for installers

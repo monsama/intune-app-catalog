@@ -184,6 +184,16 @@ $testableFunctionNames = @(
     "Test-StoreProductId",
     "Get-PermissionReport",
     "Set-PsadtTemplateValues",
+    "New-IntuneWinPackage",
+    "Get-InstallErrorInfo",
+    "Get-InstallErrorTop",
+    "Get-AppRecordFieldValues",
+    "Get-AppRecordChanges",
+    "Test-AppRecordFieldRevertable",
+    "Set-AppRecordFieldJson",
+    "Format-AppHistoryValue",
+    "Get-RetireGroups",
+    "Get-RetireProgress",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -660,6 +670,25 @@ $req = @($withSettings.mobileAppAssignments | Where-Object { $_.intent -eq 'requ
 $others = @($withSettings.mobileAppAssignments | Where-Object { $_.ContainsKey('settings') })
 Assert-True ($req.Count -eq 1 -and $others.Count -eq 1 -and $req[0].settings.notifications -eq 'hideAll') "New-AppAssignmentBody: the settings go on the Required inclusions only"
 
+# Assignment filters: on every inclusion (Intune takes none on exclusions), part of the identity, sent by id.
+$fDesired = @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All') -ExcludeGroups @('SG-No') -FilterName 'Corp laptops' -FilterMode 'include')
+$fInc = @($fDesired | Where-Object { $_.Mode -eq 'include' })[0]; $fExc = @($fDesired | Where-Object { $_.Mode -eq 'exclude' })[0]
+Assert-True ($fInc.Filter -eq 'include:Corp laptops' -and $fInc.Key -eq 'required|include|SG-All|include:Corp laptops' -and -not $fExc.Filter -and $fExc.Key -eq 'required|exclude|SG-No') "Get-DesiredAssignmentEntries: the filter on inclusions only, and in the key"
+Assert-True ((Format-AssignmentLabel $fInc) -eq '[required] SG-All (filter: Corp laptops)' -and (Format-AssignmentLabel ([pscustomobject]@{ Intent = 'available'; Mode = 'include'; Group = 'G'; Filter = 'exclude:Kiosks' })) -eq '[available] G (filter: not Kiosks)') "Format-AssignmentLabel: says which filter, and 'not' for an excluding one"
+$fCurrent = @(ConvertTo-CurrentAssignmentEntries -Assignments @(
+    @{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.groupAssignmentTarget'; groupId = 'id-1'; deviceAndAppManagementAssignmentFilterId = 'f-1'; deviceAndAppManagementAssignmentFilterType = 'include' } },
+    @{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.exclusionGroupAssignmentTarget'; groupId = 'id-3'; deviceAndAppManagementAssignmentFilterId = '00000000-0000-0000-0000-000000000000'; deviceAndAppManagementAssignmentFilterType = 'none' } }
+) -GroupNameById @{ 'id-1' = 'SG-All'; 'id-3' = 'SG-No' } -FilterNameById @{ 'f-1' = 'Corp laptops' })
+$fDiff = Get-AssignmentDiff -Current $fCurrent -Desired $fDesired
+Assert-True (@($fDiff.ToAdd).Count -eq 0 -and @($fDiff.ToRemove).Count -eq 0) "ConvertTo-CurrentAssignmentEntries: Intune's filter read back by name - the same assignments, no change"
+$fChanged = Get-AssignmentDiff -Current $fCurrent -Desired @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All') -ExcludeGroups @('SG-No') -FilterName 'Corp laptops' -FilterMode 'exclude')
+$fGone = Get-AssignmentDiff -Current $fCurrent -Desired @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-All') -ExcludeGroups @('SG-No'))
+Assert-True (@($fChanged.ToAdd).Count -eq 1 -and @($fChanged.ToRemove).Count -eq 1 -and @($fGone.ToAdd) -contains '[required] SG-All' -and @($fGone.ToRemove) -contains '[required] SG-All (filter: Corp laptops)') "Get-AssignmentDiff: a changed or removed filter is a change"
+$fBody = New-AppAssignmentBody -Entries $fDesired -GroupIdByName @{ 'SG-All' = 'id-1'; 'SG-No' = 'id-3' } -FilterIdByName @{ 'Corp laptops' = 'f-1' }
+$fbInc = @($fBody.mobileAppAssignments | Where-Object { $_.target.'@odata.type' -eq '#microsoft.graph.groupAssignmentTarget' })[0]
+$fbExc = @($fBody.mobileAppAssignments | Where-Object { $_.target.'@odata.type' -like '*exclusion*' })[0]
+Assert-True ($fbInc.target.deviceAndAppManagementAssignmentFilterId -eq 'f-1' -and $fbInc.target.deviceAndAppManagementAssignmentFilterType -eq 'include' -and -not $fbExc.target.ContainsKey('deviceAndAppManagementAssignmentFilterId')) "New-AppAssignmentBody: the filter's id and type on the inclusion, none on the exclusion"
+
 # The nightly run's other work
 $winPol = ConvertTo-ReleasePolicy ([pscustomobject]@{ ReleaseDays = @(1, 2, 3, 4); SkipLastWeek = $true; AutoWithdrawPercent = 30; DriftFix = $true; GatePath = '\\srv\test\app-data' })
 Assert-True ((@($winPol.ReleaseDays) -join ',') -eq '1,2,3,4' -and $winPol.SkipLastWeek -and $winPol.AutoWithdrawPercent -eq 30 -and $winPol.DriftCheck -and $winPol.DriftFix -and $winPol.BackupCatalog -and $winPol.GatePath -eq '\\srv\test\app-data') "ConvertTo-ReleasePolicy: release window, withdraw, drift, backup and the test tenant's folder"
@@ -765,6 +794,35 @@ $psadt = Set-PsadtTemplateValues -Text $psadtIn -Name ("Bob" + [char]0x2019 + "s
 $pe = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($psadt.Text, [ref]$null, [ref]$pe)
 Assert-True (@($psadt.Missing).Count -eq 0 -and $psadt.Text -match "AppVendor = 'Contoso'" -and $psadt.Text -match "AppVersion = '2025\.1'" -and $psadt.Text -match 'Set-ItemProperty -LiteralPath' -and $psadt.Text -match 'Remove-Item -LiteralPath' -and @($pe).Count -eq 0) "Set-PsadtTemplateValues: vendor, name and version filled in, the marker after install and uninstall - still valid PowerShell"
 Assert-True (@((Set-PsadtTemplateValues -Text 'nothing here' -Name 'X' -Vendor 'Y' -Version '1').Missing).Count -eq 5) "Set-PsadtTemplateValues: says what it couldn't fill in"
+
+# The change history: field by field, typed values, undo of one field
+$hBefore = [pscustomobject]@{ appName = 'App'; appId = ''; requiredFor = @('SG-A'); excludeFor = @(); icon = $null; metadata = [pscustomobject]@{ description = 'Old'; notes = '' } }
+$hAfter = [pscustomobject]@{ appName = 'App'; appId = ''; requiredFor = @('SG-A', 'SG-B'); excludeFor = $null; icon = [pscustomobject]@{ type = 'image/png'; value = 'AAAA' }; metadata = [pscustomobject]@{ description = "New `"quoted`" O'Neil"; notes = $null } }
+$hc = @(Get-AppRecordChanges -Before $hBefore -After $hAfter)
+$hf = @($hc | ForEach-Object { $_.field })
+Assert-True ($hc.Count -eq 3 -and $hf -contains 'requiredFor' -and $hf -contains 'metadata.description' -and $hf -contains 'icon' -and $hf -notcontains 'excludeFor' -and $hf -notcontains 'metadata.notes') "Get-AppRecordChanges: what changed, field by field - empty list, null and empty text are all 'not set'"
+$hDesc = @($hc | Where-Object { $_.field -eq 'metadata.description' })[0]
+Assert-True ((Format-AppHistoryValue $hDesc.after) -eq "New `"quoted`" O'Neil" -and (Format-AppHistoryValue '["SG-A","SG-B"]') -eq 'SG-A, SG-B' -and (Format-AppHistoryValue '[]') -eq '' -and (Format-AppHistoryValue '{"a":1}') -eq '{"a":1}') "Format-AppHistoryValue: text as itself, a list as 'a, b', objects as JSON"
+$hRec = [pscustomobject]@{ appName = 'App'; requiredFor = @('SG-A', 'SG-B'); metadata = [pscustomobject]@{ description = 'x' } }
+$okReq = Set-AppRecordFieldJson -Record $hRec -Field 'requiredFor' -Json '["SG-A"]'
+$okDesc = Set-AppRecordFieldJson -Record $hRec -Field 'metadata.description' -Json $hDesc.after
+$okEmpty = Set-AppRecordFieldJson -Record $hRec -Field 'excludeFor' -Json '[]'
+Assert-True ($okReq -and $okDesc -and $okEmpty -and @($hRec.requiredFor).Count -eq 1 -and $hRec.requiredFor[0] -eq 'SG-A' -and $hRec.metadata.description -eq "New `"quoted`" O'Neil" -and @($hRec.excludeFor).Count -eq 0) "Set-AppRecordFieldJson: a list, text with quotes, an empty list - put back as they were"
+Assert-True (-not (Set-AppRecordFieldJson -Record $hRec -Field 'appName' -Json '"Other"') -and -not (Test-AppRecordFieldRevertable 'icon') -and -not (Test-AppRecordFieldRevertable 'releases') -and (Test-AppRecordFieldRevertable 'metadata.installCommand') -and $hRec.appName -eq 'App') "Set-AppRecordFieldJson: no rename, icon or Intune link undone on its own"
+
+# Retiring an app
+Assert-True (((Get-RetireGroups ([pscustomobject]@{ requiredFor = @('SG-A', ' SG-B '); availableFor = @('SG-A', 'SG-C'); uninstallFor = @(); excludeFor = @('SG-C') })) -join ',') -eq 'SG-A,SG-B') "Get-RetireGroups: every group it was given, once, minus its exclusions"
+$rp = Get-RetireProgress @([pscustomobject]@{ State = 'Installed' }, [pscustomobject]@{ State = 'Uninstalled' }, [pscustomobject]@{ State = 'Not installed' }, [pscustomobject]@{ State = 'Failed' }, [pscustomobject]@{ State = 'Pending' })
+Assert-True ($rp.total -eq 5 -and $rp.still -eq 1 -and $rp.removed -eq 2 -and $rp.failed -eq 1 -and $rp.other -eq 1 -and -not $rp.done -and $rp.text -like '1 of 5 device(s) still have it*failed on 1*') "Get-RetireProgress: still installed, removed, failed and pending counted"
+Assert-True ((Get-RetireProgress @([pscustomobject]@{ State = 'Uninstalled' })).done -and (Get-RetireProgress @()).done) "Get-RetireProgress: done when no device has it (or none reports it)"
+
+# Install errors explained
+$e1 = Get-InstallErrorInfo -2016345060
+Assert-True ($e1.hex -eq '0x87D1041C' -and $e1.meaning -like '*detected*' -and $e1.fix -like '*detection rule*') "Get-InstallErrorInfo: 0x87D1041C (as the report's signed decimal) - not detected after install, check the detection rule"
+Assert-True ((Get-InstallErrorInfo '0x87D1041C (-2016345060)').hex -eq '0x87D1041C' -and (Get-InstallErrorInfo 2147944003).hex -eq '0x80070643' -and $null -eq (Get-InstallErrorInfo 0) -and $null -eq (Get-InstallErrorInfo '')) "Get-InstallErrorInfo: hex as the app formats it, unsigned decimal; no error for 0 and blank"
+Assert-True ((Get-InstallErrorInfo '0x80070BC2').fix -like '*Soft reboot*' -and (Get-InstallErrorInfo '0x80070659').meaning -eq 'Windows Installer error 1625.' -and (Get-InstallErrorInfo '0x87D30001').meaning -like '*Intune Management Extension*' -and (Get-InstallErrorInfo 1234).meaning -eq 'The installer exited with 1234.') "Get-InstallErrorInfo: 3010 is a restart, not a failure; unknown codes by family (MSI, agent, exit code)"
+$eTop = @(Get-InstallErrorTop -Rows @(@{ ErrorCode = '-2016345060' }, @{ ErrorCode = '0x87D1041C (-2016345060)' }, @{ ErrorCode = '-2147023293' }, @{ ErrorCode = '0' }, @{ ErrorCode = '' }) -Top 5)
+Assert-True ($eTop.Count -eq 2 -and $eTop[0].hex -eq '0x87D1041C' -and $eTop[0].count -eq 2 -and $eTop[1].count -eq 1) "Get-InstallErrorTop: errors counted by code and explained, most common first; no-error rows left out"
 
 # A newer release of this app
 $offer = Get-AppUpdateOffer -Current '2.11.0' -Tag 'v2.12.0' -Body "## Added`n- **Faster** catalog`n`n- Lock file"
@@ -2648,6 +2706,49 @@ $kept = Get-AppWindowPreferencesJson -Existing '{"profile":{"name":"X","password
 Assert-True ($kept.profile.name -eq 'X' -and $kept.extensions.ui -eq 1 -and $kept.profile.password_manager_enabled -eq $false -and $kept.translate.enabled -eq $false) "Window preferences: what the browser stored stays, ours is set (even over an odd value)"
 $unreadable = Get-AppWindowPreferencesJson -Existing '{not json' | ConvertFrom-Json
 Assert-True ($unreadable.translate.enabled -eq $false) "Window preferences: an unreadable file is replaced, not a failure"
+
+# -----------------------------------------------------------------
+# The built-in packager: a package it builds is read by the upload code
+# (CreateApp.ps1's Get-IntuneWinPackageInfo) and decrypts - MAC, digest and
+# size as Detection.xml says - back to the source folder.
+$iwFn = $createAppAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-IntuneWinPackageInfo' }, $true) | Select-Object -First 1
+Assert-True ($null -ne $iwFn) "Get-IntuneWinPackageInfo: found in CreateApp.ps1"
+if ($iwFn) {
+    if (-not $env:TEMP) { $env:TEMP = [System.IO.Path]::GetTempPath() }
+    function Write-Step { param($t) }
+    . ([scriptblock]::Create($iwFn.Extent.Text))
+    $iwSrc = Join-Path ([System.IO.Path]::GetTempPath()) ('iwsrc_' + [guid]::NewGuid().ToString('N'))
+    [void](New-Item -ItemType Directory -Path (Join-Path $iwSrc 'Files') -Force)
+    Set-Content -LiteralPath (Join-Path $iwSrc 'Install.ps1') -Value 'Write-Output "install"' -Encoding UTF8
+    [System.IO.File]::WriteAllBytes((Join-Path (Join-Path $iwSrc 'Files') 'data.bin'), [byte[]](0..255 + 0..255))
+    $iwOut = Join-Path ([System.IO.Path]::GetTempPath()) ('iwout_' + [guid]::NewGuid().ToString('N') + '.intunewin')
+    try {
+        [void](New-IntuneWinPackage -SourceFolder $iwSrc -SetupFile 'Install.ps1' -OutputPath $iwOut)
+        $iw = Get-IntuneWinPackageInfo -PackagePath $iwOut
+        $fei = $iw.FileEncryptionInfo
+        $enc = [System.IO.File]::ReadAllBytes($iw.TempEncryptedPath)
+        $hm = New-Object System.Security.Cryptography.HMACSHA256 -ArgumentList (, [System.Convert]::FromBase64String($fei.macKey))
+        $macNow = $hm.ComputeHash($enc, 32, $enc.Length - 32)
+        $macOk = ([System.Convert]::ToBase64String($macNow) -eq $fei.mac) -and ([System.Convert]::ToBase64String($enc, 0, 32) -eq $fei.mac) -and ([System.Convert]::ToBase64String($enc, 32, 16) -eq $fei.initializationVector)
+        $aesT = [System.Security.Cryptography.Aes]::Create(); $aesT.Key = [System.Convert]::FromBase64String($fei.encryptionKey); $aesT.IV = [System.Convert]::FromBase64String($fei.initializationVector)
+        $plain = $aesT.CreateDecryptor().TransformFinalBlock($enc, 48, $enc.Length - 48)
+        $digestOk = [System.Convert]::ToBase64String(([System.Security.Cryptography.SHA256]::Create()).ComputeHash($plain)) -eq $fei.fileDigest
+        Assert-True ($macOk -and $digestOk -and $plain.Length -eq $iw.UnencryptedSize -and $iw.SetupFile -eq 'Install.ps1' -and $fei.profileIdentifier -eq 'ProfileVersion1' -and $fei.fileDigestAlgorithm -eq 'SHA256' -and
+            ([System.Convert]::FromBase64String($fei.encryptionKey)).Length -eq 32) "New-IntuneWinPackage: read by the upload code; MAC, IV, digest and size match Detection.xml"
+        $innerZip = Join-Path ([System.IO.Path]::GetTempPath()) ('iwin_' + [guid]::NewGuid().ToString('N') + '.zip')
+        [System.IO.File]::WriteAllBytes($innerZip, $plain)
+        $za = [System.IO.Compression.ZipFile]::OpenRead($innerZip)
+        try { $names = @($za.Entries | ForEach-Object { $_.FullName -replace '\\', '/' }) } finally { $za.Dispose() }
+        Remove-Item -LiteralPath $innerZip, $iw.TempEncryptedPath -Force -ErrorAction SilentlyContinue
+        Assert-True (($names -contains 'Install.ps1') -and ($names -contains 'Files/data.bin')) "New-IntuneWinPackage: the content is the source folder, subfolders included"
+        $oz = [System.IO.Compression.ZipFile]::OpenRead($iwOut)
+        try { $outer = @($oz.Entries | ForEach-Object { $_.FullName }) } finally { $oz.Dispose() }
+        Assert-True (($outer -contains 'IntuneWinPackage/Contents/IntunePackage.intunewin') -and ($outer -contains 'IntuneWinPackage/Metadata/Detection.xml') -and $outer.Count -eq 2) "New-IntuneWinPackage: the layout IntuneWinAppUtil uses"
+        $threw = $false; try { [void](New-IntuneWinPackage -SourceFolder $iwSrc -SetupFile 'Missing.exe' -OutputPath $iwOut) } catch { $threw = $true }
+        Assert-True $threw "New-IntuneWinPackage: a setup file that isn't in the folder is refused"
+    }
+    finally { Remove-Item -LiteralPath $iwSrc, $iwOut -Recurse -Force -ErrorAction SilentlyContinue }
+}
 
 # =================================================================
 # Report

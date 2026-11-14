@@ -49,7 +49,7 @@ function renderUpdates() {
     else acts.push(el('span', { class: 'muted', text: 'Send it to Intune first' }));
     const verdict = p && pillFor[p.action];
     const devices = x.installed === null ? el('span', { class: 'muted', text: x.deployed ? '-' : 'not deployed' })
-      : el('span', { title: `${x.installed} installed, ${x.failed} failed, ${x.pending} pending, ${x.notInstalled} not installed` }, `${x.installed}`, el('span', { class: 'muted', text: ` of ${x.installed + x.failed + x.pending + x.notInstalled}` }), x.failed ? el('span', { class: 'pill err newer', text: `${x.failed} failed` }) : '');
+      : el('span', { title: `${x.installed} installed, ${x.failed} failed, ${x.pending} pending, ${x.notInstalled} not installed` }, `${x.installed}`, el('span', { class: 'muted', text: ` of ${x.installed + x.failed + x.pending + x.notInstalled}` }), x.failed ? el('button', { type: 'button', class: 'pill err newer linkpill', text: `${x.failed} failed`, title: 'Why? Every device\'s state, and the errors explained', onclick: () => openStatus(x.name) }) : '');
     const where = p ? releaseTimeline(p.ring, p.fastTrack, updRings) : '';
     return el('tr', {},
       el('td', { class: 'name' }, x.name, el('span', { class: 'muted', text: (x.kind === 'package' ? ' (own package)' : '') + (x.ownRule ? ' - own rule' : '') + (x.autoRelease ? ' - released automatically' : '') })),

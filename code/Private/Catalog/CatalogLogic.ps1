@@ -786,6 +786,8 @@ function Global:ConvertTo-TemplateAppRecord {
         availableFor     = @($App.availableFor)
         uninstallFor     = @($App.uninstallFor)
         excludeFor       = @($App.excludeFor)
+        assignmentFilter     = [string]$App.assignmentFilter
+        assignmentFilterMode = [string]$App.assignmentFilterMode
         icon             = $App.icon
         # Managed stays; its releases are this tenant's apps - dropped.
         managedUpdates   = [bool]$App.managedUpdates
@@ -1757,15 +1759,18 @@ function Global:Get-PermissionReport {
         @('DeviceManagementScripts.ReadWrite.All', [bool]$Usage.Scripts, 'Platform scripts', 'There are platform scripts in the scripts folder.'),
         @('DeviceManagementManagedDevices.Read.All', [bool]$Usage.Inventory, 'Apps on devices: older versions, apps worth adding', 'Apps have managed updates - the Updates page reads the inventory.'),
         @('Mail.Send', [bool]$Usage.Mail, 'Email alerts from the nightly run', 'Email alerts are set up.'),
-        @('User.Read.All', [bool]$Usage.GroupsPage, 'The Groups page: finding users to add as members', 'The Groups page adds users to groups.')
+        @('User.Read.All', [bool]$Usage.GroupsPage, 'The Groups page: finding users to add as members', 'The Groups page adds users to groups.'),
+        @('DeviceManagementConfiguration.Read.All', [bool]$Usage.Filters, 'Assignment filters', 'Apps have an assignment filter - it is looked up by name.')
     )
     foreach ($f in $feat) {
-        $isGranted = & $has $f[0]
+        $isGranted = (& $has $f[0]) -or ($f[0] -eq 'DeviceManagementConfiguration.Read.All' -and (& $has 'DeviceManagementConfiguration.ReadWrite.All'))
         if ($f[1]) { & $row $f[0] $(if ($isGranted) { 'ok' } else { 'missing' }) $f[2] $f[3] }
         elseif ($isGranted) { & $row $f[0] 'unused' $f[2] $(if ($f[0] -eq 'Mail.Send') { 'No email alerts are set up - and Mail.Send can send as any mailbox: remove it, or limit it with an application access policy.' } else { 'Nothing here uses it yet.' }) }
         else { & $row $f[0] 'optional' $f[2] 'Only when you use it.' }
     }
-    $known = @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Group.Read.All', 'DeviceManagementScripts.ReadWrite.All', 'DeviceManagementManagedDevices.Read.All', 'Mail.Send', 'User.Read.All')
+    $known = @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Group.Read.All', 'DeviceManagementScripts.ReadWrite.All', 'DeviceManagementManagedDevices.Read.All', 'Mail.Send', 'User.Read.All', 'DeviceManagementConfiguration.Read.All')
+    # ReadWrite stands in for Read.All when filters are used; otherwise it's a broad one never needed (below).
+    if ($Usage.Filters -and -not (& $has 'DeviceManagementConfiguration.Read.All')) { $known += 'DeviceManagementConfiguration.ReadWrite.All' }
     if ((& $has 'Group.Read.All') -and (& $has 'Group.ReadWrite.All')) { & $row 'Group.Read.All' 'unused' 'Reading groups' 'Group.ReadWrite.All covers it.' }
     $broad = '^(Directory\.ReadWrite\.All|Application\.ReadWrite\.All|AppRoleAssignment\.ReadWrite\.All|RoleManagement\.ReadWrite\.Directory|DeviceManagementConfiguration\.ReadWrite\.All|DeviceManagementRBAC\.ReadWrite\.All|Sites\.FullControl\.All|Mail\.ReadWrite|Files\.ReadWrite\.All|User\.ReadWrite\.All)$'
     foreach ($p in @($g | Where-Object { $known -notcontains $_ } | Sort-Object)) {
@@ -1799,4 +1804,196 @@ function Global:Set-PsadtTemplateValues {
     $rxUn = '(?m)^(\s*## <Perform Post-Uninstallation tasks here>[^\r\n]*)'
     if ($t -match $rxUn) { $t = [regex]::Replace($t, $rxUn, ('${1}' + $remove.Replace('$', '$$')), 1); $filled.Add('marker after uninstall') } else { $missing.Add('marker after uninstall') }
     return @{ Text = $t; Filled = $filled.ToArray(); Missing = $missing.ToArray() }
+}
+
+function Global:Get-InstallErrorInfo {
+    <#
+      Pure: what an install error code from Intune's install status report
+      means and what usually fixes it - @{ hex; meaning; fix }, $null for no
+      error. The code as the report gives it (decimal, signed or not) or as
+      hex ("0x87D1041C"). Codes it doesn't know get the general reading of
+      their family (a Windows / Windows Installer error, an Intune agent
+      error) and the hex to search for.
+    #>
+    param($Code)
+    $text = ([string]$Code).Trim()
+    if (-not $text) { return $null }
+    $n = 0L
+    if ($text -match '^0x([0-9A-Fa-f]{1,8})') { $n = [Convert]::ToInt64($Matches[1], 16) }
+    elseif ($text -match '^(-?\d+)') { $n = [long]$Matches[1] } else { return $null }
+    $u = [uint32]($n -band 0xFFFFFFFFL)
+    if ($u -eq 0) { return $null }
+    $hex = '0x{0:X8}' -f $u
+    $known = @{
+        '0x87D1041C' = @('The installer finished, but the app wasn''t detected afterwards.', 'The detection rule doesn''t match what the installer leaves behind: check the rule (path, registry key, MSI product code, version marker) - for a newer version, the version it checks for.')
+        '0x80070643' = @('The installer failed (Windows Installer error 1603, a fatal error during installation).', 'Usually something the installer needs: a prerequisite, a running copy of the app, or a path SYSTEM can''t reach. Install it by hand as SYSTEM (psexec -s) with logging (/l*v) to see why.')
+        '0x80070652' = @('Another installation was already running (Windows Installer error 1618).', 'Intune tries again by itself. If it keeps happening, add 1618 as a Retry return code.')
+        '0x80070666' = @('Another version of the product is already installed (Windows Installer error 1638).', 'Uninstall the old version first: supersede it with this app (uninstall the previous one), or add the old version''s uninstall to the install script.')
+        '0x80070667' = @('The installer''s command line is invalid (Windows Installer error 1639).', 'Check the install command''s switches and quoting.')
+        '0x80070642' = @('The installation was cancelled (Windows Installer error 1602).', 'Someone cancelled it, or the installer showed a prompt. Make the install command silent (/qn, /S) and run it as SYSTEM.')
+        '0x80070641' = @('The Windows Installer service couldn''t be reached (error 1601).', 'Usually passes on the next try; repeated, the device''s Windows Installer needs repair.')
+        '0x80070645' = @('This only works for an installed product (Windows Installer error 1605).', 'Typically an uninstall of something that isn''t there - check the uninstall command''s product code.')
+        '0x8007064C' = @('The installer''s source isn''t available (Windows Installer error 1612).', 'The installer needs files that aren''t in the package - put them into the app''s package folder and rebuild it.')
+        '0x80070BC2' = @('Installed, but a restart is needed (exit code 3010).', 'Not a real failure: add 3010 as a Soft reboot return code so Intune reports it as success.')
+        '0x80070BC9' = @('Installed, but a restart is needed to finish (exit code 3017).', 'Add 3017 as a Soft reboot return code, or let the device restart.')
+        '0x80070002' = @('A file wasn''t found (Windows error 2).', 'The install command names a file that isn''t in the package (or the wrong path) - check it against the package folder, and rebuild the package.')
+        '0x80070003' = @('A path wasn''t found (Windows error 3).', 'The install command uses a folder that doesn''t exist on the device - check paths and quoting.')
+        '0x80070005' = @('Access denied (Windows error 5).', 'The install ran without the rights it needs: install for the system, not the user, or check that nothing (antivirus, policies) blocks it.')
+        '0x800705B4' = @('The installation timed out.', 'The installer took longer than the maximum install time - often a hidden prompt waiting for an answer. Make it silent, or raise the install time in the app''s deploy settings.')
+        '0x80070001' = @('The installer returned 1 (incorrect function / generic failure).', 'Exit code 1 is the installer''s own "failed" - run it by hand as SYSTEM to see why; for scripts, check the script''s errors.')
+    }
+    if ($known.ContainsKey($hex)) { return [ordered]@{ hex = $hex; meaning = $known[$hex][0]; fix = $known[$hex][1] } }
+    if (($u -band 0xFFFF0000L) -eq 0x80070000L) {
+        $w = [int]($u -band 0xFFFF)
+        if ($w -ge 1600 -and $w -le 1650) { return [ordered]@{ hex = $hex; meaning = "Windows Installer error $w."; fix = "Look up MSI error $w; run the installer by hand as SYSTEM with logging (/l*v) to see the cause." } }
+        return [ordered]@{ hex = $hex; meaning = "Windows error $w (or exit code $w from the installer)."; fix = "Search for $hex; if it is the installer's own exit code, its vendor documents it - add it to the return codes if it means success." }
+    }
+    if (($u -band 0xFFF00000L) -eq 0x87D00000L) { return [ordered]@{ hex = $hex; meaning = 'An error of the Intune Management Extension (the agent that installs Win32 apps).'; fix = "Search for $hex; the device's IntuneManagementExtension.log has the details." } }
+    if ($u -lt 0x10000L) { return [ordered]@{ hex = $hex; meaning = "The installer exited with $u."; fix = "An exit code Intune doesn't know as success: the installer's documentation says what $u means - add it to the return codes if it means success." } }
+    return [ordered]@{ hex = $hex; meaning = 'An error Intune reported.'; fix = "Search for $hex." }
+}
+
+function Global:Get-InstallErrorTop {
+    <#
+      Pure: the most common install errors in an install status report's
+      rows (each with ErrorCode), most frequent first -
+      @(@{ hex; count; meaning; fix }), at most -Top.
+    #>
+    param($Rows, [int]$Top = 5)
+    $byHex = @{}
+    foreach ($r in @($Rows)) {
+        if (-not $r) { continue }
+        $code = if ($r -is [System.Collections.IDictionary]) { $r['ErrorCode'] } else { $r.ErrorCode }
+        # The report's ErrorCode can come formatted ("0x87D1041C (-2016345060)") - the hex is first.
+        $info = Get-InstallErrorInfo $code
+        if (-not $info) { continue }
+        if (-not $byHex.ContainsKey($info.hex)) { $byHex[$info.hex] = [ordered]@{ hex = $info.hex; count = 0; meaning = $info.meaning; fix = $info.fix } }
+        $byHex[$info.hex].count++
+    }
+    return @($byHex.Values | Sort-Object @{ Expression = { $_.count }; Descending = $true }, @{ Expression = { $_.hex } } | Select-Object -First $Top)
+}
+
+function Global:Get-AppRecordFieldValues {
+    <#
+      Pure: an app record's fields as field -> compact JSON, for the change
+      history: 'metadata.<name>' for each Intune detail, the icon only as a
+      fingerprint (an image isn't history text).
+    #>
+    param($Record)
+    $out = [ordered]@{}
+    if (-not $Record) { return $out }
+    $pairs = if ($Record -is [System.Collections.IDictionary]) { @($Record.Keys | ForEach-Object { @{ Name = [string]$_; Value = $Record[$_] } }) } else { @($Record.PSObject.Properties | ForEach-Object { @{ Name = $_.Name; Value = $_.Value } }) }
+    foreach ($p in $pairs) {
+        if ($p.Name -eq 'metadata') {
+            $m = $p.Value
+            if ($m) {
+                $mp = if ($m -is [System.Collections.IDictionary]) { @($m.Keys | ForEach-Object { @{ Name = [string]$_; Value = $m[$_] } }) } else { @($m.PSObject.Properties | ForEach-Object { @{ Name = $_.Name; Value = $_.Value } }) }
+                foreach ($q in $mp) { $j = ConvertTo-Json -InputObject $q.Value -Compress -Depth 12; $out["metadata.$($q.Name)"] = $(if ($j) { [string]$j } else { 'null' }) }
+            }
+            continue
+        }
+        if ($p.Name -eq 'icon') {
+            $v = if ($p.Value) { [string]$p.Value.value } else { '' }
+            $out['icon'] = $(if ($v) { $sha = [System.Security.Cryptography.SHA256]::Create(); try { '"image ' + ([System.BitConverter]::ToString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($v)), 0, 6) -replace '-', '') + '"' } finally { $sha.Dispose() } } else { 'null' })
+            continue
+        }
+        # Windows PowerShell's ConvertTo-Json gives nothing for $null - 'null', as everywhere else.
+        $j = ConvertTo-Json -InputObject $p.Value -Compress -Depth 12
+        $out[$p.Name] = $(if ($j) { [string]$j } else { 'null' })
+    }
+    return $out
+}
+
+function Global:Get-AppRecordChanges {
+    # Pure: the fields that differ between two versions of an app record, @(@{ field; before; after }) with the values as compact JSON.
+    param($Before, $After)
+    $a = Get-AppRecordFieldValues $Before; $b = Get-AppRecordFieldValues $After
+    # '' too: Windows PowerShell's ConvertTo-Json gives nothing at all for $null.
+    $empty = @('null', '""', '[]', '')
+    $keys = @(@($a.Keys) + @($b.Keys) | Select-Object -Unique)
+    return @(foreach ($k in $keys) {
+        $x = if ($a.Contains($k)) { [string]$a[$k] } else { 'null' }
+        $y = if ($b.Contains($k)) { [string]$b[$k] } else { 'null' }
+        # Missing, null, empty text and an empty list all mean "not set" - not a change.
+        if ($x -cne $y -and -not ($empty -contains $x -and $empty -contains $y)) { [ordered]@{ field = $k; before = $x; after = $y } }
+    })
+}
+
+function Global:Test-AppRecordFieldRevertable {
+    # Pure: whether the history can put a field back by itself - not the name (a rename), the icon, nor what ties the app to Intune.
+    param([string]$Field)
+    return -not ($Field -in 'appName', 'icon', 'appId', 'intuneAppType', 'intuneAppVersion', 'releases', 'packagePath')
+}
+
+function Global:Set-AppRecordFieldJson {
+    <#
+      Sets one field of an app record (as Get-AppRecordFieldValues names it)
+      from compact JSON. $false for one the history doesn't put back.
+    #>
+    param($Record, [string]$Field, [string]$Json)
+    if (-not (Test-AppRecordFieldRevertable $Field)) { return $false }
+    $t = ([string]$Json).Trim()
+    # Assigned in each branch, not as "$value = if ...": that goes through the
+    # pipeline, which turns a one-item list into the item and an empty one into $null.
+    $value = $null
+    if ($t -eq '[]') { $value = @() }
+    elseif ($t.StartsWith('"')) { $value = [regex]::Unescape($t.Substring(1, $t.Length - 2)) }
+    # Piped, so the list is enumerated - Windows PowerShell's ConvertFrom-Json hands a JSON list over as one object.
+    elseif ($t.StartsWith('[')) { $parsed = ConvertFrom-Json -InputObject $t; $value = @($parsed | ForEach-Object { $_ }) }
+    elseif ($t -and $t -ne 'null') { $value = ConvertFrom-Json -InputObject $t }
+    $target = $Record; $name = $Field
+    if ($Field -like 'metadata.*') {
+        $name = $Field.Substring(9)
+        $target = if ($Record -is [System.Collections.IDictionary]) { $Record['metadata'] } else { $Record.metadata }
+        if (-not $target) { return $false }
+    }
+    if ($target -is [System.Collections.IDictionary]) { $target[$name] = $value }
+    elseif ($target.PSObject.Properties[$name]) { $target.$name = $value }
+    else { $target | Add-Member -NotePropertyName $name -NotePropertyValue $value }
+    return $true
+}
+
+function Global:Format-AppHistoryValue {
+    # Pure: a history value (compact JSON) as short text - a list as "a, b", text as itself, '' for not set.
+    param([string]$Json, [int]$Max = 300)
+    $t = ([string]$Json).Trim()
+    $text = if ($t -in 'null', '""', '[]', '') { '' }  # '' - Windows PowerShell's JSON for $null
+        elseif ($t.StartsWith('"')) { [regex]::Unescape($t.Substring(1, $t.Length - 2)) }
+        elseif ($t.StartsWith('[')) {
+            $items = @(try { $parsed = ConvertFrom-Json -InputObject $t; $parsed | ForEach-Object { $_ } } catch { })
+            if ($items.Count -and -not @($items | Where-Object { $_ -isnot [string] }).Count) { $items -join ', ' } else { $t }
+        }
+        else { $t }
+    if ($text.Length -gt $Max) { $text = $text.Substring(0, $Max) + '...' }
+    return $text
+}
+
+function Global:Get-RetireGroups {
+    # Pure: the groups an app being retired gets an Uninstall for - every group it was given, minus its exclusions.
+    param($App)
+    $excluded = @(@($App.excludeFor) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+    return @(@(@($App.requiredFor) + @($App.availableFor) + @($App.uninstallFor)) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -and $excluded -notcontains $_ } | Select-Object -Unique)
+}
+
+function Global:Get-RetireProgress {
+    <#
+      Pure: how far an app's retirement is, from its install status rows
+      (State as the report shows it) - @{ total; still; removed; failed; other; done; text }.
+      done: no device reports it installed any more.
+    #>
+    param($Rows)
+    $still = 0; $removed = 0; $failed = 0; $other = 0
+    foreach ($r in @($Rows)) {
+        if (-not $r) { continue }
+        $s = ([string]$r.State).Trim()
+        if ($s -match '^installed$') { $still++ }
+        elseif ($s -match 'uninstall|not installed|not applicable') { $removed++ }
+        elseif ($s -match 'fail|error') { $failed++ }
+        else { $other++ }
+    }
+    $total = $still + $removed + $failed + $other
+    $text = if (-not $total) { 'No device reports this app - nothing left to uninstall.' }
+        elseif (-not $still -and -not $failed) { "Gone from all $total device(s) that reported it." }
+        else { "$still of $total device(s) still have it$(if ($failed) { "; the uninstall failed on $failed" })$(if ($other) { "; $other pending or unknown" })." }
+    return [ordered]@{ total = $total; still = $still; removed = $removed; failed = $failed; other = $other; done = [bool](-not $still -and -not $failed); text = $text }
 }

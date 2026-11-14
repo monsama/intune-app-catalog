@@ -42,6 +42,9 @@ function Global:Get-WebAppEditable {
         availableFor = @($App.availableFor | ForEach-Object { [string]$_ })
         uninstallFor = @($App.uninstallFor | ForEach-Object { [string]$_ })
         excludeFor   = @($App.excludeFor | ForEach-Object { [string]$_ })
+        assignmentFilter     = [string]$App.assignmentFilter
+        assignmentFilterMode = $(if ([string]$App.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' })
+        retiringSince = [string]$App.retiringSince
         hasMetadata  = [bool]$m
         managedUpdates = [bool]$App.managedUpdates
         releaseRule  = $(if ($App.releaseRule) { [ordered]@{ days = $App.releaseRule.days; maxFailedPercent = $App.releaseRule.maxFailedPercent; minInstalled = $App.releaseRule.minInstalled } } else { $null })
@@ -233,6 +236,11 @@ function Global:Merge-WebAppEdit {
         availableFor     = & $groups $Edit.availableFor
         uninstallFor     = & $groups $Edit.uninstallFor
         excludeFor       = & $groups $Edit.excludeFor
+        # The assignment filter: what the editor sends, else what the app had.
+        assignmentFilter     = $(if ($null -ne $Edit.assignmentFilter) { $af = ([string]$Edit.assignmentFilter).Trim(); if ($af.Length -le 200) { $af } else { '' } } elseif ($Existing) { [string]$Existing.assignmentFilter } else { '' })
+        # Being retired stays as it was - only Retire changes it.
+        retiringSince    = $(if ($Existing) { [string]$Existing.retiringSince } else { '' })
+        assignmentFilterMode = $(if ($null -ne $Edit.assignmentFilterMode) { if ([string]$Edit.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' } } elseif ($Existing -and [string]$Existing.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' })
         metadata         = $metadata
     }
 }
@@ -327,7 +335,7 @@ function Global:Save-WebApp {
     $oldFile = if ($existing) { Join-Path $folder ((Get-SafeFileNameForApp -Name $existing.appName) + '.json') } else { $null }
     Backup-WebAppFile $newFile
     try {
-        [System.IO.File]::WriteAllText($newFile, (ConvertTo-SingleAppJson -App $record), (New-Object System.Text.UTF8Encoding($false)))
+        Save-WebAppJson -File $newFile -App $record -BeforeFile $(if ($oldFile -and $oldFile -ne $newFile) { $oldFile } else { '' })
     }
     catch { return @{ ok = $false; error = "Couldn't write $newFile`: $($_.Exception.Message)" } }
     if ($oldFile -and $oldFile -ne $newFile -and (Test-Path -LiteralPath $oldFile)) {
@@ -349,6 +357,7 @@ function Global:Remove-WebApp {
     Backup-WebAppFile $file
     try { Remove-Item -LiteralPath $file -Force -ErrorAction Stop }
     catch { return @{ ok = $false; error = "Couldn't remove $file`: $($_.Exception.Message)" } }
+    Add-WebHistoryEntry -App $name -Kind 'catalog' -Text 'Removed from the catalog'
     Write-Log "[OK] Removed from the catalog: $name (a copy is in the Backups folder; nothing in Intune changed)."
     return @{ ok = $true }
 }
@@ -418,9 +427,139 @@ function Global:Restore-WebAppBackup {
     if ($problem) { return @{ ok = $false; error = "It can't go back as it was: $problem" } }
     $file = Join-Path (Get-AppFolder -Kind Catalog) $leaf
     Backup-WebAppFile $file
-    try { [System.IO.File]::WriteAllText($file, (ConvertTo-SingleAppJson -App $old), (New-Object System.Text.UTF8Encoding($false))) }
+    try { Save-WebAppJson -File $file -App $old -Text "Restored the version from $($id.Split('/')[0] -replace 'app-edit_', '')" }
     catch { return @{ ok = $false; error = "Couldn't write $file`: $($_.Exception.Message)" } }
     Write-Log "[OK] $($app.appName): restored the copy from $($id.Split('/')[0] -replace 'app-edit_', '') (the version before the restore is kept too)."
     return @{ ok = $true; name = $old.appName }
 }
 
+
+# ---------------------------------------------------------------- change history
+# Every change to an app's catalog file, field by field (from -> to), and
+# every step that changed it in Intune, with where it came from - one JSON
+# line each in Backups\history\<yyyy-MM>.jsonl. Earlier versions (above)
+# keep whole files; this says who changed what, and undoes one change.
+
+function Global:Get-WebChangeSource {
+    # Pure: where a change came from, by the request that made it - shown in the history.
+    param([string]$Path)
+    switch -Wildcard ($Path) {
+        '/api/app-save' { 'Editor' } '/api/app-restore' { 'Earlier versions (restore)' } '/api/history-undo' { 'History (undo)' }
+        '/api/batch-*' { 'Batch edit' } '/api/replace-group' { 'Replace group' } '/api/assignments-set' { 'Groups x apps' } '/api/undo-last' { 'Undo' }
+        '/api/pull-apply' { 'Pull from Intune' } '/api/csv-import' { 'CSV import' } '/api/add-*' { 'Add apps' } '/api/checks-fix' { 'Checks (fix)' }
+        '/api/release-*' { 'Updates' } '/api/managed-*' { 'Managed updates' } '/api/winget-take-version' { 'Updates' } '/api/job-poll' { 'Step result' }
+        '/api/retire-*' { 'Retire' } '/api/clear-appid*' { 'Clear App ID' } '/api/group-*' { 'Groups' }
+        default { if ($Path) { 'This app (' + ($Path -replace '^/api/', '') + ')' } else { 'This app' } }
+    }
+}
+
+function Global:Add-WebHistoryEntry {
+    # One line in the change history. -Kind: catalog (with -Changes) or intune (a step that changed it there).
+    param([string]$App, [string]$Kind, [string]$Text = '', $Changes = @(), [string]$Source = '')
+    try {
+        $dir = Join-Path (Get-AppFolder -Kind Backups -Create) 'history'
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        $src = if ($Source) { $Source } elseif ($Global:WebChangeSource) { [string]$Global:WebChangeSource } else { 'This app' }
+        $entry = [ordered]@{ id = [guid]::NewGuid().ToString('N'); at = (Get-Date).ToUniversalTime().ToString('o'); app = $App; kind = $Kind; source = $src; text = $Text; changes = @($Changes) }
+        $line = (ConvertTo-Json -InputObject $entry -Compress -Depth 6) + "`n"
+        [System.IO.File]::AppendAllText((Join-Path $dir ((Get-Date).ToString('yyyy-MM') + '.jsonl')), $line, (New-Object System.Text.UTF8Encoding($false)))
+    }
+    catch { }
+}
+
+function Global:Save-WebAppJson {
+    <#
+      Writes one app's catalog file - the one place every catalog write goes
+      through - and puts what changed, field by field, into the history.
+    #>
+    param([string]$File, $App, [string]$Text = '',
+        # A rename: the app's file under its old name, the "before" of this write.
+        [string]$BeforeFile = '')
+    $json = ConvertTo-SingleAppJson -App $App
+    $before = $null
+    $from = if ($BeforeFile -and (Test-Path -LiteralPath $BeforeFile)) { $BeforeFile } else { $File }
+    if (Test-Path -LiteralPath $from) { try { $before = ConvertTo-AppRecord (Get-Content -LiteralPath $from -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { } }
+    [System.IO.File]::WriteAllText($File, $json, (New-Object System.Text.UTF8Encoding($false)))
+    try {
+        $after = ConvertTo-AppRecord ($json | ConvertFrom-Json)
+        if (-not $before) { Add-WebHistoryEntry -App ([string]$after.appName) -Kind 'catalog' -Text $(if ($Text) { $Text } else { 'Added to the catalog' }); return }
+        $changes = @(Get-AppRecordChanges -Before $before -After $after | ForEach-Object {
+            # Very long values (a detection script) are named, not kept - Earlier versions has them.
+            if ($_.before.Length -gt 20000 -or $_.after.Length -gt 20000) { $_.before = '"(long - see Earlier versions)"'; $_.after = '"(long - see Earlier versions)"'; $_.long = $true }
+            $_
+        })
+        if ($changes.Count) { Add-WebHistoryEntry -App ([string]$after.appName) -Kind 'catalog' -Text $Text -Changes $changes }
+    }
+    catch { }
+}
+
+function Global:Read-WebHistoryEntries {
+    # The history, newest first: the last -Months files.
+    param([int]$Months = 24)
+    $dir = Join-Path (Get-AppFolder -Kind Backups) 'history'
+    if (-not (Test-Path -LiteralPath $dir)) { return @() }
+    $files = @(Get-ChildItem -LiteralPath $dir -File -Filter '*.jsonl' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d{4}-\d{2}\.jsonl$' } | Sort-Object Name -Descending | Select-Object -First $Months)
+    $out = New-Object System.Collections.Generic.List[object]
+    foreach ($f in $files) {
+        $lines = @(Get-Content -LiteralPath $f.FullName -Encoding UTF8 -ErrorAction SilentlyContinue)
+        for ($i = $lines.Count - 1; $i -ge 0; $i--) { if ($lines[$i]) { try { $out.Add(($lines[$i] | ConvertFrom-Json)) } catch { } } }
+    }
+    return $out.ToArray()
+}
+
+function Global:Get-WebAppHistory {
+    <#
+      One app's history, newest first - following renames back, so what
+      happened under its old name is there too. Catalog changes with each
+      field's before and after, and whether it can be undone on its own.
+    #>
+    param($Data)
+    $name = [string]$Data.name
+    $names = New-Object System.Collections.Generic.HashSet[string]([StringComparer]::OrdinalIgnoreCase)
+    [void]$names.Add($name)
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($e in @(Read-WebHistoryEntries)) {
+        if (-not $names.Contains([string]$e.app)) { continue }
+        $changes = @(@($e.changes) | Where-Object { $_ } | ForEach-Object {
+            if ($_.field -eq 'appName') { [void]$names.Add((Format-AppHistoryValue $_.before)) }
+            [ordered]@{ field = [string]$_.field; before = (Format-AppHistoryValue $_.before); after = (Format-AppHistoryValue $_.after); revertable = [bool]((Test-AppRecordFieldRevertable ([string]$_.field)) -and -not $_.long) }
+        })
+        $rows.Add([ordered]@{ id = [string]$e.id; at = [string]$e.at; app = [string]$e.app; kind = [string]$e.kind; source = [string]$e.source; text = [string]$e.text; changes = $changes
+            canUndo = ($e.kind -eq 'catalog' -and @($changes | Where-Object { $_.revertable }).Count -gt 0) })
+        if ($rows.Count -ge 300) { break }
+    }
+    return @{ ok = $true; app = $name; entries = $rows.ToArray() }
+}
+
+function Global:Undo-WebHistoryChange {
+    <#
+      Puts the fields one catalog change changed back to what they were -
+      only those still as that change left them; a field changed again
+      since is left alone and named.
+    #>
+    param($Data)
+    $name = [string]$Data.name; $id = [string]$Data.id
+    if ($id -notmatch '^[0-9a-f]{32}$') { return @{ ok = $false; error = 'That is not a change in the history.' } }
+    $entry = @(Read-WebHistoryEntries | Where-Object { $_.id -eq $id }) | Select-Object -First 1
+    if (-not $entry -or $entry.kind -ne 'catalog') { return @{ ok = $false; error = 'That change is not in the history (or was not a catalog change).' } }
+    $catalog = Read-WebCatalogRecords
+    $app = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $app) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
+    $now = Get-AppRecordFieldValues $app
+    $done = New-Object System.Collections.Generic.List[string]; $skipped = New-Object System.Collections.Generic.List[string]
+    $empty = @('null', '""', '[]', '')
+    foreach ($c in @($entry.changes)) {
+        $f = [string]$c.field
+        if (-not (Test-AppRecordFieldRevertable $f) -or $c.long) { $skipped.Add("$f (not undone on its own - use Earlier versions)"); continue }
+        $cur = if ($now.Contains($f)) { [string]$now[$f] } else { 'null' }
+        if ($cur -cne [string]$c.after -and -not ($empty -contains $cur -and $empty -contains [string]$c.after)) { $skipped.Add("$f (changed again since)"); continue }
+        if (Set-AppRecordFieldJson -Record $app -Field $f -Json ([string]$c.before)) { $done.Add($f) }
+    }
+    if (-not $done.Count) { return @{ ok = $false; error = "Nothing to undo: $($skipped -join '; ')." } }
+    $when = try { ([datetime]$entry.at).ToLocalTime().ToString('yyyy-MM-dd HH:mm') } catch { [string]$entry.at }
+    $file = Join-Path (Get-AppFolder -Kind Catalog) ((Get-SafeFileNameForApp -Name $app.appName) + '.json')
+    Backup-WebAppFile $file
+    Save-WebAppJson -File $file -App $app -Text "Undid the change of $when"
+    Write-Log "[OK] $name`: undid the change of $when ($($done -join ', '))."
+    return @{ ok = $true; undone = $done.ToArray(); skipped = $skipped.ToArray() }
+}

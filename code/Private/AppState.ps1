@@ -9,7 +9,7 @@ function Global:Initialize-AppState {
     # Paths & state
     # =====================================================================
     $Global:App.RootPath   = $RootPath
-    $Global:App.AppVersion = "2.13.0"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
+    $Global:App.AppVersion = "2.14.0"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
     # The catalog as last read (Read-WebCatalogRecords) - the shared
     # functions that look at "the catalog" (default dependencies, known
     # groups) read it from here.
@@ -45,6 +45,7 @@ function Global:Initialize-AppState {
     # Settings > Automatic checks. Off by default: they need a connection to be
     # of any use, and the full audit reads every deployed app.
     $Global:App.CheckDriftOnStartup = $false       # Checks' quick part when the app opens
+    $Global:App.Packager = 'auto'                  # 'auto' (IntuneWinAppUtil.exe when it's there, built in otherwise), 'builtin' or 'tool'
     $Global:App.CheckForUpdates = $true            # ask GitHub (at most twice a day) whether a newer version of this app is out
     $Global:App.ReleaseRepo = 'monsama/intune-app-catalog'
     $Global:App.RunFullAuditOnStartup = $false     # every deployed app in detail when the app opens

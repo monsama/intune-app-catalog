@@ -279,8 +279,11 @@ $('btnCertsLocal').addEventListener('click', () => { $('dlgCertsLocal').showModa
 // ---------------------------------------------------------------- settings: packaging, checks, folders, defaults, favourites
 let prefs = null;
 function setPkgState(p) {
-  $('pkgTool').textContent = p.toolFound ? `Packaging tool found${p.toolVersion ? ' (version ' + p.toolVersion + ')' : ''}.` : 'Packaging tool (IntuneWinAppUtil.exe) not downloaded yet.';
-  $('pkgTool').className = 'certstatus ' + (p.toolFound ? 'ok' : 'warn');
+  const builtIn = p.packagerInUse === 'builtin';
+  $('pkgTool').textContent = builtIn ? `Packages are built in - no download needed.${p.toolFound ? ' IntuneWinAppUtil.exe is there too.' : ''}`
+    : p.toolFound ? `Packaging tool found${p.toolVersion ? ' (version ' + p.toolVersion + ')' : ''}.` : 'Packaging tool (IntuneWinAppUtil.exe) not downloaded yet.';
+  $('pkgTool').className = 'certstatus ' + (builtIn || p.toolFound ? 'ok' : 'warn');
+  if (p.packager) $('pkgPackager').value = p.packager;
   $('pkgShared').textContent = p.sharedFound ? 'Shared Winget package (init.intunewin) built.' : 'Shared Winget package (init.intunewin) not built yet - every Winget app deploys with it.';
   $('pkgShared').className = 'certstatus ' + (p.sharedFound ? 'ok' : 'warn');
 }
@@ -359,6 +362,12 @@ async function packagingSetup(what, btn) {
   toast(r.ok ? (r.message || 'Done.') : r.error, !r.ok);
   if (r.state) setPkgState(r.state);
 }
+$('pkgPackager').addEventListener('change', async () => {
+  const r = await api('/api/prefs-save', { packager: $('pkgPackager').value });
+  if (!r.ok) { toast(r.error || 'Not saved.', true); return; }
+  const k = await api('/api/packaging'); if (k.ok) setPkgState(k);
+  toast('Packager saved.');
+});
 $('btnGetTool').addEventListener('click', () => packagingSetup('tool', 'btnGetTool'));
 $('btnBuildShared').addEventListener('click', () => packagingSetup('shared', 'btnBuildShared'));
 

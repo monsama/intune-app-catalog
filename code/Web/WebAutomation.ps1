@@ -59,6 +59,7 @@ function Global:Invoke-ManagedUpdateRun {
     #>
     param([switch]$PlanOnly, [switch]$FastTrackOnly)
     $started = Get-Date
+    Set-Variable -Name WebChangeSource -Scope Global -Value $(if ($FastTrackOnly) { 'Fast-track run' } else { 'Nightly run' })
     $policy = $Global:App.ReleasePolicy
     $items = New-Object System.Collections.Generic.List[object]
     $say = { param($App, $Outcome, $Text) $items.Add([ordered]@{ app = [string]$App; outcome = [string]$Outcome; text = [string]$Text }); Write-Log "[$(if ($Outcome -eq 'failed') { 'WARN' } else { 'INFO' })] Managed updates: $App - $Text" }
@@ -91,7 +92,7 @@ function Global:Invoke-ManagedUpdateRun {
                 if ($null -eq $gateApps) { & $say '(test tenant)' 'failed' "The test tenant's catalog folder ($($policy.GatePath)) can't be read - nothing is released automatically."; $failed++; $gateApps = @() }
             }
             $catalog = Read-WebCatalogRecords
-            $managed = @($catalog.Apps | Where-Object { $_.managedUpdates -and $_.appId })
+            $managed = @($catalog.Apps | Where-Object { $_.managedUpdates -and $_.appId -and -not $_.retiringSince })
             if ($FastTrackOnly) { $managed = @($managed | Where-Object { $p = Get-WebAppRelease $_; $p -and $p.fastTrack }) }
             if (-not $managed.Count -and -not $FastTrackOnly) { & $say '(all)' 'none' 'No deployed app has managed updates.' }
             # The newest winget versions, for the Winget apps with nothing in pilot.
@@ -290,7 +291,7 @@ function Global:Get-WebHealthChecks {
     if (@($apps | Where-Object { $_.wingetId }).Count -and -not (Test-Path -LiteralPath (Get-SharedPackagePath))) { & $add 'warn' "The shared Winget package (init.intunewin) is missing - Winget releases can't be created. Settings > Packaging & folders builds it." }
     if (@($apps | Where-Object { -not $_.wingetId -and $_.autoRelease }).Count) {
         $tool = Get-PackagingToolPath
-        if (-not $tool -or -not (Test-Path -LiteralPath $tool)) { & $add 'warn' "The packaging tool (IntuneWinAppUtil.exe) is missing - own packages can't be built. Settings > Packaging & folders downloads it." }
+        if ((Get-PackagerChoice) -eq 'tool' -and (-not $tool -or -not (Test-Path -LiteralPath $tool))) { & $add 'warn' "The packaging tool (IntuneWinAppUtil.exe) is missing - own packages can't be built. Settings > Packaging & folders downloads it, or switch to the built-in packager." }
     }
     try {
         $root = [System.IO.Path]::GetPathRoot((Get-AppFolder -Kind Catalog))

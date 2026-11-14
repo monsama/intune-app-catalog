@@ -66,6 +66,7 @@ function Global:Get-WebCatalog {
                 managed      = [bool]$apps[$i].managedUpdates
                 previousVersions = @(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'previous' } | Sort-Object { [string]$_.at } | ForEach-Object { [string]$_.version })
                 releaseIds   = @(@($apps[$i].releases) | Where-Object { $_ -and $_.appId } | ForEach-Object { ([string]$_.appId).ToLowerInvariant() })
+                retiringSince = [string]$apps[$i].retiringSince
                 pilotVersion = [string]$(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'pilot' } | Select-Object -First 1 -ExpandProperty version)
                 hasIcon      = [bool]($apps[$i].icon -and $apps[$i].icon.value)
                 iconTag      = $(if ($apps[$i].icon -and $apps[$i].icon.value) { "$($apps[$i].icon.value.Length):$($apps[$i].icon.value.Substring([Math]::Max(0, $apps[$i].icon.value.Length - 12)))" } else { '' })
@@ -93,7 +94,9 @@ function Global:Start-WebStepJob {
         # A step that takes its own parameters (Package.ps1) instead of -ConfigPath; @{} for none.
         [hashtable]$Parameters = $null,
         # Another PowerShell than the default one the steps use (installing the Graph module into each).
-        [string]$Exe = '')
+        [string]$Exe = '',
+        # The apps a step changes in Intune - its success goes into their change history (-After's AppName when not given).
+        [string[]]$Apps = @())
     $tag = [guid]::NewGuid().ToString('N')
     $configPath = Join-Path $env:TEMP ".intunepkg_$($Name)_config_$tag.json"
     $scriptPath = Join-Path $Global:App.RootPath ".intunepkg_embedded_$($Name)_$tag.ps1"
@@ -103,7 +106,7 @@ function Global:Start-WebStepJob {
     try {
         if ($ConfigJson) { [System.IO.File]::WriteAllText($configPath, $ConfigJson, $utf8) }
         [System.IO.File]::WriteAllText($scriptPath, $ScriptContent, $utf8)
-        [System.IO.File]::WriteAllText($helperPath, ((Get-GraphLogScriptHelpers) + "`n`n" + (Get-AssignmentScriptHelpers)), $utf8)
+        [System.IO.File]::WriteAllText($helperPath, ((Get-GraphLogScriptHelpers) + "`n`n" + (Get-AssignmentScriptHelpers) + "`n`n" + (Get-PackagingScriptHelpers)), $utf8)
         [System.IO.File]::WriteAllText($logPath, '')
         $stepParams = if ($null -ne $Parameters) { $Parameters } else { @{ ConfigPath = $configPath } }
         $spec = @{ Script = $scriptPath; Parameters = $stepParams; GraphHelper = $helperPath; LogFile = $logPath }
@@ -122,6 +125,8 @@ function Global:Start-WebStepJob {
     $Global:App.WebJobs[$tag] = @{
         Process = $proc; Log = $logPath; Result = $ResultPath
         Cleanup = @($scriptPath, $helperPath, $configPath); Mode = $Kind; Done = $false; After = $After; LastPoll = Get-Date; Started = Get-Date
+        HistoryApps = @($(if ($Apps.Count) { $Apps } elseif ($After.AppName -and $After.Kind -in 'deploy', 'deleted', 'release') { [string]$After.AppName }) | Where-Object { $_ })
+        HistorySource = [string]$Global:WebChangeSource
     }
     return @{ ok = $true; job = $tag }
 }
@@ -271,6 +276,8 @@ function Global:Complete-WebJob {
     if ($After.Kind -in 'deploy', 'deleted', 'addtocatalog') { $Global:App.IntuneAppsCache = $null }
     switch ($After.Kind) {
         'grouprename' { return (Complete-WebGroupRename -After $After) }
+        'retire' { return (Complete-WebRetire -After $After) }
+        'retired' { $Global:App.IntuneAppsCache = $null; return (Complete-WebRetireFinish -Name ([string]$After.AppName)) }
         'checkdetails' { return (Complete-WebCheckDetails -After $After -Result $Result) }
         'checkassign' { return (Complete-WebCheckAssign -After $After -Result $Result) }
         'addtocatalog' { return (Complete-WebAddFromIntune -After $After -Result $Result) }
@@ -369,6 +376,9 @@ function Global:Get-WebJobPoll {
                 if ($response.result -and $response.result.success -and $job.After -and $job.After.Count) {
                     try { $done = Complete-WebJob -After $job.After -Result $response.result -LogPath $job.Log }
                     catch { $done = @{ ok = $false; error = $_.Exception.Message }; Write-Log "[WARN] $($_.Exception.Message)" }
+                }
+                if ($response.result -and $response.result.success) {
+                    foreach ($n in @($job.HistoryApps)) { Add-WebHistoryEntry -App $n -Kind 'intune' -Text ([string]$job.Mode) -Source $(if ($job.HistorySource) { [string]$job.HistorySource } else { 'This app' }) }
                 }
                 return @{ finished = $true; after = $done }
             }
@@ -519,6 +529,8 @@ function Global:Read-WebCatalogRecords {
 function Global:Invoke-WebApi {
     # The route table. $Data is the token-checked request body.
     param([string]$Path, $Data)
+    # Where catalog changes made by this request come from, for the change history (per runspace - each request has its own).
+    Set-Variable -Name WebChangeSource -Scope Global -Value (Get-WebChangeSource $Path)
     switch ($Path) {
         '/api/state'            { return (Get-WebState) }
         '/api/catalog'          { return (Get-WebCatalog) }
@@ -538,6 +550,8 @@ function Global:Invoke-WebApi {
         '/api/app-save'         { return (Invoke-WithCatalogLock { Save-WebApp $Data }) }
         '/api/app-remove'       { return (Invoke-WithCatalogLock { Remove-WebApp $Data }) }
         '/api/app-backups'      { return (Get-WebAppBackups $Data) }
+        '/api/app-history'      { return (Get-WebAppHistory $Data) }
+        '/api/history-undo'     { return (Invoke-WithCatalogLock { Undo-WebHistoryChange $Data }) }
         '/api/app-restore'      { return (Invoke-WithCatalogLock { Restore-WebAppBackup $Data }) }
         '/api/deploy-plan'      { return (Get-WebDeployPlan $Data) }
         '/api/deploy-start'     { return (Start-WebDeploy $Data) }
@@ -562,6 +576,12 @@ function Global:Invoke-WebApi {
         '/api/alert-test'       { return (Send-WebTestAlert) }
         '/api/health'           { return (Get-WebHealth) }
         '/api/permission-check' { return (Get-WebPermissionCheck) }
+        '/api/filters' { return (Get-WebAssignmentFilters) }
+        '/api/retire-start'     { return (Start-WebRetire $Data) }
+        '/api/retire-status'    { return (Get-WebRetireStatus $Data) }
+        '/api/retire-finish'    { return (Start-WebRetireFinish $Data) }
+        '/api/retired-list'     { return (Get-WebRetiredApps) }
+        '/api/retired-restore'  { return (Invoke-WithCatalogLock { Restore-WebRetiredApp $Data }) }
         '/api/group-suggest'    { return (Find-WebGroupSuggestions $Data) }
         '/api/group-check'      { return (Test-WebGroupNames $Data) }
         '/api/icon-find'        { return (Find-WebAppIcon $Data) }
