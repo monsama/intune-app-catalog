@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.16.0
+
+- **Navigation in a sidebar** with icons. On a medium-width window it is an
+  icon rail (names as tooltips); on a phone it stays a top bar. The
+  connection, the theme and the coffee button sit at the bottom of the
+  sidebar.
+- **Theme follows Windows**: one button switches between Automatic,
+  Light and Dark. Automatic changes with Windows while the app is open.
+- **Home**: what needs attention comes first. Getting started lists only
+  the open steps, and the finished ones are one line of ticks.
+- **Updates**: each row has one main action, and the others (Promote,
+  Withdraw, Roll back) are in a "⋯" menu.
+- **Checks**: the fix buttons appear once there are findings. Before the
+  first run, the page says what it compares, with a Run checks button.
+- **Loading placeholders** instead of "Reading..." in Updates, Home, the
+  install status, the install status of every app, History and Retired
+  apps.
+- **Buttons come in three kinds**: the main action, normal (outlined) and
+  quiet (text in the accent colour). The Settings buttons that looked like
+  plain text are normal buttons now.
+- **The editor's tabs are pages**: Basics, Who gets it, Details,
+  Install & detection, Requirements, Dependencies - each shows its part
+  only. Save still saves everything; a required field left empty brings
+  its page up, and the Ready list's "go to the field" links open the right
+  page.
+- **Quick edits in the side panel**:
+  - Each group has an × to take it off, and "+ Add" adds one, with the
+    catalog's groups suggested.
+  - The version has Change, for apps that have Intune details and aren't
+    deployed with managed updates. Those get new versions through
+    Release new version.
+  - Changes save at once and show in History as from the side panel.
+- **Apps list Columns...**: show or hide Source, Version, Who gets it and
+  Stage, and choose Comfortable or Compact rows. This is kept in the
+  browser.
+
 ## 2.15.0
 
 A visual refresh across every page and dialog:

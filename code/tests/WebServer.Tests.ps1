@@ -543,6 +543,17 @@ try {
     [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = "$rtName 2"; wingetId = 'Contoso.Retire'; appId = $rtGuid; metadata = @{ description = 'r' } } })
     Check (-not (Invoke-Api '/api/retire-start' @{ name = "$rtName 2" }).ok) 'retire: an app without groups has nothing to uninstall - refused (finish deletes it)'
     [void](Invoke-Api '/api/app-remove' @{ name = "$rtName 2" })
+    # Quick edits from the side panel: a group added and taken off, the version - and it's in the history as from the side panel.
+    $qName = 'ZZ Quick ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $qName; wingetId = 'Contoso.Quick'; appId = ''; requiredFor = @('SG-A'); managedUpdates = $false; metadata = @{ description = 'q'; appVersion = '1.0' } } })
+    $q1 = Invoke-Api '/api/app-quick' @{ name = $qName; field = 'availableFor'; add = 'SG-B' }
+    $q2 = Invoke-Api '/api/app-quick' @{ name = $qName; field = 'requiredFor'; remove = 'SG-A' }
+    $q3 = Invoke-Api '/api/app-quick' @{ name = $qName; field = 'appVersion'; value = '2.0' }
+    $qApp = (Invoke-Api '/api/app-get' @{ name = $qName }).app
+    Check ($q1.ok -and $q2.ok -and $q3.ok -and @($qApp.availableFor) -contains 'SG-B' -and @($qApp.requiredFor).Count -eq 0 -and $qApp.metadata.appVersion -eq '2.0') 'quick edit: a group added, one taken off, the version changed - without the editor'
+    Check (-not (Invoke-Api '/api/app-quick' @{ name = $qName; field = 'appId'; value = 'x' }).ok -and -not (Invoke-Api '/api/app-quick' @{ name = $qName; field = 'requiredFor'; add = "bad`tname" }).ok) 'quick edit: only groups and the version, and only group names Entra ID takes'
+    Check ((Invoke-Api '/api/app-history' @{ name = $qName }).entries[0].source -eq 'Side panel') 'quick edit: in the history, from the side panel'
+    [void](Invoke-Api '/api/app-remove' @{ name = $qName })
     # An assignment filter round-trips through the catalog file and the editor.
     $flName = 'ZZ Filter ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
     [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $flName; wingetId = 'Contoso.Filter'; appId = ''; requiredFor = @('SG-A'); assignmentFilter = ' Corp laptops '; assignmentFilterMode = 'exclude'; metadata = @{ description = 'f' } } })

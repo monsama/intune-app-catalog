@@ -779,3 +779,84 @@ dialog > h2:first-child, dialog form > h2:first-child { font-size: 17px; margin-
 
 /* Side panel and group lists: square chips that wrap long names. */
 .chip.static { padding: 3px 9px; background: var(--field); border-color: var(--bd2); }
+
+/* ==== 2.16: navigation as a sidebar (an icon rail on medium windows, the top bar on a phone) ==== */
+.tab .ti { flex: none; }
+@media (min-width: 641px) {
+  :root { --side: 228px; }
+  body { padding-left: var(--side); }
+  .topbar { position: fixed; z-index: 20; left: 0; top: 0; bottom: 0; width: var(--side); height: auto; flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 4px; padding: 14px 12px; border-bottom: 0; border-right: 1px solid var(--bd2); overflow-y: auto; }
+  .brand { padding: 4px 8px 14px; font-size: 15px; }
+  .brand { flex-wrap: wrap; row-gap: 0; }
+  .brand .ver { flex-basis: 100%; padding-left: 32px; margin-top: -2px; }
+  .tabs { order: 0; flex-direction: column; height: auto; width: auto; gap: 2px; overflow: visible; }
+  .tab { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border: 0; border-radius: var(--r-m); text-align: left; color: var(--muted); }
+  .tab:hover { background: var(--hover); color: var(--fg); }
+  .tab[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); border: 0; font-weight: 600; }
+  .tab[data-count]::after { margin-left: auto; }
+  .topright { margin: auto 0 0; flex-direction: column; align-items: stretch; gap: 8px; padding-top: 12px; border-top: 1px solid var(--bd2); white-space: normal; }
+  .topright .conn, .topright .jobchip { justify-content: center; }
+  .topright .iconbtn { align-self: flex-start; }
+  .topright { display: grid; grid-template-columns: auto auto 1fr; }
+  .topright .conn, .topright .jobchip { grid-column: 1 / -1; }
+}
+@media (min-width: 641px) and (max-width: 1099px) {
+  :root { --side: 68px; }
+  .topbar { padding: 12px 8px; align-items: center; }
+  .brand span, .brand .ver { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .brand { padding: 4px 0 12px; justify-content: center; }
+  .tabs { width: 100%; }
+  .tab { justify-content: center; padding: 10px 0; position: relative; }
+  .tab .tl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .tab[data-count]::after { position: absolute; top: 2px; right: 4px; margin: 0; min-width: 16px; font-size: 10px; }
+  .topright { grid-template-columns: 1fr; width: 100%; justify-items: center; }
+  .topright .conn { font-size: 0; padding: 8px; gap: 0; }
+  .topright .jobchip { font-size: 0; padding: 6px; }
+  .topright .jobchip::before { margin: 0; }
+  .topright .iconbtn { align-self: center; }
+}
+@media (max-width: 640px) {
+  .tab .ti { display: none; }
+}
+/* Home: getting started lists only open steps; done ones as a line of small chips. */
+.setupdone { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin: 10px 0 0; font-size: 12px; }
+.setupdone:empty { display: none; }
+.donechip { color: var(--ok); background: var(--ok-bg); border-radius: var(--r-s); padding: 1px 8px; }
+.btn.moreacts { padding: 3px 9px; font-size: 14px; line-height: 1.1; letter-spacing: 1px; }
+/* Checks: the fix buttons only with findings; a fuller first look. */
+.fixbar { display: contents; }
+.fixbar[hidden] { display: none !important; }
+.empty .emptyicon { color: var(--accent); opacity: .8; margin-bottom: 4px; }
+.emptylist { text-align: left; max-width: 520px; margin: 10px auto 16px; padding-left: 20px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+/* Loading placeholders */
+.sk { display: block; height: 10px; border-radius: 5px; margin: 4px 0; background: linear-gradient(90deg, var(--bd2) 25%, color-mix(in srgb, var(--bd2) 40%, var(--surface)) 50%, var(--bd2) 75%); background-size: 200% 100%; animation: skmove 1.3s ease-in-out infinite; }
+.sk.w0 { width: 70%; } .sk.w1 { width: 45%; } .sk.w2 { width: 85%; } .sk.w3 { width: 30%; }
+li.skel { list-style: none; padding: 12px 14px; }
+@keyframes skmove { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+/* Three kinds of button: primary (the one main action), normal (outlined), quiet (text in the accent colour). */
+.btn.ghost:not(.iconbtn) { color: var(--accent); }
+.btn.ghost:not(.iconbtn):hover { background: var(--accent-soft); border-color: transparent; }
+/* The editor's pages: one part at a time; a page with one column uses the width. */
+#dlgApp .offpage { display: none !important; }
+#deploySec > summary { display: none; }
+#deploySec { border: 0; padding: 0; margin: 0; background: none; }
+#dlgApp .formgrid:has(> section.offpage) { grid-template-columns: 1fr; }
+#dlgApp .formgrid > section > h3 { border-top: 0; padding-top: 0; margin: 18px 0 4px; }
+#dlgApp .formgrid > section > .pgfirst { margin-top: 0; }
+/* Side panel quick edits */
+.gedit { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.chip.static.editable { display: inline-flex; align-items: center; gap: 2px; padding-right: 3px; margin: 0; }
+.chip.static.editable .x { border: 0; background: none; color: var(--muted); font-size: 14px; line-height: 1; width: 18px; height: 18px; border-radius: 50%; cursor: pointer; padding: 0; }
+.chip.static.editable .x:hover, .chip.static.editable .x:focus-visible { background: var(--bd2); color: var(--err); }
+.chip.addchip { border-style: dashed; color: var(--accent); background: none; padding: 2px 9px; }
+input.qedit { padding: 3px 8px; font-size: 12px; width: 180px; }
+/* The Apps list: columns shown or hidden, comfortable or compact rows. */
+#grid.hide-2 tr > :nth-child(2), #grid.hide-3 tr > :nth-child(3), #grid.hide-4 tr > :nth-child(4), #grid.hide-5 tr > :nth-child(5) { display: none; }
+#grid.dense td { padding-top: 4px; padding-bottom: 4px; }
+#grid.dense td .btn.small { padding-top: 1px; padding-bottom: 1px; }
+.menu.looks { min-width: 200px; padding: 6px 8px; }
+.menu.looks label.chk { display: flex; align-items: center; gap: 8px; margin: 0; padding: 5px 6px; color: var(--fg); font-size: 13px; font-weight: 400; border-radius: var(--r-s); cursor: pointer; }
+.menu.looks label.chk:hover { background: var(--hover); }
+.menu.looks hr { border: 0; border-top: 1px solid var(--bd2); margin: 6px 0; }
+.menu .mhead { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 4px 6px 2px; }

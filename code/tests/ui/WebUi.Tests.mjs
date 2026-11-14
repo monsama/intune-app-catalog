@@ -114,12 +114,15 @@ try {
       await unnamed('Add apps (script)'); await a11y('Add apps (script)'); await shot('add-script');
       await page.click('#btnAddBlank');
       await page.waitForSelector('#dlgApp[open]');
-      await page.click('#deploySec summary');
       await unnamed('the app editor'); await a11y('the app editor'); await shot('editor');
-      // The name is a required field: the browser itself says so and the save never leaves the page.
+      // Each tab is a page of the editor: only its part shows.
+      await page.click('.edtab[data-i="3"]');
+      check(await page.isVisible('#xType') && !(await page.isVisible('#aName')), `${label}: the editor's Install & detection tab shows the detection rule, not the basics`);
+      await unnamed('the app editor (install & detection)'); await a11y('the app editor (install & detection)');
+      // The name is a required field: the browser itself says so, the save never leaves the page, and the editor shows the name's page.
       await page.click('#btnSaveApp');
       const blocked = await page.evaluate(() => document.getElementById('aName').validity.valueMissing && document.getElementById('dlgApp').open);
-      check(blocked, `${label}: saving an app without a name is stopped, and the editor stays open`);
+      check(blocked && await page.isVisible('#aName'), `${label}: saving an app without a name is stopped, the editor stays open on the name's page`);
       await page.keyboard.press('Escape');
       check(!(await page.isVisible('#dlgApp[open]')), `${label}: Escape closes the editor`);
 
@@ -209,11 +212,12 @@ try {
         check(await page.isChecked('#aManaged'), `${label}: a new Winget app has managed updates by default`);
         await page.uncheck('#aManaged');   // this one stays unmanaged: Release is checked below to be off, and to say why
         // Groups are chips: typed and Enter adds one, x takes it off again; return codes are rows.
+        await page.click('.edtab[data-i="1"]');
         await page.click('#gAvailableChips'); await page.keyboard.type('SG-ZZ-Chip'); await page.waitForTimeout(400); await page.keyboard.press('Enter');
         const chipAdded = (await page.inputValue('#gAvailable')).split('\n').includes('SG-ZZ-Chip');
         await page.click('#gAvailableBox .chip.tag .x');
         check(chipAdded && !(await page.inputValue('#gAvailable')).includes('SG-ZZ-Chip'), `${label}: a group is added as a chip and removed with its x`, await page.inputValue('#gAvailable'));
-        await page.click('#deploySec summary');
+        await page.click('.edtab[data-i="4"]');
         await page.click('#xCodesRows > button');
         await page.fill('#xCodesRows .coderow:last-of-type input', '1707');
         check((await page.inputValue('#xCodes')).split('\n').includes('1707 = success'), `${label}: a return code is added as a row`, await page.inputValue('#xCodes'));

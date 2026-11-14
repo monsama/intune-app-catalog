@@ -26,19 +26,19 @@
 <header class="topbar">
   <h1 class="brand"><img src="icon.svg" alt="" width="22" height="22"><span>Intune App Catalog</span><span class="ver" id="ver"></span></h1>
   <nav class="tabs" role="tablist">
-    <button class="tab" role="tab" data-view="home" id="tabHome">Home</button>
-    <button class="tab" role="tab" data-view="apps" id="tabApps">Apps</button>
-    <button class="tab" role="tab" data-view="updates" id="tabUpdates">Updates</button>
-    <button class="tab" role="tab" data-view="checks" id="tabChecks">Checks</button>
-    <button class="tab" role="tab" data-view="groups" id="tabGroups">Groups</button>
-    <button class="tab" role="tab" data-view="scripts" id="tabScripts">Platform scripts</button>
-    <button class="tab" role="tab" data-view="settings" id="tabSettings">Settings</button>
+    <button class="tab" role="tab" data-view="home" id="tabHome" title="Home"><svg class="ti" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/></svg><span class="tl">Home</span></button>
+    <button class="tab" role="tab" data-view="apps" id="tabApps" title="Apps"><svg class="ti" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span class="tl">Apps</span></button>
+    <button class="tab" role="tab" data-view="updates" id="tabUpdates" title="Updates"><svg class="ti" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-3.5"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.9 3.5"/><path d="M20 20v-4h-4"/></svg><span class="tl">Updates</span></button>
+    <button class="tab" role="tab" data-view="checks" id="tabChecks" title="Checks"><svg class="ti" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg><span class="tl">Checks</span></button>
+    <button class="tab" role="tab" data-view="groups" id="tabGroups" title="Groups"><svg class="ti" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7"/><path d="M18 14a6 6 0 0 1 3.5 6"/></svg><span class="tl">Groups</span></button>
+    <button class="tab" role="tab" data-view="scripts" id="tabScripts" title="Platform scripts"><svg class="ti" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3"/><path d="M12.5 15h4.5"/></svg><span class="tl">Platform scripts</span></button>
+    <button class="tab" role="tab" data-view="settings" id="tabSettings" title="Settings"><svg class="ti" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span class="tl">Settings</span></button>
   </nav>
   <div class="topright">
     <button type="button" class="jobchip" id="jobChip" hidden title="An action is running - show its progress">Working...</button>
     <button type="button" class="conn" id="connBadge" title="Graph connection"></button>
     <button class="btn ghost iconbtn" id="btnCoffee" aria-label="Buy me a coffee" title="Buy me a coffee, if Intune App Catalog saved you some time"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M17 11h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M8 3v3M12 3v3"/></svg></button>
-    <button class="btn ghost" id="btnTheme" title="Switch between light and dark">Dark mode</button>
+    <button class="btn ghost iconbtn" id="btnTheme" aria-label="Theme" title="Theme">Theme</button>
   </div>
 </header>
 
@@ -71,6 +71,18 @@
         <optgroup label="Saved views" id="savedViews"></optgroup>
       </select>
       <button class="btn small" id="btnSaveView" title="Keep this search and filter as a named view in the list above">Save view...</button>
+      <button class="btn small" id="btnListLook" aria-haspopup="true" aria-expanded="false" aria-controls="listLook" title="Which columns the list shows, and how tight its rows are">Columns...</button>
+      <div class="menu looks" id="listLook" hidden role="group" aria-label="Columns and rows">
+        <div class="mhead">Columns</div>
+        <label class="chk"><input type="checkbox" data-col="2" checked>Source</label>
+        <label class="chk"><input type="checkbox" data-col="3" checked>Version</label>
+        <label class="chk"><input type="checkbox" data-col="4" checked>Who gets it</label>
+        <label class="chk"><input type="checkbox" data-col="5" checked>Stage</label>
+        <hr>
+        <div class="mhead">Rows</div>
+        <label class="chk"><input type="radio" name="density" value="comfortable" checked>Comfortable</label>
+        <label class="chk"><input type="radio" name="density" value="compact">Compact</label>
+      </div>
       <button class="btn small" id="btnDeleteView" hidden title="Forget this saved view">Delete view</button>
       <span class="count" id="count"></span>
       <span class="spacer"></span>
@@ -127,9 +139,9 @@
       <button class="btn" id="btnHomeAdd" title="Add apps from winget, an installer or a script">Add apps...</button>
       <button class="btn" id="btnHomeReload" title="Look again">Reload</button>
     </div>
-    <section class="setup" id="homeSetup" aria-labelledby="setupTitle" hidden><h2 id="setupTitle">Getting started</h2><div class="bar"><span id="setupBar"></span></div><ol id="setupList"></ol></section>
-    <div id="homeStats"></div>
     <ul class="attention" id="homeList" aria-live="polite"></ul>
+    <div id="homeStats"></div>
+    <section class="setup" id="homeSetup" aria-labelledby="setupTitle" hidden><h2 id="setupTitle">Getting started</h2><div class="bar"><span id="setupBar"></span></div><ol id="setupList"></ol><p class="setupdone" id="setupDone"></p></section>
     <p class="muted note">Tip: <kbd>Ctrl</kbd>+<kbd>K</kbd> finds any app, page or action.</p>
   </section>
 
@@ -167,12 +179,14 @@
       <span class="count" id="checkCount"></span>
       <span class="spacer"></span>
       <span class="muted" id="checkSelCount"></span>
+      <span class="fixbar" id="checkFixBar" hidden>
       <button class="btn" id="btnFixPull" disabled title="Intune is right: take its settings and groups into the catalog">Pull</button>
       <button class="btn" id="btnFixPushSettings" disabled title="The catalog is right about settings or dependencies: send them to Intune">Push settings</button>
       <button class="btn" id="btnFixPushGroups" disabled title="The catalog is right about groups: send them to Intune">Send groups</button>
       <button class="btn" id="btnFixCreateGroups" disabled title="Create the missing groups of the ticked findings in Entra ID, as security groups">Create groups</button>
       <button class="btn" id="btnFixAdd" disabled title="Add the Intune-only apps to the catalog, with their settings and groups">Add to catalog</button>
       <button class="btn" id="btnFixRecheck" disabled title="Check the ticked findings again against Intune">Re-check</button>
+      </span>
     </div>
     <p class="sub" id="checkNotes">Compares the catalog with Intune and Entra ID, checks its dependencies, and shows what the last audit found. Only reads - every fix is a button you press.</p>
     <div class="tablewrap">
@@ -180,7 +194,16 @@
         <thead><tr><th class="sel"><input type="checkbox" id="checkAll" aria-label="Select all shown"></th><th title="What kind of check found it">Area</th><th>App</th><th>Problem</th><th title="What the catalog has">Catalog</th><th title="What Intune or Entra ID has">Intune</th><th title="What can be done about it - each button says whether it changes the catalog or Intune">Fix</th></tr></thead>
         <tbody id="checkBody"></tbody>
       </table>
-      <div class="empty" id="checkEmpty"><h2 id="checkEmptyTitle">Not run yet</h2><p id="checkEmptyText">Run checks to see what needs attention.</p></div>
+      <div class="empty" id="checkEmpty">
+        <svg class="emptyicon" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>
+        <h2 id="checkEmptyTitle">Not run yet</h2><p id="checkEmptyText">Run checks to see what needs attention.</p>
+        <ul class="emptylist" id="checkEmptyList">
+          <li>Apps in the catalog and in Intune - missing on either side, App IDs that point nowhere</li>
+          <li>Settings, groups and dependencies - where the catalog and Intune differ</li>
+          <li>Groups that don't exist in Entra ID, Winget IDs winget doesn't know</li>
+        </ul>
+        <button class="btn primary" id="btnRunChecksEmpty" type="button">Run checks</button>
+      </div>
     </div>
     <details class="logbox" id="checkLogBox"><summary>Log</summary><pre class="log" id="checkLog" tabindex="0" role="log"></pre></details>
   </section>
@@ -357,8 +380,8 @@
           <div class="actions">
             <button class="btn" id="btnUseCert" title="Pick a certificate that is already in your user store or the machine store">Use an existing one...</button>
             <button class="btn" id="btnNewCert" title="Create a self-signed certificate on this machine for the app registration">Create new certificate...</button>
-            <button class="btn ghost" id="btnCertFolder" title="Open the folder with the exported .cer files in Explorer">Open certificates folder</button>
-            <button class="btn ghost" id="btnCertsLocal" title="List this machine's certificates and delete one you no longer need">Delete one...</button>
+            <button class="btn" id="btnCertFolder" title="Open the folder with the exported .cer files in Explorer">Open certificates folder</button>
+            <button class="btn" id="btnCertsLocal" title="List this machine's certificates and delete one you no longer need">Delete one...</button>
           </div>
           <p class="sub">In Entra ID <span class="muted">(signs you in with your own account)</span></p>
           <div class="actions">
@@ -500,7 +523,7 @@
             <button class="btn" id="btnRunPlan" title="Decide and report what would happen - changes nothing">Plan only</button>
             <button class="btn" id="btnRunNow" title="Run it now, as the nightly task would - may release and promote, if those switches are on">Run now</button>
             <button class="btn" id="btnRunReload" title="Read the last runs again">Reload</button>
-            <button class="btn ghost" id="btnReports" title="Open the folder with every run's report (HTML and JSON)">Open reports folder</button>
+            <button class="btn" id="btnReports" title="Open the folder with every run's report (HTML and JSON)">Open reports folder</button>
           </div>
           <div id="runList" class="runlist" aria-live="polite"></div>
           <div class="actions">
@@ -512,7 +535,7 @@
           <ul id="unattSteps" class="healthlist"></ul>
           <div class="actions">
             <button class="btn" id="btnUnattScript" title="Writes a script that copies the certificate to the computer's store and sets the tasks to run whether you are signed in or not - you run it as administrator">Create the setup script</button>
-            <button class="btn ghost" id="btnUnattReload" title="Check again">Check again</button>
+            <button class="btn" id="btnUnattReload" title="Check again">Check again</button>
           </div>
           <p class="sub" id="unattNote" hidden></p>
           <h3>Every night, too</h3>

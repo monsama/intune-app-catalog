@@ -55,6 +55,7 @@ async function runChecks(names) {
       else { notes.push(w.error); checkLog(`${stamp()} [WARN] ${w.error}`); }
     }
     $('checkNotes').textContent = notes.join(' ');
+    $('checkEmptyList').hidden = true; $('btnRunChecksEmpty').hidden = true;
     $('checkEmptyTitle').textContent = 'Nothing to fix';
     $('checkEmptyText').textContent = 'The catalog, Intune and Entra ID agree.';
     checkLog(`${stamp()} [OK] Checks finished: ${findings.length} finding(s).`);
@@ -142,6 +143,7 @@ function renderChecks() {
   $('checkAll').checked = list.length > 0 && list.every(f => checkSel.has(keyOf(f)));
   $('checkCount').textContent = findings.length ? `${list.length} finding(s)` : '';
   $('checkGrid').hidden = findings.length === 0;
+  $('checkFixBar').hidden = findings.length === 0;
   $('checkEmpty').hidden = findings.length > 0;
   updateCheckActions();
 }
@@ -211,3 +213,4 @@ $('btnFindWinget').addEventListener('click', () => openWinget($('aName').value.t
   if (!$('mPublisher').value.trim() && id.includes('.')) $('mPublisher').value = id.split('.')[0];
 }));
 $('wgQuery').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchWinget(); } });
+$('btnRunChecksEmpty').addEventListener('click', () => $('btnRunChecks').click());

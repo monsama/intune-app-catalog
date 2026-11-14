@@ -10,6 +10,7 @@ async function loadUpdates(force) {
   if (!force && updLoadedAt && Date.now() - updLoadedAt < 60000) return;
   updLoading = true;
   $('updNote').textContent = 'Reading Intune\'s install counts...';
+  if (!updRows.length) skeleton($('updBody'), 8, 4);
   try {
     const r = await api('/api/updates-overview');
     if (!r.ok) { $('updNote').textContent = r.error; return; }
@@ -59,7 +60,7 @@ function renderUpdates() {
       el('td', {}, x.available ? el('span', { class: 'pill info', text: x.available }) : el('span', { class: 'muted', text: '-' }), x.gate ? el('div', { class: 'why', text: `Test tenant: ${x.gate}` }) : ''),
       el('td', {}, x.older ? el('span', { title: x.older.versions.map(v => `${v.version}: ${v.devices}`).join('\n') }, `${x.older.devices} device${x.older.devices === 1 ? '' : 's'}`, el('div', { class: 'why', text: x.older.versions.slice(0, 3).map(v => `${v.version} (${v.devices})`).join(', ') + (x.older.versions.length > 3 ? ', ...' : '') })) : el('span', { class: 'muted', text: '-' })),
       el('td', { class: 'mono', text: x.previous.length ? x.previous.join(', ') : '-' }),
-      el('td', { class: 'act' }, el('div', { class: 'fixes' }, ...acts)));
+      el('td', { class: 'act' }, el('div', { class: 'fixes' }, ...rowActions(acts))));
   }));
 }
 

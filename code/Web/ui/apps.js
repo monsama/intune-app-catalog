@@ -405,7 +405,7 @@ const histField = f => f.startsWith('metadata.') ? (({ description: 'Description
   installCommand: 'Install command', uninstallCommand: 'Uninstall command', notes: 'Notes', detectionRule: 'Detection rule', returnCodes: 'Return codes', dependencies: 'Dependencies', supersedes: 'Supersedence', isFeatured: 'Featured' })[f.slice(9)] || f.slice(9))
   : (f === 'appName' ? 'Name' : fieldLabel[f] || ({ assignmentFilter: 'Assignment filter', assignmentFilterMode: 'Filter mode', managedUpdates: 'Managed updates', releases: 'Releases', releaseRule: 'Release rule', icon: 'Icon', autoRelease: 'Release by itself', downloadUrl: 'Download URL', retiringSince: 'Retiring since' })[f] || f);
 async function loadChanges(name) {
-  $('histChanges').replaceChildren(); $('histChangesNote').textContent = 'Reading the history...';
+  skeleton($('histChanges'), 1, 3); $('histChangesNote').textContent = '';
   const r = await api('/api/app-history', { name });
   if (!r.ok) { $('histChangesNote').textContent = r.error; return; }
   $('histChangesNote').textContent = r.entries.length ? '' : 'Nothing recorded yet - changes are recorded from this version of the app on.';
@@ -1116,7 +1116,7 @@ $('btnRetireFinish').addEventListener('click', async () => {
     { path: '/api/retire-finish', log: 'runLog', startText: 'Deleting...' });
 });
 async function openRetired() {
-  $('retiredRows').replaceChildren(); $('retiredNote').textContent = 'Reading...';
+  skeleton($('retiredRows'), 3, 2); $('retiredNote').textContent = '';
   $('dlgRetired').showModal();
   const r = await api('/api/retired-list');
   if (!r.ok) { $('retiredNote').textContent = r.error; return; }
@@ -1133,7 +1133,7 @@ async function openRetired() {
 async function openStatus(name) {
   $('statusTitle').textContent = 'Install status - ' + name;
   $('statusSummary').textContent = 'Reading Intune’s install status report...';
-  $('statusRows').replaceChildren(); $('statusErrors').hidden = true;
+  skeleton($('statusRows'), 7, 4); $('statusErrors').hidden = true;
   $('dlgStatus').showModal();
   const r = await api('/api/install-status', { name });
   if (!r.ok) { $('statusSummary').textContent = r.error; return; }
@@ -1145,3 +1145,36 @@ async function openStatus(name) {
     el('td', {}, el('span', { class: 'pill ' + (/fail/i.test(x.state) ? 'err' : /install/i.test(x.state) && !/not/i.test(x.state) ? 'ok' : 'muted'), text: x.state })),
     el('td', { text: x.detail }), el('td', { class: 'chg', text: x.error, title: x.meaning ? `${x.meaning}\n\n${x.fix}` : '' }, x.meaning ? el('div', { class: 'muted small', text: x.meaning }) : ''), el('td', { text: x.version }), el('td', { text: x.lastSeen }))));
 }
+
+// ---------------------------------------------------------------- the list's columns and row height (kept in this browser)
+(function listLook() {
+  const menu = $('listLook'), btn = $('btnListLook'), grid = $('grid');
+  let look = { hidden: [], density: 'comfortable' };
+  try { look = { ...look, ...JSON.parse(localStorage.getItem('listLook') || '{}') }; } catch (e) { }
+  const apply = () => {
+    for (const c of [2, 3, 4, 5]) grid.classList.toggle('hide-' + c, look.hidden.includes(c));
+    grid.classList.toggle('dense', look.density === 'compact');
+    for (const i of menu.querySelectorAll('[data-col]')) i.checked = !look.hidden.includes(+i.dataset.col);
+    for (const i of menu.querySelectorAll('[name=density]')) i.checked = i.value === look.density;
+  };
+  const save = () => { try { localStorage.setItem('listLook', JSON.stringify(look)); } catch (e) { } apply(); };
+  menu.addEventListener('change', e => {
+    const t = e.target;
+    if (t.dataset.col) look.hidden = t.checked ? look.hidden.filter(c => c !== +t.dataset.col) : [...look.hidden, +t.dataset.col];
+    if (t.name === 'density') look.density = t.value;
+    save();
+  });
+  const close = () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (!menu.hidden) { close(); return; }
+    const r = btn.getBoundingClientRect();
+    menu.hidden = false; btn.setAttribute('aria-expanded', 'true');
+    menu.style.left = Math.max(8, Math.min(r.left, innerWidth - menu.offsetWidth - 8)) + 'px'; menu.style.top = (r.bottom + 4) + 'px';
+    const first = menu.querySelector('input'); if (first) first.focus();
+  });
+  menu.addEventListener('click', e => e.stopPropagation());
+  document.addEventListener('click', close);
+  menu.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); close(); btn.focus(); } });
+  apply();
+})();
