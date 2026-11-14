@@ -1635,8 +1635,11 @@ function Global:ConvertTo-DetectionFromInstalled {
     }
     if ($Entry.MainExe -and $Entry.MainExe.Path -and $Entry.MainExe.Version) {
         $p = [string]$Entry.MainExe.Path
-        $folder = [System.IO.Path]::GetDirectoryName($p) -replace '^C:\\Program Files \(x86\)', '%ProgramFiles(x86)%' -replace '^C:\\Program Files', '%ProgramFiles%'
-        return @{ Rule = [ordered]@{ Type = 'File'; File_Path = $folder; File_Name = [System.IO.Path]::GetFileName($p); File_Check32Bit = $false; File_DetectionType = 'version'; File_Operator = 'greaterThanOrEqual'; File_DetectionValue = [string]$Entry.MainExe.Version }; Text = "$([System.IO.Path]::GetFileName($p)) in $folder, version $($Entry.MainExe.Version) or newer" }
+        # A Windows path, split by hand (the System.IO helpers don't know "\" off Windows).
+        $cut = $p.LastIndexOf('\')
+        $file = $p.Substring($cut + 1)
+        $folder = $p.Substring(0, [Math]::Max($cut, 0)) -replace '^C:\\Program Files \(x86\)', '%ProgramFiles(x86)%' -replace '^C:\\Program Files', '%ProgramFiles%'
+        return @{ Rule = [ordered]@{ Type = 'File'; File_Path = $folder; File_Name = $file; File_Check32Bit = $false; File_DetectionType = 'version'; File_Operator = 'greaterThanOrEqual'; File_DetectionValue = [string]$Entry.MainExe.Version }; Text = "$file in $folder, version $($Entry.MainExe.Version) or newer" }
     }
     $root = switch ([string]$Entry.Hive) { 'HKCU' { 'HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' } 'HKLM-WOW' { 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' } default { 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' } }
     $key = "$root\$($Entry.Key)"
