@@ -10,7 +10,7 @@
   This file has the route table (Invoke-WebApi) and what every page
   shares: reading the catalog, the catalog lock, step jobs and their
   completion, the Activity log. The pages: WebEditor.ps1, WebDeploy.ps1,
-  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebTenant.ps1, WebReleases.ps1, WebAutomation.ps1, WebAdd.ps1, WebGroups.ps1,
+  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebTenant.ps1, WebReleases.ps1, WebAutomation.ps1, WebAdd.ps1, WebConvenience.ps1, WebGroups.ps1,
   WebScripts.ps1, WebSetup.ps1; Graph reads go through WebGraph.ps1.
 #>
 
@@ -399,6 +399,12 @@ function Global:Open-WebTarget {
         'entra-home' { Start-Process 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade/quickStartType~/null/sourceType/Microsoft_AAD_IAM' }
         'coffee' { Start-Process 'https://buymeacoffee.com/monsama' }
         'scripts-folder' { return (Open-WebFolder (Get-AppFolder -Kind Scripts -Create)) }
+        'sandbox-folder' {
+            if ([string]$Data.id -notmatch '^\d{8}-\d{6}-[0-9a-f]{4}$') { return @{ ok = $false; error = 'Unknown test.' } }
+            $sf = Join-Path (Join-Path (Get-AppFolder -Kind Logs) 'sandbox') ([string]$Data.id)
+            if (-not (Test-Path -LiteralPath $sf)) { return @{ ok = $false; error = 'That test folder is gone.' } }
+            return (Open-WebFolder $sf)
+        }
         'certificates-folder' {
             $folder = Join-Path $Global:App.RootPath 'data\certificates'
             if (-not (Test-Path -LiteralPath $folder)) { [void](New-Item -ItemType Directory -Path $folder -Force) }
@@ -482,6 +488,17 @@ function Global:Invoke-WebApi {
         '/api/release-advanced' { return (Invoke-WithCatalogLock { Complete-WebAdvance $Data }) }
         '/api/alert-test'       { return (Send-WebTestAlert) }
         '/api/health'           { return (Get-WebHealth) }
+        '/api/group-suggest'    { return (Find-WebGroupSuggestions $Data) }
+        '/api/group-check'      { return (Test-WebGroupNames $Data) }
+        '/api/icon-find'        { return (Find-WebAppIcon $Data) }
+        '/api/installed-apps'   { return (Get-WebInstalledApps) }
+        '/api/detection-from-installed' { return (Get-WebDetectionFromInstalled $Data) }
+        '/api/sandbox-start'    { return (Start-WebSandboxTest $Data) }
+        '/api/sandbox-result'   { return (Get-WebSandboxResult $Data) }
+        '/api/attention'        { return (Get-WebAttention) }
+        '/api/assignment-matrix' { return (Get-WebAssignmentMatrix) }
+        '/api/assignments-set'  { return (Invoke-WithCatalogLock { Set-WebAssignments $Data }) }
+        '/api/package-list'     { return (Read-WebPackageList $Data) }
         '/api/winget-details'   { return (Get-WebWingetDetails $Data) }
         '/api/add-winget'       { return (Invoke-WithCatalogLock { Add-WebWingetApps $Data }) }
         '/api/upload-start'     { return (Start-WebUpload $Data) }

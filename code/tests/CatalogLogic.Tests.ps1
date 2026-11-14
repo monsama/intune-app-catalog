@@ -174,6 +174,10 @@ $testableFunctionNames = @(
     "New-InstalledAppUninstallScript",
     "Get-ScriptAppTemplates",
     "Get-ScriptAppMarkerRule",
+    "ConvertTo-AssignmentProfiles",
+    "ConvertTo-DetectionFromInstalled",
+    "ConvertTo-DetectionTestScript",
+    "ConvertFrom-WingetExportJson",
     "ConvertTo-JsonStringArray",
     "ConvertTo-FriendlyGraphError",
     "Save-ScriptsToFolder",
@@ -706,6 +710,29 @@ $tpl = @(Get-ScriptAppTemplates -Name "Contoso's printers" -Version '1.0')
 Assert-True ($tpl.Count -eq 4 -and @($tpl | Where-Object { (& $parseErr $_.install) -or (& $parseErr $_.uninstall) -or $_.install -notmatch 'IntuneAppCatalog\\Apps' }).Count -eq 0) "Get-ScriptAppTemplates: four templates, each valid PowerShell and writing the version marker"
 $mk = Get-ScriptAppMarkerRule -Name 'Contoso printers' -Version '1.0'
 Assert-True ($mk.Type -eq 'Registry' -and $mk.Reg_DetectionValue -eq '1.0' -and -not (Test-VersionDetectionRule ([pscustomobject]$mk))) "Get-ScriptAppMarkerRule: a registry rule by version - managed updates can follow it"
+
+# Conveniences: profiles, detection from an installed app, Sandbox detection, winget export lists
+$profs = @(ConvertTo-AssignmentProfiles @(@{ Name = ' Standard '; Required = @('SG-A', ' SG-A ', ''); Available = @('SG-B') }, @{ Name = 'Empty'; Required = @() }, @{ Name = ''; Required = @('SG-C') }))
+Assert-True ($profs.Count -eq 1 -and $profs[0].Name -eq 'Standard' -and @($profs[0].Required).Count -eq 1 -and (@($profs[0].Available) -join ',') -eq 'SG-B') "ConvertTo-AssignmentProfiles: named, with groups, each group once"
+$dMsi = ConvertTo-DetectionFromInstalled @{ Key = '{1c2d3e4f-1111-2222-3333-444455556666}'; WindowsInstaller = 1; DisplayVersion = '3.2.1'; Hive = 'HKLM' }
+Assert-True ($dMsi.Rule.Type -eq 'Msi' -and $dMsi.Rule.Msi_ProductCode -eq '{1C2D3E4F-1111-2222-3333-444455556666}' -and $dMsi.Rule.Msi_Version -eq '3.2.1') "ConvertTo-DetectionFromInstalled: an MSI by its product code and version"
+$dFile = ConvertTo-DetectionFromInstalled @{ Key = '7-Zip'; DisplayVersion = '24.08'; Hive = 'HKLM'; MainExe = @{ Path = 'C:\Program Files\7-Zip\7zFM.exe'; Version = '24.08' } }
+Assert-True ($dFile.Rule.Type -eq 'File' -and $dFile.Rule.File_Path -eq '%ProgramFiles%\7-Zip' -and $dFile.Rule.File_Name -eq '7zFM.exe' -and $dFile.Rule.File_DetectionType -eq 'version') "ConvertTo-DetectionFromInstalled: an EXE app by its program's file version, the folder as %ProgramFiles%"
+$dReg = ConvertTo-DetectionFromInstalled @{ Key = 'Tool'; DisplayVersion = '1.0'; Hive = 'HKLM-WOW' }
+Assert-True ($dReg.Rule.Type -eq 'Registry' -and $dReg.Rule.Reg_Check32Bit -and $dReg.Rule.Reg_ValueName -eq 'DisplayVersion' -and $dReg.Rule.Reg_DetectionType -eq 'version') "ConvertTo-DetectionFromInstalled: otherwise its Uninstall key's DisplayVersion (32-bit view)"
+$probe = Join-Path ([System.IO.Path]::GetTempPath()) ("det-probe-" + [guid]::NewGuid().ToString('N') + ".txt"); Set-Content -LiteralPath $probe -Value 'x'
+$fileRule = [pscustomobject]@{ Type = 'File'; File_Path = (Split-Path $probe -Parent); File_Name = (Split-Path $probe -Leaf); File_DetectionType = 'exists' }
+$goneRule = [pscustomobject]@{ Type = 'File'; File_Path = (Split-Path $probe -Parent); File_Name = 'not-there-' + [guid]::NewGuid().ToString('N'); File_DetectionType = 'exists' }
+Assert-True ((Invoke-Expression (ConvertTo-DetectionTestScript $fileRule)) -eq $true -and (Invoke-Expression (ConvertTo-DetectionTestScript $goneRule)) -eq $false) "ConvertTo-DetectionTestScript: a file rule finds the file that is there, and not one that isn't"
+Remove-Item -LiteralPath $probe -Force
+$allTypes = @([pscustomobject]@{ Type = 'Msi'; Msi_ProductCode = '{1C2D3E4F-1111-2222-3333-444455556666}'; Msi_VersionOperator = 'greaterThanOrEqual'; Msi_Version = '1.0' },
+    [pscustomobject]@{ Type = 'Registry'; Reg_KeyPath = "HKEY_LOCAL_MACHINE\SOFTWARE\O'Brien"; Reg_ValueName = 'Version'; Reg_DetectionType = 'version'; Reg_Operator = 'greaterThanOrEqual'; Reg_DetectionValue = '2.0' },
+    [pscustomobject]@{ Type = 'File'; File_Path = '%ProgramFiles%\X'; File_Name = 'x.exe'; File_DetectionType = 'version'; File_Operator = 'equal'; File_DetectionValue = '1.2' },
+    [pscustomobject]@{ Type = 'Script'; Script_Content = "if (Test-Path 'C:\x') { Write-Output 'Installed' }" })
+Assert-Equal 0 @($allTypes | Where-Object { $e = $null; [void][System.Management.Automation.Language.Parser]::ParseInput((ConvertTo-DetectionTestScript $_), [ref]$null, [ref]$e); @($e).Count }).Count "ConvertTo-DetectionTestScript: valid PowerShell for MSI, registry, file and script rules"
+$exp = ConvertFrom-WingetExportJson '{"Sources":[{"Packages":[{"PackageIdentifier":"7zip.7zip"},{"PackageIdentifier":"Mozilla.Firefox"},{"PackageIdentifier":"7zip.7zip"},{"PackageIdentifier":"bad id;"}]}]}'
+Assert-True (-not $exp.Error -and (@($exp.Ids) -join ',') -eq '7zip.7zip,Mozilla.Firefox') "ConvertFrom-WingetExportJson: each package once, bad IDs dropped"
+Assert-True ([bool](ConvertFrom-WingetExportJson 'not json').Error) "ConvertFrom-WingetExportJson: not JSON is refused"
 
 # Alerts
 $rep = @{ failed = 0; planOnly = $false; items = @(@{ app = 'A'; outcome = 'current'; text = 'fine' }, @{ app = 'B'; outcome = 'hold'; text = 'too many failed' }) }

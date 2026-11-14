@@ -153,6 +153,8 @@ $('btnTheme').addEventListener('click', () => {
 function showView(v) {
   if (v === 'checks') delete $('tabChecks').dataset.count;
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.view === v));
+  $('viewHome').hidden = v !== 'home';
+  if (v === 'home') loadHome();
   $('viewApps').hidden = v !== 'apps';
   $('viewChecks').hidden = v !== 'checks';
   $('viewUpdates').hidden = v !== 'updates';
@@ -171,17 +173,17 @@ function showSettings(sec) {
   if (sec) settingsSec = sec;
   if (!$('sec-' + settingsSec)) settingsSec = 'connection';
   if (!$('viewSettings').hidden || sec) showViewOnly('settings');
-  for (const b of document.querySelectorAll('.subtab')) { const on = b.dataset.sec === settingsSec; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; }
+  for (const b of document.querySelectorAll('.subtab[data-sec]')) { const on = b.dataset.sec === settingsSec; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; }
   for (const p of document.querySelectorAll('.setsec')) p.hidden = p.dataset.sec !== settingsSec;
   if (settingsSec === 'defaults' && typeof loadUpdateRuns === 'function') loadUpdateRuns();
   try { localStorage.setItem('settingsSec', settingsSec); } catch (e) { }
 }
 // Switches to the Settings tab without going through showView again.
 function showViewOnly(v) { if ($('viewSettings').hidden) showView(v); }
-for (const b of document.querySelectorAll('.subtab')) b.addEventListener('click', () => showSettings(b.dataset.sec));
+for (const b of document.querySelectorAll('.subtab[data-sec]')) b.addEventListener('click', () => showSettings(b.dataset.sec));
 document.querySelector('.subtabs').addEventListener('keydown', e => {
   if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-  const tabs = [...document.querySelectorAll('.subtab')], i = tabs.findIndex(t => t.dataset.sec === settingsSec);
+  const tabs = [...document.querySelectorAll('.subtab[data-sec]')], i = tabs.findIndex(t => t.dataset.sec === settingsSec);
   const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
   showSettings(next.dataset.sec); next.focus();
 });

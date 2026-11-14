@@ -86,7 +86,7 @@ try {
     Check ($page.Status -eq 200 -and $page.Body -like '*<script src="app.js"*') 'the page is served'
     Check ($page.Headers -match 'Content-Security-Policy: default-src ''self''' -and $page.Headers -match 'X-Frame-Options: DENY' -and $page.Headers -match 'Cache-Control: no-store') 'every response carries the security headers' $page.Headers
     Check ($page.Body -notmatch '<script>[^<]') 'no inline script (the CSP allows none)'
-    foreach ($js in 'core.js', 'apps.js', 'checks.js', 'groups.js', 'updates.js', 'add.js', 'scripts.js', 'settings.js', 'app.js') {
+    foreach ($js in 'core.js', 'apps.js', 'checks.js', 'groups.js', 'updates.js', 'add.js', 'convenience.js', 'scripts.js', 'settings.js', 'app.js') {
         Check ((Invoke-Raw -Path "/$js").Status -eq 200 -and $page.Body -like "*<script src=`"$js`" defer>*") "$js is served and loaded by the page"
     }
     Check ((Invoke-Raw -Path '/app.css').Status -eq 200) 'app.css is served'
@@ -505,6 +505,31 @@ try {
     Check ($addS.ok -and $scApp.deploy.detection.type -eq 'Registry' -and $scApp.deploy.detection.value -eq '2.0' -and $scApp.metadata.installCommand -like '*-File .\Install.ps1' -and (Test-Path -LiteralPath (Join-Path $scDir 'Install.ps1'))) 'add apps: a script app - Install.ps1 in its folder, detected by its version marker' ($addS | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/add-script' @{ name = $scName; version = '2.0'; install = $tpls.templates[1].install; uninstall = 'x' }).ok) 'add apps: a name already in the catalog is refused'
     [void](Invoke-Api '/api/app-remove' @{ name = $scName }); Remove-Item -LiteralPath $scDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    # Conveniences: group suggestions, profiles, the grid, Home, lists, Sandbox, icons.
+    $gsug = Invoke-Api '/api/group-suggest' @{ q = 'SG' }
+    Check ($gsug.ok -and @($gsug.groups).Count -ge 1 -and @($gsug.groups | Where-Object { $_.source -eq 'entra' }).Count -eq 0) 'group picker: suggestions from the catalog without a connection - Entra ID isn''t asked' ($gsug | ConvertTo-Json -Compress -Depth 3)
+    Check (-not (Invoke-Api '/api/group-check' @{ names = @('SG-X') }).checked) 'group picker: no check against Entra ID without a connection'
+    $profBad = Invoke-Api '/api/prefs-save' @{ profiles = @(@{ name = 'Twice'; required = @('SG-1') }, @{ name = 'Twice'; available = @('SG-2') }) }
+    Check (-not $profBad.ok -and $profBad.error -like '*same name*') 'profiles: two with the same name are refused' ($profBad | ConvertTo-Json -Compress)
+    $profOk = Invoke-Api '/api/prefs-save' @{ profiles = @(@{ name = 'Standard'; required = @('SG-ZZ-All'); available = @('SG-ZZ-IT'); exclude = @() }) }
+    Check ($profOk.ok -and @($profOk.profiles).Count -eq 1 -and $profOk.profiles[0].name -eq 'Standard') 'profiles: saved and given back to the page' ($profOk | ConvertTo-Json -Compress -Depth 4)
+    [void](Invoke-Api '/api/prefs-save' @{ profiles = @() })
+    $mxr = Invoke-Api '/api/assignment-matrix'
+    $setA = Invoke-Api '/api/assignments-set' @{ changes = @(@{ name = "$testName renamed"; group = 'SG-ZZ-Grid'; role = 'available' }) }
+    $gridApp = (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app
+    Check ($mxr.ok -and @($mxr.apps | Where-Object { $_.name -eq "$testName renamed" }).Count -eq 1 -and $setA.ok -and @($gridApp.availableFor) -contains 'SG-ZZ-Grid') 'groups and apps grid: lists the apps; a cell set to Available is saved' ($setA | ConvertTo-Json -Compress)
+    [void](Invoke-Api '/api/assignments-set' @{ changes = @(@{ name = "$testName renamed"; group = 'SG-ZZ-Grid'; role = '' }) })
+    Check (@((Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.availableFor) -notcontains 'SG-ZZ-Grid') 'groups and apps grid: a cell set to none takes the group off'
+    Check (-not (Invoke-Api '/api/assignments-set' @{ changes = @(@{ name = "$testName renamed"; group = 'SG-ZZ-Grid'; role = 'owner' }) }).ok) 'groups and apps grid: an unknown role is refused'
+    $att = Invoke-Api '/api/attention'
+    Check ($att.ok -and @($att.items | Where-Object { $_.title -eq 'Not connected' }).Count -eq 1 -and $att.apps -ge 1) 'home: says it is not connected, counts the apps' ($att | ConvertTo-Json -Compress -Depth 3)
+    $pl = Invoke-Api '/api/package-list' @{ json = '{"Sources":[{"Packages":[{"PackageIdentifier":"Vendor.ZZNew"},{"PackageIdentifier":"Mozilla.Firefox"}]}]}' }
+    Check ($pl.ok -and @($pl.items).Count -eq 2 -and @($pl.items | Where-Object { $_.id -eq 'Vendor.ZZNew' -and -not $_.inCatalog }).Count -eq 1) 'from a list: a winget export file''s packages, each marked in the catalog or not' ($pl | ConvertTo-Json -Compress -Depth 3)
+    Check ((Invoke-Api '/api/installed-apps').ok) 'detection from this PC: the installed apps can be listed (empty off Windows)'
+    Check (-not (Invoke-Api '/api/sandbox-start' @{ name = "$testName renamed" }).ok) 'sandbox: a Winget app (or no Sandbox here) is refused'
+    Check (-not (Invoke-Api '/api/sandbox-result' @{ id = '../x' }).ok) 'sandbox: an unknown test id is refused'
+    Check (-not (Invoke-Api '/api/icon-find' @{ name = 'No Such App' }).ok) 'icon: an app not in the catalog is refused'
 
     $muOff = Invoke-Api '/api/managed-updates' @{ names = @("$testName renamed"); on = $false }
     Check ($muOff.ok -and -not (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.managedUpdates) 'managed updates: turned off again'
