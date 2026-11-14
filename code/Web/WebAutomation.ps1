@@ -76,6 +76,20 @@ function Global:Invoke-ManagedUpdateRun {
     try {
         if (-not (Test-GraphCredentialsConfigured -Quiet)) { & $say '(all)' 'failed' 'The connection isn''t set up (Settings > Connection).'; $failed++ }
         else {
+            # Health first: what every later step needs (certificate, sign-in, packages).
+            if (-not $FastTrackOnly) {
+                foreach ($h in @(Get-WebHealthChecks)) {
+                    if ($h.level -eq 'failed') { & $say '(health)' 'failed' $h.text; $failed++ }
+                    elseif ($h.level -eq 'warn') { & $say '(health)' 'health' $h.text }
+                }
+            }
+            $window = Test-ReleaseWindow -Now (Get-Date) -Policy $policy
+            # A test tenant's catalog gates which Winget versions this one releases by itself.
+            $gateApps = $null
+            if ($policy.GatePath) {
+                $gateApps = Read-WebCatalogFolder $policy.GatePath
+                if ($null -eq $gateApps) { & $say '(test tenant)' 'failed' "The test tenant's catalog folder ($($policy.GatePath)) can't be read - nothing is released automatically."; $failed++; $gateApps = @() }
+            }
             $catalog = Read-WebCatalogRecords
             $managed = @($catalog.Apps | Where-Object { $_.managedUpdates -and $_.appId })
             if ($FastTrackOnly) { $managed = @($managed | Where-Object { $p = Get-WebAppRelease $_; $p -and $p.fastTrack }) }
@@ -99,8 +113,21 @@ function Global:Invoke-ManagedUpdateRun {
                 if ($pilot) {
                     $st = Get-WebPilotStatus $pilot -App $a
                     if (-not $st.ok) { & $say $a.appName 'failed' "$($pilot.version) in pilot - its install status couldn't be read: $($st.error)"; $failed++; continue }
+                    # Too many failed: withdrawn by itself, when that switch is on (any day - the release window is for giving out, not taking back).
+                    if (Test-AutoWithdraw -Counts $st.counts -Percent ([double]$policy.AutoWithdrawPercent)) {
+                        $why = Get-WebHoldReason $pilot
+                        if ($PlanOnly) { & $say $a.appName 'hold' "$($pilot.version) would be withdrawn: $($st.reason)$(if ($why) { " Why: $why" })"; continue }
+                        $w1 = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'withdraw' })
+                        if (-not $w1.ok) { & $say $a.appName 'failed' "Withdrawing $($pilot.version) failed: $($w1.error)"; $failed++; continue }
+                        $w2 = Invoke-WithCatalogLock { Complete-WebWithdrawal @{ name = $a.appName } }
+                        & $say $a.appName 'withdrawn' "$($pilot.version) withdrawn automatically - at least $($policy.AutoWithdrawPercent) % of devices failed ($($st.reason))$(if ($why) { " Why: $why" })$(if (-not $w2.deleted) { " It couldn't be deleted from Intune: $($w2.error)" })"
+                        continue
+                    }
+                    if ($st.action -eq 'hold') { $why = Get-WebHoldReason $pilot; if ($why) { $st.reason = "$($st.reason) Why: $why" } }
                     # A fast-track release was marked urgent by a person: it goes on when ready even with automatic promotion off.
                     $auto = $policy.AutoPromote -or $st.fastTrack
+                    # Outside the release window, nothing is given out by itself (a fast-track release doesn't wait).
+                    if ($auto -and -not $st.fastTrack -and -not $window.Open -and $st.action -in 'advance', 'promote') { & $say $a.appName 'ready' "$($pilot.version) is ready ($($st.reason)) - waiting for the release window: $($window.Reason)."; continue }
                     if ($st.action -eq 'advance') {
                         if ($PlanOnly -or -not $auto) { & $say $a.appName 'ready' "$($pilot.version) is ready for the next ring: $($st.reason)$(if (-not $auto) { ' Give it to the next ring (automatic promotion is off).' })"; continue }
                         $adv = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'advance' })
@@ -122,7 +149,13 @@ function Global:Invoke-ManagedUpdateRun {
                 if ($a.wingetId) {
                     $latest = [string]$Global:App.WingetLatest[([string]$a.wingetId).ToLowerInvariant()]
                     if (-not $latest -or (Compare-AppVersionText $current $latest) -ne 1) { & $say $a.appName 'current' "$current is the newest on winget."; continue }
+                    if ($null -ne $gateApps) {
+                        $gate = Get-GateVersion -App $a -GateApps $gateApps
+                        if (-not $gate.Version) { & $say $a.appName 'available' "winget offers $latest (now $current) - not released: $($gate.Reason)."; continue }
+                        $latest = $gate.Version
+                    }
                     if ($PlanOnly -or -not $policy.AutoRelease) { & $say $a.appName 'available' "winget offers $latest (now $current).$(if (-not $policy.AutoRelease) { ' Release it to pilot (automatic release is off).' })"; continue }
+                    if (-not $window.Open) { & $say $a.appName 'available' "$latest is ready to release (now $current) - waiting for the release window: $($window.Reason)."; continue }
                     $made = Wait-WebStepJob (Start-WebRelease @{ name = $a.appName; version = $latest })
                     if (-not $made.ok) { & $say $a.appName 'failed' "Releasing $latest failed: $($made.error)"; $failed++; continue }
                     $assigned = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'pilot' })
@@ -130,9 +163,23 @@ function Global:Invoke-ManagedUpdateRun {
                     else { & $say $a.appName 'failed' "$latest is in Intune but not assigned to pilot: $($assigned.error)"; $failed++ }
                     continue
                 }
+                # Own packages: a newer installer - downloaded from the app's address, when it has one - released by itself when the app says so.
+                $dl = ''
+                if ($a.autoRelease -and $a.downloadUrl -and -not $PlanOnly) {
+                    $got = Save-WebInstallerDownload $a
+                    if (-not $got.ok) { & $say $a.appName 'failed' $got.text; $failed++ } else { $dl = " $($got.text)" }
+                }
                 $inst = Get-WebInstallerInfo $a.appName
-                if ($inst.version -and (Compare-AppVersionText $current $inst.version) -eq 1) { & $say $a.appName 'available' "The installer in its folder is $($inst.version) (now $current) - release it from the app (own packages aren't released automatically)." }
-                else { & $say $a.appName 'current' "$current - no newer installer in its folder." }
+                if (-not ($inst.version -and (Compare-AppVersionText $current $inst.version) -eq 1)) { & $say $a.appName 'current' "$current - no newer installer in its folder.$dl"; continue }
+                if (-not $a.autoRelease -or $PlanOnly) { & $say $a.appName 'available' "The installer in its folder is $($inst.version) (now $current)$(if (-not $a.autoRelease) { ' - release it from the app (automatic release is off for this app).' } else { '.' })$dl"; continue }
+                if (-not $window.Open) { & $say $a.appName 'available' "The installer in its folder is $($inst.version) (now $current) - waiting for the release window: $($window.Reason).$dl"; continue }
+                $built = Wait-WebStepJob (Start-WebPackage @{ names = @($a.appName) })
+                if (-not $built.ok) { & $say $a.appName 'failed' "Building the package for $($inst.version) failed: $($built.error)"; $failed++; continue }
+                $made = Wait-WebStepJob (Start-WebRelease @{ name = $a.appName; version = $inst.version; productCode = $inst.productCode })
+                if (-not $made.ok) { & $say $a.appName 'failed' "Releasing $($inst.version) failed: $($made.error)"; $failed++; continue }
+                $assigned = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'pilot' })
+                if ($assigned.ok) { & $say $a.appName 'released' "$($inst.version) ($($inst.file)) released to the pilot groups (now $current for everyone else).$dl" }
+                else { & $say $a.appName 'failed' "$($inst.version) is in Intune but not assigned to pilot: $($assigned.error)"; $failed++ }
             }
         }
         # Superseded releases beyond the newest one (kept for rollback): deleted from Intune when the switch is on.
@@ -147,6 +194,25 @@ function Global:Invoke-ManagedUpdateRun {
                 if (@($c.removed).Count) { & $say $a.appName 'cleaned' "Deleted superseded release(s) $(@($c.removed) -join ', ') from Intune; kept $(@($c.kept) -join ', ') for rollback." }
                 if (@($c.failed).Count) { & $say $a.appName 'failed' "Couldn't delete: $(@($c.failed) -join '; ')"; $failed++ }
             }
+        }
+        # Full nightly runs only: drift (and its fix), the catalog backup, the monthly report on the month's first run.
+        if (-not $FastTrackOnly -and -not $PlanOnly -and (Test-GraphCredentialsConfigured -Quiet)) {
+            if ($policy.DriftCheck) {
+                foreach ($d in @(Invoke-WebNightlyDrift -Fix:([bool]$policy.DriftFix))) { & $say $d.app $d.outcome $d.text; if ($d.outcome -eq 'failed') { $failed++ } }
+            }
+            if ($policy.MonthlyReport) {
+                $lastMonth = (Get-Date).AddMonths(-1).ToString('yyyy-MM')
+                if (-not (Test-Path -LiteralPath (Join-Path $reportDir "monthly-$lastMonth.html"))) {
+                    $m = Send-WebMonthlyReport -Month $lastMonth
+                    & $say 'Monthly report' $(if ($m.error) { 'failed' } else { 'report' }) "$lastMonth report written$(if (@($m.sent).Count) { " and sent ($(@($m.sent) -join ', '))" })$(if ($m.error) { " - sending failed: $($m.error)" })."
+                    if ($m.error) { $failed++ }
+                }
+            }
+        }
+        if (-not $FastTrackOnly -and -not $PlanOnly -and $policy.BackupCatalog) {
+            $b = Invoke-WebCatalogBackup
+            & $say '(backup)' $(if ($b.ok) { 'backup' } else { 'failed' }) $b.text
+            if (-not $b.ok) { $failed++ }
         }
     }
     catch { & $say '(run)' 'failed' "The run stopped: $($_.Exception.Message)"; $failed++ }
@@ -184,6 +250,202 @@ function Global:Invoke-ManagedUpdateRun {
     return $(if ($failed) { 1 } else { 0 })
 }
 
+# ---------------------------------------------------------------- the nightly run's other work
+
+function Global:Get-WebConnectionCertificate {
+    # The connection's certificate on this PC: @{ Cert; Store } or $null.
+    $t = ([string]$Global:App.GraphCertificateThumbprint) -replace '\s', ''
+    if (-not $t) { return $null }
+    foreach ($loc in 'Cert:\CurrentUser\My', 'Cert:\LocalMachine\My') {
+        try {
+            $c = Get-ChildItem -LiteralPath $loc -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $t } | Select-Object -First 1
+            if ($c) { return @{ Cert = $c; Store = $loc } }
+        }
+        catch { }
+    }
+    return $null
+}
+
+function Global:Get-WebHealthChecks {
+    <#
+      What the nightly run needs to keep working: the connection's
+      certificate (found, private key, not expiring within 30 days), a
+      Graph call that works, the shared Winget package and the packaging
+      tool when apps need them, and free disk space.
+      @(@{ level = ok|warn|failed; text }).
+    #>
+    $out = New-Object System.Collections.Generic.List[object]
+    $add = { param($l, $t) $out.Add([ordered]@{ level = $l; text = $t }) }
+    if (-not (Test-GraphCredentialsConfigured -Quiet)) { & $add 'failed' "The connection isn't set up (Settings > Connection)."; return , $out.ToArray() }
+    if ($Global:App.TestGraph) { & $add 'ok' "Test mode: the certificate isn't checked." }
+    else {
+        $found = Get-WebConnectionCertificate
+        $h = Get-CertificateHealth -NotAfter $(if ($found) { $found.Cert.NotAfter } else { $null }) -Now (Get-Date)
+        & $add $h.Level $h.Text
+        if ($found -and -not $found.Cert.HasPrivateKey) { & $add 'failed' "The connection certificate in $($found.Store) has no private key - sign-in fails." }
+    }
+    $probe = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) [void](& $Graph 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$select=id&$top=1'); $true }
+    if ($probe.ok) { & $add 'ok' 'Signing in to Microsoft Graph works.' } else { & $add 'failed' "Signing in to Microsoft Graph failed: $($probe.error)" }
+    $apps = @((Read-WebCatalogRecords).Apps | Where-Object { $_.managedUpdates })
+    if (@($apps | Where-Object { $_.wingetId }).Count -and -not (Test-Path -LiteralPath (Get-SharedPackagePath))) { & $add 'warn' "The shared Winget package (init.intunewin) is missing - Winget releases can't be created. Settings > Packaging & folders builds it." }
+    if (@($apps | Where-Object { -not $_.wingetId -and $_.autoRelease }).Count) {
+        $tool = Get-PackagingToolPath
+        if (-not $tool -or -not (Test-Path -LiteralPath $tool)) { & $add 'warn' "The packaging tool (IntuneWinAppUtil.exe) is missing - own packages can't be built. Settings > Packaging & folders downloads it." }
+    }
+    try {
+        $root = [System.IO.Path]::GetPathRoot((Get-AppFolder -Kind Catalog))
+        if ($root) { $free = (New-Object System.IO.DriveInfo($root)).AvailableFreeSpace; if ($free -lt 1GB) { & $add 'warn' "Only $([Math]::Round($free / 1MB)) MB free on $root." } }
+    }
+    catch { }
+    return , $out.ToArray()
+}
+
+function Global:Invoke-WebNightlyDrift {
+    <#
+      Checks in detail, unattended: every deployed app against Intune
+      (settings, groups, dependencies) and the assignments Intune has that
+      the catalog doesn't. @(@{ app; outcome = drift|fixed|failed; text }).
+      -Fix: Push groups for the apps whose assignments drifted.
+    #>
+    param([switch]$Fix)
+    $items = New-Object System.Collections.Generic.List[object]
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($start in @({ Start-WebCheckDetails @{} }, { Start-WebCheckAssign @{} })) {
+        $s = & $start
+        if (-not $s.ok) { if ($s.error -notlike 'No deployed app*') { $items.Add([ordered]@{ app = '(drift)'; outcome = 'failed'; text = "The drift check couldn't start: $($s.error)" }) }; continue }
+        $r = Wait-WebStepJob $s
+        if (-not $r.ok) { $items.Add([ordered]@{ app = '(drift)'; outcome = 'failed'; text = "The drift check failed: $($r.error)" }); continue }
+        foreach ($f in @($r.after.findings)) { if ($f -and -not $f.failed) { $rows.Add($f) } }
+    }
+    $fixable = New-Object System.Collections.Generic.List[string]
+    foreach ($g in @($rows | Group-Object { [string]$(if ($_.catalogName) { $_.catalogName } else { $_.app }) })) {
+        $areas = @($g.Group | ForEach-Object { [string]$_.area } | Select-Object -Unique)
+        $what = @($g.Group | Select-Object -First 3 | ForEach-Object { "$($_.area): $($_.problem)" }) -join '; '
+        $items.Add([ordered]@{ app = $g.Name; outcome = 'drift'; text = "Intune differs from the catalog - $what$(if ($g.Count -gt 3) { "; $($g.Count - 3) more" }). Checks has the details." })
+        if (@($areas | Where-Object { $_ -in 'Groups', 'Unknown assignments' }).Count -and $g.Name) { $fixable.Add($g.Name) }
+    }
+    if ($Fix -and $fixable.Count) {
+        $p = Wait-WebStepJob (Start-WebPushGroups @{ names = $fixable.ToArray(); mode = 'Apply' })
+        if ($p.ok) { $items.Add([ordered]@{ app = ($fixable -join ', '); outcome = 'fixed'; text = "Pushed the catalog's groups again - Intune's assignments match the catalog." }) }
+        else { $items.Add([ordered]@{ app = ($fixable -join ', '); outcome = 'failed'; text = "Pushing the catalog's groups failed: $($p.error)" }) }
+    }
+    return , $items.ToArray()
+}
+
+function Global:Get-WebHoldReason {
+    # Why pilot devices failed a release: the install status report's error codes, most common first ('' when none could be read).
+    param($Pilot)
+    $id = [string]$Pilot.appId
+    $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) Get-AppInstallStatusRows -AppId $id -Invoke $Graph -MaxRows 1000 }
+    if (-not $read.ok) { return '' }
+    return [string](Get-InstallErrorSummary -Rows @($read.value.Rows)).Text
+}
+
+function Global:Invoke-WebCatalogBackup {
+    # A zip of the catalog's app files in the Backups folder (the last 30 kept); a commit too when the catalog folder is a git repository.
+    $cat = Get-AppFolder -Kind Catalog
+    $files = @(Get-ChildItem -LiteralPath $cat -Filter '*.json' -File -ErrorAction SilentlyContinue)
+    if (-not $files.Count) { return @{ ok = $true; text = 'No app files to back up.' } }
+    $dir = Get-AppFolder -Kind Backups -Create
+    $zip = Join-Path $dir ("catalog-" + (Get-Date).ToString('yyyy-MM-dd-HHmmss') + ".zip")
+    try { Compress-Archive -LiteralPath @($files | ForEach-Object { $_.FullName }) -DestinationPath $zip -CompressionLevel Optimal -ErrorAction Stop }
+    catch { return @{ ok = $false; text = "The catalog backup failed: $($_.Exception.Message)" } }
+    @(Get-ChildItem -LiteralPath $dir -Filter 'catalog-*.zip' -File | Sort-Object Name -Descending | Select-Object -Skip 30) | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
+    $text = "Backed up $($files.Count) app file(s) to $zip."
+    if ((Test-Path -LiteralPath (Join-Path $cat '.git')) -and (Get-Command git -ErrorAction SilentlyContinue)) {
+        $changes = & git -C $cat status --porcelain 2>$null
+        if ($changes) {
+            & git -C $cat add -A 2>$null | Out-Null
+            & git -C $cat commit -q -m "Catalog as of $((Get-Date).ToString('yyyy-MM-dd HH:mm')) (nightly run)" 2>$null | Out-Null
+            $text += $(if ($LASTEXITCODE -eq 0) { ' Committed the changes to the catalog''s git repository.' } else { ' The git commit failed - see git status in the catalog folder.' })
+        }
+    }
+    return @{ ok = $true; text = $text }
+}
+
+function Global:Read-WebCatalogFolder {
+    # Every app in another catalog folder (the test tenant's), as app records - read only.
+    param([string]$Path)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Container)) { return $null }
+    return @(Get-ChildItem -LiteralPath $Path -Filter '*.json' -File -ErrorAction SilentlyContinue | ForEach-Object {
+            try { ConvertTo-AppRecord (Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { }
+        })
+}
+
+function Global:Save-WebInstallerDownload {
+    <#
+      Own packages: the installer from the app's download address into its
+      folder - only an .msi or .exe with a valid digital signature, from the
+      same publisher as the installer already there (when that one is
+      signed). The installer keeps the folder's file name, so the install
+      command still finds it. @{ ok; changed; text }.
+    #>
+    param($App)
+    $url = [string]$App.downloadUrl
+    if ($Global:App.TestGraph) { return @{ ok = $true; changed = $false; text = 'Test mode: nothing downloaded.' } }
+    if (-not (Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue)) { return @{ ok = $false; changed = $false; text = 'Checking an installer''s signature needs Windows.' } }
+    $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $App.appName)
+    if (-not (Test-Path -LiteralPath $folder)) { [void](New-Item -ItemType Directory -Path $folder -Force) }
+    $old = Get-ChildItem -LiteralPath $folder -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.msi', '.exe' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $urlName = [System.IO.Path]::GetFileName(([Uri]$url).AbsolutePath)
+    $ext = if ($old) { $old.Extension } else { [System.IO.Path]::GetExtension($urlName) }
+    if ($ext -notin '.msi', '.exe') { return @{ ok = $false; changed = $false; text = "The download address doesn't name an .msi or .exe, and the folder has no installer to take the name from." } }
+    $tmp = Join-Path $env:TEMP ("intunecat-dl-" + [guid]::NewGuid().ToString('N') + $ext)
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $p = @{ Uri = $url; OutFile = $tmp; TimeoutSec = 900; MaximumRedirection = 5; ErrorAction = 'Stop' }
+        if ($PSVersionTable.PSEdition -eq 'Desktop') { $p.UseBasicParsing = $true }
+        Invoke-WebRequest @p
+        $sig = Get-AuthenticodeSignature -LiteralPath $tmp
+        if ($sig.Status -ne 'Valid') { return @{ ok = $false; changed = $false; text = "The downloaded installer isn't validly signed ($($sig.Status)) - not used." } }
+        if ($old) {
+            $oldSig = Get-AuthenticodeSignature -LiteralPath $old.FullName
+            if ($oldSig.Status -eq 'Valid' -and $oldSig.SignerCertificate.Subject -ne $sig.SignerCertificate.Subject) { return @{ ok = $false; changed = $false; text = "The downloaded installer is signed by '$($sig.SignerCertificate.Subject)', not '$($oldSig.SignerCertificate.Subject)' like the one in the folder - not used." } }
+            if ((Get-FileHash -LiteralPath $tmp).Hash -eq (Get-FileHash -LiteralPath $old.FullName).Hash) { return @{ ok = $true; changed = $false; text = 'The download is the installer already in the folder.' } }
+        }
+        $target = if ($old) { $old.FullName } else { Join-Path $folder $urlName }
+        Move-Item -LiteralPath $tmp -Destination $target -Force
+        return @{ ok = $true; changed = $true; text = "Downloaded a new installer ($([System.IO.Path]::GetFileName($target)), signed by $($sig.SignerCertificate.Subject))." }
+    }
+    catch { return @{ ok = $false; changed = $false; text = "Downloading the installer failed: $($_.Exception.Message)" } }
+    finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+}
+
+function Global:Send-WebMonthlyReport {
+    <#
+      The month's managed-updates report (Get-MonthlyReportData over the
+      nightly reports): an HTML file in Logs\reports, and the same by email
+      / a Teams card when alerts are set up. -Month: yyyy-MM (default: last
+      month). @{ ok; path; sent; error }.
+    #>
+    param([string]$Month)
+    if (-not $Month) { $Month = (Get-Date).AddMonths(-1).ToString('yyyy-MM') }
+    $dir = Join-Path (Get-AppFolder -Kind Logs -Create) 'reports'
+    if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+    $reports = @(Get-ChildItem -LiteralPath $dir -Filter "managed-updates-$Month-*.json" -File -ErrorAction SilentlyContinue | ForEach-Object { try { Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json } catch { } })
+    $d = Get-MonthlyReportData -Reports $reports -Month $Month
+    $enc = { param($t) [System.Net.WebUtility]::HtmlEncode([string]$t) }
+    $ov = $null; try { $ov = Get-WebUpdatesOverview -NoInventory } catch { }
+    $appRows = if ($ov -and $ov.ok) { @($ov.rows | ForEach-Object { "<tr><td>$(& $enc $_.name)</td><td>$(& $enc $_.current)</td><td>$(if ($null -ne $_.onCurrentPercent) { & $enc "$($_.onCurrentPercent) %" } else { '-' })</td><td>$(if ($_.pilot) { & $enc "$($_.pilot.version) ($($_.pilot.action))" } else { '-' })</td></tr>" }) } else { @() }
+    $evRows = @($d.events | ForEach-Object { "<tr><td>$(& $enc $_.at)</td><td>$(& $enc $_.app)</td><td>$(& $enc $_.outcome)</td><td>$(& $enc $_.text)</td></tr>" })
+    $html = @"
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Managed updates $(& $enc $Month)</title>
+<style>body{font:14px system-ui,Segoe UI,sans-serif;margin:24px;color:#101828}table{border-collapse:collapse;width:100%;margin-bottom:20px}th,td{text-align:left;padding:6px 10px;border-bottom:1px solid #eaecf0;vertical-align:top}th{color:#475467;font-size:12px}</style></head>
+<body><h1>Managed updates - $(& $enc $Month)</h1>
+<p>$($d.runs) nightly run(s). Released: $($d.released), promoted: $($d.promoted), withdrawn: $($d.withdrawn), held: $($d.held), failures: $($d.failed).$(if ($null -ne $d.endPercent) { " Devices on the current version: $(& $enc $d.startPercent) % at the start of the month, $(& $enc $d.endPercent) % at the end." })</p>
+<h2>Apps now</h2><table><thead><tr><th>App</th><th>Current version</th><th>Devices on it</th><th>In release</th></tr></thead><tbody>$($appRows -join '')</tbody></table>
+<h2>What happened</h2><table><thead><tr><th>Run</th><th>App</th><th>Outcome</th><th>Details</th></tr></thead><tbody>$(if ($evRows.Count) { $evRows -join '' } else { '<tr><td colspan="4">Nothing was released, promoted or held this month.</td></tr>' })</tbody></table>
+</body></html>
+"@
+    $path = Join-Path $dir "monthly-$Month.html"
+    [System.IO.File]::WriteAllText($path, $html, (New-Object System.Text.UTF8Encoding($false)))
+    $summary = @{ items = @([ordered]@{ app = 'Monthly report'; outcome = 'report'; text = "$Month - released $($d.released), promoted $($d.promoted), withdrawn $($d.withdrawn), held $($d.held)$(if ($null -ne $d.endPercent) { "; $($d.endPercent) % of devices on the current version" }). The full report is in Logs\reports\monthly-$Month.html." }); failed = 0; planOnly = $false; policy = $null; html = $html; subject = "Managed updates - $Month" }
+    $al = $Global:App.Alerts
+    $sent = if ($al.WebhookUrl -or ($al.MailFrom -and @($al.MailTo).Count)) { Send-ManagedUpdateAlert $summary -Force } else { @{ sent = @(); error = '' } }
+    Write-Log "[OK] Monthly report for ${Month}: $path$(if (@($sent.sent).Count) { " - sent ($(@($sent.sent) -join ', '))" })"
+    return @{ ok = $true; path = $path; month = $Month; sent = @($sent.sent); error = [string]$sent.error }
+}
+
 function Global:Send-ManagedUpdateAlert {
     <#
       Sends a run's alert, when Settings > Alerts says the report is worth
@@ -206,7 +468,7 @@ function Global:Send-ManagedUpdateAlert {
     $shown = @($lines | Select-Object -First 30)
     if ($lines.Count -gt $shown.Count) { $shown += "... and $($lines.Count - $shown.Count) more - see the report." }
     if ($al.WebhookUrl) {
-        $body = @(@{ type = 'TextBlock'; text = $msg.Title; weight = 'Bolder'; size = 'Medium'; wrap = $true }) + @($shown | ForEach-Object { @{ type = 'TextBlock'; text = [string]$_; wrap = $true; spacing = 'Small' } })
+        $body = @(@{ type = 'TextBlock'; text = $(if ($Report.subject) { [string]$Report.subject } else { $msg.Title }); weight = 'Bolder'; size = 'Medium'; wrap = $true }) + @($shown | ForEach-Object { @{ type = 'TextBlock'; text = [string]$_; wrap = $true; spacing = 'Small' } })
         $card = @{ type = 'message'; attachments = @(@{ contentType = 'application/vnd.microsoft.card.adaptive'; contentUrl = $null
                     content = @{ '$schema' = 'http://adaptivecards.io/schemas/adaptive-card.json'; type = 'AdaptiveCard'; version = '1.4'; body = $body } }) }
         $json = $card | ConvertTo-Json -Depth 12
@@ -222,8 +484,8 @@ function Global:Send-ManagedUpdateAlert {
         catch { $errors.Add("Teams ($(([Uri]$al.WebhookUrl).Host)): $($_.Exception.Message)") }
     }
     if ($mail) {
-        $html = if ($Report.policy) { ConvertTo-ManagedUpdateReportHtml $Report } else { '<p>' + (($shown | ForEach-Object { [System.Net.WebUtility]::HtmlEncode([string]$_) }) -join '<br>') + '</p>' }
-        $mailBody = @{ message = @{ subject = $msg.Title; body = @{ contentType = 'HTML'; content = $html }; toRecipients = @(@($al.MailTo) | ForEach-Object { @{ emailAddress = @{ address = [string]$_ } } }) }; saveToSentItems = $false }
+        $html = if ($Report.html) { [string]$Report.html } elseif ($Report.policy) { ConvertTo-ManagedUpdateReportHtml $Report } else { '<p>' + (($shown | ForEach-Object { [System.Net.WebUtility]::HtmlEncode([string]$_) }) -join '<br>') + '</p>' }
+        $mailBody = @{ message = @{ subject = $(if ($Report.subject) { [string]$Report.subject } else { $msg.Title }); body = @{ contentType = 'HTML'; content = $html }; toRecipients = @(@($al.MailTo) | ForEach-Object { @{ emailAddress = @{ address = [string]$_ } } }) }; saveToSentItems = $false }
         $from = [Uri]::EscapeDataString([string]$al.MailFrom)
         $r = Invoke-WebGraph -Permission 'Mail.Send' -Action { param($Graph) [void](& $Graph "https://graph.microsoft.com/v1.0/users/$from/sendMail" 'POST' $mailBody); $true }
         if ($r.ok) { $sent.Add('email') } else { $errors.Add("Email: $($r.error)") }
@@ -245,7 +507,7 @@ function Global:ConvertTo-ManagedUpdateReportHtml {
     # Pure: a run's report as a self-contained HTML page (no scripts, no outside files).
     param($Report)
     $enc = { param($t) [System.Net.WebUtility]::HtmlEncode([string]$t) }
-    $colors = @{ advanced = '#1b7f3b'; promoted = '#1b7f3b'; released = '#1b7f3b'; cleaned = '#1b7f3b'; cleanup = '#175cd3'; failed = '#b42318'; hold = '#b54708'; ready = '#175cd3'; available = '#175cd3'; wait = '#475467'; current = '#475467'; none = '#475467' }
+    $colors = @{ withdrawn = '#b54708'; drift = '#b54708'; health = '#b54708'; fixed = '#1b7f3b'; backup = '#475467'; report = '#175cd3'; advanced = '#1b7f3b'; promoted = '#1b7f3b'; released = '#1b7f3b'; cleaned = '#1b7f3b'; cleanup = '#175cd3'; failed = '#b42318'; hold = '#b54708'; ready = '#175cd3'; available = '#175cd3'; wait = '#475467'; current = '#475467'; none = '#475467' }
     $rows = foreach ($i in @($Report.items)) {
         $c = if ($colors.ContainsKey([string]$i.outcome)) { $colors[[string]$i.outcome] } else { '#475467' }
         "<tr><td>$(& $enc $i.app)</td><td style=""color:$c;font-weight:600"">$(& $enc $i.outcome)</td><td>$(& $enc $i.text)</td></tr>"
@@ -347,4 +609,93 @@ function Global:Set-WebUpdateSchedule {
     try { [void](Write-SettingsFile) } catch { }
     Write-Log "[OK] Scheduled task '$name': every day at $runAt, as $env:USERNAME."
     return @{ ok = $true; schedule = (Get-WebUpdateSchedule) }
+}
+
+# ---------------------------------------------------------------- running unattended
+
+function Global:Get-WebUnattendedStatus {
+    <#
+      Can the nightly task run while nobody is signed in? It can when the
+      task logs on without a password (S4U) and the certificate is in the
+      computer's store (LocalMachine\My) - a task without a signed-in user
+      can't use the user's own private keys. @{ supported; ready; steps }.
+    #>
+    $sch = Get-WebUpdateSchedule
+    if (-not $sch.supported) { return @{ ok = $true; supported = $false; ready = $false; steps = @('Scheduled tasks need Windows.') } }
+    $found = Get-WebConnectionCertificate
+    $logon = ''
+    if ($sch.exists) { try { $logon = [string](Get-ScheduledTask -TaskName (Get-WebUpdateTaskName)).Principal.LogonType } catch { } }
+    $steps = New-Object System.Collections.Generic.List[object]
+    $steps.Add([ordered]@{ done = [bool]$sch.exists; text = $(if ($sch.exists) { "The nightly task exists (every day at $($sch.runAt))." } else { 'Schedule the nightly task first (above).' }) })
+    $inMachine = [bool]($found -and $found.Store -like '*LocalMachine*')
+    $steps.Add([ordered]@{ done = $inMachine; text = $(if (-not $found) { 'The connection certificate is not on this PC.' } elseif ($inMachine) { 'The certificate is in the computer''s store (LocalMachine\My).' } else { 'The certificate is in your own store only (CurrentUser\My) - a task without a signed-in user can''t use it.' }) })
+    $s4u = $logon -eq 'S4U'
+    $steps.Add([ordered]@{ done = $s4u; text = $(if ($s4u) { 'The tasks run whether you are signed in or not (no password stored).' } else { "The tasks run only while you are signed in$(if ($logon) { " (logon: $logon)" })." }) })
+    return @{ ok = $true; supported = $true; ready = [bool]($sch.exists -and $inMachine -and $s4u); steps = $steps.ToArray() }
+}
+
+function Global:New-WebUnattendedScript {
+    <#
+      Writes a script for an administrator (Logs\unattended-setup.ps1): it
+      copies the connection certificate into the computer's store, lets
+      this user read its private key, and sets both scheduled tasks to run
+      whether the user is signed in or not (S4U - no password stored).
+      Nothing here runs it: it needs "Run as administrator".
+    #>
+    $sch = Get-WebUpdateSchedule
+    if (-not $sch.supported) { return @{ ok = $false; error = 'Scheduled tasks need Windows.' } }
+    if (-not $sch.exists) { return @{ ok = $false; error = 'Schedule the nightly task first.' } }
+    $thumb = ([string]$Global:App.GraphCertificateThumbprint) -replace '[^0-9A-Fa-f]', ''
+    if (-not $thumb) { return @{ ok = $false; error = 'Set up the connection first.' } }
+    $user = "$env:USERDOMAIN\$env:USERNAME"
+    $tasks = @((Get-WebUpdateTaskName), (Get-WebFastTrackTaskName))
+    $q = { param($s) "'" + ([string]$s).Replace("'", "''") + "'" }
+    $script = @"
+# Intune App Catalog - run the nightly tasks while nobody is signed in.
+# Written by the app on $((Get-Date).ToString('yyyy-MM-dd HH:mm')). Run it once, in PowerShell started with "Run as administrator".
+#Requires -RunAsAdministrator
+`$ErrorActionPreference = 'Stop'
+`$thumb = $(& $q $thumb)
+`$user = $(& $q $user)
+`$tasks = @($(($tasks | ForEach-Object { & $q $_ }) -join ', '))
+
+# 1. The certificate into the computer's store (skipped when it is there already).
+if (-not (Test-Path "Cert:\LocalMachine\My\`$thumb")) {
+    `$cert = Get-Item "Cert:\CurrentUser\My\`$thumb"
+    `$pfx = Join-Path `$env:TEMP ("intunecat-" + [guid]::NewGuid().ToString('N') + '.pfx')
+    `$pw = ConvertTo-SecureString ([guid]::NewGuid().ToString('N')) -AsPlainText -Force
+    try {
+        Export-PfxCertificate -Cert `$cert -FilePath `$pfx -Password `$pw | Out-Null
+        Import-PfxCertificate -FilePath `$pfx -CertStoreLocation Cert:\LocalMachine\My -Password `$pw | Out-Null
+    }
+    catch { throw "Couldn't copy the certificate (`$(`$_.Exception.Message)). If its private key can't be exported, import the original .pfx into the computer's store (certlm.msc > Personal > Import) and run this script again." }
+    finally { Remove-Item -LiteralPath `$pfx -Force -ErrorAction SilentlyContinue }
+    Write-Host 'Copied the certificate to LocalMachine\My.'
+}
+
+# 2. This user may read its private key.
+`$machine = Get-Item "Cert:\LocalMachine\My\`$thumb"
+`$keyName = `$null
+try { `$keyName = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey(`$machine).Key.UniqueName } catch { }
+if (-not `$keyName) { try { `$keyName = `$machine.PrivateKey.CspKeyContainerInfo.UniqueKeyContainerName } catch { } }
+`$keyFile = @("`$env:ProgramData\Microsoft\Crypto\Keys\`$keyName", "`$env:ProgramData\Microsoft\Crypto\RSA\MachineKeys\`$keyName") | Where-Object { `$keyName -and (Test-Path -LiteralPath `$_) } | Select-Object -First 1
+if (`$keyFile) { icacls `$keyFile /grant "`${user}:R" | Out-Null; Write-Host "`$user may read the private key." }
+else { Write-Warning "The private key file wasn't found - in certlm.msc, right-click the certificate > All Tasks > Manage Private Keys, and give `$user Read." }
+
+# 3. The tasks run whether the user is signed in or not, without a stored password.
+`$principal = New-ScheduledTaskPrincipal -UserId `$user -LogonType S4U -RunLevel Limited
+foreach (`$t in `$tasks) {
+    if (Get-ScheduledTask -TaskName `$t -ErrorAction SilentlyContinue) { Set-ScheduledTask -TaskName `$t -Principal `$principal | Out-Null; Write-Host "Task '`$t': runs whether `$user is signed in or not." }
+}
+Write-Host 'Done. Check it once: sign out, wait for the next run (or start the task from Task Scheduler), then look at Settings > Managed updates.'
+"@
+    $path = Join-Path (Get-AppFolder -Kind Logs -Create) 'unattended-setup.ps1'
+    [System.IO.File]::WriteAllText($path, $script, (New-Object System.Text.UTF8Encoding($true)))
+    Write-Log "[INFO] Wrote $path - run it as administrator to let the nightly tasks run while nobody is signed in."
+    return @{ ok = $true; path = $path }
+}
+
+function Global:Get-WebHealth {
+    # Settings > Managed updates > Check health now.
+    return @{ ok = $true; checks = @(Get-WebHealthChecks) }
 }

@@ -150,6 +150,47 @@ does the same for everything and changes nothing. That's a good way to
 start: run Plan only for a few days, read the reports, then turn the
 switches on one at a time.
 
+### What else the nightly run does
+
+- **Health first:** the certificate (warned 30 days before it expires),
+  signing in, the packages, disk space. **Check health now** shows the
+  same.
+- **Release window:** Settings > *Release window* - the days it may
+  release and promote by itself, and optionally not in a month's last
+  week. Withdrawals, fast-track releases and your own clicks don't wait.
+- **On hold, and why:** a held release lists the failed devices' error
+  codes. **Withdraw automatically at X %** withdraws it by itself once that
+  share of at least three devices failed.
+- **Drift** (full runs): every deployed app against Intune, as Checks
+  does. With *put the catalog's groups back*, drifted assignments are
+  pushed again.
+- **Own packages:** with *Release a newer installer automatically* in the
+  app's editor, a newer installer in its folder is built and released to
+  pilot. With a download address, the installer is fetched first - and
+  used only if it has a valid digital signature from the same publisher as
+  the one already there.
+- **Backup** (full runs): a zip of the catalog's app files in the Backups
+  folder (30 kept); a commit if the catalog folder is a git repository.
+- **Monthly report:** on a month's first full run.
+- **Test tenant first:** set *Test tenant's catalog folder* (a share this
+  PC can read) and Winget apps are released by themselves only in a
+  version promoted in that tenant's catalog. Run the catalog there too,
+  with its own nightly task.
+
+*Plan only* reports release decisions; it skips the drift check, the
+backup and the monthly report.
+
+### Running while nobody is signed in
+
+A task that runs without a signed-in user can't use your own private
+keys. **Settings > Managed updates > Run while nobody is signed in** shows
+what's missing; **Create the setup script** writes
+`Logs\\unattended-setup.ps1`. Run it once in PowerShell started with *Run
+as administrator*: it copies the certificate into the computer's store,
+lets you read its private key, and sets both tasks to run whether you are
+signed in or not (S4U - no password stored). Sign out once and check the
+next run's report.
+
 ### Alerts
 
 **Settings > Defaults > Managed updates > Alerts** sends a message after a

@@ -306,6 +306,10 @@ async function loadPrefs() {
   $('pilotGroups').value = (p.pilotGroups || []).join('\n');
   const rp = p.releasePolicy || {};
   $('rpDays').value = rp.Days ?? 3; $('rpFailed').value = rp.MaxFailedPercent ?? 5; $('rpMin').value = rp.MinInstalled ?? 1;
+  const rdays = rp.ReleaseDays || [0, 1, 2, 3, 4, 5, 6];
+  for (const c of document.querySelectorAll('[data-rday]')) c.checked = rdays.includes(+c.dataset.rday);
+  $('rpSkipLast').checked = !!rp.SkipLastWeek; $('rpWithdraw').value = rp.AutoWithdrawPercent ?? 0;
+  $('rpDrift').checked = rp.DriftCheck !== false; $('rpDriftFix').checked = !!rp.DriftFix; $('rpBackup').checked = rp.BackupCatalog !== false; $('rpMonthly').checked = !!rp.MonthlyReport; $('rpGate').value = rp.GatePath || '';
   $('rpFastHours').value = rp.FastTrackHours ?? 4; $('rpDeadline').value = rp.DeadlineDays ?? 0; $('rpGrace').value = rp.RestartGraceMinutes ?? 0; $('rpNotif').value = rp.Notifications || 'showAll';
   $('releaseRings').value = (p.releaseRings || []).map(r => `${r.name}: ${r.groups.join(', ')}`).join('\n');
   const al = p.alerts || {};
@@ -323,7 +327,9 @@ async function savePrefs(part, okText, errEl) {
 $('btnSaveChecks').addEventListener('click', () => savePrefs({ checks: Object.fromEntries([...document.querySelectorAll('[data-check]')].map(c => [c.dataset.check, c.checked])) }, 'Saved.'));
 $('btnSaveFolders').addEventListener('click', () => savePrefs({ folders: Object.fromEntries([...document.querySelectorAll('[data-folder]')].map(i => [i.dataset.folder, i.value.trim()])) }, 'Folders saved.'));
 $('btnSavePilot').addEventListener('click', () => savePrefs({ pilotGroups: lines('pilotGroups'), releaseRingsText: $('releaseRings').value, releasePolicy: { Days: $('rpDays').value, MaxFailedPercent: $('rpFailed').value, MinInstalled: $('rpMin').value,
-  FastTrackHours: $('rpFastHours').value, DeadlineDays: $('rpDeadline').value, RestartGraceMinutes: $('rpGrace').value, Notifications: $('rpNotif').value,
+  FastTrackHours: $('rpFastHours').value,
+  ReleaseDays: [...document.querySelectorAll('[data-rday]')].filter(c => c.checked).map(c => +c.dataset.rday), SkipLastWeek: $('rpSkipLast').checked, AutoWithdrawPercent: $('rpWithdraw').value,
+  DriftCheck: $('rpDrift').checked, DriftFix: $('rpDriftFix').checked, BackupCatalog: $('rpBackup').checked, MonthlyReport: $('rpMonthly').checked, GatePath: $('rpGate').value.trim(), DeadlineDays: $('rpDeadline').value, RestartGraceMinutes: $('rpGrace').value, Notifications: $('rpNotif').value,
   AutoRelease: $('rpAutoRelease').checked, AutoPromote: $('rpAutoPromote').checked, CleanupOld: $('rpCleanup').checked, RunAt: (prefs && prefs.releasePolicy && prefs.releasePolicy.RunAt) || '03:00' } }, 'Managed updates saved.'));
 const alertPart = () => ({ alerts: { level: $('alLevel').value, webhookUrl: $('alWebhook').value.trim(), clearWebhook: $('alClearHook').checked, mailFrom: $('alFrom').value.trim(), mailTo: $('alTo').value.split(/[,;\s]+/).filter(Boolean) } });
 $('btnSaveAlerts').addEventListener('click', () => savePrefs(alertPart(), 'Alerts saved.'));
@@ -354,6 +360,7 @@ $('btnBuildShared').addEventListener('click', () => packagingSetup('shared', 'bt
 
 // ---------------------------------------------------------------- managed updates: the nightly run
 async function loadUpdateRuns() {
+  loadUnattended();
   const r = await api('/api/update-runs');
   if (!r.ok) return;
   const sch = r.schedule || {};
@@ -363,7 +370,7 @@ async function loadUpdateRuns() {
   setEnabled($('btnSchedule'), !!sch.supported, 'Scheduled tasks need Windows.');
   setEnabled($('btnUnschedule'), !!sch.exists, 'There is no scheduled task.');
   $('btnSchedule').textContent = sch.exists ? 'Change' : 'Schedule';
-  const cls = { advanced: 'ok', promoted: 'ok', released: 'ok', cleaned: 'ok', failed: 'err', hold: 'warn', ready: 'info', available: 'info', cleanup: 'info' };
+  const cls = { withdrawn: 'warn', drift: 'warn', health: 'warn', fixed: 'ok', report: 'info', advanced: 'ok', promoted: 'ok', released: 'ok', cleaned: 'ok', failed: 'err', hold: 'warn', ready: 'info', available: 'info', cleanup: 'info' };
   $('runList').replaceChildren(...(r.running ? [el('p', { class: 'muted', text: 'A run is going now - Reload shows it when it ends.' })] : []),
     ...(r.runs.length ? r.runs.map(run => {
       const shown = run.items.filter(i => !['current', 'none', 'wait'].includes(i.outcome));
@@ -388,4 +395,34 @@ $('btnUnschedule').addEventListener('click', async () => {
   if (!(await ask('Remove the scheduled task?\n\nManaged updates then only run when you click Run now.'))) return;
   const r = await api('/api/update-schedule', { on: false });
   toast(r.ok ? 'Scheduled task removed.' : r.error, !r.ok); loadUpdateRuns();
+});
+
+// ---------------------------------------------------------------- health, monthly report, running unattended
+const healthItem = (level, text) => el('li', { class: 'hl ' + level }, el('span', { class: 'pill ' + (level === 'ok' ? 'ok' : level === 'warn' ? 'warn' : level === 'failed' ? 'err' : 'muted'), text: level === 'ok' ? 'OK' : level === 'warn' ? 'Look' : level === 'failed' ? 'Problem' : 'To do' }), ' ' + text);
+$('btnHealth').addEventListener('click', async () => {
+  const b = $('btnHealth'); b.disabled = true; $('healthList').hidden = false; $('healthList').replaceChildren(el('li', { class: 'muted', text: 'Checking...' }));
+  try {
+    const r = await api('/api/health');
+    $('healthList').replaceChildren(...(r.ok ? r.checks.map(c => healthItem(c.level, c.text)) : [healthItem('failed', r.error)]));
+  } finally { b.disabled = false; }
+});
+$('btnMonthly').addEventListener('click', async () => {
+  const b = $('btnMonthly'); b.disabled = true;
+  try {
+    const r = await api('/api/monthly-report', {});
+    toast(r.ok ? `Report for ${r.month} saved (${r.path})${r.sent.length ? ' and sent (' + r.sent.join(', ') + ')' : ''}.${r.error ? ' Sending failed: ' + r.error : ''}` : r.error, !r.ok || !!r.error);
+  } finally { b.disabled = false; }
+});
+async function loadUnattended() {
+  const r = await api('/api/unattended-status');
+  if (!r.ok) return;
+  $('unattSteps').replaceChildren(...r.steps.map(s => healthItem(s.done ? 'ok' : 'todo', s.text)));
+  setEnabled($('btnUnattScript'), r.supported && !r.ready, r.ready ? 'Everything is set already.' : 'Scheduled tasks need Windows.');
+}
+$('btnUnattReload').addEventListener('click', loadUnattended);
+$('btnUnattScript').addEventListener('click', async () => {
+  const r = await api('/api/unattended-script', {});
+  if (!r.ok) { toast(r.error, true); return; }
+  $('unattNote').hidden = false;
+  $('unattNote').replaceChildren(`Written to ${r.path}. Open PowerShell with "Run as administrator" and run it once: `, el('code', { text: `& '${r.path.replace(/'/g, "''")}'` }), ' - then Check again.');
 });

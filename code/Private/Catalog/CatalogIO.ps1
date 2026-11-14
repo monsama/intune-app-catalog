@@ -141,6 +141,9 @@ function Global:ConvertTo-AppRecord {
         # The app's own release rule (over Settings' one), and the name it has
         # in Intune's inventory of apps on devices, when not the catalog's.
         releaseRule  = (ConvertTo-AppReleaseRule $Raw.releaseRule)
+        # Own packages: the nightly run releases a newer installer by itself (autoRelease), first downloading it from downloadUrl when set (https, signed).
+        autoRelease  = [bool]$Raw.autoRelease
+        downloadUrl  = $(if ([string]$Raw.downloadUrl -match '^https://[^\s"<>]+$' -and ([string]$Raw.downloadUrl).Length -le 2000) { [string]$Raw.downloadUrl } else { '' })
         detectedName = $(if ([string]$Raw.detectedName -and ([string]$Raw.detectedName).Length -le 100) { ([string]$Raw.detectedName).Trim() } else { '' })
         metadata     = $metadata
     }
@@ -337,6 +340,8 @@ function Global:ConvertTo-SingleAppJson {
         $ruleParts = @(foreach ($k in 'days', 'maxFailedPercent', 'minInstalled') { if ($null -ne $App.releaseRule.$k) { '"' + $k + '": ' + ([string]$App.releaseRule.$k).Replace(',', '.') } })
         if ($ruleParts.Count) { $fields.Add('  "releaseRule": { ' + ($ruleParts -join ', ') + ' }') }
     }
+    if ($App.autoRelease) { $fields.Add('  "autoRelease": true') }
+    if ($App.downloadUrl) { $fields.Add("  `"downloadUrl`": $(ConvertTo-JsonStringLiteral ([string]$App.downloadUrl))") }
     if ($App.detectedName) { $fields.Add("  `"detectedName`": $(ConvertTo-JsonStringLiteral ([string]$App.detectedName))") }
     if ($App.icon -and $App.icon.value) {
         $fields.Add("  `"icon`": { `"type`": $(ConvertTo-JsonStringLiteral ([string]$App.icon.type)), `"value`": $(ConvertTo-JsonStringLiteral ([string]$App.icon.value)) }")

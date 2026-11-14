@@ -394,6 +394,7 @@ function Global:Open-WebTarget {
             Start-Process $url
         }
         'catalog-folder' { return (Open-WebFolder (Get-AppFolder -Kind Catalog -Create)) }
+        'logs-folder' { return (Open-WebFolder (Get-AppFolder -Kind Logs -Create)) }
         'reports-folder' { $rd = Join-Path (Get-AppFolder -Kind Logs -Create) 'reports'; if (-not (Test-Path -LiteralPath $rd)) { [void](New-Item -ItemType Directory -Path $rd -Force) }; return (Open-WebFolder $rd) }
         'entra-home' { Start-Process 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade/quickStartType~/null/sourceType/Microsoft_AAD_IAM' }
         'coffee' { Start-Process 'https://buymeacoffee.com/monsama' }
@@ -480,6 +481,11 @@ function Global:Invoke-WebApi {
         '/api/release-cleanup'  { return (Remove-WebOldReleases $Data) }
         '/api/release-advanced' { return (Invoke-WithCatalogLock { Complete-WebAdvance $Data }) }
         '/api/alert-test'       { return (Send-WebTestAlert) }
+        '/api/health'           { return (Get-WebHealth) }
+        '/api/inventory-suggestions' { return (Get-WebInventorySuggestions) }
+        '/api/unattended-status' { return (Get-WebUnattendedStatus) }
+        '/api/unattended-script' { return (New-WebUnattendedScript) }
+        '/api/monthly-report'   { return (Send-WebMonthlyReport -Month $(if ([string]$Data.month -match '^\d{4}-(0[1-9]|1[0-2])$') { [string]$Data.month } else { '' })) }
         '/api/updates-trend'    { return (Get-WebUpdatesTrend) }
         '/api/release-withdrawn' { return (Invoke-WithCatalogLock { Complete-WebWithdrawal $Data }) }
         '/api/update-runs'      { return (Get-WebUpdateRuns) }
