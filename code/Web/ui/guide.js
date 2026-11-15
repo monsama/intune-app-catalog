@@ -90,13 +90,14 @@ async function fillPanel(a) {
     app.managedUpdates ? releaseTimeline(pilot ? pilot.ring : (a.hasAppId ? 99 : -1), !!(pilot && pilot.fastTrack)) : '',
     el('div', { class: 'pfacts' },
       (() => {
-        const text = [a.version || '(none)', a.pilotVersion ? `pilot ${a.pilotVersion}` : '', a.newerOnWinget ? `winget has ${a.wingetVersion}` : '', (a.previousVersions || []).length ? `kept: ${a.previousVersions.join(', ')}` : ''].filter(Boolean).join(' - ');
+        const base = a.version ? (a.managed ? `${a.version} (pinned)` : a.version) : a.wingetId && !isStoreId(a.wingetId) ? (a.managed ? 'not pinned yet' : 'newest') : '(none)';
+        const text = [base, a.pilotVersion ? `pilot ${a.pilotVersion}` : '', a.newerOnWinget ? `winget has ${a.wingetVersion}` : '', (a.previousVersions || []).length ? `kept: ${a.previousVersions.join(', ')}` : ''].filter(Boolean).join(' - ');
         const canEdit = app.hasMetadata && !(app.managedUpdates && a.hasAppId);
-        const b = canEdit ? el('button', { type: 'button', class: 'btn small ghost', text: 'Change', 'aria-label': 'Change the version', title: 'Change the App version here', onclick: () => inline(b, 'App version', a.version, v => quick({ field: 'appVersion', value: v }, 'Change the version')) }) : '';
+        const b = canEdit ? el('button', { type: 'button', class: 'btn small ghost', text: 'Change', 'aria-label': 'Change the version', title: 'Change the App version here', onclick: () => pickVersion(b, a, v => quick({ field: 'appVersion', value: v }, 'Change the version'), () => inline(b, 'App version', a.version, v => quick({ field: 'appVersion', value: v }, 'Change the version'))) }) : '';
         return el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Version' }), el('span', {}, text, ' ', b));
       })(),
       fact('Source', a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
-      fact('Updates', updatesText(a, app.managedUpdates)),
+      fact('Updates', updatesText(a, app.managedUpdates || a.managed)),
       fact('In Intune', a.hasAppId ? (a.type || 'yes') : 'not yet'),
       groups('Required', 'requiredFor', app.requiredFor, true), groups('Available', 'availableFor', app.availableFor, true), groups('Uninstall', 'uninstallFor', app.uninstallFor), groups('Excluded', 'excludeFor', app.excludeFor),
       el('datalist', { id: 'qGroupList' }, ...known.map(g => el('option', { value: g }))),
@@ -281,3 +282,28 @@ function renderWhere() {
   dlg.addEventListener('close', () => setPage(0));
   setPage(0);
 })();
+
+// Change the version by picking it: winget's versions (newest first), the ones kept from earlier releases, or "Other..." to type one.
+async function pickVersion(btn, a, save, typeIt) {
+  const sel = el('select', { class: 'qedit', 'aria-label': 'App version' }, el('option', { value: '', text: 'Loading winget\'s versions...' }));
+  btn.replaceWith(sel); sel.focus();
+  const back = () => { if (sel.isConnected) sel.replaceWith(btn); btn.focus(); };
+  const opts = [];
+  if (a.wingetId && !isStoreId(a.wingetId)) {
+    const r = await api('/api/winget-versions', { id: a.wingetId });
+    if (r.ok) r.versions.slice(0, 40).forEach((v, i) => opts.push([v, i === 0 ? `${v} - newest` : v]));
+    else opts.push(['', `(winget: ${r.error})`]);
+  }
+  for (const v of (a.previousVersions || [])) if (!opts.some(o => o[0] === v)) opts.push([v, `${v} - kept from an earlier release`]);
+  if (!sel.isConnected) return;
+  sel.replaceChildren(el('option', { value: '', text: a.version ? `${a.version} (now)` : 'Choose a version...' }),
+    ...opts.map(([v, t]) => el('option', { value: v, text: t, disabled: !v })), el('option', { value: '__other', text: 'Other - type it...' }));
+  sel.addEventListener('change', async () => {
+    const v = sel.value;
+    if (v === '__other') { sel.replaceWith(btn); typeIt(); return; }
+    if (!v || v === a.version) { back(); return; }
+    if (!(await save(v))) back();
+  });
+  sel.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); back(); } });
+  sel.addEventListener('blur', () => setTimeout(() => { if (sel.isConnected && document.activeElement !== sel) back(); }, 200));
+}

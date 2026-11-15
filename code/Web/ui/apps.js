@@ -1311,3 +1311,15 @@ function versionCell(a) {
   return [el('span', { class: 'vnewest', title: `Not pinned: devices get whatever winget has when they install${a.wingetVersion ? ` (${a.wingetVersion} at the last check)` : ''}. Turn managed updates on to pin a version and release new ones to the pilot groups first.` }, 'newest',
     a.wingetVersion ? el('span', { class: 'muted vnow', text: ` · ${a.wingetVersion}` }) : '')];
 }
+
+// The App version field offers winget's versions to pick (newest first) - asked once the field is used, per Winget ID.
+let verListFor = '';
+$('mAppVersion').addEventListener('focus', async () => {
+  const id = $('aWinget').value.trim();
+  if (!id || isStoreId(id) || verListFor === id) return;
+  verListFor = id;
+  const r = await api('/api/winget-versions', { id });
+  if (verListFor !== id) return;
+  $('verList').replaceChildren(...(r.ok ? r.versions.slice(0, 60).map((v, i) => el('option', { value: v, label: i === 0 ? 'newest' : '' })) : []));
+});
+$('aWinget').addEventListener('input', () => { verListFor = ''; $('verList').replaceChildren(); });

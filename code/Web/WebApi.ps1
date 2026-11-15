@@ -581,6 +581,7 @@ function Global:Invoke-WebApi {
         '/api/app-remove'       { return (Invoke-WithCatalogLock { Remove-WebApp $Data }) }
         '/api/app-backups'      { return (Get-WebAppBackups $Data) }
         '/api/app-history'      { return (Get-WebAppHistory $Data) }
+        '/api/winget-versions'  { return (Get-WebWingetVersions $Data) }
         '/api/catalog-history'  { return (Get-WebCatalogHistory $Data) }
         '/api/winget-commands'  { return (Get-WebWingetCommands $Data) }
         '/api/app-quick'        { return (Invoke-WithCatalogLock { Update-WebAppQuick $Data }) }
