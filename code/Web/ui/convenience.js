@@ -199,6 +199,7 @@ async function useInstalled(a) {
   $('xOperator').value = d.operator || 'notConfigured'; $('xValue').value = d.value; $('x32').checked = !!d.check32Bit;
   if (d.type === 'File') $('xFileType').value = d.detectionType; if (d.type === 'Registry') $('xRegType').value = d.detectionType;
   showDetFields(); deployTouched = true; $('deploySec').open = true; edPageFor($('xType'));
+  $('xType').dispatchEvent(new Event('change', { bubbles: true }));
   $('dlgInstalled').close();
   toast(`Detection: ${r.text}. Save to keep it.`);
 }
@@ -208,7 +209,7 @@ async function loadHome() {
   $('homeNote').textContent = 'Looking...';
   if (!$('homeList').children.length) skeleton($('homeList'), 1, 3);
   const r = await api('/api/attention');
-  if (!r.ok) { $('homeNote').textContent = r.error; return; }
+  if (!r.ok) { $('homeNote').textContent = r.error; $('homeList').replaceChildren(); return; }
   renderSetup(r.setup);
   $('homeNote').textContent = r.items.length ? `${r.items.length} thing${r.items.length === 1 ? '' : 's'} to look at${r.lastRun ? ` - last nightly run ${r.lastRun}` : ''}.` : 'Nothing needs a look right now.';
   const s = r.summary, stat = (n, l, cls) => el('div', { class: 'stat ' + (cls || '') }, el('span', { class: 'n', text: n }), el('span', { class: 'l', text: l }));

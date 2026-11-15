@@ -391,7 +391,7 @@ $('btnAppHistory').addEventListener('click', async () => {
     el('td', { text: b.when }),
     el('td', { text: b.changed.length ? b.changed.map(c => fieldLabel[c] || c).join(', ') : 'nothing - same as now' }),
     el('td', { class: 'act' }, el('button', { class: 'btn small', text: 'Compare', title: 'What the save at that time changed, and that version next to now', onclick: () => compareVersion(name, b) }), ' ', el('button', { class: 'btn small', text: 'Restore', title: b.changed.length ? 'Put this version back as the app\'s file' : 'Same as the app is now - nothing to restore', disabled: !b.changed.length, onclick: async () => {
-      if (!(await ask(`Restore ${name} as it was on ${b.when}?\n\nOnly the catalog changes - Send to Intune sends it therene. The current version is kept as a copy, so this can be undone the same way.`, { ok: 'Restore', danger: false }))) return;
+      if (!(await ask(`Restore ${name} as it was on ${b.when}?\n\nOnly the catalog changes - Send to Intune sends it there. The current version is kept as a copy, so this can be undone the same way.`, { ok: 'Restore', danger: false }))) return;
       const x = await api('/api/app-restore', { name, id: b.id });
       if (!x.ok) { toast(x.error, true); return; }
       toast(`${name} restored to ${b.when}.`);
@@ -407,7 +407,7 @@ const histField = f => f.startsWith('metadata.') ? (({ description: 'Description
 async function loadChanges(name) {
   skeleton($('histChanges'), 1, 3); $('histChangesNote').textContent = '';
   const r = await api('/api/app-history', { name });
-  if (!r.ok) { $('histChangesNote').textContent = r.error; return; }
+  if (!r.ok) { $('histChangesNote').textContent = r.error; $('histChanges').replaceChildren(); return; }
   $('histChangesNote').textContent = r.entries.length ? '' : 'Nothing recorded yet - changes are recorded from this version of the app on.';
   $('histChanges').replaceChildren(...r.entries.map(e => el('li', { class: e.kind === 'intune' ? 'intune' : '' },
     el('div', { class: 'thead' }, el('time', { text: new Date(e.at).toLocaleString() }), el('span', { class: 'pill ' + (e.kind === 'intune' ? 'info' : 'muted'), text: e.kind === 'intune' ? 'Intune' : 'Catalog' }),
@@ -522,8 +522,9 @@ function placeMenu(m, x, y) {
 // Arrow keys move between a menu's items; Escape closes it (every .menu).
 for (const m of document.querySelectorAll('.menu')) m.addEventListener('keydown', e => {
   if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-  e.preventDefault();
   const items = [...m.querySelectorAll('button:not(:disabled)')], i = items.indexOf(document.activeElement);
+  if (!items.length) return;   // a menu of checkboxes and radios (Columns): the arrows are theirs
+  e.preventDefault();
   items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
 });
 $('btnCatalog').addEventListener('click', async e => {
@@ -1075,7 +1076,7 @@ let retiring = '';
 async function openRetire(name) {
   retiring = name;
   $('retireTitle').textContent = `Retire ${name}`;
-  $('retireGroups').textContent = ''; $('retireProgress').textContent = 'Reading...';
+  $('retireGroups').textContent = ''; $('retireProgress').textContent = 'Reading...'; $('retireProgress').className = '';
   for (const id of ['btnRetireStart', 'btnRetireFinish', 'btnRetireRefresh']) $(id).hidden = true;
   if (!$('dlgRetire').open) $('dlgRetire').showModal();
   const r = await api('/api/retire-status', { name });
@@ -1119,7 +1120,7 @@ async function openRetired() {
   skeleton($('retiredRows'), 3, 2); $('retiredNote').textContent = '';
   $('dlgRetired').showModal();
   const r = await api('/api/retired-list');
-  if (!r.ok) { $('retiredNote').textContent = r.error; return; }
+  if (!r.ok) { $('retiredNote').textContent = r.error; $('retiredRows').replaceChildren(); return; }
   $('retiredNote').textContent = r.apps.length ? '' : 'No app has been retired yet (More > Retire).';
   $('retiredRows').replaceChildren(...r.apps.map(x => el('tr', {}, el('td', { text: x.name || x.id }), el('td', { text: x.retired }),
     el('td', { class: 'act' }, el('button', { class: 'btn small', text: 'Restore', onclick: async () => {
@@ -1136,7 +1137,7 @@ async function openStatus(name) {
   skeleton($('statusRows'), 7, 4); $('statusErrors').hidden = true;
   $('dlgStatus').showModal();
   const r = await api('/api/install-status', { name });
-  if (!r.ok) { $('statusSummary').textContent = r.error; return; }
+  if (!r.ok) { $('statusSummary').textContent = r.error; $('statusRows').replaceChildren(); return; }
   $('statusSummary').textContent = r.summary + (r.truncated ? ' (only the first rows are shown)' : '');
   const top = r.topErrors || [];
   $('statusErrors').hidden = !top.length;
@@ -1176,5 +1177,7 @@ async function openStatus(name) {
   menu.addEventListener('click', e => e.stopPropagation());
   document.addEventListener('click', close);
   menu.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); close(); btn.focus(); } });
+  menu.addEventListener('focusout', e => { if (!menu.contains(e.relatedTarget) && e.relatedTarget !== btn) close(); });
+  addEventListener('scroll', e => { if (!menu.hidden && !menu.contains(e.target)) close(); }, true);
   apply();
 })();

@@ -57,7 +57,7 @@ async function runChecks(names) {
     $('checkNotes').textContent = notes.join(' ');
     $('checkEmptyList').hidden = true; $('btnRunChecksEmpty').hidden = true;
     $('checkEmptyTitle').textContent = 'Nothing to fix';
-    $('checkEmptyText').textContent = 'The catalog, Intune and Entra ID agree.';
+    $('checkEmptyText').textContent = notes.length ? `No findings - but not everything was compared: ${notes.join(' ')}` : 'The catalog, Intune and Entra ID agree.';
     checkLog(`${stamp()} [OK] Checks finished: ${findings.length} finding(s).`);
   } finally {
     checksRunning = false; b.disabled = false; b.textContent = 'Run checks';
@@ -211,6 +211,8 @@ $('btnFindWinget').addEventListener('click', () => openWinget($('aName').value.t
   $('aWinget').value = id;
   if (!$('aName').value.trim()) $('aName').value = x.name;
   if (!$('mPublisher').value.trim() && id.includes('.')) $('mPublisher').value = id.split('.')[0];
+  // As if typed: the Ready list and the own-installer fields follow.
+  $('aWinget').dispatchEvent(new Event('input', { bubbles: true }));
 }));
 $('wgQuery').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchWinget(); } });
 $('btnRunChecksEmpty').addEventListener('click', () => $('btnRunChecks').click());

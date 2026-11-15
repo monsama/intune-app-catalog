@@ -47,6 +47,7 @@ function updatePanel() {
   if (sel.length !== 1) { p.hidden = true; return; }
   clearTimeout(panelTimer); panelTimer = setTimeout(() => fillPanel(sel[0]), 120);
 }
+let panelRefocus = '';
 async function fillPanel(a) {
   const seq = ++panelSeq, p = $('appPanel'), s = stageOf(a);
   const r = await api('/api/app-get', { name: a.name });
@@ -54,7 +55,7 @@ async function fillPanel(a) {
   const app = r.ok ? r.app : {};
   const fact = (k, v) => v ? el('div', { class: 'kv' }, el('span', { class: 'k', text: k }), el('span', { text: v })) : '';
   // Quick edits right here: a group added or taken off, the version - saved at once (the editor isn't needed).
-  const quick = async body => { const x = await api('/api/app-quick', { name: a.name, ...body }); if (!x.ok) { toast(x.error, true); return false; } toast('Saved.'); await loadApps(); return true; };
+  const quick = async (body, refocus) => { const x = await api('/api/app-quick', { name: a.name, ...body }); if (!x.ok) { toast(x.error, true); return false; } toast('Saved.'); panelRefocus = refocus || ''; await loadApps(); return true; };
   const inline = (btn, label, value, save) => {
     const inp = el('input', { class: 'qedit', value: value || '', 'aria-label': label, placeholder: label, list: 'qGroupList',
       onkeydown: async e => { if (e.key === 'Enter') { e.preventDefault(); if (await save(inp.value.trim())) return; } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inp.replaceWith(btn); btn.focus(); } } });
@@ -62,8 +63,8 @@ async function fillPanel(a) {
     btn.replaceWith(inp); inp.focus(); inp.select();
   };
   const groups = (k, field, list, always) => (list || []).length || always ? el('div', { class: 'kv' }, el('span', { class: 'k', text: k }), el('span', { class: 'gedit' },
-    ...(list || []).map(g => el('span', { class: 'chip static editable' }, g, el('button', { type: 'button', class: 'x', text: '×', 'aria-label': `Take ${g} off ${k}`, title: `Take ${g} off ${k}`, onclick: () => quick({ field, remove: g }) }))),
-    (() => { const b = el('button', { type: 'button', class: 'chip addchip', text: '+ Add', 'aria-label': `Add a group to ${k}`, title: `Add a group to ${k}`, onclick: () => inline(b, `Group for ${k}`, '', v => v ? quick({ field, add: v }) : false) }); return b; })())) : '';
+    ...(list || []).map(g => el('span', { class: 'chip static editable' }, g, el('button', { type: 'button', class: 'x', text: '×', 'aria-label': `Take ${g} off ${k}`, title: `Take ${g} off ${k}`, onclick: () => quick({ field, remove: g }, `Add a group to ${k}`) }))),
+    (() => { const b = el('button', { type: 'button', class: 'chip addchip', text: '+ Add', 'aria-label': `Add a group to ${k}`, title: `Add a group to ${k}`, onclick: () => inline(b, `Group for ${k}`, '', v => v ? quick({ field, add: v }, `Add a group to ${k}`) : false) }); return b; })())) : '';
   const known = [...new Set(apps.flatMap(x => x.groups || []))].sort();
   const btn = (text, title, run, primary) => el('button', { class: 'btn small' + (primary ? ' primary' : ''), text, title, onclick: run });
   const pilot = (app.releases || []).find(x => x.state === 'pilot');
@@ -76,7 +77,7 @@ async function fillPanel(a) {
       (() => {
         const text = [a.version || '(none)', a.pilotVersion ? `pilot ${a.pilotVersion}` : '', a.newerOnWinget ? `winget has ${a.wingetVersion}` : '', (a.previousVersions || []).length ? `kept: ${a.previousVersions.join(', ')}` : ''].filter(Boolean).join(' - ');
         const canEdit = app.hasMetadata && !(app.managedUpdates && a.hasAppId);
-        const b = canEdit ? el('button', { type: 'button', class: 'btn small ghost', text: 'Change', 'aria-label': 'Change the version', title: 'Change the App version here', onclick: () => inline(b, 'App version', a.version, v => quick({ field: 'appVersion', value: v })) }) : '';
+        const b = canEdit ? el('button', { type: 'button', class: 'btn small ghost', text: 'Change', 'aria-label': 'Change the version', title: 'Change the App version here', onclick: () => inline(b, 'App version', a.version, v => quick({ field: 'appVersion', value: v }, 'Change the version')) }) : '';
         return el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Version' }), el('span', {}, text, ' ', b));
       })(),
       fact('Source', a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
@@ -90,6 +91,7 @@ async function fillPanel(a) {
       !a.wingetId ? btn('Test in Sandbox', 'Install, detect and uninstall it in Windows Sandbox', () => openSandbox(a.name)) : '',
       btn('More...', 'Every action for this app', () => $('btnMore').click())));
   p.hidden = false;
+  if (panelRefocus) { const t = [...p.querySelectorAll('[aria-label]')].find(x => x.getAttribute('aria-label') === panelRefocus); panelRefocus = ''; if (t) t.focus(); }
 }
 
 // ---------------------------------------------------------------- the release timeline: Pilot > rings > Everyone
@@ -111,7 +113,7 @@ function updateReady() {
     own ? [!!(row && !row.packageMissing), row && !row.packageMissing ? 'Its installer is packaged' : 'Its installer packaged (Packages\\<name>, then Package)', null]
       : [true, `Installs from winget (${wid})`, 'aWinget'],
     own ? [!!$('mInstallCommand').value.trim(), 'An install command', 'mInstallCommand'] : [true, 'Install command - made for winget', null],
-    own ? [!!det, det ? 'A detection rule' : 'A detection rule (Deploy settings)', 'xType'] : [true, 'Detection - made for winget', null],
+    own ? [!!det, det ? 'A detection rule' : 'A detection rule (Install & detection)', 'xType'] : [true, 'Detection - made for winget', null],
     $('aManaged').checked ? [!!$('mAppVersion').value.trim(), 'A version (managed updates install exactly it)', 'mAppVersion'] : null,
     [groups, groups ? 'Groups that get it' : 'Groups that get it - none yet, so nobody gets it', 'gRequired'],
   ].filter(Boolean);
@@ -120,7 +122,7 @@ function updateReady() {
   $('readyBox').classList.toggle('allok', done === items.length);
   $('readyList').replaceChildren(...items.map(([ok, text, field]) => el('li', { class: ok ? 'ok' : 'todo' },
     el('span', { class: 'mark', 'aria-hidden': 'true', text: ok ? '✓' : '!' }),
-    field && !ok ? el('button', { type: 'button', class: 'linkish', text, title: 'Go to the field', onclick: () => { edPageFor($(field)); $(field).focus(); } }) : el('span', { text: (ok ? '' : 'Missing: ') + text }))));
+    field && !ok ? el('button', { type: 'button', class: 'linkish', text, title: 'Go to the field', onclick: () => { const f = $(field); edPageFor(f); ((f.hidden && $(field + 'Chips')) || f).focus(); } }) : el('span', { text: (ok ? '' : 'Missing: ') + text }))));
 }
 $('appForm').addEventListener('input', () => updateReady());
 $('appForm').addEventListener('change', () => updateReady());
@@ -227,11 +229,14 @@ function renderWhere() {
   assign(right, 2, [[c => c.matches('.ready'), 0], [c => c.tagName === 'H3', 2]]);
   assign(dLeft, 3, [[c => c.tagName === 'H3' && /Detection rule/.test(c.textContent), 3], [c => c.tagName === 'H3' && /Dependencies/.test(c.textContent), 5]]);
   for (const c of dRight.children) pageOf.set(c, 4);
+  // The install and uninstall commands belong with the detection rule.
+  for (const id of ['mInstallCommand', 'mUninstallCommand']) pageOf.set($(id).closest('label'), 3);
   let cur = 0;
   const bar = el('nav', { class: 'edtabs', 'aria-label': 'Parts of the app' }, ...names.map((name, i) => el('button', { type: 'button', class: 'edtab', 'data-i': i, text: name, onclick: () => {
     setPage(i);
-    const f = [...pageOf].find(([c, p]) => p === i && !c.matches('.ready, h3') && c.querySelector('input:not([type=checkbox]):not([hidden]), select, textarea, .chipinput'));
-    const field = f && f[0].querySelector('input:not([type=checkbox]):not([hidden]), select, textarea, .chipinput');
+    const sel = 'input:not([type=checkbox]):not([hidden]), select, textarea:not([hidden]), .chipinput';
+    const f = [...pageOf].find(([c, p]) => p === i && !c.matches('.ready, h3') && c.querySelector(sel));
+    const field = f && f[0].querySelector(sel);
     if (field) setTimeout(() => field.focus({ preventScroll: true }), 30);
   } })));
   const mark = i => [...bar.children].forEach((b, k) => b.setAttribute('aria-current', k === i ? 'true' : 'false'));

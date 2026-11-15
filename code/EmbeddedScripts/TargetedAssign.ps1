@@ -139,6 +139,13 @@ if (-not (Test-Path -LiteralPath $ConfigPath)) {
     exit 1
 }
 $Config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+# The App ID goes into Graph addresses as is - only a GUID (see DeleteApp.ps1).
+$parsedAppId = [guid]::Empty
+if (-not [guid]::TryParse([string]$Config.AppId, [ref]$parsedAppId)) {
+    Write-Host "[FAILED] '$($Config.AppId)' isn't an Intune App ID (a GUID) - nothing was assigned." -ForegroundColor Red
+    exit 1
+}
+$Config.AppId = $parsedAppId.ToString()
 Write-Host "  App ID: $($Config.AppId)" -ForegroundColor Gray
 Write-Host "  Required groups : $(@($Config.RequiredGroups).Count)" -ForegroundColor Gray
 Write-Host "  Available groups: $(@($Config.AvailableGroups).Count)" -ForegroundColor Gray

@@ -306,7 +306,7 @@ function Global:Get-WebAppFieldTexts {
     param($App)
     $o = [ordered]@{}
     if (-not $App) { return $o }
-    foreach ($k in 'appName', 'appId', 'wingetId', 'requiredFor', 'availableFor', 'uninstallFor', 'excludeFor') { $o[$k] = Get-WebBatchValueText $App.$k }
+    foreach ($k in 'appName', 'appId', 'wingetId', 'requiredFor', 'availableFor', 'uninstallFor', 'excludeFor', 'assignmentFilter', 'assignmentFilterMode', 'retiringSince') { $o[$k] = Get-WebBatchValueText $App.$k }
     $o['icon'] = $(if ($App.icon -and $App.icon.value) { "$($App.icon.type), $([int]($App.icon.value.Length * 3 / 4 / 1024)) KB" } else { '' })
     if ($App.metadata) {
         foreach ($p in $App.metadata.PSObject.Properties) {

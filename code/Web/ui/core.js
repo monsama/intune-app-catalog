@@ -257,7 +257,8 @@ function openRowMenu(anchor, items) {
   closeRowMenu();
   if (same) return;
   rowMenuEl = el('div', { class: 'menu rowmenu', role: 'menu' }, ...items.map(b => el('button', { type: 'button', role: 'menuitem', text: b.textContent, title: b.title || '', disabled: b.disabled,
-    onclick: e => { e.stopPropagation(); closeRowMenu(); b.click(); } })));
+    onclick: e => { e.stopPropagation(); closeRowMenu(true); b.click(); } })));
+  rowMenuEl.addEventListener('focusout', e => { if (rowMenuEl && !rowMenuEl.contains(e.relatedTarget) && e.relatedTarget !== rowMenuAnchor) closeRowMenu(); });
   rowMenuEl.addEventListener('keydown', e => {
     const list = [...rowMenuEl.querySelectorAll('button:not(:disabled)')], i = list.indexOf(document.activeElement);
     if (e.key === 'Escape') { e.preventDefault(); closeRowMenu(true); }
@@ -272,7 +273,7 @@ function openRowMenu(anchor, items) {
   const first = rowMenuEl.querySelector('button:not(:disabled)'); if (first) first.focus();
 }
 document.addEventListener('click', () => closeRowMenu());
-addEventListener('scroll', () => closeRowMenu(), true);
+addEventListener('scroll', e => { if (rowMenuAnchor && (e.target === document || (e.target.contains && e.target.contains(rowMenuAnchor)))) closeRowMenu(); }, true);
 // The first button stays as it is; any others go into a "⋯" menu next to it.
 function rowActions(acts) {
   const list = acts.filter(Boolean), btns = list.filter(a => a.tagName === 'BUTTON');

@@ -190,6 +190,7 @@ $testableFunctionNames = @(
     "ConvertFrom-WingetInstallerUrl",
     "Get-DownloadCheckVerdict",
     "Add-WingetRetryReturnCode",
+    "Set-MarkerScriptVersion",
     "Get-AppRecordFieldValues",
     "Get-AppRecordChanges",
     "Test-AppRecordFieldRevertable",
@@ -827,16 +828,25 @@ Assert-True (-not (Set-AppRecordFieldJson -Record $hRec -Field 'appName' -Json '
 Assert-True (((Get-RetireGroups ([pscustomobject]@{ requiredFor = @('SG-A', ' SG-B '); availableFor = @('SG-A', 'SG-C'); uninstallFor = @(); excludeFor = @('SG-C') })) -join ',') -eq 'SG-A,SG-B') "Get-RetireGroups: every group it was given, once, minus its exclusions"
 $rp = Get-RetireProgress @([pscustomobject]@{ State = 'Installed' }, [pscustomobject]@{ State = 'Uninstalled' }, [pscustomobject]@{ State = 'Not installed' }, [pscustomobject]@{ State = 'Failed' }, [pscustomobject]@{ State = 'Pending' })
 Assert-True ($rp.total -eq 5 -and $rp.still -eq 1 -and $rp.removed -eq 2 -and $rp.failed -eq 1 -and $rp.other -eq 1 -and -not $rp.done -and $rp.text -like '1 of 5 device(s) still have it*failed on 1*') "Get-RetireProgress: still installed, removed, failed and pending counted"
+Assert-True ((Get-RetireProgress @([pscustomobject]@{ State = 'Uninstall failed' })).failed -eq 1 -and -not (Get-RetireProgress @([pscustomobject]@{ State = 'Uninstall failed' })).done) "Get-RetireProgress: a failed uninstall is still there, not removed"
 Assert-True ((Get-RetireProgress @([pscustomobject]@{ State = 'Uninstalled' })).done -and (Get-RetireProgress @()).done) "Get-RetireProgress: done when no device has it (or none reports it)"
 
 # Can a pinned winget version still be installed?
 Assert-Equal 'https://dl.example/7z2408-x64.msi' (ConvertFrom-WingetInstallerUrl "Found 7-Zip [7zip.7zip]`r`nVersion: 24.08`r`nInstaller:`r`n  Installer Type: msi`r`n  Installer Url: https://dl.example/7z2408-x64.msi`r`n  Installer SHA256: abc") "ConvertFrom-WingetInstallerUrl: the installer link from winget show"
 Assert-Equal '' (ConvertFrom-WingetInstallerUrl 'No package found matching input criteria.') "ConvertFrom-WingetInstallerUrl: none when winget doesn't have it"
+Assert-Equal 'https://dl.example/setup.exe' (ConvertFrom-WingetInstallerUrl "Homepage: https://example.com`r`nInstaller:`r`n  Installer-URL: https://dl.example/setup.exe") "ConvertFrom-WingetInstallerUrl: winget in another language (Installer-URL)"
+Assert-Equal 'https://dl.example/x.msi' (ConvertFrom-WingetInstallerUrl "Startseite: https://example.com`r`n  URL du programme: https://dl.example/x.msi") "ConvertFrom-WingetInstallerUrl: a label it doesn't know - the link that ends like an installer"
+Assert-True ((Get-DownloadCheckVerdict -InWinget $true -StatusCode 0 -Version '1' -NoLink).status -eq 'unknown') "Get-DownloadCheckVerdict: an answer without a link isn't 'gone'"
 Assert-True ((Get-DownloadCheckVerdict -InWinget $true -StatusCode 200 -Version '1').status -eq 'ok' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 206 -Version '1').status -eq 'ok' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 404 -Version '1').status -eq 'gone' -and
     (Get-DownloadCheckVerdict -InWinget $false -StatusCode 0 -Version '1').status -eq 'notinwinget' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 403 -Version '1').status -eq 'unknown' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 0 -Version '1').status -eq 'unknown') "Get-DownloadCheckVerdict: there, gone (404/410), not in winget, or not known (403, no answer)"
 $rcs = @(Add-WingetRetryReturnCode @(@{ returnCode = 0; type = 'success' }, @{ returnCode = 9009; type = 'retry' }))
 Assert-True ($rcs.Count -eq 2 -and @(Add-WingetRetryReturnCode @(@{ returnCode = 0; type = 'success' })).Count -eq 2 -and @(Add-WingetRetryReturnCode @()).Count -eq 6) "Add-WingetRetryReturnCode: 9009 added once; an empty list keeps Intune's five defaults"
 Assert-True ((Get-InstallErrorInfo 9009).meaning -like "*winget wasn't on the device*" -and (Get-InstallErrorInfo '0x80072329').fix -like '*Retry*') "Get-InstallErrorInfo: 9009 - winget not on the device yet, Intune retries"
+
+# A new version for a script or PSADT app: the version marker in its script follows
+$mk = Set-MarkerScriptVersion -Text ("x`r`nSet-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\IntuneAppCatalog\Apps\O''Neil App' -Name Version -Value '1.0'`r`n`$adtSession = @{`r`n    AppVersion = '1.0'`r`n}") -Version '2.1'
+Assert-True ($mk.Changed -and $mk.Text -match "-Name Version -Value '2\.1'" -and $mk.Text -match "AppVersion = '2\.1'" -and $mk.Text -match "O''Neil App") "Set-MarkerScriptVersion: the marker and PSADT's AppVersion get the new version"
+Assert-True (-not (Set-MarkerScriptVersion -Text "Set-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Other' -Name Version -Value '1.0'" -Version '2').Changed) "Set-MarkerScriptVersion: another registry value is left alone"
 
 # Install errors explained
 $e1 = Get-InstallErrorInfo -2016345060

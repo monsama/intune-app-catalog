@@ -320,7 +320,6 @@ function Global:Save-WebPsadtTemplate {
         if ($PSVersionTable.PSEdition -eq 'Desktop') { $p.UseBasicParsing = $true }
         $rel = Invoke-RestMethod @p
         $asset = @($rel.assets | Where-Object { [string]$_.name -match '^PSAppDeployToolkit_Template_v4\.zip$' }) | Select-Object -First 1
-        if (-not $asset) { $asset = @($rel.assets | Where-Object { [string]$_.name -match 'Template.*\.zip$' }) | Select-Object -First 1 }
         if (-not $asset) { return "The PSADT release $($rel.tag_name) has no template zip - download it by hand from GitHub (PSAppDeployToolkit) into $Folder." }
         [void](New-Item -ItemType Directory -Path $tmp -Force)
         $zip = Join-Path $tmp 'template.zip'
@@ -329,6 +328,13 @@ function Global:Save-WebPsadtTemplate {
         Expand-Archive -LiteralPath $zip -DestinationPath $out -Force
         $main = Get-ChildItem -LiteralPath $out -Filter 'Invoke-AppDeployToolkit.ps1' -File -Recurse | Select-Object -First 1
         if (-not $main) { return 'The downloaded template has no Invoke-AppDeployToolkit.ps1.' }
+        # It runs as SYSTEM on every device it goes to: the toolkit's module must be validly signed (Authenticode) - else nothing is copied.
+        $module = @(Get-ChildItem -LiteralPath $main.DirectoryName -Filter 'PSAppDeployToolkit.psm1' -File -Recurse) | Select-Object -First 1
+        if (-not $module) { return 'The downloaded template has no PSAppDeployToolkit module - not used.' }
+        if (-not (Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue)) { return 'The template''s signature can only be checked on Windows - download it by hand.' }
+        $sig = Get-AuthenticodeSignature -LiteralPath $module.FullName
+        if ($sig.Status -ne 'Valid') { return "The PSADT module in release $($rel.tag_name) isn't validly signed ($($sig.Status)) - not used. Download the template by hand from GitHub (PSAppDeployToolkit) if you trust it." }
+        Write-Log "[INFO] PSADT module signed by: $($sig.SignerCertificate.Subject)"
         Copy-Item -Path (Join-Path $main.DirectoryName '*') -Destination $Folder -Recurse -Force
         Write-Log "[OK] PSADT $($rel.tag_name) template put in $Folder."
         return ''
@@ -347,8 +353,12 @@ function Global:Add-WebPsadtApp {
     #>
     param($Data)
     $name = ([string]$Data.name).Trim() -replace '\s+', ' '
-    $why = Test-WebAddName $name @((Read-WebCatalogRecords).Apps)
+    $all = @((Read-WebCatalogRecords).Apps)
+    $why = Test-WebAddName $name $all
     if ($why) { return @{ ok = $false; error = $why } }
+    # Its packages folder is named like its catalog file - another app with the same file name would have its template rewritten.
+    $clash = @($all | Where-Object { (Get-SafeFileNameForApp -Name $_.appName) -ieq (Get-SafeFileNameForApp -Name $name) }) | Select-Object -First 1
+    if ($clash) { return @{ ok = $false; error = "'$name' would share its file and packages folder with '$($clash.appName)' - pick another name." } }
     $version = ([string]$Data.version).Trim()
     if (-not (Test-ReleaseVersionText $version)) { return @{ ok = $false; error = 'Give the version you are packaging (letters, digits and . - + _) - the detection rule checks for it.' } }
     $folder = Join-Path (Get-AppFolder -Kind Packages -Create) (Get-SafeFileNameForApp -Name $name)

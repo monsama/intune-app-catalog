@@ -162,7 +162,8 @@ try {
     # never touches group creation/lookup by id at all (see that branch's
     # own comment).
     $allResults = New-Object System.Collections.Generic.List[object]
-    $appList = @($Config.Apps)
+    # App IDs go into Graph addresses as is - an app whose ID isn't a GUID is left out.
+    $appList = @(@($Config.Apps) | Where-Object { $g = [guid]::Empty; if ([guid]::TryParse([string]$_.AppId, [ref]$g)) { $_.AppId = $g.ToString(); $true } else { Write-Host "  [SKIP] $($_.AppName): '$($_.AppId)' isn't an Intune App ID (a GUID)." -ForegroundColor Yellow; $false } })
     $totalApps = $appList.Count
     $appIndex = 0
 

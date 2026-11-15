@@ -904,7 +904,7 @@ Function Get-WingetCmd {
 }
 
 `$winget   = Get-WingetCmd
-`$JsonFile = "`$env:TEMP\InstalledApps.json"
+`$JsonFile = "`$env:TEMP\InstalledApps-`$([guid]::NewGuid().ToString('N')).json"
 & `$Winget export -o `$JsonFile --accept-source-agreements | Out-Null
 `$Json     = Get-Content `$JsonFile -Raw | ConvertFrom-Json
 `$Packages = `$Json.Sources.Packages
@@ -939,7 +939,8 @@ function Global:Get-WingetCommandLines {
     # The ID ends up in code and command lines that run as SYSTEM on the
     # devices - escaped for its single quotes, and anything that would close
     # the surrounding double quotes removed (see ConvertTo-PsSingleQuotedContent).
-    $WingetId = ConvertTo-PsSingleQuotedContent $WingetId
+    # A backslash never belongs in a winget ID - and one at the end would escape the closing quote of the WAU form.
+    $WingetId = (ConvertTo-PsSingleQuotedContent $WingetId).Replace('\', '')
     # "Managed": winget itself, pinned to -Version - a release of exactly that
     # version (Get-ManagedWingetDetection checks for it or newer). Without a
     # version yet it is the plain winget form.
@@ -1078,7 +1079,8 @@ function Global:Get-DefaultAppMetadata {
         installTimeMinutes      = $das.InstallTimeMinutes
         deviceRestartBehavior   = $das.DeviceRestartBehavior
         allowAvailableUninstall = $das.AllowAvailableUninstall
-        returnCodes             = @($das.ReturnCodes)
+        # The generated winget commands exit 9009 when winget isn't on a new device yet - Retry, not Failed.
+        returnCodes             = $(if ([string]$templates.Install -like '*exit 9009*') { @(Add-WingetRetryReturnCode @($das.ReturnCodes)) } else { @($das.ReturnCodes) })
     }
 }
 
@@ -1829,16 +1831,16 @@ function Global:Set-PsadtTemplateValues {
     $t = [string]$Text
     foreach ($pair in @(@('AppVendor', $Vendor), @('AppName', $Name), @('AppVersion', $Version))) {
         $rx = '(?m)^(\s*' + $pair[0] + '\s*=\s*)''[^''\r\n]*'''
-        if ($t -match $rx) { $lit = (ConvertTo-PsLiteral $pair[1]).Replace('$', '$$'); $t = [regex]::Replace($t, $rx, ('${1}' + $lit), 1); $filled.Add($pair[0]) } else { $missing.Add($pair[0]) }
+        if ($t -match $rx) { $lit = (ConvertTo-PsLiteral $pair[1]).Replace('$', '$$'); $t = ([regex]$rx).Replace($t, ('${1}' + $lit), 1); $filled.Add($pair[0]) } else { $missing.Add($pair[0]) }
     }
     $key = ConvertTo-PsLiteral ("HKLM:\SOFTWARE\IntuneAppCatalog\Apps\" + ([string]$Name -replace '[\\/]', '-'))
     $ver = ConvertTo-PsLiteral $Version
     $add = "`r`n    ## The version marker Intune's detection rule reads (added by Intune App Catalog) - keep it.`r`n    New-Item -Path $key -Force | Out-Null`r`n    Set-ItemProperty -LiteralPath $key -Name Version -Value $ver`r`n"
     $remove = "`r`n    ## The version marker (added by Intune App Catalog).`r`n    Remove-Item -LiteralPath $key -Recurse -Force -ErrorAction SilentlyContinue`r`n"
     $rxIn = '(?m)^(\s*## <Perform Post-Installation tasks here>[^\r\n]*)'
-    if ($t -match $rxIn) { $t = [regex]::Replace($t, $rxIn, ('${1}' + $add.Replace('$', '$$')), 1); $filled.Add('marker after install') } else { $missing.Add('marker after install') }
+    if ($t -match $rxIn) { $t = ([regex]$rxIn).Replace($t, ('${1}' + $add.Replace('$', '$$')), 1); $filled.Add('marker after install') } else { $missing.Add('marker after install') }
     $rxUn = '(?m)^(\s*## <Perform Post-Uninstallation tasks here>[^\r\n]*)'
-    if ($t -match $rxUn) { $t = [regex]::Replace($t, $rxUn, ('${1}' + $remove.Replace('$', '$$')), 1); $filled.Add('marker after uninstall') } else { $missing.Add('marker after uninstall') }
+    if ($t -match $rxUn) { $t = ([regex]$rxUn).Replace($t, ('${1}' + $remove.Replace('$', '$$')), 1); $filled.Add('marker after uninstall') } else { $missing.Add('marker after uninstall') }
     return @{ Text = $t; Filled = $filled.ToArray(); Missing = $missing.ToArray() }
 }
 
@@ -2025,8 +2027,9 @@ function Global:Get-RetireProgress {
         if (-not $r) { continue }
         $s = ([string]$r.State).Trim()
         if ($s -match '^installed$') { $still++ }
-        elseif ($s -match 'uninstall|not installed|not applicable') { $removed++ }
+        # Failed first: "Uninstall failed" is still there.
         elseif ($s -match 'fail|error') { $failed++ }
+        elseif ($s -match 'uninstall|not installed|not applicable') { $removed++ }
         else { $other++ }
     }
     $total = $still + $removed + $failed + $other
@@ -2037,11 +2040,18 @@ function Global:Get-RetireProgress {
 }
 
 function Global:ConvertFrom-WingetInstallerUrl {
-    # Pure: the first "Installer Url:" in "winget show" output ('' when there's none).
+    <#
+      Pure: the installer link in "winget show" output ('' when there's none).
+      winget's labels follow Windows' language ("Installer Url", "Installer-URL",
+      ...): a link on a line whose label has "Installer" in it, else one that
+      ends like an installer file.
+    #>
     param([string]$Text)
-    foreach ($line in @(([string]$Text) -split "`r?`n")) {
-        if ($line -match '^\s*Installer Url:\s*(\S+)\s*$') { return $Matches[1] }
-    }
+    $links = @(foreach ($line in @(([string]$Text) -split "`r?`n")) { if ($line -match '^\s*([^:]*):\s*(https?://\S+)\s*$') { [pscustomobject]@{ Label = $Matches[1]; Url = $Matches[2] } } })
+    $byLabel = @($links | Where-Object { $_.Label -match 'install' }) | Select-Object -First 1
+    if ($byLabel) { return $byLabel.Url }
+    $byFile = @($links | Where-Object { $_.Url -match '\.(exe|msi|msix|msixbundle|appx|appxbundle|zip)(\?|$)' }) | Select-Object -First 1
+    if ($byFile) { return $byFile.Url }
     return ''
 }
 
@@ -2052,7 +2062,8 @@ function Global:Get-DownloadCheckVerdict {
       -InWinget: winget still knows the version; -StatusCode: what its
       installer link answered (0 when it couldn't be asked).
     #>
-    param([bool]$InWinget, [int]$StatusCode, [string]$Version)
+    param([bool]$InWinget, [int]$StatusCode, [string]$Version, [switch]$NoLink)
+    if ($NoLink) { return @{ status = 'unknown'; text = "winget's answer about $Version couldn't be read (no installer link in it)." } }
     if (-not $InWinget) { return @{ status = 'notinwinget'; text = "winget no longer has $Version - devices that don't have it yet can't install it. Release a newer version." } }
     if ($StatusCode -in 200, 206) { return @{ status = 'ok'; text = "$Version can still be downloaded." } }
     if ($StatusCode -in 404, 410) { return @{ status = 'gone'; text = "The vendor removed the $Version download (HTTP $StatusCode) - devices that don't have it yet fail to install it. Release a newer version (fast track for a quick one); if this keeps happening, the vendor only keeps its latest version online." } }
@@ -2076,4 +2087,19 @@ function Global:Add-WingetRetryReturnCode {
     if (-not @($list | Where-Object { $_.returnCode -eq 9009 }).Count) { $list = @($list) + [pscustomobject]@{ returnCode = 9009; type = 'retry' } }
     # Never empty, so unrolled is fine - callers wrap it in @().
     return $list
+}
+
+function Global:Set-MarkerScriptVersion {
+    <#
+      Pure: a script app's or PSADT app's script with its version set to
+      -Version - the version marker this app writes
+      (Set-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\IntuneAppCatalog\Apps\...' -Name Version -Value '<v>')
+      and, in a PSADT script, AppVersion = '<v>'. So the script writes the
+      version its detection rule checks for. @{ Text; Changed }.
+    #>
+    param([string]$Text, [string]$Version)
+    $lit = (ConvertTo-PsLiteral $Version).Replace('$', '$$')
+    $t = [regex]::Replace([string]$Text, "(?m)(Set-ItemProperty\s+-LiteralPath\s+'HKLM:\\SOFTWARE\\IntuneAppCatalog\\Apps\\(?:[^']|'')*'\s+-Name\s+Version\s+-Value\s+)'(?:[^']|'')*'", ('${1}' + $lit))
+    $t = [regex]::Replace($t, "(?m)^(\s*AppVersion\s*=\s*)'(?:[^']|'')*'", ('${1}' + $lit))
+    return @{ Text = $t; Changed = ($t -cne [string]$Text) }
 }
