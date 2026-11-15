@@ -1054,14 +1054,23 @@ function Global:Get-DefaultAppMetadata {
     # The name lookup is built once per catalog list (the same list object), not for every app - for the
     # Apps list that was every app walked once per app.
     $appsNow = $Global:App.Apps
+    $appsList = @($appsNow)
+    $appsCount = $appsList.Count
+    $appsLast = ''
+    if ($appsCount) { $appsLast = [string]$appsList[$appsCount - 1].appName }
     $cache = $Global:App.CatalogNamesCache   # one object, replaced whole: a request in another runspace never sees half of it
-    if ($cache -and [object]::ReferenceEquals($cache.For, $appsNow) -and $cache.N -eq @($appsNow).Count -and $cache.Last -ceq [string]$(if (@($appsNow).Count) { @($appsNow)[-1].appName })) { $catalogNames = $cache.Names }
-    else {
+    $catalogNames = $null
+    if ($cache -and [object]::ReferenceEquals($cache['For'], $appsNow) -and $cache['N'] -eq $appsCount -and $cache['Last'] -ceq $appsLast) { $catalogNames = $cache['Names'] }
+    if ($null -eq $catalogNames) {
         $catalogNames = @{}
-        foreach ($catalogApp in $appsNow) {
+        foreach ($catalogApp in $appsList) {
             if ($catalogApp.appName) { $catalogNames[[string]$catalogApp.appName] = $true }
         }
-        if ($null -ne $appsNow) { $Global:App.CatalogNamesCache = @{ For = $appsNow; N = @($appsNow).Count; Last = [string]$(if (@($appsNow).Count) { @($appsNow)[-1].appName }); Names = $catalogNames } }
+        if ($null -ne $appsNow) {
+            $newCache = @{}
+            $newCache['For'] = $appsNow; $newCache['N'] = $appsCount; $newCache['Last'] = $appsLast; $newCache['Names'] = $catalogNames
+            $Global:App['CatalogNamesCache'] = $newCache
+        }
     }
     $defaultDeps = @(
         $das.DefaultDependencyAppNames | Where-Object {
