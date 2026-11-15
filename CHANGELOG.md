@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.27.7
+
+- **Dropdowns look the same everywhere.** One style for all 41 of them on
+  every page, Settings section, dialog and editor tab: the app's own
+  chevron (the browser's arrow looked different on every system), regular
+  text (27 had taken the bold of their label, 12 hadn't), the same size,
+  corners, colours, hover and focus; the editor's block rows use the same
+  look at a row's height. The open list follows the theme too.
+
 ## 2.27.6
 
 - **Script apps written another way get their blocks.** Commands like

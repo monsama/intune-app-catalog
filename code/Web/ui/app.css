@@ -1362,3 +1362,24 @@ fieldset.ownrule > legend + * { clear: both; }
 #dlgCode.cmdmode #seText, #dlgCode.cmdmode #seHl { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; }
 #dlgCode.cmdmode #seGutter { display: none; }
 #dlgCode.cmdmode .code { min-height: 0; height: 240px; grid-template-columns: 1fr; }
+
+/* ---- Dropdowns (2.27.7): one look everywhere ----
+   The same text (13px, regular - not the bold of the label around it), the same corners and colours, and the
+   app's own chevron instead of the browser's arrow (which looks different on every system). Lists that show
+   several rows at once (multiple, size) keep theirs. */
+select:not([multiple]):not([size]) {
+  -webkit-appearance: none; appearance: none;
+  font: inherit; font-size: 13px; font-weight: 400; line-height: 1.2; color: var(--fg);
+  background-color: var(--field, var(--surface));
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+  border: 1px solid var(--bd); border-radius: var(--r-m);
+  padding: 0 30px 0 10px; text-overflow: ellipsis; cursor: pointer;
+}
+select:not([multiple]):not([size]):hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 55%, var(--bd)); }
+select:not([multiple]):not([size]):focus { border-color: var(--accent); box-shadow: var(--ring); outline: none; }
+select:not([multiple]):not([size]):disabled { opacity: .55; cursor: default; }
+select option, select optgroup { background: var(--surface); color: var(--fg); font-weight: 400; }
+/* Compact places (a block row, the version picker): the same look, a row's height. */
+.brec select:not([multiple]):not([size]), select.pver, select.verpick { height: 30px; font-size: 13px; border-radius: var(--r-m); padding: 0 30px 0 10px !important; }
