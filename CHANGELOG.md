@@ -12,6 +12,9 @@
 - **Checks**: the fix buttons stay in the toolbar while there are
   findings (greyed out until something is ticked), so ticking a finding
   no longer pushes the table down.
+- **Creating a group**: the few seconds Entra ID needs before a new group
+  can be read no longer log red `[GRAPH] ... FAILED ... NotFound` lines;
+  the wait says "Entra ID is still copying the new group (normal)".
 
 ## 2.27.0
 

@@ -64,7 +64,10 @@ function Invoke-GraphRequestDetailed {
         [string]$Method = "GET",
         [string]$Body = $null,
         [string]$ContentType = "application/json",
-        [Parameter(Mandatory=$true)][string]$StepDescription
+        [Parameter(Mandatory=$true)][string]$StepDescription,
+        # A 404 the caller expects (waiting for a new group to replicate):
+        # no FAILED log line, the caller says "not visible yet" instead.
+        [switch]$NotFoundExpected
     )
     $maxAttempts = 4
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
@@ -110,6 +113,7 @@ function Invoke-GraphRequestDetailed {
                 continue
             }
             $detail = Get-HttpErrorDetail -ErrorRecord $_
+            if ($NotFoundExpected -and $_.Exception.Message -match 'NotFound|404') { throw "$StepDescription : not found yet" }
             if (Get-Command Write-GraphRequestLog -ErrorAction SilentlyContinue) { Write-GraphRequestLog -Method $Method -Uri $Uri -Milliseconds $graphTimer.ElapsedMilliseconds -ErrorText $_.Exception.Message -Detail $detail }
             $msg = "$StepDescription failed [$Method $Uri]: $($_.Exception.Message)"
             if ($detail) { $msg += "`nResponse body: $detail" }
@@ -277,12 +281,14 @@ try {
         for ($attempt = 1; $attempt -le 10; $attempt++) {
             Start-Sleep -Seconds 2
             try {
-                Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$groupId`?`$select=id" -Method GET -StepDescription "Check group availability" | Out-Null
+                Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$groupId`?`$select=id" -Method GET -StepDescription "Check group availability" -NotFoundExpected | Out-Null
                 $propagated = $true
                 break
             }
             catch {
-                Write-Host "  ... not yet visible (attempt $attempt/10)" -ForegroundColor DarkGray
+                # Normal for a few seconds after creating a group: Entra ID copies it to all its servers first.
+                if ($_.Exception.Message -match 'not found yet') { Write-Host "  ... not visible yet - Entra ID is still copying the new group (normal, attempt $attempt/10)" -ForegroundColor DarkGray }
+                else { Write-Host "  ... not visible yet (attempt $attempt/10): $($_.Exception.Message)" -ForegroundColor DarkGray }
             }
         }
         if ($propagated) {
