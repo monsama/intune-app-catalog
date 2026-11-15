@@ -135,7 +135,7 @@ function Global:Complete-WebRelease {
     $fast = [bool]$After.FastTrack
     [void](Update-WebCatalogApp -Name $After.AppName -Change {
             param($app)
-            $now = (Get-Date).ToString('yyyy-MM-dd HH:mm')
+            $now = (Get-Date).ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture)
             $app.releases = @(@($app.releases) | Where-Object { $_.state -ne 'pilot' }) + @([pscustomobject]@{ version = $version; appId = $newId; state = 'pilot'; at = $now; productCode = $code; ring = 0; ringAt = $now; fastTrack = $fast; unassigned = $true })
             $app.blockedVersions = @(@($app.blockedVersions) | Where-Object { $_ -and [string]$_ -ne $version })
         }.GetNewClosure())
@@ -208,7 +208,7 @@ function Global:Complete-WebAdvance {
     if (-not $pilot) { return @{ ok = $false; error = "$($a.appName) has no pilot release." } }
     $rings = @(Get-WebReleaseRings)
     $next = [Math]::Min([int]$pilot.ring + 1, $rings.Count - 1)
-    $pilot.ring = $next; $pilot.ringAt = (Get-Date).ToString('yyyy-MM-dd HH:mm')
+    $pilot.ring = $next; $pilot.ringAt = (Get-Date).ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture)
     Write-WebAppFile -App $a
     Write-Log "[OK] $($a.appName) $($pilot.version) is in ring $($next + 1) of $($rings.Count) ($($rings[$next].Name)) now."
     return @{ ok = $true; ring = $next; ringName = [string]$rings[$next].Name; version = [string]$pilot.version }
@@ -253,7 +253,7 @@ function Global:Complete-WebPromotion {
     $a.metadata.appVersion = [string]$pilot.version
     [void](Set-ManagedAppPin $a -ProductCode ([string]$pilot.productCode))
     $kept = @(@($a.releases) | Where-Object { $_.state -ne 'pilot' })
-    if ($oldId) { $kept += [pscustomobject]@{ version = $oldVersion; appId = $oldId; state = 'previous'; at = (Get-Date).ToString('yyyy-MM-dd HH:mm'); productCode = $oldCode } }
+    if ($oldId) { $kept += [pscustomobject]@{ version = $oldVersion; appId = $oldId; state = 'previous'; at = (Get-Date).ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture); productCode = $oldCode } }
     $a.releases = $kept
     $a.appId = [string]$pilot.appId
     Write-WebAppFile -App $a -Undo $undo
@@ -413,7 +413,7 @@ function Global:Complete-WebRollback {
     $a.metadata.appVersion = [string]$prev.version
     [void](Set-ManagedAppPin $a -ProductCode ([string]$prev.productCode))
     $leftCode = $leftCodeBefore
-    $a.releases = @(@($a.releases) | Where-Object { [string]$_.appId -ne [string]$prev.appId }) + @([pscustomobject]@{ version = $oldVersion; appId = $oldId; state = 'rolledback'; at = (Get-Date).ToString('yyyy-MM-dd HH:mm'); productCode = $leftCode })
+    $a.releases = @(@($a.releases) | Where-Object { [string]$_.appId -ne [string]$prev.appId }) + @([pscustomobject]@{ version = $oldVersion; appId = $oldId; state = 'rolledback'; at = (Get-Date).ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture); productCode = $leftCode })
     # The version rolled back from isn't released again by itself (the nightly run).
     $a.blockedVersions = @(@($a.blockedVersions) + $oldVersion | Where-Object { $_ } | Select-Object -Unique)
     $a.appId = [string]$prev.appId
@@ -560,7 +560,7 @@ function Global:Test-WebPinnedDownload {
     if ($r.status -in 'gone', 'notinwinget') {
         try { if ((& $check '').status -eq 'ok') { $r.latestOnly = $true; $r.text += ' The newest version can be downloaded - this vendor keeps only its latest version online: release new versions soon after they come out (fast track), or turn managed updates off for this app.' } } catch { }
     }
-    $r.at = (Get-Date).ToString('yyyy-MM-dd HH:mm')
+    $r.at = (Get-Date).ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture)
     $h = Get-WebDownloadChecks
     # Requests run side by side: one at a time changes and writes the results.
     [System.Threading.Monitor]::Enter($h.SyncRoot)
@@ -594,49 +594,110 @@ function Global:Invoke-WebDownloadChecks {
 # person and the PC. On this PC a holder whose process ended doesn't count; one on another PC counts for 3 hours.
 function Global:Get-WebBusyFile { param([string]$Name) Join-Path (Join-Path (Get-WebIntegrityFolder -Create) 'busy') ((Get-SafeFileNameForApp -Name $Name) + '.json') }
 
+function Global:ConvertTo-WebUtcTicks {
+    # A time from a busy marker as UTC ticks, however it was read: ticks (2.26.2), an ISO text, or the [datetime] PowerShell 7's ConvertFrom-Json makes of an ISO text.
+    param($Value)
+    if ($null -eq $Value -or '' -eq $Value) { return [int64]0 }
+    if ($Value -is [datetime]) { return $Value.ToUniversalTime().Ticks }
+    if ($Value -is [int64] -or $Value -is [int] -or $Value -is [double] -or $Value -is [decimal]) { return [int64]$Value }
+    $t = [datetime]::MinValue
+    if ([datetime]::TryParse([string]$Value, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal -bor [Globalization.DateTimeStyles]::AssumeUniversal, [ref]$t)) { return $t.Ticks }
+    return [int64]0
+}
+
 function Global:Get-WebBusyHolder {
     # The record of whoever holds the app now (not this process), or $null.
     param([string]$File)
     if (-not (Test-Path -LiteralPath $File)) { return $null }
-    try {
-        $b = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json
-        $started = [datetime]::Parse([string]$b.started, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal)
-        if (((Get-Date).ToUniversalTime() - $started).TotalHours -ge 3) { return $null }
-        $here = -not $b.machine -or [string]$b.machine -eq [string]$env:COMPUTERNAME
-        if ($here) {
-            if ([int]$b.pid -eq $PID) { return $null }
-            $p = Get-Process -Id ([int]$b.pid) -ErrorAction SilentlyContinue
-            if (-not ($p -and ([string]$b.procStart -eq $p.StartTime.ToUniversalTime().ToString('o')))) { return $null }
-        }
-        return $b
+    $b = $null
+    try { $b = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json }
+    catch {
+        # Being written right now (another PC's marker, half there): held - for a minute, then it doesn't count.
+        try { if (((Get-Date).ToUniversalTime() - (Get-Item -LiteralPath $File).LastWriteTimeUtc).TotalSeconds -lt 60) { return [pscustomobject]@{ what = 'starting a change'; user = ''; machine = ''; started = (Get-Date).ToUniversalTime().Ticks } } } catch { }
+        return $null
     }
-    catch { return $null }
+    if (-not $b) { return $null }
+    $started = ConvertTo-WebUtcTicks $b.started
+    if (-not $started -or ((Get-Date).ToUniversalTime().Ticks - $started) -ge [TimeSpan]::FromHours(3).Ticks) { return $null }
+    $here = -not $b.machine -or [string]$b.machine -eq [string]$env:COMPUTERNAME
+    if ($here) {
+        if ([int]$b.pid -eq $PID) { return $null }
+        $p = Get-Process -Id ([int]$b.pid) -ErrorAction SilentlyContinue
+        if (-not $p) { return $null }
+        # Another user's process can't always be asked its start time: it's there, so it counts.
+        $procStart = $null
+        try { $procStart = $p.StartTime.ToUniversalTime().Ticks } catch { return $b }
+        # The process with that number is another one now (the holder ended, its number was reused): not held.
+        if ([math]::Abs($procStart - (ConvertTo-WebUtcTicks $b.procStart)) -gt [TimeSpan]::FromSeconds(1).Ticks) { return $null }
+    }
+    return $b
 }
 
 function Global:Format-WebBusyHolder {
     param($Holder)
     $who = if ($Holder.user) { "$($Holder.user)$(if ($Holder.machine -and $Holder.machine -ne $env:COMPUTERNAME) { " on $($Holder.machine)" })" } else { 'another window' }
-    $since = try { ([datetime]::Parse([string]$Holder.started, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal)).ToLocalTime().ToString('HH:mm') } catch { '' }
+    $ticks = ConvertTo-WebUtcTicks $Holder.started
+    $since = if ($ticks) { ([datetime]::new($ticks, [DateTimeKind]::Utc)).ToLocalTime().ToString('HH:mm', [Globalization.CultureInfo]::InvariantCulture) } else { '' }
     return "$who - $($Holder.what)$(if ($since) { ", since $since" })"
 }
 
 function Global:Enter-WebAppBusy {
-    # '' when this process may work on the app (and now holds it), else who has it.
-    param([string]$Name, [string]$What)
-    $file = Get-WebBusyFile $Name
-    $dir = Split-Path -Parent $file
-    if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
-    $holder = Get-WebBusyHolder $file
-    if ($holder) { return "$Name is being changed right now by $(Format-WebBusyHolder $holder) - try again once that's done." }
-    $me = Get-Process -Id $PID
-    $rec = [ordered]@{ pid = $PID; procStart = $me.StartTime.ToUniversalTime().ToString('o'); started = (Get-Date).ToUniversalTime().ToString('o'); what = $What; user = [string]$env:USERNAME; machine = [string]$env:COMPUTERNAME }
-    [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $rec -Compress), (New-Object System.Text.UTF8Encoding($false)))
-    return ''
+    <#
+      '' when this process may work on the app (and now holds it), else who
+      has it. Held per window with a count: a second click on the same app
+      in this window is refused, while a step that continues one (-Shared:
+      a release's assign) adds to it; the marker goes when the last lets go.
+      The file is created at once (CreateNew), so two PCs can't both take it.
+    #>
+    param([string]$Name, [string]$What, [switch]$Shared)
+    if (-not $Global:App.BusyHeld) { $Global:App.BusyHeld = [hashtable]::Synchronized(@{}) }
+    $key = Get-SafeFileNameForApp -Name $Name
+    $held = $Global:App.BusyHeld
+    [System.Threading.Monitor]::Enter($held.SyncRoot)
+    try {
+        if ($held[$key] -gt 0) {
+            if (-not $Shared) { return "$Name is being changed in this window already - wait until that step is done." }
+            $held[$key] = [int]$held[$key] + 1
+            return ''
+        }
+        $file = Get-WebBusyFile $Name
+        $dir = Split-Path -Parent $file
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        $holder = Get-WebBusyHolder $file
+        if ($holder) { return "$Name is being changed right now by $(Format-WebBusyHolder $holder) - try again once that's done." }
+        # Free (no marker, or one left behind): taken in one step - whoever creates the file first has it.
+        Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+        $me = Get-Process -Id $PID
+        $rec = [ordered]@{ pid = $PID; procStart = $me.StartTime.ToUniversalTime().Ticks; started = (Get-Date).ToUniversalTime().Ticks; what = $What; user = [string]$env:USERNAME; machine = [string]$env:COMPUTERNAME }
+        $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes((ConvertTo-Json -InputObject $rec -Compress))
+        try {
+            $fs = [System.IO.File]::Open($file, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+            try { $fs.Write($bytes, 0, $bytes.Length) } finally { $fs.Dispose() }
+        }
+        catch [System.IO.IOException] {
+            $holder = Get-WebBusyHolder $file
+            return "$Name is being changed right now by $(if ($holder) { Format-WebBusyHolder $holder } else { 'someone else' }) - try again once that's done."
+        }
+        $held[$key] = 1
+        return ''
+    }
+    finally { [System.Threading.Monitor]::Exit($held.SyncRoot) }
 }
 
 function Global:Exit-WebAppBusy {
-    # Lets go of the app - only when this process (on this PC) holds it.
+    # Lets go of the app once - the marker goes when the last step of this window holding it is done.
     param([string]$Name)
+    $key = Get-SafeFileNameForApp -Name $Name
+    $held = $Global:App.BusyHeld
+    if ($held) {
+        [System.Threading.Monitor]::Enter($held.SyncRoot)
+        try {
+            $n = [int]$held[$key] - 1
+            if ($n -gt 0) { $held[$key] = $n; return }
+            $held.Remove($key)
+        }
+        finally { [System.Threading.Monitor]::Exit($held.SyncRoot) }
+    }
     $file = Get-WebBusyFile $Name
     try {
         if (Test-Path -LiteralPath $file) {
@@ -714,6 +775,13 @@ function Global:Invoke-WebWauSwitch {
             $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall
             $m.returnCodes = @(Add-WingetRetryReturnCode $m.returnCodes)
             if (-not ($a.managedUpdates -and (Set-ManagedAppPin $a)) -and $a.managedUpdates) { $noVersion.Add([string]$a.appName) }
+            # Pinned, the command is longer: past Intune's 1024 characters the options stay out after all.
+            if ($carry -and ([string]$m.installCommand).Length -gt 1024) {
+                [void]$carried.Remove("$($a.appName) ($carry)"); $dropped.Add("$($a.appName) ($extras - too long for Intune's install command)")
+                $c = Get-WingetCommandLines -WingetId $a.wingetId -Method 'Winget' -InstallContext ([string]$m.installContext)
+                $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall
+                if ($a.managedUpdates) { [void](Set-ManagedAppPin $a) }
+            }
         }
         elseif (@(Get-WauUse $a) -contains 'commands') { $byHand.Add([string]$a.appName) }
         # Only what really changed counts (and is written): an app whose WAU commands were edited by hand stays as it is.

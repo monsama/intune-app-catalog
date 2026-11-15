@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.26.2
+
+**Bug review fixes.**
+
+- **The app editor's blocks**: a value typed into a block and then Save
+  (or Ctrl+S) is saved - it was written into the command only after the
+  save. Escape with such a value asks first.
+- **The code editor**: minimized and opened again, it comes back as it was
+  instead of reloading over what was typed; a detection script is applied
+  only to the app it was opened for; Build package's progress shows on top.
+- **Ctrl+S** saves the app editor only when it's the window on top (not
+  under a question, the history or the code editor); Ctrl+F no longer
+  swallows the browser's find in a dialog.
+- **Home**: a failed refresh keeps what was shown; a button whose action is
+  still running stays disabled through the minute's refresh, and the
+  refresh waits while you're on Home's buttons with the keyboard.
+- **Being changed (several admins)**: works on PowerShell 7 too (times
+  were read differently there), counts another user's window on the same
+  PC, refuses a second start in the same window (a double click no longer
+  makes two pilot apps), is taken in one step (two PCs can't both get it),
+  and now also covers deploy, send groups, delete and retire.
+- **Time stamps** are written the same way in every Windows language (a
+  time separator other than ":" kept releases from moving on automatically).
+- **Groups renamed in Entra ID**: the message points to Replace a group,
+  and a rename made here moves the kept object ID with it; the IDs of
+  parallel sends are no longer lost.
+- winget answers with a progress spinner in front of a line are read
+  correctly; WAU options in capitals (--Override) are taken; a carried
+  option that makes the pinned command too long for Intune is left out.
+- A package script in the ANSI code page (an older one with umlauts)
+  opens with its umlauts.
+
 ## 2.26.1
 
 **A consistency pass over every page and dialog** (dark and light, wide

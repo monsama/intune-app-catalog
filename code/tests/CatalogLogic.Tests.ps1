@@ -2794,6 +2794,11 @@ Assert-True ($deFound.Ok -and $deFound.Result -eq 'Found (Notepad++ Team)' -and 
 $deGone = Get-WingetShowVerdict -ExitCode -1978335212 -StdOut "Es wurde kein Paket gefunden, das den Eingabekriterien entspricht." -StdErr ""
 Assert-True ((-not $deGone.Ok) -and $deGone.Result -like 'NOT FOUND*') "winget show in German: not found by its exit code"
 Assert-Equal '2.0,1.0' ((ConvertFrom-WingetVersionsOutput "Gefunden X [A.B]`nVersion`n-------`n2.0`n1.0") -join ',') "winget versions: the header can be in any language"
+# A progress spinner left in front of a line (carriage returns): only what follows its last one counts.
+$spun = "  - `r  \ `rName                 Id                  Version  Source`n------------------------------------------------------------`nNotepad++            Notepad++.Notepad++ 8.6.9    winget"
+Assert-Equal 'Notepad++.Notepad++' (@(ConvertFrom-WingetSearchOutput $spun)[0].Id) "winget search: a spinner in front of the header doesn't shift the columns"
+Assert-Equal '7zip.7zip' (ConvertFrom-WingetShowOutput "  - `r  | `rFound 7-Zip [7zip.7zip]`nVersion: 24.08").Id "winget show: a spinner in front of the Found line"
+Assert-True ((ConvertTo-WingetOptionText '--Override /S').Options -ceq "--override '/S'") "ConvertTo-WingetOptionText: an option in capitals is taken (as WAU commands sometimes write it)"
 $odd = Get-WingetShowVerdict -ExitCode 5 -StdOut "  - \`nSource agreement required" -StdErr ""
 Assert-True ((-not $odd.Ok) -and $odd.Result -like "Could not check (exit code 5): Source agreement required") "winget show: anything else says it couldn't check, with winget's first real line"
 

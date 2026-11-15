@@ -224,6 +224,9 @@ function Global:Complete-WebGroupRename {
     # The settings that name groups follow too - favourites, the pilot groups, the release rings and the profiles.
     # (A pilot step would otherwise create the old name again, as an empty group.)
     $old = [string]$After.OldName; $new = [string]$After.NewName
+    # The kept object ID follows the new name (the old name may be taken by another group later).
+    $ids = Read-WebGroupIdStore; $oldKey = $old.Trim().ToLowerInvariant()
+    if ($ids.ContainsKey($oldKey)) { Save-WebGroupIdStore -Map @{ ($new.Trim().ToLowerInvariant()) = $ids[$oldKey] } -Remove @($old) }
     $swap = { param($List) @(@($List) | ForEach-Object { if ([string]$_ -ieq $old) { $new } else { [string]$_ } } | Where-Object { $_ } | Select-Object -Unique) }
     $settingsChanged = $false
     if (@(@($Global:App.FavoriteGroups) | Where-Object { [string]$_ -ieq $old }).Count) {
@@ -258,9 +261,18 @@ function Global:Read-WebGroupIdStore {
 }
 
 function Global:Save-WebGroupIdStore {
-    param([hashtable]$Map)
-    $o = [ordered]@{}; foreach ($k in @($Map.Keys | Sort-Object)) { $o[$k] = $Map[$k] }
-    [System.IO.File]::WriteAllText((Join-Path (Get-WebIntegrityFolder -Create) 'groups.json'), (ConvertTo-Json -InputObject $o -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
+    # Merged into what the file has now, under a lock: two sends at once (parallel requests) both keep what they learned. -Remove: names to forget.
+    param([hashtable]$Map, [string[]]$Remove = @())
+    if (-not $Global:App.GroupIdLock) { $Global:App.GroupIdLock = New-Object System.Object }
+    [System.Threading.Monitor]::Enter($Global:App.GroupIdLock)
+    try {
+        $now = Read-WebGroupIdStore
+        foreach ($k in @($Map.Keys)) { $now[$k] = $Map[$k] }
+        foreach ($k in @($Remove)) { if ($k) { $now.Remove($k.Trim().ToLowerInvariant()) } }
+        $o = [ordered]@{}; foreach ($k in @($now.Keys | Sort-Object)) { $o[$k] = $now[$k] }
+        [System.IO.File]::WriteAllText((Join-Path (Get-WebIntegrityFolder -Create) 'groups.json'), (ConvertTo-Json -InputObject $o -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
+    }
+    finally { [System.Threading.Monitor]::Exit($Global:App.GroupIdLock) }
 }
 
 function Global:Resolve-WebGroupIds {
@@ -300,7 +312,7 @@ function Global:Resolve-WebGroupIds {
             $id = ([string]$store[$k]).ToLowerInvariant()
             if ($read.value.byId.ContainsKey($id)) {
                 $now = $read.value.byId[$id]
-                if ($now.Trim().ToLowerInvariant() -ne $k) { return @{ ok = $false; error = "The group '$n' was renamed in Entra ID to '$now' - rename it in the catalog too (Groups > the group > Rename), so assignments go where they're meant to." } }
+                if ($now.Trim().ToLowerInvariant() -ne $k) { return @{ ok = $false; error = "The group '$n' was renamed in Entra ID to '$now' - put the new name in the catalog: Apps > Catalog > Replace a group in all apps..., '$n' with '$now'. Nothing was sent." } }
                 if (@($sameName | Where-Object { $_.ToLowerInvariant() -ne $id }).Count) { Write-Log "[WARN] Another group is also named '$n' in Entra ID - assignments keep going to the one the catalog knows ($id)." }
                 $out[$n] = $id; continue
             }

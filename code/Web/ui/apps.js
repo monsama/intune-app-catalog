@@ -287,7 +287,9 @@ $('aMethod').addEventListener('change', async () => {
 // ---------------------------------------------------------------- unsaved changes (editor)
 // Escape or Cancel with changes asks first; saving or removing closes it without asking.
 let editorSnapshot = '';
-const editorState = () => [...$('appForm').querySelectorAll('input, textarea, select')].filter(e => e.id !== 'aMethod' && !e.closest('.blockbar')).map(e => e.type === 'checkbox' ? e.checked : e.value).join('\u0001') + '\u0001' + iconChange;
+const editorState = () => [...$('appForm').querySelectorAll('input, textarea, select')].filter(e => e.id !== 'aMethod' && !e.closest('.blockbar')).map(e => e.type === 'checkbox' ? e.checked : e.value).join('\u0001') + '\u0001' + iconChange +
+  // A block typed in but not written into the commands yet counts as a change too.
+  '\u0001' + [...document.querySelectorAll('#dlgApp .blockbar input')].filter(i => i.value !== i.defaultValue).length;
 async function closeEditorAsking() {
   if (editorState() !== editorSnapshot && !(await ask(`Discard your changes to ${editingName || 'the new app'}?\n\nNothing you changed in this dialog is saved.`, { ok: 'Discard', danger: true }))) return;
   $('dlgApp').close();
@@ -423,6 +425,8 @@ $('btnAddApp').addEventListener('click', () => openAdd());
 $('btnEditApp').addEventListener('click', () => { if (selected.size === 1) openEditor([...selected][0]); });
 $('appForm').addEventListener('submit', async e => {
   e.preventDefault();
+  // A block still being typed in (Save clicked, Ctrl+S) is written into the commands first.
+  if (window.blocksFlush) await blocksFlush();
   const app = {
     appName: $('aName').value, wingetId: $('aWinget').value, appId: $('aAppId').value,
     requiredFor: lines('gRequired'), availableFor: lines('gAvailable'), uninstallFor: lines('gUninstall'), excludeFor: lines('gExclude'),
@@ -694,10 +698,11 @@ $('filter').addEventListener('change', () => {
 });
 $('search').addEventListener('input', updateViewButtons);
 document.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && !$('viewApps').hidden) { e.preventDefault(); $('search').focus(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && !$('viewApps').hidden && !document.querySelector('dialog[open]:not(#dlgRun):not(.minimized)')) { e.preventDefault(); $('search').focus(); }
   if (e.key === 'F5') { e.preventDefault(); loadApps(); loadState(); }
   // Ctrl+S in the app editor saves it (the form's own submit, with its checks).
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && $('dlgApp').open && !($('dlgCode') && $('dlgCode').open)) { e.preventDefault(); $('appForm').requestSubmit(); return; }
+  // Only when the editor is the dialog on top - not under a question, the history or the code editor.
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && $('dlgApp').open && wcStack.filter(d => d.open && !d.classList.contains('minimized')).pop() === $('dlgApp')) { e.preventDefault(); $('appForm').requestSubmit(); return; }
   listKeys(e);
 });
 // The Apps list by keyboard - only while nothing else has the keys: no
@@ -1077,7 +1082,8 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu();
 function runDialog(title, text) {
   $('runTitle').textContent = title; $('runText').textContent = text || ''; $('runLog').textContent = '';
   // A tray in the corner, not a modal: keep working while it runs (Hide - the button at the top brings it back).
-  if (!$('dlgRun').open) $('dlgRun').show();
+  // Above a dialog that's open (the app editor, the code editor), it opens on top of it - otherwise it would be hidden under it.
+  if (!$('dlgRun').open) { if (document.querySelector('dialog[open]:modal:not(.minimized)')) $('dlgRun').showModal(); else $('dlgRun').show(); }
 }
 menu.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;

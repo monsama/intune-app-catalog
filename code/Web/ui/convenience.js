@@ -219,11 +219,14 @@ async function useInstalled(a) {
 
 // ---------------------------------------------------------------- Home
 let homeSeq = 0, homeAt = 0, homeSoon = 0;
+// Actions started from Home that are still running: their buttons stay disabled through a refresh.
+const homeRunning = new Set();
 // Home refreshes by itself: after any change in the app (loadApps), when the window comes back, and every
 // minute while it's open - another admin's changes show up too. Only while Home is the page shown.
 function refreshHomeSoon() { if ($('viewHome').hidden) return; clearTimeout(homeSoon); homeSoon = setTimeout(loadHome, 400); }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - homeAt > 15000) refreshHomeSoon(); });
-setInterval(() => { if (!document.hidden && Date.now() - homeAt > 55000) refreshHomeSoon(); }, 60000);
+// Not while someone is on Home's buttons with the keyboard (the refresh would take the focus away).
+setInterval(() => { if (!document.hidden && Date.now() - homeAt > 55000 && !$('viewHome').contains(document.activeElement)) refreshHomeSoon(); }, 60000);
 async function loadHome() {
   const seq = ++homeSeq;
   // Only the first load shows that it's looking; a refresh swaps the content in place, without flicker.
@@ -232,7 +235,12 @@ async function loadHome() {
   const r = await api('/api/attention');
   // A slower, older answer never overwrites a newer one (it could bring back something just fixed).
   if (seq !== homeSeq) return;
-  if (!r.ok) { $('homeNote').textContent = r.error; $('homeList').replaceChildren(); return; }
+  // A refresh that fails keeps what's shown (only the note says so); a first load that fails shows nothing stale.
+  if (!r.ok) {
+    $('homeNote').textContent = r.error;
+    if (!$('homeList').querySelector('li.att')) { $('homeList').replaceChildren(); $('homeCount').textContent = ''; $('homeStats').replaceChildren(); }
+    return;
+  }
   renderSetup(r.setup);
   $('homeNote').textContent = r.items.length ? `${r.items.length} thing${r.items.length === 1 ? '' : 's'} to look at${r.lastRun ? ` - last nightly run ${r.lastRun}` : ''}.` : 'Nothing needs a look right now.';
   $('homeCount').textContent = r.items.length ? String(r.items.length) : '';
@@ -246,7 +254,8 @@ async function loadHome() {
   const pill = { err: ['err', 'Problem'], warn: ['warn', 'Look'], ok: ['ok', 'Ready'], info: ['info', 'To do'] };
   $('homeList').replaceChildren(...(r.items.length ? r.items.map(i => { const w = where[i.go], p = pill[i.level] || pill.info;
     return el('li', { class: 'att ' + i.level }, el('span', { class: 'pill ' + p[0], text: p[1] }), el('div', { class: 'body' }, el('b', { text: i.title }), el('span', { class: 'muted', text: i.text })),
-      w ? el('button', { class: 'btn small', text: w[0], onclick: async e => { const b = e.currentTarget; if (b.disabled) return; b.disabled = true; try { await w[1](); } finally { b.disabled = false; } } }) : ''); })
+      w ? el('button', { class: 'btn small', text: w[0], 'data-go': i.go, disabled: homeRunning.has(i.go), title: homeRunning.has(i.go) ? 'Still running' : null,
+        onclick: async e => { if (homeRunning.has(i.go)) return; homeRunning.add(i.go); e.currentTarget.disabled = true; try { await w[1](); } finally { homeRunning.delete(i.go); const b = $('homeList').querySelector(`[data-go="${CSS.escape(i.go)}"]`); if (b) b.disabled = false; } } }) : ''); })
     : [el('li', { class: 'att ok' }, el('span', { class: 'pill ok', text: 'All good' }), el('div', { class: 'body' }, el('b', { text: 'Nothing to do' }), el('span', { class: 'muted', text: 'Every app is deployed, nothing is on hold, and the last nightly run went fine.' })))]));
 }
 $('btnHomeReload').addEventListener('click', loadHome);

@@ -27,7 +27,7 @@ function Global:ConvertTo-WebFindingRow {
         key = [string]$f.Key; area = [string]$f.Area; app = [string]$f.App; catalogName = [string]$f.CatalogName; appId = [string]$f.AppId
         problem = [string]$f.Problem; catalog = (Get-CheckValueText $f.Catalog); intune = (Get-CheckValueText $f.Intune)
         actions = @($f.Actions); failed = [bool]$f.Failed; cached = [bool]$f.Cached
-        checkedAt = $(if ($f.CheckedAt) { ([datetime]$f.CheckedAt).ToString('yyyy-MM-dd HH:mm') } else { '' })
+        checkedAt = $(if ($f.CheckedAt) { ([datetime]$f.CheckedAt).ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture) } else { '' })
         data = $f.Data
     }
 }

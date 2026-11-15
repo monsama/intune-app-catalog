@@ -13,7 +13,8 @@ function Global:ConvertFrom-WingetSearchOutput {
       contain spaces. No header (e.g. "No package found") means no rows.
     #>
     param([string]$Text)
-    $lines = @(([string]$Text) -split "`r?`n" | Where-Object { $_.TrimEnd() -ne '' })
+    # A progress spinner overwrites itself with carriage returns: what counts of a line is after its last one.
+    $lines = @(([string]$Text) -split "`r?`n" | ForEach-Object { ($_ -split "`r")[-1] } | Where-Object { $_.TrimEnd() -ne '' })
     $headerIdx = -1
     for ($i = 0; $i -lt $lines.Count; $i++) {
         # winget draws a progress spinner before the table; the header is

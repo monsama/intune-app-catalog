@@ -954,7 +954,7 @@ function Global:ConvertTo-WingetOptionText {
     $i = 0
     while ($i -lt $t.Length) {
         if ([char]::IsWhiteSpace($t[$i])) { $i++; continue }
-        $m = [regex]::Match($t.Substring($i), '^(--[a-z][a-z\-]*)(?:\s+|=|$)')
+        $m = [regex]::Match($t.Substring($i), '(?i)^(--[a-z][a-z\-]*)(?:\s+|=|$)')
         if (-not $m.Success) { return @{ Ok = $false; Options = ''; Error = "Extra winget options: '$($t.Substring($i).Split(' ')[0])' isn't an option (they start with --, e.g. --override `"/S`")." } }
         $name = $m.Groups[1].Value.ToLowerInvariant()
         if (-not $allowed.Contains($name)) { return @{ Ok = $false; Options = ''; Error = "Extra winget options: $name isn't taken - only $(@($allowed.Keys) -join ', ')." } }
@@ -1667,7 +1667,8 @@ function Global:ConvertFrom-WingetShowOutput {
     $map = Get-WingetShowLabelMap
     $key = ''
     foreach ($raw in @(([string]$Text) -split "`r?`n")) {
-        $line = $raw -replace '[\x00-\x08\x0B\x0C\x0E-\x1F]', ''
+        # After a progress spinner's last carriage return; control characters out.
+        $line = (([string]$raw) -split "`r")[-1] -replace '[\x00-\x08\x0B\x0C\x0E-\x1F]', ''
         # "Found 7-Zip [7zip.7zip]" ("Gefunden ...", "Trouve ..." in other Windows languages): the first line ending in [Id].
         $m = [regex]::Match($line, '^\S+\s+(.+?)\s+\[([A-Za-z0-9][A-Za-z0-9.\-_+]*)\]\s*$')
         if ($m.Success -and -not $out.Id) { $out.Name = $m.Groups[1].Value.Trim(); $out.Id = $m.Groups[2].Value.Trim(); $key = ''; continue }

@@ -250,7 +250,7 @@ function Global:Invoke-ManagedUpdateRun {
         }
         catch { Write-Log "[WARN] Managed updates: the device counts for the trend couldn't be read: $($_.Exception.Message)" }
     }
-    $report = [ordered]@{ started = $started.ToString('yyyy-MM-dd HH:mm'); finished = (Get-Date).ToString('yyyy-MM-dd HH:mm'); planOnly = [bool]$PlanOnly; fastTrackOnly = [bool]$FastTrackOnly; failed = $failed
+    $report = [ordered]@{ started = $started.ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture); finished = (Get-Date).ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture); planOnly = [bool]$PlanOnly; fastTrackOnly = [bool]$FastTrackOnly; failed = $failed
         policy = $policy; items = $items.ToArray(); trend = $trend }
     # The alert (Teams / email) - its own failure is reported, not fatal.
     $sent = Send-ManagedUpdateAlert $report
@@ -407,7 +407,7 @@ function Global:Invoke-WebCatalogBackup {
         $changes = & git -C $cat @safe status --porcelain -- '*.json' 2>$null
         if ($changes) {
             & git -C $cat @safe add -- '*.json' 2>$null | Out-Null
-            & git -C $cat @safe commit --no-verify -q -m "Catalog as of $((Get-Date).ToString('yyyy-MM-dd HH:mm')) (nightly run)" 2>$null | Out-Null
+            & git -C $cat @safe commit --no-verify -q -m "Catalog as of $((Get-Date).ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture)) (nightly run)" 2>$null | Out-Null
             $text += $(if ($LASTEXITCODE -eq 0) { ' Committed the changes to the catalog''s git repository.' } else { ' The git commit failed - see git status in the catalog folder.' })
         }
         Remove-Item -LiteralPath $hooks -Recurse -Force -ErrorAction SilentlyContinue
@@ -743,7 +743,7 @@ function Global:New-WebUnattendedScript {
     $q = { param($s) ConvertTo-PsLiteral $s }
     $script = @"
 # Intune App Catalog - run the nightly tasks while nobody is signed in.
-# Written by the app on $((Get-Date).ToString('yyyy-MM-dd HH:mm')). Run it once, in PowerShell started with "Run as administrator".
+# Written by the app on $((Get-Date).ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture)). Run it once, in PowerShell started with "Run as administrator".
 #Requires -RunAsAdministrator
 `$ErrorActionPreference = 'Stop'
 `$thumb = $(& $q $thumb)

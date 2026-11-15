@@ -50,7 +50,7 @@ function Global:Get-WebUndoInfo {
     $u = $Global:App.LastUndo
     if (-not $u -or -not $u.items.Count) { return @{ ok = $true; undo = $null } }
     $at = [datetime]$u.time
-    return @{ ok = $true; undo = @{ label = [string]$u.label; time = $(if ($at.Date -eq (Get-Date).Date) { $at.ToString('HH:mm') } else { $at.ToString('yyyy-MM-dd HH:mm') }); count = $u.items.Count; apps = @($u.items | ForEach-Object { $_.name }) } }
+    return @{ ok = $true; undo = @{ label = [string]$u.label; time = $(if ($at.Date -eq (Get-Date).Date) { $at.ToString('HH:mm') } else { $at.ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture) }); count = $u.items.Count; apps = @($u.items | ForEach-Object { $_.name }) } }
 }
 
 function Global:Invoke-WebUndo {

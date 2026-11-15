@@ -610,7 +610,7 @@ function Global:Undo-WebHistoryChange {
     if (-not $problem) { $problem = Test-ManagedAppEdit -Existing ((Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1) -Record $app }
     if ($problem) { return @{ ok = $false; error = "It can't be undone: $problem" } }
     [void](Set-ManagedAppPin $app)
-    $when = try { ([datetime]$entry.at).ToLocalTime().ToString('yyyy-MM-dd HH:mm') } catch { [string]$entry.at }
+    $when = try { ([datetime]$entry.at).ToLocalTime().ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture) } catch { [string]$entry.at }
     $file = Join-Path (Get-AppFolder -Kind Catalog) ((Get-SafeFileNameForApp -Name $app.appName) + '.json')
     Backup-WebAppFile $file
     Save-WebAppJson -File $file -App $app -Text "Undid the change of $when"

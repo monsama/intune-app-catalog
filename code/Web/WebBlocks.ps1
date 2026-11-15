@@ -65,6 +65,15 @@ function Global:Resolve-WebPackageScript {
     return @{ Ok = $true; Path = $path; App = $app.appName; Error = '' }
 }
 
+function Global:Read-WebScriptText {
+    # A script as text: UTF-8 (with or without a BOM) - or, when it isn't valid UTF-8, Windows' ANSI code page (an older script with umlauts), never replacement characters.
+    param([string]$Path)
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    $start = if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) { 3 } else { 0 }
+    try { return (New-Object System.Text.UTF8Encoding($false, $true)).GetString($bytes, $start, $bytes.Length - $start) }
+    catch { return [System.Text.Encoding]::Default.GetString($bytes) }
+}
+
 function Global:Get-WebTextHash {
     param([string]$Path)
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
@@ -76,7 +85,7 @@ function Global:Read-WebPackageScript {
     $p = Resolve-WebPackageScript -Name ([string]$Data.name) -File ([string]$Data.file)
     if (-not $p.Ok) { return @{ ok = $false; error = $p.Error } }
     if ((Get-Item -LiteralPath $p.Path).Length -gt 262144) { return @{ ok = $false; error = "$($Data.file) is larger than 256 KB - edit it outside the app." } }
-    $text = [System.IO.File]::ReadAllText($p.Path)
+    $text = Read-WebScriptText $p.Path
     $files = @(foreach ($f in 'Install.ps1', 'Uninstall.ps1', 'Invoke-AppDeployToolkit.ps1') { if (Test-Path -LiteralPath (Join-Path (Split-Path $p.Path) $f) -PathType Leaf) { $f } })
     return @{ ok = $true; text = $text; hash = (Get-WebTextHash $p.Path); locked = @(Get-PackageScriptLockedLines $text); files = $files; folder = (Split-Path $p.Path) }
 }
@@ -109,7 +118,7 @@ function Global:Save-WebPackageScript {
             $again = Resolve-WebPackageScript -Name ([string]$Data.name) -File ([string]$Data.file)
             if (-not $again.Ok -or $again.Path -ne $p.Path) { return @{ ok = $false; error = $(if ($again.Ok) { 'The script moved meanwhile.' } else { $again.Error }) } }
             if ((Get-WebTextHash $p.Path) -ne [string]$Data.hash) { return @{ ok = $false; conflict = $true; error = "$($Data.file) was changed since you opened it (by someone else, or outside the app). Nothing was saved - close it and open it again, then redo your change." } }
-            $old = [System.IO.File]::ReadAllText($p.Path)
+            $old = Read-WebScriptText $p.Path
             $check = Test-PackageScriptEdit -Old $old -New $text
             if (-not $check.Ok) { return @{ ok = $false; error = $check.Error; errors = @($check.Errors) } }
             $dir = Get-WebScriptCopyFolder
@@ -122,7 +131,7 @@ function Global:Save-WebPackageScript {
             [System.IO.File]::WriteAllText($p.Path, (ConvertTo-CanonicalLineEndings $text), (New-Object System.Text.UTF8Encoding($true)))
             Add-WebHistoryEntry -App $p.App -Kind 'catalog' -Text "$($Data.file) edited in the app - build the package again (the earlier one is in Backups)."
             Write-Log "[OK] $($p.App): $($Data.file) saved (the earlier one: $copy). Build the package again."
-            return @{ ok = $true; hash = (Get-WebTextHash $p.Path); locked = @(Get-PackageScriptLockedLines ([System.IO.File]::ReadAllText($p.Path))) }
+            return @{ ok = $true; hash = (Get-WebTextHash $p.Path); locked = @(Get-PackageScriptLockedLines (Read-WebScriptText $p.Path)) }
         })
 }
 
@@ -138,14 +147,14 @@ function Global:Get-WebPackageScriptPrevious {
     $copies = @(Get-ChildItem -LiteralPath $backups -Directory -Filter 'script-edit_*' -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -File -ErrorAction SilentlyContinue } |
             Where-Object { $_.Name -match '^\d{6}(-\d+)?_(.+)$' -and [string]::Equals($Matches[2], $want, [StringComparison]::OrdinalIgnoreCase) } | Sort-Object { $_.Directory.Name }, { $_.Name } -Descending)
     # The version marker as the current file has it now (a release may have moved it since): the copy can then be saved again.
-    $current = [System.IO.File]::ReadAllText($p.Path)
+    $current = Read-WebScriptText $p.Path
     $mv = [regex]::Match($current, "-Name\s+Version\s+-Value\s+'((?:[^']|'')*)'")
     foreach ($c in $copies) {
         if ((Test-WebCopyRecord $c.FullName) -ne 'ok') { continue }
-        $text = [System.IO.File]::ReadAllText($c.FullName)
+        $text = Read-WebScriptText $c.FullName
         if ($mv.Success) { $text = (Set-MarkerScriptVersion -Text $text -Version ($mv.Groups[1].Value -replace "''", "'")).Text }
         # When it was kept (the folder's date and the copy's time), not when that version was first written.
-        $at = if ($c.Directory.Name -match '^script-edit_\d{4}-\d{2}-\d{2}$') { '{0} {1}:{2}' -f $c.Directory.Name.Substring(12), $c.Name.Substring(0, 2), $c.Name.Substring(2, 2) } else { $c.LastWriteTime.ToString('yyyy-MM-dd HH:mm') }
+        $at = if ($c.Directory.Name -match '^script-edit_\d{4}-\d{2}-\d{2}$') { '{0} {1}:{2}' -f $c.Directory.Name.Substring(12), $c.Name.Substring(0, 2), $c.Name.Substring(2, 2) } else { $c.LastWriteTime.ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture) }
         return @{ ok = $true; text = $text; at = $at }
     }
     return @{ ok = $false; error = $(if ($copies.Count) { 'The copies in Backups were changed outside the app - none is taken.' } else { 'No earlier version in Backups yet - one is kept each time you save.' }) }
