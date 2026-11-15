@@ -278,7 +278,7 @@ $('aMethod').addEventListener('change', async () => {
 // ---------------------------------------------------------------- unsaved changes (editor)
 // Escape or Cancel with changes asks first; saving or removing closes it without asking.
 let editorSnapshot = '';
-const editorState = () => [...$('appForm').querySelectorAll('input, textarea, select')].map(e => e.type === 'checkbox' ? e.checked : e.value).join('\u0001') + '\u0001' + iconChange;
+const editorState = () => [...$('appForm').querySelectorAll('input, textarea, select')].filter(e => e.id !== 'aMethod').map(e => e.type === 'checkbox' ? e.checked : e.value).join('\u0001') + '\u0001' + iconChange;
 async function closeEditorAsking() {
   if (editorState() !== editorSnapshot && !(await ask(`Discard your changes to ${editingName || 'the new app'}?\n\nNothing you changed in this dialog is saved.`, { ok: 'Discard', danger: true }))) return;
   $('dlgApp').close();

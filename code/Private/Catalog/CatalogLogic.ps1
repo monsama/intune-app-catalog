@@ -2201,7 +2201,7 @@ function Global:Get-ClosestGroupName {
       other case, spacing, dash kind (- vs an en dash) or & vs "and" - else ''.
     #>
     param([string]$Name, [string[]]$Candidates)
-    $norm = { param($s) ((([string]$s).ToLowerInvariant() -replace '[‐-―]', '-' -replace '\s*&\s*', ' and ' -replace '[\s_\-]+', ' ')).Trim() }
+    $norm = { param($s) ((([string]$s).ToLowerInvariant() -replace '[\u2010-\u2015]', '-' -replace '\s*&\s*', ' and ' -replace '[\s_\-]+', ' ')).Trim() }
     $want = & $norm $Name
     $hits = @(@($Candidates) | Where-Object { $_ -and $_ -cne $Name -and (& $norm $_) -eq $want } | Select-Object -Unique)
     if ($hits.Count -eq 1) { return [string]$hits[0] }
