@@ -133,6 +133,7 @@ $testableFunctionNames = @(
     "Get-AppWingetInstallMethod",
     "Convert-AppWingetInstallMethod",
     "Get-DefaultAppMetadata",
+    "Get-CatalogNameLookup",
     "Get-FriendlyIntuneAppType",
     "Get-ParsedMinOsRelease",
     "Get-FriendlyMinOsRelease",

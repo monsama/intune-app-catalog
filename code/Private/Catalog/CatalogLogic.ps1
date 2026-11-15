@@ -1033,6 +1033,26 @@ function Global:Convert-AppWingetInstallMethod {
     return @{ Status = "Switched"; Install = $wanted.Install; Uninstall = $wanted.Uninstall }
 }
 
+function Global:Get-CatalogNameLookup {
+    <#
+      The catalog's app names as a hashtable (case-insensitive, like -eq),
+      built once per catalog list - the same list object, count and last
+      name - not for every app. On its own: Get-DefaultAppMetadata has so
+      many variables that more in it trip PowerShell ("Argument types do
+      not match").
+    #>
+    $appsNow = $Global:App.Apps
+    $list = @($appsNow)
+    $last = ''
+    if ($list.Count) { $last = [string]$list[$list.Count - 1].appName }
+    $cache = $Global:App.CatalogNamesCache   # one object, replaced whole: a request in another runspace never sees half of it
+    if ($cache -and [object]::ReferenceEquals($cache['For'], $appsNow) -and $cache['N'] -eq $list.Count -and $cache['Last'] -ceq $last) { return $cache['Names'] }
+    $names = @{}
+    foreach ($a in $list) { if ($a.appName) { $names[[string]$a.appName] = $true } }
+    if ($null -ne $appsNow) { $Global:App['CatalogNamesCache'] = @{ For = $appsNow; N = $list.Count; Last = $last; Names = $names } }
+    return $names
+}
+
 function Global:Get-DefaultAppMetadata {
     param([string]$AppName, [string]$WingetId, [bool]$Uncommon)
 
@@ -1053,25 +1073,7 @@ function Global:Get-DefaultAppMetadata {
     # case-insensitively, exactly as the -eq it replaces did.
     # The name lookup is built once per catalog list (the same list object), not for every app - for the
     # Apps list that was every app walked once per app.
-    $appsNow = $Global:App.Apps
-    $appsList = @($appsNow)
-    $appsCount = $appsList.Count
-    $appsLast = ''
-    if ($appsCount) { $appsLast = [string]$appsList[$appsCount - 1].appName }
-    $cache = $Global:App.CatalogNamesCache   # one object, replaced whole: a request in another runspace never sees half of it
-    $catalogNames = $null
-    if ($cache -and [object]::ReferenceEquals($cache['For'], $appsNow) -and $cache['N'] -eq $appsCount -and $cache['Last'] -ceq $appsLast) { $catalogNames = $cache['Names'] }
-    if ($null -eq $catalogNames) {
-        $catalogNames = @{}
-        foreach ($catalogApp in $appsList) {
-            if ($catalogApp.appName) { $catalogNames[[string]$catalogApp.appName] = $true }
-        }
-        if ($null -ne $appsNow) {
-            $newCache = @{}
-            $newCache['For'] = $appsNow; $newCache['N'] = $appsCount; $newCache['Last'] = $appsLast; $newCache['Names'] = $catalogNames
-            $Global:App['CatalogNamesCache'] = $newCache
-        }
-    }
+    $catalogNames = Get-CatalogNameLookup
     $defaultDeps = @(
         $das.DefaultDependencyAppNames | Where-Object {
             $depName = $_
