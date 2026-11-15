@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.19.1
+
+- **Apps > Version** is never just empty. An app without an App version
+  shows what devices actually get, greyed: **newest (24.09)** for a Winget
+  app (winget's version from the last check), **Store** for a Store app,
+  **not set** for an own installer. Hovering explains it.
+- **Company Portal and Microsoft 365 Apps** show as **Microsoft (Intune)**
+  with the stage **Microsoft app** - not "own installer", "Draft" and
+  "Build", since there's nothing to build.
+- **No second "Send to Intune" button**: the next-step button only shows
+  when the next step is something else.
+- **The Apps toolbar wraps** on narrower windows instead of pushing the
+  side panel off the right edge.
+
 ## 2.19.0
 
 Winget-AutoUpdate (WAU) is removed. Managed updates are the one way the

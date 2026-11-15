@@ -143,9 +143,9 @@ function renderApps() {
   body.replaceChildren(...[...list.map(a => {
     const tr = el('tr', { 'data-name': a.name, class: selected.has(a.name) ? 'sel' : '', title: a.appId ? 'App ID ' + a.appId : 'Not in Intune yet' },
       el('td', { class: 'name' }, iconFor(a), a.name),
-      el('td', { class: 'mono src', text: !a.wingetId ? 'own installer' : isStoreId(a.wingetId) ? `${a.wingetId} (Store)` : a.wingetId,
+      el('td', { class: 'mono src', text: a.msHint && !a.wingetId ? 'Microsoft (Intune)' : !a.wingetId ? 'own installer' : isStoreId(a.wingetId) ? `${a.wingetId} (Store)` : a.wingetId,
         title: !a.wingetId ? 'Its own installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') : isStoreId(a.wingetId) ? 'A Microsoft Store app - Intune\'s own Store type: no package, the Store installs and updates it' : `winget package ${a.wingetId}` }),
-      el('td', { class: 'num' }, a.version || '', a.pilotVersion ? el('span', { class: 'pill warn newer', text: 'pilot ' + a.pilotVersion, title: `${a.pilotVersion} is released to the pilot groups. More > Promote version in pilot gives it to everyone.` })
+      el('td', { class: 'num' }, a.version || versionFallback(a), a.pilotVersion ? el('span', { class: 'pill warn newer', text: 'pilot ' + a.pilotVersion, title: `${a.pilotVersion} is released to the pilot groups. More > Promote version in pilot gives it to everyone.` })
         : a.newerOnWinget ? el('span', { class: 'pill info newer', text: '→ ' + a.wingetVersion, title: a.managed && a.hasAppId ? `winget offers ${a.wingetVersion}. More > Release new version sends it to the pilot groups first.` : `winget offers ${a.wingetVersion}. More > Take winget's version uses it as the App version.` }) : ''),
       el('td', { title: `Required: ${a.required}, Available: ${a.available}, Uninstall: ${a.uninstall}`, class: a.required + a.available ? '' : 'muted', text: a.required + a.available + a.uninstall ? `${(a.groups || []).length} group${(a.groups || []).length === 1 ? '' : 's'}` : 'nobody yet' }),
       el('td', {}, stageCell(a)));
@@ -1232,3 +1232,12 @@ async function openStatus(name) {
   addEventListener('scroll', e => { if (!menu.hidden && !menu.contains(e.target)) close(); }, true);
   apply();
 })();
+
+// The Version column without an App version: what devices actually get, greyed - not an empty cell.
+function versionFallback(a) {
+  if (a.msHint && !a.wingetId) return el('span', { class: 'muted', text: '-', title: a.msHint });
+  if (a.wingetId && isStoreId(a.wingetId)) return el('span', { class: 'muted', text: 'Store', title: 'The Microsoft Store installs and updates it - no version to set.' });
+  if (a.wingetId) return el('span', { class: 'muted', text: a.wingetVersion ? `newest (${a.wingetVersion})` : 'newest',
+    title: (a.managed ? 'Managed updates, but no App version yet: set it (Set version) - until then it installs the newest.' : 'No App version: devices get whatever winget has at install time.') + (a.wingetVersion ? ` winget offers ${a.wingetVersion} (last check).` : ' Catalog > Check winget for new versions shows which.') });
+  return el('span', { class: 'muted', text: 'not set', title: 'No App version yet. The editor shows the installer version in its package folder (Basics); Details > App version sets it.' });
+}
