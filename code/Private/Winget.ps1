@@ -114,6 +114,8 @@ function Global:Invoke-Winget {
     # Runs winget with -Arguments and waits (at most -TimeoutSeconds): @{ ExitCode; StdOut; StdErr }.
     param([string[]]$Arguments, [int]$TimeoutSeconds = 30)
     $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
+    # Linux (the container): winget's source read without winget (WingetIndex.ps1).
+    if (-not $cmd -and (Test-WingetIndexUsable)) { return (Invoke-WingetIndex -Arguments $Arguments) }
     if (-not $cmd) { throw "winget.exe isn't on this machine. It comes with the 'App Installer' package on Windows 10 and 11 - install that from the Microsoft Store." }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $cmd.Source
@@ -143,6 +145,8 @@ function Global:Test-WingetClientModule {
       read (in several languages). Never in test mode.
     #>
     if ($Global:App.TestGraph) { return $false }
+    # Linux (the container): the index answers as the module would.
+    if (Test-WingetIndexUsable) { return $true }
     if ($null -ne $Global:App.WingetClientModule) { return [bool]$Global:App.WingetClientModule }
     $ok = $false
     try {
@@ -160,6 +164,7 @@ function Global:Find-WingetClientPackage {
     # Find-WinGetPackage as plain rows @{ Name; Id; Version; Source; Versions } ($null when the module can't answer - the caller then asks winget.exe).
     param([string]$Query, [string]$Id)
     if (-not (Test-WingetClientModule)) { return $null }
+    if (Test-WingetIndexUsable) { try { return (Find-WingetIndexPackage -Query $Query -Id $Id) } catch { return $null } }
     try {
         $found = if ($Id) { @(Find-WinGetPackage -Id $Id -MatchOption EqualsCaseInsensitive -ErrorAction Stop) } else { @(Find-WinGetPackage -Query $Query -ErrorAction Stop) }
         $rows = New-Object System.Collections.Generic.List[object]

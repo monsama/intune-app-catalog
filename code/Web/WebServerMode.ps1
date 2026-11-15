@@ -175,7 +175,7 @@ function Global:Import-WebPfx {
     if (-not $b64 -or $b64.Length -gt 200000) { return @{ ok = $false; error = 'Choose a .pfx file (at most about 140 KB).' } }
     try { $bytes = [Convert]::FromBase64String($b64) } catch { return @{ ok = $false; error = "That isn't a file the page could read." } }
     $flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]'PersistKeySet,Exportable'
-    try { $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(, $bytes, [string]$Data.password, $flags) }
+    try { $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new([byte[]]$bytes, [string]$Data.password, $flags) }
     catch { return @{ ok = $false; error = "The .pfx couldn't be opened - is the password right? ($($_.Exception.Message))" } }
     if (-not $cert.HasPrivateKey) { return @{ ok = $false; error = 'That file has no private key - export the certificate with its private key (.pfx).' } }
     if ($cert.NotAfter -le (Get-Date)) { return @{ ok = $false; error = "That certificate expired on $($cert.NotAfter.ToString('yyyy-MM-dd'))." } }
@@ -207,7 +207,7 @@ function Global:New-AppSelfSignedCertificate {
     $made = $req.CreateSelfSigned([DateTimeOffset]::Now.AddMinutes(-5), [DateTimeOffset]::Now.AddYears(2))
     # Through a .pfx so the key is one the store keeps (not the request's in-memory one).
     $pfx = $made.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx)
-    $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(, $pfx, [string]$null, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]'PersistKeySet,Exportable')
+    $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new([byte[]]$pfx, [string]'', [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]'PersistKeySet,Exportable')
     $st = New-Object System.Security.Cryptography.X509Certificates.X509Store('My', [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
     try { $st.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite); $st.Add($cert) } finally { $st.Close() }
     $rsa.Dispose()

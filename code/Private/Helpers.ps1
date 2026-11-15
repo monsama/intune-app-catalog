@@ -331,3 +331,47 @@ function Global:Get-AppWindowPreferencesJson {
     return ($prefs | ConvertTo-Json -Depth 50 -Compress)
 }
 
+
+function Global:Get-MsiPropertyValues {
+    <#
+      Values from an MSI's Property table (ProductName, ProductVersion, ProductCode, ...): @{ Name = Value }
+      for the -Names it has. Windows: Windows Installer itself. Linux (the container): msitools' msiinfo.
+      Empty when the file can't be read.
+    #>
+    param([string]$Path, [string[]]$Names)
+    $out = @{}
+    if ($IsLinux -or $IsMacOS) {
+        $tool = Get-Command msiinfo -ErrorAction SilentlyContinue
+        if (-not $tool) { return $out }
+        try {
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $tool.Source
+            foreach ($a in @('export', $Path, 'Property')) { $psi.ArgumentList.Add($a) }
+            $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true; $psi.UseShellExecute = $false
+            $p = [System.Diagnostics.Process]::Start($psi)
+            $text = $p.StandardOutput.ReadToEnd(); [void]$p.WaitForExit(20000)
+            # Tab-separated: a header of three lines, then "Property<TAB>Value".
+            foreach ($line in @($text -split "`r?`n" | Select-Object -Skip 3)) {
+                $k = $line.IndexOf("`t"); if ($k -le 0) { continue }
+                $name = $line.Substring(0, $k)
+                if ($Names -contains $name) { $out[$name] = $line.Substring($k + 1) }
+            }
+        }
+        catch { }
+        return $out
+    }
+    try {
+        $wi = New-Object -ComObject WindowsInstaller.Installer
+        $db = $wi.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $wi, @($Path, 0))
+        foreach ($prop in $Names) {
+            $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db, @("SELECT Value FROM Property WHERE Property='$prop'"))
+            [void]$view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
+            $rec = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+            if ($rec) { $out[$prop] = [string]$rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, 1) }
+            [void]$view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null)
+        }
+        [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($db); [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($wi)
+    }
+    catch { }
+    return $out
+}

@@ -147,19 +147,9 @@ function Global:Get-WebInstallerFacts {
     param([string]$Path)
     $info = [ordered]@{ Kind = ([System.IO.Path]::GetExtension($Path)).TrimStart('.').ToLowerInvariant(); FileName = [System.IO.Path]::GetFileName($Path); ProductName = ''; Manufacturer = ''; ProductVersion = ''; ProductCode = ''; ExeKind = ''; Signer = '' }
     if ($info.Kind -eq 'msi') {
-        try {
-            $wi = New-Object -ComObject WindowsInstaller.Installer
-            $db = $wi.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $wi, @($Path, 0))
-            foreach ($prop in 'ProductName', 'ProductVersion', 'Manufacturer', 'ProductCode') {
-                $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db, @("SELECT Value FROM Property WHERE Property='$prop'"))
-                [void]$view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
-                $rec = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
-                if ($rec) { $info[$prop] = [string]$rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, 1) }
-                [void]$view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null)
-            }
-            [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($db); [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($wi)
-        }
-        catch { }
+        # Windows Installer on Windows, msitools on Linux (the container).
+        $props = Get-MsiPropertyValues -Path $Path -Names @('ProductName', 'ProductVersion', 'Manufacturer', 'ProductCode')
+        foreach ($k in @($props.Keys)) { $info[$k] = [string]$props[$k] }
     }
     else {
         try {
@@ -425,7 +415,7 @@ function Global:Invoke-WebFillDetails {
       is asked first (outside the lock), the apps are written after, with Undo.
     #>
     param($Data)
-    if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not $Global:App.TestGraph) { return @{ ok = $false; error = "winget.exe isn't on this machine, so there's nothing to fill the details from. It comes with the 'App Installer' package on Windows 10 and 11." } }
+    if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not (Test-WingetIndexUsable) -and -not $Global:App.TestGraph) { return @{ ok = $false; error = "winget.exe isn't on this machine, so there's nothing to fill the details from. It comes with the 'App Installer' package on Windows 10 and 11." } }
     $all = @((Read-WebCatalogRecords).Apps)
     $names = @($Data.names | ForEach-Object { [string]$_ } | Where-Object { $_ })
     $apps = @($all | Where-Object { $_.wingetId -and (-not $names.Count -or $names -contains $_.appName) })

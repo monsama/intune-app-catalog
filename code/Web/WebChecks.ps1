@@ -229,7 +229,7 @@ function Global:Invoke-WebCheckWinget {
     param($Data)
     $apps = @(Get-WebCheckApps -Names @($Data.names) | Where-Object { $_.wingetId })
     if ($apps.Count -eq 0) { return @{ ok = $true; areas = @('Winget ID'); names = @(); findings = @() } }
-    if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) { return @{ ok = $false; error = "winget.exe isn't on this machine, so Winget IDs can't be checked. It comes with the 'App Installer' package on Windows 10 and 11." } }
+    if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not (Test-WingetIndexUsable)) { return @{ ok = $false; error = "winget.exe isn't on this machine, so Winget IDs can't be checked. It comes with the 'App Installer' package on Windows 10 and 11." } }
     $results = @($apps | ForEach-Object { Test-WingetPackageId -AppName $_.appName -WingetId $_.wingetId })
     # The newest version winget offers, kept for the Apps list ("Newer on winget") until the app restarts.
     if (-not $Global:App.WingetLatest) { $Global:App.WingetLatest = [hashtable]::Synchronized(@{}) }
