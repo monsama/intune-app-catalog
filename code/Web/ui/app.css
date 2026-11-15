@@ -1080,3 +1080,34 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 500; heig
 #sec-defaults .formgrid .checks { height: 34px; margin-top: 4px; align-items: center; }
 #sec-defaults .formgrid .checks > label.chk { margin: 0; align-items: center; }
 #sec-defaults .formgrid .checks > label.chk > input { margin-top: 0 !important; }
+
+/* ---------------------------------------------------------------- Apps header (2.24.1)
+   The view controls left, the actions right; buttons that belong together are joined into one
+   control; the counters are one strip under it. */
+#viewApps > .toolbar { gap: 10px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); }
+#viewApps > .toolbar > input[type="search"] { padding-left: 34px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a919b' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: 10px center; background-size: 16px 16px; }
+.btngroup { display: inline-flex; align-items: stretch; flex: none; height: 34px; }
+.btngroup > .btn { height: 34px; border-radius: 0; margin: 0; }
+.btngroup > .btn:not([hidden]) + .btn { margin-left: -1px; }
+.btngroup > .btn:not([hidden]):first-child, .btngroup > [hidden]:first-child + .btn:not([hidden]), .btngroup > [hidden]:first-child + [hidden] + .btn:not([hidden]) { border-top-left-radius: var(--r-m); border-bottom-left-radius: var(--r-m); }
+.btngroup > .btn:last-child { border-top-right-radius: var(--r-m); border-bottom-right-radius: var(--r-m); }
+.btngroup > .btn:hover:not(:disabled), .btngroup > .btn:focus-visible { position: relative; z-index: 1; }
+.btngroup > .btn.small { padding: 0 12px; font-size: 13px; }
+.btngroup > .recentbtn { width: 38px; }
+#viewApps > .toolbar > .count { padding: 3px 9px; border-radius: 999px; background: var(--bd2); color: var(--muted); font-size: 12px; font-weight: 600; }
+#viewApps > .toolbar > .count:empty { display: none; }
+#viewApps > .toolbar > #btnCatalog { margin-left: 2px; }
+/* The counters: one strip of equal cells, the chosen one marked. */
+.appsbar { gap: 12px; }
+.where { gap: 0; }
+.where .wchip { border-radius: 0; margin-left: -1px; padding: 7px 16px; gap: 8px; background: var(--surface); }
+.where .wchip:first-child { margin-left: 0; border-top-left-radius: var(--r-l); border-bottom-left-radius: var(--r-l); }
+.where .wchip:nth-last-child(2) { border-top-right-radius: var(--r-l); border-bottom-right-radius: var(--r-l); }
+.where .wchip span { color: var(--muted); }
+.where .wchip b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.where .wchip:hover { background: var(--hover); position: relative; z-index: 1; }
+.where .wchip[aria-pressed="true"] { position: relative; z-index: 2; box-shadow: inset 0 -2px 0 var(--accent); }
+.where .wchip[aria-pressed="true"] span { color: var(--fg); }
+.where .wnote { margin-left: 14px; display: inline-flex; align-items: center; gap: 6px; }
+.where .wnote.live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--ok, #2e9d5b); }
+@media (max-width: 900px) { .where .wchip { padding: 6px 10px; } .where .wnote { margin: 6px 0 0; flex-basis: 100%; } }

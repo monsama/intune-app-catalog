@@ -12,6 +12,11 @@
   Microsoft Store, a winget package of it often fails on devices, and
   Intune's Store app type installs it, keeps it updated and reports it
   correctly - and when to skip it.
+- **Apps page header:** the controls sit on one panel - a search box with
+  a search icon, the view buttons (Save view, Columns, Recent changes) and
+  the actions on the selected apps (Send to Intune, More) each joined into
+  one control, the app count as a badge. The counters under it are one
+  strip, the chosen one marked, with a green dot when Intune was read.
 
 ## 2.24.0
 

@@ -268,7 +268,7 @@ function renderWhere() {
     intuneApps ? chip(deployed, 'of them in Intune', '', f === 'deployed', 'Catalog apps that are in this tenant', () => { $('filter').value = 'deployed'; showIntuneOnly = false; renderApps(); updateViewButtons(); }) : '',
     chip(notDeployed, 'only in the catalog', notDeployed ? 'info' : '', f === 'notdeployed', 'Not in Intune yet - select them and Send to Intune', () => { $('filter').value = 'notdeployed'; showIntuneOnly = false; renderApps(); updateViewButtons(); }),
     intuneApps ? chip(io.win.length, 'only in Intune', io.win.length ? 'warn' : '', showIntuneOnly, 'Windows apps in Intune that the catalog doesn\'t manage (made in the portal) - add them to the catalog, or delete them in Intune', () => { showIntuneOnly = !showIntuneOnly; if (showIntuneOnly) { selected.clear(); updatePanel(); } renderApps(); updateViewButtons(); }) : '',
-    el('span', { class: 'wnote', text: intuneApps ? `Intune read at ${intuneAt}${io.other ? ` - ${io.other} app(s) for other platforms not counted` : ''}.` : (state && state.configured ? 'Reading Intune...' : 'Not connected - Intune isn\'t compared.') }));
+    el('span', { class: 'wnote' + (intuneApps ? ' live' : ''), text: intuneApps ? `Intune read at ${intuneAt}${io.other ? ` - ${io.other} app(s) for other platforms not counted` : ''}.` : (state && state.configured ? 'Reading Intune...' : 'Not connected - Intune isn\'t compared.') }));
   bar.hidden = false;
 }
 
