@@ -274,7 +274,9 @@ function Global:Get-WebAttention {
     $builtIn = @($apps | Where-Object { -not $_.appId -and (Get-NonPackageAppHint $_) })
     $noPkg = @($apps | Where-Object { -not $_.wingetId -and -not $_.appId -and -not (Get-NonPackageAppHint $_) -and -not (Resolve-AppPackagePath -AppName $_.appName -Uncommon $true -PackagePath $_.packagePath).Found })
     if ($noPkg.Count) { & $add 'warn' "$($noPkg.Count) own package(s) not built" ((@($noPkg | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + ' - select them and use Package.') 'apps:all' }
-    if ($builtIn.Count) { & $add 'info' "$($builtIn.Count) Microsoft app(s) that aren't packages" ((@($builtIn | Select-Object -First 3 | ForEach-Object { Get-NonPackageAppHint $_ }) -join ' ')) 'apps:all' }
+    # Company Portal can be fixed here (its Store ID); Microsoft 365 Apps is created in Intune, then linked by Checks.
+    $portal = @($builtIn | Where-Object { -not $_.wingetId -and (Test-CompanyPortalName $_.appName) })
+    if ($builtIn.Count) { & $add 'info' "$($builtIn.Count) Microsoft app(s) that aren't packages" ((@($builtIn | Select-Object -First 3 | ForEach-Object { Get-NonPackageAppHint $_ }) -join ' ') + $(if ($portal.Count) { ' The button sets Company Portal up as the Store app.' } else { '' })) $(if ($portal.Count) { 'do:portalstore' } else { 'apps:all' }) }
     # Managed updates as the way apps are kept current: the default, every Winget app, and each with its version.
     if ([string]$Global:App.DefaultAppSettings.WingetInstallMethod -ne 'Managed') { & $add 'info' 'Managed updates aren''t the default yet' "New Winget apps install winget's latest version without a pilot ring ($($Global:App.DefaultAppSettings.WingetInstallMethod))." 'do:manageddefault' }
     $unmanaged = @($apps | Where-Object { $_.wingetId -and -not $_.managedUpdates })
@@ -332,7 +334,10 @@ function Global:Get-WebAttention {
 function Global:Get-WebAssignmentMatrix {
     # Every app and the groups it's assigned to, by role - the grid's data.
     $apps = @((Read-WebCatalogRecords).Apps | Sort-Object { $_.appName })
-    $groups = @($apps | ForEach-Object { @($_.requiredFor) + @($_.availableFor) + @($_.uninstallFor) + @($_.excludeFor) } | Where-Object { $_ } | Select-Object -Unique | Sort-Object)
+    # Plain strings, once each whatever the case - as the apps grid counts them.
+    $set = New-Object 'System.Collections.Generic.SortedSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($a in $apps) { foreach ($g in @(@($a.requiredFor) + @($a.availableFor) + @($a.uninstallFor) + @($a.excludeFor))) { if ($g -and ([string]$g).Trim()) { [void]$set.Add(([string]$g).Trim()) } } }
+    $groups = [string[]]@($set)
     return @{ ok = $true; groups = $groups
         apps = @($apps | ForEach-Object { [ordered]@{ name = $_.appName; deployed = [bool]$_.appId; required = @($_.requiredFor); available = @($_.availableFor); uninstall = @($_.uninstallFor); exclude = @($_.excludeFor) } }) }
 }
@@ -465,4 +470,19 @@ function Global:Get-WebPermissionCheck {
     $rows = @(Get-PermissionReport -Granted $roles -Usage $usage)
     return @{ ok = $true; granted = @($roles); rows = $rows
         missing = @($rows | Where-Object { $_.status -in 'missing', 'partly' }).Count; unused = @($rows | Where-Object { $_.status -eq 'unused' }).Count }
+}
+
+function Global:Set-WebCompanyPortalStore {
+    # Company Portal without a Winget ID becomes the Microsoft Store app (9WZDNCRFJ3PZ): Send to Intune creates it as Intune's Store type. With Undo.
+    param($Data)
+    $undo = New-WebUndo 'Company Portal as a Store app'
+    $changed = New-Object System.Collections.Generic.List[string]
+    foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { -not $_.wingetId -and -not $_.appId -and (Test-CompanyPortalName $_.appName) })) {
+        $a.wingetId = '9WZDNCRFJ3PZ'
+        Write-WebAppFile -App $a -Undo $undo
+        $changed.Add([string]$a.appName)
+    }
+    Save-WebUndo $undo
+    if ($changed.Count) { Write-Log "[OK] $($changed -join ', ') set up as the Microsoft Store app (9WZDNCRFJ3PZ) - Send to Intune creates it." }
+    return @{ ok = $true; changed = $changed.ToArray() }
 }

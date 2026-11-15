@@ -922,3 +922,41 @@ main > .view { padding-top: 10px; }
 .methodrow { display: grid; gap: 6px; margin: 4px 0 10px; }
 .methodrow select { display: block; width: 100%; margin-top: 4px; }
 .methodinfo { margin: 0 0 10px; padding: 8px 12px; font-size: 12px; line-height: 1.45; color: var(--muted); background: var(--accent-soft); border-radius: var(--r-m); }
+
+/* ---- windows: minimize, maximize and close in a dialog's top right corner (windows.js) ---- */
+dialog.haswctl { position: fixed; }
+dialog.haswctl .wtitle { padding-right: 92px; }
+dialog .wctl { position: absolute; top: 10px; right: 10px; z-index: 2; display: inline-flex; gap: 2px; }
+dialog .wctl > button { width: 28px; height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: var(--r-s, 6px); background: transparent; color: var(--muted); cursor: pointer; }
+dialog .wctl > button:hover, dialog .wctl > button:focus-visible { background: var(--hover); color: var(--fg); }
+dialog .wctl > button.wc-close:hover, dialog .wctl > button.wc-close:focus-visible { background: #c42b1c; color: #fff; }
+.wtitle.movable { cursor: move; user-select: none; }
+dialog.maxed { width: calc(100vw - 16px) !important; max-width: none !important; height: calc(100vh - 16px); max-height: none !important; margin: 8px; transform: none !important; }
+#dlgTray { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+#dlgTray .tray-chip { display: inline-flex; align-items: center; border: 1px solid var(--bd); border-radius: var(--r-m); background: var(--surface); box-shadow: var(--shadow); font-size: 12px; overflow: hidden; }
+#dlgTray button { border: 0; background: transparent; color: var(--fg); cursor: pointer; padding: 7px 10px; font: inherit; }
+#dlgTray .tray-open { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+#dlgTray .tray-open:hover { background: var(--hover); }
+#dlgTray .tray-x { padding: 7px 9px; color: var(--muted); }
+#dlgTray .tray-x:hover { color: #fff; background: #c42b1c; }
+
+.toolbar > .pagebtns { margin-left: 4px; padding-left: 8px; border-left: 1px solid var(--bd); }
+.toolbar > .spacer + .pagebtns, .toolbar > .pagebtns:only-child { border-left: 0; }
+
+/* ---- groups and apps grid ---- */
+#dlgMatrix .toolbar input[type="search"] { width: 260px; flex: 0 1 260px; }
+#dlgMatrix .legend { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+#dlgMatrix .legend .cell { margin-left: 8px; }
+.mxwrap { border: 1px solid var(--bd); border-radius: var(--r-l); margin-top: 10px; }
+table.mx { width: max-content; }
+table.mx th.ah { font-weight: 500; padding: 4px 14px 4px 10px; }
+table.mx th.corner { padding: 8px 10px; font-size: 12px; }
+table.mx tbody tr:nth-child(even) > * { background: var(--surface2, var(--bg)); }
+table.mx tbody tr:hover > * { background: var(--hover); }
+table.mx td { text-align: center; }
+td.mxempty { padding: 28px 16px !important; text-align: left !important; font-size: 13px; }
+
+/* The page toolbars fit on one line with coffee and theme: the search field gives way first. */
+#viewApps > .toolbar > input[type="search"] { width: auto; flex: 1 1 200px; min-width: 150px; max-width: 320px; }
+#viewApps > .toolbar > select { flex: 0 1 auto; min-width: 120px; }
+@media (min-width: 1600px) { #viewApps > .toolbar { flex-wrap: nowrap; } #viewApps > .toolbar > .btn { flex: none; } }

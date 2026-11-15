@@ -195,6 +195,7 @@ $testableFunctionNames = @(
     "Test-ManagedAppEdit",
     "Set-AppWingetIdCommands",
     "Get-NonPackageAppHint",
+    "Test-CompanyPortalName",
     "Get-ClosestGroupName",
     "Test-WauAppName",
     "Get-WauUse",

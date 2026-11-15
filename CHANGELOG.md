@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.19.2
+
+- **Windows have minimize, maximize and close** in their top right
+  corner, as in the other NOBS apps. A minimized window keeps what was
+  typed in it and waits as a chip at the bottom right (its name restores
+  it, x closes it); maximized it fills the window; it moves by its title,
+  and a double-click on the title maximizes it. Close asks about unsaved
+  changes, as Escape does.
+- **Coffee and theme sit at the end of each page's toolbar**, on one line
+  with its buttons.
+- **Groups and apps**: groups set on apps are columns again (the grid
+  could show "0 groups"), the columns sit next to the app names, rows are
+  striped, and with no groups yet it says how to add them.
+- **Send to Intune isn't shown twice** for several selected apps either.
+- **Company Portal: one click.** Home's Microsoft apps item has **Fix
+  Company Portal**: it becomes the Microsoft Store app (9WZDNCRFJ3PZ), so
+  Send to Intune creates it as Intune's Store type. Microsoft 365 Apps is
+  still added in Intune itself.
+
 ## 2.19.1
 
 - **Apps > Version** is never just empty. An app without an App version

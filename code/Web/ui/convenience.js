@@ -228,7 +228,7 @@ async function loadHome() {
   const where = { 'settings:connection': ['Settings', () => showSettings('connection')], 'settings:defaults': ['Settings', () => showSettings('defaults')], 'settings:updates': ['Settings', () => showSettings('updates')], 'settings:automation': ['Settings', () => showSettings('automation')], 'settings:packaging': ['Settings', () => showSettings('packaging')],
     'apps:notdeployed': ['Show them', () => { showView('apps'); $('filter').value = 'notdeployed'; renderApps(); updateViewButtons(); }], 'apps:all': ['Apps', () => showView('apps')],
     updates: ['Updates', () => showView('updates')], checks: ['Checks', () => showView('checks')],
-    'open:release': ["What's new", () => api('/api/open', { target: 'release' })], 'do:manageddefault': ['Make it the default', makeManagedDefault], 'do:managedall': ['Turn on for all', managedForAll], 'do:takeversions': ["Take winget's versions", takeVersionsForManaged], 'do:wauswitch': ['Switch them', wauSwitch] };
+    'open:release': ["What's new", () => api('/api/open', { target: 'release' })], 'do:manageddefault': ['Make it the default', makeManagedDefault], 'do:managedall': ['Turn on for all', managedForAll], 'do:takeversions': ["Take winget's versions", takeVersionsForManaged], 'do:wauswitch': ['Switch them', wauSwitch], 'do:portalstore': ['Fix Company Portal', portalStore] };
   const pill = { err: ['err', 'Problem'], warn: ['warn', 'Look'], ok: ['ok', 'Ready'], info: ['info', 'To do'] };
   $('homeList').replaceChildren(...(r.items.length ? r.items.map(i => { const w = where[i.go], p = pill[i.level] || pill.info;
     return el('li', { class: 'att ' + i.level }, el('span', { class: 'pill ' + p[0], text: p[1] }), el('div', { class: 'body' }, el('b', { text: i.title }), el('span', { class: 'muted', text: i.text })),
@@ -312,7 +312,11 @@ function renderMatrix() {
     return el('td', {}, el('button', { class: 'cell ' + mxCls[role] + (mxChanges.has(k) ? ' changed' : ''), text: mxLetter[role], 'aria-label': `${a.name} - ${g}: ${role || 'not assigned'}`, title: `${a.name} / ${g}: ${role || 'not assigned'} (click to change)`,
       onclick: () => { const next = mxRoles[(mxRoles.indexOf(role) + 1) % mxRoles.length], orig = (() => { mxChanges.delete(k); return mxRole(a, g); })(); if (next !== orig) mxChanges.set(k, next); renderMatrix(); } }));
   })));
-  $('mxGrid').replaceChildren(el('thead', {}, head), el('tbody', {}, ...body));
+  // No groups at all (or none matching): say why, instead of a bare list of names.
+  if (!groups.length) {
+    $('mxGrid').replaceChildren(el('tbody', {}, el('tr', {}, el('td', { class: 'mxempty' }, el('b', { text: mx.groups.length ? 'No group matches the filter.' : 'No app has a group yet.' }),
+      el('span', { class: 'muted', text: mx.groups.length ? ' Clear "Filter groups" to see them all.' : ' Give apps groups in the editor (Who gets it) or with Add groups - each group becomes a column here.' })))));
+  } else $('mxGrid').replaceChildren(el('thead', {}, head), el('tbody', {}, ...body));
   $('mxNote').textContent = mxChanges.size ? `${mxChanges.size} change(s) not saved yet.` : '';
   setEnabled($('btnMxSave'), mxChanges.size > 0, 'Change some cells first.');
 }
@@ -374,5 +378,14 @@ async function wauSwitch() {
     const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', startText: 'Pushing ' });
     toast(`${msg} Pushed to Intune for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length, [{ label: 'Undo', run: () => undoLast() }]);
   } else toast(msg, false, [{ label: 'Undo', run: () => undoLast() }]);
+  loadHome();
+}
+
+async function portalStore() {
+  if (!(await ask("Set Company Portal up as the Microsoft Store app?\n\nIts Winget ID becomes 9WZDNCRFJ3PZ - Send to Intune then creates it as Intune's own Store app type, which the Store installs and keeps updated. Nothing to package.", { ok: 'Set it up' }))) return;
+  const r = await api('/api/portal-store', {});
+  if (!r.ok) { toast(r.error, true); return; }
+  await loadApps();
+  toast(r.changed.length ? `${r.changed.join(', ')} is a Store app now - Send to Intune creates it.` : 'Nothing to change.', false, r.changed.length ? [{ label: 'Send to Intune', run: () => openDeploy(r.changed) }, { label: 'Undo', run: () => undoLast() }] : []);
   loadHome();
 }

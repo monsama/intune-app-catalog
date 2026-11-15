@@ -179,6 +179,9 @@ function showView(v) {
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.view === v));
   const tabLabel = document.querySelector(`.tab[data-view="${v}"] .tl`);
   if (tabLabel) $('pageTitle').textContent = tabLabel.textContent;
+  // Coffee and theme sit at the end of the page's own toolbar, on one line with its buttons (the page bar when it has none).
+  const viewEl = document.querySelector(`main > .view[id="view${v[0].toUpperCase() + v.slice(1)}"]`), tb = viewEl && viewEl.querySelector(':scope > .toolbar');
+  (tb || document.querySelector('.pagebar')).append($('pageBtns'));
   $('viewHome').hidden = v !== 'home';
   if (v === 'home') loadHome();
   $('viewApps').hidden = v !== 'apps';

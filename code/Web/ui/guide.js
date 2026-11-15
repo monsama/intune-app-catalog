@@ -43,7 +43,7 @@ function updatePanel() {
   const b = $('btnNext');
   // "Send to Intune" is the toolbar's own button already - not shown twice.
   if (sel.length === 1 && stageOf(sel[0]).next && stageOf(sel[0]).next.label !== 'Send to Intune') { const s = stageOf(sel[0]); b.hidden = false; b.textContent = s.next.label; b.title = s.next.title; b.onclick = () => s.next.run(); }
-  else if (sel.length > 1 && sel.every(a => stageOf(a).key === 'ready')) { b.hidden = false; b.textContent = `Send ${sel.length} apps`; b.title = 'All of them are ready to deploy'; b.onclick = () => openDeploy(sel.map(a => a.name)); }
+  // Several apps: the toolbar's Send to Intune does it - no second button saying the same.
   else b.hidden = true;
   const p = $('appPanel');
   if (sel.length !== 1) { p.hidden = true; return; }
