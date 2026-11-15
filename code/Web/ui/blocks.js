@@ -21,7 +21,7 @@ function renderBlockBar(host, model, opts = {}) {
     return;
   }
   head.append(el('span', { class: 'bform', text: { winget: 'Winget', msi: 'MSI', exe: 'Installer (.exe)', script: 'PowerShell script', psadt: 'PSADT 4', managed: 'Managed release', installed: 'Installed app' }[model.form] || model.form }),
-    el('span', { class: 'bkey' }, el('i', { class: 'k lock' }), 'fixed', el('i', { class: 'k edit' }), "this app's", el('i', { class: 'k link' }), 'set elsewhere'),
+    el('span', { class: 'bkey' }, el('span', { class: 'k lock', text: 'fixed' }), el('span', { class: 'k edit', text: "this app's" }), el('span', { class: 'k link', text: 'set elsewhere' })),
     el('button', { type: 'button', class: 'btn small ghost', text: 'Edit as text', title: 'Write the command yourself - it is then your own, kept exactly as typed (the blocks come back when it is one of their forms again)', onclick: onText }));
   host.append(head);
   const values = {};
@@ -30,45 +30,55 @@ function renderBlockBar(host, model, opts = {}) {
     const incomplete = model.blocks.some(b => b.kind === 'list' && (values[b.id] || []).some(x => !String(x.name).trim() || !String(x.value).trim()));
     if (!incomplete) { onChange({ ...values }); return; }
     renderBlockBar(host, { ...model, blocks: model.blocks.map(b => b.id in values ? { ...b, value: values[b.id] } : b) }, opts);
-    const empty = [...host.querySelectorAll('.blk.edit input')].find(i => !i.value.trim()); if (empty) empty.focus();
+    const empty = [...host.querySelectorAll('.brec input')].find(i => !i.value.trim()); if (empty) empty.focus();
   };
+  // One row per block: its label (with a lock, pencil or link icon) on the left, its value on the right.
+  const where = { aMethod: 'Install with', xContext: 'Install for', mAppVersion: 'App version', aWinget: 'Winget ID' };
+  const card = el('div', { class: 'brec' });
+  host.append(card);
   let part = '';
-  const row = () => { const r = el('div', { class: 'brow' }); host.append(r); return r; };
-  let r = row();
   for (const b of model.blocks) {
     if (b.part !== part) {
-      if (part) { r = row(); r.append(el('span', { class: 'bpart', text: b.part === 'uninstall' ? 'Uninstall' : '' })); }
+      if (part && b.part === 'uninstall') card.append(el('div', { class: 'bsec', text: 'Uninstall' }));
       part = b.part;
     }
-    const tip = [b.label, b.help].filter(Boolean).join(' - ');
-    if (b.kind === 'lock') r.append(el('span', { class: 'blk lock', title: tip }, el('small', { text: b.label }), el('span', { text: b.text })));
-    else if (b.kind === 'link') r.append(el('button', { type: 'button', class: 'blk link', title: (b.help || '') + ' Click to go there.', onclick: () => { const t = $(b.link); if (t) { if (window.edPageFor) edPageFor(t); t.focus(); } } }, el('small', { text: b.label }), el('span', { text: b.text })));
-    else if (b.kind === 'action') r.append(el('button', { type: 'button', class: 'blk action', title: `Edit ${b.value} in the app`, onclick: () => onAction(b.value) }, el('small', { text: b.label }), el('span', { text: b.text + ' ✎' })));
+    const tip = b.help || '';
+    const lab = el('span', { class: 'blab' }, b.label);
+    if (b.kind === 'lock') card.append(el('div', { class: 'blk lock', title: tip || 'Fixed - the tool writes this the same way for every app.' }, lab, el('span', { class: 'bval', text: b.text })));
+    else if (b.kind === 'link') {
+      const go = () => { const t = $(b.link); if (t) { if (window.edPageFor) edPageFor(t); t.focus(); } };
+      card.append(el('div', { class: 'blk link', title: tip }, lab, el('span', { class: 'bval', text: b.text }),
+        el('button', { type: 'button', class: 'bgo', text: `${where[b.link] || 'Set elsewhere'} ›`, title: `Set in ${where[b.link] || 'another field'} - go there`, onclick: go })));
+    }
+    else if (b.kind === 'action') card.append(el('div', { class: 'blk action', title: tip }, lab, el('span', { class: 'bval', text: b.text }),
+      el('button', { type: 'button', class: 'btn small', text: `Edit ${b.value}`, title: `Open ${b.value} in the code editor`, onclick: () => onAction(b.value) })));
     else if (b.kind === 'edit') {
       values[b.id] = b.value ?? '';
       const input = b.type === 'select'
         ? el('select', { 'aria-label': b.label, onchange: e => { values[b.id] = e.target.value; fire(); } }, ...b.choices.map(c => el('option', { value: c.value, text: c.label })))
-        : el('input', { value: b.value ?? '', 'aria-label': b.label, spellcheck: 'false', size: Math.max(8, Math.min(40, String(b.value || '').length + 2)), onchange: e => { values[b.id] = e.target.value; fire(); } });
+        : el('input', { value: b.value ?? '', 'aria-label': b.label, spellcheck: 'false', onchange: e => { values[b.id] = e.target.value; fire(); } });
       if (b.type === 'select') input.value = b.value ?? '';
-      r.append(el('label', { class: 'blk edit', title: tip }, el('small', { text: b.label }), input));
+      card.append(el('label', { class: 'blk edit', title: tip }, lab, el('span', { class: 'bval' }, input)));
     }
     else if (b.kind === 'list') {
       const items = (b.value || []).map(x => ({ name: x.name, value: x.value }));
       values[b.id] = items;
       const named = b.choices && b.choices.length && typeof b.choices[0] === 'string';
+      const val = el('span', { class: 'bval chips' });
       items.forEach((it, i) => {
-        const val = el('input', { value: it.value, placeholder: 'value', 'aria-label': `${it.name} value`, spellcheck: 'false', size: Math.max(6, Math.min(40, String(it.value).length + 2)), onchange: e => { it.value = e.target.value; fire(); } });
-        const name = named ? el('small', { class: 'bopt', text: it.name }) : el('input', { class: 'bname', value: it.name, placeholder: 'NAME', 'aria-label': 'Property name', spellcheck: 'false', size: Math.max(6, it.name.length + 1), onchange: e => { it.name = e.target.value; fire(); } });
-        r.append(el('span', { class: 'blk edit', title: tip }, name, val, el('button', { type: 'button', class: 'bx', 'aria-label': `Remove ${it.name}`, text: '×', onclick: () => { items.splice(i, 1); fire(); } })));
+        const v = el('input', { value: it.value, placeholder: 'value', 'aria-label': `${it.name} value`, spellcheck: 'false', size: Math.max(5, Math.min(36, String(it.value).length + 1)), onchange: e => { it.value = e.target.value; fire(); } });
+        const n = named ? el('span', { class: 'bopt', text: it.name }) : el('input', { class: 'bname', value: it.name, placeholder: 'NAME', 'aria-label': 'Property name', spellcheck: 'false', size: Math.max(5, it.name.length + 1), onchange: e => { it.name = e.target.value; fire(); } });
+        val.append(el('span', { class: 'bchip' }, n, el('span', { class: 'beq', text: named ? ' ' : '=' }), v, el('button', { type: 'button', class: 'bx', 'aria-label': `Remove ${it.name}`, title: 'Remove', text: '×', onclick: () => { items.splice(i, 1); fire(); } })));
       });
       const free = named ? b.choices.filter(c => !items.some(x => x.name === c)) : [''];
       if (free.length) {
-        const add = named
-          ? el('select', { class: 'blk add', 'aria-label': `Add to ${b.label}`, title: b.help || '', onchange: e => { if (!e.target.value) return; items.push({ name: e.target.value, value: '' }); fire(); } },
-            el('option', { value: '', text: `+ ${b.label.toLowerCase().replace(/s$/, '')}` }), ...free.map(c => el('option', { value: c, text: c })))
-          : el('button', { type: 'button', class: 'blk add', text: `+ ${b.label.toLowerCase().replace(/ies$/, 'y').replace(/s$/, '')}`, title: b.help || '', onclick: () => { items.push({ name: '', value: '' }); fire(); } });
-        r.append(add);
+        val.append(named
+          ? el('select', { class: 'badd', 'aria-label': `Add to ${b.label}`, title: tip, onchange: e => { if (!e.target.value) return; items.push({ name: e.target.value, value: '' }); fire(); } },
+            el('option', { value: '', text: '+ Add' }), ...free.map(c => el('option', { value: c, text: c })))
+          : el('button', { type: 'button', class: 'badd', text: '+ Add', title: tip, onclick: () => { items.push({ name: '', value: '' }); fire(); } }));
       }
+      if (!items.length) val.prepend(el('span', { class: 'bnone', text: 'none' }));
+      card.append(el('div', { class: 'blk list', title: tip }, lab, val));
     }
   }
 }
@@ -157,6 +167,7 @@ function highlightPs(text) {
 function lockedLinesOf(text) {
   const lines = text.split(/\r?\n/), locked = new Set();
   lines.forEach((l, i) => {
+    if (/^\s*AppVersion\s*=\s*'/.test(l)) { locked.add(i); return; }
     if (!/IntuneAppCatalog\\Apps\\/.test(l)) return;
     locked.add(i);
     if (i > 0 && /^\s*#.*version marker/.test(lines[i - 1])) locked.add(i - 1);

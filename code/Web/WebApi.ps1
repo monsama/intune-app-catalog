@@ -602,7 +602,7 @@ function Global:Invoke-WebApi {
         '/api/package-script-save' { return (Save-WebPackageScript $Data) }
         '/api/package-script-previous' { return (Get-WebPackageScriptPrevious $Data) }
         '/api/app-quick'        { return (Invoke-WithCatalogLock { Update-WebAppQuick $Data }) }
-        '/api/marker-version'   { if (-not @((Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name }).Count) { return @{ ok = $false; error = 'No such app.' } }; return @{ ok = $true; changed = @(Update-WebMarkerVersion -Name ([string]$Data.name) -Version ([string]$Data.version)) } }
+        '/api/marker-version'   { if (-not @((Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name }).Count) { return @{ ok = $false; error = 'No such app.' } }; return (Invoke-WithCatalogLock { @{ ok = $true; changed = @(Update-WebMarkerVersion -Name ([string]$Data.name) -Version ([string]$Data.version)) } }) }
         '/api/history-undo'     { return (Invoke-WithCatalogLock { Undo-WebHistoryChange $Data }) }
         '/api/app-restore'      { return (Invoke-WithCatalogLock { Restore-WebAppBackup $Data }) }
         '/api/deploy-plan'      { return (Get-WebDeployPlan $Data) }

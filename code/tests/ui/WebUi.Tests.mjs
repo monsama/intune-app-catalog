@@ -268,7 +268,7 @@ try {
         await page.waitForSelector('#instBlocks:not([hidden]) .blk.lock', { timeout: 8000 });
         check(await page.evaluate(() => document.getElementById('mInstallCommand').readOnly && document.querySelectorAll('#instBlocks .blk.lock').length >= 3), `${label}: the commands show as blocks, the text read-only`);
         await unnamed('the blocks');
-        await page.selectOption('#instBlocks select.blk.add', '--override');
+        await page.selectOption('#instBlocks select.badd', '--override');
         await page.fill('#instBlocks input[aria-label="--override value"]', '/S');
         await page.press('#instBlocks input[aria-label="--override value"]', 'Tab');
         await page.waitForFunction(() => /--override '\/S'/.test(document.getElementById('mInstallCommand').value), null, { timeout: 8000 });
@@ -276,6 +276,8 @@ try {
         await page.click('#instBlocks .bx[aria-label="Remove --override"]');
         await page.waitForFunction(() => !/--override/.test(document.getElementById('mInstallCommand').value), null, { timeout: 8000 });
         await page.keyboard.press('Escape');
+        // Written back from the blocks, the commands are in today's form - the editor asks before it drops that.
+        if (await page.isVisible('#dlgAsk[open]').catch(() => false) || await page.waitForSelector('#dlgAsk[open]', { timeout: 1500 }).then(() => true, () => false)) await page.click('#askOk');
         await page.waitForFunction(() => !document.getElementById('dlgApp').open);
 
         // Undo the last bulk change (Add groups): the group is gone again, the owner from Batch edit stays.

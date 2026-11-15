@@ -145,6 +145,7 @@ $testableFunctionNames = @(
     "New-DetectionFromBlocks",
     "Get-PackageScriptLockedLines",
     "Test-PackageScriptEdit",
+    "Get-MarkerCommandPlaces",
     "Get-AppWingetInstallMethod",
     "Convert-AppWingetInstallMethod",
     "Get-DefaultAppMetadata",
@@ -2864,6 +2865,11 @@ Assert-True ((Test-PackageScriptEdit -Old $tpl -New $edited).Ok) "Test-PackageSc
 $broken = Test-PackageScriptEdit -Old $tpl -New ($edited + "`r`nif (`$x {")
 Assert-True ((-not $broken.Ok) -and @($broken.Errors).Count -ge 1 -and $broken.Errors[0].line -ge 1) "Test-PackageScriptEdit: a parse error, with its line"
 Assert-True (-not (Test-PackageScriptEdit -Old $tpl -New ($tpl -replace "-Value '2.0'", "-Value '9.9'")).Ok) "Test-PackageScriptEdit: the locked marker can't be changed"
+$markerAt = $tpl.IndexOf('# The version marker')
+foreach ($trick in @(($tpl.Substring(0, $markerAt) + "<#`r`n" + $tpl.Substring($markerAt) + "`r`n#>"), ($tpl.Substring(0, $markerAt) + "exit 0`r`n" + $tpl.Substring($markerAt)), ($tpl.Substring(0, $markerAt) + "if (`$false) {`r`n" + $tpl.Substring($markerAt) + "`r`n}"), ($edited -replace "`r`n", "`r"))) {
+    Assert-True (-not (Test-PackageScriptEdit -Old $tpl -New $trick).Ok) "Test-PackageScriptEdit: the marker can't be switched off around its lines (comment, exit before it, an if, lone CR line ends)"
+}
+Assert-True ((New-MsiCommandLines -File 'a.msi' -Properties @(@{ name = 'INSTALLDIR'; value = '%ProgramFiles%\App' }) -ProductCode '{12345678-1234-1234-1234-123456789ABC}').Install -like '*INSTALLDIR="%ProgramFiles%\App"') "New-MsiCommandLines: a value with %VAR% is quoted (Intune expands it, maybe with a space)"
 
 # =================================================================
 # Diagnostics (Diagnostics.ps1)

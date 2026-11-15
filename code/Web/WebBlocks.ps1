@@ -58,8 +58,10 @@ function Global:Resolve-WebPackageScript {
     $path = [IO.Path]::GetFullPath((Join-Path $folder $File))
     if (-not $path.StartsWith($root.TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { return @{ Ok = $false; Error = 'That file is outside the Packages folder.' } }
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return @{ Ok = $false; Error = "$File isn't in $folder." } }
-    # A link could point anywhere - only a plain file is edited.
-    if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { return @{ Ok = $false; Error = "$File is a link - edit it where it points." } }
+    # A link could point anywhere - only a plain file in a plain folder is edited (the app's folder and the file, checked each time).
+    foreach ($item in @((Get-Item -LiteralPath $folder -Force), (Get-Item -LiteralPath $path -Force))) {
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { return @{ Ok = $false; Error = "$($item.Name) is a link - edit the script where it points." } }
+    }
     return @{ Ok = $true; Path = $path; App = $app.appName; Error = '' }
 }
 
@@ -103,6 +105,9 @@ function Global:Save-WebPackageScript {
     if (-not $p.Ok) { return @{ ok = $false; error = $p.Error } }
     $text = [string]$Data.text
     return (Invoke-WithCatalogLock {
+            # Checked again under the lock, right before writing: the folder or file can't have become a link meanwhile.
+            $again = Resolve-WebPackageScript -Name ([string]$Data.name) -File ([string]$Data.file)
+            if (-not $again.Ok -or $again.Path -ne $p.Path) { return @{ ok = $false; error = $(if ($again.Ok) { 'The script moved meanwhile.' } else { $again.Error }) } }
             if ((Get-WebTextHash $p.Path) -ne [string]$Data.hash) { return @{ ok = $false; conflict = $true; error = "$($Data.file) was changed since you opened it (by someone else, or outside the app). Nothing was saved - close it and open it again, then redo your change." } }
             $old = [System.IO.File]::ReadAllText($p.Path)
             $check = Test-PackageScriptEdit -Old $old -New $text

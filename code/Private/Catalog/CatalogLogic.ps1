@@ -2526,7 +2526,8 @@ function Global:New-MsiCommandLines {
         if ($seen.ContainsKey($n)) { return @{ Ok = $false; Error = "$n is there twice." } }
         if (-not (Test-BlockValueText $v -AllowPercent -AllowSemicolon)) { return @{ Ok = $false; Error = "The value of $n isn't allowed: plain letters, digits, spaces and / \ - _ . : = + , @ ( ) [ ] { } ! # ~ ' % ; - no double quotes, &, |, <, > or ^ (200 characters at most)." } }
         $seen[$n] = $true
-        $parts.Add($(if ($v -match '\s' -or $v -eq '') { "$n=`"$v`"" } else { "$n=$v" }))
+        # In double quotes when it has a space - or a %VAR%, which Intune expands (Program Files has a space).
+        $parts.Add($(if ($v -match '[\s%]' -or $v -eq '') { "$n=`"$v`"" } else { "$n=$v" }))
     }
     $install = "msiexec /i `"$f`" /qn /norestart" + $(if ($parts.Count) { ' ' + ($parts -join ' ') } else { '' })
     if ($install.Length -gt 1024) { return @{ Ok = $false; Error = "The install command would be $($install.Length) characters - Intune takes 1024 at most." } }
@@ -2784,6 +2785,8 @@ function Global:Get-PackageScriptLockedLines {
     $lines = ([string]$Text) -split "`r?`n"
     $locked = New-Object System.Collections.Generic.List[int]
     for ($i = 0; $i -lt $lines.Count; $i++) {
+        # PSADT's AppVersion = '<v>' - a release writes it (Set-MarkerScriptVersion).
+        if ($lines[$i] -match "^\s*AppVersion\s*=\s*'") { $locked.Add($i); continue }
         if ($lines[$i] -match 'IntuneAppCatalog\\Apps\\') {
             $locked.Add($i)
             if ($i -gt 0 -and $lines[$i - 1] -match '^\s*#.*version marker' -and -not $locked.Contains($i - 1)) { $locked.Add($i - 1) }
@@ -2791,6 +2794,41 @@ function Global:Get-PackageScriptLockedLines {
         }
     }
     return @($locked | Sort-Object -Unique)
+}
+
+function Global:Get-MarkerCommandPlaces {
+    <#
+      Pure: where in -Text the version marker is written - for each
+      Set-ItemProperty ... IntuneAppCatalog\Apps\... -Name Version: the blocks
+      around it (functions by name, if, loops, script blocks) and how many
+      unconditional exits, returns or throws come before it at its own level.
+      Test-PackageScriptEdit compares these, so the marker can't be switched
+      off without changing its own line (commented out, put in an if, after
+      an exit).
+    #>
+    param([string]$Text)
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput([string]$Text, [ref]$null, [ref]$null)
+    $cmds = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Set-ItemProperty' -and $n.Extent.Text -match 'IntuneAppCatalog\\Apps\\' -and $n.Extent.Text -match '-Name\s+Version\b' }, $true))
+    $places = foreach ($c in $cmds) {
+        $path = New-Object System.Collections.Generic.List[string]
+        $stmt = $c
+        while ($stmt.Parent -and -not ($stmt.Parent -is [System.Management.Automation.Language.NamedBlockAst] -or $stmt.Parent -is [System.Management.Automation.Language.StatementBlockAst])) { $stmt = $stmt.Parent }
+        $n = $c.Parent
+        while ($n) {
+            if ($n -is [System.Management.Automation.Language.FunctionDefinitionAst]) { $path.Add('function ' + $n.Name) }
+            elseif (-not ($n -is [System.Management.Automation.Language.PipelineAst] -or $n -is [System.Management.Automation.Language.NamedBlockAst] -or $n -is [System.Management.Automation.Language.StatementBlockAst])) { $path.Add($n.GetType().Name) }
+            $n = $n.Parent
+        }
+        $before = 0
+        if ($stmt.Parent) {
+            foreach ($s in @($stmt.Parent.Statements)) {
+                if ([object]::ReferenceEquals($s, $stmt)) { break }
+                if ($s -is [System.Management.Automation.Language.ReturnStatementAst] -or $s -is [System.Management.Automation.Language.ExitStatementAst] -or $s -is [System.Management.Automation.Language.ThrowStatementAst] -or $s -is [System.Management.Automation.Language.BreakStatementAst] -or $s -is [System.Management.Automation.Language.ContinueStatementAst]) { $before++ }
+            }
+        }
+        "$($path -join '/')|$before"
+    }
+    return @(@($places) | Sort-Object)
 }
 
 function Global:Test-PackageScriptEdit {
@@ -2802,6 +2840,8 @@ function Global:Test-PackageScriptEdit {
     #>
     param([string]$Old, [string]$New)
     if (([string]$New).Length -gt 262144) { return @{ Ok = $false; Error = 'The script is too long (256 KB at most).'; Errors = @() } }
+    # A lone carriage return is a line break to PowerShell but not to the line checks below.
+    if ([string]$New -match "`r(?!`n)") { return @{ Ok = $false; Error = 'The script has a line break the editor doesn''t write (a carriage return on its own) - take it out.'; Errors = @() } }
     $errs = $null
     [void][System.Management.Automation.Language.Parser]::ParseInput([string]$New, [ref]$null, [ref]$errs)
     $list = @(foreach ($e in @($errs)) { if ($e) { [ordered]@{ line = $e.Extent.StartLineNumber; column = $e.Extent.StartColumnNumber; message = $e.Message } } })
@@ -2810,5 +2850,8 @@ function Global:Test-PackageScriptEdit {
     $want = @(foreach ($i in (Get-PackageScriptLockedLines $Old)) { $oldLines[$i] })
     $have = @(foreach ($i in (Get-PackageScriptLockedLines $New)) { $newLines[$i] })
     if (($want -join "`n") -cne ($have -join "`n")) { return @{ Ok = $false; Error = "The locked lines (the version marker the detection rule reads) must stay as they are."; Errors = @() } }
+    # The lines alone aren't enough: the marker must still run where it ran (not commented out, in an if, after an exit).
+    $was = @(Get-MarkerCommandPlaces $Old)
+    if ($was.Count -and (($was -join "`n") -cne (@(Get-MarkerCommandPlaces $New) -join "`n"))) { return @{ Ok = $false; Error = 'The version marker must still run as it did - not commented out, inside a condition or a block of its own, or after an exit, return or throw.'; Errors = @() } }
     return @{ Ok = $true; Error = ''; Errors = @() }
 }
