@@ -92,7 +92,8 @@ async function fillPanel(a) {
       (() => {
         const base = a.version ? (a.managed ? `${a.version} (pinned)` : a.version) : a.wingetId && !isStoreId(a.wingetId) ? (a.managed ? 'not pinned yet' : 'newest') : '(none)';
         const text = [base, a.pilotVersion ? `pilot ${a.pilotVersion}` : '', a.newerOnWinget ? `winget has ${a.wingetVersion}` : '', (a.previousVersions || []).length ? `kept: ${a.previousVersions.join(', ')}` : ''].filter(Boolean).join(' - ');
-        const canEdit = app.hasMetadata && !(app.managedUpdates && a.hasAppId);
+        // A Winget app without settings of its own gets them (the defaults) with the version picked.
+        const canEdit = (app.hasMetadata || (a.wingetId && !isStoreId(a.wingetId))) && !(app.managedUpdates && a.hasAppId);
         const b = canEdit ? el('button', { type: 'button', class: 'btn small ghost', text: 'Change', 'aria-label': 'Change the version', title: 'Change the App version here', onclick: () => pickVersion(b, a, v => quick({ field: 'appVersion', value: v }, 'Change the version'), () => inline(b, 'App version', a.version, v => quick({ field: 'appVersion', value: v }, 'Change the version'))) }) : '';
         return el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Version' }), el('span', {}, text, ' ', b));
       })(),

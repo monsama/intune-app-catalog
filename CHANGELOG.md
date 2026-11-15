@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.21.1
+
+- **The side panel's version picker works for every Winget app.** Change
+  (winget's versions, newest first) was missing for an app still on the
+  default settings, and the quick edit refused it; picking a version now
+  gives it settings of its own (the defaults) with that version.
+
 ## 2.21.0
 
 - **Recent changes.** A clock button on the Apps toolbar (and Catalog >
