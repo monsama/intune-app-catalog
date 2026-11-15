@@ -253,7 +253,13 @@ function Global:Get-WebAttention {
       The Home page: what needs a look, each with where to fix it. Reads
       the catalog, the packages, the last nightly run and the certificate -
       and, when connected, the Updates page's counts.
+      -Data.part: 'local' - everything but Intune's install counts (fast, Home
+      shows it at once); 'intune' - only those (items + summary), kept for
+      45 seconds unless -Data.fresh. Neither: all of it (the nightly run).
     #>
+    param($Data)
+    $part = [string]$(if ($Data) { $Data.part })
+    if ($part -eq 'intune') { return (Get-WebAttentionIntune -Fresh ([bool]$(if ($Data) { $Data.fresh }))) }
     $items = New-Object System.Collections.Generic.List[object]
     $add = { param($level, $title, $text, $go) $items.Add([ordered]@{ level = $level; title = $title; text = $text; go = $go }) }
     $configured = [bool](Test-GraphCredentialsConfigured -Quiet)
@@ -271,7 +277,15 @@ function Global:Get-WebAttention {
         & $add 'warn' "Missing API permission$(if ($miss.Count -gt 1) { 's' }): $($miss -join ', ')" "Microsoft Graph refused a request for lack of it (last at $(@($Global:App.MissingPermissions.Values | Sort-Object)[-1])). Add it to the app registration (Settings > API permissions > Add required permissions...) and grant admin consent - Diagnostics > Check permissions lists every one." 'settings:connection'
     }
     # Winget apps whose Intune details are still empty (publisher, description, information link): Fill in details does it.
-    $bare = @($apps | Where-Object { $_.wingetId -and (-not $_.metadata -or -not ([string]$_.metadata.publisher).Trim() -or -not ([string]$_.metadata.informationUrl).Trim() -or -not ([string]$_.metadata.description).Trim() -or ([string]$_.metadata.description).Trim() -eq ([string]$_.appName).Trim()) })
+    # Not those whose remaining gaps winget was asked about already and doesn't have (same Winget ID).
+    $askedDetails = Read-WebDetailsAsked
+    $bare = @($apps | Where-Object {
+            if (-not $_.wingetId) { return $false }
+            $gaps = @(Get-WebDetailsGaps -App $_ -Fill $null)
+            if (-not $gaps.Count) { return $false }
+            $k = $askedDetails[[string]$_.appName]
+            -not ($k -and $k.id -eq [string]$_.wingetId -and -not @($gaps | Where-Object { @($k.missing) -notcontains $_ }).Count)
+        })
     if ($bare.Count) { & $add 'info' "$($bare.Count) app(s) with details missing" ((@($bare | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($bare.Count -gt 5) { ', ...' } else { '' }) + " - no publisher, description or information link yet. winget knows them: fill them in (only empty fields, never the version).") 'do:filldetails' }
     if ($notDeployed.Count) { & $add 'info' "$($notDeployed.Count) app(s) not in Intune yet" ((@($notDeployed | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($notDeployed.Count -gt 5) { ', ...' })) 'apps:notdeployed' }
     # winget.exe answers in Windows' display language; its text is read in several languages, but Microsoft's WinGet module is exact in all of them.
@@ -304,7 +318,7 @@ function Global:Get-WebAttention {
     if ($noVersion.Count) { & $add 'warn' "$($noVersion.Count) managed app(s) without a version yet" ((@($noVersion | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + " - take winget's current version as the one they start from$(if (@($noVersion | Where-Object { $_.appId }).Count) { ', then Deploy the ones in Intune again (it updates them)' }).") 'do:takeversions' }
     # Pinned versions whose download is gone (the last check): new devices can't install them.
     $dlChecks = Get-WebDownloadChecks
-    $dlGone = @((Read-WebCatalogRecords).Apps | Where-Object { $_.managedUpdates -and $_.wingetId -and $_.metadata -and [string]$_.metadata.appVersion } | Where-Object { $dc = $dlChecks["$($_.wingetId)|$([string]$_.metadata.appVersion)"]; $dc -and [string]$dc.status -in 'gone', 'notinwinget' })
+    $dlGone = @($apps | Where-Object { $_.managedUpdates -and $_.wingetId -and $_.metadata -and [string]$_.metadata.appVersion } | Where-Object { $dc = $dlChecks["$($_.wingetId)|$([string]$_.metadata.appVersion)"]; $dc -and [string]$dc.status -in 'gone', 'notinwinget' })
     if ($dlGone.Count) { & $add 'err' "$($dlGone.Count) app(s) can't be installed on new devices" ((@($dlGone | Select-Object -First 5 | ForEach-Object { "$($_.appName) $([string]$_.metadata.appVersion)" }) -join ', ') + ' - the version Intune installs can no longer be downloaded. Release a newer one.') 'updates' }
     $managedWinget = @($apps | Where-Object { $_.wingetId -and $_.managedUpdates })
     if ($managedWinget.Count -and -not (Test-Path -LiteralPath (Get-SharedPackagePath))) { & $add 'warn' 'Shared Winget package missing' 'Build init.intunewin - Winget apps can''t be deployed without it.' 'settings:packaging' }
@@ -313,7 +327,44 @@ function Global:Get-WebAttention {
     if ($last -and $last.failed) { & $add 'err' "The last nightly run had $($last.failed) problem(s)" ((@($last.items | Where-Object { $_.outcome -eq 'failed' } | Select-Object -First 3 | ForEach-Object { "$($_.app): $($_.text)" }) -join ' / ')) 'settings:automation' }
     $drift = @($last.items | Where-Object { $_.outcome -eq 'drift' })
     if ($drift.Count) { & $add 'warn' "$($drift.Count) app(s) differ from Intune" ((@($drift | Select-Object -First 5 | ForEach-Object { $_.app }) -join ', ') + ' (last night) - Checks has the details.') 'checks' }
-    if (@($apps | Where-Object { $_.managedUpdates }).Count -and -not (Get-WebUpdateSchedule).exists -and (Get-WebUpdateSchedule).supported) { & $add 'info' 'Nightly run not scheduled' 'Managed updates only move when someone clicks - schedule the nightly run.' 'settings:automation' }
+    $sch = Get-WebUpdateSchedule
+    if (@($apps | Where-Object { $_.managedUpdates }).Count -and -not $sch.exists -and $sch.supported) { & $add 'info' 'Nightly run not scheduled' 'Managed updates only move when someone clicks - schedule the nightly run.' 'settings:automation' }
+    $summary = $null
+    if ($part -ne 'local') { $i = Get-WebAttentionIntune -Fresh $true; foreach ($x in @($i.items)) { $items.Add($x) }; $summary = $i.summary }
+    # Getting started: the setup steps in order - Home shows them until every one is done.
+    $tool = Get-PackagingToolPath
+    $setup = @(
+        [ordered]@{ done = $configured; title = 'Connect to Intune'; text = 'The app registration, its certificate and a test sign-in.'; go = 'settings:connection' }
+        [ordered]@{ done = [bool](((Get-PackagerChoice) -eq 'builtin') -or ($tool -and (Test-Path -LiteralPath $tool))); title = 'Packaging'; text = 'Packages are built in; IntuneWinAppUtil.exe is optional (Settings > Packaging).'; go = 'settings:packaging' }
+        [ordered]@{ done = [bool](Test-Path -LiteralPath (Get-SharedPackagePath)); title = 'Build the shared Winget package'; text = 'One package every Winget app deploys with.'; go = 'settings:packaging' }
+        [ordered]@{ done = [bool]@($Global:App.PilotGroups).Count; title = 'Choose the pilot groups'; text = 'A few test devices that get new versions first.'; go = 'settings:updates' }
+        [ordered]@{ done = [bool]$apps.Count; title = 'Add your first apps'; text = 'From winget, an installer or a script - or the apps already in Intune (Checks).'; go = 'add' }
+        [ordered]@{ done = [bool]@($apps | Where-Object { $_.appId }).Count; title = 'Send them to Intune'; text = 'Select apps on the Apps page and Send to Intune.'; go = 'apps:notdeployed' }
+        [ordered]@{ done = [bool]($sch.exists -or -not $sch.supported); title = 'Schedule the nightly run'; text = 'It releases, promotes and checks by itself.'; go = 'settings:automation' }
+    )
+    $upd = Get-WebAppUpdate
+    if ($upd.ok -and $upd.newer) { & $add 'info' "Intune App Catalog $($upd.version) is out (you have $($Global:App.AppVersion))" $(if ($upd.notes) { $upd.notes } else { 'See what is new on GitHub.' }) 'open:release' }
+    $order = @{ err = 0; warn = 1; ok = 2; info = 3 }
+    return @{ ok = $true; items = @($items | Sort-Object { $order[$_.level] }); setup = $setup; apps = $apps.Count; deployed = @($apps | Where-Object { $_.appId }).Count
+        managed = @($apps | Where-Object { $_.managedUpdates }).Count; summary = $summary; connected = $configured; lastRun = $(if ($last) { $last.started } else { '' }) }
+}
+
+function Global:Get-WebAttentionIntune {
+    <#
+      Home's part that asks Intune: the release and install counts (Get-WebUpdatesOverview without the inventory) as
+      Home items. The slow part of Home - kept for 45 seconds (Home refreshes every minute and after each change);
+      a finished step or -Fresh reads it again.
+    #>
+    param([bool]$Fresh)
+    # Also new as soon as the catalog changes (any app's file) or winget's newest versions were read again.
+    $folder = Get-AppFolder -Kind Catalog
+    $sig = ((@(Get-ChildItem -LiteralPath $folder -Filter '*.json' -File -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name)|$($_.LastWriteTimeUtc.Ticks)|$($_.Length)" })) -join ';') + "|w$(if ($Global:App.WingetLatest) { $Global:App.WingetLatest.Count })"
+    $c = $Global:App.HomeIntuneCache
+    if (-not $Fresh -and $c -and $c.Sig -eq $sig -and ([DateTime]::UtcNow - $c.At).TotalSeconds -lt 45) { return $c.Value }
+    $items = New-Object System.Collections.Generic.List[object]
+    $add = { param($level, $title, $text, $go) $items.Add([ordered]@{ level = $level; title = $title; text = $text; go = $go }) }
+    $configured = [bool](Test-GraphCredentialsConfigured -Quiet)
+    $apps = @((Read-WebCatalogRecords).Apps)
     $summary = $null
     if ($configured -and @($apps | Where-Object { $_.managedUpdates }).Count) {
         try {
@@ -329,23 +380,10 @@ function Global:Get-WebAttention {
         }
         catch { }
     }
-    # Getting started: the setup steps in order - Home shows them until every one is done.
-    $tool = Get-PackagingToolPath
-    $sch = Get-WebUpdateSchedule
-    $setup = @(
-        [ordered]@{ done = $configured; title = 'Connect to Intune'; text = 'The app registration, its certificate and a test sign-in.'; go = 'settings:connection' }
-        [ordered]@{ done = [bool](((Get-PackagerChoice) -eq 'builtin') -or ($tool -and (Test-Path -LiteralPath $tool))); title = 'Packaging'; text = 'Packages are built in; IntuneWinAppUtil.exe is optional (Settings > Packaging).'; go = 'settings:packaging' }
-        [ordered]@{ done = [bool](Test-Path -LiteralPath (Get-SharedPackagePath)); title = 'Build the shared Winget package'; text = 'One package every Winget app deploys with.'; go = 'settings:packaging' }
-        [ordered]@{ done = [bool]@($Global:App.PilotGroups).Count; title = 'Choose the pilot groups'; text = 'A few test devices that get new versions first.'; go = 'settings:updates' }
-        [ordered]@{ done = [bool]$apps.Count; title = 'Add your first apps'; text = 'From winget, an installer or a script - or the apps already in Intune (Checks).'; go = 'add' }
-        [ordered]@{ done = [bool]@($apps | Where-Object { $_.appId }).Count; title = 'Send them to Intune'; text = 'Select apps on the Apps page and Send to Intune.'; go = 'apps:notdeployed' }
-        [ordered]@{ done = [bool]($sch.exists -or -not $sch.supported); title = 'Schedule the nightly run'; text = 'It releases, promotes and checks by itself.'; go = 'settings:automation' }
-    )
-    $upd = Get-WebAppUpdate
-    if ($upd.ok -and $upd.newer) { & $add 'info' "Intune App Catalog $($upd.version) is out (you have $($Global:App.AppVersion))" $(if ($upd.notes) { $upd.notes } else { 'See what is new on GitHub.' }) 'open:release' }
     $order = @{ err = 0; warn = 1; ok = 2; info = 3 }
-    return @{ ok = $true; items = @($items | Sort-Object { $order[$_.level] }); setup = $setup; apps = $apps.Count; deployed = @($apps | Where-Object { $_.appId }).Count
-        managed = @($apps | Where-Object { $_.managedUpdates }).Count; summary = $summary; lastRun = $(if ($last) { $last.started } else { '' }) }
+    $value = @{ ok = $true; items = @($items | Sort-Object { $order[$_.level] }); summary = $summary }
+    $Global:App.HomeIntuneCache = @{ At = [DateTime]::UtcNow; Sig = $sig; Value = $value }
+    return $value
 }
 
 # ---------------------------------------------------------------- groups x apps

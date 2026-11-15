@@ -1442,7 +1442,9 @@ async function fillDetails(names) {
   const n = r.filled.length, sent = r.filled.filter(f => (apps.find(a => a.name === f.name) || {}).hasAppId).map(f => f.name);
   const msg = n ? `Filled in ${n} of ${r.asked} app(s): ${r.filled.slice(0, 4).map(f => `${f.name} (${f.fields.join(', ')})`).join('; ')}${n > 4 ? '; ...' : ''}.` : `Nothing to fill in - the ${r.asked} app(s) have their details already, or winget has none.`;
   const failed = r.failed.length ? ` Not asked or unknown to winget: ${r.failed.slice(0, 4).join('; ')}${r.failed.length > 4 ? '; ...' : ''}.` : '';
-  toast(msg + failed + (sent.length ? ` ${sent.length} of them are in Intune - send their settings.` : ''), !!r.failed.length && !n,
+  // What winget's entries don't have - Home stops asking for it; it can still be typed in the editor.
+  const lack = (r.lacking || []).length ? ` winget has no ${r.lacking.slice(0, 4).map(l => `${l.fields.join(', ')} for ${l.name}`).join('; ')}${r.lacking.length > 4 ? '; ...' : ''} - type ${r.lacking.length === 1 && r.lacking[0].fields.length === 1 ? 'it' : 'them'} in the editor if you want them.` : '';
+  toast(msg + failed + lack + (sent.length ? ` ${sent.length} of them are in Intune - send their settings.` : ''), !!r.failed.length && !n,
     [n ? { label: 'Undo', run: () => undoLast() } : null, sent.length ? { label: 'Send settings', run: () => sendSettingsNow(sent) } : null]);
 }
 

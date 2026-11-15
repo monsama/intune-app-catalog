@@ -657,6 +657,16 @@ function Global:Get-WebFastTrackTaskName { 'Intune App Catalog - fast-track upda
 
 function Global:Get-WebUpdateSchedule {
     # The nightly scheduled task, if there is one: @{ supported; exists; runAt; user }.
+    # Asking Task Scheduler is slow (a second or more the first time), and Home asks on every load - kept for a
+    # minute; Set-WebUpdateSchedule forgets it.
+    $c = $Global:App.ScheduleCache
+    if ($c -and ([DateTime]::UtcNow - $c.At).TotalSeconds -lt 60) { return $c.Value }
+    $v = Get-WebUpdateScheduleNow
+    $Global:App.ScheduleCache = @{ At = [DateTime]::UtcNow; Value = $v }
+    return $v
+}
+
+function Global:Get-WebUpdateScheduleNow {
     if (-not ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') -or -not (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue)) { return @{ supported = $false; exists = $false } }
     $t = Get-ScheduledTask -TaskName (Get-WebUpdateTaskName) -ErrorAction SilentlyContinue
     if (-not $t) { return @{ supported = $true; exists = $false } }
@@ -671,14 +681,16 @@ function Global:Set-WebUpdateSchedule {
       the connection's certificate), or removes it (-on false).
     #>
     param($Data)
+    $Global:App.ScheduleCache = $null
     $now = Get-WebUpdateSchedule
+    $Global:App.ScheduleCache = $null
     if (-not $now.supported) { return @{ ok = $false; error = 'Scheduled tasks are only available on Windows.' } }
     $name = Get-WebUpdateTaskName
     if (-not $Data.on) {
         if ($now.exists) { Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction Stop }
         if (Get-ScheduledTask -TaskName (Get-WebFastTrackTaskName) -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName (Get-WebFastTrackTaskName) -Confirm:$false -ErrorAction SilentlyContinue }
         Write-Log "[OK] Removed the scheduled task '$name'."
-        return @{ ok = $true; schedule = (Get-WebUpdateSchedule) }
+        $Global:App.ScheduleCache = $null; return @{ ok = $true; schedule = (Get-WebUpdateSchedule) }
     }
     $runAt = [string]$Data.runAt
     if ($runAt -notmatch '^([01]\d|2[0-3]):[0-5]\d$') { return @{ ok = $false; error = 'The time must be HH:mm (24 hours), e.g. 03:00.' } }
@@ -699,7 +711,7 @@ function Global:Set-WebUpdateSchedule {
     $Global:App.ReleasePolicy.RunAt = $runAt
     try { [void](Write-SettingsFile) } catch { }
     Write-Log "[OK] Scheduled task '$name': every day at $runAt, as $env:USERNAME."
-    return @{ ok = $true; schedule = (Get-WebUpdateSchedule) }
+    $Global:App.ScheduleCache = $null; return @{ ok = $true; schedule = (Get-WebUpdateSchedule) }
 }
 
 # ---------------------------------------------------------------- running unattended
