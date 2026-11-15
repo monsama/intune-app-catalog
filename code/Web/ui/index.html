@@ -339,7 +339,7 @@
       <button class="subtab" role="tab" id="stab-defaults" data-sec="defaults" aria-controls="sec-defaults" aria-selected="false">Apps &amp; defaults</button>
       <button class="subtab" role="tab" id="stab-updates" data-sec="updates" aria-controls="sec-updates" aria-selected="false">Updates</button>
       <button class="subtab" role="tab" id="stab-automation" data-sec="automation" aria-controls="sec-automation" aria-selected="false">Nightly run &amp; alerts</button>
-      <button class="subtab" role="tab" id="stab-packaging" data-sec="packaging" aria-controls="sec-packaging" aria-selected="false">Packaging &amp; folders</button>
+      <button class="subtab" role="tab" id="stab-packaging" data-sec="packaging" aria-controls="sec-packaging" aria-selected="false" data-server-text="Packaging">Packaging &amp; folders</button>
       <button class="subtab" role="tab" id="stab-diagnostics" data-sec="diagnostics" aria-controls="sec-diagnostics" aria-selected="false">Diagnostics</button>
     </nav>
     <div class="setsec" id="sec-connection" data-sec="connection" role="tabpanel" aria-labelledby="stab-connection" hidden>
@@ -351,7 +351,7 @@
           <label>Tenant ID<input id="fTenant" spellcheck="false" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000" autocorrect="off" autocapitalize="off"></label>
           <label>Client (Application) ID<input id="fClient" spellcheck="false" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000" autocorrect="off" autocapitalize="off"></label>
           <label>Certificate thumbprint
-            <span class="inputrow"><input id="fThumb" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"><button class="btn" id="btnPickCert" title="Pick a certificate from this machine's certificate store">Choose...</button></span>
+            <span class="inputrow"><input id="fThumb" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"><button class="btn" id="btnPickCert" title="Pick a certificate from this machine's certificate store" data-server-title="Pick a certificate from the server's store">Choose...</button></span>
           </label>
           <p class="certstatus" id="certStatus"></p>
           <div class="actions">
@@ -399,12 +399,12 @@
       <div class="col">
         <article class="card">
           <h2>Certificate</h2>
-          <p class="sub">On this machine</p>
+          <p class="sub" data-server-text="On the server (its data volume) - import the app registration's .pfx, or create one here">On this machine</p>
           <div class="actions">
-            <button class="btn" id="btnUseCert" title="Pick a certificate that is already in your user store or the machine store">Use an existing one...</button>
-            <button class="btn" id="btnNewCert" title="Create a self-signed certificate on this machine for the app registration">Create new certificate...</button>
+            <button class="btn" id="btnUseCert" title="Pick a certificate that is already in your user store or the machine store" data-server-title="Pick a certificate that is already in the server's store">Use an existing one...</button>
+            <button class="btn" id="btnNewCert" title="Create a self-signed certificate on this machine for the app registration" data-server-title="Create a self-signed certificate on the server for the app registration">Create new certificate...</button>
             <button class="desktoponly btn" id="btnCertFolder" title="Open the folder with the exported .cer files in Explorer">Open certificates folder</button>
-            <button class="btn" id="btnCertsLocal" title="List this machine's certificates and delete one you no longer need">Delete one...</button>
+            <button class="btn" id="btnCertsLocal" title="List this machine's certificates and delete one you no longer need" data-server-title="List the server's certificates and delete one you no longer need">Delete one...</button>
           </div>
           <div class="actions serveronly">
             <button class="btn" id="btnPfxImport" title="Use the certificate you already have: a .pfx file with its private key">Import a .pfx...</button>
@@ -435,7 +435,7 @@
             <button class="btn" id="btnPrereqCheck" title="Look for the Microsoft Graph module in each PowerShell again">Check</button>
             <button class="btn primary" id="btnPrereqInstall" hidden title="Install the Microsoft Graph module where it is missing (current user, from the PowerShell Gallery)">Install missing</button>
           </div>
-          <p class="sub">Installs from the PowerShell Gallery for your user account only - no admin rights, but internet access.</p>
+          <p class="sub" data-server-text="The PowerShell modules the app needs - they come with the server version's image.">Installs from the PowerShell Gallery for your user account only - no admin rights, but internet access.</p>
         </article>
       </div>
     </div>
@@ -548,7 +548,7 @@
       <div class="col">
         <article class="card">
           <h2>Nightly run</h2>
-          <p class="sub" id="runSchedule">Checks every managed app: promotes or holds version in pilots by the rule above, and releases new winget versions - each only when its switch above is on; otherwise it reports what it would do.</p>
+          <p class="sub" id="runSchedule">Checks every managed app: promotes or holds versions in pilots by the release rule (Managed updates), and releases new winget versions - each only when its switch is on; otherwise it reports what it would do.</p>
           <div class="toolbar tight">
             <label class="inline">Every day at <input id="runAt" type="time" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
             <button class="btn" id="btnSchedule" title="Create or change the Windows scheduled task that runs IntuneDeployment.ps1 -RunUpdates every day (as you)">Schedule</button>
@@ -579,14 +579,14 @@
           <label class="chk" title="A zip of the catalog's app files in the Backups folder, the last 30 kept"><input type="checkbox" id="rpBackup">Back up the catalog</label>
           <label class="chk" title="Only for a git repository you created yourself in the catalog folder: it's run with its hooks, fsmonitor and filters off, and not at all when its .git belongs to someone else"><input type="checkbox" id="rpBackupGit">... and commit the app files to the catalog folder's git repository</label>
           <label class="chk" title="On the first run of a month: last month's report (released, promoted, withdrawn, held; devices on the current version) in Logs\reports, sent by email / Teams when alerts are set up"><input type="checkbox" id="rpMonthly">Monthly report</label>
-          <label class="full" title="A test tenant's catalog folder (a share both PCs reach): Winget apps here are released by themselves only in a version that is promoted there. Empty: no test tenant">Test tenant's catalog folder <span class="muted">(optional)</span><input id="rpGate" class="full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. \\fileserver\intune-test\app-data"></label>
+          <label class="full" title="A test tenant's catalog folder (a share both PCs reach): Winget apps here are released by themselves only in a version that is promoted there. Empty: no test tenant">Test tenant's catalog folder <span class="muted">(optional)</span><input id="rpGate" class="full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. \\fileserver\intune-test\app-data" data-server-placeholder="e.g. /app/data/test-tenant (a folder the server reaches)"></label>
           <div class="actions"><button class="btn" id="btnSaveNightly" title="Save what the nightly run does besides releases">Save</button></div>
         </article>
         <article class="card">
           <h2>Alerts</h2>
           <p class="sub" id="alertHint">After each run, a message to a Teams channel (a Workflows webhook: in the channel, ... &gt; Workflows &gt; "Post to a channel when a webhook request is received") and/or an email, sent with Graph from a mailbox you name (the app registration needs Mail.Send).</p>
           <label class="inline">Send <select id="alLevel"><option value="off">no alerts</option><option value="attention">when something needs a look - failed, on hold, ready, released or promoted</option><option value="always">after every run</option></select></label>
-          <label class="full" title="Saved on this PC and never shown again - paste a new one to change it">Teams webhook address <input id="alWebhook" type="password" class="full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          <label class="full" title="Saved on this PC and never shown again - paste a new one to change it" data-server-title="Saved on the server and never shown again - paste a new one to change it">Teams webhook address <input id="alWebhook" type="password" class="full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
           <label class="chk"><input type="checkbox" id="alClearHook">Remove the saved webhook</label>
           <div class="policy two">
             <label>Email from <span class="muted">(mailbox)</span><input id="alFrom" type="email" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. intune-reports@contoso.com"></label>
@@ -640,8 +640,8 @@
         </article>
         <article class="card">
           <h2>Diagnostics</h2>
-          <p class="sub">This machine's setup, the catalog itself, and how it lines up with Intune. Only reads.</p>
-          <div class="actions"><button class="btn" id="btnDiag" title="Check this machine, the catalog and the link to Intune - reads only">Run diagnostics</button></div>
+          <p class="sub" data-server-text="The server's setup, the catalog itself, and how it lines up with Intune. Only reads.">This machine's setup, the catalog itself, and how it lines up with Intune. Only reads.</p>
+          <div class="actions"><button class="btn" id="btnDiag" title="Check this machine, the catalog and the link to Intune - reads only" data-server-title="Check the server, the catalog and the link to Intune - reads only">Run diagnostics</button></div>
           <pre class="log diag" id="diagLog" tabindex="0" role="log" hidden></pre>
         </article>
       </div>
@@ -706,7 +706,7 @@
   <button role="menuitem" data-cact="retired" title="Apps retired from Intune and archived - bring one back into the catalog">Retired apps...</button>
   <hr>
   <button role="menuitem" data-cact="reload" title="Read the catalog folder again - for changes made outside the app">Reload</button>
-  <button role="menuitem" data-cact="folder" title="Open the folder with one JSON file per app in Explorer">Open catalog folder</button>
+  <button role="menuitem" class="desktoponly" data-cact="folder" title="Open the folder with one JSON file per app in Explorer">Open catalog folder</button>
 </div>
 <div class="menu" id="groupMenu" role="menu" hidden>
   <button role="menuitem" data-gact="open" title="Show the group's apps and members">Open</button>
@@ -726,7 +726,7 @@
 <!-- ============ dialogs ============ -->
 <dialog id="dlgPickCert">
   <h2>Choose a certificate</h2>
-  <p class="sub">From your user store (CurrentUser\My) and the machine store (LocalMachine\My) - those with a private key that haven't expired, because only those can sign in.</p>
+  <p class="sub" data-server-text="From the server's store (on its data volume) - those with a private key that haven't expired, because only those can sign in.">From your user store (CurrentUser\My) and the machine store (LocalMachine\My) - those with a private key that haven't expired, because only those can sign in.</p>
   <ul class="picklist" id="certList"></ul>
   <p class="sub" id="certHidden" hidden></p>
   <div class="actions end"><button class="btn" data-close>Cancel</button></div>
@@ -1121,7 +1121,8 @@
   </section>
 
   <section class="asec" id="asec-list" role="tabpanel" aria-labelledby="atab-list" hidden>
-    <p class="sub">Add many Winget apps at once: from a <code>winget export</code> file (another PC's apps - <code>winget export -o apps.json</code> there), or from the apps on this PC.</p>
+    <p class="sub desktoponly">Add many Winget apps at once: from a <code>winget export</code> file (another PC's apps - <code>winget export -o apps.json</code> there), or from the apps on this PC.</p>
+    <p class="sub serveronly">Add many Winget apps at once: from a <code>winget export</code> file - <b>Script for a PC's apps</b> makes one on a Windows PC.</p>
     <div class="toolbar tight">
       <button class="btn" id="btnAlFile" title="A JSON file made by winget export">Choose an export file...</button>
       <button class="btn serveronly" id="btnAlScript" title="A script for a Windows PC: winget export of that PC's apps, into a file to choose here">Script for a PC's apps...</button>
@@ -1129,7 +1130,7 @@
       <input type="file" id="alFile" accept=".json,application/json" hidden>
       <span class="muted" id="alNote" aria-live="polite"></span>
     </div>
-    <div class="tablewrap" tabindex="0" aria-label="Packages in the list" data-empty="Choose an export file or read this PC's apps - the packages appear here to pick from.">
+    <div class="tablewrap" tabindex="0" aria-label="Packages in the list" data-empty="Choose an export file or read this PC's apps - the packages appear here to pick from." data-server-empty="Choose an export file - the packages appear here to pick from.">
       <table class="grid" id="alGrid"><thead><tr><th class="chk"><input type="checkbox" id="alAll" aria-label="Pick every package not in the catalog"></th><th>Winget ID</th><th>In the catalog</th></tr></thead><tbody id="alRows"></tbody></table>
     </div>
   </section>
@@ -1321,15 +1322,15 @@
 
 <dialog id="dlgWinget" class="wide">
   <h2>Find a Winget package</h2>
-  <div class="toolbar tight"><input type="search" id="wgQuery" placeholder="App or publisher name" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><button class="btn" id="btnWgSearch" title="Search winget's sources (needs winget on this machine)">Search</button></div>
+  <div class="toolbar tight"><input type="search" id="wgQuery" placeholder="App or publisher name" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><button class="btn" id="btnWgSearch" title="Search winget's sources (needs winget on this machine)" data-server-title="Search winget's package index">Search</button></div>
   <p class="sub" id="wgNote">Searches winget's sources. Pick the package to use its ID.</p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>Name</th><th>Winget ID</th><th>Version</th><th>Source</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="wgRows"></tbody></table></div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
 
 <dialog id="dlgCertsLocal" class="wide">
-  <h2>Certificates on this machine</h2>
-  <p class="sub">CurrentUser\My and LocalMachine\My. Deleting removes the certificate and its private key from this machine only - Entra ID keeps its copy (Check certificates there deletes that).</p>
+  <h2 data-server-text="Certificates on the server">Certificates on this machine</h2>
+  <p class="sub" data-server-text="The server's store (on its data volume). Deleting removes the certificate and its private key from the server only - Entra ID keeps its copy.">CurrentUser\My and LocalMachine\My. Deleting removes the certificate and its private key from this machine only - Entra ID keeps its copy (Check certificates there deletes that).</p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>Subject</th><th>Store</th><th>Thumbprint</th><th>Expires</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="certsLocalRows"></tbody></table></div>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>

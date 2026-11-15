@@ -183,7 +183,7 @@ $('btnAddGo').addEventListener('click', async () => {
       $('addError').classList.remove('muted');
       if (!r.ok) { showAddError(r.error); return; }
       $('dlgAdd').close(); await afterAdd([r.name]);
-      toast(`${r.name} added - edit Invoke-AppDeployToolkit.ps1 in ${r.folder}${r.missing.length ? ` (couldn't fill in: ${r.missing.join(', ')} - do that by hand)` : ''}.`, !!r.missing.length, [{ label: 'Open the folder', run: () => api('/api/open', { target: 'package-folder', name: r.name }) }, { label: 'Build', run: () => buildAdded(r.name) }]);
+      toast(`${r.name} added - edit Invoke-AppDeployToolkit.ps1 in ${r.folder}${r.missing.length ? ` (couldn't fill in: ${r.missing.join(', ')} - do that by hand)` : ''}.`, !!r.missing.length, [SERVER ? null : { label: 'Open the folder', run: () => api('/api/open', { target: 'package-folder', name: r.name }) }, { label: 'Build', run: () => buildAdded(r.name) }]);
     }
     else {
       const custom = document.querySelector('input[name="asDetect"]:checked').value === 'script';

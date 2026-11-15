@@ -455,9 +455,9 @@ async function loadUpdateRuns() {
   $('runList').replaceChildren(...(r.running ? [el('p', { class: 'muted', text: 'A run is going now - Reload shows it when it ends.' })] : []),
     ...(r.runs.length ? r.runs.map(run => {
       const shown = run.items.filter(i => !['current', 'none', 'wait'].includes(i.outcome));
-      return el('details', { class: 'run' }, el('summary', {}, `${run.started}${run.planOnly ? ' (plan only)' : ''} - `,
+      return el('details', { class: 'run' }, el('summary', {}, `${run.started}${run.fastTrack ? ' (fast track)' : ''}${run.planOnly ? ' (plan only)' : ''} - `,
         el('span', { class: 'pill ' + (run.failed ? 'err' : shown.length ? 'info' : 'ok'), text: run.failed ? `${run.failed} failed` : shown.length ? `${shown.length} to look at` : 'nothing to do' })),
-        el('ul', {}, ...run.items.map(i => el('li', {}, el('b', { text: i.app }), ' ', el('span', { class: 'pill ' + (cls[i.outcome] || 'muted'), text: i.outcome }), ' ' + i.text))));
+        el('ul', {}, ...run.items.map(i => el('li', {}, el('b', { text: i.app === '(all)' ? 'All apps' : i.app }), ' ', el('span', { class: 'pill ' + (cls[i.outcome] || 'muted'), text: i.outcome }), ' ' + i.text))));
     }) : [el('p', { class: 'muted', text: 'No run yet.' })]));
 }
 $('btnRunReload').addEventListener('click', loadUpdateRuns);

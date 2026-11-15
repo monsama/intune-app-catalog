@@ -622,7 +622,7 @@ function Global:Get-WebUpdateRuns {
         $runs = @(Get-ChildItem -LiteralPath $dir -Filter 'managed-updates-*.json' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 10 | ForEach-Object {
                 try {
                     $r = Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
-                    [ordered]@{ id = $_.BaseName; started = [string]$r.started; planOnly = [bool]$r.planOnly; failed = [int]$r.failed; items = @($r.items) }
+                    [ordered]@{ id = $_.BaseName; started = [string]$r.started; planOnly = [bool]$r.planOnly; fastTrack = ($_.BaseName -like 'managed-updates-ft-*'); failed = [int]$r.failed; items = @($r.items) }
                 }
                 catch { }
             })

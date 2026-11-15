@@ -1426,3 +1426,10 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 #dlgDetPaste { width: min(620px, calc(100vw - 32px)); }
 .dpsteps { margin: 8px 0 10px; padding-left: 22px; line-height: 1.9; }
 #dpText { width: 100%; box-sizing: border-box; resize: vertical; }
+
+/* Sweep: menus inside the window, tabs that scroll on phones, notes that wrap */
+.menu { max-height: calc(100vh - 16px); overflow-y: auto; }
+.subtabs { overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap; flex-shrink: 0; scrollbar-width: thin; }
+.subtab { white-space: nowrap; flex: 0 0 auto; }
+#groupStatusNote { white-space: normal; overflow-wrap: anywhere; }
+#guideState { white-space: nowrap; }

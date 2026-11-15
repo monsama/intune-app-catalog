@@ -86,6 +86,9 @@ function goSignIn(why) {
     b.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
     b.addEventListener('click', async () => { await api('/api/logout'); goSignIn('signedout'); });
     const bar = document.getElementById('pageBtns'); if (bar) bar.append(b);
+    // Words for the server: "this machine" is the server here (data-server-text/-title/-placeholder/-empty).
+    for (const [attr, set] of [['serverText', (n, v) => { n.textContent = v; }], ['serverTitle', (n, v) => { n.title = v; }], ['serverPlaceholder', (n, v) => { n.placeholder = v; }], ['serverEmpty', (n, v) => { n.dataset.empty = v; }]])
+      for (const n of document.querySelectorAll(`[data-${attr.replace(/[A-Z]/g, c => '-' + c.toLowerCase())}]`)) set(n, n.dataset[attr]);
     // What a Windows PC does comes as a download here (PC helpers).
     for (const m of document.querySelectorAll('[data-act="sandbox"]')) { m.textContent = 'Download a Sandbox test...'; m.title = 'A zip for a Windows PC with Windows Sandbox: the package, the test and a starter that opens the Sandbox and says how it went'; }
   } catch (e) { /* the desktop app, or no answer: nothing to do here */ }
@@ -163,6 +166,9 @@ function placeToast() {
   if (t.parentElement !== host) host.append(t);
 }
 window.addEventListener('close', () => setTimeout(placeToast, 0), true);
+// A dialog opened while a toast shows: the toast moves into it (else it sits blurred under the backdrop).
+const _showModal = HTMLDialogElement.prototype.showModal;
+HTMLDialogElement.prototype.showModal = function () { _showModal.call(this); if (!$('toast').hidden) placeToast(); };
 function toast(msg, isErr, actions) {
   activity(`${stamp()} ${isErr ? '[FAILED] ' : ''}${msg}`);
   const t = $('toast');
@@ -269,6 +275,8 @@ document.querySelector('.subtabs').addEventListener('keydown', e => {
   showSettings(next.dataset.sec); next.focus();
 });
 for (const b of document.querySelectorAll('.tab')) b.addEventListener('click', () => showView(b.dataset.view));
+// Already on Settings: the banner's button would only scroll - it hides there.
+new MutationObserver(() => { const b = $('bannerSettings'); if (b) b.hidden = !$('viewSettings').hidden; }).observe($('viewSettings'), { attributes: true, attributeFilter: ['hidden'] });
 $('bannerSettings').addEventListener('click', () => { showSettings('connection'); $('guideReg').open = true; $('guideCard').scrollIntoView({ block: 'start' }); });
 
 // ---------------------------------------------------------------- state
