@@ -544,7 +544,7 @@ Assert-Equal "x64" $wingetDefaults.architecture "Get-DefaultAppMetadata: default
 Assert-Equal "System" $wingetDefaults.installContext "Get-DefaultAppMetadata: default install context is System"
 Assert-Equal "W10_22H2" $wingetDefaults.minOSKey "Get-DefaultAppMetadata: default Min OS is the newest Windows 10 release (not Windows 11)"
 Assert-Equal "basedOnReturnCode" $wingetDefaults.deviceRestartBehavior "Get-DefaultAppMetadata: default restart behavior is basedOnReturnCode"
-Assert-Equal 5 @($wingetDefaults.returnCodes).Count "Get-DefaultAppMetadata: the standard 5 return codes are included"
+Assert-True (@($wingetDefaults.returnCodes).Count -eq 6 -and @($wingetDefaults.returnCodes | Where-Object { [string]$_.returnCode -eq "9009" -and $_.type -eq "retry" }).Count -eq 1) "Get-DefaultAppMetadata: the standard 5 return codes, plus 9009 (retry) for the winget command"
 Assert-Equal "" $wingetDefaults.publisher "Get-DefaultAppMetadata: default publisher is blank (no hardcoded org name)"
 
 $uncommonDefaults = Get-DefaultAppMetadata -AppName "Test Uncommon App" -WingetId "" -Uncommon $true
