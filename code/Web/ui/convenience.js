@@ -405,12 +405,14 @@ async function wauSwitch() {
   const msg = `Switched ${r.changed.length} app(s) away from Winget-AutoUpdate.` + ((r.byHand || []).length ? ` Not switched - their commands run Winget-Install.ps1 for several or other IDs, so they're left to you (editor, Install with): ${r.byHand.join(', ')}.` : '');
   const dropped = ((r.carried || []).length ? ` Kept the extra winget options WAU passed (editor, Install & detection): ${r.carried.join('; ')}.` : '') +
     ((r.dropped || []).length ? ` Left out options winget's own command can't take - check these install as you want: ${r.dropped.join('; ')}.` : '');
+  const ids = ((r.tookId || []).length ? ` Winget ID taken from the WAU command (none was set): ${r.tookId.join('; ')}.` : '') +
+    ((r.mismatch || []).length ? ` Not switched - the WAU command installs another Winget ID than the app has (${r.mismatch.join('; ')}). Set the Winget ID you want in the editor (Basics), then Switch them again.` : '');
   // Nothing changed: nothing to undo.
-  if (!r.changed.length) { toast(msg, (r.byHand || []).length > 0); loadHome(); return; }
+  if (!r.changed.length) { toast(msg + ids, (r.byHand || []).length + (r.mismatch || []).length > 0); loadHome(); return; }
   if (r.deployed.length) {
     const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', startText: 'Pushing ' });
-    toast(`${msg}${dropped} Pushed to Intune for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length, [{ label: 'Undo', run: () => undoLast() }]);
-  } else toast(msg + dropped, false, [{ label: 'Undo', run: () => undoLast() }]);
+    toast(`${msg}${ids}${dropped} Pushed to Intune for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length, [{ label: 'Undo', run: () => undoLast() }]);
+  } else toast(msg + ids + dropped, (r.mismatch || []).length > 0, [{ label: 'Undo', run: () => undoLast() }]);
   loadHome();
 }
 

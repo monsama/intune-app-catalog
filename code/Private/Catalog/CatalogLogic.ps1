@@ -2388,6 +2388,22 @@ function Global:Test-WauCommandForId {
     return ($parts.Count -eq 1 -or $parts[1].StartsWith('--'))
 }
 
+function Global:Get-WauCommandId {
+    <#
+      Pure: the one Winget ID a WAU command installs (-AppIDs "Some.App", maybe
+      with winget options after it) - '' when it isn't a Winget-Install.ps1
+      command, or names several IDs.
+    #>
+    param([string]$Command)
+    if ([string]$Command -notmatch '(?i)Winget-Install\.ps1') { return '' }
+    $m = [regex]::Match([string]$Command, '(?i)-AppIDs?\s+(?:"([^"]*)"|''([^'']*)''|(\S+))')
+    if (-not $m.Success) { return '' }
+    $parts = @((($m.Groups[1].Value + $m.Groups[2].Value + $m.Groups[3].Value).Trim()) -split '\s+' | Where-Object { $_ })
+    if (-not $parts.Count -or ($parts.Count -gt 1 -and -not $parts[1].StartsWith('--'))) { return '' }
+    if ($parts[0] -notmatch '^[A-Za-z0-9][A-Za-z0-9.\-_+]{0,127}$') { return '' }
+    return $parts[0]
+}
+
 function Global:Get-WauCommandExtras {
     <#
       Pure: the winget options a WAU command passed after the app's ID

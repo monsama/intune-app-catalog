@@ -743,6 +743,8 @@ function Global:Invoke-WebWauSwitch {
     $byHand = New-Object System.Collections.Generic.List[string]
     $dropped = New-Object System.Collections.Generic.List[string]
     $carried = New-Object System.Collections.Generic.List[string]
+    $tookId = New-Object System.Collections.Generic.List[string]
+    $mismatch = New-Object System.Collections.Generic.List[string]
     foreach ($a in @($all | Where-Object { @(Get-WauUse $_).Count })) {
         if (Get-WebAppRelease $a) { continue }
         if ($Data.auto -and $a.appId) { continue }
@@ -752,6 +754,13 @@ function Global:Invoke-WebWauSwitch {
         $isWau = $a.wingetId -and -not (Test-StoreProductId ([string]$a.wingetId)) -and (Get-AppWingetInstallMethod -WingetId $a.wingetId -InstallCommand ([string]$m.installCommand) -UninstallCommand ([string]$m.uninstallCommand)) -eq 'WAU'
         # Commands in another wording (other path, quotes, switches) that still run Winget-Install.ps1 for this app's own ID are WAU's too.
         if (-not $isWau -and $a.wingetId -and -not (Test-StoreProductId ([string]$a.wingetId)) -and (Test-WauCommandForId -WingetId ([string]$a.wingetId) -Command ([string]$m.installCommand))) { $isWau = $true }
+        # No Winget ID in the catalog yet: the one the WAU command installs is the app's (that's what devices got).
+        # Another one than the catalog's: not guessed - the message names both.
+        if (-not $isWau) {
+            $cmdId = Get-WauCommandId ([string]$m.installCommand)
+            if ($cmdId -and -not ([string]$a.wingetId).Trim()) { $a.wingetId = $cmdId; $tookId.Add("$($a.appName) ($cmdId)"); $isWau = $true }
+            elseif ($cmdId -and [string]$a.wingetId -ine $cmdId) { $mismatch.Add("$($a.appName): the command installs $cmdId, the Winget ID says $($a.wingetId)"); continue }
+        }
         if ($isWau) {
             # The winget options WAU passed after the ID (--override /S ...) carry over to winget's own command - when they're
             # options it may take (ConvertTo-WingetOptionText); others are left out and listed.
@@ -790,10 +799,12 @@ function Global:Invoke-WebWauSwitch {
         $changed.Add([string]$a.appName)
     }
     if ($byHand.Count -and -not $Data.auto) { Write-Log "[WARN] Not switched - their Winget-AutoUpdate commands were edited by hand, change them in the editor (Install with): $($byHand -join ', ')." }
-    if (-not $changed.Count) { return @{ ok = $true; changed = @(); noVersion = @(); deployed = @(); byHand = $byHand.ToArray(); dropped = @(); carried = @(); wauApp = $wauApp } }
+    if (-not $changed.Count) { return @{ ok = $true; changed = @(); noVersion = @(); deployed = @(); byHand = $byHand.ToArray(); mismatch = $mismatch.ToArray(); dropped = @(); carried = @(); wauApp = $wauApp } }
+    if ($tookId.Count) { Write-Log "[OK] Took the Winget ID from the WAU command (none was set): $($tookId -join '; ')." }
+    if ($mismatch.Count -and -not $Data.auto) { Write-Log "[WARN] Not switched - the WAU command installs another Winget ID than the app has: $($mismatch -join '; ')." }
     if ($carried.Count) { Write-Log "[OK] Carried WAU's extra winget options over: $($carried -join '; ')." }
     if ($dropped.Count) { Write-Log "[WARN] Left out WAU options winget's own command can't take: $($dropped -join '; ')." }
     Save-WebUndo $undo
     Write-Log "[OK] Switched $($changed.Count) app(s) from Winget-AutoUpdate to $(if ($managed) { 'managed updates' } else { 'the winget command' })$(if ($noVersion.Count) { " ($($noVersion.Count) still need an App version: $($noVersion -join ', '))" })."
-    return @{ ok = $true; changed = $changed.ToArray(); noVersion = $noVersion.ToArray(); deployed = @($all | Where-Object { $changed -contains $_.appName -and $_.appId } | ForEach-Object { [string]$_.appName }); byHand = $byHand.ToArray(); dropped = $dropped.ToArray(); carried = $carried.ToArray(); wauApp = $wauApp }
+    return @{ ok = $true; changed = $changed.ToArray(); noVersion = $noVersion.ToArray(); deployed = @($all | Where-Object { $changed -contains $_.appName -and $_.appId } | ForEach-Object { [string]$_.appName }); byHand = $byHand.ToArray(); mismatch = $mismatch.ToArray(); tookId = $tookId.ToArray(); dropped = $dropped.ToArray(); carried = $carried.ToArray(); wauApp = $wauApp }
 }

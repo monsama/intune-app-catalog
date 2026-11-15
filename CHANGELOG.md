@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.26.4
+
+- **Switch from Winget-AutoUpdate**: an app whose catalog entry has no
+  Winget ID takes the one its WAU command installs (`-AppIDs
+  "OpenJS.NodeJS"`) and is switched. When the catalog's Winget ID is
+  another one than the command's, the message now names both, so you can
+  set the one you want and switch again - nothing is guessed.
+
 ## 2.26.3
 
 - The tenant test checklist has a section for the blocks and the code

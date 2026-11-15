@@ -220,6 +220,7 @@ $testableFunctionNames = @(
     "Get-WauUse",
     "Test-WauCommandForId",
     "Get-WauCommandExtras",
+    "Get-WauCommandId",
     "Get-ReleaseAvailableSettings",
     "Get-AppRecordFieldValues",
     "Get-AppRecordChanges",
@@ -998,6 +999,8 @@ Assert-True (-not (Test-WauCommandForId '7zip.7zip' '"Winget-Install.ps1" -AppID
     "Test-WauCommandForId: several IDs, another ID, or no Winget-Install.ps1 - not this app's WAU command"
 $wauExtra = '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File "C:\Program Files\Winget-AutoUpdate\Winget-Install.ps1" -AppIDs "7zip.7zip --scope machine --override /S"'
 Assert-True ((Test-WauCommandForId '7zip.7zip' $wauExtra) -and -not (Test-WauCommandForId '7zip.7zip' '"Winget-Install.ps1" -AppIDs "7zip.7zip Git.Git"')) "Test-WauCommandForId: winget options after the ID still make it this app's command; a second ID doesn't"
+$nodeCmd = '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File "C:\Program Files\Winget-AutoUpdate\Winget-Install.ps1" -AppIDs "OpenJS.NodeJS"'
+Assert-True ((Get-WauCommandId $nodeCmd) -eq 'OpenJS.NodeJS' -and (Get-WauCommandId $wauExtra) -eq '7zip.7zip' -and (Get-WauCommandId '"Winget-Install.ps1" -AppIDs "A.B C.D"') -eq '' -and (Get-WauCommandId 'winget install --id A.B') -eq '') "Get-WauCommandId: the one ID a WAU command installs (options after it allowed), not several"
 Assert-Equal '--override /S' (Get-WauCommandExtras $wauExtra) "Get-WauCommandExtras: the options WAU passed on, --scope machine not counted"
 Assert-Equal '' (Get-WauCommandExtras '"Winget-Install.ps1" -AppIDs "7zip.7zip"') "Get-WauCommandExtras: none"
 Assert-True ((Test-WauAppName 'Winget-AutoUpdate') -and (Test-WauAppName 'Romanitho.Winget-AutoUpdate') -and (Test-WauAppName 'winget autoupdate') -and -not (Test-WauAppName 'Winget Tools')) "Test-WauAppName: its names and Winget ID"
