@@ -18,6 +18,9 @@
   to pick), no group fields while it isn't in Intune from here (nothing to
   send them to), and no "Next step: Edit" that only opened the editor
   again. Store apps don't show the Version picker either.
+- **Messages after an action** (and their Undo) show sharp on top while a
+  dialog is open - they were under its dimmed, blurred background and
+  couldn't be clicked.
 
 ## 2.26.3
 
