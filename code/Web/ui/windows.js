@@ -86,8 +86,9 @@ function wcMovable(d, head) {
   d.addEventListener('close', () => { if (!d.classList.contains('minimized')) { wcUnplace(d); wcMax(d, false); } });
 }
 
-for (const d of document.querySelectorAll('dialog')) {
-  if (wcNo.has(d.id)) continue;
+// Minimize, maximize and close, and moving by the title - for every dialog, also one made later (wcSetup).
+function wcSetup(d) {
+  if (wcNo.has(d.id) || d.classList.contains('haswctl')) return;
   const strip = el('span', { class: 'wctl' });
   strip.innerHTML = `<button type="button" class="wc-min" title="Minimize" aria-label="Minimize">${wcIcon.min}</button><button type="button" class="wc-max" title="Maximize" aria-label="Maximize">${wcIcon.max}</button><button type="button" class="wc-close" title="Close (Esc)" aria-label="Close">${wcIcon.close}</button>`;
   strip.querySelector('.wc-min').addEventListener('click', () => wcMinimize(d));
@@ -98,3 +99,5 @@ for (const d of document.querySelectorAll('dialog')) {
   const head = d.querySelector('.addhead, .trayhead') || d.querySelector('h2');
   if (head) { head.classList.add('wtitle'); wcMovable(d, head); }
 }
+for (const d of document.querySelectorAll('dialog')) wcSetup(d);
+window.wcSetup = wcSetup;

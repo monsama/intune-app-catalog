@@ -794,8 +794,6 @@
         <div class="methodrow" id="aMethodRow" hidden>
           <label title="How devices install this Winget app - and so which version they get">Install with<select id="aMethod"><option value="Managed">Managed updates - a fixed version, pilot first</option><option value="Winget">The winget command - newest, not updated</option><option value="WAU" disabled>Winget-AutoUpdate (no longer used)</option><option value="Custom" disabled>Own command (edited by hand)</option></select></label>
           <p class="methodinfo" id="aMethodInfo" aria-live="polite"></p>
-          <label class="wopts" title="Added to winget's install command: --override &quot;...&quot; replaces the installer's switches, --custom &quot;...&quot; adds to them; also --architecture, --locale, --installer-type. Most packages need none - winget uses the package's own silent switches.">Extra winget options<input id="aWingetOpts" placeholder="none - e.g. --override &quot;/S&quot;" spellcheck="false"></label>
-          <p class="hint" id="aWingetOptsInfo" aria-live="polite"></p>
         </div>
         <p class="methodinfo" id="aPkgInfo" hidden></p>
         <fieldset class="ownrule" id="aRuleBox" hidden>

@@ -1112,7 +1112,6 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 500; heig
 .where .wnote.live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--ok, #2e9d5b); }
 @media (max-width: 900px) { .where .wchip { padding: 6px 10px; } .where .wnote { margin: 6px 0 0; flex-basis: 100%; } }
 /* Extra winget options (2.25): under Install with, in code type - it's part of a command. */
-.methodrow .wopts input { display: block; width: 100%; margin-top: 4px; font-family: var(--mono); font-size: 12px; }
 .methodrow .hint:empty { display: none; }
 .hint.err { color: var(--err); }
 
@@ -1159,7 +1158,6 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 500; heig
 .brec .bsec { padding: 8px 12px 4px; border-top: 1px solid var(--bd); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--bd2); }
 @media (max-width: 760px) { .blk { grid-template-columns: 1fr auto; gap: 4px 10px; } .blk .bval, .blk.edit .bval, .blk .bval.chips { grid-column: 1 / -1; } }
 input.preview, textarea.preview { background: var(--bd2); color: var(--muted); cursor: default; }
-.methodrow .wopts[hidden] { display: none; }
 
 /* The code editor: a textarea over a highlighted copy of its text, line numbers beside it. */
 .scriptdlg { width: min(1100px, 96vw); }
@@ -1192,3 +1190,8 @@ input.preview, textarea.preview { background: var(--bd2); color: var(--muted); c
 .scriptdlg .actions > div { display: flex; gap: 8px; }
 .brec .blk .bchip input, .brec .blk .bchip input:focus { background: transparent; border: 0; box-shadow: none; height: 24px; padding: 0 4px; min-width: 5ch; }
 .brec .blk .bchip:focus-within { box-shadow: var(--ring, 0 0 0 2px var(--accent-soft)); }
+.blockbar .bnote { color: var(--warn); }
+.blockbar .bfoot { padding: 8px 12px; border-top: 1px solid var(--bd2); }
+.scriptdlg .sehint { font-size: 11px; margin-right: 6px; }
+@media (max-width: 760px) { .scriptdlg .sehint { display: none; } }
+.scriptdlg .sehead { padding-right: 112px; }

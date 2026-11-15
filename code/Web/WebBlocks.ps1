@@ -136,9 +136,17 @@ function Global:Get-WebPackageScriptPrevious {
     # HHmmss[-n]_<app>_<file>: the whole rest compared, so "My_Tool" never takes Tool's copies.
     $want = "$(Get-SafeFileNameForApp -Name $p.App)_$($Data.file)"
     $copies = @(Get-ChildItem -LiteralPath $backups -Directory -Filter 'script-edit_*' -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -File -ErrorAction SilentlyContinue } |
-            Where-Object { $_.Name -match '^\d{6}(-\d+)?_(.+)$' -and [string]::Equals($Matches[2], $want, [StringComparison]::OrdinalIgnoreCase) } | Sort-Object LastWriteTimeUtc -Descending)
+            Where-Object { $_.Name -match '^\d{6}(-\d+)?_(.+)$' -and [string]::Equals($Matches[2], $want, [StringComparison]::OrdinalIgnoreCase) } | Sort-Object { $_.Directory.Name }, { $_.Name } -Descending)
+    # The version marker as the current file has it now (a release may have moved it since): the copy can then be saved again.
+    $current = [System.IO.File]::ReadAllText($p.Path)
+    $mv = [regex]::Match($current, "-Name\s+Version\s+-Value\s+'((?:[^']|'')*)'")
     foreach ($c in $copies) {
-        if ((Test-WebCopyRecord $c.FullName) -eq 'ok') { return @{ ok = $true; text = [System.IO.File]::ReadAllText($c.FullName); at = $c.LastWriteTime.ToString('yyyy-MM-dd HH:mm') } }
+        if ((Test-WebCopyRecord $c.FullName) -ne 'ok') { continue }
+        $text = [System.IO.File]::ReadAllText($c.FullName)
+        if ($mv.Success) { $text = (Set-MarkerScriptVersion -Text $text -Version ($mv.Groups[1].Value -replace "''", "'")).Text }
+        # When it was kept (the folder's date and the copy's time), not when that version was first written.
+        $at = if ($c.Directory.Name -match '^script-edit_\d{4}-\d{2}-\d{2}$') { '{0} {1}:{2}' -f $c.Directory.Name.Substring(12), $c.Name.Substring(0, 2), $c.Name.Substring(2, 2) } else { $c.LastWriteTime.ToString('yyyy-MM-dd HH:mm') }
+        return @{ ok = $true; text = $text; at = $at }
     }
     return @{ ok = $false; error = $(if ($copies.Count) { 'The copies in Backups were changed outside the app - none is taken.' } else { 'No earlier version in Backups yet - one is kept each time you save.' }) }
 }

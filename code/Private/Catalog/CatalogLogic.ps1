@@ -2578,7 +2578,10 @@ function Global:Get-InstallBlocks {
                 (New-CommandBlock -Id 'options' -Kind 'list' -Label 'Extra winget options' -Value $list -Choices @('--override', '--custom', '--architecture', '--locale', '--installer-type') -Help 'Most packages need none - winget installs silently with the package''s own switches.')
                 (New-CommandBlock -Id 'uninstall' -Kind 'lock' -Label 'Uninstall' -Text "winget uninstall --id $WingetId -e --silent" -Part 'uninstall')
             )
-            return @{ Form = 'winget'; Own = $false; Blocks = $blocks; Note = '' }
+            # An older generated form (before 2.22) still counts, but a change writes today's form - said up front.
+            $today = Get-WingetCommandLines -WingetId $WingetId -Method $method -InstallContext $(if ($machine) { 'System' } else { 'User' }) -Version $pinned -Options $opts
+            $note = if ($today.Install -cne $Install -or $today.Uninstall -cne $Uninstall) { "Written in an older form - a change here writes today's form." } else { '' }
+            return @{ Form = 'winget'; Own = $false; Blocks = $blocks; Note = $note }
         }
         return $own
     }
@@ -2694,7 +2697,7 @@ function Global:ConvertFrom-InstalledNamePattern {
     param([string]$Pattern)
     if (-not $Pattern) { return '' }
     $tail = '(\s+(v?\d[\w.\-]*|\([^)]*\)))*\s*$'
-    if (-not $Pattern.StartsWith('^') -or -not $Pattern.EndsWith($tail)) { return $null }
+    if (-not $Pattern.StartsWith('^', [StringComparison]::Ordinal) -or -not $Pattern.EndsWith($tail, [StringComparison]::Ordinal)) { return $null }
     $escaped = $Pattern.Substring(1, $Pattern.Length - 1 - $tail.Length)
     try { $name = [regex]::Unescape($escaped) } catch { return $null }
     if ((Get-InstalledNamePattern $name) -cne $Pattern) { return $null }
@@ -2723,7 +2726,7 @@ function Global:Get-DetectionBlocks {
         if ($null -ne $name -and ((Get-ManagedWingetDetection -WingetId $id -Version $ver -NamePattern $pat) -replace "`r`n", "`n") -ceq $s) {
             $blocks = @(
                 (New-CommandBlock -Id 'read' -Kind 'lock' -Label 'First' -Text "Windows' Uninstall entries (64-bit, 32-bit, the user's)" -Part 'detection')
-                (New-CommandBlock -Id 'name' -Kind 'edit' -Label 'Name Windows lists' -Value $name -Part 'detection' -Help 'Exactly, or with a version or "(x64)" after it. Empty: only winget is asked.')
+                (New-CommandBlock -Id 'name' -Kind 'edit' -Label 'Name Windows lists' -Value $name -Part 'detection' -Help 'Exactly, or with a version or "(x64)" after it - looked for first; winget is asked when it isn''t found.')
                 (New-CommandBlock -Id 'version' -Kind 'link' -Label 'Version at least' -Text $ver -Link 'mAppVersion' -Part 'detection' -Help 'The App version - a release moves it. Newer counts too.')
                 (New-CommandBlock -Id 'id' -Kind 'link' -Label 'Else winget' -Text "winget lists $id" -Link 'aWinget' -Part 'detection')
                 (New-CommandBlock -Id 'result' -Kind 'lock' -Label 'Found' -Text "writes 'Installed!' - what Intune counts as installed" -Part 'detection')
@@ -2755,10 +2758,14 @@ function Global:New-DetectionFromBlocks {
     if ($now.Form -ne $Form) { return @{ Ok = $false; Error = "The detection script isn't the $Form form any more - open the app again." } }
     $get = { param($k) if ($Values -is [System.Collections.IDictionary]) { $Values[$k] } elseif ($Values) { $Values.$k } }
     $name = ([string](& $get 'name')).Trim()
-    if ($name.Length -gt 200 -or $name -match '[\x00-\x1f]') { return @{ Ok = $false; Error = 'The name must be one line of at most 200 characters.' } }
+    # At most 100 (what the catalog keeps as the name on devices), one line, and no quotes the script would have to change.
+    if ($name.Length -gt 100 -or $name -match '[\x00-\x1f]') { return @{ Ok = $false; Error = 'The name must be one line of at most 100 characters.' } }
+    if ($name -match "[`"\u2018-\u201F]") { return @{ Ok = $false; Error = 'The name can''t contain double quotes or typographic quotes - leave them out (the rest of the name still matches).' } }
     $s = ([string]$Rule.Script_Content) -replace "`r`n", "`n"
     $q = "'((?:[^']|'')*)'"
     if ($Form -eq 'managed') {
+        # Empty would be filled with the app's name again at the next release (Set-ManagedAppPin) - so it's needed here.
+        if (-not $name) { return @{ Ok = $false; Error = 'The name Windows lists is needed - the next release writes the detection from it.' } }
         $m = [regex]::Match($s, "^\`$AppToDetect = $q\n\`$Wanted = $q\n")
         $script = Get-ManagedWingetDetection -WingetId ($m.Groups[1].Value -replace "''", "'") -Version ($m.Groups[2].Value -replace "''", "'") -NamePattern $(if ($name) { Get-InstalledNamePattern $name } else { '' })
         return @{ Ok = $true; Script = $script; DetectedName = $name; Error = '' }
