@@ -469,3 +469,13 @@ function Global:Invoke-WebFillDetails {
     Write-Log "[OK] Fill in details: $($done.Count) app(s) filled$(if ($failed.Count) { "; not asked or not known: $($failed -join '; ')" })."
     return @{ ok = $true; filled = $done.ToArray(); asked = $apps.Count; failed = $failed.ToArray() }
 }
+
+function Global:Get-WebFillPreview {
+    # The editor's Fill from winget: what winget would fill into the fields as they are in the editor now (nothing saved).
+    param($Data)
+    $r = Get-WebWingetDetails @{ id = [string]$Data.id }
+    if (-not $r.ok) { return $r }
+    $cur = [pscustomobject]@{ publisher = [string]$Data.publisher; description = [string]$Data.description; informationUrl = [string]$Data.informationUrl; privacyUrl = [string]$Data.privacyUrl; developer = [string]$Data.developer; owner = [string]$Data.owner }
+    $fill = Get-AppDetailsFill -Metadata $cur -Details $r.details -AppName ([string]$Data.name) -DefaultOwner ([string]$Global:App.DefaultAppSettings.DefaultOwner)
+    return @{ ok = $true; fill = $fill }
+}

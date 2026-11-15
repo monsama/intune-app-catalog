@@ -432,6 +432,7 @@ async function openEditor(name) {
   $('btnRemoveApp').hidden = !name;
   $('btnAppHistory').hidden = !name;
   $('dlgApp').showModal();
+  if (typeof fillBtnSync === 'function') fillBtnSync();
   editorSnapshot = editorState();
   $('aName').focus();
 }
@@ -1444,3 +1445,22 @@ async function fillDetails(names) {
   toast(msg + failed + (sent.length ? ` ${sent.length} of them are in Intune - send their settings.` : ''), !!r.failed.length && !n,
     [n ? { label: 'Undo', run: () => undoLast() } : null, sent.length ? { label: 'Send settings', run: () => sendSettingsNow(sent) } : null]);
 }
+
+// The editor's Fill from winget: the empty Intune details filled from winget - into the form, saved with Save.
+$('btnFillWinget').addEventListener('click', async () => {
+  const b = $('btnFillWinget'), id = $('aWinget').value.trim();
+  if (!id) return;
+  b.disabled = true; const label = b.textContent; b.textContent = 'Asking winget...';
+  try {
+    const r = await api('/api/fill-preview', { id, name: $('aName').value.trim(), publisher: $('mPublisher').value, description: $('mDescription').value, informationUrl: $('mInformationUrl').value, privacyUrl: $('mPrivacyUrl').value, developer: $('mDeveloper').value, owner: $('mOwner').value });
+    if (!r.ok) { toast(r.error, true); return; }
+    const ids = { publisher: 'mPublisher', description: 'mDescription', informationUrl: 'mInformationUrl', privacyUrl: 'mPrivacyUrl', developer: 'mDeveloper', owner: 'mOwner' };
+    const done = Object.entries(r.fill || {}).filter(([k]) => ids[k]).map(([k, v]) => { const f = $(ids[k]); f.value = v; f.dispatchEvent(new Event('input', { bubbles: true })); f.classList.add('justfilled'); setTimeout(() => f.classList.remove('justfilled'), 1600); return fieldLabelFor(k); });
+    toast(done.length ? `Filled from winget: ${done.join(', ')} - Save keeps it.` : 'Nothing to fill - these fields have values already, or winget has none for them.');
+  } finally { b.disabled = false; b.textContent = label; }
+});
+function fieldLabelFor(k) { return { publisher: 'publisher', description: 'description', informationUrl: 'information URL', privacyUrl: 'privacy URL', developer: 'developer', owner: 'owner' }[k] || k; }
+// Shown for a Winget app only (the button needs an ID to ask winget about).
+const fillBtnSync = () => { $('btnFillWinget').hidden = !$('aWinget').value.trim(); };
+$('aWinget').addEventListener('input', fillBtnSync);
+$('dlgApp').addEventListener('focusin', fillBtnSync);

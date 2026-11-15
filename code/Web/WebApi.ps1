@@ -602,6 +602,7 @@ function Global:Invoke-WebApi {
         '/api/catalog-history'  { return (Get-WebCatalogHistory $Data) }
         '/api/winget-commands'  { return (Get-WebWingetCommands $Data) }
         '/api/fill-details'     { return (Invoke-WebFillDetails $Data) }
+        '/api/fill-preview'     { return (Get-WebFillPreview $Data) }
         '/api/install-blocks'   { return (Get-WebInstallBlocks $Data) }
         '/api/install-compose'  { return (Get-WebInstallCompose $Data) }
         '/api/detection-blocks' { return (Get-WebDetectionBlocks $Data) }

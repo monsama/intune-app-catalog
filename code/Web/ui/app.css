@@ -1260,3 +1260,6 @@ label.chk > input[type=checkbox] { margin-top: 2px; }
 #btnAppsReload.spin svg { animation: reloadspin .8s linear infinite; }
 @keyframes reloadspin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { #btnAppsReload.spin svg { animation: none; } }
+.formgrid h3.withfill { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.formgrid h3.withfill #btnFillWinget { margin-left: auto; }
+.justfilled { box-shadow: 0 0 0 2px var(--ok) !important; transition: box-shadow .4s; }

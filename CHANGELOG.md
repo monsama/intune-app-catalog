@@ -40,6 +40,9 @@
   empty, never the App version (managed updates pin and release it). With
   Undo; apps already in Intune then show Changes to send. New Winget apps
   get the default owner too.
+  Also in the editor (**Fill from winget** by Intune details - into the form,
+  kept with Save) and on Home ("N apps with details missing" - **Fill them
+  in**).
 - **Spacing in forms**: room under every section heading, and a button,
   checkbox or label after a field, list or checkbox no longer touches it
   (Supersedence, Dependencies, Return codes, Allow uninstall, rings).
