@@ -387,7 +387,9 @@ async function wauSwitch() {
   const r = await api('/api/wau-switch', {});
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps();
-  const msg = `Switched ${r.changed.length} app(s) away from Winget-AutoUpdate.` + ((r.byHand || []).length ? ` Not switched (their commands were edited by hand - change them in the editor's Install with): ${r.byHand.join(', ')}.` : '');
+  const msg = `Switched ${r.changed.length} app(s) away from Winget-AutoUpdate.` + ((r.byHand || []).length ? ` Not switched - their commands run Winget-Install.ps1 for several or other IDs, so they're left to you (editor, Install with): ${r.byHand.join(', ')}.` : '');
+  // Nothing changed: nothing to undo.
+  if (!r.changed.length) { toast(msg, (r.byHand || []).length > 0); loadHome(); return; }
   if (r.deployed.length) {
     const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', startText: 'Pushing ' });
     toast(`${msg} Pushed to Intune for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length, [{ label: 'Undo', run: () => undoLast() }]);
@@ -396,7 +398,7 @@ async function wauSwitch() {
 }
 
 async function portalStore() {
-  if (!(await ask("Set Company Portal up as the Microsoft Store app?\n\nIts Winget ID becomes 9WZDNCRFJ3PZ - Send to Intune then creates it as Intune's own Store app type, which the Store installs and keeps updated. Nothing to package.", { ok: 'Set it up' }))) return;
+  if (!(await ask("Set Company Portal up as the Microsoft Store app?\n\nWhy: Company Portal only exists in the Microsoft Store. Packaged as a winget command it often fails on devices (the Store source in system context), and it can't be pinned to a version anyway. Intune's own Store app type is the way Microsoft recommends: the Store installs it, keeps it updated, and Intune reports its status correctly.\n\nWhat happens: its Winget ID becomes 9WZDNCRFJ3PZ, and Send to Intune creates it as that Store app type. Nothing to package.\n\nSkip this if Company Portal already reaches your devices another way (Autopilot, your Windows image, a Store app made in Intune by hand) - then remove it from the catalog instead.", { ok: 'Set it up' }))) return;
   const r = await api('/api/portal-store', {});
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps();

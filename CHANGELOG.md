@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.24.1
+
+- **Switch from Winget-AutoUpdate** now also switches apps whose WAU
+  commands are worded differently from this tool's (another PowerShell path,
+  other quotes, extra switches such as `-Silent`): any command that runs
+  `Winget-Install.ps1` for the app's own Winget ID. Only commands for
+  several or other IDs are left to you. A switch that changed nothing no
+  longer offers Undo.
+- **Fix Company Portal** explains why: Company Portal only exists in the
+  Microsoft Store, a winget package of it often fails on devices, and
+  Intune's Store app type installs it, keeps it updated and reports it
+  correctly - and when to skip it.
+- **Apps page header:** the controls sit on one panel - a search box with
+  a search icon, the view buttons (Save view, Columns, Recent changes) and
+  the actions on the selected apps (Send to Intune, More) each joined into
+  one control, the app count as a badge. The counters under it are one
+  strip, the chosen one marked, with a green dot when Intune was read.
+- **Less rounded corners** everywhere: panels, buttons, fields and dialogs
+  (6, 4 and 3 px instead of 14, 8 and 6).
+
 ## 2.24.0
 
 **Ready for several admins, other Windows languages and larger catalogs.**

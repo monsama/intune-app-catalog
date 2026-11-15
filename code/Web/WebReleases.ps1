@@ -687,11 +687,18 @@ function Global:Invoke-WebWauSwitch {
         $before = (ConvertTo-Json @($m.installCommand, $m.uninstallCommand, @($m.dependencies), [bool]$a.managedUpdates) -Compress -Depth 4)
         if ($m.PSObject.Properties['dependencies']) { $m.dependencies = @(@($m.dependencies) | Where-Object { $_ -and -not (Test-WauAppName ([string]$_)) }) }
         $isWau = $a.wingetId -and -not (Test-StoreProductId ([string]$a.wingetId)) -and (Get-AppWingetInstallMethod -WingetId $a.wingetId -InstallCommand ([string]$m.installCommand) -UninstallCommand ([string]$m.uninstallCommand)) -eq 'WAU'
+        # Commands in another wording (other path, quotes, switches) that still run Winget-Install.ps1 for this app's own ID are WAU's too.
+        if (-not $isWau -and $a.wingetId -and -not (Test-StoreProductId ([string]$a.wingetId)) -and (Test-WauCommandForId -WingetId ([string]$a.wingetId) -Command ([string]$m.installCommand))) { $isWau = $true }
         if ($isWau) {
             $hasVersion = Test-ReleaseVersionText ([string]$m.appVersion)
             # Managed updates only with a version to pin. Without one an app in Intune would be refused by Send (it needs
             # the version first) and keep WAU there - so it gets the plain winget command now, managed updates once it has one.
             if ($managed -and ($hasVersion -or -not $a.appId)) { $a.managedUpdates = $true }
+            # Set-ManagedAppPin leaves commands it doesn't recognise alone, so a reworded WAU command is replaced with the plain form first.
+            if ((Get-AppWingetInstallMethod -WingetId $a.wingetId -InstallCommand ([string]$m.installCommand) -UninstallCommand ([string]$m.uninstallCommand)) -ne 'WAU') {
+                $c = Get-WingetCommandLines -WingetId $a.wingetId -Method 'Winget' -InstallContext ([string]$m.installContext)
+                $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall
+            }
             if (-not ($a.managedUpdates -and (Set-ManagedAppPin $a))) {
                 $c = Get-WingetCommandLines -WingetId $a.wingetId -Method 'Winget' -InstallContext ([string]$m.installContext)
                 $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall

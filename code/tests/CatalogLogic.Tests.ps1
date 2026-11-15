@@ -202,6 +202,7 @@ $testableFunctionNames = @(
     "ConvertFrom-WingetVersionsOutput",
     "Test-WauAppName",
     "Get-WauUse",
+    "Test-WauCommandForId",
     "Get-ReleaseAvailableSettings",
     "Get-AppRecordFieldValues",
     "Get-AppRecordChanges",
@@ -949,6 +950,10 @@ $wauApp = [pscustomobject]@{ appName = 'Vendor App'; wingetId = 'Vendor.App'; me
 $cleanApp = [pscustomobject]@{ appName = 'Vendor App'; wingetId = 'Vendor.App'; metadata = [pscustomobject]@{ installCommand = $switched.Install; uninstallCommand = $switched.Uninstall; dependencies = @('Base Runtime') } }
 Assert-True ((@(Get-WauUse $wauApp) -join ',') -eq 'commands,dependency' -and @(Get-WauUse $cleanApp).Count -eq 0 -and @(Get-WauUse ([pscustomobject]@{ appName = 'Winget AutoUpdate'; wingetId = 'Romanitho.Winget-AutoUpdate'; metadata = $wauApp.metadata })).Count -eq 0) `
     "Get-WauUse: WAU commands and a WAU dependency count; WAU itself and a winget app don't"
+Assert-True ((Test-WauCommandForId '7zip.7zip' 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\\ProgramData\\Winget-AutoUpdate\\Winget-Install.ps1" -AppIDs 7zip.7zip -Silent') -and (Test-WauCommandForId '7zip.7zip' "%SystemRoot%\\sysnative\\WindowsPowerShell\\v1.0\\powershell.exe -File 'C:\\Program Files\\Winget-AutoUpdate\\Winget-Install.ps1' -AppIDs '7ZIP.7zip'")) `
+    "Test-WauCommandForId: Winget-Install.ps1 for the app's own ID, in another wording (path, quotes, case, extra switches)"
+Assert-True (-not (Test-WauCommandForId '7zip.7zip' '"Winget-Install.ps1" -AppIDs "7zip.7zip,Git.Git"') -and -not (Test-WauCommandForId '7zip.7zip' '"Winget-Install.ps1" -AppIDs Git.Git') -and -not (Test-WauCommandForId '7zip.7zip' 'winget install --id 7zip.7zip')) `
+    "Test-WauCommandForId: several IDs, another ID, or no Winget-Install.ps1 - not this app's WAU command"
 Assert-True ((Test-WauAppName 'Winget-AutoUpdate') -and (Test-WauAppName 'Romanitho.Winget-AutoUpdate') -and (Test-WauAppName 'winget autoupdate') -and -not (Test-WauAppName 'Winget Tools')) "Test-WauAppName: its names and Winget ID"
 $avail = New-AppAssignmentBody -Entries @(Get-DesiredAssignmentEntries -RequiredGroups @('Pilot') -AvailableGroups @('All')) -GroupIdByName @{ All = 'g1'; Pilot = 'g2' } -AvailableSettings (Get-ReleaseAvailableSettings)
 $aAvail = @($avail.mobileAppAssignments | Where-Object { $_.intent -eq 'available' }); $aReq = @($avail.mobileAppAssignments | Where-Object { $_.intent -eq 'required' })

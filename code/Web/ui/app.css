@@ -5,7 +5,7 @@
   --ok: #166534; --ok-bg: #e7f6ec; --warn: #b45309; --warn-bg: #fdf3e2; --err: #c62828; --err-bg: #fdecec;
   --info: #1d4ed8; --row-alt: #fafbfc; --sel: #dbe8fa;
   --log: #1e1e1e; --log-fg: #d4d4d4;
-  --r-s: 4px; --r-m: 6px; --r-l: 10px;
+  --r-s: 3px; --r-m: 4px; --r-l: 6px;
   --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08);
   --ui: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
   --mono: "Cascadia Code", Consolas, "SF Mono", Menlo, "DejaVu Sans Mono", monospace;
@@ -251,7 +251,7 @@ label.chk.inline { display: inline-flex; align-items: center; gap: 6px; margin: 
 .gbrole legend { font-size: 12px; font-weight: 600; padding: 0 4px; }
 .gbrole input[data-gbx] { margin-top: 6px; }
 
-.tab[data-count]::after { content: attr(data-count); margin-left: 6px; display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--warn-bg); color: var(--warn); font-size: 11px; font-weight: 600; text-align: center; }
+.tab[data-count]::after { content: attr(data-count); margin-left: 6px; display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 4px; background: var(--warn-bg); color: var(--warn); font-size: 11px; font-weight: 600; text-align: center; }
 
 /* ---- 3d: setup and help ---- */
 .guide { margin: 6px 0 0; padding-left: 20px; font-size: 13px; }
@@ -595,7 +595,7 @@ table.mx th.gh { height: 150px; width: 30px; }
 table.mx th.gh span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-weight: 500; color: var(--muted); max-height: 145px; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
 table.mx th.ah { position: sticky; left: 0; z-index: 1; text-align: left; white-space: nowrap; padding-right: 12px; font-weight: 500; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
 table.mx th.corner { position: sticky; left: 0; z-index: 3; text-align: left; color: var(--muted); font-weight: 400; }
-.cell { width: 26px; height: 24px; border: 1px solid var(--bd2); border-radius: 5px; background: transparent; font: 600 11px var(--mono); color: var(--fg); cursor: pointer; padding: 0; display: inline-block; text-align: center; line-height: 22px; }
+.cell { width: 26px; height: 24px; border: 1px solid var(--bd2); border-radius: 4px; background: transparent; font: 600 11px var(--mono); color: var(--fg); cursor: pointer; padding: 0; display: inline-block; text-align: center; line-height: 22px; }
 .cell.r { background: var(--ok-bg); color: var(--ok); } .cell.a { background: var(--accent-soft); color: var(--info); } .cell.u { background: var(--warn-bg); color: var(--warn); } .cell.x { background: var(--err-bg); color: var(--err); }
 .cell.changed { outline: 2px solid var(--accent); outline-offset: 1px; }
 .legend { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
@@ -720,7 +720,7 @@ td.src { font-size: 12px; color: var(--muted); }
 /* ==== 2.15 refresh: softer surfaces, clearer hierarchy, calmer controls ====
    One block on top of the rules above, so every page and dialog changes together. */
 :root {
-  --r-s: 6px; --r-m: 8px; --r-l: 14px;
+  --r-s: 3px; --r-m: 4px; --r-l: 6px;
   --field: #f9fafb; --field-hover: #f3f5f8;
   --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
   --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 1px 3px rgba(16, 24, 40, .06);
@@ -844,7 +844,7 @@ dialog > h2:first-child, dialog form > h2:first-child { font-size: 17px; margin-
 .empty .emptyicon { color: var(--accent); opacity: .8; margin-bottom: 4px; }
 .emptylist { text-align: left; max-width: 520px; margin: 10px auto 16px; padding-left: 20px; color: var(--muted); font-size: 13px; line-height: 1.7; }
 /* Loading placeholders */
-.sk { display: block; height: 10px; border-radius: 5px; margin: 4px 0; background: linear-gradient(90deg, var(--bd2) 25%, color-mix(in srgb, var(--bd2) 40%, var(--surface)) 50%, var(--bd2) 75%); background-size: 200% 100%; animation: skmove 1.3s ease-in-out infinite; }
+.sk { display: block; height: 10px; border-radius: 4px; margin: 4px 0; background: linear-gradient(90deg, var(--bd2) 25%, color-mix(in srgb, var(--bd2) 40%, var(--surface)) 50%, var(--bd2) 75%); background-size: 200% 100%; animation: skmove 1.3s ease-in-out infinite; }
 .sk.w0 { width: 70%; } .sk.w1 { width: 45%; } .sk.w2 { width: 85%; } .sk.w3 { width: 30%; }
 li.skel { list-style: none; padding: 12px 14px; }
 @keyframes skmove { from { background-position: 100% 0; } to { background-position: -100% 0; } }
@@ -1080,3 +1080,34 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 500; heig
 #sec-defaults .formgrid .checks { height: 34px; margin-top: 4px; align-items: center; }
 #sec-defaults .formgrid .checks > label.chk { margin: 0; align-items: center; }
 #sec-defaults .formgrid .checks > label.chk > input { margin-top: 0 !important; }
+
+/* ---------------------------------------------------------------- Apps header (2.24.1)
+   The view controls left, the actions right; buttons that belong together are joined into one
+   control; the counters are one strip under it. */
+#viewApps > .toolbar { gap: 10px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); }
+#viewApps > .toolbar > input[type="search"] { padding-left: 34px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a919b' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: 10px center; background-size: 16px 16px; }
+.btngroup { display: inline-flex; align-items: stretch; flex: none; height: 34px; }
+.btngroup > .btn { height: 34px; border-radius: 0; margin: 0; }
+.btngroup > .btn:not([hidden]) + .btn { margin-left: -1px; }
+.btngroup > .btn:not([hidden]):first-child, .btngroup > [hidden]:first-child + .btn:not([hidden]), .btngroup > [hidden]:first-child + [hidden] + .btn:not([hidden]) { border-top-left-radius: var(--r-m); border-bottom-left-radius: var(--r-m); }
+.btngroup > .btn:last-child { border-top-right-radius: var(--r-m); border-bottom-right-radius: var(--r-m); }
+.btngroup > .btn:hover:not(:disabled), .btngroup > .btn:focus-visible { position: relative; z-index: 1; }
+.btngroup > .btn.small { padding: 0 12px; font-size: 13px; }
+.btngroup > .recentbtn { width: 38px; }
+#viewApps > .toolbar > .count { padding: 3px 8px; border-radius: var(--r-s); background: var(--bd2); color: var(--muted); font-size: 12px; font-weight: 600; }
+#viewApps > .toolbar > .count:empty { display: none; }
+#viewApps > .toolbar > #btnCatalog { margin-left: 2px; }
+/* The counters: one strip of equal cells, the chosen one marked. */
+.appsbar { gap: 12px; }
+.where { gap: 0; }
+.where .wchip { border-radius: 0; margin-left: -1px; padding: 7px 16px; gap: 8px; background: var(--surface); }
+.where .wchip:first-child { margin-left: 0; border-top-left-radius: var(--r-l); border-bottom-left-radius: var(--r-l); }
+.where .wchip:nth-last-child(2) { border-top-right-radius: var(--r-l); border-bottom-right-radius: var(--r-l); }
+.where .wchip span { color: var(--muted); }
+.where .wchip b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.where .wchip:hover { background: var(--hover); position: relative; z-index: 1; }
+.where .wchip[aria-pressed="true"] { position: relative; z-index: 2; box-shadow: inset 0 -2px 0 var(--accent); }
+.where .wchip[aria-pressed="true"] span { color: var(--fg); }
+.where .wnote { margin-left: 14px; display: inline-flex; align-items: center; gap: 6px; }
+.where .wnote.live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--ok, #2e9d5b); }
+@media (max-width: 900px) { .where .wchip { padding: 6px 10px; } .where .wnote { margin: 6px 0 0; flex-basis: 100%; } }
