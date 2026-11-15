@@ -13,6 +13,11 @@
 - Checkboxes everywhere are drawn by the app: a thin outlined box, blue
   with a white tick when ticked (the browser's dark-mode box was a solid
   grey block).
+- **Side panel of a Microsoft app** (Microsoft 365 Apps, Company Portal
+  before it's set up as a Store app): no Version picker (there's no version
+  to pick), no group fields while it isn't in Intune from here (nothing to
+  send them to), and no "Next step: Edit" that only opened the editor
+  again. Store apps don't show the Version picker either.
 
 ## 2.26.3
 

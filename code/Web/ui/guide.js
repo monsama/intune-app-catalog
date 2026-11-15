@@ -30,7 +30,8 @@ function stageOf(a) {
   if (a.busy) return { key: 'busy', label: 'Being changed', cls: 'warn', why: `Being changed right now by ${a.busy}. The list shows the result once it's done (Reload).` };
   if (tenantState(a) === 'missing') return { key: 'tenant', label: 'Other tenant', cls: 'warn', why: 'Its App ID belongs to another tenant - copied catalog?', next: { label: 'Clear App ID', title: 'Forget the link, so Send to Intune creates it in this tenant', run: () => onApp(a, 'clearid') } };
   if (isWauApp(a)) return { key: 'retire', label: 'Retire', cls: 'muted', why: a.hasAppId ? 'Winget-AutoUpdate - replaced by managed updates. Retire it to take it off the devices.' : 'Winget-AutoUpdate - replaced by managed updates. It isn\'t in Intune from this catalog: remove it from the catalog.', next: a.hasAppId ? { label: 'Retire...', title: 'Uninstall it from its groups\' devices, then delete it from Intune', run: () => onApp(a, 'retire') } : null };
-  if (a.msHint && !a.hasAppId) return { key: 'msapp', label: 'Microsoft app', cls: 'muted', why: a.msHint, next: { label: 'Edit', title: a.msHint, run: () => openEditor(a.name) } };
+  // Nothing to do here for it (it's added in Intune itself) - no "next step" button that only opens the editor again.
+  if (a.msHint && !a.hasAppId) return { key: 'msapp', label: 'Microsoft app', cls: 'muted', why: a.msHint };
   if (/issue|Check failed/.test(a.audit || '')) return { key: 'look', label: 'Needs a look', cls: 'warn', why: 'Intune differs from the catalog (last check).', next: { label: 'Checks', title: 'See what differs and fix it', run: () => showChecksFor(a.name) } };
   if (own && !a.hasAppId && !a.hasInstall) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs an install command (editor: Install & detection).', next: { label: 'Edit', title: 'Set its install command', run: () => openEditor(a.name) } };
   if (own && !a.hasAppId && !a.hasDetection) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs a detection rule - Send to Intune refuses an own package without one.', next: { label: 'Edit', title: 'Set its detection rule (Install & detection)', run: () => openEditor(a.name) } };
@@ -93,13 +94,15 @@ async function fillPanel(a) {
   const known = [...new Set(apps.flatMap(x => x.groups || []))].sort();
   const btn = (text, title, run, primary) => el('button', { class: 'btn small' + (primary ? ' primary' : ''), text, title, onclick: run });
   const pilot = (app.releases || []).find(x => x.state === 'pilot');
+  const msOnly = !!(a.msHint && !a.wingetId), noVersion = msOnly || !!(a.wingetId && isStoreId(a.wingetId));
   p.replaceChildren(
     el('div', { class: 'phead' }, iconFor(a), el('h2', { text: a.name }), el('button', { class: 'btn small ghost', text: 'Close', title: 'Close this panel', onclick: () => { selected.clear(); renderApps(); } })),
     el('div', { class: 'pstage' }, el('span', { class: 'pill ' + s.cls, text: s.label }), el('span', { class: 'muted', text: ' ' + (s.why || '') })),
     s.next ? el('div', { class: 'pnext' }, btn(s.next.label, s.next.title, s.next.run, true), el('span', { class: 'muted', text: 'Next step' })) : '',
     app.managedUpdates ? releaseTimeline(pilot ? pilot.ring : (a.hasAppId ? 99 : -1), !!(pilot && pilot.fastTrack)) : '',
     el('div', { class: 'pfacts' },
-      (() => {
+      // No version to pick for an app Microsoft or the Store keeps up to date - the row isn't shown at all.
+      noVersion ? '' : (() => {
         const base = a.version ? (a.managed ? `${a.version} (pinned)` : a.version) : a.wingetId && !isStoreId(a.wingetId) ? (a.managed ? 'not pinned yet' : 'newest') : '(none)';
         const text = [base, a.pilotVersion ? `pilot ${a.pilotVersion}` : '', a.newerOnWinget ? `winget has ${a.wingetVersion}` : '', (a.previousVersions || []).length ? `kept: ${a.previousVersions.join(', ')}` : ''].filter(Boolean).join(' - ');
         // A Winget app without settings of its own gets them (the defaults) with the version picked.
@@ -136,7 +139,8 @@ async function fillPanel(a) {
       fact('Source', a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
       fact('Updates', updatesText(a, app.managedUpdates || a.managed)),
       fact('In Intune', a.hasAppId ? (a.type || 'yes') : 'not yet'),
-      groups('Required', 'requiredFor', app.requiredFor, true), groups('Available', 'availableFor', app.availableFor, true), groups('Uninstall', 'uninstallFor', app.uninstallFor), groups('Excluded', 'excludeFor', app.excludeFor),
+      // A Microsoft app that isn't in Intune from here has nothing to send its groups to: no group fields until it is.
+      ...(msOnly && !a.hasAppId ? [] : [groups('Required', 'requiredFor', app.requiredFor, true), groups('Available', 'availableFor', app.availableFor, true), groups('Uninstall', 'uninstallFor', app.uninstallFor), groups('Excluded', 'excludeFor', app.excludeFor)]),
       el('datalist', { id: 'qGroupList' }, ...known.map(g => el('option', { value: g }))),
       fact('Last check', a.audit)),
     el('div', { class: 'pacts' }, btn('Edit', 'Open it in the editor', () => openEditor(a.name)),
