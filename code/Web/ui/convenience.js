@@ -398,7 +398,7 @@ async function wauSwitch() {
 }
 
 async function portalStore() {
-  if (!(await ask("Set Company Portal up as the Microsoft Store app?\n\nIts Winget ID becomes 9WZDNCRFJ3PZ - Send to Intune then creates it as Intune's own Store app type, which the Store installs and keeps updated. Nothing to package.", { ok: 'Set it up' }))) return;
+  if (!(await ask("Set Company Portal up as the Microsoft Store app?\n\nWhy: Company Portal only exists in the Microsoft Store. Packaged as a winget command it often fails on devices (the Store source in system context), and it can't be pinned to a version anyway. Intune's own Store app type is the way Microsoft recommends: the Store installs it, keeps it updated, and Intune reports its status correctly.\n\nWhat happens: its Winget ID becomes 9WZDNCRFJ3PZ, and Send to Intune creates it as that Store app type. Nothing to package.\n\nSkip this if Company Portal already reaches your devices another way (Autopilot, your Windows image, a Store app made in Intune by hand) - then remove it from the catalog instead.", { ok: 'Set it up' }))) return;
   const r = await api('/api/portal-store', {});
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps();

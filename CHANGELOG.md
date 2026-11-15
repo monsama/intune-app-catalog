@@ -8,6 +8,10 @@
   `Winget-Install.ps1` for the app's own Winget ID. Only commands for
   several or other IDs are left to you. A switch that changed nothing no
   longer offers Undo.
+- **Fix Company Portal** explains why: Company Portal only exists in the
+  Microsoft Store, a winget package of it often fails on devices, and
+  Intune's Store app type installs it, keeps it updated and reports it
+  correctly - and when to skip it.
 
 ## 2.24.0
 
