@@ -145,9 +145,13 @@ function Global:Invoke-WebLogin {
     }
     $bytes = New-Object byte[] 32; [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
     $token = -join ($bytes | ForEach-Object { $_.ToString('x2') })
-    $old = $s.Session
-    if ($old) { [void]$s.Ended.Add(@{ Digest = $old.Digest; Reason = 'takenover'; At = $now }); while ($s.Ended.Count -gt 20) { $s.Ended.RemoveAt(0) } }
-    $s.Session = @{ Digest = (Get-WebTokenDigest $token); Token = $token; Created = $now; Last = $now; Agent = ([string]$Agent).Substring(0, [Math]::Min(160, ([string]$Agent).Length)) }
+    [System.Threading.Monitor]::Enter($s.Ended)
+    try {
+        $old = $s.Session
+        if ($old) { [void]$s.Ended.Add(@{ Digest = $old.Digest; Reason = 'takenover'; At = $now }); while ($s.Ended.Count -gt 20) { $s.Ended.RemoveAt(0) } }
+        $s.Session = @{ Digest = (Get-WebTokenDigest $token); Token = $token; Created = $now; Last = $now; Agent = ([string]$Agent).Substring(0, [Math]::Min(160, ([string]$Agent).Length)) }
+    }
+    finally { [System.Threading.Monitor]::Exit($s.Ended) }
     Write-Log "[INFO] Admin signed in$(if ($old) { ' - the session that was open has ended' })."
     return @{ ok = $true; token = $token; tookOver = [bool]$old }
 }
@@ -160,28 +164,38 @@ function Global:Test-WebSession {
     #>
     param([string]$Token)
     $s = $Global:App.Server
-    $cur = $s.Session
-    $now = [DateTime]::UtcNow
-    if ($cur -and (($now - $cur.Last).TotalMinutes -gt $s.IdleMinutes -or ($now - $cur.Created).TotalHours -gt $s.SessionHours)) {
-        [void]$s.Ended.Add(@{ Digest = $cur.Digest; Reason = 'expired'; At = $now }); $s.Session = $null; $cur = $null
-        while ($s.Ended.Count -gt 20) { $s.Ended.RemoveAt(0) }
+    # The session and the list of ended ones change from requests running at the same time: one lock.
+    [System.Threading.Monitor]::Enter($s.Ended)
+    try {
+        $cur = $s.Session
+        $now = [DateTime]::UtcNow
+        if ($cur -and (($now - $cur.Last).TotalMinutes -gt $s.IdleMinutes -or ($now - $cur.Created).TotalHours -gt $s.SessionHours)) {
+            [void]$s.Ended.Add(@{ Digest = $cur.Digest; Reason = 'expired'; At = $now }); $s.Session = $null; $cur = $null
+            while ($s.Ended.Count -gt 20) { $s.Ended.RemoveAt(0) }
+        }
+        if (-not $Token -or $Token -notmatch '^[0-9a-f]{64}$') { return 'signin' }
+        $digest = Get-WebTokenDigest $Token
+        if ($cur -and (Test-WebBytesEqual -A ([Convert]::FromBase64String($digest)) -B ([Convert]::FromBase64String($cur.Digest)))) {
+            # Written at most once a minute: not on every call.
+            if (($now - $cur.Last).TotalSeconds -gt 60) { $cur.Last = $now }
+            return ''
+        }
+        $was = @($s.Ended) | Where-Object { $_.Digest -eq $digest } | Select-Object -Last 1
+        if ($was) { return [string]$was.Reason }
+        return 'signin'
     }
-    if (-not $Token -or $Token -notmatch '^[0-9a-f]{64}$') { return 'signin' }
-    $digest = Get-WebTokenDigest $Token
-    if ($cur -and (Test-WebBytesEqual -A ([Convert]::FromBase64String($digest)) -B ([Convert]::FromBase64String($cur.Digest)))) {
-        # Written at most once a minute: not on every call.
-        if (($now - $cur.Last).TotalSeconds -gt 60) { $cur.Last = $now }
-        return ''
-    }
-    $was = @($s.Ended) | Where-Object { $_.Digest -eq $digest } | Select-Object -Last 1
-    if ($was) { return [string]$was.Reason }
-    return 'signin'
+    finally { [System.Threading.Monitor]::Exit($s.Ended) }
 }
 
 function Global:Invoke-WebLogout {
     param([string]$Token)
     $s = $Global:App.Server
-    if ((Test-WebSession $Token) -eq '') { [void]$s.Ended.Add(@{ Digest = $s.Session.Digest; Reason = 'signedout'; At = [DateTime]::UtcNow }); $s.Session = $null; Write-Log "[INFO] Admin signed out." }
+    if ((Test-WebSession $Token) -eq '') {
+        [System.Threading.Monitor]::Enter($s.Ended)
+        try { if ($s.Session) { [void]$s.Ended.Add(@{ Digest = $s.Session.Digest; Reason = 'signedout'; At = [DateTime]::UtcNow }); while ($s.Ended.Count -gt 20) { $s.Ended.RemoveAt(0) } }; $s.Session = $null }
+        finally { [System.Threading.Monitor]::Exit($s.Ended) }
+        Write-Log "[INFO] Admin signed out."
+    }
     return @{ ok = $true }
 }
 

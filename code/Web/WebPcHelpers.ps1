@@ -49,7 +49,6 @@ function Global:Get-WebHelperHeader {
 function Global:New-WebDownload {
     # A file to be fetched once at /download/<id> within 5 minutes; -RemoveAfter: delete it (a temporary zip) once sent or expired.
     param([string]$Path, [string]$Name, [string]$ContentType = 'application/octet-stream', [switch]$RemoveAfter)
-    if (-not $Global:App.Downloads) { $Global:App.Downloads = [hashtable]::Synchronized(@{}) }
     foreach ($k in @($Global:App.Downloads.Keys)) {
         $d = $Global:App.Downloads[$k]
         if ($d -and $d.Expires -lt (Get-Date)) { $Global:App.Downloads.Remove($k); if ($d.Remove) { Remove-Item -LiteralPath $d.Path -Force -ErrorAction SilentlyContinue } }

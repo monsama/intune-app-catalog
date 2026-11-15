@@ -447,6 +447,14 @@ function Global:Get-WebJobPoll {
     return $response
 }
 
+function Global:Open-WebUrl {
+    # A web page: in the browser of this PC - or, the server version, in the admin's (the page opens it).
+    param([string]$Url)
+    if (Test-WebServerMode) { return @{ ok = $true; url = $Url } }
+    Start-Process $Url
+    return @{ ok = $true }
+}
+
 function Global:Open-WebFolder {
     <#
       Shows a folder in Explorer, in front. Started by this server - a
@@ -456,6 +464,7 @@ function Global:Open-WebFolder {
       showing the folder is reused. Returns @{ ok; error }.
     #>
     param([string]$Path)
+    if (Test-WebServerMode) { return @{ ok = $false; error = "That folder is on the server (the data volume): $Path" } }
     if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Container)) { return @{ ok = $false; error = "The folder doesn't exist: $Path" } }
     $full = (Resolve-Path -LiteralPath $Path).ProviderPath.TrimEnd('\')
     if (-not ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop')) { return @{ ok = $false; error = "Opening folders needs Windows Explorer. The folder is $full" } }
@@ -507,14 +516,14 @@ function Global:Open-WebTarget {
         'entra-permissions' {
             $url = Get-WebEntraPermissionsUrl -ClientId ([string]$Data.clientId)
             if (-not $url) { return @{ ok = $false; error = 'Fill in the Client (Application) ID first.' } }
-            Start-Process $url
+            return (Open-WebUrl $url)
         }
         'catalog-folder' { return (Open-WebFolder (Get-AppFolder -Kind Catalog -Create)) }
         'logs-folder' { return (Open-WebFolder (Get-AppFolder -Kind Logs -Create)) }
         'reports-folder' { $rd = Join-Path (Get-AppFolder -Kind Logs -Create) 'reports'; if (-not (Test-Path -LiteralPath $rd)) { [void](New-Item -ItemType Directory -Path $rd -Force) }; return (Open-WebFolder $rd) }
-        'entra-home' { Start-Process 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade/quickStartType~/null/sourceType/Microsoft_AAD_IAM' }
-        'coffee' { Start-Process 'https://buymeacoffee.com/monsama' }
-        'release' { $repo = [string]$Global:App.ReleaseRepo; if ($repo -notmatch '^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$') { return @{ ok = $false; error = 'No release repository set.' } }; Start-Process "https://github.com/$repo/releases/latest" }
+        'entra-home' { return (Open-WebUrl 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade/quickStartType~/null/sourceType/Microsoft_AAD_IAM') }
+        'coffee' { return (Open-WebUrl 'https://buymeacoffee.com/monsama') }
+        'release' { $repo = [string]$Global:App.ReleaseRepo; if ($repo -notmatch '^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$') { return @{ ok = $false; error = 'No release repository set.' } }; return (Open-WebUrl "https://github.com/$repo/releases/latest") }
         'scripts-folder' { return (Open-WebFolder (Get-AppFolder -Kind Scripts -Create)) }
         'package-folder' {
             $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1

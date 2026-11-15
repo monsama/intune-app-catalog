@@ -104,6 +104,8 @@ async function api(path, body = {}) {
   try {
     const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-ICA-Session': TOKEN }, body: JSON.stringify({ ...body, token: TOKEN }) });
     const j = await r.json();
+    // The server version: a page to open comes back as its address - this browser opens it.
+    if (path === '/api/open' && j && j.ok && j.url) window.open(j.url, '_blank', 'noopener');
     // The server version: the session ended (taken over by a sign-in elsewhere, idle, signed out) - back to sign-in.
     if (j && j.error === 'bad token') { if (j.reason) { goSignIn(j.reason); return j; } showDead(); }
     // "deployed": the apps an answer offers to push to. One whose App ID the

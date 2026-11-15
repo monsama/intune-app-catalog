@@ -332,6 +332,54 @@ function Global:Get-AppWindowPreferencesJson {
 }
 
 
+function Global:Get-ExeVersionText {
+    <#
+      An .exe's version: its ProductVersion (else FileVersion) on Windows. Elsewhere (the server version) .NET
+      reads version data only from .NET files - there the version block (VS_FIXEDFILEINFO) is found in the
+      file itself: the 'VS_VERSION_INFO' key, then its signature 0xFEEF04BD. The first 64 MB are looked at
+      (the resources come before an installer's appended payload). '' when there is none.
+    #>
+    param([string]$Path)
+    if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') {
+        try {
+            $vi = (Get-Item -LiteralPath $Path -ErrorAction Stop).VersionInfo
+            $v = ([string]$vi.ProductVersion).Trim(); if (-not $v) { $v = ([string]$vi.FileVersion).Trim() }
+            return ($v -replace ',\s*', '.')
+        }
+        catch { return '' }
+    }
+    $latin = [Text.Encoding]::GetEncoding(28591)
+    $needle = $latin.GetString([Text.Encoding]::Unicode.GetBytes('VS_VERSION_INFO'))
+    $fs = $null
+    try {
+        $fs = [System.IO.File]::OpenRead($Path)
+        $chunk = New-Object byte[] (1MB + 256); $offset = 0; $carry = 0
+        while ($offset -lt 64MB) {
+            $read = $fs.Read($chunk, $carry, 1MB); if ($read -le 0) { break }
+            $len = $carry + $read
+            $text = $latin.GetString($chunk, 0, $len)
+            $at = $text.IndexOf($needle, [System.StringComparison]::Ordinal)
+            while ($at -ge 0) {
+                # The fixed block follows the key (padded to 4 bytes): signature, struct version, then the versions.
+                $sig = $text.IndexOf($latin.GetString([byte[]](0xBD, 0x04, 0xEF, 0xFE)), $at, [Math]::Min(64, $len - $at), [System.StringComparison]::Ordinal)
+                if ($sig -ge 0 -and $sig + 24 -le $len) {
+                    $pms = [BitConverter]::ToUInt32($chunk, $sig + 16); $pls = [BitConverter]::ToUInt32($chunk, $sig + 20)
+                    if (-not ($pms -or $pls)) { $pms = [BitConverter]::ToUInt32($chunk, $sig + 8); $pls = [BitConverter]::ToUInt32($chunk, $sig + 12) }
+                    if ($pms -or $pls) { return "$($pms -shr 16).$($pms -band 0xFFFF).$($pls -shr 16).$($pls -band 0xFFFF)" }
+                }
+                $at = $text.IndexOf($needle, $at + 1, [System.StringComparison]::Ordinal)
+            }
+            # Keep the end of this chunk: a key cut in two is found in the next.
+            $carry = [Math]::Min(256, $len)
+            [Array]::Copy($chunk, $len - $carry, $chunk, 0, $carry)
+            $offset += $read
+        }
+    }
+    catch { }
+    finally { if ($fs) { $fs.Dispose() } }
+    return ''
+}
+
 function Global:Get-MsiPropertyValues {
     <#
       Values from an MSI's Property table (ProductName, ProductVersion, ProductCode, ...): @{ Name = Value }
@@ -349,7 +397,8 @@ function Global:Get-MsiPropertyValues {
             foreach ($a in @('export', $Path, 'Property')) { $psi.ArgumentList.Add($a) }
             $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true; $psi.UseShellExecute = $false
             $p = [System.Diagnostics.Process]::Start($psi)
-            $text = $p.StandardOutput.ReadToEnd(); [void]$p.WaitForExit(20000)
+            $errs = $p.StandardError.ReadToEndAsync()   # read alongside: a full error pipe would stop msiinfo
+            $text = $p.StandardOutput.ReadToEnd(); [void]$p.WaitForExit(20000); [void]$errs
             # Tab-separated: a header of three lines, then "Property<TAB>Value".
             foreach ($line in @($text -split "`r?`n" | Select-Object -Skip 3)) {
                 $k = $line.IndexOf("`t"); if ($k -le 0) { continue }

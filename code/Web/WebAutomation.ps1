@@ -835,7 +835,7 @@ function Global:Invoke-WebHousekeeping {
     $drop = { param($Item) try { Remove-Item -LiteralPath $Item.FullName -Recurse -Force -ErrorAction Stop; 1 } catch { 0 } }
     $n = 0
     $temp = [System.IO.Path]::GetTempPath()
-    foreach ($pattern in 'intunepkg_*', '.intunepkg_*', 'intunecat-upload-*', 'IntunePackaging_*', 'intunewin_*', 'iwsrc_*', 'psadt-*') {
+    foreach ($pattern in 'intunepkg_*', '.intunepkg_*', 'intunecat-upload-*', 'IntunePackaging_*', 'intunewin_*', 'iwsrc_*', 'psadt-*', 'ica-sandbox-*', 'winget-export-*') {
         foreach ($i in @(Get-ChildItem -LiteralPath $temp -Filter $pattern -Force -ErrorAction SilentlyContinue)) { if (& $old $i 1) { $n += & $drop $i } }
     }
     if ($Global:App.RootPath) {

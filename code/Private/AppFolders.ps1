@@ -86,6 +86,7 @@ function Global:Test-AppFolderPath {
     $p = $Path.Trim()
     if ($p.Length -gt 240) { return 'That path is too long (240 characters at most).' }
     if ($p -match '[\x00-\x1f"<>|?*]') { return 'A folder path cannot contain control characters, quotes, <, >, |, ? or *.' }
+    if (($IsLinux -or $IsMacOS) -and $p -match '^/[^\x00]*$') { if ($p -match '(^|/)\.\.(/|$)') { return 'A folder path cannot contain "..".' }; return '' }
     if ($p -notmatch '^[A-Za-z]:\\' -and $p -notmatch '^\\\\[^\\/]+\\[^\\/]+') { return 'Use a full path: a drive (C:\...) or a share (\\server\share\...).' }
     if ($p -match '(^|\\)\.\.(\\|$)') { return 'A folder path cannot contain "..".' }
     return ''

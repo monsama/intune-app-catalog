@@ -45,10 +45,15 @@ function Global:Update-WingetIndex {
     $db = Join-Path $folder 'index.db'
     $fresh = (Test-Path -LiteralPath $db) -and (((Get-Date) - (Get-Item -LiteralPath $db).LastWriteTime).TotalHours -lt $MaxAgeHours)
     if ($fresh) { return $db }
-    if (-not $Global:App.WingetIndexLock) { $Global:App.WingetIndexLock = New-Object System.Object }
-    [System.Threading.Monitor]::Enter($Global:App.WingetIndexLock)
+    $lock = $Global:App.WingetIndexLock
+    if (-not $lock) { $lock = $Global:App.WingetIndexLock = New-Object System.Object }
+    [System.Threading.Monitor]::Enter($lock)
     try {
         if ((Test-Path -LiteralPath $db) -and (((Get-Date) - (Get-Item -LiteralPath $db).LastWriteTime).TotalHours -lt $MaxAgeHours)) { return $db }
+        # A download that failed isn't tried again for 30 minutes while there is an index: without the CDN every
+        # search would otherwise wait for its own failed download first.
+        if ((Test-Path -LiteralPath $db) -and $Global:App.WingetIndexTried -and ((Get-Date) - $Global:App.WingetIndexTried).TotalMinutes -lt 30) { return $db }
+        $Global:App.WingetIndexTried = Get-Date
         $msix = Join-Path $folder 'source.msix.download'
         try {
             $ProgressPreference = 'SilentlyContinue'
@@ -73,7 +78,7 @@ function Global:Update-WingetIndex {
         finally { Remove-Item -LiteralPath $msix -Force -ErrorAction SilentlyContinue }
         return $db
     }
-    finally { [System.Threading.Monitor]::Exit($Global:App.WingetIndexLock) }
+    finally { [System.Threading.Monitor]::Exit($lock) }
 }
 
 function Global:ConvertTo-SqlText {
@@ -276,7 +281,9 @@ function Global:Format-WingetShowText {
     $inst = Select-WingetIndexInstaller $m.Installers
     if ($inst) {
         [void]$sb.AppendLine('Installer:')
-        if ($inst.InstallerType) { [void]$sb.AppendLine("  Installer Type: $($inst.InstallerType)") }
+        # A manifest can keep the type (and scope) once for all its installers.
+        $itype = if ($inst.InstallerType) { $inst.InstallerType } else { $m.InstallerType }
+        if ($itype) { [void]$sb.AppendLine("  Installer Type: $itype") }
         if ($inst.InstallerUrl) { [void]$sb.AppendLine("  Installer Url: $($inst.InstallerUrl)") }
         if ($inst.InstallerSha256) { [void]$sb.AppendLine("  Installer SHA256: $($inst.InstallerSha256)") }
     }
