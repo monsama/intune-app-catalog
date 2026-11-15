@@ -50,6 +50,7 @@ function Global:Get-WebCatalog {
         try { Load-LastAuditCache } catch { }
         $index = Get-PackageFolderIndex -Root (Get-AppFolder -Kind Packages)
         $busyApps = Get-WebBusyApps
+        $sentStamps = Read-WebSentStamps
         for ($i = 0; $i -lt $apps.Count; $i++) {
             $row = Get-CatalogRow -App $apps[$i] -Index $i -PackageIndex $index
             # The pilot release, found once (a plain loop - a pipeline per field is slow for 500 apps on Windows PowerShell).
@@ -61,6 +62,8 @@ function Global:Get-WebCatalog {
                 type         = [string]$row.Type
                 # Someone else (another window, another admin) is changing it right now.
                 busy         = [string]$busyApps[(Get-SafeFileNameForApp -Name $apps[$i].appName)]
+                # What changed in the catalog since it was last sent (settings / groups) - only known once it was sent with 2.26.4 or later.
+                unsent       = $(if ($apps[$i].appId) { Get-WebUnsent -App $apps[$i] -Sent $sentStamps } else { '' })
                 # The App version (what deploys and releases use) - Intune's own reported version apart.
                 version      = [string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })
                 intuneVersion = [string]$row.Version
@@ -142,7 +145,7 @@ function Global:Start-WebStepJob {
     }
     $Global:App.WebJobs[$tag] = @{
         Process = $proc; Log = $logPath; Result = $ResultPath
-        Cleanup = @($scriptPath, $helperPath, $configPath); Mode = $Kind; Done = $false; After = $After; LastPoll = Get-Date; Started = Get-Date
+        Cleanup = @($scriptPath, $helperPath, $configPath); Mode = $Kind; Step = $Name; Done = $false; After = $After; LastPoll = Get-Date; Started = Get-Date
         HistoryApps = @($(if ($Apps.Count) { $Apps } elseif ($After.AppName -and $After.Kind -in 'deploy', 'deleted', 'release') { [string]$After.AppName }) | Where-Object { $_ })
         HistorySource = [string]$Global:WebChangeSource
         BusyApp = $BusyApp
@@ -412,6 +415,11 @@ function Global:Get-WebJobPoll {
                 if ($response.result -and $response.result.success -and $job.After -and $job.After.Count) {
                     try { $done = Complete-WebJob -After $job.After -Result $response.result -LogPath $job.Log }
                     catch { $done = @{ ok = $false; error = $_.Exception.Message }; Write-Log "[WARN] $($_.Exception.Message)" }
+                }
+                # What was just sent becomes the "sent" fingerprint (settings, or groups) - a later catalog change shows as Changes to send.
+                if ($response.result -and $response.result.success -and [string]$job.Mode -notmatch '^(Release|Promote|Advance|Withdraw|Retire|Finish|Delete|Roll)') {
+                    $part = switch ([string]$job.Step) { 'createapp' { 's' } 'createstoreapp' { 's' } 'targetedassign' { 'g' } 'batchassign' { 'g' } default { '' } }
+                    if ($part) { try { Set-WebSentStamp -Names @($job.HistoryApps) -Part $part } catch { Write-Log "[WARN] Couldn't note what was sent: $($_.Exception.Message)" } }
                 }
                 if ($response.result -and $response.result.success) {
                     foreach ($n in @($job.HistoryApps)) { Add-WebHistoryEntry -App $n -Kind 'intune' -Text ([string]$job.Mode) -Source $(if ($job.HistorySource) { [string]$job.HistorySource } else { 'This app' }) }
@@ -710,4 +718,65 @@ function Global:Invoke-WebApi {
         '/api/group-job'        { return (Start-WebGroupJob $Data) }
         default                 { return @{ ok = $false; error = 'unknown' } }
     }
+}
+
+# ---------------------------------------------------------------- what was sent (2.26.4)
+
+function Global:Get-WebTextSha256 {
+    param([string]$Text)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Text)))).Replace('-', '') } finally { $sha.Dispose() }
+}
+
+function Global:Get-WebAppSentHashes {
+    <#
+      Fingerprints of what Intune gets from an app: s = its settings (the
+      metadata - for a managed app without the version, commands, detection and
+      return codes, which releases own), g = its groups and filter.
+    #>
+    param($App)
+    $m = $App.metadata
+    $skip = if ($App.managedUpdates) { @('appVersion', 'installCommand', 'uninstallCommand', 'detectionRule', 'returnCodes') } else { @() }
+    $o = [ordered]@{ name = [string]$App.appName }
+    if ($m) { foreach ($p in @($m.PSObject.Properties | Sort-Object Name)) { if ($skip -notcontains $p.Name) { $o[$p.Name] = $p.Value } } }
+    $sort = { param($l) @(@($l) | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Where-Object { $_ } | Sort-Object -Unique) }
+    $g = [ordered]@{ r = (& $sort $App.requiredFor); a = (& $sort $App.availableFor); u = (& $sort $App.uninstallFor); x = (& $sort $App.excludeFor); f = [string]$App.assignmentFilter; fm = [string]$App.assignmentFilterMode }
+    return @{ s = (Get-WebTextSha256 (ConvertTo-Json -InputObject $o -Compress -Depth 10)); g = (Get-WebTextSha256 (ConvertTo-Json -InputObject $g -Compress -Depth 4)) }
+}
+
+function Global:Read-WebSentStamps {
+    $file = Join-Path (Get-WebIntegrityFolder) 'sent.json'
+    $map = @{}
+    if (Test-Path -LiteralPath $file) {
+        try { foreach ($p in (Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties) { $map[$p.Name] = @{ s = [string]$p.Value.s; g = [string]$p.Value.g } } } catch { }
+    }
+    return $map
+}
+
+function Global:Set-WebSentStamp {
+    # After a send that worked: -Part s (settings) or g (groups) of these apps is what Intune has now.
+    param([string[]]$Names, [string]$Part)
+    $names = @($Names | Where-Object { $_ })
+    if (-not $names.Count) { return }
+    $map = Read-WebSentStamps
+    $apps = @((Read-WebCatalogRecords).Apps)
+    foreach ($n in $names) {
+        $a = $apps | Where-Object { $_.appName -eq $n } | Select-Object -First 1
+        if (-not $a) { continue }
+        $key = Get-SafeFileNameForApp -Name $a.appName
+        $h = Get-WebAppSentHashes $a
+        if (-not $map.ContainsKey($key)) { $map[$key] = @{ s = ''; g = '' } }
+        $map[$key][$Part] = $h[$Part]
+    }
+    $o = [ordered]@{}; foreach ($k in @($map.Keys | Sort-Object)) { $o[$k] = [ordered]@{ s = $map[$k].s; g = $map[$k].g } }
+    [System.IO.File]::WriteAllText((Join-Path (Get-WebIntegrityFolder -Create) 'sent.json'), (ConvertTo-Json -InputObject $o -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Global:Get-WebUnsent {
+    # '' when Intune has what the catalog says (or it isn't known), else 'settings', 'groups' or 'settings,groups'.
+    param($App, [hashtable]$Sent)
+    $st = $Sent[(Get-SafeFileNameForApp -Name $App.appName)]
+    if (-not $st) { return '' }
+    $h = Get-WebAppSentHashes $App
+    return (@($(if ($st.s -and $st.s -ne $h.s) { 'settings' }), $(if ($st.g -and $st.g -ne $h.g) { 'groups' })) | Where-Object { $_ }) -join ','
 }

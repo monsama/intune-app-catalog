@@ -1256,3 +1256,7 @@ input[type=checkbox]:disabled { opacity: .45; cursor: default; }
 label > input[type=checkbox], .formgrid label > input[type=checkbox], label.chk > input[type=checkbox] { display: inline-grid; width: 16px; height: 16px; margin: 0; flex: none; }
 label.chk > input[type=checkbox] { margin-top: 2px; }
 .formgrid label.chk + label:not(.chk) { margin-top: 14px; }
+.btngroup > #btnAppsReload { width: 38px; padding: 0; }
+#btnAppsReload.spin svg { animation: reloadspin .8s linear infinite; }
+@keyframes reloadspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #btnAppsReload.spin svg { animation: none; } }

@@ -126,7 +126,7 @@ const filters = {
 function sortValue(a, k) {
   if (k === 'groups') return a.required * 10000 + a.available * 100 + a.uninstall;
   // The stage column sorts by stage (the order an app goes through), not by its status text.
-  if (k === 'status') { const order = ['busy', 'tenant', 'look', 'draft', 'msapp', 'retire', 'ready', 'pilot', 'everyone']; const i = order.indexOf(stageOf(a).key); return String(i < 0 ? 9 : i) + (a.name || '').toLowerCase(); }
+  if (k === 'status') { const order = ['busy', 'tenant', 'look', 'unsent', 'draft', 'msapp', 'retire', 'ready', 'pilot', 'everyone']; const i = order.indexOf(stageOf(a).key); return String(i < 0 ? 9 : i) + (a.name || '').toLowerCase(); }
   return String(a[k] || '').toLowerCase();
 }
 // The search box: words match names and Winget IDs; group:text (or group:"two words") the apps assigned to a group whose name contains it.
@@ -467,6 +467,13 @@ $('appForm').addEventListener('submit', async e => {
   $('dlgApp').close();
   selected.clear(); selected.add(r.name); lastClicked = r.name;
   await loadApps();
+  // Saved in the catalog only: when Intune now has something older, say so - with the send it takes.
+  const row = apps.find(x => x.name === r.name);
+  if (row && row.hasAppId && row.unsent) {
+    const s = row.unsent.split(',');
+    toast(`${r.name} saved in the catalog - Intune still has the old ${s.join(' and ')}.`, false,
+      [s.includes('settings') ? { label: 'Send settings now', run: () => sendSettingsNow([r.name]) } : { label: 'Send groups now', run: () => sendGroupsNow([r.name]) }]);
+  }
 });
 const fieldLabel = { appName: 'name', appId: 'App ID', wingetId: 'Winget ID', requiredFor: 'Required', availableFor: 'Available', uninstallFor: 'Uninstall', excludeFor: 'Excluded', settings: 'Intune details or deploy settings' };
 $('btnAppHistory').addEventListener('click', async () => {
@@ -1414,3 +1421,9 @@ $('dlgRecent').addEventListener('wcrestore', () => openRecent());
     onclick: e => { e.stopPropagation(); const on = e.target.checked; for (const n of visible) { if (on) selected.add(n); else selected.delete(n); } syncSel(); updateActions(); } });
   th.prepend(cb);
 })();
+
+// Reload: the catalog, and Intune's App IDs and install state, read again.
+$('btnAppsReload').addEventListener('click', async () => {
+  const b = $('btnAppsReload'); b.disabled = true; b.classList.add('spin');
+  try { await Promise.all([loadApps(), loadIntuneIds(true), loadState()]); toast('Read again.'); } finally { b.disabled = false; b.classList.remove('spin'); }
+});

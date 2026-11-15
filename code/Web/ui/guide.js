@@ -37,6 +37,13 @@ function stageOf(a) {
   if (own && !a.hasAppId && !a.hasDetection) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs a detection rule - Send to Intune refuses an own package without one.', next: { label: 'Edit', title: 'Set its detection rule (Install & detection)', run: () => openEditor(a.name) } };
   if (own && a.packageMissing) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'Its installer isn\'t packaged yet.', next: { label: 'Build', title: 'Build the .intunewin from its packages folder', run: () => onApp(a, 'package') } };
   if (needsAttention(a)) return { key: 'look', label: 'Needs a look', cls: 'warn', why: (a.status || '').split('; ').map(p => statusLabel[p] || p).join('; '), next: { label: 'Edit', title: 'Open it in the editor', run: () => openEditor(a.name) } };
+  // Changed in the catalog since it was last sent: the send it needs is the next step.
+  if (a.hasAppId && a.unsent) {
+    const s = a.unsent.split(','), what = s.map(x => x === 'settings' ? 'its settings' : 'its groups').join(' and ');
+    return { key: 'unsent', label: 'Changes to send', cls: 'warn', why: `Changed in the catalog since it was last sent: ${what}. Intune still has the old ones.`,
+      next: s.includes('settings') ? { label: 'Send settings', title: 'Send its settings to Intune (no package upload, groups untouched)', run: () => sendSettingsNow([a.name]) }
+        : { label: 'Send groups', title: 'Send its groups to Intune', run: () => sendGroupsNow([a.name]) } };
+  }
   if (!a.hasAppId) {
     if (a.managed && !own && !a.version) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'Managed updates: it needs the version to start from.', next: { label: 'Pin newest', title: "Pin winget's newest version (another one: Version in the side panel)", run: () => takeVersionFor(a) } };
     return { key: 'ready', label: 'Ready to send', cls: 'info', why: 'Everything is set - not in Intune yet.', next: { label: 'Send to Intune', title: 'Create it in Intune', run: () => openDeploy([a.name]) } };
@@ -340,4 +347,16 @@ function multiPanel(sel) {
       btn('Add groups...', 'Add groups to all of them', () => openGroupsBatch('add', names)), btn('Batch edit...', 'Change fields on all of them', () => openBatch(names)),
       btn('More...', 'Every action for the selected apps', () => $('btnMore').click())));
   p.hidden = false;
+}
+
+// Sending what changed since the last send (Changes to send): its settings, or its groups - then the list is read again.
+async function sendSettingsNow(names) {
+  runDialog('Send settings to Intune', names.join(', '));
+  const done = await runEach(names, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'runLog', startText: 'Sending settings for ' });
+  toast(`Settings sent for ${done.length} of ${names.length} app(s).`, done.length < names.length); loadApps();
+}
+async function sendGroupsNow(names) {
+  runDialog('Send groups to Intune', names.join(', '));
+  const done = await runEach(names, name => ({ names: [name], mode: 'AfterDeploy' }), { path: '/api/push-start', log: 'runLog', startText: 'Sending groups for ' });
+  toast(`Groups sent for ${done.length} of ${names.length} app(s).`, done.length < names.length); loadApps();
 }

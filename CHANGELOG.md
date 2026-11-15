@@ -25,6 +25,14 @@
   app in or out, the others stay picked; Shift for a range) and one in the
   header for every app in the view (a dash when only some are picked).
   Clicking a row still picks just that one; Ctrl/Shift+click work as before.
+- **Changes to send**: an app in Intune whose settings or groups changed in
+  the catalog since they were last sent shows **Changes to send**, with the
+  send it needs (Send settings, or Send groups) as its next step; after Save
+  a message says Intune still has the old ones, with **Send now**. Known
+  for what's sent from this version on (a fingerprint of what was sent is
+  kept next to the catalog); a managed app's version, commands and
+  detection are left out - releases send those.
+- **Reload** button in the Apps toolbar: the catalog and Intune read again.
 - **Spacing in forms**: room under every section heading, and a button,
   checkbox or label after a field, list or checkbox no longer touches it
   (Supersedence, Dependencies, Return codes, Allow uninstall, rings).
