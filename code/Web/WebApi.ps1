@@ -307,8 +307,12 @@ function Global:Complete-WebJob {
     param([hashtable]$After, $Result, [string]$LogPath)
     # A deploy or a delete changes which apps the tenant has - the Apps list reads them again.
     if ($After.Kind -in 'deploy', 'deleted', 'addtocatalog') { $Global:App.IntuneAppsCache = $null }
+    # Any finished step can change what Home's Intune part says (a release, a promote, a deploy).
+    $Global:App.HomeIntuneCache = $null
     switch ($After.Kind) {
         'grouprename' { return (Complete-WebGroupRename -After $After) }
+        # Looked for again: winget is asked through the module from now on.
+        'wingetmodule' { $Global:App.WingetClientModule = $null; return @{ ok = $true; module = [bool](Test-WingetClientModule) } }
         'groupsaved' { return (Complete-WebGroupSaved -After $After -Result $Result) }
         'retire' { return (Complete-WebRetire -After $After) }
         'pilotassigned' {
@@ -653,7 +657,7 @@ function Global:Invoke-WebApi {
         '/api/detection-from-installed' { return (Get-WebDetectionFromInstalled $Data) }
         '/api/sandbox-start'    { return (Start-WebSandboxTest $Data) }
         '/api/sandbox-result'   { return (Get-WebSandboxResult $Data) }
-        '/api/attention'        { return (Get-WebAttention) }
+        '/api/attention'        { return (Get-WebAttention $Data) }
         '/api/managed-default'  { return (Set-WebManagedDefault) }
         '/api/assignment-matrix' { return (Get-WebAssignmentMatrix) }
         '/api/assignments-set'  { return (Invoke-WithCatalogLock { Set-WebAssignments $Data }) }
@@ -693,6 +697,7 @@ function Global:Invoke-WebApi {
         '/api/diagnostics'      { return (Get-WebDiagnostics) }
         '/api/prereqs'          { return (Get-WebPrerequisites) }
         '/api/prereq-install'   { return (Start-WebPrerequisiteInstall $Data) }
+        '/api/winget-module-install' { return (Start-WebWingetModuleInstall) }
         '/api/certs-all'        { return (Get-WebAllLocalCertificates) }
         '/api/cert-delete-local' { return (Remove-WebLocalCertificate $Data) }
         '/api/packaging'        { return (Get-WebPackaging) }

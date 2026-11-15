@@ -815,6 +815,12 @@ Assert-True ($sd.Id -eq '7zip.7zip' -and $sd.Name -eq '7-Zip' -and $sd.Version -
 $fillMeta = [pscustomobject]@{ description = '7-Zip'; publisher = ''; informationUrl = 'https://mine.example'; privacyUrl = ''; developer = ''; owner = ''; appVersion = '26.05' }
 $fill = Get-AppDetailsFill -Metadata $fillMeta -Details $sd -AppName '7-Zip' -DefaultOwner 'IT Workplace'
 Assert-True ($fill.publisher -eq 'Igor Pavlov' -and $fill.description -like 'Free and open source*' -and -not $fill.Contains('informationUrl') -and $fill.privacyUrl -like '*privacy' -and $fill.developer -eq 'Igor Pavlov' -and $fill.owner -eq 'IT Workplace' -and -not $fill.Contains('appVersion')) "Get-AppDetailsFill: only empty fields (a description that's just the name counts as empty), never the version, the owner from the setting"
+$supOnly = ConvertFrom-WingetShowOutput "Found Claude Code [Anthropic.ClaudeCode]`nVersion: 2.0.1`nPublisher: Anthropic PBC`nPublisher Support Url: https://support.anthropic.com/`nDescription: Agentic coding tool"
+$supFill = Get-AppDetailsFill -Metadata ([pscustomobject]@{ publisher = ''; description = 'Claude Code'; informationUrl = '' }) -Details $supOnly -AppName 'Claude Code' -DefaultOwner ''
+Assert-True ($supOnly.SupportUrl -eq 'https://support.anthropic.com/' -and $supFill.informationUrl -eq 'https://support.anthropic.com/' -and $supFill.publisher -eq 'Anthropic PBC' -and $supFill.description -eq 'Agentic coding tool') "Get-AppDetailsFill: no homepage or publisher site - the publisher's support page is the information link"
+$deSup = ConvertFrom-WingetShowOutput "Gefunden X [V.X]`nHerausgeber-Support-URL: https://help.example.com/"
+Assert-Equal 'https://help.example.com/' $deSup.SupportUrl "ConvertFrom-WingetShowOutput: the support link in German too"
+
 Assert-Equal 0 (Get-AppDetailsFill -Metadata ([pscustomobject]@{ description = 'Mine'; publisher = 'P'; informationUrl = 'https://x.example'; privacyUrl = 'https://y.example'; developer = 'D'; owner = 'O' }) -Details $sd -AppName 'X' -DefaultOwner 'IT').Count "Get-AppDetailsFill: nothing typed by hand is overwritten"
 Assert-True (-not (Get-AppDetailsFill -Metadata $fillMeta -Details @{ Homepage = 'javascript:alert(1)'; PrivacyUrl = 'http://ok.example/p' } -AppName '7-Zip').Contains('informationUrl')) "Get-AppDetailsFill: only http(s) links"
 Assert-Equal 'inno' (Get-InstallerKind 'xx Inno Setup Setup Data (6.2.0) xx') "Get-InstallerKind: Inno Setup"

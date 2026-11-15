@@ -1649,6 +1649,7 @@ function Global:Get-WingetShowLabelMap {
     $add = { param($Field, [string[]]$Labels) foreach ($l in $Labels) { $m[$l.ToLowerInvariant()] = $Field } }
     & $add 'Version' @('Version', ('Versi' + [char]0xF3 + 'n'), 'Versione', ('Vers' + [char]0xE3 + 'o'), 'Versie')
     & $add 'Publisher' @('Publisher', 'Herausgeber', ([string][char]0xC9 + 'diteur'), 'Editeur', 'Editor', 'Publicador', 'Autore', 'Uitgever')
+    & $add 'SupportUrl' @('Publisher Support Url', 'Herausgeber-Support-URL', 'Support-URL des Herausgebers', ("URL du support de l'" + [char]0xE9 + 'diteur'), 'URL de soporte del editor', "URL dell'assistenza dell'editore", 'URL de suporte do editor', 'Ondersteunings-URL van uitgever')
     & $add 'PublisherUrl' @('Publisher Url', 'Herausgeber-URL', ("URL de l'" + [char]0xE9 + 'diteur'), 'URL del editor', 'URL del publicador', "URL dell'editore", 'URL do editor', 'Uitgever-URL')
     & $add 'Description' @('Description', 'Short Description', 'Beschreibung', 'Kurzbeschreibung', ('Descripci' + [char]0xF3 + 'n'), 'Descrizione', ('Descri' + [char]0xE7 + [char]0xE3 + 'o'), 'Beschrijving')
     & $add 'Homepage' @('Homepage', 'Startseite', "Page d'accueil", ('P' + [char]0xE1 + 'gina principal'), ('P' + [char]0xE1 + 'gina inicial'), 'Home page', 'Startpagina')
@@ -1668,7 +1669,8 @@ function Global:Get-AppDetailsFill {
       value list (empty when there's nothing to fill).
     #>
     param($Metadata, $Details, [string]$AppName, [string]$DefaultOwner)
-    $now = { param($k) [string]$(if ($Metadata -and $Metadata.PSObject.Properties[$k]) { $Metadata.$k }) }
+    # A field the app's settings don't have at all counts as empty ('' - never $null, which has no .Trim()).
+    $now = { param($k) $v = if ($Metadata -and $Metadata.PSObject.Properties[$k]) { $Metadata.$k } else { $null }; if ($null -eq $v) { '' } else { [string]$v } }
     $url = { param($u) $t = ([string]$u).Trim(); if ($t -match '^https?://[^\s"<>]{3,500}$') { $t } else { '' } }
     $out = [ordered]@{}
     $publisher = ([string]$Details.Publisher).Trim()
@@ -1676,7 +1678,8 @@ function Global:Get-AppDetailsFill {
     $desc = ([string]$Details.Description).Trim()
     $haveDesc = (& $now 'description').Trim()
     if ($desc -and (-not $haveDesc -or $haveDesc -eq ([string]$AppName).Trim())) { $out.description = $desc.Substring(0, [Math]::Min($desc.Length, 2000)) }
-    $info = & $url $(if ($Details.Homepage) { $Details.Homepage } else { $Details.PublisherUrl })
+    # The package's homepage; else the publisher's site; else its support page - any of them tells people where the app comes from.
+    $info = & $url $(if ($Details.Homepage) { $Details.Homepage } elseif ($Details.PublisherUrl) { $Details.PublisherUrl } else { $Details.SupportUrl })
     if ($info -and -not (& $now 'informationUrl').Trim()) { $out.informationUrl = $info }
     $privacy = & $url $Details.PrivacyUrl
     if ($privacy -and -not (& $now 'privacyUrl').Trim()) { $out.privacyUrl = $privacy }
@@ -1695,7 +1698,7 @@ function Global:ConvertFrom-WingetShowOutput {
       indented lines (a long description, the tags).
     #>
     param([string]$Text)
-    $out = [ordered]@{ Name = ''; Id = ''; Version = ''; Publisher = ''; PublisherUrl = ''; Author = ''; Description = ''; Homepage = ''; License = ''; PrivacyUrl = ''; Tags = @() }
+    $out = [ordered]@{ Name = ''; Id = ''; Version = ''; Publisher = ''; PublisherUrl = ''; SupportUrl = ''; Author = ''; Description = ''; Homepage = ''; License = ''; PrivacyUrl = ''; Tags = @() }
     $map = Get-WingetShowLabelMap
     $key = ''
     foreach ($raw in @(([string]$Text) -split "`r?`n")) {

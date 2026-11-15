@@ -241,12 +241,17 @@ async function runHomeAction(go, fn) {
   homeRunning.add(go); showHomeBusy(go, true);
   try { await fn(); } finally { homeRunning.delete(go); showHomeBusy(go, false); }
 }
-async function loadHome() {
-  const seq = ++homeSeq;
+// Home comes in two parts, asked at the same time: what the app knows itself (the catalog, the last nightly run,
+// the setup) - shown as soon as it's there - and Intune's release and install counts, the slow part, added when
+// they arrive. Until then, the last Intune part shown stays.
+let homeLocal = null, homeIntune = null, homeIntuneSeq = 0;
+async function loadHome(fresh) {
+  const seq = ++homeSeq, iseq = ++homeIntuneSeq;
   // Only the first load shows that it's looking; a refresh swaps the content in place, without flicker.
   if (!$('homeList').children.length) { $('homeNote').textContent = 'Looking...'; skeleton($('homeList'), 1, 3); }
   homeAt = Date.now();
-  const r = await api('/api/attention');
+  const intune = api('/api/attention', { part: 'intune', fresh: fresh === true });
+  const r = await api('/api/attention', { part: 'local' });
   // A slower, older answer never overwrites a newer one (it could bring back something just fixed).
   if (seq !== homeSeq) return;
   // A refresh that fails keeps what's shown (only the note says so); a first load that fails shows nothing stale.
@@ -255,24 +260,38 @@ async function loadHome() {
     if (!$('homeList').querySelector('li.att')) { $('homeList').replaceChildren(); $('homeCount').textContent = ''; $('homeStats').replaceChildren(); }
     return;
   }
+  homeLocal = r; homeIntuneWaiting = true;
+  renderHome();
+  const q = await intune;
+  if (iseq !== homeIntuneSeq) return;
+  homeIntuneWaiting = false;
+  if (q.ok) homeIntune = q;
+  renderHome();
+}
+let homeIntuneWaiting = false;
+function renderHome() {
+  const r = homeLocal; if (!r) return;
+  const order = { err: 0, warn: 1, ok: 2, info: 3 };
+  const items = [...r.items, ...((homeIntune && homeIntune.items) || [])].map((x, n) => [x, n]).sort((a, b) => (order[a[0].level] ?? 3) - (order[b[0].level] ?? 3) || a[1] - b[1]).map(x => x[0]);
   renderSetup(r.setup);
-  $('homeNote').textContent = r.items.length ? `${r.items.length} thing${r.items.length === 1 ? '' : 's'} to look at${r.lastRun ? ` - last nightly run ${r.lastRun}` : ''}.` : 'Nothing needs a look right now.';
-  $('homeCount').textContent = r.items.length ? String(r.items.length) : '';
-  const s = r.summary, stat = (n, l, cls) => el('div', { class: 'stat ' + (cls || '') }, el('span', { class: 'n', text: n }), el('span', { class: 'l', text: l }));
+  const reading = homeIntuneWaiting && !homeIntune && r.connected !== false ? ' Reading install counts from Intune...' : '';
+  $('homeNote').textContent = (items.length ? `${items.length} thing${items.length === 1 ? '' : 's'} to look at${r.lastRun ? ` - last nightly run ${r.lastRun}` : ''}.` : 'Nothing needs a look right now.') + reading;
+  $('homeCount').textContent = items.length ? String(items.length) : '';
+  const s = homeIntune && homeIntune.summary, stat = (n, l, cls) => el('div', { class: 'stat ' + (cls || '') }, el('span', { class: 'n', text: n }), el('span', { class: 'l', text: l }));
   $('homeStats').replaceChildren(stat(String(r.apps), 'apps in the catalog'), stat(String(r.deployed), 'in Intune'), stat(String(r.managed), 'with managed updates'),
-    ...(s && s.onCurrentPercent !== null ? [stat(s.onCurrentPercent + ' %', `of ${s.devices} devices on the current version`, s.onCurrentPercent < 90 ? 'warn' : 'ok')] : []));
+    ...(s && s.onCurrentPercent !== null && s.onCurrentPercent !== undefined ? [stat(s.onCurrentPercent + ' %', `of ${s.devices} devices on the current version`, s.onCurrentPercent < 90 ? 'warn' : 'ok')] : []));
   const where = { 'settings:connection': ['Settings', () => showSettings('connection')], 'settings:defaults': ['Settings', () => showSettings('defaults')], 'settings:updates': ['Settings', () => showSettings('updates')], 'settings:automation': ['Settings', () => showSettings('automation')], 'settings:packaging': ['Settings', () => showSettings('packaging')],
     'apps:notdeployed': ['Show them', () => { showView('apps'); $('filter').value = 'notdeployed'; renderApps(); updateViewButtons(); }], 'apps:all': ['Apps', () => showView('apps')],
     updates: ['Updates', () => showView('updates')], checks: ['Checks', () => showView('checks')],
-    'open:release': ["What's new", () => api('/api/open', { target: 'release' })], 'do:manageddefault': ['Make it the default', makeManagedDefault], 'do:managedall': ['Turn on for all', managedForAll], 'do:takeversions': ["Take winget's versions", takeVersionsForManaged], 'do:wauswitch': ['Switch them', wauSwitch], 'do:portalstore': ['Fix Company Portal', portalStore], 'do:filldetails': ['Fill them in', () => fillDetails([])] };
+    'open:release': ["What's new", () => api('/api/open', { target: 'release' })], 'do:manageddefault': ['Make it the default', makeManagedDefault], 'do:managedall': ['Turn on for all', managedForAll], 'do:takeversions': ["Take winget's versions", takeVersionsForManaged], 'do:wauswitch': ['Switch them', wauSwitch], 'do:portalstore': ['Fix Company Portal', portalStore], 'do:filldetails': ['Fill them in', () => fillDetails([])], 'do:wingetmodule': ['Install it', installWingetModule] };
   const pill = { err: ['err', 'Problem'], warn: ['warn', 'Look'], ok: ['ok', 'Ready'], info: ['info', 'To do'] };
-  $('homeList').replaceChildren(...(r.items.length ? r.items.map(i => { const w = where[i.go], p = pill[i.level] || pill.info;
+  $('homeList').replaceChildren(...(items.length ? items.map(i => { const w = where[i.go], p = pill[i.level] || pill.info;
     const busy = homeRunning.has(i.go);
     return el('li', { class: 'att ' + i.level + (busy ? ' busy' : ''), 'data-row': i.go || '', 'aria-busy': String(busy) }, el('span', { class: 'pill ' + p[0], text: p[1] }), el('div', { class: 'body' }, el('b', { text: i.title }), el('span', { class: 'muted', text: i.text })),
       w ? el('button', { class: 'btn small' + (busy ? ' working' : ''), 'data-go': i.go, 'data-label': w[0], disabled: busy, title: busy ? 'Still running' : null, onclick: () => runHomeAction(i.go, w[1]) }, busy ? homeWorking() : w[0]) : ''); })
     : [el('li', { class: 'att ok' }, el('span', { class: 'pill ok', text: 'All good' }), el('div', { class: 'body' }, el('b', { text: 'Nothing to do' }), el('span', { class: 'muted', text: 'Every app is deployed, nothing is on hold, and the last nightly run went fine.' })))]));
 }
-$('btnHomeReload').addEventListener('click', loadHome);
+$('btnHomeReload').addEventListener('click', () => loadHome(true));
 $('btnHomeAdd').addEventListener('click', () => openAdd());
 $('btnHomeCheck').addEventListener('click', async () => {
   const b = $('btnHomeCheck'); b.disabled = true; b.classList.add('working'); b.replaceChildren(el('span', { class: 'spinner', 'aria-hidden': 'true' }), 'Checking...');
@@ -388,6 +407,16 @@ async function managedForAll() {
   const r = await api('/api/managed-updates', { names, on: true });
   toast(r.ok ? `Managed updates on for ${r.changed.length} app(s)${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}.` : r.error, !r.ok, r.ok ? [{ label: 'Undo', run: () => undoLast() }] : []);
   await loadApps(); loadHome();
+}
+// Microsoft's WinGet PowerShell module: exact winget answers whatever Windows' language. Installed for this user only.
+function installWingetModule() {
+  return new Promise(resolve => {
+    runDialog('Install the WinGet PowerShell module', 'Microsoft.WinGet.Client, from the PowerShell Gallery, for your user');
+    runJob({}, (ok, res, after) => {
+      toast(ok && after && after.module ? 'WinGet module installed - winget is now asked through it, in any language.' : ok ? 'Installed, but the module could not be loaded yet - restart the app.' : 'The WinGet module could not be installed - see the log.', !ok);
+      loadHome(); resolve();
+    }, { path: '/api/winget-module-install', log: 'runLog', startText: 'Installing Microsoft.WinGet.Client...' }).then(started => { if (!started) resolve(); });
+  });
 }
 async function takeVersionsForManaged() {
   const names = apps.filter(a => a.wingetId && a.managed && !a.version).map(a => a.name);

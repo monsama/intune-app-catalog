@@ -433,6 +433,8 @@ function Global:Invoke-WebFillDetails {
     $owner = [string]$Global:App.DefaultAppSettings.DefaultOwner
     $plans = New-Object System.Collections.Generic.List[object]
     $failed = New-Object System.Collections.Generic.List[string]
+    $asked = Read-WebDetailsAsked
+    $lacking = New-Object System.Collections.Generic.List[object]
     foreach ($a in ($apps | Select-Object -First 200)) {
         try {
             $r = Invoke-Winget -Arguments @('show', '--id', [string]$a.wingetId, '--exact', '--accept-source-agreements', '--disable-interactivity')
@@ -440,6 +442,10 @@ function Global:Invoke-WebFillDetails {
             if (-not $d.Id) { $failed.Add("$($a.appName) (winget doesn't know $($a.wingetId))"); continue }
             $fill = Get-AppDetailsFill -Metadata $a.metadata -Details $d -AppName $a.appName -DefaultOwner $owner
             if ($fill.Count) { $plans.Add(@{ name = $a.appName; fill = $fill }) }
+            # What stays empty because winget's entry doesn't have it: Home stops asking for those (Get-WebDetailsGaps).
+            $gaps = @(Get-WebDetailsGaps -App $a -Fill $fill)
+            $asked[[string]$a.appName] = @{ id = [string]$a.wingetId; missing = $gaps }
+            if ($gaps.Count) { $lacking.Add([ordered]@{ name = [string]$a.appName; fields = $gaps }) }
         }
         catch { $failed.Add("$($a.appName) ($($_.Exception.Message))") }
     }
@@ -454,7 +460,7 @@ function Global:Invoke-WebFillDetails {
                             if (-not $app.metadata) { $app | Add-Member -NotePropertyName metadata -NotePropertyValue ([pscustomobject]@{}) -Force }
                             foreach ($k in @($p.fill.Keys)) {
                                 # Still empty now (someone may have typed it meanwhile): only then.
-                                $cur = [string]$(if ($app.metadata.PSObject.Properties[$k]) { $app.metadata.$k })
+                                $cur = if ($app.metadata.PSObject.Properties[$k] -and $null -ne $app.metadata.$k) { [string]$app.metadata.$k } else { '' }
                                 if ($cur.Trim() -and -not ($k -eq 'description' -and $cur.Trim() -eq ([string]$app.appName).Trim())) { continue }
                                 if ($app.metadata.PSObject.Properties[$k]) { $app.metadata.$k = $p.fill[$k] } else { $app.metadata | Add-Member -NotePropertyName $k -NotePropertyValue $p.fill[$k] }
                             }
@@ -466,8 +472,38 @@ function Global:Invoke-WebFillDetails {
         }
         if ($done.Count) { Save-WebUndo $undo }
     }
-    Write-Log "[OK] Fill in details: $($done.Count) app(s) filled$(if ($failed.Count) { "; not asked or not known: $($failed -join '; ')" })."
-    return @{ ok = $true; filled = $done.ToArray(); asked = $apps.Count; failed = $failed.ToArray() }
+    try { Save-WebDetailsAsked $asked } catch { Write-Log "[WARN] Couldn't keep what winget lacks: $($_.Exception.Message)" }
+    Write-Log "[OK] Fill in details: $($done.Count) app(s) filled$(if ($lacking.Count) { "; winget has no $((@($lacking | ForEach-Object { "$($_.name): $($_.fields -join ', ')" })) -join '; ')" })$(if ($failed.Count) { "; not asked or not known: $($failed -join '; ')" })."
+    return @{ ok = $true; filled = $done.ToArray(); asked = $apps.Count; failed = $failed.ToArray(); lacking = $lacking.ToArray() }
+}
+
+# Home's "details missing" counts publisher, description and information link. When winget's entry simply has
+# no such field, Fill in details can't fill it - what it lacked (per app and Winget ID) is kept next to the
+# catalog (.integrity\details-asked.json), so Home stops asking for it until the Winget ID changes.
+function Global:Get-WebDetailsGaps {
+    # The Home fields that stay empty after -Fill (labels as people read them).
+    param($App, $Fill)
+    $m = $App.metadata
+    $val = { param($k) if ($Fill -and $Fill.Contains($k)) { [string]$Fill[$k] } elseif ($m -and $m.PSObject.Properties[$k]) { [string]$m.$k } else { '' } }
+    $gaps = @()
+    if (-not (& $val 'publisher').Trim()) { $gaps += 'publisher' }
+    $d = (& $val 'description').Trim()
+    if (-not $d -or $d -eq ([string]$App.appName).Trim()) { $gaps += 'description' }
+    if (-not (& $val 'informationUrl').Trim()) { $gaps += 'information link' }
+    return $gaps
+}
+function Global:Read-WebDetailsAsked {
+    $file = Join-Path (Get-WebIntegrityFolder) 'details-asked.json'
+    $map = @{}
+    if (Test-Path -LiteralPath $file) {
+        try { foreach ($p in (Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties) { $map[$p.Name] = @{ id = [string]$p.Value.id; missing = @($p.Value.missing | ForEach-Object { [string]$_ }) } } } catch { }
+    }
+    return $map
+}
+function Global:Save-WebDetailsAsked {
+    param([hashtable]$Map)
+    $o = [ordered]@{}; foreach ($k in @($Map.Keys | Sort-Object)) { $o[$k] = $Map[$k] }
+    [System.IO.File]::WriteAllText((Join-Path (Get-WebIntegrityFolder -Create) 'details-asked.json'), (ConvertTo-Json -InputObject $o -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
 }
 
 function Global:Get-WebFillPreview {

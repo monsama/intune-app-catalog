@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.27.3
+
+- **Home: "Install the WinGet PowerShell module" has an Install it
+  button.** It installs Microsoft.WinGet.Client from the PowerShell
+  Gallery for your user only (the same way Settings > Prerequisites
+  installs the Graph module), into the PowerShell the app runs in, and
+  winget is asked through it straight away - no PowerShell window, no
+  command to copy, no restart.
+- **Apps list**: tick box, icon and name sit on the same line as the
+  other cells (the name used to sit a few pixels higher).
+- **Home loads faster.** It now comes in two parts, asked at the same
+  time: what the app knows itself (catalog, last nightly run, setup) shows
+  at once; Intune's release and install counts - the slow part - are added
+  when they arrive ("Reading install counts from Intune..." meanwhile).
+  The Intune part is kept for 45 seconds (new at once when the catalog
+  changes, a step finishes, or you press Reload), the nightly task's
+  state for a minute (asking Task Scheduler took a second or more each
+  time), and what an own package's installer says (version, product
+  code) as long as it's the same file - Home, Updates and the Apps list
+  read it often.
+- **"N app(s) with details missing" no longer stays forever.** Home asks
+  for a publisher, a description and an information link; when winget's
+  entry doesn't have one of them, Fill in details couldn't fill it and the
+  item never went away. Fill in details now says what winget lacks ("winget
+  has no information link for MySQL Workbench - type it in the editor if
+  you want it") and Home stops asking for exactly that until the app's
+  Winget ID changes. The information link also falls back to the
+  publisher's support page when winget has neither a homepage nor a
+  publisher site.
+
 ## 2.27.2
 
 - **Send settings / Deploy of a managed Winget app sent a detection script

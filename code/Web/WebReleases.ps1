@@ -330,6 +330,12 @@ function Global:Get-WebInstallerInfo {
     }
     $msi = Get-ChildItem -LiteralPath $look -Filter '*.msi' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     $exe = Get-ChildItem -LiteralPath $look -Filter '*.exe' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin 'Invoke-AppDeployToolkit.exe', 'Deploy-Application.exe' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    # Reading an installer (Windows Installer, file versions) is slow and Home, Updates and the Apps list ask
+    # often: kept while the same file (name, time, size) is the newest.
+    $pick = if ($msi) { $msi } else { $exe }
+    $cacheKey = if ($pick) { "$($pick.FullName)|$($pick.LastWriteTimeUtc.Ticks)|$($pick.Length)".ToLowerInvariant() } else { '' }
+    if (-not $Global:App.InstallerInfoCache) { $Global:App.InstallerInfoCache = [hashtable]::Synchronized(@{}) }
+    if ($cacheKey -and $Global:App.InstallerInfoCache.ContainsKey($cacheKey)) { $hit = $Global:App.InstallerInfoCache[$cacheKey]; foreach ($k in @($hit.Keys)) { $info[$k] = $hit[$k] }; return $info }
     if ($msi) {
         $info.found = $true; $info.file = $msi.Name
         try {
@@ -354,6 +360,7 @@ function Global:Get-WebInstallerInfo {
         $info.version = ($v -replace '[^0-9A-Za-z.\-+_].*$', '')
     }
     if ($info.version -and -not (Test-ReleaseVersionText $info.version)) { $info.version = '' }
+    if ($cacheKey) { $Global:App.InstallerInfoCache[$cacheKey] = @{ found = $info.found; file = $info.file; version = $info.version; productCode = $info.productCode } }
     return $info
 }
 

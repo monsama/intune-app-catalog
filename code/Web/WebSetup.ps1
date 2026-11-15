@@ -83,6 +83,17 @@ function Global:Start-WebPrerequisiteInstall {
     return (Start-WebStepJob -ScriptContent (Get-GraphModuleInstallScript) -Name 'prereq' -ConfigJson '' -ResultPath '' -Parameters @{} -Exe $exe -Kind "Install $(Get-GraphModuleName)")
 }
 
+function Global:Start-WebWingetModuleInstall {
+    <#
+      Installs Microsoft's WinGet PowerShell module (Microsoft.WinGet.Client) for this user, into the PowerShell
+      running the app - the one that asks winget (Test-WingetClientModule). From Home's "Install it".
+    #>
+    if ($Global:App.TestGraph) { return @{ ok = $false; error = 'Not in test mode.' } }
+    if (Test-WingetClientModule) { return @{ ok = $false; error = 'The WinGet module is installed already.' } }
+    $exe = (Get-Process -Id $PID).Path
+    return (Start-WebStepJob -ScriptContent (Get-GraphModuleInstallScript -ModuleName 'Microsoft.WinGet.Client') -Name 'prereq' -ConfigJson '' -ResultPath '' -Parameters @{} -Exe $exe -Kind 'Install Microsoft.WinGet.Client' -After @{ Kind = 'wingetmodule' })
+}
+
 function Global:Get-WebAllLocalCertificates {
     # Every certificate in CurrentUser\My and LocalMachine\My, for Delete local certificate - expired and keyless ones too.
     $now = Get-Date
