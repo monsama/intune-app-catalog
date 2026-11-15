@@ -1,5 +1,69 @@
 # Changelog
 
+## 2.17.1
+
+Fixes from a full sweep of the app (security, bugs, interface).
+
+### Security
+
+- **The PSADT template** is used only from its expected release file, and
+  only when its toolkit module carries a valid digital signature.
+- **App IDs** have to be GUIDs before they go into a Graph address, in
+  every step that assigns or updates apps (Delete already did this).
+- **Download checks** only ask https links, and follow redirects only to
+  https.
+- **Undo (History) and Restore (Retired apps)** only change fields the
+  app has. They run the same checks as the editor's Save, and a managed
+  app's commands follow its version.
+- **Adding a PSADT app** refuses a name that would share a packages folder
+  with another app. Before, the other app's script could be overwritten.
+- Detection for apps without managed updates uses a temporary file of
+  its own, and backslashes never get into a Winget ID in a command.
+
+### Bugs
+
+- **Download check**:
+  - Works with winget in any language.
+  - Says *winget no longer has it* only when winget really says so. A
+    network or source problem is "not known", and no longer blocks a
+    release.
+- **Script and PSADT apps**: a new version (in the editor, the side panel
+  or a release) now also changes the version marker in Install.ps1 /
+  Invoke-AppDeployToolkit.ps1. Before, devices reported the app as not
+  detected after a release.
+- **Retire**: devices where the uninstall failed count as *still have it*,
+  not as removed.
+- **The 9009 Retry return code** goes to every app with the winget
+  commands, not only managed ones.
+- **Released versions** keep the Uninstall-entry detection.
+- **History**:
+  - Times are right on PowerShell 7.
+  - Undoing the change that created an app's Intune details takes the
+    app back to the defaults, not to empty details.
+  - *Undo last bulk change* is recorded in History too.
+  - Comparing versions shows changes to the assignment filter and
+    retirement.
+- Several downloads checked at the same time no longer lose results.
+
+### Interface
+
+- **Editor**:
+  - The install and uninstall commands are on the *Install & detection*
+    page.
+  - "Go to the field" and the *Who gets it* tab put the cursor in the
+    group box.
+  - Picking a Winget ID with *Find...*, or a detection rule *From an app
+    on this PC*, updates the Ready list.
+- **Focus** comes back to where it was after a row's "⋯" menu, and after
+  a quick edit in the side panel.
+- **Menus**: the row menu and Columns close when focus leaves them. Arrow
+  keys in Columns move between its options and no longer cause an error.
+- **Loading placeholders** are cleared when reading fails.
+- **The connection mark** in the icon rail is visible when not connected.
+- **Checks** no longer says "agree" when not everything could be
+  compared.
+- Wording fixes.
+
 ## 2.17.0
 
 Making the winget way of installing sturdier:

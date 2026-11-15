@@ -861,3 +861,5 @@ input.qedit { padding: 3px 8px; font-size: 12px; width: 180px; }
 .menu.looks hr { border: 0; border-top: 1px solid var(--bd2); margin: 6px 0; }
 .menu .mhead { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 4px 6px 2px; }
 .dlok { color: var(--ok); margin-left: 6px; font-size: 12px; }
+/* Not connected / test mode: a ring, not blank (the icon rail shows only the mark). */
+.conn.none::before, .conn.warn::before { content: ''; width: 8px; height: 8px; border-radius: 50%; border: 2px solid currentColor; box-sizing: border-box; }

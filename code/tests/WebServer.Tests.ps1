@@ -504,6 +504,10 @@ try {
     $scDir = [string]$addS.folder
     Check ($addS.ok -and $scApp.deploy.detection.type -eq 'Registry' -and $scApp.deploy.detection.value -eq '2.0' -and $scApp.metadata.installCommand -like '*-File .\Install.ps1' -and (Test-Path -LiteralPath (Join-Path $scDir 'Install.ps1')) -and $scApp.managedUpdates) 'add apps: a script app - Install.ps1 in its folder, detected by its version marker, managed updates on' ($addS | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/add-script' @{ name = $scName; version = '2.0'; install = $tpls.templates[1].install; uninstall = 'x' }).ok) 'add apps: a name already in the catalog is refused'
+    # A new version: the detection rule and the script's version marker move together.
+    $scQ = Invoke-Api '/api/app-quick' @{ name = $scName; field = 'appVersion'; value = '2.5' }
+    $scApp2 = (Invoke-Api '/api/app-get' @{ name = $scName }).app
+    Check ($scQ.ok -and @($scQ.scripts) -contains 'Install.ps1' -and $scApp2.deploy.detection.value -eq '2.5' -and (Get-Content -LiteralPath (Join-Path $scDir 'Install.ps1') -Raw) -match "-Name Version -Value '2\.5'") 'a script app''s new version: detection and the Install.ps1 marker both 2.5' ($scQ | ConvertTo-Json -Compress)
     [void](Invoke-Api '/api/app-remove' @{ name = $scName }); Remove-Item -LiteralPath $scDir -Recurse -Force -ErrorAction SilentlyContinue
     # The change history: an editor save is recorded field by field, from the Editor; undo puts one change back; a rename keeps the history.
     $hName = 'ZZ History ' + [guid]::NewGuid().ToString('N').Substring(0, 4)

@@ -329,6 +329,15 @@ function Global:Save-WebApp {
     }
     # A managed app's commands and detection follow its App version (pinned).
     [void](Set-ManagedAppPin $record)
+    # The winget commands exit 9009 while winget isn't on a new device yet - a Retry return code.
+    if ($record.metadata -and [string]$record.metadata.installCommand -like '*exit 9009*') {
+        $codes = @(Add-WingetRetryReturnCode $record.metadata.returnCodes)
+        if ($record.metadata.PSObject.Properties['returnCodes']) { $record.metadata.returnCodes = $codes } else { $record.metadata | Add-Member -NotePropertyName returnCodes -NotePropertyValue $codes }
+    }
+    # An own package's scripts write the version marker its detection rule checks - they follow a new version.
+    if (-not $record.wingetId -and $record.metadata -and $existing -and $existing.metadata -and [string]$existing.metadata.appVersion -ne [string]$record.metadata.appVersion) {
+        [void](Update-WebMarkerVersion -Name $record.appName -Version ([string]$record.metadata.appVersion))
+    }
 
     $folder = Get-AppFolder -Kind Catalog -Create
     $newFile = Join-Path $folder ((Get-SafeFileNameForApp -Name $record.appName) + '.json')
@@ -387,7 +396,7 @@ function Global:Get-WebAppBackups {
                 $changed = @()
                 try {
                     $old = ConvertTo-AppRecord (Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json)
-                    foreach ($k in 'appName', 'appId', 'wingetId', 'requiredFor', 'availableFor', 'uninstallFor', 'excludeFor') {
+                    foreach ($k in 'appName', 'appId', 'wingetId', 'requiredFor', 'availableFor', 'uninstallFor', 'excludeFor', 'assignmentFilter', 'assignmentFilterMode', 'retiringSince') {
                         if ((@($old.$k) -join '|') -ne (@($app.$k) -join '|')) { $changed += $k }
                     }
                     $oldMeta = if ($old.metadata) { $old.metadata | ConvertTo-Json -Depth 8 -Compress } else { '' }
@@ -524,7 +533,8 @@ function Global:Get-WebAppHistory {
             if ($_.field -eq 'appName') { [void]$names.Add((Format-AppHistoryValue $_.before)) }
             [ordered]@{ field = [string]$_.field; before = (Format-AppHistoryValue $_.before); after = (Format-AppHistoryValue $_.after); revertable = [bool]((Test-AppRecordFieldRevertable ([string]$_.field)) -and -not $_.long) }
         })
-        $rows.Add([ordered]@{ id = [string]$e.id; at = [string]$e.at; app = [string]$e.app; kind = [string]$e.kind; source = [string]$e.source; text = [string]$e.text; changes = $changes
+        # PowerShell 7 reads the time as a date - written back in UTC (ISO), as it was stored.
+        $rows.Add([ordered]@{ id = [string]$e.id; at = $(if ($e.at -is [datetime]) { $e.at.ToUniversalTime().ToString('o') } else { [string]$e.at }); app = [string]$e.app; kind = [string]$e.kind; source = [string]$e.source; text = [string]$e.text; changes = $changes
             canUndo = ($e.kind -eq 'catalog' -and @($changes | Where-Object { $_.revertable }).Count -gt 0) })
         if ($rows.Count -ge 300) { break }
     }
@@ -550,12 +560,20 @@ function Global:Undo-WebHistoryChange {
     $empty = @('null', '""', '[]', '')
     foreach ($c in @($entry.changes)) {
         $f = [string]$c.field
+        # Only a field the app has (the history file can be edited by anyone with the Backups folder).
+        if (-not $now.Contains($f)) { $skipped.Add("$f (not a field of this app)"); continue }
         if (-not (Test-AppRecordFieldRevertable $f) -or $c.long) { $skipped.Add("$f (not undone on its own - use Earlier versions)"); continue }
         $cur = if ($now.Contains($f)) { [string]$now[$f] } else { 'null' }
         if ($cur -cne [string]$c.after -and -not ($empty -contains $cur -and $empty -contains [string]$c.after)) { $skipped.Add("$f (changed again since)"); continue }
         if (Set-AppRecordFieldJson -Record $app -Field $f -Json ([string]$c.before)) { $done.Add($f) }
     }
     if (-not $done.Count) { return @{ ok = $false; error = "Nothing to undo: $($skipped -join '; ')." } }
+    # Undoing the change that gave the app its own Intune details: no details again (the defaults apply), not empty ones.
+    if ($app.metadata -and -not @($app.metadata.PSObject.Properties | Where-Object { $v = $_.Value; -not ($null -eq $v -or ($v -is [string] -and -not $v) -or (($v -is [array]) -and -not @($v | Where-Object { $_ }).Count)) }).Count) { $app.metadata = $null }
+    # The same checks as the editor's Save, and a managed app's commands following its version.
+    $problem = Test-WebAppEdit -Record $app -OriginalName $app.appName -Others @($catalog.Apps)
+    if ($problem) { return @{ ok = $false; error = "It can't be undone: $problem" } }
+    [void](Set-ManagedAppPin $app)
     $when = try { ([datetime]$entry.at).ToLocalTime().ToString('yyyy-MM-dd HH:mm') } catch { [string]$entry.at }
     $file = Join-Path (Get-AppFolder -Kind Catalog) ((Get-SafeFileNameForApp -Name $app.appName) + '.json')
     Backup-WebAppFile $file
@@ -595,7 +613,32 @@ function Global:Update-WebAppQuick {
             if ($x.metadata.PSObject.Properties['appVersion']) { $x.metadata.appVersion = $(if ($v) { $v } else { $null }) } else { $x.metadata | Add-Member -NotePropertyName appVersion -NotePropertyValue $v }
             [void](Set-ManagedAppPin $x)
         }.GetNewClosure())
-        return @{ ok = $true }
+        $scripts = if (-not $a.wingetId -and $v) { @(Update-WebMarkerVersion -Name $name -Version $v) } else { @() }
+        return @{ ok = $true; scripts = $scripts }
     }
     return @{ ok = $false; error = 'That field cannot be changed here.' }
+}
+
+function Global:Update-WebMarkerVersion {
+    <#
+      A script app's or PSADT app's package scripts (Install.ps1,
+      Invoke-AppDeployToolkit.ps1 in its packages folder) brought to -Version,
+      so they write the version marker the detection rule checks for. The
+      names of the files changed (the package needs building again).
+    #>
+    param([string]$Name, [string]$Version)
+    if (-not (Test-ReleaseVersionText $Version)) { return @() }
+    $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $Name)
+    $changed = New-Object System.Collections.Generic.List[string]
+    foreach ($leaf in 'Install.ps1', 'Invoke-AppDeployToolkit.ps1') {
+        $file = Join-Path $folder $leaf
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+        try {
+            $r = Set-MarkerScriptVersion -Text (Get-Content -LiteralPath $file -Raw -Encoding UTF8) -Version $Version
+            if ($r.Changed) { [System.IO.File]::WriteAllText($file, $r.Text, (New-Object System.Text.UTF8Encoding($true))); $changed.Add($leaf) }
+        }
+        catch { Write-Log "[WARN] $Name`: couldn't bring $leaf to $Version - $($_.Exception.Message)" }
+    }
+    if ($changed.Count) { Write-Log "[OK] $Name`: $($changed -join ', ') now write version $Version (build the package again)." }
+    return @($changed)
 }

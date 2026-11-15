@@ -490,6 +490,8 @@ function Global:Restore-WebRetiredApp {
     if (@($catalog.Apps | Where-Object { $_.appName -eq $rec.appName }).Count) { return @{ ok = $false; error = "An app called '$($rec.appName)' is in the catalog already." } }
     $rec.appId = ''; $rec.intuneAppType = ''; $rec.intuneAppVersion = ''; $rec.retiringSince = ''; $rec.releases = @()
     $rec.requiredFor = @(); $rec.availableFor = @(); $rec.uninstallFor = @()
+    $problem = Test-WebAppEdit -Record $rec -OriginalName '' -Others @($catalog.Apps)
+    if ($problem) { return @{ ok = $false; error = "It can't be restored: $problem" } }
     $file = Join-Path (Get-AppFolder -Kind Catalog -Create) ((Get-SafeFileNameForApp -Name $rec.appName) + '.json')
     if (Test-Path -LiteralPath $file) { return @{ ok = $false; error = "A catalog file for '$($rec.appName)' exists already." } }
     Save-WebAppJson -File $file -App $rec -Text 'Restored from the retired apps (not in Intune, no groups - see earlier entries for them)'

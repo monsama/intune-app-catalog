@@ -104,7 +104,7 @@ function Global:Start-WebRelease {
     $m = $a.metadata
     if (-not $m) { $defaults = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon $own; $m = $defaults }
     if ($own) { $why = Test-VersionDetectionRule $m.detectionRule; if ($why) { return @{ ok = $false; error = "${name}: $why" } } }
-    $next = [pscustomobject]@{ managedUpdates = $true; wingetId = $a.wingetId; metadata = $m.PSObject.Copy() }
+    $next = [pscustomobject]@{ managedUpdates = $true; wingetId = $a.wingetId; appName = $a.appName; detectedName = $a.detectedName; metadata = $m.PSObject.Copy() }
     $next.metadata.appVersion = $version
     [void](Set-ManagedAppPin $next -ProductCode ([string]$Data.productCode))
     $resultPath = Join-Path $env:TEMP (".intunepkg_createapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
@@ -451,19 +451,26 @@ function Global:Remove-WebOldReleases {
 
 function Global:Get-WebUrlStatus {
     # The HTTP status a download link answers (HEAD, then a one-byte GET if HEAD isn't taken); 0 when it couldn't be asked.
-    param([string]$Url)
-    if ($Url -notmatch '^https?://') { return 0 }
+    param([string]$Url, [int]$Hops = 0)
+    # https only, and redirects followed here (at most 5), each to https too - the link comes from a manifest.
+    if ($Url -notmatch '^https://' -or $Hops -gt 5) { return 0 }
     foreach ($method in 'HEAD', 'GET') {
         try {
             $req = [System.Net.HttpWebRequest]::Create($Url)
-            $req.Method = $method; $req.AllowAutoRedirect = $true; $req.Timeout = 20000; $req.UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) IntuneAppCatalog'
+            $req.Method = $method; $req.AllowAutoRedirect = $false; $req.Timeout = 20000; $req.UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) IntuneAppCatalog'
             if ($method -eq 'GET') { $req.AddRange(0, 0) }
-            $resp = $req.GetResponse(); $code = [int]$resp.StatusCode; $resp.Close()
+            $resp = $req.GetResponse(); $code = [int]$resp.StatusCode; $location = [string]$resp.Headers['Location']; $resp.Close()
+            if ($code -ge 300 -and $code -lt 400 -and $location) { return (Get-WebUrlStatus -Url ([string](New-Object System.Uri((New-Object System.Uri($Url)), $location))) -Hops ($Hops + 1)) }
             return $code
         }
         catch [System.Net.WebException] {
             $resp = $_.Exception.Response
-            if ($resp) { $code = [int]$resp.StatusCode; $resp.Close(); if ($method -eq 'HEAD' -and $code -notin 404, 410) { continue }; return $code }
+            if ($resp) {
+                $code = [int]$resp.StatusCode; $location = [string]$resp.Headers['Location']; $resp.Close()
+                if ($code -ge 300 -and $code -lt 400 -and $location) { return (Get-WebUrlStatus -Url ([string](New-Object System.Uri((New-Object System.Uri($Url)), $location))) -Hops ($Hops + 1)) }
+                if ($method -eq 'HEAD' -and $code -notin 404, 410) { continue }
+                return $code
+            }
             if ($method -eq 'GET') { return 0 }
         }
         catch { return 0 }
@@ -474,7 +481,7 @@ function Global:Get-WebUrlStatus {
 function Global:Get-WebDownloadChecks {
     # The kept results: "<winget id>|<version>" -> @{ status; text; url; at; latestOnly }.
     if ($Global:App.DownloadChecks) { return $Global:App.DownloadChecks }
-    $h = @{}
+    $h = [hashtable]::Synchronized(@{})
     $file = Join-Path (Get-AppFolder -Kind Logs -Create) 'download-checks.json'
     if (Test-Path -LiteralPath $file) {
         try { $j = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json; foreach ($p in $j.PSObject.Properties) { $h[$p.Name] = $p.Value } } catch { }
@@ -497,21 +504,30 @@ function Global:Test-WebPinnedDownload {
         param([string]$V)
         $show = Invoke-Winget -Arguments @(@('show', '--id', $WingetId, '--exact') + $(if ($V) { @('--version', $V) } else { @() }) + @('--accept-source-agreements', '--disable-interactivity')) -TimeoutSeconds 60
         $url = ConvertFrom-WingetInstallerUrl $show.StdOut
-        $inWinget = [bool]($show.ExitCode -eq 0 -and $url)
-        $verdict = Get-DownloadCheckVerdict -InWinget $inWinget -StatusCode $(if ($inWinget) { Get-WebUrlStatus $url } else { 0 }) -Version $(if ($V) { $V } else { 'the newest version' })
+        $label = if ($V) { $V } else { 'the newest version' }
+        # Only winget's own "no package found" (0x8A150014) means it's gone from winget; any other failure (no network, a source problem, an answer that can't be read) isn't known.
+        $verdict = if ($show.ExitCode -eq 0 -and $url) { Get-DownloadCheckVerdict -InWinget $true -StatusCode (Get-WebUrlStatus $url) -Version $label }
+            elseif ($show.ExitCode -eq -1978335212) { Get-DownloadCheckVerdict -InWinget $false -StatusCode 0 -Version $label }
+            else { Get-DownloadCheckVerdict -InWinget $true -StatusCode 0 -Version $label -NoLink }
         $verdict.url = $url
         $verdict
     }
     try { $r = & $check $Version }
     catch { $r = @{ status = 'unknown'; text = "winget couldn't be asked: $($_.Exception.Message)"; url = '' } }
     $r.latestOnly = $false
+    if ($r.url -and $r.url -notmatch '^https://' -and $r.status -eq 'unknown') { $r.text = "The $Version download isn't on https - not asked from here." }
     if ($r.status -in 'gone', 'notinwinget') {
         try { if ((& $check '').status -eq 'ok') { $r.latestOnly = $true; $r.text += ' The newest version can be downloaded - this vendor keeps only its latest version online: release new versions soon after they come out (fast track), or turn managed updates off for this app.' } } catch { }
     }
     $r.at = (Get-Date).ToString('yyyy-MM-dd HH:mm')
     $h = Get-WebDownloadChecks
-    $h["$WingetId|$Version"] = $r
-    try { [System.IO.File]::WriteAllText((Join-Path (Get-AppFolder -Kind Logs -Create) 'download-checks.json'), (ConvertTo-Json -InputObject $h -Depth 4), (New-Object System.Text.UTF8Encoding($false))) } catch { }
+    # Requests run side by side: one at a time changes and writes the results.
+    [System.Threading.Monitor]::Enter($h.SyncRoot)
+    try {
+        $h["$WingetId|$Version"] = $r
+        try { [System.IO.File]::WriteAllText((Join-Path (Get-AppFolder -Kind Logs -Create) 'download-checks.json'), (ConvertTo-Json -InputObject ([hashtable]$h.Clone()) -Depth 4), (New-Object System.Text.UTF8Encoding($false))) } catch { }
+    }
+    finally { [System.Threading.Monitor]::Exit($h.SyncRoot) }
     return $r
 }
 

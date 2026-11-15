@@ -46,6 +46,10 @@ try {
         installExperience  = @{ '@odata.type' = 'microsoft.graph.winGetAppInstallExperience'; runAsAccount = $(if ([string]$Config.RunAsAccount -eq 'user') { 'user' } else { 'system' }) }
     }
     if ($Config.AppId) {
+        # Into the PATCH address as is - only a GUID.
+        $parsedAppId = [guid]::Empty
+        if (-not [guid]::TryParse([string]$Config.AppId, [ref]$parsedAppId)) { throw "'$($Config.AppId)' isn't an Intune App ID (a GUID)." }
+        $Config.AppId = $parsedAppId.ToString()
         Write-Step "Updating the Store app in Intune"
         # packageIdentifier can't change on an existing app - it's left out.
         Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.AppId)" -Method PATCH -Body ($body | ConvertTo-Json -Depth 6) -ContentType 'application/json' -ErrorAction Stop | Out-Null

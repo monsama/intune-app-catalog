@@ -224,6 +224,8 @@ $('btnRelGo').addEventListener('click', async () => {
   if (!version) { $('relErr').textContent = 'Type the version to release.'; $('relErr').hidden = false; return; }
   $('relErr').hidden = true; $('relLog').hidden = false; $('btnRelGo').disabled = true;
   if (relInfo && relInfo.kind === 'package' && $('relBuild').checked) {
+    // A script or PSADT app's scripts write the version its detection checks - brought to this version before the build.
+    await api('/api/marker-version', { name, version });
     const built = await releaseStep({ names: [name] }, '/api/package-start', 'relLog', `Building ${name}'s package...`);
     if (!built.ok) { $('relErr').textContent = built.error || 'Building the package failed - see the log.'; $('relErr').hidden = false; $('btnRelGo').disabled = false; return; }
   }
