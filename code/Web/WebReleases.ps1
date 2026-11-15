@@ -680,6 +680,7 @@ function Global:Invoke-WebWauSwitch {
     $noVersion = New-Object System.Collections.Generic.List[string]
     $managed = ([string]$Global:App.DefaultAppSettings.WingetInstallMethod) -ne 'Winget'
     $byHand = New-Object System.Collections.Generic.List[string]
+    $dropped = New-Object System.Collections.Generic.List[string]
     foreach ($a in @($all | Where-Object { @(Get-WauUse $_).Count })) {
         if (Get-WebAppRelease $a) { continue }
         if ($Data.auto -and $a.appId) { continue }
@@ -690,6 +691,8 @@ function Global:Invoke-WebWauSwitch {
         # Commands in another wording (other path, quotes, switches) that still run Winget-Install.ps1 for this app's own ID are WAU's too.
         if (-not $isWau -and $a.wingetId -and -not (Test-StoreProductId ([string]$a.wingetId)) -and (Test-WauCommandForId -WingetId ([string]$a.wingetId) -Command ([string]$m.installCommand))) { $isWau = $true }
         if ($isWau) {
+            $extras = Get-WauCommandExtras ([string]$m.installCommand)
+            if ($extras) { $dropped.Add("$($a.appName) ($extras)") }
             $hasVersion = Test-ReleaseVersionText ([string]$m.appVersion)
             # Managed updates only with a version to pin. Without one an app in Intune would be refused by Send (it needs
             # the version first) and keep WAU there - so it gets the plain winget command now, managed updates once it has one.
@@ -713,8 +716,9 @@ function Global:Invoke-WebWauSwitch {
         $changed.Add([string]$a.appName)
     }
     if ($byHand.Count -and -not $Data.auto) { Write-Log "[WARN] Not switched - their Winget-AutoUpdate commands were edited by hand, change them in the editor (Install with): $($byHand -join ', ')." }
-    if (-not $changed.Count) { return @{ ok = $true; changed = @(); noVersion = @(); deployed = @(); byHand = $byHand.ToArray(); wauApp = $wauApp } }
+    if (-not $changed.Count) { return @{ ok = $true; changed = @(); noVersion = @(); deployed = @(); byHand = $byHand.ToArray(); dropped = @(); wauApp = $wauApp } }
+    if ($dropped.Count) { Write-Log "[INFO] Left out WAU's extra winget options (winget's own command uses the package's silent switches): $($dropped -join '; ')." }
     Save-WebUndo $undo
     Write-Log "[OK] Switched $($changed.Count) app(s) from Winget-AutoUpdate to $(if ($managed) { 'managed updates' } else { 'the winget command' })$(if ($noVersion.Count) { " ($($noVersion.Count) still need an App version: $($noVersion -join ', '))" })."
-    return @{ ok = $true; changed = $changed.ToArray(); noVersion = $noVersion.ToArray(); deployed = @($all | Where-Object { $changed -contains $_.appName -and $_.appId } | ForEach-Object { [string]$_.appName }); byHand = $byHand.ToArray(); wauApp = $wauApp }
+    return @{ ok = $true; changed = $changed.ToArray(); noVersion = $noVersion.ToArray(); deployed = @($all | Where-Object { $changed -contains $_.appName -and $_.appId } | ForEach-Object { [string]$_.appName }); byHand = $byHand.ToArray(); dropped = $dropped.ToArray(); wauApp = $wauApp }
 }
