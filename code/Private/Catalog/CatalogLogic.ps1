@@ -2288,7 +2288,25 @@ function Global:Test-WauCommandForId {
     $m = [regex]::Match($Command, '(?i)-AppIDs?\s+(?:"([^"]*)"|''([^'']*)''|(\S+))')
     if (-not $m.Success) { return $false }
     $ids = ($m.Groups[1].Value + $m.Groups[2].Value + $m.Groups[3].Value).Trim()
-    return ($ids -ieq $WingetId)
+    # WAU passes what follows the ID on to winget: "7zip.7zip --scope machine --override /S" is still this app's.
+    $parts = @($ids -split '\s+' | Where-Object { $_ })
+    if (-not $parts.Count -or $parts[0] -ine $WingetId) { return $false }
+    return ($parts.Count -eq 1 -or $parts[1].StartsWith('--'))
+}
+
+function Global:Get-WauCommandExtras {
+    <#
+      Pure: the winget options a WAU command passed after the app's ID
+      ("--override /S"), which the switch to winget's own command leaves
+      out - '' when there are none. --scope machine isn't counted: the
+      generated command installs for the machine already (System context).
+    #>
+    param([string]$Command)
+    $m = [regex]::Match([string]$Command, '(?i)-AppIDs?\s+(?:"([^"]*)"|''([^'']*)''|(\S+))')
+    if (-not $m.Success) { return '' }
+    $ids = ($m.Groups[1].Value + $m.Groups[2].Value + $m.Groups[3].Value).Trim()
+    $rest = (($ids -split '\s+', 2) | Select-Object -Skip 1) -join ''
+    return ([regex]::Replace([string]$rest, '(?i)--scope\s+machine', '') -replace '\s+', ' ').Trim()
 }
 
 function Global:Get-WauUse {

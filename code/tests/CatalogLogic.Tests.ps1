@@ -203,6 +203,7 @@ $testableFunctionNames = @(
     "Test-WauAppName",
     "Get-WauUse",
     "Test-WauCommandForId",
+    "Get-WauCommandExtras",
     "Get-ReleaseAvailableSettings",
     "Get-AppRecordFieldValues",
     "Get-AppRecordChanges",
@@ -954,6 +955,10 @@ Assert-True ((Test-WauCommandForId '7zip.7zip' 'powershell.exe -NoProfile -Execu
     "Test-WauCommandForId: Winget-Install.ps1 for the app's own ID, in another wording (path, quotes, case, extra switches)"
 Assert-True (-not (Test-WauCommandForId '7zip.7zip' '"Winget-Install.ps1" -AppIDs "7zip.7zip,Git.Git"') -and -not (Test-WauCommandForId '7zip.7zip' '"Winget-Install.ps1" -AppIDs Git.Git') -and -not (Test-WauCommandForId '7zip.7zip' 'winget install --id 7zip.7zip')) `
     "Test-WauCommandForId: several IDs, another ID, or no Winget-Install.ps1 - not this app's WAU command"
+$wauExtra = '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File "C:\Program Files\Winget-AutoUpdate\Winget-Install.ps1" -AppIDs "7zip.7zip --scope machine --override /S"'
+Assert-True ((Test-WauCommandForId '7zip.7zip' $wauExtra) -and -not (Test-WauCommandForId '7zip.7zip' '"Winget-Install.ps1" -AppIDs "7zip.7zip Git.Git"')) "Test-WauCommandForId: winget options after the ID still make it this app's command; a second ID doesn't"
+Assert-Equal '--override /S' (Get-WauCommandExtras $wauExtra) "Get-WauCommandExtras: the options WAU passed on, --scope machine not counted"
+Assert-Equal '' (Get-WauCommandExtras '"Winget-Install.ps1" -AppIDs "7zip.7zip"') "Get-WauCommandExtras: none"
 Assert-True ((Test-WauAppName 'Winget-AutoUpdate') -and (Test-WauAppName 'Romanitho.Winget-AutoUpdate') -and (Test-WauAppName 'winget autoupdate') -and -not (Test-WauAppName 'Winget Tools')) "Test-WauAppName: its names and Winget ID"
 $avail = New-AppAssignmentBody -Entries @(Get-DesiredAssignmentEntries -RequiredGroups @('Pilot') -AvailableGroups @('All')) -GroupIdByName @{ All = 'g1'; Pilot = 'g2' } -AvailableSettings (Get-ReleaseAvailableSettings)
 $aAvail = @($avail.mobileAppAssignments | Where-Object { $_.intent -eq 'available' }); $aReq = @($avail.mobileAppAssignments | Where-Object { $_.intent -eq 'required' })

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.24.2
+
+- **Switch from Winget-AutoUpdate** also takes WAU commands that pass
+  winget options after the ID (`-AppIDs "7zip.7zip --scope machine
+  --override /S"`). winget's own command installs for the machine already
+  and uses each package's silent switches; any other options left out
+  (such as `--override /S`) are listed after the switch, so you can check
+  those apps.
+- **Home refreshes by itself:** after any change made in the app, when you
+  come back to the window, and every minute while it's open (so another
+  admin's changes show up too) - quietly, without "Looking..." each time.
+
 ## 2.24.1
 
 - **Switch from Winget-AutoUpdate** now also switches apps whose WAU
