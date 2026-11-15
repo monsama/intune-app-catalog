@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.26.3
+
+- The tenant test checklist has a section for the blocks and the code
+  editor (10c), and the "renamed group" step says what the app does now.
+
 ## 2.26.2
 
 **Bug review fixes.**
