@@ -1362,3 +1362,42 @@ fieldset.ownrule > legend + * { clear: both; }
 #dlgCode.cmdmode #seText, #dlgCode.cmdmode #seHl { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; }
 #dlgCode.cmdmode #seGutter { display: none; }
 #dlgCode.cmdmode .code { min-height: 0; height: 240px; grid-template-columns: 1fr; }
+
+/* ---- Dropdowns (2.27.7): one look everywhere ----
+   The same text (13px, regular - not the bold of the label around it), the same corners and colours, and the
+   app's own chevron instead of the browser's arrow (which looks different on every system). Lists that show
+   several rows at once (multiple, size) keep theirs. */
+select:not([multiple]):not([size]) {
+  -webkit-appearance: none; appearance: none;
+  font: inherit; font-size: 13px; font-weight: 400; line-height: 1.2; color: var(--fg);
+  background-color: var(--field, var(--surface));
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+  border: 1px solid var(--bd); border-radius: var(--r-m);
+  padding: 0 30px 0 10px; text-overflow: ellipsis; cursor: pointer;
+}
+select:not([multiple]):not([size]):hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 55%, var(--bd)); }
+select:not([multiple]):not([size]):focus { border-color: var(--accent); box-shadow: var(--ring); outline: none; }
+select:not([multiple]):not([size]):disabled { opacity: .55; cursor: default; }
+select option, select optgroup { background: var(--surface); color: var(--fg); font-weight: 400; }
+/* Compact places (a block row, the version picker): the same look, a row's height. */
+.brec select:not([multiple]):not([size]), select.pver, select.verpick { height: 30px; font-size: 13px; border-radius: var(--r-m); padding: 0 30px 0 10px !important; }
+
+/* ---- The page bar (2.27.8): a fixed header above every page ----
+   The page's name left, coffee and theme right, on the sidebar's colour with a hairline under it - it stays at
+   the top while the page scrolls, and lines up with the sidebar's brand row. */
+.pagebar { position: sticky; top: 0; z-index: 15; height: 56px; min-height: 56px; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--bd2); box-sizing: border-box; }
+.pagebar .pagetitle { font-size: 17px; }
+.pagebar + .banner, .pagebar ~ main > .view { margin-top: 0; }
+main > .view { padding-top: 16px; }
+@media (max-width: 640px) { .pagebar { height: 48px; min-height: 48px; padding: 0 12px; } }
+/* The header's hairline runs on under the logo: the brand row is the page bar's height, with the same line, across the
+   whole sidebar - one line through the full width of the window. */
+@media (min-width: 641px) {
+  .topbar { padding-top: 0; }
+  .topbar > .brand { height: 56px; min-height: 56px; box-sizing: border-box; margin: 0 -12px 10px; padding: 0 20px; border-bottom: 1px solid var(--bd2); align-content: center; flex-wrap: wrap; }
+}
+@media (min-width: 641px) and (max-width: 1099px) {
+  .topbar > .brand { margin: 0 -8px 10px; padding: 0; justify-content: center; }
+}

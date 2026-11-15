@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.27.8
+
+- **A fixed header bar above every page**: the page's name on the left,
+  coffee and theme on the right, on the sidebar's colour with a hairline
+  under it, the height of the sidebar's brand row. It stays at the top
+  while the page scrolls; the two buttons are always in it (on wide
+  windows they used to move into each page's own toolbar). Its hairline
+  runs on under the logo, so one line goes through the full width of the
+  window (also with the narrow icon sidebar).
+
+## 2.27.7
+
+- **Dropdowns look the same everywhere.** One style for all 41 of them on
+  every page, Settings section, dialog and editor tab: the app's own
+  chevron (the browser's arrow looked different on every system), regular
+  text (27 had taken the bold of their label, 12 hadn't), the same size,
+  corners, colours, hover and focus; the editor's block rows use the same
+  look at a row's height. The open list follows the theme too.
+
 ## 2.27.6
 
 - **Script apps written another way get their blocks.** Commands like
