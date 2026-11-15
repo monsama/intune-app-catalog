@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.18.1
+
+Layout fixes, found by checking every page and Settings section for
+fields that are cut off, overflow their card or don't line up.
+
+- **Settings > Updates**: the pilot groups are **Ring 1 - Pilot**, in the
+  same row layout as the rings after it, so it's clear the first box is
+  the first ring. Ring names and group boxes have the same height.
+- **Group boxes** everywhere are as high as the text fields next to them.
+- **Settings > Apps & defaults**:
+  - The default values no longer run out of their card, and the return
+    codes show their full type, with a small x to remove one.
+  - Assignment profiles show the name on one line and their three group
+    boxes under it. Before, the name box was two letters wide and
+    Excluded ran off the card.
+- **Headings inside a card** are smaller than the card's title, with even
+  spacing and a divider (Nightly run, Updates and others).
+- **Toolbars**: all buttons and fields in a row are the same height (Save
+  view... and Columns... on the Apps list, the time on Nightly run).
+
 ## 2.18.0
 
 Day-to-day logic and leftovers, from a review of how the app is used every

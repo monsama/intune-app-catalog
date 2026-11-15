@@ -476,9 +476,14 @@
       <div class="col">
         <article class="card">
           <h2>Managed updates</h2>
-          <p class="sub" id="pilotGroupsHint">Apps with managed updates install a fixed version. A new version is released to these groups first (Required), and to everyone when it's promoted. Groups that Entra ID doesn't have yet are created when used.</p>
-          <textarea id="pilotGroups" aria-labelledby="pilotGroupsHint" rows="3" class="full" placeholder="e.g. SG-Intune-Pilot" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
-          <p class="sub" id="ringsHint">Release rings after the pilot groups <span class="muted">(optional)</span>: a release that passes the rule in one ring goes on to the next, then to everyone. Add a ring, name it and give it its groups. <button type="button" class="help" data-help="rings" aria-label="What are release rings?">?</button></p>
+          <p class="sub" id="pilotGroupsHint">Apps with managed updates install a fixed version. A new version goes to the release rings one after the other (Required), then to everyone when it's promoted. <b>Ring 1 is the pilot</b> - the few test devices that get every new version first. Groups that Entra ID doesn't have yet are created when used.</p>
+          <div class="ringrow pilotrow">
+            <span class="muted rnum">Ring 1</span>
+            <input class="rname" value="Pilot" readonly tabindex="-1" aria-label="Ring 1 name (always the pilot)" title="Ring 1 is always the pilot">
+            <textarea id="pilotGroups" aria-label="Ring 1 (pilot) groups" aria-describedby="pilotGroupsHint" rows="3" class="full" placeholder="e.g. SG-Intune-Pilot" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
+            <span class="ringpad" aria-hidden="true"></span>
+          </div>
+          <p class="sub" id="ringsHint">More rings after the pilot <span class="muted">(optional)</span>: a release that passes the rule in one ring goes on to the next, then to everyone. <button type="button" class="help" data-help="rings" aria-label="What are release rings?">?</button></p>
           <textarea id="releaseRings" aria-labelledby="ringsHint" rows="2" class="full" placeholder="e.g. Early adopters: SG-Intune-Early, SG-IT" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
           <h3>When a release is ready for the next ring</h3>
           <div class="policy">

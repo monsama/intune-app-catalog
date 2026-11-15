@@ -863,3 +863,37 @@ input.qedit { padding: 3px 8px; font-size: 12px; width: 180px; }
 .dlok { color: var(--ok); margin-left: 6px; font-size: 12px; }
 /* Not connected / test mode: a ring, not blank (the icon rail shows only the mark). */
 .conn.none::before, .conn.warn::before { content: ''; width: 8px; height: 8px; border-radius: 50%; border: 2px solid currentColor; box-sizing: border-box; }
+/* Release rings: ring 1 (the pilot) in the same row layout as the others; the name and group boxes the same height. */
+.ringrow .rname { height: 36px; }
+.ringrow .chipbox { min-height: 36px; }
+.pilotrow { margin: 8px 0 4px; }
+.pilotrow .rname[readonly] { color: var(--muted); background: var(--bd2); cursor: default; }
+.pilotrow .ringpad { width: 64px; }
+.chipbox { min-height: 36px; padding: 3px 6px; align-content: center; }
+.chipbox input.chipinput { padding: 3px 2px; }
+/* The input inside a group box: not the field look (the general input rule is more specific - hence !important). */
+.chipbox input.chipinput { padding: 3px 2px !important; border: 0 !important; background: transparent !important; box-shadow: none !important; min-height: 0; }
+/* Cards: the title is the biggest heading; sections inside it are smaller, with even spacing. */
+.card > h2 { font-size: 16px; margin: 0 0 4px; }
+.card h3 { font-size: 13.5px; font-weight: 600; margin: 20px 0 6px; padding-top: 14px; border-top: 1px solid var(--bd2); }
+.card > h2 + .sub, .card > h2 + p { margin-top: 0; }
+.card .actions { margin-top: 10px; }
+.card .actions + .actions { margin-top: 8px; }
+/* Grid columns may shrink below their content (else fields run out of their card). */
+.formgrid > *, .two > *, .policy > *, .cols > *, .col > * { min-width: 0; }
+.two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.two > label > input, .two > label > select { width: 100%; }
+.coderow { grid-template-columns: 90px minmax(0, 1fr) auto; }
+/* Assignment profiles: the name (and Remove) on one line, its three group boxes under it. */
+.profrows { gap: 0; }
+.profrow2 { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: start; gap: 8px 10px; padding: 12px 0; border-bottom: 1px solid var(--bd2); }
+.profrow2 > .pfield:first-child { grid-column: 1 / 4; grid-row: 1; }
+.profrow2 > .pfield:not(:first-child) { grid-row: 2; }
+.profrow2 > .btn { grid-column: 4; grid-row: 1; align-self: end; }
+@media (max-width: 900px) { .profrow2 { grid-template-columns: minmax(0, 1fr) auto; } .profrow2 > .pfield:first-child { grid-column: 1; } .profrow2 > .pfield:not(:first-child) { grid-row: auto; grid-column: 1 / -1; } .profrow2 > .btn { grid-column: 2; } }
+/* Toolbars: every control the same height. */
+.toolbar > input:not([type=checkbox]), .toolbar > select, .toolbar > .btn, .toolbar input[type=time] { height: 34px; }
+.toolbar > .btn.small { padding-top: 0; padding-bottom: 0; font-size: 13px; }
+.coderow { grid-template-columns: 76px minmax(0, 1fr) 30px; }
+.btn.rowx { padding: 2px 0; width: 28px; font-size: 16px; line-height: 1; color: var(--muted); }
+.btn.rowx:hover { color: var(--err); background: var(--err-bg); }

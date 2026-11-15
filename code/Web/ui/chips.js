@@ -69,7 +69,7 @@ function codeRows(id) {
     const r = el('div', { class: 'coderow' },
       el('input', { type: 'text', inputmode: 'numeric', value: code, 'aria-label': 'Exit code', placeholder: 'e.g. 0', pattern: '-?\\d+', oninput: write }),
       el('select', { 'aria-label': 'What the exit code means', onchange: write }, ...codeTypes.map(([v, t]) => el('option', { value: v, text: t, selected: v === type }))),
-      el('button', { type: 'button', class: 'btn small ghost', text: 'Remove', 'aria-label': `Remove exit code ${code || ''}`.trim(), onclick: () => { r.remove(); write(); } }));
+      el('button', { type: 'button', class: 'btn small ghost rowx', text: '×', title: 'Remove this exit code', 'aria-label': `Remove exit code ${code || ''}`.trim(), onclick: () => { r.remove(); write(); } }));
     return r;
   };
   const render = () => box.replaceChildren(...parse().map(x => row(x.code, x.type)), el('button', { type: 'button', class: 'btn small', text: 'Add a return code', onclick: () => { const r = row('', 'success'); box.insertBefore(r, box.lastChild); r.querySelector('input').focus(); } }));
