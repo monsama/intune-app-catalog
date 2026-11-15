@@ -40,6 +40,12 @@
   so **Previous version** can trust it), notes who changed it in Recent
   changes, and offers **Build package**. Only those files, in the app's own
   package folder.
+- Reviewed for security, correctness and behaviour before release: the
+  version marker is checked by where it runs in the script (not commented
+  out, put in a condition or after an exit), MSI values with `%VAR%` are
+  quoted, links in the package folders are refused, release marker writes
+  share the save lock, and the editor keeps focus, sequence and Ctrl+S to
+  itself.
 
 ## 2.25.0
 
