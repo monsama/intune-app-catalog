@@ -521,6 +521,9 @@ try {
     $hApp = (Invoke-Api '/api/app-get' @{ name = $hName }).app
     Check ($hu.ok -and @($hApp.requiredFor).Count -eq 1 -and $hApp.metadata.description -eq 'first') 'history: undo puts that change''s fields back' ($hu | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/history-undo' @{ name = $hName; id = $hLast.id }).ok) 'history: undoing it twice does nothing (the fields were changed since)'
+    $ch = Invoke-Api '/api/catalog-history' @{ limit = 50 }
+    $chMine = @($ch.groups | Where-Object { @($_.items | Where-Object { $_.app -eq $hName }).Count })
+    Check ($ch.ok -and $chMine.Count -ge 2 -and @($chMine[0].items | Where-Object { $_.app -eq $hName -and $_.id }).Count -ge 1) 'recent changes: the catalog''s history across apps, newest first, each change with its id' (@{ n = @($ch.groups).Count; mine = $chMine.Count } | ConvertTo-Json -Compress)
     [void](Invoke-Api '/api/app-save' @{ originalName = $hName; app = @{ appName = "$hName R"; wingetId = 'Contoso.History'; appId = ''; requiredFor = @('SG-A'); metadata = @{ description = 'first' } } })
     $hr = Invoke-Api '/api/app-history' @{ name = "$hName R" }
     Check (@($hr.entries).Count -eq 4 -and @($hr.entries[0].changes | Where-Object { $_.field -eq 'appName' }).Count -eq 1 -and $hr.entries[-1].app -eq $hName) 'history: a rename keeps what happened under the old name' ($hr | ConvertTo-Json -Compress -Depth 6)

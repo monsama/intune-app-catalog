@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.21.0
+
+- **Recent changes.** A clock button on the Apps toolbar (and Catalog >
+  Recent changes, Ctrl+K) opens every change to the catalog, newest
+  first: when, from where (Editor, Batch edit, Updates, the nightly run,
+  ...), what, and which apps - an action on many apps is one entry you
+  open to see each app's fields, before and after. Each change can be
+  undone on its own, and the last bulk change as a whole ("Undo it").
+  The bar over the apps list is gone; a dot on the clock says a bulk
+  change can be undone.
+- **Apps > Version says which version devices get**, one way per app:
+  - **pinned** (managed updates): a lock and the version - with an arrow
+    when winget has a newer one to release;
+  - **newest** (the winget command): devices get whatever winget has,
+    its version today in grey - no arrow, there's nothing to release;
+  - **not pinned yet**: managed, but the version to pin isn't set;
+  - **Store**, **-** (Microsoft's own apps) and **not set** (own
+    installer without a version).
+
 ## 2.20.1
 
 The cosmetic leftovers from the 2.20 sweep.

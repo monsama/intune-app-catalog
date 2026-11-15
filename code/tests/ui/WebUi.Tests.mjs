@@ -267,12 +267,19 @@ try {
         await page.waitForFunction(() => !document.getElementById('dlgApp').open);
 
         // Undo the last bulk change (Add groups): the group is gone again, the owner from Batch edit stays.
-        await page.waitForSelector('#undoBanner:not([hidden])');
-        check(/Add groups/.test(await page.textContent('#undoText')), `${label}: the undo banner names the last bulk change`, await page.textContent('#undoText'));
-        await page.click('#btnUndo');
+        // Recent changes: the dot says a bulk change can be undone; the panel lists it and takes it back.
+        await page.waitForSelector('#recentDot:not([hidden])');
+        await page.click('#btnRecent');
+        await page.waitForSelector('#recentUndo:not([hidden])');
+        check(/Add groups/.test(await page.textContent('#recentUndo')), `${label}: Recent changes names the last bulk change`, await page.textContent('#recentUndo'));
+        check(/SG-ZZ-UI/.test(await page.textContent('#recentList')) || (await page.locator('#recentList > li').count()) > 0, `${label}: Recent changes lists the changes`);
+        await a11y('Recent changes');
+        await page.click('#recentUndo .btn');
         await page.waitForSelector('#dlgAsk[open]');
         await page.click('#askOk');
-        await page.waitForSelector('#undoBanner', { state: 'hidden' });
+        await page.waitForSelector('#recentDot', { state: 'hidden' });
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => !document.getElementById('dlgRecent').open);
         await page.dblclick(`#gridBody tr[data-name="${testApp}"]`);
         await page.waitForSelector('#dlgApp[open]');
         await page.waitForFunction(() => document.getElementById('aName').value !== '');

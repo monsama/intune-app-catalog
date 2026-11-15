@@ -89,6 +89,7 @@
       </div>
       <button class="btn small" id="btnDeleteView" hidden title="Forget this saved view">Delete view</button>
       <span class="count" id="count"></span>
+      <button class="btn iconbtn recentbtn" id="btnRecent" aria-label="Recent changes" title="Recent changes - every change to the catalog, with Undo"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg><span class="dot" id="recentDot" hidden></span></button>
       <span class="spacer"></span>
       <button class="btn primary" id="btnAddApp" title="Add apps to the catalog - nothing changes in Intune until you send them">Add apps</button>
       <button class="btn primary" id="btnNext" hidden title="The next step for the selected app">Next step</button>
@@ -105,11 +106,6 @@
       <button class="btn small" id="btnTenantShow" title="Show only the apps whose App ID this tenant doesn't know">Show them</button>
       <button class="btn small primary" id="btnTenantSetup" title="Clear the old App IDs, create the groups, deploy and send groups - step by step">Set up this tenant...</button>
     </div>
-    <div class="banner info slim" id="undoBanner" role="region" aria-label="Last bulk change" hidden>
-      <span id="undoText"></span>
-      <button class="btn small" id="btnUndo" title="Put back each app file as it was before this change - files changed since are left alone">Undo</button>
-      <button class="btn small" id="btnUndoHide" title="Hide this until the next bulk change">Hide</button>
-    </div>
     </div>
     <div class="appsplit">
     <div class="tablewrap" tabindex="0" aria-label="Apps in the catalog">
@@ -117,7 +113,7 @@
         <thead><tr>
           <th data-sort="name" title="The app's name in the catalog (and in Intune). Click a header to sort.">App</th>
           <th data-sort="wingetId" title="Where it installs from: a winget package, or its own installer">Source</th>
-          <th data-sort="version" title="The App version it installs (managed updates) or shows. Greyed when none is set: what devices get instead.">Version</th>
+          <th data-sort="version" title="Which version devices get: a lock and the version when it's pinned (managed updates - an arrow when winget has a newer one to release), or newest when it isn't (winget's version today in grey).">Version</th>
           <th data-sort="groups" title="Who gets it - hover for the groups by role">Who gets it</th>
           <th data-sort="status" title="Where the app is: Draft, Ready to send, In Intune, In pilot, Everyone - or Needs a look, Other tenant, Microsoft app, Retire. The button is its next step.">Stage</th>
         </tr></thead>
@@ -679,6 +675,7 @@
   <button role="menuitem" data-cact="import" title="Read a CSV edited in Excel: shows every change first, then applies it to the catalog">Import from CSV...</button>
   <hr>
   <button role="menuitem" data-cact="replace" title="Swap one group for another on every app, in every role - the catalog only">Replace a group in all apps...</button>
+  <button role="menuitem" data-cact="recent" title="Every change to the catalog, newest first - with Undo">Recent changes...</button>
   <button role="menuitem" data-cact="undo" title="Take back the last batch edit, group change, App ID clearing or CSV import">Undo last bulk change...</button>
   <button role="menuitem" data-cact="retired" title="Apps retired from Intune and archived - bring one back into the catalog">Retired apps...</button>
   <hr>
@@ -740,6 +737,14 @@
     <div class="preview" id="histNow"></div>
   </div>
   </details>
+  <div class="actions end"><button class="btn" data-close>Close</button></div>
+</dialog>
+<dialog id="dlgRecent" class="wide" aria-labelledby="recentTitle">
+  <h2 id="recentTitle">Recent changes</h2>
+  <p class="sub">Every change to the catalog's apps, newest first - by you, a batch action, the nightly run. Undo puts back what one change changed (fields changed again since are left alone). Intune isn't touched: send the apps again afterwards.</p>
+  <div class="recentundo" id="recentUndo" hidden></div>
+  <div class="toolbar tight"><input type="search" id="recentFilter" placeholder="Filter by app, field or action" aria-label="Filter the changes" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><span class="muted" id="recentNote"></span></div>
+  <ol class="recentlist" id="recentList"></ol>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
 <dialog id="dlgRetire" aria-labelledby="retireTitle">

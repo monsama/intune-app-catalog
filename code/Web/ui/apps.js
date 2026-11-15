@@ -147,8 +147,7 @@ function renderApps() {
       el('td', { class: 'name' }, iconFor(a), a.name),
       el('td', { class: 'mono src', text: a.msHint && !a.wingetId ? 'Microsoft (Intune)' : !a.wingetId ? 'own installer' : isStoreId(a.wingetId) ? `${a.wingetId} (Store)` : a.wingetId,
         title: !a.wingetId ? 'Its own installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') : isStoreId(a.wingetId) ? 'A Microsoft Store app - Intune\'s own Store type: no package, the Store installs and updates it' : `winget package ${a.wingetId}` }),
-      el('td', { class: 'num' }, a.version || versionFallback(a), a.pilotVersion ? el('span', { class: 'pill warn newer', text: 'pilot ' + a.pilotVersion, title: `${a.pilotVersion} is released to the pilot groups. More > Promote version in pilot gives it to everyone.` })
-        : a.newerOnWinget ? el('span', { class: 'pill info newer', text: '→ ' + a.wingetVersion, title: a.managed && a.hasAppId ? `winget offers ${a.wingetVersion}. More > Release new version sends it to the pilot groups first.` : `winget offers ${a.wingetVersion}. More > Take winget's version uses it as the App version.` }) : ''),
+      el('td', { class: 'num' }, ...versionCell(a)),
       el('td', { title: `Required: ${a.required}, Available: ${a.available}, Uninstall: ${a.uninstall}`, class: a.required + a.available ? '' : 'muted', text: a.required + a.available + a.uninstall ? `${(a.groups || []).length} group${(a.groups || []).length === 1 ? '' : 's'}` : 'nobody yet' }),
       el('td', {}, stageCell(a)));
     tr.addEventListener('click', e => selectRow(a.name, e));
@@ -544,13 +543,13 @@ $('btnDeleteView').addEventListener('click', async () => {
 renderViewOptions();
 
 // ---------------------------------------------------------------- undo the last bulk change
-let undoInfo = null, undoHidden = '';
-const undoKey = u => u ? `${u.label}|${u.time}|${u.count}` : '';
+let undoInfo = null;
 async function loadUndo() {
   const r = await api('/api/undo-info');
   undoInfo = r.ok ? r.undo : null;
-  $('undoBanner').hidden = !undoInfo || undoHidden === undoKey(undoInfo);
-  if (undoInfo) $('undoText').textContent = `${undoInfo.label} changed ${undoInfo.count} app${undoInfo.count === 1 ? '' : 's'} at ${undoInfo.time}.`;
+  // No bar over the list: a dot on Recent changes says a bulk change can be undone (the panel has it).
+  $('recentDot').hidden = !undoInfo;
+  $('btnRecent').title = undoInfo ? `Recent changes - "${undoInfo.label}" (${undoInfo.count} app${undoInfo.count === 1 ? '' : 's'}, ${undoInfo.time}) can be undone` : 'Recent changes - every change to the catalog, with Undo';
 }
 async function undoLast() {
   await loadUndo();
@@ -562,9 +561,56 @@ async function undoLast() {
   toast(`Undid "${r.label}": ${r.restored.length} app(s) restored.${r.skipped.length ? ' Left alone: ' + r.skipped.join(', ') + '.' : ''}`, r.skipped.length > 0);
   await loadApps();
   if (groupsLoaded) loadGroups();
+  if ($('dlgRecent').open) openRecent();
 }
-$('btnUndo').addEventListener('click', undoLast);
-$('btnUndoHide').addEventListener('click', () => { undoHidden = undoKey(undoInfo); $('undoBanner').hidden = true; });
+
+// ---------------------------------------------------------------- Recent changes: the catalog's history, with Undo
+let recentData = null;
+const rFieldName = { appName: 'Name', wingetId: 'Winget ID', appId: 'App ID', requiredFor: 'Required', availableFor: 'Available', uninstallFor: 'Uninstall', excludeFor: 'Excluded', managedUpdates: 'Managed updates', releases: 'Releases',
+  'metadata.appVersion': 'App version', 'metadata.installCommand': 'Install command', 'metadata.uninstallCommand': 'Uninstall command', 'metadata.detectionRule': 'Detection rule', 'metadata.dependencies': 'Dependencies', 'metadata.description': 'Description', 'metadata.owner': 'Owner', 'metadata.publisher': 'Publisher' };
+const rField = f => rFieldName[f] || f.replace(/^metadata\./, '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
+function whenText(iso) {
+  const d = new Date(iso); if (isNaN(d)) return iso;
+  const today = new Date(), y = new Date(Date.now() - 864e5), hm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === today.toDateString() ? `Today ${hm}` : d.toDateString() === y.toDateString() ? `Yesterday ${hm}` : `${d.toLocaleDateString()} ${hm}`;
+}
+async function openRecent() {
+  if (!$('dlgRecent').open) { if (wcResume('dlgRecent')) return; $('recentFilter').value = ''; }
+  $('recentNote').textContent = 'Reading...';
+  if (!$('dlgRecent').open) $('dlgRecent').showModal();
+  const r = await api('/api/catalog-history', { limit: 300 });
+  if (!r.ok) { $('recentNote').textContent = r.error; return; }
+  recentData = r; renderRecent();
+}
+function renderRecent() {
+  const r = recentData; if (!r) return;
+  const u = r.undo, box = $('recentUndo');
+  box.hidden = !u;
+  if (u) box.replaceChildren(el('div', {}, el('b', { text: `Last bulk change: ${u.label}` }), el('span', { class: 'muted', text: ` - ${u.count} app${u.count === 1 ? '' : 's'}, ${u.time}` })),
+    el('button', { class: 'btn small', text: 'Undo it', title: 'Put back each app file as it was before this change - files changed since are left alone', onclick: undoLast }));
+  const q = $('recentFilter').value.trim().toLowerCase();
+  const groups = r.groups.filter(g => !q || [g.source, g.text, ...g.items.flatMap(i => [i.app, ...i.changes.map(c => rField(c.field))])].join(' ').toLowerCase().includes(q));
+  $('recentNote').textContent = groups.length ? `${groups.length} change${groups.length === 1 ? '' : 's'}${q ? ' match' : ''}` : '';
+  const undoOne = async (i) => {
+    if (!(await ask(`Undo this change to ${i.app}?\n\n${i.changes.filter(c => c.revertable).map(c => `${rField(c.field)}: back to ${c.before || '(empty)'}`).join('\n')}\n\nFields changed again since are left alone. Intune isn't touched.`, { ok: 'Undo' }))) return;
+    const x = await api('/api/history-undo', { name: i.app, id: i.id });
+    toast(x.ok ? `${i.app}: undone (${x.undone.map(rField).join(', ')}).${x.skipped.length ? ' Left alone: ' + x.skipped.join('; ') : ''}` : x.error, !x.ok);
+    if (x.ok) { await loadApps(); openRecent(); }
+  };
+  const change = c => el('li', {}, el('span', { class: 'f', text: rField(c.field) }), el('span', { class: 'v' }, el('span', { class: 'b', text: c.before || '(empty)' }), el('span', { class: 'arr', text: '→', 'aria-label': 'to' }), el('span', { class: 'a', text: c.after || '(empty)' })));
+  const item = i => el('div', { class: 'ritem' }, el('div', { class: 'rapp' }, el('b', { text: i.app }), i.kind === 'intune' ? el('span', { class: 'pill info', text: 'Intune' }) : '',
+      i.canUndo ? el('button', { class: 'btn small ghost', text: 'Undo', title: 'Put these fields back as they were', onclick: () => undoOne(i) }) : ''),
+    i.changes.length ? el('ul', { class: 'rchanges' }, ...i.changes.slice(0, 12).map(change), i.changes.length > 12 ? el('li', { class: 'muted', text: `... ${i.changes.length - 12} more` }) : '') : '');
+  $('recentList').replaceChildren(...(groups.length ? groups.map(g => {
+    const apps = [...new Set(g.items.map(i => i.app))];
+    const what = g.text || [...new Set(g.items.flatMap(i => i.changes.map(c => rField(c.field))))].slice(0, 4).join(', ') || 'Changed';
+    const head = el('summary', {}, el('span', { class: 'rwhen', text: whenText(g.at) }), el('span', { class: 'rsrc', text: g.source }),
+      el('span', { class: 'rwhat', text: what }), el('span', { class: 'rapps muted', text: apps.length === 1 ? apps[0] : `${apps.length} apps: ${apps.slice(0, 3).join(', ')}${apps.length > 3 ? ', ...' : ''}` }));
+    return el('li', {}, el('details', { open: g.count === 1 && groups.indexOf(g) < 3 }, head, el('div', { class: 'rbody' }, ...g.items.map(item))));
+  }) : [el('li', { class: 'muted rempty', text: q ? 'No change matches.' : 'No changes yet.' })]));
+}
+$('recentFilter').addEventListener('input', renderRecent);
+$('btnRecent').addEventListener('click', openRecent);
 
 // ---------------------------------------------------------------- the Catalog menu (the whole catalog)
 const catMenu = $('catalogMenu');
@@ -601,7 +647,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !catMenu.h
 catMenu.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   catMenu.hidden = true;
-  ({ export: exportCsv, import: openCsvImport, replace: () => openReplace({}), undo: undoLast, tenantsetup: openTenantSetup, overview: openOverview, retired: openRetired, suggest: openSuggest, matrix: openMatrix, wingetcheck: checkWingetVersions,
+  ({ export: exportCsv, import: openCsvImport, replace: () => openReplace({}), undo: undoLast, recent: openRecent, tenantsetup: openTenantSetup, overview: openOverview, retired: openRetired, suggest: openSuggest, matrix: openMatrix, wingetcheck: checkWingetVersions,
     reload: () => { loadApps(); loadState(); }, folder: () => openFolder('catalog-folder') })[b.dataset.cact]();
 });
 // Apps whose App ID the connected tenant doesn't know: a banner says so, with one button for all of them.
@@ -1246,11 +1292,22 @@ async function openStatus(name) {
   apply();
 })();
 
-// The Version column without an App version: what devices actually get, greyed - not an empty cell.
-function versionFallback(a) {
-  if (a.msHint && !a.wingetId) return el('span', { class: 'muted', text: '-', title: a.msHint });
-  if (a.wingetId && isStoreId(a.wingetId)) return el('span', { class: 'muted', text: 'Store', title: 'The Microsoft Store installs and updates it - no version to set.' });
-  if (a.wingetId) return el('span', { class: 'muted', text: a.wingetVersion ? `newest (${a.wingetVersion})` : 'newest',
-    title: (a.managed ? (a.hasAppId ? 'Managed updates, but no App version yet: set it (Set version) - until then it installs the newest.' : "Managed updates need an App version before it can be sent to Intune: Set version (winget's current one).") : 'No App version: devices get whatever winget has at install time.') + (a.wingetVersion ? ` winget offers ${a.wingetVersion} (last check).` : ' Catalog > Check winget for new versions shows which.') });
-  return el('span', { class: 'muted', text: 'not set', title: 'No App version yet. The editor shows the installer version in its package folder (Basics); Details > App version sets it.' });
+// The Version column: one clear answer to "which version do devices get?".
+// Managed (pinned): the fixed version with a lock - and an arrow when winget has a newer one to release.
+// The winget command: "newest" - devices get whatever winget has (its version today in grey); nothing to release.
+const lockSvg = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+function versionCell(a) {
+  const pilot = a.pilotVersion ? el('span', { class: 'pill warn newer', text: 'pilot ' + a.pilotVersion, title: `${a.pilotVersion} is released to the pilot groups. More > Promote version in pilot gives it to everyone.` }) : '';
+  if (a.msHint && !a.wingetId) return [el('span', { class: 'muted', text: '-', title: a.msHint })];
+  if (a.wingetId && isStoreId(a.wingetId)) return [el('span', { class: 'muted', text: 'Store', title: 'The Microsoft Store installs and updates it - no version to set.' })];
+  if (!a.wingetId) return a.version ? [el('span', { class: 'vpin', title: `Its package installs ${a.version} - a new installer goes out with Release new version (managed) or Package + Send.` }, a.version), pilot]
+    : [el('span', { class: 'muted', text: 'not set', title: 'No App version yet. The editor shows the installer version in its package folder (Basics); Details > App version sets it.' })];
+  if (a.managed) {
+    if (!a.version) return [el('span', { class: 'vwarn', text: 'not pinned yet', title: a.hasAppId ? 'Managed updates, but no App version yet: Set version (winget\'s current one) - until then it installs the newest.' : "Managed updates need the version to pin before it can be sent to Intune: Set version (winget's current one)." })];
+    const lock = el('span', { class: 'vlock' }); lock.innerHTML = lockSvg;
+    return [el('span', { class: 'vpin', title: `Pinned: devices install exactly ${a.version}. A new version reaches them only when it's released (pilot first).` }, lock, a.version), pilot,
+      !pilot && a.newerOnWinget ? el('span', { class: 'pill info newer', text: '→ ' + a.wingetVersion, title: `winget offers ${a.wingetVersion} - ${a.hasAppId ? 'Release new version sends it to the pilot groups first' : "Take winget's version pins it instead"}.` }) : ''];
+  }
+  return [el('span', { class: 'vnewest', title: `Not pinned: devices get whatever winget has when they install${a.wingetVersion ? ` (${a.wingetVersion} at the last check)` : ''}. Turn managed updates on to pin a version and release new ones to the pilot groups first.` }, 'newest',
+    a.wingetVersion ? el('span', { class: 'muted vnow', text: ` · ${a.wingetVersion}` }) : '')];
 }
