@@ -86,7 +86,8 @@ function gpAttach(ta) {
   if (!ta || ta.dataset.gp) return; ta.dataset.gp = '1';
   ta.setAttribute('aria-autocomplete', 'list'); ta.setAttribute('aria-controls', 'gpList');
   ta.addEventListener('input', e => { if (e.isTrusted === false && !gpList.hidden) return; clearTimeout(gpTimer); gpTimer = setTimeout(() => gpSuggest(ta), 200); });
-  ta.addEventListener('focus', () => { clearTimeout(gpTimer); gpTimer = setTimeout(() => gpSuggest(ta), 150); });
+  // On focus only when something is typed already: a tab switch focusing the box doesn't drop a list over the fields below.
+  ta.addEventListener('focus', () => { clearTimeout(gpTimer); if (gpLine(ta).text) gpTimer = setTimeout(() => gpSuggest(ta), 150); });
   ta.addEventListener('keydown', e => {
     if (gpList.hidden || gpBox !== ta) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); gpMove(1); }
