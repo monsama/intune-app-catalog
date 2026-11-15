@@ -1076,3 +1076,7 @@ label.chk > input[type="checkbox"], label.chk > input[type="radio"] { margin-top
 /* The file picker looks like the app's own buttons. */
 input[type="file"]::file-selector-button { font: inherit; font-weight: 500; height: 30px; padding: 0 12px; margin-right: 10px; border: 1px solid var(--bd); border-radius: var(--r-m); background: var(--surface); color: var(--fg); cursor: pointer; }
 #asec-list > .toolbar { margin-bottom: 10px; }
+/* Settings > Apps & defaults: the Architecture checkboxes take a field's height, so both columns of fields line up. */
+#sec-defaults .formgrid .checks { height: 34px; margin-top: 4px; align-items: center; }
+#sec-defaults .formgrid .checks > label.chk { margin: 0; align-items: center; }
+#sec-defaults .formgrid .checks > label.chk > input { margin-top: 0 !important; }
