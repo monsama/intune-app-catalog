@@ -71,7 +71,7 @@ function Global:ConvertTo-WebBatchChanges {
                 if ($u -and $u -notmatch '^https?://\S+$') { return @{ Error = "$k must start with http:// or https://." } }
                 $changes[$k] = $u
             }
-            'method' { if ([string]$v -notin 'WAU', 'Winget') { return @{ Error = 'Install with must be WAU or Winget.' } }; $changes[$k] = [string]$v }
+            'method' { if ([string]$v -ne 'Winget') { return @{ Error = 'Install with must be Winget - managed updates are turned on with More > Managed updates.' } }; $changes[$k] = [string]$v }
             'cmd' {
                 $c = ([string]$v).Trim()
                 if (-not $c) { return @{ Error = "$k can't be empty." } }

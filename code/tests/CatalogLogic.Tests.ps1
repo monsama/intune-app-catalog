@@ -196,6 +196,9 @@ $testableFunctionNames = @(
     "Set-AppWingetIdCommands",
     "Get-NonPackageAppHint",
     "Get-ClosestGroupName",
+    "Test-WauAppName",
+    "Get-WauUse",
+    "Get-ReleaseAvailableSettings",
     "Get-AppRecordFieldValues",
     "Get-AppRecordChanges",
     "Test-AppRecordFieldRevertable",
@@ -370,8 +373,8 @@ $Global:App.DefaultAppSettings = [pscustomobject]@{
         [pscustomobject]@{ returnCode = 1641; type = "hardReboot" }
         [pscustomobject]@{ returnCode = 1618; type = "retry" }
     )
-    DefaultDependencyAppNames = @("Winget AutoUpdate")
-    WingetInstallMethod      = "WAU"
+    DefaultDependencyAppNames = @("Base Runtime")
+    WingetInstallMethod      = "Winget"
 }
 
 # =================================================================
@@ -548,28 +551,31 @@ $uncommonDefaults = Get-DefaultAppMetadata -AppName "Test Uncommon App" -WingetI
 Assert-Null $uncommonDefaults.detectionRule `
     "Get-DefaultAppMetadata: an uncommon app with no Winget ID has NO usable default detection rule - this is the exact case Batch Deploy must skip, not silently deploy with broken detection"
 
-# Winget AutoUpdate dependency default - present in $Global:App.Apps, app isn't itself Winget AutoUpdate
+# Base Runtime dependency default - present in $Global:App.Apps, app isn't itself Base Runtime
 $Global:App.Apps.Clear()
-$Global:App.Apps.Add([pscustomobject]@{ appName = "Winget AutoUpdate" })
+$Global:App.Apps.Add([pscustomobject]@{ appName = "Base Runtime" })
 $defaultsWithWau = Get-DefaultAppMetadata -AppName "Some Other App" -WingetId "some.app" -Uncommon $false
-Assert-True (@($defaultsWithWau.dependencies) -contains "Winget AutoUpdate") `
-    "Get-DefaultAppMetadata: defaults to depending on Winget AutoUpdate when it exists in the catalog"
+Assert-True (@($defaultsWithWau.dependencies) -contains "Base Runtime") `
+    "Get-DefaultAppMetadata: defaults to depending on Base Runtime when it exists in the catalog"
 
-# Winget AutoUpdate itself shouldn't depend on itself
-$defaultsForWauItself = Get-DefaultAppMetadata -AppName "Winget AutoUpdate" -WingetId "some.app" -Uncommon $false
-Assert-True (@($defaultsForWauItself.dependencies) -notcontains "Winget AutoUpdate") `
-    "Get-DefaultAppMetadata: Winget AutoUpdate itself never defaults to depending on itself"
+# Base Runtime itself shouldn't depend on itself
+$defaultsForWauItself = Get-DefaultAppMetadata -AppName "Base Runtime" -WingetId "some.app" -Uncommon $false
+Assert-True (@($defaultsForWauItself.dependencies) -notcontains "Base Runtime") `
+    "Get-DefaultAppMetadata: Base Runtime itself never defaults to depending on itself"
 
-# Winget AutoUpdate absent from the catalog entirely
+# Base Runtime absent from the catalog entirely
 $Global:App.Apps.Clear()
 $defaultsNoWau = Get-DefaultAppMetadata -AppName "Some Other App" -WingetId "some.app" -Uncommon $false
 Assert-Equal 0 @($defaultsNoWau.dependencies).Count `
-    "Get-DefaultAppMetadata: no dependency default when Winget AutoUpdate isn't in the catalog at all"
+    "Get-DefaultAppMetadata: no dependency default when Base Runtime isn't in the catalog at all"
 
-# Install method: Winget-AutoUpdate by default, winget.exe when chosen
-$wauDefaults = Get-DefaultAppMetadata -AppName "Some App" -WingetId "Vendor.App" -Uncommon $false
+# Install method: Winget-AutoUpdate's commands (before 2.19) are only recognised, never generated
+$wauLegacy = Get-WingetCommandLines -WingetId "Vendor.App" -Method "WAU" -InstallContext "System"
+$wauDefaults = [pscustomobject]@{ installCommand = $wauLegacy.Install; uninstallCommand = $wauLegacy.Uninstall }
 Assert-True ($wauDefaults.installCommand -like '*Winget-Install.ps1*-AppIDs "Vendor.App"' -and $wauDefaults.uninstallCommand -like '*-AppIDs "Vendor.App" -Uninstall') `
-    "Get-DefaultAppMetadata: the built-in install method is Winget-AutoUpdate's Winget-Install.ps1"
+    "Get-WingetCommandLines: the old Winget-AutoUpdate form can still be built - to recognise it"
+Assert-True ((Get-CreateAppTemplates -WingetId "Vendor.App" -Uncommon $false -Method 'WAU').Install -notlike '*Winget-Install.ps1*') `
+    "Get-CreateAppTemplates: asked for WAU, it gives the winget command - Winget-AutoUpdate is never generated"
 $Global:App.DefaultAppSettings.WingetInstallMethod = "Winget"
 $wingetDefaults = Get-DefaultAppMetadata -AppName "Some App" -WingetId "Vendor.App" -Uncommon $false
 Assert-True ($wingetDefaults.installCommand -like "*& `$w install --id 'Vendor.App' -e*--scope machine*" -and $wingetDefaults.installCommand -notlike '*Winget-Install.ps1*') `
@@ -588,7 +594,7 @@ Assert-Equal 0 @($parseErrors).Count `
 $userCommands = Get-WingetCommandLines -WingetId "Vendor.App" -Method "Winget" -InstallContext "User"
 Assert-True ($userCommands.Install -notlike '*--scope machine*') `
     "Get-WingetCommandLines: a User-context install doesn't force machine scope"
-$Global:App.DefaultAppSettings.WingetInstallMethod = "WAU"
+$Global:App.DefaultAppSettings.WingetInstallMethod = "Winget"
 
 # Managed updates: a pinned version, detection of it or newer, releases
 $managedCmd = Get-WingetCommandLines -WingetId "Vendor.App" -Method "Managed" -InstallContext "System" -Version "24.09"
@@ -914,10 +920,20 @@ $switched = Convert-AppWingetInstallMethod -WingetId "Vendor.App" -InstallComman
 Assert-True ($switched.Status -eq 'Switched' -and $switched.Install -eq $wingetDefaults.installCommand -and $switched.Uninstall -eq $wingetDefaults.uninstallCommand) `
     "Convert-AppWingetInstallMethod: switches WAU commands to winget"
 $back = Convert-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $switched.Install -UninstallCommand $switched.Uninstall -Method "WAU" -InstallContext "System"
-Assert-True ($back.Status -eq 'Switched' -and $back.Install -eq $wauDefaults.installCommand) `
-    "Convert-AppWingetInstallMethod: and back again"
-$already = Convert-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $wauDefaults.installCommand -UninstallCommand $wauDefaults.uninstallCommand -Method "WAU" -InstallContext "System"
+Assert-True ($back.Status -eq 'Already' -and $back.Install -eq $switched.Install) `
+    "Convert-AppWingetInstallMethod: never back to Winget-AutoUpdate"
+$already = Convert-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $switched.Install -UninstallCommand $switched.Uninstall -Method "Winget" -InstallContext "System"
 Assert-Equal 'Already' $already.Status "Convert-AppWingetInstallMethod: an app already on that method is left as it is"
+
+# Winget-AutoUpdate removed (2.19): what still uses it, and the release's Available settings
+$wauApp = [pscustomobject]@{ appName = 'Vendor App'; wingetId = 'Vendor.App'; metadata = [pscustomobject]@{ installCommand = $wauDefaults.installCommand; uninstallCommand = $wauDefaults.uninstallCommand; dependencies = @('Winget-AutoUpdate') } }
+$cleanApp = [pscustomobject]@{ appName = 'Vendor App'; wingetId = 'Vendor.App'; metadata = [pscustomobject]@{ installCommand = $switched.Install; uninstallCommand = $switched.Uninstall; dependencies = @('Base Runtime') } }
+Assert-True ((@(Get-WauUse $wauApp) -join ',') -eq 'commands,dependency' -and @(Get-WauUse $cleanApp).Count -eq 0 -and @(Get-WauUse ([pscustomobject]@{ appName = 'Winget AutoUpdate'; wingetId = 'Romanitho.Winget-AutoUpdate'; metadata = $wauApp.metadata })).Count -eq 0) `
+    "Get-WauUse: WAU commands and a WAU dependency count; WAU itself and a winget app don't"
+Assert-True ((Test-WauAppName 'Winget-AutoUpdate') -and (Test-WauAppName 'Romanitho.Winget-AutoUpdate') -and (Test-WauAppName 'winget autoupdate') -and -not (Test-WauAppName 'Winget Tools')) "Test-WauAppName: its names and Winget ID"
+$avail = New-AppAssignmentBody -Entries @(Get-DesiredAssignmentEntries -RequiredGroups @('Pilot') -AvailableGroups @('All')) -GroupIdByName @{ All = 'g1'; Pilot = 'g2' } -AvailableSettings (Get-ReleaseAvailableSettings)
+$aAvail = @($avail.mobileAppAssignments | Where-Object { $_.intent -eq 'available' }); $aReq = @($avail.mobileAppAssignments | Where-Object { $_.intent -eq 'required' })
+Assert-True ($aAvail.Count -eq 1 -and $aAvail[0].settings.autoUpdateSettings.autoUpdateSupersededAppsState -eq 'enabled' -and $aReq.Count -eq 1 -and -not $aReq[0].settings) "New-AppAssignmentBody: a release's Available assignments auto-update the superseded version; Required ones aren't touched by it"
 $custom = Convert-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand 'setup.exe /S' -UninstallCommand 'uninst.exe /S' -Method "Winget" -InstallContext "System"
 Assert-True ($custom.Status -eq 'Custom' -and $custom.Install -eq 'setup.exe /S') `
     "Convert-AppWingetInstallMethod: custom commands are kept"

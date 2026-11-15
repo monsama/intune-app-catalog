@@ -432,7 +432,7 @@
               <div class="checks"><label class="chk"><input type="checkbox" data-arch="x64">x64</label><label class="chk"><input type="checkbox" data-arch="x86">x86</label><label class="chk"><input type="checkbox" data-arch="arm64">arm64</label></div>
               <label title="System installs for every user of the device; User installs for the signed-in user only (and needs no admin rights).">Install for<select id="dContext"><option>System</option><option>User</option></select></label>
               <label title="Devices older than this don't get the app.">Minimum OS<select id="dMinOs"></select></label>
-              <label title="Winget-AutoUpdate keeps Winget apps updated afterwards; the winget command only installs them.">Winget apps install with<select id="dWinget"><option value="Managed">Managed updates (pinned version, pilot first)</option><option value="WAU">Winget-AutoUpdate (Winget-Install.ps1)</option><option value="Winget">The winget command (latest)</option></select></label>
+              <label title="Managed updates install a fixed version and release new ones to the pilot groups first; the winget command installs the newest and nothing updates it afterwards.">Winget apps install with<select id="dWinget"><option value="Managed">Managed updates (pinned version, pilot first)</option><option value="Winget">The winget command (newest, not updated)</option></select></label>
               <label>Default dependencies <span class="muted">(installed first)</span><textarea autocomplete="off" id="dDeps" rows="2" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
             </div>
             <div>
@@ -780,7 +780,7 @@
         <label title="The winget package ID, e.g. 7zip.7zip. Empty for an app with its own installer. Find... searches winget.">Winget ID <span class="muted">(empty for an app with its own package)</span><span class="inputrow"><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip" autocorrect="off" autocapitalize="off"><button type="button" class="btn" id="btnFindWinget" title="Search winget for the package">Find...</button></span></label>
         <label class="chk" title="Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Updates"><input type="checkbox" id="aManaged">Managed updates <button type="button" class="help" data-help="managed" aria-label="What are managed updates?">?</button> <span class="muted" id="aManagedNote"></span></label>
         <div class="methodrow" id="aMethodRow" hidden>
-          <label title="How devices install this Winget app - and so which version they get">Install with<select id="aMethod"><option value="Managed">Managed updates - a fixed version, pilot first</option><option value="WAU">Winget-AutoUpdate (Winget-Install.ps1)</option><option value="Winget">The winget command</option><option value="Custom" disabled>Own command (edited by hand)</option></select></label>
+          <label title="How devices install this Winget app - and so which version they get">Install with<select id="aMethod"><option value="Managed">Managed updates - a fixed version, pilot first</option><option value="Winget">The winget command - newest, not updated</option><option value="WAU" disabled>Winget-AutoUpdate (no longer used)</option><option value="Custom" disabled>Own command (edited by hand)</option></select></label>
           <p class="methodinfo" id="aMethodInfo" aria-live="polite"></p>
         </div>
         <p class="methodinfo" id="aPkgInfo" hidden></p>
@@ -1220,7 +1220,6 @@
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="deviceRestartBehavior">Restart</label><select id="bRestart" aria-label="Restart"><option value="basedOnReturnCode">By return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="allowAvailableUninstall">Uninstall from Company Portal</label><select id="bUninstall" aria-label="Uninstall from Company Portal"><option value="1">Allowed</option><option value="0">Not allowed</option></select></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="isFeatured">Featured in Company Portal</label><select id="bFeatured" aria-label="Featured in Company Portal"><option value="1">Yes</option><option value="0">No</option></select></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="wingetInstallMethod">Install with (Winget apps)</label><select id="bMethod" aria-label="Install with (Winget apps)"><option value="WAU">Winget-AutoUpdate</option><option value="Winget">winget command</option></select></div>
     </section>
     <section>
       <h3>Details</h3>

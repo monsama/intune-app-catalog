@@ -685,7 +685,7 @@ function Global:Rename-WebAppReferences {
 function Global:Get-WebWingetCommands {
     <#
       The editor's "Install with": which generated form the app's commands are
-      now (Managed, WAU, Winget, or '' for hand-edited), and - with -method -
+      now (Managed, Winget, WAU - the old Winget-AutoUpdate form - or '' for hand-edited), and - with -method -
       the commands for that form. Nothing is saved.
     #>
     param($Data)
@@ -698,7 +698,7 @@ function Global:Get-WebWingetCommands {
     $out = @{ ok = $true; current = $current; pinned = $pinned }
     $method = [string]$Data.method
     if ($method) {
-        if ($method -notin 'Managed', 'WAU', 'Winget') { return @{ ok = $false; error = 'Install with must be Managed, WAU or Winget.' } }
+        if ($method -notin 'Managed', 'Winget') { return @{ ok = $false; error = 'Install with must be Managed or Winget.' } }
         $c = Get-WingetCommandLines -WingetId $id -Method $method -InstallContext $ctx -Version ([string]$Data.version)
         $out.install = $c.Install; $out.uninstall = $c.Uninstall
     }

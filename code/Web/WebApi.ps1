@@ -640,6 +640,7 @@ function Global:Invoke-WebApi {
         '/api/update-runs'      { return (Get-WebUpdateRuns) }
         '/api/update-run'       { return (Start-WebUpdateRun $Data) }
         '/api/update-schedule'  { return (Set-WebUpdateSchedule $Data) }
+        '/api/wau-switch'       { if ($Data.preview) { return (Invoke-WebWauSwitch $Data) }; return (Invoke-WithCatalogLock { Invoke-WebWauSwitch $Data }) }
         '/api/managed-updates'  { return (Invoke-WithCatalogLock { Set-WebManagedUpdates $Data }) }
         '/api/winget-take-version' { return (Invoke-WithCatalogLock { Set-WebWingetVersions $Data }) }
         '/api/tenant-setup'     { return (Get-WebTenantSetup) }

@@ -572,6 +572,19 @@ try {
     $depAfter = (Invoke-Api '/api/app-get' @{ name = $depName }).app
     Check (@($depBefore.deploy.dependencies) -contains $mgName -and @($depAfter.deploy.dependencies) -contains "$mgName R" -and @($depAfter.deploy.dependencies) -notcontains $mgName) 'rename: another app''s dependency follows the new name' (@{ before = $depBefore.deploy.dependencies; after = $depAfter.deploy.dependencies } | ConvertTo-Json -Compress)
     [void](Invoke-Api '/api/app-remove' @{ name = $depName }); [void](Invoke-Api '/api/app-remove' @{ name = "$mgName R" })
+    # Winget-AutoUpdate removed (2.19): an app still on its commands is switched to managed updates, its WAU dependency dropped.
+    $wauName = 'ZZ Wau ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    $wauCmd = '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File "C:\Program Files\Winget-AutoUpdate\Winget-Install.ps1" -AppIDs "Contoso.Wau"'
+    Set-Content -LiteralPath (Join-Path $catDir ($wauName.Replace(' ', '-') + '.json')) -Encoding UTF8 -Value (@{ appName = $wauName; wingetId = 'Contoso.Wau'; appId = ''; metadata = @{ description = 'w'; appVersion = '2.5'; installContext = 'System'; installCommand = $wauCmd; uninstallCommand = "$wauCmd -Uninstall"; dependencies = @('Winget-AutoUpdate') } } | ConvertTo-Json -Depth 4)
+    $wauPre = Invoke-Api '/api/wau-switch' @{ preview = $true }
+    $wauAtt = Invoke-Api '/api/attention'
+    $wauRun = Invoke-Api '/api/wau-switch' @{}
+    $wauNow = (Invoke-Api '/api/app-get' @{ name = $wauName }).app
+    Check ($wauPre.ok -and @($wauPre.apps | Where-Object { $_.app -eq $wauName }).Count -eq 1 -and @($wauAtt.items | Where-Object { $_.title -like '*still use Winget-AutoUpdate*' }).Count -eq 1 -and
+        $wauRun.ok -and $wauNow.managedUpdates -and $wauNow.metadata.installCommand -notlike '*Winget-Install.ps1*' -and $wauNow.metadata.installCommand -like "*--version '2.5'*" -and @($wauNow.deploy.dependencies) -notcontains 'Winget-AutoUpdate') `
+        'Winget-AutoUpdate: Home names the app, the switch pins it to its App version and drops the WAU dependency' (@{ pre = $wauPre; run = $wauRun; now = $wauNow.metadata } | ConvertTo-Json -Compress -Depth 4)
+    Check (-not (Invoke-Api '/api/winget-commands' @{ wingetId = 'Contoso.Wau'; method = 'WAU' }).ok) 'Winget-AutoUpdate: the editor can no longer ask for its commands'
+    [void](Invoke-Api '/api/app-remove' @{ name = $wauName })
     # An assignment filter round-trips through the catalog file and the editor.
     $flName = 'ZZ Filter ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
     [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $flName; wingetId = 'Contoso.Filter'; appId = ''; requiredFor = @('SG-A'); assignmentFilter = ' Corp laptops '; assignmentFilterMode = 'exclude'; metadata = @{ description = 'f' } } })

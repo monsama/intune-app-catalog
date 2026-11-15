@@ -87,12 +87,13 @@ function Global:Import-GraphSettings {
             if ($null -ne $das.InstallTimeMinutes)         { $Global:App.DefaultAppSettings.InstallTimeMinutes = [int]$das.InstallTimeMinutes }
             if ($null -ne $das.DeviceRestartBehavior)      { $Global:App.DefaultAppSettings.DeviceRestartBehavior = [string]$das.DeviceRestartBehavior }
             if ($null -ne $das.AllowAvailableUninstall)    { $Global:App.DefaultAppSettings.AllowAvailableUninstall = [bool]$das.AllowAvailableUninstall }
-            if ($das.WingetInstallMethod -in @("WAU", "Winget", "Managed")) { $Global:App.DefaultAppSettings.WingetInstallMethod = [string]$das.WingetInstallMethod }
+            # WAU (before 2.19) is no longer offered: managed updates take its place.
+            if ($das.WingetInstallMethod -in @("Winget", "Managed")) { $Global:App.DefaultAppSettings.WingetInstallMethod = [string]$das.WingetInstallMethod }
             if (@($das.ReturnCodes).Count -gt 0) {
                 $Global:App.DefaultAppSettings.ReturnCodes = @($das.ReturnCodes | ForEach-Object { [pscustomobject]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })
             }
             if ($null -ne $das.DefaultDependencyAppNames) {
-                $Global:App.DefaultAppSettings.DefaultDependencyAppNames = @($das.DefaultDependencyAppNames | ForEach-Object { [string]$_ } | Where-Object { $_ })
+                $Global:App.DefaultAppSettings.DefaultDependencyAppNames = @($das.DefaultDependencyAppNames | ForEach-Object { [string]$_ } | Where-Object { $_ -and -not (Test-WauAppName $_) })
             }
             # Back-compat with a settings file saved by the single-dependency
             # version of this dialog (a plain string field, no "s") - only
@@ -100,7 +101,7 @@ function Global:Import-GraphSettings {
             # all, so an already-migrated file's own (possibly now empty)
             # array is never silently overwritten by stale singular data.
             elseif ($null -ne $das.DefaultDependencyAppName -and [string]$das.DefaultDependencyAppName) {
-                $Global:App.DefaultAppSettings.DefaultDependencyAppNames = @([string]$das.DefaultDependencyAppName)
+                $Global:App.DefaultAppSettings.DefaultDependencyAppNames = @([string]$das.DefaultDependencyAppName | Where-Object { -not (Test-WauAppName $_) })
             }
         }
     }

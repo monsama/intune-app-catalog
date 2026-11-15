@@ -228,7 +228,7 @@ async function loadHome() {
   const where = { 'settings:connection': ['Settings', () => showSettings('connection')], 'settings:defaults': ['Settings', () => showSettings('defaults')], 'settings:updates': ['Settings', () => showSettings('updates')], 'settings:automation': ['Settings', () => showSettings('automation')], 'settings:packaging': ['Settings', () => showSettings('packaging')],
     'apps:notdeployed': ['Show them', () => { showView('apps'); $('filter').value = 'notdeployed'; renderApps(); updateViewButtons(); }], 'apps:all': ['Apps', () => showView('apps')],
     updates: ['Updates', () => showView('updates')], checks: ['Checks', () => showView('checks')],
-    'open:release': ["What's new", () => api('/api/open', { target: 'release' })], 'do:manageddefault': ['Make it the default', makeManagedDefault], 'do:managedall': ['Turn on for all', managedForAll], 'do:takeversions': ["Take winget's versions", takeVersionsForManaged] };
+    'open:release': ["What's new", () => api('/api/open', { target: 'release' })], 'do:manageddefault': ['Make it the default', makeManagedDefault], 'do:managedall': ['Turn on for all', managedForAll], 'do:takeversions': ["Take winget's versions", takeVersionsForManaged], 'do:wauswitch': ['Switch them', wauSwitch] };
   const pill = { err: ['err', 'Problem'], warn: ['warn', 'Look'], ok: ['ok', 'Ready'], info: ['info', 'To do'] };
   $('homeList').replaceChildren(...(r.items.length ? r.items.map(i => { const w = where[i.go], p = pill[i.level] || pill.info;
     return el('li', { class: 'att ' + i.level }, el('span', { class: 'pill ' + p[0], text: p[1] }), el('div', { class: 'body' }, el('b', { text: i.title }), el('span', { class: 'muted', text: i.text })),
@@ -353,4 +353,25 @@ async function takeVersionsForManaged() {
   await loadApps(); loadHome();
   const inIntune = (r.deployed || []);
   toast(`${r.changed.length} app(s) now start from winget's current version${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}.${inIntune.length ? ` Send ${inIntune.length} of them to Intune again so Intune installs that version: ${inIntune.join(', ')}.` : ''}`);
+}
+
+// Winget-AutoUpdate is no longer used: apps still installing through it (or depending on it) move to managed updates.
+async function wauSwitch() {
+  const p = await api('/api/wau-switch', { preview: true });
+  if (!p.ok) { toast(p.error, true); return; }
+  if (!p.apps.length) { toast('No app uses Winget-AutoUpdate any more.'); loadHome(); return; }
+  const noV = p.apps.filter(a => !a.hasVersion).map(a => a.app), dep = p.apps.filter(a => a.deployed).map(a => a.app);
+  if (!(await ask(`Switch ${p.apps.length} app(s) from Winget-AutoUpdate to managed updates?\n\n${p.apps.slice(0, 12).map(a => a.app).join(', ')}${p.apps.length > 12 ? ', ...' : ''}\n\n` +
+    `Each installs its App version with winget from then on, and new versions go to the pilot groups first. Their dependency on Winget-AutoUpdate is removed.` +
+    (noV.length ? ` ${noV.length} have no App version yet - they install the newest until you take winget's version.` : '') +
+    (dep.length ? ` The ${dep.length} in Intune get the new commands pushed.` : ''), { ok: 'Switch them' }))) return;
+  const r = await api('/api/wau-switch', {});
+  if (!r.ok) { toast(r.error, true); return; }
+  await loadApps();
+  const msg = `Switched ${r.changed.length} app(s) to managed updates.`;
+  if (r.deployed.length) {
+    const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', startText: 'Pushing ' });
+    toast(`${msg} Pushed to Intune for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length, [{ label: 'Undo', run: () => undoLast() }]);
+  } else toast(msg, false, [{ label: 'Undo', run: () => undoLast() }]);
+  loadHome();
 }

@@ -175,6 +175,8 @@ function Global:New-AppAssignmentBody {
       Required inclusion - $null sends none, Intune's defaults.
     #>
     param($Entries, $GroupIdByName, $RequiredSettings = $null,
+        # Settings for every Available inclusion (a release: auto-update the superseded version) - $null sends none.
+        $AvailableSettings = $null,
         # Assignment filter name -> id, for entries with a filter (one whose id isn't known is sent without it - the caller checks first).
         $FilterIdByName = $null)
     $assignments = @(@($Entries) | ForEach-Object {
@@ -200,6 +202,7 @@ function Global:New-AppAssignmentBody {
             target        = $target
         }
         if ($RequiredSettings -and $_.Intent -eq 'required' -and $_.Mode -ne 'exclude') { $one.settings = $RequiredSettings }
+        if ($AvailableSettings -and $_.Intent -eq 'available' -and $_.Mode -ne 'exclude') { $one.settings = $AvailableSettings }
         $one
     })
     return @{ mobileAppAssignments = @($assignments) }
