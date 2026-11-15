@@ -68,6 +68,18 @@ jobs:
         run: ./code/tests/Scale.Tests.ps1
 
 
+  docker:
+    # The server version: the image builds, starts (read-only, no rights), signs in, takes a session over,
+    # refuses other names, and reads winget's package index.
+    name: docker (server version)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the image
+        run: docker build -t intune-app-catalog:smoke .
+      - name: Smoke test
+        run: ./scripts/docker-smoke.sh intune-app-catalog:smoke
+
   lint:
     # PSScriptAnalyzer with the bug-catching rules in
     # code/tests/PSScriptAnalyzerSettings.psd1 - over all of code/, not only

@@ -67,11 +67,34 @@ const TOKEN = (() => {
   return t;
 })();
 
+// The server version (the container) has a sign-in; the desktop app's page gets its token from the app window.
+let SERVER = false, signingOut = false;
+function goSignIn(why) {
+  if (signingOut) return; signingOut = true;
+  try { sessionStorage.removeItem('iacTok'); } catch (e) { }
+  location.replace('login.html' + (why ? '?why=' + encodeURIComponent(why) : ''));
+}
+(async () => {
+  try {
+    const h = await (await fetch('/api/hello', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
+    if (!h || !h.server) return;
+    SERVER = true; document.documentElement.classList.add('servermode');
+    if (!TOKEN) { goSignIn(''); return; }
+    // Sign out: top right, next to coffee and theme.
+    const b = document.createElement('button');
+    b.className = 'btn ghost iconbtn'; b.id = 'btnSignOut'; b.title = 'Sign out'; b.setAttribute('aria-label', 'Sign out');
+    b.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
+    b.addEventListener('click', async () => { await api('/api/logout'); goSignIn('signedout'); });
+    const bar = document.getElementById('pageBtns'); if (bar) bar.append(b);
+  } catch (e) { /* the desktop app, or no answer: nothing to do here */ }
+})();
+
 async function api(path, body = {}) {
   try {
     const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, token: TOKEN }) });
     const j = await r.json();
-    if (j && j.error === 'bad token') showDead();
+    // The server version: the session ended (taken over by a sign-in elsewhere, idle, signed out) - back to sign-in.
+    if (j && j.error === 'bad token') { if (j.reason) { goSignIn(j.reason); return j; } showDead(); }
     // "deployed": the apps an answer offers to push to. One whose App ID the
     // connected tenant doesn't have (a copied catalog) would only fail there.
     if (j && Array.isArray(j.deployed) && typeof tenantState === 'function') j.deployed = j.deployed.filter(n => { const a = apps.find(x => x.name === n); return !a || tenantState(a) !== 'missing'; });

@@ -119,8 +119,11 @@ function Global:Start-WebStepJob {
         [string]$BusyApp = '')
     $tag = [guid]::NewGuid().ToString('N')
     $configPath = Join-Path $env:TEMP ".intunepkg_$($Name)_config_$tag.json"
-    $scriptPath = Join-Path $Global:App.RootPath ".intunepkg_embedded_$($Name)_$tag.ps1"
-    $helperPath = Join-Path $Global:App.RootPath ".intunepkg_graphlog_$tag.ps1"
+    # The server version (the container): the app's own folder is read-only - the step files go on the data volume.
+    $stepDir = $Global:App.RootPath
+    if (Test-WebServerMode) { $stepDir = Join-Path $Global:App.RootPath 'data\run'; if (-not (Test-Path -LiteralPath $stepDir)) { [void](New-Item -ItemType Directory -Path $stepDir -Force) } }
+    $scriptPath = Join-Path $stepDir ".intunepkg_embedded_$($Name)_$tag.ps1"
+    $helperPath = Join-Path $stepDir ".intunepkg_graphlog_$tag.ps1"
     $logPath = Join-Path $env:TEMP "intunepkg_$tag.log"
     $utf8 = New-Object System.Text.UTF8Encoding($false)
     try {
@@ -589,6 +592,8 @@ function Global:Invoke-WebApi {
         '/api/cert-status'      { return (Get-WebCertStatus $Data) }
         '/api/certs-local'      { return (Get-WebLocalCertificates) }
         '/api/cert-new'         { return (New-WebCertificate $Data) }
+        '/api/cert-import'      { return (Import-WebPfx $Data) }
+        '/api/cert-file'        { return (Get-WebCertificateFile $Data) }
         '/api/test-connection'  { return (Invoke-WebTestConnection $Data) }
         '/api/connection-status' { return (Get-WebConnectionStatus) }
         '/api/job-start'        { return (Start-WebCertJob $Data) }

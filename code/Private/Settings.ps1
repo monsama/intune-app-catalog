@@ -190,13 +190,7 @@ function Global:Get-CertificateStatusText {
         return @{ Text = "No thumbprint set."; Level = 'warn' }
     }
     $clean = $Thumbprint -replace '\s', ''
-    $cert = $null
-    foreach ($location in @("Cert:\CurrentUser\My", "Cert:\LocalMachine\My")) {
-        try {
-            $found = Get-ChildItem -LiteralPath $location -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $clean } | Select-Object -First 1
-            if ($found) { $cert = $found; break }
-        } catch { }
-    }
+    $cert = Find-AppStoreCertificate $clean
     if (-not $cert) {
         return @{ Text = "Not found in CurrentUser\My or LocalMachine\My on this machine."; Level = 'error' }
     }
@@ -219,7 +213,9 @@ function Global:ConvertTo-ReleasePolicy {
         FastTrackHours = 4; DeadlineDays = 0; RestartGraceMinutes = 0; Notifications = 'showAll'
         # The nightly run's other work: release window, automatic withdraw, drift, backup, monthly report, the test tenant's catalog.
         ReleaseDays = @(0, 1, 2, 3, 4, 5, 6); SkipLastWeek = $false; AutoWithdrawPercent = 0; DriftCheck = $true; DriftFix = $false
-        BackupCatalog = $true; BackupGit = $false; MonthlyReport = $false; GatePath = '' }
+        BackupCatalog = $true; BackupGit = $false; MonthlyReport = $false; GatePath = ''
+        # The server version (the container): its own schedule instead of Windows' scheduled tasks.
+        ServerSchedule = $false }
     if (-not $Raw) { return $p }
     if ($null -ne $Raw.ReleaseDays) {
         $d = @(@($Raw.ReleaseDays) | Where-Object { "$_" -match '^[0-6]$' } | ForEach-Object { [int]"$_" } | Sort-Object -Unique)
@@ -232,6 +228,7 @@ function Global:ConvertTo-ReleasePolicy {
     if ($null -ne $Raw.BackupCatalog) { $p.BackupCatalog = [bool]$Raw.BackupCatalog }
     if ($null -ne $Raw.BackupGit) { $p.BackupGit = [bool]$Raw.BackupGit }
     if ($null -ne $Raw.MonthlyReport) { $p.MonthlyReport = [bool]$Raw.MonthlyReport }
+    if ($null -ne $Raw.ServerSchedule) { $p.ServerSchedule = [bool]$Raw.ServerSchedule }
     $gate = ([string]$Raw.GatePath).Trim()
     if ($gate -and $gate.Length -le 260 -and $gate -notmatch '[*?"<>|]' -and ($gate -match '^[A-Za-z]:\\' -or $gate -match '^\\\\[^\\]+\\' -or $gate -match '^/')) { $p.GatePath = $gate }
     if ([string]$Raw.FastTrackHours -match '^\d{1,2}$' -and [int][string]$Raw.FastTrackHours -ge 1 -and [int][string]$Raw.FastTrackHours -le 72) { $p.FastTrackHours = [int][string]$Raw.FastTrackHours }
@@ -273,4 +270,37 @@ function Global:ConvertTo-AlertSettings {
     if (([string]$Raw.MailFrom).Trim() -match $mail) { $a.MailFrom = ([string]$Raw.MailFrom).Trim() }
     $a.MailTo = @(@($Raw.MailTo) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -match $mail } | Select-Object -Unique -First 20)
     return $a
+}
+
+
+function Global:Get-AppStoreCertificates {
+    <#
+      The certificates in the "My" store of -Store (CurrentUser, LocalMachine), read
+      with .NET's own store - which works on Windows and on Linux (the container,
+      where PowerShell has no Cert: drive and the store is a folder in $HOME). Each
+      has a Store property naming where it is.
+    #>
+    param([string[]]$Store = @('CurrentUser', 'LocalMachine'))
+    $out = New-Object System.Collections.Generic.List[object]
+    foreach ($name in $Store) {
+        # Linux has no machine store to read from - only the user's.
+        if (($IsLinux -or $IsMacOS) -and $name -ne 'CurrentUser') { continue }
+        $st = $null
+        try {
+            $st = New-Object System.Security.Cryptography.X509Certificates.X509Store('My', [System.Security.Cryptography.X509Certificates.StoreLocation]$name)
+            $st.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+            foreach ($c in $st.Certificates) { $c | Add-Member -NotePropertyName Store -NotePropertyValue $name -Force; $out.Add($c) }
+        }
+        catch { }
+        finally { if ($st) { $st.Close() } }
+    }
+    return $out.ToArray()
+}
+
+function Global:Find-AppStoreCertificate {
+    # One certificate by thumbprint, from the user's store first, then the machine's ($null when it isn't there).
+    param([string]$Thumbprint, [string[]]$Store = @('CurrentUser', 'LocalMachine'))
+    $t = ([string]$Thumbprint) -replace '\s', ''
+    if (-not $t) { return $null }
+    return (@(Get-AppStoreCertificates -Store $Store) | Where-Object { $_.Thumbprint -eq $t } | Select-Object -First 1)
 }

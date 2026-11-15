@@ -85,6 +85,28 @@ $('btnNewCertGo').addEventListener('click', async () => {
   toast('Certificate created. Upload it to Entra next, then Save.');
 });
 $('btnCertFolder').addEventListener('click', () => openFolder('certificates-folder'));
+// The server version: the certificate comes as a .pfx, and its .cer goes to Entra ID by hand.
+$('btnPfxImport').addEventListener('click', () => { $('pfxFile').value = ''; $('pfxPassword').value = ''; $('pfxError').hidden = true; $('dlgPfx').showModal(); });
+$('btnPfxGo').addEventListener('click', async () => {
+  const f = $('pfxFile').files[0];
+  if (!f) { $('pfxError').textContent = 'Choose the .pfx file.'; $('pfxError').hidden = false; return; }
+  const bytes = new Uint8Array(await f.arrayBuffer()); let bin = ''; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  const r = await api('/api/cert-import', { pfx: btoa(bin), password: $('pfxPassword').value });
+  $('pfxPassword').value = '';
+  if (!r.ok) { $('pfxError').textContent = r.error; $('pfxError').hidden = false; return; }
+  $('dlgPfx').close();
+  $('fThumb').value = r.thumbprint; $('fThumb').dispatchEvent(new Event('input'));
+  toast(`Imported ${r.subject} (valid until ${r.notAfter}) - Test connection, then Save.`);
+});
+$('btnCerDownload').addEventListener('click', async () => {
+  const t = $('fThumb').value.trim();
+  if (!t) { toast('Choose, create or import a certificate first.', true); return; }
+  const r = await api('/api/cert-file', { thumbprint: t });
+  if (!r.ok) { toast(r.error, true); return; }
+  const bin = atob(r.file), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pkix-cert' })); a.download = r.name;
+  document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+});
 for (const b of document.querySelectorAll('dialog [data-close]')) b.addEventListener('click', () => b.closest('dialog').close());
 
 // jobs: Entra actions that sign the user in, in a console window of their own

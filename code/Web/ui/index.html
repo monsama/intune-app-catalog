@@ -318,7 +318,7 @@
       <div class="btngroup" role="group" aria-label="All scripts">
         <button class="btn" id="btnScriptsSave" title="Reads every script in Intune in full - body and groups - and keeps a local copy of each. Only reads Intune.">Save local copies</button>
         <button class="btn" id="btnScriptsReload" title="Read the scripts from Intune and the local folder again">Reload</button>
-        <button class="btn" id="btnScriptsFolder" title="Open the folder with the local copies in Explorer">Open folder</button>
+        <button class="desktoponly btn" id="btnScriptsFolder" title="Open the folder with the local copies in Explorer">Open folder</button>
       </div>
     </div>
     <p class="sub" id="scriptNote">PowerShell scripts Intune runs on enrolled Windows devices, with the local copies kept beside the catalog.</p>
@@ -403,21 +403,26 @@
           <div class="actions">
             <button class="btn" id="btnUseCert" title="Pick a certificate that is already in your user store or the machine store">Use an existing one...</button>
             <button class="btn" id="btnNewCert" title="Create a self-signed certificate on this machine for the app registration">Create new certificate...</button>
-            <button class="btn" id="btnCertFolder" title="Open the folder with the exported .cer files in Explorer">Open certificates folder</button>
+            <button class="desktoponly btn" id="btnCertFolder" title="Open the folder with the exported .cer files in Explorer">Open certificates folder</button>
             <button class="btn" id="btnCertsLocal" title="List this machine's certificates and delete one you no longer need">Delete one...</button>
           </div>
-          <p class="sub">In Entra ID <span class="muted">(signs you in with your own account)</span></p>
-          <div class="actions">
+          <div class="actions serveronly">
+            <button class="btn" id="btnPfxImport" title="Use the certificate you already have: a .pfx file with its private key">Import a .pfx...</button>
+            <button class="btn" id="btnCerDownload" title="The chosen certificate's public part (.cer) - what the app registration in Entra ID takes">Download .cer</button>
+          </div>
+          <p class="sub serveronly">In Entra ID: add the .cer to the app registration (<b>Certificates &amp; secrets &gt; Certificates &gt; Upload certificate</b>), and its API permissions under <b>API permissions</b> (Diagnostics &gt; Check permissions lists them), then grant admin consent. The server can't sign you in for that.</p>
+          <p class="sub desktoponly">In Entra ID <span class="muted">(signs you in with your own account)</span></p>
+          <div class="actions desktoponly">
             <button class="btn" id="btnCheckCerts" title="List the certificates the app registration has in Entra ID (you sign in)">Check certificates</button>
             <button class="btn" id="btnUpload" title="Add this certificate to the app registration in Entra ID (you sign in)">Upload this certificate</button>
           </div>
-          <ul class="entracerts" id="entraCerts"></ul>
+          <ul class="entracerts desktoponly" id="entraCerts"></ul>
         </article>
         <article class="card">
           <h2>API permissions</h2>
           <p class="sub">Microsoft Graph application permissions this app uses.</p>
           <div class="actions">
-            <button class="btn primary" id="btnAddPerms" title="Add the Graph application permissions to the app registration (you sign in); an admin then grants consent">Add required permissions...</button>
+            <button class="desktoponly btn primary" id="btnAddPerms" title="Add the Graph application permissions to the app registration (you sign in); an admin then grants consent">Add required permissions...</button>
             <button class="btn" id="btnOpenEntra" title="Open the app registration's API permissions page to grant admin consent">Open in Entra (grant consent)</button>
           </div>
         </article>
@@ -552,7 +557,7 @@
             <button class="btn" id="btnRunPlan" title="Decide and report what would happen - changes nothing">Plan only</button>
             <button class="btn" id="btnRunNow" title="Run it now, as the nightly task would - may release and promote, if those switches are on">Run now</button>
             <button class="btn" id="btnRunReload" title="Read the last runs again">Reload</button>
-            <button class="btn" id="btnReports" title="Open the folder with every run's report (HTML and JSON)">Open reports folder</button>
+            <button class="desktoponly btn" id="btnReports" title="Open the folder with every run's report (HTML and JSON)">Open reports folder</button>
           </div>
           <div id="runList" class="runlist" aria-live="polite"></div>
           <div class="actions">
@@ -560,13 +565,13 @@
             <button class="btn" id="btnMonthly" title="Last month's report, from the nightly runs - saved in Logs\reports and sent when alerts are set up">Create last month's report</button>
           </div>
           <ul id="healthList" class="healthlist" aria-live="polite" hidden></ul>
-          <h3>Run while nobody is signed in</h3>
-          <ul id="unattSteps" class="healthlist"></ul>
+          <h3 class="desktoponly">Run while nobody is signed in</h3>
+          <ul id="unattSteps" class="desktoponly healthlist"></ul>
           <div class="actions">
-            <button class="btn" id="btnUnattScript" title="Writes a script that copies the certificate to the computer's store and sets the tasks to run whether you are signed in or not - you run it as administrator">Create the setup script</button>
-            <button class="btn" id="btnUnattReload" title="Check again">Check again</button>
+            <button class="desktoponly btn" id="btnUnattScript" title="Writes a script that copies the certificate to the computer's store and sets the tasks to run whether you are signed in or not - you run it as administrator">Create the setup script</button>
+            <button class="desktoponly btn" id="btnUnattReload" title="Check again">Check again</button>
           </div>
-          <p class="sub" id="unattNote" hidden></p>
+          <p class="desktoponly sub" id="unattNote" hidden></p>
           <h3>Every night, too</h3>
           <label class="chk" title="Each deployed app against Intune - settings, groups, dependencies, assignments the catalog doesn't have - reported (and alerted) when something changed in the portal"><input type="checkbox" id="rpDrift">Check every app against Intune (drift)</label>
           <label class="chk" title="When an app's assignments drifted, Send groups puts the catalog's back - Intune's own changes are overwritten"><input type="checkbox" id="rpDriftFix">... and put the catalog's groups back when assignments drifted</label>
@@ -600,7 +605,7 @@
         <article class="card">
           <h2>Packaging</h2>
           <p class="certstatus" id="pkgTool"></p>
-          <div class="row"><label for="pkgPackager">Build packages with</label>
+          <div class="row desktoponly"><label for="pkgPackager">Build packages with</label>
             <select id="pkgPackager" title="Built in needs no download; IntuneWinAppUtil.exe is Microsoft's tool">
               <option value="auto">Automatic - IntuneWinAppUtil.exe when it's there, built in otherwise</option>
               <option value="builtin">Built in (no download)</option>
@@ -608,13 +613,13 @@
             </select></div>
           <p class="certstatus" id="pkgShared"></p>
           <div class="actions">
-            <button class="btn" id="btnGetTool" title="Download IntuneWinAppUtil.exe from Microsoft (its signature is checked)">Download packaging tool</button>
+            <button class="desktoponly btn" id="btnGetTool" title="Download IntuneWinAppUtil.exe from Microsoft (its signature is checked)">Download packaging tool</button>
             <button class="btn" id="btnBuildShared" title="Build the shared package every Winget app deploys with">Build init.intunewin</button>
           </div>
         </article>
       </div>
       <div class="col">
-        <article class="card">
+        <article class="card desktoponly">
           <h2>Folders</h2>
           <p class="sub">Leave a box empty to use the default (shown greyed out).</p>
           <div id="folderList"></div>
@@ -656,7 +661,7 @@
   <button role="menuitem" data-act="pull" title="Read the apps' settings and groups from Intune into the catalog - you choose per field">Read from Intune...</button>
   <button role="menuitem" data-act="pushsettings" title="Send the catalog's settings to Intune, without uploading a package">Send settings only...</button>
   <button role="menuitem" data-act="status" title="Every device's install state for this app, from Intune">Install status...</button>
-  <button role="menuitem" data-act="sandbox" title="Install, detect and uninstall it in Windows Sandbox - a throwaway Windows - before it goes to any device">Test in Windows Sandbox...</button>
+  <button role="menuitem" class="desktoponly" data-act="sandbox" title="Install, detect and uninstall it in Windows Sandbox - a throwaway Windows - before it goes to any device">Test in Windows Sandbox...</button>
   <hr>
   <div class="mhead" role="presentation">Releases</div>
   <button role="menuitem" data-act="release" title="Release a new version to the pilot groups first - a new app in Intune that supersedes the current one">Release new version...</button>
@@ -724,6 +729,15 @@
   <ul class="picklist" id="certList"></ul>
   <p class="sub" id="certHidden" hidden></p>
   <div class="actions end"><button class="btn" data-close>Cancel</button></div>
+</dialog>
+
+<dialog id="dlgPfx" aria-labelledby="pfxTitle">
+  <h2 id="pfxTitle">Import a certificate</h2>
+  <p class="sub">A .pfx (or .p12) with its private key - the certificate the app registration already has. It's kept in the server's certificate store, on its data volume.</p>
+  <label>File<input type="file" id="pfxFile" accept=".pfx,.p12,application/x-pkcs12"></label>
+  <label>Password<input type="password" id="pfxPassword" autocomplete="off"></label>
+  <p class="formerror" id="pfxError" hidden></p>
+  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnPfxGo">Import</button></div>
 </dialog>
 
 <dialog id="dlgNewCert">
@@ -873,7 +887,7 @@
       <div class="formgrid">
         <section>
           <h3>Detection rule <button type="button" class="help" data-help="detection" aria-label="What is a detection rule?">?</button></h3>
-          <button type="button" class="btn small" id="btnDetFromPc" title="Pick the app from the ones installed on this PC - its MSI product code, its program file's version, or its Uninstall entry">From an app on this PC...</button>
+          <button type="button" class="desktoponly btn small" id="btnDetFromPc" title="Pick the app from the ones installed on this PC - its MSI product code, its program file's version, or its Uninstall entry">From an app on this PC...</button>
           <label>Type<select id="xType"><option value="">(none - an app with its own package needs one)</option><option value="Script">Script</option><option value="Msi">MSI product code</option><option value="File">File or folder</option><option value="Registry">Registry</option></select></label>
           <div data-det="Script"><div class="blockbar" id="detBlocks" role="group" aria-label="Detection script as blocks" hidden></div><label>Detection script <span class="muted">(writes output and exits 0 when installed)</span><textarea autocomplete="off" id="xScript" rows="8" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label></div>
           <div data-det="Msi"><label>Product code<input autocomplete="off" id="xProductCode" class="mono" spellcheck="false" placeholder="{00000000-0000-0000-0000-000000000000}" autocorrect="off" autocapitalize="off"></label></div>
@@ -1096,7 +1110,7 @@
     <p class="sub">Add many Winget apps at once: from a <code>winget export</code> file (another PC's apps - <code>winget export -o apps.json</code> there), or from the apps on this PC.</p>
     <div class="toolbar tight">
       <button class="btn" id="btnAlFile" title="A JSON file made by winget export">Choose an export file...</button>
-      <button class="btn" id="btnAlThisPc" title="Runs winget export here and lists what it finds">Read this PC's apps</button>
+      <button class="desktoponly btn" id="btnAlThisPc" title="Runs winget export here and lists what it finds">Read this PC's apps</button>
       <input type="file" id="alFile" accept=".json,application/json" hidden>
       <span class="muted" id="alNote" aria-live="polite"></span>
     </div>

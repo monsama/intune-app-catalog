@@ -99,7 +99,7 @@ function Global:Get-WebAllLocalCertificates {
     $now = Get-Date
     $inUse = ([string]$Global:App.GraphCertificateThumbprint) -replace '\s', ''
     $list = foreach ($store in 'CurrentUser', 'LocalMachine') {
-        Get-ChildItem -Path "Cert:\$store\My" -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-AppStoreCertificates -Store $store | ForEach-Object {
             [ordered]@{ subject = $_.Subject; thumbprint = $_.Thumbprint; notAfter = $_.NotAfter.ToString('yyyy-MM-dd'); store = $store
                 expired = ($_.NotAfter -lt $now); hasKey = [bool]$_.HasPrivateKey; inUse = ($inUse -and $_.Thumbprint -eq $inUse) }
         }
@@ -114,6 +114,15 @@ function Global:Remove-WebLocalCertificate {
     $store = [string]$Data.store
     if ($thumb -notmatch '^[0-9A-Fa-f]{40}$') { return @{ ok = $false; error = 'That is not a certificate thumbprint.' } }
     if ($store -notin 'CurrentUser', 'LocalMachine') { return @{ ok = $false; error = 'Unknown certificate store.' } }
+    # Linux (the container): the user's .NET store - there is no Cert: drive.
+    if ($IsLinux -or $IsMacOS) {
+        $c = Find-AppStoreCertificate $thumb -Store CurrentUser
+        if (-not $c) { return @{ ok = $false; error = "No certificate $thumb in the store." } }
+        $st = New-Object System.Security.Cryptography.X509Certificates.X509Store('My', [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
+        try { $st.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite); $st.Remove($c) } finally { $st.Close() }
+        Write-Log "[OK] Certificate $thumb deleted from the store."
+        return @{ ok = $true }
+    }
     $path = "Cert:\$store\My\$thumb"
     if (-not (Test-Path -LiteralPath $path)) { return @{ ok = $false; error = "No certificate $thumb in $store\My." } }
     # -DeleteKey: the private key goes too - without it Windows removes the

@@ -8,7 +8,8 @@ function Global:New-AppStepStartInfo {
       reads and deletes straight away. -Spec keys: see the runner's header.
     #>
     param(
-        [string]$Exe = "powershell.exe",
+        # Windows PowerShell 5.1 on Windows; on Linux (the container) the PowerShell this app runs in.
+        [string]$Exe = $(if ($IsLinux -or $IsMacOS) { (Get-Process -Id $PID).Path } else { "powershell.exe" }),
         [hashtable]$Spec,
         [switch]$NonInteractive
     )

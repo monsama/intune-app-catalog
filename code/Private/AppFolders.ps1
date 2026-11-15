@@ -37,7 +37,10 @@ function Global:Get-AppFolderDefault {
     param([Parameter(Mandatory)][string]$Kind)
     $spec = @(Get-AppFolderKinds) | Where-Object { $_.Key -eq $Kind } | Select-Object -First 1
     if (-not $spec) { throw "Unknown app folder '$Kind' - see Get-AppFolderKinds." }
-    return (Join-Path $Global:App.RootPath $spec.Default)
+    $default = $spec.Default
+    # The server version (the container): everything it writes is on the data volume - the app's own folder is read-only there.
+    if ([string]$env:ICA_SERVER -match '^(1|true|yes|on)$' -and $default -notlike 'data\*') { $default = "data\$default" }
+    return (Join-Path $Global:App.RootPath $default)
 }
 
 function Global:Get-AppFolder {

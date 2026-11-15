@@ -1,0 +1,64 @@
+# Intune App Catalog - the server version. Generated values live in ./secrets and .env (see deploy-ica.sh).
+# HTTPS comes from the shared proxy of NOBS Inventory (nobs-proxy, its own Compose project): this app joins its network
+# and has a site file there (proxy/sites/intune-catalog.caddy), written by deploy-ica.sh.
+name: intune-app-catalog
+
+services:
+  app:
+    container_name: intune-app-catalog
+    # Pinned release image (ICA_IMAGE in .env). Built locally only if the pull is not possible.
+    image: ${ICA_IMAGE:-ghcr.io/monsama/intune-app-catalog:latest}
+    build: .
+    restart: unless-stopped
+    # No extra rights inside the container, and the image's own files can't be changed - only /app/data (the volume)
+    # and /tmp are written.
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs:
+      - /tmp:size=2g
+    expose:
+      - "8080"
+    environment:
+      ICA_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      # The name(s) people type - the only ones answered (comma separated).
+      ICA_HOST: ${ICA_HOST:?Set ICA_HOST in .env (the name people type)}
+      # Only without the proxy, for a test on http://<name>:8080: allow plain http.
+      ICA_ALLOW_HTTP: ${ICA_ALLOW_HTTP:-0}
+      ICA_IDLE_MINUTES: ${ICA_IDLE_MINUTES:-120}
+      ICA_SESSION_HOURS: ${ICA_SESSION_HOURS:-12}
+      # The time zone of the nightly run's time and of the logs.
+      TZ: ${TZ:-Europe/Zurich}
+    secrets:
+      - admin_password
+    volumes:
+      # The catalog, packages, logs, settings and the connection's certificate (its .NET store).
+      - ica-data:/app/data
+    networks:
+      - default
+      - nobs-proxy
+    # An init process runs the app, so a step it starts (deploy, package) never outlives a stop.
+    init: true
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+secrets:
+  admin_password:
+    file: ./secrets/admin_password
+
+volumes:
+  ica-data:
+    name: intune-app-catalog-data
+
+networks:
+  nobs-proxy:
+    external: true

@@ -37,6 +37,7 @@ try { Add-Type -AssemblyName System.Security -ErrorAction Stop } catch { }
 . (Join-Path $PSScriptRoot 'WebConvenience.ps1')
 . (Join-Path $PSScriptRoot 'WebSetup.ps1')
 . (Join-Path $PSScriptRoot 'WebBlocks.ps1')
+. (Join-Path $PSScriptRoot 'WebServerMode.ps1')
 
 Initialize-AppState -RootPath $RootPath
 $Global:App.WebLog = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
@@ -70,27 +71,41 @@ if ($RunUpdates) {
 
 $uiRoot = Join-Path $PSScriptRoot 'ui'
 $token = [guid]::NewGuid().ToString('N')
+# Server mode (the container): every address, the port from ICA_PORT, a sign-in instead of the start token.
+$serverMode = Test-WebServerMode
+if ($serverMode) {
+    try { Initialize-WebServerMode }
+    catch { Write-Host "  Can't start: $($_.Exception.Message)" -ForegroundColor Red; Write-Log "[FAILED] Server mode: $($_.Exception.Message)"; exit 1 }
+    $NoBrowser = $true
+}
 
 # A fixed port keeps the page's origin - and with it what the browser
 # remembers for it (column widths, the last tab) - the same from one start
 # to the next; a random one only when all of them are taken.
 $listener = $null; $port = 0
-foreach ($try in 17710..17717) {
-    try { $l = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback, $try); $l.Start(); $listener = $l; $port = $try; break }
-    catch { $listener = $null }
+if ($serverMode) {
+    $port = $Global:App.Server.Port
+    $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Any, $port)
+    $listener.Start()
+}
+else {
+    foreach ($try in 17710..17717) {
+        try { $l = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback, $try); $l.Start(); $listener = $l; $port = $try; break }
+        catch { $listener = $null }
+    }
 }
 if (-not $listener) {
     $listener = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback, 0)
     $listener.Start(); $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
 }
-$url = "http://127.0.0.1:$port/#t=$token"
+$url = if ($serverMode) { "port $port, for $(@($Global:App.Server.Hosts) -join ', ')" } else { "http://127.0.0.1:$port/#t=$token" }
 
 Write-Host ""
 Write-Host "  Intune App Catalog $($Global:App.AppVersion) - web interface" -ForegroundColor Green
 Write-Host "  Open:  $url"
-Write-Host "  Close the app window (or this console) to stop." -ForegroundColor DarkGray
+Write-Host $(if ($serverMode) { '  Server mode: sign in with the admin password. Runs until the container stops.' } else { '  Close the app window (or this console) to stop.' }) -ForegroundColor DarkGray
 Write-Host ""
-Write-Log "[INFO] Web interface started on 127.0.0.1:$port."
+Write-Log "[INFO] Web interface started on $(if ($serverMode) { "port $port (server mode)" } else { "127.0.0.1:$port" })."
 
 # Every request runs in a pooled runspace with this app's functions and
 # its shared state - so a slow Graph call doesn't hold up the page.
@@ -99,7 +114,7 @@ foreach ($fn in Get-ChildItem function: | Where-Object { $_.ScriptBlock.File -an
     $iss.Commands.Add((New-Object System.Management.Automation.Runspaces.SessionStateFunctionEntry($fn.Name, $fn.ScriptBlock)))
 }
 $shared = [hashtable]::Synchronized(@{ LastPing = Get-Date; Quit = $false })
-foreach ($entry in @(@('App', $Global:App), @('WebToken', $token), @('WebShared', $shared), @('WebUiRoot', $uiRoot))) {
+foreach ($entry in @(@('App', $Global:App), @('WebToken', $token), @('WebShared', $shared), @('WebUiRoot', $uiRoot), @('WebServerMode', $serverMode))) {
     $iss.Variables.Add((New-Object System.Management.Automation.Runspaces.SessionStateVariableEntry($entry[0], $entry[1], '')))
 }
 $pool = [runspacefactory]::CreateRunspacePool(1, 8, $iss, $Host)
@@ -112,9 +127,22 @@ $handler = {
         $refusal = Test-WebRequestAllowed $req
         if ($refusal) { Send-WebResponse $Client '403 Forbidden' 'text/plain; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes('Forbidden')); return }
         if ($req.Path -like '/api/*') {
+            # The container's health check (a GET) - the page's own Health checks are a POST to the same name.
+            if ($req.Path -eq '/api/health' -and $req.Method -eq 'GET') { Send-WebJson $Client @{ ok = $true; version = $App.AppVersion }; return }
             $data = $null
             try { if ($req.Body) { $data = $req.Body | ConvertFrom-Json } } catch { }
-            if (-not (Test-WebToken -Data $data -Expected $WebToken)) { Send-WebJson $Client @{ ok = $false; error = 'bad token' }; return }
+            # Before signing in: what kind of server this is, and the sign-in itself.
+            if ($req.Path -eq '/api/hello') { Send-WebJson $Client @{ ok = $true; server = [bool]$WebServerMode; version = $App.AppVersion }; return }
+            if ($WebServerMode) {
+                if ($req.Path -eq '/api/login') { Send-WebJson $Client (Invoke-WebLogin -Data $data -Agent $req.Agent); return }
+                if ($req.Path -eq '/api/logout') { Send-WebJson $Client (Invoke-WebLogout -Token ([string]$data.token)); return }
+                $why = Test-WebSession ([string]$data.token)
+                if ($why) { Send-WebJson $Client @{ ok = $false; error = 'bad token'; reason = $why }; return }
+                # The container runs until it is stopped: no idle stop, no Quit.
+                if ($req.Path -eq '/api/ping') { Send-WebJson $Client @{ ok = $true; server = $true }; return }
+                if ($req.Path -eq '/api/quit') { Send-WebJson $Client @{ ok = $false; error = 'The server runs until its container is stopped.' }; return }
+            }
+            elseif (-not (Test-WebToken -Data $data -Expected $WebToken)) { Send-WebJson $Client @{ ok = $false; error = 'bad token' }; return }
             if ($req.Path -eq '/api/ping') { $WebShared.LastPing = Get-Date; Send-WebJson $Client @{ ok = $true }; return }
             if ($req.Path -eq '/api/quit') { Send-WebJson $Client @{ ok = $true }; $WebShared.Quit = $true; return }
             Send-WebJson $Client (Invoke-WebApi -Path $req.Path -Data $data)
@@ -142,6 +170,7 @@ if (-not $NoBrowser) {
 $inFlight = New-Object System.Collections.Generic.List[object]
 $run = $true
 $lastOrphanCheck = Get-Date
+$lastScheduleCheck = Get-Date; $scheduleState = @{}
 while ($run) {
     $pending = $false
     try { $pending = $listener.Server.Poll(200000, [System.Net.Sockets.SelectMode]::SelectRead) } catch { Start-Sleep -Milliseconds 50 }
@@ -169,9 +198,11 @@ while ($run) {
     $inFlight = $still
     # A step that ended while no page polled it (reload, closed tab) is finished here.
     if (((Get-Date) - $lastOrphanCheck).TotalSeconds -ge 5) { $lastOrphanCheck = Get-Date; try { Complete-WebOrphanJobs } catch { } }
+    # The server version: its own schedule for the nightly and fast-track runs (no Windows scheduled tasks).
+    if ($serverMode -and ((Get-Date) - $lastScheduleCheck).TotalSeconds -ge 30) { $lastScheduleCheck = Get-Date; try { Invoke-WebServerSchedule -State $scheduleState } catch { } }
     if ($shared.Quit) { $run = $false }
     elseif ($browser -and $browser.HasExited) { $run = $false }
-    elseif (((Get-Date) - $shared.LastPing).TotalHours -gt 6) { $run = $false }
+    elseif (-not $serverMode -and ((Get-Date) - $shared.LastPing).TotalHours -gt 6) { $run = $false }
 }
 
 foreach ($item in $inFlight) {

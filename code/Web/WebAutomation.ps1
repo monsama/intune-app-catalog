@@ -277,12 +277,9 @@ function Global:Get-WebConnectionCertificate {
     # The connection's certificate on this PC: @{ Cert; Store } or $null.
     $t = ([string]$Global:App.GraphCertificateThumbprint) -replace '\s', ''
     if (-not $t) { return $null }
-    foreach ($loc in 'Cert:\CurrentUser\My', 'Cert:\LocalMachine\My') {
-        try {
-            $c = Get-ChildItem -LiteralPath $loc -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $t } | Select-Object -First 1
-            if ($c) { return @{ Cert = $c; Store = $loc } }
-        }
-        catch { }
+    foreach ($loc in 'CurrentUser', 'LocalMachine') {
+        $c = Find-AppStoreCertificate $t -Store $loc
+        if ($c) { return @{ Cert = $c; Store = "Cert:\$loc\My" } }
     }
     return $null
 }
@@ -667,6 +664,8 @@ function Global:Get-WebUpdateSchedule {
 }
 
 function Global:Get-WebUpdateScheduleNow {
+    # The server version (the container): its own schedule (Invoke-WebServerSchedule), kept in the settings.
+    if (Test-WebServerMode) { return @{ supported = $true; exists = [bool]$Global:App.ReleasePolicy.ServerSchedule; runAt = [string]$Global:App.ReleasePolicy.RunAt; user = 'the server'; state = $(if ($Global:App.ReleasePolicy.ServerSchedule) { 'Ready' } else { '' }); server = $true } }
     if (-not ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') -or -not (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue)) { return @{ supported = $false; exists = $false } }
     $t = Get-ScheduledTask -TaskName (Get-WebUpdateTaskName) -ErrorAction SilentlyContinue
     if (-not $t) { return @{ supported = $true; exists = $false } }
@@ -684,6 +683,14 @@ function Global:Set-WebUpdateSchedule {
     $Global:App.ScheduleCache = $null
     $now = Get-WebUpdateSchedule
     $Global:App.ScheduleCache = $null
+    if (Test-WebServerMode) {
+        if ($Data.on -and [string]$Data.runAt -notmatch '^([01]\d|2[0-3]):[0-5]\d$') { return @{ ok = $false; error = 'The time must be HH:mm (24 hours), e.g. 03:00.' } }
+        $Global:App.ReleasePolicy.ServerSchedule = [bool]$Data.on
+        if ($Data.on) { $Global:App.ReleasePolicy.RunAt = [string]$Data.runAt }
+        try { [void](Write-SettingsFile) } catch { }
+        Write-Log "[OK] Nightly run $(if ($Data.on) { "every day at $($Global:App.ReleasePolicy.RunAt) (the server's own schedule)" } else { 'turned off' })."
+        $Global:App.ScheduleCache = $null; return @{ ok = $true; schedule = (Get-WebUpdateSchedule) }
+    }
     if (-not $now.supported) { return @{ ok = $false; error = 'Scheduled tasks are only available on Windows.' } }
     $name = Get-WebUpdateTaskName
     if (-not $Data.on) {
@@ -832,7 +839,7 @@ function Global:Invoke-WebHousekeeping {
         foreach ($i in @(Get-ChildItem -LiteralPath $temp -Filter $pattern -Force -ErrorAction SilentlyContinue)) { if (& $old $i 1) { $n += & $drop $i } }
     }
     if ($Global:App.RootPath) {
-        foreach ($i in @(Get-ChildItem -LiteralPath $Global:App.RootPath -Filter '.intunepkg_*' -File -Force -ErrorAction SilentlyContinue)) { if (& $old $i 1) { $n += & $drop $i } }
+        foreach ($i in @(Get-ChildItem -LiteralPath $Global:App.RootPath, (Join-Path $Global:App.RootPath 'data\run') -Filter '.intunepkg_*' -File -Force -ErrorAction SilentlyContinue)) { if (& $old $i 1) { $n += & $drop $i } }
     }
     $sb = Get-WebSandboxRoot
     if (Test-Path -LiteralPath $sb) { foreach ($i in @(Get-ChildItem -LiteralPath $sb -Directory -ErrorAction SilentlyContinue)) { if (& $old $i 7) { $n += & $drop $i } } }

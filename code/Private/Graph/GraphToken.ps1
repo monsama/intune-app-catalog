@@ -167,8 +167,7 @@ function Global:Get-GraphAppTokenClaims {
     #>
     param([string]$TenantId, [string]$ClientId, [string]$Thumbprint)
 
-    $certificate = Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
-        Where-Object { $_.Thumbprint -eq ($Thumbprint -replace '\s', '') } | Select-Object -First 1
+    $certificate = Find-AppStoreCertificate $Thumbprint
     if (-not $certificate) { throw "No certificate with thumbprint $Thumbprint in CurrentUser\My or LocalMachine\My." }
     if (-not $certificate.HasPrivateKey) { throw "That certificate has no private key on this machine, so it can't sign in." }
 

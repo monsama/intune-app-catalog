@@ -338,20 +338,8 @@ function Global:Get-WebInstallerInfo {
     if ($cacheKey -and $Global:App.InstallerInfoCache.ContainsKey($cacheKey)) { $hit = $Global:App.InstallerInfoCache[$cacheKey]; foreach ($k in @($hit.Keys)) { $info[$k] = $hit[$k] }; return $info }
     if ($msi) {
         $info.found = $true; $info.file = $msi.Name
-        try {
-            $wi = New-Object -ComObject WindowsInstaller.Installer
-            $db = $wi.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $wi, @($msi.FullName, 0))
-            foreach ($prop in 'ProductVersion', 'ProductCode') {
-                $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db, @("SELECT Value FROM Property WHERE Property='$prop'"))
-                [void]$view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
-                $rec = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
-                $val = if ($rec) { [string]$rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, 1) } else { '' }
-                [void]$view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null)
-                if ($prop -eq 'ProductVersion') { $info.version = $val } else { $info.productCode = $val }
-            }
-            [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($db); [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($wi)
-        }
-        catch { }
+        $props = Get-MsiPropertyValues -Path $msi.FullName -Names @('ProductVersion', 'ProductCode')
+        $info.version = [string]$props['ProductVersion']; $info.productCode = [string]$props['ProductCode']
     }
     elseif ($exe) {
         $info.found = $true; $info.file = $exe.Name
