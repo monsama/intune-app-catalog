@@ -10,6 +10,9 @@
   now, and opening it lists winget's versions (asked the first time),
   newest first, plus the ones kept from earlier releases and "Other" to
   type one. No button that turns into a list - nothing moves.
+- **"only in Intune" shows only those apps.** It added them under the
+  whole catalog list; now the list is just the Intune-only apps, and the
+  count says so.
 
 ## 2.21.0
 
