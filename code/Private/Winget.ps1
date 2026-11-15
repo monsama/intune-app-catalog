@@ -18,13 +18,13 @@ function Global:ConvertFrom-WingetSearchOutput {
     for ($i = 0; $i -lt $lines.Count; $i++) {
         # winget draws a progress spinner before the table; the header is
         # the line that names the columns.
-        if ($lines[$i] -match '(^|\s)Name\s+Id\s+Version') { $headerIdx = $i; break }
+        if ($lines[$i] -cmatch '(^|\s)Name\s+Id\s+Version') { $headerIdx = $i; break }
     }
     if ($headerIdx -ge 0) {
         $header = $lines[$headerIdx]
         $namePos = [Math]::Max(0, $header.IndexOf('Name'))
-        $idPos = $header.IndexOf('Id', $namePos + 4)
-        $versionPos = $header.IndexOf('Version', $idPos)
+        $idPos = $header.IndexOf('Id', [Math]::Min($header.Length, $namePos + 4))
+        $versionPos = $header.IndexOf('Version', [Math]::Max(0, $idPos))
         $matchPos = $header.IndexOf('Match', $versionPos)
         $sourcePos = $header.IndexOf('Source', $versionPos)
     }
