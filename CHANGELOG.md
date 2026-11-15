@@ -1,5 +1,40 @@
 # Changelog
 
+## 2.28.2
+
+A sweep of the whole app (security, bugs, UI), mostly the server version.
+
+- **Security (server version):**
+  - Every request has a deadline: someone sending a body a byte at a time
+    could hold all request slots and freeze the server without signing in.
+    Bodies larger than a sign-in are read only for the open session.
+  - Wrong passwords are counted per address (as the proxy saw it): someone
+    guessing can no longer lock the admin out, and many guesses at once
+    don't get past the limit.
+  - An installer's name can't break out of the comment in the Sandbox
+    starter script (it could have run a command on the PC outside the
+    Sandbox).
+  - `localhost` is answered only from inside the container: another
+    container on the proxy's network has to go through the HTTPS proxy.
+- **Bugs:**
+  - Saving Managed updates or Nightly run turned the server's nightly run
+    off and set its time back - only Schedule sets them now.
+  - .exe installers had no version on the server - it is read from the file.
+  - Working files (staged installers, Sandbox zips) are on the data volume,
+    not the small /tmp in memory - large installers fit.
+  - Open in Entra, What's new and the coffee button open in your browser on
+    the server version; folder actions aren't offered there.
+  - winget's index: one download at a time for sure; without the CDN, a
+    failed download isn't retried for 30 minutes (searches don't wait).
+  - The server always packages with the built-in packager; the session's
+    state is locked against requests at the same time; Linux folder paths
+    are accepted; msiinfo can't hang on its errors.
+- **UI:** app icons have their colours again (the page's security policy
+  refused how they were set); the server's texts say "the server", not
+  "this machine"; menus stay inside the window; settings and Add apps tabs
+  scroll on phones; fast-track runs are labelled in the run list; Groups
+  says why a search failed; a toast shows above a dialog opened after it.
+
 ## 2.28.1
 
 - **The server version: scripts for what needs a Windows PC.** These download
