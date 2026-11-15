@@ -4,7 +4,8 @@ The automated tests never sign in to Microsoft Graph: they check the page,
 the server and the logic, and stop at "Set up the connection first". Run
 through this once against a **test tenant** (never production) before
 relying on a release. About 45 minutes, plus about 30 for managed updates
-(section 10) and 15 for what 2.20-2.24 added (section 10b).
+(section 10), 15 for what 2.20-2.24 added (section 10b) and 20 for the
+blocks and the code editor (section 10c).
 
 ## Setup
 
@@ -265,12 +266,13 @@ group with another device.
       from the MSI, the package is rebuilt, and the pilot app's detection
       shows the new version and product code.
 
-## 10b. Newer features (2.20 - 2.24)
+## 10b. Newer features (2.20 - 2.26)
 
 - [ ] **Groups by object ID:** push groups for the 7-Zip test app, then
       rename `ZZ-Test-A` in the Entra portal and push again - the step stops
-      with "renamed in Entra ID to ... rename it in the catalog too" and
-      changes nothing. Rename it in the catalog; the next push works.
+      with "renamed in Entra ID to ..." and points to Catalog > Replace a
+      group in all apps; nothing is sent. Replace it there; the next push
+      works.
       `<catalog>\.integrity\groups.json` holds the group's ID.
 - [ ] **Two groups with one name:** create a second `ZZ-Test-B` in the
       portal and push - the step stops and says the name isn't unique.
@@ -297,9 +299,64 @@ group with another device.
 - [ ] **Recent changes, Undo:** edit an app's owner, then Catalog > Recent
       changes > **Undo** - the old value is back.
 
+## 10c. Blocks and the code editor (2.25 - 2.26)
+
+About 20 minutes. Use the 7-Zip test app, an MSI app and a script app (Add
+apps > Script, any template); keep a test device in the pilot group.
+
+- [ ] **Winget blocks:** open the 7-Zip test app, *Install & detection*. The
+      commands show as blocks: PowerShell, Find winget and Install locked;
+      Version and For linked (a click goes to Install with / Install for);
+      the Install command field below is read-only.
+- [ ] **Extra winget option:** *+ Add* > `--override`, value `/S`, Tab. The
+      install command now ends with `--override '/S'`. Save, Send to
+      Intune, install on the test device - it installs silently. Release a
+      newer version: the pilot app's command still has `--override '/S'`.
+- [ ] **Refused values:** try `--override` with `/S & calc` - refused with
+      a message, the command is unchanged.
+- [ ] **Save straight away:** change the option's value and click Save
+      without leaving the field first - reopen the app: the new value is in
+      the command.
+- [ ] **Edit as text:** click it, type something at the end of the install
+      command - it stays text (not blocks) while you type; *Back to
+      blocks* only appears when it's one of their forms again. Cancel.
+- [ ] **MSI blocks:** on the MSI app, add the property `ALLUSERS` = `1` and
+      `INSTALLDIR` = `%ProgramFiles%\ZZTest`. The command has
+      `INSTALLDIR="%ProgramFiles%\ZZTest"` (quoted). Send to Intune and
+      install - it lands in that folder.
+- [ ] **Detection blocks:** on a managed Winget app, *Detection rule*:
+      Script shows the managed release's blocks. Change *Name Windows
+      lists*, Save; Release a newer version - the pilot's detection uses
+      that name. Clearing the name is refused (the release needs it).
+- [ ] **Own detection script:** set Type to Script with a script of your own
+      - *Open in the code editor*: line numbers, colours; a syntax error is
+      marked with its line and Apply is disabled; fix it, Apply, Save.
+- [ ] **Package script editor:** on the script app, *Edit Install.ps1*. The
+      version marker lines are grey and locked: typing, Tab, Backspace at
+      the next line's start and dragging text onto them are all refused.
+      Add a `Write-Output` line, Ctrl+S - saved; the app editor stays open.
+- [ ] **Marker can't be switched off:** put `<#` before the marker lines and
+      `#>` after them, Ctrl+S - refused. Same with `exit 0` before them.
+- [ ] **Someone else's change:** with the script open, change the same
+      `Install.ps1` in Notepad and save it there; then Save in the app -
+      refused as changed since you opened it, nothing overwritten.
+- [ ] **Previous version and Build:** *Previous version* loads the copy from
+      before your save (from Backups); *Build package* closes the editor
+      and shows the build on top. Send to Intune and install on the test
+      device - the new `Write-Output` is in the IME log.
+- [ ] **Minimize:** open Install.ps1, type something, minimize the editor,
+      click *Edit Install.ps1* again - it comes back with what you typed.
+- [ ] **Several admins (2.26.2):** with the app open on two PCs, start
+      Release on one - the other shows "Being changed" with the user and
+      PC, and its Release is refused. A double click on Release on one PC
+      creates only one pilot app in Intune.
+- [ ] **Recent changes:** the script save shows there with your user name.
+
 ## 11. Clean up
 
 - [ ] Delete the test apps from Intune and the catalog (with every
       superseded or pilot release of the managed one), the test groups, and
       the `ZZ-Test-Script` platform script and its local copy.
+- [ ] The script app and its package folder, and `%ProgramFiles%\ZZTest`
+      on the test device.
 - [ ] Put back anything you changed on a real app while testing.
