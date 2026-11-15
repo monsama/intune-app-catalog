@@ -79,7 +79,7 @@ function updateCheckActions() {
   const busy = checksRunning || jobRunning ? 'Wait for the running check or job to finish.' : '';
   setEnabled($('btnFixAdd'), !busy && sel.some(f => (f.actions || []).includes('AddToCatalog')), busy || 'Tick findings that are "In Intune, not in the catalog".');
   setEnabled($('btnFixRecheck'), !busy && sel.length > 0, busy || 'Tick one or more findings first.');
-  $('checkSelCount').textContent = sel.length ? `${sel.length} selected:` : '';
+  $('checkSelCount').textContent = sel.length ? `${sel.length} selected` : '';
   $('checkFixBar').hidden = !sel.length;
 }
 // The missing groups named by findings that offer CreateGroup.
