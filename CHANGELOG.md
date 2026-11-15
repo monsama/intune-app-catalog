@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.27.4
+
+- **Add apps looks right on every tab.** "Fill in by hand..." sits at the
+  end of the tab row instead of squeezed against the window's buttons;
+  every row has the same room above it (the search hint, Start from,
+  Managed updates no longer touch what's above); the Winget results and
+  From a list fill the tab, and say what appears there while they're
+  empty (no header strip over a blank area); Install.ps1 and
+  Uninstall.ps1 are in a code font with lines kept whole; the Detection
+  box has its heading inside.
+- **A ticked checkbox showed no tick in some places** (Settings > Apps &
+  defaults: Architecture, Allow uninstall; the editor's copies) - a field
+  rule gave them padding, which pushed the tick out. Every checkbox is now
+  the same 16px box everywhere; a check over every page and dialog
+  confirms it.
+- **Room where things touched**, found by a check over every page,
+  Settings section and dialog: Packaging's "Build packages with" and its
+  status lines, the platform script dialog's Run as row and its groups
+  note ("Assigned to" instead of a second "Groups").
+
 ## 2.27.3
 
 - **Home: "Install the WinGet PowerShell module" has an Install it
