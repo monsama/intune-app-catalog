@@ -982,7 +982,7 @@
       <label class="chk"><input type="checkbox" id="s32">Run in 32-bit PowerShell on 64-bit Windows</label>
       <label class="chk"><input type="checkbox" id="sSig">Require a signature</label>
       <h3>Groups</h3>
-      <label>Groups<textarea autocomplete="off" id="sGroups" rows="4" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
+      <label>Assigned to<textarea autocomplete="off" id="sGroups" rows="4" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
       <label class="chk"><input type="checkbox" id="sAssign">Send these groups to Intune when saving there</label>
       <p class="muted note" id="sAssignNote">Replaces the script's assignments in Intune - an empty list removes them all.</p>
     </section>
@@ -1010,9 +1010,8 @@
 <dialog id="dlgAdd" class="wide addapps" aria-labelledby="addTitle">
   <div class="addhead">
     <h2 id="addTitle">Add apps</h2>
-    <span class="spacer"></span>
-    <button class="btn ghost small" id="btnAddBlank" title="The full editor with nothing filled in - for an app none of the tabs fits">Fill in by hand...</button>
   </div>
+  <div class="addtabrow">
   <nav class="subtabs" role="tablist" aria-label="Where the app comes from">
     <button class="subtab" role="tab" id="atab-winget" data-asrc="winget" aria-controls="asec-winget" aria-selected="true">Winget</button>
     <button class="subtab" role="tab" id="atab-installer" data-asrc="installer" aria-controls="asec-installer" aria-selected="false">Installer (MSI / EXE)</button>
@@ -1020,6 +1019,8 @@
     <button class="subtab" role="tab" id="atab-psadt" data-asrc="psadt" aria-controls="asec-psadt" aria-selected="false">PSADT</button>
     <button class="subtab" role="tab" id="atab-list" data-asrc="list" aria-controls="asec-list" aria-selected="false">From a list</button>
   </nav>
+  <button class="btn ghost small" id="btnAddBlank" title="The full editor with nothing filled in - for an app none of the tabs fits">Fill in by hand...</button>
+  </div>
 
   <section class="asec" id="asec-winget" role="tabpanel" aria-labelledby="atab-winget">
     <div class="wgsearch">
@@ -1027,7 +1028,7 @@
       <span class="muted" id="awNote" aria-live="polite">Type to search - results appear as you type.</span>
     </div>
     <div class="awsplit">
-      <div class="tablewrap" tabindex="0" aria-label="Winget packages">
+      <div class="tablewrap" tabindex="0" aria-label="Winget packages" data-empty="Search results appear here - pick one or several.">
         <table class="grid" id="awGrid"><thead><tr><th class="chk"><span class="sr">Pick</span></th><th>Package</th><th>ID</th><th>Version</th></tr></thead><tbody id="awRows"></tbody></table>
       </div>
       <aside class="awdetail" id="awDetail" aria-live="polite"><p class="muted">Pick a package to see what winget says about it.</p></aside>
@@ -1099,7 +1100,7 @@
       <input type="file" id="alFile" accept=".json,application/json" hidden>
       <span class="muted" id="alNote" aria-live="polite"></span>
     </div>
-    <div class="tablewrap" tabindex="0" aria-label="Packages in the list">
+    <div class="tablewrap" tabindex="0" aria-label="Packages in the list" data-empty="Choose an export file or read this PC's apps - the packages appear here to pick from.">
       <table class="grid" id="alGrid"><thead><tr><th class="chk"><input type="checkbox" id="alAll" aria-label="Pick every package not in the catalog"></th><th>Winget ID</th><th>In the catalog</th></tr></thead><tbody id="alRows"></tbody></table>
     </div>
   </section>

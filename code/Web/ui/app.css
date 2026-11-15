@@ -1299,3 +1299,41 @@ table.cmp mark.add { background: color-mix(in srgb, var(--ok) 35%, transparent);
 #grid td.name > input.rowpick, #grid td.name > .appicon { vertical-align: middle; }
 #grid td.name > .nm { vertical-align: middle; line-height: 18px; }
 #grid th input.rowpick { vertical-align: middle; }
+
+/* ---- Add apps: room between rows, tables that fill the tab, code in a code font ---- */
+/* "Fill in by hand..." at the end of the tab row - not squeezed against the window's buttons. */
+.addtabrow { display: flex; align-items: flex-end; gap: 12px; border-bottom: 1px solid var(--bd); margin-bottom: 14px; }
+.addtabrow > .subtabs { flex: 1 1 auto; border-bottom: 0; margin-bottom: 0; }
+.addtabrow > #btnAddBlank { flex: none; margin-bottom: 6px; }
+/* Every block in a tab has the same room above it (labels, hints, tick boxes, tables). */
+dialog.addapps .asec > * + * { margin-top: 12px; }
+dialog.addapps .asec > [hidden] + * { margin-top: 12px; }
+dialog.addapps .wgsearch { margin-bottom: 0; gap: 6px; }
+dialog.addapps .asec > label.inline { margin-top: 12px; }
+dialog.addapps .asec > label.inline select { width: auto; min-width: 240px; }
+/* Winget and From a list: the results fill the tab; an empty list says what goes there. */
+dialog.addapps[open]:not(.maxed) > #asec-winget:not([hidden]), dialog.addapps[open]:not(.maxed) > #asec-list:not([hidden]) { display: flex; flex-direction: column; }
+#asec-winget > .awsplit { flex: 1 1 auto; min-height: 180px; }
+#asec-winget > .awsplit .tablewrap, #asec-winget > .awsplit .awdetail { max-height: none; height: 100%; }
+#asec-list > .tablewrap { flex: 1 1 auto; min-height: 180px; overflow: auto; }
+.tablewrap[data-empty]:has(tbody:empty)::after { content: attr(data-empty); display: block; padding: 28px 16px; text-align: center; color: var(--muted); font-size: 13px; }
+/* Scripts: a code font, lines kept whole (scroll sideways), tabs as 4. */
+.formgrid label > textarea.mono, .formgrid label > input.mono, textarea.mono { font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 4; }
+#asec-script .formgrid.two textarea { height: 170px; min-height: 120px; resize: vertical; }
+/* Detection: a box like the editor's, its heading inside rather than cut into the border. */
+dialog.addapps fieldset.ownrule { padding: 10px 14px 12px; margin: 12px 0 0; }
+dialog.addapps fieldset.ownrule > legend { float: left; width: 100%; padding: 0; margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+dialog.addapps fieldset.ownrule > legend + * { clear: both; }
+dialog.addapps .asec ul.notes { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 6px; }
+dialog.addapps .asec > p.sub { margin-bottom: 0; }
+
+/* Every checkbox is the app's 16px box, wherever it sits: field rules (padding, block, full width) never reach it -
+   with padding the tick was pushed out and a ticked box looked like a plain blue square. */
+input[type=checkbox]:not([hidden]) { box-sizing: border-box !important; padding: 0 !important; width: 16px !important; height: 16px !important; min-width: 16px; display: inline-grid !important; place-content: center; }
+
+/* Room found by the spacing check (2.27.4): a label right above its select, a block right under a field, a note
+   right under its tick box. */
+#sec-packaging .row { display: flex; flex-direction: column; gap: 6px; }
+#dlgScript .formgrid > section > * + .two, #dlgScript .formgrid > section > .two + * { margin-top: 10px; }
+#dlgScript #sAssignNote { margin-top: 4px; }
+#sec-packaging .certstatus + .actions, #sec-packaging .row + .certstatus, #sec-packaging .certstatus + .row { margin-top: 10px; }
