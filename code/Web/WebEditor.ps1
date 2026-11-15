@@ -714,6 +714,12 @@ function Global:Get-WebCatalogHistory {
       can take back. @{ ok; groups; undo }.
     #>
     param($Data)
+    try { return (Get-WebCatalogHistoryCore $Data) }
+    catch { return @{ ok = $false; error = "$($_.Exception.Message) - $($_.InvocationInfo.PositionMessage -replace '\s+', ' ')" } }
+}
+
+function Global:Get-WebCatalogHistoryCore {
+    param($Data)
     [int]$limit = 200
     if ($Data -and $Data.limit) { $limit = [int]$Data.limit }
     if ($limit -lt 20) { $limit = 20 } elseif ($limit -gt 500) { $limit = 500 }
