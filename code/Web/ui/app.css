@@ -1238,3 +1238,21 @@ input[type=checkbox]:disabled { opacity: .45; cursor: default; }
 /* The list's pick boxes (2.26.4): before the app's icon, and in the header for all of them. */
 .grid td.name input.rowpick, .grid th input.rowpick { margin: 0 10px 0 0; vertical-align: -3px; }
 .grid th input.rowpick { vertical-align: -3px; }
+/* Form rhythm (2.26.4): a heading has room under it, and a button that follows a field, a checkbox or a list
+   doesn't touch it - the same step everywhere in the editor and the settings. */
+.formgrid h3 { margin: 22px 0 8px; }
+.formgrid section > h3:first-child { margin-top: 4px; }
+.formgrid section > .btn, .formgrid section > button.btn, .formgrid .two + .btn, .suplist + .btn { margin-top: 10px; align-self: flex-start; }
+.formgrid section > label.chk + .btn, .formgrid section > .depbox + .btn, .formgrid section > .suplist + .btn { margin-top: 10px; }
+.formgrid section > h3 + .btn, .formgrid section > h3 + button.btn { margin-top: 0; }
+.formgrid section > .btn + label, .formgrid section > button.btn + label { margin-top: 10px; }
+.suplist:not(:empty) { margin: 8px 0; }
+.formgrid section > label.chk { margin-top: 8px; }
+/* Rows with an Add button under them (return codes, rings, profiles): the button a step below the last row. */
+.coderows > .btn, .ringrows > .btn, .coderows > button, .ringrows > button { margin-top: 6px; }
+/* A checkbox on its own line after a grid of fields gets the same room as a field. */
+.formgrid .two + label.chk, .formgrid .grid3 + label.chk { margin-top: 14px; }
+/* The app's checkbox keeps its size and its tick inside labels too (label > input stretches fields to full width). */
+label > input[type=checkbox], .formgrid label > input[type=checkbox], label.chk > input[type=checkbox] { display: inline-grid; width: 16px; height: 16px; margin: 0; flex: none; }
+label.chk > input[type=checkbox] { margin-top: 2px; }
+.formgrid label.chk + label:not(.chk) { margin-top: 14px; }

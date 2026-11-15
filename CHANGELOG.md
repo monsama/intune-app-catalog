@@ -25,6 +25,11 @@
   app in or out, the others stay picked; Shift for a range) and one in the
   header for every app in the view (a dash when only some are picked).
   Clicking a row still picks just that one; Ctrl/Shift+click work as before.
+- **Spacing in forms**: room under every section heading, and a button,
+  checkbox or label after a field, list or checkbox no longer touches it
+  (Supersedence, Dependencies, Return codes, Allow uninstall, rings).
+- Ticked checkboxes inside labels (Settings: release window days, ...) show
+  their tick - a stretching rule made them solid blue squares.
 
 ## 2.26.3
 
