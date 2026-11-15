@@ -51,6 +51,8 @@ function Global:Get-WebCatalog {
         $index = Get-PackageFolderIndex -Root (Get-AppFolder -Kind Packages)
         for ($i = 0; $i -lt $apps.Count; $i++) {
             $row = Get-CatalogRow -App $apps[$i] -Index $i -PackageIndex $index
+            # The pilot release, found once (a plain loop - a pipeline per field is slow for 500 apps on Windows PowerShell).
+            $pr = $null; foreach ($r in @($apps[$i].releases)) { if ($r -and $r.state -eq 'pilot') { $pr = $r; break } }
             $rows.Add([ordered]@{
                 name         = [string]$row.AppName
                 wingetId     = [string]$row.WingetId
@@ -74,10 +76,10 @@ function Global:Get-WebCatalog {
                 previousVersions = @(Get-WebPreviousReleases $apps[$i] | ForEach-Object { [string]$_.version })
                 releaseIds   = @(@($apps[$i].releases) | Where-Object { $_ -and $_.appId } | ForEach-Object { ([string]$_.appId).ToLowerInvariant() })
                 retiringSince = [string]$apps[$i].retiringSince
-                pilotVersion = [string]$(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'pilot' } | Select-Object -First 1 -ExpandProperty version)
+                pilotVersion = [string]$(if ($pr) { $pr.version })
                 # Which release ring the pilot release is in (0 = pilot), and how many there are - the next step is the next ring, not everyone.
-                pilotRing    = [int]$(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'pilot' } | Select-Object -First 1 | ForEach-Object { [int]$_.ring })
-                pilotFast    = [bool]$(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'pilot' -and $_.fastTrack } | Select-Object -First 1)
+                pilotRing    = [int]$(if ($pr) { $pr.ring })
+                pilotFast    = [bool]$(if ($pr) { $pr.fastTrack })
                 hasIcon      = [bool]($apps[$i].icon -and $apps[$i].icon.value)
                 iconTag      = $(if ($apps[$i].icon -and $apps[$i].icon.value) { "$($apps[$i].icon.value.Length):$($apps[$i].icon.value.Substring([Math]::Max(0, $apps[$i].icon.value.Length - 12)))" } else { '' })
                 groups       = @(@($apps[$i].requiredFor) + @($apps[$i].availableFor) + @($apps[$i].uninstallFor) + @($apps[$i].excludeFor) | Where-Object { $_ } | ForEach-Object { [string]$_ } | Select-Object -Unique)
