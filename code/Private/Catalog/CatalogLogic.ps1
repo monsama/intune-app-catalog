@@ -1046,10 +1046,12 @@ function Global:Get-CatalogNameLookup {
     $last = ''
     if ($list.Count) { $last = [string]$list[$list.Count - 1].appName }
     $cache = $Global:App.CatalogNamesCache   # one object, replaced whole: a request in another runspace never sees half of it
-    if ($cache -and [object]::ReferenceEquals($cache['For'], $appsNow) -and $cache['N'] -eq $list.Count -and $cache['Last'] -ceq $last) { return $cache['Names'] }
+    # The list's identity as a number ([object]::ReferenceEquals trips PowerShell's compiler here).
+    $identity = if ($null -ne $appsNow) { [System.Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($appsNow) } else { 0 }
+    if ($cache -and $cache['Identity'] -eq $identity -and $cache['N'] -eq $list.Count -and $cache['Last'] -ceq $last) { return $cache['Names'] }
     $names = @{}
     foreach ($a in $list) { if ($a.appName) { $names[[string]$a.appName] = $true } }
-    if ($null -ne $appsNow) { $Global:App['CatalogNamesCache'] = @{ For = $appsNow; N = $list.Count; Last = $last; Names = $names } }
+    if ($null -ne $appsNow) { $Global:App['CatalogNamesCache'] = @{ Identity = $identity; N = $list.Count; Last = $last; Names = $names } }
     return $names
 }
 
