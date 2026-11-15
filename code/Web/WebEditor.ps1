@@ -622,11 +622,13 @@ function Global:Update-WebAppQuick {
     if ($field -eq 'appVersion') {
         $v = ([string]$Data.value).Trim()
         if ($v.Length -gt 100) { return @{ ok = $false; error = 'That version is too long.' } }
-        if (-not $a.metadata) { return @{ ok = $false; error = "$name has no Intune details yet - set its version in the editor (Details)." } }
+        # No settings of its own yet: they start from the defaults (as Managed updates on does), now with this version.
+        if (-not $a.metadata -and -not $a.wingetId) { return @{ ok = $false; error = "$name has no Intune details yet - set its version in the editor (Details)." } }
         if ($a.managedUpdates -and $a.appId) { return @{ ok = $false; error = "$name has managed updates and is in Intune - a new version goes through Release new version (More)." } }
         if ($a.managedUpdates -and $v -and -not (Test-ReleaseVersionText $v)) { return @{ ok = $false; error = "'$v' isn't a version managed updates can pin (digits and dots, e.g. 24.08)." } }
         [void](Update-WebCatalogApp -Name $name -Change {
             param($x)
+            if (-not $x.metadata) { $x.metadata = Get-DefaultAppMetadata -AppName $x.appName -WingetId $x.wingetId -Uncommon $false }
             if ($x.metadata.PSObject.Properties['appVersion']) { $x.metadata.appVersion = $(if ($v) { $v } else { $null }) } else { $x.metadata | Add-Member -NotePropertyName appVersion -NotePropertyValue $v }
             [void](Set-ManagedAppPin $x)
         }.GetNewClosure())

@@ -521,6 +521,13 @@ try {
     $hApp = (Invoke-Api '/api/app-get' @{ name = $hName }).app
     Check ($hu.ok -and @($hApp.requiredFor).Count -eq 1 -and $hApp.metadata.description -eq 'first') 'history: undo puts that change''s fields back' ($hu | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/history-undo' @{ name = $hName; id = $hLast.id }).ok) 'history: undoing it twice does nothing (the fields were changed since)'
+    # A Winget app without settings of its own: picking a version gives it settings (the defaults) with that version.
+    $qvName = 'ZZ QuickVer ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    Set-Content -LiteralPath (Join-Path (Invoke-Api '/api/catalog').path ($qvName.Replace(' ', '-') + '.json')) -Encoding UTF8 -Value (@{ appName = $qvName; wingetId = 'Contoso.QuickVer'; appId = '' } | ConvertTo-Json)
+    $qv = Invoke-Api '/api/app-quick' @{ name = $qvName; field = 'appVersion'; value = '3.2.1' }
+    $qvApp = (Invoke-Api '/api/app-get' @{ name = $qvName }).app
+    Check ($qv.ok -and $qvApp.metadata.appVersion -eq '3.2.1' -and $qvApp.hasMetadata) 'side panel: a version picked for a Winget app without settings gives it settings with that version' ($qv | ConvertTo-Json -Compress)
+    [void](Invoke-Api '/api/app-remove' @{ name = $qvName })
     $cv = Invoke-Api '/api/catalog-values'
     Check ($cv.ok -and $null -ne $cv.owner) 'pickers: the catalog''s publishers, owners and developers are listed' ($cv | ConvertTo-Json -Compress)
     $ch = Invoke-Api '/api/catalog-history' @{ limit = 50 }

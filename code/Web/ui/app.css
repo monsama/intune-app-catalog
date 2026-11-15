@@ -1037,3 +1037,9 @@ dialog > #dlgTray { position: fixed; }
 .vnewest { color: var(--fg); }
 .vnow { font-size: 12px; font-variant-numeric: tabular-nums; }
 .vwarn { color: var(--warn); }
+
+/* Side panel: the version as one steady field (pick to change). */
+.pverwrap { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pver { width: 100%; max-width: 260px; height: 30px; padding: 2px 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.pverx { font-size: 12px; }
+.pfacts .kv:has(.pver) { align-items: center; }

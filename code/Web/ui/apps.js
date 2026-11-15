@@ -132,7 +132,8 @@ function parseSearch(raw) {
 function renderApps() {
   const { text: q, groups: gq } = parseSearch($('search').value);
   const f = currentFilter();
-  const list = apps.filter(a => f(a) && (!q || (a.name + ' ' + a.wingetId).toLowerCase().includes(q))
+  // "only in Intune": just those apps - not the catalog's with them added below.
+  const list = (typeof showIntuneOnly !== 'undefined' && showIntuneOnly) ? [] : apps.filter(a => f(a) && (!q || (a.name + ' ' + a.wingetId).toLowerCase().includes(q))
     && gq.every(g => (a.groups || []).some(x => x.toLowerCase().includes(g))));
   list.sort((x, y) => {
     const a = sortValue(x, sortKey), b = sortValue(y, sortKey);
@@ -155,7 +156,7 @@ function renderApps() {
     return tr;
   }), ...(typeof intuneOnlyRows === 'function' ? intuneOnlyRows(q) : [])]);
   if (typeof renderWhere === 'function') renderWhere();
-  $('count').textContent = list.length === apps.length ? `${apps.length} apps` : `${list.length} of ${apps.length} apps`;
+  $('count').textContent = showIntuneOnly ? `${intuneOnly().win.length} only in Intune` : list.length === apps.length ? `${apps.length} apps` : `${list.length} of ${apps.length} apps`;
   for (const th of document.querySelectorAll('.grid th')) {
     th.classList.toggle('sorted', th.dataset.sort === sortKey);
     th.classList.toggle('desc', th.dataset.sort === sortKey && sortDesc);

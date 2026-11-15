@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.21.1
+
+- **The side panel's version picker works for every Winget app.** Change
+  (winget's versions, newest first) was missing for an app still on the
+  default settings, and the quick edit refused it; picking a version now
+  gives it settings of its own (the defaults) with that version.
+- **The side panel's version is one steady field**: the version as it is
+  now, and opening it lists winget's versions (asked the first time),
+  newest first, plus the ones kept from earlier releases and "Other" to
+  type one. No button that turns into a list - nothing moves.
+- **"only in Intune" shows only those apps.** It added them under the
+  whole catalog list; now the list is just the Intune-only apps, and the
+  count says so.
+
 ## 2.21.0
 
 - **Recent changes.** A clock button on the Apps toolbar (and Catalog >
