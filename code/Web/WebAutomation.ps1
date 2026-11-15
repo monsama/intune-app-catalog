@@ -161,12 +161,15 @@ function Global:Invoke-ManagedUpdateRun {
                 }
                 if ($a.wingetId) {
                     $latest = [string]$Global:App.WingetLatest[([string]$a.wingetId).ToLowerInvariant()]
-                    if (-not $latest -or (Compare-AppVersionText $current $latest) -ne 1) { & $say $a.appName 'current' "$current is the newest on winget."; continue }
+                    if (-not $latest) { & $say $a.appName 'current' "winget gave no version for it this time (not asked, or not found) - nothing released."; continue }
+                    if ((Compare-AppVersionText $current $latest) -ne 1) { & $say $a.appName 'current' "$(if ($current) { $current } else { 'Its version' }) is the newest on winget."; continue }
                     if (@($a.blockedVersions) -contains $latest) { & $say $a.appName 'available' "winget offers $latest (now $current) - not released by itself: it was withdrawn or rolled back before. Release it by hand to try it again."; continue }
                     if ($null -ne $gateApps) {
                         $gate = Get-GateVersion -App $a -GateApps $gateApps
                         if (-not $gate.Version) { & $say $a.appName 'available' "winget offers $latest (now $current) - not released: $($gate.Reason)."; continue }
                         $latest = $gate.Version
+                        # The test tenant's version may be one that was withdrawn or rolled back here.
+                        if (@($a.blockedVersions) -contains $latest -or (Compare-AppVersionText $current $latest) -ne 1) { & $say $a.appName 'available' "The test tenant has $latest (now $current) - not released by itself: $(if (@($a.blockedVersions) -contains $latest) { 'it was withdrawn or rolled back here before' } else { 'not newer than the current one' })."; continue }
                     }
                     if ($PlanOnly -or -not $policy.AutoRelease) { & $say $a.appName 'available' "winget offers $latest (now $current).$(if (-not $policy.AutoRelease) { ' Release it to pilot (automatic release is off).' })"; continue }
                     if (-not $window.Open) { & $say $a.appName 'available' "$latest is ready to release (now $current) - waiting for the release window: $($window.Reason)."; continue }
@@ -315,7 +318,7 @@ function Global:Get-WebHealthChecks {
         if ($root) { $free = (New-Object System.IO.DriveInfo($root)).AvailableFreeSpace; if ($free -lt 1GB) { & $add 'warn' "Only $([Math]::Round($free / 1MB)) MB free on $root." } }
     }
     catch { }
-    return , $out.ToArray()
+    return $out.ToArray()
 }
 
 function Global:Invoke-WebNightlyDrift {
@@ -347,7 +350,7 @@ function Global:Invoke-WebNightlyDrift {
         if ($p.ok) { $items.Add([ordered]@{ app = ($fixable -join ', '); outcome = 'fixed'; text = "Pushed the catalog's groups again - Intune's assignments match the catalog." }) }
         else { $items.Add([ordered]@{ app = ($fixable -join ', '); outcome = 'failed'; text = "Pushing the catalog's groups failed: $($p.error)" }) }
     }
-    return , $items.ToArray()
+    return $items.ToArray()
 }
 
 function Global:Get-WebHoldReason {

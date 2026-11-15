@@ -53,7 +53,8 @@ function Global:Test-WebGroupNames {
     # A name that's only written differently (spacing, dash, &) is almost always meant to be the existing group - say which one.
     $close = [ordered]@{}
     foreach ($m in @($missing | Select-Object -First 5)) {
-        $prefix = ($m -split '\s+' | Select-Object -First 1)
+        # The leading letters and digits only: "SG-Sales" must also find "SG Sales" and "SG–Sales".
+        $prefix = [regex]::Match($m, '^[\p{L}\p{N}]+').Value
         if ($prefix.Length -lt 2) { continue }
         $e = $prefix.Replace("'", "''")
         $near = Invoke-WebGraph -Permission 'Group.Read.All' -Action { param($Graph) @((& $Graph ("https://graph.microsoft.com/v1.0/groups?`$filter=" + [Uri]::EscapeDataString("startswith(displayName,'$e')") + '&$select=displayName&$top=999')).value | ForEach-Object { [string]$_.displayName }) }
@@ -269,15 +270,23 @@ function Global:Get-WebAttention {
     $wau = @($apps | Where-Object { @(Get-WauUse $_).Count })
     if ($wau.Count) { & $add 'warn' "$($wau.Count) app(s) still use Winget-AutoUpdate" ((@($wau | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + " - this catalog no longer uses WAU. Switch them to $(if ([string]$Global:App.DefaultAppSettings.WingetInstallMethod -eq 'Winget') { 'the winget command' } else { 'managed updates: a fixed version, released to the pilot groups first' }), and send the new commands to Intune.") 'do:wauswitch' }
     $wauApp = @($apps | Where-Object { (Test-WauAppName $_.appName) -or (Test-WauAppName $_.wingetId) })
-    if ($wauApp.Count) { & $add 'info' 'Winget-AutoUpdate is still in the catalog' "Managed updates replace it. Once no app uses it any more, take it off the devices: select $($wauApp[0].appName) on Apps, then More > Retire (it's uninstalled where it was assigned)." 'apps:all' }
+    if ($wauApp.Count) {
+        # Retire needs it in Intune; one only in the catalog is simply removed (devices that have WAU from elsewhere: uninstall it there).
+        $wauText = if ($wauApp[0].appId) { "Managed updates replace it. Once no app uses it any more, take it off the devices: select $($wauApp[0].appName) on Apps, then More > Retire (it's uninstalled where it was assigned)." }
+        else { "Managed updates replace it, and it isn't in Intune from this catalog - remove it from the catalog (select it on Apps, then More > Remove from catalog). If devices have WAU from elsewhere, uninstall it there." }
+        & $add 'info' 'Winget-AutoUpdate is still in the catalog' $wauText 'apps:all'
+    }
     # Microsoft's own app types (Company Portal, Microsoft 365 Apps, Store apps) have no package to build - said apart, not as "not built".
     $builtIn = @($apps | Where-Object { -not $_.appId -and (Get-NonPackageAppHint $_) })
     $noPkg = @($apps | Where-Object { -not $_.wingetId -and -not $_.appId -and -not (Get-NonPackageAppHint $_) -and -not (Resolve-AppPackagePath -AppName $_.appName -Uncommon $true -PackagePath $_.packagePath).Found })
     if ($noPkg.Count) { & $add 'warn' "$($noPkg.Count) own package(s) not built" ((@($noPkg | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + ' - select them and use Package.') 'apps:all' }
-    if ($builtIn.Count) { & $add 'info' "$($builtIn.Count) Microsoft app(s) that aren't packages" ((@($builtIn | Select-Object -First 3 | ForEach-Object { Get-NonPackageAppHint $_ }) -join ' ')) 'apps:all' }
+    # Company Portal can be fixed here (its Store ID); Microsoft 365 Apps is created in Intune, then linked by Checks.
+    $portal = @($builtIn | Where-Object { -not $_.wingetId -and (Test-CompanyPortalName $_.appName) })
+    if ($builtIn.Count) { & $add 'info' "$($builtIn.Count) Microsoft app(s) that aren't packages" ((@($builtIn | Select-Object -First 3 | ForEach-Object { Get-NonPackageAppHint $_ }) -join ' ') + $(if ($portal.Count) { ' The button sets Company Portal up as the Store app.' } else { '' })) $(if ($portal.Count) { 'do:portalstore' } else { 'apps:all' }) }
     # Managed updates as the way apps are kept current: the default, every Winget app, and each with its version.
     if ([string]$Global:App.DefaultAppSettings.WingetInstallMethod -ne 'Managed') { & $add 'info' 'Managed updates aren''t the default yet' "New Winget apps install winget's latest version without a pilot ring ($($Global:App.DefaultAppSettings.WingetInstallMethod))." 'do:manageddefault' }
-    $unmanaged = @($apps | Where-Object { $_.wingetId -and -not $_.managedUpdates })
+    # Not Store apps (the Store updates them) nor Winget-AutoUpdate itself (retired, not managed).
+    $unmanaged = @($apps | Where-Object { $_.wingetId -and -not $_.managedUpdates -and -not (Test-StoreProductId ([string]$_.wingetId)) -and -not (Test-WauAppName $_.appName) -and -not (Test-WauAppName $_.wingetId) })
     if ($unmanaged.Count) { & $add 'info' "$($unmanaged.Count) Winget app(s) without managed updates" ((@($unmanaged | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($unmanaged.Count -gt 5) { ', ...' }) + " - they install winget's latest, untested, and Intune can't tell which version a device has.") 'do:managedall' }
     $noVersion = @($apps | Where-Object { $_.wingetId -and $_.managedUpdates -and -not ($_.metadata -and [string]$_.metadata.appVersion) })
     if ($noVersion.Count) { & $add 'warn' "$($noVersion.Count) managed app(s) without a version yet" ((@($noVersion | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + " - take winget's current version as the one they start from$(if (@($noVersion | Where-Object { $_.appId }).Count) { ', then Deploy the ones in Intune again (it updates them)' }).") 'do:takeversions' }
@@ -317,7 +326,7 @@ function Global:Get-WebAttention {
         [ordered]@{ done = [bool](Test-Path -LiteralPath (Get-SharedPackagePath)); title = 'Build the shared Winget package'; text = 'One package every Winget app deploys with.'; go = 'settings:packaging' }
         [ordered]@{ done = [bool]@($Global:App.PilotGroups).Count; title = 'Choose the pilot groups'; text = 'A few test devices that get new versions first.'; go = 'settings:updates' }
         [ordered]@{ done = [bool]$apps.Count; title = 'Add your first apps'; text = 'From winget, an installer or a script - or the apps already in Intune (Checks).'; go = 'add' }
-        [ordered]@{ done = [bool]@($apps | Where-Object { $_.appId }).Count; title = 'Deploy them'; text = 'Select apps on the Apps page and Deploy.'; go = 'apps:notdeployed' }
+        [ordered]@{ done = [bool]@($apps | Where-Object { $_.appId }).Count; title = 'Deploy them'; text = 'Select apps on the Apps page and Send to Intune.'; go = 'apps:notdeployed' }
         [ordered]@{ done = [bool]($sch.exists -or -not $sch.supported); title = 'Schedule the nightly run'; text = 'It releases, promotes and checks by itself.'; go = 'settings:automation' }
     )
     $upd = Get-WebAppUpdate
@@ -332,7 +341,10 @@ function Global:Get-WebAttention {
 function Global:Get-WebAssignmentMatrix {
     # Every app and the groups it's assigned to, by role - the grid's data.
     $apps = @((Read-WebCatalogRecords).Apps | Sort-Object { $_.appName })
-    $groups = @($apps | ForEach-Object { @($_.requiredFor) + @($_.availableFor) + @($_.uninstallFor) + @($_.excludeFor) } | Where-Object { $_ } | Select-Object -Unique | Sort-Object)
+    # Plain strings, once each whatever the case - as the apps grid counts them.
+    $set = New-Object 'System.Collections.Generic.SortedSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($a in $apps) { foreach ($g in @(@($a.requiredFor) + @($a.availableFor) + @($a.uninstallFor) + @($a.excludeFor))) { if ($g -and ([string]$g).Trim()) { [void]$set.Add(([string]$g).Trim()) } } }
+    $groups = [string[]]@($set)
     return @{ ok = $true; groups = $groups
         apps = @($apps | ForEach-Object { [ordered]@{ name = $_.appName; deployed = [bool]$_.appId; required = @($_.requiredFor); available = @($_.availableFor); uninstall = @($_.uninstallFor); exclude = @($_.excludeFor) } }) }
 }
@@ -465,4 +477,19 @@ function Global:Get-WebPermissionCheck {
     $rows = @(Get-PermissionReport -Granted $roles -Usage $usage)
     return @{ ok = $true; granted = @($roles); rows = $rows
         missing = @($rows | Where-Object { $_.status -in 'missing', 'partly' }).Count; unused = @($rows | Where-Object { $_.status -eq 'unused' }).Count }
+}
+
+function Global:Set-WebCompanyPortalStore {
+    # Company Portal without a Winget ID becomes the Microsoft Store app (9WZDNCRFJ3PZ): Send to Intune creates it as Intune's Store type. With Undo.
+    param($Data)
+    $undo = New-WebUndo 'Company Portal as a Store app'
+    $changed = New-Object System.Collections.Generic.List[string]
+    foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { -not $_.wingetId -and -not $_.appId -and (Test-CompanyPortalName $_.appName) })) {
+        $a.wingetId = '9WZDNCRFJ3PZ'
+        Write-WebAppFile -App $a -Undo $undo
+        $changed.Add([string]$a.appName)
+    }
+    Save-WebUndo $undo
+    if ($changed.Count) { Write-Log "[OK] $($changed -join ', ') set up as the Microsoft Store app (9WZDNCRFJ3PZ) - Send to Intune creates it." }
+    return @{ ok = $true; changed = $changed.ToArray() }
 }

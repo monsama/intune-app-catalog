@@ -36,8 +36,8 @@ because every release counts "this version or newer" as installed.
 
 ## Release rings
 
-With only pilot groups, a release goes pilot -> everyone. **Settings >
-Defaults > Managed updates > Release rings** adds stages in between, one per
+With only pilot groups, a release goes pilot -> everyone. **Settings > Updates >
+More rings after the pilot** adds stages in between, one per
 line:
 
 ```
@@ -78,7 +78,7 @@ Settings > Updates > *Fast track and installation*:
 - **Notifications on the device:** show all, only restarts, or none.
 
 These are set when a release is assigned (pilot, next ring, promote, roll
-back). **Push groups** sets assignments without them, so after a push the
+back). **Send groups** sets assignments without them, so after a push the
 app's assignments use Intune's defaults again.
 
 ## Setting it up

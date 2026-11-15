@@ -108,6 +108,7 @@ function Global:Invoke-WebChecks {
     foreach ($f in @(Get-CachedAuditFindings -Apps $apps -LastAuditResults $Global:App.LastAuditResults)) { $findings.Add($f) }
 
     $read = $null
+    $summary = ''
     if (-not (Test-GraphCredentialsConfigured -Quiet)) { $notes.Add('Intune and Entra ID were not checked: no connection set up (Settings).') }
     elseif (-not (Test-GraphModuleHere)) { $notes.Add("Intune and Entra ID were not checked: the Microsoft.Graph.Authentication module isn't installed.") }
     else {
@@ -146,13 +147,17 @@ function Global:Invoke-WebChecks {
                 if (-not $names.Count -or -not $f.CatalogName -or $names -contains [string]$f.CatalogName) { $findings.Add($f) }
             }
             foreach ($f in @(Get-EntraGroupFindings -Apps $apps -Directory $read.value.Directory)) { $findings.Add($f) }
-            $notes.Add("Compared with $(@($read.value.IntuneApps).Count) app(s) in Intune; $(@($read.value.Directory).Count) of the $($read.value.Wanted) group(s) the catalog uses found in Entra ID$(if (-not $read.value.ByName) { ' (read in full - this tenant refused a lookup by name)' }).")
+            # What was compared - not a warning (notes are what was NOT compared). Only the catalog's groups count, also when the tenant was read in full.
+            $wantedSet = @{}; foreach ($n in @(Get-WebCatalogGroupNames -Apps $apps)) { $wantedSet[([string]$n).ToLowerInvariant()] = $true }
+            $foundCount = @($read.value.Directory | Where-Object { $wantedSet.ContainsKey(([string]$_.displayName).ToLowerInvariant()) }).Count
+            $summary = "Compared with $(@($read.value.IntuneApps).Count) app(s) in Intune; $foundCount of the $($read.value.Wanted) group(s) the catalog uses found in Entra ID$(if (-not $read.value.ByName) { ' (read in full - this tenant refused a lookup by name)' })."
+
         }
         else { $notes.Add("Intune and Entra ID could not be checked: $($read.error)") }
     }
     $rows = @($findings | ForEach-Object { ConvertTo-WebFindingRow $_ })
-    Write-Log "[INFO] Checks: $($rows.Count) finding(s). $($notes -join ' ')"
-    return @{ ok = $true; findings = $rows; notes = $notes.ToArray(); deployed = @($apps | Where-Object { $_.appId } | ForEach-Object { $_.appName }).Count
+    Write-Log "[INFO] Checks: $($rows.Count) finding(s). $summary $($notes -join ' ')"
+    return @{ ok = $true; findings = $rows; notes = $notes.ToArray(); summary = $summary; deployed = @($apps | Where-Object { $_.appId } | ForEach-Object { $_.appName }).Count
         winget = @($apps | Where-Object { $_.wingetId } | ForEach-Object { $_.appName }).Count; connected = [bool]($read -and $read.ok) }
 }
 

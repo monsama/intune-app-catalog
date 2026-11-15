@@ -37,8 +37,9 @@ async function runChecks(names) {
       const set = new Set(names);
       findings = findings.filter(f => !set.has(f.catalogName || f.app)).concat(r.findings || []);
     } else findings = r.findings || [];
+    // notes: what was NOT compared; summary: what was.
     const notes = [...(r.notes || [])];
-    checkLog(`${stamp()} ${notes.join(' ')}`);
+    checkLog(`${stamp()} ${[r.summary || '', ...notes].join(' ').trim()}`);
     renderChecks();
     if ($('chkDetails').checked && r.connected && r.deployed > 0) {
       $('checkNotes').textContent = `Reading ${r.deployed} deployed app(s) from Intune in detail - the slowest part...`;
@@ -54,11 +55,12 @@ async function runChecks(names) {
       if (w.ok) { mergeFindings(w); checkLog(`${stamp()} winget: ${(w.findings || []).length} problem(s).`); }
       else { notes.push(w.error); checkLog(`${stamp()} [WARN] ${w.error}`); }
     }
-    $('checkNotes').textContent = notes.join(' ');
+    $('checkNotes').textContent = [r.summary || '', ...notes].join(' ').trim();
     $('checkEmptyList').hidden = true; $('btnRunChecksEmpty').hidden = true;
     $('checkEmptyTitle').textContent = 'Nothing to fix';
     $('checkEmptyText').textContent = notes.length ? `No findings - but not everything was compared: ${notes.join(' ')}` : 'The catalog, Intune and Entra ID agree.';
     checkLog(`${stamp()} [OK] Checks finished: ${findings.length} finding(s).`);
+    return r;
   } finally {
     checksRunning = false; b.disabled = false; b.textContent = 'Run checks';
     setCheckAreas(); renderChecks();
@@ -190,6 +192,7 @@ async function pushSettings(names) {
 // ---------------------------------------------------------------- winget search (Find Winget ID, Add app)
 let wingetPick = null;
 function openWinget(query, onPick) {
+  if (wcResume('dlgWinget')) return;
   wingetPick = onPick;
   $('wgQuery').value = query || ''; $('wgRows').replaceChildren(); $('wgNote').textContent = 'Searches winget’s sources. Pick the package to use its ID.';
   $('dlgWinget').showModal();

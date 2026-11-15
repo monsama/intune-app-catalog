@@ -112,10 +112,20 @@ function Global:Set-WebBatchChanges {
         }
         if ($m.PSObject.Properties.Name -contains $k) { $m.$k = $value } else { $m | Add-Member -NotePropertyName $k -NotePropertyValue $value }
     }
-    if ($Changes.Contains('wingetInstallMethod') -and $App.wingetId) {
+    # A managed app keeps its pinned commands (turn managed updates off first to change how it installs).
+    if ($Changes.Contains('wingetInstallMethod') -and $App.wingetId -and -not $App.managedUpdates) {
         $c = Convert-AppWingetInstallMethod -WingetId $App.wingetId -InstallCommand $m.installCommand -UninstallCommand $m.uninstallCommand -Method $Changes.wingetInstallMethod -InstallContext $m.installContext
         $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall
         $kept = ($c.Status -eq 'Custom')
+    }
+    # Install for changed: generated winget commands follow it (machine scope or not); hand-edited ones are left alone.
+    if ($Changes.Contains('installContext') -and $App.wingetId -and -not $Changes.Contains('wingetInstallMethod')) {
+        $now = Get-AppWingetInstallMethod -WingetId $App.wingetId -InstallCommand ([string]$m.installCommand) -UninstallCommand ([string]$m.uninstallCommand)
+        if ($now -eq 'Managed' -and [string]$m.installCommand -match " --version '((?:[^']|'')+)'") {
+            $c = Get-WingetCommandLines -WingetId $App.wingetId -Method 'Managed' -InstallContext ([string]$m.installContext) -Version ($Matches[1] -replace "''", "'")
+            $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall
+        }
+        elseif ($now -eq 'Winget') { $c = Get-WingetCommandLines -WingetId $App.wingetId -Method 'Winget' -InstallContext ([string]$m.installContext); $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall }
     }
     return @{ Metadata = $m; Kept = $kept }
 }

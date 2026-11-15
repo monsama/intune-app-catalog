@@ -74,7 +74,7 @@ async function advanceRelease(name, p) {
   if (!a.ok) { toast(`Giving it to the next ring failed - nothing else changed. ${a.error || ''}`, true); return; }
   const r = await api('/api/release-advanced', { name });
   toast(r.ok ? `${name} ${r.version} is in ${r.ringName} now.` : r.error, !r.ok);
-  loadApps();
+  loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
 }
 
 // ---- the trend: one line, the share of devices on the current version per day (the nightly runs' reports)
@@ -151,4 +151,4 @@ $('btnUpdExport').addEventListener('click', () => {
   toast(`Exported ${updRows.length} app(s) to your Downloads folder.`);
 });
 // After a release action's dialogs close, the page shows the new state.
-for (const d of ['dlgRun', 'dlgRelease', 'dlgAsk']) $(d).addEventListener('close', () => { if (!$('viewUpdates').hidden) setTimeout(() => loadUpdates(true), 300); });
+for (const d of ['dlgRun', 'dlgRelease']) $(d).addEventListener('close', () => { if (!$('viewUpdates').hidden) setTimeout(() => loadUpdates(true), 300); });

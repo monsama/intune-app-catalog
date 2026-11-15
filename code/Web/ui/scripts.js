@@ -73,6 +73,7 @@ function fillScript(s) {
   $('sAssignNote').textContent = s.groupsKnown === false ? "The script's groups couldn't be read, so they can't be sent - fix the Group.Read.All permission, then reopen." : "Replaces the script's assignments in Intune - an empty list removes them all.";
 }
 async function openScript(row) {
+  if (wcResume('dlgScript')) return;
   $('scriptErr').hidden = true; $('scriptLog').hidden = true; $('scriptLog').textContent = '';
   scriptOrig = row ? { id: row.id, name: row.displayName } : { id: '', name: '' };
   $('scriptTitle').textContent = row ? row.displayName : 'New platform script';
@@ -119,6 +120,7 @@ $('btnScriptLocal').addEventListener('click', () => saveScript('Local'));
 $('btnScriptIntune').addEventListener('click', () => saveScript('Intune'));
 
 async function openScriptStatus(x) {
+  if (wcResume('dlgScriptStatus')) return;
   $('sStatusTitle').textContent = 'Run status - ' + x.displayName;
   $('sStatusSummary').textContent = 'Reading how the script went on each device...';
   $('sStatusRows').replaceChildren();

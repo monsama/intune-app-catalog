@@ -195,6 +195,7 @@ $testableFunctionNames = @(
     "Test-ManagedAppEdit",
     "Set-AppWingetIdCommands",
     "Get-NonPackageAppHint",
+    "Test-CompanyPortalName",
     "Get-ClosestGroupName",
     "Test-WauAppName",
     "Get-WauUse",
@@ -681,6 +682,8 @@ Assert-True ((ConvertFrom-ReleaseRingText 'just a group').Error -like 'Line 1*')
 $rings = @(@{ Name = 'Pilot'; Groups = @('SG-P') }) + @($ringText.Rings)
 Assert-Equal 'SG-P,SG-A,SG-B' ((Get-ReleaseRingGroups -Rings $rings -Ring 1) -join ',') "Get-ReleaseRingGroups: a ring's groups and every ring's before it"
 Assert-Equal 'SG-P,SG-A,SG-B,SG-C' ((Get-ReleaseRingGroups -Rings $rings -Ring 2) -join ',') "Get-ReleaseRingGroups: each group once"
+# Wrapped in @() (as the release step does) it's still a flat list - not one array inside another, which became ONE group named "SG-P SG-A SG-B".
+Assert-Equal 3 @(Get-ReleaseRingGroups -Rings $rings -Ring 1).Count "Get-ReleaseRingGroups: @() of it is the groups themselves, not a nested list"
 Assert-Equal 1 @(ConvertTo-ReleaseRings @(@{ Name = 'X'; Groups = @('SG-1') }, @{ Name = ''; Groups = @('SG-2') }, @{ Name = 'Y'; Groups = @() })).Count "ConvertTo-ReleaseRings: rings without a name or a group are dropped"
 
 # Assignment settings for a release
@@ -880,7 +883,8 @@ Assert-True ((Set-ManagedAppPin $msiApp -ProductCode '{22222222-2222-2222-2222-2
 
 # Microsoft's own apps aren't packages
 Assert-True ((Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Company Portal'; wingetId = '' })) -like '*9WZDNCRFJ3PZ*' -and (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Microsoft 365 Apps'; wingetId = '' })) -like '*Intune itself*' -and
-    (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Teams'; wingetId = ''; intuneAppType = 'Microsoft Store app (new)' })) -like "*own app type*" -and -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'LOB Tool'; wingetId = '' })) -and -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Company Portal'; wingetId = '9WZDNCRFJ3PZ' }))) "Get-NonPackageAppHint: Company Portal, Microsoft 365 Apps and non-Win32 types need no package; an own installer does"
+    (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Teams'; wingetId = ''; intuneAppType = 'Microsoft Store app (new)' })) -like "*own app type*" -and -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'LOB Tool'; wingetId = '' })) -and -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Company Portal'; wingetId = '9WZDNCRFJ3PZ' })) -and
+    -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Microsoft 365 Apps for enterprise'; wingetId = ''; metadata = [pscustomobject]@{ installCommand = 'setup.exe /configure config.xml'; detectionRule = [pscustomobject]@{ Type = 'File' } } }))) "Get-NonPackageAppHint: Company Portal, Microsoft 365 Apps and non-Win32 types need no package; an own installer does"
 
 Assert-True ((Get-ClosestGroupName 'ITSENSE - Intune - Deploy I&O Workplace' @("ITSENSE $([char]0x2013) Intune $([char]0x2013) Deploy I and O Workplace", 'Other')) -eq "ITSENSE $([char]0x2013) Intune $([char]0x2013) Deploy I and O Workplace" -and (Get-ClosestGroupName 'Dev  Workplace' @('dev workplace')) -eq 'dev workplace' -and -not (Get-ClosestGroupName 'Dev Workplace' @('Dev Workplaces')) -and -not (Get-ClosestGroupName 'A' @('a', 'A '))) "Get-ClosestGroupName: other case, spacing, dash or & is the same group; anything else or two hits isn't"
 
@@ -934,6 +938,9 @@ Assert-True ((Test-WauAppName 'Winget-AutoUpdate') -and (Test-WauAppName 'Romani
 $avail = New-AppAssignmentBody -Entries @(Get-DesiredAssignmentEntries -RequiredGroups @('Pilot') -AvailableGroups @('All')) -GroupIdByName @{ All = 'g1'; Pilot = 'g2' } -AvailableSettings (Get-ReleaseAvailableSettings)
 $aAvail = @($avail.mobileAppAssignments | Where-Object { $_.intent -eq 'available' }); $aReq = @($avail.mobileAppAssignments | Where-Object { $_.intent -eq 'required' })
 Assert-True ($aAvail.Count -eq 1 -and $aAvail[0].settings.autoUpdateSettings.autoUpdateSupersededAppsState -eq 'enabled' -and $aReq.Count -eq 1 -and -not $aReq[0].settings) "New-AppAssignmentBody: a release's Available assignments auto-update the superseded version; Required ones aren't touched by it"
+$cur = @([pscustomobject]@{ intent = 'available'; target = [pscustomobject]@{ '@odata.type' = '#microsoft.graph.groupAssignmentTarget'; groupId = 'g1' }; settings = [pscustomobject]@{ notifications = 'showAll'; autoUpdateSettings = [pscustomobject]@{ autoUpdateSupersededAppsState = 'enabled' } } })
+$keptSet = @((New-AppAssignmentBody -Entries @(Get-DesiredAssignmentEntries -RequiredGroups @('Pilot') -AvailableGroups @('All')) -GroupIdByName @{ All = 'g1'; Pilot = 'g2' } -CurrentAssignments $cur).mobileAppAssignments)
+Assert-True ((@($keptSet | Where-Object { $_.intent -eq 'available' })[0].settings.autoUpdateSettings.autoUpdateSupersededAppsState -eq 'enabled') -and -not (@($keptSet | Where-Object { $_.intent -eq 'required' })[0].Contains('settings'))) "New-AppAssignmentBody: an assignment kept as it is keeps its settings from Intune (Send groups doesn't wipe a release's)"
 $custom = Convert-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand 'setup.exe /S' -UninstallCommand 'uninst.exe /S' -Method "Winget" -InstallContext "System"
 Assert-True ($custom.Status -eq 'Custom' -and $custom.Install -eq 'setup.exe /S') `
     "Convert-AppWingetInstallMethod: custom commands are kept"

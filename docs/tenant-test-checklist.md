@@ -56,7 +56,7 @@ relying on a release. About 45 minutes, plus about 30 for managed updates
       `7zip.7zip`. Set `ZZ-Test-A` as Required. Save.
 - [ ] Settings > Packaging: tool found, init.intunewin built (build it if
       not).
-- [ ] **Deploy** - the plan says Create; the log shows `[GRAPH] POST ...`
+- [ ] **Send to Intune** - the plan says Create; the log shows `[GRAPH] POST ...`
       lines for the create and the upload, and **no** line containing
       `blob.core.windows.net`.
 - [ ] Afterwards the app has an App ID (Apps list: Deployed) and the portal
@@ -171,7 +171,7 @@ group with another device.
       version than winget's newest (e.g. `23.01`). Required for
       `ZZ-Test-B`. The editor's install command ends with `--version
       '23.01'`; Deploy settings > detection is the generated script.
-- [ ] **Deploy** - one app in Intune under the catalog's name. On the
+- [ ] **Send to Intune** - one app in Intune under the catalog's name. On the
       `ZZ-Test-B` device, that exact version installs and Intune reports it
       installed (the detection script works under SYSTEM).
 - [ ] Catalog > **Check winget for new versions** - the app shows

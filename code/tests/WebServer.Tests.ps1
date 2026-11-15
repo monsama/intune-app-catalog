@@ -86,7 +86,7 @@ try {
     Check ($page.Status -eq 200 -and $page.Body -like '*<script src="app.js"*') 'the page is served'
     Check ($page.Headers -match 'Content-Security-Policy: default-src ''self''' -and $page.Headers -match 'X-Frame-Options: DENY' -and $page.Headers -match 'Cache-Control: no-store') 'every response carries the security headers' $page.Headers
     Check ($page.Body -notmatch '<script>[^<]') 'no inline script (the CSP allows none)'
-    foreach ($js in 'core.js', 'apps.js', 'tools.js', 'checks.js', 'groups.js', 'updates.js', 'add.js', 'convenience.js', 'guide.js', 'chips.js', 'scripts.js', 'settings.js', 'app.js') {
+    foreach ($js in 'core.js', 'apps.js', 'tools.js', 'checks.js', 'groups.js', 'updates.js', 'add.js', 'convenience.js', 'guide.js', 'windows.js', 'chips.js', 'scripts.js', 'settings.js', 'app.js') {
         Check ((Invoke-Raw -Path "/$js").Status -eq 200 -and $page.Body -like "*<script src=`"$js`" defer>*") "$js is served and loaded by the page"
     }
     Check ((Invoke-Raw -Path '/app.css').Status -eq 200) 'app.css is served'
@@ -586,6 +586,15 @@ try {
         'Winget-AutoUpdate: Home names the app, the switch pins it to its App version and drops the WAU dependency' (@{ pre = $wauPre; run = $wauRun; now = $wauNow.metadata } | ConvertTo-Json -Compress -Depth 4)
     Check (-not (Invoke-Api '/api/winget-commands' @{ wingetId = 'Contoso.Wau'; method = 'WAU' }).ok) 'Winget-AutoUpdate: the editor can no longer ask for its commands'
     [void](Invoke-Api '/api/app-remove' @{ name = $wauName })
+    # Company Portal without a Winget ID: one click makes it the Store app.
+    $cpName = 'Company Portal'
+    if (-not (Invoke-Api '/api/app-get' @{ name = $cpName }).ok) {
+        Set-Content -LiteralPath (Join-Path $catDir 'Company-Portal.json') -Encoding UTF8 -Value (@{ appName = $cpName; wingetId = ''; appId = ''; metadata = @{ description = 'cp' } } | ConvertTo-Json -Depth 4)
+        $cpAtt = Invoke-Api '/api/attention'
+        $cpFix = Invoke-Api '/api/portal-store' @{}
+        Check (@($cpAtt.items | Where-Object { $_.go -eq 'do:portalstore' }).Count -eq 1 -and $cpFix.ok -and (Invoke-Api '/api/app-get' @{ name = $cpName }).app.wingetId -eq '9WZDNCRFJ3PZ') 'Company Portal: Home offers the fix, which makes it the Store app' ($cpFix | ConvertTo-Json -Compress)
+        [void](Invoke-Api '/api/app-remove' @{ name = $cpName })
+    }
     # An assignment filter round-trips through the catalog file and the editor.
     $flName = 'ZZ Filter ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
     [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $flName; wingetId = 'Contoso.Filter'; appId = ''; requiredFor = @('SG-A'); assignmentFilter = ' Corp laptops '; assignmentFilterMode = 'exclude'; metadata = @{ description = 'f' } } })
@@ -624,6 +633,7 @@ try {
     $mxr = Invoke-Api '/api/assignment-matrix'
     $setA = Invoke-Api '/api/assignments-set' @{ changes = @(@{ name = "$testName renamed"; group = 'SG-ZZ-Grid'; role = 'available' }) }
     $gridApp = (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app
+    Check (@((Invoke-Api '/api/assignment-matrix').groups) -contains 'SG-ZZ-Grid') 'groups and apps grid: a group set on an app is a column'
     Check ($mxr.ok -and @($mxr.apps | Where-Object { $_.name -eq "$testName renamed" }).Count -eq 1 -and $setA.ok -and @($gridApp.availableFor) -contains 'SG-ZZ-Grid') 'groups and apps grid: lists the apps; a cell set to Available is saved' ($setA | ConvertTo-Json -Compress)
     [void](Invoke-Api '/api/assignments-set' @{ changes = @(@{ name = "$testName renamed"; group = 'SG-ZZ-Grid'; role = '' }) })
     Check (@((Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app.availableFor) -notcontains 'SG-ZZ-Grid') 'groups and apps grid: a cell set to none takes the group off'

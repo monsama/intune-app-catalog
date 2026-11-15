@@ -148,7 +148,7 @@ function Global:Split-WebCellList {
         $t = $p.Trim()
         if ($t -and -not @($out | Where-Object { $_ -ieq $t }).Count) { $out.Add($t) }
     }
-    return , $out.ToArray()
+    return $out.ToArray()
 }
 
 function Global:Export-WebCatalogCsv {
@@ -222,7 +222,7 @@ function Global:Import-WebCatalogCsv {
             if (-not $cols.Contains($c)) { continue }
             $kind = $cols[$c]; $cell = [string]$r.$c
             if ($kind -eq 'groups') {
-                $want = Split-WebCellList $cell
+                $want = @(Split-WebCellList $cell)
                 foreach ($g in $want) { $p = Test-WebGroupName $g; if ($p) { $bad = "$c`: $p" } }
                 $now = @($a.$c | Where-Object { $_ } | ForEach-Object { [string]$_ })
                 $same = (@($now | ForEach-Object { $_.ToLowerInvariant() } | Sort-Object) -join "`n") -eq (@($want | ForEach-Object { $_.ToLowerInvariant() } | Sort-Object) -join "`n")

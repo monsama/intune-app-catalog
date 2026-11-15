@@ -7,6 +7,7 @@ let addSrc = 'winget', awPicked = new Map(), awTimer = 0, awSeq = 0, aiUpload = 
 const addLines = id => $(id).value.split('\n').map(s => s.trim()).filter(Boolean);
 
 function openAdd(src, file) {
+  if (wcResume('dlgAdd')) return;
   $('addError').hidden = true;
   awPicked.clear(); $('awRows').replaceChildren(); $('awQuery').value = ''; $('awNote').textContent = 'Type to search - results appear as you type.';
   $('awDetail').replaceChildren(el('p', { class: 'muted', text: 'Pick a package to see what winget says about it.' }));

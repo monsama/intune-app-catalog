@@ -56,7 +56,12 @@ function Global:Get-WebCatalog {
                 wingetId     = [string]$row.WingetId
                 appId        = [string]$apps[$i].appId
                 type         = [string]$row.Type
-                version      = [string]$row.Version
+                # The App version (what deploys and releases use) - Intune's own reported version apart.
+                version      = [string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })
+                intuneVersion = [string]$row.Version
+                # Own package without what Deploy needs (it refuses those): the stage says Draft, not Ready.
+                hasDetection = [bool]($apps[$i].wingetId -or ($apps[$i].metadata -and $apps[$i].metadata.detectionRule))
+                hasInstall   = [bool]($apps[$i].wingetId -or ($apps[$i].metadata -and ([string]$apps[$i].metadata.installCommand).Trim()))
                 customConfig = [string]$row.CustomConfig
                 required     = [int]$row.Required
                 available    = [int]$row.Available
@@ -241,7 +246,7 @@ function Global:Complete-WebOrphanJobs {
         if (((Get-Date) - [datetime]$job.LastPoll).TotalSeconds -lt $GraceSeconds) { continue }
         try {
             $r = Get-WebJobPoll ([pscustomobject]@{ job = $id; offset = [int64]::MaxValue })
-            if ($r.after -and $r.after.pushGroups) { Write-Log "[WARN] $($job.Mode): finished while the page wasn't watching, so its groups weren't pushed - use Push groups." }
+            if ($r.after -and $r.after.pushGroups) { Write-Log "[WARN] $($job.Mode): finished while the page wasn't watching, so its groups weren't pushed - use Send groups." }
         }
         catch { Write-Log "[WARN] Couldn't finish $($job.Mode): $($_.Exception.Message)" }
     }
@@ -277,7 +282,7 @@ function Global:Complete-WebJobsAtExit {
         }
         # Past the end of the log: nothing left to read, so this poll completes it.
         $r = Get-WebJobPoll ([pscustomobject]@{ job = $id; offset = [int64]::MaxValue })
-        if ($r.after -and $r.after.pushGroups) { Write-Log "[WARN] $($job.Mode): the app window was closed, so its groups weren't pushed - use Push groups." }
+        if ($r.after -and $r.after.pushGroups) { Write-Log "[WARN] $($job.Mode): the app window was closed, so its groups weren't pushed - use Send groups." }
         Write-Host "  Finished: $($job.Mode)" -ForegroundColor DarkGray
     }
 }
@@ -642,6 +647,7 @@ function Global:Invoke-WebApi {
         '/api/update-runs'      { return (Get-WebUpdateRuns) }
         '/api/update-run'       { return (Start-WebUpdateRun $Data) }
         '/api/update-schedule'  { return (Set-WebUpdateSchedule $Data) }
+        '/api/portal-store'     { return (Invoke-WithCatalogLock { Set-WebCompanyPortalStore $Data }) }
         '/api/wau-switch'       { if ($Data.preview) { return (Invoke-WebWauSwitch $Data) }; return (Invoke-WithCatalogLock { Invoke-WebWauSwitch $Data }) }
         '/api/managed-updates'  { return (Invoke-WithCatalogLock { Set-WebManagedUpdates $Data }) }
         '/api/winget-take-version' { return (Invoke-WithCatalogLock { Set-WebWingetVersions $Data }) }

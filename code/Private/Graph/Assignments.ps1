@@ -177,8 +177,17 @@ function Global:New-AppAssignmentBody {
     param($Entries, $GroupIdByName, $RequiredSettings = $null,
         # Settings for every Available inclusion (a release: auto-update the superseded version) - $null sends none.
         $AvailableSettings = $null,
+        # The app's assignments in Intune now: an inclusion kept as it is (same intent and group) keeps its settings -
+        # a release's install deadline, restart grace period or Company Portal auto-update - instead of losing them.
+        $CurrentAssignments = $null,
         # Assignment filter name -> id, for entries with a filter (one whose id isn't known is sent without it - the caller checks first).
         $FilterIdByName = $null)
+    $keep = @{}
+    foreach ($c in @($CurrentAssignments)) {
+        if (-not $c -or -not $c.target -or -not $c.settings) { continue }
+        if ([string]$c.target.'@odata.type' -like '*exclusion*') { continue }
+        $keep["$([string]$c.intent)|$([string]$c.target.groupId)".ToLowerInvariant()] = $c.settings
+    }
     $assignments = @(@($Entries) | ForEach-Object {
         # Same null-entry guard as Get-AssignmentDiff, and it matters more
         # here: this is the body of the call that REPLACES an app's whole
@@ -203,6 +212,7 @@ function Global:New-AppAssignmentBody {
         }
         if ($RequiredSettings -and $_.Intent -eq 'required' -and $_.Mode -ne 'exclude') { $one.settings = $RequiredSettings }
         if ($AvailableSettings -and $_.Intent -eq 'available' -and $_.Mode -ne 'exclude') { $one.settings = $AvailableSettings }
+        if (-not $one.Contains('settings') -and $_.Mode -ne 'exclude') { $k = "$($_.Intent)|$groupId".ToLowerInvariant(); if ($keep.ContainsKey($k)) { $one.settings = $keep[$k] } }
         $one
     })
     return @{ mobileAppAssignments = @($assignments) }

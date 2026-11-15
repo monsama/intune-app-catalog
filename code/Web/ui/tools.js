@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------- replace a group (catalog only)
 let replaceNames = [];
 function openReplace({ names = [], old = '' }) {
+  if (wcResume('dlgReplace')) return;
   replaceNames = names;
   const pool = names.length ? apps.filter(a => names.includes(a.name)) : apps;
   const used = [...new Set(pool.flatMap(a => a.groups || []))].sort((a, b) => a.localeCompare(b));
@@ -47,6 +48,7 @@ async function exportCsv() {
 }
 let csvText = '', csvChanges = [];
 function openCsvImport() {
+  if (wcResume('dlgCsv')) return;
   csvText = ''; csvChanges = [];
   $('csvFile').value = ''; $('csvName').textContent = '';
   $('csvPreview').hidden = true; $('csvErr').hidden = true; $('csvNote').textContent = ''; $('csvLog').hidden = true; $('csvLog').textContent = ''; $('csvPushRow').hidden = true;
@@ -116,6 +118,7 @@ async function checkWingetVersions() {
 // ---------------------------------------------------------------- set up this tenant
 let tsData = null;
 async function openTenantSetup() {
+  if (wcResume('dlgTenantSetup')) return;
   if (!$('dlgTenantSetup').open) $('dlgTenantSetup').showModal();
   $('tsSteps').replaceChildren(el('li', { class: 'muted', text: 'Reading the tenant...' }));
   const r = await api('/api/tenant-setup');
@@ -161,10 +164,13 @@ async function openTenantSetup() {
 $('btnTsRefresh').addEventListener('click', openTenantSetup);
 $('btnTenantSetup').addEventListener('click', openTenantSetup);
 for (const d of ['dlgDeploy', 'dlgPush', 'dlgRun']) $(d).addEventListener('close', () => { if ($('dlgTenantSetup').open) openTenantSetup(); });
+// Restored from minimized: its steps are read again (they may have changed meanwhile).
+$('dlgTenantSetup').addEventListener('wcrestore', () => openTenantSetup());
 
 // ---------------------------------------------------------------- install status of every app
 let ovRows = [];
 async function openOverview() {
+  if (wcResume('dlgOverview')) return;
   if (!$('dlgOverview').open) $('dlgOverview').showModal();
   skeleton($('ovRows'), 8, 5);
   const r = await api('/api/install-overview');
@@ -197,6 +203,7 @@ $('btnOvRefresh').addEventListener('click', openOverview);
 // ---------------------------------------------------------------- managed updates: release, promote, withdraw
 let relName = '', relInfo = null;
 async function openRelease(name) {
+  if (wcResume('dlgRelease')) return;
   const r = await api('/api/release-info', { name });
   if (!r.ok) { toast(r.error, true); return; }
   relName = name; relInfo = r;
@@ -235,7 +242,7 @@ $('btnRelGo').addEventListener('click', async () => {
   const assigned = await releaseStep({ name, step: 'pilot' }, '/api/release-assign', 'relLog', 'Assigning it to the pilot groups...');
   $('btnRelClose').textContent = 'Close'; $('btnRelGo').textContent = 'Done';
   toast(assigned.ok ? `${name} ${version} is released to the pilot groups.` : `${name} ${version} is in Intune, but assigning it to pilot failed - Release again isn't needed: use Promote or Withdraw.`, !assigned.ok);
-  loadApps();
+  loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
 });
 async function promoteRelease(name) {
   const a = apps.find(x => x.name === name);
@@ -249,7 +256,7 @@ async function promoteRelease(name) {
   const p2 = await releaseStep({ name, step: 'retire' }, '/api/release-assign', 'runLog', `Taking the groups off ${a.version || 'the old release'}...`);
   const r = await api('/api/release-promoted', { name });
   toast(r.ok ? `${name} ${r.version} is the current release for everyone.${p2.ok ? '' : ' The old release still has its assignments - remove them in Intune.'}${(r.notes || []).length ? ' ' + r.notes.join(' ') : ''}` : r.error, !r.ok || !p2.ok);
-  loadApps();
+  loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
 }
 async function withdrawRelease(name) {
   const a = apps.find(x => x.name === name);
@@ -259,7 +266,7 @@ async function withdrawRelease(name) {
   if (!w.ok) { toast(`Withdrawing failed. ${w.error || ''}`, true); return; }
   const r = await api('/api/release-withdrawn', { name });
   toast(r.ok ? (r.deleted ? `${name} ${a.pilotVersion} withdrawn and deleted from Intune.` : `${name} ${a.pilotVersion} withdrawn, but not deleted from Intune: ${r.error}`) : r.error, !r.ok || !r.deleted);
-  loadApps();
+  loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
 }
 
 async function rollbackRelease(name) {
@@ -271,11 +278,12 @@ async function rollbackRelease(name) {
   const r2 = await releaseStep({ name, step: 'retire' }, '/api/release-assign', 'runLog', `Taking the groups off ${a.version || 'the current release'}...`);
   const r = await api('/api/release-rolledback', { name });
   toast(r.ok ? `${name} is back on ${r.version}.${r2.ok ? '' : ' The newer release still has its assignments - remove them in Intune.'}${(r.notes || []).length ? ' ' + r.notes.join(' ') : ''}` : r.error, !r.ok || !r2.ok);
-  loadApps();
+  loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
 }
 
 // ---------------------------------------------------------------- apps worth adding (Intune's inventory)
 async function openSuggest() {
+  if (wcResume('dlgSuggest')) return;
   if (!$('dlgSuggest').open) $('dlgSuggest').showModal();
   $('sgRows').replaceChildren(el('tr', {}, el('td', { colspan: 4, class: 'muted', text: 'Reading the inventory of apps on devices...' })));
   const r = await api('/api/inventory-suggestions');
