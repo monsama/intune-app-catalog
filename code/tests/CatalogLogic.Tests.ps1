@@ -187,6 +187,9 @@ $testableFunctionNames = @(
     "New-IntuneWinPackage",
     "Get-InstallErrorInfo",
     "Get-InstallErrorTop",
+    "ConvertFrom-WingetInstallerUrl",
+    "Get-DownloadCheckVerdict",
+    "Add-WingetRetryReturnCode",
     "Get-AppRecordFieldValues",
     "Get-AppRecordChanges",
     "Test-AppRecordFieldRevertable",
@@ -596,6 +599,16 @@ Assert-True ($det -like "*'Vendor.App'*" -and $det -like "*'24.09'*" -and $det -
 $pinApp = [pscustomobject]@{ managedUpdates = $true; wingetId = 'Vendor.App'; metadata = [pscustomobject]@{ appVersion = '5.1'; installCommand = $wingetDefaults.installCommand; uninstallCommand = $wingetDefaults.uninstallCommand; installContext = 'System'; detectionRule = $null } }
 Assert-True ((Set-ManagedAppPin $pinApp) -and $pinApp.metadata.installCommand -like "*--version '5.1'*" -and $pinApp.metadata.detectionRule.Script_Content -like "*'5.1'*") "Set-ManagedAppPin: commands and detection follow the App version"
 Assert-True (-not (Set-ManagedAppPin $pinApp)) "Set-ManagedAppPin: nothing to change the second time"
+Assert-True (@($pinApp.metadata.returnCodes | Where-Object { $_.returnCode -eq 9009 -and $_.type -eq 'retry' }).Count -eq 1 -and @($pinApp.metadata.returnCodes | Where-Object { $_.returnCode -eq 3010 }).Count -eq 1) "Set-ManagedAppPin: 9009 (winget not on the device yet) is a Retry return code, Intune's defaults kept"
+Assert-True ($pinApp.metadata.installCommand -like '*exit 9009*' -and $pinApp.metadata.installCommand.Length -le 1024) "Set-ManagedAppPin: the install command waits for winget, then exits 9009 - still within 1024 characters"
+# Commands generated before 2.17 (no waiting) are still recognised - and brought up to date.
+$oldCmd = Get-WingetCommandLines -WingetId 'Vendor.App' -Method 'Managed' -InstallContext 'System' -Version '5.1' -Legacy
+$legacyApp = [pscustomobject]@{ managedUpdates = $true; wingetId = 'Vendor.App'; appName = 'Vendor App'; metadata = [pscustomobject]@{ appVersion = '5.1'; installCommand = $oldCmd.Install; uninstallCommand = $oldCmd.Uninstall; installContext = 'System'; detectionRule = $null; returnCodes = @() } }
+Assert-True ((Get-AppWingetInstallMethod -WingetId 'Vendor.App' -InstallCommand $oldCmd.Install -UninstallCommand $oldCmd.Uninstall) -eq 'Managed' -and (Set-ManagedAppPin $legacyApp) -and $legacyApp.metadata.installCommand -like '*exit 9009*') "Get-AppWingetInstallMethod: a command generated before 2.17 is still the generated form, and is brought up to date"
+$detReg = $legacyApp.metadata.detectionRule.Script_Content
+$pe2 = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($detReg, [ref]$null, [ref]$pe2)
+Assert-True ($detReg -like '*CurrentVersion\Uninstall*' -and $detReg -like "*`$NamePattern = '^Vendor\ App*" -and @($pe2).Count -eq 0) "Get-ManagedWingetDetection: the Uninstall entries are looked at first (by the app's name), and it parses"
+Assert-True (($pinApp.metadata.detectionRule.Script_Content) -like "*`$NamePattern = ''*") "Set-ManagedAppPin: no name, no Uninstall-entry check (an empty pattern would match anything)"
 $handApp = [pscustomobject]@{ managedUpdates = $true; wingetId = 'Vendor.App'; metadata = [pscustomobject]@{ appVersion = '5.1'; installCommand = 'setup.exe /custom'; uninstallCommand = 'x'; installContext = 'System'; detectionRule = $null } }
 Assert-True (-not (Set-ManagedAppPin $handApp) -and $handApp.metadata.installCommand -eq 'setup.exe /custom') "Set-ManagedAppPin: commands edited by hand are left alone"
 $rels = @(ConvertTo-AppReleases @([pscustomobject]@{ version = '2.0'; appId = 'dddddddd-0000-4000-8000-000000000001'; state = 'pilot' }, [pscustomobject]@{ version = '1.0'; appId = '../x'; state = 'previous' }, [pscustomobject]@{ version = '0.9'; appId = 'dddddddd-0000-4000-8000-000000000002'; state = 'weird' }))
@@ -815,6 +828,15 @@ Assert-True (((Get-RetireGroups ([pscustomobject]@{ requiredFor = @('SG-A', ' SG
 $rp = Get-RetireProgress @([pscustomobject]@{ State = 'Installed' }, [pscustomobject]@{ State = 'Uninstalled' }, [pscustomobject]@{ State = 'Not installed' }, [pscustomobject]@{ State = 'Failed' }, [pscustomobject]@{ State = 'Pending' })
 Assert-True ($rp.total -eq 5 -and $rp.still -eq 1 -and $rp.removed -eq 2 -and $rp.failed -eq 1 -and $rp.other -eq 1 -and -not $rp.done -and $rp.text -like '1 of 5 device(s) still have it*failed on 1*') "Get-RetireProgress: still installed, removed, failed and pending counted"
 Assert-True ((Get-RetireProgress @([pscustomobject]@{ State = 'Uninstalled' })).done -and (Get-RetireProgress @()).done) "Get-RetireProgress: done when no device has it (or none reports it)"
+
+# Can a pinned winget version still be installed?
+Assert-Equal 'https://dl.example/7z2408-x64.msi' (ConvertFrom-WingetInstallerUrl "Found 7-Zip [7zip.7zip]`r`nVersion: 24.08`r`nInstaller:`r`n  Installer Type: msi`r`n  Installer Url: https://dl.example/7z2408-x64.msi`r`n  Installer SHA256: abc") "ConvertFrom-WingetInstallerUrl: the installer link from winget show"
+Assert-Equal '' (ConvertFrom-WingetInstallerUrl 'No package found matching input criteria.') "ConvertFrom-WingetInstallerUrl: none when winget doesn't have it"
+Assert-True ((Get-DownloadCheckVerdict -InWinget $true -StatusCode 200 -Version '1').status -eq 'ok' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 206 -Version '1').status -eq 'ok' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 404 -Version '1').status -eq 'gone' -and
+    (Get-DownloadCheckVerdict -InWinget $false -StatusCode 0 -Version '1').status -eq 'notinwinget' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 403 -Version '1').status -eq 'unknown' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 0 -Version '1').status -eq 'unknown') "Get-DownloadCheckVerdict: there, gone (404/410), not in winget, or not known (403, no answer)"
+$rcs = @(Add-WingetRetryReturnCode @(@{ returnCode = 0; type = 'success' }, @{ returnCode = 9009; type = 'retry' }))
+Assert-True ($rcs.Count -eq 2 -and @(Add-WingetRetryReturnCode @(@{ returnCode = 0; type = 'success' })).Count -eq 2 -and @(Add-WingetRetryReturnCode @()).Count -eq 6) "Add-WingetRetryReturnCode: 9009 added once; an empty list keeps Intune's five defaults"
+Assert-True ((Get-InstallErrorInfo 9009).meaning -like "*winget wasn't on the device*" -and (Get-InstallErrorInfo '0x80072329').fix -like '*Retry*') "Get-InstallErrorInfo: 9009 - winget not on the device yet, Intune retries"
 
 # Install errors explained
 $e1 = Get-InstallErrorInfo -2016345060

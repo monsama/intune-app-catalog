@@ -84,6 +84,13 @@ function Global:Invoke-ManagedUpdateRun {
                     elseif ($h.level -eq 'warn') { & $say '(health)' 'health' $h.text }
                 }
             }
+            # Pinned Winget versions whose download is gone: new devices can't install them.
+            if (-not $FastTrackOnly) {
+                foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { $_.managedUpdates -and $_.appId -and -not $_.retiringSince -and $_.wingetId -and -not (Test-StoreProductId $_.wingetId) -and $_.metadata -and [string]$_.metadata.appVersion })) {
+                    $dl = Test-WebPinnedDownload -WingetId $a.wingetId -Version ([string]$a.metadata.appVersion)
+                    if ($dl.status -in 'gone', 'notinwinget') { & $say $a.appName 'health' $dl.text }
+                }
+            }
             $window = Test-ReleaseWindow -Now (Get-Date) -Policy $policy
             # A test tenant's catalog gates which Winget versions this one releases by itself.
             $gateApps = $null

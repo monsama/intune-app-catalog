@@ -931,7 +931,9 @@ function Global:Get-WingetCommandLines {
       it in the App Installer package folder first, and falls back to plain
       "winget" for a user install, which can't list that folder.
     #>
-    param([string]$WingetId, [string]$Method, [string]$InstallContext, [string]$Version)
+    param([string]$WingetId, [string]$Method, [string]$InstallContext, [string]$Version,
+        # The form before 2.17 (no waiting for winget) - only to recognise commands generated then.
+        [switch]$Legacy)
 
     $ps = "%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile"
     # The ID ends up in code and command lines that run as SYSTEM on the
@@ -950,7 +952,12 @@ function Global:Get-WingetCommandLines {
         $scope = if ($InstallContext -eq "User") { "" } else { " --scope machine" }
         # Newest App Installer first: there can be more than one version
         # side by side, and a plain name sort puts 1.9 after 1.21.
-        $find = "`$w = Get-Item `$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_8wekyb3d8bbwe\winget.exe -ErrorAction SilentlyContinue | Sort-Object { `$_.VersionInfo.FileVersionRaw } | Select-Object -Last 1 -ExpandProperty FullName; if (-not `$w) { `$w = 'winget' }"
+        $find = if ($Legacy) { "`$w = Get-Item `$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_8wekyb3d8bbwe\winget.exe -ErrorAction SilentlyContinue | Sort-Object { `$_.VersionInfo.FileVersionRaw } | Select-Object -Last 1 -ExpandProperty FullName; if (-not `$w) { `$w = 'winget' }" }
+        # A new device (Autopilot) can get its apps before App Installer is
+        # registered: winget is looked for up to 5 minutes, then the command
+        # exits 9009 - a Retry return code (Add-WingetRetryReturnCode), so
+        # Intune tries again later instead of reporting a failure.
+        else { "`$w = `$null; for (`$i = 0; `$i -lt 30 -and -not `$w; `$i++) { `$w = Get-Item `$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_8wekyb3d8bbwe\winget.exe -ErrorAction SilentlyContinue | Sort-Object { `$_.VersionInfo.FileVersionRaw } | Select-Object -Last 1 -ExpandProperty FullName; if (-not `$w) { `$w = (Get-Command winget.exe -ErrorAction SilentlyContinue).Source }; if (-not `$w) { Start-Sleep 10 } }; if (-not `$w) { exit 9009 }" }
         return @{
             Install   = "$ps -Command `"$find; & `$w install --id '$WingetId' -e$pin --source winget$scope --silent --accept-package-agreements --accept-source-agreements; exit `$LASTEXITCODE`""
             Uninstall = "$ps -Command `"$find; & `$w uninstall --id '$WingetId' -e --source winget$scope --silent --accept-source-agreements; exit `$LASTEXITCODE`""
@@ -977,15 +984,19 @@ function Global:Get-AppWingetInstallMethod {
     if ($InstallCommand -match " --version '((?:[^']|'')+)'") {
         $pinned = $Matches[1] -replace "''", "'"
         foreach ($context in @("System", "User")) {
-            $generated = Get-WingetCommandLines -WingetId $WingetId -Method "Managed" -InstallContext $context -Version $pinned
-            if ($InstallCommand -eq $generated.Install -and $UninstallCommand -eq $generated.Uninstall) { return "Managed" }
+            foreach ($legacy in $false, $true) {
+                $generated = Get-WingetCommandLines -WingetId $WingetId -Method "Managed" -InstallContext $context -Version $pinned -Legacy:$legacy
+                if ($InstallCommand -eq $generated.Install -and $UninstallCommand -eq $generated.Uninstall) { return "Managed" }
+            }
         }
         return ""
     }
     foreach ($method in @("WAU", "Winget")) {
         foreach ($context in @("System", "User")) {
-            $generated = Get-WingetCommandLines -WingetId $WingetId -Method $method -InstallContext $context
-            if ($InstallCommand -eq $generated.Install -and $UninstallCommand -eq $generated.Uninstall) { return $method }
+            foreach ($legacy in $false, $true) {
+                $generated = Get-WingetCommandLines -WingetId $WingetId -Method $method -InstallContext $context -Legacy:$legacy
+                if ($InstallCommand -eq $generated.Install -and $UninstallCommand -eq $generated.Uninstall) { return $method }
+            }
         }
     }
     return ""
@@ -1096,13 +1107,20 @@ function Global:Get-ManagedWingetDetection {
       winget lists -WingetId at -Version or newer. Newer counts too: a
       device a later release (or the app itself) already updated must not
       get the older version again.
+
+      -NamePattern (Get-InstalledNamePattern of the name Windows lists it
+      under): the Uninstall entries are looked at first - fast, and it works
+      while winget isn't there yet. Only when no entry has the version or
+      newer does winget get asked (an entry under another name, or none).
     #>
-    param([string]$WingetId, [string]$Version)
+    param([string]$WingetId, [string]$Version, [string]$NamePattern = '')
     $id = ConvertTo-PsSingleQuotedContent $WingetId
     $v = ConvertTo-PsSingleQuotedContent $Version
+    $np = ConvertTo-PsSingleQuotedContent $NamePattern
     return @"
 `$AppToDetect = '$id'
 `$Wanted = '$v'
+`$NamePattern = '$np'
 
 Function Get-WingetCmd {
     `$WingetCmd = `$null
@@ -1133,7 +1151,18 @@ Function Compare-Version([string]`$a, [string]`$b) {
     return 0
 }
 
+# First the Uninstall entries Windows keeps (64-bit, 32-bit, the user's).
+if (`$NamePattern) {
+    foreach (`$Root in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall', 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall') {
+        foreach (`$Key in @(Get-ChildItem -LiteralPath `$Root -ErrorAction SilentlyContinue)) {
+            `$Entry = Get-ItemProperty -LiteralPath `$Key.PSPath -ErrorAction SilentlyContinue
+            if (`$Entry -and [string]`$Entry.DisplayName -match `$NamePattern -and `$Entry.DisplayVersion -and (Compare-Version `$Wanted ([string]`$Entry.DisplayVersion)) -ge 0) { return "Installed!" }
+        }
+    }
+}
+
 `$winget   = Get-WingetCmd
+if (-not `$winget) { return }
 `$JsonFile = "`$env:TEMP\InstalledApps-`$([guid]::NewGuid().ToString('N')).json"
 & `$winget export -o `$JsonFile --include-versions --accept-source-agreements | Out-Null
 `$Json     = Get-Content `$JsonFile -Raw | ConvertFrom-Json
@@ -1166,10 +1195,17 @@ function Global:Set-ManagedAppPin {
     }
     if (-not (Get-AppWingetInstallMethod -WingetId $App.wingetId -InstallCommand $m.installCommand -UninstallCommand $m.uninstallCommand) -and $m.installCommand) { return $false }
     $c = Get-WingetCommandLines -WingetId $App.wingetId -Method "Managed" -InstallContext $m.installContext -Version $version
-    $detect = Get-ManagedWingetDetection -WingetId $App.wingetId -Version $version
+    $onDevices = ([string]$(if ([string]$App.detectedName) { $App.detectedName } else { $App.appName })).Trim()
+    $detect = Get-ManagedWingetDetection -WingetId $App.wingetId -Version $version -NamePattern $(if ($onDevices) { Get-InstalledNamePattern $onDevices } else { '' })
     $changed = ($m.installCommand -ne $c.Install) -or ($m.uninstallCommand -ne $c.Uninstall) -or -not ($m.detectionRule -and $m.detectionRule.Type -eq 'Script' -and $m.detectionRule.Script_Content -eq $detect)
     $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall
     $m.detectionRule = [pscustomobject]@{ Type = 'Script'; Script_Content = $detect }
+    # The install command exits 9009 when winget never turned up (a new device): Retry, not a failure.
+    $codes = @(Add-WingetRetryReturnCode $m.returnCodes)
+    if (@($m.returnCodes).Count -ne $codes.Count) {
+        if ($m.PSObject.Properties['returnCodes']) { $m.returnCodes = $codes } else { $m | Add-Member -NotePropertyName returnCodes -NotePropertyValue $codes }
+        $changed = $true
+    }
     return $changed
 }
 
@@ -1840,6 +1876,7 @@ function Global:Get-InstallErrorInfo {
         '0x80070003' = @('A path wasn''t found (Windows error 3).', 'The install command uses a folder that doesn''t exist on the device - check paths and quoting.')
         '0x80070005' = @('Access denied (Windows error 5).', 'The install ran without the rights it needs: install for the system, not the user, or check that nothing (antivirus, policies) blocks it.')
         '0x800705B4' = @('The installation timed out.', 'The installer took longer than the maximum install time - often a hidden prompt waiting for an answer. Make it silent, or raise the install time in the app''s deploy settings.')
+        '0x80072329' = @('winget wasn''t on the device (exit code 9009) - usually a new device still setting up (Autopilot).', 'Nothing to do: the install command waits for winget up to 5 minutes and Intune tries again later (9009 is a Retry return code). If it stays, check that App Installer is on the device.')
         '0x80070001' = @('The installer returned 1 (incorrect function / generic failure).', 'Exit code 1 is the installer''s own "failed" - run it by hand as SYSTEM to see why; for scripts, check the script''s errors.')
     }
     if ($known.ContainsKey($hex)) { return [ordered]@{ hex = $hex; meaning = $known[$hex][0]; fix = $known[$hex][1] } }
@@ -1849,6 +1886,7 @@ function Global:Get-InstallErrorInfo {
         return [ordered]@{ hex = $hex; meaning = "Windows error $w (or exit code $w from the installer)."; fix = "Search for $hex; if it is the installer's own exit code, its vendor documents it - add it to the return codes if it means success." }
     }
     if (($u -band 0xFFF00000L) -eq 0x87D00000L) { return [ordered]@{ hex = $hex; meaning = 'An error of the Intune Management Extension (the agent that installs Win32 apps).'; fix = "Search for $hex; the device's IntuneManagementExtension.log has the details." } }
+    if ($u -eq 9009) { return [ordered]@{ hex = $hex; meaning = $known['0x80072329'][0]; fix = $known['0x80072329'][1] } }
     if ($u -lt 0x10000L) { return [ordered]@{ hex = $hex; meaning = "The installer exited with $u."; fix = "An exit code Intune doesn't know as success: the installer's documentation says what $u means - add it to the return codes if it means success." } }
     return [ordered]@{ hex = $hex; meaning = 'An error Intune reported.'; fix = "Search for $hex." }
 }
@@ -1996,4 +2034,46 @@ function Global:Get-RetireProgress {
         elseif (-not $still -and -not $failed) { "Gone from all $total device(s) that reported it." }
         else { "$still of $total device(s) still have it$(if ($failed) { "; the uninstall failed on $failed" })$(if ($other) { "; $other pending or unknown" })." }
     return [ordered]@{ total = $total; still = $still; removed = $removed; failed = $failed; other = $other; done = [bool](-not $still -and -not $failed); text = $text }
+}
+
+function Global:ConvertFrom-WingetInstallerUrl {
+    # Pure: the first "Installer Url:" in "winget show" output ('' when there's none).
+    param([string]$Text)
+    foreach ($line in @(([string]$Text) -split "`r?`n")) {
+        if ($line -match '^\s*Installer Url:\s*(\S+)\s*$') { return $Matches[1] }
+    }
+    return ''
+}
+
+function Global:Get-DownloadCheckVerdict {
+    <#
+      Pure: whether a pinned version can still be installed by winget on a
+      device - @{ status = ok | gone | notinwinget | unknown; text }.
+      -InWinget: winget still knows the version; -StatusCode: what its
+      installer link answered (0 when it couldn't be asked).
+    #>
+    param([bool]$InWinget, [int]$StatusCode, [string]$Version)
+    if (-not $InWinget) { return @{ status = 'notinwinget'; text = "winget no longer has $Version - devices that don't have it yet can't install it. Release a newer version." } }
+    if ($StatusCode -in 200, 206) { return @{ status = 'ok'; text = "$Version can still be downloaded." } }
+    if ($StatusCode -in 404, 410) { return @{ status = 'gone'; text = "The vendor removed the $Version download (HTTP $StatusCode) - devices that don't have it yet fail to install it. Release a newer version (fast track for a quick one); if this keeps happening, the vendor only keeps its latest version online." } }
+    if ($StatusCode -le 0) { return @{ status = 'unknown'; text = "Couldn't ask for the $Version download (no answer)." } }
+    return @{ status = 'unknown'; text = "The $Version download answered HTTP $StatusCode - it may need a browser or be blocked here; devices may still get it." }
+}
+
+function Global:Add-WingetRetryReturnCode {
+    <#
+      Pure: return codes with 9009 = retry added - what a winget install
+      command exits with when winget isn't on the device yet (a new device
+      still setting up, Autopilot), so Intune tries again later instead of
+      reporting a failure. An empty list stands for Intune's defaults, which
+      are kept.
+    #>
+    param($ReturnCodes)
+    $list = @(@($ReturnCodes) | Where-Object { $_ } | ForEach-Object { [pscustomobject]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })
+    if (-not $list.Count) {
+        $list = @(@{ c = 0; t = 'success' }, @{ c = 1707; t = 'success' }, @{ c = 3010; t = 'softReboot' }, @{ c = 1641; t = 'hardReboot' }, @{ c = 1618; t = 'retry' }) | ForEach-Object { [pscustomobject]@{ returnCode = $_.c; type = $_.t } }
+    }
+    if (-not @($list | Where-Object { $_.returnCode -eq 9009 }).Count) { $list = @($list) + [pscustomobject]@{ returnCode = 9009; type = 'retry' } }
+    # Never empty, so unrolled is fine - callers wrap it in @().
+    return $list
 }

@@ -578,6 +578,7 @@ function Global:Invoke-WebApi {
         '/api/health'           { return (Get-WebHealth) }
         '/api/permission-check' { return (Get-WebPermissionCheck) }
         '/api/filters' { return (Get-WebAssignmentFilters) }
+        '/api/download-checks'  { return (Invoke-WebDownloadChecks) }
         '/api/retire-start'     { return (Start-WebRetire $Data) }
         '/api/retire-status'    { return (Get-WebRetireStatus $Data) }
         '/api/retire-finish'    { return (Start-WebRetireFinish $Data) }

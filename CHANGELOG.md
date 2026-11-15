@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.17.0
+
+Making the winget way of installing sturdier:
+
+- **Pinned versions whose download is gone**: winget only knows where the
+  vendor keeps the installer, and some vendors keep only their latest
+  version online. A pinned version then stops installing - first on new
+  devices.
+  - Updates > **Check downloads** checks every pinned version (winget's
+    installer link for it), and so does the nightly run.
+  - A version that's gone shows *download gone* on the Updates page and
+    as a problem on Home.
+  - A version is not released at all if its download is already gone.
+  - When the newest version still downloads, the app says the vendor
+    keeps only its latest version online, and suggests fast track or
+    managed updates off for that app.
+- **Detection without winget**: a managed Winget app's detection script
+  looks at the Windows Uninstall entries first (by the app's name, or its
+  *Name on devices*). It is faster, and works while winget isn't there.
+  Only when no entry has the version or newer is winget asked, as before.
+- **New devices (Autopilot)**: the install command waits up to 5 minutes
+  for winget, then exits 9009. That is now a *Retry* return code, so
+  Intune tries again later instead of reporting a failure. The install
+  status explains 9009.
+- Apps whose commands were generated before keep being recognised, and
+  get the new command, detection and return code the next time they're
+  saved or released. Send them to Intune (or release) for devices to get
+  them.
+
 ## 2.16.0
 
 - **Navigation in a sidebar** with icons. On a medium-width window it is an
