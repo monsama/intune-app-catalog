@@ -391,7 +391,9 @@ function Global:Save-WebPrefs {
     if ($Data.defaults) { $Global:App.DefaultAppSettings = $converted.Settings }
     if ($null -ne $Data.releasePolicy) {
         $rp = ConvertTo-ReleasePolicy $Data.releasePolicy
-        foreach ($k in @($rp.Keys)) { $Global:App.ReleasePolicy[$k] = $rp[$k] }
+        # The schedule (on/off, the time) is set by Schedule only (/api/update-schedule): a page that loaded the
+        # settings before it was changed would otherwise put the old time back, or turn the server's run off.
+        foreach ($k in @($rp.Keys)) { if ($k -in 'ServerSchedule', 'RunAt') { continue }; $Global:App.ReleasePolicy[$k] = $rp[$k] }
     }
     # An empty list clears them - so "is it there", not "is it not null" (@() -ne $null is empty, so false).
     if (@($Data.PSObject.Properties.Name) -contains 'profiles') {

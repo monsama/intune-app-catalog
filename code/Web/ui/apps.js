@@ -47,7 +47,8 @@ let iconsWanted = new Set(), iconTimer = null;
 function iconLetter(name) {
   const t = String(name || '?').trim(), letter = (t.match(/[A-Za-z0-9]/) || ['?'])[0].toUpperCase();
   let h = 0; for (const ch of t) h = (h * 31 + ch.charCodeAt(0)) % 360;
-  return el('span', { class: 'appicon none', 'aria-hidden': 'true', style: `--h:${h}`, text: letter });
+  // Through the style object: the page's Content-Security-Policy refuses inline style attributes.
+  const n = el('span', { class: 'appicon none', 'aria-hidden': 'true', text: letter }); n.style.setProperty('--h', h); return n;
 }
 function iconFor(a) {
   if (!a.hasIcon) return iconLetter(a.name);
@@ -163,7 +164,7 @@ function renderApps() {
     return tr;
   }), ...(typeof intuneOnlyRows === 'function' ? intuneOnlyRows(q) : [])]);
   if (typeof renderWhere === 'function') renderWhere();
-  $('count').textContent = showIntuneOnly ? `${intuneOnly().win.length} only in Intune` : list.length === apps.length ? `${apps.length} apps` : `${list.length} of ${apps.length} apps`;
+  $('count').textContent = showIntuneOnly ? `${intuneOnly().win.length} only in Intune` : list.length === apps.length ? `${apps.length} app${apps.length === 1 ? '' : 's'}` : `${list.length} of ${apps.length} app${apps.length === 1 ? '' : 's'}`;
   for (const th of document.querySelectorAll('.grid th')) {
     th.classList.toggle('sorted', th.dataset.sort === sortKey);
     th.classList.toggle('desc', th.dataset.sort === sortKey && sortDesc);
@@ -665,7 +666,7 @@ function placeMenu(m, x, y) {
   m.hidden = false;
   const r = m.getBoundingClientRect();
   m.style.left = Math.max(8, Math.min(x, innerWidth - r.width - 8)) + 'px';
-  m.style.top = Math.min(y, innerHeight - r.height - 8) + 'px';
+  m.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + 'px';
   const first = m.querySelector('button:not(:disabled)'); if (first) first.focus();
 }
 // Arrow keys move between a menu's items; Escape closes it (every .menu).

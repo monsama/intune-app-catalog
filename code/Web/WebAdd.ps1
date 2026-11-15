@@ -155,8 +155,7 @@ function Global:Get-WebInstallerFacts {
         try {
             $vi = (Get-Item -LiteralPath $Path).VersionInfo
             $info.ProductName = ([string]$vi.ProductName).Trim(); $info.Manufacturer = ([string]$vi.CompanyName).Trim()
-            $v = ([string]$vi.ProductVersion).Trim(); if (-not $v) { $v = ([string]$vi.FileVersion).Trim() }
-            $info.ProductVersion = $v -replace ',\s*', '.'
+            $info.ProductVersion = Get-ExeVersionText -Path $Path
         }
         catch { }
         try {

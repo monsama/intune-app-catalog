@@ -39,16 +39,16 @@ async function loadGroupsStatus() {
   renderGroupList();
 }
 // "All groups in Entra ID": what the server found for the search text (name contains it; * is a wildcard).
-let entraHits = null, entraInfo = '', entraSeq = 0, entraTimer = 0;
+let entraHits = null, entraInfo = '', entraErr = '', entraSeq = 0, entraTimer = 0;
 const entraMode = () => $('groupShow').value === 'entra';
 async function searchEntraGroups(fresh) {
   const seq = ++entraSeq, q = $('groupSearch').value.trim();
   $('groupStatusNote').textContent = 'Searching Entra ID...';
   const r = await api('/api/group-search', { q, fresh: !!fresh });
   if (seq !== entraSeq || !entraMode()) return;
-  if (!r.ok) { entraHits = []; entraInfo = r.error; $('groupStatusNote').textContent = r.error; renderGroupList(); return; }
+  if (!r.ok) { entraHits = []; entraInfo = r.error; entraErr = r.error; $('groupStatusNote').textContent = r.error; renderGroupList(); return; }
   entraHits = r.groups;
-  entraInfo = `${r.matches} of ${r.total} group(s)${r.matches > r.groups.length ? ` - first ${r.groups.length} shown, type more to narrow` : ''} - read ${r.at}`;
+  entraErr = ''; entraInfo = `${r.matches} of ${r.total} group(s)${r.matches > r.groups.length ? ` - first ${r.groups.length} shown, type more to narrow` : ''} - read ${r.at}`;
   $('groupStatusNote').textContent = entraInfo; $('groupStatusNote').title = entraInfo;
   renderGroupList();
 }
@@ -76,7 +76,7 @@ function renderGroupList() {
     li.addEventListener('click', e => clickGroup(g.name, e));
     li.addEventListener('contextmenu', e => { e.preventDefault(); if (!isSel(g.name)) { gSel = new Set([g.name]); gLast = g.name; renderGroupList(); } openGroupMenu(e.clientX, e.clientY); });
     return li;
-  }) : entraMode() ? [el('li', { class: 'muted', role: 'option', 'aria-disabled': 'true', 'aria-selected': 'false', text: entraHits === null ? 'Searching Entra ID...' : 'No group in Entra ID matches. New group creates one.' })]
+  }) : entraMode() ? [el('li', { class: 'muted', role: 'option', 'aria-disabled': 'true', 'aria-selected': 'false', text: entraHits === null ? 'Searching Entra ID...' : entraErr ? entraErr : 'No group in Entra ID matches. New group creates one.' })]
     : [(() => {
       // Nothing in the catalog matches: the same text searched in all of Entra ID is one click away.
       const q = $('groupSearch').value.trim();

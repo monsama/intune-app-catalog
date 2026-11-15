@@ -309,6 +309,8 @@ function Global:Get-PackagerChoice {
       The Packager setting: 'auto' (default - the tool when it's there, built
       in otherwise), 'builtin' or 'tool'.
     #>
+    # Not on Windows (the server version): IntuneWinAppUtil.exe can't run there - built in, whatever the setting says.
+    if ($IsLinux -or $IsMacOS) { return 'builtin' }
     $pref = [string]$Global:App.Packager
     if ($pref -eq 'builtin') { return 'builtin' }
     if ($pref -eq 'tool') { return 'tool' }

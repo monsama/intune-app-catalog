@@ -343,8 +343,7 @@ function Global:Get-WebInstallerInfo {
     }
     elseif ($exe) {
         $info.found = $true; $info.file = $exe.Name
-        $vi = $exe.VersionInfo
-        $v = ([string]$vi.ProductVersion).Trim(); if (-not $v) { $v = ([string]$vi.FileVersion).Trim() }
+        $v = Get-ExeVersionText -Path $exe.FullName
         $info.version = ($v -replace '[^0-9A-Za-z.\-+_].*$', '')
     }
     if ($info.version -and -not (Test-ReleaseVersionText $info.version)) { $info.version = '' }

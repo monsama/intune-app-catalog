@@ -27,8 +27,14 @@ function Global:Read-WebRequest {
     param($Client)
     $ns = $Client.GetStream(); $ns.ReadTimeout = 8000
     $ms = New-Object System.IO.MemoryStream; $buf = New-Object byte[] 16384; $headerEnd = -1
+    # The whole request has a deadline, not only each read: a client sending a byte every few seconds would
+    # otherwise hold one of the few request slots for as long as it likes (and with a few, the whole server).
+    $clock = [System.Diagnostics.Stopwatch]::StartNew(); $deadlineMs = 10000
+    $peer = try { [string]$Client.Client.RemoteEndPoint.Address } catch { '' }
     try {
         while ($true) {
+            $left = $deadlineMs - $clock.ElapsedMilliseconds; if ($left -le 0) { return $null }
+            $ns.ReadTimeout = [int][Math]::Max(1, [Math]::Min(8000, $left))
             $read = $ns.Read($buf, 0, $buf.Length); if ($read -le 0) { break }
             $ms.Write($buf, 0, $read); $arr = $ms.ToArray()
             # Headers end within 64 KB or the request isn't answered - a client
@@ -46,9 +52,21 @@ function Global:Read-WebRequest {
                 $firstLine = (($headerText -split "`r`n")[0])
                 $hdrHost = if ($headerText -match '(?im)^Host:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { '' }
                 $hdrOrigin = if ($headerText -match '(?im)^Origin:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { $null }
-                if (-not (Test-WebHostAllowed $hdrHost) -or -not (Test-WebOriginAllowed $hdrOrigin) -or $firstLine -notmatch '^POST /api/') { $contentLength = 0 }
+                if (-not (Test-WebHostAllowed $hdrHost -Peer $peer) -or -not (Test-WebOriginAllowed $hdrOrigin -Peer $peer) -or $firstLine -notmatch '^POST /api/') { $contentLength = 0 }
+                # The server version: a body larger than a sign-in is read only for the open session (its token in
+                # X-ICA-Session) - someone who isn't signed in can't make the server take in megabytes.
+                if ($contentLength -gt 16KB -and $Global:App.Server) {
+                    $hdrSession = if ($headerText -match '(?im)^X-ICA-Session:[ \t]*([0-9a-f]{64})\s*$') { $Matches[1] } else { '' }
+                    if ((Test-WebSession $hdrSession) -ne '') { $contentLength = 0 }
+                }
+                # The body: 10 seconds, plus a second for every 64 KB (a 10 MB upload on a slow line).
+                $deadlineMs = 10000 + [int]($contentLength / 64KB) * 1000
                 $bodyStart = $headerEnd + 4; $have = $arr.Length - $bodyStart
-                while ($have -lt $contentLength) { $read = $ns.Read($buf, 0, $buf.Length); if ($read -le 0) { break }; $ms.Write($buf, 0, $read); $have += $read }
+                while ($have -lt $contentLength) {
+                    $left = $deadlineMs - $clock.ElapsedMilliseconds; if ($left -le 0) { return $null }
+                    $ns.ReadTimeout = [int][Math]::Max(1, [Math]::Min(8000, $left))
+                    $read = $ns.Read($buf, 0, $buf.Length); if ($read -le 0) { break }; $ms.Write($buf, 0, $read); $have += $read
+                }
                 $arr = $ms.ToArray(); $body = ''
                 if ($contentLength -gt 0) { $body = [Text.Encoding]::UTF8.GetString($arr, $bodyStart, [Math]::Min($contentLength, $arr.Length - $bodyStart)) }
                 $parts = (($headerText -split "`r`n")[0]) -split ' '
@@ -57,9 +75,13 @@ function Global:Read-WebRequest {
                 $originHeader = if ($headerText -match '(?im)^Origin:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { $null }
                 $typeHeader = if ($headerText -match '(?im)^Content-Type:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { '' }
                 $agentHeader = if ($headerText -match '(?im)^User-Agent:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { '' }
+                # The client's address as the proxy in front saw it (the last X-Forwarded-For entry: Caddy writes
+                # it, it doesn't pass on what a client sent), else the connection's own.
+                $fwd = if ($headerText -match '(?im)^X-Forwarded-For:[ \t]*([^\r\n]*)') { (($Matches[1] -split ',')[-1]).Trim() } else { '' }
+                $clientAddr = if ($fwd -match '^[0-9A-Fa-f:.]{2,45}$') { $fwd } else { $peer }
                 $path = [string]$parts[1]
                 $q = $path.IndexOf('?'); if ($q -ge 0) { $path = $path.Substring(0, $q) }
-                return @{ Method = $parts[0]; Path = $path; Body = $body; Host = $hostHeader; Origin = $originHeader; ContentType = $typeHeader; Agent = $agentHeader }
+                return @{ Method = $parts[0]; Path = $path; Body = $body; Host = $hostHeader; Origin = $originHeader; ContentType = $typeHeader; Agent = $agentHeader; Peer = $peer; ClientAddr = $clientAddr }
             }
         }
     }
@@ -113,9 +135,9 @@ function Global:Test-WebRequestAllowed {
     #>
     param([hashtable]$Request)
     if (-not $Request) { return 'unreadable' }
-    if (-not (Test-WebHostAllowed ([string]$Request.Host))) { return 'host' }
+    if (-not (Test-WebHostAllowed ([string]$Request.Host) -Peer ([string]$Request.Peer))) { return 'host' }
     if ([string]$Request.Path -like '/api/*') {
-        if (-not (Test-WebOriginAllowed ([string]$Request.Origin))) { return 'origin' }
+        if (-not (Test-WebOriginAllowed ([string]$Request.Origin) -Peer ([string]$Request.Peer))) { return 'origin' }
         # The container's health check: a plain GET, answered without signing in (it says nothing but "up").
         if ($Request.Method -eq 'GET' -and $Request.Path -eq '/api/health') { return '' }
         if ($Request.Method -ne 'POST' -or [string]$Request.ContentType -notmatch '^application/json') { return 'method' }

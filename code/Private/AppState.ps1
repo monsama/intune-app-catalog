@@ -11,7 +11,13 @@ function Global:Initialize-AppState {
     $Global:App.RootPath   = $RootPath
     # Linux (the container) has no TEMP: the steps and their result files go to the system's temp folder.
     if (-not $env:TEMP) { $env:TEMP = [System.IO.Path]::GetTempPath().TrimEnd('/', '\') }
-    $Global:App.AppVersion = "2.28.1"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
+    # The container's working folder is on the data volume - a volume made by an older version doesn't have it yet.
+    foreach ($t in @($env:TEMP, $env:TMPDIR)) { if ($t -and -not (Test-Path -LiteralPath $t)) { try { [void](New-Item -ItemType Directory -Path $t -Force) } catch { } } }
+    # Created once here, not on first use: two requests at once would each make their own.
+    $Global:App.WingetIndexLock = New-Object System.Object
+    $Global:App.Downloads = [hashtable]::Synchronized(@{})
+    $Global:App.CatalogTextCache = [hashtable]::Synchronized(@{})
+    $Global:App.AppVersion = "2.28.2"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
     # The catalog as last read (Read-WebCatalogRecords) - the shared
     # functions that look at "the catalog" (default dependencies, known
     # groups) read it from here.
