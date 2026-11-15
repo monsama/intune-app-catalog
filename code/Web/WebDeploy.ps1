@@ -483,6 +483,7 @@ function Global:Complete-WebRetireFinish {
     if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
     $archive = Join-Path $dir ((Get-Date).ToString('yyyy-MM-dd_HHmmss') + '_' + (Split-Path $file -Leaf))
     Copy-Item -LiteralPath $file -Destination $archive -Force
+    Add-WebCopyRecord $archive
     Backup-WebAppFile $file
     Remove-Item -LiteralPath $file -Force
     Add-WebHistoryEntry -App $a.appName -Kind 'catalog' -Text 'Retired: deleted from Intune, archived (Catalog > Retired apps) and removed from the catalog'
@@ -549,6 +550,8 @@ function Global:Restore-WebRetiredApp {
     if ($id -notmatch '^\d{4}-\d{2}-\d{2}_\d{6}_[^\\/:*?"<>|]+\.json$') { return @{ ok = $false; error = 'That is not a retired app.' } }
     $src = Join-Path (Get-WebRetiredFolder) $id
     if (-not (Test-Path -LiteralPath $src -PathType Leaf)) { return @{ ok = $false; error = 'That retired app is gone from the archive.' } }
+    $refused = Get-WebCopyRefusal $src 'That archived app'
+    if ($refused) { return @{ ok = $false; error = $refused } }
     try { $rec = ConvertTo-AppRecord (Get-Content -LiteralPath $src -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { return @{ ok = $false; error = "It can't be read: $($_.Exception.Message)" } }
     $catalog = Read-WebCatalogRecords
     if (@($catalog.Apps | Where-Object { $_.appName -eq $rec.appName }).Count) { return @{ ok = $false; error = "An app called '$($rec.appName)' is in the catalog already." } }

@@ -67,6 +67,7 @@ function Global:Invoke-WebUndo {
     foreach ($it in $u.items) {
         if ((Get-WebFileHash $it.file) -ne $it.hash) { $skipped.Add("$($it.name) (changed since)"); continue }
         if (-not (Test-Path -LiteralPath $it.backup)) { $skipped.Add("$($it.name) (its copy is gone)"); continue }
+        if (Get-WebCopyRefusal $it.backup) { $skipped.Add("$($it.name) (its copy was changed in the Backups folder)"); continue }
         Backup-WebAppFile $it.file
         # Through the one writer, so the change history has it too.
         try { Save-WebAppJson -File $it.file -App (ConvertTo-AppRecord (Get-Content -LiteralPath $it.backup -Raw -Encoding UTF8 | ConvertFrom-Json)) -Text "Undo of: $($u.label)" }

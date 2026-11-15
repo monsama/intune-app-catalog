@@ -28,7 +28,7 @@ function Global:Get-AppFolderKinds {
         @{ Key = 'Tools';    Label = 'Packaging tool';                  Default = 'tools';             Why = 'IntuneWinAppUtil.exe, Microsoft''s Win32 Content Prep Tool. Downloaded on demand.' }
         @{ Key = 'Scripts';  Label = 'Platform script copies';          Default = 'data\script-data';  Why = 'Local copies of the tenant''s platform scripts, shaped like the catalog.' }
         @{ Key = 'Logs';     Label = 'Logs';                            Default = 'data\logs';         Why = 'One file per day of everything this app did.' }
-        @{ Key = 'Backups';  Label = 'Catalog backups';                 Default = 'data\backups';      Why = 'Copies taken before the catalog is rewritten.' }
+        @{ Key = 'Backups';  Label = 'Catalog backups';                 Default = 'data\backups';      Why = 'Copies taken before the catalog is rewritten. Only copies the catalog recorded (a fingerprint in its .integrity folder) are ever restored, so a copy changed here is refused - the change history is kept next to the catalog.' }
     )
 }
 

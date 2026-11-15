@@ -285,6 +285,7 @@ function Global:Backup-WebAppFile {
         $target = Join-Path $dir "$($stamp)_$leaf"; $n = 1
         while (Test-Path -LiteralPath $target) { $n++; $target = Join-Path $dir "$stamp-$($n)_$leaf" }
         Copy-Item -LiteralPath $FilePath -Destination $target
+        Add-WebCopyRecord $target
         if ($PassThru) { return $target }
     }
     catch { }
@@ -416,7 +417,7 @@ function Global:Get-WebAppBackups {
                     if ($oldMeta -ne $nowMeta) { $changed += 'settings' }
                 }
                 catch { $changed = @('(unreadable)') }
-                $rows.Add([ordered]@{ id = "$($dir.Name)/$($f.Name)"; when = "$day $($time.Substring(0,2)):$($time.Substring(2,2)):$($time.Substring(4,2))$(if ($seq -gt 1) { " ($seq)" })"; order = "$day $time $('{0:D4}' -f $seq)"; changed = $changed })
+                $rows.Add([ordered]@{ verified = ((Test-WebCopyRecord $f.FullName) -eq 'ok'); id = "$($dir.Name)/$($f.Name)"; when = "$day $($time.Substring(0,2)):$($time.Substring(2,2)):$($time.Substring(4,2))$(if ($seq -gt 1) { " ($seq)" })"; order = "$day $time $('{0:D4}' -f $seq)"; changed = $changed })
             }
         }
     }
@@ -441,6 +442,8 @@ function Global:Restore-WebAppBackup {
     if (-not $id.EndsWith("_$leaf")) { return @{ ok = $false; error = 'That backup is of another app.' } }
     $source = Join-Path (Get-AppFolder -Kind Backups) ($id -replace '/', [IO.Path]::DirectorySeparatorChar)
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { return @{ ok = $false; error = 'That backup is gone.' } }
+    $refused = Get-WebCopyRefusal $source 'That copy'
+    if ($refused) { return @{ ok = $false; error = $refused } }
     try { $old = ConvertTo-AppRecord (Get-Content -LiteralPath $source -Raw -Encoding UTF8 | ConvertFrom-Json) }
     catch { return @{ ok = $false; error = "That backup can't be read: $($_.Exception.Message)" } }
     if ((Get-SafeFileNameForApp -Name $old.appName) + '.json' -ne $leaf) { return @{ ok = $false; error = "That copy is of '$($old.appName)' - rename the app back first." } }
@@ -458,7 +461,7 @@ function Global:Restore-WebAppBackup {
 # ---------------------------------------------------------------- change history
 # Every change to an app's catalog file, field by field (from -> to), and
 # every step that changed it in Intune, with where it came from - one JSON
-# line each in Backups\history\<yyyy-MM>.jsonl. Earlier versions (above)
+# line each in <catalog>\.integrity\history\<yyyy-MM>.jsonl (with the catalog's permissions). Earlier versions (above)
 # keep whole files; this says who changed what, and undoes one change.
 
 function Global:Get-WebChangeSource {
@@ -478,7 +481,8 @@ function Global:Add-WebHistoryEntry {
     # One line in the change history. -Kind: catalog (with -Changes) or intune (a step that changed it there).
     param([string]$App, [string]$Kind, [string]$Text = '', $Changes = @(), [string]$Source = '')
     try {
-        $dir = Join-Path (Get-AppFolder -Kind Backups -Create) 'history'
+        # Next to the catalog (with its permissions), not in the Backups folder: Undo trusts what's written here.
+        $dir = Join-Path (Get-WebIntegrityFolder -Create) 'history'
         if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
         $src = if ($Source) { $Source } elseif ($Global:WebChangeSource) { [string]$Global:WebChangeSource } else { 'This app' }
         $entry = [ordered]@{ id = [guid]::NewGuid().ToString('N'); at = (Get-Date).ToUniversalTime().ToString('o'); app = $App; kind = $Kind; source = $src; text = $Text; changes = @($Changes) }
@@ -517,16 +521,26 @@ function Global:Save-WebAppJson {
 }
 
 function Global:Read-WebHistoryEntries {
-    # The history, newest first: the last -Months files, at most -Max entries (reading stops there).
+    <#
+      The history, newest first: the last -Months files, at most -Max entries (reading stops there). The catalog's
+      own history (<catalog>\.integrity\history) first; then what earlier versions wrote to Backups\history -
+      shown, but marked legacy: it's in a folder others may write to, so nothing is undone from it.
+    #>
     param([int]$Months = 24, [int]$Max = 0)
-    $dir = Join-Path (Get-AppFolder -Kind Backups) 'history'
-    if (-not (Test-Path -LiteralPath $dir)) { return @() }
-    $files = @(Get-ChildItem -LiteralPath $dir -File -Filter '*.jsonl' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d{4}-\d{2}\.jsonl$' } | Sort-Object Name -Descending | Select-Object -First $Months)
     $out = New-Object System.Collections.Generic.List[object]
-    foreach ($f in $files) {
-        $lines = @(Get-Content -LiteralPath $f.FullName -Encoding UTF8 -ErrorAction SilentlyContinue)
-        for ($i = $lines.Count - 1; $i -ge 0; $i--) { if ($Max -gt 0 -and $out.Count -ge $Max) { break }; if ($lines[$i]) { try { $out.Add(($lines[$i] | ConvertFrom-Json)) } catch { } } }
+    foreach ($src in @(@{ dir = (Join-Path (Get-WebIntegrityFolder) 'history'); legacy = $false }, @{ dir = (Join-Path (Get-AppFolder -Kind Backups) 'history'); legacy = $true })) {
         if ($Max -gt 0 -and $out.Count -ge $Max) { break }
+        if (-not (Test-Path -LiteralPath $src.dir)) { continue }
+        $files = @(Get-ChildItem -LiteralPath $src.dir -File -Filter '*.jsonl' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d{4}-\d{2}\.jsonl$' } | Sort-Object Name -Descending | Select-Object -First $Months)
+        foreach ($f in $files) {
+            $lines = @(Get-Content -LiteralPath $f.FullName -Encoding UTF8 -ErrorAction SilentlyContinue)
+            for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+                if ($Max -gt 0 -and $out.Count -ge $Max) { break }
+                if (-not $lines[$i]) { continue }
+                try { $e = $lines[$i] | ConvertFrom-Json; if ($src.legacy) { $e | Add-Member -NotePropertyName legacy -NotePropertyValue $true -Force }; $out.Add($e) } catch { }
+            }
+            if ($Max -gt 0 -and $out.Count -ge $Max) { break }
+        }
     }
     return $out.ToArray()
 }
@@ -550,7 +564,7 @@ function Global:Get-WebAppHistory {
         })
         # PowerShell 7 reads the time as a date - written back in UTC (ISO), as it was stored.
         $rows.Add([ordered]@{ id = [string]$e.id; at = $(if ($e.at -is [datetime]) { $e.at.ToUniversalTime().ToString('o') } else { [string]$e.at }); app = [string]$e.app; kind = [string]$e.kind; source = [string]$e.source; text = [string]$e.text; changes = $changes
-            canUndo = ($e.kind -eq 'catalog' -and @($changes | Where-Object { $_.revertable }).Count -gt 0 -and -not @($changes | Where-Object { $_.field -in 'releases', 'appId' }).Count) })
+            canUndo = ($e.kind -eq 'catalog' -and -not $e.legacy -and @($changes | Where-Object { $_.revertable }).Count -gt 0 -and -not @($changes | Where-Object { $_.field -in 'releases', 'appId' }).Count) })
         if ($rows.Count -ge 300) { break }
     }
     return @{ ok = $true; app = $name; entries = $rows.ToArray() }
@@ -567,6 +581,7 @@ function Global:Undo-WebHistoryChange {
     if ($id -notmatch '^[0-9a-f]{32}$') { return @{ ok = $false; error = 'That is not a change in the history.' } }
     $entry = @(Read-WebHistoryEntries | Where-Object { $_.id -eq $id }) | Select-Object -First 1
     if (-not $entry -or $entry.kind -ne 'catalog') { return @{ ok = $false; error = 'That change is not in the history (or was not a catalog change).' } }
+    if ($entry.legacy) { return @{ ok = $false; error = 'That change is from the history before version 2.23, kept in the Backups folder - it is shown, but nothing is undone from it. Earlier versions brings back a whole copy.' } }
     # Only a change of this app (under this name or one it had before) - never another app's fields.
     if (-not @((Get-WebAppHistory @{ name = $name }).entries | Where-Object { $_.id -eq $id }).Count) { return @{ ok = $false; error = "That change isn't one of $name's." } }
     # A release step (promotion, rollback, a new release) moved the app in Intune too - half of it can't be undone here.
@@ -740,7 +755,7 @@ function Global:Get-WebCatalogHistoryCore {
             [ordered]@{ field = [string]$_.field; before = (Format-AppHistoryValue $_.before); after = (Format-AppHistoryValue $_.after); revertable = [bool]((Test-AppRecordFieldRevertable ([string]$_.field)) -and -not $_.long) }
         })
         $item = [ordered]@{ id = [string]$e.id; app = [string]$e.app; kind = [string]$e.kind; text = [string]$e.text; changes = @($changes)
-            canUndo = ($e.kind -eq 'catalog' -and @($changes | Where-Object { $_.revertable }).Count -gt 0 -and -not @($changes | Where-Object { $_.field -in 'releases', 'appId' }).Count) }
+            canUndo = ($e.kind -eq 'catalog' -and -not $e.legacy -and @($changes | Where-Object { $_.revertable }).Count -gt 0 -and -not @($changes | Where-Object { $_.field -in 'releases', 'appId' }).Count) }
         $key = "$([string]$e.source)|$([string]$e.kind)|$([string]$e.text)"
         if ($cur -and $cur.key -eq $key -and [Math]::Abs([double]($cur.last - $ticks)) -le 600000000.0) { $cur.items.Add($item); $cur.last = $ticks; continue }
         $cur = @{ key = $key; first = $ticks; last = $ticks; source = [string]$e.source; kind = [string]$e.kind; text = [string]$e.text; items = (New-Object System.Collections.Generic.List[object]) }
@@ -761,4 +776,69 @@ function Global:Get-WebCatalogValues {
     $apps = @((Read-WebCatalogRecords).Apps)
     $pick = { param($f) @($apps | ForEach-Object { if ($_.metadata) { ([string]$_.metadata.$f).Trim() } } | Where-Object { $_ } | Sort-Object -Unique) }
     return @{ ok = $true; publisher = @(& $pick 'publisher'); owner = @(& $pick 'owner'); developer = @(& $pick 'developer') }
+}
+
+# ---------------------------------------------------------------- copies the catalog can trust
+# The Backups folder can be a share more people write to than the catalog folder. What comes back from it
+# (Earlier versions, Undo, a retired app) is only taken when the catalog itself vouches for it: each copy
+# this app writes gets its SHA-256 recorded in <catalog>\.integrity\copies.tsv - a file with the catalog's
+# permissions. A copy changed since, or one that was never recorded (put there by hand, or older than 2.23),
+# isn't restored. The change history itself is kept there too (<catalog>\.integrity\history).
+
+function Global:Get-WebIntegrityFolder {
+    param([switch]$Create)
+    $dir = Join-Path (Get-AppFolder -Kind Catalog -Create:$Create) '.integrity'
+    if ($Create -and -not (Test-Path -LiteralPath $dir)) {
+        [void](New-Item -ItemType Directory -Path $dir -Force)
+        try { (Get-Item -LiteralPath $dir -Force).Attributes += 'Hidden' } catch { }
+    }
+    return $dir
+}
+
+function Global:Get-WebBackupKey {
+    # A copy's name inside the Backups folder ("app-edit_2026-11-15/101500_App.json"), the same on every PC.
+    param([string]$Path)
+    $root = [IO.Path]::GetFullPath((Get-AppFolder -Kind Backups)).TrimEnd('\', '/')
+    $full = [IO.Path]::GetFullPath($Path)
+    if (-not $full.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { return '' }
+    return $full.Substring($root.Length + 1).Replace('\', '/')
+}
+
+function Global:Add-WebCopyRecord {
+    # Records a copy this app just wrote in the Backups folder: its name and SHA-256, in the catalog's integrity file.
+    param([string]$Path)
+    try {
+        $key = Get-WebBackupKey $Path
+        if (-not $key -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+        $hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+        [System.IO.File]::AppendAllText((Join-Path (Get-WebIntegrityFolder -Create) 'copies.tsv'), "$key`t$hash`n", (New-Object System.Text.UTF8Encoding($false)))
+    }
+    catch { Write-Log "[WARN] Couldn't record the copy $Path in the catalog's integrity file: $($_.Exception.Message)" }
+}
+
+function Global:Test-WebCopyRecord {
+    # Whether a copy in the Backups folder is one this app wrote and nobody changed since: 'ok', 'changed' or 'unknown'.
+    param([string]$Path)
+    $key = Get-WebBackupKey $Path
+    if (-not $key -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return 'unknown' }
+    $index = Join-Path (Get-WebIntegrityFolder) 'copies.tsv'
+    if (-not (Test-Path -LiteralPath $index)) { return 'unknown' }
+    $want = $null
+    foreach ($line in [System.IO.File]::ReadAllLines($index)) {
+        $p = $line.Split("`t")
+        if ($p.Count -eq 2 -and [string]::Equals($p[0], $key, [StringComparison]::OrdinalIgnoreCase)) { $want = $p[1] }
+    }
+    if (-not $want) { return 'unknown' }
+    if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -eq $want) { return 'ok' }
+    return 'changed'
+}
+
+function Global:Get-WebCopyRefusal {
+    # The reason a copy isn't taken back ('' when it may be).
+    param([string]$Path, [string]$What = 'That copy')
+    switch (Test-WebCopyRecord $Path) {
+        'ok' { return '' }
+        'changed' { return "$What was changed in the Backups folder since this app wrote it - it isn't taken back. Check the Backups folder's permissions (only the people who may change the catalog should be able to write there)." }
+        default { return "$What isn't one this app recorded (it's from before version 2.23, or was put in the Backups folder by hand) - it isn't taken back automatically. Open it from the Backups folder and copy what you need by hand if you trust it." }
+    }
 }
