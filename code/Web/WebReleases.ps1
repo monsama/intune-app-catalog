@@ -117,7 +117,9 @@ function Global:Start-WebRelease {
     # Supersedes exactly the current release (update: devices that have it get this one) - not the catalog's own supersedence list.
     $config.Supersedence = @([pscustomobject]@{ appId = [string]$a.appId; type = 'update' })
     $config.IsFeatured = $null
-    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "Release $name $version" `
+    $busy = Enter-WebAppBusy -Name $a.appName -What "releasing $version"
+    if ($busy) { return @{ ok = $false; error = $busy } }
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "Release $name $version" -BusyApp $a.appName `
         -After @{ Kind = 'release'; AppName = $a.appName; Version = $version; FastTrack = [bool]$Data.fastTrack; ProductCode = $(if ($own) { [string]$next.metadata.detectionRule.Msi_ProductCode } else { '' }) }
     if ($started.ok) { Write-Log "[INFO] Releasing $name $version to pilot$(if ($Data.fastTrack) { ' on the fast track' }) (a new app superseding $current)..." }
     return $started
@@ -189,7 +191,9 @@ function Global:Start-WebReleaseAssign {
     }
     # The pilot assignment done: the release is no longer waiting for it.
     $after = if ($step -eq 'pilot') { @{ Kind = 'pilotassigned'; AppName = [string]$a.appName; AppId = [string]$id } } else { @{} }
-    return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind $label -Apps @([string]$a.appName) -After $after)
+    $busy = Enter-WebAppBusy -Name $a.appName -What $label
+    if ($busy) { return @{ ok = $false; error = $busy } }
+    return (Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind $label -Apps @([string]$a.appName) -After $after)
 }
 
 function Global:Complete-WebAdvance {
@@ -315,8 +319,14 @@ function Global:Get-WebInstallerInfo {
     $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $AppName)
     $info = [ordered]@{ folder = $folder; found = $false; file = ''; version = ''; productCode = '' }
     if (-not (Test-Path -LiteralPath $folder -PathType Container)) { return $info }
-    $msi = Get-ChildItem -LiteralPath $folder -Filter '*.msi' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    $exe = Get-ChildItem -LiteralPath $folder -Filter '*.exe' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    # A PSADT app: the installer is in the toolkit's Files folder - the toolkit's own exe isn't the app.
+    $look = $folder
+    if (Test-Path -LiteralPath (Join-Path $folder 'Invoke-AppDeployToolkit.ps1')) {
+        $look = Join-Path $folder 'Files'
+        if (-not (Test-Path -LiteralPath $look -PathType Container)) { return $info }
+    }
+    $msi = Get-ChildItem -LiteralPath $look -Filter '*.msi' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $exe = Get-ChildItem -LiteralPath $look -Filter '*.exe' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin 'Invoke-AppDeployToolkit.exe', 'Deploy-Application.exe' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($msi) {
         $info.found = $true; $info.file = $msi.Name
         try {
@@ -569,4 +579,41 @@ function Global:Invoke-WebDownloadChecks {
     $bad = @($rows | Where-Object { $_.status -in 'gone', 'notinwinget' })
     Write-Log "$(if ($bad.Count) { '[WARN]' } else { '[OK]' }) Checked $(@($rows).Count) pinned download(s)$(if ($bad.Count) { " - can't be installed any more: $(($bad | ForEach-Object { "$($_.name) $($_.version)" }) -join ', ')" })."
     return @{ ok = $true; rows = @($rows); bad = $bad.Count }
+}
+
+# ---------------------------------------------------------------- one release step per app at a time
+# The page and the nightly run are separate processes: a file per app being
+# changed (Logs\busy) keeps them from releasing, assigning or withdrawing the
+# same app at the same time. A file whose process is gone (or older than 3
+# hours) doesn't count.
+
+function Global:Get-WebBusyFile { param([string]$Name) Join-Path (Join-Path (Get-AppFolder -Kind Logs -Create) 'busy') ((Get-SafeFileNameForApp -Name $Name) + '.json') }
+
+function Global:Enter-WebAppBusy {
+    # '' when this process may work on the app (and now holds it), else who has it.
+    param([string]$Name, [string]$What)
+    $file = Get-WebBusyFile $Name
+    $dir = Split-Path -Parent $file
+    if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+    if (Test-Path -LiteralPath $file) {
+        try {
+            $b = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json
+            $p = Get-Process -Id ([int]$b.pid) -ErrorAction SilentlyContinue
+            $sameProcess = $p -and ([string]$b.procStart -eq $p.StartTime.ToUniversalTime().ToString('o'))
+            $recent = ((Get-Date).ToUniversalTime() - [datetime]::Parse([string]$b.started, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal)).TotalHours -lt 3
+            if ($sameProcess -and $recent -and [int]$b.pid -ne $PID) { return "$Name is being changed elsewhere right now ($($b.what), since $(([datetime]::Parse([string]$b.started, [Globalization.CultureInfo]::InvariantCulture)).ToLocalTime().ToString('HH:mm')) - another window of this app or the nightly run). Try again when that is done." }
+        }
+        catch { }
+    }
+    $me = Get-Process -Id $PID
+    $rec = [ordered]@{ pid = $PID; procStart = $me.StartTime.ToUniversalTime().ToString('o'); started = (Get-Date).ToUniversalTime().ToString('o'); what = $What }
+    [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $rec -Compress), (New-Object System.Text.UTF8Encoding($false)))
+    return ''
+}
+
+function Global:Exit-WebAppBusy {
+    # Lets go of the app - only when this process holds it.
+    param([string]$Name)
+    $file = Get-WebBusyFile $Name
+    try { if ((Test-Path -LiteralPath $file) -and [int]((Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).pid) -eq $PID) { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue } } catch { }
 }

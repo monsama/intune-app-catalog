@@ -333,6 +333,8 @@ function Global:Save-WebApp {
             $record.metadata.installContext = $(if ([string]$edit.deploy.installContext -eq 'User') { 'User' } else { 'System' })
         }
     }
+    # A new Winget ID: the generated commands and the detection follow it (hand-edited ones stay).
+    if ($existing -and $existing.wingetId -and $record.wingetId -and $existing.wingetId -ne $record.wingetId) { [void](Set-AppWingetIdCommands -App $record -OldId ([string]$existing.wingetId)) }
     # A managed app's commands and detection follow its App version (pinned).
     [void](Set-ManagedAppPin $record)
     # The winget commands exit 9009 while winget isn't on a new device yet - a Retry return code.
@@ -357,6 +359,7 @@ function Global:Save-WebApp {
         Backup-WebAppFile $oldFile
         Remove-Item -LiteralPath $oldFile -Force -ErrorAction SilentlyContinue
     }
+    if ($existing -and $existing.appName -ne $record.appName) { Rename-WebAppReferences -Old $existing.appName -New $record.appName }
     Write-Log "[OK] $(if ($existing) { 'Saved' } else { 'Added' }): $($record.appName)$(if ($existing -and $existing.appName -ne $record.appName) { " (was $($existing.appName))" })."
     return @{ ok = $true; name = $record.appName }
 }
@@ -650,4 +653,26 @@ function Global:Update-WebMarkerVersion {
     }
     if ($changed.Count) { Write-Log "[OK] $Name`: $($changed -join ', ') now write version $Version (build the package again)." }
     return @($changed)
+}
+
+function Global:Rename-WebAppReferences {
+    <#
+      After an app is renamed: other apps' dependencies name it by its catalog
+      name (they would drop it on their next send), and its packages folder is
+      named after it (its package wouldn't be found).
+    #>
+    param([string]$Old, [string]$New)
+    $folder = Get-AppFolder -Kind Catalog
+    foreach ($o in @((Read-WebCatalogRecords).Apps | Where-Object { $_.metadata -and @($_.metadata.dependencies) -contains $Old })) {
+        $o.metadata.dependencies = @(@($o.metadata.dependencies) | ForEach-Object { if ([string]$_ -eq $Old) { $New } else { [string]$_ } })
+        $file = Join-Path $folder ((Get-SafeFileNameForApp -Name $o.appName) + '.json')
+        Backup-WebAppFile $file
+        Save-WebAppJson -File $file -App $o -Text "Dependency renamed: $Old -> $New"
+    }
+    $pk = Get-AppFolder -Kind Packages
+    $from = Join-Path $pk (Get-SafeFileNameForApp -Name $Old); $to = Join-Path $pk (Get-SafeFileNameForApp -Name $New)
+    if ($from -ne $to -and (Test-Path -LiteralPath $from -PathType Container) -and -not (Test-Path -LiteralPath $to)) {
+        try { Move-Item -LiteralPath $from -Destination $to -ErrorAction Stop; Write-Log "[OK] Its packages folder follows the new name: $to" }
+        catch { Write-Log "[WARN] The packages folder $from couldn't be renamed to $to ($($_.Exception.Message)) - rename it by hand." }
+    }
 }

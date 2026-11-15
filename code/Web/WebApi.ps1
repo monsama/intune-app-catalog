@@ -96,7 +96,9 @@ function Global:Start-WebStepJob {
         # Another PowerShell than the default one the steps use (installing the Graph module into each).
         [string]$Exe = '',
         # The apps a step changes in Intune - its success goes into their change history (-After's AppName when not given).
-        [string[]]$Apps = @())
+        [string[]]$Apps = @(),
+        # The app this step holds (Enter-WebAppBusy) - let go when the step ends, whatever its result.
+        [string]$BusyApp = '')
     $tag = [guid]::NewGuid().ToString('N')
     $configPath = Join-Path $env:TEMP ".intunepkg_$($Name)_config_$tag.json"
     $scriptPath = Join-Path $Global:App.RootPath ".intunepkg_embedded_$($Name)_$tag.ps1"
@@ -120,6 +122,7 @@ function Global:Start-WebStepJob {
     }
     catch {
         Remove-Item -LiteralPath $scriptPath, $helperPath, $logPath, $configPath -Force -ErrorAction SilentlyContinue
+        if ($BusyApp) { Exit-WebAppBusy $BusyApp }
         return @{ ok = $false; error = "Couldn't start the step: $($_.Exception.Message)" }
     }
     $Global:App.WebJobs[$tag] = @{
@@ -127,6 +130,7 @@ function Global:Start-WebStepJob {
         Cleanup = @($scriptPath, $helperPath, $configPath); Mode = $Kind; Done = $false; After = $After; LastPoll = Get-Date; Started = Get-Date
         HistoryApps = @($(if ($Apps.Count) { $Apps } elseif ($After.AppName -and $After.Kind -in 'deploy', 'deleted', 'release') { [string]$After.AppName }) | Where-Object { $_ })
         HistorySource = [string]$Global:WebChangeSource
+        BusyApp = $BusyApp
     }
     return @{ ok = $true; job = $tag }
 }
@@ -391,6 +395,7 @@ function Global:Get-WebJobPoll {
             # The catalog lock couldn't be had (Invoke-WithCatalogLock gave up): not finished yet - the next poll tries again.
             if ($after -and $after.ok -eq $false -and $null -eq $after.finished) { $response.done = $false }
             if ($after.finished) {
+                if ($job.BusyApp) { Exit-WebAppBusy $job.BusyApp }
                 if ($null -ne $after.after) { $response.after = $after.after }
                 Remove-Item -LiteralPath (@($job.Cleanup) + $job.Log + @($job.Result | Where-Object { $_ })) -Force -ErrorAction SilentlyContinue
                 Write-Log "$(if ($response.result -and $response.result.success) { '[OK]' } else { '[WARN]' }) Finished: $($job.Mode)."

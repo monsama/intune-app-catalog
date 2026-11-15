@@ -221,13 +221,23 @@ function Global:Complete-WebGroupRename {
         Backup-WebAppFile $file
         Save-WebAppJson -File $file -App $a -Text "Group renamed: $($After.OldName) -> $($After.NewName)"
     }
-    $fav = @($Global:App.FavoriteGroups)
-    if (@($fav | Where-Object { [string]$_ -ieq $After.OldName }).Count) {
+    # The settings that name groups follow too - favourites, the pilot groups, the release rings and the profiles.
+    # (A pilot step would otherwise create the old name again, as an empty group.)
+    $old = [string]$After.OldName; $new = [string]$After.NewName
+    $swap = { param($List) @(@($List) | ForEach-Object { if ([string]$_ -ieq $old) { $new } else { [string]$_ } } | Where-Object { $_ } | Select-Object -Unique) }
+    $settingsChanged = $false
+    if (@(@($Global:App.FavoriteGroups) | Where-Object { [string]$_ -ieq $old }).Count) {
         $list = New-Object System.Collections.Generic.List[string]
-        foreach ($g in @($fav | ForEach-Object { if ([string]$_ -ieq $After.OldName) { $After.NewName } else { [string]$_ } } | Select-Object -Unique)) { $list.Add($g) }
-        $Global:App.FavoriteGroups = $list
-        try { Write-SettingsFile | Out-Null } catch { }
+        foreach ($g in @(& $swap $Global:App.FavoriteGroups)) { $list.Add($g) }
+        $Global:App.FavoriteGroups = $list; $settingsChanged = $true
     }
+    if (@(@($Global:App.PilotGroups) | Where-Object { [string]$_ -ieq $old }).Count) { $Global:App.PilotGroups = @(& $swap $Global:App.PilotGroups); $settingsChanged = $true }
+    foreach ($ring in @($Global:App.ReleaseRings)) { if ($ring -and @(@($ring.Groups) | Where-Object { [string]$_ -ieq $old }).Count) { $ring.Groups = @(& $swap $ring.Groups); $settingsChanged = $true } }
+    foreach ($p in @($Global:App.AssignmentProfiles)) {
+        if (-not $p) { continue }
+        foreach ($k in 'Required', 'Available', 'Exclude') { if (@(@($p.$k) | Where-Object { [string]$_ -ieq $old }).Count) { $p.$k = @(& $swap $p.$k); $settingsChanged = $true } }
+    }
+    if ($settingsChanged) { try { Write-SettingsFile | Out-Null } catch { } }
     Write-Log "[OK] Renamed '$($After.OldName)' to '$($After.NewName)'; $($changed.Count) app(s) in the catalog updated$(if ($changed.Count) { ": $($changed -join ', ')" })."
     return @{ ok = $true; updated = $changed }
 }

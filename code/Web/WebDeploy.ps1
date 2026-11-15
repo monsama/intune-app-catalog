@@ -398,6 +398,15 @@ function Global:Get-WebInstallStatus {
 #    from Intune and removed from the catalog. Restore brings it back from
 #    the archive (not in Intune, no groups - its History has them).
 
+function Global:Get-WebRetireAppIds {
+    # Every Intune app of a catalog app: the current one, then its superseded and rolled-back releases - @(@{ appId; version }), version '' for the current.
+    param($App)
+    $out = New-Object System.Collections.Generic.List[object]
+    if ($App.appId) { $out.Add(@{ appId = [string]$App.appId; version = '' }) }
+    foreach ($r in @(@($App.releases) | Where-Object { $_ -and $_.state -in 'previous', 'rolledback' -and $_.appId -and [string]$_.appId -ne [string]$App.appId })) { $out.Add(@{ appId = [string]$r.appId; version = [string]$r.version }) }
+    return $out.ToArray()
+}
+
 function Global:Start-WebRetire {
     param($Data)
     $name = [string]$Data.name
@@ -405,18 +414,22 @@ function Global:Start-WebRetire {
     if (-not $a) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
     if (-not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune - nothing to uninstall. Remove it from the catalog instead." } }
     if (@(@($a.releases) | Where-Object { $_ -and $_.state -eq 'pilot' }).Count) { return @{ ok = $false; error = "A new version of $name is in pilot - withdraw it first (Updates)." } }
+    # Apps that depend on it would install it again (and Intune won't delete it while they do).
+    $dependents = @((Read-WebCatalogRecords).Apps | Where-Object { $_.appName -ne $a.appName -and $_.metadata -and @($_.metadata.dependencies) -contains $a.appName } | ForEach-Object { $_.appName })
+    if ($dependents.Count) { return @{ ok = $false; error = "$($dependents -join ', ') depend$(if ($dependents.Count -eq 1) { 's' }) on $name - take it out of their dependencies (and send them to Intune) first." } }
     $groups = @(Get-RetireGroups $a)
     if (-not $groups.Count) { return @{ ok = $false; error = "$name has no groups - nothing to uninstall. Finish the retirement to delete it from Intune." } }
+    # Every version of it in Intune gets the Uninstall: devices on an older release aren't detected by the current one.
+    $ids = @(Get-WebRetireAppIds $a)
     $resultPath = Join-Path $env:TEMP (".intunepkg_assign_result_" + [guid]::NewGuid().ToString('N') + ".json")
     $config = @{
         TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
-        AppId = $a.appId; AppName = $a.appName
-        RequiredGroups = @(); AvailableGroups = @(); UninstallGroups = $groups; ExcludeGroups = @($a.excludeFor)
-        FilterName = [string]$a.assignmentFilter; FilterMode = [string]$a.assignmentFilterMode
-        CreateMissingGroups = $false; OutputResultPath = $resultPath
+        Mode = 'Apply'; OutputResultPath = $resultPath
+        Apps = @($ids | ForEach-Object { @{ AppName = $(if ($_.version) { "$($a.appName) $($_.version)" } else { $a.appName }); AppId = $_.appId
+            RequiredGroups = @(); AvailableGroups = @(); UninstallGroups = $groups; ExcludeGroups = @($a.excludeFor); FilterName = [string]$a.assignmentFilter; FilterMode = [string]$a.assignmentFilterMode } })
     }
-    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath `
-        -Kind "Retire $name - uninstall from $($groups.Count) group(s)" -After @{ Kind = 'retire'; AppName = $a.appName; Groups = $groups } -Apps @([string]$a.appName)
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedBatchAssignScript -Name 'batchassign' -ConfigJson ($config | ConvertTo-Json -Depth 8) -ResultPath $resultPath `
+        -Kind "Retire $name - uninstall from $($groups.Count) group(s)$(if ($ids.Count -gt 1) { ", $($ids.Count) versions in Intune" })" -After @{ Kind = 'retire'; AppName = $a.appName; Groups = $groups } -Apps @([string]$a.appName)
     if ($started.ok) { Write-Log "[INFO] Retiring $name - uninstalling it from: $($groups -join ', ')..." }
     return $started
 }
@@ -438,10 +451,11 @@ function Global:Get-WebRetireStatus {
     if (-not $a) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
     $base = [ordered]@{ ok = $true; app = $name; retiringSince = [string]$a.retiringSince; inIntune = [bool]$a.appId; groups = @(Get-RetireGroups $a) }
     if (-not $a.appId -or -not $a.retiringSince) { return $base }
-    $id = [string]$a.appId
-    $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) Get-AppInstallStatusRows -AppId $id -Invoke $Graph }
+    # Every version in Intune counts - a device on an older release still has it.
+    $ids = @(Get-WebRetireAppIds $a | ForEach-Object { $_.appId })
+    $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) @(foreach ($i in $ids) { @((Get-AppInstallStatusRows -AppId $i -Invoke $Graph).Rows) }) }.GetNewClosure()
     if (-not $read.ok) { $base.note = "The install status couldn't be read: $($read.error)"; return $base }
-    $base.progress = Get-RetireProgress @($read.value.Rows)
+    $base.progress = Get-RetireProgress @($read.value)
     return $base
 }
 
@@ -452,6 +466,11 @@ function Global:Complete-WebRetireFinish {
     param([string]$Name)
     $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $Name } | Select-Object -First 1
     if (-not $a) { return @{ ok = $true } }
+    # Its older versions still in Intune (superseded by the one just deleted) go too.
+    $older = @(Get-WebRetireAppIds $a | Where-Object { $_.version -and $_.appId -ne [string]$a.appId })
+    $leftInIntune = @()
+    if ($older.Count -and (Test-GraphCredentialsConfigured -Quiet)) { $leftInIntune = @((Remove-WebIntuneAppsNewestFirst -Items $older).failed) }
+    if ($leftInIntune.Count) { Write-Log "[WARN] $($a.appName): these older versions couldn't be deleted from Intune - delete them there: $($leftInIntune -join '; ')" }
     $file = Join-Path (Get-AppFolder -Kind Catalog) ((Get-SafeFileNameForApp -Name $a.appName) + '.json')
     $dir = Get-WebRetiredFolder
     if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
@@ -464,6 +483,22 @@ function Global:Complete-WebRetireFinish {
     return @{ ok = $true; archived = (Split-Path $archive -Leaf) }
 }
 
+function Global:Remove-WebIntuneAppsNewestFirst {
+    # Deletes Intune apps (@(@{ appId; version })), the newest version first - a newer one supersedes the older ones. @{ removed; failed }.
+    param($Items)
+    $list = @($Items)
+    $sorted = New-Object System.Collections.Generic.List[object]
+    foreach ($it in $list) { $i = 0; while ($i -lt $sorted.Count -and (Compare-AppVersionText ([string]$it.version) ([string]$sorted[$i].version)) -eq 1) { $i++ }; $sorted.Insert($i, $it) }
+    $removed = New-Object System.Collections.Generic.List[string]; $failed = New-Object System.Collections.Generic.List[string]
+    foreach ($it in $sorted) {
+        $id = [string]$it.appId
+        if ($id -notmatch '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$') { $failed.Add("$($it.version): not an App ID"); continue }
+        $r = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) [void](& $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$id" 'DELETE'); $true }.GetNewClosure()
+        if ($r.ok) { $removed.Add([string]$it.version) } else { $failed.Add("$($it.version): $($r.error)") }
+    }
+    return @{ removed = $removed.ToArray(); failed = $failed.ToArray() }
+}
+
 function Global:Start-WebRetireFinish {
     param($Data)
     $name = [string]$Data.name
@@ -471,6 +506,14 @@ function Global:Start-WebRetireFinish {
     if (-not $a) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
     if (-not $a.appId) { return (Invoke-WithCatalogLock { Complete-WebRetireFinish -Name $name }) }
     if (-not $a.retiringSince -and @(Get-RetireGroups $a).Count) { return @{ ok = $false; error = "Start the retirement first - its groups get it as Uninstall, so it's removed from the devices before it's deleted." } }
+    # Its other versions in Intune: a newer one (rolled back from) supersedes the current one, so it goes first -
+    # Intune won't delete an app another one supersedes. The older ones go after the current one (Complete-WebRetireFinish).
+    $current = [string]$(if ($a.metadata) { $a.metadata.appVersion })
+    $newer = @(Get-WebRetireAppIds $a | Where-Object { $_.version -and (Compare-AppVersionText $current $_.version) -eq 1 })
+    if ($newer.Count) {
+        $del = Remove-WebIntuneAppsNewestFirst -Items $newer
+        if ($del.failed.Count) { return @{ ok = $false; error = "These versions of $name couldn't be deleted from Intune, so the current one can't be either: $($del.failed -join '; ')" } }
+    }
     $resultPath = Join-Path $env:TEMP (".intunepkg_delete_result_" + [guid]::NewGuid().ToString('N') + ".json")
     $config = @{
         TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint

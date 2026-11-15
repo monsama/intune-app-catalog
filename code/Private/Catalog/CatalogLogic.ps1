@@ -1190,9 +1190,15 @@ function Global:Set-ManagedAppPin {
     if (-not (Test-ReleaseVersionText $version)) { return $false }
     # An app with its own package: the version is in its detection rule (and an MSI's product code, which a new MSI usually changes).
     if (-not $App.wingetId) {
+        $oldCode = [string]$(if ($m.detectionRule) { $m.detectionRule.Msi_ProductCode })
         $rule = Set-DetectionRuleVersion -Rule $m.detectionRule -Version $version -ProductCode $ProductCode
         if (-not $rule.Changed) { return $false }
         $m.detectionRule = $rule.Rule
+        # A new MSI usually has a new product code: "msiexec /x {old}" would uninstall nothing.
+        $newCode = [string]$rule.Rule.Msi_ProductCode
+        if ($oldCode -and $newCode -and $oldCode -ne $newCode -and [string]$m.uninstallCommand -and ([string]$m.uninstallCommand).IndexOf($oldCode, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            $m.uninstallCommand = [regex]::Replace([string]$m.uninstallCommand, [regex]::Escape($oldCode), $newCode.Replace('$', '$$'), 'IgnoreCase')
+        }
         return $true
     }
     if (-not (Get-AppWingetInstallMethod -WingetId $App.wingetId -InstallCommand $m.installCommand -UninstallCommand $m.uninstallCommand) -and $m.installCommand) { return $false }
@@ -2141,4 +2147,33 @@ function Global:Test-ManagedAppEdit {
     if ($was -and $now -ne $was -and $Record.managedUpdates) { return "$($Existing.appName) has managed updates and is in Intune: a new version goes to the pilot groups first - use Release new version (More), not the App version field." }
     if (-not $Record.managedUpdates -and @(@($Existing.releases) | Where-Object { $_ -and $_.state -eq 'pilot' }).Count) { return "A version of $($Existing.appName) is in pilot - promote or withdraw it before switching managed updates off." }
     return ''
+}
+
+function Global:Set-AppWingetIdCommands {
+    <#
+      Pure apart from changing -App: an app whose Winget ID changed from -OldId
+      gets its generated install and uninstall commands for the new ID (any
+      form: WAU, winget, managed with its pinned version), and its detection
+      script's ID too. Commands edited by hand are left alone. Returns whether
+      anything changed.
+    #>
+    param($App, [string]$OldId)
+    $m = $App.metadata
+    $new = [string]$App.wingetId
+    if (-not $m -or -not $OldId -or -not $new -or $OldId -eq $new) { return $false }
+    $changed = $false
+    $method = Get-AppWingetInstallMethod -WingetId $OldId -InstallCommand ([string]$m.installCommand) -UninstallCommand ([string]$m.uninstallCommand)
+    if ($method) {
+        $pinned = ''
+        if ($method -eq 'Managed' -and [string]$m.installCommand -match " --version '((?:[^']|'')+)'") { $pinned = $Matches[1] -replace "''", "'" }
+        $c = Get-WingetCommandLines -WingetId $new -Method $method -InstallContext ([string]$m.installContext) -Version $pinned
+        $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall; $changed = $true
+    }
+    $rule = $m.detectionRule
+    if ($rule -and [string]$rule.Type -eq 'Script') {
+        $q = "'" + (ConvertTo-PsSingleQuotedContent $OldId) + "'"
+        $s = [string]$rule.Script_Content
+        if ($s.Contains($q)) { $r = $rule.PSObject.Copy(); $r.Script_Content = $s.Replace($q, "'" + (ConvertTo-PsSingleQuotedContent $new) + "'"); $m.detectionRule = $r; $changed = $true }
+    }
+    return $changed
 }
