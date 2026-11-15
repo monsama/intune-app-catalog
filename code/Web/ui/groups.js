@@ -211,8 +211,8 @@ async function unassignGroups(names) {
 
 // ---------------------------------------------------------------- one group
 function setGroupBusy(on) {
-  for (const id of ['btnGroupRename', 'btnGroupDelete', 'btnGroupSave', 'btnGroupFind', 'btnGroupCreate']) {
-    const needsGroup = !['btnGroupSave', 'btnGroupFind', 'btnGroupCreate'].includes(id);
+  for (const id of ['btnGroupRename', 'btnGroupDelete', 'btnGroupSave', 'btnGroupDescSave', 'btnGroupFind', 'btnGroupCreate']) {
+    const needsGroup = !['btnGroupSave', 'btnGroupDescSave', 'btnGroupFind', 'btnGroupCreate'].includes(id);
     setEnabled($(id), !on && !(needsGroup && !(group && group.found)), on ? 'Working...' : 'This group doesn\'t exist in Entra ID yet - Create it first.');
   }
 }
@@ -232,7 +232,7 @@ async function openGroup(name) {
   if (!r.ok) {
     $('gState').className = 'pill err'; $('gState').textContent = 'Not read';
     setGroupBusy(false);
-    $('gNote').textContent = r.error; setEnabled($('btnGroupSave'), false, r.error); setEnabled($('btnGroupCreate'), false, r.error); return;
+    $('gNote').textContent = r.error; setEnabled($('btnGroupSave'), false, r.error); setEnabled($('btnGroupDescSave'), false, r.error); setEnabled($('btnGroupCreate'), false, r.error); return;
   }
   group = r;
   if (entra) { if (r.found) entra.set(lc(name), r.id); else entra.delete(lc(name)); renderGroupList(); }
@@ -252,7 +252,7 @@ async function openGroup(name) {
     : [el('tr', {}, el('td', { class: 'muted', colspan: '4', text: r.found ? 'No members yet - search below to add people, devices or groups.' : 'Not created yet. People you add below become members when it is created.' }))]));
   renderUses(r.uses);
   saveLabel();
-  $('btnGroupSave').hidden = !r.found && !toAdd.size;
+  $('btnGroupSave').hidden = !toAdd.size;
   setGroupBusy(false);
 }
 
@@ -319,11 +319,12 @@ $('btnGroupCreate').addEventListener('click', () => $('btnGroupSave').click());
 function saveLabel() {
   if (!group) return;
   const n = toAdd.size, m = `${n} member${n === 1 ? '' : 's'}`;
-  $('btnGroupSave').textContent = !group.found ? (n ? `Create group with ${m}` : 'Create group') : n ? `Add ${m} and save` : 'Save description';
+  $('btnGroupSave').textContent = !group.found ? (n ? `Create group with ${m}` : 'Create group') : `Add ${m} and save`;
+  // The description has its own Save beside it: this one is for the members to add (or a group to create).
+  $('btnGroupSave').hidden = !n;
 }
 $('gDesc').addEventListener('input', saveLabel);
 function renderAdd() {
-  if (group && !group.found) $('btnGroupSave').hidden = !toAdd.size;
   saveLabel();
   $('gAddCount').textContent = toAdd.size ? `(${toAdd.size})` : '';
   $('gAdd').replaceChildren(...(toAdd.size ? [...toAdd.values()].map(m => {
@@ -356,12 +357,13 @@ function groupJob(body, title, onOk) {
   $('groupLog').hidden = false; $('groupLog').textContent = '';
   return runJob(body, (ok, res, after) => { if (ok) onOk(after); }, { path: '/api/group-job', log: 'groupLog', startText: title });
 }
-$('btnGroupSave').addEventListener('click', () => {
+function saveGroup() {
   if (!group) return;
   const name = group.name;
   groupJob({ mode: 'Save', name, description: $('gDesc').value, memberIds: [...toAdd.keys()] }, `${group.found ? 'Updating' : 'Creating'} ${name}...`,
     () => { toast(`${name} is ready.`); loadGroups(); openGroup(name); });
-});
+}
+$('btnGroupSave').addEventListener('click', saveGroup);
 async function removeMember(m) {
   if (!(await ask(`Remove ${m.name} from ${group.name}?\n\nApps assigned to this group stop applying to it.`))) return;
   const name = group.name;
@@ -392,3 +394,6 @@ $('btnGroupsDeleteGo').addEventListener('click', async () => {
   runJob({ mode: 'DeleteMany', names }, ok => { toast(ok ? `Deleted ${names.length} group(s).` : 'Not every group was deleted - see the log.', !ok); loadGroups(); },
     { path: '/api/group-job', log: 'gDelLog', startText: `Deleting ${names.length} group(s)...` });
 });
+
+// The description's own Save: the same save as the button under To add (description and members together).
+$('btnGroupDescSave').addEventListener('click', saveGroup);
