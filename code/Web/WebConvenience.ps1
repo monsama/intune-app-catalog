@@ -49,7 +49,17 @@ function Global:Test-WebGroupNames {
         $found
     }
     if (-not $read.ok) { return @{ ok = $true; checked = $false; missing = @(); note = [string]$read.error } }
-    return @{ ok = $true; checked = $true; missing = @($names | Where-Object { -not $read.value.ContainsKey($_.ToLowerInvariant()) }) }
+    $missing = @($names | Where-Object { -not $read.value.ContainsKey($_.ToLowerInvariant()) })
+    # A name that's only written differently (spacing, dash, &) is almost always meant to be the existing group - say which one.
+    $close = [ordered]@{}
+    foreach ($m in @($missing | Select-Object -First 5)) {
+        $prefix = ($m -split '\s+' | Select-Object -First 1)
+        if ($prefix.Length -lt 2) { continue }
+        $e = $prefix.Replace("'", "''")
+        $near = Invoke-WebGraph -Permission 'Group.Read.All' -Action { param($Graph) @((& $Graph ("https://graph.microsoft.com/v1.0/groups?`$filter=" + [Uri]::EscapeDataString("startswith(displayName,'$e')") + '&$select=displayName&$top=999')).value | ForEach-Object { [string]$_.displayName }) }
+        if ($near.ok) { $hit = Get-ClosestGroupName -Name $m -Candidates @($near.value); if ($hit) { $close[$m] = $hit } }
+    }
+    return @{ ok = $true; checked = $true; missing = $missing; close = $close }
 }
 
 # ---------------------------------------------------------------- icons
@@ -255,8 +265,11 @@ function Global:Get-WebAttention {
     $apps = @((Read-WebCatalogRecords).Apps)
     $notDeployed = @($apps | Where-Object { -not $_.appId })
     if ($notDeployed.Count) { & $add 'info' "$($notDeployed.Count) app(s) not deployed yet" ((@($notDeployed | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($notDeployed.Count -gt 5) { ', ...' })) 'apps:notdeployed' }
-    $noPkg = @($apps | Where-Object { -not $_.wingetId -and -not $_.appId -and -not (Resolve-AppPackagePath -AppName $_.appName -Uncommon $true -PackagePath $_.packagePath).Found })
+    # Microsoft's own app types (Company Portal, Microsoft 365 Apps, Store apps) have no package to build - said apart, not as "not built".
+    $builtIn = @($apps | Where-Object { -not $_.appId -and (Get-NonPackageAppHint $_) })
+    $noPkg = @($apps | Where-Object { -not $_.wingetId -and -not $_.appId -and -not (Get-NonPackageAppHint $_) -and -not (Resolve-AppPackagePath -AppName $_.appName -Uncommon $true -PackagePath $_.packagePath).Found })
     if ($noPkg.Count) { & $add 'warn' "$($noPkg.Count) own package(s) not built" ((@($noPkg | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + ' - select them and use Package.') 'apps:all' }
+    if ($builtIn.Count) { & $add 'info' "$($builtIn.Count) Microsoft app(s) that aren't packages" ((@($builtIn | Select-Object -First 3 | ForEach-Object { Get-NonPackageAppHint $_ }) -join ' ')) 'apps:all' }
     # Managed updates as the way apps are kept current: the default, every Winget app, and each with its version.
     if ([string]$Global:App.DefaultAppSettings.WingetInstallMethod -ne 'Managed') { & $add 'info' 'Managed updates aren''t the default yet' "New Winget apps install winget's latest version without a pilot ring ($($Global:App.DefaultAppSettings.WingetInstallMethod))." 'do:manageddefault' }
     $unmanaged = @($apps | Where-Object { $_.wingetId -and -not $_.managedUpdates })

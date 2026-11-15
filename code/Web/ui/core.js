@@ -177,6 +177,8 @@ $('btnTheme').addEventListener('click', () => {
 function showView(v) {
   if (v === 'checks') delete $('tabChecks').dataset.count;
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.view === v));
+  const tabLabel = document.querySelector(`.tab[data-view="${v}"] .tl`);
+  if (tabLabel) $('pageTitle').textContent = tabLabel.textContent;
   $('viewHome').hidden = v !== 'home';
   if (v === 'home') loadHome();
   $('viewApps').hidden = v !== 'apps';

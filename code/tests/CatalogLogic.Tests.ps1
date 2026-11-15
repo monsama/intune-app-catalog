@@ -194,6 +194,8 @@ $testableFunctionNames = @(
     "Test-ReleasePinned",
     "Test-ManagedAppEdit",
     "Set-AppWingetIdCommands",
+    "Get-NonPackageAppHint",
+    "Get-ClosestGroupName",
     "Get-AppRecordFieldValues",
     "Get-AppRecordChanges",
     "Test-AppRecordFieldRevertable",
@@ -869,6 +871,12 @@ $idApp = [pscustomobject]@{ wingetId = 'New.App'; metadata = [pscustomobject]@{ 
 Assert-True ((Set-AppWingetIdCommands -App $idApp -OldId 'Old.App') -and $idApp.metadata.installCommand -like "*--id 'New.App'*--version '3.1'*" -and $idApp.metadata.installCommand -notlike '*Old.App*' -and $idApp.metadata.detectionRule.Script_Content -eq "`$AppToDetect = 'New.App'") "Set-AppWingetIdCommands: a new Winget ID - the generated commands (pinned version kept) and the detection follow"
 $msiApp = [pscustomobject]@{ managedUpdates = $true; wingetId = ''; appName = 'MsiApp'; metadata = [pscustomobject]@{ appVersion = '2.0'; uninstallCommand = 'msiexec /x {11111111-1111-1111-1111-111111111111} /qn'; detectionRule = [pscustomobject]@{ Type = 'Msi'; Msi_ProductCode = '{11111111-1111-1111-1111-111111111111}'; Msi_Version = '1.0'; Msi_VersionOperator = 'greaterThanOrEqual' } } }
 Assert-True ((Set-ManagedAppPin $msiApp -ProductCode '{22222222-2222-2222-2222-222222222222}') -and $msiApp.metadata.uninstallCommand -eq 'msiexec /x {22222222-2222-2222-2222-222222222222} /qn' -and $msiApp.metadata.detectionRule.Msi_Version -eq '2.0') "Set-ManagedAppPin: a new MSI's product code reaches the uninstall command too"
+
+# Microsoft's own apps aren't packages
+Assert-True ((Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Company Portal'; wingetId = '' })) -like '*9WZDNCRFJ3PZ*' -and (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Microsoft 365 Apps'; wingetId = '' })) -like '*Intune itself*' -and
+    (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Teams'; wingetId = ''; intuneAppType = 'Microsoft Store app (new)' })) -like "*own app type*" -and -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'LOB Tool'; wingetId = '' })) -and -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Company Portal'; wingetId = '9WZDNCRFJ3PZ' }))) "Get-NonPackageAppHint: Company Portal, Microsoft 365 Apps and non-Win32 types need no package; an own installer does"
+
+Assert-True ((Get-ClosestGroupName 'ITSENSE - Intune - Deploy I&O Workplace' @("ITSENSE $([char]0x2013) Intune $([char]0x2013) Deploy I and O Workplace", 'Other')) -eq "ITSENSE $([char]0x2013) Intune $([char]0x2013) Deploy I and O Workplace" -and (Get-ClosestGroupName 'Dev  Workplace' @('dev workplace')) -eq 'dev workplace' -and -not (Get-ClosestGroupName 'Dev Workplace' @('Dev Workplaces')) -and -not (Get-ClosestGroupName 'A' @('a', 'A '))) "Get-ClosestGroupName: other case, spacing, dash or & is the same group; anything else or two hits isn't"
 
 # Install errors explained
 $e1 = Get-InstallErrorInfo -2016345060

@@ -185,7 +185,10 @@ function Global:Get-WebApp {
     $editable = Get-WebAppEditable $app
     $meta = if ($app.metadata) { $app.metadata } else { try { Get-DefaultAppMetadata -AppName $app.appName -WingetId $app.wingetId -Uncommon (-not $app.wingetId) } catch { $null } }
     $editable.deploy = Get-WebDeployEditable $meta
-    return @{ ok = $true; app = $editable; version = (Get-WebAppFileVersion $app.appName); knownGroups = @(Get-AllKnownGroups | Sort-Object -Unique)
+    # An own-package app: the installer Package builds into the .intunewin (and Deploy uploads) - its version, to compare with the App version.
+    $installer = if (-not $app.wingetId) { try { Get-WebInstallerInfo $app.appName } catch { $null } } else { $null }
+    $offers = [string]$(if ($Global:App.WingetLatest -and $app.wingetId) { $Global:App.WingetLatest[([string]$app.wingetId).ToLowerInvariant()] })
+    return @{ ok = $true; app = $editable; version = (Get-WebAppFileVersion $app.appName); installer = $installer; wingetOffers = $offers; knownGroups = @(Get-AllKnownGroups | Sort-Object -Unique)
         appNames = @($catalog.Apps | ForEach-Object { $_.appName } | Where-Object { $_ -ne $name } | Sort-Object); minOsChoices = @(Get-WebMinOsChoices)
         intuneApps = @($catalog.Apps | Where-Object { $_.appId -and $_.appName -ne $name } | Sort-Object appName | ForEach-Object { [ordered]@{ name = [string]$_.appName; appId = [string]$_.appId } }) }
 }
@@ -677,4 +680,27 @@ function Global:Rename-WebAppReferences {
         try { Move-Item -LiteralPath $from -Destination $to -ErrorAction Stop; Write-Log "[OK] Its packages folder follows the new name: $to" }
         catch { Write-Log "[WARN] The packages folder $from couldn't be renamed to $to ($($_.Exception.Message)) - rename it by hand." }
     }
+}
+
+function Global:Get-WebWingetCommands {
+    <#
+      The editor's "Install with": which generated form the app's commands are
+      now (Managed, WAU, Winget, or '' for hand-edited), and - with -method -
+      the commands for that form. Nothing is saved.
+    #>
+    param($Data)
+    $id = ([string]$Data.wingetId).Trim()
+    if (-not $id) { return @{ ok = $false; error = 'No Winget ID.' } }
+    $ctx = if ([string]$Data.context -eq 'User') { 'User' } else { 'System' }
+    $current = Get-AppWingetInstallMethod -WingetId $id -InstallCommand ([string]$Data.install) -UninstallCommand ([string]$Data.uninstall)
+    $pinned = ''
+    if ($current -eq 'Managed' -and ([string]$Data.install) -match " --version '((?:[^']|'')+)'") { $pinned = $Matches[1] -replace "''", "'" }
+    $out = @{ ok = $true; current = $current; pinned = $pinned }
+    $method = [string]$Data.method
+    if ($method) {
+        if ($method -notin 'Managed', 'WAU', 'Winget') { return @{ ok = $false; error = 'Install with must be Managed, WAU or Winget.' } }
+        $c = Get-WingetCommandLines -WingetId $id -Method $method -InstallContext $ctx -Version ([string]$Data.version)
+        $out.install = $c.Install; $out.uninstall = $c.Uninstall
+    }
+    return $out
 }

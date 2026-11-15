@@ -37,10 +37,13 @@
   <div class="topright">
     <button type="button" class="jobchip" id="jobChip" hidden title="An action is running - show its progress">Working...</button>
     <button type="button" class="conn" id="connBadge" title="Graph connection"></button>
-    <button class="btn ghost iconbtn" id="btnCoffee" aria-label="Buy me a coffee" title="Buy me a coffee, if Intune App Catalog saved you some time"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M17 11h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M8 3v3M12 3v3"/></svg></button>
-    <button class="btn ghost iconbtn" id="btnTheme" aria-label="Theme" title="Theme">Theme</button>
   </div>
 </header>
+<!-- Above every page: its name, and (top right, as in our other apps) the theme and the coffee button. -->
+<div class="pagebar"><span class="pagetitle" id="pageTitle" aria-hidden="true"></span><div class="pagebtns">
+    <button class="btn ghost iconbtn" id="btnCoffee" aria-label="Buy me a coffee" title="Buy me a coffee, if Intune App Catalog saved you some time"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M17 11h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M8 3v3M12 3v3"/></svg></button>
+    <button class="btn ghost iconbtn" id="btnTheme" aria-label="Theme" title="Theme">Theme</button>
+</div></div>
 
 <div class="banner warn" id="testBanner" role="region" aria-label="Test mode" hidden><span><b>Test mode.</b> Nothing here comes from a tenant: Graph answers are read from a test file (INTUNE_CATALOG_TEST_GRAPH), and settings are not saved. Restart the app without that variable.</span></div>
 <div class="banner warn" id="setupBanner" role="region" aria-label="Setup" hidden>
@@ -139,10 +142,15 @@
       <button class="btn" id="btnHomeAdd" title="Add apps from winget, an installer or a script">Add apps...</button>
       <button class="btn" id="btnHomeReload" title="Look again">Reload</button>
     </div>
-    <ul class="attention" id="homeList" aria-live="polite"></ul>
-    <div id="homeStats"></div>
-    <section class="setup" id="homeSetup" aria-labelledby="setupTitle" hidden><h2 id="setupTitle">Getting started</h2><div class="bar"><span id="setupBar"></span></div><ol id="setupList"></ol><p class="setupdone" id="setupDone"></p></section>
-    <p class="muted note">Tip: <kbd>Ctrl</kbd>+<kbd>K</kbd> finds any app, page or action.</p>
+    <div id="homeStats" class="kpis"></div>
+    <div class="homegrid">
+      <section class="hcard" aria-labelledby="attTitle"><div class="hhead"><h2 id="attTitle">Needs attention</h2><span class="hcount" id="homeCount"></span></div><ul class="attention" id="homeList" aria-live="polite"></ul></section>
+      <div class="homeside">
+        <section class="setup hcard" id="homeSetup" aria-labelledby="setupTitle" hidden><div class="hhead"><h2 id="setupTitle">Getting started</h2></div><div class="bar"><span id="setupBar"></span></div><ol id="setupList"></ol><p class="setupdone" id="setupDone"></p></section>
+        <section class="hcard tipcard" aria-labelledby="tipTitle"><div class="hhead"><h2 id="tipTitle">Shortcuts</h2></div>
+          <ul class="tips"><li><span><kbd>Ctrl</kbd>+<kbd>K</kbd></span><span class="muted">finds any app, page or action</span></li><li><span>Check everything now</span><span class="muted">compares every app with Intune</span></li><li><span>Nightly run</span><span class="muted">Settings &gt; Nightly run &amp; alerts</span></li></ul></section>
+      </div>
+    </div>
   </section>
 
   <!-- ============ Updates ============ -->
@@ -476,9 +484,14 @@
       <div class="col">
         <article class="card">
           <h2>Managed updates</h2>
-          <p class="sub" id="pilotGroupsHint">Apps with managed updates install a fixed version. A new version is released to these groups first (Required), and to everyone when it's promoted. Groups that Entra ID doesn't have yet are created when used.</p>
-          <textarea id="pilotGroups" aria-labelledby="pilotGroupsHint" rows="3" class="full" placeholder="e.g. SG-Intune-Pilot" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
-          <p class="sub" id="ringsHint">Release rings after the pilot groups <span class="muted">(optional)</span>: a release that passes the rule in one ring goes on to the next, then to everyone. Add a ring, name it and give it its groups. <button type="button" class="help" data-help="rings" aria-label="What are release rings?">?</button></p>
+          <p class="sub" id="pilotGroupsHint">Apps with managed updates install a fixed version. A new version goes to the release rings one after the other (Required), then to everyone when it's promoted. <b>Ring 1 is the pilot</b> - the few test devices that get every new version first. Groups that Entra ID doesn't have yet are created when used.</p>
+          <div class="ringrow pilotrow">
+            <span class="muted rnum">Ring 1</span>
+            <input class="rname" value="Pilot" readonly tabindex="-1" aria-label="Ring 1 name (always the pilot)" title="Ring 1 is always the pilot">
+            <textarea id="pilotGroups" aria-label="Ring 1 (pilot) groups" aria-describedby="pilotGroupsHint" rows="3" class="full" placeholder="e.g. SG-Intune-Pilot" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
+            <span class="ringpad" aria-hidden="true"></span>
+          </div>
+          <p class="sub" id="ringsHint">More rings after the pilot <span class="muted">(optional)</span>: a release that passes the rule in one ring goes on to the next, then to everyone. <button type="button" class="help" data-help="rings" aria-label="What are release rings?">?</button></p>
           <textarea id="releaseRings" aria-labelledby="ringsHint" rows="2" class="full" placeholder="e.g. Early adopters: SG-Intune-Early, SG-IT" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
           <h3>When a release is ready for the next ring</h3>
           <div class="policy">
@@ -766,6 +779,11 @@
         <label>Name<input id="aName" required autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label title="The winget package ID, e.g. 7zip.7zip. Empty for an app with its own installer. Find... searches winget.">Winget ID <span class="muted">(empty for an app with its own package)</span><span class="inputrow"><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip" autocorrect="off" autocapitalize="off"><button type="button" class="btn" id="btnFindWinget" title="Search winget for the package">Find...</button></span></label>
         <label class="chk" title="Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Updates"><input type="checkbox" id="aManaged">Managed updates <button type="button" class="help" data-help="managed" aria-label="What are managed updates?">?</button> <span class="muted" id="aManagedNote"></span></label>
+        <div class="methodrow" id="aMethodRow" hidden>
+          <label title="How devices install this Winget app - and so which version they get">Install with<select id="aMethod"><option value="Managed">Managed updates - a fixed version, pilot first</option><option value="WAU">Winget-AutoUpdate (Winget-Install.ps1)</option><option value="Winget">The winget command</option><option value="Custom" disabled>Own command (edited by hand)</option></select></label>
+          <p class="methodinfo" id="aMethodInfo" aria-live="polite"></p>
+        </div>
+        <p class="methodinfo" id="aPkgInfo" hidden></p>
         <fieldset class="ownrule" id="aRuleBox" hidden>
           <legend>This app's release rule <span class="muted">(empty: Settings' rule)</span></legend>
           <div class="policy">

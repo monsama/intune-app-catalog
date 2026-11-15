@@ -1,5 +1,60 @@
 # Changelog
 
+## 2.18.1
+
+Layout fixes, found by checking every page and Settings section for
+fields that are cut off, overflow their card or don't line up.
+
+- **Home** is laid out again: the numbers on top, then **Needs
+  attention** as one card with a row per item, and Getting started and
+  shortcuts beside it (under it on narrow windows).
+- **Company Portal and Microsoft 365 Apps** no longer count as "own
+  package(s) not built". They are Microsoft's own Intune app types, so
+  there's nothing to package: Home lists them apart with what to do
+  (Company Portal: use its Store ID 9WZDNCRFJ3PZ as the Winget ID;
+  Microsoft 365 Apps: add it in Intune itself), and Deploy says the same
+  instead of asking for a package. Apps already in Intune as a Store or
+  Microsoft 365 app are never counted.
+- **Editor > Basics > Install with** (Winget apps): choose Managed
+  updates, Winget-AutoUpdate or the winget command per app. The commands
+  are rewritten to match (after asking, when they were edited by hand). A
+  line under it says which version devices get: managed apps "exactly
+  24.004 (the App version)", WAU and winget "whatever version winget has
+  at that moment - nothing is pinned", plus what winget offers now (last
+  check) and whether anything updates the app afterwards.
+- **Own-package apps** show which installer gets uploaded: the file in
+  the package folder and its version, next to the App version, with a
+  note when the two differ.
+- **The release rule's** three fields line up, also when one label
+  wraps onto two lines.
+- **Group warnings** under a group box: one left over from before
+  (the box emptied, a chip removed, another app opened) is cleared. A
+  group that's only written differently in Entra ID (case, spacing, a
+  different dash, & or "and") is named: "did you mean ...?". Otherwise
+  it says plainly that pushing would create a new, empty group.
+- **Settings > Apps & defaults > Winget apps install with**: changing it
+  now offers to switch the Winget apps already in the catalog as well
+  (and to push the new commands to the ones in Intune). Before, it only
+  shaped apps added afterwards. Hand-edited commands and managed apps'
+  pinned commands are kept; choosing Managed updates offers to turn them
+  on for all.
+- **Settings > Updates**: the pilot groups are **Ring 1 - Pilot**, in the
+  same row layout as the rings after it, so it's clear the first box is
+  the first ring. Ring names and group boxes have the same height.
+- **Group boxes** everywhere are as high as the text fields next to them.
+- **Settings > Apps & defaults**:
+  - The default values no longer run out of their card, and the return
+    codes show their full type, with a small x to remove one.
+  - Assignment profiles show the name on one line and their three group
+    boxes under it. Before, the name box was two letters wide and
+    Excluded ran off the card.
+- **Headings inside a card** are smaller than the card's title, with even
+  spacing and a divider (Nightly run, Updates and others).
+- **Toolbars**: all buttons and fields in a row are the same height (Save
+  view... and Columns... on the Apps list, the time on Nightly run).
+- **The theme and coffee buttons are top right**, as in our other apps, in
+  a slim bar above every page that also shows the page's name.
+
 ## 2.18.0
 
 Day-to-day logic and leftovers, from a review of how the app is used every

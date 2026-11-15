@@ -455,7 +455,7 @@ label.gdesc > input { display: block; width: 100%; margin-top: 4px; }
 #viewApps > .toolbar #filter { flex: 0 1 auto; min-width: 120px; max-width: 190px; }
 @media (min-width: 1000px) { #viewApps > .toolbar { flex-wrap: nowrap; } #viewApps > .toolbar .count { white-space: nowrap; } }
 .policy { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 6px 0 10px; }
-.policy label { font-size: 12px; color: var(--muted); }
+.policy label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; justify-content: flex-end; }
 .policy input { display: block; width: 100%; margin-top: 4px; }
 #dlgRelease > label:not(.chk) { display: block; margin-top: 10px; font-size: 12px; color: var(--muted); }
 #dlgRelease > label:not(.chk) input { display: block; width: 100%; margin-top: 4px; }
@@ -555,13 +555,24 @@ h3.withtool select { margin-left: auto; font-size: 12px; font-weight: 400; }
 .sbsteps { list-style: none; padding: 0; display: grid; gap: 6px; font-size: 13px; }
 #sbLog { max-height: 220px; overflow: auto; font-size: 12px; }
 /* ---- home ---- */
-#homeStats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 12px 0; }
-#homeStats .stat { background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; box-shadow: var(--shadow); }
-#homeStats .stat .n { font-size: 22px; font-weight: 600; } #homeStats .stat .l { font-size: 12px; color: var(--muted); }
+#homeStats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 4px 0 16px; max-width: 1180px; }
+#homeStats .stat { position: relative; background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--shadow); overflow: hidden; }
+#homeStats .stat::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--accent); }
+#homeStats .stat.ok::before { background: var(--ok); } #homeStats .stat.warn::before { background: var(--warn); }
+#homeStats .stat .n { font-size: 26px; font-weight: 650; line-height: 1.1; letter-spacing: -0.01em; } #homeStats .stat .l { font-size: 12px; color: var(--muted); }
 #homeStats .stat.ok .n { color: var(--ok); } #homeStats .stat.warn .n { color: var(--warn); }
-.attention { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; max-width: 980px; }
-.attention .att { display: grid; grid-template-columns: 76px 1fr auto; gap: 12px; align-items: center; background: var(--surface); border: 1px solid var(--bd); border-left-width: 4px; border-radius: var(--r-l); padding: 10px 14px; }
-.attention .att.err { border-left-color: var(--err); } .attention .att.warn { border-left-color: var(--warn); } .attention .att.ok { border-left-color: var(--ok); } .attention .att.info { border-left-color: var(--info); }
+.homegrid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; max-width: 1180px; }
+.homeside { display: grid; gap: 16px; min-width: 0; }
+.hcard { background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); box-shadow: var(--shadow); padding: 0; margin: 0; max-width: none; min-width: 0; overflow: hidden; }
+.hhead { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--bd); }
+.hhead h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.hcount { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--accent-soft); color: var(--text); font-size: 12px; font-weight: 600; display: inline-grid; place-items: center; }
+.hcount:empty { display: none; }
+.attention { list-style: none; padding: 0; margin: 0; display: block; }
+.attention .att { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--bd); box-shadow: inset 3px 0 0 var(--info); }
+.attention .att:first-child { border-top: 0; }
+.attention .att.err { box-shadow: inset 3px 0 0 var(--err); } .attention .att.warn { box-shadow: inset 3px 0 0 var(--warn); } .attention .att.ok { box-shadow: inset 3px 0 0 var(--ok); }
+.attention .att:hover { background: var(--hover, var(--accent-soft)); }
 .attention .att .pill { justify-self: start; }
 .attention .att .body { display: flex; flex-direction: column; gap: 2px; font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
 kbd { font: 11px var(--mono); border: 1px solid var(--bd); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--surface); }
@@ -635,11 +646,13 @@ dialog.tray .log { max-height: 34vh; }
 /* ---- menu headings ---- */
 .menu .mhead { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 12px 2px; }
 /* ---- getting started ---- */
-.setup { background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); padding: 14px 16px; margin: 12px 0; max-width: 980px; box-shadow: var(--shadow); }
-.setup h2 { margin: 0 0 8px; font-size: 15px; }
-.setup .bar { height: 6px; border-radius: 999px; background: var(--bd2); overflow: hidden; margin-bottom: 10px; }
+.setup .bar { height: 6px; border-radius: 999px; background: var(--bd2); overflow: hidden; margin: 12px 16px 8px; }
+.setup .setupdone { padding: 0 16px 12px; }
+.tips { list-style: none; margin: 0; padding: 6px 0; }
+.tips li { display: flex; flex-direction: column; gap: 2px; padding: 8px 16px; font-size: 13px; }
+@media (max-width: 1000px) { .homegrid { grid-template-columns: minmax(0, 1fr); } }
 .setup .bar span { display: block; height: 100%; background: var(--ok); }
-.setup ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.setup ol { list-style: none; margin: 0; padding: 0 8px 12px; display: grid; gap: 6px; }
 .setup li { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: center; padding: 6px 8px; border-radius: var(--r-m); }
 .setup li.now { background: var(--accent-soft); }
 .setup li .mark { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--bd2); color: var(--muted); }
@@ -863,3 +876,49 @@ input.qedit { padding: 3px 8px; font-size: 12px; width: 180px; }
 .dlok { color: var(--ok); margin-left: 6px; font-size: 12px; }
 /* Not connected / test mode: a ring, not blank (the icon rail shows only the mark). */
 .conn.none::before, .conn.warn::before { content: ''; width: 8px; height: 8px; border-radius: 50%; border: 2px solid currentColor; box-sizing: border-box; }
+/* Release rings: ring 1 (the pilot) in the same row layout as the others; the name and group boxes the same height. */
+.ringrow .rname { height: 36px; }
+.ringrow .chipbox { min-height: 36px; }
+.pilotrow { margin: 8px 0 4px; }
+.pilotrow .rname[readonly] { color: var(--muted); background: var(--bd2); cursor: default; }
+.pilotrow .ringpad { width: 64px; }
+.chipbox { min-height: 36px; padding: 3px 6px; align-content: center; }
+.chipbox input.chipinput { padding: 3px 2px; }
+/* The input inside a group box: not the field look (the general input rule is more specific - hence !important). */
+.chipbox input.chipinput { padding: 3px 2px !important; border: 0 !important; background: transparent !important; box-shadow: none !important; min-height: 0; }
+/* Cards: the title is the biggest heading; sections inside it are smaller, with even spacing. */
+.card > h2 { font-size: 16px; margin: 0 0 4px; }
+.card h3 { font-size: 13.5px; font-weight: 600; margin: 20px 0 6px; padding-top: 14px; border-top: 1px solid var(--bd2); }
+.card > h2 + .sub, .card > h2 + p { margin-top: 0; }
+.card .actions { margin-top: 10px; }
+.card .actions + .actions { margin-top: 8px; }
+/* Grid columns may shrink below their content (else fields run out of their card). */
+.formgrid > *, .two > *, .policy > *, .cols > *, .col > * { min-width: 0; }
+.two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.two > label > input, .two > label > select { width: 100%; }
+.coderow { grid-template-columns: 90px minmax(0, 1fr) auto; }
+/* Assignment profiles: the name (and Remove) on one line, its three group boxes under it. */
+.profrows { gap: 0; }
+.profrow2 { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: start; gap: 8px 10px; padding: 12px 0; border-bottom: 1px solid var(--bd2); }
+.profrow2 > .pfield:first-child { grid-column: 1 / 4; grid-row: 1; }
+.profrow2 > .pfield:not(:first-child) { grid-row: 2; }
+.profrow2 > .btn { grid-column: 4; grid-row: 1; align-self: end; }
+@media (max-width: 900px) { .profrow2 { grid-template-columns: minmax(0, 1fr) auto; } .profrow2 > .pfield:first-child { grid-column: 1; } .profrow2 > .pfield:not(:first-child) { grid-row: auto; grid-column: 1 / -1; } .profrow2 > .btn { grid-column: 2; } }
+/* Toolbars: every control the same height. */
+.toolbar > input:not([type=checkbox]), .toolbar > select, .toolbar > .btn, .toolbar input[type=time] { height: 34px; }
+.toolbar > .btn.small { padding-top: 0; padding-bottom: 0; font-size: 13px; }
+.coderow { grid-template-columns: 76px minmax(0, 1fr) 30px; }
+.btn.rowx { padding: 2px 0; width: 28px; font-size: 16px; line-height: 1; color: var(--muted); }
+.btn.rowx:hover { color: var(--err); background: var(--err-bg); }
+/* The bar above every page: its name on the left, the theme and coffee buttons top right. */
+.pagebar { display: flex; align-items: center; gap: 12px; padding: 10px 16px 0; flex: none; }
+.pagetitle { font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+.pagebtns { margin-left: auto; display: flex; gap: 4px; }
+.pagebtns .iconbtn { height: 34px; width: 36px; padding: 0; }
+@media (max-width: 640px) { .pagebar { padding: 8px 12px 0; } .pagetitle { font-size: 16px; } }
+main > .view { padding-top: 10px; }
+
+/* ---- editor: Install with (Winget apps) ---- */
+.methodrow { display: grid; gap: 6px; margin: 4px 0 10px; }
+.methodrow select { display: block; width: 100%; margin-top: 4px; }
+.methodinfo { margin: 0 0 10px; padding: 8px 12px; font-size: 12px; line-height: 1.45; color: var(--muted); background: var(--accent-soft); border-radius: var(--r-m); }
