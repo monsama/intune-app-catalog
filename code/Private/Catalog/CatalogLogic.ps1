@@ -1669,7 +1669,8 @@ function Global:Get-AppDetailsFill {
       value list (empty when there's nothing to fill).
     #>
     param($Metadata, $Details, [string]$AppName, [string]$DefaultOwner)
-    $now = { param($k) [string]$(if ($Metadata -and $Metadata.PSObject.Properties[$k]) { $Metadata.$k }) }
+    # A field the app's settings don't have at all counts as empty ('' - never $null, which has no .Trim()).
+    $now = { param($k) $v = if ($Metadata -and $Metadata.PSObject.Properties[$k]) { $Metadata.$k } else { $null }; if ($null -eq $v) { '' } else { [string]$v } }
     $url = { param($u) $t = ([string]$u).Trim(); if ($t -match '^https?://[^\s"<>]{3,500}$') { $t } else { '' } }
     $out = [ordered]@{}
     $publisher = ([string]$Details.Publisher).Trim()

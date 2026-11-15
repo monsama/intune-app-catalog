@@ -460,7 +460,7 @@ function Global:Invoke-WebFillDetails {
                             if (-not $app.metadata) { $app | Add-Member -NotePropertyName metadata -NotePropertyValue ([pscustomobject]@{}) -Force }
                             foreach ($k in @($p.fill.Keys)) {
                                 # Still empty now (someone may have typed it meanwhile): only then.
-                                $cur = [string]$(if ($app.metadata.PSObject.Properties[$k]) { $app.metadata.$k })
+                                $cur = if ($app.metadata.PSObject.Properties[$k] -and $null -ne $app.metadata.$k) { [string]$app.metadata.$k } else { '' }
                                 if ($cur.Trim() -and -not ($k -eq 'description' -and $cur.Trim() -eq ([string]$app.appName).Trim())) { continue }
                                 if ($app.metadata.PSObject.Properties[$k]) { $app.metadata.$k = $p.fill[$k] } else { $app.metadata | Add-Member -NotePropertyName $k -NotePropertyValue $p.fill[$k] }
                             }
