@@ -1037,21 +1037,21 @@ function Global:Get-CatalogNameLookup {
     <#
       The catalog's app names as a hashtable (case-insensitive, like -eq),
       built once per catalog list - the same list object, count and last
-      name - not for every app. On its own: Get-DefaultAppMetadata has so
-      many variables that more in it trip PowerShell ("Argument types do
-      not match").
+      name - not for every app. No @() on the list: in Get-DefaultAppMetadata's
+      callers that trips PowerShell ("Argument types do not match").
     #>
     $appsNow = $Global:App.Apps
-    $list = @($appsNow)
-    $last = ''
-    if ($list.Count) { $last = [string]$list[$list.Count - 1].appName }
+    # Count and last name read straight off the list, so a cache hit doesn't walk it.
+    $count = 0; $last = ''
+    if ($appsNow -is [System.Collections.IList]) { $count = $appsNow.Count; if ($count) { $last = [string]$appsNow[$count - 1].appName } }
+    else { foreach ($a in $appsNow) { $count++; $last = [string]$a.appName } }
+    $identity = 0
+    if ($null -ne $appsNow) { $identity = [System.Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($appsNow) }
     $cache = $Global:App.CatalogNamesCache   # one object, replaced whole: a request in another runspace never sees half of it
-    # The list's identity as a number ([object]::ReferenceEquals trips PowerShell's compiler here).
-    $identity = if ($null -ne $appsNow) { [System.Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($appsNow) } else { 0 }
-    if ($cache -and $cache['Identity'] -eq $identity -and $cache['N'] -eq $list.Count -and $cache['Last'] -ceq $last) { return $cache['Names'] }
+    if ($cache -and $cache['Identity'] -eq $identity -and $cache['N'] -eq $count -and $cache['Last'] -ceq $last) { return $cache['Names'] }
     $names = @{}
-    foreach ($a in $list) { if ($a.appName) { $names[[string]$a.appName] = $true } }
-    if ($null -ne $appsNow) { $Global:App['CatalogNamesCache'] = @{ Identity = $identity; N = $list.Count; Last = $last; Names = $names } }
+    foreach ($a in $appsNow) { if ($a.appName) { $names[[string]$a.appName] = $true } }
+    if ($null -ne $appsNow) { $Global:App['CatalogNamesCache'] = @{ Identity = $identity; N = $count; Last = $last; Names = $names } }
     return $names
 }
 
