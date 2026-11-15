@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.27.8
+
+- **A fixed header bar above every page**: the page's name on the left,
+  coffee and theme on the right, on the sidebar's colour with a hairline
+  under it, the height of the sidebar's brand row. It stays at the top
+  while the page scrolls; the two buttons are always in it (on wide
+  windows they used to move into each page's own toolbar).
+
 ## 2.27.7
 
 - **Dropdowns look the same everywhere.** One style for all 41 of them on

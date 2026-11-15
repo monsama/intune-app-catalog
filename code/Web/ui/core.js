@@ -185,11 +185,10 @@ $('btnTheme').addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------- views
-// Coffee and theme sit at the end of the page's own toolbar where it has room (wide windows); otherwise top right in the page bar.
-function placePageBtns(v) {
-  v = v || (document.querySelector('.tab[aria-selected="true"]') || {}).dataset?.view || 'home';
-  const viewEl = document.getElementById('view' + v[0].toUpperCase() + v.slice(1)), tb = viewEl && viewEl.querySelector(':scope > .toolbar');
-  (tb && innerWidth >= 1440 ? tb : document.querySelector('.pagebar')).append($('pageBtns'));
+// Coffee and theme sit top right in the page bar, on every page and at every width (the bar stays at the top).
+function placePageBtns() {
+  const bar = document.querySelector('.pagebar');
+  if ($('pageBtns').parentElement !== bar) bar.append($('pageBtns'));
 }
 addEventListener('resize', () => placePageBtns());
 function showView(v) {
