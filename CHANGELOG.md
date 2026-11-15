@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.24.1
+
+- **Switch from Winget-AutoUpdate** now also switches apps whose WAU
+  commands are worded differently from this tool's (another PowerShell path,
+  other quotes, extra switches such as `-Silent`): any command that runs
+  `Winget-Install.ps1` for the app's own Winget ID. Only commands for
+  several or other IDs are left to you. A switch that changed nothing no
+  longer offers Undo.
+
 ## 2.24.0
 
 **Ready for several admins, other Windows languages and larger catalogs.**

@@ -2274,6 +2274,23 @@ function Global:Test-WauAppName {
     return ([string]$Name -match '(?i)^\s*(Romanitho\.)?winget[\s\-_.]*auto[\s\-_]*update\s*$')
 }
 
+function Global:Test-WauCommandForId {
+    <#
+      Pure: whether -Command runs Winget-AutoUpdate's Winget-Install.ps1 for
+      exactly -WingetId (-AppIDs "Id", 'Id' or Id), in whatever wording -
+      another PowerShell path, other quotes, extra switches. WAU is gone
+      (2.19), so such a command has nothing left worth keeping; one for
+      several IDs or another ID is not this app's and stays.
+    #>
+    param([string]$WingetId, [string]$Command)
+    if (-not $WingetId -or -not $Command) { return $false }
+    if ($Command -notmatch '(?i)Winget-Install\.ps1') { return $false }
+    $m = [regex]::Match($Command, '(?i)-AppIDs?\s+(?:"([^"]*)"|''([^'']*)''|(\S+))')
+    if (-not $m.Success) { return $false }
+    $ids = ($m.Groups[1].Value + $m.Groups[2].Value + $m.Groups[3].Value).Trim()
+    return ($ids -ieq $WingetId)
+}
+
 function Global:Get-WauUse {
     <#
       Pure: how an app still relies on Winget-AutoUpdate, which this catalog
