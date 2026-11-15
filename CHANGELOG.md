@@ -19,6 +19,8 @@ fields that are cut off, overflow their card or don't line up.
   spacing and a divider (Nightly run, Updates and others).
 - **Toolbars**: all buttons and fields in a row are the same height (Save
   view... and Columns... on the Apps list, the time on Nightly run).
+- **The theme and coffee buttons are top right**, as in our other apps, in
+  a slim bar above every page that also shows the page's name.
 
 ## 2.18.0
 

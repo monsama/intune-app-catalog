@@ -897,3 +897,10 @@ input.qedit { padding: 3px 8px; font-size: 12px; width: 180px; }
 .coderow { grid-template-columns: 76px minmax(0, 1fr) 30px; }
 .btn.rowx { padding: 2px 0; width: 28px; font-size: 16px; line-height: 1; color: var(--muted); }
 .btn.rowx:hover { color: var(--err); background: var(--err-bg); }
+/* The bar above every page: its name on the left, the theme and coffee buttons top right. */
+.pagebar { display: flex; align-items: center; gap: 12px; padding: 10px 16px 0; flex: none; }
+.pagetitle { font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+.pagebtns { margin-left: auto; display: flex; gap: 4px; }
+.pagebtns .iconbtn { height: 34px; width: 36px; padding: 0; }
+@media (max-width: 640px) { .pagebar { padding: 8px 12px 0; } .pagetitle { font-size: 16px; } }
+main > .view { padding-top: 10px; }
