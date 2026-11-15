@@ -1337,3 +1337,23 @@ input[type=checkbox]:not([hidden]) { box-sizing: border-box !important; padding:
 #dlgScript .formgrid > section > * + .two, #dlgScript .formgrid > section > .two + * { margin-top: 10px; }
 #dlgScript #sAssignNote { margin-top: 4px; }
 #sec-packaging .certstatus + .actions, #sec-packaging .row + .certstatus, #sec-packaging .certstatus + .row { margin-top: 10px; }
+
+/* ---- Editor (2.27.5): the same room everywhere, found by the spacing check ---- */
+/* A row of two fields, or tick boxes, right after a field: the room a field has. */
+#dlgApp .formgrid > section > * + .two, #dlgApp .formgrid > section > .two + *:not(.two) { margin-top: 10px; }
+#dlgApp .formgrid > section > label + .checks { margin-top: 6px; }
+#dlgApp .formgrid > section > .checks { min-height: 30px; align-items: center; }
+#dlgApp .formgrid > section > .checks + * { margin-top: 10px; }
+#dlgApp .formgrid > section > label.chk + .methodrow, #dlgApp .formgrid > section > label.chk + * { margin-top: 10px; }
+/* The install card and the detection rule card: apart, not sharing an edge. */
+#appForm[data-pg="3"] > .formgrid + details#deploySec { margin-top: 12px; }
+/* The first thing on a tab starts at the same height on every tab. */
+#dlgApp .formgrid > section > .pgfirst { margin-top: 0 !important; }
+/* Boxes with a heading (this app's release rule, Add apps' detection): the heading inside the box, not cut into its border. */
+fieldset.ownrule { padding: 10px 14px 12px; }
+fieldset.ownrule > legend { float: left; width: 100%; padding: 0; margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--muted); }
+fieldset.ownrule > legend .muted { font-weight: 400; }
+fieldset.ownrule > legend + * { clear: both; }
+/* Details: its heading on the same line as on the other tabs - the Fill button doesn't push it down. */
+#dlgApp h3.withfill { display: flex; align-items: center; gap: 8px; margin-top: 0; min-height: 28px; }
+#dlgApp h3.withfill > .btn { margin-left: auto; }

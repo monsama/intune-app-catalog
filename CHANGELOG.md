@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.27.5
+
+- **The editor, the same pass as Add apps.** Every tab starts its card
+  and heading at the same height (Details sat lower because of its Fill
+  button, Requirements and Dependencies 12-24 px lower); the install card
+  and the detection rule card no longer share an edge; Description and the
+  Publisher row, Architecture and its tick boxes, and Managed updates and
+  Install with have room between them; this app's release rule has its
+  heading inside the box instead of cut into the border (the same for
+  every such box in the app).
+
 ## 2.27.4
 
 - **Add apps looks right on every tab.** "Fill in by hand..." sits at the
