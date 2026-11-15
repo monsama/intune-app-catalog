@@ -186,6 +186,22 @@ $('btnSbFolder').addEventListener('click', () => api('/api/open', { target: 'san
 
 // ---------------------------------------------------------------- detection from an app on this PC
 let installed = [];
+// The server version: the PC's apps come from a script run on that PC, pasted here.
+$('btnDetFromPaste').addEventListener('click', () => { $('dpText').value = ''; $('dpError').hidden = true; $('dlgDetPaste').showModal(); });
+$('btnDetScript').addEventListener('click', async () => { const r = await api('/api/installed-script'); if (r.ok) saveB64File(r, 'text/plain'); else toast(r.error, true); });
+$('btnDetPasteGo').addEventListener('click', async () => {
+  const r = await api('/api/detection-from-paste', { text: $('dpText').value });
+  if (!r.ok) { $('dpError').textContent = r.error; $('dpError').hidden = false; return; }
+  applyDetection(r); $('dlgDetPaste').close();
+});
+// The Sandbox test as a zip for a Windows PC (the server version).
+async function downloadSandbox(name) {
+  toast(`Preparing the Sandbox test for ${name}...`);
+  const r = await api('/api/sandbox-package', { name });
+  if (!r.ok) { toast(r.error, true); return; }
+  saveFromUrl(r.url, r.name);
+  toast('Unpack the zip on a Windows PC with Windows Sandbox, then right-click Start-Test.ps1 > Run with PowerShell - it says how the test went.');
+}
 $('btnDetFromPc').addEventListener('click', async () => {
   $('inRows').replaceChildren(el('tr', {}, el('td', { colspan: 4, class: 'muted', text: 'Reading the apps installed here...' })));
   $('inFilter').value = ''; $('dlgInstalled').showModal(); $('inFilter').focus();
@@ -207,13 +223,17 @@ $('inFilter').addEventListener('input', renderInstalled);
 async function useInstalled(a) {
   const r = await api('/api/detection-from-installed', { key: a.key, hive: a.hive });
   if (!r.ok) { toast(r.error, true); return; }
+  applyDetection(r);
+  $('dlgInstalled').close();
+}
+// A detection rule (the editor's form) into the editor's fields.
+function applyDetection(r) {
   const d = r.detection;
   $('xType').value = d.type; $('xProductCode').value = d.productCode; $('xPath').value = d.path; $('xName').value = d.name; $('xKey').value = d.keyPath; $('xValueName').value = d.valueName;
   $('xOperator').value = d.operator || 'notConfigured'; $('xValue').value = d.value; $('x32').checked = !!d.check32Bit;
   if (d.type === 'File') $('xFileType').value = d.detectionType; if (d.type === 'Registry') $('xRegType').value = d.detectionType;
   showDetFields(); deployTouched = true; $('deploySec').open = true; edPageFor($('xType'));
   $('xType').dispatchEvent(new Event('change', { bubbles: true }));
-  $('dlgInstalled').close();
   toast(`Detection: ${r.text}. Save to keep it.`);
 }
 

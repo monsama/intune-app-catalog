@@ -1138,7 +1138,7 @@ async function menuAction(act) {
     case 'removegroups': openGroupsBatch('remove', names); break;
     case 'status': openStatus(one.name); break;
     case 'retire': openRetire(one.name); break;
-    case 'sandbox': openSandbox(one.name); break;
+    case 'sandbox': if (SERVER) downloadSandbox(one.name); else openSandbox(one.name); break;
     case 'edit': openEditor(one.name); break;
     case 'pushgroups': openPushGroups(names); break;
     case 'replacegroup': openReplace({ names }); break;

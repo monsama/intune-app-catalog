@@ -246,3 +246,6 @@ document.addEventListener('drop', e => {
 
 // Down arrow from the winget search goes into the results; the picks are then ticked with Space.
 $('awQuery').addEventListener('keydown', e => { if (e.key === 'ArrowDown') { const f = $('awRows').querySelector('input[type=checkbox], button, [tabindex]'); if (f) { e.preventDefault(); f.focus(); } } });
+
+// The server version: winget export runs on a PC - this is the script for it; its file is chosen above.
+$('btnAlScript').addEventListener('click', async () => { const r = await api('/api/winget-export-script'); if (r.ok) { saveB64File(r, 'text/plain'); toast('Run it on the PC (right-click > Run with PowerShell); it saves a file on the desktop - choose that here.'); } else toast(r.error, true); });

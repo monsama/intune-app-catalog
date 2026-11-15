@@ -37,6 +37,14 @@ if [ "${SMOKE_WINGET:-1}" = 1 ]; then
   r="$(post /api/winget-search "{\"token\":\"$T2\",\"q\":\"7zip.7zip\"}")"
   echo "$r" | grep -q '"7zip.7zip"' || fail "winget search from the index: $r"; ok "winget's index answers"
 fi
+# The PC helpers: the scripts for a Windows PC, and what the installed-app script copies made into a rule.
+for h in installed-script winget-export-script; do
+  [ "$(post /api/$h "{\"token\":\"$T2\"}" | field ok)" = "True" ] || fail "PC helper $h"
+done
+body="$(python3 -c 'import json,sys; print(json.dumps({"token":sys.argv[1],"text":json.dumps({"intuneAppCatalog":"installed-app","name":"Foo","key":"{12345678-1234-1234-1234-123456789012}","hive":"HKLM","windowsInstaller":True,"displayVersion":"1.2.3"})}))' "$T2")"
+post /api/detection-from-paste "$body" | grep -q '"Msi"' || fail "detection from a pasted app"
+post /api/detection-from-paste "{\"token\":\"$T2\",\"text\":\"nonsense\"}" | grep -q '"ok":false' || fail "nonsense paste was accepted"
+ok "PC helper scripts and the pasted detection"
 post /api/logout "{\"token\":\"$T2\"}" >/dev/null
 [ "$(post /api/ping "{\"token\":\"$T2\"}" | field reason)" = "signedout" ] || fail "sign-out"; ok "signed out"
 docker volume rm -f "$NAME-data" >/dev/null 2>&1 || true

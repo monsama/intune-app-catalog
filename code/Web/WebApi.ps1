@@ -661,6 +661,11 @@ function Global:Invoke-WebApi {
         '/api/installed-apps'   { return (Get-WebInstalledApps) }
         '/api/detection-from-installed' { return (Get-WebDetectionFromInstalled $Data) }
         '/api/sandbox-start'    { return (Start-WebSandboxTest $Data) }
+        '/api/sandbox-package'  { return (Get-WebSandboxPackage $Data) }
+        '/api/entra-script'     { return (Get-WebEntraScript $Data) }
+        '/api/installed-script' { return (Get-WebInstalledAppsScript) }
+        '/api/detection-from-paste' { return (Get-WebDetectionFromPaste $Data) }
+        '/api/winget-export-script' { return (Get-WebWingetExportScript) }
         '/api/sandbox-result'   { return (Get-WebSandboxResult $Data) }
         '/api/attention'        { return (Get-WebAttention $Data) }
         '/api/managed-default'  { return (Set-WebManagedDefault) }
