@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.27.2
+
+- **Send settings / Deploy of a managed Winget app sent a detection script
+  without the app's name** (`$NamePattern = ''`), so Checks kept reporting
+  "Detection rule differs" however often it was sent. The copy pinned to
+  the App version for the send now carries the app's name (and the name
+  Windows lists it under), so Intune gets exactly the catalog's script.
+  Send settings once more for the managed apps already in Intune - a
+  re-check then finds nothing. Devices weren't affected beyond the
+  detection falling back to winget's list.
+
 ## 2.27.1
 
 - **Checks > Compare**: a finding where the catalog and Intune differ

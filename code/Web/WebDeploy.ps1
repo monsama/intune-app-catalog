@@ -113,7 +113,9 @@ function Global:Start-WebDeploy {
     # Managed: deployed pinned to its App version, whatever the file's commands say.
     if ($a.managedUpdates -and $a.wingetId) {
         if (-not (Test-ReleaseVersionText ([string]$m.appVersion))) { return @{ ok = $false; error = "$name has managed updates, so it is deployed at a fixed version - set its App version first (or More > Take winget's version)." } }
-        $pinned = [pscustomobject]@{ managedUpdates = $true; wingetId = $a.wingetId; metadata = $m.PSObject.Copy() }
+        # The name too: the detection script looks for the app under its name in Windows' list of installed apps
+        # (detectedName, else appName) - a copy without it got an empty pattern, and every send put that in Intune.
+        $pinned = [pscustomobject]@{ managedUpdates = $true; wingetId = $a.wingetId; appName = $a.appName; detectedName = $a.detectedName; metadata = $m.PSObject.Copy() }
         [void](Set-ManagedAppPin $pinned)
         $m = $pinned.metadata
     }
