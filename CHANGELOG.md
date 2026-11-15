@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.22.1
+
+- **Settings > Apps & defaults**: the Architecture checkboxes take a
+  field's height, so the two columns of default values line up row by
+  row (Install for next to Min. memory, Minimum OS next to Min. CPU
+  speed, ...).
+
 ## 2.22.0
 
 A second full sweep - bugs, security, usability and the look - with every
