@@ -265,6 +265,11 @@ function Global:Get-WebAttention {
     $apps = @((Read-WebCatalogRecords).Apps)
     $notDeployed = @($apps | Where-Object { -not $_.appId })
     if ($notDeployed.Count) { & $add 'info' "$($notDeployed.Count) app(s) not deployed yet" ((@($notDeployed | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($notDeployed.Count -gt 5) { ', ...' })) 'apps:notdeployed' }
+    # Winget-AutoUpdate is no longer used (2.19): apps still relying on it are switched to managed updates.
+    $wau = @($apps | Where-Object { @(Get-WauUse $_).Count })
+    if ($wau.Count) { & $add 'warn' "$($wau.Count) app(s) still use Winget-AutoUpdate" ((@($wau | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + " - this catalog no longer uses WAU. Switch them to managed updates: a fixed version, released to the pilot groups first.") 'do:wauswitch' }
+    $wauApp = @($apps | Where-Object { (Test-WauAppName $_.appName) -or (Test-WauAppName $_.wingetId) })
+    if ($wauApp.Count) { & $add 'info' 'Winget-AutoUpdate is still in the catalog' "Managed updates replace it. Once no app uses it any more, take it off the devices: select $($wauApp[0].appName) on Apps, then More > Retire (it's uninstalled where it was assigned)." 'apps:all' }
     # Microsoft's own app types (Company Portal, Microsoft 365 Apps, Store apps) have no package to build - said apart, not as "not built".
     $builtIn = @($apps | Where-Object { -not $_.appId -and (Get-NonPackageAppHint $_) })
     $noPkg = @($apps | Where-Object { -not $_.wingetId -and -not $_.appId -and -not (Get-NonPackageAppHint $_) -and -not (Resolve-AppPackagePath -AppName $_.appName -Uncommon $true -PackagePath $_.packagePath).Found })

@@ -4,7 +4,8 @@ How the catalog keeps apps up to date in Intune with a pilot ring:
 versions are released to a test group first, and reach everyone only once
 the pilot devices are fine.
 
-It replaces Winget-AutoUpdate (WAU) for the apps that use it. Every version
+It replaces Winget-AutoUpdate (WAU), which the catalog no longer uses at
+all (2.19). Every version
 is an Intune app of its own, so Intune reports per device which version it
 has, and nothing changes on a device without an assignment you can see in
 the portal.
@@ -93,9 +94,12 @@ apps without a version winget's current one.
    - **Failed at most X %** of the pilot devices that tried.
    - **Installed on at least M** pilot devices.
 2. **Settings > Apps & defaults > Default values**: "Winget apps install with:
-   Managed updates" for new apps. Take *Winget AutoUpdate* out of the
-   default dependencies. A managed app doesn't need it.
+   Managed updates" for new apps.
 3. For existing apps: select them, **More > Managed updates on...**
+   Apps that still install through Winget-AutoUpdate (from before 2.19)
+   are listed on **Home**: **Switch them** turns managed updates on, pins
+   them to their App version, removes their dependency on WAU and pushes
+   the new commands to Intune.
 4. A managed Winget app needs an **App version** before its first deploy:
    **More > Take winget's version**. That deploy is its first release.
 
@@ -242,3 +246,19 @@ signs in with the app's own certificate, like the page.
   portal, or run the action again.
 - **Undo** (the banner over the Apps list) takes back a promotion or
   rollback *in the catalog*. It does not change Intune.
+
+## Winget-AutoUpdate is gone
+
+Since 2.19 the catalog doesn't generate Winget-AutoUpdate commands, doesn't
+offer it as an install method and doesn't add it as a dependency. Two
+updaters on the same app fight: WAU would update an app past the version a
+release pinned, outside the pilot groups.
+
+After switching the apps (Home > **Switch them**), take WAU off the devices:
+select it on **Apps**, then **More > Retire** - it's uninstalled where it
+was assigned. Apps that aren't in the catalog aren't updated any more:
+add the ones that matter (Apps worth adding lists what devices have).
+
+Devices that installed an app from the Company Portal (an Available
+assignment) are updated too: when a release is promoted, its Available
+assignments have Intune's *auto-update superseded apps* turned on.

@@ -244,7 +244,7 @@ function methodText(m, pinned) {
   const v = $('mAppVersion').value.trim(), w = editorWingetOffers, now = w ? ` Winget has ${w} now (last check).` : '';
   if (m === 'Managed') return !v ? "Installs the App version with winget - but there's no App version yet: set one (More > Take winget's version) before deploying."
     : `Installs exactly ${pinned || v} (the App version), with winget. Newer versions reach devices only when you release them: pilot groups first, then everyone.` + (w && w !== v ? ` Winget has ${w} now - release it on Updates.` : '');
-  if (m === 'WAU') return "Installs whatever version winget has at that moment - nothing is pinned. Runs WAU's Winget-Install.ps1, so Winget-AutoUpdate must already be on the device; WAU then updates the app on its own schedule." + now;
+  if (m === 'WAU') return "Still installs through Winget-AutoUpdate, which this catalog no longer uses. Choose Managed updates (or the winget command) - Home switches all such apps at once.";
   if (m === 'Winget') return 'Installs whatever version winget has at that moment - nothing is pinned. Nothing updates it afterwards.' + now;
   return 'The install command was edited by hand, so it is left as it is - check it for which version it installs. Choosing a method here replaces it.';
 }
@@ -889,7 +889,7 @@ function readBatch() {
     minOSKey: () => $('bMinOs').value, installContext: () => $('bContext').value, installTimeMinutes: () => $('bTime').value.trim(),
     minDiskSpaceMB: () => $('bDisk').value.trim(), minMemoryMB: () => $('bMem').value.trim(), minProcessors: () => $('bCpus').value.trim(), minCpuSpeedMHz: () => $('bSpeed').value.trim(),
     deviceRestartBehavior: () => $('bRestart').value, allowAvailableUninstall: () => $('bUninstall').value === '1', isFeatured: () => $('bFeatured').value === '1',
-    wingetInstallMethod: () => $('bMethod').value, publisher: () => $('bPublisher').value, owner: () => $('bOwner').value, developer: () => $('bDeveloper').value,
+    publisher: () => $('bPublisher').value, owner: () => $('bOwner').value, developer: () => $('bDeveloper').value,
     informationUrl: () => $('bInfoUrl').value, privacyUrl: () => $('bPrivacyUrl').value, notes: () => $('bNotes').value,
     returnCodes: () => lines('bCodes').map(l => { const m = /^(-?\d+)\s*[=:]\s*(\w+)$/.exec(l); return m ? { returnCode: m[1], type: m[2] } : { returnCode: l, type: '' }; }),
     dependencies: () => [...document.querySelectorAll('[data-bdep]')].filter(c => c.checked).map(c => c.dataset.bdep),

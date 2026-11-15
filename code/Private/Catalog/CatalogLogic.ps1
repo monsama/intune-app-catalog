@@ -167,9 +167,9 @@ function Global:Get-WingetIdFromInstallCommand {
 
       An app imported from Intune has no Winget ID, because Intune has no
       such field - but the command line usually says. This tool's own
-      Winget apps deploy through Winget-AutoUpdate's Winget-Install.ps1
-      with -AppIDs "Some.App" (see Get-CreateAppTemplates), and a plain
-      "winget install --id Some.App" says the same thing another way.
+      Winget apps call "winget install --id Some.App", and commands of
+      Winget-AutoUpdate's Winget-Install.ps1 (-AppIDs "Some.App", from
+      before 2.19 or other tools) say the same thing another way.
       Reading it back turns an imported app that IS a Winget app into one
       the catalog knows is a Winget app, which is the difference between
       deploying it from the shared package and treating it as uncommon.
@@ -834,10 +834,9 @@ function Global:Get-FactoryAppSettings {
         # The app(s) every OTHER app defaults to depending on, when an app
         # by that name exists in the catalog - an empty array means "no
         # default dependencies".
-        DefaultDependencyAppNames = @("Winget AutoUpdate")
+        DefaultDependencyAppNames = @()
         # How a Winget app's generated install and uninstall commands run
-        # winget: "WAU" through Winget-AutoUpdate's Winget-Install.ps1
-        # (needs WAU on the device), "Winget" by calling winget.exe itself.
+        # winget: "Managed" pinned to the App version, "Winget" the newest.
         # New Winget apps: a pinned version, new ones released through the pilot groups (managed updates).
         WingetInstallMethod      = "Managed"
     }
@@ -883,6 +882,8 @@ function Global:Get-CreateAppTemplates {
 
     if (-not $Uncommon -and $WingetId) {
         if (-not $Method) { $Method = [string]$Global:App.DefaultAppSettings.WingetInstallMethod }
+        # Winget-AutoUpdate is no longer generated (2.19).
+        if ($Method -eq 'WAU') { $Method = 'Winget' }
         $commands = Get-WingetCommandLines -WingetId $WingetId -Method $Method -InstallContext ([string]$Global:App.DefaultAppSettings.InstallContext)
         $install = $commands.Install
         $uninstall = $commands.Uninstall
@@ -925,9 +926,8 @@ function Global:Get-WingetCommandLines {
     <#
       The install and uninstall command lines for a Winget app.
 
-      "WAU" (also what anything else falls back to) runs Winget-AutoUpdate's
-      Winget-Install.ps1, so the device needs WAU installed. "Winget" calls
-      winget.exe itself: under SYSTEM it isn't on PATH, so the command finds
+      "Managed" pins -Version; "Winget" (also what anything else falls back
+      to) installs the newest. Both call winget.exe itself: under SYSTEM it isn't on PATH, so the command finds
       it in the App Installer package folder first, and falls back to plain
       "winget" for a user install, which can't list that folder.
     #>
@@ -949,7 +949,10 @@ function Global:Get-WingetCommandLines {
         $Method = "Winget"
         if ($Version -and (Test-ReleaseVersionText $Version)) { $pin = " --version '$(ConvertTo-PsSingleQuotedContent $Version)'" }
     }
-    if ($Method -eq "Winget") {
+    # "WAU" is only asked for to recognise commands of Winget-AutoUpdate's
+    # Winget-Install.ps1 (before 2.19), so they can be switched to managed
+    # updates - it is never generated for an app any more.
+    if ($Method -ne "WAU") {
         $scope = if ($InstallContext -eq "User") { "" } else { " --scope machine" }
         # Newest App Installer first: there can be more than one version
         # side by side, and a plain name sort puts 1.9 after 1.21.
@@ -1016,6 +1019,8 @@ function Global:Convert-AppWingetInstallMethod {
 
     $current = Get-AppWingetInstallMethod -WingetId $WingetId -InstallCommand $InstallCommand -UninstallCommand $UninstallCommand
     if (-not $current) { return @{ Status = "Custom"; Install = $InstallCommand; Uninstall = $UninstallCommand } }
+    # Never back to Winget-AutoUpdate (2.19): its commands only switch away.
+    if ($Method -eq 'WAU') { $Method = 'Winget' }
     $wanted = Get-WingetCommandLines -WingetId $WingetId -Method $Method -InstallContext $InstallContext
     if ($wanted.Install -eq $InstallCommand -and $wanted.Uninstall -eq $UninstallCommand) {
         return @{ Status = "Already"; Install = $InstallCommand; Uninstall = $UninstallCommand }
@@ -2153,7 +2158,7 @@ function Global:Set-AppWingetIdCommands {
     <#
       Pure apart from changing -App: an app whose Winget ID changed from -OldId
       gets its generated install and uninstall commands for the new ID (any
-      form: WAU, winget, managed with its pinned version), and its detection
+      form: winget, managed with its pinned version, the old WAU form), and its detection
       script's ID too. Commands edited by hand are left alone. Returns whether
       anything changed.
     #>
@@ -2206,4 +2211,39 @@ function Global:Get-ClosestGroupName {
     $hits = @(@($Candidates) | Where-Object { $_ -and $_ -cne $Name -and (& $norm $_) -eq $want } | Select-Object -Unique)
     if ($hits.Count -eq 1) { return [string]$hits[0] }
     return ''
+}
+
+
+function Global:Test-WauAppName {
+    # Pure: whether a catalog app name or Winget ID is Winget-AutoUpdate itself.
+    param([string]$Name)
+    return ([string]$Name -match '(?i)^\s*(Romanitho\.)?winget[\s\-_.]*auto[\s\-_]*update\s*$')
+}
+
+function Global:Get-WauUse {
+    <#
+      Pure: how an app still relies on Winget-AutoUpdate, which this catalog
+      no longer uses (2.19) - @() when it doesn't. 'commands': its install
+      commands run Winget-Install.ps1; 'dependency': it depends on the WAU app.
+      WAU itself isn't counted (it's retired, not switched).
+    #>
+    param($App)
+    if ((Test-WauAppName $App.appName) -or (Test-WauAppName $App.wingetId)) { return @() }
+    $m = $App.metadata
+    $use = @()
+    if ($App.wingetId -and $m -and (Get-AppWingetInstallMethod -WingetId $App.wingetId -InstallCommand ([string]$m.installCommand) -UninstallCommand ([string]$m.uninstallCommand)) -eq 'WAU') { $use += 'commands' }
+    elseif ($m -and ([string]$m.installCommand) -match '(?i)Winget-AutoUpdate\\Winget-Install\.ps1') { $use += 'commands' }
+    if ($m -and @(@($m.dependencies) | Where-Object { Test-WauAppName ([string]$_) }).Count) { $use += 'dependency' }
+    return $use
+}
+
+function Global:Get-ReleaseAvailableSettings {
+    <#
+      Pure: settings for the Available assignments of a release that replaces
+      an older one - Intune updates the devices that installed the older
+      version from Company Portal too (auto-update superseded apps), not only
+      the Required groups.
+    #>
+    return [ordered]@{ '@odata.type' = '#microsoft.graph.win32LobAppAssignmentSettings'; notifications = 'showAll'
+        autoUpdateSettings = [ordered]@{ '@odata.type' = '#microsoft.graph.win32LobAppAutoUpdateSettings'; autoUpdateSupersededAppsState = 'enabled' } }
 }

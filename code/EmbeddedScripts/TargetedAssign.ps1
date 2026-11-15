@@ -328,7 +328,7 @@ try {
     # inclusion intent already exists for group id: ..."), failing the
     # ENTIRE app's assignment even though the preview had reported "no
     # change".
-    $assignBodyObject = New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdByName -RequiredSettings $Config.RequiredSettings -FilterIdByName $filterIdByName
+    $assignBodyObject = New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdByName -RequiredSettings $Config.RequiredSettings -AvailableSettings $Config.AvailableSettings -FilterIdByName $filterIdByName
     if ($Config.RequiredSettings) {
         $rs = $Config.RequiredSettings
         Write-Host ("  Required installs: " + $(if ($rs.installTimeSettings) { "deadline $($rs.installTimeSettings.deadlineDateTime) (UTC)" } else { 'as soon as possible' }) +

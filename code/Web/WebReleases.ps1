@@ -187,6 +187,8 @@ function Global:Start-WebReleaseAssign {
         FilterName = [string]$a.assignmentFilter; FilterMode = [string]$a.assignmentFilterMode
         CreateMissingGroups = ($step -in 'pilot', 'advance'); OutputResultPath = $resultPath
         # Install deadline, restart grace period, notifications (Settings > Managed updates) on the Required assignments.
+        # Promoted (it supersedes the version before): Company Portal installs are updated as well.
+        AvailableSettings = $(if ($step -eq 'promote') { Get-ReleaseAvailableSettings } else { $null })
         RequiredSettings = $(if ($step -in 'pilot', 'advance', 'promote', 'rollback') { Get-ReleaseAssignmentSettings -Policy $Global:App.ReleasePolicy -FastTrack ([bool]($pilot -and $pilot.fastTrack -and $step -ne 'rollback')) -NowUtc ([datetime]::UtcNow) } else { $null })
     }
     # The pilot assignment done: the release is no longer waiting for it.
@@ -616,4 +618,43 @@ function Global:Exit-WebAppBusy {
     param([string]$Name)
     $file = Get-WebBusyFile $Name
     try { if ((Test-Path -LiteralPath $file) -and [int]((Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).pid) -eq $PID) { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue } } catch { }
+}
+
+function Global:Invoke-WebWauSwitch {
+    <#
+      Winget-AutoUpdate is gone (2.19): every app still installing through
+      its Winget-Install.ps1, or depending on the WAU app, is switched to
+      managed updates - pinned to its App version, or to the plain winget
+      command until it has one - and its WAU dependency removed. -preview
+      lists them without changing anything. With Undo.
+    #>
+    param($Data)
+    $all = @((Read-WebCatalogRecords).Apps)
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($a in $all) { $use = @(Get-WauUse $a); if ($use.Count) { $rows.Add([ordered]@{ app = [string]$a.appName; use = $use; deployed = [bool]$a.appId; hasVersion = [bool](Test-ReleaseVersionText ([string]$(if ($a.metadata) { $a.metadata.appVersion }))) }) } }
+    $wauApp = @($all | Where-Object { (Test-WauAppName $_.appName) -or (Test-WauAppName $_.wingetId) } | ForEach-Object { [string]$_.appName })
+    if ($Data.preview) { return @{ ok = $true; apps = $rows.ToArray(); wauApp = $wauApp } }
+    $undo = New-WebUndo 'Switch from Winget-AutoUpdate to managed updates'
+    $changed = New-Object System.Collections.Generic.List[string]
+    $noVersion = New-Object System.Collections.Generic.List[string]
+    foreach ($a in @($all | Where-Object { @(Get-WauUse $_).Count })) {
+        if (Get-WebAppRelease $a) { continue }
+        $m = $a.metadata
+        if ($m.PSObject.Properties['dependencies']) { $m.dependencies = @(@($m.dependencies) | Where-Object { $_ -and -not (Test-WauAppName ([string]$_)) }) }
+        if ($a.wingetId -and -not (Test-StoreProductId ([string]$a.wingetId))) {
+            $a.managedUpdates = $true
+            if (-not (Set-ManagedAppPin $a) -and (Get-AppWingetInstallMethod -WingetId $a.wingetId -InstallCommand ([string]$m.installCommand) -UninstallCommand ([string]$m.uninstallCommand)) -eq 'WAU') {
+                # No App version yet: the newest from winget for now - Take winget's version pins it.
+                $c = Get-WingetCommandLines -WingetId $a.wingetId -Method 'Winget' -InstallContext ([string]$m.installContext)
+                $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall
+                $m.returnCodes = @(Add-WingetRetryReturnCode $m.returnCodes)
+                $noVersion.Add([string]$a.appName)
+            }
+        }
+        Write-WebAppFile -App $a -Undo $undo
+        $changed.Add([string]$a.appName)
+    }
+    Save-WebUndo $undo
+    Write-Log "[OK] Switched $($changed.Count) app(s) from Winget-AutoUpdate to managed updates$(if ($noVersion.Count) { " ($($noVersion.Count) still need an App version: $($noVersion -join ', '))" })."
+    return @{ ok = $true; changed = $changed.ToArray(); noVersion = $noVersion.ToArray(); deployed = @($all | Where-Object { $changed -contains $_.appName -and $_.appId } | ForEach-Object { [string]$_.appName }); wauApp = $wauApp }
 }

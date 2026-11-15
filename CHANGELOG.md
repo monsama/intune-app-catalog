@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.19.0
+
+Winget-AutoUpdate (WAU) is removed. Managed updates are the one way the
+catalog updates apps.
+
+- **No more WAU commands.** New apps, the editor's Install with, the
+  default setting and batch edit offer Managed updates or the winget
+  command only. A setting saved with WAU loads as Managed updates.
+- **No WAU dependency.** The default dependency on a "Winget AutoUpdate"
+  app is gone, also from settings saved before.
+- **Home > Switch them.** Apps still installing through WAU, or depending
+  on it, are listed. One click turns managed updates on, pins each to its
+  App version (the newest from winget until it has one), removes the WAU
+  dependency and pushes the new commands to Intune. Undo works.
+- **Home** also says when the WAU app itself is still in the catalog:
+  retire it to take it off the devices.
+- **Company Portal installs are updated too.** When a release is
+  promoted, its Available assignments have Intune's "auto-update
+  superseded apps" on, so devices that installed the app themselves get
+  the new version - not only the Required groups.
+
 ## 2.18.1
 
 Layout fixes, found by checking every page and Settings section for

@@ -123,7 +123,7 @@ function Global:New-SharedWingetPackage {
       Builds init.intunewin.
 
       Every Winget app is deployed with this one package and none of them
-      read a byte of it: the install command runs Winget-Install.ps1 on the
+      read a byte of it: the install command runs winget on the
       device, and the detection rule asks Winget what is installed. So the
       content only has to be a valid package - a single readable file
       saying what it is, which is friendlier than an empty folder to
@@ -152,7 +152,7 @@ function Global:New-SharedWingetPackage {
 This package is deliberately empty.
 
 Every Winget app in this catalog is deployed with it, because Winget does
-the installing on the device (Winget-Install.ps1) and the detection rule
+the installing on the device and the detection rule
 asks Winget what is present. Intune requires a package to be uploaded, so
 this is that package - its contents are never read.
 
