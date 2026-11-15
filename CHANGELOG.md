@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.27.3
+
+- **Home: "Install the WinGet PowerShell module" has an Install it
+  button.** It installs Microsoft.WinGet.Client from the PowerShell
+  Gallery for your user only (the same way Settings > Prerequisites
+  installs the Graph module), into the PowerShell the app runs in, and
+  winget is asked through it straight away - no PowerShell window, no
+  command to copy, no restart.
+
 ## 2.27.2
 
 - **Send settings / Deploy of a managed Winget app sent a detection script

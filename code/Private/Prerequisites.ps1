@@ -143,7 +143,9 @@ function Global:Get-GraphModuleStatus {
 
 function Global:Get-GraphModuleInstallScript {
     # The installer for the Graph module, run in each PowerShell that's missing it (Settings > Prerequisites).
-    $moduleName = Get-GraphModuleName
+    # -ModuleName: another module from the PowerShell Gallery the same way (Microsoft.WinGet.Client, from Home).
+    param([string]$ModuleName = '')
+    $moduleName = if ($ModuleName) { $ModuleName } else { Get-GraphModuleName }
     return @'
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'

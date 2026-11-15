@@ -276,7 +276,7 @@ function Global:Get-WebAttention {
     if ($notDeployed.Count) { & $add 'info' "$($notDeployed.Count) app(s) not in Intune yet" ((@($notDeployed | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($notDeployed.Count -gt 5) { ', ...' })) 'apps:notdeployed' }
     # winget.exe answers in Windows' display language; its text is read in several languages, but Microsoft's WinGet module is exact in all of them.
     if (-not $Global:App.TestGraph -and @($apps | Where-Object { $_.wingetId }).Count -and (Get-UICulture).TwoLetterISOLanguageName -ne 'en' -and (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not (Test-WingetClientModule)) {
-        & $add 'info' 'Install the WinGet PowerShell module' "Windows here isn't in English, so winget's answers are read from translated text. For exact answers in any language, run once in PowerShell: Install-Module Microsoft.WinGet.Client -Scope CurrentUser" ''
+        & $add 'info' 'Install the WinGet PowerShell module' "Windows here isn't in English, so winget's answers are read from translated text. For exact answers in any language, install Microsoft's WinGet module (for your user only, from the PowerShell Gallery) - Install it does it." 'do:wingetmodule'
     }
     # Winget-AutoUpdate is no longer used (2.19): apps still relying on it are switched to managed updates.
     $wau = @($apps | Where-Object { @(Get-WauUse $_).Count })

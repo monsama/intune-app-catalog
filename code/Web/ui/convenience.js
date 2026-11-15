@@ -264,7 +264,7 @@ async function loadHome() {
   const where = { 'settings:connection': ['Settings', () => showSettings('connection')], 'settings:defaults': ['Settings', () => showSettings('defaults')], 'settings:updates': ['Settings', () => showSettings('updates')], 'settings:automation': ['Settings', () => showSettings('automation')], 'settings:packaging': ['Settings', () => showSettings('packaging')],
     'apps:notdeployed': ['Show them', () => { showView('apps'); $('filter').value = 'notdeployed'; renderApps(); updateViewButtons(); }], 'apps:all': ['Apps', () => showView('apps')],
     updates: ['Updates', () => showView('updates')], checks: ['Checks', () => showView('checks')],
-    'open:release': ["What's new", () => api('/api/open', { target: 'release' })], 'do:manageddefault': ['Make it the default', makeManagedDefault], 'do:managedall': ['Turn on for all', managedForAll], 'do:takeversions': ["Take winget's versions", takeVersionsForManaged], 'do:wauswitch': ['Switch them', wauSwitch], 'do:portalstore': ['Fix Company Portal', portalStore], 'do:filldetails': ['Fill them in', () => fillDetails([])] };
+    'open:release': ["What's new", () => api('/api/open', { target: 'release' })], 'do:manageddefault': ['Make it the default', makeManagedDefault], 'do:managedall': ['Turn on for all', managedForAll], 'do:takeversions': ["Take winget's versions", takeVersionsForManaged], 'do:wauswitch': ['Switch them', wauSwitch], 'do:portalstore': ['Fix Company Portal', portalStore], 'do:filldetails': ['Fill them in', () => fillDetails([])], 'do:wingetmodule': ['Install it', installWingetModule] };
   const pill = { err: ['err', 'Problem'], warn: ['warn', 'Look'], ok: ['ok', 'Ready'], info: ['info', 'To do'] };
   $('homeList').replaceChildren(...(r.items.length ? r.items.map(i => { const w = where[i.go], p = pill[i.level] || pill.info;
     const busy = homeRunning.has(i.go);
@@ -388,6 +388,16 @@ async function managedForAll() {
   const r = await api('/api/managed-updates', { names, on: true });
   toast(r.ok ? `Managed updates on for ${r.changed.length} app(s)${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}.` : r.error, !r.ok, r.ok ? [{ label: 'Undo', run: () => undoLast() }] : []);
   await loadApps(); loadHome();
+}
+// Microsoft's WinGet PowerShell module: exact winget answers whatever Windows' language. Installed for this user only.
+function installWingetModule() {
+  return new Promise(resolve => {
+    runDialog('Install the WinGet PowerShell module', 'Microsoft.WinGet.Client, from the PowerShell Gallery, for your user');
+    runJob({}, (ok, res, after) => {
+      toast(ok && after && after.module ? 'WinGet module installed - winget is now asked through it, in any language.' : ok ? 'Installed, but the module could not be loaded yet - restart the app.' : 'The WinGet module could not be installed - see the log.', !ok);
+      loadHome(); resolve();
+    }, { path: '/api/winget-module-install', log: 'runLog', startText: 'Installing Microsoft.WinGet.Client...' }).then(started => { if (!started) resolve(); });
+  });
 }
 async function takeVersionsForManaged() {
   const names = apps.filter(a => a.wingetId && a.managed && !a.version).map(a => a.name);

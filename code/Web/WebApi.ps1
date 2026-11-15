@@ -309,6 +309,8 @@ function Global:Complete-WebJob {
     if ($After.Kind -in 'deploy', 'deleted', 'addtocatalog') { $Global:App.IntuneAppsCache = $null }
     switch ($After.Kind) {
         'grouprename' { return (Complete-WebGroupRename -After $After) }
+        # Looked for again: winget is asked through the module from now on.
+        'wingetmodule' { $Global:App.WingetClientModule = $null; return @{ ok = $true; module = [bool](Test-WingetClientModule) } }
         'groupsaved' { return (Complete-WebGroupSaved -After $After -Result $Result) }
         'retire' { return (Complete-WebRetire -After $After) }
         'pilotassigned' {
@@ -693,6 +695,7 @@ function Global:Invoke-WebApi {
         '/api/diagnostics'      { return (Get-WebDiagnostics) }
         '/api/prereqs'          { return (Get-WebPrerequisites) }
         '/api/prereq-install'   { return (Start-WebPrerequisiteInstall $Data) }
+        '/api/winget-module-install' { return (Start-WebWingetModuleInstall) }
         '/api/certs-all'        { return (Get-WebAllLocalCertificates) }
         '/api/cert-delete-local' { return (Remove-WebLocalCertificate $Data) }
         '/api/packaging'        { return (Get-WebPackaging) }
