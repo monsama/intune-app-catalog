@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.28.0
+
+- **The server version: the app as a Docker container.** The same app, on a
+  Linux server next to NOBS Inventory, behind its shared HTTPS proxy -
+  `sudo ICA_HOST=apps.example.ch ./deploy-ica.sh` sets it up (image
+  `ghcr.io/monsama/intune-app-catalog`), see docs/docker.md. The nightly
+  run and the fast-track runs happen on the server: no PC has to stay on.
+  - **One admin, one session**: the admin password is a Docker secret;
+    signing in ends a session that is open in another browser (it goes
+    back to the sign-in page and says why); a session also ends after 2
+    hours idle and 12 hours after sign-in; five wrong passwords in a
+    minute pause the checks for a minute; Sign out top right.
+  - **winget without winget**: search, versions, details, installer links
+    and fill-in come from winget's own package index (the same source
+    winget reads, from cdn.winget.microsoft.com), refreshed every 6 hours.
+  - **The certificate** lives in the server's store on the data volume:
+    import the .pfx you have, or create one and download its .cer for
+    Entra ID (adding it and the API permissions there is done by hand -
+    the server can't sign you in to Entra ID).
+  - MSI product codes and versions are read with msitools; packages are
+    built with the built-in packager; the deployment steps run with
+    PowerShell 7 (the fake-Graph step tests now also run on Linux).
+  - Not in the server version: the Windows Sandbox test, Detection from an
+    app on this PC, Read this PC's apps, Open folder, IntuneWinAppUtil.exe.
+  - The apps you have: send them to Intune from the desktop version, then
+    Checks > Add to catalog on the server.
+  - The container is read-only and runs without rights; everything it keeps
+    is on the volume intune-app-catalog-data. scripts/update-ica.sh updates
+    (with a backup, and back again when unhealthy), scripts/backup-ica.sh
+    backs up, scripts/docker-smoke.sh tests an image; CI builds and tests
+    the image on every push, a release publishes it.
+- The desktop version reads certificates through .NET's store (the same
+  lists as before) and MSI files through one helper - no change in use.
+
 ## 2.27.8
 
 - **A fixed header bar above every page**: the page's name on the left,

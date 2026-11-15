@@ -144,6 +144,12 @@ Releases are signed when the repository has a code-signing certificate
 otherwise the scripts are unsigned. A policy of `AllSigned` won't run the
 app either way: it writes its step helpers at run time.
 
+## Server version (Docker)
+
+The same app also runs as a Linux container on a server, next to NOBS Inventory and behind its HTTPS proxy:
+people open it in the browser and sign in with the admin password, and the nightly run happens on the server.
+`sudo ICA_HOST=apps.example.ch ./deploy-ica.sh` sets it up - see [docs/docker.md](docs/docker.md).
+
 ## Getting started
 
 1. Unpack the zip somewhere other than Downloads - endpoint protection such

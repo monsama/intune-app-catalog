@@ -127,7 +127,8 @@ $handler = {
         $refusal = Test-WebRequestAllowed $req
         if ($refusal) { Send-WebResponse $Client '403 Forbidden' 'text/plain; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes('Forbidden')); return }
         if ($req.Path -like '/api/*') {
-            if ($req.Path -eq '/api/health') { Send-WebJson $Client @{ ok = $true; version = $App.AppVersion }; return }
+            # The container's health check (a GET) - the page's own Health checks are a POST to the same name.
+            if ($req.Path -eq '/api/health' -and $req.Method -eq 'GET') { Send-WebJson $Client @{ ok = $true; version = $App.AppVersion }; return }
             $data = $null
             try { if ($req.Body) { $data = $req.Body | ConvertFrom-Json } } catch { }
             # Before signing in: what kind of server this is, and the sign-in itself.
@@ -169,6 +170,7 @@ if (-not $NoBrowser) {
 $inFlight = New-Object System.Collections.Generic.List[object]
 $run = $true
 $lastOrphanCheck = Get-Date
+$lastScheduleCheck = Get-Date; $scheduleState = @{}
 while ($run) {
     $pending = $false
     try { $pending = $listener.Server.Poll(200000, [System.Net.Sockets.SelectMode]::SelectRead) } catch { Start-Sleep -Milliseconds 50 }
@@ -196,6 +198,8 @@ while ($run) {
     $inFlight = $still
     # A step that ended while no page polled it (reload, closed tab) is finished here.
     if (((Get-Date) - $lastOrphanCheck).TotalSeconds -ge 5) { $lastOrphanCheck = Get-Date; try { Complete-WebOrphanJobs } catch { } }
+    # The server version: its own schedule for the nightly and fast-track runs (no Windows scheduled tasks).
+    if ($serverMode -and ((Get-Date) - $lastScheduleCheck).TotalSeconds -ge 30) { $lastScheduleCheck = Get-Date; try { Invoke-WebServerSchedule -State $scheduleState } catch { } }
     if ($shared.Quit) { $run = $false }
     elseif ($browser -and $browser.HasExited) { $run = $false }
     elseif (-not $serverMode -and ((Get-Date) - $shared.LastPing).TotalHours -gt 6) { $run = $false }

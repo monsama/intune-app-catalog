@@ -7,7 +7,7 @@ FROM mcr.microsoft.com/powershell:7.5-ubuntu-24.04
 # version, curl is the health check. Security fixes Ubuntu has published since the base image was built.
 RUN apt-get update \
  && apt-get upgrade -y --no-install-recommends \
- && apt-get install -y --no-install-recommends sqlite3 msitools curl ca-certificates \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends sqlite3 msitools curl ca-certificates tzdata \
  && rm -rf /var/lib/apt/lists/*
 
 # Microsoft Graph (sign-in and requests) for every user of the image - the app runs as a user without a home of its own.

@@ -1414,3 +1414,10 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 .logincard .btn.primary { height: 38px; justify-content: center; }
 .loginwhy { margin: 0; padding: 8px 12px; border-radius: var(--r-m); background: var(--warn-bg); color: var(--warn); font-size: 13px; }
 .loginnote { margin: 0; font-size: 12px; color: var(--muted); }
+
+/* ---- The server version (the container): what only works on a Windows PC is left out, what replaces it shown ---- */
+.serveronly { display: none !important; }
+.servermode .serveronly { display: revert !important; }
+.servermode .actions.serveronly { display: flex !important; }
+.servermode .desktoponly { display: none !important; }
+#dlgPfx label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); margin-top: 10px; }

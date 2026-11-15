@@ -213,3 +213,38 @@ function Global:New-AppSelfSignedCertificate {
     $rsa.Dispose()
     return $cert
 }
+
+# ---------------------------------------------------------------- the nightly run without Windows' scheduled tasks
+function Global:Invoke-WebServerSchedule {
+    <#
+      Called by the server's loop every half minute. When the nightly run is on (Settings > Nightly run & alerts):
+      the run at its time each day - and once the container is back when it was down at that time - and the
+      fast-track run every 2 hours, each as its own process (IntuneDeployment.ps1 -RunUpdates), as Windows'
+      scheduled tasks would start it. Never two at once; when each last started is kept in data\server-schedule.json.
+    #>
+    param([hashtable]$State)
+    $p = $Global:App.ReleasePolicy
+    if (-not $p -or -not $p.ServerSchedule) { return }
+    if ($State.Run -and -not $State.Run.HasExited) { return }
+    $file = Join-Path $Global:App.RootPath 'data\server-schedule.json'
+    if (-not $State.Loaded) {
+        $State.Loaded = $true
+        try { $j = Get-Content -LiteralPath $file -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json; $State.Nightly = [datetime]$j.nightly; $State.FastTrack = [datetime]$j.fastTrack } catch { }
+    }
+    $now = Get-Date
+    $at = [datetime]::ParseExact("$($now.ToString('yyyy-MM-dd')) $($p.RunAt)", 'yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture)
+    $extra = $null
+    if ($now -ge $at -and (-not $State.Nightly -or $State.Nightly -lt $at)) { $extra = @(); $State.Nightly = $now }
+    elseif (-not $State.FastTrack -or ($now - $State.FastTrack).TotalHours -ge 2) { $extra = @('-FastTrackOnly'); $State.FastTrack = $now }
+    if ($null -eq $extra) { return }
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = (Get-Process -Id $PID).Path
+        foreach ($a in @('-NoLogo', '-NoProfile', '-File', (Join-Path $Global:App.RootPath 'IntuneDeployment.ps1'), '-RunUpdates') + $extra) { $psi.ArgumentList.Add($a) }
+        $psi.UseShellExecute = $false
+        $State.Run = [System.Diagnostics.Process]::Start($psi)
+        Write-Log "[INFO] $(if ($extra.Count) { 'Fast-track run' } else { 'Nightly run' }) started (the server's schedule)."
+    }
+    catch { Write-Log "[FAILED] The $(if ($extra.Count) { 'fast-track' } else { 'nightly' }) run couldn't start: $($_.Exception.Message)" }
+    try { [System.IO.File]::WriteAllText($file, (@{ nightly = $(if ($State.Nightly) { $State.Nightly.ToString('o') }); fastTrack = $(if ($State.FastTrack) { $State.FastTrack.ToString('o') }) } | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false))) } catch { }
+}

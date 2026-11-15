@@ -119,8 +119,11 @@ function Global:Start-WebStepJob {
         [string]$BusyApp = '')
     $tag = [guid]::NewGuid().ToString('N')
     $configPath = Join-Path $env:TEMP ".intunepkg_$($Name)_config_$tag.json"
-    $scriptPath = Join-Path $Global:App.RootPath ".intunepkg_embedded_$($Name)_$tag.ps1"
-    $helperPath = Join-Path $Global:App.RootPath ".intunepkg_graphlog_$tag.ps1"
+    # The server version (the container): the app's own folder is read-only - the step files go on the data volume.
+    $stepDir = $Global:App.RootPath
+    if (Test-WebServerMode) { $stepDir = Join-Path $Global:App.RootPath 'data\run'; if (-not (Test-Path -LiteralPath $stepDir)) { [void](New-Item -ItemType Directory -Path $stepDir -Force) } }
+    $scriptPath = Join-Path $stepDir ".intunepkg_embedded_$($Name)_$tag.ps1"
+    $helperPath = Join-Path $stepDir ".intunepkg_graphlog_$tag.ps1"
     $logPath = Join-Path $env:TEMP "intunepkg_$tag.log"
     $utf8 = New-Object System.Text.UTF8Encoding($false)
     try {

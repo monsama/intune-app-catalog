@@ -213,7 +213,9 @@ function Global:ConvertTo-ReleasePolicy {
         FastTrackHours = 4; DeadlineDays = 0; RestartGraceMinutes = 0; Notifications = 'showAll'
         # The nightly run's other work: release window, automatic withdraw, drift, backup, monthly report, the test tenant's catalog.
         ReleaseDays = @(0, 1, 2, 3, 4, 5, 6); SkipLastWeek = $false; AutoWithdrawPercent = 0; DriftCheck = $true; DriftFix = $false
-        BackupCatalog = $true; BackupGit = $false; MonthlyReport = $false; GatePath = '' }
+        BackupCatalog = $true; BackupGit = $false; MonthlyReport = $false; GatePath = ''
+        # The server version (the container): its own schedule instead of Windows' scheduled tasks.
+        ServerSchedule = $false }
     if (-not $Raw) { return $p }
     if ($null -ne $Raw.ReleaseDays) {
         $d = @(@($Raw.ReleaseDays) | Where-Object { "$_" -match '^[0-6]$' } | ForEach-Object { [int]"$_" } | Sort-Object -Unique)
@@ -226,6 +228,7 @@ function Global:ConvertTo-ReleasePolicy {
     if ($null -ne $Raw.BackupCatalog) { $p.BackupCatalog = [bool]$Raw.BackupCatalog }
     if ($null -ne $Raw.BackupGit) { $p.BackupGit = [bool]$Raw.BackupGit }
     if ($null -ne $Raw.MonthlyReport) { $p.MonthlyReport = [bool]$Raw.MonthlyReport }
+    if ($null -ne $Raw.ServerSchedule) { $p.ServerSchedule = [bool]$Raw.ServerSchedule }
     $gate = ([string]$Raw.GatePath).Trim()
     if ($gate -and $gate.Length -le 260 -and $gate -notmatch '[*?"<>|]' -and ($gate -match '^[A-Za-z]:\\' -or $gate -match '^\\\\[^\\]+\\' -or $gate -match '^/')) { $p.GatePath = $gate }
     if ([string]$Raw.FastTrackHours -match '^\d{1,2}$' -and [int][string]$Raw.FastTrackHours -ge 1 -and [int][string]$Raw.FastTrackHours -le 72) { $p.FastTrackHours = [int][string]$Raw.FastTrackHours }

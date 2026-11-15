@@ -294,7 +294,8 @@ try {
 
     # The steps that change Intune, against the same stored answers - they run
     # in Windows PowerShell, so only on Windows.
-    if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') {
+    # Windows PowerShell 5.1 on Windows, PowerShell 7 on Linux (the container's way).
+    if ($IsWindows -or $IsLinux -or $PSVersionTable.PSEdition -eq 'Desktop') {
         function Wait-TestJob([string]$Job) {
             $offset = 0; $deadline = (Get-Date).AddSeconds(120); $log = ''
             while ((Get-Date) -lt $deadline) {
