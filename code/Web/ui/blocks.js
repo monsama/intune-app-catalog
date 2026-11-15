@@ -105,6 +105,11 @@ function setCommandsReadOnly(on) {
 function setFields(pairs) { for (const [id, v] of pairs) { $(id).value = v; $(id).dispatchEvent(new Event('input', { bubbles: true })); } }
 // Writing a block's change back: one answer at a time, and only into the app it was asked for.
 async function compose(path, body, apply) {
+  const run = composeNow(path, body, apply);
+  bs.pending = run;
+  try { return await run; } finally { if (bs.pending === run) bs.pending = null; }
+}
+async function composeNow(path, body, apply) {
   const seq = ++bs.cseq, app = bs.app;
   const c = await api(path, body);
   if (seq !== bs.cseq || app !== bs.app || !$('dlgApp').open) return;
@@ -166,6 +171,7 @@ async function refreshDetectionBlocks() {
 const detSoon = (() => { let t = 0; return () => { clearTimeout(t); t = setTimeout(refreshDetectionBlocks, 300); }; })();
 $('xScript').addEventListener('input', detSoon);
 $('xType').addEventListener('change', detSoon);
+$('dlgApp').addEventListener('close', () => { if (se.detection && $('dlgCode') && $('dlgCode').open && !$('dlgCode').classList.contains('minimized')) $('dlgCode').close(); });
 $('dlgApp').addEventListener('close', () => { bs.instText = false; bs.detText = false; bs.inst = null; bs.det = null; bs.app = ''; bs.cseq++; });
 
 // ---------------------------------------------------------------- the code editor
@@ -280,7 +286,9 @@ function codeDialog() {
   });
   $('seBuild').addEventListener('click', async () => {
     const name = se.name;
-    if ($('seText').value !== se.original && !(await ask("Build with the saved scripts? What you typed since isn't saved yet - it won't be in the package.", { ok: 'Build' }))) return;
+    if ($('seText').value !== se.original && !(await ask("Build with the saved scripts? What you typed since isn't saved - it won't be in the package, and the editor closes for the build.", { ok: 'Build' }))) return;
+    // The progress window is under this one otherwise: the editor closes (everything in it is saved).
+    se.original = $('seText').value; $('dlgCode').close();
     runDialog('Package', `Building ${name}'s .intunewin with the saved scripts.`);
     runJob({ names: [name] }, ok => { toast(ok ? `${name}'s package is built.` : 'Packaging failed - see the log.', !ok); if (ok) $('seBuild').hidden = true; loadApps(); }, { path: '/api/package-start', log: 'runLog', startText: 'Packaging...' });
   });
@@ -325,12 +333,19 @@ function goLine(line, col) {
 
 async function openScriptEditor({ name, file, detection }) {
   const d = codeDialog();
+  // Minimized with the same script: brought back as it was. Another one: what was typed is asked about first.
+  if (d.classList.contains('minimized')) {
+    if ((detection && se.detection && se.forApp === (editingName || '')) || (!detection && !se.detection && se.name === name && se.file === file)) { wcResume('dlgCode'); return; }
+    wcResume('dlgCode');
+    if (!(await leaveScript())) return;
+  }
   Object.assign(se, { detection: !!detection, errors: [], conflict: false, lastStatus: '' });
   $('seBuild').hidden = true;
   $('sePrev').hidden = se.detection;
   $('seSave').textContent = se.detection ? 'Apply' : 'Save';
   if (se.detection) {
-    Object.assign(se, { name: '', file: '', hash: '', original: $('xScript').value.replace(/\r\n?/g, '\n') });
+    // Bound to the app open in the editor now: Apply never writes into another app's detection.
+    Object.assign(se, { name: '', file: '', hash: '', forApp: editingName || '', original: $('xScript').value.replace(/\r\n?/g, '\n') });
     $('seTitle').textContent = 'Detection script';
     $('seSub').textContent = 'Runs as SYSTEM on the device. Installed: write something to the output and exit 0. Not installed: write nothing.';
     $('seTabs').replaceChildren();
@@ -358,6 +373,7 @@ async function saveScript() {
   const text = $('seText').value;
   if ($('seSave').disabled) return;
   if (se.detection) {
+    if (!$('dlgApp').open || (editingName || '') !== se.forApp) { status('The app this detection script belongs to was closed - it can no longer be applied. Copy what you need, then close.', true); return; }
     setFields([['xScript', text]]);
     se.original = text; $('dlgCode').close(); toast('Detection script applied - Save the app to keep it.');
     return;
@@ -376,6 +392,13 @@ async function saveScript() {
   paintScript();
 }
 
+// Before the editor saves: a block typed in but not left yet is written into the commands, and every write is waited for.
+async function blocksFlush() {
+  const a = document.activeElement;
+  if (a && a.closest && a.closest('#dlgApp .blockbar') && 'value' in a && a.value !== a.defaultValue) a.dispatchEvent(new Event('change', { bubbles: true }));
+  for (let i = 0; i < 3 && bs.pending; i++) await bs.pending.catch(() => {});
+}
+window.blocksFlush = blocksFlush;
 window.refreshBlocks = refreshBlocks;
 window.refreshDetectionBlocks = refreshDetectionBlocks;
 window.openScriptEditor = openScriptEditor;

@@ -194,7 +194,7 @@ function Global:Enter-CatalogFileLock {
     while ($true) {
         try {
             $fs = [System.IO.File]::Open($path, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
-            $note = [Text.Encoding]::UTF8.GetBytes("$env:COMPUTERNAME $env:USERNAME $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))")
+            $note = [Text.Encoding]::UTF8.GetBytes("$env:COMPUTERNAME $env:USERNAME $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss', [Globalization.CultureInfo]::InvariantCulture))")
             $fs.SetLength(0); $fs.Write($note, 0, $note.Length); $fs.Flush()
             $one = @{ Stream = $fs; Thread = $tid; Depth = 1 }
             $Global:App.CatalogFileLock = $one

@@ -88,7 +88,9 @@ function Global:Start-WebDeploy {
             AppName = $a.appName; AppId = [string]$a.appId; PackageIdentifier = [string]$a.wingetId
             Description = [string]$(if ($m) { $m.description }); Publisher = [string]$(if ($m) { $m.publisher }); InformationUrl = [string]$(if ($m) { $m.informationUrl }); PrivacyUrl = [string]$(if ($m) { $m.privacyUrl })
             RunAsAccount = $(if ($m -and [string]$m.installContext -eq 'User') { 'user' } else { 'system' }); OutputResultPath = $resultPath }
-        $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateStoreAppScript -Name 'createstoreapp' -ConfigJson ($config | ConvertTo-Json -Depth 4) -ResultPath $resultPath -Kind "$(if ($a.appId) { 'Update' } else { 'Create' }) $name (Microsoft Store app)" `
+        # Shown as Being changed on every PC while it runs; a second start (a double click, another admin) is refused.
+        $busy = Enter-WebAppBusy -Name $a.appName -What 'deploying'; if ($busy) { return @{ ok = $false; error = $busy } }
+        $started = Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedCreateStoreAppScript -Name 'createstoreapp' -ConfigJson ($config | ConvertTo-Json -Depth 4) -ResultPath $resultPath -Kind "$(if ($a.appId) { 'Update' } else { 'Create' }) $name (Microsoft Store app)" `
             -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $null; WasUpdate = [bool]$a.appId; Store = $true; SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }) }
         if ($started.ok) { Write-Log "[INFO] Sending $name to Intune as a Microsoft Store app ($($a.wingetId))..." }
         return $started
@@ -124,7 +126,9 @@ function Global:Start-WebDeploy {
     $stamp = Get-WebPackageStamp $(if (-not $metadataOnly -and $unc) { $pkg.Path } else { '' })
     $upload = $stamp -and (-not $a.appId -or (-not $a.managedUpdates -and $stamp -ne [string]$a.packageStamp))
     if ($a.appId -and $upload) { $config.ReplaceContent = $true }
-    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "$(if ($metadataOnly) { 'Push settings' } else { 'Deploy' }) $name$(if ($a.appId -and $upload) { ' (new package)' })" `
+    # Shown as Being changed on every PC while it runs; a second start (a double click, another admin) is refused.
+    $busy = Enter-WebAppBusy -Name $a.appName -What 'deploying'; if ($busy) { return @{ ok = $false; error = $busy } }
+    $started = Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "$(if ($metadataOnly) { 'Push settings' } else { 'Deploy' }) $name$(if ($a.appId -and $upload) { ' (new package)' })" `
         -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $defaults; WasUpdate = [bool]$a.appId; SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }); PackageStamp = $(if ($upload) { $stamp } else { '' }) }
     if ($started.ok) { Write-Log "[INFO] $(if ($metadataOnly) { "Pushing $name's settings to Intune" } else { "Deploying $name ($($config.Mode)$(if ($a.appId -and $upload) { ', uploading the new package' }))" })..." }
     return $started
@@ -181,7 +185,9 @@ function Global:Start-WebPushGroups {
             CreateMissingGroups = $false; OutputResultPath = $resultPath
         }
         $gid = Add-WebGroupIdsToConfig $config; if ($gid) { return @{ ok = $false; error = $gid } }
-        return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind "Push groups $($a.appName)" -Apps @([string]$a.appName))
+        # Shown as Being changed on every PC while it runs; a second start (a double click, another admin) is refused.
+        $busy = Enter-WebAppBusy -Name $a.appName -What 'sending its groups'; if ($busy) { return @{ ok = $false; error = $busy } }
+        return (Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind "Push groups $($a.appName)" -Apps @([string]$a.appName))
     }
     $mode = if ([string]$Data.mode -eq 'Apply') { 'Apply' } else { 'Preview' }
     $config = @{
@@ -325,7 +331,9 @@ function Global:Start-WebDeleteFromIntune {
         TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
         AppId = $a.appId; AppName = $a.appName; RemoveDependencyFromAppId = ''; OutputResultPath = $resultPath
     }
-    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedDeleteAppScript -Name 'deleteapp' -ConfigJson ($config | ConvertTo-Json -Depth 4) -ResultPath $resultPath -Kind "Delete $name from Intune" -After @{ Kind = 'deleted'; AppName = $a.appName }
+    # Shown as Being changed on every PC while it runs; a second start (a double click, another admin) is refused.
+    $busy = Enter-WebAppBusy -Name $a.appName -What 'deleting it from Intune'; if ($busy) { return @{ ok = $false; error = $busy } }
+    $started = Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedDeleteAppScript -Name 'deleteapp' -ConfigJson ($config | ConvertTo-Json -Depth 4) -ResultPath $resultPath -Kind "Delete $name from Intune" -After @{ Kind = 'deleted'; AppName = $a.appName }
     if ($started.ok) { Write-Log "[INFO] Deleting $name from Intune..." }
     return $started
 }
@@ -530,7 +538,9 @@ function Global:Start-WebRetireFinish {
         TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
         AppId = $a.appId; AppName = $a.appName; RemoveDependencyFromAppId = ''; OutputResultPath = $resultPath
     }
-    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedDeleteAppScript -Name 'deleteapp' -ConfigJson ($config | ConvertTo-Json -Depth 4) -ResultPath $resultPath -Kind "Finish retiring $name (delete from Intune)" -After @{ Kind = 'retired'; AppName = $a.appName } -Apps @([string]$a.appName)
+    # Shown as Being changed on every PC while it runs; a second start (a double click, another admin) is refused.
+    $busy = Enter-WebAppBusy -Name $a.appName -What 'retiring it'; if ($busy) { return @{ ok = $false; error = $busy } }
+    $started = Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedDeleteAppScript -Name 'deleteapp' -ConfigJson ($config | ConvertTo-Json -Depth 4) -ResultPath $resultPath -Kind "Finish retiring $name (delete from Intune)" -After @{ Kind = 'retired'; AppName = $a.appName } -Apps @([string]$a.appName)
     if ($started.ok) { Write-Log "[INFO] Finishing the retirement of $name - deleting it from Intune..." }
     return $started
 }

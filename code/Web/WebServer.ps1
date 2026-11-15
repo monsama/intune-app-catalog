@@ -227,6 +227,6 @@ function Global:Write-Log {
         # A new file each day, also while the app keeps running past midnight.
         $today = 'intune-deployment-' + (Get-Date).ToString('yyyy-MM-dd') + '.log'
         if ((Split-Path -Leaf $Global:App.WebLogFile) -like 'intune-deployment-*.log' -and (Split-Path -Leaf $Global:App.WebLogFile) -ne $today) { $Global:App.WebLogFile = Join-Path (Split-Path -Parent $Global:App.WebLogFile) $today }
-        try { Add-Content -LiteralPath $Global:App.WebLogFile -Value "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) $line" -Encoding UTF8 } catch { }
+        try { Add-Content -LiteralPath $Global:App.WebLogFile -Value "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)) $line" -Encoding UTF8 } catch { }
     }
 }
