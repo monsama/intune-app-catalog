@@ -15,6 +15,23 @@
 - **Creating a group**: the few seconds Entra ID needs before a new group
   can be read no longer log red `[GRAPH] ... FAILED ... NotFound` lines;
   the wait says "Entra ID is still copying the new group (normal)".
+- **Groups page: search all of Entra ID.** The list showed only the
+  groups the catalog's apps use, and Open took the typed text as an exact
+  name - so searching for "intune" opened a new, not-yet-created group
+  called "intune". Now **Search Entra ID** (or Enter, or "All groups in
+  Entra ID" in the list's picker) lists every Entra ID group whose name
+  contains the text, `*` as a wildcard, with its kind (Security, dynamic,
+  Microsoft 365) and how many catalog apps use it. A search with no match
+  in the catalog offers the Entra ID search in one click; with no groups in
+  the catalog yet, the page starts on Entra ID's list. New group still
+  starts a new one.
+- **A group just created shows as created.** Entra ID's search by name
+  lags behind a new group for a while, so the page re-read it and said
+  "Not in Entra ID" - and Create group again could have made a second one
+  with the same name. The app now keeps the new group's ID for 15 minutes:
+  the page shows it by that ID ("Just created" while Entra ID catches up,
+  then its members), the list counts it as there, and saving it again
+  updates that group instead of creating another.
 
 ## 2.27.0
 

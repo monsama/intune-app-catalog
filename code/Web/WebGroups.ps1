@@ -93,6 +93,7 @@ function Global:Get-WebGroupsStatus {
     $found = foreach ($n in $names) {
         $hit = @($read.value | Where-Object { $_.name -ieq $n }) | Select-Object -First 1
         if ($hit) { [ordered]@{ name = $n; id = $hit.id } }
+        elseif (Get-WebRecentGroupId $n) { [ordered]@{ name = $n; id = (Get-WebRecentGroupId $n) } }
     }
     return @{ ok = $true; state = 'ok'; found = @($found) }
 }
@@ -107,7 +108,14 @@ function Global:Get-WebGroupDetail {
         param($Graph)
         $filter = [Uri]::EscapeDataString("displayName eq '$($name.Replace("'", "''"))'")
         $found = @((& $Graph "https://graph.microsoft.com/v1.0/groups?`$filter=$filter&`$select=id,displayName,description").value)
-        if ($found.Count -eq 0) { return @{ Found = $false; Count = 0 } }
+        if ($found.Count -eq 0) {
+            # Just created here: the name search lags behind for a while; by its ID it's there sooner.
+            $recent = Get-WebRecentGroupId $name
+            if (-not $recent) { return @{ Found = $false; Count = 0 } }
+            try { $byId = & $Graph "https://graph.microsoft.com/v1.0/groups/$recent`?`$select=id,displayName,description" } catch { $byId = $null }
+            if (-not $byId -or ([string]$byId.displayName).Trim() -ine $name) { return @{ Found = $false; Count = 0; Pending = $true } }
+            $found = @($byId)
+        }
         $g = $found[0]
         $members = New-Object System.Collections.Generic.List[object]
         $uri = "https://graph.microsoft.com/v1.0/groups/$($g.id)/members?`$select=id,displayName,userPrincipalName&`$top=999"
@@ -125,8 +133,48 @@ function Global:Get-WebGroupDetail {
     $v = $read.value
     $catalog = Read-WebCatalogRecords
     $usage = @(Get-WebGroupUsage $catalog.Apps) | Where-Object { $_.name -ieq $name } | Select-Object -First 1
-    return @{ ok = $true; name = $name; found = [bool]$v.Found; duplicates = [int]$v.Count; id = [string]$v.Id; description = [string]$v.Description
+    return @{ ok = $true; name = $name; found = [bool]$v.Found; pending = [bool]$v.Pending; duplicates = [int]$v.Count; id = [string]$v.Id; description = [string]$v.Description
         members = @($v.Members | Sort-Object { $_.type }, { $_.name }); uses = @($(if ($usage) { $usage.uses })) }
+}
+
+function Global:Find-WebEntraGroups {
+    <#
+      Groups in Entra ID whose name contains the text (or matches it with * as a wildcard), for the Groups page's
+      "Search Entra ID". Graph can't search names for "contains", so every group's name is read once (paged) and
+      kept for two minutes; the matching is done here. Empty text: all of them (the first 500).
+    #>
+    param($Data)
+    $q = ([string]$Data.q).Trim()
+    if ($q.Length -gt 100) { return @{ ok = $false; error = 'That is too long to search for.' } }
+    $cache = $Global:App.EntraGroupsCache
+    if ($Data.fresh -or -not $cache -or ([DateTime]::UtcNow - $cache.At).TotalMinutes -gt 2) {
+        $read = Invoke-WebGraph -Permission 'Group.Read.All' -Action {
+            param($Graph)
+            $rows = New-Object System.Collections.Generic.List[object]
+            $uri = "https://graph.microsoft.com/v1.0/groups?`$select=id,displayName,description,securityEnabled,mailEnabled,groupTypes&`$top=999"
+            while ($uri -and $rows.Count -lt 20000) {
+                $page = & $Graph $uri
+                foreach ($g in @($page.value)) {
+                    $types = @($g.groupTypes)
+                    $kind = if ($types -contains 'Unified') { 'Microsoft 365' } elseif ($g.securityEnabled) { 'Security' } elseif ($g.mailEnabled) { 'Distribution' } else { 'Other' }
+                    if ($types -contains 'DynamicMembership') { $kind += ', dynamic' }
+                    $rows.Add([ordered]@{ id = [string]$g.id; name = [string]$g.displayName; description = [string]$g.description; kind = $kind })
+                }
+                $uri = [string]$page.'@odata.nextLink'
+            }
+            $rows.ToArray()
+        }
+        if (-not $read.ok) { return $read }
+        $cache = @{ At = [DateTime]::UtcNow; Rows = @($read.value | Sort-Object { $_.name }) }
+        $Global:App.EntraGroupsCache = $cache
+    }
+    $hits = if (-not $q -or $q -eq '*') { @($cache.Rows) }
+            elseif ($q.Contains('*')) { $pattern = [System.Management.Automation.WildcardPattern]::Escape($q).Replace('`*', '*'); @($cache.Rows | Where-Object { $_.name -like $pattern }) }
+            else { @($cache.Rows | Where-Object { $_.name.IndexOf($q, [StringComparison]::OrdinalIgnoreCase) -ge 0 }) }
+    $usage = @{}
+    foreach ($u in @(Get-WebGroupUsage (Read-WebCatalogRecords).Apps)) { $usage[([string]$u.name).ToLowerInvariant()] = @($u.uses | ForEach-Object { $_.app } | Select-Object -Unique).Count }
+    $shown = @($hits | Select-Object -First 500 | ForEach-Object { $k = $_.name.ToLowerInvariant(); [ordered]@{ id = $_.id; name = $_.name; description = $_.description; kind = $_.kind; apps = $(if ($usage.ContainsKey($k)) { $usage[$k] } else { 0 }) } })
+    return @{ ok = $true; total = @($cache.Rows).Count; matches = @($hits).Count; groups = @($shown); at = $cache.At.ToLocalTime().ToString('HH:mm') }
 }
 
 function Global:Find-WebDirectory {
@@ -172,12 +220,19 @@ function Global:Start-WebGroupJob {
     $config = [ordered]@{ TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
         OutputResultPath = $resultPath; Mode = $mode; GroupName = $name; MemberIds = @() }
     $after = @{}
+    $Global:App.EntraGroupsCache = $null
+    # A group being deleted is no longer "just created".
+    if ($mode -in 'Delete', 'DeleteMany' -and $Global:App.RecentGroups) { foreach ($n in @(@($name) + @($Data.names))) { if ($n) { $Global:App.RecentGroups.Remove(([string]$n).Trim().ToLowerInvariant()) } } }
     switch ($mode) {
         'Save' {
             $problem = Test-WebGroupName $name; if ($problem) { return @{ ok = $false; error = $problem } }
             $ids = @(@($Data.memberIds) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
             if (@($ids | Where-Object { $_ -notmatch $guid }).Count) { return @{ ok = $false; error = 'A member id is not a GUID.' } }
             $config.Mode = ''; $config.MemberIds = $ids; $config.Description = ([string]$Data.description).Trim()
+            # Created here a moment ago: Entra ID's name search may not find it yet - the step then uses this ID, and doesn't make a second one.
+            $recent = Get-WebRecentGroupId $name
+            if ($recent) { $config.GroupId = $recent }
+            $after = @{ Kind = 'groupsaved'; Name = $name }
             $kind = "Create/update group $name"
         }
         'Delete' {
@@ -250,6 +305,33 @@ function Global:Complete-WebGroupRename {
 # its ID is kept next to the catalog (.integrity\groups.json). Every send after that goes to that ID - and checks
 # that the ID still has that name: a group renamed in Entra ID, or a look-alike made later under the same name,
 # never gets an assignment that was meant for the original.
+
+# Groups created from this app in the last 15 minutes (name -> ID): Entra ID's search by name can take a while
+# to find a new group, so until then the app goes by the ID the create call returned.
+function Global:Set-WebRecentGroupId {
+    param([string]$Name, [string]$Id)
+    if (-not $Name -or $Id -notmatch '^[0-9a-fA-F-]{36}$') { return }
+    if (-not $Global:App.RecentGroups) { $Global:App.RecentGroups = @{} }
+    $Global:App.RecentGroups[$Name.Trim().ToLowerInvariant()] = @{ Id = $Id; At = [DateTime]::UtcNow }
+}
+function Global:Get-WebRecentGroupId {
+    param([string]$Name)
+    if (-not $Global:App.RecentGroups -or -not $Name) { return '' }
+    $e = $Global:App.RecentGroups[$Name.Trim().ToLowerInvariant()]
+    if (-not $e -or ([DateTime]::UtcNow - $e.At).TotalMinutes -gt 15) { return '' }
+    return [string]$e.Id
+}
+function Global:Complete-WebGroupSaved {
+    # The group's ID from the step: remembered for the lag above, and kept for sends (groups.json).
+    param([hashtable]$After, $Result)
+    $Global:App.EntraGroupsCache = $null
+    $id = [string]$(if ($Result) { $Result.groupId })
+    if ($id -match '^[0-9a-fA-F-]{36}$') {
+        Set-WebRecentGroupId -Name $After.Name -Id $id
+        try { Save-WebGroupIdStore -Map @{ (([string]$After.Name).Trim().ToLowerInvariant()) = $id } } catch { Write-Log "[WARN] Couldn't keep the group's ID: $($_.Exception.Message)" }
+    }
+    return @{ ok = $true; groupId = $id }
+}
 
 function Global:Read-WebGroupIdStore {
     $file = Join-Path (Get-WebIntegrityFolder) 'groups.json'

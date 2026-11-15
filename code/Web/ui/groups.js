@@ -20,11 +20,14 @@ async function loadGroups() {
   favs = r.favorites || [];
   const keep = new Set(groups.map(g => lc(g.name)));
   for (const n of [...gSel]) if (!keep.has(lc(n))) gSel.delete(n);
+  // Nothing in the catalog names a group yet: start on all of Entra ID's groups instead of an empty list.
+  if (!groups.length && !$('groupShow').value) $('groupShow').value = 'entra';
+  if (entraMode()) searchEntraGroups();
   renderGroupList();
   loadGroupsStatus();
 }
 async function loadGroupsStatus() {
-  $('groupStatusNote').textContent = 'Checking Entra ID...';
+  if (!entraMode()) $('groupStatusNote').textContent = 'Checking Entra ID...';
   const r = await api('/api/groups-status');
   entra = null;
   if (r.ok && r.state === 'ok') {
@@ -32,29 +35,56 @@ async function loadGroupsStatus() {
     const missing = groups.filter(g => !entra.has(lc(g.name))).length;
     entraNote = missing ? `${missing} of ${groups.length} not in Entra ID` : groups.length ? 'All in Entra ID' : '';
   } else entraNote = r.ok && r.state === 'none' ? 'Not connected - Entra ID not checked' : 'Entra ID not checked: ' + (r.error || r.state || '');
-  $('groupStatusNote').textContent = entraNote;
-  $('groupStatusNote').title = entraNote;
+  if (!entraMode()) { $('groupStatusNote').textContent = entraNote; $('groupStatusNote').title = entraNote; }
   renderGroupList();
 }
+// "All groups in Entra ID": what the server found for the search text (name contains it; * is a wildcard).
+let entraHits = null, entraInfo = '', entraSeq = 0, entraTimer = 0;
+const entraMode = () => $('groupShow').value === 'entra';
+async function searchEntraGroups(fresh) {
+  const seq = ++entraSeq, q = $('groupSearch').value.trim();
+  $('groupStatusNote').textContent = 'Searching Entra ID...';
+  const r = await api('/api/group-search', { q, fresh: !!fresh });
+  if (seq !== entraSeq || !entraMode()) return;
+  if (!r.ok) { entraHits = []; entraInfo = r.error; $('groupStatusNote').textContent = r.error; renderGroupList(); return; }
+  entraHits = r.groups;
+  entraInfo = `${r.matches} of ${r.total} group(s)${r.matches > r.groups.length ? ` - first ${r.groups.length} shown, type more to narrow` : ''} - read ${r.at}`;
+  $('groupStatusNote').textContent = entraInfo; $('groupStatusNote').title = entraInfo;
+  renderGroupList();
+}
+function showEntraSearch() {
+  if (!entraMode()) { $('groupShow').value = 'entra'; entraHits = null; }
+  renderGroupList(); searchEntraGroups();
+}
 function visibleGroups() {
+  if (entraMode()) return (entraHits || []).map(h => ({ name: h.name, apps: h.apps, uses: [], kind: h.kind, entraId: h.id }));
   const q = lc($('groupSearch').value.trim()), show = $('groupShow').value;
-  return groups.filter(g => (!q || lc(g.name).includes(q)) && (!show || !entra || (show === 'missing') === !entra.has(lc(g.name))));
+  const re = q.includes('*') ? new RegExp('^' + q.split('*').map(x => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$') : null;
+  return groups.filter(g => (!q || (re ? re.test(lc(g.name)) : lc(g.name).includes(q))) && (!show || !entra || (show === 'missing') === !entra.has(lc(g.name))));
 }
 function renderGroupList() {
   const rows = visibleGroups();
   const open = group ? lc(group.name) : '';
   const isSel = n => [...gSel].some(x => lc(x) === lc(n));
   $('groupList').replaceChildren(...(rows.length ? rows.map(g => {
-    const st = inEntra(g.name);
+    const st = g.entraId ? true : inEntra(g.name);
     const dot = el('span', { class: 'gdot ' + (st === null ? 'unknown' : st ? 'ok' : 'warn'), title: st === null ? 'Entra ID not checked' : st ? 'In Entra ID' : 'Not in Entra ID' });
     const roles = {}; for (const u of g.uses) roles[u.role] = (roles[u.role] || 0) + 1;
     const li = el('li', { role: 'option', 'data-g': g.name, class: lc(g.name) === open ? 'open' : '', 'aria-selected': String(isSel(g.name)),
       title: `${g.name}\n${st === null ? '' : st ? 'In Entra ID' : 'Not in Entra ID'}\n${Object.entries(roles).map(([r, n]) => `${r}: ${n}`).join(', ')}` },
-      dot, el('span', { class: 'sr', text: st === null ? '' : st ? 'In Entra ID: ' : 'Not in Entra ID: ' }), el('span', { class: 'n', text: g.name }), isFav(g.name) ? el('span', { class: 'fav', title: 'A favourite - offered first wherever a group is chosen', text: '★' }) : '', el('span', { class: 'c', text: g.apps === 1 ? '1 app' : g.apps + ' apps' }));
+      dot, el('span', { class: 'sr', text: st === null ? '' : st ? 'In Entra ID: ' : 'Not in Entra ID: ' }), el('span', { class: 'n', text: g.name }), isFav(g.name) ? el('span', { class: 'fav', title: 'A favourite - offered first wherever a group is chosen', text: '★' }) : '', el('span', { class: 'c', text: g.kind ? (g.apps ? `${g.kind} · ${g.apps} app${g.apps === 1 ? '' : 's'}` : g.kind) : g.apps === 1 ? '1 app' : g.apps + ' apps' }));
     li.addEventListener('click', e => clickGroup(g.name, e));
     li.addEventListener('contextmenu', e => { e.preventDefault(); if (!isSel(g.name)) { gSel = new Set([g.name]); gLast = g.name; renderGroupList(); } openGroupMenu(e.clientX, e.clientY); });
     return li;
-  }) : [el('li', { class: 'muted', role: 'option', 'aria-disabled': 'true', 'aria-selected': 'false', text: groups.length ? 'No match - Open looks the name up in Entra ID.' : 'No app is assigned to a group yet.' })]));
+  }) : entraMode() ? [el('li', { class: 'muted', role: 'option', 'aria-disabled': 'true', 'aria-selected': 'false', text: entraHits === null ? 'Searching Entra ID...' : 'No group in Entra ID matches. New group creates one.' })]
+    : [(() => {
+      // Nothing in the catalog matches: the same text searched in all of Entra ID is one click away.
+      const q = $('groupSearch').value.trim();
+      const li = el('li', { class: 'muted nomatch', role: 'option', 'aria-selected': 'false' },
+        groups.length ? (q ? 'No group the catalog uses matches. ' : '') : 'No app is assigned to a group yet. ',
+        el('button', { type: 'button', class: 'linkbtn', text: q ? `Search Entra ID for "${q}"` : 'Show all groups in Entra ID', onclick: showEntraSearch }));
+      return li;
+    })()]));
   renderGroupSelBar();
 }
 function clickGroup(name, e) {
@@ -85,11 +115,17 @@ function renderGroupSelBar() {
   setEnabled($('btnGroupSelDelete'), found.length > 0, 'None of the selected groups is in Entra ID.');
   $('btnGroupSelDelete').textContent = found.length ? `Delete ${found.length}...` : 'Delete...';
 }
-$('groupSearch').addEventListener('input', renderGroupList);
-$('groupShow').addEventListener('change', renderGroupList);
+$('groupSearch').addEventListener('input', () => {
+  if (entraMode()) { clearTimeout(entraTimer); entraTimer = setTimeout(searchEntraGroups, 300); } else renderGroupList();
+});
+$('groupShow').addEventListener('change', () => {
+  gSel = group ? new Set([group.name]) : new Set();
+  if (entraMode()) showEntraSearch(); else { entraSeq++; $('groupStatusNote').textContent = entraNote; renderGroupList(); }
+});
 $('groupSearch').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('btnGroupOpen').click(); } });
-$('btnGroupOpen').addEventListener('click', () => { const n = $('groupSearch').value.trim(); if (n) { gSel = new Set([n]); openGroup(n); } else toast('Type a group name first.', true); });
-$('btnGroupsReload').addEventListener('click', () => { loadGroups(); if (group) openGroup(group.name); });
+// Search Entra ID: the list switches to all of Entra ID's groups matching the text.
+$('btnGroupOpen').addEventListener('click', () => { clearTimeout(entraTimer); showEntraSearch(); });
+$('btnGroupsReload').addEventListener('click', () => { if (entraMode()) searchEntraGroups(true); else loadGroups(); if (group) openGroup(group.name); });
 $('btnGroupNew').addEventListener('click', async () => {
   const n = ((await askText('Name of the new security group\n\nNext shows it here first: add members and a description, then Create group creates it in Entra ID.', '', 'Next')) || '').trim();
   if (n) openGroup(n);
@@ -216,7 +252,9 @@ function setGroupBusy(on) {
     setEnabled($(id), !on && !(needsGroup && !(group && group.found)), on ? 'Working...' : 'This group doesn\'t exist in Entra ID yet - Create it first.');
   }
 }
-async function openGroup(name) {
+let pendingTries = 0;
+async function openGroup(name, again) {
+  if (!again) pendingTries = 0;
   findSeq++; if ($('gFind')) { $('gFind').value = ''; $('gFindNote').textContent = ''; $('gHits').replaceChildren(); }
   $('groupEmpty').hidden = true; $('groupDetail').hidden = false; $('groupLog').hidden = true;
   group = { name, found: false, uses: [] }; toAdd = new Map(); renderAdd(); $('gHits').replaceChildren(); $('gFindNote').textContent = '';
@@ -233,6 +271,14 @@ async function openGroup(name) {
     $('gState').className = 'pill err'; $('gState').textContent = 'Not read';
     setGroupBusy(false);
     $('gNote').textContent = r.error; setEnabled($('btnGroupSave'), false, r.error); setEnabled($('btnGroupDescSave'), false, r.error); setEnabled($('btnGroupCreate'), false, r.error); return;
+  }
+  // Created a moment ago and Entra ID is still copying it: say so and look again shortly, instead of "Not in Entra ID".
+  if (!r.found && r.pending && pendingTries < 10) {
+    pendingTries++;
+    $('gState').className = 'pill info'; $('gState').textContent = 'Just created';
+    $('gNote').textContent = 'Entra ID is still copying the new group to all its servers - this usually takes a few seconds. Looking again...'; $('gNote').hidden = false;
+    setTimeout(() => { if (group && group.name === name) openGroup(name, true); }, 3000);
+    return;
   }
   group = r;
   if (entra) { if (r.found) entra.set(lc(name), r.id); else entra.delete(lc(name)); renderGroupList(); }
@@ -361,7 +407,7 @@ function saveGroup() {
   if (!group) return;
   const name = group.name;
   groupJob({ mode: 'Save', name, description: $('gDesc').value, memberIds: [...toAdd.keys()] }, `${group.found ? 'Updating' : 'Creating'} ${name}...`,
-    () => { toast(`${name} is ready.`); loadGroups(); openGroup(name); });
+    () => { toast(`${name} is ready.`); loadGroups(); if (entraMode()) searchEntraGroups(true); openGroup(name); });
 }
 $('btnGroupSave').addEventListener('click', saveGroup);
 async function removeMember(m) {

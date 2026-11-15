@@ -1279,3 +1279,6 @@ table.cmp td.v.none { background: repeating-linear-gradient(135deg, transparent 
 table.cmp mark.del { background: color-mix(in srgb, var(--err) 35%, transparent); color: inherit; border-radius: 2px; }
 table.cmp mark.add { background: color-mix(in srgb, var(--ok) 35%, transparent); color: inherit; border-radius: 2px; }
 #checkSelCount { font-size: 12px; }
+
+#groupList li.nomatch { display: block; line-height: 1.6; }
+#groupList li.nomatch .linkbtn { display: inline; padding: 0; }

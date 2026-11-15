@@ -237,6 +237,23 @@ try {
     $escapedName = $Config.GroupName.Replace("'", "''")
     $encodedFilter = [Uri]::EscapeDataString("displayName eq '$escapedName'")
     $existing = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=$encodedFilter&`$select=id,displayName,description" -Method GET -StepDescription "Look up group"
+    # Created from the app a moment ago and not yet found by name: Entra ID still copies it - look it up by its ID
+    # rather than make a second group with the same name.
+    if (@($existing.value).Count -eq 0 -and $Config.PSObject.Properties['GroupId'] -and $Config.GroupId) {
+        for ($attempt = 1; $attempt -le 10 -and @($existing.value).Count -eq 0; $attempt++) {
+            try {
+                $byId = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$($Config.GroupId)?`$select=id,displayName,description" -Method GET -StepDescription "Look up the new group" -NotFoundExpected
+                if (([string]$byId.displayName).Trim() -ieq $Config.GroupName) { $existing = [pscustomobject]@{ value = @([pscustomobject]@{ id = $byId.id; displayName = $byId.displayName; description = $byId.description }) } }
+                break
+            }
+            catch {
+                if ($_.Exception.Message -notmatch 'not found yet') { throw }
+                Write-Host "  ... the group created a moment ago isn't visible yet - Entra ID is still copying it (attempt $attempt/10)" -ForegroundColor DarkGray
+                Start-Sleep -Seconds 2
+            }
+        }
+        if (@($existing.value).Count -eq 0) { throw "The group '$($Config.GroupName)' was created a moment ago but Entra ID doesn't show it yet - try again in a minute (a second group with the same name was not made)." }
+    }
     # Names aren't unique in Entra ID: with two of the same name, which one is meant can't be told - nothing is changed.
     if (@($existing.value).Count -gt 1) { throw "There are $(@($existing.value).Count) groups named '$($Config.GroupName)' in Entra ID - rename one of them first (Entra admin center), so the right one is changed." }
 

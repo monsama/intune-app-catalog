@@ -55,6 +55,12 @@ blocks and the code editor (section 10c).
       is shown line by line. Tick findings and the toolbar's buttons
       light up - the table doesn't move when you tick.
 
+- [ ] **Groups**: type part of a group's name (e.g. "intune") and press
+      Enter - the list shows every Entra ID group containing it, with its
+      kind; `intune*` only those starting with it. **New group**, create
+      it - the page shows it as created right away (or "Just created" for a
+      few seconds), not "Not in Entra ID", and it appears in the search.
+
 ## 3. Add and deploy a Winget app
 
 - [ ] **Add app**, **Find...** next to Winget ID, search `7zip` and **Use**
