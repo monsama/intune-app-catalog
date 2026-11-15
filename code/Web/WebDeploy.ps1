@@ -52,6 +52,7 @@ function Global:Get-WebDeployPlan {
         if ($a.appId -and $tenantIds -and -not $tenantIds.ContainsKey(([string]$a.appId).ToLowerInvariant())) { $reason = "Its App ID isn't in this tenant (copied from another?) - clear it first: Catalog > Set up this tenant." }
         # A same-name app in Intune first: building a package would only lead to a duplicate.
         elseif (-not $a.appId -and $inIntune.ContainsKey(([string]$a.appName).Trim().ToLowerInvariant())) { $reason = 'An app with this name is already in Intune - link it (Checks > Link) instead of creating a second one.' }
+        elseif (-not $store -and ($nonPkg = Get-NonPackageAppHint $a)) { $reason = $nonPkg }
         elseif (-not $pkg.Found) {
             $reason = if ($unc) { "No package (.intunewin) yet - build it with More > Package." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging builds it." }
         }

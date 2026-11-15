@@ -2177,3 +2177,20 @@ function Global:Set-AppWingetIdCommands {
     }
     return $changed
 }
+
+function Global:Get-NonPackageAppHint {
+    <#
+      Pure: why an app without a Winget ID needs no package of its own ('' when
+      it does need one) - an Intune app type other than Win32 (Store, Microsoft
+      365 Apps, ...), or, before it's in Intune, one of Microsoft's apps that
+      Intune itself provides: Company Portal (the Store app) and Microsoft 365 Apps.
+    #>
+    param($App)
+    if (([string]$App.wingetId).Trim()) { return '' }
+    $t = [string]$App.intuneAppType
+    if ($t -and $t -ne 'Windows app (Win32)') { return "$($App.appName) is Intune's own app type ($t) - there's nothing to package." }
+    $n = ([string]$App.appName).Trim()
+    if ($n -match '^(Microsoft\s+)?Company Portal$') { return "Company Portal is a Microsoft Store app: put 9WZDNCRFJ3PZ in its Winget ID and it's sent as one - nothing to package." }
+    if ($n -match '^(Microsoft\s+)?(365|Office)\b|^Microsoft 365 Apps') { return "$n is added in Intune itself (Apps > Windows > Add > Microsoft 365 Apps) - not a package." }
+    return ''
+}

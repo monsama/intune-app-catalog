@@ -212,6 +212,7 @@ async function loadHome() {
   if (!r.ok) { $('homeNote').textContent = r.error; $('homeList').replaceChildren(); return; }
   renderSetup(r.setup);
   $('homeNote').textContent = r.items.length ? `${r.items.length} thing${r.items.length === 1 ? '' : 's'} to look at${r.lastRun ? ` - last nightly run ${r.lastRun}` : ''}.` : 'Nothing needs a look right now.';
+  $('homeCount').textContent = r.items.length ? String(r.items.length) : '';
   const s = r.summary, stat = (n, l, cls) => el('div', { class: 'stat ' + (cls || '') }, el('span', { class: 'n', text: n }), el('span', { class: 'l', text: l }));
   $('homeStats').replaceChildren(stat(String(r.apps), 'apps in the catalog'), stat(String(r.deployed), 'in Intune'), stat(String(r.managed), 'with managed updates'),
     ...(s && s.onCurrentPercent !== null ? [stat(s.onCurrentPercent + ' %', `of ${s.devices} devices on the current version`, s.onCurrentPercent < 90 ? 'warn' : 'ok')] : []));

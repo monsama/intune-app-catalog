@@ -5,6 +5,16 @@
 Layout fixes, found by checking every page and Settings section for
 fields that are cut off, overflow their card or don't line up.
 
+- **Home** is laid out again: the numbers on top, then **Needs
+  attention** as one card with a row per item, and Getting started and
+  shortcuts beside it (under it on narrow windows).
+- **Company Portal and Microsoft 365 Apps** no longer count as "own
+  package(s) not built". They are Microsoft's own Intune app types, so
+  there's nothing to package: Home lists them apart with what to do
+  (Company Portal: use its Store ID 9WZDNCRFJ3PZ as the Winget ID;
+  Microsoft 365 Apps: add it in Intune itself), and Deploy says the same
+  instead of asking for a package. Apps already in Intune as a Store or
+  Microsoft 365 app are never counted.
 - **Settings > Updates**: the pilot groups are **Ring 1 - Pilot**, in the
   same row layout as the rings after it, so it's clear the first box is
   the first ring. Ring names and group boxes have the same height.
