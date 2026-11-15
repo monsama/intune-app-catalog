@@ -438,7 +438,9 @@ try {
             foreach ($gName in @(@($desiredEntries | ForEach-Object { $_.Group }) | Select-Object -Unique)) {
                 Resolve-GroupId -GroupName $gName -CreateIfMissing $true | Out-Null
             }
-            $assignments = @((New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdCache -FilterIdByName $filterIdByName).mobileAppAssignments)
+            # Nothing differs: nothing is sent (sending replaces every assignment, and would lose their settings for no reason).
+            if ($toRemove.Count -eq 0 -and $toAdd.Count -eq 0) { continue }
+            $assignments = @((New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdCache -FilterIdByName $filterIdByName -CurrentAssignments @($currentAssignments.value)).mobileAppAssignments)
 
             $assignBody = [string](@{ mobileAppAssignments = @($assignments) } | ConvertTo-Json -Depth 10)
             try {

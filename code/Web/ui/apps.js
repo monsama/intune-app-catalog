@@ -119,6 +119,8 @@ const filters = {
 };
 function sortValue(a, k) {
   if (k === 'groups') return a.required * 10000 + a.available * 100 + a.uninstall;
+  // The stage column sorts by stage (the order an app goes through), not by its status text.
+  if (k === 'status') { const order = ['tenant', 'look', 'draft', 'msapp', 'retire', 'ready', 'pilot', 'everyone']; const i = order.indexOf(stageOf(a).key); return String(i < 0 ? 9 : i) + (a.name || '').toLowerCase(); }
   return String(a[k] || '').toLowerCase();
 }
 // The search box: words match names and Winget IDs; group:text (or group:"two words") the apps assigned to a group whose name contains it.
@@ -231,12 +233,14 @@ $('aManaged').addEventListener('change', showManagedState);
 let methodSeq = 0, methodTimer = null, editorInstaller = null, editorWingetOffers = '';
 // An own-package app: which installer (and version) Package builds and Deploy uploads, next to the App version.
 function showPkgInfo() {
-  const box = $('aPkgInfo'), v = $('mAppVersion').value.trim(), i = editorInstaller;
-  box.hidden = !!$('aWinget').value.trim() || !editingName;
+  const box = $('aPkgInfo'), v = $('mAppVersion').value.trim(), i = editorInstaller, row = apps.find(a => a.name === editingName);
+  // Not for Microsoft's own apps (nothing to package) - and only for an app with a name already saved.
+  box.hidden = !!$('aWinget').value.trim() || !editingName || !!(row && row.msHint);
   if (box.hidden) return;
-  if (!i || !i.found) { box.textContent = `No installer in its package folder yet${i && i.folder ? ` (${i.folder})` : ''} - put the .msi or .exe there; Package builds it into the .intunewin and Deploy uploads that.`; return; }
+  const script = /\.ps1\b/i.test($('mInstallCommand').value) && !/\.(msi|exe)\b/i.test($('mInstallCommand').value);
+  if (!i || !i.found) { box.textContent = script ? `A script app - Package builds the scripts in its package folder${i && i.folder ? ` (${i.folder})` : ''} into the .intunewin that Send to Intune uploads.` : `No installer in its package folder yet${i && i.folder ? ` (${i.folder})` : ''} - put the .msi or .exe there; Package builds it into the .intunewin that Send to Intune uploads.`; return; }
   const iv = i.version || '(no version in the file)';
-  box.textContent = `Uploaded: ${i.file}, version ${iv} - the installer in the package folder, which Package builds into the .intunewin and Deploy uploads. App version: ${v || '(none)'}.` +
+  box.textContent = `Installer in its folder: ${i.file}, version ${iv} - Package builds it into the .intunewin that Send to Intune uploads. App version: ${v || '(none)'}.` +
     (i.version && v && i.version !== v ? ` They differ - a release of the new installer sets the App version (More > Release new version), or correct it on Details.` : '');
 }
 const methodBody = extra => ({ wingetId: $('aWinget').value.trim(), context: $('xContext').value, version: $('mAppVersion').value.trim(), install: $('mInstallCommand').value, uninstall: $('mUninstallCommand').value, ...extra });
@@ -375,6 +379,7 @@ function readSupersedence() {
 }
 let editingVersion = '';
 async function openEditor(name) {
+  if (wcResume('dlgApp')) return;
   editingName = name || ''; editingVersion = '';
   if (name) {
     const r = await api('/api/app-get', { name });
@@ -639,7 +644,7 @@ document.addEventListener('keydown', e => {
 // The Apps list by keyboard - only while nothing else has the keys: no
 // dialog or menu open, and no field focused (typing is never taken over).
 function listKeys(e) {
-  if ($('viewApps').hidden || document.querySelector('dialog[open]') || document.querySelector('.menu:not([hidden])')) return;
+  if ($('viewApps').hidden || document.querySelector('dialog[open]:not(#dlgRun)') || document.querySelector('.menu:not([hidden])')) return;
   // ... nor a button, link or summary - Enter and Delete there mean that control, not the list.
   if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable], button, a, summary, .menu, .banner')) return;
   if (!visible.length) return;
@@ -738,6 +743,7 @@ function deployProgress() {
 }
 $('btnDeploy').addEventListener('click', () => openDeploy([...selected]));
 async function openDeploy(names) {
+  if (wcResume('dlgDeploy')) return;
   const r = await api('/api/deploy-plan', { names });
   if (!r.ok) { toast(r.error, true); return; }
   deployPlan = r.apps; deployResults = {};
@@ -809,6 +815,7 @@ $('btnDeployClose').addEventListener('click', e => { if (deployRunning) { e.stop
 let pushNames = [];
 $('btnPush').addEventListener('click', () => openPushGroups([...selected]));
 async function openPushGroups(names) {
+  if (wcResume('dlgPush')) return;
   pushNames = names;
   $('pushRows').replaceChildren(el('tr', {}, el('td', { colspan: 3, class: 'muted', text: 'Reading the current assignments in Intune...' })));
   $('pushLog').textContent = '';
@@ -839,6 +846,7 @@ $('btnPushGo').addEventListener('click', async () => {
 
 // ---------------------------------------------------------------- batch edit, add/remove groups
 function openBatch(names) {
+  if (wcResume('dlgBatch')) return;
   batchNames = names;
   $('batchTitle').textContent = `Batch edit - ${names.length} app(s)`;
   $('batchText').textContent = `Tick the fields to change on ${names.join(', ')}. Everything else stays as each app has it.`;
@@ -924,6 +932,7 @@ $('btnBatchGo').addEventListener('click', async () => {
 
 let gbMode = 'add', gbNames = [];
 function openGroupsBatch(mode, names) {
+  if (wcResume('dlgGroupsBatch')) return;
   gbMode = mode; gbNames = names;
   const sel = names.map(n => apps.find(a => a.name === n)).filter(Boolean);
   $('gbTitle').textContent = mode === 'add' ? 'Add groups' : 'Remove groups';
@@ -1047,14 +1056,14 @@ async function menuAction(act) {
     }
     case 'managed': {
       const on = menu.querySelector('[data-act=managed]').dataset.on === '1', ws = sel().map(a => a.name);
-      if (!(await ask(`Managed updates ${on ? 'on' : 'off'} for ${ws.length} app${ws.length === 1 ? '' : 's'}?\n\n${on ? 'Each installs exactly its App version, and new versions go to the pilot groups first (More > Release new version). Winget apps: the install command and detection rule follow the App version (set one with More > Take winget\'s version before the first deploy). Own packages: their detection rule must compare a version - a release updates it. Push settings sends the change to apps already in Intune.' : 'Their commands stay pinned to the current version until you change the install method (Batch edit > Install with).'} Undo takes it back.`, { ok: on ? 'Turn on' : 'Turn off', danger: false }))) return;
+      if (!(await ask(`Managed updates ${on ? 'on' : 'off'} for ${ws.length} app${ws.length === 1 ? '' : 's'}?\n\n${on ? 'Each installs exactly its App version, and new versions go to the pilot groups first (More > Release new version). Winget apps: the install command and detection rule follow the App version (set one with More > Take winget\'s version before the first deploy). Own packages: their detection rule must compare a version - a release updates it. Push settings sends the change to apps already in Intune.' : 'Their commands stay pinned to the current version until you change the install method (the editor\'s Install with).'} Undo takes it back.`, { ok: on ? 'Turn on' : 'Turn off', danger: false }))) return;
       const r = await api('/api/managed-updates', { names: ws, on });
       toast(r.ok ? `Managed updates ${on ? 'on' : 'off'} for ${r.changed.length} app(s).${r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : ''}` : r.error, !r.ok); loadApps();
       break;
     }
     case 'takeversion': {
       const take = sel().filter(a => a.newerOnWinget);
-      if (!(await ask(`Take winget's version for ${take.length} app${take.length === 1 ? '' : 's'}?\n\n${take.map(a => `${a.name}: ${a.version || '(none)'} → ${a.wingetVersion}`).join('\n')}\n\nThe App version in the catalog changes - what Intune and the Company Portal show once you push settings. Winget apps always install winget's newest anyway. Undo takes it back.`, { ok: 'Take version', danger: false }))) return;
+      if (!(await ask(`Take winget's version for ${take.length} app${take.length === 1 ? '' : 's'}?\n\n${take.map(a => `${a.name}: ${a.version || '(none)'} → ${a.wingetVersion}`).join('\n')}\n\nManaged apps then install exactly this version (their command and detection follow it) - send the ones in Intune again. Apps on the winget command only show it as their version. Undo takes it back.`, { ok: 'Take version', danger: false }))) return;
       const r = await api('/api/winget-take-version', { names: take.map(a => a.name) });
       if (!r.ok) { toast(r.error, true); return; }
       toast(`App version updated on ${r.changed.length} app(s).${r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : ''}`);
@@ -1094,6 +1103,7 @@ async function menuAction(act) {
 // ---------------------------------------------------------------- pull from Intune
 let pullPending = '';
 function openPull(names) {
+  if (wcResume('dlgPull')) return;
   $('pullText').textContent = `Reading ${names.length} app(s) from Intune. Apps whose catalog entry matches Intune (or has no settings yet) take Intune's right away; anything different is shown here to choose.`;
   $('pullReview').replaceChildren(); $('pullLog').textContent = ''; $('btnPullApply').hidden = true; pullPending = '';
   $('dlgPull').showModal();
@@ -1109,7 +1119,7 @@ function openPull(names) {
     $('pullReview').replaceChildren(...(after.review || []).map(r => el('div', { class: 'pullapp', 'data-app': r.app },
       el('h3', { text: r.app }),
       el('table', {}, el('tr', {}, el('td', { class: 'muted', text: 'Keep catalog' }), el('td', { class: 'muted', text: 'Field' }), el('td', { class: 'muted', text: 'Catalog' }), el('td', { class: 'muted', text: 'Intune' })),
-        ...r.diffs.map(d => el('tr', {}, el('td', {}, el('input', { type: 'checkbox', 'data-field': d.field })), el('td', { text: d.field }), el('td', { class: 'v', text: d.local }), el('td', { class: 'v', text: d.intune })))))));
+        ...r.diffs.map(d => el('tr', {}, el('td', {}, el('input', { type: 'checkbox', 'data-field': d.field, 'aria-label': `Take ${d.field} from Intune` })), el('td', { text: d.field }), el('td', { class: 'v', text: d.local }), el('td', { class: 'v', text: d.intune })))))));
     $('btnPullApply').hidden = !pullPending;
     loadApps();
   }, { path: '/api/pull-start', log: 'pullLog', startText: 'Reading from Intune...' });
@@ -1125,6 +1135,7 @@ $('btnPullApply').addEventListener('click', async () => {
 // ---------------------------------------------------------------- retiring an app
 let retiring = '';
 async function openRetire(name) {
+  if (wcResume('dlgRetire')) return;
   retiring = name;
   $('retireTitle').textContent = `Retire ${name}`;
   $('retireGroups').textContent = ''; $('retireProgress').textContent = 'Reading...'; $('retireProgress').className = '';
@@ -1168,6 +1179,7 @@ $('btnRetireFinish').addEventListener('click', async () => {
     { path: '/api/retire-finish', log: 'runLog', startText: 'Deleting...' });
 });
 async function openRetired() {
+  if (wcResume('dlgRetired')) return;
   skeleton($('retiredRows'), 3, 2); $('retiredNote').textContent = '';
   $('dlgRetired').showModal();
   const r = await api('/api/retired-list');
@@ -1183,6 +1195,7 @@ async function openRetired() {
 
 // ---------------------------------------------------------------- install status
 async function openStatus(name) {
+  if (wcResume('dlgStatus')) return;
   $('statusTitle').textContent = 'Install status - ' + name;
   $('statusSummary').textContent = 'Reading Intune’s install status report...';
   skeleton($('statusRows'), 7, 4); $('statusErrors').hidden = true;
@@ -1238,6 +1251,6 @@ function versionFallback(a) {
   if (a.msHint && !a.wingetId) return el('span', { class: 'muted', text: '-', title: a.msHint });
   if (a.wingetId && isStoreId(a.wingetId)) return el('span', { class: 'muted', text: 'Store', title: 'The Microsoft Store installs and updates it - no version to set.' });
   if (a.wingetId) return el('span', { class: 'muted', text: a.wingetVersion ? `newest (${a.wingetVersion})` : 'newest',
-    title: (a.managed ? 'Managed updates, but no App version yet: set it (Set version) - until then it installs the newest.' : 'No App version: devices get whatever winget has at install time.') + (a.wingetVersion ? ` winget offers ${a.wingetVersion} (last check).` : ' Catalog > Check winget for new versions shows which.') });
+    title: (a.managed ? (a.hasAppId ? 'Managed updates, but no App version yet: set it (Set version) - until then it installs the newest.' : "Managed updates need an App version before it can be sent to Intune: Set version (winget's current one).") : 'No App version: devices get whatever winget has at install time.') + (a.wingetVersion ? ` winget offers ${a.wingetVersion} (last check).` : ' Catalog > Check winget for new versions shows which.') });
   return el('span', { class: 'muted', text: 'not set', title: 'No App version yet. The editor shows the installer version in its package folder (Basics); Details > App version sets it.' });
 }

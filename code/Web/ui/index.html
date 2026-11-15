@@ -117,15 +117,15 @@
         <thead><tr>
           <th data-sort="name" title="The app's name in the catalog (and in Intune). Click a header to sort.">App</th>
           <th data-sort="wingetId" title="Where it installs from: a winget package, or its own installer">Source</th>
-          <th data-sort="version" title="The version in the app's settings">Version</th>
+          <th data-sort="version" title="The App version it installs (managed updates) or shows. Greyed when none is set: what devices get instead.">Version</th>
           <th data-sort="groups" title="Who gets it - hover for the groups by role">Who gets it</th>
-          <th data-sort="status" title="Where the app is: Draft, Ready to deploy, In Intune, In pilot, Everyone - or Needs a look. The button is its next step.">Stage</th>
+          <th data-sort="status" title="Where the app is: Draft, Ready to send, In Intune, In pilot, Everyone - or Needs a look, Other tenant, Microsoft app, Retire. The button is its next step.">Stage</th>
         </tr></thead>
         <tbody id="gridBody"></tbody>
       </table>
       <div class="empty" id="emptyState" hidden>
         <h2>No apps in this catalog yet</h2>
-        <p>A catalog is a folder of one JSON file per app. <b>Add app</b> to start one, or run <b>Checks</b> to add the apps already in Intune - or point Settings &gt; Folders at a catalog that already has some.</p>
+        <p>A catalog is a folder of one JSON file per app. <b>Add apps</b> to start one, or run <b>Checks</b> to add the apps already in Intune - or point Settings &gt; Folders at a catalog that already has some.</p>
         <p class="path" id="emptyPath"></p>
       </div>
     </div>
@@ -366,7 +366,7 @@
               </section>
               <section class="tile">
                 <span class="ico" aria-hidden="true">&#8679;</span><h3>The catalog has apps, Intune doesn't</h3>
-                <p><b>Add app</b> (Find... looks up the Winget ID), set the groups, then <b>Send to Intune</b> - several at once, in dependency order. Apps with their own installer need More &gt; Package and a detection rule first.</p>
+                <p><b>Add apps</b> (Find... looks up the Winget ID), set the groups, then <b>Send to Intune</b> - several at once, in dependency order. Apps with their own installer need More &gt; Package and a detection rule first.</p>
                 <button class="btn" id="tileAdd" title="Open the app editor for a new app">Add app</button>
               </section>
               <section class="tile">
@@ -424,7 +424,7 @@
     <div class="setsec" id="sec-defaults" data-sec="defaults" role="tabpanel" aria-labelledby="stab-defaults" hidden>
     <div class="cols">
       <div class="col">
-        <article class="card">
+        <article class="card wide-defaults">
           <h2>Default values for new apps</h2>
           <p class="sub">What an app gets when it's deployed without its own settings. Apps that already have settings keep them.</p>
           <div class="formgrid tight">

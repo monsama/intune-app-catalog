@@ -23,11 +23,29 @@ function wcMax(d, on = !d.classList.contains('maxed')) {
 }
 // Minimized = closed but kept: the page works while it waits. Its "close" isn't passed on, so nothing tidies up after it.
 function wcMinimize(d) { d.classList.add('minimized'); d.close(); wcTray(); }
-function wcRestore(d) { d.classList.remove('minimized'); if (!d.open) d.showModal(); wcTray(); }
+function wcRestore(d) { d.classList.remove('minimized'); if (!d.open) d.showModal(); wcTray(); d.dispatchEvent(new Event('wcrestore')); }
+// Opening a dialog that waits minimized brings it back as it was - never refilled over what's in it (a half-edited app,
+// a deploy still running). The opener stops when this says true.
+function wcResume(id) {
+  const d = document.getElementById(id);
+  if (!d || !d.classList.contains('minimized')) return false;
+  wcRestore(d);
+  toast(`${wcTitle(d)} was minimized - here it is, as you left it. Close it to open it for something else.`);
+  return true;
+}
 window.addEventListener('close', e => { if (e.target instanceof HTMLDialogElement && e.target.classList.contains('minimized')) e.stopImmediatePropagation(); }, true);
 // A minimized dialog the app opens again (its button, Ctrl+K) is simply restored.
 const wcShow = HTMLDialogElement.prototype.showModal;
-HTMLDialogElement.prototype.showModal = function () { const was = this.classList.contains('minimized'); this.classList.remove('minimized'); if (!this.open) wcShow.call(this); if (was) wcTray(); };
+HTMLDialogElement.prototype.showModal = function () { const was = this.classList.contains('minimized'); this.classList.remove('minimized'); if (!this.open) wcShow.call(this); if (was) wcTray(); else wcTrayTop(); };
+// The chips stay usable while another dialog is open: an open modal dialog makes the rest of the page inert, so the
+// tray goes into the topmost one (and back to the page when none is open).
+function wcTrayTop() {
+  const t = document.getElementById('dlgTray'); if (!t) return;
+  const top = [...document.querySelectorAll('dialog[open]')].filter(d => d.matches(':modal')).pop();
+  const host = top || document.body;
+  if (t.parentElement !== host) host.append(t);
+}
+window.addEventListener('close', () => setTimeout(wcTrayTop, 0), true);
 
 function wcTray() {
   let tray = document.getElementById('dlgTray');
@@ -37,6 +55,7 @@ function wcTray() {
   tray.replaceChildren(...mins.map(d => el('span', { class: 'tray-chip' },
     el('button', { type: 'button', class: 'tray-open', text: wcTitle(d), title: `${wcTitle(d)}: restore`, onclick: () => wcRestore(d) }),
     el('button', { type: 'button', class: 'tray-x', text: '×', title: 'Close', 'aria-label': `Close ${wcTitle(d)}`, onclick: () => wcClose(d) }))));
+  wcTrayTop();
 }
 
 function wcMovable(d, head) {

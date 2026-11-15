@@ -1,7 +1,73 @@
 # Changelog
 
-## 2.19.2
+## 2.20.0
 
+A full sweep: the server logic, the pages' behaviour, the layout of every
+page and window, and every message checked against a real catalog (49
+apps, none in Intune yet, Company Portal, Microsoft 365 Apps).
+
+**Fixed - could go wrong in Intune**
+- **Pilot and ring releases with two or more groups** were assigned to one
+  made-up group named after all of them (and that group was created). Each
+  group is assigned again. The nightly run's health checks and drift
+  report, Settings > Diagnostics' health list and CSV import of several
+  dependencies had the same cause and are fixed too.
+- **Send groups keeps a release's assignment settings** (install deadline,
+  restart grace period, Company Portal auto-update) for assignments that
+  stay, and sends nothing when nothing differs.
+- **Promote and Roll back no longer offer Undo**: Intune has already
+  changed, so undoing only the catalog pointed it at the wrong app.
+- **The nightly run doesn't release a withdrawn version again** through
+  the test-tenant gate, and doesn't say "the newest on winget" when
+  winget wasn't asked.
+- **Switching from Winget-AutoUpdate**: apps in Intune without an App
+  version get the winget command (managed updates once they have a
+  version), so Send to Intune really updates them; apps whose WAU commands
+  were edited by hand are named instead of being counted as switched.
+- **A Win32 package with a Microsoft name** (an Office Deployment Tool
+  package called "Microsoft 365 Apps for enterprise") is built and sent as
+  usual - only an app with nothing of its own counts as Microsoft's.
+
+**Fixed - what the pages say**
+- **Apps > Version shows the App version.** It showed the version Intune
+  last reported, so it was empty for apps not in Intune, and managed apps
+  looked like they had no version ("Set version").
+- **Stages**: Company Portal / Microsoft 365 Apps show "Microsoft app",
+  Winget-AutoUpdate "Retire", and an own package without an install
+  command or detection rule "Draft" (Send to Intune refuses those). The
+  Stage column sorts by stage.
+- **Side panel and editor** describe updates per kind: managed, the
+  winget command, the Store, an own installer, Microsoft. The editor's
+  Ready checklist fits Store and Microsoft apps; the installer box is
+  hidden for them and knows script apps.
+- **Home**: "Winget apps without managed updates" leaves out Store apps and
+  WAU; the WAU advice says "remove from the catalog" when it isn't in
+  Intune; "Check everything now" says when Intune wasn't compared; the
+  release count matches its list.
+- **Checks** shows what was compared apart from what wasn't, and counts
+  only the catalog's groups.
+- Old names (Deploy, Push groups, Add app, WAU) are gone from texts and
+  docs.
+
+**Fixed - windows and pages**
+- **A minimized window comes back as it was** when opened again - it was
+  refilled before (a half-edited app lost, a running deploy's list reset).
+  Its chip works while another window is open, a Sandbox test keeps going
+  while minimized, and Tenant setup is read again when restored.
+- The side panel no longer shows an app when several are selected; saving
+  one Settings card keeps what's typed in the others; the Updates page is
+  read again after Promote, Withdraw, Roll back and Advance; the job tray
+  no longer blocks the list keys and Ctrl+K; Home and Groups ignore late
+  answers; Home's buttons wait for their action.
+- **Layout**: the Apps toolbar stays on one line on wide windows (coffee
+  and theme top right on narrower ones), Groups' cards stack below
+  1360 px, Settings' default values use the full width (return codes and
+  dropdowns readable), fields in a row line up, Updates' tiles stay in one
+  row, Batch edit's buttons stay in sight, small row buttons have the
+  fields' height, focus rings match the app, missing labels added.
+
+
+**New**
 - **Windows have minimize, maximize and close** in their top right
   corner, as in the other NOBS apps. A minimized window keeps what was
   typed in it and waits as a chip at the bottom right (its name restores

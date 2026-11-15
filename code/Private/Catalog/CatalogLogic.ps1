@@ -1323,7 +1323,7 @@ function Global:Get-ReleaseRingGroups {
     $out = New-Object System.Collections.Generic.List[string]
     $list = @($Rings)
     for ($i = 0; $i -le $Ring -and $i -lt $list.Count; $i++) { foreach ($g in @($list[$i].Groups)) { if ($g -and -not $out.Contains([string]$g)) { $out.Add([string]$g) } } }
-    return , $out.ToArray()
+    return $out.ToArray()
 }
 
 function Global:ConvertFrom-ReleaseRingText {
@@ -2171,6 +2171,8 @@ function Global:Set-AppWingetIdCommands {
     if ($method) {
         $pinned = ''
         if ($method -eq 'Managed' -and [string]$m.installCommand -match " --version '((?:[^']|'')+)'") { $pinned = $Matches[1] -replace "''", "'" }
+        # Never written again (2.19): an app on the old WAU form gets the winget command for its new ID.
+        if ($method -eq 'WAU') { $method = 'Winget' }
         $c = Get-WingetCommandLines -WingetId $new -Method $method -InstallContext ([string]$m.installContext) -Version $pinned
         $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall; $changed = $true
     }
@@ -2194,6 +2196,10 @@ function Global:Get-NonPackageAppHint {
     if (([string]$App.wingetId).Trim()) { return '' }
     $t = [string]$App.intuneAppType
     if ($t -and $t -ne 'Windows app (Win32)') { return "$($App.appName) is Intune's own app type ($t) - there's nothing to package." }
+    # By name only for an app that has nothing of its own: an install command, a detection rule or a package path
+    # means someone packaged it as Win32 (an Office Deployment Tool package, say) - that one is built and sent as usual.
+    $m = $App.metadata
+    if ($t -eq 'Windows app (Win32)' -or [string]$App.packagePath -or ($m -and ([string]$m.installCommand).Trim() -and $m.detectionRule)) { return '' }
     $n = ([string]$App.appName).Trim()
     if (Test-CompanyPortalName $n) { return "Company Portal is a Microsoft Store app: put 9WZDNCRFJ3PZ in its Winget ID and it's sent as one - nothing to package." }
     if ($n -match '^(Microsoft\s+)?(365|Office)\b|^Microsoft 365 Apps') { return "$n is added in Intune itself (Apps > Windows > Add > Microsoft 365 Apps) - not a package." }

@@ -911,7 +911,7 @@ input.qedit { padding: 3px 8px; font-size: 12px; width: 180px; }
 .btn.rowx { padding: 2px 0; width: 28px; font-size: 16px; line-height: 1; color: var(--muted); }
 .btn.rowx:hover { color: var(--err); background: var(--err-bg); }
 /* The bar above every page: its name on the left, the theme and coffee buttons top right. */
-.pagebar { display: flex; align-items: center; gap: 12px; padding: 10px 16px 0; flex: none; }
+.pagebar { display: flex; align-items: center; gap: 12px; padding: 10px 16px 0; flex: none; min-height: 44px; }
 .pagetitle { font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
 .pagebtns { margin-left: auto; display: flex; gap: 4px; }
 .pagebtns .iconbtn { height: 34px; width: 36px; padding: 0; }
@@ -932,7 +932,7 @@ dialog .wctl > button:hover, dialog .wctl > button:focus-visible { background: v
 dialog .wctl > button.wc-close:hover, dialog .wctl > button.wc-close:focus-visible { background: #c42b1c; color: #fff; }
 .wtitle.movable { cursor: move; user-select: none; }
 dialog.maxed { width: calc(100vw - 16px) !important; max-width: none !important; height: calc(100vh - 16px); max-height: none !important; margin: 8px; transform: none !important; }
-#dlgTray { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+#dlgTray { position: fixed; inset: auto 16px 40px auto; margin: 0; padding: 0; z-index: 60; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 #dlgTray .tray-chip { display: inline-flex; align-items: center; border: 1px solid var(--bd); border-radius: var(--r-m); background: var(--surface); box-shadow: var(--shadow); font-size: 12px; overflow: hidden; }
 #dlgTray button { border: 0; background: transparent; color: var(--fg); cursor: pointer; padding: 7px 10px; font: inherit; }
 #dlgTray .tray-open { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
@@ -959,4 +959,34 @@ td.mxempty { padding: 28px 16px !important; text-align: left !important; font-si
 /* The page toolbars fit on one line with coffee and theme: the search field gives way first. */
 #viewApps > .toolbar > input[type="search"] { width: auto; flex: 1 1 200px; min-width: 150px; max-width: 320px; }
 #viewApps > .toolbar > select { flex: 0 1 auto; min-width: 120px; }
-@media (min-width: 1600px) { #viewApps > .toolbar { flex-wrap: nowrap; } #viewApps > .toolbar > .btn { flex: none; } }
+@media (min-width: 1440px) { #viewApps > .toolbar { flex-wrap: nowrap; } #viewApps > .toolbar > .btn { flex: none; } }
+
+/* ---- 2.20 sweep: layout fixes ---- */
+/* Groups: the two cards side by side only where both have room. */
+@media (max-width: 1360px) { .gcols { grid-template-columns: 1fr; } }
+/* Two fields in a row line up at their inputs, also when one label wraps. */
+.two { align-items: end; }
+label.inline { margin: 0; }
+.card select { max-width: 100%; }
+#pkgPackager { width: 100%; }
+/* Settings > Apps & defaults: the default values use the full width, so return codes and dropdowns aren't clipped. */
+#sec-defaults .col:has(> .wide-defaults) { grid-column: 1 / -1; }
+/* Updates: the summary sentence on its own line, the tiles in one row while they fit. */
+#updNote { flex-basis: 100%; }
+#updTiles { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+/* Focus shows as the app's own ring, not the browser's black box. */
+summary:focus-visible, .tablewrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-m); }
+summary:focus:not(:focus-visible), .tablewrap:focus:not(:focus-visible) { outline: none; }
+.logbox { margin-top: 8px; }
+/* Batch edit: Apply and Cancel stay in sight. */
+#dlgBatch > .actions { position: sticky; bottom: -18px; background: var(--surface); padding: 10px 0; margin-bottom: -18px; border-top: 1px solid var(--bd); z-index: 1; }
+/* Checks: the fix buttons on their own row; long IDs break between words, not inside them. */
+.grid td.mono, .grid td.v { overflow-wrap: anywhere; word-break: normal; }
+/* Small buttons next to full-height fields: the same height. */
+.suprow > .btn, .btn.rowx, .profrow2 > .btn { min-height: 34px; }
+/* Editor: some air between the commands box and the detection card, and above the "From an app on this PC" button. */
+#dlgApp .card + .card, #dlgApp .card + fieldset, #dlgApp fieldset + .card { margin-top: 12px; }
+#btnDetFromPc { margin-top: 6px; }
+/* Device names, dates and file names stay on one line. */
+#dlgStatus td:first-child, #dlgStatus td.date, #scriptsBody td.file, #scriptsBody td.date { white-space: nowrap; }
+dialog > #dlgTray { position: fixed; }

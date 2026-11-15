@@ -62,7 +62,7 @@ when you add the app.
   follow it. When you release a new version, change the version in
   Install.ps1 too. Or choose *A detection script of my own*.
 
-Then **Package** the app and **Deploy** it, as any other.
+Then **Package** the app and **Send** it **to Intune**, as any other.
 
 ## PSADT (PowerShell App Deployment Toolkit 4)
 

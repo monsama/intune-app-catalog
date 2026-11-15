@@ -165,7 +165,7 @@ $('btnUpload').addEventListener('click', () => {
 $('btnAddPerms').addEventListener('click', async () => {
   const r = await api('/api/permission-choice');
   if (!r.ok) { toast(r.error, true); return; }
-  const item = (p, req) => el('li', {}, el('input', { type: 'checkbox', checked: true, disabled: req, 'data-perm': p.name }), el('span', {}, el('span', { class: 'n', text: p.name }), el('span', { class: 'p', text: p.purpose })));
+  const item = (p, req) => el('li', {}, el('input', { type: 'checkbox', checked: true, disabled: req, 'data-perm': p.name, 'aria-label': p.name }), el('span', {}, el('span', { class: 'n', text: p.name }), el('span', { class: 'p', text: p.purpose })));
   $('permList').replaceChildren(el('li', { class: 'group', text: 'Required' }), ...r.required.map(p => item(p, true)), el('li', { class: 'group', text: 'Optional' }), ...r.optional.map(p => item(p, false)));
   $('dlgPerms').showModal();
 });
@@ -323,11 +323,21 @@ async function loadPrefs() {
   $('alFrom').value = al.mailFrom || ''; $('alTo').value = (al.mailTo || []).join(', ');
   $('rpAutoRelease').checked = !!rp.AutoRelease; $('rpAutoPromote').checked = !!rp.AutoPromote; $('rpCleanup').checked = !!rp.CleanupOld;
 }
+// Settings cards with changes not saved yet: saving one card reloads the settings, but leaves what's typed in the others.
+document.getElementById('viewSettings').addEventListener('input', e => { const c = e.target.closest('.card'); if (c) c.dataset.dirty = '1'; });
+document.getElementById('viewSettings').addEventListener('change', e => { const c = e.target.closest('.card'); if (c) c.dataset.dirty = '1'; });
 async function savePrefs(part, okText, errEl) {
+  const savedCard = document.activeElement && document.activeElement.closest && document.activeElement.closest('#viewSettings .card');
   const r = await api('/api/prefs-save', part);
   if (!r.ok) { if (errEl) { $(errEl).textContent = r.error; $(errEl).hidden = false; } else toast(r.error, true); return false; }
   if (errEl) $(errEl).hidden = true;
-  toast(okText); loadPrefs(); return true;
+  toast(okText);
+  if (savedCard) delete savedCard.dataset.dirty;
+  const keep = [...document.querySelectorAll('#viewSettings .card[data-dirty]')].flatMap(c => [...c.querySelectorAll('input, select, textarea')]).filter(x => x.id && !x.id.endsWith('Chips'))
+    .map(x => [x, x.type === 'checkbox' || x.type === 'radio' ? x.checked : x.value]);
+  await loadPrefs();
+  for (const [x, v] of keep) { if (x.type === 'checkbox' || x.type === 'radio') x.checked = v; else x.value = v; }
+  return true;
 }
 $('btnSaveChecks').addEventListener('click', () => savePrefs({ checks: Object.fromEntries([...document.querySelectorAll('[data-check]')].map(c => [c.dataset.check, c.checked])) }, 'Saved.'));
 $('btnSaveFolders').addEventListener('click', () => savePrefs({ folders: Object.fromEntries([...document.querySelectorAll('[data-folder]')].map(i => [i.dataset.folder, i.value.trim()])) }, 'Folders saved.'));

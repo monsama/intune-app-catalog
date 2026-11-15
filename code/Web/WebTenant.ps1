@@ -194,7 +194,7 @@ function Global:Get-WebUpdatesOverview {
         rings = @(Get-WebReleaseRings | ForEach-Object { [ordered]@{ name = $_.Name; groups = @($_.Groups) } }); inventory = [bool]($connected -and -not $NoInventory -and -not $invNote)
         notManaged = @($all | Where-Object { -not $_.managedUpdates }).Count
         summary = [ordered]@{ managed = $rows.Count; inPilot = @($rows | Where-Object { $_.pilot }).Count
-            ready = @($rows | Where-Object { $_.pilot -and $_.pilot.action -eq 'promote' }).Count; held = @($rows | Where-Object { $_.pilot -and $_.pilot.action -eq 'hold' }).Count
+            ready = @($rows | Where-Object { $_.pilot -and $_.pilot.action -in 'promote', 'advance' }).Count; held = @($rows | Where-Object { $_.pilot -and $_.pilot.action -eq 'hold' }).Count
             available = @($rows | Where-Object { $_.available -and -not $_.pilot }).Count
             onCurrentPercent = $(if ($total) { [Math]::Round(100.0 * $installed / $total, 1) } else { $null }); devices = [int]$total; olderDevices = [int]$olderDevices } }
 }

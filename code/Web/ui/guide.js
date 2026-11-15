@@ -11,14 +11,26 @@ async function takeVersionFor(a) {
   if (!w.ok) { toast(w.error, true); return; }
   const r = await api('/api/winget-take-version', { names: [a.name] });
   await loadApps();
-  toast(r.ok && r.changed.length ? `${a.name} starts from ${(apps.find(x => x.name === a.name) || {}).version}.` : (r.error || (r.skipped || []).join('; ') || 'winget had no version for it.'), !(r.ok && r.changed.length),
+  toast(r.ok && r.changed.length ? `${a.name} starts from ${(apps.find(x => x.name === a.name) || {}).version || "winget's version"}.` : (r.error || (r.skipped || []).join('; ') || 'winget had no version for it.'), !(r.ok && r.changed.length),
     r.ok && r.changed.length ? [{ label: 'Send to Intune', run: () => openDeploy([a.name]) }] : []);
+}
+const isWauApp = a => /^\s*(Romanitho\.)?winget[\s\-_.]*auto[\s\-_]*update\s*$/i.test(a.name || '') || /^Romanitho\.Winget-AutoUpdate$/i.test(a.wingetId || '');
+// How the app gets new versions, in words - the same for the stage, the panel and the editor.
+function updatesText(a, managed) {
+  if (managed) return 'managed - pilot first';
+  if (a.msHint && !a.wingetId) return 'Microsoft keeps it updated (created in Intune)';
+  if (a.wingetId && isStoreId(a.wingetId)) return 'the Microsoft Store keeps it updated';
+  if (!a.wingetId) return 'its own installer - the version you package';
+  return "winget's newest at install time, not updated afterwards";
 }
 function stageOf(a) {
   const own = !a.wingetId;
   if (tenantState(a) === 'missing') return { key: 'tenant', label: 'Other tenant', cls: 'warn', why: 'Its App ID belongs to another tenant - copied catalog?', next: { label: 'Clear App ID', title: 'Forget the link, so Send to Intune creates it in this tenant', run: () => onApp(a, 'clearid') } };
+  if (isWauApp(a)) return { key: 'retire', label: 'Retire', cls: 'muted', why: a.hasAppId ? 'Winget-AutoUpdate - replaced by managed updates. Retire it to take it off the devices.' : 'Winget-AutoUpdate - replaced by managed updates. It isn\'t in Intune from this catalog: remove it from the catalog.', next: a.hasAppId ? { label: 'Retire...', title: 'Uninstall it from its groups\' devices, then delete it from Intune', run: () => onApp(a, 'retire') } : null };
   if (a.msHint && !a.hasAppId) return { key: 'msapp', label: 'Microsoft app', cls: 'muted', why: a.msHint, next: { label: 'Edit', title: a.msHint, run: () => openEditor(a.name) } };
   if (/issue|Check failed/.test(a.audit || '')) return { key: 'look', label: 'Needs a look', cls: 'warn', why: 'Intune differs from the catalog (last check).', next: { label: 'Checks', title: 'See what differs and fix it', run: () => showView('checks') } };
+  if (own && !a.hasAppId && !a.hasInstall) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs an install command (editor: Install & detection).', next: { label: 'Edit', title: 'Set its install command', run: () => openEditor(a.name) } };
+  if (own && !a.hasAppId && !a.hasDetection) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs a detection rule - Send to Intune refuses an own package without one.', next: { label: 'Edit', title: 'Set its detection rule (Install & detection)', run: () => openEditor(a.name) } };
   if (own && a.packageMissing) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'Its installer isn\'t packaged yet.', next: { label: 'Build', title: 'Build the .intunewin from its packages folder', run: () => onApp(a, 'package') } };
   if (needsAttention(a)) return { key: 'look', label: 'Needs a look', cls: 'warn', why: (a.status || '').split('; ').map(p => statusLabel[p] || p).join('; '), next: { label: 'Edit', title: 'Open it in the editor', run: () => openEditor(a.name) } };
   if (!a.hasAppId) {
@@ -27,7 +39,7 @@ function stageOf(a) {
   }
   if (a.pilotVersion) return { key: 'pilot', label: `In pilot ${a.pilotVersion}`, cls: 'warn', why: `${a.pilotVersion} is with the pilot groups; everyone else has ${a.version || 'the current version'}.`, next: { label: 'Promote...', title: 'Give it to everyone (shows how the pilot went first)', run: () => promoteRelease(a.name) } };
   if (a.managed && a.newerOnWinget) return { key: 'everyone', label: 'Everyone', cls: 'ok', why: `winget has ${a.wingetVersion}.`, next: { label: 'Release...', title: `Release ${a.wingetVersion} to the pilot groups first`, run: () => openRelease(a.name) } };
-  return { key: 'everyone', label: a.managed ? 'Everyone' : 'In Intune', cls: 'ok', why: a.managed ? `Everyone gets ${a.version || 'it'}; new versions go to the pilot groups first.` : 'In Intune, installing winget\'s latest (no managed updates).' };
+  return { key: 'everyone', label: a.managed ? 'Everyone' : 'In Intune', cls: 'ok', why: a.managed ? `Everyone gets ${a.version || 'it'}; new versions go to the pilot groups first.` : `In Intune - ${updatesText(a, false)}.` };
 }
 function stageCell(a) {
   const s = stageOf(a);
@@ -46,14 +58,15 @@ function updatePanel() {
   // Several apps: the toolbar's Send to Intune does it - no second button saying the same.
   else b.hidden = true;
   const p = $('appPanel');
-  if (sel.length !== 1) { p.hidden = true; return; }
+  // Not exactly one app: a panel still on its way for an earlier click is dropped too.
+  if (sel.length !== 1) { clearTimeout(panelTimer); panelSeq++; p.hidden = true; return; }
   clearTimeout(panelTimer); panelTimer = setTimeout(() => fillPanel(sel[0]), 120);
 }
 let panelRefocus = '';
 async function fillPanel(a) {
   const seq = ++panelSeq, p = $('appPanel'), s = stageOf(a);
   const r = await api('/api/app-get', { name: a.name });
-  if (seq !== panelSeq) return;
+  if (seq !== panelSeq || selected.size !== 1 || !selected.has(a.name)) return;
   const app = r.ok ? r.app : {};
   const fact = (k, v) => v ? el('div', { class: 'kv' }, el('span', { class: 'k', text: k }), el('span', { text: v })) : '';
   // Quick edits right here: a group added or taken off, the version - saved at once (the editor isn't needed).
@@ -82,15 +95,15 @@ async function fillPanel(a) {
         const b = canEdit ? el('button', { type: 'button', class: 'btn small ghost', text: 'Change', 'aria-label': 'Change the version', title: 'Change the App version here', onclick: () => inline(b, 'App version', a.version, v => quick({ field: 'appVersion', value: v }, 'Change the version')) }) : '';
         return el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Version' }), el('span', {}, text, ' ', b));
       })(),
-      fact('Source', a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
-      fact('Updates', app.managedUpdates ? 'managed - pilot first' : 'winget\'s latest, untested'),
+      fact('Source', a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
+      fact('Updates', updatesText(a, app.managedUpdates)),
       fact('In Intune', a.hasAppId ? (a.type || 'yes') : 'not yet'),
       groups('Required', 'requiredFor', app.requiredFor, true), groups('Available', 'availableFor', app.availableFor, true), groups('Uninstall', 'uninstallFor', app.uninstallFor), groups('Excluded', 'excludeFor', app.excludeFor),
       el('datalist', { id: 'qGroupList' }, ...known.map(g => el('option', { value: g }))),
       fact('Last check', a.audit)),
     el('div', { class: 'pacts' }, btn('Edit', 'Open it in the editor', () => openEditor(a.name)),
       a.hasAppId ? btn('Install status', 'Every device\'s install state', () => openStatus(a.name)) : '',
-      !a.wingetId ? btn('Test in Sandbox', 'Install, detect and uninstall it in Windows Sandbox', () => openSandbox(a.name)) : '',
+      !a.wingetId && !a.msHint ? btn('Test in Sandbox', 'Install, detect and uninstall it in Windows Sandbox', () => openSandbox(a.name)) : '',
       btn('More...', 'Every action for this app', () => $('btnMore').click())));
   p.hidden = false;
   if (panelRefocus) { const t = [...p.querySelectorAll('[aria-label]')].find(x => x.getAttribute('aria-label') === panelRefocus); panelRefocus = ''; if (t) t.focus(); }
@@ -110,7 +123,12 @@ function updateReady() {
   const wid = $('aWinget').value.trim(), own = !wid, row = apps.find(a => a.name === editingName);
   const groups = ['gRequired', 'gAvailable'].some(id => $(id).value.trim());
   const det = $('xType').value;
-  const items = [
+  const store = !own && isStoreId(wid), ms = own && row && row.msHint;
+  const items = ms ? [[!!$('aName').value.trim(), 'A name', 'aName'], [false, row.msHint, null]] : store ? [
+    [!!$('aName').value.trim(), 'A name', 'aName'],
+    [true, `Microsoft Store app (${wid}) - the Store installs and updates it; no commands or detection`, null],
+    [groups, groups ? 'Groups that get it' : 'Groups that get it - none yet, so nobody gets it', 'gRequired'],
+  ] : [
     [!!$('aName').value.trim(), 'A name', 'aName'],
     own ? [!!(row && !row.packageMissing), row && !row.packageMissing ? 'Its installer is packaged' : 'Its installer packaged (Packages\\<name>, then Package)', null]
       : [true, `Installs from winget (${wid})`, 'aWinget'],

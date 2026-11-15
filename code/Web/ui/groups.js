@@ -217,6 +217,7 @@ function setGroupBusy(on) {
   }
 }
 async function openGroup(name) {
+  findSeq++; if ($('gFind')) { $('gFind').value = ''; $('gFindNote').textContent = ''; $('gHits').replaceChildren(); }
   $('groupEmpty').hidden = true; $('groupDetail').hidden = false; $('groupLog').hidden = true;
   group = { name, found: false, uses: [] }; toAdd = new Map(); renderAdd(); $('gHits').replaceChildren(); $('gFindNote').textContent = '';
   if (![...gSel].some(x => lc(x) === lc(name))) { gSel = new Set([name]); gLast = name; }
@@ -291,6 +292,7 @@ async function unassignOne(u) {
   loadApps(); await loadGroups(); openGroup(name);
 }
 function openAssign() {
+  if (wcResume('dlgGroupAssign')) return;
   if (!group) return;
   $('gaTitle').textContent = `Assign apps to ${group.name}`;
   const pick = () => {
@@ -329,11 +331,14 @@ function renderAdd() {
     return el('li', {}, el('span', { class: 'n', text: m.name + (m.upn ? ` (${m.upn})` : '') }), el('span', { class: 'muted', text: m.type }), b);
   }) : [el('li', { class: 'muted', text: 'Nobody yet - search above and Add.' })]));
 }
+let findSeq = 0;
 async function findMembers() {
-  const q = $('gFind').value.trim();
+  const q = $('gFind').value.trim(), seq = ++findSeq, forGroup = group && group.name;
   if (q.length < 2) { $('gFindNote').textContent = 'Type at least 2 letters.'; return; }
   $('gFindNote').textContent = 'Searching...';
   const r = await api('/api/directory-search', { q });
+  // Another search, or another group opened meanwhile: this answer belongs to neither.
+  if (seq !== findSeq || !group || group.name !== forGroup) return;
   if (!r.ok) { $('gFindNote').textContent = r.error; return; }
   const have = new Set((group.members || []).map(m => m.id));
   $('gFindNote').textContent = (r.hits.length ? '' : 'Nothing found. ') + (r.notes || []).join(' ');

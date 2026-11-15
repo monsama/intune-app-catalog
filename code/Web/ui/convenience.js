@@ -154,6 +154,7 @@ $('btnIconFind').addEventListener('click', async () => {
 // ---------------------------------------------------------------- a test in Windows Sandbox
 let sbId = '', sbTimer = 0;
 async function openSandbox(name) {
+  if (wcResume('dlgSandbox')) return;
   const r = await api('/api/sandbox-start', { name });
   if (!r.ok) { toast(r.error, true); return; }
   sbId = r.id;
@@ -164,7 +165,8 @@ async function openSandbox(name) {
   clearInterval(sbTimer); sbTimer = setInterval(pollSandbox, 3000);
 }
 async function pollSandbox() {
-  if (!$('dlgSandbox').open) { clearInterval(sbTimer); return; }
+  // Minimized it keeps going (it's only hidden); closed, it stops.
+  if (!$('dlgSandbox').open && !$('dlgSandbox').classList.contains('minimized')) { clearInterval(sbTimer); return; }
   const r = await api('/api/sandbox-result', { id: sbId });
   if (!r.ok) return;
   $('sbLog').textContent = r.log || '';
@@ -214,10 +216,14 @@ async function useInstalled(a) {
 }
 
 // ---------------------------------------------------------------- Home
+let homeSeq = 0;
 async function loadHome() {
+  const seq = ++homeSeq;
   $('homeNote').textContent = 'Looking...';
   if (!$('homeList').children.length) skeleton($('homeList'), 1, 3);
   const r = await api('/api/attention');
+  // A slower, older answer never overwrites a newer one (it could bring back something just fixed).
+  if (seq !== homeSeq) return;
   if (!r.ok) { $('homeNote').textContent = r.error; $('homeList').replaceChildren(); return; }
   renderSetup(r.setup);
   $('homeNote').textContent = r.items.length ? `${r.items.length} thing${r.items.length === 1 ? '' : 's'} to look at${r.lastRun ? ` - last nightly run ${r.lastRun}` : ''}.` : 'Nothing needs a look right now.';
@@ -232,14 +238,16 @@ async function loadHome() {
   const pill = { err: ['err', 'Problem'], warn: ['warn', 'Look'], ok: ['ok', 'Ready'], info: ['info', 'To do'] };
   $('homeList').replaceChildren(...(r.items.length ? r.items.map(i => { const w = where[i.go], p = pill[i.level] || pill.info;
     return el('li', { class: 'att ' + i.level }, el('span', { class: 'pill ' + p[0], text: p[1] }), el('div', { class: 'body' }, el('b', { text: i.title }), el('span', { class: 'muted', text: i.text })),
-      w ? el('button', { class: 'btn small', text: w[0], onclick: w[1] }) : ''); })
+      w ? el('button', { class: 'btn small', text: w[0], onclick: async e => { const b = e.currentTarget; if (b.disabled) return; b.disabled = true; try { await w[1](); } finally { b.disabled = false; } } }) : ''); })
     : [el('li', { class: 'att ok' }, el('span', { class: 'pill ok', text: 'All good' }), el('div', { class: 'body' }, el('b', { text: 'Nothing to do' }), el('span', { class: 'muted', text: 'Every app is deployed, nothing is on hold, and the last nightly run went fine.' })))]));
 }
 $('btnHomeReload').addEventListener('click', loadHome);
 $('btnHomeAdd').addEventListener('click', () => openAdd());
 $('btnHomeCheck').addEventListener('click', async () => {
   const b = $('btnHomeCheck'); b.disabled = true;
-  try { $('chkDetails').checked = true; await runChecks(); await loadApps(); toast(findings.length ? `${findings.length} difference(s) between the catalog and Intune.` : 'The catalog and Intune match.', false, findings.length ? [{ label: 'See them', run: () => showView('checks') }] : []); loadHome(); }
+  try { $('chkDetails').checked = true; const cr = await runChecks(); await loadApps();
+    const notCompared = cr && cr.connected === false;
+    toast(findings.length ? `${findings.length} finding(s) - Checks has them.` : notCompared ? 'Not compared with Intune: not connected (Settings > Connection). The catalog itself looks fine.' : 'The catalog and Intune match.', false, findings.length ? [{ label: 'See them', run: () => showView('checks') }] : []); loadHome(); }
   finally { b.disabled = false; }
 });
 
@@ -276,7 +284,7 @@ function palRender() {
   $('palQuery').setAttribute('aria-activedescendant', palItems.length ? 'pal-0' : '');
 }
 function palRun(i) { const c = palItems[i]; if (!c) return; $('dlgPalette').close(); c.run(); }
-function openPalette() { if (document.querySelector('dialog[open]:not(#dlgPalette)')) return; $('palQuery').value = ''; palRender(); $('dlgPalette').showModal(); $('palQuery').focus(); }
+function openPalette() { if (document.querySelector('dialog[open]:not(#dlgPalette):not(#dlgRun)')) return; $('palQuery').value = ''; palRender(); $('dlgPalette').showModal(); $('palQuery').focus(); }
 $('palQuery').addEventListener('input', palRender);
 $('palQuery').addEventListener('keydown', e => {
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -294,6 +302,7 @@ document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.ke
 let mx = null, mxChanges = new Map();
 const mxRoles = ['', 'required', 'available', 'uninstall', 'exclude'], mxLetter = { required: 'R', available: 'A', uninstall: 'U', exclude: 'X', '': '' }, mxCls = { required: 'r', available: 'a', uninstall: 'u', exclude: 'x', '': '' };
 async function openMatrix() {
+  if (wcResume('dlgMatrix')) return;
   const r = await api('/api/assignment-matrix');
   if (!r.ok) { toast(r.error, true); return; }
   mx = r; mxChanges = new Map(); $('mxApps').value = ''; $('mxGroups').value = '';
@@ -301,7 +310,9 @@ async function openMatrix() {
 }
 function mxRole(a, g) {
   const k = a.name + '\u0001' + g; if (mxChanges.has(k)) return mxChanges.get(k);
-  return a.required.includes(g) ? 'required' : a.available.includes(g) ? 'available' : a.uninstall.includes(g) ? 'uninstall' : a.exclude.includes(g) ? 'exclude' : '';
+  // Ignoring case, as the columns are made: "sg-sales" on an app is the SG-Sales column.
+  const has = list => list.some(x => String(x).toLowerCase() === g.toLowerCase());
+  return has(a.required) ? 'required' : has(a.available) ? 'available' : has(a.uninstall) ? 'uninstall' : has(a.exclude) ? 'exclude' : '';
 }
 function renderMatrix() {
   const fa = $('mxApps').value.trim().toLowerCase(), fg = $('mxGroups').value.trim().toLowerCase();
@@ -339,7 +350,8 @@ async function makeManagedDefault() {
   await loadPrefs(); loadHome();
 }
 async function managedForAll() {
-  const names = apps.filter(a => a.wingetId && !a.managed).map(a => a.name);
+  // Not Store apps (the Store updates them) nor Winget-AutoUpdate itself (it's retired, not managed).
+  const names = apps.filter(a => a.wingetId && !a.managed && !isStoreId(a.wingetId) && !isWauApp(a)).map(a => a.name);
   if (!names.length) return;
   if (!(await ask(`Turn managed updates on for ${names.length} Winget app(s)?\n\n${names.slice(0, 12).join(', ')}${names.length > 12 ? ', ...' : ''}\n\nEach installs a fixed version from then on, and new versions go to the pilot groups first. Their install commands follow the App version - apps without one take winget's current version next (Home asks).`, { ok: 'Turn on', danger: false }))) return;
   const r = await api('/api/managed-updates', { names, on: true });
@@ -368,12 +380,12 @@ async function wauSwitch() {
   const noV = p.apps.filter(a => !a.hasVersion).map(a => a.app), dep = p.apps.filter(a => a.deployed).map(a => a.app);
   if (!(await ask(`Switch ${p.apps.length} app(s) from Winget-AutoUpdate to ${managedDefault ? 'managed updates' : 'the winget command'}?\n\n${p.apps.slice(0, 12).map(a => a.app).join(', ')}${p.apps.length > 12 ? ', ...' : ''}\n\n` +
     (managedDefault ? `Each installs its App version with winget from then on, and new versions go to the pilot groups first.` : 'Each installs with the winget command from then on (Settings: Winget apps install with).') + ` Their dependency on Winget-AutoUpdate is removed.` +
-    (managedDefault && noV.length ? ` ${noV.length} have no App version yet - they install the newest until you take winget's version.` : '') +
+    (managedDefault && noV.length ? ` ${noV.length} have no App version yet - those in Intune install the newest until then, the others can't be sent until they have one (Take winget's version).` : '') +
     (dep.length ? ` The ${dep.length} in Intune get the new commands pushed.` : ''), { ok: 'Switch them' }))) return;
   const r = await api('/api/wau-switch', {});
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps();
-  const msg = `Switched ${r.changed.length} app(s) away from Winget-AutoUpdate.`;
+  const msg = `Switched ${r.changed.length} app(s) away from Winget-AutoUpdate.` + ((r.byHand || []).length ? ` Not switched (their commands were edited by hand - change them in the editor's Install with): ${r.byHand.join(', ')}.` : '');
   if (r.deployed.length) {
     const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', startText: 'Pushing ' });
     toast(`${msg} Pushed to Intune for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length, [{ label: 'Undo', run: () => undoLast() }]);
