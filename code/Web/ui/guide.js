@@ -94,8 +94,33 @@ async function fillPanel(a) {
         const text = [base, a.pilotVersion ? `pilot ${a.pilotVersion}` : '', a.newerOnWinget ? `winget has ${a.wingetVersion}` : '', (a.previousVersions || []).length ? `kept: ${a.previousVersions.join(', ')}` : ''].filter(Boolean).join(' - ');
         // A Winget app without settings of its own gets them (the defaults) with the version picked.
         const canEdit = (app.hasMetadata || (a.wingetId && !isStoreId(a.wingetId))) && !(app.managedUpdates && a.hasAppId);
-        const b = canEdit ? el('button', { type: 'button', class: 'btn small ghost', text: 'Change', 'aria-label': 'Change the version', title: 'Change the App version here', onclick: () => pickVersion(b, a, v => quick({ field: 'appVersion', value: v }, 'Change the version'), () => inline(b, 'App version', a.version, v => quick({ field: 'appVersion', value: v }, 'Change the version'))) }) : '';
-        return el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Version' }), el('span', {}, text, ' ', b));
+        const extra = [a.pilotVersion ? `pilot ${a.pilotVersion}` : '', a.managed && a.newerOnWinget ? `winget has ${a.wingetVersion}` : '', (a.previousVersions || []).length ? `kept: ${a.previousVersions.join(', ')}` : ''].filter(Boolean).join(' · ');
+        if (!canEdit) return el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Version' }), el('span', {}, [base, extra].filter(Boolean).join(' · ')));
+        // One steady field: the version as it is now; opening it lists winget's versions (asked the first time) - nothing moves.
+        const sel = el('select', { class: 'pver', 'aria-label': 'App version', title: 'Pick the App version - winget\'s versions, newest first' }, el('option', { value: '', text: base }));
+        let loaded = false;
+        const load = async () => {
+          if (loaded) return; loaded = true;
+          const opts = [];
+          if (a.wingetId && !isStoreId(a.wingetId)) {
+            const wait = el('option', { value: '', disabled: true, text: 'Asking winget...' }); sel.append(wait);
+            const r = await api('/api/winget-versions', { id: a.wingetId });
+            wait.remove();
+            if (r.ok) r.versions.slice(0, 40).forEach((v, i) => { if (v !== a.version) opts.push([v, i === 0 ? `${v} · newest` : v]); });
+            else opts.push(['', `winget: ${r.error}`]);
+          }
+          for (const v of (a.previousVersions || [])) if (v !== a.version && !opts.some(o => o[0] === v)) opts.push([v, `${v} · kept from an earlier release`]);
+          sel.append(...opts.map(([v, t]) => el('option', { value: v, text: t, disabled: !v })), el('option', { value: '__other', text: 'Other - type it...' }));
+        };
+        sel.addEventListener('pointerdown', load); sel.addEventListener('focus', load); sel.addEventListener('keydown', load);
+        sel.addEventListener('change', async () => {
+          const v = sel.value;
+          if (v === '__other') { const inp = el('input', { class: 'pver', value: a.version || '', 'aria-label': 'App version', placeholder: 'e.g. 24.09' });
+            inp.addEventListener('keydown', async e => { if (e.key === 'Enter') { e.preventDefault(); const t = inp.value.trim(); if (t && t !== a.version) await quick({ field: 'appVersion', value: t }, 'App version'); else inp.replaceWith(sel); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inp.replaceWith(sel); sel.value = ''; sel.focus(); } });
+            sel.replaceWith(inp); inp.focus(); inp.select(); return; }
+          if (v) { sel.disabled = true; if (!(await quick({ field: 'appVersion', value: v }, 'App version'))) { sel.disabled = false; sel.value = ''; } }
+        });
+        return el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Version' }), el('span', { class: 'pverwrap' }, sel, extra ? el('span', { class: 'muted pverx', text: extra }) : ''));
       })(),
       fact('Source', a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
       fact('Updates', updatesText(a, app.managedUpdates || a.managed)),
@@ -284,27 +309,3 @@ function renderWhere() {
   setPage(0);
 })();
 
-// Change the version by picking it: winget's versions (newest first), the ones kept from earlier releases, or "Other..." to type one.
-async function pickVersion(btn, a, save, typeIt) {
-  const sel = el('select', { class: 'qedit', 'aria-label': 'App version' }, el('option', { value: '', text: 'Loading winget\'s versions...' }));
-  btn.replaceWith(sel); sel.focus();
-  const back = () => { if (sel.isConnected) sel.replaceWith(btn); btn.focus(); };
-  const opts = [];
-  if (a.wingetId && !isStoreId(a.wingetId)) {
-    const r = await api('/api/winget-versions', { id: a.wingetId });
-    if (r.ok) r.versions.slice(0, 40).forEach((v, i) => opts.push([v, i === 0 ? `${v} - newest` : v]));
-    else opts.push(['', `(winget: ${r.error})`]);
-  }
-  for (const v of (a.previousVersions || [])) if (!opts.some(o => o[0] === v)) opts.push([v, `${v} - kept from an earlier release`]);
-  if (!sel.isConnected) return;
-  sel.replaceChildren(el('option', { value: '', text: a.version ? `${a.version} (now)` : 'Choose a version...' }),
-    ...opts.map(([v, t]) => el('option', { value: v, text: t, disabled: !v })), el('option', { value: '__other', text: 'Other - type it...' }));
-  sel.addEventListener('change', async () => {
-    const v = sel.value;
-    if (v === '__other') { sel.replaceWith(btn); typeIt(); return; }
-    if (!v || v === a.version) { back(); return; }
-    if (!(await save(v))) back();
-  });
-  sel.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); back(); } });
-  sel.addEventListener('blur', () => setTimeout(() => { if (sel.isConnected && document.activeElement !== sel) back(); }, 200));
-}

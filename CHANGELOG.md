@@ -6,6 +6,10 @@
   (winget's versions, newest first) was missing for an app still on the
   default settings, and the quick edit refused it; picking a version now
   gives it settings of its own (the defaults) with that version.
+- **The side panel's version is one steady field**: the version as it is
+  now, and opening it lists winget's versions (asked the first time),
+  newest first, plus the ones kept from earlier releases and "Other" to
+  type one. No button that turns into a list - nothing moves.
 
 ## 2.21.0
 
