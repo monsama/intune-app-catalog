@@ -190,13 +190,7 @@ function Global:Get-CertificateStatusText {
         return @{ Text = "No thumbprint set."; Level = 'warn' }
     }
     $clean = $Thumbprint -replace '\s', ''
-    $cert = $null
-    foreach ($location in @("Cert:\CurrentUser\My", "Cert:\LocalMachine\My")) {
-        try {
-            $found = Get-ChildItem -LiteralPath $location -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $clean } | Select-Object -First 1
-            if ($found) { $cert = $found; break }
-        } catch { }
-    }
+    $cert = Find-AppStoreCertificate $clean
     if (-not $cert) {
         return @{ Text = "Not found in CurrentUser\My or LocalMachine\My on this machine."; Level = 'error' }
     }
@@ -273,4 +267,37 @@ function Global:ConvertTo-AlertSettings {
     if (([string]$Raw.MailFrom).Trim() -match $mail) { $a.MailFrom = ([string]$Raw.MailFrom).Trim() }
     $a.MailTo = @(@($Raw.MailTo) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -match $mail } | Select-Object -Unique -First 20)
     return $a
+}
+
+
+function Global:Get-AppStoreCertificates {
+    <#
+      The certificates in the "My" store of -Store (CurrentUser, LocalMachine), read
+      with .NET's own store - which works on Windows and on Linux (the container,
+      where PowerShell has no Cert: drive and the store is a folder in $HOME). Each
+      has a Store property naming where it is.
+    #>
+    param([string[]]$Store = @('CurrentUser', 'LocalMachine'))
+    $out = New-Object System.Collections.Generic.List[object]
+    foreach ($name in $Store) {
+        # Linux has no machine store to read from - only the user's.
+        if (($IsLinux -or $IsMacOS) -and $name -ne 'CurrentUser') { continue }
+        $st = $null
+        try {
+            $st = New-Object System.Security.Cryptography.X509Certificates.X509Store('My', [System.Security.Cryptography.X509Certificates.StoreLocation]$name)
+            $st.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+            foreach ($c in $st.Certificates) { $c | Add-Member -NotePropertyName Store -NotePropertyValue $name -Force; $out.Add($c) }
+        }
+        catch { }
+        finally { if ($st) { $st.Close() } }
+    }
+    return $out.ToArray()
+}
+
+function Global:Find-AppStoreCertificate {
+    # One certificate by thumbprint, from the user's store first, then the machine's ($null when it isn't there).
+    param([string]$Thumbprint, [string[]]$Store = @('CurrentUser', 'LocalMachine'))
+    $t = ([string]$Thumbprint) -replace '\s', ''
+    if (-not $t) { return $null }
+    return (@(Get-AppStoreCertificates -Store $Store) | Where-Object { $_.Thumbprint -eq $t } | Select-Object -First 1)
 }

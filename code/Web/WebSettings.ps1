@@ -36,7 +36,7 @@ function Global:Get-WebLocalCertificates {
     $list = New-Object System.Collections.Generic.List[object]
     $expired = 0; $noKey = 0
     foreach ($store in 'CurrentUser', 'LocalMachine') {
-        foreach ($c in @(Get-ChildItem -Path "Cert:\$store\My" -ErrorAction SilentlyContinue)) {
+        foreach ($c in @(Get-AppStoreCertificates -Store $store)) {
             if (-not $c.HasPrivateKey) { $noKey++; continue }
             if ($c.NotAfter -le $now) { $expired++; continue }
             $list.Add([ordered]@{ subject = $c.Subject; thumbprint = $c.Thumbprint; notAfter = $c.NotAfter.ToString('yyyy-MM-dd')
@@ -57,9 +57,13 @@ function Global:New-WebCertificate {
     if (-not $subject) { $subject = 'Intune Deployment' }
     if ($subject -notmatch '^CN=') { $subject = "CN=$subject" }
     try {
+        # Linux (the container): made with .NET - New-SelfSignedCertificate is Windows only.
+        if ($IsLinux -or $IsMacOS) { $cert = New-AppSelfSignedCertificate -Subject $subject }
+        else {
         $cert = New-SelfSignedCertificate -Subject $subject -CertStoreLocation 'Cert:\CurrentUser\My' `
             -KeyExportPolicy NonExportable -KeySpec Signature -KeyLength 2048 -KeyAlgorithm RSA `
             -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(2) -ErrorAction Stop
+        }
     }
     catch { return @{ ok = $false; error = "Couldn't create the certificate: $($_.Exception.Message)" } }
     $folder = Join-Path $Global:App.RootPath 'data\certificates'
@@ -101,8 +105,7 @@ function Global:Invoke-WebTestConnection {
     $thumb = ([string]$Data.thumbprint).Trim() -replace '\s', ''
     $moduleOk = [bool](Test-GraphModuleHere)
     $localCert = if ($thumb) {
-        Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
-            Where-Object { $_.Thumbprint -eq $thumb } | Select-Object -First 1
+        Find-AppStoreCertificate $thumb
     }
     $state = @{
         ModuleOk     = $moduleOk
@@ -190,7 +193,7 @@ function Global:Start-WebCertJob {
     $config = [ordered]@{ Mode = $mode; TenantId = $tenant; ClientId = $client; OutputResultPath = $resultPath }
     if ($mode -eq 'Upload') {
         $thumb = ([string]$Data.thumbprint).Trim() -replace '\s', ''
-        $cert = Get-ChildItem Cert:\CurrentUser\My -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $thumb } | Select-Object -First 1
+        $cert = Find-AppStoreCertificate $thumb -Store CurrentUser
         if (-not $cert) { return @{ ok = $false; error = "No certificate with thumbprint $thumb in CurrentUser\My. Pick or create one first." } }
         $config.CertThumbprint = $thumb
         $config.CertSubject = $cert.Subject

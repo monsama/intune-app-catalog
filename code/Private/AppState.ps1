@@ -9,6 +9,8 @@ function Global:Initialize-AppState {
     # Paths & state
     # =====================================================================
     $Global:App.RootPath   = $RootPath
+    # Linux (the container) has no TEMP: the steps and their result files go to the system's temp folder.
+    if (-not $env:TEMP) { $env:TEMP = [System.IO.Path]::GetTempPath().TrimEnd('/', '\') }
     $Global:App.AppVersion = "2.27.8"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
     # The catalog as last read (Read-WebCatalogRecords) - the shared
     # functions that look at "the catalog" (default dependencies, known

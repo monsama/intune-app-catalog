@@ -46,8 +46,7 @@ function Global:Read-WebRequest {
                 $firstLine = (($headerText -split "`r`n")[0])
                 $hdrHost = if ($headerText -match '(?im)^Host:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { '' }
                 $hdrOrigin = if ($headerText -match '(?im)^Origin:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { $null }
-                $local = '^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$'
-                if ($hdrHost -notmatch $local -or ($null -ne $hdrOrigin -and $hdrOrigin -notmatch '^http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$') -or $firstLine -notmatch '^POST /api/') { $contentLength = 0 }
+                if (-not (Test-WebHostAllowed $hdrHost) -or -not (Test-WebOriginAllowed $hdrOrigin) -or $firstLine -notmatch '^POST /api/') { $contentLength = 0 }
                 $bodyStart = $headerEnd + 4; $have = $arr.Length - $bodyStart
                 while ($have -lt $contentLength) { $read = $ns.Read($buf, 0, $buf.Length); if ($read -le 0) { break }; $ms.Write($buf, 0, $read); $have += $read }
                 $arr = $ms.ToArray(); $body = ''
@@ -57,9 +56,10 @@ function Global:Read-WebRequest {
                 $hostHeader = if ($headerText -match '(?im)^Host:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { '' }
                 $originHeader = if ($headerText -match '(?im)^Origin:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { $null }
                 $typeHeader = if ($headerText -match '(?im)^Content-Type:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { '' }
+                $agentHeader = if ($headerText -match '(?im)^User-Agent:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { '' }
                 $path = [string]$parts[1]
                 $q = $path.IndexOf('?'); if ($q -ge 0) { $path = $path.Substring(0, $q) }
-                return @{ Method = $parts[0]; Path = $path; Body = $body; Host = $hostHeader; Origin = $originHeader; ContentType = $typeHeader }
+                return @{ Method = $parts[0]; Path = $path; Body = $body; Host = $hostHeader; Origin = $originHeader; ContentType = $typeHeader; Agent = $agentHeader }
             }
         }
     }
@@ -113,10 +113,11 @@ function Global:Test-WebRequestAllowed {
     #>
     param([hashtable]$Request)
     if (-not $Request) { return 'unreadable' }
-    if ([string]$Request.Host -notmatch '^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$') { return 'host' }
+    if (-not (Test-WebHostAllowed ([string]$Request.Host))) { return 'host' }
     if ([string]$Request.Path -like '/api/*') {
-        $originOk = ($null -eq $Request.Origin) -or ([string]$Request.Origin -match '^http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$')
-        if (-not $originOk) { return 'origin' }
+        if (-not (Test-WebOriginAllowed ([string]$Request.Origin))) { return 'origin' }
+        # The container's health check: a plain GET, answered without signing in (it says nothing but "up").
+        if ($Request.Method -eq 'GET' -and $Request.Path -eq '/api/health') { return '' }
         if ($Request.Method -ne 'POST' -or [string]$Request.ContentType -notmatch '^application/json') { return 'method' }
     }
     return ''
@@ -147,6 +148,8 @@ function Global:Get-WebStaticFile {
         '/settings.js' = @('settings.js', 'text/javascript; charset=utf-8')
         '/app.js'      = @('app.js', 'text/javascript; charset=utf-8')
         '/app.css'     = @('app.css', 'text/css; charset=utf-8')
+        '/login.html'  = @('login.html', 'text/html; charset=utf-8')
+        '/login.js'    = @('login.js', 'text/javascript; charset=utf-8')
         '/icon.svg'    = @('icon.svg', 'image/svg+xml')
     }
     if (-not $files.ContainsKey($Path)) { return $null }

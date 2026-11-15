@@ -589,6 +589,8 @@ function Global:Invoke-WebApi {
         '/api/cert-status'      { return (Get-WebCertStatus $Data) }
         '/api/certs-local'      { return (Get-WebLocalCertificates) }
         '/api/cert-new'         { return (New-WebCertificate $Data) }
+        '/api/cert-import'      { return (Import-WebPfx $Data) }
+        '/api/cert-file'        { return (Get-WebCertificateFile $Data) }
         '/api/test-connection'  { return (Invoke-WebTestConnection $Data) }
         '/api/connection-status' { return (Get-WebConnectionStatus) }
         '/api/job-start'        { return (Start-WebCertJob $Data) }

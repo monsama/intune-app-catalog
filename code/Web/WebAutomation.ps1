@@ -277,12 +277,9 @@ function Global:Get-WebConnectionCertificate {
     # The connection's certificate on this PC: @{ Cert; Store } or $null.
     $t = ([string]$Global:App.GraphCertificateThumbprint) -replace '\s', ''
     if (-not $t) { return $null }
-    foreach ($loc in 'Cert:\CurrentUser\My', 'Cert:\LocalMachine\My') {
-        try {
-            $c = Get-ChildItem -LiteralPath $loc -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $t } | Select-Object -First 1
-            if ($c) { return @{ Cert = $c; Store = $loc } }
-        }
-        catch { }
+    foreach ($loc in 'CurrentUser', 'LocalMachine') {
+        $c = Find-AppStoreCertificate $t -Store $loc
+        if ($c) { return @{ Cert = $c; Store = "Cert:\$loc\My" } }
     }
     return $null
 }
