@@ -1282,3 +1282,14 @@ table.cmp mark.add { background: color-mix(in srgb, var(--ok) 35%, transparent);
 
 #groupList li.nomatch { display: block; line-height: 1.6; }
 #groupList li.nomatch .linkbtn { display: inline; padding: 0; }
+
+/* Home: an action that is running - spinning button, a moving bar under its row, Working... in the header */
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: reloadspin .7s linear infinite; vertical-align: -2px; margin-right: 6px; flex: none; }
+.btn.working { display: inline-flex; align-items: center; opacity: 1 !important; cursor: progress; }
+.btn.working:disabled { color: var(--fg); }
+.attention li.att.busy { position: relative; overflow: hidden; }
+.attention li.att.busy::after { content: ''; position: absolute; left: 0; bottom: 0; height: 2px; width: 35%; background: var(--accent); animation: homebar 1.2s ease-in-out infinite; }
+@keyframes homebar { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+.homebusy { display: inline-flex; align-items: center; margin-left: auto; font-size: 12px; color: var(--accent); }
+.homebusy[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .spinner, .attention li.att.busy::after { animation: none; } }

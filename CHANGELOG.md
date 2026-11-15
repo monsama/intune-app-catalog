@@ -32,6 +32,11 @@
   the page shows it by that ID ("Just created" while Entra ID catches up,
   then its members), the list counts it as there, and saving it again
   updates that group instead of creating another.
+- **Home shows what's running.** A Home button that starts something
+  (Take winget's versions, Switch them, Fill them in, ...) spins and says
+  "Working...", a bar moves under its row and the card's header says
+  Working... - through Home's own refreshes, until it has finished. Check
+  everything now spins too ("Checking...").
 
 ## 2.27.0
 

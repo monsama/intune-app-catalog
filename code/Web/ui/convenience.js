@@ -227,6 +227,20 @@ function refreshHomeSoon() { if ($('viewHome').hidden) return; clearTimeout(home
 document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - homeAt > 15000) refreshHomeSoon(); });
 // Not while someone is on Home's buttons with the keyboard (the refresh would take the focus away).
 setInterval(() => { if (!document.hidden && Date.now() - homeAt > 55000 && !$('viewHome').contains(document.activeElement)) refreshHomeSoon(); }, 60000);
+// While a Home action runs: its button spins and says Working..., its row shows a moving bar, and the
+// header says what's running - through any refresh, until the action has finished.
+const homeWorking = () => [el('span', { class: 'spinner', 'aria-hidden': 'true' }), 'Working...'];
+function showHomeBusy(go, on) {
+  const b = $('homeList').querySelector(`[data-go="${CSS.escape(go)}"]`), li = $('homeList').querySelector(`li[data-row="${CSS.escape(go)}"]`);
+  if (b) { b.disabled = on; b.classList.toggle('working', on); b.title = on ? 'Still running' : ''; b.replaceChildren(...(on ? homeWorking() : [b.dataset.label])); }
+  if (li) { li.classList.toggle('busy', on); li.setAttribute('aria-busy', String(on)); }
+  $('homeBusy').hidden = !homeRunning.size;
+}
+async function runHomeAction(go, fn) {
+  if (homeRunning.has(go)) return;
+  homeRunning.add(go); showHomeBusy(go, true);
+  try { await fn(); } finally { homeRunning.delete(go); showHomeBusy(go, false); }
+}
 async function loadHome() {
   const seq = ++homeSeq;
   // Only the first load shows that it's looking; a refresh swaps the content in place, without flicker.
@@ -253,19 +267,19 @@ async function loadHome() {
     'open:release': ["What's new", () => api('/api/open', { target: 'release' })], 'do:manageddefault': ['Make it the default', makeManagedDefault], 'do:managedall': ['Turn on for all', managedForAll], 'do:takeversions': ["Take winget's versions", takeVersionsForManaged], 'do:wauswitch': ['Switch them', wauSwitch], 'do:portalstore': ['Fix Company Portal', portalStore], 'do:filldetails': ['Fill them in', () => fillDetails([])] };
   const pill = { err: ['err', 'Problem'], warn: ['warn', 'Look'], ok: ['ok', 'Ready'], info: ['info', 'To do'] };
   $('homeList').replaceChildren(...(r.items.length ? r.items.map(i => { const w = where[i.go], p = pill[i.level] || pill.info;
-    return el('li', { class: 'att ' + i.level }, el('span', { class: 'pill ' + p[0], text: p[1] }), el('div', { class: 'body' }, el('b', { text: i.title }), el('span', { class: 'muted', text: i.text })),
-      w ? el('button', { class: 'btn small', text: w[0], 'data-go': i.go, disabled: homeRunning.has(i.go), title: homeRunning.has(i.go) ? 'Still running' : null,
-        onclick: async e => { if (homeRunning.has(i.go)) return; homeRunning.add(i.go); e.currentTarget.disabled = true; try { await w[1](); } finally { homeRunning.delete(i.go); const b = $('homeList').querySelector(`[data-go="${CSS.escape(i.go)}"]`); if (b) b.disabled = false; } } }) : ''); })
+    const busy = homeRunning.has(i.go);
+    return el('li', { class: 'att ' + i.level + (busy ? ' busy' : ''), 'data-row': i.go || '', 'aria-busy': String(busy) }, el('span', { class: 'pill ' + p[0], text: p[1] }), el('div', { class: 'body' }, el('b', { text: i.title }), el('span', { class: 'muted', text: i.text })),
+      w ? el('button', { class: 'btn small' + (busy ? ' working' : ''), 'data-go': i.go, 'data-label': w[0], disabled: busy, title: busy ? 'Still running' : null, onclick: () => runHomeAction(i.go, w[1]) }, busy ? homeWorking() : w[0]) : ''); })
     : [el('li', { class: 'att ok' }, el('span', { class: 'pill ok', text: 'All good' }), el('div', { class: 'body' }, el('b', { text: 'Nothing to do' }), el('span', { class: 'muted', text: 'Every app is deployed, nothing is on hold, and the last nightly run went fine.' })))]));
 }
 $('btnHomeReload').addEventListener('click', loadHome);
 $('btnHomeAdd').addEventListener('click', () => openAdd());
 $('btnHomeCheck').addEventListener('click', async () => {
-  const b = $('btnHomeCheck'); b.disabled = true;
+  const b = $('btnHomeCheck'); b.disabled = true; b.classList.add('working'); b.replaceChildren(el('span', { class: 'spinner', 'aria-hidden': 'true' }), 'Checking...');
   try { $('chkDetails').checked = true; const cr = await runChecks(); await loadApps();
     const notCompared = cr && cr.connected === false;
     toast(findings.length ? `${findings.length} finding(s) - Checks has them.` : notCompared ? 'Not compared with Intune: not connected (Settings > Connection). The catalog itself looks fine.' : 'The catalog and Intune match.', false, findings.length ? [{ label: 'See them', run: () => showView('checks') }] : []); loadHome(); }
-  finally { b.disabled = false; }
+  finally { b.disabled = false; b.classList.remove('working'); b.textContent = 'Check everything now'; }
 });
 
 // ---------------------------------------------------------------- Ctrl+K
