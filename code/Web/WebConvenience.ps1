@@ -266,6 +266,10 @@ function Global:Get-WebAttention {
     $apps = @((Read-WebCatalogRecords).Apps)
     $notDeployed = @($apps | Where-Object { -not $_.appId })
     if ($notDeployed.Count) { & $add 'info' "$($notDeployed.Count) app(s) not in Intune yet" ((@($notDeployed | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($notDeployed.Count -gt 5) { ', ...' })) 'apps:notdeployed' }
+    # winget.exe answers in Windows' display language; its text is read in several languages, but Microsoft's WinGet module is exact in all of them.
+    if (-not $Global:App.TestGraph -and @($apps | Where-Object { $_.wingetId }).Count -and (Get-UICulture).TwoLetterISOLanguageName -ne 'en' -and (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not (Test-WingetClientModule)) {
+        & $add 'info' 'Install the WinGet PowerShell module' "Windows here isn't in English, so winget's answers are read from translated text. For exact answers in any language, run once in PowerShell: Install-Module Microsoft.WinGet.Client -Scope CurrentUser" ''
+    }
     # Winget-AutoUpdate is no longer used (2.19): apps still relying on it are switched to managed updates.
     $wau = @($apps | Where-Object { @(Get-WauUse $_).Count })
     if ($wau.Count) { & $add 'warn' "$($wau.Count) app(s) still use Winget-AutoUpdate" ((@($wau | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + " - this catalog no longer uses WAU. Switch them to $(if ([string]$Global:App.DefaultAppSettings.WingetInstallMethod -eq 'Winget') { 'the winget command' } else { 'managed updates: a fixed version, released to the pilot groups first' }), and send the new commands to Intune.") 'do:wauswitch' }

@@ -1051,9 +1051,17 @@ function Global:Get-DefaultAppMetadata {
     # name per app - quadratic in catalog size, for a question that is just
     # "is there an app called this?". A PowerShell hashtable matches names
     # case-insensitively, exactly as the -eq it replaces did.
-    $catalogNames = @{}
-    foreach ($catalogApp in $Global:App.Apps) {
-        if ($catalogApp.appName) { $catalogNames[[string]$catalogApp.appName] = $true }
+    # The name lookup is built once per catalog list (the same list object), not for every app - for the
+    # Apps list that was every app walked once per app.
+    $appsNow = $Global:App.Apps
+    $cache = $Global:App.CatalogNamesCache   # one object, replaced whole: a request in another runspace never sees half of it
+    if ($cache -and [object]::ReferenceEquals($cache.For, $appsNow) -and $cache.N -eq @($appsNow).Count -and $cache.Last -ceq [string]$(if (@($appsNow).Count) { @($appsNow)[-1].appName })) { $catalogNames = $cache.Names }
+    else {
+        $catalogNames = @{}
+        foreach ($catalogApp in $appsNow) {
+            if ($catalogApp.appName) { $catalogNames[[string]$catalogApp.appName] = $true }
+        }
+        if ($null -ne $appsNow) { $Global:App.CatalogNamesCache = @{ For = $appsNow; N = @($appsNow).Count; Last = [string]$(if (@($appsNow).Count) { @($appsNow)[-1].appName }); Names = $catalogNames } }
     }
     $defaultDeps = @(
         $das.DefaultDependencyAppNames | Where-Object {
@@ -1516,6 +1524,25 @@ function Global:Get-MonthlyReportData {
 
 # ---------------------------------------------------------------- adding apps: winget details, installers, script apps
 
+function Global:Get-WingetShowLabelMap {
+    <#
+      Pure: winget show's labels (lowercase) -> the field they fill. winget
+      writes them in Windows' display language, so the common translations
+      are here too (German, French, Spanish, Italian, Portuguese, Dutch).
+      A label that isn't known is just left out.
+    #>
+    $m = @{}
+    $add = { param($Field, [string[]]$Labels) foreach ($l in $Labels) { $m[$l.ToLowerInvariant()] = $Field } }
+    & $add 'Version' @('Version', ('Versi' + [char]0xF3 + 'n'), 'Versione', ('Vers' + [char]0xE3 + 'o'), 'Versie')
+    & $add 'Publisher' @('Publisher', 'Herausgeber', ([string][char]0xC9 + 'diteur'), 'Editeur', 'Editor', 'Publicador', 'Autore', 'Uitgever')
+    & $add 'PublisherUrl' @('Publisher Url', 'Herausgeber-URL', ("URL de l'" + [char]0xE9 + 'diteur'), 'URL del editor', 'URL del publicador', "URL dell'editore", 'URL do editor', 'Uitgever-URL')
+    & $add 'Description' @('Description', 'Short Description', 'Beschreibung', 'Kurzbeschreibung', ('Descripci' + [char]0xF3 + 'n'), 'Descrizione', ('Descri' + [char]0xE7 + [char]0xE3 + 'o'), 'Beschrijving')
+    & $add 'Homepage' @('Homepage', 'Startseite', "Page d'accueil", ('P' + [char]0xE1 + 'gina principal'), ('P' + [char]0xE1 + 'gina inicial'), 'Home page', 'Startpagina')
+    & $add 'License' @('License', 'Lizenz', 'Licence', 'Licencia', 'Licenza', ('Licen' + [char]0xE7 + 'a'), 'Licentie')
+    & $add 'PrivacyUrl' @('Privacy Url', 'Datenschutz-URL', ('URL de confidentialit' + [char]0xE9), 'URL de privacidad', 'URL della privacy', 'URL de privacidade', 'Privacy-URL')
+    & $add 'Tags' @('Tags', 'Markierungen', 'Balises', 'Etiquetas', 'Etichette', 'Marcas')
+    return $m
+}
 function Global:ConvertFrom-WingetShowOutput {
     <#
       Pure: "winget show --id X --exact" as @{ Name; Id; Version; Publisher;
@@ -1525,17 +1552,18 @@ function Global:ConvertFrom-WingetShowOutput {
     #>
     param([string]$Text)
     $out = [ordered]@{ Name = ''; Id = ''; Version = ''; Publisher = ''; PublisherUrl = ''; Description = ''; Homepage = ''; License = ''; PrivacyUrl = ''; Tags = @() }
-    $map = @{ 'Version' = 'Version'; 'Publisher' = 'Publisher'; 'Publisher Url' = 'PublisherUrl'; 'Description' = 'Description'; 'Short Description' = 'Description'; 'Homepage' = 'Homepage'; 'License' = 'License'; 'Privacy Url' = 'PrivacyUrl'; 'Tags' = 'Tags' }
+    $map = Get-WingetShowLabelMap
     $key = ''
     foreach ($raw in @(([string]$Text) -split "`r?`n")) {
         $line = $raw -replace '[\x00-\x08\x0B\x0C\x0E-\x1F]', ''
-        $m = [regex]::Match($line, '^Found (.+) \[([^\]]+)\]\s*$')
-        if ($m.Success) { $out.Name = $m.Groups[1].Value.Trim(); $out.Id = $m.Groups[2].Value.Trim(); $key = ''; continue }
-        $m = [regex]::Match($line, '^([A-Za-z][A-Za-z ]*?):\s*(.*)$')
+        # "Found 7-Zip [7zip.7zip]" ("Gefunden ...", "Trouve ..." in other Windows languages): the first line ending in [Id].
+        $m = [regex]::Match($line, '^\S+\s+(.+?)\s+\[([A-Za-z0-9][A-Za-z0-9.\-_+]*)\]\s*$')
+        if ($m.Success -and -not $out.Id) { $out.Name = $m.Groups[1].Value.Trim(); $out.Id = $m.Groups[2].Value.Trim(); $key = ''; continue }
+        $m = [regex]::Match($line, "^(\p{L}[\p{L} '\-]*?):\s*(.*)$")
         if ($m.Success) {
-            $k = $m.Groups[1].Value
+            $k = $m.Groups[1].Value.ToLowerInvariant()
             $key = if ($map.ContainsKey($k)) { $map[$k] } else { '' }
-            if ($key -eq 'Description' -and $out.Description -and $k -eq 'Short Description') { $key = ''; continue }
+            if ($key -eq 'Description' -and $out.Description) { $key = ''; continue }
             if ($key -eq 'Tags') { if ($m.Groups[2].Value.Trim()) { $out.Tags = @($m.Groups[2].Value.Trim()) } }
             elseif ($key) { $out[$key] = $m.Groups[2].Value.Trim() }
             continue
@@ -2283,7 +2311,8 @@ function Global:ConvertFrom-WingetVersionsOutput {
         $lines.Add($last)
     }
     $start = -1
-    for ($i = 0; $i -lt $lines.Count - 1; $i++) { if ($lines[$i] -match '^Version$' -and $lines[$i + 1] -match '^-{3,}$') { $start = $i + 2; break } }
+    # The header is "Version" in English, "Version" with accents, ... in other Windows languages: any one-word line over the dashes.
+    for ($i = 0; $i -lt $lines.Count - 1; $i++) { if ($lines[$i] -match '^\S+$' -and $lines[$i] -notmatch '^-+$' -and $lines[$i + 1] -match '^-{3,}$') { $start = $i + 2; break } }
     if ($start -lt 0) { return @() }
     return @($lines[$start..($lines.Count - 1)] | Where-Object { $_ -match '^[0-9A-Za-z][0-9A-Za-z.\-_+]{0,63}$' } | Select-Object -First 100)
 }

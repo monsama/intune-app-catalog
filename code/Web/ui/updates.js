@@ -142,13 +142,20 @@ $('btnUpdDownloads').addEventListener('click', async () => {
 $('btnUpdExport').addEventListener('click', () => {
   if (!updRows.length) { toast('Nothing to export.', true); return; }
   const q = v => { const t = v === null || v === undefined ? '' : String(v); return /^[=+\-@\t\r]/.test(t) ? `"'${t.replace(/"/g, '""')}"` : `"${t.replace(/"/g, '""')}"`; };
-  const head = ['App', 'Kind', 'Current version', 'Installed', 'Failed', 'Pending', 'Not installed', 'On current (%)', 'Release version', 'Released', 'Ring', 'Fast track', 'Release installed', 'Release failed', 'Release rule', 'Why', 'Available', 'Devices on older versions', 'Superseded'];
-  const lines = [head.map(q).join(';'), ...updRows.map(x => { const p = x.pilot; return [x.name, x.kind, x.current, x.installed, x.failed, x.pending, x.notInstalled, x.onCurrentPercent,
-    p && p.version, p && p.at, p && p.ringName, p && (p.fastTrack ? 'yes' : 'no'), p && p.installed, p && p.failed, p && p.action, p && p.reason, x.available, x.older && x.older.devices, x.previous.join(' | ')].map(q).join(';'); })];
+  // A compliance report: per app whether it meets the bar (90 % of devices on the pinned version, and that version still downloadable), then a totals row.
+  const verdict = x => x.onCurrentPercent === null || x.onCurrentPercent === undefined ? 'no counts'
+    : x.download && ['gone', 'notinwinget'].includes(x.download.status) ? 'not compliant (download gone)'
+    : x.onCurrentPercent >= 90 ? 'compliant' : 'not compliant';
+  const head = ['App', 'Kind', 'Compliance', 'Pinned version', 'Installed', 'Failed', 'Pending', 'Not installed', 'On pinned (%)', 'Download check', 'Release version', 'Released', 'Ring', 'Fast track', 'Release installed', 'Release failed', 'Release rule', 'Why', 'Available', 'Devices on older versions', 'Superseded'];
+  const sum = k => updRows.reduce((n, x) => n + (Number(x[k]) || 0), 0), tried = sum('installed') + sum('failed') + sum('pending') + sum('notInstalled');
+  const lines = [head.map(q).join(';'), ...updRows.map(x => { const p = x.pilot; return [x.name, x.kind, verdict(x), x.current, x.installed, x.failed, x.pending, x.notInstalled, x.onCurrentPercent,
+    x.download ? `${x.download.status} (${x.download.at})` : '', p && p.version, p && p.at, p && p.ringName, p && (p.fastTrack ? 'yes' : 'no'), p && p.installed, p && p.failed, p && p.action, p && p.reason, x.available, x.older && x.older.devices, x.previous.join(' | ')].map(q).join(';'); }),
+    [`All ${updRows.length} apps`, '', `${updRows.filter(x => verdict(x) === 'compliant').length} compliant`, '', sum('installed'), sum('failed'), sum('pending'), sum('notInstalled'), tried ? Math.round(1000 * sum('installed') / tried) / 10 : '',
+      '', '', '', '', '', '', '', '', '', '', updRows.reduce((n, x) => n + (x.older ? Number(x.older.devices) || 0 : 0), 0), ''].map(q).join(';')];
   const url = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' }));
-  const a = el('a', { href: url, download: `managed-updates-${new Date().toISOString().slice(0, 10)}.csv` });
+  const a = el('a', { href: url, download: `compliance-${new Date().toISOString().slice(0, 10)}.csv` });
   document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 10000);
-  toast(`Exported ${updRows.length} app(s) to your Downloads folder.`);
+  toast(`Compliance report for ${updRows.length} app(s) saved to your Downloads folder.`);
 });
 // After a release action's dialogs close, the page shows the new state.
 for (const d of ['dlgRun', 'dlgRelease']) $(d).addEventListener('close', () => { if (!$('viewUpdates').hidden) setTimeout(() => loadUpdates(true), 300); });

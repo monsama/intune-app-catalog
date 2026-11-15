@@ -142,7 +142,7 @@ The **Updates** tab shows every app with managed updates on one page:
 | **Superseded** | Earlier releases kept in Intune for rollback. |
 
 Release, Next ring, Promote, Withdraw and Roll back are on each row.
-**Export CSV** saves the table, for an audit or a report. After two nightly
+**Compliance report** saves the table as a CSV file, for an audit or a report: per app whether it meets the bar (90 % of devices on the pinned version, and that version still downloadable), with a totals row. After two nightly
 runs, a line shows the share of devices on the current version over the
 last 30 days (from the runs' reports). The page reuses its counts for a
 minute when you switch tabs; **Reload** reads them again.

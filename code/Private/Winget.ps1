@@ -20,13 +20,28 @@ function Global:ConvertFrom-WingetSearchOutput {
         # the line that names the columns.
         if ($lines[$i] -match '(^|\s)Name\s+Id\s+Version') { $headerIdx = $i; break }
     }
-    if ($headerIdx -lt 0) { return @() }
-    $header = $lines[$headerIdx]
-    $namePos = [Math]::Max(0, $header.IndexOf('Name'))
-    $idPos = $header.IndexOf('Id', $namePos + 4)
-    $versionPos = $header.IndexOf('Version', $idPos)
-    $matchPos = $header.IndexOf('Match', $versionPos)
-    $sourcePos = $header.IndexOf('Source', $versionPos)
+    if ($headerIdx -ge 0) {
+        $header = $lines[$headerIdx]
+        $namePos = [Math]::Max(0, $header.IndexOf('Name'))
+        $idPos = $header.IndexOf('Id', $namePos + 4)
+        $versionPos = $header.IndexOf('Version', $idPos)
+        $matchPos = $header.IndexOf('Match', $versionPos)
+        $sourcePos = $header.IndexOf('Source', $versionPos)
+    }
+    else {
+        # Not English (Windows in another display language names the columns
+        # "Name ID Version Quelle", ...): the header is the line over the
+        # ----- rule, and its words are, in order, name, ID, version, then
+        # match (only with five columns) and source.
+        for ($i = 1; $i -lt $lines.Count; $i++) { if ($lines[$i] -match '^-{10,}\s*$') { $headerIdx = $i - 1; break } }
+        if ($headerIdx -lt 0) { return @() }
+        $header = ($lines[$headerIdx] -split "`r")[-1]
+        $cols = @([regex]::Matches($header, '\S+') | ForEach-Object { $_.Index })
+        if ($cols.Count -lt 3 -or $cols.Count -gt 5) { return @() }
+        $namePos = $cols[0]; $idPos = $cols[1]; $versionPos = $cols[2]
+        $matchPos = if ($cols.Count -eq 5) { $cols[3] } else { -1 }
+        $sourcePos = if ($cols.Count -ge 4) { $cols[$cols.Count - 1] } else { -1 }
+    }
     $rows = New-Object System.Collections.Generic.List[object]
     for ($i = $headerIdx + 1; $i -lt $lines.Count; $i++) {
         $line = $lines[$i]
@@ -54,12 +69,16 @@ function Global:Get-WingetShowVerdict {
       ("NOT FOUND ..." is what Get-WingetFindings looks for).
     #>
     param([int]$ExitCode, [string]$StdOut, [string]$StdErr)
-    if ($ExitCode -eq 0 -and $StdOut -match '(?m)^\s*Version:') {
-        $publisher = if ($StdOut -match '(?m)^\s*Publisher:\s*(.+)$') { $Matches[1].Trim() } else { '' }
-        $version = if ($StdOut -match '(?m)^\s*Version:\s*(\S+)') { $Matches[1].Trim() } else { '' }
-        return @{ Ok = $true; Result = $(if ($publisher) { "Found ($publisher)" } else { 'Found' }); Version = $version }
+    # winget's words follow Windows' display language, so what decides is
+    # its exit code and the "Name [Id]" line; the labels only add details
+    # (ConvertFrom-WingetShowOutput knows them in several languages).
+    $d = ConvertFrom-WingetShowOutput $StdOut
+    if ($ExitCode -eq 0 -and ($d.Id -or $d.Version)) {
+        $publisher = [string]$d.Publisher
+        return @{ Ok = $true; Result = $(if ($publisher) { "Found ($publisher)" } else { 'Found' }); Version = [string]$d.Version }
     }
-    if ($StdOut -match 'No package found' -or $StdErr -match 'No package found') {
+    # 0x8A150014 (APPINSTALLER_CLI_ERROR_NO_APPLICATIONS_FOUND) in any language.
+    if ($ExitCode -eq -1978335212 -or $StdOut -match 'No package found' -or $StdErr -match 'No package found') {
         return @{ Ok = $false; Result = "NOT FOUND - winget doesn't know this ID any more" }
     }
     $first = @((([string]$StdOut) + "`n" + ([string]$StdErr)) -split "`r?`n" | Where-Object { $_.Trim() -and $_ -notmatch '^[\s\\|/-]+$' }) | Select-Object -First 1
@@ -115,12 +134,52 @@ function Global:Invoke-Winget {
     return @{ ExitCode = $proc.ExitCode; StdOut = $out.GetAwaiter().GetResult(); StdErr = $err.GetAwaiter().GetResult() }
 }
 
+function Global:Test-WingetClientModule {
+    <#
+      Is Microsoft's WinGet PowerShell module (Microsoft.WinGet.Client) here?
+      It answers with objects, so nothing depends on Windows' display
+      language. Looked for once per run; without it, winget.exe's text is
+      read (in several languages). Never in test mode.
+    #>
+    if ($Global:App.TestGraph) { return $false }
+    if ($null -ne $Global:App.WingetClientModule) { return [bool]$Global:App.WingetClientModule }
+    $ok = $false
+    try {
+        if (Get-Module -ListAvailable -Name Microsoft.WinGet.Client -ErrorAction SilentlyContinue) {
+            Import-Module Microsoft.WinGet.Client -ErrorAction Stop -WarningAction SilentlyContinue
+            $ok = [bool](Get-Command Find-WinGetPackage -ErrorAction SilentlyContinue)
+        }
+    }
+    catch { $ok = $false }
+    $Global:App.WingetClientModule = $ok
+    return $ok
+}
+
+function Global:Find-WingetClientPackage {
+    # Find-WinGetPackage as plain rows @{ Name; Id; Version; Source; Versions } ($null when the module can't answer - the caller then asks winget.exe).
+    param([string]$Query, [string]$Id)
+    if (-not (Test-WingetClientModule)) { return $null }
+    try {
+        $found = if ($Id) { @(Find-WinGetPackage -Id $Id -MatchOption EqualsCaseInsensitive -ErrorAction Stop) } else { @(Find-WinGetPackage -Query $Query -ErrorAction Stop) }
+        $rows = New-Object System.Collections.Generic.List[object]
+        foreach ($p in $found) {
+            if (-not $p -or -not $p.Id) { continue }
+            if ($Id -and [string]$p.Id -ne $Id) { continue }
+            $rows.Add([pscustomobject]@{ Name = [string]$p.Name; Id = [string]$p.Id; Version = [string]$p.Version; Source = [string]$p.Source; Versions = @($p.AvailableVersions | ForEach-Object { [string]$_ } | Where-Object { $_ }) })
+        }
+        return , $rows.ToArray()
+    }
+    catch { return $null }
+}
+
 function Global:Find-WingetPackage {
     # winget search, as rows (ConvertFrom-WingetSearchOutput).
     param([string]$Query)
+    $viaModule = Find-WingetClientPackage -Query $Query
+    if ($null -ne $viaModule) { return @($viaModule | ForEach-Object { [pscustomobject]@{ Name = $_.Name; Id = $_.Id; Version = $_.Version; Source = $_.Source } }) }
     $r = Invoke-Winget -Arguments @('search', '--query', $Query, '--accept-source-agreements', '--disable-interactivity')
     $rows = @(ConvertFrom-WingetSearchOutput $r.StdOut)
-    if ($r.ExitCode -ne 0 -and $rows.Count -eq 0 -and $r.StdOut -notmatch 'No package found') {
+    if ($r.ExitCode -ne 0 -and $rows.Count -eq 0 -and $r.ExitCode -ne -1978335212 -and $r.StdOut -notmatch 'No package found') {
         throw "winget search failed (exit code $($r.ExitCode)): $(([string]$r.StdErr).Trim())"
     }
     return $rows
@@ -129,6 +188,12 @@ function Global:Find-WingetPackage {
 function Global:Test-WingetPackageId {
     # Is this Winget ID still known to winget? @{ AppName; WingetId; Ok; Result } - a row Get-WingetFindings reads.
     param([string]$AppName, [string]$WingetId)
+    $viaModule = Find-WingetClientPackage -Id $WingetId
+    if ($null -ne $viaModule) {
+        $hit = @($viaModule) | Select-Object -First 1
+        if ($hit) { return [pscustomobject]@{ AppName = $AppName; WingetId = $WingetId; Ok = $true; Result = 'Found'; Version = [string]$hit.Version } }
+        return [pscustomobject]@{ AppName = $AppName; WingetId = $WingetId; Ok = $false; Result = "NOT FOUND - winget doesn't know this ID any more"; Version = '' }
+    }
     try {
         $r = Invoke-Winget -Arguments @('show', '--id', $WingetId, '--exact', '--accept-source-agreements', '--disable-interactivity')
         $v = Get-WingetShowVerdict -ExitCode $r.ExitCode -StdOut $r.StdOut -StdErr $r.StdErr

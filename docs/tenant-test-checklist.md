@@ -4,7 +4,7 @@ The automated tests never sign in to Microsoft Graph: they check the page,
 the server and the logic, and stop at "Set up the connection first". Run
 through this once against a **test tenant** (never production) before
 relying on a release. About 45 minutes, plus about 30 for managed updates
-(section 10).
+(section 10) and 15 for what 2.20-2.24 added (section 10b).
 
 ## Setup
 
@@ -264,6 +264,38 @@ group with another device.
       **Release new version...** The version and product code are read
       from the MSI, the package is rebuilt, and the pilot app's detection
       shows the new version and product code.
+
+## 10b. Newer features (2.20 - 2.24)
+
+- [ ] **Groups by object ID:** push groups for the 7-Zip test app, then
+      rename `ZZ-Test-A` in the Entra portal and push again - the step stops
+      with "renamed in Entra ID to ... rename it in the catalog too" and
+      changes nothing. Rename it in the catalog; the next push works.
+      `<catalog>\.integrity\groups.json` holds the group's ID.
+- [ ] **Two groups with one name:** create a second `ZZ-Test-B` in the
+      portal and push - the step stops and says the name isn't unique.
+      Delete the second one.
+- [ ] **Several admins:** on a second PC (or as a second Windows user)
+      open the same catalog, start **Release new version...** on the managed
+      app; on the first PC the Apps list shows the row as "Being changed"
+      with the other user and PC. When it's done, the row is back to normal.
+      **Catalog > Recent changes** shows who made each change.
+- [ ] **Windows in another language:** on a PC with German (or another)
+      display language, without the WinGet PowerShell module: search winget
+      on Add apps, open a Winget app's version picker, run Checks with
+      Winget IDs - all work, and Home suggests installing the module. Then
+      `Install-Module Microsoft.WinGet.Client -Scope CurrentUser`, restart -
+      the same, without the hint.
+- [ ] **Version picker:** on a Winget app with managed updates, the
+      version field lists winget's versions; pick one - the column shows it
+      pinned (lock), newest when not pinned.
+- [ ] **Backups locked down:** change a copy in Backups by hand, then
+      **Restore** it - it's refused as changed outside the app.
+- [ ] **Compliance report:** Updates > **Compliance report** - the CSV has
+      a Compliance column per app and a totals row; Excel opens it with
+      umlauts intact.
+- [ ] **Recent changes, Undo:** edit an app's owner, then Catalog > Recent
+      changes > **Undo** - the old value is back.
 
 ## 11. Clean up
 

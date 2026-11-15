@@ -241,3 +241,88 @@ function Global:Complete-WebGroupRename {
     Write-Log "[OK] Renamed '$($After.OldName)' to '$($After.NewName)'; $($changed.Count) app(s) in the catalog updated$(if ($changed.Count) { ": $($changed -join ', ')" })."
     return @{ ok = $true; updated = $changed }
 }
+
+# ---------------------------------------------------------------- groups by their Entra ID
+# The catalog names groups; Entra ID knows them by object ID. Once a group's name was found (once, unambiguously),
+# its ID is kept next to the catalog (.integrity\groups.json). Every send after that goes to that ID - and checks
+# that the ID still has that name: a group renamed in Entra ID, or a look-alike made later under the same name,
+# never gets an assignment that was meant for the original.
+
+function Global:Read-WebGroupIdStore {
+    $file = Join-Path (Get-WebIntegrityFolder) 'groups.json'
+    $map = @{}
+    if (Test-Path -LiteralPath $file) {
+        try { foreach ($p in (Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties) { $map[$p.Name] = [string]$p.Value } } catch { }
+    }
+    return $map
+}
+
+function Global:Save-WebGroupIdStore {
+    param([hashtable]$Map)
+    $o = [ordered]@{}; foreach ($k in @($Map.Keys | Sort-Object)) { $o[$k] = $Map[$k] }
+    [System.IO.File]::WriteAllText((Join-Path (Get-WebIntegrityFolder -Create) 'groups.json'), (ConvertTo-Json -InputObject $o -Depth 3), (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Global:Resolve-WebGroupIds {
+    <#
+      Group names -> Entra object IDs for a send. @{ ok; ids; error }. A kept ID is checked (it must still carry
+      the name); a name without one is looked up (exactly one group may have it) and kept. A name no group has yet
+      stays out (the step creates it, where it may). When Entra ID can't be asked, ids is empty and the step looks
+      the names up itself (and refuses a name two groups share).
+    #>
+    param([string[]]$Names)
+    $names = @($Names | Where-Object { $_ } | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
+    if (-not $names.Count -or -not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $true; ids = @{} } }
+    $store = Read-WebGroupIdStore
+    $key = { param($n) ([string]$n).Trim().ToLowerInvariant() }
+    $known = @($names | Where-Object { $store.ContainsKey((& $key $_)) })
+    $unknown = @($names | Where-Object { -not $store.ContainsKey((& $key $_)) })
+    $read = Invoke-WebGraph -Permission 'Group.Read.All' -Action {
+        param($Graph)
+        $byId = @{}; $byName = @{}
+        $ids = @($known | ForEach-Object { $store[(& $key $_)] } | Where-Object { $_ -match '^[0-9a-fA-F-]{36}$' })
+        for ($i = 0; $i -lt $ids.Count; $i += 15) {
+            $chunk = @($ids[$i..([Math]::Min($i + 15, $ids.Count) - 1)])
+            $f = [Uri]::EscapeDataString("id in ($(($chunk | ForEach-Object { "'$_'" }) -join ','))")
+            foreach ($g in @((& $Graph "https://graph.microsoft.com/v1.0/groups?`$filter=$f&`$select=id,displayName").value)) { $byId[([string]$g.id).ToLowerInvariant()] = [string]$g.displayName }
+        }
+        foreach ($uri in @(Get-GroupLookupUris -Names @($unknown + @($known)))) {
+            foreach ($g in @((& $Graph $uri).value)) { $k = ([string]$g.displayName).Trim().ToLowerInvariant(); if (-not $byName.ContainsKey($k)) { $byName[$k] = New-Object System.Collections.Generic.List[string] }; $byName[$k].Add([string]$g.id) }
+        }
+        @{ byId = $byId; byName = $byName }
+    }
+    if (-not $read.ok) { return @{ ok = $true; ids = @{}; note = [string]$read.error } }
+    $out = @{}; $changed = $false
+    foreach ($n in $names) {
+        $k = & $key $n
+        $sameName = @($(if ($read.value.byName.ContainsKey($k)) { $read.value.byName[$k] }))
+        if ($store.ContainsKey($k)) {
+            $id = ([string]$store[$k]).ToLowerInvariant()
+            if ($read.value.byId.ContainsKey($id)) {
+                $now = $read.value.byId[$id]
+                if ($now.Trim().ToLowerInvariant() -ne $k) { return @{ ok = $false; error = "The group '$n' was renamed in Entra ID to '$now' - rename it in the catalog too (Groups > the group > Rename), so assignments go where they're meant to." } }
+                if (@($sameName | Where-Object { $_.ToLowerInvariant() -ne $id }).Count) { Write-Log "[WARN] Another group is also named '$n' in Entra ID - assignments keep going to the one the catalog knows ($id)." }
+                $out[$n] = $id; continue
+            }
+            # The kept group is gone (deleted): found again by name below, if exactly one has it.
+            $store.Remove($k); $changed = $true
+        }
+        if ($sameName.Count -gt 1) { return @{ ok = $false; error = "There are $($sameName.Count) groups named '$n' in Entra ID - rename one of them (Entra admin center), so the right one gets the assignment." } }
+        if ($sameName.Count -eq 1) { $out[$n] = $sameName[0]; $store[$k] = $sameName[0]; $changed = $true }
+    }
+    if ($changed) { try { Save-WebGroupIdStore $store } catch { Write-Log "[WARN] Couldn't keep the groups' IDs: $($_.Exception.Message)" } }
+    return @{ ok = $true; ids = $out }
+}
+
+function Global:Add-WebGroupIdsToConfig {
+    # Puts the checked group IDs into a step's config (GroupIds); '' when it may start, else why not.
+    param([hashtable]$Config)
+    $names = New-Object System.Collections.Generic.List[string]
+    $collect = { param($o) foreach ($f in 'RequiredGroups', 'AvailableGroups', 'UninstallGroups', 'ExcludeGroups') { foreach ($g in @($o[$f])) { if ($g) { $names.Add([string]$g) } } } }
+    & $collect $Config
+    foreach ($a in @($Config.Apps)) { if ($a) { & $collect $a } }
+    $r = Resolve-WebGroupIds -Names $names.ToArray()
+    if (-not $r.ok) { return $r.error }
+    $Config.GroupIds = $r.ids
+    return ''
+}

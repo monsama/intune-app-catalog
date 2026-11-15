@@ -180,6 +180,7 @@ function Global:Start-WebPushGroups {
             FilterName = [string]$a.assignmentFilter; FilterMode = [string]$a.assignmentFilterMode
             CreateMissingGroups = $false; OutputResultPath = $resultPath
         }
+        $gid = Add-WebGroupIdsToConfig $config; if ($gid) { return @{ ok = $false; error = $gid } }
         return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind "Push groups $($a.appName)" -Apps @([string]$a.appName))
     }
     $mode = if ([string]$Data.mode -eq 'Apply') { 'Apply' } else { 'Preview' }
@@ -189,6 +190,7 @@ function Global:Start-WebPushGroups {
         Apps = @($apps | ForEach-Object { @{ AppName = $_.appName; AppId = $_.appId; RequiredGroups = @($_.requiredFor); AvailableGroups = @($_.availableFor); UninstallGroups = @($_.uninstallFor); ExcludeGroups = @($_.excludeFor); FilterName = [string]$_.assignmentFilter; FilterMode = [string]$_.assignmentFilterMode } })
         OutputResultPath = $resultPath
     }
+    if ($mode -eq 'Apply') { $gid = Add-WebGroupIdsToConfig $config; if ($gid) { return @{ ok = $false; error = $gid } } }
     $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedBatchAssignScript -Name 'batchassign' -ConfigJson ($config | ConvertTo-Json -Depth 8) -ResultPath $resultPath -Kind "Push groups ($mode, $($apps.Count) app(s))" -Apps $(if ($mode -eq 'Apply') { @($apps | ForEach-Object { [string]$_.appName }) } else { @() })
     if ($started.ok) { Write-Log "[INFO] Push groups - $(if ($mode -eq 'Apply') { 'applying' } else { 'previewing' }) for $($apps.Count) app(s)..." }
     return $started
@@ -435,6 +437,7 @@ function Global:Start-WebRetire {
         Apps = @($ids | ForEach-Object { @{ AppName = $(if ($_.version) { "$($a.appName) $($_.version)" } else { $a.appName }); AppId = $_.appId
             RequiredGroups = @(); AvailableGroups = @(); UninstallGroups = $groups; ExcludeGroups = @($a.excludeFor); FilterName = [string]$a.assignmentFilter; FilterMode = [string]$a.assignmentFilterMode } })
     }
+    $gid = Add-WebGroupIdsToConfig $config; if ($gid) { return @{ ok = $false; error = $gid } }
     $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedBatchAssignScript -Name 'batchassign' -ConfigJson ($config | ConvertTo-Json -Depth 8) -ResultPath $resultPath `
         -Kind "Retire $name - uninstall from $($groups.Count) group(s)$(if ($ids.Count -gt 1) { ", $($ids.Count) versions in Intune" })" -After @{ Kind = 'retire'; AppName = $a.appName; Groups = $groups } -Apps @([string]$a.appName)
     if ($started.ok) { Write-Log "[INFO] Retiring $name - uninstalling it from: $($groups -join ', ')..." }
