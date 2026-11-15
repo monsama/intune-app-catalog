@@ -1,5 +1,81 @@
 # Changelog
 
+## 2.22.0
+
+A second full sweep - bugs, security, usability and the look - with every
+finding checked before it was fixed.
+
+**Security**
+- **Groups with the same name**: Entra ID allows several groups of one name.
+  Sending groups, assigning, deleting and saving a group now refuse when a
+  name matches more than one group, instead of taking whichever came
+  first - a look-alike group made by someone else can't get an assignment
+  (or be deleted in place of the real one).
+- **Undo** of one change only applies to that app's own history, and it
+  no longer puts back install/uninstall commands or detection rules on
+  its own (they run as SYSTEM on devices, and the history is a file in the
+  Backups folder) - Earlier versions brings those back with the whole file.
+- **Managed apps' commands** can't be changed through Batch edit or a CSV
+  import (they follow the pinned version; a CSV could otherwise skip the
+  pilot).
+- **PSADT template**: every .exe, .psm1 and .psd1 in it must be signed by
+  the toolkit's own signer (and .dll files validly signed), not only the
+  module.
+- **The generated winget command run as SYSTEM** takes winget only from its
+  protected App Installer folder, never from PATH (a PATH folder can be
+  writable by users). Commands made before are still recognised.
+
+**Bugs**
+- **Group boxes**: typing an existing group's exact name and pressing Enter
+  added a longer, different group from the suggestions. Nothing is
+  highlighted now until Down arrow is used; comma and semicolon always add
+  what's typed; the list no longer opens over the fields when a tab is
+  switched.
+- **"only in Intune"**: a hidden app stayed selected (Enter/Delete acted
+  on it), the filter couldn't be left with the dropdown, and with an empty
+  catalog nothing showed - all fixed.
+- **Minimized windows**: the chips go into the window on top (by opening
+  order), stay clickable, sit outside the window's buttons, and no longer
+  move along when a window is dragged.
+- **Group description** can be cleared.
+- **Versions**: the editor's list no longer shows another app's versions;
+  "Other" in the side panel doesn't get stuck; a script app's version
+  change says to build its package again (with a Build button).
+- **Recent changes** keeps open entries open after an Undo, reads only
+  what it shows, and is read again when restored; History doesn't offer
+  Undo for release steps.
+- Checks' group count counts each group once; a BOM in scripts read from
+  Intune is removed again on Windows PowerShell.
+
+**Usability**
+- **One next step**: the toolbar no longer repeats the row's next step.
+  An app in pilot offers **Next ring...** while rings are left (as
+  Updates does), **Pin newest** pins winget's newest version of that app
+  only, **Needs a look** opens Checks for that app (and checks it).
+- **Several apps selected**: the side panel stays, with what they are and
+  Send to Intune / Add groups / Batch edit for all of them.
+- **One set of words**: In Intune / Not in Intune yet, Send to Intune, Send
+  settings, Send groups, Take from Intune - on every page.
+- **App ID** is linked by picking an Intune app (or unlinked), not typed;
+  **version** fields have a **Pick...** list of winget's versions;
+  **Publisher** in Add apps offers the catalog's names; **Install time**
+  suggests common values.
+- **Settings** shows "Unsaved changes" on a card and asks before leaving.
+- Checks' fix buttons show only once findings are ticked; Updates offers
+  **Send to Intune...** for apps not in Intune yet; Groups says
+  **Unassign** (catalog) and **Remove member** (Entra ID); toasts that tell
+  you to send groups have the button; one date format everywhere.
+- The editor and Add apps keep one size on every tab.
+
+**Look**
+- Buttons, fields and dropdowns share one height (34 px), small buttons
+  another (26 px); rows in the apps list are all the same height; IDs no
+  longer break inside a word; checkboxes line up with the first line of
+  their label; return codes and their type line up; the "?" buttons are
+  all the same; the file picker matches the app's buttons; the maximized
+  editor keeps its buttons at the bottom; the release-ring arrows are
+  visible again.
+
 ## 2.21.1
 
 - **The side panel's version picker works for every Winget app.** Change

@@ -598,6 +598,13 @@ Assert-True ($userCommands.Install -notlike '*--scope machine*') `
     "Get-WingetCommandLines: a User-context install doesn't force machine scope"
 $Global:App.DefaultAppSettings.WingetInstallMethod = "Winget"
 
+# SYSTEM never runs a winget.exe from PATH; the 2.17-2.21 form (which did) is still recognised
+$sysCmd = Get-WingetCommandLines -WingetId "Vendor.App" -Method "Winget" -InstallContext "System"
+$usrCmd = Get-WingetCommandLines -WingetId "Vendor.App" -Method "Winget" -InstallContext "User"
+$oldPathCmd = Get-WingetCommandLines -WingetId "Vendor.App" -Method "Winget" -InstallContext "System" -PathFallback
+Assert-True ($sysCmd.Install -notlike '*Get-Command winget.exe*' -and $usrCmd.Install -like '*Get-Command winget.exe*' -and $oldPathCmd.Install -like '*Get-Command winget.exe*' -and
+    (Get-AppWingetInstallMethod -WingetId "Vendor.App" -InstallCommand $oldPathCmd.Install -UninstallCommand $oldPathCmd.Uninstall) -eq 'Winget') "Get-WingetCommandLines: System context takes winget only from its protected folder; the older PATH form is still recognised"
+
 # Managed updates: a pinned version, detection of it or newer, releases
 $managedCmd = Get-WingetCommandLines -WingetId "Vendor.App" -Method "Managed" -InstallContext "System" -Version "24.09"
 Assert-True ($managedCmd.Install -like "*install --id 'Vendor.App' -e --version '24.09' --source winget*" -and $managedCmd.Install.Length -le 1024) "Get-WingetCommandLines: Managed pins the version with --version"
@@ -837,7 +844,7 @@ $okReq = Set-AppRecordFieldJson -Record $hRec -Field 'requiredFor' -Json '["SG-A
 $okDesc = Set-AppRecordFieldJson -Record $hRec -Field 'metadata.description' -Json $hDesc.after
 $okEmpty = Set-AppRecordFieldJson -Record $hRec -Field 'excludeFor' -Json '[]'
 Assert-True ($okReq -and $okDesc -and $okEmpty -and @($hRec.requiredFor).Count -eq 1 -and $hRec.requiredFor[0] -eq 'SG-A' -and $hRec.metadata.description -eq "New `"quoted`" O'Neil" -and @($hRec.excludeFor).Count -eq 0) "Set-AppRecordFieldJson: a list, text with quotes, an empty list - put back as they were"
-Assert-True (-not (Set-AppRecordFieldJson -Record $hRec -Field 'appName' -Json '"Other"') -and -not (Test-AppRecordFieldRevertable 'icon') -and -not (Test-AppRecordFieldRevertable 'releases') -and (Test-AppRecordFieldRevertable 'metadata.installCommand') -and $hRec.appName -eq 'App') "Set-AppRecordFieldJson: no rename, icon or Intune link undone on its own"
+Assert-True (-not (Set-AppRecordFieldJson -Record $hRec -Field 'appName' -Json '"Other"') -and -not (Test-AppRecordFieldRevertable 'icon') -and -not (Test-AppRecordFieldRevertable 'releases') -and -not (Test-AppRecordFieldRevertable 'metadata.installCommand') -and (Test-AppRecordFieldRevertable 'metadata.description') -and $hRec.appName -eq 'App') "Set-AppRecordFieldJson: no rename, icon, Intune link, command or detection undone on its own"
 
 # Retiring an app
 Assert-True (((Get-RetireGroups ([pscustomobject]@{ requiredFor = @('SG-A', ' SG-B '); availableFor = @('SG-A', 'SG-C'); uninstallFor = @(); excludeFor = @('SG-C') })) -join ',') -eq 'SG-A,SG-B') "Get-RetireGroups: every group it was given, once, minus its exclusions"

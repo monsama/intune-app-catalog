@@ -18,7 +18,8 @@ function gpLine(ta) {
 }
 function gpHide() { gpList.hidden = true; gpItems = []; gpActive = -1; if (gpBox) gpBox.removeAttribute('aria-activedescendant'); }
 function gpShow(ta, items) {
-  gpBox = ta; gpItems = items; gpActive = items.length ? 0 : -1;
+  // Nothing highlighted at first: Enter adds what's typed; Down arrow picks a suggestion.
+  gpBox = ta; gpItems = items; gpActive = -1;
   if (!items.length) { gpHide(); return; }
   // Shown inside the open dialog (top layer), else in the page.
   const host = ta.closest('dialog[open]') || document.body;
@@ -35,7 +36,7 @@ function gpShow(ta, items) {
 }
 function gpMove(d) {
   if (!gpItems.length) return;
-  gpActive = (gpActive + d + gpItems.length) % gpItems.length;
+  gpActive = gpActive < 0 ? (d > 0 ? 0 : gpItems.length - 1) : (gpActive + d + gpItems.length) % gpItems.length;
   [...gpList.children].forEach((li, i) => { li.classList.toggle('on', i === gpActive); li.setAttribute('aria-selected', String(i === gpActive)); });
   gpBox.setAttribute('aria-activedescendant', 'gp-' + gpActive);
   gpList.children[gpActive].scrollIntoView({ block: 'nearest' });
@@ -85,7 +86,8 @@ function gpAttach(ta) {
   if (!ta || ta.dataset.gp) return; ta.dataset.gp = '1';
   ta.setAttribute('aria-autocomplete', 'list'); ta.setAttribute('aria-controls', 'gpList');
   ta.addEventListener('input', e => { if (e.isTrusted === false && !gpList.hidden) return; clearTimeout(gpTimer); gpTimer = setTimeout(() => gpSuggest(ta), 200); });
-  ta.addEventListener('focus', () => { clearTimeout(gpTimer); gpTimer = setTimeout(() => gpSuggest(ta), 150); });
+  // On focus only when something is typed already: a tab switch focusing the box doesn't drop a list over the fields below.
+  ta.addEventListener('focus', () => { clearTimeout(gpTimer); if (gpLine(ta).text) gpTimer = setTimeout(() => gpSuggest(ta), 150); });
   ta.addEventListener('keydown', e => {
     if (gpList.hidden || gpBox !== ta) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); gpMove(1); }
@@ -266,7 +268,7 @@ function palCommands() {
     cat('Set up this tenant', 'tenantsetup'), cat('Recent changes (with Undo)', 'recent'), cat('Export to CSV', 'export'), cat('Import from CSV', 'import'), cat('Undo last bulk change', 'undo'),
     { label: 'Run checks', hint: 'Action', run: () => { showView('checks'); $('btnRunChecks').click(); } },
     { label: 'Switch theme (automatic, light, dark)', hint: 'Action', run: () => $('btnTheme').click() },
-    ...apps.map(a => ({ label: a.name, hint: a.hasAppId ? 'App' : 'App - not deployed', run: () => { showView('apps'); selected.clear(); selected.add(a.name); lastClicked = a.name; renderApps(); updateViewButtons(); openEditor(a.name); } })),
+    ...apps.map(a => ({ label: a.name, hint: a.hasAppId ? 'App' : 'App - not in Intune yet', run: () => { showView('apps'); selected.clear(); selected.add(a.name); lastClicked = a.name; renderApps(); updateViewButtons(); openEditor(a.name); } })),
     ...apps.filter(a => a.managed && a.hasAppId).map(a => ({ label: `Release ${a.name}`, hint: 'Managed updates', run: () => openRelease(a.name) })),
     ...apps.map(a => ({ label: `Send ${a.name}`, hint: 'Action', run: () => openDeploy([a.name]) }))];
 }
@@ -318,7 +320,7 @@ function renderMatrix() {
   const fa = $('mxApps').value.trim().toLowerCase(), fg = $('mxGroups').value.trim().toLowerCase();
   const groups = mx.groups.filter(g => !fg || g.toLowerCase().includes(fg)), rows = mx.apps.filter(a => !fa || a.name.toLowerCase().includes(fa));
   const head = el('tr', {}, el('th', { class: 'corner', text: `${rows.length} apps x ${groups.length} groups` }), ...groups.map(g => el('th', { class: 'gh', title: g }, el('span', { text: g }))));
-  const body = rows.map(a => el('tr', {}, el('th', { class: 'ah', text: a.name, title: a.deployed ? a.name : a.name + ' (not deployed)' }), ...groups.map(g => {
+  const body = rows.map(a => el('tr', {}, el('th', { class: 'ah', text: a.name, title: a.deployed ? a.name : a.name + ' (not in Intune yet)' }), ...groups.map(g => {
     const role = mxRole(a, g), k = a.name + '\u0001' + g;
     return el('td', {}, el('button', { class: 'cell ' + mxCls[role] + (mxChanges.has(k) ? ' changed' : ''), text: mxLetter[role], 'aria-label': `${a.name} - ${g}: ${role || 'not assigned'}`, title: `${a.name} / ${g}: ${role || 'not assigned'} (click to change)`,
       onclick: () => { const next = mxRoles[(mxRoles.indexOf(role) + 1) % mxRoles.length], orig = (() => { mxChanges.delete(k); return mxRole(a, g); })(); if (next !== orig) mxChanges.set(k, next); renderMatrix(); } }));

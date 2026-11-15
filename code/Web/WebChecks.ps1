@@ -148,8 +148,10 @@ function Global:Invoke-WebChecks {
             }
             foreach ($f in @(Get-EntraGroupFindings -Apps $apps -Directory $read.value.Directory)) { $findings.Add($f) }
             # What was compared - not a warning (notes are what was NOT compared). Only the catalog's groups count, also when the tenant was read in full.
-            $wantedSet = @{}; foreach ($n in @(Get-WebCatalogGroupNames -Apps $apps)) { $wantedSet[([string]$n).ToLowerInvariant()] = $true }
-            $foundCount = @($read.value.Directory | Where-Object { $wantedSet.ContainsKey(([string]$_.displayName).ToLowerInvariant()) }).Count
+            # Each catalog group once (two Entra groups of one name count once), spacing as Get-EntraGroupFindings compares it.
+            $norm = { param($t) (([string]$t).Trim() -replace '\s+', ' ').ToLowerInvariant() }
+            $wantedSet = @{}; foreach ($n in @(Get-WebCatalogGroupNames -Apps $apps)) { $wantedSet[(& $norm $n)] = $true }
+            $foundCount = @($read.value.Directory | ForEach-Object { & $norm $_.displayName } | Where-Object { $wantedSet.ContainsKey($_) } | Select-Object -Unique).Count
             $summary = "Compared with $(@($read.value.IntuneApps).Count) app(s) in Intune; $foundCount of the $($read.value.Wanted) group(s) the catalog uses found in Entra ID$(if (-not $read.value.ByName) { ' (read in full - this tenant refused a lookup by name)' })."
 
         }

@@ -517,15 +517,16 @@ function Global:Save-WebAppJson {
 }
 
 function Global:Read-WebHistoryEntries {
-    # The history, newest first: the last -Months files.
-    param([int]$Months = 24)
+    # The history, newest first: the last -Months files, at most -Max entries (reading stops there).
+    param([int]$Months = 24, [int]$Max = 0)
     $dir = Join-Path (Get-AppFolder -Kind Backups) 'history'
     if (-not (Test-Path -LiteralPath $dir)) { return @() }
     $files = @(Get-ChildItem -LiteralPath $dir -File -Filter '*.jsonl' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d{4}-\d{2}\.jsonl$' } | Sort-Object Name -Descending | Select-Object -First $Months)
     $out = New-Object System.Collections.Generic.List[object]
     foreach ($f in $files) {
         $lines = @(Get-Content -LiteralPath $f.FullName -Encoding UTF8 -ErrorAction SilentlyContinue)
-        for ($i = $lines.Count - 1; $i -ge 0; $i--) { if ($lines[$i]) { try { $out.Add(($lines[$i] | ConvertFrom-Json)) } catch { } } }
+        for ($i = $lines.Count - 1; $i -ge 0; $i--) { if ($Max -gt 0 -and $out.Count -ge $Max) { break }; if ($lines[$i]) { try { $out.Add(($lines[$i] | ConvertFrom-Json)) } catch { } } }
+        if ($Max -gt 0 -and $out.Count -ge $Max) { break }
     }
     return $out.ToArray()
 }
@@ -549,7 +550,7 @@ function Global:Get-WebAppHistory {
         })
         # PowerShell 7 reads the time as a date - written back in UTC (ISO), as it was stored.
         $rows.Add([ordered]@{ id = [string]$e.id; at = $(if ($e.at -is [datetime]) { $e.at.ToUniversalTime().ToString('o') } else { [string]$e.at }); app = [string]$e.app; kind = [string]$e.kind; source = [string]$e.source; text = [string]$e.text; changes = $changes
-            canUndo = ($e.kind -eq 'catalog' -and @($changes | Where-Object { $_.revertable }).Count -gt 0) })
+            canUndo = ($e.kind -eq 'catalog' -and @($changes | Where-Object { $_.revertable }).Count -gt 0 -and -not @($changes | Where-Object { $_.field -in 'releases', 'appId' }).Count) })
         if ($rows.Count -ge 300) { break }
     }
     return @{ ok = $true; app = $name; entries = $rows.ToArray() }
@@ -566,6 +567,8 @@ function Global:Undo-WebHistoryChange {
     if ($id -notmatch '^[0-9a-f]{32}$') { return @{ ok = $false; error = 'That is not a change in the history.' } }
     $entry = @(Read-WebHistoryEntries | Where-Object { $_.id -eq $id }) | Select-Object -First 1
     if (-not $entry -or $entry.kind -ne 'catalog') { return @{ ok = $false; error = 'That change is not in the history (or was not a catalog change).' } }
+    # Only a change of this app (under this name or one it had before) - never another app's fields.
+    if (-not @((Get-WebAppHistory @{ name = $name }).entries | Where-Object { $_.id -eq $id }).Count) { return @{ ok = $false; error = "That change isn't one of $name's." } }
     # A release step (promotion, rollback, a new release) moved the app in Intune too - half of it can't be undone here.
     if (@(@($entry.changes) | Where-Object { [string]$_.field -in 'releases', 'appId' }).Count) { return @{ ok = $false; error = 'That change came with a release step (it changed which app in Intune is the current one) - take it back with Roll back or Withdraw (Updates), not here.' } }
     $catalog = Read-WebCatalogRecords
@@ -728,7 +731,7 @@ function Global:Get-WebCatalogHistoryCore {
     $groups = New-Object System.Collections.Generic.List[object]
     $cur = $null
     $n = 0
-    foreach ($e in @(Read-WebHistoryEntries -Months 3)) {
+    foreach ($e in @(Read-WebHistoryEntries -Months 3 -Max $limit)) {
         if ($n++ -ge $limit) { break }
         # The time as UTC ticks (a plain number to compare); PowerShell 7 reads it as a date already, 5.1 as text.
         [long]$ticks = 0

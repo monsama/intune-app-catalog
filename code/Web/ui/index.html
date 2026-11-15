@@ -56,13 +56,13 @@
   <!-- ============ Apps ============ -->
   <section class="view" id="viewApps">
     <div class="toolbar">
-      <input type="search" id="search" placeholder="Search apps, Winget IDs - or group:name" aria-label="Search apps; group:name shows the apps assigned to a group" title="Searches names and Winget IDs. group:SG-Sales shows the apps assigned to a group whose name contains SG-Sales." autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+      <input type="search" id="search" placeholder="Search apps or group:name" aria-label="Search apps; group:name shows the apps assigned to a group" title="Searches names and Winget IDs. group:SG-Sales shows the apps assigned to a group whose name contains SG-Sales." autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
       <select id="filter" aria-label="Show">
         <optgroup label="Show">
           <option value="all">All apps</option>
           <option value="attention">Needs attention</option>
-          <option value="deployed">Deployed</option>
-          <option value="notdeployed">Not deployed</option>
+          <option value="deployed">In Intune</option>
+          <option value="notdeployed">Not in Intune yet</option>
           <option value="notintenant">Not in this tenant</option>
           <option value="nogroups">Assigned to no group</option>
           <option value="pkgmissing">Package missing</option>
@@ -186,8 +186,8 @@
       <span class="spacer"></span>
       <span class="muted" id="checkSelCount"></span>
       <span class="fixbar" id="checkFixBar" hidden>
-      <button class="btn" id="btnFixPull" disabled title="Intune is right: take its settings and groups into the catalog">Pull</button>
-      <button class="btn" id="btnFixPushSettings" disabled title="The catalog is right about settings or dependencies: send them to Intune">Push settings</button>
+      <button class="btn" id="btnFixPull" disabled title="Intune is right: take its settings and groups into the catalog">Take from Intune</button>
+      <button class="btn" id="btnFixPushSettings" disabled title="The catalog is right about settings or dependencies: send them to Intune">Send settings</button>
       <button class="btn" id="btnFixPushGroups" disabled title="The catalog is right about groups: send them to Intune">Send groups</button>
       <button class="btn" id="btnFixCreateGroups" disabled title="Create the missing groups of the ticked findings in Entra ID, as security groups">Create groups</button>
       <button class="btn" id="btnFixAdd" disabled title="Add the Intune-only apps to the catalog, with their settings and groups">Add to catalog</button>
@@ -434,7 +434,7 @@
             </div>
             <div>
               <div class="two">
-                <label title="How long Intune waits for the install before it counts as failed. Intune uses steps of 5 minutes.">Install time (min)<input autocomplete="off" id="dTime" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+                <label title="How long Intune waits for the install before it counts as failed. Intune uses steps of 5 minutes.">Install time (min)<input autocomplete="off" id="dTime" list="timeList" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
                 <label>Min. disk space (MB)<input autocomplete="off" id="dDisk" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
                 <label>Min. memory (MB)<input autocomplete="off" id="dMem" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
                 <label>Min. CPUs<input autocomplete="off" id="dCpus" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
@@ -454,7 +454,7 @@
           <h2>Automatic checks and pushes</h2>
           <label class="chk"><input type="checkbox" data-check="checkDriftOnStartup">Run Checks when the app opens (the quick part)</label>
           <label class="chk"><input type="checkbox" data-check="runFullAuditOnStartup">... and read every deployed app in detail (slower)</label>
-          <label class="chk"><input type="checkbox" data-check="checkIntuneOnDeployOpen">Before deploying a new app, look for one of the same name in Intune</label>
+          <label class="chk"><input type="checkbox" data-check="checkIntuneOnDeployOpen">Before sending a new app to Intune, look for one of the same name in Intune</label>
           <label class="chk"><input type="checkbox" data-check="pushGroupsOnCreate">Send groups after creating an app</label>
           <label class="chk"><input type="checkbox" data-check="pushGroupsOnUpdate">Send groups after updating an app</label>
           <label class="chk"><input type="checkbox" data-check="detailedGraphLog">Detailed Graph log (every request)</label>
@@ -739,7 +739,7 @@
   </details>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
-<datalist id="pubList"></datalist><datalist id="ownerList"></datalist><datalist id="devList"></datalist><datalist id="relVerList"></datalist>
+<datalist id="timeList"><option value="30"></option><option value="60"></option><option value="90"></option><option value="120"></option><option value="180"></option><option value="240"></option></datalist><datalist id="pubList"></datalist><datalist id="ownerList"></datalist><datalist id="devList"></datalist>
 <dialog id="dlgRecent" class="wide" aria-labelledby="recentTitle">
   <h2 id="recentTitle">Recent changes</h2>
   <p class="sub">Every change to the catalog's apps, newest first - by you, a batch action, the nightly run. Undo puts back what one change changed (fields changed again since are left alone). Intune isn't touched: send the apps again afterwards.</p>
@@ -802,7 +802,7 @@
           <label id="arUrlRow" title="Optional. The nightly run downloads the installer from here; it is used only if it carries a valid digital signature - from the same publisher as the installer already in the folder">Download the installer from <span class="muted">(https, optional)</span><input id="arUrl" type="url" maxlength="2000" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="https://vendor.example/latest/setup.msi"></label>
           <label title="How the app is named in Intune's inventory of apps on devices (Apps > Monitor > Discovered apps), when that isn't the catalog's name - the Updates page counts older versions on devices by it">Name on devices <span class="muted">(empty: the catalog's name)</span><input id="arDetected" maxlength="100" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. 7-Zip"></label>
         </fieldset>
-        <label title="The Intune app this catalog entry is linked to. Set by Send to Intune, or by Checks when it links an existing app.">App ID in Intune <span class="muted">(empty until it's deployed)</span><input id="aAppId" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label title="The Intune app this catalog entry is linked to. Set by Send to Intune, or by Checks when it links an existing app.">App ID in Intune <span class="muted">(empty until it's in Intune)</span><span class="inputrow"><input id="aAppId" readonly placeholder="Not linked" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><select id="aAppLink" aria-label="Link to an Intune app" title="Link this catalog entry to an app that's already in Intune - or unlink it"><option value="">Link...</option></select></span></label>
         <div class="iconrow" role="group" aria-labelledby="aIconLabel">
           <span class="lbl" id="aIconLabel">Icon <span class="muted">(Intune and the Company Portal)</span></span>
           <img id="aIcon" class="appicon big" alt="The app's icon" hidden>
@@ -836,7 +836,7 @@
         <label>Description<textarea autocomplete="off" id="mDescription" rows="3" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
         <div class="two">
           <label>Publisher<input autocomplete="off" id="mPublisher" list="pubList" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-          <label>App version<input autocomplete="off" id="mAppVersion" list="verList" placeholder="Pick from winget's versions, or type one" spellcheck="false" autocorrect="off" autocapitalize="off"></label><datalist id="verList"></datalist>
+          <label>App version<span class="inputrow"><input autocomplete="off" id="mAppVersion" placeholder="Pick or type a version" spellcheck="false" autocorrect="off" autocapitalize="off"><select id="mAppVersionPick" class="verpick" aria-label="Pick from winget's versions" title="winget's versions, newest first"><option value="">Pick...</option></select></span></label>
           <label>Owner<input autocomplete="off" id="mOwner" list="ownerList" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
           <label>Developer<input autocomplete="off" id="mDeveloper" list="devList" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         </div>
@@ -848,7 +848,7 @@
       </section>
     </div>
     <details class="deploysec" id="deploySec">
-      <summary>Deploy settings <span class="muted">- detection rule, requirements, return codes, dependencies, supersedence</span></summary>
+      <summary>Install settings <span class="muted">- detection rule, requirements, return codes, dependencies, supersedence</span></summary>
       <div class="formgrid">
         <section>
           <h3>Detection rule <button type="button" class="help" data-help="detection" aria-label="What is a detection rule?">?</button></h3>
@@ -876,7 +876,7 @@
           <div class="two">
             <label title="System installs for every user of the device; User installs for the signed-in user only (and needs no admin rights).">Install for<select id="xContext"><option>System</option><option>User</option></select></label>
             <label title="Devices older than this don't get the app.">Minimum OS<select id="xMinOs"></select></label>
-            <label title="How long Intune waits for the install before it counts as failed. Intune uses steps of 5 minutes.">Install time (min)<input autocomplete="off" id="xTime" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <label title="How long Intune waits for the install before it counts as failed. Intune uses steps of 5 minutes.">Install time (min)<input autocomplete="off" id="xTime" list="timeList" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
             <label title="What Intune does after the install: follow the return code, allow a restart, suppress it, or force one.">Restart<select id="xRestart"><option value="basedOnReturnCode">By return code</option><option value="allow">Allow</option><option value="suppress">Suppress</option><option value="force">Force</option></select></label>
             <label>Min. disk space (MB)<input autocomplete="off" id="xDisk" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
             <label>Min. memory (MB)<input autocomplete="off" id="xMem" inputmode="numeric" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
@@ -910,7 +910,7 @@
     <button class="btn" id="btnDeployRetry" hidden title="Run the apps that failed again, and those skipped because of them">Retry failed</button>
     <label class="chk inline" title="After each app: its groups (Required, Available, Uninstall, Excluded) to Intune as well"><input type="checkbox" id="dpGroups" checked>Send their groups too</label>
     <span class="spacer"></span>
-    <button class="btn" data-close id="btnDeployClose">Close</button><button class="btn primary" id="btnDeployGo" title="Create or update the ready apps in Intune, in this order">Send</button>
+    <button class="btn" data-close id="btnDeployClose">Cancel</button><button class="btn primary" id="btnDeployGo" title="Create or update the ready apps in Intune, in this order">Send</button>
   </div>
 </dialog>
 
@@ -990,7 +990,7 @@
   <div class="addhead">
     <h2 id="addTitle">Add apps</h2>
     <span class="spacer"></span>
-    <button class="btn ghost small" id="btnAddBlank" title="The full editor with nothing filled in">Empty form...</button>
+    <button class="btn ghost small" id="btnAddBlank" title="The full editor with nothing filled in - for an app none of the tabs fits">Fill in by hand...</button>
   </div>
   <nav class="subtabs" role="tablist" aria-label="Where the app comes from">
     <button class="subtab" role="tab" id="atab-winget" data-asrc="winget" aria-controls="asec-winget" aria-selected="true">Winget</button>
@@ -1025,7 +1025,7 @@
       <p class="sub" id="aiFacts"></p>
       <div class="formgrid two">
         <label>Name<input id="aiName" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-        <label>Publisher<input id="aiPublisher" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label>Publisher<input id="aiPublisher" list="pubList" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label>Version<input id="aiVersion" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label>Detected by<input id="aiDetection" readonly autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
       </div>
@@ -1040,7 +1040,7 @@
   <section class="asec" id="asec-script" role="tabpanel" aria-labelledby="atab-script" hidden>
     <div class="formgrid three">
       <label>Name<input id="asName" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. Contoso printer setup"></label>
-      <label>Publisher<input id="asPublisher" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+      <label>Publisher<input id="asPublisher" list="pubList" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
       <label>Version<input id="asVersion" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="1.0"></label>
     </div>
     <label class="inline">Start from <select id="asTemplate" aria-label="Template"></select></label>
@@ -1060,7 +1060,7 @@
     <p class="sub">The <b>PowerShell App Deployment Toolkit</b> (PSADT 4) - the usual way to package installers that need more than a silent switch: closing running apps, asking the user, deferrals, logging. You add the install steps to its Invoke-AppDeployToolkit.ps1; Intune runs it with the toolkit's own commands.</p>
     <div class="formgrid three">
       <label>Name<input id="apName" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. Contoso CAD"></label>
-      <label>Vendor<input id="apVendor" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+      <label>Vendor<input id="apVendor" list="pubList" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
       <label>Version<input id="apVersion" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. 2025.1"></label>
     </div>
     <label class="chk" title="The PSADT 4 template from its GitHub release, into the app's packages folder. Untick it when you have put the template there yourself."><input type="checkbox" id="apDownload" checked>Download the PSADT 4 template into the app's folder (GitHub)</label>
@@ -1161,7 +1161,7 @@
   <p class="sub" id="relText"></p>
   <p class="formerror" id="relProblem" hidden></p>
   <label class="chk" id="relBuildRow" hidden title="Package.ps1 builds the .intunewin from the app's folder before the release"><input type="checkbox" id="relBuild" checked>Build the package from its folder first <span class="muted" id="relFolder"></span></label>
-  <label>Version to release<input id="relVersion" list="relVerList" class="mono" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+  <label>Version to release<span class="inputrow"><input id="relVersion" class="mono" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><select id="relVersionPick" class="verpick" aria-label="Pick from winget's versions" title="winget's versions, newest first"><option value="">Pick...</option></select></span></label>
   <label class="chk" title="For an urgent fix: judged after a few hours instead of days, downloaded in the foreground, then given to everyone - the release rings are skipped, and the nightly task promotes it even with automatic promotion off"><input type="checkbox" id="relFast">Fast track (a security fix) <span class="muted" id="relFastNote"></span></label>
   <p class="muted note" id="relGroups"></p>
   <p class="formerror" id="relErr" hidden></p>
@@ -1219,7 +1219,7 @@
         <div class="checks"><label class="chk"><input type="checkbox" data-barch="x64" checked>x64</label><label class="chk"><input type="checkbox" data-barch="x86">x86</label><label class="chk"><input type="checkbox" data-barch="arm64">arm64</label></div></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minOSKey">Minimum OS</label><select id="bMinOs" aria-label="Minimum OS"></select></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="installContext">Install for</label><select id="bContext" aria-label="Install for"><option>System</option><option>User</option></select></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="installTimeMinutes">Install time (min)</label><input autocomplete="off" id="bTime" aria-label="Install time (min)" inputmode="numeric" value="60" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="installTimeMinutes">Install time (min)</label><input autocomplete="off" id="bTime" list="timeList" aria-label="Install time (min)" inputmode="numeric" value="60" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minDiskSpaceMB">Min. disk space (MB)</label><input autocomplete="off" id="bDisk" aria-label="Min. disk space (MB)" inputmode="numeric" value="0" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minMemoryMB">Min. memory (MB)</label><input autocomplete="off" id="bMem" aria-label="Min. memory (MB)" inputmode="numeric" value="0" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="minProcessors">Min. CPUs</label><input autocomplete="off" id="bCpus" aria-label="Min. CPUs" inputmode="numeric" value="0" spellcheck="false" autocorrect="off" autocapitalize="off"></div>

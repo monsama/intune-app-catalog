@@ -933,7 +933,9 @@ function Global:Get-WingetCommandLines {
     #>
     param([string]$WingetId, [string]$Method, [string]$InstallContext, [string]$Version,
         # The form before 2.17 (no waiting for winget) - only to recognise commands generated then.
-        [switch]$Legacy)
+        [switch]$Legacy,
+        # The form of 2.17-2.21 (System context also looked for winget.exe on PATH) - only to recognise commands generated then.
+        [switch]$PathFallback)
 
     $ps = "%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile"
     # The ID ends up in code and command lines that run as SYSTEM on the
@@ -956,12 +958,15 @@ function Global:Get-WingetCommandLines {
         $scope = if ($InstallContext -eq "User") { "" } else { " --scope machine" }
         # Newest App Installer first: there can be more than one version
         # side by side, and a plain name sort puts 1.9 after 1.21.
+        # SYSTEM never takes a winget.exe from PATH (a folder there may be writable by users): only the protected App Installer folder.
+        # A user install may - it can't list that folder, and runs as that user anyway.
+        $pathPart = if ($InstallContext -eq "User" -or $PathFallback) { 'if (-not $w) { $w = (Get-Command winget.exe -ErrorAction SilentlyContinue).Source }; ' } else { "" }
         $find = if ($Legacy) { "`$w = Get-Item `$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_8wekyb3d8bbwe\winget.exe -ErrorAction SilentlyContinue | Sort-Object { `$_.VersionInfo.FileVersionRaw } | Select-Object -Last 1 -ExpandProperty FullName; if (-not `$w) { `$w = 'winget' }" }
         # A new device (Autopilot) can get its apps before App Installer is
         # registered: winget is looked for up to 5 minutes, then the command
         # exits 9009 - a Retry return code (Add-WingetRetryReturnCode), so
         # Intune tries again later instead of reporting a failure.
-        else { "`$w = `$null; for (`$i = 0; `$i -lt 30 -and -not `$w; `$i++) { `$w = Get-Item `$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_8wekyb3d8bbwe\winget.exe -ErrorAction SilentlyContinue | Sort-Object { `$_.VersionInfo.FileVersionRaw } | Select-Object -Last 1 -ExpandProperty FullName; if (-not `$w) { `$w = (Get-Command winget.exe -ErrorAction SilentlyContinue).Source }; if (-not `$w) { Start-Sleep 10 } }; if (-not `$w) { exit 9009 }" }
+        else { "`$w = `$null; for (`$i = 0; `$i -lt 30 -and -not `$w; `$i++) { `$w = Get-Item `$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_8wekyb3d8bbwe\winget.exe -ErrorAction SilentlyContinue | Sort-Object { `$_.VersionInfo.FileVersionRaw } | Select-Object -Last 1 -ExpandProperty FullName; $($pathPart)if (-not `$w) { Start-Sleep 10 } }; if (-not `$w) { exit 9009 }" }
         return @{
             Install   = "$ps -Command `"$find; & `$w install --id '$WingetId' -e$pin --source winget$scope --silent --accept-package-agreements --accept-source-agreements; exit `$LASTEXITCODE`""
             Uninstall = "$ps -Command `"$find; & `$w uninstall --id '$WingetId' -e --source winget$scope --silent --accept-source-agreements; exit `$LASTEXITCODE`""
@@ -988,8 +993,8 @@ function Global:Get-AppWingetInstallMethod {
     if ($InstallCommand -match " --version '((?:[^']|'')+)'") {
         $pinned = $Matches[1] -replace "''", "'"
         foreach ($context in @("System", "User")) {
-            foreach ($legacy in $false, $true) {
-                $generated = Get-WingetCommandLines -WingetId $WingetId -Method "Managed" -InstallContext $context -Version $pinned -Legacy:$legacy
+            foreach ($form in 'now', 'path', 'legacy') {
+                $generated = Get-WingetCommandLines -WingetId $WingetId -Method "Managed" -InstallContext $context -Version $pinned -Legacy:($form -eq 'legacy') -PathFallback:($form -eq 'path')
                 if ($InstallCommand -eq $generated.Install -and $UninstallCommand -eq $generated.Uninstall) { return "Managed" }
             }
         }
@@ -997,8 +1002,8 @@ function Global:Get-AppWingetInstallMethod {
     }
     foreach ($method in @("WAU", "Winget")) {
         foreach ($context in @("System", "User")) {
-            foreach ($legacy in $false, $true) {
-                $generated = Get-WingetCommandLines -WingetId $WingetId -Method $method -InstallContext $context -Legacy:$legacy
+            foreach ($form in 'now', 'path', 'legacy') {
+                $generated = Get-WingetCommandLines -WingetId $WingetId -Method $method -InstallContext $context -Legacy:($form -eq 'legacy') -PathFallback:($form -eq 'path')
                 if ($InstallCommand -eq $generated.Install -and $UninstallCommand -eq $generated.Uninstall) { return $method }
             }
         }
@@ -1973,7 +1978,9 @@ function Global:Get-AppRecordChanges {
 function Global:Test-AppRecordFieldRevertable {
     # Pure: whether the history can put a field back by itself - not the name (a rename), the icon, nor what ties the app to Intune.
     param([string]$Field)
-    return -not ($Field -in 'appName', 'icon', 'appId', 'intuneAppType', 'intuneAppVersion', 'releases', 'packagePath')
+    # Not the commands and detection rule either: they run as SYSTEM on devices, and the history is a file in the Backups
+    # folder - those come back only with a whole earlier version (Earlier versions shows the file in full).
+    return -not ($Field -in 'appName', 'icon', 'appId', 'intuneAppType', 'intuneAppVersion', 'releases', 'packagePath', 'metadata.installCommand', 'metadata.uninstallCommand', 'metadata.detectionRule')
 }
 
 function Global:Set-AppRecordFieldJson {

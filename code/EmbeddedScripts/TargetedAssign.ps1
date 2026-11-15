@@ -216,8 +216,10 @@ try {
         # filter clause mid-value and producing a confusing 400 error.
         $encodedFilter = [Uri]::EscapeDataString("displayName eq '$escapedName'")
         $existing = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=$encodedFilter&`$select=id,displayName" -Method GET -StepDescription "Look up group '$groupName'"
-        if ($existing.value -and $existing.value.Count -gt 0) {
-            $groupIdByName[$groupName] = $existing.value[0].id
+        # Two groups of the same name: which one is meant can't be told - an assignment never goes to a look-alike.
+        if (@($existing.value).Count -gt 1) { throw "There are $(@($existing.value).Count) groups named '$groupName' in Entra ID - rename one of them (Entra admin center), then send again." }
+        if ($existing.value -and @($existing.value).Count -gt 0) {
+            $groupIdByName[$groupName] = @($existing.value)[0].id
             Write-Host "  [=] Exists: $groupName" -ForegroundColor DarkGray
         }
         elseif (-not $createMissingGroups) {

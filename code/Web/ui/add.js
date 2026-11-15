@@ -243,3 +243,6 @@ document.addEventListener('drop', e => {
   const f = e.dataTransfer && e.dataTransfer.files[0];
   if (f && /\.(msi|exe)$/i.test(f.name)) { e.preventDefault(); openAdd('installer', f); }
 });
+
+// Down arrow from the winget search goes into the results; the picks are then ticked with Space.
+$('awQuery').addEventListener('keydown', e => { if (e.key === 'ArrowDown') { const f = $('awRows').querySelector('input[type=checkbox], button, [tabindex]'); if (f) { e.preventDefault(); f.focus(); } } });

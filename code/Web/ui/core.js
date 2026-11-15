@@ -306,3 +306,12 @@ function skeleton(target, cols = 4, rows = 5) {
   if (target.tagName === 'TBODY') target.replaceChildren(...Array.from({ length: rows }, (_, r) => el('tr', { class: 'skel', 'aria-hidden': 'true' }, ...Array.from({ length: cols }, (_, c) => el('td', {}, bar(r + c))))));
   else target.replaceChildren(...Array.from({ length: rows }, (_, r) => el('li', { class: 'skel', 'aria-hidden': 'true' }, bar(r), el('span', { class: 'sk w3' }))));
 }
+
+// One date format everywhere: 2026-11-15 14:52 (24 hours); "Today 14:52" / "Yesterday 14:52" for the last two days.
+function fmtWhen(v) {
+  const d = v instanceof Date ? v : new Date(v); if (isNaN(d)) return String(v || '');
+  const p = n => String(n).padStart(2, '0'), hm = `${p(d.getHours())}:${p(d.getMinutes())}`, day = x => x.toDateString();
+  if (day(d) === day(new Date())) return `Today ${hm}`;
+  if (day(d) === day(new Date(Date.now() - 864e5))) return `Yesterday ${hm}`;
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${hm}`;
+}

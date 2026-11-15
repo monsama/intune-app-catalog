@@ -17,7 +17,7 @@ function wcClose(d) {
 }
 function wcMax(d, on = !d.classList.contains('maxed')) {
   d.classList.toggle('maxed', on);
-  if (on) d.style.transform = '';
+  if (on) wcUnplace(d);
   const b = d.querySelector('.wctl .wc-max'); if (!b) return;
   b.title = on ? 'Restore' : 'Maximize'; b.setAttribute('aria-label', b.title); b.innerHTML = on ? wcIcon.restore : wcIcon.max;
 }
@@ -36,12 +36,15 @@ function wcResume(id) {
 window.addEventListener('close', e => { if (e.target instanceof HTMLDialogElement && e.target.classList.contains('minimized')) e.stopImmediatePropagation(); }, true);
 // A minimized dialog the app opens again (its button, Ctrl+K) is simply restored.
 const wcShow = HTMLDialogElement.prototype.showModal;
-HTMLDialogElement.prototype.showModal = function () { const was = this.classList.contains('minimized'); this.classList.remove('minimized'); if (!this.open) wcShow.call(this); if (was) wcTray(); else wcTrayTop(); };
+// Modal dialogs in the order they were opened - the last one is on top (the page order says nothing about that).
+const wcStack = [];
+HTMLDialogElement.prototype.showModal = function () { const was = this.classList.contains('minimized'); this.classList.remove('minimized'); if (!this.open) { wcShow.call(this); const i = wcStack.indexOf(this); if (i >= 0) wcStack.splice(i, 1); wcStack.push(this); } if (was) wcTray(); else wcTrayTop(); };
+window.addEventListener('close', e => { const i = wcStack.indexOf(e.target); if (i >= 0) wcStack.splice(i, 1); }, true);
 // The chips stay usable while another dialog is open: an open modal dialog makes the rest of the page inert, so the
 // tray goes into the topmost one (and back to the page when none is open).
 function wcTrayTop() {
   const t = document.getElementById('dlgTray'); if (!t) return;
-  const top = [...document.querySelectorAll('dialog[open]')].filter(d => d.matches(':modal')).pop();
+  const top = wcStack.filter(d => d.open && d.matches(':modal')).pop();
   const host = top || document.body;
   if (t.parentElement !== host) host.append(t);
 }
@@ -58,28 +61,29 @@ function wcTray() {
   wcTrayTop();
 }
 
+// Moved by position (left/top), not a transform: a transform would make the dialog the frame of everything fixed inside it (the tray).
+function wcPlace(d, left, top) { Object.assign(d.style, { margin: '0', left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto' }); }
+function wcUnplace(d) { for (const k of ['margin', 'left', 'top', 'right', 'bottom', 'transform']) d.style[k] = ''; }
 function wcMovable(d, head) {
-  let x = 0, y = 0;
   head.classList.add('movable');
   head.addEventListener('pointerdown', e => {
     if (e.button !== 0 || d.classList.contains('maxed') || e.target.closest('button, input, select, textarea, a, .wctl') || matchMedia('(max-width: 760px)').matches) return;
     e.preventDefault();
-    const sx = e.clientX, sy = e.clientY, x0 = x, y0 = y;
+    const r0 = d.getBoundingClientRect(), sx = e.clientX, sy = e.clientY;
+    wcPlace(d, r0.left, r0.top);
     head.setPointerCapture(e.pointerId);
     const move = ev => {
-      x = x0 + ev.clientX - sx; y = y0 + ev.clientY - sy;
-      d.style.transform = `translate(${x}px, ${y}px)`;
       // The title stays reachable: its top inside the window, some of it across.
-      const r = d.getBoundingClientRect();
-      const dx = r.right < 140 ? 140 - r.right : r.left > innerWidth - 140 ? innerWidth - 140 - r.left : 0, dy = r.top < 0 ? -r.top : r.top > innerHeight - 48 ? innerHeight - 48 - r.top : 0;
-      if (dx || dy) { x += dx; y += dy; d.style.transform = `translate(${x}px, ${y}px)`; }
+      let l = r0.left + ev.clientX - sx, t = r0.top + ev.clientY - sy;
+      l = Math.min(Math.max(l, 140 - r0.width), innerWidth - 140); t = Math.min(Math.max(t, 0), innerHeight - 48);
+      wcPlace(d, l, t);
     };
     const up = () => { head.removeEventListener('pointermove', move); head.removeEventListener('pointerup', up); head.removeEventListener('pointercancel', up); };
     head.addEventListener('pointermove', move); head.addEventListener('pointerup', up); head.addEventListener('pointercancel', up);
   });
   head.addEventListener('dblclick', e => { if (!e.target.closest('button, input, select, textarea, a, .wctl')) wcMax(d); });
   // Each opening starts in the middle again, at its normal size.
-  d.addEventListener('close', () => { if (!d.classList.contains('minimized')) { x = 0; y = 0; d.style.transform = ''; wcMax(d, false); } });
+  d.addEventListener('close', () => { if (!d.classList.contains('minimized')) { wcUnplace(d); wcMax(d, false); } });
 }
 
 for (const d of document.querySelectorAll('dialog')) {
