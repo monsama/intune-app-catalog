@@ -510,6 +510,8 @@ async function loadApps() {
   renderApps();
   loadIntuneIds(false);
   loadUndo();
+  // Every change re-reads the catalog: Home follows it.
+  if (typeof refreshHomeSoon === 'function') refreshHomeSoon();
 }
 
 // ---------------------------------------------------------------- saved views (this window's own storage)

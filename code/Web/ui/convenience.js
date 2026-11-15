@@ -218,11 +218,17 @@ async function useInstalled(a) {
 }
 
 // ---------------------------------------------------------------- Home
-let homeSeq = 0;
+let homeSeq = 0, homeAt = 0, homeSoon = 0;
+// Home refreshes by itself: after any change in the app (loadApps), when the window comes back, and every
+// minute while it's open - another admin's changes show up too. Only while Home is the page shown.
+function refreshHomeSoon() { if ($('viewHome').hidden) return; clearTimeout(homeSoon); homeSoon = setTimeout(loadHome, 400); }
+document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - homeAt > 15000) refreshHomeSoon(); });
+setInterval(() => { if (!document.hidden && Date.now() - homeAt > 55000) refreshHomeSoon(); }, 60000);
 async function loadHome() {
   const seq = ++homeSeq;
-  $('homeNote').textContent = 'Looking...';
-  if (!$('homeList').children.length) skeleton($('homeList'), 1, 3);
+  // Only the first load shows that it's looking; a refresh swaps the content in place, without flicker.
+  if (!$('homeList').children.length) { $('homeNote').textContent = 'Looking...'; skeleton($('homeList'), 1, 3); }
+  homeAt = Date.now();
   const r = await api('/api/attention');
   // A slower, older answer never overwrites a newer one (it could bring back something just fixed).
   if (seq !== homeSeq) return;
