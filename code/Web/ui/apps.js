@@ -447,9 +447,9 @@ $('btnAppHistory').addEventListener('click', async () => {
   loadChanges(name);
   $('histNote').textContent = r.backups.length ? '' : 'No earlier version kept yet - one is kept the next time this app is saved.';
   $('histRows').replaceChildren(...r.backups.map(b => el('tr', {},
-    el('td', { text: b.when }),
+    el('td', {}, b.when, b.verified ? '' : el('span', { class: 'pill muted', text: 'not verified', title: "Not recorded by the catalog (from before 2.23, or put in the Backups folder by hand) - it can be compared, but isn't restored" })),
     el('td', { text: b.changed.length ? b.changed.map(c => fieldLabel[c] || c).join(', ') : 'nothing - same as now' }),
-    el('td', { class: 'act' }, el('button', { class: 'btn small', text: 'Compare', title: 'What the save at that time changed, and that version next to now', onclick: () => compareVersion(name, b) }), ' ', el('button', { class: 'btn small', text: 'Restore', title: b.changed.length ? 'Put this version back as the app\'s file' : 'Same as the app is now - nothing to restore', disabled: !b.changed.length, onclick: async () => {
+    el('td', { class: 'act' }, el('button', { class: 'btn small', text: 'Compare', title: 'What the save at that time changed, and that version next to now', onclick: () => compareVersion(name, b) }), ' ', el('button', { class: 'btn small', text: 'Restore', disabled: !b.verified || null, title: !b.verified ? "Not verified - this copy isn't one the catalog recorded, so it isn't restored" : b.changed.length ? 'Put this version back as the app\'s file' : 'Same as the app is now - nothing to restore', disabled: !b.changed.length, onclick: async () => {
       if (!(await ask(`Restore ${name} as it was on ${b.when}?\n\nOnly the catalog changes - Send to Intune sends it there. The current version is kept as a copy, so this can be undone the same way.`, { ok: 'Restore', danger: false }))) return;
       const x = await api('/api/app-restore', { name, id: b.id });
       if (!x.ok) { toast(x.error, true); return; }

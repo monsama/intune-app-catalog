@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.23.0
+
+**The Backups folder can't be used to slip a change into the catalog.**
+The Backups folder may be a share more people can write to than the catalog
+folder. What comes back from it is now only taken when the catalog itself
+vouches for it:
+
+- Every copy this app writes there (Earlier versions, the copies Undo puts
+  back, retired apps) gets its SHA-256 fingerprint recorded in the catalog
+  folder (`.integrity\copies.tsv`, with the catalog's permissions).
+  **Restore, Undo and Restore a retired app refuse a copy that was changed
+  since**, or that was never recorded (put there by hand). Earlier
+  versions marks such copies **not verified**.
+- **The change history moved next to the catalog** (`.integrity\history`),
+  out of the Backups folder. History from before this version is still
+  shown, but nothing is undone from it.
+- Copies kept before this version can't be verified, so they aren't
+  restored automatically; the ones written from now on are.
+
 ## 2.22.1
 
 - **Settings > Apps & defaults**: the Architecture checkboxes take a

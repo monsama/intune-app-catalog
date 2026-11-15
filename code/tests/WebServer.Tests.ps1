@@ -228,6 +228,16 @@ try {
         Check ($restored.ok -and ($afterRestore | ConvertTo-Json -Compress -Depth 6) -ne ($before | ConvertTo-Json -Compress -Depth 6)) 'history: a restore puts that version back' ($restored | ConvertTo-Json -Compress)
         $hist2 = Invoke-Api '/api/app-backups' @{ name = $testName }
         Check (@($hist2.backups).Count -gt @($hist.backups).Count) 'history: ... and keeps the version before the restore as a copy too'
+        # A copy changed in the Backups folder (a share others may write to) isn't taken back; one the catalog recorded is.
+        Check (@($hist2.backups | Where-Object { $_.verified }).Count -ge 1) 'backups: copies this app wrote are recorded by the catalog (verified)'
+        $bkf = @((Invoke-Api '/api/prefs').folders | Where-Object { $_.key -eq 'Backups' })[0]
+        $bkRoot = if ($bkf.chosen) { $bkf.chosen } else { $bkf.default }
+        $victim = $hist2.backups[0]
+        $victimPath = Join-Path $bkRoot ($victim.id -replace '/', [IO.Path]::DirectorySeparatorChar)
+        Add-Content -LiteralPath $victimPath -Value ' '
+        $tampered = Invoke-Api '/api/app-restore' @{ name = $testName; id = $victim.id }
+        Check (-not $tampered.ok -and $tampered.error -like '*changed in the Backups folder*') 'backups: a copy changed in the Backups folder is not restored' ($tampered | ConvertTo-Json -Compress)
+        Check (Test-Path -LiteralPath (Join-Path (Invoke-Api '/api/catalog').path '.integrity')) 'history: kept next to the catalog (.integrity), not in the Backups folder'
     }
     Check (-not (Invoke-Api '/api/app-restore' @{ name = $testName; id = '../../settings.json' }).ok) 'history: an id that is not a backup is refused'
     Check (-not (Invoke-Api '/api/app-restore' @{ name = $testName; id = 'app-edit_2020-01-01/000000_Other-App.json' }).ok) 'history: a backup of another app is refused'
