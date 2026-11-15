@@ -50,6 +50,16 @@ blocks and the code editor (section 10c).
 - [ ] Change an added app's description in the portal, Re-check - a
       Metadata finding. **Pull** shows the field; keep the catalog's value -
       **Push settings** then puts it back in the portal.
+- [ ] On that Metadata finding press **Compare**: catalog left, Intune
+      right, the differing lines and characters marked; a detection script
+      is shown line by line. Tick findings and the toolbar's buttons
+      light up - the table doesn't move when you tick.
+
+- [ ] **Groups**: type part of a group's name (e.g. "intune") and press
+      Enter - the list shows every Entra ID group containing it, with its
+      kind; `intune*` only those starting with it. **New group**, create
+      it - the page shows it as created right away (or "Just created" for a
+      few seconds), not "Not in Entra ID", and it appears in the search.
 
 ## 3. Add and deploy a Winget app
 

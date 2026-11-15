@@ -64,7 +64,10 @@ function Invoke-GraphRequestDetailed {
         [string]$Method = "GET",
         [string]$Body = $null,
         [string]$ContentType = "application/json",
-        [Parameter(Mandatory=$true)][string]$StepDescription
+        [Parameter(Mandatory=$true)][string]$StepDescription,
+        # A 404 the caller expects (waiting for a new group to replicate):
+        # no FAILED log line, the caller says "not visible yet" instead.
+        [switch]$NotFoundExpected
     )
     $maxAttempts = 4
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
@@ -110,6 +113,7 @@ function Invoke-GraphRequestDetailed {
                 continue
             }
             $detail = Get-HttpErrorDetail -ErrorRecord $_
+            if ($NotFoundExpected -and $_.Exception.Message -match 'NotFound|404') { throw "$StepDescription : not found yet" }
             if (Get-Command Write-GraphRequestLog -ErrorAction SilentlyContinue) { Write-GraphRequestLog -Method $Method -Uri $Uri -Milliseconds $graphTimer.ElapsedMilliseconds -ErrorText $_.Exception.Message -Detail $detail }
             $msg = "$StepDescription failed [$Method $Uri]: $($_.Exception.Message)"
             if ($detail) { $msg += "`nResponse body: $detail" }
@@ -233,6 +237,23 @@ try {
     $escapedName = $Config.GroupName.Replace("'", "''")
     $encodedFilter = [Uri]::EscapeDataString("displayName eq '$escapedName'")
     $existing = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=$encodedFilter&`$select=id,displayName,description" -Method GET -StepDescription "Look up group"
+    # Created from the app a moment ago and not yet found by name: Entra ID still copies it - look it up by its ID
+    # rather than make a second group with the same name.
+    if (@($existing.value).Count -eq 0 -and $Config.PSObject.Properties['GroupId'] -and $Config.GroupId) {
+        for ($attempt = 1; $attempt -le 10 -and @($existing.value).Count -eq 0; $attempt++) {
+            try {
+                $byId = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$($Config.GroupId)?`$select=id,displayName,description" -Method GET -StepDescription "Look up the new group" -NotFoundExpected
+                if (([string]$byId.displayName).Trim() -ieq $Config.GroupName) { $existing = [pscustomobject]@{ value = @([pscustomobject]@{ id = $byId.id; displayName = $byId.displayName; description = $byId.description }) } }
+                break
+            }
+            catch {
+                if ($_.Exception.Message -notmatch 'not found yet') { throw }
+                Write-Host "  ... the group created a moment ago isn't visible yet - Entra ID is still copying it (attempt $attempt/10)" -ForegroundColor DarkGray
+                Start-Sleep -Seconds 2
+            }
+        }
+        if (@($existing.value).Count -eq 0) { throw "The group '$($Config.GroupName)' was created a moment ago but Entra ID doesn't show it yet - try again in a minute (a second group with the same name was not made)." }
+    }
     # Names aren't unique in Entra ID: with two of the same name, which one is meant can't be told - nothing is changed.
     if (@($existing.value).Count -gt 1) { throw "There are $(@($existing.value).Count) groups named '$($Config.GroupName)' in Entra ID - rename one of them first (Entra admin center), so the right one is changed." }
 
@@ -277,12 +298,14 @@ try {
         for ($attempt = 1; $attempt -le 10; $attempt++) {
             Start-Sleep -Seconds 2
             try {
-                Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$groupId`?`$select=id" -Method GET -StepDescription "Check group availability" | Out-Null
+                Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$groupId`?`$select=id" -Method GET -StepDescription "Check group availability" -NotFoundExpected | Out-Null
                 $propagated = $true
                 break
             }
             catch {
-                Write-Host "  ... not yet visible (attempt $attempt/10)" -ForegroundColor DarkGray
+                # Normal for a few seconds after creating a group: Entra ID copies it to all its servers first.
+                if ($_.Exception.Message -match 'not found yet') { Write-Host "  ... not visible yet - Entra ID is still copying the new group (normal, attempt $attempt/10)" -ForegroundColor DarkGray }
+                else { Write-Host "  ... not visible yet (attempt $attempt/10): $($_.Exception.Message)" -ForegroundColor DarkGray }
             }
         }
         if ($propagated) {

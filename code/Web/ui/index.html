@@ -149,7 +149,7 @@
     </div>
     <div id="homeStats" class="kpis"></div>
     <div class="homegrid">
-      <section class="hcard" aria-labelledby="attTitle"><div class="hhead"><h2 id="attTitle">Needs attention</h2><span class="hcount" id="homeCount"></span></div><ul class="attention" id="homeList" aria-live="polite"></ul></section>
+      <section class="hcard" aria-labelledby="attTitle"><div class="hhead"><h2 id="attTitle">Needs attention</h2><span class="hcount" id="homeCount"></span><span class="homebusy" id="homeBusy" role="status" hidden><span class="spinner" aria-hidden="true"></span>Working...</span></div><ul class="attention" id="homeList" aria-live="polite"></ul></section>
       <div class="homeside">
         <section class="setup hcard" id="homeSetup" aria-labelledby="setupTitle" hidden><div class="hhead"><h2 id="setupTitle">Getting started</h2></div><div class="bar"><span id="setupBar"></span></div><ol id="setupList"></ol><p class="setupdone" id="setupDone"></p></section>
         <section class="hcard tipcard" aria-labelledby="tipTitle"><div class="hhead"><h2 id="tipTitle">Shortcuts</h2></div>
@@ -196,6 +196,7 @@
       <span class="spacer"></span>
       <span class="muted" id="checkSelCount"></span>
       <span class="fixbar" id="checkFixBar" hidden>
+      <button class="btn" id="btnFixCompare" disabled title="See side by side what differs between the catalog and Intune">Compare</button>
       <button class="btn" id="btnFixPull" disabled title="Intune is right: take its settings and groups into the catalog">Take from Intune</button>
       <button class="btn" id="btnFixPushSettings" disabled title="The catalog is right about settings or dependencies: send them to Intune">Send settings</button>
       <button class="btn" id="btnFixPushGroups" disabled title="The catalog is right about groups: send them to Intune">Send groups</button>
@@ -229,12 +230,12 @@
     <div class="gsplit">
       <div class="panel side">
         <div class="toolbar tight">
-          <input type="search" id="groupSearch" placeholder="Filter or type a group name" aria-label="Filter the groups, or type a group name to open" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
-          <button class="btn" id="btnGroupOpen" title="Open this exact group name from Entra ID">Open</button>
+          <input type="search" id="groupSearch" placeholder="Search groups (* as wildcard)" aria-label="Search the groups" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+          <button class="btn" id="btnGroupOpen" title="Search all of Entra ID for this text (Enter)">Search Entra ID</button>
         </div>
         <div class="gfilter">
-          <select id="groupShow" aria-label="Which groups to show" title="Show every group the catalog uses, or only those Entra ID has or lacks">
-            <option value="">All groups</option><option value="missing">Not in Entra ID</option><option value="found">In Entra ID</option>
+          <select id="groupShow" aria-label="Which groups to show" title="The groups the catalog uses (all, or those Entra ID has or lacks), or every group in Entra ID">
+            <option value="">Used by the catalog</option><option value="missing">Used, not in Entra ID</option><option value="found">Used, in Entra ID</option><option value="entra">All groups in Entra ID</option>
           </select>
           <span class="muted" id="groupStatusNote" aria-live="polite"></span>
         </div>
@@ -254,7 +255,7 @@
         </div>
       </div>
       <section class="panel" id="groupPane">
-        <div class="empty" id="groupEmpty"><h2>Pick a group</h2><p>The groups your apps are assigned to are listed on the left, with whether Entra ID has them. Pick one to see its apps and members, or type any group name and Open it.</p></div>
+        <div class="empty" id="groupEmpty"><h2>Pick a group</h2><p>The groups your apps are assigned to are listed on the left, with whether Entra ID has them. Pick one to see its apps and members, or search all of Entra ID on the left. New group starts a new one.</p></div>
         <div id="groupDetail" hidden>
           <div class="ghead">
             <h2 id="gName"></h2>
@@ -1279,6 +1280,13 @@
   <p class="formerror" id="gbErr" hidden></p>
   <pre class="log" id="gbLog" tabindex="0" role="log" hidden></pre>
   <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnGbGo" title="Change the groups in the catalog - Send groups sends them to Intune">Apply</button></div>
+</dialog>
+
+<dialog id="dlgCompare" class="wide" aria-labelledby="cmpTitle">
+  <h2 id="cmpTitle">Compare</h2>
+  <p class="sub" id="cmpNote">What the catalog has next to what Intune has. Changed lines are marked; nothing changes until you press a button.</p>
+  <div id="cmpBody" class="cmpbody"></div>
+  <div class="actions end"><span class="cmpnav" id="cmpNav"></span><span class="spacer"></span><span id="cmpFixes" class="fixes"></span><button class="btn" data-close>Close</button></div>
 </dialog>
 
 <dialog id="dlgWinget" class="wide">

@@ -1263,3 +1263,33 @@ label.chk > input[type=checkbox] { margin-top: 2px; }
 .formgrid h3.withfill { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .formgrid h3.withfill #btnFillWinget { margin-left: auto; }
 .justfilled { box-shadow: 0 0 0 2px var(--ok) !important; transition: box-shadow .4s; }
+
+/* Compare (Checks): catalog next to Intune, changed lines marked */
+#dlgCompare .cmpbody { display: grid; gap: 14px; overflow: auto; max-height: calc(100vh - 230px); }
+#dlgCompare .cmpfield h3 { margin: 0 0 6px; font-size: 14px; }
+#dlgCompare .cmpnav { display: inline-flex; align-items: center; gap: 4px; }
+#dlgCompare .fixes { display: inline-flex; gap: 6px; }
+table.cmp { width: 100%; border-collapse: collapse; table-layout: fixed; font-family: var(--mono); font-size: 12px; }
+table.cmp th { text-align: left; font-family: inherit; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 4px 8px; border-bottom: 1px solid var(--bd); }
+table.cmp td.v { padding: 1px 8px; white-space: pre-wrap; overflow-wrap: anywhere; vertical-align: top; }
+table.cmp td.v + td.v { border-left: 1px solid var(--bd); }
+table.cmp tr.chg td.v:first-child, table.cmp tr.del td.v:first-child { background: var(--err-bg); }
+table.cmp tr.chg td.v:last-child, table.cmp tr.add td.v:last-child { background: var(--ok-bg); }
+table.cmp td.v.none { background: repeating-linear-gradient(135deg, transparent 0 5px, var(--bd) 5px 6px) !important; opacity: .5; }
+table.cmp mark.del { background: color-mix(in srgb, var(--err) 35%, transparent); color: inherit; border-radius: 2px; }
+table.cmp mark.add { background: color-mix(in srgb, var(--ok) 35%, transparent); color: inherit; border-radius: 2px; }
+#checkSelCount { font-size: 12px; }
+
+#groupList li.nomatch { display: block; line-height: 1.6; }
+#groupList li.nomatch .linkbtn { display: inline; padding: 0; }
+
+/* Home: an action that is running - spinning button, a moving bar under its row, Working... in the header */
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: reloadspin .7s linear infinite; vertical-align: -2px; margin-right: 6px; flex: none; }
+.btn.working { display: inline-flex; align-items: center; opacity: 1 !important; cursor: progress; }
+.btn.working:disabled { color: var(--fg); }
+.attention li.att.busy { position: relative; overflow: hidden; }
+.attention li.att.busy::after { content: ''; position: absolute; left: 0; bottom: 0; height: 2px; width: 35%; background: var(--accent); animation: homebar 1.2s ease-in-out infinite; }
+@keyframes homebar { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+.homebusy { display: inline-flex; align-items: center; margin-left: auto; font-size: 12px; color: var(--accent); }
+.homebusy[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .spinner, .attention li.att.busy::after { animation: none; } }

@@ -134,6 +134,11 @@ $answers = [ordered]@{
     }
     "GET v1.0/groups?`$filter=displayName eq 'SG-ZZ-Missing'&`$select=id,displayName,description" = @{ value = @() }
     "GET v1.0/groups?`$filter=displayName eq 'SG-ZZ-Forbidden'&`$select=id,displayName,description" = @{ __status = 403; __body = @{ error = @{ code = 'Authorization_RequestDenied'; message = 'Insufficient privileges to complete the operation.' } } }
+    # Search all of Entra ID (Groups page): every name read once, matched in the app.
+    "GET v1.0/groups?`$select=id,displayName,description,securityEnabled,mailEnabled,groupTypes&`$top=999" = @{ value = @(
+        @{ id = $groupId; displayName = 'SG-ZZ-Exists'; securityEnabled = $true; mailEnabled = $false; groupTypes = @() },
+        @{ id = 'bbbbbbbb-0000-4000-8000-0000000000a1'; displayName = 'Intune Pilot'; securityEnabled = $true; mailEnabled = $false; groupTypes = @('DynamicMembership') },
+        @{ id = 'bbbbbbbb-0000-4000-8000-0000000000a2'; displayName = 'Team Intune'; securityEnabled = $false; mailEnabled = $true; groupTypes = @('Unified') }) }
     "GET v1.0/groups?`$filter=startswith(displayName,'ZZ')&`$select=id,displayName&`$top=25" = @{ value = @(@{ id = $groupId; displayName = 'ZZ Group' }) }
     "GET v1.0/users?`$filter=startswith(displayName,'ZZ') or startswith(userPrincipalName,'ZZ')&`$select=id,displayName,userPrincipalName&`$top=25" = @{ __status = 403; __body = @{ error = @{ code = 'Authorization_RequestDenied'; message = 'Insufficient privileges' } } }
 }
@@ -276,6 +281,14 @@ try {
     $gs = Invoke-Api '/api/groups-status'
     $gsNames = @(@($gs.found) | ForEach-Object { $_.name })
     Check ($gs.ok -and $gs.state -eq 'ok' -and $gsNames -contains 'SG-ZZ-Exists' -and $gsNames -notcontains 'SG-ZZ-Missing' -and (@($gs.found) | Where-Object { $_.name -eq 'SG-ZZ-Exists' }).id -eq $groupId) 'groups status: which catalog groups Entra ID has, looked up by name' ($gs | ConvertTo-Json -Compress -Depth 4)
+    $eg = Invoke-Api '/api/group-search' @{ q = 'intune' }
+    $egNames = @(@($eg.groups) | ForEach-Object { $_.name })
+    Check ($eg.ok -and $eg.total -eq 3 -and $egNames.Count -eq 2 -and $egNames[0] -eq 'Intune Pilot' -and (@($eg.groups) | Where-Object { $_.name -eq 'Team Intune' }).kind -eq 'Microsoft 365' -and (@($eg.groups) | Where-Object { $_.name -eq 'Intune Pilot' }).kind -eq 'Security, dynamic') 'group search: names containing the text, any case, sorted, with their kind' ($eg | ConvertTo-Json -Compress -Depth 4)
+    $egw = Invoke-Api '/api/group-search' @{ q = 'intune*' }
+    Check ($egw.ok -and @($egw.groups).Count -eq 1 -and @($egw.groups)[0].name -eq 'Intune Pilot') 'group search: * is a wildcard (starts with)' ($egw | ConvertTo-Json -Compress -Depth 4)
+    $ega = Invoke-Api '/api/group-search' @{ q = '' }
+    $egz = @($ega.groups) | Where-Object { $_.name -eq 'SG-ZZ-Exists' }
+    Check ($ega.ok -and @($ega.groups).Count -eq 3 -and $egz.apps -ge 1) 'group search: empty text lists every group, with how many catalog apps use each' ($ega | ConvertTo-Json -Compress -Depth 4)
     $search = Invoke-Api '/api/directory-search' @{ q = 'ZZ' }
     Check ($search.ok -and @($search.hits).Count -eq 1 -and (@($search.notes) -join ' ') -like '*Users couldn''t be searched*') 'directory search: groups found, users refused with a note' ($search | ConvertTo-Json -Compress -Depth 4)
 
