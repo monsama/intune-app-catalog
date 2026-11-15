@@ -6,7 +6,9 @@
   coffee and theme on the right, on the sidebar's colour with a hairline
   under it, the height of the sidebar's brand row. It stays at the top
   while the page scrolls; the two buttons are always in it (on wide
-  windows they used to move into each page's own toolbar).
+  windows they used to move into each page's own toolbar). Its hairline
+  runs on under the logo, so one line goes through the full width of the
+  window (also with the narrow icon sidebar).
 
 ## 2.27.7
 
