@@ -681,6 +681,7 @@ function Global:Invoke-WebWauSwitch {
     $managed = ([string]$Global:App.DefaultAppSettings.WingetInstallMethod) -ne 'Winget'
     $byHand = New-Object System.Collections.Generic.List[string]
     $dropped = New-Object System.Collections.Generic.List[string]
+    $carried = New-Object System.Collections.Generic.List[string]
     foreach ($a in @($all | Where-Object { @(Get-WauUse $_).Count })) {
         if (Get-WebAppRelease $a) { continue }
         if ($Data.auto -and $a.appId) { continue }
@@ -691,23 +692,28 @@ function Global:Invoke-WebWauSwitch {
         # Commands in another wording (other path, quotes, switches) that still run Winget-Install.ps1 for this app's own ID are WAU's too.
         if (-not $isWau -and $a.wingetId -and -not (Test-StoreProductId ([string]$a.wingetId)) -and (Test-WauCommandForId -WingetId ([string]$a.wingetId) -Command ([string]$m.installCommand))) { $isWau = $true }
         if ($isWau) {
+            # The winget options WAU passed after the ID (--override /S ...) carry over to winget's own command - when they're
+            # options it may take (ConvertTo-WingetOptionText); others are left out and listed.
+            $carry = ''
             $extras = Get-WauCommandExtras ([string]$m.installCommand)
-            if ($extras) { $dropped.Add("$($a.appName) ($extras)") }
+            if ($extras) {
+                $o = ConvertTo-WingetOptionText $extras
+                if ($o.Ok) { $carry = $o.Options; $carried.Add("$($a.appName) ($carry)") } else { $dropped.Add("$($a.appName) ($extras - $($o.Error))") }
+            }
             $hasVersion = Test-ReleaseVersionText ([string]$m.appVersion)
             # Managed updates only with a version to pin. Without one an app in Intune would be refused by Send (it needs
             # the version first) and keep WAU there - so it gets the plain winget command now, managed updates once it has one.
             if ($managed -and ($hasVersion -or -not $a.appId)) { $a.managedUpdates = $true }
-            # Set-ManagedAppPin leaves commands it doesn't recognise alone, so a reworded WAU command is replaced with the plain form first.
-            if ((Get-AppWingetInstallMethod -WingetId $a.wingetId -InstallCommand ([string]$m.installCommand) -UninstallCommand ([string]$m.uninstallCommand)) -ne 'WAU') {
+            # The plain winget form first (with the carried options): Set-ManagedAppPin then pins exactly that, options included.
+            $c = Get-WingetCommandLines -WingetId $a.wingetId -Method 'Winget' -InstallContext ([string]$m.installContext) -Options $carry
+            # Pinned, the command gets a little longer still: options that would take it past Intune's 1024 characters are left out.
+            if ($carry -and $c.Install.Length -gt 960) {
+                $carried.Remove("$($a.appName) ($carry)") | Out-Null; $dropped.Add("$($a.appName) ($extras - too long for Intune's install command)"); $carry = ''
                 $c = Get-WingetCommandLines -WingetId $a.wingetId -Method 'Winget' -InstallContext ([string]$m.installContext)
-                $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall
             }
-            if (-not ($a.managedUpdates -and (Set-ManagedAppPin $a))) {
-                $c = Get-WingetCommandLines -WingetId $a.wingetId -Method 'Winget' -InstallContext ([string]$m.installContext)
-                $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall
-                $m.returnCodes = @(Add-WingetRetryReturnCode $m.returnCodes)
-                if ($a.managedUpdates) { $noVersion.Add([string]$a.appName) }
-            }
+            $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall
+            $m.returnCodes = @(Add-WingetRetryReturnCode $m.returnCodes)
+            if (-not ($a.managedUpdates -and (Set-ManagedAppPin $a)) -and $a.managedUpdates) { $noVersion.Add([string]$a.appName) }
         }
         elseif (@(Get-WauUse $a) -contains 'commands') { $byHand.Add([string]$a.appName) }
         # Only what really changed counts (and is written): an app whose WAU commands were edited by hand stays as it is.
@@ -716,9 +722,10 @@ function Global:Invoke-WebWauSwitch {
         $changed.Add([string]$a.appName)
     }
     if ($byHand.Count -and -not $Data.auto) { Write-Log "[WARN] Not switched - their Winget-AutoUpdate commands were edited by hand, change them in the editor (Install with): $($byHand -join ', ')." }
-    if (-not $changed.Count) { return @{ ok = $true; changed = @(); noVersion = @(); deployed = @(); byHand = $byHand.ToArray(); dropped = @(); wauApp = $wauApp } }
-    if ($dropped.Count) { Write-Log "[INFO] Left out WAU's extra winget options (winget's own command uses the package's silent switches): $($dropped -join '; ')." }
+    if (-not $changed.Count) { return @{ ok = $true; changed = @(); noVersion = @(); deployed = @(); byHand = $byHand.ToArray(); dropped = @(); carried = @(); wauApp = $wauApp } }
+    if ($carried.Count) { Write-Log "[OK] Carried WAU's extra winget options over: $($carried -join '; ')." }
+    if ($dropped.Count) { Write-Log "[WARN] Left out WAU options winget's own command can't take: $($dropped -join '; ')." }
     Save-WebUndo $undo
     Write-Log "[OK] Switched $($changed.Count) app(s) from Winget-AutoUpdate to $(if ($managed) { 'managed updates' } else { 'the winget command' })$(if ($noVersion.Count) { " ($($noVersion.Count) still need an App version: $($noVersion -join ', '))" })."
-    return @{ ok = $true; changed = $changed.ToArray(); noVersion = $noVersion.ToArray(); deployed = @($all | Where-Object { $changed -contains $_.appName -and $_.appId } | ForEach-Object { [string]$_.appName }); byHand = $byHand.ToArray(); dropped = $dropped.ToArray(); wauApp = $wauApp }
+    return @{ ok = $true; changed = $changed.ToArray(); noVersion = $noVersion.ToArray(); deployed = @($all | Where-Object { $changed -contains $_.appName -and $_.appId } | ForEach-Object { [string]$_.appName }); byHand = $byHand.ToArray(); dropped = $dropped.ToArray(); carried = $carried.ToArray(); wauApp = $wauApp }
 }

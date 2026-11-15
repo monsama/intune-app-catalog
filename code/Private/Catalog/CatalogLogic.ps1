@@ -922,6 +922,94 @@ if (`$Apps) { return "Installed!" }
     }
 }
 
+function Global:ConvertTo-WingetOptionText {
+    <#
+      Pure: an app's extra winget install options, checked and written the
+      one way the generated install command carries them -
+      @{ Ok; Options; Error }. Options is '' for none, else e.g.
+      "--override '/S' --architecture 'x64'".
+
+      They end up in the install command that runs as SYSTEM on every
+      targeted device, so only these winget install options are taken, each
+      once: --override and --custom (the installer's own switches),
+      --architecture, --locale and --installer-type. Values are plain ASCII
+      without the characters that could leave the quoting or the command
+      line (double quotes, backtick, $, %, ;, &, |, <, >, ^, line breaks);
+      a single quote is doubled. Anything else is refused, never cleaned up.
+      Input values can be in double or single quotes, or one bare word.
+    #>
+    param([string]$Text)
+    $t = ([string]$Text).Trim()
+    if (-not $t) { return @{ Ok = $true; Options = ''; Error = '' } }
+    # Intune takes install commands up to 1024 characters; the generated one leaves room for about 200 more.
+    if ($t.Length -gt 200) { return @{ Ok = $false; Options = ''; Error = 'The extra winget options are too long (200 characters at most - Intune takes install commands up to 1024).' } }
+    $allowed = [ordered]@{
+        '--override' = '^[A-Za-z0-9 _\-./\\:=+,@()\[\]{}!#~'']{1,180}$'
+        '--custom' = '^[A-Za-z0-9 _\-./\\:=+,@()\[\]{}!#~'']{1,180}$'
+        '--architecture' = '^(?i:x86|x64|arm|arm64|neutral)$'
+        '--locale' = '^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$'
+        '--installer-type' = '^(?i:msi|msix|appx|exe|inno|nullsoft|wix|burn|portable|zip)$'
+    }
+    $seen = [ordered]@{}
+    $i = 0
+    while ($i -lt $t.Length) {
+        if ([char]::IsWhiteSpace($t[$i])) { $i++; continue }
+        $m = [regex]::Match($t.Substring($i), '^(--[a-z][a-z\-]*)(?:\s+|=|$)')
+        if (-not $m.Success) { return @{ Ok = $false; Options = ''; Error = "Extra winget options: '$($t.Substring($i).Split(' ')[0])' isn't an option (they start with --, e.g. --override `"/S`")." } }
+        $name = $m.Groups[1].Value.ToLowerInvariant()
+        if (-not $allowed.Contains($name)) { return @{ Ok = $false; Options = ''; Error = "Extra winget options: $name isn't taken - only $(@($allowed.Keys) -join ', ')." } }
+        if ($seen.Contains($name)) { return @{ Ok = $false; Options = ''; Error = "Extra winget options: $name is there twice." } }
+        $i += $m.Length
+        while ($i -lt $t.Length -and [char]::IsWhiteSpace($t[$i])) { $i++ }
+        if ($i -ge $t.Length) { return @{ Ok = $false; Options = ''; Error = "Extra winget options: $name has no value." } }
+        $value = ''
+        if ($t[$i] -eq '"') {
+            $end = $t.IndexOf('"', $i + 1)
+            if ($end -lt 0) { return @{ Ok = $false; Options = ''; Error = "Extra winget options: the value of $name has no closing double quote." } }
+            $value = $t.Substring($i + 1, $end - $i - 1); $i = $end + 1
+        }
+        elseif ($t[$i] -eq "'") {
+            $sb = New-Object System.Text.StringBuilder
+            $j = $i + 1; $closed = $false
+            while ($j -lt $t.Length) {
+                if ($t[$j] -eq "'") { if ($j + 1 -lt $t.Length -and $t[$j + 1] -eq "'") { [void]$sb.Append("'"); $j += 2; continue }; $closed = $true; break }
+                [void]$sb.Append($t[$j]); $j++
+            }
+            if (-not $closed) { return @{ Ok = $false; Options = ''; Error = "Extra winget options: the value of $name has no closing single quote." } }
+            $value = $sb.ToString(); $i = $j + 1
+        }
+        else {
+            $end = $i
+            while ($end -lt $t.Length -and -not [char]::IsWhiteSpace($t[$end])) { $end++ }
+            $value = $t.Substring($i, $end - $i); $i = $end
+        }
+        if ($i -lt $t.Length -and -not [char]::IsWhiteSpace($t[$i])) { return @{ Ok = $false; Options = ''; Error = "Extra winget options: put a space after the value of $name." } }
+        $value = $value.Trim()
+        if ($value -cnotmatch $allowed[$name]) {
+            $why = if ($name -in '--override', '--custom') { "plain letters, digits, spaces and / \ - _ . : = + , @ ( ) [ ] { } ! # ~ ' - no double quotes, backtick, `$, %, ;, &, |, <, > or ^" } else { 'not a value winget knows' }
+            return @{ Ok = $false; Options = ''; Error = "Extra winget options: the value of $name isn't allowed ($why)." }
+        }
+        $seen[$name] = $value
+    }
+    $parts = foreach ($k in $seen.Keys) { "$k '$($seen[$k].Replace("'", "''"))'" }
+    return @{ Ok = $true; Options = (@($parts) -join ' '); Error = '' }
+}
+
+function Global:Get-WingetCommandOptions {
+    <#
+      Pure: the extra winget options a generated install command carries
+      ('' when none) - read back from the command, so they stay through a
+      new pinned version, a new Winget ID or another install context. Only
+      options in the exact checked form count (ConvertTo-WingetOptionText).
+    #>
+    param([string]$InstallCommand)
+    $m = [regex]::Match([string]$InstallCommand, ' --accept-source-agreements (--.+); exit \$LASTEXITCODE"$')
+    if (-not $m.Success) { return '' }
+    $o = ConvertTo-WingetOptionText $m.Groups[1].Value
+    if ($o.Ok -and $o.Options -ceq $m.Groups[1].Value) { return $o.Options }
+    return ''
+}
+
 function Global:Get-WingetCommandLines {
     <#
       The install and uninstall command lines for a Winget app.
@@ -935,7 +1023,9 @@ function Global:Get-WingetCommandLines {
         # The form before 2.17 (no waiting for winget) - only to recognise commands generated then.
         [switch]$Legacy,
         # The form of 2.17-2.21 (System context also looked for winget.exe on PATH) - only to recognise commands generated then.
-        [switch]$PathFallback)
+        [switch]$PathFallback,
+        # Extra winget install options (2.25), as ConvertTo-WingetOptionText writes them - added to the install command only.
+        [string]$Options)
 
     $ps = "%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile"
     # The ID ends up in code and command lines that run as SYSTEM on the
@@ -954,6 +1044,13 @@ function Global:Get-WingetCommandLines {
     # "WAU" is only asked for to recognise commands of Winget-AutoUpdate's
     # Winget-Install.ps1 (before 2.19), so they can be switched to managed
     # updates - it is never generated for an app any more.
+    # Checked again here: whatever reaches this point runs as SYSTEM on the devices.
+    $opts = ''
+    if ($Options) {
+        $o = ConvertTo-WingetOptionText $Options
+        if (-not $o.Ok) { throw $o.Error }
+        $opts = " $($o.Options)"
+    }
     if ($Method -ne "WAU") {
         $scope = if ($InstallContext -eq "User") { "" } else { " --scope machine" }
         # Newest App Installer first: there can be more than one version
@@ -968,7 +1065,7 @@ function Global:Get-WingetCommandLines {
         # Intune tries again later instead of reporting a failure.
         else { "`$w = `$null; for (`$i = 0; `$i -lt 30 -and -not `$w; `$i++) { `$w = Get-Item `$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_8wekyb3d8bbwe\winget.exe -ErrorAction SilentlyContinue | Sort-Object { `$_.VersionInfo.FileVersionRaw } | Select-Object -Last 1 -ExpandProperty FullName; $($pathPart)if (-not `$w) { Start-Sleep 10 } }; if (-not `$w) { exit 9009 }" }
         return @{
-            Install   = "$ps -Command `"$find; & `$w install --id '$WingetId' -e$pin --source winget$scope --silent --accept-package-agreements --accept-source-agreements; exit `$LASTEXITCODE`""
+            Install   = "$ps -Command `"$find; & `$w install --id '$WingetId' -e$pin --source winget$scope --silent --accept-package-agreements --accept-source-agreements$opts; exit `$LASTEXITCODE`""
             Uninstall = "$ps -Command `"$find; & `$w uninstall --id '$WingetId' -e --source winget$scope --silent --accept-source-agreements; exit `$LASTEXITCODE`""
         }
     }
@@ -989,12 +1086,14 @@ function Global:Get-AppWingetInstallMethod {
     param([string]$WingetId, [string]$InstallCommand, [string]$UninstallCommand)
 
     if (-not $WingetId) { return "" }
+    # Extra winget options (2.25) are part of the generated form: compared with them.
+    $opts = Get-WingetCommandOptions $InstallCommand
     # A pinned winget command is the managed form, whatever version it pins.
     if ($InstallCommand -match " --version '((?:[^']|'')+)'") {
         $pinned = $Matches[1] -replace "''", "'"
         foreach ($context in @("System", "User")) {
             foreach ($form in 'now', 'path', 'legacy') {
-                $generated = Get-WingetCommandLines -WingetId $WingetId -Method "Managed" -InstallContext $context -Version $pinned -Legacy:($form -eq 'legacy') -PathFallback:($form -eq 'path')
+                $generated = Get-WingetCommandLines -WingetId $WingetId -Method "Managed" -InstallContext $context -Version $pinned -Legacy:($form -eq 'legacy') -PathFallback:($form -eq 'path') -Options $(if ($form -eq 'now') { $opts } else { '' })
                 if ($InstallCommand -eq $generated.Install -and $UninstallCommand -eq $generated.Uninstall) { return "Managed" }
             }
         }
@@ -1003,7 +1102,7 @@ function Global:Get-AppWingetInstallMethod {
     foreach ($method in @("WAU", "Winget")) {
         foreach ($context in @("System", "User")) {
             foreach ($form in 'now', 'path', 'legacy') {
-                $generated = Get-WingetCommandLines -WingetId $WingetId -Method $method -InstallContext $context -Legacy:($form -eq 'legacy') -PathFallback:($form -eq 'path')
+                $generated = Get-WingetCommandLines -WingetId $WingetId -Method $method -InstallContext $context -Legacy:($form -eq 'legacy') -PathFallback:($form -eq 'path') -Options $(if ($form -eq 'now' -and $method -ne 'WAU') { $opts } else { '' })
                 if ($InstallCommand -eq $generated.Install -and $UninstallCommand -eq $generated.Uninstall) { return $method }
             }
         }
@@ -1026,7 +1125,7 @@ function Global:Convert-AppWingetInstallMethod {
     if (-not $current) { return @{ Status = "Custom"; Install = $InstallCommand; Uninstall = $UninstallCommand } }
     # Never back to Winget-AutoUpdate (2.19): its commands only switch away.
     if ($Method -eq 'WAU') { $Method = 'Winget' }
-    $wanted = Get-WingetCommandLines -WingetId $WingetId -Method $Method -InstallContext $InstallContext
+    $wanted = Get-WingetCommandLines -WingetId $WingetId -Method $Method -InstallContext $InstallContext -Options (Get-WingetCommandOptions $InstallCommand)
     if ($wanted.Install -eq $InstallCommand -and $wanted.Uninstall -eq $UninstallCommand) {
         return @{ Status = "Already"; Install = $InstallCommand; Uninstall = $UninstallCommand }
     }
@@ -1233,7 +1332,7 @@ function Global:Set-ManagedAppPin {
         return $true
     }
     if (-not (Get-AppWingetInstallMethod -WingetId $App.wingetId -InstallCommand $m.installCommand -UninstallCommand $m.uninstallCommand) -and $m.installCommand) { return $false }
-    $c = Get-WingetCommandLines -WingetId $App.wingetId -Method "Managed" -InstallContext $m.installContext -Version $version
+    $c = Get-WingetCommandLines -WingetId $App.wingetId -Method "Managed" -InstallContext $m.installContext -Version $version -Options (Get-WingetCommandOptions ([string]$m.installCommand))
     $onDevices = ([string]$(if ([string]$App.detectedName) { $App.detectedName } else { $App.appName })).Trim()
     $detect = Get-ManagedWingetDetection -WingetId $App.wingetId -Version $version -NamePattern $(if ($onDevices) { Get-InstalledNamePattern $onDevices } else { '' })
     $changed = ($m.installCommand -ne $c.Install) -or ($m.uninstallCommand -ne $c.Uninstall) -or -not ($m.detectionRule -and $m.detectionRule.Type -eq 'Script' -and $m.detectionRule.Script_Content -eq $detect)
@@ -2221,7 +2320,7 @@ function Global:Set-AppWingetIdCommands {
         if ($method -eq 'Managed' -and [string]$m.installCommand -match " --version '((?:[^']|'')+)'") { $pinned = $Matches[1] -replace "''", "'" }
         # Never written again (2.19): an app on the old WAU form gets the winget command for its new ID.
         if ($method -eq 'WAU') { $method = 'Winget' }
-        $c = Get-WingetCommandLines -WingetId $new -Method $method -InstallContext ([string]$m.installContext) -Version $pinned
+        $c = Get-WingetCommandLines -WingetId $new -Method $method -InstallContext ([string]$m.installContext) -Version $pinned -Options (Get-WingetCommandOptions ([string]$m.installCommand))
         $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall; $changed = $true
     }
     $rule = $m.detectionRule
