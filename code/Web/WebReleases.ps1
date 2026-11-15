@@ -624,9 +624,11 @@ function Global:Invoke-WebWauSwitch {
     <#
       Winget-AutoUpdate is gone (2.19): every app still installing through
       its Winget-Install.ps1, or depending on the WAU app, is switched to
-      managed updates - pinned to its App version, or to the plain winget
-      command until it has one - and its WAU dependency removed. -preview
-      lists them without changing anything. With Undo.
+      the default install method - managed updates (pinned to its App
+      version, or the plain winget command until it has one) or the winget
+      command - and its WAU dependency removed. -preview lists them without
+      changing anything; -auto (at start) switches only the apps not in
+      Intune yet, which need nothing sent. With Undo.
     #>
     param($Data)
     $all = @((Read-WebCatalogRecords).Apps)
@@ -637,24 +639,27 @@ function Global:Invoke-WebWauSwitch {
     $undo = New-WebUndo 'Switch from Winget-AutoUpdate to managed updates'
     $changed = New-Object System.Collections.Generic.List[string]
     $noVersion = New-Object System.Collections.Generic.List[string]
+    $managed = ([string]$Global:App.DefaultAppSettings.WingetInstallMethod) -ne 'Winget'
     foreach ($a in @($all | Where-Object { @(Get-WauUse $_).Count })) {
         if (Get-WebAppRelease $a) { continue }
+        if ($Data.auto -and $a.appId) { continue }
         $m = $a.metadata
         if ($m.PSObject.Properties['dependencies']) { $m.dependencies = @(@($m.dependencies) | Where-Object { $_ -and -not (Test-WauAppName ([string]$_)) }) }
         if ($a.wingetId -and -not (Test-StoreProductId ([string]$a.wingetId))) {
-            $a.managedUpdates = $true
-            if (-not (Set-ManagedAppPin $a) -and (Get-AppWingetInstallMethod -WingetId $a.wingetId -InstallCommand ([string]$m.installCommand) -UninstallCommand ([string]$m.uninstallCommand)) -eq 'WAU') {
+            if ($managed) { $a.managedUpdates = $true }
+            if (-not ($a.managedUpdates -and (Set-ManagedAppPin $a)) -and (Get-AppWingetInstallMethod -WingetId $a.wingetId -InstallCommand ([string]$m.installCommand) -UninstallCommand ([string]$m.uninstallCommand)) -eq 'WAU') {
                 # No App version yet: the newest from winget for now - Take winget's version pins it.
                 $c = Get-WingetCommandLines -WingetId $a.wingetId -Method 'Winget' -InstallContext ([string]$m.installContext)
                 $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall
                 $m.returnCodes = @(Add-WingetRetryReturnCode $m.returnCodes)
-                $noVersion.Add([string]$a.appName)
+                if ($a.managedUpdates) { $noVersion.Add([string]$a.appName) }
             }
         }
         Write-WebAppFile -App $a -Undo $undo
         $changed.Add([string]$a.appName)
     }
+    if (-not $changed.Count) { return @{ ok = $true; changed = @(); noVersion = @(); deployed = @(); wauApp = $wauApp } }
     Save-WebUndo $undo
-    Write-Log "[OK] Switched $($changed.Count) app(s) from Winget-AutoUpdate to managed updates$(if ($noVersion.Count) { " ($($noVersion.Count) still need an App version: $($noVersion -join ', '))" })."
+    Write-Log "[OK] Switched $($changed.Count) app(s) from Winget-AutoUpdate to $(if ($managed) { 'managed updates' } else { 'the winget command' })$(if ($noVersion.Count) { " ($($noVersion.Count) still need an App version: $($noVersion -join ', '))" })."
     return @{ ok = $true; changed = $changed.ToArray(); noVersion = $noVersion.ToArray(); deployed = @($all | Where-Object { $changed -contains $_.appName -and $_.appId } | ForEach-Object { [string]$_.appName }); wauApp = $wauApp }
 }

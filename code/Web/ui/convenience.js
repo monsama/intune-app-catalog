@@ -360,15 +360,16 @@ async function wauSwitch() {
   const p = await api('/api/wau-switch', { preview: true });
   if (!p.ok) { toast(p.error, true); return; }
   if (!p.apps.length) { toast('No app uses Winget-AutoUpdate any more.'); loadHome(); return; }
+  const managedDefault = !(prefs && prefs.defaults && prefs.defaults.wingetInstallMethod === 'Winget');
   const noV = p.apps.filter(a => !a.hasVersion).map(a => a.app), dep = p.apps.filter(a => a.deployed).map(a => a.app);
-  if (!(await ask(`Switch ${p.apps.length} app(s) from Winget-AutoUpdate to managed updates?\n\n${p.apps.slice(0, 12).map(a => a.app).join(', ')}${p.apps.length > 12 ? ', ...' : ''}\n\n` +
-    `Each installs its App version with winget from then on, and new versions go to the pilot groups first. Their dependency on Winget-AutoUpdate is removed.` +
-    (noV.length ? ` ${noV.length} have no App version yet - they install the newest until you take winget's version.` : '') +
+  if (!(await ask(`Switch ${p.apps.length} app(s) from Winget-AutoUpdate to ${managedDefault ? 'managed updates' : 'the winget command'}?\n\n${p.apps.slice(0, 12).map(a => a.app).join(', ')}${p.apps.length > 12 ? ', ...' : ''}\n\n` +
+    (managedDefault ? `Each installs its App version with winget from then on, and new versions go to the pilot groups first.` : 'Each installs with the winget command from then on (Settings: Winget apps install with).') + ` Their dependency on Winget-AutoUpdate is removed.` +
+    (managedDefault && noV.length ? ` ${noV.length} have no App version yet - they install the newest until you take winget's version.` : '') +
     (dep.length ? ` The ${dep.length} in Intune get the new commands pushed.` : ''), { ok: 'Switch them' }))) return;
   const r = await api('/api/wau-switch', {});
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps();
-  const msg = `Switched ${r.changed.length} app(s) to managed updates.`;
+  const msg = `Switched ${r.changed.length} app(s) away from Winget-AutoUpdate.`;
   if (r.deployed.length) {
     const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', startText: 'Pushing ' });
     toast(`${msg} Pushed to Intune for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length, [{ label: 'Undo', run: () => undoLast() }]);

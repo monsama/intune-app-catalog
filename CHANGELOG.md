@@ -9,6 +9,12 @@
 - **Company Portal and Microsoft 365 Apps** show as **Microsoft (Intune)**
   with the stage **Microsoft app** - not "own installer", "Draft" and
   "Build", since there's nothing to build.
+- **Winget-AutoUpdate apps switch by themselves.** At start, apps that
+  still have WAU's commands and aren't in Intune yet are switched to the
+  default install method (Managed updates or the winget command) - nothing
+  to send, so nothing to click. Apps already in Intune stay on Home's
+  **Switch them**, which also sends the new commands. Both follow the
+  default install method now, not always managed updates.
 - **No second "Send to Intune" button**: the next-step button only shows
   when the next step is something else.
 - **The Apps toolbar wraps** on narrower windows instead of pushing the
