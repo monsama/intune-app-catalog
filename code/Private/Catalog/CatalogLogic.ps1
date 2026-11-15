@@ -2544,6 +2544,23 @@ function Global:Get-ExeSilentSwitches {
     return ''
 }
 
+function Global:Get-ScriptCommandFile {
+    <#
+      Pure: a command that runs a PowerShell script from the package folder - Windows PowerShell (by its full
+      path or not, quoted or not) with the usual switches in any order, then -File and a .ps1 file name (with or
+      without .\ and quotes) and maybe its own arguments. @{ Runner; File; Args } or $null when it's anything else.
+    #>
+    param([string]$Command)
+    $c = ([string]$Command).Trim()
+    $re = '^(?<runner>"?(?:(?:%SystemRoot%|%windir%|[A-Za-z]:\\Windows)\\(?:sysnative|System32|SysWOW64)\\WindowsPowerShell\\v1\.0\\)?powershell(?:\.exe)?"?' +
+        '(?:\s+-(?:NoProfile|NonInteractive|NoLogo|Sta|Mta|ExecutionPolicy\s+(?:Bypass|Unrestricted|RemoteSigned|AllSigned)|WindowStyle\s+(?:Hidden|Minimized|Normal)))*\s+-File)' +
+        '\s+(?:"(?:\.\\)?(?<qfile>[A-Za-z0-9][A-Za-z0-9 ._\-]{0,80}\.ps1)"|(?:\.\\)?(?<file>[A-Za-z0-9][A-Za-z0-9._\-]{0,80}\.ps1))(?<args>(?:\s+.*)?)$'
+    $m = [regex]::Match($c, $re, 'IgnoreCase')
+    if (-not $m.Success) { return $null }
+    $file = if ($m.Groups['qfile'].Success) { $m.Groups['qfile'].Value } else { $m.Groups['file'].Value }
+    return @{ Runner = $m.Groups['runner'].Value; File = $file; Args = $m.Groups['args'].Value }
+}
+
 function Global:Get-PackageScriptRunner {
     # Pure: how a package's own PowerShell script is run - 64-bit Windows PowerShell, no profile, from the package folder.
     return '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File'
@@ -2626,7 +2643,7 @@ function Global:Get-InstallBlocks {
             $blocks = @(
                 (New-CommandBlock -Id 'ps' -Kind 'lock' -Label 'PowerShell' -Text '64-bit Windows PowerShell, no profile' -Help "Intune's agent is 32-bit: sysnative reaches the 64-bit PowerShell.")
                 (New-CommandBlock -Id 'find' -Kind 'lock' -Label 'Find winget' -Text 'the newest App Installer - waits up to 5 minutes on a new device, else exit 9009 (Intune retries)')
-                (New-CommandBlock -Id 'cmd' -Kind 'lock' -Label 'Install' -Text "winget install --id $WingetId -e --source winget --silent")
+                (New-CommandBlock -Id 'cmd' -Kind 'link' -Label 'Install' -Text "winget install --id $WingetId -e --source winget --silent" -Link 'aWinget' -Help "The Winget ID is set on Basics. -e (exactly this ID), --source winget and --silent are always there - an install with nobody at the device needs them. More switches go in Extra winget options; Edit as text makes it an own command.")
                 (New-CommandBlock -Id 'version' -Kind 'link' -Label 'Version' -Text $(if ($pinned) { "$pinned - pinned (managed updates)" } else { 'the newest winget has' }) -Link 'aMethod' -Help 'Set with Install with.')
                 (New-CommandBlock -Id 'scope' -Kind 'link' -Label 'For' -Text $(if ($machine) { 'the device (--scope machine)' } else { 'the signed-in user' }) -Link 'xContext' -Help 'Set with Install for (Requirements).')
                 (New-CommandBlock -Id 'options' -Kind 'list' -Label 'Extra winget options' -Value $list -Choices @('--override', '--custom', '--architecture', '--locale', '--installer-type') -Help 'Most packages need none - winget installs silently with the package''s own switches.')
@@ -2692,6 +2709,23 @@ function Global:Get-InstallBlocks {
             (New-CommandBlock -Id 'uscript' -Kind 'action' -Label 'Uninstall' -Text 'Uninstall.ps1' -Value 'Uninstall.ps1' -Part 'uninstall')
         )
         return @{ Form = 'script'; Own = $false; Blocks = $blocks; Note = '' }
+    }
+
+    # A script app written another way (by hand, from Intune, another tool): Windows PowerShell running a .ps1 from
+    # the package folder - any order of the usual switches, with or without .\ or quotes, any file name. Shown as
+    # blocks with the scripts to open; the commands stay exactly as they are (nothing in them is rewritten).
+    $si = Get-ScriptCommandFile $Install
+    $su = Get-ScriptCommandFile $Uninstall
+    if ($si -and $si.File -ine 'Invoke-AppDeployToolkit.ps1') {
+        $blocks = New-Object System.Collections.Generic.List[object]
+        $blocks.Add((New-CommandBlock -Id 'ps' -Kind 'lock' -Label 'PowerShell' -Text $si.Runner))
+        $blocks.Add((New-CommandBlock -Id 'script' -Kind 'action' -Label 'Install' -Text "$($si.File)$($si.Args)" -Value $si.File))
+        if ($su) {
+            if ($su.Runner -cne $si.Runner) { $blocks.Add((New-CommandBlock -Id 'ups' -Kind 'lock' -Label 'PowerShell' -Text $su.Runner -Part 'uninstall')) }
+            $blocks.Add((New-CommandBlock -Id 'uscript' -Kind 'action' -Label 'Uninstall' -Text "$($su.File)$($su.Args)" -Value $su.File -Part 'uninstall'))
+        }
+        else { $blocks.Add((New-CommandBlock -Id 'ucmd' -Kind 'lock' -Label 'Runs' -Text $Uninstall -Part 'uninstall')) }
+        return @{ Form = 'script'; Own = $false; Blocks = $blocks.ToArray(); Note = 'Your own script commands - kept exactly as they are; open the scripts below.' }
     }
 
     # PSADT 4: Invoke-AppDeployToolkit (.exe, or the .ps1 with PowerShell), its deploy mode.

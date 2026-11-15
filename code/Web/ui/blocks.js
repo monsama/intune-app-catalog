@@ -29,12 +29,15 @@ function renderBlockBar(host, model, opts = {}) {
     head.append(el('span', { class: 'bown', text: textMode ? `Edited as text - your own ${opts.what || 'command'}, kept exactly as typed.` : (model.note || 'Your own command, kept exactly as typed.') }));
     // Back to blocks only when what's typed is one of their forms (nothing typed is lost).
     if (textMode && !model.own && onBlocks) head.append(el('button', { type: 'button', class: 'btn small ghost', text: 'Back to blocks', title: 'Show it as blocks again - it is one of their forms', onclick: onBlocks }));
+    if (opts.what !== 'script') head.append(el('button', { type: 'button', class: 'btn small', text: 'Open in the code editor', title: 'Both commands with colours, a find and the 1024-character count', onclick: () => openScriptEditor({ command: 'install' }) }));
     host.append(head);
     return;
   }
   head.append(el('span', { class: 'bform', text: { winget: 'Winget', msi: 'MSI', exe: 'Installer (.exe)', script: 'PowerShell script', psadt: 'PSADT 4', managed: 'Managed release', installed: 'Installed app' }[model.form] || model.form }),
     el('span', { class: 'bkey' }, el('span', { class: 'k lock', text: 'fixed' }), el('span', { class: 'k edit', text: "this app's" }), el('span', { class: 'k link', text: 'set elsewhere' })),
     model.note ? el('span', { class: 'bnote', text: model.note }) : '',
+    // An older generated form: rewritten in today's form in one click (the same values - nothing else changes).
+    model.form === 'winget' && /older form/.test(model.note || '') && onChange ? el('button', { type: 'button', class: 'btn small', text: "Write today's form", title: 'The same Winget ID, version, scope and options - written the way the app writes them now', onclick: () => { const o = model.blocks.find(b => b.id === 'options'); onChange({ options: (o && o.value) || [] }); } }) : '',
     el('button', { type: 'button', class: 'btn small ghost', text: 'Edit as text', title: 'Write it yourself - it is then your own, kept exactly as typed', onclick: onText }));
   host.append(head);
   const values = {};
@@ -129,7 +132,7 @@ async function refreshBlocks(opening) {
   const restore = keepFocus(host);
   renderBlockBar(host, r, {
     textMode: bs.instText,
-    onText: () => { bs.instText = true; setCommandsReadOnly(false); renderBlockBar(host, r, { textMode: true, onBlocks: backToBlocks }); $('mInstallCommand').focus(); },
+    onText: () => { bs.instText = true; setCommandsReadOnly(false); renderBlockBar(host, r, { textMode: true, onBlocks: backToBlocks }); openScriptEditor({ command: 'install' }); },
     onBlocks: backToBlocks,
     onChange: values => compose('/api/install-compose', { ...instFields(), form: r.form, values }, c => setFields([['mInstallCommand', c.install], ['mUninstallCommand', c.uninstall]])).then(ok => { if (ok === false) refreshBlocks(); }),
     onAction: file => openScriptEditor({ name: editingName, file })
@@ -156,7 +159,7 @@ async function refreshDetectionBlocks() {
   const back = () => { bs.detText = false; bs.det = null; refreshDetectionBlocks(); };
   renderBlockBar(host, r.form === 'none' ? null : r, {
     what: 'script', textMode: bs.detText, onBlocks: back,
-    onText: () => { bs.detText = true; $('xScript').readOnly = false; $('xScript').classList.remove('preview'); refreshDetectionBlocks(); $('xScript').focus(); },
+    onText: () => { bs.detText = true; $('xScript').readOnly = false; $('xScript').classList.remove('preview'); refreshDetectionBlocks(); openScriptEditor({ detection: true }); },
     onChange: values => compose('/api/detection-compose', { script: $('xScript').value, form: r.form, values }, c => {
       setFields([['xScript', c.script]]);
       // The managed release's detection is written from this name again at the next release (Name on devices).
@@ -171,7 +174,7 @@ async function refreshDetectionBlocks() {
 const detSoon = (() => { let t = 0; return () => { clearTimeout(t); t = setTimeout(refreshDetectionBlocks, 300); }; })();
 $('xScript').addEventListener('input', detSoon);
 $('xType').addEventListener('change', detSoon);
-$('dlgApp').addEventListener('close', () => { if (se.detection && $('dlgCode') && $('dlgCode').open && !$('dlgCode').classList.contains('minimized')) $('dlgCode').close(); });
+$('dlgApp').addEventListener('close', () => { if ((se.detection || se.command) && $('dlgCode') && $('dlgCode').open && !$('dlgCode').classList.contains('minimized')) $('dlgCode').close(); });
 $('dlgApp').addEventListener('close', () => { bs.instText = false; bs.detText = false; bs.inst = null; bs.det = null; bs.app = ''; bs.cseq++; });
 
 // ---------------------------------------------------------------- the code editor
@@ -207,7 +210,7 @@ function lockedLinesOf(text) {
 }
 const lockedText = text => { const l = text.split('\n'), set = lockedLinesOf(text); return [...set].sort((a, b) => a - b).map(i => l[i]).join('\n'); };
 
-const se = { name: '', file: '', hash: '', original: '', locked: new Set(), errors: [], detection: false, checkSeq: 0, good: '', want: '', conflict: false, saved: true, lastStatus: '' };
+const se = { name: '', file: '', hash: '', original: '', locked: new Set(), errors: [], detection: false, command: '', cmds: null, cmdOrig: null, checkSeq: 0, good: '', want: '', conflict: false, saved: true, lastStatus: '' };
 function codeDialog() {
   let d = $('dlgCode');
   if (d) return d;
@@ -230,7 +233,10 @@ function codeDialog() {
   const ta = $('seText');
   ta.addEventListener('input', () => {
     // Whatever got past the checks below (a drop, an IME, a paste of a marker line): the locked lines are put back.
-    if (!se.detection && lockedText(ta.value) !== se.want) {
+    // A command is one line - Intune takes no line breaks in it.
+    if (se.command && /\n/.test(ta.value)) { const pos = ta.selectionStart - 1; ta.value = ta.value.replace(/\r?\n/g, ' '); ta.setSelectionRange(pos, pos); }
+    if (se.command) { se.cmds[se.command] = ta.value; se.good = ta.value; }
+    else if (!se.detection && lockedText(ta.value) !== se.want) {
       const pos = Math.min(ta.selectionStart, se.good.length); ta.value = se.good; ta.setSelectionRange(pos, pos);
       status('The locked lines (the version marker the detection rule reads) stay as they are - a release changes them.', true);
     } else se.good = ta.value;
@@ -299,7 +305,7 @@ const lineHeight = () => parseFloat(getComputedStyle($('seText')).lineHeight) ||
 function status(text, bad) { const s = $('seStatus'); s.classList.toggle('err', !!bad); if (se.lastStatus === text) return; se.lastStatus = text; s.textContent = text; }
 function paintScript() {
   const text = $('seText').value;
-  se.locked = se.detection ? new Set() : lockedLinesOf(text);
+  se.locked = se.detection || se.command ? new Set() : lockedLinesOf(text);
   $('seHl').innerHTML = highlightPs(text);
   const lines = text.split('\n'), bad = new Set(se.errors.map(x => x.line - 1));
   $('seGutter').replaceChildren(...lines.map((_, i) => el('div', { class: (se.locked.has(i) ? 'lk' : '') + (bad.has(i) ? ' bad' : ''), title: se.locked.has(i) ? 'Locked - the version marker the detection rule reads' : null, text: String(i + 1) })));
@@ -310,11 +316,19 @@ function paintScript() {
   hl.backgroundSize = rows.map(() => `100% ${lh}px`).join(',');
   hl.backgroundPosition = rows.map(i => `0 ${pad + i * lh}px`).join(',');
   hl.backgroundRepeat = 'no-repeat';
+  if (se.command) {
+    const changed = se.cmds.install !== se.cmdOrig.install || se.cmds.uninstall !== se.cmdOrig.uninstall, long = ['install', 'uninstall'].filter(k => se.cmds[k].length > 1024);
+    $('seSave').disabled = !changed || long.length > 0 || !se.cmds.install.trim();
+    $('seSave').title = long.length ? `The ${long.join(' and ')} command is longer than Intune's 1024 characters` : !se.cmds.install.trim() ? 'The install command is empty' : changed ? 'Ctrl+S' : 'Nothing changed yet';
+    status(`${se.command === 'install' ? 'Install' : 'Uninstall'} command: ${text.length} of 1024 characters${text.length > 1024 ? ' - too long for Intune' : ''}. Apply puts both into the app (Save in the app editor keeps them).`, text.length > 1024);
+    return;
+  }
   $('seSave').disabled = text === se.original || se.errors.length > 0 || se.conflict;
   $('seSave').title = se.conflict ? 'Changed by someone else since you opened it - close and open it again' : se.errors.length ? "It doesn't parse - see the lines below" : text === se.original ? 'Nothing changed yet' : 'Ctrl+S';
 }
 const checkSoon = (() => { let t = 0; return () => { clearTimeout(t); t = setTimeout(checkScript, 450); }; })();
 async function checkScript() {
+  if (se.command) { se.errors = []; $('seErrors').replaceChildren(); paintScript(); return; }
   const seq = ++se.checkSeq, text = $('seText').value;
   const r = await api('/api/package-script-check', { old: se.detection ? '' : se.original, text });
   if (seq !== se.checkSeq || !r.ok) return;
@@ -331,18 +345,32 @@ function goLine(line, col) {
   ta.focus(); ta.setSelectionRange(pos, pos); ta.scrollTop = Math.max(0, (line - 1) * lineHeight() - ta.clientHeight / 2);
 }
 
-async function openScriptEditor({ name, file, detection }) {
+async function openScriptEditor({ name, file, detection, command }) {
   const d = codeDialog();
   // Minimized with the same script: brought back as it was. Another one: what was typed is asked about first.
   if (d.classList.contains('minimized')) {
-    if ((detection && se.detection && se.forApp === (editingName || '')) || (!detection && !se.detection && se.name === name && se.file === file)) { wcResume('dlgCode'); return; }
+    if ((command && se.command && se.forApp === (editingName || '')) || (detection && se.detection && se.forApp === (editingName || '')) || (!detection && !command && !se.detection && !se.command && se.name === name && se.file === file)) { wcResume('dlgCode'); return; }
     wcResume('dlgCode');
     if (!(await leaveScript())) return;
   }
-  Object.assign(se, { detection: !!detection, errors: [], conflict: false, lastStatus: '' });
+  // Already open on the commands: just the other one of the two.
+  if (command && d.open && se.command && se.forApp === (editingName || '')) { showCommand(command); return; }
+  Object.assign(se, { detection: !!detection, command: command || '', errors: [], conflict: false, lastStatus: '' });
+  d.classList.toggle('cmdmode', !!command);
+  $('seText').setAttribute('wrap', command ? 'soft' : 'off');
   $('seBuild').hidden = true;
-  $('sePrev').hidden = se.detection;
-  $('seSave').textContent = se.detection ? 'Apply' : 'Save';
+  $('sePrev').hidden = se.detection || !!se.command;
+  $('seSave').textContent = se.detection || se.command ? 'Apply' : 'Save';
+  if (se.command) {
+    // Bound to the app open in the editor now, like the detection script.
+    const now = { install: $('mInstallCommand').value, uninstall: $('mUninstallCommand').value };
+    Object.assign(se, { name: '', file: '', hash: '', forApp: editingName || '', cmds: { ...now }, cmdOrig: { ...now } });
+    $('seTitle').textContent = 'Install and uninstall command';
+    $('seSub').textContent = "Your own commands - kept exactly as typed. Each is one line; Intune runs it as SYSTEM from the package folder and takes at most 1024 characters.";
+    showCommand(command);
+    if (!d.open) d.showModal();
+    return;
+  }
   if (se.detection) {
     // Bound to the app open in the editor now: Apply never writes into another app's detection.
     Object.assign(se, { name: '', file: '', hash: '', forApp: editingName || '', original: $('xScript').value.replace(/\r\n?/g, '\n') });
@@ -365,13 +393,30 @@ async function openScriptEditor({ name, file, detection }) {
   if (!d.open) d.showModal();
   $('seText').focus(); $('seText').setSelectionRange(0, 0); $('seText').scrollTop = 0;
 }
+// The commands mode: two tabs, one command each; what's typed in one is kept while the other is shown.
+function showCommand(which) {
+  se.command = which;
+  $('seTabs').replaceChildren(...['install', 'uninstall'].map(k => el('button', { type: 'button', class: 'setab', 'aria-pressed': String(k === which), text: k === 'install' ? 'Install command' : 'Uninstall command', onclick: () => { if (k !== se.command) showCommand(k); } })));
+  se.original = se.cmdOrig[which]; se.good = se.cmds[which]; se.want = '';
+  $('seText').value = se.cmds[which];
+  $('seFind').hidden = true;
+  paintScript();
+  $('seText').focus(); $('seText').setSelectionRange(0, 0); $('seText').scrollLeft = 0;
+}
 async function leaveScript() {
+  if (se.command) return (se.cmds.install === se.cmdOrig.install && se.cmds.uninstall === se.cmdOrig.uninstall) || ask('Discard your changes to the commands?', { ok: 'Discard', danger: true });
   return $('seText').value === se.original || ask(`Discard your changes to ${se.detection ? 'the detection script' : se.file}?`, { ok: 'Discard', danger: true });
 }
 async function closeScript() { if (await leaveScript()) $('dlgCode').close(); }
 async function saveScript() {
   const text = $('seText').value;
   if ($('seSave').disabled) return;
+  if (se.command) {
+    if (!$('dlgApp').open || (editingName || '') !== se.forApp) { status('The app these commands belong to was closed - they can no longer be applied. Copy what you need, then close.', true); return; }
+    setFields([['mInstallCommand', se.cmds.install], ['mUninstallCommand', se.cmds.uninstall]]);
+    se.cmdOrig = { ...se.cmds }; se.original = text; $('dlgCode').close(); toast('Commands applied - Save the app to keep them.');
+    return;
+  }
   if (se.detection) {
     if (!$('dlgApp').open || (editingName || '') !== se.forApp) { status('The app this detection script belongs to was closed - it can no longer be applied. Copy what you need, then close.', true); return; }
     setFields([['xScript', text]]);

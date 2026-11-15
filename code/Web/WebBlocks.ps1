@@ -45,12 +45,14 @@ function Global:Get-WebDetectionCompose {
 
 function Global:Resolve-WebPackageScript {
     <#
-      The path of one of an app's package scripts - only Install.ps1,
-      Uninstall.ps1 or Invoke-AppDeployToolkit.ps1 in that app's own folder
-      under Packages, of an app in the catalog. @{ Ok; Path; Error }.
+      The path of one of an app's package scripts - a .ps1 directly in that
+      app's own folder under Packages (Install.ps1, Uninstall.ps1,
+      Invoke-AppDeployToolkit.ps1, or whatever its commands run), of an app
+      in the catalog. @{ Ok; Path; Error }.
     #>
     param([string]$Name, [string]$File)
-    if ($File -cnotin 'Install.ps1', 'Uninstall.ps1', 'Invoke-AppDeployToolkit.ps1') { return @{ Ok = $false; Error = 'Only Install.ps1, Uninstall.ps1 and Invoke-AppDeployToolkit.ps1 can be edited here.' } }
+    # A plain file name: no folder, no drive, no "..", only letters, digits, space, dot, dash and underscore.
+    if ($File -notmatch '^[A-Za-z0-9][A-Za-z0-9 ._\-]{0,80}\.ps1$' -or $File -match '\.\.') { return @{ Ok = $false; Error = 'Only a .ps1 script in the app''s own package folder can be edited here.' } }
     $app = @((Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $Name }) | Select-Object -First 1
     if (-not $app) { return @{ Ok = $false; Error = "'$Name' isn't in the catalog." } }
     $root = [IO.Path]::GetFullPath((Get-AppFolder -Kind Packages))
@@ -86,7 +88,10 @@ function Global:Read-WebPackageScript {
     if (-not $p.Ok) { return @{ ok = $false; error = $p.Error } }
     if ((Get-Item -LiteralPath $p.Path).Length -gt 262144) { return @{ ok = $false; error = "$($Data.file) is larger than 256 KB - edit it outside the app." } }
     $text = Read-WebScriptText $p.Path
-    $files = @(foreach ($f in 'Install.ps1', 'Uninstall.ps1', 'Invoke-AppDeployToolkit.ps1') { if (Test-Path -LiteralPath (Join-Path (Split-Path $p.Path) $f) -PathType Leaf) { $f } })
+    # The scripts next to it (the editor's other tabs): every .ps1 directly in the app's folder, the usual ones first.
+    $usual = @('Install.ps1', 'Uninstall.ps1', 'Invoke-AppDeployToolkit.ps1')
+    $files = @(Get-ChildItem -LiteralPath (Split-Path $p.Path) -Filter '*.ps1' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^[A-Za-z0-9][A-Za-z0-9 ._\-]{0,80}\.ps1$' } |
+            Sort-Object { $i = [Array]::IndexOf($usual, $_.Name); if ($i -lt 0) { 99 } else { $i } }, Name | Select-Object -First 20 | ForEach-Object { $_.Name })
     return @{ ok = $true; text = $text; hash = (Get-WebTextHash $p.Path); locked = @(Get-PackageScriptLockedLines $text); files = $files; folder = (Split-Path $p.Path) }
 }
 

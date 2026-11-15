@@ -139,6 +139,7 @@ $testableFunctionNames = @(
     "New-MsiCommandLines",
     "New-ExeCommandLines",
     "Get-InstallBlocks",
+    "Get-ScriptCommandFile",
     "New-InstallFromBlocks",
     "ConvertFrom-InstalledNamePattern",
     "Get-DetectionBlocks",
@@ -2835,6 +2836,16 @@ Assert-True ($wb.Ok -and $wb.Install -like "*--version '5.1'*" -and (Get-WingetC
 Assert-True (-not (New-InstallFromBlocks -Form 'winget' -Values @{ options = @(@{ name = '--location'; value = 'C:\x' }) } -WingetId 'Vendor.App' -Install $bw.Install -Uninstall $bw.Uninstall).Ok) "New-InstallFromBlocks: an option winget's command may not take is refused"
 $own = Get-InstallBlocks -WingetId 'Vendor.App' -Install ($bw.Install + ' --force') -Uninstall $bw.Uninstall
 Assert-True ($own.Own -and $own.Form -eq 'own' -and @($own.Blocks).Count -eq 0) "Get-InstallBlocks: a command changed by hand is an own command, kept as it is"
+$hi = '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File install.ps1'
+$hu = '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File uninstall.ps1'
+$hb = Get-InstallBlocks -WingetId '' -Install $hi -Uninstall $hu
+Assert-True ($hb.Form -eq 'script' -and -not $hb.Own -and (@($hb.Blocks | Where-Object { $_.id -eq 'script' })[0].value -ceq 'install.ps1') -and (@($hb.Blocks | Where-Object { $_.id -eq 'uscript' })[0].value -ceq 'uninstall.ps1') -and (@($hb.Blocks | Where-Object { $_.id -eq 'ps' })[0].text -ceq '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File')) "Get-InstallBlocks: a script app's own commands (switches in another order, no .\) - blocks with both scripts to open"
+$hc = New-InstallFromBlocks -Form 'script' -Values @{} -WingetId '' -Install $hi -Uninstall $hu
+Assert-True ($hc.Ok -and $hc.Install -ceq $hi -and $hc.Uninstall -ceq $hu) "New-InstallFromBlocks: own script commands stay exactly as they are"
+$hq = Get-ScriptCommandFile 'powershell.exe -NoProfile -WindowStyle Hidden -File ".\Set Up.ps1" -Mode Silent'
+Assert-True ($hq.File -ceq 'Set Up.ps1' -and $hq.Args -ceq ' -Mode Silent' -and $hq.Runner -ceq 'powershell.exe -NoProfile -WindowStyle Hidden -File') "Get-ScriptCommandFile: a quoted name with a space, its arguments kept apart"
+Assert-True ($null -eq (Get-ScriptCommandFile 'powershell.exe -File ..\other\x.ps1') -and $null -eq (Get-ScriptCommandFile 'powershell.exe -File C:\Temp\x.ps1') -and $null -eq (Get-ScriptCommandFile 'cmd /c install.cmd') -and $null -eq (Get-ScriptCommandFile 'powershell.exe -Command "& .\x.ps1"')) "Get-ScriptCommandFile: a script outside the package folder, another shell or -Command is not a package script"
+Assert-True ((Get-InstallBlocks -WingetId '' -Install 'cmd /c install.cmd' -Uninstall 'cmd /c uninstall.cmd').Own) "Get-InstallBlocks: anything else stays an own command"
 
 $msi = New-MsiCommandLines -File 'Setup x64.msi' -Properties @(@{ name = 'allusers'; value = '1' }, @{ name = 'INSTALLDIR'; value = 'C:\Program Files\X' }, @{ name = 'TRANSFORMS'; value = 'Company.mst' }) -ProductCode '{12345678-1234-1234-1234-123456789abc}'
 Assert-True ($msi.Ok -and $msi.Install -ceq 'msiexec /i "Setup x64.msi" /qn /norestart ALLUSERS=1 INSTALLDIR="C:\Program Files\X" TRANSFORMS=Company.mst' -and $msi.Uninstall -ceq 'msiexec /x {12345678-1234-1234-1234-123456789ABC} /qn /norestart') "New-MsiCommandLines: silent, properties upper case, a value with spaces in quotes"

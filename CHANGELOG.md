@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.27.6
+
+- **Script apps written another way get their blocks.** Commands like
+  `%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe
+  -ExecutionPolicy Bypass -NoProfile -File install.ps1` (switches in any
+  order, with or without `.\` or quotes, any script name, with arguments)
+  are shown as a PowerShell script with its Install and Uninstall scripts
+  to open in the code editor - the commands themselves stay exactly as
+  they are. Before, only the app's own form was recognised and everything
+  else was "an own command".
+- **The code editor opens any .ps1 in the app's package folder** (it took
+  only Install.ps1, Uninstall.ps1 and Invoke-AppDeployToolkit.ps1, spelled
+  exactly so - install.ps1 was refused); its tabs list every script there.
+- **Edit as text opens the code editor**: for the install and uninstall
+  command, with a tab for each, colours, find, the 1024-character count
+  and Apply; for the detection script, with the parse check.
+- **Winget: the Install row links to the Winget ID** (it looked locked,
+  but the ID is set on Basics); its tip says why -e, --source winget and
+  --silent are always there. **"Written in an older form"** has a
+  "Write today's form" button - the same values, rewritten in one click.
+
 ## 2.27.5
 
 - **The editor, the same pass as Add apps.** Every tab starts its card
