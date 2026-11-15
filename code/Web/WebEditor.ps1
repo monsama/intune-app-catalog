@@ -716,12 +716,21 @@ function Global:Get-WebWingetCommands {
     $current = Get-AppWingetInstallMethod -WingetId $id -InstallCommand ([string]$Data.install) -UninstallCommand ([string]$Data.uninstall)
     $pinned = ''
     if ($current -eq 'Managed' -and ([string]$Data.install) -match " --version '((?:[^']|'')+)'") { $pinned = $Matches[1] -replace "''", "'" }
-    $out = @{ ok = $true; current = $current; pinned = $pinned }
+    # The extra winget options (2.25) the generated commands carry now - the editor's field shows them.
+    $options = if ($current -in 'Managed', 'Winget') { Get-WingetCommandOptions ([string]$Data.install) } else { '' }
+    $out = @{ ok = $true; current = $current; pinned = $pinned; options = $options }
     $method = [string]$Data.method
     if ($method) {
         if ($method -notin 'Managed', 'Winget') { return @{ ok = $false; error = 'Install with must be Managed or Winget.' } }
-        $c = Get-WingetCommandLines -WingetId $id -Method $method -InstallContext $ctx -Version ([string]$Data.version)
-        $out.install = $c.Install; $out.uninstall = $c.Uninstall
+        # New options when the field sent them, else the ones the commands have.
+        if ($null -ne $Data.options) {
+            $o = ConvertTo-WingetOptionText ([string]$Data.options)
+            if (-not $o.Ok) { return @{ ok = $false; error = $o.Error } }
+            $options = $o.Options
+        }
+        $c = Get-WingetCommandLines -WingetId $id -Method $method -InstallContext $ctx -Version ([string]$Data.version) -Options $options
+        if ($c.Install.Length -gt 1024) { return @{ ok = $false; error = "With these options the install command is $($c.Install.Length) characters - Intune takes 1024 at most. Shorten them." } }
+        $out.install = $c.Install; $out.uninstall = $c.Uninstall; $out.options = $options
     }
     return $out
 }

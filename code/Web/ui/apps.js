@@ -266,7 +266,23 @@ async function refreshMethod() {
   // Managed ticked: Save pins the commands to the App version, whatever they are now.
   if ($('aManaged').checked) m = 'Managed'; else if (m === 'Managed') m = 'Custom';
   $('aMethod').value = m; $('aMethodInfo').textContent = methodText(m, r.pinned);
+  // The extra winget options: only for the generated commands (an own command has its options written in it).
+  const opts = $('aWingetOpts'), gen = m === 'Managed' || m === 'Winget';
+  opts.disabled = !gen;
+  if (document.activeElement !== opts) opts.value = gen ? (r.options || '') : '';
+  $('aWingetOptsInfo').textContent = gen ? '' : 'Only for the generated commands - an own command has its options written in it.';
 }
+// Changing the options writes the commands again with them (checked by the server - they run as SYSTEM on the devices).
+$('aWingetOpts').addEventListener('change', async () => {
+  const m = $('aMethod').value;
+  if (m !== 'Managed' && m !== 'Winget') return;
+  const r = await api('/api/winget-commands', methodBody({ method: m, options: $('aWingetOpts').value }));
+  if (!r.ok) { $('aWingetOptsInfo').textContent = r.error; $('aWingetOptsInfo').classList.add('err'); return; }
+  $('aWingetOptsInfo').classList.remove('err');
+  $('aWingetOptsInfo').textContent = r.options ? `In the install command: ${r.options}` : '';
+  $('aWingetOpts').value = r.options || '';
+  for (const [id, v] of [['mInstallCommand', r.install], ['mUninstallCommand', r.uninstall]]) { $(id).value = v; $(id).dispatchEvent(new Event('input', { bubbles: true })); }
+});
 const methodSoon = () => { clearTimeout(methodTimer); methodTimer = setTimeout(refreshMethod, 300); };
 for (const id of ['aWinget', 'mAppVersion', 'mInstallCommand', 'mUninstallCommand']) $(id).addEventListener('input', methodSoon);
 $('xContext').addEventListener('change', methodSoon);
@@ -274,7 +290,7 @@ $('aManaged').addEventListener('change', methodSoon);
 $('aMethod').addEventListener('change', async () => {
   const m = $('aMethod').value, before = await api('/api/winget-commands', methodBody());
   if (before.ok && !before.current && $('mInstallCommand').value.trim() && !(await ask('Replace the install and uninstall commands?\n\nThey were edited by hand - choosing a method writes the generated ones instead.', { ok: 'Replace' }))) { refreshMethod(); return; }
-  const r = await api('/api/winget-commands', methodBody({ method: m }));
+  const r = await api('/api/winget-commands', methodBody({ method: m, options: $('aWingetOpts').disabled ? '' : $('aWingetOpts').value }));
   if (!r.ok) { toast(r.error, true); refreshMethod(); return; }
   $('aManaged').checked = m === 'Managed'; showManagedState();
   for (const [id, v] of [['mInstallCommand', r.install], ['mUninstallCommand', r.uninstall]]) { $(id).value = v; $(id).dispatchEvent(new Event('input', { bubbles: true })); }
@@ -284,7 +300,7 @@ $('aMethod').addEventListener('change', async () => {
 // ---------------------------------------------------------------- unsaved changes (editor)
 // Escape or Cancel with changes asks first; saving or removing closes it without asking.
 let editorSnapshot = '';
-const editorState = () => [...$('appForm').querySelectorAll('input, textarea, select')].filter(e => e.id !== 'aMethod').map(e => e.type === 'checkbox' ? e.checked : e.value).join('\u0001') + '\u0001' + iconChange;
+const editorState = () => [...$('appForm').querySelectorAll('input, textarea, select')].filter(e => e.id !== 'aMethod' && e.id !== 'aWingetOpts').map(e => e.type === 'checkbox' ? e.checked : e.value).join('\u0001') + '\u0001' + iconChange;
 async function closeEditorAsking() {
   if (editorState() !== editorSnapshot && !(await ask(`Discard your changes to ${editingName || 'the new app'}?\n\nNothing you changed in this dialog is saved.`, { ok: 'Discard', danger: true }))) return;
   $('dlgApp').close();

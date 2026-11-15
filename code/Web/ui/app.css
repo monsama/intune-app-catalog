@@ -1111,3 +1111,7 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 500; heig
 .where .wnote { margin-left: 14px; display: inline-flex; align-items: center; gap: 6px; }
 .where .wnote.live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--ok, #2e9d5b); }
 @media (max-width: 900px) { .where .wchip { padding: 6px 10px; } .where .wnote { margin: 6px 0 0; flex-basis: 100%; } }
+/* Extra winget options (2.25): under Install with, in code type - it's part of a command. */
+.methodrow .wopts input { display: block; width: 100%; margin-top: 4px; font-family: var(--mono); font-size: 12px; }
+.methodrow .hint:empty { display: none; }
+.hint.err { color: var(--err); }

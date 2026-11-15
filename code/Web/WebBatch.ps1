@@ -124,10 +124,10 @@ function Global:Set-WebBatchChanges {
     if ($Changes.Contains('installContext') -and $App.wingetId -and -not $Changes.Contains('wingetInstallMethod')) {
         $now = Get-AppWingetInstallMethod -WingetId $App.wingetId -InstallCommand ([string]$m.installCommand) -UninstallCommand ([string]$m.uninstallCommand)
         if ($now -eq 'Managed' -and [string]$m.installCommand -match " --version '((?:[^']|'')+)'") {
-            $c = Get-WingetCommandLines -WingetId $App.wingetId -Method 'Managed' -InstallContext ([string]$m.installContext) -Version ($Matches[1] -replace "''", "'")
+            $c = Get-WingetCommandLines -WingetId $App.wingetId -Method 'Managed' -InstallContext ([string]$m.installContext) -Version ($Matches[1] -replace "''", "'") -Options (Get-WingetCommandOptions ([string]$m.installCommand))
             $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall
         }
-        elseif ($now -eq 'Winget') { $c = Get-WingetCommandLines -WingetId $App.wingetId -Method 'Winget' -InstallContext ([string]$m.installContext); $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall }
+        elseif ($now -eq 'Winget') { $c = Get-WingetCommandLines -WingetId $App.wingetId -Method 'Winget' -InstallContext ([string]$m.installContext) -Options (Get-WingetCommandOptions ([string]$m.installCommand)); $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall }
     }
     return @{ Metadata = $m; Kept = $kept }
 }

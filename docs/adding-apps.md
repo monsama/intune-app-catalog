@@ -20,6 +20,25 @@ right) and **Add**. Each app gets:
 Packages already in the catalog are marked *in the catalog* and can't be
 picked again.
 
+**Extra winget options** (editor, *Install & detection*, under *Install
+with*): most packages need none - winget installs silently with the
+package's own switches. For the few that need more, these are added to the
+install command and kept through every new pinned version:
+
+| Option | What it does |
+| --- | --- |
+| `--override "..."` | replaces the installer's switches, e.g. `--override "/S"` |
+| `--custom "..."` | adds to them, e.g. `--custom "ADDLOCAL=ALL"` |
+| `--architecture x64` | x86, x64, arm, arm64 or neutral |
+| `--locale de-CH` | the installer's language |
+| `--installer-type msi` | msi, msix, appx, exe, inno, nullsoft, wix, burn, portable, zip |
+
+The command runs as SYSTEM on every device, so only these options are
+taken, and values can't contain double quotes, a backtick, `$`, `%`, `;`,
+`&`, `|`, `<`, `>` or `^` (anything else is refused, never cleaned up).
+Switching apps away from Winget-AutoUpdate carries the options WAU passed
+after the ID (`-AppIDs "7zip.7zip --override /S"`) over the same way.
+
 **Microsoft Store apps** (IDs like `9NBLGGH4NNS1` or `XP...`, marked
 *Store*) are sent to Intune as native *Microsoft Store app (new)* apps -
 no package to build, Intune installs them from the Store and the Store

@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.25.0
+
+**Extra winget options per app.**
+
+- The editor (*Install & detection*, under *Install with*) has **Extra
+  winget options**: `--override`, `--custom`, `--architecture`, `--locale`
+  and `--installer-type`, added to winget's install command - for the few
+  packages whose own silent switches aren't what you want.
+- They live in the install command itself and are read back from it, so
+  they stay through every new pinned version, a new Winget ID or another
+  install context - nothing to keep in sync.
+- The command runs as SYSTEM on every device: only those options are
+  taken, values are checked (no double quotes, backtick, `$`, `%`, `;`,
+  `&`, `|`, `<`, `>`, `^`) and single-quoted, and anything else is refused,
+  not cleaned up. Within Intune's 1024 characters for an install command.
+- **Switch from Winget-AutoUpdate** carries the winget options WAU passed
+  after the ID over (`--override /S` stays `--override '/S'`) instead of
+  leaving them out; only options winget's own command can't take are left
+  out and listed.
+
 ## 2.24.2
 
 - **Switch from Winget-AutoUpdate** also takes WAU commands that pass

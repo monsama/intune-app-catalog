@@ -129,6 +129,8 @@ $testableFunctionNames = @(
     "ConvertTo-CreateAppConfigJson",
     "Get-CreateAppTemplates",
     "ConvertTo-PsSingleQuotedContent",
+    "ConvertTo-WingetOptionText",
+    "Get-WingetCommandOptions",
     "Get-WingetCommandLines",
     "Get-AppWingetInstallMethod",
     "Convert-AppWingetInstallMethod",
@@ -626,6 +628,31 @@ Assert-True ((Set-ManagedAppPin $pinApp) -and $pinApp.metadata.installCommand -l
 Assert-True (-not (Set-ManagedAppPin $pinApp)) "Set-ManagedAppPin: nothing to change the second time"
 Assert-True (@($pinApp.metadata.returnCodes | Where-Object { $_.returnCode -eq 9009 -and $_.type -eq 'retry' }).Count -eq 1 -and @($pinApp.metadata.returnCodes | Where-Object { $_.returnCode -eq 3010 }).Count -eq 1) "Set-ManagedAppPin: 9009 (winget not on the device yet) is a Retry return code, Intune's defaults kept"
 Assert-True ($pinApp.metadata.installCommand -like '*exit 9009*' -and $pinApp.metadata.installCommand.Length -le 1024) "Set-ManagedAppPin: the install command waits for winget, then exits 9009 - still within 1024 characters"
+# Extra winget options (2.25): checked, carried in the install command, kept through a new pinned version.
+$wo = ConvertTo-WingetOptionText '--override "/S /D=C:\Apps\X" --architecture x64'
+Assert-True ($wo.Ok -and $wo.Options -ceq "--override '/S /D=C:\Apps\X' --architecture 'x64'") "ConvertTo-WingetOptionText: quoted and bare values, written one way"
+Assert-True ((ConvertTo-WingetOptionText $wo.Options).Options -ceq $wo.Options) "ConvertTo-WingetOptionText: its own form reads back the same"
+Assert-True ((ConvertTo-WingetOptionText "--override 'it''s /S'").Options -ceq "--override 'it''s /S'") "ConvertTo-WingetOptionText: a single quote is doubled"
+Assert-True ((ConvertTo-WingetOptionText '').Ok -and (ConvertTo-WingetOptionText '').Options -eq '') "ConvertTo-WingetOptionText: none"
+foreach ($bad in @('--override "/S" ; calc', '--override "a`$(calc)"', '--override "a%PATH%"', '--override "a``b"', '--location C:\x', '--override "/S" --override "/Q"', '--architecture sparc', '--override', '/S', '--override "/S', ('--override "' + ('a' * 190) + '"'), '--override "a & b"', '--override "a | b"')) {
+    Assert-True (-not (ConvertTo-WingetOptionText $bad).Ok) "ConvertTo-WingetOptionText: refused - $bad"
+}
+$woCmd = Get-WingetCommandLines -WingetId 'Vendor.App' -Method 'Winget' -InstallContext 'System' -Options $wo.Options
+Assert-True ($woCmd.Install -like "*--accept-source-agreements --override '/S /D=C:\Apps\X' --architecture 'x64'; exit*" -and $woCmd.Uninstall -notlike '*--override*') "Get-WingetCommandLines: the options go into the install command only"
+$inner = [regex]::Match($woCmd.Install, '-Command "(.*)"$').Groups[1].Value
+$parseErrors = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($inner, [ref]$null, [ref]$parseErrors)
+Assert-Equal 0 @($parseErrors).Count "Get-WingetCommandLines: the command with options parses"
+Assert-Equal $wo.Options (Get-WingetCommandOptions $woCmd.Install) "Get-WingetCommandOptions: read back from the command"
+Assert-Equal '' (Get-WingetCommandOptions $wingetDefaults.installCommand) "Get-WingetCommandOptions: none in a plain command"
+Assert-Equal 'Winget' (Get-AppWingetInstallMethod -WingetId 'Vendor.App' -InstallCommand $woCmd.Install -UninstallCommand $woCmd.Uninstall) "Get-AppWingetInstallMethod: a command with options is still the generated form"
+$tampered = $woCmd.Install.Replace("--architecture 'x64'", "--architecture 'x64' --location 'C:\x'")
+Assert-Equal '' (Get-AppWingetInstallMethod -WingetId 'Vendor.App' -InstallCommand $tampered -UninstallCommand $woCmd.Uninstall) "Get-AppWingetInstallMethod: an option added by hand makes it an own command"
+$optApp = [pscustomobject]@{ managedUpdates = $true; wingetId = 'Vendor.App'; appName = 'Vendor App'; metadata = [pscustomobject]@{ appVersion = '5.1'; installCommand = $woCmd.Install; uninstallCommand = $woCmd.Uninstall; installContext = 'System'; detectionRule = $null; returnCodes = @() } }
+Assert-True ((Set-ManagedAppPin $optApp) -and $optApp.metadata.installCommand -like "*--version '5.1'*" -and (Get-WingetCommandOptions $optApp.metadata.installCommand) -ceq $wo.Options) "Set-ManagedAppPin: pinning keeps the options"
+$optApp.metadata.appVersion = '5.2'
+Assert-True ((Set-ManagedAppPin $optApp) -and $optApp.metadata.installCommand -like "*--version '5.2'*" -and (Get-WingetCommandOptions $optApp.metadata.installCommand) -ceq $wo.Options) "Set-ManagedAppPin: a new version keeps them too"
+$longest = Get-WingetCommandLines -WingetId ('V.' + ('a' * 126)) -Method 'Managed' -InstallContext 'System' -Version '1234567890.1234567890.12345' -Options (ConvertTo-WingetOptionText ('--override "' + ('a' * 180) + '"')).Options
+Assert-True ($longest.Install.Length -le 1024) "Get-WingetCommandLines: the longest ID, version and options still fit Intune's 1024 characters ($($longest.Install.Length))"
 # Commands generated before 2.17 (no waiting) are still recognised - and brought up to date.
 $oldCmd = Get-WingetCommandLines -WingetId 'Vendor.App' -Method 'Managed' -InstallContext 'System' -Version '5.1' -Legacy
 $legacyApp = [pscustomobject]@{ managedUpdates = $true; wingetId = 'Vendor.App'; appName = 'Vendor App'; metadata = [pscustomobject]@{ appVersion = '5.1'; installCommand = $oldCmd.Install; uninstallCommand = $oldCmd.Uninstall; installContext = 'System'; detectionRule = $null; returnCodes = @() } }
