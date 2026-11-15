@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.26.1
+
+**A consistency pass over every page and dialog** (dark and light, wide
+and narrow):
+
+- Every page's toolbar is the Apps page's panel now - Home, Updates,
+  Checks, Groups and Platform scripts - with related buttons joined into
+  one control and counts as badges.
+- Checks: the coffee and theme buttons no longer wrap onto a row of their
+  own; "1 selected" without the stray colon.
+- Updates' tiles are Home's tiles (size, accent edge).
+- One style for table headers, pills and chips (square like the rest, not
+  rounded ends), and the corner sizes everywhere from the same three steps.
+- Every dialog's buttons sit on a footer line, as in the app editor; one
+  size for dialog titles.
+- The blocks' fields are their own size again (30 px), the return-code x
+  is quiet grey, the code editor marks the open file, and its file tabs are
+  joined.
+- Small tables no longer stretch into an empty band; with the side panel
+  open on a narrower screen, the Source column steps aside so Stage stays
+  readable; the Apps search box shows its whole hint.
+
 ## 2.26.0
 
 **Commands and detection as blocks, and package scripts edited in the app.**

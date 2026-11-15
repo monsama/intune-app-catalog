@@ -140,9 +140,11 @@
     <div class="toolbar">
       <p class="sub" id="homeNote">What needs a look, and where to fix it.</p>
       <span class="spacer"></span>
-      <button class="btn" id="btnHomeCheck" title="Compare every app with Intune now - what differs shows here, on the apps (Needs a look) and in Checks">Check everything now</button>
-      <button class="btn" id="btnHomeAdd" title="Add apps from winget, an installer or a script">Add apps...</button>
-      <button class="btn" id="btnHomeReload" title="Look again">Reload</button>
+      <div class="btngroup" role="group" aria-label="Home actions">
+        <button class="btn" id="btnHomeCheck" title="Compare every app with Intune now - what differs shows here, on the apps (Needs a look) and in Checks">Check everything now</button>
+        <button class="btn" id="btnHomeAdd" title="Add apps from winget, an installer or a script">Add apps...</button>
+        <button class="btn" id="btnHomeReload" title="Look again">Reload</button>
+      </div>
     </div>
     <div id="homeStats" class="kpis"></div>
     <div class="homegrid">
@@ -160,10 +162,12 @@
     <div class="toolbar">
       <p class="sub" id="updNote">Apps with managed updates: what version everyone has, what is in pilot, and what's new.</p>
       <span class="spacer"></span>
-      <button class="btn" id="btnUpdWinget" title="Ask winget for the newest version of every Winget app">Check winget for new versions</button>
-      <button class="btn" id="btnUpdDownloads" title="Whether the version each app is pinned to can still be downloaded - a vendor that keeps only its latest version online breaks it, first on new devices. The nightly run checks this too.">Check downloads</button>
-      <button class="btn" id="btnUpdExport" title="A compliance report as a CSV file: per app the pinned version, how many devices have it, whether it meets the bar (90 % on the pinned version, download still there), the release and its ring - with a totals row. For an audit or a report.">Compliance report</button>
-      <button class="btn" id="btnUpdReload" title="Read the counts from Intune again">Reload</button>
+      <div class="btngroup" role="group" aria-label="Updates actions">
+        <button class="btn" id="btnUpdWinget" title="Ask winget for the newest version of every Winget app">Check winget for new versions</button>
+        <button class="btn" id="btnUpdDownloads" title="Whether the version each app is pinned to can still be downloaded - a vendor that keeps only its latest version online breaks it, first on new devices. The nightly run checks this too.">Check downloads</button>
+        <button class="btn" id="btnUpdExport" title="A compliance report as a CSV file: per app the pinned version, how many devices have it, whether it meets the bar (90 % on the pinned version, download still there), the release and its ring - with a totals row. For an audit or a report.">Compliance report</button>
+        <button class="btn" id="btnUpdReload" title="Read the counts from Intune again">Reload</button>
+      </div>
     </div>
     <div id="updTiles"></div>
     <section class="trend" id="updTrend" aria-labelledby="updTrendTitle" hidden>
@@ -255,9 +259,11 @@
             <h2 id="gName"></h2>
             <span class="pill" id="gState"></span>
             <span class="spacer"></span>
-            <button class="btn" id="btnGroupCopy" title="Copy the group's name">Copy name</button>
-            <button class="btn" id="btnGroupRename" disabled title="Rename the group in Entra ID - every catalog app using it follows">Rename...</button>
-            <button class="btn danger" id="btnGroupDelete" disabled title="Delete this group from Entra ID - asked first">Delete group...</button>
+            <div class="btngroup" role="group" aria-label="This group">
+              <button class="btn" id="btnGroupCopy" title="Copy the group's name">Copy name</button>
+              <button class="btn" id="btnGroupRename" disabled title="Rename the group in Entra ID - every catalog app using it follows">Rename...</button>
+              <button class="btn danger" id="btnGroupDelete" disabled title="Delete this group from Entra ID - asked first">Delete group...</button>
+            </div>
           </div>
           <p class="sub" id="gNote"></p>
           <div class="gmissing" id="gMissing" role="region" aria-label="Group not in Entra ID" hidden>
@@ -302,12 +308,16 @@
       <span class="count" id="scriptCount"></span>
       <span class="spacer"></span>
       <button class="btn primary" id="btnScriptNew" title="Write a new platform script - saved locally or created in Intune">New script</button>
-      <button class="btn" id="btnScriptEdit" disabled title="Open the selected script (double-click a row does the same)">Edit</button>
-      <button class="btn" id="btnScriptStatus" disabled title="How the script went on each device">Run status</button>
-      <button class="btn" id="btnScriptDelete" disabled title="Delete the selected script - from Intune, or the local copy if it is only local">Delete</button>
-      <button class="btn" id="btnScriptsSave" title="Reads every script in Intune in full - body and groups - and keeps a local copy of each. Only reads Intune.">Save local copies</button>
-      <button class="btn" id="btnScriptsReload" title="Read the scripts from Intune and the local folder again">Reload</button>
-      <button class="btn" id="btnScriptsFolder" title="Open the folder with the local copies in Explorer">Open folder</button>
+      <div class="btngroup" role="group" aria-label="The selected script">
+        <button class="btn" id="btnScriptEdit" disabled title="Open the selected script (double-click a row does the same)">Edit</button>
+        <button class="btn" id="btnScriptStatus" disabled title="How the script went on each device">Run status</button>
+        <button class="btn" id="btnScriptDelete" disabled title="Delete the selected script - from Intune, or the local copy if it is only local">Delete</button>
+      </div>
+      <div class="btngroup" role="group" aria-label="All scripts">
+        <button class="btn" id="btnScriptsSave" title="Reads every script in Intune in full - body and groups - and keeps a local copy of each. Only reads Intune.">Save local copies</button>
+        <button class="btn" id="btnScriptsReload" title="Read the scripts from Intune and the local folder again">Reload</button>
+        <button class="btn" id="btnScriptsFolder" title="Open the folder with the local copies in Explorer">Open folder</button>
+      </div>
     </div>
     <p class="sub" id="scriptNote">PowerShell scripts Intune runs on enrolled Windows devices, with the local copies kept beside the catalog.</p>
     <div class="tablewrap">

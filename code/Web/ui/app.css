@@ -42,7 +42,7 @@ h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
   .tabs { order: 3; width: 100%; height: 40px; overflow-x: auto; }
   .tab { padding: 0 10px; }
 }
-.conn { font: inherit; font-size: 12px; padding: 3px 10px; border: 0; border-radius: 999px; background: var(--bd2); color: var(--muted); white-space: nowrap; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.conn { font: inherit; font-size: 12px; padding: 3px 10px; border: 0; border-radius: var(--r-m); background: var(--bd2); color: var(--muted); white-space: nowrap; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .conn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .conn.ok { background: var(--ok-bg); color: var(--ok); }
 .conn.ok::before, .conn.error::before, .conn.busy::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
@@ -96,7 +96,7 @@ main { flex: 1; min-height: 0; display: flex; }
 .grid td.name { font-weight: 500; }
 .grid td.mono { font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .grid td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pill { display: inline-block; font-size: 12px; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+.pill { display: inline-block; font-size: 12px; padding: 2px 9px; border-radius: var(--r-s); white-space: nowrap; }
 .pill.ok { background: var(--ok-bg); color: var(--ok); }
 .pill.warn { background: var(--warn-bg); color: var(--warn); }
 .pill.linkpill { border: 0; cursor: pointer; font-family: inherit; }
@@ -193,7 +193,7 @@ label.filebtn { display: inline-block; width: auto; margin-top: 6px; cursor: poi
 @media (max-width: 900px) { .formgrid { grid-template-columns: 1fr; } }
 
 .plan { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
-.plan th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--bd); }
+.plan th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--bd); }
 .plan td { padding: 7px 8px; border-bottom: 1px solid var(--bd2); vertical-align: top; }
 /* A row with a button: text centred on the button, not above it. */
 .plan tr:has(td > .btn) > td { vertical-align: middle; }
@@ -251,7 +251,7 @@ label.chk.inline { display: inline-flex; align-items: center; gap: 6px; margin: 
 .gbrole legend { font-size: 12px; font-weight: 600; padding: 0 4px; }
 .gbrole input[data-gbx] { margin-top: 6px; }
 
-.tab[data-count]::after { content: attr(data-count); margin-left: 6px; display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 4px; background: var(--warn-bg); color: var(--warn); font-size: 11px; font-weight: 600; text-align: center; }
+.tab[data-count]::after { content: attr(data-count); margin-left: 6px; display: inline-block; min-width: 18px; padding: 0 5px; border-radius: var(--r-s); background: var(--warn-bg); color: var(--warn); font-size: 11px; font-weight: 600; text-align: center; }
 
 /* ---- 3d: setup and help ---- */
 .guide { margin: 6px 0 0; padding-left: 20px; font-size: 13px; }
@@ -280,7 +280,7 @@ label.chk.inline { display: inline-flex; align-items: center; gap: 6px; margin: 
 .panel.side .actions .btn { flex: 1 1 auto; }
 .glist li .c { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .ghead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.ghead h2 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+.ghead h2 { margin: 0; font-size: 17px; overflow-wrap: anywhere; min-width: 0; }
 .uses, .hits { list-style: none; margin: 4px 0 0; padding: 0; font-size: 13px; }
 .uses li { padding: 2px 0; }
 .hits li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--bd2); }
@@ -302,7 +302,7 @@ label.chk.inline { display: inline-flex; align-items: center; gap: 6px; margin: 
 .gmissing { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r-m); background: var(--warn-bg); color: var(--warn); font-size: 13px; }
 .gmissing span { flex: 1; }
 .gcols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
-.gcard { border: 1px solid var(--bd); border-radius: var(--r-m); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.gcard { border: 1px solid var(--bd); border-radius: var(--r-l); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .gcard h3 { margin: 4px 0 0; }
 .gcard > label { display: block; font-size: 12px; color: var(--muted); }
 .gcard > label > input { display: block; width: 100%; margin-top: 4px; }
@@ -343,7 +343,7 @@ dialog.ask h2 { font-size: 15px; line-height: 1.4; }
 #askInput[hidden] { display: none; }
 .btn.primary.dangerous { background: var(--err); border-color: var(--err); color: var(--surface); }
 /* Setup guide: a stepper whose steps tick themselves off, and start tiles. */
-.guidestate { margin-left: 8px; font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 999px; background: var(--bd2); color: var(--muted); }
+.guidestate { margin-left: 8px; font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: var(--r-s); background: var(--bd2); color: var(--muted); }
 .guidestate.ok { background: var(--ok-bg); color: var(--ok); }
 .steps { list-style: none; padding: 0; margin: 12px 0 4px; counter-reset: none; }
 .step { display: grid; grid-template-columns: 28px 1fr; gap: 0 14px; position: relative; padding-bottom: 16px; }
@@ -374,7 +374,7 @@ dialog.ask h2 { font-size: 15px; line-height: 1.4; }
 .depbox { border: 1px solid var(--bd); border-radius: var(--r-m); background: var(--surface); margin-top: 6px; overflow: hidden; }
 .depchips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; min-height: 40px; border-bottom: 1px solid var(--bd2); font-size: 13px; }
 .deplabel { font-size: 12px; color: var(--muted); margin-right: 2px; }
-.depchip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 2px 2px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--fg); font-size: 12px; }
+.depchip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 2px 2px 10px; border-radius: var(--r-s); background: var(--accent-soft); color: var(--fg); font-size: 12px; }
 .depchip button { width: 20px; height: 20px; border: 0; border-radius: 50%; background: none; color: var(--muted); font: inherit; font-size: 14px; line-height: 1; cursor: pointer; }
 .depchip button:hover, .depchip button:focus-visible { background: var(--hover); color: var(--fg); }
 .depbox .depfilter { display: block; width: calc(100% - 20px); margin: 8px 10px; }
@@ -407,12 +407,12 @@ dialog.ask h2 { font-size: 15px; line-height: 1.4; }
 optgroup[hidden] { display: none; }
 
 /* ---- icons, supersedence, tenant setup, install overview ---- */
-.appicon { width: 18px; height: 18px; border-radius: 4px; object-fit: contain; vertical-align: -4px; margin-right: 8px; flex: none; }
+.appicon { width: 18px; height: 18px; border-radius: var(--r-s); object-fit: contain; vertical-align: -4px; margin-right: 8px; flex: none; }
 .appicon.none { display: inline-block; background: var(--bd2); }
 .appicon.big { width: 40px; height: 40px; margin: 0; border: 1px solid var(--bd); background: var(--surface); }
 .iconrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .iconrow .lbl { flex-basis: 100%; font-size: 12px; color: var(--muted); }
-.iconrow .noicon { width: 40px; height: 40px; border-radius: 4px; border: 1px dashed var(--bd); display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
+.iconrow .noicon { width: 40px; height: 40px; border-radius: var(--r-m); border: 1px dashed var(--bd); display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
 .iconrow .noicon[hidden] { display: none; }
 td .pill.newer { margin-left: 6px; }
 .suplist { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
@@ -451,7 +451,7 @@ label.gdesc { display: block; font-size: 12px; color: var(--muted); }
 label.gdesc > input { display: block; width: 100%; margin-top: 4px; }
 #groupSelCount { flex-basis: 100%; }
 /* Apps toolbar: the search and filter give way first, so the action buttons stay on one row down to ~1100 px. */
-#viewApps > .toolbar #search { flex: 0 1 320px; min-width: 150px; width: auto; }
+#viewApps > .toolbar #search { flex: 0 1 320px; min-width: 220px; width: auto; }
 #viewApps > .toolbar #filter { flex: 0 1 auto; min-width: 120px; max-width: 190px; }
 #viewApps > .toolbar .count { white-space: nowrap; }
 .policy { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 6px 0 10px; }
@@ -467,10 +467,6 @@ label.inline { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 label.inline input[type="time"] { width: auto; }
 /* ---- updates page ---- */
 #updTiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 12px 0; }
-#updTiles .stat { background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; box-shadow: var(--shadow); }
-#updTiles .stat .n { font-size: 22px; font-weight: 600; }
-#updTiles .stat .l { font-size: 12px; color: var(--muted); }
-#updTiles .stat.ok .n { color: var(--ok); } #updTiles .stat.warn .n { color: var(--warn); } #updTiles .stat.info .n { color: var(--info); }
 #viewUpdates .toolbar .sub { margin: 0; }
 #updGrid td .why { font-size: 12px; color: var(--muted); margin-top: 3px; max-width: 420px; }
 #updGrid td.act { width: 1%; white-space: nowrap; }
@@ -568,7 +564,7 @@ h3.withtool select { margin-left: auto; font-weight: 400; }
 .hcard { background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); box-shadow: var(--shadow); padding: 0; margin: 0; max-width: none; min-width: 0; overflow: hidden; }
 .hhead { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--bd); }
 .hhead h2 { margin: 0; font-size: 14px; font-weight: 600; }
-.hcount { min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--accent-soft); color: var(--text); font-size: 12px; font-weight: 600; display: inline-grid; place-items: center; }
+.hcount { min-width: 22px; height: 22px; padding: 0 7px; border-radius: var(--r-s); background: var(--accent-soft); color: var(--info); font-size: 12px; font-weight: 600; display: inline-grid; place-items: center; }
 .hcount:empty { display: none; }
 .attention { list-style: none; padding: 0; margin: 0; display: block; }
 .attention .att { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--bd); box-shadow: inset 3px 0 0 var(--info); }
@@ -577,7 +573,7 @@ h3.withtool select { margin-left: auto; font-weight: 400; }
 .attention .att:hover { background: var(--hover, var(--accent-soft)); }
 .attention .att .pill { justify-self: start; }
 .attention .att .body { display: flex; flex-direction: column; gap: 2px; font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
-kbd { font: 11px var(--mono); border: 1px solid var(--bd); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--surface); }
+kbd { font: 11px var(--mono); border: 1px solid var(--bd); border-bottom-width: 2px; border-radius: var(--r-s); padding: 0 4px; background: var(--surface); }
 /* ---- palette ---- */
 dialog.palette { width: min(620px, calc(100vw - 32px)); margin-top: 12vh; padding: 10px; }
 dialog.palette input { font-size: 15px; padding: 9px 12px; }
@@ -595,7 +591,7 @@ table.mx th.gh { height: 150px; width: 30px; }
 table.mx th.gh span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-weight: 500; color: var(--muted); max-height: 145px; overflow: hidden; text-overflow: ellipsis; display: inline-block; }
 table.mx th.ah { position: sticky; left: 0; z-index: 1; text-align: left; white-space: nowrap; padding-right: 12px; font-weight: 500; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
 table.mx th.corner { position: sticky; left: 0; z-index: 3; text-align: left; color: var(--muted); font-weight: 400; }
-.cell { width: 26px; height: 24px; border: 1px solid var(--bd2); border-radius: 4px; background: transparent; font: 600 11px var(--mono); color: var(--fg); cursor: pointer; padding: 0; display: inline-block; text-align: center; line-height: 22px; }
+.cell { width: 26px; height: 24px; border: 1px solid var(--bd2); border-radius: var(--r-s); background: transparent; font: 600 11px var(--mono); color: var(--fg); cursor: pointer; padding: 0; display: inline-block; text-align: center; line-height: 22px; }
 .cell.r { background: var(--ok-bg); color: var(--ok); } .cell.a { background: var(--accent-soft); color: var(--info); } .cell.u { background: var(--warn-bg); color: var(--warn); } .cell.x { background: var(--err-bg); color: var(--err); }
 .cell.changed { outline: 2px solid var(--accent); outline-offset: 1px; }
 .legend { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); }
@@ -619,7 +615,7 @@ table.mx th.corner { position: sticky; left: 0; z-index: 3; text-align: left; co
 @media (max-width: 1100px) { .appsplit:has(> .apppanel:not([hidden])) { grid-template-columns: minmax(0, 1fr); } .apppanel { max-height: 50vh; } }
 /* ---- release timeline ---- */
 .timeline { list-style: none; display: inline-flex; flex-wrap: wrap; gap: 4px 14px; padding: 0; margin: 2px 0; font-size: 11px; vertical-align: middle; }
-.timeline li { padding: 2px 8px; border-radius: 999px; background: var(--bd2); color: var(--muted); position: relative; }
+.timeline li { padding: 2px 8px; border-radius: var(--r-s); background: var(--bd2); color: var(--muted); position: relative; }
 .timeline li + li::before { content: '\203A'; position: absolute; left: -10px; color: var(--muted); }
 .timeline li.done { background: var(--ok-bg); color: var(--ok); }
 .timeline li.now { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
@@ -641,7 +637,7 @@ dialog.tray { position: fixed; inset: auto 16px 16px auto; margin: 0; width: min
 dialog.tray .trayhead { display: flex; align-items: center; gap: 8px; }
 dialog.tray .trayhead h2 { margin: 0; font-size: 15px; }
 dialog.tray .log { max-height: 34vh; }
-.jobchip { font: inherit; font-size: 12px; border: 1px solid var(--accent); color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+.jobchip { font: inherit; font-size: 12px; border: 1px solid var(--accent); color: var(--accent); background: var(--accent-soft); border-radius: var(--r-m); padding: 3px 10px; cursor: pointer; }
 .jobchip::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px; animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .jobchip::before { animation: none; } }
@@ -844,7 +840,7 @@ dialog > h2:first-child, dialog form > h2:first-child { font-size: 17px; margin-
 .empty .emptyicon { color: var(--accent); opacity: .8; margin-bottom: 4px; }
 .emptylist { text-align: left; max-width: 520px; margin: 10px auto 16px; padding-left: 20px; color: var(--muted); font-size: 13px; line-height: 1.7; }
 /* Loading placeholders */
-.sk { display: block; height: 10px; border-radius: 4px; margin: 4px 0; background: linear-gradient(90deg, var(--bd2) 25%, color-mix(in srgb, var(--bd2) 40%, var(--surface)) 50%, var(--bd2) 75%); background-size: 200% 100%; animation: skmove 1.3s ease-in-out infinite; }
+.sk { display: block; height: 10px; border-radius: var(--r-s); margin: 4px 0; background: linear-gradient(90deg, var(--bd2) 25%, color-mix(in srgb, var(--bd2) 40%, var(--surface)) 50%, var(--bd2) 75%); background-size: 200% 100%; animation: skmove 1.3s ease-in-out infinite; }
 .sk.w0 { width: 70%; } .sk.w1 { width: 45%; } .sk.w2 { width: 85%; } .sk.w3 { width: 30%; }
 li.skel { list-style: none; padding: 12px 14px; }
 @keyframes skmove { from { background-position: 100% 0; } to { background-position: -100% 0; } }
@@ -929,7 +925,7 @@ main > .view { padding-top: 10px; }
 dialog.haswctl { position: fixed; }
 dialog.haswctl .wtitle { padding-right: 92px; }
 dialog .wctl { position: absolute; top: 10px; right: 10px; z-index: 2; display: inline-flex; gap: 2px; }
-dialog .wctl > button { width: 28px; height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: var(--r-s, 6px); background: transparent; color: var(--muted); cursor: pointer; }
+dialog .wctl > button { width: 28px; height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: var(--r-s); background: transparent; color: var(--muted); cursor: pointer; }
 dialog .wctl > button:hover, dialog .wctl > button:focus-visible { background: var(--hover); color: var(--fg); }
 dialog .wctl > button.wc-close:hover, dialog .wctl > button.wc-close:focus-visible { background: #c42b1c; color: #fff; }
 .wtitle.movable { cursor: move; user-select: none; }
@@ -959,7 +955,7 @@ table.mx td { text-align: center; }
 td.mxempty { padding: 28px 16px !important; text-align: left !important; font-size: 13px; }
 
 /* The page toolbars fit on one line with coffee and theme: the search field gives way first. */
-#viewApps > .toolbar > input[type="search"] { width: auto; flex: 1 1 200px; min-width: 150px; max-width: 320px; }
+#viewApps > .toolbar > input[type="search"] { width: auto; flex: 1 1 220px; min-width: 220px; max-width: 320px; }
 #viewApps > .toolbar > select { flex: 0 1 auto; min-width: 120px; }
 @media (min-width: 1440px) { #viewApps > .toolbar { flex-wrap: nowrap; } #viewApps > .toolbar > .btn { flex: none; } }
 
@@ -974,7 +970,6 @@ label.inline { margin: 0; }
 /* Settings > Apps & defaults: the default values use the full width, so return codes and dropdowns aren't clipped. */
 #sec-defaults .col:has(> .wide-defaults) { grid-column: 1 / -1; }
 /* Updates: the summary sentence on its own line, the tiles in one row while they fit. */
-#updNote { flex-basis: 100%; }
 #updTiles { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 /* Focus shows as the app's own ring, not the browser's black box. */
 summary:focus-visible, .tablewrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-m); }
@@ -1002,7 +997,7 @@ dialog > #dlgTray { position: fixed; }
 .gdescrow .gdesc { flex: 1; margin: 0; }
 .gdescrow > .btn { height: 34px; flex: none; }
 /* Checks: the fix buttons together on a row of their own, not split across the toolbar's two lines. */
-.fixbar:not([hidden]) { display: flex; flex-wrap: wrap; gap: 8px; flex-basis: 100%; }
+.fixbar:not([hidden]) { display: flex; flex-wrap: wrap; gap: 8px; flex-basis: 100%; order: 99; }
 
 /* ---- Recent changes ---- */
 .recentbtn { position: relative; height: 34px; width: 36px; padding: 0; }
@@ -1069,7 +1064,7 @@ label.chk > input[type="checkbox"], label.chk > input[type="radio"] { margin-top
 #grid td.mono { overflow-wrap: normal; word-break: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
 #grid td.name { white-space: nowrap; }
 /* One height for buttons, fields and dropdowns (34px), one for small buttons (26px). */
-.btn:not(.small):not(.iconbtn), input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not(.chipinput):not(#palQuery), select:not([multiple]):not([size]) { height: 34px; box-sizing: border-box; }
+.btn:not(.small):not(.iconbtn), input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not(.chipinput):not(#palQuery):not(.brec input), select:not([multiple]):not([size]):not(.brec select) { height: 34px; box-sizing: border-box; }
 .btn.small { height: 26px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; line-height: 1; }
 .btn.small.next { padding: 0 10px; }
 .pver { height: 34px; }
@@ -1084,7 +1079,8 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 500; heig
 /* ---------------------------------------------------------------- Apps header (2.24.1)
    The view controls left, the actions right; buttons that belong together are joined into one
    control; the counters are one strip under it. */
-#viewApps > .toolbar { gap: 10px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); }
+.view > .toolbar:not(#viewSettings > *) { gap: 10px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); }
+.view > .toolbar > .sub { margin: 0; flex: 1 1 auto; }
 #viewApps > .toolbar > input[type="search"] { padding-left: 34px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a919b' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: 10px center; background-size: 16px 16px; }
 .btngroup { display: inline-flex; align-items: stretch; flex: none; height: 34px; }
 .btngroup > .btn { height: 34px; border-radius: 0; margin: 0; }
@@ -1094,8 +1090,8 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 500; heig
 .btngroup > .btn:hover:not(:disabled), .btngroup > .btn:focus-visible { position: relative; z-index: 1; }
 .btngroup > .btn.small { padding: 0 12px; font-size: 13px; }
 .btngroup > .recentbtn { width: 38px; }
-#viewApps > .toolbar > .count { padding: 3px 8px; border-radius: var(--r-s); background: var(--bd2); color: var(--muted); font-size: 12px; font-weight: 600; }
-#viewApps > .toolbar > .count:empty { display: none; }
+.view > .toolbar > .count { padding: 3px 8px; border-radius: var(--r-s); background: var(--bd2); color: var(--muted); font-size: 12px; font-weight: 600; }
+.view > .toolbar > .count:empty { display: none; }
 #viewApps > .toolbar > #btnCatalog { margin-left: 2px; }
 /* The counters: one strip of equal cells, the chosen one marked. */
 .appsbar { gap: 12px; }
@@ -1164,7 +1160,7 @@ input.preview, textarea.preview { background: var(--bd2); color: var(--muted); c
 .scriptdlg .sehead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .scriptdlg .setabs { display: flex; gap: 4px; margin-left: auto; }
 .scriptdlg .setab { border: 1px solid var(--bd); background: var(--surface); color: var(--fg); border-radius: var(--r-s); padding: 4px 10px; font: 12px var(--mono); cursor: pointer; }
-.scriptdlg .setab[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.scriptdlg .setab[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .scriptdlg .sefind { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
 .scriptdlg .code { display: grid; grid-template-columns: auto 1fr; height: min(60vh, 640px); border: 1px solid var(--bd); border-radius: var(--r-m); background: var(--field, var(--surface)); overflow: hidden; font: 13px/19px var(--mono); }
 .scriptdlg .gutter { overflow: hidden; padding: 8px 8px 8px 10px; text-align: right; color: var(--muted); background: var(--bd2); user-select: none; min-width: 3.5em; }
@@ -1185,7 +1181,7 @@ input.preview, textarea.preview { background: var(--bd2); color: var(--muted); c
 .scriptdlg .sestatus.err { color: var(--err); }
 .scriptdlg .seerrors { margin: 4px 0 0; padding-left: 18px; font-size: 12px; color: var(--err); }
 .scriptdlg .seerrors:empty { display: none; }
-.linkbtn { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
+.scriptdlg .linkbtn { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
 .scriptdlg .actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; }
 .scriptdlg .actions > div { display: flex; gap: 8px; }
 .brec .blk .bchip input, .brec .blk .bchip input:focus { background: transparent; border: 0; box-shadow: none; height: 24px; padding: 0 4px; min-width: 5ch; }
@@ -1195,3 +1191,32 @@ input.preview, textarea.preview { background: var(--bd2); color: var(--muted); c
 .scriptdlg .sehint { font-size: 11px; margin-right: 6px; }
 @media (max-width: 760px) { .scriptdlg .sehint { display: none; } }
 .scriptdlg .sehead { padding-right: 112px; }
+
+/* ---------------------------------------------------------------- consistency pass (2.26.1) */
+/* Updates' tiles are Home's tiles. */
+#updTiles .stat { position: relative; background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--shadow); overflow: hidden; }
+#updTiles .stat::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--accent); }
+#updTiles .stat.ok::before { background: var(--ok); } #updTiles .stat.warn::before { background: var(--warn); } #updTiles .stat.info::before { background: var(--info); }
+#updTiles .stat .n { font-size: 26px; font-weight: 650; line-height: 1.1; letter-spacing: -0.01em; } #updTiles .stat .l { font-size: 12px; color: var(--muted); }
+#updTiles .stat.ok .n { color: var(--ok); } #updTiles .stat.warn .n { color: var(--warn); } #updTiles .stat.info .n { color: var(--info); }
+/* The blocks' own sizes (out of the one-height rule above). */
+.brec .blk.edit input, .brec .blk.edit select { height: 30px; padding: 0 8px; border-radius: var(--r-s); }
+/* The x of a return-code row: quiet, not a blue ghost button. */
+.btn.ghost.rowx { color: var(--muted); padding: 0; }
+.btn.ghost.rowx:hover { color: var(--err); }
+/* Code editor file tabs: joined like a button group. */
+.scriptdlg .setabs { gap: 0; }
+.scriptdlg .setab { border-radius: 0; }
+.scriptdlg .setab + .setab { margin-left: -1px; }
+.scriptdlg .setab:first-child { border-radius: var(--r-m) 0 0 var(--r-m); }
+.scriptdlg .setab:last-child { border-radius: 0 var(--r-m) var(--r-m) 0; }
+.scriptdlg .setab:only-child { border-radius: var(--r-m); }
+/* Tables with a row or two don't stretch to an empty band. */
+.gtable, dialog .tablewrap { min-height: 0; }
+/* Apps with the side panel open on a narrower screen: the Source column steps aside for the Stage. */
+@media (max-width: 1600px) { .appsplit:has(> .apppanel:not([hidden])) #grid tr > :nth-child(2) { display: none; } }
+/* Every dialog's action row sits on its own footer line, as the editor's does. */
+dialog:not(.tray):not(.palette) > .actions.end, dialog:not(.tray) > form > .actions.end { margin: 16px -20px -18px; padding: 12px 20px 18px; border-top: 1px solid var(--bd2); }
+/* One size for dialog titles. */
+.addhead h2, .sehead h2, dialog.tray .trayhead h2 { font-size: 17px; }
+.ghead > .btngroup { margin-left: auto; }
