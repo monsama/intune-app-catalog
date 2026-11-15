@@ -79,8 +79,10 @@ function updateCheckActions() {
   const busy = checksRunning || jobRunning ? 'Wait for the running check or job to finish.' : '';
   setEnabled($('btnFixAdd'), !busy && sel.some(f => (f.actions || []).includes('AddToCatalog')), busy || 'Tick findings that are "In Intune, not in the catalog".');
   setEnabled($('btnFixRecheck'), !busy && sel.length > 0, busy || 'Tick one or more findings first.');
-  $('checkSelCount').textContent = sel.length ? `${sel.length} selected` : '';
-  $('checkFixBar').hidden = !sel.length;
+  { const n = sel.filter(comparable).length; setEnabled($('btnFixCompare'), n > 0, 'Tick findings where the catalog and Intune differ.'); $('btnFixCompare').textContent = n > 1 ? `Compare (${n})` : 'Compare'; }
+  $('checkSelCount').textContent = sel.length ? `${sel.length} selected` : 'Tick findings to fix several at once';
+  // Always there while there are findings (greyed out until something is ticked), so ticking doesn't move the table.
+  $('checkFixBar').hidden = !findings.length;
 }
 // The missing groups named by findings that offer CreateGroup.
 const groupsOf = list => [...new Set(list.filter(f => (f.actions || []).includes('CreateGroup') && f.data && f.data.Group).map(f => f.data.Group))];
@@ -90,6 +92,7 @@ $('btnFixPull').addEventListener('click', () => openPull(namesWith(selFindings()
 $('btnFixPushSettings').addEventListener('click', () => pushSettings(namesWith(selFindings(), 'PushMetadata')));
 $('btnFixPushGroups').addEventListener('click', () => openPushGroups(namesWith(selFindings(), 'PushGroups')));
 $('btnFixAdd').addEventListener('click', () => addFromIntune(selFindings().filter(f => (f.actions || []).includes('AddToCatalog'))));
+$('btnFixCompare').addEventListener('click', () => openCompare(selFindings().filter(comparable)));
 $('btnFixRecheck').addEventListener('click', () => runChecks([...new Set(selFindings().map(f => f.catalogName || f.app).filter(Boolean))]));
 $('checkAll').addEventListener('change', e => {
   const area = $('checkFilter').value;
@@ -107,6 +110,7 @@ function fixButtons(f) {
     toast('Fixed in the catalog.'); dropFinding(f); loadApps(); return true;
   };
   // One order on every row, so the same fix is always in the same place.
+  if (comparable(f)) btn('Compare', () => openCompare([f]), 'See side by side what differs');
   const order = ['RenameFromIntune', 'SetAppId', 'ChooseAppId', 'ClearAppId', 'AddToCatalog', 'CreateGroup', 'OpenGroup', 'Pull', 'PushMetadata', 'PushGroups', 'FindWingetId', 'EditApp', 'Recheck'];
   for (const a of order.filter(x => (f.actions || []).includes(x))) {
     if (a === 'RenameFromIntune' && f.data && f.data.IntuneName) btn('Use Intune’s name', () => fix(a, f.data.IntuneName), f.data.IntuneName);
@@ -157,12 +161,101 @@ function renderChecks() {
   $('checkAll').checked = list.length > 0 && list.every(f => checkSel.has(keyOf(f)));
   $('checkCount').textContent = findings.length ? `${list.length} finding(s)` : '';
   $('checkGrid').hidden = findings.length === 0;
-  // The fix buttons for ticked findings only - each row has its own; nothing to show (and nothing pushing the table down) with none ticked.
-  $('checkFixBar').hidden = !selFindings().length;
   $('checkEmpty').hidden = findings.length > 0;
   updateCheckActions();
 }
 $('checkFilter').addEventListener('change', renderChecks);
+
+// ---------------------------------------------------------------- compare (catalog next to Intune)
+// The field-by-field values the detail check sent along; dependencies only have their two summary lines.
+const diffsOf = f => {
+  const d = f.data && f.data.Diffs;
+  if (d) return [].concat(d).filter(Boolean).map(x => ({ field: x.Field || x.field || '', local: x.Local !== undefined ? x.Local : x.local, remote: x.Remote !== undefined ? x.Remote : x.remote }));
+  if (f.area === 'Dependencies' && (f.catalog || f.intune)) return [{ field: 'Dependencies', local: String(f.catalog || '').split(/,\s*/), remote: String(f.intune || '').split(/,\s*/) }];
+  return [];
+};
+const comparable = f => diffsOf(f).length > 0;
+// A value as lines to compare: JSON (detection rule, return codes) is spread out, a script inside it gets its own lines.
+function cmpLines(v) {
+  if (v === null || v === undefined || v === '') return ['(blank)'];
+  if (typeof v === 'string') {
+    const t = v.trim();
+    if (/^[[{]/.test(t)) { try { return cmpLinesOf(JSON.parse(t)); } catch { /* plain text after all */ } }
+    return v.replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n');
+  }
+  return cmpLinesOf(v);
+}
+function cmpLinesOf(o) {
+  if (o === null || o === undefined || o === '') return ['(blank)'];
+  if (Array.isArray(o)) return o.length ? o.map(x => x !== null && typeof x === 'object' ? JSON.stringify(x) : String(x)) : ['(none)'];
+  if (typeof o !== 'object') return cmpLines(String(o));
+  const out = [];
+  for (const [k, val] of Object.entries(o)) {
+    if (typeof val === 'string' && /[\r\n]/.test(val)) out.push(`${k}:`, ...val.replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n').map(l => '    ' + l));
+    else if (val !== null && typeof val === 'object') out.push(`${k}: ${JSON.stringify(val)}`);
+    else out.push(`${k}: ${val === null || val === undefined || val === '' ? '(blank)' : val}`);
+  }
+  return out.length ? out : ['(blank)'];
+}
+// Line diff (longest common subsequence) as side-by-side rows: [left, right, kind] with kind '=', 'chg', 'del' or 'add'.
+function cmpRows(a, b) {
+  const n = a.length, m = b.length;
+  if (n * m > 4e6) return Array.from({ length: Math.max(n, m) }, (_, i) => [a[i], b[i], a[i] === b[i] ? '=' : 'chg']);
+  const L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const rows = []; let i = 0, j = 0, dels = [], adds = [];
+  const flush = () => { const k = Math.max(dels.length, adds.length); for (let x = 0; x < k; x++) rows.push([dels[x], adds[x], dels[x] !== undefined && adds[x] !== undefined ? 'chg' : dels[x] !== undefined ? 'del' : 'add']); dels = []; adds = []; };
+  while (i < n || j < m) {
+    if (i < n && j < m && a[i] === b[j]) { flush(); rows.push([a[i], b[j], '=']); i++; j++; }
+    else if (j < m && (i >= n || L[i][j + 1] >= L[i + 1][j])) adds.push(b[j++]);
+    else dels.push(a[i++]);
+  }
+  flush();
+  return rows;
+}
+// Marks what a line holds that its partner doesn't: the middle between the common start and end.
+function cmpCell(text, other, side) {
+  if (text === undefined) return el('td', { class: 'v none' });
+  if (other === undefined || text === other) return el('td', { class: 'v', text: text === '' ? ' ' : text });
+  let s = 0; while (s < text.length && s < other.length && text[s] === other[s]) s++;
+  let e = 0; while (e < text.length - s && e < other.length - s && text[text.length - 1 - e] === other[other.length - 1 - e]) e++;
+  const mid = text.slice(s, text.length - e);
+  return el('td', { class: 'v' }, text.slice(0, s), mid ? el('mark', { class: side, text: mid }) : '', text.slice(text.length - e));
+}
+let cmpList = [], cmpAt = 0;
+function openCompare(list) {
+  if (!list.length) return;
+  cmpList = list; cmpAt = 0;
+  renderCompare();
+  if (!$('dlgCompare').open) $('dlgCompare').showModal();
+}
+function renderCompare() {
+  const f = cmpList[cmpAt], diffs = diffsOf(f);
+  $('cmpTitle').textContent = `Compare: ${f.app}`;
+  $('cmpNote').textContent = `${f.area} - ${f.problem}. Left is the catalog, right is Intune; changed lines are marked.`;
+  $('cmpBody').replaceChildren(...diffs.map(d => {
+    const rows = cmpRows(cmpLines(d.local), cmpLines(d.remote));
+    const changed = rows.filter(r => r[2] !== '=').length;
+    // Only whitespace or line endings differ: say so, or the marked lines look the same.
+    const wsOnly = rows.every(r => r[2] === '=' || String(r[0] ?? '').trim() === String(r[1] ?? '').trim());
+    return el('section', { class: 'cmpfield' },
+      el('h3', {}, d.field, el('span', { class: 'muted', text: ` - ${changed} line(s) differ${wsOnly && changed ? ' (spaces only)' : ''}` })),
+      el('div', { class: 'tablewrap' }, el('table', { class: 'cmp' },
+        el('thead', {}, el('tr', {}, el('th', { text: 'Catalog' }), el('th', { text: 'Intune' }))),
+        el('tbody', {}, ...rows.map(([l, r, k]) => el('tr', { class: k === '=' ? '' : k }, cmpCell(l, r, 'del'), cmpCell(r, l, 'add')))))));
+  }));
+  const nav = $('cmpNav');
+  nav.replaceChildren(...(cmpList.length > 1 ? [
+    el('button', { class: 'btn small', text: '‹', 'aria-label': 'Previous', disabled: cmpAt === 0, onclick: () => { cmpAt--; renderCompare(); } }),
+    el('span', { class: 'muted', text: ` ${cmpAt + 1} of ${cmpList.length} ` }),
+    el('button', { class: 'btn small', text: '›', 'aria-label': 'Next', disabled: cmpAt === cmpList.length - 1, onclick: () => { cmpAt++; renderCompare(); } })] : []));
+  const name = f.catalogName || f.app, acts = f.actions || [];
+  const go = fn => () => { $('dlgCompare').close(); fn(); };
+  $('cmpFixes').replaceChildren(
+    ...(acts.includes('Pull') ? [el('button', { class: 'btn', text: 'Take from Intune', title: 'Intune is right: take its values into the catalog', onclick: go(() => openPull([name])) })] : []),
+    ...(acts.includes('PushMetadata') ? [el('button', { class: 'btn', text: 'Send settings', title: 'The catalog is right: send its settings to Intune', onclick: go(() => pushSettings([name])) })] : []),
+    ...(acts.includes('PushGroups') ? [el('button', { class: 'btn', text: 'Send groups', title: 'The catalog is right: send its groups to Intune', onclick: go(() => openPushGroups([name])) })] : []));
+}
 
 // Add to catalog: reads the Intune-only apps' settings and groups and adds them.
 async function addFromIntune(list) {

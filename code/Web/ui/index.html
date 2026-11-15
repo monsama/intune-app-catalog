@@ -196,6 +196,7 @@
       <span class="spacer"></span>
       <span class="muted" id="checkSelCount"></span>
       <span class="fixbar" id="checkFixBar" hidden>
+      <button class="btn" id="btnFixCompare" disabled title="See side by side what differs between the catalog and Intune">Compare</button>
       <button class="btn" id="btnFixPull" disabled title="Intune is right: take its settings and groups into the catalog">Take from Intune</button>
       <button class="btn" id="btnFixPushSettings" disabled title="The catalog is right about settings or dependencies: send them to Intune">Send settings</button>
       <button class="btn" id="btnFixPushGroups" disabled title="The catalog is right about groups: send them to Intune">Send groups</button>
@@ -1279,6 +1280,13 @@
   <p class="formerror" id="gbErr" hidden></p>
   <pre class="log" id="gbLog" tabindex="0" role="log" hidden></pre>
   <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnGbGo" title="Change the groups in the catalog - Send groups sends them to Intune">Apply</button></div>
+</dialog>
+
+<dialog id="dlgCompare" class="wide" aria-labelledby="cmpTitle">
+  <h2 id="cmpTitle">Compare</h2>
+  <p class="sub" id="cmpNote">What the catalog has next to what Intune has. Changed lines are marked; nothing changes until you press a button.</p>
+  <div id="cmpBody" class="cmpbody"></div>
+  <div class="actions end"><span class="cmpnav" id="cmpNav"></span><span class="spacer"></span><span id="cmpFixes" class="fixes"></span><button class="btn" data-close>Close</button></div>
 </dialog>
 
 <dialog id="dlgWinget" class="wide">

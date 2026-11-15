@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.27.1
+
+- **Checks > Compare**: a finding where the catalog and Intune differ
+  (settings, detection rule, return codes, groups, dependencies) has a
+  Compare button - catalog on the left, Intune on the right, the
+  differing lines and characters marked. A detection script is spread out
+  line by line instead of one long JSON line. Tick several findings and
+  Compare steps through them; Take from Intune / Send settings / Send
+  groups are right there.
+- **Checks**: the fix buttons stay in the toolbar while there are
+  findings (greyed out until something is ticked), so ticking a finding
+  no longer pushes the table down.
+
 ## 2.27.0
 
 - **Switch from Winget-AutoUpdate**: an app whose catalog entry has no

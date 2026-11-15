@@ -50,6 +50,10 @@ blocks and the code editor (section 10c).
 - [ ] Change an added app's description in the portal, Re-check - a
       Metadata finding. **Pull** shows the field; keep the catalog's value -
       **Push settings** then puts it back in the portal.
+- [ ] On that Metadata finding press **Compare**: catalog left, Intune
+      right, the differing lines and characters marked; a detection script
+      is shown line by line. Tick findings and the toolbar's buttons
+      light up - the table doesn't move when you tick.
 
 ## 3. Add and deploy a Winget app
 
