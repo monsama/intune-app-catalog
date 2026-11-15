@@ -117,14 +117,20 @@ function Global:Invoke-WebGraph {
                 if ($text) { $text | ConvertFrom-Json } else { $null }
             }
         }
-        return @{ ok = $true; value = (& $Action $call) }
+        $value = & $Action $call
+        if ($Permission -and $Global:App.MissingPermissions -and $Global:App.MissingPermissions.ContainsKey($Permission)) { $Global:App.MissingPermissions.Remove($Permission) }
+        return @{ ok = $true; value = $value }
     }
     catch {
         $msg = Get-InnermostErrorMessage $_.Exception
         $friendly = ConvertTo-FriendlyGraphError $msg
         if ($Permission -and "$msg" -match '\b40[13]\b|Forbidden|Unauthorized|Authorization_RequestDenied') {
+            # One short sentence on the page (the full answer from Graph goes to the log), and Home says so until it works.
             $kind = if ($Permission -match ' and ') { 'application permissions' } else { 'application permission' }
-            $friendly = "$friendly`nThis needs the $Permission $kind, with admin consent (Settings > API permissions > Add required permissions...)."
+            Write-Log "[WARN] Graph refused a request for lack of $Permission - $(Protect-LogText $msg)"
+            if (-not $Global:App.MissingPermissions) { $Global:App.MissingPermissions = [hashtable]::Synchronized(@{}) }
+            $Global:App.MissingPermissions[$Permission] = (Get-Date).ToString('HH:mm', [Globalization.CultureInfo]::InvariantCulture)
+            return @{ ok = $false; permission = $Permission; error = "the app registration is missing the API permission $Permission ($kind, with admin consent) - Settings > API permissions > Add required permissions... adds it." }
         }
         return @{ ok = $false; error = (Protect-LogText $friendly) }
     }

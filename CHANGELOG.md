@@ -1,5 +1,60 @@
 # Changelog
 
+## 2.27.0
+
+- **Switch from Winget-AutoUpdate**: an app whose catalog entry has no
+  Winget ID takes the one its WAU command installs (`-AppIDs
+  "OpenJS.NodeJS"`) and is switched. When the catalog's Winget ID is
+  another one than the command's, the message now names both, so you can
+  set the one you want and switch again - nothing is guessed.
+- **Apps list**: an app without an icon shows its first letter on a colour
+  of its own, instead of a grey square that looked like a checkbox (rows
+  are picked by clicking them; Ctrl or Shift for several).
+- Checkboxes everywhere are drawn by the app: a thin outlined box, blue
+  with a white tick when ticked (the browser's dark-mode box was a solid
+  grey block).
+- **Side panel of a Microsoft app** (Microsoft 365 Apps, Company Portal
+  before it's set up as a Store app): no Version picker (there's no version
+  to pick), no group fields while it isn't in Intune from here (nothing to
+  send them to), and no "Next step: Edit" that only opened the editor
+  again. Store apps don't show the Version picker either.
+- **Messages after an action** (and their Undo) show sharp on top while a
+  dialog is open - they were under its dimmed, blurred background and
+  couldn't be clicked.
+- **Apps list: checkboxes to pick several apps** - one before each app (that
+  app in or out, the others stay picked; Shift for a range) and one in the
+  header for every app in the view (a dash when only some are picked).
+  Clicking a row still picks just that one; Ctrl/Shift+click work as before.
+- **Changes to send**: an app in Intune whose settings or groups changed in
+  the catalog since they were last sent shows **Changes to send**, with the
+  send it needs (Send settings, or Send groups) as its next step; after Save
+  a message says Intune still has the old ones, with **Send now**. Known
+  for what's sent from this version on (a fingerprint of what was sent is
+  kept next to the catalog); a managed app's version, commands and
+  detection are left out - releases send those.
+- **Reload** button in the Apps toolbar: the catalog and Intune read again.
+- **Fill in details from winget** (More, for the selected apps; Catalog >
+  Fill in missing details for all): publisher, description, information and
+  privacy links and developer from winget, and the **owner** from a new
+  setting (Settings > Apps & defaults > Owner) - only where a field is still
+  empty, never the App version (managed updates pin and release it). With
+  Undo; apps already in Intune then show Changes to send. New Winget apps
+  get the default owner too.
+  Also in the editor (**Fill from winget** by Intune details - into the form,
+  kept with Save) and on Home ("N apps with details missing" - **Fill them
+  in**).
+- **A missing API permission** says so in one sentence ("the app
+  registration is missing the API permission X ... Add required
+  permissions... adds it"); the full answer from Graph goes to the log.
+  Home shows **Missing API permission** until a call with it works again,
+  and Diagnostics > Check permissions counts a ReadWrite permission as
+  covering its Read.All.
+- **Spacing in forms**: room under every section heading, and a button,
+  checkbox or label after a field, list or checkbox no longer touches it
+  (Supersedence, Dependencies, Return codes, Allow uninstall, rings).
+- Ticked checkboxes inside labels (Settings: release window days, ...) show
+  their tick - a stretching rule made them solid blue squares.
+
 ## 2.26.3
 
 - The tenant test checklist has a section for the blocks and the code

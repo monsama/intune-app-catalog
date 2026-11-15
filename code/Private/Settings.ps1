@@ -88,6 +88,7 @@ function Global:Import-GraphSettings {
             if ($null -ne $das.DeviceRestartBehavior)      { $Global:App.DefaultAppSettings.DeviceRestartBehavior = [string]$das.DeviceRestartBehavior }
             if ($null -ne $das.AllowAvailableUninstall)    { $Global:App.DefaultAppSettings.AllowAvailableUninstall = [bool]$das.AllowAvailableUninstall }
             # WAU (before 2.19) is no longer offered: managed updates take its place.
+            if ($null -ne $das.DefaultOwner)               { $Global:App.DefaultAppSettings.DefaultOwner = ([string]$das.DefaultOwner).Trim() }
             if ($das.WingetInstallMethod -in @("Winget", "Managed")) { $Global:App.DefaultAppSettings.WingetInstallMethod = [string]$das.WingetInstallMethod }
             if (@($das.ReturnCodes).Count -gt 0) {
                 $Global:App.DefaultAppSettings.ReturnCodes = @($das.ReturnCodes | ForEach-Object { [pscustomobject]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })

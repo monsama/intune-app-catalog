@@ -265,6 +265,14 @@ function Global:Get-WebAttention {
     }
     $apps = @((Read-WebCatalogRecords).Apps)
     $notDeployed = @($apps | Where-Object { -not $_.appId })
+    # A page hit a permission the app registration doesn't have (Invoke-WebGraph notes it; it goes once a call works).
+    if ($Global:App.MissingPermissions -and $Global:App.MissingPermissions.Count) {
+        $miss = @($Global:App.MissingPermissions.Keys | Sort-Object)
+        & $add 'warn' "Missing API permission$(if ($miss.Count -gt 1) { 's' }): $($miss -join ', ')" "Microsoft Graph refused a request for lack of it (last at $(@($Global:App.MissingPermissions.Values | Sort-Object)[-1])). Add it to the app registration (Settings > API permissions > Add required permissions...) and grant admin consent - Diagnostics > Check permissions lists every one." 'settings:connection'
+    }
+    # Winget apps whose Intune details are still empty (publisher, description, information link): Fill in details does it.
+    $bare = @($apps | Where-Object { $_.wingetId -and (-not $_.metadata -or -not ([string]$_.metadata.publisher).Trim() -or -not ([string]$_.metadata.informationUrl).Trim() -or -not ([string]$_.metadata.description).Trim() -or ([string]$_.metadata.description).Trim() -eq ([string]$_.appName).Trim()) })
+    if ($bare.Count) { & $add 'info' "$($bare.Count) app(s) with details missing" ((@($bare | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($bare.Count -gt 5) { ', ...' } else { '' }) + " - no publisher, description or information link yet. winget knows them: fill them in (only empty fields, never the version).") 'do:filldetails' }
     if ($notDeployed.Count) { & $add 'info' "$($notDeployed.Count) app(s) not in Intune yet" ((@($notDeployed | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($notDeployed.Count -gt 5) { ', ...' })) 'apps:notdeployed' }
     # winget.exe answers in Windows' display language; its text is read in several languages, but Microsoft's WinGet module is exact in all of them.
     if (-not $Global:App.TestGraph -and @($apps | Where-Object { $_.wingetId }).Count -and (Get-UICulture).TwoLetterISOLanguageName -ne 'en' -and (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not (Test-WingetClientModule)) {

@@ -117,9 +117,20 @@ let toastTimer = null;
 // -actions: the next steps as buttons in the message, e.g. [{ label: 'Send to Intune', run: () => ... }] - it then stays longer.
 // A Microsoft Store product ID (winget's msstore source) - sent to Intune as its own Store app type.
 const isStoreId = id => /^(9[0-9A-Z]{11}|XP[0-9A-Z]{12})$/.test(String(id || ''));
+// A message shows above everything: inside the dialog on top when one is open (a modal dialog dims and blurs the
+// rest of the page, and makes it unclickable - the message, and its Undo, would be under it), else on the page.
+function placeToast() {
+  const t = $('toast'); if (!t) return;
+  const top = (typeof wcStack !== 'undefined' ? wcStack : []).filter(d => d.open && d.matches(':modal') && !d.classList.contains('minimized')).pop()
+    || [...document.querySelectorAll('dialog[open]')].filter(d => d.matches(':modal') && !d.classList.contains('minimized')).pop();
+  const host = top || document.body;
+  if (t.parentElement !== host) host.append(t);
+}
+window.addEventListener('close', () => setTimeout(placeToast, 0), true);
 function toast(msg, isErr, actions) {
   activity(`${stamp()} ${isErr ? '[FAILED] ' : ''}${msg}`);
   const t = $('toast');
+  placeToast();
   const acts = (actions || []).filter(Boolean);
   t.replaceChildren(el('span', { text: msg }), ...acts.map(a => el('button', { class: 'btn small', text: a.label, onclick: () => { t.hidden = true; a.run(); } })));
   t.className = 'toast' + (isErr ? ' err' : '') + (acts.length ? ' withacts' : ''); t.hidden = false;

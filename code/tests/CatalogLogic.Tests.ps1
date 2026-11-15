@@ -185,6 +185,7 @@ $testableFunctionNames = @(
     "Get-GateVersion",
     "Get-MonthlyReportData",
     "ConvertFrom-WingetShowOutput",
+    "Get-AppDetailsFill",
     "Get-WingetShowLabelMap",
     "Get-InstallerKind",
     "Get-InstallerProposal",
@@ -220,6 +221,7 @@ $testableFunctionNames = @(
     "Get-WauUse",
     "Test-WauCommandForId",
     "Get-WauCommandExtras",
+    "Get-WauCommandId",
     "Get-ReleaseAvailableSettings",
     "Get-AppRecordFieldValues",
     "Get-AppRecordChanges",
@@ -810,6 +812,11 @@ Assert-True ($md.runs -eq 2 -and $md.released -eq 1 -and $md.promoted -eq 1 -and
 $show = "Found 7-Zip [7zip.7zip]`r`nVersion: 24.08`r`nPublisher: Igor Pavlov`r`nPublisher Url: https://www.7-zip.org/`r`nDescription:`r`n  Free and open source file archiver`r`n  with a high compression ratio.`r`nHomepage: https://www.7-zip.org/`r`nLicense: LGPL-2.1-or-later`r`nPrivacy Url: https://www.7-zip.org/privacy`r`nTags:`r`n  7zip`r`n  archiver`r`nInstaller:`r`n  Installer Type: exe`r`n  Installer Url: https://example.test/7z.exe"
 $sd = ConvertFrom-WingetShowOutput $show
 Assert-True ($sd.Id -eq '7zip.7zip' -and $sd.Name -eq '7-Zip' -and $sd.Version -eq '24.08' -and $sd.Publisher -eq 'Igor Pavlov' -and $sd.Description -eq 'Free and open source file archiver with a high compression ratio.' -and $sd.Homepage -eq 'https://www.7-zip.org/' -and $sd.PrivacyUrl -like '*privacy' -and (@($sd.Tags) -join ',') -eq '7zip,archiver') "ConvertFrom-WingetShowOutput: name, ID, publisher, a description over two lines, URLs and tags - not the installer's keys"
+$fillMeta = [pscustomobject]@{ description = '7-Zip'; publisher = ''; informationUrl = 'https://mine.example'; privacyUrl = ''; developer = ''; owner = ''; appVersion = '26.05' }
+$fill = Get-AppDetailsFill -Metadata $fillMeta -Details $sd -AppName '7-Zip' -DefaultOwner 'IT Workplace'
+Assert-True ($fill.publisher -eq 'Igor Pavlov' -and $fill.description -like 'Free and open source*' -and -not $fill.Contains('informationUrl') -and $fill.privacyUrl -like '*privacy' -and $fill.developer -eq 'Igor Pavlov' -and $fill.owner -eq 'IT Workplace' -and -not $fill.Contains('appVersion')) "Get-AppDetailsFill: only empty fields (a description that's just the name counts as empty), never the version, the owner from the setting"
+Assert-Equal 0 (Get-AppDetailsFill -Metadata ([pscustomobject]@{ description = 'Mine'; publisher = 'P'; informationUrl = 'https://x.example'; privacyUrl = 'https://y.example'; developer = 'D'; owner = 'O' }) -Details $sd -AppName 'X' -DefaultOwner 'IT').Count "Get-AppDetailsFill: nothing typed by hand is overwritten"
+Assert-True (-not (Get-AppDetailsFill -Metadata $fillMeta -Details @{ Homepage = 'javascript:alert(1)'; PrivacyUrl = 'http://ok.example/p' } -AppName '7-Zip').Contains('informationUrl')) "Get-AppDetailsFill: only http(s) links"
 Assert-Equal 'inno' (Get-InstallerKind 'xx Inno Setup Setup Data (6.2.0) xx') "Get-InstallerKind: Inno Setup"
 Assert-Equal 'nsis' (Get-InstallerKind 'Nullsoft Install System v3.09') "Get-InstallerKind: NSIS"
 Assert-Equal '' (Get-InstallerKind 'just a program') "Get-InstallerKind: unknown"
@@ -869,6 +876,8 @@ Assert-True ((Test-StoreProductId '9NBLGGH4NNS1') -and (Test-StoreProductId 'XP8
 $permA = @(Get-PermissionReport -Granted @('DeviceManagementApps.ReadWrite.All', 'Group.Read.All', 'Directory.ReadWrite.All', 'Mail.Send') -Usage @{ Scripts = $false; Inventory = $true; Mail = $false; GroupsPage = $true })
 $st = @{}; foreach ($r in $permA) { $st[$r.name] = $r.status }
 Assert-True ($st['DeviceManagementApps.ReadWrite.All'] -eq 'ok' -and $st['Group.ReadWrite.All'] -eq 'partly' -and $st['DeviceManagementManagedDevices.Read.All'] -eq 'missing' -and $st['Mail.Send'] -eq 'unused' -and $st['Directory.ReadWrite.All'] -eq 'unused' -and $st['DeviceManagementScripts.ReadWrite.All'] -eq 'optional') "Get-PermissionReport: what's there, partly there, missing, not needed and optional - by the features in use"
+$permRW = @(Get-PermissionReport -Granted @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'DeviceManagementManagedDevices.ReadWrite.All') -Usage @{ Inventory = $true })
+Assert-True (@($permRW | Where-Object { $_.name -eq 'DeviceManagementManagedDevices.Read.All' -and $_.status -eq 'ok' }).Count -eq 1 -and @($permRW | Where-Object { $_.name -eq 'DeviceManagementManagedDevices.ReadWrite.All' -and $_.status -eq 'unused' }).Count -eq 0) "Get-PermissionReport: ReadWrite covers its Read.All (not missing, not unused)"
 Assert-True (@($permA | Where-Object { $_.name -eq 'Directory.ReadWrite.All' })[0].why -like '*broad*') "Get-PermissionReport: a broad permission the app never needs is called out"
 $psadtIn = "`$adtSession = @{`r`n    AppVendor = ''`r`n    AppName = ''`r`n    AppVersion = ''`r`n}`r`n    ## <Perform Post-Installation tasks here>`r`n`r`n    ## <Perform Post-Uninstallation tasks here>`r`n"
 $psadt = Set-PsadtTemplateValues -Text $psadtIn -Name ("Bob" + [char]0x2019 + "s CAD") -Vendor 'Contoso' -Version '2025.1'
@@ -998,6 +1007,8 @@ Assert-True (-not (Test-WauCommandForId '7zip.7zip' '"Winget-Install.ps1" -AppID
     "Test-WauCommandForId: several IDs, another ID, or no Winget-Install.ps1 - not this app's WAU command"
 $wauExtra = '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File "C:\Program Files\Winget-AutoUpdate\Winget-Install.ps1" -AppIDs "7zip.7zip --scope machine --override /S"'
 Assert-True ((Test-WauCommandForId '7zip.7zip' $wauExtra) -and -not (Test-WauCommandForId '7zip.7zip' '"Winget-Install.ps1" -AppIDs "7zip.7zip Git.Git"')) "Test-WauCommandForId: winget options after the ID still make it this app's command; a second ID doesn't"
+$nodeCmd = '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File "C:\Program Files\Winget-AutoUpdate\Winget-Install.ps1" -AppIDs "OpenJS.NodeJS"'
+Assert-True ((Get-WauCommandId $nodeCmd) -eq 'OpenJS.NodeJS' -and (Get-WauCommandId $wauExtra) -eq '7zip.7zip' -and (Get-WauCommandId '"Winget-Install.ps1" -AppIDs "A.B C.D"') -eq '' -and (Get-WauCommandId 'winget install --id A.B') -eq '') "Get-WauCommandId: the one ID a WAU command installs (options after it allowed), not several"
 Assert-Equal '--override /S' (Get-WauCommandExtras $wauExtra) "Get-WauCommandExtras: the options WAU passed on, --scope machine not counted"
 Assert-Equal '' (Get-WauCommandExtras '"Winget-Install.ps1" -AppIDs "7zip.7zip"') "Get-WauCommandExtras: none"
 Assert-True ((Test-WauAppName 'Winget-AutoUpdate') -and (Test-WauAppName 'Romanitho.Winget-AutoUpdate') -and (Test-WauAppName 'winget autoupdate') -and -not (Test-WauAppName 'Winget Tools')) "Test-WauAppName: its names and Winget ID"

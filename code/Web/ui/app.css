@@ -408,7 +408,9 @@ optgroup[hidden] { display: none; }
 
 /* ---- icons, supersedence, tenant setup, install overview ---- */
 .appicon { width: 18px; height: 18px; border-radius: var(--r-s); object-fit: contain; vertical-align: -4px; margin-right: 8px; flex: none; }
-.appicon.none { display: inline-block; background: var(--bd2); }
+.appicon.none { display: inline-grid; place-items: center; vertical-align: -4px; font: 700 10px/1 var(--ui, system-ui); color: hsl(var(--h, 210) 45% 32%); background: hsl(var(--h, 210) 55% 90%); }
+:root[data-theme="dark"] .appicon.none { color: hsl(var(--h, 210) 70% 82%); background: hsl(var(--h, 210) 30% 26%); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .appicon.none { color: hsl(var(--h, 210) 70% 82%); background: hsl(var(--h, 210) 30% 26%); } }
 .appicon.big { width: 40px; height: 40px; margin: 0; border: 1px solid var(--bd); background: var(--surface); }
 .iconrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .iconrow .lbl { flex-basis: 100%; font-size: 12px; color: var(--muted); }
@@ -1220,3 +1222,44 @@ dialog:not(.tray):not(.palette) > .actions.end, dialog:not(.tray) > form > .acti
 /* One size for dialog titles. */
 .addhead h2, .sehead h2, dialog.tray .trayhead h2 { font-size: 17px; }
 .ghead > .btngroup { margin-left: auto; }
+/* Checkboxes drawn by the app (2.26.4): a thin outlined box, accent with a white tick when ticked - the browser's
+   own dark-mode box was a solid grey block. The list's row boxes are quieter until the row is hovered or picked. */
+input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 16px; height: 16px; margin: 0; flex: none; display: inline-grid; place-content: center; vertical-align: middle;
+  border: 1.5px solid color-mix(in srgb, var(--muted) 70%, transparent); border-radius: var(--r-s); background: transparent; cursor: pointer; transition: background-color .12s, border-color .12s; }
+input[type=checkbox]::before { content: ''; width: 10px; height: 10px; transform: scale(0); transition: transform .12s; background: #fff;
+  clip-path: polygon(14% 52%, 0 66%, 38% 100%, 100% 22%, 86% 8%, 38% 72%); }
+input[type=checkbox]:checked, input[type=checkbox]:indeterminate { background: var(--accent); border-color: var(--accent); }
+input[type=checkbox]:checked::before { transform: scale(1); }
+input[type=checkbox]:indeterminate::before { transform: scale(1); clip-path: inset(40% 10% 40% 10%); }
+input[type=checkbox]:hover:not(:disabled) { border-color: var(--accent); }
+input[type=checkbox]:disabled { opacity: .45; cursor: default; }
+.grid td.name input.rowpick:not(:checked) { opacity: .5; }
+.grid tr:hover td.name input.rowpick, .grid tr.sel td.name input.rowpick, .grid td.name input.rowpick:focus-visible { opacity: 1; }
+/* The list's pick boxes (2.26.4): before the app's icon, and in the header for all of them. */
+.grid td.name input.rowpick, .grid th input.rowpick { margin: 0 10px 0 0; vertical-align: -3px; }
+.grid th input.rowpick { vertical-align: -3px; }
+/* Form rhythm (2.26.4): a heading has room under it, and a button that follows a field, a checkbox or a list
+   doesn't touch it - the same step everywhere in the editor and the settings. */
+.formgrid h3 { margin: 22px 0 8px; }
+.formgrid section > h3:first-child { margin-top: 4px; }
+.formgrid section > .btn, .formgrid section > button.btn, .formgrid .two + .btn, .suplist + .btn { margin-top: 10px; align-self: flex-start; }
+.formgrid section > label.chk + .btn, .formgrid section > .depbox + .btn, .formgrid section > .suplist + .btn { margin-top: 10px; }
+.formgrid section > h3 + .btn, .formgrid section > h3 + button.btn { margin-top: 0; }
+.formgrid section > .btn + label, .formgrid section > button.btn + label { margin-top: 10px; }
+.suplist:not(:empty) { margin: 8px 0; }
+.formgrid section > label.chk { margin-top: 8px; }
+/* Rows with an Add button under them (return codes, rings, profiles): the button a step below the last row. */
+.coderows > .btn, .ringrows > .btn, .coderows > button, .ringrows > button { margin-top: 6px; }
+/* A checkbox on its own line after a grid of fields gets the same room as a field. */
+.formgrid .two + label.chk, .formgrid .grid3 + label.chk { margin-top: 14px; }
+/* The app's checkbox keeps its size and its tick inside labels too (label > input stretches fields to full width). */
+label > input[type=checkbox], .formgrid label > input[type=checkbox], label.chk > input[type=checkbox] { display: inline-grid; width: 16px; height: 16px; margin: 0; flex: none; }
+label.chk > input[type=checkbox] { margin-top: 2px; }
+.formgrid label.chk + label:not(.chk) { margin-top: 14px; }
+.btngroup > #btnAppsReload { width: 38px; padding: 0; }
+#btnAppsReload.spin svg { animation: reloadspin .8s linear infinite; }
+@keyframes reloadspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #btnAppsReload.spin svg { animation: none; } }
+.formgrid h3.withfill { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.formgrid h3.withfill #btnFillWinget { margin-left: auto; }
+.justfilled { box-shadow: 0 0 0 2px var(--ok) !important; transition: box-shadow .4s; }

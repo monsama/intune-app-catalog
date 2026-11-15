@@ -839,6 +839,8 @@ function Global:Get-FactoryAppSettings {
         # winget: "Managed" pinned to the App version, "Winget" the newest.
         # New Winget apps: a pinned version, new ones released through the pilot groups (managed updates).
         WingetInstallMethod      = "Managed"
+        # Who owns apps in Intune (Owner field) - filled into new apps and Fill in details; empty: none.
+        DefaultOwner             = ""
     }
 }
 
@@ -1653,8 +1655,38 @@ function Global:Get-WingetShowLabelMap {
     & $add 'License' @('License', 'Lizenz', 'Licence', 'Licencia', 'Licenza', ('Licen' + [char]0xE7 + 'a'), 'Licentie')
     & $add 'PrivacyUrl' @('Privacy Url', 'Datenschutz-URL', ('URL de confidentialit' + [char]0xE9), 'URL de privacidad', 'URL della privacy', 'URL de privacidade', 'Privacy-URL')
     & $add 'Tags' @('Tags', 'Markierungen', 'Balises', 'Etiquetas', 'Etichette', 'Marcas')
+    & $add 'Author' @('Author', 'Autor', 'Auteur', 'Autore', 'Auteur(s)')
     return $m
 }
+function Global:Get-AppDetailsFill {
+    <#
+      Pure: what Fill in details sets on an app - only fields that are empty
+      now (a description equal to the app's name counts as empty: Add apps
+      writes the name when it has nothing better), never the App version.
+      -Details: what winget show says (ConvertFrom-WingetShowOutput), or an
+      installer's own (ProductName, Manufacturer). Returns an ordered field ->
+      value list (empty when there's nothing to fill).
+    #>
+    param($Metadata, $Details, [string]$AppName, [string]$DefaultOwner)
+    $now = { param($k) [string]$(if ($Metadata -and $Metadata.PSObject.Properties[$k]) { $Metadata.$k }) }
+    $url = { param($u) $t = ([string]$u).Trim(); if ($t -match '^https?://[^\s"<>]{3,500}$') { $t } else { '' } }
+    $out = [ordered]@{}
+    $publisher = ([string]$Details.Publisher).Trim()
+    if ($publisher -and -not (& $now 'publisher').Trim()) { $out.publisher = $publisher.Substring(0, [Math]::Min($publisher.Length, 200)) }
+    $desc = ([string]$Details.Description).Trim()
+    $haveDesc = (& $now 'description').Trim()
+    if ($desc -and (-not $haveDesc -or $haveDesc -eq ([string]$AppName).Trim())) { $out.description = $desc.Substring(0, [Math]::Min($desc.Length, 2000)) }
+    $info = & $url $(if ($Details.Homepage) { $Details.Homepage } else { $Details.PublisherUrl })
+    if ($info -and -not (& $now 'informationUrl').Trim()) { $out.informationUrl = $info }
+    $privacy = & $url $Details.PrivacyUrl
+    if ($privacy -and -not (& $now 'privacyUrl').Trim()) { $out.privacyUrl = $privacy }
+    $dev = ([string]$(if ($Details.Author) { $Details.Author } else { $Details.Publisher })).Trim()
+    if ($dev -and -not (& $now 'developer').Trim()) { $out.developer = $dev.Substring(0, [Math]::Min($dev.Length, 200)) }
+    $owner = ([string]$DefaultOwner).Trim()
+    if ($owner -and -not (& $now 'owner').Trim()) { $out.owner = $owner }
+    return $out
+}
+
 function Global:ConvertFrom-WingetShowOutput {
     <#
       Pure: "winget show --id X --exact" as @{ Name; Id; Version; Publisher;
@@ -1663,7 +1695,7 @@ function Global:ConvertFrom-WingetShowOutput {
       indented lines (a long description, the tags).
     #>
     param([string]$Text)
-    $out = [ordered]@{ Name = ''; Id = ''; Version = ''; Publisher = ''; PublisherUrl = ''; Description = ''; Homepage = ''; License = ''; PrivacyUrl = ''; Tags = @() }
+    $out = [ordered]@{ Name = ''; Id = ''; Version = ''; Publisher = ''; PublisherUrl = ''; Author = ''; Description = ''; Homepage = ''; License = ''; PrivacyUrl = ''; Tags = @() }
     $map = Get-WingetShowLabelMap
     $key = ''
     foreach ($raw in @(([string]$Text) -split "`r?`n")) {
@@ -1952,7 +1984,8 @@ function Global:Get-PermissionReport {
         @('DeviceManagementConfiguration.Read.All', [bool]$Usage.Filters, 'Assignment filters', 'Apps have an assignment filter - it is looked up by name.')
     )
     foreach ($f in $feat) {
-        $isGranted = (& $has $f[0]) -or ($f[0] -eq 'DeviceManagementConfiguration.Read.All' -and (& $has 'DeviceManagementConfiguration.ReadWrite.All'))
+        # A ReadWrite permission covers its Read.All.
+        $isGranted = (& $has $f[0]) -or ($f[0] -match '\.Read\.All$' -and (& $has ($f[0] -replace '\.Read\.All$', '.ReadWrite.All')))
         if ($f[1]) { & $row $f[0] $(if ($isGranted) { 'ok' } else { 'missing' }) $f[2] $f[3] }
         elseif ($isGranted) { & $row $f[0] 'unused' $f[2] $(if ($f[0] -eq 'Mail.Send') { 'No email alerts are set up - and Mail.Send can send as any mailbox: remove it, or limit it with an application access policy.' } else { 'Nothing here uses it yet.' }) }
         else { & $row $f[0] 'optional' $f[2] 'Only when you use it.' }
@@ -1960,6 +1993,7 @@ function Global:Get-PermissionReport {
     $known = @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Group.Read.All', 'DeviceManagementScripts.ReadWrite.All', 'DeviceManagementManagedDevices.Read.All', 'Mail.Send', 'User.Read.All', 'DeviceManagementConfiguration.Read.All')
     # ReadWrite stands in for Read.All when filters are used; otherwise it's a broad one never needed (below).
     if ($Usage.Filters -and -not (& $has 'DeviceManagementConfiguration.Read.All')) { $known += 'DeviceManagementConfiguration.ReadWrite.All' }
+    if ($Usage.Inventory -and -not (& $has 'DeviceManagementManagedDevices.Read.All')) { $known += 'DeviceManagementManagedDevices.ReadWrite.All' }
     if ((& $has 'Group.Read.All') -and (& $has 'Group.ReadWrite.All')) { & $row 'Group.Read.All' 'unused' 'Reading groups' 'Group.ReadWrite.All covers it.' }
     $broad = '^(Directory\.ReadWrite\.All|Application\.ReadWrite\.All|AppRoleAssignment\.ReadWrite\.All|RoleManagement\.ReadWrite\.Directory|DeviceManagementConfiguration\.ReadWrite\.All|DeviceManagementRBAC\.ReadWrite\.All|Sites\.FullControl\.All|Mail\.ReadWrite|Files\.ReadWrite\.All|User\.ReadWrite\.All)$'
     foreach ($p in @($g | Where-Object { $known -notcontains $_ } | Sort-Object)) {
@@ -2386,6 +2420,22 @@ function Global:Test-WauCommandForId {
     $parts = @($ids -split '\s+' | Where-Object { $_ })
     if (-not $parts.Count -or $parts[0] -ine $WingetId) { return $false }
     return ($parts.Count -eq 1 -or $parts[1].StartsWith('--'))
+}
+
+function Global:Get-WauCommandId {
+    <#
+      Pure: the one Winget ID a WAU command installs (-AppIDs "Some.App", maybe
+      with winget options after it) - '' when it isn't a Winget-Install.ps1
+      command, or names several IDs.
+    #>
+    param([string]$Command)
+    if ([string]$Command -notmatch '(?i)Winget-Install\.ps1') { return '' }
+    $m = [regex]::Match([string]$Command, '(?i)-AppIDs?\s+(?:"([^"]*)"|''([^'']*)''|(\S+))')
+    if (-not $m.Success) { return '' }
+    $parts = @((($m.Groups[1].Value + $m.Groups[2].Value + $m.Groups[3].Value).Trim()) -split '\s+' | Where-Object { $_ })
+    if (-not $parts.Count -or ($parts.Count -gt 1 -and -not $parts[1].StartsWith('--'))) { return '' }
+    if ($parts[0] -notmatch '^[A-Za-z0-9][A-Za-z0-9.\-_+]{0,127}$') { return '' }
+    return $parts[0]
 }
 
 function Global:Get-WauCommandExtras {

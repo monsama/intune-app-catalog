@@ -43,12 +43,18 @@ function appPicker(box, names, chosen, attr, emptyText, label = 'Installed first
 // App icons: fetched once per icon (iconTag changes when the icon does), shown in the list.
 const iconCache = new Map();
 let iconsWanted = new Set(), iconTimer = null;
+// No icon (yet): the app's first letter on a colour of its own - a placeholder that reads as an icon, not as a checkbox.
+function iconLetter(name) {
+  const t = String(name || '?').trim(), letter = (t.match(/[A-Za-z0-9]/) || ['?'])[0].toUpperCase();
+  let h = 0; for (const ch of t) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return el('span', { class: 'appicon none', 'aria-hidden': 'true', style: `--h:${h}`, text: letter });
+}
 function iconFor(a) {
-  if (!a.hasIcon) return el('span', { class: 'appicon none', 'aria-hidden': 'true' });
+  if (!a.hasIcon) return iconLetter(a.name);
   const c = iconCache.get(a.name);
   if (c && c.tag === a.iconTag) return el('img', { class: 'appicon', src: c.url, alt: '' });
   iconsWanted.add(a.name); clearTimeout(iconTimer); iconTimer = setTimeout(loadIcons, 50);
-  return el('span', { class: 'appicon none', 'aria-hidden': 'true' });
+  return iconLetter(a.name);
 }
 async function loadIcons() {
   const names = [...iconsWanted]; iconsWanted = new Set();
@@ -120,7 +126,7 @@ const filters = {
 function sortValue(a, k) {
   if (k === 'groups') return a.required * 10000 + a.available * 100 + a.uninstall;
   // The stage column sorts by stage (the order an app goes through), not by its status text.
-  if (k === 'status') { const order = ['busy', 'tenant', 'look', 'draft', 'msapp', 'retire', 'ready', 'pilot', 'everyone']; const i = order.indexOf(stageOf(a).key); return String(i < 0 ? 9 : i) + (a.name || '').toLowerCase(); }
+  if (k === 'status') { const order = ['busy', 'tenant', 'look', 'unsent', 'draft', 'msapp', 'retire', 'ready', 'pilot', 'everyone']; const i = order.indexOf(stageOf(a).key); return String(i < 0 ? 9 : i) + (a.name || '').toLowerCase(); }
   return String(a[k] || '').toLowerCase();
 }
 // The search box: words match names and Winget IDs; group:text (or group:"two words") the apps assigned to a group whose name contains it.
@@ -145,7 +151,8 @@ function renderApps() {
   const body = $('gridBody');
   body.replaceChildren(...[...list.map(a => {
     const tr = el('tr', { 'data-name': a.name, class: selected.has(a.name) ? 'sel' : '', title: a.appId ? 'App ID ' + a.appId : 'Not in Intune yet' },
-      el('td', { class: 'name' }, iconFor(a), a.name),
+      el('td', { class: 'name' }, el('input', { type: 'checkbox', class: 'rowpick', 'aria-label': `Select ${a.name}`, title: 'Select - several at once (Shift: a range)', checked: selected.has(a.name),
+        onclick: e => { e.stopPropagation(); pickRow(a.name, e.target.checked, e.shiftKey); }, ondblclick: e => e.stopPropagation() }), iconFor(a), a.name),
       el('td', { class: 'mono src', text: a.msHint && !a.wingetId ? 'Microsoft (Intune)' : !a.wingetId ? 'own installer' : isStoreId(a.wingetId) ? `${a.wingetId} (Store)` : a.wingetId,
         title: !a.wingetId ? 'Its own installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') : isStoreId(a.wingetId) ? 'A Microsoft Store app - Intune\'s own Store type: no package, the Store installs and updates it' : `winget package ${a.wingetId}` }),
       el('td', { class: 'num' }, ...versionCell(a)),
@@ -161,7 +168,7 @@ function renderApps() {
     th.classList.toggle('sorted', th.dataset.sort === sortKey);
     th.classList.toggle('desc', th.dataset.sort === sortKey && sortDesc);
   }
-  updateActions();
+  syncSel(); updateActions();
   // "only in Intune" shows its rows also with an empty catalog (adding them is how a new catalog starts).
   $('emptyState').hidden = apps.length > 0 || showIntuneOnly;
   $('grid').hidden = apps.length === 0 && !showIntuneOnly;  updateTenantBanner();
@@ -177,8 +184,24 @@ function selectRow(name, e) {
   } else {
     selected.clear(); selected.add(name); lastClicked = name;
   }
-  for (const r of $('gridBody').children) r.classList.toggle('sel', selected.has(r.dataset.name));
+  syncSel();
   updateActions();
+}
+// The selection drawn: the rows, their checkboxes, and the header's (all, none, or some: a dash).
+function syncSel() {
+  for (const r of $('gridBody').children) { const on = selected.has(r.dataset.name); r.classList.toggle('sel', on); const cb = r.querySelector('input.rowpick'); if (cb) cb.checked = on; }
+  const all = $('pickAll'); if (!all) return;
+  const n = visible.filter(x => selected.has(x)).length;
+  all.checked = n > 0 && n === visible.length; all.indeterminate = n > 0 && n < visible.length;
+}
+// A row's checkbox: that app in or out, the others stay (Shift: the range from the last one picked).
+function pickRow(name, on, range) {
+  if (range && lastClicked && visible.includes(lastClicked)) {
+    const [i, j] = [visible.indexOf(lastClicked), visible.indexOf(name)].sort((x, y) => x - y);
+    for (const n of visible.slice(i, j + 1)) { if (on) selected.add(n); else selected.delete(n); }
+  } else { if (on) selected.add(name); else selected.delete(name); }
+  lastClicked = name;
+  syncSel(); updateActions();
 }
 function updateActions() {
   if (typeof updatePanel === 'function') updatePanel();
@@ -409,6 +432,7 @@ async function openEditor(name) {
   $('btnRemoveApp').hidden = !name;
   $('btnAppHistory').hidden = !name;
   $('dlgApp').showModal();
+  if (typeof fillBtnSync === 'function') fillBtnSync();
   editorSnapshot = editorState();
   $('aName').focus();
 }
@@ -444,6 +468,13 @@ $('appForm').addEventListener('submit', async e => {
   $('dlgApp').close();
   selected.clear(); selected.add(r.name); lastClicked = r.name;
   await loadApps();
+  // Saved in the catalog only: when Intune now has something older, say so - with the send it takes.
+  const row = apps.find(x => x.name === r.name);
+  if (row && row.hasAppId && row.unsent) {
+    const s = row.unsent.split(',');
+    toast(`${r.name} saved in the catalog - Intune still has the old ${s.join(' and ')}.`, false,
+      [s.includes('settings') ? { label: 'Send settings now', run: () => sendSettingsNow([r.name]) } : { label: 'Send groups now', run: () => sendGroupsNow([r.name]) }]);
+  }
 });
 const fieldLabel = { appName: 'name', appId: 'App ID', wingetId: 'Winget ID', requiredFor: 'Required', availableFor: 'Available', uninstallFor: 'Uninstall', excludeFor: 'Excluded', settings: 'Intune details or deploy settings' };
 $('btnAppHistory').addEventListener('click', async () => {
@@ -663,7 +694,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !catMenu.h
 catMenu.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   catMenu.hidden = true;
-  ({ export: exportCsv, import: openCsvImport, replace: () => openReplace({}), undo: undoLast, recent: openRecent, tenantsetup: openTenantSetup, overview: openOverview, retired: openRetired, suggest: openSuggest, matrix: openMatrix, wingetcheck: checkWingetVersions,
+  ({ export: exportCsv, import: openCsvImport, fillall: () => fillDetails([]), replace: () => openReplace({}), undo: undoLast, recent: openRecent, tenantsetup: openTenantSetup, overview: openOverview, retired: openRetired, suggest: openSuggest, matrix: openMatrix, wingetcheck: checkWingetVersions,
     reload: () => { loadApps(); loadState(); }, folder: () => openFolder('catalog-folder') })[b.dataset.cact]();
 });
 // Apps whose App ID the connected tenant doesn't know: a banner says so, with one button for all of them.
@@ -721,7 +752,7 @@ function listKeys(e) {
       selected.clear();
       for (const x of visible.slice(Math.min(anchor, to), Math.max(anchor, to) + 1)) selected.add(x);
     } else { selected.add(n); lastClicked = n; }
-    for (const r of $('gridBody').children) r.classList.toggle('sel', selected.has(r.dataset.name));
+    syncSel();
     updateActions(); show(n); cursor = n;
   };
   const at = visible.indexOf(cursor && visible.includes(cursor) ? cursor : (lastClicked && visible.includes(lastClicked) ? lastClicked : visible[0]));
@@ -733,7 +764,7 @@ function listKeys(e) {
   else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); select(visible[e.key === 'Home' ? 0 : visible.length - 1], e.shiftKey); }
   else if (ctrl && e.key.toLowerCase() === 'a') {
     e.preventDefault(); selected.clear(); for (const n of visible) selected.add(n);
-    for (const r of $('gridBody').children) r.classList.toggle('sel', true); updateActions();
+    syncSel(); updateActions();
   }
   else if (e.key === 'Enter' && selected.size === 1) { e.preventDefault(); openEditor([...selected][0]); }
   else if (e.key === 'Delete' && selected.size === 1) { e.preventDefault(); menuAction('remove'); }
@@ -1102,6 +1133,7 @@ async function menuAction(act) {
     case 'pull': openPull(names); break;
     case 'pushsettings': pushSettings(sel().filter(a => a.hasAppId).map(a => a.name)); break;
     case 'batchedit': if (!prefs) await loadPrefs(); openBatch(names); break;
+    case 'filldetails': fillDetails(names); break;
     case 'addgroups': if (!prefs) await loadPrefs(); openGroupsBatch('add', names); break;
     case 'removegroups': openGroupsBatch('remove', names); break;
     case 'status': openStatus(one.name); break;
@@ -1383,3 +1415,52 @@ $('aAppLink').addEventListener('change', () => {
 $('aAppId').addEventListener('blur', () => { $('aAppId').readOnly = true; });
 
 $('dlgRecent').addEventListener('wcrestore', () => openRecent());
+
+// The header's checkbox: every app in this view, or none.
+(function pickAllBox() {
+  const th = document.querySelector('#grid th[data-sort="name"]');
+  const cb = el('input', { type: 'checkbox', id: 'pickAll', class: 'rowpick', 'aria-label': 'Select every app in this view', title: 'Select every app in this view, or none',
+    onclick: e => { e.stopPropagation(); const on = e.target.checked; for (const n of visible) { if (on) selected.add(n); else selected.delete(n); } syncSel(); updateActions(); } });
+  th.prepend(cb);
+})();
+
+// Reload: the catalog, and Intune's App IDs and install state, read again.
+$('btnAppsReload').addEventListener('click', async () => {
+  const b = $('btnAppsReload'); b.disabled = true; b.classList.add('spin');
+  try { await Promise.all([loadApps(), loadIntuneIds(true), loadState()]); toast('Read again.'); } finally { b.disabled = false; b.classList.remove('spin'); }
+});
+
+// Fill in details: the Intune fields still empty, from winget (and the owner from Settings) - the catalog only;
+// for apps already in Intune, Changes to send then offers the send.
+async function fillDetails(names) {
+  const all = !names.length;
+  if (all && !(await ask('Fill in the missing details of every Winget app?\n\nPublisher, description, information and privacy links and developer come from winget, the owner from Settings - only where a field is still empty. The App version is never changed. winget is asked once per app, which takes a moment.', { ok: 'Fill them in' }))) return;
+  toast(`Asking winget about ${all ? 'every Winget app' : names.length + ' app(s)'}...`);
+  const r = await api('/api/fill-details', { names });
+  if (!r.ok) { toast(r.error, true); return; }
+  await loadApps();
+  const n = r.filled.length, sent = r.filled.filter(f => (apps.find(a => a.name === f.name) || {}).hasAppId).map(f => f.name);
+  const msg = n ? `Filled in ${n} of ${r.asked} app(s): ${r.filled.slice(0, 4).map(f => `${f.name} (${f.fields.join(', ')})`).join('; ')}${n > 4 ? '; ...' : ''}.` : `Nothing to fill in - the ${r.asked} app(s) have their details already, or winget has none.`;
+  const failed = r.failed.length ? ` Not asked or unknown to winget: ${r.failed.slice(0, 4).join('; ')}${r.failed.length > 4 ? '; ...' : ''}.` : '';
+  toast(msg + failed + (sent.length ? ` ${sent.length} of them are in Intune - send their settings.` : ''), !!r.failed.length && !n,
+    [n ? { label: 'Undo', run: () => undoLast() } : null, sent.length ? { label: 'Send settings', run: () => sendSettingsNow(sent) } : null]);
+}
+
+// The editor's Fill from winget: the empty Intune details filled from winget - into the form, saved with Save.
+$('btnFillWinget').addEventListener('click', async () => {
+  const b = $('btnFillWinget'), id = $('aWinget').value.trim();
+  if (!id) return;
+  b.disabled = true; const label = b.textContent; b.textContent = 'Asking winget...';
+  try {
+    const r = await api('/api/fill-preview', { id, name: $('aName').value.trim(), publisher: $('mPublisher').value, description: $('mDescription').value, informationUrl: $('mInformationUrl').value, privacyUrl: $('mPrivacyUrl').value, developer: $('mDeveloper').value, owner: $('mOwner').value });
+    if (!r.ok) { toast(r.error, true); return; }
+    const ids = { publisher: 'mPublisher', description: 'mDescription', informationUrl: 'mInformationUrl', privacyUrl: 'mPrivacyUrl', developer: 'mDeveloper', owner: 'mOwner' };
+    const done = Object.entries(r.fill || {}).filter(([k]) => ids[k]).map(([k, v]) => { const f = $(ids[k]); f.value = v; f.dispatchEvent(new Event('input', { bubbles: true })); f.classList.add('justfilled'); setTimeout(() => f.classList.remove('justfilled'), 1600); return fieldLabelFor(k); });
+    toast(done.length ? `Filled from winget: ${done.join(', ')} - Save keeps it.` : 'Nothing to fill - these fields have values already, or winget has none for them.');
+  } finally { b.disabled = false; b.textContent = label; }
+});
+function fieldLabelFor(k) { return { publisher: 'publisher', description: 'description', informationUrl: 'information URL', privacyUrl: 'privacy URL', developer: 'developer', owner: 'owner' }[k] || k; }
+// Shown for a Winget app only (the button needs an ID to ask winget about).
+const fillBtnSync = () => { $('btnFillWinget').hidden = !$('aWinget').value.trim(); };
+$('aWinget').addEventListener('input', fillBtnSync);
+$('dlgApp').addEventListener('focusin', fillBtnSync);

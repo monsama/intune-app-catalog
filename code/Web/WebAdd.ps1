@@ -85,7 +85,7 @@ function Global:Add-WebWingetApps {
             managedUpdates = $managed
             metadata = [pscustomobject]@{ description = $(if ($d.Description) { ([string]$d.Description).Substring(0, [Math]::Min(([string]$d.Description).Length, 2000)) } else { $name }); publisher = [string]$d.Publisher
                 informationUrl = (Get-WebHttpUrl $(if ($d.Homepage) { $d.Homepage } else { $d.PublisherUrl })); privacyUrl = (Get-WebHttpUrl $d.PrivacyUrl)
-                appVersion = $(if ($managed -and (Test-ReleaseVersionText ([string]$d.Version))) { [string]$d.Version } else { '' }); owner = ''; developer = ''; notes = (@($(if ($isStore) { 'A Microsoft Store app: sent to Intune as its Store type - the Store installs and updates it.' }), $(if ($d.License) { "License: $($d.License)" })) | Where-Object { $_ }) -join ' '
+                appVersion = $(if ($managed -and (Test-ReleaseVersionText ([string]$d.Version))) { [string]$d.Version } else { '' }); owner = [string]$Global:App.DefaultAppSettings.DefaultOwner; developer = ''; notes = (@($(if ($isStore) { 'A Microsoft Store app: sent to Intune as its Store type - the Store installs and updates it.' }), $(if ($d.License) { "License: $($d.License)" })) | Where-Object { $_ }) -join ' '
                 installCommand = ''; uninstallCommand = '' } }
         # The commands are the Winget defaults (the editor fills them the same way).
         $defaults = Get-DefaultAppMetadata -AppName $name -WingetId $id -Uncommon $false
@@ -230,7 +230,7 @@ function Global:Add-WebInstallerApp {
     $uninstall = ([string]$Data.uninstallCommand).Trim(); if (-not $uninstall) { $uninstall = $p.UninstallCommand }
     $edit = [pscustomobject]@{ appName = $name; wingetId = ''; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = @(); managedUpdates = $false
         metadata = [pscustomobject]@{ description = $(if ([string]$Data.description) { [string]$Data.description } else { $name }); publisher = ([string]$Data.publisher).Trim(); appVersion = $version
-            installCommand = $install; uninstallCommand = $uninstall; owner = ''; developer = ''; informationUrl = ''; privacyUrl = ''
+            installCommand = $install; uninstallCommand = $uninstall; owner = [string]$Global:App.DefaultAppSettings.DefaultOwner; developer = ''; informationUrl = ''; privacyUrl = ''
             notes = "Added from $($u.FileName)$(if ($u.Info.Signer) { ", signed by $($u.Info.Signer)" })." } }
     $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
     if (-not $r.ok) { return $r }
@@ -296,7 +296,7 @@ function Global:Add-WebScriptApp {
     $groups = Get-WebAddGroupLists $Data
     $edit = [pscustomobject]@{ appName = $name; wingetId = ''; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = @(); managedUpdates = $false
         metadata = [pscustomobject]@{ description = $(if ([string]$Data.description) { [string]$Data.description } else { $name }); publisher = ([string]$Data.publisher).Trim(); appVersion = $version
-            installCommand = "$ps .\Install.ps1"; uninstallCommand = "$ps .\Uninstall.ps1"; owner = ''; developer = ''; informationUrl = ''; privacyUrl = ''; notes = 'A script app: Install.ps1 and Uninstall.ps1 in its packages folder.' } }
+            installCommand = "$ps .\Install.ps1"; uninstallCommand = "$ps .\Uninstall.ps1"; owner = [string]$Global:App.DefaultAppSettings.DefaultOwner; developer = ''; informationUrl = ''; privacyUrl = ''; notes = 'A script app: Install.ps1 and Uninstall.ps1 in its packages folder.' } }
     $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
     if (-not $r.ok) { return $r }
     $rule = if ($useMarker) { Get-ScriptAppMarkerRule -Name $name -Version $version } else { [ordered]@{ Type = 'Script'; Script_Content = (ConvertTo-CanonicalLineEndings ([string]$Data.detectScript)).TrimEnd() } }
@@ -385,7 +385,7 @@ function Global:Add-WebPsadtApp {
     $edit = [pscustomobject]@{ appName = $name; wingetId = ''; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = @(); managedUpdates = $false
         metadata = [pscustomobject]@{ description = $(if ([string]$Data.description) { [string]$Data.description } else { $name }); publisher = ([string]$Data.publisher).Trim(); appVersion = $version
             installCommand = "$run -DeploymentType Install -DeployMode Silent"; uninstallCommand = "$run -DeploymentType Uninstall -DeployMode Silent"
-            owner = ''; developer = ''; informationUrl = ''; privacyUrl = ''; notes = 'Packaged with the PowerShell App Deployment Toolkit 4 - edit Invoke-AppDeployToolkit.ps1 in its packages folder.' } }
+            owner = [string]$Global:App.DefaultAppSettings.DefaultOwner; developer = ''; informationUrl = ''; privacyUrl = ''; notes = 'Packaged with the PowerShell App Deployment Toolkit 4 - edit Invoke-AppDeployToolkit.ps1 in its packages folder.' } }
     $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
     if (-not $r.ok) { return $r }
     $rule = Get-ScriptAppMarkerRule -Name $name -Version $version
@@ -414,4 +414,68 @@ function Global:Get-WebWingetVersions {
     if (-not $v.Count) { return @{ ok = $false; error = "winget lists no versions for '$id'." } }
     $Global:App.WingetVersionsCache[$id.ToLowerInvariant()] = @{ at = (Get-Date); versions = $v }
     return @{ ok = $true; versions = $v }
+}
+
+function Global:Invoke-WebFillDetails {
+    <#
+      Fill in details: the Intune fields still empty on these apps (or every
+      Winget app, without -names) taken from winget show - publisher,
+      description, information and privacy links, developer - and the owner
+      from Settings. Never the App version, never a field already set. winget
+      is asked first (outside the lock), the apps are written after, with Undo.
+    #>
+    param($Data)
+    if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not $Global:App.TestGraph) { return @{ ok = $false; error = "winget.exe isn't on this machine, so there's nothing to fill the details from. It comes with the 'App Installer' package on Windows 10 and 11." } }
+    $all = @((Read-WebCatalogRecords).Apps)
+    $names = @($Data.names | ForEach-Object { [string]$_ } | Where-Object { $_ })
+    $apps = @($all | Where-Object { $_.wingetId -and (-not $names.Count -or $names -contains $_.appName) })
+    if (-not $apps.Count) { return @{ ok = $false; error = 'None of these apps has a Winget ID to ask winget about - fill their details in the editor.' } }
+    $owner = [string]$Global:App.DefaultAppSettings.DefaultOwner
+    $plans = New-Object System.Collections.Generic.List[object]
+    $failed = New-Object System.Collections.Generic.List[string]
+    foreach ($a in ($apps | Select-Object -First 200)) {
+        try {
+            $r = Invoke-Winget -Arguments @('show', '--id', [string]$a.wingetId, '--exact', '--accept-source-agreements', '--disable-interactivity')
+            $d = ConvertFrom-WingetShowOutput $r.StdOut
+            if (-not $d.Id) { $failed.Add("$($a.appName) (winget doesn't know $($a.wingetId))"); continue }
+            $fill = Get-AppDetailsFill -Metadata $a.metadata -Details $d -AppName $a.appName -DefaultOwner $owner
+            if ($fill.Count) { $plans.Add(@{ name = $a.appName; fill = $fill }) }
+        }
+        catch { $failed.Add("$($a.appName) ($($_.Exception.Message))") }
+    }
+    $done = New-Object System.Collections.Generic.List[object]
+    if ($plans.Count) {
+        $undo = New-WebUndo "Fill in details ($($plans.Count) app(s))"
+        Invoke-WithCatalogLock {
+            foreach ($p in $plans) {
+                try {
+                    [void](Update-WebCatalogApp -Name $p.name -Undo $undo -Change {
+                            param($app)
+                            if (-not $app.metadata) { $app | Add-Member -NotePropertyName metadata -NotePropertyValue ([pscustomobject]@{}) -Force }
+                            foreach ($k in @($p.fill.Keys)) {
+                                # Still empty now (someone may have typed it meanwhile): only then.
+                                $cur = [string]$(if ($app.metadata.PSObject.Properties[$k]) { $app.metadata.$k })
+                                if ($cur.Trim() -and -not ($k -eq 'description' -and $cur.Trim() -eq ([string]$app.appName).Trim())) { continue }
+                                if ($app.metadata.PSObject.Properties[$k]) { $app.metadata.$k = $p.fill[$k] } else { $app.metadata | Add-Member -NotePropertyName $k -NotePropertyValue $p.fill[$k] }
+                            }
+                        }.GetNewClosure())
+                    $done.Add([ordered]@{ name = $p.name; fields = @($p.fill.Keys) })
+                }
+                catch { $failed.Add("$($p.name) ($($_.Exception.Message))") }
+            }
+        }
+        if ($done.Count) { Save-WebUndo $undo }
+    }
+    Write-Log "[OK] Fill in details: $($done.Count) app(s) filled$(if ($failed.Count) { "; not asked or not known: $($failed -join '; ')" })."
+    return @{ ok = $true; filled = $done.ToArray(); asked = $apps.Count; failed = $failed.ToArray() }
+}
+
+function Global:Get-WebFillPreview {
+    # The editor's Fill from winget: what winget would fill into the fields as they are in the editor now (nothing saved).
+    param($Data)
+    $r = Get-WebWingetDetails @{ id = [string]$Data.id }
+    if (-not $r.ok) { return $r }
+    $cur = [pscustomobject]@{ publisher = [string]$Data.publisher; description = [string]$Data.description; informationUrl = [string]$Data.informationUrl; privacyUrl = [string]$Data.privacyUrl; developer = [string]$Data.developer; owner = [string]$Data.owner }
+    $fill = Get-AppDetailsFill -Metadata $cur -Details $r.details -AppName ([string]$Data.name) -DefaultOwner ([string]$Global:App.DefaultAppSettings.DefaultOwner)
+    return @{ ok = $true; fill = $fill }
 }

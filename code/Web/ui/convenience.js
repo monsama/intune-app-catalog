@@ -250,7 +250,7 @@ async function loadHome() {
   const where = { 'settings:connection': ['Settings', () => showSettings('connection')], 'settings:defaults': ['Settings', () => showSettings('defaults')], 'settings:updates': ['Settings', () => showSettings('updates')], 'settings:automation': ['Settings', () => showSettings('automation')], 'settings:packaging': ['Settings', () => showSettings('packaging')],
     'apps:notdeployed': ['Show them', () => { showView('apps'); $('filter').value = 'notdeployed'; renderApps(); updateViewButtons(); }], 'apps:all': ['Apps', () => showView('apps')],
     updates: ['Updates', () => showView('updates')], checks: ['Checks', () => showView('checks')],
-    'open:release': ["What's new", () => api('/api/open', { target: 'release' })], 'do:manageddefault': ['Make it the default', makeManagedDefault], 'do:managedall': ['Turn on for all', managedForAll], 'do:takeversions': ["Take winget's versions", takeVersionsForManaged], 'do:wauswitch': ['Switch them', wauSwitch], 'do:portalstore': ['Fix Company Portal', portalStore] };
+    'open:release': ["What's new", () => api('/api/open', { target: 'release' })], 'do:manageddefault': ['Make it the default', makeManagedDefault], 'do:managedall': ['Turn on for all', managedForAll], 'do:takeversions': ["Take winget's versions", takeVersionsForManaged], 'do:wauswitch': ['Switch them', wauSwitch], 'do:portalstore': ['Fix Company Portal', portalStore], 'do:filldetails': ['Fill them in', () => fillDetails([])] };
   const pill = { err: ['err', 'Problem'], warn: ['warn', 'Look'], ok: ['ok', 'Ready'], info: ['info', 'To do'] };
   $('homeList').replaceChildren(...(r.items.length ? r.items.map(i => { const w = where[i.go], p = pill[i.level] || pill.info;
     return el('li', { class: 'att ' + i.level }, el('span', { class: 'pill ' + p[0], text: p[1] }), el('div', { class: 'body' }, el('b', { text: i.title }), el('span', { class: 'muted', text: i.text })),
@@ -405,12 +405,14 @@ async function wauSwitch() {
   const msg = `Switched ${r.changed.length} app(s) away from Winget-AutoUpdate.` + ((r.byHand || []).length ? ` Not switched - their commands run Winget-Install.ps1 for several or other IDs, so they're left to you (editor, Install with): ${r.byHand.join(', ')}.` : '');
   const dropped = ((r.carried || []).length ? ` Kept the extra winget options WAU passed (editor, Install & detection): ${r.carried.join('; ')}.` : '') +
     ((r.dropped || []).length ? ` Left out options winget's own command can't take - check these install as you want: ${r.dropped.join('; ')}.` : '');
+  const ids = ((r.tookId || []).length ? ` Winget ID taken from the WAU command (none was set): ${r.tookId.join('; ')}.` : '') +
+    ((r.mismatch || []).length ? ` Not switched - the WAU command installs another Winget ID than the app has (${r.mismatch.join('; ')}). Set the Winget ID you want in the editor (Basics), then Switch them again.` : '');
   // Nothing changed: nothing to undo.
-  if (!r.changed.length) { toast(msg, (r.byHand || []).length > 0); loadHome(); return; }
+  if (!r.changed.length) { toast(msg + ids, (r.byHand || []).length + (r.mismatch || []).length > 0); loadHome(); return; }
   if (r.deployed.length) {
     const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', startText: 'Pushing ' });
-    toast(`${msg}${dropped} Pushed to Intune for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length, [{ label: 'Undo', run: () => undoLast() }]);
-  } else toast(msg + dropped, false, [{ label: 'Undo', run: () => undoLast() }]);
+    toast(`${msg}${ids}${dropped} Pushed to Intune for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length, [{ label: 'Undo', run: () => undoLast() }]);
+  } else toast(msg + ids + dropped, (r.mismatch || []).length > 0, [{ label: 'Undo', run: () => undoLast() }]);
   loadHome();
 }
 
