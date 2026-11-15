@@ -1323,3 +1323,12 @@ $('mAppVersion').addEventListener('focus', async () => {
   $('verList').replaceChildren(...(r.ok ? r.versions.slice(0, 60).map((v, i) => el('option', { value: v, label: i === 0 ? 'newest' : '' })) : []));
 });
 $('aWinget').addEventListener('input', () => { verListFor = ''; $('verList').replaceChildren(); });
+
+// Publisher, owner and developer: the names the catalog already uses, to pick (typing a new one still works).
+let catValuesAt = 0;
+async function fillCatalogValues() {
+  if (Date.now() - catValuesAt < 30000) return; catValuesAt = Date.now();
+  const r = await api('/api/catalog-values'); if (!r.ok) return;
+  for (const [list, vals] of [['pubList', r.publisher], ['ownerList', r.owner], ['devList', r.developer]]) $(list).replaceChildren(...vals.map(v => el('option', { value: v })));
+}
+for (const id of ['mPublisher', 'mOwner', 'mDeveloper', 'bPublisher', 'bOwner', 'bDeveloper']) $(id).addEventListener('focus', fillCatalogValues);

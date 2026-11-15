@@ -737,3 +737,10 @@ function Global:Get-WebCatalogHistory {
     })
     return @{ ok = $true; groups = $out; undo = (Get-WebUndoInfo).undo }
 }
+
+function Global:Get-WebCatalogValues {
+    # The publishers, owners and developers the catalog already uses - offered to pick, so the same name is written the same way.
+    $apps = @((Read-WebCatalogRecords).Apps)
+    $pick = { param($f) @($apps | ForEach-Object { if ($_.metadata) { ([string]$_.metadata.$f).Trim() } } | Where-Object { $_ } | Sort-Object -Unique) }
+    return @{ ok = $true; publisher = @(& $pick 'publisher'); owner = @(& $pick 'owner'); developer = @(& $pick 'developer') }
+}

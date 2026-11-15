@@ -2268,7 +2268,13 @@ function Global:ConvertFrom-WingetVersionsOutput {
     #>
     param([string]$Text)
     # A spinner overwrites itself with carriage returns: what's left of a line is after its last one.
-    $lines = @(([string]$Text) -split "`n" | ForEach-Object { ([string](@($_ -split "`r" | Where-Object { $_.Trim() }) | Select-Object -Last 1)).Trim() } | ForEach-Object { if ($_ -match '^[\-\\|/]$') { '' } else { $_ } })
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($raw in ([string]$Text).Split("`n")) {
+        $last = ''
+        foreach ($part in $raw.Split("`r")) { if ($part.Trim()) { $last = $part.Trim() } }
+        if ($last -match '^[\-\\|/]$') { $last = '' }
+        $lines.Add($last)
+    }
     $start = -1
     for ($i = 0; $i -lt $lines.Count - 1; $i++) { if ($lines[$i] -match '^Version$' -and $lines[$i + 1] -match '^-{3,}$') { $start = $i + 2; break } }
     if ($start -lt 0) { return @() }

@@ -739,6 +739,7 @@
   </details>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
+<datalist id="pubList"></datalist><datalist id="ownerList"></datalist><datalist id="devList"></datalist><datalist id="relVerList"></datalist>
 <dialog id="dlgRecent" class="wide" aria-labelledby="recentTitle">
   <h2 id="recentTitle">Recent changes</h2>
   <p class="sub">Every change to the catalog's apps, newest first - by you, a batch action, the nightly run. Undo puts back what one change changed (fields changed again since are left alone). Intune isn't touched: send the apps again afterwards.</p>
@@ -834,10 +835,10 @@
         <h3>Intune details <span class="muted" id="metaNote"></span></h3>
         <label>Description<textarea autocomplete="off" id="mDescription" rows="3" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
         <div class="two">
-          <label>Publisher<input autocomplete="off" id="mPublisher" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          <label>Publisher<input autocomplete="off" id="mPublisher" list="pubList" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
           <label>App version<input autocomplete="off" id="mAppVersion" list="verList" placeholder="Pick from winget's versions, or type one" spellcheck="false" autocorrect="off" autocapitalize="off"></label><datalist id="verList"></datalist>
-          <label>Owner<input autocomplete="off" id="mOwner" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-          <label>Developer<input autocomplete="off" id="mDeveloper" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          <label>Owner<input autocomplete="off" id="mOwner" list="ownerList" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+          <label>Developer<input autocomplete="off" id="mDeveloper" list="devList" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         </div>
         <label>Information URL<input autocomplete="off" id="mInformationUrl" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label>Privacy URL<input autocomplete="off" id="mPrivacyUrl" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
@@ -1160,7 +1161,7 @@
   <p class="sub" id="relText"></p>
   <p class="formerror" id="relProblem" hidden></p>
   <label class="chk" id="relBuildRow" hidden title="Package.ps1 builds the .intunewin from the app's folder before the release"><input type="checkbox" id="relBuild" checked>Build the package from its folder first <span class="muted" id="relFolder"></span></label>
-  <label>Version to release<input id="relVersion" class="mono" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+  <label>Version to release<input id="relVersion" list="relVerList" class="mono" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
   <label class="chk" title="For an urgent fix: judged after a few hours instead of days, downloaded in the foreground, then given to everyone - the release rings are skipped, and the nightly task promotes it even with automatic promotion off"><input type="checkbox" id="relFast">Fast track (a security fix) <span class="muted" id="relFastNote"></span></label>
   <p class="muted note" id="relGroups"></p>
   <p class="formerror" id="relErr" hidden></p>
@@ -1229,9 +1230,9 @@
     </section>
     <section>
       <h3>Details</h3>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="publisher">Publisher</label><input autocomplete="off" id="bPublisher" aria-label="Publisher" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="owner">Owner</label><input autocomplete="off" id="bOwner" aria-label="Owner" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
-      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="developer">Developer</label><input autocomplete="off" id="bDeveloper" aria-label="Developer" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="publisher">Publisher</label><input autocomplete="off" id="bPublisher" list="pubList" aria-label="Publisher" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="owner">Owner</label><input autocomplete="off" id="bOwner" list="ownerList" aria-label="Owner" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
+      <div class="bfield"><label class="chk"><input type="checkbox" data-bf="developer">Developer</label><input autocomplete="off" id="bDeveloper" list="devList" aria-label="Developer" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="informationUrl">Information URL</label><input autocomplete="off" id="bInfoUrl" aria-label="Information URL" placeholder="https://" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="privacyUrl">Privacy URL</label><input autocomplete="off" id="bPrivacyUrl" aria-label="Privacy URL" placeholder="https://" spellcheck="false" autocorrect="off" autocapitalize="off"></div>
       <div class="bfield"><label class="chk"><input type="checkbox" data-bf="notes">Notes</label><input autocomplete="off" id="bNotes" aria-label="Notes" spellcheck="false" autocorrect="off" autocapitalize="off"></div>

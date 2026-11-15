@@ -219,6 +219,13 @@ async function openRelease(name) {
   $('relErr').hidden = true; $('relLog').hidden = true; $('relLog').textContent = '';
   $('btnRelGo').disabled = !r.pilotGroups.length || !!r.detectionProblem; $('btnRelGo').textContent = 'Release to pilot'; $('btnRelClose').textContent = 'Cancel';
   $('dlgRelease').showModal(); $('relVersion').focus();
+  // Winget apps: the version is picked from winget's versions (newest first).
+  $('relVerList').replaceChildren();
+  const app = apps.find(a => a.name === name);
+  if (!pkg && app && app.wingetId && !isStoreId(app.wingetId)) {
+    const v = await api('/api/winget-versions', { id: app.wingetId });
+    if (v.ok && relName === name) $('relVerList').replaceChildren(...v.versions.slice(0, 40).filter(x => x !== r.current).map((x, i) => el('option', { value: x, label: i === 0 ? 'newest' : '' })));
+  }
 }
 // Runs one release step as a job and resolves with its outcome (like deployOne).
 function releaseStep(body, path, log, startText) {
