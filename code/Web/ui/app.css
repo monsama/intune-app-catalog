@@ -1293,3 +1293,9 @@ table.cmp mark.add { background: color-mix(in srgb, var(--ok) 35%, transparent);
 .homebusy { display: inline-flex; align-items: center; margin-left: auto; font-size: 12px; color: var(--accent); }
 .homebusy[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { .spinner, .attention li.att.busy::after { animation: none; } }
+
+/* Apps list: tick box, icon and name on one centre line, level with the other cells */
+#grid td.name { line-height: 1; }
+#grid td.name > input.rowpick, #grid td.name > .appicon { vertical-align: middle; }
+#grid td.name > .nm { vertical-align: middle; line-height: 18px; }
+#grid th input.rowpick { vertical-align: middle; }

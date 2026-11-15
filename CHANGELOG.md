@@ -8,6 +8,8 @@
   installs the Graph module), into the PowerShell the app runs in, and
   winget is asked through it straight away - no PowerShell window, no
   command to copy, no restart.
+- **Apps list**: tick box, icon and name sit on the same line as the
+  other cells (the name used to sit a few pixels higher).
 
 ## 2.27.2
 
