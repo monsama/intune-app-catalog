@@ -322,6 +322,7 @@ function Global:ConvertTo-WebDefaultSettings {
         ReturnCodes = $codes
         DefaultDependencyAppNames = @(@($Form.defaultDependencyAppNames) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
         WingetInstallMethod = $(if ([string]$Form.wingetInstallMethod -eq 'Winget') { 'Winget' } else { 'Managed' })
+        DefaultOwner = $(([string]$Form.defaultOwner).Trim() -replace '[\x00-\x1f]', '' | ForEach-Object { if ($_.Length -gt 100) { $_.Substring(0, 100) } else { $_ } })
     } }
 }
 
@@ -343,7 +344,7 @@ function Global:Get-WebPrefs {
             minDiskSpaceMB = [int]$d.MinDiskSpaceMB; minMemoryMB = [int]$d.MinMemoryMB; minProcessors = [int]$d.MinProcessors; minCpuSpeedMHz = [int]$d.MinCpuSpeedMHz
             installTimeMinutes = [int]$d.InstallTimeMinutes; deviceRestartBehavior = [string]$d.DeviceRestartBehavior; allowAvailableUninstall = [bool]$d.AllowAvailableUninstall
             returnCodes = @($d.ReturnCodes | ForEach-Object { [ordered]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })
-            defaultDependencyAppNames = @($d.DefaultDependencyAppNames); wingetInstallMethod = [string]$d.WingetInstallMethod
+            defaultDependencyAppNames = @($d.DefaultDependencyAppNames); wingetInstallMethod = [string]$d.WingetInstallMethod; defaultOwner = [string]$d.DefaultOwner
         }
         minOsChoices = @(Get-WebMinOsChoices)
         favoriteGroups = @($Global:App.FavoriteGroups)

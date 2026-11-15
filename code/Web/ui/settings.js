@@ -298,7 +298,7 @@ async function loadPrefs() {
     el('input', { 'data-folder': f.key, value: f.chosen, placeholder: f.default, spellcheck: 'false' }))));
   const d = p.defaults;
   for (const c of document.querySelectorAll('[data-arch]')) c.checked = d.architecture.includes(c.dataset.arch);
-  $('dContext').value = d.installContext; $('dWinget').value = ['Managed', 'Winget'].includes(d.wingetInstallMethod) ? d.wingetInstallMethod : 'Managed'; dWingetSaved = $('dWinget').value;
+  $('dContext').value = d.installContext; $('dOwner').value = d.defaultOwner || ''; $('dWinget').value = ['Managed', 'Winget'].includes(d.wingetInstallMethod) ? d.wingetInstallMethod : 'Managed'; dWingetSaved = $('dWinget').value;
   $('dMinOs').replaceChildren(...p.minOsChoices.map(o => el('option', { value: o.value, text: o.label || o.value })));
   if (![...$('dMinOs').options].some(o => o.value === d.minOSKey)) $('dMinOs').append(el('option', { value: d.minOSKey, text: d.minOSKey }));
   $('dMinOs').value = d.minOSKey;
@@ -386,7 +386,7 @@ $('btnSaveDefaults').addEventListener('click', async () => {
   const codes = lines('dCodes').map(l => { const m = /^(-?\d+)\s*[=:]\s*(\w+)$/.exec(l); return m ? { returnCode: m[1], type: m[2] } : { returnCode: l, type: '' }; });
   const ok = await savePrefs({ defaults: {
     architecture: [...document.querySelectorAll('[data-arch]')].filter(c => c.checked).map(c => c.dataset.arch),
-    installContext: $('dContext').value, minOSKey: $('dMinOs').value, wingetInstallMethod: $('dWinget').value,
+    installContext: $('dContext').value, minOSKey: $('dMinOs').value, wingetInstallMethod: $('dWinget').value, defaultOwner: $('dOwner').value,
     installTimeMinutes: $('dTime').value.trim(), minDiskSpaceMB: $('dDisk').value.trim(), minMemoryMB: $('dMem').value.trim(), minProcessors: $('dCpus').value.trim(), minCpuSpeedMHz: $('dSpeed').value.trim(),
     deviceRestartBehavior: $('dRestart').value, allowAvailableUninstall: $('dUninstall').checked, returnCodes: codes, defaultDependencyAppNames: lines('dDeps'),
   } }, 'Default values saved.', 'defaultsError');

@@ -839,6 +839,8 @@ function Global:Get-FactoryAppSettings {
         # winget: "Managed" pinned to the App version, "Winget" the newest.
         # New Winget apps: a pinned version, new ones released through the pilot groups (managed updates).
         WingetInstallMethod      = "Managed"
+        # Who owns apps in Intune (Owner field) - filled into new apps and Fill in details; empty: none.
+        DefaultOwner             = ""
     }
 }
 
@@ -1653,8 +1655,38 @@ function Global:Get-WingetShowLabelMap {
     & $add 'License' @('License', 'Lizenz', 'Licence', 'Licencia', 'Licenza', ('Licen' + [char]0xE7 + 'a'), 'Licentie')
     & $add 'PrivacyUrl' @('Privacy Url', 'Datenschutz-URL', ('URL de confidentialit' + [char]0xE9), 'URL de privacidad', 'URL della privacy', 'URL de privacidade', 'Privacy-URL')
     & $add 'Tags' @('Tags', 'Markierungen', 'Balises', 'Etiquetas', 'Etichette', 'Marcas')
+    & $add 'Author' @('Author', 'Autor', 'Auteur', 'Autore', 'Auteur(s)')
     return $m
 }
+function Global:Get-AppDetailsFill {
+    <#
+      Pure: what Fill in details sets on an app - only fields that are empty
+      now (a description equal to the app's name counts as empty: Add apps
+      writes the name when it has nothing better), never the App version.
+      -Details: what winget show says (ConvertFrom-WingetShowOutput), or an
+      installer's own (ProductName, Manufacturer). Returns an ordered field ->
+      value list (empty when there's nothing to fill).
+    #>
+    param($Metadata, $Details, [string]$AppName, [string]$DefaultOwner)
+    $now = { param($k) [string]$(if ($Metadata -and $Metadata.PSObject.Properties[$k]) { $Metadata.$k }) }
+    $url = { param($u) $t = ([string]$u).Trim(); if ($t -match '^https?://[^\s"<>]{3,500}$') { $t } else { '' } }
+    $out = [ordered]@{}
+    $publisher = ([string]$Details.Publisher).Trim()
+    if ($publisher -and -not (& $now 'publisher').Trim()) { $out.publisher = $publisher.Substring(0, [Math]::Min($publisher.Length, 200)) }
+    $desc = ([string]$Details.Description).Trim()
+    $haveDesc = (& $now 'description').Trim()
+    if ($desc -and (-not $haveDesc -or $haveDesc -eq ([string]$AppName).Trim())) { $out.description = $desc.Substring(0, [Math]::Min($desc.Length, 2000)) }
+    $info = & $url $(if ($Details.Homepage) { $Details.Homepage } else { $Details.PublisherUrl })
+    if ($info -and -not (& $now 'informationUrl').Trim()) { $out.informationUrl = $info }
+    $privacy = & $url $Details.PrivacyUrl
+    if ($privacy -and -not (& $now 'privacyUrl').Trim()) { $out.privacyUrl = $privacy }
+    $dev = ([string]$(if ($Details.Author) { $Details.Author } else { $Details.Publisher })).Trim()
+    if ($dev -and -not (& $now 'developer').Trim()) { $out.developer = $dev.Substring(0, [Math]::Min($dev.Length, 200)) }
+    $owner = ([string]$DefaultOwner).Trim()
+    if ($owner -and -not (& $now 'owner').Trim()) { $out.owner = $owner }
+    return $out
+}
+
 function Global:ConvertFrom-WingetShowOutput {
     <#
       Pure: "winget show --id X --exact" as @{ Name; Id; Version; Publisher;
@@ -1663,7 +1695,7 @@ function Global:ConvertFrom-WingetShowOutput {
       indented lines (a long description, the tags).
     #>
     param([string]$Text)
-    $out = [ordered]@{ Name = ''; Id = ''; Version = ''; Publisher = ''; PublisherUrl = ''; Description = ''; Homepage = ''; License = ''; PrivacyUrl = ''; Tags = @() }
+    $out = [ordered]@{ Name = ''; Id = ''; Version = ''; Publisher = ''; PublisherUrl = ''; Author = ''; Description = ''; Homepage = ''; License = ''; PrivacyUrl = ''; Tags = @() }
     $map = Get-WingetShowLabelMap
     $key = ''
     foreach ($raw in @(([string]$Text) -split "`r?`n")) {

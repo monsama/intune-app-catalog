@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.26.4
+## 2.27.0
 
 - **Switch from Winget-AutoUpdate**: an app whose catalog entry has no
   Winget ID takes the one its WAU command installs (`-AppIDs
@@ -33,6 +33,13 @@
   kept next to the catalog); a managed app's version, commands and
   detection are left out - releases send those.
 - **Reload** button in the Apps toolbar: the catalog and Intune read again.
+- **Fill in details from winget** (More, for the selected apps; Catalog >
+  Fill in missing details for all): publisher, description, information and
+  privacy links and developer from winget, and the **owner** from a new
+  setting (Settings > Apps & defaults > Owner) - only where a field is still
+  empty, never the App version (managed updates pin and release it). With
+  Undo; apps already in Intune then show Changes to send. New Winget apps
+  get the default owner too.
 - **Spacing in forms**: room under every section heading, and a button,
   checkbox or label after a field, list or checkbox no longer touches it
   (Supersedence, Dependencies, Return codes, Allow uninstall, rings).

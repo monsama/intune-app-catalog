@@ -693,7 +693,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !catMenu.h
 catMenu.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   catMenu.hidden = true;
-  ({ export: exportCsv, import: openCsvImport, replace: () => openReplace({}), undo: undoLast, recent: openRecent, tenantsetup: openTenantSetup, overview: openOverview, retired: openRetired, suggest: openSuggest, matrix: openMatrix, wingetcheck: checkWingetVersions,
+  ({ export: exportCsv, import: openCsvImport, fillall: () => fillDetails([]), replace: () => openReplace({}), undo: undoLast, recent: openRecent, tenantsetup: openTenantSetup, overview: openOverview, retired: openRetired, suggest: openSuggest, matrix: openMatrix, wingetcheck: checkWingetVersions,
     reload: () => { loadApps(); loadState(); }, folder: () => openFolder('catalog-folder') })[b.dataset.cact]();
 });
 // Apps whose App ID the connected tenant doesn't know: a banner says so, with one button for all of them.
@@ -1132,6 +1132,7 @@ async function menuAction(act) {
     case 'pull': openPull(names); break;
     case 'pushsettings': pushSettings(sel().filter(a => a.hasAppId).map(a => a.name)); break;
     case 'batchedit': if (!prefs) await loadPrefs(); openBatch(names); break;
+    case 'filldetails': fillDetails(names); break;
     case 'addgroups': if (!prefs) await loadPrefs(); openGroupsBatch('add', names); break;
     case 'removegroups': openGroupsBatch('remove', names); break;
     case 'status': openStatus(one.name); break;
@@ -1427,3 +1428,19 @@ $('btnAppsReload').addEventListener('click', async () => {
   const b = $('btnAppsReload'); b.disabled = true; b.classList.add('spin');
   try { await Promise.all([loadApps(), loadIntuneIds(true), loadState()]); toast('Read again.'); } finally { b.disabled = false; b.classList.remove('spin'); }
 });
+
+// Fill in details: the Intune fields still empty, from winget (and the owner from Settings) - the catalog only;
+// for apps already in Intune, Changes to send then offers the send.
+async function fillDetails(names) {
+  const all = !names.length;
+  if (all && !(await ask('Fill in the missing details of every Winget app?\n\nPublisher, description, information and privacy links and developer come from winget, the owner from Settings - only where a field is still empty. The App version is never changed. winget is asked once per app, which takes a moment.', { ok: 'Fill them in' }))) return;
+  toast(`Asking winget about ${all ? 'every Winget app' : names.length + ' app(s)'}...`);
+  const r = await api('/api/fill-details', { names });
+  if (!r.ok) { toast(r.error, true); return; }
+  await loadApps();
+  const n = r.filled.length, sent = r.filled.filter(f => (apps.find(a => a.name === f.name) || {}).hasAppId).map(f => f.name);
+  const msg = n ? `Filled in ${n} of ${r.asked} app(s): ${r.filled.slice(0, 4).map(f => `${f.name} (${f.fields.join(', ')})`).join('; ')}${n > 4 ? '; ...' : ''}.` : `Nothing to fill in - the ${r.asked} app(s) have their details already, or winget has none.`;
+  const failed = r.failed.length ? ` Not asked or unknown to winget: ${r.failed.slice(0, 4).join('; ')}${r.failed.length > 4 ? '; ...' : ''}.` : '';
+  toast(msg + failed + (sent.length ? ` ${sent.length} of them are in Intune - send their settings.` : ''), !!r.failed.length && !n,
+    [n ? { label: 'Undo', run: () => undoLast() } : null, sent.length ? { label: 'Send settings', run: () => sendSettingsNow(sent) } : null]);
+}
