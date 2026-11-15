@@ -64,7 +64,7 @@ function Global:Get-WebCatalog {
                 wingetVersion = [string]$(if ($Global:App.WingetLatest -and $apps[$i].wingetId) { $Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()] })
                 newerOnWinget = [bool]($Global:App.WingetLatest -and $apps[$i].wingetId -and (Compare-AppVersionText ([string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })) ([string]$Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()])) -eq 1)
                 managed      = [bool]$apps[$i].managedUpdates
-                previousVersions = @(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'previous' } | Sort-Object { [string]$_.at } | ForEach-Object { [string]$_.version })
+                previousVersions = @(Get-WebPreviousReleases $apps[$i] | ForEach-Object { [string]$_.version })
                 releaseIds   = @(@($apps[$i].releases) | Where-Object { $_ -and $_.appId } | ForEach-Object { ([string]$_.appId).ToLowerInvariant() })
                 retiringSince = [string]$apps[$i].retiringSince
                 pilotVersion = [string]$(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'pilot' } | Select-Object -First 1 -ExpandProperty version)
@@ -277,6 +277,11 @@ function Global:Complete-WebJob {
     switch ($After.Kind) {
         'grouprename' { return (Complete-WebGroupRename -After $After) }
         'retire' { return (Complete-WebRetire -After $After) }
+        'pilotassigned' {
+            $id = [string]$After.AppId
+            [void](Update-WebCatalogApp -Name $After.AppName -Change { param($app) foreach ($r in @($app.releases)) { if ($r -and [string]$r.appId -eq $id) { $r.unassigned = $false } } }.GetNewClosure())
+            return @{ ok = $true }
+        }
         'retired' { $Global:App.IntuneAppsCache = $null; return (Complete-WebRetireFinish -Name ([string]$After.AppName)) }
         'checkdetails' { return (Complete-WebCheckDetails -After $After -Result $Result) }
         'checkassign' { return (Complete-WebCheckAssign -After $After -Result $Result) }
@@ -306,6 +311,7 @@ function Global:Complete-WebJob {
                 if ($newId) { $app.appId = $newId }
                 $app.intuneAppType = $(if ($After.Store) { 'Microsoft Store app (new)' } else { 'Windows app (Win32)' })
                 if (-not $app.metadata -and $defaults) { $app.metadata = $defaults }
+                if ($After.PackageStamp) { $app.packageStamp = [string]$After.PackageStamp }
             }.GetNewClosure())
             Write-Log "[OK] Deployed $($After.AppName)$(if ($newId) { " (App ID $newId)" }) - saved to the catalog."
             $catalog = Read-WebCatalogRecords

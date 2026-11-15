@@ -2103,3 +2103,42 @@ function Global:Set-MarkerScriptVersion {
     $t = [regex]::Replace($t, "(?m)^(\s*AppVersion\s*=\s*)'(?:[^']|'')*'", ('${1}' + $lit))
     return @{ Text = $t; Changed = ($t -cne [string]$Text) }
 }
+
+function Global:Test-ReleasePinned {
+    <#
+      Pure: why a release's settings don't install and detect -Version ('' when
+      they do). A Winget app: its install command pins the version and the
+      detection checks it; an own package: its detection rule checks it. Hand-
+      edited commands aren't re-pinned (Set-ManagedAppPin) - a release would
+      then install the old version and still count as installed.
+    #>
+    param($Metadata, [string]$Version, [bool]$Winget)
+    if (-not $Metadata) { return 'It has no settings to release with.' }
+    if ($Winget) {
+        if ([string]$Metadata.installCommand -notlike "*--version '$Version'*") { return "Its install command doesn't install $Version (it was edited by hand) - make it the generated one again (editor: clear the install and uninstall commands, or switch managed updates off and on), then release." }
+        $d = [string]$(if ($Metadata.detectionRule) { $Metadata.detectionRule.Script_Content })
+        if ($d -notlike "*'$Version'*") { return "Its detection doesn't check for $Version - it was edited by hand." }
+        return ''
+    }
+    $r = $Metadata.detectionRule
+    $v = switch ([string]$(if ($r) { $r.Type })) { 'Msi' { [string]$r.Msi_Version } 'File' { [string]$r.File_DetectionValue } 'Registry' { [string]$r.Reg_DetectionValue } default { '' } }
+    if ($v -ne $Version) { return "Its detection rule doesn't check for $Version - it would count the old version as installed." }
+    return ''
+}
+
+function Global:Test-ManagedAppEdit {
+    <#
+      Pure: why an edit to an app with managed updates that is in Intune can't
+      be saved ('' when it can). Its version only changes through a release
+      (pilot first) - a version typed in would reach everyone on the next send,
+      and an own package's detection would check a version its package
+      doesn't have. Managed updates can't be switched off while a version is
+      in pilot (it would drop off the Updates page, still assigned).
+    #>
+    param($Existing, $Record)
+    if (-not $Existing -or -not $Existing.managedUpdates -or -not $Existing.appId) { return '' }
+    $was = [string]$(if ($Existing.metadata) { $Existing.metadata.appVersion }); $now = [string]$(if ($Record.metadata) { $Record.metadata.appVersion })
+    if ($was -and $now -ne $was -and $Record.managedUpdates) { return "$($Existing.appName) has managed updates and is in Intune: a new version goes to the pilot groups first - use Release new version (More), not the App version field." }
+    if (-not $Record.managedUpdates -and @(@($Existing.releases) | Where-Object { $_ -and $_.state -eq 'pilot' }).Count) { return "A version of $($Existing.appName) is in pilot - promote or withdraw it before switching managed updates off." }
+    return ''
+}

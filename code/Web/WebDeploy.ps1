@@ -62,6 +62,14 @@ function Global:Get-WebDeployPlan {
     return @{ ok = $true; apps = @($plan); circular = @($order.CircularNames); note = $note }
 }
 
+function Global:Get-WebPackageStamp {
+    # A package file's time and size ("2026-11-15T10:00:00Z|12345"), '' for none - what was uploaded last, to tell a newer one.
+    param([string]$Path)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return '' }
+    $f = Get-Item -LiteralPath $Path
+    return ($f.LastWriteTimeUtc.ToString('yyyy-MM-ddTHH:mm:ssZ') + '|' + $f.Length)
+}
+
 function Global:Start-WebDeploy {
     # Deploys ONE app (the page runs the plan's apps one after another).
     param($Data)
@@ -109,9 +117,15 @@ function Global:Start-WebDeploy {
     if (-not $m.detectionRule) { return @{ ok = $false; error = "$name has no detection rule - set one in the editor's Deploy settings." } }
     $resultPath = Join-Path $env:TEMP (".intunepkg_createapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
     $config = New-WebCreateAppConfig -Catalog $catalog -App $a -Metadata $m -Defaults $defaults -PackagePath $pkg.Path -ResultPath $resultPath
-    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "$(if ($metadataOnly) { 'Push settings' } else { 'Deploy' }) $name" `
-        -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $defaults; WasUpdate = [bool]$a.appId; SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }) }
-    if ($started.ok) { Write-Log "[INFO] $(if ($metadataOnly) { "Pushing $name's settings to Intune" } else { "Deploying $name ($($config.Mode))" })..." }
+    # An own package already in Intune: a package newer than the one last uploaded goes up again - otherwise the
+    # devices would keep the old installer under the new version and detection. (Managed updates: a new package
+    # goes through Release new version, pilot first - never under the current app.)
+    $stamp = Get-WebPackageStamp $(if (-not $metadataOnly -and $unc) { $pkg.Path } else { '' })
+    $upload = $stamp -and (-not $a.appId -or (-not $a.managedUpdates -and $stamp -ne [string]$a.packageStamp))
+    if ($a.appId -and $upload) { $config.ReplaceContent = $true }
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "$(if ($metadataOnly) { 'Push settings' } else { 'Deploy' }) $name$(if ($a.appId -and $upload) { ' (new package)' })" `
+        -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $defaults; WasUpdate = [bool]$a.appId; SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }); PackageStamp = $(if ($upload) { $stamp } else { '' }) }
+    if ($started.ok) { Write-Log "[INFO] $(if ($metadataOnly) { "Pushing $name's settings to Intune" } else { "Deploying $name ($($config.Mode)$(if ($a.appId -and $upload) { ', uploading the new package' }))" })..." }
     return $started
 }
 

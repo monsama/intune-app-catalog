@@ -136,6 +136,10 @@ function Global:ConvertTo-AppRecord {
         # Being retired: its groups were switched to Uninstall on this date
         # (ISO); Finish retirement deletes it from Intune and archives it.
         retiringSince = $(if ([string]$Raw.retiringSince -match '^\d{4}-\d{2}-\d{2}') { [string]$Raw.retiringSince } else { '' })
+        # Versions withdrawn or rolled back from: the nightly run doesn't release them again by itself.
+        blockedVersions = @(@($Raw.blockedVersions) | ForEach-Object { [string]$_ } | Where-Object { Test-ReleaseVersionText $_ } | Select-Object -Unique -Last 20)
+        # The package last uploaded to Intune (its time and size) - a newer one is uploaded again on the next Send to Intune.
+        packageStamp = $(if ([string]$Raw.packageStamp -match '^\d{4}-\d{2}-\d{2}T[\d:.]+Z?\|\d+$') { [string]$Raw.packageStamp } else { '' })
         # The app's icon for Intune and the Company Portal (PNG or JPEG,
         # base64) - kept in the app's own file so a rename, a backup and
         # Undo carry it along. Anything else in the field is dropped.
@@ -252,14 +256,17 @@ function Global:ConvertTo-JsonStringArray {
 }
 
 function Global:ConvertTo-AppReleases {
-    # Pure: an app's release list - entries with a GUID App ID, a version a release can pin, and state pilot or previous; anything else is dropped.
+    # Pure: an app's release list - entries with a GUID App ID, a version a release can pin, and state pilot,
+    # previous (superseded, a rollback target) or rolledback (rolled back from - kept until cleanup, never a rollback target); anything else is dropped.
     param($Releases)
     $guid = '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
-    return @(@($Releases) | Where-Object { $_ -and [string]$_.appId -match $guid -and (Test-ReleaseVersionText ([string]$_.version)) -and [string]$_.state -in 'pilot', 'previous' } | ForEach-Object {
+    return @(@($Releases) | Where-Object { $_ -and [string]$_.appId -match $guid -and (Test-ReleaseVersionText ([string]$_.version)) -and [string]$_.state -in 'pilot', 'previous', 'rolledback' } | ForEach-Object {
         [pscustomobject]@{ version = [string]$_.version; appId = [string]$_.appId; state = [string]$_.state; at = [string]$_.at; productCode = $(if ([string]$_.productCode -match '^\{[0-9A-Fa-f-]{36}\}$') { [string]$_.productCode } else { '' })
             # Release rings (pilot only): the ring it is in (0 = the pilot groups) and since when; fastTrack: judged in hours, then straight to everyone.
             ring = $(if ([string]$_.ring -match '^[0-5]$') { [int][string]$_.ring } else { 0 }); ringAt = $(if ([string]$_.ringAt -match '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$') { [string]$_.ringAt } else { '' })
-            fastTrack = [bool]$_.fastTrack }
+            fastTrack = [bool]$_.fastTrack
+            # Created in Intune, but its pilot groups not assigned yet (the assignment failed) - the nightly run tries again.
+            unassigned = [bool]$_.unassigned }
     })
 }
 
@@ -337,6 +344,7 @@ function Global:ConvertTo-SingleAppJson {
             if ([int]$r.ring) { $line += ', "ring": ' + [int]$r.ring }
             if ($r.ringAt) { $line += ', "ringAt": ' + (ConvertTo-JsonStringLiteral ([string]$r.ringAt)) }
             if ($r.fastTrack) { $line += ', "fastTrack": true' }
+            if ($r.unassigned) { $line += ', "unassigned": true' }
             $line += ' }'
             if ($j -lt $relItems.Count - 1) { $line += ',' }
             $line
@@ -358,6 +366,8 @@ function Global:ConvertTo-SingleAppJson {
     $fields.Add("  `"excludeFor`": $(ConvertTo-JsonStringArray -Items @($App.excludeFor) -IndentLevel 1)")
     $fields.Add("  `"uninstallFor`": $(ConvertTo-JsonStringArray -Items @($App.uninstallFor) -IndentLevel 1)")
     if ($App.retiringSince) { $fields.Add("  `"retiringSince`": $(ConvertTo-JsonStringLiteral ([string]$App.retiringSince))") }
+    if (@($App.blockedVersions | Where-Object { $_ }).Count) { $fields.Add("  `"blockedVersions`": $(ConvertTo-JsonStringArray -Items @($App.blockedVersions | Where-Object { $_ }) -IndentLevel 1)") }
+    if ($App.packageStamp) { $fields.Add("  `"packageStamp`": $(ConvertTo-JsonStringLiteral ([string]$App.packageStamp))") }
     if ($App.assignmentFilter) {
         $fields.Add("  `"assignmentFilter`": $(ConvertTo-JsonStringLiteral ([string]$App.assignmentFilter))")
         $fields.Add("  `"assignmentFilterMode`": $(ConvertTo-JsonStringLiteral $(if ([string]$App.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' }))")

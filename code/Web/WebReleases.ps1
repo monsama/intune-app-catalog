@@ -107,6 +107,9 @@ function Global:Start-WebRelease {
     $next = [pscustomobject]@{ managedUpdates = $true; wingetId = $a.wingetId; appName = $a.appName; detectedName = $a.detectedName; metadata = $m.PSObject.Copy() }
     $next.metadata.appVersion = $version
     [void](Set-ManagedAppPin $next -ProductCode ([string]$Data.productCode))
+    # Commands edited by hand aren't re-pinned - such a release would install the old version and still count as installed.
+    $notPinned = Test-ReleasePinned -Metadata $next.metadata -Version $version -Winget (-not $own)
+    if ($notPinned) { return @{ ok = $false; error = "Not released: $notPinned" } }
     $resultPath = Join-Path $env:TEMP (".intunepkg_createapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
     $config = New-WebCreateAppConfig -Catalog $catalog -App $a -Metadata $next.metadata -Defaults $null -PackagePath $pkg.Path -ResultPath $resultPath
     $config.Mode = 'Create'; $config.ExistingAppId = ''
@@ -131,7 +134,8 @@ function Global:Complete-WebRelease {
     [void](Update-WebCatalogApp -Name $After.AppName -Change {
             param($app)
             $now = (Get-Date).ToString('yyyy-MM-dd HH:mm')
-            $app.releases = @(@($app.releases) | Where-Object { $_.state -ne 'pilot' }) + @([pscustomobject]@{ version = $version; appId = $newId; state = 'pilot'; at = $now; productCode = $code; ring = 0; ringAt = $now; fastTrack = $fast })
+            $app.releases = @(@($app.releases) | Where-Object { $_.state -ne 'pilot' }) + @([pscustomobject]@{ version = $version; appId = $newId; state = 'pilot'; at = $now; productCode = $code; ring = 0; ringAt = $now; fastTrack = $fast; unassigned = $true })
+            $app.blockedVersions = @(@($app.blockedVersions) | Where-Object { $_ -and [string]$_ -ne $version })
         }.GetNewClosure())
     Write-Log "[OK] $($After.AppName) $version is in Intune as a pilot release (App ID $newId)."
     return @{ ok = $true; assignPilot = $true; appId = $newId }
@@ -183,7 +187,9 @@ function Global:Start-WebReleaseAssign {
         # Install deadline, restart grace period, notifications (Settings > Managed updates) on the Required assignments.
         RequiredSettings = $(if ($step -in 'pilot', 'advance', 'promote', 'rollback') { Get-ReleaseAssignmentSettings -Policy $Global:App.ReleasePolicy -FastTrack ([bool]($pilot -and $pilot.fastTrack -and $step -ne 'rollback')) -NowUtc ([datetime]::UtcNow) } else { $null })
     }
-    return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind $label -Apps @([string]$a.appName))
+    # The pilot assignment done: the release is no longer waiting for it.
+    $after = if ($step -eq 'pilot') { @{ Kind = 'pilotassigned'; AppName = [string]$a.appName; AppId = [string]$id } } else { @{} }
+    return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind $label -Apps @([string]$a.appName) -After $after)
 }
 
 function Global:Complete-WebAdvance {
@@ -236,10 +242,11 @@ function Global:Complete-WebPromotion {
     }
     $undo = New-WebUndo "Promote $($a.appName) $($pilot.version)"
     if (-not $a.metadata) { $a.metadata = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon $false }
+    $oldCode = [string]$(if ($a.metadata.detectionRule) { $a.metadata.detectionRule.Msi_ProductCode })
     $a.metadata.appVersion = [string]$pilot.version
     [void](Set-ManagedAppPin $a -ProductCode ([string]$pilot.productCode))
     $kept = @(@($a.releases) | Where-Object { $_.state -ne 'pilot' })
-    if ($oldId) { $kept += [pscustomobject]@{ version = $oldVersion; appId = $oldId; state = 'previous'; at = (Get-Date).ToString('yyyy-MM-dd HH:mm') } }
+    if ($oldId) { $kept += [pscustomobject]@{ version = $oldVersion; appId = $oldId; state = 'previous'; at = (Get-Date).ToString('yyyy-MM-dd HH:mm'); productCode = $oldCode } }
     $a.releases = $kept
     $a.appId = [string]$pilot.appId
     Write-WebAppFile -App $a -Undo $undo
@@ -260,6 +267,8 @@ function Global:Complete-WebWithdrawal {
     $id = [string]$pilot.appId
     $del = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) [void](& $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$id" 'DELETE'); $true }
     $a.releases = @(@($a.releases) | Where-Object { $_.state -ne 'pilot' })
+    # Not released again by itself (the nightly run) - Release new version by hand still can.
+    $a.blockedVersions = @(@($a.blockedVersions) + [string]$pilot.version | Where-Object { $_ } | Select-Object -Unique)
     Write-WebAppFile -App $a
     $Global:App.IntuneAppsCache = $null
     Write-Log "[OK] $($a.appName) $($pilot.version) withdrawn$(if (-not $del.ok) { " - but it couldn't be deleted from Intune ($($del.error)); it has no assignments any more" })."
@@ -350,9 +359,16 @@ function Global:Get-WebPilotStatus {
 # ---------------------------------------------------------------- rollback and clean-up
 
 function Global:Get-WebPreviousReleases {
-    # Pure: an app's superseded releases, oldest first ("at" sorts as text: yyyy-MM-dd HH:mm).
+    # Pure: an app's superseded releases (rollback targets), oldest VERSION first - not by date: a rollback records the
+    # version it left at "now", and that must never become the newest one to go back to.
     param($App)
-    return @(@($App.releases) | Where-Object { $_ -and $_.state -eq 'previous' } | Sort-Object { [string]$_.at }, { [string]$_.version })
+    $list = New-Object System.Collections.Generic.List[object]
+    foreach ($r in @(@($App.releases) | Where-Object { $_ -and $_.state -eq 'previous' })) {
+        $i = 0
+        while ($i -lt $list.Count -and (Compare-AppVersionText ([string]$list[$i].version) ([string]$r.version)) -eq 1) { $i++ }
+        $list.Insert($i, $r)
+    }
+    return $list.ToArray()
 }
 
 function Global:Complete-WebRollback {
@@ -380,9 +396,13 @@ function Global:Complete-WebRollback {
     if ($why) { $notes.Add("The release rolled back from keeps its name in Intune ($why).") }
     $undo = New-WebUndo "Roll $($a.appName) back to $($prev.version)"
     if (-not $a.metadata) { $a.metadata = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon (-not $a.wingetId) }
+    $leftCodeBefore = [string]$(if ($a.metadata.detectionRule) { $a.metadata.detectionRule.Msi_ProductCode })
     $a.metadata.appVersion = [string]$prev.version
     [void](Set-ManagedAppPin $a -ProductCode ([string]$prev.productCode))
-    $a.releases = @(@($a.releases) | Where-Object { [string]$_.appId -ne [string]$prev.appId }) + @([pscustomobject]@{ version = $oldVersion; appId = $oldId; state = 'previous'; at = (Get-Date).ToString('yyyy-MM-dd HH:mm'); productCode = '' })
+    $leftCode = $leftCodeBefore
+    $a.releases = @(@($a.releases) | Where-Object { [string]$_.appId -ne [string]$prev.appId }) + @([pscustomobject]@{ version = $oldVersion; appId = $oldId; state = 'rolledback'; at = (Get-Date).ToString('yyyy-MM-dd HH:mm'); productCode = $leftCode })
+    # The version rolled back from isn't released again by itself (the nightly run).
+    $a.blockedVersions = @(@($a.blockedVersions) + $oldVersion | Where-Object { $_ } | Select-Object -Unique)
     $a.appId = [string]$prev.appId
     Write-WebAppFile -App $a -Undo $undo
     Save-WebUndo $undo
@@ -404,43 +424,51 @@ function Global:Remove-WebOldReleases {
     $a = $catalog.Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
     if (-not $a) { return @{ ok = $false; error = "'$($Data.name)' is no longer in the catalog." } }
     $prev = @(Get-WebPreviousReleases $a)
-    if ($prev.Count -le 1) { return @{ ok = $true; removed = @(); failed = @(); kept = @($prev | ForEach-Object { $_.version }) } }
-    $old = @($prev | Select-Object -First ($prev.Count - 1))
-    if ($Data.planOnly) { return @{ ok = $true; plan = @($old | ForEach-Object { $_.version }); removed = @(); failed = @(); kept = @($prev[-1].version) } }
+    # Rolled-back releases go too (never a rollback target); of the superseded ones the newest VERSION is kept for rollback.
+    $rolled = @(@($a.releases) | Where-Object { $_ -and $_.state -eq 'rolledback' })
+    $old = @(@($(if ($prev.Count -gt 1) { $prev | Select-Object -First ($prev.Count - 1) })) + $rolled | Where-Object { $_ })
+    $keptVersions = @($(if ($prev.Count) { $prev[-1].version }))
+    if (-not $old.Count) { return @{ ok = $true; removed = @(); failed = @(); kept = $keptVersions } }
+    if ($Data.planOnly) { return @{ ok = $true; plan = @($old | ForEach-Object { $_.version }); removed = @(); failed = @(); kept = $keptVersions } }
     $removed = New-Object System.Collections.Generic.List[string]
     $failed = New-Object System.Collections.Generic.List[string]
-    for ($i = 0; $i -lt $old.Count; $i++) {
-        $target = [string]$old[$i].appId
-        $parent = [string]$prev[$i + 1].appId
+    # Whichever of the app's own Intune apps supersedes (or depends on) the one deleted is found by its relationships -
+    # after a rollback that isn't the next newer version.
+    $known = @(@([string]$a.appId) + @(@($a.releases) | ForEach-Object { [string]$_.appId }) | Where-Object { $_ } | Select-Object -Unique)
+    foreach ($o in $old) {
+        $target = [string]$o.appId
+        $parents = @($known | Where-Object { $_ -ne $target })
         $res = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action {
             param($Graph)
-            $rels = @((& $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$parent/relationships").value)
-            $keep = @($rels | Where-Object { $_ -and ([string]$_.targetType -eq 'child' -or -not $_.targetType) -and [string]$_.targetId -ne $target } | ForEach-Object {
-                    $r = @{ '@odata.type' = [string]$_.'@odata.type'; targetId = [string]$_.targetId }
-                    if ([string]$_.'@odata.type' -like '*Supersedence') { $r.supersedenceType = [string]$_.supersedenceType } else { $r.dependencyType = [string]$_.dependencyType }
-                    $r
-                })
-            if (@($rels | Where-Object { [string]$_.targetId -eq $target }).Count) {
+            foreach ($parent in $parents) {
+                $rels = @(try { (& $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$parent/relationships").value } catch { })
+                if (-not @($rels | Where-Object { $_ -and [string]$_.targetId -eq $target -and ([string]$_.targetType -eq 'child' -or -not $_.targetType) }).Count) { continue }
+                $keep = @($rels | Where-Object { $_ -and ([string]$_.targetType -eq 'child' -or -not $_.targetType) -and [string]$_.targetId -ne $target } | ForEach-Object {
+                        $r = @{ '@odata.type' = [string]$_.'@odata.type'; targetId = [string]$_.targetId }
+                        if ([string]$_.'@odata.type' -like '*Supersedence') { $r.supersedenceType = [string]$_.supersedenceType } else { $r.dependencyType = [string]$_.dependencyType }
+                        $r
+                    })
                 [void](& $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$parent/updateRelationships" 'POST' @{ relationships = @($keep) })
             }
             [void](& $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$target" 'DELETE')
             $true
-        }
-        if ($res.ok) { $removed.Add([string]$old[$i].version) } else { $failed.Add("$($old[$i].version): $($res.error)") }
+        }.GetNewClosure()
+        if ($res.ok) { $removed.Add([string]$o.version) } else { $failed.Add("$($o.version): $($res.error)") }
     }
     if ($removed.Count) {
         Invoke-WithCatalogLock {
             $fresh = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $a.appName } | Select-Object -First 1
             if ($fresh) {
                 $gone = @($old | Where-Object { $removed -contains [string]$_.version } | ForEach-Object { [string]$_.appId })
+
                 $fresh.releases = @(@($fresh.releases) | Where-Object { $gone -notcontains [string]$_.appId })
                 Write-WebAppFile -App $fresh
             }
         } | Out-Null
         $Global:App.IntuneAppsCache = $null
     }
-    Write-Log "[$(if ($failed.Count) { 'WARN' } else { 'OK' })] $($a.appName): deleted superseded release(s) $($removed -join ', ') from Intune$(if ($failed.Count) { "; not deleted: $($failed -join '; ')" }); kept $($prev[-1].version) for rollback."
-    return @{ ok = ($failed.Count -eq 0); removed = $removed.ToArray(); failed = $failed.ToArray(); kept = @($prev[-1].version); error = $(if ($failed.Count) { "Not deleted: $($failed -join '; ')" } else { '' }) }
+    Write-Log "[$(if ($failed.Count) { 'WARN' } else { 'OK' })] $($a.appName): deleted superseded release(s) $($removed -join ', ') from Intune$(if ($failed.Count) { "; not deleted: $($failed -join '; ')" })$(if ($keptVersions.Count) { "; kept $($keptVersions -join ', ') for rollback" })."
+    return @{ ok = ($failed.Count -eq 0); removed = $removed.ToArray(); failed = $failed.ToArray(); kept = $keptVersions; error = $(if ($failed.Count) { "Not deleted: $($failed -join '; ')" } else { '' }) }
 }
 
 # ---------------------------------------------------------------- can a pinned winget version still be installed?

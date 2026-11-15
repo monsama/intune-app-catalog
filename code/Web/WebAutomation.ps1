@@ -119,6 +119,13 @@ function Global:Invoke-ManagedUpdateRun {
                 $pilot = Get-WebAppRelease $a
                 $current = [string]$(if ($a.metadata) { $a.metadata.appVersion })
                 if ($pilot) {
+                    # Created, but its pilot groups never assigned (that step failed): assigned now, then judged from the next run on.
+                    if ($pilot.unassigned) {
+                        if ($PlanOnly) { & $say $a.appName 'available' "$($pilot.version) is in Intune but not assigned to the pilot groups yet - this run would assign it."; continue }
+                        $re = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'pilot' })
+                        if ($re.ok) { & $say $a.appName 'released' "$($pilot.version) assigned to the pilot groups (the assignment had failed before)." } else { & $say $a.appName 'failed' "$($pilot.version) is still not assigned to pilot: $($re.error)"; $failed++ }
+                        continue
+                    }
                     $st = Get-WebPilotStatus $pilot -App $a
                     if (-not $st.ok) { & $say $a.appName 'failed' "$($pilot.version) in pilot - its install status couldn't be read: $($st.error)"; $failed++; continue }
                     # Too many failed: withdrawn by itself, when that switch is on (any day - the release window is for giving out, not taking back).
@@ -157,6 +164,7 @@ function Global:Invoke-ManagedUpdateRun {
                 if ($a.wingetId) {
                     $latest = [string]$Global:App.WingetLatest[([string]$a.wingetId).ToLowerInvariant()]
                     if (-not $latest -or (Compare-AppVersionText $current $latest) -ne 1) { & $say $a.appName 'current' "$current is the newest on winget."; continue }
+                    if (@($a.blockedVersions) -contains $latest) { & $say $a.appName 'available' "winget offers $latest (now $current) - not released by itself: it was withdrawn or rolled back before. Release it by hand to try it again."; continue }
                     if ($null -ne $gateApps) {
                         $gate = Get-GateVersion -App $a -GateApps $gateApps
                         if (-not $gate.Version) { & $say $a.appName 'available' "winget offers $latest (now $current) - not released: $($gate.Reason)."; continue }
@@ -179,6 +187,7 @@ function Global:Invoke-ManagedUpdateRun {
                 }
                 $inst = Get-WebInstallerInfo $a.appName
                 if (-not ($inst.version -and (Compare-AppVersionText $current $inst.version) -eq 1)) { & $say $a.appName 'current' "$current - no newer installer in its folder.$dl"; continue }
+                if (@($a.blockedVersions) -contains [string]$inst.version) { & $say $a.appName 'available' "The installer in its folder is $($inst.version) (now $current) - not released by itself: it was withdrawn or rolled back before. Release it by hand to try it again."; continue }
                 if (-not $a.autoRelease -or $PlanOnly) { & $say $a.appName 'available' "The installer in its folder is $($inst.version) (now $current)$(if (-not $a.autoRelease) { ' - release it from the app (automatic release is off for this app).' } else { '.' })$dl"; continue }
                 if (-not $window.Open) { & $say $a.appName 'available' "The installer in its folder is $($inst.version) (now $current) - waiting for the release window: $($window.Reason).$dl"; continue }
                 $built = Wait-WebStepJob (Start-WebPackage @{ names = @($a.appName) })
@@ -192,7 +201,7 @@ function Global:Invoke-ManagedUpdateRun {
         }
         # Superseded releases beyond the newest one (kept for rollback): deleted from Intune when the switch is on.
         if (-not $FastTrackOnly -and (Test-GraphCredentialsConfigured -Quiet)) {
-            foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { $_.managedUpdates -and @(Get-WebPreviousReleases $_).Count -gt 1 })) {
+            foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { $_.appId -and (@(Get-WebPreviousReleases $_).Count -gt 1 -or @(@($_.releases) | Where-Object { $_ -and $_.state -eq 'rolledback' }).Count) })) {
                 if ($PlanOnly -or -not $policy.CleanupOld) {
                     $plan = Remove-WebOldReleases @{ name = $a.appName; planOnly = $true }
                     & $say $a.appName 'cleanup' "Superseded release(s) $(@($plan.plan) -join ', ') could be deleted from Intune ($(@($plan.kept) -join ', ') is kept for rollback)$(if (-not $policy.CleanupOld) { ' - automatic clean-up is off.' } else { '.' })"

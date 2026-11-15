@@ -45,6 +45,7 @@ function Global:Get-WebAppEditable {
         assignmentFilter     = [string]$App.assignmentFilter
         assignmentFilterMode = $(if ([string]$App.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' })
         retiringSince = [string]$App.retiringSince
+        blockedVersions = @($App.blockedVersions | Where-Object { $_ } | ForEach-Object { [string]$_ })
         hasMetadata  = [bool]$m
         managedUpdates = [bool]$App.managedUpdates
         releaseRule  = $(if ($App.releaseRule) { [ordered]@{ days = $App.releaseRule.days; maxFailedPercent = $App.releaseRule.maxFailedPercent; minInstalled = $App.releaseRule.minInstalled } } else { $null })
@@ -240,6 +241,9 @@ function Global:Merge-WebAppEdit {
         assignmentFilter     = $(if ($null -ne $Edit.assignmentFilter) { $af = ([string]$Edit.assignmentFilter).Trim(); if ($af.Length -le 200) { $af } else { '' } } elseif ($Existing) { [string]$Existing.assignmentFilter } else { '' })
         # Being retired stays as it was - only Retire changes it.
         retiringSince    = $(if ($Existing) { [string]$Existing.retiringSince } else { '' })
+        # Kept as they were - releases and Send to Intune change them, not the editor.
+        blockedVersions  = @($(if ($Existing) { @($Existing.blockedVersions) }) | Where-Object { $_ })
+        packageStamp     = $(if ($Existing) { [string]$Existing.packageStamp } else { '' })
         assignmentFilterMode = $(if ($null -ne $Edit.assignmentFilterMode) { if ([string]$Edit.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' } } elseif ($Existing -and [string]$Existing.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' })
         metadata         = $metadata
     }
@@ -301,6 +305,8 @@ function Global:Save-WebApp {
     }
     $record = Merge-WebAppEdit -Existing $existing -Edit $edit -Defaults $defaults
     $problem = Test-WebAppEdit -Record $record -OriginalName $original -Others @($catalog.Apps)
+    if ($problem) { return @{ ok = $false; error = $problem } }
+    $problem = Test-ManagedAppEdit -Existing $existing -Record $record
     if ($problem) { return @{ ok = $false; error = $problem } }
     if ([string]$edit.iconChange -eq 'set' -and -not $record.icon) { return @{ ok = $false; error = 'The icon must be a PNG or JPEG of at most 750 KB.' } }
     if (([string]$edit.downloadUrl).Trim() -and -not $record.downloadUrl) { return @{ ok = $false; error = 'The installer download address must start with https://.' } }
@@ -552,6 +558,8 @@ function Global:Undo-WebHistoryChange {
     if ($id -notmatch '^[0-9a-f]{32}$') { return @{ ok = $false; error = 'That is not a change in the history.' } }
     $entry = @(Read-WebHistoryEntries | Where-Object { $_.id -eq $id }) | Select-Object -First 1
     if (-not $entry -or $entry.kind -ne 'catalog') { return @{ ok = $false; error = 'That change is not in the history (or was not a catalog change).' } }
+    # A release step (promotion, rollback, a new release) moved the app in Intune too - half of it can't be undone here.
+    if (@(@($entry.changes) | Where-Object { [string]$_.field -in 'releases', 'appId' }).Count) { return @{ ok = $false; error = 'That change came with a release step (it changed which app in Intune is the current one) - take it back with Roll back or Withdraw (Updates), not here.' } }
     $catalog = Read-WebCatalogRecords
     $app = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
     if (-not $app) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
@@ -572,6 +580,7 @@ function Global:Undo-WebHistoryChange {
     if ($app.metadata -and -not @($app.metadata.PSObject.Properties | Where-Object { $v = $_.Value; -not ($null -eq $v -or ($v -is [string] -and -not $v) -or (($v -is [array]) -and -not @($v | Where-Object { $_ }).Count)) }).Count) { $app.metadata = $null }
     # The same checks as the editor's Save, and a managed app's commands following its version.
     $problem = Test-WebAppEdit -Record $app -OriginalName $app.appName -Others @($catalog.Apps)
+    if (-not $problem) { $problem = Test-ManagedAppEdit -Existing ((Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1) -Record $app }
     if ($problem) { return @{ ok = $false; error = "It can't be undone: $problem" } }
     [void](Set-ManagedAppPin $app)
     $when = try { ([datetime]$entry.at).ToLocalTime().ToString('yyyy-MM-dd HH:mm') } catch { [string]$entry.at }

@@ -820,7 +820,17 @@ try {
     $appId = $app.id
     Write-Host "  [OK] App created: $appId" -ForegroundColor Green
 
-    Invoke-Win32AppContentUpload -AppId $appId -PackageInfo $packageInfo
+    # The content upload failing would leave an empty app in Intune - and the
+    # catalog never learns its ID, so the next try (the nightly run) would add
+    # another. Deleted again instead.
+    try { Invoke-Win32AppContentUpload -AppId $appId -PackageInfo $packageInfo }
+    catch {
+        $uploadError = $_.Exception.Message
+        Write-Host "  The content upload failed - deleting the app just created ($appId), so no empty app stays in Intune..." -ForegroundColor Yellow
+        try { Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$appId" -Method DELETE -StepDescription "Delete the app whose upload failed" | Out-Null; Write-Host "  Deleted." -ForegroundColor Gray }
+        catch { Write-Host "  It couldn't be deleted ($($_.Exception.Message)) - delete '$($Config.AppName)' ($appId) in the Intune portal." -ForegroundColor Yellow }
+        throw "Uploading the package failed: $uploadError"
+    }
 
     # ---- Dependencies and supersedence (one relationship list) ----
     $newSupersedence = @(if ($Config.SupersedenceSet) { Get-ConfigSupersedence })
@@ -852,5 +862,9 @@ catch {
     Write-Host "[FAILED] $($_.Exception.Message)" -ForegroundColor Red
     Write-Result -Success $false -AppId "" -ErrorMessage $_.Exception.Message
     exit 1
+}
+finally {
+    # The encrypted copy of the package (can be GBs) - on every path, not only after a commit.
+    if ($packageInfo -and $packageInfo.TempEncryptedPath) { Remove-Item -LiteralPath $packageInfo.TempEncryptedPath -Force -ErrorAction SilentlyContinue }
 }
 
