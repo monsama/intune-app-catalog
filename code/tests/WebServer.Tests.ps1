@@ -558,6 +558,19 @@ try {
     Check (-not (Invoke-Api '/api/app-quick' @{ name = $qName; field = 'appId'; value = 'x' }).ok -and -not (Invoke-Api '/api/app-quick' @{ name = $qName; field = 'requiredFor'; add = "bad`tname" }).ok) 'quick edit: only groups and the version, and only group names Entra ID takes'
     Check ((Invoke-Api '/api/app-history' @{ name = $qName }).entries[0].source -eq 'Side panel') 'quick edit: in the history, from the side panel'
     [void](Invoke-Api '/api/app-remove' @{ name = $qName })
+    # A deployed app with managed updates: its version only through a release - the editor refuses a typed one.
+    $mgName = 'ZZ Managed Guard ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $mgName; wingetId = 'Contoso.Guard'; appId = [guid]::NewGuid().ToString(); managedUpdates = $true; metadata = @{ description = 'g'; appVersion = '1.0' } } })
+    $mgSave = Invoke-Api '/api/app-save' @{ originalName = $mgName; app = @{ appName = $mgName; wingetId = 'Contoso.Guard'; appId = (Invoke-Api '/api/app-get' @{ name = $mgName }).app.appId; managedUpdates = $true; metadata = @{ description = 'g'; appVersion = '2.0' } } }
+    Check (-not $mgSave.ok -and $mgSave.error -like '*Release new version*') 'editor: a deployed managed app''s version is changed by a release, not typed in' ($mgSave | ConvertTo-Json -Compress)
+    # Renaming an app: another app's dependency on it follows.
+    $depName = 'ZZ Depends ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $depName; wingetId = 'Contoso.Dep'; appId = ''; metadata = @{ description = 'd' }; deploy = @{ dependencies = @($mgName) } } })
+    $depBefore = (Invoke-Api '/api/app-get' @{ name = $depName }).app
+    [void](Invoke-Api '/api/app-save' @{ originalName = $mgName; app = @{ appName = "$mgName R"; wingetId = 'Contoso.Guard'; appId = (Invoke-Api '/api/app-get' @{ name = $mgName }).app.appId; managedUpdates = $true; metadata = @{ description = 'g'; appVersion = '1.0' } } })
+    $depAfter = (Invoke-Api '/api/app-get' @{ name = $depName }).app
+    Check ((-not @($depBefore.deploy.dependencies).Count) -or (@($depAfter.deploy.dependencies) -contains "$mgName R" -and @($depAfter.deploy.dependencies) -notcontains $mgName)) 'rename: another app''s dependency follows the new name' ($depAfter.deploy | ConvertTo-Json -Compress)
+    [void](Invoke-Api '/api/app-remove' @{ name = $depName }); [void](Invoke-Api '/api/app-remove' @{ name = "$mgName R" })
     # An assignment filter round-trips through the catalog file and the editor.
     $flName = 'ZZ Filter ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
     [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $flName; wingetId = 'Contoso.Filter'; appId = ''; requiredFor = @('SG-A'); assignmentFilter = ' Corp laptops '; assignmentFilterMode = 'exclude'; metadata = @{ description = 'f' } } })

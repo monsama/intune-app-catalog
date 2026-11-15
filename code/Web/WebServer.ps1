@@ -212,10 +212,19 @@ function Global:Write-Log {
     # $null check, not truthiness: an empty list is $false in PowerShell, so the
     # first line would never get in.
     if ($null -ne $Global:App.WebLog) {
-        [void]$Global:App.WebLog.Add([pscustomobject]@{ Time = (Get-Date).ToString('HH:mm:ss'); Level = $level; Text = $line })
-        while ($Global:App.WebLog.Count -gt 2000) { $Global:App.WebLog.RemoveAt(0) }
+        # Each line numbered: the page asks for the lines after the last one it has - also once the list is full and old lines drop off.
+        [System.Threading.Monitor]::Enter($Global:App.WebLog.SyncRoot)
+        try {
+            $Global:App.WebLogSeq = [int64]$Global:App.WebLogSeq + 1
+            [void]$Global:App.WebLog.Add([pscustomobject]@{ Seq = $Global:App.WebLogSeq; Time = (Get-Date).ToString('HH:mm:ss'); Level = $level; Text = $line })
+            while ($Global:App.WebLog.Count -gt 2000) { $Global:App.WebLog.RemoveAt(0) }
+        }
+        finally { [System.Threading.Monitor]::Exit($Global:App.WebLog.SyncRoot) }
     }
     if ($Global:App.WebLogFile) {
+        # A new file each day, also while the app keeps running past midnight.
+        $today = 'intune-deployment-' + (Get-Date).ToString('yyyy-MM-dd') + '.log'
+        if ((Split-Path -Leaf $Global:App.WebLogFile) -like 'intune-deployment-*.log' -and (Split-Path -Leaf $Global:App.WebLogFile) -ne $today) { $Global:App.WebLogFile = Join-Path (Split-Path -Parent $Global:App.WebLogFile) $today }
         try { Add-Content -LiteralPath $Global:App.WebLogFile -Value "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) $line" -Encoding UTF8 } catch { }
     }
 }

@@ -494,6 +494,8 @@ function Global:Save-WebAppJson {
         # A rename: the app's file under its old name, the "before" of this write.
         [string]$BeforeFile = '')
     $json = ConvertTo-SingleAppJson -App $App
+    # The same as on disk: nothing to write, nothing to record.
+    if ((Test-Path -LiteralPath $File) -and -not $BeforeFile -and [System.IO.File]::ReadAllText($File) -ceq $json) { return }
     $before = $null
     $from = if ($BeforeFile -and (Test-Path -LiteralPath $BeforeFile)) { $BeforeFile } else { $File }
     if (Test-Path -LiteralPath $from) { try { $before = ConvertTo-AppRecord (Get-Content -LiteralPath $from -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { } }

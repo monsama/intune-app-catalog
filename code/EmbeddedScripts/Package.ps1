@@ -528,6 +528,7 @@ foreach ($App in $AppsToProcess) {
     }
     
     Write-Host "  Packaging..." -ForegroundColor Cyan
+    $TempSourceFolder = $null; $TempOutputFolder = $null
     
     try {
         # Create a unique temporary output folder for this app
@@ -599,7 +600,11 @@ foreach ($App in $AppsToProcess) {
         # the tool fills an output pipe
         $ToolStdout = $Process.StandardOutput.ReadToEndAsync()
         $ToolStderr = $Process.StandardError.ReadToEndAsync()
-        $Process.WaitForExit()
+        # 30 minutes at most - a packaging tool that hangs would otherwise hold the step forever.
+        if (-not $Process.WaitForExit(1800000)) {
+            try { $Process.Kill() } catch { }
+            throw "IntuneWinAppUtil.exe didn't finish within 30 minutes - stopped."
+        }
         $ToolTimer.Stop()
         
         $ExitCode = $Process.ExitCode
@@ -713,6 +718,10 @@ foreach ($App in $AppsToProcess) {
     catch {
         Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
         $FailCount++
+    }
+    finally {
+        # The copy of the installer and the tool's output folder go on every path, not only when all went well.
+        foreach ($tmp in @($TempSourceFolder, $TempOutputFolder)) { if ($tmp -and (Test-Path -LiteralPath $tmp)) { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue } }
     }
     
     Write-Host ""

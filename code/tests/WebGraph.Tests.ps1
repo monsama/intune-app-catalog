@@ -401,11 +401,12 @@ try {
     Check ($cl.ok -and @($cl.removed) -contains '1.0' -and @($cl.kept) -contains '1.5' -and @($clApp.releases).Count -eq 1 -and $clApp.releases[0].appId -eq $relPrevB) 'clean-up: 1.0 taken out of 1.5''s supersedence and deleted; 1.5 kept for rollback' ($cl | ConvertTo-Json -Compress)
     $rb = Invoke-Api '/api/release-rolledback' @{ name = $relOldName }
     $rbApp = (Invoke-Api '/api/app-get' @{ name = $relOldName }).app
-    Check ($rb.ok -and $rbApp.appId -eq $relPrevB -and $rbApp.metadata.appVersion -eq '1.5' -and $rbApp.metadata.installCommand -like "*--version '1.5'*" -and @($rbApp.releases | Where-Object { $_.appId -eq $relCur3 -and $_.state -eq 'previous' }).Count -eq 1) 'rollback: 1.5 is current again, pinned; 2.0 kept as superseded' ($rbApp | ConvertTo-Json -Compress -Depth 5)
-    Check (-not (Invoke-Api '/api/release-cleanup' @{ name = $relOldName }).removed.Count) 'clean-up: nothing more to delete with one superseded version'
+    Check ($rb.ok -and $rbApp.appId -eq $relPrevB -and $rbApp.metadata.appVersion -eq '1.5' -and $rbApp.metadata.installCommand -like "*--version '1.5'*" -and @($rbApp.releases | Where-Object { $_.appId -eq $relCur3 -and $_.state -eq 'rolledback' }).Count -eq 1 -and @($rbApp.blockedVersions) -contains '2.0') 'rollback: 1.5 is current again, pinned; 2.0 kept as rolled back (never a rollback target) and not released again by itself' ($rbApp | ConvertTo-Json -Compress -Depth 5)
+    $clPlan = Invoke-Api '/api/release-cleanup' @{ name = $relOldName; planOnly = $true }
+    Check ($clPlan.ok -and @($clPlan.plan) -contains '2.0' -and @($clPlan.kept).Count -eq 0) 'clean-up: the rolled-back 2.0 would be deleted too; nothing superseded is left to keep' ($clPlan | ConvertTo-Json -Compress)
     $wd = Invoke-Api '/api/release-withdrawn' @{ name = $relWithdrawName }
     $wdApp = (Invoke-Api '/api/app-get' @{ name = $relWithdrawName }).app
-    Check ($wd.ok -and $wd.deleted -and $wdApp.appId -eq $relCurrent -and -not @($wdApp.releases).Count) 'release: withdrawn - deleted from Intune, the current release stays' ($wd | ConvertTo-Json -Compress)
+    Check ($wd.ok -and $wd.deleted -and $wdApp.appId -eq $relCurrent -and -not @($wdApp.releases).Count -and @($wdApp.blockedVersions).Count -eq 1) 'release: withdrawn - deleted from Intune, the current release stays, the version isn''t released again by itself' ($wd | ConvertTo-Json -Compress)
 
     foreach ($n in @($created)) {
         $r = Invoke-Api '/api/app-remove' @{ name = $n }

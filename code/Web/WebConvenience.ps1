@@ -213,7 +213,7 @@ Say 'Done - you can close the Sandbox.'
     $wsbPath = Join-Path $root 'test.wsb'
     [System.IO.File]::WriteAllText($wsbPath, $wsb, (New-Object System.Text.UTF8Encoding($false)))
     try { Start-Process -FilePath $sb -ArgumentList "`"$wsbPath`"" | Out-Null }
-    catch { return @{ ok = $false; error = "Windows Sandbox didn't start: $($_.Exception.Message)" } }
+    catch { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue; return @{ ok = $false; error = "Windows Sandbox didn't start: $($_.Exception.Message)" } }
     Write-Log "[INFO] Testing $($a.appName) in Windows Sandbox ($root)."
     return @{ ok = $true; id = $id; folder = $root }
 }

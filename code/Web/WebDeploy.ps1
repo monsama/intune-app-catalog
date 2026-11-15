@@ -267,7 +267,13 @@ function Global:Complete-WebPull {
         }
     }
     $id = [guid]::NewGuid().ToString('N')
-    if ($review.Count) { $Global:App.WebPending[$id] = $pending }
+    if ($review.Count) {
+        # A review left open without applying isn't kept for ever - one older than an hour goes.
+        if (-not $Global:App.WebPendingAt) { $Global:App.WebPendingAt = [hashtable]::Synchronized(@{}) }
+        foreach ($k in @($Global:App.WebPendingAt.Keys)) { if (((Get-Date) - [datetime]$Global:App.WebPendingAt[$k]).TotalHours -gt 1) { [void]$Global:App.WebPending.Remove($k); [void]$Global:App.WebPendingAt.Remove($k) } }
+        $Global:App.WebPending[$id] = $pending
+        $Global:App.WebPendingAt[$id] = Get-Date
+    }
     Write-Log "[OK] Pulled from Intune: $($applied.Count) updated$(if ($review.Count) { ", $($review.Count) to review" })$(if ($failed.Count) { ", $($failed.Count) failed" })."
     return @{ ok = $true; pending = $(if ($review.Count) { $id } else { '' }); applied = $applied.ToArray(); review = $review.ToArray(); failed = $failed.ToArray() }
 }

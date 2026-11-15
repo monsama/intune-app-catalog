@@ -252,7 +252,9 @@ function Global:Complete-WebJobsAtExit {
       App ID saved, groups renamed, results read. What the page would have
       started next (pushing groups after a deploy) is logged instead.
     #>
-    param([int]$TimeoutMinutes = 60)
+    param([int]$TimeoutMinutes = 60,
+        # The nightly run: a step still running at the deadline is stopped (and its files removed), not left behind.
+        [switch]$StopUnfinished)
     $ids = @($Global:App.WebJobs.Keys)
     if ($ids.Count -eq 0) { return }
     Write-Host "  Waiting for $($ids.Count) running step(s) to finish before stopping (Ctrl+C stops without waiting)..." -ForegroundColor Yellow
@@ -261,7 +263,16 @@ function Global:Complete-WebJobsAtExit {
         $job = $Global:App.WebJobs[$id]
         if (-not $job) { continue }
         while (-not $job.Process.HasExited -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
-        if (-not $job.Process.HasExited) { Write-Log "[WARN] Stopped without waiting for: $($job.Mode)."; continue }
+        if (-not $job.Process.HasExited) {
+            if ($StopUnfinished) {
+                try { $job.Process.Kill() } catch { }
+                Remove-Item -LiteralPath (@($job.Cleanup) + $job.Log + @($job.Result | Where-Object { $_ })) -Force -ErrorAction SilentlyContinue
+                if ($job.BusyApp) { Exit-WebAppBusy $job.BusyApp }
+                Write-Log "[WARN] Stopped, still running at the end of the run: $($job.Mode) - check that app in Intune."
+            }
+            else { Write-Log "[WARN] Stopped without waiting for: $($job.Mode)." }
+            continue
+        }
         # Past the end of the log: nothing left to read, so this poll completes it.
         $r = Get-WebJobPoll ([pscustomobject]@{ job = $id; offset = [int64]::MaxValue })
         if ($r.after -and $r.after.pushGroups) { Write-Log "[WARN] $($job.Mode): the app window was closed, so its groups weren't pushed - use Push groups." }
@@ -499,10 +510,11 @@ function Global:Open-WebTarget {
 
 function Global:Get-WebLog {
     param($Data)
-    $from = [int]$Data.from
+    # -from: the number of the last line the page has (0: none yet) - the lines after it, and the newest number.
+    $from = [int64]$Data.from
     $all = @($Global:App.WebLog.ToArray())
-    $from = [Math]::Max(0, [Math]::Min($from, $all.Count))
-    return @{ ok = $true; next = $all.Count; lines = @($all | Select-Object -Skip $from) }
+    $lines = @($all | Where-Object { [int64]$_.Seq -gt $from })
+    return @{ ok = $true; next = $(if ($all.Count) { [int64]$all[-1].Seq } else { $from }); lines = $lines }
 }
 
 function Global:Read-WebCatalogRecords {

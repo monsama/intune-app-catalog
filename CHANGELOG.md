@@ -1,5 +1,92 @@
 # Changelog
 
+## 2.18.0
+
+Day-to-day logic and leftovers, from a review of how the app is used every
+day.
+
+### Releases and updates
+
+- **A withdrawn or rolled-back version isn't released again by itself.**
+  The nightly run used to release it again every night. It now says so on
+  the Updates page. Releasing that version by hand clears the block.
+- **Rollback and clean-up go by version number, not date.**
+  - The version rolled back from is kept as *rolled back*. It is never a
+    rollback target, and clean-up deletes it.
+  - Clean-up finds the release that actually supersedes the one it
+    deletes, so it no longer fails after a rollback.
+  - Clean-up also runs for apps that no longer have managed updates.
+- **A release that wouldn't install the new version is refused.** That
+  happens when the install command or detection was edited by hand; before,
+  the release installed the old version and was still promoted.
+- **A pilot whose assignment failed is assigned by the next nightly run.**
+  Before, it stayed in pilot with no groups.
+- **The page and the nightly run can't change the same app at the same
+  time.** Before, that could create a duplicate pilot or leave the app
+  with no groups. One gets "being changed elsewhere".
+- **MSI apps**: every release keeps its product code, a rollback restores
+  it, and the uninstall command follows a new product code.
+- **PSADT apps**: the version is read from the installer in Files, not
+  from the toolkit's own exe.
+
+### Sending to Intune
+
+- **An own package (MSI, EXE, script, PSADT) without managed updates**
+  that is already in Intune gets its package uploaded again when it's
+  newer than the last one. Before, devices kept the old installer.
+- **A failed upload no longer leaves an empty app in Intune.** It is
+  deleted again, and the encrypted copy of the package is always removed
+  from the temp folder.
+
+### Editing
+
+- **The editor can't change the version of a deployed app with managed
+  updates.** That goes through Release new version, pilot first. It also
+  can't switch managed updates off while a version is in pilot.
+- **History**:
+  - Undo isn't offered for changes that came with a release step
+    (promotion, rollback).
+  - Undoing a version change of a deployed managed app is refused.
+- **Renaming an app**: other apps' dependencies on it, and its packages
+  folder, follow the new name.
+- **A new Winget ID**: the generated commands (with the pinned version)
+  and the detection follow it, in the editor and in Checks' fix.
+- **Renaming a group** on the Groups page also renames it in the pilot
+  groups, release rings and assignment profiles. Before, the next pilot
+  created the old, empty group.
+
+### Retiring
+
+- **Every version of the app in Intune** gets the Uninstall, counts in
+  the progress, and is deleted at Finish (newest first).
+- **Retiring an app other apps depend on is refused**, with their names.
+
+### Leftovers and growth
+
+- **Packaging**:
+  - The temporary copies are removed when packaging fails too.
+  - A packaging tool that hangs is stopped after 30 minutes.
+- **Housekeeping at every start and before every nightly run** removes:
+  - step files, unfinished uploads and packaging folders older than a day;
+  - Sandbox test folders older than 7 days, and a Sandbox folder at once
+    when the Sandbox doesn't start;
+  - file backups older than 180 days;
+  - logs older than 90 days.
+- **The nightly run** stops (and cleans up) steps still running at its
+  end instead of leaving them running.
+- **The log starts a new file every day**, also while the app keeps
+  running.
+- **Reports**: nightly reports are kept for 400 days. Fast-track runs keep
+  their last 60 separately and no longer push the nightly reports out of
+  the monthly report and the trend.
+- **Unchanged saves** (a Pull of an app that matches Intune) no longer
+  write the file or make a backup.
+- **The Activity box** keeps the newest ~2000 lines, and keeps getting
+  new server lines after the server's list is full.
+- **The nightly run's lock** remembers when its process started, so a
+  reused process number after a crash doesn't block runs.
+- **Pull reviews** left open without applying are dropped after an hour.
+
 ## 2.17.1
 
 Fixes from a full sweep of the app (security, bugs, interface).

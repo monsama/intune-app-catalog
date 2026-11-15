@@ -68,11 +68,9 @@ function Global:Invoke-ManagedUpdateRun {
 
     # One run at a time (a nightly one may still be going when someone clicks Run now).
     $lockFile = Join-Path $reportDir 'managed-updates.lock'
-    if (Test-Path -LiteralPath $lockFile) {
-        $other = [int](Get-Content -LiteralPath $lockFile -Raw -ErrorAction SilentlyContinue)
-        if ($other -and (Get-Process -Id $other -ErrorAction SilentlyContinue)) { Write-Host "Another managed-updates run is going (process $other)."; return 1 }
-    }
-    Set-Content -LiteralPath $lockFile -Value $PID
+    if (Test-WebRunLockHeld $lockFile) { Write-Host "Another managed-updates run is going ($(Get-Content -LiteralPath $lockFile -Raw -ErrorAction SilentlyContinue))."; return 1 }
+    # The process and when it started: after a crash, Windows can give the number to another process - that one doesn't hold the run.
+    Set-Content -LiteralPath $lockFile -Value "$PID|$((Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o'))"
     $failed = 0
     try {
         if (-not (Test-GraphCredentialsConfigured -Quiet)) { & $say '(all)' 'failed' 'The connection isn''t set up (Settings > Connection).'; $failed++ }
@@ -254,11 +252,14 @@ function Global:Invoke-ManagedUpdateRun {
     # The alert (Teams / email) - its own failure is reported, not fatal.
     $sent = Send-ManagedUpdateAlert $report
     if ($sent.error) { $report.items = @($report.items) + @([ordered]@{ app = '(alert)'; outcome = 'failed'; text = $sent.error }); $report.failed = ++$failed }
-    $base = Join-Path $reportDir ("managed-updates-" + $started.ToString('yyyy-MM-dd-HHmmss'))
+    # Fast-track runs (every 2 hours while one is in pilot) are named apart: they must not push the nightly reports - the
+    # monthly report and the trend read those - out of the folder.
+    $base = Join-Path $reportDir ("managed-updates-" + $(if ($FastTrackOnly) { 'ft-' }) + $started.ToString('yyyy-MM-dd-HHmmss'))
     [System.IO.File]::WriteAllText("$base.json", ($report | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
     [System.IO.File]::WriteAllText("$base.html", (ConvertTo-ManagedUpdateReportHtml $report), (New-Object System.Text.UTF8Encoding($false)))
-    # Older reports beyond the last 60 runs go.
-    @(Get-ChildItem -LiteralPath $reportDir -Filter 'managed-updates-*.json' -File | Sort-Object Name -Descending | Select-Object -Skip 60) | ForEach-Object {
+    # Kept: the nightly reports of the last 400 days, the last 60 fast-track runs.
+    @(@(Get-ChildItem -LiteralPath $reportDir -Filter 'managed-updates-ft-*.json' -File | Sort-Object Name -Descending | Select-Object -Skip 60) +
+        @(Get-ChildItem -LiteralPath $reportDir -Filter 'managed-updates-2*.json' -File | Where-Object { ((Get-Date) - $_.LastWriteTime).TotalDays -gt 400 })) | ForEach-Object {
         Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath ($_.FullName -replace '\.json$', '.html') -Force -ErrorAction SilentlyContinue
     }
@@ -618,7 +619,7 @@ function Global:Get-WebUpdateRuns {
     $dir = Join-Path (Get-AppFolder -Kind Logs) 'reports'
     $runs = @()
     if (Test-Path -LiteralPath $dir) {
-        $runs = @(Get-ChildItem -LiteralPath $dir -Filter 'managed-updates-*.json' -File | Sort-Object Name -Descending | Select-Object -First 10 | ForEach-Object {
+        $runs = @(Get-ChildItem -LiteralPath $dir -Filter 'managed-updates-*.json' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 10 | ForEach-Object {
                 try {
                     $r = Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
                     [ordered]@{ id = $_.BaseName; started = [string]$r.started; planOnly = [bool]$r.planOnly; failed = [int]$r.failed; items = @($r.items) }
@@ -626,7 +627,7 @@ function Global:Get-WebUpdateRuns {
                 catch { }
             })
     }
-    $running = Test-Path -LiteralPath (Join-Path $dir 'managed-updates.lock')
+    $running = Test-WebRunLockHeld (Join-Path $dir 'managed-updates.lock')
     return @{ ok = $true; runs = $runs; running = [bool]$running; schedule = (Get-WebUpdateSchedule) }
 }
 
@@ -797,4 +798,44 @@ function Global:Set-WebManagedDefault {
     if (-not (Write-SettingsFile)) { return @{ ok = $false; error = "Couldn't write the settings file." } }
     Write-Log '[OK] Managed updates are the default for new Winget apps.'
     return @{ ok = $true }
+}
+
+# ---------------------------------------------------------------- housekeeping
+function Global:Invoke-WebHousekeeping {
+    <#
+      At every start (and before every nightly run): what earlier runs left
+      behind - step files, unfinished uploads, packaging folders - and what has
+      grown old: Sandbox test folders (7 days), file backups (180 days), logs
+      (90 days). Removes only names this app makes.
+    #>
+    $now = Get-Date
+    $old = { param($Item, [double]$Days) ($now - $Item.LastWriteTime).TotalDays -gt $Days }
+    $drop = { param($Item) try { Remove-Item -LiteralPath $Item.FullName -Recurse -Force -ErrorAction Stop; 1 } catch { 0 } }
+    $n = 0
+    $temp = [System.IO.Path]::GetTempPath()
+    foreach ($pattern in 'intunepkg_*', '.intunepkg_*', 'intunecat-upload-*', 'IntunePackaging_*', 'intunewin_*', 'iwsrc_*', 'psadt-*') {
+        foreach ($i in @(Get-ChildItem -LiteralPath $temp -Filter $pattern -Force -ErrorAction SilentlyContinue)) { if (& $old $i 1) { $n += & $drop $i } }
+    }
+    if ($Global:App.RootPath) {
+        foreach ($i in @(Get-ChildItem -LiteralPath $Global:App.RootPath -Filter '.intunepkg_*' -File -Force -ErrorAction SilentlyContinue)) { if (& $old $i 1) { $n += & $drop $i } }
+    }
+    $sb = Get-WebSandboxRoot
+    if (Test-Path -LiteralPath $sb) { foreach ($i in @(Get-ChildItem -LiteralPath $sb -Directory -ErrorAction SilentlyContinue)) { if (& $old $i 7) { $n += & $drop $i } } }
+    $bk = Get-AppFolder -Kind Backups
+    if (Test-Path -LiteralPath $bk) { foreach ($i in @(Get-ChildItem -LiteralPath $bk -Directory -Filter 'app-edit_*' -ErrorAction SilentlyContinue)) { if ($i.Name -match '^app-edit_\d{4}-\d{2}-\d{2}$' -and (& $old $i 180)) { $n += & $drop $i } } }
+    $lg = Get-AppFolder -Kind Logs
+    if (Test-Path -LiteralPath $lg) { foreach ($i in @(Get-ChildItem -LiteralPath $lg -File -Filter 'intune-deployment-*.log' -ErrorAction SilentlyContinue)) { if (& $old $i 90) { $n += & $drop $i } } }
+    if ($n) { Write-Log "[INFO] Housekeeping: $n old item(s) removed (temporary files, Sandbox tests, backups older than 180 days, logs older than 90 days)." }
+}
+
+function Global:Test-WebRunLockHeld {
+    # Whether the managed-updates lock file belongs to a run that is still going: its process, started when the file says.
+    param([string]$File)
+    if (-not (Test-Path -LiteralPath $File)) { return $false }
+    $t = ([string](Get-Content -LiteralPath $File -Raw -ErrorAction SilentlyContinue)).Trim()
+    $parts = $t -split '\|', 2
+    $p = Get-Process -Id ([int]($parts[0] -replace '\D', '')) -ErrorAction SilentlyContinue
+    if (-not $p) { return $false }
+    if ($parts.Count -lt 2) { return $true }
+    try { return ($p.StartTime.ToUniversalTime().ToString('o') -eq $parts[1]) } catch { return $true }
 }
