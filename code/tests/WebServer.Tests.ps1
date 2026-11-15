@@ -576,6 +576,7 @@ try {
     $wauName = 'ZZ Wau ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
     $wauCmd = '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -ExecutionPolicy Bypass -NoProfile -File "C:\Program Files\Winget-AutoUpdate\Winget-Install.ps1" -AppIDs "Contoso.Wau"'
     Set-Content -LiteralPath (Join-Path $catDir ($wauName.Replace(' ', '-') + '.json')) -Encoding UTF8 -Value (@{ appName = $wauName; wingetId = 'Contoso.Wau'; appId = ''; metadata = @{ description = 'w'; appVersion = '2.5'; installContext = 'System'; installCommand = $wauCmd; uninstallCommand = "$wauCmd -Uninstall"; dependencies = @('Winget-AutoUpdate') } } | ConvertTo-Json -Depth 4)
+    [void](Invoke-Api '/api/managed-default' @{})
     $wauPre = Invoke-Api '/api/wau-switch' @{ preview = $true }
     $wauAtt = Invoke-Api '/api/attention'
     $wauRun = Invoke-Api '/api/wau-switch' @{}

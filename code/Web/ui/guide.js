@@ -17,6 +17,7 @@ async function takeVersionFor(a) {
 function stageOf(a) {
   const own = !a.wingetId;
   if (tenantState(a) === 'missing') return { key: 'tenant', label: 'Other tenant', cls: 'warn', why: 'Its App ID belongs to another tenant - copied catalog?', next: { label: 'Clear App ID', title: 'Forget the link, so Send to Intune creates it in this tenant', run: () => onApp(a, 'clearid') } };
+  if (a.msHint && !a.hasAppId) return { key: 'msapp', label: 'Microsoft app', cls: 'muted', why: a.msHint, next: { label: 'Edit', title: a.msHint, run: () => openEditor(a.name) } };
   if (/issue|Check failed/.test(a.audit || '')) return { key: 'look', label: 'Needs a look', cls: 'warn', why: 'Intune differs from the catalog (last check).', next: { label: 'Checks', title: 'See what differs and fix it', run: () => showView('checks') } };
   if (own && a.packageMissing) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'Its installer isn\'t packaged yet.', next: { label: 'Build', title: 'Build the .intunewin from its packages folder', run: () => onApp(a, 'package') } };
   if (needsAttention(a)) return { key: 'look', label: 'Needs a look', cls: 'warn', why: (a.status || '').split('; ').map(p => statusLabel[p] || p).join('; '), next: { label: 'Edit', title: 'Open it in the editor', run: () => openEditor(a.name) } };
@@ -40,7 +41,8 @@ let panelSeq = 0, panelTimer = 0;
 function updatePanel() {
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const b = $('btnNext');
-  if (sel.length === 1 && stageOf(sel[0]).next) { const s = stageOf(sel[0]); b.hidden = false; b.textContent = s.next.label; b.title = s.next.title; b.onclick = () => s.next.run(); }
+  // "Send to Intune" is the toolbar's own button already - not shown twice.
+  if (sel.length === 1 && stageOf(sel[0]).next && stageOf(sel[0]).next.label !== 'Send to Intune') { const s = stageOf(sel[0]); b.hidden = false; b.textContent = s.next.label; b.title = s.next.title; b.onclick = () => s.next.run(); }
   else if (sel.length > 1 && sel.every(a => stageOf(a).key === 'ready')) { b.hidden = false; b.textContent = `Send ${sel.length} apps`; b.title = 'All of them are ready to deploy'; b.onclick = () => openDeploy(sel.map(a => a.name)); }
   else b.hidden = true;
   const p = $('appPanel');

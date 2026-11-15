@@ -51,6 +51,8 @@ catch { $Global:App.WebLogFile = $null }
 
 # What earlier runs left behind, and what has grown old enough to go (Invoke-WebHousekeeping).
 try { Invoke-WebHousekeeping } catch { }
+# Apps not in Intune yet still on Winget-AutoUpdate's commands (before 2.19) switch by themselves - nothing to send.
+try { [void](Invoke-WithCatalogLock { Invoke-WebWauSwitch @{ auto = $true } }) } catch { }
 
 if (Enable-WebTestGraph) {
     Write-Host "  TEST MODE: Graph answers come from $env:INTUNE_CATALOG_TEST_GRAPH - nothing reaches a tenant." -ForegroundColor Red
