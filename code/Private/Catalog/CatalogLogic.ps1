@@ -1984,7 +1984,8 @@ function Global:Get-PermissionReport {
         @('DeviceManagementConfiguration.Read.All', [bool]$Usage.Filters, 'Assignment filters', 'Apps have an assignment filter - it is looked up by name.')
     )
     foreach ($f in $feat) {
-        $isGranted = (& $has $f[0]) -or ($f[0] -eq 'DeviceManagementConfiguration.Read.All' -and (& $has 'DeviceManagementConfiguration.ReadWrite.All'))
+        # A ReadWrite permission covers its Read.All.
+        $isGranted = (& $has $f[0]) -or ($f[0] -match '\.Read\.All$' -and (& $has ($f[0] -replace '\.Read\.All$', '.ReadWrite.All')))
         if ($f[1]) { & $row $f[0] $(if ($isGranted) { 'ok' } else { 'missing' }) $f[2] $f[3] }
         elseif ($isGranted) { & $row $f[0] 'unused' $f[2] $(if ($f[0] -eq 'Mail.Send') { 'No email alerts are set up - and Mail.Send can send as any mailbox: remove it, or limit it with an application access policy.' } else { 'Nothing here uses it yet.' }) }
         else { & $row $f[0] 'optional' $f[2] 'Only when you use it.' }
@@ -1992,6 +1993,7 @@ function Global:Get-PermissionReport {
     $known = @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Group.Read.All', 'DeviceManagementScripts.ReadWrite.All', 'DeviceManagementManagedDevices.Read.All', 'Mail.Send', 'User.Read.All', 'DeviceManagementConfiguration.Read.All')
     # ReadWrite stands in for Read.All when filters are used; otherwise it's a broad one never needed (below).
     if ($Usage.Filters -and -not (& $has 'DeviceManagementConfiguration.Read.All')) { $known += 'DeviceManagementConfiguration.ReadWrite.All' }
+    if ($Usage.Inventory -and -not (& $has 'DeviceManagementManagedDevices.Read.All')) { $known += 'DeviceManagementManagedDevices.ReadWrite.All' }
     if ((& $has 'Group.Read.All') -and (& $has 'Group.ReadWrite.All')) { & $row 'Group.Read.All' 'unused' 'Reading groups' 'Group.ReadWrite.All covers it.' }
     $broad = '^(Directory\.ReadWrite\.All|Application\.ReadWrite\.All|AppRoleAssignment\.ReadWrite\.All|RoleManagement\.ReadWrite\.Directory|DeviceManagementConfiguration\.ReadWrite\.All|DeviceManagementRBAC\.ReadWrite\.All|Sites\.FullControl\.All|Mail\.ReadWrite|Files\.ReadWrite\.All|User\.ReadWrite\.All)$'
     foreach ($p in @($g | Where-Object { $known -notcontains $_ } | Sort-Object)) {

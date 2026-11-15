@@ -43,6 +43,12 @@
   Also in the editor (**Fill from winget** by Intune details - into the form,
   kept with Save) and on Home ("N apps with details missing" - **Fill them
   in**).
+- **A missing API permission** says so in one sentence ("the app
+  registration is missing the API permission X ... Add required
+  permissions... adds it"); the full answer from Graph goes to the log.
+  Home shows **Missing API permission** until a call with it works again,
+  and Diagnostics > Check permissions counts a ReadWrite permission as
+  covering its Read.All.
 - **Spacing in forms**: room under every section heading, and a button,
   checkbox or label after a field, list or checkbox no longer touches it
   (Supersedence, Dependencies, Return codes, Allow uninstall, rings).
