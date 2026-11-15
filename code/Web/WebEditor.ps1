@@ -742,10 +742,13 @@ function Global:Get-WebCatalogHistoryCore {
         $cur.items.Add($item)
         $groups.Add($cur)
     }
-    $out = @($groups | ForEach-Object {
-        [ordered]@{ at = ([datetime]::new([long]$_.first, [DateTimeKind]::Utc)).ToString('o'); source = $_.source; kind = $_.kind; text = $_.text; count = $_.items.Count; items = @($_.items) }
-    })
-    return @{ ok = $true; groups = $out; undo = (Get-WebUndoInfo).undo }
+    $out = New-Object System.Collections.Generic.List[object]
+    foreach ($g in $groups) {
+        $list = $g['items']
+        $when = (New-Object DateTime ([long]$g['first']), ([DateTimeKind]::Utc)).ToString('o')
+        $out.Add([ordered]@{ at = $when; source = [string]$g['source']; kind = [string]$g['kind']; text = [string]$g['text']; count = [int]$list.Count; items = $list.ToArray() })
+    }
+    return @{ ok = $true; groups = $out.ToArray(); undo = (Get-WebUndoInfo).undo }
 }
 
 function Global:Get-WebCatalogValues {
