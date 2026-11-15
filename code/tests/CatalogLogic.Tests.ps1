@@ -197,6 +197,7 @@ $testableFunctionNames = @(
     "Get-NonPackageAppHint",
     "Test-CompanyPortalName",
     "Get-ClosestGroupName",
+    "ConvertFrom-WingetVersionsOutput",
     "Test-WauAppName",
     "Get-WauUse",
     "Get-ReleaseAvailableSettings",
@@ -887,6 +888,11 @@ Assert-True ((Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Company Porta
     -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Microsoft 365 Apps for enterprise'; wingetId = ''; metadata = [pscustomobject]@{ installCommand = 'setup.exe /configure config.xml'; detectionRule = [pscustomobject]@{ Type = 'File' } } }))) "Get-NonPackageAppHint: Company Portal, Microsoft 365 Apps and non-Win32 types need no package; an own installer does"
 
 Assert-True ((Get-ClosestGroupName 'ITSENSE - Intune - Deploy I&O Workplace' @("ITSENSE $([char]0x2013) Intune $([char]0x2013) Deploy I and O Workplace", 'Other')) -eq "ITSENSE $([char]0x2013) Intune $([char]0x2013) Deploy I and O Workplace" -and (Get-ClosestGroupName 'Dev  Workplace' @('dev workplace')) -eq 'dev workplace' -and -not (Get-ClosestGroupName 'Dev Workplace' @('Dev Workplaces')) -and -not (Get-ClosestGroupName 'A' @('a', 'A '))) "Get-ClosestGroupName: other case, spacing, dash or & is the same group; anything else or two hits isn't"
+
+# winget show --versions
+$wvOut = "   - `r`n   \ `r`nFound 7-Zip [7zip.7zip]`r`nVersion`r`n-------`r`n24.09`r`n24.08`r`n23.01`r`n`r`n"
+Assert-Equal '24.09,24.08,23.01' ((ConvertFrom-WingetVersionsOutput $wvOut) -join ',') "ConvertFrom-WingetVersionsOutput: the versions under the header, newest first, without the spinner"
+Assert-Equal 0 @(ConvertFrom-WingetVersionsOutput 'No package found matching input criteria.').Count "ConvertFrom-WingetVersionsOutput: nothing when winget found no package"
 
 # Install errors explained
 $e1 = Get-InstallErrorInfo -2016345060

@@ -704,3 +704,56 @@ function Global:Get-WebWingetCommands {
     }
     return $out
 }
+
+function Global:Get-WebCatalogHistory {
+    <#
+      The recent changes across the whole catalog, newest first, for the
+      Recent changes panel: the entries of one action together (the same
+      source and note, within a minute of each other - a batch edit of 12
+      apps is one entry with 12 apps), and the last bulk change that Undo
+      can take back. @{ ok; groups; undo }.
+    #>
+    param($Data)
+    try { return (Get-WebCatalogHistoryCore $Data) }
+    catch { return @{ ok = $false; error = "$($_.Exception.Message) - $($_.InvocationInfo.PositionMessage -replace '\s+', ' ')" } }
+}
+
+function Global:Get-WebCatalogHistoryCore {
+    param($Data)
+    [int]$limit = 200
+    if ($Data -and $Data.limit) { $limit = [int]$Data.limit }
+    if ($limit -lt 20) { $limit = 20 } elseif ($limit -gt 500) { $limit = 500 }
+    $groups = New-Object System.Collections.Generic.List[object]
+    $cur = $null
+    $n = 0
+    foreach ($e in @(Read-WebHistoryEntries -Months 3)) {
+        if ($n++ -ge $limit) { break }
+        # The time as UTC ticks (a plain number to compare); PowerShell 7 reads it as a date already, 5.1 as text.
+        [long]$ticks = 0
+        try { if ($e.at -is [datetime]) { $ticks = $e.at.ToUniversalTime().Ticks } else { $ticks = ([datetime]::Parse([string]$e.at, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime().Ticks } } catch { $ticks = 0 }
+        $changes = @(@($e.changes) | Where-Object { $_ } | ForEach-Object {
+            [ordered]@{ field = [string]$_.field; before = (Format-AppHistoryValue $_.before); after = (Format-AppHistoryValue $_.after); revertable = [bool]((Test-AppRecordFieldRevertable ([string]$_.field)) -and -not $_.long) }
+        })
+        $item = [ordered]@{ id = [string]$e.id; app = [string]$e.app; kind = [string]$e.kind; text = [string]$e.text; changes = @($changes)
+            canUndo = ($e.kind -eq 'catalog' -and @($changes | Where-Object { $_.revertable }).Count -gt 0 -and -not @($changes | Where-Object { $_.field -in 'releases', 'appId' }).Count) }
+        $key = "$([string]$e.source)|$([string]$e.kind)|$([string]$e.text)"
+        if ($cur -and $cur.key -eq $key -and [Math]::Abs([double]($cur.last - $ticks)) -le 600000000.0) { $cur.items.Add($item); $cur.last = $ticks; continue }
+        $cur = @{ key = $key; first = $ticks; last = $ticks; source = [string]$e.source; kind = [string]$e.kind; text = [string]$e.text; items = (New-Object System.Collections.Generic.List[object]) }
+        $cur.items.Add($item)
+        $groups.Add($cur)
+    }
+    $out = New-Object System.Collections.Generic.List[object]
+    foreach ($g in $groups) {
+        $list = $g['items']
+        $when = (New-Object DateTime ([long]$g['first']), ([DateTimeKind]::Utc)).ToString('o')
+        $out.Add([ordered]@{ at = $when; source = [string]$g['source']; kind = [string]$g['kind']; text = [string]$g['text']; count = [int]$list.Count; items = $list.ToArray() })
+    }
+    return @{ ok = $true; groups = $out.ToArray(); undo = (Get-WebUndoInfo).undo }
+}
+
+function Global:Get-WebCatalogValues {
+    # The publishers, owners and developers the catalog already uses - offered to pick, so the same name is written the same way.
+    $apps = @((Read-WebCatalogRecords).Apps)
+    $pick = { param($f) @($apps | ForEach-Object { if ($_.metadata) { ([string]$_.metadata.$f).Trim() } } | Where-Object { $_ } | Sort-Object -Unique) }
+    return @{ ok = $true; publisher = @(& $pick 'publisher'); owner = @(& $pick 'owner'); developer = @(& $pick 'developer') }
+}

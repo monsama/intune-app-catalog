@@ -36,10 +36,11 @@ function chipify(id, opts = {}) {
   };
   input.addEventListener('keydown', e => {
     if (['Enter', ',', ';', 'Tab'].includes(e.key)) {
-      // The suggestion list picks its highlighted group itself.
-      if (typeof gpList !== 'undefined' && !gpList.hidden && gpBox === input) return;
+      // The suggestion list picks its highlighted group itself; with none highlighted, what's typed is added.
+      if (typeof gpList !== 'undefined' && !gpList.hidden && gpBox === input && gpActive >= 0) return;
       if (!input.value.trim()) return;
       e.preventDefault(); input._addChip(input.value);
+      if (typeof gpHide === 'function') gpHide();
     }
     else if (e.key === 'Backspace' && !input.value && lines().length) { e.preventDefault(); set(lines().slice(0, -1)); }
   });

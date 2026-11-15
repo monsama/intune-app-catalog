@@ -386,3 +386,19 @@ function Global:Add-WebPsadtApp {
     Write-Log "[OK] Added the PSADT app $($r.name) - edit Invoke-AppDeployToolkit.ps1 in $folder."
     return @{ ok = $true; name = $r.name; folder = $folder; filled = @($fill.Filled); missing = @($fill.Missing) }
 }
+
+function Global:Get-WebWingetVersions {
+    # The versions winget has for one package, newest first - for picking an App version instead of typing it. Cached ten minutes.
+    param($Data)
+    $id = ([string]$Data.id).Trim()
+    if ($id -notmatch '^[A-Za-z0-9][A-Za-z0-9.\-_+]{0,127}$') { return @{ ok = $false; error = "'$id' isn't a Winget ID." } }
+    if (-not $Global:App.WingetVersionsCache) { $Global:App.WingetVersionsCache = [hashtable]::Synchronized(@{}) }
+    $hit = $Global:App.WingetVersionsCache[$id.ToLowerInvariant()]
+    if ($hit -and ((Get-Date) - $hit.at).TotalMinutes -lt 10) { return @{ ok = $true; versions = @($hit.versions) } }
+    try { $r = Invoke-Winget -Arguments @('show', '--id', $id, '--exact', '--versions', '--accept-source-agreements', '--disable-interactivity') -TimeoutSeconds 45 }
+    catch { return @{ ok = $false; error = $_.Exception.Message } }
+    $v = @(ConvertFrom-WingetVersionsOutput $r.StdOut)
+    if (-not $v.Count) { return @{ ok = $false; error = "winget lists no versions for '$id'." } }
+    $Global:App.WingetVersionsCache[$id.ToLowerInvariant()] = @{ at = (Get-Date); versions = $v }
+    return @{ ok = $true; versions = $v }
+}

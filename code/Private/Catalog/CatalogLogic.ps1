@@ -2259,3 +2259,24 @@ function Global:Test-CompanyPortalName {
     param([string]$Name)
     return (([string]$Name).Trim() -match '^(Microsoft\s+|Intune\s+)?Company Portal$')
 }
+
+function Global:ConvertFrom-WingetVersionsOutput {
+    <#
+      Pure: "winget show --id X --exact --versions" as the versions it lists,
+      newest first as winget gives them - the lines under the "Version" header
+      and its dashes; progress spinners and blank lines left out.
+    #>
+    param([string]$Text)
+    # A spinner overwrites itself with carriage returns: what's left of a line is after its last one.
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($raw in ([string]$Text).Split("`n")) {
+        $last = ''
+        foreach ($part in $raw.Split("`r")) { if ($part.Trim()) { $last = $part.Trim() } }
+        if ($last -match '^[\-\\|/]$') { $last = '' }
+        $lines.Add($last)
+    }
+    $start = -1
+    for ($i = 0; $i -lt $lines.Count - 1; $i++) { if ($lines[$i] -match '^Version$' -and $lines[$i + 1] -match '^-{3,}$') { $start = $i + 2; break } }
+    if ($start -lt 0) { return @() }
+    return @($lines[$start..($lines.Count - 1)] | Where-Object { $_ -match '^[0-9A-Za-z][0-9A-Za-z.\-_+]{0,63}$' } | Select-Object -First 100)
+}
