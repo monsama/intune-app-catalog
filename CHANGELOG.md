@@ -17,6 +17,8 @@
   the actions on the selected apps (Send to Intune, More) each joined into
   one control, the app count as a badge. The counters under it are one
   strip, the chosen one marked, with a green dot when Intune was read.
+- **Less rounded corners** everywhere: panels, buttons, fields and dialogs
+  (6, 4 and 3 px instead of 14, 8 and 6).
 
 ## 2.24.0
 
