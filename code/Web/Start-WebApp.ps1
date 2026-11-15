@@ -49,6 +49,9 @@ try {
 }
 catch { $Global:App.WebLogFile = $null }
 
+# What earlier runs left behind, and what has grown old enough to go (Invoke-WebHousekeeping).
+try { Invoke-WebHousekeeping } catch { }
+
 if (Enable-WebTestGraph) {
     Write-Host "  TEST MODE: Graph answers come from $env:INTUNE_CATALOG_TEST_GRAPH - nothing reaches a tenant." -ForegroundColor Red
     Write-Log "[WARN] Test mode: Graph answers come from $env:INTUNE_CATALOG_TEST_GRAPH."
@@ -57,6 +60,8 @@ if (Enable-WebTestGraph) {
 # The unattended run: no server, no window - the same functions the page's buttons use, then the process ends.
 if ($RunUpdates) {
     $exitCode = Invoke-ManagedUpdateRun -PlanOnly:$PlanOnly -FastTrackOnly:$FastTrackOnly
+    # Steps still running (a release that took longer than the run waits): finished or stopped, not left behind.
+    try { Complete-WebJobsAtExit -TimeoutMinutes 30 -StopUnfinished } catch { }
     exit $exitCode
 }
 

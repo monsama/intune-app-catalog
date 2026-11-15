@@ -105,7 +105,10 @@ function activity(text) {
   const log = $('jobLog');
   if (!log) return;
   if (activityFresh) { log.textContent = ''; activityFresh = false; }
-  log.textContent += text.endsWith('\n') ? text : text + '\n';
+  let t = log.textContent + (text.endsWith('\n') ? text : text + '\n');
+  // A page left open for days: the newest ~2000 lines are kept.
+  if (t.length > 300000) { const cut = t.indexOf('\n', t.length - 200000); t = '...\n' + t.slice(cut + 1); }
+  log.textContent = t;
   log.scrollTop = log.scrollHeight;
 }
 const stamp = () => new Date().toTimeString().slice(0, 8);

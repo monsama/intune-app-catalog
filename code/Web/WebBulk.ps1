@@ -33,6 +33,8 @@ function Global:Write-WebAppFile {
     #>
     param($App, $Undo)
     $file = Join-Path (Get-AppFolder -Kind Catalog -Create) ((Get-SafeFileNameForApp -Name $App.appName) + '.json')
+    # Nothing changed (a Pull of an app that matches Intune): no copy, no write.
+    if ((Test-Path -LiteralPath $file) -and [System.IO.File]::ReadAllText($file) -ceq (ConvertTo-SingleAppJson -App $App)) { return }
     $backup = Backup-WebAppFile $file -PassThru
     Save-WebAppJson -File $file -App $App
     if ($Undo -and $backup) { $Undo.items.Add(@{ name = [string]$App.appName; file = $file; backup = [string]$backup; hash = (Get-WebFileHash $file) }) }

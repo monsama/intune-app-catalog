@@ -64,7 +64,7 @@ function Global:Get-WebCatalog {
                 wingetVersion = [string]$(if ($Global:App.WingetLatest -and $apps[$i].wingetId) { $Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()] })
                 newerOnWinget = [bool]($Global:App.WingetLatest -and $apps[$i].wingetId -and (Compare-AppVersionText ([string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })) ([string]$Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()])) -eq 1)
                 managed      = [bool]$apps[$i].managedUpdates
-                previousVersions = @(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'previous' } | Sort-Object { [string]$_.at } | ForEach-Object { [string]$_.version })
+                previousVersions = @(Get-WebPreviousReleases $apps[$i] | ForEach-Object { [string]$_.version })
                 releaseIds   = @(@($apps[$i].releases) | Where-Object { $_ -and $_.appId } | ForEach-Object { ([string]$_.appId).ToLowerInvariant() })
                 retiringSince = [string]$apps[$i].retiringSince
                 pilotVersion = [string]$(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'pilot' } | Select-Object -First 1 -ExpandProperty version)
@@ -96,7 +96,9 @@ function Global:Start-WebStepJob {
         # Another PowerShell than the default one the steps use (installing the Graph module into each).
         [string]$Exe = '',
         # The apps a step changes in Intune - its success goes into their change history (-After's AppName when not given).
-        [string[]]$Apps = @())
+        [string[]]$Apps = @(),
+        # The app this step holds (Enter-WebAppBusy) - let go when the step ends, whatever its result.
+        [string]$BusyApp = '')
     $tag = [guid]::NewGuid().ToString('N')
     $configPath = Join-Path $env:TEMP ".intunepkg_$($Name)_config_$tag.json"
     $scriptPath = Join-Path $Global:App.RootPath ".intunepkg_embedded_$($Name)_$tag.ps1"
@@ -120,6 +122,7 @@ function Global:Start-WebStepJob {
     }
     catch {
         Remove-Item -LiteralPath $scriptPath, $helperPath, $logPath, $configPath -Force -ErrorAction SilentlyContinue
+        if ($BusyApp) { Exit-WebAppBusy $BusyApp }
         return @{ ok = $false; error = "Couldn't start the step: $($_.Exception.Message)" }
     }
     $Global:App.WebJobs[$tag] = @{
@@ -127,6 +130,7 @@ function Global:Start-WebStepJob {
         Cleanup = @($scriptPath, $helperPath, $configPath); Mode = $Kind; Done = $false; After = $After; LastPoll = Get-Date; Started = Get-Date
         HistoryApps = @($(if ($Apps.Count) { $Apps } elseif ($After.AppName -and $After.Kind -in 'deploy', 'deleted', 'release') { [string]$After.AppName }) | Where-Object { $_ })
         HistorySource = [string]$Global:WebChangeSource
+        BusyApp = $BusyApp
     }
     return @{ ok = $true; job = $tag }
 }
@@ -248,7 +252,9 @@ function Global:Complete-WebJobsAtExit {
       App ID saved, groups renamed, results read. What the page would have
       started next (pushing groups after a deploy) is logged instead.
     #>
-    param([int]$TimeoutMinutes = 60)
+    param([int]$TimeoutMinutes = 60,
+        # The nightly run: a step still running at the deadline is stopped (and its files removed), not left behind.
+        [switch]$StopUnfinished)
     $ids = @($Global:App.WebJobs.Keys)
     if ($ids.Count -eq 0) { return }
     Write-Host "  Waiting for $($ids.Count) running step(s) to finish before stopping (Ctrl+C stops without waiting)..." -ForegroundColor Yellow
@@ -257,7 +263,16 @@ function Global:Complete-WebJobsAtExit {
         $job = $Global:App.WebJobs[$id]
         if (-not $job) { continue }
         while (-not $job.Process.HasExited -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
-        if (-not $job.Process.HasExited) { Write-Log "[WARN] Stopped without waiting for: $($job.Mode)."; continue }
+        if (-not $job.Process.HasExited) {
+            if ($StopUnfinished) {
+                try { $job.Process.Kill() } catch { }
+                Remove-Item -LiteralPath (@($job.Cleanup) + $job.Log + @($job.Result | Where-Object { $_ })) -Force -ErrorAction SilentlyContinue
+                if ($job.BusyApp) { Exit-WebAppBusy $job.BusyApp }
+                Write-Log "[WARN] Stopped, still running at the end of the run: $($job.Mode) - check that app in Intune."
+            }
+            else { Write-Log "[WARN] Stopped without waiting for: $($job.Mode)." }
+            continue
+        }
         # Past the end of the log: nothing left to read, so this poll completes it.
         $r = Get-WebJobPoll ([pscustomobject]@{ job = $id; offset = [int64]::MaxValue })
         if ($r.after -and $r.after.pushGroups) { Write-Log "[WARN] $($job.Mode): the app window was closed, so its groups weren't pushed - use Push groups." }
@@ -277,6 +292,11 @@ function Global:Complete-WebJob {
     switch ($After.Kind) {
         'grouprename' { return (Complete-WebGroupRename -After $After) }
         'retire' { return (Complete-WebRetire -After $After) }
+        'pilotassigned' {
+            $id = [string]$After.AppId
+            [void](Update-WebCatalogApp -Name $After.AppName -Change { param($app) foreach ($r in @($app.releases)) { if ($r -and [string]$r.appId -eq $id) { $r.unassigned = $false } } }.GetNewClosure())
+            return @{ ok = $true }
+        }
         'retired' { $Global:App.IntuneAppsCache = $null; return (Complete-WebRetireFinish -Name ([string]$After.AppName)) }
         'checkdetails' { return (Complete-WebCheckDetails -After $After -Result $Result) }
         'checkassign' { return (Complete-WebCheckAssign -After $After -Result $Result) }
@@ -306,6 +326,7 @@ function Global:Complete-WebJob {
                 if ($newId) { $app.appId = $newId }
                 $app.intuneAppType = $(if ($After.Store) { 'Microsoft Store app (new)' } else { 'Windows app (Win32)' })
                 if (-not $app.metadata -and $defaults) { $app.metadata = $defaults }
+                if ($After.PackageStamp) { $app.packageStamp = [string]$After.PackageStamp }
             }.GetNewClosure())
             Write-Log "[OK] Deployed $($After.AppName)$(if ($newId) { " (App ID $newId)" }) - saved to the catalog."
             $catalog = Read-WebCatalogRecords
@@ -385,6 +406,7 @@ function Global:Get-WebJobPoll {
             # The catalog lock couldn't be had (Invoke-WithCatalogLock gave up): not finished yet - the next poll tries again.
             if ($after -and $after.ok -eq $false -and $null -eq $after.finished) { $response.done = $false }
             if ($after.finished) {
+                if ($job.BusyApp) { Exit-WebAppBusy $job.BusyApp }
                 if ($null -ne $after.after) { $response.after = $after.after }
                 Remove-Item -LiteralPath (@($job.Cleanup) + $job.Log + @($job.Result | Where-Object { $_ })) -Force -ErrorAction SilentlyContinue
                 Write-Log "$(if ($response.result -and $response.result.success) { '[OK]' } else { '[WARN]' }) Finished: $($job.Mode)."
@@ -488,10 +510,11 @@ function Global:Open-WebTarget {
 
 function Global:Get-WebLog {
     param($Data)
-    $from = [int]$Data.from
+    # -from: the number of the last line the page has (0: none yet) - the lines after it, and the newest number.
+    $from = [int64]$Data.from
     $all = @($Global:App.WebLog.ToArray())
-    $from = [Math]::Max(0, [Math]::Min($from, $all.Count))
-    return @{ ok = $true; next = $all.Count; lines = @($all | Select-Object -Skip $from) }
+    $lines = @($all | Where-Object { [int64]$_.Seq -gt $from })
+    return @{ ok = $true; next = $(if ($all.Count) { [int64]$all[-1].Seq } else { $from }); lines = $lines }
 }
 
 function Global:Read-WebCatalogRecords {

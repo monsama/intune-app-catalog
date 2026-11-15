@@ -23,7 +23,12 @@ the portal.
    off the old one. The pilot app becomes the current release and the old
    one is superseded.
 3. **Withdraw** deletes the pilot app instead. **Roll back** gives the
-   catalog's groups back to the newest superseded release.
+   catalog's groups back to the newest superseded version (by version
+   number). The version rolled back from is kept as *rolled back* - never
+   a rollback target - and clean-up deletes it.
+
+A withdrawn or rolled-back version isn't released again by the nightly run
+(the Updates page says so); release it by hand to try it again.
 
 Nothing is ever uninstalled: a device that has a newer version keeps it,
 because every release counts "this version or newer" as installed.
@@ -105,10 +110,16 @@ the packages folder (Packages\\*App-Name*) and use **Release new
 version...**:
 
 - The version comes from the installer: an MSI's ProductVersion (and
-  ProductCode), or an EXE's version.
+  ProductCode), or an EXE's version. For a PSADT app, the installer in its
+  Files folder (never the toolkit's own exe).
 - The package is rebuilt from that folder.
 - The detection rule is set to the new version (and the new MSI product
-  code).
+  code - the uninstall command follows it). A script or PSADT app's script
+  is brought to the new version too, so it writes the version marker the
+  detection checks.
+- A release whose install command or detection doesn't take the new
+  version (edited by hand) is refused, rather than releasing the old one
+  again.
 
 If the install command names the installer file, keep the file name the
 same, or change the command first.

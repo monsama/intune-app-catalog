@@ -366,8 +366,8 @@ function Global:Invoke-WebCheckFix {
                 param($a)
                 $old = [string]$a.wingetId
                 $a.wingetId = $new
-                # The install commands name the package too - left as they were, they would go on installing the old ID.
-                if ($old -and $a.metadata) {
+                # The install commands and the detection name the package too - left as they were, they would go on with the old ID.
+                if ($old -and $a.metadata -and -not (Set-AppWingetIdCommands -App $a -OldId $old)) {
                     foreach ($field in 'installCommand', 'uninstallCommand') {
                         $cmd = [string]$a.metadata.$field
                         if ($cmd -and $cmd.Contains($old)) { $a.metadata.$field = $cmd.Replace($old, $new) }

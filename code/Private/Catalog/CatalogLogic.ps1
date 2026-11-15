@@ -1190,9 +1190,15 @@ function Global:Set-ManagedAppPin {
     if (-not (Test-ReleaseVersionText $version)) { return $false }
     # An app with its own package: the version is in its detection rule (and an MSI's product code, which a new MSI usually changes).
     if (-not $App.wingetId) {
+        $oldCode = [string]$(if ($m.detectionRule) { $m.detectionRule.Msi_ProductCode })
         $rule = Set-DetectionRuleVersion -Rule $m.detectionRule -Version $version -ProductCode $ProductCode
         if (-not $rule.Changed) { return $false }
         $m.detectionRule = $rule.Rule
+        # A new MSI usually has a new product code: "msiexec /x {old}" would uninstall nothing.
+        $newCode = [string]$rule.Rule.Msi_ProductCode
+        if ($oldCode -and $newCode -and $oldCode -ne $newCode -and [string]$m.uninstallCommand -and ([string]$m.uninstallCommand).IndexOf($oldCode, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            $m.uninstallCommand = [regex]::Replace([string]$m.uninstallCommand, [regex]::Escape($oldCode), $newCode.Replace('$', '$$'), 'IgnoreCase')
+        }
         return $true
     }
     if (-not (Get-AppWingetInstallMethod -WingetId $App.wingetId -InstallCommand $m.installCommand -UninstallCommand $m.uninstallCommand) -and $m.installCommand) { return $false }
@@ -2102,4 +2108,72 @@ function Global:Set-MarkerScriptVersion {
     $t = [regex]::Replace([string]$Text, "(?m)(Set-ItemProperty\s+-LiteralPath\s+'HKLM:\\SOFTWARE\\IntuneAppCatalog\\Apps\\(?:[^']|'')*'\s+-Name\s+Version\s+-Value\s+)'(?:[^']|'')*'", ('${1}' + $lit))
     $t = [regex]::Replace($t, "(?m)^(\s*AppVersion\s*=\s*)'(?:[^']|'')*'", ('${1}' + $lit))
     return @{ Text = $t; Changed = ($t -cne [string]$Text) }
+}
+
+function Global:Test-ReleasePinned {
+    <#
+      Pure: why a release's settings don't install and detect -Version ('' when
+      they do). A Winget app: its install command pins the version and the
+      detection checks it; an own package: its detection rule checks it. Hand-
+      edited commands aren't re-pinned (Set-ManagedAppPin) - a release would
+      then install the old version and still count as installed.
+    #>
+    param($Metadata, [string]$Version, [bool]$Winget)
+    if (-not $Metadata) { return 'It has no settings to release with.' }
+    if ($Winget) {
+        if ([string]$Metadata.installCommand -notlike "*--version '$Version'*") { return "Its install command doesn't install $Version (it was edited by hand) - make it the generated one again (editor: clear the install and uninstall commands, or switch managed updates off and on), then release." }
+        $d = [string]$(if ($Metadata.detectionRule) { $Metadata.detectionRule.Script_Content })
+        if ($d -notlike "*'$Version'*") { return "Its detection doesn't check for $Version - it was edited by hand." }
+        return ''
+    }
+    $r = $Metadata.detectionRule
+    $v = switch ([string]$(if ($r) { $r.Type })) { 'Msi' { [string]$r.Msi_Version } 'File' { [string]$r.File_DetectionValue } 'Registry' { [string]$r.Reg_DetectionValue } default { '' } }
+    if ($v -ne $Version) { return "Its detection rule doesn't check for $Version - it would count the old version as installed." }
+    return ''
+}
+
+function Global:Test-ManagedAppEdit {
+    <#
+      Pure: why an edit to an app with managed updates that is in Intune can't
+      be saved ('' when it can). Its version only changes through a release
+      (pilot first) - a version typed in would reach everyone on the next send,
+      and an own package's detection would check a version its package
+      doesn't have. Managed updates can't be switched off while a version is
+      in pilot (it would drop off the Updates page, still assigned).
+    #>
+    param($Existing, $Record)
+    if (-not $Existing -or -not $Existing.managedUpdates -or -not $Existing.appId) { return '' }
+    $was = [string]$(if ($Existing.metadata) { $Existing.metadata.appVersion }); $now = [string]$(if ($Record.metadata) { $Record.metadata.appVersion })
+    if ($was -and $now -ne $was -and $Record.managedUpdates) { return "$($Existing.appName) has managed updates and is in Intune: a new version goes to the pilot groups first - use Release new version (More), not the App version field." }
+    if (-not $Record.managedUpdates -and @(@($Existing.releases) | Where-Object { $_ -and $_.state -eq 'pilot' }).Count) { return "A version of $($Existing.appName) is in pilot - promote or withdraw it before switching managed updates off." }
+    return ''
+}
+
+function Global:Set-AppWingetIdCommands {
+    <#
+      Pure apart from changing -App: an app whose Winget ID changed from -OldId
+      gets its generated install and uninstall commands for the new ID (any
+      form: WAU, winget, managed with its pinned version), and its detection
+      script's ID too. Commands edited by hand are left alone. Returns whether
+      anything changed.
+    #>
+    param($App, [string]$OldId)
+    $m = $App.metadata
+    $new = [string]$App.wingetId
+    if (-not $m -or -not $OldId -or -not $new -or $OldId -eq $new) { return $false }
+    $changed = $false
+    $method = Get-AppWingetInstallMethod -WingetId $OldId -InstallCommand ([string]$m.installCommand) -UninstallCommand ([string]$m.uninstallCommand)
+    if ($method) {
+        $pinned = ''
+        if ($method -eq 'Managed' -and [string]$m.installCommand -match " --version '((?:[^']|'')+)'") { $pinned = $Matches[1] -replace "''", "'" }
+        $c = Get-WingetCommandLines -WingetId $new -Method $method -InstallContext ([string]$m.installContext) -Version $pinned
+        $m.installCommand = $c.Install; $m.uninstallCommand = $c.Uninstall; $changed = $true
+    }
+    $rule = $m.detectionRule
+    if ($rule -and [string]$rule.Type -eq 'Script') {
+        $q = "'" + (ConvertTo-PsSingleQuotedContent $OldId) + "'"
+        $s = [string]$rule.Script_Content
+        if ($s.Contains($q)) { $r = $rule.PSObject.Copy(); $r.Script_Content = $s.Replace($q, "'" + (ConvertTo-PsSingleQuotedContent $new) + "'"); $m.detectionRule = $r; $changed = $true }
+    }
+    return $changed
 }

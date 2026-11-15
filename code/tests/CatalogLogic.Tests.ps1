@@ -191,6 +191,9 @@ $testableFunctionNames = @(
     "Get-DownloadCheckVerdict",
     "Add-WingetRetryReturnCode",
     "Set-MarkerScriptVersion",
+    "Test-ReleasePinned",
+    "Test-ManagedAppEdit",
+    "Set-AppWingetIdCommands",
     "Get-AppRecordFieldValues",
     "Get-AppRecordChanges",
     "Test-AppRecordFieldRevertable",
@@ -847,6 +850,25 @@ Assert-True ((Get-InstallErrorInfo 9009).meaning -like "*winget wasn't on the de
 $mk = Set-MarkerScriptVersion -Text ("x`r`nSet-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\IntuneAppCatalog\Apps\O''Neil App' -Name Version -Value '1.0'`r`n`$adtSession = @{`r`n    AppVersion = '1.0'`r`n}") -Version '2.1'
 Assert-True ($mk.Changed -and $mk.Text -match "-Name Version -Value '2\.1'" -and $mk.Text -match "AppVersion = '2\.1'" -and $mk.Text -match "O''Neil App") "Set-MarkerScriptVersion: the marker and PSADT's AppVersion get the new version"
 Assert-True (-not (Set-MarkerScriptVersion -Text "Set-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Other' -Name Version -Value '1.0'" -Version '2').Changed) "Set-MarkerScriptVersion: another registry value is left alone"
+
+# Day-to-day logic (2.18): blocked versions, rolled-back releases, release pins, managed edits, Winget ID changes
+$rt = ConvertTo-AppRecord ([pscustomobject]@{ appName = 'RT'; wingetId = 'V.RT'; blockedVersions = @('2.0', 'bad version!'); packageStamp = '2026-11-15T10:00:00Z|12345'
+    releases = @([pscustomobject]@{ version = '2.0'; appId = '11111111-2222-4333-8444-555555555555'; state = 'rolledback'; at = '2026-11-15 10:00' }, [pscustomobject]@{ version = '2.1'; appId = '11111111-2222-4333-8444-666666666666'; state = 'pilot'; at = '2026-11-15 10:00'; unassigned = $true }) })
+$rt2 = ConvertTo-AppRecord ((ConvertTo-SingleAppJson -App $rt) | ConvertFrom-Json)
+Assert-True (@($rt2.blockedVersions).Count -eq 1 -and $rt2.blockedVersions[0] -eq '2.0' -and $rt2.packageStamp -eq '2026-11-15T10:00:00Z|12345' -and @($rt2.releases | Where-Object { $_.state -eq 'rolledback' }).Count -eq 1 -and @($rt2.releases | Where-Object { $_.unassigned }).Count -eq 1) "Catalog file: blocked versions, the uploaded package's stamp, rolled-back and not-yet-assigned releases survive a save"
+$wPin = [pscustomobject]@{ installCommand = "x --version '2.0' y"; detectionRule = [pscustomobject]@{ Type = 'Script'; Script_Content = "`$Wanted = '2.0'" } }
+Assert-True ((Test-ReleasePinned -Metadata $wPin -Version '2.0' -Winget $true) -eq '' -and (Test-ReleasePinned -Metadata $wPin -Version '2.1' -Winget $true) -like '*edited by hand*') "Test-ReleasePinned: a Winget release must install and detect the new version"
+Assert-True ((Test-ReleasePinned -Metadata ([pscustomobject]@{ detectionRule = [pscustomobject]@{ Type = 'Msi'; Msi_Version = '3.0' } }) -Version '3.0' -Winget $false) -eq '' -and (Test-ReleasePinned -Metadata ([pscustomobject]@{ detectionRule = [pscustomobject]@{ Type = 'File'; File_DetectionValue = '2.9' } }) -Version '3.0' -Winget $false)) "Test-ReleasePinned: an own package's detection must check the new version"
+$mx = [pscustomobject]@{ appName = 'M'; managedUpdates = $true; appId = 'x'; metadata = [pscustomobject]@{ appVersion = '1.0' }; releases = @() }
+Assert-True ((Test-ManagedAppEdit -Existing $mx -Record ([pscustomobject]@{ managedUpdates = $true; metadata = [pscustomobject]@{ appVersion = '2.0' } })) -like '*Release new version*' -and (Test-ManagedAppEdit -Existing $mx -Record ([pscustomobject]@{ managedUpdates = $true; metadata = [pscustomobject]@{ appVersion = '1.0' } })) -eq '' -and
+    (Test-ManagedAppEdit -Existing ([pscustomobject]@{ managedUpdates = $true; appId = ''; metadata = [pscustomobject]@{ appVersion = '1.0' } }) -Record ([pscustomobject]@{ managedUpdates = $true; metadata = [pscustomobject]@{ appVersion = '2.0' } })) -eq '') "Test-ManagedAppEdit: a deployed managed app's version only through a release; not deployed yet - any version"
+$mxp = [pscustomobject]@{ appName = 'M'; managedUpdates = $true; appId = 'x'; metadata = [pscustomobject]@{ appVersion = '1.0' }; releases = @([pscustomobject]@{ state = 'pilot' }) }
+Assert-True ((Test-ManagedAppEdit -Existing $mxp -Record ([pscustomobject]@{ managedUpdates = $false; metadata = [pscustomobject]@{ appVersion = '1.0' } })) -like '*in pilot*') "Test-ManagedAppEdit: managed updates can't go off while a version is in pilot"
+$idCmd = Get-WingetCommandLines -WingetId 'Old.App' -Method 'Managed' -InstallContext 'System' -Version '3.1'
+$idApp = [pscustomobject]@{ wingetId = 'New.App'; metadata = [pscustomobject]@{ installCommand = $idCmd.Install; uninstallCommand = $idCmd.Uninstall; installContext = 'System'; detectionRule = [pscustomobject]@{ Type = 'Script'; Script_Content = "`$AppToDetect = 'Old.App'" } } }
+Assert-True ((Set-AppWingetIdCommands -App $idApp -OldId 'Old.App') -and $idApp.metadata.installCommand -like "*--id 'New.App'*--version '3.1'*" -and $idApp.metadata.installCommand -notlike '*Old.App*' -and $idApp.metadata.detectionRule.Script_Content -eq "`$AppToDetect = 'New.App'") "Set-AppWingetIdCommands: a new Winget ID - the generated commands (pinned version kept) and the detection follow"
+$msiApp = [pscustomobject]@{ managedUpdates = $true; wingetId = ''; appName = 'MsiApp'; metadata = [pscustomobject]@{ appVersion = '2.0'; uninstallCommand = 'msiexec /x {11111111-1111-1111-1111-111111111111} /qn'; detectionRule = [pscustomobject]@{ Type = 'Msi'; Msi_ProductCode = '{11111111-1111-1111-1111-111111111111}'; Msi_Version = '1.0'; Msi_VersionOperator = 'greaterThanOrEqual' } } }
+Assert-True ((Set-ManagedAppPin $msiApp -ProductCode '{22222222-2222-2222-2222-222222222222}') -and $msiApp.metadata.uninstallCommand -eq 'msiexec /x {22222222-2222-2222-2222-222222222222} /qn' -and $msiApp.metadata.detectionRule.Msi_Version -eq '2.0') "Set-ManagedAppPin: a new MSI's product code reaches the uninstall command too"
 
 # Install errors explained
 $e1 = Get-InstallErrorInfo -2016345060

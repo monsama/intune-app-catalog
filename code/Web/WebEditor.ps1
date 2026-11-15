@@ -45,6 +45,7 @@ function Global:Get-WebAppEditable {
         assignmentFilter     = [string]$App.assignmentFilter
         assignmentFilterMode = $(if ([string]$App.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' })
         retiringSince = [string]$App.retiringSince
+        blockedVersions = @($App.blockedVersions | Where-Object { $_ } | ForEach-Object { [string]$_ })
         hasMetadata  = [bool]$m
         managedUpdates = [bool]$App.managedUpdates
         releaseRule  = $(if ($App.releaseRule) { [ordered]@{ days = $App.releaseRule.days; maxFailedPercent = $App.releaseRule.maxFailedPercent; minInstalled = $App.releaseRule.minInstalled } } else { $null })
@@ -240,6 +241,9 @@ function Global:Merge-WebAppEdit {
         assignmentFilter     = $(if ($null -ne $Edit.assignmentFilter) { $af = ([string]$Edit.assignmentFilter).Trim(); if ($af.Length -le 200) { $af } else { '' } } elseif ($Existing) { [string]$Existing.assignmentFilter } else { '' })
         # Being retired stays as it was - only Retire changes it.
         retiringSince    = $(if ($Existing) { [string]$Existing.retiringSince } else { '' })
+        # Kept as they were - releases and Send to Intune change them, not the editor.
+        blockedVersions  = @($(if ($Existing) { @($Existing.blockedVersions) }) | Where-Object { $_ })
+        packageStamp     = $(if ($Existing) { [string]$Existing.packageStamp } else { '' })
         assignmentFilterMode = $(if ($null -ne $Edit.assignmentFilterMode) { if ([string]$Edit.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' } } elseif ($Existing -and [string]$Existing.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' })
         metadata         = $metadata
     }
@@ -302,6 +306,8 @@ function Global:Save-WebApp {
     $record = Merge-WebAppEdit -Existing $existing -Edit $edit -Defaults $defaults
     $problem = Test-WebAppEdit -Record $record -OriginalName $original -Others @($catalog.Apps)
     if ($problem) { return @{ ok = $false; error = $problem } }
+    $problem = Test-ManagedAppEdit -Existing $existing -Record $record
+    if ($problem) { return @{ ok = $false; error = $problem } }
     if ([string]$edit.iconChange -eq 'set' -and -not $record.icon) { return @{ ok = $false; error = 'The icon must be a PNG or JPEG of at most 750 KB.' } }
     if (([string]$edit.downloadUrl).Trim() -and -not $record.downloadUrl) { return @{ ok = $false; error = 'The installer download address must start with https://.' } }
     if ($record.autoRelease -and ($record.wingetId -or -not $record.managedUpdates)) { $record.autoRelease = $false }
@@ -327,6 +333,8 @@ function Global:Save-WebApp {
             $record.metadata.installContext = $(if ([string]$edit.deploy.installContext -eq 'User') { 'User' } else { 'System' })
         }
     }
+    # A new Winget ID: the generated commands and the detection follow it (hand-edited ones stay).
+    if ($existing -and $existing.wingetId -and $record.wingetId -and $existing.wingetId -ne $record.wingetId) { [void](Set-AppWingetIdCommands -App $record -OldId ([string]$existing.wingetId)) }
     # A managed app's commands and detection follow its App version (pinned).
     [void](Set-ManagedAppPin $record)
     # The winget commands exit 9009 while winget isn't on a new device yet - a Retry return code.
@@ -351,6 +359,7 @@ function Global:Save-WebApp {
         Backup-WebAppFile $oldFile
         Remove-Item -LiteralPath $oldFile -Force -ErrorAction SilentlyContinue
     }
+    if ($existing -and $existing.appName -ne $record.appName) { Rename-WebAppReferences -Old $existing.appName -New $record.appName }
     Write-Log "[OK] $(if ($existing) { 'Saved' } else { 'Added' }): $($record.appName)$(if ($existing -and $existing.appName -ne $record.appName) { " (was $($existing.appName))" })."
     return @{ ok = $true; name = $record.appName }
 }
@@ -485,6 +494,8 @@ function Global:Save-WebAppJson {
         # A rename: the app's file under its old name, the "before" of this write.
         [string]$BeforeFile = '')
     $json = ConvertTo-SingleAppJson -App $App
+    # The same as on disk: nothing to write, nothing to record.
+    if ((Test-Path -LiteralPath $File) -and -not $BeforeFile -and [System.IO.File]::ReadAllText($File) -ceq $json) { return }
     $before = $null
     $from = if ($BeforeFile -and (Test-Path -LiteralPath $BeforeFile)) { $BeforeFile } else { $File }
     if (Test-Path -LiteralPath $from) { try { $before = ConvertTo-AppRecord (Get-Content -LiteralPath $from -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { } }
@@ -552,6 +563,8 @@ function Global:Undo-WebHistoryChange {
     if ($id -notmatch '^[0-9a-f]{32}$') { return @{ ok = $false; error = 'That is not a change in the history.' } }
     $entry = @(Read-WebHistoryEntries | Where-Object { $_.id -eq $id }) | Select-Object -First 1
     if (-not $entry -or $entry.kind -ne 'catalog') { return @{ ok = $false; error = 'That change is not in the history (or was not a catalog change).' } }
+    # A release step (promotion, rollback, a new release) moved the app in Intune too - half of it can't be undone here.
+    if (@(@($entry.changes) | Where-Object { [string]$_.field -in 'releases', 'appId' }).Count) { return @{ ok = $false; error = 'That change came with a release step (it changed which app in Intune is the current one) - take it back with Roll back or Withdraw (Updates), not here.' } }
     $catalog = Read-WebCatalogRecords
     $app = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
     if (-not $app) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
@@ -572,6 +585,7 @@ function Global:Undo-WebHistoryChange {
     if ($app.metadata -and -not @($app.metadata.PSObject.Properties | Where-Object { $v = $_.Value; -not ($null -eq $v -or ($v -is [string] -and -not $v) -or (($v -is [array]) -and -not @($v | Where-Object { $_ }).Count)) }).Count) { $app.metadata = $null }
     # The same checks as the editor's Save, and a managed app's commands following its version.
     $problem = Test-WebAppEdit -Record $app -OriginalName $app.appName -Others @($catalog.Apps)
+    if (-not $problem) { $problem = Test-ManagedAppEdit -Existing ((Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1) -Record $app }
     if ($problem) { return @{ ok = $false; error = "It can't be undone: $problem" } }
     [void](Set-ManagedAppPin $app)
     $when = try { ([datetime]$entry.at).ToLocalTime().ToString('yyyy-MM-dd HH:mm') } catch { [string]$entry.at }
@@ -641,4 +655,26 @@ function Global:Update-WebMarkerVersion {
     }
     if ($changed.Count) { Write-Log "[OK] $Name`: $($changed -join ', ') now write version $Version (build the package again)." }
     return @($changed)
+}
+
+function Global:Rename-WebAppReferences {
+    <#
+      After an app is renamed: other apps' dependencies name it by its catalog
+      name (they would drop it on their next send), and its packages folder is
+      named after it (its package wouldn't be found).
+    #>
+    param([string]$Old, [string]$New)
+    $folder = Get-AppFolder -Kind Catalog
+    foreach ($o in @((Read-WebCatalogRecords).Apps | Where-Object { $_.metadata -and @($_.metadata.dependencies) -contains $Old })) {
+        $o.metadata.dependencies = @(@($o.metadata.dependencies) | ForEach-Object { if ([string]$_ -eq $Old) { $New } else { [string]$_ } })
+        $file = Join-Path $folder ((Get-SafeFileNameForApp -Name $o.appName) + '.json')
+        Backup-WebAppFile $file
+        Save-WebAppJson -File $file -App $o -Text "Dependency renamed: $Old -> $New"
+    }
+    $pk = Get-AppFolder -Kind Packages
+    $from = Join-Path $pk (Get-SafeFileNameForApp -Name $Old); $to = Join-Path $pk (Get-SafeFileNameForApp -Name $New)
+    if ($from -ne $to -and (Test-Path -LiteralPath $from -PathType Container) -and -not (Test-Path -LiteralPath $to)) {
+        try { Move-Item -LiteralPath $from -Destination $to -ErrorAction Stop; Write-Log "[OK] Its packages folder follows the new name: $to" }
+        catch { Write-Log "[WARN] The packages folder $from couldn't be renamed to $to ($($_.Exception.Message)) - rename it by hand." }
+    }
 }
