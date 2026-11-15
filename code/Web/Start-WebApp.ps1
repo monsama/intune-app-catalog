@@ -135,7 +135,7 @@ $handler = {
             # Before signing in: what kind of server this is, and the sign-in itself.
             if ($req.Path -eq '/api/hello') { Send-WebJson $Client @{ ok = $true; server = [bool]$WebServerMode; version = $App.AppVersion }; return }
             if ($WebServerMode) {
-                if ($req.Path -eq '/api/login') { Send-WebJson $Client (Invoke-WebLogin -Data $data -Agent $req.Agent); return }
+                if ($req.Path -eq '/api/login') { Send-WebJson $Client (Invoke-WebLogin -Data $data -Agent $req.Agent -Client $req.ClientAddr); return }
                 if ($req.Path -eq '/api/logout') { Send-WebJson $Client (Invoke-WebLogout -Token ([string]$data.token)); return }
                 $why = Test-WebSession ([string]$data.token)
                 if ($why) { Send-WebJson $Client @{ ok = $false; error = 'bad token'; reason = $why }; return }

@@ -102,7 +102,7 @@ function saveFromUrl(url, name) { const a = document.createElement('a'); a.href 
 
 async function api(path, body = {}) {
   try {
-    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, token: TOKEN }) });
+    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-ICA-Session': TOKEN }, body: JSON.stringify({ ...body, token: TOKEN }) });
     const j = await r.json();
     // The server version: the session ended (taken over by a sign-in elsewhere, idle, signed out) - back to sign-in.
     if (j && j.error === 'bad token') { if (j.reason) { goSignIn(j.reason); return j; } showDead(); }

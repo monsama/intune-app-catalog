@@ -74,21 +74,32 @@ function Global:Get-WebTokenDigest {
 
 function Global:Test-WebHostAllowed {
     # Pure apart from $Global:App.Server: the Host header names this server (its public names, or localhost).
-    param([string]$HostHeader)
+    # localhost only from this machine itself (the health check): another container on the proxy's network
+    # reaching the app directly, around the HTTPS proxy, has to use the public name - and is refused below.
+    param([string]$HostHeader, [string]$Peer = '127.0.0.1')
     $h = ([string]$HostHeader).Trim().ToLowerInvariant()
-    if ($h -match '^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$') { return $true }
+    if ($h -match '^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$') { return (Test-WebLoopback $Peer) }
     $s = $Global:App.Server
     if (-not $s) { return $false }
     $name = $h -replace ':\d+$', ''
     return (@($s.Hosts) -contains $name)
 }
 
+function Global:Test-WebLoopback {
+    # Whether a connection's address is this machine's own (127.x, ::1, or IPv4 mapped into IPv6). '' counts:
+    # no address known (the desktop version listens on 127.0.0.1 only).
+    param([string]$Peer)
+    if (-not $Peer) { return $true }
+    $p = $Peer -replace '^::ffff:', ''
+    return ($p -match '^127\.' -or $p -eq '::1')
+}
+
 function Global:Test-WebOriginAllowed {
     # No Origin (a same-origin GET, the health check), or this server's own: https://<name>, http only when allowed.
-    param([string]$Origin)
+    param([string]$Origin, [string]$Peer = '127.0.0.1')
     if ([string]::IsNullOrEmpty($Origin)) { return $true }
     $o = $Origin.Trim().ToLowerInvariant()
-    if ($o -match '^http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$') { return $true }
+    if ($o -match '^http://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$') { return (Test-WebLoopback $Peer) }
     $s = $Global:App.Server
     if (-not $s) { return $false }
     $m = [regex]::Match($o, '^(https?)://([^/:]+)(:\d+)?$')
@@ -101,23 +112,35 @@ function Global:Invoke-WebLogin {
     <#
       Signs the admin in: a new session, and the one that was open ends (its
       browser is told it was taken over). Five wrong passwords within a
-      minute: none is checked for a minute.
+      minute from one address: none from there is checked for a minute (per
+      address, so someone else guessing can't lock the admin out). Attempts
+      being checked count too - many at once don't get past the limit.
     #>
-    param($Data, [string]$Agent)
+    param($Data, [string]$Agent, [string]$Client = '')
     $s = $Global:App.Server
     $now = [DateTime]::UtcNow
+    $key = if ($Client) { $Client } else { '?' }
+    $mine = @{ Key = $key; At = $now; Pending = $true }
     [System.Threading.Monitor]::Enter($s.Fails)
     try {
-        foreach ($t in @($s.Fails)) { if (($now - $t).TotalSeconds -gt 60) { $s.Fails.Remove($t) } }
-        if ($s.Fails.Count -ge 5) { return @{ ok = $false; error = 'Too many wrong passwords - wait a minute, then try again.' } }
+        foreach ($t in @($s.Fails)) { if (($now - $t.At).TotalSeconds -gt 60 -and -not $t.Pending) { [void]$s.Fails.Remove($t) } }
+        if (@($s.Fails | Where-Object { $_.Key -eq $key }).Count -ge 5) { return @{ ok = $false; error = 'Too many wrong passwords - wait a minute, then try again.' } }
+        [void]$s.Fails.Add($mine)
     }
     finally { [System.Threading.Monitor]::Exit($s.Fails) }
-    $given = [string]$Data.password
-    if ($given.Length -gt 256) { $given = $given.Substring(0, 256) }
-    $ok = Test-WebBytesEqual -A (Get-WebPasswordHash -Password $given -Salt $s.Salt) -B $s.Hash
+    $ok = $false
+    try {
+        $given = [string]$Data.password
+        if ($given.Length -gt 256) { $given = $given.Substring(0, 256) }
+        $ok = Test-WebBytesEqual -A (Get-WebPasswordHash -Password $given -Salt $s.Salt) -B $s.Hash
+    }
+    finally {
+        [System.Threading.Monitor]::Enter($s.Fails)
+        try { if ($ok) { [void]$s.Fails.Remove($mine) } else { $mine.Pending = $false; $mine.At = [DateTime]::UtcNow } }
+        finally { [System.Threading.Monitor]::Exit($s.Fails) }
+    }
     if (-not $ok) {
-        [System.Threading.Monitor]::Enter($s.Fails); try { [void]$s.Fails.Add($now) } finally { [System.Threading.Monitor]::Exit($s.Fails) }
-        Write-Log "[WARN] A sign-in with a wrong password."
+        Write-Log "[WARN] A sign-in with a wrong password (from $key)."
         return @{ ok = $false; error = 'Wrong password.' }
     }
     $bytes = New-Object byte[] 32; [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
@@ -141,6 +164,7 @@ function Global:Test-WebSession {
     $now = [DateTime]::UtcNow
     if ($cur -and (($now - $cur.Last).TotalMinutes -gt $s.IdleMinutes -or ($now - $cur.Created).TotalHours -gt $s.SessionHours)) {
         [void]$s.Ended.Add(@{ Digest = $cur.Digest; Reason = 'expired'; At = $now }); $s.Session = $null; $cur = $null
+        while ($s.Ended.Count -gt 20) { $s.Ended.RemoveAt(0) }
     }
     if (-not $Token -or $Token -notmatch '^[0-9a-f]{64}$') { return 'signin' }
     $digest = Get-WebTokenDigest $Token

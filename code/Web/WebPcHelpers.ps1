@@ -32,6 +32,8 @@ function Global:ConvertTo-WebScriptFile {
 function Global:Get-WebHelperHeader {
     # The first lines of every helper script: what it is, which server wrote it, when.
     param([string]$What)
+    # Free text (an app's name - from an installer's own ProductName) never ends the comment block, nor the line.
+    $What = ($What -replace '[\x00-\x1f\x7f]', ' ') -replace '<#|#>', '_'
     return @"
 <#
   Intune App Catalog - $What
@@ -111,7 +113,7 @@ function Global:Get-WebEntraScript {
     $text = (Get-WebHelperHeader 'Entra setup: the certificate and the API permissions on the app registration') + @"
 
 # You sign in with your own account (an admin of the tenant) - the same step the desktop version runs
-# (CertUpload.ps1, below as it is): $(@($steps | ForEach-Object { if ($_.Mode -eq 'Upload') { "add the certificate $($_.CertSubject) ($($_.CertThumbprint))" } else { "add $($perms.Count) Microsoft Graph application permission(s)" } }) -join ', then ').
+# (CertUpload.ps1, below as it is): $(@($steps | ForEach-Object { if ($_.Mode -eq 'Upload') { "add the certificate $(([string]$_.CertSubject) -replace '[\x00-\x1f\x7f]', ' ') ($($_.CertThumbprint))" } else { "add $($perms.Count) Microsoft Graph application permission(s)" } }) -join ', then ').
 `$ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
