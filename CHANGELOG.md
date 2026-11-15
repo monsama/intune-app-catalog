@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.28.1
+
+- **The server version: scripts for what needs a Windows PC.** These download
+  from the page and run on a Windows PC (right-click > Run with PowerShell):
+  - **Entra setup script** (Settings > Connection): you sign in on the PC; it
+    adds the chosen certificate and the API permissions to the app
+    registration, then opens the page for the admin consent - the desktop
+    version's Upload to Entra / Add permissions.
+  - **Sandbox test** (app menu > Download a Sandbox test): a zip with the
+    package, the test and `Start-Test.ps1`, which opens Windows Sandbox and
+    says how the install and the detection went.
+  - **Detection from an app on a PC** (editor > Detection): a script lists
+    the PC's installed apps; the one you pick goes to the clipboard, pasted
+    back it becomes the detection rule.
+  - **A PC's apps** (Add apps > From a list): a script runs `winget export`
+    on the PC; its file is chosen in From a list as before.
+  Download links are single-use and expire after 5 minutes.
+
 ## 2.28.0
 
 - **The server version: the app as a Docker container.** The same app, on a

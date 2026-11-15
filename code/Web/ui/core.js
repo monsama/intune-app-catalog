@@ -86,8 +86,19 @@ function goSignIn(why) {
     b.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
     b.addEventListener('click', async () => { await api('/api/logout'); goSignIn('signedout'); });
     const bar = document.getElementById('pageBtns'); if (bar) bar.append(b);
+    // What a Windows PC does comes as a download here (PC helpers).
+    for (const m of document.querySelectorAll('[data-act="sandbox"]')) { m.textContent = 'Download a Sandbox test...'; m.title = 'A zip for a Windows PC with Windows Sandbox: the package, the test and a starter that opens the Sandbox and says how it went'; }
   } catch (e) { /* the desktop app, or no answer: nothing to do here */ }
 })();
+
+// A file an answer brought (base64) saved by the browser - the PC helper scripts, a .cer.
+function saveB64File(r, type = 'application/octet-stream') {
+  const bin = atob(r.file), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bytes], { type })); a.download = r.name;
+  document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+// A file the server prepared, by its single-use link.
+function saveFromUrl(url, name) { const a = document.createElement('a'); a.href = url; a.download = name || ''; document.body.append(a); a.click(); setTimeout(() => a.remove(), 1000); }
 
 async function api(path, body = {}) {
   try {

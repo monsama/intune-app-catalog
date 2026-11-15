@@ -32,11 +32,10 @@ Without NOBS Inventory's proxy: `sudo ./deploy-ica.sh --no-proxy`, and forward `
 2. **Settings > Connection**: tenant and client ID, then the certificate:
    - **Import a .pfx...** - the certificate the app registration already has (exported with its private key from
      the PC the desktop app runs on: `certmgr.msc` > Personal > the certificate > Export, with the private key), or
-   - **Create new certificate...**, then **Download .cer** and add it in Entra ID: the app registration >
-     Certificates & secrets > Certificates > Upload certificate.
-   The API permissions are added in Entra ID by hand too (API permissions > Add a permission, then Grant admin
-   consent) - Diagnostics > Check permissions lists every one the app uses. The server can't sign you in to Entra
-   ID for these two, as the desktop app does.
+   - **Create new certificate...**, then **Entra setup script...**: run it on a Windows PC (right-click > Run with
+     PowerShell), sign in there - it adds the certificate and the API permissions to the app registration and
+     opens the page for the admin consent. (By hand: **Download .cer**, then in Entra ID Certificates & secrets >
+     Upload certificate, and API permissions > Add a permission - Diagnostics > Check permissions lists them.)
 3. **Test connection**, Save.
 4. **Settings > Packaging & folders > Build init.intunewin** - the shared package every Winget app deploys with.
 5. Your apps: they are in Intune already from the desktop version - **Checks > Run checks**, tick "In Intune, not in
@@ -60,9 +59,12 @@ To change the password: write the new one (at least 12 characters) into `secrets
 | --- | --- |
 | winget.exe answers search, versions and details | winget's package index from cdn.winget.microsoft.com, read on the server (refreshed every 6 hours) |
 | Windows scheduled tasks for the nightly run | the server's own schedule (Settings > Nightly run & alerts) |
-| Certificate in the Windows store; Upload to Entra / Add permissions sign you in | Certificate in the server's store (data volume); import a .pfx or create one; add .cer and permissions in Entra ID by hand |
+| Certificate in the Windows store; Upload to Entra / Add permissions sign you in | Certificate in the server's store (data volume); import a .pfx or create one; the Entra setup script adds it and the permissions from a Windows PC |
 | IntuneWinAppUtil.exe or built in | built in only |
-| Windows Sandbox test, Detection from an app on this PC, Read this PC's apps, Open folder | not there |
+| Windows Sandbox test | Download a Sandbox test: a zip with `Start-Test.ps1` for a PC with Windows Sandbox |
+| Detection from an app on this PC | a script lists the PC's apps; the one picked is pasted back and becomes the rule |
+| Read this PC's apps (winget export) | a script runs `winget export` on the PC; its file goes to Add apps > From a list |
+| Open folder | not there - the files are on the data volume |
 | The page on 127.0.0.1 with a token from the app window | the page on https://<name>, with the admin sign-in |
 
 Everything else - the catalog, Send to Intune, groups, Checks, Updates and releases, platform scripts - works the

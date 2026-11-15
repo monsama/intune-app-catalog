@@ -409,8 +409,9 @@
           <div class="actions serveronly">
             <button class="btn" id="btnPfxImport" title="Use the certificate you already have: a .pfx file with its private key">Import a .pfx...</button>
             <button class="btn" id="btnCerDownload" title="The chosen certificate's public part (.cer) - what the app registration in Entra ID takes">Download .cer</button>
+            <button class="btn primary" id="btnEntraScript" title="A script for a Windows PC: you sign in there, it adds this certificate and the API permissions to the app registration">Entra setup script...</button>
           </div>
-          <p class="sub serveronly">In Entra ID: add the .cer to the app registration (<b>Certificates &amp; secrets &gt; Certificates &gt; Upload certificate</b>), and its API permissions under <b>API permissions</b> (Diagnostics &gt; Check permissions lists them), then grant admin consent. The server can't sign you in for that.</p>
+          <p class="sub serveronly">In Entra ID: <b>Entra setup script...</b> - run it on a Windows PC, you sign in there and it adds this certificate and the API permissions to the app registration, then opens the page for the admin consent. Or by hand: the .cer under <b>Certificates &amp; secrets</b>, the permissions under <b>API permissions</b>.</p>
           <p class="sub desktoponly">In Entra ID <span class="muted">(signs you in with your own account)</span></p>
           <div class="actions desktoponly">
             <button class="btn" id="btnCheckCerts" title="List the certificates the app registration has in Entra ID (you sign in)">Check certificates</button>
@@ -661,7 +662,7 @@
   <button role="menuitem" data-act="pull" title="Read the apps' settings and groups from Intune into the catalog - you choose per field">Read from Intune...</button>
   <button role="menuitem" data-act="pushsettings" title="Send the catalog's settings to Intune, without uploading a package">Send settings only...</button>
   <button role="menuitem" data-act="status" title="Every device's install state for this app, from Intune">Install status...</button>
-  <button role="menuitem" class="desktoponly" data-act="sandbox" title="Install, detect and uninstall it in Windows Sandbox - a throwaway Windows - before it goes to any device">Test in Windows Sandbox...</button>
+  <button role="menuitem" data-act="sandbox" title="Install, detect and uninstall it in Windows Sandbox - a throwaway Windows - before it goes to any device">Test in Windows Sandbox...</button>
   <hr>
   <div class="mhead" role="presentation">Releases</div>
   <button role="menuitem" data-act="release" title="Release a new version to the pilot groups first - a new app in Intune that supersedes the current one">Release new version...</button>
@@ -738,6 +739,18 @@
   <label>Password<input type="password" id="pfxPassword" autocomplete="off"></label>
   <p class="formerror" id="pfxError" hidden></p>
   <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnPfxGo">Import</button></div>
+</dialog>
+
+<dialog id="dlgDetPaste" aria-labelledby="dpTitle">
+  <h2 id="dpTitle">Detection from an app on a PC</h2>
+  <ol class="dpsteps">
+    <li><button class="btn small" id="btnDetScript" type="button">Download the script</button> and run it on a Windows PC that has the app installed (right-click &gt; Run with PowerShell).</li>
+    <li>Pick the app in the list it shows - its details go to the clipboard.</li>
+    <li>Paste them here:</li>
+  </ol>
+  <textarea id="dpText" class="mono" rows="6" aria-label="What the script copied" spellcheck="false" autocomplete="off"></textarea>
+  <p class="formerror" id="dpError" hidden></p>
+  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnDetPasteGo">Use it</button></div>
 </dialog>
 
 <dialog id="dlgNewCert">
@@ -888,6 +901,7 @@
         <section>
           <h3>Detection rule <button type="button" class="help" data-help="detection" aria-label="What is a detection rule?">?</button></h3>
           <button type="button" class="desktoponly btn small" id="btnDetFromPc" title="Pick the app from the ones installed on this PC - its MSI product code, its program file's version, or its Uninstall entry">From an app on this PC...</button>
+          <button type="button" class="btn small serveronly" id="btnDetFromPaste" title="Run a small script on a Windows PC with the app installed, pick the app, paste what it copies - the detection rule is made from it">From an app on a PC...</button>
           <label>Type<select id="xType"><option value="">(none - an app with its own package needs one)</option><option value="Script">Script</option><option value="Msi">MSI product code</option><option value="File">File or folder</option><option value="Registry">Registry</option></select></label>
           <div data-det="Script"><div class="blockbar" id="detBlocks" role="group" aria-label="Detection script as blocks" hidden></div><label>Detection script <span class="muted">(writes output and exits 0 when installed)</span><textarea autocomplete="off" id="xScript" rows="8" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label></div>
           <div data-det="Msi"><label>Product code<input autocomplete="off" id="xProductCode" class="mono" spellcheck="false" placeholder="{00000000-0000-0000-0000-000000000000}" autocorrect="off" autocapitalize="off"></label></div>
@@ -1110,6 +1124,7 @@
     <p class="sub">Add many Winget apps at once: from a <code>winget export</code> file (another PC's apps - <code>winget export -o apps.json</code> there), or from the apps on this PC.</p>
     <div class="toolbar tight">
       <button class="btn" id="btnAlFile" title="A JSON file made by winget export">Choose an export file...</button>
+      <button class="btn serveronly" id="btnAlScript" title="A script for a Windows PC: winget export of that PC's apps, into a file to choose here">Script for a PC's apps...</button>
       <button class="desktoponly btn" id="btnAlThisPc" title="Runs winget export here and lists what it finds">Read this PC's apps</button>
       <input type="file" id="alFile" accept=".json,application/json" hidden>
       <span class="muted" id="alNote" aria-live="polite"></span>

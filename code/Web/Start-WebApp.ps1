@@ -38,6 +38,7 @@ try { Add-Type -AssemblyName System.Security -ErrorAction Stop } catch { }
 . (Join-Path $PSScriptRoot 'WebSetup.ps1')
 . (Join-Path $PSScriptRoot 'WebBlocks.ps1')
 . (Join-Path $PSScriptRoot 'WebServerMode.ps1')
+. (Join-Path $PSScriptRoot 'WebPcHelpers.ps1')
 
 Initialize-AppState -RootPath $RootPath
 $Global:App.WebLog = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
@@ -148,6 +149,8 @@ $handler = {
             Send-WebJson $Client (Invoke-WebApi -Path $req.Path -Data $data)
             return
         }
+        # A file the page prepared (a Sandbox test zip): once, by its random link.
+        if ($req.Method -eq 'GET' -and $req.Path -match '^/download/([0-9a-f]{32})$') { Send-WebDownload -Client $Client -Id $Matches[1]; return }
         $file = Get-WebStaticFile -Path $req.Path -UiRoot $WebUiRoot
         if ($file) { Send-WebResponse $Client '200 OK' $file.ContentType $file.Bytes }
         else { Send-WebResponse $Client '404 Not Found' 'text/plain' ([Text.Encoding]::UTF8.GetBytes('not found')) }

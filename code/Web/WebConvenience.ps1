@@ -151,6 +151,12 @@ function Global:Get-WebDetectionFromInstalled {
     $cand = if ($icon -match '\.exe$' -and $icon -notmatch 'unins|uninst|setup|installer') { $icon } elseif ($e.InstallLocation) { @(Get-ChildItem -LiteralPath ([string]$e.InstallLocation) -Filter '*.exe' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch 'unins|uninst|setup|update|crash' } | Sort-Object Length -Descending | Select-Object -First 1 | ForEach-Object { $_.FullName }) | Select-Object -First 1 } else { $null }
     if ($cand -and (Test-Path -LiteralPath $cand)) { $v = ([string](Get-Item -LiteralPath $cand).VersionInfo.FileVersion).Trim() -replace ',\s*', '.' -replace '\s.*$', ''; if ($v) { $exe = @{ Path = [string]$cand; Version = $v } } }
     $d = ConvertTo-DetectionFromInstalled @{ Key = $key; WindowsInstaller = $e.WindowsInstaller; DisplayVersion = $e.DisplayVersion; Hive = [string]$Data.hive; MainExe = $exe }
+    return (ConvertTo-WebDetectionForm $d)
+}
+
+function Global:ConvertTo-WebDetectionForm {
+    # A detection rule from ConvertTo-DetectionFromInstalled, in the editor's form: @{ ok; detection; text }.
+    param($d)
     $r = $d.Rule
     $form = [ordered]@{ type = $r.Type; productCode = [string]$r.Msi_ProductCode; operator = [string]$(if ($r.Msi_VersionOperator) { $r.Msi_VersionOperator } elseif ($r.File_Operator) { $r.File_Operator } else { $r.Reg_Operator })
         value = [string]$(if ($r.Type -eq 'Msi') { $r.Msi_Version } elseif ($r.Type -eq 'File') { $r.File_DetectionValue } else { $r.Reg_DetectionValue })
@@ -192,6 +198,27 @@ function Global:Start-WebSandboxTest {
     $pkg = Join-Path $root 'package'
     [void](New-Item -ItemType Directory -Path $pkg -Force)
     Copy-Item -Path (Join-Path $src '*') -Destination $pkg -Recurse -Force
+    $run = New-WebSandboxRunScript -Metadata $m
+    [System.IO.File]::WriteAllText((Join-Path $root 'run.ps1'), $run, (New-Object System.Text.UTF8Encoding($true)))
+    $wsb = @"
+<Configuration>
+  <MappedFolders><MappedFolder><HostFolder>$([System.Security.SecurityElement]::Escape($root))</HostFolder><SandboxFolder>C:\Test</SandboxFolder><ReadOnly>false</ReadOnly></MappedFolder></MappedFolders>
+  <LogonCommand><Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Test\run.ps1</Command></LogonCommand>
+  <Networking>Enable</Networking>
+</Configuration>
+"@
+    $wsbPath = Join-Path $root 'test.wsb'
+    [System.IO.File]::WriteAllText($wsbPath, $wsb, (New-Object System.Text.UTF8Encoding($false)))
+    try { Start-Process -FilePath $sb -ArgumentList "`"$wsbPath`"" | Out-Null }
+    catch { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue; return @{ ok = $false; error = "Windows Sandbox didn't start: $($_.Exception.Message)" } }
+    Write-Log "[INFO] Testing $($a.appName) in Windows Sandbox ($root)."
+    return @{ ok = $true; id = $id; folder = $root }
+}
+
+function Global:New-WebSandboxRunScript {
+    # The test that runs inside Windows Sandbox (C:\Test\run.ps1): install with the app's command, detect, uninstall, detect again - result.json and log.txt.
+    param($Metadata)
+    $m = $Metadata
     # 64-bit inside the Sandbox: sysnative (for Intune's 32-bit agent) is System32 here.
     $fix = { param($c) ([string]$c) -replace '(?i)%SystemRoot%\\sysnative\\', '%SystemRoot%\System32\' }
     $q = { param($s) ConvertTo-PsLiteral $s }
@@ -213,20 +240,7 @@ Start-Sleep -Seconds 5
 `$r | ConvertTo-Json | Set-Content -LiteralPath (Join-Path `$out 'result.json') -Encoding UTF8
 Say 'Done - you can close the Sandbox.'
 "@
-    [System.IO.File]::WriteAllText((Join-Path $root 'run.ps1'), $run, (New-Object System.Text.UTF8Encoding($true)))
-    $wsb = @"
-<Configuration>
-  <MappedFolders><MappedFolder><HostFolder>$([System.Security.SecurityElement]::Escape($root))</HostFolder><SandboxFolder>C:\Test</SandboxFolder><ReadOnly>false</ReadOnly></MappedFolder></MappedFolders>
-  <LogonCommand><Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Test\run.ps1</Command></LogonCommand>
-  <Networking>Enable</Networking>
-</Configuration>
-"@
-    $wsbPath = Join-Path $root 'test.wsb'
-    [System.IO.File]::WriteAllText($wsbPath, $wsb, (New-Object System.Text.UTF8Encoding($false)))
-    try { Start-Process -FilePath $sb -ArgumentList "`"$wsbPath`"" | Out-Null }
-    catch { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue; return @{ ok = $false; error = "Windows Sandbox didn't start: $($_.Exception.Message)" } }
-    Write-Log "[INFO] Testing $($a.appName) in Windows Sandbox ($root)."
-    return @{ ok = $true; id = $id; folder = $root }
+    return $run
 }
 
 function Global:Get-WebSandboxResult {

@@ -103,9 +103,7 @@ $('btnCerDownload').addEventListener('click', async () => {
   if (!t) { toast('Choose, create or import a certificate first.', true); return; }
   const r = await api('/api/cert-file', { thumbprint: t });
   if (!r.ok) { toast(r.error, true); return; }
-  const bin = atob(r.file), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pkix-cert' })); a.download = r.name;
-  document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  saveB64File(r, 'application/pkix-cert');
 });
 for (const b of document.querySelectorAll('dialog [data-close]')) b.addEventListener('click', () => b.closest('dialog').close());
 
@@ -184,6 +182,7 @@ $('btnUpload').addEventListener('click', () => {
 });
 
 // permissions
+$('btnEntraScript').addEventListener('click', () => $('btnAddPerms').click());
 $('btnAddPerms').addEventListener('click', async () => {
   const r = await api('/api/permission-choice');
   if (!r.ok) { toast(r.error, true); return; }
@@ -191,9 +190,18 @@ $('btnAddPerms').addEventListener('click', async () => {
   $('permList').replaceChildren(el('li', { class: 'group', text: 'Required' }), ...r.required.map(p => item(p, true)), el('li', { class: 'group', text: 'Optional' }), ...r.optional.map(p => item(p, false)));
   $('dlgPerms').showModal();
 });
-$('btnPermsGo').addEventListener('click', () => {
+$('btnPermsGo').addEventListener('click', async () => {
   const permissions = [...document.querySelectorAll('#permList input[data-perm]')].filter(c => c.checked).map(c => c.dataset.perm);
   $('dlgPerms').close();
+  // The server version: the same step as a script for a Windows PC (you sign in there).
+  if (SERVER) {
+    const f = fields();
+    const r = await api('/api/entra-script', { tenantId: f.tenantId, clientId: f.clientId, thumbprint: f.thumbprint, permissions });
+    if (!r.ok) { toast(r.error, true); return; }
+    saveB64File(r, 'text/plain');
+    toast('Run the script on a Windows PC (right-click > Run with PowerShell) and sign in. Then grant admin consent on the page it opens, and Test connection here.');
+    return;
+  }
   runJob({ mode: 'AddPermissions', permissions }, ok => {
     if (ok) { api('/api/open', { target: 'entra-permissions', clientId: fields().clientId }); toast('Added. In Entra, click "Grant admin consent", then Test connection.'); }
   });
