@@ -1233,5 +1233,8 @@ input[type=checkbox]:checked::before { transform: scale(1); }
 input[type=checkbox]:indeterminate::before { transform: scale(1); clip-path: inset(40% 10% 40% 10%); }
 input[type=checkbox]:hover:not(:disabled) { border-color: var(--accent); }
 input[type=checkbox]:disabled { opacity: .45; cursor: default; }
-.grid td.sel input[type=checkbox]:not(:checked) { opacity: .55; }
-.grid tr:hover td.sel input[type=checkbox], .grid tr.sel td.sel input[type=checkbox], .grid td.sel input[type=checkbox]:focus-visible { opacity: 1; }
+.grid td.name input.rowpick:not(:checked) { opacity: .5; }
+.grid tr:hover td.name input.rowpick, .grid tr.sel td.name input.rowpick, .grid td.name input.rowpick:focus-visible { opacity: 1; }
+/* The list's pick boxes (2.26.4): before the app's icon, and in the header for all of them. */
+.grid td.name input.rowpick, .grid th input.rowpick { margin: 0 10px 0 0; vertical-align: -3px; }
+.grid th input.rowpick { vertical-align: -3px; }

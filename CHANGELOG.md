@@ -21,6 +21,10 @@
 - **Messages after an action** (and their Undo) show sharp on top while a
   dialog is open - they were under its dimmed, blurred background and
   couldn't be clicked.
+- **Apps list: checkboxes to pick several apps** - one before each app (that
+  app in or out, the others stay picked; Shift for a range) and one in the
+  header for every app in the view (a dash when only some are picked).
+  Clicking a row still picks just that one; Ctrl/Shift+click work as before.
 
 ## 2.26.3
 

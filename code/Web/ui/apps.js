@@ -151,7 +151,8 @@ function renderApps() {
   const body = $('gridBody');
   body.replaceChildren(...[...list.map(a => {
     const tr = el('tr', { 'data-name': a.name, class: selected.has(a.name) ? 'sel' : '', title: a.appId ? 'App ID ' + a.appId : 'Not in Intune yet' },
-      el('td', { class: 'name' }, iconFor(a), a.name),
+      el('td', { class: 'name' }, el('input', { type: 'checkbox', class: 'rowpick', 'aria-label': `Select ${a.name}`, title: 'Select - several at once (Shift: a range)', checked: selected.has(a.name),
+        onclick: e => { e.stopPropagation(); pickRow(a.name, e.target.checked, e.shiftKey); }, ondblclick: e => e.stopPropagation() }), iconFor(a), a.name),
       el('td', { class: 'mono src', text: a.msHint && !a.wingetId ? 'Microsoft (Intune)' : !a.wingetId ? 'own installer' : isStoreId(a.wingetId) ? `${a.wingetId} (Store)` : a.wingetId,
         title: !a.wingetId ? 'Its own installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') : isStoreId(a.wingetId) ? 'A Microsoft Store app - Intune\'s own Store type: no package, the Store installs and updates it' : `winget package ${a.wingetId}` }),
       el('td', { class: 'num' }, ...versionCell(a)),
@@ -167,7 +168,7 @@ function renderApps() {
     th.classList.toggle('sorted', th.dataset.sort === sortKey);
     th.classList.toggle('desc', th.dataset.sort === sortKey && sortDesc);
   }
-  updateActions();
+  syncSel(); updateActions();
   // "only in Intune" shows its rows also with an empty catalog (adding them is how a new catalog starts).
   $('emptyState').hidden = apps.length > 0 || showIntuneOnly;
   $('grid').hidden = apps.length === 0 && !showIntuneOnly;  updateTenantBanner();
@@ -183,8 +184,24 @@ function selectRow(name, e) {
   } else {
     selected.clear(); selected.add(name); lastClicked = name;
   }
-  for (const r of $('gridBody').children) r.classList.toggle('sel', selected.has(r.dataset.name));
+  syncSel();
   updateActions();
+}
+// The selection drawn: the rows, their checkboxes, and the header's (all, none, or some: a dash).
+function syncSel() {
+  for (const r of $('gridBody').children) { const on = selected.has(r.dataset.name); r.classList.toggle('sel', on); const cb = r.querySelector('input.rowpick'); if (cb) cb.checked = on; }
+  const all = $('pickAll'); if (!all) return;
+  const n = visible.filter(x => selected.has(x)).length;
+  all.checked = n > 0 && n === visible.length; all.indeterminate = n > 0 && n < visible.length;
+}
+// A row's checkbox: that app in or out, the others stay (Shift: the range from the last one picked).
+function pickRow(name, on, range) {
+  if (range && lastClicked && visible.includes(lastClicked)) {
+    const [i, j] = [visible.indexOf(lastClicked), visible.indexOf(name)].sort((x, y) => x - y);
+    for (const n of visible.slice(i, j + 1)) { if (on) selected.add(n); else selected.delete(n); }
+  } else { if (on) selected.add(name); else selected.delete(name); }
+  lastClicked = name;
+  syncSel(); updateActions();
 }
 function updateActions() {
   if (typeof updatePanel === 'function') updatePanel();
@@ -727,7 +744,7 @@ function listKeys(e) {
       selected.clear();
       for (const x of visible.slice(Math.min(anchor, to), Math.max(anchor, to) + 1)) selected.add(x);
     } else { selected.add(n); lastClicked = n; }
-    for (const r of $('gridBody').children) r.classList.toggle('sel', selected.has(r.dataset.name));
+    syncSel();
     updateActions(); show(n); cursor = n;
   };
   const at = visible.indexOf(cursor && visible.includes(cursor) ? cursor : (lastClicked && visible.includes(lastClicked) ? lastClicked : visible[0]));
@@ -739,7 +756,7 @@ function listKeys(e) {
   else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); select(visible[e.key === 'Home' ? 0 : visible.length - 1], e.shiftKey); }
   else if (ctrl && e.key.toLowerCase() === 'a') {
     e.preventDefault(); selected.clear(); for (const n of visible) selected.add(n);
-    for (const r of $('gridBody').children) r.classList.toggle('sel', true); updateActions();
+    syncSel(); updateActions();
   }
   else if (e.key === 'Enter' && selected.size === 1) { e.preventDefault(); openEditor([...selected][0]); }
   else if (e.key === 'Delete' && selected.size === 1) { e.preventDefault(); menuAction('remove'); }
@@ -1389,3 +1406,11 @@ $('aAppLink').addEventListener('change', () => {
 $('aAppId').addEventListener('blur', () => { $('aAppId').readOnly = true; });
 
 $('dlgRecent').addEventListener('wcrestore', () => openRecent());
+
+// The header's checkbox: every app in this view, or none.
+(function pickAllBox() {
+  const th = document.querySelector('#grid th[data-sort="name"]');
+  const cb = el('input', { type: 'checkbox', id: 'pickAll', class: 'rowpick', 'aria-label': 'Select every app in this view', title: 'Select every app in this view, or none',
+    onclick: e => { e.stopPropagation(); const on = e.target.checked; for (const n of visible) { if (on) selected.add(n); else selected.delete(n); } syncSel(); updateActions(); } });
+  th.prepend(cb);
+})();
