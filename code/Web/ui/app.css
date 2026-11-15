@@ -408,7 +408,9 @@ optgroup[hidden] { display: none; }
 
 /* ---- icons, supersedence, tenant setup, install overview ---- */
 .appicon { width: 18px; height: 18px; border-radius: var(--r-s); object-fit: contain; vertical-align: -4px; margin-right: 8px; flex: none; }
-.appicon.none { display: inline-block; background: var(--bd2); }
+.appicon.none { display: inline-grid; place-items: center; vertical-align: -4px; font: 700 10px/1 var(--ui, system-ui); color: hsl(var(--h, 210) 45% 32%); background: hsl(var(--h, 210) 55% 90%); }
+:root[data-theme="dark"] .appicon.none { color: hsl(var(--h, 210) 70% 82%); background: hsl(var(--h, 210) 30% 26%); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .appicon.none { color: hsl(var(--h, 210) 70% 82%); background: hsl(var(--h, 210) 30% 26%); } }
 .appicon.big { width: 40px; height: 40px; margin: 0; border: 1px solid var(--bd); background: var(--surface); }
 .iconrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .iconrow .lbl { flex-basis: 100%; font-size: 12px; color: var(--muted); }
@@ -1220,3 +1222,16 @@ dialog:not(.tray):not(.palette) > .actions.end, dialog:not(.tray) > form > .acti
 /* One size for dialog titles. */
 .addhead h2, .sehead h2, dialog.tray .trayhead h2 { font-size: 17px; }
 .ghead > .btngroup { margin-left: auto; }
+/* Checkboxes drawn by the app (2.26.4): a thin outlined box, accent with a white tick when ticked - the browser's
+   own dark-mode box was a solid grey block. The list's row boxes are quieter until the row is hovered or picked. */
+input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 16px; height: 16px; margin: 0; flex: none; display: inline-grid; place-content: center; vertical-align: middle;
+  border: 1.5px solid color-mix(in srgb, var(--muted) 70%, transparent); border-radius: var(--r-s); background: transparent; cursor: pointer; transition: background-color .12s, border-color .12s; }
+input[type=checkbox]::before { content: ''; width: 10px; height: 10px; transform: scale(0); transition: transform .12s; background: #fff;
+  clip-path: polygon(14% 52%, 0 66%, 38% 100%, 100% 22%, 86% 8%, 38% 72%); }
+input[type=checkbox]:checked, input[type=checkbox]:indeterminate { background: var(--accent); border-color: var(--accent); }
+input[type=checkbox]:checked::before { transform: scale(1); }
+input[type=checkbox]:indeterminate::before { transform: scale(1); clip-path: inset(40% 10% 40% 10%); }
+input[type=checkbox]:hover:not(:disabled) { border-color: var(--accent); }
+input[type=checkbox]:disabled { opacity: .45; cursor: default; }
+.grid td.sel input[type=checkbox]:not(:checked) { opacity: .55; }
+.grid tr:hover td.sel input[type=checkbox], .grid tr.sel td.sel input[type=checkbox], .grid td.sel input[type=checkbox]:focus-visible { opacity: 1; }

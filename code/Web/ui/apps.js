@@ -43,12 +43,18 @@ function appPicker(box, names, chosen, attr, emptyText, label = 'Installed first
 // App icons: fetched once per icon (iconTag changes when the icon does), shown in the list.
 const iconCache = new Map();
 let iconsWanted = new Set(), iconTimer = null;
+// No icon (yet): the app's first letter on a colour of its own - a placeholder that reads as an icon, not as a checkbox.
+function iconLetter(name) {
+  const t = String(name || '?').trim(), letter = (t.match(/[A-Za-z0-9]/) || ['?'])[0].toUpperCase();
+  let h = 0; for (const ch of t) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return el('span', { class: 'appicon none', 'aria-hidden': 'true', style: `--h:${h}`, text: letter });
+}
 function iconFor(a) {
-  if (!a.hasIcon) return el('span', { class: 'appicon none', 'aria-hidden': 'true' });
+  if (!a.hasIcon) return iconLetter(a.name);
   const c = iconCache.get(a.name);
   if (c && c.tag === a.iconTag) return el('img', { class: 'appicon', src: c.url, alt: '' });
   iconsWanted.add(a.name); clearTimeout(iconTimer); iconTimer = setTimeout(loadIcons, 50);
-  return el('span', { class: 'appicon none', 'aria-hidden': 'true' });
+  return iconLetter(a.name);
 }
 async function loadIcons() {
   const names = [...iconsWanted]; iconsWanted = new Set();

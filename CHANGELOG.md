@@ -7,6 +7,12 @@
   "OpenJS.NodeJS"`) and is switched. When the catalog's Winget ID is
   another one than the command's, the message now names both, so you can
   set the one you want and switch again - nothing is guessed.
+- **Apps list**: an app without an icon shows its first letter on a colour
+  of its own, instead of a grey square that looked like a checkbox (rows
+  are picked by clicking them; Ctrl or Shift for several).
+- Checkboxes everywhere are drawn by the app: a thin outlined box, blue
+  with a white tick when ticked (the browser's dark-mode box was a solid
+  grey block).
 
 ## 2.26.3
 
