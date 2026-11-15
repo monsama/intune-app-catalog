@@ -779,6 +779,11 @@
         <label>Name<input id="aName" required autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label title="The winget package ID, e.g. 7zip.7zip. Empty for an app with its own installer. Find... searches winget.">Winget ID <span class="muted">(empty for an app with its own package)</span><span class="inputrow"><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip" autocorrect="off" autocapitalize="off"><button type="button" class="btn" id="btnFindWinget" title="Search winget for the package">Find...</button></span></label>
         <label class="chk" title="Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Updates"><input type="checkbox" id="aManaged">Managed updates <button type="button" class="help" data-help="managed" aria-label="What are managed updates?">?</button> <span class="muted" id="aManagedNote"></span></label>
+        <div class="methodrow" id="aMethodRow" hidden>
+          <label title="How devices install this Winget app - and so which version they get">Install with<select id="aMethod"><option value="Managed">Managed updates - a fixed version, pilot first</option><option value="WAU">Winget-AutoUpdate (Winget-Install.ps1)</option><option value="Winget">The winget command</option><option value="Custom" disabled>Own command (edited by hand)</option></select></label>
+          <p class="methodinfo" id="aMethodInfo" aria-live="polite"></p>
+        </div>
+        <p class="methodinfo" id="aPkgInfo" hidden></p>
         <fieldset class="ownrule" id="aRuleBox" hidden>
           <legend>This app's release rule <span class="muted">(empty: Settings' rule)</span></legend>
           <div class="policy">

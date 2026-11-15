@@ -15,6 +15,18 @@ fields that are cut off, overflow their card or don't line up.
   Microsoft 365 Apps: add it in Intune itself), and Deploy says the same
   instead of asking for a package. Apps already in Intune as a Store or
   Microsoft 365 app are never counted.
+- **Editor > Basics > Install with** (Winget apps): choose Managed
+  updates, Winget-AutoUpdate or the winget command per app. The commands
+  are rewritten to match (after asking, when they were edited by hand). A
+  line under it says which version devices get: managed apps "exactly
+  24.004 (the App version)", WAU and winget "whatever version winget has
+  at that moment - nothing is pinned", plus what winget offers now (last
+  check) and whether anything updates the app afterwards.
+- **Own-package apps** show which installer gets uploaded: the file in
+  the package folder and its version, next to the App version, with a
+  note when the two differ.
+- **The release rule's** three fields line up, also when one label
+  wraps onto two lines.
 - **Group warnings** under a group box: one left over from before
   (the box emptied, a chip removed, another app opened) is cleared. A
   group that's only written differently in Entra ID (case, spacing, a

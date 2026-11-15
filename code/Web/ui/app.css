@@ -455,7 +455,7 @@ label.gdesc > input { display: block; width: 100%; margin-top: 4px; }
 #viewApps > .toolbar #filter { flex: 0 1 auto; min-width: 120px; max-width: 190px; }
 @media (min-width: 1000px) { #viewApps > .toolbar { flex-wrap: nowrap; } #viewApps > .toolbar .count { white-space: nowrap; } }
 .policy { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 6px 0 10px; }
-.policy label { font-size: 12px; color: var(--muted); }
+.policy label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; justify-content: flex-end; }
 .policy input { display: block; width: 100%; margin-top: 4px; }
 #dlgRelease > label:not(.chk) { display: block; margin-top: 10px; font-size: 12px; color: var(--muted); }
 #dlgRelease > label:not(.chk) input { display: block; width: 100%; margin-top: 4px; }
@@ -917,3 +917,8 @@ input.qedit { padding: 3px 8px; font-size: 12px; width: 180px; }
 .pagebtns .iconbtn { height: 34px; width: 36px; padding: 0; }
 @media (max-width: 640px) { .pagebar { padding: 8px 12px 0; } .pagetitle { font-size: 16px; } }
 main > .view { padding-top: 10px; }
+
+/* ---- editor: Install with (Winget apps) ---- */
+.methodrow { display: grid; gap: 6px; margin: 4px 0 10px; }
+.methodrow select { display: block; width: 100%; margin-top: 4px; }
+.methodinfo { margin: 0 0 10px; padding: 8px 12px; font-size: 12px; line-height: 1.45; color: var(--muted); background: var(--accent-soft); border-radius: var(--r-m); }

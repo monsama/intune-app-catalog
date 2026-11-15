@@ -210,7 +210,7 @@ function fillEditor(a) {
   $('arDays').placeholder = pol.Days ?? 3; $('arFailed').placeholder = pol.MaxFailedPercent ?? 5; $('arMin').placeholder = pol.MinInstalled ?? 1;
   const rel = a.releases || [], pilot = rel.find(r => r.state === 'pilot'), prev = rel.filter(r => r.state === 'previous');
   $('aManagedNote').textContent = [pilot ? `- ${pilot.version} in pilot` : '', prev.length ? `- superseded: ${prev.map(r => r.version).join(', ')}` : ''].filter(Boolean).join(' ');
-  showManagedState();
+  showManagedState(); refreshMethod();
   $('appError').hidden = true;
   if (typeof updateReady === 'function') setTimeout(updateReady, 0);
 }
@@ -225,6 +225,55 @@ function showManagedState() {
 }
 $('aWinget').addEventListener('input', showManagedState);
 $('aManaged').addEventListener('change', showManagedState);
+
+// ---------------------------------------------------------------- Install with (Winget apps)
+// Which form the commands are, and in plain words which version devices get.
+let methodSeq = 0, methodTimer = null, editorInstaller = null, editorWingetOffers = '';
+// An own-package app: which installer (and version) Package builds and Deploy uploads, next to the App version.
+function showPkgInfo() {
+  const box = $('aPkgInfo'), v = $('mAppVersion').value.trim(), i = editorInstaller;
+  box.hidden = !!$('aWinget').value.trim() || !editingName;
+  if (box.hidden) return;
+  if (!i || !i.found) { box.textContent = `No installer in its package folder yet${i && i.folder ? ` (${i.folder})` : ''} - put the .msi or .exe there; Package builds it into the .intunewin and Deploy uploads that.`; return; }
+  const iv = i.version || '(no version in the file)';
+  box.textContent = `Uploaded: ${i.file}, version ${iv} - the installer in the package folder, which Package builds into the .intunewin and Deploy uploads. App version: ${v || '(none)'}.` +
+    (i.version && v && i.version !== v ? ` They differ - a release of the new installer sets the App version (More > Release new version), or correct it on Details.` : '');
+}
+const methodBody = extra => ({ wingetId: $('aWinget').value.trim(), context: $('xContext').value, version: $('mAppVersion').value.trim(), install: $('mInstallCommand').value, uninstall: $('mUninstallCommand').value, ...extra });
+function methodText(m, pinned) {
+  const v = $('mAppVersion').value.trim(), w = editorWingetOffers, now = w ? ` Winget has ${w} now (last check).` : '';
+  if (m === 'Managed') return !v ? "Installs the App version with winget - but there's no App version yet: set one (More > Take winget's version) before deploying."
+    : `Installs exactly ${pinned || v} (the App version), with winget. Newer versions reach devices only when you release them: pilot groups first, then everyone.` + (w && w !== v ? ` Winget has ${w} now - release it on Updates.` : '');
+  if (m === 'WAU') return "Installs whatever version winget has at that moment - nothing is pinned. Runs WAU's Winget-Install.ps1, so Winget-AutoUpdate must already be on the device; WAU then updates the app on its own schedule." + now;
+  if (m === 'Winget') return 'Installs whatever version winget has at that moment - nothing is pinned. Nothing updates it afterwards.' + now;
+  return 'The install command was edited by hand, so it is left as it is - check it for which version it installs. Choosing a method here replaces it.';
+}
+async function refreshMethod() {
+  showPkgInfo();
+  const id = $('aWinget').value.trim(), row = $('aMethodRow');
+  // Store apps (12-character IDs) are Intune's own Store type - no commands.
+  row.hidden = !id || /^[0-9A-Z]{12}$/.test(id);
+  if (row.hidden) return;
+  const seq = ++methodSeq, r = await api('/api/winget-commands', methodBody());
+  if (seq !== methodSeq || !r.ok) return;
+  let m = r.current || 'Custom';
+  // Managed ticked: Save pins the commands to the App version, whatever they are now.
+  if ($('aManaged').checked) m = 'Managed'; else if (m === 'Managed') m = 'Custom';
+  $('aMethod').value = m; $('aMethodInfo').textContent = methodText(m, r.pinned);
+}
+const methodSoon = () => { clearTimeout(methodTimer); methodTimer = setTimeout(refreshMethod, 300); };
+for (const id of ['aWinget', 'mAppVersion', 'mInstallCommand', 'mUninstallCommand']) $(id).addEventListener('input', methodSoon);
+$('xContext').addEventListener('change', methodSoon);
+$('aManaged').addEventListener('change', methodSoon);
+$('aMethod').addEventListener('change', async () => {
+  const m = $('aMethod').value, before = await api('/api/winget-commands', methodBody());
+  if (before.ok && !before.current && $('mInstallCommand').value.trim() && !(await ask('Replace the install and uninstall commands?\n\nThey were edited by hand - choosing a method writes the generated ones instead.', { ok: 'Replace' }))) { refreshMethod(); return; }
+  const r = await api('/api/winget-commands', methodBody({ method: m }));
+  if (!r.ok) { toast(r.error, true); refreshMethod(); return; }
+  $('aManaged').checked = m === 'Managed'; showManagedState();
+  for (const [id, v] of [['mInstallCommand', r.install], ['mUninstallCommand', r.uninstall]]) { $(id).value = v; $(id).dispatchEvent(new Event('input', { bubbles: true })); }
+  refreshMethod();
+});
 
 // ---------------------------------------------------------------- unsaved changes (editor)
 // Escape or Cancel with changes asks first; saving or removing closes it without asking.
@@ -332,10 +381,12 @@ async function openEditor(name) {
     if (!r.ok) { toast(r.error, true); return; }
     editorApps = r.appNames || []; editorMinOs = r.minOsChoices || []; editorIntuneApps = r.intuneApps || [];
     editingVersion = r.version || '';
+    editorInstaller = r.installer || null; editorWingetOffers = r.wingetOffers || '';
     fillEditor(r.app);
     $('knownGroups').textContent = r.knownGroups.length ? 'Groups used in this catalog: ' + r.knownGroups.join(', ') : '';
     $('appTitle').textContent = 'Edit ' + name;
   } else {
+    editorInstaller = null; editorWingetOffers = '';
     editorApps = apps.map(a => a.name); editorMinOs = (prefs && prefs.minOsChoices) || [];
     editorIntuneApps = apps.filter(a => a.hasAppId).map(a => ({ name: a.name, appId: a.appId }));
     fillEditor({ hasMetadata: false, managedUpdates: !!(prefs && prefs.defaults && prefs.defaults.wingetInstallMethod === 'Managed'), deploy: prefs && prefs.defaults ? { ...prefs.defaults, detection: { type: '' }, dependencies: prefs.defaults.defaultDependencyAppNames || [] } : null });

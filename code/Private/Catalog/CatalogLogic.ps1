@@ -2203,7 +2203,7 @@ function Global:Get-ClosestGroupName {
     param([string]$Name, [string[]]$Candidates)
     $norm = { param($s) ((([string]$s).ToLowerInvariant() -replace '[‐-―]', '-' -replace '\s*&\s*', ' and ' -replace '[\s_\-]+', ' ')).Trim() }
     $want = & $norm $Name
-    $hits = @(@($Candidates) | Where-Object { $_ -and $_ -ne $Name -and (& $norm $_) -eq $want } | Select-Object -Unique)
+    $hits = @(@($Candidates) | Where-Object { $_ -and $_ -cne $Name -and (& $norm $_) -eq $want } | Select-Object -Unique)
     if ($hits.Count -eq 1) { return [string]$hits[0] }
     return ''
 }
