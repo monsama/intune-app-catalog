@@ -69,9 +69,17 @@ async function gpCheck(ta) {
   const r = await api('/api/group-check', { names });
   if (!r.ok || !r.checked) { if (warn) warn.hidden = true; return; }
   if (!warn) { warn = el('span', { class: 'gpwarn' }); anchor.after(warn); }
+  // The box may have changed while Entra ID was asked.
+  if (src.value.split('\n').map(s => s.trim()).filter(Boolean).join('\n') !== names.join('\n')) return;
   warn.hidden = !r.missing.length;
-  warn.textContent = r.missing.length ? `Not in Entra ID yet: ${r.missing.join(', ')} - created when the groups are pushed. A typo?` : '';
+  const close = r.close || {}, near = r.missing.filter(n => close[n]), none = r.missing.filter(n => !close[n]);
+  warn.textContent = [
+    ...near.map(n => `"${n}" isn't in Entra ID, but "${close[n]}" is - did you mean that one?`),
+    ...(none.length ? [`${none.length === 1 ? 'No group' : 'No groups'} named ${none.map(n => `"${n}"`).join(', ')} in Entra ID. Pushing the groups creates ${none.length === 1 ? 'it as a new, empty group' : 'them as new, empty groups'} - check the spelling if ${none.length === 1 ? 'it' : 'they'} should already exist.`] : [])].join(' ');
 }
+// Re-checked when the box changes (a chip removed, another app opened), so a warning never outlives its names.
+function gpRecheck(ta) { const src = ta._source || ta, anchor = ta._source ? ta.parentElement : ta, warn = anchor.parentElement.querySelector('.gpwarn');
+  if (!warn) return; if (!src.value.trim()) { warn.hidden = true; warn.textContent = ''; return; } clearTimeout(ta._gpRe); ta._gpRe = setTimeout(() => gpCheck(ta), 400); }
 // Suggestions for one group field (a chip box's input, or a text box); chips.js calls it for boxes it makes later.
 function gpAttach(ta) {
   if (!ta || ta.dataset.gp) return; ta.dataset.gp = '1';
@@ -86,6 +94,7 @@ function gpAttach(ta) {
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); gpHide(); }
   });
   ta.addEventListener('blur', () => { setTimeout(() => { if (document.activeElement !== ta) gpHide(); gpCheck(ta); }, 260); });
+  const src = ta._source || ta; if (src !== ta) { src.addEventListener('input', () => gpRecheck(ta)); src.addEventListener('change', () => gpRecheck(ta)); src.addEventListener('chipsset', () => gpRecheck(ta)); }
 }
 for (const id of gpBoxes) gpAttach($(id + 'Chips') || $(id));
 for (const inp of document.querySelectorAll('.chipinput[data-kind="group"]')) gpAttach(inp);

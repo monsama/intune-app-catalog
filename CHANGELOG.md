@@ -15,6 +15,17 @@ fields that are cut off, overflow their card or don't line up.
   Microsoft 365 Apps: add it in Intune itself), and Deploy says the same
   instead of asking for a package. Apps already in Intune as a Store or
   Microsoft 365 app are never counted.
+- **Group warnings** under a group box: one left over from before
+  (the box emptied, a chip removed, another app opened) is cleared. A
+  group that's only written differently in Entra ID (case, spacing, a
+  different dash, & or "and") is named: "did you mean ...?". Otherwise
+  it says plainly that pushing would create a new, empty group.
+- **Settings > Apps & defaults > Winget apps install with**: changing it
+  now offers to switch the Winget apps already in the catalog as well
+  (and to push the new commands to the ones in Intune). Before, it only
+  shaped apps added afterwards. Hand-edited commands and managed apps'
+  pinned commands are kept; choosing Managed updates offers to turn them
+  on for all.
 - **Settings > Updates**: the pilot groups are **Ring 1 - Pilot**, in the
   same row layout as the rings after it, so it's clear the first box is
   the first ring. Ring names and group boxes have the same height.

@@ -2194,3 +2194,16 @@ function Global:Get-NonPackageAppHint {
     if ($n -match '^(Microsoft\s+)?(365|Office)\b|^Microsoft 365 Apps') { return "$n is added in Intune itself (Apps > Windows > Add > Microsoft 365 Apps) - not a package." }
     return ''
 }
+
+function Global:Get-ClosestGroupName {
+    <#
+      Pure: the one name in -Candidates that is -Name written differently -
+      other case, spacing, dash kind (- vs an en dash) or & vs "and" - else ''.
+    #>
+    param([string]$Name, [string[]]$Candidates)
+    $norm = { param($s) ((([string]$s).ToLowerInvariant() -replace '[‐-―]', '-' -replace '\s*&\s*', ' and ' -replace '[\s_\-]+', ' ')).Trim() }
+    $want = & $norm $Name
+    $hits = @(@($Candidates) | Where-Object { $_ -and $_ -ne $Name -and (& $norm $_) -eq $want } | Select-Object -Unique)
+    if ($hits.Count -eq 1) { return [string]$hits[0] }
+    return ''
+}

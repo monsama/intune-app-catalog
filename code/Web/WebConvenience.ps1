@@ -49,7 +49,17 @@ function Global:Test-WebGroupNames {
         $found
     }
     if (-not $read.ok) { return @{ ok = $true; checked = $false; missing = @(); note = [string]$read.error } }
-    return @{ ok = $true; checked = $true; missing = @($names | Where-Object { -not $read.value.ContainsKey($_.ToLowerInvariant()) }) }
+    $missing = @($names | Where-Object { -not $read.value.ContainsKey($_.ToLowerInvariant()) })
+    # A name that's only written differently (spacing, dash, &) is almost always meant to be the existing group - say which one.
+    $close = [ordered]@{}
+    foreach ($m in @($missing | Select-Object -First 5)) {
+        $prefix = ($m -split '\s+' | Select-Object -First 1)
+        if ($prefix.Length -lt 2) { continue }
+        $e = $prefix.Replace("'", "''")
+        $near = Invoke-WebGraph -Permission 'Group.Read.All' -Action { param($Graph) @((& $Graph ("https://graph.microsoft.com/v1.0/groups?`$filter=" + [Uri]::EscapeDataString("startswith(displayName,'$e')") + '&$select=displayName&$top=999')).value | ForEach-Object { [string]$_.displayName }) }
+        if ($near.ok) { $hit = Get-ClosestGroupName -Name $m -Candidates @($near.value); if ($hit) { $close[$m] = $hit } }
+    }
+    return @{ ok = $true; checked = $true; missing = $missing; close = $close }
 }
 
 # ---------------------------------------------------------------- icons

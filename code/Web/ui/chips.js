@@ -46,7 +46,7 @@ function chipify(id, opts = {}) {
   input.addEventListener('paste', e => { const t = (e.clipboardData || window.clipboardData).getData('text'); if (/[\n,;]/.test(t)) { e.preventDefault(); input._addChip(t); } });
   input.addEventListener('blur', () => setTimeout(() => { if (input.value.trim() && document.activeElement !== input && !(typeof gpList !== 'undefined' && !gpList.hidden && gpBox === input)) input._addChip(input.value); }, 200));
   // Code that sets the box (filling the editor, a profile, Undo) redraws the chips.
-  Object.defineProperty(ta, 'value', { configurable: true, get() { return proto.get.call(ta); }, set(v) { proto.set.call(ta, v); render(); } });
+  Object.defineProperty(ta, 'value', { configurable: true, get() { return proto.get.call(ta); }, set(v) { proto.set.call(ta, v); render(); ta.dispatchEvent(new Event('chipsset')); } });
   ta.hidden = true; ta.tabIndex = -1; ta._chips = true;
   ta.after(box);
   render();
@@ -73,7 +73,7 @@ function codeRows(id) {
     return r;
   };
   const render = () => box.replaceChildren(...parse().map(x => row(x.code, x.type)), el('button', { type: 'button', class: 'btn small', text: 'Add a return code', onclick: () => { const r = row('', 'success'); box.insertBefore(r, box.lastChild); r.querySelector('input').focus(); } }));
-  Object.defineProperty(ta, 'value', { configurable: true, get() { return proto.get.call(ta); }, set(v) { proto.set.call(ta, v); render(); } });
+  Object.defineProperty(ta, 'value', { configurable: true, get() { return proto.get.call(ta); }, set(v) { proto.set.call(ta, v); render(); ta.dispatchEvent(new Event('chipsset')); } });
   ta.hidden = true; ta.tabIndex = -1; ta._rows = true;
   ta.after(box); render();
 }
@@ -97,7 +97,7 @@ function ringRows(id) {
   };
   const number = () => [...box.querySelectorAll('.ringrow .rnum')].forEach((s, i) => { s.textContent = `Ring ${i + 2}`; });
   const render = () => { box.replaceChildren(...parse().map(x => row(x.name, x.groups)), el('button', { type: 'button', class: 'btn small', text: 'Add a ring', onclick: () => { const r = row('', []); box.insertBefore(r, box.lastChild); number(); r.querySelector('.rname').focus(); } })); number(); };
-  Object.defineProperty(ta, 'value', { configurable: true, get() { return proto.get.call(ta); }, set(v) { proto.set.call(ta, v); render(); } });
+  Object.defineProperty(ta, 'value', { configurable: true, get() { return proto.get.call(ta); }, set(v) { proto.set.call(ta, v); render(); ta.dispatchEvent(new Event('chipsset')); } });
   ta.hidden = true; ta.tabIndex = -1; ta._rows = true;
   ta.after(box); render();
 }

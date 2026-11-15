@@ -298,7 +298,7 @@ async function loadPrefs() {
     el('input', { 'data-folder': f.key, value: f.chosen, placeholder: f.default, spellcheck: 'false' }))));
   const d = p.defaults;
   for (const c of document.querySelectorAll('[data-arch]')) c.checked = d.architecture.includes(c.dataset.arch);
-  $('dContext').value = d.installContext; $('dWinget').value = d.wingetInstallMethod || 'Managed';
+  $('dContext').value = d.installContext; $('dWinget').value = d.wingetInstallMethod || 'Managed'; dWingetSaved = $('dWinget').value;
   $('dMinOs').replaceChildren(...p.minOsChoices.map(o => el('option', { value: o.value, text: o.label || o.value })));
   if (![...$('dMinOs').options].some(o => o.value === d.minOSKey)) $('dMinOs').append(el('option', { value: d.minOSKey, text: d.minOSKey }));
   $('dMinOs').value = d.minOSKey;
@@ -325,9 +325,9 @@ async function loadPrefs() {
 }
 async function savePrefs(part, okText, errEl) {
   const r = await api('/api/prefs-save', part);
-  if (!r.ok) { if (errEl) { $(errEl).textContent = r.error; $(errEl).hidden = false; } else toast(r.error, true); return; }
+  if (!r.ok) { if (errEl) { $(errEl).textContent = r.error; $(errEl).hidden = false; } else toast(r.error, true); return false; }
   if (errEl) $(errEl).hidden = true;
-  toast(okText); loadPrefs();
+  toast(okText); loadPrefs(); return true;
 }
 $('btnSaveChecks').addEventListener('click', () => savePrefs({ checks: Object.fromEntries([...document.querySelectorAll('[data-check]')].map(c => [c.dataset.check, c.checked])) }, 'Saved.'));
 $('btnSaveFolders').addEventListener('click', () => savePrefs({ folders: Object.fromEntries([...document.querySelectorAll('[data-folder]')].map(i => [i.dataset.folder, i.value.trim()])) }, 'Folders saved.'));
@@ -345,14 +345,32 @@ $('btnAlertTest').addEventListener('click', async () => {
   try { const r = await api('/api/alert-test', {}); toast(r.ok ? r.message : r.error, !r.ok); } finally { b.disabled = false; }
 });
 $('btnSaveFavs').addEventListener('click', () => savePrefs({ favoriteGroups: lines('favGroups') }, 'Favourites saved.'));
-$('btnSaveDefaults').addEventListener('click', () => {
+let dWingetSaved = '';
+// The default only shapes new apps - when it changes, the Winget apps already in the catalog are offered the same switch.
+async function switchExistingWinget(method) {
+  if (method === 'Managed') { if (apps.some(a => a.wingetId && !a.managed)) await managedForAll(); return; }
+  const names = apps.filter(a => a.wingetId && !a.managed && !/^[0-9A-Z]{12}$/.test(a.wingetId)).map(a => a.name);
+  if (!names.length) return;
+  const label = method === 'WAU' ? 'Winget-AutoUpdate (Winget-Install.ps1)' : 'the winget command';
+  if (!(await ask(`Switch the install and uninstall commands of the ${names.length} Winget app(s) already in the catalog to ${label} too?\n\n${names.slice(0, 12).join(', ')}${names.length > 12 ? ', ...' : ''}\n\nCommands edited by hand are kept. Apps with managed updates keep their pinned commands. Apps in Intune get the new commands pushed.`, { ok: 'Switch them' }))) return;
+  const r = await api('/api/batch-edit', { names, changes: { wingetInstallMethod: method } });
+  if (!r.ok) { toast(r.error, true); return; }
+  await loadApps();
+  const msg = `Switched ${r.changed.length} app(s).` + (r.kept.length ? ` Kept the hand-edited commands of ${r.kept.join(', ')}.` : '');
+  if (!r.deployed.length) { toast(msg); return; }
+  const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', startText: 'Pushing ' });
+  toast(`${msg} Pushed to Intune for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length, [{ label: 'Undo', run: () => undoLast() }]);
+}
+$('btnSaveDefaults').addEventListener('click', async () => {
+  const before = dWingetSaved, method = $('dWinget').value;
   const codes = lines('dCodes').map(l => { const m = /^(-?\d+)\s*[=:]\s*(\w+)$/.exec(l); return m ? { returnCode: m[1], type: m[2] } : { returnCode: l, type: '' }; });
-  savePrefs({ defaults: {
+  const ok = await savePrefs({ defaults: {
     architecture: [...document.querySelectorAll('[data-arch]')].filter(c => c.checked).map(c => c.dataset.arch),
     installContext: $('dContext').value, minOSKey: $('dMinOs').value, wingetInstallMethod: $('dWinget').value,
     installTimeMinutes: $('dTime').value.trim(), minDiskSpaceMB: $('dDisk').value.trim(), minMemoryMB: $('dMem').value.trim(), minProcessors: $('dCpus').value.trim(), minCpuSpeedMHz: $('dSpeed').value.trim(),
     deviceRestartBehavior: $('dRestart').value, allowAvailableUninstall: $('dUninstall').checked, returnCodes: codes, defaultDependencyAppNames: lines('dDeps'),
   } }, 'Default values saved.', 'defaultsError');
+  if (ok && before && method !== before) await switchExistingWinget(method);
 });
 async function packagingSetup(what, btn) {
   const b = $(btn); b.disabled = true; const t = b.textContent; b.textContent = 'Working...';
