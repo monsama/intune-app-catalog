@@ -86,7 +86,7 @@ try {
     Check ($page.Status -eq 200 -and $page.Body -like '*<script src="app.js"*') 'the page is served'
     Check ($page.Headers -match 'Content-Security-Policy: default-src ''self''' -and $page.Headers -match 'X-Frame-Options: DENY' -and $page.Headers -match 'Cache-Control: no-store') 'every response carries the security headers' $page.Headers
     Check ($page.Body -notmatch '<script>[^<]') 'no inline script (the CSP allows none)'
-    foreach ($js in 'core.js', 'apps.js', 'tools.js', 'checks.js', 'groups.js', 'updates.js', 'add.js', 'convenience.js', 'guide.js', 'windows.js', 'chips.js', 'scripts.js', 'settings.js', 'app.js') {
+    foreach ($js in 'core.js', 'apps.js', 'tools.js', 'checks.js', 'groups.js', 'updates.js', 'add.js', 'convenience.js', 'guide.js', 'windows.js', 'blocks.js', 'chips.js', 'scripts.js', 'settings.js', 'app.js') {
         Check ((Invoke-Raw -Path "/$js").Status -eq 200 -and $page.Body -like "*<script src=`"$js`" defer>*") "$js is served and loaded by the page"
     }
     Check ((Invoke-Raw -Path '/app.css').Status -eq 200) 'app.css is served'
@@ -518,6 +518,23 @@ try {
     $scQ = Invoke-Api '/api/app-quick' @{ name = $scName; field = 'appVersion'; value = '2.5' }
     $scApp2 = (Invoke-Api '/api/app-get' @{ name = $scName }).app
     Check ($scQ.ok -and @($scQ.scripts) -contains 'Install.ps1' -and $scApp2.deploy.detection.value -eq '2.5' -and (Get-Content -LiteralPath (Join-Path $scDir 'Install.ps1') -Raw) -match "-Name Version -Value '2\.5'") 'a script app''s new version: detection and the Install.ps1 marker both 2.5' ($scQ | ConvertTo-Json -Compress)
+    # Package scripts in the app (2.26): read with the locked marker lines, saved only unchanged since opened, parsing and keeping the marker; the earlier one in Backups.
+    $ps1 = Invoke-Api '/api/package-script' @{ name = $scName; file = 'Install.ps1' }
+    Check ($ps1.ok -and $ps1.text -match 'IntuneAppCatalog' -and @($ps1.locked).Count -ge 2 -and @($ps1.files) -contains 'Uninstall.ps1') 'script editor: Install.ps1 read, its version marker locked' ($ps1 | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/package-script' @{ name = $scName; file = '..\..\evil.ps1' }).ok -and -not (Invoke-Api '/api/package-script' @{ name = 'No Such App'; file = 'Install.ps1' }).ok) 'script editor: only the package scripts of an app in the catalog'
+    $edited = $ps1.text.Replace('$ErrorActionPreference', "Write-Output 'edited in the app'`r`n`$ErrorActionPreference")
+    $sv = Invoke-Api '/api/package-script-save' @{ name = $scName; file = 'Install.ps1'; text = $edited; hash = $ps1.hash }
+    Check ($sv.ok -and (Get-Content -LiteralPath (Join-Path $scDir 'Install.ps1') -Raw) -match 'edited in the app' -and $sv.hash -ne $ps1.hash) 'script editor: saved' ($sv | ConvertTo-Json -Compress)
+    $stale = Invoke-Api '/api/package-script-save' @{ name = $scName; file = 'Install.ps1'; text = $edited + "`r`n# again"; hash = $ps1.hash }
+    Check ((-not $stale.ok) -and $stale.conflict) 'script editor: a save over a change made since it was opened is refused'
+    $markerGone = Invoke-Api '/api/package-script-save' @{ name = $scName; file = 'Install.ps1'; text = ($edited -replace "-Value '2\.5'", "-Value '9.9'"); hash = $sv.hash }
+    $broken = Invoke-Api '/api/package-script-save' @{ name = $scName; file = 'Install.ps1'; text = ($edited + "`r`nif (`$x {"); hash = $sv.hash }
+    Check ((-not $markerGone.ok) -and (-not $broken.ok) -and @($broken.errors).Count -ge 1) 'script editor: a changed version marker or a script that does not parse is refused'
+    $prev = Invoke-Api '/api/package-script-previous' @{ name = $scName; file = 'Install.ps1' }
+    Check ($prev.ok -and $prev.text -eq $ps1.text) 'script editor: the previous version comes from the recorded copy in Backups' ($prev | ConvertTo-Json -Compress)
+    $blk = Invoke-Api '/api/install-blocks' @{ install = $scApp.metadata.installCommand; uninstall = $scApp.metadata.uninstallCommand }
+    $mblk = Invoke-Api '/api/install-compose' @{ form = 'msi'; values = @{ file = 'a.msi'; props = @(@{ name = 'ALLUSERS'; value = '1' }); code = '{12345678-1234-1234-1234-123456789ABC}' }; install = 'msiexec /i "a.msi" /qn /norestart'; uninstall = 'msiexec /x {12345678-1234-1234-1234-123456789ABC} /qn /norestart' }
+    Check ($blk.ok -and $blk.form -eq 'script' -and $mblk.ok -and $mblk.install -eq 'msiexec /i "a.msi" /qn /norestart ALLUSERS=1') 'blocks: a script app''s commands, and an MSI property written into its command' ($mblk | ConvertTo-Json -Compress)
     [void](Invoke-Api '/api/app-remove' @{ name = $scName }); Remove-Item -LiteralPath $scDir -Recurse -Force -ErrorAction SilentlyContinue
     # The change history: an editor save is recorded field by field, from the Editor; undo puts one change back; a rename keeps the history.
     $hName = 'ZZ History ' + [guid]::NewGuid().ToString('N').Substring(0, 4)

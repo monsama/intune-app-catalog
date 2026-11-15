@@ -289,6 +289,7 @@ function renderWhere() {
   for (const c of dRight.children) pageOf.set(c, 4);
   // The install and uninstall commands belong with the detection rule.
   for (const id of ['mInstallCommand', 'mUninstallCommand']) pageOf.set($(id).closest('label'), 3);
+  pageOf.set($('instBlocks'), 3);
   let cur = 0;
   const bar = el('nav', { class: 'edtabs', 'aria-label': 'Parts of the app' }, ...names.map((name, i) => el('button', { type: 'button', class: 'edtab', 'data-i': i, text: name, onclick: () => {
     setPage(i);

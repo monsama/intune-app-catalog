@@ -20,8 +20,8 @@ right) and **Add**. Each app gets:
 Packages already in the catalog are marked *in the catalog* and can't be
 picked again.
 
-**Extra winget options** (editor, *Install & detection*, under *Install
-with*): most packages need none - winget installs silently with the
+**Extra winget options** (editor, *Install & detection*, as blocks in the
+command): most packages need none - winget installs silently with the
 package's own switches. For the few that need more, these are added to the
 install command and kept through every new pinned version:
 
@@ -100,3 +100,17 @@ asking the user, deferrals, logging. Give a name, vendor and version and
 Put the installer in the folder's Files subfolder, write the install steps
 in Invoke-AppDeployToolkit.ps1, then build the package and send it to
 Intune.
+
+## Commands, detection and scripts as blocks
+
+On *Install & detection* the commands are shown as blocks: dashed ones are
+fixed (the tool writes them the same way for every app), blue ones are this
+app's (an MSI's properties, an installer's extra switches, winget options,
+the name Windows lists for detection), grey ones are set in another field
+(click to go there). The command under them is the result, read-only.
+**Edit as text** makes it your own command instead - kept exactly as typed.
+
+A script app's or PSADT app's scripts open in the app's code editor from
+their block. The version marker the detection rule reads is locked; the
+script must parse to be saved; the earlier one is kept in Backups
+(**Previous version**), and **Build package** builds the package again.

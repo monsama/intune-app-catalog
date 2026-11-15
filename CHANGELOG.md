@@ -1,5 +1,52 @@
 # Changelog
 
+## 2.26.0
+
+**Commands and detection as blocks, and package scripts edited in the app.**
+
+- **Blocks** (editor, *Install & detection*): the install and uninstall
+  commands are shown as blocks - **locked** ones (dashed: what the tool
+  writes the same way for every app - the 64-bit PowerShell, finding winget,
+  msiexec's silent switches) and **editable** ones (this app's values),
+  plus **linked** ones set in another field (the pinned version: *Install
+  with*; machine or user: *Install for* - a click goes there). The command
+  below is the read-only result.
+  - **Winget**: extra winget options as blocks (`--override`, `--custom`,
+    `--architecture`, `--locale`, `--installer-type`).
+  - **MSI**: the file, public properties (`ALLUSERS=1`,
+    `TRANSFORMS=Company.mst`, `INSTALLDIR="C:\Apps\X"`) and the product code.
+  - **Installer (.exe)**: the file, its maker (Inno Setup, NSIS, WiX
+    bundle, InstallShield, Advanced Installer - their silent switches) and
+    extra switches.
+  - **Script app / PSADT 4**: the scripts (open them in the editor) and
+    PSADT's deploy mode (Silent, NonInteractive, Interactive).
+  - **Edit as text** makes it your own command, kept exactly as typed; the
+    blocks come back when it's one of their forms again.
+- **Detection script as blocks**: the managed release's script (the name
+  Windows lists editable, the version linked to the App version, winget
+  as the fallback) and the installed-app script (name and minimum version).
+  An own script opens in the code editor.
+- The blocks are read from the commands and written back to them - the
+  commands stay the one stored truth, a form counts only when writing it
+  again gives exactly the same command, and every value is checked on the
+  server (they run as SYSTEM): no quotes or shell characters, known options
+  only, within Intune's 1024 characters.
+- **Package scripts in the app**: `Install.ps1`, `Uninstall.ps1` and
+  `Invoke-AppDeployToolkit.ps1` open in a code editor - line numbers,
+  PowerShell colours, Tab, Ctrl+F, Ctrl+S. The version marker the detection
+  rule reads is **locked** (grey); the script is checked as you type and
+  can't be saved while it doesn't parse. Saving refuses if someone changed
+  the file since you opened it, keeps the earlier one in Backups (recorded,
+  so **Previous version** can trust it), notes who changed it in Recent
+  changes, and offers **Build package**. Only those files, in the app's own
+  package folder.
+- Reviewed for security, correctness and behaviour before release: the
+  version marker is checked by where it runs in the script (not commented
+  out, put in a condition or after an exit), MSI values with `%VAR%` are
+  quoted, links in the package folders are refused, release marker writes
+  share the save lock, and the editor keeps focus, sequence and Ctrl+S to
+  itself.
+
 ## 2.25.0
 
 **Extra winget options per app.**

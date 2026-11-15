@@ -36,6 +36,7 @@ try { Add-Type -AssemblyName System.Security -ErrorAction Stop } catch { }
 . (Join-Path $PSScriptRoot 'WebAdd.ps1')
 . (Join-Path $PSScriptRoot 'WebConvenience.ps1')
 . (Join-Path $PSScriptRoot 'WebSetup.ps1')
+. (Join-Path $PSScriptRoot 'WebBlocks.ps1')
 
 Initialize-AppState -RootPath $RootPath
 $Global:App.WebLog = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))

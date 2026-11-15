@@ -132,6 +132,20 @@ $testableFunctionNames = @(
     "ConvertTo-WingetOptionText",
     "Get-WingetCommandOptions",
     "Get-WingetCommandLines",
+    "New-CommandBlock",
+    "Get-ExeSilentSwitches",
+    "Get-PackageScriptRunner",
+    "Test-BlockValueText",
+    "New-MsiCommandLines",
+    "New-ExeCommandLines",
+    "Get-InstallBlocks",
+    "New-InstallFromBlocks",
+    "ConvertFrom-InstalledNamePattern",
+    "Get-DetectionBlocks",
+    "New-DetectionFromBlocks",
+    "Get-PackageScriptLockedLines",
+    "Test-PackageScriptEdit",
+    "Get-MarkerCommandPlaces",
     "Get-AppWingetInstallMethod",
     "Convert-AppWingetInstallMethod",
     "Get-DefaultAppMetadata",
@@ -2783,6 +2797,79 @@ Assert-Equal '2.0,1.0' ((ConvertFrom-WingetVersionsOutput "Gefunden X [A.B]`nVer
 $odd = Get-WingetShowVerdict -ExitCode 5 -StdOut "  - \`nSource agreement required" -StdErr ""
 Assert-True ((-not $odd.Ok) -and $odd.Result -like "Could not check (exit code 5): Source agreement required") "winget show: anything else says it couldn't check, with winget's first real line"
 
+
+
+# =================================================================
+# Command and detection blocks (2.26)
+# =================================================================
+$bw = Get-WingetCommandLines -WingetId 'Vendor.App' -Method 'Managed' -InstallContext 'System' -Version '5.1' -Options "--override '/S'"
+$ib = Get-InstallBlocks -WingetId 'Vendor.App' -Install $bw.Install -Uninstall $bw.Uninstall -InstallContext 'System'
+Assert-True ($ib.Form -eq 'winget' -and -not $ib.Own -and @($ib.Blocks | Where-Object { $_.kind -eq 'lock' }).Count -ge 3) "Get-InstallBlocks: a managed winget command - locked PowerShell, winget and install blocks"
+$optBlock = @($ib.Blocks | Where-Object { $_.id -eq 'options' })[0]
+Assert-True (@($optBlock.value).Count -eq 1 -and $optBlock.value[0].name -eq '--override' -and $optBlock.value[0].value -eq '/S') "Get-InstallBlocks: the extra winget options as name = value"
+Assert-True (@($ib.Blocks | Where-Object { $_.id -eq 'version' })[0].text -like '5.1*') "Get-InstallBlocks: the pinned version shown (linked to Install with)"
+$wb = New-InstallFromBlocks -Form 'winget' -Values @{ options = @(@{ name = '--override'; value = '/S /D=C:\X' }, @{ name = '--architecture'; value = 'x64' }) } -WingetId 'Vendor.App' -Install $bw.Install -Uninstall $bw.Uninstall
+Assert-True ($wb.Ok -and $wb.Install -like "*--version '5.1'*" -and (Get-WingetCommandOptions $wb.Install) -ceq "--override '/S /D=C:\X' --architecture 'x64'") "New-InstallFromBlocks: winget options written, the pin kept"
+Assert-True (-not (New-InstallFromBlocks -Form 'winget' -Values @{ options = @(@{ name = '--location'; value = 'C:\x' }) } -WingetId 'Vendor.App' -Install $bw.Install -Uninstall $bw.Uninstall).Ok) "New-InstallFromBlocks: an option winget's command may not take is refused"
+$own = Get-InstallBlocks -WingetId 'Vendor.App' -Install ($bw.Install + ' --force') -Uninstall $bw.Uninstall
+Assert-True ($own.Own -and $own.Form -eq 'own' -and @($own.Blocks).Count -eq 0) "Get-InstallBlocks: a command changed by hand is an own command, kept as it is"
+
+$msi = New-MsiCommandLines -File 'Setup x64.msi' -Properties @(@{ name = 'allusers'; value = '1' }, @{ name = 'INSTALLDIR'; value = 'C:\Program Files\X' }, @{ name = 'TRANSFORMS'; value = 'Company.mst' }) -ProductCode '{12345678-1234-1234-1234-123456789abc}'
+Assert-True ($msi.Ok -and $msi.Install -ceq 'msiexec /i "Setup x64.msi" /qn /norestart ALLUSERS=1 INSTALLDIR="C:\Program Files\X" TRANSFORMS=Company.mst' -and $msi.Uninstall -ceq 'msiexec /x {12345678-1234-1234-1234-123456789ABC} /qn /norestart') "New-MsiCommandLines: silent, properties upper case, a value with spaces in quotes"
+$mb = Get-InstallBlocks -Install $msi.Install -Uninstall $msi.Uninstall
+Assert-True ($mb.Form -eq 'msi' -and @(@($mb.Blocks | Where-Object { $_.id -eq 'props' })[0].value).Count -eq 3 -and @($mb.Blocks | Where-Object { $_.id -eq 'file' })[0].value -eq 'Setup x64.msi') "Get-InstallBlocks: an MSI command read back into file, properties and product code"
+$proposed = Get-InstallerProposal @{ Kind = 'msi'; FileName = 'App.msi'; ProductName = 'App'; ProductVersion = '1.0'; ProductCode = '{12345678-1234-1234-1234-123456789ABC}' }
+Assert-Equal 'msi' (Get-InstallBlocks -Install $proposed.InstallCommand -Uninstall $proposed.UninstallCommand).Form "Get-InstallBlocks: what Add apps proposes for an MSI is the MSI form"
+foreach ($bad in @(@{ name = 'X'; value = 'a & calc' }, @{ name = 'X'; value = 'say "hi"' }, @{ name = 'lower case!'; value = '1' }, @{ name = 'REBOOT'; value = 'Force' })) {
+    Assert-True (-not (New-MsiCommandLines -File 'a.msi' -Properties @($bad) -ProductCode '{12345678-1234-1234-1234-123456789ABC}').Ok) "New-MsiCommandLines: refused - $($bad.name)=$($bad.value)"
+}
+Assert-True (-not (New-MsiCommandLines -File '..\x.msi' -ProductCode '{12345678-1234-1234-1234-123456789ABC}').Ok -and -not (New-MsiCommandLines -File 'a.msi' -ProductCode 'nope').Ok) "New-MsiCommandLines: a path or a wrong product code is refused"
+
+$exeP = Get-InstallerProposal @{ Kind = 'exe'; FileName = 'setup.exe'; ProductName = 'Tool'; ProductVersion = '2.0'; ExeKind = 'inno' }
+$eb = Get-InstallBlocks -Install $exeP.InstallCommand -Uninstall $exeP.UninstallCommand
+Assert-True ($eb.Form -eq 'exe' -and @($eb.Blocks | Where-Object { $_.id -eq 'kind' })[0].value -eq 'inno') "Get-InstallBlocks: an Inno Setup installer is the exe form, its maker recognised"
+$ex = New-InstallFromBlocks -Form 'exe' -Values @{ file = 'setup.exe'; kind = 'inno'; extra = '/DIR=C:\Apps\Tool /LOG' } -Install $exeP.InstallCommand -Uninstall $exeP.UninstallCommand
+Assert-True ($ex.Ok -and $ex.Install -ceq '"setup.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR=C:\Apps\Tool /LOG' -and (Get-InstallBlocks -Install $ex.Install -Uninstall $ex.Uninstall).Form -eq 'exe') "New-InstallFromBlocks: extra switches after the maker's, read back the same"
+Assert-True (-not (New-ExeCommandLines -File 'setup.exe' -Kind 'nsis' -Extra '/S & calc').Ok -and -not (New-ExeCommandLines -File 'setup.exe' -Kind 'nope').Ok) "New-ExeCommandLines: shell characters or an unknown maker are refused"
+
+$run = Get-PackageScriptRunner
+Assert-Equal 'script' (Get-InstallBlocks -Install "$run .\Install.ps1" -Uninstall "$run .\Uninstall.ps1").Form "Get-InstallBlocks: a script app's commands"
+$pa = Get-InstallBlocks -Install 'Invoke-AppDeployToolkit.exe -DeploymentType Install -DeployMode Silent' -Uninstall 'Invoke-AppDeployToolkit.exe -DeploymentType Uninstall -DeployMode Silent'
+Assert-Equal 'psadt' $pa.Form "Get-InstallBlocks: PSADT 4's commands"
+$pm = New-InstallFromBlocks -Form 'psadt' -Values @{ mode = 'Interactive' } -Install 'Invoke-AppDeployToolkit.exe -DeploymentType Install -DeployMode Silent' -Uninstall 'Invoke-AppDeployToolkit.exe -DeploymentType Uninstall -DeployMode Silent'
+Assert-True ($pm.Ok -and $pm.Install -ceq 'Invoke-AppDeployToolkit.exe -DeploymentType Install -DeployMode Interactive' -and $pm.Uninstall -ceq 'Invoke-AppDeployToolkit.exe -DeploymentType Uninstall -DeployMode Interactive') "New-InstallFromBlocks: PSADT deploy mode for install and uninstall"
+Assert-True (-not (New-InstallFromBlocks -Form 'psadt' -Values @{ mode = 'Silent; calc' } -Install 'Invoke-AppDeployToolkit.exe -DeploymentType Install -DeployMode Silent' -Uninstall 'Invoke-AppDeployToolkit.exe -DeploymentType Uninstall -DeployMode Silent').Ok) "New-InstallFromBlocks: only the known deploy modes"
+Assert-True (-not (New-InstallFromBlocks -Form 'msi' -Values @{} -Install 'my own command' -Uninstall '').Ok) "New-InstallFromBlocks: blocks for another form than the commands have are refused"
+
+# Detection
+Assert-Equal 'Visual Studio Code' (ConvertFrom-InstalledNamePattern (Get-InstalledNamePattern 'Visual Studio Code')) "ConvertFrom-InstalledNamePattern: the name back from its pattern"
+Assert-True ($null -eq (ConvertFrom-InstalledNamePattern '^Code.*$')) "ConvertFrom-InstalledNamePattern: a pattern written by hand isn't one of its names"
+$md = [ordered]@{ Type = 'Script'; Script_Content = (Get-ManagedWingetDetection -WingetId 'Vendor.App' -Version '5.1' -NamePattern (Get-InstalledNamePattern 'Vendor App')) }
+$db = Get-DetectionBlocks $md
+Assert-True ($db.Form -eq 'managed' -and @($db.Blocks | Where-Object { $_.id -eq 'name' })[0].value -eq 'Vendor App') "Get-DetectionBlocks: a managed release's script, the name Windows lists editable"
+$nd = New-DetectionFromBlocks -Form 'managed' -Values @{ name = 'Vendor App (x64)' } -Rule $md
+Assert-True ($nd.Ok -and $nd.Script -like "*'5.1'*" -and $nd.DetectedName -eq 'Vendor App (x64)' -and (Get-DetectionBlocks ([ordered]@{ Type = 'Script'; Script_Content = $nd.Script })).Form -eq 'managed') "New-DetectionFromBlocks: a new name, the version kept, read back the same"
+$crlf = [ordered]@{ Type = 'Script'; Script_Content = ($md.Script_Content -replace "`r?`n", "`r`n") }
+Assert-Equal 'managed' (Get-DetectionBlocks $crlf).Form "Get-DetectionBlocks: Windows line ends don't make it an own script"
+$id2 = [ordered]@{ Type = 'Script'; Script_Content = (New-InstalledAppDetectionScript -DisplayName 'Tool' -Version '2.0') }
+Assert-Equal 'installed' (Get-DetectionBlocks $id2).Form "Get-DetectionBlocks: the installed-app script"
+Assert-True (-not (New-DetectionFromBlocks -Form 'installed' -Values @{ name = 'Tool'; version = '2.0; calc' } -Rule $id2).Ok) "New-DetectionFromBlocks: a version that isn't one is refused"
+Assert-True ((Get-DetectionBlocks ([ordered]@{ Type = 'Script'; Script_Content = 'if (Test-Path C:\x) { "ok" }' })).Own -and (Get-DetectionBlocks ([ordered]@{ Type = 'Msi'; Msi_ProductCode = '{x}' })).Form -eq 'rule') "Get-DetectionBlocks: an own script, and a rule that has fields of its own"
+
+# Package scripts
+$tpl = (Get-ScriptAppTemplates -Name 'Tool' -Version '2.0')[3].install
+$locked = @(Get-PackageScriptLockedLines $tpl)
+Assert-True ($locked.Count -ge 2) "Get-PackageScriptLockedLines: the version marker and its comment are locked"
+$edited = $tpl.Replace('# Your install steps here.', "Write-Output 'step'")
+Assert-True ((Test-PackageScriptEdit -Old $tpl -New $edited).Ok) "Test-PackageScriptEdit: an edit outside the locked lines is fine"
+$broken = Test-PackageScriptEdit -Old $tpl -New ($edited + "`r`nif (`$x {")
+Assert-True ((-not $broken.Ok) -and @($broken.Errors).Count -ge 1 -and $broken.Errors[0].line -ge 1) "Test-PackageScriptEdit: a parse error, with its line"
+Assert-True (-not (Test-PackageScriptEdit -Old $tpl -New ($tpl -replace "-Value '2.0'", "-Value '9.9'")).Ok) "Test-PackageScriptEdit: the locked marker can't be changed"
+$markerAt = $tpl.IndexOf('# The version marker')
+foreach ($trick in @(($tpl.Substring(0, $markerAt) + "<#`r`n" + $tpl.Substring($markerAt) + "`r`n#>"), ($tpl.Substring(0, $markerAt) + "exit 0`r`n" + $tpl.Substring($markerAt)), ($tpl.Substring(0, $markerAt) + "if (`$false) {`r`n" + $tpl.Substring($markerAt) + "`r`n}"), ($edited -replace "`r`n", "`r"))) {
+    Assert-True (-not (Test-PackageScriptEdit -Old $tpl -New $trick).Ok) "Test-PackageScriptEdit: the marker can't be switched off around its lines (comment, exit before it, an if, lone CR line ends)"
+}
+Assert-True ((New-MsiCommandLines -File 'a.msi' -Properties @(@{ name = 'INSTALLDIR'; value = '%ProgramFiles%\App' }) -ProductCode '{12345678-1234-1234-1234-123456789ABC}').Install -like '*INSTALLDIR="%ProgramFiles%\App"') "New-MsiCommandLines: a value with %VAR% is quoted (Intune expands it, maybe with a space)"
 
 # =================================================================
 # Diagnostics (Diagnostics.ps1)
