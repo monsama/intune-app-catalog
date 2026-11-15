@@ -503,7 +503,9 @@ label.full input { margin-top: 4px; }
 dialog.addapps { width: min(1100px, calc(100vw - 32px)); }
 .addhead { display: flex; align-items: center; gap: 8px; }
 .addhead h2 { margin: 0; }
-.asec { min-height: 360px; }
+/* As tall as the tab's content; the window is anchored at the top, so switching tabs doesn't make it jump. */
+.asec { min-height: 0; }
+dialog.addapps:not(.maxed) { margin-top: 6vh; max-height: 88vh; }
 .wgsearch { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .wgsearch input { font-size: 15px; padding: 9px 12px; }
 .awsplit { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; }
@@ -990,3 +992,14 @@ summary:focus:not(:focus-visible), .tablewrap:focus:not(:focus-visible) { outlin
 /* Device names, dates and file names stay on one line. */
 #dlgStatus td:first-child, #dlgStatus td.date, #scriptsBody td.file, #scriptsBody td.date { white-space: nowrap; }
 dialog > #dlgTray { position: fixed; }
+
+/* Editor Basics: the fields wide, "Ready to send?" a side column that stays in view. */
+#dlgApp .formgrid.pg0 { grid-template-columns: minmax(0, 1fr) 300px; }
+#dlgApp .formgrid.pg0 .ready { position: sticky; top: 0; }
+@media (max-width: 900px) { #dlgApp .formgrid.pg0 { grid-template-columns: 1fr; } }
+/* Groups: the description and its Save button on one line. */
+.gdescrow { display: flex; gap: 8px; align-items: flex-end; }
+.gdescrow .gdesc { flex: 1; margin: 0; }
+.gdescrow > .btn { height: 34px; flex: none; }
+/* Checks: the fix buttons together on a row of their own, not split across the toolbar's two lines. */
+.fixbar:not([hidden]) { display: flex; flex-wrap: wrap; gap: 8px; flex-basis: 100%; }

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.20.1
+
+The cosmetic leftovers from the 2.20 sweep.
+
+- **Editor > Basics**: the fields get the room; "Ready to send?" is a
+  narrower column beside them that stays in view.
+- **Add apps** is as tall as the tab's content (no blank band under a
+  short tab), and opens near the top so switching tabs doesn't make it
+  jump.
+- **Groups**: the description has its own **Save** right beside it. The
+  button under To add only shows when there are members to add (it says
+  how many).
+- **Checks**: the fix buttons sit together on a row of their own.
+
 ## 2.20.0
 
 A full sweep: the server logic, the pages' behaviour, the layout of every

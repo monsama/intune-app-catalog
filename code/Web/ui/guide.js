@@ -269,6 +269,8 @@ function renderWhere() {
       const first = [...s.children].find(c => pageOf.get(c) === i); if (first) first.classList.add('pgfirst');
     }
     dsec.classList.toggle('offpage', i < 3);
+    // Basics: the "Ready to send?" box is a narrow column beside the fields, not half the window.
+    left.parentElement.classList.toggle('pg0', i === 0);
     if (i >= 3) dsec.open = true;
     mark(i); dlg.scrollTop = 0;
   }
