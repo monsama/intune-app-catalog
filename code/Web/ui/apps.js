@@ -256,6 +256,8 @@ function methodText(m, pinned) {
 }
 async function refreshMethod() {
   showPkgInfo();
+  // The commands as blocks (blocks.js) - for every kind of app, not only Winget ones.
+  if (typeof refreshBlocks === 'function') refreshBlocks();
   const id = $('aWinget').value.trim(), row = $('aMethodRow');
   // Store apps (12-character IDs) are Intune's own Store type - no commands.
   row.hidden = !id || /^[0-9A-Z]{12}$/.test(id);
@@ -753,6 +755,7 @@ let editorApps = [], editorMinOs = [], deployTouched = false;
 function showDetFields() {
   const t = $('xType').value;
   for (const d of document.querySelectorAll('[data-det]')) d.hidden = !d.dataset.det.split(' ').includes(t);
+  if (typeof refreshDetectionBlocks === 'function') refreshDetectionBlocks();
 }
 $('xType').addEventListener('change', showDetFields);
 function fillDeploy(d) {

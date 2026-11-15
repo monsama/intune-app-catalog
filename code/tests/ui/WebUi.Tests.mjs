@@ -263,6 +263,18 @@ try {
         await page.waitForFunction(() => document.getElementById('aName').value !== '');
         check(await page.inputValue('#mOwner') === 'ZZ Owner', `${label}: Batch edit saved the owner`, await page.inputValue('#mOwner'));
         check((await page.inputValue('#gRequired')).split('\n').includes('SG-ZZ-UI'), `${label}: Add groups saved the group`, await page.inputValue('#gRequired'));
+        // Blocks (2.26): the winget commands as locked and editable blocks; an option added there lands in the command.
+        await page.click('.edtab[data-i="3"]');
+        await page.waitForSelector('#instBlocks:not([hidden]) .blk.lock', { timeout: 8000 });
+        check(await page.evaluate(() => document.getElementById('mInstallCommand').readOnly && document.querySelectorAll('#instBlocks .blk.lock').length >= 3), `${label}: the commands show as blocks, the text read-only`);
+        await unnamed('the blocks');
+        await page.selectOption('#instBlocks select.blk.add', '--override');
+        await page.fill('#instBlocks input[aria-label="--override value"]', '/S');
+        await page.press('#instBlocks input[aria-label="--override value"]', 'Tab');
+        await page.waitForFunction(() => /--override '\/S'/.test(document.getElementById('mInstallCommand').value), null, { timeout: 8000 });
+        check(true, `${label}: an option added as a block is written into the install command`);
+        await page.click('#instBlocks .bx[aria-label="Remove --override"]');
+        await page.waitForFunction(() => !/--override/.test(document.getElementById('mInstallCommand').value), null, { timeout: 8000 });
         await page.keyboard.press('Escape');
         await page.waitForFunction(() => !document.getElementById('dlgApp').open);
 

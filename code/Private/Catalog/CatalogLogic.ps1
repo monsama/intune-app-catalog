@@ -1733,14 +1733,8 @@ function Global:Get-InstallerProposal {
         $p.Notes = $notes.ToArray()
         return $p
     }
-    $switches = switch ([string]$Info.ExeKind) {
-        'inno' { '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-' }
-        'nsis' { '/S' }
-        'burn' { '/quiet /norestart' }
-        'installshield' { '/s /v"/qn REBOOT=ReallySuppress"' }
-        'advanced' { '/exenoui /qn /norestart' }
-        default { '' }
-    }
+    # The maker's silent switches - one table (Get-ExeSilentSwitches), which the editor's blocks read too.
+    $switches = Get-ExeSilentSwitches ([string]$Info.ExeKind)
     $p.InstallCommand = "`"$file`"$(if ($switches) { " $switches" })"
     if (-not $switches) { $notes.Add("The installer's maker wasn't recognised - add its silent switch to the install command (the vendor's documentation, or try /S, /quiet or /silent).") }
     $p.UninstallCommand = "$ps .\Uninstall.ps1"
@@ -2462,4 +2456,359 @@ function Global:ConvertFrom-WingetVersionsOutput {
     for ($i = 0; $i -lt $lines.Count - 1; $i++) { if ($lines[$i] -match '^\S+$' -and $lines[$i] -notmatch '^-+$' -and $lines[$i + 1] -match '^-{3,}$') { $start = $i + 2; break } }
     if ($start -lt 0) { return @() }
     return @($lines[$start..($lines.Count - 1)] | Where-Object { $_ -match '^[0-9A-Za-z][0-9A-Za-z.\-_+]{0,63}$' } | Select-Object -First 100)
+}
+
+# ---------------------------------------------------------------- command and detection blocks (2.26)
+<#
+  The install and uninstall commands and the detection script, as blocks:
+  locked ones (what this tool writes the same way for every app - the
+  64-bit PowerShell, finding winget, msiexec's silent switches, the frame of
+  a detection script) and editable ones (what each app chooses - its MSI
+  file and properties, its winget options, the name Windows lists it
+  under). The blocks are read from the commands themselves and written
+  back to them - the commands stay the one stored truth, so nothing can get
+  out of step. A command that isn't one of these forms is the app's own
+  ("Own"): kept exactly as it is.
+#>
+
+function Global:New-CommandBlock {
+    # Pure: one block for the editor. -Kind: lock (fixed), edit (this app's value), link (another field's value), list (name = value pairs), action (opens something).
+    param([string]$Id, [string]$Kind, [string]$Label, [string]$Text = '', $Value = $null, [string]$Type = 'text', $Choices = @(), [string]$Link = '', [string]$Help = '', [string]$Part = 'install')
+    return [ordered]@{ id = $Id; kind = $Kind; label = $Label; text = $Text; value = $Value; type = $Type; choices = @($Choices); link = $Link; help = $Help; part = $Part }
+}
+
+function Global:Get-ExeSilentSwitches {
+    # Pure: the silent install switches for an .exe installer's maker (Get-InstallerKind) - '' when unknown.
+    param([string]$Kind)
+    switch ($Kind) {
+        'inno' { return '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-' }
+        'nsis' { return '/S' }
+        'burn' { return '/quiet /norestart' }
+        'installshield' { return '/s /v"/qn REBOOT=ReallySuppress"' }
+        'advanced' { return '/exenoui /qn /norestart' }
+    }
+    return ''
+}
+
+function Global:Get-PackageScriptRunner {
+    # Pure: how a package's own PowerShell script is run - 64-bit Windows PowerShell, no profile, from the package folder.
+    return '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File'
+}
+
+function Global:Test-BlockValueText {
+    # Pure: whether -Text is a value that can go into a command line as it is - plain ASCII, no quotes, no characters a shell or PowerShell acts on, at most -Max characters.
+    param([string]$Text, [int]$Max = 200, [switch]$AllowPercent, [switch]$AllowSemicolon)
+    if ($null -eq $Text -or $Text.Length -gt $Max) { return $false }
+    $extra = $(if ($AllowPercent) { '%' } else { '' }) + $(if ($AllowSemicolon) { ';' } else { '' })
+    return ($Text -cmatch ('^[A-Za-z0-9 _\-./\\:=+,@()\[\]{}!#~''' + [regex]::Escape($extra) + ']*$'))
+}
+
+function Global:New-MsiCommandLines {
+    <#
+      Pure: an MSI's install and uninstall commands from its blocks -
+      @{ Ok; Install; Uninstall; Error }. -Properties: @(@{ name; value })
+      public properties (upper case) such as ALLUSERS=1 or TRANSFORMS=x.mst;
+      a value with a space is put in double quotes.
+    #>
+    param([string]$File, $Properties = @(), [string]$ProductCode)
+    $f = ([string]$File).Trim()
+    if ($f -notmatch '^[A-Za-z0-9 _\-.()\[\]+,@!#~]{1,120}\.msi$') { return @{ Ok = $false; Error = "The MSI file must be a file name in the package folder, ending in .msi (no path, no quotes)." } }
+    $code = ([string]$ProductCode).Trim().ToUpperInvariant()
+    if ($code -notmatch '^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$') { return @{ Ok = $false; Error = 'The product code must look like {12345678-1234-1234-1234-123456789ABC}.' } }
+    $parts = New-Object System.Collections.Generic.List[string]
+    $seen = @{}
+    foreach ($p in @($Properties)) {
+        if (-not $p) { continue }
+        $n = ([string]$p.name).Trim().ToUpperInvariant(); $v = ([string]$p.value).Trim()
+        if (-not $n -and -not $v) { continue }
+        if ($n -notmatch '^[A-Z_][A-Z0-9_.]{0,63}$') { return @{ Ok = $false; Error = "'$n' isn't an MSI property name (letters, digits, _ and . - public properties are upper case)." } }
+        if ($n -in 'REBOOT', 'REBOOTPROMPT') { return @{ Ok = $false; Error = "$n is set by the tool already (/norestart) - leave it out." } }
+        if ($seen.ContainsKey($n)) { return @{ Ok = $false; Error = "$n is there twice." } }
+        if (-not (Test-BlockValueText $v -AllowPercent -AllowSemicolon)) { return @{ Ok = $false; Error = "The value of $n isn't allowed: plain letters, digits, spaces and / \ - _ . : = + , @ ( ) [ ] { } ! # ~ ' % ; - no double quotes, &, |, <, > or ^ (200 characters at most)." } }
+        $seen[$n] = $true
+        $parts.Add($(if ($v -match '\s' -or $v -eq '') { "$n=`"$v`"" } else { "$n=$v" }))
+    }
+    $install = "msiexec /i `"$f`" /qn /norestart" + $(if ($parts.Count) { ' ' + ($parts -join ' ') } else { '' })
+    if ($install.Length -gt 1024) { return @{ Ok = $false; Error = "The install command would be $($install.Length) characters - Intune takes 1024 at most." } }
+    return @{ Ok = $true; Install = $install; Uninstall = "msiexec /x $code /qn /norestart"; Error = '' }
+}
+
+function Global:New-ExeCommandLines {
+    # Pure: an .exe installer's commands from its blocks - the maker's silent switches, extra switches, and Uninstall.ps1 (which finds the app's own uninstaller). @{ Ok; Install; Uninstall; Error }.
+    param([string]$File, [string]$Kind, [string]$Extra)
+    $f = ([string]$File).Trim()
+    if ($f -notmatch '^[A-Za-z0-9 _\-.()\[\]+,@!#~]{1,120}\.exe$') { return @{ Ok = $false; Error = 'The installer must be a file name in the package folder, ending in .exe (no path, no quotes).' } }
+    if ($Kind -and -not (Get-ExeSilentSwitches $Kind)) { return @{ Ok = $false; Error = "'$Kind' isn't an installer maker this tool knows." } }
+    $x = ([string]$Extra).Trim()
+    if ($x -and -not (Test-BlockValueText $x)) { return @{ Ok = $false; Error = "The extra switches aren't allowed: plain letters, digits, spaces and / \ - _ . : = + , @ ( ) [ ] { } ! # ~ ' - no quotes, %, ;, &, |, <, > or ^ (200 characters at most)." } }
+    $sw = Get-ExeSilentSwitches $Kind
+    $install = "`"$f`"" + $(if ($sw) { " $sw" } else { '' }) + $(if ($x) { " $x" } else { '' })
+    return @{ Ok = $true; Install = $install; Uninstall = "$(Get-PackageScriptRunner) .\Uninstall.ps1"; Error = '' }
+}
+
+function Global:Get-InstallBlocks {
+    <#
+      Pure: an app's install and uninstall commands as blocks - @{ Form;
+      Own; Blocks; Note }. Form: winget, msi, exe, script, psadt, or own
+      (a command this tool doesn't write - kept as it is, Blocks empty).
+      Each form is recognised only when writing its blocks back gives
+      exactly the same commands.
+    #>
+    param([string]$WingetId, [string]$Install, [string]$Uninstall, [string]$InstallContext)
+    $own = @{ Form = 'own'; Own = $true; Blocks = @(); Note = 'An own command: kept exactly as it is.' }
+    $Install = [string]$Install; $Uninstall = [string]$Uninstall
+    if (-not $Install.Trim()) { return @{ Form = 'none'; Own = $true; Blocks = @(); Note = 'No install command yet.' } }
+
+    # Winget: the generated forms (Get-AppWingetInstallMethod), pinned or newest, with extra options.
+    if ($WingetId -and -not (Test-StoreProductId $WingetId)) {
+        $method = Get-AppWingetInstallMethod -WingetId $WingetId -InstallCommand $Install -UninstallCommand $Uninstall
+        if ($method -in 'Managed', 'Winget') {
+            $pinned = ''
+            if ($method -eq 'Managed' -and $Install -match " --version '((?:[^']|'')+)'") { $pinned = $Matches[1] -replace "''", "'" }
+            $opts = Get-WingetCommandOptions $Install
+            $list = @(foreach ($m in [regex]::Matches($opts, "(--[a-z\-]+) '((?:[^']|'')*)'")) { [ordered]@{ name = $m.Groups[1].Value; value = ($m.Groups[2].Value -replace "''", "'") } })
+            $machine = $Install -match ' --scope machine'
+            $blocks = @(
+                (New-CommandBlock -Id 'ps' -Kind 'lock' -Label 'PowerShell' -Text '64-bit Windows PowerShell, no profile' -Help "Intune's agent is 32-bit: sysnative reaches the 64-bit PowerShell.")
+                (New-CommandBlock -Id 'find' -Kind 'lock' -Label 'Find winget' -Text 'the newest App Installer - waits up to 5 minutes on a new device, else exit 9009 (Intune retries)')
+                (New-CommandBlock -Id 'cmd' -Kind 'lock' -Label 'Install' -Text "winget install --id $WingetId -e --source winget --silent")
+                (New-CommandBlock -Id 'version' -Kind 'link' -Label 'Version' -Text $(if ($pinned) { "$pinned - pinned (managed updates)" } else { 'the newest winget has' }) -Link 'aMethod' -Help 'Set with Install with.')
+                (New-CommandBlock -Id 'scope' -Kind 'link' -Label 'For' -Text $(if ($machine) { 'the device (--scope machine)' } else { 'the signed-in user' }) -Link 'xContext' -Help 'Set with Install for (Requirements).')
+                (New-CommandBlock -Id 'options' -Kind 'list' -Label 'Extra winget options' -Value $list -Choices @('--override', '--custom', '--architecture', '--locale', '--installer-type') -Help 'Most packages need none - winget installs silently with the package''s own switches.')
+                (New-CommandBlock -Id 'uninstall' -Kind 'lock' -Label 'Uninstall' -Text "winget uninstall --id $WingetId -e --silent" -Part 'uninstall')
+            )
+            return @{ Form = 'winget'; Own = $false; Blocks = $blocks; Note = '' }
+        }
+        return $own
+    }
+
+    # MSI: msiexec /i "file.msi" /qn /norestart [PROPERTY=value ...], uninstalled by its product code.
+    $mi = [regex]::Match($Install, '^msiexec /i "([^"]+)" /qn /norestart((?: [A-Z_][A-Z0-9_.]*=(?:"[^"]*"|[^\s"]+))*)$')
+    $mu = [regex]::Match($Uninstall, '^msiexec /x (\{[0-9A-F-]{36}\}) /qn /norestart$')
+    if ($mi.Success -and $mu.Success) {
+        $props = @(foreach ($m in [regex]::Matches($mi.Groups[2].Value, ' ([A-Z_][A-Z0-9_.]*)=(?:"([^"]*)"|([^\s"]+))')) { [ordered]@{ name = $m.Groups[1].Value; value = ($m.Groups[2].Value + $m.Groups[3].Value) } })
+        $again = New-MsiCommandLines -File $mi.Groups[1].Value -Properties $props -ProductCode $mu.Groups[1].Value
+        if ($again.Ok -and $again.Install -ceq $Install -and $again.Uninstall -ceq $Uninstall) {
+            $blocks = @(
+                (New-CommandBlock -Id 'msiexec' -Kind 'lock' -Label 'Run' -Text 'msiexec /i')
+                (New-CommandBlock -Id 'file' -Kind 'edit' -Label 'MSI file' -Value $mi.Groups[1].Value -Help 'A file in the app''s package folder.')
+                (New-CommandBlock -Id 'silent' -Kind 'lock' -Label 'Silent' -Text '/qn /norestart - no windows, no restart (Intune restarts by the return code)')
+                (New-CommandBlock -Id 'props' -Kind 'list' -Label 'Properties' -Value $props -Help 'Public MSI properties, e.g. ALLUSERS=1, TRANSFORMS=Company.mst, INSTALLDIR=C:\Apps\X.')
+                (New-CommandBlock -Id 'msix' -Kind 'lock' -Label 'Uninstall' -Text 'msiexec /x' -Part 'uninstall')
+                (New-CommandBlock -Id 'code' -Kind 'edit' -Label 'Product code' -Value $mu.Groups[1].Value -Part 'uninstall' -Help 'The MSI''s ProductCode - read from the installer when it was added.')
+                (New-CommandBlock -Id 'usilent' -Kind 'lock' -Label 'Silent' -Text '/qn /norestart' -Part 'uninstall')
+            )
+            return @{ Form = 'msi'; Own = $false; Blocks = $blocks; Note = '' }
+        }
+        return $own
+    }
+
+    # EXE: "setup.exe" with the maker's silent switches and extra ones; Uninstall.ps1 runs the app's own uninstaller.
+    $me = [regex]::Match($Install, '^"([^"]+\.exe)"(.*)$')
+    if ($me.Success -and $Uninstall -ceq "$(Get-PackageScriptRunner) .\Uninstall.ps1") {
+        $rest = $me.Groups[2].Value.Trim(); $kind = ''; $extra = $rest
+        foreach ($k in 'inno', 'nsis', 'burn', 'installshield', 'advanced') {
+            $sw = Get-ExeSilentSwitches $k
+            if ($rest -ceq $sw -or $rest.StartsWith("$sw ", [StringComparison]::Ordinal)) { $kind = $k; $extra = $rest.Substring($sw.Length).Trim(); break }
+        }
+        $again = New-ExeCommandLines -File $me.Groups[1].Value -Kind $kind -Extra $extra
+        if ($again.Ok -and $again.Install -ceq $Install) {
+            $choices = @([ordered]@{ value = ''; label = '(unknown - switches below)' }) + @(foreach ($k in 'inno', 'nsis', 'burn', 'installshield', 'advanced') { [ordered]@{ value = $k; label = "$(@{ inno = 'Inno Setup'; nsis = 'NSIS'; burn = 'WiX bundle (Burn)'; installshield = 'InstallShield'; advanced = 'Advanced Installer' }[$k]) - $(Get-ExeSilentSwitches $k)" } })
+            $blocks = @(
+                (New-CommandBlock -Id 'file' -Kind 'edit' -Label 'Installer' -Value $me.Groups[1].Value -Help 'A file in the app''s package folder.')
+                (New-CommandBlock -Id 'kind' -Kind 'edit' -Label 'Made with' -Type 'select' -Value $kind -Choices $choices -Help 'Sets the silent switches its maker uses.')
+                (New-CommandBlock -Id 'extra' -Kind 'edit' -Label 'Extra switches' -Value $extra -Help 'Added after the silent switches, e.g. /DIR=C:\Apps\X or /LOG.')
+                (New-CommandBlock -Id 'uninstall' -Kind 'action' -Label 'Uninstall' -Text 'Uninstall.ps1 - runs the uninstaller Windows lists for the app, silently' -Value 'Uninstall.ps1' -Part 'uninstall')
+            )
+            return @{ Form = 'exe'; Own = $false; Blocks = $blocks; Note = '' }
+        }
+        return $own
+    }
+
+    # A script app: Install.ps1 and Uninstall.ps1 in its package folder.
+    $run = Get-PackageScriptRunner
+    if ($Install -ceq "$run .\Install.ps1" -and $Uninstall -ceq "$run .\Uninstall.ps1") {
+        $blocks = @(
+            (New-CommandBlock -Id 'ps' -Kind 'lock' -Label 'PowerShell' -Text '64-bit Windows PowerShell, no profile, from the package folder')
+            (New-CommandBlock -Id 'script' -Kind 'action' -Label 'Install' -Text 'Install.ps1' -Value 'Install.ps1')
+            (New-CommandBlock -Id 'uscript' -Kind 'action' -Label 'Uninstall' -Text 'Uninstall.ps1' -Value 'Uninstall.ps1' -Part 'uninstall')
+        )
+        return @{ Form = 'script'; Own = $false; Blocks = $blocks; Note = '' }
+    }
+
+    # PSADT 4: Invoke-AppDeployToolkit (.exe, or the .ps1 with PowerShell), its deploy mode.
+    $mp = [regex]::Match($Install, '^(Invoke-AppDeployToolkit\.exe|' + [regex]::Escape($run) + ' Invoke-AppDeployToolkit\.ps1) -DeploymentType Install -DeployMode (Silent|NonInteractive|Interactive)$')
+    if ($mp.Success -and $Uninstall -ceq "$($mp.Groups[1].Value) -DeploymentType Uninstall -DeployMode $($mp.Groups[2].Value)") {
+        $blocks = @(
+            (New-CommandBlock -Id 'run' -Kind 'lock' -Label 'Run' -Text $mp.Groups[1].Value.Replace($run, '64-bit PowerShell:'))
+            (New-CommandBlock -Id 'type' -Kind 'lock' -Label 'Deployment' -Text '-DeploymentType Install (Uninstall for the uninstall command)')
+            (New-CommandBlock -Id 'mode' -Kind 'edit' -Label 'Deploy mode' -Type 'select' -Value $mp.Groups[2].Value -Choices @([ordered]@{ value = 'Silent'; label = 'Silent - no windows' }, [ordered]@{ value = 'NonInteractive'; label = 'NonInteractive - progress, no questions' }, [ordered]@{ value = 'Interactive'; label = 'Interactive - asks the user (close apps, defer)' }))
+            (New-CommandBlock -Id 'script' -Kind 'action' -Label 'Script' -Text 'Invoke-AppDeployToolkit.ps1' -Value 'Invoke-AppDeployToolkit.ps1')
+        )
+        return @{ Form = 'psadt'; Own = $false; Blocks = $blocks; Note = '' }
+    }
+    return $own
+}
+
+function Global:New-InstallFromBlocks {
+    <#
+      Pure: the commands written from -Values (block id -> value) for -Form,
+      starting from the current commands (what isn't a block stays as it
+      is: the pinned version, the install context, the PSADT runner).
+      @{ Ok; Install; Uninstall; Error }. Every value is checked here - these
+      commands run as SYSTEM on every device.
+    #>
+    param([string]$Form, $Values, [string]$WingetId, [string]$Install, [string]$Uninstall, [string]$InstallContext)
+    $now = Get-InstallBlocks -WingetId $WingetId -Install $Install -Uninstall $Uninstall -InstallContext $InstallContext
+    if ($now.Form -ne $Form) { return @{ Ok = $false; Error = "The commands aren't the $Form form any more (changed meanwhile) - open the app again." } }
+    $get = { param($k) if ($Values -is [System.Collections.IDictionary]) { $Values[$k] } elseif ($Values) { $Values.$k } }
+    switch ($Form) {
+        'winget' {
+            $method = Get-AppWingetInstallMethod -WingetId $WingetId -InstallCommand $Install -UninstallCommand $Uninstall
+            $pinned = ''
+            if ($method -eq 'Managed' -and $Install -match " --version '((?:[^']|'')+)'") { $pinned = $Matches[1] -replace "''", "'" }
+            $text = (@(foreach ($o in @(& $get 'options')) { if ($o -and ([string]$o.name).Trim()) { "$(([string]$o.name).Trim()) '$(([string]$o.value).Replace("'", "''"))'" } }) -join ' ')
+            $o = ConvertTo-WingetOptionText $text
+            if (-not $o.Ok) { return @{ Ok = $false; Error = $o.Error } }
+            $context = if ($Install -match ' --scope machine') { 'System' } else { 'User' }
+            $c = Get-WingetCommandLines -WingetId $WingetId -Method $method -InstallContext $context -Version $pinned -Options $o.Options
+            if ($c.Install.Length -gt 1024) { return @{ Ok = $false; Error = "With these options the install command is $($c.Install.Length) characters - Intune takes 1024 at most." } }
+            return @{ Ok = $true; Install = $c.Install; Uninstall = $c.Uninstall; Error = '' }
+        }
+        'msi' { $r = New-MsiCommandLines -File ([string](& $get 'file')) -Properties @(& $get 'props') -ProductCode ([string](& $get 'code')); return $r }
+        'exe' { return (New-ExeCommandLines -File ([string](& $get 'file')) -Kind ([string](& $get 'kind')) -Extra ([string](& $get 'extra'))) }
+        'psadt' {
+            $mode = [string](& $get 'mode')
+            if ($mode -notin 'Silent', 'NonInteractive', 'Interactive') { return @{ Ok = $false; Error = 'Deploy mode must be Silent, NonInteractive or Interactive.' } }
+            $runner = ([regex]::Match($Install, '^(.+?) -DeploymentType Install')).Groups[1].Value
+            return @{ Ok = $true; Install = "$runner -DeploymentType Install -DeployMode $mode"; Uninstall = "$runner -DeploymentType Uninstall -DeployMode $mode"; Error = '' }
+        }
+        'script' { return @{ Ok = $true; Install = $Install; Uninstall = $Uninstall; Error = '' } }
+    }
+    return @{ Ok = $false; Error = "An own command has no blocks - it's edited as text." }
+}
+
+function Global:ConvertFrom-InstalledNamePattern {
+    # Pure: the name Get-InstalledNamePattern made -Pattern from ('' when it isn't one of its patterns) - so the name can be shown and edited instead of the regex.
+    param([string]$Pattern)
+    if (-not $Pattern) { return '' }
+    $tail = '(\s+(v?\d[\w.\-]*|\([^)]*\)))*\s*$'
+    if (-not $Pattern.StartsWith('^') -or -not $Pattern.EndsWith($tail)) { return $null }
+    $escaped = $Pattern.Substring(1, $Pattern.Length - 1 - $tail.Length)
+    try { $name = [regex]::Unescape($escaped) } catch { return $null }
+    if ((Get-InstalledNamePattern $name) -cne $Pattern) { return $null }
+    return $name
+}
+
+function Global:Get-DetectionBlocks {
+    <#
+      Pure: a detection rule as blocks - @{ Form; Own; Blocks; Note }.
+      Form: managed (the managed winget release's script), installed (the
+      name and version Windows lists), rule (an MSI, file or registry rule -
+      already fields of their own), own (a script this tool didn't write),
+      none. A script counts as a form only when writing it again from its
+      blocks gives exactly the same script.
+    #>
+    param($Rule)
+    if (-not $Rule -or -not [string]$Rule.Type) { return @{ Form = 'none'; Own = $true; Blocks = @(); Note = '' } }
+    if ([string]$Rule.Type -ne 'Script') { return @{ Form = 'rule'; Own = $false; Blocks = @(); Note = '' } }
+    $s = ([string]$Rule.Script_Content) -replace "`r`n", "`n"
+    $q = "'((?:[^']|'')*)'"
+    $un = { param($t) $t -replace "''", "'" }
+    $m = [regex]::Match($s, "^\`$AppToDetect = $q\n\`$Wanted = $q\n\`$NamePattern = $q\n")
+    if ($m.Success) {
+        $id = & $un $m.Groups[1].Value; $ver = & $un $m.Groups[2].Value; $pat = & $un $m.Groups[3].Value
+        $name = ConvertFrom-InstalledNamePattern $pat
+        if ($null -ne $name -and ((Get-ManagedWingetDetection -WingetId $id -Version $ver -NamePattern $pat) -replace "`r`n", "`n") -ceq $s) {
+            $blocks = @(
+                (New-CommandBlock -Id 'read' -Kind 'lock' -Label 'First' -Text "Windows' Uninstall entries (64-bit, 32-bit, the user's)" -Part 'detection')
+                (New-CommandBlock -Id 'name' -Kind 'edit' -Label 'Name Windows lists' -Value $name -Part 'detection' -Help 'Exactly, or with a version or "(x64)" after it. Empty: only winget is asked.')
+                (New-CommandBlock -Id 'version' -Kind 'link' -Label 'Version at least' -Text $ver -Link 'mAppVersion' -Part 'detection' -Help 'The App version - a release moves it. Newer counts too.')
+                (New-CommandBlock -Id 'id' -Kind 'link' -Label 'Else winget' -Text "winget lists $id" -Link 'aWinget' -Part 'detection')
+                (New-CommandBlock -Id 'result' -Kind 'lock' -Label 'Found' -Text "writes 'Installed!' - what Intune counts as installed" -Part 'detection')
+            )
+            return @{ Form = 'managed'; Own = $false; Blocks = $blocks; Note = '' }
+        }
+    }
+    $m = [regex]::Match($s, "^\`$pattern = $q; \`$want = $q\n")
+    if ($m.Success) {
+        $pat = & $un $m.Groups[1].Value; $ver = & $un $m.Groups[2].Value
+        $name = ConvertFrom-InstalledNamePattern $pat
+        if ($name -and ((New-InstalledAppDetectionScript -DisplayName $name -Version $ver) -replace "`r`n", "`n") -ceq $s) {
+            $blocks = @(
+                (New-CommandBlock -Id 'read' -Kind 'lock' -Label 'Look in' -Text "Windows' Uninstall entries (64-bit and 32-bit)" -Part 'detection')
+                (New-CommandBlock -Id 'name' -Kind 'edit' -Label 'Name Windows lists' -Value $name -Part 'detection' -Help 'Exactly, or with a version or "(x64)" after it - not another product that starts the same.')
+                (New-CommandBlock -Id 'version' -Kind 'edit' -Label 'Version at least' -Value $ver -Part 'detection' -Help 'Empty: any version.')
+                (New-CommandBlock -Id 'result' -Kind 'lock' -Label 'Found' -Text "writes 'Installed', exit 0 - what Intune counts as installed" -Part 'detection')
+            )
+            return @{ Form = 'installed'; Own = $false; Blocks = $blocks; Note = '' }
+        }
+    }
+    return @{ Form = 'own'; Own = $true; Blocks = @(); Note = 'An own script: kept exactly as it is.' }
+}
+
+function Global:New-DetectionFromBlocks {
+    # Pure: the detection script written from -Values for -Form, from the current -Rule (what isn't a block stays). @{ Ok; Script; DetectedName; Error }.
+    param([string]$Form, $Values, $Rule)
+    $now = Get-DetectionBlocks $Rule
+    if ($now.Form -ne $Form) { return @{ Ok = $false; Error = "The detection script isn't the $Form form any more - open the app again." } }
+    $get = { param($k) if ($Values -is [System.Collections.IDictionary]) { $Values[$k] } elseif ($Values) { $Values.$k } }
+    $name = ([string](& $get 'name')).Trim()
+    if ($name.Length -gt 200 -or $name -match '[\x00-\x1f]') { return @{ Ok = $false; Error = 'The name must be one line of at most 200 characters.' } }
+    $s = ([string]$Rule.Script_Content) -replace "`r`n", "`n"
+    $q = "'((?:[^']|'')*)'"
+    if ($Form -eq 'managed') {
+        $m = [regex]::Match($s, "^\`$AppToDetect = $q\n\`$Wanted = $q\n")
+        $script = Get-ManagedWingetDetection -WingetId ($m.Groups[1].Value -replace "''", "'") -Version ($m.Groups[2].Value -replace "''", "'") -NamePattern $(if ($name) { Get-InstalledNamePattern $name } else { '' })
+        return @{ Ok = $true; Script = $script; DetectedName = $name; Error = '' }
+    }
+    if ($Form -eq 'installed') {
+        if (-not $name) { return @{ Ok = $false; Error = 'The name Windows lists is needed.' } }
+        $ver = ([string](& $get 'version')).Trim()
+        if ($ver -and -not (Test-ReleaseVersionText $ver)) { return @{ Ok = $false; Error = "'$ver' isn't a version (digits, letters, . - + _)." } }
+        return @{ Ok = $true; Script = (New-InstalledAppDetectionScript -DisplayName $name -Version $ver); DetectedName = ''; Error = '' }
+    }
+    return @{ Ok = $false; Error = "This detection rule has no blocks." }
+}
+
+# ---------------------------------------------------------------- package scripts in the editor (2.26)
+
+function Global:Get-PackageScriptLockedLines {
+    <#
+      Pure: the lines of a package script this tool owns - the version
+      marker the detection rule reads (and its comment), which a release
+      moves to the new version. The editor keeps them as they are; zero-based
+      line numbers.
+    #>
+    param([string]$Text)
+    $lines = ([string]$Text) -split "`r?`n"
+    $locked = New-Object System.Collections.Generic.List[int]
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match 'IntuneAppCatalog\\Apps\\') {
+            $locked.Add($i)
+            if ($i -gt 0 -and $lines[$i - 1] -match '^\s*#.*version marker' -and -not $locked.Contains($i - 1)) { $locked.Add($i - 1) }
+            if ($i + 1 -lt $lines.Count -and $lines[$i + 1] -match '^\s*Set-ItemProperty\b.*-Name\s+Version\b' -and -not $locked.Contains($i + 1)) { $locked.Add($i + 1) }
+        }
+    }
+    return @($locked | Sort-Object -Unique)
+}
+
+function Global:Test-PackageScriptEdit {
+    <#
+      Pure: whether -New may replace -Old - @{ Ok; Error; Errors }. It must
+      parse as PowerShell (Errors: @{ line; column; message }, one-based) and
+      keep the locked lines of -Old (Get-PackageScriptLockedLines) unchanged
+      and in their order.
+    #>
+    param([string]$Old, [string]$New)
+    if (([string]$New).Length -gt 262144) { return @{ Ok = $false; Error = 'The script is too long (256 KB at most).'; Errors = @() } }
+    $errs = $null
+    [void][System.Management.Automation.Language.Parser]::ParseInput([string]$New, [ref]$null, [ref]$errs)
+    $list = @(foreach ($e in @($errs)) { if ($e) { [ordered]@{ line = $e.Extent.StartLineNumber; column = $e.Extent.StartColumnNumber; message = $e.Message } } })
+    if ($list.Count) { return @{ Ok = $false; Error = "It doesn't parse: $($list[0].message) (line $($list[0].line))."; Errors = $list } }
+    $oldLines = ([string]$Old) -split "`r?`n"; $newLines = ([string]$New) -split "`r?`n"
+    $want = @(foreach ($i in (Get-PackageScriptLockedLines $Old)) { $oldLines[$i] })
+    $have = @(foreach ($i in (Get-PackageScriptLockedLines $New)) { $newLines[$i] })
+    if (($want -join "`n") -cne ($have -join "`n")) { return @{ Ok = $false; Error = "The locked lines (the version marker the detection rule reads) must stay as they are."; Errors = @() } }
+    return @{ Ok = $true; Error = ''; Errors = @() }
 }

@@ -593,6 +593,14 @@ function Global:Invoke-WebApi {
         '/api/winget-versions'  { return (Get-WebWingetVersions $Data) }
         '/api/catalog-history'  { return (Get-WebCatalogHistory $Data) }
         '/api/winget-commands'  { return (Get-WebWingetCommands $Data) }
+        '/api/install-blocks'   { return (Get-WebInstallBlocks $Data) }
+        '/api/install-compose'  { return (Get-WebInstallCompose $Data) }
+        '/api/detection-blocks' { return (Get-WebDetectionBlocks $Data) }
+        '/api/detection-compose' { return (Get-WebDetectionCompose $Data) }
+        '/api/package-script'   { return (Read-WebPackageScript $Data) }
+        '/api/package-script-check' { return (Test-WebPackageScript $Data) }
+        '/api/package-script-save' { return (Save-WebPackageScript $Data) }
+        '/api/package-script-previous' { return (Get-WebPackageScriptPrevious $Data) }
         '/api/app-quick'        { return (Invoke-WithCatalogLock { Update-WebAppQuick $Data }) }
         '/api/marker-version'   { if (-not @((Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name }).Count) { return @{ ok = $false; error = 'No such app.' } }; return @{ ok = $true; changed = @(Update-WebMarkerVersion -Name ([string]$Data.name) -Version ([string]$Data.version)) } }
         '/api/history-undo'     { return (Invoke-WithCatalogLock { Undo-WebHistoryChange $Data }) }

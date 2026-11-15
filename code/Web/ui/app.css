@@ -1115,3 +1115,70 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 500; heig
 .methodrow .wopts input { display: block; width: 100%; margin-top: 4px; font-family: var(--mono); font-size: 12px; }
 .methodrow .hint:empty { display: none; }
 .hint.err { color: var(--err); }
+
+/* ---------------------------------------------------------------- blocks (2.26)
+   Locked blocks: dashed, muted - the tool writes them. Editable: accent - this app's values. Linked: set in
+   another field (click goes there). A command shown as blocks is a read-only preview below them. */
+:root { --lockbg: color-mix(in srgb, var(--muted) 14%, transparent); }
+.blockbar { display: grid; gap: 6px; margin: 2px 0 10px; padding: 10px; border: 1px solid var(--bd); border-radius: var(--r-m); background: var(--surface); }
+.blockbar .bhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.blockbar .bform { font-weight: 600; color: var(--fg); }
+.blockbar .bown { color: var(--muted); }
+.blockbar .bhead .btn { margin-left: auto; }
+.blockbar .bkey { display: inline-flex; align-items: center; gap: 5px; }
+.blockbar .bkey .k { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-left: 6px; }
+.blockbar .bkey .k.lock { border: 1px dashed var(--muted); background: var(--lockbg); }
+.blockbar .bkey .k.edit { border: 1px solid var(--accent); background: var(--accent-soft); }
+.blockbar .bkey .k.link { border: 1px solid var(--bd); background: var(--bd2); }
+.blockbar .brow { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; }
+.blockbar .bpart { flex-basis: 100%; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-top: 4px; }
+.blk { display: inline-flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 38px; padding: 4px 9px; border-radius: var(--r-s); font: 12px var(--mono); color: var(--fg); text-align: left; max-width: 100%; }
+.blk small { font: 600 10px var(--font, inherit); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.blk > span { overflow-wrap: anywhere; }
+.blk.lock { border: 1px dashed var(--bd); background: var(--lockbg); color: var(--muted); }
+.blk.lock small::before { content: '\1F512\FE0E  '; font-size: 9px; }
+.blk.edit { border: 1px solid var(--accent); background: var(--accent-soft); flex-direction: row; align-items: center; gap: 6px; flex-wrap: wrap; }
+.blk.edit small { color: var(--accent); }
+.blk.edit input, .blk.edit select { border: 0; background: transparent; color: var(--fg); font: 12px var(--mono); padding: 2px 0; min-width: 4ch; height: auto; box-shadow: none; }
+.blk.edit input:focus, .blk.edit select:focus { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.blk.edit .bname { font-weight: 600; text-transform: uppercase; }
+.blk.edit .bx { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; }
+.blk.edit .bx:hover { color: var(--err); }
+.blk.link, .blk.action { border: 1px solid var(--bd); background: var(--bd2); cursor: pointer; }
+.blk.link:hover, .blk.action:hover { border-color: var(--accent); }
+.blk.action span { color: var(--accent); }
+.blk.add { border: 1px dashed var(--accent); background: none; color: var(--accent); font: 12px inherit; cursor: pointer; min-height: 38px; padding: 0 10px; border-radius: var(--r-s); }
+input.preview, textarea.preview { background: var(--bd2); color: var(--muted); cursor: default; }
+.methodrow .wopts[hidden] { display: none; }
+
+/* The code editor: a textarea over a highlighted copy of its text, line numbers beside it. */
+.scriptdlg { width: min(1100px, 96vw); }
+.scriptdlg .sehead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.scriptdlg .setabs { display: flex; gap: 4px; margin-left: auto; }
+.scriptdlg .setab { border: 1px solid var(--bd); background: var(--surface); color: var(--fg); border-radius: var(--r-s); padding: 4px 10px; font: 12px var(--mono); cursor: pointer; }
+.scriptdlg .setab[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.scriptdlg .sefind { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.scriptdlg .code { display: grid; grid-template-columns: auto 1fr; height: min(60vh, 640px); border: 1px solid var(--bd); border-radius: var(--r-m); background: var(--field, var(--surface)); overflow: hidden; font: 13px/19px var(--mono); }
+.scriptdlg .gutter { overflow: hidden; padding: 8px 8px 8px 10px; text-align: right; color: var(--muted); background: var(--bd2); user-select: none; min-width: 3.5em; }
+.scriptdlg .gutter div { height: 19px; }
+.scriptdlg .gutter .lk::before { content: '\1F512\FE0E '; font-size: 9px; }
+.scriptdlg .gutter .bad { color: var(--err); font-weight: 700; background: var(--err-bg); }
+.scriptdlg .codearea { position: relative; overflow: hidden; }
+.scriptdlg .hl, .scriptdlg textarea { position: absolute; inset: 0; margin: 0; padding: 8px 10px; font: inherit; white-space: pre; tab-size: 4; border: 0; overflow: auto; }
+.scriptdlg .hl { pointer-events: none; color: var(--fg); background-attachment: local; overflow: hidden; }
+.scriptdlg textarea { color: transparent; background: transparent; caret-color: var(--fg); resize: none; outline: none; }
+.scriptdlg textarea::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); color: transparent; }
+.scriptdlg .hl .c { color: #6a9955; } .scriptdlg .hl .s { color: #b5651d; } .scriptdlg .hl .v { color: #2b6cb0; } .scriptdlg .hl .k { color: #8b3fbf; font-weight: 600; }
+.scriptdlg .hl .f { color: #00808a; } .scriptdlg .hl .p { color: #777; } .scriptdlg .hl .n { color: #098658; }
+:root[data-theme="dark"] .scriptdlg .hl .c { color: #7fb06a; } :root[data-theme="dark"] .scriptdlg .hl .s { color: #e0a36b; } :root[data-theme="dark"] .scriptdlg .hl .v { color: #8cc4ff; }
+:root[data-theme="dark"] .scriptdlg .hl .k { color: #d19bf0; } :root[data-theme="dark"] .scriptdlg .hl .f { color: #5fd3d3; } :root[data-theme="dark"] .scriptdlg .hl .p { color: #a0a6ae; } :root[data-theme="dark"] .scriptdlg .hl .n { color: #b5cea8; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .scriptdlg .hl .c { color: #7fb06a; } :root:not([data-theme="light"]) .scriptdlg .hl .s { color: #e0a36b; } :root:not([data-theme="light"]) .scriptdlg .hl .v { color: #8cc4ff; } :root:not([data-theme="light"]) .scriptdlg .hl .k { color: #d19bf0; } :root:not([data-theme="light"]) .scriptdlg .hl .f { color: #5fd3d3; } :root:not([data-theme="light"]) .scriptdlg .hl .p { color: #a0a6ae; } :root:not([data-theme="light"]) .scriptdlg .hl .n { color: #b5cea8; } }
+.scriptdlg .sestatus { margin: 8px 0 0; font-size: 12px; color: var(--muted); min-height: 1.4em; }
+.scriptdlg .sestatus.err { color: var(--err); }
+.scriptdlg .seerrors { margin: 4px 0 0; padding-left: 18px; font-size: 12px; color: var(--err); }
+.scriptdlg .seerrors:empty { display: none; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
+.formgrid .blk.edit > input, .formgrid .blk.edit > select, .blk.edit > input, .blk.edit > select { display: inline-block; width: auto; margin-top: 0; }
+.blk small.bopt { text-transform: none; letter-spacing: 0; font: 600 12px var(--mono); }
+.scriptdlg .actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; }
+.scriptdlg .actions > div { display: flex; gap: 8px; }
