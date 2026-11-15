@@ -298,7 +298,7 @@ async function loadPrefs() {
     el('input', { 'data-folder': f.key, value: f.chosen, placeholder: f.default, spellcheck: 'false' }))));
   const d = p.defaults;
   for (const c of document.querySelectorAll('[data-arch]')) c.checked = d.architecture.includes(c.dataset.arch);
-  $('dContext').value = d.installContext; $('dWinget').value = d.wingetInstallMethod || 'Managed'; dWingetSaved = $('dWinget').value;
+  $('dContext').value = d.installContext; $('dWinget').value = ['Managed', 'Winget'].includes(d.wingetInstallMethod) ? d.wingetInstallMethod : 'Managed'; dWingetSaved = $('dWinget').value;
   $('dMinOs').replaceChildren(...p.minOsChoices.map(o => el('option', { value: o.value, text: o.label || o.value })));
   if (![...$('dMinOs').options].some(o => o.value === d.minOSKey)) $('dMinOs').append(el('option', { value: d.minOSKey, text: d.minOSKey }));
   $('dMinOs').value = d.minOSKey;
@@ -324,15 +324,25 @@ async function loadPrefs() {
   $('rpAutoRelease').checked = !!rp.AutoRelease; $('rpAutoPromote').checked = !!rp.AutoPromote; $('rpCleanup').checked = !!rp.CleanupOld;
 }
 // Settings cards with changes not saved yet: saving one card reloads the settings, but leaves what's typed in the others.
-document.getElementById('viewSettings').addEventListener('input', e => { const c = e.target.closest('.card'); if (c) c.dataset.dirty = '1'; });
-document.getElementById('viewSettings').addEventListener('change', e => { const c = e.target.closest('.card'); if (c) c.dataset.dirty = '1'; });
+// A card with unsaved changes says so next to its title; leaving the app then asks first.
+function markDirty(c, on) {
+  if (!c) return;
+  if (on) c.dataset.dirty = '1'; else delete c.dataset.dirty;
+  const h = c.querySelector('h2'); if (!h) return;
+  let tag = h.querySelector('.unsaved');
+  if (on && !tag) h.append(tag = el('span', { class: 'pill warn unsaved', text: 'Unsaved changes' }));
+  if (!on && tag) tag.remove();
+}
+document.getElementById('viewSettings').addEventListener('input', e => markDirty(e.target.closest('.card'), true));
+document.getElementById('viewSettings').addEventListener('change', e => markDirty(e.target.closest('.card'), true));
+addEventListener('beforeunload', e => { if (document.querySelector('#viewSettings .card[data-dirty]')) { e.preventDefault(); e.returnValue = ''; } });
 async function savePrefs(part, okText, errEl) {
   const savedCard = document.activeElement && document.activeElement.closest && document.activeElement.closest('#viewSettings .card');
   const r = await api('/api/prefs-save', part);
   if (!r.ok) { if (errEl) { $(errEl).textContent = r.error; $(errEl).hidden = false; } else toast(r.error, true); return false; }
   if (errEl) $(errEl).hidden = true;
   toast(okText);
-  if (savedCard) delete savedCard.dataset.dirty;
+  if (savedCard) markDirty(savedCard, false);
   const keep = [...document.querySelectorAll('#viewSettings .card[data-dirty]')].flatMap(c => [...c.querySelectorAll('input, select, textarea')]).filter(x => x.id && !x.id.endsWith('Chips'))
     .map(x => [x, x.type === 'checkbox' || x.type === 'radio' ? x.checked : x.value]);
   await loadPrefs();

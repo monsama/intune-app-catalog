@@ -153,7 +153,8 @@ try {
         if (-not $existing.value -or $existing.value.Count -eq 0) {
             throw "No group named '$($Config.GroupName)' was found - nothing to delete."
         }
-        $groupId = $existing.value[0].id
+        if (@($existing.value).Count -gt 1) { throw "There are $(@($existing.value).Count) groups named '$($Config.GroupName)' in Entra ID - not deleted, as which one is meant can't be told. Delete the right one in the Entra admin center." }
+        $groupId = @($existing.value)[0].id
         Write-Host "  Found: $($Config.GroupName) ($groupId)" -ForegroundColor Gray
 
         Write-Step "Deleting group"
@@ -184,7 +185,8 @@ try {
                     $failed.Add("$name (not found)")
                     continue
                 }
-                $gid = $existing.value[0].id
+                if (@($existing.value).Count -gt 1) { Write-Host "  [SKIPPED] $(@($existing.value).Count) groups are named '$name' - not deleted." -ForegroundColor Yellow; $failed.Add("$name (several groups of that name)"); continue }
+                $gid = @($existing.value)[0].id
                 Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid" -Method DELETE -StepDescription "Delete $name" | Out-Null
                 Write-Host "  [OK] Deleted '$name'." -ForegroundColor Green
                 $deleted++
@@ -230,15 +232,19 @@ try {
     Write-Step "Ensuring group exists"
     $escapedName = $Config.GroupName.Replace("'", "''")
     $encodedFilter = [Uri]::EscapeDataString("displayName eq '$escapedName'")
-    $existing = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=$encodedFilter&`$select=id,displayName" -Method GET -StepDescription "Look up group"
+    $existing = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=$encodedFilter&`$select=id,displayName,description" -Method GET -StepDescription "Look up group"
+    # Names aren't unique in Entra ID: with two of the same name, which one is meant can't be told - nothing is changed.
+    if (@($existing.value).Count -gt 1) { throw "There are $(@($existing.value).Count) groups named '$($Config.GroupName)' in Entra ID - rename one of them first (Entra admin center), so the right one is changed." }
 
-    if ($existing.value -and $existing.value.Count -gt 0) {
-        $groupId = $existing.value[0].id
+    if ($existing.value -and @($existing.value).Count -gt 0) {
+        $groupId = @($existing.value)[0].id
         Write-Host "  [=] Using existing group: $($Config.GroupName)" -ForegroundColor Gray
 
-        if ($Config.Description) {
+        # The description as given - also emptied (it couldn't be cleared before).
+        $wantDesc = [string]$Config.Description
+        if ($Config.PSObject.Properties['Description'] -and $wantDesc -cne [string](@($existing.value)[0].description)) {
             Write-Step "Updating description"
-            $descBody = @{ description = $Config.Description } | ConvertTo-Json
+            $descBody = @{ description = $(if ($wantDesc) { $wantDesc } else { $null }) } | ConvertTo-Json
             Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$groupId" -Method PATCH -Body $descBody -ContentType "application/json" -StepDescription "Update group description" | Out-Null
             Write-Host "  [OK] Description updated." -ForegroundColor Green
         }

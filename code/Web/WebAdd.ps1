@@ -335,6 +335,14 @@ function Global:Save-WebPsadtTemplate {
         $sig = Get-AuthenticodeSignature -LiteralPath $module.FullName
         if ($sig.Status -ne 'Valid') { return "The PSADT module in release $($rel.tag_name) isn't validly signed ($($sig.Status)) - not used. Download the template by hand from GitHub (PSAppDeployToolkit) if you trust it." }
         Write-Log "[INFO] PSADT module signed by: $($sig.SignerCertificate.Subject)"
+        # Not only the module: every program and module file runs on the devices too. The .exe, .psm1 and .psd1 files must carry
+        # the same signer as the module (a swapped launcher next to the real module isn't accepted), .dll files a valid signature.
+        $thumb = [string]$sig.SignerCertificate.Thumbprint
+        foreach ($f in @(Get-ChildItem -LiteralPath $main.DirectoryName -File -Recurse | Where-Object { $_.Extension -in '.exe', '.psm1', '.psd1', '.dll' })) {
+            $fs = Get-AuthenticodeSignature -LiteralPath $f.FullName
+            $sameSigner = $fs.SignerCertificate -and [string]$fs.SignerCertificate.Thumbprint -eq $thumb
+            if ($fs.Status -ne 'Valid' -or ($f.Extension -ne '.dll' -and -not $sameSigner)) { return "$($f.Name) in the PSADT release $($rel.tag_name) isn't signed by the toolkit's signer ($($fs.Status)) - the template isn't used. Download it by hand from GitHub (PSAppDeployToolkit) if you trust it." }
+        }
         Copy-Item -Path (Join-Path $main.DirectoryName '*') -Destination $Folder -Recurse -Force
         Write-Log "[OK] PSADT $($rel.tag_name) template put in $Folder."
         return ''

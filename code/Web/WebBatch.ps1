@@ -98,6 +98,8 @@ function Global:Set-WebBatchChanges {
     $kept = $false
     foreach ($k in $Changes.Keys) {
         if ($k -eq 'wingetInstallMethod' -or $k -eq 'dependenciesMode') { continue }
+        # A managed app's commands follow its pinned version: batch edit leaves them (as the editor does).
+        if ($k -in 'installCommand', 'uninstallCommand' -and $App.managedUpdates) { $kept = $true; continue }
         $value = $Changes[$k]
         if ($k -eq 'dependencies') {
             # set: exactly these; add: these as well; remove: all but these.

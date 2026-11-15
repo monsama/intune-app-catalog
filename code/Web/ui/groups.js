@@ -248,7 +248,7 @@ async function openGroup(name) {
   $('gDesc').value = r.description || '';
   $('gCount').textContent = r.found ? `(${r.members.length})` : '';
   $('gMembers').replaceChildren(...(r.members.length ? r.members.map(m => el('tr', {}, el('td', { text: m.name }), el('td', { text: m.type }), el('td', { class: 'chg', text: m.upn }),
-    el('td', {}, (() => { const b = el('button', { class: 'btn small danger', text: 'Remove', title: `Remove ${m.name} from this group in Entra ID` }); b.addEventListener('click', () => removeMember(m)); return b; })())))
+    el('td', {}, (() => { const b = el('button', { class: 'btn small danger', text: 'Remove member', title: `Remove ${m.name} from this group in Entra ID - at once` }); b.addEventListener('click', () => removeMember(m)); return b; })())))
     : [el('tr', {}, el('td', { class: 'muted', colspan: '4', text: r.found ? 'No members yet - search below to add people, devices or groups.' : 'Not created yet. People you add below become members when it is created.' }))]));
   renderUses(r.uses);
   saveLabel();
@@ -268,12 +268,12 @@ function renderUses(uses) {
   const tenant = u => {
     const a = typeof apps !== 'undefined' ? apps.find(x => x.name === u.app) : null;
     const t = a ? tenantState(a) : '';
-    return t === 'present' ? el('span', { class: 'pill ok', text: 'Deployed' }) : t === 'missing' ? el('span', { class: 'pill warn', text: 'Not in this tenant' })
-      : t === 'unchecked' ? el('span', { class: 'pill muted', text: 'Has App ID' }) : el('span', { class: 'muted', text: 'Not deployed' });
+    return t === 'present' ? el('span', { class: 'pill ok', text: 'In Intune' }) : t === 'missing' ? el('span', { class: 'pill warn', text: 'Not in this tenant' })
+      : t === 'unchecked' ? el('span', { class: 'pill muted', text: 'Has App ID' }) : el('span', { class: 'muted', text: 'Not in Intune yet' });
   };
   $('gUses').replaceChildren(...(rows.length ? rows.map(u => {
     const open = el('button', { class: 'linkbtn', text: u.app, title: `Open ${u.app} in the editor` }); open.addEventListener('click', () => openEditor(u.app));
-    const rm = el('button', { class: 'btn small', text: 'Remove', title: `Take this group off ${u.app}'s ${u.role} list in the catalog` }); rm.addEventListener('click', () => unassignOne(u));
+    const rm = el('button', { class: 'btn small', text: 'Unassign', title: `Take this group off ${u.app}'s ${u.role} list in the catalog (Send groups applies it in Intune)` }); rm.addEventListener('click', () => unassignOne(u));
     return el('tr', {}, el('td', {}, open), el('td', {}, el('span', { class: 'pill ' + (u.role === 'Excluded' || u.role === 'Uninstall' ? 'muted' : 'info'), text: u.role })), el('td', {}, tenant(u)), el('td', { class: 'act' }, rm));
   }) : [el('tr', {}, el('td', { class: 'muted', colspan: '4', text: uses.length ? 'No app matches the filter.' : 'No app in the catalog is assigned to this group. Assign apps... adds some.' }))]));
   const deployed = [...new Set(uses.map(u => apps.find(x => x.name === u.app)).filter(a => a && tenantState(a) === 'present').map(a => a.name))];
@@ -288,7 +288,7 @@ async function unassignOne(u) {
   if (!(await ask(`Remove ${name} from ${u.app}?\n\nOnly its ${u.role} assignment in the catalog changes. Intune changes when you send groups.`))) return;
   const r = await api('/api/batch-groups', { mode: 'remove', names: [u.app], roles: { [field]: [name] } });
   if (!r.ok) { toast(r.error, true); return; }
-  toast(r.deployed.length ? `Removed. ${u.app} is in Intune - push its groups to apply.` : 'Removed from the app in the catalog.');
+  toast(r.deployed.length ? `Unassigned. ${u.app} is in Intune - send its groups to apply it there.` : 'Unassigned in the catalog.', false, r.deployed.length ? [{ label: 'Send groups', run: () => openPushGroups([u.app]) }] : []);
   loadApps(); await loadGroups(); openGroup(name);
 }
 function openAssign() {

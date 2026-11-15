@@ -37,7 +37,7 @@ function chipify(id, opts = {}) {
   input.addEventListener('keydown', e => {
     if (['Enter', ',', ';', 'Tab'].includes(e.key)) {
       // The suggestion list picks its highlighted group itself; with none highlighted, what's typed is added.
-      if (typeof gpList !== 'undefined' && !gpList.hidden && gpBox === input && gpActive >= 0) return;
+      if ((e.key === 'Enter' || e.key === 'Tab') && typeof gpList !== 'undefined' && !gpList.hidden && gpBox === input && gpActive >= 0) return;
       if (!input.value.trim()) return;
       e.preventDefault(); input._addChip(input.value);
       if (typeof gpHide === 'function') gpHide();

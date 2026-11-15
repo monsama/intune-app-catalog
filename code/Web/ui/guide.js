@@ -6,13 +6,14 @@
 // ---------------------------------------------------------------- an app's stage and its next step
 const onApp = (a, act) => { selected.clear(); selected.add(a.name); lastClicked = a.name; renderApps(); menuAction(act); };
 async function takeVersionFor(a) {
-  toast(`Asking winget for ${a.name}'s current version...`);
-  const w = await api('/api/checks-winget', {});
-  if (!w.ok) { toast(w.error, true); return; }
-  const r = await api('/api/winget-take-version', { names: [a.name] });
+  // Only this app is asked about (not every app), and the toast says which version it pinned - the side panel's Version lists the others.
+  toast(`Asking winget for ${a.name}'s versions...`);
+  const w = await api('/api/winget-versions', { id: a.wingetId });
+  if (!w.ok || !w.versions.length) { toast(w.error || 'winget had no version for it.', true); return; }
+  const r = await api('/api/app-quick', { name: a.name, field: 'appVersion', value: w.versions[0] });
   await loadApps();
-  toast(r.ok && r.changed.length ? `${a.name} starts from ${(apps.find(x => x.name === a.name) || {}).version || "winget's version"}.` : (r.error || (r.skipped || []).join('; ') || 'winget had no version for it.'), !(r.ok && r.changed.length),
-    r.ok && r.changed.length ? [{ label: 'Send to Intune', run: () => openDeploy([a.name]) }] : []);
+  toast(r.ok ? `${a.name} is pinned to ${w.versions[0]} (winget's newest). Another version: pick it under Version in the side panel.` : r.error, !r.ok,
+    r.ok ? [{ label: 'Send to Intune', run: () => openDeploy([a.name]) }] : []);
 }
 const isWauApp = a => /^\s*(Romanitho\.)?winget[\s\-_.]*auto[\s\-_]*update\s*$/i.test(a.name || '') || /^Romanitho\.Winget-AutoUpdate$/i.test(a.wingetId || '');
 // How the app gets new versions, in words - the same for the stage, the panel and the editor.
@@ -28,16 +29,22 @@ function stageOf(a) {
   if (tenantState(a) === 'missing') return { key: 'tenant', label: 'Other tenant', cls: 'warn', why: 'Its App ID belongs to another tenant - copied catalog?', next: { label: 'Clear App ID', title: 'Forget the link, so Send to Intune creates it in this tenant', run: () => onApp(a, 'clearid') } };
   if (isWauApp(a)) return { key: 'retire', label: 'Retire', cls: 'muted', why: a.hasAppId ? 'Winget-AutoUpdate - replaced by managed updates. Retire it to take it off the devices.' : 'Winget-AutoUpdate - replaced by managed updates. It isn\'t in Intune from this catalog: remove it from the catalog.', next: a.hasAppId ? { label: 'Retire...', title: 'Uninstall it from its groups\' devices, then delete it from Intune', run: () => onApp(a, 'retire') } : null };
   if (a.msHint && !a.hasAppId) return { key: 'msapp', label: 'Microsoft app', cls: 'muted', why: a.msHint, next: { label: 'Edit', title: a.msHint, run: () => openEditor(a.name) } };
-  if (/issue|Check failed/.test(a.audit || '')) return { key: 'look', label: 'Needs a look', cls: 'warn', why: 'Intune differs from the catalog (last check).', next: { label: 'Checks', title: 'See what differs and fix it', run: () => showView('checks') } };
+  if (/issue|Check failed/.test(a.audit || '')) return { key: 'look', label: 'Needs a look', cls: 'warn', why: 'Intune differs from the catalog (last check).', next: { label: 'Checks', title: 'See what differs and fix it', run: () => showChecksFor(a.name) } };
   if (own && !a.hasAppId && !a.hasInstall) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs an install command (editor: Install & detection).', next: { label: 'Edit', title: 'Set its install command', run: () => openEditor(a.name) } };
   if (own && !a.hasAppId && !a.hasDetection) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs a detection rule - Send to Intune refuses an own package without one.', next: { label: 'Edit', title: 'Set its detection rule (Install & detection)', run: () => openEditor(a.name) } };
   if (own && a.packageMissing) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'Its installer isn\'t packaged yet.', next: { label: 'Build', title: 'Build the .intunewin from its packages folder', run: () => onApp(a, 'package') } };
   if (needsAttention(a)) return { key: 'look', label: 'Needs a look', cls: 'warn', why: (a.status || '').split('; ').map(p => statusLabel[p] || p).join('; '), next: { label: 'Edit', title: 'Open it in the editor', run: () => openEditor(a.name) } };
   if (!a.hasAppId) {
-    if (a.managed && !own && !a.version) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'Managed updates: it needs the version to start from.', next: { label: 'Set version', title: "Take winget's current version", run: () => takeVersionFor(a) } };
+    if (a.managed && !own && !a.version) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'Managed updates: it needs the version to start from.', next: { label: 'Pin newest', title: "Pin winget's newest version (another one: Version in the side panel)", run: () => takeVersionFor(a) } };
     return { key: 'ready', label: 'Ready to send', cls: 'info', why: 'Everything is set - not in Intune yet.', next: { label: 'Send to Intune', title: 'Create it in Intune', run: () => openDeploy([a.name]) } };
   }
-  if (a.pilotVersion) return { key: 'pilot', label: `In pilot ${a.pilotVersion}`, cls: 'warn', why: `${a.pilotVersion} is with the pilot groups; everyone else has ${a.version || 'the current version'}.`, next: { label: 'Promote...', title: 'Give it to everyone (shows how the pilot went first)', run: () => promoteRelease(a.name) } };
+  if (a.pilotVersion) {
+    // As on Updates: a ring still to go is the next step; everyone only after the last ring (or on the fast track).
+    const rings = 1 + ((prefs && prefs.releaseRings) || []).length, next = !a.pilotFast && (a.pilotRing || 0) < rings - 1;
+    const p = { version: a.pilotVersion, ring: a.pilotRing || 0, ringCount: rings, ringName: (a.pilotRing || 0) === 0 ? 'Pilot' : ((prefs.releaseRings[(a.pilotRing || 0) - 1] || {}).name || `Ring ${(a.pilotRing || 0) + 1}`) };
+    return { key: 'pilot', label: `In pilot ${a.pilotVersion}`, cls: 'warn', why: `${a.pilotVersion} is with ${p.ringName === 'Pilot' ? 'the pilot groups' : p.ringName}; everyone else has ${a.version || 'the current version'}.`,
+      next: next ? { label: 'Next ring...', title: 'Give it to the next release ring too', run: () => advanceRelease(a.name, p) } : { label: 'Promote...', title: 'Give it to everyone (shows how the pilot went first)', run: () => promoteRelease(a.name) } };
+  }
   if (a.managed && a.newerOnWinget) return { key: 'everyone', label: 'Everyone', cls: 'ok', why: `winget has ${a.wingetVersion}.`, next: { label: 'Release...', title: `Release ${a.wingetVersion} to the pilot groups first`, run: () => openRelease(a.name) } };
   return { key: 'everyone', label: a.managed ? 'Everyone' : 'In Intune', cls: 'ok', why: a.managed ? `Everyone gets ${a.version || 'it'}; new versions go to the pilot groups first.` : `In Intune - ${updatesText(a, false)}.` };
 }
@@ -45,7 +52,7 @@ function stageCell(a) {
   const s = stageOf(a);
   const pill = el('span', { class: 'pill ' + s.cls, text: s.label, title: [s.why, a.status ? 'Status: ' + a.status : ''].filter(Boolean).join('\n') });
   if (!s.next) return pill;
-  return el('span', { class: 'stage' }, pill, el('button', { class: 'btn small next', text: s.next.label, title: s.next.title, onclick: e => { e.stopPropagation(); s.next.run(); } }));
+  return el('span', { class: 'stage' }, pill, el('button', { class: 'btn small next', text: s.next.label, title: s.next.title, tabindex: '-1', onclick: e => { e.stopPropagation(); s.next.run(); } }));
 }
 
 // ---------------------------------------------------------------- the toolbar's next step, and the side panel
@@ -54,12 +61,11 @@ function updatePanel() {
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const b = $('btnNext');
   // "Send to Intune" is the toolbar's own button already - not shown twice.
-  if (sel.length === 1 && stageOf(sel[0]).next && stageOf(sel[0]).next.label !== 'Send to Intune') { const s = stageOf(sel[0]); b.hidden = false; b.textContent = s.next.label; b.title = s.next.title; b.onclick = () => s.next.run(); }
-  // Several apps: the toolbar's Send to Intune does it - no second button saying the same.
-  else b.hidden = true;
+  // The next step is on the app's row and in the side panel - the toolbar keeps its own buttons, so nothing jumps.
+  b.hidden = true;
   const p = $('appPanel');
   // Not exactly one app: a panel still on its way for an earlier click is dropped too.
-  if (sel.length !== 1) { clearTimeout(panelTimer); panelSeq++; p.hidden = true; return; }
+  if (sel.length !== 1) { clearTimeout(panelTimer); panelSeq++; if (sel.length > 1) multiPanel(sel); else p.hidden = true; return; }
   clearTimeout(panelTimer); panelTimer = setTimeout(() => fillPanel(sel[0]), 120);
 }
 let panelRefocus = '';
@@ -70,7 +76,9 @@ async function fillPanel(a) {
   const app = r.ok ? r.app : {};
   const fact = (k, v) => v ? el('div', { class: 'kv' }, el('span', { class: 'k', text: k }), el('span', { text: v })) : '';
   // Quick edits right here: a group added or taken off, the version - saved at once (the editor isn't needed).
-  const quick = async (body, refocus) => { const x = await api('/api/app-quick', { name: a.name, ...body }); if (!x.ok) { toast(x.error, true); return false; } toast('Saved.'); panelRefocus = refocus || ''; await loadApps(); return true; };
+  const quick = async (body, refocus) => { const x = await api('/api/app-quick', { name: a.name, ...body }); if (!x.ok) { toast(x.error, true); return false; }
+    // A script app's marker follows the version: its package has to be built again before it's sent.
+    if ((x.scripts || []).length) toast(`Saved. ${x.scripts.join(', ')} now ${x.scripts.length === 1 ? 'writes' : 'write'} the new version - build the package again before sending it.`, false, [{ label: 'Build', run: () => onApp(a, 'package') }]); else toast('Saved.'); panelRefocus = refocus || ''; await loadApps(); return true; };
   const inline = (btn, label, value, save) => {
     const inp = el('input', { class: 'qedit', value: value || '', 'aria-label': label, placeholder: label, list: 'qGroupList',
       onkeydown: async e => { if (e.key === 'Enter') { e.preventDefault(); if (await save(inp.value.trim())) return; } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inp.replaceWith(btn); btn.focus(); } } });
@@ -94,7 +102,7 @@ async function fillPanel(a) {
         const text = [base, a.pilotVersion ? `pilot ${a.pilotVersion}` : '', a.newerOnWinget ? `winget has ${a.wingetVersion}` : '', (a.previousVersions || []).length ? `kept: ${a.previousVersions.join(', ')}` : ''].filter(Boolean).join(' - ');
         // A Winget app without settings of its own gets them (the defaults) with the version picked.
         const canEdit = (app.hasMetadata || (a.wingetId && !isStoreId(a.wingetId))) && !(app.managedUpdates && a.hasAppId);
-        const extra = [a.pilotVersion ? `pilot ${a.pilotVersion}` : '', a.managed && a.newerOnWinget ? `winget has ${a.wingetVersion}` : '', (a.previousVersions || []).length ? `kept: ${a.previousVersions.join(', ')}` : ''].filter(Boolean).join(' · ');
+        const extra = [a.pilotVersion ? `pilot ${a.pilotVersion}` : '', (a.previousVersions || []).length ? `kept: ${a.previousVersions.join(', ')}` : ''].filter(Boolean).join(' · ');
         if (!canEdit) return el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Version' }), el('span', {}, [base, extra].filter(Boolean).join(' · ')));
         // One steady field: the version as it is now; opening it lists winget's versions (asked the first time) - nothing moves.
         const sel = el('select', { class: 'pver', 'aria-label': 'App version', title: 'Pick the App version - winget\'s versions, newest first' }, el('option', { value: '', text: base }));
@@ -116,7 +124,8 @@ async function fillPanel(a) {
         sel.addEventListener('change', async () => {
           const v = sel.value;
           if (v === '__other') { const inp = el('input', { class: 'pver', value: a.version || '', 'aria-label': 'App version', placeholder: 'e.g. 24.09' });
-            inp.addEventListener('keydown', async e => { if (e.key === 'Enter') { e.preventDefault(); const t = inp.value.trim(); if (t && t !== a.version) await quick({ field: 'appVersion', value: t }, 'App version'); else inp.replaceWith(sel); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inp.replaceWith(sel); sel.value = ''; sel.focus(); } });
+            inp.addEventListener('keydown', async e => { if (e.key === 'Enter') { e.preventDefault(); const t = inp.value.trim(); if (t && t !== a.version) await quick({ field: 'appVersion', value: t }, 'App version'); else { sel.value = ''; inp.replaceWith(sel); } } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inp.replaceWith(sel); sel.value = ''; sel.focus(); } });
+            inp.addEventListener('blur', () => setTimeout(() => { if (inp.isConnected) { sel.value = ''; inp.replaceWith(sel); } }, 150));
             sel.replaceWith(inp); inp.focus(); inp.select(); return; }
           if (v) { sel.disabled = true; if (!(await quick({ field: 'appVersion', value: v }, 'App version'))) { sel.disabled = false; sel.value = ''; } }
         });
@@ -221,7 +230,7 @@ function renderSetup(steps) {
   $('setupList').replaceChildren(...steps.map((s, i) => s.done ? null : el('li', { class: i === first ? 'now' : '' },
     el('span', { class: 'mark', 'aria-hidden': 'true', text: String(i + 1) }),
     el('div', { class: 'body' }, el('b', { text: s.title }), el('span', { class: 'muted', text: s.text })),
-    go[s.go] ? el('button', { class: 'btn small' + (i === first ? ' primary' : ''), text: i === first ? 'Do it' : 'Go', onclick: go[s.go] }) : '')).filter(Boolean));
+    go[s.go] ? el('button', { class: 'btn small' + (i === first ? ' primary' : ''), text: 'Open', onclick: go[s.go] }) : '')).filter(Boolean));
   const doneSteps = steps.filter(s => s.done);
   $('setupDone').replaceChildren(...(doneSteps.length ? [el('span', { class: 'muted', text: 'Done: ' }), ...doneSteps.map(s => el('span', { class: 'donechip', text: '✓ ' + s.title }))] : []));
 }
@@ -256,7 +265,7 @@ function renderWhere() {
     chip(inCat, 'in the catalog', '', f === 'all' && !showIntuneOnly, 'Every app the catalog manages - click to show them all', () => { $('filter').value = 'all'; showIntuneOnly = false; renderApps(); updateViewButtons(); }),
     intuneApps ? chip(deployed, 'of them in Intune', '', f === 'deployed', 'Catalog apps that are in this tenant', () => { $('filter').value = 'deployed'; showIntuneOnly = false; renderApps(); updateViewButtons(); }) : '',
     chip(notDeployed, 'only in the catalog', notDeployed ? 'info' : '', f === 'notdeployed', 'Not in Intune yet - select them and Send to Intune', () => { $('filter').value = 'notdeployed'; showIntuneOnly = false; renderApps(); updateViewButtons(); }),
-    intuneApps ? chip(io.win.length, 'only in Intune', io.win.length ? 'warn' : '', showIntuneOnly, 'Windows apps in Intune that the catalog doesn\'t manage (made in the portal) - add them to the catalog, or delete them in Intune', () => { showIntuneOnly = !showIntuneOnly; renderApps(); }) : '',
+    intuneApps ? chip(io.win.length, 'only in Intune', io.win.length ? 'warn' : '', showIntuneOnly, 'Windows apps in Intune that the catalog doesn\'t manage (made in the portal) - add them to the catalog, or delete them in Intune', () => { showIntuneOnly = !showIntuneOnly; if (showIntuneOnly) { selected.clear(); updatePanel(); } renderApps(); updateViewButtons(); }) : '',
     el('span', { class: 'wnote', text: intuneApps ? `Intune read at ${intuneAt}${io.other ? ` - ${io.other} app(s) for other platforms not counted` : ''}.` : (state && state.configured ? 'Reading Intune...' : 'Not connected - Intune isn\'t compared.') }));
   bar.hidden = false;
 }
@@ -309,3 +318,19 @@ function renderWhere() {
   setPage(0);
 })();
 
+
+// Several apps selected: the panel stays (nothing shifts) with what they are and what can be done to all of them.
+function multiPanel(sel) {
+  const p = $('appPanel'), names = sel.map(a => a.name), inIntune = sel.filter(a => a.hasAppId).length;
+  const btn = (text, title, run, primary) => el('button', { class: 'btn small' + (primary ? ' primary' : ''), text, title, onclick: run });
+  p.replaceChildren(
+    el('div', { class: 'phead' }, el('h2', { text: `${sel.length} apps selected` }), el('button', { class: 'btn small ghost', text: 'Clear', title: 'Select none', onclick: () => { selected.clear(); renderApps(); updateViewButtons(); } })),
+    el('div', { class: 'pfacts' },
+      el('div', { class: 'kv' }, el('span', { class: 'k', text: 'In Intune' }), el('span', { text: `${inIntune} of ${sel.length}` })),
+      el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Managed' }), el('span', { text: `${sel.filter(a => a.managed).length} of ${sel.length}` })),
+      el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Apps' }), el('span', { class: 'muted', text: names.slice(0, 12).join(', ') + (names.length > 12 ? `, ... ${names.length - 12} more` : '') }))),
+    el('div', { class: 'pacts' }, btn('Send to Intune', 'Create or update them in Intune', () => openDeploy(names), true),
+      btn('Add groups...', 'Add groups to all of them', () => openGroupsBatch('add', names)), btn('Batch edit...', 'Change fields on all of them', () => openBatch(names)),
+      btn('More...', 'Every action for the selected apps', () => $('btnMore').click())));
+  p.hidden = false;
+}

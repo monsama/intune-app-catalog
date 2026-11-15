@@ -79,14 +79,14 @@ async function loadIntuneIds(force) {
 // Intune's app types, short for the list (the full name is the cell's tooltip).
 const shortType = t => ({ 'Windows app (Win32)': 'Win32', 'Microsoft Store app (new)': 'Store', 'Microsoft 365 Apps (Windows 10 and later)': 'Microsoft 365' })[t] || t || '';
 // What the server's status words are shown as - the same meaning, in the words the rest of the page uses.
-const statusLabel = { 'No App ID': 'Not deployed', 'Metadata saved - ready to deploy': 'Not deployed - own settings', 'Custom package': 'Winget ID + own package' };
+const statusLabel = { 'No App ID': 'Not in Intune yet', 'Metadata saved - ready to deploy': 'Not in Intune yet - own settings', 'Custom package': 'Winget ID + own package' };
 function statusPill(row) {
   if (row.retiringSince) return el('span', { class: 'pill err', text: 'Retiring', title: `Being uninstalled from its groups since ${row.retiringSince} - More > Retire shows how far, and finishes it.` });
   const s = row.status || '';
   const t = tenantState(row);
   if (t === 'missing') return el('span', { class: 'pill warn', text: 'Not in this tenant' + (s ? '; ' + s.split('; ').map(p => statusLabel[p] || p).join('; ') : ''), title: statusHelp['Not in this tenant'] });
   if (!s && t === 'unchecked') return el('span', { class: 'pill muted', text: 'Has App ID', title: statusHelp['Has App ID'] });
-  if (!s) return el('span', { class: 'pill ok', text: 'Deployed', title: statusHelp.Deployed });
+  if (!s) return el('span', { class: 'pill ok', text: 'In Intune', title: statusHelp.Deployed });
   const parts = s.split('; ');
   const plain = parts.every(p => p === 'No App ID' || p === 'Metadata saved - ready to deploy' || p === 'Custom package');
   const cls = !plain ? 'warn' : parts.includes('No App ID') ? 'muted' : 'info';
@@ -162,8 +162,9 @@ function renderApps() {
     th.classList.toggle('desc', th.dataset.sort === sortKey && sortDesc);
   }
   updateActions();
-  $('emptyState').hidden = apps.length > 0;
-  $('grid').hidden = apps.length === 0;  updateTenantBanner();
+  // "only in Intune" shows its rows also with an empty catalog (adding them is how a new catalog starts).
+  $('emptyState').hidden = apps.length > 0 || showIntuneOnly;
+  $('grid').hidden = apps.length === 0 && !showIntuneOnly;  updateTenantBanner();
 }
 function selectRow(name, e) {
   if (e.shiftKey && lastClicked && visible.includes(lastClicked)) {
@@ -220,6 +221,7 @@ function fillEditor(a) {
 // Managed updates need a Winget ID; while one is ticked, the install commands and detection follow the App version.
 function showManagedState() {
   const has = !!$('aWinget').value.trim();
+  appVerPick.hide(!has || isStoreId($('aWinget').value.trim()));
   $('aRuleBox').hidden = !$('aManaged').checked;
   $('arAutoRow').hidden = has; $('arUrlRow').hidden = has;
   $('aManaged').parentElement.title = has ? 'Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Updates'
@@ -379,6 +381,7 @@ function readSupersedence() {
 }
 let editingVersion = '';
 async function openEditor(name) {
+  appVerPick.reset();
   if (wcResume('dlgApp')) return;
   editingName = name || ''; editingVersion = '';
   if (name) {
@@ -466,7 +469,7 @@ async function loadChanges(name) {
   if (!r.ok) { $('histChangesNote').textContent = r.error; $('histChanges').replaceChildren(); return; }
   $('histChangesNote').textContent = r.entries.length ? '' : 'Nothing recorded yet - changes are recorded from this version of the app on.';
   $('histChanges').replaceChildren(...r.entries.map(e => el('li', { class: e.kind === 'intune' ? 'intune' : '' },
-    el('div', { class: 'thead' }, el('time', { text: new Date(e.at).toLocaleString() }), el('span', { class: 'pill ' + (e.kind === 'intune' ? 'info' : 'muted'), text: e.kind === 'intune' ? 'Intune' : 'Catalog' }),
+    el('div', { class: 'thead' }, el('time', { text: fmtWhen(e.at) }), el('span', { class: 'pill ' + (e.kind === 'intune' ? 'info' : 'muted'), text: e.kind === 'intune' ? 'Intune' : 'Catalog' }),
       el('span', { class: 'muted', text: e.source }), e.app !== name ? el('span', { class: 'muted', text: `(as ${e.app})` }) : '',
       e.canUndo ? el('button', { class: 'btn small', text: 'Undo', title: 'Put the fields this change changed back - only those not changed again since', onclick: async () => {
         if (!(await ask(`Undo this change to ${name}?\n\n${e.changes.filter(c => c.revertable).map(c => `${histField(c.field)}: back to ${c.before || '(empty)'}`).join('\n')}\n\nOnly the catalog changes - Send to Intune sends it there.`, { ok: 'Undo' }))) return;
@@ -567,13 +570,13 @@ async function undoLast() {
 
 // ---------------------------------------------------------------- Recent changes: the catalog's history, with Undo
 let recentData = null;
+const recentOpen = new Set();   // the entries opened - kept open when the list is read again (after an Undo)
 const rFieldName = { appName: 'Name', wingetId: 'Winget ID', appId: 'App ID', requiredFor: 'Required', availableFor: 'Available', uninstallFor: 'Uninstall', excludeFor: 'Excluded', managedUpdates: 'Managed updates', releases: 'Releases',
   'metadata.appVersion': 'App version', 'metadata.installCommand': 'Install command', 'metadata.uninstallCommand': 'Uninstall command', 'metadata.detectionRule': 'Detection rule', 'metadata.dependencies': 'Dependencies', 'metadata.description': 'Description', 'metadata.owner': 'Owner', 'metadata.publisher': 'Publisher' };
 const rField = f => rFieldName[f] || f.replace(/^metadata\./, '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
 function whenText(iso) {
   const d = new Date(iso); if (isNaN(d)) return iso;
-  const today = new Date(), y = new Date(Date.now() - 864e5), hm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return d.toDateString() === today.toDateString() ? `Today ${hm}` : d.toDateString() === y.toDateString() ? `Yesterday ${hm}` : `${d.toLocaleDateString()} ${hm}`;
+  return fmtWhen(d);
 }
 async function openRecent() {
   if (!$('dlgRecent').open) { if (wcResume('dlgRecent')) return; $('recentFilter').value = ''; }
@@ -607,7 +610,10 @@ function renderRecent() {
     const what = g.text || [...new Set(g.items.flatMap(i => i.changes.map(c => rField(c.field))))].slice(0, 4).join(', ') || 'Changed';
     const head = el('summary', {}, el('span', { class: 'rwhen', text: whenText(g.at) }), el('span', { class: 'rsrc', text: g.source }),
       el('span', { class: 'rwhat', text: what }), el('span', { class: 'rapps muted', text: apps.length === 1 ? apps[0] : `${apps.length} apps: ${apps.slice(0, 3).join(', ')}${apps.length > 3 ? ', ...' : ''}` }));
-    return el('li', {}, el('details', { open: g.count === 1 && groups.indexOf(g) < 3 }, head, el('div', { class: 'rbody' }, ...g.items.map(item))));
+    const key = g.items[0] && g.items[0].id;
+    const d = el('details', { open: recentOpen.has(key) || (!recentOpen.size && g.count === 1 && groups.indexOf(g) < 3) }, head, el('div', { class: 'rbody' }, ...g.items.map(item)));
+    d.addEventListener('toggle', () => { if (d.open) recentOpen.add(key); else recentOpen.delete(key); });
+    return el('li', {}, d);
   }) : [el('li', { class: 'muted rempty', text: q ? 'No change matches.' : 'No changes yet.' })]));
 }
 $('recentFilter').addEventListener('input', renderRecent);
@@ -676,6 +682,7 @@ for (const th of document.querySelectorAll('.grid th')) th.addEventListener('cli
 let searchTimer = null;
 $('search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(renderApps, 120); });
 $('filter').addEventListener('change', () => {
+  showIntuneOnly = false;
   const sv = activeView();
   if (sv) $('search').value = sv.search || '';
   renderApps(); updateViewButtons();
@@ -791,11 +798,12 @@ function deployProgress() {
 $('btnDeploy').addEventListener('click', () => openDeploy([...selected]));
 async function openDeploy(names) {
   if (wcResume('dlgDeploy')) return;
+  $('btnDeployClose').textContent = 'Cancel';
   const r = await api('/api/deploy-plan', { names });
   if (!r.ok) { toast(r.error, true); return; }
   deployPlan = r.apps; deployResults = {};
   $('deployRows').replaceChildren(...deployPlan.map(a => el('tr', { 'data-name': a.name },
-    el('td', { text: a.name }), el('td', { text: a.update ? 'Push settings' : 'Create' }),
+    el('td', { text: a.name }), el('td', { text: a.update ? 'Send settings' : 'Create' }),
     el('td', {}, a.ready ? el('span', { class: 'pill muted', text: 'Waiting' }) : el('span', { class: 'pill warn', text: 'Not ready', title: a.reason }), a.ready ? '' : el('span', { class: 'why', text: a.reason })))));
   if (r.circular && r.circular.length) toast('These depend on each other in a circle: ' + r.circular.join(', '), true);
   $('deployLog').textContent = r.note ? r.note + '\n' : '';
@@ -841,7 +849,7 @@ async function runDeployQueue(names) {
     else setDeployStatus(name, r.groups === false ? 'warn' : 'ok', r.groups === true ? 'Done, groups pushed' : r.groups === false ? 'Done, groups failed' : 'Done', r.groups === false ? 'Send groups again from the toolbar.' : '');
     deployProgress();
   }
-  deployRunning = false;
+  deployRunning = false; $('btnDeployClose').textContent = 'Close';
   $('btnDeployStop').hidden = true;
   const ready = deployPlan.filter(a => a.ready).map(a => a.name);
   const retry = ready.filter(n => ['failed', 'skipped', 'stopped'].includes(deployResults[n]));
@@ -1030,7 +1038,7 @@ function openMenu(x, y) {
     copyid: 'None of the selected apps has an App ID.', clearid: 'None of the selected apps has an App ID.',
     delete: 'None of the selected apps is in Intune.', remove: 'Select one or more apps first.',
     retire: one ? 'This app isn\'t in Intune - Remove from catalog is enough.' : 'Select exactly one app.',
-    takeversion: sel.some(a => a.managed && a.hasAppId) ? 'Deployed apps with managed updates get a new version through Release new version.' : apps.some(a => a.wingetVersion) ? 'winget offers nothing newer for the selected apps.' : 'Ask winget first: Catalog > Check winget for new versions.',
+    takeversion: sel.some(a => a.managed && a.hasAppId) ? 'Apps in Intune with managed updates get a new version through Release new version.' : apps.some(a => a.wingetVersion) ? 'winget offers nothing newer for the selected apps.' : 'Ask winget first: Catalog > Check winget for new versions.',
     release: !one ? 'Select exactly one app.' : !one.managed ? 'Turn managed updates on first (More > Managed updates on).' : !one.hasAppId ? 'Send it to Intune first - that is its first release.' : 'A version is in pilot already - promote or withdraw it first.',
     promote: one ? 'No version of this app is in pilot.' : 'Select exactly one app.', withdraw: one ? 'No version of this app is in pilot.' : 'Select exactly one app.',
     managed: 'Select one or more apps first.',
@@ -1103,7 +1111,7 @@ async function menuAction(act) {
     }
     case 'managed': {
       const on = menu.querySelector('[data-act=managed]').dataset.on === '1', ws = sel().map(a => a.name);
-      if (!(await ask(`Managed updates ${on ? 'on' : 'off'} for ${ws.length} app${ws.length === 1 ? '' : 's'}?\n\n${on ? 'Each installs exactly its App version, and new versions go to the pilot groups first (More > Release new version). Winget apps: the install command and detection rule follow the App version (set one with More > Take winget\'s version before the first deploy). Own packages: their detection rule must compare a version - a release updates it. Push settings sends the change to apps already in Intune.' : 'Their commands stay pinned to the current version until you change the install method (the editor\'s Install with).'} Undo takes it back.`, { ok: on ? 'Turn on' : 'Turn off', danger: false }))) return;
+      if (!(await ask(`Managed updates ${on ? 'on' : 'off'} for ${ws.length} app${ws.length === 1 ? '' : 's'}?\n\n${on ? 'Each installs exactly its App version, and new versions go to the pilot groups first (More > Release new version). Winget apps: the install command and detection rule follow the App version (set one with More > Take winget\'s version before the first deploy). Own packages: their detection rule must compare a version - a release updates it. Send settings sends the change to apps already in Intune.' : 'Their commands stay pinned to the current version until you change the install method (the editor\'s Install with).'} Undo takes it back.`, { ok: on ? 'Turn on' : 'Turn off', danger: false }))) return;
       const r = await api('/api/managed-updates', { names: ws, on });
       toast(r.ok ? `Managed updates ${on ? 'on' : 'off'} for ${r.changed.length} app(s).${r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : ''}` : r.error, !r.ok); loadApps();
       break;
@@ -1115,7 +1123,7 @@ async function menuAction(act) {
       if (!r.ok) { toast(r.error, true); return; }
       toast(`App version updated on ${r.changed.length} app(s).${r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : ''}`);
       await loadApps();
-      if (r.deployed.length && await ask(`Push the settings of the ${r.deployed.length} deployed app(s) now?\n\n${r.deployed.join('\n')}`, { ok: 'Push settings', danger: false })) pushSettings(r.deployed);
+      if (r.deployed.length && await ask(`Send the settings of the ${r.deployed.length} app(s) in Intune now?\n\n${r.deployed.join('\n')}`, { ok: 'Push settings', danger: false })) pushSettings(r.deployed);
       break;
     }
     case 'copyid': {
@@ -1313,17 +1321,24 @@ function versionCell(a) {
     a.wingetVersion ? el('span', { class: 'muted vnow', text: ` · ${a.wingetVersion}` }) : '')];
 }
 
-// The App version field offers winget's versions to pick (newest first) - asked once the field is used, per Winget ID.
-let verListFor = '';
-$('mAppVersion').addEventListener('focus', async () => {
-  const id = $('aWinget').value.trim();
-  if (!id || isStoreId(id) || verListFor === id) return;
-  verListFor = id;
-  const r = await api('/api/winget-versions', { id });
-  if (verListFor !== id) return;
-  $('verList').replaceChildren(...(r.ok ? r.versions.slice(0, 60).map((v, i) => el('option', { value: v, label: i === 0 ? 'newest' : '' })) : []));
-});
-$('aWinget').addEventListener('input', () => { verListFor = ''; $('verList').replaceChildren(); });
+// A "Pick..." list beside a version field: winget's versions, newest first (asked when it's opened, per Winget ID).
+// A dropdown of its own - a browser's suggestion list filters by what's typed, so a filled field would offer only itself.
+function verPicker(selId, inputId, wingetId) {
+  const sel = $(selId); let loadedFor = '';
+  const load = async () => {
+    const id = wingetId(); if (!id || isStoreId(id) || loadedFor === id) return;
+    loadedFor = id; sel.replaceChildren(el('option', { value: '', text: 'Asking winget...' }));
+    const r = await api('/api/winget-versions', { id });
+    if (!r.ok) { loadedFor = ''; sel.replaceChildren(el('option', { value: '', text: 'Pick...' }), el('option', { value: '', disabled: true, text: `winget: ${r.error}` })); return; }
+    sel.replaceChildren(el('option', { value: '', text: 'Pick...' }), ...r.versions.slice(0, 60).map((v, i) => el('option', { value: v, text: i === 0 ? `${v} - newest` : v })));
+  };
+  sel.addEventListener('pointerdown', load); sel.addEventListener('focus', load);
+  sel.addEventListener('change', () => { if (sel.value) { const f = $(inputId); f.value = sel.value; f.dispatchEvent(new Event('input', { bubbles: true })); } sel.value = ''; });
+  return { reset: () => { loadedFor = ''; sel.replaceChildren(el('option', { value: '', text: 'Pick...' })); }, hide: on => { sel.hidden = on; } };
+}
+const appVerPick = verPicker('mAppVersionPick', 'mAppVersion', () => $('aWinget').value.trim());
+const relVerPick = verPicker('relVersionPick', 'relVersion', () => { const a = apps.find(x => x.name === relName); return a && relInfo && relInfo.kind !== 'package' ? a.wingetId : ''; });
+$('aWinget').addEventListener('input', () => { appVerPick.reset(); appVerPick.hide(!$('aWinget').value.trim() || isStoreId($('aWinget').value.trim())); });
 
 // Publisher, owner and developer: the names the catalog already uses, to pick (typing a new one still works).
 let catValuesAt = 0;
@@ -1332,4 +1347,27 @@ async function fillCatalogValues() {
   const r = await api('/api/catalog-values'); if (!r.ok) return;
   for (const [list, vals] of [['pubList', r.publisher], ['ownerList', r.owner], ['devList', r.developer]]) $(list).replaceChildren(...vals.map(v => el('option', { value: v })));
 }
-for (const id of ['mPublisher', 'mOwner', 'mDeveloper', 'bPublisher', 'bOwner', 'bDeveloper']) $(id).addEventListener('focus', fillCatalogValues);
+for (const id of ['mPublisher', 'mOwner', 'mDeveloper', 'bPublisher', 'bOwner', 'bDeveloper', 'aiPublisher', 'asPublisher', 'apVendor']) $(id).addEventListener('focus', fillCatalogValues);
+
+// App ID: picked, not typed - a typo would link the app to the wrong Intune app (or none).
+function fillAppLink() {
+  const sel = $('aAppLink'), cur = $('aAppId').value.trim();
+  const known = typeof intuneOnly === 'function' ? intuneOnly().win : [];
+  sel.replaceChildren(el('option', { value: '', text: cur ? 'Change...' : 'Link...' }),
+    ...(cur ? [el('option', { value: '__unlink', text: 'Unlink (Send to Intune then creates a new app)' })] : []),
+    ...(known.length ? [el('optgroup', { label: 'Windows apps in Intune the catalog doesn\'t manage' }, ...known.slice().sort((x, y) => x.name.localeCompare(y.name)).map(x => el('option', { value: x.id, text: x.name })))] : []),
+    el('option', { value: '__type', text: 'Type or paste an App ID...' }));
+}
+$('aAppLink').addEventListener('focus', fillAppLink);
+$('aAppLink').addEventListener('pointerdown', fillAppLink);
+$('aAppLink').addEventListener('change', () => {
+  const v = $('aAppLink').value, f = $('aAppId');
+  if (v === '__unlink') f.value = '';
+  else if (v === '__type') { f.readOnly = false; f.focus(); f.select(); }
+  else if (v) f.value = v;
+  $('aAppLink').value = '';
+  f.dispatchEvent(new Event('input', { bubbles: true }));
+});
+$('aAppId').addEventListener('blur', () => { $('aAppId').readOnly = true; });
+
+$('dlgRecent').addEventListener('wcrestore', () => openRecent());

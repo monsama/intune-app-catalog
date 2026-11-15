@@ -265,7 +265,7 @@ function Global:Get-WebAttention {
     }
     $apps = @((Read-WebCatalogRecords).Apps)
     $notDeployed = @($apps | Where-Object { -not $_.appId })
-    if ($notDeployed.Count) { & $add 'info' "$($notDeployed.Count) app(s) not deployed yet" ((@($notDeployed | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($notDeployed.Count -gt 5) { ', ...' })) 'apps:notdeployed' }
+    if ($notDeployed.Count) { & $add 'info' "$($notDeployed.Count) app(s) not in Intune yet" ((@($notDeployed | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($notDeployed.Count -gt 5) { ', ...' })) 'apps:notdeployed' }
     # Winget-AutoUpdate is no longer used (2.19): apps still relying on it are switched to managed updates.
     $wau = @($apps | Where-Object { @(Get-WauUse $_).Count })
     if ($wau.Count) { & $add 'warn' "$($wau.Count) app(s) still use Winget-AutoUpdate" ((@($wau | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + " - this catalog no longer uses WAU. Switch them to $(if ([string]$Global:App.DefaultAppSettings.WingetInstallMethod -eq 'Winget') { 'the winget command' } else { 'managed updates: a fixed version, released to the pilot groups first' }), and send the new commands to Intune.") 'do:wauswitch' }
@@ -326,7 +326,7 @@ function Global:Get-WebAttention {
         [ordered]@{ done = [bool](Test-Path -LiteralPath (Get-SharedPackagePath)); title = 'Build the shared Winget package'; text = 'One package every Winget app deploys with.'; go = 'settings:packaging' }
         [ordered]@{ done = [bool]@($Global:App.PilotGroups).Count; title = 'Choose the pilot groups'; text = 'A few test devices that get new versions first.'; go = 'settings:updates' }
         [ordered]@{ done = [bool]$apps.Count; title = 'Add your first apps'; text = 'From winget, an installer or a script - or the apps already in Intune (Checks).'; go = 'add' }
-        [ordered]@{ done = [bool]@($apps | Where-Object { $_.appId }).Count; title = 'Deploy them'; text = 'Select apps on the Apps page and Send to Intune.'; go = 'apps:notdeployed' }
+        [ordered]@{ done = [bool]@($apps | Where-Object { $_.appId }).Count; title = 'Send them to Intune'; text = 'Select apps on the Apps page and Send to Intune.'; go = 'apps:notdeployed' }
         [ordered]@{ done = [bool]($sch.exists -or -not $sch.supported); title = 'Schedule the nightly run'; text = 'It releases, promotes and checks by itself.'; go = 'settings:automation' }
     )
     $upd = Get-WebAppUpdate

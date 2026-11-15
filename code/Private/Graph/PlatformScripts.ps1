@@ -20,7 +20,7 @@ function Global:ConvertFrom-PlatformScriptBase64 {
     if (-not $Base64) { return "" }
     try {
         $text = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Base64))
-        return ($text -replace "^﻿", "")
+        return ($text -replace "^\uFEFF", "")
     }
     catch { return "" }
 }

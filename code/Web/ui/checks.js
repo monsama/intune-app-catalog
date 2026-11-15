@@ -75,11 +75,12 @@ function updateCheckActions() {
   const count = a => namesWith(sel, a).length;
   const set = (id, a, label) => { const n = count(a); setEnabled($(id), !(checksRunning || jobRunning) && n > 0, checksRunning || jobRunning ? 'Wait for the running check or job to finish.' : `Tick findings that offer ${label}.`); $(id).textContent = n > 1 ? `${label} (${n})` : label; };
   { const n = groupsOf(sel).length; setEnabled($('btnFixCreateGroups'), !(checksRunning || jobRunning) && n > 0, checksRunning || jobRunning ? 'Wait for the running check or job to finish.' : 'Tick findings about groups that don\'t exist in Entra ID.'); $('btnFixCreateGroups').textContent = n > 1 ? `Create groups (${n})` : 'Create group'; }
-  set('btnFixPull', 'Pull', 'Pull'); set('btnFixPushSettings', 'PushMetadata', 'Push settings'); set('btnFixPushGroups', 'PushGroups', 'Send groups');
+  set('btnFixPull', 'Pull', 'Take from Intune'); set('btnFixPushSettings', 'PushMetadata', 'Send settings'); set('btnFixPushGroups', 'PushGroups', 'Send groups');
   const busy = checksRunning || jobRunning ? 'Wait for the running check or job to finish.' : '';
   setEnabled($('btnFixAdd'), !busy && sel.some(f => (f.actions || []).includes('AddToCatalog')), busy || 'Tick findings that are "In Intune, not in the catalog".');
   setEnabled($('btnFixRecheck'), !busy && sel.length > 0, busy || 'Tick one or more findings first.');
-  $('checkSelCount').textContent = sel.length ? `${sel.length} selected` : '';
+  $('checkSelCount').textContent = sel.length ? `${sel.length} selected:` : '';
+  $('checkFixBar').hidden = !sel.length;
 }
 // The missing groups named by findings that offer CreateGroup.
 const groupsOf = list => [...new Set(list.filter(f => (f.actions || []).includes('CreateGroup') && f.data && f.data.Group).map(f => f.data.Group))];
@@ -118,8 +119,8 @@ function fixButtons(f) {
     else if (a === 'CreateGroup' && f.data && f.data.Group) btn('Create group', () => createGroups([f.data.Group], dropGroupFindings), `Create "${f.data.Group}" in Entra ID as a security group`);
     else if (a === 'OpenGroup' && f.data && f.data.Group) btn('Open in Groups', () => { showView('groups'); openGroup(f.data.Group); }, 'See which apps use this group, and its members');
     else if (a === 'EditApp') btn('Edit', () => openEditor(name));
-    else if (a === 'Pull') btn('Pull', () => openPull([name]), 'Intune is right: take its settings and groups into the catalog');
-    else if (a === 'PushMetadata') btn('Push settings', () => pushSettings([name]), 'The catalog is right: send its settings to Intune');
+    else if (a === 'Pull') btn('Take from Intune', () => openPull([name]), 'Intune is right: take its settings and groups into the catalog');
+    else if (a === 'PushMetadata') btn('Send settings', () => pushSettings([name]), 'The catalog is right: send its settings to Intune');
     else if (a === 'PushGroups') btn('Send groups', () => openPushGroups([name]), 'The catalog is right: send its groups to Intune');
     else if (a === 'AddToCatalog') btn('Add to catalog', () => addFromIntune([f]));
     else if (a === 'FindWingetId') btn('Find Winget ID', () => openWinget(f.app, async id => { if (await fix('SetWingetId', id)) runChecks([name]); }));
@@ -127,9 +128,20 @@ function fixButtons(f) {
   }
   return el('div', { class: 'fixes' }, ...out);
 }
+// One app's findings only (from its "Needs a look" on Apps or Home) - a chip says so and x shows all again.
+let checkApp = '';
+async function showChecksFor(name) {
+  showView('checks'); checkApp = name; renderChecks();
+  if (!findings.some(f => (f.catalogName || f.app) === name)) await runChecks([name]);
+}
 function renderChecks() {
   const area = $('checkFilter').value;
-  const list = findings.filter(f => !area || f.area === area);
+  const list = findings.filter(f => (!area || f.area === area) && (!checkApp || (f.catalogName || f.app) === checkApp));
+  let chip = document.getElementById('checkAppChip');
+  if (checkApp) {
+    if (!chip) { chip = el('span', { class: 'chip tag', id: 'checkAppChip' }); $('checkFilter').after(chip); }
+    chip.replaceChildren(el('span', { class: 't', text: `Only ${checkApp}` }), el('button', { type: 'button', class: 'x', text: '×', 'aria-label': 'Show every app', title: 'Show every app', onclick: () => { checkApp = ''; renderChecks(); } }));
+  } else if (chip) chip.remove();
   $('checkBody').replaceChildren(...list.map(f => {
     const k = keyOf(f);
     const box = el('input', { type: 'checkbox', 'aria-label': 'Select', checked: checkSel.has(k) });
@@ -145,7 +157,8 @@ function renderChecks() {
   $('checkAll').checked = list.length > 0 && list.every(f => checkSel.has(keyOf(f)));
   $('checkCount').textContent = findings.length ? `${list.length} finding(s)` : '';
   $('checkGrid').hidden = findings.length === 0;
-  $('checkFixBar').hidden = findings.length === 0;
+  // The fix buttons for ticked findings only - each row has its own; nothing to show (and nothing pushing the table down) with none ticked.
+  $('checkFixBar').hidden = !selFindings().length;
   $('checkEmpty').hidden = findings.length > 0;
   updateCheckActions();
 }

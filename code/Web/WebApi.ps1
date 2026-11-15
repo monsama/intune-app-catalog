@@ -75,6 +75,9 @@ function Global:Get-WebCatalog {
                 releaseIds   = @(@($apps[$i].releases) | Where-Object { $_ -and $_.appId } | ForEach-Object { ([string]$_.appId).ToLowerInvariant() })
                 retiringSince = [string]$apps[$i].retiringSince
                 pilotVersion = [string]$(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'pilot' } | Select-Object -First 1 -ExpandProperty version)
+                # Which release ring the pilot release is in (0 = pilot), and how many there are - the next step is the next ring, not everyone.
+                pilotRing    = [int]$(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'pilot' } | Select-Object -First 1 | ForEach-Object { [int]$_.ring })
+                pilotFast    = [bool]$(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'pilot' -and $_.fastTrack } | Select-Object -First 1)
                 hasIcon      = [bool]($apps[$i].icon -and $apps[$i].icon.value)
                 iconTag      = $(if ($apps[$i].icon -and $apps[$i].icon.value) { "$($apps[$i].icon.value.Length):$($apps[$i].icon.value.Substring([Math]::Max(0, $apps[$i].icon.value.Length - 12)))" } else { '' })
                 groups       = @(@($apps[$i].requiredFor) + @($apps[$i].availableFor) + @($apps[$i].uninstallFor) + @($apps[$i].excludeFor) | Where-Object { $_ } | ForEach-Object { [string]$_ } | Select-Object -Unique)

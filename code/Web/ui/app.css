@@ -1043,3 +1043,12 @@ dialog > #dlgTray { position: fixed; }
 .pver { width: 100%; max-width: 260px; height: 30px; padding: 2px 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .pverx { font-size: 12px; }
 .pfacts .kv:has(.pver) { align-items: center; }
+/* The editor and Add apps keep one size and place on every tab: the tab bar and the buttons don't move under the mouse. */
+dialog#dlgApp:not(.maxed) { margin-top: 4vh; height: min(90vh, 960px); }
+dialog#dlgApp:not(.maxed) > form { min-height: 100%; display: flex; flex-direction: column; }
+dialog#dlgApp:not(.maxed) > form > .actions.split { margin-top: auto; }
+dialog.addapps[open]:not(.maxed) { height: min(84vh, 860px); display: flex; flex-direction: column; }
+dialog.addapps[open]:not(.maxed) > .asec:not([hidden]) { flex: 1 1 auto; overflow: auto; min-height: 0; }
+.card h2 .unsaved { margin-left: 8px; font-size: 11px; vertical-align: middle; }
+#aAppLink { width: auto; flex: none; max-width: 160px; }
+.verpick { width: auto; flex: none; max-width: 150px; }

@@ -376,9 +376,11 @@ try {
             $escapedName = $GroupName.Replace("'", "''")
             $encodedFilter = [Uri]::EscapeDataString("displayName eq '$escapedName'")
             $existing = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=$encodedFilter&`$select=id,displayName" -Method GET -StepDescription "Look up group '$GroupName'"
-            if ($existing.value -and $existing.value.Count -gt 0) {
-                $groupIdCache[$GroupName] = $existing.value[0].id
-                return $existing.value[0].id
+            # Two groups of the same name: which one is meant can't be told - an assignment never goes to a look-alike.
+            if (@($existing.value).Count -gt 1) { throw "There are $(@($existing.value).Count) groups named '$GroupName' in Entra ID - rename one of them (Entra admin center), then send again." }
+            if ($existing.value -and @($existing.value).Count -gt 0) {
+                $groupIdCache[$GroupName] = @($existing.value)[0].id
+                return @($existing.value)[0].id
             }
             if ($CreateIfMissing) {
                 $mailNickname = ($GroupName -replace '[^a-zA-Z0-9]', '')

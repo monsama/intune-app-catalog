@@ -47,9 +47,9 @@ function renderUpdates() {
       acts.push(btn('Release...', x.available ? `Release ${x.available} to the pilot groups` : 'Release a new version to the pilot groups', () => openRelease(x.name)));
       if (x.previous.length) acts.push(btn('Roll back...', `Back to ${x.previous[x.previous.length - 1]}`, () => rollbackRelease(x.name)));
     }
-    else acts.push(el('span', { class: 'muted', text: 'Send it to Intune first' }));
+    else acts.push(btn('Send to Intune...', 'Create it in Intune first - then its versions are released here', () => openDeploy([x.name])));
     const verdict = p && pillFor[p.action];
-    const devices = x.installed === null ? el('span', { class: 'muted', text: x.deployed ? '-' : 'not deployed' })
+    const devices = x.installed === null ? el('span', { class: 'muted', text: x.deployed ? '-' : 'not in Intune yet' })
       : el('span', { title: `${x.installed} installed, ${x.failed} failed, ${x.pending} pending, ${x.notInstalled} not installed` }, `${x.installed}`, el('span', { class: 'muted', text: ` of ${x.installed + x.failed + x.pending + x.notInstalled}` }), x.failed ? el('button', { type: 'button', class: 'pill err newer linkpill', text: `${x.failed} failed`, title: 'Why? Every device\'s state, and the errors explained', onclick: () => openStatus(x.name) }) : '');
     const where = p ? releaseTimeline(p.ring, p.fastTrack, updRings) : '';
     return el('tr', {},

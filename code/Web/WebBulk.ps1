@@ -234,6 +234,8 @@ function Global:Import-WebCatalogCsv {
                 if ($c -eq 'dependencies') { $newText = (Split-WebCellList $cell) -join ' | ' }
                 if ($c -eq 'architecture') { $newText = (@($cell -split '[,|\s]+' | Where-Object { $_ }) -join ',') }
                 if ($newText -ceq $old) { continue }
+                # A managed app's commands follow its pinned version - a CSV can't change them (nor skip the pilot with them).
+                if ($c -in 'installCommand', 'uninstallCommand' -and $a.managedUpdates) { $bad = "${c}: it has managed updates - its commands follow its App version (turn managed updates off to change them)"; continue }
                 $form[$c] = $(if ($c -eq 'dependencies') { @(Split-WebCellList $cell) } elseif ($c -eq 'architecture') { @($newText -split ',') } else { $newText })
                 $diffs.Add([ordered]@{ app = $a.appName; field = $c; old = $old; new = $newText })
             }
