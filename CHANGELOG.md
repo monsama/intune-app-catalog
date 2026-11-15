@@ -18,6 +18,15 @@
   - **not pinned yet**: managed, but the version to pin isn't set;
   - **Store**, **-** (Microsoft's own apps) and **not set** (own
     installer without a version).
+- **Pick instead of typing**:
+  - **Version** in the side panel: Change opens winget's versions (newest
+    first) and the ones kept from earlier releases; "Other" still lets
+    you type one. The editor's App version and Release new version offer
+    winget's versions the same way.
+  - **Publisher, Owner and Developer** (editor and Batch edit) offer the
+    names the catalog already uses, so they're written the same way.
+- **Group boxes**: Enter adds what's typed when no suggestion is
+  highlighted (it did nothing while the suggestion list was open).
 
 ## 2.20.1
 
