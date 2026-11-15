@@ -373,6 +373,8 @@ try {
         function Resolve-GroupId {
             param([string]$GroupName, [bool]$CreateIfMissing)
             if ($groupIdCache.ContainsKey($GroupName)) { return $groupIdCache[$GroupName] }
+            # A group the catalog knows by its Entra ID (checked just before this step: still that name) - no lookup by name.
+            if ($Config.GroupIds -and $Config.GroupIds.PSObject.Properties[$GroupName]) { $groupIdCache[$GroupName] = [string]$Config.GroupIds.PSObject.Properties[$GroupName].Value; return $groupIdCache[$GroupName] }
             $escapedName = $GroupName.Replace("'", "''")
             $encodedFilter = [Uri]::EscapeDataString("displayName eq '$escapedName'")
             $existing = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=$encodedFilter&`$select=id,displayName" -Method GET -StepDescription "Look up group '$GroupName'"

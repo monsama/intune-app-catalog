@@ -538,6 +538,16 @@ try {
     $qvApp = (Invoke-Api '/api/app-get' @{ name = $qvName }).app
     Check ($qv.ok -and $qvApp.metadata.appVersion -eq '3.2.1' -and $qvApp.hasMetadata) 'side panel: a version picked for a Winget app without settings gives it settings with that version' ($qv | ConvertTo-Json -Compress)
     [void](Invoke-Api '/api/app-remove' @{ name = $qvName })
+    # Another admin changing an app (a busy marker from another PC, next to the catalog): the list says who.
+    $busyDir = Join-Path (Join-Path (Invoke-Api '/api/catalog').path '.integrity') 'busy'
+    [void](New-Item -ItemType Directory -Path $busyDir -Force)
+    $busyApp = @((Invoke-Api '/api/catalog').apps)[0].name
+    $busySafe = (((($busyApp -replace '[<>:"/\\|?*\x00-\x1f]', '') -replace '\s+', ' ') -replace '\s', '-') -replace '[.-]+', '-').Trim('-')
+    $busyFile = Join-Path $busyDir ($busySafe + '.json')
+    Set-Content -LiteralPath $busyFile -Encoding UTF8 -Value (@{ pid = 1; procStart = ''; started = (Get-Date).ToUniversalTime().ToString('o'); what = 'Release'; user = 'anna'; machine = 'OTHER-PC' } | ConvertTo-Json -Compress)
+    $busyRow = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $busyApp })[0]
+    Check ([string]$busyRow.busy -like '*anna on OTHER-PC*Release*') 'several admins: an app another admin is changing says who and what' ([string]$busyRow.busy + ' / ' + $busySafe)
+    Remove-Item -LiteralPath $busyFile -Force
     $cv = Invoke-Api '/api/catalog-values'
     Check ($cv.ok -and $null -ne $cv.owner) 'pickers: the catalog''s publishers, owners and developers are listed' ($cv | ConvertTo-Json -Compress)
     $ch = Invoke-Api '/api/catalog-history' @{ limit = 50 }

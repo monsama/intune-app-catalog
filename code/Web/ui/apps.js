@@ -120,7 +120,7 @@ const filters = {
 function sortValue(a, k) {
   if (k === 'groups') return a.required * 10000 + a.available * 100 + a.uninstall;
   // The stage column sorts by stage (the order an app goes through), not by its status text.
-  if (k === 'status') { const order = ['tenant', 'look', 'draft', 'msapp', 'retire', 'ready', 'pilot', 'everyone']; const i = order.indexOf(stageOf(a).key); return String(i < 0 ? 9 : i) + (a.name || '').toLowerCase(); }
+  if (k === 'status') { const order = ['busy', 'tenant', 'look', 'draft', 'msapp', 'retire', 'ready', 'pilot', 'everyone']; const i = order.indexOf(stageOf(a).key); return String(i < 0 ? 9 : i) + (a.name || '').toLowerCase(); }
   return String(a[k] || '').toLowerCase();
 }
 // The search box: words match names and Winget IDs; group:text (or group:"two words") the apps assigned to a group whose name contains it.
@@ -608,7 +608,7 @@ function renderRecent() {
   $('recentList').replaceChildren(...(groups.length ? groups.map(g => {
     const apps = [...new Set(g.items.map(i => i.app))];
     const what = g.text || [...new Set(g.items.flatMap(i => i.changes.map(c => rField(c.field))))].slice(0, 4).join(', ') || 'Changed';
-    const head = el('summary', {}, el('span', { class: 'rwhen', text: whenText(g.at) }), el('span', { class: 'rsrc', text: g.source }),
+    const head = el('summary', {}, el('span', { class: 'rwhen', text: whenText(g.at) }), el('span', { class: 'rsrc', text: g.by ? `${g.source} · ${g.by}` : g.source, title: g.by ? `By ${g.by}, from ${g.source}` : g.source }),
       el('span', { class: 'rwhat', text: what }), el('span', { class: 'rapps muted', text: apps.length === 1 ? apps[0] : `${apps.length} apps: ${apps.slice(0, 3).join(', ')}${apps.length > 3 ? ', ...' : ''}` }));
     const key = g.items[0] && g.items[0].id;
     const d = el('details', { open: recentOpen.has(key) || (!recentOpen.size && g.count === 1 && groups.indexOf(g) < 3) }, head, el('div', { class: 'rbody' }, ...g.items.map(item)));

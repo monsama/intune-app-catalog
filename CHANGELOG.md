@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.24.0
+
+**Ready for several admins, other Windows languages and larger catalogs.**
+
+- **Who is changing what:** while a release, deploy or push runs on an app,
+  the Apps list shows it as **Being changed** - with the Windows user and
+  PC, also when that's another admin on another PC (the markers live in the
+  catalog's `.integrity` folder). **Recent changes** shows who made each
+  change.
+- **Groups by object ID:** the first time a group is sent to Intune, its
+  Entra ID object ID is remembered next to the catalog. A group renamed in
+  Entra ID stops the step with a clear message instead of failing on a
+  name lookup, and a name that two groups share is never guessed.
+- **winget in any Windows language:** winget's answers are read in German,
+  French, Spanish, Italian, Portuguese and Dutch too (search, details,
+  versions, Checks). With Microsoft's WinGet PowerShell module installed
+  (`Microsoft.WinGet.Client`), it's used first - exact in every language;
+  Home suggests it on a non-English Windows.
+- **Faster Apps list:** a catalog of 500 apps loads several times faster on
+  Windows PowerShell 5.1 (the default values no longer walk the whole
+  catalog once per app).
+- **Compliance report:** Updates > **Compliance report** (was Export CSV)
+  adds per app whether it meets the bar - 90 % of devices on the pinned
+  version and that version still downloadable - and a totals row.
+- The tenant test checklist has a section for what 2.20 - 2.24 added.
+
 ## 2.23.0
 
 **The Backups folder can't be used to slip a change into the catalog.**

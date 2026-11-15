@@ -133,6 +133,7 @@ $testableFunctionNames = @(
     "Get-AppWingetInstallMethod",
     "Convert-AppWingetInstallMethod",
     "Get-DefaultAppMetadata",
+    "Get-CatalogNameLookup",
     "Get-FriendlyIntuneAppType",
     "Get-ParsedMinOsRelease",
     "Get-FriendlyMinOsRelease",
@@ -168,6 +169,7 @@ $testableFunctionNames = @(
     "Get-GateVersion",
     "Get-MonthlyReportData",
     "ConvertFrom-WingetShowOutput",
+    "Get-WingetShowLabelMap",
     "Get-InstallerKind",
     "Get-InstallerProposal",
     "New-InstalledAppDetectionScript",
@@ -2729,6 +2731,18 @@ Assert-Equal 1 (Compare-AppVersionText '1.99999999999999999999999999999' '1.1000
 Assert-Equal 1 (Compare-AppVersionText '1.0-beta' '1.0-rc') "Compare-AppVersionText: text parts compared as text"
 $gone = Get-WingetShowVerdict -ExitCode -1978335212 -StdOut "No package found matching input criteria." -StdErr ""
 Assert-True ((-not $gone.Ok) -and $gone.Result -like "NOT FOUND*") "winget show: an unknown ID reads NOT FOUND (what Get-WingetFindings looks for)"
+# winget in another Windows display language (German): the same rows and details.
+$deTable = "Name                 ID                     Version   Quelle`n----------------------------------------------------------`nNotepad++            Notepad++.Notepad++    8.6.9     winget`nVisual Studio Code   Microsoft.VisualStudioCode 1.95.3 winget"
+$deRows = @(ConvertFrom-WingetSearchOutput $deTable)
+Assert-True ($deRows.Count -ge 1 -and $deRows[0].Id -eq 'Notepad++.Notepad++' -and $deRows[0].Version -eq '8.6.9' -and $deRows[0].Source -eq 'winget') "winget search in German: columns found from the line over the rule"
+$deShow = "Gefunden Notepad++ [Notepad++.Notepad++]`r`nVersion: 8.6.9`r`nHerausgeber: Notepad++ Team`r`nBeschreibung: Ein Editor`r`nStartseite: https://notepad-plus-plus.org/`r`nMarkierungen:`r`n  editor`r`n  text`r`n"
+$dd = ConvertFrom-WingetShowOutput $deShow
+Assert-True ($dd.Id -eq 'Notepad++.Notepad++' -and $dd.Name -eq 'Notepad++' -and $dd.Publisher -eq 'Notepad++ Team' -and $dd.Description -eq 'Ein Editor' -and $dd.Homepage -like 'https://notepad*' -and (@($dd.Tags) -join ',') -eq 'editor,text') "winget show in German: name, ID, publisher, description, homepage and tags"
+$deFound = Get-WingetShowVerdict -ExitCode 0 -StdOut $deShow -StdErr ""
+Assert-True ($deFound.Ok -and $deFound.Result -eq 'Found (Notepad++ Team)' -and $deFound.Version -eq '8.6.9') "winget show in German: a known ID is found, with publisher and version"
+$deGone = Get-WingetShowVerdict -ExitCode -1978335212 -StdOut "Es wurde kein Paket gefunden, das den Eingabekriterien entspricht." -StdErr ""
+Assert-True ((-not $deGone.Ok) -and $deGone.Result -like 'NOT FOUND*') "winget show in German: not found by its exit code"
+Assert-Equal '2.0,1.0' ((ConvertFrom-WingetVersionsOutput "Gefunden X [A.B]`nVersion`n-------`n2.0`n1.0") -join ',') "winget versions: the header can be in any language"
 $odd = Get-WingetShowVerdict -ExitCode 5 -StdOut "  - \`nSource agreement required" -StdErr ""
 Assert-True ((-not $odd.Ok) -and $odd.Result -like "Could not check (exit code 5): Source agreement required") "winget show: anything else says it couldn't check, with winget's first real line"
 

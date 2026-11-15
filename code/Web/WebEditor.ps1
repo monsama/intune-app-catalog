@@ -485,7 +485,8 @@ function Global:Add-WebHistoryEntry {
         $dir = Join-Path (Get-WebIntegrityFolder -Create) 'history'
         if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
         $src = if ($Source) { $Source } elseif ($Global:WebChangeSource) { [string]$Global:WebChangeSource } else { 'This app' }
-        $entry = [ordered]@{ id = [guid]::NewGuid().ToString('N'); at = (Get-Date).ToUniversalTime().ToString('o'); app = $App; kind = $Kind; source = $src; text = $Text; changes = @($Changes) }
+        # Who made it - with several admins on one catalog, Recent changes says whose change it was.
+        $entry = [ordered]@{ id = [guid]::NewGuid().ToString('N'); at = (Get-Date).ToUniversalTime().ToString('o'); app = $App; kind = $Kind; source = $src; by = [string]$env:USERNAME; text = $Text; changes = @($Changes) }
         $line = (ConvertTo-Json -InputObject $entry -Compress -Depth 6) + "`n"
         [System.IO.File]::AppendAllText((Join-Path $dir ((Get-Date).ToString('yyyy-MM') + '.jsonl')), $line, (New-Object System.Text.UTF8Encoding($false)))
     }
@@ -756,9 +757,9 @@ function Global:Get-WebCatalogHistoryCore {
         })
         $item = [ordered]@{ id = [string]$e.id; app = [string]$e.app; kind = [string]$e.kind; text = [string]$e.text; changes = @($changes)
             canUndo = ($e.kind -eq 'catalog' -and -not $e.legacy -and @($changes | Where-Object { $_.revertable }).Count -gt 0 -and -not @($changes | Where-Object { $_.field -in 'releases', 'appId' }).Count) }
-        $key = "$([string]$e.source)|$([string]$e.kind)|$([string]$e.text)"
+        $key = "$([string]$e.source)|$([string]$e.by)|$([string]$e.kind)|$([string]$e.text)"
         if ($cur -and $cur.key -eq $key -and [Math]::Abs([double]($cur.last - $ticks)) -le 600000000.0) { $cur.items.Add($item); $cur.last = $ticks; continue }
-        $cur = @{ key = $key; first = $ticks; last = $ticks; source = [string]$e.source; kind = [string]$e.kind; text = [string]$e.text; items = (New-Object System.Collections.Generic.List[object]) }
+        $cur = @{ key = $key; first = $ticks; last = $ticks; source = [string]$e.source; by = [string]$e.by; kind = [string]$e.kind; text = [string]$e.text; items = (New-Object System.Collections.Generic.List[object]) }
         $cur.items.Add($item)
         $groups.Add($cur)
     }
@@ -766,7 +767,7 @@ function Global:Get-WebCatalogHistoryCore {
     foreach ($g in $groups) {
         $list = $g['items']
         $when = (New-Object DateTime ([long]$g['first']), ([DateTimeKind]::Utc)).ToString('o')
-        $out.Add([ordered]@{ at = $when; source = [string]$g['source']; kind = [string]$g['kind']; text = [string]$g['text']; count = [int]$list.Count; items = $list.ToArray() })
+        $out.Add([ordered]@{ at = $when; source = [string]$g['source']; by = [string]$g['by']; kind = [string]$g['kind']; text = [string]$g['text']; count = [int]$list.Count; items = $list.ToArray() })
     }
     return @{ ok = $true; groups = $out.ToArray(); undo = (Get-WebUndoInfo).undo }
 }

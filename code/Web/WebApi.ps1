@@ -49,6 +49,7 @@ function Global:Get-WebCatalog {
     if (Test-Path -LiteralPath $path) {
         try { Load-LastAuditCache } catch { }
         $index = Get-PackageFolderIndex -Root (Get-AppFolder -Kind Packages)
+        $busyApps = Get-WebBusyApps
         for ($i = 0; $i -lt $apps.Count; $i++) {
             $row = Get-CatalogRow -App $apps[$i] -Index $i -PackageIndex $index
             # The pilot release, found once (a plain loop - a pipeline per field is slow for 500 apps on Windows PowerShell).
@@ -58,6 +59,8 @@ function Global:Get-WebCatalog {
                 wingetId     = [string]$row.WingetId
                 appId        = [string]$apps[$i].appId
                 type         = [string]$row.Type
+                # Someone else (another window, another admin) is changing it right now.
+                busy         = [string]$busyApps[(Get-SafeFileNameForApp -Name $apps[$i].appName)]
                 # The App version (what deploys and releases use) - Intune's own reported version apart.
                 version      = [string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })
                 intuneVersion = [string]$row.Version

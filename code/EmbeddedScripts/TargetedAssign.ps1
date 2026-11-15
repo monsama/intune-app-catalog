@@ -215,6 +215,12 @@ try {
         # as a query-string separator otherwise, silently truncating the
         # filter clause mid-value and producing a confusing 400 error.
         $encodedFilter = [Uri]::EscapeDataString("displayName eq '$escapedName'")
+        # A group the catalog knows by its Entra ID (checked just before this step: still that name) - no lookup by name.
+        if ($Config.GroupIds -and $Config.GroupIds.PSObject.Properties[$groupName]) {
+            $groupIdByName[$groupName] = [string]$Config.GroupIds.PSObject.Properties[$groupName].Value
+            Write-Host "  [=] Exists: $groupName (by its ID)" -ForegroundColor DarkGray
+            continue
+        }
         $existing = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups?`$filter=$encodedFilter&`$select=id,displayName" -Method GET -StepDescription "Look up group '$groupName'"
         # Two groups of the same name: which one is meant can't be told - an assignment never goes to a look-alike.
         if (@($existing.value).Count -gt 1) { throw "There are $(@($existing.value).Count) groups named '$groupName' in Entra ID - rename one of them (Entra admin center), then send again." }

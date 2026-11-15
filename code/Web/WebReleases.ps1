@@ -191,6 +191,7 @@ function Global:Start-WebReleaseAssign {
         AvailableSettings = $(if ($step -eq 'promote') { Get-ReleaseAvailableSettings } else { $null })
         RequiredSettings = $(if ($step -in 'pilot', 'advance', 'promote', 'rollback') { Get-ReleaseAssignmentSettings -Policy $Global:App.ReleasePolicy -FastTrack ([bool]($pilot -and $pilot.fastTrack -and $step -ne 'rollback')) -NowUtc ([datetime]::UtcNow) } else { $null })
     }
+    $gid = Add-WebGroupIdsToConfig $config; if ($gid) { return @{ ok = $false; error = $gid } }
     # The pilot assignment done: the release is no longer waiting for it.
     $after = if ($step -eq 'pilot') { @{ Kind = 'pilotassigned'; AppName = [string]$a.appName; AppId = [string]$id } } else { @{} }
     $busy = Enter-WebAppBusy -Name $a.appName -What $label
@@ -585,11 +586,39 @@ function Global:Invoke-WebDownloadChecks {
 
 # ---------------------------------------------------------------- one release step per app at a time
 # The page and the nightly run are separate processes: a file per app being
-# changed (Logs\busy) keeps them from releasing, assigning or withdrawing the
+# changed (.integrity\busy next to the catalog) keeps them from releasing, assigning or withdrawing the
 # same app at the same time. A file whose process is gone (or older than 3
 # hours) doesn't count.
 
-function Global:Get-WebBusyFile { param([string]$Name) Join-Path (Join-Path (Get-AppFolder -Kind Logs -Create) 'busy') ((Get-SafeFileNameForApp -Name $Name) + '.json') }
+# Who is changing an app right now - next to the catalog (every admin's app sees it, also on another PC), with the
+# person and the PC. On this PC a holder whose process ended doesn't count; one on another PC counts for 3 hours.
+function Global:Get-WebBusyFile { param([string]$Name) Join-Path (Join-Path (Get-WebIntegrityFolder -Create) 'busy') ((Get-SafeFileNameForApp -Name $Name) + '.json') }
+
+function Global:Get-WebBusyHolder {
+    # The record of whoever holds the app now (not this process), or $null.
+    param([string]$File)
+    if (-not (Test-Path -LiteralPath $File)) { return $null }
+    try {
+        $b = Get-Content -LiteralPath $File -Raw -Encoding UTF8 | ConvertFrom-Json
+        $started = [datetime]::Parse([string]$b.started, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal)
+        if (((Get-Date).ToUniversalTime() - $started).TotalHours -ge 3) { return $null }
+        $here = -not $b.machine -or [string]$b.machine -eq [string]$env:COMPUTERNAME
+        if ($here) {
+            if ([int]$b.pid -eq $PID) { return $null }
+            $p = Get-Process -Id ([int]$b.pid) -ErrorAction SilentlyContinue
+            if (-not ($p -and ([string]$b.procStart -eq $p.StartTime.ToUniversalTime().ToString('o')))) { return $null }
+        }
+        return $b
+    }
+    catch { return $null }
+}
+
+function Global:Format-WebBusyHolder {
+    param($Holder)
+    $who = if ($Holder.user) { "$($Holder.user)$(if ($Holder.machine -and $Holder.machine -ne $env:COMPUTERNAME) { " on $($Holder.machine)" })" } else { 'another window' }
+    $since = try { ([datetime]::Parse([string]$Holder.started, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal)).ToLocalTime().ToString('HH:mm') } catch { '' }
+    return "$who - $($Holder.what)$(if ($since) { ", since $since" })"
+}
 
 function Global:Enter-WebAppBusy {
     # '' when this process may work on the app (and now holds it), else who has it.
@@ -597,27 +626,37 @@ function Global:Enter-WebAppBusy {
     $file = Get-WebBusyFile $Name
     $dir = Split-Path -Parent $file
     if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
-    if (Test-Path -LiteralPath $file) {
-        try {
-            $b = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json
-            $p = Get-Process -Id ([int]$b.pid) -ErrorAction SilentlyContinue
-            $sameProcess = $p -and ([string]$b.procStart -eq $p.StartTime.ToUniversalTime().ToString('o'))
-            $recent = ((Get-Date).ToUniversalTime() - [datetime]::Parse([string]$b.started, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal)).TotalHours -lt 3
-            if ($sameProcess -and $recent -and [int]$b.pid -ne $PID) { return "$Name is being changed elsewhere right now ($($b.what), since $(([datetime]::Parse([string]$b.started, [Globalization.CultureInfo]::InvariantCulture)).ToLocalTime().ToString('HH:mm')) - another window of this app or the nightly run). Try again when that is done." }
-        }
-        catch { }
-    }
+    $holder = Get-WebBusyHolder $file
+    if ($holder) { return "$Name is being changed right now by $(Format-WebBusyHolder $holder) - try again once that's done." }
     $me = Get-Process -Id $PID
-    $rec = [ordered]@{ pid = $PID; procStart = $me.StartTime.ToUniversalTime().ToString('o'); started = (Get-Date).ToUniversalTime().ToString('o'); what = $What }
+    $rec = [ordered]@{ pid = $PID; procStart = $me.StartTime.ToUniversalTime().ToString('o'); started = (Get-Date).ToUniversalTime().ToString('o'); what = $What; user = [string]$env:USERNAME; machine = [string]$env:COMPUTERNAME }
     [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $rec -Compress), (New-Object System.Text.UTF8Encoding($false)))
     return ''
 }
 
 function Global:Exit-WebAppBusy {
-    # Lets go of the app - only when this process holds it.
+    # Lets go of the app - only when this process (on this PC) holds it.
     param([string]$Name)
     $file = Get-WebBusyFile $Name
-    try { if ((Test-Path -LiteralPath $file) -and [int]((Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).pid) -eq $PID) { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue } } catch { }
+    try {
+        if (Test-Path -LiteralPath $file) {
+            $b = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ([int]$b.pid -eq $PID -and (-not $b.machine -or [string]$b.machine -eq [string]$env:COMPUTERNAME)) { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
+        }
+    }
+    catch { }
+}
+
+function Global:Get-WebBusyApps {
+    # Every app someone else is changing right now: safe file name -> who and what.
+    $out = @{}
+    $dir = Join-Path (Get-WebIntegrityFolder) 'busy'
+    if (-not (Test-Path -LiteralPath $dir)) { return $out }
+    foreach ($f in @(Get-ChildItem -LiteralPath $dir -File -Filter '*.json' -ErrorAction SilentlyContinue)) {
+        $h = Get-WebBusyHolder $f.FullName
+        if ($h) { $out[$f.BaseName] = Format-WebBusyHolder $h }
+    }
+    return $out
 }
 
 function Global:Invoke-WebWauSwitch {

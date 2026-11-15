@@ -26,6 +26,8 @@ function updatesText(a, managed) {
 }
 function stageOf(a) {
   const own = !a.wingetId;
+  // Another admin (or another window) is changing it right now: no next step until that's done.
+  if (a.busy) return { key: 'busy', label: 'Being changed', cls: 'warn', why: `Being changed right now by ${a.busy}. The list shows the result once it's done (Reload).` };
   if (tenantState(a) === 'missing') return { key: 'tenant', label: 'Other tenant', cls: 'warn', why: 'Its App ID belongs to another tenant - copied catalog?', next: { label: 'Clear App ID', title: 'Forget the link, so Send to Intune creates it in this tenant', run: () => onApp(a, 'clearid') } };
   if (isWauApp(a)) return { key: 'retire', label: 'Retire', cls: 'muted', why: a.hasAppId ? 'Winget-AutoUpdate - replaced by managed updates. Retire it to take it off the devices.' : 'Winget-AutoUpdate - replaced by managed updates. It isn\'t in Intune from this catalog: remove it from the catalog.', next: a.hasAppId ? { label: 'Retire...', title: 'Uninstall it from its groups\' devices, then delete it from Intune', run: () => onApp(a, 'retire') } : null };
   if (a.msHint && !a.hasAppId) return { key: 'msapp', label: 'Microsoft app', cls: 'muted', why: a.msHint, next: { label: 'Edit', title: a.msHint, run: () => openEditor(a.name) } };

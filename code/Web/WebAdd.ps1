@@ -403,9 +403,14 @@ function Global:Get-WebWingetVersions {
     if (-not $Global:App.WingetVersionsCache) { $Global:App.WingetVersionsCache = [hashtable]::Synchronized(@{}) }
     $hit = $Global:App.WingetVersionsCache[$id.ToLowerInvariant()]
     if ($hit -and ((Get-Date) - $hit.at).TotalMinutes -lt 10) { return @{ ok = $true; versions = @($hit.versions) } }
-    try { $r = Invoke-Winget -Arguments @('show', '--id', $id, '--exact', '--versions', '--accept-source-agreements', '--disable-interactivity') -TimeoutSeconds 45 }
-    catch { return @{ ok = $false; error = $_.Exception.Message } }
-    $v = @(ConvertFrom-WingetVersionsOutput $r.StdOut)
+    # Microsoft's WinGet module first (objects, any Windows language), else winget.exe's text.
+    $viaModule = Find-WingetClientPackage -Id $id
+    $v = @(if ($viaModule) { @($viaModule)[0].Versions | Select-Object -First 100 })
+    if (-not $v.Count) {
+        try { $r = Invoke-Winget -Arguments @('show', '--id', $id, '--exact', '--versions', '--accept-source-agreements', '--disable-interactivity') -TimeoutSeconds 45 }
+        catch { return @{ ok = $false; error = $_.Exception.Message } }
+        $v = @(ConvertFrom-WingetVersionsOutput $r.StdOut)
+    }
     if (-not $v.Count) { return @{ ok = $false; error = "winget lists no versions for '$id'." } }
     $Global:App.WingetVersionsCache[$id.ToLowerInvariant()] = @{ at = (Get-Date); versions = $v }
     return @{ ok = $true; versions = $v }
