@@ -92,6 +92,11 @@ function Global:Start-WebRelease {
     if (-not (Test-ReleaseVersionText $version)) { return @{ ok = $false; error = "'$version' isn't a version a release can pin (letters, digits and . - + _)." } }
     $current = [string]$(if ($a.metadata) { $a.metadata.appVersion })
     if ($version -eq $current) { return @{ ok = $false; error = "$name is at $version already." } }
+    # A Winget version whose installer is gone would fail on every pilot device - not released.
+    if (-not $own -and -not $Global:App.TestGraph) {
+        $dl = Test-WebPinnedDownload -WingetId $a.wingetId -Version $version
+        if ($dl.status -in 'gone', 'notinwinget') { return @{ ok = $false; error = "Not released: $($dl.text)" } }
+    }
     if (-not @($Global:App.PilotGroups).Count) { return @{ ok = $false; error = 'Set the pilot groups first: Settings > Updates.' } }
     $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $own -PackagePath $a.packagePath
     if (-not $pkg.Found) { return @{ ok = $false; error = $(if ($own) { "$name has no package to upload - put the new installer in its folder and build it (the release dialog does both)." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging & folders builds it." }) } }
@@ -436,4 +441,88 @@ function Global:Remove-WebOldReleases {
     }
     Write-Log "[$(if ($failed.Count) { 'WARN' } else { 'OK' })] $($a.appName): deleted superseded release(s) $($removed -join ', ') from Intune$(if ($failed.Count) { "; not deleted: $($failed -join '; ')" }); kept $($prev[-1].version) for rollback."
     return @{ ok = ($failed.Count -eq 0); removed = $removed.ToArray(); failed = $failed.ToArray(); kept = @($prev[-1].version); error = $(if ($failed.Count) { "Not deleted: $($failed -join '; ')" } else { '' }) }
+}
+
+# ---------------------------------------------------------------- can a pinned winget version still be installed?
+# winget only knows where the vendor's installer is; a vendor that keeps only
+# its latest download online breaks a pinned version weeks later, first on new
+# devices. Checked before a release and by the nightly run; the results are
+# kept (Logs\download-checks.json) for the Updates page and Home.
+
+function Global:Get-WebUrlStatus {
+    # The HTTP status a download link answers (HEAD, then a one-byte GET if HEAD isn't taken); 0 when it couldn't be asked.
+    param([string]$Url)
+    if ($Url -notmatch '^https?://') { return 0 }
+    foreach ($method in 'HEAD', 'GET') {
+        try {
+            $req = [System.Net.HttpWebRequest]::Create($Url)
+            $req.Method = $method; $req.AllowAutoRedirect = $true; $req.Timeout = 20000; $req.UserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) IntuneAppCatalog'
+            if ($method -eq 'GET') { $req.AddRange(0, 0) }
+            $resp = $req.GetResponse(); $code = [int]$resp.StatusCode; $resp.Close()
+            return $code
+        }
+        catch [System.Net.WebException] {
+            $resp = $_.Exception.Response
+            if ($resp) { $code = [int]$resp.StatusCode; $resp.Close(); if ($method -eq 'HEAD' -and $code -notin 404, 410) { continue }; return $code }
+            if ($method -eq 'GET') { return 0 }
+        }
+        catch { return 0 }
+    }
+    return 0
+}
+
+function Global:Get-WebDownloadChecks {
+    # The kept results: "<winget id>|<version>" -> @{ status; text; url; at; latestOnly }.
+    if ($Global:App.DownloadChecks) { return $Global:App.DownloadChecks }
+    $h = @{}
+    $file = Join-Path (Get-AppFolder -Kind Logs -Create) 'download-checks.json'
+    if (Test-Path -LiteralPath $file) {
+        try { $j = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json; foreach ($p in $j.PSObject.Properties) { $h[$p.Name] = $p.Value } } catch { }
+    }
+    $Global:App.DownloadChecks = $h
+    return $h
+}
+
+function Global:Test-WebPinnedDownload {
+    <#
+      Whether winget can still install -Version of -WingetId: winget knows the
+      version, and its installer link answers. When it can't, the newest
+      version is checked too - downloadable means the vendor keeps only its
+      latest version online (latestOnly). Kept for the Updates page and Home.
+    #>
+    param([string]$WingetId, [string]$Version)
+    # Test mode: no winget and no internet - nothing is known.
+    if ($Global:App.TestGraph) { return @{ status = 'unknown'; text = 'Not checked in test mode.'; url = ''; latestOnly = $false; at = '' } }
+    $check = {
+        param([string]$V)
+        $show = Invoke-Winget -Arguments @(@('show', '--id', $WingetId, '--exact') + $(if ($V) { @('--version', $V) } else { @() }) + @('--accept-source-agreements', '--disable-interactivity')) -TimeoutSeconds 60
+        $url = ConvertFrom-WingetInstallerUrl $show.StdOut
+        $inWinget = [bool]($show.ExitCode -eq 0 -and $url)
+        $verdict = Get-DownloadCheckVerdict -InWinget $inWinget -StatusCode $(if ($inWinget) { Get-WebUrlStatus $url } else { 0 }) -Version $(if ($V) { $V } else { 'the newest version' })
+        $verdict.url = $url
+        $verdict
+    }
+    try { $r = & $check $Version }
+    catch { $r = @{ status = 'unknown'; text = "winget couldn't be asked: $($_.Exception.Message)"; url = '' } }
+    $r.latestOnly = $false
+    if ($r.status -in 'gone', 'notinwinget') {
+        try { if ((& $check '').status -eq 'ok') { $r.latestOnly = $true; $r.text += ' The newest version can be downloaded - this vendor keeps only its latest version online: release new versions soon after they come out (fast track), or turn managed updates off for this app.' } } catch { }
+    }
+    $r.at = (Get-Date).ToString('yyyy-MM-dd HH:mm')
+    $h = Get-WebDownloadChecks
+    $h["$WingetId|$Version"] = $r
+    try { [System.IO.File]::WriteAllText((Join-Path (Get-AppFolder -Kind Logs -Create) 'download-checks.json'), (ConvertTo-Json -InputObject $h -Depth 4), (New-Object System.Text.UTF8Encoding($false))) } catch { }
+    return $r
+}
+
+function Global:Invoke-WebDownloadChecks {
+    # Updates > Check downloads: every deployed Winget app with managed updates, its pinned version (and the one in pilot).
+    $apps = @((Read-WebCatalogRecords).Apps | Where-Object { $_.managedUpdates -and $_.wingetId -and -not (Test-StoreProductId $_.wingetId) -and $_.metadata -and [string]$_.metadata.appVersion })
+    $rows = foreach ($a in $apps) {
+        $r = Test-WebPinnedDownload -WingetId $a.wingetId -Version ([string]$a.metadata.appVersion)
+        [ordered]@{ name = $a.appName; version = [string]$a.metadata.appVersion; status = $r.status; text = $r.text; latestOnly = [bool]$r.latestOnly }
+    }
+    $bad = @($rows | Where-Object { $_.status -in 'gone', 'notinwinget' })
+    Write-Log "$(if ($bad.Count) { '[WARN]' } else { '[OK]' }) Checked $(@($rows).Count) pinned download(s)$(if ($bad.Count) { " - can't be installed any more: $(($bad | ForEach-Object { "$($_.name) $($_.version)" }) -join ', ')" })."
+    return @{ ok = $true; rows = @($rows); bad = $bad.Count }
 }

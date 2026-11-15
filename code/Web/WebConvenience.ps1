@@ -263,6 +263,10 @@ function Global:Get-WebAttention {
     if ($unmanaged.Count) { & $add 'info' "$($unmanaged.Count) Winget app(s) without managed updates" ((@($unmanaged | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($unmanaged.Count -gt 5) { ', ...' }) + " - they install winget's latest, untested, and Intune can't tell which version a device has.") 'do:managedall' }
     $noVersion = @($apps | Where-Object { $_.wingetId -and $_.managedUpdates -and -not ($_.metadata -and [string]$_.metadata.appVersion) })
     if ($noVersion.Count) { & $add 'warn' "$($noVersion.Count) managed app(s) without a version yet" ((@($noVersion | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + " - take winget's current version as the one they start from$(if (@($noVersion | Where-Object { $_.appId }).Count) { ', then Deploy the ones in Intune again (it updates them)' }).") 'do:takeversions' }
+    # Pinned versions whose download is gone (the last check): new devices can't install them.
+    $dlChecks = Get-WebDownloadChecks
+    $dlGone = @((Read-WebCatalogRecords).Apps | Where-Object { $_.managedUpdates -and $_.wingetId -and $_.metadata -and [string]$_.metadata.appVersion } | Where-Object { $dc = $dlChecks["$($_.wingetId)|$([string]$_.metadata.appVersion)"]; $dc -and [string]$dc.status -in 'gone', 'notinwinget' })
+    if ($dlGone.Count) { & $add 'err' "$($dlGone.Count) app(s) can't be installed on new devices" ((@($dlGone | Select-Object -First 5 | ForEach-Object { "$($_.appName) $([string]$_.metadata.appVersion)" }) -join ', ') + ' - the version Intune installs can no longer be downloaded. Release a newer one.') 'updates' }
     $managedWinget = @($apps | Where-Object { $_.wingetId -and $_.managedUpdates })
     if ($managedWinget.Count -and -not (Test-Path -LiteralPath (Get-SharedPackagePath))) { & $add 'warn' 'Shared Winget package missing' 'Build init.intunewin - Winget apps can''t be deployed without it.' 'settings:packaging' }
     $runs = Get-WebUpdateRuns

@@ -180,6 +180,8 @@ function Global:Get-WebUpdatesOverview {
                         action = $(if ($decision) { $decision.Action } else { '' }); reason = $(if ($decision) { $decision.Reason } else { '' })
                         fastTrack = [bool]$pilot.fastTrack; ring = $ringNo; ringCount = $rings.Count; ringName = [string]$rings[$ringNo].Name } } else { $null })
             ownRule = [bool]$a.releaseRule; autoRelease = [bool]$a.autoRelease; gate = $gateText
+            # The last check of the pinned version's download (Check downloads, the nightly run).
+            download = $(if ($a.wingetId -and $current) { $dc = (Get-WebDownloadChecks)["$($a.wingetId)|$current"]; if ($dc) { [ordered]@{ status = [string]$dc.status; text = [string]$dc.text; at = [string]$dc.at; latestOnly = [bool]$dc.latestOnly } } else { $null } } else { $null })
             older = $(if ($older.ContainsKey($nameKey)) { $older[$nameKey] } else { $null })
             available = $available; previous = @(Get-WebPreviousReleases $a | ForEach-Object { [string]$_.version }) }
     }

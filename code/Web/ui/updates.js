@@ -54,7 +54,9 @@ function renderUpdates() {
     const where = p ? releaseTimeline(p.ring, p.fastTrack, updRings) : '';
     return el('tr', {},
       el('td', { class: 'name' }, x.name, el('span', { class: 'muted', text: (x.kind === 'package' ? ' (own package)' : '') + (x.ownRule ? ' - own rule' : '') + (x.autoRelease ? ' - released automatically' : '') })),
-      el('td', { class: 'num', text: x.current || '-' }),
+      el('td', { class: 'num' }, x.current || '-', x.download && ['gone', 'notinwinget'].includes(x.download.status)
+        ? el('span', { class: 'pill err newer', text: x.download.latestOnly ? 'download gone (latest only)' : 'download gone', title: `${x.download.text}\n(checked ${x.download.at})` })
+        : x.download && x.download.status === 'ok' ? el('span', { class: 'dlok', text: '✓', title: `Can still be downloaded (checked ${x.download.at})`, 'aria-label': 'Download checked' }) : ''),
       el('td', {}, devices),
       el('td', {}, p ? [el('span', { class: 'mono', text: p.version }), ' ', where, verdict ? el('span', { class: 'pill ' + verdict[0], text: verdict[1], title: p.reason }) : el('span', { class: 'muted', text: '(no counts yet)' }), el('div', { class: 'why', text: p.reason || `since ${p.at}` })] : el('span', { class: 'muted', text: '-' })),
       el('td', {}, x.available ? el('span', { class: 'pill info', text: x.available }) : el('span', { class: 'muted', text: '-' }), x.gate ? el('div', { class: 'why', text: `Test tenant: ${x.gate}` }) : ''),
@@ -125,6 +127,16 @@ $('btnUpdWinget').addEventListener('click', async () => {
     if (!r.ok) { toast(r.error, true); return; }
     await loadApps(); await loadUpdates(true);
     toast('winget versions updated.');
+  } finally { b.disabled = false; }
+});
+$('btnUpdDownloads').addEventListener('click', async () => {
+  const b = $('btnUpdDownloads'); b.disabled = true;
+  toast('Checking each pinned version\'s download - a few seconds per app...');
+  try {
+    const r = await api('/api/download-checks', {});
+    if (!r.ok) { toast(r.error, true); return; }
+    await loadUpdates(true);
+    toast(r.bad ? `${r.bad} app(s) can't be installed on new devices any more - see the red marks.` : `All ${r.rows.length} pinned version(s) can still be downloaded.`, !!r.bad);
   } finally { b.disabled = false; }
 });
 $('btnUpdExport').addEventListener('click', () => {
