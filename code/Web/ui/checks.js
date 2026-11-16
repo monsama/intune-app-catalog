@@ -312,7 +312,7 @@ async function searchWinget() {
   $('btnWgSearch').disabled = false;
   if (!r.ok) { $('wgNote').textContent = r.error; return; }
   $('wgNote').textContent = r.rows.length ? `${r.rows.length} package(s). Pick one to use its ID.` : 'winget found nothing - try a shorter name or the publisher.';
-  $('wgRows').replaceChildren(...r.rows.map(x => el('tr', {}, el('td', { text: x.name }), el('td', { class: 'chg', text: x.id }), el('td', { text: x.version }), el('td', { text: x.source }),
+  $('wgRows').replaceChildren(...r.rows.map(x => el('tr', {}, el('td', { text: x.name }), el('td', { class: 'chg wgid' }, ...String(x.id).split('.').flatMap((part, i, all) => i < all.length - 1 ? [part + '.', el('wbr')] : [part])), el('td', { text: x.version }), el('td', { text: x.source }),
     el('td', {}, el('button', { class: 'btn small', text: 'Use', onclick: () => { $('dlgWinget').close(); if (wingetPick) wingetPick(x.id, x); } })))));
 }
 $('btnWgSearch').addEventListener('click', searchWinget);

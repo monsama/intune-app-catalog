@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.28.3
+
+- **One button size per row.** The editor's field buttons (Choose image,
+  From Intune, Find one, Remove, From an app on a PC, Add an app) and
+  Settings' Add a return code / Add a ring are the size of the field
+  buttons beside them (Find..., Link..., Choose...); the small size stays
+  for table rows, lists, toasts and panels. Groups: the buttons under the
+  list line up.
+- **Editor:** "Ready to send?" without the extra space above its title; an
+  empty dependency list has its note inside the box; on a phone the parts
+  scroll on one line and Cancel/Save stay on the right.
+- **The nightly run's time** reads the same in the sentence as in the time
+  field (12- or 24-hour, as the browser shows times).
+- **Groups:** the search box's text isn't cut off; the "set up the
+  connection" note shows once, under the select.
+- Winget IDs in the search results break at their dots, not mid-word;
+  two-column fields line up when one label wraps.
+
 ## 2.28.2
 
 A sweep of the whole app (security, bugs, UI), mostly the server version.
