@@ -46,7 +46,7 @@ async function searchEntraGroups(fresh) {
   $('groupStatusNote').textContent = 'Searching Entra ID...';
   const r = await api('/api/group-search', { q, fresh: !!fresh });
   if (seq !== entraSeq || !entraMode()) return;
-  if (!r.ok) { entraHits = []; entraInfo = r.error; entraErr = r.error; $('groupStatusNote').textContent = r.error; renderGroupList(); return; }
+  if (!r.ok) { entraHits = []; entraInfo = r.error; entraErr = r.error; $('groupStatusNote').textContent = ''; /* the list says it */ renderGroupList(); return; }
   entraHits = r.groups;
   entraErr = ''; entraInfo = `${r.matches} of ${r.total} group(s)${r.matches > r.groups.length ? ` - first ${r.groups.length} shown, type more to narrow` : ''} - read ${r.at}`;
   $('groupStatusNote').textContent = entraInfo; $('groupStatusNote').title = entraInfo;

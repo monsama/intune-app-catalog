@@ -230,7 +230,7 @@
     <div class="gsplit">
       <div class="panel side">
         <div class="toolbar tight">
-          <input type="search" id="groupSearch" placeholder="Search groups (* as wildcard)" aria-label="Search the groups" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+          <input type="search" id="groupSearch" placeholder="Search groups" title="Part of a name, or * as a wildcard" aria-label="Search the groups" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
           <button class="btn" id="btnGroupOpen" title="Search all of Entra ID for this text (Enter)">Search Entra ID</button>
         </div>
         <div class="gfilter">
@@ -854,10 +854,10 @@
           <span class="lbl" id="aIconLabel">Icon <span class="muted">(Intune and the Company Portal)</span></span>
           <img id="aIcon" class="appicon big" alt="The app's icon" hidden>
           <span class="noicon" id="aIconNone" aria-hidden="true">?</span>
-          <button type="button" class="btn small" id="btnIconPick" title="A PNG or JPEG of at most 750 KB - square, 256 x 256 or larger, looks best">Choose image...</button>
-          <button type="button" class="btn small" id="btnIconIntune" title="Take the icon this app has in Intune">From Intune</button>
-          <button type="button" class="btn small" id="btnIconFind" title="An icon from the installer in its packages folder, or from the app's homepage (its Information URL)">Find one</button>
-          <button type="button" class="btn small" id="btnIconRemove" title="No icon in the catalog - Intune keeps the one it has">Remove</button>
+          <button type="button" class="btn" id="btnIconPick" title="A PNG or JPEG of at most 750 KB - square, 256 x 256 or larger, looks best">Choose image...</button>
+          <button type="button" class="btn" id="btnIconIntune" title="Take the icon this app has in Intune">From Intune</button>
+          <button type="button" class="btn" id="btnIconFind" title="An icon from the installer in its packages folder, or from the app's homepage (its Information URL)">Find one</button>
+          <button type="button" class="btn" id="btnIconRemove" title="No icon in the catalog - Intune keeps the one it has">Remove</button>
           <input type="file" id="aIconFile" accept="image/png,image/jpeg" hidden>
         </div>
         <h3 class="withtool">Assignments <button type="button" class="help" data-help="assignments" aria-label="What do Required, Available, Uninstall and Excluded mean?">?</button> <select id="aProfile" class="small" aria-label="Apply an assignment profile"><option value="">Apply a profile...</option></select></h3>
@@ -900,8 +900,8 @@
       <div class="formgrid">
         <section>
           <h3>Detection rule <button type="button" class="help" data-help="detection" aria-label="What is a detection rule?">?</button></h3>
-          <button type="button" class="desktoponly btn small" id="btnDetFromPc" title="Pick the app from the ones installed on this PC - its MSI product code, its program file's version, or its Uninstall entry">From an app on this PC...</button>
-          <button type="button" class="btn small serveronly" id="btnDetFromPaste" title="Run a small script on a Windows PC with the app installed, pick the app, paste what it copies - the detection rule is made from it">From an app on a PC...</button>
+          <button type="button" class="desktoponly btn" id="btnDetFromPc" title="Pick the app from the ones installed on this PC - its MSI product code, its program file's version, or its Uninstall entry">From an app on this PC...</button>
+          <button type="button" class="btn serveronly" id="btnDetFromPaste" title="Run a small script on a Windows PC with the app installed, pick the app, paste what it copies - the detection rule is made from it">From an app on a PC...</button>
           <label>Type<select id="xType"><option value="">(none - an app with its own package needs one)</option><option value="Script">Script</option><option value="Msi">MSI product code</option><option value="File">File or folder</option><option value="Registry">Registry</option></select></label>
           <div data-det="Script"><div class="blockbar" id="detBlocks" role="group" aria-label="Detection script as blocks" hidden></div><label>Detection script <span class="muted">(writes output and exits 0 when installed)</span><textarea autocomplete="off" id="xScript" rows="8" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label></div>
           <div data-det="Msi"><label>Product code<input autocomplete="off" id="xProductCode" class="mono" spellcheck="false" placeholder="{00000000-0000-0000-0000-000000000000}" autocorrect="off" autocapitalize="off"></label></div>
@@ -916,7 +916,7 @@
           <h3>Supersedence <span class="muted">(older apps this one replaces)</span> <button type="button" class="help" data-help="supersedence" aria-label="What is supersedence?">?</button></h3>
           <label class="chk" title="Unticked, the catalog leaves whatever Intune has for this app alone"><input type="checkbox" id="xSupSet">Set supersedence from the catalog</label>
           <div class="suplist" id="xSup"></div>
-          <button type="button" class="btn small" id="btnSupAdd" title="One more app this one supersedes (at most 10)">Add an app</button>
+          <button type="button" class="btn" id="btnSupAdd" title="One more app this one supersedes (at most 10)">Add an app</button>
         </section>
         <section>
           <h3>Requirements</h3>

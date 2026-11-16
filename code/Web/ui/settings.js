@@ -446,7 +446,7 @@ async function loadUpdateRuns() {
   if (!r.ok) return;
   const sch = r.schedule || {};
   $('runSchedule').dataset.base = $('runSchedule').dataset.base || $('runSchedule').textContent;
-  $('runSchedule').textContent = $('runSchedule').dataset.base + (!sch.supported ? ' (Scheduled tasks need Windows.)' : sch.exists ? ` Scheduled every day at ${sch.runAt}, as ${sch.user}.` : ' Not scheduled yet.');
+  $('runSchedule').textContent = $('runSchedule').dataset.base + (!sch.supported ? ' (Scheduled tasks need Windows.)' : sch.exists ? ` Scheduled every day at ${showTime(sch.runAt)}, as ${sch.user}.` : ' Not scheduled yet.');
   if (sch.runAt) $('runAt').value = sch.runAt; else if (!$('runAt').value) $('runAt').value = (prefs && prefs.releasePolicy && prefs.releasePolicy.RunAt) || '03:00';
   setEnabled($('btnSchedule'), !!sch.supported, 'Scheduled tasks need Windows.');
   setEnabled($('btnUnschedule'), !!sch.exists, 'There is no scheduled task.');
@@ -460,6 +460,8 @@ async function loadUpdateRuns() {
         el('ul', {}, ...run.items.map(i => el('li', {}, el('b', { text: i.app === '(all)' ? 'All apps' : i.app }), ' ', el('span', { class: 'pill ' + (cls[i.outcome] || 'muted'), text: i.outcome }), ' ' + i.text))));
     }) : [el('p', { class: 'muted', text: 'No run yet.' })]));
 }
+// "03:00" as this browser writes times - the same form the time field next to it shows (12- or 24-hour).
+function showTime(hhmm) { const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '')); if (!m) return hhmm; const d = new Date(); d.setHours(+m[1], +m[2], 0, 0); return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
 $('btnRunReload').addEventListener('click', loadUpdateRuns);
 $('btnReports').addEventListener('click', () => openFolder('reports-folder'));
 for (const [id, planOnly] of [['btnRunNow', false], ['btnRunPlan', true]]) $(id).addEventListener('click', async () => {
@@ -470,7 +472,7 @@ for (const [id, planOnly] of [['btnRunNow', false], ['btnRunPlan', true]]) $(id)
 });
 $('btnSchedule').addEventListener('click', async () => {
   const r = await api('/api/update-schedule', { on: true, runAt: $('runAt').value });
-  toast(r.ok ? `Scheduled every day at ${$('runAt').value}.` : r.error, !r.ok); loadUpdateRuns();
+  toast(r.ok ? `Scheduled every day at ${showTime($('runAt').value)}.` : r.error, !r.ok); loadUpdateRuns();
 });
 $('btnUnschedule').addEventListener('click', async () => {
   if (!(await ask('Remove the scheduled task?\n\nManaged updates then only run when you click Run now.'))) return;

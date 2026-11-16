@@ -1433,3 +1433,27 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 .subtab { white-space: nowrap; flex: 0 0 auto; }
 #groupStatusNote { white-space: normal; overflow-wrap: anywhere; }
 #guideState { white-space: nowrap; }
+
+/* Polish after the 2.28.2 sweep */
+/* The checklist's title: no section-heading spacing (the editor's h3 rule reaches it). */
+#dlgApp .ready h3, .ready h3 { margin: 0 0 6px; padding: 0; border: 0; }
+/* "Add a return code" / "Add a ring": a full-size button under the rows, as the field buttons. */
+.btn.addrow { margin-top: 6px; }
+/* An empty dependency list: the note inside the box, not against its edge. */
+.depbox > .muted:only-child { display: block; padding: 8px 12px; font-size: 13px; }
+/* The editor's parts on a phone: one line that scrolls, as the settings tabs. */
+.edtabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.edtab { white-space: nowrap; flex: 0 0 auto; }
+/* Labels in a two-column row that wrap differently: the fields still line up at the bottom. */
+.two { align-items: end; }
+/* Groups: the three buttons under the list, one size. */
+#viewGroups .panel.side > .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+#viewGroups .panel.side > .actions > #btnGroupsReload { grid-column: 1 / -1; }
+#viewGroups .panel.side > .actions .btn { width: 100%; }
+/* Winget IDs break at their dots, not inside a word. */
+.wgid { overflow-wrap: normal; word-break: normal; font-family: var(--mono); font-size: 12px; }
+/* The editor's footer on a phone: Remove/History on one line, Cancel/Save on the next - still on the right. */
+@media (max-width: 560px) { .actions.split { flex-wrap: wrap; } .actions.split > .spacer { flex: 1 0 100%; height: 0; } .actions.split > .spacer ~ .btn { margin-left: auto; } .actions.split > .spacer ~ .btn ~ .btn { margin-left: 0; } }
+/* Groups: the filter's note on its own line under the select (it was squeezed next to it), and only when the list doesn't say it already. */
+.gfilter { flex-wrap: wrap; }
+.gfilter .muted { flex: 1 1 100%; white-space: normal; }
