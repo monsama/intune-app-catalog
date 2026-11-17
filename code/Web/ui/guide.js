@@ -192,6 +192,8 @@ function updateReady() {
       : [true, `Installs from winget (${wid})`, 'aWinget'],
     own ? [!!$('mInstallCommand').value.trim(), 'An install command', 'mInstallCommand'] : [true, 'Install command - made for winget', null],
     own ? [!!det, det ? 'A detection rule' : 'A detection rule (Install & detection)', 'xType'] : [true, 'Detection - made for winget', null],
+    // Detection and uninstall naming different MSI product codes (one updated, the other not): Install & detection says more.
+    own && $('xPcNote') && !$('xPcNote').hidden ? [false, 'Detection and uninstall use different product codes', 'xProductCode'] : null,
     $('aManaged').checked ? [!!$('mAppVersion').value.trim(), 'A version (managed updates install exactly it)', 'mAppVersion'] : null,
     [groups, groups ? 'Groups that get it' : 'Groups that get it - none yet, so nobody gets it', 'gRequired'],
   ].filter(Boolean);

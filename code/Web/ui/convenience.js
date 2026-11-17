@@ -295,7 +295,7 @@ function renderHome() {
   const items = [...r.items, ...((homeIntune && homeIntune.items) || [])].map((x, n) => [x, n]).sort((a, b) => (order[a[0].level] ?? 3) - (order[b[0].level] ?? 3) || a[1] - b[1]).map(x => x[0]);
   renderSetup(r.setup);
   const reading = homeIntuneWaiting && !homeIntune && r.connected !== false ? ' Reading install counts from Intune...' : '';
-  $('homeNote').textContent = (items.length ? `${items.length} thing${items.length === 1 ? '' : 's'} to look at${r.lastRun ? ` - last managed-updates run ${r.lastRun}` : ''}.` : 'Nothing needs a look right now.') + reading;
+  $('homeNote').textContent = (items.length ? `${items.length} thing${items.length === 1 ? '' : 's'} to look at${r.lastRun ? ` - last managed-updates run ${fmtWhen(r.lastRun)}` : ''}.` : 'Nothing needs a look right now.') + reading;
   $('homeCount').textContent = items.length ? String(items.length) : '';
   const s = homeIntune && homeIntune.summary, stat = (n, l, cls) => el('div', { class: 'stat ' + (cls || '') }, el('span', { class: 'n', text: n }), el('span', { class: 'l', text: l }));
   $('homeStats').replaceChildren(stat(String(r.apps), 'apps in the catalog'), stat(String(r.deployed), 'in Intune'), stat(String(r.managed), 'with managed updates'),

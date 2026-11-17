@@ -466,7 +466,7 @@ async function loadUpdateRuns() {
   if (!r.ok) return;
   const sch = r.schedule || {};
   $('runSchedule').dataset.base = $('runSchedule').dataset.base || $('runSchedule').textContent;
-  $('runSchedule').textContent = $('runSchedule').dataset.base + (!sch.supported ? ' (Scheduled tasks need Windows.)' : sch.exists ? ` Scheduled every day at ${showTime(sch.runAt)}, as ${sch.user}.` : ' Not scheduled yet.');
+  $('runSchedule').textContent = $('runSchedule').dataset.base + (!sch.supported ? ' (Scheduled tasks need Windows.)' : sch.exists ? ` Scheduled every day at ${showTime(sch.runAt)}${serverTimeNote(sch)}, as ${sch.user}.` : ' Not scheduled yet.');
   if (sch.runAt) $('runAt').value = sch.runAt; else if (!$('runAt').value) $('runAt').value = (prefs && prefs.releasePolicy && prefs.releasePolicy.RunAt) || '03:00';
   setEnabled($('btnSchedule'), !!sch.supported, 'Scheduled tasks need Windows.');
   setEnabled($('btnUnschedule'), !!sch.exists, 'There is no scheduled task.');
@@ -475,12 +475,18 @@ async function loadUpdateRuns() {
   $('runList').replaceChildren(...(r.running ? [el('p', { class: 'muted', text: 'A run is going now - Reload shows it when it ends.' })] : []),
     ...(r.runs.length ? r.runs.map(run => {
       const shown = run.items.filter(i => !['current', 'none', 'wait'].includes(i.outcome));
-      return el('details', { class: 'run' }, el('summary', {}, `${run.started}${run.fastTrack ? ' (fast track)' : ''}${run.planOnly ? ' (plan only)' : ''} - `,
+      return el('details', { class: 'run' }, el('summary', {}, `${fmtWhen(run.started)}${run.fastTrack ? ' (fast track)' : ''}${run.planOnly ? ' (plan only)' : ''} - `,
         el('span', { class: 'pill ' + (run.failed ? 'err' : shown.length ? 'info' : 'ok'), text: run.failed ? `${run.failed} failed` : shown.length ? `${shown.length} to look at` : 'nothing to do' })),
         el('ul', {}, ...run.items.map(i => el('li', {}, el('b', { text: i.app === '(all)' ? 'All apps' : i.app }), ' ', el('span', { class: 'pill ' + (cls[i.outcome] || 'muted'), text: i.outcome }), ' ' + i.text))));
     }) : [el('p', { class: 'muted', text: 'No run yet.' })]));
 }
 // "03:00" as this browser writes times - the same form the time field next to it shows (12- or 24-hour).
+// The server's clock in another time zone than this browser: the run's time is the server's - said so, with its offset.
+function serverTimeNote(sch) {
+  if (sch.offsetMinutes == null || -new Date().getTimezoneOffset() === sch.offsetMinutes) return '';
+  const m = Math.abs(sch.offsetMinutes), sign = sch.offsetMinutes < 0 ? '-' : '+';
+  return ` server time (UTC${sign}${Math.floor(m / 60)}${m % 60 ? ':' + String(m % 60).padStart(2, '0') : ''})`;
+}
 function showTime(hhmm) { const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '')); if (!m) return hhmm; const d = new Date(); d.setHours(+m[1], +m[2], 0, 0); return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
 $('btnRunReload').addEventListener('click', loadUpdateRuns);
 $('btnReports').addEventListener('click', () => openFolder('reports-folder'));

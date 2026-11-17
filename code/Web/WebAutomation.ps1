@@ -623,7 +623,7 @@ function Global:Get-WebUpdateRuns {
         $runs = @(Get-ChildItem -LiteralPath $dir -Filter 'managed-updates-*.json' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 10 | ForEach-Object {
                 try {
                     $r = Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
-                    [ordered]@{ id = $_.BaseName; started = [string]$r.started; planOnly = [bool]$r.planOnly; fastTrack = ($_.BaseName -like 'managed-updates-ft-*'); failed = [int]$r.failed; items = @($r.items) }
+                    [ordered]@{ id = $_.BaseName; started = (ConvertTo-WebIsoTime ([string]$r.started)); planOnly = [bool]$r.planOnly; fastTrack = ($_.BaseName -like 'managed-updates-ft-*'); failed = [int]$r.failed; items = @($r.items) }
                 }
                 catch { }
             })
@@ -666,7 +666,7 @@ function Global:Get-WebUpdateSchedule {
 
 function Global:Get-WebUpdateScheduleNow {
     # The server version (the container): its own schedule (Invoke-WebServerSchedule), kept in the settings.
-    if (Test-WebServerMode) { return @{ supported = $true; exists = [bool]$Global:App.ReleasePolicy.ServerSchedule; runAt = [string]$Global:App.ReleasePolicy.RunAt; user = 'the server'; state = $(if ($Global:App.ReleasePolicy.ServerSchedule) { 'Ready' } else { '' }); server = $true } }
+    if (Test-WebServerMode) { return @{ supported = $true; exists = [bool]$Global:App.ReleasePolicy.ServerSchedule; runAt = [string]$Global:App.ReleasePolicy.RunAt; user = 'the server'; state = $(if ($Global:App.ReleasePolicy.ServerSchedule) { 'Ready' } else { '' }); server = $true; offsetMinutes = [int]([DateTimeOffset]::Now.Offset.TotalMinutes) } }
     if (-not ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') -or -not (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue)) { return @{ supported = $false; exists = $false } }
     $t = Get-ScheduledTask -TaskName (Get-WebUpdateTaskName) -ErrorAction SilentlyContinue
     if (-not $t) { return @{ supported = $true; exists = $false } }

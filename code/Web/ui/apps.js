@@ -486,13 +486,13 @@ $('btnAppHistory').addEventListener('click', async () => {
   loadChanges(name);
   $('histNote').textContent = r.backups.length ? '' : 'No earlier version kept yet - one is kept the next time this app is saved.';
   $('histRows').replaceChildren(...r.backups.map(b => el('tr', {},
-    el('td', {}, b.when, b.verified ? '' : el('span', { class: 'pill muted', text: 'not verified', title: "Not recorded by the catalog (from before 2.23, or put in the Backups folder by hand) - it can be compared, but isn't restored" })),
+    el('td', {}, backupWhen(b), b.verified ? '' : el('span', { class: 'pill muted', text: 'not verified', title: "Not recorded by the catalog (from before 2.23, or put in the Backups folder by hand) - it can be compared, but isn't restored" })),
     el('td', { text: b.changed.length ? b.changed.map(c => fieldLabel[c] || c).join(', ') : 'nothing - same as now' }),
     el('td', { class: 'act' }, el('button', { class: 'btn small', text: 'Compare', title: 'What the save at that time changed, and that version next to now', onclick: () => compareVersion(name, b) }), ' ', el('button', { class: 'btn small', text: 'Restore', title: !b.verified ? "Not verified - this copy isn't one the catalog recorded, so it isn't restored" : b.changed.length ? 'Put this version back as the app\'s file' : 'Same as the app is now - nothing to restore', disabled: !b.verified || !b.changed.length || null, onclick: async () => {
-      if (!(await ask(`Restore ${name} as it was on ${b.when}?\n\nOnly the catalog changes - Send to Intune sends it there. The current version is kept as a copy, so this can be undone the same way.`, { ok: 'Restore', danger: false }))) return;
+      if (!(await ask(`Restore ${name} as it was on ${backupWhen(b)}?\n\nOnly the catalog changes - Send to Intune sends it there. The current version is kept as a copy, so this can be undone the same way.`, { ok: 'Restore', danger: false }))) return;
       const x = await api('/api/app-restore', { name, id: b.id });
       if (!x.ok) { toast(x.error, true); return; }
-      toast(`${name} restored to ${b.when}.`);
+      toast(`${name} restored to ${backupWhen(b)}.`);
       $('dlgHistory').close(); $('dlgApp').close(); await loadApps(); openEditor(x.name);
     } })))));
   $('histCompare').hidden = true;
@@ -502,6 +502,8 @@ $('btnAppHistory').addEventListener('click', async () => {
 const histField = f => f.startsWith('metadata.') ? (({ description: 'Description', publisher: 'Publisher', appVersion: 'App version', owner: 'Owner', developer: 'Developer', informationUrl: 'Information URL', privacyUrl: 'Privacy URL',
   installCommand: 'Install command', uninstallCommand: 'Uninstall command', notes: 'Notes', detectionRule: 'Detection rule', returnCodes: 'Return codes', dependencies: 'Dependencies', supersedes: 'Supersedence', isFeatured: 'Featured' })[f.slice(9)] || f.slice(9))
   : (f === 'appName' ? 'Name' : fieldLabel[f] || ({ assignmentFilter: 'Assignment filter', assignmentFilterMode: 'Filter mode', managedUpdates: 'Managed updates', releases: 'Releases', releaseRule: 'Release rule', icon: 'Icon', autoRelease: 'Release by itself', downloadUrl: 'Download URL', retiringSince: 'Retiring since' })[f] || f);
+// A backup's time in the viewer's time (the server sends it with its offset), and which copy of that second it is.
+const backupWhen = b => (b.at ? fmtWhen(b.at) : b.when) + (b.seq > 1 ? ` (${b.seq})` : '');
 async function loadChanges(name) {
   skeleton($('histChanges'), 1, 3); $('histChangesNote').textContent = '';
   const r = await api('/api/app-history', { name });
@@ -525,7 +527,7 @@ async function compareVersion(name, b) {
   const r = await api('/api/app-compare', { name, id: b.id });
   if (!r.ok) { toast(r.error, true); return; }
   const rows = list => list.map(c => ({ app: '', field: c.field, old: c.old, new: c.new }));
-  $('histCmpTitle').textContent = `What the save on ${r.when} changed`;
+  $('histCmpTitle').textContent = `What the save on ${r.at ? fmtWhen(r.at) : r.when} changed`;
   previewTable($('histSave'), rows(r.thatSave), 'Nothing - that save left the file as it was.', { ...fieldNames, appName: 'Name', appId: 'App ID', wingetId: 'Winget ID', icon: 'Icon', supersedes: 'Supersedence', detectionRule: 'Detection rule', appVersion: 'App version', isFeatured: 'Featured' });
   previewTable($('histNow'), rows(r.versusNow).map(x => ({ ...x })), 'The same as now.', { ...fieldNames, appName: 'Name', appId: 'App ID', wingetId: 'Winget ID', icon: 'Icon', supersedes: 'Supersedence', detectionRule: 'Detection rule', appVersion: 'App version', isFeatured: 'Featured' });
   for (const th of $('histNow').querySelectorAll('th')) { if (th.textContent === 'Now') th.textContent = 'That version'; else if (th.textContent === 'New') th.textContent = 'Now'; }
@@ -643,7 +645,8 @@ function renderRecent() {
     if (x.ok) { await loadApps(); openRecent(); }
   };
   const change = c => el('li', {}, el('span', { class: 'f', text: rField(c.field) }), el('span', { class: 'v' }, el('span', { class: 'b', text: c.before || '(empty)' }), el('span', { class: 'arr', text: '→', 'aria-label': 'to' }), el('span', { class: 'a', text: c.after || '(empty)' })));
-  const item = i => el('div', { class: 'ritem' }, el('div', { class: 'rapp' }, el('b', { text: i.app }), i.kind === 'intune' ? el('span', { class: 'pill info', text: 'Intune' }) : '',
+  // The app's name over its changes - unless the group's line already names that one app.
+  const item = (i, named) => el('div', { class: 'ritem' }, el('div', { class: 'rapp' }, named ? '' : el('b', { text: i.app }), i.kind === 'intune' ? el('span', { class: 'pill info', text: 'Intune' }) : '',
       i.canUndo ? el('button', { class: 'btn small ghost', text: 'Undo', title: 'Put these fields back as they were', onclick: () => undoOne(i) }) : ''),
     i.changes.length ? el('ul', { class: 'rchanges' }, ...i.changes.slice(0, 12).map(change), i.changes.length > 12 ? el('li', { class: 'muted', text: `... ${i.changes.length - 12} more` }) : '') : '');
   $('recentList').replaceChildren(...(groups.length ? groups.map(g => {
@@ -652,7 +655,7 @@ function renderRecent() {
     const head = el('summary', {}, el('span', { class: 'rwhen', text: whenText(g.at) }), el('span', { class: 'rsrc', text: g.by ? `${g.source} · ${g.by}` : g.source, title: g.by ? `By ${g.by}, from ${g.source}` : g.source }),
       el('span', { class: 'rwhat', text: what }), el('span', { class: 'rapps muted', text: apps.length === 1 ? apps[0] : `${apps.length} apps: ${apps.slice(0, 3).join(', ')}${apps.length > 3 ? ', ...' : ''}` }));
     const key = g.items[0] && g.items[0].id;
-    const d = el('details', { open: recentOpen.has(key) || (!recentOpen.size && g.count === 1 && groups.indexOf(g) < 3) }, head, el('div', { class: 'rbody' }, ...g.items.map(item)));
+    const d = el('details', { open: recentOpen.has(key) || (!recentOpen.size && g.count === 1 && groups.indexOf(g) < 3) }, head, el('div', { class: 'rbody' }, ...g.items.map(i => item(i, apps.length === 1))));
     d.addEventListener('toggle', () => { if (d.open) recentOpen.add(key); else recentOpen.delete(key); });
     return el('li', {}, d);
   }) : [el('li', { class: 'muted rempty', text: q ? 'No change matches.' : 'No changes yet.' })]));
@@ -786,6 +789,7 @@ function fillDeploy(d) {
   if (!d) d = { detection: { type: '' }, architecture: ['x64'], installContext: 'System', minOSKey: 'W10_22H2', installTimeMinutes: 60, deviceRestartBehavior: 'basedOnReturnCode', returnCodes: [], dependencies: [] };
   const x = d.detection || { type: '' };
   $('xType').value = x.type || ''; $('xScript').value = x.script || ''; $('xProductCode').value = x.productCode || '';
+  setTimeout(() => { if (typeof checkProductCodes === 'function') checkProductCodes(); }, 0);
   $('xPath').value = x.path || ''; $('xName').value = x.name || ''; $('xKey').value = x.keyPath || ''; $('xValueName').value = x.valueName || '';
   $('xOperator').value = x.operator || 'notConfigured'; $('xValue').value = x.value || ''; $('x32').checked = !!x.check32Bit;
   $('xFileType').value = x.type === 'File' ? (x.detectionType || 'exists') : 'exists';
@@ -1469,3 +1473,36 @@ $('aWinget').addEventListener('input', fillBtnSync);
 $('dlgApp').addEventListener('focusin', fillBtnSync);
 // Batch edit brought back from the tray: a preview made before may be out of date (the apps changed meanwhile).
 $('dlgBatch').addEventListener('wcrestore', () => { if (!$('batchPreview').hidden) batchReset(); });
+
+// ---------------------------------------------------------------- product code: detection and uninstall
+// An MSI app is found by its product code and removed by it. After an update (a new MSI) both must be the new one:
+// detection on the old code says "not installed" for ever, an uninstall with the old one removes nothing. Not tied
+// together silently (they can differ on purpose) - the editor says when they differ and offers either one.
+const guidRx = /\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?/;
+const normGuid = g => { const m = String(g || '').match(guidRx); return m ? '{' + m[0].replace(/[{}]/g, '').toUpperCase() + '}' : ''; };
+function checkProductCodes() {
+  const box = $('xPcNote'); if (!box) return;
+  const det = $('xType').value === 'Msi' ? normGuid($('xProductCode').value) : '';
+  const un = $('mUninstallCommand').value, inUn = /msiexec/i.test(un) ? normGuid(un) : '';
+  const was = box.hidden;
+  box.hidden = !(det && inUn && det !== inUn);
+  // The checklist names it too (it is visible on every page of the editor).
+  if (was !== box.hidden && typeof updateReady === 'function') setTimeout(updateReady, 0);
+  if (box.hidden) return;
+  $('xPcText').textContent = `The uninstall command removes ${inUn}, but detection looks for ${det}. After an MSI update both should be the new product code.`;
+  $('btnPcToUninst').textContent = `Uninstall ${det}`; $('btnPcToUninst').title = `Put ${det} into the uninstall command too`;
+  $('btnPcToDet').textContent = `Detect ${inUn}`; $('btnPcToDet').title = `Look for ${inUn} in the detection rule too`;
+}
+$('btnPcToUninst').addEventListener('click', () => {
+  const f = $('mUninstallCommand'), det = normGuid($('xProductCode').value);
+  f.value = f.value.replace(guidRx, det); f.dispatchEvent(new Event('input', { bubbles: true }));
+  if (window.refreshBlocks) refreshBlocks();
+  checkProductCodes();
+});
+$('btnPcToDet').addEventListener('click', () => {
+  const f = $('xProductCode'); f.value = normGuid($('mUninstallCommand').value); f.dispatchEvent(new Event('input', { bubbles: true }));
+  if (window.refreshDetectionBlocks) refreshDetectionBlocks();
+  checkProductCodes();
+});
+$('appForm').addEventListener('input', checkProductCodes);
+$('appForm').addEventListener('change', checkProductCodes);

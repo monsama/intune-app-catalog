@@ -360,7 +360,7 @@ function Global:Get-WebAttention {
     if ($upd.ok -and $upd.newer) { & $add 'info' "Intune App Catalog $($upd.version) is out (you have $($Global:App.AppVersion))" $(if ($upd.notes) { $upd.notes } else { 'See what is new on GitHub.' }) 'open:release' }
     $order = @{ err = 0; warn = 1; ok = 2; info = 3 }
     return @{ ok = $true; items = @($items | Sort-Object { $order[$_.level] }); setup = $setup; apps = $apps.Count; deployed = @($apps | Where-Object { $_.appId }).Count
-        managed = @($apps | Where-Object { $_.managedUpdates }).Count; summary = $summary; connected = $configured; lastRun = $(if ($last) { $last.started } else { '' }) }
+        managed = @($apps | Where-Object { $_.managedUpdates }).Count; summary = $summary; connected = $configured; lastRun = $(if ($last) { ConvertTo-WebIsoTime $last.started } else { '' }) }
 }
 
 function Global:Get-WebAttentionIntune {

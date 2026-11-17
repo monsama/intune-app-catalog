@@ -1480,3 +1480,8 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 @media (max-width: 640px) { .addtabrow { flex-wrap: wrap; } .addtabrow > .subtabs { flex: 1 1 100%; } .addtabrow > #btnAddBlank { margin: 0 0 8px; } }
 /* Settings' direction icons: enough contrast in dark mode too. */
 .tile .ico { color: var(--accent); filter: brightness(1.25); }
+
+/* Product code: detection and uninstall differ (an MSI updated in one of them only) */
+.pcnote { margin: 6px 0 0; padding: 8px 10px; border-radius: var(--r-m); background: var(--warn-bg); color: var(--warn); font-size: 12px; line-height: 1.5; }
+.pcnote .pcacts { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.pcnote .btn { font-family: var(--mono); font-size: 11px; }

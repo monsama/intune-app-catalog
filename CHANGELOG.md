@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.28.7
+
+- **Product code: detection and uninstall checked against each other.** An
+  MSI app is found and removed by its product code; after an update (a new
+  MSI) both must be the new one - detection on the old code says "not
+  installed" for ever, an uninstall with the old one removes nothing. When
+  they differ, the editor says so under the detection rule and in "Ready to
+  send?", with a button for either direction. Not tied together silently:
+  they can differ on purpose.
+- **The history reads as text.** A detection rule is shown as the editor
+  says it ("MSI product code {...}, version 26.06 or newer", "File
+  %ProgramFiles%\7-Zip\7zFM.exe, version 24.08 or newer") instead of its
+  JSON - in the app's history, Recent changes and the version comparison.
+  Recent changes names an app once (it was in the group's line and again
+  over its changes).
+- **Times in the viewer's own time.** The run list, Home's last run, the
+  backups in History and their comparison came as the server's local time
+  without its zone, and a browser in another zone read them as its own
+  (the same dialog showed one save at 17:01 and 18:01). They come with the
+  server's offset now and are all shown the same way. The nightly run's
+  time is the server's clock - from another time zone the page says so
+  ("server time (UTC+1)").
+
 ## 2.28.6
 
 A sweep of the whole app (security, bugs, UI - with every preview checked

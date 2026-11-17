@@ -417,7 +417,7 @@ function Global:Get-WebAppBackups {
                     if ($oldMeta -ne $nowMeta) { $changed += 'settings' }
                 }
                 catch { $changed = @('(unreadable)') }
-                $rows.Add([ordered]@{ verified = ((Test-WebCopyRecord $f.FullName) -eq 'ok'); id = "$($dir.Name)/$($f.Name)"; when = "$day $($time.Substring(0,2)):$($time.Substring(2,2)):$($time.Substring(4,2))$(if ($seq -gt 1) { " ($seq)" })"; order = "$day $time $('{0:D4}' -f $seq)"; changed = $changed })
+                $rows.Add([ordered]@{ verified = ((Test-WebCopyRecord $f.FullName) -eq 'ok'); id = "$($dir.Name)/$($f.Name)"; when = "$day $($time.Substring(0,2)):$($time.Substring(2,2)):$($time.Substring(4,2))$(if ($seq -gt 1) { " ($seq)" })"; at = (ConvertTo-WebIsoTime "$day $($time.Substring(0,2)):$($time.Substring(2,2)):$($time.Substring(4,2))"); seq = $seq; order = "$day $time $('{0:D4}' -f $seq)"; changed = $changed })
             }
         }
     }
