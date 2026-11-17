@@ -1,8 +1,14 @@
-# The workflows' actions are pinned to exact commits (supply-chain safety);
-# Dependabot proposes the update as a pull request when a new version comes out.
+# Weekly checks for updates, as in our other apps. The workflows' actions are pinned to exact commits
+# (supply-chain safety) and the Dockerfile builds on a PowerShell base image; Dependabot proposes each new
+# version as a pull request. Not covered here (bumped by hand): Microsoft.Graph.Authentication in the Dockerfile
+# (PowerShell Gallery) and Playwright / axe-core in tests.yml.
 version: 2
 updates:
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
