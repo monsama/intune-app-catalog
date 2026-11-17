@@ -63,9 +63,9 @@ function Global:ConvertTo-FriendlyGraphError {
     elseif ($RawMessage -match '\bforbidden\b|\b403\b|insufficient privileges|Authorization_RequestDenied') {
         $permission = Get-GraphPermissionHint $RawMessage
         $summary = if ($permission) {
-            "Microsoft Graph refused this request: the app registration is missing a permission. Add $permission to it and grant admin consent, then try again (Settings > API permissions > Add required permissions... adds it)."
+            "Microsoft Graph refused this request: the app registration is missing a permission. Add $permission to it and grant admin consent, then try again (Settings > Connection, In Entra ID: Add required permissions... (on the server: Entra setup script...) adds it)."
         } else {
-            "Microsoft Graph refused this request - the app registration is likely missing a required permission (Settings > API permissions > Add required permissions... adds them)."
+            "Microsoft Graph refused this request - the app registration is likely missing a required permission (Settings > Connection, In Entra ID, adds them: Add required permissions..., or on the server the Entra setup script)."
         }
     }
     if (-not $summary) { return $RawMessage }

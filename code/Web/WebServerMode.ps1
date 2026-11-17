@@ -306,10 +306,16 @@ function Global:Invoke-WebServerSchedule {
     }
     $now = Get-Date
     $at = [datetime]::ParseExact("$($now.ToString('yyyy-MM-dd')) $($p.RunAt)", 'yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture)
+    # Schedule just switched on, or moved to a time already past today (Set-WebUpdateSchedule): today's is done.
+    $done = $Global:App.ServerScheduleDoneToday
+    if ($done) { $Global:App.ServerScheduleDoneToday = $null; if (-not $State.Nightly -or $State.Nightly -lt $done) { $State.Nightly = $done } }
     $extra = $null
     if ($now -ge $at -and (-not $State.Nightly -or $State.Nightly -lt $at)) { $extra = @(); $State.Nightly = $now }
     elseif (-not $State.FastTrack -or ($now - $State.FastTrack).TotalHours -ge 2) { $extra = @('-FastTrackOnly'); $State.FastTrack = $now }
-    if ($null -eq $extra) { return }
+    if ($null -eq $extra) {
+        if ($done) { try { [System.IO.File]::WriteAllText($file, (@{ nightly = $State.Nightly.ToString('o'); fastTrack = $(if ($State.FastTrack) { $State.FastTrack.ToString('o') }) } | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false))) } catch { } }
+        return
+    }
     try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = (Get-Process -Id $PID).Path

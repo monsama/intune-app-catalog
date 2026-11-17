@@ -258,9 +258,9 @@ function Global:Format-SetupChecklist {
                   elseif (-not $State.CertHasKey) { 'FAILED' }
                   elseif ($State.CertNotAfter -and $State.CertNotAfter -lt $Now) { 'FAILED' }
                   else { 'OK' }
-    $certNext = if (-not $State.CertFound) { 'Certificate tab: pick the certificate you uploaded to Entra, or generate a new one (then upload it).' }
+    $certNext = if (-not $State.CertFound) { 'Settings > Connection: Choose... the certificate you uploaded to Entra, or Certificate > Create new certificate... (then add it in Entra ID).' }
                 elseif (-not $State.CertHasKey) { 'This certificate has no private key on this machine. Import it with its key (.pfx), or generate a new one and upload it.' }
-                else { 'The certificate has expired. Generate a new one on the Certificate tab and upload it.' }
+                else { 'The certificate has expired. Create a new one (Settings > Connection, Certificate > Create new certificate...) and add it in Entra ID.' }
     & $add 'Certificate on this machine, with its private key, not expired' $certStatus $certNext
 
     $signStatus = if ($certStatus -ne 'OK' -or $null -eq $State.SignInOk) { 'SKIP' } elseif ($State.SignInOk) { 'OK' } else { 'FAILED' }
