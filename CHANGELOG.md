@@ -1,5 +1,49 @@
 # Changelog
 
+## 2.28.6
+
+A sweep of the whole app (security, bugs, UI - with every preview checked
+against the real data).
+
+- **Previews that said something else than the data:**
+  - An app without groups showed "Ready to send - Everything is set" in the
+    list and the side panel, while the editor said "4 of 5 - no groups".
+    The list now says **Ready - no groups**, with Groups... as next step.
+  - The editor's "Ready to send?" list kept "Its installer is packaged"
+    when the install command named another installer than the one in the
+    packages folder (an MSI file block changed) - it says so now.
+  - Home said "last nightly run" for any run (fast track too) - now "last
+    managed-updates run".
+  - History: Restore was enabled for copies the catalog didn't record (it
+    refused them anyway); a batch-edit preview brought back from the tray
+    is made again.
+- **The server's nightly run never looked for new winget versions** (it
+  asked for winget.exe, which Linux hasn't) and reported a failure every
+  night - it asks winget's package index now, so automatic releases work.
+- **Switching the server's schedule on** after its time started a real run
+  at once - today's now counts as done, the first is at the time tomorrow.
+- **A refused Save changed nothing** - before, a bad group name was refused
+  after the update rules were already applied.
+- Settings > Connection: deleting an old certificate no longer puts the
+  saved thumbprint back over a new, unsaved one. The setup guide is drawn
+  for the server as soon as that is known; the server refuses the desktop's
+  sign-in jobs. Help texts point to Settings > Connection (the removed
+  cards were still named).
+- winget: descriptions over several paragraphs are read whole; installers
+  named in capitals (Setup.MSI) are found on the server; XP... Store IDs
+  aren't offered for the winget-command switch.
+- **Security (server version):** before signing in, a request may carry
+  4 KB and has 3 seconds (16 request slots instead of 8); wrong passwords
+  are counted per client only as the HTTPS proxy reports it
+  (`ICA_TRUSTED_PROXY`, default `nobs-proxy`), IPv6 per /64.
+- **CI and release:** the tests run with a read-only token; the signing
+  secrets reach only the signing step; the version is passed as data and
+  checked; a released image is never overwritten.
+- UI: the side panel's Sandbox test is the download on the server; the
+  theme says "follows the system"; an unknown page goes to Home instead of
+  a blank one; side panel, batch edit and Add apps fit on a phone;
+  "Install and uninstall commands".
+
 ## 2.28.5
 
 - **Dependabot as in our other apps:** weekly instead of monthly, and now

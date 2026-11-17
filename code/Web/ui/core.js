@@ -207,7 +207,7 @@ const themeIcons = {
   light: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   dark: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
 };
-const themeNames = { auto: 'Automatic (follows Windows)', light: 'Light', dark: 'Dark' };
+const themeNames = { auto: 'Automatic (follows the system)', light: 'Light', dark: 'Dark' };
 let themePref = 'auto';
 function applyTheme(pref) {
   themePref = ['light', 'dark'].includes(pref) ? pref : 'auto';
@@ -236,6 +236,8 @@ function placePageBtns() {
 }
 addEventListener('resize', () => placePageBtns());
 function showView(v) {
+  // Only the pages there are (a view saved by another version, or a typo, would leave a blank page - and be saved).
+  if (![...document.querySelectorAll('.tab[data-view]')].some(b => b.dataset.view === v)) v = 'home';
   if (v === 'checks') delete $('tabChecks').dataset.count;
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.view === v));
   const tabLabel = document.querySelector(`.tab[data-view="${v}"] .tl`);

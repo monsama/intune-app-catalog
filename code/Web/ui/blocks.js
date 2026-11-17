@@ -365,7 +365,7 @@ async function openScriptEditor({ name, file, detection, command }) {
     // Bound to the app open in the editor now, like the detection script.
     const now = { install: $('mInstallCommand').value, uninstall: $('mUninstallCommand').value };
     Object.assign(se, { name: '', file: '', hash: '', forApp: editingName || '', cmds: { ...now }, cmdOrig: { ...now } });
-    $('seTitle').textContent = 'Install and uninstall command';
+    $('seTitle').textContent = 'Install and uninstall commands';
     $('seSub').textContent = "Your own commands - kept exactly as typed. Each is one line; Intune runs it as SYSTEM from the package folder and takes at most 1024 characters.";
     showCommand(command);
     if (!d.open) d.showModal();
