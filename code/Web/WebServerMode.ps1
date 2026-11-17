@@ -85,6 +85,41 @@ function Global:Test-WebHostAllowed {
     return (@($s.Hosts) -contains $name)
 }
 
+function Global:Test-WebTrustedProxy {
+    <#
+      Whether a connection's address is the HTTPS proxy in front (ICA_TRUSTED_PROXY: names or addresses,
+      default nobs-proxy - the container's name on the Docker network). Names are looked up again every
+      5 minutes (a restarted proxy can get another address). Only its X-Forwarded-For is believed.
+    #>
+    param([string]$Peer)
+    $s = $Global:App.Server
+    if (-not $s -or -not $Peer) { return $false }
+    $p = $Peer -replace '^::ffff:', ''
+    $c = $s.TrustedProxy
+    if (-not $c -or ((Get-Date) - $c.At).TotalMinutes -gt 5) {
+        $names = @(([string]$(if ($env:ICA_TRUSTED_PROXY) { $env:ICA_TRUSTED_PROXY } else { 'nobs-proxy' })) -split '[,;\s]+' | Where-Object { $_ })
+        $ips = New-Object System.Collections.Generic.List[string]
+        foreach ($n in $names) {
+            $a = $null
+            if ([System.Net.IPAddress]::TryParse($n, [ref]$a)) { $ips.Add(($a.ToString() -replace '^::ffff:', '')); continue }
+            try { foreach ($x in [System.Net.Dns]::GetHostAddresses($n)) { $ips.Add(($x.ToString() -replace '^::ffff:', '')) } } catch { }
+        }
+        $c = @{ At = Get-Date; Ips = @($ips) }; $s.TrustedProxy = $c
+    }
+    return (@($c.Ips) -contains $p)
+}
+
+function Global:Get-WebThrottleKey {
+    # The address wrong passwords are counted for: IPv4 as it is, IPv6 by its /64 (one line hands out a whole
+    # /64 - counting single addresses would let a guesser just take the next one).
+    param([string]$Address)
+    $a = $null
+    if (-not [System.Net.IPAddress]::TryParse([string]$Address, [ref]$a)) { return [string]$Address }
+    if ($a.IsIPv4MappedToIPv6) { $a = $a.MapToIPv4() }
+    if ($a.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetworkV6) { return $a.ToString() }
+    return ((($a.GetAddressBytes())[0..7] | ForEach-Object { $_.ToString('x2') }) -join '') + '::/64'
+}
+
 function Global:Test-WebLoopback {
     # Whether a connection's address is this machine's own (127.x, ::1, or IPv4 mapped into IPv6). '' counts:
     # no address known (the desktop version listens on 127.0.0.1 only).
@@ -119,7 +154,7 @@ function Global:Invoke-WebLogin {
     param($Data, [string]$Agent, [string]$Client = '')
     $s = $Global:App.Server
     $now = [DateTime]::UtcNow
-    $key = if ($Client) { $Client } else { '?' }
+    $key = if ($Client) { Get-WebThrottleKey $Client } else { '?' }
     $mine = @{ Key = $key; At = $now; Pending = $true }
     [System.Threading.Monitor]::Enter($s.Fails)
     try {

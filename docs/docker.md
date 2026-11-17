@@ -50,6 +50,11 @@ One admin, one session: signing in ends the session that is open in another brow
 sign-in page and says so. A session also ends after 2 hours without use (`ICA_IDLE_MINUTES`) and 12 hours after
 sign-in (`ICA_SESSION_HOURS`). Five wrong passwords within a minute: no password is checked for a minute.
 
+Wrong passwords are counted per client address as the HTTPS proxy reports it (`X-Forwarded-For`), and only
+when the request comes from that proxy - `ICA_TRUSTED_PROXY` in `.env`, default `nobs-proxy`. With a proxy of your
+own (`--no-proxy`), set it to that proxy's container name or address. Before signing in, a request may carry at most
+4 KB and has 3 seconds for it.
+
 To change the password: write the new one (at least 12 characters) into `secrets/admin_password`, then
 `docker compose restart app`.
 
