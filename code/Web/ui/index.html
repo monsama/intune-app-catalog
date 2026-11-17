@@ -351,9 +351,21 @@
           <label>Tenant ID<input id="fTenant" spellcheck="false" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000" autocorrect="off" autocapitalize="off"></label>
           <label>Client (Application) ID<input id="fClient" spellcheck="false" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000" autocorrect="off" autocapitalize="off"></label>
           <label>Certificate thumbprint
-            <span class="inputrow"><input id="fThumb" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"><button class="btn" id="btnPickCert" title="Pick a certificate from this machine's certificate store" data-server-title="Pick a certificate from the server's store">Choose...</button></span>
+            <span class="inputrow"><input id="fThumb" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"><button class="btn" id="btnPickCert" title="Pick a certificate from this machine's certificate store" data-server-title="Pick a certificate from the server's store">Choose...</button><button class="btn" id="btnCertMenu" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="certMenu" title="Create, import, download or delete a certificate">Certificate &#9662;</button></span>
           </label>
           <p class="certstatus" id="certStatus"></p>
+          <div class="entrarow">
+            <span class="entralabel">In Entra ID <span class="muted desktoponly">(you sign in)</span></span>
+            <div class="actions">
+              <button class="btn serveronly" id="btnEntraScript" title="A script for a Windows PC: you sign in there, it adds this certificate and the API permissions to the app registration">Entra setup script...</button>
+              <button class="btn desktoponly" id="btnUpload" title="Add this certificate to the app registration in Entra ID (you sign in)">Upload this certificate</button>
+              <button class="btn desktoponly" id="btnAddPerms" title="Add the Graph application permissions to the app registration (you sign in); an admin then grants consent">Add required permissions...</button>
+              <button class="btn desktoponly" id="btnCheckCerts" title="List the certificates the app registration has in Entra ID (you sign in)">Check certificates</button>
+              <button class="btn" id="btnOpenEntra" title="Open the app registration's API permissions page to grant admin consent">Grant consent...</button>
+            </div>
+            <p class="hint serveronly">The script runs on a Windows PC: you sign in there, it adds the certificate and the API permissions to the app registration.</p>
+            <ul class="entracerts desktoponly" id="entraCerts"></ul>
+          </div>
           <div class="actions">
             <button class="btn primary" id="btnTest" title="Sign in with these values and check permissions - nothing is saved or changed">Test connection</button>
             <button class="btn" id="btnSave" title="Save the connection settings">Save</button>
@@ -361,6 +373,19 @@
           </div>
           <div class="result" id="testResult" hidden></div>
         </article>
+        <!-- The server version brings the module in its image: nothing to check or install there. -->
+        <article class="card desktoponly">
+          <h2>Prerequisites</h2>
+          <p class="sub" id="prereqText">The Microsoft.Graph.Authentication PowerShell module, in each PowerShell this app uses.</p>
+          <ul class="prereqs" id="prereqRows"></ul>
+          <div class="actions">
+            <button class="btn" id="btnPrereqCheck" title="Look for the Microsoft Graph module in each PowerShell again">Check</button>
+            <button class="btn primary" id="btnPrereqInstall" hidden title="Install the Microsoft Graph module where it is missing (current user, from the PowerShell Gallery)">Install missing</button>
+          </div>
+          <p class="sub" data-server-text="The PowerShell modules the app needs - they come with the server version's image.">Installs from the PowerShell Gallery for your user account only - no admin rights, but internet access.</p>
+        </article>
+      </div>
+      <div class="col">
         <article class="card" id="guideCard">
           <h2>Setup guide</h2>
           <details id="guideReg">
@@ -394,48 +419,6 @@
           <h2>Setup checklist</h2>
           <ol class="checklist" id="checklist"></ol>
           <div class="report" id="report"></div>
-        </article>
-      </div>
-      <div class="col">
-        <article class="card">
-          <h2>Certificate</h2>
-          <p class="sub" data-server-text="On the server (its data volume) - import the app registration's .pfx, or create one here">On this machine</p>
-          <div class="actions">
-            <button class="btn" id="btnUseCert" title="Pick a certificate that is already in your user store or the machine store" data-server-title="Pick a certificate that is already in the server's store">Use an existing one...</button>
-            <button class="btn" id="btnNewCert" title="Create a self-signed certificate on this machine for the app registration" data-server-title="Create a self-signed certificate on the server for the app registration">Create new certificate...</button>
-            <button class="desktoponly btn" id="btnCertFolder" title="Open the folder with the exported .cer files in Explorer">Open certificates folder</button>
-            <button class="btn" id="btnCertsLocal" title="List this machine's certificates and delete one you no longer need" data-server-title="List the server's certificates and delete one you no longer need">Delete one...</button>
-          </div>
-          <div class="actions serveronly">
-            <button class="btn" id="btnPfxImport" title="Use the certificate you already have: a .pfx file with its private key">Import a .pfx...</button>
-            <button class="btn" id="btnCerDownload" title="The chosen certificate's public part (.cer) - what the app registration in Entra ID takes">Download .cer</button>
-            <button class="btn primary" id="btnEntraScript" title="A script for a Windows PC: you sign in there, it adds this certificate and the API permissions to the app registration">Entra setup script...</button>
-          </div>
-          <p class="sub serveronly">In Entra ID: <b>Entra setup script...</b> - run it on a Windows PC, you sign in there and it adds this certificate and the API permissions to the app registration, then opens the page for the admin consent. Or by hand: the .cer under <b>Certificates &amp; secrets</b>, the permissions under <b>API permissions</b>.</p>
-          <p class="sub desktoponly">In Entra ID <span class="muted">(signs you in with your own account)</span></p>
-          <div class="actions desktoponly">
-            <button class="btn" id="btnCheckCerts" title="List the certificates the app registration has in Entra ID (you sign in)">Check certificates</button>
-            <button class="btn" id="btnUpload" title="Add this certificate to the app registration in Entra ID (you sign in)">Upload this certificate</button>
-          </div>
-          <ul class="entracerts desktoponly" id="entraCerts"></ul>
-        </article>
-        <article class="card">
-          <h2>API permissions</h2>
-          <p class="sub">Microsoft Graph application permissions this app uses.</p>
-          <div class="actions">
-            <button class="desktoponly btn primary" id="btnAddPerms" title="Add the Graph application permissions to the app registration (you sign in); an admin then grants consent">Add required permissions...</button>
-            <button class="btn" id="btnOpenEntra" title="Open the app registration's API permissions page to grant admin consent">Open in Entra (grant consent)</button>
-          </div>
-        </article>
-        <article class="card">
-          <h2>Prerequisites</h2>
-          <p class="sub" id="prereqText">The Microsoft.Graph.Authentication PowerShell module, in each PowerShell this app uses.</p>
-          <ul class="prereqs" id="prereqRows"></ul>
-          <div class="actions">
-            <button class="btn" id="btnPrereqCheck" title="Look for the Microsoft Graph module in each PowerShell again">Check</button>
-            <button class="btn primary" id="btnPrereqInstall" hidden title="Install the Microsoft Graph module where it is missing (current user, from the PowerShell Gallery)">Install missing</button>
-          </div>
-          <p class="sub" data-server-text="The PowerShell modules the app needs - they come with the server version's image.">Installs from the PowerShell Gallery for your user account only - no admin rights, but internet access.</p>
         </article>
       </div>
     </div>
@@ -707,6 +690,14 @@
   <hr>
   <button role="menuitem" data-cact="reload" title="Read the catalog folder again - for changes made outside the app">Reload</button>
   <button role="menuitem" class="desktoponly" data-cact="folder" title="Open the folder with one JSON file per app in Explorer">Open catalog folder</button>
+</div>
+<div class="menu" id="certMenu" role="menu" hidden>
+  <button role="menuitem" id="btnNewCert" title="Create a self-signed certificate on this machine for the app registration" data-server-title="Create a self-signed certificate on the server for the app registration">Create new certificate...</button>
+  <button role="menuitem" class="serveronly" id="btnPfxImport" title="Use the certificate you already have: a .pfx file with its private key">Import a .pfx...</button>
+  <button role="menuitem" class="serveronly" id="btnCerDownload" title="The chosen certificate's public part (.cer) - what the app registration in Entra ID takes">Download .cer</button>
+  <button role="menuitem" class="desktoponly" id="btnCertFolder" title="Open the folder with the exported .cer files in Explorer">Open certificates folder</button>
+  <hr>
+  <button role="menuitem" class="danger" id="btnCertsLocal" title="List this machine's certificates and delete one you no longer need" data-server-title="List the server's certificates and delete one you no longer need">Delete one...</button>
 </div>
 <div class="menu" id="groupMenu" role="menu" hidden>
   <button role="menuitem" data-gact="open" title="Show the group's apps and members">Open</button>

@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.28.4
+
+- **Settings > Connection in one form.** The certificate is handled where its
+  thumbprint is: **Choose...** beside the field, and a **Certificate** menu
+  (create, import a .pfx, download the .cer, open the folder, delete one).
+  The Entra ID actions sit in an "In Entra ID" box under it - on the server
+  the Entra setup script and Grant consent, on the desktop Upload, Add
+  required permissions and Check certificates. The separate Certificate
+  and API permissions cards are gone; Setup guide moved to the right.
+- **The setup guide on the server** offers what works there: Choose /
+  Import a .pfx / Create new for the certificate, and the Entra setup
+  script for the certificate and the permissions in Entra ID (it clicked
+  the desktop's Upload and Add permissions before).
+- **Home uses the whole width** of the window (it stopped at 1180 px).
+- **Prerequisites isn't shown on the server**: the image brings the Graph
+  module, there is nothing to check or install.
+- Home: a nightly run's problem that isn't about one app no longer starts
+  with "(all):".
+
 ## 2.28.3
 
 - **One button size per row.** The editor's field buttons (Choose image,

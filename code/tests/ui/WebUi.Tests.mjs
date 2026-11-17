@@ -188,6 +188,8 @@ try {
 
       if (size.width === 1440) {
         // Certificates on this machine (none on Linux - the dialog says so).
+        // In the certificate menu beside the thumbprint.
+        await page.click('#btnCertMenu'); await page.waitForSelector('#certMenu:not([hidden])');
         await page.click('#btnCertsLocal');
         await page.waitForSelector('#dlgCertsLocal[open]');
         await unnamed('the certificates dialog'); await a11y('the certificates dialog');

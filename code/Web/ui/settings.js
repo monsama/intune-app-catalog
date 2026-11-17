@@ -75,7 +75,18 @@ async function pickCertificate() {
   $('dlgPickCert').showModal();
 }
 $('btnPickCert').addEventListener('click', pickCertificate);
-$('btnUseCert').addEventListener('click', pickCertificate);
+// The certificate menu beside the thumbprint: create, import, download, delete.
+const certMenu = $('certMenu');
+$('btnCertMenu').addEventListener('click', e => {
+  e.stopPropagation();
+  if (!certMenu.hidden) { certMenu.hidden = true; $('btnCertMenu').setAttribute('aria-expanded', 'false'); return; }
+  setEnabled($('btnCerDownload'), !!$('fThumb').value.trim(), 'Choose or create a certificate first.');
+  const r = $('btnCertMenu').getBoundingClientRect();
+  placeMenu(certMenu, r.right - 240, r.bottom + 4); $('btnCertMenu').setAttribute('aria-expanded', 'true');
+});
+certMenu.addEventListener('click', e => { if (e.target.closest('button')) { certMenu.hidden = true; $('btnCertMenu').setAttribute('aria-expanded', 'false'); } });
+document.addEventListener('click', e => { if (!certMenu.hidden && !certMenu.contains(e.target)) { certMenu.hidden = true; $('btnCertMenu').setAttribute('aria-expanded', 'false'); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !certMenu.hidden) { certMenu.hidden = true; $('btnCertMenu').setAttribute('aria-expanded', 'false'); $('btnCertMenu').focus(); } });
 $('btnNewCert').addEventListener('click', () => $('dlgNewCert').showModal());
 $('btnNewCertGo').addEventListener('click', async () => {
   const r = await api('/api/cert-new', { subject: $('fSubject').value });
@@ -232,10 +243,19 @@ function renderSetupSteps() {
       acts: [el('button', { type: 'button', class: 'btn', text: 'Open App registrations', title: 'Open the Entra admin center in your browser', onclick: async () => { const r = await api('/api/open', { target: 'entra-home' }); if (!r.ok) toast(r.error, true); } })] },
     { title: 'Copy its IDs into Connection', text: 'The Application (client) ID and the Directory (tenant) ID.', done: !!(f.tenantId && f.clientId),
       acts: [el('button', { type: 'button', class: 'btn', text: 'Go to Connection', title: 'Jump to the Tenant ID field', onclick: () => { $('fTenant').scrollIntoView({ block: 'center' }); $('fTenant').focus(); } })] },
+    // The server version: the certificate is chosen, created or imported here; Entra ID gets it (and the permissions)
+    // from the Entra setup script, run on a Windows PC.
+    ...(SERVER ? [
+      { title: 'Give it a certificate', text: 'Import the .pfx the app registration already has, or create one here.', done: certOk,
+        acts: [btn('Choose...', 'btnPickCert', 'Pick a certificate from the server\'s store'), btn('Import a .pfx...', 'btnPfxImport', 'The app registration\'s certificate, with its private key'), btn('Create new...', 'btnNewCert', 'A self-signed certificate on the server')] },
+      { title: 'Add it and the API permissions in Entra ID', text: 'The Entra setup script does both on a Windows PC (you sign in there); then an admin presses Grant admin consent.', done: !!(t.entra && t.perms),
+        acts: [btn('Entra setup script...', 'btnEntraScript', 'A script for a Windows PC: adds the certificate and the permissions'), btn('Grant consent...', 'btnOpenEntra', 'Open the API permissions page in Entra')] },
+    ] : [
     { title: 'Give it a certificate', text: 'Use one from your user or machine store, or create one - then upload it to the app registration.', done: certOk && !!t.entra,
-      acts: [btn('Use an existing one...', 'btnUseCert', 'Pick a certificate from your user or machine store'), btn('Create new...', 'btnNewCert', 'Create a self-signed certificate on this machine'), btn('Upload to Entra', 'btnUpload', 'Add the chosen certificate to the app registration (you sign in)')] },
+      acts: [btn('Use an existing one...', 'btnPickCert', 'Pick a certificate from your user or machine store'), btn('Create new...', 'btnNewCert', 'Create a self-signed certificate on this machine'), btn('Upload to Entra', 'btnUpload', 'Add the chosen certificate to the app registration (you sign in)')] },
     { title: 'Add the API permissions', text: 'As Application permissions (not Delegated) - then an admin presses Grant admin consent in Entra.', done: !!t.perms,
       acts: [btn('Add required permissions...', 'btnAddPerms', 'Add the permissions to the app registration (you sign in)')] },
+    ]),
     { title: 'Test the connection', text: 'Signs in with the settings above and lists anything still missing.', done: !!t.all,
       acts: [btn('Test connection', 'btnTest', 'Sign in and check the permissions - nothing is changed')] },
   ];
