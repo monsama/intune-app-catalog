@@ -118,7 +118,8 @@ $shared = [hashtable]::Synchronized(@{ LastPing = Get-Date; Quit = $false })
 foreach ($entry in @(@('App', $Global:App), @('WebToken', $token), @('WebShared', $shared), @('WebUiRoot', $uiRoot), @('WebServerMode', $serverMode))) {
     $iss.Variables.Add((New-Object System.Management.Automation.Runspaces.SessionStateVariableEntry($entry[0], $entry[1], '')))
 }
-$pool = [runspacefactory]::CreateRunspacePool(1, 8, $iss, $Host)
+# 16 at a time: a few slow clients can't take every slot (each also has a deadline - Read-WebRequest).
+$pool = [runspacefactory]::CreateRunspacePool(1, 16, $iss, $Host)
 $pool.Open()
 
 $handler = {

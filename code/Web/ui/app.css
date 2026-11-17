@@ -1464,3 +1464,19 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 .entrarow .actions { margin: 0; }
 .entrarow .hint { margin-top: 8px; }
 .entrarow .entracerts:empty { display: none; }
+
+/* Sweep after 2.28.5 */
+/* Side panel under the table (narrow windows): rows of their own, the panel at least readable. */
+@media (max-width: 1100px) { .appsplit:has(> .apppanel:not([hidden])) { grid-template-rows: minmax(260px, 1fr) auto; } .apppanel { min-height: 220px; } }
+/* Batch edit on a phone: label and field share the width, nothing runs off the side. */
+.bfield { grid-template-columns: minmax(0, 40%) minmax(0, 1fr); }
+.bfield input, .bfield select, .bfield textarea { min-width: 0; width: 100%; box-sizing: border-box; }
+@media (max-width: 560px) { .bfield { grid-template-columns: minmax(0, 1fr); } }
+/* Batch edit: the footer's buttons keep their distance from the edge, and what is above it scrolls clear of it. */
+#dlgBatch > .actions { padding-right: 2px; }
+#dlgBatch #batchPreview, #dlgBatch label:has(> #bPush) { scroll-margin-bottom: 72px; }
+#dlgBatch label:has(> #bPush) { margin-bottom: 12px; }
+/* Add apps on a phone: "Fill in by hand..." under the tabs, which scroll on one line. */
+@media (max-width: 640px) { .addtabrow { flex-wrap: wrap; } .addtabrow > .subtabs { flex: 1 1 100%; } .addtabrow > #btnAddBlank { margin: 0 0 8px; } }
+/* Settings' direction icons: enough contrast in dark mode too. */
+.tile .ico { color: var(--accent); filter: brightness(1.25); }

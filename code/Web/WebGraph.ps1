@@ -130,7 +130,7 @@ function Global:Invoke-WebGraph {
             Write-Log "[WARN] Graph refused a request for lack of $Permission - $(Protect-LogText $msg)"
             if (-not $Global:App.MissingPermissions) { $Global:App.MissingPermissions = [hashtable]::Synchronized(@{}) }
             $Global:App.MissingPermissions[$Permission] = (Get-Date).ToString('HH:mm', [Globalization.CultureInfo]::InvariantCulture)
-            return @{ ok = $false; permission = $Permission; error = "the app registration is missing the API permission $Permission ($kind, with admin consent) - Settings > API permissions > Add required permissions... adds it." }
+            return @{ ok = $false; permission = $Permission; error = "the app registration is missing the API permission $Permission ($kind, with admin consent) - Settings > Connection, In Entra ID: Add required permissions... (on the server: Entra setup script...) adds it." }
         }
         return @{ ok = $false; error = (Protect-LogText $friendly) }
     }

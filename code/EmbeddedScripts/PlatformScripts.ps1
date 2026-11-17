@@ -100,7 +100,7 @@ function Invoke-GraphRequestDetailed {
             # this script needs two different ones (scripts, groups).
             if ("$($_.Exception.Message) $detail" -match '\bforbidden\b|\b403\b|insufficient privileges|Authorization_RequestDenied') {
                 $needed = if ($Uri -match 'deviceManagementScripts') { "DeviceManagementScripts.ReadWrite.All" } else { "Group.Read.All" }
-                $message += "`nThis usually means the app registration is missing the $needed application permission (with admin consent). Settings > API permissions > Add required permissions... adds it."
+                $message += "`nThis usually means the app registration is missing the $needed application permission (with admin consent). Settings > Connection, In Entra ID: Add required permissions... (on the server: Entra setup script...) adds it."
             }
             throw $message
         }

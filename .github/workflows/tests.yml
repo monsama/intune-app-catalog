@@ -7,6 +7,11 @@ on:
 
 # A new push to the same branch replaces the run that's still going - there's
 # no point finishing a run for code that has already moved on.
+# Read-only token: nothing here writes to the repository, and the UI job installs npm packages
+# (their install scripts must not get a token that can push).
+permissions:
+  contents: read
+
 concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: true

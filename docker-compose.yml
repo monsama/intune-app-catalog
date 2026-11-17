@@ -25,6 +25,8 @@ services:
       ICA_HOST: ${ICA_HOST:?Set ICA_HOST in .env (the name people type)}
       # Only without the proxy, for a test on http://<name>:8080: allow plain http.
       ICA_ALLOW_HTTP: ${ICA_ALLOW_HTTP:-0}
+      # The HTTPS proxy in front: only its X-Forwarded-For is believed (wrong passwords are counted per client).
+      ICA_TRUSTED_PROXY: ${ICA_TRUSTED_PROXY:-nobs-proxy}
       ICA_IDLE_MINUTES: ${ICA_IDLE_MINUTES:-120}
       ICA_SESSION_HOURS: ${ICA_SESSION_HOURS:-12}
       # The time zone of the nightly run's time and of the logs.

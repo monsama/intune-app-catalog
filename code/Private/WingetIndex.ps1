@@ -217,7 +217,12 @@ function Global:ConvertFrom-WingetManifestYaml {
             # A quoted value may go on over more lines (indented).
             $v = $val
             if (($v.StartsWith("'") -and -not ($v.Length -gt 1 -and $v.EndsWith("'"))) -or ($v.StartsWith('"') -and -not ($v.Length -gt 1 -and $v.EndsWith('"')))) {
-                while ($i -lt $lines.Count -and $lines[$i] -match '^\s+') { $v += ' ' + $lines[$i].Trim(); $i++; if ($v.EndsWith("'") -or $v.EndsWith('"')) { break } }
+                # A blank line inside the quotes is a line break (YAML folding) - not the value's end.
+                while ($i -lt $lines.Count -and ($lines[$i] -match '^\s+' -or $lines[$i] -eq '')) {
+                    if ($lines[$i] -eq '' -or $lines[$i].Trim() -eq '') { $v = $v.TrimEnd() + "`n"; $i++; continue }
+                    $v += $(if ($v.EndsWith("`n")) { '' } else { ' ' }) + $lines[$i].Trim(); $i++
+                    if ($v.EndsWith("'") -or $v.EndsWith('"')) { break }
+                }
             }
             $m[$key] = & $unquote $v
             continue

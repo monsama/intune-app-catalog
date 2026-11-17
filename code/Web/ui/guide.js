@@ -46,6 +46,8 @@ function stageOf(a) {
   }
   if (!a.hasAppId) {
     if (a.managed && !own && !a.version) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'Managed updates: it needs the version to start from.', next: { label: 'Pin newest', title: "Pin winget's newest version (another one: Version in the side panel)", run: () => takeVersionFor(a) } };
+    // As the editor's "Ready to send?" list: no group yet means Intune would have it for nobody.
+    if (!(a.groups || []).length) return { key: 'ready', label: 'Ready - no groups', cls: 'warn', why: 'Everything else is set - but no group gets it yet, so in Intune nobody would have it. Who gets it is in the editor.', next: { label: 'Groups...', title: 'Set who gets it (editor: Who gets it)', run: () => openEditor(a.name) } };
     return { key: 'ready', label: 'Ready to send', cls: 'info', why: 'Everything is set - not in Intune yet.', next: { label: 'Send to Intune', title: 'Create it in Intune', run: () => openDeploy([a.name]) } };
   }
   if (a.pilotVersion) {
@@ -152,7 +154,7 @@ async function fillPanel(a) {
       fact('Last check', a.audit)),
     el('div', { class: 'pacts' }, btn('Edit', 'Open it in the editor', () => openEditor(a.name)),
       a.hasAppId ? btn('Install status', 'Every device\'s install state', () => openStatus(a.name)) : '',
-      !a.wingetId && !a.msHint ? btn('Test in Sandbox', 'Install, detect and uninstall it in Windows Sandbox', () => openSandbox(a.name)) : '',
+      !a.wingetId && !a.msHint ? (SERVER ? btn('Sandbox test...', 'A zip for a Windows PC with Windows Sandbox: the package, the test and a starter', () => downloadSandbox(a.name)) : btn('Test in Sandbox', 'Install, detect and uninstall it in Windows Sandbox', () => openSandbox(a.name))) : '',
       btn('More...', 'Every action for this app', () => $('btnMore').click())));
   p.hidden = false;
   if (panelRefocus) { const t = [...p.querySelectorAll('[aria-label]')].find(x => x.getAttribute('aria-label') === panelRefocus); panelRefocus = ''; if (t) t.focus(); }
@@ -179,7 +181,14 @@ function updateReady() {
     [groups, groups ? 'Groups that get it' : 'Groups that get it - none yet, so nobody gets it', 'gRequired'],
   ] : [
     [!!$('aName').value.trim(), 'A name', 'aName'],
-    own ? [!!(row && !row.packageMissing), row && !row.packageMissing ? 'Its installer is packaged' : 'Its installer packaged (Packages\\<name>, then Package)', null]
+    own ? (() => {
+      // The command naming another installer than the one in its packages folder (an MSI file block changed):
+      // the package has the old one - not "packaged" until that file is there and packaged again.
+      const named = ($('mInstallCommand').value.match(/([^\s"'\\/]+\.(?:msi|exe))\b/i) || [])[1], have = editorInstaller && editorInstaller.file;
+      if (named && have && named.toLowerCase() !== String(have).toLowerCase() && !/^(msiexec|cmd|powershell)\.exe$/i.test(named))
+        return [false, `The command installs ${named}, the packages folder has ${have} - put ${named} there, then Package`, 'mInstallCommand'];
+      return [!!(row && !row.packageMissing), row && !row.packageMissing ? 'Its installer is packaged' : 'Its installer packaged (Packages\\<name>, then Package)', null];
+    })()
       : [true, `Installs from winget (${wid})`, 'aWinget'],
     own ? [!!$('mInstallCommand').value.trim(), 'An install command', 'mInstallCommand'] : [true, 'Install command - made for winget', null],
     own ? [!!det, det ? 'A detection rule' : 'A detection rule (Install & detection)', 'xType'] : [true, 'Detection - made for winget', null],

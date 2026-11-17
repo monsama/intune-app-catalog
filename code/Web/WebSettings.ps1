@@ -181,6 +181,8 @@ function Global:Start-WebCertJob {
       /api/job-poll for its output and result.
     #>
     param($Data)
+    # The server version has no window to sign in through: the Entra setup script does this on a Windows PC.
+    if (Test-WebServerMode) { return @{ ok = $false; error = 'On the server this runs on a Windows PC: Settings > Connection > Entra setup script...' } }
     $mode = [string]$Data.mode
     if ($mode -notin 'Check', 'Upload', 'DeleteCert', 'AddPermissions') { return @{ ok = $false; error = "Unknown action '$mode'." } }
     $tenant = ([string]$Data.tenantId).Trim()
@@ -374,6 +376,24 @@ function Global:Save-WebPrefs {
             if ($why) { return @{ ok = $false; error = "$(@(Get-AppFolderKinds | Where-Object { $_.Key -eq $p.Name })[0].Label): $why" } }
         }
     }
+    # Every part is checked before any is applied: a refused Save changes nothing (it once applied the policy and
+    # folders, then refused the rings - and the next save of another card wrote them to the file).
+    if (@($Data.PSObject.Properties.Name) -contains 'profiles') {
+        foreach ($p in @($Data.profiles)) {
+            if (-not ([string]$p.name).Trim()) { return @{ ok = $false; error = 'Every profile needs a name.' } }
+            foreach ($g in @($p.required) + @($p.available) + @($p.exclude)) { if (([string]$g).Trim()) { $problem = Test-WebGroupName ([string]$g).Trim(); if ($problem) { return @{ ok = $false; error = "Profile '$($p.name)': $problem" } } } }
+        }
+        if (@(@($Data.profiles) | Group-Object { ([string]$_.name).Trim() } | Where-Object { $_.Count -gt 1 }).Count) { return @{ ok = $false; error = 'Two profiles have the same name.' } }
+    }
+    if ($null -ne $Data.releaseRingsText) {
+        $rrCheck = ConvertFrom-ReleaseRingText ([string]$Data.releaseRingsText)
+        if ($rrCheck.Error) { return @{ ok = $false; error = "Release rings: $($rrCheck.Error)" } }
+        foreach ($ring in @($rrCheck.Rings)) { foreach ($g in @($ring.Groups)) { $problem = Test-WebGroupName $g; if ($problem) { return @{ ok = $false; error = "Release rings ($($ring.Name)): $problem" } } } }
+    }
+    if ($null -ne $Data.pilotGroups) {
+        foreach ($g in @($Data.pilotGroups | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })) { $problem = Test-WebGroupName $g; if ($problem) { return @{ ok = $false; error = "Pilot groups: $problem" } } }
+    }
+    if ($null -ne $Data.packager -and [string]$Data.packager -notin 'auto', 'builtin', 'tool') { return @{ ok = $false; error = 'Unknown packager.' } }
     if ($Data.checks) {
         $c = $Data.checks
         $Global:App.CheckDriftOnStartup = [bool]$c.checkDriftOnStartup; $Global:App.RunFullAuditOnStartup = [bool]$c.runFullAuditOnStartup

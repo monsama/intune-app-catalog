@@ -23,17 +23,22 @@ jobs:
     env:
       # Optional: a code-signing certificate as repository secrets (the .pfx
       # base64-encoded, and its password). Without them the scripts are
-      # released unsigned, as before.
-      SIGNING_PFX_BASE64: ${{ secrets.CODE_SIGNING_PFX_BASE64 }}
-      SIGNING_PFX_PASSWORD: ${{ secrets.CODE_SIGNING_PFX_PASSWORD }}
+      # released unsigned, as before. Only whether they exist is known to the
+      # whole job - the secrets themselves go to the signing step alone, not to
+      # the app's start from the zip or the release action.
+      HAS_SIGNING: ${{ secrets.CODE_SIGNING_PFX_BASE64 != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Work out the version
         id: version
         shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          $version = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:GITHUB_REF -replace '^refs/tags/', '' } else { '${{ inputs.version }}' }
+          # The version arrives as data (env), never pasted into the script, and must look like one.
+          $version = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:GITHUB_REF -replace '^refs/tags/', '' } else { $env:INPUT_VERSION }
+          if ($version -notmatch '^v\d+\.\d+(\.\d+)?(-[A-Za-z0-9.]+)?$') { throw "Not a version: '$version' (e.g. v2.28.6 or v2.28.6-test)." }
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "Building $version"
 
@@ -58,7 +63,10 @@ jobs:
           "staging=$staging" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Sign the scripts
-        if: env.SIGNING_PFX_BASE64 != ''
+        if: env.HAS_SIGNING == 'true'
+        env:
+          SIGNING_PFX_BASE64: ${{ secrets.CODE_SIGNING_PFX_BASE64 }}
+          SIGNING_PFX_PASSWORD: ${{ secrets.CODE_SIGNING_PFX_PASSWORD }}
         shell: pwsh
         run: |
           # Authenticode signatures with a timestamp, so they stay valid after
@@ -139,8 +147,10 @@ jobs:
       - name: Version
         id: v
         shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version || github.ref_name }}
         run: |
-          v="${{ github.event.inputs.version || github.ref_name }}"
+          v="$INPUT_VERSION"
           v="${v#v}"
           [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Not a release version: $v (no image for test builds)"; echo "push=false" >> "$GITHUB_OUTPUT"; exit 0; }
           echo "version=$v" >> "$GITHUB_OUTPUT"; echo "push=true" >> "$GITHUB_OUTPUT"
@@ -155,5 +165,7 @@ jobs:
           docker build --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" --label "org.opencontainers.image.version=$VERSION" -t "$img:$VERSION" -t "$img:latest" .
           ./scripts/docker-smoke.sh "$img:$VERSION"
           echo "$TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          # A released version's image is never replaced: servers pull it by that tag.
+          if docker manifest inspect "$img:$VERSION" >/dev/null 2>&1; then echo "::error::$img:$VERSION exists already - a released image isn't overwritten. Bump the version."; exit 1; fi
           docker push "$img:$VERSION"
           docker push "$img:latest"

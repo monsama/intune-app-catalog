@@ -419,7 +419,7 @@ let dWingetSaved = '';
 // The default only shapes new apps - when it changes, the Winget apps already in the catalog are offered the same switch.
 async function switchExistingWinget(method) {
   if (method === 'Managed') { if (apps.some(a => a.wingetId && !a.managed)) await managedForAll(); return; }
-  const names = apps.filter(a => a.wingetId && !a.managed && !/^[0-9A-Z]{12}$/.test(a.wingetId)).map(a => a.name);
+  const names = apps.filter(a => a.wingetId && !a.managed && !isStoreId(a.wingetId)).map(a => a.name);
   if (!names.length) return;
   const label = 'the winget command';
   if (!(await ask(`Switch the install and uninstall commands of the ${names.length} Winget app(s) already in the catalog to ${label} too?\n\n${names.slice(0, 12).join(', ')}${names.length > 12 ? ', ...' : ''}\n\nCommands edited by hand are kept. Apps with managed updates keep their pinned commands. Apps in Intune get the new commands pushed.`, { ok: 'Switch them' }))) return;

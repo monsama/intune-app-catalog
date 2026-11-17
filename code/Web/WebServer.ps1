@@ -55,12 +55,16 @@ function Global:Read-WebRequest {
                 if (-not (Test-WebHostAllowed $hdrHost -Peer $peer) -or -not (Test-WebOriginAllowed $hdrOrigin -Peer $peer) -or $firstLine -notmatch '^POST /api/') { $contentLength = 0 }
                 # The server version: a body larger than a sign-in is read only for the open session (its token in
                 # X-ICA-Session) - someone who isn't signed in can't make the server take in megabytes.
-                if ($contentLength -gt 16KB -and $Global:App.Server) {
+                # Before signing in only a sign-in fits (4 KB), and it has 3 seconds: someone sending bodies a byte
+                # at a time can't hold the request slots for long.
+                $signedIn = $true
+                if ($contentLength -gt 0 -and $Global:App.Server) {
                     $hdrSession = if ($headerText -match '(?im)^X-ICA-Session:[ \t]*([0-9a-f]{64})\s*$') { $Matches[1] } else { '' }
-                    if ((Test-WebSession $hdrSession) -ne '') { $contentLength = 0 }
+                    $signedIn = (Test-WebSession $hdrSession) -eq ''
+                    if (-not $signedIn -and $contentLength -gt 4KB) { $contentLength = 0 }
                 }
-                # The body: 10 seconds, plus a second for every 64 KB (a 10 MB upload on a slow line).
-                $deadlineMs = 10000 + [int]($contentLength / 64KB) * 1000
+                # The body: 10 seconds, plus a second for every 64 KB (a 10 MB upload on a slow line); 3 before signing in.
+                $deadlineMs = if ($signedIn) { 10000 + [int]($contentLength / 64KB) * 1000 } else { [int]$clock.ElapsedMilliseconds + 3000 }
                 $bodyStart = $headerEnd + 4; $have = $arr.Length - $bodyStart
                 while ($have -lt $contentLength) {
                     $left = $deadlineMs - $clock.ElapsedMilliseconds; if ($left -le 0) { return $null }
@@ -75,10 +79,10 @@ function Global:Read-WebRequest {
                 $originHeader = if ($headerText -match '(?im)^Origin:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { $null }
                 $typeHeader = if ($headerText -match '(?im)^Content-Type:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { '' }
                 $agentHeader = if ($headerText -match '(?im)^User-Agent:[ \t]*([^\r\n]*)') { $Matches[1].Trim() } else { '' }
-                # The client's address as the proxy in front saw it (the last X-Forwarded-For entry: Caddy writes
-                # it, it doesn't pass on what a client sent), else the connection's own.
+                # The client's address: as the proxy in front saw it (the last X-Forwarded-For entry) - but only when
+                # the connection comes from that proxy; from anywhere else the header is the sender's own claim.
                 $fwd = if ($headerText -match '(?im)^X-Forwarded-For:[ \t]*([^\r\n]*)') { (($Matches[1] -split ',')[-1]).Trim() } else { '' }
-                $clientAddr = if ($fwd -match '^[0-9A-Fa-f:.]{2,45}$') { $fwd } else { $peer }
+                $clientAddr = if ($fwd -match '^[0-9A-Fa-f:.]{2,45}$' -and (Test-WebTrustedProxy $peer)) { $fwd } else { $peer }
                 $path = [string]$parts[1]
                 $q = $path.IndexOf('?'); if ($q -ge 0) { $path = $path.Substring(0, $q) }
                 return @{ Method = $parts[0]; Path = $path; Body = $body; Host = $hostHeader; Origin = $originHeader; ContentType = $typeHeader; Agent = $agentHeader; Peer = $peer; ClientAddr = $clientAddr }

@@ -104,14 +104,15 @@ function Global:Invoke-ManagedUpdateRun {
             $askWinget = @($managed | Where-Object { $_.wingetId -and -not (Get-WebAppRelease $_) -and -not $FastTrackOnly })
             if ($askWinget.Count) {
                 if (-not $Global:App.WingetLatest) { $Global:App.WingetLatest = [hashtable]::Synchronized(@{}) }
-                if (Get-Command winget.exe -ErrorAction SilentlyContinue) {
+                # winget.exe on Windows; on the server winget's package index (Test-WingetPackageId uses either).
+                if ((Get-Command winget.exe -ErrorAction SilentlyContinue) -or (Test-WingetIndexUsable)) {
                     foreach ($a in $askWinget) {
                         $w = Test-WingetPackageId -AppName $a.appName -WingetId $a.wingetId
                         if ($w.Ok -and $w.Version) { $Global:App.WingetLatest[([string]$a.wingetId).ToLowerInvariant()] = [string]$w.Version }
                         elseif (-not $w.Ok) { & $say $a.appName 'failed' "winget couldn't be asked: $($w.Result)"; $failed++ }
                     }
                 }
-                else { & $say '(winget)' 'failed' 'winget.exe isn''t on this machine, so new Winget versions weren''t looked for.'; $failed++ }
+                else { & $say '(winget)' 'failed' 'Neither winget.exe nor winget''s package index can be asked here, so new Winget versions weren''t looked for.'; $failed++ }
             }
             foreach ($a in $managed) {
                 $pilot = Get-WebAppRelease $a
@@ -686,7 +687,13 @@ function Global:Set-WebUpdateSchedule {
     if (Test-WebServerMode) {
         if ($Data.on -and [string]$Data.runAt -notmatch '^([01]\d|2[0-3]):[0-5]\d$') { return @{ ok = $false; error = 'The time must be HH:mm (24 hours), e.g. 03:00.' } }
         $Global:App.ReleasePolicy.ServerSchedule = [bool]$Data.on
-        if ($Data.on) { $Global:App.ReleasePolicy.RunAt = [string]$Data.runAt }
+        if ($Data.on) {
+            $Global:App.ReleasePolicy.RunAt = [string]$Data.runAt
+            # Switched on (or moved) to a time already past today: today's run counts as done - the first run is
+            # at that time tomorrow, not within the next half minute.
+            $at = [datetime]::ParseExact("$((Get-Date).ToString('yyyy-MM-dd')) $($Data.runAt)", 'yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture)
+            if ((Get-Date) -ge $at) { $Global:App.ServerScheduleDoneToday = Get-Date }
+        }
         try { [void](Write-SettingsFile) } catch { }
         Write-Log "[OK] Nightly run $(if ($Data.on) { "every day at $($Global:App.ReleasePolicy.RunAt) (the server's own schedule)" } else { 'turned off' })."
         $Global:App.ScheduleCache = $null; return @{ ok = $true; schedule = (Get-WebUpdateSchedule) }

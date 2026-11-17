@@ -90,6 +90,8 @@ function goSignIn(why) {
     for (const [attr, set] of [['serverText', (n, v) => { n.textContent = v; }], ['serverTitle', (n, v) => { n.title = v; }], ['serverPlaceholder', (n, v) => { n.placeholder = v; }], ['serverEmpty', (n, v) => { n.dataset.empty = v; }]])
       for (const n of document.querySelectorAll(`[data-${attr.replace(/[A-Z]/g, c => '-' + c.toLowerCase())}]`)) set(n, n.dataset[attr]);
     // What a Windows PC does comes as a download here (PC helpers).
+    // Anything drawn before this answer came (the setup guide, from /api/state) is drawn again for the server.
+    if (typeof renderSetupSteps === 'function') renderSetupSteps();
     for (const m of document.querySelectorAll('[data-act="sandbox"]')) { m.textContent = 'Download a Sandbox test...'; m.title = 'A zip for a Windows PC with Windows Sandbox: the package, the test and a starter that opens the Sandbox and says how it went'; }
   } catch (e) { /* the desktop app, or no answer: nothing to do here */ }
 })();
@@ -205,7 +207,7 @@ const themeIcons = {
   light: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   dark: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
 };
-const themeNames = { auto: 'Automatic (follows Windows)', light: 'Light', dark: 'Dark' };
+const themeNames = { auto: 'Automatic (follows the system)', light: 'Light', dark: 'Dark' };
 let themePref = 'auto';
 function applyTheme(pref) {
   themePref = ['light', 'dark'].includes(pref) ? pref : 'auto';
@@ -234,6 +236,8 @@ function placePageBtns() {
 }
 addEventListener('resize', () => placePageBtns());
 function showView(v) {
+  // Only the pages there are (a view saved by another version, or a typo, would leave a blank page - and be saved).
+  if (![...document.querySelectorAll('.tab[data-view]')].some(b => b.dataset.view === v)) v = 'home';
   if (v === 'checks') delete $('tabChecks').dataset.count;
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.view === v));
   const tabLabel = document.querySelector(`.tab[data-view="${v}"] .tl`);
@@ -308,8 +312,9 @@ async function loadState() {
   else checkConnection();
   $('setupBanner').hidden = r.configured;
   $('testBanner').hidden = !r.testMode;
-  setFields(r.settings);
-  setCertStatus(r.cert);
+  // Connection fields changed and not saved yet (a new certificate chosen, then an old one deleted): kept - only
+  // whether they still differ from what's saved is worked out again.
+  if ($('dirtyNote').hidden) { setFields(r.settings); setCertStatus(r.cert); } else updateDirty();
 }
 
 // ---------------------------------------------------------------- row actions: one main button, the rest behind "⋯"

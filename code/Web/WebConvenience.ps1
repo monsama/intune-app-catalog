@@ -92,7 +92,7 @@ function Global:Find-WebAppIcon {
     if (-not $a) { return @{ ok = $false; error = "No app called '$($Data.name)'." } }
     if (-not $a.wingetId) {
         $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $a.appName)
-        $exe = Get-ChildItem -LiteralPath $folder -Filter '*.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        $exe = Get-ChildItem -LiteralPath $folder -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -eq '.exe' } | Select-Object -First 1
         if ($exe) { $png = ConvertTo-WebPngIcon $exe.FullName -FromExe; if ($png) { return @{ ok = $true; icon = @{ type = 'image/png'; value = $png }; from = "the installer $($exe.Name)" } } }
     }
     $site = [string]$(if ($a.metadata) { $a.metadata.informationUrl })
@@ -288,7 +288,7 @@ function Global:Get-WebAttention {
     # A page hit a permission the app registration doesn't have (Invoke-WebGraph notes it; it goes once a call works).
     if ($Global:App.MissingPermissions -and $Global:App.MissingPermissions.Count) {
         $miss = @($Global:App.MissingPermissions.Keys | Sort-Object)
-        & $add 'warn' "Missing API permission$(if ($miss.Count -gt 1) { 's' }): $($miss -join ', ')" "Microsoft Graph refused a request for lack of it (last at $(@($Global:App.MissingPermissions.Values | Sort-Object)[-1])). Add it to the app registration (Settings > API permissions > Add required permissions...) and grant admin consent - Diagnostics > Check permissions lists every one." 'settings:connection'
+        & $add 'warn' "Missing API permission$(if ($miss.Count -gt 1) { 's' }): $($miss -join ', ')" "Microsoft Graph refused a request for lack of it (last at $(@($Global:App.MissingPermissions.Values | Sort-Object)[-1])). Add it to the app registration (Settings > Connection, In Entra ID: Add required permissions..., on the server the Entra setup script) and grant admin consent - Diagnostics > Check permissions lists every one." 'settings:connection'
     }
     # Winget apps whose Intune details are still empty (publisher, description, information link): Fill in details does it.
     # Not those whose remaining gaps winget was asked about already and doesn't have (same Winget ID).

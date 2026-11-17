@@ -328,8 +328,9 @@ function Global:Get-WebInstallerInfo {
         $look = Join-Path $folder 'Files'
         if (-not (Test-Path -LiteralPath $look -PathType Container)) { return $info }
     }
-    $msi = Get-ChildItem -LiteralPath $look -Filter '*.msi' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    $exe = Get-ChildItem -LiteralPath $look -Filter '*.exe' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin 'Invoke-AppDeployToolkit.exe', 'Deploy-Application.exe' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    # By extension, any case: on Linux (the server) -Filter '*.msi' would miss Setup.MSI.
+    $msi = Get-ChildItem -LiteralPath $look -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -eq '.msi' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $exe = Get-ChildItem -LiteralPath $look -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -eq '.exe' } | Where-Object { $_.Name -notin 'Invoke-AppDeployToolkit.exe', 'Deploy-Application.exe' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     # Reading an installer (Windows Installer, file versions) is slow and Home, Updates and the Apps list ask
     # often: kept while the same file (name, time, size) is the newest.
     $pick = if ($msi) { $msi } else { $exe }

@@ -229,7 +229,8 @@ try {
 
         await page.click(`#gridBody tr[data-name="${testApp}"]`);
         await page.waitForSelector('#appPanel:not([hidden]) .pfacts');
-        check(/Ready to send|Draft/.test(await page.textContent(`#gridBody tr[data-name="${testApp}"]`)) && (await page.isVisible('#btnNext') || await page.isEnabled('#btnDeploy')), `${label}: a new app shows its stage and the next step (in the row and on the toolbar)`, await page.textContent(`#gridBody tr[data-name="${testApp}"]`));
+        // Without groups (the chip above was taken off again) its stage says so: "Ready - no groups", with Groups... next.
+        check(/Ready to send|Ready - no groups|Draft/.test(await page.textContent(`#gridBody tr[data-name="${testApp}"]`)) && (await page.isVisible('#btnNext') || await page.isEnabled('#btnDeploy')), `${label}: a new app shows its stage and the next step (in the row and on the toolbar)`, await page.textContent(`#gridBody tr[data-name="${testApp}"]`));
         await noOverflow('Apps with the side panel'); await unnamed('Apps with the side panel'); await a11y('Apps with the side panel');
         await page.click('#btnMore');
         const relTip = await page.getAttribute('[data-act="release"]', 'title');
