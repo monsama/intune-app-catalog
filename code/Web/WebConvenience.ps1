@@ -338,7 +338,7 @@ function Global:Get-WebAttention {
     if ($managedWinget.Count -and -not (Test-Path -LiteralPath (Get-SharedPackagePath))) { & $add 'warn' 'Shared Winget package missing' 'Build init.intunewin - Winget apps can''t be deployed without it.' 'settings:packaging' }
     $runs = Get-WebUpdateRuns
     $last = @($runs.runs) | Select-Object -First 1
-    if ($last -and $last.failed) { & $add 'err' "The last nightly run had $($last.failed) problem(s)" ((@($last.items | Where-Object { $_.outcome -eq 'failed' } | Select-Object -First 3 | ForEach-Object { "$($_.app): $($_.text)" }) -join ' / ')) 'settings:automation' }
+    if ($last -and $last.failed) { & $add 'err' "The last nightly run had $($last.failed) problem(s)" ((@($last.items | Where-Object { $_.outcome -eq 'failed' } | Select-Object -First 3 | ForEach-Object { if ($_.app -eq '(all)') { [string]$_.text } else { "$($_.app): $($_.text)" } }) -join ' / ')) 'settings:automation' }
     $drift = @($last.items | Where-Object { $_.outcome -eq 'drift' })
     if ($drift.Count) { & $add 'warn' "$($drift.Count) app(s) differ from Intune" ((@($drift | Select-Object -First 5 | ForEach-Object { $_.app }) -join ', ') + ' (last night) - Checks has the details.') 'checks' }
     $sch = Get-WebUpdateSchedule

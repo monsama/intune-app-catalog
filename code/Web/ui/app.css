@@ -555,13 +555,13 @@ h3.withtool select { margin-left: auto; font-weight: 400; }
 .sbsteps { list-style: none; padding: 0; display: grid; gap: 6px; font-size: 13px; }
 #sbLog { max-height: 220px; overflow: auto; font-size: 12px; }
 /* ---- home ---- */
-#homeStats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 4px 0 16px; max-width: 1180px; }
+#homeStats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 4px 0 16px; }
 #homeStats .stat { position: relative; background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--shadow); overflow: hidden; }
 #homeStats .stat::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--accent); }
 #homeStats .stat.ok::before { background: var(--ok); } #homeStats .stat.warn::before { background: var(--warn); }
 #homeStats .stat .n { font-size: 26px; font-weight: 650; line-height: 1.1; letter-spacing: -0.01em; } #homeStats .stat .l { font-size: 12px; color: var(--muted); }
 #homeStats .stat.ok .n { color: var(--ok); } #homeStats .stat.warn .n { color: var(--warn); }
-.homegrid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; max-width: 1180px; }
+.homegrid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
 .homeside { display: grid; gap: 16px; min-width: 0; }
 .hcard { background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); box-shadow: var(--shadow); padding: 0; margin: 0; max-width: none; min-width: 0; overflow: hidden; }
 .hhead { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--bd); }
@@ -1457,3 +1457,10 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 /* Groups: the filter's note on its own line under the select (it was squeezed next to it), and only when the list doesn't say it already. */
 .gfilter { flex-wrap: wrap; }
 .gfilter .muted { flex: 1 1 100%; white-space: normal; }
+
+/* Connection: the Entra ID actions under the certificate, inside the form */
+.entrarow { margin: 4px 0 14px; padding: 10px 12px; border: 1px solid var(--bd2); border-radius: var(--r-m); background: var(--surface2, var(--bg)); }
+.entrarow .entralabel { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+.entrarow .actions { margin: 0; }
+.entrarow .hint { margin-top: 8px; }
+.entrarow .entracerts:empty { display: none; }
