@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.28.5
+
+- **Dependabot as in our other apps:** weekly instead of monthly, and now
+  also for the Docker base image (`mcr.microsoft.com/powershell`) - a new
+  version arrives as a pull request. Still bumped by hand:
+  Microsoft.Graph.Authentication in the Dockerfile (PowerShell Gallery) and
+  Playwright / axe-core in the UI test.
+
 ## 2.28.4
 
 - **Settings > Connection in one form.** The certificate is handled where its
