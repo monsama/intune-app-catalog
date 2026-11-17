@@ -2183,12 +2183,40 @@ function Global:Set-AppRecordFieldJson {
     return $true
 }
 
+function Global:Format-DetectionRuleText {
+    <#
+      Pure: a catalog detection rule as one line, as the editor says it - for the history and the comparisons
+      (they showed its JSON). "MSI product code {...}, version 26.06 or newer", "File C:\...\7zFM.exe exists", ...
+    #>
+    param($Rule)
+    if (-not $Rule -or -not $Rule.Type) { return '' }
+    $op = { param($o) switch ([string]$o) { 'greaterThanOrEqual' { 'or newer' } 'greaterThan' { 'newer than' } 'equal' { 'exactly' } 'lessThan' { 'older than' } 'lessThanOrEqual' { 'or older' } 'notEqual' { 'not' } default { [string]$o } } }
+    $ver = { param($o, $v) if (-not $v) { '' } elseif ([string]$o -in 'greaterThanOrEqual', 'lessThanOrEqual') { "$v $(& $op $o)" } else { "$(& $op $o) $v" } }
+    $where = { param($a, $b) (@([string]$a, [string]$b) | Where-Object { $_ }) -join '\' }
+    switch ([string]$Rule.Type) {
+        'Msi' { $v = & $ver $Rule.Msi_VersionOperator $Rule.Msi_Version; return "MSI product code $($Rule.Msi_ProductCode)$(if ($v) { ", version $v" })" }
+        'File' {
+            $what = & $where $Rule.File_Path $Rule.File_Name
+            $how = switch ([string]$Rule.File_DetectionType) { 'version' { "version $(& $ver $Rule.File_Operator $Rule.File_DetectionValue)" } 'exists' { 'exists' } 'doesNotExist' { "doesn't exist" } '' { 'exists' } default { "$($Rule.File_DetectionType) $(& $ver $Rule.File_Operator $Rule.File_DetectionValue)".Trim() } }
+            return "File $what, $how$(if ($Rule.File_Check32Bit) { ' (32-bit)' })"
+        }
+        'Registry' {
+            $what = (@([string]$Rule.Reg_KeyPath, [string]$Rule.Reg_ValueName) | Where-Object { $_ }) -join ' : '
+            $how = switch ([string]$Rule.Reg_DetectionType) { 'exists' { 'exists' } 'doesNotExist' { "doesn't exist" } '' { 'exists' } default { "$($Rule.Reg_DetectionType) $(& $ver $Rule.Reg_Operator $Rule.Reg_DetectionValue)".Trim() } }
+            return "Registry $what, $how$(if ($Rule.Reg_Check32Bit) { ' (32-bit)' })"
+        }
+        'Script' { $lines = @(([string]$Rule.Script_Content) -split "`r?`n" | Where-Object { $_.Trim() }).Count; return "Script ($lines line$(if ($lines -ne 1) { 's' }))" }
+        default { return [string]$Rule.Type }
+    }
+}
+
 function Global:Format-AppHistoryValue {
     # Pure: a history value (compact JSON) as short text - a list as "a, b", text as itself, '' for not set.
     param([string]$Json, [int]$Max = 300)
     $t = ([string]$Json).Trim()
     $text = if ($t -in 'null', '""', '[]', '') { '' }  # '' - Windows PowerShell's JSON for $null
         elseif ($t.StartsWith('"')) { [regex]::Unescape($t.Substring(1, $t.Length - 2)) }
+        elseif ($t.StartsWith('{') -and $t -match '"Type"\s*:') { $d = try { ConvertFrom-Json -InputObject $t } catch { $null }; $(if ($d) { Format-DetectionRuleText $d } else { $t }) }
         elseif ($t.StartsWith('[')) {
             $items = @(try { $parsed = ConvertFrom-Json -InputObject $t; $parsed | ForEach-Object { $_ } } catch { })
             if ($items.Count -and -not @($items | Where-Object { $_ -isnot [string] }).Count) { $items -join ', ' } else { $t }

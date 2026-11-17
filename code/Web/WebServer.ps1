@@ -113,6 +113,20 @@ function Global:Send-WebResponse {
     $ns.Flush()
 }
 
+function Global:ConvertTo-WebIsoTime {
+    <#
+      A time the server keeps as its local "yyyy-MM-dd HH:mm[:ss]" (run reports, backup names) as ISO 8601 with
+      the server's offset - so the page shows it in the viewer's own time, the same way as the times that were
+      ISO already (a browser elsewhere read "18:01" as its own 18:01). Anything else comes back as it was.
+    #>
+    param([string]$Local)
+    $d = [datetime]::MinValue
+    if ([datetime]::TryParseExact(([string]$Local).Trim(), [string[]]@('yyyy-MM-dd HH:mm', 'yyyy-MM-dd HH:mm:ss'), [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeLocal, [ref]$d)) {
+        return ([DateTimeOffset]$d).ToString('o')
+    }
+    return [string]$Local
+}
+
 function Global:Send-WebJson {
     param($Client, $Object)
     $json = if ($Object -is [string]) { $Object } else { $Object | ConvertTo-Json -Depth 12 -Compress }

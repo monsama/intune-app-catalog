@@ -346,7 +346,7 @@ function Global:Get-WebAppVersionCompare {
     $now = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
     # Backups are newest first: the copy kept by the next save is at $i - 1.
     $after = if ($i -gt 0) { try { & $read $ids[$i - 1] } catch { $null } } else { $now }
-    return @{ ok = $true; when = $list.backups[$i].when; versusNow = @(Compare-WebAppVersions $old $now); thatSave = @(Compare-WebAppVersions $old $after) }
+    return @{ ok = $true; when = $list.backups[$i].when; at = $list.backups[$i].at; versusNow = @(Compare-WebAppVersions $old $now); thatSave = @(Compare-WebAppVersions $old $after) }
 }
 
 function Global:Get-WebInventorySuggestions {

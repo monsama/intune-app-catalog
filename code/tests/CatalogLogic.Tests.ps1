@@ -229,6 +229,7 @@ $testableFunctionNames = @(
     "Test-AppRecordFieldRevertable",
     "Set-AppRecordFieldJson",
     "Format-AppHistoryValue",
+    "Format-DetectionRuleText",
     "Get-RetireGroups",
     "Get-RetireProgress",
     "ConvertTo-JsonStringArray",
@@ -900,6 +901,11 @@ $hf = @($hc | ForEach-Object { $_.field })
 Assert-True ($hc.Count -eq 3 -and $hf -contains 'requiredFor' -and $hf -contains 'metadata.description' -and $hf -contains 'icon' -and $hf -notcontains 'excludeFor' -and $hf -notcontains 'metadata.notes') "Get-AppRecordChanges: what changed, field by field - empty list, null and empty text are all 'not set'"
 $hDesc = @($hc | Where-Object { $_.field -eq 'metadata.description' })[0]
 Assert-True ((Format-AppHistoryValue $hDesc.after) -eq "New `"quoted`" O'Neil" -and (Format-AppHistoryValue '["SG-A","SG-B"]') -eq 'SG-A, SG-B' -and (Format-AppHistoryValue '[]') -eq '' -and (Format-AppHistoryValue '{"a":1}') -eq '{"a":1}') "Format-AppHistoryValue: text as itself, a list as 'a, b', objects as JSON"
+# A detection rule in the history reads as the editor says it, not as its JSON (2.28.7).
+Assert-True ((Format-AppHistoryValue '{"Type":"Msi","Msi_ProductCode":"{23170F69-40C1-2701-2606-000001000000}","Msi_VersionOperator":"greaterThanOrEqual","Msi_Version":"26.06"}') -eq 'MSI product code {23170F69-40C1-2701-2606-000001000000}, version 26.06 or newer') "History: an MSI detection rule as text"
+Assert-True ((Format-AppHistoryValue '{"Type":"File","File_Path":"C:\\App","File_Name":"a.exe","File_DetectionType":"exists"}') -eq 'File C:\App\a.exe, exists') "History: a file detection rule as text"
+Assert-True ((Format-DetectionRuleText ([pscustomobject]@{ Type = 'Script'; Script_Content = "a`nb" })) -eq 'Script (2 lines)') "History: a script detection rule by its length"
+Assert-True ((Format-DetectionRuleText $null) -eq '') "History: no detection rule is empty"
 $hRec = [pscustomobject]@{ appName = 'App'; requiredFor = @('SG-A', 'SG-B'); metadata = [pscustomobject]@{ description = 'x' } }
 $okReq = Set-AppRecordFieldJson -Record $hRec -Field 'requiredFor' -Json '["SG-A"]'
 $okDesc = Set-AppRecordFieldJson -Record $hRec -Field 'metadata.description' -Json $hDesc.after
