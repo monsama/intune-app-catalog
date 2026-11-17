@@ -14,6 +14,8 @@
   script for the certificate and the permissions in Entra ID (it clicked
   the desktop's Upload and Add permissions before).
 - **Home uses the whole width** of the window (it stopped at 1180 px).
+- **Prerequisites isn't shown on the server**: the image brings the Graph
+  module, there is nothing to check or install.
 - Home: a nightly run's problem that isn't about one app no longer starts
   with "(all):".
 
