@@ -154,6 +154,24 @@ function Global:Format-GraphRoleReport {
     return $lines.ToArray()
 }
 
+function Global:New-AppClientAssertion {
+    <#
+      The app registration's proof of who it is, signed with its certificate (RS256, the certificate's
+      thumbprint as x5t) - for a token request to -Audience (the tenant's token endpoint). Valid 10 minutes.
+      Used for the app-only Graph token and for the server version's sign-in with Microsoft.
+    #>
+    param([Parameter(Mandatory)]$Certificate, [string]$ClientId, [string]$Audience)
+    $toBase64Url = { param([byte[]]$Bytes) [Convert]::ToBase64String($Bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_') }
+    $now = [DateTimeOffset]::UtcNow
+    $header = @{ alg = 'RS256'; typ = 'JWT'; x5t = (& $toBase64Url $Certificate.GetCertHash()) } | ConvertTo-Json -Compress
+    $payload = @{ aud = $Audience; iss = $ClientId; sub = $ClientId; jti = [guid]::NewGuid().ToString(); nbf = $now.ToUnixTimeSeconds(); exp = $now.AddMinutes(10).ToUnixTimeSeconds() } | ConvertTo-Json -Compress
+    $signingInput = "$(& $toBase64Url ([Text.Encoding]::UTF8.GetBytes($header))).$(& $toBase64Url ([Text.Encoding]::UTF8.GetBytes($payload)))"
+    $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($Certificate)
+    if (-not $rsa) { throw "Could not use that certificate's private key for signing." }
+    $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signingInput), [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+    return "$signingInput.$(& $toBase64Url $signature)"
+}
+
 function Global:Get-GraphAppTokenClaims {
     <#
       A brand-new app-only token from Entra ID, as its claims - nothing
@@ -171,33 +189,14 @@ function Global:Get-GraphAppTokenClaims {
     if (-not $certificate) { throw "No certificate with thumbprint $Thumbprint in CurrentUser\My or LocalMachine\My." }
     if (-not $certificate.HasPrivateKey) { throw "That certificate has no private key on this machine, so it can't sign in." }
 
-    $toBase64Url = {
-        param([byte[]]$Bytes)
-        [Convert]::ToBase64String($Bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
-    }
     $tokenUri = "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token"
-    $now = [DateTimeOffset]::UtcNow
-    $header = @{ alg = 'RS256'; typ = 'JWT'; x5t = (& $toBase64Url $certificate.GetCertHash()) } | ConvertTo-Json -Compress
-    $payload = @{
-        aud = $tokenUri
-        iss = $ClientId
-        sub = $ClientId
-        jti = [guid]::NewGuid().ToString()
-        nbf = $now.ToUnixTimeSeconds()
-        exp = $now.AddMinutes(10).ToUnixTimeSeconds()
-    } | ConvertTo-Json -Compress
-    $signingInput = "$(& $toBase64Url ([Text.Encoding]::UTF8.GetBytes($header))).$(& $toBase64Url ([Text.Encoding]::UTF8.GetBytes($payload)))"
-    $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($certificate)
-    if (-not $rsa) { throw "Could not use that certificate's private key for signing." }
-    $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signingInput),
-        [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-        [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+    $assertion = New-AppClientAssertion -Certificate $certificate -ClientId $ClientId -Audience $tokenUri
 
     $response = Invoke-RestMethod -Uri $tokenUri -Method POST -ContentType 'application/x-www-form-urlencoded' -Body @{
         client_id             = $ClientId
         scope                 = 'https://graph.microsoft.com/.default'
         client_assertion_type = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
-        client_assertion      = "$signingInput.$(& $toBase64Url $signature)"
+        client_assertion      = $assertion
         grant_type            = 'client_credentials'
     }
     $claims = ConvertFrom-JwtPayload $response.access_token

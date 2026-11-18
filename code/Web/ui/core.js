@@ -85,6 +85,7 @@ function goSignIn(why) {
     b.className = 'btn ghost iconbtn'; b.id = 'btnSignOut'; b.title = 'Sign out'; b.setAttribute('aria-label', 'Sign out');
     b.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
     b.addEventListener('click', async () => { await api('/api/logout'); goSignIn('signedout'); });
+    api('/api/signin-settings').then(r => { if (r && r.ok && r.signedInAs) b.title = `Sign out ${r.signedInAs}${r.upn ? ` (${r.upn})` : ''}`; });
     const bar = document.getElementById('pageBtns'); if (bar) bar.append(b);
     // Words for the server: "this machine" is the server here (data-server-text/-title/-placeholder/-empty).
     for (const [attr, set] of [['serverText', (n, v) => { n.textContent = v; }], ['serverTitle', (n, v) => { n.title = v; }], ['serverPlaceholder', (n, v) => { n.placeholder = v; }], ['serverEmpty', (n, v) => { n.dataset.empty = v; }]])
@@ -267,6 +268,7 @@ function showSettings(sec) {
   for (const b of document.querySelectorAll('.subtab[data-sec]')) { const on = b.dataset.sec === settingsSec; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; }
   for (const p of document.querySelectorAll('.setsec')) p.hidden = p.dataset.sec !== settingsSec;
   if (settingsSec === 'automation' && typeof loadUpdateRuns === 'function') loadUpdateRuns();
+  if (settingsSec === 'connection' && typeof loadSignIn === 'function') loadSignIn();
   try { localStorage.setItem('settingsSec', settingsSec); } catch (e) { }
 }
 // Switches to the Settings tab without going through showView again.

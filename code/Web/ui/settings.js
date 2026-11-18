@@ -548,3 +548,27 @@ $('btnPermCheck').addEventListener('click', async () => {
     $('permWrap').hidden = false;
   } finally { b.disabled = false; }
 });
+
+// ---------------------------------------------------------------- sign-in (the server version): Sign in with Microsoft
+async function loadSignIn() {
+  if (!SERVER) return;
+  const r = await api('/api/signin-settings');
+  if (!r.ok) return;
+  $('siEntra').checked = !!r.entra; $('siGroup').value = r.groupName || r.groupId || ''; $('siPassword').checked = r.allowPassword !== false;
+  $('siRedirect').value = r.redirectUri || '';
+  $('siNow').textContent = r.signedInAs ? `Signed in now: ${r.signedInAs}${r.upn ? ` (${r.upn})` : ''}, ${r.signedInWith === 'entra' ? 'with Microsoft' : 'with the admin password'}.` + (r.forcedPassword ? ' ICA_PASSWORD_SIGNIN is set on the server: the admin password works whatever is chosen here.' : '') : '';
+  siShow();
+}
+function siShow() { const on = $('siEntra').checked; $('siGroup').disabled = !on; $('siPassword').disabled = !on; if (!on) $('siPassword').checked = true; }
+$('siEntra').addEventListener('change', siShow);
+$('btnSiCopy').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('siRedirect').value); toast('Copied.'); } catch (e) { $('siRedirect').select(); } });
+$('btnSiSave').addEventListener('click', async () => {
+  $('siError').hidden = true;
+  if ($('siEntra').checked && !$('siPassword').checked && !(await ask('Turn the admin password off?\n\nThen only members of the group get in, with Microsoft. If Entra ID or this setting ever fails, the way back in is ICA_PASSWORD_SIGNIN=1 in the server\'s .env (then docker compose up -d app).', { ok: 'Turn it off', danger: true }))) return;
+  const b = $('btnSiSave'); b.disabled = true;
+  const r = await api('/api/signin-save', { entra: $('siEntra').checked, group: $('siGroup').value.trim(), allowPassword: $('siPassword').checked });
+  b.disabled = false;
+  if (!r.ok) { $('siError').textContent = r.error; $('siError').hidden = false; return; }
+  toast(r.entra ? `Sign in with Microsoft is on for the members of ${r.groupName}.` : 'Only the admin password signs in.');
+  loadSignIn();
+});

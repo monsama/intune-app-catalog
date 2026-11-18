@@ -46,6 +46,13 @@ function Global:Initialize-WebServerMode {
             Session = $null
             Ended = (New-Object System.Collections.ArrayList)
             Fails = (New-Object System.Collections.ArrayList)
+            # Sign in with Microsoft: sign-ins under way (state -> nonce, PKCE verifier) and finished ones waiting
+            # for their page to pick the session up (one-time handoff code -> token), each for a few minutes.
+            Pending = [hashtable]::Synchronized(@{})
+            Handoffs = [hashtable]::Synchronized(@{})
+            # ICA_PASSWORD_SIGNIN=1: the admin password works whatever Settings says (the way back in when
+            # Sign in with Microsoft was set up wrong).
+            ForcePassword = ([string]$env:ICA_PASSWORD_SIGNIN -match '^(1|true|yes|on)$')
         })
     $password = $null
 }
@@ -154,6 +161,9 @@ function Global:Invoke-WebLogin {
     param($Data, [string]$Agent, [string]$Client = '')
     $s = $Global:App.Server
     $now = [DateTime]::UtcNow
+    # Back from signing in with Microsoft: the page trades its one-time code for the session (WebEntraSignIn.ps1).
+    if ($Data -and $Data.handoff) { return (Complete-WebEntraHandoff ([string]$Data.handoff)) }
+    if (-not (Test-WebPasswordSignInAllowed)) { return @{ ok = $false; error = 'The admin password is turned off - sign in with Microsoft.' } }
     $key = if ($Client) { Get-WebThrottleKey $Client } else { '?' }
     $mine = @{ Key = $key; At = $now; Pending = $true }
     [System.Threading.Monitor]::Enter($s.Fails)
@@ -178,17 +188,38 @@ function Global:Invoke-WebLogin {
         Write-Log "[WARN] A sign-in with a wrong password (from $key)."
         return @{ ok = $false; error = 'Wrong password.' }
     }
+    return (New-WebSession -Agent $Agent -Method 'password' -Name 'Admin (password)')
+}
+
+function Global:New-WebSession {
+    <#
+      The one session: a new token, and the session that was open ends (its browser is told it was taken over).
+      -Method: password or entra; -Name/-Upn/-Oid: who (with Microsoft: the Entra ID account).
+    #>
+    param([string]$Agent, [string]$Method, [string]$Name, [string]$Upn = '', [string]$Oid = '')
+    $s = $Global:App.Server
+    $now = [DateTime]::UtcNow
     $bytes = New-Object byte[] 32; [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
     $token = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+    $cut = { param($t, $n) $t = [string]$t; $t.Substring(0, [Math]::Min($n, $t.Length)) }
     [System.Threading.Monitor]::Enter($s.Ended)
     try {
         $old = $s.Session
-        if ($old) { [void]$s.Ended.Add(@{ Digest = $old.Digest; Reason = 'takenover'; At = $now }); while ($s.Ended.Count -gt 20) { $s.Ended.RemoveAt(0) } }
-        $s.Session = @{ Digest = (Get-WebTokenDigest $token); Token = $token; Created = $now; Last = $now; Agent = ([string]$Agent).Substring(0, [Math]::Min(160, ([string]$Agent).Length)) }
+        if ($old) { [void]$s.Ended.Add(@{ Digest = $old.Digest; Reason = 'takenover'; At = $now; By = $(if ($Method -eq 'entra') { & $cut $Name 120 } else { '' }) }); while ($s.Ended.Count -gt 20) { $s.Ended.RemoveAt(0) } }
+        $s.Session = @{ Digest = (Get-WebTokenDigest $token); Token = $token; Created = $now; Last = $now; Agent = (& $cut $Agent 160)
+            Method = $Method; Name = (& $cut $Name 120); Upn = (& $cut $Upn 120); Oid = $Oid }
     }
     finally { [System.Threading.Monitor]::Exit($s.Ended) }
-    Write-Log "[INFO] Admin signed in$(if ($old) { ' - the session that was open has ended' })."
+    Write-Log "[INFO] Signed in: $(& $cut $Name 120)$(if ($Upn) { " ($(& $cut $Upn 120))" })$(if ($old) { ' - the session that was open has ended' })."
     return @{ ok = $true; token = $token; tookOver = [bool]$old }
+}
+
+function Global:Test-WebPasswordSignInAllowed {
+    # The admin password: on unless Sign in with Microsoft is on and the password turned off - or forced on (ICA_PASSWORD_SIGNIN).
+    $s = $Global:App.Server
+    if ($s -and $s.ForcePassword) { return $true }
+    $si = ConvertTo-SignInSettings $Global:App.SignIn
+    return [bool]$si.AllowPassword
 }
 
 function Global:Test-WebSession {

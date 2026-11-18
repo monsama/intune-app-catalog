@@ -83,9 +83,9 @@ function Global:Read-WebRequest {
                 # the connection comes from that proxy; from anywhere else the header is the sender's own claim.
                 $fwd = if ($headerText -match '(?im)^X-Forwarded-For:[ \t]*([^\r\n]*)') { (($Matches[1] -split ',')[-1]).Trim() } else { '' }
                 $clientAddr = if ($fwd -match '^[0-9A-Fa-f:.]{2,45}$' -and (Test-WebTrustedProxy $peer)) { $fwd } else { $peer }
-                $path = [string]$parts[1]
-                $q = $path.IndexOf('?'); if ($q -ge 0) { $path = $path.Substring(0, $q) }
-                return @{ Method = $parts[0]; Path = $path; Body = $body; Host = $hostHeader; Origin = $originHeader; ContentType = $typeHeader; Agent = $agentHeader; Peer = $peer; ClientAddr = $clientAddr }
+                $path = [string]$parts[1]; $query = ''
+                $q = $path.IndexOf('?'); if ($q -ge 0) { $query = $path.Substring($q + 1); $path = $path.Substring(0, $q) }
+                return @{ Method = $parts[0]; Path = $path; Body = $body; Host = $hostHeader; Origin = $originHeader; ContentType = $typeHeader; Agent = $agentHeader; Peer = $peer; ClientAddr = $clientAddr; Query = $query }
             }
         }
     }
@@ -125,6 +125,15 @@ function Global:ConvertTo-WebIsoTime {
         return ([DateTimeOffset]$d).ToString('o')
     }
     return [string]$Local
+}
+
+function Global:Send-WebRedirect {
+    # 302 to a path of this server (or the Entra ID sign-in). No referrer: the callback's address holds a code.
+    param($Client, [string]$Location)
+    if ($Location -match '[\r\n]') { $Location = '/login.html' }
+    $head = "HTTP/1.1 302 Found`r`nLocation: $Location`r`nContent-Length: 0`r`nCache-Control: no-store`r`nReferrer-Policy: no-referrer`r`nX-Content-Type-Options: nosniff`r`nConnection: close`r`n`r`n"
+    $bytes = [Text.Encoding]::ASCII.GetBytes($head)
+    $ns = $Client.GetStream(); $ns.Write($bytes, 0, $bytes.Length); $ns.Flush()
 }
 
 function Global:Send-WebJson {

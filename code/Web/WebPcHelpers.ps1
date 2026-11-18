@@ -104,6 +104,8 @@ function Global:Get-WebEntraScript {
     }
     $perms = @($Data.permissions | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^[A-Za-z]+(\.[A-Za-z]+)+$' } | Select-Object -Unique)
     if ($perms.Count) { $steps.Add([ordered]@{ Mode = 'AddPermissions'; TenantId = $tenant; ClientId = $client; Permissions = $perms }) }
+    # The server version: the address Sign in with Microsoft comes back to, on the same app registration.
+    if ((Test-WebServerMode) -and $steps.Count) { $steps.Add([ordered]@{ Mode = 'AddRedirectUri'; TenantId = $tenant; ClientId = $client; RedirectUri = (Get-WebEntraRedirectUri) }) }
     if (-not $steps.Count) { return @{ ok = $false; error = 'Choose a certificate or at least one permission.' } }
     $step = $Global:App.EmbeddedCertUploadScript
     if ($step -match "(?m)^'@") { return @{ ok = $false; error = 'The Entra step could not be put into a script.' } }

@@ -195,7 +195,7 @@ try {
     $clientGuid = [guid]::Empty
     if (-not [guid]::TryParse([string]$Config.ClientId, [ref]$clientGuid)) { throw "The Client ID '$($Config.ClientId)' isn't a GUID - check it in Settings." }
     $encodedFilter = [Uri]::EscapeDataString("appId eq '$clientGuid'")
-    $appLookup = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/applications?`$filter=$encodedFilter&`$select=id,displayName,keyCredentials,requiredResourceAccess" -Method GET -StepDescription "Look up app registration"
+    $appLookup = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/applications?`$filter=$encodedFilter&`$select=id,displayName,keyCredentials,requiredResourceAccess,web" -Method GET -StepDescription "Look up app registration"
     if (-not $appLookup.value -or $appLookup.value.Count -eq 0) {
         throw "No app registration found with Application (client) ID '$($Config.ClientId)' in this tenant. Double check the Client ID in Settings, and that you signed into the right tenant just now."
     }
@@ -235,6 +235,27 @@ try {
         }
         Write-Step "Done"
         Write-Result -Success $true -ErrorMessage "" -Certificates $certList.ToArray()
+        exit 0
+    }
+
+    if ($Config.Mode -eq "AddRedirectUri") {
+        # The server version's "Sign in with Microsoft": Entra ID sends the browser back only to an address the
+        # app registration lists (Web platform). Added to what is there - nothing is removed.
+        $uri = [string]$Config.RedirectUri
+        if ($uri -notmatch '^https://[A-Za-z0-9.-]+(:\d+)?/auth/callback$') { throw "'$uri' isn't the server version's sign-in address (https://<name>/auth/callback)." }
+        $web = $appLookup.value[0].web
+        $have = @(@($web.redirectUris) | Where-Object { $_ })
+        if ($have -contains $uri) {
+            Write-Host "[OK] $uri is already a redirect URI of the app registration." -ForegroundColor Green
+            Write-Result -Success $true -ErrorMessage ""
+            exit 0
+        }
+        Write-Step "Adding the redirect URI $uri (Authentication > Web)"
+        $patchBody = @{ web = @{ redirectUris = @($have + $uri) } } | ConvertTo-Json -Depth 5
+        Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/applications/$objectId" -Method PATCH -Body $patchBody -ContentType "application/json" -StepDescription "Add the redirect URI"
+        Write-Step "Done"
+        Write-Host "[OK] Added - 'Sign in with Microsoft' can send people back to the server now." -ForegroundColor Green
+        Write-Result -Success $true -ErrorMessage ""
         exit 0
     }
 

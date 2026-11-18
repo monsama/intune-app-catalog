@@ -25,6 +25,8 @@ B="http://127.0.0.1:$PORT"
 post() { curl -s --noproxy '*' -H 'Host: apps.example.test' -H 'Content-Type: application/json' -X POST -d "$2" "$B$1"; }
 field() { python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('$1',''))"; }
 [ "$(post /api/hello '{}' | field server)" = "True" ] || fail "hello: not the server version"; ok "server mode"
+[ "$(post /api/hello '{}' | python3 -c "import sys,json; s=json.load(sys.stdin)['signIn']; print(s['password'], s['entra'])")" = "True False" ] || fail "hello: the sign-in ways"; ok "sign-in: the password, not Microsoft (not set up)"
+code="$(curl -s --noproxy '*' -o /dev/null -w '%{http_code} %{redirect_url}' -H 'Host: apps.example.test' "$B/auth/login")"; [ "$code" = "302 http://127.0.0.1:$PORT/login.html?why=entra-off" ] || fail "/auth/login ($code)"; ok "Sign in with Microsoft off: /auth/login says so"
 post /api/login '{"password":"wrong one"}' | grep -q 'Wrong password' || fail "a wrong password was not refused"; ok "wrong password refused"
 T1="$(post /api/login "{\"password\":\"$PW\"}" | field token)"; [ -n "$T1" ] || fail "sign-in"; ok "signed in"
 [ "$(post /api/ping "{\"token\":\"$T1\"}" | field ok)" = "True" ] || fail "session not open"

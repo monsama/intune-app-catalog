@@ -486,7 +486,7 @@ function Global:Add-WebHistoryEntry {
         if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
         $src = if ($Source) { $Source } elseif ($Global:WebChangeSource) { [string]$Global:WebChangeSource } else { 'This app' }
         # Who made it - with several admins on one catalog, Recent changes says whose change it was.
-        $entry = [ordered]@{ id = [guid]::NewGuid().ToString('N'); at = (Get-Date).ToUniversalTime().ToString('o'); app = $App; kind = $Kind; source = $src; by = [string]$env:USERNAME; text = $Text; changes = @($Changes) }
+        $entry = [ordered]@{ id = [guid]::NewGuid().ToString('N'); at = (Get-Date).ToUniversalTime().ToString('o'); app = $App; kind = $Kind; source = $src; by = $(if ($Global:App.Server -and $Global:App.Server.Session -and $Global:App.Server.Session.Name) { [string]$Global:App.Server.Session.Name } else { [string]$env:USERNAME }); text = $Text; changes = @($Changes) }
         $line = (ConvertTo-Json -InputObject $entry -Compress -Depth 6) + "`n"
         [System.IO.File]::AppendAllText((Join-Path $dir ((Get-Date).ToString('yyyy-MM') + '.jsonl')), $line, (New-Object System.Text.UTF8Encoding($false)))
     }

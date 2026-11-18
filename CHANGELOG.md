@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.29.0
+
+- **Sign in with Microsoft (the server version).** People sign in with their
+  own Entra ID account instead of the shared admin password: Entra ID asks
+  for the password and the second factor, so your MFA and Conditional
+  Access rules apply. Only members of one Entra ID group get in (checked at
+  each sign-in, nested groups included). The history says who changed
+  what; the sign-out button says who is signed in.
+  - Set up in **Settings > Connection > Sign-in**: the group, on/off, and
+    whether the admin password still works. The password can only be
+    turned off from a session signed in with Microsoft - the new way in is
+    proven first. `ICA_PASSWORD_SIGNIN=1` in `.env` is the way back in.
+  - Uses the connection's app registration and certificate (no client
+    secret). The **Entra setup script** adds the redirect URI
+    `https://<name>/auth/callback` to it.
+  - OpenID Connect code flow with PKCE; the ID token is checked (app,
+    tenant, issuer, nonce, times); the browser picks the session up with a
+    one-time code that never reaches a server. Tested end to end against a
+    stand-in for Entra ID (PKCE, the certificate's signature, wrong app,
+    wrong nonce, cancelled, not in the group, codes used twice).
+  - The sign-in page shows **Sign in with Microsoft** and/or the password,
+    and says plainly why a sign-in didn't work.
+
 ## 2.28.7
 
 - **Product code: detection and uninstall checked against each other.** An

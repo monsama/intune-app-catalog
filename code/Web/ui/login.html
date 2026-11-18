@@ -13,9 +13,13 @@
     <div class="loginbrand"><img src="icon.svg" alt="" width="28" height="28"><span>Intune App Catalog</span><span class="ver" id="loginVer"></span></div>
     <h1>Sign in</h1>
     <p class="loginwhy" id="loginWhy" role="status" hidden></p>
-    <label>Admin password<input type="password" id="loginPassword" autocomplete="current-password" required autofocus spellcheck="false"></label>
-    <p class="formerror" id="loginError" role="alert" hidden></p>
-    <button class="btn primary" type="submit" id="loginGo">Sign in</button>
+    <a class="btn primary msbtn" id="loginMs" href="/auth/login" hidden><svg viewBox="0 0 21 21" width="16" height="16" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>Sign in with Microsoft</a>
+    <p class="loginor" id="loginOr" hidden><span>or with the admin password</span></p>
+    <div id="loginPw">
+      <label>Admin password<input type="password" id="loginPassword" autocomplete="current-password" required spellcheck="false"></label>
+      <p class="formerror" id="loginError" role="alert" hidden></p>
+      <button class="btn primary" type="submit" id="loginGo">Sign in</button>
+    </div>
     <p class="loginnote">Only one session at a time: signing in here ends a session that is open in another browser.</p>
   </form>
 </main>

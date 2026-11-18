@@ -57,6 +57,7 @@ $Script:RequiredPrivateFiles = @(
     "code\Private\Settings.ps1"
     "code\Private\Winget.ps1"
     "code\Private\WingetIndex.ps1"
+    "code\Private\EntraSignIn.ps1"
 )
 
 # Files Windows marked as downloaded from the internet (the zip wasn't
