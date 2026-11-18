@@ -230,6 +230,9 @@ $testableFunctionNames = @(
     "Set-AppRecordFieldJson",
     "Format-AppHistoryValue",
     "Format-DetectionRuleText",
+    "ConvertTo-SignInSettings",
+    "Get-EntraAuthorizeUrl",
+    "Test-EntraIdTokenClaims",
     "Get-RetireGroups",
     "Get-RetireProgress",
     "ConvertTo-JsonStringArray",
@@ -901,6 +904,28 @@ $hf = @($hc | ForEach-Object { $_.field })
 Assert-True ($hc.Count -eq 3 -and $hf -contains 'requiredFor' -and $hf -contains 'metadata.description' -and $hf -contains 'icon' -and $hf -notcontains 'excludeFor' -and $hf -notcontains 'metadata.notes') "Get-AppRecordChanges: what changed, field by field - empty list, null and empty text are all 'not set'"
 $hDesc = @($hc | Where-Object { $_.field -eq 'metadata.description' })[0]
 Assert-True ((Format-AppHistoryValue $hDesc.after) -eq "New `"quoted`" O'Neil" -and (Format-AppHistoryValue '["SG-A","SG-B"]') -eq 'SG-A, SG-B' -and (Format-AppHistoryValue '[]') -eq '' -and (Format-AppHistoryValue '{"a":1}') -eq '{"a":1}') "Format-AppHistoryValue: text as itself, a list as 'a, b', objects as JSON"
+# Sign in with Microsoft (2.29.0): settings, the authorize address, the ID token checks.
+$si = ConvertTo-SignInSettings $null
+Assert-True (-not $si.Entra -and $si.AllowPassword -and -not $si.GroupId) "Sign-in: defaults - password only"
+$si = ConvertTo-SignInSettings ([pscustomobject]@{ Entra = $true; GroupId = 'not-a-guid'; AllowPassword = $false })
+Assert-True (-not $si.Entra -and $si.AllowPassword) "Sign-in: Microsoft without a valid group falls back to the password"
+$si = ConvertTo-SignInSettings ([pscustomobject]@{ Entra = $true; GroupId = '11111111-AAAA-bbbb-cccc-000000000001'; GroupName = 'SG-X'; AllowPassword = $false })
+Assert-True ($si.Entra -and $si.GroupId -eq '11111111-aaaa-bbbb-cccc-000000000001' -and -not $si.AllowPassword) "Sign-in: Microsoft only, group ID normalised"
+$au = Get-EntraAuthorizeUrl -TenantId 'contoso.onmicrosoft.com' -ClientId 'c1' -RedirectUri 'https://ica.example.ch/auth/callback' -State 's1' -Nonce 'n1' -CodeChallenge 'ch'
+Assert-True ($au.StartsWith('https://login.microsoftonline.com/contoso.onmicrosoft.com/oauth2/v2.0/authorize?') -and $au -match 'redirect_uri=https%3A%2F%2Fica\.example\.ch%2Fauth%2Fcallback' -and $au -match 'code_challenge_method=S256' -and $au -match 'scope=openid%20profile' -and $au -match 'response_type=code') "Sign-in: the authorize address (tenant authority, code + PKCE, encoded)"
+$tid = 'aaaaaaaa-0000-0000-0000-00000000000a'; $exp = [DateTimeOffset]::UtcNow.AddMinutes(30).ToUnixTimeSeconds()
+$good = [pscustomobject]@{ aud = 'c1'; tid = $tid; iss = "https://login.microsoftonline.com/$tid/v2.0"; nonce = 'n1'; exp = $exp; oid = '22222222-0000-0000-0000-000000000001' }
+Assert-True ((Test-EntraIdTokenClaims -Claims $good -ClientId 'c1' -TenantId $tid -Nonce 'n1') -eq '') "Sign-in: a good ID token passes"
+Assert-True ((Test-EntraIdTokenClaims -Claims $good -ClientId 'c1' -TenantId 'contoso.onmicrosoft.com' -Nonce 'n1') -eq '') "Sign-in: a tenant set by name isn't compared to tid"
+$bad = { param($k, $v) $c = $good.PSObject.Copy(); $c.$k = $v; Test-EntraIdTokenClaims -Claims $c -ClientId 'c1' -TenantId $tid -Nonce 'n1' }
+Assert-True ((& $bad 'aud' 'other') -match 'another app') "Sign-in: another app's token is refused"
+Assert-True ((& $bad 'nonce' 'n2') -match 'not the answer') "Sign-in: another sign-in's token is refused"
+Assert-True ((& $bad 'iss' 'https://evil.example/x/v2.0') -match 'issuer') "Sign-in: another issuer is refused"
+Assert-True ((& $bad 'tid' 'bbbbbbbb-0000-0000-0000-00000000000b') -match 'another tenant') "Sign-in: another tenant is refused"
+Assert-True ((& $bad 'exp' ([DateTimeOffset]::UtcNow.AddMinutes(-10).ToUnixTimeSeconds())) -match 'expired') "Sign-in: an expired token is refused"
+Assert-True ((& $bad 'oid' '') -match 'no user') "Sign-in: a token without a user is refused"
+Assert-True ((Test-EntraIdTokenClaims -Claims $good -ClientId 'c1' -TenantId $tid -Nonce '') -match 'not the answer') "Sign-in: no nonce on our side, no pass"
+
 # A detection rule in the history reads as the editor says it, not as its JSON (2.28.7).
 Assert-True ((Format-AppHistoryValue '{"Type":"Msi","Msi_ProductCode":"{23170F69-40C1-2701-2606-000001000000}","Msi_VersionOperator":"greaterThanOrEqual","Msi_Version":"26.06"}') -eq 'MSI product code {23170F69-40C1-2701-2606-000001000000}, version 26.06 or newer') "History: an MSI detection rule as text"
 Assert-True ((Format-AppHistoryValue '{"Type":"File","File_Path":"C:\\App","File_Name":"a.exe","File_DetectionType":"exists"}') -eq 'File C:\App\a.exe, exists') "History: a file detection rule as text"

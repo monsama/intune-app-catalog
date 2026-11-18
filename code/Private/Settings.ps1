@@ -24,6 +24,8 @@ function Global:Import-GraphSettings {
         }
         if ($settings.ReleaseRings) { $Global:App.ReleaseRings = @(ConvertTo-ReleaseRings $settings.ReleaseRings) }
         if ($settings.Alerts) { $Global:App.Alerts = ConvertTo-AlertSettings $settings.Alerts }
+        # The server version's sign-in (Sign in with Microsoft, the group, the admin password on/off).
+        $Global:App.SignIn = ConvertTo-SignInSettings $settings.SignIn
         if ($settings.AssignmentProfiles) { $Global:App.AssignmentProfiles = @(ConvertTo-AssignmentProfiles $settings.AssignmentProfiles) }
         if ($settings.PilotGroups) {
             $Global:App.PilotGroups.Clear()
@@ -126,6 +128,7 @@ function Global:Write-SettingsFile {
             ReleasePolicy         = $Global:App.ReleasePolicy
             ReleaseRings          = @($Global:App.ReleaseRings)
             Alerts                = $Global:App.Alerts
+            SignIn                = (ConvertTo-SignInSettings $Global:App.SignIn)
             AssignmentProfiles    = @($Global:App.AssignmentProfiles)
             DefaultAppSettings    = $Global:App.DefaultAppSettings
             CheckDriftOnStartup   = $Global:App.CheckDriftOnStartup

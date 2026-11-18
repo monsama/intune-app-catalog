@@ -55,6 +55,37 @@ when the request comes from that proxy - `ICA_TRUSTED_PROXY` in `.env`, default 
 own (`--no-proxy`), set it to that proxy's container name or address. Before signing in, a request may carry at most
 4 KB and has 3 seconds for it.
 
+### Sign in with Microsoft (Entra ID)
+
+Instead of the shared admin password, people sign in with their own Microsoft account. Entra ID asks for the
+password and the second factor, so your MFA and Conditional Access rules apply. The history then says who changed
+what, and the sign-out button says who is signed in.
+
+1. **Settings > Connection**: the connection has to work first (the sign-in uses the same app registration and
+   proves itself with the same certificate - there is no client secret).
+2. **The redirect URI** `https://<ICA_HOST>/auth/callback` on the app registration: the **Entra setup script...**
+   adds it (with the certificate and the permissions). By hand: the app registration > Authentication > Add a
+   platform > Web > that address.
+3. **Settings > Connection > Sign-in**: tick *Sign in with Microsoft*, name the Entra ID group whose members may
+   sign in (e.g. `SG-Intune-Catalog-Admins`, or its object ID), *Save sign-in*.
+4. Sign out, then **Sign in with Microsoft** - to check that it works.
+5. Optional: untick *The admin password works too*. That is only possible from a session that was signed in with
+   Microsoft, so the new way in is proven before the old one closes.
+
+Who is in the group is checked with Graph (app-only) at each sign-in, nested groups included - the app's
+`Group.Read.All` is enough. Someone outside the group gets a clear "not in the group" on the sign-in page, and the
+log says who tried. Still one session at a time: signing in with Microsoft takes over a session that is open.
+
+**The way back in** when Entra ID can't be reached or the setting is wrong while the password is off: set
+`ICA_PASSWORD_SIGNIN=1` in `.env`, `docker compose up -d app` - the admin password works again, whatever Settings
+says. Remove it afterwards.
+
+How it works: OpenID Connect authorization code with PKCE, `prompt=select_account`, the tenant's own authority (only
+its accounts). The code is redeemed by the server with a client assertion signed by the connection's certificate;
+the ID token comes straight from Entra ID's token endpoint and is checked (app, tenant, issuer, nonce, times). The
+browser gets the session through a one-time code in the address's `#` part (never sent to a server, removed at once,
+valid 2 minutes).
+
 To change the password: write the new one (at least 12 characters) into `secrets/admin_password`, then
 `docker compose restart app`.
 

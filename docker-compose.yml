@@ -27,6 +27,8 @@ services:
       ICA_ALLOW_HTTP: ${ICA_ALLOW_HTTP:-0}
       # The HTTPS proxy in front: only its X-Forwarded-For is believed (wrong passwords are counted per client).
       ICA_TRUSTED_PROXY: ${ICA_TRUSTED_PROXY:-nobs-proxy}
+      # 1: the admin password works whatever Settings > Sign-in says - the way back in (see docs/docker.md).
+      ICA_PASSWORD_SIGNIN: ${ICA_PASSWORD_SIGNIN:-0}
       ICA_IDLE_MINUTES: ${ICA_IDLE_MINUTES:-120}
       ICA_SESSION_HOURS: ${ICA_SESSION_HOURS:-12}
       # The time zone of the nightly run's time and of the logs.

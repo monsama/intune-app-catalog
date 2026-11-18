@@ -39,6 +39,7 @@ try { Add-Type -AssemblyName System.Security -ErrorAction Stop } catch { }
 . (Join-Path $PSScriptRoot 'WebBlocks.ps1')
 . (Join-Path $PSScriptRoot 'WebServerMode.ps1')
 . (Join-Path $PSScriptRoot 'WebPcHelpers.ps1')
+. (Join-Path $PSScriptRoot 'WebEntraSignIn.ps1')
 
 Initialize-AppState -RootPath $RootPath
 $Global:App.WebLog = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
@@ -134,7 +135,7 @@ $handler = {
             $data = $null
             try { if ($req.Body) { $data = $req.Body | ConvertFrom-Json } } catch { }
             # Before signing in: what kind of server this is, and the sign-in itself.
-            if ($req.Path -eq '/api/hello') { Send-WebJson $Client @{ ok = $true; server = [bool]$WebServerMode; version = $App.AppVersion }; return }
+            if ($req.Path -eq '/api/hello') { Send-WebJson $Client @{ ok = $true; server = [bool]$WebServerMode; version = $App.AppVersion; signIn = $(if ($WebServerMode) { Get-WebSignInInfo } else { $null }) }; return }
             if ($WebServerMode) {
                 if ($req.Path -eq '/api/login') { Send-WebJson $Client (Invoke-WebLogin -Data $data -Agent $req.Agent -Client $req.ClientAddr); return }
                 if ($req.Path -eq '/api/logout') { Send-WebJson $Client (Invoke-WebLogout -Token ([string]$data.token)); return }
@@ -150,6 +151,12 @@ $handler = {
             Send-WebJson $Client (Invoke-WebApi -Path $req.Path -Data $data)
             return
         }
+        # Sign in with Microsoft (the server version): off to Entra ID, and back.
+        if ($WebServerMode -and $req.Method -eq 'GET' -and $req.Path -eq '/auth/login') {
+            $start = Start-WebEntraSignIn
+            Send-WebRedirect -Client $Client -Location $(if ($start.ok) { $start.url } else { "/login.html?why=$($start.why)" }); return
+        }
+        if ($WebServerMode -and $req.Method -eq 'GET' -and $req.Path -eq '/auth/callback') { Send-WebRedirect -Client $Client -Location (Complete-WebEntraCallback -Query $req.Query -Agent $req.Agent); return }
         # A file the page prepared (a Sandbox test zip): once, by its random link.
         if ($req.Method -eq 'GET' -and $req.Path -match '^/download/([0-9a-f]{32})$') { Send-WebDownload -Client $Client -Id $Matches[1]; return }
         $file = Get-WebStaticFile -Path $req.Path -UiRoot $WebUiRoot

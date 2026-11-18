@@ -373,6 +373,21 @@
           </div>
           <div class="result" id="testResult" hidden></div>
         </article>
+        <article class="card serveronly" id="signInCard">
+          <h2>Sign-in</h2>
+          <p class="sub">Who may open this app. With Microsoft, Entra ID asks for the password and the second factor (your MFA and Conditional Access rules apply) - and the history says who changed what.</p>
+          <label class="chk"><input type="checkbox" id="siEntra">Sign in with Microsoft (Entra ID)</label>
+          <label>Group whose members may sign in <span class="muted">(name or object ID)</span><input id="siGroup" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. SG-Intune-Catalog-Admins"></label>
+          <label class="chk"><input type="checkbox" id="siPassword" checked><span>The admin password works too <span class="muted">(the way in when Entra ID can't be reached)</span></span></label>
+          <div class="entrarow">
+            <span class="entralabel">Redirect URI on the app registration</span>
+            <span class="inputrow"><input id="siRedirect" class="mono" readonly aria-label="Redirect URI"><button type="button" class="btn" id="btnSiCopy">Copy</button></span>
+            <p class="hint">The Entra setup script adds it. By hand: the app registration > Authentication > Add a platform > Web > this address.</p>
+          </div>
+          <p class="sub" id="siNow"></p>
+          <p class="formerror" id="siError" hidden></p>
+          <div class="actions"><button class="btn primary" id="btnSiSave">Save sign-in</button></div>
+        </article>
         <!-- The server version brings the module in its image: nothing to check or install there. -->
         <article class="card desktoponly">
           <h2>Prerequisites</h2>

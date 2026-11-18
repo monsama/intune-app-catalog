@@ -602,6 +602,8 @@ function Global:Invoke-WebApi {
         '/api/certs-local'      { return (Get-WebLocalCertificates) }
         '/api/cert-new'         { return (New-WebCertificate $Data) }
         '/api/cert-import'      { return (Import-WebPfx $Data) }
+        '/api/signin-settings'  { if (-not (Test-WebServerMode)) { return @{ ok = $false; error = 'The desktop app has no sign-in.' } }; return (Get-WebSignInSettings) }
+        '/api/signin-save'      { if (-not (Test-WebServerMode)) { return @{ ok = $false; error = 'The desktop app has no sign-in.' } }; return (Save-WebSignInSettings $Data) }
         '/api/cert-file'        { return (Get-WebCertificateFile $Data) }
         '/api/test-connection'  { return (Invoke-WebTestConnection $Data) }
         '/api/connection-status' { return (Get-WebConnectionStatus) }
