@@ -222,11 +222,18 @@ try {
         await page.uncheck('#aManaged');   // this one stays unmanaged: Release is checked below to be off, and to say why
         // Groups are chips: typed and Enter adds one, x takes it off again; return codes are rows.
         await page.click('.edtab[data-i="1"]');
-        await page.click('#gAvailableChips'); await page.keyboard.type('SG-ZZ-Chip'); await page.waitForTimeout(400); await page.keyboard.press('Enter');
+        // A comma adds what's typed as it is (Enter takes a highlighted suggestion instead - when one comes up in time
+        // depends on the machine, which made this step flaky); then wait for the chip, not a fixed time.
+        await page.click('#gAvailableChips'); await page.keyboard.type('SG-ZZ-Chip'); await page.keyboard.press(',');
+        await page.waitForSelector('#gAvailableBox .chip.tag .x', { timeout: 8000 }).catch(() => {});
         const chipAdded = (await page.inputValue('#gAvailable')).split('\n').includes('SG-ZZ-Chip');
         await page.click('#gAvailableBox .chip.tag .x');
         check(chipAdded && !(await page.inputValue('#gAvailable')).includes('SG-ZZ-Chip'), `${label}: a group is added as a chip and removed with its x`, await page.inputValue('#gAvailable'));
-        await page.click('.edtab[data-i="4"]');
+        // 2.30.0: Requirements is on Install & detection, folded to one line - Change brings the fields out.
+        await page.click('.edtab[data-i="3"]');
+        check(await page.evaluate(() => document.querySelectorAll('.edtab').length === 4 && !document.getElementById('xTime').offsetParent && /for the device/.test(document.querySelector('[data-sum="req"]').textContent)), `${label}: the requirements show as one line until Change`);
+        check(await page.evaluate(() => !document.getElementById('xType').offsetParent && /Made for winget/.test(document.querySelector('[data-sum="det"]').textContent)), `${label}: a winget app's detection shows as one line`);
+        await page.click('[data-sum="req"] button');
         await page.click('#xCodesRows > button');
         await page.fill('#xCodesRows .coderow:last-of-type input', '1707');
         check((await page.inputValue('#xCodes')).split('\n').includes('1707 = success'), `${label}: a return code is added as a row`, await page.inputValue('#xCodes'));
@@ -291,6 +298,12 @@ try {
         check(true, `${label}: an option added as a block is written into the install command`);
         await page.click('#instBlocks .bx[aria-label="Remove --override"]');
         await page.waitForFunction(() => !/--override/.test(document.getElementById('mInstallCommand').value), null, { timeout: 8000 });
+        // 2.29.3: a linked part is changed in its row - it writes into its own field (Install for), the command follows.
+        await page.selectOption('#instBlocks select[data-bid="context"]', 'User');
+        await page.waitForFunction(() => document.getElementById('xContext').value === 'User' && !/--scope machine/.test(document.getElementById('mInstallCommand').value), null, { timeout: 8000 });
+        check(true, `${label}: Install for is changed in its row - the field and the command follow`);
+        await page.selectOption('#instBlocks select[data-bid="context"]', 'System');
+        await page.waitForFunction(() => document.getElementById('xContext').value === 'System' && /--scope machine/.test(document.getElementById('mInstallCommand').value), null, { timeout: 8000 });
         await page.keyboard.press('Escape');
         // Written back from the blocks, the commands are in today's form - the editor asks before it drops that.
         if (await page.isVisible('#dlgAsk[open]').catch(() => false) || await page.waitForSelector('#dlgAsk[open]', { timeout: 1500 }).then(() => true, () => false)) await page.click('#askOk');

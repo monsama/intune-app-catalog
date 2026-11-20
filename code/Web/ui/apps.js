@@ -297,7 +297,10 @@ const methodSoon = () => { clearTimeout(methodTimer); methodTimer = setTimeout(r
 for (const id of ['aWinget', 'mAppVersion', 'mInstallCommand', 'mUninstallCommand']) $(id).addEventListener('input', methodSoon);
 $('xContext').addEventListener('change', methodSoon);
 $('aManaged').addEventListener('change', methodSoon);
-$('aMethod').addEventListener('change', async () => {
+$('aMethod').addEventListener('change', () => applyMethod());
+// Install for decides --scope machine: generated commands are written again for it (own ones are left as typed).
+$('xContext').addEventListener('change', () => { if (!$('aMethodRow').hidden && ['Managed', 'Winget'].includes($('aMethod').value)) applyMethod(); });
+async function applyMethod() {
   const m = $('aMethod').value, before = await api('/api/winget-commands', methodBody());
   if (before.ok && !before.current && $('mInstallCommand').value.trim() && !(await ask('Replace the install and uninstall commands?\n\nThey were edited by hand - choosing a method writes the generated ones instead.', { ok: 'Replace' }))) { refreshMethod(); return; }
   // The extra winget options in the commands stay (the server reads them back from the install command).
@@ -306,7 +309,7 @@ $('aMethod').addEventListener('change', async () => {
   $('aManaged').checked = m === 'Managed'; showManagedState();
   for (const [id, v] of [['mInstallCommand', r.install], ['mUninstallCommand', r.uninstall]]) { $(id).value = v; $(id).dispatchEvent(new Event('input', { bubbles: true })); }
   refreshMethod();
-});
+}
 
 // ---------------------------------------------------------------- unsaved changes (editor)
 // Escape or Cancel with changes asks first; saving or removing closes it without asking.
@@ -809,6 +812,7 @@ function fillDeploy(d) {
   $('xSupSet').checked = !!d.supersedesSet;
   $('xSup').replaceChildren(...(d.supersedes || []).map(s => supRow(s)));
   showSupState();
+  if (window.edFoldsReset) edFoldsReset();
 }
 $('deploySec').addEventListener('input', () => { deployTouched = true; });
 $('deploySec').addEventListener('change', () => { deployTouched = true; });

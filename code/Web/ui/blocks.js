@@ -26,6 +26,43 @@ function setRawShown(host, mode) {
   raw.classList.toggle('plain', mode === 'plain');
   if (raw.dataset.mode !== mode) { raw.open = mode !== 'blocks'; raw.dataset.mode = mode; }
 }
+// A linked block changed right in the row: the control writes into the field it is linked to (the one truth - Save,
+// the method's own checks and the commands follow from there, as when it is changed in that field).
+function setLinked(id, v, opts) {
+  const f = $(id); if (!f || f.value === v) return;
+  f.value = v;
+  f.dispatchEvent(new Event('input', { bubbles: true })); f.dispatchEvent(new Event('change', { bubbles: true }));
+  // The field may say no (Managed without a version, a hand-edited command kept): the row shows what it is then.
+  if (opts.onLinked) setTimeout(opts.onLinked, 1200);
+}
+function inlineLink(b, card, tip, opts) {
+  const row = (...val) => card.append(el('div', { class: 'blk edit inline', title: tip }, el('span', { class: 'blab' }, b.label), el('span', { class: 'bval' }, ...val)));
+  if (b.link === 'aWinget' && b.id === 'cmd') {
+    // winget install --id [Winget ID] -e ... : only the ID is this app's.
+    const id = $('aWinget').value.trim(), at = b.text.indexOf(' ' + id + ' ');
+    if (!id || at < 0) return false;
+    const input = el('input', { value: id, 'data-bid': 'wingetId', 'aria-label': 'Winget ID', spellcheck: 'false', size: Math.max(12, id.length + 2),
+      onchange: e => { const v = e.target.value.trim(); if (v) setLinked('aWinget', v, opts); else e.target.value = $('aWinget').value; } });
+    row(el('span', { class: 'bpre', text: b.text.slice(0, at + 1) }), input, el('span', { class: 'bpre', text: b.text.slice(at + id.length + 1) }));
+    return true;
+  }
+  if (b.link === 'aMethod') {
+    const pinned = /pinned/.test(b.text), cur = $('aMethod').value;
+    if (cur !== 'Managed' && cur !== 'Winget') return false;   // an own command: the method row explains it
+    const sel = el('select', { 'data-bid': 'method', 'aria-label': 'Version - install with', onchange: e => setLinked('aMethod', e.target.value, opts) },
+      el('option', { value: 'Managed', text: pinned ? b.text : 'pinned to the App version (managed updates)' }),
+      el('option', { value: 'Winget', text: 'the newest winget has' }));
+    sel.value = pinned ? 'Managed' : 'Winget';
+    row(sel); return true;
+  }
+  if (b.link === 'xContext') {
+    const sel = el('select', { 'data-bid': 'context', 'aria-label': 'Install for', onchange: e => setLinked('xContext', e.target.value, opts) },
+      el('option', { value: 'System', text: 'the device (--scope machine)' }), el('option', { value: 'User', text: 'the signed-in user' }));
+    sel.value = $('xContext').value === 'User' ? 'User' : 'System';
+    row(sel); return true;
+  }
+  return false;
+}
 function renderBlockBar(host, model, opts = {}) {
   const { onChange, onAction, onText, onBlocks, textMode } = opts;
   host.replaceChildren();
@@ -79,6 +116,7 @@ function renderBlockBar(host, model, opts = {}) {
     const tip = b.help || '';
     const lab = el('span', { class: 'blab' }, b.label);
     if (b.kind === 'lock') card.append(el('div', { class: 'blk lock', title: tip || 'Fixed - the tool writes this the same way for every app.' }, lab, el('span', { class: 'bval', text: b.text })));
+    else if (b.kind === 'link' && b.part !== 'detection' && inlineLink(b, card, tip, opts)) { /* changed right here */ }
     else if (b.kind === 'link') {
       const go = () => { const t = $(b.link); if (t) { if (window.edPageFor) edPageFor(t); t.focus(); } };
       card.append(el('div', { class: 'blk link', title: tip }, lab, el('span', { class: 'bval', text: b.text }),
@@ -153,7 +191,8 @@ async function refreshBlocks(opening) {
     onText: () => { bs.instText = true; setCommandsReadOnly(false); renderBlockBar(host, r, { textMode: true, onBlocks: backToBlocks }); openScriptEditor({ command: 'install' }); },
     onBlocks: backToBlocks,
     onChange: values => compose('/api/install-compose', { ...instFields(), form: r.form, values }, c => setFields([['mInstallCommand', c.install], ['mUninstallCommand', c.uninstall]])).then(ok => { if (ok === false) refreshBlocks(); }),
-    onAction: file => openScriptEditor({ name: editingName, file })
+    onAction: file => openScriptEditor({ name: editingName, file }),
+    onLinked: () => { bs.inst = null; refreshBlocks(); }
   });
   restore();
 }
