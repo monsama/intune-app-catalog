@@ -306,6 +306,7 @@ function Global:Get-WebHealthChecks {
     $probe = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) [void](& $Graph 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$select=id&$top=1'); $true }
     if ($probe.ok) { & $add 'ok' 'Signing in to Microsoft Graph works.' } else { & $add 'failed' "Signing in to Microsoft Graph failed: $($probe.error)" }
     $apps = @((Read-WebCatalogRecords).Apps | Where-Object { $_.managedUpdates })
+    if (@($apps | Where-Object { $_.wingetId }).Count) { [void](Initialize-SharedWingetPackage) }
     if (@($apps | Where-Object { $_.wingetId }).Count -and -not (Test-Path -LiteralPath (Get-SharedPackagePath))) { & $add 'warn' "The shared Winget package (init.intunewin) is missing - Winget releases can't be created. Settings > Packaging & folders builds it." }
     if (@($apps | Where-Object { -not $_.wingetId -and $_.autoRelease }).Count) {
         $tool = Get-PackagingToolPath

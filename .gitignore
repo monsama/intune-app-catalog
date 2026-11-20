@@ -3,3 +3,4 @@ logs/*.log
 # Runtime state the app creates on first run (catalog, backups, logs, caches)
 data/
 node_modules/
+init/

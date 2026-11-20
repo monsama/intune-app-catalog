@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.29.1
+
+- **The shared Winget package builds itself.** `init.intunewin` is built
+  when it is missing - at start, before a send, a release and in the
+  nightly check - instead of being a step you have to remember. The
+  Packaging card says when it was built; the button there rebuilds it.
+- **Getting started lists the steps already done** in place (ticked, title
+  only), so you see where you are in the whole list.
+- **Install & detection is quieter.** The parts the tool writes the same
+  for every app fold into one line ("4 fixed parts - the same for every
+  app"), click to show them. The raw install/uninstall commands and the
+  detection script fold under the blocks ("as Intune gets them"); they
+  open by themselves when there are no blocks, the app is your own, or you
+  edit as text. The colour legend is gone - the icons keep their tooltips.
+- **Add apps: the button names what it adds** ("Add 2 Winget apps", "Add
+  installer", "Add script app", "Add PSADT app", "Add 3 from the list").
+  Only the open tab is added; what is filled in on the other tabs is left.
+
 ## 2.29.0
 
 - **Sign in with Microsoft (the server version).** People sign in with their

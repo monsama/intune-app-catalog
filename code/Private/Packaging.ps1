@@ -118,6 +118,20 @@ function Global:Test-MicrosoftSignature {
     return ([string]$Signature.SignerCertificate.Subject -match '(?:^|,\s*)O=("?)Microsoft Corporation\1\s*(?:,|$)')
 }
 
+function Global:Initialize-SharedWingetPackage {
+    <#
+      init.intunewin built by itself when it isn't there - its content is fixed (one text file no device reads), so
+      there is nothing to choose and nothing to keep up to date: missing is the only state that needs doing. Called
+      when the app starts, before a send and before the nightly run. With IntuneWinAppUtil.exe chosen and not here,
+      it stays a button (Settings > Packaging). Returns $true when the package is there afterwards.
+    #>
+    if (Test-Path -LiteralPath (Get-SharedPackagePath)) { return $true }
+    if ((Get-PackagerChoice) -eq 'tool' -and -not (Get-PackagingReadiness).ToolFound) { return $false }
+    Write-Log "[INFO] The shared Winget package (init.intunewin) isn't there - building it."
+    $r = New-SharedWingetPackage
+    return [bool]$r.Ok
+}
+
 function Global:New-SharedWingetPackage {
     <#
       Builds init.intunewin.

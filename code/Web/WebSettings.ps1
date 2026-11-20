@@ -271,7 +271,9 @@ function Global:Get-WebPackaging {
     # What packaging needs and whether it's there: the tool, and the shared Winget package.
     $r = Get-PackagingReadiness
     return @{ ok = $true; toolPath = [string]$r.ToolPath; toolFound = [bool]$r.ToolFound; toolVersion = [string]$r.ToolVersion
-        sharedPath = [string]$r.SharedPath; sharedFound = [bool]$r.SharedFound; packagesFolder = (Get-AppFolder -Kind Packages)
+        sharedPath = [string]$r.SharedPath; sharedFound = [bool]$r.SharedFound
+        sharedBuilt = $(if ($r.SharedFound) { try { ([DateTimeOffset](Get-Item -LiteralPath $r.SharedPath).LastWriteTime).ToString('o') } catch { '' } } else { '' })
+        packagesFolder = (Get-AppFolder -Kind Packages)
         packager = $(if ([string]$Global:App.Packager -in 'builtin', 'tool') { [string]$Global:App.Packager } else { 'auto' }); packagerInUse = (Get-PackagerChoice) }
 }
 

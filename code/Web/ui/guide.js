@@ -202,7 +202,7 @@ function updateReady() {
   $('readyBox').classList.toggle('allok', done === items.length);
   $('readyList').replaceChildren(...items.map(([ok, text, field]) => el('li', { class: ok ? 'ok' : 'todo' },
     el('span', { class: 'mark', 'aria-hidden': 'true', text: ok ? '✓' : '!' }),
-    field && !ok ? el('button', { type: 'button', class: 'linkish', text, title: 'Go to the field', onclick: () => { const f = $(field); edPageFor(f); ((f.hidden && $(field + 'Chips')) || f).focus(); } }) : el('span', { text: (ok ? '' : 'Missing: ') + text }))));
+    field && !ok ? el('button', { type: 'button', class: 'linkish', text, title: 'Go to the field', onclick: () => { const f = $(field); edPageFor(f); const d = f.closest('details'); if (d) d.open = true; ((f.hidden && $(field + 'Chips')) || f).focus(); } }) : el('span', { text: (ok ? '' : 'Missing: ') + text }))));
 }
 $('appForm').addEventListener('input', () => updateReady());
 $('appForm').addEventListener('change', () => updateReady());
@@ -250,13 +250,16 @@ function renderSetup(steps) {
   $('setupTitle').textContent = `Getting started - ${done} of ${steps.length} done`;
   $('setupBar').style.width = Math.round(100 * done / steps.length) + '%';
   const first = steps.findIndex(s => !s.done);
-  // Only the steps still open, in full; the done ones as one short line under them.
-  $('setupList').replaceChildren(...steps.map((s, i) => s.done ? null : el('li', { class: i === first ? 'now' : '' },
-    el('span', { class: 'mark', 'aria-hidden': 'true', text: String(i + 1) }),
-    el('div', { class: 'body' }, el('b', { text: s.title }), el('span', { class: 'muted', text: s.text })),
-    go[s.go] ? el('button', { class: 'btn small' + (i === first ? ' primary' : ''), text: 'Open', onclick: go[s.go] }) : '')).filter(Boolean));
-  const doneSteps = steps.filter(s => s.done);
-  $('setupDone').replaceChildren(...(doneSteps.length ? [el('span', { class: 'muted', text: 'Done: ' }), ...doneSteps.map(s => el('span', { class: 'donechip', text: '✓ ' + s.title }))] : []));
+  // Every step in its place, 1 to the last: the done ones ticked and short (their title), the open ones in full with
+  // their button - the next one marked.
+  $('setupList').replaceChildren(...steps.map((s, i) => s.done
+    ? el('li', { class: 'done', title: s.text }, el('span', { class: 'mark', 'aria-hidden': 'true', text: '✓' }),
+      el('div', { class: 'body' }, el('b', { text: s.title }), el('span', { class: 'sr', text: ' - done' })), '')
+    : el('li', { class: i === first ? 'now' : '' },
+      el('span', { class: 'mark', 'aria-hidden': 'true', text: String(i + 1) }),
+      el('div', { class: 'body' }, el('b', { text: s.title }), el('span', { class: 'muted', text: s.text })),
+      go[s.go] ? el('button', { class: 'btn small' + (i === first ? ' primary' : ''), text: 'Open', onclick: go[s.go] }) : '')));
+  $('setupDone').replaceChildren();
 }
 
 // ---------------------------------------------------------------- the catalog and Intune, side by side
@@ -310,7 +313,7 @@ function renderWhere() {
   assign(dLeft, 3, [[c => c.tagName === 'H3' && /Detection rule/.test(c.textContent), 3], [c => c.tagName === 'H3' && /Dependencies/.test(c.textContent), 5]]);
   for (const c of dRight.children) pageOf.set(c, 4);
   // The install and uninstall commands belong with the detection rule.
-  for (const id of ['mInstallCommand', 'mUninstallCommand']) pageOf.set($(id).closest('label'), 3);
+  pageOf.set($('instRaw'), 3);
   pageOf.set($('instBlocks'), 3);
   let cur = 0;
   const bar = el('nav', { class: 'edtabs', 'aria-label': 'Parts of the app' }, ...names.map((name, i) => el('button', { type: 'button', class: 'edtab', 'data-i': i, text: name, onclick: () => {
@@ -338,7 +341,7 @@ function renderWhere() {
   }
   // The page a field is on, brought up - for "go to the field" links and a required field left empty.
   window.edPageFor = elm => { let n = elm; while (n && !pageOf.has(n)) n = n.parentElement; if (n && pageOf.get(n) !== cur) setPage(pageOf.get(n)); };
-  form.addEventListener('invalid', e => edPageFor(e.target), true);
+  form.addEventListener('invalid', e => { edPageFor(e.target); const d = e.target.closest('details.rawcmds'); if (d) d.open = true; }, true);
   form.insertBefore(bar, form.querySelector('.formgrid'));
   dlg.addEventListener('close', () => setPage(0));
   setPage(0);

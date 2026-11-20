@@ -19,10 +19,18 @@ function keepFocus(host) {
 // A field in the block being typed in (changed, not yet left): no redraw under the fingers.
 const typingIn = host => { const a = document.activeElement; return !!(a && host.contains(a) && a.tagName === 'INPUT' && a.value !== a.defaultValue); };
 
+// The command fields / script under the blocks: folded away while the blocks show them, open when they are the only
+// way to see or change it (no blocks, edited as text, your own). Folded or opened again only when that changes.
+function setRawShown(host, mode) {
+  const raw = $(host.id === 'instBlocks' ? 'instRaw' : 'detRaw'); if (!raw) return;
+  raw.classList.toggle('plain', mode === 'plain');
+  if (raw.dataset.mode !== mode) { raw.open = mode !== 'blocks'; raw.dataset.mode = mode; }
+}
 function renderBlockBar(host, model, opts = {}) {
   const { onChange, onAction, onText, onBlocks, textMode } = opts;
   host.replaceChildren();
   host.hidden = !model || model.form === 'none' || model.form === 'rule';
+  setRawShown(host, host.hidden ? 'plain' : (model.own || textMode) ? 'text' : 'blocks');
   if (host.hidden) return;
   const head = el('div', { class: 'bhead' });
   if (model.own || textMode) {
@@ -34,7 +42,6 @@ function renderBlockBar(host, model, opts = {}) {
     return;
   }
   head.append(el('span', { class: 'bform', text: { winget: 'Winget', msi: 'MSI', exe: 'Installer (.exe)', script: 'PowerShell script', psadt: 'PSADT 4', managed: 'Managed release', installed: 'Installed app' }[model.form] || model.form }),
-    el('span', { class: 'bkey' }, el('span', { class: 'k lock', text: 'fixed' }), el('span', { class: 'k edit', text: "this app's" }), el('span', { class: 'k link', text: 'set elsewhere' })),
     model.note ? el('span', { class: 'bnote', text: model.note }) : '',
     // An older generated form: rewritten in today's form in one click (the same values - nothing else changes).
     model.form === 'winget' && /older form/.test(model.note || '') && onChange ? el('button', { type: 'button', class: 'btn small', text: "Write today's form", title: 'The same Winget ID, version, scope and options - written the way the app writes them now', onclick: () => { const o = model.blocks.find(b => b.id === 'options'); onChange({ options: (o && o.value) || [] }); } }) : '',
@@ -52,10 +59,21 @@ function renderBlockBar(host, model, opts = {}) {
   const where = { aMethod: 'Install with', xContext: 'Install for', mAppVersion: 'App version', aWinget: 'Winget ID' };
   const card = el('div', { class: 'brec' });
   host.append(card);
+  // The fixed parts (the same for every app) folded into one line - this app's values and links stay in view.
+  const fixedN = model.blocks.filter(b => b.kind === 'lock').length;
+  let showFixed = false; try { showFixed = localStorage.getItem('blocksShowFixed') === '1'; } catch (e) { }
+  card.classList.toggle('showfixed', showFixed);
+  if (fixedN) card.append(el('button', { type: 'button', class: 'bfixed', 'aria-expanded': String(showFixed),
+    text: showFixed ? `Hide the ${fixedN} fixed part${fixedN === 1 ? '' : 's'}` : `${fixedN} fixed part${fixedN === 1 ? '' : 's'} - the same for every app`,
+    title: 'What the tool writes the same way for every app - shown for reading, not for changing',
+    onclick: e => { const on = !card.classList.contains('showfixed'); card.classList.toggle('showfixed', on); try { localStorage.setItem('blocksShowFixed', on ? '1' : '0'); } catch (x) { }
+      e.currentTarget.setAttribute('aria-expanded', String(on)); e.currentTarget.textContent = on ? `Hide the ${fixedN} fixed part${fixedN === 1 ? '' : 's'}` : `${fixedN} fixed part${fixedN === 1 ? '' : 's'} - the same for every app`; } }));
   let part = '';
   for (const b of model.blocks) {
     if (b.part !== part) {
-      if (part && b.part === 'uninstall') card.append(el('div', { class: 'bsec', text: 'Uninstall' }));
+      // The Uninstall heading: folded with the fixed parts when all of the uninstall is fixed (a winget uninstall).
+      const onlyFixed = !model.blocks.some(x => x.part === b.part && x.kind !== 'lock');
+      if (part && b.part === 'uninstall') card.append(el('div', { class: 'bsec' + (onlyFixed ? ' onlyfixed' : ''), text: 'Uninstall' }));
       part = b.part;
     }
     const tip = b.help || '';

@@ -349,13 +349,14 @@ function Global:Get-WebAttention {
     $tool = Get-PackagingToolPath
     $setup = @(
         [ordered]@{ done = $configured; title = 'Connect to Intune'; text = 'The app registration, its certificate and a test sign-in.'; go = 'settings:connection' }
-        [ordered]@{ done = [bool](((Get-PackagerChoice) -eq 'builtin') -or ($tool -and (Test-Path -LiteralPath $tool))); title = 'Packaging'; text = 'Packages are built in; IntuneWinAppUtil.exe is optional (Settings > Packaging).'; go = 'settings:packaging' }
-        [ordered]@{ done = [bool](Test-Path -LiteralPath (Get-SharedPackagePath)); title = 'Build the shared Winget package'; text = 'One package every Winget app deploys with.'; go = 'settings:packaging' }
+        # Packaging is a step only when there is something to do: IntuneWinAppUtil.exe chosen and not here. The shared
+        # Winget package builds itself (Initialize-SharedWingetPackage) - no step for it.
+        $(if ((Get-PackagerChoice) -eq 'tool' -and -not ($tool -and (Test-Path -LiteralPath $tool))) { [ordered]@{ done = $false; title = 'Packaging'; text = 'IntuneWinAppUtil.exe is chosen and not here - download it, or switch to the built-in packager (Settings > Packaging).'; go = 'settings:packaging' } })
         [ordered]@{ done = [bool]@($Global:App.PilotGroups).Count; title = 'Choose the pilot groups'; text = 'A few test devices that get new versions first.'; go = 'settings:updates' }
         [ordered]@{ done = [bool]$apps.Count; title = 'Add your first apps'; text = 'From winget, an installer or a script - or the apps already in Intune (Checks).'; go = 'add' }
         [ordered]@{ done = [bool]@($apps | Where-Object { $_.appId }).Count; title = 'Send them to Intune'; text = 'Select apps on the Apps page and Send to Intune.'; go = 'apps:notdeployed' }
         [ordered]@{ done = [bool]($sch.exists -or -not $sch.supported); title = 'Schedule the nightly run'; text = 'It releases, promotes and checks by itself.'; go = 'settings:automation' }
-    )
+    ) | Where-Object { $_ }
     $upd = Get-WebAppUpdate
     if ($upd.ok -and $upd.newer) { & $add 'info' "Intune App Catalog $($upd.version) is out (you have $($Global:App.AppVersion))" $(if ($upd.notes) { $upd.notes } else { 'See what is new on GitHub.' }) 'open:release' }
     $order = @{ err = 0; warn = 1; ok = 2; info = 3 }

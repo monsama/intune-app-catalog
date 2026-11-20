@@ -1495,3 +1495,19 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 #loginPw { display: grid; gap: 12px; }
 #loginPw[hidden] { display: none; }
 .loginor { margin: 2px 0; }
+
+/* Getting started: done steps stay in their place, one quiet line each */
+.setup li.done { padding-top: 3px; padding-bottom: 3px; }
+.setup li.done .body b { font-size: 13px; text-decoration: none; }
+
+/* Blocks, quieter: the fixed parts folded into one line, the raw commands folded under the blocks */
+.brec .bfixed { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--bd2); background: none; color: var(--muted); font: inherit; font-size: 12px; padding: 6px 12px; cursor: pointer; }
+.brec .bfixed::before { content: '\25B8'; display: inline-block; width: 14px; transition: transform .15s; }
+.brec.showfixed .bfixed::before { transform: rotate(90deg); }
+.brec .bfixed:hover { color: var(--fg); background: var(--hover); }
+.brec:not(.showfixed) .blk.lock, .brec:not(.showfixed) .bsec.onlyfixed { display: none; }
+.rawcmds { margin: 8px 0 4px; }
+.rawcmds > summary { cursor: pointer; font-size: 12px; color: var(--muted); padding: 4px 0; }
+.rawcmds > summary:hover { color: var(--fg); }
+.rawcmds.plain > summary { display: none; }
+.rawcmds[open] > summary { margin-bottom: 6px; }

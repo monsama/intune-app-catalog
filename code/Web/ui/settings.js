@@ -334,8 +334,11 @@ function setPkgState(p) {
     : p.toolFound ? `Packaging tool found${p.toolVersion ? ' (version ' + p.toolVersion + ')' : ''}.` : 'Packaging tool (IntuneWinAppUtil.exe) not downloaded yet.';
   $('pkgTool').className = 'certstatus ' + (builtIn || p.toolFound ? 'ok' : 'warn');
   if (p.packager) $('pkgPackager').value = p.packager;
-  $('pkgShared').textContent = p.sharedFound ? 'Shared Winget package (init.intunewin) built.' : 'Shared Winget package (init.intunewin) not built yet - every Winget app deploys with it.';
+  // Built by itself when it's missing (start, before a send, the nightly run) - the card only says it's there, and since when.
+  $('pkgShared').textContent = p.sharedFound ? `Shared Winget package (init.intunewin): ready - built ${p.sharedBuilt ? fmtWhen(p.sharedBuilt) : ''}. Every Winget app deploys with it; the app builds it again by itself if it goes missing.`
+    : 'Shared Winget package (init.intunewin): not there yet - the app builds it by itself before the first Winget app is sent (or Build it now).';
   $('pkgShared').className = 'certstatus ' + (p.sharedFound ? 'ok' : 'warn');
+  if ($('btnBuildShared')) { $('btnBuildShared').textContent = p.sharedFound ? 'Rebuild init.intunewin' : 'Build init.intunewin'; $('btnBuildShared').title = p.sharedFound ? 'Build it again - only needed if the file was damaged; its content never changes' : 'Build it now'; }
 }
 async function loadPrefs() {
   const [p, k] = await Promise.all([api('/api/prefs'), api('/api/packaging')]);
@@ -447,7 +450,8 @@ async function packagingSetup(what, btn) {
   activity(`${stamp()} ${what === 'tool' ? 'Downloading the packaging tool...' : 'Building init.intunewin...'}`);
   const r = await api('/api/packaging-setup', { what });
   b.disabled = false; b.textContent = t;
-  toast(r.ok ? (r.message || 'Done.') : r.error, !r.ok);
+  // Said as what happened, not as a bare file path.
+  toast(r.ok ? (what === 'shared' ? 'The shared Winget package (init.intunewin) is built.' : (r.message || 'Done.')) : r.error, !r.ok);
   if (r.state) setPkgState(r.state);
 }
 $('pkgPackager').addEventListener('change', async () => {
