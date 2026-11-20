@@ -382,7 +382,9 @@ function renderWhere() {
     const sel = 'input:not([type=checkbox]):not([hidden]), select, textarea:not([hidden]), .chipinput';
     const f = [...pageOf].find(([c, p]) => p === i && !c.matches('.ready, h3') && c.querySelector(sel));
     const field = f && f[0].querySelector(sel);
-    if (field) setTimeout(() => field.focus({ preventScroll: true }), 30);
+    // Only while the tab still has the focus - a field clicked right after keeps it (typing went to the wrong field).
+    const tab = document.activeElement;
+    if (field) setTimeout(() => { if (document.activeElement === tab || document.activeElement === document.body) field.focus({ preventScroll: true }); }, 30);
   } })));
   const mark = i => [...bar.children].forEach((b, k) => b.setAttribute('aria-current', k === i ? 'true' : 'false'));
   function setPage(i) {

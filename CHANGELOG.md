@@ -15,6 +15,9 @@ A sweep of 2.29 to 2.32 (the folds, menus and in-place edits):
   saying it needs one until the app restarts.
 - **The new More menus** (Updates) move with the arrow keys like the
   other menus.
+- **Clicking a field right after an editor tab** keeps the focus there -
+  before, the tab moved it to its first field a moment later, so typing
+  could land in the wrong field (Required instead of Available).
 - The blocks' tooltips say the Winget ID, version and Install for are
   changed right there (not "set on Basics").
 
