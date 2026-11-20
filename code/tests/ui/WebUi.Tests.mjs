@@ -15,7 +15,7 @@
 //   npm install --no-save playwright@1.48.2 axe-core@4.10.2 && npx playwright install chromium
 //   node code/tests/ui/WebUi.Tests.mjs [--shots <folder>]
 import { spawn } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, existsSync, rmSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -34,6 +34,9 @@ const failures = [];
 const check = (ok, name, detail = '') => { if (ok) passed++; else { failures.push(`${name}${detail ? ' - ' + detail : ''}`); console.log(`FAIL: ${name} ${detail}`); } };
 
 // ---- the server
+// What the run itself creates in the repo (the catalog and settings in data\, the shared package in init\) is removed
+// again afterwards - so the next run starts clean. Folders that were there before the run are left alone.
+const leftovers = ['data', 'init'].map(d => join(repo, d)).filter(d => !existsSync(d));
 const server = spawn(pwsh, ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(repo, 'IntuneDeployment.ps1'), '-NoBrowser'], { cwd: repo });
 let out = '';
 server.stdout.on('data', d => { out += d; });
@@ -198,8 +201,11 @@ try {
 
         // An app added through the editor, then Batch edit and Add groups on it.
         await page.click('#tabApps');
+        await page.evaluate(() => localStorage.setItem('addLastSrc', 'installer'));   // as after adding an installer
         await page.click('#btnAddApp');
         await page.waitForSelector('#dlgAdd[open]');
+        check(await page.isVisible('#aiDrop') && await page.textContent('#btnAddGo') === 'Add installer', `${label}: Add apps opens on the kind added last time`);
+        await page.evaluate(() => localStorage.removeItem('addLastSrc'));
         await page.click('#btnAddBlank');
         await page.waitForSelector('#dlgApp[open]');
         await page.fill('#aName', testApp);
@@ -326,6 +332,8 @@ try {
   await browser.close();
   // The page's own Quit isn't reachable without a window; the server stops with its process.
   server.kill();
+  await new Promise(r => setTimeout(r, 1500));   // let the server let go of its files
+  for (const d of leftovers) { try { rmSync(d, { recursive: true, force: true }); } catch (e) { console.log(`Note: could not remove ${d}: ${e.message}`); } }
 }
 
 console.log('');
