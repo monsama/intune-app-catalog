@@ -308,7 +308,22 @@ async function refreshMethod() {
   // Managed ticked: Save pins the commands to the App version, whatever they are now.
   if ($('aManaged').checked) m = 'Managed'; else if (m === 'Managed') m = 'Custom';
   $('aMethod').value = m; $('aMethodInfo').textContent = methodText(m, r.pinned);
+  if (r.current === 'Managed' || r.current === 'Winget') genFor = { id, method: r.current };
 }
+// The Winget ID the commands were generated for (and how): a new ID writes them again for it - unless they were
+// edited by hand since, then they stay as typed (and the blocks show them as the app's own).
+let genFor = null;
+$('dlgApp').addEventListener('close', () => { genFor = null; });
+$('aWinget').addEventListener('change', async () => {
+  const id = $('aWinget').value.trim(), g = genFor;
+  if (!g || !id || id === g.id || isStoreId(id)) return;
+  const was = await api('/api/winget-commands', methodBody({ wingetId: g.id }));
+  if (!was.ok || was.current !== g.method || $('aWinget').value.trim() !== id) return;
+  const r = await api('/api/winget-commands', methodBody({ method: g.method }));
+  if (!r.ok || $('aWinget').value.trim() !== id) return;
+  for (const [f, v] of [['mInstallCommand', r.install], ['mUninstallCommand', r.uninstall]]) { $(f).value = v; $(f).dispatchEvent(new Event('input', { bubbles: true })); }
+  refreshMethod();
+});
 const methodSoon = () => { clearTimeout(methodTimer); methodTimer = setTimeout(refreshMethod, 300); };
 for (const id of ['aWinget', 'mAppVersion', 'mInstallCommand', 'mUninstallCommand']) $(id).addEventListener('input', methodSoon);
 $('xContext').addEventListener('change', methodSoon);
@@ -495,7 +510,13 @@ $('appForm').addEventListener('submit', async e => {
   app.detectedName = $('arDetected').value.trim();
   app.autoRelease = $('arAuto').checked && !$('aWinget').value.trim(); app.downloadUrl = $('arUrl').value.trim();
   const r = await api('/api/app-save', { originalName: editingName, version: editingVersion, app });
-  if (!r.ok) { const p = $('appError'); p.textContent = r.error; p.hidden = false; return; }
+  if (!r.ok) {
+    const p = $('appError'); p.textContent = r.error; p.hidden = false;
+    // What it is about may be folded away: the release rule (the download address), or a part of Install & detection.
+    if (/download address/i.test(r.error)) $('aRuleBox').classList.remove('folded');
+    else if (window.edRevealFor) edRevealFor(r.error);
+    return;
+  }
   $('dlgApp').close();
   selected.clear(); selected.add(r.name); lastClicked = r.name;
   await loadApps();
@@ -709,7 +730,13 @@ function foldIntoMenu(ids, opts = {}) {
     menu.replaceChildren(...btns.filter(b => !b.classList.contains('gone')).map(b => el('button', { role: 'menuitem', text: b.textContent.trim(), title: b.title, disabled: b.disabled, onclick: () => { close(); b.click(); } })));
     const r = more.getBoundingClientRect(); placeMenu(menu, r.right - 260, r.bottom + 4); more.setAttribute('aria-expanded', 'true');
   });
-  menu.addEventListener('keydown', e => { if (e.key === 'Escape') { close(); more.focus(); } });
+  menu.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { close(); more.focus(); return; }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const items = [...menu.querySelectorAll('button:not(:disabled)')], i = items.indexOf(document.activeElement);
+    if (!items.length) return;
+    e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+  });
   document.addEventListener('click', e => { if (!menu.hidden && !menu.contains(e.target)) close(); });
   btns[0].before(more); for (const b of btns) b.hidden = true;
   return more;

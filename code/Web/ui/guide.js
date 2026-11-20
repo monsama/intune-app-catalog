@@ -351,6 +351,12 @@ function renderWhere() {
       $('xSupSet').checked ? (sup ? `replaces ${sup} older app${sup === 1 ? '' : 's'}` : 'replaces nothing') : 'supersedence as Intune has it'].join(' · ');
   }
   // On opening an app: folded again; detection only for a winget app whose rule is made for it.
+  // A save refused for something in a folded part (the server says what): that part comes out, on its page.
+  window.edRevealFor = msg => {
+    const m = String(msg || ''), hit = [[/supersed|depend/i, 'dep'], [/detection|product code|registry|file detection/i, 'det'],
+      [/install time|architecture|return code|disk|memory|processor|cpu|operating system|minimum os|restart/i, 'req']].find(([re]) => re.test(m));
+    if (hit) { unfold(hit[1]); setPage(3); }
+  };
   window.edFoldsReset = () => {
     const id = $('aWinget').value.trim();
     detOwn = false;
@@ -376,7 +382,9 @@ function renderWhere() {
     const sel = 'input:not([type=checkbox]):not([hidden]), select, textarea:not([hidden]), .chipinput';
     const f = [...pageOf].find(([c, p]) => p === i && !c.matches('.ready, h3') && c.querySelector(sel));
     const field = f && f[0].querySelector(sel);
-    if (field) setTimeout(() => field.focus({ preventScroll: true }), 30);
+    // Only while the tab still has the focus - a field clicked right after keeps it (typing went to the wrong field).
+    const tab = document.activeElement;
+    if (field) setTimeout(() => { if (document.activeElement === tab || document.activeElement === document.body) field.focus({ preventScroll: true }); }, 30);
   } })));
   const mark = i => [...bar.children].forEach((b, k) => b.setAttribute('aria-current', k === i ? 'true' : 'false'));
   function setPage(i) {

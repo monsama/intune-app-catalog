@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.32.1
+
+A sweep of 2.29 to 2.32 (the folds, menus and in-place edits):
+
+- **A new Winget ID rewrites the generated commands** - in its row on
+  Install & detection or on Basics. Before, the commands kept the old ID
+  (and the blocks then showed them as your own command). Commands edited by
+  hand are left as typed.
+- **A save refused for something folded away opens it:** dependencies or
+  supersedence, the detection rule, the requirements, or the release
+  rule's download address - the message and the field are both in view.
+- **Groups looks again** after the connection is set up, instead of still
+  saying it needs one until the app restarts.
+- **The new More menus** (Updates) move with the arrow keys like the
+  other menus.
+- **Clicking a field right after an editor tab** keeps the focus there -
+  before, the tab moved it to its first field a moment later, so typing
+  could land in the wrong field (Required instead of Available).
+- The blocks' tooltips say the Winget ID, version and Install for are
+  changed right there (not "set on Basics").
+
 ## 2.32.0
 
 Each thing said once, and controls only where they can do something:
