@@ -53,7 +53,7 @@ function Global:New-WebDownload {
         $d = $Global:App.Downloads[$k]
         if ($d -and $d.Expires -lt (Get-Date)) { $Global:App.Downloads.Remove($k); if ($d.Remove) { Remove-Item -LiteralPath $d.Path -Force -ErrorAction SilentlyContinue } }
     }
-    $bytes = New-Object byte[] 16; [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $bytes = New-Object byte[] 16; $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create(); try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     $id = -join ($bytes | ForEach-Object { $_.ToString('x2') })
     $Global:App.Downloads[$id] = @{ Path = $Path; Name = $Name; Type = $ContentType; Expires = (Get-Date).AddMinutes(5); Remove = [bool]$RemoveAfter }
     return "/download/$id"

@@ -35,7 +35,7 @@ function Global:ConvertTo-WebBase64Url {
 
 function Global:New-WebRandomHex {
     param([int]$Bytes = 16)
-    $b = New-Object byte[] $Bytes; [System.Security.Cryptography.RandomNumberGenerator]::Fill($b)
+    $b = New-Object byte[] $Bytes; $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create(); try { $rng.GetBytes($b) } finally { $rng.Dispose() }
     return (-join ($b | ForEach-Object { $_.ToString('x2') }))
 }
 
@@ -52,7 +52,7 @@ function Global:Start-WebEntraSignIn {
     foreach ($k in @($pending.Keys)) { if (($now - $pending[$k].At).TotalMinutes -gt 10) { $pending.Remove($k) } }
     if ($pending.Count -ge 50) { return @{ ok = $false; why = 'entra-busy' } }
     $state = New-WebRandomHex 16; $nonce = New-WebRandomHex 16
-    $vb = New-Object byte[] 32; [System.Security.Cryptography.RandomNumberGenerator]::Fill($vb)
+    $vb = New-Object byte[] 32; $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create(); try { $rng.GetBytes($vb) } finally { $rng.Dispose() }
     $verifier = ConvertTo-WebBase64Url $vb
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try { $challenge = ConvertTo-WebBase64Url ($sha.ComputeHash([Text.Encoding]::ASCII.GetBytes($verifier))) } finally { $sha.Dispose() }

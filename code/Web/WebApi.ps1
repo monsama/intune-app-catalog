@@ -523,6 +523,13 @@ function Global:Open-WebTarget {
         'reports-folder' { $rd = Join-Path (Get-AppFolder -Kind Logs -Create) 'reports'; if (-not (Test-Path -LiteralPath $rd)) { [void](New-Item -ItemType Directory -Path $rd -Force) }; return (Open-WebFolder $rd) }
         'entra-home' { return (Open-WebUrl 'https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade/quickStartType~/null/sourceType/Microsoft_AAD_IAM') }
         'coffee' { return (Open-WebUrl 'https://buymeacoffee.com/monsama') }
+        'intune-app' {
+            # The app's page in the Intune admin center - by its App ID from the catalog (a GUID, nothing else is opened).
+            $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
+            $id = [string]$(if ($a) { $a.appId })
+            if ($id -notmatch '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$') { return @{ ok = $false; error = 'This app has no Intune App ID yet - Send to Intune creates it.' } }
+            return (Open-WebUrl "https://intune.microsoft.com/#view/Microsoft_Intune_Apps/SettingsMenu/~/0/appId/$id")
+        }
         'release' { $repo = [string]$Global:App.ReleaseRepo; if ($repo -notmatch '^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$') { return @{ ok = $false; error = 'No release repository set.' } }; return (Open-WebUrl "https://github.com/$repo/releases/latest") }
         'scripts-folder' { return (Open-WebFolder (Get-AppFolder -Kind Scripts -Create)) }
         'package-folder' {

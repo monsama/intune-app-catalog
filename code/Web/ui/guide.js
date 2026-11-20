@@ -147,7 +147,12 @@ async function fillPanel(a) {
       })(),
       fact('Source', a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
       fact('Updates', updatesText(a, app.managedUpdates || a.managed)),
-      fact('In Intune', a.hasAppId ? (a.type || 'yes') : 'not yet'),
+      // The App ID in full, with Copy and Open in Intune - the app's page in the Intune admin center.
+      a.hasAppId && a.appId ? el('div', { class: 'kv' }, el('span', { class: 'k', text: 'In Intune' }), el('span', { class: 'pappid' },
+        el('span', { text: a.type || 'yes' }), el('code', { class: 'appid', text: a.appId, title: 'The Intune App ID' }),
+        el('span', { class: 'idacts' }, btn('Copy', 'Copy the App ID', async () => { try { await navigator.clipboard.writeText(a.appId); toast('App ID copied.'); } catch (e) { toast('Could not copy - select the ID and copy it by hand.', true); } }),
+          btn('Open in Intune', "This app's page in the Intune admin center", async () => { const r = await api('/api/open', { target: 'intune-app', name: a.name }); if (!r.ok) toast(r.error, true); }))))
+        : fact('In Intune', a.hasAppId ? (a.type || 'yes') : 'not yet'),
       // A Microsoft app that isn't in Intune from here has nothing to send its groups to: no group fields until it is.
       ...(msOnly && !a.hasAppId ? [] : [groups('Required', 'requiredFor', app.requiredFor, true), groups('Available', 'availableFor', app.availableFor, true), groups('Uninstall', 'uninstallFor', app.uninstallFor), groups('Excluded', 'excludeFor', app.excludeFor)]),
       el('datalist', { id: 'qGroupList' }, ...known.map(g => el('option', { value: g }))),
@@ -155,7 +160,8 @@ async function fillPanel(a) {
     el('div', { class: 'pacts' }, btn('Edit', 'Open it in the editor', () => openEditor(a.name)),
       a.hasAppId ? btn('Install status', 'Every device\'s install state', () => openStatus(a.name)) : '',
       !a.wingetId && !a.msHint ? (SERVER ? btn('Sandbox test...', 'A zip for a Windows PC with Windows Sandbox: the package, the test and a starter', () => downloadSandbox(a.name)) : btn('Test in Sandbox', 'Install, detect and uninstall it in Windows Sandbox', () => openSandbox(a.name))) : '',
-      btn('More...', 'Every action for this app', () => $('btnMore').click())));
+      // Opened right here (the same click reaching the page would close the menu again at once).
+      btn('More...', 'Every action for this app', e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); openMenu(r.left, r.bottom + 4); })));
   p.hidden = false;
   if (panelRefocus) { const t = [...p.querySelectorAll('[aria-label]')].find(x => x.getAttribute('aria-label') === panelRefocus); panelRefocus = ''; if (t) t.focus(); }
 }

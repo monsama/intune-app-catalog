@@ -514,6 +514,15 @@ try {
     $scDir = [string]$addS.folder
     Check ($addS.ok -and $scApp.deploy.detection.type -eq 'Registry' -and $scApp.deploy.detection.value -eq '2.0' -and $scApp.metadata.installCommand -like '*-File .\Install.ps1' -and (Test-Path -LiteralPath (Join-Path $scDir 'Install.ps1')) -and $scApp.managedUpdates) 'add apps: a script app - Install.ps1 in its folder, detected by its version marker, managed updates on' ($addS | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/add-script' @{ name = $scName; version = '2.0'; install = $tpls.templates[1].install; uninstall = 'x' }).ok) 'add apps: a name already in the catalog is refused'
+    # The Sandbox test as a zip (what the server version offers): the package, run.ps1 and Start-Test.ps1, served once.
+    $sbz = Invoke-Api '/api/sandbox-package' @{ name = $scName }
+    $sbFile = Join-Path ([System.IO.Path]::GetTempPath()) ('ica-test-sandbox-' + [guid]::NewGuid().ToString('N') + '.zip')
+    if ($sbz.ok) { try { Invoke-WebRequest -Uri ($url.TrimEnd('/') + [string]$sbz.url) -OutFile $sbFile -UseBasicParsing -ErrorAction Stop } catch { } }
+    $sbEntries = @()
+    if (Test-Path -LiteralPath $sbFile) { Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue; $zf = [System.IO.Compression.ZipFile]::OpenRead($sbFile); try { $sbEntries = @($zf.Entries | ForEach-Object { $_.FullName -replace '\\', '/' }) } finally { $zf.Dispose() } }
+    Check ($sbz.ok -and $sbz.name -like 'Sandbox-test-*.zip' -and $sbEntries -contains 'Start-Test.ps1' -and $sbEntries -contains 'run.ps1' -and ($sbEntries -contains 'package/Install.ps1')) 'sandbox test: a zip with Start-Test.ps1, run.ps1 and the package (the server version)' (($sbEntries -join ', ') + ' ' + ($sbz | ConvertTo-Json -Compress))
+    Check (-not (Invoke-Api '/api/sandbox-package' @{ name = $testName }).ok) 'sandbox test: refused for a Winget app (the Sandbox has no winget)'
+    Remove-Item -LiteralPath $sbFile -Force -ErrorAction SilentlyContinue
     # A new version: the detection rule and the script's version marker move together.
     $scQ = Invoke-Api '/api/app-quick' @{ name = $scName; field = 'appVersion'; value = '2.5' }
     $scApp2 = (Invoke-Api '/api/app-get' @{ name = $scName }).app

@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.32.2
+
+- **Fixed: the side panel's More... did nothing.** It opened the actions
+  menu - and the same click closed it again at once.
+- **The icon's More... is a real menu now** (it was a drop-down whose
+  entries were mostly greyed out with the reason only in a tooltip, so
+  picking one seemed to do nothing). What can't be done yet says why under
+  its name - in every More menu.
+- **The Intune App ID where you look for it:** in the side panel in full,
+  with **Copy** and **Open in Intune** (the app's page in the Intune admin
+  center); and as an optional **App ID** column in the list (view menu >
+  Intune App ID). Hovering a row still shows it too.
+- **Fixed: downloads failed on Windows PowerShell 5.1** (the Sandbox test
+  zip, helper scripts) - the random link name used a call that only
+  PowerShell 7 has. Found by the new Sandbox test.
+- The Sandbox test in the server version (a zip for a Windows PC with
+  Windows Sandbox) now has a server test of its own.
+
 ## 2.32.1
 
 A sweep of 2.29 to 2.32 (the folds, menus and in-place edits):

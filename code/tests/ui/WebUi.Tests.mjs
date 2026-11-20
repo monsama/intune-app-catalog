@@ -248,6 +248,10 @@ try {
 
         await page.click(`#gridBody tr[data-name="${testApp}"]`);
         await page.waitForSelector('#appPanel:not([hidden]) .pfacts');
+        // 2.32.2: the side panel's More... opens the actions menu (the same click used to close it again at once).
+        await page.click('#appPanel .pacts button:has-text("More...")');
+        check(await page.isVisible('#appMenu'), `${label}: the side panel's More... opens the actions menu`);
+        await page.keyboard.press('Escape');
         // Without groups (the chip above was taken off again) its stage says so: "Ready - no groups", with Groups... next.
         check(/Ready to send|Ready - no groups|Draft/.test(await page.textContent(`#gridBody tr[data-name="${testApp}"]`)) && (await page.isVisible('#btnNext') || await page.isEnabled('#btnDeploy')), `${label}: a new app shows its stage and the next step (in the row and on the toolbar)`, await page.textContent(`#gridBody tr[data-name="${testApp}"]`));
         await noOverflow('Apps with the side panel'); await unnamed('Apps with the side panel'); await a11y('Apps with the side panel');
