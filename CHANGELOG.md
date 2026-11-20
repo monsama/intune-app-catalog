@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.29.2
+
+- **Add apps opens on the kind you added last** (Winget, installer, script,
+  PSADT or a list). Opened for a kind (an installer dropped on the window,
+  the command palette), it opens on that one as before.
+- **The UI tests clean up after themselves:** the `data` and `init` folders
+  a run creates are removed again, so the next run starts clean. Folders
+  that were there before the run are left alone.
+
 ## 2.29.1
 
 - **The shared Winget package builds itself.** `init.intunewin` is built

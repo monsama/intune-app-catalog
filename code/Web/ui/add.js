@@ -20,7 +20,9 @@ function openAdd(src, file) {
   const favs = (prefs && prefs.favoriteGroups) || [];
   $('adFavs').replaceChildren(...(favs.length ? [el('span', { class: 'muted', text: 'Favourites:' }), ...favs.map(g => el('button', { type: 'button', class: 'chip', text: g, title: `Add ${g} to Required for (Shift: Available for)`, onclick: e => addGroup(e.shiftKey ? 'adAvailable' : 'adRequired', g) }))] : []));
   if (!$('dlgAdd').open) $('dlgAdd').showModal();
-  showAddSrc(src || 'winget');
+  // Opened without a kind (the Add apps button): on the kind added last time.
+  let last = ''; try { last = localStorage.getItem('addLastSrc') || ''; } catch (e) { }
+  showAddSrc(src || (['winget', 'installer', 'script', 'psadt', 'list'].includes(last) ? last : 'winget'));
   if (file) startUpload(file);
 }
 function addGroup(id, g) { const l = addLines(id); if (!l.includes(g)) $(id).value = [...l, g].join('\n'); }
@@ -154,6 +156,7 @@ $('btnAddGo').addEventListener('click', async () => {
   const groups = { requiredFor: addLines('adRequired'), availableFor: addLines('adAvailable') };
   const publish = $('adPublish').checked;
   try {
+    try { localStorage.setItem('addLastSrc', addSrc); } catch (e) { }   // the next Add apps opens on this kind
     if (addSrc === 'winget' || addSrc === 'list') {
       const items = addSrc === 'winget' ? [...awPicked.values()].map(x => ({ id: x.id, name: x.name, version: x.version })) : [...alPicked].map(id => ({ id }));
       const note = addSrc === 'winget' ? 'awNote' : 'alNote', added = [], skipped = [];
