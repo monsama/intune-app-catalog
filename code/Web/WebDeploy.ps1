@@ -21,6 +21,8 @@ function Global:Get-WebDeployPlan {
     if ($chosen.Count -eq 0) { return @{ ok = $false; error = 'Choose one or more apps first.' } }
     if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Set up the connection in Settings first.' } }
     $order = Get-DependencyOrderedApps -Apps $chosen
+    # Winget apps deploy the shared package: built here if it isn't there yet (nothing to choose about it).
+    if (@($chosen | Where-Object { $_.wingetId -and -not (Test-StoreProductId ([string]$_.wingetId)) }).Count) { [void](Initialize-SharedWingetPackage) }
     $index = Get-PackageFolderIndex -Root (Get-AppFolder -Kind Packages)
     # App IDs the connected tenant doesn't have (a catalog copied from another tenant): an update would fail.
     $tenantIds = $null

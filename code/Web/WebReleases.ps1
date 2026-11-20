@@ -98,6 +98,7 @@ function Global:Start-WebRelease {
         if ($dl.status -in 'gone', 'notinwinget') { return @{ ok = $false; error = "Not released: $($dl.text)" } }
     }
     if (-not @($Global:App.PilotGroups).Count) { return @{ ok = $false; error = 'Set the pilot groups first: Settings > Updates.' } }
+    if (-not $own) { [void](Initialize-SharedWingetPackage) }
     $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $own -PackagePath $a.packagePath
     if (-not $pkg.Found) { return @{ ok = $false; error = $(if ($own) { "$name has no package to upload - put the new installer in its folder and build it (the release dialog does both)." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging & folders builds it." }) } }
     $defaults = $null

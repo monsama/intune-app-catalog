@@ -250,13 +250,16 @@ function renderSetup(steps) {
   $('setupTitle').textContent = `Getting started - ${done} of ${steps.length} done`;
   $('setupBar').style.width = Math.round(100 * done / steps.length) + '%';
   const first = steps.findIndex(s => !s.done);
-  // Only the steps still open, in full; the done ones as one short line under them.
-  $('setupList').replaceChildren(...steps.map((s, i) => s.done ? null : el('li', { class: i === first ? 'now' : '' },
-    el('span', { class: 'mark', 'aria-hidden': 'true', text: String(i + 1) }),
-    el('div', { class: 'body' }, el('b', { text: s.title }), el('span', { class: 'muted', text: s.text })),
-    go[s.go] ? el('button', { class: 'btn small' + (i === first ? ' primary' : ''), text: 'Open', onclick: go[s.go] }) : '')).filter(Boolean));
-  const doneSteps = steps.filter(s => s.done);
-  $('setupDone').replaceChildren(...(doneSteps.length ? [el('span', { class: 'muted', text: 'Done: ' }), ...doneSteps.map(s => el('span', { class: 'donechip', text: '✓ ' + s.title }))] : []));
+  // Every step in its place, 1 to the last: the done ones ticked and short (their title), the open ones in full with
+  // their button - the next one marked.
+  $('setupList').replaceChildren(...steps.map((s, i) => s.done
+    ? el('li', { class: 'done', title: s.text }, el('span', { class: 'mark', 'aria-hidden': 'true', text: '✓' }),
+      el('div', { class: 'body' }, el('b', { text: s.title }), el('span', { class: 'sr', text: ' - done' })), '')
+    : el('li', { class: i === first ? 'now' : '' },
+      el('span', { class: 'mark', 'aria-hidden': 'true', text: String(i + 1) }),
+      el('div', { class: 'body' }, el('b', { text: s.title }), el('span', { class: 'muted', text: s.text })),
+      go[s.go] ? el('button', { class: 'btn small' + (i === first ? ' primary' : ''), text: 'Open', onclick: go[s.go] }) : '')));
+  $('setupDone').replaceChildren();
 }
 
 // ---------------------------------------------------------------- the catalog and Intune, side by side

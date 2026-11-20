@@ -80,6 +80,8 @@ if ($serverMode) {
     catch { Write-Host "  Can't start: $($_.Exception.Message)" -ForegroundColor Red; Write-Log "[FAILED] Server mode: $($_.Exception.Message)"; exit 1 }
     $NoBrowser = $true
 }
+# The shared Winget package: built now when it isn't there (it has nothing to choose, so it needs no button).
+try { [void](Initialize-SharedWingetPackage) } catch { Write-Log "[WARN] The shared Winget package couldn't be built: $($_.Exception.Message)" }
 
 # A fixed port keeps the page's origin - and with it what the browser
 # remembers for it (column widths, the last tab) - the same from one start

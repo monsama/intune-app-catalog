@@ -1495,3 +1495,7 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 #loginPw { display: grid; gap: 12px; }
 #loginPw[hidden] { display: none; }
 .loginor { margin: 2px 0; }
+
+/* Getting started: done steps stay in their place, one quiet line each */
+.setup li.done { padding-top: 3px; padding-bottom: 3px; }
+.setup li.done .body b { font-size: 13px; text-decoration: none; }
