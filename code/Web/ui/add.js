@@ -34,11 +34,12 @@ function showAddSrc(src) {
 for (const t of document.querySelectorAll('[data-asrc]')) t.addEventListener('click', () => showAddSrc(t.dataset.asrc));
 function updateAddButton() {
   const b = $('btnAddGo');
-  if (addSrc === 'winget') { b.textContent = awPicked.size ? `Add ${awPicked.size} app${awPicked.size === 1 ? '' : 's'}` : 'Add'; setEnabled(b, awPicked.size > 0, 'Tick one or more packages first.'); }
-  else if (addSrc === 'installer') { b.textContent = 'Add'; setEnabled(b, !!aiInfo, 'Drop or choose an installer first.'); }
-  else if (addSrc === 'psadt') { b.textContent = 'Add'; setEnabled(b, !!($('apName').value.trim() && $('apVersion').value.trim()), 'Give the app a name and the version you are packaging.'); }
-  else if (addSrc === 'list') { b.textContent = alPicked.size ? `Add ${alPicked.size} app${alPicked.size === 1 ? '' : 's'}` : 'Add'; setEnabled(b, alPicked.size > 0, 'Read a list and tick the packages first.'); }
-  else { b.textContent = 'Add'; setEnabled(b, !!$('asName').value.trim(), 'Give the app a name first.'); }
+  // The button names what it adds: only the open tab counts - what is filled in on the other tabs is left as it is.
+  if (addSrc === 'winget') { b.textContent = awPicked.size ? `Add ${awPicked.size} Winget app${awPicked.size === 1 ? '' : 's'}` : 'Add Winget apps'; setEnabled(b, awPicked.size > 0, 'Tick one or more packages first.'); }
+  else if (addSrc === 'installer') { b.textContent = 'Add installer'; setEnabled(b, !!aiInfo, 'Drop or choose an installer first.'); }
+  else if (addSrc === 'psadt') { b.textContent = 'Add PSADT app'; setEnabled(b, !!($('apName').value.trim() && $('apVersion').value.trim()), 'Give the app a name and the version you are packaging.'); }
+  else if (addSrc === 'list') { b.textContent = alPicked.size ? `Add ${alPicked.size} from the list` : 'Add from the list'; setEnabled(b, alPicked.size > 0, 'Read a list and tick the packages first.'); }
+  else { b.textContent = 'Add script app'; setEnabled(b, !!$('asName').value.trim(), 'Give the app a name first.'); }
 }
 $('btnAddBlank').addEventListener('click', () => { $('dlgAdd').close(); openEditor(''); });
 $('btnAddCancel').addEventListener('click', () => $('dlgAdd').close());

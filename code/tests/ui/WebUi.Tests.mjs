@@ -111,6 +111,7 @@ try {
       await page.waitForFunction(() => document.getElementById('asTemplate').options.length > 0 && /IntuneAppCatalog/.test(document.getElementById('asInstall').value));
       await page.fill('#asName', 'ZZ UI script');
       check(!(await page.isDisabled('#btnAddGo')), `${label}: a script app can be added once it has a name - the template writes the version marker`);
+      check(await page.textContent('#btnAddGo') === 'Add script app', `${label}: the Add button names what it adds`, await page.textContent('#btnAddGo'));
       await unnamed('Add apps (script)'); await a11y('Add apps (script)'); await shot('add-script');
       await page.click('#btnAddBlank');
       await page.waitForSelector('#dlgApp[open]');
@@ -268,9 +269,15 @@ try {
         check((await page.inputValue('#gRequired')).split('\n').includes('SG-ZZ-UI'), `${label}: Add groups saved the group`, await page.inputValue('#gRequired'));
         // Blocks (2.26): the winget commands as locked and editable blocks; an option added there lands in the command.
         await page.click('.edtab[data-i="3"]');
-        await page.waitForSelector('#instBlocks:not([hidden]) .blk.lock', { timeout: 8000 });
+        await page.waitForSelector('#instBlocks:not([hidden]) .bfixed', { timeout: 8000 });
         check(await page.evaluate(() => document.getElementById('mInstallCommand').readOnly && document.querySelectorAll('#instBlocks .blk.lock').length >= 3), `${label}: the commands show as blocks, the text read-only`);
-        await unnamed('the blocks');
+        // 2.29.1: the fixed parts fold into one line, the raw commands under the blocks; both open on request.
+        check(await page.evaluate(() => !document.getElementById('instRaw').open && [...document.querySelectorAll('#instBlocks .blk.lock')].every(b => !b.offsetParent)), `${label}: the fixed parts and the raw commands are folded away`);
+        await page.click('#instBlocks .bfixed');
+        check(await page.evaluate(() => [...document.querySelectorAll('#instBlocks .blk.lock')].every(b => !!b.offsetParent)), `${label}: the fixed parts show on a click`);
+        await page.click('#instBlocks .bfixed');
+        await page.evaluate(() => { try { localStorage.removeItem('blocksShowFixed'); } catch (e) { } });
+        await unnamed('the blocks'); await shot('blocks');
         await page.selectOption('#instBlocks select.badd', '--override');
         await page.fill('#instBlocks input[aria-label="--override value"]', '/S');
         await page.press('#instBlocks input[aria-label="--override value"]', 'Tab');
