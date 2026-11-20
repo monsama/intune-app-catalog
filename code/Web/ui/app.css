@@ -1527,3 +1527,20 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 #deploySec .foldsum .fstext { flex: 1; min-width: 0; }
 #deploySec .formgrid:not(.f-det) [data-sum="det"], #deploySec .formgrid:not(.f-req) [data-sum="req"], #deploySec .formgrid:not(.f-dep) [data-sum="dep"] { display: none; }
 #deploySec .formgrid.f-det [data-fold="det"], #deploySec .formgrid.f-req [data-fold="req"], #deploySec .formgrid.f-dep [data-fold="dep"] { display: none !important; }
+
+/* 2.31.0: the list's view options in one icon menu, with the mouse and keys */
+.menu.looks .mkeys { max-width: 300px; margin: 4px 8px 6px; font-size: 12px; line-height: 1.5; color: var(--muted); white-space: normal; }
+body[data-view="home"] #setupBanner { display: none; }
+
+/* 2.31.0: the release rule as one line; the App ID as plain text; the icon's extra actions in one menu */
+#aRuleBox .foldsum { display: flex; align-items: center; gap: 12px; padding: 6px 0 2px; font-size: 13px; color: var(--muted); }
+#aRuleBox .foldsum .fstext { flex: 1; min-width: 0; }
+#aRuleBox:not(.folded) .foldsum { display: none; }
+#aRuleBox.folded > :not(legend):not(.foldsum) { display: none !important; }
+#aRuleBox.folded > legend .muted { display: none; }
+#aAppId[readonly] { border-color: transparent; background: none; padding-left: 0; box-shadow: none; }
+#aIconMore { width: auto; }
+#dlgAdd .addgroups .foldsum { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); }
+#dlgAdd .addgroups .foldsum .fstext { flex: 1; min-width: 0; }
+#dlgAdd .addgroups:not(.folded) .foldsum { display: none; }
+#dlgAdd .addgroups.folded > :not(.foldsum) { display: none !important; }

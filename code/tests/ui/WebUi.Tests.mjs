@@ -134,7 +134,8 @@ try {
       await page.click('#tabHome');
       await page.waitForFunction(() => !/Looking/.test(document.getElementById('homeNote').textContent));
       check(await page.isVisible('#homeSetup') && /Connect to Intune/.test(await page.textContent('#setupList li.now')), `${label}: Home's getting started points at the first step - connecting`, await page.textContent('#homeSetup'));
-      check(/Not connected/.test(await page.textContent('#homeList')), `${label}: Home says the app isn't connected`, await page.textContent('#homeList'));
+      // 2.31.0: said once - in Getting started, not again in Needs attention or the banner; no zero tiles.
+      check(!/Not connected/.test(await page.textContent('#homeList')) && !(await page.isVisible('#setupBanner')) && !(await page.isVisible('#homeStats')), `${label}: Home says "not connected" once, in Getting started`, await page.textContent('#homeList'));
       await noOverflow('Home'); await unnamed('Home'); await a11y('Home'); await shot('home');
       await page.keyboard.press('Control+k');
       await page.waitForSelector('#dlgPalette[open]');
