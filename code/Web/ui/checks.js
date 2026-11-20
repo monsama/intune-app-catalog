@@ -55,7 +55,8 @@ async function runChecks(names) {
       if (w.ok) { mergeFindings(w); checkLog(`${stamp()} winget: ${(w.findings || []).length} problem(s).`); }
       else { notes.push(w.error); checkLog(`${stamp()} [WARN] ${w.error}`); }
     }
-    $('checkNotes').textContent = [r.summary || '', ...notes].join(' ').trim();
+    // No findings: the empty state says what wasn't compared - the note above doesn't say it again.
+    $('checkNotes').textContent = [r.summary || '', ...(findings.length ? notes : [])].join(' ').trim();
     $('checkEmptyList').hidden = true; $('btnRunChecksEmpty').hidden = true;
     $('checkEmptyTitle').textContent = 'Nothing to fix';
     $('checkEmptyText').textContent = notes.length ? `No findings - but not everything was compared: ${notes.join(' ')}` : 'The catalog, Intune and Entra ID agree.';
@@ -325,3 +326,13 @@ $('btnFindWinget').addEventListener('click', () => openWinget($('aName').value.t
 }));
 $('wgQuery').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchWinget(); } });
 $('btnRunChecksEmpty').addEventListener('click', () => $('btnRunChecks').click());
+
+// 2.32.0: what Run checks reads, as one Options drop-down next to it (the two switches stay as they were).
+{
+  const box = el('details', { class: 'optsdrop' }, el('summary', { class: 'btn', text: 'Options', title: 'What Run checks reads: deployed apps in detail, winget' }), el('div', { class: 'optspanel' }));
+  const panel = box.querySelector('.optspanel');
+  for (const id of ['chkDetails', 'chkWinget']) { const l = $(id).closest('label'); l.classList.remove('inline'); panel.append(l); }
+  $('btnRunChecks').after(box);
+  document.addEventListener('click', e => { if (box.open && !box.contains(e.target)) box.open = false; });
+  box.addEventListener('keydown', e => { if (e.key === 'Escape' && box.open) { e.stopPropagation(); box.open = false; box.querySelector('summary').focus(); } });
+}

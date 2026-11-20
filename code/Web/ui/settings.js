@@ -77,6 +77,8 @@ async function pickCertificate() {
 $('btnPickCert').addEventListener('click', pickCertificate);
 // The certificate menu beside the thumbprint: create, import, download, delete.
 const certMenu = $('certMenu');
+// Choosing a certificate is one more item of the Certificate menu (2.32.0) - one button beside the thumbprint.
+$('btnPickCertMenu').addEventListener('click', () => $('btnPickCert').click());
 $('btnCertMenu').addEventListener('click', e => {
   e.stopPropagation();
   if (!certMenu.hidden) { certMenu.hidden = true; $('btnCertMenu').setAttribute('aria-expanded', 'false'); return; }
@@ -266,7 +268,13 @@ function renderSetupSteps() {
   const doneCount = steps.filter(s => s.done).length;
   $('guideState').textContent = doneCount === steps.length ? 'Setup complete' : `${doneCount} of ${steps.length} done`;
   $('guideState').className = 'guidestate' + (doneCount === steps.length ? ' ok' : '');
+  // 2.32.0: while it is being set up, the guide has the Entra ID buttons (once); set up, the guide folds away and
+  // the Entra ID row under the connection holds them for later (a new certificate, the permissions again).
+  const complete = doneCount === steps.length;
+  document.querySelector('#viewSettings .entrarow').hidden = !(complete || (state && state.configured));
+  if (guideWasComplete !== complete) { $('guideReg').open = !complete; guideWasComplete = complete; }
 }
+let guideWasComplete = null;
 for (const id of ['fTenant', 'fClient', 'fThumb']) $(id).addEventListener('input', () => setTimeout(renderSetupSteps, 0));
 $('tileChecks').addEventListener('click', () => { showView('checks'); $('btnRunChecks').click(); });
 $('tileAdd').addEventListener('click', () => { showView('apps'); $('btnAddApp').click(); });

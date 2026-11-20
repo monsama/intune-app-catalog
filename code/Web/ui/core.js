@@ -302,7 +302,11 @@ async function checkConnection() {
   if (!r.ok) { setBadge('error', 'Connection problem', r.error || ''); return; }
   setBadge(r.state === 'none' ? 'none' : r.state, r.text, r.detail);
 }
-$('connBadge').addEventListener('click', () => { showSettings('connection'); $('fTenant').closest('.card').scrollIntoView({ block: 'start' }); $('btnTest').focus(); });
+$('connBadge').addEventListener('click', () => {
+  // Not set up yet: the setup guide, step by step; set up: the connection fields and Test connection.
+  if (state && !state.configured && !state.testMode) { showSettings('connection'); $('guideReg').open = true; $('guideCard').scrollIntoView({ block: 'start' }); return; }
+  showSettings('connection'); $('fTenant').closest('.card').scrollIntoView({ block: 'start' }); $('btnTest').focus();
+});
 
 async function loadState() {
   const r = await api('/api/state');
@@ -311,9 +315,10 @@ async function loadState() {
   $('ver').textContent = 'v' + r.version;
   document.title = 'Intune App Catalog ' + r.version;
   if (r.testMode) setBadge('warn', 'TEST MODE', 'Graph answers come from a test file, not from a tenant. Started with INTUNE_CATALOG_TEST_GRAPH set - restart the app without it.');
-  else if (!r.configured) setBadge('none', 'Not connected', 'Fill in the connection in Settings - until then nothing is read from or sent to Intune.');
+  else if (!r.configured) setBadge('none', 'Not connected - set up', 'Nothing is read from or sent to Intune until the connection is set up - click for the setup guide.');
   else checkConnection();
-  $('setupBanner').hidden = r.configured;
+  // 2.32.0: no banner on every page - the badge says it (and leads to the setup guide), each page says what it can't do.
+  $('setupBanner').hidden = true;
   $('testBanner').hidden = !r.testMode;
   // Connection fields changed and not saved yet (a new certificate chosen, then an old one deleted): kept - only
   // whether they still differ from what's saved is worked out again.

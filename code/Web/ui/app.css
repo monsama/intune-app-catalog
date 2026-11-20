@@ -1544,3 +1544,13 @@ body[data-view="home"] #setupBanner { display: none; }
 #dlgAdd .addgroups .foldsum .fstext { flex: 1; min-width: 0; }
 #dlgAdd .addgroups:not(.folded) .foldsum { display: none; }
 #dlgAdd .addgroups.folded > :not(.foldsum) { display: none !important; }
+
+/* 2.32.0: Run checks' options as a drop-down */
+.optsdrop { position: relative; }
+.optsdrop > summary { list-style: none; }
+.optsdrop > summary::-webkit-details-marker { display: none; }
+.optsdrop > summary::after { content: ' \25BE'; }
+.optsdrop .optspanel { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; display: grid; gap: 8px; min-width: 240px; padding: 10px 12px; border: 1px solid var(--bd); border-radius: var(--r-m); background: var(--surface); box-shadow: var(--shadow); }
+#viewGroups.noconn .panel.side { display: none; }
+#viewGroups.noconn .gsplit { grid-template-columns: 1fr; }
+#groupEmpty #btnGroupsSetup { margin-top: 8px; }

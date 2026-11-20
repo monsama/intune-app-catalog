@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.32.0
+
+Each thing said once, and controls only where they can do something:
+
+- **No "no connection" banner on every page.** The sidebar badge says
+  "Not connected - set up" and opens the setup guide; each page says what
+  it can't do without the connection.
+- **Settings > Connection:** the Entra ID buttons are in the setup guide
+  while it is being set up - the row under the connection appears once it
+  is (a new certificate, the permissions again later). The guide folds
+  away when setup is complete. Choosing a certificate is the first item of
+  the **Certificate** menu - one button beside the thumbprint.
+- **Updates:** with no app on managed updates, just the message - no zero
+  tiles or empty column headers. Check downloads and Compliance report are
+  under **More**; Reload is an icon.
+- **Checks:** "Deployed apps in detail" and "Ask winget" are under
+  **Options** next to Run checks; with no findings, what wasn't compared is
+  said once (in the empty state).
+- **Groups:** not connected and no group in the catalog - one message with
+  **Set up the connection** instead of controls that can't work. Reload is
+  an icon next to the search; the selection hint is the list's tooltip.
+
 ## 2.31.0
 
 Quieter everywhere - said once, and what most people never change folded:

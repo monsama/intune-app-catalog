@@ -23,6 +23,12 @@ async function loadGroups() {
   // Nothing in the catalog names a group yet: start on all of Entra ID's groups instead of an empty list.
   if (!groups.length && !$('groupShow').value) $('groupShow').value = 'entra';
   if (entraMode()) searchEntraGroups();
+  // Not connected and no group in the catalog: nothing here can work yet - one message instead of controls.
+  const noconn = !!(state && !state.configured && !state.testMode) && !groups.length;
+  $('viewGroups').classList.toggle('noconn', noconn);
+  $('groupEmpty').querySelector('h2').textContent = noconn ? 'Groups needs the connection' : 'Pick a group';
+  $('groupEmptyText').textContent = noconn ? 'Searching, creating and deleting groups goes through Entra ID. Set up the connection first - the groups your apps use then show here, with whether Entra ID has them.' : groupEmptyDefault;
+  $('btnGroupsSetup').hidden = !noconn;
   renderGroupList();
   loadGroupsStatus();
 }
@@ -443,3 +449,12 @@ $('btnGroupsDeleteGo').addEventListener('click', async () => {
 
 // The description's own Save: the same save as the button under To add (description and members together).
 $('btnGroupDescSave').addEventListener('click', saveGroup);
+
+// 2.32.0: Reload as an icon next to the search; the selection hint lives in the list's tooltip.
+{
+  $('btnGroupOpen').after($('btnGroupsReload')); reloadIcon('btnGroupsReload');
+  $('groupList').title = 'Ctrl+click or Shift+click selects several; right-click for actions.';
+  const p = $('groupEmpty').querySelector('p'); p.id = 'groupEmptyText';
+  p.after(el('button', { type: 'button', class: 'btn primary', id: 'btnGroupsSetup', hidden: true, text: 'Set up the connection', onclick: () => $('connBadge').click() }));
+}
+const groupEmptyDefault = $('groupEmptyText').textContent;

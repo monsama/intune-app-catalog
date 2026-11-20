@@ -26,6 +26,8 @@ async function loadUpdates(force) {
       tile(s.onCurrentPercent === null ? '-' : s.onCurrentPercent + ' %', `of ${s.devices} devices on the current version`, s.onCurrentPercent !== null && s.onCurrentPercent < 90 ? 'warn' : 'ok'),
       ...(r.inventory ? [tile(String(s.olderDevices), 'devices with an older version (inventory)', s.olderDevices ? 'warn' : 'ok', 'From Intune\'s inventory of apps on devices - also versions installed by hand')] : []));
     $('updEmpty').hidden = r.rows.length > 0;
+    // No app with managed updates: the message says it - no zero tiles, no empty column headers above it.
+    $('updTiles').hidden = !r.rows.length; $('updGrid').tHead.hidden = !r.rows.length;
     renderUpdates();
     loadTrend();
   } finally {
@@ -159,3 +161,7 @@ $('btnUpdExport').addEventListener('click', () => {
 });
 // After a release action's dialogs close, the page shows the new state.
 for (const d of ['dlgRun', 'dlgRelease']) $(d).addEventListener('close', () => { if (!$('viewUpdates').hidden) setTimeout(() => loadUpdates(true), 300); });
+
+// 2.32.0: the two occasional actions in one menu; Reload as an icon.
+foldIntoMenu(['btnUpdDownloads', 'btnUpdExport'], { id: 'btnUpdMore', title: 'Check downloads, compliance report' });
+reloadIcon('btnUpdReload');
