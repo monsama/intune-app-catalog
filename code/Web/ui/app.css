@@ -1563,3 +1563,8 @@ body[data-view="home"] #setupBanner { display: none; }
 .pappid { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
 .pappid code.appid { font: 11.5px var(--mono); color: var(--muted); overflow-wrap: anywhere; user-select: all; }
 .pappid .idacts { display: inline-flex; gap: 6px; }
+
+/* 2.33.0: the installer uploaded right in the editor */
+#aPkgInfo .pkgacts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.apppanel .plob { display: grid; gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--warn); border-radius: var(--r-m); background: var(--warn-bg); font-size: 13px; }
+.apppanel .plob .btn { justify-self: start; }

@@ -522,6 +522,20 @@ function Global:Test-AppIsUncommon {
     return [string]::IsNullOrWhiteSpace($App.wingetId)
 }
 
+function Global:Test-IntuneLobMsiType {
+    # Pure: whether an Intune app type (an @odata.type, with or without its prefix, or its friendly label) is the MSI line-of-business type.
+    param([string]$Type)
+    $t = ($Type -replace '^#?microsoft\.graph\.', '').Trim()
+    return ($t -eq 'windowsMobileMSI' -or $t -eq 'Windows MSI line-of-business app')
+}
+
+function Global:Test-PackagedIntuneAppType {
+    # Pure: an Intune app type this tool builds a package for - Win32, or an MSI line-of-business app (moved to Win32
+    # when it's sent; Test-IntuneLobMsiType). Blank (not synced, not deployed) counts too.
+    param([string]$Label)
+    return (-not $Label -or $Label -eq 'Windows app (Win32)' -or (Test-IntuneLobMsiType $Label))
+}
+
 function Global:Get-FriendlyIntuneAppType {
     param([string]$ODataType)
 
@@ -540,7 +554,9 @@ function Global:Get-FriendlyIntuneAppType {
         "windowsPhone81AppX"      = "Windows Phone app package (.appx)"
         "windowsWebApp"           = "Web link"
         "webApp"                  = "Web link"
-        "windowsMobileMSI"        = "Windows app (Win32)"
+        # Intune's own MSI type (an .msi uploaded as a line-of-business app) - not Win32: it can't be updated as one,
+        # and Intune never gives the .msi back. Said so, so it isn't mistaken for a Win32 app (2.33.0).
+        "windowsMobileMSI"        = "Windows MSI line-of-business app"
     }
     if ($knownTypes.ContainsKey($typeName)) { return $knownTypes[$typeName] }
 
@@ -2402,11 +2418,11 @@ function Global:Get-NonPackageAppHint {
     param($App)
     if (([string]$App.wingetId).Trim()) { return '' }
     $t = [string]$App.intuneAppType
-    if ($t -and $t -ne 'Windows app (Win32)') { return "$($App.appName) is Intune's own app type ($t) - there's nothing to package." }
+    if (-not (Test-PackagedIntuneAppType $t)) { return "$($App.appName) is Intune's own app type ($t) - there's nothing to package." }
     # By name only for an app that has nothing of its own: an install command, a detection rule or a package path
     # means someone packaged it as Win32 (an Office Deployment Tool package, say) - that one is built and sent as usual.
     $m = $App.metadata
-    if ($t -eq 'Windows app (Win32)' -or [string]$App.packagePath -or ($m -and ([string]$m.installCommand).Trim() -and $m.detectionRule)) { return '' }
+    if (($t -and (Test-PackagedIntuneAppType $t)) -or [string]$App.packagePath -or ($m -and ([string]$m.installCommand).Trim() -and $m.detectionRule)) { return '' }
     $n = ([string]$App.appName).Trim()
     if (Test-CompanyPortalName $n) { return "Company Portal is a Microsoft Store app: put 9WZDNCRFJ3PZ in its Winget ID and it's sent as one - nothing to package." }
     if ($n -match '^(Microsoft\s+)?(365|Office)\b|^Microsoft 365 Apps') { return "$n is added in Intune itself (Apps > Windows > Add > Microsoft 365 Apps) - not a package." }

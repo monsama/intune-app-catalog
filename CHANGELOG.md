@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.33.0
+
+**MSI line-of-business apps can move to Win32.** An app taken over from
+Intune that Intune has as an *MSI line-of-business app* (its own MSI type)
+came into the catalog without its .msi - Intune never gives it back - and
+couldn't be built or sent: this tool sends Win32 apps, and Intune can't
+turn an MSI app into one. Now, the way Microsoft recommends:
+
+1. **Upload the installer right in the editor** (Basics - "Upload the
+   installer..."), on the server too. It goes into the app's packages
+   folder and fills in what is still empty: the install and uninstall
+   commands, the detection rule (MSI product code), the version and the
+   publisher. What the app already has is kept.
+2. **Send to Intune creates it as a new Win32 app** with its groups. Send
+   asks Intune for the linked app's type first; the plan says "Create as
+   Win32" and why. The catalog then follows the Win32 app.
+3. **Retire the MSI app** from the app's side panel, once the Win32 app has
+   its groups - asked first, and only if Intune still says it is an MSI
+   line-of-business app. It is deleted from Intune; devices keep the
+   software (the Win32 app finds it by the same MSI product code), so
+   nothing is uninstalled and installed again.
+
+Also:
+
+- **Its type is said as it is:** "Windows MSI line-of-business app"
+  instead of "Windows app (Win32)"; the side panel and the editor explain
+  what to do with one.
+- Push settings to an MSI line-of-business app is refused with why (its
+  settings can't be pushed as a Win32 app's).
+- New tests: the type helpers, the installer upload (filled in, kept,
+  refused), retiring the MSI app (only an MSI app, only once replaced) and
+  the editor upload in the browser.
+
 ## 2.32.2
 
 - **Fixed: the side panel's More... did nothing.** It opened the actions

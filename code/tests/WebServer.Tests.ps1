@@ -506,6 +506,23 @@ try {
         (Test-Path -LiteralPath (Join-Path $upDir 'zz-tool-setup.exe')) -and (Test-Path -LiteralPath (Join-Path $upDir 'Uninstall.ps1'))) 'add apps: the installer becomes an own package - commands, detection, groups, the file and Uninstall.ps1 in its folder' ($addI | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/add-installer' @{ uploadId = $up.uploadId; name = 'again' }).ok) 'add apps: an upload is added once'
     [void](Invoke-Api '/api/app-remove' @{ name = $upName }); Remove-Item -LiteralPath $upDir -Recurse -Force -ErrorAction SilentlyContinue
+    # 2.33.0: an installer for an app already in the catalog (one taken over from Intune comes without it): into its
+    # packages folder, what is empty filled in, what it has kept; a second installer and a Winget app are refused.
+    $sendUp = { param($file) $u = Invoke-Api '/api/upload-start' @{ fileName = $file; size = $setup.Length }; [void](Invoke-Api '/api/upload-chunk' @{ uploadId = $u.uploadId; offset = 0; data = [Convert]::ToBase64String($setup) }); [void](Invoke-Api '/api/upload-finish' @{ uploadId = $u.uploadId }); $u.uploadId }
+    $lobName = 'ZZ From Intune ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $lobName; wingetId = ''; appId = 'aaea81e5-38fd-434a-a553-29fd3fb8d307'; requiredFor = @('SG-ZZ-Lob') } })
+    $ai = Invoke-Api '/api/app-installer' @{ name = $lobName; uploadId = (& $sendUp 'zz-lob-setup.exe') }
+    $lobApp = (Invoke-Api '/api/app-get' @{ name = $lobName }).app
+    Check ($ai.ok -and @($ai.filled) -contains 'the install command' -and (@($ai.filled) -join ' ') -match 'detection rule' -and $lobApp.metadata.installCommand -eq '"zz-lob-setup.exe" /S' -and $lobApp.deploy.detection.type -eq 'Script' -and $lobApp.appId -eq 'aaea81e5-38fd-434a-a553-29fd3fb8d307' -and @($lobApp.requiredFor) -contains 'SG-ZZ-Lob' -and (Test-Path -LiteralPath (Join-Path ([string]$ai.folder) 'zz-lob-setup.exe')) -and (Test-Path -LiteralPath (Join-Path ([string]$ai.folder) 'Uninstall.ps1'))) 'installer for an app: into its folder, the commands and detection filled in, its App ID and groups kept' ($ai | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/app-installer' @{ name = $lobName; uploadId = (& $sendUp 'zz-other-setup.exe') }).ok) 'installer for an app: a second, different installer is refused (a new version is a release)'
+    $keepName = 'ZZ Keep ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $keepName; wingetId = ''; appId = ''; metadata = @{ installCommand = 'my-own.cmd'; uninstallCommand = 'my-own-uninstall.cmd' } } })
+    $ak = Invoke-Api '/api/app-installer' @{ name = $keepName; uploadId = (& $sendUp 'zz-keep-setup.exe') }
+    $keepApp = (Invoke-Api '/api/app-get' @{ name = $keepName }).app
+    Check ($ak.ok -and $keepApp.metadata.installCommand -eq 'my-own.cmd' -and $keepApp.metadata.uninstallCommand -eq 'my-own-uninstall.cmd' -and @($ak.filled) -notcontains 'the install command') 'installer for an app: commands it already has are kept' ($ak | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/app-installer' @{ name = $testName; uploadId = (& $sendUp 'zz-winget-setup.exe') }).ok) 'installer for an app: refused for a Winget app'
+    foreach ($n in $lobName, $keepName) { [void](Invoke-Api '/api/app-remove' @{ name = $n }) }
+    foreach ($d in $ai.folder, $ak.folder) { if ($d) { Remove-Item -LiteralPath ([string]$d) -Recurse -Force -ErrorAction SilentlyContinue } }
     $scName = 'ZZ Script ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
     $tpls = Invoke-Api '/api/script-templates' @{ name = $scName; version = '2.0' }
     Check (-not (Invoke-Api '/api/add-script' @{ name = $scName; version = '2.0'; install = 'Write-Output hi'; uninstall = 'Write-Output bye' }).ok) 'add apps: a script app without the version marker or a detection script is refused'
