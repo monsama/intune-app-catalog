@@ -25,11 +25,14 @@ function Global:Get-WebDeployPlan {
     if (@($chosen | Where-Object { $_.wingetId -and -not (Test-StoreProductId ([string]$_.wingetId)) }).Count) { [void](Initialize-SharedWingetPackage) }
     $index = Get-PackageFolderIndex -Root (Get-AppFolder -Kind Packages)
     # App IDs the connected tenant doesn't have (a catalog copied from another tenant): an update would fail.
-    $tenantIds = $null
+    $tenantIds = $null; $t = $null
     if (@($chosen | Where-Object { $_.appId }).Count) {
         $t = Get-WebIntuneApps @{}
         if ($t.ok) { $tenantIds = @{}; foreach ($i in @($t.ids)) { $tenantIds[[string]$i] = $true } }
     }
+    # The Intune type of each linked app: an MSI line-of-business app is sent as a new Win32 app (said in the plan).
+    $typeOf = @{}
+    if ($t -and $t.ok) { foreach ($x in @($t.apps)) { if ($x) { $typeOf[[string]$x.id] = [string]$x.type } } }
     # Settings > Automatic checks: before creating an app, look for one of the
     # same name already in Intune - creating a second is the mistake to stop.
     $inIntune = @{}
@@ -60,7 +63,10 @@ function Global:Get-WebDeployPlan {
         }
         elseif (-not $store -and $a.managedUpdates -and $a.wingetId -and -not (Test-ReleaseVersionText ([string]$(if ($a.metadata) { $a.metadata.appVersion })))) { $reason = "Managed updates deploy a fixed version - set its App version first (More > Take winget's version)." }
         elseif ($unc -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = "No detection rule yet - an app with its own package needs one (the editor's Install & detection)." }
-        [ordered]@{ name = $a.appName; update = [bool]$a.appId; ready = (-not $reason); reason = $reason; deps = @($(if ($a.metadata) { @($a.metadata.dependencies) | Where-Object { $_ } | ForEach-Object { [string]$_ } })) }
+        $lob = $a.appId -and (Test-IntuneLobMsiType ([string]$typeOf[([string]$a.appId).ToLowerInvariant()]))
+        [ordered]@{ name = $a.appName; update = ([bool]$a.appId -and -not $lob); ready = (-not $reason); reason = $reason; deps = @($(if ($a.metadata) { @($a.metadata.dependencies) | Where-Object { $_ } | ForEach-Object { [string]$_ } }))
+            replacesLob = [bool]$lob
+            note = $(if ($lob) { 'An MSI line-of-business app in Intune - it can''t be updated as Win32, so it is created as a new Win32 app with its groups. The MSI app stays until you retire it (the side panel).' } else { '' }) }
     }
     return @{ ok = $true; apps = @($plan); circular = @($order.CircularNames); note = $note }
 }
@@ -100,6 +106,17 @@ function Global:Start-WebDeploy {
     # -metadataOnly: Push settings - the catalog's settings to an app already in
     # Intune, without uploading a package.
     $metadataOnly = [bool]$Data.metadataOnly
+    # Linked to an MSI line-of-business app (asked of Intune now, not taken from the catalog): Intune can't turn it
+    # into a Win32 app, so it is created as a new one - the catalog then follows that, the MSI app is left to retire.
+    $replacesLob = ''
+    if ($a.appId) {
+        $ty = Get-WebIntuneAppODataType -AppId ([string]$a.appId)
+        if ($ty.ok -and (Test-IntuneLobMsiType $ty.type)) {
+            if ($metadataOnly) { return @{ ok = $false; error = "$name is an MSI line-of-business app in Intune - its settings can't be pushed as a Win32 app's. Send it to Intune: it is created as a Win32 app that replaces it." } }
+            $replacesLob = ([string]$a.appId).ToLowerInvariant()
+            $a = $a.PSObject.Copy(); $a.appId = ''
+        }
+    }
     if ($metadataOnly) {
         if (-not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune yet - Deploy it first." } }
         if (-not $a.metadata) { return @{ ok = $false; error = "$name has no settings of its own yet - Pull them from Intune, or set them in the editor, first." } }
@@ -133,7 +150,7 @@ function Global:Start-WebDeploy {
     # Shown as Being changed on every PC while it runs; a second start (a double click, another admin) is refused.
     $busy = Enter-WebAppBusy -Name $a.appName -What 'deploying'; if ($busy) { return @{ ok = $false; error = $busy } }
     $started = Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "$(if ($metadataOnly) { 'Push settings' } else { 'Deploy' }) $name$(if ($a.appId -and $upload) { ' (new package)' })" `
-        -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $defaults; WasUpdate = [bool]$a.appId; SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }); PackageStamp = $(if ($upload) { $stamp } else { '' }) }
+        -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $defaults; WasUpdate = [bool]$a.appId; SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }); PackageStamp = $(if ($upload) { $stamp } else { '' }); ReplacesLobAppId = $replacesLob }
     if ($started.ok) { Write-Log "[INFO] $(if ($metadataOnly) { "Pushing $name's settings to Intune" } else { "Deploying $name ($($config.Mode)$(if ($a.appId -and $upload) { ', uploading the new package' }))" })..." }
     return $started
 }
@@ -418,6 +435,51 @@ function Global:Get-WebInstallStatus {
 # 3. Finish: the app's file is archived (Backups\Retired), it is deleted
 #    from Intune and removed from the catalog. Restore brings it back from
 #    the archive (not in Intune, no groups - its History has them).
+
+# ---------------------------------------------------------------- MSI line-of-business apps (2.33.0)
+# Intune's MSI type can't become Win32 and never gives the .msi back. With the .msi in the app's package folder,
+# Send creates a Win32 app (same groups) and the catalog follows it; the MSI app is then retired here - deleted
+# from Intune, which leaves the software on the devices: the Win32 app finds it by the same MSI product code, so
+# nothing is uninstalled and installed again (Microsoft's way of moving an MSI app to Win32).
+
+function Global:Get-WebIntuneAppODataType {
+    # The type Intune has for an app now (its @odata.type without the prefix) - read live, not from the catalog.
+    param([string]$AppId)
+    if ($AppId -notmatch '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$') { return @{ ok = $false; error = 'Not an App ID.' } }
+    if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Not connected.' } }
+    $r = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) & $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$AppId" }.GetNewClosure()
+    if (-not $r.ok) { return $r }
+    return @{ ok = $true; type = ([string]$r.value.'@odata.type' -replace '^#?microsoft\.graph\.', ''); name = [string]$r.value.displayName }
+}
+
+function Global:Remove-WebReplacedLobApp {
+    <#
+      Retires the MSI line-of-business app a catalog app replaced as Win32: deletes it from Intune (its
+      assignments go with it; the software stays on the devices), then forgets it. Only when the catalog app is
+      in Intune as Win32 now, and only an app Intune still says is MSI line-of-business - checked again here.
+    #>
+    param($Data)
+    $name = [string]$Data.name
+    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
+    $old = [string]$a.lobToRetire
+    if (-not $old) { return @{ ok = $false; error = "$name has no MSI app to retire." } }
+    if (-not $a.appId -or [string]$a.appId -eq $old) { return @{ ok = $false; error = "$name isn't in Intune as a Win32 app yet - send it to Intune first." } }
+    $ty = Get-WebIntuneAppODataType -AppId $old
+    if (-not $ty.ok) {
+        # Already gone from Intune (deleted there): nothing left to do but forget it.
+        if ([string]$ty.error -match '(?i)not ?found|404|does not exist') { [void](Update-WebCatalogApp -Name $name -Change { param($x) $x.lobToRetire = '' }); return @{ ok = $true; gone = $true } }
+        return @{ ok = $false; error = "Intune couldn't be asked about the MSI app: $($ty.error)" }
+    }
+    if (-not (Test-IntuneLobMsiType $ty.type)) { return @{ ok = $false; error = "The app $old is a $($ty.type) in Intune, not an MSI line-of-business app - not deleted. Clear it in Intune yourself if it should go." } }
+    $del = Remove-WebIntuneAppsNewestFirst -Items @(@{ appId = $old; version = '' })
+    if ($del.failed.Count) { return @{ ok = $false; error = "The MSI app couldn't be deleted from Intune: $($del.failed -join '; ')" } }
+    [void](Update-WebCatalogApp -Name $name -Change { param($x) $x.lobToRetire = '' })
+    $Global:App.IntuneAppsCache = $null
+    Add-WebHistoryEntry -App $name -Kind 'intune' -Text "Retired the MSI line-of-business app $old ($($ty.name)) - deleted from Intune; the Win32 app $($a.appId) replaces it"
+    Write-Log "[OK] $name`: the MSI line-of-business app $old is deleted from Intune - the Win32 app replaces it."
+    return @{ ok = $true }
+}
 
 function Global:Get-WebRetireAppIds {
     # Every Intune app of a catalog app: the current one, then its superseded and rolled-back releases - @(@{ appId; version }), version '' for the current.

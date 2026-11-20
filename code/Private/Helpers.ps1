@@ -192,7 +192,8 @@ function Global:Get-CatalogRow {
     # intuneAppType (never synced, or genuinely not deployed yet) still
     # falls through to the normal uncommon/package check below, since
     # that's the only case where a real package IS actually expected.
-    $isKnownNonWin32 = $app.intuneAppType -and $app.intuneAppType -ne "Windows app (Win32)"
+    # An MSI line-of-business app needs a package too: it is moved to Win32 when it's sent (2.33.0).
+    $isKnownNonWin32 = $app.intuneAppType -and -not (Test-PackagedIntuneAppType ([string]$app.intuneAppType))
     # A stored packagePath counts too, Winget ID or not. "Has a Winget
     # ID" normally means "deploys with the shared init.intunewin", so
     # this column ignored those apps entirely - which made a custom

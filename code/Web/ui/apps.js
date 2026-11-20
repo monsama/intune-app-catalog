@@ -83,8 +83,10 @@ async function loadIntuneIds(force) {
   intuneApps = r.ok ? (r.apps || []) : null; intuneAt = r.ok ? r.at : '';
   renderApps();
 }
+// An MSI line-of-business app in Intune - by the type Intune has now (the live list), else by the catalog's label.
+const isLobMsi = a => !!a.appId && ((intuneApps || []).some(x => x.id === String(a.appId).toLowerCase() && x.type === 'windowsMobileMSI') || /line-of-business/.test(a.type || ''));
 // Intune's app types, short for the list (the full name is the cell's tooltip).
-const shortType = t => ({ 'Windows app (Win32)': 'Win32', 'Microsoft Store app (new)': 'Store', 'Microsoft 365 Apps (Windows 10 and later)': 'Microsoft 365' })[t] || t || '';
+const shortType = t => ({ 'Windows app (Win32)': 'Win32', 'Windows MSI line-of-business app': 'MSI (line-of-business)', 'Microsoft Store app (new)': 'Store', 'Microsoft 365 Apps (Windows 10 and later)': 'Microsoft 365' })[t] || t || '';
 // What the server's status words are shown as - the same meaning, in the words the rest of the page uses.
 const statusLabel = { 'No App ID': 'Not in Intune yet', 'Metadata saved - ready to deploy': 'Not in Intune yet - own settings', 'Custom package': 'Winget ID + own package' };
 function statusPill(row) {
@@ -283,11 +285,46 @@ function showPkgInfo() {
   box.hidden = !!$('aWinget').value.trim() || !editingName || !!(row && row.msHint);
   if (box.hidden) return;
   const script = /\.ps1\b/i.test($('mInstallCommand').value) && !/\.(msi|exe)\b/i.test($('mInstallCommand').value);
-  if (!i || !i.found) { box.textContent = script ? `A script app - Package builds the scripts in its package folder${i && i.folder ? ` (${i.folder})` : ''} into the .intunewin that Send to Intune uploads.` : `No installer in its package folder yet${i && i.folder ? ` (${i.folder})` : ''} - put the .msi or .exe there; Package builds it into the .intunewin that Send to Intune uploads.`; return; }
+  if (!i || !i.found) {
+    if (script) { box.textContent = `A script app - Package builds the scripts in its package folder${i && i.folder ? ` (${i.folder})` : ''} into the .intunewin that Send to Intune uploads.`; return; }
+    // No installer yet (an app taken over from Intune comes without one): upload it right here - works on the server too.
+    const lob = row && isLobMsi(row) ? "In Intune this is an MSI line-of-business app: Intune can't turn it into Win32 and never gives the .msi back - Send to Intune creates it as a Win32 app with its groups, then you retire the MSI app. " : '';
+    box.replaceChildren(el('span', { text: lob + 'No installer yet - upload the .msi or .exe: what is still empty (the commands, the detection rule, the version) is filled in from it; Package then builds the .intunewin that Send to Intune uploads.' }),
+      el('span', { class: 'pkgacts' }, el('button', { type: 'button', class: 'btn small primary', id: 'btnAppInstaller', text: 'Upload the installer...', title: 'An .msi or .exe - it goes into the app\'s packages folder', onclick: () => $('aInstallerFile').click() }),
+        SERVER || !(i && i.folder) ? '' : el('span', { class: 'muted', text: ` or put it in ${i.folder}` })));
+    return;
+  }
   const iv = i.version || '(no version in the file)';
   box.textContent = `Installer in its folder: ${i.file}, version ${iv} - Package builds it into the .intunewin that Send to Intune uploads. App version: ${v || '(none)'}.` +
     (i.version && v && i.version !== v ? ` They differ - a release of the new installer sets the App version (More > Release new version), or correct it on Details.` : '');
 }
+// An installer for the app open in the editor (2.33.0): uploaded in pieces, put in its packages folder, what is empty
+// filled in from it - then the editor shows the app again, as saved.
+const installerFile = el('input', { type: 'file', id: 'aInstallerFile', accept: '.msi,.exe', hidden: true, 'aria-label': 'Installer to upload' });
+document.body.append(installerFile);
+installerFile.addEventListener('change', async () => {
+  const file = installerFile.files[0]; installerFile.value = '';
+  const name = editingName, box = $('aPkgInfo');
+  if (!file || !name) return;
+  if (!/\.(msi|exe)$/i.test(file.name)) { toast('Choose an .msi or .exe installer.', true); return; }
+  if (editorState() !== editorSnapshot) { toast('Save your changes first - the installer fills in what the saved app still lacks.', true); return; }
+  const say = t => { const b = $('btnAppInstaller'); if (b) b.disabled = true; box.firstChild.textContent = t; };
+  const st = await api('/api/upload-start', { fileName: file.name, size: file.size });
+  if (!st.ok) { toast(st.error, true); showPkgInfo(); return; }
+  const piece = 3 * 1024 * 1024;
+  for (let off = 0; off < file.size; off += piece) {
+    const r = await api('/api/upload-chunk', { uploadId: st.uploadId, offset: off, data: b64(await file.slice(off, off + piece).arrayBuffer()) });
+    if (!r.ok) { toast(r.error, true); api('/api/upload-cancel', { uploadId: st.uploadId }); showPkgInfo(); return; }
+    say(`Uploading ${file.name} - ${Math.round(100 * r.received / file.size)} %`);
+  }
+  say(`Reading ${file.name}...`);
+  const f = await api('/api/upload-finish', { uploadId: st.uploadId });
+  const r = f.ok ? await api('/api/app-installer', { name, uploadId: st.uploadId }) : f;
+  if (!r.ok) { toast(r.error, true); api('/api/upload-cancel', { uploadId: st.uploadId }); showPkgInfo(); return; }
+  if (!$('dlgApp').open || editingName !== name) return;
+  toast(`${r.fileName} is in its packages folder${r.filled.length ? ' - filled in ' + r.filled.join(', ') : ''}. Package builds it next.`, false, [{ label: 'Package now', run: () => { $('dlgApp').close(); buildAdded(name); } }]);
+  await loadApps(); $('dlgApp').close(); openEditor(name);
+});
 const methodBody = extra => ({ wingetId: $('aWinget').value.trim(), context: $('xContext').value, version: $('mAppVersion').value.trim(), install: $('mInstallCommand').value, uninstall: $('mUninstallCommand').value, ...extra });
 function methodText(m, pinned) {
   const v = $('mAppVersion').value.trim(), w = editorWingetOffers, now = w ? ` Winget has ${w} now (last check).` : '';
@@ -928,7 +965,7 @@ async function openDeploy(names) {
   if (!r.ok) { toast(r.error, true); return; }
   deployPlan = r.apps; deployResults = {};
   $('deployRows').replaceChildren(...deployPlan.map(a => el('tr', { 'data-name': a.name },
-    el('td', { text: a.name }), el('td', { text: a.update ? 'Send settings' : 'Create' }),
+    el('td', { text: a.name }), el('td', {}, el('span', { text: a.replacesLob ? 'Create as Win32' : a.update ? 'Send settings' : 'Create' }), a.replacesLob ? el('span', { class: 'why', text: a.note }) : ''),
     el('td', {}, a.ready ? el('span', { class: 'pill muted', text: 'Waiting' }) : el('span', { class: 'pill warn', text: 'Not ready', title: a.reason }), a.ready ? '' : el('span', { class: 'why', text: a.reason })))));
   if (r.circular && r.circular.length) toast('These depend on each other in a circle: ' + r.circular.join(', '), true);
   $('deployLog').textContent = r.note ? r.note + '\n' : '';

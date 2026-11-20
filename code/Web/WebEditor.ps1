@@ -45,6 +45,7 @@ function Global:Get-WebAppEditable {
         assignmentFilter     = [string]$App.assignmentFilter
         assignmentFilterMode = $(if ([string]$App.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' })
         retiringSince = [string]$App.retiringSince
+        lobToRetire = [string]$App.lobToRetire
         blockedVersions = @($App.blockedVersions | Where-Object { $_ } | ForEach-Object { [string]$_ })
         hasMetadata  = [bool]$m
         managedUpdates = [bool]$App.managedUpdates
@@ -244,6 +245,8 @@ function Global:Merge-WebAppEdit {
         assignmentFilter     = $(if ($null -ne $Edit.assignmentFilter) { $af = ([string]$Edit.assignmentFilter).Trim(); if ($af.Length -le 200) { $af } else { '' } } elseif ($Existing) { [string]$Existing.assignmentFilter } else { '' })
         # Being retired stays as it was - only Retire changes it.
         retiringSince    = $(if ($Existing) { [string]$Existing.retiringSince } else { '' })
+        # The MSI app to retire stays as it was - Send to Intune and Retire the MSI app change it, not the editor.
+        lobToRetire      = $(if ($Existing) { [string]$Existing.lobToRetire } else { '' })
         # Kept as they were - releases and Send to Intune change them, not the editor.
         blockedVersions  = @($(if ($Existing) { @($Existing.blockedVersions) }) | Where-Object { $_ })
         packageStamp     = $(if ($Existing) { [string]$Existing.packageStamp } else { '' })

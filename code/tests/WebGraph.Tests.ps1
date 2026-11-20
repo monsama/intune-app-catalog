@@ -43,6 +43,8 @@ $relCur3 = 'eeeeeeee-0000-4000-8000-000000000003'
 $relPrevA = 'cccccccc-1111-4000-8000-00000000000a'
 $relPrevB = 'cccccccc-1111-4000-8000-00000000000b'
 $scriptText = "Write-Output 'hi'"
+# 2.33.0: MSI line-of-business apps moved to Win32 - the old one retired only when Intune says it is one.
+$lobOld = 'aaaaaaaa-1111-4000-8000-0000000000b1'; $lobNew = 'aaaaaaaa-1111-4000-8000-0000000000b2'; $lobWin32 = 'aaaaaaaa-1111-4000-8000-0000000000b3'
 
 $answers = [ordered]@{
     # Two pages, to check that every page follows @odata.nextLink.
@@ -53,6 +55,9 @@ $answers = [ordered]@{
     'GET beta/deviceAppManagement/mobileApps?$skiptoken=page2' = @{ value = @(@{ id = $appSameName; displayName = $sameName }) }
     # Managed updates: renaming the releases on promotion, deleting a withdrawn pilot.
     "PATCH beta/deviceAppManagement/mobileApps/$relPilot" = $null
+    "GET beta/deviceAppManagement/mobileApps/$lobOld" = @{ id = $lobOld; displayName = 'ZZ Graph LOB'; '@odata.type' = '#microsoft.graph.windowsMobileMSI' }
+    "DELETE beta/deviceAppManagement/mobileApps/$lobOld" = $null
+    "GET beta/deviceAppManagement/mobileApps/$lobWin32" = @{ id = $lobWin32; displayName = 'ZZ Graph Not LOB'; '@odata.type' = '#microsoft.graph.win32LobApp' }
     "GET beta/deviceAppManagement/mobileApps/$relPilot/installSummary" = @{ installedDeviceCount = 4; failedDeviceCount = 1; pendingInstallDeviceCount = 2 }
     "PATCH beta/deviceAppManagement/mobileApps/$relCurrent" = $null
     "DELETE beta/deviceAppManagement/mobileApps/$relPilot2" = $null
@@ -244,6 +249,20 @@ try {
     $dg = Invoke-Api '/api/diagnostics'
     $intuneLines = @($dg.sections[2].lines.text) -join ' | '
     Check ($dg.ok -and $intuneLines -like '*Connected - 3 app(s) in Intune*') 'diagnostics: connected, and how many apps are in Intune' $intuneLines
+
+    # MSI line-of-business app retired (2.33.0): deleted only when Intune says it is one, and only once a Win32 app replaces it.
+    $catDir = Join-Path $repoRoot 'data\app-data'
+    $lobRec = { param($name, $appId, $old) [ordered]@{ appName = $name; wingetId = ''; appId = $appId; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @(); lobToRetire = $old } | ConvertTo-Json -Depth 4 }
+    foreach ($x in @(@('ZZ Graph LOB A', $lobNew, $lobOld), @('ZZ Graph LOB B', $lobNew, $lobWin32), @('ZZ Graph LOB C', $lobOld, $lobOld))) {
+        Set-Content -LiteralPath (Join-Path $catDir (($x[0] -replace ' ', '-') + '.json')) -Value (& $lobRec $x[0] $x[1] $x[2]) -Encoding UTF8; $created.Add($x[0])
+    }
+    $lr = Invoke-Api '/api/lob-retire' @{ name = 'ZZ Graph LOB A' }
+    $rowA = @((Invoke-Api '/api/catalog').apps) | Where-Object { $_.name -eq 'ZZ Graph LOB A' } | Select-Object -First 1
+    Check ($lr.ok -and $rowA -and -not $rowA.lobToRetire -and $rowA.appId -eq $lobNew) 'MSI app: retired (deleted in Intune) and forgotten - the Win32 app stays' ($lr | ConvertTo-Json -Compress)
+    $lrB = Invoke-Api '/api/lob-retire' @{ name = 'ZZ Graph LOB B' }
+    Check ((-not $lrB.ok) -and $lrB.error -like '*not an MSI line-of-business app*') 'MSI app: an app Intune says is Win32 is not deleted' ($lrB | ConvertTo-Json -Compress)
+    $lrC = Invoke-Api '/api/lob-retire' @{ name = 'ZZ Graph LOB C' }
+    Check ((-not $lrC.ok) -and $lrC.error -like '*send it to Intune first*') 'MSI app: not retired before a Win32 app replaces it' ($lrC | ConvertTo-Json -Compress)
 
     # Deploy plan: the same-name app is held back
     $plan = Invoke-Api '/api/deploy-plan' @{ names = @($sameName) }

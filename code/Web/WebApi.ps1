@@ -82,6 +82,7 @@ function Global:Get-WebCatalog {
                 previousVersions = @(Get-WebPreviousReleases $apps[$i] | ForEach-Object { [string]$_.version })
                 releaseIds   = @(@($apps[$i].releases) | Where-Object { $_ -and $_.appId } | ForEach-Object { ([string]$_.appId).ToLowerInvariant() })
                 retiringSince = [string]$apps[$i].retiringSince
+                lobToRetire  = [string]$apps[$i].lobToRetire
                 pilotVersion = [string]$(if ($pr) { $pr.version })
                 # Which release ring the pilot release is in (0 = pilot), and how many there are - the next step is the next ring, not everyone.
                 pilotRing    = [int]$(if ($pr) { $pr.ring })
@@ -351,10 +352,16 @@ function Global:Complete-WebJob {
                 param($app)
                 if ($newId) { $app.appId = $newId }
                 $app.intuneAppType = $(if ($After.Store) { 'Microsoft Store app (new)' } else { 'Windows app (Win32)' })
+                # It replaced an MSI line-of-business app: that one stays in Intune until it is retired (asked for, not done here).
+                if ($After.ReplacesLobAppId -and $newId) { $app.lobToRetire = ([string]$After.ReplacesLobAppId).ToLowerInvariant() }
                 if (-not $app.metadata -and $defaults) { $app.metadata = $defaults }
                 if ($After.PackageStamp) { $app.packageStamp = [string]$After.PackageStamp }
             }.GetNewClosure())
             Write-Log "[OK] Deployed $($After.AppName)$(if ($newId) { " (App ID $newId)" }) - saved to the catalog."
+            if ($After.ReplacesLobAppId -and $newId) {
+                Add-WebHistoryEntry -App $After.AppName -Kind 'intune' -Text "Created as a Win32 app ($newId) - it replaces the MSI line-of-business app $($After.ReplacesLobAppId), still in Intune until it is retired"
+                Write-Log "[INFO] $($After.AppName): the MSI line-of-business app it replaces ($($After.ReplacesLobAppId)) is still in Intune - retire it from the app's side panel once the Win32 app has its groups."
+            }
             $catalog = Read-WebCatalogRecords
             $app = $catalog.Apps | Where-Object { $_.appName -eq $After.AppName } | Select-Object -First 1
             $hasGroups = $app -and (@($app.requiredFor).Count + @($app.availableFor).Count + @($app.uninstallFor).Count) -gt 0
@@ -669,6 +676,8 @@ function Global:Invoke-WebApi {
         '/api/filters' { return (Get-WebAssignmentFilters) }
         '/api/download-checks'  { return (Invoke-WebDownloadChecks) }
         '/api/retire-start'     { return (Start-WebRetire $Data) }
+        '/api/lob-retire'       { return (Invoke-WithCatalogLock { Remove-WebReplacedLobApp $Data }) }
+        '/api/app-installer'    { return (Invoke-WithCatalogLock { Set-WebAppInstaller $Data }) }
         '/api/retire-status'    { return (Get-WebRetireStatus $Data) }
         '/api/retire-finish'    { return (Start-WebRetireFinish $Data) }
         '/api/retired-list'     { return (Get-WebRetiredApps) }

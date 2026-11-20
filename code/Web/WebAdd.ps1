@@ -237,6 +237,60 @@ function Global:Add-WebInstallerApp {
     return @{ ok = $true; name = $r.name; folder = $folder }
 }
 
+function Global:Set-WebAppInstaller {
+    <#
+      An uploaded installer for an app already in the catalog (one with its own package, no Winget ID) - an app
+      taken over from Intune comes without it (Intune never gives an .msi back). The file goes into its packages
+      folder; what is still empty is filled in from it (install and uninstall command, detection rule, version,
+      publisher) - what the app already has stays. Package then builds it; Send to Intune sends it.
+    #>
+    param($Data)
+    $u = (Get-WebUploads)[[string]$Data.uploadId]
+    if (-not $u -or -not $u.Proposal) { return @{ ok = $false; error = 'That upload is no longer known - choose the installer again.' } }
+    $name = [string]$Data.name
+    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
+    if (([string]$a.wingetId).Trim()) { return @{ ok = $false; error = "$name installs from winget - it has no installer of its own." } }
+    $folder = Join-Path (Get-AppFolder -Kind Packages -Create) (Get-SafeFileNameForApp -Name $a.appName)
+    if (Test-Path -LiteralPath $folder) {
+        $other = @(Get-ChildItem -LiteralPath $folder -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.msi', '.exe' -and $_.Name -ne $u.FileName })
+        if ($other.Count) { return @{ ok = $false; error = "Its packages folder already holds an installer ($($other[0].Name)). A new version goes through Release new version (Updates); to swap it, remove that one first." } }
+    }
+    else { [void](New-Item -ItemType Directory -Path $folder -Force) }
+    Copy-Item -LiteralPath $u.Path -Destination (Join-Path $folder $u.FileName) -Force
+    $p = $u.Proposal; $info = $u.Info
+    if ($p.NeedsUninstallScript -and -not (Test-Path -LiteralPath (Join-Path $folder 'Uninstall.ps1'))) {
+        $label = if ($info.ProductName) { $info.ProductName } else { $a.appName }
+        [System.IO.File]::WriteAllText((Join-Path $folder 'Uninstall.ps1'), (New-InstalledAppUninstallScript -DisplayName $label -ExeKind $info.ExeKind), (New-Object System.Text.UTF8Encoding($true)))
+    }
+    $filled = New-Object System.Collections.Generic.List[string]
+    [void](Update-WebCatalogApp -Name $a.appName -Change {
+            param($app)
+            if (-not $app.metadata) { $app.metadata = Get-DefaultAppMetadata -AppName $app.appName -WingetId '' -Uncommon $true }
+            $m = $app.metadata
+            # The placeholder an app without settings gets (install.ps1 / uninstall.ps1 that aren't there) counts as empty.
+            $tpl = Get-CreateAppTemplates -WingetId '' -Uncommon $true
+            $empty = { param($k) $now = ([string]$m.$k).Trim(); -not $now -or (($now -eq $tpl.Install -or $now -eq $tpl.Uninstall) -and -not (Test-Path -LiteralPath (Join-Path $folder ($(if ($k -eq 'installCommand') { 'install.ps1' } else { 'uninstall.ps1' }))))) }
+            $set = { param($k, $v, $label) if ($v -and (& $empty $k)) { $m | Add-Member -NotePropertyName $k -NotePropertyValue $v -Force; $filled.Add($label) } }
+            & $set 'installCommand' ([string]$p.InstallCommand) 'the install command'
+            & $set 'uninstallCommand' ([string]$p.UninstallCommand) 'the uninstall command'
+            $v = [string]$p.Version
+            if ($v -and (Test-ReleaseVersionText $v)) { & $set 'appVersion' $v 'the version' }
+            & $set 'publisher' ([string]$p.Publisher) 'the publisher'
+            if ($p.Detection -and -not $m.detectionRule) {
+                $rule = $p.Detection
+                $ver = [string]$m.appVersion
+                if ($rule.Type -eq 'Msi' -and $ver) { $rule.Msi_Version = $ver }
+                $m | Add-Member -NotePropertyName detectionRule -NotePropertyValue ([pscustomobject]$rule) -Force; $filled.Add("the detection rule ($($rule.Type))")
+            }
+        }.GetNewClosure())
+    Remove-Item -LiteralPath (Split-Path $u.Path -Parent) -Recurse -Force -ErrorAction SilentlyContinue
+    (Get-WebUploads).Remove([string]$Data.uploadId)
+    Add-WebHistoryEntry -App $a.appName -Kind 'catalog' -Text "Installer $($u.FileName) added to its packages folder$(if ($filled.Count) { "; filled in: $($filled -join ', ')" })"
+    Write-Log "[OK] $($a.appName): $($u.FileName) is in its packages folder$(if ($filled.Count) { " - filled in $($filled -join ', ')" })."
+    return @{ ok = $true; fileName = $u.FileName; filled = $filled.ToArray(); kind = [string]$info.Kind }
+}
+
 function Global:Remove-WebUpload {
     # The dialog was closed without adding: the temporary file goes.
     param($Data)

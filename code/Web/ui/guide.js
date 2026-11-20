@@ -108,6 +108,11 @@ async function fillPanel(a) {
     el('div', { class: 'phead' }, iconFor(a), el('h2', { text: a.name }), el('button', { class: 'btn small ghost', text: 'Close', title: 'Close this panel', onclick: () => { selected.clear(); renderApps(); } })),
     el('div', { class: 'pstage' }, el('span', { class: 'pill ' + s.cls, text: s.label }), el('span', { class: 'muted', text: ' ' + (s.why || '') })),
     s.next ? el('div', { class: 'pnext' }, btn(s.next.label, s.next.title, s.next.run, true), el('span', { class: 'muted', text: 'Next step' })) : '',
+    // 2.33.0: it replaced an MSI line-of-business app as Win32 - that one is still in Intune until it is retired.
+    a.lobToRetire ? el('div', { class: 'plob' }, el('span', { text: 'The MSI line-of-business app this one replaces is still in Intune. Once this Win32 app has its groups, retire it: devices keep the software - this app finds it by the same MSI product code.' }),
+      btn('Retire the MSI app...', 'Delete the old MSI line-of-business app from Intune', () => retireLobApp(a.name))) : '',
+    // An MSI line-of-business app in Intune, not moved yet: what to do.
+    !a.lobToRetire && a.hasAppId && isLobMsi(a) ? el('div', { class: 'plob' }, el('span', { text: "In Intune it is an MSI line-of-business app - it can't be updated as Win32, and Intune never gives the .msi back. Upload the .msi in the editor (Basics), Package it, then Send to Intune creates it as a Win32 app with its groups." })) : '',
     app.managedUpdates ? releaseTimeline(pilot ? pilot.ring : (a.hasAppId ? 99 : -1), !!(pilot && pilot.fastTrack)) : '',
     el('div', { class: 'pfacts' },
       // No version to pick for an app Microsoft or the Store keeps up to date - the row isn't shown at all.
@@ -443,4 +448,14 @@ async function sendGroupsNow(names) {
   runDialog('Send groups to Intune', names.join(', '));
   const done = await runEach(names, name => ({ names: [name], mode: 'AfterDeploy' }), { path: '/api/push-start', log: 'runLog', startText: 'Sending groups for ' });
   toast(`Groups sent for ${done.length} of ${names.length} app(s).`, done.length < names.length); loadApps();
+}
+
+// Retire the MSI line-of-business app a Win32 app replaced (2.33.0): asked first, checked again on the server.
+async function retireLobApp(name) {
+  const a = apps.find(x => x.name === name); if (!a || !a.lobToRetire) return;
+  if (!(await ask(`Delete the old MSI line-of-business app from Intune?\n\n${a.lobToRetire}\n\nIts assignments go with it. Devices keep the software: the Win32 app "${name}" finds it by the same MSI product code, so nothing is uninstalled. Make sure the Win32 app has its groups first.`, { ok: 'Delete the MSI app', danger: true }))) return;
+  const r = await api('/api/lob-retire', { name });
+  if (!r.ok) { toast(r.error, true); return; }
+  toast(r.gone ? 'The MSI app was already gone from Intune.' : 'The MSI line-of-business app is deleted from Intune - the Win32 app replaces it.');
+  await loadApps();
 }

@@ -152,6 +152,8 @@ $testableFunctionNames = @(
     "Get-DefaultAppMetadata",
     "Get-CatalogNameLookup",
     "Get-FriendlyIntuneAppType",
+    "Test-IntuneLobMsiType",
+    "Test-PackagedIntuneAppType",
     "Get-ParsedMinOsRelease",
     "Get-FriendlyMinOsRelease",
     "Test-AppHasCustomConfig",
@@ -3049,6 +3051,14 @@ if ($iwFn) {
     }
     finally { Remove-Item -LiteralPath $iwSrc, $iwOut -Recurse -Force -ErrorAction SilentlyContinue }
 }
+
+# MSI line-of-business apps (2.33.0): said so, and treated as needing a package (they move to Win32 when sent).
+Assert-Equal (Get-FriendlyIntuneAppType '#microsoft.graph.windowsMobileMSI') 'Windows MSI line-of-business app' "Get-FriendlyIntuneAppType: Intune's MSI type isn't called Win32"
+Assert-True ((Test-IntuneLobMsiType '#microsoft.graph.windowsMobileMSI') -and (Test-IntuneLobMsiType 'windowsMobileMSI') -and (Test-IntuneLobMsiType 'Windows MSI line-of-business app') -and
+    -not (Test-IntuneLobMsiType 'win32LobApp') -and -not (Test-IntuneLobMsiType 'Windows app (Win32)') -and -not (Test-IntuneLobMsiType '')) "Test-IntuneLobMsiType: the MSI type by its @odata.type or its label, nothing else"
+Assert-True ((Test-PackagedIntuneAppType '') -and (Test-PackagedIntuneAppType 'Windows app (Win32)') -and (Test-PackagedIntuneAppType 'Windows MSI line-of-business app') -and
+    -not (Test-PackagedIntuneAppType 'Microsoft Store app (new)')) "Test-PackagedIntuneAppType: Win32 and MSI line-of-business apps get a package, Intune's own types don't"
+Assert-True (-not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'SonicWall NetExtender'; wingetId = ''; intuneAppType = 'Windows MSI line-of-business app' }))) "Get-NonPackageAppHint: an MSI line-of-business app needs a package (it moves to Win32)"
 
 # =================================================================
 # Report

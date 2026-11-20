@@ -15,7 +15,8 @@
 //   npm install --no-save playwright@1.48.2 axe-core@4.10.2 && npx playwright install chromium
 //   node code/tests/ui/WebUi.Tests.mjs [--shots <folder>]
 import { spawn } from 'node:child_process';
-import { mkdirSync, existsSync, rmSync } from 'node:fs';
+import { mkdirSync, existsSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -248,6 +249,19 @@ try {
 
         await page.click(`#gridBody tr[data-name="${testApp}"]`);
         await page.waitForSelector('#appPanel:not([hidden]) .pfacts');
+        // 2.33.0: an app with no installer (one taken over from Intune) gets it uploaded right in the editor -
+        // into its packages folder, the commands and detection rule filled in.
+        const lobApp = `ZZ UI Installer ${label.replace(/\W+/g, '')}`, fakeSetup = join(tmpdir(), `zz-ui-setup-${Date.now()}.exe`);
+        writeFileSync(fakeSetup, Buffer.concat([Buffer.from('MZ fake setup - Nullsoft Install System v3.09 '), Buffer.alloc(4000, 120)]));
+        await page.evaluate(n => api('/api/app-save', { originalName: '', app: { appName: n, wingetId: '', appId: '', requiredFor: [], availableFor: [], uninstallFor: [], excludeFor: [] } }).then(() => loadApps()), lobApp);
+        await page.dblclick(`#gridBody tr[data-name="${lobApp}"]`); await page.waitForSelector('#dlgApp[open] #btnAppInstaller');
+        await page.setInputFiles('#aInstallerFile', fakeSetup);
+        await page.waitForFunction(() => /zz-ui-setup-\d+\.exe" \/S/.test(document.getElementById('mInstallCommand').value) && document.getElementById('xType').value === 'Script', null, { timeout: 20000 });
+        check(true, `${label}: an installer uploaded in the editor fills in the commands and the detection rule`);
+        await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.getElementById('dlgApp').open);
+        await page.evaluate(n => api('/api/app-remove', { name: n }).then(() => loadApps()), lobApp); rmSync(fakeSetup, { force: true });
+        await page.click(`#gridBody tr[data-name="${testApp}"]`); await page.waitForSelector('#appPanel:not([hidden]) .pfacts');
+
         // 2.32.2: the side panel's More... opens the actions menu (the same click used to close it again at once).
         await page.click('#appPanel .pacts button:has-text("More...")');
         check(await page.isVisible('#appMenu'), `${label}: the side panel's More... opens the actions menu`);
