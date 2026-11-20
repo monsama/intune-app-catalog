@@ -1520,3 +1520,10 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 .brec .blk.inline .bpre { color: var(--muted); white-space: pre-wrap; }
 .brec .blk.inline input { display: inline-block; width: auto; min-width: 16ch; flex: 0 1 auto; }
 .brec .blk.inline select { width: auto; max-width: 100%; }
+
+/* Install & detection as one page (2.30.0): one column; detection, requirements, dependencies fold to a line */
+#appForm[data-pg="3"] #deploySec > .formgrid { grid-template-columns: 1fr; }
+#deploySec .foldsum { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--bd2); border-radius: var(--r-m); background: var(--surface); font-size: 13px; color: var(--muted); }
+#deploySec .foldsum .fstext { flex: 1; min-width: 0; }
+#deploySec .formgrid:not(.f-det) [data-sum="det"], #deploySec .formgrid:not(.f-req) [data-sum="req"], #deploySec .formgrid:not(.f-dep) [data-sum="dep"] { display: none; }
+#deploySec .formgrid.f-det [data-fold="det"], #deploySec .formgrid.f-req [data-fold="req"], #deploySec .formgrid.f-dep [data-fold="dep"] { display: none !important; }

@@ -812,6 +812,7 @@ function fillDeploy(d) {
   $('xSupSet').checked = !!d.supersedesSet;
   $('xSup').replaceChildren(...(d.supersedes || []).map(s => supRow(s)));
   showSupState();
+  if (window.edFoldsReset) edFoldsReset();
 }
 $('deploySec').addEventListener('input', () => { deployTouched = true; });
 $('deploySec').addEventListener('change', () => { deployTouched = true; });

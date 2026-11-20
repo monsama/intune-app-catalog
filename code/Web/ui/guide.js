@@ -305,13 +305,68 @@ function renderWhere() {
   const form = $('appForm'), dlg = $('dlgApp'), dsec = $('deploySec');
   const [left, right] = form.querySelectorAll(':scope > .formgrid > section');
   const [dLeft, dRight] = dsec.querySelectorAll(':scope > .formgrid > section');
-  const names = ['Basics', 'Who gets it', 'Details', 'Install & detection', 'Requirements', 'Dependencies'];
+  const names = ['Basics', 'Who gets it', 'Details', 'Install & detection'];
   const pageOf = new Map();
+  // Install & detection holds all of how it installs: the commands, the detection rule, the requirements, then the
+  // dependencies and supersedence (moved under the requirements - one column, in the order they are looked at).
+  const depStart = [...dLeft.children].find(c => c.tagName === 'H3' && /Dependencies/.test(c.textContent));
+  for (let c = depStart, n; c; c = n) { n = c.nextElementSibling; dRight.append(c); }
+  // Folded parts: what most apps never change shows as one line with Change - the fields come out when asked for.
+  const folds = { det: [], req: [], dep: [] };
+  const foldHead = (sec, test, g) => {
+    let on = false;
+    for (const c of [...sec.children]) {
+      if (c.tagName === 'H3' && test(c)) { on = true; c.after(el('div', { class: 'foldsum', 'data-sum': g }, el('span', { class: 'fstext' }),
+        el('button', { type: 'button', class: 'btn small', text: g === 'det' ? 'Set a rule of its own' : 'Change', 'aria-label': g === 'det' ? 'Set a detection rule of its own' : `Change ${c.firstChild.textContent.trim().toLowerCase()}`, onclick: () => unfold(g, true) }))); continue; }
+      if (c.tagName === 'H3' && on && g !== 'dep') break;
+      if (on) { c.dataset.fold = g; folds[g].push(c); }
+    }
+  };
+  foldHead(dLeft, c => /Detection rule/.test(c.textContent), 'det');
+  foldHead(dRight, c => /Requirements/.test(c.textContent), 'req');
+  foldHead(dRight, c => /Dependencies/.test(c.textContent), 'dep');
+  const grid = dsec.querySelector(':scope > .formgrid');
+  let detOwn = false;   // "Set a rule of its own" (or a rule chosen): detection stays out until the editor closes
+  function unfold(g, focus) {
+    if (g === 'det' && focus) detOwn = true;
+    if (!grid.classList.contains('f-' + g)) return;
+    grid.classList.remove('f-' + g);
+    if (focus) { const f = folds[g].map(c => c.matches('input, select, textarea') ? c : c.querySelector('input:not([type=search]), select, textarea')).find(Boolean); if (f) f.focus(); }
+  }
+  const optText = id => { const s = $(id); return s.selectedOptions[0] ? s.selectedOptions[0].textContent : s.value; };
+  function foldSummaries() {
+    const id = $('aWinget').value.trim();
+    grid.querySelector('[data-sum="det"] .fstext').textContent = typeof isStoreId === 'function' && isStoreId(id)
+      ? 'A Store app - Intune detects it itself.' : `Made for winget - installed when winget lists ${id}.`;
+    const arch = [...document.querySelectorAll('[data-xarch]')].filter(c => c.checked).map(c => c.dataset.xarch);
+    const n = v => +($(v).value || 0), codes = $('xCodes').value.split('\n').filter(l => l.trim()).length;
+    const req = [`${optText('xMinOs')} or newer`, arch.length ? arch.join(', ') : 'no architecture', $('xContext').value === 'User' ? 'for the signed-in user' : 'for the device',
+      `${$('xTime').value || 60} min`, `restart: ${optText('xRestart').toLowerCase()}`];
+    if (n('xDisk') || n('xMem') || n('xCpus') || n('xSpeed')) req.push('hardware minimums');
+    if (codes) req.push(`${codes} return code${codes === 1 ? '' : 's'}`);
+    if ($('xUninstall').checked) req.push('uninstall in Company Portal');
+    grid.querySelector('[data-sum="req"] .fstext').textContent = req.join(' · ');
+    const deps = document.querySelectorAll('#xDeps [data-dep]:checked').length, sup = $('xSup').querySelectorAll('.suprow').length;
+    grid.querySelector('[data-sum="dep"] .fstext').textContent = [deps ? `${deps} app${deps === 1 ? '' : 's'} installed first` : 'Installs on its own',
+      $('xSupSet').checked ? (sup ? `replaces ${sup} older app${sup === 1 ? '' : 's'}` : 'replaces nothing') : 'supersedence as Intune has it'].join(' · ');
+  }
+  // On opening an app: folded again; detection only for a winget app whose rule is made for it.
+  window.edFoldsReset = () => {
+    const id = $('aWinget').value.trim();
+    detOwn = false;
+    grid.classList.toggle('f-det', !!id && !$('xType').value);
+    grid.classList.add('f-req', 'f-dep');
+    foldSummaries();
+  };
+  form.addEventListener('input', foldSummaries); form.addEventListener('change', foldSummaries);
+  // A rule set, or the winget ID cleared: the detection fields are what is needed.
+  $('xType').addEventListener('change', () => { if ($('xType').value) { detOwn = true; unfold('det'); } });
+  // A winget ID typed in (a new app): its detection is made for winget - folded, unless a rule of its own was asked for.
+  $('aWinget').addEventListener('input', () => { if (!$('aWinget').value.trim()) unfold('det'); else if (!detOwn && !$('xType').value) grid.classList.add('f-det'); });
   const assign = (section, start, switches) => { let p = start; for (const c of section.children) { const sw = switches.find(([test]) => test(c)); if (sw) p = sw[1]; pageOf.set(c, p); } };
   assign(left, 0, [[c => c.matches('h3.withtool'), 1]]);
   assign(right, 2, [[c => c.matches('.ready'), 0], [c => c.tagName === 'H3', 2]]);
-  assign(dLeft, 3, [[c => c.tagName === 'H3' && /Detection rule/.test(c.textContent), 3], [c => c.tagName === 'H3' && /Dependencies/.test(c.textContent), 5]]);
-  for (const c of dRight.children) pageOf.set(c, 4);
+  for (const c of [...dLeft.children, ...dRight.children]) pageOf.set(c, 3);
   // The install and uninstall commands belong with the detection rule.
   pageOf.set($('instRaw'), 3);
   pageOf.set($('instBlocks'), 3);
@@ -340,7 +395,7 @@ function renderWhere() {
     mark(i); dlg.scrollTop = 0;
   }
   // The page a field is on, brought up - for "go to the field" links and a required field left empty.
-  window.edPageFor = elm => { let n = elm; while (n && !pageOf.has(n)) n = n.parentElement; if (n && pageOf.get(n) !== cur) setPage(pageOf.get(n)); };
+  window.edPageFor = elm => { let n = elm; while (n && !pageOf.has(n)) n = n.parentElement; if (n && pageOf.get(n) !== cur) setPage(pageOf.get(n)); const f = elm && elm.closest('[data-fold]'); if (f) unfold(f.dataset.fold); };
   form.addEventListener('invalid', e => { edPageFor(e.target); const d = e.target.closest('details.rawcmds'); if (d) d.open = true; }, true);
   form.insertBefore(bar, form.querySelector('.formgrid'));
   dlg.addEventListener('close', () => setPage(0));

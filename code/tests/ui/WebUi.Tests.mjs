@@ -222,11 +222,18 @@ try {
         await page.uncheck('#aManaged');   // this one stays unmanaged: Release is checked below to be off, and to say why
         // Groups are chips: typed and Enter adds one, x takes it off again; return codes are rows.
         await page.click('.edtab[data-i="1"]');
-        await page.click('#gAvailableChips'); await page.keyboard.type('SG-ZZ-Chip'); await page.waitForTimeout(400); await page.keyboard.press('Enter');
+        // A comma adds what's typed as it is (Enter takes a highlighted suggestion instead - when one comes up in time
+        // depends on the machine, which made this step flaky); then wait for the chip, not a fixed time.
+        await page.click('#gAvailableChips'); await page.keyboard.type('SG-ZZ-Chip'); await page.keyboard.press(',');
+        await page.waitForSelector('#gAvailableBox .chip.tag .x', { timeout: 8000 }).catch(() => {});
         const chipAdded = (await page.inputValue('#gAvailable')).split('\n').includes('SG-ZZ-Chip');
         await page.click('#gAvailableBox .chip.tag .x');
         check(chipAdded && !(await page.inputValue('#gAvailable')).includes('SG-ZZ-Chip'), `${label}: a group is added as a chip and removed with its x`, await page.inputValue('#gAvailable'));
-        await page.click('.edtab[data-i="4"]');
+        // 2.30.0: Requirements is on Install & detection, folded to one line - Change brings the fields out.
+        await page.click('.edtab[data-i="3"]');
+        check(await page.evaluate(() => document.querySelectorAll('.edtab').length === 4 && !document.getElementById('xTime').offsetParent && /for the device/.test(document.querySelector('[data-sum="req"]').textContent)), `${label}: the requirements show as one line until Change`);
+        check(await page.evaluate(() => !document.getElementById('xType').offsetParent && /Made for winget/.test(document.querySelector('[data-sum="det"]').textContent)), `${label}: a winget app's detection shows as one line`);
+        await page.click('[data-sum="req"] button');
         await page.click('#xCodesRows > button');
         await page.fill('#xCodesRows .coderow:last-of-type input', '1707');
         check((await page.inputValue('#xCodes')).split('\n').includes('1707 = success'), `${label}: a return code is added as a row`, await page.inputValue('#xCodes'));

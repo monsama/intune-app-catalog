@@ -1,7 +1,20 @@
 # Changelog
 
-## 2.29.3
+## 2.30.0
 
+- **The editor has 4 tabs instead of 6.** Install & detection holds all of
+  how the app installs: the commands, the detection rule, the requirements,
+  then dependencies and supersedence - in one column.
+- **What most apps never change shows as one line,** with **Change** to
+  bring the fields out:
+  - *Detection* of a winget app: "Made for winget - installed when winget
+    lists <ID>" (**Set a rule of its own** for anything else). Apps with
+    their own package show the detection fields as before.
+  - *Requirements*: "Windows 10 22H2 or newer · x64 · for the device ·
+    60 min · restart: by return code · 7 return codes".
+  - *Dependencies*: "Installs on its own · supersedence as Intune has it".
+  The Ready checklist, a required field and "go to the field" open the
+  part they need by themselves.
 - **Install & detection: changed in place.** The Winget ID, the version
   (newest or pinned with managed updates) and who it installs for are
   changed right in their rows - no more jumping to Basics or Requirements.
