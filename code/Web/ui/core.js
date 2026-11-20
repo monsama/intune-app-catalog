@@ -254,7 +254,8 @@ function showView(v) {
   if (v === 'updates') loadUpdates(false);
   $('viewScripts').hidden = v !== 'scripts';
   $('viewGroups').hidden = v !== 'groups';
-  if (v === 'groups' && !groupsLoaded) loadGroups();
+  // Shown as "needs the connection" before: look again - it may have been set up since.
+  if (v === 'groups' && (!groupsLoaded || $('viewGroups').classList.contains('noconn'))) loadGroups();
   if (v === 'scripts' && !scriptsLoaded) loadScripts();
   $('viewSettings').hidden = v !== 'settings';
   if (v === 'settings') showSettings();

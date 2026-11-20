@@ -309,6 +309,12 @@ try {
         check(true, `${label}: Install for is changed in its row - the field and the command follow`);
         await page.selectOption('#instBlocks select[data-bid="context"]', 'System');
         await page.waitForFunction(() => document.getElementById('xContext').value === 'System' && /--scope machine/.test(document.getElementById('mInstallCommand').value), null, { timeout: 8000 });
+        // 2.32.1: a new Winget ID in its row writes the generated commands again for it (they were for the old one).
+        await page.fill('#instBlocks input[data-bid="wingetId"]', 'Vendor.ZZUiTestTwo'); await page.press('#instBlocks input[data-bid="wingetId"]', 'Tab');
+        await page.waitForFunction(() => /--id 'Vendor\.ZZUiTestTwo'/.test(document.getElementById('mInstallCommand').value) && /--id 'Vendor\.ZZUiTestTwo'/.test(document.getElementById('mUninstallCommand').value), null, { timeout: 8000 });
+        check(await page.inputValue('#aWinget') === 'Vendor.ZZUiTestTwo', `${label}: a new Winget ID in its row - the field and both commands follow`);
+        await page.fill('#instBlocks input[data-bid="wingetId"]', 'Vendor.ZZUiTest'); await page.press('#instBlocks input[data-bid="wingetId"]', 'Tab');
+        await page.waitForFunction(() => /--id 'Vendor\.ZZUiTest'/.test(document.getElementById('mInstallCommand').value), null, { timeout: 8000 });
         await page.keyboard.press('Escape');
         // Written back from the blocks, the commands are in today's form - the editor asks before it drops that.
         if (await page.isVisible('#dlgAsk[open]').catch(() => false) || await page.waitForSelector('#dlgAsk[open]', { timeout: 1500 }).then(() => true, () => false)) await page.click('#askOk');
