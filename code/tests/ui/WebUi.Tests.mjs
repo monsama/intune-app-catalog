@@ -291,6 +291,12 @@ try {
         check(true, `${label}: an option added as a block is written into the install command`);
         await page.click('#instBlocks .bx[aria-label="Remove --override"]');
         await page.waitForFunction(() => !/--override/.test(document.getElementById('mInstallCommand').value), null, { timeout: 8000 });
+        // 2.29.3: a linked part is changed in its row - it writes into its own field (Install for), the command follows.
+        await page.selectOption('#instBlocks select[data-bid="context"]', 'User');
+        await page.waitForFunction(() => document.getElementById('xContext').value === 'User' && !/--scope machine/.test(document.getElementById('mInstallCommand').value), null, { timeout: 8000 });
+        check(true, `${label}: Install for is changed in its row - the field and the command follow`);
+        await page.selectOption('#instBlocks select[data-bid="context"]', 'System');
+        await page.waitForFunction(() => document.getElementById('xContext').value === 'System' && /--scope machine/.test(document.getElementById('mInstallCommand').value), null, { timeout: 8000 });
         await page.keyboard.press('Escape');
         // Written back from the blocks, the commands are in today's form - the editor asks before it drops that.
         if (await page.isVisible('#dlgAsk[open]').catch(() => false) || await page.waitForSelector('#dlgAsk[open]', { timeout: 1500 }).then(() => true, () => false)) await page.click('#askOk');

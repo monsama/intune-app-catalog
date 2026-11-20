@@ -1511,3 +1511,12 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 .rawcmds > summary:hover { color: var(--fg); }
 .rawcmds.plain > summary { display: none; }
 .rawcmds[open] > summary { margin-bottom: 6px; }
+
+/* Blocks, calmer (2.29.3): every row this app can change is changed in place - no icons, no tint, one look */
+.brec .blk .blab::before { display: none; }
+.brec .blk.edit, .brec .blk.list { border-left-color: transparent; background: none; }
+.brec .blk.edit .blab, .brec .blk.list .blab { color: var(--muted); }
+.brec .blk.inline .bval { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.brec .blk.inline .bpre { color: var(--muted); white-space: pre-wrap; }
+.brec .blk.inline input { display: inline-block; width: auto; min-width: 16ch; flex: 0 1 auto; }
+.brec .blk.inline select { width: auto; max-width: 100%; }

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.29.3
+
+- **Install & detection: changed in place.** The Winget ID, the version
+  (newest or pinned with managed updates) and who it installs for are
+  changed right in their rows - no more jumping to Basics or Requirements.
+  They write into the same fields as before, so Save, the checks and the
+  commands follow as they always did.
+- **Calmer rows:** no icons, no tinted rows - label on the left, value or
+  control on the right.
+- **Fixed: changing Install for now rewrites generated commands.** Before,
+  switching to User (or back) left `--scope machine` in the winget command
+  until the install method was chosen again. Own commands are left as
+  typed.
+
 ## 2.29.2
 
 - **Add apps opens on the kind you added last** (Winget, installer, script,
