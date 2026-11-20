@@ -288,7 +288,7 @@ function Global:Set-WebAppInstaller {
     (Get-WebUploads).Remove([string]$Data.uploadId)
     Add-WebHistoryEntry -App $a.appName -Kind 'catalog' -Text "Installer $($u.FileName) added to its packages folder$(if ($filled.Count) { "; filled in: $($filled -join ', ')" })"
     Write-Log "[OK] $($a.appName): $($u.FileName) is in its packages folder$(if ($filled.Count) { " - filled in $($filled -join ', ')" })."
-    return @{ ok = $true; fileName = $u.FileName; filled = $filled.ToArray(); kind = [string]$info.Kind }
+    return @{ ok = $true; fileName = $u.FileName; filled = $filled.ToArray(); kind = [string]$info.Kind; folder = $folder }
 }
 
 function Global:Remove-WebUpload {
