@@ -34,7 +34,7 @@ function Global:Initialize-WebServerMode {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "The admin password file $file isn't there - the deploy script writes it (secrets/admin_password)." }
     $password = ([System.IO.File]::ReadAllText($file)).Trim()
     if ($password.Length -lt 12) { throw "The admin password in $file is shorter than 12 characters - set a longer one." }
-    $salt = New-Object byte[] 16; [System.Security.Cryptography.RandomNumberGenerator]::Fill($salt)
+    $salt = New-Object byte[] 16; $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create(); try { $rng.GetBytes($salt) } finally { $rng.Dispose() }
     $Global:App.Server = [hashtable]::Synchronized(@{
             Port = $(if ([int]$env:ICA_PORT -gt 0) { [int]$env:ICA_PORT } else { 8080 })
             Hosts = $hosts
@@ -199,7 +199,7 @@ function Global:New-WebSession {
     param([string]$Agent, [string]$Method, [string]$Name, [string]$Upn = '', [string]$Oid = '')
     $s = $Global:App.Server
     $now = [DateTime]::UtcNow
-    $bytes = New-Object byte[] 32; [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $bytes = New-Object byte[] 32; $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create(); try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     $token = -join ($bytes | ForEach-Object { $_.ToString('x2') })
     $cut = { param($t, $n) $t = [string]$t; $t.Substring(0, [Math]::Min($n, $t.Length)) }
     [System.Threading.Monitor]::Enter($s.Ended)

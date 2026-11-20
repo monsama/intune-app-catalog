@@ -12,6 +12,9 @@
   with **Copy** and **Open in Intune** (the app's page in the Intune admin
   center); and as an optional **App ID** column in the list (view menu >
   Intune App ID). Hovering a row still shows it too.
+- **Fixed: downloads failed on Windows PowerShell 5.1** (the Sandbox test
+  zip, helper scripts) - the random link name used a call that only
+  PowerShell 7 has. Found by the new Sandbox test.
 - The Sandbox test in the server version (a zip for a Windows PC with
   Windows Sandbox) now has a server test of its own.
 
