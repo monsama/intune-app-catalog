@@ -16,6 +16,8 @@ function openAdd(src, file) {
   for (const id of ['asName', 'asPublisher', 'asVersion']) $(id).value = '';
   $('asVersion').value = '1.0'; loadScriptTemplates(true);
   $('adRequired').value = ''; $('adAvailable').value = ''; $('adPublish').checked = false;
+  $('adRequired').dispatchEvent(new Event('input')); $('adAvailable').dispatchEvent(new Event('input'));
+  document.querySelector('#dlgAdd .addgroups').classList.add('folded'); addGroupsSummary();
   alItems = []; alPicked.clear(); $('alRows').replaceChildren(); $('alNote').textContent = ''; $('alAll').checked = false;
   const favs = (prefs && prefs.favoriteGroups) || [];
   $('adFavs').replaceChildren(...(favs.length ? [el('span', { class: 'muted', text: 'Favourites:' }), ...favs.map(g => el('button', { type: 'button', class: 'chip', text: g, title: `Add ${g} to Required for (Shift: Available for)`, onclick: e => addGroup(e.shiftKey ? 'adAvailable' : 'adRequired', g) }))] : []));
@@ -25,6 +27,14 @@ function openAdd(src, file) {
   showAddSrc(src || (['winget', 'installer', 'script', 'psadt', 'list'].includes(last) ? last : 'winget'));
   if (file) startUpload(file);
 }
+// Who gets the new apps, as one line (2.31.0) - Choose brings out the profile, the groups and the favourites.
+document.querySelector('#dlgAdd .addgroups').prepend(el('div', { class: 'foldsum', id: 'adSum' }, el('span', { class: 'fstext' }),
+  el('button', { type: 'button', class: 'btn small', text: 'Choose', 'aria-label': 'Choose who gets the new apps', onclick: () => { document.querySelector('#dlgAdd .addgroups').classList.remove('folded'); ($('adRequiredChips') || $('adRequired')).focus(); } })));
+function addGroupsSummary() {
+  const r = addLines('adRequired'), a = addLines('adAvailable'), list = l => l.length > 3 ? `${l.slice(0, 3).join(', ')} and ${l.length - 3} more` : l.join(', ');
+  $('adSum').querySelector('.fstext').textContent = 'Who gets it: ' + (r.length || a.length ? [r.length ? `required for ${list(r)}` : '', a.length ? `available for ${list(a)}` : ''].filter(Boolean).join(' · ') : 'nobody yet - you can choose later in the editor');
+}
+for (const id of ['adRequired', 'adAvailable']) { $(id).addEventListener('input', addGroupsSummary); $(id).addEventListener('change', addGroupsSummary); }
 function addGroup(id, g) { const l = addLines(id); if (!l.includes(g)) $(id).value = [...l, g].join('\n'); }
 function showAddSrc(src) {
   addSrc = src;

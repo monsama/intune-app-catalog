@@ -235,6 +235,7 @@ function fillEditor(a) {
   $('arDays').value = own.days ?? ''; $('arFailed').value = own.maxFailedPercent ?? ''; $('arMin').value = own.minInstalled ?? ''; $('arDetected').value = a.detectedName || ''; $('arAuto').checked = !!a.autoRelease; $('arUrl').value = a.downloadUrl || '';
   const pol = (prefs && prefs.releasePolicy) || {};
   $('arDays').placeholder = pol.Days ?? 3; $('arFailed').placeholder = pol.MaxFailedPercent ?? 5; $('arMin').placeholder = pol.MinInstalled ?? 1;
+  ruleFoldReset();
   const rel = a.releases || [], pilot = rel.find(r => r.state === 'pilot'), prev = rel.filter(r => r.state === 'previous');
   $('aManagedNote').textContent = [pilot ? `- ${pilot.version} in pilot` : '', prev.length ? `- superseded: ${prev.map(r => r.version).join(', ')}` : ''].filter(Boolean).join(' ');
   showManagedState(); refreshMethod();
@@ -254,6 +255,21 @@ function showManagedState() {
     : 'Release new versions of this package to the pilot groups first. Needs a detection rule that compares a version (MSI, or file/registry by version) - a release updates it to the new version.';
 }
 $('aWinget').addEventListener('input', showManagedState);
+// The release rule as one line (2.31.0) - most apps follow Settings' rule; Change brings the fields out.
+$('aRuleBox').querySelector('legend').after(el('div', { class: 'foldsum', id: 'arSum' }, el('span', { class: 'fstext' }),
+  el('button', { type: 'button', class: 'btn small', text: 'Change', 'aria-label': 'Change the release rule', onclick: () => { $('aRuleBox').classList.remove('folded'); $('arDays').focus(); } })));
+function ruleSummary() {
+  const v = id => $(id).value.trim() || $(id).placeholder, own = ['arDays', 'arFailed', 'arMin'].some(id => $(id).value.trim()), min = +v('arMin');
+  const parts = [`${own ? "This app's own rule" : 'The rule from Settings'}: ${v('arDays')} days per ring, at most ${v('arFailed')} % failed, at least ${min} device${min === 1 ? '' : 's'}`];
+  if (!$('aWinget').value.trim() && $('arAuto').checked) parts.push('releases a newer installer by itself');
+  if ($('arDetected').value.trim()) parts.push(`on devices as "${$('arDetected').value.trim()}"`);
+  $('arSum').querySelector('.fstext').textContent = parts.join(' · ');
+}
+function ruleFoldReset() { $('aRuleBox').classList.add('folded'); ruleSummary(); }
+for (const id of ['arDays', 'arFailed', 'arMin', 'arUrl', 'arDetected', 'aWinget']) $(id).addEventListener('input', ruleSummary);
+$('arAuto').addEventListener('change', ruleSummary);
+// A field of the rule asked for (a required one left empty, a "go to the field" link): the rule comes out.
+$('aRuleBox').addEventListener('invalid', () => $('aRuleBox').classList.remove('folded'), true);
 $('aManaged').addEventListener('change', showManagedState);
 
 // ---------------------------------------------------------------- Install with (Winget apps)
@@ -371,6 +387,17 @@ $('btnIconIntune').addEventListener('click', async () => {
   setEditorIcon(r.icon, 'set'); toast('Took the icon from Intune - Save keeps it.');
 });
 $('btnIconRemove').addEventListener('click', () => setEditorIcon(null, 'remove'));
+// Choose image... and one menu for the rest (from Intune, find one, remove) - each as its button says, when it can.
+{
+  const acts = [['btnIconIntune', 'From Intune'], ['btnIconFind', 'Find one'], ['btnIconRemove', 'Remove']];
+  const more = el('select', { id: 'aIconMore', 'aria-label': 'More for the icon', title: 'Take the icon from Intune, find one, or remove it' },
+    el('option', { value: '', text: 'More...' }), ...acts.map(([id, text]) => el('option', { value: id, text })));
+  const sync = () => { for (const o of more.options) if (o.value) { o.disabled = $(o.value).disabled; o.title = $(o.value).title; } };
+  more.addEventListener('mousedown', sync); more.addEventListener('focus', sync); more.addEventListener('keydown', sync);
+  more.addEventListener('change', () => { const id = more.value; more.value = ''; if (id && !$(id).disabled) $(id).click(); });
+  for (const [id] of acts) $(id).hidden = true;
+  $('btnIconPick').after(more);
+}
 
 // ---------------------------------------------------------------- supersedence (editor, Deploy settings)
 let editorIntuneApps = [];
@@ -549,6 +576,7 @@ async function loadApps() {
   const r = await api('/api/catalog');
   if (!r.ok) { toast(r.error || 'Could not read the catalog.', true); return; }
   apps = r.apps || [];
+  updateViewButtons();   // Save view... only when there's a search or filter to keep
   $('emptyPath').textContent = r.path || '';
   if (r.failed && r.failed.length) toast(`${r.failed.length} file(s) in the catalog could not be read: ${r.failed.join(', ')}`, true);
   renderApps();

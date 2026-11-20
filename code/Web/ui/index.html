@@ -77,7 +77,7 @@
       </select>
       <div class="btngroup" role="group" aria-label="This view">
         <button class="btn small" id="btnSaveView" title="Keep this search and filter as a named view in the list above">Save view...</button>
-        <button class="btn small" id="btnListLook" aria-haspopup="true" aria-expanded="false" aria-controls="listLook" title="Which columns the list shows, and how tight its rows are">Columns...</button>
+        <button class="btn iconbtn" id="btnListLook" aria-haspopup="true" aria-expanded="false" aria-controls="listLook" aria-label="View options" title="Which columns the list shows, how tight its rows are - and the mouse and keys"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
         <button class="btn small" id="btnDeleteView" hidden title="Forget this saved view">Delete view</button>
         <button class="btn iconbtn" id="btnAppsReload" aria-label="Reload" title="Read the catalog and Intune again (F5)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
         <button class="btn iconbtn recentbtn" id="btnRecent" aria-label="Recent changes" title="Recent changes - every change to the catalog, with Undo"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg><span class="dot" id="recentDot" hidden></span></button>
@@ -92,6 +92,9 @@
         <div class="mhead">Rows</div>
         <label class="chk"><input type="radio" name="density" value="comfortable" checked>Comfortable</label>
         <label class="chk"><input type="radio" name="density" value="compact">Compact</label>
+        <hr>
+        <div class="mhead">Mouse and keys</div>
+        <p class="mkeys">Click to select; tick the boxes (or Ctrl/Shift+click) for several, double-click to edit, right-click for more. Keys: &uarr;/&darr; (Shift for several), Ctrl+A, Enter to edit, Delete to remove from the catalog, Ctrl+S to save in the editor.</p>
       </div>
       <span class="count" id="count"></span>
       <span class="spacer"></span>
@@ -133,7 +136,6 @@
     </div>
     <aside class="apppanel" id="appPanel" aria-label="The selected app" hidden></aside>
     </div>
-    <p class="hint">Click to select; tick the boxes (or Ctrl/Shift+click) for several, double-click to edit, right-click for more. Keys: &uarr;/&darr; (Shift for several), Ctrl+A, Enter to edit, Delete to remove from the catalog, Ctrl+S to save in the editor.</p>
   </section>
 
   <!-- ============ Home ============ -->
@@ -152,7 +154,7 @@
       <section class="hcard" aria-labelledby="attTitle"><div class="hhead"><h2 id="attTitle">Needs attention</h2><span class="hcount" id="homeCount"></span><span class="homebusy" id="homeBusy" role="status" hidden><span class="spinner" aria-hidden="true"></span>Working...</span></div><ul class="attention" id="homeList" aria-live="polite"></ul></section>
       <div class="homeside">
         <section class="setup hcard" id="homeSetup" aria-labelledby="setupTitle" hidden><div class="hhead"><h2 id="setupTitle">Getting started</h2></div><div class="bar"><span id="setupBar"></span></div><ol id="setupList"></ol><p class="setupdone" id="setupDone"></p></section>
-        <section class="hcard tipcard" aria-labelledby="tipTitle"><div class="hhead"><h2 id="tipTitle">Shortcuts</h2></div>
+        <section class="hcard tipcard" id="homeTips" aria-labelledby="tipTitle"><div class="hhead"><h2 id="tipTitle">Shortcuts</h2></div>
           <ul class="tips"><li><span><kbd>Ctrl</kbd>+<kbd>K</kbd></span><span class="muted">finds any app, page or action</span></li><li><span>Check everything now</span><span class="muted">compares every app with Intune</span></li><li><span>Nightly run</span><span class="muted">Settings &gt; Nightly run &amp; alerts</span></li></ul></section>
       </div>
     </div>
@@ -845,7 +847,7 @@
         </div>
         <p class="methodinfo" id="aPkgInfo" hidden></p>
         <fieldset class="ownrule" id="aRuleBox" hidden>
-          <legend>This app's release rule <span class="muted">(empty: Settings' rule)</span></legend>
+          <legend>Release rule <span class="muted">- this app's own; empty fields: Settings' rule</span></legend>
           <div class="policy">
             <label>In each ring at least <span class="muted">(days)</span><input id="arDays" type="number" min="0" max="99" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
             <label>Failed at most <span class="muted">(%)</span><input id="arFailed" type="number" min="0" max="100" step="0.5" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
@@ -855,7 +857,7 @@
           <label id="arUrlRow" title="Optional. The nightly run downloads the installer from here; it is used only if it carries a valid digital signature - from the same publisher as the installer already in the folder">Download the installer from <span class="muted">(https, optional)</span><input id="arUrl" type="url" maxlength="2000" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="https://vendor.example/latest/setup.msi"></label>
           <label title="How the app is named in Intune's inventory of apps on devices (Apps > Monitor > Discovered apps), when that isn't the catalog's name - the Updates page counts older versions on devices by it">Name on devices <span class="muted">(empty: the catalog's name)</span><input id="arDetected" maxlength="100" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. 7-Zip"></label>
         </fieldset>
-        <label title="The Intune app this catalog entry is linked to. Set by Send to Intune, or by Checks when it links an existing app.">App ID in Intune <span class="muted">(empty until it's in Intune)</span><span class="inputrow"><input id="aAppId" readonly placeholder="Not linked" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><select id="aAppLink" aria-label="Link to an Intune app" title="Link this catalog entry to an app that's already in Intune - or unlink it"><option value="">Link...</option></select></span></label>
+        <label title="The Intune app this catalog entry is linked to. Set by Send to Intune, or by Checks when it links an existing app.">App ID in Intune<span class="inputrow"><input id="aAppId" readonly placeholder="Not linked" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><select id="aAppLink" aria-label="Link to an Intune app" title="Link this catalog entry to an app that's already in Intune - or unlink it"><option value="">Link...</option></select></span></label>
         <div class="iconrow" role="group" aria-labelledby="aIconLabel">
           <span class="lbl" id="aIconLabel">Icon <span class="muted">(Intune and the Company Portal)</span></span>
           <img id="aIcon" class="appicon big" alt="The app's icon" hidden>

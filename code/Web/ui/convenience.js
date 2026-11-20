@@ -292,12 +292,17 @@ let homeIntuneWaiting = false;
 function renderHome() {
   const r = homeLocal; if (!r) return;
   const order = { err: 0, warn: 1, ok: 2, info: 3 };
-  const items = [...r.items, ...((homeIntune && homeIntune.items) || [])].map((x, n) => [x, n]).sort((a, b) => (order[a[0].level] ?? 3) - (order[b[0].level] ?? 3) || a[1] - b[1]).map(x => x[0]);
+  // Getting started still open: its first step is the connection - "Not connected" isn't said twice.
+  const setupOpen = (r.setup || []).some(s => !s.done);
+  const items = [...r.items.filter(x => !(setupOpen && x.go === 'settings:connection' && x.title === 'Not connected')), ...((homeIntune && homeIntune.items) || [])].map((x, n) => [x, n]).sort((a, b) => (order[a[0].level] ?? 3) - (order[b[0].level] ?? 3) || a[1] - b[1]).map(x => x[0]);
   renderSetup(r.setup);
   const reading = homeIntuneWaiting && !homeIntune && r.connected !== false ? ' Reading install counts from Intune...' : '';
   $('homeNote').textContent = (items.length ? `${items.length} thing${items.length === 1 ? '' : 's'} to look at${r.lastRun ? ` - last managed-updates run ${fmtWhen(r.lastRun)}` : ''}.` : 'Nothing needs a look right now.') + reading;
   $('homeCount').textContent = items.length ? String(items.length) : '';
   const s = homeIntune && homeIntune.summary, stat = (n, l, cls) => el('div', { class: 'stat ' + (cls || '') }, el('span', { class: 'n', text: n }), el('span', { class: 'l', text: l }));
+  // An empty catalog: three zeros say nothing - Getting started is what's there to do.
+  $('homeStats').hidden = !r.apps;
+  $('homeTips').hidden = setupOpen;
   $('homeStats').replaceChildren(stat(String(r.apps), 'apps in the catalog'), stat(String(r.deployed), 'in Intune'), stat(String(r.managed), 'with managed updates'),
     ...(s && s.onCurrentPercent !== null && s.onCurrentPercent !== undefined ? [stat(s.onCurrentPercent + ' %', `of ${s.devices} devices on the current version`, s.onCurrentPercent < 90 ? 'warn' : 'ok')] : []));
   const where = { 'settings:connection': ['Settings', () => showSettings('connection')], 'settings:defaults': ['Settings', () => showSettings('defaults')], 'settings:updates': ['Settings', () => showSettings('updates')], 'settings:automation': ['Settings', () => showSettings('automation')], 'settings:packaging': ['Settings', () => showSettings('packaging')],
@@ -309,7 +314,7 @@ function renderHome() {
     const busy = homeRunning.has(i.go);
     return el('li', { class: 'att ' + i.level + (busy ? ' busy' : ''), 'data-row': i.go || '', 'aria-busy': String(busy) }, el('span', { class: 'pill ' + p[0], text: p[1] }), el('div', { class: 'body' }, el('b', { text: i.title }), el('span', { class: 'muted', text: i.text })),
       w ? el('button', { class: 'btn small' + (busy ? ' working' : ''), 'data-go': i.go, 'data-label': w[0], disabled: busy, title: busy ? 'Still running' : null, onclick: () => runHomeAction(i.go, w[1]) }, busy ? homeWorking() : w[0]) : ''); })
-    : [el('li', { class: 'att ok' }, el('span', { class: 'pill ok', text: 'All good' }), el('div', { class: 'body' }, el('b', { text: 'Nothing to do' }), el('span', { class: 'muted', text: 'Every app is deployed, nothing is on hold, and the last nightly run went fine.' })))]));
+    : [el('li', { class: 'att ok' }, el('span', { class: 'pill ok', text: 'All good' }), el('div', { class: 'body' }, el('b', { text: setupOpen ? 'Nothing here yet' : 'Nothing to do' }), el('span', { class: 'muted', text: setupOpen ? 'Getting started shows what comes next.' : 'Every app is deployed, nothing is on hold, and the last nightly run went fine.' })))]));
 }
 $('btnHomeReload').addEventListener('click', () => loadHome(true));
 $('btnHomeAdd').addEventListener('click', () => openAdd());

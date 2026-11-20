@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.31.0
+
+Quieter everywhere - said once, and what most people never change folded:
+
+- **Home:** "Not connected" is said once, in Getting started - not again
+  in Needs attention or the banner (other pages keep the banner). An empty
+  catalog shows no zero tiles, and Shortcuts appears once Getting started
+  is done.
+- **Apps list:** Columns, rows and the mouse-and-keys hint are in one icon
+  menu next to Reload and Recent changes; **Save view...** only shows when
+  there is a search or filter to keep.
+- **Editor, Basics:** the release rule is one line ("The rule from
+  Settings: 3 days per ring, at most 5 % failed, at least 1 device" -
+  **Change**); the App ID reads as plain text; the icon has **Choose
+  image...** and one **More...** menu (from Intune, find one, remove).
+- **Add apps:** who gets the new apps is one line ("Who gets it: nobody
+  yet") - **Choose** brings out the profile, the groups and favourites.
+
 ## 2.30.0
 
 - **The editor has 4 tabs instead of 6.** Install & detection holds all of

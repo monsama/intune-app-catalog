@@ -240,6 +240,7 @@ function showView(v) {
   // Only the pages there are (a view saved by another version, or a typo, would leave a blank page - and be saved).
   if (![...document.querySelectorAll('.tab[data-view]')].some(b => b.dataset.view === v)) v = 'home';
   if (v === 'checks') delete $('tabChecks').dataset.count;
+  document.body.dataset.view = v;   // Home says "not connected" in Getting started - the banner is for the other pages
   for (const b of document.querySelectorAll('.tab')) b.setAttribute('aria-selected', String(b.dataset.view === v));
   const tabLabel = document.querySelector(`.tab[data-view="${v}"] .tl`);
   if (tabLabel) $('pageTitle').textContent = tabLabel.textContent;
