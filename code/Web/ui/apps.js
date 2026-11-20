@@ -158,7 +158,8 @@ function renderApps() {
         title: !a.wingetId ? 'Its own installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') : isStoreId(a.wingetId) ? 'A Microsoft Store app - Intune\'s own Store type: no package, the Store installs and updates it' : `winget package ${a.wingetId}` }),
       el('td', { class: 'num' }, ...versionCell(a)),
       el('td', { title: `Required: ${a.required}, Available: ${a.available}, Uninstall: ${a.uninstall}`, class: a.required + a.available ? '' : 'muted', text: a.required + a.available + a.uninstall ? `${(a.groups || []).length} group${(a.groups || []).length === 1 ? '' : 's'}` : 'nobody yet' }),
-      el('td', {}, stageCell(a)));
+      el('td', {}, stageCell(a)),
+      el('td', { class: 'mono appidcol', text: a.appId ? a.appId.slice(0, 8) + '…' : '', title: a.appId || 'Not in Intune yet' }));
     tr.addEventListener('click', e => selectRow(a.name, e));
     tr.addEventListener('dblclick', () => openEditor(a.name));
     return tr;
@@ -402,17 +403,9 @@ $('btnIconIntune').addEventListener('click', async () => {
   setEditorIcon(r.icon, 'set'); toast('Took the icon from Intune - Save keeps it.');
 });
 $('btnIconRemove').addEventListener('click', () => setEditorIcon(null, 'remove'));
-// Choose image... and one menu for the rest (from Intune, find one, remove) - each as its button says, when it can.
-{
-  const acts = [['btnIconIntune', 'From Intune'], ['btnIconFind', 'Find one'], ['btnIconRemove', 'Remove']];
-  const more = el('select', { id: 'aIconMore', 'aria-label': 'More for the icon', title: 'Take the icon from Intune, find one, or remove it' },
-    el('option', { value: '', text: 'More...' }), ...acts.map(([id, text]) => el('option', { value: id, text })));
-  const sync = () => { for (const o of more.options) if (o.value) { o.disabled = $(o.value).disabled; o.title = $(o.value).title; } };
-  more.addEventListener('mousedown', sync); more.addEventListener('focus', sync); more.addEventListener('keydown', sync);
-  more.addEventListener('change', () => { const id = more.value; more.value = ''; if (id && !$(id).disabled) $(id).click(); });
-  for (const [id] of acts) $(id).hidden = true;
-  $('btnIconPick').after(more);
-}
+// Choose image... and one menu for the rest (from Intune, find one, remove) - a real menu: what can't be done yet
+// says why right in it (a drop-down hid that in a tooltip, so picking it seemed to do nothing).
+foldIntoMenu(['btnIconIntune', 'btnIconFind', 'btnIconRemove'], { id: 'aIconMore', title: 'Take the icon from Intune, find one, or remove it' });
 
 // ---------------------------------------------------------------- supersedence (editor, Deploy settings)
 let editorIntuneApps = [];
@@ -727,7 +720,9 @@ function foldIntoMenu(ids, opts = {}) {
   more.addEventListener('click', e => {
     e.stopPropagation();
     if (!menu.hidden) { close(); return; }
-    menu.replaceChildren(...btns.filter(b => !b.classList.contains('gone')).map(b => el('button', { role: 'menuitem', text: b.textContent.trim(), title: b.title, disabled: b.disabled, onclick: () => { close(); b.click(); } })));
+    // An item that can't be used right now says why under its name (its button's title - setEnabled puts the reason there).
+    menu.replaceChildren(...btns.filter(b => !b.classList.contains('gone')).map(b => el('button', { role: 'menuitem', title: b.title, disabled: b.disabled, onclick: () => { close(); b.click(); } },
+      el('span', { text: b.textContent.trim() }), b.disabled && b.title ? el('small', { class: 'why', text: b.title }) : '')));
     const r = more.getBoundingClientRect(); placeMenu(menu, r.right - 260, r.bottom + 4); more.setAttribute('aria-expanded', 'true');
   });
   menu.addEventListener('keydown', e => {
@@ -1405,13 +1400,17 @@ async function openStatus(name) {
   try { look = { ...look, ...JSON.parse(localStorage.getItem('listLook') || '{}') }; } catch (e) { }
   const apply = () => {
     for (const c of [2, 3, 4, 5]) grid.classList.toggle('hide-' + c, look.hidden.includes(c));
+    // The App ID column is off unless asked for (a list saved before it existed doesn't get it all of a sudden).
+    grid.classList.toggle('hide-6', !look.showAppId);
+    const idBox = menu.querySelector('[data-col="6"]'); if (idBox) idBox.checked = !!look.showAppId;
     grid.classList.toggle('dense', look.density === 'compact');
-    for (const i of menu.querySelectorAll('[data-col]')) i.checked = !look.hidden.includes(+i.dataset.col);
+    for (const i of menu.querySelectorAll('[data-col]')) if (i.dataset.col !== '6') i.checked = !look.hidden.includes(+i.dataset.col);
     for (const i of menu.querySelectorAll('[name=density]')) i.checked = i.value === look.density;
   };
   const save = () => { try { localStorage.setItem('listLook', JSON.stringify(look)); } catch (e) { } apply(); };
   menu.addEventListener('change', e => {
     const t = e.target;
+    if (t.dataset.col === '6') { look.showAppId = t.checked; save(); return; }
     if (t.dataset.col) look.hidden = t.checked ? look.hidden.filter(c => c !== +t.dataset.col) : [...look.hidden, +t.dataset.col];
     if (t.name === 'density') look.density = t.value;
     save();

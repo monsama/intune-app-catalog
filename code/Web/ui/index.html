@@ -88,6 +88,7 @@
         <label class="chk"><input type="checkbox" data-col="3" checked>Version</label>
         <label class="chk"><input type="checkbox" data-col="4" checked>Who gets it</label>
         <label class="chk"><input type="checkbox" data-col="5" checked>Stage</label>
+        <label class="chk"><input type="checkbox" data-col="6">Intune App ID</label>
         <hr>
         <div class="mhead">Rows</div>
         <label class="chk"><input type="radio" name="density" value="comfortable" checked>Comfortable</label>
@@ -125,6 +126,7 @@
           <th data-sort="version" title="Which version devices get: a lock and the version when it's pinned (managed updates - an arrow when winget has a newer one to release), or newest when it isn't (winget's version today in grey).">Version</th>
           <th data-sort="groups" title="Who gets it - hover for the groups by role">Who gets it</th>
           <th data-sort="status" title="Where the app is: Draft, Ready to send, In Intune, In pilot, Everyone - or Needs a look, Other tenant, Microsoft app, Retire. The button is its next step.">Stage</th>
+          <th data-sort="appId" title="The app's Intune App ID (its first characters - hover for all of it)">App ID</th>
         </tr></thead>
         <tbody id="gridBody"></tbody>
       </table>
