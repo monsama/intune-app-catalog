@@ -249,7 +249,6 @@
           <button class="btn small" id="btnGroupSelClear" title="Clear the selection (Escape)">Clear</button>
         </div>
         <ul class="glist" id="groupList" role="listbox" aria-multiselectable="true" tabindex="0" aria-label="Groups used by the catalog"></ul>
-        <p class="hint">Ctrl+click or Shift+click selects several; right-click for actions.</p>
         <div class="actions">
           <button class="btn" id="btnGroupNew" title="Create a security group in Entra ID">New group</button>
           <button class="btn" id="btnGroupsDelete" title="Delete groups from Entra ID by name, including groups the catalog doesn't use - asked first">Delete by name...</button>
@@ -353,7 +352,7 @@
           <label>Tenant ID<input id="fTenant" spellcheck="false" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000" autocorrect="off" autocapitalize="off"></label>
           <label>Client (Application) ID<input id="fClient" spellcheck="false" autocomplete="off" placeholder="00000000-0000-0000-0000-000000000000" autocorrect="off" autocapitalize="off"></label>
           <label>Certificate thumbprint
-            <span class="inputrow"><input id="fThumb" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"><button class="btn" id="btnPickCert" title="Pick a certificate from this machine's certificate store" data-server-title="Pick a certificate from the server's store">Choose...</button><button class="btn" id="btnCertMenu" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="certMenu" title="Create, import, download or delete a certificate">Certificate &#9662;</button></span>
+            <span class="inputrow"><input id="fThumb" spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off"><button class="btn" id="btnPickCert" hidden title="Pick a certificate from this machine's certificate store" data-server-title="Pick a certificate from the server's store">Choose...</button><button class="btn" id="btnCertMenu" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="certMenu" title="Create, import, download or delete a certificate">Certificate &#9662;</button></span>
           </label>
           <p class="certstatus" id="certStatus"></p>
           <div class="entrarow">
@@ -709,6 +708,7 @@
   <button role="menuitem" class="desktoponly" data-cact="folder" title="Open the folder with one JSON file per app in Explorer">Open catalog folder</button>
 </div>
 <div class="menu" id="certMenu" role="menu" hidden>
+  <button role="menuitem" id="btnPickCertMenu" title="Pick a certificate from this machine's certificate store" data-server-title="Pick a certificate from the server's store">Choose one...</button>
   <button role="menuitem" id="btnNewCert" title="Create a self-signed certificate on this machine for the app registration" data-server-title="Create a self-signed certificate on the server for the app registration">Create new certificate...</button>
   <button role="menuitem" class="serveronly" id="btnPfxImport" title="Use the certificate you already have: a .pfx file with its private key">Import a .pfx...</button>
   <button role="menuitem" class="serveronly" id="btnCerDownload" title="The chosen certificate's public part (.cer) - what the app registration in Entra ID takes">Download .cer</button>

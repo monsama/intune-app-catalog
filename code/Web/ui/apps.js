@@ -696,6 +696,30 @@ $('btnRecent').addEventListener('click', openRecent);
 
 // ---------------------------------------------------------------- the Catalog menu (the whole catalog)
 const catMenu = $('catalogMenu');
+// Buttons folded into one "More" menu (2.32.0): the buttons stay (their handlers, enabled state and titles are the
+// truth) - hidden; the menu's items click them. The menu button goes where the first of them was.
+function foldIntoMenu(ids, opts = {}) {
+  const btns = ids.map(id => $(id)).filter(Boolean); if (!btns.length) return null;
+  const menu = el('div', { class: 'menu', role: 'menu' }); menu.hidden = true; document.body.append(menu);
+  const more = el('button', { type: 'button', class: 'btn' + (opts.cls ? ' ' + opts.cls : ''), id: opts.id || null, 'aria-haspopup': 'menu', 'aria-expanded': 'false', text: opts.text || 'More \u25BE', title: opts.title || btns.map(b => b.textContent.trim()).join(', ') });
+  const close = () => { menu.hidden = true; more.setAttribute('aria-expanded', 'false'); };
+  more.addEventListener('click', e => {
+    e.stopPropagation();
+    if (!menu.hidden) { close(); return; }
+    menu.replaceChildren(...btns.filter(b => !b.classList.contains('gone')).map(b => el('button', { role: 'menuitem', text: b.textContent.trim(), title: b.title, disabled: b.disabled, onclick: () => { close(); b.click(); } })));
+    const r = more.getBoundingClientRect(); placeMenu(menu, r.right - 260, r.bottom + 4); more.setAttribute('aria-expanded', 'true');
+  });
+  menu.addEventListener('keydown', e => { if (e.key === 'Escape') { close(); more.focus(); } });
+  document.addEventListener('click', e => { if (!menu.hidden && !menu.contains(e.target)) close(); });
+  btns[0].before(more); for (const b of btns) b.hidden = true;
+  return more;
+}
+// A text Reload button as the round icon the Apps page has.
+function reloadIcon(id) {
+  const b = $(id); if (!b) return;
+  b.classList.add('iconbtn'); b.setAttribute('aria-label', 'Reload');
+  b.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>';
+}
 function placeMenu(m, x, y) {
   m.hidden = false;
   const r = m.getBoundingClientRect();

@@ -99,7 +99,8 @@ try {
       // Apps: an unconfigured app opens on Settings; the Apps list is empty but explained.
       await page.click('#tabApps');
       await page.waitForSelector('#emptyState:not([hidden]), #gridBody tr');
-      check(await page.isVisible('#setupBanner'), `${label}: the "no connection" banner shows`);
+      // 2.32.0: no banner - the sidebar badge says it and leads to the setup guide.
+      check(!(await page.isVisible('#setupBanner')) && /Not connected - set up/.test(await page.textContent('#connBadge')), `${label}: "not connected" is the sidebar badge, not a banner on every page`, await page.textContent('#connBadge'));
       await noOverflow('Apps'); await unnamed('Apps'); await a11y('Apps'); await shot('apps');
 
       // Add apps: three ways in; the empty form is one click further.
@@ -155,12 +156,15 @@ try {
       await page.click('#tabChecks');
       await page.click('#btnRunChecks');
       await page.waitForFunction(() => document.getElementById('btnRunChecks').textContent === 'Run checks');
-      check(/not checked/i.test(await page.textContent('#checkNotes')), `${label}: Checks says Intune wasn't checked`, await page.textContent('#checkNotes'));
+      // 2.32.0: said once - in the empty state, not again in the note above it.
+      check(/not checked/i.test(await page.textContent('#checkEmptyText')) && !/not checked/i.test(await page.textContent('#checkNotes')), `${label}: Checks says once that Intune wasn't checked`, await page.textContent('#checkNotes'));
       await noOverflow('Checks'); await unnamed('Checks'); await a11y('Checks'); await shot('checks');
 
       // Groups and Platform scripts: empty, explained.
       await page.click('#tabGroups');
-      await page.waitForSelector('#groupList li');
+      // 2.32.0: not connected and no group in the catalog - one message and a way to set it up, no controls.
+      await page.waitForSelector('#btnGroupsSetup:not([hidden])');
+      check(!(await page.isVisible('#groupSearch')) && /needs the connection/.test(await page.textContent('#groupEmpty')), `${label}: Groups without a connection says so once, with a way to set it up`);
       await noOverflow('Groups'); await unnamed('Groups'); await a11y('Groups'); await shot('groups');
       await page.click('#tabScripts');
       await page.waitForFunction(() => !/Reading/.test(document.getElementById('scriptNote').textContent));
