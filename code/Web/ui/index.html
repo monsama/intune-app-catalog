@@ -496,7 +496,7 @@
           <h2>Assignment profiles</h2>
           <p class="sub">Named sets of groups - "Apply a profile" in the editor and in Add apps fills them in at once. Groups separated by commas.</p>
           <div id="profRows" class="profrows"></div>
-          <div class="actions"><button class="btn" id="btnProfAdd" title="Another profile">Add a profile</button><button class="btn" id="btnProfSave" title="Save the profiles">Save profiles</button></div>
+          <div class="actions"><label class="inline" title="Add apps and a new app in the editor start with this profile's groups">New apps get <select id="profDefault" aria-label="The profile new apps get"><option value="">(none)</option></select></label><button class="btn" id="btnProfAdd" title="Another profile">Add a profile</button><button class="btn" id="btnProfSave" title="Save the profiles">Save profiles</button></div>
         </article>
       </div>
     </div>
@@ -658,6 +658,7 @@
 <div class="menu" id="appMenu" role="menu" hidden>
   <div class="mhead" role="presentation">Package &amp; Intune</div>
   <button role="menuitem" data-act="edit" title="Open the app in the editor (double-click a row does the same)">Edit...</button>
+  <button role="menuitem" data-act="duplicate" title="A new app with this one's settings and groups - a starting point for a variant or a similar app">Duplicate...</button>
   <button role="menuitem" data-act="pushgroups" title="Send only the groups (assignments) to Intune - not the settings or the package">Send groups only</button>
   <button role="menuitem" data-act="package" title="Build the .intunewin for apps with their own installer">Package (build .intunewin)</button>
   <button role="menuitem" data-act="pull" title="Read the apps' settings and groups from Intune into the catalog - you choose per field">Read from Intune...</button>
@@ -827,6 +828,12 @@
   <div class="tablewrap short"><table class="plan"><thead><tr><th>App</th><th>Retired</th><th><span class="sr">Actions</span></th></tr></thead><tbody id="retiredRows"></tbody></table></div>
   <p class="sub" id="retiredNote"></p>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
+</dialog>
+<dialog id="dlgAddDone" class="wide" aria-labelledby="adDoneTitle">
+  <h2 id="adDoneTitle">Added - send to Intune?</h2>
+  <p class="sub" id="adDoneSub">What is ready goes to Intune with its groups. What still lacks something says what - Fix opens the editor there.</p>
+  <div class="tablewrap short"><table class="plan"><thead><tr><th>App</th><th>Who gets it</th><th>Ready?</th></tr></thead><tbody id="adDoneRows"></tbody></table></div>
+  <div class="actions end"><button class="btn" id="adDoneClose">Not now</button><button class="btn primary" id="adDoneSend">Send</button></div>
 </dialog>
 <dialog id="dlgPkgUp" class="ask" aria-labelledby="puTitle">
   <h2 id="puTitle">Into its packages folder</h2>
@@ -1169,13 +1176,14 @@
     <div class="favchips" id="adFavs" role="group" aria-label="Favourite groups"></div>
   </div>
   <p class="formerror" id="addError" hidden></p>
-  <div class="actions end"><label class="chk inline" title="Right after adding: the Send to Intune dialog for the new apps (installers and scripts are built first)"><input type="checkbox" id="adPublish">Send to Intune right after adding</label><span class="spacer"></span><button class="btn" id="btnAddCancel">Cancel</button><button class="btn primary" id="btnAddGo" disabled>Add</button></div>
+  <div class="actions end"><span class="spacer"></span><button class="btn" id="btnAddCancel">Cancel</button><button class="btn" id="btnAddSend" disabled title="Add it, build its package if it has one, then show what is ready - and send that to Intune with its groups">Add and send...</button><button class="btn primary" id="btnAddGo" disabled>Add</button></div>
 </dialog>
 
 <dialog id="dlgSandbox" class="wide" aria-labelledby="sbTitle">
   <h2 id="sbTitle">Test in Windows Sandbox</h2>
   <p class="sub" id="sbText"></p>
   <ol class="sbsteps" id="sbSteps"></ol>
+  <div class="sbfound" id="sbFound" hidden></div>
   <pre class="log" id="sbLog" aria-label="The test's log"></pre>
   <div class="actions end"><button class="btn" id="btnSbFolder" title="The test folder: run.ps1, the .wsb file, the log">Open the test folder</button><button class="btn" data-close>Close</button></div>
 </dialog>

@@ -297,6 +297,36 @@ function Global:Backup-WebAppFile {
     catch { }
 }
 
+function Global:Copy-WebApp {
+    <#
+      A new app made as a copy of one in the catalog (2.35.0): its groups, filter and managed updates, its settings
+      (commands, detection, requirements, return codes, dependencies) and icon - through the same save as any app, so
+      the name is checked. Not copied: its App ID, releases, package files and the supersedence (two apps replacing the
+      same older one would fight over it) - the copy is new to Intune.
+    #>
+    param($Data)
+    $all = @((Read-WebCatalogRecords).Apps)
+    $a = $all | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "No app called '$($Data.name)' in the catalog." } }
+    $newName = ([string]$Data.newName).Trim() -replace '\s+', ' '
+    $why = Test-WebAddName $newName $all
+    if ($why) { return @{ ok = $false; error = $why } }
+    $edit = [pscustomobject]@{ appName = $newName; wingetId = [string]$a.wingetId; appId = ''; managedUpdates = [bool]$a.managedUpdates
+        requiredFor = @($a.requiredFor); availableFor = @($a.availableFor); uninstallFor = @($a.uninstallFor); excludeFor = @($a.excludeFor)
+        assignmentFilter = [string]$a.assignmentFilter; assignmentFilterMode = [string]$a.assignmentFilterMode }
+    $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
+    if (-not $r.ok) { return $r }
+    # A copy of its own, not the same objects.
+    $meta = if ($a.metadata) { $a.metadata | ConvertTo-Json -Depth 20 | ConvertFrom-Json } else { $null }
+    if ($meta -and $meta.PSObject.Properties.Name -contains 'supersedes') { $meta.supersedes = @() }
+    if ($meta -and $meta.PSObject.Properties.Name -contains 'supersedesSet') { $meta.supersedesSet = $false }
+    $icon = $a.icon
+    [void](Update-WebCatalogApp -Name $r.name -Change { param($x) if ($meta) { $x.metadata = $meta }; if ($icon) { $x.icon = $icon } }.GetNewClosure())
+    Add-WebHistoryEntry -App $r.name -Kind 'catalog' -Text "Made as a copy of $($a.appName)"
+    Write-Log "[OK] $($r.name) made as a copy of $($a.appName)."
+    return @{ ok = $true; name = $r.name }
+}
+
 function Global:Save-WebApp {
     param($Data)
     $catalog = Read-WebCatalogRecords

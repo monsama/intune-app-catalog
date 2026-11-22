@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.35.0
+
+**Adding apps takes fewer steps, and makes fewer duplicates.**
+
+- **Add and send** beside Add (Add apps): it adds the app, builds its
+  package, then shows a summary - who gets each app, and Ready or what it
+  lacks, with **Build** or **Fix...** (the editor, at that field) - and
+  **Send the N ready** to Intune with their groups. It needs a connection;
+  without one it is off and says so.
+- **Duplicate warnings while adding**: a name that's already in the
+  catalog, or an app of that name already in Intune and not linked (link
+  it in Checks instead of sending a second one). Winget search marks such
+  packages "in Intune".
+- **Duplicate app** (the app's menu): a copy with the same groups,
+  settings, detection, requirements and icon under a new name - no App ID,
+  no supersedence.
+- **A default assignment profile** for new apps (Settings > Assignment
+  profiles, "New apps get"): Add apps and the editor start with its
+  groups, its exclusions too. A profile's exclusions now carry over when
+  it is picked in Add apps.
+- **Better .exe detection**:
+  - The name, publisher and version an installer states about itself
+    (Inno Setup, NSIS, ...) are read on the server too, not only on
+    Windows.
+  - A Sandbox test now records what Windows lists after the install. The
+    result shows it with **Use as the detection rule**: a script rule for
+    that exact name, that version or newer. An Uninstall.ps1 this app
+    wrote looks for the same name. Start-Test.ps1 (the server's Sandbox
+    package) prints the name.
+
 ## 2.34.0
 
 **Upload whole folders (or a .zip of one) to build the .intunewin** - also

@@ -27,6 +27,7 @@ function Global:Import-GraphSettings {
         # The server version's sign-in (Sign in with Microsoft, the group, the admin password on/off).
         $Global:App.SignIn = ConvertTo-SignInSettings $settings.SignIn
         if ($settings.AssignmentProfiles) { $Global:App.AssignmentProfiles = @(ConvertTo-AssignmentProfiles $settings.AssignmentProfiles) }
+        $Global:App.DefaultProfile = [string]$settings.DefaultProfile
         if ($settings.PilotGroups) {
             $Global:App.PilotGroups.Clear()
             foreach ($g in @($settings.PilotGroups)) { [void]$Global:App.PilotGroups.Add([string]$g) }
@@ -130,6 +131,7 @@ function Global:Write-SettingsFile {
             Alerts                = $Global:App.Alerts
             SignIn                = (ConvertTo-SignInSettings $Global:App.SignIn)
             AssignmentProfiles    = @($Global:App.AssignmentProfiles)
+            DefaultProfile        = [string]$Global:App.DefaultProfile
             DefaultAppSettings    = $Global:App.DefaultAppSettings
             CheckDriftOnStartup   = $Global:App.CheckDriftOnStartup
             CheckForUpdates       = [bool]$Global:App.CheckForUpdates

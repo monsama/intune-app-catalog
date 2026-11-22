@@ -333,6 +333,66 @@ function Global:Get-AppWindowPreferencesJson {
 }
 
 
+function Global:Get-VersionStringsFromBytes {
+    <#
+      Pure: the strings of an .exe's version block (StringFileInfo) found in -Bytes - ProductName, CompanyName,
+      ProductVersion, FileDescription - as @{ key = value }, from the first VS_VERSION_INFO in them. Each String is
+      wLength, wValueLength (characters), wType, the key (UTF-16, ending in 0), padding to 4 bytes, the value.
+    #>
+    param([byte[]]$Bytes, [string[]]$Keys = @('ProductName', 'CompanyName', 'ProductVersion', 'FileDescription'))
+    $out = @{}
+    if (-not $Bytes -or $Bytes.Length -lt 64) { return $out }
+    $latin = [Text.Encoding]::GetEncoding(28591)
+    $text = $latin.GetString($Bytes)
+    $vs = $text.IndexOf($latin.GetString([Text.Encoding]::Unicode.GetBytes('VS_VERSION_INFO')), [System.StringComparison]::Ordinal)
+    if ($vs -lt 0) { return $out }
+    $end = [Math]::Min($Bytes.Length, $vs + 65536)
+    foreach ($k in $Keys) {
+        $needle = $latin.GetString([Text.Encoding]::Unicode.GetBytes($k + [char]0))
+        $at = $text.IndexOf($needle, $vs, $end - $vs, [System.StringComparison]::Ordinal)
+        if ($at -lt 6) { continue }
+        $start = $at - 6
+        $chars = [BitConverter]::ToUInt16($Bytes, $start + 2)
+        if ($chars -le 0 -or $chars -gt 1024) { continue }
+        $valueAt = $start + [int]([Math]::Ceiling((6 + $needle.Length) / 4.0) * 4)
+        if ($valueAt + $chars * 2 -gt $Bytes.Length) { continue }
+        $v = ([Text.Encoding]::Unicode.GetString($Bytes, $valueAt, $chars * 2)).TrimEnd([char]0).Trim()
+        if ($v) { $out[$k] = $v }
+    }
+    return $out
+}
+
+function Global:Get-ExeVersionStrings {
+    # An .exe's ProductName, CompanyName, ProductVersion, FileDescription: Windows reads them; elsewhere they are found in the file (the first 64 MB).
+    param([string]$Path)
+    if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') {
+        try { $vi = (Get-Item -LiteralPath $Path -ErrorAction Stop).VersionInfo; return @{ ProductName = ([string]$vi.ProductName).Trim(); CompanyName = ([string]$vi.CompanyName).Trim(); ProductVersion = ([string]$vi.ProductVersion).Trim(); FileDescription = ([string]$vi.FileDescription).Trim() } }
+        catch { return @{} }
+    }
+    $fs = $null
+    try {
+        $fs = [System.IO.File]::OpenRead($Path)
+        $latin = [Text.Encoding]::GetEncoding(28591); $needle = $latin.GetString([Text.Encoding]::Unicode.GetBytes('VS_VERSION_INFO'))
+        $chunk = New-Object byte[] (1MB + 256); $offset = [long]0; $carry = 0
+        while ($offset -lt 64MB) {
+            $read = $fs.Read($chunk, $carry, 1MB); if ($read -le 0) { break }
+            $len = $carry + $read
+            $at = $latin.GetString($chunk, 0, $len).IndexOf($needle, [System.StringComparison]::Ordinal)
+            if ($at -ge 0) {
+                # The block from there on (64 KB is far more than a version block takes).
+                [void]$fs.Seek($offset - $carry + $at, [System.IO.SeekOrigin]::Begin)
+                $buf = New-Object byte[] 65536; $n = $fs.Read($buf, 0, $buf.Length)
+                return (Get-VersionStringsFromBytes -Bytes ($buf[0..($n - 1)]))
+            }
+            # Keep the last bytes: the key may straddle two chunks.
+            $keep = [Math]::Min(64, $len); [Array]::Copy($chunk, $len - $keep, $chunk, 0, $keep); $carry = $keep; $offset += $read
+        }
+        return @{}
+    }
+    catch { return @{} }
+    finally { if ($fs) { $fs.Dispose() } }
+}
+
 function Global:Get-ExeVersionText {
     <#
       An .exe's version: its ProductVersion (else FileVersion) on Windows. Elsewhere (the server version) .NET

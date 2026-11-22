@@ -230,10 +230,15 @@ function Global:New-WebSandboxRunScript {
 function Say(`$t) { Add-Content -LiteralPath `$log -Value ((Get-Date).ToString('HH:mm:ss') + ' ' + `$t) }
 function Detected { try { [bool](& { $detect }) } catch { Say "Detection failed: `$(`$_.Exception.Message)"; `$false } }
 function Run(`$cmd) { Say "Running: `$cmd"; `$p = Start-Process -FilePath cmd.exe -ArgumentList '/c', `$cmd -WorkingDirectory (Join-Path `$out 'package') -Wait -PassThru -WindowStyle Hidden; Say "Exit code `$(`$p.ExitCode)"; `$p.ExitCode }
+function Listed { foreach (`$k in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*') { Get-ItemProperty -Path `$k -ErrorAction SilentlyContinue | Where-Object { `$_.DisplayName -and -not `$_.SystemComponent } | ForEach-Object { [pscustomobject]@{ name = [string]`$_.DisplayName; version = [string]`$_.DisplayVersion; publisher = [string]`$_.Publisher } } } }
+`$listedBefore = @(Listed | ForEach-Object { `$_.name })
 `$r = [ordered]@{ before = Detected }
 `$r.installExit = Run $(& $q (& $fix $m.installCommand))
 Start-Sleep -Seconds 5
 `$r.detectedAfterInstall = Detected
+# What Windows lists now that it didn't before: the name and version a detection rule can look for.
+`$r.installed = @(Listed | Where-Object { `$listedBefore -notcontains `$_.name } | Select-Object -First 5)
+foreach (`$e in `$r.installed) { Say "Windows lists: `$(`$e.name) `$(`$e.version)" }
 `$r.uninstallExit = $(if ($m.uninstallCommand) { "Run $(& $q (& $fix $m.uninstallCommand))" } else { '$null' })
 Start-Sleep -Seconds 5
 `$r.detectedAfterUninstall = Detected
@@ -241,6 +246,42 @@ Start-Sleep -Seconds 5
 Say 'Done - you can close the Sandbox.'
 "@
     return $run
+}
+
+function Global:Set-WebSandboxDetection {
+    <#
+      The detection rule from a Sandbox test (2.35.0): the app as Windows listed it there (name and version) -
+      a script that finds it by that name, that version or newer. An Uninstall.ps1 this app wrote for it looks
+      for the same name from then on.
+    #>
+    param($Data)
+    $id = [string]$Data.id
+    if ($id -notmatch '^\d{8}-\d{6}-[0-9a-f]{4}$') { return @{ ok = $false; error = 'Unknown test.' } }
+    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "No app called '$($Data.name)' in the catalog." } }
+    $file = Join-Path (Join-Path (Get-WebSandboxRoot) $id) 'result.json'
+    if (-not (Test-Path -LiteralPath $file)) { return @{ ok = $false; error = 'That test has no result (yet).' } }
+    $r = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
+    $i = -1; [void][int]::TryParse([string]$Data.index, [ref]$i)
+    $e = @($r.installed)[$i]
+    if ($i -lt 0 -or -not $e -or -not ([string]$e.name).Trim()) { return @{ ok = $false; error = 'That entry isn''t in the test''s result.' } }
+    $name = ([string]$e.name).Trim(); $ver = ([string]$e.version).Trim()
+    if ($ver -and -not (Test-ReleaseVersionText $ver)) { $ver = '' }
+    $rule = [pscustomobject]@{ Type = 'Script'; Script_Content = (New-InstalledAppDetectionScript -DisplayName $name -Version $ver) }
+    [void](Update-WebCatalogApp -Name $a.appName -Change { param($x) if (-not $x.metadata) { $x.metadata = Get-DefaultAppMetadata -AppName $x.appName -WingetId '' -Uncommon $true }; $x.metadata | Add-Member -NotePropertyName detectionRule -NotePropertyValue $rule -Force }.GetNewClosure())
+    # Its own Uninstall.ps1 (the one this app writes) looks for the same name.
+    $un = Join-Path (Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $a.appName)) 'Uninstall.ps1'
+    $uninstallToo = $false
+    if (Test-Path -LiteralPath $un) {
+        $text = Get-Content -LiteralPath $un -Raw -Encoding UTF8
+        if ($text -match '^# Uninstalls the app: the uninstaller Windows lists for it' -and $text -match '(?m)^\$pattern = .*$') {
+            $line = '$pattern = ' + (ConvertTo-PsLiteral (Get-InstalledNamePattern $name))
+            [System.IO.File]::WriteAllText($un, ([regex]::Replace($text, '(?m)^\$pattern = .*$', [System.Text.RegularExpressions.MatchEvaluator] { param($mm) $line }, 1)), (New-Object System.Text.UTF8Encoding($true)))
+            $uninstallToo = $true
+        }
+    }
+    Add-WebHistoryEntry -App $a.appName -Kind 'catalog' -Text "Detection rule from the Sandbox test: '$name'$(if ($ver) { " $ver or newer" })$(if ($uninstallToo) { '; Uninstall.ps1 looks for it too' })"
+    return @{ ok = $true; detectedName = $name; version = $ver; uninstallToo = $uninstallToo }
 }
 
 function Global:Get-WebSandboxResult {

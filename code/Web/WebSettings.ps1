@@ -358,6 +358,7 @@ function Global:Get-WebPrefs {
         pilotGroups    = @($Global:App.PilotGroups)
         releasePolicy  = $Global:App.ReleasePolicy
         profiles       = @($Global:App.AssignmentProfiles | ForEach-Object { [ordered]@{ name = $_.Name; required = @($_.Required); available = @($_.Available); exclude = @($_.Exclude) } })
+        defaultProfile = [string]$Global:App.DefaultProfile
         releaseRings   = @($Global:App.ReleaseRings | ForEach-Object { [ordered]@{ name = $_.Name; groups = @($_.Groups) } })
         # The webhook URL is a secret (anyone with it can post to the channel): the page only learns whether one is saved.
         alerts         = [ordered]@{ level = $Global:App.Alerts.Level; webhookSet = [bool]$Global:App.Alerts.WebhookUrl; mailFrom = $Global:App.Alerts.MailFrom; mailTo = @($Global:App.Alerts.MailTo) }
@@ -425,6 +426,13 @@ function Global:Save-WebPrefs {
         if (@($raw | Group-Object { ([string]$_.Name).Trim() } | Where-Object { $_.Count -gt 1 }).Count) { return @{ ok = $false; error = 'Two profiles have the same name.' } }
         $Global:App.AssignmentProfiles = @(ConvertTo-AssignmentProfiles $raw)
     }
+    # The profile new apps get: one of the profiles, or none. A profile that is gone isn't the default any more.
+    if (@($Data.PSObject.Properties.Name) -contains 'defaultProfile') {
+        $dp = ([string]$Data.defaultProfile).Trim()
+        if ($dp -and -not (@($Global:App.AssignmentProfiles) | Where-Object { $_.Name -eq $dp })) { return @{ ok = $false; error = "There's no profile called '$dp'." } }
+        $Global:App.DefaultProfile = $dp
+    }
+    elseif ($Global:App.DefaultProfile -and -not (@($Global:App.AssignmentProfiles) | Where-Object { $_.Name -eq $Global:App.DefaultProfile })) { $Global:App.DefaultProfile = '' }
     if ($null -ne $Data.releaseRingsText) {
         $rr = ConvertFrom-ReleaseRingText ([string]$Data.releaseRingsText)
         if ($rr.Error) { return @{ ok = $false; error = "Release rings: $($rr.Error)" } }

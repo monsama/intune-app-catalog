@@ -571,7 +571,9 @@ async function openEditor(name) {
     editorInstaller = null; editorWingetOffers = '';
     editorApps = apps.map(a => a.name); editorMinOs = (prefs && prefs.minOsChoices) || [];
     editorIntuneApps = apps.filter(a => a.hasAppId).map(a => ({ name: a.name, appId: a.appId }));
-    fillEditor({ hasMetadata: false, managedUpdates: !!(prefs && prefs.defaults && prefs.defaults.wingetInstallMethod === 'Managed'), deploy: prefs && prefs.defaults ? { ...prefs.defaults, detection: { type: '' }, dependencies: prefs.defaults.defaultDependencyAppNames || [] } : null });
+    // A new app starts with the default profile's groups (Settings > Apps & defaults).
+    const dp = defaultProfile();
+    fillEditor({ ...(dp ? { requiredFor: dp.required, availableFor: dp.available, excludeFor: dp.exclude } : {}), hasMetadata: false, managedUpdates: !!(prefs && prefs.defaults && prefs.defaults.wingetInstallMethod === 'Managed'), deploy: prefs && prefs.defaults ? { ...prefs.defaults, detection: { type: '' }, dependencies: prefs.defaults.defaultDependencyAppNames || [] } : null });
     $('knownGroups').textContent = '';
     $('appTitle').textContent = 'Add an app';
   }
@@ -1028,7 +1030,7 @@ function deployProgress() {
   $('deployProgressText').textContent = `${res.length} of ${ready.length}` + [[n('ok'), 'done'], [n('failed'), 'failed'], [n('skipped'), 'skipped'], [n('stopped'), 'not started']].filter(x => x[0]).map(x => ` - ${x[0]} ${x[1]}`).join('');
 }
 $('btnDeploy').addEventListener('click', () => openDeploy([...selected]));
-async function openDeploy(names) {
+async function openDeploy(names, opts = {}) {
   if (wcResume('dlgDeploy')) return;
   $('btnDeployClose').textContent = 'Cancel';
   const r = await api('/api/deploy-plan', { names });
@@ -1044,6 +1046,8 @@ async function openDeploy(names) {
   $('btnDeployGo').textContent = n === 1 ? 'Send 1 app' : `Send ${n} apps`;
   $('btnDeployGo').disabled = n === 0;
   $('dlgDeploy').showModal();
+  // From Add and send's summary: the send starts at once (the summary was the review).
+  if (opts.autostart && n) runDeployQueue(deployPlan.filter(a => a.ready).map(a => a.name));
 }
 // One app: deploy, then push its groups when the step asks for it. Resolves with whether the deploy worked.
 function deployOne(name) {
@@ -1254,14 +1258,14 @@ function openMenu(x, y) {
   const one = oneSelected();
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
-  const enable = { edit: !!one, pushgroups: anyId, sandbox: !!(one && !one.wingetId), package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
+  const enable = { edit: !!one, duplicate: !!one, pushgroups: anyId, sandbox: !!(one && !one.wingetId), package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
     replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any, retire: !!(one && (one.hasAppId || one.retiringSince)),
     takeversion: sel.some(a => a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
     release: !!(one && one.managed && one.hasAppId && !one.pilotVersion), promote: !!(one && one.pilotVersion), withdraw: !!(one && one.pilotVersion),
     managed: any,
     rollback: !!(one && one.managed && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && (one.previousVersions || []).length > 1) };
   const why = {
-    edit: 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
+    edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
     sandbox: one ? 'Windows Sandbox has no winget - test a Winget app on a pilot device.' : 'Select exactly one app.',
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
@@ -1330,6 +1334,7 @@ async function menuAction(act) {
     case 'retire': openRetire(one.name); break;
     case 'sandbox': if (SERVER) downloadSandbox(one.name); else openSandbox(one.name); break;
     case 'edit': openEditor(one.name); break;
+    case 'duplicate': duplicateApp(one.name); break;
     case 'pushgroups': openPushGroups(names); break;
     case 'replacegroup': openReplace({ names }); break;
     case 'release': openRelease(one.name); break;
@@ -1695,3 +1700,15 @@ $('btnPcToDet').addEventListener('click', () => {
 });
 $('appForm').addEventListener('input', checkProductCodes);
 $('appForm').addEventListener('change', checkProductCodes);
+
+// Duplicate an app (2.35.0): its settings and groups under a new name - not its App ID, releases or package files.
+async function duplicateApp(name) {
+  let n = 2; while (apps.some(a => a.name.toLowerCase() === `${name} (${n})`.toLowerCase())) n++;
+  const newName = await ask(`Duplicate ${name}\n\nA new app with its settings and groups (commands, detection, requirements, return codes, icon). Not its App ID, releases or package files - it is new to Intune. The name of the new app:`, { ok: 'Duplicate', input: `${name} (${n})`, danger: false });
+  if (!newName) return;
+  const r = await api('/api/app-duplicate', { name, newName: String(newName).trim() });
+  if (!r.ok) { toast(r.error, true); return; }
+  await loadApps(); selected.clear(); selected.add(r.name); renderApps(); updateViewButtons();
+  toast(`${r.name} is a copy of ${name} - change what differs.`, false, [{ label: 'Open it', run: () => openEditor(r.name) }]);
+  openEditor(r.name);
+}
