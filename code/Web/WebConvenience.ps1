@@ -521,6 +521,12 @@ function Global:Read-WebPackageList {
       Each with whether the catalog has it. @{ ok; items = @(@{ id; inCatalog }) }.
     #>
     param($Data)
+    # The starter set (2.38.0): the apps most organisations deploy - each with its name, category and why.
+    if ($Data.starter) {
+        $have = @{}; foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { $_.wingetId })) { $have[([string]$a.wingetId).ToLowerInvariant()] = [string]$a.appName }
+        return @{ ok = $true; starter = $true; items = @(Get-StarterAppSet | ForEach-Object { $k = ([string]$_.id).ToLowerInvariant()
+            [ordered]@{ id = $_.id; name = $_.name; category = $_.category; recommended = [bool]$_.recommended; why = $_.why; inCatalog = $(if ($have.ContainsKey($k)) { $have[$k] } else { '' }) } }) }
+    }
     $json = [string]$Data.json
     if ($Data.thisPc) {
         $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("winget-export-" + [guid]::NewGuid().ToString('N') + ".json")

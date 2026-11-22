@@ -1590,3 +1590,6 @@ body[data-view="home"] #setupBanner { display: none; }
 #dlgAddDone .addfix { flex-wrap: wrap; }
 .why.pkgwarn { display: block; color: var(--warn); }
 .namewarn { margin: 4px 0 8px; padding: 6px 10px; border-radius: var(--r-s); background: var(--warn-bg); color: var(--warn); font-size: 12.5px; }
+/* 2.38.0: the starter set's categories in Add apps > From a list */
+#alGrid .grouprow th { text-align: left; font-size: 12px; font-weight: 600; text-transform: none; color: var(--muted); padding-top: 12px; background: transparent; }
+#alGrid td .small { margin-top: 2px; }

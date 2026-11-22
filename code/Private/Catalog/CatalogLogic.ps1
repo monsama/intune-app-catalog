@@ -2240,6 +2240,45 @@ function Global:ConvertTo-SandboxResult {
     }
 }
 
+function Global:Get-StarterAppSet {
+    <#
+      Pure (2.38.0): a starter set of Winget apps most organisations deploy, by category - the recommended ones
+      ticked by default (browsers, 7-Zip, a PDF reader, a text editor, VLC, Java and the Visual C++ runtime);
+      the others common choices for some. Every ID was checked against winget's index when it was written.
+      Java is Eclipse Temurin (no Oracle licence needed); Chrome is Google's enterprise MSI.
+    #>
+    return @(
+        [ordered]@{ id = 'Mozilla.Firefox'; name = 'Mozilla Firefox'; category = 'Browsers'; recommended = $true; why = 'A second browser beside Edge - many sites and admins expect one.' },
+        [ordered]@{ id = 'Google.Chrome'; name = 'Google Chrome'; category = 'Browsers'; recommended = $true; why = 'Chrome''s enterprise MSI - installs for all users, managed by policy.' },
+        [ordered]@{ id = 'Mozilla.Firefox.ESR'; name = 'Mozilla Firefox ESR'; category = 'Browsers'; recommended = $false; why = 'Instead of Firefox: a release a year, security fixes only - fewer changes for users.' },
+        [ordered]@{ id = '7zip.7zip'; name = '7-Zip'; category = 'Files and documents'; recommended = $true; why = 'Opens .7z, .rar, .tar and more - Windows itself only does .zip well.' },
+        [ordered]@{ id = 'Adobe.Acrobat.Reader.64-bit'; name = 'Adobe Acrobat Reader'; category = 'Files and documents'; recommended = $true; why = 'Forms and signatures in PDFs that the browser viewers handle badly.' },
+        [ordered]@{ id = 'Notepad++.Notepad++'; name = 'Notepad++'; category = 'Files and documents'; recommended = $true; why = 'A text editor for logs, scripts and config files.' },
+        [ordered]@{ id = 'SumatraPDF.SumatraPDF'; name = 'SumatraPDF'; category = 'Files and documents'; recommended = $false; why = 'A small, fast PDF reader - instead of Acrobat where forms are not needed.' },
+        [ordered]@{ id = 'TheDocumentFoundation.LibreOffice'; name = 'LibreOffice'; category = 'Files and documents'; recommended = $false; why = 'An office suite where there is no Microsoft 365 licence.' },
+        [ordered]@{ id = 'VideoLAN.VLC'; name = 'VLC media player'; category = 'Media'; recommended = $true; why = 'Plays nearly every audio and video format without extra codecs.' },
+        [ordered]@{ id = 'dotPDN.PaintDotNet'; name = 'Paint.NET'; category = 'Media'; recommended = $false; why = 'Simple image editing beyond Paint.' },
+        [ordered]@{ id = 'Greenshot.Greenshot'; name = 'Greenshot'; category = 'Media'; recommended = $false; why = 'Screenshots with arrows and blur - for support tickets and documentation.' },
+        [ordered]@{ id = 'EclipseAdoptium.Temurin.21.JRE'; name = 'Java 21 (Eclipse Temurin JRE)'; category = 'Runtimes'; recommended = $true; why = 'Java without an Oracle licence: the current long-term version, for Java apps.' },
+        [ordered]@{ id = 'EclipseAdoptium.Temurin.17.JRE'; name = 'Java 17 (Eclipse Temurin JRE)'; category = 'Runtimes'; recommended = $false; why = 'The previous long-term Java - for apps not yet certified on 21.' },
+        [ordered]@{ id = 'EclipseAdoptium.Temurin.8.JRE'; name = 'Java 8 (Eclipse Temurin JRE)'; category = 'Runtimes'; recommended = $false; why = 'Only for old apps that need Java 8.' },
+        [ordered]@{ id = 'Microsoft.VCRedist.2015+.x64'; name = 'Visual C++ Redistributable (x64)'; category = 'Runtimes'; recommended = $true; why = 'Needed by many desktop apps - better installed once than by each app.' },
+        [ordered]@{ id = 'Microsoft.VCRedist.2015+.x86'; name = 'Visual C++ Redistributable (x86)'; category = 'Runtimes'; recommended = $false; why = 'The same for 32-bit apps.' },
+        [ordered]@{ id = 'Microsoft.DotNet.DesktopRuntime.8'; name = '.NET 8 Desktop Runtime'; category = 'Runtimes'; recommended = $false; why = 'For apps built on .NET 8 that do not bring it themselves.' },
+        [ordered]@{ id = 'Zoom.Zoom'; name = 'Zoom'; category = 'Meetings and remote work'; recommended = $false; why = 'Where customers or partners meet on Zoom.' },
+        [ordered]@{ id = 'Cisco.Webex'; name = 'Webex'; category = 'Meetings and remote work'; recommended = $false; why = 'Where meetings run on Webex.' },
+        [ordered]@{ id = 'Citrix.Workspace'; name = 'Citrix Workspace'; category = 'Meetings and remote work'; recommended = $false; why = 'For Citrix virtual apps and desktops.' },
+        [ordered]@{ id = 'KeePassXCTeam.KeePassXC'; name = 'KeePassXC'; category = 'Meetings and remote work'; recommended = $false; why = 'A local password manager, where no company one is in use.' },
+        [ordered]@{ id = 'Microsoft.PowerShell'; name = 'PowerShell 7'; category = 'IT and developers'; recommended = $false; why = 'The current PowerShell, beside Windows PowerShell 5.1.' },
+        [ordered]@{ id = 'Microsoft.PowerToys'; name = 'PowerToys'; category = 'IT and developers'; recommended = $false; why = 'Window layouts, quick launcher, file tools - for power users.' },
+        [ordered]@{ id = 'Microsoft.VisualStudioCode'; name = 'Visual Studio Code'; category = 'IT and developers'; recommended = $false; why = 'A code editor - for IT and developers.' },
+        [ordered]@{ id = 'Git.Git'; name = 'Git'; category = 'IT and developers'; recommended = $false; why = 'Version control - for IT and developers.' },
+        [ordered]@{ id = 'WinMerge.WinMerge'; name = 'WinMerge'; category = 'IT and developers'; recommended = $false; why = 'Compares files and folders.' },
+        [ordered]@{ id = 'PuTTY.PuTTY'; name = 'PuTTY'; category = 'IT and developers'; recommended = $false; why = 'SSH and serial connections to network devices.' },
+        [ordered]@{ id = 'WinSCP.WinSCP'; name = 'WinSCP'; category = 'IT and developers'; recommended = $false; why = 'Copies files over SFTP and SCP.' }
+    )
+}
+
 function Global:Get-CommandPackageFiles {
     <#
       Pure: the package's own files a command runs or reads ("setup.exe", "Files\app.msi", TRANSFORMS=x.mst,

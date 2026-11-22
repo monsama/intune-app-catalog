@@ -99,6 +99,7 @@ $testableFunctionNames = @(
     "Get-VersionStringsFromBytes",
     "Get-ExeVersionStrings",
     "ConvertTo-PlainJsonValue",
+    "Get-StarterAppSet",
     # 2.36.0: what doesn't fit together in a package, a PC's Sandbox result, winget's SHA256
     "Get-CommandPackageFiles",
     "Get-PackageConsistencyWarnings",
@@ -3200,6 +3201,16 @@ $plain = ConvertTo-PlainJsonValue ([ordered]@{ log = $tagged; list = @($tagged, 
 Assert-True (-not ($plain.log.PSObject.Properties.Name -contains 'PSPath') -and -not ($plain.list[0].PSObject.Properties.Name -contains 'PSPath')) "Plain values: text loses what PowerShell hung on it (PSPath)"
 Assert-True ((ConvertTo-Json -InputObject $plain -Depth 5 -Compress) -eq '{"log":"log text","list":["log text",2],"none":[],"one":["a"],"obj":{"n":null,"t":true},"at":3.5}') "Plain values: the same JSON - empty and one-item lists stay lists ($(ConvertTo-Json -InputObject $plain -Depth 5 -Compress))"
 Assert-True ($null -eq (ConvertTo-PlainJsonValue $null) -and (ConvertTo-Json -InputObject (ConvertTo-PlainJsonValue @()) -Compress) -eq '[]') "Plain values: nothing stays nothing, an empty list stays a list"
+
+# =================================================================
+# 2.38.0: the starter set of apps
+# =================================================================
+$starter = @(Get-StarterAppSet)
+$sIds = @($starter | ForEach-Object { $_.id })
+Assert-True ($starter.Count -ge 20 -and @($sIds | Select-Object -Unique).Count -eq $sIds.Count -and -not @($starter | Where-Object { $_.id -notmatch '^[A-Za-z0-9][A-Za-z0-9._+\-]{0,127}$' -or -not $_.name -or -not $_.category -or -not $_.why }).Count) "Starter set: unique, valid Winget IDs, each with a name, category and why"
+Assert-True (@($starter | Where-Object recommended).Count -eq 8 -and (@('Mozilla.Firefox', 'Google.Chrome', 'VideoLAN.VLC', 'EclipseAdoptium.Temurin.21.JRE', '7zip.7zip') | Where-Object { $sIds -notcontains $_ }).Count -eq 0) "Starter set: the eight recommended ones, Firefox, Chrome, VLC, Java and 7-Zip among them"
+$cats = @($starter | ForEach-Object { $_.category }); $runs = @(for ($i = 0; $i -lt $cats.Count; $i++) { if ($i -eq 0 -or $cats[$i] -ne $cats[$i - 1]) { $cats[$i] } })
+Assert-True (@($runs | Select-Object -Unique).Count -eq $runs.Count) "Starter set: each category's apps together (the list shows one heading per category)"
 
 # =================================================================
 # Report

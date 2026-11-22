@@ -1164,16 +1164,19 @@
   </section>
 
   <section class="asec" id="asec-list" role="tabpanel" aria-labelledby="atab-list" hidden>
+    <p class="sub">New catalog? <b>Recommended apps</b> lists the apps most organisations deploy, the usual ones ticked.</p>
     <p class="sub desktoponly">Add many Winget apps at once: from a <code>winget export</code> file (another PC's apps - <code>winget export -o apps.json</code> there), or from the apps on this PC.</p>
     <p class="sub serveronly">Add many Winget apps at once: from a <code>winget export</code> file - <b>Script for a PC's apps</b> makes one on a Windows PC.</p>
     <div class="toolbar tight">
+      <button class="btn" id="btnAlStarter" title="The apps most organisations deploy - browsers, 7-Zip, a PDF reader, VLC, Java and more - the usual ones ticked">Recommended apps</button>
       <button class="btn" id="btnAlFile" title="A JSON file made by winget export">Choose an export file...</button>
       <button class="btn serveronly" id="btnAlScript" title="A script for a Windows PC: winget export of that PC's apps, into a file to choose here">Script for a PC's apps...</button>
       <button class="desktoponly btn" id="btnAlThisPc" title="Runs winget export here and lists what it finds">Read this PC's apps</button>
       <input type="file" id="alFile" accept=".json,application/json" hidden>
       <span class="muted" id="alNote" aria-live="polite"></span>
     </div>
-    <div class="tablewrap" tabindex="0" aria-label="Packages in the list" data-empty="Choose an export file or read this PC's apps - the packages appear here to pick from." data-server-empty="Choose an export file - the packages appear here to pick from.">
+    <label class="chk" title="Install a fixed version (winget's current one) and release new versions to the pilot groups first"><input type="checkbox" id="alManaged">Managed updates (pin winget's current version)</label>
+    <div class="tablewrap" tabindex="0" aria-label="Packages in the list" data-empty="Recommended apps, an export file or this PC's apps - the packages appear here to pick from." data-server-empty="Recommended apps or an export file - the packages appear here to pick from.">
       <table class="grid" id="alGrid"><thead><tr><th class="chk"><input type="checkbox" id="alAll" aria-label="Pick every package not in the catalog"></th><th>Winget ID</th><th>In the catalog</th></tr></thead><tbody id="alRows"></tbody></table>
     </div>
   </section>

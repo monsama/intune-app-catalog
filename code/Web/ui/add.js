@@ -13,6 +13,7 @@ function openAdd(src, file) {
   awPicked.clear(); $('awRows').replaceChildren(); $('awQuery').value = ''; $('awNote').textContent = 'Type to search - results appear as you type.';
   $('awDetail').replaceChildren(el('p', { class: 'muted', text: 'Pick a package to see what winget says about it.' }));
   $('awManaged').checked = !!(prefs && prefs.defaults && prefs.defaults.wingetInstallMethod === 'Managed');
+  $('alManaged').checked = $('awManaged').checked;
   resetInstaller();
   for (const id of ['asName', 'asPublisher', 'asVersion']) $(id).value = '';
   $('asVersion').value = '1.0'; loadScriptTemplates(true);
@@ -290,7 +291,7 @@ async function doAdd(send) {
       // Five at a time: each asks winget for its details, and the page shows how far it got.
       for (let i = 0; i < items.length; i += 5) {
         $(note).textContent = `Adding ${Math.min(i + 5, items.length)} of ${items.length} - reading each one's details from winget...`;
-        const r = await api('/api/add-winget', { items: items.slice(i, i + 5), managed: addSrc === 'winget' && $('awManaged').checked, ...groups });
+        const r = await api('/api/add-winget', { items: items.slice(i, i + 5), managed: addSrc === 'winget' ? $('awManaged').checked : $('alManaged').checked, ...groups });
         if (!r.ok) { showAddError(r.error); break; }
         added.push(...r.added); skipped.push(...r.skipped);
       }
@@ -373,21 +374,30 @@ async function readList(body) {
   $('alNote').textContent = body.thisPc ? 'Running winget export here - this can take a minute...' : 'Reading the list...';
   const r = await api('/api/package-list', body);
   if (!r.ok) { $('alNote').textContent = r.error; return; }
-  alItems = r.items; alPicked = new Set(r.items.filter(x => !x.inCatalog).map(x => x.id));
-  $('alNote').textContent = `${r.items.length} package(s) - ${r.items.filter(x => x.inCatalog).length} already in the catalog.`;
+  alItems = r.items;
+  // The starter set: only the recommended ones are ticked - the others are there to choose.
+  alPicked = new Set(r.items.filter(x => !x.inCatalog && (!r.starter || x.recommended)).map(x => x.id));
+  $('alNote').textContent = r.starter ? `${r.items.length} apps - ${alPicked.size} recommended ticked${r.items.some(x => x.inCatalog) ? `, ${r.items.filter(x => x.inCatalog).length} already in the catalog` : ''}.`
+    : `${r.items.length} package(s) - ${r.items.filter(x => x.inCatalog).length} already in the catalog.`;
   $('alAll').checked = alPicked.size > 0;
   renderList(); updateAddButton();
 }
 function renderList() {
-  $('alRows').replaceChildren(...alItems.map(x => {
-    const box = el('input', { type: 'checkbox', 'aria-label': `Pick ${x.id}`, disabled: !!x.inCatalog });
+  let cat = '';
+  $('alRows').replaceChildren(...alItems.flatMap(x => {
+    const box = el('input', { type: 'checkbox', 'aria-label': `Pick ${x.name || x.id}`, disabled: !!x.inCatalog });
     box.checked = alPicked.has(x.id);
     box.addEventListener('change', () => { if (box.checked) alPicked.add(x.id); else alPicked.delete(x.id); updateAddButton(); });
-    return el('tr', { class: x.inCatalog ? 'dim' : '' }, el('td', { class: 'chk' }, box), el('td', { class: 'mono', text: x.id }), el('td', { text: x.inCatalog || '-' }));
+    // The starter set: a heading per category, the app's name and why beside its Winget ID.
+    const head = x.category && x.category !== cat ? [el('tr', { class: 'grouprow' }, el('th', { colspan: 3, scope: 'colgroup', text: (cat = x.category) }))] : [];
+    const what = x.name ? el('td', {}, el('b', { text: x.name }), ' ', el('span', { class: 'mono muted', text: x.id }), x.why ? el('div', { class: 'muted small', text: x.why }) : '')
+      : el('td', { class: 'mono', text: x.id });
+    return [...head, el('tr', { class: x.inCatalog ? 'dim' : '' }, el('td', { class: 'chk' }, box), what, el('td', { text: x.inCatalog || '-' }))];
   }));
 }
 $('alAll').addEventListener('change', () => { alPicked = new Set($('alAll').checked ? alItems.filter(x => !x.inCatalog).map(x => x.id) : []); renderList(); updateAddButton(); });
 $('btnAlFile').addEventListener('click', () => $('alFile').click());
+$('btnAlStarter').addEventListener('click', () => readList({ starter: true }));
 $('alFile').addEventListener('change', async () => { const f = $('alFile').files[0]; if (!f) return; if (f.size > 5 * 1048576) { $('alNote').textContent = 'That file is too large.'; return; } readList({ json: await f.text() }); $('alFile').value = ''; });
 $('btnAlThisPc').addEventListener('click', () => readList({ thisPc: true }));
 

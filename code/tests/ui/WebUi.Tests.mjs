@@ -118,6 +118,13 @@ try {
       check(!(await page.isDisabled('#btnAddGo')), `${label}: a script app can be added once it has a name - the template writes the version marker`);
       check(await page.textContent('#btnAddGo') === 'Add script app', `${label}: the Add button names what it adds`, await page.textContent('#btnAddGo'));
       await unnamed('Add apps (script)'); await a11y('Add apps (script)'); await shot('add-script');
+      // 2.38.0: From a list > Recommended apps - the starter set by category, the recommended ones ticked.
+      await page.click('#atab-list'); await page.click('#btnAlStarter');
+      await page.waitForFunction(() => document.querySelectorAll('#alRows tr').length > 20, null, { timeout: 10000 }).catch(() => {});
+      const rec = await page.evaluate(() => ({ heads: document.querySelectorAll('#alRows tr.grouprow').length, ticked: document.querySelectorAll('#alRows input:checked').length, firefox: /Mozilla Firefox/.test(document.getElementById('alRows').textContent), button: document.getElementById('btnAddGo').textContent }));
+      check(rec.heads >= 5 && rec.ticked === 8 && rec.firefox && rec.button === 'Add 8 from the list', `${label}: Recommended apps - by category, the eight recommended ones ticked`, JSON.stringify(rec));
+      await noOverflow('Add apps (recommended)'); await unnamed('Add apps (recommended)'); await a11y('Add apps (recommended)'); await shot('add-recommended');
+      await page.click('#atab-script');
       await page.click('#btnAddBlank');
       await page.waitForSelector('#dlgApp[open]');
       await unnamed('the app editor'); await a11y('the app editor'); await shot('editor');
