@@ -138,7 +138,10 @@ function Global:Send-WebRedirect {
 
 function Global:Send-WebJson {
     param($Client, $Object)
-    $json = if ($Object -is [string]) { $Object } else { $Object | ConvertTo-Json -Depth 12 -Compress }
+    # Windows PowerShell 5.1 writes what PowerShell hangs on a value (Get-Content's PSPath, PSProvider...) - the
+    # answer is rebuilt from plain values there first (2.37.0); PowerShell 7 leaves those out by itself.
+    if ($PSVersionTable.PSEdition -eq 'Desktop' -and $Object -isnot [string]) { $Object = ConvertTo-PlainJsonValue $Object }
+    $json = if ($Object -is [string]) { $Object } else { ConvertTo-Json -InputObject $Object -Depth 12 -Compress }
     Send-WebResponse $Client '200 OK' 'application/json; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes($json))
 }
 

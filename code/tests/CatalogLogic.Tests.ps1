@@ -98,6 +98,7 @@ $testableFunctionNames = @(
     "Get-SafeFileNameForApp",
     "Get-VersionStringsFromBytes",
     "Get-ExeVersionStrings",
+    "ConvertTo-PlainJsonValue",
     # 2.36.0: what doesn't fit together in a package, a PC's Sandbox result, winget's SHA256
     "Get-CommandPackageFiles",
     "Get-PackageConsistencyWarnings",
@@ -3190,6 +3191,15 @@ Assert-True (@((ConvertTo-SandboxResult $many).installed).Count -eq 10 -and $nul
 
 # winget's SHA256 for an installer (what Get new installer checks the download against).
 Assert-True ((ConvertFrom-WingetInstallerSha256 "Installer:`n  Installer Type: inno`n  Installer Url: https://x.example/setup.exe`n  Installer SHA256: $('ab' * 32)`n") -eq ('AB' * 32) -and (ConvertFrom-WingetInstallerSha256 "Installer-SHA256: $('0' * 64)") -eq ('0' * 64) -and (ConvertFrom-WingetInstallerSha256 'Version: 1.0') -eq '') "winget SHA256: read from its line, any case and label language; none when it isn't there"
+
+# =================================================================
+# 2.37.0: answers as plain values (Windows PowerShell 5.1 writes what hangs on a value)
+# =================================================================
+$tagged = 'log text' | Add-Member -NotePropertyName PSPath -NotePropertyValue 'C:\x\log.txt' -PassThru
+$plain = ConvertTo-PlainJsonValue ([ordered]@{ log = $tagged; list = @($tagged, 2); none = @(); one = @('a'); obj = [pscustomobject]@{ n = $null; t = $true }; at = 3.5 })
+Assert-True (-not ($plain.log.PSObject.Properties.Name -contains 'PSPath') -and -not ($plain.list[0].PSObject.Properties.Name -contains 'PSPath')) "Plain values: text loses what PowerShell hung on it (PSPath)"
+Assert-True ((ConvertTo-Json -InputObject $plain -Depth 5 -Compress) -eq '{"log":"log text","list":["log text",2],"none":[],"one":["a"],"obj":{"n":null,"t":true},"at":3.5}') "Plain values: the same JSON - empty and one-item lists stay lists ($(ConvertTo-Json -InputObject $plain -Depth 5 -Compress))"
+Assert-True ($null -eq (ConvertTo-PlainJsonValue $null) -and (ConvertTo-Json -InputObject (ConvertTo-PlainJsonValue @()) -Compress) -eq '[]') "Plain values: nothing stays nothing, an empty list stays a list"
 
 # =================================================================
 # Report

@@ -166,8 +166,10 @@ async function fillPanel(a) {
       fact('Last check', a.audit)),
     el('div', { class: 'pacts' }, btn('Edit', 'Open it in the editor', () => openEditor(a.name)),
       a.hasAppId ? btn('Install status', 'Every device\'s install state', () => openStatus(a.name)) : '',
-      !a.wingetId && !a.msHint && SERVER ? btn('Upload test result...', "The result.json a Sandbox test on a PC wrote (Start-Test.ps1) - how it went, and the detection rule from it", () => uploadSandboxResult(a.name)) : '',
-      !a.wingetId && !a.msHint ? (SERVER ? btn('Sandbox test...', 'A zip for a Windows PC with Windows Sandbox: the package, the test and a starter', () => downloadSandbox(a.name)) : btn('Test in Sandbox', 'Install, detect and uninstall it in Windows Sandbox', () => openSandbox(a.name))) : '',
+      // The server (2.37.0): one button - the test as a zip for a PC, or the result it wrote there.
+      !a.wingetId && !a.msHint ? (SERVER ? btn('Sandbox test...', 'Test it in Windows Sandbox on a PC: download the test, or upload the result it wrote', e => { e.stopPropagation(); popMenu(e.currentTarget, [
+        ['Download the test (zip)', 'The package, the test and a starter for a Windows PC with Windows Sandbox', () => downloadSandbox(a.name)],
+        ['Upload its result...', 'The result.json Start-Test.ps1 wrote on the PC - how it went, and the detection rule from it', () => uploadSandboxResult(a.name)]]); }) : btn('Test in Sandbox', 'Install, detect and uninstall it in Windows Sandbox', () => openSandbox(a.name))) : '',
       // Opened right here (the same click reaching the page would close the menu again at once).
       btn('More...', 'Every action for this app', e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); openMenu(r.left, r.bottom + 4); })));
   p.hidden = false;
