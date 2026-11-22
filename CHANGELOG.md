@@ -25,6 +25,9 @@ check before sending.**
   ("Ready - check", with Fix...) and in Checks (area Package).
 - The installer's own name (MSI ProductName, an .exe's version block) is
   read for that check.
+- **Fixed: a Sandbox test's progress in Windows PowerShell 5.1.** The
+  answer carrying the test's log failed there (5.1 wrote the log file's
+  provider details along with its text), so the result never showed.
 - Tests for what 2.35.0 left out: the deploy plan's warnings against fake
   Intune answers, "Use as the detection rule" clicked in the page, the
   app's own Uninstall.ps1 following the name, and an .exe's version block

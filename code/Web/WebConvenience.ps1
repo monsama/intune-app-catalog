@@ -311,7 +311,9 @@ function Global:Get-WebSandboxResult {
     $id = [string]$Data.id
     if ($id -notmatch '^\d{8}-\d{6}-[0-9a-f]{4}$') { return @{ ok = $false; error = 'Unknown test.' } }
     $root = Join-Path (Get-WebSandboxRoot) $id
-    $log = if (Test-Path -LiteralPath (Join-Path $root 'log.txt')) { Get-Content -LiteralPath (Join-Path $root 'log.txt') -Raw } else { '' }
+    # [string]: Windows PowerShell 5.1 hangs the file's PSPath, PSDrive, PSProvider... on Get-Content's text, and
+    # ConvertTo-Json writes them (a provider many levels deep) - the answer then fails instead of carrying the log.
+    $log = if (Test-Path -LiteralPath (Join-Path $root 'log.txt')) { [string](Get-Content -LiteralPath (Join-Path $root 'log.txt') -Raw) } else { '' }
     $file = Join-Path $root 'result.json'
     if (-not (Test-Path -LiteralPath $file)) { return @{ ok = $true; done = $false; log = $log } }
     $r = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
