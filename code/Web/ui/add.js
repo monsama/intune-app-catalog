@@ -388,6 +388,7 @@ async function readList(body) {
   const r = await api('/api/package-list', body);
   if (!r.ok) { $('alNote').textContent = r.error; return; }
   alItems = r.items;
+  $('alGrid').tHead.rows[0].cells[1].textContent = r.starter ? 'App' : 'Winget ID';
   // The starter set: only the recommended ones are ticked - the others are there to choose.
   alPicked = new Set(r.items.filter(x => !x.inCatalog && (!r.starter || x.recommended)).map(x => x.id));
   $('alNote').textContent = r.starter ? `${r.items.length} apps - ${alPicked.size} recommended ticked${r.items.some(x => x.inCatalog) ? `, ${r.items.filter(x => x.inCatalog).length} already in the catalog` : ''}.`
@@ -402,7 +403,8 @@ function renderList() {
     box.checked = alPicked.has(x.id);
     box.addEventListener('change', () => { if (box.checked) alPicked.add(x.id); else alPicked.delete(x.id); updateAddButton(); });
     // The starter set: a heading per category, the app's name and why beside its Winget ID.
-    const head = x.category && x.category !== cat ? [el('tr', { class: 'grouprow' }, el('th', { colspan: 3, scope: 'colgroup', text: (cat = x.category) }))] : [];
+    // A plain cell (2.38.1): the table's heading cells stay at the top while it scrolls, and a category heading did too - over the column names.
+    const head = x.category && x.category !== cat ? [el('tr', { class: 'grouprow' }, el('td', { colspan: 3, text: (cat = x.category) }))] : [];
     const what = x.name ? el('td', {}, el('b', { text: x.name }), ' ', el('span', { class: 'mono muted', text: x.id }), x.why ? el('div', { class: 'muted small', text: x.why }) : '')
       : el('td', { class: 'mono', text: x.id });
     return [...head, el('tr', { class: x.inCatalog ? 'dim' : '' }, el('td', { class: 'chk' }, box), what, el('td', { text: x.inCatalog || '-' }))];

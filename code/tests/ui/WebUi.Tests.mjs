@@ -121,9 +121,10 @@ try {
       // 2.38.0: From a list > Recommended apps - the starter set by category, the recommended ones ticked.
       await page.click('#atab-list'); await page.click('#btnAlStarter');
       await page.waitForFunction(() => document.querySelectorAll('#alRows tr').length > 20, null, { timeout: 10000 }).catch(() => {});
-      const rec = await page.evaluate(() => ({ heads: document.querySelectorAll('#alRows tr.grouprow').length, ticked: document.querySelectorAll('#alRows input:checked').length, firefox: /Mozilla Firefox/.test(document.getElementById('alRows').textContent), button: document.getElementById('btnAddGo').textContent }));
-      check(rec.heads >= 5 && rec.ticked === 8 && rec.firefox && rec.button === 'Add 8 from the list', `${label}: Recommended apps - by category, the eight recommended ones ticked`, JSON.stringify(rec));
-      await noOverflow('Add apps (recommended)'); await unnamed('Add apps (recommended)'); await a11y('Add apps (recommended)'); await shot('add-recommended');
+      const rec = await page.evaluate(() => ({ pinned: [...document.querySelectorAll('#alRows tr.grouprow > *')].some(c => getComputedStyle(c).position === 'sticky'), heads: document.querySelectorAll('#alRows tr.grouprow').length, ticked: document.querySelectorAll('#alRows input:checked').length, firefox: /Mozilla Firefox/.test(document.getElementById('alRows').textContent), button: document.getElementById('btnAddGo').textContent }));
+      check(!rec.pinned && rec.heads >= 5 && rec.ticked === 8 && rec.firefox && rec.button === 'Add 8 from the list', `${label}: Recommended apps - by category, the eight recommended ones ticked`, JSON.stringify(rec));
+      await noOverflow('Add apps (recommended)'); await unnamed('Add apps (recommended)'); await a11y('Add apps (recommended)');
+      await page.evaluate(() => { const w = document.getElementById('alGrid').closest('.tablewrap'); w.scrollTop = 400; }); await shot('add-recommended');
       await page.click('#atab-script');
       await page.click('#btnAddBlank');
       await page.waitForSelector('#dlgApp[open]');

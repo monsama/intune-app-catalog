@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.38.1
+
+**More recommended apps, and the list looks right while it scrolls.**
+
+- **64 apps** in Add apps > From a list > Recommended apps (was 28), in
+  clearer categories: Browsers, Files and documents, Communication, Remote
+  access, Cloud storage, Passwords, Media and design, Runtimes, IT and
+  developers. New among them: Microsoft Teams, Slack, Thunderbird, PDF24,
+  PDFsam, Acrobat Pro, Everything, TreeSize, OpenVPN, WireGuard, AnyDesk,
+  TeamViewer, Dropbox, Google Drive, Box, Bitwarden, 1Password, IrfanView,
+  GIMP, Inkscape, Audacity, OBS Studio, Creative Cloud, Figma, Miro,
+  Notion, Power BI Desktop, .NET 9, Python, Node.js, Azure CLI, Azure
+  Storage Explorer, SQL Server Management Studio, Postman, Wireshark. Every
+  ID checked against winget's index; licensed ones say so.
+- **Java 25** (Eclipse Temurin) is the ticked Java now - the current
+  long-term version; 21, 17 and 8 stay there for apps not certified on it.
+  Still 8 ticked by default.
+- Not in the list: what Windows or Microsoft 365 bring (Edge, OneDrive,
+  Office), and VPN clients winget doesn't have (FortiClient, Cisco Secure
+  Client).
+- **Fixed:** a category heading stayed at the top of the list while it
+  scrolled, over the column names. The column says "App" for this list.
+
 ## 2.38.0
 
 **Recommended apps to start with, and a full sweep (security, bugs, UI)
