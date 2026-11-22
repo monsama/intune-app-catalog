@@ -188,7 +188,18 @@ function Global:Invoke-ManagedUpdateRun {
                     if (-not $got.ok) { & $say $a.appName 'failed' $got.text; $failed++ } else { $dl = " $($got.text)" }
                 }
                 $inst = Get-WebInstallerInfo $a.appName -SetupFile ([string]$a.setupFile)
-                if (-not ($inst.version -and (Compare-AppVersionText $current $inst.version) -eq 1)) { & $say $a.appName 'current' "$current - no newer installer in its folder.$dl"; continue }
+                # Watching a winget package (2.36.0): said when it has a newer version than the app and its folder - getting it is a click (the app's menu).
+                $watchNote = ''
+                if ($a.watchWinget -and -not $PlanOnly -and ((Get-Command winget.exe -ErrorAction SilentlyContinue) -or (Test-WingetIndexUsable))) {
+                    $ww = Test-WingetPackageId -AppName $a.appName -WingetId $a.watchWinget
+                    if ($ww.Ok -and $ww.Version) {
+                        if (-not $Global:App.WingetLatest) { $Global:App.WingetLatest = [hashtable]::Synchronized(@{}) }
+                        $Global:App.WingetLatest[([string]$a.watchWinget).ToLowerInvariant()] = [string]$ww.Version
+                        $ahead = if ($inst.version) { $inst.version } else { $current }
+                        if ((Compare-AppVersionText $ahead $ww.Version) -eq 1) { $watchNote = " winget ($($a.watchWinget)) has $($ww.Version) - Get new installer (the app's menu) puts it in its folder." }
+                    }
+                }
+                if (-not ($inst.version -and (Compare-AppVersionText $current $inst.version) -eq 1)) { & $say $a.appName $(if ($watchNote) { 'available' } else { 'current' }) "$current - no newer installer in its folder.$dl$watchNote"; continue }
                 if (@($a.blockedVersions) -contains [string]$inst.version) { & $say $a.appName 'available' "The installer in its folder is $($inst.version) (now $current) - not released by itself: it was withdrawn or rolled back before. Release it by hand to try it again."; continue }
                 if (-not $a.autoRelease -or $PlanOnly) { & $say $a.appName 'available' "The installer in its folder is $($inst.version) (now $current)$(if (-not $a.autoRelease) { ' - release it from the app (automatic release is off for this app).' } else { '.' })$dl"; continue }
                 if (-not $window.Open) { & $say $a.appName 'available' "The installer in its folder is $($inst.version) (now $current) - waiting for the release window: $($window.Reason).$dl"; continue }
@@ -497,6 +508,77 @@ function Global:Save-WebInstallerDownload {
         return @{ ok = $true; changed = $true; text = "Downloaded a new installer ($([System.IO.Path]::GetFileName($target)), signed by $($sig.SignerCertificate.Subject))." }
     }
     catch { return @{ ok = $false; changed = $false; text = "Downloading the installer failed: $($_.Exception.Message)" } }
+    finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+}
+
+function Global:Get-WebWatchedUpdate {
+    <#
+      An own package that watches a winget package (2.36.0): winget's newest version of it, its installer link
+      and SHA256, and whether that is newer than the app's version and the installer in its folder.
+      @{ ok; latest; current; folderVersion; newer; url; sha256; error }.
+    #>
+    param($Data)
+    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "No app called '$($Data.name)' in the catalog." } }
+    if ($a.wingetId -or -not $a.watchWinget) { return @{ ok = $false; error = "$($a.appName) doesn't watch a winget package for new versions (the editor: Watch winget for new versions)." } }
+    if ($Global:App.TestGraph) { return @{ ok = $false; error = 'Not asked in test mode (no winget, no internet).' } }
+    if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not (Test-WingetIndexUsable)) { return @{ ok = $false; error = "Neither winget.exe nor winget's package index can be asked here." } }
+    $show = Invoke-Winget -Arguments @('show', '--id', $a.watchWinget, '--exact', '--accept-source-agreements', '--disable-interactivity') -TimeoutSeconds 90
+    $v = Get-WingetShowVerdict -ExitCode $show.ExitCode -StdOut $show.StdOut -StdErr $show.StdErr
+    if (-not $v.Ok -or -not $v.Version) { return @{ ok = $false; error = "winget couldn't tell $($a.watchWinget)'s newest version: $($v.Result)" } }
+    if (-not $Global:App.WingetLatest) { $Global:App.WingetLatest = [hashtable]::Synchronized(@{}) }
+    $Global:App.WingetLatest[([string]$a.watchWinget).ToLowerInvariant()] = [string]$v.Version
+    $current = [string]$(if ($a.metadata) { $a.metadata.appVersion })
+    $inst = Get-WebInstallerInfo $a.appName -SetupFile ([string]$a.setupFile)
+    $ahead = if ($inst.version) { $inst.version } else { $current }
+    return @{ ok = $true; latest = [string]$v.Version; current = $current; folderVersion = [string]$inst.version; newer = ((Compare-AppVersionText $ahead $v.Version) -eq 1)
+        url = (ConvertFrom-WingetInstallerUrl $show.StdOut); sha256 = (ConvertFrom-WingetInstallerSha256 $show.StdOut); file = [string]$inst.file; app = $a }
+}
+
+function Global:Save-WebWatchedInstaller {
+    <#
+      Get new installer (2.36.0): the newest installer of the winget package an own package watches, into its
+      folder under the name the installer there has (so its commands still find it). Used only when its
+      SHA256 is the one winget's manifest gives - and, on Windows, when an installer there that was validly
+      signed is followed by one signed by the same publisher. The release itself is the next step.
+    #>
+    param($Data)
+    $w = Get-WebWatchedUpdate $Data
+    if (-not $w.ok) { return $w }
+    $a = $w.app
+    if (-not $w.newer -and -not $Data.force) { return @{ ok = $false; error = "winget's newest is $($w.latest) - the installer in the folder$(if ($w.folderVersion) { " ($($w.folderVersion))" }) is that or newer." } }
+    if ($w.url -notmatch '^https://') { return @{ ok = $false; error = "winget gives no https link to $($a.watchWinget)'s installer." } }
+    if (-not $w.sha256) { return @{ ok = $false; error = "winget gives no SHA256 for $($a.watchWinget)'s installer, so a download couldn't be checked - not downloaded." } }
+    $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $a.appName)
+    if (-not (Test-Path -LiteralPath $folder)) { [void](New-Item -ItemType Directory -Path $folder -Force) }
+    $urlExt = [System.IO.Path]::GetExtension(([Uri]$w.url).AbsolutePath).ToLowerInvariant()
+    $old = if ($w.file) { Join-Path $folder ($w.file -replace '[\\/]+', [System.IO.Path]::DirectorySeparatorChar) } else { '' }
+    if ($old -and -not (Test-Path -LiteralPath $old -PathType Leaf)) { $old = '' }
+    $ext = if ($old) { [System.IO.Path]::GetExtension($old).ToLowerInvariant() } else { $urlExt }
+    if ($ext -notin '.msi', '.exe') { return @{ ok = $false; error = "winget's installer for $($a.watchWinget) isn't an .msi or .exe ($(if ($urlExt) { $urlExt } else { 'no file type in its link' })) - get it by hand." } }
+    if ($urlExt -in '.msi', '.exe' -and $urlExt -ne $ext) { return @{ ok = $false; error = "winget's installer is an $urlExt, the one in the folder an $ext - their commands differ. Upload it by hand (the editor) and check the commands." } }
+    $target = if ($old) { $old } else { Join-Path $folder ([System.IO.Path]::GetFileName(([Uri]$w.url).AbsolutePath)) }
+    $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("intunecat-dl-" + [guid]::NewGuid().ToString('N') + $ext)
+    try {
+        Invoke-WebHttpsGet -Uri $w.url -MaxBytes 8GB -OutFile $tmp -TimeoutSec 900
+        $hash = (Get-FileHash -LiteralPath $tmp -Algorithm SHA256).Hash.ToUpperInvariant()
+        if ($hash -ne $w.sha256) { return @{ ok = $false; error = "The download's SHA256 isn't the one winget gives ($hash, expected $($w.sha256)) - not used." } }
+        $signedBy = ''
+        if ($old -and (Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue)) {
+            $oldSig = Get-AuthenticodeSignature -LiteralPath $old
+            if ($oldSig.Status -eq 'Valid') {
+                $sig = Get-AuthenticodeSignature -LiteralPath $tmp
+                if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -ne $oldSig.SignerCertificate.Subject) { return @{ ok = $false; error = "The download isn't signed by the publisher of the installer in the folder ($($oldSig.SignerCertificate.Subject)) - not used." } }
+                $signedBy = [string]$sig.SignerCertificate.Subject
+            }
+        }
+        Move-Item -LiteralPath $tmp -Destination $target -Force
+        $rel = $target.Substring($folder.Length).TrimStart('\', '/')
+        Add-WebHistoryEntry -App $a.appName -Kind 'catalog' -Text "New installer from winget ($($a.watchWinget) $($w.latest)) put in its packages folder as $rel - SHA256 as winget gives it$(if ($signedBy) { "; signed by $signedBy" })"
+        Write-Log "[OK] $($a.appName): $($a.watchWinget) $($w.latest) downloaded into its folder as $rel (SHA256 checked)."
+        return @{ ok = $true; version = $w.latest; file = $rel; managed = [bool]($a.managedUpdates -and $a.appId) }
+    }
+    catch { return @{ ok = $false; error = "Downloading the installer failed: $($_.Exception.Message)" } }
     finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
 }
 

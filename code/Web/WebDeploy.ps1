@@ -64,11 +64,24 @@ function Global:Get-WebDeployPlan {
         elseif (-not $store -and $a.managedUpdates -and $a.wingetId -and -not (Test-ReleaseVersionText ([string]$(if ($a.metadata) { $a.metadata.appVersion })))) { $reason = "Managed updates deploy a fixed version - set its App version first (More > Take winget's version)." }
         elseif ($unc -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = "No detection rule yet - an app with its own package needs one (the editor's Install & detection)." }
         $lob = $a.appId -and (Test-IntuneLobMsiType ([string]$typeOf[([string]$a.appId).ToLowerInvariant()]))
+        # What doesn't fit together (2.36.0): said, not blocking - each can be on purpose.
+        $warnings = if ($unc -and -not $store -and -not $reason) { @(Get-WebPackageWarnings $a) } else { @() }
         [ordered]@{ name = $a.appName; update = ([bool]$a.appId -and -not $lob); ready = (-not $reason); reason = $reason; deps = @($(if ($a.metadata) { @($a.metadata.dependencies) | Where-Object { $_ } | ForEach-Object { [string]$_ } }))
-            replacesLob = [bool]$lob
+            replacesLob = [bool]$lob; warnings = @($warnings)
             note = $(if ($lob) { 'An MSI line-of-business app in Intune - it can''t be updated as Win32, so it is created as a new Win32 app with its groups. The MSI app stays until you retire it (the side panel).' } else { '' }) }
     }
     return @{ ok = $true; apps = @($plan); circular = @($order.CircularNames); note = $note }
+}
+
+function Global:Get-WebPackageWarnings {
+    # An own package's commands, setup file, detection rule and App version against its folder and installer (Get-PackageConsistencyWarnings).
+    param($App)
+    if (-not $App -or $App.wingetId -or -not $App.metadata) { return @() }
+    $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $App.appName)
+    if (-not (Test-Path -LiteralPath $folder -PathType Container)) { return @() }
+    $files = @(Get-PackageFolderFiles -Folder $folder | ForEach-Object { [string]$_.path })
+    $inst = $null; try { $inst = Get-WebInstallerInfo $App.appName -SetupFile ([string]$App.setupFile) } catch { }
+    return @(Get-PackageConsistencyWarnings -Metadata $App.metadata -Files $files -Installer $(if ($inst -and $inst.found) { $inst }) -SetupFile ([string]$App.setupFile))
 }
 
 function Global:Get-WebPackageStamp {

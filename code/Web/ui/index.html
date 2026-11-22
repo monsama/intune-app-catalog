@@ -667,6 +667,7 @@
   <button role="menuitem" data-act="sandbox" title="Install, detect and uninstall it in Windows Sandbox - a throwaway Windows - before it goes to any device">Test in Windows Sandbox...</button>
   <hr>
   <div class="mhead" role="presentation">Releases</div>
+  <button role="menuitem" data-act="watchfetch" title="winget's newest installer of the package this app watches - downloaded, checked against winget's SHA256, put in its folder">Get new installer...</button>
   <button role="menuitem" data-act="release" title="Release a new version to the pilot groups first - a new app in Intune that supersedes the current one">Release new version...</button>
   <button role="menuitem" data-act="promote" title="Give the version in pilot to everyone - the current one is kept in Intune as superseded">Promote version in pilot...</button>
   <button role="menuitem" data-act="withdraw" title="Take the version in pilot back - its app is deleted from Intune; pilot devices keep the newer version">Withdraw version in pilot...</button>
@@ -867,6 +868,7 @@
           <p class="methodinfo" id="aMethodInfo" aria-live="polite"></p>
         </div>
         <p class="methodinfo" id="aPkgInfo" hidden></p>
+        <label id="aWatchRow" title="Optional, for an app with its own installer: a winget package with the same app (its Winget ID). It is only watched - the Apps list shows when it has a newer version, and More > Get new installer downloads it (checked against winget's SHA256). Devices still install this app's own package.">Watch winget for new versions <span class="muted">(Winget ID, optional)</span><input id="aWatch" maxlength="128" placeholder="e.g. Vendor.App" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <fieldset class="ownrule" id="aRuleBox" hidden>
           <legend>Release rule <span class="muted">- this app's own; empty fields: Settings' rule</span></legend>
           <div class="policy">
@@ -1185,7 +1187,7 @@
   <ol class="sbsteps" id="sbSteps"></ol>
   <div class="sbfound" id="sbFound" hidden></div>
   <pre class="log" id="sbLog" aria-label="The test's log"></pre>
-  <div class="actions end"><button class="btn" id="btnSbFolder" title="The test folder: run.ps1, the .wsb file, the log">Open the test folder</button><button class="btn" data-close>Close</button></div>
+  <div class="actions end"><button class="btn desktoponly" id="btnSbFolder" title="The test folder: run.ps1, the .wsb file, the log">Open the test folder</button><button class="btn" data-close>Close</button></div>
 </dialog>
 
 <dialog id="dlgInstalled" class="wide" aria-labelledby="inTitle">

@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.36.0
+
+**New versions of your own packages, the server's Sandbox results, and a
+check before sending.**
+
+- **Watch winget for new versions** (an app with its own installer; the
+  editor, next to the release rule): a winget package with the same app,
+  only watched - devices still install your package. The Apps list shows
+  "→ newer" when winget has one (Checks > winget, the nightly run), and
+  **More > Get new installer** downloads it into the app's folder under the
+  installer's own name - used only if its SHA256 is the one winget gives
+  (and on Windows, if the installer there was signed, by the same
+  publisher). Then Release new version (managed) or Package + send.
+- **Sandbox results on the server**: "Upload test result..." in the side
+  panel takes the result.json that Start-Test.ps1 wrote on the PC - shown
+  like a test run here, with **Use as the detection rule**. Start-Test.ps1
+  says where to upload it.
+- **Before sending: what doesn't fit together** in an own package - a
+  command running a file the package doesn't have, the chosen setup file
+  gone, detection looking for another product code, a newer version or
+  another name than the installer's, the App version not the installer's.
+  Warnings, not blockers: in Send to Intune, in Add and send's summary
+  ("Ready - check", with Fix...) and in Checks (area Package).
+- The installer's own name (MSI ProductName, an .exe's version block) is
+  read for that check.
+- Tests for what 2.35.0 left out: the deploy plan's warnings against fake
+  Intune answers, "Use as the detection rule" clicked in the page, the
+  app's own Uninstall.ps1 following the name, and an .exe's version block
+  read from a file across the read boundary.
+
 ## 2.35.0
 
 **Adding apps takes fewer steps, and makes fewer duplicates.**

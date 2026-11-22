@@ -248,6 +248,27 @@ Say 'Done - you can close the Sandbox.'
     return $run
 }
 
+function Global:Import-WebSandboxResult {
+    <#
+      The server version (2.36.0): the result.json a test on a PC wrote (Start-Test.ps1 in the downloaded zip),
+      uploaded or pasted - kept like a test run here, so the page shows how it went and can take its detection rule.
+    #>
+    param($Data)
+    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "No app called '$($Data.name)' in the catalog." } }
+    if ($a.wingetId) { return @{ ok = $false; error = 'A Winget app has no Sandbox test.' } }
+    $r = ConvertTo-SandboxResult ([string]$Data.text)
+    if (-not $r) { return @{ ok = $false; error = "That isn't a test result - choose the result.json that Start-Test.ps1 left in the test's folder." } }
+    $id = (Get-Date).ToString('yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    $dir = Join-Path (Get-WebSandboxRoot) $id
+    [void](New-Item -ItemType Directory -Path $dir -Force)
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText((Join-Path $dir 'result.json'), ($r | ConvertTo-Json -Depth 4), $utf8)
+    [System.IO.File]::WriteAllText((Join-Path $dir 'log.txt'), "The result of a test on a PC, uploaded $((Get-Date).ToString('yyyy-MM-dd HH:mm')) for $($a.appName).", $utf8)
+    Add-WebHistoryEntry -App $a.appName -Kind 'catalog' -Text "Sandbox test result from a PC uploaded (install exit code $($r.installExit)$(if (@($r.installed).Count) { "; Windows listed: $((@($r.installed) | ForEach-Object { $_.name }) -join ', ')" }))"
+    return @{ ok = $true; id = $id }
+}
+
 function Global:Set-WebSandboxDetection {
     <#
       The detection rule from a Sandbox test (2.35.0): the app as Windows listed it there (name and version) -

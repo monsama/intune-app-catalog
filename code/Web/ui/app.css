@@ -1587,4 +1587,6 @@ body[data-view="home"] #setupBanner { display: none; }
 /* 2.35.0: Add and send's summary */
 #dlgAddDone .addfix { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
 #dlgAddDone .addfix .why { font-size: 12.5px; }
+#dlgAddDone .addfix { flex-wrap: wrap; }
+.why.pkgwarn { display: block; color: var(--warn); }
 .namewarn { margin: 4px 0 8px; padding: 6px 10px; border-radius: var(--r-s); background: var(--warn-bg); color: var(--warn); font-size: 12.5px; }

@@ -54,6 +54,7 @@ function Global:Get-WebAppEditable {
         detectedName = [string]$App.detectedName
         autoRelease  = [bool]$App.autoRelease
         downloadUrl  = [string]$App.downloadUrl
+        watchWinget  = [string]$App.watchWinget
         releases     = @(@($App.releases) | ForEach-Object { [ordered]@{ version = [string]$_.version; appId = [string]$_.appId; state = [string]$_.state; at = [string]$_.at; ring = [int]$_.ring; fastTrack = [bool]$_.fastTrack } })
         icon         = $(if ($App.icon -and $App.icon.value) { [ordered]@{ type = [string]$App.icon.type; value = [string]$App.icon.value } } else { $null })
         metadata     = [ordered]@{
@@ -250,6 +251,7 @@ function Global:Merge-WebAppEdit {
         lobToRetire      = $(if ($Existing) { [string]$Existing.lobToRetire } else { '' })
         # The chosen setup file stays as it was - uploads and the package file list change it, not the editor's form.
         setupFile        = $(if ($Existing) { [string]$Existing.setupFile } else { '' })
+        watchWinget      = $(if ($null -ne $Edit.watchWinget) { $w = ([string]$Edit.watchWinget).Trim(); if (Test-WebWingetId $w) { $w } else { '' } } elseif ($Existing) { [string]$Existing.watchWinget } else { '' })
         # Kept as they were - releases and Send to Intune change them, not the editor.
         blockedVersions  = @($(if ($Existing) { @($Existing.blockedVersions) }) | Where-Object { $_ })
         packageStamp     = $(if ($Existing) { [string]$Existing.packageStamp } else { '' })
@@ -313,7 +315,7 @@ function Global:Copy-WebApp {
     if ($why) { return @{ ok = $false; error = $why } }
     $edit = [pscustomobject]@{ appName = $newName; wingetId = [string]$a.wingetId; appId = ''; managedUpdates = [bool]$a.managedUpdates
         requiredFor = @($a.requiredFor); availableFor = @($a.availableFor); uninstallFor = @($a.uninstallFor); excludeFor = @($a.excludeFor)
-        assignmentFilter = [string]$a.assignmentFilter; assignmentFilterMode = [string]$a.assignmentFilterMode }
+        assignmentFilter = [string]$a.assignmentFilter; assignmentFilterMode = [string]$a.assignmentFilterMode; watchWinget = [string]$a.watchWinget }
     $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
     if (-not $r.ok) { return $r }
     # A copy of its own, not the same objects.
@@ -350,6 +352,9 @@ function Global:Save-WebApp {
     if ($problem) { return @{ ok = $false; error = $problem } }
     if ([string]$edit.iconChange -eq 'set' -and -not $record.icon) { return @{ ok = $false; error = 'The icon must be a PNG or JPEG of at most 750 KB.' } }
     if (([string]$edit.downloadUrl).Trim() -and -not $record.downloadUrl) { return @{ ok = $false; error = 'The installer download address must start with https://.' } }
+    if (([string]$edit.watchWinget).Trim() -and -not $record.watchWinget) { return @{ ok = $false; error = "'$(([string]$edit.watchWinget).Trim())' isn't a Winget ID (letters, digits and . _ + -)." } }
+    # Watched only for an own package: a Winget app's own ID already says it.
+    if ($record.wingetId) { $record.watchWinget = '' }
     if ($record.autoRelease -and ($record.wingetId -or -not $record.managedUpdates)) { $record.autoRelease = $false }
     # The Store updates its own apps: no managed updates for a Microsoft Store app.
     if ($record.managedUpdates -and (Test-StoreProductId ([string]$record.wingetId))) { $record.managedUpdates = $false }

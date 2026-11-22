@@ -321,7 +321,7 @@ function Global:Get-WebInstallerInfo {
     #>
     param([string]$AppName, [string]$SetupFile)
     $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $AppName)
-    $info = [ordered]@{ folder = $folder; found = $false; file = ''; version = ''; productCode = '' }
+    $info = [ordered]@{ folder = $folder; found = $false; file = ''; version = ''; productCode = ''; name = '' }
     if (-not (Test-Path -LiteralPath $folder -PathType Container)) { return $info }
     # A PSADT app: the installer is in the toolkit's Files folder - the toolkit's own exe isn't the app.
     $look = $folder
@@ -349,13 +349,15 @@ function Global:Get-WebInstallerInfo {
     if ($cacheKey -and $Global:App.InstallerInfoCache.ContainsKey($cacheKey)) { $hit = $Global:App.InstallerInfoCache[$cacheKey]; foreach ($k in @($hit.Keys)) { $info[$k] = $hit[$k] }; return $info }
     if ($msi) {
         $info.found = $true; $info.file = $(if ($chosenRel) { $chosenRel } else { $msi.Name })
-        $props = Get-MsiPropertyValues -Path $msi.FullName -Names @('ProductVersion', 'ProductCode')
-        $info.version = [string]$props['ProductVersion']; $info.productCode = [string]$props['ProductCode']
+        $props = Get-MsiPropertyValues -Path $msi.FullName -Names @('ProductVersion', 'ProductCode', 'ProductName')
+        $info.version = [string]$props['ProductVersion']; $info.productCode = [string]$props['ProductCode']; $info.name = [string]$props['ProductName']
     }
     elseif ($exe) {
         $info.found = $true; $info.file = $(if ($chosenRel) { $chosenRel } else { $exe.Name })
         $v = Get-ExeVersionText -Path $exe.FullName
         $info.version = ($v -replace '[^0-9A-Za-z.\-+_].*$', '')
+        # The name it states (2.36.0): what a detection rule by name is checked against before sending.
+        try { $info.name = [string](Get-ExeVersionStrings -Path $exe.FullName).ProductName } catch { }
     }
     if ($info.version -and -not (Test-ReleaseVersionText $info.version)) { $info.version = '' }
     if ($cacheKey) { $Global:App.InstallerInfoCache[$cacheKey] = @{ found = $info.found; file = $info.file; version = $info.version; productCode = $info.productCode } }

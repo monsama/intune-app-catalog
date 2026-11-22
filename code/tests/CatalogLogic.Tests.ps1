@@ -97,6 +97,12 @@ $testableFunctionNames = @(
     "Get-CatalogDiagnosticLines",
     "Get-SafeFileNameForApp",
     "Get-VersionStringsFromBytes",
+    "Get-ExeVersionStrings",
+    # 2.36.0: what doesn't fit together in a package, a PC's Sandbox result, winget's SHA256
+    "Get-CommandPackageFiles",
+    "Get-PackageConsistencyWarnings",
+    "ConvertTo-SandboxResult",
+    "ConvertFrom-WingetInstallerSha256",
     "Get-DependencyOrderedApps",
     # The Checks window's one findings list (CheckFindings.ps1)
     "Get-IntuneCatalogDrift",
@@ -3139,6 +3145,51 @@ Assert-True ($vs.ProductName -eq 'Contoso Widget' -and $vs.CompanyName -eq 'Cont
 $early = New-Object System.Collections.Generic.List[byte]; $early.AddRange((New-VersionStringStruct 'ProductName' 'Wrong')); $early.AddRange((New-Object byte[] 8)); $early.AddRange($u.GetBytes('VS_VERSION_INFO')); $early.AddRange((New-Object byte[] 64))
 Assert-True ((Get-VersionStringsFromBytes -Bytes $early.ToArray()).Count -eq 0) "Version strings: only from the version block"
 Assert-True ((Get-VersionStringsFromBytes -Bytes ([byte[]](1..200))).Count -eq 0 -and (Get-VersionStringsFromBytes -Bytes @()).Count -eq 0) "Version strings: none in a file without a version block"
+# Off Windows the file itself is read, a chunk at a time: a version block across two chunks (at 1 MB) is still found.
+if (-not ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop')) {
+    $vf = Join-Path ([System.IO.Path]::GetTempPath()) ("zz-ver-" + [guid]::NewGuid().ToString('N') + '.exe')
+    try {
+        $pad = New-Object byte[] (1MB - 20)
+        $file = New-Object System.Collections.Generic.List[byte]; $file.AddRange($pad); $file.AddRange($blob.ToArray())
+        [System.IO.File]::WriteAllBytes($vf, $file.ToArray())
+        $fv = Get-ExeVersionStrings -Path $vf
+        Assert-True ($fv.ProductName -eq 'Contoso Widget' -and $fv.ProductVersion -eq '4.2.1') "Version strings from a file: found across the 1 MB read boundary"
+    }
+    finally { Remove-Item -LiteralPath $vf -Force -ErrorAction SilentlyContinue }
+}
+
+# =================================================================
+# 2.36.0: before sending - what doesn't fit together in an own package
+# =================================================================
+$cf = @(Get-CommandPackageFiles '"%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -File Install.ps1')
+Assert-True ($cf.Count -eq 1 -and $cf[0] -eq 'Install.ps1') "Command files: the script it runs, not Windows' own PowerShell"
+$cf = @(Get-CommandPackageFiles 'msiexec /i "Setup\Contoso App.msi" /qn TRANSFORMS=custom.mst')
+Assert-True ($cf -contains 'Setup\Contoso App.msi' -and $cf -contains 'custom.mst' -and $cf -notcontains 'msiexec') "Command files: a quoted MSI in a subfolder and its transform"
+Assert-True (@(Get-CommandPackageFiles '"C:\Program Files\Contoso\unins000.exe" /SILENT').Count -eq 0 -and @(Get-CommandPackageFiles 'msiexec /x {11111111-2222-3333-4444-555555555555} /qn').Count -eq 0) "Command files: a path on the device or a product code is not a package file"
+$meta = [pscustomobject]@{ installCommand = 'setup.exe /S'; uninstallCommand = 'powershell.exe -File Uninstall.ps1'; appVersion = '4.2.1'
+    detectionRule = [pscustomobject]@{ Type = 'Msi'; Msi_ProductCode = '{AAAAAAAA-0000-0000-0000-000000000001}'; Msi_Version = '4.2.1'; Msi_VersionOperator = 'greaterThanOrEqual' } }
+$fine = @(Get-PackageConsistencyWarnings -Metadata $meta -Files @('setup.exe', 'Uninstall.ps1') -Installer @{ version = '4.2.1'; productCode = '{aaaaaaaa-0000-0000-0000-000000000001}'; name = 'Contoso' })
+Assert-True ($fine.Count -eq 0) "Package check: commands, product code and versions that fit say nothing ($($fine -join ' | '))"
+$bad = @(Get-PackageConsistencyWarnings -Metadata $meta -Files @('setup-old.exe') -Installer @{ version = '4.1.0'; productCode = '{BBBBBBBB-0000-0000-0000-000000000002}'; name = '' } -SetupFile 'gone.exe')
+Assert-True (@($bad | Where-Object { $_ -match 'install command runs setup\.exe' }).Count -eq 1 -and @($bad | Where-Object { $_ -match 'uninstall command runs Uninstall\.ps1' }).Count -eq 1) "Package check: a command naming a file the package doesn't have"
+Assert-True (@($bad | Where-Object { $_ -match 'gone\.exe' }).Count -eq 1 -and @($bad | Where-Object { $_ -match 'product code' }).Count -eq 1) "Package check: the setup file gone; detection on another product code"
+Assert-True (@($bad | Where-Object { $_ -match 'version 4\.2\.1, the installer is 4\.1\.0' }).Count -eq 1 -and @($bad | Where-Object { $_ -match 'App version is 4\.2\.1' }).Count -eq 1) "Package check: detection looking for a newer version than the installer; App version not the installer's"
+$scriptMeta = [pscustomobject]@{ installCommand = 'setup.exe'; appVersion = ''; detectionRule = [pscustomobject]@{ Type = 'Script'; Script_Content = (New-InstalledAppDetectionScript -DisplayName 'Contoso Widget' -Version '2.0') } }
+$byName = @(Get-PackageConsistencyWarnings -Metadata $scriptMeta -Files @('setup.exe') -Installer @{ version = '2.0'; productCode = ''; name = 'Fabrikam Tool' })
+Assert-True (@($byName | Where-Object { $_ -match "listed as 'Contoso Widget'.*'Fabrikam Tool'" }).Count -eq 1) "Package check: a rule by name that isn't the installer's name ($($byName -join ' | '))"
+Assert-True (@(Get-PackageConsistencyWarnings -Metadata $scriptMeta -Files @('setup.exe') -Installer @{ version = '2.0'; productCode = ''; name = 'Contoso Widget 2.0 (x64)' }).Count -eq 0) "Package check: the name with its version and (x64) after it matches"
+Assert-True (@(Get-PackageConsistencyWarnings -Metadata ([pscustomobject]@{ installCommand = 'setup.exe /S'; uninstallCommand = 'Tools\remove.cmd' }) -Files @('Setup\setup.exe', 'Tools\remove.cmd')).Count -eq 0) "Package check: a file found in a subfolder by its name, or by its path"
+Assert-True (@(Get-PackageConsistencyWarnings -Metadata $meta -Files @() -Installer $null).Count -eq 0) "Package check: nothing known about the folder or installer, nothing said"
+
+# A PC's Sandbox result, uploaded to the server: only what a test writes.
+$sr = ConvertTo-SandboxResult '{"before":false,"installExit":0,"detectedAfterInstall":true,"uninstallExit":1605,"detectedAfterUninstall":false,"installed":[{"name":"Contoso\u0007 Widget","version":"1.0","publisher":"Contoso","extra":"x"}],"evil":"$(rm)"}'
+Assert-True ($sr -and $sr.installExit -eq 0 -and $sr.uninstallExit -eq 1605 -and $sr.detectedAfterInstall -and @($sr.installed).Count -eq 1 -and $sr.installed[0].name -eq 'Contoso Widget' -and -not $sr.Contains('evil')) "Sandbox result: its fields, control characters out, nothing else"
+Assert-True ($null -eq (ConvertTo-SandboxResult 'not json') -and $null -eq (ConvertTo-SandboxResult '{"before":true}') -and $null -eq (ConvertTo-SandboxResult '{"installExit":"abc"}') -and $null -eq (ConvertTo-SandboxResult '[1,2]')) "Sandbox result: not a test result is refused"
+$many = '{"installExit":0,"installed":[' + ((1..20 | ForEach-Object { '{"name":"App ' + $_ + '"}' }) -join ',') + ']}'
+Assert-True (@((ConvertTo-SandboxResult $many).installed).Count -eq 10 -and $null -eq (ConvertTo-SandboxResult ('{"installExit":0,"x":"' + ('a' * 70000) + '"}'))) "Sandbox result: at most 10 apps; a huge text is refused"
+
+# winget's SHA256 for an installer (what Get new installer checks the download against).
+Assert-True ((ConvertFrom-WingetInstallerSha256 "Installer:`n  Installer Type: inno`n  Installer Url: https://x.example/setup.exe`n  Installer SHA256: $('ab' * 32)`n") -eq ('AB' * 32) -and (ConvertFrom-WingetInstallerSha256 "Installer-SHA256: $('0' * 64)") -eq ('0' * 64) -and (ConvertFrom-WingetInstallerSha256 'Version: 1.0') -eq '') "winget SHA256: read from its line, any case and label language; none when it isn't there"
 
 # =================================================================
 # Report

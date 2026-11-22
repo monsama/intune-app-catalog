@@ -228,7 +228,22 @@ async function downloadSandbox(name) {
   const r = await api('/api/sandbox-package', { name });
   if (!r.ok) { toast(r.error, true); return; }
   saveFromUrl(r.url, r.name);
-  toast('Unpack the zip on a Windows PC with Windows Sandbox, then right-click Start-Test.ps1 > Run with PowerShell - it says how the test went.');
+  toast('Unpack the zip on a Windows PC with Windows Sandbox, then right-click Start-Test.ps1 > Run with PowerShell - it says how the test went. Then upload its result.json here.', false, [{ label: 'Upload test result', run: () => uploadSandboxResult(name) }]);
+}
+// The server version (2.36.0): the result.json the test on a PC wrote, shown here as a test run - with its detection rule to take.
+function uploadSandboxResult(name) {
+  const inp = el('input', { type: 'file', accept: '.json,application/json', hidden: true });
+  inp.addEventListener('change', async () => {
+    const f = inp.files && inp.files[0]; inp.remove(); if (!f) return;
+    if (f.size > 65536) { toast("That's too large for a test result - choose the result.json from the test's folder.", true); return; }
+    const r = await api('/api/sandbox-result-upload', { name, text: await f.text() });
+    if (!r.ok) { toast(r.error, true); return; }
+    sbId = r.id; sbApp = name; $('sbFound').replaceChildren(); $('sbFound').hidden = true;
+    $('sbTitle').textContent = `Test of ${name} on a PC`;
+    $('sbText').textContent = 'The result Start-Test.ps1 wrote:'; $('sbSteps').replaceChildren(); $('sbLog').textContent = '';
+    $('dlgSandbox').showModal(); await pollSandbox();
+  });
+  document.body.append(inp); inp.click();
 }
 $('btnDetFromPc').addEventListener('click', async () => {
   $('inRows').replaceChildren(el('tr', {}, el('td', { colspan: 4, class: 'muted', text: 'Reading the apps installed here...' })));

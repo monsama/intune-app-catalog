@@ -269,6 +269,15 @@ try {
     $row = @($plan.apps) | Where-Object { $_.name -eq $sameName } | Select-Object -First 1
     Check ($plan.ok -and $row -and -not $row.ready -and $row.reason -like '*already in Intune*') 'deploy plan: an app of the same name in Intune is not created again' ($plan | ConvertTo-Json -Compress -Depth 4)
 
+    # 2.36.0: an own package that can be sent, but whose uninstall command runs a file it lacks - ready, with a warning.
+    $pwName = 'ZZ Graph Pkgwarn ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    $pwAdd = Invoke-Api '/api/add-script' @{ name = $pwName; publisher = 'IT'; version = '2.0'; install = 'Write-Output hi'; uninstall = 'Write-Output bye'; detectScript = "Write-Output 'Installed'" }
+    if ($pwAdd.ok) { $created.Add($pwAdd.name) }
+    if ($pwAdd.ok -and $pwAdd.folder) { [System.IO.File]::WriteAllBytes((Join-Path $pwAdd.folder "$($pwAdd.name).intunewin"), [byte[]](1..64)); Remove-Item -LiteralPath (Join-Path $pwAdd.folder 'Uninstall.ps1') -Force -ErrorAction SilentlyContinue }
+    $pwPlan = Invoke-Api '/api/deploy-plan' @{ names = @($pwName) }
+    $pwRow = @($pwPlan.apps) | Where-Object { $_.name -eq $pwName } | Select-Object -First 1
+    Check ($pwAdd.ok -and $pwRow -and $pwRow.ready -and @($pwRow.warnings | Where-Object { $_ -like '*Uninstall.ps1*' }).Count -eq 1) 'deploy plan: ready, with a warning for what does not fit together in its package' (@($pwAdd, $pwPlan) | ConvertTo-Json -Compress -Depth 5)
+
     # Install status: beta refused, v1.0 answers
     $st = Invoke-Api '/api/install-status' @{ name = $linkedName }
     Check ($st.ok -and @($st.rows).Count -eq 2 -and $st.summary -eq '2 devices: 1 Failed, 1 Installed') 'install status: rows and summary (from v1.0 after beta refused)' ($st | ConvertTo-Json -Compress -Depth 4)

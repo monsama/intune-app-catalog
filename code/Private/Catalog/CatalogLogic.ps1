@@ -829,6 +829,7 @@ function Global:ConvertTo-TemplateAppRecord {
         detectedName     = [string]$App.detectedName
         autoRelease      = [bool]$App.autoRelease
         downloadUrl      = [string]$App.downloadUrl
+        watchWinget      = [string]$App.watchWinget
         releases         = @()
         metadata         = $App.metadata
     }
@@ -2218,6 +2219,115 @@ function Global:Set-AppRecordFieldJson {
     return $true
 }
 
+function Global:ConvertTo-SandboxResult {
+    <#
+      Pure (2.36.0): a Sandbox test's result.json as pasted or uploaded - only the fields a test writes, each of
+      its type (exit codes as numbers, the found apps as short text, at most 10) - or $null when it isn't one.
+    #>
+    param([string]$Text)
+    if (-not $Text -or $Text.Length -gt 65536) { return $null }
+    try { $j = $Text.Trim([char]0xFEFF).Trim() | ConvertFrom-Json -ErrorAction Stop } catch { return $null }
+    if (-not $j -or $j -is [array] -or $null -eq $j.installExit) { return $null }
+    $int = { param($v) $n = 0L; if ([long]::TryParse([string]$v, [ref]$n) -and $n -ge [int]::MinValue -and $n -le [uint32]::MaxValue) { [long]$n } else { $null } }
+    $ie = & $int $j.installExit
+    if ($null -eq $ie) { return $null }
+    $short = { param($v) $t = ([string]$v -replace '[\x00-\x1F]', '').Trim(); if ($t.Length -gt 256) { $t.Substring(0, 256) } else { $t } }
+    $found = @(@($j.installed) | Where-Object { $_ -and $_.name } | Select-Object -First 10 | ForEach-Object { [ordered]@{ name = (& $short $_.name); version = (& $short $_.version); publisher = (& $short $_.publisher) } } | Where-Object { $_.name })
+    return [ordered]@{
+        before = [bool]$j.before; installExit = $ie; detectedAfterInstall = [bool]$j.detectedAfterInstall
+        uninstallExit = $(if ($null -ne $j.uninstallExit) { & $int $j.uninstallExit } else { $null }); detectedAfterUninstall = [bool]$j.detectedAfterUninstall
+        installed = $found
+    }
+}
+
+function Global:Get-CommandPackageFiles {
+    <#
+      Pure: the package's own files a command runs or reads ("setup.exe", "Files\app.msi", TRANSFORMS=x.mst,
+      -File Install.ps1) - not Windows' own programs, not a path on the device (C:\..., %ProgramFiles%\...).
+    #>
+    param([string]$Command)
+    $system = @('msiexec.exe', 'cmd.exe', 'powershell.exe', 'pwsh.exe', 'wscript.exe', 'cscript.exe', 'rundll32.exe', 'reg.exe', 'regsvr32.exe', 'conhost.exe', 'start.exe', 'sc.exe', 'net.exe', 'taskkill.exe', 'dism.exe')
+    $out = New-Object System.Collections.Generic.List[string]
+    foreach ($m in [regex]::Matches([string]$Command, '"([^"]+)"|(\S+)')) {
+        $t = if ($m.Groups[1].Success) { $m.Groups[1].Value } else { $m.Groups[2].Value }
+        # A path on the device (C:\..., %ProgramFiles%\..., \\server\...) isn't in the package.
+        if ($t -match '^(?i)([a-z]:|%|\\\\|\$env:|\$)') { continue }
+        # PROPERTY=value (TRANSFORMS=x.mst), /switch:value - the value.
+        $t = ($t -replace '^/?[A-Za-z_][A-Za-z0-9_]*(=|:(?![\\/]))', '').Trim('"', "'", ';', ',')
+        if ($t -notmatch '(?i)\.(msi|exe|ps1|cmd|bat|mst|msp|vbs)$') { continue }
+        if ($t -match '^(?i)([a-z]:|%|\\\\|\$env:|\$)') { continue }
+        $t = $t -replace '^\.[\\/]', '' -replace '/', '\'
+        if ($system -contains ($t -split '\\')[-1].ToLowerInvariant()) { continue }
+        if (-not $out.Contains($t)) { $out.Add($t) }
+    }
+    return $out.ToArray()
+}
+
+function Global:Get-PackageConsistencyWarnings {
+    <#
+      Pure (2.36.0): what doesn't fit together in an own package before it is sent - a command naming a file
+      the package doesn't have, the chosen setup file gone, the detection rule looking for another product
+      code, version or name than the installer's, the App version not the installer's. Warnings, not blockers:
+      each can be on purpose. -Files: the folder's files (relative paths); -Installer: @{ file; version;
+      productCode; name } (Get-WebInstallerInfo).
+    #>
+    param($Metadata, [string[]]$Files = @(), $Installer = $null, [string]$SetupFile = '')
+    $w = New-Object System.Collections.Generic.List[string]
+    if (-not $Metadata) { return @() }
+    $have = @{}; foreach ($f in @($Files)) { if ($f) { $p = ([string]$f -replace '/', '\').ToLowerInvariant(); $have[$p] = $true; $have[($p -split '\\')[-1]] = $true } }
+    $hasFiles = $have.Count -gt 0
+    if ($hasFiles) {
+        foreach ($k in 'installCommand', 'uninstallCommand') {
+            foreach ($f in @(Get-CommandPackageFiles ([string]$Metadata.$k))) {
+                $key = $f.ToLowerInvariant()
+                if (-not ($have.ContainsKey($key) -or $have.ContainsKey(($key -split '\\')[-1]))) {
+                    $w.Add("The $(if ($k -eq 'installCommand') { 'install' } else { 'uninstall' }) command runs $f, but the package has no such file.")
+                }
+            }
+        }
+        if ($SetupFile -and -not $have.ContainsKey(($SetupFile -replace '/', '\').ToLowerInvariant())) { $w.Add("The setup file chosen for it ($SetupFile) isn't in its folder any more.") }
+    }
+    $rule = $Metadata.detectionRule
+    $iv = if ($Installer) { [string]$Installer.version } else { '' }
+    $ipc = if ($Installer) { [string]$Installer.productCode } else { '' }
+    $iname = if ($Installer) { [string]$Installer.name } else { '' }
+    if ($rule -and $rule.Type) {
+        $detVer = ''; $op = ''
+        switch ([string]$rule.Type) {
+            'Msi' {
+                if ($ipc -and $rule.Msi_ProductCode -and ([string]$rule.Msi_ProductCode).Trim('{}').ToLowerInvariant() -ne $ipc.Trim('{}').ToLowerInvariant()) {
+                    $w.Add("The detection rule looks for product code $($rule.Msi_ProductCode), the installer's is $ipc - it would never be found installed.")
+                }
+                $detVer = [string]$rule.Msi_Version; $op = [string]$rule.Msi_VersionOperator
+            }
+            'File' { if ([string]$rule.File_DetectionType -eq 'version') { $detVer = [string]$rule.File_DetectionValue; $op = [string]$rule.File_Operator } }
+            'Registry' { if ([string]$rule.Reg_DetectionType -eq 'version') { $detVer = [string]$rule.Reg_DetectionValue; $op = [string]$rule.Reg_Operator } }
+            'Script' {
+                $sc = [string]$rule.Script_Content
+                $m = [regex]::Match($sc, "(?m)\`$want = '((?:[^']|'')*)'")
+                if ($m.Success) { $detVer = $m.Groups[1].Value -replace "''", "'"; $op = 'greaterThanOrEqual' }
+                # A rule this app wrote (by the name Windows lists): the installer's own name should match it.
+                $pm = [regex]::Match($sc, "(?m)^\`$pattern = '((?:[^']|'')*)'")
+                if ($pm.Success -and $iname) {
+                    $ok = $false; try { $ok = $iname -match ($pm.Groups[1].Value -replace "''", "'") } catch { $ok = $true }
+                    if (-not $ok) {
+                        $shown = $pm.Groups[1].Value.Replace("''", "'") -replace '^\^', '' -replace '\(\\s\+.*$', ''
+                        try { $shown = [regex]::Unescape($shown) } catch { }
+                        $w.Add("The detection rule looks for an app listed as '$shown', the installer calls itself '$iname' - a Sandbox test shows the name Windows lists.")
+                    }
+                }
+            }
+        }
+        # Looking for a newer version than the installer installs: never found, installed again and again.
+        if ($detVer -and $iv -and $op -in 'greaterThanOrEqual', 'equal', 'greaterThan' -and (Compare-AppVersionText $iv $detVer) -eq 1) {
+            $w.Add("The detection rule looks for version $detVer, the installer is $iv - it would never be found installed.")
+        }
+    }
+    $av = [string]$Metadata.appVersion
+    if ($av -and $iv -and (Compare-AppVersionText $av $iv) -ne 0) { $w.Add("The App version is $av, the installer is $iv - Intune and the Company Portal would show the wrong one.") }
+    return $w.ToArray()
+}
+
 function Global:Format-DetectionRuleText {
     <#
       Pure: a catalog detection rule as one line, as the editor says it - for the history and the comparisons
@@ -2305,6 +2415,16 @@ function Global:ConvertFrom-WingetInstallerUrl {
     if ($byLabel) { return $byLabel.Url }
     $byFile = @($links | Where-Object { $_.Url -match '\.(exe|msi|msix|msixbundle|appx|appxbundle|zip)(\?|$)' }) | Select-Object -First 1
     if ($byFile) { return $byFile.Url }
+    return ''
+}
+
+function Global:ConvertFrom-WingetInstallerSha256 {
+    # Pure (2.36.0): the installer's SHA256 in "winget show" output ('' when there's none) - on a line whose label has SHA256 in it.
+    param([string]$Text)
+    foreach ($line in @(([string]$Text) -split "`r?`n")) {
+        $m = [regex]::Match($line, '^\s*[^:]*SHA-?256[^:]*:\s*([0-9A-Fa-f]{64})\s*$')
+        if ($m.Success) { return $m.Groups[1].Value.ToUpperInvariant() }
+    }
     return ''
 }
 
