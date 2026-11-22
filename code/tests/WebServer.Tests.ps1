@@ -490,7 +490,7 @@ try {
         Remove-Item -LiteralPath $ownDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     # Add apps: an installer uploaded in pieces, a script app - and what is refused.
-    Check (-not (Invoke-Api '/api/upload-start' @{ fileName = 'notes.zip'; size = 10 }).ok) 'add apps: only an .msi or .exe can be uploaded'
+    Check (-not (Invoke-Api '/api/upload-start' @{ fileName = 'notes.txt'; size = 10 }).ok) 'add apps: only an .msi, .exe or .zip can be uploaded'
     $setup = [Text.Encoding]::ASCII.GetBytes('MZ fake setup - Nullsoft Install System v3.09 ' + ('x' * 5000))
     $up = Invoke-Api '/api/upload-start' @{ fileName = 'zz-tool-setup.exe'; size = $setup.Length }
     $first = Invoke-Api '/api/upload-chunk' @{ uploadId = $up.uploadId; offset = 0; data = [Convert]::ToBase64String($setup, 0, 3000) }
@@ -521,6 +521,67 @@ try {
     $keepApp = (Invoke-Api '/api/app-get' @{ name = $keepName }).app
     Check ($ak.ok -and $keepApp.metadata.installCommand -eq 'my-own.cmd' -and $keepApp.metadata.uninstallCommand -eq 'my-own-uninstall.cmd' -and @($ak.filled) -notcontains 'the install command') 'installer for an app: commands it already has are kept' ($ak | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/app-installer' @{ name = $testName; uploadId = (& $sendUp 'zz-winget-setup.exe') }).ok) 'installer for an app: refused for a Winget app'
+    # 2.34.0: a whole folder (or a .zip of it) for an app: every file into its packages folder, the setup file
+    # suggested and changeable, replace or add asked, the files listed and deleted one by one - nothing outside it.
+    $fName = 'ZZ Folder ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $fName; wingetId = ''; appId = '' } })
+    Check (-not (Invoke-Api '/api/folder-upload-start' @{ folderName = 'x'; files = @(@{ path = '../evil.txt'; size = 3 }) }).ok -and -not (Invoke-Api '/api/folder-upload-start' @{ folderName = 'x'; files = @(@{ path = 'C:\evil.txt'; size = 3 }) }).ok) 'folder upload: a path outside the folder is refused before anything is sent'
+    $folderFiles = [ordered]@{ 'Setup\zz-folder-setup.exe' = $setup; 'Setup\config.xml' = [Text.Encoding]::UTF8.GetBytes('<cfg/>'); 'readme.txt' = [Text.Encoding]::UTF8.GetBytes('hi') }
+    $fs = Invoke-Api '/api/folder-upload-start' @{ folderName = 'Vendor App'; files = @($folderFiles.Keys | ForEach-Object { @{ path = $_; size = $folderFiles[$_].Length } }) }
+    $idx = 0; foreach ($k in $folderFiles.Keys) { [void](Invoke-Api '/api/upload-chunk' @{ uploadId = $fs.uploadId; index = $idx; offset = 0; data = [Convert]::ToBase64String($folderFiles[$k]) }); $idx++ }
+    $ff = Invoke-Api '/api/upload-finish' @{ uploadId = $fs.uploadId }
+    Check ($ff.ok -and $ff.folder -and $ff.fileCount -eq 3 -and $ff.setup -eq 'Setup\zz-folder-setup.exe' -and $ff.installCommand -eq '"Setup\zz-folder-setup.exe" /S') 'folder upload: all files arrive, the setup file in a subfolder is suggested and its commands use its path' ($ff | ConvertTo-Json -Compress -Depth 4)
+    $sw = Invoke-Api '/api/upload-setup' @{ uploadId = $fs.uploadId; setup = '' }
+    Check ($sw.ok -and -not $sw.installCommand -and -not (Invoke-Api '/api/upload-setup' @{ uploadId = $fs.uploadId; setup = 'missing.exe' }).ok) 'folder upload: another setup file (or none) makes the proposal again; a file not in it is refused'
+    [void](Invoke-Api '/api/upload-setup' @{ uploadId = $fs.uploadId; setup = 'Setup\zz-folder-setup.exe' })
+    $fa = Invoke-Api '/api/app-installer' @{ name = $fName; uploadId = $fs.uploadId }
+    $fApp = (Invoke-Api '/api/app-get' @{ name = $fName }).app
+    $pf = Invoke-Api '/api/package-files' @{ name = $fName }
+    $pfPaths = @($pf.files | ForEach-Object { $_.path })
+    Check ($fa.ok -and $fa.files -eq 3 -and $fa.setup -eq 'Setup\zz-folder-setup.exe' -and $fApp.metadata.installCommand -eq '"Setup\zz-folder-setup.exe" /S' -and $pf.ok -and $pf.setupFile -eq 'Setup\zz-folder-setup.exe' -and ($pfPaths -contains 'Setup\config.xml') -and ($pfPaths -contains 'readme.txt') -and ($pfPaths -contains 'Uninstall.ps1')) 'folder upload: into its packages folder with its subfolders, the setup file remembered, the commands filled in' ($pfPaths -join ', ')
+    # A .zip on top: asked first (files there already); added, it keeps them - replaced, they go. A .zip with a ../ entry is refused.
+    $zipBytes = { param($entries) $ms = New-Object System.IO.MemoryStream; $za = New-Object System.IO.Compression.ZipArchive($ms, [System.IO.Compression.ZipArchiveMode]::Create, $true); foreach ($k in $entries.Keys) { $e = $za.CreateEntry($k); $w = New-Object System.IO.StreamWriter($e.Open()); $w.Write([string]$entries[$k]); $w.Dispose() }; $za.Dispose(); $ms.ToArray() }
+    Add-Type -AssemblyName System.IO.Compression
+    $sendZip = { param($name, $bytes) $u = Invoke-Api '/api/upload-start' @{ fileName = $name; size = $bytes.Length }; [void](Invoke-Api '/api/upload-chunk' @{ uploadId = $u.uploadId; offset = 0; data = [Convert]::ToBase64String($bytes) }); @{ id = $u.uploadId; fin = (Invoke-Api '/api/upload-finish' @{ uploadId = $u.uploadId }) } }
+    $evilZ = & $sendZip 'evil.zip' (& $zipBytes ([ordered]@{ 'ok.txt' = 'x'; '../../escaped.txt' = 'bad' }))
+    Check ((-not $evilZ.fin.ok) -and $evilZ.fin.error -like "*isn't allowed*") 'zip upload: an entry pointing outside the folder is refused' ($evilZ.fin | ConvertTo-Json -Compress)
+    $z = & $sendZip 'Vendor App.zip' (& $zipBytes ([ordered]@{ 'Vendor App/extra.cfg' = 'cfg'; 'Vendor App/Setup/zz-folder-setup.exe' = 'MZ new' }))
+    Check ($z.fin.ok -and $z.fin.folder -and $z.fin.fileCount -eq 2 -and @($z.fin.files | ForEach-Object { $_.path }) -contains 'extra.cfg') 'zip upload: unpacked, its one top folder taken as the folder itself' ($z.fin | ConvertTo-Json -Compress -Depth 4)
+    $ask = Invoke-Api '/api/app-installer' @{ name = $fName; uploadId = $z.id }
+    Check ((-not $ask.ok) -and $ask.needsChoice -and $ask.existing -eq 4) 'zip upload: files there already - replace or add is asked, not guessed' ($ask | ConvertTo-Json -Compress)
+    $add = Invoke-Api '/api/app-installer' @{ name = $fName; uploadId = $z.id; mode = 'add' }
+    $after = @((Invoke-Api '/api/package-files' @{ name = $fName }).files | ForEach-Object { $_.path })
+    Check ($add.ok -and ($after -contains 'readme.txt') -and ($after -contains 'extra.cfg')) 'zip upload: added - the files there stay, the new ones join them' ($after -join ', ')
+    $z2 = & $sendZip 'only.zip' (& $zipBytes ([ordered]@{ 'only.cfg' = 'x' }))
+    $rep = Invoke-Api '/api/app-installer' @{ name = $fName; uploadId = $z2.id; mode = 'replace' }
+    $after2 = @((Invoke-Api '/api/package-files' @{ name = $fName }).files | ForEach-Object { $_.path })
+    Check ($rep.ok -and $after2.Count -eq 1 -and $after2[0] -eq 'only.cfg') 'zip upload: replaced - only the new files are there' ($after2 -join ', ')
+    # The file list: one file deleted (only one inside the folder), the setup file set to one of them.
+    Check (-not (Invoke-Api '/api/package-file-delete' @{ name = $fName; path = '..\..\catalog.json' }).ok -and -not (Invoke-Api '/api/package-setup' @{ name = $fName; path = 'missing.exe' }).ok) 'package files: a path outside it, or not in it, is refused'
+    $ps = Invoke-Api '/api/package-setup' @{ name = $fName; path = 'only.cfg' }
+    $del = Invoke-Api '/api/package-file-delete' @{ name = $fName; path = 'only.cfg' }
+    $pf3 = Invoke-Api '/api/package-files' @{ name = $fName }
+    Check ($ps.ok -and $del.ok -and @($pf3.files).Count -eq 0 -and -not $pf3.setupFile) 'package files: the setup file chosen; deleted, it is forgotten too' ($pf3 | ConvertTo-Json -Compress)
+    [void](Invoke-Api '/api/app-remove' @{ name = $fName }); if ($fa.folder) { Remove-Item -LiteralPath ([string]$fa.folder) -Recurse -Force -ErrorAction SilentlyContinue }
+    # And built: Package runs on an uploaded folder whose setup file is in a subfolder (the package holds the whole folder).
+    $bName = 'ZZ Build ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $bName; wingetId = ''; appId = '' } })
+    $bs = Invoke-Api '/api/folder-upload-start' @{ folderName = 'Build'; files = @(@{ path = 'Setup\zz-build-setup.exe'; size = $setup.Length }, @{ path = 'Setup\cfg.ini'; size = 3 }) }
+    [void](Invoke-Api '/api/upload-chunk' @{ uploadId = $bs.uploadId; index = 0; offset = 0; data = [Convert]::ToBase64String($setup) })
+    [void](Invoke-Api '/api/upload-chunk' @{ uploadId = $bs.uploadId; index = 1; offset = 0; data = [Convert]::ToBase64String([byte[]](65, 66, 67)) })
+    [void](Invoke-Api '/api/upload-finish' @{ uploadId = $bs.uploadId })
+    $ba = Invoke-Api '/api/app-installer' @{ name = $bName; uploadId = $bs.uploadId }
+    $pkgJob = Invoke-Api '/api/package-start' @{ names = @($bName) }
+    $pkgLog = ''; $pkgDone = $false; $off = 0; $until = (Get-Date).AddSeconds(120)
+    while ($pkgJob.ok -and -not $pkgDone -and (Get-Date) -lt $until) {
+        $pp = Invoke-Api '/api/job-poll' @{ job = $pkgJob.job; offset = $off }
+        if (-not $pp.ok) { break }
+        $off = $pp.offset; $pkgLog += [string]$pp.text
+        if ($pp.done -and -not $pp.text) { $pkgDone = $true } else { Start-Sleep -Milliseconds 400 }
+    }
+    $built = @(Get-ChildItem -LiteralPath ([string]$ba.folder) -Filter '*.intunewin' -File -ErrorAction SilentlyContinue)
+    Check ($ba.ok -and $pkgDone -and $built.Count -eq 1 -and $built[0].Length -gt 0) 'folder upload: Package builds it - the setup file in its subfolder' (($pkgLog -split "`n" | Select-Object -Last 8) -join ' | ')
+    [void](Invoke-Api '/api/app-remove' @{ name = $bName }); if ($ba.folder) { Remove-Item -LiteralPath ([string]$ba.folder) -Recurse -Force -ErrorAction SilentlyContinue }
     foreach ($n in $lobName, $keepName) { [void](Invoke-Api '/api/app-remove' @{ name = $n }) }
     foreach ($d in $ai.folder, $ak.folder) { if ($d) { Remove-Item -LiteralPath ([string]$d) -Recurse -Force -ErrorAction SilentlyContinue } }
     $scName = 'ZZ Script ' + [guid]::NewGuid().ToString('N').Substring(0, 4)

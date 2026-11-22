@@ -64,7 +64,7 @@ function Global:Get-WebReleaseInfo {
     $pilot = Get-WebAppRelease $a
     $latest = if ($Global:App.WingetLatest -and $a.wingetId) { [string]$Global:App.WingetLatest[([string]$a.wingetId).ToLowerInvariant()] } else { '' }
     $own = -not $a.wingetId
-    $installer = if ($own) { Get-WebInstallerInfo $a.appName } else { $null }
+    $installer = if ($own) { Get-WebInstallerInfo $a.appName -SetupFile ([string]$a.setupFile) } else { $null }
     $status = if ($pilot) { Get-WebPilotStatus $pilot -App $a } else { $null }
     return @{ ok = $true; name = $a.appName; managed = [bool]$a.managedUpdates; wingetId = [string]$a.wingetId; appId = [string]$a.appId
         kind = $(if ($own) { 'package' } else { 'winget' }); installer = $installer; pilotStatus = $status
@@ -319,7 +319,7 @@ function Global:Get-WebInstallerInfo {
       Installer - or else the newest .exe's product/file version.
       @{ folder; found; file; version; productCode }.
     #>
-    param([string]$AppName)
+    param([string]$AppName, [string]$SetupFile)
     $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $AppName)
     $info = [ordered]@{ folder = $folder; found = $false; file = ''; version = ''; productCode = '' }
     if (-not (Test-Path -LiteralPath $folder -PathType Container)) { return $info }
@@ -334,17 +334,26 @@ function Global:Get-WebInstallerInfo {
     $exe = Get-ChildItem -LiteralPath $look -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -eq '.exe' } | Where-Object { $_.Name -notin 'Invoke-AppDeployToolkit.exe', 'Deploy-Application.exe' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     # Reading an installer (Windows Installer, file versions) is slow and Home, Updates and the Apps list ask
     # often: kept while the same file (name, time, size) is the newest.
+    # The setup file chosen for it (uploaded with its folder - in a subfolder too) is the installer, when it is one.
+    $chosenRel = ''
+    if ($SetupFile -and (Test-PackageRelativePath $SetupFile)) {
+        $chosen = Join-Path $folder ($SetupFile -replace '[\\/]+', [System.IO.Path]::DirectorySeparatorChar)
+        if (Test-Path -LiteralPath $chosen -PathType Leaf) {
+            $c = Get-Item -LiteralPath $chosen
+            if ($c.Extension -eq '.msi') { $msi = $c; $exe = $null; $chosenRel = $SetupFile } elseif ($c.Extension -eq '.exe') { $msi = $null; $exe = $c; $chosenRel = $SetupFile }
+        }
+    }
     $pick = if ($msi) { $msi } else { $exe }
     $cacheKey = if ($pick) { "$($pick.FullName)|$($pick.LastWriteTimeUtc.Ticks)|$($pick.Length)".ToLowerInvariant() } else { '' }
     if (-not $Global:App.InstallerInfoCache) { $Global:App.InstallerInfoCache = [hashtable]::Synchronized(@{}) }
     if ($cacheKey -and $Global:App.InstallerInfoCache.ContainsKey($cacheKey)) { $hit = $Global:App.InstallerInfoCache[$cacheKey]; foreach ($k in @($hit.Keys)) { $info[$k] = $hit[$k] }; return $info }
     if ($msi) {
-        $info.found = $true; $info.file = $msi.Name
+        $info.found = $true; $info.file = $(if ($chosenRel) { $chosenRel } else { $msi.Name })
         $props = Get-MsiPropertyValues -Path $msi.FullName -Names @('ProductVersion', 'ProductCode')
         $info.version = [string]$props['ProductVersion']; $info.productCode = [string]$props['ProductCode']
     }
     elseif ($exe) {
-        $info.found = $true; $info.file = $exe.Name
+        $info.found = $true; $info.file = $(if ($chosenRel) { $chosenRel } else { $exe.Name })
         $v = Get-ExeVersionText -Path $exe.FullName
         $info.version = ($v -replace '[^0-9A-Za-z.\-+_].*$', '')
     }

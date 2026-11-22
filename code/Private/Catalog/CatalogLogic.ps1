@@ -522,6 +522,24 @@ function Global:Test-AppIsUncommon {
     return [string]::IsNullOrWhiteSpace($App.wingetId)
 }
 
+function Global:Test-PackageRelativePath {
+    <#
+      Pure: whether a path is a safe file path inside an app's packages folder - relative, no '..' or '.' parts,
+      no drive or UNC root, no characters Windows refuses, at most 20 levels and 400 characters. For uploaded
+      folders and .zip entries (nothing may land outside the folder) and the chosen setup file.
+    #>
+    param([string]$Path)
+    if (-not $Path -or $Path.Length -gt 400) { return $false }
+    if ($Path -match '^[\\/]|^[A-Za-z]:|[\x00-\x1F<>:"|?*]') { return $false }
+    $parts = @($Path -split '[\\/]')
+    if ($parts.Count -gt 20) { return $false }
+    foreach ($p in $parts) {
+        if (-not $p -or $p -eq '.' -or $p -eq '..' -or $p.Trim() -ne $p -or $p.EndsWith('.')) { return $false }
+        if ($p -match '^(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$') { return $false }
+    }
+    return $true
+}
+
 function Global:Test-IntuneLobMsiType {
     # Pure: whether an Intune app type (an @odata.type, with or without its prefix, or its friendly label) is the MSI line-of-business type.
     param([string]$Type)
@@ -1768,7 +1786,8 @@ function Global:Get-InstallerProposal {
     param($Info)
     $file = [string]$Info.FileName
     $name = ([string]$Info.ProductName).Trim()
-    if (-not $name) { $name = ([System.IO.Path]::GetFileNameWithoutExtension($file) -replace '[_\-.]+(x64|x86|amd64|win64|win32|setup|installer|install)$', '' -replace '[_]+', ' ' -replace '\s+v?\d[\d.]*$', '').Trim() }
+    # From the file's own name - it may be a path in an uploaded folder (Setup\setup.exe), on any system.
+    if (-not $name) { $name = ([System.IO.Path]::GetFileNameWithoutExtension(($file -split '[\\/]')[-1]) -replace '[_\-.]+(x64|x86|amd64|win64|win32|setup|installer|install)$', '' -replace '[_]+', ' ' -replace '\s+v?\d[\d.]*$', '').Trim() }
     $version = ([string]$Info.ProductVersion).Trim() -replace '[^0-9A-Za-z.\-+_].*$', ''
     $notes = New-Object System.Collections.Generic.List[string]
     $p = [ordered]@{ Name = $name; Publisher = ([string]$Info.Manufacturer).Trim(); Version = $version; InstallCommand = ''; UninstallCommand = ''; Detection = $null; NeedsUninstallScript = $false; Notes = $null; ManagedOk = $false }

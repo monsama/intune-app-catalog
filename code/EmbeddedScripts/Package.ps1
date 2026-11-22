@@ -58,7 +58,12 @@ param(
     # Build the packages with the app's own packager (New-IntuneWinPackage,
     # dot-sourced with the step helpers) instead of IntuneWinAppUtil.exe.
     [Parameter(Mandatory=$false)]
-    [switch]$BuiltIn
+    [switch]$BuiltIn,
+
+    # The setup file chosen for an app (JSON: { "<folder name>": "<path in its folder>" }) - e.g. one in a subfolder.
+    # Without one, the best installer at the top of the folder is taken (Find-BestInstaller).
+    [Parameter(Mandatory=$false)]
+    [string]$SetupFiles = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -135,6 +140,35 @@ function Download-IntuneWinAppUtil {
 #endregion
 
 #region Installer Functions
+# The package's content: every file of the app's folder, subfolders too (the installer's transforms, config files,
+# the Uninstall.ps1 an EXE app gets) - but no .intunewin built before, which would otherwise end up inside the next.
+function Copy-PackageSource {
+    param([string]$From, [string]$To)
+    $sep = [System.IO.Path]::DirectorySeparatorChar
+    $root = [System.IO.Path]::GetFullPath($From).TrimEnd($sep) + $sep
+    foreach ($f in @(Get-ChildItem -LiteralPath $From -Recurse -File -Force -ErrorAction Stop | Where-Object { $_.Extension -ne '.intunewin' })) {
+        $rel = $f.FullName.Substring($root.Length)
+        $dest = Join-Path $To $rel
+        $dir = Split-Path -Parent $dest
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        Copy-Item -LiteralPath $f.FullName -Destination $dest -Force
+    }
+}
+
+# The setup file chosen for a folder, if it is a file inside that folder: @{ File; Rel }, else $null.
+function Get-ChosenSetupFile {
+    param($Folder, [hashtable]$Map)
+    if (-not $Map -or -not $Map.ContainsKey($Folder.Name)) { return $null }
+    $sep = [System.IO.Path]::DirectorySeparatorChar
+    $rel = ([string]$Map[$Folder.Name]) -replace '[\\/]+', $sep
+    # No root and no '..' at all (even one that leads back in) - only a plain path inside the folder.
+    if (-not $rel -or [System.IO.Path]::IsPathRooted($rel) -or $rel -match '(^|[\\/])\.\.?([\\/]|$)') { return $null }
+    $root = [System.IO.Path]::GetFullPath($Folder.FullName).TrimEnd($sep) + $sep
+    $full = [System.IO.Path]::GetFullPath((Join-Path $Folder.FullName $rel))
+    if (-not $full.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $full -PathType Leaf)) { return $null }
+    return @{ File = (Get-Item -LiteralPath $full); Rel = $full.Substring($root.Length) }
+}
+
 function Find-BestInstaller {
     param([string]$FolderPath)
     
@@ -373,11 +407,34 @@ elseif ($FolderNames) {
     }
 }
 
+$SetupFileMap = @{}
+if ($SetupFiles) {
+    try { foreach ($p in @(($SetupFiles | ConvertFrom-Json).PSObject.Properties)) { if ($p.Value) { $SetupFileMap[[string]$p.Name] = [string]$p.Value } } }
+    catch { Write-Host "  The chosen setup files couldn't be read - each folder's best installer is taken." -ForegroundColor Yellow }
+}
+
 foreach ($Folder in $AllFolders) {
     # Check for PowerShell script (install.ps1)
     $InstallScript = Get-ChildItem -LiteralPath $Folder.FullName -File -Filter "install.ps1" -ErrorAction SilentlyContinue
-    
-    if ($InstallScript) {
+    # A setup file chosen for this app (the catalog's setupFile - one in a subfolder too) comes first.
+    $Chosen = Get-ChosenSetupFile -Folder $Folder -Map $SetupFileMap
+
+    if ($Chosen) {
+        $AppsToProcess += [PSCustomObject]@{
+            Type             = "Installer"
+            FolderName       = $Folder.Name
+            FolderPath       = $Folder.FullName
+            AppName          = $Folder.Name
+            Scope            = "machine"
+            SourceFile       = $Chosen.File
+            SourceFileName   = $Chosen.Rel
+            UninstallScript  = $null
+            DetectScript     = $null
+            HasUninstall     = $false
+            HasDetect        = $false
+        }
+    }
+    elseif ($InstallScript) {
         # PowerShell-based WinGet app
         $AppName = Get-AppNameFromScript -ScriptPath $InstallScript.FullName
         
@@ -535,19 +592,12 @@ foreach ($App in $AppsToProcess) {
         $TempOutputFolder = Join-Path $env:TEMP ("IntunePackaging_Output_" + (Get-Random))
         New-Item -ItemType Directory -Path $TempOutputFolder -Force | Out-Null
         
-        # For installers, copy to temp folder first
-        if ($App.Type -eq "Installer") {
-            $TempSourceFolder = Join-Path $env:TEMP ("IntunePackaging_Source_" + (Get-Random))
-            New-Item -ItemType Directory -Path $TempSourceFolder -Force | Out-Null
-            Copy-Item -LiteralPath $App.SourceFile.FullName -Destination $TempSourceFolder -Force
-            $PackageSourceFolder = $TempSourceFolder
-            $SetupFile = $App.SourceFileName
-        }
-        else {
-            # For scripts, use the folder directly
-            $PackageSourceFolder = $App.FolderPath
-            $SetupFile = $App.SourceFileName
-        }
+        # The app's whole folder, copied without any .intunewin built before (installers and scripts alike).
+        $TempSourceFolder = Join-Path $env:TEMP ("IntunePackaging_Source_" + (Get-Random))
+        New-Item -ItemType Directory -Path $TempSourceFolder -Force | Out-Null
+        Copy-PackageSource -From $App.FolderPath -To $TempSourceFolder
+        $PackageSourceFolder = $TempSourceFolder
+        $SetupFile = $App.SourceFileName
         
         if ($BuiltIn) {
             # The app's own packager - same output as the tool: <setupfile>.intunewin in the temp output folder.
@@ -620,8 +670,8 @@ foreach ($App in $AppsToProcess) {
         }
         }
         
-        # Clean up temp source folder for installers
-        if ($App.Type -eq "Installer" -and (Test-Path -LiteralPath $TempSourceFolder)) {
+        # Clean up the temp source folder
+        if ($TempSourceFolder -and (Test-Path -LiteralPath $TempSourceFolder)) {
             Remove-Item -LiteralPath $TempSourceFolder -Recurse -Force -ErrorAction SilentlyContinue
         }
         

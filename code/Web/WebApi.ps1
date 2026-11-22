@@ -83,6 +83,7 @@ function Global:Get-WebCatalog {
                 releaseIds   = @(@($apps[$i].releases) | Where-Object { $_ -and $_.appId } | ForEach-Object { ([string]$_.appId).ToLowerInvariant() })
                 retiringSince = [string]$apps[$i].retiringSince
                 lobToRetire  = [string]$apps[$i].lobToRetire
+                setupFile    = [string]$apps[$i].setupFile
                 pilotVersion = [string]$(if ($pr) { $pr.version })
                 # Which release ring the pilot release is in (0 = pilot), and how many there are - the next step is the next ring, not everyone.
                 pilotRing    = [int]$(if ($pr) { $pr.ring })
@@ -678,6 +679,11 @@ function Global:Invoke-WebApi {
         '/api/retire-start'     { return (Start-WebRetire $Data) }
         '/api/lob-retire'       { return (Invoke-WithCatalogLock { Remove-WebReplacedLobApp $Data }) }
         '/api/app-installer'    { return (Invoke-WithCatalogLock { Set-WebAppInstaller $Data }) }
+        '/api/folder-upload-start' { return (Start-WebFolderUpload $Data) }
+        '/api/upload-setup'     { return (Set-WebUploadSetup $Data) }
+        '/api/package-files'    { return (Get-WebPackageFiles $Data) }
+        '/api/package-file-delete' { return (Invoke-WithCatalogLock { Remove-WebPackageFile $Data }) }
+        '/api/package-setup'    { return (Invoke-WithCatalogLock { Set-WebPackageSetup $Data }) }
         '/api/retire-status'    { return (Get-WebRetireStatus $Data) }
         '/api/retire-finish'    { return (Start-WebRetireFinish $Data) }
         '/api/retired-list'     { return (Get-WebRetiredApps) }

@@ -169,7 +169,7 @@ function Global:Get-WebUpdatesOverview {
             if ($latest -and (Compare-AppVersionText $current $latest) -eq 1) { $available = $latest }
         }
         else {
-            $inst = Get-WebInstallerInfo $a.appName
+            $inst = Get-WebInstallerInfo $a.appName -SetupFile ([string]$a.setupFile)
             if ($inst.version -and (Compare-AppVersionText $current $inst.version) -eq 1) { $available = $inst.version }
         }
         $tried = if ($cur) { $cur.installed + $cur.failed + $cur.pending + $cur.notInstalled } else { 0 }

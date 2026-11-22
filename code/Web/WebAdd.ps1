@@ -109,16 +109,65 @@ function Global:Start-WebUpload {
     param($Data)
     $name = [System.IO.Path]::GetFileName(([string]$Data.fileName).Trim())
     $size = [long]0; [void][long]::TryParse([string]$Data.size, [ref]$size)
-    if ($name -notmatch '^[^<>:"/\\|?*\x00-\x1F]{1,150}\.(msi|exe)$') { return @{ ok = $false; error = 'Choose an .msi or .exe installer (the file name may not hold < > : " / \ | ? *).' } }
+    if ($name -notmatch '^[^<>:"/\\|?*\x00-\x1F]{1,150}\.(msi|exe|zip)$') { return @{ ok = $false; error = 'Choose an .msi or .exe installer, or a .zip of its folder (the file name may not hold < > : " / \ | ? *).' } }
     if ($size -le 0 -or $size -gt 8GB) { return @{ ok = $false; error = 'The installer must be between 1 byte and 8 GB.' } }
     $uploads = Get-WebUploads
     # Unfinished uploads older than a day go (a closed tab never finishes its own).
-    foreach ($k in @($uploads.Keys)) { if ($uploads[$k].Started -lt (Get-Date).AddDays(-1)) { Remove-Item -LiteralPath $uploads[$k].Path -Force -ErrorAction SilentlyContinue; $uploads.Remove($k) } }
+    Remove-WebStaleUploads $uploads
     $id = [guid]::NewGuid().ToString('N')
     $dir = Join-Path ([System.IO.Path]::GetTempPath()) "intunecat-upload-$id"
     [void](New-Item -ItemType Directory -Path $dir -Force)
-    $uploads[$id] = @{ Path = (Join-Path $dir $name); FileName = $name; Size = $size; Received = [long]0; Started = (Get-Date); Info = $null }
+    $uploads[$id] = @{ Path = (Join-Path $dir $name); FileName = $name; Size = $size; Received = [long]0; Started = (Get-Date); Info = $null
+        Kind = $(if ($name -match '(?i)\.zip$') { 'zip' } else { 'file' }); Root = (Join-Path $dir 'tree'); Setup = '' }
     [System.IO.File]::WriteAllBytes($uploads[$id].Path, [byte[]]@())
+    return @{ ok = $true; uploadId = $id }
+}
+
+function Global:Remove-WebStaleUploads {
+    # Unfinished uploads older than a day go (a closed tab never finishes its own) - their whole temporary folder.
+    param($Uploads)
+    foreach ($k in @($Uploads.Keys)) { if ($Uploads[$k].Started -lt (Get-Date).AddDays(-1)) { Remove-Item -LiteralPath (Split-Path $Uploads[$k].Path -Parent) -Recurse -Force -ErrorAction SilentlyContinue; $Uploads.Remove($k) } }
+}
+
+function Global:Start-WebFolderUpload {
+    <#
+      Begins a folder upload (2.34.0): -files @(@{ path; size }) - paths relative to the folder, each one checked
+      (Test-PackageRelativePath: nothing can land outside it), at most 5000 files and 8 GB. The files then come
+      piece by piece (Add-WebUploadChunk with -index), into a temporary folder of their own.
+    #>
+    param($Data)
+    $list = @($Data.files)
+    if (-not $list.Count) { return @{ ok = $false; error = 'The folder is empty.' } }
+    if ($list.Count -gt 5000) { return @{ ok = $false; error = "The folder holds $($list.Count) files - at most 5000 go into one package." } }
+    $seen = @{}; [long]$total = 0
+    $files = New-Object System.Collections.Generic.List[object]
+    foreach ($f in $list) {
+        $p = ([string]$f.path) -replace '/', '\'
+        if (-not (Test-PackageRelativePath $p)) { return @{ ok = $false; error = "'$($f.path)' isn't a name a package file can have - nothing was uploaded." } }
+        $key = $p.ToLowerInvariant()
+        if ($seen.ContainsKey($key)) { return @{ ok = $false; error = "'$p' is in the folder twice." } }
+        $seen[$key] = $true
+        $size = [long]0; [void][long]::TryParse([string]$f.size, [ref]$size)
+        if ($size -lt 0) { return @{ ok = $false; error = "'$p' has no size." } }
+        $total += $size
+        $files.Add(@{ Path = $p; Size = $size; Received = [long]0 })
+    }
+    if ($total -gt 8GB) { return @{ ok = $false; error = 'The folder is larger than 8 GB.' } }
+    $uploads = Get-WebUploads
+    Remove-WebStaleUploads $uploads
+    $id = [guid]::NewGuid().ToString('N')
+    $dir = Join-Path ([System.IO.Path]::GetTempPath()) "intunecat-upload-$id"
+    $root = Join-Path $dir 'tree'
+    [void](New-Item -ItemType Directory -Path $root -Force)
+    $sep = [System.IO.Path]::DirectorySeparatorChar
+    # Every file made now - empty ones need no piece.
+    foreach ($f in $files) {
+        $dest = Join-Path $root ($f.Path -replace '\\', $sep)
+        $d = Split-Path -Parent $dest; if (-not (Test-Path -LiteralPath $d)) { [void](New-Item -ItemType Directory -Path $d -Force) }
+        [System.IO.File]::WriteAllBytes($dest, [byte[]]@())
+    }
+    $name = ([string]$Data.folderName).Trim(); if (-not $name -or $name -match '[\\/:*?"<>|]') { $name = 'folder' }
+    $uploads[$id] = @{ Path = (Join-Path $dir '.folder'); FileName = $name; Size = $total; Received = [long]0; Started = (Get-Date); Info = $null; Kind = 'folder'; Root = $root; Files = $files.ToArray(); Setup = '' }
     return @{ ok = $true; uploadId = $id }
 }
 
@@ -128,6 +177,19 @@ function Global:Add-WebUploadChunk {
     $u = (Get-WebUploads)[[string]$Data.uploadId]
     if (-not $u) { return @{ ok = $false; error = 'That upload is no longer known - start again.' } }
     $offset = [long]0; [void][long]::TryParse([string]$Data.offset, [ref]$offset)
+    if ($u.Kind -eq 'folder') {
+        # One piece of one of the folder's files (-index), in order.
+        $i = -1; [void][int]::TryParse([string]$Data.index, [ref]$i)
+        if ($i -lt 0 -or $i -ge @($u.Files).Count) { return @{ ok = $false; error = 'No such file in this upload.' } }
+        $f = $u.Files[$i]
+        if ($offset -ne $f.Received) { return @{ ok = $false; error = "Upload out of order (expected byte $($f.Received) of $($f.Path))."; expected = $f.Received } }
+        try { $bytes = [Convert]::FromBase64String([string]$Data.data) } catch { return @{ ok = $false; error = 'A piece of the upload was damaged.' } }
+        if ($bytes.Length -eq 0 -or $bytes.Length -gt 6MB -or $f.Received + $bytes.Length -gt $f.Size) { return @{ ok = $false; error = "That piece is larger than $($f.Path)." } }
+        $fs = [System.IO.File]::Open((Join-Path $u.Root ($f.Path -replace '\\', [System.IO.Path]::DirectorySeparatorChar)), [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write)
+        try { $fs.Write($bytes, 0, $bytes.Length) } finally { $fs.Dispose() }
+        $f.Received += $bytes.Length; $u.Received += $bytes.Length
+        return @{ ok = $true; received = $u.Received; fileReceived = $f.Received }
+    }
     if ($offset -ne $u.Received) { return @{ ok = $false; error = "Upload out of order (expected byte $($u.Received))."; expected = $u.Received } }
     try { $bytes = [Convert]::FromBase64String([string]$Data.data) } catch { return @{ ok = $false; error = 'A piece of the upload was damaged.' } }
     if ($bytes.Length -eq 0 -or $bytes.Length -gt 6MB -or $u.Received + $bytes.Length -gt $u.Size) { return @{ ok = $false; error = 'That piece is larger than the file.' } }
@@ -177,13 +239,106 @@ function Global:Complete-WebUpload {
     $u = (Get-WebUploads)[[string]$Data.uploadId]
     if (-not $u) { return @{ ok = $false; error = 'That upload is no longer known - start again.' } }
     if ($u.Received -ne $u.Size) { return @{ ok = $false; error = "Only $($u.Received) of $($u.Size) bytes arrived - start again." } }
-    $u.Info = Get-WebInstallerFacts $u.Path
-    $p = Get-InstallerProposal $u.Info
-    $u.Proposal = $p
+    if ($u.Kind -eq 'file') {
+        $u.Info = Get-WebInstallerFacts $u.Path
+        $u.Proposal = Get-InstallerProposal $u.Info
+        return (Get-WebUploadAnswer $u)
+    }
+    # A .zip: unpacked without trusting it (Expand-ZipSafely); one folder at its top is the folder itself.
+    if ($u.Kind -eq 'zip') {
+        try { [void](Expand-ZipSafely -ZipPath $u.Path -Destination $u.Root) }
+        catch { Remove-Item -LiteralPath $u.Root -Recurse -Force -ErrorAction SilentlyContinue; return @{ ok = $false; error = $_.Exception.Message } }
+        Remove-Item -LiteralPath $u.Path -Force -ErrorAction SilentlyContinue
+        $top = @(Get-ChildItem -LiteralPath $u.Root -Force)
+        if ($top.Count -eq 1 -and $top[0].PSIsContainer) { $u.Root = $top[0].FullName }
+        if (-not @(Get-PackageFolderFiles $u.Root).Count) { return @{ ok = $false; error = 'The .zip holds no files.' } }
+        $u.FileName = [System.IO.Path]::GetFileNameWithoutExtension($u.FileName)
+    }
+    $cands = @(Get-SetupFileCandidates (Get-PackageFolderFiles $u.Root))
+    $u.Setup = $(if ($cands.Count) { [string]$cands[0].path } else { '' })
+    Set-WebUploadProposal $u
+    return (Get-WebUploadAnswer $u)
+}
+
+function Global:Set-WebUploadProposal {
+    <#
+      What an uploaded folder's setup file proposes ($u.Setup, a path in it): an .msi or .exe as a single
+      installer does (its path in the commands); the PSADT 4 launcher its Install/Uninstall commands; an
+      install.ps1 64-bit PowerShell. Nothing for none - the commands are then written in the editor.
+    #>
+    param($u)
+    $rel = [string]$u.Setup
+    $none = [ordered]@{ Name = [string]$u.FileName; Publisher = ''; Version = ''; InstallCommand = ''; UninstallCommand = ''; Detection = $null; NeedsUninstallScript = $false; Notes = @(); ManagedOk = $false }
+    $u.Info = $null
+    if (-not $rel) { $none.Notes = @('No installer found in it - choose the setup file, or write the commands in the editor.'); $u.Proposal = $none; return }
+    $leaf = ($rel -split '[\\/]')[-1]
+    $ps = '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File'
+    if ($leaf -ieq 'Invoke-AppDeployToolkit.exe' -or $leaf -ieq 'Invoke-AppDeployToolkit.ps1') {
+        $run = if ($leaf -ieq 'Invoke-AppDeployToolkit.exe') { $rel } else { "$ps $rel" }
+        $none.InstallCommand = "$run -DeploymentType Install -DeployMode Silent"; $none.UninstallCommand = "$run -DeploymentType Uninstall -DeployMode Silent"
+        $none.Notes = @('A PSADT 4 package - set its detection rule in the editor (Install & detection).')
+        $u.Proposal = $none; return
+    }
+    if ($leaf -ieq 'install.ps1') {
+        $dir = Split-Path -Parent $rel
+        $un = if ($dir) { "$dir\uninstall.ps1" } else { 'uninstall.ps1' }
+        $none.InstallCommand = "$ps .\$rel"
+        if (Test-Path -LiteralPath (Join-Path $u.Root ($un -replace '\\', [System.IO.Path]::DirectorySeparatorChar))) { $none.UninstallCommand = "$ps .\$un" }
+        $none.Notes = @('A script package - set its detection rule in the editor (Install & detection).')
+        $u.Proposal = $none; return
+    }
+    $u.Info = Get-WebInstallerFacts (Join-Path $u.Root ($rel -replace '\\', [System.IO.Path]::DirectorySeparatorChar))
+    $u.Info.FileName = $rel
+    $u.Proposal = Get-InstallerProposal $u.Info
+    # A name only like "setup" or "install" says nothing - the folder's own name does.
+    if (-not ([string]$u.Proposal.Name).Trim() -or ([string]$u.Proposal.Name) -match '^(?i)(setup|install|installer)\d*$') { $u.Proposal.Name = [string]$u.FileName }
+}
+
+function Global:Get-WebUploadAnswer {
+    # What the page shows of a finished upload: the installer's facts and proposal, and for a folder its files and setup choices.
+    param($u)
+    $p = $u.Proposal; $i = $u.Info
     $apps = @((Read-WebCatalogRecords).Apps)
-    return @{ ok = $true; fileName = $u.FileName; size = $u.Size; kind = $u.Info.Kind; exeKind = $u.Info.ExeKind; signer = $u.Info.Signer; productCode = $u.Info.ProductCode
+    $out = [ordered]@{ ok = $true; fileName = $u.FileName; size = $u.Size; kind = $(if ($i) { $i.Kind } else { '' }); exeKind = $(if ($i) { $i.ExeKind } else { '' }); signer = $(if ($i) { $i.Signer } else { '' }); productCode = $(if ($i) { $i.ProductCode } else { '' })
         name = $p.Name; publisher = $p.Publisher; version = $p.Version; installCommand = $p.InstallCommand; uninstallCommand = $p.UninstallCommand
-        detection = $(if ($p.Detection) { $p.Detection.Type } else { '' }); managedOk = [bool]$p.ManagedOk; notes = @($p.Notes); nameProblem = (Test-WebAddName $p.Name $apps) }
+        detection = $(if ($p.Detection) { $p.Detection.Type } else { '' }); managedOk = [bool]$p.ManagedOk; notes = @($p.Notes); nameProblem = (Test-WebAddName $p.Name $apps); folder = ($u.Kind -ne 'file') }
+    if ($u.Kind -ne 'file') {
+        $files = @(Get-PackageFolderFiles $u.Root)
+        $out.fileCount = $files.Count
+        $out.size = [long](($files | Measure-Object size -Sum).Sum)
+        $out.files = @($files | Select-Object -First 300)
+        $out.candidates = @(Get-SetupFileCandidates $files | ForEach-Object { $_.path })
+        $out.setup = [string]$u.Setup
+    }
+    return $out
+}
+
+function Global:Set-WebUploadSetup {
+    # Another setup file for an uploaded folder (one of its files): the proposal is made again from it.
+    param($Data)
+    $u = (Get-WebUploads)[[string]$Data.uploadId]
+    if (-not $u -or $u.Kind -eq 'file' -or -not $u.Proposal) { return @{ ok = $false; error = 'That upload is no longer known - start again.' } }
+    $rel = ([string]$Data.setup) -replace '/', '\'
+    if ($rel -and -not ((Test-PackageRelativePath $rel) -and (Test-Path -LiteralPath (Join-Path $u.Root ($rel -replace '\\', [System.IO.Path]::DirectorySeparatorChar)) -PathType Leaf))) { return @{ ok = $false; error = "'$rel' isn't a file of this folder." } }
+    $u.Setup = $rel
+    Set-WebUploadProposal $u
+    return (Get-WebUploadAnswer $u)
+}
+
+function Global:Copy-WebUploadInto {
+    # The uploaded installer (or the uploaded folder's files) into -Folder; -Replace empties it first. The paths written.
+    param($u, [string]$Folder, [switch]$Replace)
+    if ($Replace -and (Test-Path -LiteralPath $Folder)) { Get-ChildItem -LiteralPath $Folder -Force | Remove-Item -Recurse -Force }
+    if (-not (Test-Path -LiteralPath $Folder)) { [void](New-Item -ItemType Directory -Path $Folder -Force) }
+    if ($u.Kind -eq 'file') { Copy-Item -LiteralPath $u.Path -Destination (Join-Path $Folder $u.FileName) -Force; return @($u.FileName) }
+    $sep = [System.IO.Path]::DirectorySeparatorChar
+    $written = foreach ($f in @(Get-PackageFolderFiles $u.Root)) {
+        $dest = Join-Path $Folder ($f.path -replace '\\', $sep)
+        $d = Split-Path -Parent $dest; if (-not (Test-Path -LiteralPath $d)) { [void](New-Item -ItemType Directory -Path $d -Force) }
+        Copy-Item -LiteralPath (Join-Path $u.Root ($f.path -replace '\\', $sep)) -Destination $dest -Force
+        $f.path
+    }
+    return @($written)
 }
 
 function Global:Add-WebInstallerApp {
@@ -205,11 +360,11 @@ function Global:Add-WebInstallerApp {
     if ($version -and -not (Test-ReleaseVersionText $version)) { return @{ ok = $false; error = "'$version' isn't a version (letters, digits and . - + _)." } }
     $folder = Join-Path (Get-AppFolder -Kind Packages -Create) (Get-SafeFileNameForApp -Name $name)
     if (Test-Path -LiteralPath $folder) {
-        $other = @(Get-ChildItem -LiteralPath $folder -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.msi', '.exe' -and $_.Name -ne $u.FileName })
-        if ($other.Count) { return @{ ok = $false; error = "$folder already holds another installer ($($other[0].Name)) - choose another name, or empty that folder first." } }
+        $other = @(Get-PackageFolderFiles $folder | Where-Object { $u.Kind -ne 'file' -or $_.path -ne $u.FileName })
+        if ($other.Count) { return @{ ok = $false; error = "$folder already holds files ($($other[0].path)) - choose another name, or empty that folder first." } }
     }
-    else { [void](New-Item -ItemType Directory -Path $folder -Force) }
-    Copy-Item -LiteralPath $u.Path -Destination (Join-Path $folder $u.FileName) -Force
+    [void](Copy-WebUploadInto $u $folder)
+    $setup = if ($u.Kind -eq 'file') { '' } else { [string]$u.Setup }
     if ($p.NeedsUninstallScript) {
         $label = if ($u.Info.ProductName) { $u.Info.ProductName } else { $name }
         [System.IO.File]::WriteAllText((Join-Path $folder 'Uninstall.ps1'), (New-InstalledAppUninstallScript -DisplayName $label -ExeKind $u.Info.ExeKind), (New-Object System.Text.UTF8Encoding($true)))
@@ -228,6 +383,7 @@ function Global:Add-WebInstallerApp {
     $managed = [bool]$Data.managed -and [bool]$p.ManagedOk
     [void](Update-WebCatalogApp -Name $r.name -Change {
             param($app)
+            if ($setup) { $app.setupFile = $setup }
             if ($rule) { $app.metadata.detectionRule = [pscustomobject]$rule }
             if ($managed) { $app.managedUpdates = $true; [void](Set-ManagedAppPin $app -ProductCode ([string]$u.Info.ProductCode)) }
         }.GetNewClosure())
@@ -252,13 +408,16 @@ function Global:Set-WebAppInstaller {
     if (-not $a) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
     if (([string]$a.wingetId).Trim()) { return @{ ok = $false; error = "$name installs from winget - it has no installer of its own." } }
     $folder = Join-Path (Get-AppFolder -Kind Packages -Create) (Get-SafeFileNameForApp -Name $a.appName)
-    if (Test-Path -LiteralPath $folder) {
-        $other = @(Get-ChildItem -LiteralPath $folder -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.msi', '.exe' -and $_.Name -ne $u.FileName })
-        if ($other.Count) { return @{ ok = $false; error = "Its packages folder already holds an installer ($($other[0].Name)). A new version goes through Release new version (Updates); to swap it, remove that one first." } }
+    # Files there already: replaced, or added to (-mode) - asked, never guessed. A managed app's new version is a release.
+    $have = @(Get-PackageFolderFiles $folder)
+    $mode = [string]$Data.mode
+    if ($have.Count) {
+        if ($a.managedUpdates -and $a.appId) { return @{ ok = $false; error = "$($a.appName) has managed updates - a new installer goes through Release new version (Updates), pilot first." } }
+        if ($mode -notin 'replace', 'add') { return @{ ok = $false; needsChoice = $true; existing = $have.Count; error = "Its packages folder already holds $($have.Count) file(s) - replace them, or add to them?" } }
     }
-    else { [void](New-Item -ItemType Directory -Path $folder -Force) }
-    Copy-Item -LiteralPath $u.Path -Destination (Join-Path $folder $u.FileName) -Force
+    $written = @(Copy-WebUploadInto $u $folder -Replace:($mode -eq 'replace'))
     $p = $u.Proposal; $info = $u.Info
+    $setup = if ($u.Kind -eq 'file') { [string]$u.FileName } else { [string]$u.Setup }
     if ($p.NeedsUninstallScript -and -not (Test-Path -LiteralPath (Join-Path $folder 'Uninstall.ps1'))) {
         $label = if ($info.ProductName) { $info.ProductName } else { $a.appName }
         [System.IO.File]::WriteAllText((Join-Path $folder 'Uninstall.ps1'), (New-InstalledAppUninstallScript -DisplayName $label -ExeKind $info.ExeKind), (New-Object System.Text.UTF8Encoding($true)))
@@ -266,6 +425,8 @@ function Global:Set-WebAppInstaller {
     $filled = New-Object System.Collections.Generic.List[string]
     [void](Update-WebCatalogApp -Name $a.appName -Change {
             param($app)
+            # The setup file Package uses: the one chosen (or the uploaded installer itself).
+            if ($setup) { $app.setupFile = $setup }
             if (-not $app.metadata) { $app.metadata = Get-DefaultAppMetadata -AppName $app.appName -WingetId '' -Uncommon $true }
             $m = $app.metadata
             # The placeholder an app without settings gets (install.ps1 / uninstall.ps1 that aren't there) counts as empty.
@@ -286,9 +447,61 @@ function Global:Set-WebAppInstaller {
         }.GetNewClosure())
     Remove-Item -LiteralPath (Split-Path $u.Path -Parent) -Recurse -Force -ErrorAction SilentlyContinue
     (Get-WebUploads).Remove([string]$Data.uploadId)
-    Add-WebHistoryEntry -App $a.appName -Kind 'catalog' -Text "Installer $($u.FileName) added to its packages folder$(if ($filled.Count) { "; filled in: $($filled -join ', ')" })"
-    Write-Log "[OK] $($a.appName): $($u.FileName) is in its packages folder$(if ($filled.Count) { " - filled in $($filled -join ', ')" })."
-    return @{ ok = $true; fileName = $u.FileName; filled = $filled.ToArray(); kind = [string]$info.Kind; folder = $folder }
+    $what = if ($u.Kind -eq 'file') { $u.FileName } else { "$($written.Count) file(s) from $($u.FileName)$(if ($setup) { " (setup: $setup)" })" }
+    Add-WebHistoryEntry -App $a.appName -Kind 'catalog' -Text "$(if ($mode -eq 'replace') { 'Packages folder replaced with' } else { 'Added to its packages folder:' }) $what$(if ($filled.Count) { "; filled in: $($filled -join ', ')" })"
+    Write-Log "[OK] $($a.appName): $what in its packages folder$(if ($filled.Count) { " - filled in $($filled -join ', ')" })."
+    return @{ ok = $true; fileName = $u.FileName; files = $written.Count; setup = $setup; filled = $filled.ToArray(); kind = [string]$(if ($info) { $info.Kind }); folder = $folder }
+}
+
+# ---------------------------------------------------------------- an app's packages folder, as files (2.34.0)
+
+function Global:Get-WebPackageFiles {
+    # The files in an own-package app's packages folder (what Package builds into its .intunewin), the setup file, the built package.
+    param($Data)
+    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "No app called '$($Data.name)' in the catalog." } }
+    if (([string]$a.wingetId).Trim()) { return @{ ok = $false; error = "$($a.appName) installs from winget - it has no packages folder of its own." } }
+    $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $a.appName)
+    $files = @(Get-PackageFolderFiles $folder)
+    $built = @(Get-PackageFolderFiles $folder -All | Where-Object { $_.path -match '(?i)\.intunewin$' } | Select-Object -First 1)
+    return @{ ok = $true; folder = $folder; files = $files; total = [long](($files | Measure-Object size -Sum).Sum); setupFile = [string]$a.setupFile
+        package = $(if ($built.Count) { $built[0] } else { $null }) }
+}
+
+function Global:Remove-WebPackageFile {
+    # One file out of an app's packages folder - only a file inside it. The chosen setup file, deleted, is forgotten.
+    param($Data)
+    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "No app called '$($Data.name)' in the catalog." } }
+    $rel = ([string]$Data.path) -replace '/', '\'
+    if (-not (Test-PackageRelativePath $rel)) { return @{ ok = $false; error = "'$rel' isn't a file of its packages folder." } }
+    $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $a.appName)
+    $sep = [System.IO.Path]::DirectorySeparatorChar
+    $root = [System.IO.Path]::GetFullPath($folder).TrimEnd($sep) + $sep
+    $full = [System.IO.Path]::GetFullPath((Join-Path $folder ($rel -replace '\\', $sep)))
+    if (-not $full.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $full -PathType Leaf)) { return @{ ok = $false; error = "'$rel' isn't a file of its packages folder." } }
+    Remove-Item -LiteralPath $full -Force
+    # Folders left empty go too (up to the packages folder itself).
+    $d = Split-Path -Parent $full
+    while ($d -and ($d.TrimEnd($sep) + $sep).Length -gt $root.Length -and -not @(Get-ChildItem -LiteralPath $d -Force).Count) { Remove-Item -LiteralPath $d -Force; $d = Split-Path -Parent $d }
+    if ([string]$a.setupFile -and ([string]$a.setupFile).ToLowerInvariant() -eq $rel.ToLowerInvariant()) { [void](Update-WebCatalogApp -Name $a.appName -Change { param($x) $x.setupFile = '' }) }
+    Add-WebHistoryEntry -App $a.appName -Kind 'catalog' -Text "Deleted $rel from its packages folder"
+    Write-Log "[OK] $($a.appName): deleted $rel from its packages folder."
+    return @{ ok = $true }
+}
+
+function Global:Set-WebPackageSetup {
+    # The setup file Package uses for an app: one of its packages folder's files ('' - the best one found).
+    param($Data)
+    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "No app called '$($Data.name)' in the catalog." } }
+    $rel = ([string]$Data.path) -replace '/', '\'
+    if ($rel) {
+        $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $a.appName)
+        if (-not (Test-PackageRelativePath $rel) -or -not (@(Get-PackageFolderFiles $folder) | Where-Object { $_.path -eq $rel })) { return @{ ok = $false; error = "'$rel' isn't a file of its packages folder." } }
+    }
+    [void](Update-WebCatalogApp -Name $a.appName -Change { param($x) $x.setupFile = $rel }.GetNewClosure())
+    return @{ ok = $true; setupFile = $rel }
 }
 
 function Global:Remove-WebUpload {

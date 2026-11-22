@@ -1568,3 +1568,15 @@ body[data-view="home"] #setupBanner { display: none; }
 #aPkgInfo .pkgacts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 .apppanel .plob { display: grid; gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--warn); border-radius: var(--r-m); background: var(--warn-bg); font-size: 13px; }
 .apppanel .plob .btn { justify-self: start; }
+
+/* 2.34.0: an app's packages folder - uploads (installer, .zip, folder) and its files */
+#aPkgInfo.over { outline: 2px dashed var(--accent); outline-offset: 2px; }
+#aPkgInfo .pkgfiles { margin-top: 8px; }
+#aPkgInfo .pkgfiles summary { cursor: pointer; font-size: 12.5px; }
+#aPkgInfo .pkgfiles ul { list-style: none; margin: 6px 0 0; padding: 0; max-height: 260px; overflow: auto; }
+#aPkgInfo .pkgfiles li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 3px 0; border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent); font-size: 12.5px; }
+#aPkgInfo .pkgfiles .pfpath { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#aPkgInfo .pkgfiles .bx { border: 0; background: none; color: inherit; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; border-radius: var(--r-s); }
+#aPkgInfo .pkgfiles .bx:hover { color: var(--err); background: var(--err-bg); }
+#dlgPkgUp fieldset.plain { border: 0; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+#dlgPkgUp fieldset.plain legend { font-weight: 600; font-size: 13px; margin-bottom: 4px; }

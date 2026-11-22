@@ -239,7 +239,9 @@ function Global:New-IntuneWinPackage {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     if (-not (Test-Path -LiteralPath $SourceFolder -PathType Container)) { throw "Source folder not found: $SourceFolder" }
     $setupName = Split-Path -Leaf $SetupFile
-    if (-not (Test-Path -LiteralPath (Join-Path $SourceFolder $setupName))) { throw "The setup file $setupName isn't in $SourceFolder." }
+    # The setup file may be in a subfolder (sub\setup.exe) - it must be inside the source folder.
+    $setupPath = Join-Path $SourceFolder ($SetupFile -replace '[\\/]+', [System.IO.Path]::DirectorySeparatorChar)
+    if ([System.IO.Path]::IsPathRooted($SetupFile) -or -not (Test-Path -LiteralPath $setupPath -PathType Leaf)) { throw "The setup file $SetupFile isn't in $SourceFolder." }
     $work = Join-Path ([System.IO.Path]::GetTempPath()) ('intunewin_' + [guid]::NewGuid().ToString('N'))
     [void](New-Item -ItemType Directory -Path $work -Force)
     try {
@@ -330,4 +332,91 @@ function Global:Get-PackagerChoice {
     if ($pref -eq 'tool') { return 'tool' }
     if (Test-Path -LiteralPath (Get-PackagingToolPath)) { return 'tool' }
     return 'builtin'
+}
+
+# ---------------------------------------------------------------- folders and .zip files for a package (2.34.0)
+
+function Global:Get-SetupFileCandidates {
+    <#
+      Pure: the files of an uploaded folder that can be its setup file, best first - @(@{ path; size }).
+      Shallowest first (the setup is normally at the top); then the PSADT 4 launcher (Invoke-AppDeployToolkit.exe,
+      else its .ps1), an install.ps1, setup/install-named installers (64-bit first), any .msi, any .exe.
+    #>
+    param($Files)
+    $rank = {
+        param($p)
+        $name = ([string]$p -split '[\\/]')[-1]
+        $ext = [System.IO.Path]::GetExtension($name).ToLowerInvariant()
+        if ($name -ieq 'Invoke-AppDeployToolkit.exe') { return 0 }
+        if ($name -ieq 'Invoke-AppDeployToolkit.ps1') { return 1 }
+        if ($name -ieq 'install.ps1') { return 2 }
+        $setupish = $name -match '(?i)setup|install'
+        $x64 = $name -match '(?i)x64|64bit|amd64|win64'
+        if ($ext -in '.msi', '.exe' -and $setupish -and $x64) { return 3 }
+        if ($ext -in '.msi', '.exe' -and $setupish) { return 4 }
+        if ($ext -eq '.msi') { return $(if ($x64) { 5 } else { 6 }) }
+        if ($ext -eq '.exe') { return $(if ($x64) { 7 } else { 8 }) }
+        return 99
+    }
+    $list = foreach ($f in @($Files)) {
+        $p = [string]$f.path
+        $r = & $rank $p
+        if ($r -lt 99) { [pscustomobject]@{ path = $p; size = [long]$f.size; Depth = @($p -split '[\\/]').Count; Rank = $r } }
+    }
+    return @(@($list) | Sort-Object Depth, Rank, path | ForEach-Object { [ordered]@{ path = $_.path; size = $_.size } })
+}
+
+function Global:Expand-ZipSafely {
+    <#
+      Unpacks a .zip into -Destination without trusting it: every entry's path must be a safe path inside it
+      (Test-PackageRelativePath - no '..', no root, no drive), symbolic links are skipped, and the files and bytes
+      written are counted as they are written (an entry's stated size can lie) - past -MaxFiles or -MaxBytes it
+      stops and throws. Folders a Mac adds (__MACOSX, .DS_Store) are left out. @{ files; bytes; skipped }.
+    #>
+    param([Parameter(Mandatory = $true)][string]$ZipPath, [Parameter(Mandatory = $true)][string]$Destination, [long]$MaxBytes = 8GB, [int]$MaxFiles = 5000)
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $sep = [System.IO.Path]::DirectorySeparatorChar
+    if (-not (Test-Path -LiteralPath $Destination)) { [void](New-Item -ItemType Directory -Path $Destination -Force) }
+    $root = [System.IO.Path]::GetFullPath($Destination).TrimEnd($sep) + $sep
+    $files = 0; [long]$bytes = 0; $skipped = New-Object System.Collections.Generic.List[string]
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+    try {
+        foreach ($e in $zip.Entries) {
+            $name = [string]$e.FullName
+            if ($name.EndsWith('/') -or $name.EndsWith('\')) { continue }   # a folder: made as its files need it
+            if ($name -match '(?i)(^|[\\/])__MACOSX([\\/]|$)' -or $name -match '(?i)(^|[\\/])\.DS_Store$') { $skipped.Add($name); continue }
+            # Unix symbolic link (mode 0xA000 in the high bits of the external attributes): not followed, not written.
+            if ((($e.ExternalAttributes -shr 16) -band 0xF000) -eq 0xA000) { $skipped.Add($name); continue }
+            if (-not (Test-PackageRelativePath $name)) { throw "The .zip holds a path that isn't allowed: '$name' - nothing was added." }
+            $files++
+            if ($files -gt $MaxFiles) { throw "The .zip holds more than $MaxFiles files - too many for one package." }
+            $dest = [System.IO.Path]::GetFullPath((Join-Path $Destination ($name -replace '[\\/]+', $sep)))
+            if (-not $dest.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { throw "The .zip holds a path outside its folder: '$name' - nothing was added." }
+            $dir = Split-Path -Parent $dest
+            if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+            $in = $e.Open(); $out = [System.IO.File]::Create($dest)
+            try {
+                $buf = New-Object byte[] 81920
+                while (($n = $in.Read($buf, 0, $buf.Length)) -gt 0) {
+                    $bytes += $n
+                    if ($bytes -gt $MaxBytes) { throw "The .zip unpacks to more than $([Math]::Round($MaxBytes / 1GB)) GB - too large for one package." }
+                    $out.Write($buf, 0, $n)
+                }
+            }
+            finally { $out.Dispose(); $in.Dispose() }
+        }
+    }
+    finally { $zip.Dispose() }
+    return @{ files = $files; bytes = $bytes; skipped = $skipped.ToArray() }
+}
+
+function Global:Get-PackageFolderFiles {
+    # The files under a folder as @(@{ path (relative, with \); size; modified }), no .intunewin unless -All; @() when it isn't there.
+    param([string]$Folder, [switch]$All)
+    if (-not $Folder -or -not (Test-Path -LiteralPath $Folder -PathType Container)) { return @() }
+    $sep = [System.IO.Path]::DirectorySeparatorChar
+    $root = [System.IO.Path]::GetFullPath($Folder).TrimEnd($sep) + $sep
+    return @(Get-ChildItem -LiteralPath $Folder -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object { $All -or $_.Extension -ne '.intunewin' } | Sort-Object FullName | ForEach-Object {
+        [ordered]@{ path = ($_.FullName.Substring($root.Length) -replace '/', '\'); size = [long]$_.Length; modified = $_.LastWriteTimeUtc.ToString('yyyy-MM-ddTHH:mm:ssZ') } })
 }

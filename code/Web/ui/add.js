@@ -99,46 +99,123 @@ async function showWingetDetail(x) {
 
 // ---- an installer: drop, upload in pieces, review
 function resetInstaller() {
-  aiInfo = null; aiUpload = null;
+  aiInfo = null; aiUpload = null; delete $('aiName').dataset.touched; $('aiSetupRow').hidden = true;
   $('aiReview').hidden = true; $('aiProgress').hidden = true; $('aiDrop').hidden = false; $('aiFile').value = '';
 }
 $('aiDrop').addEventListener('click', () => $('aiFile').click());
 $('aiDrop').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('aiFile').click(); } });
-$('aiFile').addEventListener('change', () => { if ($('aiFile').files[0]) startUpload($('aiFile').files[0]); });
+$('aiFile').addEventListener('change', () => { if ($('aiFile').files[0]) startUpload({ file: $('aiFile').files[0] }); });
+$('aiFolder').addEventListener('change', () => { const p = pickFromFolderInput($('aiFolder')); $('aiFolder').value = ''; if (p) startUpload(p); });
+$('aiFolderBtn').addEventListener('click', e => { e.stopPropagation(); $('aiFolder').click(); });
 for (const ev of ['dragenter', 'dragover']) $('aiDrop').addEventListener(ev, e => { e.preventDefault(); $('aiDrop').classList.add('over'); });
 for (const ev of ['dragleave', 'drop']) $('aiDrop').addEventListener(ev, () => $('aiDrop').classList.remove('over'));
-$('aiDrop').addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) startUpload(f); });
+$('aiDrop').addEventListener('drop', async e => { e.preventDefault(); const p = await pickFromDrop(e.dataTransfer); if (p) startUpload(p); });
 const b64 = buf => { let s = ''; const a = new Uint8Array(buf); for (let i = 0; i < a.length; i += 0x8000) s += String.fromCharCode.apply(null, a.subarray(i, i + 0x8000)); return btoa(s); };
-async function startUpload(file) {
-  $('addError').hidden = true;
-  if (!/\.(msi|exe)$/i.test(file.name)) { showAddError('Drop an .msi or .exe installer.'); return; }
-  const st = await api('/api/upload-start', { fileName: file.name, size: file.size });
-  if (!st.ok) { showAddError(st.error); return; }
-  aiUpload = { id: st.uploadId, added: false };
-  $('aiDrop').hidden = true; $('aiProgress').hidden = false; $('aiReview').hidden = true;
-  const piece = 3 * 1024 * 1024;
-  for (let off = 0; off < file.size; off += piece) {
-    if (!aiUpload || aiUpload.id !== st.uploadId) return;   // closed meanwhile
-    const data = b64(await file.slice(off, off + piece).arrayBuffer());
-    const r = await api('/api/upload-chunk', { uploadId: st.uploadId, offset: off, data });
-    if (!r.ok) { showAddError(r.error); resetInstaller(); return; }
-    const pct = Math.round(100 * r.received / file.size);
-    $('aiBar').style.width = pct + '%'; $('aiProgressText').textContent = `Uploading ${file.name} - ${pct} %`;
+// ---- uploads (2.34.0): one installer or a .zip of its folder, or a whole folder - in pieces of 3 MB
+const PIECE = 3 * 1024 * 1024;
+// pick: { file } or { folderName, files: [{ file, path }] } (paths inside the folder). The finished upload's answer, with uploadId.
+async function uploadPick(pick, say) {
+  const mb = n => (n / 1048576).toFixed(1) + ' MB';
+  if (pick.file) {
+    const f = pick.file;
+    const st = await api('/api/upload-start', { fileName: f.name, size: f.size });
+    if (!st.ok) return st;
+    for (let off = 0; off < f.size; off += PIECE) {
+      const r = await api('/api/upload-chunk', { uploadId: st.uploadId, offset: off, data: b64(await f.slice(off, off + PIECE).arrayBuffer()) });
+      if (!r.ok) { api('/api/upload-cancel', { uploadId: st.uploadId }); return r; }
+      say(`Uploading ${f.name} - ${Math.round(100 * r.received / f.size)} %`, r.received / f.size);
+    }
+    say(/\.zip$/i.test(f.name) ? `Unpacking ${f.name}...` : `Reading ${f.name}...`);
+    const fin = await api('/api/upload-finish', { uploadId: st.uploadId });
+    if (!fin.ok) api('/api/upload-cancel', { uploadId: st.uploadId });
+    return { ...fin, uploadId: st.uploadId };
   }
-  $('aiProgressText').textContent = `Reading ${file.name}...`;
-  const f = await api('/api/upload-finish', { uploadId: st.uploadId });
+  const list = pick.files;
+  if (!list.length) return { ok: false, error: 'The folder is empty.' };
+  if (list.length > 5000) return { ok: false, error: `The folder holds ${list.length} files - at most 5000 go into one package.` };
+  const total = list.reduce((n, x) => n + x.file.size, 0);
+  const st = await api('/api/folder-upload-start', { folderName: pick.folderName, files: list.map(x => ({ path: x.path, size: x.file.size })) });
+  if (!st.ok) return st;
+  let sent = 0;
+  for (const [i, x] of list.entries()) {
+    for (let off = 0; off < x.file.size; off += PIECE) {
+      const piece = x.file.slice(off, off + PIECE);
+      const r = await api('/api/upload-chunk', { uploadId: st.uploadId, index: i, offset: off, data: b64(await piece.arrayBuffer()) });
+      if (!r.ok) { api('/api/upload-cancel', { uploadId: st.uploadId }); return r; }
+      sent += piece.size;
+      say(`Uploading ${pick.folderName} - ${Math.round(100 * sent / Math.max(1, total))} % (file ${i + 1} of ${list.length}, ${mb(total)})`, sent / Math.max(1, total));
+    }
+  }
+  say(`Reading ${pick.folderName}...`);
+  const fin = await api('/api/upload-finish', { uploadId: st.uploadId });
+  if (!fin.ok) api('/api/upload-cancel', { uploadId: st.uploadId });
+  return { ...fin, uploadId: st.uploadId };
+}
+// A folder input's files, with their paths inside the chosen folder (its own name left off).
+function pickFromFolderInput(input) {
+  const files = [...input.files]; if (!files.length) return null;
+  const top = files[0].webkitRelativePath.split('/')[0];
+  return { folderName: top, files: files.map(f => ({ file: f, path: f.webkitRelativePath.split('/').slice(1).join('/') })) };
+}
+// What was dropped: a folder (read through its entries, subfolders too) or one file.
+async function pickFromDrop(dt) {
+  const entries = [...(dt.items || [])].map(i => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null)).filter(Boolean);
+  if (entries.length === 1 && entries[0].isDirectory) { const files = []; await walkEntry(entries[0], '', files); return { folderName: entries[0].name, files }; }
+  const f = dt.files && dt.files[0]; return f ? { file: f } : null;
+}
+async function walkEntry(dir, prefix, out) {
+  const reader = dir.createReader(); let batch;
+  do {
+    batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+    for (const e of batch) {
+      if (e.isDirectory) await walkEntry(e, prefix + e.name + '/', out);
+      else out.push({ file: await new Promise((res, rej) => e.file(res, rej)), path: prefix + e.name });
+    }
+  } while (batch.length);
+}
+const isPickable = pick => !!pick && (pick.files ? pick.files.length > 0 : /\.(msi|exe|zip)$/i.test(pick.file.name));
+const fmtMB = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+
+// ---- Add apps > Installer: an installer, a .zip or a folder
+async function startUpload(pick) {
+  if (pick instanceof File) pick = { file: pick };
+  $('addError').hidden = true;
+  if (!isPickable(pick)) { showAddError('Drop an .msi or .exe installer, a .zip of its folder, or the folder itself.'); return; }
+  $('aiDrop').hidden = true; $('aiProgress').hidden = false; $('aiReview').hidden = true;
+  const token = {}; aiUpload = { id: '', added: false, token };
+  const f = await uploadPick(pick, (t, frac) => { if (aiUpload && aiUpload.token === token) { $('aiProgressText').textContent = t; if (frac !== undefined) $('aiBar').style.width = Math.round(100 * frac) + '%'; } });
+  if (!aiUpload || aiUpload.token !== token) { if (f.uploadId) api('/api/upload-cancel', { uploadId: f.uploadId }); return; }   // closed meanwhile
+  aiUpload.id = f.uploadId || '';
   if (!f.ok) { showAddError(f.error); resetInstaller(); return; }
+  showUploadReview(f);
+}
+function showUploadReview(f) {
   aiInfo = f;
   $('aiProgress').hidden = true; $('aiReview').hidden = false;
   const kinds = { inno: 'Inno Setup', nsis: 'NSIS', burn: 'WiX bundle', installshield: 'InstallShield', advanced: 'Advanced Installer' };
-  $('aiFacts').textContent = `${f.fileName} (${(f.size / 1048576).toFixed(1)} MB) - ${f.kind === 'msi' ? 'Windows Installer package' : 'setup program' + (f.exeKind ? ' made with ' + kinds[f.exeKind] : '')}${f.signer ? ', signed by ' + f.signer.replace(/^CN=([^,]+).*$/, '$1') : ', not signed'}.`;
-  $('aiName').value = f.name; $('aiPublisher').value = f.publisher; $('aiVersion').value = f.version;
+  const what = f.kind === 'msi' ? 'Windows Installer package' : f.kind === 'exe' ? 'setup program' + (f.exeKind ? ' made with ' + kinds[f.exeKind] : '') : '';
+  $('aiFacts').textContent = f.folder
+    ? `${f.fileName}: ${f.fileCount} file${f.fileCount === 1 ? '' : 's'}, ${fmtMB(f.size)} - all of them go into the package.${what ? ` Its setup file is a ${what}${f.signer ? ', signed by ' + f.signer.replace(/^CN=([^,]+).*$/, '$1') : ''}.` : ''}`
+    : `${f.fileName} (${(f.size / 1048576).toFixed(1)} MB) - ${what}${f.signer ? ', signed by ' + f.signer.replace(/^CN=([^,]+).*$/, '$1') : ', not signed'}.`;
+  // A folder: which of its files is the setup file (suggested; another one makes the proposal again).
+  $('aiSetupRow').hidden = !f.folder;
+  if (f.folder) $('aiSetup').replaceChildren(el('option', { value: '', text: '(none - I write the commands)' }), ...(f.candidates || []).map(c => el('option', { value: c, text: c })));
+  if (f.folder) $('aiSetup').value = f.setup || '';
+  if (!$('aiName').dataset.touched) $('aiName').value = f.name;
+  $('aiPublisher').value = f.publisher; $('aiVersion').value = f.version;
   $('aiInstall').value = f.installCommand; $('aiUninstall').value = f.uninstallCommand;
   $('aiDetection').value = f.detection === 'Msi' ? `MSI product code ${f.productCode}${f.version ? ', version ' + f.version + ' or newer' : ''}` : f.detection === 'Script' ? 'A script: the name and version Windows lists' : 'Nothing yet - set it in the editor';
   $('aiNotes').replaceChildren(...[...(f.nameProblem ? [f.nameProblem + ' Change the name.'] : []), ...f.notes].map(n => el('li', { text: n })));
   $('aiManagedRow').hidden = !f.managedOk; $('aiManaged').checked = !!f.managedOk;
   updateAddButton(); $('aiName').focus();
 }
+$('aiSetup').addEventListener('change', async () => {
+  if (!aiUpload || !aiUpload.id) return;
+  const r = await api('/api/upload-setup', { uploadId: aiUpload.id, setup: $('aiSetup').value });
+  if (!r.ok) { showAddError(r.error); return; }
+  showUploadReview({ ...r, uploadId: aiUpload.id });
+});
+$('aiName').addEventListener('input', () => { $('aiName').dataset.touched = '1'; });
 function showAddError(t) { $('addError').textContent = t; $('addError').hidden = false; }
 
 // ---- a PowerShell script app
@@ -252,10 +329,12 @@ $('btnAlThisPc').addEventListener('click', () => readList({ thisPc: true }));
 
 // Dropping an installer anywhere on the Apps page starts Add apps with it.
 document.addEventListener('dragover', e => { if (!$('viewApps').hidden && [...(e.dataTransfer.items || [])].some(i => i.kind === 'file')) e.preventDefault(); });
-document.addEventListener('drop', e => {
-  if ($('dlgAdd').open || $('viewApps').hidden) return;
-  const f = e.dataTransfer && e.dataTransfer.files[0];
-  if (f && /\.(msi|exe)$/i.test(f.name)) { e.preventDefault(); openAdd('installer', f); }
+document.addEventListener('drop', async e => {
+  if ($('dlgAdd').open || $('viewApps').hidden || !e.dataTransfer) return;
+  // Read before the first await - a drop's items are gone after it. An installer, a .zip, or a folder.
+  e.preventDefault();
+  const p = await pickFromDrop(e.dataTransfer);
+  if (isPickable(p)) openAdd('installer', p);
 });
 
 // Down arrow from the winget search goes into the results; the picks are then ticked with Space.
