@@ -55,6 +55,12 @@ function Global:Get-WebCatalog {
             $row = Get-CatalogRow -App $apps[$i] -Index $i -PackageIndex $index
             # winget's newest version: of its own ID, or (an own package, 2.36.0) of the one it watches.
             $wk = [string]$(if ($apps[$i].wingetId) { $apps[$i].wingetId } else { $apps[$i].watchWinget })
+            # Newer than what it has: its App version - or, watching winget, the installer already in its folder (2.38.0:
+            # one fetched but not yet released was listed again and again).
+            $ahead = [string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })
+            if (-not $apps[$i].wingetId -and $apps[$i].watchWinget -and $Global:App.WingetLatest -and $Global:App.WingetLatest[$wk.ToLowerInvariant()]) {
+                try { $fi = Get-WebInstallerInfo $apps[$i].appName -SetupFile ([string]$apps[$i].setupFile); if ($fi.version -and (Compare-AppVersionText $ahead $fi.version) -eq 1) { $ahead = [string]$fi.version } } catch { }
+            }
             # The pilot release, found once (a plain loop - a pipeline per field is slow for 500 apps on Windows PowerShell).
             $pr = $null; foreach ($r in @($apps[$i].releases)) { if ($r -and $r.state -eq 'pilot') { $pr = $r; break } }
             $rows.Add([ordered]@{
@@ -77,7 +83,7 @@ function Global:Get-WebCatalog {
                 available    = [int]$row.Available
                 uninstall    = [int]$row.Uninstall
                 wingetVersion = [string]$(if ($Global:App.WingetLatest -and $wk) { $Global:App.WingetLatest[$wk.ToLowerInvariant()] })
-                newerOnWinget = [bool]($Global:App.WingetLatest -and $wk -and (Compare-AppVersionText ([string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })) ([string]$Global:App.WingetLatest[$wk.ToLowerInvariant()])) -eq 1)
+                newerOnWinget = [bool]($Global:App.WingetLatest -and $wk -and (Compare-AppVersionText $ahead ([string]$Global:App.WingetLatest[$wk.ToLowerInvariant()])) -eq 1)
                 watchWinget  = [string]$apps[$i].watchWinget
                 managed      = [bool]$apps[$i].managedUpdates
                 # Company Portal, Microsoft 365 Apps, Store/other Intune types: nothing to package.
@@ -232,7 +238,19 @@ function Global:Exit-CatalogFileLock {
 }
 
 function Global:Update-WebCatalogApp {
-    # Changes one app's saved file: reads it, lets -Change edit the record, writes it back (with a backup).
+    <#
+      Changes one app's saved file: reads it, lets -Change edit the record, writes it back (with a backup) - holding
+      the catalog lock (2.38.0; it can be taken again, so a caller holding it already is fine). A long step (an upload
+      copied into the packages folder, a call to Intune) then needn't hold it the whole time - only this write does.
+    #>
+    param([string]$Name, [scriptblock]$Change, $Undo = $null)
+    $r = Invoke-WithCatalogLock { Update-WebCatalogAppHeld -Name $Name -Change $Change -Undo $Undo }.GetNewClosure()
+    if ($r -is [hashtable] -and $r.ContainsKey('ok') -and -not $r.ok) { throw [string]$r.error }
+    return $r
+}
+
+function Global:Update-WebCatalogAppHeld {
+    # Update-WebCatalogApp with the catalog lock held.
     param([string]$Name, [scriptblock]$Change, $Undo = $null)
     $catalog = Read-WebCatalogRecords
     $app = $catalog.Apps | Where-Object { $_.appName -eq $Name } | Select-Object -First 1
@@ -680,8 +698,9 @@ function Global:Invoke-WebApi {
         '/api/filters' { return (Get-WebAssignmentFilters) }
         '/api/download-checks'  { return (Invoke-WebDownloadChecks) }
         '/api/retire-start'     { return (Start-WebRetire $Data) }
-        '/api/lob-retire'       { return (Invoke-WithCatalogLock { Remove-WebReplacedLobApp $Data }) }
-        '/api/app-installer'    { return (Invoke-WithCatalogLock { Set-WebAppInstaller $Data }) }
+        # Not under the catalog lock as a whole (2.38.0): a call to Intune, files copied - their catalog write takes it.
+        '/api/lob-retire'       { return (Remove-WebReplacedLobApp $Data) }
+        '/api/app-installer'    { return (Set-WebAppInstaller $Data) }
         '/api/app-duplicate'    { return (Invoke-WithCatalogLock { Copy-WebApp $Data }) }
         '/api/sandbox-detection' { return (Invoke-WithCatalogLock { Set-WebSandboxDetection $Data }) }
         '/api/folder-upload-start' { return (Start-WebFolderUpload $Data) }
@@ -719,7 +738,7 @@ function Global:Invoke-WebApi {
         '/api/upload-chunk'     { return (Add-WebUploadChunk $Data) }
         '/api/upload-finish'    { return (Complete-WebUpload $Data) }
         '/api/upload-cancel'    { return (Remove-WebUpload $Data) }
-        '/api/add-installer'    { return (Invoke-WithCatalogLock { Add-WebInstallerApp $Data }) }
+        '/api/add-installer'    { return (Add-WebInstallerApp $Data) }
         '/api/script-templates' { return (Get-WebScriptTemplates $Data) }
         '/api/add-script'       { return (Invoke-WithCatalogLock { Add-WebScriptApp $Data }) }
         '/api/add-psadt'        { return (Invoke-WithCatalogLock { Add-WebPsadtApp $Data }) }

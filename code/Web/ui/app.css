@@ -400,6 +400,7 @@ dialog.ask h2 { font-size: 15px; line-height: 1.4; }
 .progress .bar { flex: 1; height: 6px; border-radius: 999px; background: var(--bd2); overflow: hidden; }
 .progress .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
 #deployRows td .why { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
+#deployRows td .why.pkgwarn { color: var(--warn); }
 #dlgDeploy .actions .spacer { flex: 1; }
 #dlgReplace label { display: block; margin-top: 10px; font-size: 12px; color: var(--muted); }
 #dlgReplace label select, #dlgReplace label input { display: block; width: 100%; margin-top: 4px; }
@@ -1576,8 +1577,9 @@ body[data-view="home"] #setupBanner { display: none; }
 #aPkgInfo .pkgfiles { margin-top: 8px; }
 #aPkgInfo .pkgfiles summary { cursor: pointer; font-size: 12.5px; }
 #aPkgInfo .pkgfiles ul { list-style: none; margin: 6px 0 0; padding: 0; max-height: 260px; overflow: auto; }
-#aPkgInfo .pkgfiles li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 3px 0; border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent); font-size: 12.5px; }
+#aPkgInfo .pkgfiles li { display: grid; grid-template-columns: minmax(0, 1fr) 5.5em 7.5em 1.6em; gap: 10px; align-items: center; padding: 3px 0; border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent); font-size: 12.5px; }
 #aPkgInfo .pkgfiles .pfpath { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#aPkgInfo .pkgfiles li > :nth-child(2) { text-align: right; }
 #aPkgInfo .pkgfiles .bx { border: 0; background: none; color: inherit; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; border-radius: var(--r-s); }
 #aPkgInfo .pkgfiles .bx:hover { color: var(--err); background: var(--err-bg); }
 #dlgPkgUp fieldset.plain { border: 0; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
@@ -1585,8 +1587,10 @@ body[data-view="home"] #setupBanner { display: none; }
 .dropalt { margin: 8px 0 0; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* 2.35.0: Add and send's summary */
-#dlgAddDone .addfix { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+#dlgAddDone .addfix { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 #dlgAddDone .addfix .why { font-size: 12.5px; }
-#dlgAddDone .addfix { flex-wrap: wrap; }
 .why.pkgwarn { display: block; color: var(--warn); }
-.namewarn { margin: 4px 0 8px; padding: 6px 10px; border-radius: var(--r-s); background: var(--warn-bg); color: var(--warn); font-size: 12.5px; }
+.namewarn { grid-column: 1 / -1; margin: 4px 0 8px; padding: 6px 10px; border-radius: var(--r-s); background: var(--warn-bg); color: var(--warn); font-size: 12.5px; }
+/* 2.38.0: the starter set's categories in Add apps > From a list */
+#alGrid .grouprow th { text-align: left; font-size: 12px; font-weight: 600; text-transform: none; color: var(--muted); padding-top: 12px; background: transparent; }
+#alGrid td .small { margin-top: 2px; }

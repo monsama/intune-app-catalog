@@ -339,7 +339,8 @@ function Global:Get-PackagerChoice {
 function Global:Get-SetupFileCandidates {
     <#
       Pure: the files of an uploaded folder that can be its setup file, best first - @(@{ path; size }).
-      Shallowest first (the setup is normally at the top); then the PSADT 4 launcher (Invoke-AppDeployToolkit.exe,
+      Setup-like files (the PSADT 4 launcher, install.ps1, setup/install-named installers, .msi) before plain .exe files,
+      each shallowest first; within a depth the PSADT 4 launcher (Invoke-AppDeployToolkit.exe,
       else its .ps1), an install.ps1, setup/install-named installers (64-bit first), any .msi, any .exe.
     #>
     param($Files)
@@ -350,6 +351,8 @@ function Global:Get-SetupFileCandidates {
         if ($name -ieq 'Invoke-AppDeployToolkit.exe') { return 0 }
         if ($name -ieq 'Invoke-AppDeployToolkit.ps1') { return 1 }
         if ($name -ieq 'install.ps1') { return 2 }
+        # An uninstaller is never the setup (2.38.0): "Uninstall.exe" matched "install".
+        if ($name -match '(?i)^unins|uninstall') { return 99 }
         $setupish = $name -match '(?i)setup|install'
         $x64 = $name -match '(?i)x64|64bit|amd64|win64'
         if ($ext -in '.msi', '.exe' -and $setupish -and $x64) { return 3 }
@@ -363,7 +366,9 @@ function Global:Get-SetupFileCandidates {
         $r = & $rank $p
         if ($r -lt 99) { [pscustomobject]@{ path = $p; size = [long]$f.size; Depth = @($p -split '[\\/]').Count; Rank = $r } }
     }
-    return @(@($list) | Sort-Object Depth, Rank, path | ForEach-Object { [ordered]@{ path = $_.path; size = $_.size } })
+    # A launcher, install.ps1, setup-named installer or .msi anywhere comes before a plain .exe that is merely shallower
+    # (2.38.0): a top-level vcredist_x64.exe beside Setup\setup.exe isn't the setup. Within each, the shallowest first.
+    return @(@($list) | Sort-Object @{ Expression = { if ($_.Rank -le 6) { 0 } else { 1 } } }, Depth, Rank, path | ForEach-Object { [ordered]@{ path = $_.path; size = $_.size } })
 }
 
 function Global:Expand-ZipSafely {

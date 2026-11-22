@@ -318,7 +318,8 @@ function pkgFilesView() {
   const setup = (editorInstaller && editorInstaller.found ? editorInstaller.file : '') || r.setupFile || '';
   const row = f => el('li', {}, el('span', { class: 'pfpath mono', text: f.path, title: f.path }), el('span', { class: 'muted', text: fmtMB(f.size) }),
     f.path.toLowerCase() === setup.toLowerCase() ? el('span', { class: 'pill ok', text: 'setup', title: 'The setup file Package uses' })
-      : /\.(msi|exe|ps1)$/i.test(f.path) ? el('button', { type: 'button', class: 'linkish', text: 'Use as setup', title: 'Package uses this file as the setup file', onclick: () => setPkgSetup(f.path) }) : el('span'),
+      // Not the uninstall script (2.38.0): it was offered as a setup file too.
+      : /\.(msi|exe|ps1)$/i.test(f.path) && !/(^|[\\/])uninstall\.ps1$/i.test(f.path) ? el('button', { type: 'button', class: 'linkish', text: 'Use as setup', title: 'Package uses this file as the setup file', onclick: () => setPkgSetup(f.path) }) : el('span'),
     el('button', { type: 'button', class: 'bx', text: '×', title: `Delete ${f.path} from the packages folder`, 'aria-label': `Delete ${f.path}`, onclick: () => deletePkgFile(f.path) }));
   const d = el('details', { class: 'pkgfiles' }, el('summary', { text: `Files in its packages folder - ${r.files.length}, ${fmtMB(r.total)}${r.package ? ` · package built ${fmtWhen(r.package.modified)}` : ''}` }),
     el('ul', {}, ...r.files.slice(0, 300).map(row)), r.files.length > 300 ? el('p', { class: 'muted', text: `... and ${r.files.length - 300} more.` }) : '');
@@ -333,7 +334,7 @@ async function refreshPkg(name) {
 }
 async function deletePkgFile(path) {
   const name = editingName;
-  if (!(await ask(`Delete ${path} from the packages folder?\n\nIt is left out of the next package. Backups don't keep package files.`, { ok: 'Delete' }))) return;
+  if (!(await ask(`Delete ${path} from the packages folder?\n\nIt is left out of the next package. Backups don't keep package files - this can't be undone.`, { ok: 'Delete', danger: true }))) return;
   const r = await api('/api/package-file-delete', { name, path });
   if (!r.ok) { toast(r.error, true); return; }
   toast(`${path} deleted.`); refreshPkg(name);
@@ -837,10 +838,7 @@ function foldIntoMenu(ids, opts = {}) {
   });
   menu.addEventListener('keydown', e => {
     if (e.key === 'Escape') { close(); more.focus(); return; }
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-    const items = [...menu.querySelectorAll('button:not(:disabled)')], i = items.indexOf(document.activeElement);
-    if (!items.length) return;
-    e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+    menuStep(e, menu);
   });
   document.addEventListener('click', e => { if (!menu.hidden && !menu.contains(e.target)) close(); });
   btns[0].before(more); for (const b of btns) b.hidden = true;
@@ -848,17 +846,21 @@ function foldIntoMenu(ids, opts = {}) {
 }
 // A small menu under -anchor (2.37.0): [text, title, run] each; closes on a choice, Escape or a click elsewhere.
 function popMenu(anchor, items) {
-  document.querySelectorAll('.menu.pop').forEach(m => m.remove());
-  const menu = el('div', { class: 'menu pop', role: 'menu' });
-  const close = () => { menu.remove(); document.removeEventListener('click', away, true); anchor.focus(); };
-  const away = e => { if (!menu.contains(e.target)) close(); };
-  menu.append(...items.map(([text, title, run]) => el('button', { role: 'menuitem', type: 'button', title, text, onclick: () => { close(); run(); } })));
+  // Its button again: closes it.
+  const open = document.querySelector('.menu.pop');
+  if (open) { open.remove(); anchor.setAttribute('aria-expanded', 'false'); if (open.__anchor === anchor) return; }
+  const menu = el('div', { class: 'menu pop', role: 'menu' }); menu.__anchor = anchor;
+  anchor.setAttribute('aria-haspopup', 'menu'); anchor.setAttribute('aria-expanded', 'true');
+  // Focus goes back to the button only after Escape or a choice - a click elsewhere keeps it where it went (2.38.0).
+  const close = back => { if (!menu.isConnected) return; menu.remove(); anchor.setAttribute('aria-expanded', 'false'); document.removeEventListener('click', away, true); if (back) anchor.focus(); };
+  const away = e => { if (!menu.contains(e.target) && e.target !== anchor) close(false); };
+  menu.append(...items.map(([text, title, run]) => el('button', { role: 'menuitem', type: 'button', title, text, onclick: () => { close(true); run(); } })));
   menu.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { e.stopPropagation(); close(); return; }
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-    const b = [...menu.querySelectorAll('button')], i = b.indexOf(document.activeElement);
-    e.preventDefault(); b[(i + (e.key === 'ArrowDown' ? 1 : b.length - 1)) % b.length].focus();
+    if (e.key === 'Escape') { e.stopPropagation(); close(true); return; }
+    menuStep(e, menu);
   });
+  // Tab out of it: it closes (Escape couldn't reach it any more).
+  menu.addEventListener('focusout', e => { if (!menu.contains(e.relatedTarget) && e.relatedTarget) close(false); });
   document.body.append(menu);
   const r = anchor.getBoundingClientRect(); placeMenu(menu, r.left, r.bottom + 4);
   setTimeout(() => document.addEventListener('click', away, true), 0);
@@ -877,14 +879,18 @@ function placeMenu(m, x, y) {
   m.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + 'px';
   const first = m.querySelector('button:not(:disabled)'); if (first) first.focus();
 }
-// Arrow keys move between a menu's items; Escape closes it (every .menu).
-for (const m of document.querySelectorAll('.menu')) m.addEventListener('keydown', e => {
-  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-  const items = [...m.querySelectorAll('button:not(:disabled)')], i = items.indexOf(document.activeElement);
-  if (!items.length) return;   // a menu of checkboxes and radios (Columns): the arrows are theirs
+// Arrow keys move between a menu's items, Home and End to the first and last (2.38.0) - only items that are shown
+// and can be used (the More menu hides what can't apply). True when it handled the key.
+function menuStep(e, m) {
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return false;
+  const items = [...m.querySelectorAll('button:not(:disabled)')].filter(b => !b.hidden && b.offsetParent !== null), i = items.indexOf(document.activeElement);
+  if (!items.length) return false;   // a menu of checkboxes and radios (Columns): the keys are theirs
   e.preventDefault();
-  items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
-});
+  const to = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : (i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+  items[to].focus();
+  return true;
+}
+for (const m of document.querySelectorAll('.menu')) m.addEventListener('keydown', e => menuStep(e, m));
 $('btnCatalog').addEventListener('click', async e => {
   e.stopPropagation();
   closeMenu();
@@ -1038,7 +1044,10 @@ function readDeploy() {
 let deployPlan = [], deployResults = {}, deployStop = false, deployRunning = false;
 function setDeployStatus(name, cls, text, detail) {
   const row = [...$('deployRows').children].find(r => r.dataset.name === name);
-  if (row) row.lastChild.replaceChildren(el('span', { class: 'pill ' + cls, text, title: detail || '' }), detail ? el('span', { class: 'why', text: detail }) : '');
+  // The package's warnings stay under its status while it is sent (2.38.0) - they went with the first status change.
+  const plan = (deployPlan || []).find(a => a.name === name), warns = plan && plan.ready ? (plan.warnings || []) : [];
+  if (row) row.lastChild.replaceChildren(el('span', { class: 'pill ' + cls, text, title: detail || '' }), detail ? el('span', { class: 'why', text: detail }) : '',
+    ...warns.map(w => el('span', { class: 'why pkgwarn', text: '⚠ ' + w })));
 }
 // "3 of 10 - 2 done, 1 failed" and the bar, from deployResults.
 function deployProgress() {
@@ -1276,6 +1285,7 @@ $('btnGbGo').addEventListener('click', async () => {
 const menu = $('appMenu');
 function oneSelected() { return selected.size === 1 ? apps.find(a => a.name === [...selected][0]) : null; }
 function openMenu(x, y) {
+  menuOpener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
   const one = oneSelected();
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
@@ -1288,7 +1298,7 @@ function openMenu(x, y) {
     managed: any,
     rollback: !!(one && one.managed && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && (one.previousVersions || []).length > 1) };
   const why = {
-    edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', filldetails: 'Only for Winget apps - their details come from winget.', watchfetch: one ? 'Only for an own package that watches a winget package for new versions (the editor, Details: Watch winget for new versions).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
+    edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', filldetails: 'Only for Winget apps - their details come from winget.', watchfetch: one ? 'Only for an own package that watches a winget package for new versions (the editor: Winget package to watch).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
     sandbox: one ? 'Windows Sandbox has no winget - test a Winget app on a pilot device.' : 'Select exactly one app.',
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
@@ -1338,7 +1348,9 @@ function openMenu(x, y) {
   catMenu.hidden = true;
   placeMenu(menu, x, y);
 }
-function closeMenu() { menu.hidden = true; }
+// Escape gives focus back to what opened it (2.38.0) - the More button, the panel's More..., the row.
+let menuOpener = null;
+function closeMenu(back) { const was = !menu.hidden; menu.hidden = true; if (back && was && menuOpener && menuOpener.isConnected) menuOpener.focus(); }
 $('btnMore').addEventListener('click', e => { e.stopPropagation(); const r = $('btnMore').getBoundingClientRect(); openMenu(r.left, r.bottom + 4); });
 $('gridBody').addEventListener('contextmenu', e => {
   const tr = e.target.closest('tr'); if (!tr) return;
@@ -1347,7 +1359,7 @@ $('gridBody').addEventListener('contextmenu', e => {
   openMenu(e.clientX, e.clientY);
 });
 document.addEventListener('click', e => { if (!menu.contains(e.target)) closeMenu(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(true); });
 
 function runDialog(title, text) {
   $('runTitle').textContent = title; $('runText').textContent = text || ''; $('runLog').textContent = '';
@@ -1756,7 +1768,7 @@ async function fetchWatched(name) {
   const c = await api('/api/watch-check', { name });
   if (!c.ok) { toast(c.error, true); return; }
   if (!c.newer) { toast(`winget's newest is ${c.latest} - ${c.folderVersion ? `the installer in the folder is ${c.folderVersion}` : `the app is ${c.current || 'on no version yet'}`}. Nothing newer to get.`); return; }
-  if (!(await ask(`Get ${name}'s new installer?\n\nwinget has ${c.latest} (the app: ${c.current || 'no version'}${c.folderVersion ? `, its folder: ${c.folderVersion}` : ''}). It is downloaded from\n${c.url}\nand used only if its SHA256 is the one winget gives${c.file ? ` - it replaces ${c.file}, so the commands still find it` : ''}.`, { ok: 'Get it' }))) return;
+  if (!(await ask(`Get ${name}'s new installer?\n\nwinget has ${c.latest} (the app: ${c.current || 'no version'}${c.folderVersion ? `, its folder: ${c.folderVersion}` : ''}). It is downloaded from\n${c.url}\nand used only if it is an installer of the same type with the SHA256 winget gives${c.signerCheck ? ', signed by the same publisher as the one there' : " (its signature can't be checked here - Windows does that)"}${c.file ? ` - it replaces ${c.file}, so the commands still find it` : ''}.`, { ok: 'Get it' }))) return;
   toast(`Downloading ${c.latest}...`);
   const r = await api('/api/watch-fetch', { name });
   if (!r.ok) { toast(r.error, true); return; }

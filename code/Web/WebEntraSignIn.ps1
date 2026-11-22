@@ -42,21 +42,26 @@ function Global:New-WebRandomHex {
 function Global:Start-WebEntraSignIn {
     <#
       A new sign-in with Microsoft: returns @{ ok; url } - the Entra ID address the browser goes to - or why not.
-      Kept for 10 minutes: its state (the key), nonce and PKCE verifier; at most 50 under way at once.
+      Kept for 10 minutes: its state (the key), nonce and PKCE verifier. At most 5 under way per client
+      (-Client, its address) and 200 in all - the oldest goes when it is full (2.38.0): /auth/login needs no
+      sign-in, so refusing new ones when full let anyone keep every admin out by asking 50 times.
     #>
+    param([string]$Client = '')
     $si = ConvertTo-SignInSettings $Global:App.SignIn
     if (-not $si.Entra) { return @{ ok = $false; why = 'entra-off' } }
     if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; why = 'entra-noconnection' } }
     $pending = $Global:App.Server.Pending
     $now = [DateTime]::UtcNow
     foreach ($k in @($pending.Keys)) { if (($now - $pending[$k].At).TotalMinutes -gt 10) { $pending.Remove($k) } }
-    if ($pending.Count -ge 50) { return @{ ok = $false; why = 'entra-busy' } }
+    $key = if ($Client) { Get-WebThrottleKey $Client } else { '?' }
+    if (@($pending.Values | Where-Object { $_.Client -eq $key }).Count -ge 5) { return @{ ok = $false; why = 'entra-busy' } }
+    while ($pending.Count -ge 200) { $oldest = @($pending.Keys | Sort-Object { $pending[$_].At })[0]; $pending.Remove($oldest) }
     $state = New-WebRandomHex 16; $nonce = New-WebRandomHex 16
     $vb = New-Object byte[] 32; $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create(); try { $rng.GetBytes($vb) } finally { $rng.Dispose() }
     $verifier = ConvertTo-WebBase64Url $vb
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try { $challenge = ConvertTo-WebBase64Url ($sha.ComputeHash([Text.Encoding]::ASCII.GetBytes($verifier))) } finally { $sha.Dispose() }
-    $pending[$state] = @{ Nonce = $nonce; Verifier = $verifier; At = $now }
+    $pending[$state] = @{ Nonce = $nonce; Verifier = $verifier; At = $now; Client = $key }
     $url = Get-EntraAuthorizeUrl -Authority (Get-WebEntraAuthority) -TenantId $Global:App.GraphTenantId -ClientId $Global:App.GraphClientId `
         -RedirectUri (Get-WebEntraRedirectUri) -State $state -Nonce $nonce -CodeChallenge $challenge
     return @{ ok = $true; url = $url }

@@ -286,7 +286,8 @@ function Global:Set-WebSandboxDetection {
     $i = -1; [void][int]::TryParse([string]$Data.index, [ref]$i)
     $e = @($r.installed)[$i]
     if ($i -lt 0 -or -not $e -or -not ([string]$e.name).Trim()) { return @{ ok = $false; error = 'That entry isn''t in the test''s result.' } }
-    $name = ([string]$e.name).Trim(); $ver = ([string]$e.version).Trim()
+    # By its name without the version in it (2.38.0): "7-Zip 24.09 (x64)" would never find 7-Zip 25.
+    $listed = ([string]$e.name).Trim(); $name = Get-ListedBaseName $listed; $ver = ([string]$e.version).Trim()
     if ($ver -and -not (Test-ReleaseVersionText $ver)) { $ver = '' }
     $rule = [pscustomobject]@{ Type = 'Script'; Script_Content = (New-InstalledAppDetectionScript -DisplayName $name -Version $ver) }
     [void](Update-WebCatalogApp -Name $a.appName -Change { param($x) if (-not $x.metadata) { $x.metadata = Get-DefaultAppMetadata -AppName $x.appName -WingetId '' -Uncommon $true }; $x.metadata | Add-Member -NotePropertyName detectionRule -NotePropertyValue $rule -Force }.GetNewClosure())
@@ -521,6 +522,12 @@ function Global:Read-WebPackageList {
       Each with whether the catalog has it. @{ ok; items = @(@{ id; inCatalog }) }.
     #>
     param($Data)
+    # The starter set (2.38.0): the apps most organisations deploy - each with its name, category and why.
+    if ($Data.starter) {
+        $have = @{}; foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { $_.wingetId })) { $have[([string]$a.wingetId).ToLowerInvariant()] = [string]$a.appName }
+        return @{ ok = $true; starter = $true; items = @(Get-StarterAppSet | ForEach-Object { $k = ([string]$_.id).ToLowerInvariant()
+            [ordered]@{ id = $_.id; name = $_.name; category = $_.category; recommended = [bool]$_.recommended; why = $_.why; inCatalog = $(if ($have.ContainsKey($k)) { $have[$k] } else { '' }) } }) }
+    }
     $json = [string]$Data.json
     if ($Data.thisPc) {
         $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("winget-export-" + [guid]::NewGuid().ToString('N') + ".json")

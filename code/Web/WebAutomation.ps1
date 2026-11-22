@@ -499,6 +499,7 @@ function Global:Save-WebInstallerDownload {
         $oldSig = Get-AuthenticodeSignature -LiteralPath $old.FullName
         if ($oldSig.Status -ne 'Valid') { return @{ ok = $false; changed = $false; text = "The installer in the app's folder ($($old.Name)) isn't validly signed, so a download can't be checked against it - not downloaded." } }
         Invoke-WebHttpsGet -Uri $url -MaxBytes 8GB -OutFile $tmp -TimeoutSec 900
+        if (-not (Test-InstallerFileHeader -Bytes (Read-FileHead $tmp) -Extension $ext)) { return @{ ok = $false; changed = $false; text = "The download isn't an $ext installer (its first bytes say otherwise) - not used." } }
         $sig = Get-AuthenticodeSignature -LiteralPath $tmp
         if ($sig.Status -ne 'Valid') { return @{ ok = $false; changed = $false; text = "The downloaded installer isn't validly signed ($($sig.Status)) - not used." } }
         if ($oldSig.SignerCertificate.Subject -ne $sig.SignerCertificate.Subject -or $oldSig.SignerCertificate.Issuer -ne $sig.SignerCertificate.Issuer) { return @{ ok = $false; changed = $false; text = "The downloaded installer is signed by '$($sig.SignerCertificate.Subject)' (issuer '$($sig.SignerCertificate.Issuer)'), not like the one in the folder - not used." } }
@@ -520,7 +521,7 @@ function Global:Get-WebWatchedUpdate {
     param($Data)
     $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
     if (-not $a) { return @{ ok = $false; error = "No app called '$($Data.name)' in the catalog." } }
-    if ($a.wingetId -or -not $a.watchWinget) { return @{ ok = $false; error = "$($a.appName) doesn't watch a winget package for new versions (the editor: Watch winget for new versions)." } }
+    if ($a.wingetId -or -not $a.watchWinget) { return @{ ok = $false; error = "$($a.appName) doesn't watch a winget package for new versions (the editor: Winget package to watch)." } }
     if ($Global:App.TestGraph) { return @{ ok = $false; error = 'Not asked in test mode (no winget, no internet).' } }
     if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not (Test-WingetIndexUsable)) { return @{ ok = $false; error = "Neither winget.exe nor winget's package index can be asked here." } }
     $show = Invoke-Winget -Arguments @('show', '--id', $a.watchWinget, '--exact', '--accept-source-agreements', '--disable-interactivity') -TimeoutSeconds 90
@@ -532,6 +533,7 @@ function Global:Get-WebWatchedUpdate {
     $inst = Get-WebInstallerInfo $a.appName -SetupFile ([string]$a.setupFile)
     $ahead = if ($inst.version) { $inst.version } else { $current }
     return @{ ok = $true; latest = [string]$v.Version; current = $current; folderVersion = [string]$inst.version; newer = ((Compare-AppVersionText $ahead $v.Version) -eq 1)
+        signerCheck = [bool](Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue)
         url = (ConvertFrom-WingetInstallerUrl $show.StdOut); sha256 = (ConvertFrom-WingetInstallerSha256 $show.StdOut); file = [string]$inst.file; app = $a }
 }
 
@@ -556,12 +558,14 @@ function Global:Save-WebWatchedInstaller {
     if ($old -and -not (Test-Path -LiteralPath $old -PathType Leaf)) { $old = '' }
     $ext = if ($old) { [System.IO.Path]::GetExtension($old).ToLowerInvariant() } else { $urlExt }
     if ($ext -notin '.msi', '.exe') { return @{ ok = $false; error = "winget's installer for $($a.watchWinget) isn't an .msi or .exe ($(if ($urlExt) { $urlExt } else { 'no file type in its link' })) - get it by hand." } }
-    if ($urlExt -in '.msi', '.exe' -and $urlExt -ne $ext) { return @{ ok = $false; error = "winget's installer is an $urlExt, the one in the folder an $ext - their commands differ. Upload it by hand (the editor) and check the commands." } }
+    # A link to something else (.zip, .msix, ...) never replaces the folder's .exe or .msi (2.38.0).
+    if ($urlExt -and $urlExt -ne $ext) { return @{ ok = $false; error = "winget's installer is an $urlExt, the one in the folder an $ext - their commands differ. Upload it by hand (the editor) and check the commands." } }
     $target = if ($old) { $old } else { Join-Path $folder ([System.IO.Path]::GetFileName(([Uri]$w.url).AbsolutePath)) }
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("intunecat-dl-" + [guid]::NewGuid().ToString('N') + $ext)
     try {
         Invoke-WebHttpsGet -Uri $w.url -MaxBytes 8GB -OutFile $tmp -TimeoutSec 900
         $hash = (Get-FileHash -LiteralPath $tmp -Algorithm SHA256).Hash.ToUpperInvariant()
+        if (-not (Test-InstallerFileHeader -Bytes (Read-FileHead $tmp) -Extension $ext)) { return @{ ok = $false; error = "The download isn't an $ext installer (its first bytes say otherwise) - not used." } }
         if ($hash -ne $w.sha256) { return @{ ok = $false; error = "The download's SHA256 isn't the one winget gives ($hash, expected $($w.sha256)) - not used." } }
         $signedBy = ''
         if ($old -and (Get-Command Get-AuthenticodeSignature -ErrorAction SilentlyContinue)) {

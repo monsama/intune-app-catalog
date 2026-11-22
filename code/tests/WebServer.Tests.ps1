@@ -810,6 +810,8 @@ try {
     Check ($attL.ok -and @($attL.items).Count -eq @($att.items).Count -and @($attL.setup).Count -eq 5 -and $attI.ok -and @($attI.items).Count -eq 0 -and $null -eq $attI.setup) 'home: the local part has every item without Intune, the Intune part only its own (none when not connected)' (@($attL, $attI) | ConvertTo-Json -Compress -Depth 3)
     $pl = Invoke-Api '/api/package-list' @{ json = '{"Sources":[{"Packages":[{"PackageIdentifier":"Vendor.ZZNew"},{"PackageIdentifier":"Mozilla.Firefox"}]}]}' }
     Check ($pl.ok -and @($pl.items).Count -eq 2 -and @($pl.items | Where-Object { $_.id -eq 'Vendor.ZZNew' -and -not $_.inCatalog }).Count -eq 1) 'from a list: a winget export file''s packages, each marked in the catalog or not' ($pl | ConvertTo-Json -Compress -Depth 3)
+    $st = Invoke-Api '/api/package-list' @{ starter = $true }
+    Check ($st.ok -and $st.starter -and @($st.items).Count -ge 20 -and @($st.items | Where-Object { $_.recommended }).Count -eq 8 -and @($st.items | Where-Object { $_.id -eq 'Mozilla.Firefox' -and $_.name -and $_.category -and $_.why }).Count -eq 1) 'recommended apps: the starter set, each with its name, category and why' ($st | ConvertTo-Json -Compress -Depth 3)
     Check ((Invoke-Api '/api/installed-apps').ok) 'detection from this PC: the installed apps can be listed (empty off Windows)'
     Check (-not (Invoke-Api '/api/sandbox-start' @{ name = "$testName renamed" }).ok) 'sandbox: a Winget app (or no Sandbox here) is refused'
     Check (-not (Invoke-Api '/api/sandbox-result' @{ id = '../x' }).ok) 'sandbox: an unknown test id is refused'
@@ -824,12 +826,14 @@ try {
         Check (-not (Invoke-Api '/api/sandbox-detection' @{ name = "$testName renamed"; id = $sbId; index = 3 }).ok) 'sandbox detection: an entry the result does not have is refused'
         $sbd = Invoke-Api '/api/sandbox-detection' @{ name = "$testName renamed"; id = $sbId; index = 0 }
         $sbApp = (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app
-        Check ($sbd.ok -and $sbd.detectedName -eq 'Contoso Widget (x64)' -and $sbd.version -eq '4.2.1' -and $sbApp.deploy.detection.type -eq 'Script' -and $sbApp.deploy.detection.script -like '*Contoso*Widget*4.2.1*') 'sandbox detection: the name Windows listed becomes a script detection rule' (@($sbd, $sbApp.deploy.detection) | ConvertTo-Json -Compress -Depth 4)
+        Check ($sbd.ok -and $sbd.detectedName -eq 'Contoso Widget' -and $sbd.version -eq '4.2.1' -and $sbApp.deploy.detection.type -eq 'Script' -and $sbApp.deploy.detection.script -like '*Contoso*Widget*4.2.1*') 'sandbox detection: the name Windows listed becomes a script detection rule' (@($sbd, $sbApp.deploy.detection) | ConvertTo-Json -Compress -Depth 4)
     }
     finally { Remove-Item -LiteralPath $sbDir -Recurse -Force -ErrorAction SilentlyContinue }
     # Duplicate app: a copy with the same groups and settings, under a new name.
     $dupBad = Invoke-Api '/api/app-duplicate' @{ name = "$testName renamed"; newName = "$testName renamed" }
     Check (-not $dupBad.ok) 'duplicate: the same name is refused' ($dupBad | ConvertTo-Json -Compress)
+    $dupTwin = Invoke-Api '/api/app-duplicate' @{ name = "$testName renamed"; newName = ("$testName renamed" -replace ' ', '-') }
+    Check (-not $dupTwin.ok -and $dupTwin.error -like '*packages folder*') 'duplicate: a name that would share the original''s file and packages folder is refused' ($dupTwin | ConvertTo-Json -Compress)
     $dup = Invoke-Api '/api/app-duplicate' @{ name = "$testName renamed"; newName = "$testName copy" }
     $dupApp = (Invoke-Api '/api/app-get' @{ name = "$testName copy" }).app
     Check ($dup.ok -and $dupApp -and -not $dupApp.appId -and $dupApp.deploy.detection.type -eq 'Script' -and @($dupApp.requiredFor).Count -eq @($sbApp.requiredFor).Count) 'duplicate: a copy with the settings and groups, no App ID' (@($dup, $dupApp) | ConvertTo-Json -Compress -Depth 4)

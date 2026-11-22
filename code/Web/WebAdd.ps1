@@ -34,6 +34,10 @@ function Global:Test-WebAddName {
     if (-not $Name.Trim()) { return 'The app needs a name.' }
     if ($Name.Length -gt 100) { return 'The name is too long (100 characters at most).' }
     if (@($Apps | Where-Object { [string]$_.appName -eq $Name.Trim() }).Count) { return "There is already an app called '$($Name.Trim())'." }
+    # Different names, one file and one packages folder ("7-Zip", "7 Zip", "7.Zip"): one would change the other's installer (2.38.0).
+    $file = Get-SafeFileNameForApp -Name $Name.Trim()
+    $twin = @($Apps | Where-Object { $_ -and (Get-SafeFileNameForApp -Name ([string]$_.appName)) -eq $file }) | Select-Object -First 1
+    if ($twin) { return "'$($Name.Trim())' would share '$($twin.appName)''s file and packages folder ($file) - choose a different name." }
     return ''
 }
 
@@ -174,10 +178,20 @@ function Global:Start-WebFolderUpload {
 }
 
 function Global:Add-WebUploadChunk {
-    # One piece of an upload (base64, at most 6 MB), at the offset the server expects next.
+    # One piece of an upload (base64, at most 6 MB), at the offset the server expects next. One piece of an upload at
+    # a time (2.38.0): two sent at once both passed the offset check, and both were appended.
     param($Data)
     $u = (Get-WebUploads)[[string]$Data.uploadId]
     if (-not $u) { return @{ ok = $false; error = 'That upload is no longer known - start again.' } }
+    [System.Threading.Monitor]::Enter($u)
+    try { return (Add-WebUploadChunkHeld -Upload $u -Data $Data) }
+    finally { [System.Threading.Monitor]::Exit($u) }
+}
+
+function Global:Add-WebUploadChunkHeld {
+    # Add-WebUploadChunk with the upload held.
+    param($Upload, $Data)
+    $u = $Upload
     $offset = [long]0; [void][long]::TryParse([string]$Data.offset, [ref]$offset)
     if ($u.Kind -eq 'folder') {
         # One piece of one of the folder's files (-index), in order.
@@ -280,8 +294,10 @@ function Global:Set-WebUploadProposal {
     if (-not $rel) { $none.Notes = @('No installer found in it - choose the setup file, or write the commands in the editor.'); $u.Proposal = $none; return }
     $leaf = ($rel -split '[\\/]')[-1]
     $ps = '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File'
+    # In quotes when it needs them (2.38.0): "My App\install.ps1" ran ".\My" with "App\install.ps1" as its argument.
+    $quote = { param([string]$p) if ($p -match '[^\w.\\\-]') { '"' + $p + '"' } else { $p } }
     if ($leaf -ieq 'Invoke-AppDeployToolkit.exe' -or $leaf -ieq 'Invoke-AppDeployToolkit.ps1') {
-        $run = if ($leaf -ieq 'Invoke-AppDeployToolkit.exe') { $rel } else { "$ps $rel" }
+        $run = if ($leaf -ieq 'Invoke-AppDeployToolkit.exe') { & $quote $rel } else { "$ps $(& $quote $rel)" }
         $none.InstallCommand = "$run -DeploymentType Install -DeployMode Silent"; $none.UninstallCommand = "$run -DeploymentType Uninstall -DeployMode Silent"
         $none.Notes = @('A PSADT 4 package - set its detection rule in the editor (Install & detection).')
         $u.Proposal = $none; return
@@ -289,8 +305,8 @@ function Global:Set-WebUploadProposal {
     if ($leaf -ieq 'install.ps1') {
         $dir = Split-Path -Parent $rel
         $un = if ($dir) { "$dir\uninstall.ps1" } else { 'uninstall.ps1' }
-        $none.InstallCommand = "$ps .\$rel"
-        if (Test-Path -LiteralPath (Join-Path $u.Root ($un -replace '\\', [System.IO.Path]::DirectorySeparatorChar))) { $none.UninstallCommand = "$ps .\$un" }
+        $none.InstallCommand = "$ps $(& $quote ".\$rel")"
+        if (Test-Path -LiteralPath (Join-Path $u.Root ($un -replace '\\', [System.IO.Path]::DirectorySeparatorChar))) { $none.UninstallCommand = "$ps $(& $quote ".\$un")" }
         $none.Notes = @('A script package - set its detection rule in the editor (Install & detection).')
         $u.Proposal = $none; return
     }

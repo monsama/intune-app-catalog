@@ -503,6 +503,9 @@ function Global:Get-WebRetireAppIds {
     param($App)
     $out = New-Object System.Collections.Generic.List[object]
     if ($App.appId) { $out.Add(@{ appId = [string]$App.appId; version = '' }) }
+    # The MSI line-of-business app it replaced, still in Intune (2.38.0): uninstalled and deleted with it - left alone,
+    # its Required groups installed the app again, and once the app was archived nothing pointed to it any more.
+    if ($App.lobToRetire -and [string]$App.lobToRetire -ne [string]$App.appId) { $out.Add(@{ appId = [string]$App.lobToRetire; version = 'MSI app'; lob = $true }) }
     foreach ($r in @(@($App.releases) | Where-Object { $_ -and $_.state -in 'previous', 'rolledback' -and $_.appId -and [string]$_.appId -ne [string]$App.appId })) { $out.Add(@{ appId = [string]$r.appId; version = [string]$r.version }) }
     return $out.ToArray()
 }
@@ -611,7 +614,7 @@ function Global:Start-WebRetireFinish {
     # Its other versions in Intune: a newer one (rolled back from) supersedes the current one, so it goes first -
     # Intune won't delete an app another one supersedes. The older ones go after the current one (Complete-WebRetireFinish).
     $current = [string]$(if ($a.metadata) { $a.metadata.appVersion })
-    $newer = @(Get-WebRetireAppIds $a | Where-Object { $_.version -and (Compare-AppVersionText $current $_.version) -eq 1 })
+    $newer = @(Get-WebRetireAppIds $a | Where-Object { $_.version -and -not $_.lob -and (Compare-AppVersionText $current $_.version) -eq 1 })
     if ($newer.Count) {
         $del = Remove-WebIntuneAppsNewestFirst -Items $newer
         if ($del.failed.Count) { return @{ ok = $false; error = "These versions of $name couldn't be deleted from Intune, so the current one can't be either: $($del.failed -join '; ')" } }

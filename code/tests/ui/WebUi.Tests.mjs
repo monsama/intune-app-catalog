@@ -118,6 +118,13 @@ try {
       check(!(await page.isDisabled('#btnAddGo')), `${label}: a script app can be added once it has a name - the template writes the version marker`);
       check(await page.textContent('#btnAddGo') === 'Add script app', `${label}: the Add button names what it adds`, await page.textContent('#btnAddGo'));
       await unnamed('Add apps (script)'); await a11y('Add apps (script)'); await shot('add-script');
+      // 2.38.0: From a list > Recommended apps - the starter set by category, the recommended ones ticked.
+      await page.click('#atab-list'); await page.click('#btnAlStarter');
+      await page.waitForFunction(() => document.querySelectorAll('#alRows tr').length > 20, null, { timeout: 10000 }).catch(() => {});
+      const rec = await page.evaluate(() => ({ heads: document.querySelectorAll('#alRows tr.grouprow').length, ticked: document.querySelectorAll('#alRows input:checked').length, firefox: /Mozilla Firefox/.test(document.getElementById('alRows').textContent), button: document.getElementById('btnAddGo').textContent }));
+      check(rec.heads >= 5 && rec.ticked === 8 && rec.firefox && rec.button === 'Add 8 from the list', `${label}: Recommended apps - by category, the eight recommended ones ticked`, JSON.stringify(rec));
+      await noOverflow('Add apps (recommended)'); await unnamed('Add apps (recommended)'); await a11y('Add apps (recommended)'); await shot('add-recommended');
+      await page.click('#atab-script');
       await page.click('#btnAddBlank');
       await page.waitForSelector('#dlgApp[open]');
       await unnamed('the app editor'); await a11y('the app editor'); await shot('editor');
@@ -379,6 +386,8 @@ try {
           return !v('watchfetch') && !v('sandbox') && !v('package') && !v('promote') && v('takeversion') && v('release') && !document.querySelector('#appMenu [data-act="filldetails"]').disabled; }),
           `${label}: the menu leaves out what can't apply to a Winget app; Fill in details from winget works`);
         await page.keyboard.press('Escape');
+        // 2.38.0: Escape gives focus back to what opened the menu; the arrow keys skip what it hides.
+        check(await page.evaluate(() => document.getElementById('appMenu').hidden && document.activeElement && document.activeElement.id === 'btnMore'), `${label}: Escape on the More menu puts focus back on More`);
         await page.click(`#gridBody tr[data-name="${testApp}"]`);
         await page.click('#btnMore');
         await page.click('[data-act="batchedit"]');

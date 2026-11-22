@@ -99,6 +99,10 @@ $testableFunctionNames = @(
     "Get-VersionStringsFromBytes",
     "Get-ExeVersionStrings",
     "ConvertTo-PlainJsonValue",
+    "ConvertTo-WebJsonText",
+    "Get-StarterAppSet",
+    "Test-InstallerFileHeader",
+    "Get-ListedBaseName",
     # 2.36.0: what doesn't fit together in a package, a PC's Sandbox result, winget's SHA256
     "Get-CommandPackageFiles",
     "Get-PackageConsistencyWarnings",
@@ -3078,7 +3082,9 @@ $okPaths = @('setup.msi', 'sub\setup.exe', 'sub/x/y.cab', 'Files\app.mst')
 $badPaths = @('../x', '..\x', '/etc/passwd', 'C:\x', '\\srv\x', 'a/./b', 'a/b.', 'CON', 'con.txt', 'a<b', ' a', 'a//b', '')
 Assert-True ((@($okPaths | Where-Object { -not (Test-PackageRelativePath $_) }).Count -eq 0) -and (@($badPaths | Where-Object { Test-PackageRelativePath $_ }).Count -eq 0)) "Test-PackageRelativePath: paths inside the folder pass; '..', roots, drives, UNC, reserved names and odd names don't"
 $cand = @(Get-SetupFileCandidates @(@{ path = 'Files\data.cab'; size = 1 }, @{ path = 'sub\setup.exe'; size = 1 }, @{ path = 'readme.txt'; size = 1 }, @{ path = 'App_x64.msi'; size = 1 }, @{ path = 'tool.exe'; size = 1 }))
-Assert-True ($cand.Count -eq 3 -and $cand[0].path -eq 'App_x64.msi' -and $cand[1].path -eq 'tool.exe' -and $cand[2].path -eq 'sub\setup.exe') "Get-SetupFileCandidates: installers only, the top of the folder first, an .msi before an .exe"
+Assert-True ($cand.Count -eq 3 -and $cand[0].path -eq 'App_x64.msi' -and $cand[1].path -eq 'sub\setup.exe' -and $cand[2].path -eq 'tool.exe') "Get-SetupFileCandidates: installers only; an .msi or setup-named one before a plain .exe, the top of the folder first"
+$cand2 = @(Get-SetupFileCandidates @(@{ path = 'vcredist_x64.exe'; size = 1 }, @{ path = 'Setup\setup.exe'; size = 1 }, @{ path = 'Uninstall.exe'; size = 1 }, @{ path = 'unins000.exe'; size = 1 }))
+Assert-True ($cand2.Count -eq 2 -and $cand2[0].path -eq 'Setup\setup.exe' -and $cand2[1].path -eq 'vcredist_x64.exe') "Get-SetupFileCandidates: an uninstaller is never offered; Setup\setup.exe before a top-level vcredist (2.38.0)"
 $psadt = @(Get-SetupFileCandidates @(@{ path = 'Files\setup.msi'; size = 1 }, @{ path = 'Invoke-AppDeployToolkit.exe'; size = 1 }, @{ path = 'Invoke-AppDeployToolkit.ps1'; size = 1 }))
 Assert-Equal $psadt[0].path 'Invoke-AppDeployToolkit.exe' "Get-SetupFileCandidates: a PSADT 4 folder's launcher comes first"
 Add-Type -AssemblyName System.IO.Compression; Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -3200,6 +3206,33 @@ $plain = ConvertTo-PlainJsonValue ([ordered]@{ log = $tagged; list = @($tagged, 
 Assert-True (-not ($plain.log.PSObject.Properties.Name -contains 'PSPath') -and -not ($plain.list[0].PSObject.Properties.Name -contains 'PSPath')) "Plain values: text loses what PowerShell hung on it (PSPath)"
 Assert-True ((ConvertTo-Json -InputObject $plain -Depth 5 -Compress) -eq '{"log":"log text","list":["log text",2],"none":[],"one":["a"],"obj":{"n":null,"t":true},"at":3.5}') "Plain values: the same JSON - empty and one-item lists stay lists ($(ConvertTo-Json -InputObject $plain -Depth 5 -Compress))"
 Assert-True ($null -eq (ConvertTo-PlainJsonValue $null) -and (ConvertTo-Json -InputObject (ConvertTo-PlainJsonValue @()) -Compress) -eq '[]') "Plain values: nothing stays nothing, an empty list stays a list"
+
+# =================================================================
+# 2.38.0: the starter set of apps
+# =================================================================
+$starter = @(Get-StarterAppSet)
+$sIds = @($starter | ForEach-Object { $_.id })
+Assert-True ($starter.Count -ge 20 -and @($sIds | Select-Object -Unique).Count -eq $sIds.Count -and -not @($starter | Where-Object { $_.id -notmatch '^[A-Za-z0-9][A-Za-z0-9._+\-]{0,127}$' -or -not $_.name -or -not $_.category -or -not $_.why }).Count) "Starter set: unique, valid Winget IDs, each with a name, category and why"
+Assert-True (@($starter | Where-Object recommended).Count -eq 8 -and (@('Mozilla.Firefox', 'Google.Chrome', 'VideoLAN.VLC', 'EclipseAdoptium.Temurin.21.JRE', '7zip.7zip') | Where-Object { $sIds -notcontains $_ }).Count -eq 0) "Starter set: the eight recommended ones, Firefox, Chrome, VLC, Java and 7-Zip among them"
+$cats = @($starter | ForEach-Object { $_.category }); $runs = @(for ($i = 0; $i -lt $cats.Count; $i++) { if ($i -eq 0 -or $cats[$i] -ne $cats[$i - 1]) { $cats[$i] } })
+Assert-True (@($runs | Select-Object -Unique).Count -eq $runs.Count) "Starter set: each category's apps together (the list shows one heading per category)"
+
+# 2.38.0: a download that replaces an installer must be one of its type.
+Assert-True ((Test-InstallerFileHeader -Bytes ([byte[]](0x4D, 0x5A, 0x90, 0, 3, 0, 0, 0)) -Extension '.exe') -and (Test-InstallerFileHeader -Bytes ([byte[]](0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0)) -Extension '.MSI')) "Installer header: an .exe starts with MZ, an .msi is an OLE file"
+Assert-True (-not (Test-InstallerFileHeader -Bytes ([byte[]](0x50, 0x4B, 3, 4, 0, 0, 0, 0)) -Extension '.exe') -and -not (Test-InstallerFileHeader -Bytes ([Text.Encoding]::ASCII.GetBytes('<html><body>')) -Extension '.msi') -and -not (Test-InstallerFileHeader -Bytes ([byte[]](0x4D, 0x5A, 0, 0, 0, 0, 0, 0)) -Extension '.msi')) "Installer header: a .zip, an HTML page, an .exe for an .msi - refused"
+
+# 2.38.0: a detection rule from what Windows lists finds the next version too, and follows a release.
+Assert-True ((Get-ListedBaseName '7-Zip 24.09 (x64)') -eq '7-Zip' -and (Get-ListedBaseName 'Python 3.12.4 (64-bit)') -eq 'Python' -and (Get-ListedBaseName 'Microsoft 365') -eq 'Microsoft 365' -and (Get-ListedBaseName 'VLC media player') -eq 'VLC media player' -and (Get-ListedBaseName '(x64)') -eq '(x64)') "Listed name: the version and (x64) go, a name with a number but no dot stays"
+$sr = [pscustomobject]@{ Type = 'Script'; Script_Content = (New-InstalledAppDetectionScript -DisplayName '7-Zip' -Version '24.09') }
+$moved = Set-DetectionRuleVersion -Rule $sr -Version '25.01'
+Assert-True (-not (Test-VersionDetectionRule $sr) -and $moved.Changed -and $moved.Rule.Script_Content -match "\`$want = '25\.01'" -and $sr.Script_Content -match "\`$want = '24\.09'") "Detection script: a release moves its version (the rule itself is left as it was)"
+Assert-True ([bool](Test-VersionDetectionRule ([pscustomobject]@{ Type = 'Script'; Script_Content = 'Write-Output Installed' }))) "Detection script: one written by hand still can't follow a release"
+
+# 2.38.0: on 5.1 an answer is rebuilt only when plain ConvertTo-Json fails or writes PSPath.
+$ans = [ordered]@{ ok = $true; apps = @([ordered]@{ name = 'A'; v = 1 }); none = @() }
+Assert-True ((ConvertTo-WebJsonText -Object $ans -Desktop) -eq (ConvertTo-Json -InputObject $ans -Depth 12 -Compress) -and (ConvertTo-WebJsonText -Object 'x') -eq 'x') "Answer JSON: the same text either way; text passes as it is"
+$withPath = [ordered]@{ log = [pscustomobject]@{ value = 'log'; PSPath = 'C:\x' } }
+Assert-True ((ConvertTo-WebJsonText -Object $withPath -Desktop) -eq (ConvertTo-Json -InputObject (ConvertTo-PlainJsonValue $withPath) -Depth 12 -Compress)) "Answer JSON: one that writes PSPath is rebuilt from plain values"
 
 # =================================================================
 # Report
