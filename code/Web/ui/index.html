@@ -1092,10 +1092,10 @@
   <section class="asec" id="asec-installer" role="tabpanel" aria-labelledby="atab-installer" hidden>
     <div class="dropzone" id="aiDrop" tabindex="0" role="button" aria-describedby="aiDropText">
       <strong>Drop an .msi or .exe here - or a whole folder, or a .zip of it</strong>
-      <span id="aiDropText" class="muted">or <u>choose a file</u> (.msi, .exe, .zip) or <button type="button" class="linkish" id="aiFolderBtn">choose a folder</button> - the installer is read for its name, publisher, version and silent switches; everything goes into the app's packages folder and into its package.</span>
+      <span id="aiDropText" class="muted">or <u>choose a file</u> (.msi, .exe, .zip) - the installer is read for its name, publisher, version and silent switches; everything goes into the app's packages folder and into its package.</span>
       <input type="file" id="aiFile" accept=".msi,.exe,.zip" hidden>
-      <input type="file" id="aiFolder" webkitdirectory multiple hidden aria-label="A folder to upload">
     </div>
+    <p class="dropalt" id="aiFolderRow">Or upload a whole folder: <button type="button" class="btn small" id="aiFolderBtn">Choose a folder...</button><input type="file" id="aiFolder" webkitdirectory multiple hidden aria-label="A folder to upload"></p>
     <div class="upbar" id="aiProgress" hidden><div class="bar"><span id="aiBar"></span></div><span class="muted" id="aiProgressText"></span></div>
     <div id="aiReview" hidden>
       <p class="sub" id="aiFacts"></p>

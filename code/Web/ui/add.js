@@ -100,13 +100,13 @@ async function showWingetDetail(x) {
 // ---- an installer: drop, upload in pieces, review
 function resetInstaller() {
   aiInfo = null; aiUpload = null; delete $('aiName').dataset.touched; $('aiSetupRow').hidden = true;
-  $('aiReview').hidden = true; $('aiProgress').hidden = true; $('aiDrop').hidden = false; $('aiFile').value = '';
+  $('aiReview').hidden = true; $('aiProgress').hidden = true; $('aiDrop').hidden = false; $('aiFolderRow').hidden = false; $('aiFile').value = '';
 }
 $('aiDrop').addEventListener('click', () => $('aiFile').click());
 $('aiDrop').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('aiFile').click(); } });
 $('aiFile').addEventListener('change', () => { if ($('aiFile').files[0]) startUpload({ file: $('aiFile').files[0] }); });
 $('aiFolder').addEventListener('change', () => { const p = pickFromFolderInput($('aiFolder')); $('aiFolder').value = ''; if (p) startUpload(p); });
-$('aiFolderBtn').addEventListener('click', e => { e.stopPropagation(); $('aiFolder').click(); });
+$('aiFolderBtn').addEventListener('click', () => $('aiFolder').click());
 for (const ev of ['dragenter', 'dragover']) $('aiDrop').addEventListener(ev, e => { e.preventDefault(); $('aiDrop').classList.add('over'); });
 for (const ev of ['dragleave', 'drop']) $('aiDrop').addEventListener(ev, () => $('aiDrop').classList.remove('over'));
 $('aiDrop').addEventListener('drop', async e => { e.preventDefault(); const p = await pickFromDrop(e.dataTransfer); if (p) startUpload(p); });
@@ -181,7 +181,7 @@ async function startUpload(pick) {
   if (pick instanceof File) pick = { file: pick };
   $('addError').hidden = true;
   if (!isPickable(pick)) { showAddError('Drop an .msi or .exe installer, a .zip of its folder, or the folder itself.'); return; }
-  $('aiDrop').hidden = true; $('aiProgress').hidden = false; $('aiReview').hidden = true;
+  $('aiDrop').hidden = true; $('aiFolderRow').hidden = true; $('aiProgress').hidden = false; $('aiReview').hidden = true;
   const token = {}; aiUpload = { id: '', added: false, token };
   const f = await uploadPick(pick, (t, frac) => { if (aiUpload && aiUpload.token === token) { $('aiProgressText').textContent = t; if (frac !== undefined) $('aiBar').style.width = Math.round(100 * frac) + '%'; } });
   if (!aiUpload || aiUpload.token !== token) { if (f.uploadId) api('/api/upload-cancel', { uploadId: f.uploadId }); return; }   // closed meanwhile

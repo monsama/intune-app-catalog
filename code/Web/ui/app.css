@@ -1580,3 +1580,4 @@ body[data-view="home"] #setupBanner { display: none; }
 #aPkgInfo .pkgfiles .bx:hover { color: var(--err); background: var(--err-bg); }
 #dlgPkgUp fieldset.plain { border: 0; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
 #dlgPkgUp fieldset.plain legend { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.dropalt { margin: 8px 0 0; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
