@@ -195,7 +195,8 @@ function updateReady() {
     own ? (() => {
       // The command naming another installer than the one in its packages folder (an MSI file block changed):
       // the package has the old one - not "packaged" until that file is there and packaged again.
-      const named = ($('mInstallCommand').value.match(/([^\s"'\\/]+\.(?:msi|exe))\b/i) || [])[1], have = editorInstaller && editorInstaller.file;
+      // By file name - the installer may sit in a subfolder (Setup\\setup.exe, uploaded with its folder).
+      const named = ($('mInstallCommand').value.match(/([^\s"'\\/]+\.(?:msi|exe))\b/i) || [])[1], have = editorInstaller && editorInstaller.file && String(editorInstaller.file).split(/[\\/]/).pop();
       if (named && have && named.toLowerCase() !== String(have).toLowerCase() && !/^(msiexec|cmd|powershell)\.exe$/i.test(named))
         return [false, `The command installs ${named}, the packages folder has ${have} - put ${named} there, then Package`, 'mInstallCommand'];
       return [!!(row && !row.packageMissing), row && !row.packageMissing ? 'Its installer is packaged' : 'Its installer packaged (Packages\\<name>, then Package)', null];

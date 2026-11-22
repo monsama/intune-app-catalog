@@ -46,6 +46,7 @@ function Global:Get-WebAppEditable {
         assignmentFilterMode = $(if ([string]$App.assignmentFilterMode -eq 'exclude') { 'exclude' } else { 'include' })
         retiringSince = [string]$App.retiringSince
         lobToRetire = [string]$App.lobToRetire
+        setupFile = [string]$App.setupFile
         blockedVersions = @($App.blockedVersions | Where-Object { $_ } | ForEach-Object { [string]$_ })
         hasMetadata  = [bool]$m
         managedUpdates = [bool]$App.managedUpdates
@@ -187,7 +188,7 @@ function Global:Get-WebApp {
     $meta = if ($app.metadata) { $app.metadata } else { try { Get-DefaultAppMetadata -AppName $app.appName -WingetId $app.wingetId -Uncommon (-not $app.wingetId) } catch { $null } }
     $editable.deploy = Get-WebDeployEditable $meta
     # An own-package app: the installer Package builds into the .intunewin (and Deploy uploads) - its version, to compare with the App version.
-    $installer = if (-not $app.wingetId) { try { Get-WebInstallerInfo $app.appName } catch { $null } } else { $null }
+    $installer = if (-not $app.wingetId) { try { Get-WebInstallerInfo $app.appName -SetupFile ([string]$app.setupFile) } catch { $null } } else { $null }
     $offers = [string]$(if ($Global:App.WingetLatest -and $app.wingetId) { $Global:App.WingetLatest[([string]$app.wingetId).ToLowerInvariant()] })
     return @{ ok = $true; app = $editable; version = (Get-WebAppFileVersion $app.appName); installer = $installer; wingetOffers = $offers; knownGroups = @(Get-AllKnownGroups | Sort-Object -Unique)
         appNames = @($catalog.Apps | ForEach-Object { $_.appName } | Where-Object { $_ -ne $name } | Sort-Object); minOsChoices = @(Get-WebMinOsChoices)
@@ -247,6 +248,8 @@ function Global:Merge-WebAppEdit {
         retiringSince    = $(if ($Existing) { [string]$Existing.retiringSince } else { '' })
         # The MSI app to retire stays as it was - Send to Intune and Retire the MSI app change it, not the editor.
         lobToRetire      = $(if ($Existing) { [string]$Existing.lobToRetire } else { '' })
+        # The chosen setup file stays as it was - uploads and the package file list change it, not the editor's form.
+        setupFile        = $(if ($Existing) { [string]$Existing.setupFile } else { '' })
         # Kept as they were - releases and Send to Intune change them, not the editor.
         blockedVersions  = @($(if ($Existing) { @($Existing.blockedVersions) }) | Where-Object { $_ })
         packageStamp     = $(if ($Existing) { [string]$Existing.packageStamp } else { '' })

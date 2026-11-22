@@ -153,6 +153,10 @@ $testableFunctionNames = @(
     "Get-CatalogNameLookup",
     "Get-FriendlyIntuneAppType",
     "Test-IntuneLobMsiType",
+    "Test-PackageRelativePath",
+    "Get-SetupFileCandidates",
+    "Expand-ZipSafely",
+    "Get-PackageFolderFiles",
     "Test-PackagedIntuneAppType",
     "Get-ParsedMinOsRelease",
     "Get-FriendlyMinOsRelease",
@@ -3059,6 +3063,53 @@ Assert-True ((Test-IntuneLobMsiType '#microsoft.graph.windowsMobileMSI') -and (T
 Assert-True ((Test-PackagedIntuneAppType '') -and (Test-PackagedIntuneAppType 'Windows app (Win32)') -and (Test-PackagedIntuneAppType 'Windows MSI line-of-business app') -and
     -not (Test-PackagedIntuneAppType 'Microsoft Store app (new)')) "Test-PackagedIntuneAppType: Win32 and MSI line-of-business apps get a package, Intune's own types don't"
 Assert-True (-not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'SonicWall NetExtender'; wingetId = ''; intuneAppType = 'Windows MSI line-of-business app' }))) "Get-NonPackageAppHint: an MSI line-of-business app needs a package (it moves to Win32)"
+
+# Folders and .zip files for a package (2.34.0): nothing lands outside the folder, the setup file is suggested,
+# and a package holds the whole folder (no older .intunewin) - a setup file in a subfolder too.
+$okPaths = @('setup.msi', 'sub\setup.exe', 'sub/x/y.cab', 'Files\app.mst')
+$badPaths = @('../x', '..\x', '/etc/passwd', 'C:\x', '\\srv\x', 'a/./b', 'a/b.', 'CON', 'con.txt', 'a<b', ' a', 'a//b', '')
+Assert-True ((@($okPaths | Where-Object { -not (Test-PackageRelativePath $_) }).Count -eq 0) -and (@($badPaths | Where-Object { Test-PackageRelativePath $_ }).Count -eq 0)) "Test-PackageRelativePath: paths inside the folder pass; '..', roots, drives, UNC, reserved names and odd names don't"
+$cand = @(Get-SetupFileCandidates @(@{ path = 'Files\data.cab'; size = 1 }, @{ path = 'sub\setup.exe'; size = 1 }, @{ path = 'readme.txt'; size = 1 }, @{ path = 'App_x64.msi'; size = 1 }, @{ path = 'tool.exe'; size = 1 }))
+Assert-True ($cand.Count -eq 3 -and $cand[0].path -eq 'App_x64.msi' -and $cand[1].path -eq 'tool.exe' -and $cand[2].path -eq 'sub\setup.exe') "Get-SetupFileCandidates: installers only, the top of the folder first, an .msi before an .exe"
+$psadt = @(Get-SetupFileCandidates @(@{ path = 'Files\setup.msi'; size = 1 }, @{ path = 'Invoke-AppDeployToolkit.exe'; size = 1 }, @{ path = 'Invoke-AppDeployToolkit.ps1'; size = 1 }))
+Assert-Equal $psadt[0].path 'Invoke-AppDeployToolkit.exe' "Get-SetupFileCandidates: a PSADT 4 folder's launcher comes first"
+Add-Type -AssemblyName System.IO.Compression; Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zt = Join-Path ([System.IO.Path]::GetTempPath()) ('ziptest_' + [guid]::NewGuid().ToString('N'))
+[void](New-Item -ItemType Directory -Path $zt -Force)
+$mkZip = { param($zipName, $entries) $zp = Join-Path $zt $zipName; $fs = [System.IO.File]::Create($zp); $za = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Create)
+    try { foreach ($k in $entries.Keys) { $e = $za.CreateEntry($k); $w = New-Object System.IO.StreamWriter($e.Open()); $w.Write([string]$entries[$k]); $w.Dispose() } } finally { $za.Dispose(); $fs.Dispose() }; $zp }
+try {
+    $good = & $mkZip 'good.zip' ([ordered]@{ 'App/setup.exe' = 'MZ'; 'App/Files/cfg.xml' = '<x/>'; '__MACOSX/App/._setup.exe' = 'junk' })
+    $r1 = Expand-ZipSafely -ZipPath $good -Destination (Join-Path $zt 'good')
+    $gf = @(Get-PackageFolderFiles (Join-Path $zt 'good') | ForEach-Object { $_.path })
+    Assert-True ($r1.files -eq 2 -and ($gf -contains 'App\setup.exe') -and ($gf -contains 'App\Files\cfg.xml') -and @($r1.skipped).Count -eq 1) "Expand-ZipSafely: unpacks with its folders, Mac clutter left out" (($gf -join ', ') + ' | ' + ($r1.skipped -join ','))
+    $evil = & $mkZip 'evil.zip' ([ordered]@{ 'ok.txt' = 'fine'; '../../escaped.txt' = 'bad' })
+    $threw = $false; try { [void](Expand-ZipSafely -ZipPath $evil -Destination (Join-Path $zt 'evil')) } catch { $threw = $_.Exception.Message -like "*isn't allowed*" }
+    Assert-True ($threw -and -not (Test-Path -LiteralPath (Join-Path $zt 'escaped.txt')) -and -not (Test-Path -LiteralPath (Join-Path ([System.IO.Path]::GetTempPath()) 'escaped.txt'))) "Expand-ZipSafely: an entry pointing outside the folder is refused, nothing written outside"
+    $big = & $mkZip 'big.zip' ([ordered]@{ 'a.bin' = ('x' * 5000) })
+    $threw = $false; try { [void](Expand-ZipSafely -ZipPath $big -Destination (Join-Path $zt 'big') -MaxBytes 1000) } catch { $threw = $_.Exception.Message -like '*too large*' }
+    Assert-True $threw "Expand-ZipSafely: stops at the size limit as it writes (a zip's stated sizes aren't trusted)"
+    $many = & $mkZip 'many.zip' ([ordered]@{ 'a' = '1'; 'b' = '2'; 'c' = '3' })
+    $threw = $false; try { [void](Expand-ZipSafely -ZipPath $many -Destination (Join-Path $zt 'many') -MaxFiles 2) } catch { $threw = $_.Exception.Message -like '*more than 2 files*' }
+    Assert-True $threw "Expand-ZipSafely: stops at the file count limit"
+    # The package step: the whole folder (subfolders, Uninstall.ps1 of an EXE app) without an older .intunewin; a chosen setup in a subfolder.
+    $pkgAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot '..\EmbeddedScripts\Package.ps1'), [ref]$null, [ref]$null)
+    foreach ($fnName in 'Copy-PackageSource', 'Get-ChosenSetupFile') { $fn = $pkgAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $fnName }, $true) | Select-Object -First 1; . ([scriptblock]::Create($fn.Extent.Text)) }
+    $src = Join-Path $zt 'Contoso'; [void](New-Item -ItemType Directory -Path (Join-Path $src 'sub') -Force)
+    foreach ($f in 'setup.exe', 'Uninstall.ps1', 'Contoso.intunewin', 'sub\app.mst') { Set-Content -LiteralPath (Join-Path $src ($f -replace '\\', [System.IO.Path]::DirectorySeparatorChar)) -Value 'x' }
+    $copy = Join-Path $zt 'copy'; [void](New-Item -ItemType Directory -Path $copy -Force)
+    Copy-PackageSource -From $src -To $copy
+    $cf = @(Get-PackageFolderFiles $copy -All | ForEach-Object { $_.path })
+    Assert-True (($cf -contains 'setup.exe') -and ($cf -contains 'Uninstall.ps1') -and ($cf -contains 'sub\app.mst') -and -not ($cf -match '\.intunewin$')) "Package: the whole folder goes into the package - subfolders and Uninstall.ps1 - but no older .intunewin" ($cf -join ', ')
+    $folderItem = Get-Item -LiteralPath $src
+    $ch = Get-ChosenSetupFile -Folder $folderItem -Map @{ Contoso = 'sub\app.mst' }
+    Assert-True ($ch -and ($ch.Rel -replace '/', '\') -eq 'sub\app.mst' -and -not (Get-ChosenSetupFile -Folder $folderItem -Map @{ Contoso = '..\Contoso\setup.exe' }) -and -not (Get-ChosenSetupFile -Folder $folderItem -Map @{ Contoso = 'missing.exe' })) "Package: a chosen setup file in a subfolder is used; one outside the folder or missing isn't"
+    $sub = Join-Path $zt 'subsetup'; [void](New-Item -ItemType Directory -Path (Join-Path $sub 'Setup') -Force); Set-Content -LiteralPath (Join-Path (Join-Path $sub 'Setup') 'install.cmd') -Value 'echo'
+    $subOut = Join-Path $zt 'sub.intunewin'
+    [void](New-IntuneWinPackage -SourceFolder $sub -SetupFile 'Setup\install.cmd' -OutputPath $subOut)
+    Assert-True (Test-Path -LiteralPath $subOut) "New-IntuneWinPackage: a setup file in a subfolder"
+}
+finally { Remove-Item -LiteralPath $zt -Recurse -Force -ErrorAction SilentlyContinue }
 
 # =================================================================
 # Report

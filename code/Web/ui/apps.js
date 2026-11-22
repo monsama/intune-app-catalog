@@ -285,46 +285,115 @@ function showPkgInfo() {
   box.hidden = !!$('aWinget').value.trim() || !editingName || !!(row && row.msHint);
   if (box.hidden) return;
   const script = /\.ps1\b/i.test($('mInstallCommand').value) && !/\.(msi|exe)\b/i.test($('mInstallCommand').value);
+  const managedLocked = !!(row && row.managed && row.appId && i && i.found);
+  // Upload: an installer or a .zip of its folder, or the folder itself (2.34.0) - works on the server too; drop it here as well.
+  const acts = managedLocked ? el('span', { class: 'pkgacts muted', text: 'A new installer of an app with managed updates goes through Release new version (Updates), pilot first.' })
+    : el('span', { class: 'pkgacts' },
+      el('button', { type: 'button', class: 'btn small' + (i && i.found ? '' : ' primary'), id: 'btnAppInstaller', text: i && i.found ? 'Upload another...' : 'Upload an installer or .zip...', title: 'An .msi or .exe, or a .zip of its folder - it goes into the app\'s packages folder', onclick: () => $('aInstallerFile').click() }),
+      el('button', { type: 'button', class: 'btn small', id: 'btnAppFolder', text: 'Upload a folder...', title: 'A whole folder - the installer with its other files (transforms, config files); all of it goes into the package', onclick: () => $('aInstallerFolder').click() }),
+      SERVER || !(i && i.folder) ? '' : el('span', { class: 'muted', text: `or put the files in ${i.folder}` }));
+  let text;
   if (!i || !i.found) {
-    if (script) { box.textContent = `A script app - Package builds the scripts in its package folder${i && i.folder ? ` (${i.folder})` : ''} into the .intunewin that Send to Intune uploads.`; return; }
-    // No installer yet (an app taken over from Intune comes without one): upload it right here - works on the server too.
     const lob = row && isLobMsi(row) ? "In Intune this is an MSI line-of-business app: Intune can't turn it into Win32 and never gives the .msi back - Send to Intune creates it as a Win32 app with its groups, then you retire the MSI app. " : '';
-    box.replaceChildren(el('span', { text: lob + 'No installer yet - upload the .msi or .exe: what is still empty (the commands, the detection rule, the version) is filled in from it; Package then builds the .intunewin that Send to Intune uploads.' }),
-      el('span', { class: 'pkgacts' }, el('button', { type: 'button', class: 'btn small primary', id: 'btnAppInstaller', text: 'Upload the installer...', title: 'An .msi or .exe - it goes into the app\'s packages folder', onclick: () => $('aInstallerFile').click() }),
-        SERVER || !(i && i.folder) ? '' : el('span', { class: 'muted', text: ` or put it in ${i.folder}` })));
-    return;
+    text = script ? 'A script app - Package builds the files in its packages folder into the .intunewin that Send to Intune uploads.'
+      : lob + 'No installer yet - upload the .msi or .exe (or its whole folder, or a .zip of it): what is still empty (the commands, the detection rule, the version) is filled in from it; Package then builds the .intunewin that Send to Intune uploads.';
+  } else {
+    const iv = i.version || '(no version in the file)';
+    text = `Installer: ${i.file}, version ${iv} - Package builds its folder into the .intunewin that Send to Intune uploads. App version: ${v || '(none)'}.` +
+      (i.version && v && i.version !== v ? ` They differ - a release of the new installer sets the App version (More > Release new version), or correct it on Details.` : '');
   }
-  const iv = i.version || '(no version in the file)';
-  box.textContent = `Installer in its folder: ${i.file}, version ${iv} - Package builds it into the .intunewin that Send to Intune uploads. App version: ${v || '(none)'}.` +
-    (i.version && v && i.version !== v ? ` They differ - a release of the new installer sets the App version (More > Release new version), or correct it on Details.` : '');
+  box.replaceChildren(el('span', { text }), acts, pkgFilesView());
 }
-// An installer for the app open in the editor (2.33.0): uploaded in pieces, put in its packages folder, what is empty
-// filled in from it - then the editor shows the app again, as saved.
-const installerFile = el('input', { type: 'file', id: 'aInstallerFile', accept: '.msi,.exe', hidden: true, 'aria-label': 'Installer to upload' });
-document.body.append(installerFile);
-installerFile.addEventListener('change', async () => {
-  const file = installerFile.files[0]; installerFile.value = '';
+// The files in its packages folder (what goes into the package): each one's size, which is the setup file, delete one.
+let pkgFiles = null;
+async function loadPkgFiles() {
+  const name = editingName; pkgFiles = null;
+  if (!name || $('aWinget').value.trim()) { showPkgInfo(); return; }
+  const r = await api('/api/package-files', { name });
+  if (editingName !== name) return;
+  pkgFiles = r.ok ? r : null; showPkgInfo();
+}
+function pkgFilesView() {
+  const r = pkgFiles; if (!r || !r.files.length) return '';
+  const setup = (editorInstaller && editorInstaller.found ? editorInstaller.file : '') || r.setupFile || '';
+  const row = f => el('li', {}, el('span', { class: 'pfpath mono', text: f.path, title: f.path }), el('span', { class: 'muted', text: fmtMB(f.size) }),
+    f.path.toLowerCase() === setup.toLowerCase() ? el('span', { class: 'pill ok', text: 'setup', title: 'The setup file Package uses' })
+      : /\.(msi|exe|ps1)$/i.test(f.path) ? el('button', { type: 'button', class: 'linkish', text: 'Use as setup', title: 'Package uses this file as the setup file', onclick: () => setPkgSetup(f.path) }) : el('span'),
+    el('button', { type: 'button', class: 'bx', text: '×', title: `Delete ${f.path} from the packages folder`, 'aria-label': `Delete ${f.path}`, onclick: () => deletePkgFile(f.path) }));
+  const d = el('details', { class: 'pkgfiles' }, el('summary', { text: `Files in its packages folder - ${r.files.length}, ${fmtMB(r.total)}${r.package ? ` · package built ${fmtWhen(r.package.modified)}` : ''}` }),
+    el('ul', {}, ...r.files.slice(0, 300).map(row)), r.files.length > 300 ? el('p', { class: 'muted', text: `... and ${r.files.length - 300} more.` }) : '');
+  d.open = !!pkgFilesOpen; d.addEventListener('toggle', () => { pkgFilesOpen = d.open; });
+  return d;
+}
+let pkgFilesOpen = false;
+async function refreshPkg(name) {
+  const g = await api('/api/app-get', { name });
+  if (g.ok && editingName === name) editorInstaller = g.installer || null;
+  await loadPkgFiles();
+}
+async function deletePkgFile(path) {
+  const name = editingName;
+  if (!(await ask(`Delete ${path} from the packages folder?\n\nIt is left out of the next package. Backups don't keep package files.`, { ok: 'Delete' }))) return;
+  const r = await api('/api/package-file-delete', { name, path });
+  if (!r.ok) { toast(r.error, true); return; }
+  toast(`${path} deleted.`); refreshPkg(name);
+}
+async function setPkgSetup(path) {
+  const name = editingName, r = await api('/api/package-setup', { name, path });
+  if (!r.ok) { toast(r.error, true); return; }
+  toast(`${path} is the setup file now - Package builds with it; check the install command on Install & detection.`); refreshPkg(name);
+}
+// An installer, a .zip or a folder for the app open in the editor (2.33.0, folders 2.34.0): uploaded, then the
+// review - its files, the setup file, replace or add to what is there - then into its packages folder.
+const installerFile = el('input', { type: 'file', id: 'aInstallerFile', accept: '.msi,.exe,.zip', hidden: true, 'aria-label': 'Installer or .zip to upload' });
+const installerFolder = el('input', { type: 'file', id: 'aInstallerFolder', webkitdirectory: true, multiple: true, hidden: true, 'aria-label': 'Folder to upload' });
+document.body.append(installerFile, installerFolder);
+installerFile.addEventListener('change', () => { const f = installerFile.files[0]; installerFile.value = ''; if (f) editorUpload({ file: f }); });
+installerFolder.addEventListener('change', () => { const p = pickFromFolderInput(installerFolder); installerFolder.value = ''; if (p) editorUpload(p); });
+for (const ev of ['dragenter', 'dragover']) $('aPkgInfo').addEventListener(ev, e => { if ([...(e.dataTransfer.items || [])].some(i => i.kind === 'file')) { e.preventDefault(); e.stopPropagation(); $('aPkgInfo').classList.add('over'); } });
+for (const ev of ['dragleave', 'drop']) $('aPkgInfo').addEventListener(ev, () => $('aPkgInfo').classList.remove('over'));
+$('aPkgInfo').addEventListener('drop', async e => { e.preventDefault(); e.stopPropagation(); const p = await pickFromDrop(e.dataTransfer); if (p) editorUpload(p); });
+async function editorUpload(pick) {
   const name = editingName, box = $('aPkgInfo');
-  if (!file || !name) return;
-  if (!/\.(msi|exe)$/i.test(file.name)) { toast('Choose an .msi or .exe installer.', true); return; }
-  if (editorState() !== editorSnapshot) { toast('Save your changes first - the installer fills in what the saved app still lacks.', true); return; }
-  const say = t => { const b = $('btnAppInstaller'); if (b) b.disabled = true; box.firstChild.textContent = t; };
-  const st = await api('/api/upload-start', { fileName: file.name, size: file.size });
-  if (!st.ok) { toast(st.error, true); showPkgInfo(); return; }
-  const piece = 3 * 1024 * 1024;
-  for (let off = 0; off < file.size; off += piece) {
-    const r = await api('/api/upload-chunk', { uploadId: st.uploadId, offset: off, data: b64(await file.slice(off, off + piece).arrayBuffer()) });
-    if (!r.ok) { toast(r.error, true); api('/api/upload-cancel', { uploadId: st.uploadId }); showPkgInfo(); return; }
-    say(`Uploading ${file.name} - ${Math.round(100 * r.received / file.size)} %`);
-  }
-  say(`Reading ${file.name}...`);
-  const f = await api('/api/upload-finish', { uploadId: st.uploadId });
-  const r = f.ok ? await api('/api/app-installer', { name, uploadId: st.uploadId }) : f;
-  if (!r.ok) { toast(r.error, true); api('/api/upload-cancel', { uploadId: st.uploadId }); showPkgInfo(); return; }
+  if (!name) return;
+  if (!isPickable(pick)) { toast('Choose an .msi or .exe installer, a .zip of its folder, or the folder itself.', true); return; }
+  if (editorState() !== editorSnapshot) { toast('Save your changes first - the upload fills in what the saved app still lacks.', true); return; }
+  const say = t => { for (const b of box.querySelectorAll('button')) b.disabled = true; box.firstChild.textContent = t; };
+  const f = await uploadPick(pick, say);
+  if (!$('dlgApp').open || editingName !== name) { if (f.uploadId) api('/api/upload-cancel', { uploadId: f.uploadId }); return; }
+  if (!f.ok) { toast(f.error, true); showPkgInfo(); return; }
+  const have = (pkgFiles && pkgFiles.files.length) || 0;
+  const choice = await pkgUploadReview(f, have);
+  if (!choice) { api('/api/upload-cancel', { uploadId: f.uploadId }); showPkgInfo(); return; }
+  const r = await api('/api/app-installer', { name, uploadId: f.uploadId, mode: choice.mode });
+  if (!r.ok) { toast(r.error, true); api('/api/upload-cancel', { uploadId: f.uploadId }); showPkgInfo(); return; }
   if (!$('dlgApp').open || editingName !== name) return;
-  toast(`${r.fileName} is in its packages folder${r.filled.length ? ' - filled in ' + r.filled.join(', ') : ''}. Package builds it next.`, false, [{ label: 'Package now', run: () => { $('dlgApp').close(); buildAdded(name); } }]);
+  toast(`${f.folder ? `${r.files} file(s) from ${r.fileName}` : r.fileName} in its packages folder${r.filled.length ? ' - filled in ' + r.filled.join(', ') : ''}. Package builds it next.`, false, [{ label: 'Package now', run: () => { $('dlgApp').close(); buildAdded(name); } }]);
   await loadApps(); $('dlgApp').close(); openEditor(name);
-});
+}
+// The review of an upload for an app: what came, which file is the setup file (a folder), replace or add (files there already).
+function pkgUploadReview(f, have) {
+  return new Promise(resolve => {
+    const dlg = $('dlgPkgUp');
+    $('puFacts').textContent = f.folder ? `${f.fileName}: ${f.fileCount} file${f.fileCount === 1 ? '' : 's'}, ${fmtMB(f.size)} - all of them go into its packages folder and into its package.` : `${f.fileName}, ${fmtMB(f.size)}.`;
+    $('puSetupRow').hidden = !f.folder;
+    const fill = x => {
+      if (f.folder) { $('puSetup').replaceChildren(el('option', { value: '', text: '(none - I write the commands)' }), ...(x.candidates || []).map(c => el('option', { value: c, text: c }))); $('puSetup').value = x.setup || ''; }
+      $('puWill').textContent = x.installCommand ? `Install command (when it has none yet): ${x.installCommand}` : 'No install command is proposed - write it in the editor (Install & detection).';
+      $('puNotes').replaceChildren(...(x.notes || []).map(n => el('li', { text: n })));
+    };
+    fill(f);
+    $('puSetup').onchange = async () => { const r = await api('/api/upload-setup', { uploadId: f.uploadId, setup: $('puSetup').value }); if (r.ok) fill(r); else toast(r.error, true); };
+    $('puModeRow').hidden = !have;
+    $('puReplaceText').textContent = `Replace the ${have} file${have === 1 ? '' : 's'} there`;
+    $('puAdd').checked = true;
+    const done = v => { dlg.onclose = null; if (dlg.open) dlg.close(); resolve(v); };
+    $('puGo').onclick = () => done({ mode: have ? ($('puReplace').checked ? 'replace' : 'add') : '' });
+    $('puCancel').onclick = () => done(null);
+    dlg.onclose = () => done(null);
+    dlg.showModal(); $('puGo').focus();
+  });
+}
 const methodBody = extra => ({ wingetId: $('aWinget').value.trim(), context: $('xContext').value, version: $('mAppVersion').value.trim(), install: $('mInstallCommand').value, uninstall: $('mUninstallCommand').value, ...extra });
 function methodText(m, pinned) {
   const v = $('mAppVersion').value.trim(), w = editorWingetOffers, now = w ? ` Winget has ${w} now (last check).` : '';
@@ -494,6 +563,7 @@ async function openEditor(name) {
     editorApps = r.appNames || []; editorMinOs = r.minOsChoices || []; editorIntuneApps = r.intuneApps || [];
     editingVersion = r.version || '';
     editorInstaller = r.installer || null; editorWingetOffers = r.wingetOffers || '';
+    setTimeout(loadPkgFiles, 0);
     fillEditor(r.app);
     $('knownGroups').textContent = r.knownGroups.length ? 'Groups used in this catalog: ' + r.knownGroups.join(', ') : '';
     $('appTitle').textContent = 'Edit ' + name;

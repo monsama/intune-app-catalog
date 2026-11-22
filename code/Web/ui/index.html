@@ -828,6 +828,18 @@
   <p class="sub" id="retiredNote"></p>
   <div class="actions end"><button class="btn" data-close>Close</button></div>
 </dialog>
+<dialog id="dlgPkgUp" class="ask" aria-labelledby="puTitle">
+  <h2 id="puTitle">Into its packages folder</h2>
+  <p id="puFacts"></p>
+  <label id="puSetupRow" hidden title="The file Intune runs to install it - the commands, detection and version are made from it">Setup file<select id="puSetup"></select></label>
+  <fieldset id="puModeRow" class="plain" hidden><legend>Its packages folder has files already</legend>
+    <label class="chk"><input type="radio" name="puMode" id="puAdd" checked>Add to them - files with the same name are overwritten</label>
+    <label class="chk"><input type="radio" name="puMode" id="puReplace"><span id="puReplaceText">Replace them</span></label>
+  </fieldset>
+  <p class="muted" id="puWill"></p>
+  <ul class="notes" id="puNotes"></ul>
+  <div class="actions end"><button type="button" class="btn" id="puCancel">Cancel</button><button type="button" class="btn primary" id="puGo">Put it there</button></div>
+</dialog>
 <dialog id="dlgAsk" class="ask" aria-labelledby="askTitle">
   <h2 id="askTitle"></h2>
   <p class="asktext" id="askText"></p>
@@ -1079,10 +1091,11 @@
 
   <section class="asec" id="asec-installer" role="tabpanel" aria-labelledby="atab-installer" hidden>
     <div class="dropzone" id="aiDrop" tabindex="0" role="button" aria-describedby="aiDropText">
-      <strong>Drop an .msi or .exe here</strong>
-      <span id="aiDropText" class="muted">or <u>choose a file</u> - it's read for its name, publisher, version and silent switches, and copied into the app's packages folder.</span>
-      <input type="file" id="aiFile" accept=".msi,.exe" hidden>
+      <strong>Drop an .msi or .exe here - or a whole folder, or a .zip of it</strong>
+      <span id="aiDropText" class="muted">or <u>choose a file</u> (.msi, .exe, .zip) - the installer is read for its name, publisher, version and silent switches; everything goes into the app's packages folder and into its package.</span>
+      <input type="file" id="aiFile" accept=".msi,.exe,.zip" hidden>
     </div>
+    <p class="dropalt" id="aiFolderRow">Or upload a whole folder: <button type="button" class="btn small" id="aiFolderBtn">Choose a folder...</button><input type="file" id="aiFolder" webkitdirectory multiple hidden aria-label="A folder to upload"></p>
     <div class="upbar" id="aiProgress" hidden><div class="bar"><span id="aiBar"></span></div><span class="muted" id="aiProgressText"></span></div>
     <div id="aiReview" hidden>
       <p class="sub" id="aiFacts"></p>
@@ -1094,6 +1107,7 @@
       </div>
       <label class="full">Install command<input id="aiInstall" class="mono full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
       <label class="full">Uninstall command<input id="aiUninstall" class="mono full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+      <label class="full" id="aiSetupRow" hidden title="The file Intune runs to install it - suggested from the folder; the commands, detection and version are made from it">Setup file<select id="aiSetup"></select></label>
       <ul class="notes" id="aiNotes"></ul>
       <label class="chk" id="aiManagedRow" title="Release new versions of this MSI to the pilot groups first - the detection rule follows the version"><input type="checkbox" id="aiManaged">Managed updates</label>
       <label class="chk" title="Build the .intunewin from the app's folder right after adding it (needs the packaging tool)"><input type="checkbox" id="aiBuild" checked>Build the package now</label>

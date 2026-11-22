@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.34.0
+
+**Upload whole folders (or a .zip of one) to build the .intunewin** - also
+on the server, where the packages folder can't be reached otherwise.
+
+- **A folder, a .zip or a single installer** - in the editor ("Upload an
+  installer or .zip...", "Upload a folder...", or drop it on the package
+  box) and in Add apps > Installer (drop a folder, or "choose a folder").
+  Subfolders come along.
+- **The setup file is suggested** (the top of the folder first: a PSADT 4
+  launcher, install.ps1, a setup/install installer, an .msi, an .exe) and
+  can be changed; the commands, detection rule and version are made from
+  it - only where still empty. Package uses that file, in a subfolder too.
+- **Replace or add** when the app's folder has files already - asked, not
+  guessed. (A new installer of an app with managed updates still goes
+  through Release new version.)
+- **The packages folder as a list** in the editor: each file and its size,
+  which one is the setup file ("Use as setup"), delete a file, and when
+  the package was last built.
+- **Safe unpacking:** every path is checked (nothing can land outside the
+  app's folder - no "..", no root or drive), symbolic links are skipped,
+  Mac clutter (__MACOSX, .DS_Store) left out, and at most 5000 files and
+  8 GB, counted as they are written.
+
+Fixed:
+
+- **Packages now hold the app's whole folder.** An installer app was built
+  from the setup file alone - its other files were left out, among them
+  the Uninstall.ps1 an EXE app's uninstall command runs (so that uninstall
+  failed on the devices). Rebuild such packages (More > Package) and send
+  them again.
+- A package no longer contains the .intunewin built before it (script apps
+  were packaged with their folder as it was).
+
 ## 2.33.0
 
 **MSI line-of-business apps can move to Win32.** An app taken over from

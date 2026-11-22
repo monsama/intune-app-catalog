@@ -136,6 +136,8 @@ function Global:ConvertTo-AppRecord {
         # Being retired: its groups were switched to Uninstall on this date
         # (ISO); Finish retirement deletes it from Intune and archives it.
         retiringSince = $(if ([string]$Raw.retiringSince -match '^\d{4}-\d{2}-\d{2}') { [string]$Raw.retiringSince } else { '' })
+        # The setup file Package uses, as a path inside the app's packages folder (one in a subfolder too) - '' for the best one found.
+        setupFile = $(if (Test-PackageRelativePath ([string]$Raw.setupFile)) { ([string]$Raw.setupFile) -replace '/', '\' } else { '' })
         # The MSI line-of-business app this one replaced as a Win32 app (its App ID), until it is retired in Intune.
         lobToRetire = $(if ([string]$Raw.lobToRetire -match '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$') { ([string]$Raw.lobToRetire).ToLowerInvariant() } else { '' })
         # Versions withdrawn or rolled back from: the nightly run doesn't release them again by itself.
@@ -368,6 +370,7 @@ function Global:ConvertTo-SingleAppJson {
     $fields.Add("  `"excludeFor`": $(ConvertTo-JsonStringArray -Items @($App.excludeFor) -IndentLevel 1)")
     $fields.Add("  `"uninstallFor`": $(ConvertTo-JsonStringArray -Items @($App.uninstallFor) -IndentLevel 1)")
     if ($App.retiringSince) { $fields.Add("  `"retiringSince`": $(ConvertTo-JsonStringLiteral ([string]$App.retiringSince))") }
+    if ($App.setupFile) { $fields.Add("  `"setupFile`": $(ConvertTo-JsonStringLiteral ([string]$App.setupFile))") }
     if ($App.lobToRetire) { $fields.Add("  `"lobToRetire`": $(ConvertTo-JsonStringLiteral ([string]$App.lobToRetire))") }
     if (@($App.blockedVersions | Where-Object { $_ }).Count) { $fields.Add("  `"blockedVersions`": $(ConvertTo-JsonStringArray -Items @($App.blockedVersions | Where-Object { $_ }) -IndentLevel 1)") }
     if ($App.packageStamp) { $fields.Add("  `"packageStamp`": $(ConvertTo-JsonStringLiteral ([string]$App.packageStamp))") }

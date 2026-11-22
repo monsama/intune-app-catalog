@@ -238,6 +238,10 @@ function Global:Start-WebPackage {
     $params = @{ InputFolder = (Get-AppFolder -Kind Packages -Create); Force = $true; ToolPath = (Get-PackagingToolPath) }
     if ((Get-PackagerChoice) -eq 'builtin') { $params.BuiltIn = $true }
     $folders = @($own | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
+    # The setup file chosen for an app (one in a subfolder too): Package takes it instead of guessing.
+    $chosen = [ordered]@{}
+    foreach ($o in $own) { if ($o.setupFile) { $chosen[(Get-SafeFileNameForApp -Name $o.appName)] = [string]$o.setupFile } }
+    if ($chosen.Count) { $params.SetupFiles = ($chosen | ConvertTo-Json -Compress) }
     if ($names.Count -eq 1) { $params.SingleFolderName = $folders[0] }
     elseif ($names.Count -gt 1) { $params.FolderNames = ($folders -join ',') }
     $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedPackageScript -Name 'package' -ConfigJson '' -ResultPath '' -Kind 'Package' -Parameters $params -After @{ Kind = 'package' }

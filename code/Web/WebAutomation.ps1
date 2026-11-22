@@ -187,7 +187,7 @@ function Global:Invoke-ManagedUpdateRun {
                     $got = Save-WebInstallerDownload $a
                     if (-not $got.ok) { & $say $a.appName 'failed' $got.text; $failed++ } else { $dl = " $($got.text)" }
                 }
-                $inst = Get-WebInstallerInfo $a.appName
+                $inst = Get-WebInstallerInfo $a.appName -SetupFile ([string]$a.setupFile)
                 if (-not ($inst.version -and (Compare-AppVersionText $current $inst.version) -eq 1)) { & $say $a.appName 'current' "$current - no newer installer in its folder.$dl"; continue }
                 if (@($a.blockedVersions) -contains [string]$inst.version) { & $say $a.appName 'available' "The installer in its folder is $($inst.version) (now $current) - not released by itself: it was withdrawn or rolled back before. Release it by hand to try it again."; continue }
                 if (-not $a.autoRelease -or $PlanOnly) { & $say $a.appName 'available' "The installer in its folder is $($inst.version) (now $current)$(if (-not $a.autoRelease) { ' - release it from the app (automatic release is off for this app).' } else { '.' })$dl"; continue }

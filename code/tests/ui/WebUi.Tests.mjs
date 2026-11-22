@@ -15,7 +15,7 @@
 //   npm install --no-save playwright@1.48.2 axe-core@4.10.2 && npx playwright install chromium
 //   node code/tests/ui/WebUi.Tests.mjs [--shots <folder>]
 import { spawn } from 'node:child_process';
-import { mkdirSync, existsSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, existsSync, rmSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -256,10 +256,32 @@ try {
         await page.evaluate(n => api('/api/app-save', { originalName: '', app: { appName: n, wingetId: '', appId: '', requiredFor: [], availableFor: [], uninstallFor: [], excludeFor: [] } }).then(() => loadApps()), lobApp);
         await page.dblclick(`#gridBody tr[data-name="${lobApp}"]`); await page.waitForSelector('#dlgApp[open] #btnAppInstaller');
         await page.setInputFiles('#aInstallerFile', fakeSetup);
+        await page.waitForSelector('#dlgPkgUp[open]', { timeout: 20000 }); await page.click('#puGo');
         await page.waitForFunction(() => /zz-ui-setup-\d+\.exe" \/S/.test(document.getElementById('mInstallCommand').value) && document.getElementById('xType').value === 'Script', null, { timeout: 20000 });
         check(true, `${label}: an installer uploaded in the editor fills in the commands and the detection rule`);
         await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.getElementById('dlgApp').open);
         await page.evaluate(n => api('/api/app-remove', { name: n }).then(() => loadApps()), lobApp); rmSync(fakeSetup, { force: true });
+        // 2.34.0: a whole folder for an app - reviewed (the setup file in a subfolder suggested), all of it in its
+        // packages folder, listed file by file; a file deleted from the list.
+        const folderApp = `ZZ UI Folder ${label.replace(/\W+/g, '')}`, dir = mkdtempSync(join(tmpdir(), 'zz-ui-folder-'));
+        mkdirSync(join(dir, 'Setup')); writeFileSync(join(dir, 'Setup', 'zz-folder-setup.exe'), Buffer.concat([Buffer.from('MZ fake setup - Nullsoft Install System v3.09 '), Buffer.alloc(4000, 120)]));
+        writeFileSync(join(dir, 'Setup', 'config.xml'), '<cfg/>'); writeFileSync(join(dir, 'readme.txt'), 'hi');
+        await page.evaluate(n => api('/api/app-save', { originalName: '', app: { appName: n, wingetId: '', appId: '', requiredFor: [], availableFor: [], uninstallFor: [], excludeFor: [] } }).then(() => loadApps()), folderApp);
+        await page.dblclick(`#gridBody tr[data-name="${folderApp}"]`); await page.waitForSelector('#dlgApp[open] #btnAppFolder');
+        await page.setInputFiles('#aInstallerFolder', dir);
+        await page.waitForSelector('#dlgPkgUp[open]', { timeout: 20000 });
+        check(await page.inputValue('#puSetup') === 'Setup\\zz-folder-setup.exe' && /3 files/.test(await page.textContent('#puFacts')), `${label}: a folder upload is reviewed - its files counted, the setup file in its subfolder suggested`, await page.textContent('#puFacts'));
+        await unnamed('the folder upload review'); await a11y('the folder upload review');
+        await page.click('#puGo');
+        await page.waitForFunction(() => /Setup\\zz-folder-setup\.exe" \/S/.test(document.getElementById('mInstallCommand').value), null, { timeout: 20000 });
+        await page.waitForSelector('#aPkgInfo .pkgfiles'); await page.click('#aPkgInfo .pkgfiles summary');
+        const listed = await page.$$eval('#aPkgInfo .pkgfiles .pfpath', els => els.map(e => e.textContent));
+        check(['readme.txt', 'Setup\\config.xml', 'Setup\\zz-folder-setup.exe'].every(f => listed.includes(f)), `${label}: the folder's files are in its packages folder, listed`, listed.join(', '));
+        await page.click('#aPkgInfo .pkgfiles button[aria-label="Delete readme.txt"]'); await page.click('#askOk');
+        await page.waitForFunction(() => ![...document.querySelectorAll('#aPkgInfo .pkgfiles .pfpath')].some(e => e.textContent === 'readme.txt'), null, { timeout: 10000 });
+        check(true, `${label}: a file is deleted from the packages folder in the list`);
+        await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.getElementById('dlgApp').open);
+        await page.evaluate(n => api('/api/app-remove', { name: n }).then(() => loadApps()), folderApp); rmSync(dir, { recursive: true, force: true });
         await page.click(`#gridBody tr[data-name="${testApp}"]`); await page.waitForSelector('#appPanel:not([hidden]) .pfacts');
 
         // 2.32.2: the side panel's More... opens the actions menu (the same click used to close it again at once).
