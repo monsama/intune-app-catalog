@@ -99,6 +99,7 @@ $testableFunctionNames = @(
     "Get-VersionStringsFromBytes",
     "Get-ExeVersionStrings",
     "ConvertTo-PlainJsonValue",
+    "ConvertTo-WebJsonText",
     "Get-StarterAppSet",
     "Test-InstallerFileHeader",
     "Get-ListedBaseName",
@@ -3226,6 +3227,12 @@ $sr = [pscustomobject]@{ Type = 'Script'; Script_Content = (New-InstalledAppDete
 $moved = Set-DetectionRuleVersion -Rule $sr -Version '25.01'
 Assert-True (-not (Test-VersionDetectionRule $sr) -and $moved.Changed -and $moved.Rule.Script_Content -match "\`$want = '25\.01'" -and $sr.Script_Content -match "\`$want = '24\.09'") "Detection script: a release moves its version (the rule itself is left as it was)"
 Assert-True ([bool](Test-VersionDetectionRule ([pscustomobject]@{ Type = 'Script'; Script_Content = 'Write-Output Installed' }))) "Detection script: one written by hand still can't follow a release"
+
+# 2.38.0: on 5.1 an answer is rebuilt only when plain ConvertTo-Json fails or writes PSPath.
+$ans = [ordered]@{ ok = $true; apps = @([ordered]@{ name = 'A'; v = 1 }); none = @() }
+Assert-True ((ConvertTo-WebJsonText -Object $ans -Desktop) -eq (ConvertTo-Json -InputObject $ans -Depth 12 -Compress) -and (ConvertTo-WebJsonText -Object 'x') -eq 'x') "Answer JSON: the same text either way; text passes as it is"
+$withPath = [ordered]@{ log = [pscustomobject]@{ value = 'log'; PSPath = 'C:\x' } }
+Assert-True ((ConvertTo-WebJsonText -Object $withPath -Desktop) -eq (ConvertTo-Json -InputObject (ConvertTo-PlainJsonValue $withPath) -Depth 12 -Compress)) "Answer JSON: one that writes PSPath is rebuilt from plain values"
 
 # =================================================================
 # Report

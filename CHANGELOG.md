@@ -60,6 +60,11 @@ since 2.28.5 - everything it found fixed.**
   already in its folder. For a PSADT app it lands in Files\.
 - Add apps: emptying both group lists clears a profile's exclusions too.
 
+- **Faster on Windows PowerShell 5.1**: 2.37.0 rebuilt every answer from
+  plain values there - the Apps list of 500 apps took 7.7 s instead of
+  about 5. Now only an answer that needs it is rebuilt (plain JSON fails or
+  carries a file's PSPath).
+
 ### UI
 - Menus: Escape gives focus back to what opened them; arrow keys skip
   hidden items, Home/End work; the server's Sandbox test menu no longer

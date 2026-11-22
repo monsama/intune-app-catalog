@@ -364,6 +364,22 @@ function Global:ConvertTo-PlainJsonValue {
     return $Value
 }
 
+function Global:ConvertTo-WebJsonText {
+    <#
+      An answer as JSON text. Windows PowerShell 5.1 (-Desktop) writes what PowerShell hangs on a value (Get-Content's
+      PSPath, PSDrive, PSProvider - many levels, and the answer then fails): there it is rebuilt from plain values
+      (ConvertTo-PlainJsonValue) - but only when it has to be (2.38.0): rebuilding every answer made the Apps list of
+      500 apps a second and a half slower. Plain ConvertTo-Json first; rebuilt when that fails or writes PSPath.
+    #>
+    param($Object, [switch]$Desktop)
+    if ($Object -is [string]) { return $Object }
+    if (-not $Desktop) { return (ConvertTo-Json -InputObject $Object -Depth 12 -Compress) }
+    $json = $null
+    try { $json = ConvertTo-Json -InputObject $Object -Depth 12 -Compress -ErrorAction Stop } catch { $json = $null }
+    if ($null -eq $json -or $json.Contains('"PSPath":') -or $json.Contains('"PSProvider":')) { $json = ConvertTo-Json -InputObject (ConvertTo-PlainJsonValue $Object) -Depth 12 -Compress }
+    return $json
+}
+
 function Global:Get-VersionStringsFromBytes {
     <#
       Pure: the strings of an .exe's version block (StringFileInfo) found in -Bytes - ProductName, CompanyName,
