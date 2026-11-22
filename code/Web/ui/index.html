@@ -169,6 +169,7 @@
       <span class="spacer"></span>
       <div class="btngroup" role="group" aria-label="Updates actions">
         <button class="btn" id="btnUpdWinget" title="Ask winget for the newest version of every Winget app">Check winget for new versions</button>
+        <button class="btn" id="btnUpdWatched" title="Own packages that watch a winget package: ask winget, then get each newer installer into its folder (checked against winget's SHA256) - and release them from the list">Get new installers...</button>
         <button class="btn" id="btnUpdDownloads" title="Whether the version each app is pinned to can still be downloaded - a vendor that keeps only its latest version online breaks it, first on new devices. The nightly run checks this too.">Check downloads</button>
         <button class="btn" id="btnUpdExport" title="A compliance report as a CSV file: per app the pinned version, how many devices have it, whether it meets the bar (90 % on the pinned version, download still there), the release and its ring - with a totals row. For an audit or a report.">Compliance report</button>
         <button class="btn" id="btnUpdReload" title="Read the counts from Intune again">Reload</button>
@@ -665,6 +666,7 @@
   <button role="menuitem" data-act="pushsettings" title="Send the catalog's settings to Intune, without uploading a package">Send settings only...</button>
   <button role="menuitem" data-act="status" title="Every device's install state for this app, from Intune">Install status...</button>
   <button role="menuitem" data-act="sandbox" title="Install, detect and uninstall it in Windows Sandbox - a throwaway Windows - before it goes to any device">Test in Windows Sandbox...</button>
+  <button role="menuitem" data-act="filldetails" title="Publisher, description, links and developer from winget - and the owner from Settings - where they are still empty. Never the App version.">Fill in details from winget</button>
   <hr>
   <div class="mhead" role="presentation">Releases</div>
   <button role="menuitem" data-act="watchfetch" title="winget's newest installer of the package this app watches - downloaded, checked against winget's SHA256, put in its folder">Get new installer...</button>
@@ -677,7 +679,6 @@
   <button role="menuitem" data-act="takeversion" title="Use the version winget offers as the App version (from the last Check winget for new versions)">Take winget's version</button>
   <hr>
   <div class="mhead" role="presentation">Groups</div>
-  <button role="menuitem" data-act="filldetails" title="Publisher, description, links and developer from winget - and the owner from Settings - where they are still empty. Never the App version.">Fill in details from winget</button>
   <button role="menuitem" data-act="batchedit" title="Change the same fields on all selected apps in the catalog">Batch edit...</button>
   <button role="menuitem" data-act="addgroups" title="Add groups to all selected apps in the catalog">Add groups...</button>
   <button role="menuitem" data-act="removegroups" title="Remove groups from all selected apps in the catalog">Remove groups...</button>
@@ -835,6 +836,12 @@
   <p class="sub" id="adDoneSub">What is ready goes to Intune with its groups. What still lacks something says what - Fix opens the editor there.</p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>App</th><th>Who gets it</th><th>Ready?</th></tr></thead><tbody id="adDoneRows"></tbody></table></div>
   <div class="actions end"><button class="btn" id="adDoneClose">Not now</button><button class="btn primary" id="adDoneSend">Send</button></div>
+</dialog>
+<dialog id="dlgWatched" class="wide" aria-labelledby="wtTitle">
+  <h2 id="wtTitle">New installers from winget</h2>
+  <p class="sub" id="wtSub">Own packages that watch a winget package and have a newer version there. Each is downloaded into its folder and kept only if its SHA256 is the one winget gives.</p>
+  <div class="tablewrap short"><table class="plan"><thead><tr><th>App</th><th>Version</th><th>Status</th></tr></thead><tbody id="wtRows"></tbody></table></div>
+  <div class="actions end"><button class="btn" id="wtClose">Close</button><button class="btn primary" id="wtGo">Get them</button></div>
 </dialog>
 <dialog id="dlgPkgUp" class="ask" aria-labelledby="puTitle">
   <h2 id="puTitle">Into its packages folder</h2>

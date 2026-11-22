@@ -846,6 +846,24 @@ function foldIntoMenu(ids, opts = {}) {
   btns[0].before(more); for (const b of btns) b.hidden = true;
   return more;
 }
+// A small menu under -anchor (2.37.0): [text, title, run] each; closes on a choice, Escape or a click elsewhere.
+function popMenu(anchor, items) {
+  document.querySelectorAll('.menu.pop').forEach(m => m.remove());
+  const menu = el('div', { class: 'menu pop', role: 'menu' });
+  const close = () => { menu.remove(); document.removeEventListener('click', away, true); anchor.focus(); };
+  const away = e => { if (!menu.contains(e.target)) close(); };
+  menu.append(...items.map(([text, title, run]) => el('button', { role: 'menuitem', type: 'button', title, text, onclick: () => { close(); run(); } })));
+  menu.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.stopPropagation(); close(); return; }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const b = [...menu.querySelectorAll('button')], i = b.indexOf(document.activeElement);
+    e.preventDefault(); b[(i + (e.key === 'ArrowDown' ? 1 : b.length - 1)) % b.length].focus();
+  });
+  document.body.append(menu);
+  const r = anchor.getBoundingClientRect(); placeMenu(menu, r.left, r.bottom + 4);
+  setTimeout(() => document.addEventListener('click', away, true), 0);
+  menu.querySelector('button').focus();
+}
 // A text Reload button as the round icon the Apps page has.
 function reloadIcon(id) {
   const b = $(id); if (!b) return;
@@ -1265,11 +1283,12 @@ function openMenu(x, y) {
     replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any, retire: !!(one && (one.hasAppId || one.retiringSince)),
     takeversion: sel.some(a => a.wingetId && a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
     watchfetch: !!(one && !one.wingetId && one.watchWinget),
+    filldetails: sel.some(a => a.wingetId && !isStoreId(a.wingetId)),
     release: !!(one && one.managed && one.hasAppId && !one.pilotVersion), promote: !!(one && one.pilotVersion), withdraw: !!(one && one.pilotVersion),
     managed: any,
     rollback: !!(one && one.managed && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && (one.previousVersions || []).length > 1) };
   const why = {
-    edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', watchfetch: one ? 'Only for an own package that watches a winget package for new versions (the editor, Details: Watch winget for new versions).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
+    edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', filldetails: 'Only for Winget apps - their details come from winget.', watchfetch: one ? 'Only for an own package that watches a winget package for new versions (the editor, Details: Watch winget for new versions).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
     sandbox: one ? 'Windows Sandbox has no winget - test a Winget app on a pilot device.' : 'Select exactly one app.',
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
@@ -1286,6 +1305,28 @@ function openMenu(x, y) {
     cleanup: !one ? 'Select exactly one app.' : 'Only one superseded version (or none) - it is kept for rollback.',
   };
   for (const b of menu.querySelectorAll('button')) setEnabled(b, !!enable[b.dataset.act], why[b.dataset.act]);
+  // 2.37.0: what can never apply to the selected apps isn't listed at all - greyed out with a reason stays only
+  // what could be made to apply (send it first, select one). A section with nothing left loses its heading too.
+  if (any) {
+    const own = sel.some(a => !a.wingetId), winget = sel.some(a => a.wingetId && !isStoreId(a.wingetId));
+    const never = {
+      sandbox: !own, package: !own, watchfetch: !own, takeversion: !winget, filldetails: !winget,
+      promote: !sel.some(a => a.pilotVersion), withdraw: !sel.some(a => a.pilotVersion),
+      rollback: !sel.some(a => (a.previousVersions || []).length), cleanup: !sel.some(a => (a.previousVersions || []).length > 1),
+    };
+    for (const b of menu.querySelectorAll('button[data-act]')) b.hidden = !!never[b.dataset.act];
+  } else for (const b of menu.querySelectorAll('button[data-act]')) b.hidden = false;
+  // Headings and rules follow what is left in their section.
+  let head = null, rule = null, shown = 0;
+  const settle = () => { if (head) head.hidden = !shown; if (rule) rule.hidden = !shown; };
+  for (const n of [...menu.children]) {
+    if (n.tagName === 'HR') { settle(); rule = n; head = null; shown = 0; }
+    else if (n.classList.contains('mhead')) head = n;
+    else if (n.tagName === 'BUTTON' && !n.hidden) shown++;
+  }
+  settle();
+  // No rule before the first section that is shown.
+  const firstShown = [...menu.children].find(n => !n.hidden); if (firstShown && firstShown.tagName === 'HR') firstShown.hidden = true;
   menu.querySelector('[data-act=package]').textContent = !any ? 'Package every app with its own installer' : enable.package ? `Package ${sel.length > 1 ? 'the selected apps' : 'this app'} (build .intunewin)` : 'Package (Winget apps use the shared package)';
   const allManaged = sel.length && sel.every(a => a.managed);
   menu.querySelector('[data-act=managed]').textContent = allManaged ? 'Managed updates off...' : 'Managed updates on...';

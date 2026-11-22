@@ -333,6 +333,37 @@ function Global:Get-AppWindowPreferencesJson {
 }
 
 
+function Global:ConvertTo-PlainJsonValue {
+    <#
+      Pure (2.37.0): a value as ConvertTo-Json should see it - text as plain text, lists and dictionaries and
+      objects rebuilt from their parts. Windows PowerShell 5.1 writes what PowerShell hangs on a value too
+      (Get-Content's text carries PSPath, PSDrive, PSProvider...: many levels, and the answer fails); 7 doesn't.
+    #>
+    param($Value, [int]$Depth = 12)
+    if ($null -eq $Value) { return $null }
+    # Not "$base = if ...": an if's output is unrolled - @(5) would come out as 5, @() as nothing.
+    $base = $Value
+    if ($Value -is [System.Management.Automation.PSObject]) { $base = $Value.PSObject.BaseObject }
+    if ($base -is [string]) { return [string]$base }
+    if ($base -is [ValueType] -or $Depth -le 0) { return $base }
+    if ($base -is [System.Collections.IDictionary]) {
+        $o = [ordered]@{}
+        foreach ($k in @($base.Keys)) { $o[[string]$k] = ConvertTo-PlainJsonValue $base[$k] ($Depth - 1) }
+        return $o
+    }
+    if ($base -is [System.Collections.IEnumerable]) {
+        $list = New-Object System.Collections.Generic.List[object]
+        foreach ($i in $base) { $list.Add((ConvertTo-PlainJsonValue $i ($Depth - 1))) }
+        return , $list.ToArray()
+    }
+    if ($base -is [System.Management.Automation.PSCustomObject] -or $Value -is [System.Management.Automation.PSObject] -and $base.GetType().FullName -eq 'System.Management.Automation.PSCustomObject') {
+        $o = [ordered]@{}
+        foreach ($p in $Value.PSObject.Properties) { $o[$p.Name] = ConvertTo-PlainJsonValue $p.Value ($Depth - 1) }
+        return $o
+    }
+    return $Value
+}
+
 function Global:Get-VersionStringsFromBytes {
     <#
       Pure: the strings of an .exe's version block (StringFileInfo) found in -Bytes - ProductName, CompanyName,

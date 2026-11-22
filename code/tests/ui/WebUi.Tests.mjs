@@ -260,6 +260,51 @@ try {
         check(await page.isVisible('#btnAddSend') && await page.isDisabled('#btnAddSend') && /connection/i.test(await page.getAttribute('#btnAddSend', 'title')), `${label}: Add and send is beside Add - off without a connection, saying so`);
         await page.click('#btnAddGo'); await page.waitForSelector(`#gridBody tr[data-name="${sendApp}"]`, { timeout: 20000 }).catch(() => {});
         check(await page.isVisible(`#gridBody tr[data-name="${sendApp}"]`), `${label}: a script app is added with Add`);
+        // 2.36.0: the rest of Add and send - the summary, then Send - with Intune's answers stood in for here (sending
+        // needs a connection and an upload to Intune): only the ready app is sent, with its groups; a warning shows, not blocks.
+        await page.evaluate(([ready, notReady]) => {
+          window.__realApi = api; window.__calls = [];
+          api = async (path, body = {}) => {
+            if (path === '/api/deploy-plan') return { ok: true, note: '', circular: [], apps: [
+              { name: ready, ready: true, update: false, reason: '', deps: [], warnings: ['The App version is 1.0, the installer is 1.1.'] },
+              { name: notReady, ready: false, update: false, reason: "No package (.intunewin) yet - build it with More > Package.", deps: [], warnings: [] }] };
+            if (path === '/api/deploy-start') { window.__calls.push(body); return { ok: false, error: 'stood in for: not sent' }; }
+            return window.__realApi(path, body);
+          };
+        }, [sendApp, testApp]);
+        await page.evaluate(([a, b]) => showAddSummary([a, b]), [sendApp, testApp]);
+        await page.waitForSelector('#dlgAddDone[open]', { timeout: 10000 }).catch(() => {});
+        const sum = await page.evaluate(() => ({ text: document.getElementById('adDoneRows').textContent, send: document.getElementById('adDoneSend').textContent, off: document.getElementById('adDoneSend').disabled,
+          buttons: [...document.querySelectorAll('#adDoneRows button')].map(b => b.textContent) }));
+        check(/Ready - check/.test(sum.text) && /installer is 1\.1/.test(sum.text) && sum.buttons.includes('Build') && sum.send === 'Send the 1 ready' && !sum.off, `${label}: the summary - ready with a warning, Build for the one without a package, Send the 1 ready`, JSON.stringify(sum));
+        await a11y('the Add and send summary'); await unnamed('the Add and send summary');
+        await page.click('#adDoneSend');
+        await page.waitForFunction(() => window.__calls.length > 0, null, { timeout: 15000 }).catch(() => {});
+        const sent = await page.evaluate(() => window.__calls);
+        check(sent.length === 1 && sent[0].name === sendApp && sent[0].sendGroups === true, `${label}: Send sends only the ready app, with its groups`, JSON.stringify(sent));
+        await page.waitForFunction(() => /Failed/.test(document.getElementById('dlgDeploy').textContent), null, { timeout: 10000 }).catch(() => {});
+        await page.evaluate(() => { api = window.__realApi; });
+        await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.getElementById('dlgDeploy').open, null, { timeout: 5000 }).catch(() => {});
+        // 2.37.0: Updates > Get new installers - every watched app with a newer version on winget, fetched one after another
+        // (winget and the download stood in for here), each with its next step.
+        await page.evaluate(n => {
+          window.__realApi = api; window.__fetched = [];
+          api = async (path, body = {}) => {
+            if (path === '/api/checks-winget') return { ok: true, areas: [], names: [], findings: [] };
+            if (path === '/api/watch-fetch') { window.__fetched.push(body.name); return { ok: true, version: '9.9', file: 'Install.ps1', managed: false }; }
+            const r = await window.__realApi(path, body);
+            if (path === '/api/catalog' && r.ok) for (const a of r.apps) if (a.name === n) Object.assign(a, { watchWinget: 'ZZ.Watched', wingetVersion: '9.9', newerOnWinget: true });
+            return r;
+          };
+        }, sendApp);
+        await page.evaluate(() => document.getElementById('btnUpdWatched').click());
+        await page.waitForSelector('#dlgWatched[open]', { timeout: 10000 }).catch(() => {});
+        check(await page.evaluate(n => [...document.querySelectorAll('#wtRows tr')].some(r => r.textContent.includes(n) && /→ 9\.9/.test(r.textContent)), sendApp), `${label}: Get new installers lists each watched app with a newer version on winget`);
+        await a11y('Get new installers'); await unnamed('Get new installers');
+        await page.click('#wtGo');
+        await page.waitForFunction(() => /9\.9 in its folder/.test(document.getElementById('wtRows').textContent), null, { timeout: 10000 }).catch(() => {});
+        check(await page.evaluate(n => window.__fetched.includes(n) && [...document.querySelectorAll('#wtRows button')].some(b => b.textContent === 'Open'), sendApp), `${label}: ... gets each, then offers its next step`);
+        await page.evaluate(() => { api = window.__realApi; document.getElementById('dlgWatched').close(); });
         await page.waitForFunction(() => !document.getElementById('dlgRun')?.open, null, { timeout: 20000 }).catch(() => {});
         // Duplicate app: a copy to start from, under a new name.
         await page.evaluate(() => { selected.clear(); renderApps(); });
@@ -329,6 +374,10 @@ try {
         await page.click('#btnMore');
         const relTip = await page.getAttribute('[data-act="release"]', 'title');
         check(await page.isDisabled('[data-act="release"]') && /managed updates on/i.test(relTip || ''), `${label}: Release new version is off for an app without managed updates, and says why`, relTip);
+        // 2.37.0: what can never apply to a Winget app isn't listed (an own installer's actions); what can be, is.
+        check(await page.evaluate(() => { const v = a => !document.querySelector(`#appMenu [data-act="${a}"]`).hidden;
+          return !v('watchfetch') && !v('sandbox') && !v('package') && !v('promote') && v('takeversion') && v('release') && !document.querySelector('#appMenu [data-act="filldetails"]').disabled; }),
+          `${label}: the menu leaves out what can't apply to a Winget app; Fill in details from winget works`);
         await page.keyboard.press('Escape');
         await page.click(`#gridBody tr[data-name="${testApp}"]`);
         await page.click('#btnMore');

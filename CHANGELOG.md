@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.37.0
+
+**Windows PowerShell 5.1 made safe for every answer, new installers in
+one go, and a shorter menu.**
+
+- **Every answer the page gets is plain values on Windows PowerShell
+  5.1.** 5.1 writes what PowerShell hangs on a value into the JSON too -
+  text read from a file carries its path, drive and provider, many levels
+  deep - and the answer then fails (2.36.0 fixed one case, the Sandbox
+  log). The server now rebuilds each answer from plain values on 5.1 first,
+  so no page can run into it. PowerShell 7 (and the server version) leaves
+  those out by itself.
+- **Updates > Get new installers...**: every app with its own installer
+  that watches a winget package and has a newer version there, in one
+  list - each downloaded into its folder one after another (SHA256 as
+  winget gives it), then **Release...** (managed) or **Open** (set the App
+  version, Package and send) beside it.
+- **A shorter More menu**: what can never apply to the selected apps isn't
+  listed (Sandbox, Package and Get new installer for Winget apps; Take
+  winget's version and Fill in details for own installers; Promote,
+  Withdraw, Roll back and clean-up without versions to act on), and a
+  section with nothing left loses its heading. What could apply after a
+  step stays, greyed out with the reason (Release new version: turn on
+  managed updates).
+- **Fixed: Fill in details from winget was always greyed out** in the
+  menu. "Fill in details" moved from Groups to Package & Intune.
+- **The server's side panel has one Sandbox test... button** - download
+  the test, or upload its result - instead of two.
+- Tested: the last step of Add and send (the summary's Send sends only the
+  ready apps, with their groups; Intune's answers stood in for in the
+  page), and Get new installers.
+
 ## 2.36.0
 
 **New versions of your own packages, the server's Sandbox results, and a
