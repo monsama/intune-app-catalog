@@ -2248,10 +2248,11 @@ function Global:ConvertTo-SandboxResult {
 
 function Global:Get-StarterAppSet {
     <#
-      Pure (2.38.0): a starter set of Winget apps most organisations deploy, by category - the recommended ones
-      ticked by default (browsers, 7-Zip, a PDF reader, a text editor, VLC, Java and the Visual C++ runtime);
+      Pure (2.38.0, more in 2.38.1): a starter set of Winget apps organisations deploy, by category - the recommended
+      ones ticked by default (browsers, 7-Zip, a PDF reader, a text editor, VLC, Java and the Visual C++ runtime);
       the others common choices for some. Every ID was checked against winget's index when it was written.
-      Java is Eclipse Temurin (no Oracle licence needed); Chrome is Google's enterprise MSI.
+      Java is Eclipse Temurin (no Oracle licence needed); Chrome is Google's enterprise MSI. Not here: what Windows
+      or Microsoft 365 bring (Edge, OneDrive, Office), and VPN clients winget doesn't have (FortiClient, Cisco).
     #>
     return @(
         [ordered]@{ id = 'Mozilla.Firefox'; name = 'Mozilla Firefox'; category = 'Browsers'; recommended = $true; why = 'A second browser beside Edge - many sites and admins expect one.' },
@@ -2260,28 +2261,64 @@ function Global:Get-StarterAppSet {
         [ordered]@{ id = '7zip.7zip'; name = '7-Zip'; category = 'Files and documents'; recommended = $true; why = 'Opens .7z, .rar, .tar and more - Windows itself only does .zip well.' },
         [ordered]@{ id = 'Adobe.Acrobat.Reader.64-bit'; name = 'Adobe Acrobat Reader'; category = 'Files and documents'; recommended = $true; why = 'Forms and signatures in PDFs that the browser viewers handle badly.' },
         [ordered]@{ id = 'Notepad++.Notepad++'; name = 'Notepad++'; category = 'Files and documents'; recommended = $true; why = 'A text editor for logs, scripts and config files.' },
+        [ordered]@{ id = 'Adobe.Acrobat.Pro'; name = 'Adobe Acrobat (Pro / Standard)'; category = 'Files and documents'; recommended = $false; why = 'Editing and creating PDFs - needs an Adobe licence; it replaces Reader.' },
+        [ordered]@{ id = 'geeksoftwareGmbH.PDF24Creator'; name = 'PDF24 Creator'; category = 'Files and documents'; recommended = $false; why = 'Free PDF printer and tools: merge, split, compress, convert.' },
+        [ordered]@{ id = 'PDFsam.PDFsam'; name = 'PDFsam Basic'; category = 'Files and documents'; recommended = $false; why = 'Merges, splits and rotates PDFs.' },
         [ordered]@{ id = 'SumatraPDF.SumatraPDF'; name = 'SumatraPDF'; category = 'Files and documents'; recommended = $false; why = 'A small, fast PDF reader - instead of Acrobat where forms are not needed.' },
         [ordered]@{ id = 'TheDocumentFoundation.LibreOffice'; name = 'LibreOffice'; category = 'Files and documents'; recommended = $false; why = 'An office suite where there is no Microsoft 365 licence.' },
-        [ordered]@{ id = 'VideoLAN.VLC'; name = 'VLC media player'; category = 'Media'; recommended = $true; why = 'Plays nearly every audio and video format without extra codecs.' },
-        [ordered]@{ id = 'dotPDN.PaintDotNet'; name = 'Paint.NET'; category = 'Media'; recommended = $false; why = 'Simple image editing beyond Paint.' },
-        [ordered]@{ id = 'Greenshot.Greenshot'; name = 'Greenshot'; category = 'Media'; recommended = $false; why = 'Screenshots with arrows and blur - for support tickets and documentation.' },
-        [ordered]@{ id = 'EclipseAdoptium.Temurin.21.JRE'; name = 'Java 21 (Eclipse Temurin JRE)'; category = 'Runtimes'; recommended = $true; why = 'Java without an Oracle licence: the current long-term version, for Java apps.' },
-        [ordered]@{ id = 'EclipseAdoptium.Temurin.17.JRE'; name = 'Java 17 (Eclipse Temurin JRE)'; category = 'Runtimes'; recommended = $false; why = 'The previous long-term Java - for apps not yet certified on 21.' },
+        [ordered]@{ id = 'voidtools.Everything'; name = 'Everything'; category = 'Files and documents'; recommended = $false; why = 'Finds any file by name at once.' },
+        [ordered]@{ id = 'JAMSoftware.TreeSize.Free'; name = 'TreeSize Free'; category = 'Files and documents'; recommended = $false; why = 'Shows what fills a disk.' },
+        [ordered]@{ id = 'Microsoft.Teams'; name = 'Microsoft Teams'; category = 'Communication'; recommended = $false; why = 'Where Microsoft 365 Apps do not bring it already (the new Teams, for all users).' },
+        [ordered]@{ id = 'Zoom.Zoom'; name = 'Zoom'; category = 'Communication'; recommended = $false; why = 'Where customers or partners meet on Zoom.' },
+        [ordered]@{ id = 'Cisco.Webex'; name = 'Webex'; category = 'Communication'; recommended = $false; why = 'Where meetings run on Webex.' },
+        [ordered]@{ id = 'SlackTechnologies.Slack'; name = 'Slack'; category = 'Communication'; recommended = $false; why = 'Where teams or partners chat on Slack.' },
+        [ordered]@{ id = 'Mozilla.Thunderbird'; name = 'Thunderbird'; category = 'Communication'; recommended = $false; why = 'A mail client where Outlook is not used.' },
+        [ordered]@{ id = 'Citrix.Workspace'; name = 'Citrix Workspace'; category = 'Remote access'; recommended = $false; why = 'For Citrix virtual apps and desktops.' },
+        [ordered]@{ id = 'OpenVPNTechnologies.OpenVPNConnect'; name = 'OpenVPN Connect'; category = 'Remote access'; recommended = $false; why = 'For an OpenVPN-based company VPN.' },
+        [ordered]@{ id = 'WireGuard.WireGuard'; name = 'WireGuard'; category = 'Remote access'; recommended = $false; why = 'For a WireGuard-based company VPN.' },
+        [ordered]@{ id = 'AnyDesk.AnyDesk'; name = 'AnyDesk'; category = 'Remote access'; recommended = $false; why = 'Remote support - needs an AnyDesk licence for business use.' },
+        [ordered]@{ id = 'TeamViewer.TeamViewer'; name = 'TeamViewer'; category = 'Remote access'; recommended = $false; why = 'Remote support - needs a TeamViewer licence for business use.' },
+        [ordered]@{ id = 'Dropbox.Dropbox'; name = 'Dropbox'; category = 'Cloud storage'; recommended = $false; why = 'Where files are shared on Dropbox (OneDrive comes with Windows).' },
+        [ordered]@{ id = 'Google.GoogleDrive'; name = 'Google Drive'; category = 'Cloud storage'; recommended = $false; why = 'Where files are shared on Google Drive.' },
+        [ordered]@{ id = 'Box.Box'; name = 'Box Drive'; category = 'Cloud storage'; recommended = $false; why = 'Where files are shared on Box.' },
+        [ordered]@{ id = 'KeePassXCTeam.KeePassXC'; name = 'KeePassXC'; category = 'Passwords'; recommended = $false; why = 'A local password manager, where no company one is in use.' },
+        [ordered]@{ id = 'Bitwarden.Bitwarden'; name = 'Bitwarden'; category = 'Passwords'; recommended = $false; why = 'Where the company password manager is Bitwarden.' },
+        [ordered]@{ id = 'AgileBits.1Password'; name = '1Password'; category = 'Passwords'; recommended = $false; why = 'Where the company password manager is 1Password.' },
+        [ordered]@{ id = 'VideoLAN.VLC'; name = 'VLC media player'; category = 'Media and design'; recommended = $true; why = 'Plays nearly every audio and video format without extra codecs.' },
+        [ordered]@{ id = 'Greenshot.Greenshot'; name = 'Greenshot'; category = 'Media and design'; recommended = $false; why = 'Screenshots with arrows and blur - for support tickets and documentation.' },
+        [ordered]@{ id = 'IrfanSkiljan.IrfanView'; name = 'IrfanView'; category = 'Media and design'; recommended = $false; why = 'A fast image viewer that opens almost any format.' },
+        [ordered]@{ id = 'dotPDN.PaintDotNet'; name = 'Paint.NET'; category = 'Media and design'; recommended = $false; why = 'Simple image editing beyond Paint.' },
+        [ordered]@{ id = 'GIMP.GIMP.3'; name = 'GIMP'; category = 'Media and design'; recommended = $false; why = 'Full image editing, free.' },
+        [ordered]@{ id = 'Inkscape.Inkscape'; name = 'Inkscape'; category = 'Media and design'; recommended = $false; why = 'Vector graphics: logos, diagrams, SVG.' },
+        [ordered]@{ id = 'Audacity.Audacity'; name = 'Audacity'; category = 'Media and design'; recommended = $false; why = 'Records and edits audio.' },
+        [ordered]@{ id = 'OBSProject.OBSStudio'; name = 'OBS Studio'; category = 'Media and design'; recommended = $false; why = 'Records screens and webinars, streams.' },
+        [ordered]@{ id = 'Adobe.CreativeCloud'; name = 'Adobe Creative Cloud'; category = 'Media and design'; recommended = $false; why = 'Installs and updates the Adobe apps a licence includes.' },
+        [ordered]@{ id = 'Figma.Figma'; name = 'Figma'; category = 'Media and design'; recommended = $false; why = 'Design and prototypes - for design teams.' },
+        [ordered]@{ id = 'Miro.Miro'; name = 'Miro'; category = 'Media and design'; recommended = $false; why = 'The whiteboard app - where Miro is used.' },
+        [ordered]@{ id = 'Notion.Notion'; name = 'Notion'; category = 'Media and design'; recommended = $false; why = 'Notes and wikis - where Notion is used.' },
+        [ordered]@{ id = 'Microsoft.PowerBI'; name = 'Power BI Desktop'; category = 'Media and design'; recommended = $false; why = 'Builds Power BI reports - for analysts.' },
+        [ordered]@{ id = 'EclipseAdoptium.Temurin.25.JRE'; name = 'Java 25 (Eclipse Temurin JRE)'; category = 'Runtimes'; recommended = $true; why = 'Java without an Oracle licence: the current long-term version, for Java apps.' },
+        [ordered]@{ id = 'EclipseAdoptium.Temurin.21.JRE'; name = 'Java 21 (Eclipse Temurin JRE)'; category = 'Runtimes'; recommended = $false; why = 'The previous long-term Java - for apps not yet certified on 25.' },
+        [ordered]@{ id = 'EclipseAdoptium.Temurin.17.JRE'; name = 'Java 17 (Eclipse Temurin JRE)'; category = 'Runtimes'; recommended = $false; why = 'An older long-term Java - for apps that still need 17.' },
         [ordered]@{ id = 'EclipseAdoptium.Temurin.8.JRE'; name = 'Java 8 (Eclipse Temurin JRE)'; category = 'Runtimes'; recommended = $false; why = 'Only for old apps that need Java 8.' },
         [ordered]@{ id = 'Microsoft.VCRedist.2015+.x64'; name = 'Visual C++ Redistributable (x64)'; category = 'Runtimes'; recommended = $true; why = 'Needed by many desktop apps - better installed once than by each app.' },
         [ordered]@{ id = 'Microsoft.VCRedist.2015+.x86'; name = 'Visual C++ Redistributable (x86)'; category = 'Runtimes'; recommended = $false; why = 'The same for 32-bit apps.' },
         [ordered]@{ id = 'Microsoft.DotNet.DesktopRuntime.8'; name = '.NET 8 Desktop Runtime'; category = 'Runtimes'; recommended = $false; why = 'For apps built on .NET 8 that do not bring it themselves.' },
-        [ordered]@{ id = 'Zoom.Zoom'; name = 'Zoom'; category = 'Meetings and remote work'; recommended = $false; why = 'Where customers or partners meet on Zoom.' },
-        [ordered]@{ id = 'Cisco.Webex'; name = 'Webex'; category = 'Meetings and remote work'; recommended = $false; why = 'Where meetings run on Webex.' },
-        [ordered]@{ id = 'Citrix.Workspace'; name = 'Citrix Workspace'; category = 'Meetings and remote work'; recommended = $false; why = 'For Citrix virtual apps and desktops.' },
-        [ordered]@{ id = 'KeePassXCTeam.KeePassXC'; name = 'KeePassXC'; category = 'Meetings and remote work'; recommended = $false; why = 'A local password manager, where no company one is in use.' },
+        [ordered]@{ id = 'Microsoft.DotNet.DesktopRuntime.9'; name = '.NET 9 Desktop Runtime'; category = 'Runtimes'; recommended = $false; why = 'For apps built on .NET 9 that do not bring it themselves.' },
         [ordered]@{ id = 'Microsoft.PowerShell'; name = 'PowerShell 7'; category = 'IT and developers'; recommended = $false; why = 'The current PowerShell, beside Windows PowerShell 5.1.' },
         [ordered]@{ id = 'Microsoft.PowerToys'; name = 'PowerToys'; category = 'IT and developers'; recommended = $false; why = 'Window layouts, quick launcher, file tools - for power users.' },
         [ordered]@{ id = 'Microsoft.VisualStudioCode'; name = 'Visual Studio Code'; category = 'IT and developers'; recommended = $false; why = 'A code editor - for IT and developers.' },
         [ordered]@{ id = 'Git.Git'; name = 'Git'; category = 'IT and developers'; recommended = $false; why = 'Version control - for IT and developers.' },
+        [ordered]@{ id = 'Python.Python.3.13'; name = 'Python 3.13'; category = 'IT and developers'; recommended = $false; why = 'For scripts and tools written in Python.' },
+        [ordered]@{ id = 'OpenJS.NodeJS.LTS'; name = 'Node.js (LTS)'; category = 'IT and developers'; recommended = $false; why = 'For developers and tools built on Node.js.' },
+        [ordered]@{ id = 'Microsoft.AzureCLI'; name = 'Azure CLI'; category = 'IT and developers'; recommended = $false; why = 'Manages Azure from the command line.' },
+        [ordered]@{ id = 'Microsoft.Azure.StorageExplorer'; name = 'Azure Storage Explorer'; category = 'IT and developers'; recommended = $false; why = 'Browses Azure storage accounts.' },
+        [ordered]@{ id = 'Microsoft.SQLServerManagementStudio'; name = 'SQL Server Management Studio'; category = 'IT and developers'; recommended = $false; why = 'Manages SQL Server and Azure SQL.' },
+        [ordered]@{ id = 'Postman.Postman'; name = 'Postman'; category = 'IT and developers'; recommended = $false; why = 'Tries and tests web APIs.' },
         [ordered]@{ id = 'WinMerge.WinMerge'; name = 'WinMerge'; category = 'IT and developers'; recommended = $false; why = 'Compares files and folders.' },
         [ordered]@{ id = 'PuTTY.PuTTY'; name = 'PuTTY'; category = 'IT and developers'; recommended = $false; why = 'SSH and serial connections to network devices.' },
-        [ordered]@{ id = 'WinSCP.WinSCP'; name = 'WinSCP'; category = 'IT and developers'; recommended = $false; why = 'Copies files over SFTP and SCP.' }
+        [ordered]@{ id = 'WinSCP.WinSCP'; name = 'WinSCP'; category = 'IT and developers'; recommended = $false; why = 'Copies files over SFTP and SCP.' },
+        [ordered]@{ id = 'WiresharkFoundation.Wireshark'; name = 'Wireshark'; category = 'IT and developers'; recommended = $false; why = 'Captures and reads network traffic - for network admins.' }
     )
 }
 
