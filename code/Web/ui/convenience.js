@@ -128,25 +128,35 @@ let profN = 0;
 function profRow(p) {
   // Each role a chip box (chips.js) over a hidden text box, one group per line.
   const part = (list, label) => { const t = el('textarea', { id: `prof${++profN}`, 'aria-label': label, rows: 1 }); t.value = (list || []).join('\n'); return el('label', { class: 'pfield' }, label, t); };
-  const row = el('div', { class: 'profrow2' },
+  const row = el('div', { class: 'profrow2', 'data-pid': String(++profN) },
     el('label', { class: 'pfield' }, 'Name', el('input', { value: p.name || '', placeholder: 'e.g. Standard', 'aria-label': 'Profile name' })),
     part(p.required, 'Required for'), part(p.available, 'Available for'), part(p.exclude, 'Excluded'),
-    el('button', { class: 'btn small ghost', text: 'Remove', title: 'Remove this profile', 'aria-label': `Remove the profile ${p.name || ''}`.trim(), onclick: () => row.remove() }));
+    el('button', { class: 'btn small ghost', text: 'Remove', title: 'Remove this profile', 'aria-label': `Remove the profile ${p.name || ''}`.trim(), onclick: () => { row.remove(); profDefaultOptions(); } }));
   for (const t of row.querySelectorAll('textarea')) chipify(t);
   return row;
 }
+// "New apps get" lists the profiles as they are typed (2.38.0): a new one can be the default before it is saved,
+// and the choice follows its row - a renamed default stays the default.
+function profDefaultOptions(pickName) {
+  const sel = $('profDefault'), was = pickName === undefined ? sel.value : '';
+  const rows = [...$('profRows').children].map(r => ({ pid: r.dataset.pid, name: r.querySelector('input').value.trim() })).filter(x => x.name);
+  sel.replaceChildren(el('option', { value: '', text: '(none)' }), ...rows.map(x => el('option', { value: x.pid, text: x.name })));
+  const pick = pickName !== undefined ? (rows.find(x => x.name === pickName) || {}).pid : was;
+  sel.value = rows.some(x => x.pid === pick) ? pick : '';
+}
 function fillProfiles(p) {
   fillProfileSelect($('aProfile'), 'Apply a profile...'); fillProfileSelect($('adProfile'), '(none)');
-  $('profDefault').replaceChildren(el('option', { value: '', text: '(none)' }), ...((p && p.profiles) || []).map(x => el('option', { value: x.name, text: x.name })));
-  $('profDefault').value = (p && p.defaultProfile) || '';
-  $('profRows').replaceChildren(...((p && p.profiles) || []).map(profRow)); if (!$('profRows').children.length) $('profRows').append(profRow({})); }
+  $('profRows').replaceChildren(...((p && p.profiles) || []).map(profRow)); if (!$('profRows').children.length) $('profRows').append(profRow({}));
+  profDefaultOptions((p && p.defaultProfile) || ''); }
+$('profRows').addEventListener('input', e => { if (e.target.matches('input[aria-label="Profile name"]')) profDefaultOptions(); });
 $('btnProfAdd').addEventListener('click', () => { const r = profRow({}); $('profRows').append(r); r.querySelector('input').focus(); });
 $('btnProfSave').addEventListener('click', () => {
   const lines = t => t.value.split('\n').map(x => x.trim()).filter(Boolean);
-  const list = [...$('profRows').children].map(r => { const t = [...r.querySelectorAll('textarea')]; return { name: r.querySelector('input').value.trim(), required: lines(t[0]), available: lines(t[1]), exclude: lines(t[2]) }; })
+  const rows = [...$('profRows').children];
+  const list = rows.map(r => { const t = [...r.querySelectorAll('textarea')]; return { name: r.querySelector('input').value.trim(), required: lines(t[0]), available: lines(t[1]), exclude: lines(t[2]) }; })
     .filter(p => p.name || p.required.length || p.available.length || p.exclude.length);
-  // The default only if it is still one of them (renamed or removed: none).
-  const dp = list.some(p => p.name === $('profDefault').value) ? $('profDefault').value : '';
+  // The default by its row: its name as it is now.
+  const dRow = rows.find(r => r.dataset.pid === $('profDefault').value), dp = dRow ? dRow.querySelector('input').value.trim() : '';
   savePrefs({ profiles: list, defaultProfile: dp }, 'Assignment profiles saved.');
 });
 
@@ -197,13 +207,14 @@ function showSandboxFound(x, passed) {
   const box = $('sbFound');
   box.hidden = !found.length;
   if (!found.length) { box.replaceChildren(); return; }
-  box.replaceChildren(el('p', { class: 'muted', text: passed ? 'Windows listed it as:' : 'Windows listed it as - a detection rule that looks for this name finds it:' }),
+  box.replaceChildren(el('p', { class: 'muted', text: passed ? 'Windows lists it under this name:' : 'Windows lists it under this name. A detection rule can look for it:' }),
     el('ul', {}, ...found.map((e, i) => {
-      const b = el('button', { class: 'btn small' + (passed ? '' : ' primary'), type: 'button', text: 'Use as the detection rule' });
+      // Each says which entry it takes; one primary; once one is used, the others are off (2.38.0).
+      const b = el('button', { class: 'btn small' + (passed || i ? '' : ' primary'), type: 'button', text: 'Use as the detection rule', 'aria-label': `Use ${e.name} as the detection rule` });
       b.addEventListener('click', async () => {
-        b.disabled = true;
+        const all = [...box.querySelectorAll('button')]; for (const x of all) x.disabled = true;
         const res = await api('/api/sandbox-detection', { name: sbApp, id: sbId, index: i });
-        if (!res.ok) { toast(res.error, true); b.disabled = false; return; }
+        if (!res.ok) { toast(res.error, true); for (const x of all) x.disabled = false; return; }
         b.textContent = 'Used'; toast(`Detection now looks for '${res.detectedName}'${res.version ? ` ${res.version} or newer` : ''}${res.uninstallToo ? ' (Uninstall.ps1 too)' : ''} - test again to check.`);
         loadApps();
       });

@@ -315,7 +315,11 @@ function Global:Copy-WebApp {
     if ($why) { return @{ ok = $false; error = $why } }
     $edit = [pscustomobject]@{ appName = $newName; wingetId = [string]$a.wingetId; appId = ''; managedUpdates = [bool]$a.managedUpdates
         requiredFor = @($a.requiredFor); availableFor = @($a.availableFor); uninstallFor = @($a.uninstallFor); excludeFor = @($a.excludeFor)
-        assignmentFilter = [string]$a.assignmentFilter; assignmentFilterMode = [string]$a.assignmentFilterMode; watchWinget = [string]$a.watchWinget }
+        assignmentFilter = [string]$a.assignmentFilter; assignmentFilterMode = [string]$a.assignmentFilterMode; watchWinget = [string]$a.watchWinget
+        # The release settings come along (2.38.0), and the name Windows lists it under: the copy's own name ("Chrome (2)")
+        # is no name Windows lists, so a detection by it would never find the app.
+        detectedName = $(if ([string]$a.detectedName) { [string]$a.detectedName } else { [string]$a.appName }); autoRelease = [bool]$a.autoRelease; downloadUrl = [string]$a.downloadUrl
+        releaseRule = $(if ($a.releaseRule) { [pscustomobject]@{ days = [string]$a.releaseRule.days; maxFailedPercent = [string]$a.releaseRule.maxFailedPercent; minInstalled = [string]$a.releaseRule.minInstalled } } else { $null }) }
     $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
     if (-not $r.ok) { return $r }
     # A copy of its own, not the same objects.
@@ -330,6 +334,12 @@ function Global:Copy-WebApp {
 }
 
 function Global:Save-WebApp {
+    # Holding the catalog lock (2.38.0) - see Update-WebCatalogApp.
+    param($Data)
+    return (Invoke-WithCatalogLock { Save-WebAppHeld $Data }.GetNewClosure())
+}
+
+function Global:Save-WebAppHeld {
     param($Data)
     $catalog = Read-WebCatalogRecords
     $original = [string]$Data.originalName

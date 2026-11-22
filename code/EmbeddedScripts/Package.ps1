@@ -172,8 +172,9 @@ function Get-ChosenSetupFile {
 function Find-BestInstaller {
     param([string]$FolderPath)
     
+    # Not an uninstaller ("Uninstall.exe" matched "install" below).
     $Installers = @(Get-ChildItem -LiteralPath $FolderPath -File | Where-Object {
-        $_.Extension -match '\.(exe|msi)$'
+        $_.Extension -match '\.(exe|msi)$' -and $_.Name -notmatch '(?i)^unins|uninstall'
     })
     
     if ($Installers.Count -eq 0) { return $null }

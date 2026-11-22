@@ -1392,6 +1392,8 @@ function Global:Test-VersionDetectionRule {
         'Msi' { return '' }
         'File' { if ([string]$Rule.File_DetectionType -eq 'version') { return '' } }
         'Registry' { if ([string]$Rule.Reg_DetectionType -eq 'version') { return '' } }
+        # The script this app writes (by the name Windows lists, 2.35.0): its "$want" is the version (2.38.0).
+        'Script' { if ([string]$Rule.Script_Content -match "(?m)^\`$pattern = '(?:[^']|'')*'; \`$want = '(?:[^']|'')*'") { return '' } }
     }
     return "Its detection rule doesn't compare a version (an MSI rule, or a file or registry rule detecting by version) - a release couldn't tell the new version from the old one. Change it in the editor's Deploy settings."
 }
@@ -1416,6 +1418,10 @@ function Global:Set-DetectionRuleVersion {
         }
         'File' { $r.File_DetectionValue = $Version; if ([string]$r.File_Operator -notin $ops) { $r.File_Operator = 'greaterThanOrEqual' } }
         'Registry' { $r.Reg_DetectionValue = $Version; if ([string]$r.Reg_Operator -notin $ops) { $r.Reg_Operator = 'greaterThanOrEqual' } }
+        'Script' {
+            $lit = ConvertTo-PsLiteral $Version
+            $r.Script_Content = [regex]::Replace([string]$r.Script_Content, "(?m)^(\`$pattern = '(?:[^']|'')*'; \`$want = )'(?:[^']|'')*'", [System.Text.RegularExpressions.MatchEvaluator] { param($m) $m.Groups[1].Value + $lit }.GetNewClosure(), 1)
+        }
     }
     return @{ Rule = $r; Changed = (($r | ConvertTo-Json -Compress -Depth 4) -ne $before) }
 }
@@ -2277,6 +2283,42 @@ function Global:Get-StarterAppSet {
         [ordered]@{ id = 'PuTTY.PuTTY'; name = 'PuTTY'; category = 'IT and developers'; recommended = $false; why = 'SSH and serial connections to network devices.' },
         [ordered]@{ id = 'WinSCP.WinSCP'; name = 'WinSCP'; category = 'IT and developers'; recommended = $false; why = 'Copies files over SFTP and SCP.' }
     )
+}
+
+function Global:Get-ListedBaseName {
+    <#
+      Pure (2.38.0): the name Windows lists an app under, without the version and the (x64) after it - "7-Zip 24.09
+      (x64)" is "7-Zip", "Python 3.12.4 (64-bit)" is "Python". A detection rule by that name finds the next version
+      too (the version is checked apart). Only version-like parts go (with a dot): "Microsoft 365" stays.
+    #>
+    param([string]$Name)
+    $n = ([string]$Name).Trim(); $before = $null
+    while ($n -ne $before) { $before = $n; $n = ($n -replace '\s+\([^()]*\)\s*$', '' -replace '\s+v?\d+(\.\d+)+[\w\-.]*\s*$', '').Trim() }
+    if (-not $n) { return ([string]$Name).Trim() }
+    return $n
+}
+
+function Global:Test-InstallerFileHeader {
+    <#
+      Pure (2.38.0): whether a file's first bytes are what its type says - an .exe starts with "MZ", an .msi is
+      an OLE compound file (D0 CF 11 E0 A1 B1 1A E1). A download replacing an installer must be one: a .zip or
+      an HTML error page under the installer's name would be packaged and sent to devices.
+    #>
+    param([byte[]]$Bytes, [string]$Extension)
+    if (-not $Bytes -or $Bytes.Length -lt 8) { return $false }
+    switch (([string]$Extension).ToLowerInvariant()) {
+        '.exe' { return ($Bytes[0] -eq 0x4D -and $Bytes[1] -eq 0x5A) }
+        '.msi' { $sig = [byte[]](0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1); for ($i = 0; $i -lt 8; $i++) { if ($Bytes[$i] -ne $sig[$i]) { return $false } }; return $true }
+        default { return $false }
+    }
+}
+
+function Global:Read-FileHead {
+    # The first -Count bytes of a file (fewer when it is shorter).
+    param([string]$Path, [int]$Count = 8)
+    $fs = [System.IO.File]::OpenRead($Path)
+    try { $b = New-Object byte[] $Count; $n = $fs.Read($b, 0, $Count); if ($n -lt $Count) { $b = $b[0..([Math]::Max(0, $n - 1))] }; return , $b }
+    finally { $fs.Dispose() }
 }
 
 function Global:Get-CommandPackageFiles {

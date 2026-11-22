@@ -1,5 +1,85 @@
 # Changelog
 
+## 2.38.0
+
+**Recommended apps to start with, and a full sweep (security, bugs, UI)
+since 2.28.5 - everything it found fixed.**
+
+### Recommended apps
+- **Add apps > From a list > Recommended apps**: 28 Winget apps most
+  organisations deploy, by category, each with why. Ticked: Firefox,
+  Google Chrome (the enterprise MSI), 7-Zip, Adobe Acrobat Reader,
+  Notepad++, VLC, Java 21 (Eclipse Temurin - no Oracle licence needed) and
+  the Visual C++ runtime. Also there: Firefox ESR, SumatraPDF, LibreOffice,
+  Paint.NET, Greenshot, Java 17 and 8, .NET 8, Zoom, Webex, Citrix
+  Workspace, KeePassXC, PowerShell 7, PowerToys, VS Code, Git, WinMerge,
+  PuTTY, WinSCP. Every ID checked against winget's index.
+- The list tab has its own **Managed updates** box (the Settings default) -
+  apps added from a list never got managed updates before.
+
+### Security
+- **Sign in with Microsoft couldn't be blocked any more.** /auth/login
+  needs no sign-in; 50 calls in ten minutes refused every new sign-in (with
+  the password off: everyone locked out). Now at most 5 under way per
+  client, and the oldest goes when 200 are.
+- **Get new installer only takes an installer of the same type**: a link
+  to a .zip, .msix or anything else never replaces the folder's .exe or
+  .msi, and the download's first bytes must say .exe (MZ) or .msi. The same
+  for the nightly download. The question says when the signature can't be
+  checked (the server - Windows does that).
+- **Different names, one packages folder** ("7-Zip", "7 Zip", "7.Zip"):
+  refused when adding or duplicating - one could delete or replace the
+  other's installer.
+- Install commands from an uploaded folder quote paths with spaces ("My
+  App\install.ps1" ran ".\My").
+- The server warns when the trusted proxy has no address (wrong passwords
+  would be counted for everyone); deploy-ica.sh --no-proxy says to set
+  ICA_TRUSTED_PROXY. Two pieces of one upload sent at once are taken one
+  after the other.
+
+### Bugs
+- The installer's own name was lost on a cached read - the check of a
+  detection rule by name almost never ran.
+- **Use as the detection rule** takes the name without its version ("7-Zip
+  24.09 (x64)" is "7-Zip"), so the next version is found too - and a
+  release now moves the version that rule looks for, so a managed own
+  package with it can still be released.
+- **Retiring** an app also uninstalls and deletes the MSI line-of-business
+  app it replaced, when that is still in Intune.
+- Uploads into a packages folder and retiring the MSI app don't hold the
+  catalog lock the whole time (other saves waited and failed) - only the
+  catalog write does.
+- The setup file suggested for a folder is never an uninstaller, and a
+  setup-named installer or an .msi comes before a plain .exe that is merely
+  higher up (Setup\setup.exe before a top-level vcredist). Package itself
+  no longer takes an Uninstall.exe as the setup.
+- The editor's "setup" mark names the file Package really uses.
+- Duplicate app keeps the release rule, automatic release, download address
+  and the name Windows lists the app under.
+- Get new installers doesn't list an app again whose new installer is
+  already in its folder. For a PSADT app it lands in Files\.
+- Add apps: emptying both group lists clears a profile's exclusions too.
+
+### UI
+- Menus: Escape gives focus back to what opened them; arrow keys skip
+  hidden items, Home/End work; the server's Sandbox test menu no longer
+  takes focus back from where you clicked, and closes when you Tab out.
+- Updates: Get new installers moved into the toolbar's More (it pushed the
+  toolbar off a phone screen).
+- Send to Intune: package warnings in the warning color, kept while it is
+  sent. Add and send's summary: one item per line, focus on Send, no
+  greyed-out "Send the 0 ready", Build can't be pressed twice.
+- "New apps get" lists profiles as they are typed and keeps the choice
+  through a rename; on its own line.
+- Get new installers ends with only Close; Sandbox results: each button
+  says which entry it takes, one primary, the others off once one is used.
+- Package files: columns line up, no "Use as setup" on Uninstall.ps1,
+  delete asked as a dangerous step. "Winget package to watch" moved below
+  the release rule (two Winget ID fields one above the other were
+  confusing).
+- Add apps: a name the catalog has turns Add off and offers Open it; small
+  files show in KB.
+
 ## 2.37.0
 
 **Windows PowerShell 5.1 made safe for every answer, new installers in

@@ -38,6 +38,8 @@ document.querySelector('#dlgAdd .addgroups').prepend(el('div', { class: 'foldsum
 function addGroupsSummary() {
   const r = addLines('adRequired'), a = addLines('adAvailable'), list = l => l.length > 3 ? `${l.slice(0, 3).join(', ')} and ${l.length - 3} more` : l.join(', ');
   const dp = defaultProfile();
+  // Nobody gets it: no exclusions either (2.38.0) - a profile's excluded groups had no way to be taken off again.
+  if (!r.length && !a.length) addExclude = [];
   $('adSum').querySelector('.fstext').textContent = 'Who gets it: ' + (r.length || a.length ? [r.length ? `required for ${list(r)}` : '', a.length ? `available for ${list(a)}` : '', addExclude.length ? `not ${list(addExclude)}` : ''].filter(Boolean).join(' · ') : 'nobody yet - you can choose later in the editor') +
     (dp && r.join() === dp.required.join() && a.join() === dp.available.join() ? ` (the "${dp.name}" profile)` : '');
 }
@@ -59,6 +61,8 @@ function updateAddButton() {
   else if (addSrc === 'psadt') { b.textContent = 'Add PSADT app'; setEnabled(b, !!($('apName').value.trim() && $('apVersion').value.trim()), 'Give the app a name and the version you are packaging.'); }
   else if (addSrc === 'list') { b.textContent = alPicked.size ? `Add ${alPicked.size} from the list` : 'Add from the list'; setEnabled(b, alPicked.size > 0, 'Read a list and tick the packages first.'); }
   else { b.textContent = 'Add script app'; setEnabled(b, !!$('asName').value.trim(), 'Give the app a name first.'); }
+  const nameField = { installer: 'aiName', script: 'asName', psadt: 'apName' }[addSrc];
+  if (nameField && !b.disabled && catalogTwin($(nameField).value)) setEnabled(b, false, 'An app of that name is in the catalog - choose another name.');
   // Add and send follows Add - same condition, and the same kind of thing.
   // Sending needs the connection: without it, Add alone (it would build, then stop at "set up the connection").
   const conn = !!(state && state.configured);
@@ -134,23 +138,29 @@ function intuneTwin(name) {
 function nameWarning(name) {
   const n = String(name || '').trim(); if (!n) return '';
   const cat = apps.find(a => a.name.toLowerCase() === n.toLowerCase());
-  if (cat) return `There's already an app called "${cat.name}" in the catalog - choose another name, or open that one.`;
+  if (cat) return `There's already an app called "${cat.name}" in the catalog - choose another name, or open that one.`;   // with Open it beside it
   const tw = intuneTwin(n);
   return tw ? `An app called "${tw.name}" is already in Intune. Adding is fine - then link it (Checks > Link) instead of sending a second one.` : '';
 }
 for (const id of ['aiName', 'asName', 'apName']) {
   const inp = $(id), note = el('p', { class: 'namewarn', id: id + 'Warn', role: 'status', hidden: true });
   (inp.closest('label') || inp).after(note);
-  const check = () => { const w = nameWarning(inp.value); note.textContent = w; note.hidden = !w; };
+  // A name the catalog has: Add is off (the server would refuse it), and Open it opens that app (2.38.0).
+  const check = () => {
+    const w = nameWarning(inp.value), twin = catalogTwin(inp.value);
+    note.replaceChildren(w, twin ? ' ' : '', twin ? el('button', { type: 'button', class: 'linkish', text: 'Open it', onclick: () => { $('dlgAdd').close(); openEditor(twin.name); } }) : '');
+    note.hidden = !w; updateAddButton();
+  };
   inp.addEventListener('input', check); inp.addEventListener('change', check);
 }
+function catalogTwin(name) { const n = String(name || '').trim().toLowerCase(); return n ? apps.find(a => a.name.toLowerCase() === n) || null : null; }
 const nameWarnRefresh = () => { for (const id of ['aiName', 'asName', 'apName']) $(id).dispatchEvent(new Event('change')); };
 
 // ---- uploads (2.34.0): one installer or a .zip of its folder, or a whole folder - in pieces of 3 MB
 const PIECE = 3 * 1024 * 1024;
 // pick: { file } or { folderName, files: [{ file, path }] } (paths inside the folder). The finished upload's answer, with uploadId.
 async function uploadPick(pick, say) {
-  const mb = n => (n / 1048576).toFixed(1) + ' MB';
+  const mb = n => fmtMB(n);
   if (pick.file) {
     const f = pick.file;
     const st = await api('/api/upload-start', { fileName: f.name, size: f.size });
@@ -231,7 +241,7 @@ function showUploadReview(f) {
   const what = f.kind === 'msi' ? 'Windows Installer package' : f.kind === 'exe' ? 'setup program' + (f.exeKind ? ' made with ' + kinds[f.exeKind] : '') : '';
   $('aiFacts').textContent = f.folder
     ? `${f.fileName}: ${f.fileCount} file${f.fileCount === 1 ? '' : 's'}, ${fmtMB(f.size)} - all of them go into the package.${what ? ` Its setup file is a ${what}${f.signer ? ', signed by ' + f.signer.replace(/^CN=([^,]+).*$/, '$1') : ''}.` : ''}`
-    : `${f.fileName} (${(f.size / 1048576).toFixed(1)} MB) - ${what}${f.signer ? ', signed by ' + f.signer.replace(/^CN=([^,]+).*$/, '$1') : ', not signed'}.`;
+    : `${f.fileName} (${fmtMB(f.size)}) - ${what}${f.signer ? ', signed by ' + f.signer.replace(/^CN=([^,]+).*$/, '$1') : ', not signed'}.`;
   // A folder: which of its files is the setup file (suggested; another one makes the proposal again).
   $('aiSetupRow').hidden = !f.folder;
   if (f.folder) $('aiSetup').replaceChildren(el('option', { value: '', text: '(none - I write the commands)' }), ...(f.candidates || []).map(c => el('option', { value: c, text: c })));
@@ -338,19 +348,22 @@ async function showAddSummary(names) {
   const fieldFor = reason => /detection rule/i.test(reason) ? 'xType' : /App version|fixed version/i.test(reason) ? 'mAppVersion' : /install command/i.test(reason) ? 'mInstallCommand' : '';
   const who = n => { const a = apps.find(x => x.name === n); if (!a) return ''; const g = a.groups || []; return a.required + a.available ? `${g.slice(0, 3).join(', ')}${g.length > 3 ? ` and ${g.length - 3} more` : ''}` : 'nobody yet'; };
   const ready = r.apps.filter(a => a.ready).map(a => a.name);
+  const buildable = reason => /package \(\.intunewin\)|isn't built/i.test(reason) && !/shared Winget/i.test(reason);
   $('adDoneRows').replaceChildren(...r.apps.map(a => el('tr', {},
     el('td', { text: a.name }), el('td', { class: who(a.name) === 'nobody yet' ? 'muted' : '', text: who(a.name) }),
-    el('td', {}, a.ready && (a.warnings || []).length ? el('span', { class: 'addfix' }, el('span', { class: 'pill warn', text: 'Ready - check' }), ...a.warnings.map(w => el('span', { class: 'why pkgwarn', text: w })),
+    el('td', {}, a.ready && (a.warnings || []).length ? el('span', { class: 'addfix' }, el('span', { class: 'pill warn', text: 'Ready - check' }), ...a.warnings.map(w => el('span', { class: 'why pkgwarn', text: '⚠ ' + w })),
         el('button', { type: 'button', class: 'btn small', text: 'Fix...', title: 'Open it in the editor', onclick: async () => { $('dlgAddDone').close(); await openEditor(a.name); } }))
       : a.ready ? el('span', { class: 'pill ok', text: a.replacesLob ? 'Ready - as Win32' : 'Ready' })
-      : el('span', { class: 'addfix' }, el('span', { class: 'why', text: a.reason }),
-        /package \(\.intunewin\)|isn't built/i.test(a.reason) && !/shared Winget/i.test(a.reason) ? el('button', { type: 'button', class: 'btn small', text: 'Build', onclick: async () => { await buildAdded(a.name, true); showAddSummary(names); } })
+      : el('span', { class: 'addfix' }, el('span', { class: 'why', text: buildable(a.reason) ? a.reason.replace(/ - build it with More > Package\.?$/, '.') : a.reason }),
+        buildable(a.reason) ? el('button', { type: 'button', class: 'btn small', text: 'Build', onclick: async e => { e.currentTarget.disabled = true; await buildAdded(a.name, true); showAddSummary(names); } })
           : el('button', { type: 'button', class: 'btn small', text: 'Fix...', title: 'Open it in the editor, at what it lacks', onclick: async () => { $('dlgAddDone').close(); await openEditor(a.name); const f = fieldFor(a.reason) && $(fieldFor(a.reason)); if (f) { edPageFor(f); const d = f.closest('details'); if (d) d.open = true; f.focus(); } } }))))));
   $('adDoneSend').textContent = ready.length === r.apps.length ? (ready.length === 1 ? 'Send it' : `Send all ${ready.length}`) : `Send the ${ready.length} ready`;
-  $('adDoneSend').disabled = !ready.length;
+  // Nothing ready: no Send at all (2.38.0) - a greyed-out "Send the 0 ready" said nothing.
+  $('adDoneSend').hidden = !ready.length; $('adDoneSend').disabled = !ready.length;
   $('adDoneSend').onclick = () => { $('dlgAddDone').close(); openDeploy(ready, { autostart: true }); };
   $('adDoneSub').textContent = ready.length === r.apps.length ? 'Everything is ready - it goes to Intune with its groups.' : 'What is ready goes to Intune with its groups. What still lacks something says what - Fix opens the editor there.';
   if (!$('dlgAddDone').open) $('dlgAddDone').showModal();
+  (ready.length ? $('adDoneSend') : $('adDoneClose')).focus();
 }
 $('adDoneClose').addEventListener('click', () => $('dlgAddDone').close());
 async function afterAdd(names) {

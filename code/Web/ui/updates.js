@@ -138,7 +138,7 @@ $('btnUpdWatched').addEventListener('click', async () => {
   try {
     // The list as it is now (another window may have just set an app to watch winget), then winget.
     await loadApps();
-    if (!apps.some(a => !a.wingetId && a.watchWinget)) { toast('No app with its own installer watches a winget package yet - the editor, Details: Watch winget for new versions.'); return; }
+    if (!apps.some(a => !a.wingetId && a.watchWinget)) { toast('No app with its own installer watches a winget package yet - the editor: Winget package to watch.'); return; }
     toast('Asking winget for the newest versions...');
     const r = await api('/api/checks-winget', {});
     if (!r.ok) { toast(r.error, true); return; }
@@ -147,7 +147,7 @@ $('btnUpdWatched').addEventListener('click', async () => {
     if (!wtList.length) { toast('No watched app has a newer version on winget.'); return; }
     $('wtRows').replaceChildren(...wtList.map(a => el('tr', { 'data-name': a.name }, el('td', { text: a.name }),
       el('td', { text: `${a.version || '-'} → ${a.wingetVersion}` }), el('td', {}, el('span', { class: 'pill muted', text: 'Waiting' })))));
-    $('wtGo').disabled = false; $('wtGo').textContent = wtList.length === 1 ? 'Get it' : `Get all ${wtList.length}`;
+    $('wtGo').hidden = false; $('wtGo').disabled = false; $('wtGo').textContent = wtList.length === 1 ? 'Get it' : `Get all ${wtList.length}`;
     $('dlgWatched').showModal();
   } finally { b.disabled = false; }
 });
@@ -163,14 +163,15 @@ $('wtGo').addEventListener('click', async () => {
       const cell = $('wtRows').querySelector(`tr[data-name="${CSS.escape(a.name)}"] td:last-child`);
       cell.replaceChildren(el('span', { class: 'pill info', text: 'Downloading...' }));
       const r = await api('/api/watch-fetch', { name: a.name });
-      if (!r.ok) { cell.replaceChildren(el('span', { class: 'pill err', text: 'Not done' }), el('span', { class: 'why', text: r.error })); continue; }
+      if (!r.ok) { cell.replaceChildren(el('span', { class: 'pill err', text: 'Failed' }), el('span', { class: 'why', text: r.error })); continue; }
       got++;
       // The next step: a managed app releases it to pilot; any other is packaged and sent with its App version set.
       cell.replaceChildren(el('span', { class: 'pill ok', text: `${r.version} in its folder` }), ' ',
         r.managed ? el('button', { type: 'button', class: 'btn small', text: 'Release...', title: `Release ${r.version} to the pilot groups first`, onclick: () => { $('dlgWatched').close(); openRelease(a.name); } })
           : el('button', { type: 'button', class: 'btn small', text: 'Open', title: `Set the App version to ${r.version}, then Package and send it`, onclick: () => { $('dlgWatched').close(); openEditor(a.name); } }));
     }
-  } finally { wtRunning = false; $('wtClose').disabled = false; $('wtGo').textContent = 'Done'; }
+  // Done: only Close is left (2.38.0) - a greyed-out "Done" beside it said nothing.
+  } finally { wtRunning = false; $('wtClose').disabled = false; $('wtGo').hidden = true; $('wtClose').focus(); }
   toast(`${got} of ${wtList.length} new installer${wtList.length === 1 ? '' : 's'} in their folders${got ? ' - release or send each from the list' : ''}.`, got < wtList.length);
   await loadApps(); loadUpdates(true);
 });
@@ -206,5 +207,5 @@ $('btnUpdExport').addEventListener('click', () => {
 for (const d of ['dlgRun', 'dlgRelease']) $(d).addEventListener('close', () => { if (!$('viewUpdates').hidden) setTimeout(() => loadUpdates(true), 300); });
 
 // 2.32.0: the two occasional actions in one menu; Reload as an icon.
-foldIntoMenu(['btnUpdDownloads', 'btnUpdExport'], { id: 'btnUpdMore', title: 'Check downloads, compliance report' });
+foldIntoMenu(['btnUpdWatched', 'btnUpdDownloads', 'btnUpdExport'], { id: 'btnUpdMore', title: 'Get new installers, check downloads, compliance report' });
 reloadIcon('btnUpdReload');

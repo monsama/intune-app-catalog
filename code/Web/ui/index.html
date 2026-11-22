@@ -497,7 +497,8 @@
           <h2>Assignment profiles</h2>
           <p class="sub">Named sets of groups - "Apply a profile" in the editor and in Add apps fills them in at once. Groups separated by commas.</p>
           <div id="profRows" class="profrows"></div>
-          <div class="actions"><label class="inline" title="Add apps and a new app in the editor start with this profile's groups">New apps get <select id="profDefault" aria-label="The profile new apps get"><option value="">(none)</option></select></label><button class="btn" id="btnProfAdd" title="Another profile">Add a profile</button><button class="btn" id="btnProfSave" title="Save the profiles">Save profiles</button></div>
+          <p class="profdef"><label class="inline" title="Add apps and a new app in the editor start with this profile's groups">New apps get <select id="profDefault" aria-label="The profile new apps get"><option value="">(none)</option></select></label></p>
+          <div class="actions"><button class="btn" id="btnProfAdd" title="Another profile">Add a profile</button><button class="btn" id="btnProfSave" title="Save the profiles">Save profiles</button></div>
         </article>
       </div>
     </div>
@@ -875,7 +876,6 @@
           <p class="methodinfo" id="aMethodInfo" aria-live="polite"></p>
         </div>
         <p class="methodinfo" id="aPkgInfo" hidden></p>
-        <label id="aWatchRow" title="Optional, for an app with its own installer: a winget package with the same app (its Winget ID). It is only watched - the Apps list shows when it has a newer version, and More > Get new installer downloads it (checked against winget's SHA256). Devices still install this app's own package.">Watch winget for new versions <span class="muted">(Winget ID, optional)</span><input id="aWatch" maxlength="128" placeholder="e.g. Vendor.App" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <fieldset class="ownrule" id="aRuleBox" hidden>
           <legend>Release rule <span class="muted">- this app's own; empty fields: Settings' rule</span></legend>
           <div class="policy">
@@ -887,6 +887,7 @@
           <label id="arUrlRow" title="Optional. The nightly run downloads the installer from here; it is used only if it carries a valid digital signature - from the same publisher as the installer already in the folder">Download the installer from <span class="muted">(https, optional)</span><input id="arUrl" type="url" maxlength="2000" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="https://vendor.example/latest/setup.msi"></label>
           <label title="How the app is named in Intune's inventory of apps on devices (Apps > Monitor > Discovered apps), when that isn't the catalog's name - the Updates page counts older versions on devices by it">Name on devices <span class="muted">(empty: the catalog's name)</span><input id="arDetected" maxlength="100" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. 7-Zip"></label>
         </fieldset>
+        <label id="aWatchRow" title="Optional, for an app with its own installer: a winget package with the same app (its Winget ID). It is only watched - the Apps list shows when it has a newer version, and More > Get new installer downloads it (checked against winget's SHA256). Devices still install this app's own package.">Winget package to watch <span class="muted">(optional - only for new versions)</span><input id="aWatch" maxlength="128" placeholder="e.g. Vendor.App" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label title="The Intune app this catalog entry is linked to. Set by Send to Intune, or by Checks when it links an existing app.">App ID in Intune<span class="inputrow"><input id="aAppId" readonly placeholder="Not linked" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><select id="aAppLink" aria-label="Link to an Intune app" title="Link this catalog entry to an app that's already in Intune - or unlink it"><option value="">Link...</option></select></span></label>
         <div class="iconrow" role="group" aria-labelledby="aIconLabel">
           <span class="lbl" id="aIconLabel">Icon <span class="muted">(Intune and the Company Portal)</span></span>

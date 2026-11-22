@@ -155,7 +155,7 @@ $handler = {
         }
         # Sign in with Microsoft (the server version): off to Entra ID, and back.
         if ($WebServerMode -and $req.Method -eq 'GET' -and $req.Path -eq '/auth/login') {
-            $start = Start-WebEntraSignIn
+            $start = Start-WebEntraSignIn -Client ([string]$req.ClientAddr)
             Send-WebRedirect -Client $Client -Location $(if ($start.ok) { $start.url } else { "/login.html?why=$($start.why)" }); return
         }
         if ($WebServerMode -and $req.Method -eq 'GET' -and $req.Path -eq '/auth/callback') { Send-WebRedirect -Client $Client -Location (Complete-WebEntraCallback -Query $req.Query -Agent $req.Agent); return }

@@ -826,12 +826,14 @@ try {
         Check (-not (Invoke-Api '/api/sandbox-detection' @{ name = "$testName renamed"; id = $sbId; index = 3 }).ok) 'sandbox detection: an entry the result does not have is refused'
         $sbd = Invoke-Api '/api/sandbox-detection' @{ name = "$testName renamed"; id = $sbId; index = 0 }
         $sbApp = (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app
-        Check ($sbd.ok -and $sbd.detectedName -eq 'Contoso Widget (x64)' -and $sbd.version -eq '4.2.1' -and $sbApp.deploy.detection.type -eq 'Script' -and $sbApp.deploy.detection.script -like '*Contoso*Widget*4.2.1*') 'sandbox detection: the name Windows listed becomes a script detection rule' (@($sbd, $sbApp.deploy.detection) | ConvertTo-Json -Compress -Depth 4)
+        Check ($sbd.ok -and $sbd.detectedName -eq 'Contoso Widget' -and $sbd.version -eq '4.2.1' -and $sbApp.deploy.detection.type -eq 'Script' -and $sbApp.deploy.detection.script -like '*Contoso*Widget*4.2.1*') 'sandbox detection: the name Windows listed becomes a script detection rule' (@($sbd, $sbApp.deploy.detection) | ConvertTo-Json -Compress -Depth 4)
     }
     finally { Remove-Item -LiteralPath $sbDir -Recurse -Force -ErrorAction SilentlyContinue }
     # Duplicate app: a copy with the same groups and settings, under a new name.
     $dupBad = Invoke-Api '/api/app-duplicate' @{ name = "$testName renamed"; newName = "$testName renamed" }
     Check (-not $dupBad.ok) 'duplicate: the same name is refused' ($dupBad | ConvertTo-Json -Compress)
+    $dupTwin = Invoke-Api '/api/app-duplicate' @{ name = "$testName renamed"; newName = ("$testName renamed" -replace ' ', '-') }
+    Check (-not $dupTwin.ok -and $dupTwin.error -like '*packages folder*') 'duplicate: a name that would share the original''s file and packages folder is refused' ($dupTwin | ConvertTo-Json -Compress)
     $dup = Invoke-Api '/api/app-duplicate' @{ name = "$testName renamed"; newName = "$testName copy" }
     $dupApp = (Invoke-Api '/api/app-get' @{ name = "$testName copy" }).app
     Check ($dup.ok -and $dupApp -and -not $dupApp.appId -and $dupApp.deploy.detection.type -eq 'Script' -and @($dupApp.requiredFor).Count -eq @($sbApp.requiredFor).Count) 'duplicate: a copy with the settings and groups, no App ID' (@($dup, $dupApp) | ConvertTo-Json -Compress -Depth 4)

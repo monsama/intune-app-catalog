@@ -343,24 +343,39 @@ function Global:Get-WebInstallerInfo {
             if ($c.Extension -eq '.msi') { $msi = $c; $exe = $null; $chosenRel = $SetupFile } elseif ($c.Extension -eq '.exe') { $msi = $null; $exe = $c; $chosenRel = $SetupFile }
         }
     }
+    # No setup file chosen: the one Package picks (Find-BestInstaller, 2.38.0) - a setup-named installer (x64 first), then an
+    # .msi (x64 first), then an .exe (x64 first), the newest; never an uninstaller. The editor called the newest .msi the setup file
+    # while Package built with setup.exe beside it.
+    if (-not $chosenRel) {
+        $all = @(Get-ChildItem -LiteralPath $look -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.msi', '.exe' -and $_.Name -notin 'Invoke-AppDeployToolkit.exe', 'Deploy-Application.exe' -and $_.Name -notmatch '(?i)^unins|uninstall' })
+        $x64 = '(?i)x64|64bit|amd64|win64'
+        $best = @($all | Where-Object { $_.Name -match '(?i)setup|install' -and $_.Name -match $x64 })[0]
+        if (-not $best) { $best = @($all | Where-Object { $_.Name -match '(?i)setup|install' } | Sort-Object LastWriteTime -Descending)[0] }
+        if (-not $best) { $best = @($all | Where-Object { $_.Extension -eq '.msi' -and $_.Name -match $x64 })[0] }
+        if (-not $best) { $best = @($all | Where-Object { $_.Extension -eq '.msi' } | Sort-Object LastWriteTime -Descending)[0] }
+        if (-not $best) { $best = @($all | Where-Object { $_.Extension -eq '.exe' -and $_.Name -match $x64 } | Sort-Object LastWriteTime -Descending)[0] }
+        if (-not $best) { $best = @($all | Sort-Object LastWriteTime -Descending)[0] }
+        if ($best) { if ($best.Extension -eq '.msi') { $msi = $best; $exe = $null } else { $msi = $null; $exe = $best } } else { $msi = $null; $exe = $null }
+    }
     $pick = if ($msi) { $msi } else { $exe }
     $cacheKey = if ($pick) { "$($pick.FullName)|$($pick.LastWriteTimeUtc.Ticks)|$($pick.Length)".ToLowerInvariant() } else { '' }
     if (-not $Global:App.InstallerInfoCache) { $Global:App.InstallerInfoCache = [hashtable]::Synchronized(@{}) }
     if ($cacheKey -and $Global:App.InstallerInfoCache.ContainsKey($cacheKey)) { $hit = $Global:App.InstallerInfoCache[$cacheKey]; foreach ($k in @($hit.Keys)) { $info[$k] = $hit[$k] }; return $info }
     if ($msi) {
-        $info.found = $true; $info.file = $(if ($chosenRel) { $chosenRel } else { $msi.Name })
+        $info.found = $true; $info.file = $(if ($chosenRel) { $chosenRel } elseif ($look -ne $folder) { "Files\$($msi.Name)" } else { $msi.Name })
         $props = Get-MsiPropertyValues -Path $msi.FullName -Names @('ProductVersion', 'ProductCode', 'ProductName')
         $info.version = [string]$props['ProductVersion']; $info.productCode = [string]$props['ProductCode']; $info.name = [string]$props['ProductName']
     }
     elseif ($exe) {
-        $info.found = $true; $info.file = $(if ($chosenRel) { $chosenRel } else { $exe.Name })
+        $info.found = $true; $info.file = $(if ($chosenRel) { $chosenRel } elseif ($look -ne $folder) { "Files\$($exe.Name)" } else { $exe.Name })
         $v = Get-ExeVersionText -Path $exe.FullName
         $info.version = ($v -replace '[^0-9A-Za-z.\-+_].*$', '')
         # The name it states (2.36.0): what a detection rule by name is checked against before sending.
         try { $info.name = [string](Get-ExeVersionStrings -Path $exe.FullName).ProductName } catch { }
     }
     if ($info.version -and -not (Test-ReleaseVersionText $info.version)) { $info.version = '' }
-    if ($cacheKey) { $Global:App.InstallerInfoCache[$cacheKey] = @{ found = $info.found; file = $info.file; version = $info.version; productCode = $info.productCode } }
+    # Its name too (2.38.0): a cached read came back without it, and the check of a detection rule by name never ran.
+    if ($cacheKey) { $Global:App.InstallerInfoCache[$cacheKey] = @{ found = $info.found; file = $info.file; version = $info.version; productCode = $info.productCode; name = $info.name } }
     return $info
 }
 

@@ -16,7 +16,7 @@
 # Environment overrides (optional):
 #   ICA_HOST=apps.example.ch      name people type (required on first run; asked for otherwise)
 #   NOBS_DIR=/opt/nobs-inventory  where NOBS Inventory (and its proxy/) is
-#   ICA_IMAGE=ghcr.io/monsama/intune-app-catalog:2.37.0   a pinned image (default: the version in code)
+#   ICA_IMAGE=ghcr.io/monsama/intune-app-catalog:2.38.0   a pinned image (default: the version in code)
 #   BUILD_NETWORK=host            build with host networking (needed behind some proxies)
 # ============================================================
 set -Eeuo pipefail
@@ -88,6 +88,7 @@ info "Healthy."
 echo; echo "Step 5: HTTPS (the shared proxy)"
 if $NO_PROXY_FLAG; then
     info "Skipped (--no-proxy): forward https://$host to intune-app-catalog:8080 on the network nobs-proxy."
+    info "Set ICA_TRUSTED_PROXY in .env to that proxy's container name or address - else every client counts as one for wrong passwords."
 else
     nobs="${NOBS_DIR:-}"
     for d in "$nobs" /opt/nobs-inventory "$BASE_DIR/../nobs-inventory"; do [ -n "$d" ] && [ -d "$d/proxy/sites" ] && { nobs="$d"; break; }; done

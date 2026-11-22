@@ -386,6 +386,8 @@ try {
           return !v('watchfetch') && !v('sandbox') && !v('package') && !v('promote') && v('takeversion') && v('release') && !document.querySelector('#appMenu [data-act="filldetails"]').disabled; }),
           `${label}: the menu leaves out what can't apply to a Winget app; Fill in details from winget works`);
         await page.keyboard.press('Escape');
+        // 2.38.0: Escape gives focus back to what opened the menu; the arrow keys skip what it hides.
+        check(await page.evaluate(() => document.getElementById('appMenu').hidden && document.activeElement && document.activeElement.id === 'btnMore'), `${label}: Escape on the More menu puts focus back on More`);
         await page.click(`#gridBody tr[data-name="${testApp}"]`);
         await page.click('#btnMore');
         await page.click('[data-act="batchedit"]');

@@ -111,6 +111,9 @@ function Global:Test-WebTrustedProxy {
             if ([System.Net.IPAddress]::TryParse($n, [ref]$a)) { $ips.Add(($a.ToString() -replace '^::ffff:', '')); continue }
             try { foreach ($x in [System.Net.Dns]::GetHostAddresses($n)) { $ips.Add(($x.ToString() -replace '^::ffff:', '')) } } catch { }
         }
+        # No address for it (another proxy is in front, ICA_TRUSTED_PROXY not set to it): every client would be
+        # counted as the proxy - wrong passwords from anyone would lock the admin out. Said once (2.38.0).
+        if (-not $ips.Count -and -not $s.TrustedProxyWarned) { $s.TrustedProxyWarned = $true; Write-Log "[WARN] The trusted proxy ($($names -join ', ')) has no address here: clients are counted by the proxy's address, so wrong passwords from anyone count for everyone. Set ICA_TRUSTED_PROXY to the proxy in front (its container name or address)." }
         $c = @{ At = Get-Date; Ips = @($ips) }; $s.TrustedProxy = $c
     }
     return (@($c.Ips) -contains $p)
