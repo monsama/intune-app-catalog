@@ -247,6 +247,26 @@ try {
         await page.waitForSelector(`#gridBody tr[data-name="${testApp}"]`);
         check(!(await page.isVisible('#dlgApp[open]')), `${label}: the new app is saved and listed`);
 
+        // 2.35.0: adding warns about a name already in the catalog; Add and send ends on a summary of what's ready.
+        await page.click('#btnAddApp'); await page.waitForSelector('#dlgAdd[open]');
+        await page.click('#atab-script');
+        await page.waitForFunction(() => document.getElementById('asTemplate').options.length > 0);
+        await page.fill('#asName', testApp);
+        await page.waitForFunction(() => [...document.querySelectorAll('.namewarn')].some(x => x.offsetParent && /already an app called .* in the catalog/i.test(x.textContent)), null, { timeout: 5000 }).catch(() => {});
+        check(await page.evaluate(() => [...document.querySelectorAll('.namewarn')].some(x => x.offsetParent && /already an app called .* in the catalog/i.test(x.textContent))), `${label}: Add apps warns that an app of that name is already in the catalog`);
+        const sendApp = `ZZ UI Send ${label.replace(/\W+/g, '')} ${Date.now() % 100000}`;
+        await page.fill('#asName', sendApp);
+        // Not connected here: Add and send is there beside Add, off, and says why.
+        check(await page.isVisible('#btnAddSend') && await page.isDisabled('#btnAddSend') && /connection/i.test(await page.getAttribute('#btnAddSend', 'title')), `${label}: Add and send is beside Add - off without a connection, saying so`);
+        await page.click('#btnAddGo'); await page.waitForSelector(`#gridBody tr[data-name="${sendApp}"]`, { timeout: 20000 }).catch(() => {});
+        check(await page.isVisible(`#gridBody tr[data-name="${sendApp}"]`), `${label}: a script app is added with Add`);
+        await page.waitForFunction(() => !document.getElementById('dlgRun')?.open, null, { timeout: 20000 }).catch(() => {});
+        // Duplicate app: a copy to start from, under a new name.
+        await page.evaluate(() => { selected.clear(); renderApps(); });
+        await page.click(`#gridBody tr[data-name="${testApp}"]`);
+        await page.evaluate(n => api('/api/app-duplicate', { name: n, newName: n + ' (2)' }).then(() => loadApps()), testApp);
+        check(await page.isVisible(`#gridBody tr[data-name="${testApp} (2)"]`), `${label}: Duplicate app makes a copy under a new name`);
+        await page.evaluate(([a, b]) => Promise.all([api('/api/app-remove', { name: a + ' (2)' }), api('/api/app-remove', { name: b })]).then(() => loadApps()), [testApp, sendApp]);
         await page.click(`#gridBody tr[data-name="${testApp}"]`);
         await page.waitForSelector('#appPanel:not([hidden]) .pfacts');
         // 2.33.0: an app with no installer (one taken over from Intune) gets it uploaded right in the editor -

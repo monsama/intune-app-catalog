@@ -3,6 +3,7 @@
 'use strict';
 
 let alItems = [], alPicked = new Set();
+let addExclude = [];   // a profile's excluded groups (no field of their own in the dialog - the summary says them)
 let addSrc = 'winget', awPicked = new Map(), awTimer = 0, awSeq = 0, aiUpload = null, aiInfo = null, asTemplates = [];
 const addLines = id => $(id).value.split('\n').map(s => s.trim()).filter(Boolean);
 
@@ -15,7 +16,10 @@ function openAdd(src, file) {
   resetInstaller();
   for (const id of ['asName', 'asPublisher', 'asVersion']) $(id).value = '';
   $('asVersion').value = '1.0'; loadScriptTemplates(true);
-  $('adRequired').value = ''; $('adAvailable').value = ''; $('adPublish').checked = false;
+  $('adRequired').value = ''; $('adAvailable').value = ''; addExclude = [];
+  // The default profile's groups (Settings > Apps & defaults), filled in for every new app - changeable here.
+  const dp = defaultProfile();
+  if (dp) { mergeLines('adRequired', dp.required); mergeLines('adAvailable', dp.available); addExclude = [...dp.exclude]; }
   $('adRequired').dispatchEvent(new Event('input')); $('adAvailable').dispatchEvent(new Event('input'));
   document.querySelector('#dlgAdd .addgroups').classList.add('folded'); addGroupsSummary();
   alItems = []; alPicked.clear(); $('alRows').replaceChildren(); $('alNote').textContent = ''; $('alAll').checked = false;
@@ -32,7 +36,9 @@ document.querySelector('#dlgAdd .addgroups').prepend(el('div', { class: 'foldsum
   el('button', { type: 'button', class: 'btn small', text: 'Choose', 'aria-label': 'Choose who gets the new apps', onclick: () => { document.querySelector('#dlgAdd .addgroups').classList.remove('folded'); ($('adRequiredChips') || $('adRequired')).focus(); } })));
 function addGroupsSummary() {
   const r = addLines('adRequired'), a = addLines('adAvailable'), list = l => l.length > 3 ? `${l.slice(0, 3).join(', ')} and ${l.length - 3} more` : l.join(', ');
-  $('adSum').querySelector('.fstext').textContent = 'Who gets it: ' + (r.length || a.length ? [r.length ? `required for ${list(r)}` : '', a.length ? `available for ${list(a)}` : ''].filter(Boolean).join(' · ') : 'nobody yet - you can choose later in the editor');
+  const dp = defaultProfile();
+  $('adSum').querySelector('.fstext').textContent = 'Who gets it: ' + (r.length || a.length ? [r.length ? `required for ${list(r)}` : '', a.length ? `available for ${list(a)}` : '', addExclude.length ? `not ${list(addExclude)}` : ''].filter(Boolean).join(' · ') : 'nobody yet - you can choose later in the editor') +
+    (dp && r.join() === dp.required.join() && a.join() === dp.available.join() ? ` (the "${dp.name}" profile)` : '');
 }
 for (const id of ['adRequired', 'adAvailable']) { $(id).addEventListener('input', addGroupsSummary); $(id).addEventListener('change', addGroupsSummary); }
 function addGroup(id, g) { const l = addLines(id); if (!l.includes(g)) $(id).value = [...l, g].join('\n'); }
@@ -52,6 +58,10 @@ function updateAddButton() {
   else if (addSrc === 'psadt') { b.textContent = 'Add PSADT app'; setEnabled(b, !!($('apName').value.trim() && $('apVersion').value.trim()), 'Give the app a name and the version you are packaging.'); }
   else if (addSrc === 'list') { b.textContent = alPicked.size ? `Add ${alPicked.size} from the list` : 'Add from the list'; setEnabled(b, alPicked.size > 0, 'Read a list and tick the packages first.'); }
   else { b.textContent = 'Add script app'; setEnabled(b, !!$('asName').value.trim(), 'Give the app a name first.'); }
+  // Add and send follows Add - same condition, and the same kind of thing.
+  // Sending needs the connection: without it, Add alone (it would build, then stop at "set up the connection").
+  const conn = !!(state && state.configured);
+  setEnabled($('btnAddSend'), !b.disabled && conn, b.disabled ? b.title : 'Set up the connection to Intune first (Settings > Connection).');
 }
 $('btnAddBlank').addEventListener('click', () => { $('dlgAdd').close(); openEditor(''); });
 $('btnAddCancel').addEventListener('click', () => $('dlgAdd').close());
@@ -72,11 +82,14 @@ async function searchAdd() {
   $('awNote').textContent = r.rows.length ? `${r.rows.length} package(s)${awPicked.size ? ` - ${awPicked.size} picked` : ''}.` : 'winget found nothing - try a shorter name or the publisher.';
   $('awRows').replaceChildren(...r.rows.map(x => {
     const inCat = have.get(x.id.toLowerCase());
+    // Already in Intune by its name, and not linked to a catalog app: adding is fine - sending would make a second one.
+    const inIntune = !inCat && intuneTwin(x.name);
     const box = el('input', { type: 'checkbox', 'aria-label': `Pick ${x.name}`, disabled: !!inCat });
     box.checked = awPicked.has(x.id);
     const tr = el('tr', { class: inCat ? 'dim' : '' },
       el('td', { class: 'chk' }, box),
-      el('td', {}, x.name, isStoreId(x.id) ? el('span', { class: 'pill info newer', text: 'Store', title: 'A Microsoft Store app: Intune\'s own Store type - no package, the Store installs and updates it' }) : '', inCat ? el('span', { class: 'pill muted newer', text: 'in the catalog', title: `Already in the catalog as ${inCat}` }) : ''),
+      el('td', {}, x.name, isStoreId(x.id) ? el('span', { class: 'pill info newer', text: 'Store', title: 'A Microsoft Store app: Intune\'s own Store type - no package, the Store installs and updates it' }) : '', inCat ? el('span', { class: 'pill muted newer', text: 'in the catalog', title: `Already in the catalog as ${inCat}` }) : '',
+        inIntune ? el('span', { class: 'pill warn newer', text: 'in Intune', title: `An app called "${inIntune.name}" is already in Intune - after adding, link it (Checks) instead of sending a second one` }) : ''),
       el('td', { class: 'mono', text: x.id }), el('td', { text: x.version }));
     const pick = on => { if (inCat) return; if (on) awPicked.set(x.id, x); else awPicked.delete(x.id); box.checked = on; tr.classList.toggle('sel', on); updateAddButton(); };
     box.addEventListener('change', () => { pick(box.checked); showWingetDetail(x); });
@@ -111,6 +124,27 @@ for (const ev of ['dragenter', 'dragover']) $('aiDrop').addEventListener(ev, e =
 for (const ev of ['dragleave', 'drop']) $('aiDrop').addEventListener(ev, () => $('aiDrop').classList.remove('over'));
 $('aiDrop').addEventListener('drop', async e => { e.preventDefault(); const p = await pickFromDrop(e.dataTransfer); if (p) startUpload(p); });
 const b64 = buf => { let s = ''; const a = new Uint8Array(buf); for (let i = 0; i < a.length; i += 0x8000) s += String.fromCharCode.apply(null, a.subarray(i, i + 0x8000)); return btoa(s); };
+// ---- the same app twice (2.35.0): a name already in the catalog, or an app of that name in Intune not linked to one.
+function intuneTwin(name) {
+  const n = String(name || '').trim().toLowerCase(); if (!n || !intuneApps) return null;
+  const linked = new Set(apps.filter(a => a.appId).map(a => String(a.appId).toLowerCase()));
+  return intuneApps.find(i => String(i.name || '').trim().toLowerCase() === n && !linked.has(i.id)) || null;
+}
+function nameWarning(name) {
+  const n = String(name || '').trim(); if (!n) return '';
+  const cat = apps.find(a => a.name.toLowerCase() === n.toLowerCase());
+  if (cat) return `There's already an app called "${cat.name}" in the catalog - choose another name, or open that one.`;
+  const tw = intuneTwin(n);
+  return tw ? `An app called "${tw.name}" is already in Intune. Adding is fine - then link it (Checks > Link) instead of sending a second one.` : '';
+}
+for (const id of ['aiName', 'asName', 'apName']) {
+  const inp = $(id), note = el('p', { class: 'namewarn', id: id + 'Warn', role: 'status', hidden: true });
+  (inp.closest('label') || inp).after(note);
+  const check = () => { const w = nameWarning(inp.value); note.textContent = w; note.hidden = !w; };
+  inp.addEventListener('input', check); inp.addEventListener('change', check);
+}
+const nameWarnRefresh = () => { for (const id of ['aiName', 'asName', 'apName']) $(id).dispatchEvent(new Event('change')); };
+
 // ---- uploads (2.34.0): one installer or a .zip of its folder, or a whole folder - in pieces of 3 MB
 const PIECE = 3 * 1024 * 1024;
 // pick: { file } or { folderName, files: [{ file, path }] } (paths inside the folder). The finished upload's answer, with uploadId.
@@ -202,6 +236,7 @@ function showUploadReview(f) {
   if (f.folder) $('aiSetup').replaceChildren(el('option', { value: '', text: '(none - I write the commands)' }), ...(f.candidates || []).map(c => el('option', { value: c, text: c })));
   if (f.folder) $('aiSetup').value = f.setup || '';
   if (!$('aiName').dataset.touched) $('aiName').value = f.name;
+  nameWarnRefresh();
   $('aiPublisher').value = f.publisher; $('aiVersion').value = f.version;
   $('aiInstall').value = f.installCommand; $('aiUninstall').value = f.uninstallCommand;
   $('aiDetection').value = f.detection === 'Msi' ? `MSI product code ${f.productCode}${f.version ? ', version ' + f.version + ' or newer' : ''}` : f.detection === 'Script' ? 'A script: the name and version Windows lists' : 'Nothing yet - set it in the editor';
@@ -238,10 +273,15 @@ for (const id of ['asName', 'asVersion']) $(id).addEventListener('input', () => 
 for (const r of document.querySelectorAll('input[name="asDetect"]')) r.addEventListener('change', () => { $('asDetectScript').hidden = document.querySelector('input[name="asDetect"]:checked').value !== 'script'; });
 
 // ---- Add
-$('btnAddGo').addEventListener('click', async () => {
-  const b = $('btnAddGo'); b.disabled = true; $('addError').hidden = true;
-  const groups = { requiredFor: addLines('adRequired'), availableFor: addLines('adAvailable') };
-  const publish = $('adPublish').checked;
+// Add, or Add and send (2.35.0): the second builds what needs a package, then shows the summary - who gets each new
+// app and whether it is ready - and sends what is with one click (Fix opens the editor at what is missing).
+$('btnAddGo').addEventListener('click', () => doAdd(false));
+$('btnAddSend').addEventListener('click', () => doAdd(true));
+async function doAdd(send) {
+  const b = $('btnAddGo'); b.disabled = true; $('btnAddSend').disabled = true; $('addError').hidden = true;
+  const groups = { requiredFor: addLines('adRequired'), availableFor: addLines('adAvailable'), excludeFor: addExclude };
+  const publish = send;
+  let done = [];
   try {
     try { localStorage.setItem('addLastSrc', addSrc); } catch (e) { }   // the next Add apps opens on this kind
     if (addSrc === 'winget' || addSrc === 'list') {
@@ -255,8 +295,8 @@ $('btnAddGo').addEventListener('click', async () => {
         added.push(...r.added); skipped.push(...r.skipped);
       }
       if (!added.length && !skipped.length) return;
-      $('dlgAdd').close(); await afterAdd(added);
-      toast(`${added.length} app(s) added${skipped.length ? ' - skipped: ' + skipped.join('; ') : ''}.`, !added.length, added.length && !$('adPublish').checked ? [{ label: added.length === 1 ? 'Send to Intune' : `Send ${added.length}`, run: () => openDeploy(added) }] : []);
+      $('dlgAdd').close(); await afterAdd(added); done = added;
+      toast(`${added.length} app(s) added${skipped.length ? ' - skipped: ' + skipped.join('; ') : ''}.`, !added.length, added.length && !send ? [{ label: added.length === 1 ? 'Send to Intune' : `Send ${added.length}`, run: () => openDeploy(added) }] : []);
     }
     else if (addSrc === 'installer') {
       const r = await api('/api/add-installer', { uploadId: aiUpload.id, name: $('aiName').value.trim(), publisher: $('aiPublisher').value.trim(), version: $('aiVersion').value.trim(),
@@ -264,16 +304,17 @@ $('btnAddGo').addEventListener('click', async () => {
       if (!r.ok) { showAddError(r.error); return; }
       aiUpload.added = true;
       const build = $('aiBuild').checked;
-      $('dlgAdd').close(); await afterAdd([r.name]);
+      $('dlgAdd').close(); await afterAdd([r.name]); done = [r.name];
       toast(`${r.name} added - its installer is in ${r.folder}.`, false, build || publish ? [] : [{ label: 'Build', run: () => buildAdded(r.name) }]);
-      if (build || publish) { if (!(await buildAdded(r.name))) return; }
+      if (build || publish) await buildAdded(r.name, publish);
     }
     else if (addSrc === 'psadt') {
       $('addError').hidden = false; $('addError').textContent = $('apDownload').checked ? 'Downloading the PSADT template...' : 'Adding...'; $('addError').classList.add('muted');
       const r = await api('/api/add-psadt', { name: $('apName').value.trim(), publisher: $('apVendor').value.trim(), version: $('apVersion').value.trim(), download: $('apDownload').checked, ...groups });
       $('addError').classList.remove('muted');
       if (!r.ok) { showAddError(r.error); return; }
-      $('dlgAdd').close(); await afterAdd([r.name]);
+      $('dlgAdd').close(); await afterAdd([r.name]); done = [r.name];
+      if (publish) await buildAdded(r.name, true);
       toast(`${r.name} added - edit Invoke-AppDeployToolkit.ps1 in ${r.folder}${r.missing.length ? ` (couldn't fill in: ${r.missing.join(', ')} - do that by hand)` : ''}.`, !!r.missing.length, [SERVER ? null : { label: 'Open the folder', run: () => api('/api/open', { target: 'package-folder', name: r.name }) }, { label: 'Build', run: () => buildAdded(r.name) }]);
     }
     else {
@@ -281,26 +322,47 @@ $('btnAddGo').addEventListener('click', async () => {
       const r = await api('/api/add-script', { name: $('asName').value.trim(), publisher: $('asPublisher').value.trim(), version: $('asVersion').value.trim(),
         install: $('asInstall').value, uninstall: $('asUninstall').value, detectScript: custom ? $('asDetectScript').value : '', ...groups });
       if (!r.ok) { showAddError(r.error); return; }
-      $('dlgAdd').close(); await afterAdd([r.name]);
+      $('dlgAdd').close(); await afterAdd([r.name]); done = [r.name];
       toast(`${r.name} added - Install.ps1 and Uninstall.ps1 are in ${r.folder}.`, false, publish ? [] : [{ label: 'Build', run: () => buildAdded(r.name) }]);
-      if (publish && !(await buildAdded(r.name))) return;
+      if (publish) await buildAdded(r.name, true);
     }
   } finally { updateAddButton(); }
-});
+  if (send && done.length) showAddSummary(done);
+}
+
+// What was just added, app by app: who gets it, ready to send or what it lacks (Fix: the editor at that field).
+async function showAddSummary(names) {
+  const r = await api('/api/deploy-plan', { names });
+  if (!r.ok) { toast(r.error, true); return; }
+  const fieldFor = reason => /detection rule/i.test(reason) ? 'xType' : /App version|fixed version/i.test(reason) ? 'mAppVersion' : /install command/i.test(reason) ? 'mInstallCommand' : '';
+  const who = n => { const a = apps.find(x => x.name === n); if (!a) return ''; const g = a.groups || []; return a.required + a.available ? `${g.slice(0, 3).join(', ')}${g.length > 3 ? ` and ${g.length - 3} more` : ''}` : 'nobody yet'; };
+  const ready = r.apps.filter(a => a.ready).map(a => a.name);
+  $('adDoneRows').replaceChildren(...r.apps.map(a => el('tr', {},
+    el('td', { text: a.name }), el('td', { class: who(a.name) === 'nobody yet' ? 'muted' : '', text: who(a.name) }),
+    el('td', {}, a.ready ? el('span', { class: 'pill ok', text: a.replacesLob ? 'Ready - as Win32' : 'Ready' })
+      : el('span', { class: 'addfix' }, el('span', { class: 'why', text: a.reason }),
+        /package \(\.intunewin\)|isn't built/i.test(a.reason) && !/shared Winget/i.test(a.reason) ? el('button', { type: 'button', class: 'btn small', text: 'Build', onclick: async () => { await buildAdded(a.name, true); showAddSummary(names); } })
+          : el('button', { type: 'button', class: 'btn small', text: 'Fix...', title: 'Open it in the editor, at what it lacks', onclick: async () => { $('dlgAddDone').close(); await openEditor(a.name); const f = fieldFor(a.reason) && $(fieldFor(a.reason)); if (f) { edPageFor(f); const d = f.closest('details'); if (d) d.open = true; f.focus(); } } }))))));
+  $('adDoneSend').textContent = ready.length === r.apps.length ? (ready.length === 1 ? 'Send it' : `Send all ${ready.length}`) : `Send the ${ready.length} ready`;
+  $('adDoneSend').disabled = !ready.length;
+  $('adDoneSend').onclick = () => { $('dlgAddDone').close(); openDeploy(ready, { autostart: true }); };
+  $('adDoneSub').textContent = ready.length === r.apps.length ? 'Everything is ready - it goes to Intune with its groups.' : 'What is ready goes to Intune with its groups. What still lacks something says what - Fix opens the editor there.';
+  if (!$('dlgAddDone').open) $('dlgAddDone').showModal();
+}
+$('adDoneClose').addEventListener('click', () => $('dlgAddDone').close());
 async function afterAdd(names) {
   await loadApps();
   if (names.length) { selected.clear(); for (const n of names) selected.add(n); lastClicked = names[names.length - 1]; renderApps(); updateViewButtons(); }
-  // Send to Intune right after adding: the Send to Intune dialog for them (own packages are built first, by their flow).
-  if (names.length && $('adPublish').checked && addSrc !== 'installer' && addSrc !== 'script') setTimeout(() => openDeploy(names), 300);
 }
 // Builds an own package just added; with "Send to Intune right after adding", the Send to Intune dialog follows. Resolves with whether it built.
-async function buildAdded(name) {
+async function buildAdded(name, quiet) {
   runDialog(`Build ${name}`, 'Packaging it as an .intunewin for Intune.');
   const p = await releaseStep({ names: [name] }, '/api/package-start', 'runLog', `Building ${name}'s package...`);
   toast(p.ok ? `${name}'s package is built.` : `Building the package failed: ${p.error || 'see the log'}`, !p.ok,
-    p.ok && !$('adPublish').checked ? [{ label: 'Test in Sandbox', run: () => openSandbox(name) }, { label: 'Send to Intune', run: () => openDeploy([name]) }] : []);
+    p.ok && !quiet ? [{ label: 'Test in Sandbox', run: () => openSandbox(name) }, { label: 'Send to Intune', run: () => openDeploy([name]) }] : []);
   await loadApps();
-  if (p.ok && $('adPublish').checked) { $('dlgRun').close(); openDeploy([name]); }
+  // Part of Add and send: the run window closes by itself - the summary says what comes next.
+  if (quiet && $('dlgRun').open) $('dlgRun').close();
   return p.ok;
 }
 

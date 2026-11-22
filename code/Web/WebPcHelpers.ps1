@@ -208,6 +208,8 @@ else {
     if (-not $okInstall) { if ($r.installExit -notin 0, 1707, 3010, 1641) { Write-Host "The install command ended with exit code $($r.installExit)." -ForegroundColor Red } else { Write-Host "It installed, but the detection rule doesn't find it." -ForegroundColor Red } }
     if (-not $okUninstall) { if ($r.uninstallExit -notin 0, 1605, 3010, 1641) { Write-Host "The uninstall command ended with exit code $($r.uninstallExit)." -ForegroundColor Red } else { Write-Host 'After the uninstall, the detection rule still finds it.' -ForegroundColor Red } }
 }
+# The name Windows listed it under: what a detection rule (Edit app > Detection > from an installed app) looks for.
+foreach ($e in @($r.installed)) { if ($e.name) { Write-Host "Windows listed it as: $($e.name)$(if ($e.version) { "  (version $($e.version))" })" -ForegroundColor Cyan } }
 Write-Host 'You can close the Sandbox now.'
 Read-Host 'Press Enter to close'
 '@

@@ -17,7 +17,7 @@ function Global:Initialize-AppState {
     $Global:App.WingetIndexLock = New-Object System.Object
     $Global:App.Downloads = [hashtable]::Synchronized(@{})
     $Global:App.CatalogTextCache = [hashtable]::Synchronized(@{})
-    $Global:App.AppVersion = "2.34.0"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
+    $Global:App.AppVersion = "2.35.0"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
     # The catalog as last read (Read-WebCatalogRecords) - the shared
     # functions that look at "the catalog" (default dependencies, known
     # groups) read it from here.
@@ -49,6 +49,8 @@ function Global:Initialize-AppState {
     $Global:App.Alerts = ConvertTo-AlertSettings $null
     # Assignment profiles: named sets of groups (Required, Available, Excluded), applied in one click.
     $Global:App.AssignmentProfiles = @()
+    # The profile new apps get (Add apps and a new app in the editor fill in its groups) - '' for none (2.35.0).
+    $Global:App.DefaultProfile = ''
 
     # Settings > Automatic checks. Off by default: they need a connection to be
     # of any use, and the full audit reads every deployed app.

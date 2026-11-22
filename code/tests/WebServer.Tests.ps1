@@ -792,6 +792,35 @@ try {
     Check ((Invoke-Api '/api/installed-apps').ok) 'detection from this PC: the installed apps can be listed (empty off Windows)'
     Check (-not (Invoke-Api '/api/sandbox-start' @{ name = "$testName renamed" }).ok) 'sandbox: a Winget app (or no Sandbox here) is refused'
     Check (-not (Invoke-Api '/api/sandbox-result' @{ id = '../x' }).ok) 'sandbox: an unknown test id is refused'
+    # A test's result names what Windows listed: that becomes the detection rule (2.35.0).
+    $sbBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [System.IO.Path]::GetTempPath() }
+    $sbId = '20261122-101010-' + ([guid]::NewGuid().ToString('N').Substring(0, 4))
+    $sbDir = Join-Path (Join-Path (Join-Path $sbBase 'IntuneAppCatalog') 'sandbox') $sbId
+    [void](New-Item -ItemType Directory -Path $sbDir -Force)
+    Set-Content -LiteralPath (Join-Path $sbDir 'result.json') -Value '{"before":false,"installExit":0,"detectedAfterInstall":false,"installed":[{"name":"Contoso Widget (x64)","version":"4.2.1","publisher":"Contoso"}]}'
+    try {
+        Check (-not (Invoke-Api '/api/sandbox-detection' @{ name = "$testName renamed"; id = '../x'; index = 0 }).ok) 'sandbox detection: an unknown test id is refused'
+        Check (-not (Invoke-Api '/api/sandbox-detection' @{ name = "$testName renamed"; id = $sbId; index = 3 }).ok) 'sandbox detection: an entry the result does not have is refused'
+        $sbd = Invoke-Api '/api/sandbox-detection' @{ name = "$testName renamed"; id = $sbId; index = 0 }
+        $sbApp = (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app
+        Check ($sbd.ok -and $sbd.detectedName -eq 'Contoso Widget (x64)' -and $sbd.version -eq '4.2.1' -and $sbApp.deploy.detection.type -eq 'Script' -and $sbApp.deploy.detection.script -like '*Contoso*Widget*4.2.1*') 'sandbox detection: the name Windows listed becomes a script detection rule' (@($sbd, $sbApp.deploy.detection) | ConvertTo-Json -Compress -Depth 4)
+    }
+    finally { Remove-Item -LiteralPath $sbDir -Recurse -Force -ErrorAction SilentlyContinue }
+    # Duplicate app: a copy with the same groups and settings, under a new name.
+    $dupBad = Invoke-Api '/api/app-duplicate' @{ name = "$testName renamed"; newName = "$testName renamed" }
+    Check (-not $dupBad.ok) 'duplicate: the same name is refused' ($dupBad | ConvertTo-Json -Compress)
+    $dup = Invoke-Api '/api/app-duplicate' @{ name = "$testName renamed"; newName = "$testName copy" }
+    $dupApp = (Invoke-Api '/api/app-get' @{ name = "$testName copy" }).app
+    Check ($dup.ok -and $dupApp -and -not $dupApp.appId -and $dupApp.deploy.detection.type -eq 'Script' -and @($dupApp.requiredFor).Count -eq @($sbApp.requiredFor).Count) 'duplicate: a copy with the settings and groups, no App ID' (@($dup, $dupApp) | ConvertTo-Json -Compress -Depth 4)
+    [void](Invoke-Api '/api/app-remove' @{ name = "$testName copy" })
+    # Default assignment profile for new apps.
+    [void](Invoke-Api '/api/prefs-save' @{ profiles = @(@{ name = 'Standard'; required = @('SG-ZZ-All'); available = @(); exclude = @('SG-ZZ-Kiosk') }) })
+    $dpBad = Invoke-Api '/api/prefs-save' @{ defaultProfile = 'Nope' }
+    Check (-not $dpBad.ok) 'default profile: one that does not exist is refused' ($dpBad | ConvertTo-Json -Compress)
+    $dpOk = Invoke-Api '/api/prefs-save' @{ defaultProfile = 'Standard' }
+    Check ($dpOk.ok -and (Invoke-Api '/api/prefs').defaultProfile -eq 'Standard') 'default profile: saved and given back to the page' ($dpOk | ConvertTo-Json -Compress)
+    [void](Invoke-Api '/api/prefs-save' @{ profiles = @() })
+    Check ((Invoke-Api '/api/prefs').defaultProfile -eq '') 'default profile: cleared when its profile is deleted'
     Check (-not (Invoke-Api '/api/icon-find' @{ name = 'No Such App' }).ok) 'icon: an app not in the catalog is refused'
 
     $muOff = Invoke-Api '/api/managed-updates' @{ names = @("$testName renamed"); on = $false }

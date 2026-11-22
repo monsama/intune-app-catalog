@@ -96,6 +96,7 @@ $testableFunctionNames = @(
     # Diagnostics (Diagnostics.ps1)
     "Get-CatalogDiagnosticLines",
     "Get-SafeFileNameForApp",
+    "Get-VersionStringsFromBytes",
     "Get-DependencyOrderedApps",
     # The Checks window's one findings list (CheckFindings.ps1)
     "Get-IntuneCatalogDrift",
@@ -3110,6 +3111,34 @@ try {
     Assert-True (Test-Path -LiteralPath $subOut) "New-IntuneWinPackage: a setup file in a subfolder"
 }
 finally { Remove-Item -LiteralPath $zt -Recurse -Force -ErrorAction SilentlyContinue }
+
+# =================================================================
+# An .exe's version strings, read without Windows (2.35.0)
+# =================================================================
+$u = [Text.Encoding]::Unicode
+function New-VersionStringStruct([string]$Key, [string]$Value) {
+    $k = $u.GetBytes($Key + [char]0); $v = $u.GetBytes($Value + [char]0)
+    $head = 6 + $k.Length; $pad = (4 - ($head % 4)) % 4
+    $len = $head + $pad + $v.Length
+    $b = New-Object System.Collections.Generic.List[byte]
+    $b.AddRange([BitConverter]::GetBytes([uint16]$len)); $b.AddRange([BitConverter]::GetBytes([uint16]($Value.Length + 1))); $b.AddRange([BitConverter]::GetBytes([uint16]1))
+    $b.AddRange($k); for ($i = 0; $i -lt $pad; $i++) { $b.Add(0) }; $b.AddRange($v)
+    while ($b.Count % 4) { $b.Add(0) }
+    return , $b.ToArray()
+}
+$blob = New-Object System.Collections.Generic.List[byte]
+$blob.AddRange((New-Object byte[] 200))
+$blob.AddRange([byte[]](0, 0, 0, 0, 0, 0)); $blob.AddRange($u.GetBytes('VS_VERSION_INFO' + [char]0)); $blob.AddRange((New-Object byte[] 60))
+while ($blob.Count % 4) { $blob.Add(0) }
+$blob.AddRange((New-VersionStringStruct 'CompanyName' 'Contoso Ltd.'))
+$blob.AddRange((New-VersionStringStruct 'ProductName' 'Contoso Widget'))
+$blob.AddRange((New-VersionStringStruct 'ProductVersion' '4.2.1'))
+$vs = Get-VersionStringsFromBytes -Bytes $blob.ToArray()
+Assert-True ($vs.ProductName -eq 'Contoso Widget' -and $vs.CompanyName -eq 'Contoso Ltd.' -and $vs.ProductVersion -eq '4.2.1' -and -not $vs.ContainsKey('FileDescription')) "Version strings: name, company and version from the block; a missing key is left out"
+# A key before VS_VERSION_INFO (elsewhere in the file) isn't taken.
+$early = New-Object System.Collections.Generic.List[byte]; $early.AddRange((New-VersionStringStruct 'ProductName' 'Wrong')); $early.AddRange((New-Object byte[] 8)); $early.AddRange($u.GetBytes('VS_VERSION_INFO')); $early.AddRange((New-Object byte[] 64))
+Assert-True ((Get-VersionStringsFromBytes -Bytes $early.ToArray()).Count -eq 0) "Version strings: only from the version block"
+Assert-True ((Get-VersionStringsFromBytes -Bytes ([byte[]](1..200))).Count -eq 0 -and (Get-VersionStringsFromBytes -Bytes @()).Count -eq 0) "Version strings: none in a file without a version block"
 
 # =================================================================
 # Report

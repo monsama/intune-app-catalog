@@ -23,6 +23,8 @@ function Global:Get-WebAddGroupLists {
     return @{
         Required  = @(@($Data.requiredFor) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
         Available = @(@($Data.availableFor) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
+        # A profile's excluded groups too (2.35.0 - the default profile, or one applied in Add apps).
+        Exclude   = @(@($Data.excludeFor) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
     }
 }
 
@@ -81,7 +83,7 @@ function Global:Add-WebWingetApps {
         if ($why) { $skipped.Add("$id ($why)"); continue }
         $isStore = Test-StoreProductId $id
         $managed = [bool]$Data.managed -and -not $isStore
-        $edit = [pscustomobject]@{ appName = $name; wingetId = $id; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = @()
+        $edit = [pscustomobject]@{ appName = $name; wingetId = $id; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = $groups.Exclude
             managedUpdates = $managed
             metadata = [pscustomobject]@{ description = $(if ($d.Description) { ([string]$d.Description).Substring(0, [Math]::Min(([string]$d.Description).Length, 2000)) } else { $name }); publisher = [string]$d.Publisher
                 informationUrl = (Get-WebHttpUrl $(if ($d.Homepage) { $d.Homepage } else { $d.PublisherUrl })); privacyUrl = (Get-WebHttpUrl $d.PrivacyUrl)
@@ -214,10 +216,15 @@ function Global:Get-WebInstallerFacts {
         foreach ($k in @($props.Keys)) { $info[$k] = [string]$props[$k] }
     }
     else {
+        # What it says about itself - read by Windows, or (the server) from its version block in the file:
+        # Inno Setup and NSIS installers name the app and its version there (2.35.0).
         try {
-            $vi = (Get-Item -LiteralPath $Path).VersionInfo
-            $info.ProductName = ([string]$vi.ProductName).Trim(); $info.Manufacturer = ([string]$vi.CompanyName).Trim()
+            $vs = Get-ExeVersionStrings -Path $Path
+            $info.ProductName = [string]$vs.ProductName; $info.Manufacturer = [string]$vs.CompanyName
+            # A setup's own description ("Contoso Setup") isn't the app's name.
+            if (-not $info.ProductName -and $vs.FileDescription -and $vs.FileDescription -notmatch '(?i)\b(setup|install(er)?)\b') { $info.ProductName = [string]$vs.FileDescription }
             $info.ProductVersion = Get-ExeVersionText -Path $Path
+            if (-not $info.ProductVersion -and $vs.ProductVersion) { $info.ProductVersion = ([string]$vs.ProductVersion -replace ',\s*', '.') }
         }
         catch { }
         try {
@@ -372,7 +379,7 @@ function Global:Add-WebInstallerApp {
     $groups = Get-WebAddGroupLists $Data
     $install = ([string]$Data.installCommand).Trim(); if (-not $install) { $install = $p.InstallCommand }
     $uninstall = ([string]$Data.uninstallCommand).Trim(); if (-not $uninstall) { $uninstall = $p.UninstallCommand }
-    $edit = [pscustomobject]@{ appName = $name; wingetId = ''; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = @(); managedUpdates = $false
+    $edit = [pscustomobject]@{ appName = $name; wingetId = ''; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = $groups.Exclude; managedUpdates = $false
         metadata = [pscustomobject]@{ description = $(if ([string]$Data.description) { [string]$Data.description } else { $name }); publisher = ([string]$Data.publisher).Trim(); appVersion = $version
             installCommand = $install; uninstallCommand = $uninstall; owner = [string]$Global:App.DefaultAppSettings.DefaultOwner; developer = ''; informationUrl = ''; privacyUrl = ''
             notes = "Added from $($u.FileName)$(if ($u.Info.Signer) { ", signed by $($u.Info.Signer)" })." } }
@@ -550,7 +557,7 @@ function Global:Add-WebScriptApp {
     [System.IO.File]::WriteAllText((Join-Path $folder 'Uninstall.ps1'), (ConvertTo-CanonicalLineEndings $uninstall), $utf8)
     $ps = '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File'
     $groups = Get-WebAddGroupLists $Data
-    $edit = [pscustomobject]@{ appName = $name; wingetId = ''; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = @(); managedUpdates = $false
+    $edit = [pscustomobject]@{ appName = $name; wingetId = ''; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = $groups.Exclude; managedUpdates = $false
         metadata = [pscustomobject]@{ description = $(if ([string]$Data.description) { [string]$Data.description } else { $name }); publisher = ([string]$Data.publisher).Trim(); appVersion = $version
             installCommand = "$ps .\Install.ps1"; uninstallCommand = "$ps .\Uninstall.ps1"; owner = [string]$Global:App.DefaultAppSettings.DefaultOwner; developer = ''; informationUrl = ''; privacyUrl = ''; notes = 'A script app: Install.ps1 and Uninstall.ps1 in its packages folder.' } }
     $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
@@ -638,7 +645,7 @@ function Global:Add-WebPsadtApp {
     $exe = Test-Path -LiteralPath (Join-Path $folder 'Invoke-AppDeployToolkit.exe')
     $run = if ($exe) { 'Invoke-AppDeployToolkit.exe' } else { '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File Invoke-AppDeployToolkit.ps1' }
     $groups = Get-WebAddGroupLists $Data
-    $edit = [pscustomobject]@{ appName = $name; wingetId = ''; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = @(); managedUpdates = $false
+    $edit = [pscustomobject]@{ appName = $name; wingetId = ''; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = $groups.Exclude; managedUpdates = $false
         metadata = [pscustomobject]@{ description = $(if ([string]$Data.description) { [string]$Data.description } else { $name }); publisher = ([string]$Data.publisher).Trim(); appVersion = $version
             installCommand = "$run -DeploymentType Install -DeployMode Silent"; uninstallCommand = "$run -DeploymentType Uninstall -DeployMode Silent"
             owner = [string]$Global:App.DefaultAppSettings.DefaultOwner; developer = ''; informationUrl = ''; privacyUrl = ''; notes = 'Packaged with the PowerShell App Deployment Toolkit 4 - edit Invoke-AppDeployToolkit.ps1 in its packages folder.' } }

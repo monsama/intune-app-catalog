@@ -679,6 +679,8 @@ function Global:Invoke-WebApi {
         '/api/retire-start'     { return (Start-WebRetire $Data) }
         '/api/lob-retire'       { return (Invoke-WithCatalogLock { Remove-WebReplacedLobApp $Data }) }
         '/api/app-installer'    { return (Invoke-WithCatalogLock { Set-WebAppInstaller $Data }) }
+        '/api/app-duplicate'    { return (Invoke-WithCatalogLock { Copy-WebApp $Data }) }
+        '/api/sandbox-detection' { return (Invoke-WithCatalogLock { Set-WebSandboxDetection $Data }) }
         '/api/folder-upload-start' { return (Start-WebFolderUpload $Data) }
         '/api/upload-setup'     { return (Set-WebUploadSetup $Data) }
         '/api/package-files'    { return (Get-WebPackageFiles $Data) }

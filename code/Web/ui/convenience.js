@@ -103,6 +103,8 @@ for (const inp of document.querySelectorAll('.chipinput[data-kind="group"]')) gp
 
 // ---------------------------------------------------------------- assignment profiles
 const profiles = () => (prefs && prefs.profiles) || [];
+// The profile new apps get (Settings > Apps & defaults - 2.35.0), or null.
+const defaultProfile = () => { const n = prefs && prefs.defaultProfile; return n ? profiles().find(p => p.name === n) || null : null; };
 function fillProfileSelect(sel, first) {
   sel.replaceChildren(el('option', { value: '', text: first }), ...profiles().map((p, i) => el('option', { value: String(i), text: p.name })));
   sel.disabled = !profiles().length; sel.title = profiles().length ? 'Fill in a profile\'s groups' : 'No assignment profiles yet - Settings > Apps & defaults > Assignment profiles';
@@ -118,7 +120,8 @@ $('adProfile').addEventListener('focus', () => fillProfileSelect($('adProfile'),
 $('adProfile').addEventListener('change', () => {
   const p = profiles()[+$('adProfile').value]; if (!p) return;
   mergeLines('adRequired', p.required); mergeLines('adAvailable', p.available);
-  if (p.exclude.length) toast(`"${p.name}" also excludes ${p.exclude.join(', ')} - add that in the editor afterwards.`);
+  for (const g of p.exclude) if (!addExclude.some(x => x.toLowerCase() === g.toLowerCase())) addExclude.push(g);
+  for (const id of ['adRequired', 'adAvailable']) $(id).dispatchEvent(new Event('input'));
   $('adProfile').value = '';
 });
 let profN = 0;
@@ -133,13 +136,18 @@ function profRow(p) {
   return row;
 }
 function fillProfiles(p) {
-  fillProfileSelect($('aProfile'), 'Apply a profile...'); fillProfileSelect($('adProfile'), '(none)'); $('profRows').replaceChildren(...((p && p.profiles) || []).map(profRow)); if (!$('profRows').children.length) $('profRows').append(profRow({})); }
+  fillProfileSelect($('aProfile'), 'Apply a profile...'); fillProfileSelect($('adProfile'), '(none)');
+  $('profDefault').replaceChildren(el('option', { value: '', text: '(none)' }), ...((p && p.profiles) || []).map(x => el('option', { value: x.name, text: x.name })));
+  $('profDefault').value = (p && p.defaultProfile) || '';
+  $('profRows').replaceChildren(...((p && p.profiles) || []).map(profRow)); if (!$('profRows').children.length) $('profRows').append(profRow({})); }
 $('btnProfAdd').addEventListener('click', () => { const r = profRow({}); $('profRows').append(r); r.querySelector('input').focus(); });
 $('btnProfSave').addEventListener('click', () => {
   const lines = t => t.value.split('\n').map(x => x.trim()).filter(Boolean);
   const list = [...$('profRows').children].map(r => { const t = [...r.querySelectorAll('textarea')]; return { name: r.querySelector('input').value.trim(), required: lines(t[0]), available: lines(t[1]), exclude: lines(t[2]) }; })
     .filter(p => p.name || p.required.length || p.available.length || p.exclude.length);
-  savePrefs({ profiles: list }, 'Assignment profiles saved.');
+  // The default only if it is still one of them (renamed or removed: none).
+  const dp = list.some(p => p.name === $('profDefault').value) ? $('profDefault').value : '';
+  savePrefs({ profiles: list, defaultProfile: dp }, 'Assignment profiles saved.');
 });
 
 // ---------------------------------------------------------------- an icon, found
@@ -154,12 +162,12 @@ $('btnIconFind').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- a test in Windows Sandbox
-let sbId = '', sbTimer = 0;
+let sbId = '', sbApp = '', sbTimer = 0;
 async function openSandbox(name) {
   if (wcResume('dlgSandbox')) return;
   const r = await api('/api/sandbox-start', { name });
   if (!r.ok) { toast(r.error, true); return; }
-  sbId = r.id;
+  sbId = r.id; sbApp = name; $('sbFound').replaceChildren(); $('sbFound').hidden = true;
   $('sbTitle').textContent = `Test ${name} in Windows Sandbox`;
   $('sbText').textContent = 'Windows Sandbox is starting - it installs the app with its install command, checks the detection rule, uninstalls it and checks again. This takes a few minutes; the Sandbox window can stay in the background.';
   $('sbSteps').replaceChildren(el('li', { class: 'muted', text: 'Waiting for the Sandbox...' })); $('sbLog').textContent = '';
@@ -181,6 +189,26 @@ async function pollSandbox() {
     step(!!x.detectedAfterInstall, x.detectedAfterInstall ? 'Detected after installing.' : 'Not detected after installing - check the detection rule.'),
     ...(x.uninstallExit === null || x.uninstallExit === undefined ? [] : [step([0, 1605, 3010, 1641].includes(x.uninstallExit), `Uninstall command: exit code ${x.uninstallExit}.`), step(!x.detectedAfterUninstall, x.detectedAfterUninstall ? 'Still detected after uninstalling.' : 'Gone after uninstalling.')]));
   $('sbText').textContent = r.passed ? 'Passed: it installs, is detected, and uninstalls cleanly. Ready to deploy.' : `Not ready: ${r.verdict}`;
+  showSandboxFound(x, r.passed);
+}
+// What Windows listed after the install: the exact name (and version) a detection rule can look for.
+function showSandboxFound(x, passed) {
+  const found = (x.installed || []).filter(e => e && e.name);
+  const box = $('sbFound');
+  box.hidden = !found.length;
+  if (!found.length) { box.replaceChildren(); return; }
+  box.replaceChildren(el('p', { class: 'muted', text: passed ? 'Windows listed it as:' : 'Windows listed it as - a detection rule that looks for this name finds it:' }),
+    el('ul', {}, ...found.map((e, i) => {
+      const b = el('button', { class: 'btn small' + (passed ? '' : ' primary'), type: 'button', text: 'Use as the detection rule' });
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        const res = await api('/api/sandbox-detection', { name: sbApp, id: sbId, index: i });
+        if (!res.ok) { toast(res.error, true); b.disabled = false; return; }
+        b.textContent = 'Used'; toast(`Detection now looks for '${res.detectedName}'${res.version ? ` ${res.version} or newer` : ''}${res.uninstallToo ? ' (Uninstall.ps1 too)' : ''} - test again to check.`);
+        loadApps();
+      });
+      return el('li', {}, el('b', { text: e.name }), e.version ? ` ${e.version}` : '', e.publisher ? el('span', { class: 'muted', text: ` - ${e.publisher}` }) : '', ' ', b);
+    })));
 }
 $('btnSbFolder').addEventListener('click', () => api('/api/open', { target: 'sandbox-folder', id: sbId }).then(r => { if (!r.ok) toast(r.error, true); }));
 
