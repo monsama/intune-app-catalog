@@ -235,7 +235,7 @@ function fillEditor(a) {
   setEditorIcon(a.icon || null, 'keep');
   $('aManaged').checked = !!a.managedUpdates;
   const own = a.releaseRule || {};
-  $('arDays').value = own.days ?? ''; $('arFailed').value = own.maxFailedPercent ?? ''; $('arMin').value = own.minInstalled ?? ''; $('arDetected').value = a.detectedName || ''; $('arAuto').checked = !!a.autoRelease; $('arUrl').value = a.downloadUrl || '';
+  $('arDays').value = own.days ?? ''; $('arFailed').value = own.maxFailedPercent ?? ''; $('arMin').value = own.minInstalled ?? ''; $('arDetected').value = a.detectedName || ''; $('arAuto').checked = !!a.autoRelease; $('arUrl').value = a.downloadUrl || ''; $('aWatch').value = a.watchWinget || '';
   const pol = (prefs && prefs.releasePolicy) || {};
   $('arDays').placeholder = pol.Days ?? 3; $('arFailed').placeholder = pol.MaxFailedPercent ?? 5; $('arMin').placeholder = pol.MinInstalled ?? 1;
   ruleFoldReset();
@@ -253,7 +253,7 @@ function showManagedState() {
   const has = !!$('aWinget').value.trim();
   appVerPick.hide(!has || isStoreId($('aWinget').value.trim()));
   $('aRuleBox').hidden = !$('aManaged').checked;
-  $('arAutoRow').hidden = has; $('arUrlRow').hidden = has;
+  $('arAutoRow').hidden = has; $('arUrlRow').hidden = has; $('aWatchRow').hidden = has;
   $('aManaged').parentElement.title = has ? 'Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Updates'
     : 'Release new versions of this package to the pilot groups first. Needs a detection rule that compares a version (MSI, or file/registry by version) - a release updates it to the new version.';
 }
@@ -611,6 +611,7 @@ $('appForm').addEventListener('submit', async e => {
   app.releaseRule = { days: $('arDays').value.trim(), maxFailedPercent: $('arFailed').value.trim(), minInstalled: $('arMin').value.trim() };
   app.detectedName = $('arDetected').value.trim();
   app.autoRelease = $('arAuto').checked && !$('aWinget').value.trim(); app.downloadUrl = $('arUrl').value.trim();
+  app.watchWinget = $('aWatch').value.trim();
   const r = await api('/api/app-save', { originalName: editingName, version: editingVersion, app });
   if (!r.ok) {
     const p = $('appError'); p.textContent = r.error; p.hidden = false;
@@ -1038,7 +1039,9 @@ async function openDeploy(names, opts = {}) {
   deployPlan = r.apps; deployResults = {};
   $('deployRows').replaceChildren(...deployPlan.map(a => el('tr', { 'data-name': a.name },
     el('td', { text: a.name }), el('td', {}, el('span', { text: a.replacesLob ? 'Create as Win32' : a.update ? 'Send settings' : 'Create' }), a.replacesLob ? el('span', { class: 'why', text: a.note }) : ''),
-    el('td', {}, a.ready ? el('span', { class: 'pill muted', text: 'Waiting' }) : el('span', { class: 'pill warn', text: 'Not ready', title: a.reason }), a.ready ? '' : el('span', { class: 'why', text: a.reason })))));
+    el('td', {}, a.ready ? el('span', { class: 'pill muted', text: 'Waiting' }) : el('span', { class: 'pill warn', text: 'Not ready', title: a.reason }), a.ready ? '' : el('span', { class: 'why', text: a.reason }),
+      // 2.36.0: what doesn't fit together in its package - it can be sent, but likely isn't what was meant.
+      ...(a.ready ? (a.warnings || []).map(w => el('span', { class: 'why pkgwarn', text: '⚠ ' + w })) : [])))));
   if (r.circular && r.circular.length) toast('These depend on each other in a circle: ' + r.circular.join(', '), true);
   $('deployLog').textContent = r.note ? r.note + '\n' : '';
   $('deployProgress').hidden = true; $('btnDeployStop').hidden = true; $('btnDeployRetry').hidden = true;
@@ -1260,12 +1263,13 @@ function openMenu(x, y) {
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
   const enable = { edit: !!one, duplicate: !!one, pushgroups: anyId, sandbox: !!(one && !one.wingetId), package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
     replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any, retire: !!(one && (one.hasAppId || one.retiringSince)),
-    takeversion: sel.some(a => a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
+    takeversion: sel.some(a => a.wingetId && a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
+    watchfetch: !!(one && !one.wingetId && one.watchWinget),
     release: !!(one && one.managed && one.hasAppId && !one.pilotVersion), promote: !!(one && one.pilotVersion), withdraw: !!(one && one.pilotVersion),
     managed: any,
     rollback: !!(one && one.managed && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && (one.previousVersions || []).length > 1) };
   const why = {
-    edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
+    edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', watchfetch: one ? 'Only for an own package that watches a winget package for new versions (the editor, Details: Watch winget for new versions).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
     sandbox: one ? 'Windows Sandbox has no winget - test a Winget app on a pilot device.' : 'Select exactly one app.',
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
@@ -1335,6 +1339,7 @@ async function menuAction(act) {
     case 'sandbox': if (SERVER) downloadSandbox(one.name); else openSandbox(one.name); break;
     case 'edit': openEditor(one.name); break;
     case 'duplicate': duplicateApp(one.name); break;
+    case 'watchfetch': fetchWatched(one.name); break;
     case 'pushgroups': openPushGroups(names); break;
     case 'replacegroup': openReplace({ names }); break;
     case 'release': openRelease(one.name); break;
@@ -1356,7 +1361,7 @@ async function menuAction(act) {
       break;
     }
     case 'takeversion': {
-      const take = sel().filter(a => a.newerOnWinget);
+      const take = sel().filter(a => a.wingetId && a.newerOnWinget);
       if (!(await ask(`Take winget's version for ${take.length} app${take.length === 1 ? '' : 's'}?\n\n${take.map(a => `${a.name}: ${a.version || '(none)'} → ${a.wingetVersion}`).join('\n')}\n\nManaged apps then install exactly this version (their command and detection follow it) - send the ones in Intune again. Apps on the winget command only show it as their version. Undo takes it back.`, { ok: 'Take version', danger: false }))) return;
       const r = await api('/api/winget-take-version', { names: take.map(a => a.name) });
       if (!r.ok) { toast(r.error, true); return; }
@@ -1552,7 +1557,9 @@ function versionCell(a) {
   const pilot = a.pilotVersion ? el('span', { class: 'pill warn newer', text: 'pilot ' + a.pilotVersion, title: `${a.pilotVersion} is released to the pilot groups. More > Promote version in pilot gives it to everyone.` }) : '';
   if (a.msHint && !a.wingetId) return [el('span', { class: 'muted', text: '-', title: a.msHint })];
   if (a.wingetId && isStoreId(a.wingetId)) return [el('span', { class: 'muted', text: 'Store', title: 'The Microsoft Store installs and updates it - no version to set.' })];
-  if (!a.wingetId) return a.version ? [el('span', { class: 'vpin', title: `Its package installs ${a.version} - a new installer goes out with Release new version (managed) or Package + Send.` }, a.version), pilot]
+  // An own package watching a winget package (2.36.0): an arrow when winget has a newer one - Get new installer fetches it.
+  const watched = !a.wingetId && a.watchWinget && a.newerOnWinget && !pilot ? el('span', { class: 'pill info newer', text: '→ ' + a.wingetVersion, title: `winget (${a.watchWinget}) has ${a.wingetVersion} - More > Get new installer puts it in its folder, then release it.` }) : '';
+  if (!a.wingetId) return a.version ? [el('span', { class: 'vpin', title: `Its package installs ${a.version} - a new installer goes out with Release new version (managed) or Package + Send.` }, a.version), pilot, watched]
     : [el('span', { class: 'muted', text: 'not set', title: 'No App version yet. The editor shows the installer version in its package folder (Basics); Details > App version sets it.' })];
   if (a.managed) {
     if (!a.version) return [el('span', { class: 'vwarn', text: 'not pinned yet', title: a.hasAppId ? 'Managed updates, but no App version yet: Set version (winget\'s current one) - until then it installs the newest.' : "Managed updates need the version to pin before it can be sent to Intune: Set version (winget's current one)." })];
@@ -1702,6 +1709,20 @@ $('appForm').addEventListener('input', checkProductCodes);
 $('appForm').addEventListener('change', checkProductCodes);
 
 // Duplicate an app (2.35.0): its settings and groups under a new name - not its App ID, releases or package files.
+// Get new installer (2.36.0): winget's newest installer of the package it watches, SHA256-checked, into its folder - then the release.
+async function fetchWatched(name) {
+  toast(`Asking winget about ${name}'s newest installer...`);
+  const c = await api('/api/watch-check', { name });
+  if (!c.ok) { toast(c.error, true); return; }
+  if (!c.newer) { toast(`winget's newest is ${c.latest} - ${c.folderVersion ? `the installer in the folder is ${c.folderVersion}` : `the app is ${c.current || 'on no version yet'}`}. Nothing newer to get.`); return; }
+  if (!(await ask(`Get ${name}'s new installer?\n\nwinget has ${c.latest} (the app: ${c.current || 'no version'}${c.folderVersion ? `, its folder: ${c.folderVersion}` : ''}). It is downloaded from\n${c.url}\nand used only if its SHA256 is the one winget gives${c.file ? ` - it replaces ${c.file}, so the commands still find it` : ''}.`, { ok: 'Get it' }))) return;
+  toast(`Downloading ${c.latest}...`);
+  const r = await api('/api/watch-fetch', { name });
+  if (!r.ok) { toast(r.error, true); return; }
+  await loadApps();
+  if (r.managed) { toast(`${r.version} is in its folder (${r.file}) - release it to the pilot groups.`); openRelease(name); }
+  else toast(`${r.version} is in its folder (${r.file}). Set the App version to ${r.version} (the editor), then Package and send it.`, false, [{ label: 'Open it', run: () => openEditor(name) }]);
+}
 async function duplicateApp(name) {
   let n = 2; while (apps.some(a => a.name.toLowerCase() === `${name} (${n})`.toLowerCase())) n++;
   const newName = await ask(`Duplicate ${name}\n\nA new app with its settings and groups (commands, detection, requirements, return codes, icon). Not its App ID, releases or package files - it is new to Intune. The name of the new app:`, { ok: 'Duplicate', input: `${name} (${n})`, danger: false });

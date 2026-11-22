@@ -210,6 +210,8 @@ else {
 }
 # The name Windows listed it under: what a detection rule (Edit app > Detection > from an installed app) looks for.
 foreach ($e in @($r.installed)) { if ($e.name) { Write-Host "Windows listed it as: $($e.name)$(if ($e.version) { "  (version $($e.version))" })" -ForegroundColor Cyan } }
+Write-Host ''
+Write-Host "To see it in Intune App Catalog (and take the detection rule from it): the app's side panel > Upload test result, and choose $(Join-Path $root 'result.json')." -ForegroundColor Cyan
 Write-Host 'You can close the Sandbox now.'
 Read-Host 'Press Enter to close'
 '@

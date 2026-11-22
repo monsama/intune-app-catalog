@@ -505,6 +505,27 @@ try {
     Check ($addI.ok -and $upApp.metadata.installCommand -eq '"zz-tool-setup.exe" /S' -and $upApp.metadata.uninstallCommand -like '*Uninstall.ps1' -and $upApp.deploy.detection.type -eq 'Script' -and @($upApp.requiredFor) -contains 'SG-ZZ-Up' -and $upApp.metadata.publisher -eq 'ZZ Vendor' -and
         (Test-Path -LiteralPath (Join-Path $upDir 'zz-tool-setup.exe')) -and (Test-Path -LiteralPath (Join-Path $upDir 'Uninstall.ps1'))) 'add apps: the installer becomes an own package - commands, detection, groups, the file and Uninstall.ps1 in its folder' ($addI | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/add-installer' @{ uploadId = $up.uploadId; name = 'again' }).ok) 'add apps: an upload is added once'
+    # 2.36.0: a Sandbox result from a PC, uploaded - shown as a test, its detection rule taken; the app's own Uninstall.ps1 follows the name.
+    Check (-not (Invoke-Api '/api/sandbox-result-upload' @{ name = $upName; text = 'not a result' }).ok) 'sandbox upload: a file that is not a test result is refused'
+    $sbUp = Invoke-Api '/api/sandbox-result-upload' @{ name = $upName; text = '{"before":false,"installExit":0,"detectedAfterInstall":true,"uninstallExit":0,"detectedAfterUninstall":false,"installed":[{"name":"ZZ Tool Suite","version":"1.2.3","publisher":"ZZ Vendor"}]}' }
+    $sbRes = if ($sbUp.ok) { Invoke-Api '/api/sandbox-result' @{ id = $sbUp.id } } else { $null }
+    Check ($sbUp.ok -and $sbRes.ok -and $sbRes.done -and $sbRes.passed -and @($sbRes.result.installed)[0].name -eq 'ZZ Tool Suite') 'sandbox upload: kept like a test run here - passed, with what Windows listed' (@($sbUp, $sbRes) | ConvertTo-Json -Compress -Depth 5)
+    $sbDet = Invoke-Api '/api/sandbox-detection' @{ name = $upName; id = $sbUp.id; index = 0 }
+    $unText = Get-Content -LiteralPath (Join-Path $upDir 'Uninstall.ps1') -Raw
+    Check ($sbDet.ok -and $sbDet.uninstallToo -and $unText -match 'ZZ\\ Tool\\ Suite' -and $unText -match '^# Uninstalls the app') "sandbox detection: the app's own Uninstall.ps1 looks for the same name" (@($sbDet, $unText.Substring(0, [Math]::Min(300, $unText.Length))) | ConvertTo-Json -Compress)
+    # Before sending: what doesn't fit together in the package - shown by Checks (no connection needed).
+    Remove-Item -LiteralPath (Join-Path $upDir 'Uninstall.ps1') -Force
+    $pkgChk = Invoke-Api '/api/checks-run' @{ names = @($upName) }
+    $pkgRow = @($pkgChk.findings | Where-Object { $_.area -eq 'Package' -or $_.Area -eq 'Package' }) | Select-Object -First 1
+    Check ($pkgChk.ok -and $pkgRow -and (($pkgRow | ConvertTo-Json -Compress) -match 'Uninstall\.ps1')) 'checks: an own package whose uninstall command runs a file it lacks' ($pkgChk | ConvertTo-Json -Compress -Depth 4)
+    # Watch winget for new versions (an own package): saved, a bad ID refused, shown in the list; not asked in test mode.
+    $wApp = (Invoke-Api '/api/app-get' @{ name = $upName })
+    $wBad = Invoke-Api '/api/app-save' @{ originalName = $upName; version = $wApp.version; app = @{ appName = $upName; wingetId = ''; appId = ''; requiredFor = @('SG-ZZ-Up'); watchWinget = 'not an id!' } }
+    Check (-not $wBad.ok -and $wBad.error -like '*Winget ID*') 'watch winget: a bad Winget ID is refused' ($wBad | ConvertTo-Json -Compress)
+    $wOk = Invoke-Api '/api/app-save' @{ originalName = $upName; version = $wApp.version; app = @{ appName = $upName; wingetId = ''; appId = ''; requiredFor = @('SG-ZZ-Up'); watchWinget = 'ZZVendor.Tool' } }
+    $wRow = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $upName }) | Select-Object -First 1
+    Check ($wOk.ok -and (Invoke-Api '/api/app-get' @{ name = $upName }).app.watchWinget -eq 'ZZVendor.Tool' -and $wRow.watchWinget -eq 'ZZVendor.Tool') 'watch winget: saved and in the Apps list' (@($wOk, $wRow) | ConvertTo-Json -Compress -Depth 3)
+    Check (-not (Invoke-Api '/api/watch-fetch' @{ name = $upName }).ok -and -not (Invoke-Api '/api/watch-check' @{ name = 'No Such App' }).ok) 'watch winget: nothing downloaded in test mode; an unknown app is refused'
     [void](Invoke-Api '/api/app-remove' @{ name = $upName }); Remove-Item -LiteralPath $upDir -Recurse -Force -ErrorAction SilentlyContinue
     # 2.33.0: an installer for an app already in the catalog (one taken over from Intune comes without it): into its
     # packages folder, what is empty filled in, what it has kept; a second installer and a Winget app are refused.

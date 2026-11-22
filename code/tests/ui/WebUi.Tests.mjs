@@ -280,6 +280,21 @@ try {
         await page.waitForFunction(() => /zz-ui-setup-\d+\.exe" \/S/.test(document.getElementById('mInstallCommand').value) && document.getElementById('xType').value === 'Script', null, { timeout: 20000 });
         check(true, `${label}: an installer uploaded in the editor fills in the commands and the detection rule`);
         await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.getElementById('dlgApp').open);
+        // 2.36.0: an own package watches winget for new versions - the field is there for it (not for a Winget app).
+        await page.dblclick(`#gridBody tr[data-name="${lobApp}"]`); await page.waitForSelector('#dlgApp[open]');
+        check(await page.evaluate(() => !document.getElementById('aWatchRow').hidden), `${label}: an own package can watch a winget package for new versions`);
+        await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.getElementById('dlgApp').open);
+        // A Sandbox result (uploaded from a PC on the server): the name Windows listed, taken as the detection rule with one click.
+        const sbUp = await page.evaluate(n => api('/api/sandbox-result-upload', { name: n, text: JSON.stringify({ before: false, installExit: 0, detectedAfterInstall: false, uninstallExit: 0, detectedAfterUninstall: false, installed: [{ name: 'ZZ UI Listed App', version: '3.1', publisher: 'ZZ' }] }) }), lobApp);
+        await page.evaluate(([id, n]) => { sbId = id; sbApp = n; document.getElementById('dlgSandbox').showModal(); return pollSandbox(); }, [sbUp.id, lobApp]);
+        await page.waitForSelector('#sbFound:not([hidden]) button', { timeout: 10000 }).catch(() => {});
+        check(sbUp.ok && /ZZ UI Listed App/.test(await page.textContent('#sbFound')), `${label}: a Sandbox result shows the name Windows listed`, JSON.stringify(sbUp));
+        await a11y('the Sandbox result'); await unnamed('the Sandbox result');
+        await page.click('#sbFound button');
+        await page.waitForFunction(() => /Used/.test(document.querySelector('#sbFound button').textContent), null, { timeout: 10000 }).catch(() => {});
+        const det = await page.evaluate(n => api('/api/app-get', { name: n }).then(r => r.app.deploy.detection), lobApp);
+        check(det && det.type === 'Script' && /ZZ\\ UI\\ Listed\\ App/.test(det.script || ''), `${label}: Use as the detection rule sets a rule for that name`, JSON.stringify(det).slice(0, 300));
+        await page.keyboard.press('Escape');
         await page.evaluate(n => api('/api/app-remove', { name: n }).then(() => loadApps()), lobApp); rmSync(fakeSetup, { force: true });
         // 2.34.0: a whole folder for an app - reviewed (the setup file in a subfolder suggested), all of it in its
         // packages folder, listed file by file; a file deleted from the list.

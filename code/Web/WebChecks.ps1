@@ -104,6 +104,11 @@ function Global:Invoke-WebChecks {
     $findings = New-Object System.Collections.Generic.List[object]
     $notes = New-Object System.Collections.Generic.List[string]
     foreach ($f in @(Get-DependencyFindings -Apps $all)) { if (-not $names.Count -or $names -contains [string]$f.CatalogName) { $findings.Add($f) } }
+    # Own packages: what doesn't fit together in the package (2.36.0) - local, no Intune needed.
+    foreach ($a in @($apps | Where-Object { -not $_.wingetId -and $_.metadata })) {
+        $ws = @(Get-WebPackageWarnings $a)
+        if ($ws.Count) { $findings.Add((New-CheckFinding -Area 'Package' -App $a.appName -CatalogName $a.appName -AppId ([string]$a.appId) -Problem ($ws -join ' ') -Actions @('EditApp'))) }
+    }
     try { Load-LastAuditCache } catch { }
     foreach ($f in @(Get-CachedAuditFindings -Apps $apps -LastAuditResults $Global:App.LastAuditResults)) { $findings.Add($f) }
 
@@ -228,12 +233,14 @@ function Global:Invoke-WebCheckWinget {
     # Asks winget about each Winget ID (or -names'). One at a time: winget is a process each time, and they share one source cache.
     param($Data)
     $apps = @(Get-WebCheckApps -Names @($Data.names) | Where-Object { $_.wingetId })
-    if ($apps.Count -eq 0) { return @{ ok = $true; areas = @('Winget ID'); names = @(); findings = @() } }
+    if ($apps.Count -eq 0 -and -not @(Get-WebCheckApps -Names @($Data.names) | Where-Object { -not $_.wingetId -and $_.watchWinget }).Count) { return @{ ok = $true; areas = @('Winget ID'); names = @(); findings = @() } }
     if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not (Test-WingetIndexUsable)) { return @{ ok = $false; error = "winget.exe isn't on this machine, so Winget IDs can't be checked. It comes with the 'App Installer' package on Windows 10 and 11." } }
     $results = @($apps | ForEach-Object { Test-WingetPackageId -AppName $_.appName -WingetId $_.wingetId })
+    # Own packages that watch a winget package for new versions (2.36.0): only its newest version is wanted.
+    $watched = @(Get-WebCheckApps -Names @($Data.names) | Where-Object { -not $_.wingetId -and $_.watchWinget } | ForEach-Object { Test-WingetPackageId -AppName $_.appName -WingetId $_.watchWinget })
     # The newest version winget offers, kept for the Apps list ("Newer on winget") until the app restarts.
     if (-not $Global:App.WingetLatest) { $Global:App.WingetLatest = [hashtable]::Synchronized(@{}) }
-    foreach ($r in $results) { if ($r.Ok -and $r.Version) { $Global:App.WingetLatest[([string]$r.WingetId).ToLowerInvariant()] = [string]$r.Version } }
+    foreach ($r in @($results) + @($watched)) { if ($r.Ok -and $r.Version) { $Global:App.WingetLatest[([string]$r.WingetId).ToLowerInvariant()] = [string]$r.Version } }
     $new = @(Get-WingetFindings -Results $results -Apps @((Read-WebCatalogRecords).Apps))
     Write-Log "[INFO] winget: asked about $($apps.Count) Winget ID(s), $($new.Count) problem(s)."
     return @{ ok = $true; areas = @('Winget ID'); names = @($apps | ForEach-Object { [string]$_.appName }); findings = @($new | ForEach-Object { ConvertTo-WebFindingRow $_ })

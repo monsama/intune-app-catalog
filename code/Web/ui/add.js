@@ -339,7 +339,9 @@ async function showAddSummary(names) {
   const ready = r.apps.filter(a => a.ready).map(a => a.name);
   $('adDoneRows').replaceChildren(...r.apps.map(a => el('tr', {},
     el('td', { text: a.name }), el('td', { class: who(a.name) === 'nobody yet' ? 'muted' : '', text: who(a.name) }),
-    el('td', {}, a.ready ? el('span', { class: 'pill ok', text: a.replacesLob ? 'Ready - as Win32' : 'Ready' })
+    el('td', {}, a.ready && (a.warnings || []).length ? el('span', { class: 'addfix' }, el('span', { class: 'pill warn', text: 'Ready - check' }), ...a.warnings.map(w => el('span', { class: 'why pkgwarn', text: w })),
+        el('button', { type: 'button', class: 'btn small', text: 'Fix...', title: 'Open it in the editor', onclick: async () => { $('dlgAddDone').close(); await openEditor(a.name); } }))
+      : a.ready ? el('span', { class: 'pill ok', text: a.replacesLob ? 'Ready - as Win32' : 'Ready' })
       : el('span', { class: 'addfix' }, el('span', { class: 'why', text: a.reason }),
         /package \(\.intunewin\)|isn't built/i.test(a.reason) && !/shared Winget/i.test(a.reason) ? el('button', { type: 'button', class: 'btn small', text: 'Build', onclick: async () => { await buildAdded(a.name, true); showAddSummary(names); } })
           : el('button', { type: 'button', class: 'btn small', text: 'Fix...', title: 'Open it in the editor, at what it lacks', onclick: async () => { $('dlgAddDone').close(); await openEditor(a.name); const f = fieldFor(a.reason) && $(fieldFor(a.reason)); if (f) { edPageFor(f); const d = f.closest('details'); if (d) d.open = true; f.focus(); } } }))))));

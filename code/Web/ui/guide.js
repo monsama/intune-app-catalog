@@ -57,6 +57,8 @@ function stageOf(a) {
     return { key: 'pilot', label: `In pilot ${a.pilotVersion}`, cls: 'warn', why: `${a.pilotVersion} is with ${p.ringName === 'Pilot' ? 'the pilot groups' : p.ringName}; everyone else has ${a.version || 'the current version'}.`,
       next: next ? { label: 'Next ring...', title: 'Give it to the next release ring too', run: () => advanceRelease(a.name, p) } : { label: 'Promote...', title: 'Give it to everyone (shows how the pilot went first)', run: () => promoteRelease(a.name) } };
   }
+  // An own package watching winget (2.36.0): the new installer is fetched first, then released.
+  if (a.managed && a.newerOnWinget && !a.wingetId && a.watchWinget) return { key: 'everyone', label: 'Everyone', cls: 'ok', why: `winget (${a.watchWinget}) has ${a.wingetVersion}.`, next: { label: 'Get new installer...', title: `Download ${a.wingetVersion} into its folder, then release it`, run: () => fetchWatched(a.name) } };
   if (a.managed && a.newerOnWinget) return { key: 'everyone', label: 'Everyone', cls: 'ok', why: `winget has ${a.wingetVersion}.`, next: { label: 'Release...', title: `Release ${a.wingetVersion} to the pilot groups first`, run: () => openRelease(a.name) } };
   return { key: 'everyone', label: a.managed ? 'Everyone' : 'In Intune', cls: 'ok', why: a.managed ? `Everyone gets ${a.version || 'it'}; new versions go to the pilot groups first.` : `In Intune - ${updatesText(a, false)}.` };
 }
@@ -164,6 +166,7 @@ async function fillPanel(a) {
       fact('Last check', a.audit)),
     el('div', { class: 'pacts' }, btn('Edit', 'Open it in the editor', () => openEditor(a.name)),
       a.hasAppId ? btn('Install status', 'Every device\'s install state', () => openStatus(a.name)) : '',
+      !a.wingetId && !a.msHint && SERVER ? btn('Upload test result...', "The result.json a Sandbox test on a PC wrote (Start-Test.ps1) - how it went, and the detection rule from it", () => uploadSandboxResult(a.name)) : '',
       !a.wingetId && !a.msHint ? (SERVER ? btn('Sandbox test...', 'A zip for a Windows PC with Windows Sandbox: the package, the test and a starter', () => downloadSandbox(a.name)) : btn('Test in Sandbox', 'Install, detect and uninstall it in Windows Sandbox', () => openSandbox(a.name))) : '',
       // Opened right here (the same click reaching the page would close the menu again at once).
       btn('More...', 'Every action for this app', e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); openMenu(r.left, r.bottom + 4); })));

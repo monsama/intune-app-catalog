@@ -53,6 +53,8 @@ function Global:Get-WebCatalog {
         $sentStamps = Read-WebSentStamps
         for ($i = 0; $i -lt $apps.Count; $i++) {
             $row = Get-CatalogRow -App $apps[$i] -Index $i -PackageIndex $index
+            # winget's newest version: of its own ID, or (an own package, 2.36.0) of the one it watches.
+            $wk = [string]$(if ($apps[$i].wingetId) { $apps[$i].wingetId } else { $apps[$i].watchWinget })
             # The pilot release, found once (a plain loop - a pipeline per field is slow for 500 apps on Windows PowerShell).
             $pr = $null; foreach ($r in @($apps[$i].releases)) { if ($r -and $r.state -eq 'pilot') { $pr = $r; break } }
             $rows.Add([ordered]@{
@@ -74,8 +76,9 @@ function Global:Get-WebCatalog {
                 required     = [int]$row.Required
                 available    = [int]$row.Available
                 uninstall    = [int]$row.Uninstall
-                wingetVersion = [string]$(if ($Global:App.WingetLatest -and $apps[$i].wingetId) { $Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()] })
-                newerOnWinget = [bool]($Global:App.WingetLatest -and $apps[$i].wingetId -and (Compare-AppVersionText ([string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })) ([string]$Global:App.WingetLatest[([string]$apps[$i].wingetId).ToLowerInvariant()])) -eq 1)
+                wingetVersion = [string]$(if ($Global:App.WingetLatest -and $wk) { $Global:App.WingetLatest[$wk.ToLowerInvariant()] })
+                newerOnWinget = [bool]($Global:App.WingetLatest -and $wk -and (Compare-AppVersionText ([string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })) ([string]$Global:App.WingetLatest[$wk.ToLowerInvariant()])) -eq 1)
+                watchWinget  = [string]$apps[$i].watchWinget
                 managed      = [bool]$apps[$i].managedUpdates
                 # Company Portal, Microsoft 365 Apps, Store/other Intune types: nothing to package.
                 msHint       = [string]$(if (-not $apps[$i].appId -and -not $apps[$i].wingetId) { Get-NonPackageAppHint $apps[$i] })
@@ -702,6 +705,9 @@ function Global:Invoke-WebApi {
         '/api/detection-from-paste' { return (Get-WebDetectionFromPaste $Data) }
         '/api/winget-export-script' { return (Get-WebWingetExportScript) }
         '/api/sandbox-result'   { return (Get-WebSandboxResult $Data) }
+        '/api/sandbox-result-upload' { return (Import-WebSandboxResult $Data) }
+        '/api/watch-check'      { $w = Get-WebWatchedUpdate $Data; if ($w.app) { $w.Remove('app') }; return $w }
+        '/api/watch-fetch'      { return (Save-WebWatchedInstaller $Data) }
         '/api/attention'        { return (Get-WebAttention $Data) }
         '/api/managed-default'  { return (Set-WebManagedDefault) }
         '/api/assignment-matrix' { return (Get-WebAssignmentMatrix) }
