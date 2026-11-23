@@ -203,7 +203,7 @@ try {
         # Handed to each worker as text - a runspace of its own doesn't
         # inherit the functions the step runner dot-sourced here.
         $assignmentHelperText = (@(
-            'Get-AssignmentKey', 'Get-DesiredAssignmentEntries', 'ConvertTo-CurrentAssignmentEntries',
+            'Get-AllTargetInfo', 'Get-AssignmentKey', 'Get-DesiredAssignmentEntries', 'ConvertTo-CurrentAssignmentEntries',
             'Format-AssignmentLabel', 'Get-AssignmentDiff', 'New-AppAssignmentBody'
         ) | ForEach-Object { "function global:$_ {`n$((Get-Command $_).ScriptBlock.ToString())`n}" }) -join "`n`n"
         $maxConcurrency = [Math]::Max(1, [Math]::Min(6, $appList.Count))

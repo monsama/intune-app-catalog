@@ -2132,6 +2132,12 @@ Assert-Equal 1 $otherTargets.Count "ConvertTo-CurrentAssignmentEntries: a target
 Assert-Equal "[available] someFuture" $otherTargets[0] "ConvertTo-CurrentAssignmentEntries: ...readably, without Graph's type prefix"
 
 # All users / All devices (2.38.4): Intune's own targets, held in the catalog as [All users] / [All devices].
+# The multi-app preview's workers (BatchAssign.ps1, also what Checks compares assignments with) get the helpers
+# as text from their own list - every helper the others get must be on it (2.38.4 shipped without Get-AllTargetInfo).
+$sharedHelpers = @([regex]::Matches((Get-Content -Raw (Join-Path $PSScriptRoot '..\Private\Graph\Assignments.ps1')), "(?s)function Global:Get-AssignmentScriptHelpers.*?\`$names = @\((.*?)\)").Groups[1].Value -split ',' | ForEach-Object { $_.Trim().Trim("'").Trim() } | Where-Object { $_ })
+$workerHelpers = @([regex]::Match((Get-Content -Raw (Join-Path $PSScriptRoot '..\EmbeddedScripts\BatchAssign.ps1')), "(?s)\`$assignmentHelperText = \(@\((.*?)\)").Groups[1].Value -split ',' | ForEach-Object { $_.Trim().Trim("'").Trim() } | Where-Object { $_ })
+Assert-True ($sharedHelpers.Count -ge 7) "Get-AssignmentScriptHelpers' list is read ($($sharedHelpers.Count) helpers)"
+Assert-Equal '' (@($sharedHelpers | Where-Object { $workerHelpers -notcontains $_ }) -join ', ') "BatchAssign's preview workers get every assignment helper"
 Assert-Equal '[All users]' (Get-AllTargetInfo ' [all USERS] ').Name "Get-AllTargetInfo: the catalog name, whatever the case and spaces"
 Assert-Equal '#microsoft.graph.allDevicesAssignmentTarget' (Get-AllTargetInfo '[All devices]').Type "Get-AllTargetInfo: All devices' Graph type"
 Assert-Equal '[All devices]' (Get-AllTargetInfo '#microsoft.graph.allDevicesAssignmentTarget').Name "Get-AllTargetInfo: from Graph's type back to the catalog name"
