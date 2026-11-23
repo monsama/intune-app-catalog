@@ -1732,11 +1732,10 @@ button.pill.pillbtn:hover, button.pill.pillbtn[aria-expanded="true"] { box-shado
 /* Sweep 2.38.14 */
 /* Add apps: the tabs wrap under "Fill in by hand..." before they'd be cut off; Store IDs in one piece; links in the theme's colour;
    the Managed updates row and the Store note take the same height (switching tabs doesn't move the table). */
-@media (max-width: 900px) { .addtabrow { flex-wrap: wrap; } .addtabrow > .subtabs { flex: 1 1 100%; } .addtabrow > #btnAddBlank { margin: 0 0 8px; } }
-@media (max-width: 900px) { .subtab { padding: 8px 10px; } }
+@media (max-width: 900px) { .subtab { padding: 8px 8px; } .addtabrow > #btnAddBlank { white-space: nowrap; } }
 #awGrid td.mono { white-space: nowrap; }
 .awdetail a, .card a:not(.btn) { color: var(--accent); }
-#awManagedRow, #awStoreNote { min-height: 3em; margin-top: 8px; margin-bottom: 0; align-items: flex-start; box-sizing: border-box; }
+#awManagedRow, #awStoreNote { min-height: 40px; margin: 8px 0 0; padding: 0; line-height: 18px; font-size: 13px; align-items: flex-start; box-sizing: border-box; }
 /* Checks: the note above the list keeps two lines' room - the list doesn't jump while a check runs. */
 #checkNotes { min-height: 3em; }
 /* Settings > Diagnostics > Permissions: whole names, sentences under each other, room above the table. */
@@ -1745,6 +1744,9 @@ button.pill.pillbtn:hover, button.pill.pillbtn[aria-expanded="true"] { box-shado
 #permRows td { vertical-align: top; }
 #permRows td.pname { overflow-wrap: normal; word-break: normal; min-width: 14em; }
 #permRows td.pstat { white-space: nowrap; }
+/* Narrow: the status under the name - the For column keeps its room. */
+.pstat-in { display: none; }
+@media (max-width: 800px) { #permWrap th:nth-child(2), #permRows td.pstat { display: none; } .pstat-in { display: block; margin-top: 4px; } #permRows td.pname { min-width: 0; } }
 #permRows .why { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
 /* Home: a Needs attention button stays its own size when the row stacks. */
 @media (max-width: 800px) { .attention .att > button, .attention .att > .btn { justify-self: start; } }
