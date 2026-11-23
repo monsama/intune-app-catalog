@@ -376,7 +376,12 @@ function renderWhere() {
   };
   // A Microsoft Store app (2.38.3): no commands and no detection of its own - the Store does both; the fields went
   // on showing (empty, or a rule made for winget) while "Ready to send?" said it needs none.
-  const storeState = () => { const st = typeof isStoreId === 'function' && isStoreId($('aWinget').value.trim()); $('dlgApp').classList.toggle('is-store', st); return st; };
+  const storeState = () => {
+    const st = typeof isStoreId === 'function' && isStoreId($('aWinget').value.trim()), was = $('dlgApp').classList.contains('is-store');
+    $('dlgApp').classList.toggle('is-store', st);
+    if (st !== was) { try { setPage(cur); } catch (e) { } }   // the page's sections follow (not before the editor is set up)
+    return st;
+  };
   window.edFoldsReset = () => {
     const id = $('aWinget').value.trim();
     detOwn = false;
@@ -412,7 +417,9 @@ function renderWhere() {
     cur = i;
     for (const [c, p] of pageOf) c.classList.toggle('offpage', p !== i);
     for (const s of [left, right, dLeft, dRight]) {
-      s.classList.toggle('offpage', ![...s.children].some(c => pageOf.get(c) === i));
+      // A Store app's command parts are hidden: a section holding only them is empty, so it goes too (2.38.3).
+      const shownHere = c => pageOf.get(c) === i && !($('dlgApp').classList.contains('is-store') && (c.id === 'instRaw' || c.id === 'instBlocks'));
+      s.classList.toggle('offpage', ![...s.children].some(shownHere));
       [...s.children].forEach(c => c.classList.remove('pgfirst'));
       const first = [...s.children].find(c => pageOf.get(c) === i); if (first) first.classList.add('pgfirst');
     }

@@ -1075,7 +1075,9 @@ label.chk > input[type="checkbox"], label.chk > input[type="radio"] { margin-top
 #grid td.name { white-space: nowrap; }
 /* 2.38.3: a very long name is cut with an ellipsis (the full one in its tooltip and the side panel) - it pushed
    Version, Who gets it and Stage off the grid. */
-#grid td.name > .nm { display: inline-block; max-width: 40ch; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+#grid td.name > .nm { display: inline-block; max-width: min(36ch, 20vw); overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+/* With the side panel open the list has less room: names shorter still (Stage stayed off the grid at 40 characters). */
+body:has(#appPanel:not([hidden])) #grid td.name > .nm { max-width: min(24ch, 12vw); }
 /* One height for buttons, fields and dropdowns (34px), one for small buttons (26px). */
 .btn:not(.small):not(.iconbtn), input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not(.chipinput):not(#palQuery):not(.brec input), select:not([multiple]):not([size]):not(.brec select) { height: 34px; box-sizing: border-box; }
 .btn.small { height: 26px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; line-height: 1; }
@@ -1630,3 +1632,13 @@ label.chk:has(> #aManagedNote) { flex-wrap: wrap; }
 label + .blockbar, select + .blockbar, .inputrow + .blockbar { margin-top: 10px; }
 /* A Store app: no commands, no detection rule of its own - the Store installs and detects it. */
 #dlgApp.is-store #instRaw, #dlgApp.is-store #instBlocks, #dlgApp.is-store [data-sum="det"] button { display: none !important; }
+/* The detection blocks under the Type field: room between them (they touched). */
+[data-det] > .blockbar:first-child { margin-top: 10px; }
+/* Remove groups: a long group name without spaces breaks inside its box (it spilled out of the dialog). */
+fieldset.gbrole label.chk { min-width: 0; overflow-wrap: anywhere; }
+/* The editor's four group boxes two by two on narrower screens (not three and one). */
+@media (max-width: 1000px) { #dlgApp .groups4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { #dlgApp .groups4 { grid-template-columns: minmax(0, 1fr); } }
+/* A labelled select in a sentence ("Send [when something needs a look - ...]"): never wider than its box. */
+label.inline { max-width: 100%; }
+label.inline > select { max-width: 100%; min-width: 0; text-overflow: ellipsis; }
