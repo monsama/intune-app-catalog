@@ -11,7 +11,14 @@ const ROLES = { requiredFor: 'Required', availableFor: 'Available', uninstallFor
 const roleField = role => Object.keys(ROLES).find(k => ROLES[k] === role);
 const lc = s => String(s).toLowerCase();
 const isFav = name => favs.some(f => lc(f) === lc(name));
-const inEntra = name => entra ? entra.has(lc(name)) : null;
+// In Entra ID? true / false, or null when not known yet. Both lists count: the catalog's groups that were found, and
+// the "All groups in Entra ID" search - a group the catalog doesn't use is in Entra ID too (2.38.8: two such groups
+// selected offered "Create 1" and "Delete 1...").
+const inEntra = name => {
+  const k = lc(name);
+  if ((entraHits || []).some(h => lc(h.name) === k)) return true;
+  return entra ? entra.has(k) : null;
+};
 async function loadGroups() {
   groupsLoaded = true;
   const r = await api('/api/groups');
@@ -114,8 +121,8 @@ function renderGroupSelBar() {
   $('groupSelBar').hidden = sel.length < 2;
   if (sel.length < 2) return;
   $('groupSelCount').textContent = `${sel.length} selected`;
-  const missing = entra ? sel.filter(n => !entra.has(lc(n))) : [];
-  const found = entra ? sel.filter(n => entra.has(lc(n))) : sel;
+  const missing = sel.filter(n => inEntra(n) === false);
+  const found = sel.filter(n => inEntra(n) !== false);
   setEnabled($('btnGroupSelCreate'), missing.length > 0, entra ? 'Every selected group is in Entra ID already.' : 'Entra ID not checked - connect first.');
   $('btnGroupSelCreate').textContent = missing.length ? `Create ${missing.length}` : 'Create';
   setEnabled($('btnGroupSelDelete'), found.length > 0, 'None of the selected groups is in Entra ID.');
@@ -137,8 +144,8 @@ $('btnGroupNew').addEventListener('click', async () => {
   if (n) openGroup(n);
 });
 $('btnGroupSelClear').addEventListener('click', () => { gSel = group ? new Set([group.name]) : new Set(); renderGroupList(); });
-$('btnGroupSelCreate').addEventListener('click', () => createGroups([...gSel].filter(n => entra && !entra.has(lc(n)))));
-$('btnGroupSelDelete').addEventListener('click', () => deleteGroups([...gSel].filter(n => !entra || entra.has(lc(n)))));
+$('btnGroupSelCreate').addEventListener('click', () => createGroups([...gSel].filter(n => inEntra(n) === false)));
+$('btnGroupSelDelete').addEventListener('click', () => deleteGroups([...gSel].filter(n => inEntra(n) !== false)));
 
 // The list by keyboard: arrows move (Shift extends), Ctrl+A selects all, Delete deletes, Escape clears, the menu key opens the menu.
 $('groupList').addEventListener('keydown', e => {
@@ -151,7 +158,7 @@ $('groupList').addEventListener('keydown', e => {
   else if (e.key === 'Home') { e.preventDefault(); go(0); }
   else if (e.key === 'End') { e.preventDefault(); go(rows.length - 1); }
   else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); gSel = new Set(rows); renderGroupList(); }
-  else if (e.key === 'Delete' && gSel.size) { e.preventDefault(); deleteGroups([...gSel].filter(n => !entra || entra.has(lc(n)))); }
+  else if (e.key === 'Delete' && gSel.size) { e.preventDefault(); deleteGroups([...gSel].filter(n => inEntra(n) !== false)); }
   else if (e.key === 'Escape' && gSel.size > 1) { e.preventDefault(); $('btnGroupSelClear').click(); }
   else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
     e.preventDefault();
@@ -165,8 +172,8 @@ function scrollGroupIntoView(n) { const li = [...document.querySelectorAll('#gro
 const gMenu = $('groupMenu');
 function openGroupMenu(x, y) {
   const sel = [...gSel], one = sel.length === 1 ? sel[0] : null;
-  const missing = entra ? sel.filter(n => !entra.has(lc(n))) : [];
-  const found = entra ? sel.filter(n => entra.has(lc(n))) : sel;
+  const missing = sel.filter(n => inEntra(n) === false);
+  const found = sel.filter(n => inEntra(n) !== false);
   const used = sel.filter(n => groups.some(g => lc(g.name) === lc(n)));
   const b = act => gMenu.querySelector(`[data-gact=${act}]`);
   setEnabled(b('open'), !!one, 'Select exactly one group.');
@@ -177,7 +184,7 @@ function openGroupMenu(x, y) {
   setEnabled(b('assign'), !!one, 'Select exactly one group.');
   setEnabled(b('create'), missing.length > 0, entra ? (sel.length > 1 ? 'Every selected group is in Entra ID already.' : 'This group is in Entra ID already.') : 'Entra ID not checked - connect first.');
   b('create').textContent = missing.length > 1 ? `Create ${missing.length} in Entra ID` : 'Create in Entra ID';
-  setEnabled(b('rename'), !!one && (!entra || entra.has(lc(one))), one ? 'This group isn\'t in Entra ID - rename it in the apps instead (Batch edit).' : 'Select exactly one group.');
+  setEnabled(b('rename'), !!one && inEntra(one) !== false, one ? 'This group isn\'t in Entra ID - rename it in the apps instead (Batch edit).' : 'Select exactly one group.');
   setEnabled(b('replace'), !!one && used.length > 0, one ? 'No app in the catalog uses this group.' : 'Select exactly one group.');
   setEnabled(b('unassign'), used.length > 0, 'No app in the catalog uses these groups.');
   b('unassign').textContent = used.length > 1 ? `Remove ${used.length} groups from all apps...` : 'Remove from all apps...';
@@ -199,7 +206,7 @@ gMenu.addEventListener('click', async e => {
     case 'open': openGroup(sel[0]); break;
     case 'copy': try { await navigator.clipboard.writeText(sel.join('\n')); toast(sel.length > 1 ? `Copied ${sel.length} names.` : 'Copied ' + sel[0]); } catch (err) { toast('Could not copy.', true); } break;
     case 'assign': if (!group || lc(group.name) !== lc(sel[0])) await openGroup(sel[0]); openAssign(); break;
-    case 'create': createGroups(sel.filter(n => entra && !entra.has(lc(n)))); break;
+    case 'create': createGroups(sel.filter(n => inEntra(n) === false)); break;
     case 'rename': if (!group || lc(group.name) !== lc(sel[0])) await openGroup(sel[0]); $('btnGroupRename').click(); break;
     case 'replace': openReplace({ old: sel[0] }); break;
     case 'fav': {
@@ -211,7 +218,7 @@ gMenu.addEventListener('click', async e => {
       break;
     }
     case 'unassign': unassignGroups(sel.filter(n => groups.some(g => lc(g.name) === lc(n)))); break;
-    case 'delete': deleteGroups(sel.filter(n => !entra || entra.has(lc(n)))); break;
+    case 'delete': deleteGroups(sel.filter(n => inEntra(n) !== false)); break;
   }
 });
 

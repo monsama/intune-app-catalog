@@ -780,6 +780,7 @@ function Global:Invoke-WebApi {
         '/api/packaging-setup'  { return (Invoke-WebPackagingSetup $Data) }
         '/api/package-start'    { return (Start-WebPackage $Data) }
         '/api/pull-start'       { return (Start-WebPull $Data) }
+        '/api/unsent-diff'      { return (Get-WebUnsentDiff $Data) }
         '/api/pull-apply'       { return (Invoke-WithCatalogLock { Invoke-WebPullApply $Data }) }
         '/api/prefs'            { return (Get-WebPrefs) }
         '/api/prefs-save'       { return (Save-WebPrefs $Data) }
@@ -820,20 +821,28 @@ function Global:Get-WebAppSentHashes {
       return codes, which releases own), g = its groups and filter.
     #>
     param($App)
+    $v = Get-WebAppSentValues $App
+    return @{ s = (Get-WebTextSha256 (ConvertTo-Json -InputObject $v.s -Compress -Depth 10)); g = (Get-WebTextSha256 (ConvertTo-Json -InputObject $v.g -Compress -Depth 4)) }
+}
+
+function Global:Get-WebAppSentValues {
+    # What Intune gets from an app, as values: s = settings, g = groups and filter - fingerprinted above, and kept
+    # beside the fingerprint after a send (2.38.8) so "Changes to send" can say what changed.
+    param($App)
     $m = $App.metadata
     $skip = if ($App.managedUpdates) { @('appVersion', 'installCommand', 'uninstallCommand', 'detectionRule', 'returnCodes') } else { @() }
     $o = [ordered]@{ name = [string]$App.appName }
     if ($m) { foreach ($p in @($m.PSObject.Properties | Sort-Object Name)) { if ($skip -notcontains $p.Name) { $o[$p.Name] = $p.Value } } }
     $sort = { param($l) @(@($l) | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Where-Object { $_ } | Sort-Object -Unique) }
     $g = [ordered]@{ r = (& $sort $App.requiredFor); a = (& $sort $App.availableFor); u = (& $sort $App.uninstallFor); x = (& $sort $App.excludeFor); f = [string]$App.assignmentFilter; fm = [string]$App.assignmentFilterMode }
-    return @{ s = (Get-WebTextSha256 (ConvertTo-Json -InputObject $o -Compress -Depth 10)); g = (Get-WebTextSha256 (ConvertTo-Json -InputObject $g -Compress -Depth 4)) }
+    return @{ s = $o; g = $g }
 }
 
 function Global:Read-WebSentStamps {
     $file = Join-Path (Get-WebIntegrityFolder) 'sent.json'
     $map = @{}
     if (Test-Path -LiteralPath $file) {
-        try { foreach ($p in (Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties) { $map[$p.Name] = @{ s = [string]$p.Value.s; g = [string]$p.Value.g } } } catch { }
+        try { foreach ($p in (Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties) { $map[$p.Name] = @{ s = [string]$p.Value.s; g = [string]$p.Value.g; sv = [string]$p.Value.sv; gv = [string]$p.Value.gv } } } catch { }
     }
     return $map
 }
@@ -850,11 +859,73 @@ function Global:Set-WebSentStamp {
         if (-not $a) { continue }
         $key = Get-SafeFileNameForApp -Name $a.appName
         $h = Get-WebAppSentHashes $a
-        if (-not $map.ContainsKey($key)) { $map[$key] = @{ s = ''; g = '' } }
+        $v = Get-WebAppSentValues $a
+        if (-not $map.ContainsKey($key)) { $map[$key] = @{ s = ''; g = ''; sv = ''; gv = '' } }
         $map[$key][$Part] = $h[$Part]
+        # The values too - "Changes to send" shows them next to the catalog's.
+        $map[$key]["$($Part)v"] = (ConvertTo-Json -InputObject $v[$Part] -Compress -Depth 10)
     }
-    $o = [ordered]@{}; foreach ($k in @($map.Keys | Sort-Object)) { $o[$k] = [ordered]@{ s = $map[$k].s; g = $map[$k].g } }
+    $o = [ordered]@{}; foreach ($k in @($map.Keys | Sort-Object)) { $o[$k] = [ordered]@{ s = $map[$k].s; g = $map[$k].g; sv = [string]$map[$k].sv; gv = [string]$map[$k].gv } }
     [System.IO.File]::WriteAllText((Join-Path (Get-WebIntegrityFolder -Create) 'sent.json'), (ConvertTo-Json -InputObject $o -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Global:Get-WebUnsentDiff {
+    <#
+      "Changes to send", field by field (2.38.8): what was last sent next to what the catalog has now. From the values
+      kept at the last send; an app last sent by an earlier version has only its fingerprint, so its catalog edits
+      since its last send to Intune come from the change history instead.
+    #>
+    param($Data)
+    $a = @((Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name }) | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = 'Not in the catalog.' } }
+    $st = (Read-WebSentStamps)[(Get-SafeFileNameForApp -Name $a.appName)]
+    $h = Get-WebAppSentHashes $a
+    $now = Get-WebAppSentValues $a
+    $labels = @{ r = 'Required for'; a = 'Available for'; u = 'Uninstall for'; x = 'Excluded'; f = 'Assignment filter'; fm = 'Filter mode'; name = 'Name' }
+    $label = { param($k) if ($labels.ContainsKey($k)) { $labels[$k] } else { $t = ($k -creplace '([a-z0-9])([A-Z])', '$1 $2').ToLowerInvariant(); $t.Substring(0, 1).ToUpperInvariant() + $t.Substring(1) } }
+    $text = { param($v) if ($null -eq $v) { '' } elseif ($v -is [string]) { $v } elseif ($v -is [System.Collections.IEnumerable] -and -not ($v -is [System.Collections.IDictionary]) -and -not ($v.PSObject.Properties['PSPath'])) { (@($v | ForEach-Object { if ($_ -is [string] -or $_ -is [ValueType]) { [string]$_ } else { ConvertTo-Json -InputObject $_ -Compress -Depth 8 } })) -join ', ' } elseif ($v -is [ValueType]) { [string]$v } else { ConvertTo-Json -InputObject $v -Compress -Depth 8 } }
+    $rows = New-Object System.Collections.Generic.List[object]
+    $fromHistory = $false
+    foreach ($part in 's', 'g') {
+        if (-not $st -or -not $st[$part] -or $st[$part] -eq $h[$part]) { continue }
+        $what = if ($part -eq 's') { 'settings' } else { 'groups' }
+        if ($st["$($part)v"]) {
+            $was = $st["$($part)v"] | ConvertFrom-Json
+            $cur = $now[$part] | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+            $keys = @(@($was.PSObject.Properties.Name) + @($cur.PSObject.Properties.Name) | Select-Object -Unique)
+            foreach ($k in $keys) {
+                $l = & $text $was.$k; $r = & $text $cur.$k
+                if ($l -cne $r) { $rows.Add([ordered]@{ part = $what; field = (& $label $k); sent = $l; now = $r }) }
+            }
+        }
+        else { $fromHistory = $true }
+    }
+    if ($fromHistory) {
+        # Since the last change in Intune: the catalog's own edits, oldest value first, newest last.
+        $dir = Join-Path (Get-WebIntegrityFolder) 'history'
+        $entries = @(Get-ChildItem -LiteralPath $dir -Filter '*.jsonl' -File -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object { Get-Content -LiteralPath $_.FullName -Encoding UTF8 } |
+            ForEach-Object { try { $_ | ConvertFrom-Json } catch { } } | Where-Object { $_ -and $_.app -eq $a.appName })
+        $lastSend = -1
+        for ($i = 0; $i -lt $entries.Count; $i++) { if ($entries[$i].kind -eq 'intune') { $lastSend = $i } }
+        $by = [ordered]@{}
+        for ($i = $lastSend + 1; $i -lt $entries.Count; $i++) {
+            foreach ($c in @($entries[$i].changes)) {
+                if (-not $c -or -not $c.field) { continue }
+                $f = [string]$c.field
+                if (-not $by.Contains($f)) { $by[$f] = @{ sent = [string]$c.before; now = [string]$c.after } } else { $by[$f].now = [string]$c.after }
+            }
+        }
+        # Only what Intune gets (settings, groups, filter); the history keeps each value as compact JSON.
+        $groupFields = @{ requiredFor = 'r'; availableFor = 'a'; uninstallFor = 'u'; excludeFor = 'x'; assignmentFilter = 'f'; assignmentFilterMode = 'fm'; appName = 'name' }
+        $decode = { param($j) $t = ([string]$j).Trim(); if (-not $t -or $t -eq 'null') { '' } else { try { & $text (ConvertFrom-Json -InputObject $t) } catch { $t } } }
+        foreach ($f in $by.Keys) {
+            $k = if ($f -like 'metadata.*') { $f.Substring(9) } elseif ($groupFields.ContainsKey($f)) { $groupFields[$f] } else { $null }
+            if (-not $k) { continue }
+            $l = & $decode $by[$f].sent; $r = & $decode $by[$f].now
+            if ($l -cne $r) { $rows.Add([ordered]@{ part = 'history'; field = (& $label $k); sent = $l; now = $r }) }
+        }
+    }
+    return @{ ok = $true; name = $a.appName; rows = $rows.ToArray(); fromHistory = $fromHistory }
 }
 
 function Global:Get-WebUnsent {

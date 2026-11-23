@@ -1076,7 +1076,7 @@ async function openDeploy(names, opts = {}) {
   $('deployLog').textContent = r.note ? r.note + '\n' : '';
   $('deployProgress').hidden = true; $('btnDeployStop').hidden = true; $('btnDeployRetry').hidden = true;
   const n = deployPlan.filter(a => a.ready).length;
-  $('btnDeployGo').textContent = n === 1 ? 'Send 1 app' : `Send ${n} apps`;
+  $('btnDeployGo').textContent = n === 1 ? 'Send 1 app' : `Send ${n} apps`; $('btnDeployGo').title = '';
   $('btnDeployGo').disabled = n === 0;
   $('dlgDeploy').showModal();
   // From Add and send's summary: the send starts at once (the summary was the review).
@@ -1124,12 +1124,19 @@ async function runDeployQueue(names) {
   const retry = ready.filter(n => ['failed', 'skipped', 'stopped'].includes(deployResults[n]));
   $('btnDeployRetry').hidden = !retry.length;
   $('btnDeployRetry').textContent = retry.length ? `Retry ${retry.length}` : 'Retry failed';
-  $('btnDeployGo').textContent = 'Done'; $('btnDeployGo').disabled = true;
+  // Done closes the dialog (2.38.8 - it was a switched-off label: it looked like a button and did nothing). Set after
+  // the job runner gives its buttons back, so it isn't switched off again.
+  const done = () => { const b = $('btnDeployGo'); b.textContent = 'Done'; delete b.dataset.jobWas; b.disabled = false; b.title = 'Close - the results stay in the list and in Recent changes'; };
+  done(); setTimeout(done, 0);
   const okN = ready.filter(n => deployResults[n] === 'ok').length;
   toast(`Send to Intune finished: ${okN} of ${ready.length} done${retry.length ? `, ${retry.length} to retry` : ''}.`, okN < ready.length);
   loadApps();
 }
-$('btnDeployGo').addEventListener('click', () => { if (!deployRunning && $('btnDeployGo').textContent !== 'Done') runDeployQueue(deployPlan.filter(a => a.ready).map(a => a.name)); });
+$('btnDeployGo').addEventListener('click', () => {
+  if (deployRunning) return;
+  if ($('btnDeployGo').textContent === 'Done') { $('dlgDeploy').close(); return; }
+  runDeployQueue(deployPlan.filter(a => a.ready).map(a => a.name));
+});
 $('btnDeployRetry').addEventListener('click', () => !deployRunning && runDeployQueue(deployPlan.filter(a => a.ready && ['failed', 'skipped', 'stopped'].includes(deployResults[a.name])).map(a => a.name)));
 $('btnDeployStop').addEventListener('click', () => { deployStop = true; $('btnDeployStop').disabled = true; toast('Stopping after the app that is running.'); });
 $('dlgDeploy').addEventListener('cancel', e => { if (deployRunning) { e.preventDefault(); toast('Deploying - use "Stop after this app" first, or wait.', true); } });
@@ -1161,10 +1168,12 @@ async function openPushGroups(names) {
   }, { path: '/api/push-start', log: 'pushLog', startText: 'Comparing with Intune...' });
 }
 $('btnPushGo').addEventListener('click', async () => {
+  // Done (after it worked) closes - it used to run Apply again.
+  if ($('btnPushGo').textContent === 'Done') { $('btnPushGo').closest('dialog').close(); return; }
   $('btnPushGo').disabled = true;
   await runJob({ names: pushNames, mode: 'Apply' }, ok => {
     toast(ok ? 'Groups pushed to Intune.' : 'Send groups failed - see the log.', !ok);
-    if (ok) { $('btnPushGo').textContent = 'Done'; loadApps(); }
+    if (ok) { const done = () => { const b = $('btnPushGo'); b.textContent = 'Done'; delete b.dataset.jobWas; b.disabled = false; }; done(); setTimeout(done, 0); loadApps(); }
   }, { path: '/api/push-start', log: 'pushLog', startText: 'Applying...' });
 });
 
@@ -1457,34 +1466,69 @@ async function menuAction(act) {
 
 // ---------------------------------------------------------------- pull from Intune
 let pullPending = '';
+// 2.38.8: each differing field is a choice between its two values - click the one to keep (Intune's is picked) -
+// instead of a "Keep catalog" tick; the log folds away unless something failed.
+function pullCount() {
+  const rows = [...document.querySelectorAll('#pullReview tr[data-field]')];
+  const fromIntune = rows.filter(r => r.dataset.pick === 'intune').length;
+  $('btnPullApply').textContent = rows.length ? `Save to catalog (${fromIntune} from Intune, ${rows.length - fromIntune} kept)` : 'Save to catalog';
+}
+function pullPick(tr, side) {
+  tr.dataset.pick = side;
+  for (const td of tr.querySelectorAll('td.pick')) {
+    const on = td.dataset.side === side;
+    td.classList.toggle('on', on);
+    td.querySelector('input').checked = on;
+  }
+  pullCount();
+}
 function openPull(names) {
   if (wcResume('dlgPull')) return;
-  $('pullText').textContent = `Reading ${names.length} app(s) from Intune. Apps whose catalog entry matches Intune (or has no settings yet) take Intune's right away; anything different is shown here to choose.`;
-  $('pullReview').replaceChildren(); $('pullLog').textContent = ''; $('btnPullApply').hidden = true; pullPending = '';
+  $('pullText').textContent = `Reading ${names.length === 1 ? names[0] : names.length + ' apps'} from Intune... Anything that matches (or the catalog has no value for) is taken at once; whatever differs is shown here to choose.`;
+  $('pullReview').replaceChildren(); $('pullLog').textContent = ''; $('pullLogBox').open = false; $('btnPullApply').hidden = true; pullPending = '';
   $('dlgPull').showModal();
   runJob({ names }, (ok, res, after) => {
-    if (!ok || !after) { $('pullText').textContent = 'Pull failed - see the log below.'; return; }
+    if (!ok || !after) { $('pullText').textContent = 'Reading from Intune failed - the log says why.'; $('pullLogBox').open = true; return; }
     const msg = [];
-    if (after.applied && after.applied.length) msg.push(`Updated from Intune: ${after.applied.join(', ')}.`);
-    if (after.failed && after.failed.length) msg.push(`Could not read: ${after.failed.join('; ')}.`);
-    if (after.review && after.review.length) msg.push('These differ from Intune. Tick what should keep the catalog’s value - everything else takes Intune’s:');
-    else msg.push('Nothing to review.');
+    if (after.applied && after.applied.length) msg.push(`Taken from Intune: ${after.applied.join(', ')}.`);
+    if (after.failed && after.failed.length) { msg.push(`Could not read: ${after.failed.join('; ')}.`); $('pullLogBox').open = true; }
+    const review = after.review || [];
+    if (review.length) msg.push('These differ - click the value to keep for each (Intune’s is picked). Nothing in Intune changes.');
+    else if (!msg.length) msg.push('The catalog already matches Intune - nothing to change.');
     $('pullText').textContent = msg.join(' ');
     pullPending = after.pending || '';
-    $('pullReview').replaceChildren(...(after.review || []).map(r => el('div', { class: 'pullapp', 'data-app': r.app },
-      el('h3', { text: r.app }),
-      el('table', {}, el('tr', {}, el('td', { class: 'muted', text: 'Keep catalog' }), el('td', { class: 'muted', text: 'Field' }), el('td', { class: 'muted', text: 'Catalog' }), el('td', { class: 'muted', text: 'Intune' })),
-        ...r.diffs.map(d => el('tr', {}, el('td', {}, el('input', { type: 'checkbox', 'data-field': d.field, 'aria-label': `Take ${d.field} from Intune` })), el('td', { text: d.field }), el('td', { class: 'v', text: d.local }), el('td', { class: 'v', text: d.intune })))))));
+    let n = 0;
+    $('pullReview').replaceChildren(...review.map(r => {
+      const rows = r.diffs.map(d => {
+        const group = `pull${n++}`;
+        const cell = (side, value) => {
+          const id = `${group}-${side}`;
+          const td = el('td', { class: 'pick v', 'data-side': side },
+            el('label', { for: id }, el('input', { type: 'radio', name: group, id, 'aria-label': `${d.field}: keep the ${side === 'intune' ? 'Intune' : 'catalog'} value` }), el('span', { text: value === '' || value === null || value === undefined ? '(blank)' : String(value) })));
+          td.addEventListener('click', () => pullPick(tr, side));
+          td.querySelector('input').addEventListener('change', () => pullPick(tr, side));
+          return td;
+        };
+        const tr = el('tr', { 'data-field': d.field }, el('td', { class: 'f', text: d.field }), cell('catalog', d.local), cell('intune', d.intune));
+        pullPick(tr, 'intune');
+        return tr;
+      });
+      const all = side => el('button', { type: 'button', class: 'btn small', text: side === 'intune' ? 'All from Intune' : 'Keep all', onclick: () => rows.forEach(tr => pullPick(tr, side)) });
+      return el('div', { class: 'pullapp', 'data-app': r.app },
+        el('div', { class: 'pullhead' }, el('h3', { text: r.app }), rows.length > 1 ? el('span', { class: 'pullall' }, all('catalog'), all('intune')) : ''),
+        el('table', {}, el('thead', {}, el('tr', {}, el('th', { text: 'Field' }), el('th', { text: 'Catalog' }), el('th', { text: 'Intune' }))), el('tbody', {}, ...rows)));
+    }));
     $('btnPullApply').hidden = !pullPending;
+    pullCount();
     loadApps();
   }, { path: '/api/pull-start', log: 'pullLog', startText: 'Reading from Intune...' });
 }
 $('btnPullApply').addEventListener('click', async () => {
   const keep = {};
-  for (const box of document.querySelectorAll('#pullReview .pullapp')) keep[box.dataset.app] = [...box.querySelectorAll('input:checked')].map(c => c.dataset.field);
+  for (const box of document.querySelectorAll('#pullReview .pullapp')) keep[box.dataset.app] = [...box.querySelectorAll('tr[data-pick="catalog"]')].map(tr => tr.dataset.field);
   const r = await api('/api/pull-apply', { pending: pullPending, keep });
   if (!r.ok) { toast(r.error, true); return; }
-  $('dlgPull').close(); toast('Applied.'); loadApps();
+  $('dlgPull').close(); toast('Saved to the catalog.'); loadApps();
 });
 
 // ---------------------------------------------------------------- retiring an app
@@ -1561,6 +1605,8 @@ async function openStatus(name) {
   const top = r.topErrors || [];
   $('statusErrors').hidden = !top.length;
   $('statusErrList').replaceChildren(...top.map(e => el('li', {}, el('strong', { text: `${e.count} × ${e.hex}` }), ` ${e.meaning} `, el('span', { class: 'muted', text: e.fix }))));
+  // Nothing reported yet: one line in the table saying so and why, not empty column headings (2.38.8).
+  if (!r.rows.length) { $('statusRows').replaceChildren(el('tr', {}, el('td', { colspan: 7, class: 'muted', text: 'No device has reported yet. Intune lists a device here once it has checked in and tried the app - usually within an hour or two of the assignment (Company Portal > Sync speeds it up).' }))); return; }
   $('statusRows').replaceChildren(...r.rows.map(x => el('tr', {}, el('td', { text: x.device }), el('td', { text: x.user }),
     el('td', {}, el('span', { class: 'pill ' + (/fail/i.test(x.state) ? 'err' : /install/i.test(x.state) && !/not/i.test(x.state) ? 'ok' : 'muted'), text: x.state })),
     el('td', { text: x.detail }), el('td', { class: 'chg', text: x.error, title: x.meaning ? `${x.meaning}\n\n${x.fix}` : '' }, x.meaning ? el('div', { class: 'muted small', text: x.meaning }) : ''), el('td', { text: x.version }), el('td', { text: x.lastSeen }))));

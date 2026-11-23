@@ -155,6 +155,41 @@ function activity(text) {
 }
 const stamp = () => new Date().toTimeString().slice(0, 8);
 
+// 2.38.8: every log colours its lines - failures red, warnings amber, OK green - whoever writes to it (they all set
+// textContent; this follows). A failure also opens a folded log, so it is never hidden.
+const logKind = l => /\[(FAILED|ERROR)\]|-> FAILED\b|^\s*(ERROR|FAILED)\b[:\s]|\bException\b/.test(l) ? 'lerr'
+  : /\[(WARN|WARNING|!)\]/.test(l) ? 'lwarn' : /\[OK\]|^\s*\[\+\]|^PASSED\b/.test(l) ? 'lok' : '';
+const logSeen = new WeakMap();
+function colourLog(pre) {
+  const text = pre.textContent;
+  if (logSeen.get(pre) === text) return;
+  const atEnd = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 24;
+  if (text.length > 400000) { logSeen.set(pre, text); return; }
+  const frag = document.createDocumentFragment();
+  let plain = '', failed = false;
+  for (const line of text.split(/(?<=\n)/)) {
+    const k = logKind(line);
+    if (!k) { plain += line; continue; }
+    if (plain) { frag.append(plain); plain = ''; }
+    if (k === 'lerr') failed = true;
+    frag.append(el('span', { class: k, text: line }));
+  }
+  if (plain) frag.append(plain);
+  logSeen.set(pre, text);
+  pre.replaceChildren(frag);
+  pre.classList.toggle('hasfail', failed);
+  if (failed) { const d = pre.closest('details'); if (d && !d.open) d.open = true; }
+  if (atEnd) pre.scrollTop = pre.scrollHeight;
+}
+{
+  const pending = new Set();
+  const mo = new MutationObserver(recs => {
+    for (const r of recs) { const pre = (r.target.nodeType === 3 ? r.target.parentElement : r.target).closest('pre.log'); if (pre) pending.add(pre); }
+    if (pending.size === 1) requestAnimationFrame(() => { for (const p of pending) colourLog(p); pending.clear(); });
+  });
+  for (const pre of document.querySelectorAll('pre.log')) mo.observe(pre, { childList: true, characterData: true, subtree: true });
+}
+
 let toastTimer = null;
 // -actions: the next steps as buttons in the message, e.g. [{ label: 'Send to Intune', run: () => ... }] - it then stays longer.
 // A Microsoft Store product ID (winget's msstore source) - sent to Intune as its own Store app type.

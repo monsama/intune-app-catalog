@@ -352,6 +352,14 @@ try {
         Check (-not @(& $calls | Where-Object { $_.uri -like '*All devices*' -or $_.uri -like '*All%20devices*' }).Count) 'step: ... and is never looked up in Entra ID' ((& $calls | ConvertTo-Json -Compress))
         Check ($assign -and ($targets -contains "required:$groupId") -and ($targets -contains "available:$newGroupId") -and -not ($targets -like "*$oldGroupId")) 'step: ... and Intune gets exactly the catalog''s groups (old assignment dropped)' ($targets -join ', ')
 
+        # 2.38.8: Changes to send, field by field - what was sent (kept with the send) next to what the catalog has now.
+        $sentApp = (Invoke-Api '/api/app-get' @{ name = $linkedName }).app
+        $sentApp.requiredFor = @(@($sentApp.requiredFor) + 'SG-ZZ-Later')
+        [void](Invoke-Api '/api/app-save' @{ originalName = $linkedName; app = $sentApp })
+        $ud = Invoke-Api '/api/unsent-diff' @{ name = $linkedName }
+        $udReq = @($ud.rows | Where-Object { $_.field -eq 'Required for' }) | Select-Object -First 1
+        Check ($ud.ok -and -not $ud.fromHistory -and $udReq -and $udReq.now -like '*sg-zz-later*' -and $udReq.sent -notlike '*sg-zz-later*' -and @($ud.rows).Count -eq 1) 'changes to send: what changed since the send, field by field' ($ud | ConvertTo-Json -Compress -Depth 4)
+
         $del = Invoke-Api '/api/delete-intune' @{ name = $linkedName }
         $delDone = Wait-TestJob $del.job
         Check ($del.ok -and $delDone.Poll.result.success) 'step: Delete from Intune succeeds' "$($delDone.Poll | ConvertTo-Json -Compress -Depth 4) $($delDone.Log)"
