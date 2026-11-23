@@ -24,7 +24,8 @@
   if (state && state.configured && state.startup && state.startup.drift) {
     $('chkDetails').checked = !!state.startup.fullAudit;
     await runChecks();
-    if (findings.length) $('tabChecks').dataset.count = findings.length;
-    if (findings.length) activity(`${stamp()} Checks at start: ${findings.length} finding(s) - see Checks.`);
+    const shownN = shownFindings().length;
+    if (shownN) $('tabChecks').dataset.count = shownN;
+    if (shownN) activity(`${stamp()} Checks at start: ${shownN} finding(s) - see Checks.`);
   }
 })();

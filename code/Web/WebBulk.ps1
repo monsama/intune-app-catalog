@@ -100,6 +100,10 @@ function Global:Invoke-WebReplaceGroup {
         $new = $all.Name
         $excl = @($apps | Where-Object { @($_.excludeFor | Where-Object { ([string]$_).Trim() -ieq $old }).Count } | ForEach-Object { $_.appName })
         if ($excl.Count) { return @{ ok = $false; error = "Intune can't exclude $new, and '$old' is excluded in $($excl -join ', ') - take it out of Excluded there first." } }
+        if ($new -eq '[All devices]') {
+            $avail = @($apps | Where-Object { @($_.availableFor | Where-Object { ([string]$_).Trim() -ieq $old }).Count } | ForEach-Object { $_.appName })
+            if ($avail.Count) { return @{ ok = $false; error = "Available is for users - '$old' is Available in $($avail -join ', '), and Intune has no Available for all devices. Use [All users] there." } }
+        }
     }
     $changed = @(Rename-WebGroupInApps -Apps $apps -Old $old -New $new)
     if (-not $changed.Count) { return @{ ok = $false; error = "No app$(if ($only.Count) { ' of those chosen' }) in the catalog uses '$old'." } }

@@ -330,6 +330,20 @@ function Global:Get-WebSandboxResult {
 
 # ---------------------------------------------------------------- Home: what needs attention
 
+function Global:Get-WebShortGraphError {
+    <#
+      Home's one line for a failed step (2.38.12): Graph's raw "404 Not Found: {"error":{"code":...,"message":"..."}}"
+      as "404 Not Found - <its message>", not a page of JSON. Other text stays as it is.
+    #>
+    param([string]$Text)
+    if ($Text -notmatch '^(?<head>[^{]*?)\s*:?\s*(?<json>\{.*\})\s*$') { return $Text }
+    $head = $Matches.head.Trim().TrimEnd(':').Trim(); $msg = ''
+    try { $j = $Matches.json | ConvertFrom-Json; $msg = [string]$j.error.message; if (-not $msg) { $msg = [string]$j.error.code } } catch { }
+    if ($msg.Length -gt 160) { $msg = $msg.Substring(0, 157) + '...' }
+    if (-not $head) { return $(if ($msg) { $msg } else { $Text }) }
+    return $(if ($msg) { "$head - $msg" } else { $head })
+}
+
 function Global:Get-WebAttention {
     <#
       The Home page: what needs a look, each with where to fix it. Reads
@@ -406,7 +420,7 @@ function Global:Get-WebAttention {
     if ($managedWinget.Count -and -not (Test-Path -LiteralPath (Get-SharedPackagePath))) { & $add 'warn' 'Shared Winget package missing' 'Build init.intunewin - Winget apps can''t be deployed without it.' 'settings:packaging' }
     $runs = Get-WebUpdateRuns
     $last = @($runs.runs) | Select-Object -First 1
-    if ($last -and $last.failed) { & $add 'err' "The last nightly run had $($last.failed) problem(s)" ((@($last.items | Where-Object { $_.outcome -eq 'failed' } | Select-Object -First 3 | ForEach-Object { if ($_.app -eq '(all)') { [string]$_.text } else { "$($_.app): $($_.text)" } }) -join ' / ')) 'settings:automation' }
+    if ($last -and $last.failed) { & $add 'err' "The last nightly run had $($last.failed) problem(s)" ((@($last.items | Where-Object { $_.outcome -eq 'failed' } | Select-Object -First 3 | ForEach-Object { $t = Get-WebShortGraphError ([string]$_.text); if ($_.app -eq '(all)') { $t } else { "$($_.app): $t" } }) -join ' / ')) 'settings:automation' }
     $drift = @($last.items | Where-Object { $_.outcome -eq 'drift' })
     if ($drift.Count) { & $add 'warn' "$($drift.Count) app(s) differ from Intune" ((@($drift | Select-Object -First 5 | ForEach-Object { $_.app }) -join ', ') + ' (last night) - Checks has the details.') 'checks' }
     $sch = Get-WebUpdateSchedule

@@ -52,7 +52,7 @@ function openCsvImport() {
   csvText = ''; csvChanges = [];
   $('csvFile').value = ''; $('csvName').textContent = '';
   $('csvPreview').hidden = true; $('csvErr').hidden = true; $('csvNote').textContent = ''; $('csvLog').hidden = true; $('csvLog').textContent = ''; $('csvPushRow').hidden = true;
-  $('btnCsvGo').disabled = true; $('btnCsvGo').textContent = 'Apply'; $('btnCsvClose').textContent = 'Cancel';
+  $('btnCsvGo').disabled = true; $('btnCsvGo').textContent = 'Apply'; $('btnCsvClose').textContent = 'Cancel'; $('btnCsvClose').hidden = false;
   $('dlgCsv').showModal();
 }
 $('csvFile').addEventListener('change', async () => {
@@ -87,7 +87,8 @@ $('btnCsvGo').addEventListener('click', async () => {
   if ($('btnCsvGo').textContent === 'Done') { $('dlgCsv').close(); return; }
   $('btnCsvGo').disabled = true;
   const r = await api('/api/csv-import', { text: csvText });
-  if (!r.ok) { $('csvErr').textContent = r.error; $('csvErr').hidden = false; return; }
+  // A failed apply can be tried again (2.38.12 - Apply stayed off until the file was chosen again).
+  if (!r.ok) { $('csvErr').textContent = r.error; $('csvErr').hidden = false; $('btnCsvGo').disabled = false; return; }
   toast(`Imported ${r.changes.length} change(s) on ${r.apps.length} app(s). Undo takes it back.`);
   $('btnCsvClose').textContent = 'Close';
   await loadApps();
@@ -100,7 +101,7 @@ $('btnCsvGo').addEventListener('click', async () => {
     const done = await runEach(meta, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'csvLog', startText: 'Pushing ' });
     toast(`Settings pushed for ${done.length} of ${meta.length} app(s).`, done.length < meta.length);
   }
-  $('btnCsvGo').textContent = 'Done'; $('btnCsvGo').disabled = false;
+  $('btnCsvGo').textContent = 'Done'; $('btnCsvGo').disabled = false; $('btnCsvClose').hidden = true;
   if (grp.length && await ask(`Send groups for the ${grp.length} deployed app(s) whose groups changed?\n\n${grp.join('\n')}`, { ok: 'Send groups', danger: false })) { $('dlgCsv').close(); openPushGroups(grp); }
 });
 
@@ -218,7 +219,7 @@ async function openRelease(name) {
   $('relGroups').textContent = r.pilotGroups.length ? `Pilot groups: ${r.pilotGroups.join(', ')}.${(r.rings || []).length > 1 ? ` Then ${r.rings.slice(1).map(x => x.name).join(', then ')}, then everyone.` : ''}` : 'No pilot groups yet - set them in Settings > Updates.';
   $('relFast').checked = false; $('relFastNote').textContent = `(pilot for ${r.fastTrackHours || 4} hours, then everyone)`;
   $('relErr').hidden = true; $('relLog').hidden = true; $('relLog').textContent = '';
-  $('btnRelGo').disabled = !r.pilotGroups.length || !!r.detectionProblem; $('btnRelGo').textContent = 'Release to pilot'; $('btnRelClose').textContent = 'Cancel';
+  $('btnRelGo').disabled = !r.pilotGroups.length || !!r.detectionProblem; $('btnRelGo').textContent = 'Release to pilot'; $('btnRelClose').textContent = 'Cancel'; $('btnRelClose').hidden = false;
   $('dlgRelease').showModal(); $('relVersion').focus();
   // Winget apps: Pick... beside the version lists winget's versions (newest first); a package's version comes from its installer.
   relVerPick.reset(); relVerPick.hide(pkg);
@@ -244,7 +245,7 @@ $('btnRelGo').addEventListener('click', async () => {
   const made = await releaseStep({ name, version, productCode, fastTrack: $('relFast').checked }, '/api/release-start', 'relLog', `Creating ${name} ${version} in Intune...`);
   if (!made.ok) { $('relErr').textContent = made.error || 'The release failed - see the log.'; $('relErr').hidden = false; $('btnRelGo').disabled = false; loadApps(); return; }
   const assigned = await releaseStep({ name, step: 'pilot' }, '/api/release-assign', 'relLog', 'Assigning it to the pilot groups...');
-  $('btnRelClose').textContent = 'Close'; $('btnRelGo').textContent = 'Done'; $('btnRelGo').disabled = false;
+  $('btnRelClose').textContent = 'Close'; $('btnRelClose').hidden = true; $('btnRelGo').textContent = 'Done'; $('btnRelGo').disabled = false;
   toast(assigned.ok ? `${name} ${version} is released to the pilot groups.` : `${name} ${version} is in Intune, but assigning it to pilot failed - Release again isn't needed: use Promote or Withdraw.`, !assigned.ok);
   loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
 });

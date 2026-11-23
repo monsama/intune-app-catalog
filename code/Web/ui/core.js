@@ -163,6 +163,8 @@ const logSeen = new WeakMap();
 function colourLog(pre) {
   const text = pre.textContent;
   if (logSeen.get(pre) === text) return;
+  // A log with markup of its own (Diagnostics' headings and verdicts) is left as it is - only plain text is coloured.
+  if ([...pre.children].some(c => !/^(lerr|lwarn|lok)$/.test(c.className))) { logSeen.set(pre, text); return; }
   const atEnd = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 24;
   if (text.length > 400000) { logSeen.set(pre, text); return; }
   const frag = document.createDocumentFragment();
@@ -182,10 +184,11 @@ function colourLog(pre) {
   if (atEnd) pre.scrollTop = pre.scrollHeight;
 }
 {
-  const pending = new Set();
+  const pending = new Set(); let scheduled = false;
+  // One frame for whatever changed since the last - a step writes two logs at once (its own and Activity).
   const mo = new MutationObserver(recs => {
     for (const r of recs) { const pre = (r.target.nodeType === 3 ? r.target.parentElement : r.target).closest('pre.log'); if (pre) pending.add(pre); }
-    if (pending.size === 1) requestAnimationFrame(() => { for (const p of pending) colourLog(p); pending.clear(); });
+    if (pending.size && !scheduled) { scheduled = true; requestAnimationFrame(() => { scheduled = false; const list = [...pending]; pending.clear(); for (const p of list) colourLog(p); }); }
   });
   for (const pre of document.querySelectorAll('pre.log')) mo.observe(pre, { childList: true, characterData: true, subtree: true });
 }

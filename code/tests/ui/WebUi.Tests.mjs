@@ -221,7 +221,8 @@ try {
       // stays inside the card.
       await page.evaluate(`homeLocal = { ...homeLocal, setup: homeLocal.setup.map((x, i) => i === 0 ? { ...x, done: true } : x) };
         homeIntune = { ok: true, items: [], summary: null, permMissing: ['DeviceManagementManagedDevices.Read.All'] }; renderHome();`);
-      check(/1 permission\(s\) are missing.*DeviceManagementManagedDevices\.Read\.All/.test(await page.textContent('#setupList li.now')) && /Check permissions|Open/.test(await page.textContent('#setupList li.now button')),
+      check(/Grant the missing permissions/.test(await page.textContent('#setupList li.now')) && /1 permission is missing/.test(await page.textContent('#setupList li.now'))
+        && /DeviceManagementManagedDevices\.Read\.All/.test(await page.getAttribute('#setupList li.now .body', 'title')) && (await page.textContent('#setupList li.now button')) === 'Check permissions',
         `${label}: Getting started keeps Connect open while a permission is missing, and names it`, await page.textContent('#setupList'));
       await squeezed('Home (a permission missing)');
       await page.evaluate('homeIntune = null; loadHome(true);');
@@ -389,8 +390,8 @@ try {
         await page.fill('#pfxExPw', 'a-long-enough-pw'); await page.fill('#pfxExPw2', 'a-long-enough-px'); await page.click('#btnPfxExGo');
         check(/differ/.test(await page.textContent('#pfxExError')), `${label}: .pfx export wants the password twice the same`);
         await page.fill('#pfxExPw2', 'a-long-enough-pw'); await page.click('#btnPfxExGo');
-        await page.waitForFunction(() => /No certificate/.test(document.getElementById('pfxExError').textContent));
-        check(await page.evaluate(() => document.getElementById('dlgPfxExport').open && !document.getElementById('pfxExPw').value), `${label}: .pfx export says why it can't (no such certificate) and clears the passwords`);
+        await page.waitForFunction(() => /No certificate|Only the connection/.test(document.getElementById('pfxExError').textContent));
+        check(await page.evaluate(() => document.getElementById('dlgPfxExport').open && !document.getElementById('pfxExPw').value), `${label}: .pfx export says why it can't (not the connection's certificate) and clears the passwords`);
         await page.keyboard.press('Escape');
         await page.fill('#fThumb', thumbWas);
 

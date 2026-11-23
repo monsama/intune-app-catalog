@@ -1708,3 +1708,20 @@ button.pill.pillbtn:hover, button.pill.pillbtn[aria-expanded="true"] { box-shado
 
 /* 2.38.10: a warning inside a dialog (the .pfx export). */
 .warnbox { margin: 8px 0 4px; padding: 8px 12px; border-radius: var(--r-m); background: var(--warn-bg); color: var(--fg); border-left: 3px solid var(--warn); font-size: 13px; }
+
+/* 2.38.12 (sweep): narrow windows. */
+/* Apps: at a phone's width "Who gets it" makes room for the stage and its next step (the side panel has the groups). */
+@media (max-width: 640px) { #grid tr > :nth-child(4) { display: none; } }
+/* Checks: the area is in the pill already beside the app; the Differs chips may wrap narrower. */
+@media (max-width: 600px) { #checkGrid tr > :nth-child(2) { display: none; } #checkGrid td.dif { min-width: 0; } }
+/* Read from Intune: the field's name lines up with its values; on a phone above them, the two values side by side. */
+.pullapp td.f { vertical-align: top; padding-top: 6px; }
+.pullapp td.pick { padding-top: 4px; }
+@media (max-width: 600px) {
+  .pullapp table, .pullapp tbody { display: block; }
+  .pullapp thead { display: none; }
+  .pullapp tr[data-field] { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 6px; padding: 6px 0; border-top: 1px solid var(--bd2); }
+  .pullapp tr[data-field] > td { border-top: 0; width: auto; }
+  .pullapp tr[data-field] > td.f { grid-column: 1 / -1; font-weight: 600; padding: 0 6px; }
+  .pullapp td.pick::before { content: attr(data-side); display: block; font-size: 11px; color: var(--muted); text-transform: capitalize; font-family: var(--ui); }
+}

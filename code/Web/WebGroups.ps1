@@ -62,6 +62,8 @@ function Global:Test-WebGroupName {
     if ($n.Length -gt 256) { return 'A group name can be at most 256 characters.' }
     if ($n -match '[\x00-\x1f]') { return 'A group name cannot contain control characters.' }
     if ($Role -in 'excludeFor', 'exclude', 'Excluded' -and (Get-AllTargetInfo $n)) { return "Intune can't exclude $((Get-AllTargetInfo $n).Name) - only a group can be excluded." }
+    # Available is offered to users (Company Portal) - Intune has no "available for every device" (2.38.12).
+    if ($Role -in 'availableFor', 'available', 'Available' -and (Get-AllTargetInfo $n) -and (Get-AllTargetInfo $n).Name -eq '[All devices]') { return "Available is offered to users in the Company Portal - use [All users] (Intune has no Available for all devices)." }
     return ''
 }
 

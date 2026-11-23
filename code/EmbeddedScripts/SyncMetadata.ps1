@@ -363,6 +363,13 @@ try {
                 try {
                     $groupInfo = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve group name"
                     if ($groupInfo.displayName) { $groupDisplayName = $groupInfo.displayName }
+                    # A real group named like a built-in target ("[All users]"): kept by its ID, or the catalog would
+                    # read it as Intune's All users target - and a send would assign the app to everyone.
+                    # (Matched here: this worker runs in a runspace of its own, without the shared helpers.)
+                    if ([string]$groupDisplayName -match '^\s*\[(all users|all devices)\]\s*$') {
+                        $warnings.Add("The group $gid is named '$groupDisplayName' - like Intune's built-in target. It is kept by its ID; rename it in Entra ID.")
+                        $groupDisplayName = $gid
+                    }
                 }
                 # Left as its ID, the group compared as a difference that
                 # isn't one, and a Pull wrote the ID into the catalog. The

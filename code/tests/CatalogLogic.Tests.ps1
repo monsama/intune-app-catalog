@@ -2155,7 +2155,14 @@ Assert-True ($sharedHelpers.Count -ge 7) "Get-AssignmentScriptHelpers' list is r
 Assert-Equal '' (@($sharedHelpers | Where-Object { $workerHelpers -notcontains $_ }) -join ', ') "BatchAssign's preview workers get every assignment helper"
 Assert-Equal '[All users]' (Get-AllTargetInfo ' [all USERS] ').Name "Get-AllTargetInfo: the catalog name, whatever the case and spaces"
 Assert-Equal '#microsoft.graph.allDevicesAssignmentTarget' (Get-AllTargetInfo '[All devices]').Type "Get-AllTargetInfo: All devices' Graph type"
-Assert-Equal '[All devices]' (Get-AllTargetInfo '#microsoft.graph.allDevicesAssignmentTarget').Name "Get-AllTargetInfo: from Graph's type back to the catalog name"
+Assert-Equal '[All devices]' (Get-AllTargetInfo '#microsoft.graph.allDevicesAssignmentTarget' -Type).Name "Get-AllTargetInfo: from Graph's type back to the catalog name"
+Assert-True ($null -eq (Get-AllTargetInfo '#microsoft.graph.allDevicesAssignmentTarget')) "Get-AllTargetInfo (2.38.12): a group named like Graph's type is an ordinary group"
+Assert-True ($null -eq (Get-AllTargetInfo '[All devices]' -Type)) "Get-AllTargetInfo (2.38.12): -Type takes only Graph's types"
+# A real group named "[All users]" keeps its ID - read as the name it would compare (and send) as Intune's All users.
+$fakeGid = '11111111-2222-3333-4444-555555555555'
+$fakeNames = @{}; $fakeNames[$fakeGid] = '[All users]'
+$tokenGroup = @(ConvertTo-CurrentAssignmentEntries -Assignments @(@{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.groupAssignmentTarget'; groupId = $fakeGid } }) -GroupNameById $fakeNames)
+Assert-Equal $fakeGid $tokenGroup[0].Group "ConvertTo-CurrentAssignmentEntries (2.38.12): a group named [All users] stays its ID, never the built-in target"
 Assert-True ($null -eq (Get-AllTargetInfo 'All users')) "Get-AllTargetInfo: a group called All users (no brackets) is an ordinary group"
 Assert-True ($null -eq (Get-AllTargetInfo '')) "Get-AllTargetInfo: nothing is nothing"
 $allOther = @()

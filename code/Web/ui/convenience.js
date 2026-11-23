@@ -62,7 +62,9 @@ async function gpSuggest(ta) {
   const src = ta._source || ta, have = new Set(src.value.split('\n').map(s => s.trim().toLowerCase()));
   // [All users] / [All devices] (Intune's own targets) only where an app gets assigned: never Excluded, pilot or favourite lists.
   const builtInOk = ['gRequired', 'gAvailable', 'gUninstall', 'adRequired', 'adAvailable'].includes(src.id) || ['Required for', 'Available for'].includes(src.getAttribute('aria-label'));
-  gpShow(ta, r.ok ? r.groups.filter(g => builtInOk || g.source !== 'built-in').filter(g => !have.has(g.name.toLowerCase()) || g.name.toLowerCase() === l.text.toLowerCase()).filter(g => g.name.toLowerCase() !== l.text.toLowerCase()).slice(0, 12) : []);
+  // Available is for users - [All devices] isn't offered there (Intune refuses it).
+  const isAvail = ['gAvailable', 'adAvailable'].includes(src.id) || src.getAttribute('aria-label') === 'Available for';
+  gpShow(ta, r.ok ? r.groups.filter(g => builtInOk || g.source !== 'built-in').filter(g => !(isAvail && g.name === '[All devices]')).filter(g => !have.has(g.name.toLowerCase()) || g.name.toLowerCase() === l.text.toLowerCase()).filter(g => g.name.toLowerCase() !== l.text.toLowerCase()).slice(0, 12) : []);
 }
 async function gpCheck(ta) {
   const src = ta._source || ta, anchor = ta._source ? ta.parentElement : ta;
@@ -352,7 +354,8 @@ function renderHome() {
   // Connected, but a Graph permission the catalog uses is missing (2.38.6): the connection step isn't done yet.
   const perm = [...new Set([...(r.refused || []), ...((homeIntune && homeIntune.permMissing) || [])])];
   const setup = (r.setup || []).map(s => perm.length && s.go === 'settings:connection' && s.done
-    ? { ...s, done: false, go: 'settings:permissions', text: `Connected - but ${perm.length} permission(s) are missing in Entra ID: ${perm.join(', ')}.` } : s);
+    ? { ...s, done: false, go: 'settings:permissions', title: 'Grant the missing permissions', button: 'Check permissions',
+        text: `Connected - but ${perm.length} permission${perm.length === 1 ? ' is' : 's are'} missing in Entra ID. Check permissions lists ${perm.length === 1 ? 'it' : 'them'} and how to add ${perm.length === 1 ? 'it' : 'them'}.`, tip: perm.join('\n') } : s);
   const setupOpen = setup.some(s => !s.done);
   const items = [...r.items.filter(x => !(setupOpen && ((x.go === 'settings:connection' && x.title === 'Not connected') || x.go === 'settings:permissions'))),
     ...((homeIntune && homeIntune.items) || []).filter(x => !(setupOpen && x.go === 'settings:permissions'))].map((x, n) => [x, n]).sort((a, b) => (order[a[0].level] ?? 3) - (order[b[0].level] ?? 3) || a[1] - b[1]).map(x => x[0]);
@@ -383,7 +386,7 @@ $('btnHomeCheck').addEventListener('click', async () => {
   const b = $('btnHomeCheck'); b.disabled = true; b.classList.add('working'); b.replaceChildren(el('span', { class: 'spinner', 'aria-hidden': 'true' }), 'Checking...');
   try { $('chkDetails').checked = true; const cr = await runChecks(); await loadApps();
     const notCompared = cr && cr.connected === false;
-    toast(findings.length ? `${findings.length} finding(s) - Checks has them.` : notCompared ? 'Not compared with Intune: not connected (Settings > Connection). The catalog itself looks fine.' : 'The catalog and Intune match.', false, findings.length ? [{ label: 'See them', run: () => showView('checks') }] : []); loadHome(); }
+    toast(shownFindings().length ? `${shownFindings().length} finding(s) - Checks has them.` : notCompared ? 'Not compared with Intune: not connected (Settings > Connection). The catalog itself looks fine.' : 'The catalog and Intune match.', false, findings.length ? [{ label: 'See them', run: () => showView('checks') }] : []); loadHome(); }
   finally { b.disabled = false; b.classList.remove('working'); b.textContent = 'Check everything now'; }
 });
 

@@ -1076,9 +1076,11 @@ async function openDeploy(names, opts = {}) {
   $('deployLog').textContent = r.note ? r.note + '\n' : '';
   $('deployProgress').hidden = true; $('btnDeployStop').hidden = true; $('btnDeployRetry').hidden = true;
   const n = deployPlan.filter(a => a.ready).length;
-  $('btnDeployGo').textContent = n === 1 ? 'Send 1 app' : `Send ${n} apps`; $('btnDeployGo').title = '';
-  $('btnDeployGo').disabled = n === 0;
+  $('btnDeployGo').textContent = n === 1 ? 'Send 1 app' : `Send ${n} apps`; $('btnDeployGo').title = 'Create or update the ready apps in Intune, in this order';
+  $('btnDeployGo').disabled = n === 0; $('btnDeployClose').hidden = false; $('dpGroups').disabled = false;
   $('dlgDeploy').showModal();
+  // The send is what's here to do - not the folded log, which a dialog's first stop would otherwise be.
+  (n ? $('btnDeployGo') : $('btnDeployClose')).focus();
   // From Add and send's summary: the send starts at once (the summary was the review).
   if (opts.autostart && n) runDeployQueue(deployPlan.filter(a => a.ready).map(a => a.name));
 }
@@ -1128,6 +1130,9 @@ async function runDeployQueue(names) {
   // the job runner gives its buttons back, so it isn't switched off again.
   const done = () => { const b = $('btnDeployGo'); b.textContent = 'Done'; delete b.dataset.jobWas; b.disabled = false; b.title = 'Close - the results stay in the list and in Recent changes'; };
   done(); setTimeout(done, 0);
+  // One way out (Done), and the send's own option isn't offered again once it's over (Retry keeps it as it was).
+  $('btnDeployClose').hidden = true; $('dpGroups').disabled = !retry.length;
+  $('btnDeployGo').focus();
   const okN = ready.filter(n => deployResults[n] === 'ok').length;
   toast(`Send to Intune finished: ${okN} of ${ready.length} done${retry.length ? `, ${retry.length} to retry` : ''}.`, okN < ready.length);
   loadApps();
@@ -1151,6 +1156,7 @@ async function openPushGroups(names) {
   $('pushRows').replaceChildren(el('tr', {}, el('td', { colspan: 3, class: 'muted', text: 'Reading the current assignments in Intune...' })));
   $('pushLog').textContent = '';
   $('btnPushGo').disabled = true;
+  $('btnPushClose').hidden = false;
   $('dlgPush').showModal();
   await runJob({ names: pushNames, mode: 'Preview' }, (ok, result) => {
     if (!ok) { $('pushRows').replaceChildren(el('tr', {}, el('td', { colspan: 3, class: 'muted', text: 'Preview failed - see the log below.' }))); return; }
@@ -1173,7 +1179,7 @@ $('btnPushGo').addEventListener('click', async () => {
   $('btnPushGo').disabled = true;
   await runJob({ names: pushNames, mode: 'Apply' }, ok => {
     toast(ok ? 'Groups pushed to Intune.' : 'Send groups failed - see the log.', !ok);
-    if (ok) { const done = () => { const b = $('btnPushGo'); b.textContent = 'Done'; delete b.dataset.jobWas; b.disabled = false; }; done(); setTimeout(done, 0); loadApps(); }
+    if (ok) { const done = () => { const b = $('btnPushGo'); b.textContent = 'Done'; delete b.dataset.jobWas; b.disabled = false; }; done(); setTimeout(done, 0); $('btnPushClose').hidden = true; $('btnPushGo').focus(); loadApps(); }
   }, { path: '/api/push-start', log: 'pushLog', startText: 'Applying...' });
 });
 
@@ -1486,7 +1492,7 @@ function openPull(names) {
   if (wcResume('dlgPull')) return;
   $('pullText').textContent = `Reading ${names.length === 1 ? names[0] : names.length + ' apps'} from Intune... Anything that matches (or the catalog has no value for) is taken at once; whatever differs is shown here to choose.`;
   $('pullReview').replaceChildren(); $('pullLog').textContent = ''; $('pullLogBox').open = false; $('btnPullApply').hidden = true; pullPending = '';
-  $('dlgPull').showModal();
+  $('dlgPull').showModal(); $('dlgPull').querySelector('[data-close]').focus();
   runJob({ names }, (ok, res, after) => {
     if (!ok || !after) { $('pullText').textContent = 'Reading from Intune failed - the log says why.'; $('pullLogBox').open = true; return; }
     const msg = [];
@@ -1520,6 +1526,9 @@ function openPull(names) {
     }));
     $('btnPullApply').hidden = !pullPending;
     pullCount();
+    // The first choice to make, else the way out - not the folded log.
+    const firstPick = document.querySelector('#pullReview input:checked');
+    (firstPick || (pullPending ? $('btnPullApply') : $('dlgPull').querySelector('[data-close]'))).focus();
     loadApps();
   }, { path: '/api/pull-start', log: 'pullLog', startText: 'Reading from Intune...' });
 }
@@ -1603,8 +1612,8 @@ async function openStatus(name) {
   if (!r.ok) { $('statusSummary').textContent = r.error; $('statusRows').replaceChildren(); return; }
   // 2.38.9: who its groups target but hasn't reported yet - listed as "Waiting for report", after those that did.
   const waitN = r.waiting || 0, reported = (r.rows || []).length - waitN;
-  $('statusSummary').textContent = (reported ? r.summary : 'No device has reported yet.') + (r.truncated ? ' (only the first rows are shown)' : '')
-    + (waitN ? ` ${waitN} more in its groups haven't reported yet - they appear once they check in and try the app (Company Portal > Sync speeds it up).` : '')
+  $('statusSummary').textContent = (reported ? String(r.summary).replace(/\.?\s*$/, '.') : 'No device has reported yet.') + (r.truncated ? ' (Only the first rows are shown.)' : '')
+    + (waitN ? ` ${waitN} more in its groups haven't reported yet - a Required one appears once its device checks in and tries the app (Company Portal > Sync speeds it up), an Available one once its user installs it from the Company Portal.` : '')
     + ((r.targetNotes || []).length ? ' ' + r.targetNotes.join(' ') : '');
   const top = r.topErrors || [];
   $('statusErrors').hidden = !top.length;

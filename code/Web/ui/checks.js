@@ -69,7 +69,8 @@ async function runChecks(names) {
 }
 $('btnRunChecks').addEventListener('click', () => runChecks());
 
-const selFindings = () => findings.filter(f => checkSel.has(keyOf(f)));
+// Only what the list shows - a finding folded into its Groups row isn't acted on twice.
+const selFindings = () => shownFindings().filter(f => checkSel.has(keyOf(f)));
 const namesWith = (list, action) => [...new Set(list.filter(f => (f.actions || []).includes(action)).map(f => f.catalogName || f.app))];
 function updateCheckActions() {
   const sel = selFindings();
@@ -305,7 +306,8 @@ function diffCell(f) {
 // (it asks the server); from the keyboard the focus moves into the card, so its buttons can be reached.
 function hoverCardOn(b, show) {
   let want = false;
-  const open = async kbd => { want = true; await show(); if (!want || hcFor !== b) return; if (kbd) { const first = $('cmpCard').querySelector('button'); if (first) first.focus(); } };
+  // show(still): still() is false once the pointer has left before an async show is ready - it then doesn't open.
+  const open = async kbd => { want = true; await show(() => want); if (!want || hcFor !== b) return; if (kbd) { const first = $('cmpCard').querySelector('button'); if (first) first.focus(); } };
   b.addEventListener('mouseenter', () => { clearTimeout(hcCloseT); clearTimeout(hcOpenT); if (hcFor !== b) hcOpenT = setTimeout(() => open(false), 300); });
   b.addEventListener('mouseleave', () => { want = hcFor === b; clearTimeout(hcOpenT); hcLater(); });
   b.addEventListener('click', e => { e.stopPropagation(); clearTimeout(hcOpenT); open(e.detail === 0); });
@@ -319,7 +321,15 @@ function hcCard() {
   c = el('div', { class: 'hovercard', id: 'cmpCard', role: 'dialog', 'aria-label': 'What differs', hidden: true });
   c.addEventListener('mouseenter', () => clearTimeout(hcCloseT));
   c.addEventListener('mouseleave', hcLater);
-  c.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); hcClose(true); } });
+  c.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); hcClose(true); return; }
+    // Tab past its last button (or Shift+Tab before its first) goes back to what opened it - the card sits at the end
+    // of the page, so tabbing on would jump far away from the row (2.38.12).
+    if (e.key === 'Tab') {
+      const f = [...c.querySelectorAll('button, [href], input, select, textarea')].filter(x => !x.disabled);
+      if (!f.length || (!e.shiftKey && document.activeElement === f[f.length - 1]) || (e.shiftKey && document.activeElement === f[0])) { e.preventDefault(); hcClose(true); }
+    }
+  });
   c.addEventListener('focusout', e => { if (!c.contains(e.relatedTarget) && e.relatedTarget !== hcFor) hcLater(); });
   document.body.append(c);
   document.addEventListener('pointerdown', e => { if (!c.hidden && !c.contains(e.target) && !(hcFor && hcFor.contains(e.target))) hcClose(); });
