@@ -140,6 +140,7 @@ async function showChecksFor(name) {
   if (!findings.some(f => (f.catalogName || f.app) === name)) await runChecks([name]);
 }
 function renderChecks() {
+  hcClose();
   const area = $('checkFilter').value;
   const list = findings.filter(f => (!area || f.area === area) && (!checkApp || (f.catalogName || f.app) === checkApp));
   let chip = document.getElementById('checkAppChip');
@@ -156,7 +157,7 @@ function renderChecks() {
       el('td', {}, el('span', { class: 'pill ' + (f.failed ? 'err' : 'warn'), text: f.area })),
       el('td', { class: 'name', text: f.app }),
       el('td', {}, f.problem, f.cached ? el('span', { class: 'muted', text: ` (last audit${f.checkedAt ? ', ' + f.checkedAt : ''})` }) : ''),
-      el('td', { class: 'cmp', text: f.catalog }), el('td', { class: 'cmp', text: f.intune }),
+      el('td', { class: 'dif' }, diffCell(f)),
       el('td', {}, fixButtons(f)));
   }));
   $('checkAll').checked = list.length > 0 && list.every(f => checkSel.has(keyOf(f)));
@@ -250,12 +251,101 @@ function renderCompare() {
     el('button', { class: 'btn small', text: '‹', 'aria-label': 'Previous', disabled: cmpAt === 0, onclick: () => { cmpAt--; renderCompare(); } }),
     el('span', { class: 'muted', text: ` ${cmpAt + 1} of ${cmpList.length} ` }),
     el('button', { class: 'btn small', text: '›', 'aria-label': 'Next', disabled: cmpAt === cmpList.length - 1, onclick: () => { cmpAt++; renderCompare(); } })] : []));
+  $('cmpFixes').replaceChildren(...cmpFixButtons(f, 'btn', () => $('dlgCompare').close()));
+}
+// "Take from Intune" / "Send settings" / "Send groups" for one finding - in Compare and in the hover card.
+function cmpFixButtons(f, cls, before) {
   const name = f.catalogName || f.app, acts = f.actions || [];
-  const go = fn => () => { $('dlgCompare').close(); fn(); };
-  $('cmpFixes').replaceChildren(
-    ...(acts.includes('Pull') ? [el('button', { class: 'btn', text: 'Take from Intune', title: 'Intune is right: take its values into the catalog', onclick: go(() => openPull([name])) })] : []),
-    ...(acts.includes('PushMetadata') ? [el('button', { class: 'btn', text: 'Send settings', title: 'The catalog is right: send its settings to Intune', onclick: go(() => pushSettings([name])) })] : []),
-    ...(acts.includes('PushGroups') ? [el('button', { class: 'btn', text: 'Send groups', title: 'The catalog is right: send its groups to Intune', onclick: go(() => openPushGroups([name])) })] : []));
+  const go = fn => () => { before(); fn(); };
+  return [
+    ...(acts.includes('Pull') ? [el('button', { class: cls, text: 'Take from Intune', title: 'Intune is right: take its values into the catalog', onclick: go(() => openPull([name])) })] : []),
+    ...(acts.includes('PushMetadata') ? [el('button', { class: cls, text: 'Send settings', title: 'The catalog is right: send its settings to Intune', onclick: go(() => pushSettings([name])) })] : []),
+    ...(acts.includes('PushGroups') ? [el('button', { class: cls, text: 'Send groups', title: 'The catalog is right: send its groups to Intune', onclick: go(() => openPushGroups([name])) })] : [])];
+}
+
+// ---------------------------------------------------------------- "Differs": a chip per field + a hover card (2.38.4)
+// The row says WHICH fields differ; pointing at them (or Tab + Enter) shows the values side by side - field, catalog,
+// Intune - with the changed part marked. The full Compare dialog is one click away for long values.
+function diffCell(f) {
+  const diffs = diffsOf(f);
+  if (!diffs.length) {
+    const line = (k, v) => v ? el('div', { class: 'dline', title: String(v) }, el('b', { text: k }), String(v)) : '';
+    return el('div', { class: 'dlines' }, line('Catalog', f.catalog), line(f.area === 'Entra groups' ? 'Entra ID' : 'Intune', f.intune));
+  }
+  const names = diffs.map(d => d.field || 'Value'), shown = names.slice(0, names.length > 4 ? 3 : 4);
+  const b = el('button', { type: 'button', class: 'difs', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-controls': 'cmpCard',
+    'aria-label': `${names.length} field(s) differ: ${names.join(', ')} - show side by side` },
+    ...shown.map(n => el('span', { class: 'dchip', text: n })), names.length > shown.length ? el('span', { class: 'dchip more', text: `+${names.length - shown.length} more` }) : '');
+  b.addEventListener('mouseenter', () => { clearTimeout(hcCloseT); clearTimeout(hcOpenT); if (hcFor !== b) hcOpenT = setTimeout(() => hcShow(f, b), 300); });
+  b.addEventListener('mouseleave', () => { clearTimeout(hcOpenT); hcLater(); });
+  // A click (or a tap) opens it at once; from the keyboard the focus moves into it, so its buttons can be reached.
+  b.addEventListener('click', e => { clearTimeout(hcOpenT); hcShow(f, b); if (e.detail === 0) { const first = $('cmpCard').querySelector('button'); if (first) first.focus(); } });
+  b.addEventListener('keydown', e => { if (e.key === 'Escape' && hcFor === b) { e.preventDefault(); e.stopPropagation(); hcClose(); } });
+  return b;
+}
+let hcFor = null, hcOpenT = 0, hcCloseT = 0;
+function hcCard() {
+  let c = document.getElementById('cmpCard');
+  if (c) return c;
+  c = el('div', { class: 'hovercard', id: 'cmpCard', role: 'dialog', 'aria-label': 'What differs', hidden: true });
+  c.addEventListener('mouseenter', () => clearTimeout(hcCloseT));
+  c.addEventListener('mouseleave', hcLater);
+  c.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); hcClose(true); } });
+  c.addEventListener('focusout', e => { if (!c.contains(e.relatedTarget) && e.relatedTarget !== hcFor) hcLater(); });
+  document.body.append(c);
+  document.addEventListener('pointerdown', e => { if (!c.hidden && !c.contains(e.target) && !(hcFor && hcFor.contains(e.target))) hcClose(); });
+  window.addEventListener('scroll', () => { if (!c.hidden && !c.contains(document.activeElement)) hcClose(); }, true);
+  window.addEventListener('resize', () => hcClose());
+  return c;
+}
+const hcLater = () => { clearTimeout(hcCloseT); hcCloseT = setTimeout(() => hcClose(), 200); };
+function hcClose(refocus) {
+  clearTimeout(hcOpenT); clearTimeout(hcCloseT);
+  const c = document.getElementById('cmpCard');
+  if (!c || c.hidden) return;
+  const back = refocus && c.contains(document.activeElement) ? hcFor : null;
+  c.hidden = true;
+  if (hcFor) hcFor.setAttribute('aria-expanded', 'false');
+  hcFor = null;
+  if (back && back.isConnected) back.focus();
+}
+// One side's value, short: up to 4 lines of up to 160 characters, and how much more there is.
+function hcValue(lines) {
+  const keep = lines.slice(0, 4).map(l => l.length > 160 ? l.slice(0, 159) + '…' : l);
+  const td = el('td', { class: 'v' }, keep.join('\n'));
+  if (lines.length > 4) td.append(el('span', { class: 'more', text: `\n+${lines.length - 4} more line(s)` }));
+  return td;
+}
+function hcShow(f, b) {
+  const c = hcCard();
+  if (hcFor && hcFor !== b) hcFor.setAttribute('aria-expanded', 'false');
+  hcFor = b; b.setAttribute('aria-expanded', 'true');
+  const diffs = diffsOf(f);
+  const blank = t => t === '(blank)' || t === '(none)';
+  c.replaceChildren(
+    el('header', {}, el('b', { text: `${f.app} - ${f.area}` }), el('span', { text: `${diffs.length} field(s) differ · left is the catalog, right is Intune` })),
+    el('div', { class: 'hcbody' }, el('table', { class: 'hc' },
+      el('thead', {}, el('tr', {}, el('th', { text: 'Field' }), el('th', { text: 'Catalog' }), el('th', { text: 'Intune' }))),
+      el('tbody', {}, ...diffs.map(d => {
+        const L = cmpLines(d.local), R = cmpLines(d.remote);
+        const wsOnly = L.join('\n').trim() === R.join('\n').trim();
+        const field = el('td', { class: 'f', text: d.field || 'Value' }, wsOnly ? el('span', { class: 'more', text: ' (spaces only)' }) : '');
+        // One line each and not too long: mark the part that differs; otherwise the lines as they are.
+        if (L.length === 1 && R.length === 1 && L[0].length <= 300 && R[0].length <= 300 && !blank(L[0]) && !blank(R[0]))
+          return el('tr', {}, field, cmpCell(L[0], R[0], 'del'), cmpCell(R[0], L[0], 'add'));
+        const side = lines => blank(lines[0]) && lines.length === 1 ? el('td', { class: 'v' }, el('span', { class: 'more', text: lines[0] })) : hcValue(lines);
+        return el('tr', {}, field, side(L), side(R));
+      })))),
+    el('footer', {}, el('span', { class: 'note', text: 'Long values are shortened here · Esc closes' }),
+      el('button', { type: 'button', class: 'btn small', text: 'Open full compare', onclick: () => { hcClose(); openCompare([f]); } }),
+      ...cmpFixButtons(f, 'btn small', () => hcClose())));
+  c.hidden = false;
+  // Below the chips, inside the window; above them when there's no room below.
+  const r = b.getBoundingClientRect(), w = c.offsetWidth, h = c.offsetHeight;
+  const left = Math.max(16, Math.min(r.left, window.innerWidth - w - 16));
+  let top = r.bottom + 6;
+  if (top + h > window.innerHeight - 8 && r.top - h - 6 >= 8) top = r.top - h - 6;
+  c.style.left = left + 'px'; c.style.top = Math.max(8, top) + 'px';
 }
 
 // Add to catalog: reads the Intune-only apps' settings and groups and adds them.

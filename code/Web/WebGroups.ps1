@@ -22,7 +22,8 @@ function Global:Get-WebGroupUsage {
     $byName = @{}
     foreach ($a in @($Apps)) {
         foreach ($field in $roles.Keys) {
-            foreach ($g in @($a.$field | Where-Object { $_ })) {
+            # All users / All devices are Intune's own targets, not Entra groups - not listed here.
+            foreach ($g in @($a.$field | Where-Object { $_ -and -not (Get-AllTargetInfo ([string]$_)) })) {
                 $key = ([string]$g).ToLowerInvariant()
                 if (-not $byName.ContainsKey($key)) { $byName[$key] = [ordered]@{ name = [string]$g; uses = New-Object System.Collections.Generic.List[object] } }
                 $byName[$key].uses.Add([ordered]@{ app = [string]$a.appName; role = $roles[$field] })
@@ -54,11 +55,13 @@ function Global:Rename-WebGroupInApps {
 
 function Global:Test-WebGroupName {
     # Pure: what's wrong with a group name, or ''.
-    param([string]$Name)
+    # -Role: the list it goes in - Excluded (excludeFor / exclude) can't take All users / All devices.
+    param([string]$Name, [string]$Role = '')
     $n = ([string]$Name).Trim()
     if (-not $n) { return 'Enter a group name.' }
     if ($n.Length -gt 256) { return 'A group name can be at most 256 characters.' }
     if ($n -match '[\x00-\x1f]') { return 'A group name cannot contain control characters.' }
+    if ($Role -in 'excludeFor', 'exclude', 'Excluded' -and (Get-AllTargetInfo $n)) { return "Intune can't exclude $((Get-AllTargetInfo $n).Name) - only a group can be excluded." }
     return ''
 }
 
@@ -365,7 +368,8 @@ function Global:Resolve-WebGroupIds {
       the names up itself (and refuses a name two groups share).
     #>
     param([string[]]$Names)
-    $names = @($Names | Where-Object { $_ } | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
+    # All users / All devices have no Entra ID - the step sends them as Intune's own targets.
+    $names = @($Names | Where-Object { $_ } | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -and -not (Get-AllTargetInfo $_) } | Select-Object -Unique)
     if (-not $names.Count -or -not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $true; ids = @{} } }
     $store = Read-WebGroupIdStore
     $key = { param($n) ([string]$n).Trim().ToLowerInvariant() }

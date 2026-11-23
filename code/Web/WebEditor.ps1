@@ -207,7 +207,8 @@ function Global:Merge-WebAppEdit {
     param($Existing, $Edit, $Defaults)
     $groups = {
         param($list)
-        @(@($list) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
+        # All users / All devices in their one spelling, however typed.
+        @(@($list) | ForEach-Object { $t = Get-AllTargetInfo ([string]$_); if ($t) { $t.Name } else { ([string]$_).Trim() } } | Where-Object { $_ } | Select-Object -Unique)
     }
     $metaEdit = $Edit.metadata
     # installContext is in the Deploy settings section (ConvertTo-WebDeploySettings).
@@ -268,6 +269,7 @@ function Global:Test-WebAppEdit {
     param($Record, [string]$OriginalName, [object[]]$Others)
     if (-not $Record.appName) { return 'The app needs a name.' }
     if ($Record.appId -and $Record.appId -notmatch '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$') { return "The App ID must be a GUID (or empty for an app that isn't in Intune yet)." }
+    foreach ($g in @($Record.excludeFor)) { if (Get-AllTargetInfo ([string]$g)) { return "Intune can't exclude $((Get-AllTargetInfo ([string]$g)).Name) - take it out of Excluded (only a group can be excluded)." } }
     if (-not (Test-WebWingetId $Record.wingetId)) { return "'$($Record.wingetId)' isn't a Winget ID winget accepts (letters, digits, . _ + -)." }
     $key = $Record.appName.ToLowerInvariant()
     $file = Get-SafeFileNameForApp -Name $Record.appName
@@ -682,7 +684,7 @@ function Global:Update-WebAppQuick {
     if (-not $a) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
     if ($field -in 'requiredFor', 'availableFor', 'uninstallFor', 'excludeFor') {
         $add = ([string]$Data.add).Trim(); $remove = ([string]$Data.remove).Trim()
-        if ($add) { $problem = Test-WebGroupName $add; if ($problem) { return @{ ok = $false; error = $problem } } }
+        if ($add) { $problem = Test-WebGroupName $add -Role $field; if ($problem) { return @{ ok = $false; error = $problem } }; $t = Get-AllTargetInfo $add; if ($t) { $add = $t.Name } }
         if (-not $add -and -not $remove) { return @{ ok = $false; error = 'Which group?' } }
         $list = @(@($a.$field) | ForEach-Object { [string]$_ } | Where-Object { $_ -and $_ -ne $remove })
         if ($add -and $list -notcontains $add) { $list += $add }

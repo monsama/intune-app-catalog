@@ -103,8 +103,27 @@ try {
       };
       // Every rule axe-core has for WCAG 2.1 A/AA and best practice - in the
       // open dialog when there is one (axe skips what's behind a modal).
+      // 2.38.4: opening a list doesn't move things - lists that fill in when clicked (winget's versions, Link...,
+      // profiles) keep their width, and so does everything beside them.
+      const steady = async view => {
+        const where = () => {
+          const dlg = [...document.querySelectorAll('dialog[open]')].pop();
+          const root = dlg || document.querySelector('.view:not([hidden])') || document.body;
+          return [...root.querySelectorAll('select:not([multiple]):not([size])')].filter(e => e.offsetParent !== null && !e.disabled);
+        };
+        // Measured once the dialog's opening animation is over (it grows from 98%).
+        await page.evaluate(() => Promise.all(document.getAnimations().filter(a => a.effect && a.effect.getComputedTiming().iterations !== Infinity).map(a => a.finished.catch(() => { }))));
+        const before = await page.evaluate(`(${where})().map(e => [e.id || e.className, Math.round(e.getBoundingClientRect().width)])`);
+        await page.evaluate(`(${where})().forEach(e => { e.dispatchEvent(new Event('focus')); e.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); })`);
+        await page.waitForTimeout(600);
+        const after = await page.evaluate(`(${where})().map(e => [e.id || e.className, Math.round(e.getBoundingClientRect().width)])`);
+        const moved = before.filter(([id, w]) => { const a = after.find(x => x[0] === id); return a && Math.abs(a[1] - w) > 1; })
+          .map(([id, w]) => `${id} ${w}px -> ${after.find(x => x[0] === id)[1]}px`);
+        check(!moved.length, `${label}: ${view} - lists keep their size when opened`, moved.join('; '));
+      };
       const a11y = async view => {
         await squeezed(view);
+        await steady(view);
         if (!axePath) return;
         if (!(await page.evaluate(() => typeof window.axe !== 'undefined'))) await page.addScriptTag({ path: axePath });
         const found = await page.evaluate(async () => {
@@ -206,6 +225,36 @@ try {
       // 2.32.0: said once - in the empty state, not again in the note above it.
       check(/not checked/i.test(await page.textContent('#checkEmptyText')) && !/not checked/i.test(await page.textContent('#checkNotes')), `${label}: Checks says once that Intune wasn't checked`, await page.textContent('#checkNotes'));
       await noOverflow('Checks'); await unnamed('Checks'); await a11y('Checks'); await shot('checks');
+      // 2.38.4: "Differs" - a chip per field; pointing at them shows the values side by side, Esc closes, and from the
+      // keyboard the focus goes into the card and back. Findings put in by hand (there is no tenant here).
+      await page.evaluate(`findings = [
+        { area: 'Metadata', app: 'ZZ Card', catalogName: 'ZZ Card', problem: '3 field(s) differ', actions: ['Pull', 'PushMetadata'],
+          data: { Diffs: [{ Field: 'Description', Local: 'A file archiver', Remote: 'A file manager' }, { Field: 'Publisher', Local: 'Igor Pavlov', Remote: '' },
+            { Field: 'Return codes', Local: '[{"returnCode":0,"type":"success"},{"returnCode":3010,"type":"softReboot"}]', Remote: '[{"returnCode":0,"type":"success"}]' }] } },
+        { area: 'Unknown assignments', app: 'ZZ Portal', catalogName: 'ZZ Portal', problem: '1 unknown', catalog: '(not in the catalog)', intune: '[required] All devices', actions: ['PushGroups', 'Pull'] }];
+        renderChecks();`);
+      const chips = await page.$$eval('#checkBody .difs .dchip', a => a.map(x => x.textContent));
+      check(chips.join('|') === 'Description|Publisher|Return codes', `${label}: Checks lists the differing fields as chips`, chips.join('|'));
+      check(/Intune.*All devices/.test(await page.textContent('#checkBody tr:nth-child(2) td.dif')), `${label}: a finding without fields shows its catalog and Intune lines`);
+      await page.hover('#checkBody .difs');
+      await page.waitForSelector('#cmpCard:not([hidden])', { timeout: 3000 }).catch(() => { });
+      const card = await page.evaluate(() => { const c = document.getElementById('cmpCard'); if (!c || c.hidden) return null; const r = c.getBoundingClientRect();
+        return { rows: c.querySelectorAll('tbody tr').length, marks: c.querySelectorAll('mark.del, mark.add').length, blank: /\(blank\)/.test(c.textContent),
+          inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight, take: [...c.querySelectorAll('button')].map(b => b.textContent).join('|') }; });
+      check(card && card.rows === 3 && card.marks >= 2 && card.blank, `${label}: hovering the chips shows the fields side by side, the changes marked`, JSON.stringify(card));
+      check(card && card.inside, `${label}: the hover card fits the window`, JSON.stringify(card));
+      check(card && card.take === 'Open full compare|Take from Intune|Send settings', `${label}: the hover card offers the fixes`, card && card.take);
+      await a11y('Checks hover card');
+      await page.mouse.move(2, 2); await page.waitForTimeout(400);
+      check(await page.evaluate(() => document.getElementById('cmpCard').hidden), `${label}: the hover card closes when the pointer leaves`);
+      await page.focus('#checkBody .difs'); await page.keyboard.press('Enter');
+      check(await page.evaluate(() => { const c = document.getElementById('cmpCard'); return !c.hidden && c.contains(document.activeElement); }), `${label}: Enter on the chips opens the card and moves into it`);
+      await page.keyboard.press('Escape');
+      check(await page.evaluate(() => document.getElementById('cmpCard').hidden && document.activeElement.classList.contains('difs') && !document.querySelector('dialog[open]')), `${label}: Esc closes the card and goes back to the chips`);
+      await page.click('#checkBody .difs'); await page.click('#cmpCard button');
+      check(await page.evaluate(() => document.getElementById('dlgCompare').open && document.getElementById('cmpCard').hidden), `${label}: Open full compare opens Compare`);
+      await page.keyboard.press('Escape');
+      await page.evaluate('findings = []; renderChecks();');
 
       // Groups and Platform scripts: empty, explained.
       await page.click('#tabGroups');

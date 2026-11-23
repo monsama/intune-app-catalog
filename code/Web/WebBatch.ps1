@@ -220,7 +220,7 @@ function Global:Invoke-WebBatchGroups {
     foreach ($field in (Get-WebGroupRoles).Keys) {
         # A role that wasn't sent comes through as $null - nothing to add there, not an empty name.
         foreach ($g in @($Data.roles.$field | Where-Object { $null -ne $_ -and ([string]$_).Trim() })) {
-            $problem = Test-WebGroupName ([string]$g)
+            $problem = Test-WebGroupName ([string]$g) -Role $field
             if ($problem) { return @{ ok = $false; error = $problem } }
             $any = $true
         }

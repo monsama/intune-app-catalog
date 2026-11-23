@@ -373,6 +373,8 @@ try {
         function Resolve-GroupId {
             param([string]$GroupName, [bool]$CreateIfMissing)
             if ($groupIdCache.ContainsKey($GroupName)) { return $groupIdCache[$GroupName] }
+            # All users / All devices are Intune's own targets, not Entra groups - nothing to look up or create.
+            if (Get-AllTargetInfo $GroupName) { return $null }
             # A group the catalog knows by its Entra ID (checked just before this step: still that name) - no lookup by name.
             if ($Config.GroupIds -and $Config.GroupIds.PSObject.Properties[$GroupName]) { $groupIdCache[$GroupName] = [string]$Config.GroupIds.PSObject.Properties[$GroupName].Value; return $groupIdCache[$GroupName] }
             $escapedName = $GroupName.Replace("'", "''")

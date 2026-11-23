@@ -346,7 +346,18 @@ try {
         try {
             $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($AppEntry.AppId)/assignments" -Method GET -StepDescription "Fetch group assignments"
             foreach ($a in @($currentAssignments.value)) {
-                if ($a.target.'@odata.type' -ne '#microsoft.graph.groupAssignmentTarget') { continue }
+                $tt = [string]$a.target.'@odata.type'
+                # Intune's own All users / All devices targets: the catalog holds them as these names.
+                $builtIn = switch ($tt) { '#microsoft.graph.allLicensedUsersAssignmentTarget' { '[All users]' } '#microsoft.graph.allDevicesAssignmentTarget' { '[All devices]' } default { '' } }
+                if ($builtIn) {
+                    switch ($a.intent) {
+                        "required"  { $requiredGroupNames += $builtIn }
+                        "available" { $availableGroupNames += $builtIn }
+                        "uninstall" { $uninstallGroupNames += $builtIn }
+                    }
+                    continue
+                }
+                if ($tt -ne '#microsoft.graph.groupAssignmentTarget') { continue }
                 $gid = $a.target.groupId
                 $groupDisplayName = $gid
                 try {

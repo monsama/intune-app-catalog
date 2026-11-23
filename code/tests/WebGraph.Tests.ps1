@@ -215,7 +215,8 @@ try {
     $favSave = Invoke-Api '/api/prefs-save' @{ favoriteGroups = @('SG-ZZ-Test') }
     $settingsAfter = if (Test-Path -LiteralPath $settingsPath) { Get-Content -LiteralPath $settingsPath -Raw } else { $null }
     Check (-not $favSave.ok -and $settingsAfter -eq $settingsBefore) 'test mode never writes the settings file (its made-up IDs stay in memory)' ($favSave | ConvertTo-Json -Compress)
-    Check ((Add-TestApp @{ appName = $linkedName; appId = $appLinked; requiredFor = @('SG-ZZ-Exists'); availableFor = @('SG-ZZ-Missing') }).ok) 'a linked app is added'
+    Check ((Add-TestApp @{ appName = $linkedName; appId = $appLinked; requiredFor = @('SG-ZZ-Exists'); availableFor = @('SG-ZZ-Missing'); uninstallFor = @('[all devices]') }).ok) 'a linked app is added'
+    Check ((@((Invoke-Api '/api/app-get' @{ name = $linkedName }).app.uninstallFor) -join ',') -ceq '[All devices]') '... [All devices] stored in its one spelling, however typed'
     Check ((Add-TestApp @{ appName = $sameName }).ok) 'an app not linked yet is added'
 
     # Set up this tenant: what it still needs
@@ -345,6 +346,10 @@ try {
         Check ($madeGroups.Count -eq 1 -and ($madeGroups[0].body | ConvertFrom-Json).displayName -eq 'SG-ZZ-Missing') 'step: ... creating the one group that was missing' ((& $calls | ConvertTo-Json -Compress))
         $assign = @(& $calls | Where-Object { $_.method -eq 'POST' -and $_.uri -like "*/mobileApps/$appLinked/assign" }) | Select-Object -First 1
         $targets = @(if ($assign) { @(($assign.body | ConvertFrom-Json).mobileAppAssignments) | ForEach-Object { "$($_.intent):$($_.target.groupId)" } })
+        # [All devices] (2.38.4): sent as Intune's own target - never looked up, created or flagged as a missing group.
+        $allDev = @(if ($assign) { @(($assign.body | ConvertFrom-Json).mobileAppAssignments) | Where-Object { $_.target.'@odata.type' -eq '#microsoft.graph.allDevicesAssignmentTarget' } })
+        Check ($allDev.Count -eq 1 -and $allDev[0].intent -eq 'uninstall' -and -not $allDev[0].target.groupId) 'step: ... [All devices] goes to Intune as its All devices target' (($assign.body))
+        Check (-not @(& $calls | Where-Object { $_.uri -like '*All devices*' -or $_.uri -like '*All%20devices*' }).Count) 'step: ... and is never looked up in Entra ID' ((& $calls | ConvertTo-Json -Compress))
         Check ($assign -and ($targets -contains "required:$groupId") -and ($targets -contains "available:$newGroupId") -and -not ($targets -like "*$oldGroupId")) 'step: ... and Intune gets exactly the catalog''s groups (old assignment dropped)' ($targets -join ', ')
 
         $del = Invoke-Api '/api/delete-intune' @{ name = $linkedName }

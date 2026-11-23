@@ -23,6 +23,27 @@ function Global:Get-AssignmentKey {
     return "$Intent|$Mode|$Group"
 }
 
+function Global:Get-AllTargetInfo {
+    <#
+      Intune's two built-in targets, which are not groups: "[All users]"
+      (every licensed user) and "[All devices]". The catalog holds them in
+      requiredFor/availableFor/uninstallFor as these bracketed names - a real
+      Entra group called "All Users" never collides. Given a catalog name or a
+      Graph target type, returns @{ Name = '[All users]'; Type = '#microsoft.graph.allLicensedUsersAssignmentTarget' },
+      or $null when it is neither (an ordinary group). Case-insensitive.
+    #>
+    param([string]$Value)
+    $v = ([string]$Value).Trim()
+    if (-not $v) { return $null }
+    foreach ($t in @(
+        @{ Name = '[All users]'; Type = '#microsoft.graph.allLicensedUsersAssignmentTarget' },
+        @{ Name = '[All devices]'; Type = '#microsoft.graph.allDevicesAssignmentTarget' }
+    )) {
+        if ($v -eq $t.Name -or $v -eq $t.Type -or $v -eq $t.Type.TrimStart('#')) { return $t }
+    }
+    return $null
+}
+
 function Global:Get-DesiredAssignmentEntries {
     <#
       The assignments an app should have, from its catalog groups.
@@ -42,9 +63,10 @@ function Global:Get-DesiredAssignmentEntries {
     $filter = if (([string]$FilterName).Trim()) { "$(if ($FilterMode -eq 'exclude') { 'exclude' } else { 'include' }):$(([string]$FilterName).Trim())" } else { '' }
     $clean = {
         param($Names)
-        @(@($Names) | Where-Object { $null -ne $_ -and "$_".Trim() } | ForEach-Object { "$_".Trim() } | Select-Object -Unique)
+        @(@($Names) | Where-Object { $null -ne $_ -and "$_".Trim() } | ForEach-Object { $t = Get-AllTargetInfo "$_"; if ($t) { $t.Name } else { "$_".Trim() } } | Select-Object -Unique)
     }
-    $excluded = @(& $clean $ExcludeGroups)
+    # Intune can't exclude All users / All devices - such an entry is dropped (the editor refuses it).
+    $excluded = @(& $clean $ExcludeGroups | Where-Object { -not (Get-AllTargetInfo $_) })
     $entries = New-Object System.Collections.Generic.List[object]
     $usedIntents = New-Object System.Collections.Generic.List[string]
     foreach ($pair in @(
@@ -95,17 +117,22 @@ function Global:ConvertTo-CurrentAssignmentEntries {
         if (-not $target) { continue }
         $targetType = if ($target -is [System.Collections.IDictionary]) { [string]$target['@odata.type'] } else { [string]$target.'@odata.type' }
         $groupId = if ($target -is [System.Collections.IDictionary]) { [string]$target['groupId'] } else { [string]$target.groupId }
+        $all = Get-AllTargetInfo $targetType
+        if ($all) { $mode = 'include'; $groupId = $all.Name }
+        else {
         $mode = switch -Wildcard ($targetType) {
             '*exclusionGroupAssignmentTarget' { 'exclude'; break }
             '*groupAssignmentTarget'          { 'include'; break }
             default                           { $null }
         }
+        }
         if (-not $mode -or -not $groupId) {
-            $others.Add("[$intent] $targetType")
+            $others.Add("[$intent] $(($targetType -replace '^#?microsoft\.graph\.', '') -replace 'AssignmentTarget$', '')")
             continue
         }
         $name = $groupId
-        if ($GroupNameById -and $GroupNameById.Contains($groupId) -and $GroupNameById[$groupId]) { $name = [string]$GroupNameById[$groupId] }
+        if ($all) { $name = $all.Name }
+        if (-not $all -and $GroupNameById -and $GroupNameById.Contains($groupId) -and $GroupNameById[$groupId]) { $name = [string]$GroupNameById[$groupId] }
         # The assignment filter, by name where it's known (its id otherwise).
         $filterId = if ($target -is [System.Collections.IDictionary]) { [string]$target['deviceAndAppManagementAssignmentFilterId'] } else { [string]$target.deviceAndAppManagementAssignmentFilterId }
         $filterType = if ($target -is [System.Collections.IDictionary]) { [string]$target['deviceAndAppManagementAssignmentFilterType'] } else { [string]$target.deviceAndAppManagementAssignmentFilterType }
@@ -186,7 +213,9 @@ function Global:New-AppAssignmentBody {
     foreach ($c in @($CurrentAssignments)) {
         if (-not $c -or -not $c.target -or -not $c.settings) { continue }
         if ([string]$c.target.'@odata.type' -like '*exclusion*') { continue }
-        $keep["$([string]$c.intent)|$([string]$c.target.groupId)".ToLowerInvariant()] = $c.settings
+        $cAll = Get-AllTargetInfo ([string]$c.target.'@odata.type')
+        $cKey = if ($cAll) { $cAll.Name } else { [string]$c.target.groupId }
+        $keep["$([string]$c.intent)|$cKey".ToLowerInvariant()] = $c.settings
     }
     $assignments = @(@($Entries) | ForEach-Object {
         # Same null-entry guard as Get-AssignmentDiff, and it matters more
@@ -194,10 +223,19 @@ function Global:New-AppAssignmentBody {
         # assignment list, and Hashtable.Contains($null) throws outright.
         if (-not $_ -or -not $_.Group) { return }
         $groupId = $null
-        if ($GroupIdByName -and $GroupIdByName.Contains($_.Group)) { $groupId = [string]$GroupIdByName[$_.Group] }
-        if (-not $groupId) { return }
-        $targetType = if ($_.Mode -eq 'exclude') { "#microsoft.graph.exclusionGroupAssignmentTarget" } else { "#microsoft.graph.groupAssignmentTarget" }
-        $target = @{ "@odata.type" = $targetType; groupId = $groupId }
+        $all = Get-AllTargetInfo ([string]$_.Group)
+        if ($all) {
+            # All users / All devices: no group id, and never an exclusion.
+            if ($_.Mode -eq 'exclude') { return }
+            $groupId = $all.Name
+            $target = @{ "@odata.type" = $all.Type }
+        }
+        else {
+            if ($GroupIdByName -and $GroupIdByName.Contains($_.Group)) { $groupId = [string]$GroupIdByName[$_.Group] }
+            if (-not $groupId) { return }
+            $targetType = if ($_.Mode -eq 'exclude') { "#microsoft.graph.exclusionGroupAssignmentTarget" } else { "#microsoft.graph.groupAssignmentTarget" }
+            $target = @{ "@odata.type" = $targetType; groupId = $groupId }
+        }
         if ($_.Mode -ne 'exclude' -and $_.Filter) {
             $f = ([string]$_.Filter) -split ':', 2
             if ($FilterIdByName -and $FilterIdByName.Contains($f[1]) -and $FilterIdByName[$f[1]]) {
@@ -222,7 +260,7 @@ function Global:Get-AssignmentScriptHelpers {
     # The functions above as script text, for the embedded scripts' own
     # runs - same approach as Get-GraphLogScriptHelpers.
     $names = @(
-        'Get-AssignmentKey', 'Get-DesiredAssignmentEntries', 'ConvertTo-CurrentAssignmentEntries',
+        'Get-AllTargetInfo', 'Get-AssignmentKey', 'Get-DesiredAssignmentEntries', 'ConvertTo-CurrentAssignmentEntries',
         'Format-AssignmentLabel', 'Get-AssignmentDiff', 'New-AppAssignmentBody'
     )
     $parts = New-Object System.Collections.Generic.List[string]

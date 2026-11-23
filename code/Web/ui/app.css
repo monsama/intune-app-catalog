@@ -209,7 +209,35 @@ dialog .log:empty { display: none; }
 .fixes { display: flex; gap: 6px; flex-wrap: wrap; }
 .fixes select { font-size: 12px; padding: 3px 6px; max-width: 220px; }
 #checkGrid td { font-size: 13px; }
-#checkGrid td.cmp { font-family: var(--mono); font-size: 11px; color: var(--muted); max-width: 220px; overflow-wrap: anywhere; }
+/* 2.38.4: "Differs" - a chip per field (the values are in the hover card), or a short catalog / Intune line each. */
+#checkGrid td.dif { max-width: 340px; min-width: 160px; }
+.difs { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px; margin: -2px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: default; border-radius: var(--r-l); }
+.difs:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dchip { font-size: 12px; line-height: 18px; padding: 1px 8px; border: 1px solid var(--bd); border-radius: 999px; background: var(--field, var(--surface)); white-space: nowrap; }
+.dchip.more { color: var(--muted); }
+.difs[aria-expanded="true"] .dchip, .difs:hover .dchip { border-color: var(--accent); }
+.dlines { display: grid; gap: 2px; }
+.dline { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.dline > b { font-family: var(--ui); font-weight: 600; color: var(--fg); margin-right: 6px; }
+.hovercard { position: fixed; z-index: 60; width: min(720px, calc(100vw - 32px)); max-height: min(70vh, 560px); display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); box-shadow: var(--shadow-lg, 0 12px 32px rgba(0,0,0,.25)); }
+.hovercard[hidden] { display: none; }
+.hovercard > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 10px 14px 8px; }
+.hovercard > header b { font-size: 13px; }
+.hovercard > header span { color: var(--muted); font-size: 12px; }
+.hovercard .hcbody { overflow: auto; min-height: 0; }
+table.hc { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+table.hc th { position: sticky; top: 0; background: var(--surface); text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 14px; border-top: 1px solid var(--bd2); border-bottom: 1px solid var(--bd2); }
+table.hc th:first-child { width: 150px; }
+table.hc td { padding: 6px 14px; border-bottom: 1px solid var(--bd2); vertical-align: top; overflow-wrap: anywhere; }
+table.hc tr:last-child td { border-bottom: 0; }
+table.hc td.f { color: var(--muted); }
+table.hc td.v { font-family: var(--mono); white-space: pre-wrap; }
+table.hc .more { color: var(--muted); font-style: italic; font-family: var(--ui); }
+table.hc mark.del { background: color-mix(in srgb, var(--err) 30%, transparent); color: inherit; border-radius: 2px; }
+table.hc mark.add { background: color-mix(in srgb, var(--ok) 30%, transparent); color: inherit; border-radius: 2px; }
+.hovercard > footer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--bd2); }
+.hovercard > footer .note { margin-right: auto; color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) { table.hc th:first-child { width: 92px; } table.hc td, table.hc th { padding-left: 8px; padding-right: 8px; } }
 
 .menu { position: fixed; z-index: 50; background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-m); box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 4px; min-width: 220px; }
 .menu button { display: block; width: 100%; text-align: left; border: 0; background: none; color: var(--fg); font: inherit; font-size: 13px; padding: 7px 12px; border-radius: var(--r-s); cursor: pointer; }
@@ -1055,8 +1083,10 @@ dialog#dlgApp > form > .actions.split { margin-top: auto; }
 dialog.addapps[open]:not(.maxed) { height: min(84vh, 860px); display: flex; flex-direction: column; }
 dialog.addapps[open]:not(.maxed) > .asec:not([hidden]) { flex: 1 1 auto; overflow: auto; min-height: 0; }
 .card h2 .unsaved { margin-left: 8px; font-size: 11px; vertical-align: middle; }
-#aAppLink { width: auto; flex: none; max-width: 160px; }
-.verpick { width: auto; flex: none; max-width: 150px; }
+/* 2.38.4: lists that refill when opened keep one width - sized to their text they jumped when clicked. */
+#aAppLink { width: 130px; flex: none; }
+.verpick { width: 150px; flex: none; }
+h3.withtool select, #adProfile, #checkFilter { width: 200px; max-width: 100%; text-overflow: ellipsis; }
 
 /* ---- 2.22 sweep: overlaps, alignment, one size per control ---- */
 /* The minimized-window chips: inside a dialog bottom left (over the backdrop, not the dialog's buttons); on a page with room kept for them. */

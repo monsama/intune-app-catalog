@@ -25,6 +25,8 @@ function Global:Find-WebGroupSuggestions {
     $seen = @{}; $out = New-Object System.Collections.Generic.List[object]
     $add = { param($n, $src) $k = ([string]$n).ToLowerInvariant(); if ($n -and -not $seen.ContainsKey($k)) { $seen[$k] = $true; $out.Add([ordered]@{ name = [string]$n; source = $src }) } }
     $rank = { param($list) @(@($list) | Where-Object { $_ -like "$q*" }) + @(@($list) | Where-Object { $_ -notlike "$q*" -and $_ -like "*$q*" }) }
+    # Intune's own targets first when the text fits them (the picker leaves them out of Excluded).
+    foreach ($b in '[All users]', '[All devices]') { if (-not $q -or $b -like "*$q*") { & $add $b 'built-in' } }
     foreach ($g in & $rank @($Global:App.FavoriteGroups)) { & $add $g 'favourite' }
     $used = @((Read-WebCatalogRecords).Apps | ForEach-Object { @($_.requiredFor) + @($_.availableFor) + @($_.uninstallFor) + @($_.excludeFor) } | Where-Object { $_ } | Select-Object -Unique | Sort-Object)
     foreach ($g in & $rank $used) { & $add $g 'catalog' }
@@ -40,7 +42,8 @@ function Global:Find-WebGroupSuggestions {
 function Global:Test-WebGroupNames {
     # Which of the names aren't groups in Entra ID (pushing creates them) - only when connected. @{ ok; checked; missing }.
     param($Data)
-    $names = @(@($Data.names) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique -First 200)
+    # All users / All devices are Intune's own targets - never "missing" from Entra ID.
+    $names = @(@($Data.names) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -and -not (Get-AllTargetInfo $_) } | Select-Object -Unique -First 200)
     if (-not $names.Count -or -not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $true; checked = $false; missing = @() } }
     $read = Invoke-WebGraph -Permission 'Group.Read.All' -Action {
         param($Graph)
@@ -491,7 +494,7 @@ function Global:Set-WebAssignments {
     if (-not $changes.Count) { return @{ ok = $false; error = 'Nothing to change.' } }
     $fields = @{ required = 'requiredFor'; available = 'availableFor'; uninstall = 'uninstallFor'; exclude = 'excludeFor' }
     foreach ($c in $changes) {
-        $problem = Test-WebGroupName ([string]$c.group); if ($problem) { return @{ ok = $false; error = $problem } }
+        $problem = Test-WebGroupName ([string]$c.group) -Role ([string]$c.role); if ($problem) { return @{ ok = $false; error = $problem } }
         if ([string]$c.role -and -not $fields.ContainsKey([string]$c.role)) { return @{ ok = $false; error = "Unknown role '$($c.role)'." } }
     }
     $undo = New-WebUndo "Assignments grid ($($changes.Count) change(s))"

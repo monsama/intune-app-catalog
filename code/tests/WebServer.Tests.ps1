@@ -358,6 +358,11 @@ try {
     $ga = Invoke-Api '/api/batch-groups' @{ mode = 'add'; names = @($rn); roles = @{ availableFor = @('SG-B'); excludeFor = @('SG-X', 'sg-x') } }
     $gm = (Invoke-Api '/api/app-get' @{ name = $rn }).app
     Check ($ga.ok -and @($gm.availableFor) -contains 'SG-B' -and @($gm.excludeFor).Count -eq 1 -and @($gm.requiredFor) -contains 'SG-A') 'batch groups: added (no duplicates), the other lists kept' ($gm | ConvertTo-Json -Compress -Depth 4)
+    # [All users] / [All devices] (2.38.4): Intune can't exclude them.
+    $gx = Invoke-Api '/api/batch-groups' @{ mode = 'add'; names = @($rn); roles = @{ excludeFor = @('[All users]') } }
+    Check (-not $gx.ok -and $gx.error -like "*can't exclude*") 'batch groups: [All users] refused in Excluded' ($gx | ConvertTo-Json -Compress)
+    $gxs = Invoke-Api '/api/app-save' @{ originalName = $rn; app = @{ appName = $rn; appId = ''; wingetId = $gm.wingetId; requiredFor = @('SG-A'); excludeFor = @('[all devices]') } }
+    Check (-not $gxs.ok -and $gxs.error -like "*can't exclude*") 'app editor: [All devices] refused in Excluded' ($gxs | ConvertTo-Json -Compress)
     $gr = Invoke-Api '/api/batch-groups' @{ mode = 'remove'; names = @($rn); roles = @{ availableFor = @('sg-b') } }
     Check ($gr.ok -and @((Invoke-Api '/api/app-get' @{ name = $rn }).app.availableFor).Count -eq 0) 'batch groups: removed (case does not matter)'
     # Batch edit preview: says what changes, writes nothing.
@@ -784,6 +789,8 @@ try {
     $gsug = Invoke-Api '/api/group-suggest' @{ q = 'SG' }
     Check ($gsug.ok -and @($gsug.groups).Count -ge 1 -and @($gsug.groups | Where-Object { $_.source -eq 'entra' }).Count -eq 0) 'group picker: suggestions from the catalog without a connection - Entra ID isn''t asked' ($gsug | ConvertTo-Json -Compress -Depth 3)
     Check (-not (Invoke-Api '/api/group-check' @{ names = @('SG-X') }).checked) 'group picker: no check against Entra ID without a connection'
+    $gall = Invoke-Api '/api/group-suggest' @{ q = 'all' }
+    Check ($gall.ok -and @($gall.groups | Where-Object { $_.source -eq 'built-in' } | ForEach-Object { $_.name }) -join ',' -eq '[All users],[All devices]') 'group picker: Intune''s All users and All devices offered' ($gall | ConvertTo-Json -Compress -Depth 3)
     $profBad = Invoke-Api '/api/prefs-save' @{ profiles = @(@{ name = 'Twice'; required = @('SG-1') }, @{ name = 'Twice'; available = @('SG-2') }) }
     Check (-not $profBad.ok -and $profBad.error -like '*same name*') 'profiles: two with the same name are refused' ($profBad | ConvertTo-Json -Compress)
     $profOk = Invoke-Api '/api/prefs-save' @{ profiles = @(@{ name = 'Standard'; required = @('SG-ZZ-All'); available = @('SG-ZZ-IT'); exclude = @() }) }

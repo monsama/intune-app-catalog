@@ -85,6 +85,8 @@ function Global:Get-WebCatalogGroupNames {
     foreach ($a in @($Apps)) {
         foreach ($g in @(@($a.requiredFor) + @($a.availableFor) + @($a.uninstallFor) + @($a.excludeFor))) {
             $n = ([string]$g).Trim() -replace '\s+', ' '
+            # All users / All devices: Intune's own targets, never looked up in Entra ID.
+            if (Get-AllTargetInfo $n) { continue }
             if ($n -and -not $seen.ContainsKey($n.ToLowerInvariant())) { $seen[$n.ToLowerInvariant()] = $n }
         }
     }
