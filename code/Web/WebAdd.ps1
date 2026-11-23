@@ -85,11 +85,14 @@ function Global:Add-WebWingetApps {
         if (Test-WebAddName $name $apps) { $name = "$name ($id)" }
         $why = Test-WebAddName $name $apps
         if ($why) { $skipped.Add("$id ($why)"); continue }
+        # The publisher may come from the request (a Store row when winget can't be asked): one line, at most 256 characters.
+        $pub = (([string]$d.Publisher) -replace '[\x00-\x1f]', ' ').Trim()
+        if ($pub.Length -gt 256) { $pub = $pub.Substring(0, 256) }
         $isStore = Test-StoreProductId $id
         $managed = [bool]$Data.managed -and -not $isStore
         $edit = [pscustomobject]@{ appName = $name; wingetId = $id; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = $groups.Exclude
             managedUpdates = $managed
-            metadata = [pscustomobject]@{ description = $(if ($d.Description) { ([string]$d.Description).Substring(0, [Math]::Min(([string]$d.Description).Length, 2000)) } else { $name }); publisher = [string]$d.Publisher
+            metadata = [pscustomobject]@{ description = $(if ($d.Description) { ([string]$d.Description).Substring(0, [Math]::Min(([string]$d.Description).Length, 2000)) } else { $name }); publisher = $pub
                 informationUrl = (Get-WebHttpUrl $(if ($d.Homepage) { $d.Homepage } else { $d.PublisherUrl })); privacyUrl = (Get-WebHttpUrl $d.PrivacyUrl)
                 appVersion = $(if ($managed -and (Test-ReleaseVersionText ([string]$d.Version))) { [string]$d.Version } else { '' }); owner = [string]$Global:App.DefaultAppSettings.DefaultOwner; developer = ''; notes = (@($(if ($isStore) { 'A Microsoft Store app: sent to Intune as its Store type - the Store installs and updates it.' }), $(if ($d.License) { "License: $($d.License)" })) | Where-Object { $_ }) -join ' '
                 installCommand = ''; uninstallCommand = '' } }

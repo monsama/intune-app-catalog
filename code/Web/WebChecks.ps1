@@ -304,7 +304,10 @@ function Global:Find-WebStoreApps {
     $why = ''
     try {
         $body = @{ Query = @{ KeyWord = $q; MatchType = 'Substring' } } | ConvertTo-Json -Depth 4 -Compress
-        $answer = Invoke-RestMethod -Method Post -Uri 'https://storeedgefd.dsx.mp.microsoft.com/v9.0/manifestSearch' -Body $body -ContentType 'application/json' -TimeoutSec 20 -UseBasicParsing
+        $resp = Invoke-WebRequest -Method Post -Uri 'https://storeedgefd.dsx.mp.microsoft.com/v9.0/manifestSearch' -Body $body -ContentType 'application/json' -TimeoutSec 20 -UseBasicParsing
+        # The answer is a few KB; anything far larger is not the Store (a proxy page, a broken answer) - don't parse it.
+        if (([string]$resp.Content).Length -gt 2MB) { throw 'the answer was too large' }
+        $answer = ([string]$resp.Content) | ConvertFrom-Json
         $rows = @(ConvertFrom-StoreSearchResult $answer)
         return @{ ok = $true; source = 'store'; rows = @($rows | Select-Object -First 60 | ForEach-Object { [ordered]@{ name = $_.Name; id = $_.Id; publisher = $_.Publisher; version = '' } }) }
     }
