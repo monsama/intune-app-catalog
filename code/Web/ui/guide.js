@@ -260,7 +260,7 @@ $('dlgRun').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preve
 // ---------------------------------------------------------------- getting started (Home)
 function renderSetup(steps) {
   const left = (steps || []).filter(s => !s.done), go = { 'settings:connection': () => showSettings('connection'), 'settings:packaging': () => showSettings('packaging'), 'settings:updates': () => showSettings('updates'),
-    'settings:automation': () => showSettings('automation'), add: () => openAdd(), 'apps:notdeployed': () => { showView('apps'); $('filter').value = 'notdeployed'; renderApps(); updateViewButtons(); } };
+    'settings:automation': () => showSettings('automation'), 'settings:permissions': checkPermissionsNow, add: () => openAdd(), 'apps:notdeployed': () => { showView('apps'); $('filter').value = 'notdeployed'; renderApps(); updateViewButtons(); } };
   $('homeSetup').hidden = !steps || !left.length;
   if (!steps || !left.length) return;
   const done = steps.length - left.length;

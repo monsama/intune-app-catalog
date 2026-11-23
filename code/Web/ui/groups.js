@@ -432,21 +432,6 @@ $('btnGroupRename').addEventListener('click', async () => {
   });
 });
 $('btnGroupDelete').addEventListener('click', () => { if (group && group.found) deleteGroups([group.name]); });
-$('btnGroupsDelete').addEventListener('click', () => {
-  $('gDelLog').hidden = true; $('gDelLog').textContent = ''; $('gDelMore').value = '';
-  $('gDelList').replaceChildren(...(groups.length ? groups.map(g => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-gdel': g.name }), `${g.name} `, el('span', { class: 'muted', text: `(${g.apps} app${g.apps === 1 ? '' : 's'})` })))
-    : [el('span', { class: 'muted', text: 'No catalog groups - type names below.' })]));
-  $('dlgGroupsDelete').showModal();
-});
-$('btnGroupsDeleteGo').addEventListener('click', async () => {
-  const names = [...new Set([...document.querySelectorAll('[data-gdel]')].filter(c => c.checked).map(c => c.dataset.gdel).concat(lines('gDelMore')))];
-  if (!names.length) { toast('Tick or type at least one group.', true); return; }
-  if (!(await ask(`Delete ${names.length} group(s) from Entra ID?\n\n${names.join('\n')}\n\nApps assigned to them lose those assignments. This can't be undone here.`))) return;
-  $('gDelLog').hidden = false;
-  runJob({ mode: 'DeleteMany', names }, ok => { toast(ok ? `Deleted ${names.length} group(s).` : 'Not every group was deleted - see the log.', !ok); loadGroups(); },
-    { path: '/api/group-job', log: 'gDelLog', startText: `Deleting ${names.length} group(s)...` });
-});
-
 // The description's own Save: the same save as the button under To add (description and members together).
 $('btnGroupDescSave').addEventListener('click', saveGroup);
 

@@ -356,7 +356,7 @@ function Global:Get-WebAttention {
     # A page hit a permission the app registration doesn't have (Invoke-WebGraph notes it; it goes once a call works).
     if ($Global:App.MissingPermissions -and $Global:App.MissingPermissions.Count) {
         $miss = @($Global:App.MissingPermissions.Keys | Sort-Object)
-        & $add 'warn' "Missing API permission$(if ($miss.Count -gt 1) { 's' }): $($miss -join ', ')" "Microsoft Graph refused a request for lack of it (last at $(@($Global:App.MissingPermissions.Values | Sort-Object)[-1])). Add it to the app registration (Settings > Connection, In Entra ID: Add required permissions..., on the server the Entra setup script) and grant admin consent - Diagnostics > Check permissions lists every one." 'settings:connection'
+        & $add 'warn' "Missing API permission$(if ($miss.Count -gt 1) { 's' }): $($miss -join ', ')" "Microsoft Graph refused a request for lack of it (last at $(@($Global:App.MissingPermissions.Values | Sort-Object)[-1])). Add it to the app registration (Settings > Connection, In Entra ID: Add required permissions..., on the server the Entra setup script) and grant admin consent - Diagnostics > Check permissions lists every one." 'settings:permissions'
     }
     # Winget apps whose Intune details are still empty (publisher, description, information link): Fill in details does it.
     # Not those whose remaining gaps winget was asked about already and doesn't have (same Winget ID).
@@ -428,7 +428,7 @@ function Global:Get-WebAttention {
     $upd = Get-WebAppUpdate
     if ($upd.ok -and $upd.newer) { & $add 'info' "Intune App Catalog $($upd.version) is out (you have $($Global:App.AppVersion))" $(if ($upd.notes) { $upd.notes } else { 'See what is new on GitHub.' }) 'open:release' }
     $order = @{ err = 0; warn = 1; ok = 2; info = 3 }
-    return @{ ok = $true; items = @($items | Sort-Object { $order[$_.level] }); setup = $setup; apps = $apps.Count; deployed = @($apps | Where-Object { $_.appId }).Count
+    return @{ ok = $true; items = @($items | Sort-Object { $order[$_.level] }); setup = $setup; refused = @($(if ($Global:App.MissingPermissions) { @($Global:App.MissingPermissions.Keys | Sort-Object) })); apps = $apps.Count; deployed = @($apps | Where-Object { $_.appId }).Count
         managed = @($apps | Where-Object { $_.managedUpdates }).Count; summary = $summary; connected = $configured; lastRun = $(if ($last) { ConvertTo-WebIsoTime $last.started } else { '' }) }
 }
 
@@ -463,8 +463,24 @@ function Global:Get-WebAttentionIntune {
         }
         catch { }
     }
+    # Graph permissions the catalog uses but the app registration lacks (2.38.6) - the same report as Settings >
+    # Diagnostics > Check permissions, so Getting started doesn't call the connection done while a page can't work.
+    $permMissing = @()
+    if ($configured -and (-not $Global:App.TestGraph -or $Global:App.TestGraph.Answers.PSObject.Properties['TOKEN roles'])) {
+        try {
+            $pc = Get-WebPermissionCheck
+            # Not those Graph already refused - Home says those (Missing API permission) with when it happened.
+            $refused = @($(if ($Global:App.MissingPermissions) { @($Global:App.MissingPermissions.Keys) }))
+            if ($pc.ok) { $permMissing = @($pc.rows | Where-Object { $_.status -in 'missing', 'partly' -and $refused -notcontains [string]$_.name }) }
+        }
+        catch { }
+    }
+    if ($permMissing.Count) {
+        & $add 'warn' "$($permMissing.Count) Graph permission(s) missing" (((@($permMissing | ForEach-Object { "$($_.name) ($($_.for))" })) -join '; ') +
+            ' - in Entra ID: Add required permissions... adds them (Settings > Connection; on the server: Entra setup script...).') 'settings:permissions'
+    }
     $order = @{ err = 0; warn = 1; ok = 2; info = 3 }
-    $value = @{ ok = $true; items = @($items | Sort-Object { $order[$_.level] }); summary = $summary }
+    $value = @{ ok = $true; items = @($items | Sort-Object { $order[$_.level] }); summary = $summary; permMissing = @($permMissing | ForEach-Object { [string]$_.name }) }
     $Global:App.HomeIntuneCache = @{ At = [DateTime]::UtcNow; Sig = $sig; Value = $value }
     return $value
 }
