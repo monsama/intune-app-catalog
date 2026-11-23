@@ -1,5 +1,56 @@
 # Changelog
 
+## 2.38.12
+
+**A full sweep - security, bugs and the GUI - since 2.38.0.**
+
+Security
+- **A group named "[All users]" or "[All devices]" stays a group.** Reading
+  assignments from Intune took a real Entra group with such a name for
+  Intune's built-in target - and a send would then have assigned the app to
+  every user. It is kept by its ID now (with a warning to rename it), and only
+  the bracketed names are read as the built-in targets.
+- **.pfx export on a PC: only the connection's certificate.** The same store
+  holds the user's own certificates (mail, VPN, code signing) - the export
+  isn't a general tool for those. The server version's store has only the
+  app's own.
+
+Bugs
+- **Logs stopped colouring** after the first step that wrote to a dialog's log
+  (two logs written at once). Fixed.
+- **[All devices] for Available** was accepted, and Intune then refused the
+  app's whole assignment list: Available is offered to users. It is refused
+  in the editor, Batch edit, the grid, CSV import and Replace group, and not
+  offered in the Available pickers.
+- **Changes to send** (for an app last sent by an earlier version): the
+  change history's rows are only those of the part that has no sent values,
+  without a managed app's release fields, and never twice.
+- **Install status**: when Entra ID couldn't be read, it said each group
+  "isn't in Entra ID" - one note now. The waiting rows say that Available ones
+  report once their user installs the app.
+- **Groups**: left-over search results could keep offering Delete for a group
+  just deleted, and Delete was offered while Entra ID wasn't checked. Fixed.
+- **Checks**: the start-up badge, Home's toast and ticked findings left in a
+  folded row now count only what the list shows. A change to send's card no
+  longer opens after the pointer has left.
+
+GUI
+- The hover cards keep the keyboard: Tab past the last button goes back to
+  what opened it; "Changes to send" can be reached with Tab.
+- Read from Intune and Send to Intune open on what there is to do, not on the
+  folded log; on a phone, Read from Intune shows each field above its two
+  values.
+- Done is the one button left after a send (Send to Intune, Send groups,
+  Release, CSV import); "Send their groups too" can't be changed after the
+  run; a failed CSV apply can be tried again; Send keeps its tooltip.
+- Getting started's permission step says "Grant the missing permissions" with
+  a "Check permissions" button; the names are in its tooltip.
+- Install status: the summary's sentences are separated.
+- Narrow windows: the Apps list hides "Who gets it" at a phone's width so the
+  next step fits; Checks hides the Area column there.
+- Home: a failed nightly-run step reads "404 Not Found - <Graph's message>",
+  not Graph's raw JSON.
+
 ## 2.38.11
 
 - **Export the certificate with its private key (.pfx)** - Settings >

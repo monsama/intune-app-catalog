@@ -887,6 +887,7 @@ function Global:Get-WebUnsentDiff {
     $text = { param($v) if ($null -eq $v) { '' } elseif ($v -is [string]) { $v } elseif ($v -is [System.Collections.IEnumerable] -and -not ($v -is [System.Collections.IDictionary]) -and -not ($v.PSObject.Properties['PSPath'])) { (@($v | ForEach-Object { if ($_ -is [string] -or $_ -is [ValueType]) { [string]$_ } else { ConvertTo-Json -InputObject $_ -Compress -Depth 8 } })) -join ', ' } elseif ($v -is [ValueType]) { [string]$v } else { ConvertTo-Json -InputObject $v -Compress -Depth 8 } }
     $rows = New-Object System.Collections.Generic.List[object]
     $fromHistory = $false
+    $histParts = New-Object System.Collections.Generic.List[string]
     foreach ($part in 's', 'g') {
         if (-not $st -or -not $st[$part] -or $st[$part] -eq $h[$part]) { continue }
         $what = if ($part -eq 's') { 'settings' } else { 'groups' }
@@ -899,7 +900,7 @@ function Global:Get-WebUnsentDiff {
                 if ($l -cne $r) { $rows.Add([ordered]@{ part = $what; field = (& $label $k); sent = $l; now = $r }) }
             }
         }
-        else { $fromHistory = $true }
+        else { $fromHistory = $true; $histParts.Add($part) }
     }
     if ($fromHistory) {
         # Since the last change in Intune: the catalog's own edits, oldest value first, newest last.
@@ -919,8 +920,13 @@ function Global:Get-WebUnsentDiff {
         # Only what Intune gets (settings, groups, filter); the history keeps each value as compact JSON.
         $groupFields = @{ requiredFor = 'r'; availableFor = 'a'; uninstallFor = 'u'; excludeFor = 'x'; assignmentFilter = 'f'; assignmentFilterMode = 'fm'; appName = 'name' }
         $decode = { param($j) $t = ([string]$j).Trim(); if (-not $t -or $t -eq 'null') { '' } else { try { & $text (ConvertFrom-Json -InputObject $t) } catch { $t } } }
+        # Only the part whose sent values aren't kept (the other came from them above), and not what a managed app's
+        # releases own (version, commands, detection, return codes - never in its settings fingerprint).
+        $skipManaged = if ($a.managedUpdates) { @('appVersion', 'installCommand', 'uninstallCommand', 'detectionRule', 'returnCodes') } else { @() }
         foreach ($f in $by.Keys) {
-            $k = if ($f -like 'metadata.*') { $f.Substring(9) } elseif ($groupFields.ContainsKey($f)) { $groupFields[$f] } else { $null }
+            $k = $null
+            if ($f -like 'metadata.*' -and $histParts -contains 's' -and $skipManaged -notcontains $f.Substring(9)) { $k = $f.Substring(9) }
+            elseif ($groupFields.ContainsKey($f) -and (($histParts -contains 'g' -and $f -ne 'appName') -or ($histParts -contains 's' -and $f -eq 'appName'))) { $k = $groupFields[$f] }
             if (-not $k) { continue }
             $l = & $decode $by[$f].sent; $r = & $decode $by[$f].now
             if ($l -cne $r) { $rows.Add([ordered]@{ part = 'history'; field = (& $label $k); sent = $l; now = $r }) }

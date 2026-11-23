@@ -73,10 +73,12 @@ function stageCell(a) {
 }
 
 function unsentPill(a, s) {
-  const b = el('button', { type: 'button', class: 'pill pillbtn ' + s.cls, text: s.label, tabindex: '-1', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-controls': 'cmpCard',
+  // Reachable by Tab (2.38.12) - the card is the only place that says what changed.
+  const b = el('button', { type: 'button', class: 'pill pillbtn ' + s.cls, text: s.label, 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-controls': 'cmpCard',
     'aria-label': `${s.label} - show what changed since the last send` });
-  return hoverCardOn(b, async () => {
+  return hoverCardOn(b, async still => {
     const r = await api('/api/unsent-diff', { name: a.name });
+    if (!still()) return;
     if (!r.ok) { toast(r.error, true); return; }
     const parts = a.unsent.split(',');
     hcOpen(b, { title: `${a.name} - changes to send`, sub: `${s.why}`, left: 'Intune has (last sent)', right: 'Catalog now',
@@ -295,8 +297,8 @@ function renderSetup(steps) {
       el('div', { class: 'body' }, el('b', { text: s.title }), el('span', { class: 'sr', text: ' - done' })), '')
     : el('li', { class: i === first ? 'now' : '' },
       el('span', { class: 'mark', 'aria-hidden': 'true', text: String(i + 1) }),
-      el('div', { class: 'body' }, el('b', { text: s.title }), el('span', { class: 'muted', text: s.text })),
-      go[s.go] ? el('button', { class: 'btn small' + (i === first ? ' primary' : ''), text: 'Open', onclick: go[s.go] }) : '')));
+      el('div', { class: 'body', title: s.tip || '' }, el('b', { text: s.title }), el('span', { class: 'muted', text: s.text })),
+      go[s.go] ? el('button', { class: 'btn small' + (i === first ? ' primary' : ''), text: s.button || 'Open', onclick: go[s.go] }) : '')));
   $('setupDone').replaceChildren();
 }
 

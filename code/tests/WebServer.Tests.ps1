@@ -363,6 +363,9 @@ try {
     Check (-not $gx.ok -and $gx.error -like "*can't exclude*") 'batch groups: [All users] refused in Excluded' ($gx | ConvertTo-Json -Compress)
     $gxs = Invoke-Api '/api/app-save' @{ originalName = $rn; app = @{ appName = $rn; appId = ''; wingetId = $gm.wingetId; requiredFor = @('SG-A'); excludeFor = @('[all devices]') } }
     Check (-not $gxs.ok -and $gxs.error -like "*can't exclude*") 'app editor: [All devices] refused in Excluded' ($gxs | ConvertTo-Json -Compress)
+    # 2.38.12: Available is for users - Intune has no Available for all devices.
+    $gav = Invoke-Api '/api/app-save' @{ originalName = $rn; app = @{ appName = $rn; appId = ''; wingetId = $gm.wingetId; requiredFor = @('SG-A'); availableFor = @('[All devices]') } }
+    Check (-not $gav.ok -and $gav.error -like "*Available is offered to users*") 'app editor: [All devices] refused in Available' ($gav | ConvertTo-Json -Compress)
     $gr = Invoke-Api '/api/batch-groups' @{ mode = 'remove'; names = @($rn); roles = @{ availableFor = @('sg-b') } }
     Check ($gr.ok -and @((Invoke-Api '/api/app-get' @{ name = $rn }).app.availableFor).Count -eq 0) 'batch groups: removed (case does not matter)'
     # Batch edit preview: says what changes, writes nothing.

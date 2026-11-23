@@ -472,6 +472,8 @@ function Global:Get-WebExpectedInstallMembers {
     try {
         $ids = Resolve-WebGroupIds -Names @($want | ForEach-Object { $_.Name })
         if (-not $ids.ok) { $notes.Add("Its groups' members couldn't be read: $($ids.error)"); return @{ Members = @(); Notes = $notes.ToArray() } }
+        # Entra ID couldn't be read at all: one note - not "isn't in Entra ID" for each group.
+        if ($ids.note -and -not @($ids.ids.Keys).Count) { $notes.Add("Its groups' members couldn't be read: $($ids.note)"); return @{ Members = @(); Notes = $notes.ToArray() } }
         $excluded = @{}
         $read = Invoke-WebGraph -Permission 'Group.Read.All' -Action {
             param($Graph)

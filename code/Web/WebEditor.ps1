@@ -270,6 +270,7 @@ function Global:Test-WebAppEdit {
     if (-not $Record.appName) { return 'The app needs a name.' }
     if ($Record.appId -and $Record.appId -notmatch '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$') { return "The App ID must be a GUID (or empty for an app that isn't in Intune yet)." }
     foreach ($g in @($Record.excludeFor)) { if (Get-AllTargetInfo ([string]$g)) { return "Intune can't exclude $((Get-AllTargetInfo ([string]$g)).Name) - take it out of Excluded (only a group can be excluded)." } }
+    foreach ($g in @($Record.availableFor)) { $t = Get-AllTargetInfo ([string]$g); if ($t -and $t.Name -eq '[All devices]') { return "Available is offered to users in the Company Portal - use [All users] there (Intune has no Available for all devices)." } }
     if (-not (Test-WebWingetId $Record.wingetId)) { return "'$($Record.wingetId)' isn't a Winget ID winget accepts (letters, digits, . _ + -)." }
     $key = $Record.appName.ToLowerInvariant()
     $file = Get-SafeFileNameForApp -Name $Record.appName

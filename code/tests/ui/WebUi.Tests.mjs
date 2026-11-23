@@ -221,7 +221,8 @@ try {
       // stays inside the card.
       await page.evaluate(`homeLocal = { ...homeLocal, setup: homeLocal.setup.map((x, i) => i === 0 ? { ...x, done: true } : x) };
         homeIntune = { ok: true, items: [], summary: null, permMissing: ['DeviceManagementManagedDevices.Read.All'] }; renderHome();`);
-      check(/1 permission\(s\) are missing.*DeviceManagementManagedDevices\.Read\.All/.test(await page.textContent('#setupList li.now')) && /Check permissions|Open/.test(await page.textContent('#setupList li.now button')),
+      check(/Grant the missing permissions/.test(await page.textContent('#setupList li.now')) && /1 permission is missing/.test(await page.textContent('#setupList li.now'))
+        && /DeviceManagementManagedDevices\.Read\.All/.test(await page.getAttribute('#setupList li.now .body', 'title')) && (await page.textContent('#setupList li.now button')) === 'Check permissions',
         `${label}: Getting started keeps Connect open while a permission is missing, and names it`, await page.textContent('#setupList'));
       await squeezed('Home (a permission missing)');
       await page.evaluate('homeIntune = null; loadHome(true);');
