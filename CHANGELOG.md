@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.38.4
+
+**Checks shows what differs side by side, the catalog can assign to All users
+and All devices, and lists no longer jump when you open them.**
+
+- **Checks - "Differs"**: the two cut-off Catalog / Intune text columns are one
+  column with a chip per field that differs. Point at the chips (or Tab to them
+  and press Enter) for a card with the fields side by side - Field, Catalog,
+  Intune - the changed part marked, "(blank)" spelled out, and Open full
+  compare / Take from Intune / Send settings / Send groups right there. Esc
+  closes it.
+- **All users / All devices**: Intune's built-in targets can be in an app's
+  Required, Available and Uninstall lists as `[All users]` and `[All devices]`
+  (the group picker offers them). Send groups assigns them, Take from Intune
+  brings them into the catalog, and they are never looked up, created or
+  reported missing in Entra ID. Intune can't exclude them, so Excluded refuses
+  them. An app assigned to All devices in Intune (Company Portal, say) no
+  longer shows as "Unknown assignments" once it's taken from Intune; anything
+  else Intune has that the catalog can't hold is named readably instead of as
+  a raw Graph type.
+- **No jumping lists**: "Pick..." beside App version, "Link..." beside the App
+  ID, the assignment profile lists and the Checks area filter keep one width
+  when they fill in. The UI tests now open every list on every page and dialog
+  they visit and fail if one changes size.
+
 ## 2.38.3
 
 **A full GUI sweep: every page, dialog and editor state at four widths, light and
