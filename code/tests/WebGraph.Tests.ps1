@@ -407,6 +407,12 @@ try {
     $pc = Invoke-Api '/api/permission-check'
     $pcDir = @($pc.rows | Where-Object { $_.name -eq 'Directory.ReadWrite.All' })[0]
     Check ($pc.ok -and $pcDir.status -eq 'unused' -and @($pc.rows | Where-Object { $_.name -eq 'Group.ReadWrite.All' -and $_.status -eq 'ok' }).Count -eq 1) 'permissions: granted against used - a broad one not needed' ($pc | ConvertTo-Json -Compress -Depth 4)
+    # 2.38.6: Home (and so Getting started) knows the permissions the check calls missing - not the ones Graph already refused.
+    $pcMiss = @($pc.rows | Where-Object { $_.status -in 'missing', 'partly' } | ForEach-Object { [string]$_.name })
+    $attP = Invoke-Api '/api/attention' @{ part = 'intune'; fresh = $true }
+    $attPL = Invoke-Api '/api/attention' @{ part = 'local' }
+    $expect = @($pcMiss | Where-Object { @($attPL.refused) -notcontains $_ } | Sort-Object)
+    Check ($attP.ok -and ((@($attP.permMissing) | Sort-Object) -join ',') -eq ($expect -join ',') -and ($expect.Count -eq 0 -or @($attP.items | Where-Object { $_.go -eq 'settings:permissions' -and $_.title -like '*permission(s) missing' }).Count -eq 1)) 'home: missing Graph permissions are a Home item, the same as the permission check' "missing=$($pcMiss -join ',') refused=$(@($attPL.refused) -join ',') got=$(@($attP.permMissing) -join ',')"
     $hc = Invoke-Api '/api/health'
     Check ($hc.ok -and @($hc.checks | Where-Object { $_.level -eq 'ok' -and $_.text -like 'Signing in to Microsoft Graph works*' }).Count -eq 1) 'health: signing in to Graph is checked' ($hc | ConvertTo-Json -Compress -Depth 4)
     $mr = Invoke-Api '/api/monthly-report' @{ month = '2026-01' }

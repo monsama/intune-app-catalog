@@ -289,7 +289,14 @@ async function openSuggest() {
   if (!$('dlgSuggest').open) $('dlgSuggest').showModal();
   $('sgRows').replaceChildren(el('tr', {}, el('td', { colspan: 4, class: 'muted', text: 'Reading the inventory of apps on devices...' })));
   const r = await api('/api/inventory-suggestions');
-  if (!r.ok) { $('sgRows').replaceChildren(el('tr', {}, el('td', { colspan: 4, class: 'muted', text: r.error }))); return; }
+  if (!r.ok) {
+    // A missing Graph permission is a message with its fix, not a row of the table (2.38.6).
+    $('sgRows').replaceChildren(el('tr', {}, el('td', { colspan: 4 }, el('div', { class: 'permmiss' },
+      el('span', { class: 'pill ' + (r.permission ? 'warn' : 'err'), text: r.permission ? 'Permission missing' : 'Problem' }),
+      el('span', { text: r.permission ? `Reading the inventory needs ${r.permission} - the app registration doesn't have it yet. In Entra ID: Add required permissions... (Settings > Connection; on the server: Entra setup script...) adds it, with admin consent.` : r.error }),
+      r.permission ? el('button', { class: 'btn small', text: 'Check permissions', onclick: () => { $('dlgSuggest').close(); checkPermissionsNow(); } }) : ''))));
+    return;
+  }
   $('sgNote').textContent = `${r.suggestions.length} app(s) on at least three devices that the catalog doesn't have, from ${r.scanned} inventory entries${r.more ? ' (the first 20 pages)' : ''}. Parts of Windows and drivers are left out.`;
   $('sgRows').replaceChildren(...(r.suggestions.length ? r.suggestions.map(s => el('tr', {},
     el('td', { class: 'name', text: s.name }), el('td', { class: 'num', text: String(s.devices) }), el('td', { class: 'mono', text: s.versions.join(', ') }),

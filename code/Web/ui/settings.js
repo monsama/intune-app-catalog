@@ -125,7 +125,7 @@ let jobRunning = false;
 // While a step runs, the buttons that start another are off; afterwards each
 // gets back the state it had before - a button its dialog had switched off
 // (Deploy's "Done", Apply before a preview) stays off.
-const jobButtonIds = ['btnCheckCerts', 'btnUpload', 'btnAddPerms', 'btnDeployGo', 'btnPushGo', 'btnScriptIntune', 'btnScriptLocal', 'btnGroupSave', 'btnGroupsDeleteGo'];
+const jobButtonIds = ['btnCheckCerts', 'btnUpload', 'btnAddPerms', 'btnDeployGo', 'btnPushGo', 'btnScriptIntune', 'btnScriptLocal', 'btnGroupSave'];
 function jobButtons(on) {
   const chip = $('jobChip'); if (chip) chip.hidden = on;
   for (const id of jobButtonIds) {
@@ -549,6 +549,8 @@ $('btnUnattScript').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- permissions: granted vs used
+// From Home, Getting started or a page that hit a missing permission: Settings > Diagnostics, the check run at once.
+function checkPermissionsNow() { showSettings('diagnostics'); $('btnPermCheck').click(); $('btnPermCheck').scrollIntoView({ block: 'center' }); }
 $('btnPermCheck').addEventListener('click', async () => {
   const b = $('btnPermCheck'); b.disabled = true; $('permNote').textContent = 'Signing in to read the permissions...';
   try {

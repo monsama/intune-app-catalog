@@ -9,6 +9,15 @@
   already shows every item on it. What the Groups row can't show (an
   assignment with a filter, an exclusion, a target the catalog can't hold)
   still gets its own row.
+- **Missing Graph permissions are said up front.** Getting started no longer
+  ticks "Connect to Intune" while the app registration lacks a permission the
+  catalog uses (or one Graph already refused): the step says which, and
+  Check permissions opens Settings > Diagnostics and runs the check. Once
+  Getting started is done, Home says it instead. "Apps worth adding" shows a
+  missing permission as a message with that button, not as a table row.
+- **Groups: "Delete by name..." is gone.** Select the groups (Ctrl/Shift+click;
+  "All groups in Entra ID" shows those the catalog doesn't use) and press
+  Delete - one way, with the groups in front of you.
 
 ## 2.38.5
 

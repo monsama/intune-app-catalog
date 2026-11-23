@@ -349,9 +349,14 @@ function renderHome() {
   const r = homeLocal; if (!r) return;
   const order = { err: 0, warn: 1, ok: 2, info: 3 };
   // Getting started still open: its first step is the connection - "Not connected" isn't said twice.
-  const setupOpen = (r.setup || []).some(s => !s.done);
-  const items = [...r.items.filter(x => !(setupOpen && x.go === 'settings:connection' && x.title === 'Not connected')), ...((homeIntune && homeIntune.items) || [])].map((x, n) => [x, n]).sort((a, b) => (order[a[0].level] ?? 3) - (order[b[0].level] ?? 3) || a[1] - b[1]).map(x => x[0]);
-  renderSetup(r.setup);
+  // Connected, but a Graph permission the catalog uses is missing (2.38.6): the connection step isn't done yet.
+  const perm = [...new Set([...(r.refused || []), ...((homeIntune && homeIntune.permMissing) || [])])];
+  const setup = (r.setup || []).map(s => perm.length && s.go === 'settings:connection' && s.done
+    ? { ...s, done: false, go: 'settings:permissions', text: `Connected - but ${perm.length} permission(s) are missing in Entra ID: ${perm.join(', ')}.` } : s);
+  const setupOpen = setup.some(s => !s.done);
+  const items = [...r.items.filter(x => !(setupOpen && ((x.go === 'settings:connection' && x.title === 'Not connected') || x.go === 'settings:permissions'))),
+    ...((homeIntune && homeIntune.items) || []).filter(x => !(setupOpen && x.go === 'settings:permissions'))].map((x, n) => [x, n]).sort((a, b) => (order[a[0].level] ?? 3) - (order[b[0].level] ?? 3) || a[1] - b[1]).map(x => x[0]);
+  renderSetup(setup);
   const reading = homeIntuneWaiting && !homeIntune && r.connected !== false ? ' Reading install counts from Intune...' : '';
   $('homeNote').textContent = (items.length ? `${items.length} thing${items.length === 1 ? '' : 's'} to look at${r.lastRun ? ` - last managed-updates run ${fmtWhen(r.lastRun)}` : ''}.` : 'Nothing needs a look right now.') + reading;
   $('homeCount').textContent = items.length ? String(items.length) : '';
@@ -361,7 +366,7 @@ function renderHome() {
   $('homeTips').hidden = setupOpen;
   $('homeStats').replaceChildren(stat(String(r.apps), 'apps in the catalog'), stat(String(r.deployed), 'in Intune'), stat(String(r.managed), 'with managed updates'),
     ...(s && s.onCurrentPercent !== null && s.onCurrentPercent !== undefined ? [stat(s.onCurrentPercent + ' %', `of ${s.devices} devices on the current version`, s.onCurrentPercent < 90 ? 'warn' : 'ok')] : []));
-  const where = { 'settings:connection': ['Settings', () => showSettings('connection')], 'settings:defaults': ['Settings', () => showSettings('defaults')], 'settings:updates': ['Settings', () => showSettings('updates')], 'settings:automation': ['Settings', () => showSettings('automation')], 'settings:packaging': ['Settings', () => showSettings('packaging')],
+  const where = { 'settings:connection': ['Settings', () => showSettings('connection')], 'settings:permissions': ['Check permissions', checkPermissionsNow], 'settings:defaults': ['Settings', () => showSettings('defaults')], 'settings:updates': ['Settings', () => showSettings('updates')], 'settings:automation': ['Settings', () => showSettings('automation')], 'settings:packaging': ['Settings', () => showSettings('packaging')],
     'apps:notdeployed': ['Show them', () => { showView('apps'); $('filter').value = 'notdeployed'; renderApps(); updateViewButtons(); }], 'apps:all': ['Apps', () => showView('apps')],
     updates: ['Updates', () => showView('updates')], checks: ['Checks', () => showView('checks')],
     'open:release': ["What's new", () => api('/api/open', { target: 'release' })], 'do:manageddefault': ['Make it the default', makeManagedDefault], 'do:managedall': ['Turn on for all', managedForAll], 'do:takeversions': ["Take winget's versions", takeVersionsForManaged], 'do:wauswitch': ['Switch them', wauSwitch], 'do:portalstore': ['Fix Company Portal', portalStore], 'do:filldetails': ['Fill them in', () => fillDetails([])], 'do:wingetmodule': ['Install it', installWingetModule] };

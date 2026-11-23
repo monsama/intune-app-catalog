@@ -317,8 +317,6 @@ label.chk.inline { display: inline-flex; align-items: center; gap: 6px; margin: 
 .uses li { padding: 2px 0; }
 .hits li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--bd2); }
 .hits li .n { flex: 1; overflow-wrap: anywhere; }
-#dlgGroupsDelete > label { display: block; margin-top: 12px; font-size: 12px; color: var(--muted); }
-#dlgGroupsDelete > label > textarea { display: block; width: 100%; margin-top: 4px; }
 .deplist.tall { max-height: 40vh; flex-direction: column; flex-wrap: nowrap; }
 .glist li .fav { color: var(--warn); font-size: 12px; }
 .gdot { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; background: var(--bd); }
@@ -1674,3 +1672,7 @@ fieldset.gbrole label.chk { min-width: 0; overflow-wrap: anywhere; }
 /* A labelled select in a sentence ("Send [when something needs a look - ...]"): never wider than its box. */
 label.inline { max-width: 100%; }
 label.inline > select { max-width: 100%; min-width: 0; text-overflow: ellipsis; }
+
+/* 2.38.6: a missing Graph permission inside a table - one message with its fix. */
+.permmiss { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 4px 0; white-space: normal; }
+.permmiss > span:nth-child(2) { flex: 1 1 320px; min-width: 0; }

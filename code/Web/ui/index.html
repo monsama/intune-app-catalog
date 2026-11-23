@@ -254,7 +254,6 @@
         <ul class="glist" id="groupList" role="listbox" aria-multiselectable="true" tabindex="0" aria-label="Groups used by the catalog"></ul>
         <div class="actions">
           <button class="btn" id="btnGroupNew" title="Create a security group in Entra ID">New group</button>
-          <button class="btn" id="btnGroupsDelete" title="Delete groups from Entra ID by name, including groups the catalog doesn't use - asked first">Delete by name...</button>
           <button class="btn" id="btnGroupsReload" title="Read the groups, their status in Entra ID and the open group's members again">Reload</button>
         </div>
       </div>
@@ -1300,14 +1299,6 @@
   <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnGroupAssignGo" title="Add the group to the ticked apps in the catalog">Assign</button></div>
 </dialog>
 
-<dialog id="dlgGroupsDelete">
-  <h2>Delete groups by name</h2>
-  <p class="sub">Deletes these security groups from Entra ID. Apps assigned to them lose those assignments in Intune. The catalog still names them until you change the apps.</p>
-  <div class="deplist tall" id="gDelList"></div>
-  <label>More group names <span class="muted">(one per line)</span><textarea autocomplete="off" id="gDelMore" rows="3" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
-  <pre class="log" id="gDelLog" tabindex="0" role="log" hidden></pre>
-  <div class="actions end"><button class="btn" data-close>Close</button><button class="btn danger" id="btnGroupsDeleteGo" title="Delete the ticked groups from Entra ID">Delete</button></div>
-</dialog>
 
 <dialog id="dlgBatch" class="wide">
   <h2 id="batchTitle">Batch edit</h2>
