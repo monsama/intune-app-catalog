@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.38.7
+
+- **Server image builds can't hang on a slow package mirror.** Ubuntu's
+  package step once took 29 minutes in CI (and one run hung for an hour).
+  apt now gives up on a stalled mirror after 30 seconds and tries again (5
+  times); CI caches the image's layers, so the packages are only downloaded
+  again when the Dockerfile changes or once a week (security fixes still come
+  in); and CI's image job stops after 20 minutes instead of holding a release.
+  The released image is still built fresh, with every security fix.
+- **update-ica.sh / backup-ica.sh**: the backup leaves out the running app's
+  scratch folder (tmp/), so tar no longer prints "socket ignored" - those
+  were throwaway files, the backups were always complete.
+
 ## 2.38.6
 
 - **Checks: one problem, one row.** An app assigned in Intune to a group or

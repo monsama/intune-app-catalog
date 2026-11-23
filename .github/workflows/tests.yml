@@ -78,10 +78,25 @@ jobs:
     # refuses other names, and reads winget's package index.
     name: docker (server version)
     runs-on: ubuntu-latest
+    # A normal run takes a few minutes - a stalled package mirror fails the job instead of holding it for an hour.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The image's layers are cached between runs, so the slow part (Ubuntu's packages) is only downloaded again
+      # when the Dockerfile changes or a new week starts (APT_REFRESH - the security fixes still come in weekly).
+      - name: This week
+        id: week
+        run: echo "stamp=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build the image
-        run: docker build -t intune-app-catalog:smoke .
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: intune-app-catalog:smoke
+          build-args: APT_REFRESH=${{ steps.week.outputs.stamp }}
+          cache-from: type=gha,scope=ica-image
+          cache-to: type=gha,scope=ica-image,mode=max
       - name: Smoke test
         run: ./scripts/docker-smoke.sh intune-app-catalog:smoke
 
