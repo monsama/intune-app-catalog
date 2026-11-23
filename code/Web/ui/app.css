@@ -1327,7 +1327,7 @@ dialog.addapps[open]:not(.maxed) > #asec-winget:not([hidden]), dialog.addapps[op
 /* Detection: a box like the editor's, its heading inside rather than cut into the border. */
 dialog.addapps fieldset.ownrule { padding: 10px 14px 12px; margin: 12px 0 0; }
 dialog.addapps fieldset.ownrule > legend { float: left; width: 100%; padding: 0; margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
-dialog.addapps fieldset.ownrule > legend + * { clear: both; }
+dialog.addapps fieldset.ownrule > :not(legend) { clear: both; }
 dialog.addapps .asec ul.notes { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 6px; }
 dialog.addapps .asec > p.sub { margin-bottom: 0; }
 
@@ -1357,7 +1357,9 @@ input[type=checkbox]:not([hidden]) { box-sizing: border-box !important; padding:
 fieldset.ownrule { padding: 10px 14px 12px; }
 fieldset.ownrule > legend { float: left; width: 100%; padding: 0; margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--muted); }
 fieldset.ownrule > legend .muted { font-weight: 400; }
-fieldset.ownrule > legend + * { clear: both; }
+/* Every part below the floated heading (2.38.3): only the first did, and that is the folded summary - hidden once
+   Change is clicked, so the release rule's fields sat beside the heading, squeezed to a few pixels. */
+fieldset.ownrule > :not(legend) { clear: both; }
 /* Details: its heading on the same line as on the other tabs - the Fill button doesn't push it down. */
 #dlgApp h3.withfill { display: flex; align-items: center; gap: 8px; margin-top: 0; min-height: 28px; }
 #dlgApp h3.withfill > .btn { margin-left: auto; }
