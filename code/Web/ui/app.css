@@ -1536,7 +1536,7 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 #dlgBatch #batchPreview, #dlgBatch label:has(> #bPush) { scroll-margin-bottom: 72px; }
 #dlgBatch label:has(> #bPush) { margin-bottom: 12px; }
 /* Add apps on a phone: "Fill in by hand..." under the tabs, which scroll on one line. */
-@media (max-width: 640px) { .addtabrow { flex-wrap: wrap; } .addtabrow > .subtabs { flex: 1 1 100%; } .addtabrow > #btnAddBlank { margin: 0 0 8px; } }
+@media (max-width: 720px) { .addtabrow { flex-wrap: wrap; } .addtabrow > .subtabs { flex: 1 1 100%; } .addtabrow > #btnAddBlank { margin: 0 0 8px; } }
 /* Settings' direction icons: enough contrast in dark mode too. */
 .tile .ico { color: var(--accent); filter: brightness(1.25); }
 
@@ -1746,7 +1746,10 @@ button.pill.pillbtn:hover, button.pill.pillbtn[aria-expanded="true"] { box-shado
 #permRows td.pstat { white-space: nowrap; }
 /* Narrow: the status under the name - the For column keeps its room. */
 .pstat-in { display: none; }
-@media (max-width: 800px) { #permWrap th:nth-child(2), #permRows td.pstat { display: none; } .pstat-in { display: block; margin-top: 4px; } #permRows td.pname { min-width: 0; } }
+.pstat-in .pill { font-family: var(--ui); font-size: 11px; }
+/* Narrow: tab rows wrap onto a second line instead of hiding tabs behind sideways scrolling. */
+@media (max-width: 720px) { .subtabs { flex-wrap: wrap; overflow-x: visible; } }
+@media (max-width: 900px) { #permWrap th:nth-child(2), #permRows td.pstat { display: none; } .pstat-in { display: block; margin-top: 4px; } #permRows td.pname { min-width: 0; } }
 #permRows .why { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
 /* Home: a Needs attention button stays its own size when the row stacks. */
 @media (max-width: 800px) { .attention .att > button, .attention .att > .btn { justify-self: start; } }
