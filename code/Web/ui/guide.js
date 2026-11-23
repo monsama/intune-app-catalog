@@ -53,7 +53,7 @@ function stageOf(a) {
   if (a.pilotVersion) {
     // As on Updates: a ring still to go is the next step; everyone only after the last ring (or on the fast track).
     const rings = 1 + ((prefs && prefs.releaseRings) || []).length, next = !a.pilotFast && (a.pilotRing || 0) < rings - 1;
-    const p = { version: a.pilotVersion, ring: a.pilotRing || 0, ringCount: rings, ringName: (a.pilotRing || 0) === 0 ? 'Pilot' : ((prefs.releaseRings[(a.pilotRing || 0) - 1] || {}).name || `Ring ${(a.pilotRing || 0) + 1}`) };
+    const p = { version: a.pilotVersion, ring: a.pilotRing || 0, ringCount: rings, ringName: (a.pilotRing || 0) === 0 ? 'Pilot' : ((((prefs && prefs.releaseRings) || [])[(a.pilotRing || 0) - 1] || {}).name || `Ring ${(a.pilotRing || 0) + 1}`) };
     return { key: 'pilot', label: `In pilot ${a.pilotVersion}`, cls: 'warn', why: `${a.pilotVersion} is with ${p.ringName === 'Pilot' ? 'the pilot groups' : p.ringName}; everyone else has ${a.version || 'the current version'}.`,
       next: next ? { label: 'Next ring...', title: 'Give it to the next release ring too', run: () => advanceRelease(a.name, p) } : { label: 'Promote...', title: 'Give it to everyone (shows how the pilot went first)', run: () => promoteRelease(a.name) } };
   }
@@ -374,10 +374,19 @@ function renderWhere() {
       [/install time|architecture|return code|disk|memory|processor|cpu|operating system|minimum os|restart/i, 'req']].find(([re]) => re.test(m));
     if (hit) { unfold(hit[1]); setPage(3); }
   };
+  // A Microsoft Store app (2.38.3): no commands and no detection of its own - the Store does both; the fields went
+  // on showing (empty, or a rule made for winget) while "Ready to send?" said it needs none.
+  const storeState = () => {
+    const st = typeof isStoreId === 'function' && isStoreId($('aWinget').value.trim()), was = $('dlgApp').classList.contains('is-store');
+    $('dlgApp').classList.toggle('is-store', st);
+    if (st !== was) { try { setPage(cur); } catch (e) { } }   // the page's sections follow (not before the editor is set up)
+    return st;
+  };
   window.edFoldsReset = () => {
     const id = $('aWinget').value.trim();
     detOwn = false;
-    grid.classList.toggle('f-det', !!id && !$('xType').value);
+    const store = storeState();
+    grid.classList.toggle('f-det', !!id && (store || !$('xType').value));
     grid.classList.add('f-req', 'f-dep');
     foldSummaries();
   };
@@ -385,7 +394,7 @@ function renderWhere() {
   // A rule set, or the winget ID cleared: the detection fields are what is needed.
   $('xType').addEventListener('change', () => { if ($('xType').value) { detOwn = true; unfold('det'); } });
   // A winget ID typed in (a new app): its detection is made for winget - folded, unless a rule of its own was asked for.
-  $('aWinget').addEventListener('input', () => { if (!$('aWinget').value.trim()) unfold('det'); else if (!detOwn && !$('xType').value) grid.classList.add('f-det'); });
+  $('aWinget').addEventListener('input', () => { const store = storeState(); if (!$('aWinget').value.trim()) unfold('det'); else if (store || (!detOwn && !$('xType').value)) grid.classList.add('f-det'); });
   const assign = (section, start, switches) => { let p = start; for (const c of section.children) { const sw = switches.find(([test]) => test(c)); if (sw) p = sw[1]; pageOf.set(c, p); } };
   assign(left, 0, [[c => c.matches('h3.withtool'), 1]]);
   assign(right, 2, [[c => c.matches('.ready'), 0], [c => c.tagName === 'H3', 2]]);
@@ -408,7 +417,9 @@ function renderWhere() {
     cur = i;
     for (const [c, p] of pageOf) c.classList.toggle('offpage', p !== i);
     for (const s of [left, right, dLeft, dRight]) {
-      s.classList.toggle('offpage', ![...s.children].some(c => pageOf.get(c) === i));
+      // A Store app's command parts are hidden: a section holding only them is empty, so it goes too (2.38.3).
+      const shownHere = c => pageOf.get(c) === i && !($('dlgApp').classList.contains('is-store') && (c.id === 'instRaw' || c.id === 'instBlocks'));
+      s.classList.toggle('offpage', ![...s.children].some(shownHere));
       [...s.children].forEach(c => c.classList.remove('pgfirst'));
       const first = [...s.children].find(c => pageOf.get(c) === i); if (first) first.classList.add('pgfirst');
     }

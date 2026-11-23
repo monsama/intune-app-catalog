@@ -395,6 +395,8 @@ async function readList(body) {
     : `${r.items.length} package(s) - ${r.items.filter(x => x.inCatalog).length} already in the catalog.`;
   $('alAll').checked = alPicked.size > 0 && alPicked.size === r.items.filter(x => !x.inCatalog).length;
   renderList(); updateAddButton();
+  // On a phone the explanation fills the screen: the list is brought into view (it started below it).
+  if (innerWidth < 600) $('alGrid').scrollIntoView({ block: 'start' });
 }
 function renderList() {
   let cat = '';

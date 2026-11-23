@@ -825,7 +825,7 @@ function Global:Get-WebUnattendedStatus {
       can't use the user's own private keys. @{ supported; ready; steps }.
     #>
     $sch = Get-WebUpdateSchedule
-    if (-not $sch.supported) { return @{ ok = $true; supported = $false; ready = $false; steps = @('Scheduled tasks need Windows.') } }
+    if (-not $sch.supported) { return @{ ok = $true; supported = $false; ready = $false; steps = @([ordered]@{ done = $false; text = 'Scheduled tasks need Windows.' }) } }   # each step as the page reads them (it said "To do undefined")
     $found = Get-WebConnectionCertificate
     $logon = ''
     if ($sch.exists) { try { $logon = [string](Get-ScheduledTask -TaskName (Get-WebUpdateTaskName)).Principal.LogonType } catch { } }

@@ -76,9 +76,35 @@ try {
         const w = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
         check(w[0] <= w[1] + 1, `${label}: ${view} fits the window (no sideways scrolling)`, `${w[0]} > ${w[1]}`);
       };
+      // 2.38.3: nothing squeezed - a field a few pixels wide, a label wrapping letter by letter (the release rule's
+      // fields sat beside a floated heading). In the open dialog, else the page; only what is shown.
+      const squeezed = async view => {
+        const bad = await page.evaluate(() => {
+          const dlg = [...document.querySelectorAll('dialog[open]')].pop();
+          const root = dlg || document.querySelector('.view:not([hidden])') || document.body;
+          const shown = e => { const r = e.getBoundingClientRect(); if (!r.width && !r.height) return false; const cs = getComputedStyle(e); return cs.visibility !== 'hidden' && cs.display !== 'none' && cs.clip !== 'rect(0px, 0px, 0px, 0px)' && !e.closest('[hidden]'); };
+          const name = e => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (e.className && typeof e.className === 'string' ? '.' + e.className.trim().split(/\s+/).slice(0, 2).join('.') : '');
+          const out = [];
+          for (const e of root.querySelectorAll('input, select, textarea')) {
+            if (['checkbox', 'radio', 'hidden', 'file', 'color', 'range'].includes(e.type) || !shown(e)) continue;
+            const w = e.getBoundingClientRect().width;
+            if (w > 0 && w < 36) out.push(`${name(e)} is ${Math.round(w)}px wide`);
+          }
+          for (const e of root.querySelectorAll('label, legend, p, span, td, th, h2, h3, button, a, b, li')) {
+            const own = [...e.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim();
+            if (own.length < 6 || !shown(e)) continue;
+            // Squeezed: narrow and wrapping over several lines (a short ID that is simply narrow is fine).
+            const r = e.getBoundingClientRect(), line = parseFloat(getComputedStyle(e).fontSize) * 1.25;
+            if (r.width > 0 && r.width < 48 && r.height > 2.5 * line) out.push(`${name(e)} "${own.slice(0, 20)}" is ${Math.round(r.width)}px wide, ${Math.round(r.height)}px high`);
+          }
+          return out.slice(0, 5);
+        });
+        check(!bad.length, `${label}: ${view} - nothing squeezed (fields and labels have room)`, bad.join('; '));
+      };
       // Every rule axe-core has for WCAG 2.1 A/AA and best practice - in the
       // open dialog when there is one (axe skips what's behind a modal).
       const a11y = async view => {
+        await squeezed(view);
         if (!axePath) return;
         if (!(await page.evaluate(() => typeof window.axe !== 'undefined'))) await page.addScriptTag({ path: axePath });
         const found = await page.evaluate(async () => {
@@ -103,6 +129,10 @@ try {
       // 2.32.0: no banner - the sidebar badge says it and leads to the setup guide.
       check(!(await page.isVisible('#setupBanner')) && /Not connected - set up/.test(await page.textContent('#connBadge')), `${label}: "not connected" is the sidebar badge, not a banner on every page`, await page.textContent('#connBadge'));
       await noOverflow('Apps'); await unnamed('Apps'); await a11y('Apps'); await shot('apps');
+      // 2.38.3: an app in a later release ring, before the settings are read: the list still shows (it stayed empty).
+      const ringOk = await page.evaluate(() => { const keep = prefs; prefs = null; apps.push({ ...(apps[0] || {}), name: 'ZZ ring app', pilotVersion: '2.0', pilotRing: 1, groups: [] });
+        let ok = true; try { renderApps(); } catch (e) { ok = false; } apps.pop(); prefs = keep; renderApps(); return ok; });
+      check(ringOk, `${label}: the Apps list shows an app in a later release ring before the settings are read`);
 
       // Add apps: three ways in; the empty form is one click further.
       await page.click('#btnAddApp');
@@ -129,6 +159,14 @@ try {
       await page.click('#btnAddBlank');
       await page.waitForSelector('#dlgApp[open]');
       await unnamed('the app editor'); await a11y('the app editor'); await shot('editor');
+      // 2.38.3: managed updates on, the release rule opened with Change - its fields have room (they were squeezed).
+      await page.evaluate(() => { const m = document.getElementById('aManaged'); m.checked = true; m.dispatchEvent(new Event('change')); });
+      await page.click('#arSum button');
+      check(await page.evaluate(() => { const r = document.getElementById('arDays').getBoundingClientRect(); return r.width > 60; }), `${label}: the release rule's fields have room once opened`, String(await page.evaluate(() => document.getElementById('arDays').getBoundingClientRect().width)));
+      await squeezed('the app editor (release rule open)');
+      // A fresh editor again (the toggle made this one changed - Escape would ask first).
+      await page.evaluate(() => { document.getElementById('dlgApp').close(); openEditor(''); });
+      await page.waitForSelector('#dlgApp[open]');
       // Each tab is a page of the editor: only its part shows.
       await page.click('.edtab[data-i="3"]');
       check(await page.isVisible('#xType') && !(await page.isVisible('#aName')), `${label}: the editor's Install & detection tab shows the detection rule, not the basics`);
