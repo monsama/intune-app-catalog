@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.38.13
+
+- **Add apps > Microsoft Store**: a tab of its own. It searches the Store's
+  catalog (as winget's msstore source does - on the server version too, where
+  there is no winget; on Windows winget's own search if the Store doesn't
+  answer), shows the publisher and the app's Store page, and adds the apps as
+  Intune's Microsoft Store app type - no package, the Store keeps them up to
+  date (no managed updates).
+- **A send never drops a group.** Send groups and the release steps replace an
+  app's whole assignment list in Intune; a group whose ID couldn't be found
+  was left out of it - and so lost its assignment, or every assignment when
+  none was found. Now the step stops and changes nothing, and says which
+  group it couldn't find.
+- **Permissions - one list, the narrow ones.** "Add required permissions"
+  (and the server's Entra setup script) offered Directory.Read.All while the
+  permission check called it "not needed": both now use the narrow ones -
+  User.Read.All (group members), Device.Read.All (the devices in an app's
+  groups - install status names them with it), DeviceManagementManagedDevices
+  .Read.All (apps on devices) and DeviceManagementConfiguration.Read.All
+  (assignment filters), besides apps and groups. The check no longer calls
+  DeviceManagementScripts.ReadWrite.All "not needed" when this folder has no
+  script yet - the Scripts page uses it.
+- **Checks: one change to the list.** While the checks run, the list stays as
+  it was, dimmed, and the result replaces it in one go - no rows coming and
+  going for a few seconds.
+
 ## 2.38.12
 
 **A full sweep - security, bugs and the GUI - since 2.38.0.**

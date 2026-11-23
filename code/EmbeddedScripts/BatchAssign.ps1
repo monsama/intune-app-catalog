@@ -204,7 +204,7 @@ try {
         # inherit the functions the step runner dot-sourced here.
         $assignmentHelperText = (@(
             'Get-AllTargetInfo', 'Get-AssignmentKey', 'Get-DesiredAssignmentEntries', 'ConvertTo-CurrentAssignmentEntries',
-            'Format-AssignmentLabel', 'Get-AssignmentDiff', 'New-AppAssignmentBody'
+            'Format-AssignmentLabel', 'Get-AssignmentDiff', 'New-AppAssignmentBody', 'Get-UnresolvedAssignmentGroups'
         ) | ForEach-Object { "function global:$_ {`n$((Get-Command $_).ScriptBlock.ToString())`n}" }) -join "`n`n"
         $maxConcurrency = [Math]::Max(1, [Math]::Min(6, $appList.Count))
         Write-Host "  Checking $($appList.Count) app(s), up to $maxConcurrency at a time..." -ForegroundColor Gray
@@ -446,6 +446,9 @@ try {
             }
             # Nothing differs: nothing is sent (sending replaces every assignment, and would lose their settings for no reason).
             if ($toRemove.Count -eq 0 -and $toAdd.Count -eq 0) { continue }
+            # 2.38.13: never send a list with a group left out - it replaces the whole list and would drop that group.
+            $unresolved = @(Get-UnresolvedAssignmentGroups -Entries $desiredEntries -GroupIdByName $groupIdCache)
+            if ($unresolved.Count) { throw "$($app.AppName): these groups couldn't be found in Entra ID: $($unresolved -join ', '). Its assignments in Intune were left as they are." }
             $assignments = @((New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdCache -FilterIdByName $filterIdByName -CurrentAssignments @($currentAssignments.value)).mobileAppAssignments)
 
             $assignBody = [string](@{ mobileAppAssignments = @($assignments) } | ConvertTo-Json -Depth 10)

@@ -351,7 +351,8 @@ $testableFunctionNames = @(
     "ConvertTo-CurrentAssignmentEntries",
     "Format-AssignmentLabel",
     "Get-AssignmentDiff",
-    "New-AppAssignmentBody"
+    "New-AppAssignmentBody",
+    "Get-UnresolvedAssignmentGroups"
 )
 
 $funcAsts = New-Object System.Collections.Generic.List[object]
@@ -2139,6 +2140,11 @@ Assert-Equal 2 $currentEntries.Count "ConvertTo-CurrentAssignmentEntries: group 
 Assert-Equal "required|exclude|SG-Contractors" $currentEntries[1].Key "ConvertTo-CurrentAssignmentEntries: an exclusion target is read as an exclusion"
 Assert-Equal 1 $otherTargets.Count "ConvertTo-CurrentAssignmentEntries: a target the catalog can't hold is reported separately, not dropped silently"
 Assert-Equal "[available] someFuture" $otherTargets[0] "ConvertTo-CurrentAssignmentEntries: ...readably, without Graph's type prefix"
+
+# A send never leaves a group out (2.38.13): the body would replace the whole list and drop its assignment.
+$unrEntries = @(Get-DesiredAssignmentEntries -RequiredGroups @('SG-A', '[All devices]') -AvailableGroups @('SG-B'))
+Assert-Equal 'SG-B' ((Get-UnresolvedAssignmentGroups -Entries $unrEntries -GroupIdByName @{ 'SG-A' = 'id-a' }) -join ',') "Get-UnresolvedAssignmentGroups: the group without an ID - not All devices"
+Assert-Equal 0 @(Get-UnresolvedAssignmentGroups -Entries $unrEntries -GroupIdByName @{ 'SG-A' = 'id-a'; 'SG-B' = 'id-b' }).Count "Get-UnresolvedAssignmentGroups: every group found, nothing left out"
 
 # Microsoft Store search (2.38.13): the Store catalog's answer as rows - only real Store product IDs, once each.
 $storeAnswer = [pscustomobject]@{ '$type' = 'x'; Data = @(

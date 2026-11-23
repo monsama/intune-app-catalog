@@ -338,6 +338,9 @@ try {
     # inclusion intent already exists for group id: ..."), failing the
     # ENTIRE app's assignment even though the preview had reported "no
     # change".
+    # 2.38.13: every group must be in the body - a send replaces the whole list, so one left out loses its assignment.
+    $unresolved = @(Get-UnresolvedAssignmentGroups -Entries $desiredEntries -GroupIdByName $groupIdByName)
+    if ($unresolved.Count) { throw "These groups couldn't be found in Entra ID: $($unresolved -join ', '). Nothing was changed in Intune - sending without them would have removed their assignments. Check the names (Groups page), then send again." }
     $assignBodyObject = New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdByName -RequiredSettings $Config.RequiredSettings -AvailableSettings $Config.AvailableSettings -FilterIdByName $filterIdByName -CurrentAssignments @($currentAssignments.value)
     if ($Config.RequiredSettings) {
         $rs = $Config.RequiredSettings

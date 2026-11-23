@@ -26,6 +26,10 @@ function checkJob(path, body, label) {
 async function runChecks(names) {
   if (checksRunning) return;
   checksRunning = true; updateCheckActions();
+  // 2.38.13: one change to the list - at the end. While the stages run, what was shown stays, dimmed (a first run
+  // shows the last audit's rows that way); before, each stage redrew it and rows came and went for a few seconds.
+  const hadRows = shownFindings().length > 0;
+  $('checkGrid').classList.add('checking');
   const b = $('btnRunChecks'); b.disabled = true; b.textContent = 'Checking...';
   $('checkLogBox').open = false; $('checkLog').textContent = '';
   const only = names && names.length ? { names } : {};
@@ -40,13 +44,13 @@ async function runChecks(names) {
     // notes: what was NOT compared; summary: what was.
     const notes = [...(r.notes || [])];
     checkLog(`${stamp()} ${[r.summary || '', ...notes].join(' ').trim()}`);
-    renderChecks();
+    if (!hadRows) renderChecks();
     if ($('chkDetails').checked && r.connected && r.deployed > 0) {
       $('checkNotes').textContent = `Reading ${r.deployed} deployed app(s) from Intune in detail - the slowest part...`;
       const d = await checkJob('/api/checks-details', only, 'Reading the deployed apps in detail...');
-      if (d) { mergeFindings(d); renderChecks(); } else notes.push('The detailed check of the deployed apps did not finish - see the log.');
+      if (d) mergeFindings(d); else notes.push('The detailed check of the deployed apps did not finish - see the log.');
       const a = await checkJob('/api/checks-assign', only, 'Comparing the assignments...');
-      if (a) { mergeFindings(a); renderChecks(); } else notes.push('The assignments could not be compared - see the log.');
+      if (a) mergeFindings(a); else notes.push('The assignments could not be compared - see the log.');
     }
     if ($('chkWinget').checked && r.winget > 0) {
       $('checkNotes').textContent = `Asking winget about ${r.winget} Winget ID(s)...`;
@@ -64,6 +68,7 @@ async function runChecks(names) {
     return r;
   } finally {
     checksRunning = false; b.disabled = false; b.textContent = 'Run checks';
+    $('checkGrid').classList.remove('checking');
     setCheckAreas(); renderChecks();
   }
 }

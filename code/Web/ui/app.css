@@ -1725,3 +1725,6 @@ button.pill.pillbtn:hover, button.pill.pillbtn[aria-expanded="true"] { box-shado
   .pullapp tr[data-field] > td.f { grid-column: 1 / -1; font-weight: 600; padding: 0 6px; }
   .pullapp td.pick::before { content: attr(data-side); display: block; font-size: 11px; color: var(--muted); text-transform: capitalize; font-family: var(--ui); }
 }
+
+/* 2.38.13: Checks running - the list stays as it was, dimmed, until the result replaces it in one go. */
+#checkGrid.checking tbody { opacity: .5; pointer-events: none; transition: opacity .2s; }
