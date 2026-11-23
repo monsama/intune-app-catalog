@@ -2,9 +2,33 @@
 
 ## 2.38.3
 
-- **Settings > Defaults: every card full width.** Automatic checks,
-  Favourite groups and Assignment profiles sat in one narrow column under
-  the full-width default values, with empty space beside them.
+**A full GUI sweep: every page, dialog and editor state at four widths, light and
+dark - what looked broken is fixed, and the tests now catch squeezed layout.**
+
+- **Release rule** (the editor, managed updates, Change): its three fields were
+  squeezed to a few pixels beside the box's heading. Fixed - and the UI tests
+  now check every page and dialog they open for squeezed fields and text.
+- **Apps list empty** when an app was in a later release ring and the settings
+  weren't read yet - fixed.
+- **Remove groups offered nothing** to remove - the list now carries each app's
+  groups per role.
+- **Changing a Winget ID twice quickly** (in its block row) left the commands on
+  the one in between - fixed.
+- **Long names**: group names pushed the editor's Available/Excluded columns out
+  of the dialog (the four boxes now go 2x2, then one column on phones); app names
+  pushed Stage off the Apps grid (cut with "..." now, shorter with the side panel
+  open); a group name without spaces spilled out of Remove groups.
+- **Phones**: Add groups and the group boxes stack; From a list shows the list
+  (brought into view); a group's apps table scrolls sideways with Unassign whole;
+  the Updates toolbar and the Alerts select fit.
+- **Store apps**: no empty command fields, detection rule or empty box - the Store
+  installs and detects them.
+- Smaller: Settings > Defaults cards full width; "Ready to send?" marks keep
+  their shape; the setup guide's steps without divider lines; nothing shows
+  above the editor's tabs while scrolling; App ID shows its focus; the managed
+  updates note below its label; room between the detection Type field and its
+  blocks; the sign-in page follows the system's dark mode; "Scheduled tasks need
+  Windows" (it said "To do undefined"); a missing space on Updates.
 
 ## 2.38.2
 
