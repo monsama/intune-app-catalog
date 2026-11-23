@@ -578,7 +578,7 @@ $('btnPermCheck').addEventListener('click', async () => {
     if (!r.ok) { $('permNote').textContent = r.error; return; }
     $('permNote').textContent = r.missing ? `${r.missing} to add, ${r.unused} you could remove.` : r.unused ? `Everything needed is there - ${r.unused} you could remove.` : 'Exactly what this catalog needs.';
     const look = { ok: ['ok', 'OK'], missing: ['err', 'Add it'], partly: ['warn', 'Partly'], unused: ['warn', 'Not needed - remove'], optional: ['muted', 'Optional'] };
-    $('permRows').replaceChildren(...r.rows.map(x => el('tr', {}, el('td', { class: 'mono', text: x.name }), el('td', {}, el('span', { class: 'pill ' + look[x.status][0], text: look[x.status][1] })), el('td', {}, x.for, x.why ? el('div', { class: 'why', text: x.why }) : ''))));
+    $('permRows').replaceChildren(...r.rows.map(x => el('tr', {}, el('td', { class: 'mono pname' }, ...x.name.split('.').flatMap((p, i, a) => i < a.length - 1 ? [p + '.', el('wbr')] : [p])), el('td', { class: 'pstat' }, el('span', { class: 'pill ' + look[x.status][0], text: look[x.status][1] })), el('td', {}, x.for, x.why ? el('div', { class: 'why', text: x.why }) : ''))));
     $('permWrap').hidden = false;
   } finally { b.disabled = false; }
 });

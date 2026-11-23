@@ -441,7 +441,8 @@ function Global:Get-WebInstallStatus {
             meaning = $(if ($why) { [string]$why.meaning } else { '' }); fix = $(if ($why) { [string]$why.fix } else { '' }) } })
     # 2.38.9: who its groups target but the report doesn't list yet - "Waiting for report" rows, so a fresh assignment
     # shows who's coming instead of an empty table. Never fails the report: a group that can't be read is a note.
-    $exp = Get-WebExpectedInstallMembers -App $a
+    # A cut-off report (5000 rows) misses devices that did report: then "waiting" would be wrong - left out, with a note.
+    $exp = if ($report.Truncated) { @{ Members = @(); Notes = @("The report has more than $(@($report.Rows).Count) rows and was cut off - devices waiting for their first report aren't listed.") } } else { Get-WebExpectedInstallMembers -App $a }
     $waiting = @(Get-ExpectedInstallRows -ReportRows @($report.Rows) -Members @($exp.Members) | ForEach-Object {
         [ordered]@{ device = $(if ($_.Kind -eq 'device') { $_.Name } else { '' }); user = $(if ($_.Kind -eq 'user') { $(if ($_.Upn) { $_.Upn } else { $_.Name }) } else { '' })
             state = 'Waiting for report'; detail = "In $(@($_.Groups) -join ', ')"; error = ''; version = ''; lastSeen = ''; meaning = ''; fix = ''; waiting = $true } })

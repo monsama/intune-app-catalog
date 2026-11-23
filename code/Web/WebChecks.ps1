@@ -304,7 +304,9 @@ function Global:Find-WebStoreApps {
     $why = ''
     try {
         $body = @{ Query = @{ KeyWord = $q; MatchType = 'Substring' } } | ConvertTo-Json -Depth 4 -Compress
-        $resp = Invoke-WebRequest -Method Post -Uri 'https://storeedgefd.dsx.mp.microsoft.com/v9.0/manifestSearch' -Body $body -ContentType 'application/json' -TimeoutSec 20 -UseBasicParsing
+        # TLS 1.2 and UTF-8 bytes: Windows PowerShell 5.1 would otherwise send a non-Latin query as '?'.
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $resp = Invoke-WebRequest -Method Post -Uri 'https://storeedgefd.dsx.mp.microsoft.com/v9.0/manifestSearch' -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) -ContentType 'application/json; charset=utf-8' -TimeoutSec 20 -UseBasicParsing
         # The answer is a few KB; anything far larger is not the Store (a proxy page, a broken answer) - don't parse it.
         if (([string]$resp.Content).Length -gt 2MB) { throw 'the answer was too large' }
         $answer = ([string]$resp.Content) | ConvertFrom-Json

@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.38.14
+
+Full sweep (security, bugs, UI).
+
+- **Permissions**: the check no longer tells you to remove what "Add required
+  permissions" just granted - the narrow read-only ones (inventory, filters,
+  devices, users) count as optional while nothing uses them yet; only Mail.Send
+  is still called out. Directory.Read.All counts for users too (the Groups
+  page). The table now spans the whole page, names break only at the dots and
+  each note sits on its own line.
+- **Install status**: when Intune's report is cut off (over 5000 rows), no
+  "Waiting for report" rows are guessed - a note says why.
+- **Microsoft Store search**: sends non-Latin searches correctly (UTF-8) and
+  uses TLS 1.2 on Windows PowerShell 5.1; a far too large answer isn't read.
+  The publisher is cut to 256 characters.
+- **Add apps**: each tab (Winget, Microsoft Store) keeps its own picks; a slow
+  winget detail no longer lands on the Store tab; no "Store" pill on every Store
+  row; texts and column names fit the tab; Store IDs stay in one piece; the
+  table doesn't move when switching tabs; the tabs wrap instead of being cut off
+  on narrow windows; arrow keys move between tabs.
+- **Checks**: while a check runs the list can't be ticked or filtered (keyboard
+  included), and the note above it no longer makes the list jump.
+- **Batch Send groups**: if a group can't be found, the message says the batch
+  stopped there and which apps were changed.
+- Entra display names are cleaned of control characters before they go into
+  the log; links use the theme's colour; Home's attention buttons keep their
+  size on narrow windows.
+
 ## 2.38.13
 
 - **Permissions check**: each permission now says exactly what it is used for
