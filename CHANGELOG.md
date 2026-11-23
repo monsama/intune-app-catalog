@@ -2,6 +2,8 @@
 
 ## 2.38.13
 
+- **Permissions check**: each permission now says exactly what it is used for
+  (which pages and steps), not just a short label.
 - **Add apps > Microsoft Store**: a tab of its own. It searches the Store's
   catalog (as winget's msstore source does - on the server version too, where
   there is no winget; on Windows winget's own search if the Store doesn't

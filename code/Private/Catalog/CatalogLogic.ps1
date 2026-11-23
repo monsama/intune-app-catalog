@@ -2017,17 +2017,17 @@ function Global:Get-PermissionReport {
     $has = { param($n) $g -contains $n }
     $rows = New-Object System.Collections.Generic.List[object]
     $row = { param($name, $status, $for, $why) $rows.Add([ordered]@{ name = $name; status = $status; for = $for; why = $why }) }
-    & $row 'DeviceManagementApps.ReadWrite.All' $(if (& $has 'DeviceManagementApps.ReadWrite.All') { 'ok' } else { 'missing' }) 'Apps: send to Intune, assign, release, install status' 'Everything about apps needs it.'
-    if (& $has 'Group.ReadWrite.All') { & $row 'Group.ReadWrite.All' 'ok' 'Groups: create missing ones, rename, members' '' }
-    elseif (& $has 'Group.Read.All') { & $row 'Group.ReadWrite.All' 'partly' 'Groups: create missing ones, rename, members' 'Group.Read.All finds groups, but missing groups can''t be created and the Groups page can''t change them.' }
-    else { & $row 'Group.ReadWrite.All' 'missing' 'Groups: find, create, rename' 'Assignments name groups - they are looked up and created with it.' }
+    & $row 'DeviceManagementApps.ReadWrite.All' $(if (& $has 'DeviceManagementApps.ReadWrite.All') { 'ok' } else { 'missing' }) 'Apps in Intune: create and update them (Send to Intune, Send settings, package upload), assign them (Send groups, releases), read them (Checks, Read from Intune, Updates, install status, Home) and delete or retire them' 'Everything about apps needs it - without it the app can do nothing in Intune.'
+    if (& $has 'Group.ReadWrite.All') { & $row 'Group.ReadWrite.All' 'ok' 'Groups: find the groups apps are assigned to (every send, Checks), create missing ones (Send groups, release rings), and on the Groups page rename them and change members and descriptions' '' }
+    elseif (& $has 'Group.Read.All') { & $row 'Group.ReadWrite.All' 'partly' 'Groups: find the groups apps are assigned to (every send, Checks), create missing ones (Send groups, release rings), and on the Groups page rename them and change members and descriptions' 'Group.Read.All finds groups, but missing groups can''t be created and the Groups page can''t change them.' }
+    else { & $row 'Group.ReadWrite.All' 'missing' 'Groups: find the groups apps are assigned to (every send, Checks), create missing ones, rename them, change members' 'Assignments name groups - they are looked up and created with it.' }
     $feat = @(
-        @('DeviceManagementScripts.ReadWrite.All', [bool]$Usage.Scripts, 'Platform scripts', 'There are platform scripts in the scripts folder.'),
-        @('DeviceManagementManagedDevices.Read.All', [bool]$Usage.Inventory, 'Apps on devices: older versions, apps worth adding', 'Apps have managed updates - the Updates page reads the inventory.'),
-        @('Mail.Send', [bool]$Usage.Mail, 'Email alerts from the nightly run', 'Email alerts are set up.'),
-        @('User.Read.All', [bool]$Usage.GroupsPage, 'The Groups page: finding users to add as members', 'The Groups page adds users to groups.'),
-        @('DeviceManagementConfiguration.Read.All', [bool]$Usage.Filters, 'Assignment filters', 'Apps have an assignment filter - it is looked up by name.'),
-        @('Device.Read.All', [bool]$Usage.Devices, 'Install status: the devices in an app''s groups', 'Apps are assigned to groups - install status lists their devices that haven''t reported yet; without it Graph gives those devices no name.')
+        @('DeviceManagementScripts.ReadWrite.All', [bool]$Usage.Scripts, 'Platform scripts (the Scripts page): list the PowerShell scripts in Intune, upload and edit them, assign them to groups', 'There are platform scripts in the scripts folder.'),
+        @('DeviceManagementManagedDevices.Read.All', [bool]$Usage.Inventory, 'Intune''s app inventory (Discovered apps), read only: Updates > On older versions, Apps worth adding, and the version counts of the nightly run', 'Apps have managed updates - the Updates page reads the inventory.'),
+        @('Mail.Send', [bool]$Usage.Mail, 'Email alerts from the nightly run, sent from the mailbox set under Alerts (limit it to that mailbox with an application access policy)', 'Email alerts are set up.'),
+        @('User.Read.All', [bool]$Usage.GroupsPage, 'Users, read only: the Groups page searches users to add as members and shows the members'' names', 'The Groups page adds users to groups.'),
+        @('DeviceManagementConfiguration.Read.All', [bool]$Usage.Filters, 'Assignment filters, read only: the editor lists them, and each send looks the app''s filter up by its name', 'Apps have an assignment filter - it is looked up by name.'),
+        @('Device.Read.All', [bool]$Usage.Devices, 'Devices, read only: install status lists the devices in an app''s groups that haven''t reported yet, and the Groups page shows device members by name', 'Apps are assigned to groups - install status lists their devices that haven''t reported yet; without it Graph gives those devices no name.')
     )
     foreach ($f in $feat) {
         # A ReadWrite permission covers its Read.All.
