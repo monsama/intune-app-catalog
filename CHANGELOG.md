@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.38.9
+
+- **Install status lists who is still to come.** Besides the devices Intune's
+  report has, it lists the devices and users in the app's Required and
+  Available groups (nested groups too, excluded groups' members left out) that
+  haven't reported yet, as "Waiting for report" - so a fresh assignment shows
+  who gets it instead of an empty table. The summary says how many are still to
+  report and why it takes a while (a device reports after it checks in and
+  tries the app). All users / All devices aren't listed one by one - a note
+  says so; a group that isn't in Entra ID is a note too, never an error.
+
 ## 2.38.8
 
 **Changes to send says what changed, logs show their errors, and a round of

@@ -1702,3 +1702,6 @@ pre.log.hasfail { box-shadow: inset 3px 0 0 #ff6b6b; }
 button.pill.pillbtn { border: 0; font: inherit; font-size: 12px; cursor: pointer; }
 button.pill.pillbtn:hover, button.pill.pillbtn[aria-expanded="true"] { box-shadow: 0 0 0 1px currentColor; }
 .hovercard .hcempty { margin: 8px 14px; font-size: 12px; }
+
+/* 2.38.9: install status - who its groups target but hasn't reported yet. */
+#statusRows tr.waiting td { color: var(--muted); }

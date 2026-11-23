@@ -3253,3 +3253,33 @@ function Global:Test-PackageScriptEdit {
     if ($was.Count -and (($was -join "`n") -cne (@(Get-MarkerCommandPlaces $New) -join "`n"))) { return @{ Ok = $false; Error = 'The version marker must still run as it did - not commented out, inside a condition or a block of its own, or after an exit, return or throw.'; Errors = @() } }
     return @{ Ok = $true; Error = ''; Errors = @() }
 }
+
+
+function Global:Get-ExpectedInstallRows {
+    <#
+      Pure (2.38.9): who the app's groups target but Intune's install status report doesn't list yet - a device that
+      hasn't checked in and tried the app, or a user with no device reporting. -Members: @(@{ Kind = 'device'|'user';
+      Name; Upn; Group; Intent }) from the groups' members (excluded groups' members already taken out). A device is
+      matched by its name, a user by UPN (else name) - case-insensitive. One row each, its groups joined.
+    #>
+    param($ReportRows, $Members)
+    $devices = @{}; $users = @{}
+    foreach ($r in @($ReportRows)) {
+        if (-not $r) { continue }
+        if ([string]$r.DeviceName) { $devices[([string]$r.DeviceName).ToLowerInvariant()] = $true }
+        if ([string]$r.UserName) { $users[([string]$r.UserName).ToLowerInvariant()] = $true }
+    }
+    $out = [ordered]@{}
+    foreach ($m in @($Members)) {
+        if (-not $m) { continue }
+        $kind = [string]$m.Kind
+        $key = if ($kind -eq 'user') { ([string]$(if ($m.Upn) { $m.Upn } else { $m.Name })).ToLowerInvariant() } else { ([string]$m.Name).ToLowerInvariant() }
+        if (-not $key) { continue }
+        if (($kind -eq 'user' -and ($users.ContainsKey($key) -or $users.ContainsKey(([string]$m.Name).ToLowerInvariant()))) -or ($kind -ne 'user' -and $devices.ContainsKey($key))) { continue }
+        $where = "$($m.Group) ($($m.Intent))"
+        $k = "$kind|$key"
+        if ($out.Contains($k)) { if (@($out[$k].Groups) -notcontains $where) { $out[$k].Groups += $where } ; continue }
+        $out[$k] = [ordered]@{ Kind = $kind; Name = [string]$m.Name; Upn = [string]$m.Upn; Groups = @($where) }
+    }
+    return @($out.Values)
+}

@@ -1601,13 +1601,17 @@ async function openStatus(name) {
   $('dlgStatus').showModal();
   const r = await api('/api/install-status', { name });
   if (!r.ok) { $('statusSummary').textContent = r.error; $('statusRows').replaceChildren(); return; }
-  $('statusSummary').textContent = r.summary + (r.truncated ? ' (only the first rows are shown)' : '');
+  // 2.38.9: who its groups target but hasn't reported yet - listed as "Waiting for report", after those that did.
+  const waitN = r.waiting || 0, reported = (r.rows || []).length - waitN;
+  $('statusSummary').textContent = (reported ? r.summary : 'No device has reported yet.') + (r.truncated ? ' (only the first rows are shown)' : '')
+    + (waitN ? ` ${waitN} more in its groups haven't reported yet - they appear once they check in and try the app (Company Portal > Sync speeds it up).` : '')
+    + ((r.targetNotes || []).length ? ' ' + r.targetNotes.join(' ') : '');
   const top = r.topErrors || [];
   $('statusErrors').hidden = !top.length;
   $('statusErrList').replaceChildren(...top.map(e => el('li', {}, el('strong', { text: `${e.count} × ${e.hex}` }), ` ${e.meaning} `, el('span', { class: 'muted', text: e.fix }))));
   // Nothing reported yet: one line in the table saying so and why, not empty column headings (2.38.8).
-  if (!r.rows.length) { $('statusRows').replaceChildren(el('tr', {}, el('td', { colspan: 7, class: 'muted', text: 'No device has reported yet. Intune lists a device here once it has checked in and tried the app - usually within an hour or two of the assignment (Company Portal > Sync speeds it up).' }))); return; }
-  $('statusRows').replaceChildren(...r.rows.map(x => el('tr', {}, el('td', { text: x.device }), el('td', { text: x.user }),
+  if (!r.rows.length) { $('statusRows').replaceChildren(el('tr', {}, el('td', { colspan: 7, class: 'muted', text: 'No device has reported yet, and its groups list no device or user here. Intune lists a device once it has checked in and tried the app - usually within an hour or two of the assignment.' }))); return; }
+  $('statusRows').replaceChildren(...r.rows.map(x => el('tr', { class: x.waiting ? 'waiting' : '' }, el('td', { text: x.device || '-' }), el('td', { text: x.user || '-' }),
     el('td', {}, el('span', { class: 'pill ' + (/fail/i.test(x.state) ? 'err' : /install/i.test(x.state) && !/not/i.test(x.state) ? 'ok' : 'muted'), text: x.state })),
     el('td', { text: x.detail }), el('td', { class: 'chg', text: x.error, title: x.meaning ? `${x.meaning}\n\n${x.fix}` : '' }, x.meaning ? el('div', { class: 'muted small', text: x.meaning }) : ''), el('td', { text: x.version }), el('td', { text: x.lastSeen }))));
 }
