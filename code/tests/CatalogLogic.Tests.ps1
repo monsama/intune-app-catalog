@@ -82,6 +82,7 @@ $privateFiles = Get-ChildItem -Path $privateRoot -Filter "*.ps1" -Recurse
 # functions. Adding a name here is a claim that function has NO WinForms
 # and NO live Graph dependency; verify that before adding one.
 $testableFunctionNames = @(
+    "ConvertFrom-StoreSearchResult",
     "Get-ExpectedInstallRows",
     "Test-AppIsUncommon",
     # winget output (Winget.ps1)
@@ -907,6 +908,11 @@ Assert-True ((Test-StoreProductId '9NBLGGH4NNS1') -and (Test-StoreProductId 'XP8
 $permA = @(Get-PermissionReport -Granted @('DeviceManagementApps.ReadWrite.All', 'Group.Read.All', 'Directory.ReadWrite.All', 'Mail.Send') -Usage @{ Scripts = $false; Inventory = $true; Mail = $false; GroupsPage = $true })
 $st = @{}; foreach ($r in $permA) { $st[$r.name] = $r.status }
 Assert-True ($st['DeviceManagementApps.ReadWrite.All'] -eq 'ok' -and $st['Group.ReadWrite.All'] -eq 'partly' -and $st['DeviceManagementManagedDevices.Read.All'] -eq 'missing' -and $st['Mail.Send'] -eq 'unused' -and $st['Directory.ReadWrite.All'] -eq 'unused' -and $st['DeviceManagementScripts.ReadWrite.All'] -eq 'optional') "Get-PermissionReport: what's there, partly there, missing, not needed and optional - by the features in use"
+$permD = @(Get-PermissionReport -Granted @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'DeviceManagementScripts.ReadWrite.All', 'Directory.Read.All') -Usage @{ Scripts = $false; Devices = $true })
+$stD = @{}; foreach ($r in $permD) { $stD[$r.name] = $r.status }
+Assert-True ($stD['DeviceManagementScripts.ReadWrite.All'] -eq 'optional' -and $stD['Device.Read.All'] -eq 'ok' -and -not $stD.ContainsKey('Directory.Read.All')) "Get-PermissionReport (2.38.13): scripts kept for the Scripts page; Directory.Read.All stands in for Device.Read.All" (($permD | ForEach-Object { "$($_.name)=$($_.status)" }) -join ', ')
+$permD2 = @(Get-PermissionReport -Granted @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All') -Usage @{ Devices = $true })
+Assert-True (@($permD2 | Where-Object { $_.name -eq 'Device.Read.All' -and $_.status -eq 'missing' }).Count -eq 1) "Get-PermissionReport (2.38.13): Device.Read.All is needed once apps are assigned to groups"
 $permRW = @(Get-PermissionReport -Granted @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'DeviceManagementManagedDevices.ReadWrite.All') -Usage @{ Inventory = $true })
 Assert-True (@($permRW | Where-Object { $_.name -eq 'DeviceManagementManagedDevices.Read.All' -and $_.status -eq 'ok' }).Count -eq 1 -and @($permRW | Where-Object { $_.name -eq 'DeviceManagementManagedDevices.ReadWrite.All' -and $_.status -eq 'unused' }).Count -eq 0) "Get-PermissionReport: ReadWrite covers its Read.All (not missing, not unused)"
 Assert-True (@($permA | Where-Object { $_.name -eq 'Directory.ReadWrite.All' })[0].why -like '*broad*') "Get-PermissionReport: a broad permission the app never needs is called out"
@@ -1852,7 +1858,9 @@ $liveReport = Get-GraphRoleReport -Roles $liveRoles
 $liveMissing = @($liveReport.Missing)
 $liveFeatures = @($liveMissing | ForEach-Object { [string]$_.Feature })
 # No scripts permission at all, so neither half of that feature works.
-Assert-Equal 2 $liveMissing.Count "Get-GraphRoleReport: names the features this token can't reach"
+# 2.38.13: and the inventory and filters - their narrow permissions are in the list now too.
+Assert-Equal 4 $liveMissing.Count "Get-GraphRoleReport: names the features this token can't reach"
+Assert-True ($liveFeatures -contains "Apps on devices" -and $liveFeatures -contains "Assignment filters" -and $liveFeatures -notcontains "Devices in groups") "Get-GraphRoleReport: inventory and filters missing; Device.Read.All covers devices in groups"
 Assert-True ($liveFeatures -contains "Platform scripts (read)") "Get-GraphRoleReport: says reading scripts is out of reach"
 Assert-True ($liveFeatures -contains "Platform scripts (change)") "Get-GraphRoleReport: and says changing them is too"
 Assert-True (@($liveMissing | Where-Object { $_.Required }).Count -eq 0) "Get-GraphRoleReport: platform scripts is a feature, not a blocker"
@@ -1892,7 +1900,7 @@ Assert-True (($noRoleLines -join "`n") -like "*no application permissions at all
 $noRoleText = $noRoleLines -join "`n"
 Assert-True ($noRoleText -like "*Application permissions (not Delegated)*" -and $noRoleText -like "*Grant admin consent*") `
     "Format-GraphRoleReport: says where to add them and to consent" $noRoleText
-Assert-True ($noRoleText -like "*DeviceManagementApps.ReadWrite.All*required*" -and $noRoleText -like "*Directory.Read.All*optional*" -and $noRoleText -like "*DeviceManagementScripts.ReadWrite.All*optional*") `
+Assert-True ($noRoleText -like "*DeviceManagementApps.ReadWrite.All*required*" -and $noRoleText -like "*User.Read.All*optional*" -and $noRoleText -like "*DeviceManagementScripts.ReadWrite.All*optional*") `
     "Format-GraphRoleReport: lists each permission to add, required or optional" $noRoleText
 Assert-Equal 1 ([regex]::Matches($noRoleText, '(?m)^\s+Group\.ReadWrite\.All\s').Count) `
     "Format-GraphRoleReport: a permission two features need is listed once" $noRoleText
@@ -1902,7 +1910,7 @@ Assert-True ($linkText -like '*https://entra.microsoft.com/*/appId/c0ffee00-1111
 Assert-True ($noRoleText -notlike '*entra.microsoft.com/#view*') "Format-GraphRoleReport: no link built from a Client ID that isn't a GUID"
 Assert-True (($liveLines -contains '[OK] Apps in Intune') -and (($liveLines -join "`n") -like "*DeviceManagementScripts.ReadWrite.All*optional*")) `
     "Format-GraphRoleReport: shows what works and only adds what's missing" ($liveLines -join "`n")
-$allLines = @(Format-GraphRoleReport -Report (Get-GraphRoleReport -Roles @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Directory.Read.All', 'DeviceManagementScripts.ReadWrite.All')) -TokenAppId 'x' -SettingsClientId 'x')
+$allLines = @(Format-GraphRoleReport -Report (Get-GraphRoleReport -Roles @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Directory.Read.All', 'DeviceManagementScripts.ReadWrite.All', 'DeviceManagementManagedDevices.Read.All', 'DeviceManagementConfiguration.Read.All')) -TokenAppId 'x' -SettingsClientId 'x')
 Assert-True ((($allLines -join "`n") -like "*Everything this app uses is covered*") -and -not (($allLines -join "`n") -like "*Quickest fix*")) `
     "Format-GraphRoleReport: nothing to fix, no fix instructions"
 
@@ -2131,6 +2139,18 @@ Assert-Equal 2 $currentEntries.Count "ConvertTo-CurrentAssignmentEntries: group 
 Assert-Equal "required|exclude|SG-Contractors" $currentEntries[1].Key "ConvertTo-CurrentAssignmentEntries: an exclusion target is read as an exclusion"
 Assert-Equal 1 $otherTargets.Count "ConvertTo-CurrentAssignmentEntries: a target the catalog can't hold is reported separately, not dropped silently"
 Assert-Equal "[available] someFuture" $otherTargets[0] "ConvertTo-CurrentAssignmentEntries: ...readably, without Graph's type prefix"
+
+# Microsoft Store search (2.38.13): the Store catalog's answer as rows - only real Store product IDs, once each.
+$storeAnswer = [pscustomobject]@{ '$type' = 'x'; Data = @(
+    [pscustomobject]@{ PackageIdentifier = '9WZDNCRFJ3PZ'; PackageName = 'Company Portal'; Publisher = 'Microsoft Corporation' },
+    [pscustomobject]@{ PackageIdentifier = '9wzdncrfj3pz'; PackageName = 'Company Portal (again)'; Publisher = 'Microsoft Corporation' },
+    [pscustomobject]@{ PackageIdentifier = 'XPDC2RH70K22MN'; PackageName = 'Discord'; Publisher = 'Discord Inc.' },
+    [pscustomobject]@{ PackageIdentifier = 'Some.Winget.Id'; PackageName = 'Not a Store app'; Publisher = 'x' }) }
+$storeRows = @(ConvertFrom-StoreSearchResult $storeAnswer)
+Assert-Equal 2 $storeRows.Count "ConvertFrom-StoreSearchResult: Store product IDs only, each once"
+Assert-Equal 'Company Portal|9WZDNCRFJ3PZ|Microsoft Corporation' "$($storeRows[0].Name)|$($storeRows[0].Id)|$($storeRows[0].Publisher)" "ConvertFrom-StoreSearchResult: name, ID and publisher"
+Assert-Equal 'XPDC2RH70K22MN' $storeRows[1].Id "ConvertFrom-StoreSearchResult: XP... IDs too"
+Assert-Equal 0 @(ConvertFrom-StoreSearchResult $null).Count "ConvertFrom-StoreSearchResult: no answer, no rows"
 
 # Install status (2.38.9): who the groups target but the report doesn't list yet.
 $rep = @([pscustomobject]@{ DeviceName = 'PC-01'; UserName = 'anna@contoso.com' })
@@ -2783,7 +2803,7 @@ Assert-Equal '' (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'A'; app
 # Setup checklist after Test connection (GraphToken.ps1)
 # =================================================================
 $future = (Get-Date).AddYears(1)
-$fullReport = Get-GraphRoleReport -Roles @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Directory.Read.All', 'DeviceManagementScripts.ReadWrite.All')
+$fullReport = Get-GraphRoleReport -Roles @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Directory.Read.All', 'DeviceManagementScripts.ReadWrite.All', 'DeviceManagementManagedDevices.Read.All', 'DeviceManagementConfiguration.Read.All')
 $doneText = (Format-SetupChecklist -State @{ ModuleOk = $true; FieldsOk = $true; CertFound = $true; CertHasKey = $true; CertNotAfter = $future; SignInOk = $true; Report = $fullReport; Saved = $true }) -join "`n"
 Assert-True ($doneText -like '*Setup complete - every step is done*' -and $doneText -notlike '*FAILED*' -and $doneText -notlike '*Next:*') "Format-SetupChecklist: everything done says so" $doneText
 

@@ -642,6 +642,8 @@ function Global:Get-WebPermissionCheck {
         Filters    = [bool](@((Read-WebCatalogRecords).Apps | Where-Object { $_.assignmentFilter }).Count)
         Mail       = [bool]($Global:App.Alerts.MailFrom -and @($Global:App.Alerts.MailTo).Count)
         GroupsPage = $true
+        # Install status names the devices in deployed apps' groups (2.38.9).
+        Devices    = [bool](@((Read-WebCatalogRecords).Apps | Where-Object { $_.appId -and (@($_.requiredFor) + @($_.availableFor) | Where-Object { $_ -and -not (Get-AllTargetInfo ([string]$_)) }) }).Count)
     }
     $rows = @(Get-PermissionReport -Granted $roles -Usage $usage)
     return @{ ok = $true; granted = @($roles); rows = $rows

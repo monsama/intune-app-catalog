@@ -2026,23 +2026,28 @@ function Global:Get-PermissionReport {
         @('DeviceManagementManagedDevices.Read.All', [bool]$Usage.Inventory, 'Apps on devices: older versions, apps worth adding', 'Apps have managed updates - the Updates page reads the inventory.'),
         @('Mail.Send', [bool]$Usage.Mail, 'Email alerts from the nightly run', 'Email alerts are set up.'),
         @('User.Read.All', [bool]$Usage.GroupsPage, 'The Groups page: finding users to add as members', 'The Groups page adds users to groups.'),
-        @('DeviceManagementConfiguration.Read.All', [bool]$Usage.Filters, 'Assignment filters', 'Apps have an assignment filter - it is looked up by name.')
+        @('DeviceManagementConfiguration.Read.All', [bool]$Usage.Filters, 'Assignment filters', 'Apps have an assignment filter - it is looked up by name.'),
+        @('Device.Read.All', [bool]$Usage.Devices, 'Install status: the devices in an app''s groups', 'Apps are assigned to groups - install status lists their devices that haven''t reported yet; without it Graph gives those devices no name.')
     )
     foreach ($f in $feat) {
         # A ReadWrite permission covers its Read.All.
-        $isGranted = (& $has $f[0]) -or ($f[0] -match '\.Read\.All$' -and (& $has ($f[0] -replace '\.Read\.All$', '.ReadWrite.All')))
+        $isGranted = (& $has $f[0]) -or ($f[0] -match '\.Read\.All$' -and (& $has ($f[0] -replace '\.Read\.All$', '.ReadWrite.All'))) -or ($f[0] -eq 'Device.Read.All' -and (& $has 'Directory.Read.All'))
         if ($f[1]) { & $row $f[0] $(if ($isGranted) { 'ok' } else { 'missing' }) $f[2] $f[3] }
+        # 2.38.13: the Scripts page reads and sends platform scripts in Intune, whether or not this folder has one yet.
+        elseif ($isGranted -and $f[0] -eq 'DeviceManagementScripts.ReadWrite.All') { & $row $f[0] 'optional' $f[2] 'For the Scripts page (platform scripts in Intune) - keep it if you use that page, remove it if you don''t.' }
         elseif ($isGranted) { & $row $f[0] 'unused' $f[2] $(if ($f[0] -eq 'Mail.Send') { 'No email alerts are set up - and Mail.Send can send as any mailbox: remove it, or limit it with an application access policy.' } else { 'Nothing here uses it yet.' }) }
         else { & $row $f[0] 'optional' $f[2] 'Only when you use it.' }
     }
-    $known = @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Group.Read.All', 'DeviceManagementScripts.ReadWrite.All', 'DeviceManagementManagedDevices.Read.All', 'Mail.Send', 'User.Read.All', 'DeviceManagementConfiguration.Read.All')
+    $known = @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Group.Read.All', 'DeviceManagementScripts.ReadWrite.All', 'DeviceManagementManagedDevices.Read.All', 'Mail.Send', 'User.Read.All', 'DeviceManagementConfiguration.Read.All', 'Device.Read.All')
+    # Directory.Read.All covers Device.Read.All - known (not "remove it") when it stands in for it.
+    if ($Usage.Devices -and -not (& $has 'Device.Read.All')) { $known += 'Directory.Read.All' }
     # ReadWrite stands in for Read.All when filters are used; otherwise it's a broad one never needed (below).
     if ($Usage.Filters -and -not (& $has 'DeviceManagementConfiguration.Read.All')) { $known += 'DeviceManagementConfiguration.ReadWrite.All' }
     if ($Usage.Inventory -and -not (& $has 'DeviceManagementManagedDevices.Read.All')) { $known += 'DeviceManagementManagedDevices.ReadWrite.All' }
     if ((& $has 'Group.Read.All') -and (& $has 'Group.ReadWrite.All')) { & $row 'Group.Read.All' 'unused' 'Reading groups' 'Group.ReadWrite.All covers it.' }
     $broad = '^(Directory\.ReadWrite\.All|Application\.ReadWrite\.All|AppRoleAssignment\.ReadWrite\.All|RoleManagement\.ReadWrite\.Directory|DeviceManagementConfiguration\.ReadWrite\.All|DeviceManagementRBAC\.ReadWrite\.All|Sites\.FullControl\.All|Mail\.ReadWrite|Files\.ReadWrite\.All|User\.ReadWrite\.All)$'
     foreach ($p in @($g | Where-Object { $known -notcontains $_ } | Sort-Object)) {
-        & $row $p 'unused' 'Not used by this app' $(if ($p -match $broad) { 'A broad permission this app never needs - remove it: the certificate could otherwise change far more than apps.' } elseif ($p -in 'Directory.Read.All', 'Device.Read.All') { 'User.Read.All and Group.ReadWrite.All cover what this app reads.' } else { 'Not used by this app.' })
+        & $row $p 'unused' 'Not used by this app' $(if ($p -match $broad) { 'A broad permission this app never needs - remove it: the certificate could otherwise change far more than apps.' } elseif ($p -in 'Directory.Read.All', 'Device.Read.All') { 'User.Read.All, Device.Read.All and Group.ReadWrite.All cover what this app reads.' } else { 'Not used by this app.' })
     }
     # One row per pipeline object (callers wrap it in @()); there's always at least the apps row.
     return $rows.ToArray()
@@ -3283,4 +3288,25 @@ function Global:Get-ExpectedInstallRows {
         $out[$k] = [ordered]@{ Kind = $kind; Name = [string]$m.Name; Upn = [string]$m.Upn; Groups = @($where) }
     }
     return @($out.Values)
+}
+
+
+function Global:ConvertFrom-StoreSearchResult {
+    <#
+      Pure (2.38.13): the Microsoft Store catalog's answer to a search (the service winget's msstore source asks -
+      storeedgefd ... /manifestSearch) as rows @{ Name; Id; Publisher }. Only real Store product IDs (Test-StoreProductId)
+      are kept - those Intune deploys as its own Store app type; the rest are dropped. Tolerant of the answer's shape:
+      Data (or data) holding PackageIdentifier / PackageName / Publisher, as the service writes them.
+    #>
+    param($Answer)
+    $data = @(if ($Answer) { if ($Answer.PSObject.Properties['Data']) { $Answer.Data } elseif ($Answer.PSObject.Properties['data']) { $Answer.data } })
+    $seen = @{}
+    return @(foreach ($d in $data) {
+        if (-not $d) { continue }
+        $id = ([string]$d.PackageIdentifier).Trim().ToUpperInvariant()
+        if (-not (Test-StoreProductId $id) -or $seen.ContainsKey($id)) { continue }
+        $seen[$id] = $true
+        $name = ([string]$d.PackageName).Trim(); if (-not $name) { $name = $id }
+        [ordered]@{ Name = $name; Id = $id; Publisher = ([string]$d.Publisher).Trim() }
+    })
 }

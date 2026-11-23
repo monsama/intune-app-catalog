@@ -687,6 +687,7 @@ function Global:Invoke-WebApi {
         '/api/checks-assign'    { return (Start-WebCheckAssign $Data) }
         '/api/checks-winget'    { return (Invoke-WebCheckWinget $Data) }
         '/api/winget-search'    { return (Find-WebWinget $Data) }
+        '/api/store-search'     { return (Find-WebStoreApps $Data) }
         '/api/add-from-intune'  { return (Start-WebAddFromIntune $Data) }
         '/api/batch-edit'       { return (Invoke-WithCatalogLock { Invoke-WebBatchEdit $Data }) }
         '/api/batch-groups'     { return (Invoke-WithCatalogLock { Invoke-WebBatchGroups $Data }) }

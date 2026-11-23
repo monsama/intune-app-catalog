@@ -292,6 +292,33 @@ function Global:Find-WebWinget {
     return @{ ok = $true; rows = @($rows | Select-Object -First 100 | ForEach-Object { [ordered]@{ name = $_.Name; id = $_.Id; version = $_.Version; source = $_.Source } }) }
 }
 
+function Global:Find-WebStoreApps {
+    <#
+      Add apps > Microsoft Store (2.38.13): the Store's own catalog, as winget's msstore source asks it - on the server
+      too, where there is no winget. On Windows, if the service doesn't answer, winget's own search (its Store results).
+    #>
+    param($Data)
+    $q = ([string]$Data.q).Trim()
+    if ($q.Length -lt 2) { return @{ ok = $false; error = 'Type at least 2 characters.' } }
+    if ($q.Length -gt 100) { return @{ ok = $false; error = 'That is too long to search for.' } }
+    $why = ''
+    try {
+        $body = @{ Query = @{ KeyWord = $q; MatchType = 'Substring' } } | ConvertTo-Json -Depth 4 -Compress
+        $answer = Invoke-RestMethod -Method Post -Uri 'https://storeedgefd.dsx.mp.microsoft.com/v9.0/manifestSearch' -Body $body -ContentType 'application/json' -TimeoutSec 20 -UseBasicParsing
+        $rows = @(ConvertFrom-StoreSearchResult $answer)
+        return @{ ok = $true; source = 'store'; rows = @($rows | Select-Object -First 60 | ForEach-Object { [ordered]@{ name = $_.Name; id = $_.Id; publisher = $_.Publisher; version = '' } }) }
+    }
+    catch { $why = $_.Exception.Message }
+    if (-not ($IsLinux -or $IsMacOS)) {
+        try {
+            $rows = @(Find-WingetPackage -Query $q | Where-Object { Test-StoreProductId ([string]$_.Id) })
+            return @{ ok = $true; source = 'winget'; rows = @($rows | Select-Object -First 60 | ForEach-Object { [ordered]@{ name = $_.Name; id = $_.Id; publisher = ''; version = '' } }) }
+        }
+        catch { $why = "$why / winget: $($_.Exception.Message)" }
+    }
+    return @{ ok = $false; error = "The Microsoft Store couldn't be searched ($why). Its catalog is at storeedgefd.dsx.mp.microsoft.com - a proxy or firewall may block it." }
+}
+
 function Global:Start-WebAddFromIntune {
     # Add to catalog: reads the Intune-only apps (SyncMetadata) and adds them with their settings and groups.
     param($Data)

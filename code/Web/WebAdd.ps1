@@ -80,7 +80,7 @@ function Global:Add-WebWingetApps {
         $twin = @($apps | Where-Object { [string]$_.wingetId -eq $id }) | Select-Object -First 1
         if ($twin) { $skipped.Add("$id (already in the catalog as $($twin.appName))"); continue }
         $det = Get-WebWingetDetails @{ id = $id }
-        $d = if ($det.ok) { $det.details } else { @{ Name = [string]$item.name; Version = [string]$item.version } }
+        $d = if ($det.ok) { $det.details } else { @{ Name = [string]$item.name; Version = [string]$item.version; Publisher = [string]$item.publisher } }
         $name = ([string]$(if ([string]$item.name) { $item.name } else { $d.Name })).Trim()
         if (Test-WebAddName $name $apps) { $name = "$name ($id)" }
         $why = Test-WebAddName $name $apps

@@ -832,6 +832,9 @@ try {
         Check ($nc.ok -and -not $pxOther.ok -and $pxOther.error -like "*Only the connection*") '.pfx export: on a PC, a certificate that isn''t the connection''s is refused' ($pxOther | ConvertTo-Json -Compress)
         if ($nc.ok) { [void](Invoke-Api '/api/cert-delete-local' @{ thumbprint = $nc.thumbprint; store = 'CurrentUser' }) }
     }
+    # 2.38.13: Add apps > Microsoft Store - the search wants 2 characters, like winget's.
+    $ss = Invoke-Api '/api/store-search' @{ q = 'x' }
+    Check (-not $ss.ok -and $ss.error -like '*at least 2*') 'store search: too short a query is refused' ($ss | ConvertTo-Json -Compress)
     $st = Invoke-Api '/api/package-list' @{ starter = $true }
     Check ($st.ok -and $st.starter -and @($st.items).Count -ge 20 -and @($st.items | Where-Object { $_.recommended }).Count -eq 8 -and @($st.items | Where-Object { $_.id -eq 'Mozilla.Firefox' -and $_.name -and $_.category -and $_.why }).Count -eq 1) 'recommended apps: the starter set, each with its name, category and why' ($st | ConvertTo-Json -Compress -Depth 3)
     Check ((Invoke-Api '/api/installed-apps').ok) 'detection from this PC: the installed apps can be listed (empty off Windows)'
