@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.38.3
+
+- **Settings > Defaults: every card full width.** Automatic checks,
+  Favourite groups and Assignment profiles sat in one narrow column under
+  the full-width default values, with empty space beside them.
+
 ## 2.38.2
 
 - **Recommended apps: nothing ticked by default** - each app is chosen.

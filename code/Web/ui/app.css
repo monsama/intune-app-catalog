@@ -973,7 +973,8 @@ label.inline { margin: 0; }
 .card select { max-width: 100%; }
 #pkgPackager { width: 100%; }
 /* Settings > Apps & defaults: the default values use the full width, so return codes and dropdowns aren't clipped. */
-#sec-defaults .col:has(> .wide-defaults) { grid-column: 1 / -1; }
+/* 2.38.3: every card on this page full width - the second column sat in one narrow cell beside nothing. */
+#sec-defaults .cols > .col { grid-column: 1 / -1; }
 /* Updates: the summary sentence on its own line, the tiles in one row while they fit. */
 #updTiles { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 /* Focus shows as the app's own ring, not the browser's black box. */
