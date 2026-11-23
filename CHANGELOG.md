@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.38.10
+
+- **Recommended apps: Jabra Direct** (`Jabra.Direct`) under Communication - for
+  Jabra headsets: firmware updates and settings, and call control in Teams and
+  softphones. 67 apps now.
+
 ## 2.38.9
 
 - **Install status lists who is still to come.** Besides the devices Intune's
