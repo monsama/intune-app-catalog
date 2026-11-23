@@ -1094,6 +1094,7 @@
   <div class="addtabrow">
   <nav class="subtabs" role="tablist" aria-label="Where the app comes from">
     <button class="subtab" role="tab" id="atab-winget" data-asrc="winget" aria-controls="asec-winget" aria-selected="true">Winget</button>
+    <button class="subtab" role="tab" id="atab-store" data-asrc="store" aria-controls="asec-winget" aria-selected="false" title="Microsoft Store apps - Intune's own Store app type: no package, the Store installs and updates them">Microsoft Store</button>
     <button class="subtab" role="tab" id="atab-installer" data-asrc="installer" aria-controls="asec-installer" aria-selected="false">Installer (MSI / EXE)</button>
     <button class="subtab" role="tab" id="atab-script" data-asrc="script" aria-controls="asec-script" aria-selected="false">PowerShell script</button>
     <button class="subtab" role="tab" id="atab-psadt" data-asrc="psadt" aria-controls="asec-psadt" aria-selected="false">PSADT</button>
@@ -1109,11 +1110,12 @@
     </div>
     <div class="awsplit">
       <div class="tablewrap" tabindex="0" aria-label="Winget packages" data-empty="Search results appear here - pick one or several.">
-        <table class="grid" id="awGrid"><thead><tr><th class="chk"><span class="sr">Pick</span></th><th>Package</th><th>ID</th><th>Version</th></tr></thead><tbody id="awRows"></tbody></table>
+        <table class="grid" id="awGrid"><thead><tr><th class="chk"><span class="sr">Pick</span></th><th>Package</th><th>ID</th><th id="awColLast">Version</th></tr></thead><tbody id="awRows"></tbody></table>
       </div>
       <aside class="awdetail" id="awDetail" aria-live="polite"><p class="muted">Pick a package to see what winget says about it.</p></aside>
     </div>
-    <label class="chk" title="Install a fixed version (winget's current one) and release new versions to the pilot groups first"><input type="checkbox" id="awManaged">Managed updates (pin winget's current version)</label>
+    <label class="chk" id="awManagedRow" title="Install a fixed version (winget's current one) and release new versions to the pilot groups first"><input type="checkbox" id="awManaged">Managed updates (pin winget's current version)</label>
+    <p class="sub" id="awStoreNote" hidden>Store apps go to Intune as its own Microsoft Store app type: no package to build, and the Store keeps them up to date - managed updates don't apply.</p>
   </section>
 
   <section class="asec" id="asec-installer" role="tabpanel" aria-labelledby="atab-installer" hidden>

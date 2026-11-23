@@ -171,6 +171,21 @@ try {
       await page.waitForSelector('#dlgAdd[open]');
       check(await page.isVisible('#awQuery') && await page.isDisabled('#btnAddGo'), `${label}: Add apps opens on the winget search, Add off until something is picked`);
       await unnamed('Add apps (winget)'); await a11y('Add apps (winget)'); await shot('add-winget');
+      // 2.38.13: Microsoft Store - the same search, asking the Store (answered here by hand), no managed updates.
+      await page.evaluate(`window.__apiS = api; api = (path, body) => path === '/api/store-search' ? Promise.resolve({ ok: true, source: 'store',
+        rows: [{ name: 'Company Portal', id: '9WZDNCRFJ3PZ', publisher: 'Microsoft Corporation', version: '' }] }) : window.__apiS(path, body);`);
+      await page.click('#atab-store');
+      await page.fill('#awQuery', 'company');
+      await page.waitForSelector('#awRows tr');
+      const sto = await page.evaluate(() => ({ col: document.getElementById('awColLast').textContent, cell: document.querySelector('#awRows tr td:last-child').textContent,
+        managed: !document.getElementById('awManagedRow').hidden, note: !document.getElementById('awStoreNote').hidden, ph: document.getElementById('awQuery').placeholder }));
+      check(sto.col === 'Publisher' && sto.cell === 'Microsoft Corporation' && !sto.managed && sto.note && /Microsoft Store/.test(sto.ph), `${label}: Add apps > Microsoft Store searches the Store, shows the publisher, no managed updates`, JSON.stringify(sto));
+      await page.click('#awRows tr');
+      check(await page.textContent('#btnAddGo') === 'Add 1 Store app' && /apps\.microsoft\.com\/detail\/9WZDNCRFJ3PZ/.test(await page.getAttribute('#awDetail a', 'href')), `${label}: a picked Store app - its Store page, and Add names it`, await page.textContent('#btnAddGo'));
+      await a11y('Add apps (Microsoft Store)');
+      await page.click('#atab-winget');
+      check(await page.evaluate(() => document.getElementById('awColLast').textContent === 'Version' && !document.getElementById('awManagedRow').hidden && !document.querySelector('#awRows tr')), `${label}: back on Winget - its own columns, managed updates, the Store picks gone`);
+      await page.evaluate('api = window.__apiS;'); await page.fill('#awQuery', '');
       await page.click('#atab-installer');
       check(await page.isVisible('#aiDrop'), `${label}: Add apps has a drop zone for an installer`);
       await a11y('Add apps (installer)');

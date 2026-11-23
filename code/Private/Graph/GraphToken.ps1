@@ -65,8 +65,15 @@ function Global:Get-GraphRoleRequirements {
            Grant = 'DeviceManagementScripts.ReadWrite.All'; Purpose = 'the Platform scripts page only' }
         @{ Feature = "Platform scripts (change)"; Roles = @('DeviceManagementScripts.ReadWrite.All'); Required = $false
            Grant = 'DeviceManagementScripts.ReadWrite.All'; Purpose = 'the Platform scripts page only' }
+        # 2.38.13: the narrow permissions the permission check names - not Directory.Read.All, which reads far more.
         @{ Feature = "Group members";         Roles = @('User.Read.All', 'Directory.Read.All'); Required = $false
-           Grant = 'Directory.Read.All'; Purpose = 'show and pick users and devices as group members' }
+           Grant = 'User.Read.All'; Purpose = 'show and pick users as group members (the Groups page)' }
+        @{ Feature = "Devices in groups";     Roles = @('Device.Read.All', 'Directory.Read.All'); Required = $false
+           Grant = 'Device.Read.All'; Purpose = 'name the devices in an app''s groups (install status, group members)' }
+        @{ Feature = "Apps on devices";       Roles = @('DeviceManagementManagedDevices.Read.All', 'DeviceManagementManagedDevices.ReadWrite.All'); Required = $false
+           Grant = 'DeviceManagementManagedDevices.Read.All'; Purpose = 'Intune''s app inventory: older versions on devices, apps worth adding' }
+        @{ Feature = "Assignment filters";    Roles = @('DeviceManagementConfiguration.Read.All', 'DeviceManagementConfiguration.ReadWrite.All'); Required = $false
+           Grant = 'DeviceManagementConfiguration.Read.All'; Purpose = 'assignment filters, looked up by name' }
     )
 }
 

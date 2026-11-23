@@ -261,12 +261,24 @@ function Global:New-AppAssignmentBody {
     return @{ mobileAppAssignments = @($assignments) }
 }
 
+function Global:Get-UnresolvedAssignmentGroups {
+    <#
+      Pure (2.38.13): the groups among -Entries that have no ID in -GroupIdByName (All users / All devices need none).
+      New-AppAssignmentBody leaves such an entry out - and since sending REPLACES the app's whole assignment list,
+      that would quietly remove the group's assignment (or every assignment, when none was found). The steps check
+      this first and change nothing instead.
+    #>
+    param($Entries, $GroupIdByName)
+    return @(@($Entries) | Where-Object { $_ -and $_.Group -and -not (Get-AllTargetInfo ([string]$_.Group)) -and -not ($GroupIdByName -and $GroupIdByName.Contains($_.Group) -and $GroupIdByName[$_.Group]) } |
+        ForEach-Object { [string]$_.Group } | Select-Object -Unique)
+}
+
 function Global:Get-AssignmentScriptHelpers {
     # The functions above as script text, for the embedded scripts' own
     # runs - same approach as Get-GraphLogScriptHelpers.
     $names = @(
         'Get-AllTargetInfo', 'Get-AssignmentKey', 'Get-DesiredAssignmentEntries', 'ConvertTo-CurrentAssignmentEntries',
-        'Format-AssignmentLabel', 'Get-AssignmentDiff', 'New-AppAssignmentBody'
+        'Format-AssignmentLabel', 'Get-AssignmentDiff', 'New-AppAssignmentBody', 'Get-UnresolvedAssignmentGroups'
     )
     $parts = New-Object System.Collections.Generic.List[string]
     foreach ($name in $names) {

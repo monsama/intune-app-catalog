@@ -29,7 +29,7 @@ function openAdd(src, file) {
   if (!$('dlgAdd').open) $('dlgAdd').showModal();
   // Opened without a kind (the Add apps button): on the kind added last time.
   let last = ''; try { last = localStorage.getItem('addLastSrc') || ''; } catch (e) { }
-  showAddSrc(src || (['winget', 'installer', 'script', 'psadt', 'list'].includes(last) ? last : 'winget'));
+  showAddSrc(src || (['winget', 'store', 'installer', 'script', 'psadt', 'list'].includes(last) ? last : 'winget'));
   if (file) startUpload(file);
 }
 // Who gets the new apps, as one line (2.31.0) - Choose brings out the profile, the groups and the favourites.
@@ -45,18 +45,34 @@ function addGroupsSummary() {
 }
 for (const id of ['adRequired', 'adAvailable']) { $(id).addEventListener('input', addGroupsSummary); $(id).addEventListener('change', addGroupsSummary); }
 function addGroup(id, g) { const l = addLines(id); if (!l.includes(g)) $(id).value = [...l, g].join('\n'); }
+// 2.38.13: Microsoft Store - the Winget search's table and detail pane, asking the Store's catalog instead.
+let awMode = 'winget';
+function setSearchMode(mode) {
+  if (awMode === mode) return;
+  awMode = mode; awPicked.clear(); $('awRows').replaceChildren(); clearTimeout(awTimer);
+  const store = mode === 'store';
+  $('awQuery').placeholder = store ? 'Search the Microsoft Store - app name or publisher (e.g. Company Portal, WhatsApp)' : 'Search winget - name, publisher or ID (e.g. 7-Zip, Mozilla, Notepad++)';
+  $('awQuery').setAttribute('aria-label', store ? 'Search the Microsoft Store' : 'Search winget');
+  $('awColLast').textContent = store ? 'Publisher' : 'Version';
+  $('awManagedRow').hidden = store; $('awStoreNote').hidden = !store;
+  $('awNote').textContent = 'Type to search - results appear as you type.';
+  $('awDetail').replaceChildren(el('p', { class: 'muted', text: store ? 'Pick an app to see its Store page.' : 'Pick a package to see what winget says about it.' }));
+  if ($('awQuery').value.trim().length >= 2) searchAdd();
+}
 function showAddSrc(src) {
   addSrc = src;
   for (const t of document.querySelectorAll('[data-asrc]')) t.setAttribute('aria-selected', String(t.dataset.asrc === src));
-  for (const s of ['winget', 'installer', 'script', 'psadt', 'list']) $('asec-' + s).hidden = s !== src;
+  const sec = src === 'store' ? 'winget' : src;
+  for (const s of ['winget', 'installer', 'script', 'psadt', 'list']) $('asec-' + s).hidden = s !== sec;
+  if (sec === 'winget') { setSearchMode(src); $('asec-winget').setAttribute('aria-labelledby', 'atab-' + src); }
   updateAddButton();
-  (src === 'winget' ? $('awQuery') : src === 'installer' ? $('aiDrop') : src === 'list' ? $('btnAlFile') : src === 'psadt' ? $('apName') : $('asName')).focus();
+  (sec === 'winget' ? $('awQuery') : src === 'installer' ? $('aiDrop') : src === 'list' ? $('btnAlFile') : src === 'psadt' ? $('apName') : $('asName')).focus();
 }
 for (const t of document.querySelectorAll('[data-asrc]')) t.addEventListener('click', () => showAddSrc(t.dataset.asrc));
 function updateAddButton() {
   const b = $('btnAddGo');
   // The button names what it adds: only the open tab counts - what is filled in on the other tabs is left as it is.
-  if (addSrc === 'winget') { b.textContent = awPicked.size ? `Add ${awPicked.size} Winget app${awPicked.size === 1 ? '' : 's'}` : 'Add Winget apps'; setEnabled(b, awPicked.size > 0, 'Tick one or more packages first.'); }
+  if (addSrc === 'winget' || addSrc === 'store') { const kind = addSrc === 'store' ? 'Store' : 'Winget'; b.textContent = awPicked.size ? `Add ${awPicked.size} ${kind} app${awPicked.size === 1 ? '' : 's'}` : `Add ${kind} apps`; setEnabled(b, awPicked.size > 0, 'Tick one or more first.'); }
   else if (addSrc === 'installer') { b.textContent = 'Add installer'; setEnabled(b, !!aiInfo, 'Drop or choose an installer first.'); }
   else if (addSrc === 'psadt') { b.textContent = 'Add PSADT app'; setEnabled(b, !!($('apName').value.trim() && $('apVersion').value.trim()), 'Give the app a name and the version you are packaging.'); }
   else if (addSrc === 'list') { b.textContent = alPicked.size ? `Add ${alPicked.size} from the list` : 'Add from the list'; setEnabled(b, alPicked.size > 0, 'Read a list and tick the packages first.'); }
@@ -79,12 +95,14 @@ async function searchAdd() {
   const q = $('awQuery').value.trim();
   if (q.length < 2) { $('awNote').textContent = 'Type at least 2 characters.'; return; }
   const seq = ++awSeq;
-  $('awNote').textContent = 'Asking winget...';
-  const r = await api('/api/winget-search', { q });
+  const mode = awMode;
+  $('awNote').textContent = mode === 'store' ? 'Asking the Microsoft Store...' : 'Asking winget...';
+  const r = await api(mode === 'store' ? '/api/store-search' : '/api/winget-search', { q });
+  if (mode !== awMode) return;
   if (seq !== awSeq) return;   // a newer search is under way
   if (!r.ok) { $('awNote').textContent = r.error; return; }
   const have = new Map(apps.filter(a => a.wingetId).map(a => [a.wingetId.toLowerCase(), a.name]));
-  $('awNote').textContent = r.rows.length ? `${r.rows.length} package(s)${awPicked.size ? ` - ${awPicked.size} picked` : ''}.` : 'winget found nothing - try a shorter name or the publisher.';
+  $('awNote').textContent = r.rows.length ? `${r.rows.length} ${mode === 'store' ? 'app' : 'package'}(s)${awPicked.size ? ` - ${awPicked.size} picked` : ''}.` : (mode === 'store' ? 'The Store found nothing - try a shorter name.' : 'winget found nothing - try a shorter name or the publisher.');
   $('awRows').replaceChildren(...r.rows.map(x => {
     const inCat = have.get(x.id.toLowerCase());
     // Already in Intune by its name, and not linked to a catalog app: adding is fine - sending would make a second one.
@@ -95,7 +113,7 @@ async function searchAdd() {
       el('td', { class: 'chk' }, box),
       el('td', {}, x.name, isStoreId(x.id) ? el('span', { class: 'pill info newer', text: 'Store', title: 'A Microsoft Store app: Intune\'s own Store type - no package, the Store installs and updates it' }) : '', inCat ? el('span', { class: 'pill muted newer', text: 'in the catalog', title: `Already in the catalog as ${inCat}` }) : '',
         inIntune ? el('span', { class: 'pill warn newer', text: 'in Intune', title: `An app called "${inIntune.name}" is already in Intune - after adding, link it (Checks) instead of sending a second one` }) : ''),
-      el('td', { class: 'mono', text: x.id }), el('td', { text: x.version }));
+      el('td', { class: 'mono', text: x.id }), el('td', { text: mode === 'store' ? (x.publisher || '') : x.version }));
     const pick = on => { if (inCat) return; if (on) awPicked.set(x.id, x); else awPicked.delete(x.id); box.checked = on; tr.classList.toggle('sel', on); updateAddButton(); };
     box.addEventListener('change', () => { pick(box.checked); showWingetDetail(x); });
     tr.addEventListener('click', e => { if (e.target !== box) { pick(!awPicked.has(x.id)); showWingetDetail(x); } });
@@ -106,6 +124,14 @@ async function searchAdd() {
 let awDetailSeq = 0;
 async function showWingetDetail(x) {
   const seq = ++awDetailSeq;
+  // A Store app: what the Store said, and its page - winget's details aren't there for it on every machine.
+  if (awMode === 'store') {
+    const kv = (k, v) => v ? el('div', { class: 'kv' }, el('span', { class: 'k', text: k }), el('span', { text: v })) : '';
+    $('awDetail').replaceChildren(el('h3', { text: x.name }), kv('Publisher', x.publisher), kv('Product ID', x.id),
+      el('p', {}, el('a', { href: `https://apps.microsoft.com/detail/${encodeURIComponent(x.id)}`, target: '_blank', rel: 'noopener noreferrer', text: 'Open its Store page' })),
+      el('p', { class: 'muted', text: 'Intune installs it from the Store and the Store keeps it up to date.' }));
+    return;
+  }
   $('awDetail').replaceChildren(el('h3', { text: x.name }), el('p', { class: 'muted', text: 'Reading winget show...' }));
   const r = await api('/api/winget-details', { id: x.id });
   if (seq !== awDetailSeq) return;
@@ -295,13 +321,13 @@ async function doAdd(send) {
   let done = [];
   try {
     try { localStorage.setItem('addLastSrc', addSrc); } catch (e) { }   // the next Add apps opens on this kind
-    if (addSrc === 'winget' || addSrc === 'list') {
-      const items = addSrc === 'winget' ? [...awPicked.values()].map(x => ({ id: x.id, name: x.name, version: x.version })) : [...alPicked].map(id => ({ id }));
-      const note = addSrc === 'winget' ? 'awNote' : 'alNote', added = [], skipped = [];
+    if (addSrc === 'winget' || addSrc === 'store' || addSrc === 'list') {
+      const items = addSrc !== 'list' ? [...awPicked.values()].map(x => ({ id: x.id, name: x.name, version: x.version, publisher: x.publisher || '' })) : [...alPicked].map(id => ({ id }));
+      const note = addSrc !== 'list' ? 'awNote' : 'alNote', added = [], skipped = [];
       // Five at a time: each asks winget for its details, and the page shows how far it got.
       for (let i = 0; i < items.length; i += 5) {
         $(note).textContent = `Adding ${Math.min(i + 5, items.length)} of ${items.length} - reading each one's details from winget...`;
-        const r = await api('/api/add-winget', { items: items.slice(i, i + 5), managed: addSrc === 'winget' ? $('awManaged').checked : $('alManaged').checked, ...groups });
+        const r = await api('/api/add-winget', { items: items.slice(i, i + 5), managed: addSrc === 'store' ? false : addSrc === 'winget' ? $('awManaged').checked : $('alManaged').checked, ...groups });
         if (!r.ok) { showAddError(r.error); break; }
         added.push(...r.added); skipped.push(...r.skipped);
       }
