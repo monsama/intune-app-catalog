@@ -1705,3 +1705,6 @@ button.pill.pillbtn:hover, button.pill.pillbtn[aria-expanded="true"] { box-shado
 
 /* 2.38.9: install status - who its groups target but hasn't reported yet. */
 #statusRows tr.waiting td { color: var(--muted); }
+
+/* 2.38.10: a warning inside a dialog (the .pfx export). */
+.warnbox { margin: 8px 0 4px; padding: 8px 12px; border-radius: var(--r-m); background: var(--warn-bg); color: var(--fg); border-left: 3px solid var(--warn); font-size: 13px; }

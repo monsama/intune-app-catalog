@@ -717,6 +717,7 @@
   <button role="menuitem" id="btnNewCert" title="Create a self-signed certificate on this machine for the app registration" data-server-title="Create a self-signed certificate on the server for the app registration">Create new certificate...</button>
   <button role="menuitem" class="serveronly" id="btnPfxImport" title="Use the certificate you already have: a .pfx file with its private key">Import a .pfx...</button>
   <button role="menuitem" class="serveronly" id="btnCerDownload" title="The chosen certificate's public part (.cer) - what the app registration in Entra ID takes">Download .cer</button>
+  <button role="menuitem" id="btnPfxExport" title="The chosen certificate with its private key, as a password-protected .pfx - to move the connection to another machine or keep a copy">Export with private key (.pfx)...</button>
   <button role="menuitem" class="desktoponly" id="btnCertFolder" title="Open the folder with the exported .cer files in Explorer">Open certificates folder</button>
   <hr>
   <button role="menuitem" class="danger" id="btnCertsLocal" title="List this machine's certificates and delete one you no longer need" data-server-title="List the server's certificates and delete one you no longer need">Delete one...</button>
@@ -752,6 +753,16 @@
   <label>Password<input type="password" id="pfxPassword" autocomplete="off"></label>
   <p class="formerror" id="pfxError" hidden></p>
   <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnPfxGo">Import</button></div>
+</dialog>
+
+<dialog id="dlgPfxExport" aria-labelledby="pfxExTitle">
+  <h2 id="pfxExTitle">Export the certificate with its private key</h2>
+  <p class="sub" id="pfxExWhat"></p>
+  <p class="warnbox">Anyone with this file and its password can sign in to Intune as the app - with every permission the app registration has. Keep it like a password: not in e-mail or a shared folder. The export is logged.</p>
+  <label>Password for the file <span class="muted">(at least 12 characters)</span><input type="password" id="pfxExPw" autocomplete="new-password"></label>
+  <label>The same password again<input type="password" id="pfxExPw2" autocomplete="new-password"></label>
+  <p class="formerror" id="pfxExError" hidden></p>
+  <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnPfxExGo">Export .pfx</button></div>
 </dialog>
 
 <dialog id="dlgDetPaste" aria-labelledby="dpTitle">

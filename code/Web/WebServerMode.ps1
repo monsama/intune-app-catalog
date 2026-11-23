@@ -302,6 +302,31 @@ function Global:Get-WebCertificateFile {
     return @{ ok = $true; file = [Convert]::ToBase64String($raw); name = $(if ($name -eq '.cer') { "$($cert.Thumbprint).cer" } else { $name }) }
 }
 
+function Global:Export-WebPfx {
+    <#
+      2.38.10: a certificate with its private key, as a password-protected .pfx (base64) - as Windows' certificate
+      manager exports one: to move the connection to another machine, or keep a copy. Anyone with the file and its
+      password can sign in as the app, so it takes a password of 12 characters or more and every export is logged.
+      A key Windows keeps as not exportable (the app creates its own that way on Windows) can't leave the machine.
+    #>
+    param($Data)
+    $thumb = ([string]$Data.thumbprint) -replace '\s', ''
+    if ($thumb -notmatch '^[0-9A-Fa-f]{40}$') { return @{ ok = $false; error = 'Choose, create or import a certificate first.' } }
+    $pw = [string]$Data.password
+    if ($pw.Length -lt 12) { return @{ ok = $false; error = 'Use a password of at least 12 characters - the file can sign in as the app.' } }
+    $cert = Find-AppStoreCertificate $thumb
+    if (-not $cert) { return @{ ok = $false; error = 'No certificate with that thumbprint here.' } }
+    if (-not $cert.HasPrivateKey) { return @{ ok = $false; error = 'This certificate has no private key here - there is nothing to export but its .cer.' } }
+    try { $bytes = $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $pw) }
+    catch {
+        return @{ ok = $false; error = "Its private key can't be exported - it was made or imported as not exportable (the app creates its own that way on Windows, so the key never leaves this machine). To use the connection elsewhere, create a new certificate there and add its .cer to the app registration too. ($($_.Exception.Message))" }
+    }
+    $who = if ($Global:App.Server -and $Global:App.Server.Session -and $Global:App.Server.Session.Name) { [string]$Global:App.Server.Session.Name } else { [string]$env:USERNAME }
+    Write-Log "[WARN] Certificate exported with its private key: $($cert.Subject) ($($cert.Thumbprint))$(if ($who) { " by $who" })."
+    $name = (($cert.Subject -replace '^CN=', '' -replace '[^\w .-]', '') + '.pfx').Trim()
+    return @{ ok = $true; file = [Convert]::ToBase64String($bytes); name = $(if ($name -eq '.pfx') { "$($cert.Thumbprint).pfx" } else { $name }) }
+}
+
 function Global:New-AppSelfSignedCertificate {
     <#
       A self-signed certificate made with .NET (where New-SelfSignedCertificate isn't there - Linux), its key in

@@ -377,6 +377,22 @@ try {
         await page.waitForSelector('#dlgCertsLocal[open]');
         await unnamed('the certificates dialog'); await a11y('the certificates dialog');
         await page.keyboard.press('Escape');
+        // 2.38.10: export with its private key - a password of 12+ characters, typed twice; the server says why it can't.
+        const thumbWas = await page.inputValue('#fThumb');
+        await page.fill('#fThumb', 'AB'.repeat(20));
+        await page.click('#btnCertMenu'); await page.waitForSelector('#certMenu:not([hidden])');
+        await page.click('#btnPfxExport');
+        await page.waitForSelector('#dlgPfxExport[open]');
+        await a11y('the .pfx export dialog');
+        await page.fill('#pfxExPw', 'short'); await page.fill('#pfxExPw2', 'short'); await page.click('#btnPfxExGo');
+        check(/at least 12/.test(await page.textContent('#pfxExError')), `${label}: .pfx export refuses a short password`);
+        await page.fill('#pfxExPw', 'a-long-enough-pw'); await page.fill('#pfxExPw2', 'a-long-enough-px'); await page.click('#btnPfxExGo');
+        check(/differ/.test(await page.textContent('#pfxExError')), `${label}: .pfx export wants the password twice the same`);
+        await page.fill('#pfxExPw2', 'a-long-enough-pw'); await page.click('#btnPfxExGo');
+        await page.waitForFunction(() => /No certificate/.test(document.getElementById('pfxExError').textContent));
+        check(await page.evaluate(() => document.getElementById('dlgPfxExport').open && !document.getElementById('pfxExPw').value), `${label}: .pfx export says why it can't (no such certificate) and clears the passwords`);
+        await page.keyboard.press('Escape');
+        await page.fill('#fThumb', thumbWas);
 
         // An app added through the editor, then Batch edit and Add groups on it.
         await page.click('#tabApps');
