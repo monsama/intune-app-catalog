@@ -82,6 +82,7 @@ $privateFiles = Get-ChildItem -Path $privateRoot -Filter "*.ps1" -Recurse
 # functions. Adding a name here is a claim that function has NO WinForms
 # and NO live Graph dependency; verify that before adding one.
 $testableFunctionNames = @(
+    "Get-ExpectedInstallRows",
     "Test-AppIsUncommon",
     # winget output (Winget.ps1)
     "ConvertFrom-WingetSearchOutput",
@@ -2130,6 +2131,20 @@ Assert-Equal 2 $currentEntries.Count "ConvertTo-CurrentAssignmentEntries: group 
 Assert-Equal "required|exclude|SG-Contractors" $currentEntries[1].Key "ConvertTo-CurrentAssignmentEntries: an exclusion target is read as an exclusion"
 Assert-Equal 1 $otherTargets.Count "ConvertTo-CurrentAssignmentEntries: a target the catalog can't hold is reported separately, not dropped silently"
 Assert-Equal "[available] someFuture" $otherTargets[0] "ConvertTo-CurrentAssignmentEntries: ...readably, without Graph's type prefix"
+
+# Install status (2.38.9): who the groups target but the report doesn't list yet.
+$rep = @([pscustomobject]@{ DeviceName = 'PC-01'; UserName = 'anna@contoso.com' })
+$exp = @(Get-ExpectedInstallRows -ReportRows $rep -Members @(
+    @{ Kind = 'device'; Name = 'pc-01'; Group = 'SG-A'; Intent = 'Required' },
+    @{ Kind = 'device'; Name = 'PC-02'; Group = 'SG-A'; Intent = 'Required' },
+    @{ Kind = 'device'; Name = 'PC-02'; Group = 'SG-B'; Intent = 'Available' },
+    @{ Kind = 'user'; Name = 'Anna'; Upn = 'ANNA@contoso.com'; Group = 'SG-U'; Intent = 'Available' },
+    @{ Kind = 'user'; Name = 'Ben'; Upn = 'ben@contoso.com'; Group = 'SG-U'; Intent = 'Available' }))
+Assert-Equal 2 $exp.Count "Get-ExpectedInstallRows: devices and users the report already lists are left out (case-insensitive)"
+Assert-Equal 'PC-02' $exp[0].Name "Get-ExpectedInstallRows: a device not reported yet is listed"
+Assert-Equal 'SG-A (Required), SG-B (Available)' (@($exp[0].Groups) -join ', ') "Get-ExpectedInstallRows: once, with every group that targets it"
+Assert-Equal 'ben@contoso.com' $exp[1].Upn "Get-ExpectedInstallRows: a user not reported yet is listed by UPN"
+Assert-Equal 0 @(Get-ExpectedInstallRows -ReportRows @() -Members @()).Count "Get-ExpectedInstallRows: nothing targeted, nothing waiting"
 
 # All users / All devices (2.38.4): Intune's own targets, held in the catalog as [All users] / [All devices].
 # The multi-app preview's workers (BatchAssign.ps1, also what Checks compares assignments with) get the helpers

@@ -439,9 +439,67 @@ function Global:Get-WebInstallStatus {
         $why = Get-InstallErrorInfo $_.ErrorCode
         [ordered]@{ device = [string]$_.DeviceName; user = [string]$_.UserName; state = [string]$_.State; detail = [string]$_.Detail; error = [string]$_.ErrorCode; version = [string]$_.Version; lastSeen = [string]$_.LastSeen
             meaning = $(if ($why) { [string]$why.meaning } else { '' }); fix = $(if ($why) { [string]$why.fix } else { '' }) } })
-    return @{ ok = $true; app = $name; rows = $rows; truncated = [bool]$report.Truncated; summary = (Format-InstallStatusSummary @($report.Rows))
+    # 2.38.9: who its groups target but the report doesn't list yet - "Waiting for report" rows, so a fresh assignment
+    # shows who's coming instead of an empty table. Never fails the report: a group that can't be read is a note.
+    $exp = Get-WebExpectedInstallMembers -App $a
+    $waiting = @(Get-ExpectedInstallRows -ReportRows @($report.Rows) -Members @($exp.Members) | ForEach-Object {
+        [ordered]@{ device = $(if ($_.Kind -eq 'device') { $_.Name } else { '' }); user = $(if ($_.Kind -eq 'user') { $(if ($_.Upn) { $_.Upn } else { $_.Name }) } else { '' })
+            state = 'Waiting for report'; detail = "In $(@($_.Groups) -join ', ')"; error = ''; version = ''; lastSeen = ''; meaning = ''; fix = ''; waiting = $true } })
+    return @{ ok = $true; app = $name; rows = @($rows) + @($waiting); waiting = $waiting.Count; truncated = [bool]$report.Truncated; summary = (Format-InstallStatusSummary @($report.Rows))
+        targetNotes = @($exp.Notes)
         # The most common errors, explained - what to fix first.
         topErrors = @(Get-InstallErrorTop -Rows @($report.Rows) -Top 5) }
+}
+
+function Global:Get-WebExpectedInstallMembers {
+    <#
+      The members (nested too) of the app's Required and Available groups, without those of its excluded groups:
+      @{ Members = @(@{ Kind; Name; Upn; Group; Intent }); Notes = @(...) }. All users / All devices aren't listed -
+      a note says so. Up to 999 members a group (one page) - a bigger group is named in a note.
+    #>
+    param($App)
+    $notes = New-Object System.Collections.Generic.List[string]
+    $members = New-Object System.Collections.Generic.List[object]
+    $want = New-Object System.Collections.Generic.List[object]
+    foreach ($pair in @(@{ Intent = 'Required'; Names = @($App.requiredFor) }, @{ Intent = 'Available'; Names = @($App.availableFor) }, @{ Intent = 'Excluded'; Names = @($App.excludeFor) })) {
+        foreach ($n in @($pair.Names | Where-Object { $_ -and ([string]$_).Trim() })) {
+            $all = Get-AllTargetInfo ([string]$n)
+            if ($all) { $notes.Add("$($pair.Intent): $($all.Name) - every $(if ($all.Name -eq '[All users]') { 'licensed user' } else { 'managed device' }) gets it; they aren't listed one by one."); continue }
+            $want.Add(@{ Intent = $pair.Intent; Name = ([string]$n).Trim() })
+        }
+    }
+    if (-not $want.Count) { return @{ Members = @(); Notes = $notes.ToArray() } }
+    try {
+        $ids = Resolve-WebGroupIds -Names @($want | ForEach-Object { $_.Name })
+        if (-not $ids.ok) { $notes.Add("Its groups' members couldn't be read: $($ids.error)"); return @{ Members = @(); Notes = $notes.ToArray() } }
+        $excluded = @{}
+        $read = Invoke-WebGraph -Permission 'Group.Read.All' -Action {
+            param($Graph)
+            $got = @{}
+            foreach ($w in $want) {
+                $gid = [string]$ids.ids[$w.Name]
+                if (-not $gid) { continue }
+                $page = & $Graph "https://graph.microsoft.com/v1.0/groups/$gid/transitiveMembers?`$select=id,displayName,userPrincipalName&`$top=999"
+                $got["$($w.Intent)|$($w.Name)"] = @{ Items = @($page.value); More = [bool]$page.'@odata.nextLink' }
+            }
+            $got
+        }.GetNewClosure()
+        if (-not $read.ok) { $notes.Add("Its groups' members couldn't be read: $($read.error)"); return @{ Members = @(); Notes = $notes.ToArray() } }
+        foreach ($w in $want) {
+            $g = $read.value["$($w.Intent)|$($w.Name)"]
+            if (-not $g) { $notes.Add("$($w.Intent): $($w.Name) isn't in Entra ID."); continue }
+            if ($g.More) { $notes.Add("$($w.Intent): $($w.Name) has more than 999 members - the first 999 are listed.") }
+            foreach ($o in @($g.Items)) {
+                $type = [string]$o.'@odata.type'
+                $kind = if ($type -like '*device') { 'device' } elseif ($type -like '*user') { 'user' } else { $null }
+                if (-not $kind) { continue }
+                if ($w.Intent -eq 'Excluded') { $excluded[[string]$o.id] = $true; continue }
+                $members.Add(@{ Kind = $kind; Id = [string]$o.id; Name = [string]$o.displayName; Upn = [string]$o.userPrincipalName; Group = $w.Name; Intent = $w.Intent })
+            }
+        }
+        return @{ Members = @($members | Where-Object { -not $excluded.ContainsKey($_.Id) }); Notes = $notes.ToArray() }
+    }
+    catch { $notes.Add("Its groups' members couldn't be read: $($_.Exception.Message)"); return @{ Members = @(); Notes = $notes.ToArray() } }
 }
 
 # ---------------------------------------------------------------- retiring an app

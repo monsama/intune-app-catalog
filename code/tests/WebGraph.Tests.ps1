@@ -138,6 +138,10 @@ $answers = [ordered]@{
         value = @(@{ '@odata.type' = '#microsoft.graph.user'; id = 'u1'; displayName = 'Zed User'; userPrincipalName = 'zed@example.test' }, @{ '@odata.type' = '#microsoft.graph.device'; id = 'd1'; displayName = 'PC-ZZ-1' })
     }
     "GET v1.0/groups?`$filter=displayName eq 'SG-ZZ-Missing'&`$select=id,displayName,description" = @{ value = @() }
+    # Install status (2.38.9): its groups' members (nested too) - one device already reported, one device and one user not yet.
+    "GET v1.0/groups/$groupId/transitiveMembers?`$select=id,displayName,userPrincipalName&`$top=999" = @{ value = @(
+            @{ '@odata.type' = '#microsoft.graph.device'; id = 'd1'; displayName = 'PC-ZZ-1' }, @{ '@odata.type' = '#microsoft.graph.device'; id = 'd9'; displayName = 'PC-ZZ-9' },
+            @{ '@odata.type' = '#microsoft.graph.user'; id = 'u9'; displayName = 'Nine User'; userPrincipalName = 'nine@example.test' }, @{ '@odata.type' = '#microsoft.graph.group'; id = 'g9'; displayName = 'Nested' }) }
     "GET v1.0/groups?`$filter=displayName eq 'SG-ZZ-Forbidden'&`$select=id,displayName,description" = @{ __status = 403; __body = @{ error = @{ code = 'Authorization_RequestDenied'; message = 'Insufficient privileges to complete the operation.' } } }
     # Search all of Entra ID (Groups page): every name read once, matched in the app.
     "GET v1.0/groups?`$select=id,displayName,description,securityEnabled,mailEnabled,groupTypes&`$top=999" = @{ value = @(
@@ -281,7 +285,10 @@ try {
 
     # Install status: beta refused, v1.0 answers
     $st = Invoke-Api '/api/install-status' @{ name = $linkedName }
-    Check ($st.ok -and @($st.rows).Count -eq 2 -and $st.summary -eq '2 devices: 1 Failed, 1 Installed') 'install status: rows and summary (from v1.0 after beta refused)' ($st | ConvertTo-Json -Compress -Depth 4)
+    Check ($st.ok -and @($st.rows | Where-Object { -not $_.waiting }).Count -eq 2 -and $st.summary -eq '2 devices: 1 Failed, 1 Installed') 'install status: rows and summary (from v1.0 after beta refused)' ($st | ConvertTo-Json -Compress -Depth 4)
+    $stWait = @($st.rows | Where-Object { $_.waiting })
+    Check ($st.waiting -eq 2 -and @($stWait | Where-Object { $_.device -eq 'PC-ZZ-9' -and $_.detail -like '*SG-ZZ-Exists (Required)*' }).Count -eq 1 -and @($stWait | Where-Object { $_.user -eq 'nine@example.test' }).Count -eq 1 -and -not @($stWait | Where-Object { $_.device -eq 'PC-ZZ-1' }).Count) 'install status: its groups'' members not reported yet are listed as waiting - not the ones that reported' ($stWait | ConvertTo-Json -Compress -Depth 4)
+    Check ((@($st.targetNotes) -join ' ') -like '*SG-ZZ-Missing*') 'install status: a group that isn''t in Entra ID is a note, not a failure' (@($st.targetNotes) -join ' | ')
     Check ((@($st.rows | Where-Object { $_.device -eq 'PC-ZZ-2' -and $_.state -eq 'Failed' })).Count -eq 1) 'install status: the device and its state'
 
     # Platform scripts
