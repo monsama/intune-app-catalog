@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.38.2
+
+- **Recommended apps: nothing ticked by default** - each app is chosen.
+  The eight nearly every organisation deploys (Firefox, Chrome, 7-Zip,
+  Acrobat Reader, Notepad++, VLC, Java 25, the Visual C++ runtime) say
+  "common" instead.
+- **TeamViewer Host and TeamViewer QuickSupport** in the list, right after
+  TeamViewer: Host on users' PCs for unattended support, QuickSupport for
+  support the user starts; the full TeamViewer for the support team.
+
 ## 2.38.1
 
 **More recommended apps, and the list looks right while it scrolls.**

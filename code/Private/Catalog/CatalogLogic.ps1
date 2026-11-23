@@ -2248,9 +2248,9 @@ function Global:ConvertTo-SandboxResult {
 
 function Global:Get-StarterAppSet {
     <#
-      Pure (2.38.0, more in 2.38.1): a starter set of Winget apps organisations deploy, by category - the recommended
-      ones ticked by default (browsers, 7-Zip, a PDF reader, a text editor, VLC, Java and the Visual C++ runtime);
-      the others common choices for some. Every ID was checked against winget's index when it was written.
+      Pure (2.38.0, more in 2.38.1): a starter set of Winget apps organisations deploy, by category. "recommended"
+      marks the ones nearly every organisation deploys (browsers, 7-Zip, a PDF reader, a text editor, VLC, Java and
+      the Visual C++ runtime) - shown as "common", not ticked (2.38.2: nothing is ticked by default). Every ID was checked against winget's index when it was written.
       Java is Eclipse Temurin (no Oracle licence needed); Chrome is Google's enterprise MSI. Not here: what Windows
       or Microsoft 365 bring (Edge, OneDrive, Office), and VPN clients winget doesn't have (FortiClient, Cisco).
     #>
@@ -2277,7 +2277,9 @@ function Global:Get-StarterAppSet {
         [ordered]@{ id = 'OpenVPNTechnologies.OpenVPNConnect'; name = 'OpenVPN Connect'; category = 'Remote access'; recommended = $false; why = 'For an OpenVPN-based company VPN.' },
         [ordered]@{ id = 'WireGuard.WireGuard'; name = 'WireGuard'; category = 'Remote access'; recommended = $false; why = 'For a WireGuard-based company VPN.' },
         [ordered]@{ id = 'AnyDesk.AnyDesk'; name = 'AnyDesk'; category = 'Remote access'; recommended = $false; why = 'Remote support - needs an AnyDesk licence for business use.' },
-        [ordered]@{ id = 'TeamViewer.TeamViewer'; name = 'TeamViewer'; category = 'Remote access'; recommended = $false; why = 'Remote support - needs a TeamViewer licence for business use.' },
+        [ordered]@{ id = 'TeamViewer.TeamViewer'; name = 'TeamViewer'; category = 'Remote access'; recommended = $false; why = 'Remote support - the full app, for the support team; needs a TeamViewer licence for business use.' },
+        [ordered]@{ id = 'TeamViewer.TeamViewer.Host'; name = 'TeamViewer Host'; category = 'Remote access'; recommended = $false; why = "On users' PCs: support connects to them unattended (the PC is assigned to the company's TeamViewer account)." },
+        [ordered]@{ id = 'TeamViewer.TeamViewer.QuickSupport'; name = 'TeamViewer QuickSupport'; category = 'Remote access'; recommended = $false; why = 'On users'' PCs: the user starts it and gives support the ID - nothing runs in the background.' },
         [ordered]@{ id = 'Dropbox.Dropbox'; name = 'Dropbox'; category = 'Cloud storage'; recommended = $false; why = 'Where files are shared on Dropbox (OneDrive comes with Windows).' },
         [ordered]@{ id = 'Google.GoogleDrive'; name = 'Google Drive'; category = 'Cloud storage'; recommended = $false; why = 'Where files are shared on Google Drive.' },
         [ordered]@{ id = 'Box.Box'; name = 'Box Drive'; category = 'Cloud storage'; recommended = $false; why = 'Where files are shared on Box.' },
