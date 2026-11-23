@@ -1230,6 +1230,8 @@ input.preview, textarea.preview { background: var(--bd2); color: var(--muted); c
 .gtable, dialog .tablewrap { min-height: 0; }
 /* Apps with the side panel open on a narrower screen: the Source column steps aside for the Stage. */
 @media (max-width: 1600px) { .appsplit:has(> .apppanel:not([hidden])) #grid tr > :nth-child(2) { display: none; } }
+/* Narrower windows without the panel too (2.38.3): Source goes, Stage stays in view (it needed sideways scrolling at 820). */
+@media (max-width: 1000px) { #grid tr > :nth-child(2) { display: none; } }
 /* Every dialog's action row sits on its own footer line, as the editor's does. */
 dialog:not(.tray):not(.palette) > .actions.end, dialog:not(.tray) > form > .actions.end { margin: 16px -20px -18px; padding: 12px 20px 18px; border-top: 1px solid var(--bd2); }
 /* One size for dialog titles. */
