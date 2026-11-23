@@ -264,7 +264,7 @@ function Global:Get-EntraGroupFindings {
     $usage = [ordered]@{}
     foreach ($a in @(@($Apps) | Where-Object { $_ } | Sort-Object appName)) {
         if ($OnlyNames -and $OnlyNames -notcontains [string]$a.appName) { continue }
-        foreach ($groupName in @(@($a.requiredFor) + @($a.availableFor) + @($a.uninstallFor) + @($a.excludeFor) | Where-Object { $_ })) {
+        foreach ($groupName in @(@($a.requiredFor) + @($a.availableFor) + @($a.uninstallFor) + @($a.excludeFor) | Where-Object { $_ -and -not (Get-AllTargetInfo ([string]$_)) })) {
             $normGroup = ([string]$groupName).Trim() -replace '\s+', ' '
             if (-not $usage.Contains($normGroup)) { $usage[$normGroup] = New-Object System.Collections.Generic.List[string] }
             if (-not $usage[$normGroup].Contains([string]$a.appName)) { $usage[$normGroup].Add([string]$a.appName) }

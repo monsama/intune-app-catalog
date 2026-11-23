@@ -95,6 +95,12 @@ function Global:Invoke-WebReplaceGroup {
     $catalog = Read-WebCatalogRecords
     $only = @($Data.names | Where-Object { $_ } | ForEach-Object { [string]$_ })
     $apps = @($catalog.Apps | Where-Object { -not $only.Count -or $only -contains $_.appName })
+    $all = Get-AllTargetInfo $new
+    if ($all) {
+        $new = $all.Name
+        $excl = @($apps | Where-Object { @($_.excludeFor | Where-Object { ([string]$_).Trim() -ieq $old }).Count } | ForEach-Object { $_.appName })
+        if ($excl.Count) { return @{ ok = $false; error = "Intune can't exclude $new, and '$old' is excluded in $($excl -join ', ') - take it out of Excluded there first." } }
+    }
     $changed = @(Rename-WebGroupInApps -Apps $apps -Old $old -New $new)
     if (-not $changed.Count) { return @{ ok = $false; error = "No app$(if ($only.Count) { ' of those chosen' }) in the catalog uses '$old'." } }
     $undo = New-WebUndo "Replace $old with $new"
@@ -224,7 +230,7 @@ function Global:Import-WebCatalogCsv {
             $kind = $cols[$c]; $cell = [string]$r.$c
             if ($kind -eq 'groups') {
                 $want = @(Split-WebCellList $cell)
-                foreach ($g in $want) { $p = Test-WebGroupName $g; if ($p) { $bad = "$c`: $p" } }
+                foreach ($g in $want) { $p = Test-WebGroupName $g -Role $c; if ($p) { $bad = "$c`: $p" } }
                 $now = @($a.$c | Where-Object { $_ } | ForEach-Object { [string]$_ })
                 $same = (@($now | ForEach-Object { $_.ToLowerInvariant() } | Sort-Object) -join "`n") -eq (@($want | ForEach-Object { $_.ToLowerInvariant() } | Sort-Object) -join "`n")
                 if (-not $same) { $groupSets[$c] = $want; $diffs.Add([ordered]@{ app = $a.appName; field = $c; old = (Get-WebCellText $now); new = (Get-WebCellText $want) }) }

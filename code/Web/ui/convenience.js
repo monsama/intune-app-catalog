@@ -28,7 +28,7 @@ function gpShow(ta, items) {
   gpList.style.left = (r.left - hr.left + (host === document.body ? window.scrollX : host.scrollLeft)) + 'px';
   gpList.style.top = (r.bottom - hr.top + 2 + (host === document.body ? window.scrollY : host.scrollTop)) + 'px';
   gpList.style.minWidth = Math.max(220, r.width) + 'px';
-  const label = { favourite: 'favourite', catalog: 'in the catalog', entra: 'Entra ID' };
+  const label = { 'built-in': 'Intune built-in', favourite: 'favourite', catalog: 'in the catalog', entra: 'Entra ID' };
   gpList.replaceChildren(...items.map((g, i) => el('li', { id: 'gp-' + i, role: 'option', 'aria-selected': String(i === gpActive), class: i === gpActive ? 'on' : '', onmousedown: e => { e.preventDefault(); gpPick(i); } },
     el('span', { text: g.name }), el('span', { class: 'src', text: label[g.source] || '' }))));
   gpList.hidden = false;
@@ -59,8 +59,10 @@ async function gpSuggest(ta) {
   const l = gpLine(ta), seq = ++gpSeq;
   const r = await api('/api/group-suggest', { q: l.text });
   if (seq !== gpSeq || document.activeElement !== ta) return;
-  const have = new Set((ta._source || ta).value.split('\n').map(s => s.trim().toLowerCase()));
-  gpShow(ta, r.ok ? r.groups.filter(g => !have.has(g.name.toLowerCase()) || g.name.toLowerCase() === l.text.toLowerCase()).filter(g => g.name.toLowerCase() !== l.text.toLowerCase()).slice(0, 12) : []);
+  const src = ta._source || ta, have = new Set(src.value.split('\n').map(s => s.trim().toLowerCase()));
+  // [All users] / [All devices] (Intune's own targets) only where an app gets assigned: never Excluded, pilot or favourite lists.
+  const builtInOk = ['gRequired', 'gAvailable', 'gUninstall', 'adRequired', 'adAvailable'].includes(src.id) || ['Required for', 'Available for'].includes(src.getAttribute('aria-label'));
+  gpShow(ta, r.ok ? r.groups.filter(g => builtInOk || g.source !== 'built-in').filter(g => !have.has(g.name.toLowerCase()) || g.name.toLowerCase() === l.text.toLowerCase()).filter(g => g.name.toLowerCase() !== l.text.toLowerCase()).slice(0, 12) : []);
 }
 async function gpCheck(ta) {
   const src = ta._source || ta, anchor = ta._source ? ta.parentElement : ta;

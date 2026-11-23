@@ -343,6 +343,7 @@ $testableFunctionNames = @(
     "ConvertTo-ScriptRunStateRow",
     "Format-ScriptRunSummary",
     # Assignments incl. exclusions (Assignments.ps1)
+    "Get-AllTargetInfo",
     "Get-AssignmentKey",
     "Get-DesiredAssignmentEntries",
     "ConvertTo-CurrentAssignmentEntries",
@@ -2123,11 +2124,42 @@ $otherTargets = @()
 $currentEntries = @(ConvertTo-CurrentAssignmentEntries -Assignments @(
     @{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.groupAssignmentTarget'; groupId = 'g1' } },
     @{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.exclusionGroupAssignmentTarget'; groupId = 'g2' } },
-    @{ intent = 'available'; target = @{ '@odata.type' = '#microsoft.graph.allDevicesAssignmentTarget' } }
+    @{ intent = 'available'; target = @{ '@odata.type' = '#microsoft.graph.someFutureAssignmentTarget' } }
 ) -GroupNameById @{ 'g1' = 'SG-All'; 'g2' = 'SG-Contractors' } -OtherTargets ([ref]$otherTargets))
 Assert-Equal 2 $currentEntries.Count "ConvertTo-CurrentAssignmentEntries: group targets only"
 Assert-Equal "required|exclude|SG-Contractors" $currentEntries[1].Key "ConvertTo-CurrentAssignmentEntries: an exclusion target is read as an exclusion"
-Assert-Equal 1 $otherTargets.Count "ConvertTo-CurrentAssignmentEntries: All devices is reported separately, not dropped silently"
+Assert-Equal 1 $otherTargets.Count "ConvertTo-CurrentAssignmentEntries: a target the catalog can't hold is reported separately, not dropped silently"
+Assert-Equal "[available] someFuture" $otherTargets[0] "ConvertTo-CurrentAssignmentEntries: ...readably, without Graph's type prefix"
+
+# All users / All devices (2.38.4): Intune's own targets, held in the catalog as [All users] / [All devices].
+Assert-Equal '[All users]' (Get-AllTargetInfo ' [all USERS] ').Name "Get-AllTargetInfo: the catalog name, whatever the case and spaces"
+Assert-Equal '#microsoft.graph.allDevicesAssignmentTarget' (Get-AllTargetInfo '[All devices]').Type "Get-AllTargetInfo: All devices' Graph type"
+Assert-Equal '[All devices]' (Get-AllTargetInfo '#microsoft.graph.allDevicesAssignmentTarget').Name "Get-AllTargetInfo: from Graph's type back to the catalog name"
+Assert-True ($null -eq (Get-AllTargetInfo 'All users')) "Get-AllTargetInfo: a group called All users (no brackets) is an ordinary group"
+Assert-True ($null -eq (Get-AllTargetInfo '')) "Get-AllTargetInfo: nothing is nothing"
+$allOther = @()
+$allCurrent = @(ConvertTo-CurrentAssignmentEntries -Assignments @(
+    @{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.allDevicesAssignmentTarget' } },
+    @{ intent = 'available'; target = @{ '@odata.type' = '#microsoft.graph.allLicensedUsersAssignmentTarget'; deviceAndAppManagementAssignmentFilterId = 'f1'; deviceAndAppManagementAssignmentFilterType = 'include' } }
+) -GroupNameById @{} -OtherTargets ([ref]$allOther) -FilterNameById @{ 'f1' = 'Corporate' })
+Assert-Equal 2 $allCurrent.Count "ConvertTo-CurrentAssignmentEntries: All devices and All users are read as assignments"
+Assert-Equal 0 $allOther.Count "ConvertTo-CurrentAssignmentEntries: ...not as targets the catalog can't hold"
+Assert-Equal 'required|include|[All devices]' $allCurrent[0].Key "ConvertTo-CurrentAssignmentEntries: All devices by its catalog name"
+Assert-Equal 'available|include|[All users]|include:Corporate' $allCurrent[1].Key "ConvertTo-CurrentAssignmentEntries: All users with its filter"
+$allDesired = @(Get-DesiredAssignmentEntries -RequiredGroups @('[all devices]') -AvailableGroups @('[All users]') -ExcludeGroups @('[All users]', 'SG-Contractors') -FilterName '')
+Assert-True (@($allDesired | Where-Object { $_.Key -eq 'required|include|[All devices]' }).Count -eq 1) "Get-DesiredAssignmentEntries: All devices in its one spelling"
+Assert-True (@($allDesired | Where-Object { $_.Key -eq 'available|include|[All users]' }).Count -eq 1) "Get-DesiredAssignmentEntries: All users can't be excluded, so it stays included"
+Assert-True (@($allDesired | Where-Object { $_.Mode -eq 'exclude' -and $_.Group -like '`[All*' }).Count -eq 0) "Get-DesiredAssignmentEntries: no exclusion of All users / All devices"
+$allDiff = Get-AssignmentDiff -Current @($allCurrent[0]) -Desired @(Get-DesiredAssignmentEntries -RequiredGroups @('[All devices]'))
+Assert-True (-not @($allDiff.ToAdd).Count -and -not @($allDiff.ToRemove).Count) "Get-AssignmentDiff: All devices in Intune and in the catalog - no change"
+$allBody = @((New-AppAssignmentBody -Entries $allDesired -GroupIdByName @{ 'SG-Contractors' = 'id-2' } -CurrentAssignments @(
+    @{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.allDevicesAssignmentTarget' }; settings = @{ restartSettings = 'kept' } })).mobileAppAssignments)
+$allDev = @($allBody | Where-Object { $_.target.'@odata.type' -eq '#microsoft.graph.allDevicesAssignmentTarget' })
+Assert-Equal 1 $allDev.Count "New-AppAssignmentBody: All devices is sent as Intune's own target"
+Assert-True (-not $allDev[0].target.Contains('groupId')) "New-AppAssignmentBody: ...with no group id"
+Assert-Equal 'kept' $allDev[0].settings.restartSettings "New-AppAssignmentBody: All devices keeps the settings it has in Intune"
+Assert-Equal 1 @($allBody | Where-Object { $_.target.'@odata.type' -eq '#microsoft.graph.allLicensedUsersAssignmentTarget' }).Count "New-AppAssignmentBody: All users likewise"
+Assert-Equal 0 @($allBody | Where-Object { $_.target.'@odata.type' -like '*exclusion*' -and -not $_.target.groupId }).Count "New-AppAssignmentBody: never an exclusion without a group"
 Assert-Equal "g9" (ConvertTo-CurrentAssignmentEntries -Assignments @(@{ intent = 'required'; target = @{ '@odata.type' = '#microsoft.graph.groupAssignmentTarget'; groupId = 'g9' } }) -GroupNameById @{})[0].Group `
     "ConvertTo-CurrentAssignmentEntries: an unknown group keeps its id"
 
@@ -2600,6 +2632,8 @@ Assert-Equal 1 @(Get-DependencyFindings -Apps $depApps -OnlyNames @('C')).Count 
 # Entra groups
 $dir = @([pscustomobject]@{ type = 'Group'; displayName = 'SG-All' }, [pscustomobject]@{ type = 'User'; displayName = 'SG-Gone' })
 $entra = @(Get-EntraGroupFindings -Apps $chkApps -Directory $dir)
+Assert-Equal 0 @(Get-EntraGroupFindings -Apps @([pscustomobject]@{ appName = 'X'; requiredFor = @('[All devices]'); availableFor = @('[All users]'); uninstallFor = @(); excludeFor = @() }) -Directory @()).Count `
+    "Get-EntraGroupFindings: All users / All devices are Intune's own targets, never missing from Entra ID"
 Assert-Equal 1 $entra.Count "Get-EntraGroupFindings: only the group that doesn't exist (a user of that name doesn't count)"
 Assert-Equal 'SG-Gone' $entra[0].Data.Group "Get-EntraGroupFindings: exclusions are checked too"
 Assert-Equal '7-Zip' $entra[0].App "Get-EntraGroupFindings: names the app that uses it"

@@ -385,6 +385,7 @@ function Global:Save-WebPrefs {
         foreach ($p in @($Data.profiles)) {
             if (-not ([string]$p.name).Trim()) { return @{ ok = $false; error = 'Every profile needs a name.' } }
             foreach ($g in @($p.required) + @($p.available) + @($p.exclude)) { if (([string]$g).Trim()) { $problem = Test-WebGroupName ([string]$g).Trim(); if ($problem) { return @{ ok = $false; error = "Profile '$($p.name)': $problem" } } } }
+            foreach ($g in @($p.exclude)) { $problem = Test-WebGroupName ([string]$g).Trim() -Role exclude; if (([string]$g).Trim() -and $problem) { return @{ ok = $false; error = "Profile '$($p.name)': $problem" } } }
         }
         if (@(@($Data.profiles) | Group-Object { ([string]$_.name).Trim() } | Where-Object { $_.Count -gt 1 }).Count) { return @{ ok = $false; error = 'Two profiles have the same name.' } }
     }

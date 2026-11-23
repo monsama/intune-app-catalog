@@ -209,6 +209,8 @@ try {
 
     foreach ($groupName in $allGroupNames) {
         if ([string]::IsNullOrWhiteSpace($groupName)) { continue }
+        # All users / All devices are Intune's own targets, not Entra groups - nothing to look up or create.
+        if (Get-AllTargetInfo $groupName) { Write-Host "  [=] Built in: $groupName" -ForegroundColor DarkGray; continue }
         $escapedName = $groupName.Replace("'", "''")
         # The filter VALUE must be percent-encoded, not just quote-escaped -
         # a raw & (e.g. in "Deploy I&O Workplace") gets parsed by the server
