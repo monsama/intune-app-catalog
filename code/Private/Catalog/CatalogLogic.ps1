@@ -2271,6 +2271,7 @@ function Global:Get-StarterAppSet {
         [ordered]@{ id = 'Microsoft.Teams'; name = 'Microsoft Teams'; category = 'Communication'; recommended = $false; why = 'Where Microsoft 365 Apps do not bring it already (the new Teams, for all users).' },
         [ordered]@{ id = 'Zoom.Zoom'; name = 'Zoom'; category = 'Communication'; recommended = $false; why = 'Where customers or partners meet on Zoom.' },
         [ordered]@{ id = 'Cisco.Webex'; name = 'Webex'; category = 'Communication'; recommended = $false; why = 'Where meetings run on Webex.' },
+        [ordered]@{ id = 'Jabra.Direct'; name = 'Jabra Direct'; category = 'Communication'; recommended = $false; why = 'For Jabra headsets: firmware updates and settings, and call control in Teams and softphones.' },
         [ordered]@{ id = 'SlackTechnologies.Slack'; name = 'Slack'; category = 'Communication'; recommended = $false; why = 'Where teams or partners chat on Slack.' },
         [ordered]@{ id = 'Mozilla.Thunderbird'; name = 'Thunderbird'; category = 'Communication'; recommended = $false; why = 'A mail client where Outlook is not used.' },
         [ordered]@{ id = 'Citrix.Workspace'; name = 'Citrix Workspace'; category = 'Remote access'; recommended = $false; why = 'For Citrix virtual apps and desktops.' },
