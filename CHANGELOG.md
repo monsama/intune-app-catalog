@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.38.6
+
+- **Checks: one problem, one row.** An app assigned in Intune to a group or
+  to All users / All devices the catalog doesn't have showed twice - as
+  "Groups: ... differ" and as "Unknown assignments" - with the same fixes.
+  The Unknown assignments row is now left out when the app's Groups row
+  already shows every item on it. What the Groups row can't show (an
+  assignment with a filter, an exclusion, a target the catalog can't hold)
+  still gets its own row.
+
 ## 2.38.5
 
 - **Checks failed** with "The term 'Get-AllTargetInfo' is not recognized"

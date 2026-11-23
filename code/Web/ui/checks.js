@@ -12,7 +12,7 @@ function mergeFindings(r) {
   findings = findings.filter(f => !(areas.has(f.area) && names.has(f.catalogName || f.app))).concat(r.findings || []);
 }
 function setCheckAreas() {
-  const cur = $('checkFilter').value, areas = [...new Set(findings.map(f => f.area))].sort();
+  const cur = $('checkFilter').value, areas = [...new Set(shownFindings().map(f => f.area))].sort();
   $('checkFilter').replaceChildren(el('option', { value: '', text: 'All areas' }), ...areas.map(a => el('option', { value: a, text: a })));
   if (areas.includes(cur)) $('checkFilter').value = cur;
 }
@@ -60,7 +60,7 @@ async function runChecks(names) {
     $('checkEmptyList').hidden = true; $('btnRunChecksEmpty').hidden = true;
     $('checkEmptyTitle').textContent = 'Nothing to fix';
     $('checkEmptyText').textContent = notes.length ? `No findings - but not everything was compared: ${notes.join(' ')}` : 'The catalog, Intune and Entra ID agree.';
-    checkLog(`${stamp()} [OK] Checks finished: ${findings.length} finding(s).`);
+    checkLog(`${stamp()} [OK] Checks finished: ${shownFindings().length} finding(s).`);
     return r;
   } finally {
     checksRunning = false; b.disabled = false; b.textContent = 'Run checks';
@@ -97,7 +97,7 @@ $('btnFixCompare').addEventListener('click', () => openCompare(selFindings().fil
 $('btnFixRecheck').addEventListener('click', () => runChecks([...new Set(selFindings().map(f => f.catalogName || f.app).filter(Boolean))]));
 $('checkAll').addEventListener('change', e => {
   const area = $('checkFilter').value;
-  for (const f of findings.filter(f => !area || f.area === area)) { if (e.target.checked) checkSel.add(keyOf(f)); else checkSel.delete(keyOf(f)); }
+  for (const f of shownFindings().filter(f => (!area || f.area === area) && (!checkApp || (f.catalogName || f.app) === checkApp))) { if (e.target.checked) checkSel.add(keyOf(f)); else checkSel.delete(keyOf(f)); }
   renderChecks();
 });
 
@@ -139,10 +139,28 @@ async function showChecksFor(name) {
   showView('checks'); checkApp = name; renderChecks();
   if (!findings.some(f => (f.catalogName || f.app) === name)) await runChecks([name]);
 }
+// One problem, one row (2.38.6): an "Unknown assignments" finding whose every item is already in the same app's
+// "Groups" finding (that list differs - Intune has it, the catalog doesn't) says nothing new, and its fixes are the same.
+// What the Groups row can't show - an assignment with a filter, an exclusion, a target the catalog can't hold - stays.
+const shownFindings = () => findings.filter(f => !coveredByGroups(f, findings));
+function coveredByGroups(f, all) {
+  if (f.area !== 'Unknown assignments') return false;
+  const name = f.catalogName || f.app;
+  const g = all.find(x => x.area === 'Groups' && (x.catalogName || x.app) === name);
+  if (!g) return false;
+  const lists = {};
+  for (const d of diffsOf(g)) lists[String(d.field).toLowerCase()] = String(d.remote ?? '').split(/,\s*/).map(s => s.trim().toLowerCase()).filter(Boolean);
+  const items = String(f.intune || '').split(/,\s*(?=\[)/).map(s => s.trim()).filter(Boolean);
+  return items.length > 0 && items.every(it => {
+    const m = /^\[(required|available|uninstall)\]\s+(.+)$/i.exec(it);
+    if (!m || /\(filter:|^EXCLUDE\s/i.test(m[2])) return false;
+    return (lists[`${m[1].toLowerCase()} for`] || []).includes(m[2].trim().toLowerCase());
+  });
+}
 function renderChecks() {
   hcClose();
   const area = $('checkFilter').value;
-  const list = findings.filter(f => (!area || f.area === area) && (!checkApp || (f.catalogName || f.app) === checkApp));
+  const list = findings.filter(f => (!area || f.area === area) && (!checkApp || (f.catalogName || f.app) === checkApp) && !coveredByGroups(f, findings));
   let chip = document.getElementById('checkAppChip');
   if (checkApp) {
     if (!chip) { chip = el('span', { class: 'chip tag', id: 'checkAppChip' }); $('checkFilter').after(chip); }

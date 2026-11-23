@@ -254,6 +254,18 @@ try {
       await page.click('#checkBody .difs'); await page.click('#cmpCard button');
       check(await page.evaluate(() => document.getElementById('dlgCompare').open && document.getElementById('cmpCard').hidden), `${label}: Open full compare opens Compare`);
       await page.keyboard.press('Escape');
+      // 2.38.6: one problem, one row - an Unknown assignments finding that the app's Groups finding already shows is
+      // folded into it; one with something the Groups row can't show (a filter) stays.
+      await page.evaluate(`findings = [
+        { area: 'Groups', app: 'ZZ Portal', catalogName: 'ZZ Portal', problem: '1 assignment list(s) differ: Required for', actions: ['Pull', 'PushGroups'],
+          data: { Diffs: [{ Field: 'Required for', Local: '', Remote: '[All devices]' }] } },
+        { area: 'Unknown assignments', app: 'ZZ Portal', catalogName: 'ZZ Portal', problem: '1 unknown', catalog: '(not in the catalog)', intune: '[required] [All devices]', actions: ['PushGroups', 'Pull'] },
+        { area: 'Groups', app: 'ZZ Filtered', catalogName: 'ZZ Filtered', problem: '1 differ', actions: ['Pull'], data: { Diffs: [{ Field: 'Required for', Local: '', Remote: 'SG-A' }] } },
+        { area: 'Unknown assignments', app: 'ZZ Filtered', catalogName: 'ZZ Filtered', problem: '1 unknown', catalog: '(not in the catalog)', intune: '[required] SG-A (filter: Laptops)', actions: ['Pull'] }];
+        renderChecks();`);
+      const rows = await page.$$eval('#checkBody tr', r => r.map(x => x.children[1].textContent + ':' + x.children[2].textContent));
+      check(rows.join('|') === 'Groups:ZZ Portal|Groups:ZZ Filtered|Unknown assignments:ZZ Filtered', `${label}: an Unknown assignments finding the Groups row already shows is one row`, rows.join('|'));
+      check(/^3 /.test(await page.textContent('#checkCount')), `${label}: the count leaves the folded finding out`, await page.textContent('#checkCount'));
       await page.evaluate('findings = []; renderChecks();');
 
       // Groups and Platform scripts: empty, explained.
