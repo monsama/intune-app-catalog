@@ -314,6 +314,10 @@ function Global:Export-WebPfx {
     if ($thumb -notmatch '^[0-9A-Fa-f]{40}$') { return @{ ok = $false; error = 'Choose, create or import a certificate first.' } }
     $pw = [string]$Data.password
     if ($pw.Length -lt 12) { return @{ ok = $false; error = 'Use a password of at least 12 characters - the file can sign in as the app.' } }
+    # Only the connection's certificate (2.38.12): on a PC the store also holds the user's own (mail, VPN, code
+    # signing) - this is no general export tool. The server's store has only those made or imported here.
+    $saved = ([string]$Global:App.GraphCertificateThumbprint) -replace '\s', ''
+    if (-not (Test-WebServerMode) -and $thumb -ne $saved) { return @{ ok = $false; error = 'Only the connection''s certificate can be exported here - save the connection with this certificate first (Settings > Connection).' } }
     $cert = Find-AppStoreCertificate $thumb
     if (-not $cert) { return @{ ok = $false; error = 'No certificate with that thumbprint here.' } }
     if (-not $cert.HasPrivateKey) { return @{ ok = $false; error = 'This certificate has no private key here - there is nothing to export but its .cer.' } }

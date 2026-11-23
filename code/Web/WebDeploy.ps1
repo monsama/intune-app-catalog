@@ -488,7 +488,7 @@ function Global:Get-WebExpectedInstallMembers {
         foreach ($w in $want) {
             $g = $read.value["$($w.Intent)|$($w.Name)"]
             if (-not $g) { $notes.Add("$($w.Intent): $($w.Name) isn't in Entra ID."); continue }
-            if ($g.More) { $notes.Add("$($w.Intent): $($w.Name) has more than 999 members - the first 999 are listed.") }
+            if ($g.More) { $notes.Add($(if ($w.Intent -eq 'Excluded') { "Excluded: $($w.Name) has more than 999 members - only the first 999 are left out of the list, so some shown as waiting won't get it." } else { "$($w.Intent): $($w.Name) has more than 999 members - the first 999 are listed." })) }
             foreach ($o in @($g.Items)) {
                 $type = [string]$o.'@odata.type'
                 $kind = if ($type -like '*device') { 'device' } elseif ($type -like '*user') { 'user' } else { $null }

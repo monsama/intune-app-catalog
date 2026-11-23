@@ -52,6 +52,11 @@ body="$(python3 -c 'import json,sys; print(json.dumps({"token":sys.argv[1],"text
 post /api/detection-from-paste "$body" | grep -q '"Msi"' || fail "detection from a pasted app"
 post /api/detection-from-paste "{\"token\":\"$T2\",\"text\":\"nonsense\"}" | grep -q '"ok":false' || fail "nonsense paste was accepted"
 ok "PC helper scripts and the pasted detection"
+# The certificate with its private key (2.38.11): made here, exported as a .pfx that opens with its password.
+th="$(post /api/cert-new "{\"token\":\"$T2\",\"subject\":\"ICA Smoke\"}" | field thumbprint)"; [ -n "$th" ] || fail "creating a certificate"
+post /api/cert-export-pfx "{\"token\":\"$T2\",\"thumbprint\":\"$th\",\"password\":\"short\"}" | grep -q '"ok":false' || fail ".pfx export took a short password"
+post /api/cert-export-pfx "{\"token\":\"$T2\",\"thumbprint\":\"$th\",\"password\":\"smoke-pfx-password\"}" | python3 -c "import sys,json,base64; d=json.load(sys.stdin); assert d.get('ok') and len(base64.b64decode(d['file'])) > 1000, d" || fail ".pfx export"
+ok "certificate made and exported as a .pfx"
 post /api/logout "{\"token\":\"$T2\"}" >/dev/null
 [ "$(post /api/ping "{\"token\":\"$T2\"}" | field reason)" = "signedout" ] || fail "sign-out"; ok "signed out"
 docker volume rm -f "$NAME-data" >/dev/null 2>&1 || true

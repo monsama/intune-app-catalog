@@ -821,13 +821,12 @@ try {
     Check ($pl.ok -and @($pl.items).Count -eq 2 -and @($pl.items | Where-Object { $_.id -eq 'Vendor.ZZNew' -and -not $_.inCatalog }).Count -eq 1) 'from a list: a winget export file''s packages, each marked in the catalog or not' ($pl | ConvertTo-Json -Compress -Depth 3)
     # 2.38.10: a certificate exported with its private key - a long password, and the same certificate comes back.
     $px = Invoke-Api '/api/cert-export-pfx' @{ thumbprint = ('CD' * 20); password = 'a-long-enough-pw' }
-    Check (-not $px.ok -and $px.error -like '*No certificate*') '.pfx export: an unknown certificate is refused' ($px | ConvertTo-Json -Compress)
+    Check (-not $px.ok -and $px.error -like '*Only the connection*') '.pfx export: an unknown certificate is refused' ($px | ConvertTo-Json -Compress)
+    # 2.38.12: on a PC only the connection's certificate - not the user's own (mail, VPN, code signing) in the same store.
     if ($IsLinux) {
         $nc = Invoke-Api '/api/cert-new' @{ subject = 'ZZ Export Test' }
-        $pxShort = Invoke-Api '/api/cert-export-pfx' @{ thumbprint = $nc.thumbprint; password = 'short' }
-        $pxOk = Invoke-Api '/api/cert-export-pfx' @{ thumbprint = $nc.thumbprint; password = 'a-long-enough-pw' }
-        $back = $null; try { $back = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new([Convert]::FromBase64String([string]$pxOk.file), 'a-long-enough-pw') } catch { }
-        Check ($nc.ok -and -not $pxShort.ok -and $pxOk.ok -and $pxOk.name -eq 'ZZ Export Test.pfx' -and $back -and $back.Thumbprint -eq $nc.thumbprint -and $back.HasPrivateKey) '.pfx export: a short password is refused; the .pfx opens with its password - the same certificate, with its key' "$($pxShort.error) | $($pxOk.error)"
+        $pxOther = Invoke-Api '/api/cert-export-pfx' @{ thumbprint = $nc.thumbprint; password = 'a-long-enough-pw' }
+        Check ($nc.ok -and -not $pxOther.ok -and $pxOther.error -like "*Only the connection*") '.pfx export: on a PC, a certificate that isn''t the connection''s is refused' ($pxOther | ConvertTo-Json -Compress)
         if ($nc.ok) { [void](Invoke-Api '/api/cert-delete-local' @{ thumbprint = $nc.thumbprint; store = 'CurrentUser' }) }
     }
     $st = Invoke-Api '/api/package-list' @{ starter = $true }

@@ -389,8 +389,8 @@ try {
         await page.fill('#pfxExPw', 'a-long-enough-pw'); await page.fill('#pfxExPw2', 'a-long-enough-px'); await page.click('#btnPfxExGo');
         check(/differ/.test(await page.textContent('#pfxExError')), `${label}: .pfx export wants the password twice the same`);
         await page.fill('#pfxExPw2', 'a-long-enough-pw'); await page.click('#btnPfxExGo');
-        await page.waitForFunction(() => /No certificate/.test(document.getElementById('pfxExError').textContent));
-        check(await page.evaluate(() => document.getElementById('dlgPfxExport').open && !document.getElementById('pfxExPw').value), `${label}: .pfx export says why it can't (no such certificate) and clears the passwords`);
+        await page.waitForFunction(() => /No certificate|Only the connection/.test(document.getElementById('pfxExError').textContent));
+        check(await page.evaluate(() => document.getElementById('dlgPfxExport').open && !document.getElementById('pfxExPw').value), `${label}: .pfx export says why it can't (not the connection's certificate) and clears the passwords`);
         await page.keyboard.press('Escape');
         await page.fill('#fThumb', thumbWas);
 

@@ -31,15 +31,18 @@ function Global:Get-AllTargetInfo {
       Entra group called "All Users" never collides. Given a catalog name or a
       Graph target type, returns @{ Name = '[All users]'; Type = '#microsoft.graph.allLicensedUsersAssignmentTarget' },
       or $null when it is neither (an ordinary group). Case-insensitive.
+      2.38.12: a catalog name matches only the bracketed name, a Graph type only with -Type - so a group that is
+      named like a Graph type is never taken for one (and one named "[All users]" is caught where names are read).
     #>
-    param([string]$Value)
+    param([string]$Value, [switch]$Type)
     $v = ([string]$Value).Trim()
     if (-not $v) { return $null }
     foreach ($t in @(
         @{ Name = '[All users]'; Type = '#microsoft.graph.allLicensedUsersAssignmentTarget' },
         @{ Name = '[All devices]'; Type = '#microsoft.graph.allDevicesAssignmentTarget' }
     )) {
-        if ($v -eq $t.Name -or $v -eq $t.Type -or $v -eq $t.Type.TrimStart('#')) { return $t }
+        if ($Type) { if ($v -eq $t.Type -or $v -eq $t.Type.TrimStart('#')) { return $t } }
+        elseif ($v -eq $t.Name) { return $t }
     }
     return $null
 }
@@ -117,7 +120,7 @@ function Global:ConvertTo-CurrentAssignmentEntries {
         if (-not $target) { continue }
         $targetType = if ($target -is [System.Collections.IDictionary]) { [string]$target['@odata.type'] } else { [string]$target.'@odata.type' }
         $groupId = if ($target -is [System.Collections.IDictionary]) { [string]$target['groupId'] } else { [string]$target.groupId }
-        $all = Get-AllTargetInfo $targetType
+        $all = Get-AllTargetInfo $targetType -Type
         if ($all) { $mode = 'include'; $groupId = $all.Name }
         else {
         $mode = switch -Wildcard ($targetType) {
@@ -132,7 +135,9 @@ function Global:ConvertTo-CurrentAssignmentEntries {
         }
         $name = $groupId
         if ($all) { $name = $all.Name }
-        if (-not $all -and $GroupNameById -and $GroupNameById.Contains($groupId) -and $GroupNameById[$groupId]) { $name = [string]$GroupNameById[$groupId] }
+        # A real group named like a built-in target ("[All users]") keeps its ID - read as the name, it would compare as
+        # Intune's All users target, and a send would assign the app to every user.
+        if (-not $all -and $GroupNameById -and $GroupNameById.Contains($groupId) -and $GroupNameById[$groupId] -and -not (Get-AllTargetInfo ([string]$GroupNameById[$groupId]))) { $name = [string]$GroupNameById[$groupId] }
         # The assignment filter, by name where it's known (its id otherwise).
         $filterId = if ($target -is [System.Collections.IDictionary]) { [string]$target['deviceAndAppManagementAssignmentFilterId'] } else { [string]$target.deviceAndAppManagementAssignmentFilterId }
         $filterType = if ($target -is [System.Collections.IDictionary]) { [string]$target['deviceAndAppManagementAssignmentFilterType'] } else { [string]$target.deviceAndAppManagementAssignmentFilterType }
@@ -213,7 +218,7 @@ function Global:New-AppAssignmentBody {
     foreach ($c in @($CurrentAssignments)) {
         if (-not $c -or -not $c.target -or -not $c.settings) { continue }
         if ([string]$c.target.'@odata.type' -like '*exclusion*') { continue }
-        $cAll = Get-AllTargetInfo ([string]$c.target.'@odata.type')
+        $cAll = Get-AllTargetInfo ([string]$c.target.'@odata.type') -Type
         $cKey = if ($cAll) { $cAll.Name } else { [string]$c.target.groupId }
         $keep["$([string]$c.intent)|$cKey".ToLowerInvariant()] = $c.settings
     }
