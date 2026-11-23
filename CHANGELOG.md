@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.38.5
+
+- **Checks failed** with "The term 'Get-AllTargetInfo' is not recognized"
+  when it compared assignments (2.38.4): the workers that read each app's
+  assignments in parallel weren't handed the new All users / All devices
+  helper. Fixed - and a test now fails if those workers miss any assignment
+  helper the rest of the app has.
+- **Checks**: a finding with nothing stored for the catalog or Intune (an
+  earlier audit's) no longer shows "Catalog (blank) / Intune (blank)".
+
 ## 2.38.4
 
 **Checks shows what differs side by side, the catalog can assign to All users

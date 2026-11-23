@@ -269,7 +269,7 @@ function cmpFixButtons(f, cls, before) {
 function diffCell(f) {
   const diffs = diffsOf(f);
   if (!diffs.length) {
-    const line = (k, v) => v ? el('div', { class: 'dline', title: String(v) }, el('b', { text: k }), String(v)) : '';
+    const line = (k, v) => v && !/^\((blank|none)\)$/.test(String(v).trim()) ? el('div', { class: 'dline', title: String(v) }, el('b', { text: k }), String(v)) : '';
     return el('div', { class: 'dlines' }, line('Catalog', f.catalog), line(f.area === 'Entra groups' ? 'Entra ID' : 'Intune', f.intune));
   }
   const names = diffs.map(d => d.field || 'Value'), shown = names.slice(0, names.length > 4 ? 3 : 4);
