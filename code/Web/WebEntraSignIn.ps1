@@ -119,7 +119,9 @@ function Global:Complete-WebEntraCallback {
         Write-Log "[FAILED] Sign in with Microsoft: $(Protect-LogText $_.Exception.Message)"
         return '/login.html?why=entra-failed'
     }
-    $who = if ($claims.name) { [string]$claims.name } else { [string]$claims.preferred_username }
+    # Names come from the tenant: no control characters in log lines (a crafted display name can't fake a log line).
+    $who = (($(if ($claims.name) { [string]$claims.name } else { [string]$claims.preferred_username })) -replace '[\x00-\x1f]', ' ').Trim()
+    $upnText = ([string]$claims.preferred_username) -replace '[\x00-\x1f]', ' '
     $si = ConvertTo-SignInSettings $Global:App.SignIn
     $member = Test-WebEntraGroupMember -UserId ([string]$claims.oid) -GroupId $si.GroupId
     if (-not $member.ok) {
@@ -127,7 +129,7 @@ function Global:Complete-WebEntraCallback {
         return '/login.html?why=entra-groupcheck'
     }
     if (-not $member.member) {
-        Write-Log "[WARN] Sign in with Microsoft refused: $who ($([string]$claims.preferred_username)) isn't in the sign-in group $($si.GroupName)."
+        Write-Log "[WARN] Sign in with Microsoft refused: $who ($upnText) isn't in the sign-in group $($si.GroupName)."
         return '/login.html?why=entra-notmember'
     }
     $session = New-WebSession -Agent $Agent -Method 'entra' -Name $who -Upn ([string]$claims.preferred_username) -Oid ([string]$claims.oid)

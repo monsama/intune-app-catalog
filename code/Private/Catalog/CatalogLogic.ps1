@@ -2031,16 +2031,18 @@ function Global:Get-PermissionReport {
     )
     foreach ($f in $feat) {
         # A ReadWrite permission covers its Read.All.
-        $isGranted = (& $has $f[0]) -or ($f[0] -match '\.Read\.All$' -and (& $has ($f[0] -replace '\.Read\.All$', '.ReadWrite.All'))) -or ($f[0] -eq 'Device.Read.All' -and (& $has 'Directory.Read.All'))
+        $isGranted = (& $has $f[0]) -or ($f[0] -match '\.Read\.All$' -and (& $has ($f[0] -replace '\.Read\.All$', '.ReadWrite.All'))) -or ($f[0] -in 'Device.Read.All', 'User.Read.All' -and (& $has 'Directory.Read.All'))
         if ($f[1]) { & $row $f[0] $(if ($isGranted) { 'ok' } else { 'missing' }) $f[2] $f[3] }
         # 2.38.13: the Scripts page reads and sends platform scripts in Intune, whether or not this folder has one yet.
         elseif ($isGranted -and $f[0] -eq 'DeviceManagementScripts.ReadWrite.All') { & $row $f[0] 'optional' $f[2] 'For the Scripts page (platform scripts in Intune) - keep it if you use that page, remove it if you don''t.' }
+        # Narrow read permissions "Add required permissions" grants: kept, not "remove it" (Mail.Send can send as anyone - that one is flagged).
+        elseif ($isGranted -and $f[0] -ne 'Mail.Send') { & $row $f[0] 'optional' $f[2] 'Read only - nothing here uses it yet; it is used as soon as you do. Fine to keep.' }
         elseif ($isGranted) { & $row $f[0] 'unused' $f[2] $(if ($f[0] -eq 'Mail.Send') { 'No email alerts are set up - and Mail.Send can send as any mailbox: remove it, or limit it with an application access policy.' } else { 'Nothing here uses it yet.' }) }
         else { & $row $f[0] 'optional' $f[2] 'Only when you use it.' }
     }
     $known = @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Group.Read.All', 'DeviceManagementScripts.ReadWrite.All', 'DeviceManagementManagedDevices.Read.All', 'Mail.Send', 'User.Read.All', 'DeviceManagementConfiguration.Read.All', 'Device.Read.All')
-    # Directory.Read.All covers Device.Read.All - known (not "remove it") when it stands in for it.
-    if ($Usage.Devices -and -not (& $has 'Device.Read.All')) { $known += 'Directory.Read.All' }
+    # Directory.Read.All covers Device.Read.All and User.Read.All - known (not "remove it") when it stands in for it.
+    if (($Usage.Devices -and -not (& $has 'Device.Read.All')) -or ($Usage.GroupsPage -and -not (& $has 'User.Read.All'))) { $known += 'Directory.Read.All' }
     # ReadWrite stands in for Read.All when filters are used; otherwise it's a broad one never needed (below).
     if ($Usage.Filters -and -not (& $has 'DeviceManagementConfiguration.Read.All')) { $known += 'DeviceManagementConfiguration.ReadWrite.All' }
     if ($Usage.Inventory -and -not (& $has 'DeviceManagementManagedDevices.Read.All')) { $known += 'DeviceManagementManagedDevices.ReadWrite.All' }

@@ -29,7 +29,7 @@ async function runChecks(names) {
   // 2.38.13: one change to the list - at the end. While the stages run, what was shown stays, dimmed (a first run
   // shows the last audit's rows that way); before, each stage redrew it and rows came and went for a few seconds.
   const hadRows = shownFindings().length > 0;
-  $('checkGrid').classList.add('checking');
+  $('checkGrid').classList.add('checking'); $('checkBody').inert = true; $('checkAll').disabled = true; $('checkFilter').disabled = true;
   const b = $('btnRunChecks'); b.disabled = true; b.textContent = 'Checking...';
   $('checkLogBox').open = false; $('checkLog').textContent = '';
   const only = names && names.length ? { names } : {};
@@ -68,7 +68,7 @@ async function runChecks(names) {
     return r;
   } finally {
     checksRunning = false; b.disabled = false; b.textContent = 'Run checks';
-    $('checkGrid').classList.remove('checking');
+    $('checkGrid').classList.remove('checking'); $('checkBody').inert = false; $('checkAll').disabled = false; $('checkFilter').disabled = false;
     setCheckAreas(); renderChecks();
   }
 }

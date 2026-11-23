@@ -448,7 +448,7 @@ try {
             if ($toRemove.Count -eq 0 -and $toAdd.Count -eq 0) { continue }
             # 2.38.13: never send a list with a group left out - it replaces the whole list and would drop that group.
             $unresolved = @(Get-UnresolvedAssignmentGroups -Entries $desiredEntries -GroupIdByName $groupIdCache)
-            if ($unresolved.Count) { throw "$($app.AppName): these groups couldn't be found in Entra ID: $($unresolved -join ', '). Its assignments in Intune were left as they are." }
+            if ($unresolved.Count) { throw "$($app.AppName): these groups couldn't be found in Entra ID: $($unresolved -join ', '). Stopped here: its assignments in Intune were left as they are, and the apps after it werent changed (the ones before it were)." }
             $assignments = @((New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdCache -FilterIdByName $filterIdByName -CurrentAssignments @($currentAssignments.value)).mobileAppAssignments)
 
             $assignBody = [string](@{ mobileAppAssignments = @($assignments) } | ConvertTo-Json -Depth 10)

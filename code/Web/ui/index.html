@@ -632,14 +632,15 @@
     </div>
     </div>
     <div class="setsec" id="sec-diagnostics" data-sec="diagnostics" role="tabpanel" aria-labelledby="stab-diagnostics" hidden>
+    <!-- Permissions: the whole width - its "For" texts are sentences. -->
+    <article class="card permcard">
+      <h2>Permissions</h2>
+      <p class="sub" id="permNote">The Graph permissions the app registration has, against what this catalog uses - what to add, and what to remove (the fewer, the less the certificate can do).</p>
+      <div class="actions"><button class="btn" id="btnPermCheck" title="Read the permissions from the sign-in and compare them with the features in use">Check permissions</button></div>
+      <div class="tablewrap short" id="permWrap" hidden><table class="grid"><thead><tr><th>Permission</th><th>Status</th><th>For</th></tr></thead><tbody id="permRows"></tbody></table></div>
+    </article>
     <div class="cols">
       <div class="col">
-        <article class="card">
-          <h2>Permissions</h2>
-          <p class="sub" id="permNote">The Graph permissions the app registration has, against what this catalog uses - what to add, and what to remove (the fewer, the less the certificate can do).</p>
-          <div class="actions"><button class="btn" id="btnPermCheck" title="Read the permissions from the sign-in and compare them with the features in use">Check permissions</button></div>
-          <div class="tablewrap short" id="permWrap" hidden><table class="grid"><thead><tr><th>Permission</th><th>Status</th><th>For</th></tr></thead><tbody id="permRows"></tbody></table></div>
-        </article>
         <article class="card">
           <h2>Diagnostics</h2>
           <p class="sub" data-server-text="The server's setup, the catalog itself, and how it lines up with Intune. Only reads.">This machine's setup, the catalog itself, and how it lines up with Intune. Only reads.</p>
@@ -1109,8 +1110,8 @@
       <span class="muted" id="awNote" aria-live="polite">Type to search - results appear as you type.</span>
     </div>
     <div class="awsplit">
-      <div class="tablewrap" tabindex="0" aria-label="Winget packages" data-empty="Search results appear here - pick one or several.">
-        <table class="grid" id="awGrid"><thead><tr><th class="chk"><span class="sr">Pick</span></th><th>Package</th><th>ID</th><th id="awColLast">Version</th></tr></thead><tbody id="awRows"></tbody></table>
+      <div class="tablewrap" id="awWrap" tabindex="0" aria-label="Winget packages" data-empty="Search results appear here - pick one or several.">
+        <table class="grid" id="awGrid"><thead><tr><th class="chk"><span class="sr">Pick</span></th><th id="awColName">Package</th><th>ID</th><th id="awColLast">Version</th></tr></thead><tbody id="awRows"></tbody></table>
       </div>
       <aside class="awdetail" id="awDetail" aria-live="polite"><p class="muted">Pick a package to see what winget says about it.</p></aside>
     </div>
