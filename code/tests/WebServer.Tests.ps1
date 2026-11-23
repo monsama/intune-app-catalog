@@ -819,6 +819,17 @@ try {
     Check ($attL.ok -and @($attL.items).Count -eq @($att.items).Count -and @($attL.setup).Count -eq 5 -and $attI.ok -and @($attI.items).Count -eq 0 -and $null -eq $attI.setup) 'home: the local part has every item without Intune, the Intune part only its own (none when not connected)' (@($attL, $attI) | ConvertTo-Json -Compress -Depth 3)
     $pl = Invoke-Api '/api/package-list' @{ json = '{"Sources":[{"Packages":[{"PackageIdentifier":"Vendor.ZZNew"},{"PackageIdentifier":"Mozilla.Firefox"}]}]}' }
     Check ($pl.ok -and @($pl.items).Count -eq 2 -and @($pl.items | Where-Object { $_.id -eq 'Vendor.ZZNew' -and -not $_.inCatalog }).Count -eq 1) 'from a list: a winget export file''s packages, each marked in the catalog or not' ($pl | ConvertTo-Json -Compress -Depth 3)
+    # 2.38.10: a certificate exported with its private key - a long password, and the same certificate comes back.
+    $px = Invoke-Api '/api/cert-export-pfx' @{ thumbprint = ('CD' * 20); password = 'a-long-enough-pw' }
+    Check (-not $px.ok -and $px.error -like '*No certificate*') '.pfx export: an unknown certificate is refused' ($px | ConvertTo-Json -Compress)
+    if ($IsLinux) {
+        $nc = Invoke-Api '/api/cert-new' @{ subject = 'ZZ Export Test' }
+        $pxShort = Invoke-Api '/api/cert-export-pfx' @{ thumbprint = $nc.thumbprint; password = 'short' }
+        $pxOk = Invoke-Api '/api/cert-export-pfx' @{ thumbprint = $nc.thumbprint; password = 'a-long-enough-pw' }
+        $back = $null; try { $back = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new([Convert]::FromBase64String([string]$pxOk.file), 'a-long-enough-pw') } catch { }
+        Check ($nc.ok -and -not $pxShort.ok -and $pxOk.ok -and $pxOk.name -eq 'ZZ Export Test.pfx' -and $back -and $back.Thumbprint -eq $nc.thumbprint -and $back.HasPrivateKey) '.pfx export: a short password is refused; the .pfx opens with its password - the same certificate, with its key' "$($pxShort.error) | $($pxOk.error)"
+        if ($nc.ok) { [void](Invoke-Api '/api/cert-delete-local' @{ thumbprint = $nc.thumbprint; store = 'CurrentUser' }) }
+    }
     $st = Invoke-Api '/api/package-list' @{ starter = $true }
     Check ($st.ok -and $st.starter -and @($st.items).Count -ge 20 -and @($st.items | Where-Object { $_.recommended }).Count -eq 8 -and @($st.items | Where-Object { $_.id -eq 'Mozilla.Firefox' -and $_.name -and $_.category -and $_.why }).Count -eq 1) 'recommended apps: the starter set, each with its name, category and why' ($st | ConvertTo-Json -Compress -Depth 3)
     Check ((Invoke-Api '/api/installed-apps').ok) 'detection from this PC: the installed apps can be listed (empty off Windows)'

@@ -647,6 +647,7 @@ function Global:Invoke-WebApi {
         '/api/signin-settings'  { if (-not (Test-WebServerMode)) { return @{ ok = $false; error = 'The desktop app has no sign-in.' } }; return (Get-WebSignInSettings) }
         '/api/signin-save'      { if (-not (Test-WebServerMode)) { return @{ ok = $false; error = 'The desktop app has no sign-in.' } }; return (Save-WebSignInSettings $Data) }
         '/api/cert-file'        { return (Get-WebCertificateFile $Data) }
+        '/api/cert-export-pfx'  { return (Export-WebPfx $Data) }
         '/api/test-connection'  { return (Invoke-WebTestConnection $Data) }
         '/api/connection-status' { return (Get-WebConnectionStatus) }
         '/api/job-start'        { return (Start-WebCertJob $Data) }

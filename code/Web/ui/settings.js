@@ -83,6 +83,7 @@ $('btnCertMenu').addEventListener('click', e => {
   e.stopPropagation();
   if (!certMenu.hidden) { certMenu.hidden = true; $('btnCertMenu').setAttribute('aria-expanded', 'false'); return; }
   setEnabled($('btnCerDownload'), !!$('fThumb').value.trim(), 'Choose or create a certificate first.');
+  setEnabled($('btnPfxExport'), !!$('fThumb').value.trim(), 'Choose, create or import a certificate first.');
   const r = $('btnCertMenu').getBoundingClientRect();
   placeMenu(certMenu, r.right - 240, r.bottom + 4); $('btnCertMenu').setAttribute('aria-expanded', 'true');
 });
@@ -117,6 +118,25 @@ $('btnCerDownload').addEventListener('click', async () => {
   const r = await api('/api/cert-file', { thumbprint: t });
   if (!r.ok) { toast(r.error, true); return; }
   saveB64File(r, 'application/pkix-cert');
+});
+// 2.38.10: the certificate with its private key, as a .pfx - with a password, and only after saying what the file can do.
+$('btnPfxExport').addEventListener('click', () => {
+  const t = $('fThumb').value.trim();
+  if (!t) { toast('Choose, create or import a certificate first.', true); return; }
+  $('pfxExWhat').textContent = `The certificate ${t} - as Windows' certificate manager exports it. To use the connection on another machine (or keep a copy), import the file there.`;
+  $('pfxExPw').value = ''; $('pfxExPw2').value = ''; $('pfxExError').hidden = true;
+  $('dlgPfxExport').showModal(); $('pfxExPw').focus();
+});
+$('btnPfxExGo').addEventListener('click', async () => {
+  const pw = $('pfxExPw').value, err = t => { $('pfxExError').textContent = t; $('pfxExError').hidden = false; };
+  if (pw.length < 12) return err('Use a password of at least 12 characters - the file can sign in as the app.');
+  if (pw !== $('pfxExPw2').value) return err('The two passwords differ.');
+  const r = await api('/api/cert-export-pfx', { thumbprint: $('fThumb').value.trim(), password: pw });
+  $('pfxExPw').value = ''; $('pfxExPw2').value = '';
+  if (!r.ok) return err(r.error);
+  $('dlgPfxExport').close();
+  saveB64File(r, 'application/x-pkcs12');
+  toast(`Exported ${r.name} - keep it safe; the export is in the log.`);
 });
 for (const b of document.querySelectorAll('dialog [data-close]')) b.addEventListener('click', () => b.closest('dialog').close());
 

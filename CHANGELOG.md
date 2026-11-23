@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.38.11
+
+- **Export the certificate with its private key (.pfx)** - Settings >
+  Connection, the certificate menu: as Windows' certificate manager exports
+  one, to move the connection to another machine or keep a copy. It takes a
+  password of at least 12 characters (typed twice), says first what the file
+  can do (sign in to Intune as the app), and every export is in the log with
+  who did it. A key kept as not exportable can't leave the machine - the app
+  creates its own certificates that way on Windows, and the dialog says so;
+  on the server version (and for an imported .pfx) it works.
+
 ## 2.38.10
 
 - **Recommended apps: Jabra Direct** (`Jabra.Direct`) under Communication - for
