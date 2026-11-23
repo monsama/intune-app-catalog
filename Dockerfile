@@ -5,7 +5,12 @@ FROM mcr.microsoft.com/powershell:7.5-ubuntu-24.04
 
 # sqlite3 reads winget's package index (there's no winget on Linux), msitools reads an MSI's product code and
 # version, curl is the health check. Security fixes Ubuntu has published since the base image was built.
-RUN apt-get update \
+# A stalled package mirror fails in seconds and is tried again, instead of holding the build for half an hour
+# (CI took 29 minutes on this step once). APT_REFRESH: CI's weekly stamp, so a cached layer still gets the
+# security fixes at least weekly; a plain docker build (the release) always runs it fresh.
+ARG APT_REFRESH=
+RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' > /etc/apt/apt.conf.d/80-retries \
+ && apt-get update \
  && apt-get upgrade -y --no-install-recommends \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends sqlite3 msitools curl ca-certificates tzdata \
  && rm -rf /var/lib/apt/lists/*
