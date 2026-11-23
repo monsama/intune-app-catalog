@@ -97,9 +97,22 @@ try {
             const r = e.getBoundingClientRect(), line = parseFloat(getComputedStyle(e).fontSize) * 1.25;
             if (r.width > 0 && r.width < 48 && r.height > 2.5 * line) out.push(`${name(e)} "${own.slice(0, 20)}" is ${Math.round(r.width)}px wide, ${Math.round(r.height)}px high`);
           }
+          // 2.38.8: nothing cut off - a button, link or field reaching past a box that hides what sticks out (the
+          // Getting started card hid its Open buttons behind a long permission name). Scrolling boxes are fine.
+          for (const e of root.querySelectorAll('button, a.btn, select, input:not([type=checkbox]):not([type=radio]):not([type=hidden])')) {
+            if (!shown(e)) continue;
+            const r = e.getBoundingClientRect();
+            if (r.width < 2) continue;
+            for (let a = e.parentElement; a && a !== document.body; a = a.parentElement) {
+              const ox = getComputedStyle(a).overflowX;
+              if (ox !== 'hidden' && ox !== 'clip') continue;
+              const ar = a.getBoundingClientRect();
+              if (r.right > ar.right + 1 || r.left < ar.left - 1) { out.push(`${name(e)} "${(e.textContent || e.value || '').trim().slice(0, 16)}" is cut off by ${name(a)} (${Math.round(r.right - ar.right)}px)`); break; }
+            }
+          }
           return out.slice(0, 5);
         });
-        check(!bad.length, `${label}: ${view} - nothing squeezed (fields and labels have room)`, bad.join('; '));
+        check(!bad.length, `${label}: ${view} - nothing squeezed or cut off (fields, labels and buttons have room)`, bad.join('; '));
       };
       // Every rule axe-core has for WCAG 2.1 A/AA and best practice - in the
       // open dialog when there is one (axe skips what's behind a modal).
@@ -204,6 +217,35 @@ try {
       // 2.31.0: said once - in Getting started, not again in Needs attention or the banner; no zero tiles.
       check(!/Not connected/.test(await page.textContent('#homeList')) && !(await page.isVisible('#setupBanner')) && !(await page.isVisible('#homeStats')), `${label}: Home says "not connected" once, in Getting started`, await page.textContent('#homeList'));
       await noOverflow('Home'); await unnamed('Home'); await a11y('Home'); await shot('home');
+      // 2.38.6/2.38.8: connected but a permission missing - the step says which, with its long name, and every Open button
+      // stays inside the card.
+      await page.evaluate(`homeLocal = { ...homeLocal, setup: homeLocal.setup.map((x, i) => i === 0 ? { ...x, done: true } : x) };
+        homeIntune = { ok: true, items: [], summary: null, permMissing: ['DeviceManagementManagedDevices.Read.All'] }; renderHome();`);
+      check(/1 permission\(s\) are missing.*DeviceManagementManagedDevices\.Read\.All/.test(await page.textContent('#setupList li.now')) && /Check permissions|Open/.test(await page.textContent('#setupList li.now button')),
+        `${label}: Getting started keeps Connect open while a permission is missing, and names it`, await page.textContent('#setupList'));
+      await squeezed('Home (a permission missing)');
+      await page.evaluate('homeIntune = null; loadHome(true);');
+      // 2.38.8: Read from Intune - each differing field is a choice between its two values (Intune's picked), the
+      // log folded away. Fed a result by hand (no tenant here).
+      await page.evaluate(`window.__runJob = runJob; runJob = (body, done) => { done(true, null, { applied: [], failed: [], pending: 'zz',
+        review: [{ app: 'ZZ Pull', diffs: [{ field: 'Required for', local: '', intune: '[All devices]' }, { field: 'Publisher', local: 'Old Name Ltd', intune: 'New Name Ltd' }] }] }); return Promise.resolve(true); };
+        openPull(['ZZ Pull']);`);
+      await page.waitForSelector('#dlgPull[open] #pullReview tr[data-field]');
+      const pull0 = await page.evaluate(() => ({ picks: [...document.querySelectorAll('#pullReview tr[data-field]')].map(t => t.dataset.pick).join(','), btn: document.getElementById('btnPullApply').textContent, log: document.getElementById('pullLogBox').open, blank: /\(blank\)/.test(document.getElementById('pullReview').textContent) }));
+      check(pull0.picks === 'intune,intune' && /2 from Intune, 0 kept/.test(pull0.btn) && !pull0.log && pull0.blank, `${label}: Read from Intune - Intune's value is picked for each field, the log folded`, JSON.stringify(pull0));
+      await page.click('#pullReview tr[data-field="Publisher"] td.pick[data-side="catalog"]');
+      const pull1 = await page.evaluate(() => ({ picks: [...document.querySelectorAll('#pullReview tr[data-field]')].map(t => t.dataset.pick).join(','), btn: document.getElementById('btnPullApply').textContent }));
+      check(pull1.picks === 'intune,catalog' && /1 from Intune, 1 kept/.test(pull1.btn), `${label}: Read from Intune - clicking the catalog's value keeps it`, JSON.stringify(pull1));
+      await page.click('#pullReview .pullall button:first-child');
+      check(await page.evaluate(() => [...document.querySelectorAll('#pullReview tr[data-field]')].every(t => t.dataset.pick === 'catalog')), `${label}: Read from Intune - Keep all picks the catalog's values`);
+      await a11y('Read from Intune');
+      await page.evaluate(`document.getElementById('dlgPull').close(); runJob = window.__runJob;`);
+      // 2.38.8: every log colours its lines; a failure opens a folded log.
+      await page.evaluate(() => { const l = document.getElementById('pullLog'); document.getElementById('pullLogBox').open = false; l.textContent = '== Step ==\n  [OK] Connected.\n  [WARN] Slow.\n[FAILED] Graph said no.\n[GRAPH] GET /x -> FAILED (9 ms): nope\n'; });
+      await page.waitForFunction(() => document.querySelectorAll('#pullLog .lerr').length === 2);
+      const logc = await page.evaluate(() => ({ err: document.querySelectorAll('#pullLog .lerr').length, warn: document.querySelectorAll('#pullLog .lwarn').length, ok: document.querySelectorAll('#pullLog .lok').length, open: document.getElementById('pullLogBox').open, text: document.getElementById('pullLog').textContent.split('\n').length }));
+      check(logc.err === 2 && logc.warn === 1 && logc.ok === 1 && logc.open && logc.text === 6, `${label}: logs colour failures, warnings and OK lines, and a failure opens the log`, JSON.stringify(logc));
+      await page.evaluate(() => { document.getElementById('pullLog').textContent = ''; });
       await page.keyboard.press('Control+k');
       await page.waitForSelector('#dlgPalette[open]');
       await page.keyboard.type('updates');
@@ -266,7 +308,31 @@ try {
       const rows = await page.$$eval('#checkBody tr', r => r.map(x => x.children[1].textContent + ':' + x.children[2].textContent));
       check(rows.join('|') === 'Groups:ZZ Portal|Groups:ZZ Filtered|Unknown assignments:ZZ Filtered', `${label}: an Unknown assignments finding the Groups row already shows is one row`, rows.join('|'));
       check(/^3 /.test(await page.textContent('#checkCount')), `${label}: the count leaves the folded finding out`, await page.textContent('#checkCount'));
+      // 2.38.8: the last audit's saved rows (shown while checks run) carry only their text - they fold too.
+      await page.evaluate(`findings = [
+        { area: 'Groups', app: 'ZZ Saved', catalogName: 'ZZ Saved', cached: true, problem: '2 differ: Required for - catalog: (none) | Intune: [All devices]; Available for - catalog: SG-A | Intune: SG-A, SG-B', actions: ['Pull'] },
+        { area: 'Unknown assignments', app: 'ZZ Saved', catalogName: 'ZZ Saved', cached: true, problem: '2 unknown: [required] [All devices], [available] SG-B', actions: ['Pull'] },
+        { area: 'Groups', app: 'ZZ Saved2', catalogName: 'ZZ Saved2', cached: true, problem: '1 differ: Required for - catalog: (none) | Intune: SG-C', actions: ['Pull'] },
+        { area: 'Unknown assignments', app: 'ZZ Saved2', catalogName: 'ZZ Saved2', cached: true, problem: '1 unknown: [required] SG-D', actions: ['Pull'] }];
+        renderChecks();`);
+      const savedRows = await page.$$eval('#checkBody tr', r => r.map(x => x.children[1].textContent + ':' + x.children[2].textContent));
+      check(savedRows.join('|') === 'Groups:ZZ Saved|Groups:ZZ Saved2|Unknown assignments:ZZ Saved2', `${label}: the last audit's saved rows fold the same way`, savedRows.join('|'));
       await page.evaluate('findings = []; renderChecks();');
+      // 2.38.8: Changes to send - pointing at the stage shows what changed since the last send (answered here by hand).
+      await page.click('#tabApps');
+      await page.evaluate(`window.__api = api; api = (path, body) => path === '/api/unsent-diff' ? Promise.resolve({ ok: true, name: 'ZZ Unsent', fromHistory: false,
+        rows: [{ part: 'settings', field: 'Description', sent: 'A file archiver', now: 'A file archiver with a high compression ratio' }] }) : window.__api(path, body);
+        apps.push({ name: 'ZZ Unsent', hasAppId: true, unsent: 'settings', groups: ['SG-A'], version: '1.0' }); renderApps();`);
+      const unsentPill = page.locator('#grid tr', { hasText: 'ZZ Unsent' }).locator('button.pillbtn');
+      check(await unsentPill.count() === 1 && /Changes to send/.test(await unsentPill.textContent()), `${label}: Changes to send is a pill that opens the changes`);
+      await unsentPill.hover();
+      await page.waitForSelector('#cmpCard:not([hidden])', { timeout: 3000 }).catch(() => { });
+      const uc = await page.evaluate(() => { const c = document.getElementById('cmpCard'); return c && !c.hidden ? { rows: c.querySelectorAll('tbody tr').length, head: [...c.querySelectorAll('th')].map(t => t.textContent).join('|'), marks: c.querySelectorAll('mark.add').length, btns: [...c.querySelectorAll('footer button')].map(b => b.textContent).join('|') } : null; });
+      check(uc && uc.rows === 1 && uc.head === 'Field|Intune has (last sent)|Catalog now' && uc.marks === 1 && uc.btns === 'Send settings|Edit', `${label}: hovering Changes to send shows the last-sent value next to the catalog's`, JSON.stringify(uc));
+      await a11y('Changes to send card');
+      await page.mouse.move(2, 2); await page.waitForTimeout(400);
+      await page.evaluate(`api = window.__api; apps = apps.filter(a => a.name !== 'ZZ Unsent'); renderApps();`);
+      await page.click('#tabChecks');
 
       // Groups and Platform scripts: empty, explained.
       await page.click('#tabGroups');

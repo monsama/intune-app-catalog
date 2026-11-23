@@ -84,6 +84,7 @@ $('csvFile').addEventListener('change', async () => {
   $('csvPushRow').hidden = !deployedTouched.length;
 });
 $('btnCsvGo').addEventListener('click', async () => {
+  if ($('btnCsvGo').textContent === 'Done') { $('dlgCsv').close(); return; }
   $('btnCsvGo').disabled = true;
   const r = await api('/api/csv-import', { text: csvText });
   if (!r.ok) { $('csvErr').textContent = r.error; $('csvErr').hidden = false; return; }
@@ -99,7 +100,7 @@ $('btnCsvGo').addEventListener('click', async () => {
     const done = await runEach(meta, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'csvLog', startText: 'Pushing ' });
     toast(`Settings pushed for ${done.length} of ${meta.length} app(s).`, done.length < meta.length);
   }
-  $('btnCsvGo').textContent = 'Done';
+  $('btnCsvGo').textContent = 'Done'; $('btnCsvGo').disabled = false;
   if (grp.length && await ask(`Send groups for the ${grp.length} deployed app(s) whose groups changed?\n\n${grp.join('\n')}`, { ok: 'Send groups', danger: false })) { $('dlgCsv').close(); openPushGroups(grp); }
 });
 
@@ -229,6 +230,7 @@ function releaseStep(body, path, log, startText) {
   });
 }
 $('btnRelGo').addEventListener('click', async () => {
+  if ($('btnRelGo').textContent === 'Done') { $('btnRelGo').closest('dialog').close(); return; }
   const version = $('relVersion').value.trim(), name = relName;
   if (!version) { $('relErr').textContent = 'Type the version to release.'; $('relErr').hidden = false; return; }
   $('relErr').hidden = true; $('relLog').hidden = false; $('btnRelGo').disabled = true;
@@ -242,7 +244,7 @@ $('btnRelGo').addEventListener('click', async () => {
   const made = await releaseStep({ name, version, productCode, fastTrack: $('relFast').checked }, '/api/release-start', 'relLog', `Creating ${name} ${version} in Intune...`);
   if (!made.ok) { $('relErr').textContent = made.error || 'The release failed - see the log.'; $('relErr').hidden = false; $('btnRelGo').disabled = false; loadApps(); return; }
   const assigned = await releaseStep({ name, step: 'pilot' }, '/api/release-assign', 'relLog', 'Assigning it to the pilot groups...');
-  $('btnRelClose').textContent = 'Close'; $('btnRelGo').textContent = 'Done';
+  $('btnRelClose').textContent = 'Close'; $('btnRelGo').textContent = 'Done'; $('btnRelGo').disabled = false;
   toast(assigned.ok ? `${name} ${version} is released to the pilot groups.` : `${name} ${version} is in Intune, but assigning it to pilot failed - Release again isn't needed: use Promote or Withdraw.`, !assigned.ok);
   loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
 });

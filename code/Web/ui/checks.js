@@ -148,9 +148,14 @@ function coveredByGroups(f, all) {
   const name = f.catalogName || f.app;
   const g = all.find(x => x.area === 'Groups' && (x.catalogName || x.app) === name);
   if (!g) return false;
-  const lists = {};
-  for (const d of diffsOf(g)) lists[String(d.field).toLowerCase()] = String(d.remote ?? '').split(/,\s*/).map(s => s.trim().toLowerCase()).filter(Boolean);
-  const items = String(f.intune || '').split(/,\s*(?=\[)/).map(s => s.trim()).filter(Boolean);
+  const lists = {}, split = v => String(v ?? '').split(/,\s*/).map(s => s.trim().toLowerCase()).filter(Boolean);
+  for (const d of diffsOf(g)) lists[String(d.field).toLowerCase()] = split(d.remote);
+  // The last audit's saved rows (shown while checks run) keep only their text: "1 differ: Required for - catalog:
+  // (none) | Intune: [All devices]" and "1 unknown: [required] [All devices]" - read from that, so they fold at once too.
+  if (!Object.keys(lists).length)
+    for (const m of String(g.problem || '').matchAll(/((?:Required|Available|Uninstall) for) - catalog: .*? \| Intune: (.*?)(?=; (?:Required|Available|Uninstall) for - |$)/gi)) lists[m[1].toLowerCase()] = split(m[2]);
+  const itemText = f.intune || String(f.problem || '').replace(/^\d+ unknown:\s*/i, '');
+  const items = String(itemText).split(/,\s*(?=\[)/).map(s => s.trim()).filter(Boolean);
   return items.length > 0 && items.every(it => {
     const m = /^\[(required|available|uninstall)\]\s+(.+)$/i.exec(it);
     if (!m || /\(filter:|^EXCLUDE\s/i.test(m[2])) return false;
@@ -294,10 +299,16 @@ function diffCell(f) {
   const b = el('button', { type: 'button', class: 'difs', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-controls': 'cmpCard',
     'aria-label': `${names.length} field(s) differ: ${names.join(', ')} - show side by side` },
     ...shown.map(n => el('span', { class: 'dchip', text: n })), names.length > shown.length ? el('span', { class: 'dchip more', text: `+${names.length - shown.length} more` }) : '');
-  b.addEventListener('mouseenter', () => { clearTimeout(hcCloseT); clearTimeout(hcOpenT); if (hcFor !== b) hcOpenT = setTimeout(() => hcShow(f, b), 300); });
-  b.addEventListener('mouseleave', () => { clearTimeout(hcOpenT); hcLater(); });
-  // A click (or a tap) opens it at once; from the keyboard the focus moves into it, so its buttons can be reached.
-  b.addEventListener('click', e => { clearTimeout(hcOpenT); hcShow(f, b); if (e.detail === 0) { const first = $('cmpCard').querySelector('button'); if (first) first.focus(); } });
+  return hoverCardOn(b, () => hcShow(f, b));
+}
+// Any trigger: pointing at it (300 ms) or clicking / tapping it opens the card that show() fills - show may be async
+// (it asks the server); from the keyboard the focus moves into the card, so its buttons can be reached.
+function hoverCardOn(b, show) {
+  let want = false;
+  const open = async kbd => { want = true; await show(); if (!want || hcFor !== b) return; if (kbd) { const first = $('cmpCard').querySelector('button'); if (first) first.focus(); } };
+  b.addEventListener('mouseenter', () => { clearTimeout(hcCloseT); clearTimeout(hcOpenT); if (hcFor !== b) hcOpenT = setTimeout(() => open(false), 300); });
+  b.addEventListener('mouseleave', () => { want = hcFor === b; clearTimeout(hcOpenT); hcLater(); });
+  b.addEventListener('click', e => { e.stopPropagation(); clearTimeout(hcOpenT); open(e.detail === 0); });
   b.addEventListener('keydown', e => { if (e.key === 'Escape' && hcFor === b) { e.preventDefault(); e.stopPropagation(); hcClose(); } });
   return b;
 }
@@ -335,17 +346,23 @@ function hcValue(lines) {
   return td;
 }
 function hcShow(f, b) {
+  const diffs = diffsOf(f);
+  hcOpen(b, { title: `${f.app} - ${f.area}`, sub: `${diffs.length} field(s) differ · left is the catalog, right is Intune`, left: 'Catalog', right: 'Intune',
+    rows: diffs.map(d => ({ field: d.field, left: d.local, right: d.remote })),
+    buttons: [el('button', { type: 'button', class: 'btn small', text: 'Open full compare', onclick: () => { hcClose(); openCompare([f]); } }), ...cmpFixButtons(f, 'btn small', () => hcClose())] });
+}
+// The card itself: { title, sub, left, right (the column names), rows: [{ field, left, right }], note, buttons }.
+function hcOpen(b, m) {
   const c = hcCard();
   if (hcFor && hcFor !== b) hcFor.setAttribute('aria-expanded', 'false');
   hcFor = b; b.setAttribute('aria-expanded', 'true');
-  const diffs = diffsOf(f);
   const blank = t => t === '(blank)' || t === '(none)';
   c.replaceChildren(
-    el('header', {}, el('b', { text: `${f.app} - ${f.area}` }), el('span', { text: `${diffs.length} field(s) differ · left is the catalog, right is Intune` })),
-    el('div', { class: 'hcbody' }, el('table', { class: 'hc' },
-      el('thead', {}, el('tr', {}, el('th', { text: 'Field' }), el('th', { text: 'Catalog' }), el('th', { text: 'Intune' }))),
-      el('tbody', {}, ...diffs.map(d => {
-        const L = cmpLines(d.local), R = cmpLines(d.remote);
+    el('header', {}, el('b', { text: m.title }), el('span', { text: m.sub || '' })),
+    el('div', { class: 'hcbody' }, m.rows.length ? el('table', { class: 'hc' },
+      el('thead', {}, el('tr', {}, el('th', { text: 'Field' }), el('th', { text: m.left }), el('th', { text: m.right }))),
+      el('tbody', {}, ...m.rows.map(d => {
+        const L = cmpLines(d.left), R = cmpLines(d.right);
         const wsOnly = L.join('\n').trim() === R.join('\n').trim();
         const field = el('td', { class: 'f', text: d.field || 'Value' }, wsOnly ? el('span', { class: 'more', text: ' (spaces only)' }) : '');
         // One line each and not too long: mark the part that differs; otherwise the lines as they are.
@@ -353,12 +370,10 @@ function hcShow(f, b) {
           return el('tr', {}, field, cmpCell(L[0], R[0], 'del'), cmpCell(R[0], L[0], 'add'));
         const side = lines => blank(lines[0]) && lines.length === 1 ? el('td', { class: 'v' }, el('span', { class: 'more', text: lines[0] })) : hcValue(lines);
         return el('tr', {}, field, side(L), side(R));
-      })))),
-    el('footer', {}, el('span', { class: 'note', text: 'Long values are shortened here · Esc closes' }),
-      el('button', { type: 'button', class: 'btn small', text: 'Open full compare', onclick: () => { hcClose(); openCompare([f]); } }),
-      ...cmpFixButtons(f, 'btn small', () => hcClose())));
+      }))) : el('p', { class: 'hcempty muted', text: m.empty || 'Nothing to show.' })),
+    el('footer', {}, el('span', { class: 'note', text: m.note || 'Long values are shortened here · Esc closes' }), ...(m.buttons || [])));
   c.hidden = false;
-  // Below the chips, inside the window; above them when there's no room below.
+  // Below the trigger, inside the window; above it when there's no room below.
   const r = b.getBoundingClientRect(), w = c.offsetWidth, h = c.offsetHeight;
   const left = Math.max(16, Math.min(r.left, window.innerWidth - w - 16));
   let top = r.bottom + 6;

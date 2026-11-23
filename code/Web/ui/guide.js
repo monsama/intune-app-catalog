@@ -64,9 +64,30 @@ function stageOf(a) {
 }
 function stageCell(a) {
   const s = stageOf(a);
-  const pill = el('span', { class: 'pill ' + s.cls, text: s.label, title: [s.why, a.status ? 'Status: ' + a.status : ''].filter(Boolean).join('\n') });
+  // Changes to send (2.38.8): pointing at it shows what changed since the last send, field by field.
+  const pill = s.key === 'unsent'
+    ? unsentPill(a, s)
+    : el('span', { class: 'pill ' + s.cls, text: s.label, title: [s.why, a.status ? 'Status: ' + a.status : ''].filter(Boolean).join('\n') });
   if (!s.next) return pill;
   return el('span', { class: 'stage' }, pill, el('button', { class: 'btn small next', text: s.next.label, title: s.next.title, tabindex: '-1', onclick: e => { e.stopPropagation(); s.next.run(); } }));
+}
+
+function unsentPill(a, s) {
+  const b = el('button', { type: 'button', class: 'pill pillbtn ' + s.cls, text: s.label, tabindex: '-1', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-controls': 'cmpCard',
+    'aria-label': `${s.label} - show what changed since the last send` });
+  return hoverCardOn(b, async () => {
+    const r = await api('/api/unsent-diff', { name: a.name });
+    if (!r.ok) { toast(r.error, true); return; }
+    const parts = a.unsent.split(',');
+    hcOpen(b, { title: `${a.name} - changes to send`, sub: `${s.why}`, left: 'Intune has (last sent)', right: 'Catalog now',
+      rows: r.rows.map(x => ({ field: x.field, left: x.sent, right: x.now })),
+      empty: 'Only the order or spacing changed - nothing a person would see.',
+      note: r.fromHistory ? 'From the change history - it was last sent by an earlier version · Esc closes' : 'Long values are shortened here · Esc closes',
+      buttons: [
+        ...(parts.includes('settings') ? [el('button', { type: 'button', class: 'btn small primary', text: 'Send settings', onclick: () => { hcClose(); sendSettingsNow([a.name]); } })] : []),
+        ...(parts.includes('groups') ? [el('button', { type: 'button', class: 'btn small' + (parts.includes('settings') ? '' : ' primary'), text: 'Send groups', onclick: () => { hcClose(); sendGroupsNow([a.name]); } })] : []),
+        el('button', { type: 'button', class: 'btn small', text: 'Edit', onclick: () => { hcClose(); openEditor(a.name); } })] });
+  });
 }
 
 // ---------------------------------------------------------------- the toolbar's next step, and the side panel

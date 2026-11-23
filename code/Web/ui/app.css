@@ -261,6 +261,20 @@ textarea.monotext, .formgrid label > textarea.monotext { font-family: var(--mono
 .pullapp table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .pullapp td { padding: 4px 6px; border-top: 1px solid var(--bd2); vertical-align: top; }
 .pullapp td.v { font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
+/* 2.38.8: pick the value to keep - the chosen one is marked. */
+.pullapp .pullhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pullapp .pullall { margin-left: auto; display: inline-flex; gap: 6px; }
+.pullapp table { table-layout: fixed; }
+.pullapp th { text-align: left; font-size: 11px; font-weight: 600; color: var(--muted); padding: 4px 6px; }
+.pullapp th:first-child, .pullapp td.f { width: 28%; }
+.pullapp td.pick { cursor: pointer; border-radius: var(--r-s); }
+.pullapp td.pick label { display: flex; gap: 6px; align-items: flex-start; cursor: pointer; }
+.pullapp td.pick input { margin: 1px 0 0; flex: none; }
+.pullapp td.pick:hover { background: var(--hover); }
+.pullapp td.pick.on { background: var(--accent-soft); }
+.pullapp td.pick:not(.on) span { color: var(--muted); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--muted) 60%, transparent); }
+#dlgPull .logbox { margin-top: 10px; }
+#dlgPull .logbox > summary { cursor: pointer; font-size: 12px; color: var(--muted); }
 .tablewrap.short { max-height: 55vh; flex: none; }
 
 .deploysec { margin-top: 16px; border: 1px solid var(--bd2); border-radius: var(--r-m); padding: 8px 14px 14px; }
@@ -685,12 +699,12 @@ dialog.tray .log { max-height: 34vh; }
 .tips li { display: flex; flex-direction: column; gap: 2px; padding: 8px 16px; font-size: 13px; }
 @media (max-width: 1000px) { .homegrid { grid-template-columns: minmax(0, 1fr); } }
 .setup .bar span { display: block; height: 100%; background: var(--ok); }
-.setup ol { list-style: none; margin: 0; padding: 0 8px 12px; display: grid; gap: 6px; }
-.setup li { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: center; padding: 6px 8px; border-radius: var(--r-m); }
+.setup ol { list-style: none; margin: 0; padding: 0 8px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.setup li { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 8px; border-radius: var(--r-m); }
 .setup li.now { background: var(--accent-soft); }
 .setup li .mark { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--bd2); color: var(--muted); }
 .setup li.done .mark { background: var(--ok-bg); color: var(--ok); }
-.setup li .body { display: flex; flex-direction: column; gap: 1px; }
+.setup li .body { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
 .setup li.done .body b { color: var(--muted); font-weight: 500; }
 /* ---- toast with next steps ---- */
 .toast.withacts { display: flex; align-items: center; gap: 10px; pointer-events: auto; }
@@ -1676,3 +1690,15 @@ label.inline > select { max-width: 100%; min-width: 0; text-overflow: ellipsis; 
 /* 2.38.6: a missing Graph permission inside a table - one message with its fix. */
 .permmiss { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 4px 0; white-space: normal; }
 .permmiss > span:nth-child(2) { flex: 1 1 320px; min-width: 0; }
+
+/* 2.38.8: log lines by kind - every log in the app. */
+/* The log is dark in both themes - its own colours, readable on it. */
+pre.log .lerr { color: #ff8a80; font-weight: 600; background: rgba(255, 82, 82, .14); }
+pre.log .lwarn { color: #f5c451; }
+pre.log .lok { color: #7ee2a0; }
+pre.log.hasfail { box-shadow: inset 3px 0 0 #ff6b6b; }
+
+/* 2.38.8: Changes to send - the pill opens the hover card. */
+button.pill.pillbtn { border: 0; font: inherit; font-size: 12px; cursor: pointer; }
+button.pill.pillbtn:hover, button.pill.pillbtn[aria-expanded="true"] { box-shadow: 0 0 0 1px currentColor; }
+.hovercard .hcempty { margin: 8px 14px; font-size: 12px; }

@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.38.8
+
+**Changes to send says what changed, logs show their errors, and a round of
+GUI fixes.**
+
+- **Changes to send - what changed.** Point at the Apps list's "Changes to
+  send" (or click it) for a card with each changed field: what Intune has
+  (last sent) next to what the catalog has now, the change marked, with Send
+  settings / Send groups. Each send now keeps the values it sent beside its
+  fingerprint; for an app last sent by an earlier version the card takes the
+  catalog's edits since its last send from the change history.
+- **Logs show their errors.** Every log in the app colours its lines - failures
+  red, warnings amber, OK green - and a failure opens a folded log by itself.
+- **Read from Intune** is simpler: each differing field is a choice between its
+  two values - click the one to keep (Intune's is picked), or "Keep all" /
+  "All from Intune". The button says what happens ("Save to catalog (1 from
+  Intune, 1 kept)"), and the log is folded unless something failed. (The old
+  "Keep catalog" tick's screen-reader label said the opposite of what it did.)
+- **Done closes.** Send to Intune, CSV import and Release ended on a "Done"
+  that was switched off; Send groups' "Done" ran Apply again. Each now closes
+  its dialog.
+- **Groups: two existing groups selected offered "Create 1" and "Delete 1..."**
+  In "All groups in Entra ID", a group the catalog doesn't use counted as
+  missing. Fixed - both say "Delete 2..." now, and Create stays off.
+- **Getting started** cut off its Open buttons when a step had a long word (the
+  missing permission's name). Fixed - and the UI tests now fail on any button
+  or field cut off by its box, on every page and dialog they open.
+- **Checks: no doubled rows while it runs.** The last audit's rows, shown while
+  the checks run, fold "Unknown assignments" into the app's "Groups" row from
+  the start - not only once the assignment stage has finished.
+- **Install status** with nothing reported yet says why (devices report after
+  they check in and try the app) instead of showing empty column headings.
+
 ## 2.38.7
 
 - **Server image builds can't hang on a slow package mirror.** Ubuntu's
