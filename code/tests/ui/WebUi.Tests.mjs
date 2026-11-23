@@ -103,8 +103,27 @@ try {
       };
       // Every rule axe-core has for WCAG 2.1 A/AA and best practice - in the
       // open dialog when there is one (axe skips what's behind a modal).
+      // 2.38.4: opening a list doesn't move things - lists that fill in when clicked (winget's versions, Link...,
+      // profiles) keep their width, and so does everything beside them.
+      const steady = async view => {
+        const where = () => {
+          const dlg = [...document.querySelectorAll('dialog[open]')].pop();
+          const root = dlg || document.querySelector('.view:not([hidden])') || document.body;
+          return [...root.querySelectorAll('select:not([multiple]):not([size])')].filter(e => e.offsetParent !== null && !e.disabled);
+        };
+        // Measured once the dialog's opening animation is over (it grows from 98%).
+        await page.evaluate(() => Promise.all(document.getAnimations().filter(a => a.effect && a.effect.getComputedTiming().iterations !== Infinity).map(a => a.finished.catch(() => { }))));
+        const before = await page.evaluate(`(${where})().map(e => [e.id || e.className, Math.round(e.getBoundingClientRect().width)])`);
+        await page.evaluate(`(${where})().forEach(e => { e.dispatchEvent(new Event('focus')); e.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); })`);
+        await page.waitForTimeout(600);
+        const after = await page.evaluate(`(${where})().map(e => [e.id || e.className, Math.round(e.getBoundingClientRect().width)])`);
+        const moved = before.filter(([id, w]) => { const a = after.find(x => x[0] === id); return a && Math.abs(a[1] - w) > 1; })
+          .map(([id, w]) => `${id} ${w}px -> ${after.find(x => x[0] === id)[1]}px`);
+        check(!moved.length, `${label}: ${view} - lists keep their size when opened`, moved.join('; '));
+      };
       const a11y = async view => {
         await squeezed(view);
+        await steady(view);
         if (!axePath) return;
         if (!(await page.evaluate(() => typeof window.axe !== 'undefined'))) await page.addScriptTag({ path: axePath });
         const found = await page.evaluate(async () => {
