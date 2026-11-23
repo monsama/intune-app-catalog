@@ -13,7 +13,9 @@
   const r = new URLSearchParams(location.search).get('why') || '';
   if (why[r]) { $('loginWhy').textContent = why[r]; $('loginWhy').hidden = false; if (/^entra-(failed|notmember|groupcheck|off|noconnection|busy)$/.test(r)) $('loginWhy').classList.add('bad'); }
   // Theme as the app has it (remembered per browser).
-  try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) { }
+  // Never chosen (auto): the system's, as the app does it (2.38.3 - the sign-in page was light while the app opened dark).
+  let t = ''; try { t = localStorage.getItem('theme') || ''; } catch (e) { }
+  document.documentElement.dataset.theme = t === 'light' || t === 'dark' ? t : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   const post = (path, body) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then(x => x.json());
   // Back from signing in with Microsoft: the one-time code in the #fragment (never sent anywhere) is traded for the session.
   const ho = /^#handoff=([0-9a-f]{32})$/.exec(location.hash);

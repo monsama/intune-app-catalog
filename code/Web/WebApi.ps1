@@ -100,6 +100,11 @@ function Global:Get-WebCatalog {
                 hasIcon      = [bool]($apps[$i].icon -and $apps[$i].icon.value)
                 iconTag      = $(if ($apps[$i].icon -and $apps[$i].icon.value) { "$($apps[$i].icon.value.Length):$($apps[$i].icon.value.Substring([Math]::Max(0, $apps[$i].icon.value.Length - 12)))" } else { '' })
                 groups       = @(@($apps[$i].requiredFor) + @($apps[$i].availableFor) + @($apps[$i].uninstallFor) + @($apps[$i].excludeFor) | Where-Object { $_ } | ForEach-Object { [string]$_ } | Select-Object -Unique)
+                # Per role too (2.38.3): Remove groups offers what the selected apps have in each - it found nothing without them.
+                requiredFor  = @(@($apps[$i].requiredFor) | Where-Object { $_ } | ForEach-Object { [string]$_ })
+                availableFor = @(@($apps[$i].availableFor) | Where-Object { $_ } | ForEach-Object { [string]$_ })
+                uninstallFor = @(@($apps[$i].uninstallFor) | Where-Object { $_ } | ForEach-Object { [string]$_ })
+                excludeFor   = @(@($apps[$i].excludeFor) | Where-Object { $_ } | ForEach-Object { [string]$_ })
                 status       = [string]$row.Status
                 audit        = [string]$row.IntuneAudit
                 hasAppId     = [bool]$row.HasAppId

@@ -178,7 +178,11 @@ dialog.wide { width: min(1100px, calc(100vw - 32px)); max-height: calc(100vh - 3
 .formgrid label > input, .formgrid label > select, .formgrid label > textarea { display: block; width: 100%; margin-top: 4px; font-family: var(--ui); }
 .formgrid label > input.mono, .formgrid #aWinget, .formgrid #aAppId, .groups4 textarea { font-family: var(--mono); font-size: 12px; }
 textarea { font: inherit; font-size: 13px; color: var(--fg); background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-m); padding: 6px 9px; resize: vertical; }
-.groups4 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.groups4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 0 12px; }
+/* 2.38.3: a column can shrink below its widest group name (a long one pushed the second column out of the dialog), and
+   on a phone they stack. Fieldsets otherwise refuse to get narrower than their content. */
+.groups4 > * { min-width: 0; }
+fieldset.gbrole { min-width: 0; }
 .filterrow { display: grid; grid-template-columns: 2fr 1fr; gap: 0 12px; margin-top: 6px; }
 @media (max-width: 640px) { .filterrow { grid-template-columns: 1fr; } }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
@@ -1069,6 +1073,9 @@ label.chk > input[type="checkbox"], label.chk > input[type="radio"] { margin-top
 #grid td { height: 40px; }
 #grid td.mono { overflow-wrap: normal; word-break: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
 #grid td.name { white-space: nowrap; }
+/* 2.38.3: a very long name is cut with an ellipsis (the full one in its tooltip and the side panel) - it pushed
+   Version, Who gets it and Stage off the grid. */
+#grid td.name > .nm { display: inline-block; max-width: 40ch; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
 /* One height for buttons, fields and dropdowns (34px), one for small buttons (26px). */
 .btn:not(.small):not(.iconbtn), input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not(.chipinput):not(#palQuery):not(.brec input), select:not([multiple]):not([size]):not(.brec select) { height: 34px; box-sizing: border-box; }
 .btn.small { height: 26px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; line-height: 1; }
@@ -1597,3 +1604,29 @@ body[data-view="home"] #setupBanner { display: none; }
 /* 2.38.0: the starter set's categories in Add apps > From a list */
 #alGrid .grouprow td { font-size: 12px; font-weight: 600; color: var(--muted); padding-top: 14px; }
 #alGrid td .small { margin-top: 2px; }
+
+/* 2.38.3 GUI sweep */
+/* "Ready to send?": the round mark keeps its size when the line wraps (it was squeezed to an oval). */
+.ready li .mark { flex: none; }
+/* The setup guide's step headings: not the card's section divider (it cut through the numbered steps). */
+.card .step h3 { margin: 4px 0 2px; padding-top: 0; border-top: 0; }
+/* The editor's tab bar covers the dialog's whole top padding while it sticks (text showed through above it). */
+#dlgApp .edtabs { top: -18px; }
+/* App ID (read only, borderless): its focus still shows. */
+#aAppId[readonly]:focus-visible { box-shadow: var(--ring, 0 0 0 2px var(--accent)); }
+/* "Managed updates" stays on one line; the note about versions in pilot goes below it. */
+label.chk:has(> #aManagedNote) { flex-wrap: wrap; }
+#aManagedNote:not(:empty) { flex-basis: 100%; padding-left: 24px; }
+/* Add apps > From a list on a phone: one scrolling list, not a box inside a scrolling box (only its header showed). */
+@media (max-width: 600px) {
+  dialog.addapps[open]:not(.maxed) > #asec-list:not([hidden]) { display: block; }
+  #asec-list > .tablewrap { min-height: 0; max-height: none; overflow: visible; }
+}
+/* Groups > a group's apps on a phone: the table keeps a readable width and scrolls sideways in its box, the Unassign
+   button whole (names wrapped a word per line and the button was cut). */
+.gtable td.act { white-space: nowrap; }
+@media (max-width: 600px) { .gtable { overflow-x: auto; } .gtable > table { min-width: 520px; } }
+/* A block box right under a field (the detection Type select): room between them (they touched). */
+label + .blockbar, select + .blockbar, .inputrow + .blockbar { margin-top: 10px; }
+/* A Store app: no commands, no detection rule of its own - the Store installs and detects it. */
+#dlgApp.is-store #instRaw, #dlgApp.is-store #instBlocks, #dlgApp.is-store [data-sum="det"] button { display: none !important; }

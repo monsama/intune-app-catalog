@@ -129,6 +129,10 @@ try {
       // 2.32.0: no banner - the sidebar badge says it and leads to the setup guide.
       check(!(await page.isVisible('#setupBanner')) && /Not connected - set up/.test(await page.textContent('#connBadge')), `${label}: "not connected" is the sidebar badge, not a banner on every page`, await page.textContent('#connBadge'));
       await noOverflow('Apps'); await unnamed('Apps'); await a11y('Apps'); await shot('apps');
+      // 2.38.3: an app in a later release ring, before the settings are read: the list still shows (it stayed empty).
+      const ringOk = await page.evaluate(() => { const keep = prefs; prefs = null; apps.push({ ...(apps[0] || {}), name: 'ZZ ring app', pilotVersion: '2.0', pilotRing: 1, groups: [] });
+        let ok = true; try { renderApps(); } catch (e) { ok = false; } apps.pop(); prefs = keep; renderApps(); return ok; });
+      check(ringOk, `${label}: the Apps list shows an app in a later release ring before the settings are read`);
 
       // Add apps: three ways in; the empty form is one click further.
       await page.click('#btnAddApp');

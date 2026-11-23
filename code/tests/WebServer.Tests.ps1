@@ -179,6 +179,8 @@ try {
     $got = Invoke-Api '/api/app-get' @{ name = $testName }
     Check ($got.ok -and $got.app.wingetId -eq 'Vendor.WebTest' -and @($got.app.requiredFor).Count -eq 1) 'editor: it reads back, groups cleaned (blank and duplicate dropped)' ($got | ConvertTo-Json -Compress -Depth 5)
     Check ($got.app.metadata.description -eq 'from the test' -and $got.app.hasMetadata) 'editor: metadata created from the defaults plus what was typed'
+    $row = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $testName })[0]
+    Check ($row -and @($row.requiredFor) -contains 'SG-A' -and $row.PSObject.Properties.Name -contains 'excludeFor') 'apps list: each app''s groups per role (Remove groups offers them)' ($row | ConvertTo-Json -Compress -Depth 3)
     Check ($got.version -match '^[0-9A-F]{64}$') 'editor: the app comes with a fingerprint of its file' ([string]$got.version)
     # Something else (a deploy saving its App ID) changes the file while the editor is open.
     $changedId = '11111111-2222-3333-4444-555555555555'

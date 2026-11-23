@@ -155,7 +155,7 @@ function renderApps() {
   body.replaceChildren(...[...list.map(a => {
     const tr = el('tr', { 'data-name': a.name, class: selected.has(a.name) ? 'sel' : '', title: a.appId ? 'App ID ' + a.appId : 'Not in Intune yet' },
       el('td', { class: 'name' }, el('input', { type: 'checkbox', class: 'rowpick', 'aria-label': `Select ${a.name}`, title: 'Select - several at once (Shift: a range)', checked: selected.has(a.name),
-        onclick: e => { e.stopPropagation(); pickRow(a.name, e.target.checked, e.shiftKey); }, ondblclick: e => e.stopPropagation() }), iconFor(a), el('span', { class: 'nm', text: a.name })),
+        onclick: e => { e.stopPropagation(); pickRow(a.name, e.target.checked, e.shiftKey); }, ondblclick: e => e.stopPropagation() }), iconFor(a), el('span', { class: 'nm', text: a.name, title: a.name.length > 40 ? a.name : null })),
       el('td', { class: 'mono src', text: a.msHint && !a.wingetId ? 'Microsoft (Intune)' : !a.wingetId ? 'own installer' : isStoreId(a.wingetId) ? `${a.wingetId} (Store)` : a.wingetId,
         title: !a.wingetId ? 'Its own installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') : isStoreId(a.wingetId) ? 'A Microsoft Store app - Intune\'s own Store type: no package, the Store installs and updates it' : `winget package ${a.wingetId}` }),
       el('td', { class: 'num' }, ...versionCell(a)),
@@ -430,6 +430,9 @@ $('aWinget').addEventListener('change', async () => {
   const r = await api('/api/winget-commands', methodBody({ method: g.method }));
   if (!r.ok || $('aWinget').value.trim() !== id) return;
   for (const [f, v] of [['mInstallCommand', r.install], ['mUninstallCommand', r.uninstall]]) { $(f).value = v; $(f).dispatchEvent(new Event('input', { bubbles: true })); }
+  // Generated for this ID now (2.38.3) - at once, not only when the refresh 300 ms later says so: a second change in
+  // between (back to the first ID) found "the same ID" and left the commands on the one in between.
+  genFor = { ...g, id };
   refreshMethod();
 });
 const methodSoon = () => { clearTimeout(methodTimer); methodTimer = setTimeout(refreshMethod, 300); };
