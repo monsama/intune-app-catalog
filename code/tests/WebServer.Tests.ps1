@@ -650,6 +650,18 @@ try {
     Check ((-not $markerGone.ok) -and (-not $broken.ok) -and @($broken.errors).Count -ge 1) 'script editor: a changed version marker or a script that does not parse is refused'
     $prev = Invoke-Api '/api/package-script-previous' @{ name = $scName; file = 'Install.ps1' }
     Check ($prev.ok -and $prev.text -eq $ps1.text) 'script editor: the previous version comes from the recorded copy in Backups' ($prev | ConvertTo-Json -Compress)
+    # 2.38.17: the text files a setup reads open too - saved in their own encoding and line ends (an ANSI .cfg stays ANSI).
+    $cfgBytes = [byte[]](@([System.Text.Encoding]::ASCII.GetBytes("[Params]`r`nName=M")) + @([byte]0xFC) + @([System.Text.Encoding]::ASCII.GetBytes("ller`r`n")))
+    [System.IO.File]::WriteAllBytes((Join-Path $scDir 'SilentClient.cfg'), $cfgBytes)
+    [System.IO.File]::WriteAllText((Join-Path $scDir 'login.xml'), "<a><b>1</b></a>", (New-Object System.Text.UTF8Encoding($false)))
+    $cfg = Invoke-Api '/api/package-script' @{ name = $scName; file = 'SilentClient.cfg' }
+    $cfgSave = Invoke-Api '/api/package-script-save' @{ name = $scName; file = 'SilentClient.cfg'; text = ($cfg.text -replace 'Name=', 'Name=Herr '); hash = $cfg.hash }
+    $cfgAfter = [System.IO.File]::ReadAllBytes((Join-Path $scDir 'SilentClient.cfg'))
+    Check ($cfg.ok -and $cfg.kind -eq 'text' -and $cfg.text -match 'Müller' -and @($cfg.files) -contains 'login.xml' -and $cfgSave.ok -and $cfgAfter -contains [byte]0xFC -and -not ($cfgAfter[0] -eq 0xEF) -and ([System.Text.Encoding]::ASCII.GetString($cfgAfter)) -match "Herr M.ller`r`n") 'text editor: a .cfg read and saved back in its own (ANSI) encoding and line ends' ($cfg | ConvertTo-Json -Compress)
+    $xml = Invoke-Api '/api/package-script' @{ name = $scName; file = 'login.xml' }
+    $badXml = Invoke-Api '/api/package-script-save' @{ name = $scName; file = 'login.xml'; text = '<a><b>1</a>'; hash = $xml.hash }
+    $chk = Invoke-Api '/api/package-script-check' @{ file = 'login.xml'; text = '<a><b>1</a>'; old = '' }
+    Check ($xml.ok -and -not $badXml.ok -and -not $chk.valid -and @($chk.errors).Count -ge 1 -and -not (Invoke-Api '/api/package-script' @{ name = $scName; file = 'setup.exe' }).ok) 'text editor: an .xml must stay well-formed; other file types are not opened'
     $blk = Invoke-Api '/api/install-blocks' @{ install = $scApp.metadata.installCommand; uninstall = $scApp.metadata.uninstallCommand }
     $mblk = Invoke-Api '/api/install-compose' @{ form = 'msi'; values = @{ file = 'a.msi'; props = @(@{ name = 'ALLUSERS'; value = '1' }); code = '{12345678-1234-1234-1234-123456789ABC}' }; install = 'msiexec /i "a.msi" /qn /norestart'; uninstall = 'msiexec /x {12345678-1234-1234-1234-123456789ABC} /qn /norestart' }
     Check ($blk.ok -and $blk.form -eq 'script' -and $mblk.ok -and $mblk.install -eq 'msiexec /i "a.msi" /qn /norestart ALLUSERS=1') 'blocks: a script app''s commands, and an MSI property written into its command' ($mblk | ConvertTo-Json -Compress)

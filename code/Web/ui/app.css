@@ -1802,3 +1802,7 @@ dialog .wctl { z-index: 6; }
   #grid td.name > .nm { max-width: min(24ch, 12vw); }
   #updGrid tr > :nth-child(6), #updGrid tr > :nth-child(7) { display: none; }
 }
+/* 2.38.17: a file row also has "Open" (scripts and text files) - in a row that lays out whatever it holds, right-aligned. */
+#aPkgInfo .pkgfiles li { display: flex; gap: 10px; }
+#aPkgInfo .pkgfiles li > .pfpath { flex: 1 1 auto; min-width: 0; }
+#aPkgInfo .pkgfiles li > .muted { flex: 0 0 5.5em; text-align: right; }

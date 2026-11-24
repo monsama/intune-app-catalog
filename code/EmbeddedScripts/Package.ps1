@@ -327,7 +327,10 @@ function Get-SafeFileName {
 #endregion
 
 #region Main Script
-Clear-Host
+# Only in a real console: on the server (Linux, no terminal) clear fails ("TERM environment variable not set") and its exit
+# code stayed until the end - the job said "failed" although every package was built (2.38.17).
+if ($Host.Name -eq 'ConsoleHost' -and ($env:TERM -or $IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop')) { try { Clear-Host } catch { } }
+$global:LASTEXITCODE = 0
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "  Universal Intune Packager" -ForegroundColor Cyan
 Write-Host "  Handles: Installers (.exe, .msi) & PowerShell Scripts" -ForegroundColor Cyan
@@ -797,3 +800,5 @@ if ($UseCentralOutput) {
 Write-Host ""
 Write-Host "Done!" -ForegroundColor Green
 #endregion
+# The result is the exit code: failed only when a package failed - never a leftover code of some tool run on the way.
+exit $(if ($FailCount -gt 0) { 1 } else { 0 })

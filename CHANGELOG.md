@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.38.17
+
+- **Edit a package's text files in the app**: the file list on the editor's
+  Basics tab has "Open" for every script and text file directly in the app's
+  packages folder - .ps1 and now also .cfg, .ini, .xml, .txt, .cmd, .bat,
+  .inf, .iss, .json, .reg and .config (e.g. an installer's SilentClient.cfg or a
+  client's login.xml). They open in the code editor, with all of them as tabs.
+  A text file is saved back exactly as it was written (ANSI, UTF-8 with or
+  without BOM, UTF-16; Windows or Unix line ends) - an older setup reads its
+  .ini only that way; an .xml must stay well-formed. As with scripts: only
+  unchanged since it was opened, the earlier one kept in Backups ("Previous
+  version"), the change in the history - and the package needs building again.
+- **Packaging on the server said "failed" although it worked**: the packager
+  cleared the screen first, which fails without a terminal ("TERM environment
+  variable not set"), and that exit code was the job's result. Now the result is
+  only whether a package failed.
+- **Adding an installer without a detection rule** (a folder whose setup is
+  install.ps1 or a .cmd) now says so in the log, instead of "( detection)".
+
 ## 2.38.16
 
 Third full sweep (security, bugs, UI).
