@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.38.15
+
+Second full sweep (security, bugs, UI), and:
+
+- **Checks refreshes itself after a fix**: after Take from Intune, Send
+  settings, Send groups, Add to catalog or a catalog fix, it checks those apps
+  again - the list shows what is still different, not a stale row.
+- **Checks: "N selected"** counts only the rows in sight (a tick on a row hidden
+  by the area or app filter no longer counts or gets sent).
+- **Home warns when the nightly run hasn't run** for a day and a half though it
+  is scheduled (the PC was off, the task couldn't start).
+- **Apps list**: the version (lock, "-> newer", "pilot") and the stage pill sit
+  on one line with the rest of the row.
+- **Catalog backup to git** (nightly run): refuses repositories whose config
+  could make git run a program (includes, signing, drivers, a .git that points
+  elsewhere, filters in any .gitattributes) and runs git with signing and the
+  attributes file switched off; the owner check works on Linux too.
+- **Scripts > Save local copies** no longer deletes scripts saved locally and
+  never sent to Intune.
+- **Script run status** no longer lists devices twice when a later page fails.
+- **Renaming an app by case only** ("Foo app" -> "Foo App") no longer leaves a
+  second file on the server version (Linux).
+- **PC test results** with non-English app names are read as UTF-8 on Windows
+  PowerShell 5.1 (the detection rule got a garbled name).
+- **Install status**: times read the same on any regional setting, and a report
+  of exactly 5000 rows is no longer called cut off.
+
 ## 2.38.14
 
 Full sweep (security, bugs, UI).
