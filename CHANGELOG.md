@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.38.30
+
+- **Store apps read from Intune keep their Store ID**: an app that is a "Microsoft
+  Store app (new)" in Intune (Company Portal, say) came into the catalog as "Its own
+  installer" - Intune's package ID wasn't taken over. Add to catalog and Read from
+  Intune now take it as the Store product ID, and Checks takes it over for apps
+  already linked (with an entry in the app's history).
+- Add apps: "Fill in by hand..." sits on the tab row, not above it.
+
 ## 2.38.29
 
 - **Home: "app(s) differ from Intune"** came from the last nightly run and stayed

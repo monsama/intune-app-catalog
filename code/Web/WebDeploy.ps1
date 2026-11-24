@@ -365,6 +365,8 @@ function Global:Invoke-WebPullApply {
             param($a)
             $a.intuneAppType = Get-FriendlyIntuneAppType -ODataType $r.OdataType
             $a.intuneAppVersion = [string]$r.DisplayVersion
+            # A Microsoft Store app in Intune: its Store product ID too (2.38.30).
+            if (-not $a.wingetId -and -not $a.office -and (Get-StoreIdFromSync $r)) { $a.wingetId = Get-StoreIdFromSync $r; $a.managedUpdates = $false }
             $a.metadata = if ($a.metadata) { Merge-CatalogMetadata -Remote $r.Metadata -Local $a.metadata -KeepLocalFields $keep } else { $r.Metadata }
             if ($r.GroupFetchOk) {
                 if ($keep -notcontains 'Required for') { $a.requiredFor = @($r.RequiredGroupNames) }
