@@ -217,7 +217,16 @@ function updateReady() {
     [true, 'Microsoft 365 Apps - Microsoft installs and updates it; no commands or detection', null],
     [[...document.querySelectorAll('[data-oapp]')].some(c => c.checked), 'At least one app installed', 'oChannel'],
     [groups, groups ? 'Groups that get it' : 'Groups that get it - none yet, so nobody gets it', 'gRequired'],
-  ] : ms ? [[!!$('aName').value.trim(), 'A name', 'aName'], [false, row.msHint, null]] : store ? [
+  ] : ms ? [
+    [!!$('aName').value.trim(), 'A name', 'aName'],
+    // Microsoft's own apps (2.38.22): what to do, as a one-click step - not a "Missing:" line that only says why.
+    /company\s*portal/i.test($('aName').value) ? [false, 'Its Store ID 9WZDNCRFJ3PZ - Company Portal is sent as a Microsoft Store app', null,
+      { label: 'Use Store ID 9WZDNCRFJ3PZ', run: () => { editorSrc = 'store'; $('aWinget').value = '9WZDNCRFJ3PZ'; $('aWinget').dispatchEvent(new Event('input', { bubbles: true })); } }]
+      : /^(microsoft\s+)?(365|office)\b|^microsoft 365 apps/i.test($('aName').value.trim()) ? [false, 'Its Microsoft 365 settings - sent as Intune\'s own Microsoft 365 Apps', null,
+      { label: 'Install from Microsoft 365', run: () => { const b = document.querySelector('.srcpick [data-src="office"]'); if (b) b.click(); } }]
+      : [true, `In Intune as ${row.type || 'its own app type'} - nothing to package`, null],
+    ...(row.hasAppId ? [[groups, groups ? 'Groups that get it' : 'Groups that get it - none yet, so nobody gets it', 'gRequired']] : []),
+  ] : store ? [
     [!!$('aName').value.trim(), 'A name', 'aName'],
     [true, `Microsoft Store app (${wid}) - the Store installs and updates it; no commands or detection`, null],
     [groups, groups ? 'Groups that get it' : 'Groups that get it - none yet, so nobody gets it', 'gRequired'],
@@ -243,9 +252,10 @@ function updateReady() {
   const done = items.filter(i => i[0]).length;
   $('readyBox').querySelector('h3').textContent = done === items.length ? 'Ready to send to Intune' : `Ready to send? ${done} of ${items.length}`;
   $('readyBox').classList.toggle('allok', done === items.length);
-  $('readyList').replaceChildren(...items.map(([ok, text, field]) => el('li', { class: ok ? 'ok' : 'todo' },
+  $('readyList').replaceChildren(...items.map(([ok, text, field, act]) => el('li', { class: ok ? 'ok' : 'todo' },
     el('span', { class: 'mark', 'aria-hidden': 'true', text: ok ? '✓' : '!' }),
-    field && !ok ? el('button', { type: 'button', class: 'linkish', text, title: 'Go to the field', onclick: () => { const f = $(field); edPageFor(f); const d = f.closest('details'); if (d) d.open = true; ((f.hidden && $(field + 'Chips')) || f).focus(); } }) : el('span', { text: (ok ? '' : 'Missing: ') + text }))));
+    act && !ok ? el('span', {}, text, ' ', el('button', { type: 'button', class: 'btn small', text: act.label, onclick: () => { act.run(); updateReady(); } }))
+    : field && !ok ? el('button', { type: 'button', class: 'linkish', text, title: 'Go to the field', onclick: () => { const f = $(field); edPageFor(f); const d = f.closest('details'); if (d) d.open = true; ((f.hidden && $(field + 'Chips')) || f).focus(); } }) : el('span', { text: (ok ? '' : 'Missing: ') + text }))));
 }
 $('appForm').addEventListener('input', () => updateReady());
 $('appForm').addEventListener('change', () => updateReady());
@@ -406,6 +416,15 @@ function renderWhere() {
     const st = (typeof isStoreId === 'function' && isStoreId($('aWinget').value.trim())) || (typeof editorSrc !== 'undefined' && editorSrc === 'office' && !$('aWinget').value.trim()), was = $('dlgApp').classList.contains('is-store');
     $('dlgApp').classList.toggle('is-store', st);
     if (st !== was) { try { setPage(cur); } catch (e) { } }   // the page's sections follow (not before the editor is set up)
+    // Store, Microsoft 365 and Microsoft's own apps in Intune (2.38.22): no Install & detection tab - no commands, detection,
+    // requirements or dependencies are sent for them. Details stay: the description, publisher and links go to Intune.
+    try {
+      const row = typeof editingName !== 'undefined' && editingName ? apps.find(a => a.name === editingName) : null;
+      const special = st || !!(!$('aWinget').value.trim() && row && row.msHint);
+      bar.children[3].hidden = special;
+      $('dlgApp').classList.toggle('is-special', special);
+      if (special && cur === 3) setPage(0);
+    } catch (e) { }
     return st;
   };
   window.edFoldsReset = () => {

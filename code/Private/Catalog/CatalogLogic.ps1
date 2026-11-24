@@ -369,7 +369,9 @@ function Global:Get-CatalogMetadataFieldDiffs {
     # right default for every OTHER caller (Test-AppHasCustomConfig, the
     # single-app auto-fetch), which only ever deal with apps this tool
     # itself deploys as win32LobApp.
-    param($Local, $Remote, [string]$OdataType = "")
+    # -FirstOnly (2.38.22): only whether anything differs - stops at the first difference that isn't one of
+    # -IgnoreFields (labels). The Apps list asks this for every app (Test-AppHasCustomConfig).
+    param($Local, $Remote, [string]$OdataType = "", [switch]$FirstOnly, [string[]]$IgnoreFields = @())
 
     $diffs = New-Object System.Collections.Generic.List[object]
     if (-not $Local) { return $diffs.ToArray() }
@@ -396,6 +398,8 @@ function Global:Get-CatalogMetadataFieldDiffs {
         if ($f.Unrecorded -and $null -eq $Local.($f.Key)) { continue }
         $localVal = [string]$Local.($f.Key)
         $remoteVal = [string]$Remote.($f.Key)
+        # The same text is the same after any normalising - the usual case, without two function calls (2.38.22).
+        if ($localVal -ceq $remoteVal) { continue }
         # Same "a line-ending/trailing-whitespace-only difference is not a
         # real change" normalization ConvertTo-DetectionRuleJson applies for
         # the detection script (confirmed live, WinMerge: Intune's own copy
@@ -416,6 +420,7 @@ function Global:Get-CatalogMetadataFieldDiffs {
         }
         if ($compareLocal -ne $compareRemote) {
             $diffs.Add([pscustomobject]@{ Field = $f.Label; Local = $localVal; Remote = $remoteVal })
+            if ($FirstOnly -and $IgnoreFields -notcontains $f.Label) { return $diffs.ToArray() }
         }
     }
 
@@ -434,6 +439,7 @@ function Global:Get-CatalogMetadataFieldDiffs {
         $remoteDetSummary = if ($Remote.detectionRule) { ConvertTo-DetectionRuleJson -DetectionRule (Get-ComparableDetectionRule -DetectionRule $Remote.detectionRule) -IndentLevel 0 } else { "" }
         if ($localDetSummary -ne $remoteDetSummary) {
             $diffs.Add([pscustomobject]@{ Field = "Detection rule"; Local = $localDetSummary; Remote = $remoteDetSummary })
+            if ($FirstOnly) { return $diffs.ToArray() }
         }
 
         $localRcSummary = if (@($Local.returnCodes).Count -gt 0) { (@($Local.returnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
@@ -1265,7 +1271,7 @@ function Global:Test-AppHasCustomConfig {
     $defaults = Get-DefaultAppMetadata -AppName $App.appName -WingetId $App.wingetId -Uncommon $false
     # App version is a fact about the package, not a setting - an app
     # whose version was pulled from Intune isn't custom because of it.
-    $diffs = @(Get-CatalogMetadataFieldDiffs -Local $App.metadata -Remote $defaults | Where-Object { $_.Field -ne "App version" })
+    $diffs = @(Get-CatalogMetadataFieldDiffs -Local $App.metadata -Remote $defaults -FirstOnly -IgnoreFields 'App version' | Where-Object { $_.Field -ne "App version" })
     return ($diffs.Count -gt 0)
 }
 
@@ -2635,6 +2641,8 @@ function Global:Get-NonPackageAppHint {
     # Microsoft 365 Apps with its settings in the catalog (2.38.21): sent from here, as Intune's own Office app.
     if ($App.office) { return '' }
     $t = [string]$App.intuneAppType
+    # Company Portal as a Store app in Intune but without its Store ID here (2.38.22): the ID is what it needs - said first.
+    if ($t -and -not (Test-PackagedIntuneAppType $t) -and (Test-CompanyPortalName ([string]$App.appName).Trim())) { return "Company Portal is a Microsoft Store app: put 9WZDNCRFJ3PZ in its Store product ID and it's sent as one - nothing to package." }
     if (-not (Test-PackagedIntuneAppType $t)) { return "$($App.appName) is Intune's own app type ($t) - there's nothing to package." }
     # By name only for an app that has nothing of its own: an install command, a detection rule or a package path
     # means someone packaged it as Win32 (an Office Deployment Tool package, say) - that one is built and sent as usual.

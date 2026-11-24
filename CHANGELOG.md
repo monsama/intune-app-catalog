@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.38.22
+
+- **Ready to send? for Microsoft's own apps** says what to do, with a button:
+  Company Portal without its Store ID gets "Use Store ID 9WZDNCRFJ3PZ" (it is
+  then sent as the Store app); an app named Microsoft 365 / Office gets
+  "Install from Microsoft 365". No more "Missing: ... is Intune's own app
+  type". A linked Company Portal is told the Store ID too.
+- **Editor for Store, Microsoft 365 and Microsoft's own apps**: no Install &
+  detection tab (no commands, detection, requirements or dependencies are sent
+  for them) and no App version field - Microsoft or the Store keeps it.
+  Details stay: description, publisher and links go to Intune.
+- More room between the Name field and "Installs from".
+- **Send to Intune...** in the app menu (right-click a row, or More...) - not
+  only the button top right.
+- The Apps list is faster with many apps: the "custom settings" check stops
+  at the first difference and skips identical fields without normalising them.
+
 ## 2.38.21
 
 - **Microsoft 365 Apps, made and changed in the app**: in the editor, Installs
