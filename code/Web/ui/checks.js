@@ -48,7 +48,8 @@ async function runChecks(names) {
     if ($('chkDetails').checked && r.connected && r.deployed > 0) {
       $('checkNotes').textContent = `Reading ${r.deployed} deployed app(s) from Intune in detail - the slowest part...`;
       const d = await checkJob('/api/checks-details', only, 'Reading the deployed apps in detail...');
-      if (d) mergeFindings(d); else notes.push('The detailed check of the deployed apps did not finish - see the log.');
+      // Apps Checks set right in the catalog (a Store app's ID from Intune, 2.38.31): the list shows them as they are now.
+      if (d) { mergeFindings(d); if ((d.changed || []).length) { findings = findings.filter(f => !(d.changed.includes(f.app) && f.area === 'Package')); notes.push(`Taken from Intune: ${d.changed.join(', ')} - a Microsoft Store app there, its Store ID is now in the catalog.`); if (typeof loadApps === 'function') loadApps(); } } else notes.push('The detailed check of the deployed apps did not finish - see the log.');
       const a = await checkJob('/api/checks-assign', only, 'Comparing the assignments...');
       if (a) mergeFindings(a); else notes.push('The assignments could not be compared - see the log.');
     }

@@ -396,9 +396,29 @@ function Global:Set-WebUploadSetup {
     return (Get-WebUploadAnswer $u)
 }
 
+function Global:Test-WebPathThroughLink {
+    <#
+      Whether -Path, or any folder on the way to it below the Packages root, is a link (symlink or junction) - '' when
+      none is, else the part that is (2.38.31). Writing or deleting through one would reach another place on disk.
+    #>
+    param([string]$Path)
+    $root = [System.IO.Path]::GetFullPath((Get-AppFolder -Kind Packages)).TrimEnd('\', '/')
+    $full = [System.IO.Path]::GetFullPath($Path)
+    if (-not $full.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { return $full }
+    $p = $full
+    while ($p -and $p.Length -gt $root.Length) {
+        if (Test-Path -LiteralPath $p) { if ((Get-Item -LiteralPath $p -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { return $p } }
+        $p = Split-Path -Parent $p
+    }
+    return ''
+}
+
 function Global:Copy-WebUploadInto {
     # The uploaded installer (or the uploaded folder's files) into -Folder; -Replace empties it first. The paths written.
     param($u, [string]$Folder, [switch]$Replace)
+    # Links checked before anything is deleted or written (2.38.31: Replace emptied a linked folder's target first).
+    $link = Test-WebPathThroughLink $Folder
+    if ($link) { throw "The package folder goes through a link ($link) - nothing was changed." }
     if ($Replace -and (Test-Path -LiteralPath $Folder)) { Get-ChildItem -LiteralPath $Folder -Force | Remove-Item -Recurse -Force }
     if (-not (Test-Path -LiteralPath $Folder)) { [void](New-Item -ItemType Directory -Path $Folder -Force) }
     # A file it replaces goes to Backups first (2.38.23) - like a save in the script editor; links are never written through.
@@ -419,7 +439,8 @@ function Global:Copy-WebUploadInto {
     $written = foreach ($f in @(Get-PackageFolderFiles $u.Root)) {
         $dest = Join-Path $Folder ($f.path -replace '\\', $sep)
         $d = Split-Path -Parent $dest; if (-not (Test-Path -LiteralPath $d)) { [void](New-Item -ItemType Directory -Path $d -Force) }
-        if ((Get-Item -LiteralPath $d -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "$($f.path): its folder in the package is a link - nothing more was copied." }
+        $link = Test-WebPathThroughLink $dest
+        if ($link) { throw "$($f.path): its path in the package goes through a link ($link) - nothing more was copied." }
         if (-not $Replace) { & $keep $dest }
         Copy-Item -LiteralPath (Join-Path $u.Root ($f.path -replace '\\', $sep)) -Destination $dest -Force
         $f.path
@@ -489,7 +510,7 @@ function Global:Add-WebInstallerApp {
     $setup = if ($u.Kind -eq 'file') { '' } else { [string]$u.Setup }
     if ($p.NeedsUninstallScript) {
         $label = if ($u.Info.ProductName) { $u.Info.ProductName } else { $name }
-        [System.IO.File]::WriteAllText((Join-Path $folder 'Uninstall.ps1'), (New-InstalledAppUninstallScript -DisplayName $label -ExeKind $u.Info.ExeKind), (New-Object System.Text.UTF8Encoding($true)))
+        if (Test-WebPathThroughLink (Join-Path $folder 'Uninstall.ps1')) { throw 'Uninstall.ps1 in the package folder is a link - not written.' }; [System.IO.File]::WriteAllText((Join-Path $folder 'Uninstall.ps1'), (New-InstalledAppUninstallScript -DisplayName $label -ExeKind $u.Info.ExeKind), (New-Object System.Text.UTF8Encoding($true)))
     }
     $groups = Get-WebAddGroupLists $Data
     $install = ([string]$Data.installCommand).Trim(); if (-not $install) { $install = $p.InstallCommand }
@@ -548,7 +569,7 @@ function Global:Set-WebAppInstaller {
     $setup = if ($u.Kind -eq 'file') { [string]$u.FileName } else { [string]$u.Setup }
     if ($p.NeedsUninstallScript -and -not (Test-Path -LiteralPath (Join-Path $folder 'Uninstall.ps1'))) {
         $label = if ($info.ProductName) { $info.ProductName } else { $a.appName }
-        [System.IO.File]::WriteAllText((Join-Path $folder 'Uninstall.ps1'), (New-InstalledAppUninstallScript -DisplayName $label -ExeKind $info.ExeKind), (New-Object System.Text.UTF8Encoding($true)))
+        if (Test-WebPathThroughLink (Join-Path $folder 'Uninstall.ps1')) { throw 'Uninstall.ps1 in the package folder is a link - not written.' }; [System.IO.File]::WriteAllText((Join-Path $folder 'Uninstall.ps1'), (New-InstalledAppUninstallScript -DisplayName $label -ExeKind $info.ExeKind), (New-Object System.Text.UTF8Encoding($true)))
     }
     $filled = New-Object System.Collections.Generic.List[string]
     [void](Update-WebCatalogApp -Name $a.appName -Change {
@@ -676,7 +697,7 @@ function Global:Add-WebScriptApp {
     [void](New-Item -ItemType Directory -Path $folder -Force)
     $utf8 = New-Object System.Text.UTF8Encoding($true)
     [System.IO.File]::WriteAllText((Join-Path $folder 'Install.ps1'), (ConvertTo-CanonicalLineEndings $install), $utf8)
-    [System.IO.File]::WriteAllText((Join-Path $folder 'Uninstall.ps1'), (ConvertTo-CanonicalLineEndings $uninstall), $utf8)
+    if (Test-WebPathThroughLink (Join-Path $folder 'Uninstall.ps1')) { throw 'Uninstall.ps1 in the package folder is a link - not written.' }; [System.IO.File]::WriteAllText((Join-Path $folder 'Uninstall.ps1'), (ConvertTo-CanonicalLineEndings $uninstall), $utf8)
     $ps = '%SystemRoot%\sysnative\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File'
     $groups = Get-WebAddGroupLists $Data
     $edit = [pscustomobject]@{ appName = $name; wingetId = ''; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = $groups.Exclude; managedUpdates = $false

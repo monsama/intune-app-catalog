@@ -429,6 +429,7 @@ async function doAdd(send) {
       if (build || publish) await buildAdded(r.name, publish);
     }
     else if (addSrc === 'office') {
+      if (badLocales($('aoLocales').value).length) { showAddError(localeHelp(badLocales($('aoLocales').value))); $('aoLocales').focus(); return; }
       const r = await api('/api/add-office', { name: $('aoName').value.trim(), office: aoRead(), ...groups });
       if (!r.ok) { showAddError(r.error); return; }
       $('dlgAdd').close(); await afterAdd([r.name]); done = [r.name]; aoReset();

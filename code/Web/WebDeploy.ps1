@@ -127,6 +127,8 @@ function Global:Start-WebDeploy {
         # asked of Intune now (2.38.29), with what to do instead.
         if ($a.appId) {
             $ty = Get-WebIntuneAppODataType -AppId ([string]$a.appId)
+            # The Store product of an app in Intune can't change (2.38.31): another ID in the catalog would be "updated" and change nothing.
+            if ($ty.ok -and $ty.type -eq 'winGetApp' -and [string]$ty.value.packageIdentifier -and [string]$ty.value.packageIdentifier -ne [string]$a.wingetId) { return @{ ok = $false; error = "$name is the Store app $($ty.value.packageIdentifier) in Intune, the catalog says $($a.wingetId) - Intune can't change an app's Store product. Clear its App ID (More > Clear App ID) and send it again to create the new one, then delete the old one in Intune - or put $($ty.value.packageIdentifier) back." } }
             if ($ty.ok -and $ty.type -ne 'winGetApp') { return @{ ok = $false; error = "$name is linked to a $(Get-FriendlyIntuneAppType -ODataType $ty.type) in Intune, which can't become the new Microsoft Store app. Clear its App ID (More > Clear App ID) and send it again: the Store app is created new with its groups - devices that have it keep it. Then delete the old one in Intune." } }
         }
         $m = $a.metadata
