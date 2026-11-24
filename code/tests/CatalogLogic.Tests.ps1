@@ -1007,10 +1007,12 @@ Assert-True ((Get-DownloadCheckVerdict -InWinget $true -StatusCode 200 -Version 
 $rcs = @(Add-WingetRetryReturnCode @(@{ returnCode = 0; type = 'success' }, @{ returnCode = 9009; type = 'retry' }))
 Assert-True ($rcs.Count -eq 6 -and @(Add-WingetRetryReturnCode @(@{ returnCode = 0; type = 'success' })).Count -eq 6 -and @(Add-WingetRetryReturnCode @()).Count -eq 10) "Add-WingetRetryReturnCode: 9009 and winget's codes added once; an empty list keeps Intune's five defaults"
 Assert-True (@($rcs | Where-Object { $_.returnCode -eq -1978334974 -and $_.type -eq 'retry' }).Count -eq 1 -and @($rcs | Where-Object { $_.returnCode -eq -1978335135 -and $_.type -eq 'success' }).Count -eq 1) "Add-WingetRetryReturnCode: winget's 'another install in progress' is Retry, 'already installed' Success (2.38.34)"
-$devDet = New-InstalledAppDetectionScript -DisplayName 'Müller Ñandú' -Version '24'
+# Built from character codes: this file is ASCII, so Windows PowerShell reads it the same in any code page.
+$uniName = 'M' + [char]0x00FC + 'ller ' + [char]0x00D1 + 'and' + [char]0x00FA
+$devDet = New-InstalledAppDetectionScript -DisplayName $uniName -Version '24'
 $devErr = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($devDet, [ref]$null, [ref]$devErr)
 Assert-True (@($devErr).Count -eq 0 -and $devDet -notmatch '\[version\]' -and $devDet -match 'HKCU:') "New-InstalledAppDetectionScript: parses, compares part by part (no [version]) and looks at the user's entries too (2.38.34)"
-Assert-True ((Get-InstalledNamePattern 'Müller Ñandú') -match '^[\x00-\x7F]+$' -and 'Müller Ñandú 2.1' -match (Get-InstalledNamePattern 'Müller Ñandú')) "Get-InstalledNamePattern: letters outside ASCII written as \\u - the script stays ASCII and still matches (2.38.34)"
+Assert-True ((Get-InstalledNamePattern $uniName) -match '^[\x00-\x7F]+$' -and ($uniName + ' 2.1') -match (Get-InstalledNamePattern $uniName)) "Get-InstalledNamePattern: letters outside ASCII written as \\u - the script stays ASCII and still matches (2.38.34)"
 Invoke-Expression (Get-DeviceVersionCompareScript)
 Assert-True ((Compare-Version '9.0.0' 'ad 8.1.0') -eq -1 -and (Compare-Version '1.0' '1.0-beta') -eq -1 -and (Compare-Version '24' '25') -eq 1 -and (Compare-Version '2.0' 'v2.0') -eq 0) "Get-DeviceVersionCompareScript: a word before the version is ignored, a pre-release is older, one-part versions compare (2.38.34)"
 $unin = New-InstalledAppUninstallScript -DisplayName 'X' -ExeKind 'nsis'

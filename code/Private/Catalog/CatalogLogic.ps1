@@ -908,7 +908,7 @@ function Global:Get-InstalledNamePattern {
     # "Version 2.1" - 2.38.18) or "(x64)" - not "<name> Meeting Add-in", another product.
     param([string]$Name)
     # Letters outside ASCII as \uXXXX (2.38.34): the pattern lands in a script Windows PowerShell may read in the ANSI
-    # code page, where "Ñ" (UTF-8 C3 91) ends a quoted string.
+    # code page, where a letter like N-tilde (UTF-8 C3 91) ends a quoted string.
     $esc = [regex]::Replace([regex]::Escape(([string]$Name).Trim()), '[^\x00-\x7F]', { param($c) '\u{0:X4}' -f [int][char]$c.Value })
     return '^' + $esc + '(\s+((version|ver\.?)\s*)?(v?\d[\w.\-]*|\([^)]*\)))*\s*$'
 }
