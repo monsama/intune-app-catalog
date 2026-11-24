@@ -160,7 +160,7 @@ function renderApps() {
         title: a.office && !a.wingetId ? `Intune's own Microsoft 365 Apps - ${a.officeText}` : !a.wingetId ? 'Its own installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') : isStoreId(a.wingetId) ? 'A Microsoft Store app - Intune\'s own Store type: no package, the Store installs and updates it' : `winget package ${a.wingetId}` }),
       el('td', { class: 'num' }, el('span', { class: 'vcell' }, ...versionCell(a))),
       el('td', { title: `Required: ${a.required}, Available: ${a.available}, Uninstall: ${a.uninstall}`, class: a.required + a.available ? '' : 'muted', text: a.required + a.available + a.uninstall ? `${(a.groups || []).length} group${(a.groups || []).length === 1 ? '' : 's'}` : 'nobody yet' }),
-      el('td', {}, stageCell(a)),
+      el('td', { class: 'stagecol' }, stageCell(a)),
       el('td', { class: 'mono appidcol', text: a.appId ? a.appId.slice(0, 8) + '…' : '', title: a.appId || 'Not in Intune yet' }));
     tr.addEventListener('click', e => selectRow(a.name, e));
     tr.addEventListener('dblclick', () => openEditor(a.name));

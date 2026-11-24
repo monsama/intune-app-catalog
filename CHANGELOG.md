@@ -11,6 +11,7 @@
   send it again (the Store app is created new) instead of failing in Intune. The
   editor's "Use Store ID" item says what it changes: the catalog only - nothing on
   devices.
+- Apps list: every stage label the same width.
 
 ## 2.38.28
 
