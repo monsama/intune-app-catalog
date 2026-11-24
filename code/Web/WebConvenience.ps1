@@ -263,6 +263,19 @@ function Global:Get-WebAttention {
     $last = @($runs.runs) | Select-Object -First 1
     if ($last -and $last.failed) { & $add 'err' "The last nightly run had $($last.failed) problem(s)" ((@($last.items | Where-Object { $_.outcome -eq 'failed' } | Select-Object -First 3 | ForEach-Object { $t = Get-WebShortGraphError ([string]$_.text); if ($_.app -eq '(all)') { $t } else { "$($_.app): $t" } }) -join ' / ')) 'settings:automation' }
     $drift = @($last.items | Where-Object { $_.outcome -eq 'drift' })
+    # 2.38.28: an app Checks compared since that run, and found as the catalog says, isn't "differs" any more - Home showed
+    # last night's finding until the next night, while Checks (the same comparison, later) found nothing.
+    if ($drift.Count) {
+        try { Load-LastAuditCache } catch { }
+        $runAt = [datetime]::MinValue; try { if ($last.started) { $runAt = ([datetime]$last.started).ToUniversalTime() } } catch { }
+        $drift = @($drift | Where-Object {
+                $e = if ($Global:App.LastAuditResults) { $Global:App.LastAuditResults[[string]$_.app] } else { $null }
+                if (-not $e -or -not $e.Timestamp) { return $true }
+                $at = [datetime]::MinValue; try { $at = ([datetime]$e.Timestamp).ToUniversalTime() } catch { }
+                $clean = -not @(@($e.Metadata, $e.Groups, $e.Dependencies, $e.Unknown) | Where-Object { $null -ne $_ -and [string]$_ -ne 'OK' -and [string]$_ -ne '' }).Count
+                -not ($at -gt $runAt -and $clean)
+            })
+    }
     if ($drift.Count) { & $add 'warn' "$($drift.Count) app(s) differ from Intune" ((@($drift | Select-Object -First 5 | ForEach-Object { $_.app }) -join ', ') + ' (last night) - Checks has the details.') 'checks' }
     $sch = Get-WebUpdateSchedule
     # Scheduled, but no run for a day and a half: the PC was off, the task didn't start, or it can't sign in.

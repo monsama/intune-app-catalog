@@ -225,7 +225,9 @@ function updateReady() {
   ] : ms ? [
     [!!$('aName').value.trim(), 'A name', 'aName'],
     // Microsoft's own apps (2.38.22): what to do, as a one-click step - not a "Missing:" line that only says why.
-    /company\s*portal/i.test($('aName').value) ? [false, 'Its Store ID 9WZDNCRFJ3PZ - Company Portal is sent as a Microsoft Store app', null,
+    /company\s*portal/i.test($('aName').value) ? [false, row.hasAppId
+      ? `Its Store ID 9WZDNCRFJ3PZ - then the catalog knows it as the Microsoft Store app. Nothing changes on devices; Send to Intune ${/Store app \(new\)/.test(row.type || '') ? 'updates its details in Intune' : `says what to do, as it is a ${row.type || 'different app type'} in Intune now`}.`
+      : 'Its Store ID 9WZDNCRFJ3PZ - Company Portal is sent as a Microsoft Store app', null,
       { label: 'Use Store ID 9WZDNCRFJ3PZ', run: () => { editorSrc = 'store'; $('aWinget').value = '9WZDNCRFJ3PZ'; $('aWinget').dispatchEvent(new Event('input', { bubbles: true })); } }]
       : /^(microsoft\s+)?(365|office)\b|^microsoft 365 apps/i.test($('aName').value.trim()) ? [false, 'Its Microsoft 365 settings - sent as Intune\'s own Microsoft 365 Apps', null,
       { label: 'Install from Microsoft 365', run: () => { const b = document.querySelector('.srcpick [data-src="office"]'); if (b) b.click(); } }]

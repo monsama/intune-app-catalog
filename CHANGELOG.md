@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.38.29
+
+- **Home: "app(s) differ from Intune"** came from the last nightly run and stayed
+  until the next one - even when Checks, run later, found everything as the catalog
+  says. An app Checks compared since that run and found in order is no longer
+  listed there.
+- **Company Portal (and any Store app) linked to another app type** in Intune (the
+  legacy Store app, a Win32 package): Send to Intune says to clear the App ID and
+  send it again (the Store app is created new) instead of failing in Intune. The
+  editor's "Use Store ID" item says what it changes: the catalog only - nothing on
+  devices.
+- Apps list: every stage label the same width.
+
 ## 2.38.28
 
 - **Stage says what is true for the devices**: "Released 24.09" (managed updates,
