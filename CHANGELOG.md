@@ -14,6 +14,8 @@
 - More room between the Name field and "Installs from".
 - **Send to Intune...** in the app menu (right-click a row, or More...) - not
   only the button top right.
+- The Apps list is faster with many apps: the "custom settings" check stops
+  at the first difference and skips identical fields without normalising them.
 
 ## 2.38.21
 

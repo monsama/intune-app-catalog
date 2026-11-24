@@ -163,7 +163,7 @@ function Global:ConvertTo-AppRecord {
         downloadUrl  = $(if ([string]$Raw.downloadUrl -match '^https://[^\s"<>]+$' -and ([string]$Raw.downloadUrl).Length -le 2000) { [string]$Raw.downloadUrl } else { '' })
         detectedName = $(if ([string]$Raw.detectedName -and ([string]$Raw.detectedName).Length -le 100) { ([string]$Raw.detectedName).Trim() } else { '' })
         # Microsoft 365 Apps (2.38.21): Intune's own Office app with its settings (channel, apps left out, ...) - no package.
-        office       = (ConvertTo-OfficeSettings $Raw.office)
+        office       = $(if ($null -ne $Raw.office) { ConvertTo-OfficeSettings $Raw.office } else { $null })
         metadata     = $metadata
     }
 }
