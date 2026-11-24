@@ -118,7 +118,7 @@
       {
         "type": "officeSuiteApp",
         "why": "Microsoft 365 Apps this tool creates and updates (2.38.21) - CreateOfficeApp.ps1, ConvertTo-OfficeSuiteBody",
-        "properties": ["displayName", "description", "publisher", "productIds", "excludedApps", "useSharedComputerActivation", "updateChannel", "officePlatformArchitecture", "localesToInstall", "installProgressDisplayLevel", "shouldUninstallOlderVersionsOfOffice", "autoAcceptEula"]
+        "properties": ["displayName", "description", "publisher", "productIds", "excludedApps", "useSharedComputerActivation", "updateChannel", "officePlatformArchitecture", "localesToInstall", "installProgressDisplayLevel", "shouldUninstallOlderVersionsOfOffice", "autoAcceptEula", "officeSuiteAppDefaultFileFormat"]
       },
       {
         "type": "excludedApps",
