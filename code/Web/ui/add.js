@@ -414,7 +414,7 @@ async function doAdd(send) {
       $('dlgAdd').close(); await afterAdd(added); done = added;
       // winget didn't give the details for some: said here, with the button that reads them again.
       const lacking = noDetails.length ? ` winget's details (publisher, description, links) couldn't be read for ${noDetails.join(', ')} - Fill in details reads them later.` : '';
-      toast(`${added.length} app(s) added${skipped.length ? ' - skipped: ' + skipped.join('; ') : ''}.${lacking}`, !added.length, [
+      toast(`${nWord(added.length, 'app')} added${skipped.length ? ' - skipped: ' + skipped.join('; ') : ''}.${lacking}`, !added.length, [
         ...(noDetails.length && typeof fillDetails === 'function' ? [{ label: 'Fill in details', run: () => fillDetails(noDetails) }] : []),
         ...(added.length && !send ? [{ label: added.length === 1 ? 'Send to Intune' : `Send ${added.length}`, run: () => openDeploy(added) }] : [])]);
     }
@@ -507,8 +507,8 @@ async function readList(body) {
   $('alGrid').tHead.rows[0].cells[1].textContent = r.starter ? 'App' : 'Winget ID';
   // The starter set: nothing ticked (2.38.2) - each is chosen; the ones nearly everyone deploys say "common".
   alPicked = new Set(r.starter ? [] : r.items.filter(x => !x.inCatalog).map(x => x.id));
-  $('alNote').textContent = r.starter ? `${r.items.length} apps - tick what you need${r.items.some(x => x.inCatalog) ? ` (${r.items.filter(x => x.inCatalog).length} already in the catalog)` : ''}.`
-    : `${r.items.length} package(s) - ${r.items.filter(x => x.inCatalog).length} already in the catalog.`;
+  $('alNote').textContent = r.starter ? `${r.items.length} apps${r.items.some(x => x.inCatalog) ? ` (${r.items.filter(x => x.inCatalog).length} already in the catalog)` : ''}.`
+    : `${nWord(r.items.length, 'package')} - ${r.items.filter(x => x.inCatalog).length} already in the catalog.`;
   $('alAll').checked = alPicked.size > 0 && alPicked.size === r.items.filter(x => !x.inCatalog).length;
   renderList(); updateAddButton();
   // On a phone the explanation fills the screen: the list is brought into view (it started below it).
@@ -520,11 +520,14 @@ function renderList() {
   let cat = '';
   $('alSearchRow').hidden = !alItems.length;
   const shown = alItems.filter(alMatch);
+  // Select all says whether everything the search shows is picked (2.38.34: it stayed ticked for the previous search).
+  const syncAll = () => { const free = shown.filter(x => !x.inCatalog); $('alAll').checked = free.length > 0 && free.every(x => alPicked.has(x.id)); };
+  syncAll();
   if (alItems.length && !shown.length) { $('alRows').replaceChildren(el('tr', {}, el('td', { colspan: 3, class: 'muted', text: `Nothing in the list matches "${$('alSearch').value.trim()}".` }))); return; }
   $('alRows').replaceChildren(...shown.flatMap(x => {
     const box = el('input', { type: 'checkbox', 'aria-label': `Pick ${x.name || x.id}`, disabled: !!x.inCatalog });
     box.checked = alPicked.has(x.id);
-    box.addEventListener('change', () => { if (box.checked) alPicked.add(x.id); else alPicked.delete(x.id); updateAddButton(); });
+    box.addEventListener('change', () => { if (box.checked) alPicked.add(x.id); else alPicked.delete(x.id); syncAll(); updateAddButton(); });
     // The starter set: a heading per category, the app's name and why beside its Winget ID.
     // A plain cell (2.38.1): the table's heading cells stay at the top while it scrolls, and a category heading did too - over the column names.
     const head = x.category && x.category !== cat ? [el('tr', { class: 'grouprow' }, el('td', { colspan: 3, text: (cat = x.category) }))] : [];

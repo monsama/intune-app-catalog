@@ -236,35 +236,38 @@ function Global:Get-AssignmentChangeFindings {
     <#
       The whole assignment preview of one app as findings (2.38.33). Before, only what Intune had extra was shown
       ("unknown"), so a changed filter showed as an unknown assignment and a missing exclusion not at all:
-        - the same assignment with another filter on each side -> "Assignment filter differs"
-        - an exclusion the catalog has and Intune doesn't      -> "Exclusion missing in Intune"
-        - the rest of what Intune has                          -> the unknown-assignments finding
+        - the same assignment with another filter on each side, and exclusions the catalog has and Intune doesn't ->
+          one "Assignment filter" finding for the app (2.38.34: one row - they share one fix, and one key)
+        - the rest of what Intune has -> the unknown-assignments finding
       Missing inclusions are left to the Groups check, which already compares those lists.
-      Returns @{ Findings; Unknown } - Unknown is what is still unknown, for the last-audit text.
+      Returns @{ Findings; Unknown; Text } - Unknown is what is still unknown, Text the last-audit wording for both.
     #>
     param($CatalogApp, $ToAdd, $ToRemove)
-    $base = { param($l) ([string]$l) -replace ' \(filter: [^)]*\)$', '' }
+    # Labels end with their filter part - a filter name may itself hold brackets (2.38.34).
+    $base = { param($l) ([string]$l) -replace ' \(filter: .*\)$', '' }
     $add = @(@($ToAdd) | Where-Object { $_ }); $remove = @(@($ToRemove) | Where-Object { $_ })
     $findings = New-Object System.Collections.Generic.List[object]
     $name = [string]$CatalogApp.appName; $id = [string]$CatalogApp.appId
-    $pairedAdd = @{}; $pairedRemove = @{}
+    $pairedAdd = @{}; $pairedRemove = @{}; $pairs = New-Object System.Collections.Generic.List[object]
     foreach ($a in $add) {
         if ([string]$a -match '\] EXCLUDE ') { continue }
         $r = @($remove | Where-Object { -not $pairedRemove.ContainsKey([string]$_) -and (& $base $_) -eq (& $base $a) }) | Select-Object -First 1
-        if ($r) {
-            $pairedAdd[[string]$a] = $true; $pairedRemove[[string]$r] = $true
-            $findings.Add((New-CheckFinding -Area "Assignment filter" -App $name -CatalogName $name -AppId $id `
-                -Problem "Assignment filter differs" -Catalog ([string]$a) -Intune ([string]$r) -Actions @("PushGroups", "Pull")))
-        }
+        if ($r) { $pairedAdd[[string]$a] = $true; $pairedRemove[[string]$r] = $true; $pairs.Add(@([string]$a, [string]$r)) }
     }
     $excl = @($add | Where-Object { [string]$_ -match '\] EXCLUDE ' -and -not $pairedAdd.ContainsKey([string]$_) })
-    if ($excl.Count) {
+    $problems = @()
+    if ($pairs.Count) { $problems += "Assignment filter differs" }
+    if ($excl.Count) { $problems += "Exclusion missing in Intune" }
+    if ($problems.Count) {
         $findings.Add((New-CheckFinding -Area "Assignment filter" -App $name -CatalogName $name -AppId $id `
-            -Problem "Exclusion missing in Intune" -Catalog ($excl -join ", ") -Intune "(not excluded)" -Actions @("PushGroups", "Pull")))
+            -Problem ($problems -join '; ') -Catalog (@(@($pairs | ForEach-Object { $_[0] }) + $excl) -join ", ") `
+            -Intune (@(@($pairs | ForEach-Object { $_[1] }) + $(if ($excl.Count) { '(not excluded)' })) -join ", ") -Actions @("PushGroups", "Pull")))
     }
     $unknown = @($remove | Where-Object { -not $pairedRemove.ContainsKey([string]$_) })
     foreach ($f in @(Get-UnknownAssignmentFindings -CatalogApp $CatalogApp -ToRemove $unknown)) { $findings.Add($f) }
-    return @{ Findings = $findings.ToArray(); Unknown = $unknown }
+    # The last audit keeps one text for assignments: Home and the Apps list read anything but "OK" as a difference.
+    $text = @(@($problems) + $(if ($unknown.Count) { Get-UnknownAssignmentText $unknown })) -join '; '
+    return @{ Findings = $findings.ToArray(); Unknown = $unknown; Text = $(if ($text) { $text } else { 'OK' }) }
 }
 
 function Global:Get-DependencyFindings {

@@ -480,7 +480,10 @@ function Global:Remove-WebOldReleases {
         $res = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action {
             param($Graph)
             foreach ($parent in $parents) {
-                $rels = @(try { (& $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$parent/relationships").value } catch { })
+                # Every page (2.38.34): updateRelationships below replaces the whole list - one it never read would be dropped.
+                $rels = @(try { $u = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$parent/relationships"; while ($u) { $pg = & $Graph $u; @($pg.value); $u = [string]$pg.'@odata.nextLink' } } catch { @('__unread__') })
+                # A list that couldn't be read fully is left alone.
+                if ($rels -contains '__unread__') { continue }
                 if (-not @($rels | Where-Object { $_ -and [string]$_.targetId -eq $target -and ([string]$_.targetType -eq 'child' -or -not $_.targetType) }).Count) { continue }
                 $keep = @($rels | Where-Object { $_ -and ([string]$_.targetType -eq 'child' -or -not $_.targetType) -and [string]$_.targetId -ne $target } | ForEach-Object {
                         $r = @{ '@odata.type' = [string]$_.'@odata.type'; targetId = [string]$_.targetId }

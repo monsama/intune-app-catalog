@@ -120,6 +120,8 @@ async function api(path, body = {}) {
   }
 }
 
+// "1 app", "3 apps" (2.38.34: instead of "app(s)").
+function nWord(n, w) { const k = Number(n); return `${n} ${w}${k === 1 ? '' : 's'}`; }
 function el(tag, attrs = {}, ...kids) {
   const n = document.createElement(tag);
   // No browser autofill or password suggestions in the app's own fields.
@@ -310,6 +312,7 @@ function showSettings(sec) {
   for (const p of document.querySelectorAll('.setsec')) p.hidden = p.dataset.sec !== settingsSec;
   if (settingsSec === 'automation' && typeof loadUpdateRuns === 'function') loadUpdateRuns();
   if (settingsSec === 'connection' && typeof loadSignIn === 'function') loadSignIn();
+  if (settingsSec === 'about' && typeof loadAbout === 'function') loadAbout();
   try { localStorage.setItem('settingsSec', settingsSec); } catch (e) { }
 }
 // Switches to the Settings tab without going through showView again.

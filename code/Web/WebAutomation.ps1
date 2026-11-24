@@ -463,23 +463,57 @@ function Global:Read-WebCatalogFolder {
         })
 }
 
+function Global:Test-WebPublicHost {
+    <#
+      Whether every address -HostName resolves to is a public one (2.38.34) - not loopback, private (10/8, 172.16/12,
+      192.168/16, 100.64/10, fc00::/7), link-local (169.254/16, fe80::/10) or unspecified. Used for addresses taken
+      from catalog data (a homepage), so they can't be used to reach the server's own network.
+    #>
+    param([string]$HostName)
+    try { $ips = @([System.Net.Dns]::GetHostAddresses($HostName)) } catch { return $false }
+    if (-not $ips.Count) { return $false }
+    foreach ($ip in $ips) {
+        if ($ip.IsIPv4MappedToIPv6) { $ip = $ip.MapToIPv4() }
+        if ([System.Net.IPAddress]::IsLoopback($ip) -or $ip.Equals([System.Net.IPAddress]::Any) -or $ip.Equals([System.Net.IPAddress]::IPv6Any)) { return $false }
+        $b = $ip.GetAddressBytes()
+        if ($ip.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork) {
+            if ($b[0] -eq 10 -or $b[0] -eq 0 -or $b[0] -eq 127 -or ($b[0] -eq 172 -and $b[1] -ge 16 -and $b[1] -le 31) -or ($b[0] -eq 192 -and $b[1] -eq 168) -or ($b[0] -eq 169 -and $b[1] -eq 254) -or ($b[0] -eq 100 -and $b[1] -ge 64 -and $b[1] -le 127) -or $b[0] -ge 224) { return $false }
+        }
+        else {
+            if ($ip.IsIPv6LinkLocal -or $ip.IsIPv6SiteLocal -or $ip.IsIPv6Multicast -or (($b[0] -band 0xFE) -eq 0xFC)) { return $false }
+        }
+    }
+    return $true
+}
+
 function Global:Invoke-WebHttpsGet {
     <#
       A GET that stays on https (a redirect elsewhere is refused) and stops at
       -MaxBytes - read into memory, or into -OutFile. Returns the bytes (no
-      -OutFile) or $null; throws with the reason.
+      -OutFile) or $null; throws with the reason. -PublicOnly (2.38.34): every
+      address on the way, redirects included, must be a public host
+      (Test-WebPublicHost) - for addresses that come from catalog data.
     #>
-    param([string]$Uri, [long]$MaxBytes, [string]$OutFile, [int]$TimeoutSec = 60)
+    param([string]$Uri, [long]$MaxBytes, [string]$OutFile, [int]$TimeoutSec = 60, [switch]$PublicOnly)
     if ($Uri -notmatch '^https://') { throw 'Only https addresses are read.' }
     Add-Type -AssemblyName System.Net.Http
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     $handler = New-Object System.Net.Http.HttpClientHandler
-    $handler.AllowAutoRedirect = $true; $handler.MaxAutomaticRedirections = 5
+    # With -PublicOnly the redirects are followed here, one at a time, so each address can be checked first.
+    $handler.AllowAutoRedirect = -not $PublicOnly; $handler.MaxAutomaticRedirections = 5
     $client = New-Object System.Net.Http.HttpClient($handler)
     $client.Timeout = [TimeSpan]::FromSeconds($TimeoutSec)
     [void]$client.DefaultRequestHeaders.UserAgent.TryParseAdd('IntuneAppCatalog')
     try {
-        $resp = $client.GetAsync($Uri, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        $next = [Uri]$Uri; $hops = 0
+        while ($true) {
+            if ($next.Scheme -ne 'https') { throw "It was redirected off https ($($next.Host))." }
+            if ($PublicOnly -and -not (Test-WebPublicHost $next.DnsSafeHost)) { throw "$($next.Host) isn't a public address - not read." }
+            $resp = $client.GetAsync($next, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+            if (-not $PublicOnly -or [int]$resp.StatusCode -lt 300 -or [int]$resp.StatusCode -ge 400 -or -not $resp.Headers.Location) { break }
+            if (++$hops -gt 5) { throw 'Too many redirects.' }
+            $next = New-Object Uri($next, $resp.Headers.Location); $resp.Dispose()
+        }
         $final = $resp.RequestMessage.RequestUri
         if ($final.Scheme -ne 'https') { throw "It was redirected off https ($($final.Host))." }
         if (-not $resp.IsSuccessStatusCode) { throw "$([int]$resp.StatusCode) $($resp.ReasonPhrase)" }
@@ -534,6 +568,7 @@ function Global:Save-WebInstallerDownload {
         if ($oldSig.SignerCertificate.Subject -ne $sig.SignerCertificate.Subject -or $oldSig.SignerCertificate.Issuer -ne $sig.SignerCertificate.Issuer) { return @{ ok = $false; changed = $false; text = "The downloaded installer is signed by '$($sig.SignerCertificate.Subject)' (issuer '$($sig.SignerCertificate.Issuer)'), not like the one in the folder - not used." } }
         if ((Get-FileHash -LiteralPath $tmp).Hash -eq (Get-FileHash -LiteralPath $old.FullName).Hash) { return @{ ok = $true; changed = $false; text = 'The download is the installer already in the folder.' } }
         $target = $old.FullName
+        if (Test-WebPathThroughLink $target) { return @{ ok = $false; changed = $false; text = 'The installer in the packages folder is reached through a link - not replaced.' } }
         Move-Item -LiteralPath $tmp -Destination $target -Force
         return @{ ok = $true; changed = $true; text = "Downloaded a new installer ($([System.IO.Path]::GetFileName($target)), signed by $($sig.SignerCertificate.Subject))." }
     }
@@ -605,6 +640,7 @@ function Global:Save-WebWatchedInstaller {
                 $signedBy = [string]$sig.SignerCertificate.Subject
             }
         }
+        if (Test-WebPathThroughLink $target) { return @{ ok = $false; error = 'The packages folder is reached through a link - the download was not put there.' } }
         Move-Item -LiteralPath $tmp -Destination $target -Force
         $rel = $target.Substring($folder.Length).TrimStart('\', '/')
         Add-WebHistoryEntry -App $a.appName -Kind 'catalog' -Text "New installer from winget ($($a.watchWinget) $($w.latest)) put in its packages folder as $rel - SHA256 as winget gives it$(if ($signedBy) { "; signed by $signedBy" })"
@@ -956,7 +992,8 @@ function Global:Invoke-WebHousekeeping {
     #>
     $now = Get-Date
     $old = { param($Item, [double]$Days) ($now - $Item.LastWriteTime).TotalDays -gt $Days }
-    $drop = { param($Item) try { Remove-Item -LiteralPath $Item.FullName -Recurse -Force -ErrorAction Stop; 1 } catch { 0 } }
+    # Links inside are removed as links, never followed (2.38.34).
+    $drop = { param($Item) try { Remove-WebTreeNoFollow $Item.FullName; 1 } catch { 0 } }
     $n = 0
     $temp = [System.IO.Path]::GetTempPath()
     foreach ($pattern in 'intunepkg_*', '.intunepkg_*', 'intunecat-upload-*', 'IntunePackaging_*', 'intunewin_*', 'iwsrc_*', 'psadt-*', 'ica-sandbox-*', 'winget-export-*') {

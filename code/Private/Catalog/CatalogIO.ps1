@@ -15,6 +15,9 @@ function Global:ConvertTo-AppRecord {
             informationUrl   = [string]$Raw.metadata.informationUrl
             privacyUrl       = [string]$Raw.metadata.privacyUrl
             notes            = [string]$Raw.metadata.notes
+            # Fields emptied in the catalog on purpose (2.38.34): sent to Intune as empty once, so its value goes too.
+            # A field the catalog never had stays out - what was set in the portal is kept.
+            clearedFields    = @(@($Raw.metadata.clearedFields) | Where-Object { [string]$_ -in 'owner', 'developer', 'informationUrl', 'privacyUrl', 'notes', 'appVersion' } | ForEach-Object { [string]$_ } | Select-Object -Unique)
             # Intune's "App version" (displayVersion) and "Show this as a
             # featured app in the Company Portal" (isFeatured) - the value
             # to push, not the version Intune last reported (that is the
@@ -415,6 +418,7 @@ function Global:ConvertTo-SingleAppJson {
         $metaFields.Add("    `"informationUrl`": $(ConvertTo-JsonStringLiteral $m.informationUrl)")
         $metaFields.Add("    `"privacyUrl`": $(ConvertTo-JsonStringLiteral $m.privacyUrl)")
         $metaFields.Add("    `"notes`": $(ConvertTo-JsonStringLiteral $m.notes)")
+        if (@($m.clearedFields | Where-Object { $_ }).Count) { $metaFields.Add("    `"clearedFields`": $(ConvertTo-JsonStringArray -Items @($m.clearedFields | Where-Object { $_ }) -IndentLevel 2)") }
         # null stays null - see ConvertTo-AppRecord
         $metaFields.Add("    `"appVersion`": $(if ($null -ne $m.appVersion) { ConvertTo-JsonStringLiteral ([string]$m.appVersion) } else { 'null' })")
         $metaFields.Add("    `"isFeatured`": $(if ($null -eq $m.isFeatured) { 'null' } elseif ($m.isFeatured) { 'true' } else { 'false' })")
@@ -493,6 +497,7 @@ function Global:ConvertTo-CreateAppConfigJson {
     $fields.Add("  `"PrivacyUrl`": $(ConvertTo-JsonStringLiteral $Config.PrivacyUrl)")
     $fields.Add("  `"Notes`": $(ConvertTo-JsonStringLiteral $Config.Notes)")
     $fields.Add("  `"AppVersion`": $(ConvertTo-JsonStringLiteral ([string]$Config.AppVersion))")
+    $fields.Add("  `"ClearedFields`": $(ConvertTo-JsonStringArray -Items @(@($Config.ClearedFields) | Where-Object { $_ }) -IndentLevel 1)")
     # null = leave Intune's setting alone (a catalog entry that never
     # recorded it must not switch a portal-set featured app off)
     $fields.Add("  `"IsFeatured`": $(if ($null -eq $Config.IsFeatured) { 'null' } elseif ($Config.IsFeatured) { 'true' } else { 'false' })")

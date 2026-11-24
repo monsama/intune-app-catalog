@@ -414,6 +414,12 @@ try {
       await page.waitForSelector('#diagLog .h');
       check((await page.textContent('#diagLog')).includes('Skipped'), `${label}: Diagnostics skips Intune without a connection`);
       await noOverflow('Settings diagnostics'); await unnamed('Settings diagnostics'); await a11y('Settings diagnostics');
+      // 2.38.34: Settings > About - the version, where it runs, the folders (desktop), updates and the project's pages.
+      await page.click('#stab-about');
+      await page.waitForFunction(() => /Version/.test(document.getElementById('aboutFacts').textContent));
+      const about = await page.evaluate(() => ({ facts: document.getElementById('aboutFacts').textContent, folders: document.querySelectorAll('#aboutFolders dt').length, links: document.querySelectorAll('[data-about]').length }));
+      check(/\d+\.\d+\.\d+/.test(about.facts) && /PowerShell/.test(about.facts) && about.folders >= 3 && about.links === 5, `${label}: Settings > About shows the version, PowerShell, the folders and the project links`, JSON.stringify(about));
+      await noOverflow('Settings about'); await unnamed('Settings about'); await a11y('Settings about'); await shot('settings-about');
       await page.click('#stab-connection');
 
       if (size.width === 1440) {

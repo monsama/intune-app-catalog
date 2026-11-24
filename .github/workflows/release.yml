@@ -58,6 +58,8 @@ jobs:
           $staging = Join-Path $env:RUNNER_TEMP 'intune-app-catalog'
           New-Item -ItemType Directory -Path $staging -Force | Out-Null
           Copy-Item IntuneDeployment.ps1 $staging
+          # The license travels with the program (GPL-2.0).
+          Copy-Item LICENSE $staging
           Copy-Item code -Destination (Join-Path $staging 'code') -Recurse
           Remove-Item (Join-Path $staging 'code\tests') -Recurse -Force
           "staging=$staging" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -134,10 +136,16 @@ jobs:
 
             Download the zip, unblock it if Windows marked it as downloaded, and run `IntuneDeployment.ps1`.
           draft: false
+          # A test build ("v2.38.34-test") never becomes the latest release the README links to.
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          # The tag goes on the commit that was built, not on the default branch's head.
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
 
   image:
     # The server version's image: ghcr.io/monsama/intune-app-catalog:<version> and :latest (deploy-ica.sh pulls it).
+    # Only after the release job passed - its version check (tag = AppVersion) guards the image's tag too.
+    needs: release
     runs-on: ubuntu-latest
     permissions:
       contents: read

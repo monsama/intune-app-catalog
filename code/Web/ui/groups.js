@@ -63,7 +63,7 @@ async function searchEntraGroups(fresh) {
   if (seq !== entraSeq || !entraMode()) return;
   if (!r.ok) { entraHits = []; entraInfo = r.error; entraErr = r.error; $('groupStatusNote').textContent = ''; /* the list says it */ renderGroupList(); return; }
   entraHits = r.groups;
-  entraErr = ''; entraInfo = `${r.matches} of ${r.total} group(s)${r.matches > r.groups.length ? ` - first ${r.groups.length} shown, type more to narrow` : ''} - read ${r.at}`;
+  entraErr = ''; entraInfo = `${r.matches} of ${nWord(r.total, 'group')}${r.matches > r.groups.length ? ` - first ${r.groups.length} shown, type more to narrow` : ''} - read ${r.at}`;
   $('groupStatusNote').textContent = entraInfo; $('groupStatusNote').title = entraInfo;
   renderGroupList();
 }
@@ -231,30 +231,30 @@ async function createGroups(names, onDone) {
   if (!(await ask(`Create ${names.length === 1 ? `"${names[0]}"` : names.length + ' groups'} in Entra ID?\n\n${names.length > 1 ? names.join('\n') + '\n\n' : ''}Each becomes an empty security group with exactly this name. Add members on the Groups page; push the apps' groups to Intune once they are deployed.`, { ok: 'Create' }))) return;
   runDialog('Create groups in Entra ID', names.join(', '));
   const done = await runEach(names, name => ({ mode: 'Save', name, description: '', memberIds: [] }), { path: '/api/group-job', log: 'runLog', startText: 'Creating ' });
-  toast(`Created ${done.length} of ${names.length} group(s) in Entra ID.`, done.length < names.length);
+  toast(`Created ${done.length} of ${nWord(names.length, 'group')} in Entra ID.`, done.length < names.length);
   if (onDone) onDone(done);
   if (groupsLoaded) { await loadGroups(); if (group && done.some(n => lc(n) === lc(group.name))) openGroup(group.name); }
 }
 async function deleteGroups(names) {
   if (!names.length) return;
   const uses = names.reduce((n, x) => n + ((groups.find(g => lc(g.name) === lc(x)) || { apps: 0 }).apps), 0);
-  if (!(await ask(`Delete ${names.length === 1 ? `the group "${names[0]}"` : names.length + ' groups'} from Entra ID?\n\n${names.length > 1 ? names.join('\n') + '\n\n' : ''}${uses ? `Catalog apps name ${names.length === 1 ? 'it' : 'them'} ${uses} time(s) - those assignments stop reaching anyone, and the catalog keeps naming groups that are gone (Remove from all apps takes them off).` : 'No app in the catalog uses them.'} This can't be undone here.`))) return;
+  if (!(await ask(`Delete ${names.length === 1 ? `the group "${names[0]}"` : names.length + ' groups'} from Entra ID?\n\n${names.length > 1 ? names.join('\n') + '\n\n' : ''}${uses ? `Catalog apps name ${names.length === 1 ? 'it' : 'them'} ${nWord(uses, 'time')} - those assignments stop reaching anyone, and the catalog keeps naming groups that are gone (Remove from all apps takes them off).` : 'No app in the catalog uses them.'} This can't be undone here.`))) return;
   runDialog('Delete groups from Entra ID', names.join(', '));
   runJob({ mode: 'DeleteMany', names }, ok => {
-    toast(ok ? `Deleted ${names.length} group(s).` : 'Not every group was deleted - see the log.', !ok);
+    toast(ok ? `Deleted ${nWord(names.length, 'group')}.` : 'Not every group was deleted - see the log.', !ok);
     if (group && names.some(n => lc(n) === lc(group.name))) openGroup(group.name);
     loadGroups();
-  }, { path: '/api/group-job', log: 'runLog', startText: `Deleting ${names.length} group(s)...` });
+  }, { path: '/api/group-job', log: 'runLog', startText: `Deleting ${nWord(names.length, 'group')}...` });
 }
 // Takes groups off every catalog app that names them, in every role. Entra ID and Intune don't change.
 async function unassignGroups(names) {
   if (!names.length) return;
   const users = [...new Set(groups.filter(g => names.some(n => lc(n) === lc(g.name))).flatMap(g => g.uses.map(u => u.app)))];
-  if (!(await ask(`Remove ${names.length === 1 ? `"${names[0]}"` : names.length + ' groups'} from ${users.length} app(s) in the catalog?\n\n${names.length > 1 ? names.join('\n') + '\n\n' : ''}Every assignment to ${names.length === 1 ? 'it' : 'them'} goes: Required, Available, Uninstall and Excluded. Entra ID keeps the group${names.length === 1 ? '' : 's'}; Intune changes when you send groups. Each app's file is backed up first.`))) return;
+  if (!(await ask(`Remove ${names.length === 1 ? `"${names[0]}"` : names.length + ' groups'} from ${nWord(users.length, 'app')} in the catalog?\n\n${names.length > 1 ? names.join('\n') + '\n\n' : ''}Every assignment to ${names.length === 1 ? 'it' : 'them'} goes: Required, Available, Uninstall and Excluded. Entra ID keeps the group${names.length === 1 ? '' : 's'}; Intune changes when you send groups. Each app's file is backed up first.`))) return;
   const roles = {}; for (const k of Object.keys(ROLES)) roles[k] = names;
   const r = await api('/api/batch-groups', { mode: 'remove', names: users, roles });
   if (!r.ok) { toast(r.error, true); return; }
-  toast(`Removed from ${r.changed.length} app(s) in the catalog.${r.deployed.length ? ` ${r.deployed.length} of them are in Intune - push their groups.` : ''}`);
+  toast(`Removed from ${nWord(r.changed.length, 'app')} in the catalog.${r.deployed.length ? ` ${r.deployed.length} of them are in Intune - push their groups.` : ''}`);
   gSel.clear(); loadApps(); await loadGroups();
   if (group) openGroup(group.name);
   if (r.deployed.length && await ask(`Send groups for the ${r.deployed.length} deployed app(s) now?\n\n${r.deployed.join('\n')}`, { ok: 'Send groups', danger: false })) openPushGroups(r.deployed);
@@ -371,7 +371,7 @@ $('btnGroupAssignGo').addEventListener('click', async () => {
   const r = await api('/api/batch-groups', { mode: 'add', names, roles: { [field]: [name] } });
   if (!r.ok) { toast(r.error, true); return; }
   $('dlgGroupAssign').close();
-  toast(`${name} added to ${r.changed.length} app(s) as ${ROLES[field]}.${r.deployed.length ? ` ${r.deployed.length} are in Intune - push their groups to apply.` : ''}`);
+  toast(`${name} added to ${nWord(r.changed.length, 'app')} as ${ROLES[field]}.${r.deployed.length ? ` ${r.deployed.length} are in Intune - push their groups to apply.` : ''}`);
   loadApps(); await loadGroups(); openGroup(name);
 });
 $('btnGroupCopy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(group.name); toast('Copied ' + group.name); } catch (e) { toast('Could not copy.', true); } });
@@ -437,7 +437,7 @@ $('btnGroupRename').addEventListener('click', async () => {
   if (!nn || nn === old) return;
   groupJob({ mode: 'Rename', name: old, groupId: group.id, newName: nn }, `Renaming ${old}...`, after => {
     const n = after && after.updated ? after.updated.length : 0;
-    toast(`Renamed to ${nn}; ${n} app(s) in the catalog updated.`); $('groupSearch').value = ''; loadGroups(); loadApps(); openGroup(nn);
+    toast(`Renamed to ${nn}; ${nWord(n, 'app')} in the catalog updated.`); $('groupSearch').value = ''; loadGroups(); loadApps(); openGroup(nn);
   });
 });
 $('btnGroupDelete').addEventListener('click', () => { if (group && group.found) deleteGroups([group.name]); });

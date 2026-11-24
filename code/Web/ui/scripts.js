@@ -30,7 +30,8 @@ function renderScripts() {
     tr.addEventListener('dblclick', () => { scriptSel = x; openScript(x); });
     return tr;
   }));
-  $('scriptCount').textContent = `${rows.length} of ${scripts.length}`;
+  // "3 scripts", and "1 of 3 scripts" only while the search hides some (2.38.34: "0 of 0").
+  $('scriptCount').textContent = rows.length === scripts.length ? `${scripts.length} script${scripts.length === 1 ? '' : 's'}` : `${rows.length} of ${scripts.length} scripts`;
   $('scriptEmpty').hidden = scripts.length > 0;
   setEnabled($('btnScriptEdit'), !!scriptSel, 'Select a script first.');
   setEnabled($('btnScriptDelete'), !!scriptSel, 'Select a script first.');

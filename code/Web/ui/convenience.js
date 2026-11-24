@@ -286,7 +286,8 @@ function renderHome() {
     ...((homeIntune && homeIntune.items) || []).filter(x => !(setupOpen && x.go === 'settings:permissions'))].map((x, n) => [x, n]).sort((a, b) => (order[a[0].level] ?? 3) - (order[b[0].level] ?? 3) || a[1] - b[1]).map(x => x[0]);
   renderSetup(setup);
   const reading = homeIntuneWaiting && !homeIntune && r.connected !== false ? ' Reading install counts from Intune...' : '';
-  $('homeNote').textContent = (items.length ? `${items.length} thing${items.length === 1 ? '' : 's'} to look at${r.lastRun ? ` - last managed-updates run ${fmtWhen(r.lastRun)}` : ''}.` : 'Nothing needs a look right now.') + reading;
+  // Not set up yet (2.38.34): not "nothing needs a look" while the guide is open.
+  $('homeNote').textContent = (items.length ? `${items.length} thing${items.length === 1 ? '' : 's'} to look at${r.lastRun ? ` - last managed-updates run ${fmtWhen(r.lastRun)}` : ''}.` : setupOpen ? 'Not set up yet - Getting started shows the next step.' : 'Nothing needs a look right now.') + reading;
   $('homeCount').textContent = items.length ? String(items.length) : '';
   const s = homeIntune && homeIntune.summary, stat = (n, l, cls) => el('div', { class: 'stat ' + (cls || '') }, el('span', { class: 'n', text: n }), el('span', { class: 'l', text: l }));
   // An empty catalog: three zeros say nothing - Getting started is what's there to do.
@@ -304,7 +305,7 @@ function renderHome() {
     const busy = homeRunning.has(i.go);
     return el('li', { class: 'att ' + i.level + (busy ? ' busy' : ''), 'data-row': i.go || '', 'aria-busy': String(busy) }, el('span', { class: 'pill ' + p[0], text: p[1] }), el('div', { class: 'body' }, el('b', { text: i.title }), el('span', { class: 'muted', text: i.text })),
       w ? el('button', { class: 'btn small' + (busy ? ' working' : ''), 'data-go': i.go, 'data-label': w[0], disabled: busy, title: busy ? 'Still running' : null, onclick: () => runHomeAction(i.go, w[1]) }, busy ? homeWorking() : w[0]) : ''); })
-    : [el('li', { class: 'att ok' }, el('span', { class: 'pill ok', text: 'All good' }), el('div', { class: 'body' }, el('b', { text: setupOpen ? 'Nothing here yet' : 'Nothing to do' }), el('span', { class: 'muted', text: setupOpen ? 'Getting started shows what comes next.' : 'Every app is deployed, nothing is on hold, and the last nightly run went fine.' })))]));
+    : [el('li', { class: 'att ' + (setupOpen ? 'info' : 'ok') }, el('span', { class: setupOpen ? 'pill' : 'pill ok', text: setupOpen ? 'Setting up' : 'All good' }), el('div', { class: 'body' }, el('b', { text: setupOpen ? 'Nothing here yet' : 'Nothing to do' }), el('span', { class: 'muted', text: setupOpen ? 'Getting started shows what comes next.' : 'Every app is deployed, nothing is on hold, and the last nightly run went fine.' })))]));
 }
 $('btnHomeReload').addEventListener('click', () => loadHome(true));
 $('btnHomeAdd').addEventListener('click', () => openAdd());
@@ -312,7 +313,7 @@ $('btnHomeCheck').addEventListener('click', async () => {
   const b = $('btnHomeCheck'); b.disabled = true; b.classList.add('working'); b.replaceChildren(el('span', { class: 'spinner', 'aria-hidden': 'true' }), 'Checking...');
   try { $('chkDetails').checked = true; const cr = await runChecks(); await loadApps();
     const notCompared = cr && cr.connected === false;
-    toast(shownFindings().length ? `${shownFindings().length} finding(s) - Checks has them.` : notCompared ? 'Not compared with Intune: not connected (Settings > Connection). The catalog itself looks fine.' : 'The catalog and Intune match.', false, findings.length ? [{ label: 'See them', run: () => showView('checks') }] : []); loadHome(); }
+    toast(shownFindings().length ? `${nWord(shownFindings().length, 'finding')} - Checks has them.` : notCompared ? 'Not compared with Intune: not connected (Settings > Connection). The catalog itself looks fine.' : 'The catalog and Intune match.', false, findings.length ? [{ label: 'See them', run: () => showView('checks') }] : []); loadHome(); }
   finally { b.disabled = false; b.classList.remove('working'); b.textContent = 'Check everything now'; }
 });
 
@@ -324,7 +325,7 @@ function palCommands() {
   return [v('Home', 'home'), v('Apps', 'apps'), v('Updates', 'updates'), v('Checks', 'checks'), v('Groups', 'groups'), v('Platform scripts', 'scripts'),
     { label: 'Settings: Connection', hint: 'Page', run: () => showSettings('connection') }, { label: 'Settings: Apps & defaults, profiles, favourites', hint: 'Page', run: () => showSettings('defaults') },
     { label: 'Settings: Updates - pilot groups, rings, release rule', hint: 'Page', run: () => showSettings('updates') }, { label: 'Settings: Nightly run & alerts', hint: 'Page', run: () => showSettings('automation') },
-    { label: 'Settings: Packaging & folders', hint: 'Page', run: () => showSettings('packaging') }, { label: 'Settings: Diagnostics', hint: 'Page', run: () => showSettings('diagnostics') },
+    { label: 'Settings: Packaging & folders', hint: 'Page', run: () => showSettings('packaging') }, { label: 'Settings: Diagnostics', hint: 'Page', run: () => showSettings('diagnostics') }, { label: 'Settings: About (version, updates)', hint: 'Page', run: () => showSettings('about') },
     { label: 'Add apps', hint: 'Action', run: () => openAdd() }, { label: 'Add an installer (MSI / EXE)', hint: 'Action', run: () => openAdd('installer') },
     { label: 'Add a PowerShell script app', hint: 'Action', run: () => openAdd('script') }, { label: 'Add apps from a list (winget export)', hint: 'Action', run: () => openAdd('list') },
     cat('Groups and apps grid', 'matrix'), cat('Apps worth adding', 'suggest'), cat('Check winget for new versions', 'wingetcheck'), cat('Install status of every app', 'overview'),
@@ -393,7 +394,7 @@ function renderMatrix() {
     $('mxGrid').replaceChildren(el('tbody', {}, el('tr', {}, el('td', { class: 'mxempty' }, el('b', { text: mx.groups.length ? 'No group matches the filter.' : 'No app has a group yet.' }),
       el('span', { class: 'muted', text: mx.groups.length ? ' Clear "Filter groups" to see them all.' : ' Give apps groups in the editor (Who gets it) or with Add groups - each group becomes a column here.' })))));
   } else $('mxGrid').replaceChildren(el('thead', {}, head), el('tbody', {}, ...body));
-  $('mxNote').textContent = mxChanges.size ? `${mxChanges.size} change(s) not saved yet.` : '';
+  $('mxNote').textContent = mxChanges.size ? `${nWord(mxChanges.size, 'change')} not saved yet.` : '';
   setEnabled($('btnMxSave'), mxChanges.size > 0, 'Change some cells first.');
 }
 $('mxApps').addEventListener('input', renderMatrix); $('mxGroups').addEventListener('input', renderMatrix);
@@ -401,12 +402,12 @@ $('btnMxSave').addEventListener('click', async () => {
   const changes = [...mxChanges].map(([k, role]) => { const [name, group] = k.split('\u0001'); return { name, group, role }; });
   const r = await api('/api/assignments-set', { changes });
   if (!r.ok) { toast(r.error, true); return; }
-  toast(`${changes.length} change(s) saved to ${r.apps.length} app(s) in the catalog.`, false, [
+  toast(`${nWord(changes.length, 'change')} saved to ${nWord(r.apps.length, 'app')} in the catalog.`, false, [
     { label: 'Send groups', run: () => { const names = r.apps.filter(n => (apps.find(a => a.name === n) || {}).hasAppId); if (names.length) { showView('apps'); selected.clear(); names.forEach(n => selected.add(n)); renderApps(); $('btnPush').click(); } else toast('None of them is in Intune yet - Send them to Intune.'); } },
     { label: 'Undo', run: () => undoLast() }]);
   await loadApps(); await openMatrix();
 });
-$('dlgMatrix').addEventListener('cancel', async e => { if (mxChanges.size) { e.preventDefault(); if (await ask(`Discard ${mxChanges.size} change(s) in the grid?`, { ok: 'Discard', danger: true })) { mxChanges.clear(); $('dlgMatrix').close(); } } });
+$('dlgMatrix').addEventListener('cancel', async e => { if (mxChanges.size) { e.preventDefault(); if (await ask(`Discard ${nWord(mxChanges.size, 'change')} in the grid?`, { ok: 'Discard', danger: true })) { mxChanges.clear(); $('dlgMatrix').close(); } } });
 
 // ---------------------------------------------------------------- managed updates as the default (Home's buttons)
 async function makeManagedDefault() {
@@ -420,7 +421,7 @@ async function managedForAll() {
   if (!names.length) return;
   if (!(await ask(`Turn managed updates on for ${names.length} Winget app(s)?\n\n${names.slice(0, 12).join(', ')}${names.length > 12 ? ', ...' : ''}\n\nEach installs a fixed version from then on, and new versions go to the pilot groups first. Their install commands follow the App version - apps without one take winget's current version next (Home asks).`, { ok: 'Turn on', danger: false }))) return;
   const r = await api('/api/managed-updates', { names, on: true });
-  toast(r.ok ? `Managed updates on for ${r.changed.length} app(s)${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}.` : r.error, !r.ok, r.ok ? [{ label: 'Undo', run: () => undoLast() }] : []);
+  toast(r.ok ? `Managed updates on for ${nWord(r.changed.length, 'app')}${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}.` : r.error, !r.ok, r.ok ? [{ label: 'Undo', run: () => undoLast() }] : []);
   await loadApps(); loadHome();
 }
 // Microsoft's WinGet PowerShell module: exact winget answers whatever Windows' language. Installed for this user only.
@@ -436,14 +437,14 @@ function installWingetModule() {
 async function takeVersionsForManaged() {
   const names = apps.filter(a => a.wingetId && a.managed && !a.version).map(a => a.name);
   if (!names.length) return;
-  toast(`Asking winget for the current version of ${names.length} app(s)...`);
+  toast(`Asking winget for the current version of ${nWord(names.length, 'app')}...`);
   const w = await api('/api/checks-winget', {});
   if (!w.ok) { toast(w.error, true); return; }
   const r = await api('/api/winget-take-version', { names });
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps(); loadHome();
   const inIntune = (r.deployed || []);
-  toast(`${r.changed.length} app(s) now start from winget's current version${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}.${inIntune.length ? ` Send ${inIntune.length} of them to Intune again so Intune installs that version: ${inIntune.join(', ')}.` : ''}`);
+  toast(`${nWord(r.changed.length, 'app')} now start from winget's current version${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}.${inIntune.length ? ` Send ${inIntune.length} of them to Intune again so Intune installs that version: ${inIntune.join(', ')}.` : ''}`);
 }
 
 // Winget-AutoUpdate is no longer used: apps still installing through it (or depending on it) move to managed updates.
@@ -453,14 +454,14 @@ async function wauSwitch() {
   if (!p.apps.length) { toast('No app uses Winget-AutoUpdate any more.'); loadHome(); return; }
   const managedDefault = !(prefs && prefs.defaults && prefs.defaults.wingetInstallMethod === 'Winget');
   const noV = p.apps.filter(a => !a.hasVersion).map(a => a.app), dep = p.apps.filter(a => a.deployed).map(a => a.app);
-  if (!(await ask(`Switch ${p.apps.length} app(s) from Winget-AutoUpdate to ${managedDefault ? 'managed updates' : 'the winget command'}?\n\n${p.apps.slice(0, 12).map(a => a.app).join(', ')}${p.apps.length > 12 ? ', ...' : ''}\n\n` +
+  if (!(await ask(`Switch ${nWord(p.apps.length, 'app')} from Winget-AutoUpdate to ${managedDefault ? 'managed updates' : 'the winget command'}?\n\n${p.apps.slice(0, 12).map(a => a.app).join(', ')}${p.apps.length > 12 ? ', ...' : ''}\n\n` +
     (managedDefault ? `Each installs its App version with winget from then on, and new versions go to the pilot groups first.` : 'Each installs with the winget command from then on (Settings: Winget apps install with).') + ` Their dependency on Winget-AutoUpdate is removed.` +
     (managedDefault && noV.length ? ` ${noV.length} have no App version yet - those in Intune install the newest until then, the others can't be sent until they have one (Pin newest in their side panel).` : '') +
     (dep.length ? ` The ${dep.length} in Intune get the new commands pushed.` : ''), { ok: 'Switch them' }))) return;
   const r = await api('/api/wau-switch', {});
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps();
-  const msg = `Switched ${r.changed.length} app(s) away from Winget-AutoUpdate.` + ((r.byHand || []).length ? ` Not switched - their commands run Winget-Install.ps1 for several or other IDs, so they're left to you (editor, Install with): ${r.byHand.join(', ')}.` : '');
+  const msg = `Switched ${nWord(r.changed.length, 'app')} away from Winget-AutoUpdate.` + ((r.byHand || []).length ? ` Not switched - their commands run Winget-Install.ps1 for several or other IDs, so they're left to you (editor, Install with): ${r.byHand.join(', ')}.` : '');
   const dropped = ((r.carried || []).length ? ` Kept the extra winget options WAU passed (editor, Install & detection): ${r.carried.join('; ')}.` : '') +
     ((r.dropped || []).length ? ` Left out options winget's own command can't take - check these install as you want: ${r.dropped.join('; ')}.` : '');
   const ids = ((r.tookId || []).length ? ` Winget ID taken from the WAU command (none was set): ${r.tookId.join('; ')}.` : '') +

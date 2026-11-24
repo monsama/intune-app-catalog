@@ -325,7 +325,7 @@ function showManagedState() {
 $('aWinget').addEventListener('input', showManagedState);
 // The release rule as one line (2.31.0) - most apps follow Settings' rule; Change brings the fields out.
 $('aRuleBox').querySelector('legend').after(el('div', { class: 'foldsum', id: 'arSum' }, el('span', { class: 'fstext' }),
-  el('button', { type: 'button', class: 'btn small', text: 'Change', 'aria-label': 'Change the release rule', onclick: () => { $('aRuleBox').classList.remove('folded'); $('arDays').focus(); } })));
+  el('button', { type: 'button', class: 'btn', text: 'Change', 'aria-label': 'Change the release rule', onclick: () => { $('aRuleBox').classList.remove('folded'); $('arDays').focus(); } })));
 function ruleSummary() {
   const v = id => $(id).value.trim() || $(id).placeholder, own = ['arDays', 'arFailed', 'arMin'].some(id => $(id).value.trim()), min = +v('arMin');
   const parts = [`${own ? "This app's own rule" : 'The rule from Settings'}: ${v('arDays')} days per ring, at most ${v('arFailed')} % failed, at least ${min} device${min === 1 ? '' : 's'}`];
@@ -440,7 +440,7 @@ async function editorUpload(pick) {
   const r = await api('/api/app-installer', { name, uploadId: f.uploadId, mode: choice.mode });
   if (!r.ok) { toast(r.error, true); api('/api/upload-cancel', { uploadId: f.uploadId }); showPkgInfo(); return; }
   if (!$('dlgApp').open || editingName !== name) return;
-  toast(`${f.folder ? `${r.files} file(s) from ${r.fileName}` : r.fileName} in its packages folder${r.filled.length ? ' - filled in ' + r.filled.join(', ') : ''}. Package builds it next.`, false, [{ label: 'Package now', run: () => { $('dlgApp').close(); buildAdded(name); } }]);
+  toast(`${f.folder ? `${nWord(r.files, 'file')} from ${r.fileName}` : r.fileName} in its packages folder${r.filled.length ? ' - filled in ' + r.filled.join(', ') : ''}. Package builds it next.`, false, [{ label: 'Package now', run: () => { $('dlgApp').close(); buildAdded(name); } }]);
   await loadApps(); $('dlgApp').close(); openEditor(name);
 }
 // The review of an upload for an app: what came, which file is the setup file (a folder), replace or add (files there already).
@@ -787,7 +787,7 @@ async function loadApps() {
   apps = r.apps || [];
   updateViewButtons();   // Save view... only when there's a search or filter to keep
   $('emptyPath').textContent = r.path || '';
-  if (r.failed && r.failed.length) toast(`${r.failed.length} file(s) in the catalog could not be read: ${r.failed.join(', ')}`, true);
+  if (r.failed && r.failed.length) toast(`${nWord(r.failed.length, 'file')} in the catalog could not be read: ${r.failed.join(', ')}`, true);
   renderApps();
   loadIntuneIds(false);
   loadUndo();
@@ -845,7 +845,7 @@ async function undoLast() {
   if (!(await ask(`Undo "${u.label}" (${u.time})?\n\nThese ${u.count} app file(s) get back what they had before:\n${list}\n\nA file changed since (an editor save, a deploy's App ID) is left alone. Intune isn't touched - if you already pushed, push again afterwards.`, { ok: 'Undo', danger: false }))) return;
   const r = await api('/api/undo-last');
   if (!r.ok) { toast(r.error, true); return; }
-  toast(`Undid "${r.label}": ${r.restored.length} app(s) restored.${r.skipped.length ? ' Left alone: ' + r.skipped.join(', ') + '.' : ''}`, r.skipped.length > 0);
+  toast(`Undid "${r.label}": ${nWord(r.restored.length, 'app')} restored.${r.skipped.length ? ' Left alone: ' + r.skipped.join(', ') + '.' : ''}`, r.skipped.length > 0);
   await loadApps();
   if (groupsLoaded) loadGroups();
   if ($('dlgRecent').open) openRecent();
@@ -1269,7 +1269,7 @@ $('btnPushGo').addEventListener('click', async () => {
 function openBatch(names) {
   if (wcResume('dlgBatch')) return;
   batchNames = names;
-  $('batchTitle').textContent = `Batch edit - ${names.length} app(s)`;
+  $('batchTitle').textContent = `Batch edit - ${nWord(names.length, 'app')}`;
   $('batchText').textContent = `Tick the fields to change on ${names.join(', ')}. Everything else stays as each app has it.`;
   for (const c of document.querySelectorAll('[data-bf]')) c.checked = false;
   $('bDepMode').value = 'add';
@@ -1344,7 +1344,7 @@ $('btnBatchGo').addEventListener('click', async () => {
   if (!r.ok) { $('batchErr').textContent = r.error; $('batchErr').hidden = false; return; }
   batchReset();
   loadApps();
-  const msg = `Changed ${r.changed.length} app(s) in the catalog.` + (r.kept.length ? ` Install commands edited by hand were kept on ${r.kept.join(', ')}.` : '');
+  const msg = `Changed ${nWord(r.changed.length, 'app')} in the catalog.` + (r.kept.length ? ` Install commands edited by hand were kept on ${r.kept.join(', ')}.` : '');
   if (!$('bPush').checked || !r.deployed.length) { toast(msg); $('dlgBatch').close(); return; }
   $('btnBatchGo').disabled = true; $('batchLog').hidden = false;
   const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'batchLog', startText: 'Pushing ' });
@@ -1377,7 +1377,7 @@ $('btnGbGo').addEventListener('click', async () => {
   if (!r.ok) { $('gbErr').textContent = r.error; $('gbErr').hidden = false; return; }
   loadApps();
   $('dlgGroupsBatch').close();
-  toast(`${r.changed.length} app(s) changed in the catalog.`);
+  toast(`${nWord(r.changed.length, 'app')} changed in the catalog.`);
   if ($('gbPush').checked && r.deployed.length) openPushGroups(r.deployed);
 });
 
@@ -1478,7 +1478,7 @@ async function menuAction(act) {
   const names = [...selected], one = oneSelected(), sel = () => names.map(n => apps.find(a => a.name === n)).filter(Boolean);
   switch (act) {
     case 'package':
-      runDialog('Package', names.length ? `Building the .intunewin for ${names.length} app(s) with their own installer.` : 'Building every app with its own installer.');
+      runDialog('Package', names.length ? `Building the .intunewin for ${nWord(names.length, 'app')} with their own installer.` : 'Building every app with its own installer.');
       runJob({ names }, (ok, res, after) => { toast(ok ? (after && after.failed ? `Packaging finished - ${after.failed} failed, see the log.` : 'Packaging finished.') : 'Packaging failed - see the log.', !ok || (after && after.failed)); loadApps(); },
         { path: '/api/package-start', log: 'runLog', startText: 'Packaging...' });
       break;
@@ -1511,7 +1511,7 @@ async function menuAction(act) {
       const on = menu.querySelector('[data-act=managed]').dataset.on === '1', ws = sel().map(a => a.name);
       if (!(await ask(`Managed updates ${on ? 'on' : 'off'} for ${ws.length} app${ws.length === 1 ? '' : 's'}?\n\n${on ? 'Each installs exactly its App version, and new versions go to the pilot groups first (More > Release new version). Winget apps: the install command and detection rule follow the App version (set one with More > Take winget\'s version before the first deploy). Own packages: their detection rule must compare a version - a release updates it. Send settings sends the change to apps already in Intune.' : 'Their commands stay pinned to the current version until you change the install method (the editor\'s Install with).'} Undo takes it back.`, { ok: on ? 'Turn on' : 'Turn off', danger: false }))) return;
       const r = await api('/api/managed-updates', { names: ws, on });
-      toast(r.ok ? `Managed updates ${on ? 'on' : 'off'} for ${r.changed.length} app(s).${r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : ''}` : r.error, !r.ok); loadApps();
+      toast(r.ok ? `Managed updates ${on ? 'on' : 'off'} for ${nWord(r.changed.length, 'app')}.${r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : ''}` : r.error, !r.ok); loadApps();
       break;
     }
     case 'takeversion': {
@@ -1519,9 +1519,9 @@ async function menuAction(act) {
       if (!(await ask(`Pin winget's newest version for ${take.length} app${take.length === 1 ? '' : 's'}?\n\n${take.map(a => `${a.name}: ${a.version || '(none)'} → ${a.wingetVersion}`).join('\n')}\n\nManaged apps then install exactly this version (their command and detection follow it) - send the ones in Intune again. Apps on the winget command only show it as their version. Undo takes it back.`, { ok: 'Take version', danger: false }))) return;
       const r = await api('/api/winget-take-version', { names: take.map(a => a.name) });
       if (!r.ok) { toast(r.error, true); return; }
-      toast(`App version updated on ${r.changed.length} app(s).${r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : ''}`);
+      toast(`App version updated on ${nWord(r.changed.length, 'app')}.${r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : ''}`);
       await loadApps();
-      if (r.deployed.length && await ask(`Send the settings of the ${r.deployed.length} app(s) in Intune now?\n\n${r.deployed.join('\n')}`, { ok: 'Push settings', danger: false })) pushSettings(r.deployed);
+      if (r.deployed.length && await ask(`Send the settings of the ${nWord(r.deployed.length, 'app')} in Intune now?\n\n${r.deployed.join('\n')}`, { ok: 'Push settings', danger: false })) pushSettings(r.deployed);
       break;
     }
     case 'copyid': {
@@ -1540,14 +1540,14 @@ async function menuAction(act) {
       if (!(await ask(`Delete ${del.length === 1 ? `"${del[0]}"` : `these ${del.length} apps`} from Intune?\n\n${del.length > 1 ? del.join('\n') + '\n\n' : ''}Their assignments go with them - devices that have them keep them installed, but Intune stops managing them. The catalog entries stay, without an App ID.`))) return;
       runDialog('Delete from Intune', del.join(', '));
       const done = await runEach(del, name => ({ name }), { path: '/api/delete-intune', log: 'runLog', startText: 'Deleting ' });
-      toast(`Deleted ${done.length} of ${del.length} app(s) from Intune.`, done.length < del.length); loadApps();
+      toast(`Deleted ${done.length} of ${nWord(del.length, 'app')} from Intune.`, done.length < del.length); loadApps();
       break;
     }
     case 'remove': {
       if (!(await ask(`Remove ${names.length === 1 ? `"${names[0]}"` : `${names.length} apps`} from the catalog?\n\n${names.length > 1 ? names.slice(0, 15).join('\n') + (names.length > 15 ? `\n... and ${names.length - 15} more` : '') + '\n\n' : ''}Only the catalog changes - nothing in Intune. A copy of each file goes to the Backups folder.`))) return;
       const failed = [];
       for (const n of names) { const r = await api('/api/app-remove', { name: n }); if (r.ok) selected.delete(n); else failed.push(`${n}: ${r.error}`); }
-      toast(failed.length ? 'Not removed: ' + failed.join('; ') : `Removed ${names.length} app(s) from the catalog.`, failed.length > 0); loadApps();
+      toast(failed.length ? 'Not removed: ' + failed.join('; ') : `Removed ${nWord(names.length, 'app')} from the catalog.`, failed.length > 0); loadApps();
       break;
     }
   }
@@ -1848,7 +1848,7 @@ async function fillDetails(names) {
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps();
   const n = r.filled.length, sent = r.filled.filter(f => (apps.find(a => a.name === f.name) || {}).hasAppId).map(f => f.name);
-  const msg = n ? `Filled in ${n} of ${r.asked} app(s): ${r.filled.slice(0, 4).map(f => `${f.name} (${f.fields.join(', ')})`).join('; ')}${n > 4 ? '; ...' : ''}.` : `Nothing to fill in - the ${r.asked} app(s) have their details already, or winget has none.`;
+  const msg = n ? `Filled in ${n} of ${nWord(r.asked, 'app')}: ${r.filled.slice(0, 4).map(f => `${f.name} (${f.fields.join(', ')})`).join('; ')}${n > 4 ? '; ...' : ''}.` : `Nothing to fill in - the ${nWord(r.asked, 'app')} have their details already, or winget has none.`;
   const failed = r.failed.length ? ` Not asked or unknown to winget: ${r.failed.slice(0, 4).join('; ')}${r.failed.length > 4 ? '; ...' : ''}.` : '';
   // What winget's entries don't have - Home stops asking for it; it can still be typed in the editor.
   const lack = (r.lacking || []).length ? ` winget has no ${r.lacking.slice(0, 4).map(l => `${l.fields.join(', ')} for ${l.name}`).join('; ')}${r.lacking.length > 4 ? '; ...' : ''} - type ${r.lacking.length === 1 && r.lacking[0].fields.length === 1 ? 'it' : 'them'} in the editor if you want them.` : '';

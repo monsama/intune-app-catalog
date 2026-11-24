@@ -121,6 +121,11 @@ $testableFunctionNames = @(
     "Get-UnknownAssignmentText",
     "Get-UnknownAssignmentFindings",
     "Get-AssignmentChangeFindings",
+    "Get-MetadataWithoutOwnReleases",
+    "Get-DeviceVersionCompareScript",
+    "Set-ClearedFields",
+    "Get-ManagedWingetDetectionV1",
+    "New-InstalledAppDetectionScriptV1",
     "Get-DependencyFindings",
     "Get-EntraGroupFindings",
     "Get-WingetFindings",
@@ -607,7 +612,7 @@ Assert-Equal "x64" $wingetDefaults.architecture "Get-DefaultAppMetadata: default
 Assert-Equal "System" $wingetDefaults.installContext "Get-DefaultAppMetadata: default install context is System"
 Assert-Equal "W10_22H2" $wingetDefaults.minOSKey "Get-DefaultAppMetadata: default Min OS is the newest Windows 10 release (not Windows 11)"
 Assert-Equal "basedOnReturnCode" $wingetDefaults.deviceRestartBehavior "Get-DefaultAppMetadata: default restart behavior is basedOnReturnCode"
-Assert-True (@($wingetDefaults.returnCodes).Count -eq 6 -and @($wingetDefaults.returnCodes | Where-Object { [string]$_.returnCode -eq "9009" -and $_.type -eq "retry" }).Count -eq 1) "Get-DefaultAppMetadata: the standard 5 return codes, plus 9009 (retry) for the winget command"
+Assert-True (@($wingetDefaults.returnCodes).Count -eq 10 -and @($wingetDefaults.returnCodes | Where-Object { [string]$_.returnCode -eq "9009" -and $_.type -eq "retry" }).Count -eq 1) "Get-DefaultAppMetadata: the standard 5 return codes, plus 9009 (retry) and winget's own four for the winget command"
 Assert-Equal "" $wingetDefaults.publisher "Get-DefaultAppMetadata: default publisher is blank (no hardcoded org name)"
 
 $uncommonDefaults = Get-DefaultAppMetadata -AppName "Test Uncommon App" -WingetId "" -Uncommon $true
@@ -722,6 +727,23 @@ $rels = @(ConvertTo-AppReleases @([pscustomobject]@{ version = '2.0'; appId = 'd
 Assert-True ($rels.Count -eq 1 -and $rels[0].state -eq 'pilot') "ConvertTo-AppReleases: only GUID App IDs, pinnable versions and known states"
 $relRecord = ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'Rel App'; managedUpdates = $true; releases = @([pscustomobject]@{ version = '2.0'; appId = 'dddddddd-0000-4000-8000-000000000001'; state = 'pilot'; at = 'x' }) })
 $relBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $relRecord) | ConvertFrom-Json)
+# 2.38.34: fields emptied on purpose are kept through a save, unknown names are dropped
+$clrRec = ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'Clr'; metadata = [pscustomobject]@{ description = 'd'; owner = ''; clearedFields = @('owner', 'bogus', 'owner') } })
+$clrBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $clrRec) | ConvertFrom-Json)
+Assert-Equal 'owner' (@($clrBack.metadata.clearedFields) -join ',') "ConvertTo-AppRecord: fields emptied on purpose survive a save, once, only known fields (2.38.34)"
+$clrNone = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'N'; metadata = [pscustomobject]@{ description = 'd' } }))) | ConvertFrom-Json)
+Assert-Equal 0 @($clrNone.metadata.clearedFields).Count "ConvertTo-AppRecord: an app without emptied fields has none (and its file no such key)"
+$scOld = [pscustomobject]@{ owner = 'Alice'; notes = ''; developer = 'Dev'; clearedFields = @('notes') }
+$scNew = [pscustomobject]@{ owner = ''; notes = ''; developer = 'Dev'; clearedFields = @('notes') }
+Set-ClearedFields -Old $scOld -New $scNew
+Assert-Equal 'notes,owner' (@($scNew.clearedFields | Sort-Object) -join ',') "Set-ClearedFields: a field emptied is added, one already waiting stays (2.38.34)"
+$scNew.owner = 'Bob'; Set-ClearedFields -Old $scOld -New $scNew
+Assert-Equal 'notes' (@($scNew.clearedFields) -join ',') "Set-ClearedFields: ...and taken off once it has a value again"
+$mgKeep = Merge-CatalogMetadata -Remote ([pscustomobject]@{ description = 'r'; owner = 'Portal' }) -Local ([pscustomobject]@{ description = 'l'; owner = ''; clearedFields = @('owner') }) -KeepLocalFields @('Owner')
+Assert-True ([string]$mgKeep.owner -eq '' -and @($mgKeep.clearedFields) -contains 'owner') "Merge-CatalogMetadata: keeping the catalog's emptied field keeps it marked for the next send (2.38.34)" ($mgKeep | ConvertTo-Json -Compress)
+$cfgJson = ConvertTo-CreateAppConfigJson -Config ([pscustomobject]@{ AppName = 'x'; ClearedFields = @('notes') })
+# A text check: a config this small isn't a whole one (Windows PowerShell's ConvertFrom-Json refuses its empty numbers).
+Assert-True ($cfgJson -match '"ClearedFields": \[\s*"notes"\s*\]') "ConvertTo-CreateAppConfigJson: the emptied fields go to the step (2.38.34)"
 Assert-True ($relBack.managedUpdates -and @($relBack.releases).Count -eq 1 -and $relBack.releases[0].version -eq '2.0') "ConvertTo-SingleAppJson/ConvertTo-AppRecord: managed updates and releases round-trip"
 Assert-True ((ConvertTo-SingleAppJson -App (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'Plain' }))) -notlike '*managedUpdates*') "ConvertTo-SingleAppJson: no managed fields for an unmanaged app"
 $tpl = ConvertTo-TemplateAppRecord -App $relBack
@@ -1003,7 +1025,33 @@ Assert-True ((Get-DownloadCheckVerdict -InWinget $true -StatusCode 0 -Version '1
 Assert-True ((Get-DownloadCheckVerdict -InWinget $true -StatusCode 200 -Version '1').status -eq 'ok' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 206 -Version '1').status -eq 'ok' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 404 -Version '1').status -eq 'gone' -and
     (Get-DownloadCheckVerdict -InWinget $false -StatusCode 0 -Version '1').status -eq 'notinwinget' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 403 -Version '1').status -eq 'unknown' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 0 -Version '1').status -eq 'unknown') "Get-DownloadCheckVerdict: there, gone (404/410), not in winget, or not known (403, no answer)"
 $rcs = @(Add-WingetRetryReturnCode @(@{ returnCode = 0; type = 'success' }, @{ returnCode = 9009; type = 'retry' }))
-Assert-True ($rcs.Count -eq 2 -and @(Add-WingetRetryReturnCode @(@{ returnCode = 0; type = 'success' })).Count -eq 2 -and @(Add-WingetRetryReturnCode @()).Count -eq 6) "Add-WingetRetryReturnCode: 9009 added once; an empty list keeps Intune's five defaults"
+Assert-True ($rcs.Count -eq 6 -and @(Add-WingetRetryReturnCode @(@{ returnCode = 0; type = 'success' })).Count -eq 6 -and @(Add-WingetRetryReturnCode @()).Count -eq 10) "Add-WingetRetryReturnCode: 9009 and winget's codes added once; an empty list keeps Intune's five defaults"
+Assert-True (@($rcs | Where-Object { $_.returnCode -eq -1978334974 -and $_.type -eq 'retry' }).Count -eq 1 -and @($rcs | Where-Object { $_.returnCode -eq -1978335135 -and $_.type -eq 'success' }).Count -eq 1) "Add-WingetRetryReturnCode: winget's 'another install in progress' is Retry, 'already installed' Success (2.38.34)"
+# Built from character codes: this file is ASCII, so Windows PowerShell reads it the same in any code page.
+$uniName = 'M' + [char]0x00FC + 'ller ' + [char]0x00D1 + 'and' + [char]0x00FA
+$devDet = New-InstalledAppDetectionScript -DisplayName $uniName -Version '24'
+$devErr = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($devDet, [ref]$null, [ref]$devErr)
+Assert-True (@($devErr).Count -eq 0 -and $devDet -notmatch '\[version\]' -and $devDet -match 'HKCU:') "New-InstalledAppDetectionScript: parses, compares part by part (no [version]) and looks at the user's entries too (2.38.34)"
+Assert-True ((Get-InstalledNamePattern $uniName) -match '^[\x00-\x7F]+$' -and ($uniName + ' 2.1') -match (Get-InstalledNamePattern $uniName)) "Get-InstalledNamePattern: letters outside ASCII written as \\u - the script stays ASCII and still matches (2.38.34)"
+Invoke-Expression (Get-DeviceVersionCompareScript)
+Assert-True ((Compare-Version '9.0.0' 'ad 8.1.0') -eq -1 -and (Compare-Version '1.0' '1.0-beta') -eq -1 -and (Compare-Version '24' '25') -eq 1 -and (Compare-Version '2.0' 'v2.0') -eq 0) "Get-DeviceVersionCompareScript: a word before the version is ignored, a pre-release is older, one-part versions compare (2.38.34)"
+# Scripts written before 2.38.34: recognised exactly - an edited one stays an own script.
+$oldMg = Get-ManagedWingetDetectionV1 -WingetId 'Vendor.App' -Version '2.0' -NamePattern (Get-InstalledNamePattern 'Vendor App')
+Assert-Equal 'managed' ([string](Get-DetectionBlocks ([pscustomobject]@{ Type = 'Script'; Script_Content = $oldMg })).Form) "Get-DetectionBlocks: a managed detection written before 2.38.34 is still that form"
+Assert-Equal 'own' ([string](Get-DetectionBlocks ([pscustomobject]@{ Type = 'Script'; Script_Content = ($oldMg + "`nWrite-Output 'x'") })).Form) "Get-DetectionBlocks: ...edited by hand, it is an own script"
+$oldIn = New-InstalledAppDetectionScriptV1 -Pattern (Get-InstalledNamePattern 'Some App') -Version '1.0'
+Assert-Equal 'installed' ([string](Get-DetectionBlocks ([pscustomobject]@{ Type = 'Script'; Script_Content = $oldIn })).Form) "Get-DetectionBlocks: an installed-app detection written before 2.38.34 is still that form"
+Assert-Equal 'own' ([string](Get-DetectionBlocks ([pscustomobject]@{ Type = 'Script'; Script_Content = ($oldIn -replace 'exit 0', "if (Test-Path 'C:\x') { exit 0 }`nexit 0") })).Form) "Get-DetectionBlocks: ...edited by hand, it is an own script (its edits aren't lost)"
+$mgNew = Get-ManagedWingetDetection -WingetId 'Vendor.App' -Version '2.0' -NamePattern 'x'
+Assert-True ($mgNew.Contains('if (-not $Json -and $RegNewer)') -and -not $mgNew.Contains('-not $Apps.Count -and $RegNewer')) "Get-ManagedWingetDetection: a newer Uninstall entry counts only when winget's list couldn't be read - a list without the package is an answer (2.38.34)"
+$pubDet = ConvertTo-DetectionFromInstalled ([pscustomobject]@{ Key = 'P'; DisplayVersion = '1'; Hive = 'HKLM'; MainExe = [pscustomobject]@{ Path = 'C:\Users\Public\Tool\t.exe'; Version = '1.0' } })
+Assert-True (-not $pubDet.PerUser -and $pubDet.Rule.File_Path -eq 'C:\Users\Public\Tool') "ConvertTo-DetectionFromInstalled: the shared Public profile is not per user"
+$keepEmpty = Get-MetadataWithoutOwnReleases -Metadata ([pscustomobject]@{ description = 'i'; supersedes = $null; dependencies = @() }) -App ([pscustomobject]@{ releases = @() }) -LocalMetadata ([pscustomobject]@{ dependencies = @(); supersedes = @() }) -NoRelations
+Assert-True ($null -ne $keepEmpty.supersedes -and @($keepEmpty.supersedes).Count -eq 0) "Get-MetadataWithoutOwnReleases: the catalog's empty supersedence stays empty, not 'keep Intune's'"
+$unin = New-InstalledAppUninstallScript -DisplayName 'X' -ExeKind 'nsis'
+Assert-True ($unin -like "*(.+?\.exe)*") "New-InstalledAppUninstallScript: an unquoted uninstall path with spaces is read up to .exe (2.38.34)"
+$puDet = ConvertTo-DetectionFromInstalled ([pscustomobject]@{ Key = 'Code'; DisplayVersion = '1.9'; Hive = 'HKCU'; MainExe = [pscustomobject]@{ Path = 'C:\Users\alice\AppData\Local\Programs\Code\Code.exe'; Version = '1.9.0' } })
+Assert-True ($puDet.Rule.File_Path -eq '%LOCALAPPDATA%\Programs\Code' -and $puDet.PerUser) "ConvertTo-DetectionFromInstalled: a per-user path is the user's folder by its variable, and said to be per user (2.38.34)"
 Assert-True ((Get-InstallErrorInfo 9009).meaning -like "*winget wasn't on the device*" -and (Get-InstallErrorInfo '0x80072329').fix -like '*Retry*') "Get-InstallErrorInfo: 9009 - winget not on the device yet, Intune retries"
 
 # A new version for a script or PSADT app: the version marker in its script follows
@@ -2685,12 +2733,28 @@ Assert-Equal 0 @($relPoss | Where-Object { $_.Problem -like 'Possibly*' }).Count
 $chgApp = [pscustomobject]@{ appName = 'Chg'; appId = 'id-chg' }
 $chg = Get-AssignmentChangeFindings -CatalogApp $chgApp -ToAdd @('[required] SG-A (filter: Laptops)', '[required] EXCLUDE SG-X') -ToRemove @('[required] SG-A', '[available] SG-Other')
 $chgBy = @{}; foreach ($f in @($chg.Findings)) { $chgBy[[string]$f.Problem] = $f }
-Assert-True ($chgBy.ContainsKey('Assignment filter differs')) "Get-AssignmentChangeFindings: a filter on one side only is a filter difference"
-Assert-Equal '[required] SG-A' ([string]$chgBy['Assignment filter differs'].Intune) "Get-AssignmentChangeFindings: ...showing Intune's side"
-Assert-True ($chgBy.ContainsKey('Exclusion missing in Intune')) "Get-AssignmentChangeFindings: a missing exclusion is reported"
+$chgF = $chgBy['Assignment filter differs; Exclusion missing in Intune']
+Assert-True ($null -ne $chgF) "Get-AssignmentChangeFindings: a filter on one side only and a missing exclusion are one row for the app" (($chgBy.Keys) -join ' / ')
+Assert-True ([string]$chgF.Intune -like '`[required`] SG-A*') "Get-AssignmentChangeFindings: ...showing Intune's side"
+Assert-True ([string]$chg.Text -like 'Assignment filter differs; Exclusion missing in Intune; 1 unknown*') "Get-AssignmentChangeFindings: ...and the last-audit text says all of it" ([string]$chg.Text)
+$chgP = Get-AssignmentChangeFindings -CatalogApp $chgApp -ToAdd @('[required] SG (filter: Corp (laptops))') -ToRemove @('[required] SG')
+Assert-Equal 0 @($chgP.Unknown).Count "Get-AssignmentChangeFindings: a filter name with brackets still pairs"
+Assert-Equal 'OK' ([string](Get-AssignmentChangeFindings -CatalogApp $chgApp -ToAdd @() -ToRemove @()).Text) "Get-AssignmentChangeFindings: nothing different is OK"
 Assert-Equal 1 @($chg.Unknown).Count "Get-AssignmentChangeFindings: ...and only the unpaired one is unknown"
 Assert-Equal '[available] SG-Other' ([string]@($chg.Unknown)[0]) "Get-AssignmentChangeFindings: ...the other group"
 Assert-Equal 0 @((Get-AssignmentChangeFindings -CatalogApp $chgApp -ToAdd @('[required] SG-New') -ToRemove @()).Findings).Count "Get-AssignmentChangeFindings: a missing inclusion is left to the Groups check"
+
+# 2.38.34: what a promotion leaves in Intune isn't a difference, nor stored by Pull
+$ownApp = [pscustomobject]@{ appName = 'Own'; appId = 'id-new'; releases = @([pscustomobject]@{ appId = 'ID-OLD'; state = 'previous' }) }
+$ownMeta = [pscustomobject]@{ description = 'd'; supersedes = @([pscustomobject]@{ appId = 'id-old'; name = 'Own 1.0'; type = 'update' }, [pscustomobject]@{ appId = 'id-x'; name = 'Other'; type = 'replace' }); dependencies = @('Runtime 2.0 (superseded)', 'Unknown 1.0 (superseded)') }
+$ownOut = Get-MetadataWithoutOwnReleases -Metadata $ownMeta -App $ownApp -CatalogNames @('Runtime', 'Own')
+Assert-Equal 'id-x' ((@($ownOut.supersedes) | ForEach-Object { $_.appId }) -join ',') "Get-MetadataWithoutOwnReleases: the update path to its own earlier release goes (any case), another stays"
+Assert-Equal 'Runtime,Unknown 1.0 (superseded)' (@($ownOut.dependencies) -join ',') "Get-MetadataWithoutOwnReleases: a dependency on a catalog app's old release is named as the app"
+Assert-Equal 2 @($ownMeta.supersedes).Count "Get-MetadataWithoutOwnReleases: ...on a copy"
+$noRel = Get-MetadataWithoutOwnReleases -Metadata ([pscustomobject]@{ description = 'i'; dependencies = @(); supersedes = $null }) -App $ownApp -LocalMetadata ([pscustomobject]@{ dependencies = @('VC'); supersedes = @([pscustomobject]@{ appId = 'a' }) }) -NoRelations
+Assert-Equal 'VC' (@($noRel.dependencies) -join ',') "Get-MetadataWithoutOwnReleases: Intune's relationships unread - the catalog's dependencies are kept"
+Assert-Equal 1 @($noRel.supersedes).Count "Get-MetadataWithoutOwnReleases: ...and its supersedence"
+Assert-Equal 'i' ([string]$noRel.description) "Get-MetadataWithoutOwnReleases: ...the rest is Intune's"
 
 # Per-app detail from a SyncMetadata result
 $chkResultSame = [pscustomobject]@{ Success = $true; OdataType = '#microsoft.graph.win32LobApp'; GroupFetchOk = $true

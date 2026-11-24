@@ -185,7 +185,7 @@ $('btnUpdDownloads').addEventListener('click', async () => {
     const r = await api('/api/download-checks', {});
     if (!r.ok) { toast(r.error, true); return; }
     await loadUpdates(true);
-    toast(r.bad ? `${r.bad} app(s) can't be installed on new devices any more - see the red marks.` : `All ${r.rows.length} pinned version(s) can still be downloaded.`, !!r.bad);
+    toast(r.bad ? `${nWord(r.bad, 'app')} can't be installed on new devices any more - see the red marks.` : `All ${r.rows.length} pinned version(s) can still be downloaded.`, !!r.bad);
   } finally { b.disabled = false; }
 });
 $('btnUpdExport').addEventListener('click', () => {
@@ -204,7 +204,7 @@ $('btnUpdExport').addEventListener('click', () => {
   const url = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n') + '\r\n'], { type: 'text/csv;charset=utf-8' }));
   const a = el('a', { href: url, download: `compliance-${new Date().toISOString().slice(0, 10)}.csv` });
   document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 10000);
-  toast(`Compliance report for ${updRows.length} app(s) saved to your Downloads folder.`);
+  toast(`Compliance report for ${nWord(updRows.length, 'app')} saved to your Downloads folder.`);
 });
 // After a release action's dialogs close, the page shows the new state.
 for (const d of ['dlgRun', 'dlgRelease']) $(d).addEventListener('close', () => { if (!$('viewUpdates').hidden) setTimeout(() => loadUpdates(true), 300); });
@@ -212,3 +212,5 @@ for (const d of ['dlgRun', 'dlgRelease']) $(d).addEventListener('close', () => {
 // 2.32.0: the two occasional actions in one menu; Reload as an icon.
 foldIntoMenu(['btnUpdWatched', 'btnUpdDownloads', 'btnUpdExport'], { id: 'btnUpdMore', title: 'Get new installers, check downloads, compliance report' });
 reloadIcon('btnUpdReload');
+
+$('btnUpdOpenApps').addEventListener('click', () => showView('apps'));

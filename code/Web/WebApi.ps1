@@ -257,7 +257,14 @@ function Global:Update-WebCatalogApp {
       copied into the packages folder, a call to Intune) then needn't hold it the whole time - only this write does.
     #>
     param([string]$Name, [scriptblock]$Change, $Undo = $null)
-    $r = Invoke-WithCatalogLock { Update-WebCatalogAppHeld -Name $Name -Change $Change -Undo $Undo }.GetNewClosure()
+    # Tried three times when the catalog is busy (2.38.34): a deploy's or release's new App ID that wasn't saved meant a
+    # second app in Intune on the next send.
+    for ($try = 1; ; $try++) {
+        $r = Invoke-WithCatalogLock { Update-WebCatalogAppHeld -Name $Name -Change $Change -Undo $Undo }.GetNewClosure()
+        $busy = $r -is [hashtable] -and $r.ContainsKey('ok') -and -not $r.ok
+        if (-not $busy -or $try -ge 3 -or [string]$r.error -notmatch 'busy|lock') { break }
+        Start-Sleep -Seconds 2
+    }
     if ($r -is [hashtable] -and $r.ContainsKey('ok') -and -not $r.ok) { throw [string]$r.error }
     return $r
 }
@@ -383,6 +390,9 @@ function Global:Complete-WebJob {
         'deploy' {
             $newId = [string]$Result.appId
             $defaults = $After.Defaults
+            # The app is in Intune now: if its App ID can't be saved, the log keeps it (2.38.34) - Checks then offers it
+            # ("In Intune, App ID not set") instead of a second app being sent.
+            try {
             [void](Update-WebCatalogApp -Name $After.AppName -Change {
                 param($app)
                 if ($newId) { $app.appId = $newId }
@@ -391,7 +401,16 @@ function Global:Complete-WebJob {
                 if ($After.ReplacesLobAppId -and $newId) { $app.lobToRetire = ([string]$After.ReplacesLobAppId).ToLowerInvariant() }
                 if (-not $app.metadata -and $defaults) { $app.metadata = $defaults }
                 if ($After.PackageStamp) { $app.packageStamp = [string]$After.PackageStamp }
+                # The emptied fields this send carried went to Intune as empty (2.38.34) - only those: one emptied while it ran
+                # still waits, and a Store app's Owner or Notes (its type has none to send) stays a difference to see.
+                $sentCleared = @($After.SentCleared)
+                if ($app.metadata -and $app.metadata.PSObject.Properties['clearedFields']) { $app.metadata.clearedFields = @(@($app.metadata.clearedFields) | Where-Object { $sentCleared -notcontains $_ }) }
             }.GetNewClosure())
+            }
+            catch {
+                if ($newId) { Write-Log "[FAILED] $($After.AppName) was created in Intune as $newId, but the catalog couldn't be saved: $($_.Exception.Message). Run Checks and use 'Set App ID'." }
+                throw
+            }
             Write-Log "[OK] Deployed $($After.AppName)$(if ($newId) { " (App ID $newId)" }) - saved to the catalog."
             if ($After.ReplacesLobAppId -and $newId) {
                 Add-WebHistoryEntry -App $After.AppName -Kind 'intune' -Text "Created as a Win32 app ($newId) - it replaces the MSI line-of-business app $($After.ReplacesLobAppId), still in Intune until it is retired"
@@ -573,6 +592,12 @@ function Global:Open-WebTarget {
             return (Open-WebUrl "https://intune.microsoft.com/#view/Microsoft_Intune_Apps/SettingsMenu/~/0/appId/$id")
         }
         'release' { $repo = [string]$Global:App.ReleaseRepo; if ($repo -notmatch '^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$') { return @{ ok = $false; error = 'No release repository set.' } }; return (Open-WebUrl "https://github.com/$repo/releases/latest") }
+        # Settings > About (2.38.34): the project's pages - a fixed list, only the repository comes from the app's own settings.
+        { $_ -in 'repo', 'changelog', 'license', 'issues', 'security' } {
+            $repo = [string]$Global:App.ReleaseRepo; if ($repo -notmatch '^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$') { return @{ ok = $false; error = 'No release repository set.' } }
+            $tail = @{ repo = ''; changelog = '/blob/main/CHANGELOG.md'; license = '/blob/main/LICENSE'; issues = '/issues'; security = '/blob/main/SECURITY.md' }[[string]$Data.target]
+            return (Open-WebUrl "https://github.com/$repo$tail")
+        }
         'scripts-folder' { return (Open-WebFolder (Get-AppFolder -Kind Scripts -Create)) }
         'package-folder' {
             $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
@@ -771,6 +796,7 @@ function Global:Invoke-WebApi {
         '/api/csv-export'       { return (Export-WebCatalogCsv) }
         '/api/csv-import'       { return $(if ($Data.preview) { Import-WebCatalogCsv $Data } else { Invoke-WithCatalogLock { Import-WebCatalogCsv $Data } }) }
         '/api/diagnostics'      { return (Get-WebDiagnostics) }
+        '/api/about'            { return (Get-WebAbout $Data) }
         '/api/prereqs'          { return (Get-WebPrerequisites) }
         '/api/prereq-install'   { return (Start-WebPrerequisiteInstall $Data) }
         '/api/winget-module-install' { return (Start-WebWingetModuleInstall) }

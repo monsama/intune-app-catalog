@@ -103,7 +103,7 @@ function Global:Find-WebAppIcon {
     if ($Global:App.TestGraph) { return @{ ok = $false; error = 'Test mode: no homepage is read.' } }
     try {
         # https only, a megabyte at most - the page and each icon (Invoke-WebHttpsGet).
-        $html = [System.Text.Encoding]::UTF8.GetString((Invoke-WebHttpsGet -Uri $site -MaxBytes 1MB -TimeoutSec 15))
+        $html = [System.Text.Encoding]::UTF8.GetString((Invoke-WebHttpsGet -Uri $site -MaxBytes 1MB -TimeoutSec 15 -PublicOnly))
         $base = [Uri]$site
         $cands = New-Object System.Collections.Generic.List[string]
         foreach ($m in [regex]::Matches($html, '<link[^>]+>', 'IgnoreCase')) {
@@ -116,7 +116,7 @@ function Global:Find-WebAppIcon {
         $cands.Add((New-Object Uri($base, '/apple-touch-icon.png')).AbsoluteUri)
         foreach ($c2 in @($cands | Select-Object -Unique -First 5)) {
             try {
-                $bytes = [byte[]](Invoke-WebHttpsGet -Uri $c2 -MaxBytes 750KB -TimeoutSec 15)
+                $bytes = [byte[]](Invoke-WebHttpsGet -Uri $c2 -MaxBytes 750KB -TimeoutSec 15 -PublicOnly)
                 $type = if ($bytes.Length -gt 8 -and $bytes[0] -eq 0x89 -and $bytes[1] -eq 0x50) { 'image/png' } elseif ($bytes.Length -gt 3 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xD8) { 'image/jpeg' } else { '' }
                 if ($type -and $bytes.Length -ge 200) { return @{ ok = $true; icon = @{ type = $type; value = [Convert]::ToBase64String($bytes) }; from = $c2 } }
             }
@@ -458,11 +458,14 @@ function Global:Get-WebAppUpdate {
       Is a newer release of this app out? Asks GitHub's API for the latest
       release (its tag and notes - nothing about this PC is sent beyond the
       request itself), at most twice a day; off in Settings or in test
-      mode. @{ ok; newer; version; notes; url }.
+      mode. @{ ok; newer; version; notes; url }. -Now (Settings > About's
+      "Check now"): asks even when the automatic check is off, and not from
+      the 12-hour memory.
     #>
-    if (-not $Global:App.CheckForUpdates -or $Global:App.TestGraph) { return @{ ok = $true; newer = $false; off = $true } }
+    param([switch]$Now)
+    if ($Global:App.TestGraph -or (-not $Now -and -not $Global:App.CheckForUpdates)) { return @{ ok = $true; newer = $false; off = $true } }
     $c = $Global:App.AppUpdateCache
-    if ($c -and ((Get-Date) - $c.At).TotalHours -lt 12) { return $c.Answer }
+    if (-not $Now -and $c -and ((Get-Date) - $c.At).TotalHours -lt 12) { return $c.Answer }
     $repo = [string]$Global:App.ReleaseRepo
     if ($repo -notmatch '^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$') { return @{ ok = $false; error = 'No release repository set.' } }
     try {
@@ -476,6 +479,33 @@ function Global:Get-WebAppUpdate {
     catch { $answer = @{ ok = $false; error = "GitHub couldn't be asked: $($_.Exception.Message)" } }
     $Global:App.AppUpdateCache = @{ At = (Get-Date); Answer = $answer }
     return $answer
+}
+
+function Global:Get-WebAbout {
+    <#
+      Settings > About (2.38.34): which version this is, where it runs and
+      where its files are - what a bug report or a support question needs.
+      -CheckNow also asks GitHub for a newer release.
+    #>
+    param($Data)
+    $server = [bool](Test-WebServerMode)
+    $os = try { [string][System.Runtime.InteropServices.RuntimeInformation]::OSDescription } catch { [string][Environment]::OSVersion }
+    $apps = try { @((Read-WebCatalogRecords).Apps).Count } catch { 0 }
+    $folders = @(foreach ($k in @(Get-AppFolderKinds)) { try { [ordered]@{ label = [string]$k.Label; path = [string](Get-AppFolder -Kind $k.Key) } } catch { } })
+    $upd = if ($Data -and $Data.checkNow) { Get-WebAppUpdate -Now } elseif ($Global:App.AppUpdateCache) { $Global:App.AppUpdateCache.Answer } else { $null }
+    return @{
+        ok          = $true
+        version     = [string]$Global:App.AppVersion
+        server      = $server
+        powershell  = "$($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))"
+        os          = $os.Trim()
+        apps        = $apps
+        autoCheck   = [bool]$Global:App.CheckForUpdates
+        update      = $upd
+        repo        = [string]$Global:App.ReleaseRepo
+        # Paths of the server's data volume mean nothing to the admin's browser - shown on the desktop app only.
+        folders     = $(if ($server) { @() } else { $folders })
+    }
 }
 
 # ---------------------------------------------------------------- assignment filters

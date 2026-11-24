@@ -115,6 +115,8 @@ function Global:Set-WebBatchChanges {
         }
         if ($m.PSObject.Properties.Name -contains $k) { $m.$k = $value } else { $m | Add-Member -NotePropertyName $k -NotePropertyValue $value }
     }
+    # Fields emptied here are sent as empty too (2.38.34), as from the editor.
+    Set-ClearedFields -Old $Metadata -New $m
     # A managed app keeps its pinned commands (turn managed updates off first to change how it installs).
     if ($Changes.Contains('wingetInstallMethod') -and $App.wingetId -and -not $App.managedUpdates) {
         $c = Convert-AppWingetInstallMethod -WingetId $App.wingetId -InstallCommand $m.installCommand -UninstallCommand $m.uninstallCommand -Method $Changes.wingetInstallMethod -InstallContext $m.installContext
