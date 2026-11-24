@@ -1355,9 +1355,9 @@ table.cmp mark.add { background: color-mix(in srgb, var(--ok) 35%, transparent);
 
 /* ---- Add apps: room between rows, tables that fill the tab, code in a code font ---- */
 /* "Fill in by hand..." at the end of the tab row - not squeezed against the window's buttons. */
-.addtabrow { display: flex; align-items: flex-end; gap: 12px; border-bottom: 1px solid var(--bd); margin-bottom: 14px; }
+.addtabrow { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--bd); margin-bottom: 14px; }
 .addtabrow > .subtabs { flex: 1 1 auto; border-bottom: 0; margin-bottom: 0; }
-.addtabrow > #btnAddBlank { flex: none; margin-bottom: 6px; }
+.addtabrow > #btnAddBlank { flex: none; margin-bottom: 0;   /* 2.38.30: centred on the tabs, not 6px above their baseline */ }
 /* Every block in a tab has the same room above it (labels, hints, tick boxes, tables). */
 dialog.addapps .asec > * + * { margin-top: 12px; }
 dialog.addapps .asec > [hidden] + * { margin-top: 12px; }
