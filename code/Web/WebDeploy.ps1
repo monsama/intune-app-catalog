@@ -206,6 +206,10 @@ function Global:New-WebCreateAppConfig {
         $dep = $Catalog.Apps | Where-Object { $_.appName -eq $depName } | Select-Object -First 1
         if ($dep -and $dep.appId) { $dep.appId }
     })
+    # Assigned outside $( ) (2.38.34): an empty list - "no supersedence", which clears it in Intune - came out of a
+    # subexpression as $null, "keep Intune's", so removing supersedence in the catalog never reached Intune.
+    $supersedence = $null
+    if (-not ($defaults -and $a.appId)) { $supersedence = Get-WebSupersedenceWithReleases -App $a -Supersedes $m.supersedes }
     return [pscustomobject]@{
         TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
         Mode = $(if ($a.appId) { 'UpdateMetadata' } else { 'Create' }); ExistingAppId = [string]$a.appId
@@ -217,7 +221,7 @@ function Global:New-WebCreateAppConfig {
         # An app with no settings of its own, already in Intune: the defaults say nothing about supersedence or Featured - leave Intune's.
         # Its own earlier releases stay superseded (2.38.33): the catalog's list doesn't hold them, and sending it alone
         # removed the update path a promotion set up.
-        Supersedence = $(if ($defaults -and $a.appId) { $null } else { Get-WebSupersedenceWithReleases -App $a -Supersedes $m.supersedes })
+        Supersedence = $supersedence
         MinDiskSpaceMB = [int]$m.minDiskSpaceMB; MinMemoryMB = [int]$m.minMemoryMB; MinProcessors = [int]$m.minProcessors; MinCpuSpeedMHz = [int]$m.minCpuSpeedMHz
         InstallTimeMinutes = $(if ($m.installTimeMinutes) { [int]$m.installTimeMinutes } else { 60 }); DeviceRestartBehavior = $m.deviceRestartBehavior
         AllowAvailableUninstall = [bool]$m.allowAvailableUninstall; ReturnCodes = @($m.returnCodes); OutputResultPath = $ResultPath
@@ -323,8 +327,14 @@ function Global:Complete-WebPull {
     $pending = @{}
     foreach ($r in @($Result.results)) {
         if (-not $r.Success) { $failed.Add("$($r.AppName): $($r.Error)"); continue }
-        $app = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $r.AppName } | Select-Object -First 1
+        $all = @((Read-WebCatalogRecords).Apps)
+        $app = $all | Where-Object { $_.appName -eq $r.AppName } | Select-Object -First 1
         if (-not $app) { continue }
+        # 2.38.34: Intune's dependencies and supersedence as the catalog would hold them - without the app's own release steps
+        # (they'd come back as permanent differences), and the catalog's own when Intune's couldn't be read (they were wiped).
+        $noRel = $r.PSObject.Properties['DependenciesFetchOk'] -and -not $r.DependenciesFetchOk
+        $r.Metadata = Get-MetadataWithoutOwnReleases -Metadata $r.Metadata -App $app -CatalogNames @($all | ForEach-Object { [string]$_.appName }) -LocalMetadata $app.metadata -NoRelations:$noRel
+        if ($noRel) { Write-Log "[WARN] $($r.AppName): Intune's dependencies and supersedence couldn't be read - the catalog's are kept." }
         $fieldDiffs = @(Get-CatalogMetadataFieldDiffs -Local $app.metadata -Remote $r.Metadata -OdataType $r.OdataType)
         # @() around the whole if: one difference on its own would otherwise be
         # unrolled to a single object without .Count (Windows PowerShell 5.1).
@@ -564,14 +574,16 @@ function Global:Get-WebIntuneAppODataType {
 }
 
 function Global:Get-WebSupersedenceWithReleases {
-    # The catalog's supersedence plus the app's own earlier releases still in Intune (not the one being sent) - $null stays $null.
+    # The catalog's supersedence plus the app's own earlier releases still in Intune (not the one being sent).
+    # $null stays $null - "keep what Intune has" (2.38.34: it replaced supersedence set in the portal with the releases
+    # alone; CreateApp keeps the existing list, the releases included). An empty list stays a list: it clears it.
     param($App, $Supersedes)
+    if ($null -eq $Supersedes) { return $null }
     $own = @(@($App.releases) | Where-Object { $_ -and $_.appId -and [string]$_.appId -ne [string]$App.appId -and [string]$_.state -eq 'previous' })
-    if ($null -eq $Supersedes -and -not $own.Count) { return $null }
     $list = @(@($Supersedes) | Where-Object { $_ })
     $have = @{}; foreach ($s in $list) { $have[([string]$s.appId).ToLowerInvariant()] = $true }
     foreach ($r in $own) { if (-not $have.ContainsKey(([string]$r.appId).ToLowerInvariant())) { $list += [pscustomobject]@{ appId = [string]$r.appId; name = "$($App.appName) $($r.version)"; type = 'update' } } }
-    return $list
+    return , $list
 }
 
 function Global:Get-WebOfficeFromIntune {

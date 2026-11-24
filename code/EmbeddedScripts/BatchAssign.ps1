@@ -274,7 +274,15 @@ try {
                 Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertThumbprint -NoWelcome -ErrorAction Stop
             }
 
+            # Every page (2.38.34): a list Graph splits would otherwise be read in part - and sending it back replaces the whole list.
+
             $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($App.AppId)/assignments" -Method GET -StepDescription "Get current assignments for $($App.AppName)"
+
+            $pagedAll = @($currentAssignments.value); $pagedNext = [string]$currentAssignments.'@odata.nextLink'
+
+            while ($pagedNext) { $pagedPage = Invoke-GraphRequestDetailed -Uri $pagedNext -Method GET -StepDescription "Get current assignments for $($App.AppName) (next page)"; $pagedAll += @($pagedPage.value); $pagedNext = [string]$pagedPage.'@odata.nextLink' }
+
+            $currentAssignments = [pscustomobject]@{ value = $pagedAll }
             $groupNameById = @{}
             $unresolved = @()
             foreach ($a in @($currentAssignments.value)) {
@@ -414,7 +422,15 @@ try {
             $appIndex++
             Write-Step "[$appIndex/$totalApps] $($app.AppName)"
 
+            # Every page (2.38.34): a list Graph splits would otherwise be read in part - and sending it back replaces the whole list.
+
             $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($app.AppId)/assignments" -Method GET -StepDescription "Get current assignments for $($app.AppName)"
+
+            $pagedAll = @($currentAssignments.value); $pagedNext = [string]$currentAssignments.'@odata.nextLink'
+
+            while ($pagedNext) { $pagedPage = Invoke-GraphRequestDetailed -Uri $pagedNext -Method GET -StepDescription "Get current assignments for $($app.AppName) (next page)"; $pagedAll += @($pagedPage.value); $pagedNext = [string]$pagedPage.'@odata.nextLink' }
+
+            $currentAssignments = [pscustomobject]@{ value = $pagedAll }
             $groupNameById = @{}
             $unresolved = @()
             foreach ($a in @($currentAssignments.value)) {
@@ -433,6 +449,7 @@ try {
             $toRemove = @(@($diff.ToRemove) + @($otherTargets))
             $toAdd = @($diff.ToAdd)
 
+            foreach ($u in @($unresolved)) { Write-Host "  [!] Couldn't read the name of group $u - it is compared by ID." -ForegroundColor Yellow }
             if ($toRemove.Count -eq 0 -and $toAdd.Count -eq 0) {
                 Write-Host "  (no change)" -ForegroundColor Gray
             }
@@ -453,8 +470,8 @@ try {
             # Nothing differs: nothing is sent (sending replaces every assignment, and would lose their settings for no reason).
             if ($toRemove.Count -eq 0 -and $toAdd.Count -eq 0) { continue }
             # 2.38.13: never send a list with a group left out - it replaces the whole list and would drop that group.
-            $unresolved = @(Get-UnresolvedAssignmentGroups -Entries $desiredEntries -GroupIdByName $groupIdCache)
-            if ($unresolved.Count) { throw "$($app.AppName): these groups couldn't be found in Entra ID: $($unresolved -join ', '). Stopped here: its assignments in Intune were left as they are, and the apps after it werent changed (the ones before it were)." }
+            $notFound = @(Get-UnresolvedAssignmentGroups -Entries $desiredEntries -GroupIdByName $groupIdCache)
+            if ($notFound.Count) { throw "$($app.AppName): these groups couldn't be found in Entra ID: $($notFound -join ', '). Stopped here: its assignments in Intune were left as they are, and the apps after it werent changed (the ones before it were)." }
             $assignments = @((New-AppAssignmentBody -Entries $desiredEntries -GroupIdByName $groupIdCache -FilterIdByName $filterIdByName -CurrentAssignments @($currentAssignments.value)).mobileAppAssignments)
 
             $assignBody = [string](@{ mobileAppAssignments = @($assignments) } | ConvertTo-Json -Depth 10)

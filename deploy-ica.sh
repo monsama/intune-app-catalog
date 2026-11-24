@@ -16,7 +16,7 @@
 # Environment overrides (optional):
 #   ICA_HOST=apps.example.ch      name people type (required on first run; asked for otherwise)
 #   NOBS_DIR=/opt/nobs-inventory  where NOBS Inventory (and its proxy/) is
-#   ICA_IMAGE=ghcr.io/monsama/intune-app-catalog:2.38.33   a pinned image (default: the version in code)
+#   ICA_IMAGE=ghcr.io/monsama/intune-app-catalog:2.38.34   a pinned image (default: the version in code)
 #   BUILD_NETWORK=host            build with host networking (needed behind some proxies)
 # ============================================================
 set -Eeuo pipefail
@@ -34,6 +34,14 @@ gen_secret() { openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c "$1"; }
 set_env() { # key value: added when missing, never changed
     grep -q "^$1=" .env 2>/dev/null || echo "$1=$2" >> .env
 }
+set_env_given() { # key value: a value given on this run (ICA_HOST=... ./deploy-ica.sh) replaces the one in .env
+    if grep -q "^$1=" .env 2>/dev/null; then
+        old="$(grep "^$1=" .env | tail -1 | cut -d= -f2-)"
+        [ "$old" = "$2" ] && return 0
+        tmp="$(mktemp)"; grep -v "^$1=" .env > "$tmp"; echo "$1=$2" >> "$tmp"; cat "$tmp" > .env; rm -f "$tmp"
+        info "$1 changed: $old -> $2"
+    else echo "$1=$2" >> .env; fi
+}
 
 echo "Step 1: Preflight"
 if [ "$(id -u)" -ne 0 ] && ! id -nG | grep -qw docker; then fail "Run with sudo (or as a member of the docker group)."; fi
@@ -50,8 +58,9 @@ if [ -z "$host" ] && [ -t 0 ]; then read -r -p "Name people will type (e.g. apps
 [ -n "$host" ] || fail "Set ICA_HOST, e.g. sudo ICA_HOST=apps.example.ch ./deploy-ica.sh"
 [[ "$host" =~ ^[A-Za-z0-9.-]+$ ]] || fail "ICA_HOST must be a host name (letters, digits, dots, dashes): $host"
 touch .env; chmod 600 .env
-set_env ICA_HOST "$host"
-set_env ICA_IMAGE "${ICA_IMAGE:-ghcr.io/monsama/intune-app-catalog:$VERSION}"
+# Given on this run: it replaces what .env had (a new name was ignored before - and the app refused it with 403).
+if [ -n "${ICA_HOST:-}" ]; then set_env_given ICA_HOST "$host"; else set_env ICA_HOST "$host"; fi
+if [ -n "${ICA_IMAGE:-}" ]; then set_env_given ICA_IMAGE "$ICA_IMAGE"; else set_env ICA_IMAGE "ghcr.io/monsama/intune-app-catalog:$VERSION"; fi
 set_env TZ "${TZ:-Europe/Zurich}"
 info "Name: $(grep '^ICA_HOST=' .env | cut -d= -f2-)"
 
@@ -71,8 +80,12 @@ docker network inspect nobs-proxy >/dev/null 2>&1 || { docker network create nob
 IMG="$(grep '^ICA_IMAGE=' .env | cut -d= -f2-)"
 if docker image inspect "$IMG" >/dev/null 2>&1; then info "Image $IMG is here."
 elif ! docker compose pull app 2>/dev/null; then
-    warn "The image could not be pulled - building it here."
-    if [ -n "${BUILD_NETWORK:-}" ]; then docker build --network "$BUILD_NETWORK" -t "$(grep '^ICA_IMAGE=' .env | cut -d= -f2-)" .; else docker compose build app; fi
+    # Only when asked (BUILD_LOCAL=1): a build of whatever is checked out here isn't the release, so it isn't tagged as one.
+    [ "${BUILD_LOCAL:-}" = "1" ] || fail "The image $IMG could not be pulled. Check the network, or build this checkout yourself: sudo BUILD_LOCAL=1 ./deploy-ica.sh"
+    LOCAL_IMG="intune-app-catalog:local-$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M%S)"
+    warn "Building this checkout as $LOCAL_IMG."
+    if [ -n "${BUILD_NETWORK:-}" ]; then docker build --network "$BUILD_NETWORK" -t "$LOCAL_IMG" .; else docker build -t "$LOCAL_IMG" .; fi
+    set_env_given ICA_IMAGE "$LOCAL_IMG"
 fi
 docker compose up -d app
 info "Waiting until the app is healthy..."

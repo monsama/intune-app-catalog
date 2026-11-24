@@ -154,11 +154,21 @@ function Add-OptionalStringField {
 # tolerate both spellings, since apps created via the portal or other
 # tools can carry either - this just normalizes to the one spelling Graph
 # actually accepts before writing.
+# 2.38.34: only Windows 10 21H2/22H2 and Windows 11 carry the "Windows<major>_" prefix - Windows 10 up to 21H1 are the
+# plain release ("1607" ... "21H1", 20H2 spelled "2H20"); "Windows10_1607" was refused with a 400. The legacy property's
+# names ("v10_1607") are taken too - an app pulled from Intune before had those.
 function ConvertTo-GraphMinOsRelease {
     param([string]$RawValue)
     if (-not $RawValue) { return $RawValue }
-    if ($RawValue -match '^(?i)W(10|11)_(.+)$') { return "Windows$($Matches[1])_$($Matches[2])" }
-    return $RawValue
+    $v = $RawValue.Trim()
+    if ($v -match '^(?i)(?:W|Windows)(10|11)_(.+)$') { $major = $Matches[1]; $rel = $Matches[2].ToUpperInvariant() }
+    elseif ($v -match '^(?i)v10_(.+)$') { $major = '10'; $rel = $Matches[1].ToUpperInvariant() }
+    else { return $v }
+    if ($rel -eq '2H20') { $rel = '20H2' }
+    if ($major -eq '11' -or $rel -in '21H2', '22H2') { return "Windows$($major)_$rel" }
+    if ($rel -eq '0') { return '1607' }
+    if ($rel -eq '20H2') { return '2H20' }
+    return $rel
 }
 
 # Wraps Invoke-MgGraphRequest so any failure throws an exception whose message
@@ -429,8 +439,10 @@ function Invoke-Win32AppContentUpload {
 
     Write-Step "Uploading package content"
     $blockSize = 6 * 1024 * 1024
-    $bytes = [System.IO.File]::ReadAllBytes($PackageInfo.TempEncryptedPath)
-    $totalBlocks = [Math]::Ceiling($bytes.Length / $blockSize)
+    # Read block by block (2.38.34): the whole file in one array stopped at 2 GB; Intune takes packages up to 30 GB.
+    $fileStream = [System.IO.File]::OpenRead($PackageInfo.TempEncryptedPath)
+    $fileLength = $fileStream.Length
+    $totalBlocks = [Math]::Ceiling($fileLength / $blockSize)
     $blockIds = New-Object System.Collections.Generic.List[string]
 
     # Asks Intune for a new upload address (renewUpload) and waits for it - a NEW one: after an earlier renewal the
@@ -450,10 +462,11 @@ function Invoke-Win32AppContentUpload {
     }
 
     for ($b = 0; $b -lt $totalBlocks; $b++) {
-        $offset = $b * $blockSize
-        $len = [Math]::Min($blockSize, $bytes.Length - $offset)
+        $offset = [long]$b * $blockSize
+        $len = [int][Math]::Min([long]$blockSize, $fileLength - [long]$offset)
         $chunk = New-Object byte[] $len
-        [Array]::Copy($bytes, $offset, $chunk, 0, $len)
+        [void]$fileStream.Seek([long]$offset, [System.IO.SeekOrigin]::Begin)
+        $read = 0; while ($read -lt $len) { $n = $fileStream.Read($chunk, $read, $len - $read); if ($n -le 0) { throw "The package file ended early." }; $read += $n }
 
         $blockIdRaw = [string]$b
         $blockIdPadded = $blockIdRaw.PadLeft(20, '0')
@@ -476,6 +489,7 @@ function Invoke-Win32AppContentUpload {
         Write-Host "  ... block $($b + 1) of $totalBlocks uploaded" -ForegroundColor DarkGray
     }
 
+    $fileStream.Dispose()
     $blockListXml = "<?xml version=`"1.0`" encoding=`"utf-8`"?><BlockList>"
     foreach ($id in $blockIds) { $blockListXml += "<Latest>$id</Latest>" }
     $blockListXml += "</BlockList>"
@@ -588,7 +602,9 @@ try {
         default {
             $detectionRule = @{
                 "@odata.type"          = "#microsoft.graph.win32LobAppPowerShellScriptDetection"
-                scriptContent          = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($Config.DetectionRule.Script_Content))
+                # With a BOM when it holds anything outside ASCII (2.38.34): Windows PowerShell reads a .ps1 without one in
+                # the ANSI code page, where some UTF-8 letters end a quoted string. ASCII-only scripts go as before.
+                scriptContent          = [Convert]::ToBase64String($(if ([string]$Config.DetectionRule.Script_Content -match '[^\x00-\x7F]') { [byte[]](0xEF, 0xBB, 0xBF) + [System.Text.Encoding]::UTF8.GetBytes($Config.DetectionRule.Script_Content) } else { [System.Text.Encoding]::UTF8.GetBytes($Config.DetectionRule.Script_Content) }))
                 enforceSignatureCheck  = $false
                 runAs32Bit             = $false
             }
@@ -670,7 +686,8 @@ try {
         # minimumSupportedWindowsRelease"), and the old property's schema
         # has no Windows 11 values at all, so it's the only one that can
         # actually express one.
-        $patchBody.minimumSupportedWindowsRelease = ConvertTo-GraphMinOsRelease -RawValue $Config.MinOSVersionKey
+        # Left out when the catalog has none (2.38.34): $null in a PATCH cleared the minimum OS in Intune.
+        if ([string]$Config.MinOSVersionKey) { $patchBody.minimumSupportedWindowsRelease = ConvertTo-GraphMinOsRelease -RawValue $Config.MinOSVersionKey }
         # applicableArchitectures is the OLD, legacy single-value property -
         # confirmed live against the tenant that Graph rejects it outright
         # inside an Update PATCH ("can only be set via ODataAction:
@@ -706,6 +723,14 @@ try {
         # The catalog's icon, when it has one; none leaves Intune's own alone.
         if ($Config.LargeIcon -and $Config.LargeIcon.value) { $patchBody["largeIcon"] = @{ "@odata.type" = "#microsoft.graph.mimeContent"; type = [string]$Config.LargeIcon.type; value = [string]$Config.LargeIcon.value } }
         $patchBody = $patchBody | ConvertTo-Json -Depth 8
+
+        # The new package first (2.38.34): when its upload failed after the settings were changed, Intune had the new
+        # detection rule and commands against the old package - devices reported failed or not installed.
+        if ($Config.ReplaceContent -and $Config.PackagePath) {
+            Write-Step "Replacing package content on the existing app"
+            $packageInfo = Get-IntuneWinPackageInfo -PackagePath $Config.PackagePath
+            Invoke-Win32AppContentUpload -AppId $Config.ExistingAppId -PackageInfo $packageInfo
+        }
 
         Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.ExistingAppId)" `
             -Method PATCH -Body $patchBody -ContentType "application/json" -StepDescription "Update app metadata" | Out-Null
@@ -746,12 +771,6 @@ try {
             Write-Host "  [WARN] Could not set dependencies: $($_.Exception.Message)" -ForegroundColor Yellow
             Write-Host "  The app was still updated successfully, and its existing dependencies and supersedence were left as they were - set dependencies manually in the Intune portal if needed." -ForegroundColor Yellow
             }
-
-        if ($Config.ReplaceContent -and $Config.PackagePath) {
-            Write-Step "Replacing package content on the existing app"
-            $packageInfo = Get-IntuneWinPackageInfo -PackagePath $Config.PackagePath
-            Invoke-Win32AppContentUpload -AppId $Config.ExistingAppId -PackageInfo $packageInfo
-        }
 
         Write-Step "Done"
         Write-Host "[OK] App metadata updated successfully!" -ForegroundColor Green

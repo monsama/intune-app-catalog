@@ -413,13 +413,32 @@ function Global:Test-WebPathThroughLink {
     return ''
 }
 
+function Global:Remove-WebTreeNoFollow {
+    <#
+      Deletes -Path and what is in it without following links (2.38.34): a junction or symlink inside is removed as the
+      link itself - Windows PowerShell's Remove-Item -Recurse could empty the folder it points to first.
+    #>
+    param([string]$Path)
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if (-not $item) { return }
+    if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+        if ($item.PSIsContainer) { [System.IO.Directory]::Delete($item.FullName, $false) } else { [System.IO.File]::Delete($item.FullName) }
+        return
+    }
+    if ($item.PSIsContainer) {
+        foreach ($c in @(Get-ChildItem -LiteralPath $item.FullName -Force)) { Remove-WebTreeNoFollow $c.FullName }
+        Remove-Item -LiteralPath $item.FullName -Force
+    }
+    else { Remove-Item -LiteralPath $item.FullName -Force }
+}
+
 function Global:Copy-WebUploadInto {
     # The uploaded installer (or the uploaded folder's files) into -Folder; -Replace empties it first. The paths written.
     param($u, [string]$Folder, [switch]$Replace)
     # Links checked before anything is deleted or written (2.38.31: Replace emptied a linked folder's target first).
     $link = Test-WebPathThroughLink $Folder
     if ($link) { throw "The package folder goes through a link ($link) - nothing was changed." }
-    if ($Replace -and (Test-Path -LiteralPath $Folder)) { Get-ChildItem -LiteralPath $Folder -Force | Remove-Item -Recurse -Force }
+    if ($Replace -and (Test-Path -LiteralPath $Folder)) { foreach ($c in @(Get-ChildItem -LiteralPath $Folder -Force)) { Remove-WebTreeNoFollow $c.FullName } }
     if (-not (Test-Path -LiteralPath $Folder)) { [void](New-Item -ItemType Directory -Path $Folder -Force) }
     # A file it replaces goes to Backups first (2.38.23) - like a save in the script editor; links are never written through.
     $keep = {
@@ -629,6 +648,9 @@ function Global:Remove-WebPackageFile {
     $root = [System.IO.Path]::GetFullPath($folder).TrimEnd($sep) + $sep
     $full = [System.IO.Path]::GetFullPath((Join-Path $folder ($rel -replace '\\', $sep)))
     if (-not $full.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $full -PathType Leaf)) { return @{ ok = $false; error = "'$rel' isn't a file of its packages folder." } }
+    # Not through a link (2.38.34): a folder in it that is a junction or symlink leads elsewhere on disk.
+    $link = Test-WebPathThroughLink $full
+    if ($link) { return @{ ok = $false; error = "'$rel' is reached through a link ($link) - not deleted. Remove the link by hand." } }
     Remove-Item -LiteralPath $full -Force
     # Folders left empty go too (up to the packages folder itself).
     $d = Split-Path -Parent $full
@@ -736,10 +758,10 @@ function Global:Save-WebPsadtTemplate {
         $zip = Join-Path $tmp 'template.zip'
         Invoke-WebHttpsGet -Uri ([string]$asset.browser_download_url) -MaxBytes 60MB -OutFile $zip -TimeoutSec 120
         # GitHub publishes each release file's SHA-256: what arrived must be exactly that file (a proxy or mirror can't swap it).
-        if ([string]$asset.digest -match '^sha256:([0-9a-fA-F]{64})$') {
-            $want = $Matches[1]
-            if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $want) { return "The downloaded PSADT template doesn't match the SHA-256 GitHub publishes for it - not used." }
-        }
+        # Required (2.38.34): without GitHub's digest nothing but TLS said the file was the release's.
+        if ([string]$asset.digest -notmatch '^sha256:([0-9a-fA-F]{64})$') { return "GitHub gave no SHA-256 for the PSADT template - not used. Download it by hand from GitHub (PSAppDeployToolkit) into $Folder." }
+        $want = $Matches[1]
+        if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $want) { return "The downloaded PSADT template doesn't match the SHA-256 GitHub publishes for it - not used." }
         $out = Join-Path $tmp 'x'
         Expand-Archive -LiteralPath $zip -DestinationPath $out -Force
         $main = Get-ChildItem -LiteralPath $out -Filter 'Invoke-AppDeployToolkit.ps1' -File -Recurse | Select-Object -First 1
@@ -754,7 +776,9 @@ function Global:Save-WebPsadtTemplate {
         # Not only the module: every program and module file runs on the devices too. The .exe, .psm1 and .psd1 files must carry
         # the same signer as the module (a swapped launcher next to the real module isn't accepted), .dll files a valid signature.
         $thumb = [string]$sig.SignerCertificate.Thumbprint
-        foreach ($f in @(Get-ChildItem -LiteralPath $main.DirectoryName -File -Recurse | Where-Object { $_.Extension -in '.exe', '.psm1', '.psd1', '.dll' })) {
+        # The module's own scripts too (2.38.34) - all but the template's Invoke-AppDeployToolkit.ps1, which this app fills in.
+        $moduleDir = $module.DirectoryName
+        foreach ($f in @(Get-ChildItem -LiteralPath $main.DirectoryName -File -Recurse | Where-Object { $_.Extension -in '.exe', '.psm1', '.psd1', '.dll' -or ($_.Extension -eq '.ps1' -and $_.FullName.StartsWith($moduleDir, [StringComparison]::OrdinalIgnoreCase)) })) {
             $fs = Get-AuthenticodeSignature -LiteralPath $f.FullName
             $sameSigner = $fs.SignerCertificate -and [string]$fs.SignerCertificate.Thumbprint -eq $thumb
             if ($fs.Status -ne 'Valid' -or ($f.Extension -ne '.dll' -and -not $sameSigner)) { return "$($f.Name) in the PSADT release $($rel.tag_name) isn't signed by the toolkit's signer ($($fs.Status)) - the template isn't used. Download it by hand from GitHub (PSAppDeployToolkit) if you trust it." }

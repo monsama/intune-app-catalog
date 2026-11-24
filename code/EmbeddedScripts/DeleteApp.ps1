@@ -155,7 +155,11 @@ try {
         # dependency this app has, so the full current list is read first
         # and only the one entry pointing at the blocking app is left out
         # of what gets resubmitted.
+        # Every page (2.38.34): a list Graph splits would otherwise be read in part - and sending it back replaces the whole list.
         $existingRels = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.AppId)/relationships" -Method GET -StepDescription "Read existing dependencies"
+        $pagedAll = @($existingRels.value); $pagedNext = [string]$existingRels.'@odata.nextLink'
+        while ($pagedNext) { $pagedPage = Invoke-GraphRequestDetailed -Uri $pagedNext -Method GET -StepDescription "Read existing dependencies (next page)"; $pagedAll += @($pagedPage.value); $pagedNext = [string]$pagedPage.'@odata.nextLink' }
+        $existingRels = [pscustomobject]@{ value = $pagedAll }
         $matchingRel = $existingRels.value | Where-Object { $_.targetId -eq $Config.RemoveDependencyFromAppId } | Select-Object -First 1
         if ($matchingRel) {
             # Only this app's own ("child") relationships go back, each as
@@ -187,7 +191,11 @@ try {
             $removalConfirmed = $false
             for ($attempt = 1; $attempt -le 10; $attempt++) {
                 Start-Sleep -Seconds 2
+                # Every page (2.38.34): a list Graph splits would otherwise be read in part - and sending it back replaces the whole list.
                 $recheckRels = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.AppId)/relationships" -Method GET -StepDescription "Re-check dependencies"
+                $pagedAll = @($recheckRels.value); $pagedNext = [string]$recheckRels.'@odata.nextLink'
+                while ($pagedNext) { $pagedPage = Invoke-GraphRequestDetailed -Uri $pagedNext -Method GET -StepDescription "Re-check dependencies (next page)"; $pagedAll += @($pagedPage.value); $pagedNext = [string]$pagedPage.'@odata.nextLink' }
+                $recheckRels = [pscustomobject]@{ value = $pagedAll }
                 $stillThere = $recheckRels.value | Where-Object { $_.targetId -eq $Config.RemoveDependencyFromAppId }
                 if (-not $stillThere) { $removalConfirmed = $true; break }
                 Write-Host "  ... still showing as a dependency (attempt $attempt/10)" -ForegroundColor Gray

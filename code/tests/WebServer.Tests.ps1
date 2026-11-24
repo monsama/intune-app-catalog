@@ -345,6 +345,9 @@ try {
     $cws = Invoke-Api '/api/checks-winget' @{ names = @('ZZ Store Check') }
     Check ($cws.ok -and -not @($cws.findings).Count) 'checks: a Store app is not checked against winget' ($cws | ConvertTo-Json -Compress -Depth 5)
     [void](Invoke-Api '/api/app-remove' @{ name = 'ZZ Store Check' })
+    $ab = Invoke-Api '/api/about' @{}
+    Check ($ab.ok -and $ab.version -match '^\d+\.\d+\.\d+' -and $ab.powershell -and @($ab.folders).Count -ge 3) 'about: version, PowerShell and the folders' ($ab | ConvertTo-Json -Compress -Depth 4)
+    Check (-not (Invoke-Api '/api/open' @{ target = 'changelog-x' }).ok) 'about: only the fixed project pages open'
     Check (-not (Invoke-Api '/api/winget-search' @{ q = 'a' }).ok) 'winget search: a one-letter search is refused'
     Check (-not (Invoke-Api '/api/checks-fix' @{ action = 'SetWingetId'; catalogName = $rn; value = 'bad id"; calc' }).ok) 'checks fix: a Winget ID winget would not accept is refused'
     $before = (Invoke-Api '/api/app-get' @{ name = $rn }).app

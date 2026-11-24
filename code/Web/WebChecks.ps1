@@ -214,16 +214,11 @@ function Global:Complete-WebCheckDetails {
         }
         # Its own earlier releases (2.38.33): a promotion leaves the new app superseding the old one in Intune, and apps that
         # depend on it still pointing at "<name> <version> (superseded)". Neither is a difference the catalog has to know.
+        # 2.38.34: on the catalog's side too - an earlier Pull may have stored the old release's ID or name there.
         if ($one.Metadata) {
-            $ownIds = @{}; foreach ($r in @($app.releases)) { if ($r -and $r.appId) { $ownIds[([string]$r.appId).ToLowerInvariant()] = $true } }
-            if ($null -ne $one.Metadata.supersedes -and $ownIds.Count) { $one.Metadata.supersedes = @(@($one.Metadata.supersedes) | Where-Object { $_ -and -not $ownIds.ContainsKey(([string]$_.appId).ToLowerInvariant()) }) }
-            if (@($one.Metadata.dependencies).Count) {
-                $names = @{}; foreach ($c in $catalog) { $names[([string]$c.appName).ToLowerInvariant()] = [string]$c.appName }
-                $one.Metadata.dependencies = @(@($one.Metadata.dependencies) | ForEach-Object {
-                        $d = [string]$_
-                        if ($d -match '^(.+?) \S+ \((superseded|pilot)\)$' -and $names.ContainsKey($Matches[1].ToLowerInvariant())) { $names[$Matches[1].ToLowerInvariant()] } else { $d }
-                    } | Select-Object -Unique)
-            }
+            $catNames = @($catalog | ForEach-Object { [string]$_.appName })
+            $one.Metadata = Get-MetadataWithoutOwnReleases -Metadata $one.Metadata -App $app -CatalogNames $catNames
+            if ($app.metadata) { $app = $app.PSObject.Copy(); $app.metadata = Get-MetadataWithoutOwnReleases -Metadata $app.metadata -App $app -CatalogNames $catNames }
         }
         # A Microsoft Store app has no install commands or detection in Intune to compare - its settings aren't checked.
         $isStore = (Test-StoreProductId ([string]$app.wingetId)) -or [bool]$app.office
@@ -263,7 +258,7 @@ function Global:Complete-WebCheckAssign {
         if (-not $app) { continue }
         $chg = Get-AssignmentChangeFindings -CatalogApp $app -ToAdd @($one.ToAdd) -ToRemove @($one.ToRemove)
         foreach ($f in @($chg.Findings)) { $new.Add($f) }
-        Set-LastAuditCacheEntry -AppName ([string]$one.AppName) -Unknown (Get-UnknownAssignmentText @($chg.Unknown))
+        Set-LastAuditCacheEntry -AppName ([string]$one.AppName) -Unknown ([string]$chg.Text)
     }
     Save-LastAuditCache
     return @{ ok = $true; areas = @('Unknown assignments', 'Assignment filter'); names = @($After.Names); findings = @($new | ForEach-Object { ConvertTo-WebFindingRow $_ }) }

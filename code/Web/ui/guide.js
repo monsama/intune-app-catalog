@@ -215,7 +215,8 @@ function releaseTimeline(current, fast, rings) {
 // ---------------------------------------------------------------- "Ready to deploy?" in the editor
 function updateReady() {
   if (!$('dlgApp').open && !$('readyList')) return;
-  const wid = $('aWinget').value.trim(), own = !wid, row = apps.find(a => a.name === editingName);
+  // Installs from winget or the Store but no ID yet (2.38.34): it asks for the ID, not for an installer and commands.
+  const wid = $('aWinget').value.trim(), needsId = !wid && ['winget', 'store'].includes(editorSrc), own = !wid && !needsId, row = apps.find(a => a.name === editingName);
   const groups = ['gRequired', 'gAvailable'].some(id => $(id).value.trim());
   const det = $('xType').value;
   const store = !own && isStoreId(wid), office = own && editorSrc === 'office', ms = own && !office && row && row.msHint;
@@ -239,6 +240,10 @@ function updateReady() {
     [!!$('aName').value.trim(), 'A name', 'aName'],
     [true, `Microsoft Store app (${wid}) - the Store installs and updates it; no commands or detection`, null],
     [groups, groups ? 'Groups that get it' : 'Groups that get it - none yet, so nobody gets it', 'gRequired'],
+  ] : needsId ? [
+    [!!$('aName').value.trim(), 'A name', 'aName'],
+    [false, editorSrc === 'store' ? 'Its Store product ID' : 'Its Winget ID', 'aWinget'],
+    [groups, groups ? 'Groups that get it' : 'Groups that get it - none yet, so nobody gets it', 'gRequired'],
   ] : [
     [!!$('aName').value.trim(), 'A name', 'aName'],
     own ? (() => {
@@ -248,7 +253,7 @@ function updateReady() {
       const named = ($('mInstallCommand').value.match(/([^\s"'\\/]+\.(?:msi|exe))\b/i) || [])[1], have = editorInstaller && editorInstaller.file && String(editorInstaller.file).split(/[\\/]/).pop();
       if (named && have && named.toLowerCase() !== String(have).toLowerCase() && !/^(msiexec|cmd|powershell)\.exe$/i.test(named))
         return [false, `The command installs ${named}, the packages folder has ${have} - put ${named} there, then Build package`, 'mInstallCommand'];
-      return [!!(row && !row.packageMissing), row && !row.packageMissing ? 'Its installer is packaged' : 'Its installer packaged (upload it, then Build package)', null];
+      return [!!(row && !row.packageMissing), row && !row.packageMissing ? 'Its installer is packaged' : 'Its installer, packaged (upload it, then Build package)', null];
     })()
       : [true, `Installs from winget (${wid})`, 'aWinget'],
     own ? [!!$('mInstallCommand').value.trim(), 'An install command', 'mInstallCommand'] : [true, 'Install command - made for winget', null],
@@ -264,7 +269,7 @@ function updateReady() {
   $('readyList').replaceChildren(...items.map(([ok, text, field, act]) => el('li', { class: ok ? 'ok' : 'todo' },
     el('span', { class: 'mark', 'aria-hidden': 'true', text: ok ? '✓' : '!' }),
     act && !ok ? el('span', {}, text, ' ', el('button', { type: 'button', class: 'btn small', text: act.label, onclick: () => { act.run(); updateReady(); } }))
-    : field && !ok ? el('button', { type: 'button', class: 'linkish', text, title: 'Go to the field', onclick: () => { const f = $(field); edPageFor(f); const d = f.closest('details'); if (d) d.open = true; ((f.hidden && $(field + 'Chips')) || f).focus(); } }) : el('span', { text: (ok ? '' : 'Missing: ') + text }))));
+    : field && !ok ? el('button', { type: 'button', class: 'linkish', text, title: 'Go to the field', onclick: () => { const f = $(field); edPageFor(f); const d = f.closest('details'); if (d) d.open = true; ((f.hidden && $(field + 'Chips')) || f).focus(); } }) : el('span', { text }))));
 }
 $('appForm').addEventListener('input', () => updateReady());
 $('appForm').addEventListener('change', () => updateReady());
@@ -355,7 +360,7 @@ function renderWhere() {
     intuneApps ? chip(deployed, 'of them in Intune', '', f === 'deployed', 'Catalog apps that are in this tenant', () => { $('filter').value = 'deployed'; showIntuneOnly = false; renderApps(); updateViewButtons(); }) : '',
     chip(notDeployed, 'not in Intune yet', notDeployed ? 'info' : '', f === 'notdeployed', 'Not in Intune yet - select them and Send to Intune', () => { $('filter').value = 'notdeployed'; showIntuneOnly = false; renderApps(); updateViewButtons(); }),
     intuneApps ? chip(io.win.length, 'only in Intune', io.win.length ? 'warn' : '', showIntuneOnly, 'Windows apps in Intune that the catalog doesn\'t manage (made in the portal) - add them to the catalog, or delete them in Intune', () => { showIntuneOnly = !showIntuneOnly; if (showIntuneOnly) { selected.clear(); updatePanel(); } renderApps(); updateViewButtons(); }) : '',
-    el('span', { class: 'wnote' + (intuneApps ? ' live' : ''), text: intuneApps ? `Intune read at ${intuneAt}${io.other ? ` - ${io.other} app(s) for other platforms not counted` : ''}.` : (state && state.configured ? 'Reading Intune...' : 'Not connected - Intune isn\'t compared.') }));
+    el('span', { class: 'wnote' + (intuneApps ? ' live' : ''), text: intuneApps ? `Intune read at ${intuneAt}${io.other ? ` - ${nWord(io.other, 'app')} for other platforms not counted` : ''}.` : (state && state.configured ? 'Reading Intune...' : 'Not connected - Intune isn\'t compared.') }));
   bar.hidden = false;
 }
 
@@ -517,12 +522,12 @@ function multiPanel(sel) {
 async function sendSettingsNow(names) {
   runDialog('Send settings to Intune', names.join(', '));
   const done = await runEach(names, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'runLog', startText: 'Sending settings for ' });
-  toast(`Settings sent for ${done.length} of ${names.length} app(s).`, done.length < names.length); loadApps();
+  toast(`Settings sent for ${done.length} of ${nWord(names.length, 'app')}.`, done.length < names.length); loadApps();
 }
 async function sendGroupsNow(names) {
   runDialog('Send groups to Intune', names.join(', '));
   const done = await runEach(names, name => ({ names: [name], mode: 'AfterDeploy' }), { path: '/api/push-start', log: 'runLog', startText: 'Sending groups for ' });
-  toast(`Groups sent for ${done.length} of ${names.length} app(s).`, done.length < names.length); loadApps();
+  toast(`Groups sent for ${done.length} of ${nWord(names.length, 'app')}.`, done.length < names.length); loadApps();
 }
 
 // Retire the MSI line-of-business app a Win32 app replaced (2.33.0): asked first, checked again on the server.

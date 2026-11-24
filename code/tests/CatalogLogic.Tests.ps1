@@ -121,6 +121,8 @@ $testableFunctionNames = @(
     "Get-UnknownAssignmentText",
     "Get-UnknownAssignmentFindings",
     "Get-AssignmentChangeFindings",
+    "Get-MetadataWithoutOwnReleases",
+    "Get-DeviceVersionCompareScript",
     "Get-DependencyFindings",
     "Get-EntraGroupFindings",
     "Get-WingetFindings",
@@ -607,7 +609,7 @@ Assert-Equal "x64" $wingetDefaults.architecture "Get-DefaultAppMetadata: default
 Assert-Equal "System" $wingetDefaults.installContext "Get-DefaultAppMetadata: default install context is System"
 Assert-Equal "W10_22H2" $wingetDefaults.minOSKey "Get-DefaultAppMetadata: default Min OS is the newest Windows 10 release (not Windows 11)"
 Assert-Equal "basedOnReturnCode" $wingetDefaults.deviceRestartBehavior "Get-DefaultAppMetadata: default restart behavior is basedOnReturnCode"
-Assert-True (@($wingetDefaults.returnCodes).Count -eq 6 -and @($wingetDefaults.returnCodes | Where-Object { [string]$_.returnCode -eq "9009" -and $_.type -eq "retry" }).Count -eq 1) "Get-DefaultAppMetadata: the standard 5 return codes, plus 9009 (retry) for the winget command"
+Assert-True (@($wingetDefaults.returnCodes).Count -eq 10 -and @($wingetDefaults.returnCodes | Where-Object { [string]$_.returnCode -eq "9009" -and $_.type -eq "retry" }).Count -eq 1) "Get-DefaultAppMetadata: the standard 5 return codes, plus 9009 (retry) and winget's own four for the winget command"
 Assert-Equal "" $wingetDefaults.publisher "Get-DefaultAppMetadata: default publisher is blank (no hardcoded org name)"
 
 $uncommonDefaults = Get-DefaultAppMetadata -AppName "Test Uncommon App" -WingetId "" -Uncommon $true
@@ -1003,7 +1005,18 @@ Assert-True ((Get-DownloadCheckVerdict -InWinget $true -StatusCode 0 -Version '1
 Assert-True ((Get-DownloadCheckVerdict -InWinget $true -StatusCode 200 -Version '1').status -eq 'ok' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 206 -Version '1').status -eq 'ok' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 404 -Version '1').status -eq 'gone' -and
     (Get-DownloadCheckVerdict -InWinget $false -StatusCode 0 -Version '1').status -eq 'notinwinget' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 403 -Version '1').status -eq 'unknown' -and (Get-DownloadCheckVerdict -InWinget $true -StatusCode 0 -Version '1').status -eq 'unknown') "Get-DownloadCheckVerdict: there, gone (404/410), not in winget, or not known (403, no answer)"
 $rcs = @(Add-WingetRetryReturnCode @(@{ returnCode = 0; type = 'success' }, @{ returnCode = 9009; type = 'retry' }))
-Assert-True ($rcs.Count -eq 2 -and @(Add-WingetRetryReturnCode @(@{ returnCode = 0; type = 'success' })).Count -eq 2 -and @(Add-WingetRetryReturnCode @()).Count -eq 6) "Add-WingetRetryReturnCode: 9009 added once; an empty list keeps Intune's five defaults"
+Assert-True ($rcs.Count -eq 6 -and @(Add-WingetRetryReturnCode @(@{ returnCode = 0; type = 'success' })).Count -eq 6 -and @(Add-WingetRetryReturnCode @()).Count -eq 10) "Add-WingetRetryReturnCode: 9009 and winget's codes added once; an empty list keeps Intune's five defaults"
+Assert-True (@($rcs | Where-Object { $_.returnCode -eq -1978334974 -and $_.type -eq 'retry' }).Count -eq 1 -and @($rcs | Where-Object { $_.returnCode -eq -1978335135 -and $_.type -eq 'success' }).Count -eq 1) "Add-WingetRetryReturnCode: winget's 'another install in progress' is Retry, 'already installed' Success (2.38.34)"
+$devDet = New-InstalledAppDetectionScript -DisplayName 'Müller Ñandú' -Version '24'
+$devErr = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($devDet, [ref]$null, [ref]$devErr)
+Assert-True (@($devErr).Count -eq 0 -and $devDet -notmatch '\[version\]' -and $devDet -match 'HKCU:') "New-InstalledAppDetectionScript: parses, compares part by part (no [version]) and looks at the user's entries too (2.38.34)"
+Assert-True ((Get-InstalledNamePattern 'Müller Ñandú') -match '^[\x00-\x7F]+$' -and 'Müller Ñandú 2.1' -match (Get-InstalledNamePattern 'Müller Ñandú')) "Get-InstalledNamePattern: letters outside ASCII written as \\u - the script stays ASCII and still matches (2.38.34)"
+Invoke-Expression (Get-DeviceVersionCompareScript)
+Assert-True ((Compare-Version '9.0.0' 'ad 8.1.0') -eq -1 -and (Compare-Version '1.0' '1.0-beta') -eq -1 -and (Compare-Version '24' '25') -eq 1 -and (Compare-Version '2.0' 'v2.0') -eq 0) "Get-DeviceVersionCompareScript: a word before the version is ignored, a pre-release is older, one-part versions compare (2.38.34)"
+$unin = New-InstalledAppUninstallScript -DisplayName 'X' -ExeKind 'nsis'
+Assert-True ($unin -like "*(.+?\.exe)*") "New-InstalledAppUninstallScript: an unquoted uninstall path with spaces is read up to .exe (2.38.34)"
+$puDet = ConvertTo-DetectionFromInstalled ([pscustomobject]@{ Key = 'Code'; DisplayVersion = '1.9'; Hive = 'HKCU'; MainExe = [pscustomobject]@{ Path = 'C:\Users\alice\AppData\Local\Programs\Code\Code.exe'; Version = '1.9.0' } })
+Assert-True ($puDet.Rule.File_Path -eq '%LOCALAPPDATA%\Programs\Code' -and $puDet.PerUser) "ConvertTo-DetectionFromInstalled: a per-user path is the user's folder by its variable, and said to be per user (2.38.34)"
 Assert-True ((Get-InstallErrorInfo 9009).meaning -like "*winget wasn't on the device*" -and (Get-InstallErrorInfo '0x80072329').fix -like '*Retry*') "Get-InstallErrorInfo: 9009 - winget not on the device yet, Intune retries"
 
 # A new version for a script or PSADT app: the version marker in its script follows
@@ -2685,12 +2698,28 @@ Assert-Equal 0 @($relPoss | Where-Object { $_.Problem -like 'Possibly*' }).Count
 $chgApp = [pscustomobject]@{ appName = 'Chg'; appId = 'id-chg' }
 $chg = Get-AssignmentChangeFindings -CatalogApp $chgApp -ToAdd @('[required] SG-A (filter: Laptops)', '[required] EXCLUDE SG-X') -ToRemove @('[required] SG-A', '[available] SG-Other')
 $chgBy = @{}; foreach ($f in @($chg.Findings)) { $chgBy[[string]$f.Problem] = $f }
-Assert-True ($chgBy.ContainsKey('Assignment filter differs')) "Get-AssignmentChangeFindings: a filter on one side only is a filter difference"
-Assert-Equal '[required] SG-A' ([string]$chgBy['Assignment filter differs'].Intune) "Get-AssignmentChangeFindings: ...showing Intune's side"
-Assert-True ($chgBy.ContainsKey('Exclusion missing in Intune')) "Get-AssignmentChangeFindings: a missing exclusion is reported"
+$chgF = $chgBy['Assignment filter differs; Exclusion missing in Intune']
+Assert-True ($null -ne $chgF) "Get-AssignmentChangeFindings: a filter on one side only and a missing exclusion are one row for the app" (($chgBy.Keys) -join ' / ')
+Assert-True ([string]$chgF.Intune -like '`[required`] SG-A*') "Get-AssignmentChangeFindings: ...showing Intune's side"
+Assert-True ([string]$chg.Text -like 'Assignment filter differs; Exclusion missing in Intune; 1 unknown*') "Get-AssignmentChangeFindings: ...and the last-audit text says all of it" ([string]$chg.Text)
+$chgP = Get-AssignmentChangeFindings -CatalogApp $chgApp -ToAdd @('[required] SG (filter: Corp (laptops))') -ToRemove @('[required] SG')
+Assert-Equal 0 @($chgP.Unknown).Count "Get-AssignmentChangeFindings: a filter name with brackets still pairs"
+Assert-Equal 'OK' ([string](Get-AssignmentChangeFindings -CatalogApp $chgApp -ToAdd @() -ToRemove @()).Text) "Get-AssignmentChangeFindings: nothing different is OK"
 Assert-Equal 1 @($chg.Unknown).Count "Get-AssignmentChangeFindings: ...and only the unpaired one is unknown"
 Assert-Equal '[available] SG-Other' ([string]@($chg.Unknown)[0]) "Get-AssignmentChangeFindings: ...the other group"
 Assert-Equal 0 @((Get-AssignmentChangeFindings -CatalogApp $chgApp -ToAdd @('[required] SG-New') -ToRemove @()).Findings).Count "Get-AssignmentChangeFindings: a missing inclusion is left to the Groups check"
+
+# 2.38.34: what a promotion leaves in Intune isn't a difference, nor stored by Pull
+$ownApp = [pscustomobject]@{ appName = 'Own'; appId = 'id-new'; releases = @([pscustomobject]@{ appId = 'ID-OLD'; state = 'previous' }) }
+$ownMeta = [pscustomobject]@{ description = 'd'; supersedes = @([pscustomobject]@{ appId = 'id-old'; name = 'Own 1.0'; type = 'update' }, [pscustomobject]@{ appId = 'id-x'; name = 'Other'; type = 'replace' }); dependencies = @('Runtime 2.0 (superseded)', 'Unknown 1.0 (superseded)') }
+$ownOut = Get-MetadataWithoutOwnReleases -Metadata $ownMeta -App $ownApp -CatalogNames @('Runtime', 'Own')
+Assert-Equal 'id-x' ((@($ownOut.supersedes) | ForEach-Object { $_.appId }) -join ',') "Get-MetadataWithoutOwnReleases: the update path to its own earlier release goes (any case), another stays"
+Assert-Equal 'Runtime,Unknown 1.0 (superseded)' (@($ownOut.dependencies) -join ',') "Get-MetadataWithoutOwnReleases: a dependency on a catalog app's old release is named as the app"
+Assert-Equal 2 @($ownMeta.supersedes).Count "Get-MetadataWithoutOwnReleases: ...on a copy"
+$noRel = Get-MetadataWithoutOwnReleases -Metadata ([pscustomobject]@{ description = 'i'; dependencies = @(); supersedes = $null }) -App $ownApp -LocalMetadata ([pscustomobject]@{ dependencies = @('VC'); supersedes = @([pscustomobject]@{ appId = 'a' }) }) -NoRelations
+Assert-Equal 'VC' (@($noRel.dependencies) -join ',') "Get-MetadataWithoutOwnReleases: Intune's relationships unread - the catalog's dependencies are kept"
+Assert-Equal 1 @($noRel.supersedes).Count "Get-MetadataWithoutOwnReleases: ...and its supersedence"
+Assert-Equal 'i' ([string]$noRel.description) "Get-MetadataWithoutOwnReleases: ...the rest is Intune's"
 
 # Per-app detail from a SyncMetadata result
 $chkResultSame = [pscustomobject]@{ Success = $true; OdataType = '#microsoft.graph.win32LobApp'; GroupFetchOk = $true

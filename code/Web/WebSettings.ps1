@@ -296,7 +296,7 @@ function Global:Invoke-WebPackagingSetup {
 
 function Global:Get-WebMinOsChoices {
     # The minimum OS values the deploy form offers, with readable labels.
-    @('W10_1607', 'W10_1703', 'W10_1709', 'W10_1803', 'W10_1809', 'W10_1903', 'W10_1909', 'W10_2004', 'W10_20H2', 'W10_21H1', 'W10_21H2', 'W10_22H2', 'W11_21H2', 'W11_22H2') |
+    @('W10_1607', 'W10_1703', 'W10_1709', 'W10_1803', 'W10_1809', 'W10_1903', 'W10_1909', 'W10_2004', 'W10_20H2', 'W10_21H1', 'W10_21H2', 'W10_22H2', 'W11_21H2', 'W11_22H2', 'W11_23H2', 'W11_24H2') |
         ForEach-Object { [ordered]@{ value = $_; label = (Get-FriendlyMinOsRelease -RawValue $_) } }
 }
 

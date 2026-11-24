@@ -186,7 +186,7 @@
         <thead><tr><th>App</th><th title="The version everyone gets">Current</th><th title="Devices with the current release installed, of those it is assigned to">Devices on it</th><th title="The new version being released: its ring (or fast track), and what the release rule says">In release</th><th title="A newer version: winget's, or the installer in an own package's folder">Available</th><th title="Devices Intune's inventory finds with an older version of the app - installed by Intune or by hand">On older versions</th><th title="Earlier releases kept in Intune for rollback">Superseded</th><th><span class="sr">Actions</span></th></tr></thead>
         <tbody id="updBody"></tbody>
       </table>
-      <div class="empty" id="updEmpty" hidden><h2>No app has managed updates yet</h2><p id="updEmptyText">Select apps on the Apps tab and use More &gt; Managed updates on - Settings &gt; Updates has the pilot groups and the release rule.</p></div>
+      <div class="empty" id="updEmpty" hidden><h2>No app has managed updates yet</h2><p id="updEmptyText">Select apps on the Apps page and choose More &gt; Managed updates on. The pilot groups and the release rule are in Settings &gt; Updates.</p><button class="btn primary" id="btnUpdOpenApps" title="Go to the Apps page">Open Apps</button></div>
     </div>
   </section>
 
@@ -217,8 +217,9 @@
         <tbody id="checkBody"></tbody>
       </table>
       <div class="empty" id="checkEmpty">
-        <svg class="emptyicon" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>
+        <svg class="emptyicon" viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path class="tick" d="M8.5 12l2.5 2.5 4.5-5"/><path class="bang" d="M12 8v4.5M12 16h.01"/></svg>
         <h2 id="checkEmptyTitle">Not run yet</h2><p id="checkEmptyText">Run checks to see what needs attention.</p>
+        <button class="btn primary" id="btnCheckConnect" hidden title="Fill in the connection to Intune - then Checks compares the catalog with it">Set up the connection</button>
         <ul class="emptylist" id="checkEmptyList">
           <li>Apps in the catalog and in Intune - missing on either side, App IDs that point nowhere</li>
           <li>Settings, groups and dependencies - where the catalog and Intune differ</li>
@@ -344,6 +345,7 @@
       <button class="subtab" role="tab" id="stab-automation" data-sec="automation" aria-controls="sec-automation" aria-selected="false">Nightly run &amp; alerts</button>
       <button class="subtab" role="tab" id="stab-packaging" data-sec="packaging" aria-controls="sec-packaging" aria-selected="false" data-server-text="Packaging">Packaging &amp; folders</button>
       <button class="subtab" role="tab" id="stab-diagnostics" data-sec="diagnostics" aria-controls="sec-diagnostics" aria-selected="false">Diagnostics</button>
+      <button class="subtab" role="tab" id="stab-about" data-sec="about" aria-controls="sec-about" aria-selected="false">About</button>
     </nav>
     <div class="setsec" id="sec-connection" data-sec="connection" role="tabpanel" aria-labelledby="stab-connection" hidden>
     <div class="cols">
@@ -652,6 +654,47 @@
         <article class="card">
           <h2>Activity</h2>
           <pre class="log" id="jobLog" tabindex="0" role="log" aria-live="polite">Everything the app does appears here: Test connection, saving, and the certificate and permission actions.</pre>
+        </article>
+      </div>
+    </div>
+    </div>
+    <!-- About (2.38.34): the version, where it runs, updates and the project's pages. -->
+    <div class="setsec" id="sec-about" data-sec="about" role="tabpanel" aria-labelledby="stab-about" hidden>
+    <div class="cols">
+      <div class="col">
+        <article class="card">
+          <h2>Intune App Catalog</h2>
+          <p class="sub">A catalog of Windows apps, kept in step with Microsoft Intune.</p>
+          <dl class="about" id="aboutFacts"></dl>
+          <div class="actions">
+            <button class="btn" id="btnAboutCopy" title="Copy the version and environment - for a bug report or a support question">Copy details</button>
+          </div>
+        </article>
+        <article class="card" id="aboutFoldersCard" hidden>
+          <h2>Folders</h2>
+          <p class="sub">Where this app keeps its files - Settings &gt; Packaging &amp; folders changes them.</p>
+          <dl class="about" id="aboutFolders"></dl>
+        </article>
+      </div>
+      <div class="col">
+        <article class="card">
+          <h2>Updates</h2>
+          <p class="sub" id="aboutUpdText">Ask GitHub whether a newer version is out.</p>
+          <div class="actions">
+            <button class="btn" id="btnAboutCheck" title="Ask GitHub now for the latest release">Check for updates</button>
+            <button class="btn" id="btnAboutRelease" hidden title="Open the latest release on GitHub">Get it</button>
+          </div>
+        </article>
+        <article class="card">
+          <h2>Project</h2>
+          <p class="sub">Open source under the GNU General Public License, version 2 or later.</p>
+          <div class="actions wrap">
+            <button class="btn" data-about="repo" title="The project on GitHub">GitHub</button>
+            <button class="btn" data-about="changelog" title="What changed in each version">Changelog</button>
+            <button class="btn" data-about="issues" title="Report a bug or ask for a feature">Report a problem</button>
+            <button class="btn" data-about="security" title="How to report a security problem privately">Security policy</button>
+            <button class="btn" data-about="license" title="The license text">License</button>
+          </div>
         </article>
       </div>
     </div>

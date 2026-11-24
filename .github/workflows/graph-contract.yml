@@ -20,6 +20,9 @@ on:
       - 'code/tests/GraphContract.Tests.ps1'
       - '.github/workflows/graph-contract.yml'
 
+permissions:
+  contents: read
+
 jobs:
   contract:
     name: Graph contract

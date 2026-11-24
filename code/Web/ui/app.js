@@ -29,6 +29,6 @@
     $('chkDetails').checked = true;
     const shownN = shownFindings().length;
     if (shownN) $('tabChecks').dataset.count = shownN;
-    if (shownN) activity(`${stamp()} Checks at start: ${shownN} finding(s) - see Checks.`);
+    if (shownN) activity(`${stamp()} Checks at start: ${nWord(shownN, 'finding')} - see Checks.`);
   }
 })();

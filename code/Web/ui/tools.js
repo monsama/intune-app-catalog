@@ -29,7 +29,7 @@ $('btnReplaceGo').addEventListener('click', async () => {
   const r = await api('/api/replace-group', { old: oldName, new: newName, names: replaceNames });
   if (!r.ok) { $('rpErr').textContent = r.error; $('rpErr').hidden = false; return; }
   $('dlgReplace').close();
-  toast(`Replaced ${oldName} with ${newName} on ${r.changed.length} app(s) in the catalog.`);
+  toast(`Replaced ${oldName} with ${newName} on ${nWord(r.changed.length, 'app')} in the catalog.`);
   await loadApps();
   if (groupsLoaded) { await loadGroups(); if (group && group.name.toLowerCase() === oldName.toLowerCase()) openGroup(newName); }
   if (r.deployed.length && await ask(`Send groups for the ${r.deployed.length} deployed app(s) now?\n\n${r.deployed.join('\n')}`, { ok: 'Send groups', danger: false })) openPushGroups(r.deployed);
@@ -44,7 +44,7 @@ async function exportCsv() {
   const a = el('a', { href: url, download: `intune-app-catalog-${new Date().toISOString().slice(0, 10)}.csv` });
   document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
-  toast(`Exported ${r.count} app(s) to your Downloads folder. Edit in Excel, save as CSV, then Catalog > Import from CSV.`);
+  toast(`Exported ${nWord(r.count, 'app')} to your Downloads folder. Edit in Excel, save as CSV, then Catalog > Import from CSV.`);
 }
 let csvText = '', csvChanges = [];
 function openCsvImport() {
@@ -89,7 +89,7 @@ $('btnCsvGo').addEventListener('click', async () => {
   const r = await api('/api/csv-import', { text: csvText });
   // A failed apply can be tried again (2.38.12 - Apply stayed off until the file was chosen again).
   if (!r.ok) { $('csvErr').textContent = r.error; $('csvErr').hidden = false; $('btnCsvGo').disabled = false; return; }
-  toast(`Imported ${r.changes.length} change(s) on ${r.apps.length} app(s). Undo takes it back.`);
+  toast(`Imported ${nWord(r.changes.length, 'change')} on ${nWord(r.apps.length, 'app')}. Undo takes it back.`);
   $('btnCsvClose').textContent = 'Close';
   await loadApps();
   if (groupsLoaded) loadGroups();
@@ -99,7 +99,7 @@ $('btnCsvGo').addEventListener('click', async () => {
   if ($('csvPush').checked && meta.length) {
     $('csvLog').hidden = false;
     const done = await runEach(meta, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'csvLog', startText: 'Pushing ' });
-    toast(`Settings pushed for ${done.length} of ${meta.length} app(s).`, done.length < meta.length);
+    toast(`Settings pushed for ${done.length} of ${nWord(meta.length, 'app')}.`, done.length < meta.length);
   }
   $('btnCsvGo').textContent = 'Done'; $('btnCsvGo').disabled = false; $('btnCsvClose').hidden = true;
   if (grp.length && await ask(`Send groups for the ${grp.length} deployed app(s) whose groups changed?\n\n${grp.join('\n')}`, { ok: 'Send groups', danger: false })) { $('dlgCsv').close(); openPushGroups(grp); }
@@ -108,12 +108,12 @@ $('btnCsvGo').addEventListener('click', async () => {
 // ---------------------------------------------------------------- winget: newest versions
 async function checkWingetVersions() {
   const n = apps.filter(a => a.wingetId).length;
-  toast(`Asking winget about ${n} app(s) - about a second each...`);
+  toast(`Asking winget about ${nWord(n, 'app')} - about a second each...`);
   const r = await api('/api/checks-winget', {});
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps();
   const newer = apps.filter(a => a.newerOnWinget).length;
-  toast(newer ? `winget offers a newer version for ${newer} app(s) - showing them.` : 'No app has a newer version on winget than the catalog records.');
+  toast(newer ? `winget offers a newer version for ${nWord(newer, 'app')} - showing them.` : 'No app has a newer version on winget than the catalog records.');
   if (newer) { $('filter').value = 'newer'; renderApps(); updateViewButtons(); }
 }
 
@@ -300,7 +300,7 @@ async function openSuggest() {
       r.permission ? el('button', { class: 'btn small', text: 'Check permissions', onclick: () => { $('dlgSuggest').close(); checkPermissionsNow(); } }) : ''))));
     return;
   }
-  $('sgNote').textContent = `${r.suggestions.length} app(s) on at least three devices that the catalog doesn't have, from ${r.scanned} inventory entries${r.more ? ' (the first 20 pages)' : ''}. Parts of Windows and drivers are left out.`;
+  $('sgNote').textContent = `${nWord(r.suggestions.length, 'app')} on at least three devices that the catalog doesn't have, from ${r.scanned} inventory entries${r.more ? ' (the first 20 pages)' : ''}. Parts of Windows and drivers are left out.`;
   $('sgRows').replaceChildren(...(r.suggestions.length ? r.suggestions.map(s => el('tr', {},
     el('td', { class: 'name', text: s.name }), el('td', { class: 'num', text: String(s.devices) }), el('td', { class: 'mono', text: s.versions.join(', ') }),
     el('td', { class: 'act' }, el('button', { class: 'btn small', text: 'Add...', title: `Add ${s.name} to the catalog - winget is searched for it`, onclick: () => addSuggested(s.name) }))))

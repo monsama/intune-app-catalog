@@ -1021,7 +1021,7 @@ summary:focus-visible, .tablewrap:focus-visible { outline: 2px solid var(--accen
 summary:focus:not(:focus-visible), .tablewrap:focus:not(:focus-visible) { outline: none; }
 .logbox { margin-top: 8px; }
 /* Batch edit: Apply and Cancel stay in sight. */
-#dlgBatch > .actions { position: sticky; bottom: -18px; background: var(--surface); padding: 10px 0; margin-bottom: -18px; border-top: 1px solid var(--bd); z-index: 1; }
+#dlgBatch > .actions { position: sticky; bottom: -18px; background: var(--surface); margin-bottom: -18px; border-top: 1px solid var(--bd); z-index: 1; }
 /* Checks: the fix buttons on their own row; long IDs break between words, not inside them. */
 .grid td.mono, .grid td.v { overflow-wrap: anywhere; word-break: normal; }
 /* Small buttons next to full-height fields: the same height. */
@@ -1529,7 +1529,6 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 .bfield input, .bfield select, .bfield textarea { min-width: 0; width: 100%; box-sizing: border-box; }
 @media (max-width: 560px) { .bfield { grid-template-columns: minmax(0, 1fr); } }
 /* Batch edit: the footer's buttons keep their distance from the edge, and what is above it scrolls clear of it. */
-#dlgBatch > .actions { padding-right: 2px; }
 #dlgBatch #batchPreview, #dlgBatch label:has(> #bPush) { scroll-margin-bottom: 72px; }
 #dlgBatch label:has(> #bPush) { margin-bottom: 12px; }
 /* Add apps on a phone: "Fill in by hand..." under the tabs, which scroll on one line. */
@@ -1873,3 +1872,34 @@ dialog.addapps .asec ul.notes { font-size: 12px; }
 /* Add apps > From a list: search (2.38.33). */
 .alsearch { display: block; margin: 0 0 8px; }
 .alsearch input { width: 100%; }
+
+/* Settings > About (2.38.34): label / value pairs. */
+dl.about { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 4px 0 12px; }
+dl.about dt { color: var(--muted); }
+dl.about dd { margin: 0; overflow-wrap: anywhere; }
+dl.about dd.path { font-family: var(--mono, ui-monospace, Consolas, monospace); font-size: .92em; }
+.actions.wrap { flex-wrap: wrap; }
+
+/* 2.38.34 sweep */
+/* Text in fields: the page's font; the monospace font only where an ID, a path or a command goes. */
+label > input, .inputrow input { font-family: inherit; }
+#fTenant, #fClient, #fThumb, #aWinget, #aAppId:not(:placeholder-shown), #aWatch, #xProductCode, #xPath, #xKey, #xValueName, #xValue,
+#mInstallCommand, #mUninstallCommand, #aiInstall, #aiUninstall, #aiDetFolder, #aiDetKey, #aiDetFileName { font-family: var(--mono); }
+/* Checks: no empty band when there is nothing to say. */
+#checkNotes:empty { display: none; }
+/* Radio buttons drawn like the checkboxes - the browser's own looked disabled in the dark theme. */
+input[type=radio] { appearance: none; -webkit-appearance: none; border: 1.5px solid var(--bd); border-radius: 50%; display: inline-grid; place-items: center; background: var(--surface); margin: 0; cursor: pointer; flex: none; }
+input[type=radio]::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); transform: scale(0); transition: transform .1s; }
+input[type=radio]:checked { border-color: var(--accent); }
+input[type=radio]:checked::before { transform: scale(1); }
+input[type=radio]:disabled { opacity: .5; cursor: default; }
+/* Add apps > PowerShell script: the two script boxes one under the other while the dialog is narrow. */
+@media (max-width: 1000px) { #asec-script .formgrid.two { grid-template-columns: 1fr; } }
+/* Add apps tabs on one line, scrolling sideways when narrow (they wrapped under each other). */
+@media (max-width: 900px) { .addtabrow > .subtabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; } .addtabrow > .subtabs .subtab { white-space: nowrap; } }
+/* Checks' empty state: a tick when all was compared, "!" when some parts weren't. */
+#checkEmpty .emptyicon .bang { display: none; }
+#checkEmpty.partial .emptyicon .tick { display: none; }
+#checkEmpty.partial .emptyicon .bang { display: inline; }
+#btnCheckConnect { margin-top: 10px; }
+#btnUpdOpenApps { margin-top: 10px; }

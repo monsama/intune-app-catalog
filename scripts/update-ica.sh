@@ -14,8 +14,10 @@ VERSION="${1:-$(grep -oE 'AppVersion = "[0-9.]+"' code/Private/AppState.ps1 | gr
 OLD="$(grep '^ICA_IMAGE=' .env | cut -d= -f2-)"
 NEW="ghcr.io/monsama/intune-app-catalog:$VERSION"
 ./scripts/backup-ica.sh
+BACKUP="$(ls -1t backup/intune-app-catalog-*.tar.gz 2>/dev/null | head -1)"
+# The release's image only: a failed pull stops here (a local build of this checkout isn't that release).
+docker pull "$NEW" || fail "$NEW could not be pulled - nothing was changed."
 sed -i "s#^ICA_IMAGE=.*#ICA_IMAGE=$NEW#" .env
-docker compose pull app || docker compose build app
 docker compose up -d app
 for _ in $(seq 1 60); do
     s="$(docker inspect -f '{{.State.Health.Status}}' intune-app-catalog 2>/dev/null || echo starting)"
@@ -26,4 +28,7 @@ done
 echo "[WARN]  $NEW isn't healthy - going back to $OLD." >&2
 sed -i "s#^ICA_IMAGE=.*#ICA_IMAGE=$OLD#" .env
 docker compose up -d app
+# The data may already have been changed by the new version - the backup taken first is the way back.
+echo "[WARN]  The data may have been changed by $NEW. To restore the backup taken before the update:" >&2
+echo "        docker compose stop app; docker run --rm -v intune-app-catalog-data:/data -v \"\$PWD/backup\":/b alpine:3.20 sh -c 'rm -rf /data/* && tar -xzf /b/$(basename "${BACKUP:-<file>}") -C /data'; docker compose start app" >&2
 fail "Update failed; $OLD is running again. See: docker compose logs app"

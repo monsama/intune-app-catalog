@@ -29,108 +29,283 @@
         "type": "win32LobApp",
         "why": "The app object this tool creates and updates - CreateApp.ps1",
         "properties": [
-          "displayName", "description", "publisher",
-          "installCommandLine", "uninstallCommandLine",
-          "detectionRules", "installExperience", "returnCodes",
-          "minimumFreeDiskSpaceInMB", "minimumMemoryInMB",
-          "minimumNumberOfProcessors", "minimumCpuSpeedInMHz",
-          "allowAvailableUninstall", "minimumSupportedWindowsRelease",
-          "committedContentVersion", "setupFilePath", "fileName", "displayVersion"
+          "displayName",
+          "description",
+          "publisher",
+          "installCommandLine",
+          "uninstallCommandLine",
+          "detectionRules",
+          "installExperience",
+          "returnCodes",
+          "minimumFreeDiskSpaceInMB",
+          "minimumMemoryInMB",
+          "minimumNumberOfProcessors",
+          "minimumCpuSpeedInMHz",
+          "allowAvailableUninstall",
+          "minimumSupportedWindowsRelease",
+          "committedContentVersion",
+          "setupFilePath",
+          "fileName",
+          "displayVersion",
+          "allowedArchitectures",
+          "owner",
+          "developer",
+          "notes",
+          "informationUrl",
+          "privacyInformationUrl",
+          "isFeatured",
+          "largeIcon"
         ]
       },
       {
         "type": "win32LobAppInstallExperience",
         "why": "installExperience on the app above",
-        "properties": ["runAsAccount", "deviceRestartBehavior", "maxRunTimeInMinutes"]
+        "properties": [
+          "runAsAccount",
+          "deviceRestartBehavior",
+          "maxRunTimeInMinutes"
+        ]
       },
       {
         "type": "win32LobAppReturnCode",
         "why": "returnCodes on the app above",
-        "properties": ["returnCode", "type"]
+        "properties": [
+          "returnCode",
+          "type"
+        ]
       },
       {
         "type": "win32LobAppProductCodeDetection",
         "why": "MSI detection rule",
-        "properties": ["productCode", "productVersionOperator"]
+        "properties": [
+          "productCode",
+          "productVersionOperator",
+          "productVersion"
+        ]
       },
       {
         "type": "win32LobAppFileSystemDetection",
         "why": "File/folder detection rule",
-        "properties": ["path", "fileOrFolderName", "check32BitOn64System", "detectionType"]
+        "properties": [
+          "path",
+          "fileOrFolderName",
+          "check32BitOn64System",
+          "detectionType",
+          "operator",
+          "detectionValue"
+        ]
       },
       {
         "type": "win32LobAppRegistryDetection",
         "why": "Registry detection rule",
-        "properties": ["keyPath", "check32BitOn64System", "detectionType"]
+        "properties": [
+          "keyPath",
+          "check32BitOn64System",
+          "detectionType",
+          "valueName",
+          "operator",
+          "detectionValue"
+        ]
       },
       {
         "type": "win32LobAppPowerShellScriptDetection",
         "why": "Script detection rule - the default for every Winget app",
-        "properties": ["scriptContent", "enforceSignatureCheck", "runAs32Bit"]
+        "properties": [
+          "scriptContent",
+          "enforceSignatureCheck",
+          "runAs32Bit"
+        ]
       },
       {
         "type": "mobileAppContentFile",
         "why": "Uploading the .intunewin payload",
-        "properties": ["name", "size", "sizeEncrypted", "manifest", "isDependency"]
+        "properties": [
+          "name",
+          "size",
+          "sizeEncrypted",
+          "manifest",
+          "isDependency"
+        ]
       },
       {
         "type": "fileEncryptionInfo",
         "why": "The encryption header that upload commits",
         "properties": [
-          "encryptionKey", "macKey", "initializationVector", "mac",
-          "profileIdentifier", "fileDigest", "fileDigestAlgorithm"
+          "encryptionKey",
+          "macKey",
+          "initializationVector",
+          "mac",
+          "profileIdentifier",
+          "fileDigest",
+          "fileDigestAlgorithm"
         ]
       },
       {
         "type": "mobileAppDependency",
         "why": "App-to-app dependencies",
-        "properties": ["targetId", "dependencyType"]
+        "properties": [
+          "targetId",
+          "dependencyType"
+        ]
       },
       {
         "type": "deviceManagementScript",
         "why": "Platform scripts - listed, created, changed and saved locally",
         "properties": [
-          "displayName", "description", "fileName", "scriptContent",
-          "runAsAccount", "runAs32Bit", "enforceSignatureCheck",
+          "displayName",
+          "description",
+          "fileName",
+          "scriptContent",
+          "runAsAccount",
+          "runAs32Bit",
+          "enforceSignatureCheck",
           "lastModifiedDateTime"
         ]
       },
       {
         "type": "win32LobAppAssignmentSettings",
         "why": "Managed updates: a release's Required assignments - install deadline, restart grace period, notifications (TargetedAssign.ps1)",
-        "properties": ["notifications", "deliveryOptimizationPriority", "installTimeSettings", "restartSettings"]
+        "properties": [
+          "notifications",
+          "deliveryOptimizationPriority",
+          "installTimeSettings",
+          "restartSettings",
+          "autoUpdateSettings"
+        ]
       },
       {
         "type": "mobileAppInstallTimeSettings",
         "why": "Managed updates: the install deadline",
-        "properties": ["useLocalTime", "startDateTime", "deadlineDateTime"]
+        "properties": [
+          "useLocalTime",
+          "startDateTime",
+          "deadlineDateTime"
+        ]
       },
       {
         "type": "win32LobAppRestartSettings",
         "why": "Managed updates: the restart grace period",
-        "properties": ["gracePeriodInMinutes", "countdownDisplayBeforeRestartInMinutes", "restartNotificationSnoozeDurationInMinutes"]
+        "properties": [
+          "gracePeriodInMinutes",
+          "countdownDisplayBeforeRestartInMinutes",
+          "restartNotificationSnoozeDurationInMinutes"
+        ]
       },
       {
         "type": "detectedApp",
         "why": "The Updates page: older versions found on devices (Intune's inventory)",
-        "properties": ["displayName", "version", "deviceCount"]
+        "properties": [
+          "displayName",
+          "version",
+          "deviceCount"
+        ]
       },
       {
         "type": "officeSuiteApp",
         "why": "Microsoft 365 Apps this tool creates and updates (2.38.21) - CreateOfficeApp.ps1, ConvertTo-OfficeSuiteBody",
-        "properties": ["displayName", "description", "publisher", "productIds", "excludedApps", "useSharedComputerActivation", "updateChannel", "officePlatformArchitecture", "localesToInstall", "installProgressDisplayLevel", "shouldUninstallOlderVersionsOfOffice", "autoAcceptEula", "officeSuiteAppDefaultFileFormat"]
+        "properties": [
+          "displayName",
+          "description",
+          "publisher",
+          "productIds",
+          "excludedApps",
+          "useSharedComputerActivation",
+          "updateChannel",
+          "officePlatformArchitecture",
+          "localesToInstall",
+          "installProgressDisplayLevel",
+          "shouldUninstallOlderVersionsOfOffice",
+          "autoAcceptEula",
+          "officeSuiteAppDefaultFileFormat"
+        ]
       },
       {
         "type": "excludedApps",
         "why": "The apps Microsoft 365 Apps leaves out - every one is sent (Get-OfficeAppKeys)",
-        "properties": ["access", "bing", "excel", "groove", "infoPath", "lync", "oneDrive", "oneNote", "outlook", "powerPoint", "publisher", "sharePointDesigner", "teams", "visio", "word"]
+        "properties": [
+          "access",
+          "bing",
+          "excel",
+          "groove",
+          "infoPath",
+          "lync",
+          "oneDrive",
+          "oneNote",
+          "outlook",
+          "powerPoint",
+          "publisher",
+          "sharePointDesigner",
+          "teams",
+          "visio",
+          "word"
+        ]
+      },
+      {
+        "type": "win32LobAppAutoUpdateSettings",
+        "why": "Auto-update of superseded apps for Available assignments (2.19) - CatalogLogic.ps1",
+        "properties": [
+          "autoUpdateSupersededAppsState"
+        ]
+      },
+      {
+        "type": "winGetApp",
+        "why": "Microsoft Store apps (new) - CreateStoreApp.ps1",
+        "properties": [
+          "displayName",
+          "description",
+          "publisher",
+          "packageIdentifier",
+          "installExperience",
+          "informationUrl",
+          "privacyInformationUrl"
+        ]
+      },
+      {
+        "type": "winGetAppInstallExperience",
+        "why": "Store app install context - CreateStoreApp.ps1",
+        "properties": [
+          "runAsAccount"
+        ]
+      },
+      {
+        "type": "mobileAppSupersedence",
+        "why": "Supersedence and the release update path - CreateApp.ps1, WebReleases.ps1",
+        "properties": [
+          "targetId",
+          "supersedenceType"
+        ]
+      },
+      {
+        "type": "mobileAppAssignment",
+        "why": "Every assignment sent and read - BatchAssign.ps1, TargetedAssign.ps1",
+        "properties": [
+          "intent",
+          "target",
+          "settings"
+        ]
+      },
+      {
+        "type": "groupAssignmentTarget",
+        "why": "Group targets and their assignment filters - Assignments.ps1",
+        "properties": [
+          "groupId",
+          "deviceAndAppManagementAssignmentFilterId",
+          "deviceAndAppManagementAssignmentFilterType"
+        ]
       }
     ],
     "v1.0": [
       {
         "type": "group",
         "why": "Resolving and creating the groups apps are assigned to",
-        "properties": ["displayName", "id", "mailNickname", "securityEnabled", "mailEnabled", "groupTypes"]
+        "properties": [
+          "displayName",
+          "id",
+          "mailNickname",
+          "securityEnabled",
+          "mailEnabled",
+          "groupTypes"
+        ]
       }
     ]
   }

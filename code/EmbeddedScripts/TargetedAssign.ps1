@@ -266,7 +266,11 @@ try {
 
     # ---- Show current assignments before changing anything ----
     Write-Step "Checking current assignments (before making any change)"
+    # Every page (2.38.34): a list Graph splits would otherwise be read in part - and sending it back replaces the whole list.
     $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.AppId)/assignments" -Method GET -StepDescription "Get current assignments"
+    $pagedAll = @($currentAssignments.value); $pagedNext = [string]$currentAssignments.'@odata.nextLink'
+    while ($pagedNext) { $pagedPage = Invoke-GraphRequestDetailed -Uri $pagedNext -Method GET -StepDescription "Get current assignments (next page)"; $pagedAll += @($pagedPage.value); $pagedNext = [string]$pagedPage.'@odata.nextLink' }
+    $currentAssignments = [pscustomobject]@{ value = $pagedAll }
     $currentGroupNameById = @{}
     foreach ($a in @($currentAssignments.value)) {
         $gid = $a.target.groupId

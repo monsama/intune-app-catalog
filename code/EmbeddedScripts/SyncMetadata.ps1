@@ -298,7 +298,19 @@ try {
         }
 
         $minOsPropName = $null
-        if ($app.minimumSupportedOperatingSystem) {
+        # Today's property first (2.38.34) - the legacy one below has no Windows 11 values, and its names ("v10_1607")
+        # were sent back as they were and refused. Both kept in the catalog's own spelling: "W10_1607", "W11_23H2".
+        $toKey = {
+            param([string]$v)
+            if ($v -match '^(?i)(?:W|Windows)(10|11)_(.+)$') { $mj = $Matches[1]; $r = $Matches[2].ToUpperInvariant() }
+            elseif ($v -match '^(?i)v10_(.+)$') { $mj = '10'; $r = $Matches[1].ToUpperInvariant() }
+            elseif ($v -match '^(?i)(\d{4}|\d{2}H\d|2H20)$') { $mj = '10'; $r = $v.ToUpperInvariant() }
+            else { return $v }
+            if ($r -eq '2H20') { $r = '20H2' }; if ($r -eq '0') { $r = '1607' }
+            return "W$($mj)_$r"
+        }
+        if ([string]$app.minimumSupportedWindowsRelease) { $minOsPropName = & $toKey ([string]$app.minimumSupportedWindowsRelease) }
+        elseif ($app.minimumSupportedOperatingSystem) {
             $minOsObj = $app.minimumSupportedOperatingSystem
             if ($minOsObj -is [System.Collections.IDictionary]) {
                 foreach ($key in $minOsObj.Keys) {
@@ -330,7 +342,11 @@ try {
         # $null on a failed read: unknown, not "supersedes nothing".
         $supersedence = $null
         try {
+            # Every page (2.38.34): a list Graph splits would otherwise be read in part - and sending it back replaces the whole list.
             $rels = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($AppEntry.AppId)/relationships" -Method GET -StepDescription "Fetch dependencies"
+            $pagedAll = @($rels.value); $pagedNext = [string]$rels.'@odata.nextLink'
+            while ($pagedNext) { $pagedPage = Invoke-GraphRequestDetailed -Uri $pagedNext -Method GET -StepDescription "Fetch dependencies (next page)"; $pagedAll += @($pagedPage.value); $pagedNext = [string]$pagedPage.'@odata.nextLink' }
+            $rels = [pscustomobject]@{ value = $pagedAll }
             $depNames = @($rels.value | Where-Object { $_.'@odata.type' -eq '#microsoft.graph.mobileAppDependency' -and $_.targetType -eq 'child' } | ForEach-Object { $_.targetDisplayName } | Where-Object { $_ })
             $supersedence = @($rels.value | Where-Object { ([string]$_.'@odata.type') -like '*mobileAppSupersedence' -and (-not [string]$_.targetType -or [string]$_.targetType -eq 'child') } | ForEach-Object {
                 [pscustomobject]@{ appId = [string]$_.targetId; name = [string]$_.targetDisplayName; type = $(if ([string]$_.supersedenceType -eq 'replace') { 'replace' } else { 'update' }) }
@@ -347,7 +363,11 @@ try {
         $uninstallGroupNames = @()
         $groupFetchOk = $true
         try {
+            # Every page (2.38.34): a list Graph splits would otherwise be read in part - and sending it back replaces the whole list.
             $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($AppEntry.AppId)/assignments" -Method GET -StepDescription "Fetch group assignments"
+            $pagedAll = @($currentAssignments.value); $pagedNext = [string]$currentAssignments.'@odata.nextLink'
+            while ($pagedNext) { $pagedPage = Invoke-GraphRequestDetailed -Uri $pagedNext -Method GET -StepDescription "Fetch group assignments (next page)"; $pagedAll += @($pagedPage.value); $pagedNext = [string]$pagedPage.'@odata.nextLink' }
+            $currentAssignments = [pscustomobject]@{ value = $pagedAll }
             foreach ($a in @($currentAssignments.value)) {
                 $tt = [string]$a.target.'@odata.type'
                 # Intune's own All users / All devices targets: the catalog holds them as these names.
@@ -407,7 +427,7 @@ try {
             uninstallCommand = $app.uninstallCommandLine
             architecture     = $archValue
             installContext   = $app.installExperience.runAsAccount
-            minOSKey         = $minOsPropName
+            minOSKey         = $(if ($minOsPropName -match '^(?i)v10_') { & $toKey $minOsPropName } else { $minOsPropName })
             detectionRule    = $detectionRule
             dependencies     = $depNames
             supersedes       = $supersedence

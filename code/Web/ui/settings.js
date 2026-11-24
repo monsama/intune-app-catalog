@@ -457,7 +457,7 @@ async function switchExistingWinget(method) {
   const r = await api('/api/batch-edit', { names, changes: { wingetInstallMethod: method } });
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps();
-  const msg = `Switched ${r.changed.length} app(s).` + (r.kept.length ? ` Kept the hand-edited commands of ${r.kept.join(', ')}.` : '');
+  const msg = `Switched ${nWord(r.changed.length, 'app')}.` + (r.kept.length ? ` Kept the hand-edited commands of ${r.kept.join(', ')}.` : '');
   if (!r.deployed.length) { toast(msg); return; }
   const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', startText: 'Pushing ' });
   toast(`${msg} Pushed to Intune for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length, [{ label: 'Undo', run: () => undoLast() }]);
@@ -608,4 +608,39 @@ $('btnSiSave').addEventListener('click', async () => {
   if (!r.ok) { $('siError').textContent = r.error; $('siError').hidden = false; return; }
   toast(r.entra ? `Sign in with Microsoft is on for the members of ${r.groupName}.` : 'Only the admin password signs in.');
   loadSignIn();
+});
+
+// ---------------------------------------------------------------- About (2.38.34)
+let aboutInfo = null;
+function aboutRows(dl, rows, cls) {
+  dl.replaceChildren(...rows.flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { class: cls || '', text: v })]));
+}
+function showAboutUpdate(u) {
+  const t = $('aboutUpdText'), get = $('btnAboutRelease');
+  get.hidden = true;
+  if (!u) { t.textContent = aboutInfo && aboutInfo.autoCheck ? 'Not asked yet - Home says when a newer version is out.' : 'The automatic check is off (Settings > Apps & defaults). Ask now?'; return; }
+  if (u.off) { t.textContent = 'Not asked in test mode.'; return; }
+  if (!u.ok) { t.textContent = u.error || 'GitHub couldn\'t be asked.'; return; }
+  if (u.newer) { t.textContent = `Version ${u.version} is out - this is ${aboutInfo ? aboutInfo.version : 'older'}.`; get.hidden = false; return; }
+  t.textContent = `This is the latest version${u.version ? ` (${u.version})` : ''}.`;
+}
+async function loadAbout(checkNow) {
+  const r = await api('/api/about', checkNow ? { checkNow: true } : {});
+  if (!r || !r.ok) { $('aboutFacts').replaceChildren(el('dd', { text: (r && r.error) || 'Couldn\'t read the details.' })); return; }
+  aboutInfo = r;
+  aboutRows($('aboutFacts'), [['Version', r.version], ['Runs as', r.server ? 'Server (Docker container)' : 'Desktop app on this PC'], ['PowerShell', r.powershell], ['System', r.os], ['Catalog', `${r.apps} app${r.apps === 1 ? '' : 's'}`]]);
+  $('aboutFoldersCard').hidden = !(r.folders || []).length;
+  aboutRows($('aboutFolders'), (r.folders || []).map(f => [f.label, f.path]), 'path');
+  showAboutUpdate(r.update);
+}
+$('btnAboutCheck').addEventListener('click', async () => {
+  const b = $('btnAboutCheck'); b.disabled = true; $('aboutUpdText').textContent = 'Asking GitHub...';
+  try { await loadAbout(true); } finally { b.disabled = false; }
+});
+$('btnAboutRelease').addEventListener('click', () => api('/api/open', { target: 'release' }));
+for (const b of document.querySelectorAll('[data-about]')) b.addEventListener('click', async () => { const r = await api('/api/open', { target: b.dataset.about }); if (!r.ok) toast(r.error || 'Could not open the browser.', true); });
+$('btnAboutCopy').addEventListener('click', async () => {
+  if (!aboutInfo) return;
+  const a = aboutInfo, text = `Intune App Catalog ${a.version}\n${a.server ? 'Server (Docker)' : 'Desktop'} - PowerShell ${a.powershell}\n${a.os}\nCatalog: ${nWord(a.apps, 'app')}`;
+  try { await navigator.clipboard.writeText(text); toast('Copied the details.'); } catch (e) { toast('Couldn\'t copy - select the text instead.', true); }
 });

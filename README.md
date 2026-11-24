@@ -184,13 +184,14 @@ Application permissions, with admin consent:
 | --- | --- |
 | `DeviceManagementApps.ReadWrite.All` | Apps: deploy, update, assign, delete, install status |
 | `Group.ReadWrite.All` | Creating and managing the groups apps are assigned to |
-| `User.Read.All`, `Device.Read.All`, `Directory.Read.All` | Resolving users, devices and groups by name |
+| `User.Read.All`, `Device.Read.All` | Group members on the Groups page, and install status by user and device (optional) |
 | `DeviceManagementScripts.ReadWrite.All` | Platform scripts only |
 | `DeviceManagementManagedDevices.Read.All` | Detected apps (older versions still on devices) only |
-| `Mail.Send` | Email alerts only |
+| `Mail.Send` | Email alerts only - added by hand, and best limited to the sending mailbox with an application access policy |
 | `DeviceManagementConfiguration.Read.All` | Assignment filters only (looked up by name) |
 
-**Add required permissions** in Settings adds them for you. When Graph
+**Add required permissions** in Settings adds them for you, except `Mail.Send`.
+`Directory.Read.All` isn't needed - the permissions above cover what the app reads. When Graph
 refuses a request, the app says which of these is likely missing.
 **Settings > Diagnostics > Check permissions** compares what the
 registration has with the features you use: what to add, and what to

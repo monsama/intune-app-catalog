@@ -55,12 +55,12 @@ async function runChecks(names) {
     }
     // 2.38.20: without the detailed part, the settings and groups in Intune weren't compared at all - "Nothing to fix" said
     // "the catalog and Intune agree" although Home and the apps showed differences (from the nightly run or a full check).
-    else if (r.connected && r.deployed > 0) notes.push(`The settings and groups of the ${r.deployed} app(s) in Intune weren't compared - turn on Options > Deployed apps in detail.`);
+    else if (r.connected && r.deployed > 0) notes.push(`The settings and groups of the ${nWord(r.deployed, 'app')} in Intune weren't compared - turn on Options > Deployed apps in detail.`);
     if ($('chkWinget').checked && r.winget > 0) {
       $('checkNotes').textContent = `Asking winget about ${r.winget} Winget ID(s)...`;
       checkLog(`${stamp()} Asking winget about ${r.winget} Winget ID(s)...`);
       const w = await api('/api/checks-winget', only);
-      if (w.ok) { mergeFindings(w); checkLog(`${stamp()} winget: ${(w.findings || []).length} problem(s).`); }
+      if (w.ok) { mergeFindings(w); checkLog(`${stamp()} winget: ${nWord((w.findings || []).length, 'problem')}.`); }
       else { notes.push(w.error); checkLog(`${stamp()} [WARN] ${w.error}`); }
     }
     // No findings: the empty state says what wasn't compared - the note above doesn't say it again.
@@ -68,9 +68,11 @@ async function runChecks(names) {
     $('checkEmptyList').hidden = true; $('btnRunChecksEmpty').hidden = true;
     // Not everything compared (2.38.23): said in the title - not the green "Nothing to fix" with the catch in small print.
     $('checkEmptyTitle').textContent = notes.length ? 'No findings in what was compared' : 'Nothing to fix';
-    $('checkEmptyText').textContent = notes.length ? `Not everything was compared: ${notes.join(' ')}` : 'The catalog, Intune and Entra ID agree.';
+    $('checkEmptyText').textContent = notes.length ? `Some parts weren't compared - ${notes.join(' ')}` : 'The catalog, Intune and Entra ID agree.';
     $('checkEmpty').classList.toggle('partial', !!notes.length);
-    checkLog(`${stamp()} [OK] Checks finished: ${shownFindings().length} finding(s).`);
+    // Not connected (2.38.34): the way to fix it, as on the Groups page.
+    $('btnCheckConnect').hidden = !notes.some(n => /no connection|not connected|connection (isn't|is not) set up/i.test(String(n)));
+    checkLog(`${stamp()} [OK] Checks finished: ${nWord(shownFindings().length, 'finding')}.`);
     return r;
   } finally {
     checksRunning = false; b.disabled = false; b.textContent = 'Run checks';
@@ -108,7 +110,7 @@ function updateCheckActions() {
   setEnabled($('btnFixAdd'), !busy && sel.some(f => (f.actions || []).includes('AddToCatalog')), busy || 'Tick findings that are "In Intune, not in the catalog".');
   setEnabled($('btnFixRecheck'), !busy && sel.length > 0, busy || 'Tick one or more findings first.');
   { const n = sel.filter(comparable).length; setEnabled($('btnFixCompare'), n > 0, 'Tick findings where the catalog and Intune differ.'); $('btnFixCompare').textContent = n > 1 ? `Compare (${n})` : 'Compare'; }
-  $('checkSelCount').textContent = sel.length ? `${sel.length} selected` : 'Tick findings to fix several at once';
+  $('checkSelCount').textContent = sel.length ? `${sel.length} selected` : findings.length ? 'Tick findings to fix several at once' : '';
   // Always there while there are findings (greyed out until something is ticked), so ticking doesn't move the table.
   $('checkFixBar').hidden = !findings.length;
 }
@@ -212,7 +214,7 @@ function renderChecks() {
   $('checkAll').checked = list.length > 0 && list.every(f => checkSel.has(keyOf(f)));
   // Filtered to one app (2.38.32): say how many the other apps have - "0 finding(s)" read as "nothing anywhere".
   const hiddenN = checkApp ? shownFindings().filter(f => (f.catalogName || f.app) !== checkApp).length : 0;
-  $('checkCount').textContent = findings.length ? `${list.length} finding(s)${hiddenN ? ` - ${hiddenN} more for other apps (x shows all)` : ''}` : '';
+  $('checkCount').textContent = findings.length ? `${nWord(list.length, 'finding')}${hiddenN ? ` - ${hiddenN} more for other apps (x shows all)` : ''}` : '';
   $('checkGrid').hidden = findings.length === 0;
   $('checkEmpty').hidden = findings.length > 0;
   updateCheckActions();
@@ -292,7 +294,7 @@ function renderCompare() {
     // Only whitespace or line endings differ: say so, or the marked lines look the same.
     const wsOnly = rows.every(r => r[2] === '=' || String(r[0] ?? '').trim() === String(r[1] ?? '').trim());
     return el('section', { class: 'cmpfield' },
-      el('h3', {}, d.field, el('span', { class: 'muted', text: ` - ${changed} line(s) differ${wsOnly && changed ? ' (spaces only)' : ''}` })),
+      el('h3', {}, d.field, el('span', { class: 'muted', text: ` - ${nWord(changed, 'line')} differ${wsOnly && changed ? ' (spaces only)' : ''}` })),
       el('div', { class: 'tablewrap' }, el('table', { class: 'cmp' },
         el('thead', {}, el('tr', {}, el('th', { text: 'Catalog' }), el('th', { text: 'Intune' }))),
         el('tbody', {}, ...rows.map(([l, r, k]) => el('tr', { class: k === '=' ? '' : k }, cmpCell(l, r, 'del'), cmpCell(r, l, 'add')))))));
@@ -325,7 +327,7 @@ function diffCell(f) {
   }
   const names = diffs.map(d => d.field || 'Value'), shown = names.slice(0, names.length > 4 ? 3 : 4);
   const b = el('button', { type: 'button', class: 'difs', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-controls': 'cmpCard',
-    'aria-label': `${names.length} field(s) differ: ${names.join(', ')} - show side by side` },
+    'aria-label': `${nWord(names.length, 'field')} differ: ${names.join(', ')} - show side by side` },
     ...shown.map(n => el('span', { class: 'dchip', text: n })), names.length > shown.length ? el('span', { class: 'dchip more', text: `+${names.length - shown.length} more` }) : '');
   return hoverCardOn(b, () => hcShow(f, b));
 }
@@ -384,7 +386,7 @@ function hcValue(lines) {
 }
 function hcShow(f, b) {
   const diffs = diffsOf(f);
-  hcOpen(b, { title: `${f.app} - ${f.area}`, sub: `${diffs.length} field(s) differ · left is the catalog, right is Intune`, left: 'Catalog', right: 'Intune',
+  hcOpen(b, { title: `${f.app} - ${f.area}`, sub: `${nWord(diffs.length, 'field')} differ · left is the catalog, right is Intune`, left: 'Catalog', right: 'Intune',
     rows: diffs.map(d => ({ field: d.field, left: d.local, right: d.remote })),
     buttons: [el('button', { type: 'button', class: 'btn small', text: 'Open full compare', onclick: () => { hcClose(); openCompare([f]); } }), ...cmpFixButtons(f, 'btn small', () => hcClose())] });
 }
@@ -426,7 +428,7 @@ async function addFromIntune(list) {
   runDialog('Add to catalog', items.map(i => i.name).join(', '));
   runJob({ apps: items }, (ok, res, after) => {
     if (!ok || !after) return;
-    const parts = [`Added ${after.added.length} app(s).`];
+    const parts = [`Added ${nWord(after.added.length, 'app')}.`];
     if (after.skipped.length) parts.push(`Skipped: ${after.skipped.join('; ')}.`);
     if (after.noGroups.length) parts.push(`Groups couldn't be read for ${after.noGroups.join(', ')} - left empty.`);
     toast(parts.join(' '), !after.added.length);
@@ -451,7 +453,7 @@ async function pushSettings(names) {
   if (!(await ask(`Send the catalog's settings for ${names.length === 1 ? `"${names[0]}"` : names.length + ' apps'} to Intune?\n\nDescription, commands, detection rule, requirements, return codes and dependencies are replaced with the catalog's. No package is uploaded; groups aren't touched.`))) return;
   runDialog('Send settings to Intune', names.join(', '));
   const done = await runEach(names, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'runLog', startText: 'Pushing ' });
-  toast(`Settings pushed for ${done.length} of ${names.length} app(s).`, done.length < names.length);
+  toast(`Settings pushed for ${done.length} of ${nWord(names.length, 'app')}.`, done.length < names.length);
   for (const f of findings.filter(f => done.includes(f.catalogName) && (f.actions || []).includes('PushMetadata'))) dropFinding(f);
   loadApps(); checksRefresh(done);
 }
@@ -472,7 +474,7 @@ async function searchWinget() {
   const r = await api('/api/winget-search', { q });
   $('btnWgSearch').disabled = false;
   if (!r.ok) { $('wgNote').textContent = r.error; return; }
-  $('wgNote').textContent = r.rows.length ? `${r.rows.length} package(s). Pick one to use its ID.` : 'winget found nothing - try a shorter name or the publisher.';
+  $('wgNote').textContent = r.rows.length ? `${nWord(r.rows.length, 'package')}. Pick one to use its ID.` : 'winget found nothing - try a shorter name or the publisher.';
   $('wgRows').replaceChildren(...r.rows.map(x => el('tr', {}, el('td', { text: x.name }), el('td', { class: 'chg wgid' }, ...String(x.id).split('.').flatMap((part, i, all) => i < all.length - 1 ? [part + '.', el('wbr')] : [part])), el('td', { text: x.version }), el('td', { text: x.source }),
     el('td', {}, el('button', { class: 'btn small', text: 'Use', onclick: () => { $('dlgWinget').close(); if (wingetPick) wingetPick(x.id, x); } })))));
 }
@@ -496,3 +498,5 @@ $('btnRunChecksEmpty').addEventListener('click', () => $('btnRunChecks').click()
   document.addEventListener('click', e => { if (box.open && !box.contains(e.target)) box.open = false; });
   box.addEventListener('keydown', e => { if (e.key === 'Escape' && box.open) { e.stopPropagation(); box.open = false; box.querySelector('summary').focus(); } });
 }
+
+$('btnCheckConnect').addEventListener('click', () => $('connBadge').click());

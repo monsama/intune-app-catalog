@@ -1,5 +1,88 @@
 # Changelog
 
+## 2.38.34
+
+A full review of the app: what runs on the devices, what is sent to Intune,
+security, logic, the screens, and the server and release setup.
+
+- **Settings > About**: the version, where it runs (desktop or server),
+  PowerShell and the system, the folders, a "Check for updates" button and the
+  project's pages (GitHub, changelog, report a problem, security policy,
+  license). "Copy details" copies what a bug report needs.
+
+**On the devices**
+- Detection scripts with letters outside ASCII in the app's name (é, ü, Ñ) no
+  longer break on Windows PowerShell 5.1 - the name is written as \u codes,
+  and a script that still has such letters goes up with a BOM.
+- Managed updates: an older build no longer counts as installed. The version
+  compare ignores a word before the version ("ad 8.1.0") and counts a
+  pre-release as older; the Uninstall entry alone is enough only for the exact
+  version (a newer one only while winget isn't there yet).
+- "Installed" detection compares part by part - "24", or five-part versions,
+  no longer fail - and looks at the user's Uninstall entries too.
+- The generated Uninstall.ps1 reads an unquoted uninstaller path with spaces
+  ("C:\Program Files\App\uninst.exe /S").
+- winget's own exit codes are mapped: "another install in progress" is Retry,
+  "already installed" and "no applicable update" are Success (detection
+  decides), "restart required" is a soft reboot. Managed apps get them the next
+  time their settings are sent.
+- The script-app installer template writes its version marker after exit 1641
+  too.
+- Detection from an app on a PC: a per-user install's path is written with
+  %LOCALAPPDATA% / %APPDATA% (not the technician's profile), and it says to
+  install it for the user.
+
+**Sent to Intune**
+- Minimum OS: Windows 10 up to 21H1 is sent as Graph expects ("1607" ...
+  "21H1", 20H2 as "2H20") - "Windows10_1607" was refused with a 400. Take from
+  Intune reads today's property (Windows 11 values too), and an empty minimum
+  OS no longer clears Intune's. Windows 11 23H2 and 24H2 are offered.
+- Replacing a package uploads it first, then changes the settings - a failed
+  upload no longer leaves new detection rules on the old package.
+- Packages over 2 GB upload (read block by block).
+- Updating a Store app no longer blanks links and texts set in the portal.
+- Assignments and relationships are read page by page; withdrawing a release
+  leaves a relationship list it couldn't read fully alone.
+- Removing supersedence in the catalog now reaches Intune, and "not set"
+  supersedence keeps what was set in the portal.
+
+**Checks and Take from Intune**
+- Take from Intune no longer wipes the catalog's dependencies and supersedence
+  when Intune's couldn't be read, and doesn't store a promotion's old release.
+- Assignment filter and exclusion differences are one row per app, are kept in
+  the last audit (Home and the Apps list show them), and a filter name with
+  brackets is read right.
+- A new App ID is saved even when the catalog was busy (retried), and logged if
+  it still can't be.
+
+**Security**
+- Package files are never deleted or replaced through a link, and clean-up
+  removes links as links.
+- The icon finder only reads public addresses (also after redirects).
+- The PSADT template needs GitHub's SHA-256, and the toolkit's own scripts must
+  be signed too.
+
+**Screens**
+- The editor's checklist asks for the Winget ID (or Store ID) when that is
+  where the app installs from, not for an installer.
+- Checks: no empty band, a "!" icon and "Set up the connection" when not
+  connected. Home says "Setting up" until the guide is done.
+- "1 app" / "3 apps" instead of "app(s)"; ID and command fields keep the
+  monospace font, other fields don't; radio buttons look right in the dark
+  theme; Add apps tabs stay on one line when narrow; the Updates empty state has
+  an "Open Apps" button; Platform scripts says "3 scripts".
+
+**Server and releases**
+- Settings > Folders on the server only takes folders inside /app/data.
+- deploy-ica.sh: a host name or image given on a re-run replaces the old one;
+  a failed pull no longer builds and labels the checkout as the release
+  (BUILD_LOCAL=1 builds it as a local image).
+- update-ica.sh pulls the release's image or stops, and says how to restore the
+  backup when it goes back.
+- The release zip has the LICENSE; test builds are pre-releases; the image is
+  only published after the release's version check.
+- README: the permissions match what the app checks (no Directory.Read.All).
+
 ## 2.38.33
 
 - **Search in "From a list"**: Add apps > From a list has a search box - name, ID,
