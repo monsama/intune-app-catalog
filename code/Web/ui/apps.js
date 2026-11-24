@@ -360,6 +360,9 @@ $('aPkgInfo').addEventListener('drop', async e => { e.preventDefault(); e.stopPr
 async function editorUpload(pick) {
   const name = editingName, box = $('aPkgInfo');
   if (!name) return;
+  // 2.38.19: an app that has its package already takes any file (login.xml, a .cfg next to the setup) - it goes in as a
+  // file of the folder, never as a new installer; the setup file stays as it is.
+  if (pick && pick.file && !/\.(msi|exe|zip)$/i.test(pick.file.name)) pick = { folderName: pick.file.name.replace(/\.[^.]+$/, ''), files: [{ file: pick.file, path: pick.file.name }], extraOnly: true };
   if (!isPickable(pick)) { toast('Choose an .msi or .exe installer, a .zip of its folder, the folder itself - or several files at once.', true); return; }
   if (editorState() !== editorSnapshot) { toast('Save your changes first - the upload fills in what the saved app still lacks.', true); return; }
   const say = t => { for (const b of box.querySelectorAll('button')) b.disabled = true; box.firstChild.textContent = t; };
@@ -380,11 +383,14 @@ function pkgUploadReview(f, have) {
   return new Promise(resolve => {
     const dlg = $('dlgPkgUp');
     $('puFacts').textContent = f.folder ? `${f.fileName}: ${f.fileCount} file${f.fileCount === 1 ? '' : 's'}, ${fmtMB(f.size)} - all of them go into its packages folder and into its package.` : `${f.fileName}, ${fmtMB(f.size)}.`;
-    $('puSetupRow').hidden = !f.folder;
+    // Files added next to the setup (no installer among them): no setup file to choose - the one there stays.
+    $('puSetupRow').hidden = !f.folder || !(f.candidates || []).length;
     const fill = x => {
       if (f.folder) { $('puSetup').replaceChildren(el('option', { value: '', text: '(none - I write the commands)' }), ...(x.candidates || []).map(c => el('option', { value: c, text: c }))); $('puSetup').value = x.setup || ''; }
-      $('puWill').textContent = x.installCommand ? `Install command (when it has none yet): ${x.installCommand}` : 'No install command is proposed - write it in the editor (Install & detection).';
-      $('puNotes').replaceChildren(...(x.notes || []).map(n => el('li', { text: n })));
+      const extra = f.folder && !(x.candidates || []).length && have > 0;
+      $('puWill').textContent = extra ? 'They go next to what is there - the setup file, the commands and the detection rule stay as they are.'
+        : x.installCommand ? `Install command (when it has none yet): ${x.installCommand}` : 'No install command is proposed - write it in the editor (Install & detection).';
+      $('puNotes').replaceChildren(...(extra ? [] : (x.notes || [])).map(n => el('li', { text: n })));
     };
     fill(f);
     $('puSetup').onchange = async () => { const r = await api('/api/upload-setup', { uploadId: f.uploadId, setup: $('puSetup').value }); if (r.ok) fill(r); else toast(r.error, true); };
@@ -1311,7 +1317,7 @@ function openMenu(x, y) {
   const one = oneSelected();
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
-  const enable = { edit: !!one, duplicate: !!one, pushgroups: anyId, sandbox: !!(one && !one.wingetId), package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
+  const enable = { edit: !!one, duplicate: !!one, pushgroups: anyId, package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
     replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any, retire: !!(one && (one.hasAppId || one.retiringSince)),
     takeversion: sel.some(a => a.wingetId && a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
     watchfetch: !!(one && !one.wingetId && one.watchWinget),
@@ -1321,7 +1327,6 @@ function openMenu(x, y) {
     rollback: !!(one && one.managed && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && (one.previousVersions || []).length > 1) };
   const why = {
     edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', filldetails: 'Only for Winget apps - their details come from winget.', watchfetch: one ? 'Only for an own package that watches a winget package for new versions (the editor: Winget package to watch).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
-    sandbox: one ? 'Windows Sandbox has no winget - test a Winget app on a pilot device.' : 'Select exactly one app.',
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
     batchedit: 'Select one or more apps first.', addgroups: 'Select one or more apps first.', removegroups: 'Select one or more apps first.',
@@ -1342,7 +1347,7 @@ function openMenu(x, y) {
   if (any) {
     const own = sel.some(a => !a.wingetId), winget = sel.some(a => a.wingetId && !isStoreId(a.wingetId));
     const never = {
-      sandbox: !own, package: !own, watchfetch: !own, takeversion: !winget, filldetails: !winget,
+      package: !own, watchfetch: !own, takeversion: !winget, filldetails: !winget,
       promote: !sel.some(a => a.pilotVersion), withdraw: !sel.some(a => a.pilotVersion),
       rollback: !sel.some(a => (a.previousVersions || []).length), cleanup: !sel.some(a => (a.previousVersions || []).length > 1),
     };
@@ -1411,7 +1416,6 @@ async function menuAction(act) {
     case 'removegroups': openGroupsBatch('remove', names); break;
     case 'status': openStatus(one.name); break;
     case 'retire': openRetire(one.name); break;
-    case 'sandbox': if (SERVER) downloadSandbox(one.name); else openSandbox(one.name); break;
     case 'edit': openEditor(one.name); break;
     case 'duplicate': duplicateApp(one.name); break;
     case 'watchfetch': fetchWatched(one.name); break;

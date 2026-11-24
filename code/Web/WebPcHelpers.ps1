@@ -10,15 +10,11 @@
       - Entra setup: the certificate and the API permissions onto the app
         registration (you sign in there) - the desktop version's Upload and
         Add permissions, the very same step (CertUpload.ps1)
-      - Sandbox test: the app's package with the test, and a starter that
-        opens Windows Sandbox and says how it went
       - Detection from an installed app: lists the PC's apps, the chosen one's
         details go to the clipboard - pasted into the editor, the server
         makes the detection rule from them
       - This PC's apps: winget export - the file goes to Add apps > From a list
 
-    A file too large for an answer (the Sandbox zip) is served once, by a
-    random link that ends after 5 minutes (/download/<id>).
 #>
 
 function Global:ConvertTo-WebScriptFile {
@@ -42,43 +38,6 @@ function Global:Get-WebHelperHeader {
   It is plain PowerShell - read it before you run it.
 #>
 "@
-}
-
-# ---------------------------------------------------------------- downloads by a single-use link
-
-function Global:New-WebDownload {
-    # A file to be fetched once at /download/<id> within 5 minutes; -RemoveAfter: delete it (a temporary zip) once sent or expired.
-    param([string]$Path, [string]$Name, [string]$ContentType = 'application/octet-stream', [switch]$RemoveAfter)
-    foreach ($k in @($Global:App.Downloads.Keys)) {
-        $d = $Global:App.Downloads[$k]
-        if ($d -and $d.Expires -lt (Get-Date)) { $Global:App.Downloads.Remove($k); if ($d.Remove) { Remove-Item -LiteralPath $d.Path -Force -ErrorAction SilentlyContinue } }
-    }
-    $bytes = New-Object byte[] 16; $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create(); try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
-    $id = -join ($bytes | ForEach-Object { $_.ToString('x2') })
-    $Global:App.Downloads[$id] = @{ Path = $Path; Name = $Name; Type = $ContentType; Expires = (Get-Date).AddMinutes(5); Remove = [bool]$RemoveAfter }
-    return "/download/$id"
-}
-
-function Global:Send-WebDownload {
-    # The file behind a /download/<id> link, once (404 when unknown, used or expired) - streamed, not read into memory.
-    param($Client, [string]$Id)
-    $d = if ($Global:App.Downloads) { $Global:App.Downloads[$Id] } else { $null }
-    if ($d) { $Global:App.Downloads.Remove($Id) }
-    if (-not $d -or $d.Expires -lt (Get-Date) -or -not (Test-Path -LiteralPath $d.Path -PathType Leaf)) {
-        Send-WebResponse $Client '404 Not Found' 'text/plain; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes('This download link was used already or has expired - start the download again.'))
-        return
-    }
-    try {
-        $name = ([string]$d.Name -replace '[^\w .()-]', '_')
-        $len = (Get-Item -LiteralPath $d.Path).Length
-        $head = "HTTP/1.1 200 OK`r`nContent-Type: $($d.Type)`r`nContent-Length: $len`r`nContent-Disposition: attachment; filename=`"$name`"`r`nCache-Control: no-store`r`nX-Content-Type-Options: nosniff`r`nReferrer-Policy: no-referrer`r`nConnection: close`r`n`r`n"
-        $ns = $Client.GetStream()
-        $hb = [Text.Encoding]::ASCII.GetBytes($head); $ns.Write($hb, 0, $hb.Length)
-        $fs = [System.IO.File]::OpenRead($d.Path)
-        try { $fs.CopyTo($ns, 1MB) } finally { $fs.Dispose() }
-        $ns.Flush()
-    }
-    finally { if ($d.Remove) { Remove-Item -LiteralPath $d.Path -Force -ErrorAction SilentlyContinue } }
 }
 
 # ---------------------------------------------------------------- Entra setup (certificate and API permissions)
@@ -149,82 +108,6 @@ Write-Host ''
 Read-Host 'Press Enter to close'
 "@
     return (ConvertTo-WebScriptFile -Text $text -Name 'Intune-App-Catalog-Entra-setup.ps1')
-}
-
-# ---------------------------------------------------------------- Windows Sandbox test
-
-function Global:Get-WebSandboxPackage {
-    <#
-      A test in Windows Sandbox as a zip, for a Windows PC: the app's package folder, the test
-      (run.ps1, as the desktop version writes it) and Start-Test.ps1, which opens the Sandbox with the
-      unpacked folder, waits for the result and says how it went. Served once by a download link.
-    #>
-    param($Data)
-    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
-    if (-not $a) { return @{ ok = $false; error = "No app called '$($Data.name)'." } }
-    if ($a.wingetId) { return @{ ok = $false; error = "Windows Sandbox has no winget, so a Winget app can't be tested there - test it on a pilot device (managed updates)." } }
-    $m = $a.metadata
-    if (-not $m -or -not $m.installCommand -or -not $m.detectionRule) { return @{ ok = $false; error = 'The app needs an install command and a detection rule first (the editor).' } }
-    $src = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $a.appName)
-    if (-not (Test-Path -LiteralPath $src)) { return @{ ok = $false; error = "The app's packages folder isn't there - add its installer first." } }
-    $size = (@(Get-ChildItem -LiteralPath $src -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -ne '.intunewin' }) | Measure-Object Length -Sum).Sum
-    if ($size -gt 4GB) { return @{ ok = $false; error = 'The package folder is larger than 4 GB - too large to download as a test.' } }
-    $work = Join-Path ([System.IO.Path]::GetTempPath()) ('ica-sandbox-' + [guid]::NewGuid().ToString('N'))
-    $root = Join-Path $work 'test'
-    $pkg = Join-Path $root 'package'
-    try {
-        [void](New-Item -ItemType Directory -Path $pkg -Force)
-        # The installer and its files - not the built .intunewin, which the test doesn't use.
-        foreach ($i in @(Get-ChildItem -LiteralPath $src -Force -ErrorAction SilentlyContinue | Where-Object { $_.Extension -ne '.intunewin' })) { Copy-Item -LiteralPath $i.FullName -Destination $pkg -Recurse -Force }
-        $utf8bom = New-Object System.Text.UTF8Encoding($true)
-        [System.IO.File]::WriteAllText((Join-Path $root 'run.ps1'), ((New-WebSandboxRunScript -Metadata $m) -replace "`r?`n", "`r`n"), $utf8bom)
-        $start = (Get-WebHelperHeader "a test of $($a.appName) in Windows Sandbox") + @'
-
-# Unpack the zip first. This opens Windows Sandbox with this folder as C:\Test: run.ps1 installs the app with
-# its install command, checks its detection rule, uninstalls it and checks again. You see how it went here.
-$root = $PSScriptRoot
-$sb = Join-Path $env:SystemRoot 'System32\WindowsSandbox.exe'
-if (-not (Test-Path -LiteralPath $sb)) { Write-Host "Windows Sandbox isn't turned on: Windows Features > Windows Sandbox (Windows Pro or Enterprise), then restart." -ForegroundColor Yellow; Read-Host 'Press Enter to close'; exit 1 }
-Remove-Item -LiteralPath (Join-Path $root 'result.json'), (Join-Path $root 'log.txt') -Force -ErrorAction SilentlyContinue
-$wsb = "<Configuration><MappedFolders><MappedFolder><HostFolder>$([System.Security.SecurityElement]::Escape($root))</HostFolder><SandboxFolder>C:\Test</SandboxFolder><ReadOnly>false</ReadOnly></MappedFolder></MappedFolders><LogonCommand><Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Test\run.ps1</Command></LogonCommand><Networking>Enable</Networking></Configuration>"
-$wsbPath = Join-Path $root 'test.wsb'
-Set-Content -LiteralPath $wsbPath -Value $wsb -Encoding UTF8
-Start-Process -FilePath $sb -ArgumentList "`"$wsbPath`""
-Write-Host 'Windows Sandbox is starting - the test runs by itself (a few minutes). Waiting for it...' -ForegroundColor Cyan
-$shown = 0
-for ($i = 0; $i -lt 360 -and -not (Test-Path -LiteralPath (Join-Path $root 'result.json')); $i++) {
-    Start-Sleep -Seconds 5
-    $lines = @(Get-Content -LiteralPath (Join-Path $root 'log.txt') -ErrorAction SilentlyContinue)
-    if ($lines.Count -gt $shown) { $lines[$shown..($lines.Count - 1)] | ForEach-Object { Write-Host "  $_" }; $shown = $lines.Count }
-}
-$file = Join-Path $root 'result.json'
-if (-not (Test-Path -LiteralPath $file)) { Write-Host 'No result after 30 minutes - see log.txt in this folder.' -ForegroundColor Yellow; Read-Host 'Press Enter to close'; exit 1 }
-$r = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
-$okInstall = ($r.installExit -in 0, 1707, 3010, 1641) -and $r.detectedAfterInstall
-$okUninstall = ($null -eq $r.uninstallExit) -or (($r.uninstallExit -in 0, 1605, 3010, 1641) -and -not $r.detectedAfterUninstall)
-Write-Host ''
-if ($okInstall -and $okUninstall) { Write-Host 'PASSED: it installs, is detected, uninstalls and is gone again.' -ForegroundColor Green }
-else {
-    if (-not $okInstall) { if ($r.installExit -notin 0, 1707, 3010, 1641) { Write-Host "The install command ended with exit code $($r.installExit)." -ForegroundColor Red } else { Write-Host "It installed, but the detection rule doesn't find it." -ForegroundColor Red } }
-    if (-not $okUninstall) { if ($r.uninstallExit -notin 0, 1605, 3010, 1641) { Write-Host "The uninstall command ended with exit code $($r.uninstallExit)." -ForegroundColor Red } else { Write-Host 'After the uninstall, the detection rule still finds it.' -ForegroundColor Red } }
-}
-# The name Windows listed it under: what a detection rule (Edit app > Detection > from an installed app) looks for.
-foreach ($e in @($r.installed)) { if ($e.name) { Write-Host "Windows listed it as: $($e.name)$(if ($e.version) { "  (version $($e.version))" })" -ForegroundColor Cyan } }
-Write-Host ''
-Write-Host "To see it in Intune App Catalog (and take the detection rule from it): the app's side panel > Upload test result, and choose $(Join-Path $root 'result.json')." -ForegroundColor Cyan
-Write-Host 'You can close the Sandbox now.'
-Read-Host 'Press Enter to close'
-'@
-        [System.IO.File]::WriteAllText((Join-Path $root 'Start-Test.ps1'), ($start -replace "`r?`n", "`r`n"), $utf8bom)
-        $zip = Join-Path $work 'test.zip'
-        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
-        [System.IO.Compression.ZipFile]::CreateFromDirectory($root, $zip)
-        $final = Join-Path ([System.IO.Path]::GetTempPath()) ('ica-sandbox-' + [guid]::NewGuid().ToString('N') + '.zip')
-        Move-Item -LiteralPath $zip -Destination $final
-    }
-    finally { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
-    $name = "Sandbox-test-$(Get-SafeFileNameForApp -Name $a.appName).zip"
-    return @{ ok = $true; url = (New-WebDownload -Path $final -Name $name -ContentType 'application/zip' -RemoveAfter); name = $name }
 }
 
 # ---------------------------------------------------------------- detection from an app installed on a PC

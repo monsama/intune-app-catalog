@@ -460,7 +460,7 @@ async function buildAdded(name, quiet) {
   runDialog(`Build ${name}`, 'Packaging it as an .intunewin for Intune.');
   const p = await releaseStep({ names: [name] }, '/api/package-start', 'runLog', `Building ${name}'s package...`);
   toast(p.ok ? `${name}'s package is built.` : `Building the package failed: ${p.error || 'see the log'}`, !p.ok,
-    p.ok && !quiet ? [{ label: 'Test in Sandbox', run: () => openSandbox(name) }, { label: 'Send to Intune', run: () => openDeploy([name]) }] : []);
+    p.ok && !quiet ? [{ label: 'Send to Intune', run: () => openDeploy([name]) }] : []);
   await loadApps();
   // Part of Add and send: the run window closes by itself - the summary says what comes next.
   if (quiet && $('dlgRun').open) $('dlgRun').close();

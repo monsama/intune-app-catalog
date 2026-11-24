@@ -105,10 +105,9 @@ $testableFunctionNames = @(
     "Get-StarterAppSet",
     "Test-InstallerFileHeader",
     "Get-ListedBaseName",
-    # 2.36.0: what doesn't fit together in a package, a PC's Sandbox result, winget's SHA256
+    # 2.36.0: what doesn't fit together in a package, winget's SHA256
     "Get-CommandPackageFiles",
     "Get-PackageConsistencyWarnings",
-    "ConvertTo-SandboxResult",
     "ConvertFrom-WingetInstallerSha256",
     "Get-DependencyOrderedApps",
     # The Checks window's one findings list (CheckFindings.ps1)
@@ -216,7 +215,6 @@ $testableFunctionNames = @(
     "Get-ScriptAppMarkerRule",
     "ConvertTo-AssignmentProfiles",
     "ConvertTo-DetectionFromInstalled",
-    "ConvertTo-DetectionTestScript",
     "ConvertFrom-WingetExportJson",
     "Get-AppUpdateOffer",
     "ConvertTo-PsLiteral",
@@ -871,7 +869,7 @@ Assert-True ($tpl.Count -eq 4 -and @($tpl | Where-Object { (& $parseErr $_.insta
 $mk = Get-ScriptAppMarkerRule -Name 'Contoso printers' -Version '1.0'
 Assert-True ($mk.Type -eq 'Registry' -and $mk.Reg_DetectionValue -eq '1.0' -and -not (Test-VersionDetectionRule ([pscustomobject]$mk))) "Get-ScriptAppMarkerRule: a registry rule by version - managed updates can follow it"
 
-# Conveniences: profiles, detection from an installed app, Sandbox detection, winget export lists
+# Conveniences: profiles, detection from an installed app, winget export lists
 $profs = @(ConvertTo-AssignmentProfiles @(@{ Name = ' Standard '; Required = @('SG-A', ' SG-A ', ''); Available = @('SG-B') }, @{ Name = 'Empty'; Required = @() }, @{ Name = ''; Required = @('SG-C') }))
 Assert-True ($profs.Count -eq 1 -and $profs[0].Name -eq 'Standard' -and @($profs[0].Required).Count -eq 1 -and (@($profs[0].Available) -join ',') -eq 'SG-B') "ConvertTo-AssignmentProfiles: named, with groups, each group once"
 $dMsi = ConvertTo-DetectionFromInstalled @{ Key = '{1c2d3e4f-1111-2222-3333-444455556666}'; WindowsInstaller = 1; DisplayVersion = '3.2.1'; Hive = 'HKLM' }
@@ -880,16 +878,6 @@ $dFile = ConvertTo-DetectionFromInstalled @{ Key = '7-Zip'; DisplayVersion = '24
 Assert-True ($dFile.Rule.Type -eq 'File' -and $dFile.Rule.File_Path -eq '%ProgramFiles%\7-Zip' -and $dFile.Rule.File_Name -eq '7zFM.exe' -and $dFile.Rule.File_DetectionType -eq 'version') "ConvertTo-DetectionFromInstalled: an EXE app by its program's file version, the folder as %ProgramFiles%"
 $dReg = ConvertTo-DetectionFromInstalled @{ Key = 'Tool'; DisplayVersion = '1.0'; Hive = 'HKLM-WOW' }
 Assert-True ($dReg.Rule.Type -eq 'Registry' -and $dReg.Rule.Reg_Check32Bit -and $dReg.Rule.Reg_ValueName -eq 'DisplayVersion' -and $dReg.Rule.Reg_DetectionType -eq 'version') "ConvertTo-DetectionFromInstalled: otherwise its Uninstall key's DisplayVersion (32-bit view)"
-$probe = Join-Path ([System.IO.Path]::GetTempPath()) ("det-probe-" + [guid]::NewGuid().ToString('N') + ".txt"); Set-Content -LiteralPath $probe -Value 'x'
-$fileRule = [pscustomobject]@{ Type = 'File'; File_Path = (Split-Path $probe -Parent); File_Name = (Split-Path $probe -Leaf); File_DetectionType = 'exists' }
-$goneRule = [pscustomobject]@{ Type = 'File'; File_Path = (Split-Path $probe -Parent); File_Name = 'not-there-' + [guid]::NewGuid().ToString('N'); File_DetectionType = 'exists' }
-Assert-True ((Invoke-Expression (ConvertTo-DetectionTestScript $fileRule)) -eq $true -and (Invoke-Expression (ConvertTo-DetectionTestScript $goneRule)) -eq $false) "ConvertTo-DetectionTestScript: a file rule finds the file that is there, and not one that isn't"
-Remove-Item -LiteralPath $probe -Force
-$allTypes = @([pscustomobject]@{ Type = 'Msi'; Msi_ProductCode = '{1C2D3E4F-1111-2222-3333-444455556666}'; Msi_VersionOperator = 'greaterThanOrEqual'; Msi_Version = '1.0' },
-    [pscustomobject]@{ Type = 'Registry'; Reg_KeyPath = "HKEY_LOCAL_MACHINE\SOFTWARE\O'Brien"; Reg_ValueName = 'Version'; Reg_DetectionType = 'version'; Reg_Operator = 'greaterThanOrEqual'; Reg_DetectionValue = '2.0' },
-    [pscustomobject]@{ Type = 'File'; File_Path = '%ProgramFiles%\X'; File_Name = 'x.exe'; File_DetectionType = 'version'; File_Operator = 'equal'; File_DetectionValue = '1.2' },
-    [pscustomobject]@{ Type = 'Script'; Script_Content = "if (Test-Path 'C:\x') { Write-Output 'Installed' }" })
-Assert-Equal 0 @($allTypes | Where-Object { $e = $null; [void][System.Management.Automation.Language.Parser]::ParseInput((ConvertTo-DetectionTestScript $_), [ref]$null, [ref]$e); @($e).Count }).Count "ConvertTo-DetectionTestScript: valid PowerShell for MSI, registry, file and script rules"
 $exp = ConvertFrom-WingetExportJson '{"Sources":[{"Packages":[{"PackageIdentifier":"7zip.7zip"},{"PackageIdentifier":"Mozilla.Firefox"},{"PackageIdentifier":"7zip.7zip"},{"PackageIdentifier":"bad id;"}]}]}'
 Assert-True (-not $exp.Error -and (@($exp.Ids) -join ',') -eq '7zip.7zip,Mozilla.Firefox') "ConvertFrom-WingetExportJson: each package once, bad IDs dropped"
 Assert-True ([bool](ConvertFrom-WingetExportJson 'not json').Error) "ConvertFrom-WingetExportJson: not JSON is refused"
@@ -3293,12 +3281,6 @@ Assert-True (@(Get-PackageConsistencyWarnings -Metadata $scriptMeta -Files @('se
 Assert-True (@(Get-PackageConsistencyWarnings -Metadata ([pscustomobject]@{ installCommand = 'setup.exe /S'; uninstallCommand = 'Tools\remove.cmd' }) -Files @('Setup\setup.exe', 'Tools\remove.cmd')).Count -eq 0) "Package check: a file found in a subfolder by its name, or by its path"
 Assert-True (@(Get-PackageConsistencyWarnings -Metadata $meta -Files @() -Installer $null).Count -eq 0) "Package check: nothing known about the folder or installer, nothing said"
 
-# A PC's Sandbox result, uploaded to the server: only what a test writes.
-$sr = ConvertTo-SandboxResult '{"before":false,"installExit":0,"detectedAfterInstall":true,"uninstallExit":1605,"detectedAfterUninstall":false,"installed":[{"name":"Contoso\u0007 Widget","version":"1.0","publisher":"Contoso","extra":"x"}],"evil":"$(rm)"}'
-Assert-True ($sr -and $sr.installExit -eq 0 -and $sr.uninstallExit -eq 1605 -and $sr.detectedAfterInstall -and @($sr.installed).Count -eq 1 -and $sr.installed[0].name -eq 'Contoso Widget' -and -not $sr.Contains('evil')) "Sandbox result: its fields, control characters out, nothing else"
-Assert-True ($null -eq (ConvertTo-SandboxResult 'not json') -and $null -eq (ConvertTo-SandboxResult '{"before":true}') -and $null -eq (ConvertTo-SandboxResult '{"installExit":"abc"}') -and $null -eq (ConvertTo-SandboxResult '[1,2]')) "Sandbox result: not a test result is refused"
-$many = '{"installExit":0,"installed":[' + ((1..20 | ForEach-Object { '{"name":"App ' + $_ + '"}' }) -join ',') + ']}'
-Assert-True (@((ConvertTo-SandboxResult $many).installed).Count -eq 10 -and $null -eq (ConvertTo-SandboxResult ('{"installExit":0,"x":"' + ('a' * 70000) + '"}'))) "Sandbox result: at most 10 apps; a huge text is refused"
 
 # winget's SHA256 for an installer (what Get new installer checks the download against).
 Assert-True ((ConvertFrom-WingetInstallerSha256 "Installer:`n  Installer Type: inno`n  Installer Url: https://x.example/setup.exe`n  Installer SHA256: $('ab' * 32)`n") -eq ('AB' * 32) -and (ConvertFrom-WingetInstallerSha256 "Installer-SHA256: $('0' * 64)") -eq ('0' * 64) -and (ConvertFrom-WingetInstallerSha256 'Version: 1.0') -eq '') "winget SHA256: read from its line, any case and label language; none when it isn't there"

@@ -666,7 +666,6 @@
   <button role="menuitem" data-act="pull" title="Read the apps' settings and groups from Intune into the catalog - you choose per field">Read from Intune...</button>
   <button role="menuitem" data-act="pushsettings" title="Send the catalog's settings to Intune, without uploading a package">Send settings only...</button>
   <button role="menuitem" data-act="status" title="Every device's install state for this app, from Intune">Install status...</button>
-  <button role="menuitem" data-act="sandbox" title="Install, detect and uninstall it in Windows Sandbox - a throwaway Windows - before it goes to any device">Test in Windows Sandbox...</button>
   <button role="menuitem" data-act="filldetails" title="Publisher, description, links and developer from winget - and the owner from Settings - where they are still empty. Never the App version.">Fill in details from winget</button>
   <hr>
   <div class="mhead" role="presentation">Releases</div>
@@ -1219,15 +1218,6 @@
   </div>
   <p class="formerror" id="addError" hidden></p>
   <div class="actions end"><span class="spacer"></span><button class="btn" id="btnAddCancel">Cancel</button><button class="btn" id="btnAddSend" disabled title="Add it, build its package if it has one, then show what is ready - and send that to Intune with its groups">Add and send...</button><button class="btn primary" id="btnAddGo" disabled>Add</button></div>
-</dialog>
-
-<dialog id="dlgSandbox" class="wide" aria-labelledby="sbTitle">
-  <h2 id="sbTitle">Test in Windows Sandbox</h2>
-  <p class="sub" id="sbText"></p>
-  <ol class="sbsteps" id="sbSteps"></ol>
-  <div class="sbfound" id="sbFound" hidden></div>
-  <pre class="log" id="sbLog" aria-label="The test's log"></pre>
-  <div class="actions end"><button class="btn desktoponly" id="btnSbFolder" title="The test folder: run.ps1, the .wsb file, the log">Open the test folder</button><button class="btn" data-close>Close</button></div>
 </dialog>
 
 <dialog id="dlgInstalled" class="wide" aria-labelledby="inTitle">

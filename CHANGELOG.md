@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.38.19
+
+- **Windows Sandbox test removed**: "Test in Windows Sandbox" (the app's menu,
+  the side panel, the result dialog), its server download (the zip with
+  Start-Test.ps1) and the upload of its result are gone - also the single-use
+  /download/ link only it used. Folders earlier versions left for it in the
+  user's app data are cleaned up at the next start. Test an app on a pilot
+  device instead (a test group as Required).
+- **Files next to the setup, in the editor**: dropping or choosing a single
+  file that isn't an installer (login.xml, a .cfg) now puts it into the app's
+  packages folder beside its setup - the setup file, the commands and the
+  detection rule stay as they are (before: "Choose an .msi or .exe installer").
+
 ## 2.38.18
 
 - **Detected by, chosen in Add apps > Installer**: besides the app's proposal,

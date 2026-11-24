@@ -1901,7 +1901,7 @@ function Global:Get-ScriptAppMarkerRule {
         Reg_DetectionType = $(if ($Version) { 'version' } else { 'exists' }); Reg_Operator = $(if ($Version) { 'greaterThanOrEqual' } else { 'notConfigured' }); Reg_DetectionValue = [string]$Version }
 }
 
-# ---------------------------------------------------------------- convenience: profiles, installed apps, sandbox tests, lists
+# ---------------------------------------------------------------- convenience: profiles, installed apps, lists
 
 function Global:ConvertTo-AssignmentProfiles {
     # Pure: assignment profiles from settings or the page - at most 30, each with a name and at least one group; groups trimmed and unique.
@@ -1937,46 +1937,6 @@ function Global:ConvertTo-DetectionFromInstalled {
     $root = switch ([string]$Entry.Hive) { 'HKCU' { 'HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' } 'HKLM-WOW' { 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' } default { 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' } }
     $key = "$root\$($Entry.Key)"
     return @{ Rule = [ordered]@{ Type = 'Registry'; Reg_KeyPath = $key; Reg_ValueName = 'DisplayVersion'; Reg_Check32Bit = ([string]$Entry.Hive -eq 'HKLM-WOW'); Reg_DetectionType = $(if ($ver) { 'version' } else { 'exists' }); Reg_Operator = $(if ($ver) { 'greaterThanOrEqual' } else { 'notConfigured' }); Reg_DetectionValue = $ver }; Text = "the Uninstall key $($Entry.Key)$(if ($ver) { ", DisplayVersion $ver or newer" })" }
-}
-
-function Global:ConvertTo-DetectionTestScript {
-    <#
-      Pure: PowerShell that says whether -Rule detects the app here - for a
-      test in Windows Sandbox. Writes $true or $false.
-    #>
-    param($Rule)
-    $q = { param($s) ConvertTo-PsLiteral $s }
-    $cmp = { param($have, $op, $want) "`$ok = `$false; try { `$h = [version](($have) -replace '[^0-9.].*$', ''); `$w = [version]($(& $q $want) -replace '[^0-9.].*$', ''); `$ok = switch ($(& $q $op)) { 'equal' { `$h -eq `$w } 'notEqual' { `$h -ne `$w } 'greaterThan' { `$h -gt `$w } 'greaterThanOrEqual' { `$h -ge `$w } 'lessThan' { `$h -lt `$w } 'lessThanOrEqual' { `$h -le `$w } default { `$true } } } catch { `$ok = (($have) -eq $(& $q $want)) }; `$ok" }
-    # In parentheses: as a command argument, [Environment]::... would be passed as text.
-    $expand = { param($p) "([Environment]::ExpandEnvironmentVariables($(& $q $p)))" }
-    switch ([string]$Rule.Type) {
-        'Msi' {
-            $code = [string]$Rule.Msi_ProductCode
-            $find = "`$e = @(Get-ItemProperty -Path ('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\' + $(& $q $code)), ('HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\' + $(& $q $code)) -ErrorAction SilentlyContinue) | Select-Object -First 1"
-            if ([string]$Rule.Msi_VersionOperator -in '', 'notConfigured') { return "$find; [bool]`$e" }
-            return "$find; if (-not `$e) { `$false } else { $(& $cmp '[string]$e.DisplayVersion' $Rule.Msi_VersionOperator $Rule.Msi_Version) }"
-        }
-        'File' {
-            $path = "(Join-Path $(& $expand $Rule.File_Path) $(& $q $Rule.File_Name))"
-            switch ([string]$Rule.File_DetectionType) {
-                'doesNotExist' { return "-not (Test-Path -LiteralPath $path)" }
-                'version' { return "`$f = $path; if (-not (Test-Path -LiteralPath `$f)) { `$false } else { $(& $cmp '[string](Get-Item -LiteralPath $f).VersionInfo.FileVersion' $Rule.File_Operator $Rule.File_DetectionValue) }" }
-                default { return "Test-Path -LiteralPath $path" }
-            }
-        }
-        'Registry' {
-            $k = 'Registry::' + ([string]$Rule.Reg_KeyPath)
-            $name = [string]$Rule.Reg_ValueName
-            switch ([string]$Rule.Reg_DetectionType) {
-                'doesNotExist' { return "-not (Test-Path -LiteralPath $(& $q $k))" }
-                'exists' { if ($name) { return "`$null -ne (Get-ItemProperty -LiteralPath $(& $q $k) -Name $(& $q $name) -ErrorAction SilentlyContinue)" }; return "Test-Path -LiteralPath $(& $q $k)" }
-                'version' { return "`$v = (Get-ItemProperty -LiteralPath $(& $q $k) -Name $(& $q $name) -ErrorAction SilentlyContinue).PSObject.Properties[$(& $q $name)].Value; if (-not `$v) { `$false } else { $(& $cmp '[string]$v' $Rule.Reg_Operator $Rule.Reg_DetectionValue) }" }
-                default { return "`$v = (Get-ItemProperty -LiteralPath $(& $q $k) -Name $(& $q $name) -ErrorAction SilentlyContinue).PSObject.Properties[$(& $q $name)].Value; [string]`$v -eq $(& $q $Rule.Reg_DetectionValue)" }
-            }
-        }
-        'Script' { return "`$out = & { $([string]$Rule.Script_Content) } 2>`$null; [bool](@(`$out) | Where-Object { `$_ })" }
-    }
-    return '$false'
 }
 
 function Global:ConvertFrom-WingetExportJson {
@@ -2236,27 +2196,6 @@ function Global:Set-AppRecordFieldJson {
     return $true
 }
 
-function Global:ConvertTo-SandboxResult {
-    <#
-      Pure (2.36.0): a Sandbox test's result.json as pasted or uploaded - only the fields a test writes, each of
-      its type (exit codes as numbers, the found apps as short text, at most 10) - or $null when it isn't one.
-    #>
-    param([string]$Text)
-    if (-not $Text -or $Text.Length -gt 65536) { return $null }
-    try { $j = $Text.Trim([char]0xFEFF).Trim() | ConvertFrom-Json -ErrorAction Stop } catch { return $null }
-    if (-not $j -or $j -is [array] -or $null -eq $j.installExit) { return $null }
-    $int = { param($v) $n = 0L; if ([long]::TryParse([string]$v, [ref]$n) -and $n -ge [int]::MinValue -and $n -le [uint32]::MaxValue) { [long]$n } else { $null } }
-    $ie = & $int $j.installExit
-    if ($null -eq $ie) { return $null }
-    $short = { param($v) $t = ([string]$v -replace '[\x00-\x1F]', '').Trim(); if ($t.Length -gt 256) { $t.Substring(0, 256) } else { $t } }
-    $found = @(@($j.installed) | Where-Object { $_ -and $_.name } | Select-Object -First 10 | ForEach-Object { [ordered]@{ name = (& $short $_.name); version = (& $short $_.version); publisher = (& $short $_.publisher) } } | Where-Object { $_.name })
-    return [ordered]@{
-        before = [bool]$j.before; installExit = $ie; detectedAfterInstall = [bool]$j.detectedAfterInstall
-        uninstallExit = $(if ($null -ne $j.uninstallExit) { & $int $j.uninstallExit } else { $null }); detectedAfterUninstall = [bool]$j.detectedAfterUninstall
-        installed = $found
-    }
-}
-
 function Global:Get-StarterAppSet {
     <#
       Pure (2.38.0, more in 2.38.1): a starter set of Winget apps organisations deploy, by category. "recommended"
@@ -2445,7 +2384,7 @@ function Global:Get-PackageConsistencyWarnings {
                     if (-not $ok) {
                         $shown = $pm.Groups[1].Value.Replace("''", "'") -replace '^\^', '' -replace '\(\\s\+.*$', ''
                         try { $shown = [regex]::Unescape($shown) } catch { }
-                        $w.Add("The detection rule looks for an app listed as '$shown', the installer calls itself '$iname' - a Sandbox test shows the name Windows lists.")
+                        $w.Add("The detection rule looks for an app listed as '$shown', the installer calls itself '$iname' - a test install shows the name Windows lists (Settings > Apps).")
                     }
                 }
             }

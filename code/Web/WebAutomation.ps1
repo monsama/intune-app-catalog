@@ -947,7 +947,7 @@ function Global:Invoke-WebHousekeeping {
     <#
       At every start (and before every nightly run): what earlier runs left
       behind - step files, unfinished uploads, packaging folders - and what has
-      grown old: Sandbox test folders (7 days), file backups (180 days), logs
+      grown old: file backups (180 days), logs
       (90 days). Removes only names this app makes.
     #>
     $now = Get-Date
@@ -961,13 +961,14 @@ function Global:Invoke-WebHousekeeping {
     if ($Global:App.RootPath) {
         foreach ($i in @(Get-ChildItem -LiteralPath $Global:App.RootPath, (Join-Path $Global:App.RootPath 'data\run'), (Join-Path $env:TEMP 'IntuneAppCatalog-steps') -Filter '.intunepkg_*' -File -Force -ErrorAction SilentlyContinue)) { if (& $old $i 1) { $n += & $drop $i } }
     }
-    $sb = Get-WebSandboxRoot
-    if (Test-Path -LiteralPath $sb) { foreach ($i in @(Get-ChildItem -LiteralPath $sb -Directory -ErrorAction SilentlyContinue)) { if (& $old $i 7) { $n += & $drop $i } } }
+    # The Windows Sandbox test is gone (2.38.19): what earlier versions left in the user's app data goes too.
+    $sb = Join-Path (Join-Path $(if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { $temp }) 'IntuneAppCatalog') 'sandbox'
+    if (Test-Path -LiteralPath $sb) { foreach ($i in @(Get-ChildItem -LiteralPath $sb -Directory -ErrorAction SilentlyContinue)) { $n += & $drop $i }; Remove-Item -LiteralPath $sb -Force -ErrorAction SilentlyContinue }
     $bk = Get-AppFolder -Kind Backups
     if (Test-Path -LiteralPath $bk) { foreach ($i in @(Get-ChildItem -LiteralPath $bk -Directory -Filter 'app-edit_*' -ErrorAction SilentlyContinue)) { if ($i.Name -match '^app-edit_\d{4}-\d{2}-\d{2}$' -and (& $old $i 180)) { $n += & $drop $i } } }
     $lg = Get-AppFolder -Kind Logs
     if (Test-Path -LiteralPath $lg) { foreach ($i in @(Get-ChildItem -LiteralPath $lg -File -Filter 'intune-deployment-*.log' -ErrorAction SilentlyContinue)) { if (& $old $i 90) { $n += & $drop $i } } }
-    if ($n) { Write-Log "[INFO] Housekeeping: $n old item(s) removed (temporary files, Sandbox tests, backups older than 180 days, logs older than 90 days)." }
+    if ($n) { Write-Log "[INFO] Housekeeping: $n old item(s) removed (temporary files, backups older than 180 days, logs older than 90 days)." }
 }
 
 function Global:Test-WebRunLockHeld {
