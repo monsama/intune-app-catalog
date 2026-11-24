@@ -62,7 +62,7 @@ function Global:Get-WebDeployPlan {
         elseif (-not $pkg.Found) {
             $reason = if ($unc) { "No package (.intunewin) yet - build it with More > Package." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging builds it." }
         }
-        elseif (-not $store -and $a.managedUpdates -and $a.wingetId -and -not (Test-ReleaseVersionText ([string]$(if ($a.metadata) { $a.metadata.appVersion })))) { $reason = "Managed updates deploy a fixed version - set its App version first (More > Take winget's version)." }
+        elseif (-not $store -and $a.managedUpdates -and $a.wingetId -and -not (Test-ReleaseVersionText ([string]$(if ($a.metadata) { $a.metadata.appVersion })))) { $reason = "Managed updates deploy a fixed version - set its App version first (Pin newest in its side panel)." }
         elseif ($unc -and -not $store -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = "No detection rule yet - an app with its own package needs one (the editor's Install & detection)." }
         $lob = $a.appId -and (Test-IntuneLobMsiType ([string]$typeOf[([string]$a.appId).ToLowerInvariant()]))
         # What doesn't fit together (2.36.0): said, not blocking - each can be on purpose.
@@ -104,6 +104,12 @@ function Global:Start-WebDeploy {
     # Microsoft 365 Apps (2.38.21): created (or updated) as Intune's own Office app with the catalog's settings.
     if ($a.office -and -not $a.wingetId) {
         if ($Data.metadataOnly -and -not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune yet - send it first." } }
+        # Linked to another kind of app (an Office Deployment Tool package as Win32, say): Intune can't turn that into
+        # Microsoft 365 Apps - asked of Intune now (2.38.23), not patched blindly.
+        if ($a.appId) {
+            $ty = Get-WebIntuneAppODataType -AppId ([string]$a.appId)
+            if ($ty.ok -and $ty.type -ne 'officeSuiteApp') { return @{ ok = $false; error = "$name is linked to a $(Get-FriendlyIntuneAppType -ODataType $ty.type) in Intune, which can't become Microsoft 365 Apps. Clear its App ID (More > Clear App ID) and send it again: Microsoft 365 Apps is created as a new app - then delete the old one in Intune." } }
+        }
         $resultPath = Join-Path $env:TEMP (".intunepkg_officeapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
         $body = ConvertTo-OfficeSuiteBody -Name $a.appName -Description ([string]$(if ($a.metadata) { $a.metadata.description })) -Settings $a.office
         $config = @{ TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
@@ -158,7 +164,7 @@ function Global:Start-WebDeploy {
     if (-not $m) { $defaults = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon $unc; $m = $defaults }
     # Managed: deployed pinned to its App version, whatever the file's commands say.
     if ($a.managedUpdates -and $a.wingetId) {
-        if (-not (Test-ReleaseVersionText ([string]$m.appVersion))) { return @{ ok = $false; error = "$name has managed updates, so it is deployed at a fixed version - set its App version first (or More > Take winget's version)." } }
+        if (-not (Test-ReleaseVersionText ([string]$m.appVersion))) { return @{ ok = $false; error = "$name has managed updates, so it is deployed at a fixed version - set its App version first (Pin newest in its side panel)." } }
         # The name too: the detection script looks for the app under its name in Windows' list of installed apps
         # (detectedName, else appName) - a copy without it got an empty pattern, and every send put that in Intune.
         $pinned = [pscustomobject]@{ managedUpdates = $true; wingetId = $a.wingetId; appName = $a.appName; detectedName = $a.detectedName; metadata = $m.PSObject.Copy() }
@@ -541,7 +547,23 @@ function Global:Get-WebIntuneAppODataType {
     if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Not connected.' } }
     $r = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) & $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$AppId" }.GetNewClosure()
     if (-not $r.ok) { return $r }
-    return @{ ok = $true; type = ([string]$r.value.'@odata.type' -replace '^#?microsoft\.graph\.', ''); name = [string]$r.value.displayName }
+    return @{ ok = $true; type = ([string]$r.value.'@odata.type' -replace '^#?microsoft\.graph\.', ''); name = [string]$r.value.displayName; value = $r.value }
+}
+
+function Global:Get-WebOfficeFromIntune {
+    <#
+      Microsoft 365 Apps' settings as Intune has them (2.38.23): for an app linked to Intune's own Microsoft 365 Apps,
+      so switching it to "Installs from Microsoft 365" starts from the tenant's settings, not the defaults - the next
+      send would otherwise overwrite them.
+    #>
+    param($Data)
+    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "No app called '$($Data.name)' in the catalog." } }
+    if (-not $a.appId) { return @{ ok = $true; found = $false } }
+    $ty = Get-WebIntuneAppODataType -AppId ([string]$a.appId)
+    if (-not $ty.ok) { return @{ ok = $false; error = $ty.error } }
+    if ($ty.type -ne 'officeSuiteApp') { return @{ ok = $true; found = $false; type = (Get-FriendlyIntuneAppType -ODataType $ty.type) } }
+    return @{ ok = $true; found = $true; office = (ConvertFrom-OfficeSuiteApp $ty.value) }
 }
 
 function Global:Remove-WebReplacedLobApp {

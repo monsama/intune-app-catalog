@@ -216,7 +216,7 @@ function Global:Get-WebAttention {
     # Not those whose remaining gaps winget was asked about already and doesn't have (same Winget ID).
     $askedDetails = Read-WebDetailsAsked
     $bare = @($apps | Where-Object {
-            if (-not $_.wingetId) { return $false }
+            if (-not $_.wingetId -or (Test-StoreProductId ([string]$_.wingetId))) { return $false }   # Store apps: winget has no details for them (2.38.23)
             $gaps = @(Get-WebDetailsGaps -App $_ -Fill $null)
             if (-not $gaps.Count) { return $false }
             $k = $askedDetails[[string]$_.appName]
@@ -241,9 +241,9 @@ function Global:Get-WebAttention {
     # Microsoft's own app types (Company Portal, Microsoft 365 Apps, Store apps) have no package to build - said apart, not as "not built".
     # Not yet in Intune - or Company Portal linked without its Store ID (2.38.20: the button sets that too).
     $builtIn = @($apps | Where-Object { (-not $_.appId -or (-not $_.wingetId -and (Test-CompanyPortalName $_.appName))) -and (Get-NonPackageAppHint $_) })
-    $noPkg = @($apps | Where-Object { -not $_.wingetId -and -not $_.appId -and -not (Get-NonPackageAppHint $_) -and -not (Resolve-AppPackagePath -AppName $_.appName -Uncommon $true -PackagePath $_.packagePath).Found })
-    if ($noPkg.Count) { & $add 'warn' "$($noPkg.Count) own package(s) not built" ((@($noPkg | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + ' - select them and use Package.') 'apps:all' }
-    # Company Portal can be fixed here (its Store ID); Microsoft 365 Apps is created in Intune, then linked by Checks.
+    $noPkg = @($apps | Where-Object { -not $_.wingetId -and -not $_.appId -and -not $_.office -and -not (Get-NonPackageAppHint $_) -and -not (Resolve-AppPackagePath -AppName $_.appName -Uncommon $true -PackagePath $_.packagePath).Found })
+    if ($noPkg.Count) { & $add 'warn' "$($noPkg.Count) own package(s) not built" ((@($noPkg | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + ' - select them and use Build package (More).') 'apps:all' }
+    # Company Portal can be fixed here (its Store ID); Microsoft 365 Apps by its editor (Installs from > Microsoft 365).
     $portal = @($builtIn | Where-Object { -not $_.wingetId -and (Test-CompanyPortalName $_.appName) })
     if ($builtIn.Count) { & $add 'info' "$($builtIn.Count) Microsoft app(s) that aren't packages" ((@($builtIn | Select-Object -First 3 | ForEach-Object { Get-NonPackageAppHint $_ }) -join ' ') + $(if ($portal.Count) { ' The button sets Company Portal up as the Store app.' } else { '' })) $(if ($portal.Count) { 'do:portalstore' } else { 'apps:all' }) }
     # Managed updates as the way apps are kept current: the default, every Winget app, and each with its version.
@@ -411,7 +411,8 @@ function Global:Read-WebPackageList {
         # without its Store ID, Microsoft 365 Apps with its settings or by its name.
         $cp = @($all | Where-Object { Test-CompanyPortalName ([string]$_.appName) }) | Select-Object -First 1
         if ($cp -and -not $have.ContainsKey('9wzdncrfj3pz')) { $have['9wzdncrfj3pz'] = [string]$cp.appName }
-        $o365 = @($all | Where-Object { $_.office -or (-not $_.wingetId -and ([string]$_.appName).Trim() -match '^(Microsoft\s+)?(365|Office)\b|^Microsoft 365 Apps') }) | Select-Object -First 1
+        # By name only the suite itself (2.38.23) - not "Office Timeline" or another app that starts with the word.
+        $o365 = @($all | Where-Object { $_.office -or (-not $_.wingetId -and ([string]$_.appName).Trim() -match '^(Microsoft 365( Apps)?|Office 365|Microsoft Office)(\s+(for\s+)?(enterprise|business|ProPlus))?$') }) | Select-Object -First 1
         if ($o365) { $have[(Get-OfficeStarterId).ToLowerInvariant()] = [string]$o365.appName }
         return @{ ok = $true; starter = $true; items = @(Get-StarterAppSet | ForEach-Object { $k = ([string]$_.id).ToLowerInvariant()
             [ordered]@{ id = $_.id; name = $_.name; category = $_.category; recommended = [bool]$_.recommended; why = $_.why; inCatalog = $(if ($have.ContainsKey($k)) { $have[$k] } else { '' }) } }) }
@@ -510,9 +511,12 @@ function Global:Set-WebCompanyPortalStore {
     param($Data)
     $undo = New-WebUndo 'Company Portal as a Store app'
     $changed = New-Object System.Collections.Generic.List[string]
-    # Linked to Intune already too: its App ID stays - the catalog then knows it as the Store app it is in Intune.
-    foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { -not $_.wingetId -and (Test-CompanyPortalName $_.appName) })) {
+    # Linked to Intune already too: its App ID stays when it is the new Store app there - the catalog then knows it as
+    # it is. Linked to anything else (the legacy Store app, 2.38.23): the App ID goes, Send to Intune creates the new one
+    # (a winGetApp can't be patched onto the legacy type). Not one packaged on purpose (its own package or commands).
+    foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { -not $_.wingetId -and (Test-CompanyPortalName $_.appName) -and -not $_.packagePath -and -not ($_.metadata -and ([string]$_.metadata.installCommand).Trim() -and $_.metadata.detectionRule) })) {
         $a.wingetId = '9WZDNCRFJ3PZ'
+        if ($a.appId -and [string]$a.intuneAppType -ne 'Microsoft Store app (new)') { $a.appId = ''; $a.intuneAppType = ''; $a.intuneAppVersion = '' }
         Write-WebAppFile -App $a -Undo $undo
         $changed.Add([string]$a.appName)
     }

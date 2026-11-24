@@ -65,8 +65,10 @@ async function runChecks(names) {
     // No findings: the empty state says what wasn't compared - the note above doesn't say it again.
     $('checkNotes').textContent = [r.summary || '', ...(findings.length ? notes : [])].join(' ').trim();
     $('checkEmptyList').hidden = true; $('btnRunChecksEmpty').hidden = true;
-    $('checkEmptyTitle').textContent = 'Nothing to fix';
-    $('checkEmptyText').textContent = notes.length ? `No findings - but not everything was compared: ${notes.join(' ')}` : 'The catalog, Intune and Entra ID agree.';
+    // Not everything compared (2.38.23): said in the title - not the green "Nothing to fix" with the catch in small print.
+    $('checkEmptyTitle').textContent = notes.length ? 'No findings in what was compared' : 'Nothing to fix';
+    $('checkEmptyText').textContent = notes.length ? `Not everything was compared: ${notes.join(' ')}` : 'The catalog, Intune and Entra ID agree.';
+    $('checkEmpty').classList.toggle('partial', !!notes.length);
     checkLog(`${stamp()} [OK] Checks finished: ${shownFindings().length} finding(s).`);
     return r;
   } finally {

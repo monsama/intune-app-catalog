@@ -1,5 +1,45 @@
 # Changelog
 
+## 2.38.23
+
+Full sweep (security, bugs, usability).
+
+- **Microsoft 365 Apps**
+  - Ticking every app and saving kept the default exclusions - "no app left out" is
+    now kept. A minimised editor opened again no longer loses its Microsoft 365
+    settings on Save.
+  - An app linked to Intune's own Microsoft 365 Apps reads its settings from Intune
+    when switched to "Installs from Microsoft 365", so the next send doesn't
+    overwrite the tenant's channel, languages and apps with the defaults.
+  - Linked to another app type in Intune (an Office Deployment Tool package as
+    Win32): Send to Intune says to clear the App ID instead of failing in Intune.
+  - Defaults now also leave out Visio (needs its own licence) and Publisher
+    (retired); Publisher and Microsoft as publisher/developer are filled in.
+  - Not shown as an "own package not built" on Home; can't be duplicated (one per
+    catalog); languages like sr-latn-rs are kept; Managed updates on says why it
+    doesn't apply.
+- **Company Portal** linked to the legacy Store app: the one-click fix creates the
+  new Store app instead of sending a body the legacy type can't take; an app
+  packaged on purpose is left alone.
+- **Editor**: the Install & detection tab is hidden only for apps that really are
+  Intune's own types - an app merely named like Office keeps it. No Managed
+  updates checkbox for Store apps.
+- **Security hardening**
+  - "Previous version" of a package file could load another app's copy when names
+    had underscores - copies are now kept per app.
+  - Saving and Previous version keep the 256 KB limit of opening a file.
+  - A file in the ANSI code page refuses characters it can't hold (they became "?").
+  - Uploads into a package folder keep a copy of each file they replace (Backups)
+    and never write through links.
+- **Usability**
+  - One name per action: "Pin newest" / "Pin winget's newest version", and
+    "Build package" everywhere.
+  - The menu no longer offers managed updates or releases for Store and Microsoft
+    365 apps; greyed-out menu items look greyed out.
+  - Checks that couldn't compare everything no longer show the green all-clear.
+  - Home doesn't offer winget details for Store apps; Starter set shows "Intune's
+    Office app" and "Store 9WZDNCRFJ3PZ" instead of bare IDs.
+
 ## 2.38.22
 
 - **Ready to send? for Microsoft's own apps** says what to do, with a button:

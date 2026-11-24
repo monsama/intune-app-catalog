@@ -171,7 +171,7 @@ $('wtGo').addEventListener('click', async () => {
       // The next step: a managed app releases it to pilot; any other is packaged and sent with its App version set.
       cell.replaceChildren(el('span', { class: 'pill ok', text: `${r.version} in its folder` }), ' ',
         r.managed ? el('button', { type: 'button', class: 'btn small', text: 'Release...', title: `Release ${r.version} to the pilot groups first`, onclick: () => { $('dlgWatched').close(); openRelease(a.name); } })
-          : el('button', { type: 'button', class: 'btn small', text: 'Open', title: `Set the App version to ${r.version}, then Package and send it`, onclick: () => { $('dlgWatched').close(); openEditor(a.name); } }));
+          : el('button', { type: 'button', class: 'btn small', text: 'Open', title: `Set the App version to ${r.version}, then build the package and send it`, onclick: () => { $('dlgWatched').close(); openEditor(a.name); } }));
     }
   // Done: only Close is left (2.38.0) - a greyed-out "Done" beside it said nothing.
   } finally { wtRunning = false; $('wtClose').disabled = false; $('wtGo').hidden = true; $('wtClose').focus(); }

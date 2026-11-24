@@ -316,6 +316,8 @@ function Global:Copy-WebApp {
     $all = @((Read-WebCatalogRecords).Apps)
     $a = $all | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
     if (-not $a) { return @{ ok = $false; error = "No app called '$($Data.name)' in the catalog." } }
+    # One Microsoft 365 Apps per catalog (2.38.23) - a copy had no settings and showed as an own installer.
+    if ($a.office -and -not $a.wingetId) { return @{ ok = $false; error = "$($a.appName) is Microsoft 365 Apps - there is one per catalog. Change its settings (channel, apps, languages) in the editor instead." } }
     $newName = ([string]$Data.newName).Trim() -replace '\s+', ' '
     $why = Test-WebAddName $newName $all
     if ($why) { return @{ ok = $false; error = $why } }

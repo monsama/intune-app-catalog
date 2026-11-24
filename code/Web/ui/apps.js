@@ -257,9 +257,9 @@ function srcFromField() { const v = $('aWinget').value.trim(); return !v ? null 
 const officeChannels = [['monthlyEnterprise', 'Monthly Enterprise Channel - once a month (recommended)'], ['current', 'Current Channel - new features as they come'],
   ['deferred', 'Semi-Annual Enterprise Channel - twice a year'], ['firstReleaseCurrent', 'Current Channel (Preview)'], ['firstReleaseDeferred', 'Semi-Annual Enterprise Channel (Preview)']];
 const officeApps = [['word', 'Word'], ['excel', 'Excel'], ['powerPoint', 'PowerPoint'], ['outlook', 'Outlook'], ['oneNote', 'OneNote'], ['teams', 'Teams'], ['oneDrive', 'OneDrive'],
-  ['access', 'Access'], ['publisher', 'Publisher'], ['visio', 'Visio (needs its licence)'], ['groove', 'OneDrive for Business (Groove, old)'], ['lync', 'Skype for Business (retired)'],
+  ['access', 'Access'], ['publisher', 'Publisher (retired)'], ['visio', 'Visio (needs its own licence)'], ['groove', 'OneDrive for Business (Groove, old)'], ['lync', 'Skype for Business (retired)'],
   ['infoPath', 'InfoPath (retired)'], ['sharePointDesigner', 'SharePoint Designer (retired)'], ['bing', 'Bing search in the browser']];
-const officeDefaults = () => ({ channel: 'monthlyEnterprise', architecture: 'x64', locales: [], excluded: ['bing', 'groove', 'infoPath', 'lync', 'sharePointDesigner'], sharedActivation: false, removeOlder: true });
+const officeDefaults = () => ({ channel: 'monthlyEnterprise', architecture: 'x64', locales: [], excluded: ['bing', 'groove', 'infoPath', 'lync', 'publisher', 'sharePointDesigner', 'visio'], sharedActivation: false, removeOlder: true });
 $('oChannel').replaceChildren(...officeChannels.map(([v, t]) => el('option', { value: v, text: t })));
 $('oApps').replaceChildren(...officeApps.map(([k, t]) => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-oapp': k }), t)));
 function fillOffice(o) {
@@ -268,6 +268,17 @@ function fillOffice(o) {
   $('oLocales').value = (s.locales || []).join(', ');
   for (const c of document.querySelectorAll('[data-oapp]')) c.checked = !(s.excluded || []).includes(c.dataset.oapp);
   $('oShared').checked = !!s.sharedActivation; $('oRemoveOlder').checked = s.removeOlder !== false;
+}
+// Linked to Intune's own Microsoft 365 Apps but without its settings here (2.38.23): they are read from Intune, so the
+// next send keeps the tenant's channel, languages and apps instead of overwriting them with the defaults.
+async function officeFromIntune() {
+  const row = apps.find(a => a.name === editingName);
+  if (!row || !row.hasAppId || row.office) return;
+  const r = await api('/api/office-from-intune', { name: editingName });
+  if (editorSrc !== 'office') return;
+  if (r.ok && r.found) { fillOffice(r.office); toast(`${editingName}'s Microsoft 365 settings were read from Intune - change what you need, then Save.`); }
+  else if (r.ok && r.type) toast(`${editingName} is a ${r.type} in Intune - it can't become Microsoft 365 Apps in place. Clear its App ID to create Microsoft 365 Apps as a new app.`, true);
+  else if (!r.ok) toast(`Its settings couldn't be read from Intune (${r.error}) - the usual ones are shown; check them before you send.`, true);
 }
 function readOffice() {
   return { channel: $('oChannel').value, architecture: $('oArch').value, locales: $('oLocales').value.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean),
@@ -279,7 +290,11 @@ function showSrc() {
   $('aWingetRow').hidden = editorSrc === 'own' || office;
   // Microsoft 365: its settings instead of managed updates, a release rule and a package - Microsoft updates it on its channel.
   $('aOfficeBox').hidden = !office;
-  $('aManaged').parentElement.hidden = office;
+  // A Store app neither (2.38.23) - the Store updates it.
+  $('aManaged').parentElement.hidden = office || editorSrc === 'store';
+  if (office || editorSrc === 'store') $('aManaged').checked = false;
+  // Microsoft's app: its publisher, when nothing is set yet.
+  if (office && !$('mPublisher').value.trim()) { $('mPublisher').value = 'Microsoft'; if (!$('mDeveloper').value.trim()) $('mDeveloper').value = 'Microsoft'; }
   if (office) { $('aManaged').checked = false; $('aRuleBox').hidden = true; $('aPkgInfo').hidden = true; $('aWatchRow').hidden = true; if ($('aMethodRow')) $('aMethodRow').hidden = true; }
   if (window.edSrcChanged) edSrcChanged();
   $('aWingetLbl').textContent = editorSrc === 'store' ? 'Store product ID' : 'Winget ID';
@@ -290,7 +305,7 @@ for (const b of document.querySelectorAll('.srcpick [data-src]')) b.addEventList
   editorSrc = now;
   // What doesn't fit the new choice goes (an own installer has no ID; a Winget ID isn't a Store ID).
   if (f && f !== now) { $('aWinget').value = ''; $('aWinget').dispatchEvent(new Event('input', { bubbles: true })); }
-  showManagedState(); if (now === 'office') { if (was !== now) $('oChannel').focus(); } else if (now !== 'own' && was !== now) $('aWinget').focus();
+  showManagedState(); if (now === 'office') { if (was !== now) { $('oChannel').focus(); officeFromIntune(); } } else if (now !== 'own' && was !== now) $('aWinget').focus();
   if (typeof updateReady === 'function') updateReady();
 });
 function showManagedState() {
@@ -454,7 +469,7 @@ function pkgUploadReview(f, have) {
 const methodBody = extra => ({ wingetId: $('aWinget').value.trim(), context: $('xContext').value, version: $('mAppVersion').value.trim(), install: $('mInstallCommand').value, uninstall: $('mUninstallCommand').value, ...extra });
 function methodText(m, pinned) {
   const v = $('mAppVersion').value.trim(), w = editorWingetOffers, now = w ? ` Winget has ${w} now (last check).` : '';
-  if (m === 'Managed') return !v ? "Installs the App version with winget - but there's no App version yet: set one (More > Take winget's version) before deploying."
+  if (m === 'Managed') return !v ? "Installs the App version with winget - but there's no App version yet: set one (Pin newest in the side panel) before deploying."
     : `Installs exactly ${pinned || v} (the App version), with winget. Newer versions reach devices only when you release them: pilot groups first, then everyone.` + (w && w !== v ? ` Winget has ${w} now - release it on Updates.` : '');
   if (m === 'WAU') return "Still installs through Winget-AutoUpdate, which this catalog no longer uses. Choose Managed updates (or the winget command) - Home switches all such apps at once.";
   if (m === 'Winget') return 'Installs whatever version winget has at that moment - nothing is pinned. Nothing updates it afterwards.' + now;
@@ -614,8 +629,9 @@ function readSupersedence() {
 }
 let editingVersion = '';
 async function openEditor(name) {
-  appVerPick.reset(); editorSrc = name ? 'own' : 'winget';   // a new app starts on Winget (most are)
+  // A minimised editor comes back as it was (2.38.23: its "Installs from" too - reset first, Microsoft 365 was lost on Save).
   if (wcResume('dlgApp')) return;
+  appVerPick.reset(); editorSrc = name ? 'own' : 'winget';   // a new app starts on Winget (most are)
   editingName = name || ''; editingVersion = '';
   if (name) {
     const r = await api('/api/app-get', { name });
@@ -1398,8 +1414,10 @@ function openMenu(x, y) {
   // what could be made to apply (send it first, select one). A section with nothing left loses its heading too.
   if (any) {
     const own = sel.some(a => !a.wingetId && !a.office), winget = sel.some(a => a.wingetId && !isStoreId(a.wingetId));
+    // Store and Microsoft 365 apps (2.38.23): Microsoft or the Store updates them - no managed updates or releases.
+    const versioned = sel.some(a => !(a.wingetId && isStoreId(a.wingetId)) && !(a.office && !a.wingetId) && !(a.msHint && !a.wingetId));
     const never = {
-      package: !own, watchfetch: !own, takeversion: !winget, filldetails: !winget,
+      package: !own, watchfetch: !own, takeversion: !winget, filldetails: !winget, managed: !versioned, release: !versioned,
       promote: !sel.some(a => a.pilotVersion), withdraw: !sel.some(a => a.pilotVersion),
       rollback: !sel.some(a => (a.previousVersions || []).length), cleanup: !sel.some(a => (a.previousVersions || []).length > 1),
     };
@@ -1494,7 +1512,7 @@ async function menuAction(act) {
     }
     case 'takeversion': {
       const take = sel().filter(a => a.wingetId && a.newerOnWinget);
-      if (!(await ask(`Take winget's version for ${take.length} app${take.length === 1 ? '' : 's'}?\n\n${take.map(a => `${a.name}: ${a.version || '(none)'} → ${a.wingetVersion}`).join('\n')}\n\nManaged apps then install exactly this version (their command and detection follow it) - send the ones in Intune again. Apps on the winget command only show it as their version. Undo takes it back.`, { ok: 'Take version', danger: false }))) return;
+      if (!(await ask(`Pin winget's newest version for ${take.length} app${take.length === 1 ? '' : 's'}?\n\n${take.map(a => `${a.name}: ${a.version || '(none)'} → ${a.wingetVersion}`).join('\n')}\n\nManaged apps then install exactly this version (their command and detection follow it) - send the ones in Intune again. Apps on the winget command only show it as their version. Undo takes it back.`, { ok: 'Take version', danger: false }))) return;
       const r = await api('/api/winget-take-version', { names: take.map(a => a.name) });
       if (!r.ok) { toast(r.error, true); return; }
       toast(`App version updated on ${r.changed.length} app(s).${r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : ''}`);
@@ -1901,7 +1919,7 @@ async function fetchWatched(name) {
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps();
   if (r.managed) { toast(`${r.version} is in its folder (${r.file}) - release it to the pilot groups.`); openRelease(name); }
-  else toast(`${r.version} is in its folder (${r.file}). Set the App version to ${r.version} (the editor), then Package and send it.`, false, [{ label: 'Open it', run: () => openEditor(name) }]);
+  else toast(`${r.version} is in its folder (${r.file}). Set the App version to ${r.version} (the editor), then build the package and send it.`, false, [{ label: 'Open it', run: () => openEditor(name) }]);
 }
 async function duplicateApp(name) {
   let n = 2; while (apps.some(a => a.name.toLowerCase() === `${name} (${n})`.toLowerCase())) n++;

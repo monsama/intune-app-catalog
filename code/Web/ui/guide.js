@@ -238,8 +238,8 @@ function updateReady() {
       // By file name - the installer may sit in a subfolder (Setup\\setup.exe, uploaded with its folder).
       const named = ($('mInstallCommand').value.match(/([^\s"'\\/]+\.(?:msi|exe))\b/i) || [])[1], have = editorInstaller && editorInstaller.file && String(editorInstaller.file).split(/[\\/]/).pop();
       if (named && have && named.toLowerCase() !== String(have).toLowerCase() && !/^(msiexec|cmd|powershell)\.exe$/i.test(named))
-        return [false, `The command installs ${named}, the packages folder has ${have} - put ${named} there, then Package`, 'mInstallCommand'];
-      return [!!(row && !row.packageMissing), row && !row.packageMissing ? 'Its installer is packaged' : 'Its installer packaged (Packages\\<name>, then Package)', null];
+        return [false, `The command installs ${named}, the packages folder has ${have} - put ${named} there, then Build package`, 'mInstallCommand'];
+      return [!!(row && !row.packageMissing), row && !row.packageMissing ? 'Its installer is packaged' : 'Its installer packaged (upload it, then Build package)', null];
     })()
       : [true, `Installs from winget (${wid})`, 'aWinget'],
     own ? [!!$('mInstallCommand').value.trim(), 'An install command', 'mInstallCommand'] : [true, 'Install command - made for winget', null],
@@ -420,7 +420,9 @@ function renderWhere() {
     // requirements or dependencies are sent for them. Details stay: the description, publisher and links go to Intune.
     try {
       const row = typeof editingName !== 'undefined' && editingName ? apps.find(a => a.name === editingName) : null;
-      const special = st || !!(!$('aWinget').value.trim() && row && row.msHint);
+      // By Intune's own app type only (2.38.23): an app named like Office but packaged by hand (an Office Deployment Tool
+      // package without its detection yet) needs this tab to get its commands and detection.
+      const special = st || !!(!$('aWinget').value.trim() && row && row.msHint && row.hasAppId);
       bar.children[3].hidden = special;
       $('dlgApp').classList.toggle('is-special', special);
       if (special && cur === 3) setPage(0);
