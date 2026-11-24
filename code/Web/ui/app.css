@@ -1270,8 +1270,9 @@ input.preview, textarea.preview { background: var(--bd2); color: var(--muted); c
 .scriptdlg .setab:only-child { border-radius: var(--r-m); }
 /* Tables with a row or two don't stretch to an empty band. */
 .gtable, dialog .tablewrap { min-height: 0; }
-/* Apps with the side panel open on a narrower screen: the Source column steps aside for the Stage. */
-@media (max-width: 1600px) { .appsplit:has(> .apppanel:not([hidden])) #grid tr > :nth-child(2) { display: none; } }
+/* Up to 1600px the Source column (also in the side panel) isn't shown at all - before, it went only when the panel
+   opened, and the whole table jumped sideways on every click (2.38.15). */
+@media (max-width: 1600px) { #grid tr > :nth-child(2) { display: none; } }
 /* Narrower windows without the panel too (2.38.3): Source goes, Stage stays in view (it needed sideways scrolling at 820). */
 @media (max-width: 1000px) { #grid tr > :nth-child(2) { display: none; } }
 /* Every dialog's action row sits on its own footer line, as the editor's does. */
@@ -1774,3 +1775,16 @@ dialog.palette input { width: 100%; box-sizing: border-box; }
 /* Checks: the App column keeps room for a name - it squeezed to one word a line at 800px. */
 #checkGrid td:nth-child(3) { min-width: 9em; }
 @media (max-width: 900px) { #checkGrid td.dif { min-width: 0; } }
+
+/* Long dialogs (2.38.15): the window buttons follow the scroll (windows.js) - on a background of their own, and the
+   editor's sticky section tabs leave them room. */
+dialog .wctl { background: var(--surface); border-radius: var(--r-s); }
+dialog.haswctl .edtabs { padding-right: 96px; }
+/* Install status on a narrower window (2.38.15): Detail and Version step aside (the state says enough), the error's
+   explanation in the normal font - Last seen stays in view without sideways scrolling. */
+#statusRows td.chg .muted.small { font-family: var(--ui); white-space: normal; }
+@media (max-width: 900px) { #dlgStatus table.plan tr > :nth-child(4), #dlgStatus table.plan tr > :nth-child(6) { display: none; } }
+/* Home and Updates while loading (2.38.15): the note above the buttons gets a line of its own on narrower windows, so a
+   long sentence replacing "Looking..." doesn't push the buttons onto a second row. */
+@media (max-width: 1100px) { #homeNote, #updNote { flex-basis: 100%; } }
+.stat.skel .n { color: var(--muted); }

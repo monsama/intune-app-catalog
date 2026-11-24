@@ -35,6 +35,17 @@ Second full sweep (security, bugs, UI), and:
   up to 1600px, names stay on one line and the button just says Remove; the
   Checks App column no longer squeezes to one word a line; the Apps chip says
   "not in Intune yet"; the side panel says "Next step:" before its button.
+- **Less movement while loading and clicking**: Home and Updates show
+  placeholder tiles from the start (the page no longer drops when the numbers
+  come), Home's Shortcuts card no longer shows and then vanishes, the note above
+  the buttons has its own line on narrower windows, and the Updates placeholder
+  rows use the real columns. The Apps table no longer jumps sideways when the
+  side panel opens (Source is simply not shown up to 1600px - it is in the
+  panel).
+- **Long dialogs**: minimize, maximize and close stay in the top right corner
+  while the dialog scrolls (the editor with a section open).
+- **Install status on narrower windows**: Detail and Version step aside so Last
+  seen stays in view; the error explanation uses the normal font.
 
 ## 2.38.14
 
