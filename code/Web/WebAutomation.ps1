@@ -353,7 +353,7 @@ function Global:Invoke-WebNightlyDrift {
         $areas = @($g.Group | ForEach-Object { [string]$_.area } | Select-Object -Unique)
         $what = @($g.Group | Select-Object -First 3 | ForEach-Object { "$($_.area): $($_.problem)" }) -join '; '
         $items.Add([ordered]@{ app = $g.Name; outcome = 'drift'; text = "Intune differs from the catalog - $what$(if ($g.Count -gt 3) { "; $($g.Count - 3) more" }). Checks has the details." })
-        if (@($areas | Where-Object { $_ -in 'Groups', 'Unknown assignments' }).Count -and $g.Name) { $fixable.Add($g.Name) }
+        if (@($areas | Where-Object { $_ -in 'Groups', 'Unknown assignments', 'Assignment filter' }).Count -and $g.Name) { $fixable.Add($g.Name) }
     }
     if ($Fix -and $fixable.Count) {
         # Never creates groups unattended (2.38.32): a mistyped group name made an empty group at night.

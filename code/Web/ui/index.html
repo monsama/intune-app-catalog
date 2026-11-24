@@ -1233,6 +1233,7 @@
       <input type="file" id="alFile" accept=".json,application/json" hidden>
       <span class="muted" id="alNote" aria-live="polite"></span>
     </div>
+    <label class="alsearch" id="alSearchRow" hidden><span class="sr">Search the list</span><input type="search" id="alSearch" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="Search the list - name, ID, category or what it is for (e.g. pdf, vpn, lenovo)"></label>
     <label class="chk" title="Install a fixed version (winget's current one) and release new versions to the pilot groups first"><input type="checkbox" id="alManaged">Managed updates (pin winget's current version)</label>
     <div class="tablewrap" tabindex="0" aria-label="Packages in the list" data-empty="Recommended apps, an export file or this PC's apps - the packages appear here to pick from." data-server-empty="Recommended apps or an export file - the packages appear here to pick from.">
       <table class="grid" id="alGrid"><thead><tr><th class="chk"><input type="checkbox" id="alAll" aria-label="Pick every package not in the catalog"></th><th>Winget ID</th><th>In the catalog</th></tr></thead><tbody id="alRows"></tbody></table>

@@ -1870,3 +1870,6 @@ dialog.addapps .asec ul.notes { font-size: 12px; }
 /* Nightly run settings: the usual gap after a checkbox row; History's section heading below the title in size. */
 #sec-automation label.chk + label:not(.chk) { margin-top: 14px; }
 #dlgHistory h3 { font-size: 14px; }
+/* Add apps > From a list: search (2.38.33). */
+.alsearch { display: block; margin: 0 0 8px; }
+.alsearch input { width: 100%; }

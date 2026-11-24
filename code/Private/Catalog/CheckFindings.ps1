@@ -94,9 +94,12 @@ function Global:Get-IntuneLinkFindings {
         }
     }
     foreach ($renamed in @($drift.Renamed | Sort-Object IntuneName)) {
+        # A name left over from a release step ("<name> <version> (pilot)") is the catalog's name with a marker: send the
+        # catalog's settings to put the real name back instead of taking the marker into the catalog.
+        $marker = [string]$renamed.IntuneName -match ('^' + [regex]::Escape([string]$renamed.CatalogName) + ' \S+ \((pilot|superseded)\)$')
         $findings.Add((New-CheckFinding -Area "Intune link" -App ([string]$renamed.CatalogName) -CatalogName ([string]$renamed.CatalogName) -AppId ([string]$renamed.Id) `
-            -Problem "Renamed in Intune" -Catalog ([string]$renamed.CatalogName) -Intune ([string]$renamed.IntuneName) `
-            -Actions @("RenameFromIntune") -Data ([pscustomobject]@{ IntuneName = [string]$renamed.IntuneName })))
+            -Problem $(if ($marker) { "Still has its release name in Intune" } else { "Renamed in Intune" }) -Catalog ([string]$renamed.CatalogName) -Intune ([string]$renamed.IntuneName) `
+            -Actions $(if ($marker) { @("PushMetadata") } else { @("RenameFromIntune") }) -Data ([pscustomobject]@{ IntuneName = [string]$renamed.IntuneName })))
     }
     foreach ($gone in @($drift.DeletedFromIntune | Sort-Object appName)) {
         $findings.Add((New-CheckFinding -Area "Intune link" -App ([string]$gone.appName) -CatalogName ([string]$gone.appName) -AppId ([string]$gone.appId) `
@@ -107,8 +110,10 @@ function Global:Get-IntuneLinkFindings {
     # App IDs already taken by a catalog entry can't be another one's match
     $usedIds = @{}
     foreach ($a in @($Apps)) { if ($a -and $a.appId) { $usedIds[[string]$a.appId] = $true } }
+    # Every app's releases too (2.38.33): "Firefox ESR" was offered "Firefox 128.0 (superseded)" - another app's old release.
+    foreach ($a in @($Apps)) { foreach ($r in @($a.releases)) { if ($r -and $r.appId) { $usedIds[([string]$r.appId).ToLowerInvariant()] = $true; $usedIds[[string]$r.appId] = $true } } }
     foreach ($a in @($Apps | Where-Object { $_ -and -not $_.appId } | Sort-Object appName)) {
-        $candidates = @(Find-IntuneNameMatches -Name ([string]$a.appName) -IntuneApps $IntuneApps | Where-Object { -not $usedIds.ContainsKey([string]$_.id) })
+        $candidates = @(Find-IntuneNameMatches -Name ([string]$a.appName) -IntuneApps $IntuneApps | Where-Object { -not $usedIds.ContainsKey([string]$_.id) -and -not $usedIds.ContainsKey(([string]$_.id).ToLowerInvariant()) -and ([string]$_.displayName) -notmatch '\((superseded|pilot)\)\s*$' })
         if ($candidates.Count -eq 0) { continue }
         $normName = ([string]$a.appName).Trim() -replace '\s+', ' '
         $exact = @($candidates | Where-Object { (([string]$_.displayName).Trim() -replace '\s+', ' ') -eq $normName })
@@ -225,6 +230,41 @@ function Global:Get-UnknownAssignmentFindings {
     if ($items.Count -eq 0) { return @() }
     return @(New-CheckFinding -Area "Unknown assignments" -App ([string]$CatalogApp.appName) -CatalogName ([string]$CatalogApp.appName) -AppId ([string]$CatalogApp.appId) `
         -Problem (Get-UnknownAssignmentText $items) -Catalog "(not in the catalog)" -Intune ($items -join ", ") -Actions @("PushGroups", "Pull"))
+}
+
+function Global:Get-AssignmentChangeFindings {
+    <#
+      The whole assignment preview of one app as findings (2.38.33). Before, only what Intune had extra was shown
+      ("unknown"), so a changed filter showed as an unknown assignment and a missing exclusion not at all:
+        - the same assignment with another filter on each side -> "Assignment filter differs"
+        - an exclusion the catalog has and Intune doesn't      -> "Exclusion missing in Intune"
+        - the rest of what Intune has                          -> the unknown-assignments finding
+      Missing inclusions are left to the Groups check, which already compares those lists.
+      Returns @{ Findings; Unknown } - Unknown is what is still unknown, for the last-audit text.
+    #>
+    param($CatalogApp, $ToAdd, $ToRemove)
+    $base = { param($l) ([string]$l) -replace ' \(filter: [^)]*\)$', '' }
+    $add = @(@($ToAdd) | Where-Object { $_ }); $remove = @(@($ToRemove) | Where-Object { $_ })
+    $findings = New-Object System.Collections.Generic.List[object]
+    $name = [string]$CatalogApp.appName; $id = [string]$CatalogApp.appId
+    $pairedAdd = @{}; $pairedRemove = @{}
+    foreach ($a in $add) {
+        if ([string]$a -match '\] EXCLUDE ') { continue }
+        $r = @($remove | Where-Object { -not $pairedRemove.ContainsKey([string]$_) -and (& $base $_) -eq (& $base $a) }) | Select-Object -First 1
+        if ($r) {
+            $pairedAdd[[string]$a] = $true; $pairedRemove[[string]$r] = $true
+            $findings.Add((New-CheckFinding -Area "Assignment filter" -App $name -CatalogName $name -AppId $id `
+                -Problem "Assignment filter differs" -Catalog ([string]$a) -Intune ([string]$r) -Actions @("PushGroups", "Pull")))
+        }
+    }
+    $excl = @($add | Where-Object { [string]$_ -match '\] EXCLUDE ' -and -not $pairedAdd.ContainsKey([string]$_) })
+    if ($excl.Count) {
+        $findings.Add((New-CheckFinding -Area "Assignment filter" -App $name -CatalogName $name -AppId $id `
+            -Problem "Exclusion missing in Intune" -Catalog ($excl -join ", ") -Intune "(not excluded)" -Actions @("PushGroups", "Pull")))
+    }
+    $unknown = @($remove | Where-Object { -not $pairedRemove.ContainsKey([string]$_) })
+    foreach ($f in @(Get-UnknownAssignmentFindings -CatalogApp $CatalogApp -ToRemove $unknown)) { $findings.Add($f) }
+    return @{ Findings = $findings.ToArray(); Unknown = $unknown }
 }
 
 function Global:Get-DependencyFindings {

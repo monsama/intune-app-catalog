@@ -274,7 +274,10 @@ function Global:Complete-WebWithdrawal {
     if (-not $pilot) { return @{ ok = $false; error = "$($a.appName) has no pilot release." } }
     $id = [string]$pilot.appId
     $del = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) [void](& $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$id" 'DELETE'); $true }
-    $a.releases = @(@($a.releases) | Where-Object { $_.state -ne 'pilot' })
+    # Deleted from Intune: forgotten. Not deleted (2.38.33): kept as a withdrawn ('rolledback') release without groups - forgetting it made
+    # it "In Intune, not in the catalog", and Add to catalog a second entry; Delete old versions removes it later.
+    if ($del.ok) { $a.releases = @(@($a.releases) | Where-Object { $_.state -ne 'pilot' }) }
+    else { foreach ($r in @($a.releases | Where-Object { $_.state -eq 'pilot' })) { $r.state = 'rolledback'; $r | Add-Member -NotePropertyName unassigned -NotePropertyValue $true -Force } }
     # Not released again by itself (the nightly run) - Release new version by hand still can.
     $a.blockedVersions = @(@($a.blockedVersions) + [string]$pilot.version | Where-Object { $_ } | Select-Object -Unique)
     Write-WebAppFile -App $a

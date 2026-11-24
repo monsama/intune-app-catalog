@@ -23,7 +23,7 @@ function openAdd(src, file) {
   if (dp) { mergeLines('adRequired', dp.required); mergeLines('adAvailable', dp.available); addExclude = [...dp.exclude]; }
   $('adRequired').dispatchEvent(new Event('input')); $('adAvailable').dispatchEvent(new Event('input'));
   document.querySelector('#dlgAdd .addgroups').classList.add('folded'); addGroupsSummary();
-  alItems = []; alPicked.clear(); $('alRows').replaceChildren(); $('alNote').textContent = ''; $('alAll').checked = false;
+  alItems = []; alPicked.clear(); $('alRows').replaceChildren(); $('alNote').textContent = ''; $('alAll').checked = false; $('alSearch').value = ''; $('alSearchRow').hidden = true;
   const favs = (prefs && prefs.favoriteGroups) || [];
   $('adFavs').replaceChildren(...(favs.length ? [el('span', { class: 'muted', text: 'Favourites:' }), ...favs.map(g => el('button', { type: 'button', class: 'chip', text: g, title: `Add ${g} to Required for (Shift: Available for)`, onclick: e => addGroup(e.shiftKey ? 'adAvailable' : 'adRequired', g) }))] : []));
   if (!$('dlgAdd').open) $('dlgAdd').showModal();
@@ -503,7 +503,7 @@ async function readList(body) {
   $('alNote').textContent = body.thisPc ? 'Running winget export here - this can take a minute...' : 'Reading the list...';
   const r = await api('/api/package-list', body);
   if (!r.ok) { $('alNote').textContent = r.error; return; }
-  alItems = r.items;
+  alItems = r.items; $('alSearch').value = '';
   $('alGrid').tHead.rows[0].cells[1].textContent = r.starter ? 'App' : 'Winget ID';
   // The starter set: nothing ticked (2.38.2) - each is chosen; the ones nearly everyone deploys say "common".
   alPicked = new Set(r.starter ? [] : r.items.filter(x => !x.inCatalog).map(x => x.id));
@@ -514,9 +514,14 @@ async function readList(body) {
   // On a phone the explanation fills the screen: the list is brought into view (it started below it).
   if (innerWidth < 600) $('alGrid').scrollIntoView({ block: 'start' });
 }
+// Search the list (2.38.33): name, ID, category and the why - every word must match; ticks stay as they are.
+const alMatch = x => { const q = $('alSearch').value.trim().toLowerCase(); if (!q) return true; const hay = [x.name, x.id, x.category, x.why].join(' ').toLowerCase(); return q.split(/\s+/).every(w => hay.includes(w)); };
 function renderList() {
   let cat = '';
-  $('alRows').replaceChildren(...alItems.flatMap(x => {
+  $('alSearchRow').hidden = !alItems.length;
+  const shown = alItems.filter(alMatch);
+  if (alItems.length && !shown.length) { $('alRows').replaceChildren(el('tr', {}, el('td', { colspan: 3, class: 'muted', text: `Nothing in the list matches "${$('alSearch').value.trim()}".` }))); return; }
+  $('alRows').replaceChildren(...shown.flatMap(x => {
     const box = el('input', { type: 'checkbox', 'aria-label': `Pick ${x.name || x.id}`, disabled: !!x.inCatalog });
     box.checked = alPicked.has(x.id);
     box.addEventListener('change', () => { if (box.checked) alPicked.add(x.id); else alPicked.delete(x.id); updateAddButton(); });
@@ -528,7 +533,9 @@ function renderList() {
     return [...head, el('tr', { class: x.inCatalog ? 'dim' : '' }, el('td', { class: 'chk' }, box), what, el('td', { text: x.inCatalog || '-' }))];
   }));
 }
-$('alAll').addEventListener('change', () => { alPicked = new Set($('alAll').checked ? alItems.filter(x => !x.inCatalog).map(x => x.id) : []); renderList(); updateAddButton(); });
+// Pick all: what the search shows (2.38.33) - picks outside it stay.
+$('alAll').addEventListener('change', () => { for (const x of alItems.filter(x => !x.inCatalog && alMatch(x))) { if ($('alAll').checked) alPicked.add(x.id); else alPicked.delete(x.id); } renderList(); updateAddButton(); });
+$('alSearch').addEventListener('input', renderList);
 $('btnAlFile').addEventListener('click', () => $('alFile').click());
 $('btnAlStarter').addEventListener('click', () => readList({ starter: true }));
 $('alFile').addEventListener('change', async () => { const f = $('alFile').files[0]; if (!f) return; if (f.size > 5 * 1048576) { $('alNote').textContent = 'That file is too large.'; return; } readList({ json: await f.text() }); $('alFile').value = ''; });

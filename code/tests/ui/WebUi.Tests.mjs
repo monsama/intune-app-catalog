@@ -222,6 +222,17 @@ try {
       check(!rec.pinned && rec.heads >= 5 && rec.ticked === 0 && rec.common === 10 && rec.ms && rec.tv && rec.firefox && rec.button === 'Add from the list', `${label}: Recommended apps - by category, nothing ticked, the ten usual ones marked common (Microsoft 365 Apps and Company Portal first), TeamViewer Host and QuickSupport there`, JSON.stringify(rec));
       await noOverflow('Add apps (recommended)'); await unnamed('Add apps (recommended)'); await a11y('Add apps (recommended)');
       await page.evaluate(() => { const w = document.getElementById('alGrid').closest('.tablewrap'); w.scrollTop = 400; }); await shot('add-recommended');
+      // 2.38.33: the list has a search - every word must match name, ID, category or what it is for; Select all ticks only what shows.
+      await page.fill('#alSearch', 'lenovo');
+      const srch = await page.evaluate(() => ({ shown: document.getElementById('alSearchRow').hidden === false, rows: [...document.querySelectorAll('#alRows tr:not(.grouprow)')].map(r => r.textContent) }));
+      check(srch.shown && srch.rows.length >= 2 && srch.rows.every(t => /lenovo/i.test(t)), `${label}: From a list - the search shows only matching apps`, JSON.stringify(srch));
+      await page.evaluate(() => { const a = document.getElementById('alAll'); a.checked = true; a.dispatchEvent(new Event('change')); });
+      await page.fill('#alSearch', '');
+      const tickedAll = await page.evaluate(() => document.querySelectorAll('#alRows input:checked:not(#alAll)').length);
+      check(tickedAll >= 2 && tickedAll <= 4, `${label}: From a list - Select all ticks only the apps the search showed`, String(tickedAll));
+      await page.fill('#alSearch', 'zzznothingzzz');
+      check(/Nothing in the list matches/.test(await page.textContent('#alRows')), `${label}: From a list - a search without matches says so`);
+      await page.fill('#alSearch', '');
       await page.click('#atab-script');
       await page.click('#btnAddBlank');
       await page.waitForSelector('#dlgApp[open]');

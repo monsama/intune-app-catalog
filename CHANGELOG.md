@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.38.33
+
+- **Search in "From a list"**: Add apps > From a list has a search box - name, ID,
+  category or what the app is for (e.g. "pdf", "vpn", "lenovo"). "Select all"
+  ticks only what the search shows.
+- **No false findings after a promotion**: the new release superseding the old one
+  and apps that depend on "<name> <version> (superseded)" are no longer reported as
+  differences. "Send settings" keeps the update path to the app's own earlier
+  releases instead of removing it.
+- **Leftover release names**: an app still called "<name> <version> (pilot)" in
+  Intune (the rename at promotion failed) is reported as such, and "Send settings"
+  puts the catalog name back - before, the only offer was to take the pilot name
+  into the catalog.
+- **"Possibly in Intune"** no longer offers another app's old release or a
+  "(superseded)"/"(pilot)" copy as a match.
+- **Assignments compared in full**: a different assignment filter now shows as
+  "Assignment filter differs" (was an unknown assignment), and an exclusion the
+  catalog has but Intune doesn't shows as "Exclusion missing in Intune" (was not
+  shown at all). A group whose name can't be read is named in the log instead of
+  quietly showing as an unknown ID.
+- **Withdraw**: when deleting the pilot from Intune fails, the release is kept as
+  rolled back and unassigned, so it isn't lost track of.
+
 ## 2.38.32
 
 - **Checks kept showing one app only**: after "Checks" for one app (Apps list,
