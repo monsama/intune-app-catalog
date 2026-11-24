@@ -1785,7 +1785,7 @@ $scriptCatalogDir = Join-Path ([IO.Path]::GetTempPath()) ("scriptcat-" + [guid]:
 try {
     $saveResult = Save-ScriptsToFolder -Path $scriptCatalogDir -Scripts @(
         @{ displayName = 'Set power plan'; fileName = 'power.ps1'; runAsAccount = 'system'; scriptContent = "Write-Host 'hi'"; assignedGroups = @('SG-All') }
-        @{ displayName = 'Map drives'; fileName = 'drives.ps1'; runAsAccount = 'user'; runAs32Bit = $true; scriptContent = "net use" }
+        @{ id = '11111111-2222-3333-4444-555555555555'; displayName = 'Map drives'; fileName = 'drives.ps1'; runAsAccount = 'user'; runAs32Bit = $true; scriptContent = "net use" }
     )
     Assert-Equal 2 $saveResult.Saved "Save-ScriptsToFolder: one file per script"
     Assert-Equal 0 (@($saveResult.Errors)).Count "Save-ScriptsToFolder: nothing went wrong"
@@ -1805,6 +1805,11 @@ try {
     Assert-Equal 1 $second.Removed "Save-ScriptsToFolder: a script no longer in the set loses its file"
     Assert-Equal 1 (@((Import-ScriptsFromFolder -Path $scriptCatalogDir).Scripts)).Count `
         "Save-ScriptsToFolder: and is gone on the next read"
+    # 2.38.15: a script saved locally and never sent (no Intune ID) is not pruned - "Save local copies" deleted drafts.
+    [IO.File]::WriteAllText((Join-Path $scriptCatalogDir "draft.json"), '{"displayName":"Draft","fileName":"draft.ps1","runAsAccount":"system","scriptContent":"x"}')
+    $third = Save-ScriptsToFolder -Path $scriptCatalogDir -Scripts @(@{ displayName = 'Set power plan'; fileName = 'power.ps1'; runAsAccount = 'system'; scriptContent = "Write-Host 'hi'" })
+    Assert-True ((Test-Path -LiteralPath (Join-Path $scriptCatalogDir "draft.json")) -and $third.Removed -eq 0) "Save-ScriptsToFolder: a local-only script (no Intune ID) stays"
+    Remove-Item -LiteralPath (Join-Path $scriptCatalogDir "draft.json") -Force
     # A broken file is named, not silently skipped
     [IO.File]::WriteAllText((Join-Path $scriptCatalogDir "broken.json"), "{ this is not json")
     $withBroken = Import-ScriptsFromFolder -Path $scriptCatalogDir
@@ -2421,10 +2426,10 @@ $scriptFolder = Join-Path ([IO.Path]::GetTempPath()) ("scriptcat-" + [guid]::New
 try {
     [void](New-Item -ItemType Directory -Path $scriptFolder -Force)
     $existing = Join-Path $scriptFolder 'Already-Here.json'
-    Set-Content -LiteralPath $existing -Value '{}' -Encoding UTF8
+    Set-Content -LiteralPath $existing -Value '{"scriptId":"22222222-2222-2222-2222-222222222222"}' -Encoding UTF8
 
     # Normal case: this set is the tenant, so what is not in it goes.
-    $pruned = Save-ScriptsToFolder -Path $scriptFolder -Scripts @(@{ displayName = 'Kept One'; scriptContent = 'x' })
+    $pruned = Save-ScriptsToFolder -Path $scriptFolder -Scripts @(@{ id = '33333333-3333-3333-3333-333333333333'; displayName = 'Kept One'; scriptContent = 'x' })
     Assert-Equal 1 $pruned.Saved "Save-ScriptsToFolder: writes the script it was given"
     Assert-Equal 1 $pruned.Removed "Save-ScriptsToFolder: and removes one the tenant no longer has"
     Assert-True (-not (Test-Path -LiteralPath $existing)) "Save-ScriptsToFolder: the stale file really is gone"

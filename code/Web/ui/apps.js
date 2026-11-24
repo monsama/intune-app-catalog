@@ -158,7 +158,7 @@ function renderApps() {
         onclick: e => { e.stopPropagation(); pickRow(a.name, e.target.checked, e.shiftKey); }, ondblclick: e => e.stopPropagation() }), iconFor(a), el('span', { class: 'nm', text: a.name, title: a.name.length > 40 ? a.name : null })),
       el('td', { class: 'mono src', text: a.msHint && !a.wingetId ? 'Microsoft (Intune)' : !a.wingetId ? 'own installer' : isStoreId(a.wingetId) ? `${a.wingetId} (Store)` : a.wingetId,
         title: !a.wingetId ? 'Its own installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') : isStoreId(a.wingetId) ? 'A Microsoft Store app - Intune\'s own Store type: no package, the Store installs and updates it' : `winget package ${a.wingetId}` }),
-      el('td', { class: 'num' }, ...versionCell(a)),
+      el('td', { class: 'num' }, el('span', { class: 'vcell' }, ...versionCell(a))),
       el('td', { title: `Required: ${a.required}, Available: ${a.available}, Uninstall: ${a.uninstall}`, class: a.required + a.available ? '' : 'muted', text: a.required + a.available + a.uninstall ? `${(a.groups || []).length} group${(a.groups || []).length === 1 ? '' : 's'}` : 'nobody yet' }),
       el('td', {}, stageCell(a)),
       el('td', { class: 'mono appidcol', text: a.appId ? a.appId.slice(0, 8) + '…' : '', title: a.appId || 'Not in Intune yet' }));
@@ -1179,7 +1179,7 @@ $('btnPushGo').addEventListener('click', async () => {
   $('btnPushGo').disabled = true;
   await runJob({ names: pushNames, mode: 'Apply' }, ok => {
     toast(ok ? 'Groups pushed to Intune.' : 'Send groups failed - see the log.', !ok);
-    if (ok) { const done = () => { const b = $('btnPushGo'); b.textContent = 'Done'; delete b.dataset.jobWas; b.disabled = false; }; done(); setTimeout(done, 0); $('btnPushClose').hidden = true; $('btnPushGo').focus(); loadApps(); }
+    if (ok) { const done = () => { const b = $('btnPushGo'); b.textContent = 'Done'; delete b.dataset.jobWas; b.disabled = false; }; done(); setTimeout(done, 0); $('btnPushClose').hidden = true; $('btnPushGo').focus(); loadApps(); if (typeof checksRefresh === 'function') checksRefresh(pushNames); }
   }, { path: '/api/push-start', log: 'pushLog', startText: 'Applying...' });
 });
 
@@ -1497,6 +1497,8 @@ function openPull(names) {
     if (!ok || !after) { $('pullText').textContent = 'Reading from Intune failed - the log says why.'; $('pullLogBox').open = true; return; }
     const msg = [];
     if (after.applied && after.applied.length) msg.push(`Taken from Intune: ${after.applied.join(', ')}.`);
+    // Applied at once (nothing to choose): Checks asks again about them.
+    if (after.applied && after.applied.length && typeof checksRefresh === 'function') checksRefresh(after.applied);
     if (after.failed && after.failed.length) { msg.push(`Could not read: ${after.failed.join('; ')}.`); $('pullLogBox').open = true; }
     const review = after.review || [];
     if (review.length) msg.push('These differ - click the value to keep for each (Intune’s is picked). Nothing in Intune changes.');
@@ -1538,6 +1540,7 @@ $('btnPullApply').addEventListener('click', async () => {
   const r = await api('/api/pull-apply', { pending: pullPending, keep });
   if (!r.ok) { toast(r.error, true); return; }
   $('dlgPull').close(); toast('Saved to the catalog.'); loadApps();
+  if (typeof checksRefresh === 'function') checksRefresh(Object.keys(keep));
 });
 
 // ---------------------------------------------------------------- retiring an app

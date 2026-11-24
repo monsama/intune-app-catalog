@@ -226,7 +226,8 @@ function Global:Get-WebScriptRunStatus {
             try { $page = & $Graph $uri }
             catch {
                 # Some tenants refuse the $expand; the plain list still works (device ids instead of names).
-                if (-not $expanded) { throw }
+                # Only when the first page fails: after it, starting over would list its devices twice.
+                if (-not $expanded -or $rows.Count) { throw }
                 $expanded = $false
                 $uri = "https://graph.microsoft.com/beta/deviceManagement/deviceManagementScripts/$id/deviceRunStates"
                 continue
