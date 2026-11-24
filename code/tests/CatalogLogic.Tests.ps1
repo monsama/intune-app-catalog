@@ -220,6 +220,7 @@ $testableFunctionNames = @(
     "ConvertTo-PsLiteral",
     "Get-InstalledNamePattern",
     "Get-OfficeAppKeys",
+    "Get-StoreIdFromSync",
     "Get-OfficeStarterId",
     "Get-OfficeChannels",
     "Get-OfficeDefaultSettings",
@@ -1029,6 +1030,7 @@ $msiApp = [pscustomobject]@{ managedUpdates = $true; wingetId = ''; appName = 'M
 Assert-True ((Set-ManagedAppPin $msiApp -ProductCode '{22222222-2222-2222-2222-222222222222}') -and $msiApp.metadata.uninstallCommand -eq 'msiexec /x {22222222-2222-2222-2222-222222222222} /qn' -and $msiApp.metadata.detectionRule.Msi_Version -eq '2.0') "Set-ManagedAppPin: a new MSI's product code reaches the uninstall command too"
 
 # Microsoft's own apps aren't packages
+Assert-True ((Get-StoreIdFromSync ([pscustomobject]@{ OdataType = '#microsoft.graph.winGetApp'; PackageIdentifier = '9wzdncrfj3pz' })) -eq '9WZDNCRFJ3PZ' -and -not (Get-StoreIdFromSync ([pscustomobject]@{ OdataType = '#microsoft.graph.win32LobApp'; PackageIdentifier = '9WZDNCRFJ3PZ' })) -and -not (Get-StoreIdFromSync ([pscustomobject]@{ OdataType = '#microsoft.graph.winGetApp'; PackageIdentifier = 'Some.Id' }))) "Get-StoreIdFromSync (2.38.30): the Store product ID of a Microsoft Store app (new) in Intune, nothing else"
 Assert-True ((Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Company Portal'; wingetId = ''; intuneAppType = 'Microsoft Store app (new)' })) -like '*9WZDNCRFJ3PZ*') "Get-NonPackageAppHint (2.38.22): a linked Company Portal without its Store ID is told the ID"
 Assert-True ((Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Company Portal'; wingetId = '' })) -like '*9WZDNCRFJ3PZ*' -and (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Microsoft 365 Apps'; wingetId = '' })) -like '*Installs from*' -and -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Microsoft 365 Apps'; wingetId = ''; office = (Get-OfficeDefaultSettings) })) -and
     (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Teams'; wingetId = ''; intuneAppType = 'Microsoft Store app (new)' })) -like "*own app type*" -and -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'LOB Tool'; wingetId = '' })) -and -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Company Portal'; wingetId = '9WZDNCRFJ3PZ' })) -and

@@ -192,6 +192,15 @@ function Global:Complete-WebCheckDetails {
     foreach ($one in @($Result.results)) {
         $app = @($catalog | Where-Object { [string]$_.appName -eq [string]$one.AppName }) | Select-Object -First 1
         if (-not $app) { continue }
+        # Linked to a Microsoft Store app (new) but without its Store ID in the catalog (2.38.30): Intune says what it is -
+        # taken over (Company Portal and the like showed as an own installer).
+        $sid = Get-StoreIdFromSync $one
+        if ($sid -and -not $app.wingetId -and -not $app.office) {
+            [void](Update-WebCatalogApp -Name ([string]$app.appName) -Change { param($x) $x.wingetId = $sid; $x.intuneAppType = 'Microsoft Store app (new)'; $x.managedUpdates = $false }.GetNewClosure())
+            Add-WebHistoryEntry -App ([string]$app.appName) -Kind 'catalog' -Text "Store product ID $sid taken from Intune (it is a Microsoft Store app there)"
+            Write-Log "[OK] $($app.appName): Store product ID $sid taken from Intune - it is a Microsoft Store app there."
+            $app = @((Read-WebCatalogRecords).Apps | Where-Object { [string]$_.appName -eq [string]$one.AppName }) | Select-Object -First 1
+        }
         # A Microsoft Store app has no install commands or detection in Intune to compare - its settings aren't checked.
         $isStore = (Test-StoreProductId ([string]$app.wingetId)) -or [bool]$app.office
         foreach ($f in @(Get-AppDetailFindings -CatalogApp $app -Result $one)) { if ($isStore -and [string]$f.Area -eq 'Metadata') { continue }; $new.Add($f) }
@@ -345,7 +354,7 @@ function Global:ConvertTo-WebCatalogEntryFromSync {
     $groupsKnown = [bool]$r.GroupFetchOk
     return [pscustomobject]@{
         appId = $AppId; appName = ([string]$r.AppName).Trim()
-        wingetId = $(if ($r.Metadata) { Get-WingetIdFromInstallCommand -InstallCommand ([string]$r.Metadata.installCommand) } else { '' })
+        wingetId = $(if (Get-StoreIdFromSync $r) { Get-StoreIdFromSync $r } elseif ($r.Metadata) { Get-WingetIdFromInstallCommand -InstallCommand ([string]$r.Metadata.installCommand) } else { '' })
         intuneAppType = Get-FriendlyIntuneAppType -ODataType ([string]$r.OdataType); intuneAppVersion = [string]$r.DisplayVersion
         requiredFor = $(if ($groupsKnown) { @(@($r.RequiredGroupNames) | Where-Object { $_ }) } else { @() })
         availableFor = $(if ($groupsKnown) { @(@($r.AvailableGroupNames) | Where-Object { $_ }) } else { @() })

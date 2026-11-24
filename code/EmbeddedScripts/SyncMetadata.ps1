@@ -423,6 +423,8 @@ try {
             Success              = $true
             Metadata             = $metadata
             OdataType            = $app.'@odata.type'
+            # A Microsoft Store app (new): its Store product ID - the catalog's Winget ID for it (2.38.30).
+            PackageIdentifier    = [string]$app.packageIdentifier
             DisplayVersion       = [string]$app.displayVersion
             RequiredGroupNames   = $requiredGroupNames
             AvailableGroupNames  = $availableGroupNames

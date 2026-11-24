@@ -2637,6 +2637,15 @@ function Global:Set-AppWingetIdCommands {
     return $changed
 }
 
+function Global:Get-StoreIdFromSync {
+    # Pure (2.38.30): the Store product ID Intune has for a "Microsoft Store app (new)" (winGetApp) - '' for anything else.
+    param($Result)
+    if (-not $Result) { return '' }
+    $id = ([string]$Result.PackageIdentifier).Trim().ToUpperInvariant()
+    if ((([string]$Result.OdataType) -replace '^#?microsoft\.graph\.', '') -eq 'winGetApp' -and (Test-StoreProductId $id)) { return $id }
+    return ''
+}
+
 function Global:Get-NonPackageAppHint {
     <#
       Pure: why an app without a Winget ID needs no package of its own ('' when
