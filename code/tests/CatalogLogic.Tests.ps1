@@ -731,7 +731,8 @@ Assert-Equal 'owner' (@($clrBack.metadata.clearedFields) -join ',') "ConvertTo-A
 $clrNone = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'N'; metadata = [pscustomobject]@{ description = 'd' } }))) | ConvertFrom-Json)
 Assert-Equal 0 @($clrNone.metadata.clearedFields).Count "ConvertTo-AppRecord: an app without emptied fields has none (and its file no such key)"
 $cfgJson = ConvertTo-CreateAppConfigJson -Config ([pscustomobject]@{ AppName = 'x'; ClearedFields = @('notes') })
-Assert-True (($cfgJson | ConvertFrom-Json).ClearedFields -contains 'notes') "ConvertTo-CreateAppConfigJson: the emptied fields go to the step (2.38.34)"
+# A text check: a config this small isn't a whole one (Windows PowerShell's ConvertFrom-Json refuses its empty numbers).
+Assert-True ($cfgJson -match '"ClearedFields": \[\s*"notes"\s*\]') "ConvertTo-CreateAppConfigJson: the emptied fields go to the step (2.38.34)"
 Assert-True ($relBack.managedUpdates -and @($relBack.releases).Count -eq 1 -and $relBack.releases[0].version -eq '2.0') "ConvertTo-SingleAppJson/ConvertTo-AppRecord: managed updates and releases round-trip"
 Assert-True ((ConvertTo-SingleAppJson -App (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'Plain' }))) -notlike '*managedUpdates*') "ConvertTo-SingleAppJson: no managed fields for an unmanaged app"
 $tpl = ConvertTo-TemplateAppRecord -App $relBack
