@@ -4,6 +4,10 @@
 
 Second full sweep (security, bugs, UI), and:
 
+- **Package upload refused with 403 "SAS identifier cannot be found"**: the
+  upload address Intune just handed out can need ~30 s before Azure Storage
+  accepts it. The upload now waits and tries again, and if Azure still refuses,
+  asks Intune for a new address and sends the block again (it failed at once).
 - **Checks refreshes itself after a fix**: after Take from Intune, Send
   settings, Send groups, Add to catalog or a catalog fix, it checks those apps
   again - the list shows what is still different, not a stale row.
