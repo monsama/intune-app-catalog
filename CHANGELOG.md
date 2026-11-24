@@ -5,6 +5,12 @@
 - **Recommended apps**: Snapform Viewer (Ringler.SnapformViewer - Snapform forms,
   .qdf) in Files and documents, and eDrawings Viewer (SolidWorks.eDrawings - CAD
   drawings and 3D models without a CAD licence) in Media and design.
+- **Device vendor tools** (a new group of recommended apps): HP Support Assistant,
+  HP Image Assistant, Lenovo System Update and Dell Command | Update (winget), and
+  Lenovo Commercial Vantage and Lenovo Vantage (Microsoft Store apps).
+  Store apps picked from the list are added with their name (winget has none for them).
+- Apps list: "Ready - no groups" without the Groups... button next to it - who gets
+  an app is set in the editor or the side panel.
 
 ## 2.38.24
 

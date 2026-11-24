@@ -2263,6 +2263,13 @@ function Global:Get-StarterAppSet {
         [ordered]@{ id = 'Miro.Miro'; name = 'Miro'; category = 'Media and design'; recommended = $false; why = 'The whiteboard app - where Miro is used.' },
         [ordered]@{ id = 'Notion.Notion'; name = 'Notion'; category = 'Media and design'; recommended = $false; why = 'Notes and wikis - where Notion is used.' },
         [ordered]@{ id = 'Microsoft.PowerBI'; name = 'Power BI Desktop'; category = 'Media and design'; recommended = $false; why = 'Builds Power BI reports - for analysts.' },
+        # 2.38.25: the PC makers' tools - drivers, BIOS and firmware updates, warranty; Lenovo Vantage only from the Store.
+        [ordered]@{ id = 'HP.SupportAssistant'; name = 'HP Support Assistant'; category = 'Device vendor tools'; recommended = $false; why = 'On HP PCs: driver, BIOS and firmware updates and diagnostics for the user.' },
+        [ordered]@{ id = 'HP.ImageAssistant'; name = 'HP Image Assistant'; category = 'Device vendor tools'; recommended = $false; why = 'On HP business PCs: IT keeps drivers and BIOS current, silently and by policy.' },
+        [ordered]@{ id = '9NR5B8GVVM13'; name = 'Lenovo Commercial Vantage'; category = 'Device vendor tools'; recommended = $false; why = 'On Lenovo ThinkPad/ThinkCentre: updates, warranty and settings - the business version, managed by policy (Microsoft Store app).' },
+        [ordered]@{ id = '9WZDNCRFJ4MV'; name = 'Lenovo Vantage'; category = 'Device vendor tools'; recommended = $false; why = 'On consumer Lenovo PCs (IdeaPad, Legion): updates, warranty and settings (Microsoft Store app).' },
+        [ordered]@{ id = 'Lenovo.SystemUpdate'; name = 'Lenovo System Update'; category = 'Device vendor tools'; recommended = $false; why = 'On Lenovo PCs: drivers and BIOS updates without Vantage - scriptable for IT.' },
+        [ordered]@{ id = 'Dell.CommandUpdate.Universal'; name = 'Dell Command | Update'; category = 'Device vendor tools'; recommended = $false; why = 'On Dell business PCs: drivers, BIOS and firmware updates, silently and by policy.' },
         [ordered]@{ id = 'EclipseAdoptium.Temurin.25.JRE'; name = 'Java 25 (Eclipse Temurin JRE)'; category = 'Runtimes'; recommended = $true; why = 'Java without an Oracle licence: the current long-term version, for Java apps.' },
         [ordered]@{ id = 'EclipseAdoptium.Temurin.21.JRE'; name = 'Java 21 (Eclipse Temurin JRE)'; category = 'Runtimes'; recommended = $false; why = 'The previous long-term Java - for apps not yet certified on 25.' },
         [ordered]@{ id = 'EclipseAdoptium.Temurin.17.JRE'; name = 'Java 17 (Eclipse Temurin JRE)'; category = 'Runtimes'; recommended = $false; why = 'An older long-term Java - for apps that still need 17.' },
