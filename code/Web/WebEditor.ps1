@@ -218,20 +218,14 @@ function Global:Merge-WebAppEdit {
     $anyMetaFilled = $metaEdit -and @($metaFields | Where-Object { [string]$metaEdit.$_ }).Count -gt 0
     if (-not $metadata -and $anyMetaFilled -and $Defaults) { $metadata = $Defaults.PSObject.Copy() }
     if ($metadata -and $metaEdit) {
-        # Emptied on purpose (2.38.34): remembered, so the next send empties it in Intune too; filled again, forgotten.
-        $cleared = New-Object System.Collections.Generic.List[string]
-        foreach ($c in @($metadata.clearedFields)) { if ($c) { $cleared.Add([string]$c) } }
-        foreach ($f in 'owner', 'developer', 'informationUrl', 'privacyUrl', 'notes', 'appVersion') {
-            $was = [string]$metadata.$f; $now = [string]$metaEdit.$f
-            if ($now.Trim()) { [void]$cleared.Remove($f) }
-            elseif ($was.Trim() -and -not $cleared.Contains($f)) { $cleared.Add($f) }
-        }
-        if ($metadata.PSObject.Properties['clearedFields']) { $metadata.clearedFields = @($cleared) } else { $metadata | Add-Member -NotePropertyName clearedFields -NotePropertyValue @($cleared) }
+        $before = $metadata.PSObject.Copy()
         foreach ($f in $metaFields) {
             if ($metadata.PSObject.Properties.Name -contains $f) { $metadata.$f = [string]$metaEdit.$f }
             else { $metadata | Add-Member -NotePropertyName $f -NotePropertyValue ([string]$metaEdit.$f) }
         }
         if (-not $metadata.appVersion) { $metadata.appVersion = $null }
+        # Emptied on purpose (2.38.34): remembered, so the next send empties it in Intune too; filled again, forgotten.
+        Set-ClearedFields -Old $before -New $metadata
     }
     return [pscustomobject]@{
         appId            = ([string]$Edit.appId).Trim()

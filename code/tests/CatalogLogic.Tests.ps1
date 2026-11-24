@@ -123,6 +123,7 @@ $testableFunctionNames = @(
     "Get-AssignmentChangeFindings",
     "Get-MetadataWithoutOwnReleases",
     "Get-DeviceVersionCompareScript",
+    "Set-ClearedFields",
     "Get-ManagedWingetDetectionV1",
     "New-InstalledAppDetectionScriptV1",
     "Get-DependencyFindings",
@@ -732,6 +733,14 @@ $clrBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $clrRec) | Co
 Assert-Equal 'owner' (@($clrBack.metadata.clearedFields) -join ',') "ConvertTo-AppRecord: fields emptied on purpose survive a save, once, only known fields (2.38.34)"
 $clrNone = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'N'; metadata = [pscustomobject]@{ description = 'd' } }))) | ConvertFrom-Json)
 Assert-Equal 0 @($clrNone.metadata.clearedFields).Count "ConvertTo-AppRecord: an app without emptied fields has none (and its file no such key)"
+$scOld = [pscustomobject]@{ owner = 'Alice'; notes = ''; developer = 'Dev'; clearedFields = @('notes') }
+$scNew = [pscustomobject]@{ owner = ''; notes = ''; developer = 'Dev'; clearedFields = @('notes') }
+Set-ClearedFields -Old $scOld -New $scNew
+Assert-Equal 'notes,owner' (@($scNew.clearedFields | Sort-Object) -join ',') "Set-ClearedFields: a field emptied is added, one already waiting stays (2.38.34)"
+$scNew.owner = 'Bob'; Set-ClearedFields -Old $scOld -New $scNew
+Assert-Equal 'notes' (@($scNew.clearedFields) -join ',') "Set-ClearedFields: ...and taken off once it has a value again"
+$mgKeep = Merge-CatalogMetadata -Remote ([pscustomobject]@{ description = 'r'; owner = 'Portal' }) -Local ([pscustomobject]@{ description = 'l'; owner = ''; clearedFields = @('owner') }) -KeepLocalFields @('Owner')
+Assert-True ([string]$mgKeep.owner -eq '' -and @($mgKeep.clearedFields) -contains 'owner') "Merge-CatalogMetadata: keeping the catalog's emptied field keeps it marked for the next send (2.38.34)" ($mgKeep | ConvertTo-Json -Compress)
 $cfgJson = ConvertTo-CreateAppConfigJson -Config ([pscustomobject]@{ AppName = 'x'; ClearedFields = @('notes') })
 # A text check: a config this small isn't a whole one (Windows PowerShell's ConvertFrom-Json refuses its empty numbers).
 Assert-True ($cfgJson -match '"ClearedFields": \[\s*"notes"\s*\]') "ConvertTo-CreateAppConfigJson: the emptied fields go to the step (2.38.34)"
@@ -1034,7 +1043,7 @@ $oldIn = New-InstalledAppDetectionScriptV1 -Pattern (Get-InstalledNamePattern 'S
 Assert-Equal 'installed' ([string](Get-DetectionBlocks ([pscustomobject]@{ Type = 'Script'; Script_Content = $oldIn })).Form) "Get-DetectionBlocks: an installed-app detection written before 2.38.34 is still that form"
 Assert-Equal 'own' ([string](Get-DetectionBlocks ([pscustomobject]@{ Type = 'Script'; Script_Content = ($oldIn -replace 'exit 0', "if (Test-Path 'C:\x') { exit 0 }`nexit 0") })).Form) "Get-DetectionBlocks: ...edited by hand, it is an own script (its edits aren't lost)"
 $mgNew = Get-ManagedWingetDetection -WingetId 'Vendor.App' -Version '2.0' -NamePattern 'x'
-Assert-True ($mgNew -match 'if \(-not `\$Apps.Count -and `\$RegNewer\)' -or $mgNew -match [regex]::Escape('if (-not $Apps.Count -and $RegNewer)')) "Get-ManagedWingetDetection: a newer Uninstall entry counts when winget doesn't list the package (2.38.34)"
+Assert-True ($mgNew.Contains('if (-not $Json -and $RegNewer)') -and -not $mgNew.Contains('-not $Apps.Count -and $RegNewer')) "Get-ManagedWingetDetection: a newer Uninstall entry counts only when winget's list couldn't be read - a list without the package is an answer (2.38.34)"
 $pubDet = ConvertTo-DetectionFromInstalled ([pscustomobject]@{ Key = 'P'; DisplayVersion = '1'; Hive = 'HKLM'; MainExe = [pscustomobject]@{ Path = 'C:\Users\Public\Tool\t.exe'; Version = '1.0' } })
 Assert-True (-not $pubDet.PerUser -and $pubDet.Rule.File_Path -eq 'C:\Users\Public\Tool') "ConvertTo-DetectionFromInstalled: the shared Public profile is not per user"
 $keepEmpty = Get-MetadataWithoutOwnReleases -Metadata ([pscustomobject]@{ description = 'i'; supersedes = $null; dependencies = @() }) -App ([pscustomobject]@{ releases = @() }) -LocalMetadata ([pscustomobject]@{ dependencies = @(); supersedes = @() }) -NoRelations

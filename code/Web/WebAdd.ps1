@@ -428,6 +428,8 @@ function Global:Remove-WebTreeNoFollow {
     # Errors stop here (a locked file): a folder left with children must never reach a Confirm prompt - nobody answers it.
     if ($item.PSIsContainer) {
         foreach ($c in @(Get-ChildItem -LiteralPath $item.FullName -Force -ErrorAction Stop)) { Remove-WebTreeNoFollow $c.FullName }
+        # A read-only folder (Remove-Item -Force took those): the attribute off first.
+        if ($item.Attributes -band [System.IO.FileAttributes]::ReadOnly) { $item.Attributes = $item.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly) }
         [System.IO.Directory]::Delete($item.FullName, $false)
     }
     else { Remove-Item -LiteralPath $item.FullName -Force -ErrorAction Stop }

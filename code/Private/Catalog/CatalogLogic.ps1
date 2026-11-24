@@ -462,6 +462,24 @@ function Global:Get-CatalogMetadataFieldDiffs {
     return $diffs.ToArray()
 }
 
+function Global:Set-ClearedFields {
+    <#
+      Pure apart from changing -New (2.38.34): which of the fields Intune keeps unless told otherwise were emptied on
+      purpose between -Old and -New - added to New.clearedFields when one went from a value to empty, taken off when it
+      has a value again. The next send empties them in Intune too. Used by the editor, batch edit and CSV import.
+    #>
+    param($Old, $New)
+    if (-not $New) { return }
+    $cleared = New-Object System.Collections.Generic.List[string]
+    foreach ($c in @($(if ($null -ne $New.clearedFields) { $New.clearedFields } elseif ($Old) { $Old.clearedFields }))) { if ($c -and -not $cleared.Contains([string]$c)) { $cleared.Add([string]$c) } }
+    foreach ($f in 'owner', 'developer', 'informationUrl', 'privacyUrl', 'notes', 'appVersion') {
+        $was = [string]$(if ($Old) { $Old.$f }); $now = [string]$New.$f
+        if ($now.Trim()) { [void]$cleared.Remove($f) }
+        elseif ($was.Trim() -and -not $cleared.Contains($f)) { $cleared.Add($f) }
+    }
+    if ($New.PSObject.Properties['clearedFields']) { $New.clearedFields = @($cleared) } else { $New | Add-Member -NotePropertyName clearedFields -NotePropertyValue @($cleared) }
+}
+
 function Global:Merge-CatalogMetadata {
     param($Remote, $Local, [string[]]$KeepLocalFields)
 
@@ -482,6 +500,9 @@ function Global:Merge-CatalogMetadata {
     if ($KeepLocalFields -contains "Supersedence") {
         $merged | Add-Member -NotePropertyName "supersedes" -NotePropertyValue $Local.supersedes -Force
     }
+    # A kept field the catalog emptied on purpose stays marked (2.38.34) - else the next send left Intune's value.
+    $keptCleared = @(@($Local.clearedFields) | Where-Object { $_ -and -not ([string]$merged.$_).Trim() })
+    $merged | Add-Member -NotePropertyName "clearedFields" -NotePropertyValue $keptCleared -Force
     return $merged
 }
 
@@ -1347,9 +1368,9 @@ Remove-Item `$JsonFile -Force -ErrorAction SilentlyContinue
 foreach (`$App in `$Apps) {
     if (`$App.Version -and (Compare-Version `$Wanted ([string]`$App.Version)) -ge 0) { return "Installed!" }
 }
-# winget doesn't list the package at all (it updated itself past what winget can match, or the export failed): the newer
-# Uninstall entry counts - only a package winget lists, older than wanted, is "not installed".
-if (-not `$Apps.Count -and `$RegNewer) { return "Installed!" }
+# The export failed (no list at all): the newer Uninstall entry counts, as without winget. A list without this package
+# is an answer - another package under the same name ("Node.js" 22 for an LTS 20 pin) doesn't count.
+if (-not `$Json -and `$RegNewer) { return "Installed!" }
 "@
 }
 
@@ -1973,7 +1994,7 @@ function Global:ConvertTo-DetectionFromInstalled {
         # A per-user install (2.38.34): the PC's own profile path ("C:\Users\alice\...") matches on no other device -
         # the user's folder by its variable instead, and it only works when the app installs in the user's context.
         # Not the shared Public or Default profile - those are the same folder for everyone.
-        $perUser = $folder -match '^[A-Za-z]:\\Users\\(?!(Public|Default)\\)[^\\]+\\'
+        $perUser = $folder -match '^[A-Za-z]:\\Users\\(?!(Public|Default)(\\|$))[^\\]+(\\|$)'
         $folder = $folder -replace '^[A-Za-z]:\\Users\\(?!(Public|Default)\\)[^\\]+\\AppData\\Local(?=\\|$)', '%LOCALAPPDATA%' -replace '^[A-Za-z]:\\Users\\(?!(Public|Default)\\)[^\\]+\\AppData\\Roaming(?=\\|$)', '%APPDATA%' -replace '^[A-Za-z]:\\Users\\(?!(Public|Default)(\\|$))[^\\]+(?=\\|$)', '%USERPROFILE%'
         return @{ Rule = [ordered]@{ Type = 'File'; File_Path = $folder; File_Name = $file; File_Check32Bit = $false; File_DetectionType = 'version'; File_Operator = 'greaterThanOrEqual'; File_DetectionValue = [string]$Entry.MainExe.Version }; PerUser = $perUser
             Text = "$file in $folder, version $($Entry.MainExe.Version) or newer$(if ($perUser) { ' - installed per user: set Install for to User, or the rule finds nothing when Intune installs as SYSTEM' })" }
@@ -2174,7 +2195,8 @@ function Global:Get-AppRecordFieldValues {
             $m = $p.Value
             if ($m) {
                 $mp = if ($m -is [System.Collections.IDictionary]) { @($m.Keys | ForEach-Object { @{ Name = [string]$_; Value = $m[$_] } }) } else { @($m.PSObject.Properties | ForEach-Object { @{ Name = $_.Name; Value = $_.Value } }) }
-                foreach ($q in $mp) { $j = ConvertTo-Json -InputObject $q.Value -Compress -Depth 12; $out["metadata.$($q.Name)"] = $(if ($j) { [string]$j } else { 'null' }) }
+                # Which fields wait to be emptied in Intune is bookkeeping, not a change anyone made (2.38.34).
+                foreach ($q in $mp) { if ($q.Name -eq 'clearedFields') { continue }; $j = ConvertTo-Json -InputObject $q.Value -Compress -Depth 12; $out["metadata.$($q.Name)"] = $(if ($j) { [string]$j } else { 'null' }) }
             }
             continue
         }

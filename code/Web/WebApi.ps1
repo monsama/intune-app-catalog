@@ -401,8 +401,10 @@ function Global:Complete-WebJob {
                 if ($After.ReplacesLobAppId -and $newId) { $app.lobToRetire = ([string]$After.ReplacesLobAppId).ToLowerInvariant() }
                 if (-not $app.metadata -and $defaults) { $app.metadata = $defaults }
                 if ($After.PackageStamp) { $app.packageStamp = [string]$After.PackageStamp }
-                # Emptied fields went to Intune as empty (2.38.34) - done.
-                if ($app.metadata -and $app.metadata.PSObject.Properties['clearedFields']) { $app.metadata.clearedFields = @() }
+                # The emptied fields this send carried went to Intune as empty (2.38.34) - only those: one emptied while it ran
+                # still waits, and a Store app's Owner or Notes (its type has none to send) stays a difference to see.
+                $sentCleared = @($After.SentCleared)
+                if ($app.metadata -and $app.metadata.PSObject.Properties['clearedFields']) { $app.metadata.clearedFields = @(@($app.metadata.clearedFields) | Where-Object { $sentCleared -notcontains $_ }) }
             }.GetNewClosure())
             }
             catch {

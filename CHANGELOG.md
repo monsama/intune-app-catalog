@@ -17,7 +17,8 @@ security, logic, the screens, and the server and release setup.
 - Managed updates: an older build no longer counts as installed. The version
   compare ignores a word before the version ("ad 8.1.0") and counts a
   pre-release as older; the Uninstall entry alone is enough only for the exact
-  version (a newer one only while winget isn't there yet).
+  version (a newer one only while winget isn't there yet or can't list the
+  installed apps).
 - "Installed" detection compares part by part - "24", or five-part versions,
   no longer fail - and looks at the user's Uninstall entries too.
 - The generated Uninstall.ps1 reads an unquoted uninstaller path with spaces
@@ -34,10 +35,11 @@ security, logic, the screens, and the server and release setup.
 
 **Sent to Intune**
 - Fields emptied in the catalog reach Intune: when Owner, Developer, the links,
-  Notes or App version is emptied in the editor, the next send empties it in
-  Intune too (before, Intune kept the old value and Checks showed it as a
-  difference for good). A field the catalog never had is still left alone, so
-  what was set in the portal stays.
+  Notes or App version is emptied (in the editor, Batch edit or a CSV import),
+  the next send empties it in Intune too (before, Intune kept the old value and
+  Checks showed it as a difference for good). A field the catalog never had is
+  still left alone, so what was set in the portal stays. Microsoft Store apps:
+  the two links (their type takes no owner, developer or notes from here).
 - Minimum OS: Windows 10 up to 21H1 is sent as Graph expects ("1607" ...
   "21H1", 20H2 as "2H20") - "Windows10_1607" was refused with a 400. Take from
   Intune reads today's property (Windows 11 values too), and an empty minimum

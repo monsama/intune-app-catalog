@@ -140,7 +140,7 @@ function Global:Start-WebDeploy {
         # Shown as Being changed on every PC while it runs; a second start (a double click, another admin) is refused.
         $busy = Enter-WebAppBusy -Name $a.appName -What 'deploying'; if ($busy) { return @{ ok = $false; error = $busy } }
         $started = Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedCreateStoreAppScript -Name 'createstoreapp' -ConfigJson ($config | ConvertTo-Json -Depth 4) -ResultPath $resultPath -Kind "$(if ($a.appId) { 'Update' } else { 'Create' }) $name (Microsoft Store app)" `
-            -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $null; WasUpdate = [bool]$a.appId; Store = $true; SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }) }
+            -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $null; WasUpdate = [bool]$a.appId; Store = $true; SentCleared = @(@($config.ClearedFields) | Where-Object { $_ -in 'informationUrl', 'privacyUrl' }); SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }) }
         if ($started.ok) { Write-Log "[INFO] Sending $name to Intune as a Microsoft Store app ($($a.wingetId))..." }
         return $started
     }
@@ -191,7 +191,7 @@ function Global:Start-WebDeploy {
     # Shown as Being changed on every PC while it runs; a second start (a double click, another admin) is refused.
     $busy = Enter-WebAppBusy -Name $a.appName -What 'deploying'; if ($busy) { return @{ ok = $false; error = $busy } }
     $started = Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "$(if ($metadataOnly) { 'Push settings' } else { 'Deploy' }) $name$(if ($a.appId -and $upload) { ' (new package)' })" `
-        -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $defaults; WasUpdate = [bool]$a.appId; SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }); PackageStamp = $(if ($upload) { $stamp } else { '' }); ReplacesLobAppId = $replacesLob }
+        -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $defaults; WasUpdate = [bool]$a.appId; SentCleared = @($config.ClearedFields); SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }); PackageStamp = $(if ($upload) { $stamp } else { '' }); ReplacesLobAppId = $replacesLob }
     if ($started.ok) { Write-Log "[INFO] $(if ($metadataOnly) { "Pushing $name's settings to Intune" } else { "Deploying $name ($($config.Mode)$(if ($a.appId -and $upload) { ', uploading the new package' }))" })..." }
     return $started
 }
