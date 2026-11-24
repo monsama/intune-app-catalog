@@ -12,6 +12,8 @@
   for them) and no App version field - Microsoft or the Store keeps it.
   Details stay: description, publisher and links go to Intune.
 - More room between the Name field and "Installs from".
+- **Send to Intune...** in the app menu (right-click a row, or More...) - not
+  only the button top right.
 
 ## 2.38.21
 

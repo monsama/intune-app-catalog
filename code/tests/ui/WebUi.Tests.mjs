@@ -563,6 +563,7 @@ try {
         await page.click('.srcpick [data-src="office"]');
         check(await page.evaluate(() => !document.getElementById('aOfficeBox').hidden && document.getElementById('aWingetRow').hidden && document.getElementById('oChannel').value === 'monthlyEnterprise' && document.querySelector('[data-oapp="word"]').checked && !document.querySelector('[data-oapp="lync"]').checked), `${label}: Installs from Microsoft 365 shows its settings, with the defaults`);
         await unnamed('the Microsoft 365 settings'); await a11y('the Microsoft 365 settings');
+        check(await page.evaluate(() => !!document.querySelector('#appMenu [data-act="deploy"], [role="menu"] [data-act="deploy"]')), `${label}: the app menu has Send to Intune (2.38.22)`);
         check(await page.evaluate(() => document.querySelector('.edtab[data-i="3"]').hidden && getComputedStyle(document.getElementById('mAppVersion').closest('label')).display === 'none'), `${label}: Microsoft 365 Apps - no Install & detection tab and no App version (2.38.22)`); await page.$eval('#aOfficeBox', e => e.scrollIntoView({ block: 'center' })); await shot('editor-office');
         await page.selectOption('#oChannel', 'current'); await page.uncheck('[data-oapp="teams"]');
         await page.click('#btnSaveApp'); await page.waitForFunction(() => !document.getElementById('dlgApp').open, null, { timeout: 15000 });
