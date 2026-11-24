@@ -657,7 +657,7 @@ try {
     $cfg = Invoke-Api '/api/package-script' @{ name = $scName; file = 'SilentClient.cfg' }
     $cfgSave = Invoke-Api '/api/package-script-save' @{ name = $scName; file = 'SilentClient.cfg'; text = ($cfg.text -replace 'Name=', 'Name=Herr '); hash = $cfg.hash }
     $cfgAfter = [System.IO.File]::ReadAllBytes((Join-Path $scDir 'SilentClient.cfg'))
-    Check ($cfg.ok -and $cfg.kind -eq 'text' -and $cfg.text -match 'Müller' -and @($cfg.files) -contains 'login.xml' -and $cfgSave.ok -and $cfgAfter -contains [byte]0xFC -and -not ($cfgAfter[0] -eq 0xEF) -and ([System.Text.Encoding]::ASCII.GetString($cfgAfter)) -match "Herr M.ller`r`n") 'text editor: a .cfg read and saved back in its own (ANSI) encoding and line ends' ($cfg | ConvertTo-Json -Compress)
+    Check ($cfg.ok -and $cfg.kind -eq 'text' -and $cfg.text -match 'Müller' -and @($cfg.files) -contains 'login.xml' -and $cfgSave.ok -and $cfgAfter -contains [byte]0xFC -and -not ($cfgAfter[0] -eq 0xEF) -and ([System.Text.Encoding]::ASCII.GetString($cfgAfter)) -match "Herr M.ller`r`n") 'text editor: a .cfg read and saved back in its own (ANSI) encoding and line ends' (($cfgSave | ConvertTo-Json -Compress) + ' bytes: ' + (($cfgAfter | ForEach-Object { '{0:X2}' -f $_ }) -join ' '))
     $xml = Invoke-Api '/api/package-script' @{ name = $scName; file = 'login.xml' }
     $badXml = Invoke-Api '/api/package-script-save' @{ name = $scName; file = 'login.xml'; text = '<a><b>1</a>'; hash = $xml.hash }
     $chk = Invoke-Api '/api/package-script-check' @{ file = 'login.xml'; text = '<a><b>1</a>'; old = '' }
