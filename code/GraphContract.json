@@ -114,6 +114,16 @@
         "type": "detectedApp",
         "why": "The Updates page: older versions found on devices (Intune's inventory)",
         "properties": ["displayName", "version", "deviceCount"]
+      },
+      {
+        "type": "officeSuiteApp",
+        "why": "Microsoft 365 Apps this tool creates and updates (2.38.21) - CreateOfficeApp.ps1, ConvertTo-OfficeSuiteBody",
+        "properties": ["displayName", "description", "publisher", "productIds", "excludedApps", "useSharedComputerActivation", "updateChannel", "officePlatformArchitecture", "localesToInstall", "installProgressDisplayLevel", "shouldUninstallOlderVersionsOfOffice", "autoAcceptEula"]
+      },
+      {
+        "type": "excludedApps",
+        "why": "The apps Microsoft 365 Apps leaves out - every one is sent (Get-OfficeAppKeys)",
+        "properties": ["access", "bing", "excel", "groove", "infoPath", "lync", "oneDrive", "oneNote", "outlook", "powerPoint", "publisher", "sharePointDesigner", "teams", "visio", "word"]
       }
     ],
     "v1.0": [

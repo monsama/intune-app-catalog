@@ -20,12 +20,14 @@ const isWauApp = a => /^\s*(Romanitho\.)?winget[\s\-_.]*auto[\s\-_]*update\s*$/i
 function updatesText(a, managed) {
   if (managed) return 'managed - pilot first';
   if (a.msHint && !a.wingetId) return 'Microsoft keeps it updated (created in Intune)';
+  if (a.office && !a.wingetId) return 'Microsoft keeps it updated on its update channel';
   if (a.wingetId && isStoreId(a.wingetId)) return 'the Microsoft Store keeps it updated';
   if (!a.wingetId) return 'its own installer - the version you package';
   return "winget's newest at install time, not updated afterwards";
 }
 function stageOf(a) {
-  const own = !a.wingetId;
+  // Microsoft 365 Apps (2.38.21): no installer, command or detection of its own - like a Store app.
+  const own = !a.wingetId && !a.office;
   // Another admin (or another window) is changing it right now: no next step until that's done.
   if (a.busy) return { key: 'busy', label: 'Being changed', cls: 'warn', why: `Being changed right now by ${a.busy}. The list shows the result once it's done (Reload).` };
   if (tenantState(a) === 'missing') return { key: 'tenant', label: 'Other tenant', cls: 'warn', why: 'Its App ID belongs to another tenant - copied catalog?', next: { label: 'Clear App ID', title: 'Forget the link, so Send to Intune creates it in this tenant', run: () => onApp(a, 'clearid') } };
@@ -128,7 +130,7 @@ async function fillPanel(a) {
   const known = [...new Set(apps.flatMap(x => x.groups || []))].sort();
   const btn = (text, title, run, primary) => el('button', { class: 'btn small' + (primary ? ' primary' : ''), text, title, onclick: run });
   const pilot = (app.releases || []).find(x => x.state === 'pilot');
-  const msOnly = !!(a.msHint && !a.wingetId), noVersion = msOnly || !!(a.wingetId && isStoreId(a.wingetId));
+  const msOnly = !!(a.msHint && !a.wingetId), noVersion = msOnly || !!(a.office && !a.wingetId) || !!(a.wingetId && isStoreId(a.wingetId));
   p.replaceChildren(
     el('div', { class: 'phead' }, iconFor(a), el('h2', { text: a.name }), el('button', { class: 'btn small ghost', text: 'Close', title: 'Close this panel', onclick: () => { selected.clear(); renderApps(); } })),
     el('div', { class: 'pstage' }, el('span', { class: 'pill ' + s.cls, text: s.label }), el('span', { class: 'muted', text: ' ' + (s.why || '') })),
@@ -175,7 +177,7 @@ async function fillPanel(a) {
         });
         return el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Version' }), el('span', { class: 'pverwrap' }, sel, extra ? el('span', { class: 'muted pverx', text: extra }) : ''));
       })(),
-      fact('Source', a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
+      fact('Source', a.office && !a.wingetId ? `Microsoft 365 Apps: ${a.officeText}` : a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
       fact('Updates', updatesText(a, app.managedUpdates || a.managed)),
       // The App ID in full, with Copy and Open in Intune - the app's page in the Intune admin center.
       a.hasAppId && a.appId ? el('div', { class: 'kv' }, el('span', { class: 'k', text: 'In Intune' }), el('span', { class: 'pappid' },
@@ -209,8 +211,13 @@ function updateReady() {
   const wid = $('aWinget').value.trim(), own = !wid, row = apps.find(a => a.name === editingName);
   const groups = ['gRequired', 'gAvailable'].some(id => $(id).value.trim());
   const det = $('xType').value;
-  const store = !own && isStoreId(wid), ms = own && row && row.msHint;
-  const items = ms ? [[!!$('aName').value.trim(), 'A name', 'aName'], [false, row.msHint, null]] : store ? [
+  const store = !own && isStoreId(wid), office = own && editorSrc === 'office', ms = own && !office && row && row.msHint;
+  const items = office ? [
+    [!!$('aName').value.trim(), 'A name', 'aName'],
+    [true, 'Microsoft 365 Apps - Microsoft installs and updates it; no commands or detection', null],
+    [[...document.querySelectorAll('[data-oapp]')].some(c => c.checked), 'At least one app installed', 'oChannel'],
+    [groups, groups ? 'Groups that get it' : 'Groups that get it - none yet, so nobody gets it', 'gRequired'],
+  ] : ms ? [[!!$('aName').value.trim(), 'A name', 'aName'], [false, row.msHint, null]] : store ? [
     [!!$('aName').value.trim(), 'A name', 'aName'],
     [true, `Microsoft Store app (${wid}) - the Store installs and updates it; no commands or detection`, null],
     [groups, groups ? 'Groups that get it' : 'Groups that get it - none yet, so nobody gets it', 'gRequired'],
@@ -372,8 +379,8 @@ function renderWhere() {
   const optText = id => { const s = $(id); return s.selectedOptions[0] ? s.selectedOptions[0].textContent : s.value; };
   function foldSummaries() {
     const id = $('aWinget').value.trim();
-    grid.querySelector('[data-sum="det"] .fstext').textContent = typeof isStoreId === 'function' && isStoreId(id)
-      ? 'A Store app - Intune detects it itself.' : `Made for winget - installed when winget lists ${id}.`;
+    grid.querySelector('[data-sum="det"] .fstext').textContent = !id && typeof editorSrc !== 'undefined' && editorSrc === 'office' ? 'Microsoft 365 Apps - Intune detects it itself.'
+      : typeof isStoreId === 'function' && isStoreId(id) ? 'A Store app - Intune detects it itself.' : `Made for winget - installed when winget lists ${id}.`;
     const arch = [...document.querySelectorAll('[data-xarch]')].filter(c => c.checked).map(c => c.dataset.xarch);
     const n = v => +($(v).value || 0), codes = $('xCodes').value.split('\n').filter(l => l.trim()).length;
     const req = [`${optText('xMinOs')} or newer`, arch.length ? arch.join(', ') : 'no architecture', $('xContext').value === 'User' ? 'for the signed-in user' : 'for the device',
@@ -396,7 +403,7 @@ function renderWhere() {
   // A Microsoft Store app (2.38.3): no commands and no detection of its own - the Store does both; the fields went
   // on showing (empty, or a rule made for winget) while "Ready to send?" said it needs none.
   const storeState = () => {
-    const st = typeof isStoreId === 'function' && isStoreId($('aWinget').value.trim()), was = $('dlgApp').classList.contains('is-store');
+    const st = (typeof isStoreId === 'function' && isStoreId($('aWinget').value.trim())) || (typeof editorSrc !== 'undefined' && editorSrc === 'office' && !$('aWinget').value.trim()), was = $('dlgApp').classList.contains('is-store');
     $('dlgApp').classList.toggle('is-store', st);
     if (st !== was) { try { setPage(cur); } catch (e) { } }   // the page's sections follow (not before the editor is set up)
     return st;
@@ -405,11 +412,13 @@ function renderWhere() {
     const id = $('aWinget').value.trim();
     detOwn = false;
     const store = storeState();
-    grid.classList.toggle('f-det', !!id && (store || !$('xType').value));
+    grid.classList.toggle('f-det', (!!id || store) && (store || !$('xType').value));
     grid.classList.add('f-req', 'f-dep');
     foldSummaries();
   };
   form.addEventListener('input', foldSummaries); form.addEventListener('change', foldSummaries);
+  // Installs from changed (2.38.21): Microsoft 365 folds the commands and detection away like a Store app; another choice brings them back.
+  window.edSrcChanged = () => { const st = storeState(); if (st) grid.classList.add('f-det'); else if (!$('aWinget').value.trim()) unfold('det'); foldSummaries(); };
   // A rule set, or the winget ID cleared: the detection fields are what is needed.
   $('xType').addEventListener('change', () => { if ($('xType').value) { detOwn = true; unfold('det'); } });
   // A winget ID typed in (a new app): its detection is made for winget - folded, unless a rule of its own was asked for.

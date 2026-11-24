@@ -78,6 +78,12 @@ function Global:Add-WebWingetApps {
     foreach ($item in @($Data.items | Select-Object -First 50)) {
         $id = ([string]$item.id).Trim()
         $apps = @((Read-WebCatalogRecords).Apps)
+        # Microsoft 365 Apps from the starter set (2.38.21): Intune's own Office app with the usual settings - no Winget ID.
+        if ($id -eq (Get-OfficeStarterId)) {
+            $r = Add-WebOfficeApp -Groups $groups -Apps $apps
+            if ($r.ok) { $added.Add($r.name) } else { $skipped.Add("Microsoft 365 Apps ($($r.error))") }
+            continue
+        }
         if ($id -notmatch '^[A-Za-z0-9][A-Za-z0-9.\-_+]{0,127}$') { $skipped.Add("$id (not a Winget ID)"); continue }
         $twin = @($apps | Where-Object { [string]$_.wingetId -eq $id }) | Select-Object -First 1
         if ($twin) { $skipped.Add("$id (already in the catalog as $($twin.appName))"); continue }
@@ -112,6 +118,26 @@ function Global:Add-WebWingetApps {
     }
     Write-Log "[OK] Add apps (winget): $($added.Count) added$(if ($skipped.Count) { ", skipped: $($skipped -join '; ')" })."
     return @{ ok = $true; added = $added.ToArray(); skipped = $skipped.ToArray(); noDetails = $noDetails.ToArray() }
+}
+
+function Global:Add-WebOfficeApp {
+    # Microsoft 365 Apps into the catalog (2.38.21): Intune's own Office app with Get-OfficeDefaultSettings - changed in the editor.
+    param($Groups, [object[]]$Apps)
+    $twin = @($Apps | Where-Object { $_.office }) | Select-Object -First 1
+    if ($twin) { return @{ ok = $false; error = "already in the catalog as $($twin.appName)" } }
+    $name = 'Microsoft 365 Apps'
+    if (Test-WebAddName $name $Apps) { $name = 'Microsoft 365 Apps for enterprise' }
+    $why = Test-WebAddName $name $Apps
+    if ($why) { return @{ ok = $false; error = $why } }
+    $edit = [pscustomobject]@{ appName = $name; wingetId = ''; appId = ''; requiredFor = $Groups.Required; availableFor = $Groups.Available; uninstallFor = @(); excludeFor = $Groups.Exclude
+        managedUpdates = $false; office = (Get-OfficeDefaultSettings)
+        metadata = [pscustomobject]@{ description = 'Microsoft 365 Apps for Windows: Word, Excel, PowerPoint, Outlook, OneNote and Teams.'; publisher = 'Microsoft'
+            informationUrl = 'https://www.microsoft.com/microsoft-365'; privacyUrl = 'https://privacy.microsoft.com/privacystatement'; appVersion = ''
+            owner = [string]$Global:App.DefaultAppSettings.DefaultOwner; developer = 'Microsoft'; notes = 'Intune''s own Microsoft 365 Apps - Microsoft installs and updates it on its update channel.'
+            installCommand = ''; uninstallCommand = '' } }
+    $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
+    if ($r.ok) { Write-Log "[OK] $($r.name) added: Microsoft 365 Apps ($(Get-OfficeSettingsSummary (Get-OfficeDefaultSettings)))." }
+    return $r
 }
 
 # ---------------------------------------------------------------- an installer, uploaded

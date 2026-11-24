@@ -377,7 +377,7 @@ async function doAdd(send) {
   try {
     try { localStorage.setItem('addLastSrc', addSrc); } catch (e) { }   // the next Add apps opens on this kind
     if (addSrc === 'winget' || addSrc === 'store' || addSrc === 'list') {
-      const items = addSrc !== 'list' ? [...awPicked.values()].map(x => ({ id: x.id, name: x.name, version: x.version, publisher: x.publisher || '' })) : [...alPicked].map(id => ({ id }));
+      const items = addSrc !== 'list' ? [...awPicked.values()].map(x => ({ id: x.id, name: x.name, version: x.version, publisher: x.publisher || '' })) : [...alPicked].map(id => { const x = alItems.find(i => i.id === id) || {}; return x.category === 'Microsoft' ? { id, name: x.name } : { id }; });
       const note = addSrc !== 'list' ? 'awNote' : 'alNote', added = [], skipped = [], noDetails = [];
       // Five at a time: each asks winget for its details, and the page shows how far it got.
       for (let i = 0; i < items.length; i += 5) {

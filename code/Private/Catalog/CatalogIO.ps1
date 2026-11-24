@@ -162,8 +162,21 @@ function Global:ConvertTo-AppRecord {
         watchWinget  = $(if ([string]$Raw.watchWinget -match '^[A-Za-z0-9][A-Za-z0-9._+\-]{0,127}$') { [string]$Raw.watchWinget } else { '' })
         downloadUrl  = $(if ([string]$Raw.downloadUrl -match '^https://[^\s"<>]+$' -and ([string]$Raw.downloadUrl).Length -le 2000) { [string]$Raw.downloadUrl } else { '' })
         detectedName = $(if ([string]$Raw.detectedName -and ([string]$Raw.detectedName).Length -le 100) { ([string]$Raw.detectedName).Trim() } else { '' })
+        # Microsoft 365 Apps (2.38.21): Intune's own Office app with its settings (channel, apps left out, ...) - no package.
+        office       = (ConvertTo-OfficeSettings $Raw.office)
         metadata     = $metadata
     }
+}
+
+function Global:ConvertTo-OfficeSettingsJson {
+    # Microsoft 365 Apps' settings on one line, hand-built like the rest of the file.
+    param($Office)
+    $s = ConvertTo-OfficeSettings $Office
+    if (-not $s) { return 'null' }
+    $arr = { param($items) '[' + ((@($items) | ForEach-Object { ConvertTo-JsonStringLiteral ([string]$_) }) -join ', ') + ']' }
+    return '{ "channel": ' + (ConvertTo-JsonStringLiteral $s.channel) + ', "architecture": ' + (ConvertTo-JsonStringLiteral $s.architecture) +
+        ', "locales": ' + (& $arr $s.locales) + ', "excluded": ' + (& $arr $s.excluded) +
+        ', "sharedActivation": ' + $(if ($s.sharedActivation) { 'true' } else { 'false' }) + ', "removeOlder": ' + $(if ($s.removeOlder) { 'true' } else { 'false' }) + ' }'
 }
 
 function Global:ConvertTo-JsonStringLiteral {
@@ -364,6 +377,7 @@ function Global:ConvertTo-SingleAppJson {
     if ($App.autoRelease) { $fields.Add('  "autoRelease": true') }
     if ($App.downloadUrl) { $fields.Add("  `"downloadUrl`": $(ConvertTo-JsonStringLiteral ([string]$App.downloadUrl))") }
     if ($App.watchWinget) { $fields.Add("  `"watchWinget`": $(ConvertTo-JsonStringLiteral ([string]$App.watchWinget))") }
+    if ($App.office) { $fields.Add('  "office": ' + (ConvertTo-OfficeSettingsJson $App.office)) }
     if ($App.detectedName) { $fields.Add("  `"detectedName`": $(ConvertTo-JsonStringLiteral ([string]$App.detectedName))") }
     if ($App.icon -and $App.icon.value) {
         $fields.Add("  `"icon`": { `"type`": $(ConvertTo-JsonStringLiteral ([string]$App.icon.type)), `"value`": $(ConvertTo-JsonStringLiteral ([string]$App.icon.value)) }")

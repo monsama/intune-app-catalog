@@ -831,8 +831,29 @@ try {
     $ss = Invoke-Api '/api/store-search' @{ q = 'x' }
     Check (-not $ss.ok -and $ss.error -like '*at least 2*') 'store search: too short a query is refused' ($ss | ConvertTo-Json -Compress)
     $st = Invoke-Api '/api/package-list' @{ starter = $true }
-    Check ($st.ok -and $st.starter -and @($st.items).Count -ge 20 -and @($st.items | Where-Object { $_.recommended }).Count -eq 8 -and @($st.items | Where-Object { $_.id -eq 'Mozilla.Firefox' -and $_.name -and $_.category -and $_.why }).Count -eq 1) 'recommended apps: the starter set, each with its name, category and why' ($st | ConvertTo-Json -Compress -Depth 3)
+    Check ($st.ok -and $st.starter -and @($st.items).Count -ge 20 -and @($st.items | Where-Object { $_.recommended }).Count -eq 10 -and @($st.items | Where-Object { $_.id -eq 'Mozilla.Firefox' -and $_.name -and $_.category -and $_.why }).Count -eq 1) 'recommended apps: the starter set, each with its name, category and why' ($st | ConvertTo-Json -Compress -Depth 3)
     Check ((Invoke-Api '/api/installed-apps').ok) 'detection from this PC: the installed apps can be listed (empty off Windows)'
+    # 2.38.21: Microsoft 365 Apps from the starter set - Intune's own Office app with its settings, ready to send without a package.
+    $o365 = Invoke-Api '/api/add-winget' @{ items = @(@{ id = 'Microsoft.365Apps.Intune'; name = 'Microsoft 365 Apps' }); required = @('SG-ZZ-Office') }
+    $o365Name = @($o365.added)[0]
+    $o365App = if ($o365Name) { (Invoke-Api '/api/app-get' @{ name = $o365Name }).app }
+    Check ($o365.ok -and $o365Name -and $o365App.office.channel -eq 'monthlyEnterprise' -and -not $o365App.wingetId -and @($o365App.office.excluded) -contains 'lync') 'Microsoft 365 Apps: added from the starter set with the default settings' (@($o365, $o365App) | ConvertTo-Json -Compress -Depth 4)
+    $o365Again = Invoke-Api '/api/add-winget' @{ items = @(@{ id = 'Microsoft.365Apps.Intune' }) }
+    Check (@($o365Again.added).Count -eq 0 -and @($o365Again.skipped) -match 'already in the catalog') 'Microsoft 365 Apps: a second one is refused' ($o365Again | ConvertTo-Json -Compress)
+    if ($o365Name) {
+        $o365Edit = $o365App; $o365Edit | Add-Member -NotePropertyName office -NotePropertyValue @{ channel = 'current'; architecture = 'x86'; locales = @('de-de'); excluded = @('teams'); sharedActivation = $true; removeOlder = $false } -Force
+        $o365Save = Invoke-Api '/api/app-save' @{ originalName = $o365Name; version = (Invoke-Api '/api/app-get' @{ name = $o365Name }).version; app = $o365Edit }
+        $o365After = (Invoke-Api '/api/app-get' @{ name = $o365Name }).app
+        Check ($o365Save.ok -and $o365After.office.channel -eq 'current' -and $o365After.office.architecture -eq 'x86' -and (@($o365After.office.excluded) -join ',') -eq 'teams' -and $o365After.office.sharedActivation -and -not $o365After.office.removeOlder) 'Microsoft 365 Apps: its settings saved from the editor and read back' (@($o365Save, $o365After.office) | ConvertTo-Json -Compress -Depth 4)
+        $o365Row = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $o365Name })[0]
+        Check ($o365Row.office -and $o365Row.officeText -like 'Current Channel, 32-bit, de-de*without Teams' -and -not $o365Row.msHint) 'Microsoft 365 Apps: the list says its settings in one line' ($o365Row | ConvertTo-Json -Compress -Depth 4)
+        $stO = Invoke-Api '/api/package-list' @{ starter = $true }
+        Check (@($stO.items | Where-Object { $_.id -eq 'Microsoft.365Apps.Intune' -and $_.inCatalog -eq $o365Name }).Count -eq 1) 'recommended apps: Microsoft 365 Apps shown as already in the catalog' ''
+        $o365Off = $o365After; $o365Off | Add-Member -NotePropertyName office -NotePropertyValue $false -Force
+        $o365OffSave = Invoke-Api '/api/app-save' @{ originalName = $o365Name; version = (Invoke-Api '/api/app-get' @{ name = $o365Name }).version; app = $o365Off }
+        Check ($o365OffSave.ok -and -not (Invoke-Api '/api/app-get' @{ name = $o365Name }).app.office) 'Microsoft 365 Apps: choosing another source takes its settings away' ($o365OffSave | ConvertTo-Json -Compress)
+        [void](Invoke-Api '/api/app-remove' @{ name = $o365Name })
+    }
     # Duplicate app: a copy with the same groups and settings, under a new name.
     $dupBad = Invoke-Api '/api/app-duplicate' @{ name = "$testName renamed"; newName = "$testName renamed" }
     Check (-not $dupBad.ok) 'duplicate: the same name is refused' ($dupBad | ConvertTo-Json -Compress)

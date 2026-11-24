@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.38.21
+
+- **Microsoft 365 Apps, made and changed in the app**: in the editor, Installs
+  from > **Microsoft 365** sends it as Intune's own Office app (Microsoft 365
+  Apps for Windows 10 and later) with its settings: update channel,
+  architecture, extra languages, the apps installed (Word, Excel, ... - untick
+  to leave one out), remove older Office first, shared computer activation.
+  Sensible defaults: Monthly Enterprise Channel, 64-bit, the language of
+  Windows, older Office removed, retired apps (Skype for Business, InfoPath,
+  SharePoint Designer, Groove) and Bing left out. No package or detection - like
+  a Store app; a change of its settings shows as "Changes to send".
+- **Suggested apps (Add apps > From a list > Starter set)** start with
+  Microsoft's own two: **Microsoft 365 Apps** (with the defaults above) and
+  **Company Portal** (the Store app 9WZDNCRFJ3PZ). Either is shown as already
+  in the catalog when it is - also when linked without a Store ID.
+- The list's Source column says "Microsoft 365 Apps" for it, as "(Store)" for a
+  Store app.
+
 ## 2.38.20
 
 - **Checks said "Nothing to fix" too early**: when "Deployed apps in detail"

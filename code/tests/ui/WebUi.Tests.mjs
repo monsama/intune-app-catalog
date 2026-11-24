@@ -218,8 +218,8 @@ try {
       // 2.38.0: From a list > Recommended apps - the starter set by category, the recommended ones ticked.
       await page.click('#atab-list'); await page.click('#btnAlStarter');
       await page.waitForFunction(() => document.querySelectorAll('#alRows tr').length > 20, null, { timeout: 10000 }).catch(() => {});
-      const rec = await page.evaluate(() => ({ pinned: [...document.querySelectorAll('#alRows tr.grouprow > *')].some(c => getComputedStyle(c).position === 'sticky'), heads: document.querySelectorAll('#alRows tr.grouprow').length, ticked: document.querySelectorAll('#alRows input:checked').length, common: [...document.querySelectorAll('#alRows .pill')].filter(p => p.textContent === 'common').length, tv: /TeamViewer Host[\s\S]*TeamViewer QuickSupport/.test(document.getElementById('alRows').textContent), firefox: /Mozilla Firefox/.test(document.getElementById('alRows').textContent), button: document.getElementById('btnAddGo').textContent }));
-      check(!rec.pinned && rec.heads >= 5 && rec.ticked === 0 && rec.common === 8 && rec.tv && rec.firefox && rec.button === 'Add from the list', `${label}: Recommended apps - by category, nothing ticked, the eight usual ones marked common, TeamViewer Host and QuickSupport there`, JSON.stringify(rec));
+      const rec = await page.evaluate(() => ({ pinned: [...document.querySelectorAll('#alRows tr.grouprow > *')].some(c => getComputedStyle(c).position === 'sticky'), heads: document.querySelectorAll('#alRows tr.grouprow').length, ticked: document.querySelectorAll('#alRows input:checked').length, common: [...document.querySelectorAll('#alRows .pill')].filter(p => p.textContent === 'common').length, tv: /TeamViewer Host[\s\S]*TeamViewer QuickSupport/.test(document.getElementById('alRows').textContent), firefox: /Mozilla Firefox/.test(document.getElementById('alRows').textContent), ms: /^Microsoft 365 Apps[\s\S]*Company Portal/.test(document.querySelector('#alRows tr:not(.grouprow) td:nth-child(2)')?.textContent + ' ' + document.querySelectorAll('#alRows tr:not(.grouprow) td:nth-child(2)')[1]?.textContent), button: document.getElementById('btnAddGo').textContent }));
+      check(!rec.pinned && rec.heads >= 5 && rec.ticked === 0 && rec.common === 10 && rec.ms && rec.tv && rec.firefox && rec.button === 'Add from the list', `${label}: Recommended apps - by category, nothing ticked, the ten usual ones marked common (Microsoft 365 Apps and Company Portal first), TeamViewer Host and QuickSupport there`, JSON.stringify(rec));
       await noOverflow('Add apps (recommended)'); await unnamed('Add apps (recommended)'); await a11y('Add apps (recommended)');
       await page.evaluate(() => { const w = document.getElementById('alGrid').closest('.tablewrap'); w.scrollTop = 400; }); await shot('add-recommended');
       await page.click('#atab-script');
@@ -556,6 +556,18 @@ try {
         await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.getElementById('dlgApp').open);
         await page.keyboard.press('Escape');
         await page.evaluate(n => api('/api/app-remove', { name: n }).then(() => loadApps()), lobApp); rmSync(fakeSetup, { force: true });
+        // 2.38.21: Installs from > Microsoft 365 - its settings card, saved and shown as Microsoft 365 Apps in the list.
+        const o365App = `ZZ UI Office ${label.replace(/\W+/g, '')}`;
+        await page.evaluate(n => api('/api/app-save', { originalName: '', app: { appName: n, wingetId: '', appId: '', requiredFor: ['SG-ZZ-Office'], availableFor: [], uninstallFor: [], excludeFor: [] } }).then(() => loadApps()), o365App);
+        await page.dblclick(`#gridBody tr[data-name="${o365App}"]`); await page.waitForSelector('#dlgApp[open]');
+        await page.click('.srcpick [data-src="office"]');
+        check(await page.evaluate(() => !document.getElementById('aOfficeBox').hidden && document.getElementById('aWingetRow').hidden && document.getElementById('oChannel').value === 'monthlyEnterprise' && document.querySelector('[data-oapp="word"]').checked && !document.querySelector('[data-oapp="lync"]').checked), `${label}: Installs from Microsoft 365 shows its settings, with the defaults`);
+        await unnamed('the Microsoft 365 settings'); await a11y('the Microsoft 365 settings'); await page.$eval('#aOfficeBox', e => e.scrollIntoView({ block: 'center' })); await shot('editor-office');
+        await page.selectOption('#oChannel', 'current'); await page.uncheck('[data-oapp="teams"]');
+        await page.click('#btnSaveApp'); await page.waitForFunction(() => !document.getElementById('dlgApp').open, null, { timeout: 15000 });
+        const o365Row = await page.evaluate(n => { const a = apps.find(x => x.name === n); return a && { office: a.office, text: a.officeText, src: document.querySelector(`#gridBody tr[data-name="${n}"] td.src`)?.textContent }; }, o365App);
+        check(!!(o365Row && o365Row.office && o365Row.office.channel === 'current' && o365Row.office.excluded.includes('teams') && o365Row.src === 'Microsoft 365 Apps'), `${label}: Microsoft 365 Apps saved with its settings and shown as such in the list`, JSON.stringify(o365Row));
+        await page.evaluate(n => api('/api/app-remove', { name: n }).then(() => loadApps()), o365App);
         // 2.34.0: a whole folder for an app - reviewed (the setup file in a subfolder suggested), all of it in its
         // packages folder, listed file by file; a file deleted from the list.
         const folderApp = `ZZ UI Folder ${label.replace(/\W+/g, '')}`, dir = mkdtempSync(join(tmpdir(), 'zz-ui-folder-'));
