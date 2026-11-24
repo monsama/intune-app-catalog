@@ -856,6 +856,15 @@ try {
         Check ($o365OffSave.ok -and -not (Invoke-Api '/api/app-get' @{ name = $o365Name }).app.office) 'Microsoft 365 Apps: choosing another source takes its settings away' ($o365OffSave | ConvertTo-Json -Compress)
         [void](Invoke-Api '/api/app-remove' @{ name = $o365Name })
     }
+    # 2.38.24: Add apps > Microsoft 365 - its name, settings and groups; a second one refused; every app left out refused.
+    $aoAll = Invoke-Api '/api/add-office' @{ name = 'ZZ Office'; office = @{ excluded = @('access', 'bing', 'excel', 'groove', 'infoPath', 'lync', 'oneDrive', 'oneNote', 'outlook', 'powerPoint', 'publisher', 'sharePointDesigner', 'teams', 'visio', 'word') } }
+    Check (-not $aoAll.ok -and $aoAll.error -like '*at least one*') 'Add apps > Microsoft 365: every app left out is refused' ($aoAll | ConvertTo-Json -Compress)
+    $ao = Invoke-Api '/api/add-office' @{ name = 'ZZ Office'; office = @{ channel = 'current'; architecture = 'x64'; locales = @('de-ch'); excluded = @(); sharedActivation = $true; removeOlder = $true }; requiredFor = @('SG-ZZ-Office') }
+    $aoApp = if ($ao.ok) { (Invoke-Api '/api/app-get' @{ name = $ao.name }).app }
+    Check ($ao.ok -and $ao.name -eq 'ZZ Office' -and $aoApp.office.channel -eq 'current' -and @($aoApp.office.excluded).Count -eq 0 -and $aoApp.office.sharedActivation -and (@($aoApp.requiredFor) -join ',') -eq 'SG-ZZ-Office') 'Add apps > Microsoft 365: added with its name, settings (none left out) and groups' (@($ao, $aoApp.office) | ConvertTo-Json -Compress -Depth 4)
+    $ao2 = Invoke-Api '/api/add-office' @{ name = 'ZZ Office 2'; office = @{ channel = 'current' } }
+    Check (-not $ao2.ok -and $ao2.error -like '*one per catalog*') 'Add apps > Microsoft 365: a second one is refused' ($ao2 | ConvertTo-Json -Compress)
+    if ($ao.ok) { [void](Invoke-Api '/api/app-remove' @{ name = $ao.name }) }
     # Duplicate app: a copy with the same groups and settings, under a new name.
     $dupBad = Invoke-Api '/api/app-duplicate' @{ name = "$testName renamed"; newName = "$testName renamed" }
     Check (-not $dupBad.ok) 'duplicate: the same name is refused' ($dupBad | ConvertTo-Json -Compress)

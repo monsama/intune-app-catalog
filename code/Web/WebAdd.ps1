@@ -122,21 +122,32 @@ function Global:Add-WebWingetApps {
 
 function Global:Add-WebOfficeApp {
     # Microsoft 365 Apps into the catalog (2.38.21): Intune's own Office app with Get-OfficeDefaultSettings - changed in the editor.
-    param($Groups, [object[]]$Apps)
+    param($Groups, [object[]]$Apps, [string]$Name, $Settings)
     $twin = @($Apps | Where-Object { $_.office }) | Select-Object -First 1
     if ($twin) { return @{ ok = $false; error = "already in the catalog as $($twin.appName)" } }
-    $name = 'Microsoft 365 Apps'
-    if (Test-WebAddName $name $Apps) { $name = 'Microsoft 365 Apps for enterprise' }
+    $name = if ($Name) { $Name.Trim() -replace '\s+', ' ' } else { 'Microsoft 365 Apps' }
+    if (-not $Name -and (Test-WebAddName $name $Apps)) { $name = 'Microsoft 365 Apps for enterprise' }
     $why = Test-WebAddName $name $Apps
     if ($why) { return @{ ok = $false; error = $why } }
     $edit = [pscustomobject]@{ appName = $name; wingetId = ''; appId = ''; requiredFor = $Groups.Required; availableFor = $Groups.Available; uninstallFor = @(); excludeFor = $Groups.Exclude
-        managedUpdates = $false; office = (Get-OfficeDefaultSettings)
+        managedUpdates = $false; office = $(if ($Settings) { ConvertTo-OfficeSettings $Settings } else { Get-OfficeDefaultSettings })
         metadata = [pscustomobject]@{ description = 'Microsoft 365 Apps for Windows: Word, Excel, PowerPoint, Outlook, OneNote and Teams.'; publisher = 'Microsoft'
             informationUrl = 'https://www.microsoft.com/microsoft-365'; privacyUrl = 'https://privacy.microsoft.com/privacystatement'; appVersion = ''
             owner = [string]$Global:App.DefaultAppSettings.DefaultOwner; developer = 'Microsoft'; notes = 'Intune''s own Microsoft 365 Apps - Microsoft installs and updates it on its update channel.'
             installCommand = ''; uninstallCommand = '' } }
     $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
-    if ($r.ok) { Write-Log "[OK] $($r.name) added: Microsoft 365 Apps ($(Get-OfficeSettingsSummary (Get-OfficeDefaultSettings)))." }
+    if ($r.ok) { Write-Log "[OK] $($r.name) added: Microsoft 365 Apps ($(Get-OfficeSettingsSummary $edit.office))." }
+    return $r
+}
+
+function Global:Add-WebOfficeFromDialog {
+    # Add apps > Microsoft 365 (2.38.24): its name, settings and the dialog's groups. @{ ok; name } or @{ ok = $false; error }.
+    param($Data)
+    $s = ConvertTo-OfficeSettings $Data.office
+    if (-not $s) { return @{ ok = $false; error = 'No Microsoft 365 settings were sent.' } }
+    if (@($s.excluded).Count -ge @((Get-OfficeAppKeys).Keys).Count) { return @{ ok = $false; error = 'Every app is left out - keep at least one.' } }
+    $r = Add-WebOfficeApp -Groups (Get-WebAddGroupLists $Data) -Apps @((Read-WebCatalogRecords).Apps) -Name ([string]$Data.name) -Settings $s
+    if (-not $r.ok -and $r.error -like 'already in the catalog as*') { $r.error = "Microsoft 365 Apps is $($r.error) - there is one per catalog; change its settings in the editor." }
     return $r
 }
 

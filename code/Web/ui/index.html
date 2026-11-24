@@ -1109,6 +1109,7 @@
   <nav class="subtabs" role="tablist" aria-label="Where the app comes from">
     <button class="subtab" role="tab" id="atab-winget" data-asrc="winget" aria-controls="asec-winget" aria-selected="true">Winget</button>
     <button class="subtab" role="tab" id="atab-store" data-asrc="store" aria-controls="asec-winget" aria-selected="false" title="Microsoft Store apps - Intune's own Store app type: no package, the Store installs and updates them">Microsoft Store</button>
+    <button class="subtab" role="tab" id="atab-office" data-asrc="office" aria-controls="asec-office" aria-selected="false" title="Intune's own Microsoft 365 Apps (Word, Excel, Outlook, ...) with its settings - Microsoft installs and updates it">Microsoft 365</button>
     <button class="subtab" role="tab" id="atab-installer" data-asrc="installer" aria-controls="asec-installer" aria-selected="false">Installer (MSI / EXE)</button>
     <button class="subtab" role="tab" id="atab-script" data-asrc="script" aria-controls="asec-script" aria-selected="false">PowerShell script</button>
     <button class="subtab" role="tab" id="atab-psadt" data-asrc="psadt" aria-controls="asec-psadt" aria-selected="false">PSADT</button>
@@ -1190,6 +1191,20 @@
       <textarea id="asDetectScript" class="mono full" rows="5" aria-label="Detection script" hidden autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="if (Test-Path 'C:\Program Files\Contoso\app.exe') { Write-Output 'Installed' }"></textarea>
     </fieldset>
     <p class="muted note">Both scripts run as SYSTEM with 64-bit PowerShell from the package folder (Packages\&lt;app&gt;) - put any files they need there too.</p>
+  </section>
+
+  <section class="asec officebox" id="asec-office" role="tabpanel" aria-labelledby="atab-office" hidden>
+    <p class="sub"><b>Microsoft 365 Apps</b> - Word, Excel, Outlook, PowerPoint, OneNote, Teams and more - as Intune's own Office app: no package to build, Microsoft installs it and keeps it updated on the channel you choose. One per catalog; its settings can be changed later in the editor.</p>
+    <p class="sub warnline" id="aoHave" hidden></p>
+    <div class="formgrid three">
+      <label>Name<input id="aoName" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" value="Microsoft 365 Apps"></label>
+      <label title="How often Office gets new features - security fixes come every month on each">Update channel<select id="aoChannel"></select></label>
+      <label title="64-bit unless an old 32-bit add-in needs Office in 32-bit">Architecture<select id="aoArch"><option value="x64">64-bit</option><option value="x86">32-bit</option></select></label>
+    </div>
+    <label title="Languages to install as well as Windows' own, e.g. de-de, fr-fr (empty: only the language of Windows)">Extra languages <span class="muted">(empty: the language of Windows)</span><input id="aoLocales" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. de-de, fr-fr, it-it"></label>
+    <div class="officeapps" role="group" aria-labelledby="aoAppsLbl"><span class="srclbl" id="aoAppsLbl">Apps installed <span class="muted">(untick to leave one out)</span></span><div class="ochecks" id="aoApps"></div></div>
+    <label class="chk" title="Older Office (MSI or Click-to-Run) is removed before Microsoft 365 Apps installs"><input type="checkbox" id="aoRemoveOlder" checked>Remove older Office versions first</label>
+    <label class="chk" title="For PCs several people use with their own licence: Remote Desktop / Azure Virtual Desktop session hosts, shared PCs"><input type="checkbox" id="aoShared">Shared computer activation <span class="muted">(Remote Desktop, shared PCs)</span></label>
   </section>
 
   <section class="asec" id="asec-psadt" role="tabpanel" aria-labelledby="atab-psadt" hidden>

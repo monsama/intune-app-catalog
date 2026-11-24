@@ -1832,3 +1832,5 @@ dialog .wctl { z-index: 6; }
 #checkEmpty.partial .emptyicon { color: var(--warn); }
 /* Menu items that don't apply now: visibly greyed out, not just a slightly lighter text. */
 .menu button:disabled { opacity: .45; }
+/* Add apps > Microsoft 365 (2.38.24): already in the catalog - said, with Open it. */
+.asec .warnline { color: var(--warn); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.38.24
+
+- **Add apps > Microsoft 365**: a tab of its own for Intune's Microsoft 365 Apps -
+  name, update channel, architecture, extra languages, the apps installed, remove
+  older Office, shared computer activation (the usual settings filled in), with
+  the dialog's groups. Add and send works too (nothing to build). One per catalog:
+  when it is there already, the tab says so with Open it.
+
 ## 2.38.23
 
 Full sweep (security, bugs, usability).

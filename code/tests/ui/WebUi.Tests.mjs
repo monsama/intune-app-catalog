@@ -572,6 +572,11 @@ try {
         const o365Row = await page.evaluate(n => { const a = apps.find(x => x.name === n); return a && { office: a.office, text: a.officeText, src: document.querySelector(`#gridBody tr[data-name="${n}"] td.src`)?.textContent }; }, o365App);
         check(!!(o365Row && o365Row.office && o365Row.office.channel === 'current' && o365Row.office.excluded.includes('teams') && o365Row.src === 'Microsoft 365 Apps'), `${label}: Microsoft 365 Apps saved with its settings and shown as such in the list`, JSON.stringify(o365Row));
         await page.evaluate(n => api('/api/app-remove', { name: n }).then(() => loadApps()), o365App);
+        // 2.38.24: Add apps > Microsoft 365 - the tab and its usual settings, ready to add.
+        await page.evaluate(() => openAdd('office')); await page.waitForSelector('#dlgAdd[open] #asec-office:not([hidden])');
+        check(await page.evaluate(() => document.getElementById('aoChannel').value === 'monthlyEnterprise' && document.querySelector('[data-aoapp="word"]').checked && !document.querySelector('[data-aoapp="visio"]').checked && !document.getElementById('btnAddGo').disabled), `${label}: Add apps > Microsoft 365 starts with the usual settings, ready to add`);
+        await unnamed('Add apps > Microsoft 365'); await a11y('Add apps > Microsoft 365'); await shot('add-office');
+        await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.getElementById('dlgAdd').open);
         // 2.34.0: a whole folder for an app - reviewed (the setup file in a subfolder suggested), all of it in its
         // packages folder, listed file by file; a file deleted from the list.
         const folderApp = `ZZ UI Folder ${label.replace(/\W+/g, '')}`, dir = mkdtempSync(join(tmpdir(), 'zz-ui-folder-'));
