@@ -565,6 +565,8 @@ try {
         await unnamed('the Microsoft 365 settings'); await a11y('the Microsoft 365 settings'); await page.$eval('#aOfficeBox', e => e.scrollIntoView({ block: 'center' })); await shot('editor-office');
         await page.selectOption('#oChannel', 'current'); await page.uncheck('[data-oapp="teams"]');
         await page.click('#btnSaveApp'); await page.waitForFunction(() => !document.getElementById('dlgApp').open, null, { timeout: 15000 });
+        // The dialog closes before the list is read again - wait for the row as it is now.
+        await page.waitForFunction(n => { const a = apps.find(x => x.name === n); return !!(a && a.office); }, o365App, { timeout: 15000 }).catch(() => {});
         const o365Row = await page.evaluate(n => { const a = apps.find(x => x.name === n); return a && { office: a.office, text: a.officeText, src: document.querySelector(`#gridBody tr[data-name="${n}"] td.src`)?.textContent }; }, o365App);
         check(!!(o365Row && o365Row.office && o365Row.office.channel === 'current' && o365Row.office.excluded.includes('teams') && o365Row.src === 'Microsoft 365 Apps'), `${label}: Microsoft 365 Apps saved with its settings and shown as such in the list`, JSON.stringify(o365Row));
         await page.evaluate(n => api('/api/app-remove', { name: n }).then(() => loadApps()), o365App);
