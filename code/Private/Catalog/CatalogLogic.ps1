@@ -896,9 +896,10 @@ function Global:ConvertTo-PsLiteral {
 }
 
 function Global:Get-InstalledNamePattern {
-    # Pure: a regex for a product's name as Windows lists it - the name itself, or followed by a version or "(x64)" - not "<name> Meeting Add-in", another product.
+    # Pure: a regex for a product's name as Windows lists it - the name itself, or followed by a version ("2.1", "v2.1",
+    # "Version 2.1" - 2.38.18) or "(x64)" - not "<name> Meeting Add-in", another product.
     param([string]$Name)
-    return '^' + [regex]::Escape(([string]$Name).Trim()) + '(\s+(v?\d[\w.\-]*|\([^)]*\)))*\s*$'
+    return '^' + [regex]::Escape(([string]$Name).Trim()) + '(\s+((version|ver\.?)\s*)?(v?\d[\w.\-]*|\([^)]*\)))*\s*$'
 }
 
 function Global:ConvertTo-PsSingleQuotedContent {
@@ -1616,13 +1617,13 @@ function Global:Get-InventorySuggestions {
       parts of Windows or drivers. Most devices first.
     #>
     param($Detected, $Apps, [int]$MinDevices = 3, [int]$Max = 40)
-    $known = @(@($Apps) | ForEach-Object { [string]$_.appName; [string]$_.detectedName } | Where-Object { $_ } | ForEach-Object { '^' + [regex]::Escape($_) + '(\s+(v?\d[\w.\-]*|\([^)]*\)))*\s*$' })
+    $known = @(@($Apps) | ForEach-Object { [string]$_.appName; [string]$_.detectedName } | Where-Object { $_ } | ForEach-Object { Get-InstalledNamePattern $_ })
     $system = '^(Microsoft (Visual C\+\+|Edge( Update| WebView2)?|Update Health Tools|\.NET|Windows Desktop Runtime|ASP\.NET|Intune Management Extension|Teams Meeting Add-in|OneDrive|GameInput|Policy Platform)|Windows |Update for |Security Update|Hotfix|Intel\(R\)|Realtek|NVIDIA|AMD |Dell |HP |Lenovo )'
     $byName = @{}
     foreach ($d in @($Detected)) {
         $name = ([string]$d.displayName).Trim()
         if (-not $name -or $name -match $system) { continue }
-        $base = ($name -replace '(\s+(v?\d[\w.\-]*|\([^)]*\)))+\s*$', '').Trim()
+        $base = ($name -replace '(\s+((version|ver\.?)\s*)?(v?\d[\w.\-]*|\([^)]*\)))+\s*$', '').Trim()
         if (-not $base) { $base = $name }
         $hit = $false; foreach ($k in $known) { if ($name -match $k -or $base -match $k) { $hit = $true; break } }
         if ($hit) { continue }
@@ -3098,12 +3099,17 @@ function Global:ConvertFrom-InstalledNamePattern {
     # Pure: the name Get-InstalledNamePattern made -Pattern from ('' when it isn't one of its patterns) - so the name can be shown and edited instead of the regex.
     param([string]$Pattern)
     if (-not $Pattern) { return '' }
-    $tail = '(\s+(v?\d[\w.\-]*|\([^)]*\)))*\s*$'
-    if (-not $Pattern.StartsWith('^', [StringComparison]::Ordinal) -or -not $Pattern.EndsWith($tail, [StringComparison]::Ordinal)) { return $null }
-    $escaped = $Pattern.Substring(1, $Pattern.Length - 1 - $tail.Length)
-    try { $name = [regex]::Unescape($escaped) } catch { return $null }
-    if ((Get-InstalledNamePattern $name) -cne $Pattern) { return $null }
-    return $name
+    # Today's ending, and the one before 2.38.18 (scripts already in the catalog and in Intune have it).
+    $tails = @('(\s+((version|ver\.?)\s*)?(v?\d[\w.\-]*|\([^)]*\)))*\s*$', '(\s+(v?\d[\w.\-]*|\([^)]*\)))*\s*$')
+    if (-not $Pattern.StartsWith('^', [StringComparison]::Ordinal)) { return $null }
+    foreach ($tail in $tails) {
+        if (-not $Pattern.EndsWith($tail, [StringComparison]::Ordinal)) { continue }
+        $escaped = $Pattern.Substring(1, $Pattern.Length - 1 - $tail.Length)
+        try { $name = [regex]::Unescape($escaped) } catch { return $null }
+        if (('^' + [regex]::Escape(([string]$name).Trim()) + $tail) -cne $Pattern) { return $null }
+        return $name
+    }
+    return $null
 }
 
 function Global:Get-DetectionBlocks {
