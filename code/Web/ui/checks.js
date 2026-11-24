@@ -162,7 +162,7 @@ function fixButtons(f) {
 // One app's findings only (from its "Needs a look" on Apps or Home) - a chip says so and x shows all again.
 let checkApp = '';
 async function showChecksFor(name) {
-  showView('checks'); checkApp = name; renderChecks();
+  window.keepCheckApp = true; showView('checks'); window.keepCheckApp = false; checkApp = name; renderChecks();
   if (!findings.some(f => (f.catalogName || f.app) === name)) await runChecks([name]);
 }
 // One problem, one row (2.38.6): an "Unknown assignments" finding whose every item is already in the same app's
@@ -210,7 +210,9 @@ function renderChecks() {
       el('td', {}, fixButtons(f)));
   }));
   $('checkAll').checked = list.length > 0 && list.every(f => checkSel.has(keyOf(f)));
-  $('checkCount').textContent = findings.length ? `${list.length} finding(s)` : '';
+  // Filtered to one app (2.38.32): say how many the other apps have - "0 finding(s)" read as "nothing anywhere".
+  const hiddenN = checkApp ? shownFindings().filter(f => (f.catalogName || f.app) !== checkApp).length : 0;
+  $('checkCount').textContent = findings.length ? `${list.length} finding(s)${hiddenN ? ` - ${hiddenN} more for other apps (x shows all)` : ''}` : '';
   $('checkGrid').hidden = findings.length === 0;
   $('checkEmpty').hidden = findings.length > 0;
   updateCheckActions();

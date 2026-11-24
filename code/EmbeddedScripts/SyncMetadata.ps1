@@ -325,6 +325,7 @@ try {
         }
 
         $depNames = @()
+        $depsFetchFailed = $false
         # Same list, same shape as the app's ConvertTo-SupersedenceEntries.
         # $null on a failed read: unknown, not "supersedes nothing".
         $supersedence = $null
@@ -337,6 +338,8 @@ try {
         }
         catch {
             $warnings.Add("Could not fetch dependencies: $($_.Exception.Message)")
+            # Unknown, not "none" (2.38.32): Checks said "Intune has (none)" and Take from Intune would have wiped them.
+            $depsFetchFailed = $true
         }
 
         $requiredGroupNames = @()
@@ -425,6 +428,7 @@ try {
             OdataType            = $app.'@odata.type'
             # A Microsoft Store app (new): its Store product ID - the catalog's Winget ID for it (2.38.30).
             PackageIdentifier    = [string]$app.packageIdentifier
+            DependenciesFetchOk  = -not $depsFetchFailed
             DisplayVersion       = [string]$app.displayVersion
             RequiredGroupNames   = $requiredGroupNames
             AvailableGroupNames  = $availableGroupNames

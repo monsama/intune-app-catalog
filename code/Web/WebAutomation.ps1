@@ -101,7 +101,7 @@ function Global:Invoke-ManagedUpdateRun {
             if ($FastTrackOnly) { $managed = @($managed | Where-Object { $p = Get-WebAppRelease $_; $p -and $p.fastTrack }) }
             if (-not $managed.Count -and -not $FastTrackOnly) { & $say '(all)' 'none' 'No deployed app has managed updates.' }
             # The newest winget versions, for the Winget apps with nothing in pilot.
-            $askWinget = @($managed | Where-Object { $_.wingetId -and -not (Get-WebAppRelease $_) -and -not $FastTrackOnly })
+            $askWinget = @($managed | Where-Object { $_.wingetId -and -not (Test-StoreProductId ([string]$_.wingetId)) -and -not (Get-WebAppRelease $_) -and -not $FastTrackOnly })
             if ($askWinget.Count) {
                 if (-not $Global:App.WingetLatest) { $Global:App.WingetLatest = [hashtable]::Synchronized(@{}) }
                 # winget.exe on Windows; on the server winget's package index (Test-WingetPackageId uses either).
@@ -356,7 +356,10 @@ function Global:Invoke-WebNightlyDrift {
         if (@($areas | Where-Object { $_ -in 'Groups', 'Unknown assignments' }).Count -and $g.Name) { $fixable.Add($g.Name) }
     }
     if ($Fix -and $fixable.Count) {
-        $p = Wait-WebStepJob (Start-WebPushGroups @{ names = $fixable.ToArray(); mode = 'Apply' })
+        # Never creates groups unattended (2.38.32): a mistyped group name made an empty group at night.
+        $p = Wait-WebStepJob (Start-WebPushGroups @{ names = $fixable.ToArray(); mode = 'Apply'; createMissing = $false })
+        # Fixed: their drift is no longer "differs" on Home - only what wasn't about groups stays.
+        if ($p.ok) { foreach ($it in @($items | Where-Object { $_.outcome -eq 'drift' -and $fixable -contains [string]$_.app -and ([string]$_.text) -notmatch '(Metadata|Dependencies|Supersedence|Package)' })) { $it.outcome = 'fixed' } }
         if ($p.ok) { $items.Add([ordered]@{ app = ($fixable -join ', '); outcome = 'fixed'; text = "Pushed the catalog's groups again - Intune's assignments match the catalog." }) }
         else { $items.Add([ordered]@{ app = ($fixable -join ', '); outcome = 'failed'; text = "Pushing the catalog's groups failed: $($p.error)" }) }
     }

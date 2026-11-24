@@ -129,7 +129,11 @@ function Global:Invoke-WebChecks {
                 # which would otherwise get the whole list as a single item.
                 $items.ToArray()
             }
+            # Windows apps only (2.38.32): the tenant's iOS, Android and macOS apps were "in Intune, not in the catalog" -
+            # with Add to catalog - while the Apps page leaves them out, as this catalog is for Windows.
+            $winTypes = '^(win32LobApp|winGetApp|windowsMicrosoftEdgeApp|officeSuiteApp|windowsMobileMSI|windowsUniversalAppX|windowsStoreApp|microsoftStoreForBusinessApp|windowsWebApp|webApp|windowsAppX|win32CatalogApp)$'
             $intuneApps = @(& $pages 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$select=id,displayName&$top=999' |
+                Where-Object { -not [string]$_.'@odata.type' -or (([string]$_.'@odata.type') -replace '^#?microsoft\.graph\.', '') -match $winTypes } |
                 ForEach-Object { [pscustomobject]@{ id = [string]$_.id; displayName = [string]$_.displayName } })
             # Only the groups the catalog names, 15 to a request - not every group
             # and user in the tenant, which in a big one is hundreds of pages.
@@ -167,7 +171,7 @@ function Global:Invoke-WebChecks {
     $rows = @($findings | ForEach-Object { ConvertTo-WebFindingRow $_ })
     Write-Log "[INFO] Checks: $($rows.Count) finding(s). $summary $($notes -join ' ')"
     return @{ ok = $true; findings = $rows; notes = $notes.ToArray(); summary = $summary; deployed = @($apps | Where-Object { $_.appId } | ForEach-Object { $_.appName }).Count
-        winget = @($apps | Where-Object { $_.wingetId } | ForEach-Object { $_.appName }).Count; connected = [bool]($read -and $read.ok) }
+        winget = @($apps | Where-Object { $_.wingetId -and -not (Test-StoreProductId ([string]$_.wingetId)) } | ForEach-Object { $_.appName }).Count; connected = [bool]($read -and $read.ok) }
 }
 
 function Global:Start-WebCheckDetails {
@@ -210,11 +214,12 @@ function Global:Complete-WebCheckDetails {
         }
         # A Microsoft Store app has no install commands or detection in Intune to compare - its settings aren't checked.
         $isStore = (Test-StoreProductId ([string]$app.wingetId)) -or [bool]$app.office
-        foreach ($f in @(Get-AppDetailFindings -CatalogApp $app -Result $one)) { if ($isStore -and [string]$f.Area -eq 'Metadata') { continue }; $new.Add($f) }
+        # Nor their dependencies (2.38.32): Intune's Store and Microsoft 365 app types take none from here - a permanent "differ".
+        foreach ($f in @(Get-AppDetailFindings -CatalogApp $app -Result $one)) { if ($isStore -and [string]$f.Area -in 'Metadata', 'Dependencies') { continue }; $new.Add($f) }
         $texts = Get-AuditSummaryTexts -CatalogApp $app -Result $one
         # Store apps and Microsoft 365 Apps: their settings aren't compared (above) - the audit says OK for them too (2.38.31:
         # Home kept "differs" for fields Intune doesn't have on those types).
-        if ($isStore) { $texts.Metadata = 'OK' }
+        if ($isStore) { $texts.Metadata = 'OK'; $texts.Dependencies = 'OK' }
         Set-LastAuditCacheEntry -AppName ([string]$one.AppName) -Metadata $texts.Metadata -Groups $texts.Groups -Dependencies $texts.Dependencies
     }
     Save-LastAuditCache
@@ -253,7 +258,9 @@ function Global:Complete-WebCheckAssign {
 function Global:Invoke-WebCheckWinget {
     # Asks winget about each Winget ID (or -names'). One at a time: winget is a process each time, and they share one source cache.
     param($Data)
-    $apps = @(Get-WebCheckApps -Names @($Data.names) | Where-Object { $_.wingetId })
+    # Store product IDs aren't winget packages (2.38.32): winget's index doesn't have them, so every Store app showed
+    # "Winget no longer has this package" - they are asked of the Store's own catalog (the Store tab) instead.
+    $apps = @(Get-WebCheckApps -Names @($Data.names) | Where-Object { $_.wingetId -and -not (Test-StoreProductId ([string]$_.wingetId)) })
     if ($apps.Count -eq 0 -and -not @(Get-WebCheckApps -Names @($Data.names) | Where-Object { -not $_.wingetId -and $_.watchWinget }).Count) { return @{ ok = $true; areas = @('Winget ID'); names = @(); findings = @() } }
     if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not (Test-WingetIndexUsable)) { return @{ ok = $false; error = "winget.exe isn't on this machine, so Winget IDs can't be checked. It comes with the 'App Installer' package on Windows 10 and 11." } }
     $results = @($apps | ForEach-Object { Test-WingetPackageId -AppName $_.appName -WingetId $_.wingetId })

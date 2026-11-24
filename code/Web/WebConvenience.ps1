@@ -225,7 +225,7 @@ function Global:Get-WebAttention {
     if ($bare.Count) { & $add 'info' "$($bare.Count) app(s) with details missing" ((@($bare | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($bare.Count -gt 5) { ', ...' } else { '' }) + " - no publisher, description or information link yet. winget knows them: fill them in (only empty fields, never the version).") 'do:filldetails' }
     if ($notDeployed.Count) { & $add 'info' "$($notDeployed.Count) app(s) not in Intune yet" ((@($notDeployed | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($notDeployed.Count -gt 5) { ', ...' })) 'apps:notdeployed' }
     # winget.exe answers in Windows' display language; its text is read in several languages, but Microsoft's WinGet module is exact in all of them.
-    if (-not $Global:App.TestGraph -and @($apps | Where-Object { $_.wingetId }).Count -and (Get-UICulture).TwoLetterISOLanguageName -ne 'en' -and (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not (Test-WingetClientModule)) {
+    if (-not $Global:App.TestGraph -and @($apps | Where-Object { $_.wingetId -and -not (Test-StoreProductId ([string]$_.wingetId)) }).Count -and (Get-UICulture).TwoLetterISOLanguageName -ne 'en' -and (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not (Test-WingetClientModule)) {
         & $add 'info' 'Install the WinGet PowerShell module' "Windows here isn't in English, so winget's answers are read from translated text. For exact answers in any language, install Microsoft's WinGet module (for your user only, from the PowerShell Gallery) - Install it does it." 'do:wingetmodule'
     }
     # Winget-AutoUpdate is no longer used (2.19): apps still relying on it are switched to managed updates.
@@ -260,7 +260,8 @@ function Global:Get-WebAttention {
     $managedWinget = @($apps | Where-Object { $_.wingetId -and $_.managedUpdates })
     if ($managedWinget.Count -and -not (Test-Path -LiteralPath (Get-SharedPackagePath))) { & $add 'warn' 'Shared Winget package missing' 'Build init.intunewin - Winget apps can''t be deployed without it.' 'settings:packaging' }
     $runs = Get-WebUpdateRuns
-    $last = @($runs.runs) | Select-Object -First 1
+    # The last full nightly run (2.38.32) - a fast-track or plan-only run said nothing about drift, and Home lost it.
+    $last = @($runs.runs | Where-Object { -not $_.fastTrack -and -not $_.planOnly }) | Select-Object -First 1
     if ($last -and $last.failed) { & $add 'err' "The last nightly run had $($last.failed) problem(s)" ((@($last.items | Where-Object { $_.outcome -eq 'failed' } | Select-Object -First 3 | ForEach-Object { $t = Get-WebShortGraphError ([string]$_.text); if ($_.app -eq '(all)') { $t } else { "$($_.app): $t" } }) -join ' / ')) 'settings:automation' }
     $drift = @($last.items | Where-Object { $_.outcome -eq 'drift' })
     # 2.38.28: an app Checks compared since that run, and found as the catalog says, isn't "differs" any more - Home showed

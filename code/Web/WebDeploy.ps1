@@ -256,6 +256,7 @@ function Global:Start-WebPushGroups {
         TenantId = $creds.TenantId; ClientId = $creds.ClientId; CertificateThumbprint = $creds.CertificateThumbprint
         Mode = $mode
         Apps = @($apps | ForEach-Object { @{ AppName = $_.appName; AppId = $_.appId; RequiredGroups = @($_.requiredFor); AvailableGroups = @($_.availableFor); UninstallGroups = @($_.uninstallFor); ExcludeGroups = @($_.excludeFor); FilterName = [string]$_.assignmentFilter; FilterMode = [string]$_.assignmentFilterMode } })
+        CreateMissingGroups = $(if ($null -ne $Data.createMissing) { [bool]$Data.createMissing } else { $true })
         OutputResultPath = $resultPath
     }
     if ($mode -eq 'Apply') { $gid = Add-WebGroupIdsToConfig $config; if ($gid) { return @{ ok = $false; error = $gid } } }
