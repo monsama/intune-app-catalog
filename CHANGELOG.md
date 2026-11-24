@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.38.26
+
+- Recommended apps: Lenovo Commercial Vantage taken out again (its Store ID wasn't
+  confirmed); Lenovo Vantage (9WZDNCRFJ4MV, confirmed in the Store) stays.
+
 ## 2.38.25
 
 - **Recommended apps**: Snapform Viewer (Ringler.SnapformViewer - Snapform forms,
