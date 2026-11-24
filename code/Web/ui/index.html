@@ -1122,8 +1122,8 @@
   <section class="asec" id="asec-installer" role="tabpanel" aria-labelledby="atab-installer" hidden>
     <div class="dropzone" id="aiDrop" tabindex="0" role="button" aria-describedby="aiDropText">
       <strong>Drop an .msi or .exe here - or a whole folder, or a .zip of it</strong>
-      <span id="aiDropText" class="muted">or <u>choose a file</u> (.msi, .exe, .zip) - the installer is read for its name, publisher, version and silent switches; everything goes into the app's packages folder and into its package.</span>
-      <input type="file" id="aiFile" accept=".msi,.exe,.zip" hidden>
+      <span id="aiDropText" class="muted">or <u>choose files</u> (.msi, .exe, .zip - or several at once: the setup and the files it needs) - the installer is read for its name, publisher, version and silent switches; everything goes into the app's packages folder and into its package.</span>
+      <input type="file" id="aiFile" multiple hidden>
     </div>
     <p class="dropalt" id="aiFolderRow">Or upload a whole folder: <button type="button" class="btn small" id="aiFolderBtn">Choose a folder...</button><input type="file" id="aiFolder" webkitdirectory multiple hidden aria-label="A folder to upload"></p>
     <div class="upbar" id="aiProgress" hidden><div class="bar"><span id="aiBar"></span></div><span class="muted" id="aiProgressText"></span></div>
@@ -1133,7 +1133,23 @@
         <label>Name<input id="aiName" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label>Publisher<input id="aiPublisher" list="pubList" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label>Version<input id="aiVersion" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-        <label>Detected by<input id="aiDetection" readonly autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label title="How Intune tells it is installed - the app's proposal, or a file or a registry value of your own (all of them, and more, also on the editor's Install &amp; detection tab later)">Detected by<select id="aiDetType"><option value="proposed" id="aiDetProposed">The proposal</option><option value="file">A file</option><option value="registry">A registry value</option></select></label>
+      </div>
+      <div class="detbox" id="aiDetBox" hidden>
+        <div class="formgrid two" id="aiDetFile" hidden>
+          <label>Folder<input id="aiDetFolder" class="mono" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="C:\Program Files (x86)\Vendor\App"></label>
+          <label>File<input id="aiDetFileName" class="mono" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="app.exe"></label>
+        </div>
+        <div class="formgrid two" id="aiDetReg" hidden>
+          <label>Key<input id="aiDetKey" class="mono" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{AppId}_is1"></label>
+          <label>Value <span class="muted">(empty: the key exists)</span><input id="aiDetValue" class="mono" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="DisplayVersion"></label>
+        </div>
+        <div class="detcheck">
+          <label class="inline">Check<select id="aiDetCheck"><option value="exists">It exists</option><option value="version">Version is at least</option></select></label>
+          <input id="aiDetVersion" class="mono" aria-label="Version" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="2.1">
+          <label class="chk" title="A 32-bit app on 64-bit Windows: Intune looks in Program Files (x86) and the WOW6432Node part of the registry"><input type="checkbox" id="aiDet32">32-bit app</label>
+        </div>
+        <p class="hint" id="aiDetHint"></p>
       </div>
       <label class="full">Install command<input id="aiInstall" class="mono full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
       <label class="full">Uninstall command<input id="aiUninstall" class="mono full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>

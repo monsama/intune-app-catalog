@@ -349,10 +349,10 @@ async function setPkgSetup(path) {
 }
 // An installer, a .zip or a folder for the app open in the editor (2.33.0, folders 2.34.0): uploaded, then the
 // review - its files, the setup file, replace or add to what is there - then into its packages folder.
-const installerFile = el('input', { type: 'file', id: 'aInstallerFile', accept: '.msi,.exe,.zip', hidden: true, 'aria-label': 'Installer or .zip to upload' });
+const installerFile = el('input', { type: 'file', id: 'aInstallerFile', multiple: true, hidden: true, 'aria-label': 'Installer, .zip or files to upload' });
 const installerFolder = el('input', { type: 'file', id: 'aInstallerFolder', webkitdirectory: true, multiple: true, hidden: true, 'aria-label': 'Folder to upload' });
 document.body.append(installerFile, installerFolder);
-installerFile.addEventListener('change', () => { const f = installerFile.files[0]; installerFile.value = ''; if (f) editorUpload({ file: f }); });
+installerFile.addEventListener('change', () => { const p = pickFromFiles([...installerFile.files]); installerFile.value = ''; if (p) editorUpload(p); });
 installerFolder.addEventListener('change', () => { const p = pickFromFolderInput(installerFolder); installerFolder.value = ''; if (p) editorUpload(p); });
 for (const ev of ['dragenter', 'dragover']) $('aPkgInfo').addEventListener(ev, e => { if ([...(e.dataTransfer.items || [])].some(i => i.kind === 'file')) { e.preventDefault(); e.stopPropagation(); $('aPkgInfo').classList.add('over'); } });
 for (const ev of ['dragleave', 'drop']) $('aPkgInfo').addEventListener(ev, () => $('aPkgInfo').classList.remove('over'));
@@ -360,7 +360,7 @@ $('aPkgInfo').addEventListener('drop', async e => { e.preventDefault(); e.stopPr
 async function editorUpload(pick) {
   const name = editingName, box = $('aPkgInfo');
   if (!name) return;
-  if (!isPickable(pick)) { toast('Choose an .msi or .exe installer, a .zip of its folder, or the folder itself.', true); return; }
+  if (!isPickable(pick)) { toast('Choose an .msi or .exe installer, a .zip of its folder, the folder itself - or several files at once.', true); return; }
   if (editorState() !== editorSnapshot) { toast('Save your changes first - the upload fills in what the saved app still lacks.', true); return; }
   const say = t => { for (const b of box.querySelectorAll('button')) b.disabled = true; box.firstChild.textContent = t; };
   const f = await uploadPick(pick, say);

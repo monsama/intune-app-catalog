@@ -906,6 +906,8 @@ $tplEvil = @(Get-ScriptAppTemplates -Name $evil -Version "1.0'; Write-Output x; 
 Assert-Equal 0 @($tplEvil | Where-Object { $e = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($_.install + "`n" + $_.uninstall, [ref]$null, [ref]$e); @($e).Count }).Count "Get-ScriptAppTemplates: a hostile name or version still gives valid scripts"
 $pat = Get-InstalledNamePattern 'Microsoft Teams'
 Assert-True ('Microsoft Teams' -match $pat -and 'Microsoft Teams 24.1 (x64)' -match $pat -and 'Microsoft Teams Meeting Add-in' -notmatch $pat -and 'Microsoft Teams classic' -notmatch $pat) "Get-InstalledNamePattern: the product, with a version or (x64) - not a sibling product"
+$patV = Get-InstalledNamePattern 'apm system2'
+Assert-True ('apm system2 Version 2.1' -match $patV -and 'apm system2 v2.1' -match $patV -and 'apm system2 Viewer' -notmatch $patV) "Get-InstalledNamePattern (2.38.18): 'Version 2.1' after the name counts as its version"
 Assert-True ('Tool [beta]' -match (Get-InstalledNamePattern 'Tool [beta]')) "Get-InstalledNamePattern: brackets in a name are matched as text"
 
 # Microsoft Store apps, the permissions report, PSADT

@@ -75,7 +75,7 @@ function updateAddButton() {
   const b = $('btnAddGo');
   // The button names what it adds: only the open tab counts - what is filled in on the other tabs is left as it is.
   if (addSrc === 'winget' || addSrc === 'store') { const kind = addSrc === 'store' ? 'Store' : 'Winget'; b.textContent = awPicked.size ? `Add ${awPicked.size} ${kind} app${awPicked.size === 1 ? '' : 's'}` : `Add ${kind} apps`; setEnabled(b, awPicked.size > 0, 'Tick one or more first.'); }
-  else if (addSrc === 'installer') { b.textContent = 'Add installer'; setEnabled(b, !!aiInfo, 'Drop or choose an installer first.'); }
+  else if (addSrc === 'installer') { b.textContent = 'Add installer'; const d = aiInfo ? aiDetection() : null; setEnabled(b, !!aiInfo && !(d && d.error), !aiInfo ? 'Drop or choose an installer first.' : (d && d.error) || ''); }
   else if (addSrc === 'psadt') { b.textContent = 'Add PSADT app'; setEnabled(b, !!($('apName').value.trim() && $('apVersion').value.trim()), 'Give the app a name and the version you are packaging.'); }
   else if (addSrc === 'list') { b.textContent = alPicked.size ? `Add ${alPicked.size} from the list` : 'Add from the list'; setEnabled(b, alPicked.size > 0, 'Read a list and tick the packages first.'); }
   else { b.textContent = 'Add script app'; setEnabled(b, !!$('asName').value.trim(), 'Give the app a name first.'); }
@@ -84,7 +84,9 @@ function updateAddButton() {
   // Add and send follows Add - same condition, and the same kind of thing.
   // Sending needs the connection: without it, Add alone (it would build, then stop at "set up the connection").
   const conn = !!(state && state.configured);
-  setEnabled($('btnAddSend'), !b.disabled && conn, b.disabled ? b.title : 'Set up the connection to Intune first (Settings > Connection).');
+  // Add and send needs a detection rule (Intune won't take an app without one): the proposal or one chosen here.
+  const noRule = addSrc === 'installer' && aiInfo && $('aiDetType').value === 'proposed' && !aiProposal;
+  setEnabled($('btnAddSend'), !b.disabled && conn && !noRule, b.disabled ? b.title : noRule ? 'Choose how Intune detects it first (Detected by) - Add alone works, and the editor sets it later.' : 'Set up the connection to Intune first (Settings > Connection).');
 }
 $('btnAddBlank').addEventListener('click', () => { $('dlgAdd').close(); openEditor(''); });
 $('btnAddCancel').addEventListener('click', () => $('dlgAdd').close());
@@ -150,7 +152,7 @@ function resetInstaller() {
 }
 $('aiDrop').addEventListener('click', () => $('aiFile').click());
 $('aiDrop').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('aiFile').click(); } });
-$('aiFile').addEventListener('change', () => { if ($('aiFile').files[0]) startUpload({ file: $('aiFile').files[0] }); });
+$('aiFile').addEventListener('change', () => { const p = pickFromFiles([...$('aiFile').files]); $('aiFile').value = ''; if (p) startUpload(p); });
 $('aiFolder').addEventListener('change', () => { const p = pickFromFolderInput($('aiFolder')); $('aiFolder').value = ''; if (p) startUpload(p); });
 $('aiFolderBtn').addEventListener('click', () => $('aiFolder').click());
 for (const ev of ['dragenter', 'dragover']) $('aiDrop').addEventListener(ev, e => { e.preventDefault(); $('aiDrop').classList.add('over'); });
@@ -230,10 +232,27 @@ function pickFromFolderInput(input) {
   const top = files[0].webkitRelativePath.split('/')[0];
   return { folderName: top, files: files.map(f => ({ file: f, path: f.webkitRelativePath.split('/').slice(1).join('/') })) };
 }
-// What was dropped: a folder (read through its entries, subfolders too) or one file.
+// Several files chosen or dropped at once (2.38.18 - only the first one was taken): together, as a folder named after its
+// setup file. One file stays one file.
+function pickFromFiles(files, extra) {
+  const all = [...files.map(f => ({ file: f, path: f.name })), ...(extra || [])];
+  if (!all.length) return null;
+  if (all.length === 1 && !(extra && extra.length)) return { file: all[0].file };
+  const setup = all.find(x => !x.path.includes('/') && /\.(msi|exe)$/i.test(x.path)) || all.find(x => /\.(msi|exe)$/i.test(x.path)) || all[0];
+  return { folderName: setup.path.split('/').pop().replace(/\.[^.]+$/, ''), files: all };
+}
+// What was dropped: a folder (read through its entries, subfolders too), one file - or several files and folders together.
 async function pickFromDrop(dt) {
   const entries = [...(dt.items || [])].map(i => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null)).filter(Boolean);
   if (entries.length === 1 && entries[0].isDirectory) { const files = []; await walkEntry(entries[0], '', files); return { folderName: entries[0].name, files }; }
+  if (entries.length > 1) {
+    const files = [], sub = [];
+    for (const e of entries) {
+      if (e.isDirectory) await walkEntry(e, e.name + '/', sub);
+      else files.push(await new Promise((res, rej) => e.file(res, rej)));
+    }
+    return pickFromFiles(files, sub);
+  }
   const f = dt.files && dt.files[0]; return f ? { file: f } : null;
 }
 async function walkEntry(dir, prefix, out) {
@@ -253,7 +272,7 @@ const fmtMB = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1,
 async function startUpload(pick) {
   if (pick instanceof File) pick = { file: pick };
   $('addError').hidden = true;
-  if (!isPickable(pick)) { showAddError('Drop an .msi or .exe installer, a .zip of its folder, or the folder itself.'); return; }
+  if (!isPickable(pick)) { showAddError('Drop an .msi or .exe installer, a .zip of its folder, the folder itself - or several files at once.'); return; }
   $('aiDrop').hidden = true; $('aiFolderRow').hidden = true; $('aiProgress').hidden = false; $('aiReview').hidden = true;
   const token = {}; aiUpload = { id: '', added: false, token };
   const f = await uploadPick(pick, (t, frac) => { if (aiUpload && aiUpload.token === token) { $('aiProgressText').textContent = t; if (frac !== undefined) $('aiBar').style.width = Math.round(100 * frac) + '%'; } });
@@ -278,7 +297,15 @@ function showUploadReview(f) {
   nameWarnRefresh();
   $('aiPublisher').value = f.publisher; $('aiVersion').value = f.version;
   $('aiInstall').value = f.installCommand; $('aiUninstall').value = f.uninstallCommand;
-  $('aiDetection').value = f.detection === 'Msi' ? `MSI product code ${f.productCode}${f.version ? ', version ' + f.version + ' or newer' : ''}` : f.detection === 'Script' ? 'A script: the name and version Windows lists' : 'Nothing yet - set it in the editor';
+  // Detected by (2.38.18): the proposal - or a file or registry value of your own, right here.
+  aiProposal = f.detection === 'Msi' ? `MSI product code ${f.productCode}${f.version ? ', version ' + f.version + ' or newer' : ''}` : f.detection === 'Script' ? 'A script: the name and version Windows lists' : '';
+  $('aiDetProposed').textContent = aiProposal ? `Proposed: ${aiProposal}` : 'Nothing proposed - choose a file or a registry value';
+  $('aiDetType').value = aiProposal ? 'proposed' : (f.exeKind === 'inno' ? 'registry' : 'file');
+  for (const id of ['aiDetFolder', 'aiDetFileName', 'aiDetKey', 'aiDetVersion']) $(id).value = '';
+  $('aiDetValue').value = 'DisplayVersion'; $('aiDetCheck').value = f.version ? 'version' : 'exists'; $('aiDetVersion').value = f.version || ''; $('aiDet32').checked = false;
+  // Inno Setup lists itself under Uninstall\<its AppId>_is1 - the key to fill in (the AppId is in the registry after a test install).
+  if (f.exeKind === 'inno') $('aiDetKey').value = 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{AppId}_is1';
+  aiDetShow();
   $('aiNotes').replaceChildren(...[...(f.nameProblem ? [f.nameProblem + ' Change the name.'] : []), ...f.notes].map(n => el('li', { text: n })));
   $('aiManagedRow').hidden = !f.managedOk; $('aiManaged').checked = !!f.managedOk;
   updateAddButton(); $('aiName').focus();
@@ -290,6 +317,32 @@ $('aiSetup').addEventListener('change', async () => {
   showUploadReview({ ...r, uploadId: aiUpload.id });
 });
 $('aiName').addEventListener('input', () => { $('aiName').dataset.touched = '1'; });
+let aiProposal = '';
+function aiDetShow() {
+  const t = $('aiDetType').value;
+  $('aiDetBox').hidden = t === 'proposed'; $('aiDetFile').hidden = t !== 'file'; $('aiDetReg').hidden = t !== 'registry';
+  $('aiDetVersion').hidden = $('aiDetCheck').value !== 'version';
+  $('aiDetHint').textContent = t === 'registry' ? (aiInfo && aiInfo.exeKind === 'inno' ? 'Inno Setup: replace {AppId} with the key name a test install made (HKLM\\...\\Uninstall, ends in _is1) and tick 32-bit if it is under WOW6432Node.' : 'Tick 32-bit for a key under WOW6432Node - write it without that part.')
+    : t === 'file' ? 'The program file the setup puts there. For a 32-bit app in Program Files (x86), tick 32-bit.' : '';
+  updateAddButton();
+}
+for (const id of ['aiDetType', 'aiDetCheck']) $(id).addEventListener('change', aiDetShow);
+for (const id of ['aiDetFolder', 'aiDetFileName', 'aiDetKey', 'aiDetValue', 'aiDetVersion']) $(id).addEventListener('input', updateAddButton);
+// The detection rule chosen here, as the catalog keeps it - null for the proposal; { error } when something is missing.
+function aiDetection() {
+  const t = $('aiDetType').value; if (t === 'proposed') return null;
+  const ver = $('aiDetCheck').value === 'version', v = $('aiDetVersion').value.trim(), b32 = $('aiDet32').checked;
+  if (ver && !v) return { error: 'Give the version to check against.' };
+  if (t === 'file') {
+    const folder = $('aiDetFolder').value.trim(), file = $('aiDetFileName').value.trim();
+    if (!folder || !file) return { error: 'Give the folder and the file Intune looks for.' };
+    return { Type: 'File', File_Path: folder, File_Name: file, File_Check32Bit: b32, File_DetectionType: ver ? 'version' : 'exists', File_Operator: ver ? 'greaterThanOrEqual' : 'notConfigured', File_DetectionValue: ver ? v : '' };
+  }
+  const key = $('aiDetKey').value.trim(), val = $('aiDetValue').value.trim();
+  if (!key || /\{AppId\}/i.test(key)) return { error: 'Give the registry key (replace {AppId} with the real key name).' };
+  if (ver && !val) return { error: 'A version is read from a value - give its name (e.g. DisplayVersion).' };
+  return { Type: 'Registry', Reg_KeyPath: key, Reg_ValueName: val, Reg_Check32Bit: b32, Reg_DetectionType: ver ? 'version' : 'exists', Reg_Operator: ver ? 'greaterThanOrEqual' : 'notConfigured', Reg_DetectionValue: ver ? v : '' };
+}
 function showAddError(t) { $('addError').textContent = t; $('addError').hidden = false; }
 
 // ---- a PowerShell script app
@@ -343,7 +396,7 @@ async function doAdd(send) {
     }
     else if (addSrc === 'installer') {
       const r = await api('/api/add-installer', { uploadId: aiUpload.id, name: $('aiName').value.trim(), publisher: $('aiPublisher').value.trim(), version: $('aiVersion').value.trim(),
-        installCommand: $('aiInstall').value.trim(), uninstallCommand: $('aiUninstall').value.trim(), managed: $('aiManaged').checked, ...groups });
+        installCommand: $('aiInstall').value.trim(), uninstallCommand: $('aiUninstall').value.trim(), managed: $('aiManaged').checked, detection: aiDetection(), ...groups });
       if (!r.ok) { showAddError(r.error); return; }
       aiUpload.added = true;
       const build = $('aiBuild').checked;

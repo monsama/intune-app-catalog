@@ -236,7 +236,7 @@ function Global:Get-WebOlderOnDevices {
         catch { if ("$($_.Exception.Message)" -match '^(401|403)\b') { throw } }
         $byVersion = @{}
         # The name itself, or followed by a version or "(x64)" - not "<name> Meeting Add-in", another product.
-        $same = '^' + [regex]::Escape($name) + '(\s+(v?\d[\w.\-]*|\([^)]*\)))*\s*$'
+        $same = Get-InstalledNamePattern $name
         foreach ($d in $found) {
             if ([string]$d.displayName -notmatch $same) { continue }
             $v = ([string]$d.version).Trim()

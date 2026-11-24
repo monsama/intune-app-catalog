@@ -375,6 +375,35 @@ function Global:Copy-WebUploadInto {
     return @($written)
 }
 
+function Global:ConvertTo-WebAddDetection {
+    <#
+      Detected by from the Add apps dialog: a file (exists, or version at least) or a registry value (key exists, or a
+      value's version at least) - as the catalog keeps it. A message (string) when something doesn't fit.
+    #>
+    param($D)
+    $ver = [string]$D.File_DetectionType -eq 'version' -or [string]$D.Reg_DetectionType -eq 'version'
+    $value = ([string]$(if ([string]$D.Type -eq 'File') { $D.File_DetectionValue } else { $D.Reg_DetectionValue })).Trim()
+    if ($ver -and -not (Test-ReleaseVersionText $value)) { return "'$value' isn't a version (digits and dots, e.g. 2.1)." }
+    $bad = '["<>|\x00-\x1f]'
+    switch ([string]$D.Type) {
+        'File' {
+            $path = ([string]$D.File_Path).Trim().TrimEnd('\'); $file = ([string]$D.File_Name).Trim()
+            if (-not $path -or -not $file -or $path -match $bad -or $file -match $bad -or $file -match '[\\/]') { return 'Give the folder and the file name (no quotes, the name without a folder).' }
+            return [ordered]@{ Type = 'File'; File_Path = $path; File_Name = $file; File_Check32Bit = [bool]$D.File_Check32Bit
+                File_DetectionType = $(if ($ver) { 'version' } else { 'exists' }); File_Operator = $(if ($ver) { 'greaterThanOrEqual' } else { 'notConfigured' }); File_DetectionValue = $(if ($ver) { $value } else { '' }) }
+        }
+        'Registry' {
+            $key = ([string]$D.Reg_KeyPath).Trim().TrimEnd('\'); $name = ([string]$D.Reg_ValueName).Trim()
+            if ($key -notmatch '^(HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER|HKLM|HKCU)\\.+' -or $key -match $bad -or $key -match '\{AppId\}') { return 'Give the registry key, starting with HKEY_LOCAL_MACHINE\ (or HKEY_CURRENT_USER\).' }
+            $key = $key -replace '^HKLM\\', 'HKEY_LOCAL_MACHINE\' -replace '^HKCU\\', 'HKEY_CURRENT_USER\'
+            if ($ver -and -not $name) { return 'A version is read from a value - give its name (e.g. DisplayVersion).' }
+            return [ordered]@{ Type = 'Registry'; Reg_KeyPath = $key; Reg_ValueName = $name; Reg_Check32Bit = [bool]$D.Reg_Check32Bit
+                Reg_DetectionType = $(if ($ver) { 'version' } else { 'exists' }); Reg_Operator = $(if ($ver) { 'greaterThanOrEqual' } else { 'notConfigured' }); Reg_DetectionValue = $(if ($ver) { $value } else { '' }) }
+        }
+        default { return 'Detected by: a file or a registry value.' }
+    }
+}
+
 function Global:Add-WebInstallerApp {
     <#
       Adds the uploaded installer as an own-package app: the file goes into
@@ -393,6 +422,12 @@ function Global:Add-WebInstallerApp {
     $version = ([string]$Data.version).Trim()
     if ($version -and -not (Test-ReleaseVersionText $version)) { return @{ ok = $false; error = "'$version' isn't a version (letters, digits and . - + _)." } }
     $folder = Join-Path (Get-AppFolder -Kind Packages -Create) (Get-SafeFileNameForApp -Name $name)
+    # Checked before anything is written into the folder.
+    $own = $null
+    if ($Data.detection) {
+        $own = ConvertTo-WebAddDetection $Data.detection
+        if ($own -is [string]) { return @{ ok = $false; error = $own } }
+    }
     $folderWasNew = -not (Test-Path -LiteralPath $folder)
     if (Test-Path -LiteralPath $folder) {
         $other = @(Get-PackageFolderFiles $folder | Where-Object { $u.Kind -ne 'file' -or $_.path -ne $u.FileName })
@@ -417,6 +452,8 @@ function Global:Add-WebInstallerApp {
     if (-not $r.ok) { if ($folderWasNew) { Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue } elseif ($p.NeedsUninstallScript) { Remove-Item -LiteralPath (Join-Path $folder 'Uninstall.ps1') -Force -ErrorAction SilentlyContinue }; return $r }
     $rule = $p.Detection
     if ($rule -and $version -and $rule.Type -eq 'Msi') { $rule.Msi_Version = $version }
+    # Detected by, chosen in the dialog (2.38.18): a file or a registry value instead of the proposal.
+    if ($own) { $rule = $own }
     $managed = [bool]$Data.managed -and [bool]$p.ManagedOk
     [void](Update-WebCatalogApp -Name $r.name -Change {
             param($app)
@@ -427,8 +464,8 @@ function Global:Add-WebInstallerApp {
     Remove-Item -LiteralPath (Split-Path $u.Path -Parent) -Recurse -Force -ErrorAction SilentlyContinue
     (Get-WebUploads).Remove([string]$Data.uploadId)
     # No detection proposed (a folder whose setup is install.ps1 or a .cmd): said plainly - Intune can't send it without one.
-    $detText = if ($p.Detection -and [string]$p.Detection.Type) { "$($p.Detection.Type) detection" } else { 'no detection rule yet - set one on Install & detection before sending' }
-    Write-Log "$(if ($p.Detection -and [string]$p.Detection.Type) { '[OK]' } else { '[WARN]' }) Added $($r.name) from $($u.FileName) ($detText) - its installer is in $folder."
+    $detText = if ($rule -and [string]$rule.Type) { "$($rule.Type) detection" } else { 'no detection rule yet - set one on Install & detection before sending' }
+    Write-Log "$(if ($rule -and [string]$rule.Type) { '[OK]' } else { '[WARN]' }) Added $($r.name) from $($u.FileName) ($detText) - its installer is in $folder."
     return @{ ok = $true; name = $r.name; folder = $folder }
 }
 
