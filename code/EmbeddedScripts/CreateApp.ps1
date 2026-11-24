@@ -463,35 +463,38 @@ function Invoke-Win32AppContentUpload {
         throw "Timed out waiting for a renewed upload address."
     }
 
-    for ($b = 0; $b -lt $totalBlocks; $b++) {
-        $offset = [long]$b * $blockSize
-        $len = [int][Math]::Min([long]$blockSize, $fileLength - [long]$offset)
-        $chunk = New-Object byte[] $len
-        [void]$fileStream.Seek([long]$offset, [System.IO.SeekOrigin]::Begin)
-        $read = 0; while ($read -lt $len) { $n = $fileStream.Read($chunk, $read, $len - $read); if ($n -le 0) { throw "The package file ended early." }; $read += $n }
+    # Closed on every way out (2.38.34): an open file can't be deleted, and the encrypted package stayed in %TEMP%.
+    try {
+        for ($b = 0; $b -lt $totalBlocks; $b++) {
+            $offset = [long]$b * $blockSize
+            $len = [int][Math]::Min([long]$blockSize, $fileLength - [long]$offset)
+            $chunk = New-Object byte[] $len
+            [void]$fileStream.Seek([long]$offset, [System.IO.SeekOrigin]::Begin)
+            $read = 0; while ($read -lt $len) { $n = $fileStream.Read($chunk, $read, $len - $read); if ($n -le 0) { throw "The package file ended early." }; $read += $n }
 
-        $blockIdRaw = [string]$b
-        $blockIdPadded = $blockIdRaw.PadLeft(20, '0')
-        $blockId = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($blockIdPadded))
-        $blockIds.Add($blockId)
+            $blockIdRaw = [string]$b
+            $blockIdPadded = $blockIdRaw.PadLeft(20, '0')
+            $blockId = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($blockIdPadded))
+            $blockIds.Add($blockId)
 
-        $blockUri = "$azureStorageUri&comp=block&blockid=$([Uri]::EscapeDataString($blockId))"
-        Write-Host "  ... attempting block $($b + 1) of $totalBlocks ($len bytes)..." -ForegroundColor DarkGray
-        try {
-            Invoke-WebRequestDetailed -Uri $blockUri -Method PUT -Body $chunk -Headers @{ "x-ms-blob-type" = "BlockBlob" } -TimeoutSec 60 -StepDescription "Upload block $($b + 1) of $totalBlocks" | Out-Null
-        }
-        catch {
-            # Still refused (403 - the address's signature or access policy isn't valid, or it expired): ask Intune for
-            # a fresh upload address once and send this block again.
-            if ([string]$_ -notmatch '\b403\b|AuthenticationFailed|signed identifier') { throw }
-            $azureStorageUri = & $renewUploadUri $azureStorageUri
             $blockUri = "$azureStorageUri&comp=block&blockid=$([Uri]::EscapeDataString($blockId))"
-            Invoke-WebRequestDetailed -Uri $blockUri -Method PUT -Body $chunk -Headers @{ "x-ms-blob-type" = "BlockBlob" } -TimeoutSec 60 -StepDescription "Upload block $($b + 1) of $totalBlocks (new address)" | Out-Null
+            Write-Host "  ... attempting block $($b + 1) of $totalBlocks ($len bytes)..." -ForegroundColor DarkGray
+            try {
+                Invoke-WebRequestDetailed -Uri $blockUri -Method PUT -Body $chunk -Headers @{ "x-ms-blob-type" = "BlockBlob" } -TimeoutSec 60 -StepDescription "Upload block $($b + 1) of $totalBlocks" | Out-Null
+            }
+            catch {
+                # Still refused (403 - the address's signature or access policy isn't valid, or it expired): ask Intune for
+                # a fresh upload address once and send this block again.
+                if ([string]$_ -notmatch '\b403\b|AuthenticationFailed|signed identifier') { throw }
+                $azureStorageUri = & $renewUploadUri $azureStorageUri
+                $blockUri = "$azureStorageUri&comp=block&blockid=$([Uri]::EscapeDataString($blockId))"
+                Invoke-WebRequestDetailed -Uri $blockUri -Method PUT -Body $chunk -Headers @{ "x-ms-blob-type" = "BlockBlob" } -TimeoutSec 60 -StepDescription "Upload block $($b + 1) of $totalBlocks (new address)" | Out-Null
+            }
+            Write-Host "  ... block $($b + 1) of $totalBlocks uploaded" -ForegroundColor DarkGray
         }
-        Write-Host "  ... block $($b + 1) of $totalBlocks uploaded" -ForegroundColor DarkGray
     }
+    finally { $fileStream.Dispose() }
 
-    $fileStream.Dispose()
     $blockListXml = "<?xml version=`"1.0`" encoding=`"utf-8`"?><BlockList>"
     foreach ($id in $blockIds) { $blockListXml += "<Latest>$id</Latest>" }
     $blockListXml += "</BlockList>"

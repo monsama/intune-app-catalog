@@ -425,11 +425,12 @@ function Global:Remove-WebTreeNoFollow {
         if ($item.PSIsContainer) { [System.IO.Directory]::Delete($item.FullName, $false) } else { [System.IO.File]::Delete($item.FullName) }
         return
     }
+    # Errors stop here (a locked file): a folder left with children must never reach a Confirm prompt - nobody answers it.
     if ($item.PSIsContainer) {
-        foreach ($c in @(Get-ChildItem -LiteralPath $item.FullName -Force)) { Remove-WebTreeNoFollow $c.FullName }
-        Remove-Item -LiteralPath $item.FullName -Force
+        foreach ($c in @(Get-ChildItem -LiteralPath $item.FullName -Force -ErrorAction Stop)) { Remove-WebTreeNoFollow $c.FullName }
+        [System.IO.Directory]::Delete($item.FullName, $false)
     }
-    else { Remove-Item -LiteralPath $item.FullName -Force }
+    else { Remove-Item -LiteralPath $item.FullName -Force -ErrorAction Stop }
 }
 
 function Global:Copy-WebUploadInto {

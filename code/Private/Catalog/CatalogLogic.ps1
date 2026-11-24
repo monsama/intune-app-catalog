@@ -1347,6 +1347,9 @@ Remove-Item `$JsonFile -Force -ErrorAction SilentlyContinue
 foreach (`$App in `$Apps) {
     if (`$App.Version -and (Compare-Version `$Wanted ([string]`$App.Version)) -ge 0) { return "Installed!" }
 }
+# winget doesn't list the package at all (it updated itself past what winget can match, or the export failed): the newer
+# Uninstall entry counts - only a package winget lists, older than wanted, is "not installed".
+if (-not `$Apps.Count -and `$RegNewer) { return "Installed!" }
 "@
 }
 
@@ -1969,8 +1972,9 @@ function Global:ConvertTo-DetectionFromInstalled {
         $folder = $p.Substring(0, [Math]::Max($cut, 0)) -replace '^C:\\Program Files \(x86\)', '%ProgramFiles(x86)%' -replace '^C:\\Program Files', '%ProgramFiles%'
         # A per-user install (2.38.34): the PC's own profile path ("C:\Users\alice\...") matches on no other device -
         # the user's folder by its variable instead, and it only works when the app installs in the user's context.
-        $perUser = $folder -match '^[A-Za-z]:\\Users\\[^\\]+\\'
-        $folder = $folder -replace '^[A-Za-z]:\\Users\\[^\\]+\\AppData\\Local(?=\\|$)', '%LOCALAPPDATA%' -replace '^[A-Za-z]:\\Users\\[^\\]+\\AppData\\Roaming(?=\\|$)', '%APPDATA%' -replace '^[A-Za-z]:\\Users\\[^\\]+(?=\\|$)', '%USERPROFILE%'
+        # Not the shared Public or Default profile - those are the same folder for everyone.
+        $perUser = $folder -match '^[A-Za-z]:\\Users\\(?!(Public|Default)\\)[^\\]+\\'
+        $folder = $folder -replace '^[A-Za-z]:\\Users\\(?!(Public|Default)\\)[^\\]+\\AppData\\Local(?=\\|$)', '%LOCALAPPDATA%' -replace '^[A-Za-z]:\\Users\\(?!(Public|Default)\\)[^\\]+\\AppData\\Roaming(?=\\|$)', '%APPDATA%' -replace '^[A-Za-z]:\\Users\\(?!(Public|Default)(\\|$))[^\\]+(?=\\|$)', '%USERPROFILE%'
         return @{ Rule = [ordered]@{ Type = 'File'; File_Path = $folder; File_Name = $file; File_Check32Bit = $false; File_DetectionType = 'version'; File_Operator = 'greaterThanOrEqual'; File_DetectionValue = [string]$Entry.MainExe.Version }; PerUser = $perUser
             Text = "$file in $folder, version $($Entry.MainExe.Version) or newer$(if ($perUser) { ' - installed per user: set Install for to User, or the rule finds nothing when Intune installs as SYSTEM' })" }
     }
@@ -2701,8 +2705,9 @@ function Global:Get-MetadataWithoutOwnReleases {
     $m = $Metadata.PSObject.Copy()
     $set = { param($n, $v) if ($m.PSObject.Properties[$n]) { $m.$n = $v } else { $m | Add-Member -NotePropertyName $n -NotePropertyValue $v -Force } }
     if ($NoRelations) {
-        & $set 'dependencies' $(if ($LocalMetadata) { $LocalMetadata.dependencies } else { @() })
-        & $set 'supersedes' $(if ($LocalMetadata) { $LocalMetadata.supersedes } else { $null })
+        # Passed as they are - a $( ) would turn an empty supersedence list ("none") into $null ("keep Intune's").
+        if ($LocalMetadata) { & $set 'dependencies' $LocalMetadata.dependencies; & $set 'supersedes' $LocalMetadata.supersedes }
+        else { & $set 'dependencies' @(); & $set 'supersedes' $null }
         return $m
     }
     $own = @{}; foreach ($r in @($App.releases)) { if ($r -and $r.appId) { $own[([string]$r.appId).ToLowerInvariant()] = $true } }
@@ -3161,6 +3166,96 @@ function Global:ConvertFrom-InstalledNamePattern {
     return $null
 }
 
+function Global:Get-ManagedWingetDetectionV1 {
+    # The script before 2.38.34, kept only to recognise it exactly (Get-DetectionBlocks) - never written any more.
+    <#
+      Pure: the detection script of a managed release - installed when
+      winget lists -WingetId at -Version or newer. Newer counts too: a
+      device a later release (or the app itself) already updated must not
+      get the older version again.
+
+      -NamePattern (Get-InstalledNamePattern of the name Windows lists it
+      under): the Uninstall entries are looked at first - fast, and it works
+      while winget isn't there yet. Only when no entry has the version or
+      newer does winget get asked (an entry under another name, or none).
+    #>
+    param([string]$WingetId, [string]$Version, [string]$NamePattern = '')
+    $id = ConvertTo-PsSingleQuotedContent $WingetId
+    $v = ConvertTo-PsSingleQuotedContent $Version
+    $np = ConvertTo-PsSingleQuotedContent $NamePattern
+    return @"
+`$AppToDetect = '$id'
+`$Wanted = '$v'
+`$NamePattern = '$np'
+
+Function Get-WingetCmd {
+    `$WingetCmd = `$null
+    try {
+        `$WingetInfo = (Get-Item "`$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_8wekyb3d8bbwe\winget.exe").VersionInfo | Sort-Object -Property FileVersionRaw
+        `$WingetCmd = `$WingetInfo[-1].FileName
+    }
+    catch {
+        if (Test-Path "`$env:LocalAppData\Microsoft\WindowsApps\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\winget.exe") {
+            `$WingetCmd = "`$env:LocalAppData\Microsoft\WindowsApps\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\winget.exe"
+        }
+    }
+    return `$WingetCmd
+}
+
+# 1 when `$b is newer than `$a, 0 the same, -1 older: numbers as numbers, part by part.
+Function Compare-Version([string]`$a, [string]`$b) {
+    `$pa = @(`$a -split '[.\-+_ ]' | Where-Object { `$_ -ne '' }); `$pb = @(`$b -split '[.\-+_ ]' | Where-Object { `$_ -ne '' })
+    for (`$i = 0; `$i -lt [Math]::Max(`$pa.Count, `$pb.Count); `$i++) {
+        `$x = if (`$i -lt `$pa.Count) { `$pa[`$i] } else { '0' }; `$y = if (`$i -lt `$pb.Count) { `$pb[`$i] } else { '0' }
+        if (`$x -match '^\d+$' -and `$y -match '^\d+$') {
+            `$xs = `$x.TrimStart('0'); `$ys = `$y.TrimStart('0')
+            if (`$xs.Length -ne `$ys.Length) { return [Math]::Sign(`$ys.Length - `$xs.Length) }
+            `$c = [string]::CompareOrdinal(`$ys, `$xs); if (`$c) { return [Math]::Sign(`$c) }
+        }
+        elseif (`$x -ne `$y) { return [Math]::Sign([string]::CompareOrdinal(`$y.ToLowerInvariant(), `$x.ToLowerInvariant())) }
+    }
+    return 0
+}
+
+# First the Uninstall entries Windows keeps (64-bit, 32-bit, the user's).
+if (`$NamePattern) {
+    foreach (`$Root in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall', 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall') {
+        foreach (`$Key in @(Get-ChildItem -LiteralPath `$Root -ErrorAction SilentlyContinue)) {
+            `$Entry = Get-ItemProperty -LiteralPath `$Key.PSPath -ErrorAction SilentlyContinue
+            if (`$Entry -and [string]`$Entry.DisplayName -match `$NamePattern -and `$Entry.DisplayVersion -and (Compare-Version `$Wanted ([string]`$Entry.DisplayVersion)) -ge 0) { return "Installed!" }
+        }
+    }
+}
+
+`$winget   = Get-WingetCmd
+if (-not `$winget) { return }
+`$JsonFile = "`$env:TEMP\InstalledApps-`$([guid]::NewGuid().ToString('N')).json"
+& `$winget export -o `$JsonFile --include-versions --accept-source-agreements | Out-Null
+`$Json     = Get-Content `$JsonFile -Raw | ConvertFrom-Json
+Remove-Item `$JsonFile -Force -ErrorAction SilentlyContinue
+`$Apps = @(`$Json.Sources.Packages | Where-Object { `$_.PackageIdentifier -eq `$AppToDetect })
+foreach (`$App in `$Apps) {
+    if (`$App.Version -and (Compare-Version `$Wanted ([string]`$App.Version)) -ge 0) { return "Installed!" }
+}
+"@
+}
+
+function Global:New-InstalledAppDetectionScriptV1 {
+    # The script before 2.38.34, kept only to recognise it exactly - takes the pattern as it stands in the script (-Pattern).
+    # Pure: a detection script - the app is installed when Windows lists it (Uninstall keys, both views) by -DisplayName (exactly, or with a version or "(x64)" after it) with -Version or newer.
+    param([string]$Pattern, [string]$Version)
+    $pat = ConvertTo-PsLiteral $Pattern; $v = ConvertTo-PsLiteral $Version
+    return @"
+`$pattern = $pat; `$want = $v
+`$keys = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+foreach (`$e in @(Get-ItemProperty -Path `$keys -ErrorAction SilentlyContinue | Where-Object { [string]`$_.DisplayName -match `$pattern })) {
+    if (-not `$want) { Write-Output 'Installed'; exit 0 }
+    try { if ([version]([string]`$e.DisplayVersion -replace '[^0-9.].*$', '') -ge [version](`$want -replace '[^0-9.].*$', '')) { Write-Output 'Installed'; exit 0 } } catch { if ([string]`$e.DisplayVersion -eq `$want) { Write-Output 'Installed'; exit 0 } }
+}
+exit 0
+"@
+}
+
 function Global:Get-DetectionBlocks {
     <#
       Pure: a detection rule as blocks - @{ Form; Own; Blocks; Note }.
@@ -3181,7 +3276,8 @@ function Global:Get-DetectionBlocks {
         $id = & $un $m.Groups[1].Value; $ver = & $un $m.Groups[2].Value; $pat = & $un $m.Groups[3].Value
         $name = ConvertFrom-InstalledNamePattern $pat
         # The script before 2.38.34 (another version compare) is this form too - written anew when saved from the blocks.
-        $legacyM = $s -match 'Function Get-WingetCmd' -and $s -match '& `\$winget export -o' -and $s -notmatch 'RegNewer'
+        # Exactly as written today, or exactly as written before (2.38.34) - an edited script stays an own script.
+        $legacyM = ((Get-ManagedWingetDetectionV1 -WingetId $id -Version $ver -NamePattern $pat) -replace "`r`n", "`n") -ceq $s
         if ($null -ne $name -and ($legacyM -or ((Get-ManagedWingetDetection -WingetId $id -Version $ver -NamePattern $pat) -replace "`r`n", "`n") -ceq $s)) {
             $blocks = @(
                 (New-CommandBlock -Id 'read' -Kind 'lock' -Label 'First' -Text "Windows' Uninstall entries (64-bit, 32-bit, the user's)" -Part 'detection')
@@ -3199,7 +3295,7 @@ function Global:Get-DetectionBlocks {
     if ($m.Success) {
         $pat = & $un $m.Groups[1].Value; $ver = & $un $m.Groups[2].Value
         $name = ConvertFrom-InstalledNamePattern $pat
-        $legacy = $m.Index -eq 0 -and $s -match "\[version\]\(\[string\]\`$e\.DisplayVersion" -and $s -match '(?m)^exit 0\s*$'
+        $legacy = $m.Index -eq 0 -and ((New-InstalledAppDetectionScriptV1 -Pattern $pat -Version $ver) -replace "`r`n", "`n") -ceq $s
         if ($name -and ($legacy -or ((New-InstalledAppDetectionScript -DisplayName $name -Version $ver) -replace "`r`n", "`n") -ceq $s)) {
             $blocks = @(
                 (New-CommandBlock -Id 'read' -Kind 'lock' -Label 'Look in' -Text "Windows' Uninstall entries (64-bit and 32-bit)" -Part 'detection')

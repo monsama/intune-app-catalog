@@ -123,6 +123,8 @@ $testableFunctionNames = @(
     "Get-AssignmentChangeFindings",
     "Get-MetadataWithoutOwnReleases",
     "Get-DeviceVersionCompareScript",
+    "Get-ManagedWingetDetectionV1",
+    "New-InstalledAppDetectionScriptV1",
     "Get-DependencyFindings",
     "Get-EntraGroupFindings",
     "Get-WingetFindings",
@@ -1024,6 +1026,19 @@ Assert-True (@($devErr).Count -eq 0 -and $devDet -notmatch '\[version\]' -and $d
 Assert-True ((Get-InstalledNamePattern $uniName) -match '^[\x00-\x7F]+$' -and ($uniName + ' 2.1') -match (Get-InstalledNamePattern $uniName)) "Get-InstalledNamePattern: letters outside ASCII written as \\u - the script stays ASCII and still matches (2.38.34)"
 Invoke-Expression (Get-DeviceVersionCompareScript)
 Assert-True ((Compare-Version '9.0.0' 'ad 8.1.0') -eq -1 -and (Compare-Version '1.0' '1.0-beta') -eq -1 -and (Compare-Version '24' '25') -eq 1 -and (Compare-Version '2.0' 'v2.0') -eq 0) "Get-DeviceVersionCompareScript: a word before the version is ignored, a pre-release is older, one-part versions compare (2.38.34)"
+# Scripts written before 2.38.34: recognised exactly - an edited one stays an own script.
+$oldMg = Get-ManagedWingetDetectionV1 -WingetId 'Vendor.App' -Version '2.0' -NamePattern (Get-InstalledNamePattern 'Vendor App')
+Assert-Equal 'managed' ([string](Get-DetectionBlocks ([pscustomobject]@{ Type = 'Script'; Script_Content = $oldMg })).Form) "Get-DetectionBlocks: a managed detection written before 2.38.34 is still that form"
+Assert-Equal 'own' ([string](Get-DetectionBlocks ([pscustomobject]@{ Type = 'Script'; Script_Content = ($oldMg + "`nWrite-Output 'x'") })).Form) "Get-DetectionBlocks: ...edited by hand, it is an own script"
+$oldIn = New-InstalledAppDetectionScriptV1 -Pattern (Get-InstalledNamePattern 'Some App') -Version '1.0'
+Assert-Equal 'installed' ([string](Get-DetectionBlocks ([pscustomobject]@{ Type = 'Script'; Script_Content = $oldIn })).Form) "Get-DetectionBlocks: an installed-app detection written before 2.38.34 is still that form"
+Assert-Equal 'own' ([string](Get-DetectionBlocks ([pscustomobject]@{ Type = 'Script'; Script_Content = ($oldIn -replace 'exit 0', "if (Test-Path 'C:\x') { exit 0 }`nexit 0") })).Form) "Get-DetectionBlocks: ...edited by hand, it is an own script (its edits aren't lost)"
+$mgNew = Get-ManagedWingetDetection -WingetId 'Vendor.App' -Version '2.0' -NamePattern 'x'
+Assert-True ($mgNew -match 'if \(-not `\$Apps.Count -and `\$RegNewer\)' -or $mgNew -match [regex]::Escape('if (-not $Apps.Count -and $RegNewer)')) "Get-ManagedWingetDetection: a newer Uninstall entry counts when winget doesn't list the package (2.38.34)"
+$pubDet = ConvertTo-DetectionFromInstalled ([pscustomobject]@{ Key = 'P'; DisplayVersion = '1'; Hive = 'HKLM'; MainExe = [pscustomobject]@{ Path = 'C:\Users\Public\Tool\t.exe'; Version = '1.0' } })
+Assert-True (-not $pubDet.PerUser -and $pubDet.Rule.File_Path -eq 'C:\Users\Public\Tool') "ConvertTo-DetectionFromInstalled: the shared Public profile is not per user"
+$keepEmpty = Get-MetadataWithoutOwnReleases -Metadata ([pscustomobject]@{ description = 'i'; supersedes = $null; dependencies = @() }) -App ([pscustomobject]@{ releases = @() }) -LocalMetadata ([pscustomobject]@{ dependencies = @(); supersedes = @() }) -NoRelations
+Assert-True ($null -ne $keepEmpty.supersedes -and @($keepEmpty.supersedes).Count -eq 0) "Get-MetadataWithoutOwnReleases: the catalog's empty supersedence stays empty, not 'keep Intune's'"
 $unin = New-InstalledAppUninstallScript -DisplayName 'X' -ExeKind 'nsis'
 Assert-True ($unin -like "*(.+?\.exe)*") "New-InstalledAppUninstallScript: an unquoted uninstall path with spaces is read up to .exe (2.38.34)"
 $puDet = ConvertTo-DetectionFromInstalled ([pscustomobject]@{ Key = 'Code'; DisplayVersion = '1.9'; Hive = 'HKCU'; MainExe = [pscustomobject]@{ Path = 'C:\Users\alice\AppData\Local\Programs\Code\Code.exe'; Version = '1.9.0' } })
