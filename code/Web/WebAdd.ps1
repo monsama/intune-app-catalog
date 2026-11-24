@@ -73,6 +73,8 @@ function Global:Add-WebWingetApps {
     $groups = Get-WebAddGroupLists $Data
     $added = New-Object System.Collections.Generic.List[string]
     $skipped = New-Object System.Collections.Generic.List[string]
+    # Added without winget's details (winget show didn't answer, twice): said in the result - Fill in details does it later.
+    $noDetails = New-Object System.Collections.Generic.List[string]
     foreach ($item in @($Data.items | Select-Object -First 50)) {
         $id = ([string]$item.id).Trim()
         $apps = @((Read-WebCatalogRecords).Apps)
@@ -80,6 +82,8 @@ function Global:Add-WebWingetApps {
         $twin = @($apps | Where-Object { [string]$_.wingetId -eq $id }) | Select-Object -First 1
         if ($twin) { $skipped.Add("$id (already in the catalog as $($twin.appName))"); continue }
         $det = Get-WebWingetDetails @{ id = $id }
+        # One more try: a slow index or manifest download is the usual reason (not for Store apps - winget has no details for them).
+        if (-not $det.ok -and -not (Test-StoreProductId $id) -and -not $Global:App.TestGraph) { Start-Sleep -Seconds 2; $det = Get-WebWingetDetails @{ id = $id } }
         $d = if ($det.ok) { $det.details } else { @{ Name = [string]$item.name; Version = [string]$item.version; Publisher = [string]$item.publisher } }
         $name = ([string]$(if ([string]$item.name) { $item.name } else { $d.Name })).Trim()
         if (Test-WebAddName $name $apps) { $name = "$name ($id)" }
@@ -100,10 +104,14 @@ function Global:Add-WebWingetApps {
         $defaults = Get-DefaultAppMetadata -AppName $name -WingetId $id -Uncommon $false
         $edit.metadata.installCommand = [string]$defaults.installCommand; $edit.metadata.uninstallCommand = [string]$defaults.uninstallCommand
         $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
-        if ($r.ok) { $added.Add($r.name) } else { $skipped.Add("$id ($($r.error))") }
+        if ($r.ok) {
+            $added.Add($r.name)
+            if (-not $det.ok -and -not $isStore) { $noDetails.Add($r.name); Write-Log "[WARN] $($r.name) added without winget's details (publisher, description, links): $($det.error) - Home > Fill them in reads them later." }
+        }
+        else { $skipped.Add("$id ($($r.error))") }
     }
     Write-Log "[OK] Add apps (winget): $($added.Count) added$(if ($skipped.Count) { ", skipped: $($skipped -join '; ')" })."
-    return @{ ok = $true; added = $added.ToArray(); skipped = $skipped.ToArray() }
+    return @{ ok = $true; added = $added.ToArray(); skipped = $skipped.ToArray(); noDetails = $noDetails.ToArray() }
 }
 
 # ---------------------------------------------------------------- an installer, uploaded

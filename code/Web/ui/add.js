@@ -325,17 +325,21 @@ async function doAdd(send) {
     try { localStorage.setItem('addLastSrc', addSrc); } catch (e) { }   // the next Add apps opens on this kind
     if (addSrc === 'winget' || addSrc === 'store' || addSrc === 'list') {
       const items = addSrc !== 'list' ? [...awPicked.values()].map(x => ({ id: x.id, name: x.name, version: x.version, publisher: x.publisher || '' })) : [...alPicked].map(id => ({ id }));
-      const note = addSrc !== 'list' ? 'awNote' : 'alNote', added = [], skipped = [];
+      const note = addSrc !== 'list' ? 'awNote' : 'alNote', added = [], skipped = [], noDetails = [];
       // Five at a time: each asks winget for its details, and the page shows how far it got.
       for (let i = 0; i < items.length; i += 5) {
         $(note).textContent = `Adding ${Math.min(i + 5, items.length)} of ${items.length} - ${addSrc === 'store' ? 'adding them as Store apps' : 'reading each one\'s details from winget'}...`;
         const r = await api('/api/add-winget', { items: items.slice(i, i + 5), managed: addSrc === 'store' ? false : addSrc === 'winget' ? $('awManaged').checked : $('alManaged').checked, ...groups });
         if (!r.ok) { showAddError(r.error); break; }
-        added.push(...r.added); skipped.push(...r.skipped);
+        added.push(...r.added); skipped.push(...r.skipped); noDetails.push(...(r.noDetails || []));
       }
       if (!added.length && !skipped.length) return;
       $('dlgAdd').close(); await afterAdd(added); done = added;
-      toast(`${added.length} app(s) added${skipped.length ? ' - skipped: ' + skipped.join('; ') : ''}.`, !added.length, added.length && !send ? [{ label: added.length === 1 ? 'Send to Intune' : `Send ${added.length}`, run: () => openDeploy(added) }] : []);
+      // winget didn't give the details for some: said here, with the button that reads them again.
+      const lacking = noDetails.length ? ` winget's details (publisher, description, links) couldn't be read for ${noDetails.join(', ')} - Fill in details reads them later.` : '';
+      toast(`${added.length} app(s) added${skipped.length ? ' - skipped: ' + skipped.join('; ') : ''}.${lacking}`, !added.length, [
+        ...(noDetails.length && typeof fillDetails === 'function' ? [{ label: 'Fill in details', run: () => fillDetails(noDetails) }] : []),
+        ...(added.length && !send ? [{ label: added.length === 1 ? 'Send to Intune' : `Send ${added.length}`, run: () => openDeploy(added) }] : [])]);
     }
     else if (addSrc === 'installer') {
       const r = await api('/api/add-installer', { uploadId: aiUpload.id, name: $('aiName').value.trim(), publisher: $('aiPublisher').value.trim(), version: $('aiVersion').value.trim(),

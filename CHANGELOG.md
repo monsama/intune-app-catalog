@@ -4,6 +4,13 @@
 
 Third full sweep (security, bugs, UI).
 
+- **Adding Winget apps without winget's details**: when `winget show` doesn't
+  answer (a slow index or manifest download), it is asked once more; if it still
+  doesn't, the result now says which apps came without publisher, description
+  and links, with a "Fill in details" button - before, they were added silently
+  without them (Home later listed them as "details missing").
+- **Checks with many apps**: the dependency order no longer takes a minute for
+  500 apps (a per-pair comparison in 2.38.16's first build).
 - **Checks really re-checks after a fix** now - in 2.38.15 it mostly didn't (the
   fixed row was dropped first, and with it the app's name). It also waits while
   another job runs instead of losing the detailed findings.
