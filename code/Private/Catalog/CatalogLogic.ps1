@@ -2635,6 +2635,8 @@ function Global:Get-NonPackageAppHint {
     # Microsoft 365 Apps with its settings in the catalog (2.38.21): sent from here, as Intune's own Office app.
     if ($App.office) { return '' }
     $t = [string]$App.intuneAppType
+    # Company Portal as a Store app in Intune but without its Store ID here (2.38.22): the ID is what it needs - said first.
+    if ($t -and -not (Test-PackagedIntuneAppType $t) -and (Test-CompanyPortalName ([string]$App.appName).Trim())) { return "Company Portal is a Microsoft Store app: put 9WZDNCRFJ3PZ in its Store product ID and it's sent as one - nothing to package." }
     if (-not (Test-PackagedIntuneAppType $t)) { return "$($App.appName) is Intune's own app type ($t) - there's nothing to package." }
     # By name only for an app that has nothing of its own: an install command, a detection rule or a package path
     # means someone packaged it as Win32 (an Office Deployment Tool package, say) - that one is built and sent as usual.

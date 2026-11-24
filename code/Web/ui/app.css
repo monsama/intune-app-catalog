@@ -1814,7 +1814,7 @@ dialog .wctl { z-index: 6; }
 #puSetupRow select { flex: 1 1 auto; min-width: 0; }
 
 /* Editor: Installs from - Winget, its own installer, the Microsoft Store (2.38.20). */
-.srcpick { display: flex; align-items: center; flex-wrap: wrap; gap: 0; margin: 2px 0 10px; }
+.srcpick { display: flex; align-items: center; flex-wrap: wrap; gap: 0; margin: 12px 0 12px; }
 .srcpick .srclbl { font-size: 12px; color: var(--muted); margin-right: 10px; }
 .srcpick button { font: inherit; font-size: 12.5px; padding: 5px 12px; border: 1px solid var(--bd); background: var(--surface); color: var(--fg); cursor: pointer; margin-left: -1px; }
 .srcpick button:first-of-type { border-radius: var(--r-m) 0 0 var(--r-m); margin-left: 0; }
@@ -1826,3 +1826,5 @@ dialog .wctl { z-index: 6; }
 .officebox .officeapps { margin: 4px 0 8px; }
 .officebox .ochecks { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 2px 12px; margin-top: 4px; }
 .officebox .ochecks label.chk { margin: 0; }
+/* Store, Microsoft 365 and Microsoft's own apps (2.38.22): no version of their own to set - Microsoft or the Store keeps it. */
+#dlgApp.is-special label:has(#mAppVersion) { display: none; }
