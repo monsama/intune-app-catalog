@@ -1788,3 +1788,17 @@ dialog.haswctl .edtabs { padding-right: 96px; }
    long sentence replacing "Looking..." doesn't push the buttons onto a second row. */
 @media (max-width: 1100px) { #homeNote, #updNote { flex-basis: 100%; } }
 .stat.skel .n { color: var(--muted); }
+
+/* Sweep 2.38.16 (UI) */
+dialog .wctl { z-index: 6; }
+#btnDeploy { min-width: 9.5em; }
+#whereBar { min-height: 30px; }
+#whereBar[hidden] { display: flex; visibility: hidden; }
+#updTiles .stat .l { min-height: 2.6em; }
+#updGrid td.act .fixes { flex-wrap: nowrap; }
+#statusRows td:nth-child(7) { white-space: nowrap; }
+.toast .tclose { min-width: 24px; min-height: 24px; display: inline-grid; place-items: center; }
+@media (max-width: 1000px) {
+  #grid td.name > .nm { max-width: min(24ch, 12vw); }
+  #updGrid tr > :nth-child(6), #updGrid tr > :nth-child(7) { display: none; }
+}

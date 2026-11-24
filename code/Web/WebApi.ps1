@@ -137,7 +137,10 @@ function Global:Start-WebStepJob {
     $tag = [guid]::NewGuid().ToString('N')
     $configPath = Join-Path $env:TEMP ".intunepkg_$($Name)_config_$tag.json"
     # The server version (the container): the app's own folder is read-only - the step files go on the data volume.
-    $stepDir = $Global:App.RootPath
+    # On a PC (2.38.16): this user's own TEMP, not the app folder - a folder others can write to (one made right under
+    # C:\ is) would let them swap the script between writing and running it, and it runs with the Intune certificate.
+    $stepDir = Join-Path $env:TEMP 'IntuneAppCatalog-steps'
+    if (-not (Test-WebServerMode) -and -not (Test-Path -LiteralPath $stepDir)) { [void](New-Item -ItemType Directory -Path $stepDir -Force) }
     if (Test-WebServerMode) { $stepDir = Join-Path $Global:App.RootPath 'data\run'; if (-not (Test-Path -LiteralPath $stepDir)) { [void](New-Item -ItemType Directory -Path $stepDir -Force) } }
     $scriptPath = Join-Path $stepDir ".intunepkg_embedded_$($Name)_$tag.ps1"
     $helperPath = Join-Path $stepDir ".intunepkg_graphlog_$tag.ps1"

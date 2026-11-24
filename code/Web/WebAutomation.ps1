@@ -404,7 +404,14 @@ function Global:Test-WebGitRepoSafe {
     $cfg = Join-Path $gitDir 'config'
     if (Test-Path -LiteralPath $cfg) {
         $text = [string](Get-Content -LiteralPath $cfg -Raw)
-        $sections = @([regex]::Matches($text, '(?m)^\s*\[\s*([A-Za-z0-9.-]+)') | ForEach-Object { $_.Groups[1].Value.ToLowerInvariant() } | Select-Object -Unique)
+        # Git's own reading of the file (runs nothing; includes not followed): a section or key on the same line as
+        # another ("[core] [include] path=...") doesn't slip past a line-by-line look.
+        $keys = @(& git config --file $cfg --no-includes --list --name-only 2>$null | ForEach-Object { ([string]$_).ToLowerInvariant() })
+        if ($LASTEXITCODE -ne 0) { return 'git couldn''t read its config.' }
+        $sections = @($keys | ForEach-Object { ($_ -split '\.')[0] }) + @([regex]::Matches($text, '\[\s*([A-Za-z0-9.-]+)') | ForEach-Object { $_.Groups[1].Value.ToLowerInvariant() })
+        $sections = @($sections | Select-Object -Unique)
+        $odd2 = @($keys | Where-Object { ($_ -split '\.')[-1] -in 'fsmonitor', 'hookspath', 'attributesfile', 'sshcommand', 'askpass', 'pager', 'editor', 'gitproxy', 'path' })
+        if ($odd2.Count) { return "its config sets a program or file for git to use: $($odd2 -join ', ')." }
         $odd = @($sections | Where-Object { $_ -notin 'core', 'user', 'remote', 'branch', 'init', 'gui', 'pull', 'push', 'fetch', 'gc' })
         if ($odd.Count) { return "its config has section(s) this app doesn't run git with: $($odd -join ', ')." }
         if ($text -match '(?im)^\s*(fsmonitor|hookspath|attributesfile|sshcommand|askpass|pager|editor|gitproxy)\s*=') { return 'its config sets a program for git to run (fsmonitor, hooks path, attributes file, ssh, pager or editor).' }
@@ -952,7 +959,7 @@ function Global:Invoke-WebHousekeeping {
         foreach ($i in @(Get-ChildItem -LiteralPath $temp -Filter $pattern -Force -ErrorAction SilentlyContinue)) { if (& $old $i 1) { $n += & $drop $i } }
     }
     if ($Global:App.RootPath) {
-        foreach ($i in @(Get-ChildItem -LiteralPath $Global:App.RootPath, (Join-Path $Global:App.RootPath 'data\run') -Filter '.intunepkg_*' -File -Force -ErrorAction SilentlyContinue)) { if (& $old $i 1) { $n += & $drop $i } }
+        foreach ($i in @(Get-ChildItem -LiteralPath $Global:App.RootPath, (Join-Path $Global:App.RootPath 'data\run'), (Join-Path $env:TEMP 'IntuneAppCatalog-steps') -Filter '.intunepkg_*' -File -Force -ErrorAction SilentlyContinue)) { if (& $old $i 1) { $n += & $drop $i } }
     }
     $sb = Get-WebSandboxRoot
     if (Test-Path -LiteralPath $sb) { foreach ($i in @(Get-ChildItem -LiteralPath $sb -Directory -ErrorAction SilentlyContinue)) { if (& $old $i 7) { $n += & $drop $i } } }

@@ -737,9 +737,11 @@ function Global:Get-DependencyOrderedApps {
     # App ID gets resolved separately at actual create time regardless.
     $remainingDeps = @{}
     foreach ($a in $Apps) {
-        $depsInBatch = New-Object System.Collections.Generic.List[string]
+        # A set that ignores case: "dep" and "Dep" are the same app (as -contains says), and removing one is cheap
+        # (a scriptblock predicate per pair took Checks from seconds to 44 s for 500 apps on Windows PowerShell 5.1).
+        $depsInBatch = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
         foreach ($depName in @($a.metadata.dependencies)) {
-            if ($namesInBatch -contains $depName) { $depsInBatch.Add($depName) }
+            if ($namesInBatch -contains $depName) { [void]$depsInBatch.Add([string]$depName) }
         }
         $remainingDeps[$a.appName] = $depsInBatch
     }
@@ -764,6 +766,7 @@ function Global:Get-DependencyOrderedApps {
 
         $ordered.Add($byName[$readyName])
         [void]$remainingNames.Remove($readyName)
+        # Case doesn't matter (the sets ignore it): a dependency typed "dep" for the app "Dep" isn't a circle.
         foreach ($name in $remainingNames) {
             [void]$remainingDeps[$name].Remove($readyName)
         }

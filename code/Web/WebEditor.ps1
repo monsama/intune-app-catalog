@@ -420,6 +420,15 @@ function Global:Save-WebAppHeld {
         Backup-WebAppFile $oldFile
         Remove-Item -LiteralPath $oldFile -Force -ErrorAction SilentlyContinue
     }
+    # Windows, a rename by case only ("Foo app" -> "Foo App"): the file kept its old spelling - renamed through a
+    # temporary name, so a copy of the catalog on Linux (git, the server) doesn't show the app twice.
+    elseif ($oldFile -and $oldFile -cne $newFile -and -not ($IsLinux -or $IsMacOS)) {
+        $actual = [string](Get-Item -LiteralPath $newFile -ErrorAction SilentlyContinue).Name
+        if ($actual -and $actual -cne (Split-Path $newFile -Leaf)) {
+            $tmpName = "$newFile.renaming-$([guid]::NewGuid().ToString('N').Substring(0, 6))"
+            try { Move-Item -LiteralPath $newFile -Destination $tmpName -ErrorAction Stop; Move-Item -LiteralPath $tmpName -Destination $newFile -ErrorAction Stop } catch { }
+        }
+    }
     if ($existing -and $existing.appName -cne $record.appName) { Rename-WebAppReferences -Old $existing.appName -New $record.appName }
     Write-Log "[OK] $(if ($existing) { 'Saved' } else { 'Added' }): $($record.appName)$(if ($existing -and $existing.appName -ne $record.appName) { " (was $($existing.appName))" })."
     return @{ ok = $true; name = $record.appName }

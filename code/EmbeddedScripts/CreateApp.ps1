@@ -433,6 +433,22 @@ function Invoke-Win32AppContentUpload {
     $totalBlocks = [Math]::Ceiling($bytes.Length / $blockSize)
     $blockIds = New-Object System.Collections.Generic.List[string]
 
+    # Asks Intune for a new upload address (renewUpload) and waits for it - a NEW one: after an earlier renewal the
+    # state already reads "renewal succeeded" with the old address.
+    $renewUploadUri = {
+        param([string]$OldUri)
+        Write-Host "  [!] Azure Storage refused the upload address - asking Intune for a new one..." -ForegroundColor Yellow
+        $fileUri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$AppId/microsoft.graph.win32LobApp/contentVersions/$cvId/files/$fileId"
+        Invoke-GraphRequestDetailed -Uri "$fileUri/renewUpload" -Method POST -Body '{}' -ContentType "application/json" -StepDescription "Renew the upload address" | Out-Null
+        for ($i = 0; $i -lt 60; $i++) {
+            Start-Sleep -Seconds 2
+            $fs = Invoke-GraphRequestDetailed -Uri $fileUri -Method GET -StepDescription "Poll for the renewed upload address"
+            if ($fs.uploadState -eq 'azureStorageUriRenewalSuccess' -and [string]$fs.azureStorageUri -and [string]$fs.azureStorageUri -ne $OldUri) { Start-Sleep -Seconds 10; return [string]$fs.azureStorageUri }
+            if ($fs.uploadState -like '*Failed*') { throw "Renewing the upload address failed: $($fs.uploadState)" }
+        }
+        throw "Timed out waiting for a renewed upload address."
+    }
+
     for ($b = 0; $b -lt $totalBlocks; $b++) {
         $offset = $b * $blockSize
         $len = [Math]::Min($blockSize, $bytes.Length - $offset)
@@ -453,19 +469,7 @@ function Invoke-Win32AppContentUpload {
             # Still refused (403 - the address's signature or access policy isn't valid, or it expired): ask Intune for
             # a fresh upload address once and send this block again.
             if ([string]$_ -notmatch '\b403\b|AuthenticationFailed|signed identifier') { throw }
-            Write-Host "  [!] Azure Storage refused the upload address - asking Intune for a new one..." -ForegroundColor Yellow
-            $fileUri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$AppId/microsoft.graph.win32LobApp/contentVersions/$cvId/files/$fileId"
-            Invoke-GraphRequestDetailed -Uri "$fileUri/renewUpload" -Method POST -Body '{}' -ContentType "application/json" -StepDescription "Renew the upload address" | Out-Null
-            $renewed = $null
-            for ($i = 0; $i -lt 60 -and -not $renewed; $i++) {
-                Start-Sleep -Seconds 2
-                $fs = Invoke-GraphRequestDetailed -Uri $fileUri -Method GET -StepDescription "Poll for the renewed upload address"
-                if ($fs.uploadState -eq 'azureStorageUriRenewalSuccess') { $renewed = [string]$fs.azureStorageUri }
-                elseif ($fs.uploadState -like '*Failed*') { throw "Renewing the upload address failed: $($fs.uploadState)" }
-            }
-            if (-not $renewed) { throw "Timed out waiting for a renewed upload address." }
-            $azureStorageUri = $renewed
-            Start-Sleep -Seconds 10
+            $azureStorageUri = & $renewUploadUri $azureStorageUri
             $blockUri = "$azureStorageUri&comp=block&blockid=$([Uri]::EscapeDataString($blockId))"
             Invoke-WebRequestDetailed -Uri $blockUri -Method PUT -Body $chunk -Headers @{ "x-ms-blob-type" = "BlockBlob" } -TimeoutSec 60 -StepDescription "Upload block $($b + 1) of $totalBlocks (new address)" | Out-Null
         }
@@ -476,7 +480,13 @@ function Invoke-Win32AppContentUpload {
     foreach ($id in $blockIds) { $blockListXml += "<Latest>$id</Latest>" }
     $blockListXml += "</BlockList>"
     $commitBlocksUri = "$azureStorageUri&comp=blocklist"
-    Invoke-WebRequestDetailed -Uri $commitBlocksUri -Method PUT -Body $blockListXml -ContentType "text/plain" -StepDescription "Commit block list to storage" | Out-Null
+    try { Invoke-WebRequestDetailed -Uri $commitBlocksUri -Method PUT -Body $blockListXml -ContentType "text/plain" -StepDescription "Commit block list to storage" | Out-Null }
+    catch {
+        # The address ran out right before the commit: the blocks are kept by Azure - a new address commits them.
+        if ([string]$_ -notmatch '\b403\b|AuthenticationFailed|signed identifier') { throw }
+        $azureStorageUri = & $renewUploadUri $azureStorageUri
+        Invoke-WebRequestDetailed -Uri "$azureStorageUri&comp=blocklist" -Method PUT -Body $blockListXml -ContentType "text/plain" -StepDescription "Commit block list to storage (new address)" | Out-Null
+    }
     Write-Host "  [OK] All $totalBlocks block(s) uploaded and committed to storage." -ForegroundColor Green
 
     Remove-Item -LiteralPath $PackageInfo.TempEncryptedPath -Force -ErrorAction SilentlyContinue

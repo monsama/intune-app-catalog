@@ -161,7 +161,8 @@ function Global:Save-ScriptsToFolder {
         else { $items.Add($Scripts) }
     }
 
-    $wanted = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::OrdinalIgnoreCase)
+    # Linux tells "Map Drives.json" from "Map drives.json": a script renamed by case leaves no stale copy there.
+    $wanted = New-Object System.Collections.Generic.HashSet[string] ($(if ($IsLinux -or $IsMacOS) { [StringComparer]::Ordinal } else { [StringComparer]::OrdinalIgnoreCase }))
     foreach ($script in $items) {
         $record = ConvertTo-ScriptRecord $script
         if (-not $record.displayName) { $result.Errors.Add("A script with no name was skipped."); continue }

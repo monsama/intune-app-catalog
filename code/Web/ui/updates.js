@@ -11,10 +11,10 @@ async function loadUpdates(force) {
   updLoading = true;
   $('updNote').textContent = 'Reading Intune\'s install counts...';
   // The placeholder rows under the real header, with its number of columns - the columns don't jump when the rows come.
-  if (!updRows.length) { skeleton($('updBody'), $('updGrid').tHead.rows[0].cells.length, 4); tileSkeleton($('updTiles'), 4); }
+  if (!updRows.length) { skeleton($('updBody'), $('updGrid').tHead.rows[0].cells.length, 4); tileSkeleton($('updTiles'), 5); }
   try {
     const r = await api('/api/updates-overview');
-    if (!r.ok) { $('updNote').textContent = r.error; if (!updRows.length) $('updBody').replaceChildren(); return; }
+    if (!r.ok) { $('updNote').textContent = r.error; if (!updRows.length) { $('updBody').replaceChildren(); $('updTiles').replaceChildren(); $('updTiles').hidden = true; } return; }
     updRows = r.rows; updLoadedAt = Date.now(); updRings = (r.rings || []).map(x => x.name);
     const rings = (r.rings || []).length > 1 ? ` Release rings: ${r.rings.map(x => x.name).join(' > ')} > everyone.` : '';
     $('updNote').textContent = `${r.rows.length} app${r.rows.length === 1 ? '' : 's'} with managed updates${r.notManaged ? `, ${r.notManaged} without` : ''}.${r.connected ? ` Counts read at ${r.at}.` : ' Not connected - no counts from Intune.'}${rings}${r.note ? ' ' + r.note : ''}`;
@@ -25,7 +25,9 @@ async function loadUpdates(force) {
       tile(String(s.inPilot), s.inPilot ? `in release - ${s.ready} ready, ${s.held} on hold` : 'in release', s.held ? 'warn' : s.ready ? 'info' : ''),
       tile(String(s.available), 'newer version available', s.available ? 'info' : '', 'Not counting apps that have a version in release'),
       tile(s.onCurrentPercent === null ? '-' : s.onCurrentPercent + ' %', `of ${s.devices} devices on the current version`, s.onCurrentPercent !== null && s.onCurrentPercent < 90 ? 'warn' : 'ok'),
-      ...(r.inventory ? [tile(String(s.olderDevices), 'devices with an older version (inventory)', s.olderDevices ? 'warn' : 'ok', 'From Intune\'s inventory of apps on devices - also versions installed by hand')] : []));
+      // Always five tiles (the placeholders are five): without the inventory the last one says so.
+      r.inventory ? tile(String(s.olderDevices), 'devices with an older version (inventory)', s.olderDevices ? 'warn' : 'ok', 'From Intune\'s inventory of apps on devices - also versions installed by hand')
+        : tile('–', 'devices with an older version (inventory)', '', 'Intune\'s app inventory couldn\'t be read - DeviceManagementManagedDevices.Read.All shows it'));
     $('updEmpty').hidden = r.rows.length > 0;
     // No app with managed updates: the message says it - no zero tiles, no empty column headers above it.
     $('updTiles').hidden = !r.rows.length; $('updGrid').tHead.hidden = !r.rows.length;

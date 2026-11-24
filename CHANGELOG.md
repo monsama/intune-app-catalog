@@ -1,5 +1,50 @@
 # Changelog
 
+## 2.38.16
+
+Third full sweep (security, bugs, UI).
+
+- **Adding Winget apps without winget's details**: when `winget show` doesn't
+  answer (a slow index or manifest download), it is asked once more; if it still
+  doesn't, the result now says which apps came without publisher, description
+  and links, with a "Fill in details" button - before, they were added silently
+  without them (Home later listed them as "details missing").
+- **Checks with many apps**: the dependency order no longer takes a minute for
+  500 apps (a per-pair comparison in 2.38.16's first build).
+- **Checks really re-checks after a fix** now - in 2.38.15 it mostly didn't (the
+  fixed row was dropped first, and with it the app's name). It also waits while
+  another job runs instead of losing the detailed findings.
+- **Package upload**: a second renewal of the upload address no longer reuses
+  the refused one, and an address that runs out just before the final commit is
+  renewed too.
+- **Home and Updates tiles**: the same number of tiles from the start (Home's
+  "on the current version" tile shows "–" until Intune answers; Updates always
+  has its inventory tile) - the page no longer drops when they fill in.
+- **Apps**: selecting a second app no longer moves the page ("Send 2 to Intune"
+  has room); the first load no longer jumps (Save view and the chip bar keep
+  their place); no sideways scrolling at 800px.
+- **Sorting**: a click on a Checks header no longer breaks the Apps list's sort.
+- **Updates**: Promote and the menu stay on one line; at 1000px and narrower the
+  Superseded and Older-versions columns step aside so the actions stay in view.
+- **Editor**: minimize, maximize and close stay above the sticky section tabs.
+- **Install status**: Last seen no longer breaks inside the date.
+- **Home warns** when the nightly task itself hasn't run (fast-track checks and
+  plan-only clicks no longer count as a run).
+- **Dependencies** named in other case ("dep" for "Dep") are no longer a
+  "circular dependency"; batch edit saves the catalog's spelling.
+- **Adding an app that is refused** (e.g. a profile group that doesn't fit)
+  no longer leaves files behind that block the next try.
+- **Case-only renames**: on Windows the file takes the new spelling too; on the
+  server a script renamed by case in Intune leaves no stale copy.
+- **Security**: on a PC the step scripts run from your own TEMP folder, not the
+  app folder (another user of a shared PC could swap them); the catalog's git
+  config is read by git itself for the backup check; the PSADT template must
+  match the SHA-256 GitHub publishes; new server installs have the proxy buffer
+  request bodies (a slow client can't tie up the app's request slots - for an
+  existing proxy site, the deploy script says what to add).
+- Small: the toast's close button is a proper target; "Add apps..." the same on
+  Home and Apps; placeholder tiles go when Updates can't be read.
+
 ## 2.38.15
 
 Second full sweep (security, bugs, UI), and:
