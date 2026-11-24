@@ -132,7 +132,7 @@ async function fillPanel(a) {
   p.replaceChildren(
     el('div', { class: 'phead' }, iconFor(a), el('h2', { text: a.name }), el('button', { class: 'btn small ghost', text: 'Close', title: 'Close this panel', onclick: () => { selected.clear(); renderApps(); } })),
     el('div', { class: 'pstage' }, el('span', { class: 'pill ' + s.cls, text: s.label }), el('span', { class: 'muted', text: ' ' + (s.why || '') })),
-    s.next ? el('div', { class: 'pnext' }, btn(s.next.label, s.next.title, s.next.run, true), el('span', { class: 'muted', text: 'Next step' })) : '',
+    s.next ? el('div', { class: 'pnext' }, el('span', { class: 'muted', text: 'Next step:' }), btn(s.next.label, s.next.title, s.next.run, true)) : '',
     // 2.33.0: it replaced an MSI line-of-business app as Win32 - that one is still in Intune until it is retired.
     a.lobToRetire ? el('div', { class: 'plob' }, el('span', { text: 'The MSI line-of-business app this one replaces is still in Intune. Once this Win32 app has its groups, retire it: devices keep the software - this app finds it by the same MSI product code.' }),
       btn('Retire the MSI app...', 'Delete the old MSI line-of-business app from Intune', () => retireLobApp(a.name))) : '',
@@ -331,7 +331,7 @@ function renderWhere() {
   bar.replaceChildren(
     chip(inCat, 'in the catalog', '', f === 'all' && !showIntuneOnly, 'Every app the catalog manages - click to show them all', () => { $('filter').value = 'all'; showIntuneOnly = false; renderApps(); updateViewButtons(); }),
     intuneApps ? chip(deployed, 'of them in Intune', '', f === 'deployed', 'Catalog apps that are in this tenant', () => { $('filter').value = 'deployed'; showIntuneOnly = false; renderApps(); updateViewButtons(); }) : '',
-    chip(notDeployed, 'only in the catalog', notDeployed ? 'info' : '', f === 'notdeployed', 'Not in Intune yet - select them and Send to Intune', () => { $('filter').value = 'notdeployed'; showIntuneOnly = false; renderApps(); updateViewButtons(); }),
+    chip(notDeployed, 'not in Intune yet', notDeployed ? 'info' : '', f === 'notdeployed', 'Not in Intune yet - select them and Send to Intune', () => { $('filter').value = 'notdeployed'; showIntuneOnly = false; renderApps(); updateViewButtons(); }),
     intuneApps ? chip(io.win.length, 'only in Intune', io.win.length ? 'warn' : '', showIntuneOnly, 'Windows apps in Intune that the catalog doesn\'t manage (made in the portal) - add them to the catalog, or delete them in Intune', () => { showIntuneOnly = !showIntuneOnly; if (showIntuneOnly) { selected.clear(); updatePanel(); } renderApps(); updateViewButtons(); }) : '',
     el('span', { class: 'wnote' + (intuneApps ? ' live' : ''), text: intuneApps ? `Intune read at ${intuneAt}${io.other ? ` - ${io.other} app(s) for other platforms not counted` : ''}.` : (state && state.configured ? 'Reading Intune...' : 'Not connected - Intune isn\'t compared.') }));
   bar.hidden = false;

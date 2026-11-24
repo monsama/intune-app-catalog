@@ -176,6 +176,10 @@ function Global:Save-ScriptsToFolder {
     if ($NoPrune) { return $result }
     foreach ($stale in @(Get-ChildItem -LiteralPath $Path -Filter "*.json" -ErrorAction SilentlyContinue)) {
         if ($wanted.Contains($stale.Name)) { continue }
+        # Only copies of scripts from Intune (they have its ID) go: a script saved locally and never sent stays.
+        $staleId = ''
+        try { $j = Get-Content -LiteralPath $stale.FullName -Raw -Encoding UTF8 | ConvertFrom-Json; $staleId = [string]$(if ($j.scriptId) { $j.scriptId } else { $j.id }) } catch { continue }
+        if (-not $staleId) { continue }
         try { Remove-Item -LiteralPath $stale.FullName -Force -ErrorAction Stop; $result.Removed++ }
         catch { $result.Errors.Add("$($stale.Name): $($_.Exception.Message)") }
     }

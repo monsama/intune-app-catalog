@@ -215,7 +215,9 @@ function toast(msg, isErr, actions) {
   const t = $('toast');
   placeToast();
   const acts = (actions || []).filter(Boolean);
-  t.replaceChildren(el('span', { text: msg }), ...acts.map(a => el('button', { class: 'btn small', text: a.label, onclick: () => { t.hidden = true; a.run(); } })));
+  // A close button: an error toast (8 s) mustn't sit over the buttons you need now.
+  t.replaceChildren(el('span', { text: msg }), ...acts.map(a => el('button', { class: 'btn small', text: a.label, onclick: () => { t.hidden = true; a.run(); } })),
+    el('button', { type: 'button', class: 'tclose', text: '×', 'aria-label': 'Close the message', title: 'Close', onclick: () => { t.hidden = true; clearTimeout(toastTimer); } }));
   t.className = 'toast' + (isErr ? ' err' : '') + (acts.length ? ' withacts' : ''); t.hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, acts.length ? 12000 : isErr ? 8000 : 4000);
 }
@@ -411,6 +413,14 @@ function skeleton(target, cols = 4, rows = 5) {
   const bar = i => el('span', { class: 'sk w' + (i % 4) });
   if (target.tagName === 'TBODY') target.replaceChildren(...Array.from({ length: rows }, (_, r) => el('tr', { class: 'skel', 'aria-hidden': 'true' }, ...Array.from({ length: cols }, (_, c) => el('td', {}, bar(r + c))))));
   else target.replaceChildren(...Array.from({ length: rows }, (_, r) => el('li', { class: 'skel', 'aria-hidden': 'true' }, bar(r), el('span', { class: 'sk w3' }))));
+}
+
+// The tile row while it loads (2.38.15): placeholder tiles take its place from the start, so the page below doesn't
+// drop by a tile's height when the numbers come in.
+function tileSkeleton(target, n = 3) {
+  if (!target || target.children.length) return;
+  target.hidden = false;
+  target.replaceChildren(...Array.from({ length: n }, () => el('div', { class: 'stat skel', 'aria-hidden': 'true' }, el('span', { class: 'n', text: '–' }), el('span', { class: 'l' }, el('span', { class: 'sk w2' })))));
 }
 
 // One date format everywhere: 2026-11-15 14:52 (24 hours); "Today 14:52" / "Yesterday 14:52" for the last two days.

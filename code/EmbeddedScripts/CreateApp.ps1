@@ -258,7 +258,10 @@ function Invoke-WebRequestDetailed {
             try { return Invoke-WebRequest @params }
             catch {
                 $text = [string]$_.Exception.Message
-                $retryable = $text -match '\b(408|429|500|502|503|504)\b|timed out|timeout|connection was closed|forcibly closed|underlying connection|Unable to read data|ServerBusy|OperationTimedOut|InternalError'
+                # 403 "SAS identifier cannot be found for specified signed identifier": the upload address Intune just
+                # handed out refers to an access policy Azure Storage hasn't spread yet (it can take ~30 s) - waiting helps.
+                $detailText = try { [string](Get-HttpErrorDetail -ErrorRecord $_) } catch { '' }
+                $retryable = "$text $detailText" -match '\b(408|429|500|502|503|504)\b|timed out|timeout|connection was closed|forcibly closed|underlying connection|Unable to read data|ServerBusy|OperationTimedOut|InternalError|SAS identifier cannot be found|signed identifier'
                 if (-not $retryable -or $try -ge 4) { throw }
                 $wait = @(5, 15, 30)[$try - 1]
                 Write-Host "  [!] $StepDescription didn't go through ($($text.Split([char]10)[0])) - trying again in ${wait}s ($($try + 1) of 4)..." -ForegroundColor Yellow
@@ -443,7 +446,29 @@ function Invoke-Win32AppContentUpload {
 
         $blockUri = "$azureStorageUri&comp=block&blockid=$([Uri]::EscapeDataString($blockId))"
         Write-Host "  ... attempting block $($b + 1) of $totalBlocks ($len bytes)..." -ForegroundColor DarkGray
-        Invoke-WebRequestDetailed -Uri $blockUri -Method PUT -Body $chunk -Headers @{ "x-ms-blob-type" = "BlockBlob" } -TimeoutSec 60 -StepDescription "Upload block $($b + 1) of $totalBlocks" | Out-Null
+        try {
+            Invoke-WebRequestDetailed -Uri $blockUri -Method PUT -Body $chunk -Headers @{ "x-ms-blob-type" = "BlockBlob" } -TimeoutSec 60 -StepDescription "Upload block $($b + 1) of $totalBlocks" | Out-Null
+        }
+        catch {
+            # Still refused (403 - the address's signature or access policy isn't valid, or it expired): ask Intune for
+            # a fresh upload address once and send this block again.
+            if ([string]$_ -notmatch '\b403\b|AuthenticationFailed|signed identifier') { throw }
+            Write-Host "  [!] Azure Storage refused the upload address - asking Intune for a new one..." -ForegroundColor Yellow
+            $fileUri = "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$AppId/microsoft.graph.win32LobApp/contentVersions/$cvId/files/$fileId"
+            Invoke-GraphRequestDetailed -Uri "$fileUri/renewUpload" -Method POST -Body '{}' -ContentType "application/json" -StepDescription "Renew the upload address" | Out-Null
+            $renewed = $null
+            for ($i = 0; $i -lt 60 -and -not $renewed; $i++) {
+                Start-Sleep -Seconds 2
+                $fs = Invoke-GraphRequestDetailed -Uri $fileUri -Method GET -StepDescription "Poll for the renewed upload address"
+                if ($fs.uploadState -eq 'azureStorageUriRenewalSuccess') { $renewed = [string]$fs.azureStorageUri }
+                elseif ($fs.uploadState -like '*Failed*') { throw "Renewing the upload address failed: $($fs.uploadState)" }
+            }
+            if (-not $renewed) { throw "Timed out waiting for a renewed upload address." }
+            $azureStorageUri = $renewed
+            Start-Sleep -Seconds 10
+            $blockUri = "$azureStorageUri&comp=block&blockid=$([Uri]::EscapeDataString($blockId))"
+            Invoke-WebRequestDetailed -Uri $blockUri -Method PUT -Body $chunk -Headers @{ "x-ms-blob-type" = "BlockBlob" } -TimeoutSec 60 -StepDescription "Upload block $($b + 1) of $totalBlocks (new address)" | Out-Null
+        }
         Write-Host "  ... block $($b + 1) of $totalBlocks uploaded" -ForegroundColor DarkGray
     }
 

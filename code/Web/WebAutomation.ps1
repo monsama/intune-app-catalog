@@ -380,17 +380,35 @@ function Global:Test-WebGitRepoSafe {
     #>
     param([string]$Folder)
     $gitDir = Join-Path $Folder '.git'
-    try {
-        $owner = (Get-Acl -LiteralPath $gitDir).Owner
-        $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-        if ($owner -and $me -and $owner -ne $me -and $owner -notmatch '\\Administrators$') { return "its .git belongs to $owner, not you." }
+    # A .git file ("gitdir: \\elsewhere") points at a repository this check can't see: refused.
+    if (-not (Test-Path -LiteralPath $gitDir -PathType Container)) { return 'its .git is not a folder (it points elsewhere).' }
+    if ($IsLinux -or $IsMacOS) {
+        # Linux (the server version): owned by the user the app runs as.
+        $owner = [string](& stat -c '%U' -- $gitDir 2>$null); $me = [Environment]::UserName
+        if ($owner -and $me -and $owner.Trim() -ne $me) { return "its .git belongs to $($owner.Trim()), not $me." }
     }
-    catch { }
-    foreach ($f in @((Join-Path $Folder '.gitattributes'), (Join-Path $gitDir 'info\attributes'))) {
-        if ((Test-Path -LiteralPath $f) -and ((Get-Content -LiteralPath $f -Raw) -match 'filter\s*=')) { return "$f sets a filter." }
+    else {
+        try {
+            $owner = (Get-Acl -LiteralPath $gitDir).Owner
+            $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+            if ($owner -and $me -and $owner -ne $me -and $owner -notmatch '\\Administrators$') { return "its .git belongs to $owner, not you." }
+        }
+        catch { }
     }
+    # Every .gitattributes in the folder (not only the top one), and the repository's own.
+    $attrs = @(Get-ChildItem -LiteralPath $Folder -Filter '.gitattributes' -File -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notlike "$gitDir*" } | ForEach-Object { $_.FullName }) + @(Join-Path (Join-Path $gitDir 'info') 'attributes')
+    foreach ($f in $attrs) {
+        if ((Test-Path -LiteralPath $f) -and ((Get-Content -LiteralPath $f -Raw) -match '(filter|diff|merge)\s*=')) { return "$f sets a filter, diff or merge driver." }
+    }
+    # The config: only plain sections - an include, a filter, signing (gpg.program), a driver... could run a command.
     $cfg = Join-Path $gitDir 'config'
-    if ((Test-Path -LiteralPath $cfg) -and ((Get-Content -LiteralPath $cfg -Raw) -match '(?im)^\s*\[filter|^\s*fsmonitor\s*=|^\s*hookspath\s*=')) { return 'its config sets a filter, an fsmonitor or a hooks path.' }
+    if (Test-Path -LiteralPath $cfg) {
+        $text = [string](Get-Content -LiteralPath $cfg -Raw)
+        $sections = @([regex]::Matches($text, '(?m)^\s*\[\s*([A-Za-z0-9.-]+)') | ForEach-Object { $_.Groups[1].Value.ToLowerInvariant() } | Select-Object -Unique)
+        $odd = @($sections | Where-Object { $_ -notin 'core', 'user', 'remote', 'branch', 'init', 'gui', 'pull', 'push', 'fetch', 'gc' })
+        if ($odd.Count) { return "its config has section(s) this app doesn't run git with: $($odd -join ', ')." }
+        if ($text -match '(?im)^\s*(fsmonitor|hookspath|attributesfile|sshcommand|askpass|pager|editor|gitproxy)\s*=') { return 'its config sets a program for git to run (fsmonitor, hooks path, attributes file, ssh, pager or editor).' }
+    }
     return ''
 }
 
@@ -413,7 +431,8 @@ function Global:Invoke-WebCatalogBackup {
         if ($why) { return @{ ok = $true; text = "$text The changes weren't committed: $why" } }
         $hooks = Join-Path ([System.IO.Path]::GetTempPath()) ('intunecat-nohooks-' + [guid]::NewGuid().ToString('N'))
         [void](New-Item -ItemType Directory -Path $hooks -Force)
-        $safe = @('-c', 'core.fsmonitor=false', '-c', "core.hooksPath=$hooks", '-c', 'core.untrackedCache=false')
+        $noAttr = Join-Path $hooks 'attributes'; [void](New-Item -ItemType File -Path $noAttr -Force)
+        $safe = @('-c', 'core.fsmonitor=false', '-c', "core.hooksPath=$hooks", '-c', 'core.untrackedCache=false', '-c', "core.attributesFile=$noAttr", '-c', 'commit.gpgSign=false', '-c', 'tag.gpgSign=false')
         $changes = & git -C $cat @safe status --porcelain -- '*.json' 2>$null
         if ($changes) {
             & git -C $cat @safe add -- '*.json' 2>$null | Out-Null

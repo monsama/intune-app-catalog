@@ -96,6 +96,9 @@ function wcSetup(d) {
   strip.querySelector('.wc-close').addEventListener('click', () => wcClose(d));
   // Last in the dialog: opening it focuses its first field, not Minimize.
   d.classList.add('haswctl'); d.append(strip);
+  // A long dialog scrolls (the editor with a section open): the buttons stay in its top right corner, in sight.
+  d.addEventListener('scroll', () => { strip.style.top = (10 + d.scrollTop) + 'px'; }, { passive: true });
+  d.addEventListener('close', () => { strip.style.top = ''; });
   const head = d.querySelector('.addhead, .trayhead') || d.querySelector('h2');
   if (head) { head.classList.add('wtitle'); wcMovable(d, head); }
 }

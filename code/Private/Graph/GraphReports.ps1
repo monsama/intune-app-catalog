@@ -105,9 +105,11 @@ function Global:Format-InstallStatusTime {
     $text = "$Value".Trim()
     if (-not $text) { return "" }
     $parsed = [datetime]::MinValue
-    if ([datetime]::TryParse($text, [ref]$parsed)) {
+    # Invariant: Graph's ISO times read the same on a de-CH or en-US machine, and the output always uses ':'.
+    $inv = [Globalization.CultureInfo]::InvariantCulture
+    if ([datetime]::TryParse($text, $inv, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$parsed)) {
         if ($parsed.Kind -eq [System.DateTimeKind]::Utc) { $parsed = $parsed.ToLocalTime() }
-        return $parsed.ToString("yyyy-MM-dd HH:mm")
+        return $parsed.ToString("yyyy-MM-dd HH:mm", $inv)
     }
     return $text
 }
@@ -185,7 +187,12 @@ function Global:Get-AppInstallStatusRows {
                 $pageRows = @(ConvertFrom-GraphReportTable $page)
                 foreach ($r in $pageRows) { $rows.Add((ConvertTo-InstallStatusRow $r)) }
                 if ($pageRows.Count -lt $PageSize) { break }
-                if ($rows.Count -ge $MaxRows) { $truncated = $true; break }
+                # Cut off only when there is more: a last page that happens to be full isn't.
+                if ($rows.Count -ge $MaxRows) {
+                    $body.skip = $skip + $PageSize; $body.top = 1
+                    try { $truncated = @(ConvertFrom-GraphReportTable (& $Invoke $endpoint.Uri "POST" $body)).Count -gt 0 } catch { $truncated = $true }
+                    break
+                }
                 $skip += $PageSize
             }
             return @{ Rows = $rows.ToArray(); Source = $endpoint.Source; Truncated = $truncated }

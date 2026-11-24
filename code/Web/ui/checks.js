@@ -75,7 +75,16 @@ async function runChecks(names) {
 $('btnRunChecks').addEventListener('click', () => runChecks());
 
 // Only what the list shows - a finding folded into its Groups row isn't acted on twice.
-const selFindings = () => shownFindings().filter(f => checkSel.has(keyOf(f)));
+// What the list shows now (area and app filter too): only those count as selected - a tick on a row filtered away
+// doesn't (it said "2 selected" with one row in sight).
+const visibleFindings = () => { const area = $('checkFilter').value; return shownFindings().filter(f => (!area || f.area === area) && (!checkApp || (f.catalogName || f.app) === checkApp)); };
+const selFindings = () => visibleFindings().filter(f => checkSel.has(keyOf(f)));
+// After a fix changed apps in the catalog or Intune: Checks asks again about those apps, so the list shows what is
+// still different (not a stale row, nor one dropped too early).
+function checksRefresh(names) {
+  const want = [...new Set((names || []).filter(Boolean))].filter(n => findings.some(f => (f.catalogName || f.app) === n));
+  if (want.length && !checksRunning) runChecks(want);
+}
 const namesWith = (list, action) => [...new Set(list.filter(f => (f.actions || []).includes(action)).map(f => f.catalogName || f.app))];
 function updateCheckActions() {
   const sel = selFindings();
@@ -102,8 +111,7 @@ $('btnFixAdd').addEventListener('click', () => addFromIntune(selFindings().filte
 $('btnFixCompare').addEventListener('click', () => openCompare(selFindings().filter(comparable)));
 $('btnFixRecheck').addEventListener('click', () => runChecks([...new Set(selFindings().map(f => f.catalogName || f.app).filter(Boolean))]));
 $('checkAll').addEventListener('change', e => {
-  const area = $('checkFilter').value;
-  for (const f of shownFindings().filter(f => (!area || f.area === area) && (!checkApp || (f.catalogName || f.app) === checkApp))) { if (e.target.checked) checkSel.add(keyOf(f)); else checkSel.delete(keyOf(f)); }
+  for (const f of visibleFindings()) { if (e.target.checked) checkSel.add(keyOf(f)); else checkSel.delete(keyOf(f)); }
   renderChecks();
 });
 
@@ -114,7 +122,7 @@ function fixButtons(f) {
   const fix = async (action, value) => {
     const r = await api('/api/checks-fix', { action, catalogName: name, value });
     if (!r.ok) { toast(r.error, true); return false; }
-    toast('Fixed in the catalog.'); dropFinding(f); loadApps(); return true;
+    toast('Fixed in the catalog.'); dropFinding(f); loadApps(); checksRefresh([name]); return true;
   };
   // One order on every row, so the same fix is always in the same place.
   if (comparable(f)) btn('Compare', () => openCompare([f]), 'See side by side what differs');
@@ -409,7 +417,7 @@ async function addFromIntune(list) {
     if (after.noGroups.length) parts.push(`Groups couldn't be read for ${after.noGroups.join(', ')} - left empty.`);
     toast(parts.join(' '), !after.added.length);
     for (const f of list) if (after.added.includes(f.app)) dropFinding(f);
-    loadApps();
+    loadApps(); checksRefresh(after.added);
   }, { path: '/api/add-from-intune', log: 'runLog', startText: 'Reading from Intune...' });
 }
 
@@ -431,7 +439,7 @@ async function pushSettings(names) {
   const done = await runEach(names, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'runLog', startText: 'Pushing ' });
   toast(`Settings pushed for ${done.length} of ${names.length} app(s).`, done.length < names.length);
   for (const f of findings.filter(f => done.includes(f.catalogName) && (f.actions || []).includes('PushMetadata'))) dropFinding(f);
-  loadApps();
+  loadApps(); checksRefresh(done);
 }
 
 // ---------------------------------------------------------------- winget search (Find Winget ID, Add app)

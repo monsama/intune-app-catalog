@@ -10,7 +10,8 @@ async function loadUpdates(force) {
   if (!force && updLoadedAt && Date.now() - updLoadedAt < 60000) return;
   updLoading = true;
   $('updNote').textContent = 'Reading Intune\'s install counts...';
-  if (!updRows.length) skeleton($('updBody'), 8, 4);
+  // The placeholder rows under the real header, with its number of columns - the columns don't jump when the rows come.
+  if (!updRows.length) { skeleton($('updBody'), $('updGrid').tHead.rows[0].cells.length, 4); tileSkeleton($('updTiles'), 4); }
   try {
     const r = await api('/api/updates-overview');
     if (!r.ok) { $('updNote').textContent = r.error; if (!updRows.length) $('updBody').replaceChildren(); return; }

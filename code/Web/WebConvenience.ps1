@@ -285,7 +285,7 @@ function Global:Set-WebSandboxDetection {
     if (-not $a) { return @{ ok = $false; error = "No app called '$($Data.name)' in the catalog." } }
     $file = Join-Path (Join-Path (Get-WebSandboxRoot) $id) 'result.json'
     if (-not (Test-Path -LiteralPath $file)) { return @{ ok = $false; error = 'That test has no result (yet).' } }
-    $r = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
+    $r = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json
     $i = -1; [void][int]::TryParse([string]$Data.index, [ref]$i)
     $e = @($r.installed)[$i]
     if ($i -lt 0 -or -not $e -or -not ([string]$e.name).Trim()) { return @{ ok = $false; error = 'That entry isn''t in the test''s result.' } }
@@ -317,10 +317,10 @@ function Global:Get-WebSandboxResult {
     $root = Join-Path (Get-WebSandboxRoot) $id
     # [string]: Windows PowerShell 5.1 hangs the file's PSPath, PSDrive, PSProvider... on Get-Content's text, and
     # ConvertTo-Json writes them (a provider many levels deep) - the answer then fails instead of carrying the log.
-    $log = if (Test-Path -LiteralPath (Join-Path $root 'log.txt')) { [string](Get-Content -LiteralPath (Join-Path $root 'log.txt') -Raw) } else { '' }
+    $log = if (Test-Path -LiteralPath (Join-Path $root 'log.txt')) { [string](Get-Content -LiteralPath (Join-Path $root 'log.txt') -Raw -Encoding UTF8) } else { '' }
     $file = Join-Path $root 'result.json'
     if (-not (Test-Path -LiteralPath $file)) { return @{ ok = $true; done = $false; log = $log } }
-    $r = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
+    $r = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json
     $okInstall = ($r.installExit -in 0, 1707, 3010, 1641) -and $r.detectedAfterInstall
     $okUninstall = ($null -eq $r.uninstallExit) -or (($r.uninstallExit -in 0, 1605, 3010, 1641) -and -not $r.detectedAfterUninstall)
     return @{ ok = $true; done = $true; log = $log; result = $r; passed = [bool]($okInstall -and $okUninstall)
@@ -424,6 +424,11 @@ function Global:Get-WebAttention {
     $drift = @($last.items | Where-Object { $_.outcome -eq 'drift' })
     if ($drift.Count) { & $add 'warn' "$($drift.Count) app(s) differ from Intune" ((@($drift | Select-Object -First 5 | ForEach-Object { $_.app }) -join ', ') + ' (last night) - Checks has the details.') 'checks' }
     $sch = Get-WebUpdateSchedule
+    # Scheduled, but no run for a day and a half: the PC was off, the task didn't start, or it can't sign in.
+    $lastAt = [DateTimeOffset]::MinValue
+    if ($sch.exists -and $last -and [DateTimeOffset]::TryParse([string]$last.started, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$lastAt) -and ([DateTimeOffset]::Now - $lastAt).TotalHours -gt 36) {
+        & $add 'warn' 'The nightly run hasn''t run lately' "The last run started $([int]([DateTimeOffset]::Now - $lastAt).TotalDays) day(s) ago, though it is scheduled every day - the computer may have been off, or the task couldn't start (Settings > Automation shows the schedule; Run now tries it)." 'settings:automation'
+    }
     if (@($apps | Where-Object { $_.managedUpdates }).Count -and -not $sch.exists -and $sch.supported) { & $add 'info' 'Nightly run not scheduled' 'Managed updates only move when someone clicks - schedule the nightly run.' 'settings:automation' }
     $summary = $null
     if ($part -ne 'local') { $i = Get-WebAttentionIntune -Fresh $true; foreach ($x in @($i.items)) { $items.Add($x) }; $summary = $i.summary }

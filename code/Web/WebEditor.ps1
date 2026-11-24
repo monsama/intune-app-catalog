@@ -410,14 +410,17 @@ function Global:Save-WebAppHeld {
     $oldFile = if ($existing) { Join-Path $folder ((Get-SafeFileNameForApp -Name $existing.appName) + '.json') } else { $null }
     Backup-WebAppFile $newFile
     try {
-        Save-WebAppJson -File $newFile -App $record -BeforeFile $(if ($oldFile -and $oldFile -ne $newFile) { $oldFile } else { '' })
+        Save-WebAppJson -File $newFile -App $record -BeforeFile $(if ($oldFile -and $oldFile -cne $newFile) { $oldFile } else { '' })
     }
     catch { return @{ ok = $false; error = "Couldn't write $newFile`: $($_.Exception.Message)" } }
-    if ($oldFile -and $oldFile -ne $newFile -and (Test-Path -LiteralPath $oldFile)) {
+    # Case counts on Linux: "Foo app" -> "Foo App" is a new file there, and the old one must go. On Windows it is the
+    # same file (just written) - never removed.
+    $otherFile = $oldFile -and $(if ($IsLinux -or $IsMacOS) { $oldFile -cne $newFile } else { $oldFile -ne $newFile })
+    if ($otherFile -and (Test-Path -LiteralPath $oldFile)) {
         Backup-WebAppFile $oldFile
         Remove-Item -LiteralPath $oldFile -Force -ErrorAction SilentlyContinue
     }
-    if ($existing -and $existing.appName -ne $record.appName) { Rename-WebAppReferences -Old $existing.appName -New $record.appName }
+    if ($existing -and $existing.appName -cne $record.appName) { Rename-WebAppReferences -Old $existing.appName -New $record.appName }
     Write-Log "[OK] $(if ($existing) { 'Saved' } else { 'Added' }): $($record.appName)$(if ($existing -and $existing.appName -ne $record.appName) { " (was $($existing.appName))" })."
     return @{ ok = $true; name = $record.appName }
 }

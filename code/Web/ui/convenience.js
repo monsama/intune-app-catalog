@@ -326,7 +326,7 @@ let homeLocal = null, homeIntune = null, homeIntuneSeq = 0;
 async function loadHome(fresh) {
   const seq = ++homeSeq, iseq = ++homeIntuneSeq;
   // Only the first load shows that it's looking; a refresh swaps the content in place, without flicker.
-  if (!$('homeList').children.length) { $('homeNote').textContent = 'Looking...'; skeleton($('homeList'), 1, 3); }
+  if (!$('homeList').children.length) { $('homeNote').textContent = 'Looking...'; skeleton($('homeList'), 1, 3); tileSkeleton($('homeStats'), 3); }
   homeAt = Date.now();
   const intune = api('/api/attention', { part: 'intune', fresh: fresh === true });
   const r = await api('/api/attention', { part: 'local' });
