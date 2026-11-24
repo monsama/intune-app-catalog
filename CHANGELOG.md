@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.38.20
+
+- **Checks said "Nothing to fix" too early**: when "Deployed apps in detail"
+  was off, the settings and groups in Intune weren't compared, yet the page said
+  "the catalog, Intune and Entra ID agree". It now says what wasn't compared.
+  And the box no longer stays off after the check at start (when "full check at
+  start" is off) - every later Run checks compares everything again.
+- **Company Portal (and other Microsoft apps) linked to Intune** without their
+  Store ID now show as "Microsoft (Intune)", not "own installer"; Home's "Fix
+  Company Portal" sets the Store ID (9WZDNCRFJ3PZ) for a linked one too.
+- **Editor: Installs from** Winget, Its own installer or Microsoft Store - the
+  ID field only where it means something (none for an own installer), named
+  "Winget ID" or "Store product ID". A new app starts on Winget.
+- **Create last month's report** downloads the report (HTML) in the browser -
+  on the server the Logs folder was out of reach.
+- Upload review: room between "Setup file" and its dropdown.
+
 ## 2.38.19
 
 - **Windows Sandbox test removed**: "Test in Windows Sandbox" (the app's menu,

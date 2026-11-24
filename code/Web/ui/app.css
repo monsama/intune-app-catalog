@@ -1808,3 +1808,16 @@ dialog .wctl { z-index: 6; }
 .detcheck { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
 .detcheck #aiDetVersion { width: 10em; }
 .detbox .hint { margin-top: 6px; }
+
+/* Upload review: room between "Setup file" and its dropdown (2.38.20). */
+#puSetupRow:not([hidden]) { display: flex; align-items: center; gap: 12px; }
+#puSetupRow select { flex: 1 1 auto; min-width: 0; }
+
+/* Editor: Installs from - Winget, its own installer, the Microsoft Store (2.38.20). */
+.srcpick { display: flex; align-items: center; flex-wrap: wrap; gap: 0; margin: 2px 0 10px; }
+.srcpick .srclbl { font-size: 12px; color: var(--muted); margin-right: 10px; }
+.srcpick button { font: inherit; font-size: 12.5px; padding: 5px 12px; border: 1px solid var(--bd); background: var(--surface); color: var(--fg); cursor: pointer; margin-left: -1px; }
+.srcpick button:first-of-type { border-radius: var(--r-m) 0 0 var(--r-m); margin-left: 0; }
+.srcpick button:last-of-type { border-radius: 0 var(--r-m) var(--r-m) 0; }
+.srcpick button[aria-checked="true"] { background: var(--accent-soft); color: var(--info); border-color: var(--accent); position: relative; z-index: 1; font-weight: 600; }
+.srcpick button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; position: relative; z-index: 2; }

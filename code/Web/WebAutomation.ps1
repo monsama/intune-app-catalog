@@ -644,7 +644,8 @@ function Global:Send-WebMonthlyReport {
     $al = $Global:App.Alerts
     $sent = if ($al.WebhookUrl -or ($al.MailFrom -and @($al.MailTo).Count)) { Send-ManagedUpdateAlert $summary -Force } else { @{ sent = @(); error = '' } }
     Write-Log "[OK] Monthly report for ${Month}: $path$(if (@($sent.sent).Count) { " - sent ($(@($sent.sent) -join ', '))" })"
-    return @{ ok = $true; path = $path; month = $Month; sent = @($sent.sent); error = [string]$sent.error }
+    # The page also gets the report itself (2.38.20): saved by the browser - on the server the Logs folder is out of reach.
+    return @{ ok = $true; path = $path; month = $Month; sent = @($sent.sent); error = [string]$sent.error; html = $html; name = "monthly-$Month.html" }
 }
 
 function Global:Send-ManagedUpdateAlert {
