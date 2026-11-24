@@ -168,7 +168,7 @@ function renderApps() {
   }), ...(typeof intuneOnlyRows === 'function' ? intuneOnlyRows(q) : [])]);
   if (typeof renderWhere === 'function') renderWhere();
   $('count').textContent = showIntuneOnly ? `${intuneOnly().win.length} only in Intune` : list.length === apps.length ? `${apps.length} app${apps.length === 1 ? '' : 's'}` : `${list.length} of ${apps.length} app${apps.length === 1 ? '' : 's'}`;
-  for (const th of document.querySelectorAll('.grid th')) {
+  for (const th of document.querySelectorAll('#grid th[data-sort]')) {
     th.classList.toggle('sorted', th.dataset.sort === sortKey);
     th.classList.toggle('desc', th.dataset.sort === sortKey && sortDesc);
   }
@@ -933,7 +933,8 @@ $('btnTenantClear') && $('btnTenantClear').addEventListener('click', async () =>
   if ($('filter').value === 'notintenant') $('filter').value = 'all';
   await loadApps();
 });
-for (const th of document.querySelectorAll('.grid th')) th.addEventListener('click', () => {
+// Only the Apps list sorts by its headers (2.38.16: a click on a Checks header set the sort to nothing).
+for (const th of document.querySelectorAll('#grid th[data-sort]')) th.addEventListener('click', () => {
   if (sortKey === th.dataset.sort) sortDesc = !sortDesc; else { sortKey = th.dataset.sort; sortDesc = false; }
   renderApps();
 });

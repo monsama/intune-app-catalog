@@ -326,7 +326,7 @@ let homeLocal = null, homeIntune = null, homeIntuneSeq = 0;
 async function loadHome(fresh) {
   const seq = ++homeSeq, iseq = ++homeIntuneSeq;
   // Only the first load shows that it's looking; a refresh swaps the content in place, without flicker.
-  if (!$('homeList').children.length) { $('homeNote').textContent = 'Looking...'; skeleton($('homeList'), 1, 3); tileSkeleton($('homeStats'), 3); }
+  if (!$('homeList').children.length) { $('homeNote').textContent = 'Looking...'; skeleton($('homeList'), 1, 3); tileSkeleton($('homeStats'), state && state.configured ? 4 : 3); }
   homeAt = Date.now();
   const intune = api('/api/attention', { part: 'intune', fresh: fresh === true });
   const r = await api('/api/attention', { part: 'local' });
@@ -368,7 +368,8 @@ function renderHome() {
   $('homeStats').hidden = !r.apps;
   $('homeTips').hidden = setupOpen;
   $('homeStats').replaceChildren(stat(String(r.apps), 'apps in the catalog'), stat(String(r.deployed), 'in Intune'), stat(String(r.managed), 'with managed updates'),
-    ...(s && s.onCurrentPercent !== null && s.onCurrentPercent !== undefined ? [stat(s.onCurrentPercent + ' %', `of ${s.devices} devices on the current version`, s.onCurrentPercent < 90 ? 'warn' : 'ok')] : []));
+    // The fourth tile is there from the start when connected ('–' until Intune answers): the row doesn't grow later.
+    ...(s && s.onCurrentPercent !== null && s.onCurrentPercent !== undefined ? [stat(s.onCurrentPercent + ' %', `of ${s.devices} devices on the current version`, s.onCurrentPercent < 90 ? 'warn' : 'ok')] : r.connected !== false && state && state.configured ? [stat('–', 'devices on the current version', 'skel')] : []));
   const where = { 'settings:connection': ['Settings', () => showSettings('connection')], 'settings:permissions': ['Check permissions', checkPermissionsNow], 'settings:defaults': ['Settings', () => showSettings('defaults')], 'settings:updates': ['Settings', () => showSettings('updates')], 'settings:automation': ['Settings', () => showSettings('automation')], 'settings:packaging': ['Settings', () => showSettings('packaging')],
     'apps:notdeployed': ['Show them', () => { showView('apps'); $('filter').value = 'notdeployed'; renderApps(); updateViewButtons(); }], 'apps:all': ['Apps', () => showView('apps')],
     updates: ['Updates', () => showView('updates')], checks: ['Checks', () => showView('checks')],
