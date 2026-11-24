@@ -239,7 +239,8 @@ function Global:Get-WebAttention {
         & $add 'info' 'Winget-AutoUpdate is still in the catalog' $wauText 'apps:all'
     }
     # Microsoft's own app types (Company Portal, Microsoft 365 Apps, Store apps) have no package to build - said apart, not as "not built".
-    $builtIn = @($apps | Where-Object { -not $_.appId -and (Get-NonPackageAppHint $_) })
+    # Not yet in Intune - or Company Portal linked without its Store ID (2.38.20: the button sets that too).
+    $builtIn = @($apps | Where-Object { (-not $_.appId -or (-not $_.wingetId -and (Test-CompanyPortalName $_.appName))) -and (Get-NonPackageAppHint $_) })
     $noPkg = @($apps | Where-Object { -not $_.wingetId -and -not $_.appId -and -not (Get-NonPackageAppHint $_) -and -not (Resolve-AppPackagePath -AppName $_.appName -Uncommon $true -PackagePath $_.packagePath).Found })
     if ($noPkg.Count) { & $add 'warn' "$($noPkg.Count) own package(s) not built" ((@($noPkg | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + ' - select them and use Package.') 'apps:all' }
     # Company Portal can be fixed here (its Store ID); Microsoft 365 Apps is created in Intune, then linked by Checks.
@@ -502,7 +503,8 @@ function Global:Set-WebCompanyPortalStore {
     param($Data)
     $undo = New-WebUndo 'Company Portal as a Store app'
     $changed = New-Object System.Collections.Generic.List[string]
-    foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { -not $_.wingetId -and -not $_.appId -and (Test-CompanyPortalName $_.appName) })) {
+    # Linked to Intune already too: its App ID stays - the catalog then knows it as the Store app it is in Intune.
+    foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { -not $_.wingetId -and (Test-CompanyPortalName $_.appName) })) {
         $a.wingetId = '9WZDNCRFJ3PZ'
         Write-WebAppFile -App $a -Undo $undo
         $changed.Add([string]$a.appName)

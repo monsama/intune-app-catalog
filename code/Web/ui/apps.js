@@ -249,7 +249,26 @@ function fillEditor(a) {
 }
 
 // Managed updates need a Winget ID; while one is ticked, the install commands and detection follow the App version.
+// Installs from (2.38.20): Winget, its own installer or the Microsoft Store - the Winget ID field only where it means
+// something (an own installer has none), named for what goes in it.
+let editorSrc = 'own';
+function srcFromField() { const v = $('aWinget').value.trim(); return !v ? null : isStoreId(v) ? 'store' : 'winget'; }
+function showSrc() {
+  for (const b of document.querySelectorAll('.srcpick [data-src]')) b.setAttribute('aria-checked', String(b.dataset.src === editorSrc));
+  $('aWingetRow').hidden = editorSrc === 'own';
+  $('aWingetLbl').textContent = editorSrc === 'store' ? 'Store product ID' : 'Winget ID';
+  $('aWinget').placeholder = editorSrc === 'store' ? 'e.g. 9WZDNCRFJ3PZ' : 'e.g. 7zip.7zip';
+}
+for (const b of document.querySelectorAll('.srcpick [data-src]')) b.addEventListener('click', () => {
+  const was = editorSrc, now = b.dataset.src, f = srcFromField();
+  editorSrc = now;
+  // What doesn't fit the new choice goes (an own installer has no ID; a Winget ID isn't a Store ID).
+  if (f && f !== now) { $('aWinget').value = ''; $('aWinget').dispatchEvent(new Event('input', { bubbles: true })); }
+  showSrc(); if (now !== 'own' && was !== now) $('aWinget').focus();
+});
 function showManagedState() {
+  const f = srcFromField(); if (f) editorSrc = f; else if (editorSrc !== 'winget' && editorSrc !== 'store') editorSrc = 'own';
+  showSrc();
   const has = !!$('aWinget').value.trim();
   appVerPick.hide(!has || isStoreId($('aWinget').value.trim()));
   $('aRuleBox').hidden = !$('aManaged').checked;
@@ -567,7 +586,7 @@ function readSupersedence() {
 }
 let editingVersion = '';
 async function openEditor(name) {
-  appVerPick.reset();
+  appVerPick.reset(); editorSrc = name ? 'own' : 'winget';   // a new app starts on Winget (most are)
   if (wcResume('dlgApp')) return;
   editingName = name || ''; editingVersion = '';
   if (name) {

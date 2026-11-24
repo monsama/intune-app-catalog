@@ -551,7 +551,10 @@ $('btnMonthly').addEventListener('click', async () => {
   const b = $('btnMonthly'); b.disabled = true;
   try {
     const r = await api('/api/monthly-report', {});
-    toast(r.ok ? `Report for ${r.month} saved (${r.path})${r.sent.length ? ' and sent (' + r.sent.join(', ') + ')' : ''}.${r.error ? ' Sending failed: ' + r.error : ''}` : r.error, !r.ok || !!r.error);
+    const save = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.html], { type: 'text/html' })); a.download = r.name; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); };
+    // 2.38.20: the report comes to the browser too - downloaded at once (Logs\reports is out of reach on the server).
+    if (r.ok && r.html) save();
+    toast(r.ok ? `Report for ${r.month} downloaded (${r.name})${SERVER ? '' : ' - also in ' + r.path}${r.sent.length ? ' and sent (' + r.sent.join(', ') + ')' : ''}.${r.error ? ' Sending failed: ' + r.error : ''}` : r.error, !r.ok || !!r.error, r.ok && r.html ? [{ label: 'Download again', run: save }] : []);
   } finally { b.disabled = false; }
 });
 async function loadUnattended() {

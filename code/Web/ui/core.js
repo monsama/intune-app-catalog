@@ -102,7 +102,6 @@ function saveB64File(r, type = 'application/octet-stream') {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([bytes], { type })); a.download = r.name;
   document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
-// A file the server prepared, by its single-use link.
 
 async function api(path, body = {}) {
   try {

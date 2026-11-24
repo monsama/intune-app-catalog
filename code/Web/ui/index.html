@@ -565,7 +565,7 @@
           <div id="runList" class="runlist" aria-live="polite"></div>
           <div class="actions">
             <button class="btn" id="btnHealth" title="What the nightly run checks first: the certificate, signing in, the packages, disk space">Check health now</button>
-            <button class="btn" id="btnMonthly" title="Last month's report, from the nightly runs - saved in Logs\reports and sent when alerts are set up">Create last month's report</button>
+            <button class="btn" id="btnMonthly" title="Last month's report, from the nightly runs - downloaded here as HTML, also kept in Logs\reports and sent when alerts are set up">Create last month's report</button>
           </div>
           <ul id="healthList" class="healthlist" aria-live="polite" hidden></ul>
           <h3 class="desktoponly">Run while nobody is signed in</h3>
@@ -879,7 +879,8 @@
       <section>
         <h3>General</h3>
         <label>Name<input id="aName" required autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-        <label title="The winget package ID, e.g. 7zip.7zip. Empty for an app with its own installer. Find... searches winget.">Winget ID <span class="muted">(empty for an app with its own package)</span><span class="inputrow"><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip" autocorrect="off" autocapitalize="off"><button type="button" class="btn" id="btnFindWinget" title="Search winget for the package">Find...</button></span></label>
+        <div class="srcpick" role="radiogroup" aria-label="Installs from"><span class="srclbl">Installs from</span><button type="button" role="radio" data-src="winget" title="Devices install it with winget - from its Winget ID">Winget</button><button type="button" role="radio" data-src="own" title="Its own installer (.msi, .exe, a script) in its packages folder - built into a package">Its own installer</button><button type="button" role="radio" data-src="store" title="The Microsoft Store installs and updates it - from its Store product ID">Microsoft Store</button></div>
+        <label id="aWingetRow" title="The winget package ID, e.g. 7zip.7zip. Find... searches winget."><span id="aWingetLbl">Winget ID</span><span class="inputrow"><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip" autocorrect="off" autocapitalize="off"><button type="button" class="btn" id="btnFindWinget" title="Search winget for the package">Find...</button></span></label>
         <label class="chk" title="Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Updates"><input type="checkbox" id="aManaged">Managed updates <button type="button" class="help" data-help="managed" aria-label="What are managed updates?">?</button> <span class="muted" id="aManagedNote"></span></label>
         <div class="methodrow" id="aMethodRow" hidden>
           <label title="How devices install this Winget app - and so which version they get">Install with<select id="aMethod"><option value="Managed">Managed updates - a fixed version, pilot first</option><option value="Winget">The winget command - newest, not updated</option><option value="WAU" disabled>Winget-AutoUpdate (no longer used)</option><option value="Custom" disabled>Own command (edited by hand)</option></select></label>

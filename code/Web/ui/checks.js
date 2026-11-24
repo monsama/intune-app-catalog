@@ -52,6 +52,9 @@ async function runChecks(names) {
       const a = await checkJob('/api/checks-assign', only, 'Comparing the assignments...');
       if (a) mergeFindings(a); else notes.push('The assignments could not be compared - see the log.');
     }
+    // 2.38.20: without the detailed part, the settings and groups in Intune weren't compared at all - "Nothing to fix" said
+    // "the catalog and Intune agree" although Home and the apps showed differences (from the nightly run or a full check).
+    else if (r.connected && r.deployed > 0) notes.push(`The settings and groups of the ${r.deployed} app(s) in Intune weren't compared - turn on Options > Deployed apps in detail.`);
     if ($('chkWinget').checked && r.winget > 0) {
       $('checkNotes').textContent = `Asking winget about ${r.winget} Winget ID(s)...`;
       checkLog(`${stamp()} Asking winget about ${r.winget} Winget ID(s)...`);

@@ -552,7 +552,7 @@ try {
         await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.getElementById('dlgApp').open);
         // 2.36.0: an own package watches winget for new versions - the field is there for it (not for a Winget app).
         await page.dblclick(`#gridBody tr[data-name="${lobApp}"]`); await page.waitForSelector('#dlgApp[open]');
-        check(await page.evaluate(() => !document.getElementById('aWatchRow').hidden), `${label}: an own package can watch a winget package for new versions`);
+        check(await page.evaluate(() => !document.getElementById('aWatchRow').hidden && document.getElementById('aWingetRow').hidden && document.querySelector('.srcpick [data-src="own"]').getAttribute('aria-checked') === 'true'), `${label}: an own package can watch a winget package for new versions - and shows no Winget ID field (Installs from: its own installer)`);
         await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.getElementById('dlgApp').open);
         await page.keyboard.press('Escape');
         await page.evaluate(n => api('/api/app-remove', { name: n }).then(() => loadApps()), lobApp); rmSync(fakeSetup, { force: true });

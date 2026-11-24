@@ -24,6 +24,9 @@
   if (state && state.configured && state.startup && state.startup.drift) {
     $('chkDetails').checked = !!state.startup.fullAudit;
     await runChecks();
+    // Only this check at start follows "full check at start": a Run checks afterwards compares everything again (2.38.20 -
+    // the box stayed off, and every later check skipped the settings and groups in Intune).
+    $('chkDetails').checked = true;
     const shownN = shownFindings().length;
     if (shownN) $('tabChecks').dataset.count = shownN;
     if (shownN) activity(`${stamp()} Checks at start: ${shownN} finding(s) - see Checks.`);

@@ -87,7 +87,8 @@ function Global:Get-WebCatalog {
                 watchWinget  = [string]$apps[$i].watchWinget
                 managed      = [bool]$apps[$i].managedUpdates
                 # Company Portal, Microsoft 365 Apps, Store/other Intune types: nothing to package.
-                msHint       = [string]$(if (-not $apps[$i].appId -and -not $apps[$i].wingetId) { Get-NonPackageAppHint $apps[$i] })
+                # 2.38.20: also once it is in Intune (linked) - Company Portal linked without its Store ID showed as "own installer".
+                msHint       = [string]$(if (-not $apps[$i].wingetId) { Get-NonPackageAppHint $apps[$i] })
                 previousVersions = @(Get-WebPreviousReleases $apps[$i] | ForEach-Object { [string]$_.version })
                 releaseIds   = @(@($apps[$i].releases) | Where-Object { $_ -and $_.appId } | ForEach-Object { ([string]$_.appId).ToLowerInvariant() })
                 retiringSince = [string]$apps[$i].retiringSince
