@@ -577,12 +577,6 @@ function Global:Open-WebTarget {
             if (-not (Test-Path -LiteralPath $pf)) { return @{ ok = $false; error = "$pf doesn't exist." } }
             return (Open-WebFolder $pf)
         }
-        'sandbox-folder' {
-            if ([string]$Data.id -notmatch '^\d{8}-\d{6}-[0-9a-f]{4}$') { return @{ ok = $false; error = 'Unknown test.' } }
-            $sf = Join-Path (Get-WebSandboxRoot) ([string]$Data.id)
-            if (-not (Test-Path -LiteralPath $sf)) { return @{ ok = $false; error = 'That test folder is gone.' } }
-            return (Open-WebFolder $sf)
-        }
         'certificates-folder' {
             $folder = Join-Path $Global:App.RootPath 'data\certificates'
             if (-not (Test-Path -LiteralPath $folder)) { [void](New-Item -ItemType Directory -Path $folder -Force) }
@@ -713,7 +707,6 @@ function Global:Invoke-WebApi {
         '/api/lob-retire'       { return (Remove-WebReplacedLobApp $Data) }
         '/api/app-installer'    { return (Set-WebAppInstaller $Data) }
         '/api/app-duplicate'    { return (Invoke-WithCatalogLock { Copy-WebApp $Data }) }
-        '/api/sandbox-detection' { return (Invoke-WithCatalogLock { Set-WebSandboxDetection $Data }) }
         '/api/folder-upload-start' { return (Start-WebFolderUpload $Data) }
         '/api/upload-setup'     { return (Set-WebUploadSetup $Data) }
         '/api/package-files'    { return (Get-WebPackageFiles $Data) }
@@ -728,14 +721,10 @@ function Global:Invoke-WebApi {
         '/api/icon-find'        { return (Find-WebAppIcon $Data) }
         '/api/installed-apps'   { return (Get-WebInstalledApps) }
         '/api/detection-from-installed' { return (Get-WebDetectionFromInstalled $Data) }
-        '/api/sandbox-start'    { return (Start-WebSandboxTest $Data) }
-        '/api/sandbox-package'  { return (Get-WebSandboxPackage $Data) }
         '/api/entra-script'     { return (Get-WebEntraScript $Data) }
         '/api/installed-script' { return (Get-WebInstalledAppsScript) }
         '/api/detection-from-paste' { return (Get-WebDetectionFromPaste $Data) }
         '/api/winget-export-script' { return (Get-WebWingetExportScript) }
-        '/api/sandbox-result'   { return (Get-WebSandboxResult $Data) }
-        '/api/sandbox-result-upload' { return (Import-WebSandboxResult $Data) }
         '/api/watch-check'      { $w = Get-WebWatchedUpdate $Data; if ($w.app) { $w.Remove('app') }; return $w }
         '/api/watch-fetch'      { return (Save-WebWatchedInstaller $Data) }
         '/api/attention'        { return (Get-WebAttention $Data) }

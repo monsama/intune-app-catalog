@@ -24,8 +24,8 @@ RUN --mount=type=secret,id=buildca,required=false \
  && rm -rf /root/.local/share/powershell /root/.cache
 
 # ICA_SERVER: server mode (a sign-in, every address, no app window). HOME on the data volume: the .NET certificate
-# store (the connection's certificate) lives there. TEMP/TMPDIR: working files (an installer staged and packaged,
-# a Sandbox zip) - on the data volume, not the small /tmp in memory, so a large installer fits.
+# store (the connection's certificate) lives there. TEMP/TMPDIR: working files (an installer staged and
+# packaged) - on the data volume, not the small /tmp in memory, so a large installer fits.
 ENV ICA_SERVER=1 ICA_PORT=8080 HOME=/app/data/home TEMP=/app/data/tmp TMPDIR=/app/data/tmp TZ=Europe/Zurich POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off
 
 WORKDIR /app

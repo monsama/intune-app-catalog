@@ -93,7 +93,6 @@ function goSignIn(why) {
     // What a Windows PC does comes as a download here (PC helpers).
     // Anything drawn before this answer came (the setup guide, from /api/state) is drawn again for the server.
     if (typeof renderSetupSteps === 'function') renderSetupSteps();
-    for (const m of document.querySelectorAll('[data-act="sandbox"]')) { m.textContent = 'Download a Sandbox test...'; m.title = 'A zip for a Windows PC with Windows Sandbox: the package, the test and a starter that opens the Sandbox and says how it went'; }
   } catch (e) { /* the desktop app, or no answer: nothing to do here */ }
 })();
 
@@ -104,7 +103,6 @@ function saveB64File(r, type = 'application/octet-stream') {
   document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 // A file the server prepared, by its single-use link.
-function saveFromUrl(url, name) { const a = document.createElement('a'); a.href = url; a.download = name || ''; document.body.append(a); a.click(); setTimeout(() => a.remove(), 1000); }
 
 async function api(path, body = {}) {
   try {

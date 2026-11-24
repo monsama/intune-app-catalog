@@ -159,8 +159,6 @@ $handler = {
             Send-WebRedirect -Client $Client -Location $(if ($start.ok) { $start.url } else { "/login.html?why=$($start.why)" }); return
         }
         if ($WebServerMode -and $req.Method -eq 'GET' -and $req.Path -eq '/auth/callback') { Send-WebRedirect -Client $Client -Location (Complete-WebEntraCallback -Query $req.Query -Agent $req.Agent); return }
-        # A file the page prepared (a Sandbox test zip): once, by its random link.
-        if ($req.Method -eq 'GET' -and $req.Path -match '^/download/([0-9a-f]{32})$') { Send-WebDownload -Client $Client -Id $Matches[1]; return }
         $file = Get-WebStaticFile -Path $req.Path -UiRoot $WebUiRoot
         if ($file) { Send-WebResponse $Client '200 OK' $file.ContentType $file.Bytes }
         else { Send-WebResponse $Client '404 Not Found' 'text/plain' ([Text.Encoding]::UTF8.GetBytes('not found')) }

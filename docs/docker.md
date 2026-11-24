@@ -97,7 +97,6 @@ To change the password: write the new one (at least 12 characters) into `secrets
 | Windows scheduled tasks for the nightly run | the server's own schedule (Settings > Nightly run & alerts) |
 | Certificate in the Windows store; Upload to Entra / Add permissions sign you in | Certificate in the server's store (data volume); import a .pfx or create one; the Entra setup script adds it and the permissions from a Windows PC |
 | IntuneWinAppUtil.exe or built in | built in only |
-| Windows Sandbox test | Download a Sandbox test: a zip with `Start-Test.ps1` for a PC with Windows Sandbox |
 | Detection from an app on this PC | a script lists the PC's apps; the one picked is pasted back and becomes the rule |
 | Read this PC's apps (winget export) | a script runs `winget export` on the PC; its file goes to Add apps > From a list |
 | Open folder | not there - the files are on the data volume |

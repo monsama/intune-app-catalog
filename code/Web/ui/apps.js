@@ -1317,7 +1317,7 @@ function openMenu(x, y) {
   const one = oneSelected();
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
-  const enable = { edit: !!one, duplicate: !!one, pushgroups: anyId, sandbox: !!(one && !one.wingetId), package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
+  const enable = { edit: !!one, duplicate: !!one, pushgroups: anyId, package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
     replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any, retire: !!(one && (one.hasAppId || one.retiringSince)),
     takeversion: sel.some(a => a.wingetId && a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
     watchfetch: !!(one && !one.wingetId && one.watchWinget),
@@ -1327,7 +1327,6 @@ function openMenu(x, y) {
     rollback: !!(one && one.managed && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && (one.previousVersions || []).length > 1) };
   const why = {
     edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', filldetails: 'Only for Winget apps - their details come from winget.', watchfetch: one ? 'Only for an own package that watches a winget package for new versions (the editor: Winget package to watch).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
-    sandbox: one ? 'Windows Sandbox has no winget - test a Winget app on a pilot device.' : 'Select exactly one app.',
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
     batchedit: 'Select one or more apps first.', addgroups: 'Select one or more apps first.', removegroups: 'Select one or more apps first.',
@@ -1348,7 +1347,7 @@ function openMenu(x, y) {
   if (any) {
     const own = sel.some(a => !a.wingetId), winget = sel.some(a => a.wingetId && !isStoreId(a.wingetId));
     const never = {
-      sandbox: !own, package: !own, watchfetch: !own, takeversion: !winget, filldetails: !winget,
+      package: !own, watchfetch: !own, takeversion: !winget, filldetails: !winget,
       promote: !sel.some(a => a.pilotVersion), withdraw: !sel.some(a => a.pilotVersion),
       rollback: !sel.some(a => (a.previousVersions || []).length), cleanup: !sel.some(a => (a.previousVersions || []).length > 1),
     };
@@ -1417,7 +1416,6 @@ async function menuAction(act) {
     case 'removegroups': openGroupsBatch('remove', names); break;
     case 'status': openStatus(one.name); break;
     case 'retire': openRetire(one.name); break;
-    case 'sandbox': if (SERVER) downloadSandbox(one.name); else openSandbox(one.name); break;
     case 'edit': openEditor(one.name); break;
     case 'duplicate': duplicateApp(one.name); break;
     case 'watchfetch': fetchWatched(one.name); break;

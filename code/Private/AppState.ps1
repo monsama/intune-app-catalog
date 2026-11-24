@@ -15,9 +15,8 @@ function Global:Initialize-AppState {
     foreach ($t in @($env:TEMP, $env:TMPDIR)) { if ($t -and -not (Test-Path -LiteralPath $t)) { try { [void](New-Item -ItemType Directory -Path $t -Force) } catch { } } }
     # Created once here, not on first use: two requests at once would each make their own.
     $Global:App.WingetIndexLock = New-Object System.Object
-    $Global:App.Downloads = [hashtable]::Synchronized(@{})
     $Global:App.CatalogTextCache = [hashtable]::Synchronized(@{})
-    $Global:App.AppVersion = "2.38.18"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
+    $Global:App.AppVersion = "2.38.19"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
     # The catalog as last read (Read-WebCatalogRecords) - the shared
     # functions that look at "the catalog" (default dependencies, known
     # groups) read it from here.

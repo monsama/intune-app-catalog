@@ -39,8 +39,7 @@ it opens can talk to it.
 - **Group picker** with suggestions from favourites, the catalog and Entra
   ID; **assignment profiles**; a **groups and apps grid** for every
   assignment at once.
-- **Test in Windows Sandbox** before deploying, and **detection from an app
-  installed on this PC**.
+- **Detection from an app installed on this PC**.
 - **Add apps** three ways: **winget** (search as you type, pick several,
   each added with winget's publisher, description and links), an
   **installer** dropped on the page (an MSI's name, version and product

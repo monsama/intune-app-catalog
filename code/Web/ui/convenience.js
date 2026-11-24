@@ -1,5 +1,5 @@
 // Intune App Catalog - web interface: conveniences. The group picker, assignment profiles,
-// finding an icon, a test in Windows Sandbox, detection from an app on this PC, the Home
+// finding an icon, detection from an app on this PC, the Home
 // page, Ctrl+K, and the groups x apps grid. Loaded after apps.js and add.js.
 'use strict';
 
@@ -175,58 +175,6 @@ $('btnIconFind').addEventListener('click', async () => {
   } finally { b.disabled = false; }
 });
 
-// ---------------------------------------------------------------- a test in Windows Sandbox
-let sbId = '', sbApp = '', sbTimer = 0;
-async function openSandbox(name) {
-  if (wcResume('dlgSandbox')) return;
-  const r = await api('/api/sandbox-start', { name });
-  if (!r.ok) { toast(r.error, true); return; }
-  sbId = r.id; sbApp = name; $('sbFound').replaceChildren(); $('sbFound').hidden = true;
-  $('sbTitle').textContent = `Test ${name} in Windows Sandbox`;
-  $('sbText').textContent = 'Windows Sandbox is starting - it installs the app with its install command, checks the detection rule, uninstalls it and checks again. This takes a few minutes; the Sandbox window can stay in the background.';
-  $('sbSteps').replaceChildren(el('li', { class: 'muted', text: 'Waiting for the Sandbox...' })); $('sbLog').textContent = '';
-  $('dlgSandbox').showModal();
-  clearInterval(sbTimer); sbTimer = setInterval(pollSandbox, 3000);
-}
-async function pollSandbox() {
-  // Minimized it keeps going (it's only hidden); closed, it stops.
-  if (!$('dlgSandbox').open && !$('dlgSandbox').classList.contains('minimized')) { clearInterval(sbTimer); return; }
-  const r = await api('/api/sandbox-result', { id: sbId });
-  if (!r.ok) return;
-  $('sbLog').textContent = r.log || '';
-  if (!r.done) return;
-  clearInterval(sbTimer);
-  const x = r.result, step = (ok, text) => el('li', {}, el('span', { class: 'pill ' + (ok ? 'ok' : 'err'), text: ok ? 'OK' : 'Problem' }), ' ' + text);
-  $('sbSteps').replaceChildren(
-    step(!x.before, x.before ? 'It was detected before installing - the rule may be too loose.' : 'Not detected before installing.'),
-    step([0, 1707, 3010, 1641].includes(x.installExit), `Install command: exit code ${x.installExit}.`),
-    step(!!x.detectedAfterInstall, x.detectedAfterInstall ? 'Detected after installing.' : 'Not detected after installing - check the detection rule.'),
-    ...(x.uninstallExit === null || x.uninstallExit === undefined ? [] : [step([0, 1605, 3010, 1641].includes(x.uninstallExit), `Uninstall command: exit code ${x.uninstallExit}.`), step(!x.detectedAfterUninstall, x.detectedAfterUninstall ? 'Still detected after uninstalling.' : 'Gone after uninstalling.')]));
-  $('sbText').textContent = r.passed ? 'Passed: it installs, is detected, and uninstalls cleanly. Ready to deploy.' : `Not ready: ${r.verdict}`;
-  showSandboxFound(x, r.passed);
-}
-// What Windows listed after the install: the exact name (and version) a detection rule can look for.
-function showSandboxFound(x, passed) {
-  const found = (x.installed || []).filter(e => e && e.name);
-  const box = $('sbFound');
-  box.hidden = !found.length;
-  if (!found.length) { box.replaceChildren(); return; }
-  box.replaceChildren(el('p', { class: 'muted', text: passed ? 'Windows lists it under this name:' : 'Windows lists it under this name. A detection rule can look for it:' }),
-    el('ul', {}, ...found.map((e, i) => {
-      // Each says which entry it takes; one primary; once one is used, the others are off (2.38.0).
-      const b = el('button', { class: 'btn small' + (passed || i ? '' : ' primary'), type: 'button', text: 'Use as the detection rule', 'aria-label': `Use ${e.name} as the detection rule` });
-      b.addEventListener('click', async () => {
-        const all = [...box.querySelectorAll('button')]; for (const x of all) x.disabled = true;
-        const res = await api('/api/sandbox-detection', { name: sbApp, id: sbId, index: i });
-        if (!res.ok) { toast(res.error, true); for (const x of all) x.disabled = false; return; }
-        b.textContent = 'Used'; toast(`Detection now looks for '${res.detectedName}'${res.version ? ` ${res.version} or newer` : ''}${res.uninstallToo ? ' (Uninstall.ps1 too)' : ''} - test again to check.`);
-        loadApps();
-      });
-      return el('li', {}, el('b', { text: e.name }), e.version ? ` ${e.version}` : '', e.publisher ? el('span', { class: 'muted', text: ` - ${e.publisher}` }) : '', ' ', b);
-    })));
-}
-$('btnSbFolder').addEventListener('click', () => api('/api/open', { target: 'sandbox-folder', id: sbId }).then(r => { if (!r.ok) toast(r.error, true); }));
-
 // ---------------------------------------------------------------- detection from an app on this PC
 let installed = [];
 // The server version: the PC's apps come from a script run on that PC, pasted here.
@@ -237,29 +185,6 @@ $('btnDetPasteGo').addEventListener('click', async () => {
   if (!r.ok) { $('dpError').textContent = r.error; $('dpError').hidden = false; return; }
   applyDetection(r); $('dlgDetPaste').close();
 });
-// The Sandbox test as a zip for a Windows PC (the server version).
-async function downloadSandbox(name) {
-  toast(`Preparing the Sandbox test for ${name}...`);
-  const r = await api('/api/sandbox-package', { name });
-  if (!r.ok) { toast(r.error, true); return; }
-  saveFromUrl(r.url, r.name);
-  toast('Unpack the zip on a Windows PC with Windows Sandbox, then right-click Start-Test.ps1 > Run with PowerShell - it says how the test went. Then upload its result.json here.', false, [{ label: 'Upload test result', run: () => uploadSandboxResult(name) }]);
-}
-// The server version (2.36.0): the result.json the test on a PC wrote, shown here as a test run - with its detection rule to take.
-function uploadSandboxResult(name) {
-  const inp = el('input', { type: 'file', accept: '.json,application/json', hidden: true });
-  inp.addEventListener('change', async () => {
-    const f = inp.files && inp.files[0]; inp.remove(); if (!f) return;
-    if (f.size > 65536) { toast("That's too large for a test result - choose the result.json from the test's folder.", true); return; }
-    const r = await api('/api/sandbox-result-upload', { name, text: await f.text() });
-    if (!r.ok) { toast(r.error, true); return; }
-    sbId = r.id; sbApp = name; $('sbFound').replaceChildren(); $('sbFound').hidden = true;
-    $('sbTitle').textContent = `Test of ${name} on a PC`;
-    $('sbText').textContent = 'The result Start-Test.ps1 wrote:'; $('sbSteps').replaceChildren(); $('sbLog').textContent = '';
-    $('dlgSandbox').showModal(); await pollSandbox();
-  });
-  document.body.append(inp); inp.click();
-}
 $('btnDetFromPc').addEventListener('click', async () => {
   $('inRows').replaceChildren(el('tr', {}, el('td', { colspan: 4, class: 'muted', text: 'Reading the apps installed here...' })));
   $('inFilter').value = ''; $('dlgInstalled').showModal(); $('inFilter').focus();

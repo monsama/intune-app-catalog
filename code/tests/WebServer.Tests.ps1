@@ -515,14 +515,6 @@ try {
     Check ($addI.ok -and $upApp.metadata.installCommand -eq '"zz-tool-setup.exe" /S' -and $upApp.metadata.uninstallCommand -like '*Uninstall.ps1' -and $upApp.deploy.detection.type -eq 'Script' -and @($upApp.requiredFor) -contains 'SG-ZZ-Up' -and $upApp.metadata.publisher -eq 'ZZ Vendor' -and
         (Test-Path -LiteralPath (Join-Path $upDir 'zz-tool-setup.exe')) -and (Test-Path -LiteralPath (Join-Path $upDir 'Uninstall.ps1'))) 'add apps: the installer becomes an own package - commands, detection, groups, the file and Uninstall.ps1 in its folder' ($addI | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/add-installer' @{ uploadId = $up.uploadId; name = 'again' }).ok) 'add apps: an upload is added once'
-    # 2.36.0: a Sandbox result from a PC, uploaded - shown as a test, its detection rule taken; the app's own Uninstall.ps1 follows the name.
-    Check (-not (Invoke-Api '/api/sandbox-result-upload' @{ name = $upName; text = 'not a result' }).ok) 'sandbox upload: a file that is not a test result is refused'
-    $sbUp = Invoke-Api '/api/sandbox-result-upload' @{ name = $upName; text = '{"before":false,"installExit":0,"detectedAfterInstall":true,"uninstallExit":0,"detectedAfterUninstall":false,"installed":[{"name":"ZZ Tool Suite","version":"1.2.3","publisher":"ZZ Vendor"}]}' }
-    $sbRes = if ($sbUp.ok) { Invoke-Api '/api/sandbox-result' @{ id = $sbUp.id } } else { $null }
-    Check ($sbUp.ok -and $sbRes.ok -and $sbRes.done -and $sbRes.passed -and @($sbRes.result.installed)[0].name -eq 'ZZ Tool Suite') 'sandbox upload: kept like a test run here - passed, with what Windows listed' (@($sbUp, $sbRes) | ConvertTo-Json -Compress -Depth 5)
-    $sbDet = Invoke-Api '/api/sandbox-detection' @{ name = $upName; id = $sbUp.id; index = 0 }
-    $unText = Get-Content -LiteralPath (Join-Path $upDir 'Uninstall.ps1') -Raw
-    Check ($sbDet.ok -and $sbDet.uninstallToo -and $unText -match 'ZZ\\ Tool\\ Suite' -and $unText -match '^# Uninstalls the app') "sandbox detection: the app's own Uninstall.ps1 looks for the same name" (@($sbDet, $unText.Substring(0, [Math]::Min(300, $unText.Length))) | ConvertTo-Json -Compress)
     # Before sending: what doesn't fit together in the package - shown by Checks (no connection needed).
     Remove-Item -LiteralPath (Join-Path $upDir 'Uninstall.ps1') -Force
     $pkgChk = Invoke-Api '/api/checks-run' @{ names = @($upName) }
@@ -623,15 +615,6 @@ try {
     $scDir = [string]$addS.folder
     Check ($addS.ok -and $scApp.deploy.detection.type -eq 'Registry' -and $scApp.deploy.detection.value -eq '2.0' -and $scApp.metadata.installCommand -like '*-File .\Install.ps1' -and (Test-Path -LiteralPath (Join-Path $scDir 'Install.ps1')) -and $scApp.managedUpdates) 'add apps: a script app - Install.ps1 in its folder, detected by its version marker, managed updates on' ($addS | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/add-script' @{ name = $scName; version = '2.0'; install = $tpls.templates[1].install; uninstall = 'x' }).ok) 'add apps: a name already in the catalog is refused'
-    # The Sandbox test as a zip (what the server version offers): the package, run.ps1 and Start-Test.ps1, served once.
-    $sbz = Invoke-Api '/api/sandbox-package' @{ name = $scName }
-    $sbFile = Join-Path ([System.IO.Path]::GetTempPath()) ('ica-test-sandbox-' + [guid]::NewGuid().ToString('N') + '.zip')
-    if ($sbz.ok) { try { Invoke-WebRequest -Uri ($url.TrimEnd('/') + [string]$sbz.url) -OutFile $sbFile -UseBasicParsing -ErrorAction Stop } catch { } }
-    $sbEntries = @()
-    if (Test-Path -LiteralPath $sbFile) { Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue; $zf = [System.IO.Compression.ZipFile]::OpenRead($sbFile); try { $sbEntries = @($zf.Entries | ForEach-Object { $_.FullName -replace '\\', '/' }) } finally { $zf.Dispose() } }
-    Check ($sbz.ok -and $sbz.name -like 'Sandbox-test-*.zip' -and $sbEntries -contains 'Start-Test.ps1' -and $sbEntries -contains 'run.ps1' -and ($sbEntries -contains 'package/Install.ps1')) 'sandbox test: a zip with Start-Test.ps1, run.ps1 and the package (the server version)' (($sbEntries -join ', ') + ' ' + ($sbz | ConvertTo-Json -Compress))
-    Check (-not (Invoke-Api '/api/sandbox-package' @{ name = $testName }).ok) 'sandbox test: refused for a Winget app (the Sandbox has no winget)'
-    Remove-Item -LiteralPath $sbFile -Force -ErrorAction SilentlyContinue
     # A new version: the detection rule and the script's version marker move together.
     $scQ = Invoke-Api '/api/app-quick' @{ name = $scName; field = 'appVersion'; value = '2.5' }
     $scApp2 = (Invoke-Api '/api/app-get' @{ name = $scName }).app
@@ -800,7 +783,7 @@ try {
     [void](Invoke-Api '/api/app-remove' @{ name = $psName }); Remove-Item -LiteralPath $psDir -Recurse -Force -ErrorAction SilentlyContinue
     Check (-not (Invoke-Api '/api/permission-check').ok) 'permissions: the check needs a connection'
 
-    # Conveniences: group suggestions, profiles, the grid, Home, lists, Sandbox, icons.
+    # Conveniences: group suggestions, profiles, the grid, Home, lists, icons.
     $gsug = Invoke-Api '/api/group-suggest' @{ q = 'SG' }
     Check ($gsug.ok -and @($gsug.groups).Count -ge 1 -and @($gsug.groups | Where-Object { $_.source -eq 'entra' }).Count -eq 0) 'group picker: suggestions from the catalog without a connection - Entra ID isn''t asked' ($gsug | ConvertTo-Json -Compress -Depth 3)
     Check (-not (Invoke-Api '/api/group-check' @{ names = @('SG-X') }).checked) 'group picker: no check against Entra ID without a connection'
@@ -850,30 +833,15 @@ try {
     $st = Invoke-Api '/api/package-list' @{ starter = $true }
     Check ($st.ok -and $st.starter -and @($st.items).Count -ge 20 -and @($st.items | Where-Object { $_.recommended }).Count -eq 8 -and @($st.items | Where-Object { $_.id -eq 'Mozilla.Firefox' -and $_.name -and $_.category -and $_.why }).Count -eq 1) 'recommended apps: the starter set, each with its name, category and why' ($st | ConvertTo-Json -Compress -Depth 3)
     Check ((Invoke-Api '/api/installed-apps').ok) 'detection from this PC: the installed apps can be listed (empty off Windows)'
-    Check (-not (Invoke-Api '/api/sandbox-start' @{ name = "$testName renamed" }).ok) 'sandbox: a Winget app (or no Sandbox here) is refused'
-    Check (-not (Invoke-Api '/api/sandbox-result' @{ id = '../x' }).ok) 'sandbox: an unknown test id is refused'
-    # A test's result names what Windows listed: that becomes the detection rule (2.35.0).
-    $sbBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [System.IO.Path]::GetTempPath() }
-    $sbId = '20261122-101010-' + ([guid]::NewGuid().ToString('N').Substring(0, 4))
-    $sbDir = Join-Path (Join-Path (Join-Path $sbBase 'IntuneAppCatalog') 'sandbox') $sbId
-    [void](New-Item -ItemType Directory -Path $sbDir -Force)
-    Set-Content -LiteralPath (Join-Path $sbDir 'result.json') -Value '{"before":false,"installExit":0,"detectedAfterInstall":false,"installed":[{"name":"Contoso Widget (x64)","version":"4.2.1","publisher":"Contoso"}]}'
-    try {
-        Check (-not (Invoke-Api '/api/sandbox-detection' @{ name = "$testName renamed"; id = '../x'; index = 0 }).ok) 'sandbox detection: an unknown test id is refused'
-        Check (-not (Invoke-Api '/api/sandbox-detection' @{ name = "$testName renamed"; id = $sbId; index = 3 }).ok) 'sandbox detection: an entry the result does not have is refused'
-        $sbd = Invoke-Api '/api/sandbox-detection' @{ name = "$testName renamed"; id = $sbId; index = 0 }
-        $sbApp = (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app
-        Check ($sbd.ok -and $sbd.detectedName -eq 'Contoso Widget' -and $sbd.version -eq '4.2.1' -and $sbApp.deploy.detection.type -eq 'Script' -and $sbApp.deploy.detection.script -like '*Contoso*Widget*4.2.1*') 'sandbox detection: the name Windows listed becomes a script detection rule' (@($sbd, $sbApp.deploy.detection) | ConvertTo-Json -Compress -Depth 4)
-    }
-    finally { Remove-Item -LiteralPath $sbDir -Recurse -Force -ErrorAction SilentlyContinue }
     # Duplicate app: a copy with the same groups and settings, under a new name.
     $dupBad = Invoke-Api '/api/app-duplicate' @{ name = "$testName renamed"; newName = "$testName renamed" }
     Check (-not $dupBad.ok) 'duplicate: the same name is refused' ($dupBad | ConvertTo-Json -Compress)
     $dupTwin = Invoke-Api '/api/app-duplicate' @{ name = "$testName renamed"; newName = ("$testName renamed" -replace ' ', '-') }
     Check (-not $dupTwin.ok -and $dupTwin.error -like '*packages folder*') 'duplicate: a name that would share the original''s file and packages folder is refused' ($dupTwin | ConvertTo-Json -Compress)
+    $sbApp = (Invoke-Api '/api/app-get' @{ name = "$testName renamed" }).app
     $dup = Invoke-Api '/api/app-duplicate' @{ name = "$testName renamed"; newName = "$testName copy" }
     $dupApp = (Invoke-Api '/api/app-get' @{ name = "$testName copy" }).app
-    Check ($dup.ok -and $dupApp -and -not $dupApp.appId -and $dupApp.deploy.detection.type -eq 'Script' -and @($dupApp.requiredFor).Count -eq @($sbApp.requiredFor).Count) 'duplicate: a copy with the settings and groups, no App ID' (@($dup, $dupApp) | ConvertTo-Json -Compress -Depth 4)
+    Check ($dup.ok -and $dupApp -and -not $dupApp.appId -and $dupApp.deploy.detection.type -eq $sbApp.deploy.detection.type -and @($dupApp.requiredFor).Count -eq @($sbApp.requiredFor).Count) 'duplicate: a copy with the settings and groups, no App ID' (@($dup, $dupApp) | ConvertTo-Json -Compress -Depth 4)
     [void](Invoke-Api '/api/app-remove' @{ name = "$testName copy" })
     # Default assignment profile for new apps.
     [void](Invoke-Api '/api/prefs-save' @{ profiles = @(@{ name = 'Standard'; required = @('SG-ZZ-All'); available = @(); exclude = @('SG-ZZ-Kiosk') }) })
