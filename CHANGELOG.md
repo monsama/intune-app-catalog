@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.38.25
+
+- **Recommended apps**: Snapform Viewer (Ringler.SnapformViewer - Snapform forms,
+  .qdf) in Files and documents, and eDrawings Viewer (SolidWorks.eDrawings - CAD
+  drawings and 3D models without a CAD licence) in Media and design.
+
 ## 2.38.24
 
 - **Add apps > Microsoft 365**: a tab of its own for Intune's Microsoft 365 Apps -
