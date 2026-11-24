@@ -390,11 +390,26 @@ function Global:Copy-WebUploadInto {
     param($u, [string]$Folder, [switch]$Replace)
     if ($Replace -and (Test-Path -LiteralPath $Folder)) { Get-ChildItem -LiteralPath $Folder -Force | Remove-Item -Recurse -Force }
     if (-not (Test-Path -LiteralPath $Folder)) { [void](New-Item -ItemType Directory -Path $Folder -Force) }
-    if ($u.Kind -eq 'file') { Copy-Item -LiteralPath $u.Path -Destination (Join-Path $Folder $u.FileName) -Force; return @($u.FileName) }
+    # A file it replaces goes to Backups first (2.38.23) - like a save in the script editor; links are never written through.
+    $keep = {
+        param($dest)
+        if (-not (Test-Path -LiteralPath $dest -PathType Leaf)) { return }
+        if ((Get-Item -LiteralPath $dest -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "$(Split-Path $dest -Leaf) in the package folder is a link - not replaced." }
+        $dir = Join-Path (Join-Path (Get-AppFolder -Kind Backups -Create) ('upload-replaced_' + (Get-Date -Format 'yyyy-MM-dd'))) (Split-Path $Folder -Leaf)
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        $copy = Join-Path $dir ("$(Get-Date -Format 'HHmmss')_" + (Split-Path $dest -Leaf)); $n = 1
+        while (Test-Path -LiteralPath $copy) { $n++; $copy = Join-Path $dir ("$(Get-Date -Format 'HHmmss')-$($n)_" + (Split-Path $dest -Leaf)) }
+        Copy-Item -LiteralPath $dest -Destination $copy
+        Add-WebCopyRecord $copy
+    }
+    if ((Test-Path -LiteralPath $Folder) -and ((Get-Item -LiteralPath $Folder -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) { throw "The package folder is a link - nothing was copied into it." }
+    if ($u.Kind -eq 'file') { $dest = Join-Path $Folder $u.FileName; & $keep $dest; Copy-Item -LiteralPath $u.Path -Destination $dest -Force; return @($u.FileName) }
     $sep = [System.IO.Path]::DirectorySeparatorChar
     $written = foreach ($f in @(Get-PackageFolderFiles $u.Root)) {
         $dest = Join-Path $Folder ($f.path -replace '\\', $sep)
         $d = Split-Path -Parent $dest; if (-not (Test-Path -LiteralPath $d)) { [void](New-Item -ItemType Directory -Path $d -Force) }
+        if ((Get-Item -LiteralPath $d -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "$($f.path): its folder in the package is a link - nothing more was copied." }
+        if (-not $Replace) { & $keep $dest }
         Copy-Item -LiteralPath (Join-Path $u.Root ($f.path -replace '\\', $sep)) -Destination $dest -Force
         $f.path
     }
@@ -459,7 +474,7 @@ function Global:Add-WebInstallerApp {
         $other = @(Get-PackageFolderFiles $folder | Where-Object { $u.Kind -ne 'file' -or $_.path -ne $u.FileName })
         if ($other.Count) { return @{ ok = $false; error = "$folder already holds files ($($other[0].path)) - choose another name, or empty that folder first." } }
     }
-    [void](Copy-WebUploadInto $u $folder)
+    try { [void](Copy-WebUploadInto $u $folder) } catch { return @{ ok = $false; error = $_.Exception.Message } }
     $setup = if ($u.Kind -eq 'file') { '' } else { [string]$u.Setup }
     if ($p.NeedsUninstallScript) {
         $label = if ($u.Info.ProductName) { $u.Info.ProductName } else { $name }
@@ -517,7 +532,7 @@ function Global:Set-WebAppInstaller {
         if ($a.managedUpdates -and $a.appId) { return @{ ok = $false; error = "$($a.appName) has managed updates - a new installer goes through Release new version (Updates), pilot first." } }
         if ($mode -notin 'replace', 'add') { return @{ ok = $false; needsChoice = $true; existing = $have.Count; error = "Its packages folder already holds $($have.Count) file(s) - replace them, or add to them?" } }
     }
-    $written = @(Copy-WebUploadInto $u $folder -Replace:($mode -eq 'replace'))
+    try { $written = @(Copy-WebUploadInto $u $folder -Replace:($mode -eq 'replace')) } catch { return @{ ok = $false; error = $_.Exception.Message } }
     $p = $u.Proposal; $info = $u.Info
     $setup = if ($u.Kind -eq 'file') { [string]$u.FileName } else { [string]$u.Setup }
     if ($p.NeedsUninstallScript -and -not (Test-Path -LiteralPath (Join-Path $folder 'Uninstall.ps1'))) {

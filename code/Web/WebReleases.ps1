@@ -293,6 +293,7 @@ function Global:Set-WebManagedUpdates {
     $skipped = New-Object System.Collections.Generic.List[string]
     foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { $names -contains $_.appName })) {
         if ($on -and (Test-StoreProductId ([string]$a.wingetId))) { $skipped.Add("$($a.appName) (a Microsoft Store app - the Store updates it)"); continue }
+        if ($on -and $a.office -and -not $a.wingetId) { $skipped.Add("$($a.appName) (Microsoft 365 Apps - Microsoft updates it on its update channel)"); continue }
         if ($on -and -not $a.wingetId) {
             $why = Test-VersionDetectionRule $(if ($a.metadata) { $a.metadata.detectionRule })
             if ($why) { $skipped.Add("$($a.appName) (its detection rule doesn't compare a version)"); continue }

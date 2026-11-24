@@ -1828,3 +1828,7 @@ dialog .wctl { z-index: 6; }
 .officebox .ochecks label.chk { margin: 0; }
 /* Store, Microsoft 365 and Microsoft's own apps (2.38.22): no version of their own to set - Microsoft or the Store keeps it. */
 #dlgApp.is-special label:has(#mAppVersion) { display: none; }
+/* 2.38.23: Checks that couldn't compare everything - the shield in the warning colour, not the all-clear one. */
+#checkEmpty.partial .emptyicon { color: var(--warn); }
+/* Menu items that don't apply now: visibly greyed out, not just a slightly lighter text. */
+.menu button:disabled { opacity: .45; }

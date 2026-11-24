@@ -107,6 +107,12 @@ function Global:Write-WebTextFile {
         'ansi' { Get-WebAnsiEncoding }
         default { New-Object System.Text.UTF8Encoding($false) }
     }
+    # A character the file's code page doesn't have would be written as '?' (2.38.23): refused, not lost.
+    if ($As.Encoding -eq 'ansi') {
+        $strict = [System.Text.Encoding]::GetEncoding($e.CodePage, [System.Text.EncoderFallback]::ExceptionFallback, [System.Text.DecoderFallback]::ExceptionFallback)
+        try { [void]$strict.GetBytes($t) }
+        catch { throw "The file is saved in the $($e.WebName) code page, which has no character for something you typed (e.g. an emoji or a non-Western letter). Take it out - or save the file as UTF-8 outside the app." }
+    }
     [System.IO.File]::WriteAllText($Path, $t, $e)
 }
 
@@ -175,6 +181,8 @@ function Global:Save-WebPackageScript {
     $p = Resolve-WebPackageScript -Name ([string]$Data.name) -File ([string]$Data.file)
     if (-not $p.Ok) { return @{ ok = $false; error = $p.Error } }
     $text = [string]$Data.text
+    # As on opening (2.38.23): only files the editor could open, and no more text than it would show.
+    if ((Get-Item -LiteralPath $p.Path).Length -gt 262144 -or $text.Length -gt 262144) { return @{ ok = $false; error = "$($Data.file) is larger than 256 KB - edit it outside the app." } }
     return (Invoke-WithCatalogLock {
             # Checked again under the lock, right before writing: the folder or file can't have become a link meanwhile.
             $again = Resolve-WebPackageScript -Name ([string]$Data.name) -File ([string]$Data.file)
@@ -185,10 +193,18 @@ function Global:Save-WebPackageScript {
             $old = if ($isPs) { Read-WebScriptText $p.Path } else { $was.Text }
             $check = if ($isPs) { Test-PackageScriptEdit -Old $old -New $text } else { Test-WebPackageTextFile -File ([string]$Data.file) -Text $text }
             if (-not $check.Ok) { return @{ ok = $false; error = $check.Error; errors = @($check.Errors) } }
-            $dir = Get-WebScriptCopyFolder
+            # A file in a code page: everything typed must fit it - checked before anything is written (2.38.23).
+            if (-not $isPs -and $was.Encoding -eq 'ansi') {
+                $cp = (Get-WebAnsiEncoding).CodePage
+                try { [void]([System.Text.Encoding]::GetEncoding($cp, [System.Text.EncoderFallback]::ExceptionFallback, [System.Text.DecoderFallback]::ExceptionFallback)).GetBytes($text) }
+                catch { return @{ ok = $false; error = "$($Data.file) is saved in code page $cp (ANSI), which has no character for something you typed (an emoji or a non-Western letter, say) - take it out, or save the file as UTF-8 outside the app. Nothing was saved." } }
+            }
+            # A folder per app (2.38.23): "<app>_<file>" in one name was ambiguous - app "My" with Tool_Install.ps1 and app
+            # "My_Tool" with Install.ps1 gave the same name, and Previous version could load the other app's file.
+            $dir = Join-Path (Get-WebScriptCopyFolder) (Get-SafeFileNameForApp -Name $p.App)
             if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
-            $copy = Join-Path $dir ("$(Get-Date -Format 'HHmmss')_$(Get-SafeFileNameForApp -Name $p.App)_$($Data.file)"); $n = 1
-            while (Test-Path -LiteralPath $copy) { $n++; $copy = Join-Path $dir ("$(Get-Date -Format 'HHmmss')-$($n)_$(Get-SafeFileNameForApp -Name $p.App)_$($Data.file)") }
+            $copy = Join-Path $dir ("$(Get-Date -Format 'HHmmss')_$($Data.file)"); $n = 1
+            while (Test-Path -LiteralPath $copy) { $n++; $copy = Join-Path $dir ("$(Get-Date -Format 'HHmmss')-$($n)_$($Data.file)") }
             Copy-Item -LiteralPath $p.Path -Destination $copy
             Add-WebCopyRecord $copy
             # Scripts: UTF-8 with a BOM (Windows PowerShell 5.1 reads a file without one in the ANSI code page - umlauts break).
@@ -208,10 +224,16 @@ function Global:Get-WebPackageScriptPrevious {
     if (-not $p.Ok) { return @{ ok = $false; error = $p.Error } }
     $backups = Get-AppFolder -Kind Backups
     if (-not (Test-Path -LiteralPath $backups)) { return @{ ok = $false; error = 'No earlier version in Backups.' } }
-    # HHmmss[-n]_<app>_<file>: the whole rest compared, so "My_Tool" never takes Tool's copies.
-    $want = "$(Get-SafeFileNameForApp -Name $p.App)_$($Data.file)"
-    $copies = @(Get-ChildItem -LiteralPath $backups -Directory -Filter 'script-edit_*' -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -File -ErrorAction SilentlyContinue } |
-            Where-Object { $_.Name -match '^\d{6}(-\d+)?_(.+)$' -and [string]::Equals($Matches[2], $want, [StringComparison]::OrdinalIgnoreCase) } | Sort-Object { $_.Directory.Name }, { $_.Name } -Descending)
+    # script-edit_<date>\<app>\HHmmss[-n]_<file> (2.38.23). Copies from before, HHmmss[-n]_<app>_<file> in the day's folder,
+    # only where that name can't be another app's file: neither the app's name nor the file's has an underscore.
+    $safe = Get-SafeFileNameForApp -Name $p.App
+    $legacyOk = -not $safe.Contains('_') -and -not ([string]$Data.file).Contains('_')
+    $days = @(Get-ChildItem -LiteralPath $backups -Directory -Filter 'script-edit_*' -ErrorAction SilentlyContinue)
+    $copies = @(@(foreach ($day in $days) {
+                $own = Join-Path $day.FullName $safe
+                if (Test-Path -LiteralPath $own -PathType Container) { Get-ChildItem -LiteralPath $own -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d{6}(-\d+)?_(.+)$' -and [string]::Equals($Matches[2], [string]$Data.file, [StringComparison]::OrdinalIgnoreCase) } }
+                if ($legacyOk) { Get-ChildItem -LiteralPath $day.FullName -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d{6}(-\d+)?_(.+)$' -and [string]::Equals($Matches[2], "$($safe)_$($Data.file)", [StringComparison]::OrdinalIgnoreCase) } }
+            }) | Where-Object { $_.Length -le 262144 } | Sort-Object { $_.FullName.Substring($backups.Length) -replace '[\\/][^\\/]+[\\/](\d{6})', '/$1' } -Descending)
     # The version marker as the current file has it now (a release may have moved it since): the copy can then be saved again.
     $isPs = [string]$Data.file -match '(?i)\.ps1$'
     $current = if ($isPs) { Read-WebScriptText $p.Path } else { '' }
@@ -221,7 +243,8 @@ function Global:Get-WebPackageScriptPrevious {
         $text = if ($isPs) { Read-WebScriptText $c.FullName } else { (Read-WebTextFile $c.FullName).Text }
         if ($mv.Success) { $text = (Set-MarkerScriptVersion -Text $text -Version ($mv.Groups[1].Value -replace "''", "'")).Text }
         # When it was kept (the folder's date and the copy's time), not when that version was first written.
-        $at = if ($c.Directory.Name -match '^script-edit_\d{4}-\d{2}-\d{2}$') { '{0} {1}:{2}' -f $c.Directory.Name.Substring(12), $c.Name.Substring(0, 2), $c.Name.Substring(2, 2) } else { $c.LastWriteTime.ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture) }
+        $dayDir = if ($c.Directory.Name -match '^script-edit_') { $c.Directory } else { $c.Directory.Parent }
+        $at = if ($dayDir.Name -match '^script-edit_\d{4}-\d{2}-\d{2}$') { '{0} {1}:{2}' -f $dayDir.Name.Substring(12), $c.Name.Substring(0, 2), $c.Name.Substring(2, 2) } else { $c.LastWriteTime.ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture) }
         return @{ ok = $true; text = $text; at = $at }
     }
     return @{ ok = $false; error = $(if ($copies.Count) { 'The copies in Backups were changed outside the app - none is taken.' } else { 'No earlier version in Backups yet - one is kept each time you save.' }) }

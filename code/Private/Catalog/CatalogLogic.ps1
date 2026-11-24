@@ -2214,7 +2214,7 @@ function Global:Get-StarterAppSet {
       Get-OfficeDefaultSettings) and Company Portal (its Microsoft Store app).
     #>
     return @(
-        [ordered]@{ id = (Get-OfficeStarterId); name = 'Microsoft 365 Apps'; category = 'Microsoft'; recommended = $true; why = 'Word, Excel, Outlook, PowerPoint, OneNote and Teams - Intune''s own Office app: Monthly Enterprise Channel, 64-bit, the language of Windows, older Office removed (each changeable in the editor).' },
+        [ordered]@{ id = (Get-OfficeStarterId); name = 'Microsoft 365 Apps'; category = 'Microsoft'; recommended = $true; why = 'Word, Excel, Outlook, PowerPoint, OneNote, Teams, OneDrive and Access - Intune''s own Office app: Monthly Enterprise Channel, 64-bit, the language of Windows, older Office removed (each changeable in the editor).' },
         [ordered]@{ id = '9WZDNCRFJ3PZ'; name = 'Company Portal'; category = 'Microsoft'; recommended = $true; why = 'Where users install the apps they are offered (Available) - the Microsoft Store app, kept up to date by the Store.' },
         [ordered]@{ id = 'Mozilla.Firefox'; name = 'Mozilla Firefox'; category = 'Browsers'; recommended = $true; why = 'A second browser beside Edge - many sites and admins expect one.' },
         [ordered]@{ id = 'Google.Chrome'; name = 'Google Chrome'; category = 'Browsers'; recommended = $true; why = 'Chrome''s enterprise MSI - installs for all users, managed by policy.' },
@@ -2649,7 +2649,7 @@ function Global:Get-NonPackageAppHint {
     $m = $App.metadata
     if (($t -and (Test-PackagedIntuneAppType $t)) -or [string]$App.packagePath -or ($m -and ([string]$m.installCommand).Trim() -and $m.detectionRule)) { return '' }
     $n = ([string]$App.appName).Trim()
-    if (Test-CompanyPortalName $n) { return "Company Portal is a Microsoft Store app: put 9WZDNCRFJ3PZ in its Winget ID and it's sent as one - nothing to package." }
+    if (Test-CompanyPortalName $n) { return "Company Portal is a Microsoft Store app: put 9WZDNCRFJ3PZ in its Store product ID and it's sent as one - nothing to package." }
     if ($n -match '^(Microsoft\s+)?(365|Office)\b|^Microsoft 365 Apps') { return "$n is Intune's own Microsoft 365 Apps - set it to install from Microsoft 365 in the editor (Basics > Installs from) and it's sent with its settings - nothing to package." }
     return ''
 }
@@ -3281,7 +3281,7 @@ function Global:ConvertFrom-StoreSearchResult {
 function Global:Get-OfficeAppKeys {
     # Pure: the apps of Microsoft 365 Apps Intune can leave out (its excludedApps), with the names people know.
     return [ordered]@{ access = 'Access'; bing = 'Bing (search in the browser)'; excel = 'Excel'; groove = 'OneDrive for Business (Groove)'; infoPath = 'InfoPath'
-        lync = 'Skype for Business'; oneDrive = 'OneDrive'; oneNote = 'OneNote'; outlook = 'Outlook'; powerPoint = 'PowerPoint'; publisher = 'Publisher'
+        lync = 'Skype for Business'; oneDrive = 'OneDrive'; oneNote = 'OneNote'; outlook = 'Outlook'; powerPoint = 'PowerPoint'; publisher = 'Publisher (retired)'
         sharePointDesigner = 'SharePoint Designer'; teams = 'Teams'; visio = 'Visio'; word = 'Word' }
 }
 
@@ -3300,9 +3300,10 @@ function Global:Get-OfficeDefaultSettings {
     <#
       Pure: Microsoft 365 Apps as most organisations deploy it - Monthly Enterprise Channel (one update a month, on
       Patch Tuesday), 64-bit, the language of Windows, older Office removed first, no shared computer activation; left
-      out: what is retired or replaced (Groove, Skype for Business, InfoPath, SharePoint Designer, Bing).
+      out: what is retired or replaced (Groove, Skype for Business, InfoPath, SharePoint Designer, Publisher, Bing) and
+      Visio, which needs a licence of its own (2.38.23).
     #>
-    return [ordered]@{ channel = 'monthlyEnterprise'; architecture = 'x64'; locales = @(); excluded = @('bing', 'groove', 'infoPath', 'lync', 'sharePointDesigner')
+    return [ordered]@{ channel = 'monthlyEnterprise'; architecture = 'x64'; locales = @(); excluded = @('bing', 'groove', 'infoPath', 'lync', 'publisher', 'sharePointDesigner', 'visio')
         sharedActivation = $false; removeOlder = $true }
 }
 
@@ -3311,16 +3312,33 @@ function Global:ConvertTo-OfficeSettings {
     param($Raw)
     if (-not $Raw) { return $null }
     $get = { param($k) if ($Raw -is [System.Collections.IDictionary]) { if ($Raw.Contains($k)) { $Raw[$k] } } else { $Raw.$k } }
+    # Whether a setting is there at all: an empty list ("no apps left out") is a choice, not a missing value (2.38.23) -
+    # through & $get it came back as nothing, and the default exclusions returned.
+    $has = { param($k) if ($Raw -is [System.Collections.IDictionary]) { $Raw.Contains($k) } else { [bool]$Raw.PSObject.Properties[$k] } }
     $d = Get-OfficeDefaultSettings
-    $ch = [string](& $get 'channel'); if (-not (Get-OfficeChannels).Contains($ch)) { $ch = $d.channel }
+    $ch = "$(& $get 'channel')"; if (-not $ch -or -not (Get-OfficeChannels).Contains($ch)) { $ch = $d.channel }
     $arch = if ([string](& $get 'architecture') -eq 'x86') { 'x86' } else { 'x64' }
-    $locales = @(@(& $get 'locales') | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Where-Object { $_ -match '^[a-z]{2,3}-[a-z]{2,4}$' } | Select-Object -Unique -First 20)
+    $locales = @(@(& $get 'locales') | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Where-Object { $_ -match '^[a-z]{2,3}(-[a-z0-9]{2,8}){1,2}$' } | Select-Object -Unique -First 20)
     $keys = @((Get-OfficeAppKeys).Keys)
-    $exRaw = & $get 'excluded'
-    $excluded = if ($null -eq $exRaw) { @($d.excluded) } else { @(@($exRaw) | ForEach-Object { $k = [string]$_; @($keys | Where-Object { $_ -ieq $k })[0] } | Where-Object { $_ } | Select-Object -Unique) }
+    # Not through if/else or & - both turn an empty list into nothing.
+    $exRaw = $null; $exHas = & $has 'excluded'
+    if ($Raw -is [System.Collections.IDictionary]) { if ($exHas) { $exRaw = $Raw['excluded'] } } elseif ($exHas) { $exRaw = $Raw.PSObject.Properties['excluded'].Value }
+    [string[]]$excluded = @($d.excluded)
+    if ($exHas -and $null -ne $exRaw) { [string[]]$excluded = @(@($exRaw) | ForEach-Object { $k = [string]$_; @($keys | Where-Object { $_ -ieq $k })[0] } | Where-Object { $_ } | Select-Object -Unique) }
     $sa = & $get 'sharedActivation'; $ro = & $get 'removeOlder'
     return [ordered]@{ channel = $ch; architecture = $arch; locales = $locales; excluded = $excluded
         sharedActivation = [bool]$sa; removeOlder = $(if ($null -eq $ro) { $true } else { [bool]$ro }) }
+}
+
+function Global:ConvertFrom-OfficeSuiteApp {
+    # Pure (2.38.23): Intune's Microsoft 365 Apps (officeSuiteApp, as Graph gives it) as the catalog's settings.
+    param($App)
+    if (-not $App) { return $null }
+    $ex = $App.excludedApps
+    $left = @(foreach ($k in (Get-OfficeAppKeys).Keys) { if ($ex -and $ex.$k -eq $true) { $k } })
+    return (ConvertTo-OfficeSettings ([ordered]@{ channel = [string]$App.updateChannel; architecture = [string]$App.officePlatformArchitecture
+                locales = @($App.localesToInstall); excluded = $left; sharedActivation = [bool]$App.useSharedComputerActivation
+                removeOlder = [bool]$App.shouldUninstallOlderVersionsOfOffice }))
 }
 
 function Global:ConvertTo-OfficeSuiteBody {

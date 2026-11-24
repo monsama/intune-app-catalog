@@ -847,6 +847,8 @@ try {
         Check ($o365Save.ok -and $o365After.office.channel -eq 'current' -and $o365After.office.architecture -eq 'x86' -and (@($o365After.office.excluded) -join ',') -eq 'teams' -and $o365After.office.sharedActivation -and -not $o365After.office.removeOlder) 'Microsoft 365 Apps: its settings saved from the editor and read back' (@($o365Save, $o365After.office) | ConvertTo-Json -Compress -Depth 4)
         $o365Row = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $o365Name })[0]
         Check ($o365Row.office -and $o365Row.officeText -like 'Current Channel, 32-bit, de-de*without Teams' -and -not $o365Row.msHint) 'Microsoft 365 Apps: the list says its settings in one line' ($o365Row | ConvertTo-Json -Compress -Depth 4)
+        $o365Dup = Invoke-Api '/api/app-duplicate' @{ name = $o365Name; newName = "$o365Name copy" }
+        Check (-not $o365Dup.ok -and $o365Dup.error -like '*one per catalog*') 'Microsoft 365 Apps: not duplicated (one per catalog)' ($o365Dup | ConvertTo-Json -Compress)
         $stO = Invoke-Api '/api/package-list' @{ starter = $true }
         Check (@($stO.items | Where-Object { $_.id -eq 'Microsoft.365Apps.Intune' -and $_.inCatalog -eq $o365Name }).Count -eq 1) 'recommended apps: Microsoft 365 Apps shown as already in the catalog' ''
         $o365Off = $o365After; $o365Off | Add-Member -NotePropertyName office -NotePropertyValue $false -Force

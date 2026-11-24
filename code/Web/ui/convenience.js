@@ -455,7 +455,7 @@ async function wauSwitch() {
   const noV = p.apps.filter(a => !a.hasVersion).map(a => a.app), dep = p.apps.filter(a => a.deployed).map(a => a.app);
   if (!(await ask(`Switch ${p.apps.length} app(s) from Winget-AutoUpdate to ${managedDefault ? 'managed updates' : 'the winget command'}?\n\n${p.apps.slice(0, 12).map(a => a.app).join(', ')}${p.apps.length > 12 ? ', ...' : ''}\n\n` +
     (managedDefault ? `Each installs its App version with winget from then on, and new versions go to the pilot groups first.` : 'Each installs with the winget command from then on (Settings: Winget apps install with).') + ` Their dependency on Winget-AutoUpdate is removed.` +
-    (managedDefault && noV.length ? ` ${noV.length} have no App version yet - those in Intune install the newest until then, the others can't be sent until they have one (Take winget's version).` : '') +
+    (managedDefault && noV.length ? ` ${noV.length} have no App version yet - those in Intune install the newest until then, the others can't be sent until they have one (Pin newest in their side panel).` : '') +
     (dep.length ? ` The ${dep.length} in Intune get the new commands pushed.` : ''), { ok: 'Switch them' }))) return;
   const r = await api('/api/wau-switch', {});
   if (!r.ok) { toast(r.error, true); return; }

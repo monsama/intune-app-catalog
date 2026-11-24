@@ -492,7 +492,7 @@ function renderList() {
     // The starter set: a heading per category, the app's name and why beside its Winget ID.
     // A plain cell (2.38.1): the table's heading cells stay at the top while it scrolls, and a category heading did too - over the column names.
     const head = x.category && x.category !== cat ? [el('tr', { class: 'grouprow' }, el('td', { colspan: 3, text: (cat = x.category) }))] : [];
-    const what = x.name ? el('td', {}, el('b', { text: x.name }), ' ', x.recommended ? el('span', { class: 'pill info', text: 'common', title: 'Nearly every organisation deploys it' }) : '', ' ', el('span', { class: 'mono muted', text: x.id }), x.why ? el('div', { class: 'muted small', text: x.why }) : '')
+    const what = x.name ? el('td', {}, el('b', { text: x.name }), ' ', x.recommended ? el('span', { class: 'pill info', text: 'common', title: 'Nearly every organisation deploys it' }) : '', ' ', el('span', { class: 'mono muted', text: x.id === 'Microsoft.365Apps.Intune' ? "Intune's Office app" : isStoreId(x.id) ? `Store ${x.id}` : x.id }), x.why ? el('div', { class: 'muted small', text: x.why }) : '')
       : el('td', { class: 'mono', text: x.id });
     return [...head, el('tr', { class: x.inCatalog ? 'dim' : '' }, el('td', { class: 'chk' }, box), what, el('td', { text: x.inCatalog || '-' }))];
   }));
