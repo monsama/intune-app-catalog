@@ -167,7 +167,7 @@ function Global:Invoke-WebChecks {
     $rows = @($findings | ForEach-Object { ConvertTo-WebFindingRow $_ })
     Write-Log "[INFO] Checks: $($rows.Count) finding(s). $summary $($notes -join ' ')"
     return @{ ok = $true; findings = $rows; notes = $notes.ToArray(); summary = $summary; deployed = @($apps | Where-Object { $_.appId } | ForEach-Object { $_.appName }).Count
-        winget = @($apps | Where-Object { $_.wingetId } | ForEach-Object { $_.appName }).Count; connected = [bool]($read -and $read.ok) }
+        winget = @($apps | Where-Object { $_.wingetId -and -not (Test-StoreProductId ([string]$_.wingetId)) } | ForEach-Object { $_.appName }).Count; connected = [bool]($read -and $read.ok) }
 }
 
 function Global:Start-WebCheckDetails {
@@ -253,7 +253,9 @@ function Global:Complete-WebCheckAssign {
 function Global:Invoke-WebCheckWinget {
     # Asks winget about each Winget ID (or -names'). One at a time: winget is a process each time, and they share one source cache.
     param($Data)
-    $apps = @(Get-WebCheckApps -Names @($Data.names) | Where-Object { $_.wingetId })
+    # Store product IDs aren't winget packages (2.38.32): winget's index doesn't have them, so every Store app showed
+    # "Winget no longer has this package" - they are asked of the Store's own catalog (the Store tab) instead.
+    $apps = @(Get-WebCheckApps -Names @($Data.names) | Where-Object { $_.wingetId -and -not (Test-StoreProductId ([string]$_.wingetId)) })
     if ($apps.Count -eq 0 -and -not @(Get-WebCheckApps -Names @($Data.names) | Where-Object { -not $_.wingetId -and $_.watchWinget }).Count) { return @{ ok = $true; areas = @('Winget ID'); names = @(); findings = @() } }
     if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not (Test-WingetIndexUsable)) { return @{ ok = $false; error = "winget.exe isn't on this machine, so Winget IDs can't be checked. It comes with the 'App Installer' package on Windows 10 and 11." } }
     $results = @($apps | ForEach-Object { Test-WingetPackageId -AppName $_.appName -WingetId $_.wingetId })

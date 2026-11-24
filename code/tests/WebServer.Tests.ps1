@@ -340,6 +340,11 @@ try {
     Check (-not (Invoke-Api '/api/checks-details' @{ names = @($rn) }).ok) 'checks: the detailed check needs a deployed app and a connection'
     $cw = Invoke-Api '/api/checks-winget' @{ names = @($rn) }
     Check ($cw.ok -or $cw.error -like '*winget*') 'checks: winget is asked, or says it is missing' ($cw | ConvertTo-Json -Compress -Depth 5)
+    # 2.38.32: a Microsoft Store app's ID isn't asked of winget (its index doesn't have Store IDs - "no longer has this package").
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = 'ZZ Store Check'; wingetId = '9WZDNCRFJ3PZ'; appId = ''; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @() } })
+    $cws = Invoke-Api '/api/checks-winget' @{ names = @('ZZ Store Check') }
+    Check ($cws.ok -and -not @($cws.findings).Count) 'checks: a Store app is not checked against winget' ($cws | ConvertTo-Json -Compress -Depth 5)
+    [void](Invoke-Api '/api/app-remove' @{ name = 'ZZ Store Check' })
     Check (-not (Invoke-Api '/api/winget-search' @{ q = 'a' }).ok) 'winget search: a one-letter search is refused'
     Check (-not (Invoke-Api '/api/checks-fix' @{ action = 'SetWingetId'; catalogName = $rn; value = 'bad id"; calc' }).ok) 'checks fix: a Winget ID winget would not accept is refused'
     $before = (Invoke-Api '/api/app-get' @{ name = $rn }).app

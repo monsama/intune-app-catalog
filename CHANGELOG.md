@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.38.32
+
+- **Checks kept showing one app only**: after "Checks" for one app (Apps list,
+  Microsoft 365, ...), the "Only <app>" filter stayed when Checks was opened again
+  from Home or the menu - "0 finding(s)" while other apps had some. Opening Checks
+  any other way now shows every app, and with the filter on, the count says how
+  many findings the other apps have.
+- **Checks: "Winget no longer has this package" for Store apps** (Company Portal):
+  Store product IDs were checked against winget's index, which doesn't have them.
+  Store apps aren't asked of winget any more.
+
 ## 2.38.31
 
 Full sweep (GUI alignment on every page and dialog, security, bugs).
