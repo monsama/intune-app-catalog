@@ -189,6 +189,26 @@ try {
       await page.click('#atab-installer');
       check(await page.isVisible('#aiDrop'), `${label}: Add apps has a drop zone for an installer`);
       await a11y('Add apps (installer)');
+      // 2.38.18: Detected by chosen in the dialog - and several files at once go up together, as one folder.
+      const det = await page.evaluate(() => {
+        showUploadReview({ ok: true, fileName: 'ClientSetup.exe', size: 1000, kind: 'exe', exeKind: 'inno', name: 'apm system2', publisher: 'APM', version: '2.1', installCommand: '"ClientSetup.exe" /VERYSILENT', uninstallCommand: 'x', detection: 'Script', notes: [], managedOk: false });
+        const out = { proposed: aiDetection(), proposedText: document.getElementById('aiDetType').selectedOptions[0].textContent };
+        const t = document.getElementById('aiDetType'); t.value = 'registry'; t.dispatchEvent(new Event('change'));
+        out.innoKey = document.getElementById('aiDetKey').value; out.blocked = document.getElementById('btnAddGo').disabled;
+        document.getElementById('aiDetKey').value = 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A6917EBF-00FC-419B-A5D0-42F265CD9C85}_is1';
+        document.getElementById('aiDet32').checked = true; document.getElementById('aiDetKey').dispatchEvent(new Event('input'));
+        out.rule = aiDetection(); out.boxShown = !document.getElementById('aiDetBox').hidden; out.free = !document.getElementById('btnAddGo').disabled;
+        const f = n => new File(['x'], n);
+        out.many = pickFromFiles([f('login.xml'), f('ClientSetup.exe'), f('loneos.inf')]);
+        out.many = { folderName: out.many.folderName, count: out.many.files.length };
+        out.one = !!pickFromFiles([f('ClientSetup.exe')]).file;
+        t.value = 'proposed'; t.dispatchEvent(new Event('change'));
+        return out;
+      });
+      check(det.proposed === null && /Proposed: A script/.test(det.proposedText) && /\{AppId\}_is1$/.test(det.innoKey) && det.blocked && det.boxShown && det.free
+        && det.rule.Type === 'Registry' && det.rule.Reg_ValueName === 'DisplayVersion' && det.rule.Reg_DetectionType === 'version' && det.rule.Reg_DetectionValue === '2.1' && det.rule.Reg_Check32Bit === true
+        && det.many.folderName === 'ClientSetup' && det.many.count === 3 && det.one, `${label}: Detected by is chosen in the Add dialog (Inno: the _is1 key to fill in), and several files go up together`, JSON.stringify(det));
+      await page.evaluate(() => resetInstaller());
       await page.click('#atab-script');
       await page.waitForFunction(() => document.getElementById('asTemplate').options.length > 0 && /IntuneAppCatalog/.test(document.getElementById('asInstall').value));
       await page.fill('#asName', 'ZZ UI script');

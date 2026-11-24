@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.38.18
+
+- **Detected by, chosen in Add apps > Installer**: besides the app's proposal,
+  a file (exists, or version at least) or a registry value (key exists, or a
+  value's version at least), each with "32-bit app" - right there, before the
+  app is added. For an Inno Setup installer it starts on the registry rule with
+  the `Uninstall\{AppId}_is1` key to fill in (DisplayVersion, at least the
+  version). When nothing is proposed (a folder whose setup is install.ps1),
+  "Add and send" waits until a rule is chosen - Intune takes no app without one.
+- **Detection by the name Windows lists**: "apm system2 Version 2.1" now counts
+  as "apm system2" in version 2.1 ("Version" / "Ver." before the number) - the
+  proposed script would never have found it. Existing scripts keep working.
+- **Several files at once**: dropping or choosing several files (the setup with
+  its .xml, .inf, .cfg...) uploads all of them together, as one folder named
+  after the setup file - before, only the first one was taken. Folders dropped
+  along with them keep their subfolders. Also in the editor's upload.
+
 ## 2.38.17
 
 - **Edit a package's text files in the app**: the file list on the editor's
