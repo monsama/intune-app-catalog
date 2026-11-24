@@ -10,6 +10,18 @@
 - **Checks: "Winget no longer has this package" for Store apps** (Company Portal):
   Store product IDs were checked against winget's index, which doesn't have them.
   Store apps aren't asked of winget any more.
+- **Checks review** (every kind of finding, for false alarms):
+  - iOS, Android and macOS apps in the tenant are no longer "In Intune, not in the
+    catalog" with Add to catalog - the catalog is for Windows, as the Apps page.
+  - An App ID typed in capitals no longer reads as "not in Intune any more" (with
+    Clear App ID offered).
+  - A dependency list Intune couldn't be asked for is "could not check", not "Intune
+    has (none)" - Take from Intune would have wiped the catalog's.
+  - Store apps and Microsoft 365 Apps: no permanent "Dependencies differ" (those
+    Intune types take none from here).
+  - Nightly run: apps whose groups it pushed back are "fixed", no longer "differ
+    from Intune" on Home; it never creates groups unattended (a mistyped group name
+    made an empty one); Home reads the last full nightly run, not a fast-track run.
 
 ## 2.38.31
 

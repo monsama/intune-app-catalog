@@ -129,7 +129,11 @@ function Global:Invoke-WebChecks {
                 # which would otherwise get the whole list as a single item.
                 $items.ToArray()
             }
+            # Windows apps only (2.38.32): the tenant's iOS, Android and macOS apps were "in Intune, not in the catalog" -
+            # with Add to catalog - while the Apps page leaves them out, as this catalog is for Windows.
+            $winTypes = '^(win32LobApp|winGetApp|windowsMicrosoftEdgeApp|officeSuiteApp|windowsMobileMSI|windowsUniversalAppX|windowsStoreApp|microsoftStoreForBusinessApp|windowsWebApp|webApp|windowsAppX|win32CatalogApp)$'
             $intuneApps = @(& $pages 'https://graph.microsoft.com/beta/deviceAppManagement/mobileApps?$select=id,displayName&$top=999' |
+                Where-Object { -not [string]$_.'@odata.type' -or (([string]$_.'@odata.type') -replace '^#?microsoft\.graph\.', '') -match $winTypes } |
                 ForEach-Object { [pscustomobject]@{ id = [string]$_.id; displayName = [string]$_.displayName } })
             # Only the groups the catalog names, 15 to a request - not every group
             # and user in the tenant, which in a big one is hundreds of pages.
@@ -210,11 +214,12 @@ function Global:Complete-WebCheckDetails {
         }
         # A Microsoft Store app has no install commands or detection in Intune to compare - its settings aren't checked.
         $isStore = (Test-StoreProductId ([string]$app.wingetId)) -or [bool]$app.office
-        foreach ($f in @(Get-AppDetailFindings -CatalogApp $app -Result $one)) { if ($isStore -and [string]$f.Area -eq 'Metadata') { continue }; $new.Add($f) }
+        # Nor their dependencies (2.38.32): Intune's Store and Microsoft 365 app types take none from here - a permanent "differ".
+        foreach ($f in @(Get-AppDetailFindings -CatalogApp $app -Result $one)) { if ($isStore -and [string]$f.Area -in 'Metadata', 'Dependencies') { continue }; $new.Add($f) }
         $texts = Get-AuditSummaryTexts -CatalogApp $app -Result $one
         # Store apps and Microsoft 365 Apps: their settings aren't compared (above) - the audit says OK for them too (2.38.31:
         # Home kept "differs" for fields Intune doesn't have on those types).
-        if ($isStore) { $texts.Metadata = 'OK' }
+        if ($isStore) { $texts.Metadata = 'OK'; $texts.Dependencies = 'OK' }
         Set-LastAuditCacheEntry -AppName ([string]$one.AppName) -Metadata $texts.Metadata -Groups $texts.Groups -Dependencies $texts.Dependencies
     }
     Save-LastAuditCache

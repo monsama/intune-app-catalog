@@ -442,7 +442,8 @@ try {
             })
 
             foreach ($gName in @(@($desiredEntries | ForEach-Object { $_.Group }) | Select-Object -Unique)) {
-                Resolve-GroupId -GroupName $gName -CreateIfMissing $true | Out-Null
+                # The nightly run sends CreateMissingGroups = false (2.38.32): no group is made unattended.
+                Resolve-GroupId -GroupName $gName -CreateIfMissing ($Config.CreateMissingGroups -ne $false) | Out-Null
             }
             # Nothing differs: nothing is sent (sending replaces every assignment, and would lose their settings for no reason).
             if ($toRemove.Count -eq 0 -and $toAdd.Count -eq 0) { continue }

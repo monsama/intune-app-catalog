@@ -20,7 +20,8 @@ function Global:Get-IntuneCatalogDrift {
     # direction below - a catalog entry can only be flagged as genuinely
     # deleted if its own stored ID isn't in this set at all, not just
     # absent from a name-based lookup.
-    $intuneIds = New-Object System.Collections.Generic.HashSet[string]
+    # Any case (2.38.32): an App ID typed in capitals read as "not in Intune any more", with Clear App ID offered.
+    $intuneIds = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach ($ia in $IntuneApps) { [void]$intuneIds.Add($ia.id) }
 
     $missing = New-Object System.Collections.Generic.List[object]

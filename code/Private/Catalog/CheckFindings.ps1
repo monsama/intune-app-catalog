@@ -143,9 +143,11 @@ function Global:Get-AuditSummaryTexts {
         $groupsText = Format-GroupFieldDiffs -Diffs $groupDiffs
     }
     else { $groupsText = "Failed: could not fetch live assignments" }
+    $depsUnknown = $Result.PSObject.Properties['DependenciesFetchOk'] -and -not $Result.DependenciesFetchOk
     $liveDeps = @(@($Result.Metadata.dependencies) | Where-Object { $_ } | Sort-Object)
     $localDeps = @(@($CatalogApp.metadata.dependencies) | Where-Object { $_ } | Sort-Object)
-    if (($liveDeps -join "|") -eq ($localDeps -join "|")) { $depsText = "OK" }
+    if ($depsUnknown) { $depsText = "Failed: could not fetch the dependencies" }
+    elseif (($liveDeps -join "|") -eq ($localDeps -join "|")) { $depsText = "OK" }
     else {
         $liveText = if ($liveDeps.Count -gt 0) { $liveDeps -join ", " } else { "(none)" }
         $localText = if ($localDeps.Count -gt 0) { $localDeps -join ", " } else { "(none)" }
@@ -185,7 +187,10 @@ function Global:Get-AppDetailFindings {
             -Intune ((@($gd | ForEach-Object { "$($_.Field): $(Get-CheckValueText $_.Remote)" })) -join "; ") `
             -Actions @("Pull", "PushGroups") -Data ([pscustomobject]@{ Diffs = $gd })))
     }
-    if ($texts.Dependencies -ne "OK") {
+    if ($texts.Dependencies -like "Failed*") {
+        $findings.Add((New-CheckFinding -Area "Dependencies" -App $name -CatalogName $name -AppId $id -Problem $texts.Dependencies -Failed -Actions @("Recheck")))
+    }
+    elseif ($texts.Dependencies -ne "OK") {
         $parts = $texts.Dependencies -split ' \| Intune has: ', 2
         $findings.Add((New-CheckFinding -Area "Dependencies" -App $name -CatalogName $name -AppId $id -Problem "Dependencies differ" `
             -Catalog ($parts[0] -replace '^Catalog has: ', '') -Intune $(if ($parts.Count -gt 1) { $parts[1] } else { "" }) `
