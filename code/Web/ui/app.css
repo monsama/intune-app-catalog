@@ -1821,3 +1821,8 @@ dialog .wctl { z-index: 6; }
 .srcpick button:last-of-type { border-radius: 0 var(--r-m) var(--r-m) 0; }
 .srcpick button[aria-checked="true"] { background: var(--accent-soft); color: var(--info); border-color: var(--accent); position: relative; z-index: 1; font-weight: 600; }
 .srcpick button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; position: relative; z-index: 2; }
+/* Microsoft 365 Apps (2.38.21): its settings in the editor - the apps as a grid of ticks. */
+.officebox .policy { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+.officebox .officeapps { margin: 4px 0 8px; }
+.officebox .ochecks { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 2px 12px; margin-top: 4px; }
+.officebox .ochecks label.chk { margin: 0; }

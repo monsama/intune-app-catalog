@@ -219,6 +219,13 @@ $testableFunctionNames = @(
     "Get-AppUpdateOffer",
     "ConvertTo-PsLiteral",
     "Get-InstalledNamePattern",
+    "Get-OfficeAppKeys",
+    "Get-OfficeStarterId",
+    "Get-OfficeChannels",
+    "Get-OfficeDefaultSettings",
+    "ConvertTo-OfficeSettings",
+    "ConvertTo-OfficeSuiteBody",
+    "Get-OfficeSettingsSummary",
     "Test-StoreProductId",
     "Get-PermissionReport",
     "Set-PsadtTemplateValues",
@@ -894,6 +901,12 @@ $tplEvil = @(Get-ScriptAppTemplates -Name $evil -Version "1.0'; Write-Output x; 
 Assert-Equal 0 @($tplEvil | Where-Object { $e = $null; [void][System.Management.Automation.Language.Parser]::ParseInput($_.install + "`n" + $_.uninstall, [ref]$null, [ref]$e); @($e).Count }).Count "Get-ScriptAppTemplates: a hostile name or version still gives valid scripts"
 $pat = Get-InstalledNamePattern 'Microsoft Teams'
 Assert-True ('Microsoft Teams' -match $pat -and 'Microsoft Teams 24.1 (x64)' -match $pat -and 'Microsoft Teams Meeting Add-in' -notmatch $pat -and 'Microsoft Teams classic' -notmatch $pat) "Get-InstalledNamePattern: the product, with a version or (x64) - not a sibling product"
+# Microsoft 365 Apps (2.38.21): the settings kept, and Intune's body made from them.
+$offD = ConvertTo-OfficeSettings @{ channel = 'nonsense'; architecture = 'x86'; locales = @('de-CH', 'bad locale', 'fr-fr'); excluded = @('TEAMS', 'unknown', 'groove'); sharedActivation = $true }
+Assert-True ($offD.channel -eq 'monthlyEnterprise' -and $offD.architecture -eq 'x86' -and (@($offD.locales) -join ',') -eq 'de-ch,fr-fr' -and (@($offD.excluded) -join ',') -eq 'teams,groove' -and $offD.sharedActivation -and $offD.removeOlder) "ConvertTo-OfficeSettings: only known values; an unknown channel falls back to the default"
+$offB = ConvertTo-OfficeSuiteBody -Name 'Microsoft 365 Apps' -Description '' -Settings @{ channel = 'current'; excluded = @('teams') }
+Assert-True ($offB.'@odata.type' -eq '#microsoft.graph.officeSuiteApp' -and $offB.updateChannel -eq 'current' -and $offB.excludedApps.teams -eq $true -and $offB.excludedApps.word -eq $false -and $offB.autoAcceptEula -and (@($offB.productIds) -join '') -eq 'o365ProPlusRetail' -and $offB.officePlatformArchitecture -eq 'x64') "ConvertTo-OfficeSuiteBody: Intune's officeSuiteApp with every app in excludedApps"
+Assert-True ((Get-OfficeSettingsSummary (Get-OfficeDefaultSettings)) -like "Monthly Enterprise Channel, 64-bit, Windows' language; without *Skype for Business*") "Get-OfficeSettingsSummary: the defaults in one line"
 $patV = Get-InstalledNamePattern 'apm system2'
 Assert-True ('apm system2 Version 2.1' -match $patV -and 'apm system2 v2.1' -match $patV -and 'apm system2 Viewer' -notmatch $patV) "Get-InstalledNamePattern (2.38.18): 'Version 2.1' after the name counts as its version"
 Assert-True ('Tool [beta]' -match (Get-InstalledNamePattern 'Tool [beta]')) "Get-InstalledNamePattern: brackets in a name are matched as text"
@@ -1009,7 +1022,7 @@ $msiApp = [pscustomobject]@{ managedUpdates = $true; wingetId = ''; appName = 'M
 Assert-True ((Set-ManagedAppPin $msiApp -ProductCode '{22222222-2222-2222-2222-222222222222}') -and $msiApp.metadata.uninstallCommand -eq 'msiexec /x {22222222-2222-2222-2222-222222222222} /qn' -and $msiApp.metadata.detectionRule.Msi_Version -eq '2.0') "Set-ManagedAppPin: a new MSI's product code reaches the uninstall command too"
 
 # Microsoft's own apps aren't packages
-Assert-True ((Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Company Portal'; wingetId = '' })) -like '*9WZDNCRFJ3PZ*' -and (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Microsoft 365 Apps'; wingetId = '' })) -like '*Intune itself*' -and
+Assert-True ((Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Company Portal'; wingetId = '' })) -like '*9WZDNCRFJ3PZ*' -and (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Microsoft 365 Apps'; wingetId = '' })) -like '*Installs from*' -and -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Microsoft 365 Apps'; wingetId = ''; office = (Get-OfficeDefaultSettings) })) -and
     (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Teams'; wingetId = ''; intuneAppType = 'Microsoft Store app (new)' })) -like "*own app type*" -and -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'LOB Tool'; wingetId = '' })) -and -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Company Portal'; wingetId = '9WZDNCRFJ3PZ' })) -and
     -not (Get-NonPackageAppHint ([pscustomobject]@{ appName = 'Microsoft 365 Apps for enterprise'; wingetId = ''; metadata = [pscustomobject]@{ installCommand = 'setup.exe /configure config.xml'; detectionRule = [pscustomobject]@{ Type = 'File' } } }))) "Get-NonPackageAppHint: Company Portal, Microsoft 365 Apps and non-Win32 types need no package; an own installer does"
 
@@ -3300,7 +3313,8 @@ Assert-True ($null -eq (ConvertTo-PlainJsonValue $null) -and (ConvertTo-Json -In
 $starter = @(Get-StarterAppSet)
 $sIds = @($starter | ForEach-Object { $_.id })
 Assert-True ($starter.Count -ge 20 -and @($sIds | Select-Object -Unique).Count -eq $sIds.Count -and -not @($starter | Where-Object { $_.id -notmatch '^[A-Za-z0-9][A-Za-z0-9._+\-]{0,127}$' -or -not $_.name -or -not $_.category -or -not $_.why }).Count) "Starter set: unique, valid Winget IDs, each with a name, category and why"
-Assert-True (@($starter | Where-Object recommended).Count -eq 8 -and (@('Mozilla.Firefox', 'Google.Chrome', 'VideoLAN.VLC', 'EclipseAdoptium.Temurin.21.JRE', '7zip.7zip') | Where-Object { $sIds -notcontains $_ }).Count -eq 0) "Starter set: the eight recommended ones, Firefox, Chrome, VLC, Java and 7-Zip among them"
+Assert-True ($sIds[0] -eq (Get-OfficeStarterId) -and $sIds[1] -eq '9WZDNCRFJ3PZ' -and $starter[0].category -eq 'Microsoft' -and $starter[1].recommended) "Starter set (2.38.21): Microsoft 365 Apps and Company Portal first"
+Assert-True (@($starter | Where-Object recommended).Count -eq 10 -and (@('Mozilla.Firefox', 'Google.Chrome', 'VideoLAN.VLC', 'EclipseAdoptium.Temurin.21.JRE', '7zip.7zip') | Where-Object { $sIds -notcontains $_ }).Count -eq 0) "Starter set: the ten recommended ones, Firefox, Chrome, VLC, Java and 7-Zip among them"
 $cats = @($starter | ForEach-Object { $_.category }); $runs = @(for ($i = 0; $i -lt $cats.Count; $i++) { if ($i -eq 0 -or $cats[$i] -ne $cats[$i - 1]) { $cats[$i] } })
 Assert-True (@($runs | Select-Object -Unique).Count -eq $runs.Count) "Starter set: each category's apps together (the list shows one heading per category)"
 

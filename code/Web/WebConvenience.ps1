@@ -405,7 +405,14 @@ function Global:Read-WebPackageList {
     param($Data)
     # The starter set (2.38.0): the apps most organisations deploy - each with its name, category and why.
     if ($Data.starter) {
-        $have = @{}; foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { $_.wingetId })) { $have[([string]$a.wingetId).ToLowerInvariant()] = [string]$a.appName }
+        $all = @((Read-WebCatalogRecords).Apps)
+        $have = @{}; foreach ($a in @($all | Where-Object { $_.wingetId })) { $have[([string]$a.wingetId).ToLowerInvariant()] = [string]$a.appName }
+        # Microsoft's own two (2.38.21) are in the catalog by what they are, not only by an ID: Company Portal linked
+        # without its Store ID, Microsoft 365 Apps with its settings or by its name.
+        $cp = @($all | Where-Object { Test-CompanyPortalName ([string]$_.appName) }) | Select-Object -First 1
+        if ($cp -and -not $have.ContainsKey('9wzdncrfj3pz')) { $have['9wzdncrfj3pz'] = [string]$cp.appName }
+        $o365 = @($all | Where-Object { $_.office -or (-not $_.wingetId -and ([string]$_.appName).Trim() -match '^(Microsoft\s+)?(365|Office)\b|^Microsoft 365 Apps') }) | Select-Object -First 1
+        if ($o365) { $have[(Get-OfficeStarterId).ToLowerInvariant()] = [string]$o365.appName }
         return @{ ok = $true; starter = $true; items = @(Get-StarterAppSet | ForEach-Object { $k = ([string]$_.id).ToLowerInvariant()
             [ordered]@{ id = $_.id; name = $_.name; category = $_.category; recommended = [bool]$_.recommended; why = $_.why; inCatalog = $(if ($have.ContainsKey($k)) { $have[$k] } else { '' }) } }) }
     }

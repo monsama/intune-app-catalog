@@ -194,6 +194,8 @@ function Global:Get-CatalogRow {
     # that's the only case where a real package IS actually expected.
     # An MSI line-of-business app needs a package too: it is moved to Win32 when it's sent (2.33.0).
     $isKnownNonWin32 = $app.intuneAppType -and -not (Test-PackagedIntuneAppType ([string]$app.intuneAppType))
+    # Microsoft 365 Apps with its settings here (2.38.21): Intune's own Office app before it is sent, too.
+    $isKnownNonWin32 = $isKnownNonWin32 -or [bool]$app.office
     # A stored packagePath counts too, Winget ID or not. "Has a Winget
     # ID" normally means "deploys with the shared init.intunewin", so
     # this column ignored those apps entirely - which made a custom

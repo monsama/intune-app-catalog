@@ -283,6 +283,12 @@ try {
     $pwRow = @($pwPlan.apps) | Where-Object { $_.name -eq $pwName } | Select-Object -First 1
     Check ($pwAdd.ok -and $pwRow -and $pwRow.ready -and @($pwRow.warnings | Where-Object { $_ -like '*Uninstall.ps1*' }).Count -eq 1) 'deploy plan: ready, with a warning for what does not fit together in its package' (@($pwAdd, $pwPlan) | ConvertTo-Json -Compress -Depth 5)
 
+    # 2.38.21: Microsoft 365 Apps - ready to send without a package or a detection rule.
+    $o365 = Invoke-Api '/api/add-winget' @{ items = @(@{ id = 'Microsoft.365Apps.Intune'; name = 'Microsoft 365 Apps' }) }
+    if (@($o365.added).Count) { $created.Add(@($o365.added)[0]) }
+    $o365Plan = if (@($o365.added).Count) { Invoke-Api '/api/deploy-plan' @{ names = @(@($o365.added)[0]) } }
+    Check ($o365Plan.ok -and @($o365Plan.apps)[0].ready -and -not @($o365Plan.apps)[0].reason) 'deploy plan: Microsoft 365 Apps is ready - no package or detection rule needed' (@($o365, $o365Plan) | ConvertTo-Json -Compress -Depth 4)
+
     # Install status: beta refused, v1.0 answers
     $st = Invoke-Api '/api/install-status' @{ name = $linkedName }
     Check ($st.ok -and @($st.rows | Where-Object { -not $_.waiting }).Count -eq 2 -and $st.summary -eq '2 devices: 1 Failed, 1 Installed') 'install status: rows and summary (from v1.0 after beta refused)' ($st | ConvertTo-Json -Compress -Depth 4)

@@ -89,6 +89,9 @@ function Global:Get-WebCatalog {
                 # Company Portal, Microsoft 365 Apps, Store/other Intune types: nothing to package.
                 # 2.38.20: also once it is in Intune (linked) - Company Portal linked without its Store ID showed as "own installer".
                 msHint       = [string]$(if (-not $apps[$i].wingetId) { Get-NonPackageAppHint $apps[$i] })
+                # Microsoft 365 Apps (2.38.21): its settings, and them in one line.
+                office       = $apps[$i].office
+                officeText   = [string]$(if ($apps[$i].office) { Get-OfficeSettingsSummary $apps[$i].office })
                 previousVersions = @(Get-WebPreviousReleases $apps[$i] | ForEach-Object { [string]$_.version })
                 releaseIds   = @(@($apps[$i].releases) | Where-Object { $_ -and $_.appId } | ForEach-Object { ([string]$_.appId).ToLowerInvariant() })
                 retiringSince = [string]$apps[$i].retiringSince
@@ -383,7 +386,7 @@ function Global:Complete-WebJob {
             [void](Update-WebCatalogApp -Name $After.AppName -Change {
                 param($app)
                 if ($newId) { $app.appId = $newId }
-                $app.intuneAppType = $(if ($After.Store) { 'Microsoft Store app (new)' } else { 'Windows app (Win32)' })
+                $app.intuneAppType = $(if ($After.Office) { 'Microsoft 365 Apps (Windows 10 and later)' } elseif ($After.Store) { 'Microsoft Store app (new)' } else { 'Windows app (Win32)' })
                 # It replaced an MSI line-of-business app: that one stays in Intune until it is retired (asked for, not done here).
                 if ($After.ReplacesLobAppId -and $newId) { $app.lobToRetire = ([string]$After.ReplacesLobAppId).ToLowerInvariant() }
                 if (-not $app.metadata -and $defaults) { $app.metadata = $defaults }
@@ -465,7 +468,7 @@ function Global:Get-WebJobPoll {
                 }
                 # What was just sent becomes the "sent" fingerprint (settings, or groups) - a later catalog change shows as Changes to send.
                 if ($response.result -and $response.result.success -and [string]$job.Mode -notmatch '^(Release|Promote|Advance|Withdraw|Retire|Finish|Delete|Roll)') {
-                    $part = switch ([string]$job.Step) { 'createapp' { 's' } 'createstoreapp' { 's' } 'targetedassign' { 'g' } 'batchassign' { 'g' } default { '' } }
+                    $part = switch ([string]$job.Step) { 'createapp' { 's' } 'createstoreapp' { 's' } 'createofficeapp' { 's' } 'targetedassign' { 'g' } 'batchassign' { 'g' } default { '' } }
                     if ($part) { try { Set-WebSentStamp -Names @($job.HistoryApps) -Part $part } catch { Write-Log "[WARN] Couldn't note what was sent: $($_.Exception.Message)" } }
                 }
                 if ($response.result -and $response.result.success) {
@@ -828,6 +831,8 @@ function Global:Get-WebAppSentValues {
     $skip = if ($App.managedUpdates) { @('appVersion', 'installCommand', 'uninstallCommand', 'detectionRule', 'returnCodes') } else { @() }
     $o = [ordered]@{ name = [string]$App.appName }
     if ($m) { foreach ($p in @($m.PSObject.Properties | Sort-Object Name)) { if ($skip -notcontains $p.Name) { $o[$p.Name] = $p.Value } } }
+    # Microsoft 365 Apps (2.38.21): its settings are what Intune gets - in words, so Changes to send can show them.
+    if ($App.office) { $o['office'] = [string](Get-OfficeSettingsSummary $App.office) }
     $sort = { param($l) @(@($l) | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Where-Object { $_ } | Sort-Object -Unique) }
     $g = [ordered]@{ r = (& $sort $App.requiredFor); a = (& $sort $App.availableFor); u = (& $sort $App.uninstallFor); x = (& $sort $App.excludeFor); f = [string]$App.assignmentFilter; fm = [string]$App.assignmentFilterMode }
     return @{ s = $o; g = $g }

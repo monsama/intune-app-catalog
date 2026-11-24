@@ -51,7 +51,8 @@ function Global:Get-WebDeployPlan {
     $plan = foreach ($a in @($order.Ordered)) {
         $unc = Test-AppIsUncommon -App $a
         # A Microsoft Store app: Intune's own Store type - no package, no detection rule, no version to pin.
-        $store = Test-StoreProductId ([string]$a.wingetId)
+        # Microsoft 365 Apps (2.38.21) the same: Intune's own Office app, sent with its settings.
+        $store = (Test-StoreProductId ([string]$a.wingetId)) -or [bool]$a.office
         $pkg = if ($store) { @{ Found = $true } } else { Resolve-AppPackagePath -AppName $a.appName -Uncommon $unc -Index $index -PackagePath $a.packagePath }
         $reason = ''
         if ($a.appId -and $tenantIds -and -not $tenantIds.ContainsKey(([string]$a.appId).ToLowerInvariant())) { $reason = "Its App ID isn't in this tenant (copied from another?) - clear it first: Catalog > Set up this tenant." }
@@ -62,7 +63,7 @@ function Global:Get-WebDeployPlan {
             $reason = if ($unc) { "No package (.intunewin) yet - build it with More > Package." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging builds it." }
         }
         elseif (-not $store -and $a.managedUpdates -and $a.wingetId -and -not (Test-ReleaseVersionText ([string]$(if ($a.metadata) { $a.metadata.appVersion })))) { $reason = "Managed updates deploy a fixed version - set its App version first (More > Take winget's version)." }
-        elseif ($unc -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = "No detection rule yet - an app with its own package needs one (the editor's Install & detection)." }
+        elseif ($unc -and -not $store -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = "No detection rule yet - an app with its own package needs one (the editor's Install & detection)." }
         $lob = $a.appId -and (Test-IntuneLobMsiType ([string]$typeOf[([string]$a.appId).ToLowerInvariant()]))
         # What doesn't fit together (2.36.0): said, not blocking - each can be on purpose.
         $warnings = if ($unc -and -not $store -and -not $reason) { @(Get-WebPackageWarnings $a) } else { @() }
@@ -100,6 +101,19 @@ function Global:Start-WebDeploy {
     $a = $catalog.Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
     if (-not $a) { return @{ ok = $false; error = "'$name' is no longer in the catalog." } }
     $unc = Test-AppIsUncommon -App $a
+    # Microsoft 365 Apps (2.38.21): created (or updated) as Intune's own Office app with the catalog's settings.
+    if ($a.office -and -not $a.wingetId) {
+        if ($Data.metadataOnly -and -not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune yet - send it first." } }
+        $resultPath = Join-Path $env:TEMP (".intunepkg_officeapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
+        $body = ConvertTo-OfficeSuiteBody -Name $a.appName -Description ([string]$(if ($a.metadata) { $a.metadata.description })) -Settings $a.office
+        $config = @{ TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
+            AppName = $a.appName; AppId = [string]$a.appId; Body = $body; OutputResultPath = $resultPath }
+        $busy = Enter-WebAppBusy -Name $a.appName -What 'deploying'; if ($busy) { return @{ ok = $false; error = $busy } }
+        $started = Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedCreateOfficeAppScript -Name 'createofficeapp' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind "$(if ($a.appId) { 'Update' } else { 'Create' }) $name (Microsoft 365 Apps)" `
+            -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $null; WasUpdate = [bool]$a.appId; Office = $true; SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }) }
+        if ($started.ok) { Write-Log "[INFO] Sending $name to Intune as Microsoft 365 Apps ($(Get-OfficeSettingsSummary $a.office))..." }
+        return $started
+    }
     # A Microsoft Store app: created (or updated) as Intune's own Store type - the Store installs and updates it.
     if (Test-StoreProductId ([string]$a.wingetId)) {
         if ($Data.metadataOnly -and -not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune yet - send it first." } }
@@ -245,7 +259,7 @@ function Global:Start-WebPackage {
     param($Data)
     $catalog = Read-WebCatalogRecords
     $names = @($Data.names | ForEach-Object { [string]$_ } | Where-Object { $_ })
-    $own = @($catalog.Apps | Where-Object { Test-AppIsUncommon -App $_ })
+    $own = @($catalog.Apps | Where-Object { (Test-AppIsUncommon -App $_) -and -not $_.office })
     if ($names.Count) { $own = @($own | Where-Object { $names -contains $_.appName }) }
     if ($names.Count -and $own.Count -eq 0) { return @{ ok = $false; error = 'None of the chosen apps has its own installer to package - Winget apps use the shared package.' } }
     $params = @{ InputFolder = (Get-AppFolder -Kind Packages -Create); Force = $true; ToolPath = (Get-PackagingToolPath) }

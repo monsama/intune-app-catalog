@@ -55,6 +55,7 @@ function Global:Get-WebAppEditable {
         autoRelease  = [bool]$App.autoRelease
         downloadUrl  = [string]$App.downloadUrl
         watchWinget  = [string]$App.watchWinget
+        office       = $(if ($App.office) { ConvertTo-OfficeSettings $App.office } else { $null })
         releases     = @(@($App.releases) | ForEach-Object { [ordered]@{ version = [string]$_.version; appId = [string]$_.appId; state = [string]$_.state; at = [string]$_.at; ring = [int]$_.ring; fastTrack = [bool]$_.fastTrack } })
         icon         = $(if ($App.icon -and $App.icon.value) { [ordered]@{ type = [string]$App.icon.type; value = [string]$App.icon.value } } else { $null })
         metadata     = [ordered]@{
@@ -253,6 +254,8 @@ function Global:Merge-WebAppEdit {
         # The chosen setup file stays as it was - uploads and the package file list change it, not the editor's form.
         setupFile        = $(if ($Existing) { [string]$Existing.setupFile } else { '' })
         watchWinget      = $(if ($null -ne $Edit.watchWinget) { $w = ([string]$Edit.watchWinget).Trim(); if (Test-WebWingetId $w) { $w } else { '' } } elseif ($Existing) { [string]$Existing.watchWinget } else { '' })
+        # Microsoft 365 Apps (2.38.21): the editor sends its settings (false: not Microsoft 365), else what it had.
+        office           = $(if ($null -ne $Edit.office) { if ($Edit.office -is [bool]) { $null } else { ConvertTo-OfficeSettings $Edit.office } } elseif ($Existing) { $Existing.office } else { $null })
         # Kept as they were - releases and Send to Intune change them, not the editor.
         blockedVersions  = @($(if ($Existing) { @($Existing.blockedVersions) }) | Where-Object { $_ })
         packageStamp     = $(if ($Existing) { [string]$Existing.packageStamp } else { '' })
@@ -368,6 +371,9 @@ function Global:Save-WebAppHeld {
     if (([string]$edit.watchWinget).Trim() -and -not $record.watchWinget) { return @{ ok = $false; error = "'$(([string]$edit.watchWinget).Trim())' isn't a Winget ID (letters, digits and . _ + -)." } }
     # Watched only for an own package: a Winget app's own ID already says it.
     if ($record.wingetId) { $record.watchWinget = '' }
+    # Microsoft 365 Apps has no Winget ID, no package and no releases of its own - Microsoft updates it on its channel.
+    if ($record.wingetId) { $record.office = $null }
+    if ($record.office) { $record.managedUpdates = $false; $record.watchWinget = ''; $record.autoRelease = $false; $record.downloadUrl = '' }
     if ($record.autoRelease -and ($record.wingetId -or -not $record.managedUpdates)) { $record.autoRelease = $false }
     # The Store updates its own apps: no managed updates for a Microsoft Store app.
     if ($record.managedUpdates -and (Test-StoreProductId ([string]$record.wingetId))) { $record.managedUpdates = $false }

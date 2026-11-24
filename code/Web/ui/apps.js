@@ -156,8 +156,8 @@ function renderApps() {
     const tr = el('tr', { 'data-name': a.name, class: selected.has(a.name) ? 'sel' : '', title: a.appId ? 'App ID ' + a.appId : 'Not in Intune yet' },
       el('td', { class: 'name' }, el('input', { type: 'checkbox', class: 'rowpick', 'aria-label': `Select ${a.name}`, title: 'Select - several at once (Shift: a range)', checked: selected.has(a.name),
         onclick: e => { e.stopPropagation(); pickRow(a.name, e.target.checked, e.shiftKey); }, ondblclick: e => e.stopPropagation() }), iconFor(a), el('span', { class: 'nm', text: a.name, title: a.name.length > 40 ? a.name : null })),
-      el('td', { class: 'mono src', text: a.msHint && !a.wingetId ? 'Microsoft (Intune)' : !a.wingetId ? 'own installer' : isStoreId(a.wingetId) ? `${a.wingetId} (Store)` : a.wingetId,
-        title: !a.wingetId ? 'Its own installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') : isStoreId(a.wingetId) ? 'A Microsoft Store app - Intune\'s own Store type: no package, the Store installs and updates it' : `winget package ${a.wingetId}` }),
+      el('td', { class: 'mono src', text: a.office && !a.wingetId ? 'Microsoft 365 Apps' : a.msHint && !a.wingetId ? 'Microsoft (Intune)' : !a.wingetId ? 'own installer' : isStoreId(a.wingetId) ? `${a.wingetId} (Store)` : a.wingetId,
+        title: a.office && !a.wingetId ? `Intune's own Microsoft 365 Apps - ${a.officeText}` : !a.wingetId ? 'Its own installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') : isStoreId(a.wingetId) ? 'A Microsoft Store app - Intune\'s own Store type: no package, the Store installs and updates it' : `winget package ${a.wingetId}` }),
       el('td', { class: 'num' }, el('span', { class: 'vcell' }, ...versionCell(a))),
       el('td', { title: `Required: ${a.required}, Available: ${a.available}, Uninstall: ${a.uninstall}`, class: a.required + a.available ? '' : 'muted', text: a.required + a.available + a.uninstall ? `${(a.groups || []).length} group${(a.groups || []).length === 1 ? '' : 's'}` : 'nobody yet' }),
       el('td', {}, stageCell(a)),
@@ -253,9 +253,35 @@ function fillEditor(a) {
 // something (an own installer has none), named for what goes in it.
 let editorSrc = 'own';
 function srcFromField() { const v = $('aWinget').value.trim(); return !v ? null : isStoreId(v) ? 'store' : 'winget'; }
+// Microsoft 365 Apps (2.38.21): Intune's own Office app - its settings as the server keeps them (Get-OfficeDefaultSettings, -AppKeys, -Channels).
+const officeChannels = [['monthlyEnterprise', 'Monthly Enterprise Channel - once a month (recommended)'], ['current', 'Current Channel - new features as they come'],
+  ['deferred', 'Semi-Annual Enterprise Channel - twice a year'], ['firstReleaseCurrent', 'Current Channel (Preview)'], ['firstReleaseDeferred', 'Semi-Annual Enterprise Channel (Preview)']];
+const officeApps = [['word', 'Word'], ['excel', 'Excel'], ['powerPoint', 'PowerPoint'], ['outlook', 'Outlook'], ['oneNote', 'OneNote'], ['teams', 'Teams'], ['oneDrive', 'OneDrive'],
+  ['access', 'Access'], ['publisher', 'Publisher'], ['visio', 'Visio (needs its licence)'], ['groove', 'OneDrive for Business (Groove, old)'], ['lync', 'Skype for Business (retired)'],
+  ['infoPath', 'InfoPath (retired)'], ['sharePointDesigner', 'SharePoint Designer (retired)'], ['bing', 'Bing search in the browser']];
+const officeDefaults = () => ({ channel: 'monthlyEnterprise', architecture: 'x64', locales: [], excluded: ['bing', 'groove', 'infoPath', 'lync', 'sharePointDesigner'], sharedActivation: false, removeOlder: true });
+$('oChannel').replaceChildren(...officeChannels.map(([v, t]) => el('option', { value: v, text: t })));
+$('oApps').replaceChildren(...officeApps.map(([k, t]) => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-oapp': k }), t)));
+function fillOffice(o) {
+  const s = { ...officeDefaults(), ...(o || {}) };
+  $('oChannel').value = s.channel; $('oArch').value = s.architecture === 'x86' ? 'x86' : 'x64';
+  $('oLocales').value = (s.locales || []).join(', ');
+  for (const c of document.querySelectorAll('[data-oapp]')) c.checked = !(s.excluded || []).includes(c.dataset.oapp);
+  $('oShared').checked = !!s.sharedActivation; $('oRemoveOlder').checked = s.removeOlder !== false;
+}
+function readOffice() {
+  return { channel: $('oChannel').value, architecture: $('oArch').value, locales: $('oLocales').value.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean),
+    excluded: [...document.querySelectorAll('[data-oapp]')].filter(c => !c.checked).map(c => c.dataset.oapp), sharedActivation: $('oShared').checked, removeOlder: $('oRemoveOlder').checked };
+}
 function showSrc() {
   for (const b of document.querySelectorAll('.srcpick [data-src]')) b.setAttribute('aria-checked', String(b.dataset.src === editorSrc));
-  $('aWingetRow').hidden = editorSrc === 'own';
+  const office = editorSrc === 'office';
+  $('aWingetRow').hidden = editorSrc === 'own' || office;
+  // Microsoft 365: its settings instead of managed updates, a release rule and a package - Microsoft updates it on its channel.
+  $('aOfficeBox').hidden = !office;
+  $('aManaged').parentElement.hidden = office;
+  if (office) { $('aManaged').checked = false; $('aRuleBox').hidden = true; $('aPkgInfo').hidden = true; $('aWatchRow').hidden = true; if ($('aMethodRow')) $('aMethodRow').hidden = true; }
+  if (window.edSrcChanged) edSrcChanged();
   $('aWingetLbl').textContent = editorSrc === 'store' ? 'Store product ID' : 'Winget ID';
   $('aWinget').placeholder = editorSrc === 'store' ? 'e.g. 9WZDNCRFJ3PZ' : 'e.g. 7zip.7zip';
 }
@@ -264,11 +290,13 @@ for (const b of document.querySelectorAll('.srcpick [data-src]')) b.addEventList
   editorSrc = now;
   // What doesn't fit the new choice goes (an own installer has no ID; a Winget ID isn't a Store ID).
   if (f && f !== now) { $('aWinget').value = ''; $('aWinget').dispatchEvent(new Event('input', { bubbles: true })); }
-  showSrc(); if (now !== 'own' && was !== now) $('aWinget').focus();
+  showManagedState(); if (now === 'office') { if (was !== now) $('oChannel').focus(); } else if (now !== 'own' && was !== now) $('aWinget').focus();
+  if (typeof updateReady === 'function') updateReady();
 });
 function showManagedState() {
-  const f = srcFromField(); if (f) editorSrc = f; else if (editorSrc !== 'winget' && editorSrc !== 'store') editorSrc = 'own';
+  const f = srcFromField(); if (f) editorSrc = f; else if (!['winget', 'store', 'office'].includes(editorSrc)) editorSrc = 'own';
   showSrc();
+  if (editorSrc === 'office') return;
   const has = !!$('aWinget').value.trim();
   appVerPick.hide(!has || isStoreId($('aWinget').value.trim()));
   $('aRuleBox').hidden = !$('aManaged').checked;
@@ -301,7 +329,7 @@ let methodSeq = 0, methodTimer = null, editorInstaller = null, editorWingetOffer
 function showPkgInfo() {
   const box = $('aPkgInfo'), v = $('mAppVersion').value.trim(), i = editorInstaller, row = apps.find(a => a.name === editingName);
   // Not for Microsoft's own apps (nothing to package) - and only for an app with a name already saved.
-  box.hidden = !!$('aWinget').value.trim() || !editingName || !!(row && row.msHint);
+  box.hidden = !!$('aWinget').value.trim() || !editingName || !!(row && row.msHint) || editorSrc === 'office';
   if (box.hidden) return;
   const script = /\.ps1\b/i.test($('mInstallCommand').value) && !/\.(msi|exe)\b/i.test($('mInstallCommand').value);
   const managedLocked = !!(row && row.managed && row.appId && i && i.found);
@@ -486,7 +514,7 @@ async function applyMethod() {
 let editorSnapshot = '';
 const editorState = () => [...$('appForm').querySelectorAll('input, textarea, select')].filter(e => e.id !== 'aMethod' && !e.closest('.blockbar')).map(e => e.type === 'checkbox' ? e.checked : e.value).join('\u0001') + '\u0001' + iconChange +
   // A block typed in but not written into the commands yet counts as a change too.
-  '\u0001' + [...document.querySelectorAll('#dlgApp .blockbar input')].filter(i => i.value !== i.defaultValue).length;
+  '\u0001' + [...document.querySelectorAll('#dlgApp .blockbar input')].filter(i => i.value !== i.defaultValue).length + '\u0001' + editorSrc;
 async function closeEditorAsking() {
   if (editorState() !== editorSnapshot && !(await ask(`Discard your changes to ${editingName || 'the new app'}?\n\nNothing you changed in this dialog is saved.`, { ok: 'Discard', danger: true }))) return;
   $('dlgApp').close();
@@ -596,11 +624,13 @@ async function openEditor(name) {
     editingVersion = r.version || '';
     editorInstaller = r.installer || null; editorWingetOffers = r.wingetOffers || '';
     setTimeout(loadPkgFiles, 0);
+    if (r.app.office && !r.app.wingetId) editorSrc = 'office';
+    fillOffice(r.app.office);
     fillEditor(r.app);
     $('knownGroups').textContent = r.knownGroups.length ? 'Groups used in this catalog: ' + r.knownGroups.join(', ') : '';
     $('appTitle').textContent = 'Edit ' + name;
   } else {
-    editorInstaller = null; editorWingetOffers = '';
+    editorInstaller = null; editorWingetOffers = ''; fillOffice(null);
     editorApps = apps.map(a => a.name); editorMinOs = (prefs && prefs.minOsChoices) || [];
     editorIntuneApps = apps.filter(a => a.hasAppId).map(a => ({ name: a.name, appId: a.appId }));
     // A new app starts with the default profile's groups (Settings > Apps & defaults).
@@ -644,6 +674,9 @@ $('appForm').addEventListener('submit', async e => {
   app.detectedName = $('arDetected').value.trim();
   app.autoRelease = $('arAuto').checked && !$('aWinget').value.trim(); app.downloadUrl = $('arUrl').value.trim();
   app.watchWinget = $('aWatch').value.trim();
+  // Microsoft 365 Apps (2.38.21): its settings - false takes them away (another source was chosen).
+  app.office = editorSrc === 'office' && !app.wingetId.trim() ? readOffice() : false;
+  if (app.office) { app.managedUpdates = false; app.autoRelease = false; }
   const r = await api('/api/app-save', { originalName: editingName, version: editingVersion, app });
   if (!r.ok) {
     const p = $('appError'); p.textContent = r.error; p.hidden = false;
@@ -1364,7 +1397,7 @@ function openMenu(x, y) {
   // 2.37.0: what can never apply to the selected apps isn't listed at all - greyed out with a reason stays only
   // what could be made to apply (send it first, select one). A section with nothing left loses its heading too.
   if (any) {
-    const own = sel.some(a => !a.wingetId), winget = sel.some(a => a.wingetId && !isStoreId(a.wingetId));
+    const own = sel.some(a => !a.wingetId && !a.office), winget = sel.some(a => a.wingetId && !isStoreId(a.wingetId));
     const never = {
       package: !own, watchfetch: !own, takeversion: !winget, filldetails: !winget,
       promote: !sel.some(a => a.pilotVersion), withdraw: !sel.some(a => a.pilotVersion),
@@ -1701,6 +1734,7 @@ const lockSvg = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" str
 function versionCell(a) {
   const pilot = a.pilotVersion ? el('span', { class: 'pill warn newer', text: 'pilot ' + a.pilotVersion, title: `${a.pilotVersion} is released to the pilot groups. More > Promote version in pilot gives it to everyone.` }) : '';
   if (a.msHint && !a.wingetId) return [el('span', { class: 'muted', text: '-', title: a.msHint })];
+  if (a.office && !a.wingetId) return [el('span', { class: 'muted', text: 'Microsoft 365', title: 'Microsoft updates it on its update channel - no version to set.' })];
   if (a.wingetId && isStoreId(a.wingetId)) return [el('span', { class: 'muted', text: 'Store', title: 'The Microsoft Store installs and updates it - no version to set.' })];
   // An own package watching a winget package (2.36.0): an arrow when winget has a newer one - Get new installer fetches it.
   const watched = !a.wingetId && a.watchWinget && a.newerOnWinget && !pilot ? el('span', { class: 'pill info newer', text: '→ ' + a.wingetVersion, title: `winget (${a.watchWinget}) has ${a.wingetVersion} - More > Get new installer puts it in its folder, then release it.` }) : '';
