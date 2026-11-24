@@ -49,7 +49,7 @@ function stageOf(a) {
   if (!a.hasAppId) {
     if (a.managed && !own && !a.version) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'Managed updates: it needs the version to start from.', next: { label: 'Pin newest', title: "Pin winget's newest version (another one: Version in the side panel)", run: () => takeVersionFor(a) } };
     // As the editor's "Ready to send?" list: no group yet means Intune would have it for nobody.
-    if (!(a.groups || []).length) return { key: 'ready', label: 'Ready - no groups', cls: 'warn', why: 'Everything else is set - but no group gets it yet, so in Intune nobody would have it. Who gets it is in the editor.', next: { label: 'Groups...', title: 'Set who gets it (editor: Who gets it)', run: () => openEditor(a.name) } };
+    if (!(a.groups || []).length) return { key: 'ready', label: 'Ready - no groups', cls: 'warn', why: 'Everything else is set - but no group gets it yet, so in Intune nobody would have it. Who gets it is in the editor.' };   // 2.38.25: no Groups... button in the list - Who gets it is set in the editor or the side panel
     return { key: 'ready', label: 'Ready to send', cls: 'info', why: 'Everything is set - not in Intune yet.', next: { label: 'Send to Intune', title: 'Create it in Intune', run: () => openDeploy([a.name]) } };
   }
   if (a.pilotVersion) {
