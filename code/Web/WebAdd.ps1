@@ -426,7 +426,9 @@ function Global:Add-WebInstallerApp {
         }.GetNewClosure())
     Remove-Item -LiteralPath (Split-Path $u.Path -Parent) -Recurse -Force -ErrorAction SilentlyContinue
     (Get-WebUploads).Remove([string]$Data.uploadId)
-    Write-Log "[OK] Added $($r.name) from $($u.FileName) ($($p.Detection.Type) detection) - its installer is in $folder."
+    # No detection proposed (a folder whose setup is install.ps1 or a .cmd): said plainly - Intune can't send it without one.
+    $detText = if ($p.Detection -and [string]$p.Detection.Type) { "$($p.Detection.Type) detection" } else { 'no detection rule yet - set one on Install & detection before sending' }
+    Write-Log "$(if ($p.Detection -and [string]$p.Detection.Type) { '[OK]' } else { '[WARN]' }) Added $($r.name) from $($u.FileName) ($detText) - its installer is in $folder."
     return @{ ok = $true; name = $r.name; folder = $folder }
 }
 

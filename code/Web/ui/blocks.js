@@ -362,8 +362,8 @@ const lineHeight = () => parseFloat(getComputedStyle($('seText')).lineHeight) ||
 function status(text, bad) { const s = $('seStatus'); s.classList.toggle('err', !!bad); if (se.lastStatus === text) return; se.lastStatus = text; s.textContent = text; }
 function paintScript() {
   const text = $('seText').value;
-  se.locked = se.detection || se.command ? new Set() : lockedLinesOf(text);
-  $('seHl').innerHTML = highlightPs(text);
+  se.locked = se.detection || se.command || se.plain ? new Set() : lockedLinesOf(text);
+  if (se.plain) $('seHl').textContent = text + '\n'; else $('seHl').innerHTML = highlightPs(text);
   const lines = text.split('\n'), bad = new Set(se.errors.map(x => x.line - 1));
   $('seGutter').replaceChildren(...lines.map((_, i) => el('div', { class: (se.locked.has(i) ? 'lk' : '') + (bad.has(i) ? ' bad' : ''), title: se.locked.has(i) ? 'Locked - the version marker the detection rule reads' : null, text: String(i + 1) })));
   // Locked lines tinted behind the text.
@@ -387,11 +387,12 @@ const checkSoon = (() => { let t = 0; return () => { clearTimeout(t); t = setTim
 async function checkScript() {
   if (se.command) { se.errors = []; $('seErrors').replaceChildren(); paintScript(); return; }
   const seq = ++se.checkSeq, text = $('seText').value;
-  const r = await api('/api/package-script-check', { old: se.detection ? '' : se.original, text });
+  const r = await api('/api/package-script-check', { old: se.detection ? '' : se.original, text, file: se.detection ? '' : se.file });
   if (seq !== se.checkSeq || !r.ok) return;
   se.errors = r.errors || [];
   $('seErrors').replaceChildren(...se.errors.slice(0, 8).map(x => el('li', {}, el('button', { type: 'button', class: 'linkbtn', text: `Line ${x.line}:`, onclick: () => goLine(x.line, x.column) }), ' ' + x.message)));
   if (se.conflict) status("Someone else changed this file since you opened it - close it and open it again (copy what you typed first).", true);
+  else if (r.valid && se.plain) status(text === se.original ? (/\.(xml|config)$/i.test(se.file) ? 'Well-formed XML.' : 'A text file of the package.') : 'Not saved yet.');
   else if (r.valid) status(se.detection ? 'Parses. Apply puts it into the detection rule (Save in the app editor keeps it).' : (text === se.original ? 'Parses. Grey lines are locked - the version marker the detection rule reads.' : 'Parses - not saved yet.'));
   else status(r.error, true);
   paintScript();
@@ -412,7 +413,8 @@ async function openScriptEditor({ name, file, detection, command }) {
   }
   // Already open on the commands: just the other one of the two.
   if (command && d.open && se.command && se.forApp === (editingName || '')) { showCommand(command); return; }
-  Object.assign(se, { detection: !!detection, command: command || '', errors: [], conflict: false, lastStatus: '' });
+  // 2.38.17: a text file of the package (SilentClient.cfg, setup.ini, login.xml) - no PowerShell colours, checks or locked lines.
+  Object.assign(se, { detection: !!detection, command: command || '', errors: [], conflict: false, lastStatus: '', plain: !detection && !command && !!file && !/\.ps1$/i.test(file) });
   d.classList.toggle('cmdmode', !!command);
   $('seText').setAttribute('wrap', command ? 'soft' : 'off');
   $('seBuild').hidden = true;
@@ -440,7 +442,7 @@ async function openScriptEditor({ name, file, detection, command }) {
     // A textarea keeps line ends as \n: compared that way, an unchanged file isn't "changed" (the server writes Windows line ends).
     Object.assign(se, { name, file, hash: r.hash, original: r.text.replace(/\r\n?/g, '\n') });
     $('seTitle').textContent = `${file} - ${name}`;
-    $('seSub').textContent = `In ${r.folder}. Runs as SYSTEM from the package folder. Saving keeps the earlier one in Backups; the package needs building again.`;
+    $('seSub').textContent = se.plain ? `In ${r.folder}. A file of the package (its setup or the app reads it) - saved in the encoding it has. Saving keeps the earlier one in Backups; the package needs building again.` : `In ${r.folder}. Runs as SYSTEM from the package folder. Saving keeps the earlier one in Backups; the package needs building again.`;
     $('seTabs').replaceChildren(...r.files.map(f => el('button', { type: 'button', class: 'setab', 'aria-pressed': String(f === file), text: f, title: `Open ${f}`, onclick: async () => { if (f === se.file || !(await leaveScript())) return; openScriptEditor({ name, file: f }); } })));
   }
   se.want = lockedText(se.original); se.good = se.original;

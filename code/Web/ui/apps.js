@@ -320,6 +320,9 @@ function pkgFilesView() {
     f.path.toLowerCase() === setup.toLowerCase() ? el('span', { class: 'pill ok', text: 'setup', title: 'The setup file Package uses' })
       // Not the uninstall script (2.38.0): it was offered as a setup file too.
       : /\.(msi|exe|ps1)$/i.test(f.path) && !/(^|[\\/])uninstall\.ps1$/i.test(f.path) ? el('button', { type: 'button', class: 'linkish', text: 'Use as setup', title: 'Package uses this file as the setup file', onclick: () => setPkgSetup(f.path) }) : el('span'),
+    // 2.38.17: scripts and the text files a setup reads (directly in the folder) open in the code editor.
+    !/[\\/]/.test(f.path) && /\.(ps1|cfg|ini|xml|txt|cmd|bat|inf|iss|json|reg|config)$/i.test(f.path) && f.size <= 262144
+      ? el('button', { type: 'button', class: 'linkish', text: 'Open', title: `Show and edit ${f.path} in the code editor`, onclick: () => openScriptEditor({ name: editingName, file: f.path }) }) : '',
     el('button', { type: 'button', class: 'bx', text: '×', title: `Delete ${f.path} from the packages folder`, 'aria-label': `Delete ${f.path}`, onclick: () => deletePkgFile(f.path) }));
   const d = el('details', { class: 'pkgfiles' }, el('summary', { text: `Files in its packages folder - ${r.files.length}, ${fmtMB(r.total)}${r.package ? ` · package built ${fmtWhen(r.package.modified)}` : ''}` }),
     el('ul', {}, ...r.files.slice(0, 300).map(row)), r.files.length > 300 ? el('p', { class: 'muted', text: `... and ${r.files.length - 300} more.` }) : '');
