@@ -212,6 +212,19 @@ function Global:Complete-WebCheckDetails {
             }
             catch { Write-Log "[WARN] $($app.appName) is a Microsoft Store app in Intune ($sid), but its Store ID couldn't be saved now: $($_.Exception.Message) - the next check tries again." }
         }
+        # Its own earlier releases (2.38.33): a promotion leaves the new app superseding the old one in Intune, and apps that
+        # depend on it still pointing at "<name> <version> (superseded)". Neither is a difference the catalog has to know.
+        if ($one.Metadata) {
+            $ownIds = @{}; foreach ($r in @($app.releases)) { if ($r -and $r.appId) { $ownIds[([string]$r.appId).ToLowerInvariant()] = $true } }
+            if ($null -ne $one.Metadata.supersedes -and $ownIds.Count) { $one.Metadata.supersedes = @(@($one.Metadata.supersedes) | Where-Object { $_ -and -not $ownIds.ContainsKey(([string]$_.appId).ToLowerInvariant()) }) }
+            if (@($one.Metadata.dependencies).Count) {
+                $names = @{}; foreach ($c in $catalog) { $names[([string]$c.appName).ToLowerInvariant()] = [string]$c.appName }
+                $one.Metadata.dependencies = @(@($one.Metadata.dependencies) | ForEach-Object {
+                        $d = [string]$_
+                        if ($d -match '^(.+?) \S+ \((superseded|pilot)\)$' -and $names.ContainsKey($Matches[1].ToLowerInvariant())) { $names[$Matches[1].ToLowerInvariant()] } else { $d }
+                    } | Select-Object -Unique)
+            }
+        }
         # A Microsoft Store app has no install commands or detection in Intune to compare - its settings aren't checked.
         $isStore = (Test-StoreProductId ([string]$app.wingetId)) -or [bool]$app.office
         # Nor their dependencies (2.38.32): Intune's Store and Microsoft 365 app types take none from here - a permanent "differ".
@@ -248,11 +261,12 @@ function Global:Complete-WebCheckAssign {
     foreach ($one in @($Result.data)) {
         $app = @($catalog | Where-Object { [string]$_.appName -eq [string]$one.AppName }) | Select-Object -First 1
         if (-not $app) { continue }
-        foreach ($f in @(Get-UnknownAssignmentFindings -CatalogApp $app -ToRemove @($one.ToRemove))) { $new.Add($f) }
-        Set-LastAuditCacheEntry -AppName ([string]$one.AppName) -Unknown (Get-UnknownAssignmentText @($one.ToRemove))
+        $chg = Get-AssignmentChangeFindings -CatalogApp $app -ToAdd @($one.ToAdd) -ToRemove @($one.ToRemove)
+        foreach ($f in @($chg.Findings)) { $new.Add($f) }
+        Set-LastAuditCacheEntry -AppName ([string]$one.AppName) -Unknown (Get-UnknownAssignmentText @($chg.Unknown))
     }
     Save-LastAuditCache
-    return @{ ok = $true; areas = @('Unknown assignments'); names = @($After.Names); findings = @($new | ForEach-Object { ConvertTo-WebFindingRow $_ }) }
+    return @{ ok = $true; areas = @('Unknown assignments', 'Assignment filter'); names = @($After.Names); findings = @($new | ForEach-Object { ConvertTo-WebFindingRow $_ }) }
 }
 
 function Global:Invoke-WebCheckWinget {

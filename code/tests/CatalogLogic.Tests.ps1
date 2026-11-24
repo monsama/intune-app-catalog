@@ -120,6 +120,7 @@ $testableFunctionNames = @(
     "Get-CheckValueText",
     "Get-UnknownAssignmentText",
     "Get-UnknownAssignmentFindings",
+    "Get-AssignmentChangeFindings",
     "Get-DependencyFindings",
     "Get-EntraGroupFindings",
     "Get-WingetFindings",
@@ -2670,6 +2671,26 @@ Assert-Equal 0 @($link | Where-Object { $_.App -eq 'Firefox' -and $_.Problem -li
 $scopedLink = @(Get-IntuneLinkFindings -Apps @($chkApps[1]) -IntuneApps $chkIntune -Scoped)
 Assert-Equal 0 @($scopedLink | Where-Object { $_.Problem -like 'In Intune, not*' }).Count "Get-IntuneLinkFindings: a scoped run leaves the tenant's other apps alone"
 Assert-Equal 1 @($scopedLink | Where-Object { $_.Problem -eq 'Renamed in Intune' }).Count "Get-IntuneLinkFindings: ...but still checks the scoped app"
+
+# 2.38.33: a release name left over in Intune is put back by sending settings, not taken into the catalog
+$pilotLink = @(Get-IntuneLinkFindings -Apps @([pscustomobject]@{ appName = 'Pilot App'; appId = 'id-pa' }) -IntuneApps @([pscustomobject]@{ id = 'id-pa'; displayName = 'Pilot App 2.0 (pilot)' }) -Scoped)
+Assert-Equal 'Still has its release name in Intune' ([string]$pilotLink[0].Problem) "Get-IntuneLinkFindings: a '<name> <version> (pilot)' name is a leftover release name"
+Assert-Equal 'PushMetadata' ([string]@($pilotLink[0].Actions)[0]) "Get-IntuneLinkFindings: ...fixed by sending the catalog's settings"
+# 2.38.33: "Possibly in Intune" leaves the app's own releases and superseded/pilot copies alone
+$relApp = [pscustomobject]@{ appName = 'Rel Tool'; appId = ''; releases = @([pscustomobject]@{ appId = 'id-rt-old'; state = 'previous' }) }
+$relPoss = @(Get-IntuneLinkFindings -Apps @($relApp) -IntuneApps @([pscustomobject]@{ id = 'id-rt-old'; displayName = 'Rel Tool Suite' }, [pscustomobject]@{ id = 'id-rt-x'; displayName = 'Rel Tool 1.0 (superseded)' }) -Scoped)
+Assert-Equal 0 @($relPoss | Where-Object { $_.Problem -like 'Possibly*' }).Count "Get-IntuneLinkFindings: a release's own app or a superseded copy isn't 'possibly in Intune'"
+
+# 2.38.33: the whole assignment preview as findings
+$chgApp = [pscustomobject]@{ appName = 'Chg'; appId = 'id-chg' }
+$chg = Get-AssignmentChangeFindings -CatalogApp $chgApp -ToAdd @('[required] SG-A (filter: Laptops)', '[required] EXCLUDE SG-X') -ToRemove @('[required] SG-A', '[available] SG-Other')
+$chgBy = @{}; foreach ($f in @($chg.Findings)) { $chgBy[[string]$f.Problem] = $f }
+Assert-True ($chgBy.ContainsKey('Assignment filter differs')) "Get-AssignmentChangeFindings: a filter on one side only is a filter difference"
+Assert-Equal '[required] SG-A' ([string]$chgBy['Assignment filter differs'].Intune) "Get-AssignmentChangeFindings: ...showing Intune's side"
+Assert-True ($chgBy.ContainsKey('Exclusion missing in Intune')) "Get-AssignmentChangeFindings: a missing exclusion is reported"
+Assert-Equal 1 @($chg.Unknown).Count "Get-AssignmentChangeFindings: ...and only the unpaired one is unknown"
+Assert-Equal '[available] SG-Other' ([string]@($chg.Unknown)[0]) "Get-AssignmentChangeFindings: ...the other group"
+Assert-Equal 0 @((Get-AssignmentChangeFindings -CatalogApp $chgApp -ToAdd @('[required] SG-New') -ToRemove @()).Findings).Count "Get-AssignmentChangeFindings: a missing inclusion is left to the Groups check"
 
 # Per-app detail from a SyncMetadata result
 $chkResultSame = [pscustomobject]@{ Success = $true; OdataType = '#microsoft.graph.win32LobApp'; GroupFetchOk = $true

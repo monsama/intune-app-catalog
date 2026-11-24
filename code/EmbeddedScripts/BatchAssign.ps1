@@ -276,13 +276,14 @@ try {
 
             $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($App.AppId)/assignments" -Method GET -StepDescription "Get current assignments for $($App.AppName)"
             $groupNameById = @{}
+            $unresolved = @()
             foreach ($a in @($currentAssignments.value)) {
                 $gid = $a.target.groupId
                 if (-not $gid -or $groupNameById.Contains($gid)) { continue }
                 try {
                     $gi = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve current assignment's group name"
                     if ($gi.displayName) { $groupNameById[$gid] = $gi.displayName }
-                } catch { }
+                } catch { $unresolved += "$gid ($($_.Exception.Message))" }
             }
             $otherTargets = @()
             $currentEntries = ConvertTo-CurrentAssignmentEntries -Assignments @($currentAssignments.value) -GroupNameById $groupNameById -OtherTargets ([ref]$otherTargets) -FilterNameById $FilterNameById
@@ -297,6 +298,8 @@ try {
                 # A target the catalog can't express (All devices, All users)
                 # would be dropped by Apply, so it belongs in the preview.
                 ToRemove = @(@($diff.ToRemove) + @($otherTargets))
+                # Groups whose name couldn't be read show as their ID - said in the log so they don't look like unknown groups.
+                Unresolved = @($unresolved)
             }
         }
 
@@ -350,6 +353,7 @@ try {
                 if (-not $oneResult) { throw "No result returned for `"$($job.App.AppName)`"." }
 
                 Write-Step "[$appIndex/$totalApps] $($oneResult.AppName)"
+                foreach ($u in @($oneResult.Unresolved)) { Write-Host "  [!] Couldn't read the name of group $u - it is compared by ID." -ForegroundColor Yellow }
                 if ($oneResult.ToRemove.Count -eq 0 -and $oneResult.ToAdd.Count -eq 0) {
                     Write-Host "  (no change)" -ForegroundColor Gray
                 }
@@ -412,13 +416,14 @@ try {
 
             $currentAssignments = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($app.AppId)/assignments" -Method GET -StepDescription "Get current assignments for $($app.AppName)"
             $groupNameById = @{}
+            $unresolved = @()
             foreach ($a in @($currentAssignments.value)) {
                 $gid = $a.target.groupId
                 if (-not $gid -or $groupNameById.Contains($gid)) { continue }
                 try {
                     $gi = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/v1.0/groups/$gid`?`$select=displayName" -Method GET -StepDescription "Resolve current assignment's group name"
                     if ($gi.displayName) { $groupNameById[$gid] = $gi.displayName }
-                } catch { }
+                } catch { $unresolved += "$gid ($($_.Exception.Message))" }
             }
             $otherTargets = @()
             $currentEntries = ConvertTo-CurrentAssignmentEntries -Assignments @($currentAssignments.value) -GroupNameById $groupNameById -OtherTargets ([ref]$otherTargets) -FilterNameById $filterNameById

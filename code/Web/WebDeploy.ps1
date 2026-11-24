@@ -215,7 +215,9 @@ function Global:New-WebCreateAppConfig {
         InstallContext = $m.installContext; Architecture = $m.architecture; MinOSVersionKey = $m.minOSKey; PackagePath = $PackagePath
         DependencyAppIds = $depIds; ReplaceContent = $false; LargeIcon = $a.icon
         # An app with no settings of its own, already in Intune: the defaults say nothing about supersedence or Featured - leave Intune's.
-        Supersedence = $(if ($defaults -and $a.appId) { $null } else { $m.supersedes })
+        # Its own earlier releases stay superseded (2.38.33): the catalog's list doesn't hold them, and sending it alone
+        # removed the update path a promotion set up.
+        Supersedence = $(if ($defaults -and $a.appId) { $null } else { Get-WebSupersedenceWithReleases -App $a -Supersedes $m.supersedes })
         MinDiskSpaceMB = [int]$m.minDiskSpaceMB; MinMemoryMB = [int]$m.minMemoryMB; MinProcessors = [int]$m.minProcessors; MinCpuSpeedMHz = [int]$m.minCpuSpeedMHz
         InstallTimeMinutes = $(if ($m.installTimeMinutes) { [int]$m.installTimeMinutes } else { 60 }); DeviceRestartBehavior = $m.deviceRestartBehavior
         AllowAvailableUninstall = [bool]$m.allowAvailableUninstall; ReturnCodes = @($m.returnCodes); OutputResultPath = $ResultPath
@@ -559,6 +561,17 @@ function Global:Get-WebIntuneAppODataType {
     $r = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) & $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$AppId" }.GetNewClosure()
     if (-not $r.ok) { return $r }
     return @{ ok = $true; type = ([string]$r.value.'@odata.type' -replace '^#?microsoft\.graph\.', ''); name = [string]$r.value.displayName; value = $r.value }
+}
+
+function Global:Get-WebSupersedenceWithReleases {
+    # The catalog's supersedence plus the app's own earlier releases still in Intune (not the one being sent) - $null stays $null.
+    param($App, $Supersedes)
+    $own = @(@($App.releases) | Where-Object { $_ -and $_.appId -and [string]$_.appId -ne [string]$App.appId -and [string]$_.state -eq 'previous' })
+    if ($null -eq $Supersedes -and -not $own.Count) { return $null }
+    $list = @(@($Supersedes) | Where-Object { $_ })
+    $have = @{}; foreach ($s in $list) { $have[([string]$s.appId).ToLowerInvariant()] = $true }
+    foreach ($r in $own) { if (-not $have.ContainsKey(([string]$r.appId).ToLowerInvariant())) { $list += [pscustomobject]@{ appId = [string]$r.appId; name = "$($App.appName) $($r.version)"; type = 'update' } } }
+    return $list
 }
 
 function Global:Get-WebOfficeFromIntune {
