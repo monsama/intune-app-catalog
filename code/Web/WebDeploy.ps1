@@ -123,6 +123,12 @@ function Global:Start-WebDeploy {
     # A Microsoft Store app: created (or updated) as Intune's own Store type - the Store installs and updates it.
     if (Test-StoreProductId ([string]$a.wingetId)) {
         if ($Data.metadataOnly -and -not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune yet - send it first." } }
+        # Linked to another kind of app (the legacy Store app, or a Win32 package): a Store app can't be patched onto it -
+        # asked of Intune now (2.38.29), with what to do instead.
+        if ($a.appId) {
+            $ty = Get-WebIntuneAppODataType -AppId ([string]$a.appId)
+            if ($ty.ok -and $ty.type -ne 'winGetApp') { return @{ ok = $false; error = "$name is linked to a $(Get-FriendlyIntuneAppType -ODataType $ty.type) in Intune, which can't become the new Microsoft Store app. Clear its App ID (More > Clear App ID) and send it again: the Store app is created new with its groups - devices that have it keep it. Then delete the old one in Intune." } }
+        }
         $m = $a.metadata
         $resultPath = Join-Path $env:TEMP (".intunepkg_storeapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
         $config = @{ TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
