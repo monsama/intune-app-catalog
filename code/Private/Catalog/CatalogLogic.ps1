@@ -3373,6 +3373,9 @@ function Global:ConvertTo-OfficeSuiteBody {
         installProgressDisplayLevel = 'none'
         shouldUninstallOlderVersionsOfOffice = [bool]$s.removeOlder
         autoAcceptEula = $true
+        # Required by Intune (2.38.27: "A valid office default file format version must be selected") - Office Open
+        # XML (.docx, .xlsx, .pptx), the format Intune's own Microsoft 365 Apps page picks.
+        officeSuiteAppDefaultFileFormat = 'officeOpenXMLFormat'
     }
 }
 

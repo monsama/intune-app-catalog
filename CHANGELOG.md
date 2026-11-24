@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.38.27
+
+- **Microsoft 365 Apps: Send to Intune failed** with "A valid office default file
+  format version must be selected" - Intune requires the default file format. It
+  is now sent as Office Open XML (.docx, .xlsx, .pptx), as Intune's own page sets it.
+
 ## 2.38.26
 
 - Recommended apps: Lenovo Commercial Vantage taken out again (its Store ID wasn't
