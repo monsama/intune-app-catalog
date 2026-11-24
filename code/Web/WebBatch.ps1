@@ -63,7 +63,8 @@ function Global:ConvertTo-WebBatchChanges {
             'deps' {
                 $deps = @(@($v) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
                 foreach ($d in $deps) { if ($AppNames -notcontains $d) { return @{ Error = "Dependency '$d' isn't an app in this catalog." } } }
-                $changes[$k] = $deps
+                # Saved as the catalog writes the name ("dep" typed for "Dep"), so every later comparison agrees.
+                $changes[$k] = @($deps | ForEach-Object { $t = $_; @($AppNames | Where-Object { $_ -ieq $t })[0] } | Select-Object -Unique)
             }
             'text' { $changes[$k] = ([string]$v).Trim() }
             'url' {

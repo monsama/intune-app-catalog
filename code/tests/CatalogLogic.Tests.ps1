@@ -463,6 +463,10 @@ Assert-Equal "A,B,C" (($chainResult.Ordered | ForEach-Object { $_.appName }) -jo
     "Get-DependencyOrderedApps: a chain (C->B->A) orders as A,B,C"
 Assert-Equal 0 $chainResult.CircularNames.Count `
     "Get-DependencyOrderedApps: a chain has no circular names"
+$caseDep = Get-DependencyOrderedApps -Apps @(
+    [pscustomobject]@{ appName = "App"; metadata = [pscustomobject]@{ dependencies = @("dep") } }
+    [pscustomobject]@{ appName = "Dep"; metadata = [pscustomobject]@{ dependencies = @() } })
+Assert-True ($caseDep.CircularNames.Count -eq 0 -and (($caseDep.Ordered | ForEach-Object { $_.appName }) -join ',') -eq 'Dep,App') "Get-DependencyOrderedApps (2.38.16): a dependency named in other case isn't a circle"
 
 $diamond = @(
     [pscustomobject]@{ appName = "D"; metadata = [pscustomobject]@{ dependencies = @("B","C") } }

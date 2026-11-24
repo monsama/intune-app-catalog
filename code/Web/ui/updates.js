@@ -14,7 +14,7 @@ async function loadUpdates(force) {
   if (!updRows.length) { skeleton($('updBody'), $('updGrid').tHead.rows[0].cells.length, 4); tileSkeleton($('updTiles'), 4); }
   try {
     const r = await api('/api/updates-overview');
-    if (!r.ok) { $('updNote').textContent = r.error; if (!updRows.length) $('updBody').replaceChildren(); return; }
+    if (!r.ok) { $('updNote').textContent = r.error; if (!updRows.length) { $('updBody').replaceChildren(); $('updTiles').replaceChildren(); $('updTiles').hidden = true; } return; }
     updRows = r.rows; updLoadedAt = Date.now(); updRings = (r.rings || []).map(x => x.name);
     const rings = (r.rings || []).length > 1 ? ` Release rings: ${r.rings.map(x => x.name).join(' > ')} > everyone.` : '';
     $('updNote').textContent = `${r.rows.length} app${r.rows.length === 1 ? '' : 's'} with managed updates${r.notManaged ? `, ${r.notManaged} without` : ''}.${r.connected ? ` Counts read at ${r.at}.` : ' Not connected - no counts from Intune.'}${rings}${r.note ? ' ' + r.note : ''}`;

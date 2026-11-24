@@ -81,9 +81,15 @@ const visibleFindings = () => { const area = $('checkFilter').value; return show
 const selFindings = () => visibleFindings().filter(f => checkSel.has(keyOf(f)));
 // After a fix changed apps in the catalog or Intune: Checks asks again about those apps, so the list shows what is
 // still different (not a stale row, nor one dropped too early).
-function checksRefresh(names) {
-  const want = [...new Set((names || []).filter(Boolean))].filter(n => findings.some(f => (f.catalogName || f.app) === n));
-  if (want.length && !checksRunning) runChecks(want);
+// Only apps Checks knows about: still with a finding, or one just dropped by the fix (most fixes drop it first).
+// While a check or a job runs it waits for it - a check started next to a job loses its detail stages.
+const checksDropped = new Set();
+function checksRefresh(names, tries = 0) {
+  const want = [...new Set((names || []).filter(Boolean))].filter(n => checksDropped.has(n) || findings.some(f => (f.catalogName || f.app) === n));
+  if (!want.length) return;
+  if (checksRunning || (typeof jobRunning !== 'undefined' && jobRunning)) { if (tries < 100) setTimeout(() => checksRefresh(want, tries + 1), 3000); return; }
+  for (const n of want) checksDropped.delete(n);
+  runChecks(want);
 }
 const namesWith = (list, action) => [...new Set(list.filter(f => (f.actions || []).includes(action)).map(f => f.catalogName || f.app))];
 function updateCheckActions() {
@@ -115,7 +121,7 @@ $('checkAll').addEventListener('change', e => {
   renderChecks();
 });
 
-function dropFinding(f) { findings = findings.filter(x => keyOf(x) !== keyOf(f)); checkSel.delete(keyOf(f)); renderChecks(); }
+function dropFinding(f) { checksDropped.add(f.catalogName || f.app); findings = findings.filter(x => keyOf(x) !== keyOf(f)); checkSel.delete(keyOf(f)); renderChecks(); }
 function fixButtons(f) {
   const out = [], name = f.catalogName || f.app;
   const btn = (text, onclick, title) => out.push(el('button', { class: 'btn small', text, title: title || '', onclick }));

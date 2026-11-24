@@ -764,8 +764,9 @@ function Global:Get-DependencyOrderedApps {
 
         $ordered.Add($byName[$readyName])
         [void]$remainingNames.Remove($readyName)
+        # Case doesn't matter (as above): a dependency typed "dep" for the app "Dep" isn't a circle.
         foreach ($name in $remainingNames) {
-            [void]$remainingDeps[$name].Remove($readyName)
+            [void]$remainingDeps[$name].RemoveAll([Predicate[string]] { param($x) $x -ieq $readyName })
         }
     }
 

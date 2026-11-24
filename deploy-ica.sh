@@ -94,15 +94,18 @@ else
     for d in "$nobs" /opt/nobs-inventory "$BASE_DIR/../nobs-inventory"; do [ -n "$d" ] && [ -d "$d/proxy/sites" ] && { nobs="$d"; break; }; done
     if [ -z "$nobs" ] || [ ! -d "$nobs/proxy/sites" ]; then
         warn "NOBS Inventory's proxy wasn't found (set NOBS_DIR). Add this site to your proxy by hand:"
-        echo "    https://$host { import tls_and_headers; reverse_proxy intune-app-catalog:8080 }"
+        echo "    https://$host { import tls_and_headers; reverse_proxy intune-app-catalog:8080 { request_buffers 64KB } }"
     else
         site="$nobs/proxy/sites/intune-catalog.caddy"
         # Kept when it is there: it may point at a certificate of its own (install-cert.sh).
         if [ ! -f "$site" ]; then
-            printf 'https://%s {\n\timport tls_and_headers\n\treverse_proxy intune-app-catalog:8080\n}\n' "$host" > "$site"
+            # request_buffers: the proxy takes in a request's body (a sign-in is far below 64 KB) before passing it on -
+            # someone sending bodies a byte at a time ties up the proxy, not the app's few request slots.
+            printf 'https://%s {\n\timport tls_and_headers\n\treverse_proxy intune-app-catalog:8080 {\n\t\trequest_buffers 64KB\n\t}\n}\n' "$host" > "$site"
             info "Wrote $site"
         else
             info "Kept $site (it is there already)."
+            grep -q request_buffers "$site" || warn "Add 'request_buffers 64KB' inside the reverse_proxy block of $site ('reverse_proxy intune-app-catalog:8080 { request_buffers 64KB }') - it keeps slow clients from tying up the app."
         fi
         if docker ps --format '{{.Names}}' | grep -qx nobs-proxy; then docker restart nobs-proxy >/dev/null && info "Restarted nobs-proxy."
         else warn "nobs-proxy isn't running - start it with NOBS Inventory's deploy-nobs.sh or update.sh."; fi

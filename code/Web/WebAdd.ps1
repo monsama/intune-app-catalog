@@ -385,6 +385,7 @@ function Global:Add-WebInstallerApp {
     $version = ([string]$Data.version).Trim()
     if ($version -and -not (Test-ReleaseVersionText $version)) { return @{ ok = $false; error = "'$version' isn't a version (letters, digits and . - + _)." } }
     $folder = Join-Path (Get-AppFolder -Kind Packages -Create) (Get-SafeFileNameForApp -Name $name)
+    $folderWasNew = -not (Test-Path -LiteralPath $folder)
     if (Test-Path -LiteralPath $folder) {
         $other = @(Get-PackageFolderFiles $folder | Where-Object { $u.Kind -ne 'file' -or $_.path -ne $u.FileName })
         if ($other.Count) { return @{ ok = $false; error = "$folder already holds files ($($other[0].path)) - choose another name, or empty that folder first." } }
@@ -403,7 +404,9 @@ function Global:Add-WebInstallerApp {
             installCommand = $install; uninstallCommand = $uninstall; owner = [string]$Global:App.DefaultAppSettings.DefaultOwner; developer = ''; informationUrl = ''; privacyUrl = ''
             notes = "Added from $($u.FileName)$(if ($u.Info.Signer) { ", signed by $($u.Info.Signer)" })." } }
     $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
-    if (-not $r.ok) { return $r }
+    # Refused (a profile's group that doesn't fit, a name taken meanwhile): the folder made for it goes again - a second
+    # try would otherwise stop at "already holds files".
+    if (-not $r.ok) { if ($folderWasNew) { Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue } elseif ($p.NeedsUninstallScript) { Remove-Item -LiteralPath (Join-Path $folder 'Uninstall.ps1') -Force -ErrorAction SilentlyContinue }; return $r }
     $rule = $p.Detection
     if ($rule -and $version -and $rule.Type -eq 'Msi') { $rule.Msi_Version = $version }
     $managed = [bool]$Data.managed -and [bool]$p.ManagedOk
@@ -570,6 +573,7 @@ function Global:Add-WebScriptApp {
     }
     $folder = Join-Path (Get-AppFolder -Kind Packages -Create) (Get-SafeFileNameForApp -Name $name)
     if ((Test-Path -LiteralPath (Join-Path $folder 'Install.ps1'))) { return @{ ok = $false; error = "$folder already holds an Install.ps1 - choose another name." } }
+    $scriptFolderWasNew = -not (Test-Path -LiteralPath $folder)
     [void](New-Item -ItemType Directory -Path $folder -Force)
     $utf8 = New-Object System.Text.UTF8Encoding($true)
     [System.IO.File]::WriteAllText((Join-Path $folder 'Install.ps1'), (ConvertTo-CanonicalLineEndings $install), $utf8)
@@ -580,7 +584,12 @@ function Global:Add-WebScriptApp {
         metadata = [pscustomobject]@{ description = $(if ([string]$Data.description) { [string]$Data.description } else { $name }); publisher = ([string]$Data.publisher).Trim(); appVersion = $version
             installCommand = "$ps .\Install.ps1"; uninstallCommand = "$ps .\Uninstall.ps1"; owner = [string]$Global:App.DefaultAppSettings.DefaultOwner; developer = ''; informationUrl = ''; privacyUrl = ''; notes = 'A script app: Install.ps1 and Uninstall.ps1 in its packages folder.' } }
     $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
-    if (-not $r.ok) { return $r }
+    if (-not $r.ok) {
+        # Refused: the two scripts written for it go again, so the same name can be tried once more.
+        Remove-Item -LiteralPath (Join-Path $folder 'Install.ps1'), (Join-Path $folder 'Uninstall.ps1') -Force -ErrorAction SilentlyContinue
+        if ($scriptFolderWasNew) { Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue }
+        return $r
+    }
     $rule = if ($useMarker) { Get-ScriptAppMarkerRule -Name $name -Version $version } else { [ordered]@{ Type = 'Script'; Script_Content = (ConvertTo-CanonicalLineEndings ([string]$Data.detectScript)).TrimEnd() } }
     # Managed updates by default when the version marker detects it (a version-comparing rule), unless turned off.
     $managed = $useMarker -and [bool]$version -and $Data.managed -ne $false
@@ -606,6 +615,11 @@ function Global:Save-WebPsadtTemplate {
         [void](New-Item -ItemType Directory -Path $tmp -Force)
         $zip = Join-Path $tmp 'template.zip'
         Invoke-WebHttpsGet -Uri ([string]$asset.browser_download_url) -MaxBytes 60MB -OutFile $zip -TimeoutSec 120
+        # GitHub publishes each release file's SHA-256: what arrived must be exactly that file (a proxy or mirror can't swap it).
+        if ([string]$asset.digest -match '^sha256:([0-9a-fA-F]{64})$') {
+            $want = $Matches[1]
+            if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $want) { return "The downloaded PSADT template doesn't match the SHA-256 GitHub publishes for it - not used." }
+        }
         $out = Join-Path $tmp 'x'
         Expand-Archive -LiteralPath $zip -DestinationPath $out -Force
         $main = Get-ChildItem -LiteralPath $out -Filter 'Invoke-AppDeployToolkit.ps1' -File -Recurse | Select-Object -First 1
