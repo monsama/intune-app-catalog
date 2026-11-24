@@ -724,6 +724,14 @@ $rels = @(ConvertTo-AppReleases @([pscustomobject]@{ version = '2.0'; appId = 'd
 Assert-True ($rels.Count -eq 1 -and $rels[0].state -eq 'pilot') "ConvertTo-AppReleases: only GUID App IDs, pinnable versions and known states"
 $relRecord = ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'Rel App'; managedUpdates = $true; releases = @([pscustomobject]@{ version = '2.0'; appId = 'dddddddd-0000-4000-8000-000000000001'; state = 'pilot'; at = 'x' }) })
 $relBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $relRecord) | ConvertFrom-Json)
+# 2.38.34: fields emptied on purpose are kept through a save, unknown names are dropped
+$clrRec = ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'Clr'; metadata = [pscustomobject]@{ description = 'd'; owner = ''; clearedFields = @('owner', 'bogus', 'owner') } })
+$clrBack = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App $clrRec) | ConvertFrom-Json)
+Assert-Equal 'owner' (@($clrBack.metadata.clearedFields) -join ',') "ConvertTo-AppRecord: fields emptied on purpose survive a save, once, only known fields (2.38.34)"
+$clrNone = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'N'; metadata = [pscustomobject]@{ description = 'd' } }))) | ConvertFrom-Json)
+Assert-Equal 0 @($clrNone.metadata.clearedFields).Count "ConvertTo-AppRecord: an app without emptied fields has none (and its file no such key)"
+$cfgJson = ConvertTo-CreateAppConfigJson -Config ([pscustomobject]@{ AppName = 'x'; ClearedFields = @('notes') })
+Assert-True (($cfgJson | ConvertFrom-Json).ClearedFields -contains 'notes') "ConvertTo-CreateAppConfigJson: the emptied fields go to the step (2.38.34)"
 Assert-True ($relBack.managedUpdates -and @($relBack.releases).Count -eq 1 -and $relBack.releases[0].version -eq '2.0') "ConvertTo-SingleAppJson/ConvertTo-AppRecord: managed updates and releases round-trip"
 Assert-True ((ConvertTo-SingleAppJson -App (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'Plain' }))) -notlike '*managedUpdates*') "ConvertTo-SingleAppJson: no managed fields for an unmanaged app"
 $tpl = ConvertTo-TemplateAppRecord -App $relBack

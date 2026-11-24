@@ -1903,3 +1903,6 @@ input[type=radio]:disabled { opacity: .5; cursor: default; }
 #checkEmpty.partial .emptyicon .bang { display: inline; }
 #btnCheckConnect { margin-top: 10px; }
 #btnUpdOpenApps { margin-top: 10px; }
+/* Editor > Release rule, folded (2.38.34): the summary right under its heading, and "Change" the size of the buttons around it. */
+#aRuleBox.folded > legend { margin-bottom: 2px; }
+#aRuleBox .foldsum { padding-top: 0; }

@@ -33,6 +33,11 @@ security, logic, the screens, and the server and release setup.
   install it for the user.
 
 **Sent to Intune**
+- Fields emptied in the catalog reach Intune: when Owner, Developer, the links,
+  Notes or App version is emptied in the editor, the next send empties it in
+  Intune too (before, Intune kept the old value and Checks showed it as a
+  difference for good). A field the catalog never had is still left alone, so
+  what was set in the portal stays.
 - Minimum OS: Windows 10 up to 21H1 is sent as Graph expects ("1607" ...
   "21H1", 20H2 as "2H20") - "Windows10_1607" was refused with a 400. Take from
   Intune reads today's property (Windows 11 values too), and an empty minimum
@@ -70,7 +75,8 @@ security, logic, the screens, and the server and release setup.
 - "1 app" / "3 apps" instead of "app(s)"; ID and command fields keep the
   monospace font, other fields don't; radio buttons look right in the dark
   theme; Add apps tabs stay on one line when narrow; the Updates empty state has
-  an "Open Apps" button; Platform scripts says "3 scripts".
+  an "Open Apps" button; Platform scripts says "3 scripts"; the editor's
+  release rule sits right under its heading.
 
 **Server and releases**
 - Settings > Folders on the server only takes folders inside /app/data.

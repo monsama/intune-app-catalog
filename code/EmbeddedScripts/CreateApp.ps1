@@ -137,8 +137,10 @@ function Get-ConfigSupersedence {
 }
 
 function Add-OptionalStringField {
-    param([hashtable]$Body, [string]$GraphKey, [string]$Value)
+    # An empty value is left out (Intune's own stays) - unless the catalog emptied it on purpose (-Cleared, 2.38.34).
+    param([hashtable]$Body, [string]$GraphKey, [string]$Value, [switch]$Cleared)
     if (-not [string]::IsNullOrWhiteSpace($Value)) { $Body[$GraphKey] = $Value }
+    elseif ($Cleared) { $Body[$GraphKey] = '' }
 }
 
 # $Config.MinOSVersionKey arrives in the IntuneWin32App module's own
@@ -711,12 +713,12 @@ try {
         # several - applicableArchitectures is never written by this app
         # at all any more, on Create or Update.
         $patchBody.allowedArchitectures = $Config.Architecture
-        Add-OptionalStringField -Body $patchBody -GraphKey "owner" -Value $Config.Owner
-        Add-OptionalStringField -Body $patchBody -GraphKey "developer" -Value $Config.Developer
-        Add-OptionalStringField -Body $patchBody -GraphKey "informationUrl" -Value $Config.InformationUrl
-        Add-OptionalStringField -Body $patchBody -GraphKey "privacyInformationUrl" -Value $Config.PrivacyUrl
-        Add-OptionalStringField -Body $patchBody -GraphKey "notes" -Value $Config.Notes
-        Add-OptionalStringField -Body $patchBody -GraphKey "displayVersion" -Value $Config.AppVersion
+        Add-OptionalStringField -Body $patchBody -GraphKey "owner" -Value $Config.Owner -Cleared:(@($Config.ClearedFields) -contains 'owner')
+        Add-OptionalStringField -Body $patchBody -GraphKey "developer" -Value $Config.Developer -Cleared:(@($Config.ClearedFields) -contains 'developer')
+        Add-OptionalStringField -Body $patchBody -GraphKey "informationUrl" -Value $Config.InformationUrl -Cleared:(@($Config.ClearedFields) -contains 'informationUrl')
+        Add-OptionalStringField -Body $patchBody -GraphKey "privacyInformationUrl" -Value $Config.PrivacyUrl -Cleared:(@($Config.ClearedFields) -contains 'privacyUrl')
+        Add-OptionalStringField -Body $patchBody -GraphKey "notes" -Value $Config.Notes -Cleared:(@($Config.ClearedFields) -contains 'notes')
+        Add-OptionalStringField -Body $patchBody -GraphKey "displayVersion" -Value $Config.AppVersion -Cleared:(@($Config.ClearedFields) -contains 'appVersion')
         # Only when the catalog actually says - $null leaves Intune's own
         # setting alone rather than switching a featured app off.
         if ($null -ne $Config.IsFeatured) { $patchBody["isFeatured"] = [bool]$Config.IsFeatured }

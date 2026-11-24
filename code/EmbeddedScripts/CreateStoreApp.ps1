@@ -53,8 +53,10 @@ try {
         Write-Step "Updating the Store app in Intune"
         # packageIdentifier can't change on an existing app - it's left out. So is what the catalog doesn't have (2.38.34):
         # a PATCH applies nulls and fallbacks, so links and texts set in the portal were blanked or overwritten.
-        if (-not [string]$Config.InformationUrl) { $body.Remove('informationUrl') }
-        if (-not [string]$Config.PrivacyUrl) { $body.Remove('privacyInformationUrl') }
+        # ...unless emptied in the catalog on purpose: then it goes as empty.
+        $cleared = @($Config.ClearedFields)
+        if (-not [string]$Config.InformationUrl) { if ($cleared -contains 'informationUrl') { $body['informationUrl'] = '' } else { $body.Remove('informationUrl') } }
+        if (-not [string]$Config.PrivacyUrl) { if ($cleared -contains 'privacyUrl') { $body['privacyInformationUrl'] = '' } else { $body.Remove('privacyInformationUrl') } }
         if (-not [string]$Config.Description) { $body.Remove('description') }
         if (-not [string]$Config.Publisher) { $body.Remove('publisher') }
         Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.AppId)" -Method PATCH -Body ($body | ConvertTo-Json -Depth 6) -ContentType 'application/json' -ErrorAction Stop | Out-Null

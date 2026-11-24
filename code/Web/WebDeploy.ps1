@@ -135,7 +135,7 @@ function Global:Start-WebDeploy {
         $resultPath = Join-Path $env:TEMP (".intunepkg_storeapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
         $config = @{ TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
             AppName = $a.appName; AppId = [string]$a.appId; PackageIdentifier = [string]$a.wingetId
-            Description = [string]$(if ($m) { $m.description }); Publisher = [string]$(if ($m) { $m.publisher }); InformationUrl = [string]$(if ($m) { $m.informationUrl }); PrivacyUrl = [string]$(if ($m) { $m.privacyUrl })
+            Description = [string]$(if ($m) { $m.description }); Publisher = [string]$(if ($m) { $m.publisher }); InformationUrl = [string]$(if ($m) { $m.informationUrl }); PrivacyUrl = [string]$(if ($m) { $m.privacyUrl }); ClearedFields = @($(if ($m) { $m.clearedFields }) | Where-Object { $_ })
             RunAsAccount = $(if ($m -and [string]$m.installContext -eq 'User') { 'user' } else { 'system' }); OutputResultPath = $resultPath }
         # Shown as Being changed on every PC while it runs; a second start (a double click, another admin) is refused.
         $busy = Enter-WebAppBusy -Name $a.appName -What 'deploying'; if ($busy) { return @{ ok = $false; error = $busy } }
@@ -214,7 +214,7 @@ function Global:New-WebCreateAppConfig {
         TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
         Mode = $(if ($a.appId) { 'UpdateMetadata' } else { 'Create' }); ExistingAppId = [string]$a.appId
         AppName = $a.appName; Description = $m.description; Publisher = $m.publisher; Owner = $m.owner; Developer = $m.developer
-        InformationUrl = $m.informationUrl; PrivacyUrl = $m.privacyUrl; Notes = $m.notes; AppVersion = $m.appVersion; IsFeatured = $(if ($defaults -and $a.appId) { $null } else { $m.isFeatured })
+        InformationUrl = $m.informationUrl; PrivacyUrl = $m.privacyUrl; Notes = $m.notes; AppVersion = $m.appVersion; ClearedFields = @($(if ($m) { $m.clearedFields }) | Where-Object { $_ }); IsFeatured = $(if ($defaults -and $a.appId) { $null } else { $m.isFeatured })
         InstallCommand = $m.installCommand; UninstallCommand = $m.uninstallCommand; DetectionRule = $m.detectionRule
         InstallContext = $m.installContext; Architecture = $m.architecture; MinOSVersionKey = $m.minOSKey; PackagePath = $PackagePath
         DependencyAppIds = $depIds; ReplaceContent = $false; LargeIcon = $a.icon

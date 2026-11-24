@@ -345,6 +345,14 @@ try {
     $cws = Invoke-Api '/api/checks-winget' @{ names = @('ZZ Store Check') }
     Check ($cws.ok -and -not @($cws.findings).Count) 'checks: a Store app is not checked against winget' ($cws | ConvertTo-Json -Compress -Depth 5)
     [void](Invoke-Api '/api/app-remove' @{ name = 'ZZ Store Check' })
+    # 2.38.34: a field emptied in the editor is remembered, so the next send empties it in Intune too
+    $clrApp = @{ appName = 'ZZClear'; wingetId = 'Contoso.Clear'; appId = ''; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @(); metadata = @{ description = 'd'; owner = 'Alice'; notes = '' } }
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = $clrApp })
+    $clrApp.metadata.owner = ''
+    [void](Invoke-Api '/api/app-save' @{ originalName = 'ZZClear'; app = $clrApp })
+    $clrFile = Get-Content -Raw -LiteralPath (Join-Path (Invoke-Api '/api/catalog').path 'ZZClear.json') | ConvertFrom-Json
+    Check ((@($clrFile.metadata.clearedFields) -join ',') -eq 'owner') 'editor: an emptied Owner is remembered for the next send - notes, never set, is not' ($clrFile.metadata | ConvertTo-Json -Compress)
+    [void](Invoke-Api '/api/app-remove' @{ name = 'ZZClear' })
     $ab = Invoke-Api '/api/about' @{}
     Check ($ab.ok -and $ab.version -match '^\d+\.\d+\.\d+' -and $ab.powershell -and @($ab.folders).Count -ge 3) 'about: version, PowerShell and the folders' ($ab | ConvertTo-Json -Compress -Depth 4)
     Check (-not (Invoke-Api '/api/open' @{ target = 'changelog-x' }).ok) 'about: only the fixed project pages open'

@@ -325,7 +325,7 @@ function showManagedState() {
 $('aWinget').addEventListener('input', showManagedState);
 // The release rule as one line (2.31.0) - most apps follow Settings' rule; Change brings the fields out.
 $('aRuleBox').querySelector('legend').after(el('div', { class: 'foldsum', id: 'arSum' }, el('span', { class: 'fstext' }),
-  el('button', { type: 'button', class: 'btn small', text: 'Change', 'aria-label': 'Change the release rule', onclick: () => { $('aRuleBox').classList.remove('folded'); $('arDays').focus(); } })));
+  el('button', { type: 'button', class: 'btn', text: 'Change', 'aria-label': 'Change the release rule', onclick: () => { $('aRuleBox').classList.remove('folded'); $('arDays').focus(); } })));
 function ruleSummary() {
   const v = id => $(id).value.trim() || $(id).placeholder, own = ['arDays', 'arFailed', 'arMin'].some(id => $(id).value.trim()), min = +v('arMin');
   const parts = [`${own ? "This app's own rule" : 'The rule from Settings'}: ${v('arDays')} days per ring, at most ${v('arFailed')} % failed, at least ${min} device${min === 1 ? '' : 's'}`];
