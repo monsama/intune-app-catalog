@@ -1357,7 +1357,7 @@ table.cmp mark.add { background: color-mix(in srgb, var(--ok) 35%, transparent);
 /* "Fill in by hand..." at the end of the tab row - not squeezed against the window's buttons. */
 .addtabrow { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--bd); margin-bottom: 14px; }
 .addtabrow > .subtabs { flex: 1 1 auto; border-bottom: 0; margin-bottom: 0; }
-.addtabrow > #btnAddBlank { flex: none; margin-bottom: 0;   /* 2.38.30: centred on the tabs, not 6px above their baseline */ }
+.addtabrow > #btnAddBlank { flex: none; margin-bottom: 0; }
 /* Every block in a tab has the same room above it (labels, hints, tick boxes, tables). */
 dialog.addapps .asec > * + * { margin-top: 12px; }
 dialog.addapps .asec > [hidden] + * { margin-top: 12px; }
@@ -1837,3 +1837,36 @@ dialog .wctl { z-index: 6; }
 .asec .warnline { color: var(--warn); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 /* 2.38.29: every stage pill in the Apps list the same width - the column reads as one, whatever the label. */
 #gridBody td.stagecol .pill { display: inline-block; min-width: 11.5em; text-align: center; box-sizing: border-box; }
+
+/* ---------------------------------------------------------------- 2.38.31: alignment pass (every page and dialog, light/dark, 1440/820px) */
+/* Add apps: "Fill in by hand..." gets the tabs' own box, so it shares their baseline - with or without a scrollbar under them. */
+.addtabrow { align-items: flex-start; }
+.addtabrow > #btnAddBlank { margin: 0; height: auto; padding: 8px 14px; font-size: 13px; line-height: inherit; border: 0; background: none; }
+/* Narrow windows: the Add apps tabs wrap instead of hiding "From a list" off to the side. */
+@media (max-width: 900px) { .addtabrow > .subtabs { flex-wrap: wrap; overflow-x: visible; } }
+/* Dialog window controls level with the dialog's title. */
+dialog .wctl { top: 17px; }
+/* With a dialog open, messages show at the top - at the bottom they lay across the dialog's buttons. */
+body:has(dialog[open]) .toast { bottom: auto; top: 18px; }
+/* Group fields as high as the inputs next to them (34px). */
+.chipbox { min-height: 34px; }
+.ringrow .rname { height: 34px; }
+/* Menu section headings in line with their items. */
+.menu .mhead { padding: 6px 12px 2px; }
+/* Add apps: room for the focus ring of the first full-width field (the scrolling section clipped it). */
+dialog.addapps[open]:not(.maxed) > .asec:not([hidden]) { padding: 3px 3px 0; margin-inline: -3px; }
+/* Text sizes as their neighbours. */
+.officeapps .srclbl { font-size: 12px; font-weight: 500; }
+#awNote, #alNote { font-size: 12px; }
+dialog.addapps .asec ul.notes { font-size: 12px; }
+/* A button in the Stage column doesn't make its row taller. */
+#gridBody td.stagecol .btn { height: 22px; padding-block: 0; margin-block: -2px; }
+/* Recommended apps: the tick on the app's first line, not in the middle of its two. */
+#alRows tr:not(.grouprow) > td { vertical-align: top; }
+/* Editor: the icon placeholder as high as the buttons beside it. */
+.iconrow .noicon, .iconrow .appicon.big { width: 34px; height: 34px; }
+/* Narrow Apps list: names get the room before Version does. */
+@media (max-width: 900px) { #gridBody td:nth-child(2) { min-width: 180px; } }
+/* Nightly run settings: the usual gap after a checkbox row; History's section heading below the title in size. */
+#sec-automation label.chk + label:not(.chk) { margin-top: 14px; }
+#dlgHistory h3 { font-size: 14px; }

@@ -49,7 +49,7 @@ function stageOf(a) {
   if (!a.hasAppId) {
     if (a.managed && !own && !a.version) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'Managed updates: it needs the version to start from.', next: { label: 'Pin newest', title: "Pin winget's newest version (another one: Version in the side panel)", run: () => takeVersionFor(a) } };
     // As the editor's "Ready to send?" list: no group yet means Intune would have it for nobody.
-    if (!(a.groups || []).length) return { key: 'ready', label: 'Ready - no groups', cls: 'warn', why: 'Everything else is set - but no group gets it yet, so in Intune nobody would have it. Who gets it is in the editor.' };   // 2.38.25: no Groups... button in the list - Who gets it is set in the editor or the side panel
+    if (![...(a.requiredFor || []), ...(a.availableFor || [])].length) return { key: 'ready', label: 'Ready - no groups', cls: 'warn', why: 'Everything else is set - but no group gets it yet, so in Intune nobody would have it. Who gets it is in the editor.' };   // 2.38.25: no Groups... button in the list - Who gets it is set in the editor or the side panel
     return { key: 'ready', label: 'Ready to send', cls: 'info', why: 'Everything is set - not in Intune yet.', next: { label: 'Send to Intune', title: 'Create it in Intune', run: () => openDeploy([a.name]) } };
   }
   if (a.pilotVersion) {
@@ -62,8 +62,10 @@ function stageOf(a) {
   // An own package watching winget (2.36.0): the new installer is fetched first, then released.
   // In Intune (2.38.28): said as what it is for the devices - released (and which version), deployed, an update waiting,
   // or in Intune for nobody - not "Everyone" for an app no group gets.
-  if (!(a.groups || []).length) return { key: 'everyone', label: 'In Intune - no groups', cls: 'warn', why: 'It is in Intune, but no group gets it - no device has it from there. Set who gets it in the editor or the side panel.' };
-  const gw = (a.groups || []).length === 1 ? (a.groups || [])[0] : `${(a.groups || []).length} groups`;
+  // Who gets it: Required and Available - an Uninstall or Excluded group alone gives it to nobody (2.38.31).
+  const gets = [...(a.requiredFor || []), ...(a.availableFor || [])];
+  if (!gets.length) return { key: 'everyone', label: 'In Intune - no groups', cls: 'warn', why: 'It is in Intune, but no group gets it - no device has it from there. Set who gets it in the editor or the side panel.' };
+  const gw = gets.length === 1 ? gets[0] : `${gets.length} groups`;
   if (a.managed && a.newerOnWinget && !a.wingetId && a.watchWinget) return { key: 'everyone', label: `Update ${a.wingetVersion}`, cls: 'info', why: `${gw} ${a.version ? `have ${a.version}` : 'have it'}; winget (${a.watchWinget}) has ${a.wingetVersion}.`, next: { label: 'Get new installer...', title: `Download ${a.wingetVersion} into its folder, then release it`, run: () => fetchWatched(a.name) } };
   if (a.managed && a.newerOnWinget) return { key: 'everyone', label: `Update ${a.wingetVersion}`, cls: 'info', why: `${gw} ${a.version ? `have ${a.version}` : 'have it'}; winget has ${a.wingetVersion} - release it to the pilot groups first.`, next: { label: 'Release...', title: `Release ${a.wingetVersion} to the pilot groups first`, run: () => openRelease(a.name) } };
   return { key: 'everyone', label: a.managed ? (a.version ? `Released ${a.version}` : 'Released') : 'Deployed', cls: 'ok',

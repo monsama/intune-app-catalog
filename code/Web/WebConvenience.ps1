@@ -266,10 +266,12 @@ function Global:Get-WebAttention {
     # 2.38.28: an app Checks compared since that run, and found as the catalog says, isn't "differs" any more - Home showed
     # last night's finding until the next night, while Checks (the same comparison, later) found nothing.
     if ($drift.Count) {
-        try { Load-LastAuditCache } catch { }
+        # Read into a copy (2.38.31): loading into the shared table could put back older entries while a check is saving.
+        $audit = @{}
+        try { if ($Global:App.LastAuditCachePath -and (Test-Path -LiteralPath $Global:App.LastAuditCachePath)) { $raw = Get-Content -LiteralPath $Global:App.LastAuditCachePath -Raw -Encoding UTF8 | ConvertFrom-Json; foreach ($pr in @($raw.PSObject.Properties)) { $audit[$pr.Name] = $pr.Value } } } catch { }
         $runAt = [datetime]::MinValue; try { if ($last.started) { $runAt = ([datetime]$last.started).ToUniversalTime() } } catch { }
         $drift = @($drift | Where-Object {
-                $e = if ($Global:App.LastAuditResults) { $Global:App.LastAuditResults[[string]$_.app] } else { $null }
+                $e = $audit[[string]$_.app]
                 if (-not $e -or -not $e.Timestamp) { return $true }
                 $at = [datetime]::MinValue; try { $at = ([datetime]$e.Timestamp).ToUniversalTime() } catch { }
                 $clean = -not @(@($e.Metadata, $e.Groups, $e.Dependencies, $e.Unknown) | Where-Object { $null -ne $_ -and [string]$_ -ne 'OK' -and [string]$_ -ne '' }).Count

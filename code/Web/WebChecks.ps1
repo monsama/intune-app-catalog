@@ -189,6 +189,7 @@ function Global:Complete-WebCheckDetails {
     $catalog = @((Read-WebCatalogRecords).Apps)
     try { Load-LastAuditCache } catch { }
     $new = New-Object System.Collections.Generic.List[object]
+    $changed = New-Object System.Collections.Generic.List[string]
     foreach ($one in @($Result.results)) {
         $app = @($catalog | Where-Object { [string]$_.appName -eq [string]$one.AppName }) | Select-Object -First 1
         if (-not $app) { continue }
@@ -196,19 +197,28 @@ function Global:Complete-WebCheckDetails {
         # taken over (Company Portal and the like showed as an own installer).
         $sid = Get-StoreIdFromSync $one
         if ($sid -and -not $app.wingetId -and -not $app.office) {
-            [void](Update-WebCatalogApp -Name ([string]$app.appName) -Change { param($x) $x.wingetId = $sid; $x.intuneAppType = 'Microsoft Store app (new)'; $x.managedUpdates = $false }.GetNewClosure())
-            Add-WebHistoryEntry -App ([string]$app.appName) -Kind 'catalog' -Text "Store product ID $sid taken from Intune (it is a Microsoft Store app there)"
-            Write-Log "[OK] $($app.appName): Store product ID $sid taken from Intune - it is a Microsoft Store app there."
-            $app = @((Read-WebCatalogRecords).Apps | Where-Object { [string]$_.appName -eq [string]$one.AppName }) | Select-Object -First 1
+            # One app's catalog file busy (another admin saving) mustn't fail the whole check (2.38.31) - said, and left for the next run.
+            try {
+                [void](Update-WebCatalogApp -Name ([string]$app.appName) -Change { param($x) $x.wingetId = $sid; $x.intuneAppType = 'Microsoft Store app (new)'; $x.managedUpdates = $false }.GetNewClosure())
+                Add-WebHistoryEntry -App ([string]$app.appName) -Kind 'catalog' -Text "Store product ID $sid taken from Intune (it is a Microsoft Store app there)"
+                Write-Log "[OK] $($app.appName): Store product ID $sid taken from Intune - it is a Microsoft Store app there."
+                $changed.Add([string]$app.appName)
+                $fresh = @((Read-WebCatalogRecords).Apps | Where-Object { [string]$_.appName -eq [string]$one.AppName }) | Select-Object -First 1
+                if ($fresh) { $app = $fresh }
+            }
+            catch { Write-Log "[WARN] $($app.appName) is a Microsoft Store app in Intune ($sid), but its Store ID couldn't be saved now: $($_.Exception.Message) - the next check tries again." }
         }
         # A Microsoft Store app has no install commands or detection in Intune to compare - its settings aren't checked.
         $isStore = (Test-StoreProductId ([string]$app.wingetId)) -or [bool]$app.office
         foreach ($f in @(Get-AppDetailFindings -CatalogApp $app -Result $one)) { if ($isStore -and [string]$f.Area -eq 'Metadata') { continue }; $new.Add($f) }
         $texts = Get-AuditSummaryTexts -CatalogApp $app -Result $one
+        # Store apps and Microsoft 365 Apps: their settings aren't compared (above) - the audit says OK for them too (2.38.31:
+        # Home kept "differs" for fields Intune doesn't have on those types).
+        if ($isStore) { $texts.Metadata = 'OK' }
         Set-LastAuditCacheEntry -AppName ([string]$one.AppName) -Metadata $texts.Metadata -Groups $texts.Groups -Dependencies $texts.Dependencies
     }
     Save-LastAuditCache
-    return @{ ok = $true; areas = @('Metadata', 'Groups', 'Dependencies'); names = @($After.Names); findings = @($new | ForEach-Object { ConvertTo-WebFindingRow $_ }) }
+    return @{ ok = $true; areas = @('Metadata', 'Groups', 'Dependencies'); names = @($After.Names); findings = @($new | ForEach-Object { ConvertTo-WebFindingRow $_ }); changed = $changed.ToArray() }
 }
 
 function Global:Start-WebCheckAssign {

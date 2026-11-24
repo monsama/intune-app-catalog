@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.38.31
+
+Full sweep (GUI alignment on every page and dialog, security, bugs).
+
+- **Bugs**
+  - Checks: one app's catalog file busy (another admin saving) while taking a Store
+    ID from Intune no longer fails the whole detailed check (and the nightly drift
+    check); the Apps list reloads when Checks changed an app.
+  - Home "differ from Intune" now clears for Store apps and Microsoft 365 Apps too
+    (Intune has no owner/developer/notes on those types), and Home no longer reloads
+    the shared check results while a check is saving them.
+  - A Store app whose Store ID was changed in the catalog: Send to Intune says that
+    Intune can't change an app's Store product (it reported "updated" and nothing
+    changed).
+  - Stage: an app with only Uninstall or Excluded groups is "no groups" - nobody gets it.
+  - Microsoft 365 extra languages: "de" or "fr" alone is refused with a hint (de-de,
+    fr-ch) instead of silently dropped.
+- **Security**: uploads into a package folder check every folder on the way for links
+  before anything is deleted or written - Replace emptied a linked folder's target
+  first, and a link higher up the path wasn't seen. Uninstall.ps1 is never written
+  through a link.
+- **GUI**
+  - Add apps: "Fill in by hand..." on the tabs' baseline (with or without a
+    scrollbar); the tabs wrap on narrow windows instead of hiding "From a list";
+    focus rings no longer clipped; notes and labels in the same size as around them.
+  - Dialog window controls level with the title; messages show at the top while a
+    dialog is open (they covered its buttons).
+  - Group fields as high as the inputs beside them; menu headings in line with their
+    items; equal row heights in the Apps list; the icon placeholder as high as its
+    buttons; Recommended apps' ticks on the first line; wider names on narrow screens.
+
 ## 2.38.30
 
 - **Store apps read from Intune keep their Store ID**: an app that is a "Microsoft

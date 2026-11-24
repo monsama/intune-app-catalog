@@ -280,6 +280,9 @@ async function officeFromIntune() {
   else if (r.ok && r.type) toast(`${editingName} is a ${r.type} in Intune - it can't become Microsoft 365 Apps in place. Clear its App ID to create Microsoft 365 Apps as a new app.`, true);
   else if (!r.ok) toast(`Its settings couldn't be read from Intune (${r.error}) - the usual ones are shown; check them before you send.`, true);
 }
+// Extra languages as Office knows them (de-de, fr-fr, sr-latn-rs) - what isn't one is said, not dropped (2.38.31).
+const badLocales = text => String(text || '').split(/[\s,;]+/).map(x => x.trim()).filter(Boolean).filter(x => !/^[a-z]{2,3}(-[a-z0-9]{2,8}){1,2}$/i.test(x));
+const localeHelp = bad => `Not a language Office knows: ${bad.join(', ')} - use language and region, e.g. de-de, fr-ch, it-it.`;
 function readOffice() {
   return { channel: $('oChannel').value, architecture: $('oArch').value, locales: $('oLocales').value.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean),
     excluded: [...document.querySelectorAll('[data-oapp]')].filter(c => !c.checked).map(c => c.dataset.oapp), sharedActivation: $('oShared').checked, removeOlder: $('oRemoveOlder').checked };
@@ -692,6 +695,7 @@ $('appForm').addEventListener('submit', async e => {
   app.watchWinget = $('aWatch').value.trim();
   // Microsoft 365 Apps (2.38.21): its settings - false takes them away (another source was chosen).
   app.office = editorSrc === 'office' && !app.wingetId.trim() ? readOffice() : false;
+  if (app.office && badLocales($('oLocales').value).length) { const p = $('appError'); p.textContent = localeHelp(badLocales($('oLocales').value)); p.hidden = false; $('oLocales').focus(); return; }
   if (app.office) { app.managedUpdates = false; app.autoRelease = false; }
   const r = await api('/api/app-save', { originalName: editingName, version: editingVersion, app });
   if (!r.ok) {
