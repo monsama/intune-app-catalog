@@ -1497,7 +1497,8 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 /* An empty dependency list: the note inside the box, not against its edge. */
 .depbox > .muted:only-child { display: block; padding: 8px 12px; font-size: 13px; }
 /* The editor's parts on a phone: one line that scrolls, as the settings tabs. */
-.edtabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+.edtabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.edtabs::-webkit-scrollbar { display: none; }   /* 2.38.28: no scrollbar beside the tabs (a tab's underline overflowed by 1px) */
 .edtab { white-space: nowrap; flex: 0 0 auto; }
 /* Labels in a two-column row that wrap differently: the fields still line up at the bottom. */
 .two { align-items: end; }

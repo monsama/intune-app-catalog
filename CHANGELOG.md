@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.38.28
+
+- **Stage says what is true for the devices**: "Released 24.09" (managed updates,
+  every ring has that version), "Deployed" (in Intune for its groups), "Update
+  25.01" (winget has a newer version - Release... next to it), and "In Intune - no
+  groups" (warning) instead of "Everyone" for an app no group gets. Pointing at it
+  says which groups have which version.
+- Editor: no small scrollbar beside the tabs any more.
+
 ## 2.38.27
 
 - **Microsoft 365 Apps: Send to Intune failed** with "A valid office default file

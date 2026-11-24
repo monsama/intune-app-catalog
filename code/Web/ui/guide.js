@@ -60,9 +60,14 @@ function stageOf(a) {
       next: next ? { label: 'Next ring...', title: 'Give it to the next release ring too', run: () => advanceRelease(a.name, p) } : { label: 'Promote...', title: 'Give it to everyone (shows how the pilot went first)', run: () => promoteRelease(a.name) } };
   }
   // An own package watching winget (2.36.0): the new installer is fetched first, then released.
-  if (a.managed && a.newerOnWinget && !a.wingetId && a.watchWinget) return { key: 'everyone', label: 'Everyone', cls: 'ok', why: `winget (${a.watchWinget}) has ${a.wingetVersion}.`, next: { label: 'Get new installer...', title: `Download ${a.wingetVersion} into its folder, then release it`, run: () => fetchWatched(a.name) } };
-  if (a.managed && a.newerOnWinget) return { key: 'everyone', label: 'Everyone', cls: 'ok', why: `winget has ${a.wingetVersion}.`, next: { label: 'Release...', title: `Release ${a.wingetVersion} to the pilot groups first`, run: () => openRelease(a.name) } };
-  return { key: 'everyone', label: a.managed ? 'Everyone' : 'In Intune', cls: 'ok', why: a.managed ? `Everyone gets ${a.version || 'it'}; new versions go to the pilot groups first.` : `In Intune - ${updatesText(a, false)}.` };
+  // In Intune (2.38.28): said as what it is for the devices - released (and which version), deployed, an update waiting,
+  // or in Intune for nobody - not "Everyone" for an app no group gets.
+  if (!(a.groups || []).length) return { key: 'everyone', label: 'In Intune - no groups', cls: 'warn', why: 'It is in Intune, but no group gets it - no device has it from there. Set who gets it in the editor or the side panel.' };
+  const gw = (a.groups || []).length === 1 ? (a.groups || [])[0] : `${(a.groups || []).length} groups`;
+  if (a.managed && a.newerOnWinget && !a.wingetId && a.watchWinget) return { key: 'everyone', label: `Update ${a.wingetVersion}`, cls: 'info', why: `${gw} ${a.version ? `have ${a.version}` : 'have it'}; winget (${a.watchWinget}) has ${a.wingetVersion}.`, next: { label: 'Get new installer...', title: `Download ${a.wingetVersion} into its folder, then release it`, run: () => fetchWatched(a.name) } };
+  if (a.managed && a.newerOnWinget) return { key: 'everyone', label: `Update ${a.wingetVersion}`, cls: 'info', why: `${gw} ${a.version ? `have ${a.version}` : 'have it'}; winget has ${a.wingetVersion} - release it to the pilot groups first.`, next: { label: 'Release...', title: `Release ${a.wingetVersion} to the pilot groups first`, run: () => openRelease(a.name) } };
+  return { key: 'everyone', label: a.managed ? (a.version ? `Released ${a.version}` : 'Released') : 'Deployed', cls: 'ok',
+    why: a.managed ? `Released to ${gw}: ${a.version || 'its version'} on every ring; new versions go to the pilot groups first.` : `Deployed to ${gw} - ${updatesText(a, false)}.` };
 }
 function stageCell(a) {
   const s = stageOf(a);
