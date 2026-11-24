@@ -215,7 +215,9 @@ function toast(msg, isErr, actions) {
   const t = $('toast');
   placeToast();
   const acts = (actions || []).filter(Boolean);
-  t.replaceChildren(el('span', { text: msg }), ...acts.map(a => el('button', { class: 'btn small', text: a.label, onclick: () => { t.hidden = true; a.run(); } })));
+  // A close button: an error toast (8 s) mustn't sit over the buttons you need now.
+  t.replaceChildren(el('span', { text: msg }), ...acts.map(a => el('button', { class: 'btn small', text: a.label, onclick: () => { t.hidden = true; a.run(); } })),
+    el('button', { type: 'button', class: 'tclose', text: '×', 'aria-label': 'Close the message', title: 'Close', onclick: () => { t.hidden = true; clearTimeout(toastTimer); } }));
   t.className = 'toast' + (isErr ? ' err' : '') + (acts.length ? ' withacts' : ''); t.hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, acts.length ? 12000 : isErr ? 8000 : 4000);
 }

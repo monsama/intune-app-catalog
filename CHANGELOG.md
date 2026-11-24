@@ -26,6 +26,11 @@ Second full sweep (security, bugs, UI), and:
   PowerShell 5.1 (the detection rule got a garbled name).
 - **Install status**: times read the same on any regional setting, and a report
   of exactly 5000 rows is no longer called cut off.
+- **UI**: messages at the bottom have a close button; the palette's search box
+  uses the whole width; on the Groups page the members table gets the full width
+  up to 1600px, names stay on one line and the button just says Remove; the
+  Checks App column no longer squeezes to one word a line; the Apps chip says
+  "not in Intune yet"; the side panel says "Next step:" before its button.
 
 ## 2.38.14
 

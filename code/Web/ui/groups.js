@@ -309,7 +309,7 @@ async function openGroup(name, again) {
   $('gDesc').value = r.description || '';
   $('gCount').textContent = r.found ? `(${r.members.length})` : '';
   $('gMembers').replaceChildren(...(r.members.length ? r.members.map(m => el('tr', {}, el('td', { text: m.name }), el('td', { text: m.type }), el('td', { class: 'chg', text: m.upn }),
-    el('td', {}, (() => { const b = el('button', { class: 'btn small danger', text: 'Remove member', title: `Remove ${m.name} from this group in Entra ID - at once` }); b.addEventListener('click', () => removeMember(m)); return b; })())))
+    el('td', {}, (() => { const b = el('button', { class: 'btn small danger', text: 'Remove', 'aria-label': `Remove ${m.name}`, title: `Remove ${m.name} from this group in Entra ID - at once` }); b.addEventListener('click', () => removeMember(m)); return b; })())))
     : [el('tr', {}, el('td', { class: 'muted', colspan: '4', text: r.found ? 'No members yet - search below to add people, devices or groups.' : 'Not created yet. People you add below become members when it is created.' }))]));
   renderUses(r.uses);
   saveLabel();

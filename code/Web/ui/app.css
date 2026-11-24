@@ -1762,3 +1762,15 @@ button.pill.pillbtn:hover, button.pill.pillbtn[aria-expanded="true"] { box-shado
 .stage { vertical-align: middle; }
 #grid td > .pill, #grid td > .pillbtn { vertical-align: middle; }
 #grid td { line-height: 18px; }
+
+/* Sweep 2.38.15 (UI) */
+dialog.palette input { width: 100%; box-sizing: border-box; }
+.toast { display: flex; align-items: center; gap: 10px; }
+.toast .tclose { border: 0; background: none; color: inherit; font: inherit; font-size: 16px; line-height: 1; padding: 0 2px; cursor: pointer; opacity: .75; }
+.toast .tclose:hover, .toast .tclose:focus-visible { opacity: 1; }
+/* Groups: the two cards side by side only from 1600px (the members table needs the room); names on one line. */
+@media (max-width: 1600px) { .gcols { grid-template-columns: 1fr; } }
+#gMembers td:first-child, #gMembers td.chg { white-space: nowrap; }
+/* Checks: the App column keeps room for a name - it squeezed to one word a line at 800px. */
+#checkGrid td:nth-child(3) { min-width: 9em; }
+@media (max-width: 900px) { #checkGrid td.dif { min-width: 0; } }
