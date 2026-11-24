@@ -745,6 +745,7 @@ function Global:Invoke-WebApi {
         '/api/add-installer'    { return (Add-WebInstallerApp $Data) }
         '/api/script-templates' { return (Get-WebScriptTemplates $Data) }
         '/api/add-script'       { return (Invoke-WithCatalogLock { Add-WebScriptApp $Data }) }
+        '/api/add-office'       { return (Invoke-WithCatalogLock { Add-WebOfficeFromDialog $Data }) }
         '/api/add-psadt'        { return (Invoke-WithCatalogLock { Add-WebPsadtApp $Data }) }
         '/api/inventory-suggestions' { return (Get-WebInventorySuggestions) }
         '/api/unattended-status' { return (Get-WebUnattendedStatus) }

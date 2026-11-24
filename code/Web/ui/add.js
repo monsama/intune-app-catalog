@@ -65,10 +65,11 @@ function showAddSrc(src) {
   addSrc = src;
   for (const t of document.querySelectorAll('[data-asrc]')) t.setAttribute('aria-selected', String(t.dataset.asrc === src));
   const sec = src === 'store' ? 'winget' : src;
-  for (const s of ['winget', 'installer', 'script', 'psadt', 'list']) $('asec-' + s).hidden = s !== sec;
+  for (const s of ['winget', 'office', 'installer', 'script', 'psadt', 'list']) $('asec-' + s).hidden = s !== sec;
+  if (src === 'office') aoShow();
   if (sec === 'winget') { setSearchMode(src); $('asec-winget').setAttribute('aria-labelledby', 'atab-' + src); }
   updateAddButton();
-  (sec === 'winget' ? $('awQuery') : src === 'installer' ? $('aiDrop') : src === 'list' ? $('btnAlFile') : src === 'psadt' ? $('apName') : $('asName')).focus();
+  (sec === 'winget' ? $('awQuery') : src === 'office' ? $('aoChannel') : src === 'installer' ? $('aiDrop') : src === 'list' ? $('btnAlFile') : src === 'psadt' ? $('apName') : $('asName')).focus();
 }
 for (const t of document.querySelectorAll('[data-asrc]')) t.addEventListener('click', () => showAddSrc(t.dataset.asrc));
 function updateAddButton() {
@@ -76,10 +77,11 @@ function updateAddButton() {
   // The button names what it adds: only the open tab counts - what is filled in on the other tabs is left as it is.
   if (addSrc === 'winget' || addSrc === 'store') { const kind = addSrc === 'store' ? 'Store' : 'Winget'; b.textContent = awPicked.size ? `Add ${awPicked.size} ${kind} app${awPicked.size === 1 ? '' : 's'}` : `Add ${kind} apps`; setEnabled(b, awPicked.size > 0, 'Tick one or more first.'); }
   else if (addSrc === 'installer') { b.textContent = 'Add installer'; const d = aiInfo ? aiDetection() : null; setEnabled(b, !!aiInfo && !(d && d.error), !aiInfo ? 'Drop or choose an installer first.' : (d && d.error) || ''); }
+  else if (addSrc === 'office') { const have = apps.find(a => a.office && !a.wingetId); b.textContent = 'Add Microsoft 365 Apps'; setEnabled(b, !have && !!$('aoName').value.trim() && [...document.querySelectorAll('[data-aoapp]')].some(c => c.checked), have ? `${have.name} is Microsoft 365 Apps already - change its settings in the editor.` : 'Give it a name and keep at least one app.'); }
   else if (addSrc === 'psadt') { b.textContent = 'Add PSADT app'; setEnabled(b, !!($('apName').value.trim() && $('apVersion').value.trim()), 'Give the app a name and the version you are packaging.'); }
   else if (addSrc === 'list') { b.textContent = alPicked.size ? `Add ${alPicked.size} from the list` : 'Add from the list'; setEnabled(b, alPicked.size > 0, 'Read a list and tick the packages first.'); }
   else { b.textContent = 'Add script app'; setEnabled(b, !!$('asName').value.trim(), 'Give the app a name first.'); }
-  const nameField = { installer: 'aiName', script: 'asName', psadt: 'apName' }[addSrc];
+  const nameField = { installer: 'aiName', script: 'asName', psadt: 'apName', office: 'aoName' }[addSrc];
   if (nameField && !b.disabled && catalogTwin($(nameField).value)) setEnabled(b, false, 'An app of that name is in the catalog - choose another name.');
   // Add and send follows Add - same condition, and the same kind of thing.
   // Sending needs the connection: without it, Add alone (it would build, then stop at "set up the connection").
@@ -364,6 +366,28 @@ for (const id of ['apName', 'apVersion']) $(id).addEventListener('input', update
 for (const id of ['asName', 'asVersion']) $(id).addEventListener('input', () => { updateAddButton(); if (!asTouched) { clearTimeout(asTimer); asTimer = setTimeout(() => loadScriptTemplates(false), 300); } });
 for (const r of document.querySelectorAll('input[name="asDetect"]')) r.addEventListener('change', () => { $('asDetectScript').hidden = document.querySelector('input[name="asDetect"]:checked').value !== 'script'; });
 
+// ---- Microsoft 365 Apps (2.38.24): the editor's settings, here before it is added - one per catalog.
+$('aoChannel').replaceChildren(...officeChannels.map(([v, t]) => el('option', { value: v, text: t })));
+$('aoApps').replaceChildren(...officeApps.map(([k, t]) => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-aoapp': k }), t)));
+function aoReset() {
+  const d = officeDefaults();
+  $('aoName').value = 'Microsoft 365 Apps'; $('aoChannel').value = d.channel; $('aoArch').value = d.architecture; $('aoLocales').value = '';
+  for (const c of document.querySelectorAll('[data-aoapp]')) c.checked = !d.excluded.includes(c.dataset.aoapp);
+  $('aoRemoveOlder').checked = d.removeOlder; $('aoShared').checked = d.sharedActivation;
+}
+aoReset();
+function aoShow() {
+  const have = apps.find(a => a.office && !a.wingetId);
+  $('aoHave').hidden = !have;
+  if (have) $('aoHave').replaceChildren(`${have.name} is in the catalog as Microsoft 365 Apps already - there is one per catalog. `,
+    el('button', { type: 'button', class: 'btn small', text: 'Open it', onclick: () => { $('dlgAdd').close(); openEditor(have.name); } }));
+  updateAddButton();
+}
+const aoRead = () => ({ channel: $('aoChannel').value, architecture: $('aoArch').value, locales: $('aoLocales').value.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean),
+  excluded: [...document.querySelectorAll('[data-aoapp]')].filter(c => !c.checked).map(c => c.dataset.aoapp), sharedActivation: $('aoShared').checked, removeOlder: $('aoRemoveOlder').checked });
+$('aoName').addEventListener('input', updateAddButton);
+$('aoApps').addEventListener('change', updateAddButton);
+
 // ---- Add
 // Add, or Add and send (2.35.0): the second builds what needs a package, then shows the summary - who gets each new
 // app and whether it is ready - and sends what is with one click (Fix opens the editor at what is missing).
@@ -403,6 +427,12 @@ async function doAdd(send) {
       $('dlgAdd').close(); await afterAdd([r.name]); done = [r.name];
       toast(`${r.name} added - its installer is in ${r.folder}.`, false, build || publish ? [] : [{ label: 'Build', run: () => buildAdded(r.name) }]);
       if (build || publish) await buildAdded(r.name, publish);
+    }
+    else if (addSrc === 'office') {
+      const r = await api('/api/add-office', { name: $('aoName').value.trim(), office: aoRead(), ...groups });
+      if (!r.ok) { showAddError(r.error); return; }
+      $('dlgAdd').close(); await afterAdd([r.name]); done = [r.name]; aoReset();
+      toast(`${r.name} added as Microsoft 365 Apps - nothing to build; Send to Intune creates it.`, false, send ? [] : [{ label: 'Send to Intune', run: () => openDeploy([r.name]) }]);
     }
     else if (addSrc === 'psadt') {
       $('addError').hidden = false; $('addError').textContent = $('apDownload').checked ? 'Downloading the PSADT template...' : 'Adding...'; $('addError').classList.add('muted');
