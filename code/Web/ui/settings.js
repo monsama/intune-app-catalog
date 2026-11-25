@@ -453,7 +453,7 @@ async function switchExistingWinget(method) {
   const names = apps.filter(a => a.wingetId && !a.managed && !isStoreId(a.wingetId)).map(a => a.name);
   if (!names.length) return;
   const label = 'the winget command';
-  if (!(await ask(`Switch the install and uninstall commands of the ${names.length} Winget app(s) already in the catalog to ${label} too?\n\n${names.slice(0, 12).join(', ')}${names.length > 12 ? ', ...' : ''}\n\nCommands edited by hand are kept. Apps with managed updates keep their pinned commands. Apps in Intune get the new commands pushed.`, { ok: 'Switch them' }))) return;
+  if (!(await ask(`Switch the install and uninstall commands of the ${nWord(names.length, 'Winget app')} already in the catalog to ${label} too?\n\n${names.slice(0, 12).join(', ')}${names.length > 12 ? ', ...' : ''}\n\nCommands edited by hand are kept. Apps with managed updates keep their pinned commands. Apps in Intune get the new commands pushed.`, { ok: 'Switch them' }))) return;
   const r = await api('/api/batch-edit', { names, changes: { wingetInstallMethod: method } });
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps();
@@ -509,9 +509,12 @@ async function loadUpdateRuns() {
       const shown = run.items.filter(i => !['current', 'none', 'wait'].includes(i.outcome));
       return el('details', { class: 'run' }, el('summary', {}, `${fmtWhen(run.started)}${run.fastTrack ? ' (fast track)' : ''}${run.planOnly ? ' (plan only)' : ''} - `,
         el('span', { class: 'pill ' + (run.failed ? 'err' : shown.length ? 'info' : 'ok'), text: run.failed ? `${run.failed} failed` : shown.length ? `${shown.length} to look at` : 'nothing to do' })),
-        el('ul', {}, ...run.items.map(i => el('li', {}, el('b', { text: i.app === '(all)' ? 'All apps' : i.app }), ' ', el('span', { class: 'pill ' + (cls[i.outcome] || 'muted'), text: i.outcome }), ' ' + i.text))));
+        el('ul', {}, ...run.items.map(i => el('li', {}, el('b', { text: i.app === '(all)' ? 'All apps' : i.app }), ' ', el('span', { class: 'pill ' + (cls[i.outcome] || 'muted'), text: runOutcomeLabel[i.outcome] || i.outcome }), ' ' + i.text))));
     }) : [el('p', { class: 'muted', text: 'No run yet.' })]));
 }
+// The nightly run's outcomes in words (2.38.41), not its keys ("drift", "cleanup").
+const runOutcomeLabel = { withdrawn: 'Withdrawn', drift: 'Differs from Intune', health: 'Health', fixed: 'Fixed', report: 'Report', advanced: 'Next ring', promoted: 'Promoted', released: 'Released',
+  cleaned: 'Cleaned up', cleanup: 'Clean-up possible', failed: 'Failed', hold: 'On hold', ready: 'Ready', available: 'New version', current: 'Up to date', none: 'Nothing', wait: 'Waiting' };
 // "03:00" as this browser writes times - the same form the time field next to it shows (12- or 24-hour).
 // The server's clock in another time zone than this browser: the run's time is the server's - said so, with its offset.
 function serverTimeNote(sch) {
@@ -622,7 +625,9 @@ function showAboutUpdate(u) {
   if (u.off) { t.textContent = 'Not asked in test mode.'; return; }
   if (!u.ok) { t.textContent = u.error || 'GitHub couldn\'t be asked.'; return; }
   if (u.newer) { t.textContent = `Version ${u.version} is out - this is ${aboutInfo ? aboutInfo.version : 'older'}.`; get.hidden = false; return; }
-  t.textContent = `This is the latest version${u.version ? ` (${u.version})` : ''}.`;
+  // Running a version newer than the latest release (2.38.41: it said "the latest version (2.38.39)" on 2.38.40).
+  const mine = aboutInfo ? aboutInfo.version : '';
+  t.textContent = u.version && mine && u.version !== mine ? `This is ${mine} - newer than the latest release (${u.version}).` : `This is the latest version${u.version ? ` (${u.version})` : ''}.`;
 }
 async function loadAbout(checkNow) {
   const r = await api('/api/about', checkNow ? { checkNow: true } : {});
@@ -631,6 +636,8 @@ async function loadAbout(checkNow) {
   aboutRows($('aboutFacts'), [['Version', r.version], ['Runs as', r.server ? 'Server (Docker container)' : 'Desktop app on this PC'], ['PowerShell', r.powershell], ['System', r.os], ['Catalog', `${r.apps} app${r.apps === 1 ? '' : 's'}`]]);
   $('aboutFoldersCard').hidden = !(r.folders || []).length;
   aboutRows($('aboutFolders'), (r.folders || []).map(f => [f.label, f.path]), 'path');
+  // Long paths break at their separators, not in the middle of a folder name (2.38.41).
+  for (const dd of $('aboutFolders').querySelectorAll('dd.path')) { const t = dd.textContent; dd.replaceChildren(...t.split(/(?<=[\\/])/).flatMap((p, i) => i ? [el('wbr'), p] : [p])); }
   showAboutUpdate(r.update);
 }
 $('btnAboutCheck').addEventListener('click', async () => {

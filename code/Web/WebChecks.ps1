@@ -163,13 +163,13 @@ function Global:Invoke-WebChecks {
             $norm = { param($t) (([string]$t).Trim() -replace '\s+', ' ').ToLowerInvariant() }
             $wantedSet = @{}; foreach ($n in @(Get-WebCatalogGroupNames -Apps $apps)) { $wantedSet[(& $norm $n)] = $true }
             $foundCount = @($read.value.Directory | ForEach-Object { & $norm $_.displayName } | Where-Object { $wantedSet.ContainsKey($_) } | Select-Object -Unique).Count
-            $summary = "Compared with $(@($read.value.IntuneApps).Count) app(s) in Intune; $foundCount of the $($read.value.Wanted) group(s) the catalog uses found in Entra ID$(if (-not $read.value.ByName) { ' (read in full - this tenant refused a lookup by name)' })."
+            $summary = "Compared with $(Format-Count (@($read.value.IntuneApps).Count) 'app') in Intune; $foundCount of the $(Format-Count ($read.value.Wanted) 'group') the catalog uses found in Entra ID$(if (-not $read.value.ByName) { ' (read in full - this tenant refused a lookup by name)' })."
 
         }
         else { $notes.Add("Intune and Entra ID could not be checked: $($read.error)") }
     }
     $rows = @($findings | ForEach-Object { ConvertTo-WebFindingRow $_ })
-    Write-Log "[INFO] Checks: $($rows.Count) finding(s). $summary $($notes -join ' ')"
+    Write-Log "[INFO] Checks: $(Format-Count ($rows.Count) 'finding'). $summary $($notes -join ' ')"
     return @{ ok = $true; findings = $rows; notes = $notes.ToArray(); summary = $summary; deployed = @($apps | Where-Object { $_.appId } | ForEach-Object { $_.appName }).Count
         winget = @($apps | Where-Object { $_.wingetId -and -not (Test-StoreProductId ([string]$_.wingetId)) } | ForEach-Object { $_.appName }).Count; connected = [bool]($read -and $read.ok) }
 }
@@ -184,7 +184,7 @@ function Global:Start-WebCheckDetails {
     $config = @{ TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
         Apps = @($apps | ForEach-Object { @{ AppName = $_.appName; AppId = $_.appId } }); OutputResultPath = $resultPath }
     return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedSyncMetadataScript -Name 'checksdetails' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath `
-        -Kind "Check $($apps.Count) deployed app(s) in detail" -After @{ Kind = 'checkdetails'; Names = @($apps | ForEach-Object { [string]$_.appName }) })
+        -Kind "Check $(Format-Count ($apps.Count) 'deployed app') in detail" -After @{ Kind = 'checkdetails'; Names = @($apps | ForEach-Object { [string]$_.appName }) })
 }
 
 function Global:Complete-WebCheckDetails {
@@ -250,7 +250,7 @@ function Global:Start-WebCheckAssign {
         Mode = 'Preview'; OutputResultPath = $resultPath
         Apps = @($apps | ForEach-Object { @{ AppName = $_.appName; AppId = $_.appId; RequiredGroups = @($_.requiredFor); AvailableGroups = @($_.availableFor); UninstallGroups = @($_.uninstallFor); ExcludeGroups = @($_.excludeFor); FilterName = [string]$_.assignmentFilter; FilterMode = [string]$_.assignmentFilterMode } }) }
     return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedBatchAssignScript -Name 'checksassign' -ConfigJson ($config | ConvertTo-Json -Depth 8) -ResultPath $resultPath `
-        -Kind "Check $($apps.Count) app(s)' assignments" -After @{ Kind = 'checkassign'; Names = @($apps | ForEach-Object { [string]$_.appName }) })
+        -Kind "Check $(Format-Count ($apps.Count) 'app')' assignments" -After @{ Kind = 'checkassign'; Names = @($apps | ForEach-Object { [string]$_.appName }) })
 }
 
 function Global:Complete-WebCheckAssign {
@@ -284,7 +284,7 @@ function Global:Invoke-WebCheckWinget {
     if (-not $Global:App.WingetLatest) { $Global:App.WingetLatest = [hashtable]::Synchronized(@{}) }
     foreach ($r in @($results) + @($watched)) { if ($r.Ok -and $r.Version) { $Global:App.WingetLatest[([string]$r.WingetId).ToLowerInvariant()] = [string]$r.Version } }
     $new = @(Get-WingetFindings -Results $results -Apps @((Read-WebCatalogRecords).Apps))
-    Write-Log "[INFO] winget: asked about $($apps.Count) Winget ID(s), $($new.Count) problem(s)."
+    Write-Log "[INFO] winget: asked about $(Format-Count ($apps.Count) 'Winget ID'), $(Format-Count ($new.Count) 'problem')."
     return @{ ok = $true; areas = @('Winget ID'); names = @($apps | ForEach-Object { [string]$_.appName }); findings = @($new | ForEach-Object { ConvertTo-WebFindingRow $_ })
         versions = @($results | Where-Object { $_.Version } | ForEach-Object { [ordered]@{ app = [string]$_.AppName; version = [string]$_.Version } }) }
 }
@@ -317,7 +317,7 @@ function Global:Set-WebWingetVersions {
         $changed.Add($a.appName)
     }
     Save-WebUndo $undo
-    Write-Log "[OK] Took winget's version for $($changed.Count) app(s) in the catalog$(if ($changed.Count) { ': ' + ($changed -join ', ') })."
+    Write-Log "[OK] Took winget's version for $(Format-Count ($changed.Count) 'app') in the catalog$(if ($changed.Count) { ': ' + ($changed -join ', ') })."
     return @{ ok = $true; changed = $changed.ToArray(); skipped = $skipped.ToArray(); deployed = @((Read-WebCatalogRecords).Apps | Where-Object { $_.appId -and $changed -contains $_.appName } | ForEach-Object { $_.appName }) }
 }
 
@@ -375,7 +375,7 @@ function Global:Start-WebAddFromIntune {
     $config = @{ TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
         Apps = @($items | ForEach-Object { @{ AppName = ([string]$_.name).Trim(); AppId = [string]$_.id } }); OutputResultPath = $resultPath }
     return (Start-WebStepJob -ScriptContent $Global:App.EmbeddedSyncMetadataScript -Name 'syncmeta' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath `
-        -Kind "Add $($items.Count) app(s) from Intune" -After @{ Kind = 'addtocatalog'; Ids = @($items | ForEach-Object { @{ Name = ([string]$_.name).Trim(); Id = [string]$_.id } }) })
+        -Kind "Add $(Format-Count ($items.Count) 'app') from Intune" -After @{ Kind = 'addtocatalog'; Ids = @($items | ForEach-Object { @{ Name = ([string]$_.name).Trim(); Id = [string]$_.id } }) })
 }
 
 function Global:ConvertTo-WebCatalogEntryFromSync {

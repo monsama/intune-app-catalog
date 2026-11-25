@@ -367,7 +367,7 @@ label.chk.inline { display: inline-flex; align-items: center; gap: 6px; margin: 
 @media (max-width: 760px) { .gsplit { grid-template-columns: 1fr; } }
 
 /* ---- toast ---- */
-.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 9px 16px; border-radius: var(--r-m); font-size: 13px; box-shadow: var(--shadow); max-width: 80vw; }
+.toast { position: fixed; z-index: 60; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 9px 16px; border-radius: var(--r-m); font-size: 13px; box-shadow: var(--shadow); max-width: 80vw; }
 .toast.err { background: var(--err-bg); color: var(--err); border: 1px solid var(--err); }
 .deadnote { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(15, 20, 30, .6); color: #fff; font-size: 16px; }
 
@@ -1876,7 +1876,7 @@ dialog.addapps .asec ul.notes { font-size: 12px; }
 /* Settings > About (2.38.34): label / value pairs. */
 dl.about { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 4px 0 12px; }
 dl.about dt { color: var(--muted); }
-dl.about dd { margin: 0; overflow-wrap: anywhere; }
+dl.about dd { margin: 0; overflow-wrap: break-word; }
 dl.about dd.path { font-family: var(--mono, ui-monospace, Consolas, monospace); font-size: .92em; }
 .actions.wrap { flex-wrap: wrap; }
 
@@ -1915,7 +1915,7 @@ input[type=radio]:disabled { opacity: .5; cursor: default; }
 /* 2.38.37: the Stage column's next-step buttons one width (Send settings, Checks, Edit, ...), so they line up like the pills. */
 .stage .btn.small.next { min-width: 112px; justify-content: center; text-align: center; }
 /* 2.38.39: one small window per send, side by side in the bottom right corner - the newest left of the others. */
-.sendstack { position: fixed; right: 16px; bottom: 16px; z-index: 41; display: flex; flex-direction: row-reverse; flex-wrap: wrap-reverse; gap: 10px; max-width: calc(100vw - 32px); pointer-events: none; }
+.sendstack { position: fixed; right: 16px; bottom: 16px; z-index: 41; display: flex; flex-direction: row-reverse; flex-wrap: wrap-reverse; align-items: flex-end; gap: 10px; max-width: calc(100vw - 32px); max-height: 60vh; overflow-y: auto; pointer-events: none; }
 .sendcard { pointer-events: auto; width: 320px; max-width: calc(100vw - 32px); background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); padding: 12px 14px; box-shadow: 0 10px 32px rgba(16, 24, 40, .25); box-sizing: border-box; }
 .sendcard .trayhead { display: flex; align-items: center; gap: 8px; }
 .sendcard .trayhead h2 { margin: 0; font-size: 14px; }
@@ -1924,3 +1924,16 @@ input[type=radio]:disabled { opacity: .5; cursor: default; }
 .sendcard.failed { border-color: var(--err, #c42b1c); }
 @media (max-width: 720px) { .sendstack { flex-direction: column-reverse; flex-wrap: nowrap; } .sendcard { width: auto; } }
 .rwhat .pill { margin-left: 8px; vertical-align: 1px; }
+#sec-about .cols > .col.wide { grid-column: 1 / -1; }
+/* 2.38.41 GUI review */
+/* Checks: the Area labels one width, and the fix buttons line up from row to row (like the Apps list's Stage column). */
+#checkGrid td:nth-child(2) .pill { display: inline-block; min-width: 110px; text-align: center; box-sizing: border-box; }
+#checkGrid td .btn.small { min-width: 112px; justify-content: center; text-align: center; }
+/* Long names have more room on a wide screen before they are cut. */
+#grid td.name > .nm { max-width: min(60ch, 30vw); }
+body:has(#appPanel:not([hidden])) #grid td.name > .nm { max-width: min(40ch, 18vw); }
+/* Settings > Updates: the label and its unit on one line, number fields as wide as a number needs. */
+.policy label { display: block; }
+.policy input[type=number] { max-width: 160px; }
+/* The toolbar's Send buttons don't change width as the selection grows ("Send to Intune (2)"). */
+#btnDeploy { min-width: 150px; } #btnPush { min-width: 130px; }

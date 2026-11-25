@@ -586,7 +586,7 @@ function Global:Set-WebAppInstaller {
     $mode = [string]$Data.mode
     if ($have.Count) {
         if ($a.managedUpdates -and $a.appId) { return @{ ok = $false; error = "$($a.appName) has managed updates - a new installer goes through Release new version (Updates), pilot first." } }
-        if ($mode -notin 'replace', 'add') { return @{ ok = $false; needsChoice = $true; existing = $have.Count; error = "Its packages folder already holds $($have.Count) file(s) - replace them, or add to them?" } }
+        if ($mode -notin 'replace', 'add') { return @{ ok = $false; needsChoice = $true; existing = $have.Count; error = "Its packages folder already holds $(Format-Count ($have.Count) 'file') - replace them, or add to them?" } }
     }
     try { $written = @(Copy-WebUploadInto $u $folder -Replace:($mode -eq 'replace')) } catch { return @{ ok = $false; error = $_.Exception.Message } }
     $p = $u.Proposal; $info = $u.Info
@@ -620,7 +620,7 @@ function Global:Set-WebAppInstaller {
         }.GetNewClosure())
     Remove-Item -LiteralPath (Split-Path $u.Path -Parent) -Recurse -Force -ErrorAction SilentlyContinue
     (Get-WebUploads).Remove([string]$Data.uploadId)
-    $what = if ($u.Kind -eq 'file') { $u.FileName } else { "$($written.Count) file(s) from $($u.FileName)$(if ($setup) { " (setup: $setup)" })" }
+    $what = if ($u.Kind -eq 'file') { $u.FileName } else { "$(Format-Count ($written.Count) 'file') from $($u.FileName)$(if ($setup) { " (setup: $setup)" })" }
     Add-WebHistoryEntry -App $a.appName -Kind 'catalog' -Text "$(if ($mode -eq 'replace') { 'Packages folder replaced with' } else { 'Added to its packages folder:' }) $what$(if ($filled.Count) { "; filled in: $($filled -join ', ')" })"
     Write-Log "[OK] $($a.appName): $what in its packages folder$(if ($filled.Count) { " - filled in $($filled -join ', ')" })."
     return @{ ok = $true; fileName = $u.FileName; files = $written.Count; setup = $setup; filled = $filled.ToArray(); kind = [string]$(if ($info) { $info.Kind }); folder = $folder }
@@ -918,7 +918,7 @@ function Global:Invoke-WebFillDetails {
         if ($done.Count) { Save-WebUndo $undo }
     }
     try { Save-WebDetailsAsked $asked } catch { Write-Log "[WARN] Couldn't keep what winget lacks: $($_.Exception.Message)" }
-    Write-Log "[OK] Fill in details: $($done.Count) app(s) filled$(if ($lacking.Count) { "; winget has no $((@($lacking | ForEach-Object { "$($_.name): $($_.fields -join ', ')" })) -join '; ')" })$(if ($failed.Count) { "; not asked or not known: $($failed -join '; ')" })."
+    Write-Log "[OK] Fill in details: $(Format-Count ($done.Count) 'app') filled$(if ($lacking.Count) { "; winget has no $((@($lacking | ForEach-Object { "$($_.name): $($_.fields -join ', ')" })) -join '; ')" })$(if ($failed.Count) { "; not asked or not known: $($failed -join '; ')" })."
     return @{ ok = $true; filled = $done.ToArray(); asked = $apps.Count; failed = $failed.ToArray(); lacking = $lacking.ToArray() }
 }
 

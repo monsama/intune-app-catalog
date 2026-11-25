@@ -46,7 +46,7 @@ async function runChecks(names) {
     checkLog(`${stamp()} ${[r.summary || '', ...notes].join(' ').trim()}`);
     if (!hadRows) renderChecks();
     if ($('chkDetails').checked && r.connected && r.deployed > 0) {
-      $('checkNotes').textContent = `Reading ${r.deployed} deployed app(s) from Intune in detail - the slowest part...`;
+      $('checkNotes').textContent = `Reading ${nWord(r.deployed, 'deployed app')} from Intune in detail - the slowest part...`;
       const d = await checkJob('/api/checks-details', only, 'Reading the deployed apps in detail...');
       // Apps Checks set right in the catalog (a Store app's ID from Intune, 2.38.31): the list shows them as they are now.
       if (d) { mergeFindings(d); if ((d.changed || []).length) { findings = findings.filter(f => !(d.changed.includes(f.app) && f.area === 'Package')); notes.push(`Taken from Intune: ${d.changed.join(', ')} - a Microsoft Store app there, its Store ID is now in the catalog.`); if (typeof loadApps === 'function') loadApps(); } } else notes.push('The detailed check of the deployed apps did not finish - see the log.');
@@ -57,8 +57,8 @@ async function runChecks(names) {
     // "the catalog and Intune agree" although Home and the apps showed differences (from the nightly run or a full check).
     else if (r.connected && r.deployed > 0) notes.push(`The settings and groups of the ${nWord(r.deployed, 'app')} in Intune weren't compared - turn on Options > Deployed apps in detail.`);
     if ($('chkWinget').checked && r.winget > 0) {
-      $('checkNotes').textContent = `Asking winget about ${r.winget} Winget ID(s)...`;
-      checkLog(`${stamp()} Asking winget about ${r.winget} Winget ID(s)...`);
+      $('checkNotes').textContent = `Asking winget about ${nWord(r.winget, 'Winget ID')}...`;
+      checkLog(`${stamp()} Asking winget about ${nWord(r.winget, 'Winget ID')}...`);
       const w = await api('/api/checks-winget', only);
       if (w.ok) { mergeFindings(w); checkLog(`${stamp()} winget: ${nWord((w.findings || []).length, 'problem')}.`); }
       else { notes.push(w.error); checkLog(`${stamp()} [WARN] ${w.error}`); }
@@ -67,7 +67,10 @@ async function runChecks(names) {
     $('checkNotes').textContent = [r.summary || '', ...(findings.length ? notes : [])].join(' ').trim();
     $('checkEmptyList').hidden = true; $('btnRunChecksEmpty').hidden = true;
     // Not everything compared (2.38.23): said in the title - not the green "Nothing to fix" with the catch in small print.
-    $('checkEmptyTitle').textContent = notes.length ? 'No findings in what was compared' : 'Nothing to fix';
+    const offline = notes.some(n => /no connection|not connected|connection (isn't|is not) set up/i.test(String(n)));
+    // Not connected (2.38.41): only the catalog was checked - not "no findings", and one blue button (Set up), not two.
+    $('checkEmptyTitle').textContent = offline ? 'Not connected - only the catalog was checked' : notes.length ? 'No findings in what was compared' : 'Nothing to fix';
+    $('btnRunChecks').classList.toggle('primary', !offline);
     $('checkEmptyText').textContent = notes.length ? `Some parts weren't compared - ${notes.join(' ')}` : 'The catalog, Intune and Entra ID agree.';
     $('checkEmpty').classList.toggle('partial', !!notes.length);
     // Not connected (2.38.34): the way to fix it, as on the Groups page.
@@ -232,7 +235,7 @@ const diffsOf = f => {
 const comparable = f => diffsOf(f).length > 0;
 // A value as lines to compare: JSON (detection rule, return codes) is spread out, a script inside it gets its own lines.
 function cmpLines(v) {
-  if (v === null || v === undefined || v === '') return ['(blank)'];
+  if (v === null || v === undefined || v === '') return ['(empty)'];
   if (typeof v === 'string') {
     const t = v.trim();
     if (/^[[{]/.test(t)) { try { return cmpLinesOf(JSON.parse(t)); } catch { /* plain text after all */ } }
@@ -241,16 +244,16 @@ function cmpLines(v) {
   return cmpLinesOf(v);
 }
 function cmpLinesOf(o) {
-  if (o === null || o === undefined || o === '') return ['(blank)'];
+  if (o === null || o === undefined || o === '') return ['(empty)'];
   if (Array.isArray(o)) return o.length ? o.map(x => x !== null && typeof x === 'object' ? JSON.stringify(x) : String(x)) : ['(none)'];
   if (typeof o !== 'object') return cmpLines(String(o));
   const out = [];
   for (const [k, val] of Object.entries(o)) {
     if (typeof val === 'string' && /[\r\n]/.test(val)) out.push(`${k}:`, ...val.replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n').map(l => '    ' + l));
     else if (val !== null && typeof val === 'object') out.push(`${k}: ${JSON.stringify(val)}`);
-    else out.push(`${k}: ${val === null || val === undefined || val === '' ? '(blank)' : val}`);
+    else out.push(`${k}: ${val === null || val === undefined || val === '' ? '(empty)' : val}`);
   }
-  return out.length ? out : ['(blank)'];
+  return out.length ? out : ['(empty)'];
 }
 // Line diff (longest common subsequence) as side-by-side rows: [left, right, kind] with kind '=', 'chg', 'del' or 'add'.
 function cmpRows(a, b) {
@@ -387,7 +390,7 @@ function hcClose(refocus) {
 function hcValue(lines) {
   const keep = lines.slice(0, 4).map(l => l.length > 160 ? l.slice(0, 159) + '…' : l);
   const td = el('td', { class: 'v' }, keep.join('\n'));
-  if (lines.length > 4) td.append(el('span', { class: 'more', text: `\n+${lines.length - 4} more line(s)` }));
+  if (lines.length > 4) td.append(el('span', { class: 'more', text: `\n+${nWord(lines.length - 4, 'more line')}` }));
   return td;
 }
 function hcShow(f, b) {
@@ -401,7 +404,7 @@ function hcOpen(b, m) {
   const c = hcCard();
   if (hcFor && hcFor !== b) hcFor.setAttribute('aria-expanded', 'false');
   hcFor = b; b.setAttribute('aria-expanded', 'true');
-  const blank = t => t === '(blank)' || t === '(none)' || t === '(not kept at the last send)';
+  const blank = t => t === '(empty)' || t === '(none)' || t === '(not recorded)';
   c.replaceChildren(
     el('header', {}, el('b', { text: m.title }), el('span', { text: m.sub || '' })),
     el('div', { class: 'hcbody' }, m.rows.length ? el('table', { class: 'hc' },

@@ -97,7 +97,7 @@ function Global:Start-WebRelease {
         $dl = Test-WebPinnedDownload -WingetId $a.wingetId -Version $version
         if ($dl.status -in 'gone', 'notinwinget') { return @{ ok = $false; error = "Not released: $($dl.text)" } }
     }
-    if (-not @($Global:App.PilotGroups).Count) { return @{ ok = $false; error = 'Set the pilot groups first: Settings > Updates.' } }
+    # No pilot groups: the release goes to everyone at once (2.38.41) - the page and the nightly run promote it right after.
     if (-not $own) { [void](Initialize-SharedWingetPackage) }
     $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $own -PackagePath $a.packagePath
     if (-not $pkg.Found) { return @{ ok = $false; error = $(if ($own) { "$name has no package to upload - put the new installer in its folder and build it (the release dialog does both)." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging & folders builds it." }) } }
@@ -312,7 +312,7 @@ function Global:Set-WebManagedUpdates {
         $changed.Add($a.appName)
     }
     Save-WebUndo $undo
-    Write-Log "[OK] Managed updates $(if ($on) { 'on' } else { 'off' }) for $($changed.Count) app(s)$(if ($skipped.Count) { "; skipped: $($skipped -join ', ')" })."
+    Write-Log "[OK] Managed updates $(if ($on) { 'on' } else { 'off' }) for $(Format-Count ($changed.Count) 'app')$(if ($skipped.Count) { "; skipped: $($skipped -join ', ')" })."
     return @{ ok = $true; changed = $changed.ToArray(); skipped = $skipped.ToArray() }
 }
 
@@ -609,7 +609,7 @@ function Global:Invoke-WebDownloadChecks {
         [ordered]@{ name = $a.appName; version = [string]$a.metadata.appVersion; status = $r.status; text = $r.text; latestOnly = [bool]$r.latestOnly }
     }
     $bad = @($rows | Where-Object { $_.status -in 'gone', 'notinwinget' })
-    Write-Log "$(if ($bad.Count) { '[WARN]' } else { '[OK]' }) Checked $(@($rows).Count) pinned download(s)$(if ($bad.Count) { " - can't be installed any more: $(($bad | ForEach-Object { "$($_.name) $($_.version)" }) -join ', ')" })."
+    Write-Log "$(if ($bad.Count) { '[WARN]' } else { '[OK]' }) Checked $(Format-Count (@($rows).Count) 'pinned download')$(if ($bad.Count) { " - can't be installed any more: $(($bad | ForEach-Object { "$($_.name) $($_.version)" }) -join ', ')" })."
     return @{ ok = $true; rows = @($rows); bad = $bad.Count }
 }
 
@@ -834,6 +834,6 @@ function Global:Invoke-WebWauSwitch {
     if ($carried.Count) { Write-Log "[OK] Carried WAU's extra winget options over: $($carried -join '; ')." }
     if ($dropped.Count) { Write-Log "[WARN] Left out WAU options winget's own command can't take: $($dropped -join '; ')." }
     Save-WebUndo $undo
-    Write-Log "[OK] Switched $($changed.Count) app(s) from Winget-AutoUpdate to $(if ($managed) { 'managed updates' } else { 'the winget command' })$(if ($noVersion.Count) { " ($($noVersion.Count) still need an App version: $($noVersion -join ', '))" })."
+    Write-Log "[OK] Switched $(Format-Count ($changed.Count) 'app') from Winget-AutoUpdate to $(if ($managed) { 'managed updates' } else { 'the winget command' })$(if ($noVersion.Count) { " ($($noVersion.Count) still need an App version: $($noVersion -join ', '))" })."
     return @{ ok = $true; changed = $changed.ToArray(); noVersion = $noVersion.ToArray(); deployed = @($all | Where-Object { $changed -contains $_.appName -and $_.appId } | ForEach-Object { [string]$_.appName }); byHand = $byHand.ToArray(); mismatch = $mismatch.ToArray(); tookId = $tookId.ToArray(); dropped = $dropped.ToArray(); carried = $carried.ToArray(); wauApp = $wauApp }
 }

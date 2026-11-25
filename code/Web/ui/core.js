@@ -212,6 +212,8 @@ HTMLDialogElement.prototype.showModal = function () { _showModal.call(this); if 
 function toast(msg, isErr, actions) {
   activity(`${stamp()} ${isErr ? '[FAILED] ' : ''}${msg}`);
   const t = $('toast');
+  // A plain note doesn't push an error off the screen while it is still showing (2.38.41) - the note is in Activity.
+  if (!isErr && !(actions || []).filter(Boolean).length && !t.hidden && t.classList.contains('err')) return;
   placeToast();
   const acts = (actions || []).filter(Boolean);
   // A close button: an error toast (8 s) mustn't sit over the buttons you need now.

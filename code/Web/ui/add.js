@@ -108,7 +108,7 @@ async function searchAdd() {
   if (seq !== awSeq) return;   // a newer search is under way
   if (!r.ok) { $('awNote').textContent = r.error; return; }
   const have = new Map(apps.filter(a => a.wingetId).map(a => [a.wingetId.toLowerCase(), a.name]));
-  $('awNote').textContent = r.rows.length ? `${r.rows.length} ${mode === 'store' ? 'app' : 'package'}(s)${awPicked.size ? ` - ${awPicked.size} picked` : ''}.` : (mode === 'store' ? 'The Store found nothing - try a shorter name.' : 'winget found nothing - try a shorter name or the publisher.');
+  $('awNote').textContent = r.rows.length ? `${nWord(r.rows.length, mode === 'store' ? 'app' : 'package')}${awPicked.size ? ` - ${awPicked.size} picked` : ''}.` : (mode === 'store' ? 'The Store found nothing - try a shorter name.' : 'winget found nothing - try a shorter name or the publisher.');
   $('awRows').replaceChildren(...r.rows.map(x => {
     const inCat = have.get(x.id.toLowerCase());
     // Already in Intune by its name, and not linked to a catalog app: adding is fine - sending would make a second one.

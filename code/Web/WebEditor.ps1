@@ -556,6 +556,8 @@ function Global:Get-WebChangeSource {
         # 2.38.40: words, not the request's name ("This app (deploy-start)").
         '/api/deploy-start' { 'Send to Intune' } '/api/push-start' { 'Send groups' } '/api/package-start' { 'Build package' } '/api/pull-start' { 'Pull from Intune' }
         '/api/upload-start' { 'Upload' } '/api/folder-upload-start' { 'Upload' } '/api/delete-intune' { 'Delete from Intune' } '/api/lob-retire' { 'Retire MSI app' }
+        '/api/app-remove' { 'Remove from catalog' } '/api/app-installer' { 'Installer upload' } '/api/app-duplicate' { 'Duplicate' } '/api/package-*' { 'Packages folder' }
+        '/api/upload-*' { 'Installer upload' } '/api/winget-*' { 'Winget' } '/api/fill-details' { 'Fill in details' } '/api/icon-*' { 'Icon' } '/api/marker-version' { 'Release' }
         default { if ($Path) { $w = ($Path -replace '^/api/', '' -replace '-', ' '); $w.Substring(0, 1).ToUpperInvariant() + $w.Substring(1) } else { 'This app' } }
     }
 }

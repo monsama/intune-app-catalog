@@ -238,7 +238,7 @@ try {
     $rows = @($checks.findings)
     $by = { param($problem) @($rows | Where-Object { $_.problem -like $problem }) }
     Check ($checks.ok -and $checks.connected) 'checks: Intune and Entra ID were read' ($checks | ConvertTo-Json -Compress -Depth 6)
-    Check (([string]$checks.summary) -like '*3 app(s) in Intune*') 'checks: every page of Intune''s apps was read (nextLink followed)' (@($checks.notes) -join ' | ')
+    Check (([string]$checks.summary) -like '*3 apps in Intune*') 'checks: every page of Intune''s apps was read (nextLink followed)' (@($checks.notes) -join ' | ')
     $renamed = @(& $by 'Renamed in Intune')
     Check ($renamed.Count -eq 1 -and $renamed[0].catalogName -eq $linkedName -and @($renamed[0].actions) -contains 'RenameFromIntune') 'checks: an app renamed in Intune'
     $missing = @(& $by 'In Intune, not in the catalog')
@@ -248,12 +248,12 @@ try {
     Check ($unlinked.Count -eq 1 -and $unlinked[0].catalogName -eq $sameName -and $unlinked[0].data.MatchedId -eq $appSameName) 'checks: a catalog app with the same name in Intune, to link'
     $group = @(& $by '*SG-ZZ-Missing*')
     Check ($group.Count -eq 1 -and @(& $by '*SG-ZZ-Exists*').Count -eq 0) 'checks: a group missing in Entra ID (and not the one that exists)'
-    Check (([string]$checks.summary) -like '*1 of the 2 group(s) the catalog uses found*') 'checks: only the catalog''s groups were looked up, by name (no full group or user listing)' (@($checks.notes) -join ' | ')
+    Check (([string]$checks.summary) -like '*1 of the 2 groups the catalog uses found*') 'checks: only the catalog''s groups were looked up, by name (no full group or user listing)' (@($checks.notes) -join ' | ')
 
     # Diagnostics
     $dg = Invoke-Api '/api/diagnostics'
     $intuneLines = @($dg.sections[2].lines.text) -join ' | '
-    Check ($dg.ok -and $intuneLines -like '*Connected - 3 app(s) in Intune*') 'diagnostics: connected, and how many apps are in Intune' $intuneLines
+    Check ($dg.ok -and $intuneLines -like '*Connected - 3 apps in Intune*') 'diagnostics: connected, and how many apps are in Intune' $intuneLines
 
     # MSI line-of-business app retired (2.33.0): deleted only when Intune says it is one, and only once a Win32 app replaces it.
     $catDir = Join-Path $repoRoot 'data\app-data'
@@ -433,7 +433,7 @@ try {
     $attP = Invoke-Api '/api/attention' @{ part = 'intune'; fresh = $true }
     $attPL = Invoke-Api '/api/attention' @{ part = 'local' }
     $expect = @($pcMiss | Where-Object { @($attPL.refused) -notcontains $_ } | Sort-Object)
-    Check ($attP.ok -and ((@($attP.permMissing) | Sort-Object) -join ',') -eq ($expect -join ',') -and ($expect.Count -eq 0 -or @($attP.items | Where-Object { $_.go -eq 'settings:permissions' -and $_.title -like '*permission(s) missing' }).Count -eq 1)) 'home: missing Graph permissions are a Home item, the same as the permission check' "missing=$($pcMiss -join ',') refused=$(@($attPL.refused) -join ',') got=$(@($attP.permMissing) -join ',')"
+    Check ($attP.ok -and ((@($attP.permMissing) | Sort-Object) -join ',') -eq ($expect -join ',') -and ($expect.Count -eq 0 -or @($attP.items | Where-Object { $_.go -eq 'settings:permissions' -and $_.title -like '*permission* missing' }).Count -eq 1)) 'home: missing Graph permissions are a Home item, the same as the permission check' "missing=$($pcMiss -join ',') refused=$(@($attPL.refused) -join ',') got=$(@($attP.permMissing) -join ',')"
     $hc = Invoke-Api '/api/health'
     Check ($hc.ok -and @($hc.checks | Where-Object { $_.level -eq 'ok' -and $_.text -like 'Signing in to Microsoft Graph works*' }).Count -eq 1) 'health: signing in to Graph is checked' ($hc | ConvertTo-Json -Compress -Depth 4)
     $mr = Invoke-Api '/api/monthly-report' @{ month = '2026-01' }

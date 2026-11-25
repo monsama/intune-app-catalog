@@ -278,7 +278,7 @@ try {
         review: [{ app: 'ZZ Pull', diffs: [{ field: 'Required for', local: '', intune: '[All devices]' }, { field: 'Publisher', local: 'Old Name Ltd', intune: 'New Name Ltd' }] }] }); return Promise.resolve(true); };
         openPull(['ZZ Pull']);`);
       await page.waitForSelector('#dlgPull[open] #pullReview tr[data-field]');
-      const pull0 = await page.evaluate(() => ({ picks: [...document.querySelectorAll('#pullReview tr[data-field]')].map(t => t.dataset.pick).join(','), btn: document.getElementById('btnPullApply').textContent, log: document.getElementById('pullLogBox').open, blank: /\(blank\)/.test(document.getElementById('pullReview').textContent) }));
+      const pull0 = await page.evaluate(() => ({ picks: [...document.querySelectorAll('#pullReview tr[data-field]')].map(t => t.dataset.pick).join(','), btn: document.getElementById('btnPullApply').textContent, log: document.getElementById('pullLogBox').open, blank: /\(empty\)/.test(document.getElementById('pullReview').textContent) }));
       check(pull0.picks === 'intune,intune' && /2 from Intune, 0 kept/.test(pull0.btn) && !pull0.log && pull0.blank, `${label}: Read from Intune - Intune's value is picked for each field, the log folded`, JSON.stringify(pull0));
       await page.click('#pullReview tr[data-field="Publisher"] td.pick[data-side="catalog"]');
       const pull1 = await page.evaluate(() => ({ picks: [...document.querySelectorAll('#pullReview tr[data-field]')].map(t => t.dataset.pick).join(','), btn: document.getElementById('btnPullApply').textContent }));
@@ -328,7 +328,7 @@ try {
       await page.hover('#checkBody .difs');
       await page.waitForSelector('#cmpCard:not([hidden])', { timeout: 3000 }).catch(() => { });
       const card = await page.evaluate(() => { const c = document.getElementById('cmpCard'); if (!c || c.hidden) return null; const r = c.getBoundingClientRect();
-        return { rows: c.querySelectorAll('tbody tr').length, marks: c.querySelectorAll('mark.del, mark.add').length, blank: /\(blank\)/.test(c.textContent),
+        return { rows: c.querySelectorAll('tbody tr').length, marks: c.querySelectorAll('mark.del, mark.add').length, blank: /\(empty\)/.test(c.textContent),
           inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight, take: [...c.querySelectorAll('button')].map(b => b.textContent).join('|') }; });
       check(card && card.rows === 3 && card.marks >= 2 && card.blank, `${label}: hovering the chips shows the fields side by side, the changes marked`, JSON.stringify(card));
       check(card && card.inside, `${label}: the hover card fits the window`, JSON.stringify(card));

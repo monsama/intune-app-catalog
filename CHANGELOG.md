@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.38.41
+
+- **Release to everyone works**: without pilot groups the server still refused
+  the release ("Set the pilot groups first") although the dialog offered
+  "Release to everyone" - it goes through now. The dialog's text names the
+  version and leaves "(pilot)" out when there is no pilot.
+- **GUI review**:
+  - Send windows: they no longer stretch to the tallest one, the stack scrolls
+    instead of covering the list, a waiting one can be closed (it is taken out
+    of the queue), they stay usable over an open dialog, and a sent one still
+    closes by itself after the pointer leaves it. Error messages show above
+    them and aren't pushed away by a plain note.
+  - Counts read "1 app", "3 apps" everywhere (Home, Checks, Diagnostics, the
+    logs) - no more "app(s)"; "1 field differs", "2 fields differ".
+  - "Send" throughout, where some texts still said Push or deploy.
+  - Recent changes names the remaining sources in words (Remove from catalog,
+    Installer upload, Packages folder, Duplicate, ...).
+  - Empty values read "(empty)" everywhere, values not kept "(not recorded)".
+  - Checks: the Area labels and fix buttons are one width; when not connected
+    it says "Not connected - only the catalog was checked", with one blue button.
+  - Settings > About: the folders use the full width and long paths break at
+    their separators; a version newer than the latest release says so.
+  - Settings > Updates: label and unit on one line, number fields sized for a
+    number. The nightly run's results show their outcome in words.
+  - Apps: longer names before they are cut on wide screens; the toolbar says
+    "Send to Intune (2)" like "Send groups (2)" and keeps its width.
+
 ## 2.38.40
 
 - **Release without pilot groups**: with no pilot groups set, "Release new

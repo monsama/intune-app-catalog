@@ -266,8 +266,8 @@ function Global:Start-WebPushGroups {
         OutputResultPath = $resultPath
     }
     if ($mode -eq 'Apply') { $gid = Add-WebGroupIdsToConfig $config; if ($gid) { return @{ ok = $false; error = $gid } } }
-    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedBatchAssignScript -Name 'batchassign' -ConfigJson ($config | ConvertTo-Json -Depth 8) -ResultPath $resultPath -Kind "Push groups ($mode, $($apps.Count) app(s))" -Apps $(if ($mode -eq 'Apply') { @($apps | ForEach-Object { [string]$_.appName }) } else { @() })
-    if ($started.ok) { Write-Log "[INFO] Push groups - $(if ($mode -eq 'Apply') { 'applying' } else { 'previewing' }) for $($apps.Count) app(s)..." }
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedBatchAssignScript -Name 'batchassign' -ConfigJson ($config | ConvertTo-Json -Depth 8) -ResultPath $resultPath -Kind "Push groups ($mode, $(Format-Count ($apps.Count) 'app'))" -Apps $(if ($mode -eq 'Apply') { @($apps | ForEach-Object { [string]$_.appName }) } else { @() })
+    if ($started.ok) { Write-Log "[INFO] Push groups - $(if ($mode -eq 'Apply') { 'applying' } else { 'previewing' }) for $(Format-Count ($apps.Count) 'app')..." }
     return $started
 }
 
@@ -293,7 +293,7 @@ function Global:Start-WebPackage {
     if ($names.Count -eq 1) { $params.SingleFolderName = $folders[0] }
     elseif ($names.Count -gt 1) { $params.FolderNames = ($folders -join ',') }
     $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedPackageScript -Name 'package' -ConfigJson '' -ResultPath '' -Kind 'Package' -Parameters $params -After @{ Kind = 'package' }
-    if ($started.ok) { Write-Log "[INFO] Packaging $(if ($names.Count) { "$($own.Count) app(s)" } else { 'every app with its own installer' })..." }
+    if ($started.ok) { Write-Log "[INFO] Packaging $(if ($names.Count) { "$(Format-Count ($own.Count) 'app')" } else { 'every app with its own installer' })..." }
     return $started
 }
 
@@ -309,8 +309,8 @@ function Global:Start-WebPull {
         TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
         Apps = @($apps | ForEach-Object { @{ AppName = $_.appName; AppId = $_.appId } }); OutputResultPath = $resultPath
     }
-    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedSyncMetadataScript -Name 'syncmeta' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind "Pull ($($apps.Count) app(s))" -After @{ Kind = 'pull' }
-    if ($started.ok) { Write-Log "[INFO] Reading $($apps.Count) app(s) from Intune..." }
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedSyncMetadataScript -Name 'syncmeta' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind "Pull ($(Format-Count ($apps.Count) 'app'))" -After @{ Kind = 'pull' }
+    if ($started.ok) { Write-Log "[INFO] Reading $(Format-Count ($apps.Count) 'app') from Intune..." }
     return $started
 }
 
@@ -453,7 +453,7 @@ function Global:Clear-WebAppIds {
     }
     Save-WebUndo $undo
     $Global:App.IntuneAppsCache = $null
-    Write-Log "[OK] Cleared the App ID of $($cleared.Count) app(s) in the catalog (Intune unchanged).$(if ($failed.Count) { " Failed: $($failed -join '; ')" })"
+    Write-Log "[OK] Cleared the App ID of $(Format-Count ($cleared.Count) 'app') in the catalog (Intune unchanged).$(if ($failed.Count) { " Failed: $($failed -join '; ')" })"
     return @{ ok = ($failed.Count -eq 0); cleared = $cleared.ToArray(); failed = $failed.ToArray(); error = $(if ($failed.Count) { "Not cleared: $($failed -join '; ')" } else { '' }) }
 }
 
@@ -666,7 +666,7 @@ function Global:Start-WebRetire {
     }
     $gid = Add-WebGroupIdsToConfig $config; if ($gid) { return @{ ok = $false; error = $gid } }
     $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedBatchAssignScript -Name 'batchassign' -ConfigJson ($config | ConvertTo-Json -Depth 8) -ResultPath $resultPath `
-        -Kind "Retire $name - uninstall from $($groups.Count) group(s)$(if ($ids.Count -gt 1) { ", $($ids.Count) versions in Intune" })" -After @{ Kind = 'retire'; AppName = $a.appName; Groups = $groups } -Apps @([string]$a.appName)
+        -Kind "Retire $name - uninstall from $(Format-Count ($groups.Count) 'group')$(if ($ids.Count -gt 1) { ", $($ids.Count) versions in Intune" })" -After @{ Kind = 'retire'; AppName = $a.appName; Groups = $groups } -Apps @([string]$a.appName)
     if ($started.ok) { Write-Log "[INFO] Retiring $name - uninstalling it from: $($groups -join ', ')..." }
     return $started
 }

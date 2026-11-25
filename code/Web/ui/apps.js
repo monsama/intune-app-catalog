@@ -213,8 +213,8 @@ function updateActions() {
   const notInIntune = [...selected].filter(s => !(apps.find(a => a.name === s) || {}).hasAppId);
   setEnabled($('btnEditApp'), n === 1, n === 0 ? 'Select an app first.' : 'Select exactly one app to edit.');
   setEnabled($('btnDeploy'), n > 0, 'Select one or more apps first.');
-  setEnabled($('btnPush'), n > 0 && notInIntune.length === 0, n === 0 ? 'Select one or more apps first.' : `Only apps already in Intune - deploy ${notInIntune.length === 1 ? notInIntune[0] : notInIntune.length + ' of the selected apps'} first.`);
-  $('btnDeploy').textContent = n > 1 ? `Send ${n} to Intune` : 'Send to Intune';
+  setEnabled($('btnPush'), n > 0 && notInIntune.length === 0, n === 0 ? 'Select one or more apps first.' : `Only apps already in Intune - send ${notInIntune.length === 1 ? notInIntune[0] : notInIntune.length + ' of the selected apps'} to Intune first.`);
+  $('btnDeploy').textContent = n > 1 ? `Send to Intune (${n})` : 'Send to Intune';
   $('btnPush').textContent = n > 1 ? `Send groups (${n})` : 'Send groups';
 }
 
@@ -848,7 +848,7 @@ async function undoLast() {
   await loadUndo();
   if (!undoInfo) { toast('There is no bulk change to undo.', true); return; }
   const u = undoInfo, list = u.apps.slice(0, 15).join('\n') + (u.apps.length > 15 ? `\n... and ${u.apps.length - 15} more` : '');
-  if (!(await ask(`Undo "${u.label}" (${u.time})?\n\nThese ${u.count} app file(s) get back what they had before:\n${list}\n\nA file changed since (an editor save, a deploy's App ID) is left alone. Intune isn't touched - if you already pushed, push again afterwards.`, { ok: 'Undo', danger: false }))) return;
+  if (!(await ask(`Undo "${u.label}" (${u.time})?\n\nThese ${nWord(u.count, 'app file')} get back what they had before:\n${list}\n\nA file changed since (an editor save, a deploy's App ID) is left alone. Intune isn't touched - if you already sent them, send them again afterwards.`, { ok: 'Undo', danger: false }))) return;
   const r = await api('/api/undo-last');
   if (!r.ok) { toast(r.error, true); return; }
   toast(`Undid "${r.label}": ${nWord(r.restored.length, 'app')} restored.${r.skipped.length ? ' Left alone: ' + r.skipped.join(', ') + '.' : ''}`, r.skipped.length > 0);
@@ -1031,7 +1031,7 @@ $('btnTenantClear') && $('btnTenantClear').addEventListener('click', async () =>
   if (!names.length) return;
   if (!(await ask(`Clear the App ID of ${names.length} app${names.length === 1 ? '' : 's'}?\n\nOnly the catalog changes - their settings, groups and packages stay, and they read "ready to deploy". Send to Intune then creates them in this tenant. Each file is kept as a copy first (Earlier versions...).`, { ok: 'Clear App IDs', danger: false }))) return;
   const r = await api('/api/clear-appids', { names });
-  toast(r.ok ? `Cleared ${r.cleared.length} App ID(s).` : r.error, !r.ok);
+  toast(r.ok ? `Cleared ${nWord(r.cleared.length, 'App ID')}.` : r.error, !r.ok);
   if ($('filter').value === 'notintenant') $('filter').value = 'all';
   await loadApps();
 });
@@ -1193,9 +1193,9 @@ function deployOne(name) {
     runJob({ name, sendGroups: $('dpGroups').checked }, async (ok, result, after) => {
       if (!ok) { resolve({ ok: false, error: (result && result.error) || 'see the log' }); return; }
       if (after && after.pushGroups) {
-        setDeployStatus(name, 'info', 'Pushing groups...');
+        setDeployStatus(name, 'info', 'Sending groups...');
         const started = await runJob({ names: [name], mode: 'AfterDeploy' }, ok2 => resolve({ ok: true, groups: ok2 }),
-          { path: '/api/push-start', log: 'deployLog', startText: `Pushing ${name}'s groups...` });
+          { path: '/api/push-start', log: 'deployLog', startText: `Sending ${name}'s groups...` });
         if (!started) resolve({ ok: true, groups: false });
         return;
       }
@@ -1220,7 +1220,7 @@ async function runDeployQueue(names) {
     const r = await deployOne(name);
     deployResults[name] = r.ok ? 'ok' : 'failed';
     if (!r.ok) setDeployStatus(name, 'err', 'Failed', r.error);
-    else setDeployStatus(name, r.groups === false ? 'warn' : 'ok', r.groups === true ? 'Done, groups pushed' : r.groups === false ? 'Done, groups failed' : 'Done', r.groups === false ? 'Send groups again from the toolbar.' : '');
+    else setDeployStatus(name, r.groups === false ? 'warn' : 'ok', r.groups === true ? 'Done, groups sent' : r.groups === false ? 'Done, groups failed' : 'Done', r.groups === false ? 'Send groups again from the toolbar.' : '');
     deployProgress();
   }
   deployRunning = false; $('btnDeployClose').textContent = 'Close';
@@ -1281,7 +1281,7 @@ $('btnPushGo').addEventListener('click', async () => {
   if ($('btnPushGo').textContent === 'Done') { $('btnPushGo').closest('dialog').close(); return; }
   $('btnPushGo').disabled = true;
   await runJob({ names: pushNames, mode: 'Apply' }, ok => {
-    toast(ok ? 'Groups pushed to Intune.' : 'Send groups failed - see the log.', !ok);
+    toast(ok ? 'Groups sent to Intune.' : 'Send groups failed - see the log.', !ok);
     if (ok) { const done = () => { const b = $('btnPushGo'); b.textContent = 'Done'; delete b.dataset.jobWas; b.disabled = false; }; done(); setTimeout(done, 0); $('btnPushClose').hidden = true; $('btnPushGo').focus(); loadApps(); if (typeof checksRefresh === 'function') checksRefresh(pushNames); }
   }, { path: '/api/push-start', log: 'pushLog', startText: 'Applying...' });
 });
@@ -1368,8 +1368,8 @@ $('btnBatchGo').addEventListener('click', async () => {
   const msg = `Changed ${nWord(r.changed.length, 'app')} in the catalog.` + (r.kept.length ? ` Install commands edited by hand were kept on ${r.kept.join(', ')}.` : '');
   if (!$('bPush').checked || !r.deployed.length) { toast(msg); $('dlgBatch').close(); return; }
   $('btnBatchGo').disabled = true; $('batchLog').hidden = false;
-  const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'batchLog', startText: 'Pushing ' });
-  toast(`${msg} Settings pushed for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length);
+  const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'batchLog', startText: 'Sending settings for ' });
+  toast(`${msg} Settings sent for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length);
 });
 
 let gbMode = 'add', gbNames = [];
@@ -1542,7 +1542,7 @@ async function menuAction(act) {
       if (!r.ok) { toast(r.error, true); return; }
       toast(`App version updated on ${nWord(r.changed.length, 'app')}.${r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : ''}`);
       await loadApps();
-      if (r.deployed.length && await ask(`Send the settings of the ${nWord(r.deployed.length, 'app')} in Intune now?\n\n${r.deployed.join('\n')}`, { ok: 'Push settings', danger: false })) pushSettings(r.deployed);
+      if (r.deployed.length && await ask(`Send the settings of the ${nWord(r.deployed.length, 'app')} in Intune now?\n\n${r.deployed.join('\n')}`, { ok: 'Send settings', danger: false })) pushSettings(r.deployed);
       break;
     }
     case 'copyid': {
@@ -1553,7 +1553,7 @@ async function menuAction(act) {
     case 'clearid': {
       const ids = sel().filter(a => a.hasAppId).map(a => a.name);
       if (!(await ask(`Clear ${ids.length === 1 ? `${ids[0]}'s App ID` : `the App IDs of ${ids.length} apps`} in the catalog?\n\nOnly the catalog changes - Intune isn't touched. Settings, groups and packages stay, and the app can be deployed again (here or in another tenant). Undo takes it back.`, { ok: 'Clear App IDs', danger: false }))) return;
-      const r = await api('/api/clear-appids', { names: ids }); toast(r.ok ? `Cleared ${r.cleared.length} App ID(s).` : r.error, !r.ok); loadApps();
+      const r = await api('/api/clear-appids', { names: ids }); toast(r.ok ? `Cleared ${nWord(r.cleared.length, 'App ID')}.` : r.error, !r.ok); loadApps();
       break;
     }
     case 'delete': {
@@ -1616,7 +1616,7 @@ function openPull(names) {
         const cell = (side, value) => {
           const id = `${group}-${side}`;
           const td = el('td', { class: 'pick v', 'data-side': side },
-            el('label', { for: id }, el('input', { type: 'radio', name: group, id, 'aria-label': `${d.field}: keep the ${side === 'intune' ? 'Intune' : 'catalog'} value` }), el('span', { text: value === '' || value === null || value === undefined ? '(blank)' : String(value) })));
+            el('label', { for: id }, el('input', { type: 'radio', name: group, id, 'aria-label': `${d.field}: keep the ${side === 'intune' ? 'Intune' : 'catalog'} value` }), el('span', { text: value === '' || value === null || value === undefined ? '(empty)' : String(value) })));
           td.addEventListener('click', () => pullPick(tr, side));
           td.querySelector('input').addEventListener('change', () => pullPick(tr, side));
           return td;
@@ -1864,7 +1864,7 @@ $('btnAppsReload').addEventListener('click', async () => {
 async function fillDetails(names) {
   const all = !names.length;
   if (all && !(await ask('Fill in the missing details of every Winget app?\n\nPublisher, description, information and privacy links and developer come from winget, the owner from Settings - only where a field is still empty. The App version is never changed. winget is asked once per app, which takes a moment.', { ok: 'Fill them in' }))) return;
-  toast(`Asking winget about ${all ? 'every Winget app' : names.length + ' app(s)'}...`);
+  toast(`Asking winget about ${all ? 'every Winget app' : nWord(names.length, 'app')}...`);
   const r = await api('/api/fill-details', { names });
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps();

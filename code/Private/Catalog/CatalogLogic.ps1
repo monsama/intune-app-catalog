@@ -2768,6 +2768,13 @@ function Global:Test-AppUpdatesItself {
     return (Test-KnownSelfUpdatingApp ([string]$App.wingetId))
 }
 
+function Global:Format-Count {
+    # Pure (2.38.41): "1 app", "3 apps" - instead of "3 app(s)". -Word is the singular; the plural adds an s.
+    param($N, [string]$Word)
+    $n = $N; if ($null -eq $n) { $n = 0 }
+    return "$n $Word$(if ([double]$n -ne 1) { 's' })"
+}
+
 function Global:Get-NonPackageAppHint {
     <#
       Pure: why an app without a Winget ID needs no package of its own ('' when

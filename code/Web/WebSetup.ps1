@@ -30,8 +30,8 @@ function Global:Get-WebDiagnostics {
     $pkgRoot = Get-AppFolder -Kind Packages
     $folders = @(if (Test-Path -LiteralPath $pkgRoot) { Get-ChildItem -LiteralPath $pkgRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object { @{ Name = $_.Name; FullName = $_.FullName } } })
     $cat = @(Get-CatalogDiagnosticLines -Apps $apps -PackageFolders $folders | ForEach-Object { & $line $_.Level $_.Text $_.Items })
-    if (@($catalog.Failed).Count) { $cat = @(& $line 'failed' "$(@($catalog.Failed).Count) catalog file(s) couldn't be read" @($catalog.Failed)) + $cat }
-    $sections.Add([ordered]@{ title = "Catalog ($($apps.Count) app(s))"; lines = $cat })
+    if (@($catalog.Failed).Count) { $cat = @(& $line 'failed' "$(Format-Count (@($catalog.Failed).Count) 'catalog file') couldn't be read" @($catalog.Failed)) + $cat }
+    $sections.Add([ordered]@{ title = "Catalog ($(Format-Count ($apps.Count) 'app'))"; lines = $cat })
 
     $live = New-Object System.Collections.Generic.List[object]
     if (-not $credsOk -or -not $moduleOk) { $live.Add((& $line 'info' 'Skipped - the connection isn''t set up.')) }
@@ -46,15 +46,15 @@ function Global:Get-WebDiagnostics {
         if (-not $read.ok) { $live.Add((& $line 'failed' "Couldn't read Intune: $($read.error)")) }
         else {
             $intune = @($read.value)
-            $live.Add((& $line 'ok' "Connected - $($intune.Count) app(s) in Intune"))
+            $live.Add((& $line 'ok' "Connected - $(Format-Count ($intune.Count) 'app') in Intune"))
             $f = @(Get-IntuneLinkFindings -Apps $apps -IntuneApps $intune)
             $by = { param($a) @($f | Where-Object { @($_.Actions) -contains $a }) }
             $gone = & $by 'ClearAppId'; $renamed = & $by 'RenameFromIntune'; $missing = & $by 'AddToCatalog'
             $unlinked = @($f | Where-Object { @($_.Actions) -contains 'ChooseAppId' -or @($_.Actions) -contains 'SetAppId' })
-            $live.Add((& $line $(if ($gone.Count) { 'failed' } else { 'ok' }) "$($gone.Count) app(s) whose App ID no longer exists in Intune" @($gone | ForEach-Object { $_.App })))
-            $live.Add((& $line $(if ($renamed.Count) { 'warn' } else { 'ok' }) "$($renamed.Count) app(s) renamed in Intune since" @($renamed | ForEach-Object { $_.App })))
-            $live.Add((& $line $(if ($unlinked.Count) { 'warn' } else { 'ok' }) "$($unlinked.Count) app(s) not linked to the Intune app of the same name" @($unlinked | ForEach-Object { $_.App })))
-            $live.Add((& $line $(if ($missing.Count) { 'info' } else { 'ok' }) "$($missing.Count) app(s) in Intune that aren't in the catalog - Checks can add them"))
+            $live.Add((& $line $(if ($gone.Count) { 'failed' } else { 'ok' }) "$(Format-Count ($gone.Count) 'app') whose App ID no longer exists in Intune" @($gone | ForEach-Object { $_.App })))
+            $live.Add((& $line $(if ($renamed.Count) { 'warn' } else { 'ok' }) "$(Format-Count ($renamed.Count) 'app') renamed in Intune since" @($renamed | ForEach-Object { $_.App })))
+            $live.Add((& $line $(if ($unlinked.Count) { 'warn' } else { 'ok' }) "$(Format-Count ($unlinked.Count) 'app') not linked to the Intune app of the same name" @($unlinked | ForEach-Object { $_.App })))
+            $live.Add((& $line $(if ($missing.Count) { 'info' } else { 'ok' }) "$(Format-Count ($missing.Count) 'app') in Intune that aren't in the catalog - Checks can add them"))
             $live.Add((& $line 'info' 'The API permissions are checked by Settings > Connection > Test connection; every difference in detail by Checks.'))
         }
     }

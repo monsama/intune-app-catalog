@@ -531,25 +531,40 @@ const sendKinds = {
 function sendStack() {
   let s = $('sendStack');
   if (!s) { s = el('div', { id: 'sendStack', class: 'sendstack', role: 'region', 'aria-label': 'Sends to Intune' }); document.body.append(s); }
+  placeSendStack();
   return s;
 }
+// Inside the topmost open dialog (2.38.41): an open dialog makes the page behind it inert, so the windows sat blurred
+// under its backdrop - their logs unreadable, Close not pressable (as the minimized-window tray does).
+function placeSendStack() {
+  const s = $('sendStack'); if (!s) return;
+  const top = [...document.querySelectorAll('dialog[open]')].filter(d => d.matches(':modal')).pop();
+  const host = top || document.body;
+  if (s.parentElement !== host) host.append(s);
+}
+window.addEventListener('close', () => setTimeout(placeSendStack, 0), true);
+{ const sm = HTMLDialogElement.prototype.showModal; HTMLDialogElement.prototype.showModal = function () { sm.call(this); placeSendStack(); }; }
 function sendCard(kind, name) {
   const id = 'sendLog' + (++sendSeq);
-  const state = el('span', { class: 'pill', text: 'Waiting' });
-  const close = el('button', { type: 'button', class: 'btn small ghost', text: 'Close', disabled: true, title: 'It closes once it is sent' });
+  const state = el('span', { class: 'pill muted', text: 'Waiting' });
+  // Waiting, Close takes it out of the queue (2.38.41); sending, it can't be closed; done, it closes the window.
+  const close = el('button', { type: 'button', class: 'btn small ghost', text: 'Close', title: 'Take it out of the queue - it is not sent' });
   const log = el('pre', { class: 'log', id, tabindex: '0', role: 'log', hidden: true });
   const card = el('section', { class: 'sendcard waiting', 'aria-label': `${sendKinds[kind].title}: ${name}` },
     el('div', { class: 'trayhead' }, el('h2', { text: sendKinds[kind].title }), el('span', { class: 'spacer' }), state, close),
     el('p', { class: 'sub', text: name }), log);
-  close.addEventListener('click', () => card.remove());
+  close.addEventListener('click', () => { const i = sendQueue.findIndex(q => q.card && q.card.id === id); if (i >= 0) sendQueue.splice(i, 1); card.remove(); });
+  // Sent: it goes by itself 20 s later - not while the pointer or focus is on it, but once they leave (2.38.41).
+  let autoClose = null;
+  const later = () => { clearTimeout(autoClose); autoClose = setTimeout(() => { if (!card.isConnected) return; if (card.matches(':hover, :focus-within')) later(); else card.remove(); }, 20000); };
   // Newest on the left: the stack runs right to left.
   sendStack().append(card);
   const set = (cls, text, done) => {
-    card.className = 'sendcard ' + cls; state.className = 'pill ' + ({ sending: 'info', sent: 'ok', failed: 'err' }[cls] || ''); state.textContent = text;
+    card.className = 'sendcard ' + cls; state.className = 'pill ' + ({ sending: 'info', sent: 'ok', failed: 'err' }[cls] || 'muted'); state.textContent = text;
     if (cls !== 'waiting') log.hidden = false;
     close.disabled = !done; close.title = done ? 'Close this window' : 'It closes once it is sent';
     // Sent: it goes by itself after a while; failed stays until closed, so the log can be read.
-    if (cls === 'sent') setTimeout(() => { if (card.isConnected && !card.matches(':hover, :focus-within')) card.remove(); }, 20000);
+    if (cls === 'sent') later();
   };
   return { id, set };
 }

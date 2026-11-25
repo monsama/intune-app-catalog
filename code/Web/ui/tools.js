@@ -32,7 +32,7 @@ $('btnReplaceGo').addEventListener('click', async () => {
   toast(`Replaced ${oldName} with ${newName} on ${nWord(r.changed.length, 'app')} in the catalog.`);
   await loadApps();
   if (groupsLoaded) { await loadGroups(); if (group && group.name.toLowerCase() === oldName.toLowerCase()) openGroup(newName); }
-  if (r.deployed.length && await ask(`Send groups for the ${r.deployed.length} deployed app(s) now?\n\n${r.deployed.join('\n')}`, { ok: 'Send groups', danger: false })) openPushGroups(r.deployed);
+  if (r.deployed.length && await ask(`Send groups for the ${nWord(r.deployed.length, 'deployed app')} now?\n\n${r.deployed.join('\n')}`, { ok: 'Send groups', danger: false })) openPushGroups(r.deployed);
 });
 
 // ---------------------------------------------------------------- CSV export and import
@@ -98,11 +98,11 @@ $('btnCsvGo').addEventListener('click', async () => {
   const grp = r.deployed.filter(a => r.changes.some(c => c.app === a && groupFields.includes(c.field)));
   if ($('csvPush').checked && meta.length) {
     $('csvLog').hidden = false;
-    const done = await runEach(meta, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'csvLog', startText: 'Pushing ' });
-    toast(`Settings pushed for ${done.length} of ${nWord(meta.length, 'app')}.`, done.length < meta.length);
+    const done = await runEach(meta, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'csvLog', startText: 'Sending settings for ' });
+    toast(`Settings sent for ${done.length} of ${nWord(meta.length, 'app')}.`, done.length < meta.length);
   }
   $('btnCsvGo').textContent = 'Done'; $('btnCsvGo').disabled = false; $('btnCsvClose').hidden = true;
-  if (grp.length && await ask(`Send groups for the ${grp.length} deployed app(s) whose groups changed?\n\n${grp.join('\n')}`, { ok: 'Send groups', danger: false })) { $('dlgCsv').close(); openPushGroups(grp); }
+  if (grp.length && await ask(`Send groups for the ${nWord(grp.length, 'deployed app')} whose groups changed?\n\n${grp.join('\n')}`, { ok: 'Send groups', danger: false })) { $('dlgCsv').close(); openPushGroups(grp); }
 });
 
 // ---------------------------------------------------------------- winget: newest versions
@@ -155,11 +155,11 @@ async function openTenantSetup() {
         [`Create ${r.missingGroups.length} group${r.missingGroups.length === 1 ? '' : 's'}`, 'Create them as empty security groups', () => createGroups(r.missingGroups, () => openTenantSetup())],
         ['Open Groups', 'The Groups page, showing the groups Entra ID doesn\'t have - to create them one by one and add members', () => { $('dlgTenantSetup').close(); showView('groups'); $('groupShow').value = 'missing'; if (groupsLoaded) renderGroupList(); }]]),
     step(3, 'Send the apps to Intune', states[2], 'Every app in the catalog is in Intune.',
-      `${r.notDeployed.length} app${r.notDeployed.length === 1 ? ' isn\'t' : 's aren\'t'} in Intune yet - ${ready.length} ready to deploy${r.notReady.length ? `, ${r.notReady.length} not ready` : ''}. Send to Intune runs them in dependency order.${r.sharedMissing ? ' The shared Winget package isn\'t built yet: Settings > Packaging & folders builds it - every Winget app needs it.' : ''}`,
+      `${r.notDeployed.length} app${r.notDeployed.length === 1 ? ' isn\'t' : 's aren\'t'} in Intune yet - ${ready.length} ready to send${r.notReady.length ? `, ${r.notReady.length} not ready` : ''}. Send to Intune runs them in dependency order.${r.sharedMissing ? ' The shared Winget package isn\'t built yet: Settings > Packaging & folders builds it - every Winget app needs it.' : ''}`,
       el('div', {}, list(r.notDeployed), reasons),
       [[`Send ${ready.length} app${ready.length === 1 ? '' : 's'}...`, 'Opens Send to Intune for the apps that are ready - nothing starts until you confirm there', () => openDeploy(ready.length ? ready : r.notDeployed)],
         ...(r.sharedMissing ? [['Open Packaging', 'Settings > Packaging & folders: download the packaging tool and build the shared Winget package', () => { $('dlgTenantSetup').close(); showSettings('packaging'); }]] : [])]),
-    step(4, 'Push the groups', states[3], 'No deployed app has groups to push.',
+    step(4, 'Send the groups', states[3], 'No app in Intune has groups to send.',
       `${r.pushGroups.length} deployed app${r.pushGroups.length === 1 ? ' has' : 's have'} groups in the catalog. Deploys push them already (Settings > Apps & defaults); Send groups compares the catalog with Intune and shows what would change - "nothing to change" means it's done.`, list(r.pushGroups),
       [['Send groups...', 'Compare the catalog\'s groups with Intune, then apply', () => openPushGroups(r.pushGroups)]]));
 }
@@ -211,14 +211,18 @@ async function openRelease(name) {
   relName = name; relInfo = r;
   const pkg = r.kind === 'package', inst = r.installer || {};
   $('relTitle').textContent = `Release a new version of ${name}`;
-  $('relText').textContent = `Now: ${r.current || '(no version)'} for everyone.${pkg ? (inst.found ? ` The installer in its folder is ${inst.file}${inst.version ? ', version ' + inst.version : ''}.` : ` Put the new installer in ${inst.folder} first.`) : (r.latest ? ` winget offers ${r.latest}.` : ' Catalog > Check winget for new versions finds the newest.')} The new version becomes its own app in Intune ("${name} <version> (pilot)") that updates devices which have ${r.current || 'the current one'}, assigned Required to the pilot groups only. Promote gives it to everyone; Withdraw takes it back.${pkg ? ' Its detection rule is set to the new version' + (inst.productCode ? ' and the MSI\'s product code' : '') + '.' : ''}`;
+  // Said for the way it goes (2.38.41): to the pilot groups first, or - with none - to everyone at once.
+  const noPilotText = !r.pilotGroups.length, nextVer = (pkg ? inst.version : r.latest) || 'new version';
+  const where = noPilotText
+    ? `The new version becomes its own app in Intune ("${name} ${nextVer}") that updates devices which have ${r.current || 'the current one'}, and gets the app's groups right away - there are no pilot groups to try it on first.`
+    : `The new version becomes its own app in Intune ("${name} ${nextVer} (pilot)") that updates devices which have ${r.current || 'the current one'}, assigned Required to the pilot groups only. Promote gives it to everyone; Withdraw takes it back.`;
+  $('relText').textContent = `Now: ${r.current || '(no version)'} for everyone.${pkg ? (inst.found ? ` The installer in its folder is ${inst.file}${inst.version ? ', version ' + inst.version : ''}.` : ` Put the new installer in ${inst.folder} first.`) : (r.latest ? ` winget offers ${r.latest}.` : ' Catalog > Check winget for new versions finds the newest.')} ${where}${pkg ? ' Its detection rule is set to the new version' + (inst.productCode ? ' and the MSI\'s product code' : '') + '.' : ''}`;
   const suggest = pkg ? inst.version : r.latest;
   $('relVersion').value = suggest && suggest !== r.current ? suggest : '';
   $('relBuildRow').hidden = !pkg; $('relFolder').textContent = pkg ? `(${inst.folder})` : '';
   $('relProblem').textContent = r.detectionProblem || ''; $('relProblem').hidden = !r.detectionProblem;
   // No pilot groups (2.38.40): the release goes to everyone straight away - the app's own groups - instead of not at all.
   const noPilot = !r.pilotGroups.length;
-  if (noPilot) $('relText').textContent = $('relText').textContent.replace(/, assigned Required to the pilot groups only\. Promote gives it to everyone; Withdraw takes it back\./, ' and gets the app\'s groups right away - there are no pilot groups to try it on first.');
   $('relGroups').textContent = noPilot ? 'No pilot groups - it goes to everyone at once. To try new versions on a few devices first, choose pilot groups in Settings > Updates.' : `Pilot groups: ${r.pilotGroups.join(', ')}.${(r.rings || []).length > 1 ? ` Then ${r.rings.slice(1).map(x => x.name).join(', then ')}, then everyone.` : ''}`;
   $('relFast').checked = false; $('relFastNote').textContent = `(pilot for ${r.fastTrackHours || 4} hours, then everyone)`;
   $('relFast').closest('label').hidden = noPilot;

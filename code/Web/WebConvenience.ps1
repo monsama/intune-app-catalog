@@ -222,15 +222,15 @@ function Global:Get-WebAttention {
             $k = $askedDetails[[string]$_.appName]
             -not ($k -and $k.id -eq [string]$_.wingetId -and -not @($gaps | Where-Object { @($k.missing) -notcontains $_ }).Count)
         })
-    if ($bare.Count) { & $add 'info' "$($bare.Count) app(s) with details missing" ((@($bare | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($bare.Count -gt 5) { ', ...' } else { '' }) + " - no publisher, description or information link yet. winget knows them: fill them in (only empty fields, never the version).") 'do:filldetails' }
-    if ($notDeployed.Count) { & $add 'info' "$($notDeployed.Count) app(s) not in Intune yet" ((@($notDeployed | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($notDeployed.Count -gt 5) { ', ...' })) 'apps:notdeployed' }
+    if ($bare.Count) { & $add 'info' "$(Format-Count ($bare.Count) 'app') with details missing" ((@($bare | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($bare.Count -gt 5) { ', ...' } else { '' }) + " - no publisher, description or information link yet. winget knows them: fill them in (only empty fields, never the version).") 'do:filldetails' }
+    if ($notDeployed.Count) { & $add 'info' "$(Format-Count ($notDeployed.Count) 'app') not in Intune yet" ((@($notDeployed | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($notDeployed.Count -gt 5) { ', ...' })) 'apps:notdeployed' }
     # winget.exe answers in Windows' display language; its text is read in several languages, but Microsoft's WinGet module is exact in all of them.
     if (-not $Global:App.TestGraph -and @($apps | Where-Object { $_.wingetId -and -not (Test-StoreProductId ([string]$_.wingetId)) }).Count -and (Get-UICulture).TwoLetterISOLanguageName -ne 'en' -and (Get-Command winget.exe -ErrorAction SilentlyContinue) -and -not (Test-WingetClientModule)) {
         & $add 'info' 'Install the WinGet PowerShell module' "Windows here isn't in English, so winget's answers are read from translated text. For exact answers in any language, install Microsoft's WinGet module (for your user only, from the PowerShell Gallery) - Install it does it." 'do:wingetmodule'
     }
     # Winget-AutoUpdate is no longer used (2.19): apps still relying on it are switched to managed updates.
     $wau = @($apps | Where-Object { @(Get-WauUse $_).Count })
-    if ($wau.Count) { & $add 'warn' "$($wau.Count) app(s) still use Winget-AutoUpdate" ((@($wau | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + " - this catalog no longer uses WAU. Switch them to $(if ([string]$Global:App.DefaultAppSettings.WingetInstallMethod -eq 'Winget') { 'the winget command' } else { 'managed updates: a fixed version, released to the pilot groups first' }), and send the new commands to Intune.") 'do:wauswitch' }
+    if ($wau.Count) { & $add 'warn' "$(Format-Count ($wau.Count) 'app') still use Winget-AutoUpdate" ((@($wau | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + " - this catalog no longer uses WAU. Switch them to $(if ([string]$Global:App.DefaultAppSettings.WingetInstallMethod -eq 'Winget') { 'the winget command' } else { 'managed updates: a fixed version, released to the pilot groups first' }), and send the new commands to Intune.") 'do:wauswitch' }
     $wauApp = @($apps | Where-Object { (Test-WauAppName $_.appName) -or (Test-WauAppName $_.wingetId) })
     if ($wauApp.Count) {
         # Retire needs it in Intune; one only in the catalog is simply removed (devices that have WAU from elsewhere: uninstall it there).
@@ -242,28 +242,28 @@ function Global:Get-WebAttention {
     # Not yet in Intune - or Company Portal linked without its Store ID (2.38.20: the button sets that too).
     $builtIn = @($apps | Where-Object { (-not $_.appId -or (-not $_.wingetId -and (Test-CompanyPortalName $_.appName))) -and (Get-NonPackageAppHint $_) })
     $noPkg = @($apps | Where-Object { -not $_.wingetId -and -not $_.appId -and -not $_.office -and -not (Get-NonPackageAppHint $_) -and -not (Resolve-AppPackagePath -AppName $_.appName -Uncommon $true -PackagePath $_.packagePath).Found })
-    if ($noPkg.Count) { & $add 'warn' "$($noPkg.Count) own package(s) not built" ((@($noPkg | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + ' - select them and use Build package (More).') 'apps:all' }
+    if ($noPkg.Count) { & $add 'warn' "$(Format-Count ($noPkg.Count) 'own package') not built" ((@($noPkg | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + ' - select them and use Build package (More).') 'apps:all' }
     # Company Portal can be fixed here (its Store ID); Microsoft 365 Apps by its editor (Installs from > Microsoft 365).
     $portal = @($builtIn | Where-Object { -not $_.wingetId -and (Test-CompanyPortalName $_.appName) })
-    if ($builtIn.Count) { & $add 'info' "$($builtIn.Count) Microsoft app(s) that aren't packages" ((@($builtIn | Select-Object -First 3 | ForEach-Object { Get-NonPackageAppHint $_ }) -join ' ') + $(if ($portal.Count) { ' The button sets Company Portal up as the Store app.' } else { '' })) $(if ($portal.Count) { 'do:portalstore' } else { 'apps:all' }) }
+    if ($builtIn.Count) { & $add 'info' "$(Format-Count ($builtIn.Count) 'Microsoft app') that aren't packages" ((@($builtIn | Select-Object -First 3 | ForEach-Object { Get-NonPackageAppHint $_ }) -join ' ') + $(if ($portal.Count) { ' The button sets Company Portal up as the Store app.' } else { '' })) $(if ($portal.Count) { 'do:portalstore' } else { 'apps:all' }) }
     # Managed updates as the way apps are kept current: the default, every Winget app, and each with its version.
     if ([string]$Global:App.DefaultAppSettings.WingetInstallMethod -ne 'Managed') { & $add 'info' 'Managed updates aren''t the default yet' "New Winget apps install winget's latest version without a pilot ring ($($Global:App.DefaultAppSettings.WingetInstallMethod))." 'do:manageddefault' }
     # Not Store apps (the Store updates them) nor Winget-AutoUpdate itself (retired, not managed).
     # Nor apps that update themselves (2.38.40): winget's latest is the right choice for them, not something to fix.
     $unmanaged = @($apps | Where-Object { $_.wingetId -and -not $_.managedUpdates -and -not (Test-StoreProductId ([string]$_.wingetId)) -and -not (Test-WauAppName $_.appName) -and -not (Test-WauAppName $_.wingetId) -and -not (Test-AppUpdatesItself $_) })
-    if ($unmanaged.Count) { & $add 'info' "$($unmanaged.Count) Winget app(s) without managed updates" ((@($unmanaged | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($unmanaged.Count -gt 5) { ', ...' }) + " - they install winget's latest, untested, and Intune can't tell which version a device has.") 'do:managedall' }
+    if ($unmanaged.Count) { & $add 'info' "$(Format-Count ($unmanaged.Count) 'Winget app') without managed updates" ((@($unmanaged | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + $(if ($unmanaged.Count -gt 5) { ', ...' }) + " - they install winget's latest, untested, and Intune can't tell which version a device has.") 'do:managedall' }
     $noVersion = @($apps | Where-Object { $_.wingetId -and $_.managedUpdates -and -not ($_.metadata -and [string]$_.metadata.appVersion) })
-    if ($noVersion.Count) { & $add 'warn' "$($noVersion.Count) managed app(s) without a version yet" ((@($noVersion | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + " - take winget's current version as the one they start from$(if (@($noVersion | Where-Object { $_.appId }).Count) { ', then Deploy the ones in Intune again (it updates them)' }).") 'do:takeversions' }
+    if ($noVersion.Count) { & $add 'warn' "$(Format-Count ($noVersion.Count) 'managed app') without a version yet" ((@($noVersion | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + " - take winget's current version as the one they start from$(if (@($noVersion | Where-Object { $_.appId }).Count) { ', then Send settings for the ones in Intune (it updates them)' }).") 'do:takeversions' }
     # Pinned versions whose download is gone (the last check): new devices can't install them.
     $dlChecks = Get-WebDownloadChecks
     $dlGone = @($apps | Where-Object { $_.managedUpdates -and $_.wingetId -and $_.metadata -and [string]$_.metadata.appVersion } | Where-Object { $dc = $dlChecks["$($_.wingetId)|$([string]$_.metadata.appVersion)"]; $dc -and [string]$dc.status -in 'gone', 'notinwinget' })
-    if ($dlGone.Count) { & $add 'err' "$($dlGone.Count) app(s) can't be installed on new devices" ((@($dlGone | Select-Object -First 5 | ForEach-Object { "$($_.appName) $([string]$_.metadata.appVersion)" }) -join ', ') + ' - winget no longer offers the version Intune installs (it keeps only recent ones). The nightly run releases the current one to pilot by itself; to do it now, Release new version on the Updates page.') 'updates' }
+    if ($dlGone.Count) { & $add 'err' "$(Format-Count ($dlGone.Count) 'app') can't be installed on new devices" ((@($dlGone | Select-Object -First 5 | ForEach-Object { "$($_.appName) $([string]$_.metadata.appVersion)" }) -join ', ') + ' - winget no longer offers the version Intune installs (it keeps only recent ones). The nightly run releases the current one to pilot by itself; to do it now, Release new version on the Updates page.') 'updates' }
     $managedWinget = @($apps | Where-Object { $_.wingetId -and $_.managedUpdates })
     if ($managedWinget.Count -and -not (Test-Path -LiteralPath (Get-SharedPackagePath))) { & $add 'warn' 'Shared Winget package missing' 'Build init.intunewin - Winget apps can''t be deployed without it.' 'settings:packaging' }
     $runs = Get-WebUpdateRuns
     # The last full nightly run (2.38.32) - a fast-track or plan-only run said nothing about drift, and Home lost it.
     $last = @($runs.runs | Where-Object { -not $_.fastTrack -and -not $_.planOnly }) | Select-Object -First 1
-    if ($last -and $last.failed) { & $add 'err' "The last nightly run had $($last.failed) problem(s)" ((@($last.items | Where-Object { $_.outcome -eq 'failed' } | Select-Object -First 3 | ForEach-Object { $t = Get-WebShortGraphError ([string]$_.text); if ($_.app -eq '(all)') { $t } else { "$($_.app): $t" } }) -join ' / ')) 'settings:automation' }
+    if ($last -and $last.failed) { & $add 'err' "The last nightly run had $(Format-Count ($last.failed) 'problem')" ((@($last.items | Where-Object { $_.outcome -eq 'failed' } | Select-Object -First 3 | ForEach-Object { $t = Get-WebShortGraphError ([string]$_.text); if ($_.app -eq '(all)') { $t } else { "$($_.app): $t" } }) -join ' / ')) 'settings:automation' }
     $drift = @($last.items | Where-Object { $_.outcome -eq 'drift' })
     # 2.38.28: an app Checks compared since that run, and found as the catalog says, isn't "differs" any more - Home showed
     # last night's finding until the next night, while Checks (the same comparison, later) found nothing.
@@ -280,14 +280,14 @@ function Global:Get-WebAttention {
                 -not ($at -gt $runAt -and $clean)
             })
     }
-    if ($drift.Count) { & $add 'warn' "$($drift.Count) app(s) differ from Intune" ((@($drift | Select-Object -First 5 | ForEach-Object { $_.app }) -join ', ') + ' (last night) - Checks has the details.') 'checks' }
+    if ($drift.Count) { & $add 'warn' "$(Format-Count ($drift.Count) 'app') differ$(if (($drift.Count) -eq 1) { 's' }) from Intune" ((@($drift | Select-Object -First 5 | ForEach-Object { $_.app }) -join ', ') + ' (last night) - Checks has the details.') 'checks' }
     $sch = Get-WebUpdateSchedule
     # Scheduled, but no run for a day and a half: the PC was off, the task didn't start, or it can't sign in.
     $lastAt = [DateTimeOffset]::MinValue
     # The nightly task's own runs: not the fast-track checks (every 2 hours while a fix is in pilot) nor a plan-only click.
     $lastNightly = @($runs.runs | Where-Object { -not $_.fastTrack -and -not $_.planOnly }) | Select-Object -First 1
     if ($sch.exists -and $lastNightly -and [DateTimeOffset]::TryParse([string]$lastNightly.started, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$lastAt) -and ([DateTimeOffset]::Now - $lastAt).TotalHours -gt 36) {
-        & $add 'warn' 'The nightly run hasn''t run lately' "The last run started $([int]([DateTimeOffset]::Now - $lastAt).TotalDays) day(s) ago, though it is scheduled every day - the computer may have been off, or the task couldn't start (Settings > Automation shows the schedule; Run now tries it)." 'settings:automation'
+        & $add 'warn' 'The nightly run hasn''t run lately' "The last run started $(Format-Count ([int]([DateTimeOffset]::Now - $lastAt).TotalDays) 'day') ago, though it is scheduled every day - the computer may have been off, or the task couldn't start (Settings > Automation shows the schedule; Run now tries it)." 'settings:automation'
     }
     if (@($apps | Where-Object { $_.managedUpdates }).Count -and -not $sch.exists -and $sch.supported) { & $add 'info' 'Nightly run not scheduled' 'Managed updates only move when someone clicks - schedule the nightly run.' 'settings:automation' }
     $summary = $null
@@ -333,11 +333,11 @@ function Global:Get-WebAttentionIntune {
             $ov = Get-WebUpdatesOverview -NoInventory
             if ($ov.ok) {
                 $summary = $ov.summary
-                if ($ov.summary.held) { & $add 'err' "$($ov.summary.held) release(s) on hold" ((@($ov.rows | Where-Object { $_.pilot -and $_.pilot.action -eq 'hold' } | ForEach-Object { $_.name }) -join ', ') + ' - too many devices failed.') 'updates' }
-                if ($ov.summary.ready) { & $add 'ok' "$($ov.summary.ready) release(s) ready to go on" ((@($ov.rows | Where-Object { $_.pilot -and $_.pilot.action -in 'promote', 'advance' } | ForEach-Object { "$($_.name) $($_.pilot.version)" }) -join ', ')) 'updates' }
-                if ($ov.summary.available) { & $add 'info' "$($ov.summary.available) newer version(s) available" ((@($ov.rows | Where-Object { $_.available -and -not $_.pilot } | ForEach-Object { "$($_.name) $($_.available)" }) -join ', ')) 'updates' }
+                if ($ov.summary.held) { & $add 'err' "$(Format-Count ($ov.summary.held) 'release') on hold" ((@($ov.rows | Where-Object { $_.pilot -and $_.pilot.action -eq 'hold' } | ForEach-Object { $_.name }) -join ', ') + ' - too many devices failed.') 'updates' }
+                if ($ov.summary.ready) { & $add 'ok' "$(Format-Count ($ov.summary.ready) 'release') ready to go on" ((@($ov.rows | Where-Object { $_.pilot -and $_.pilot.action -in 'promote', 'advance' } | ForEach-Object { "$($_.name) $($_.pilot.version)" }) -join ', ')) 'updates' }
+                if ($ov.summary.available) { & $add 'info' "$(Format-Count ($ov.summary.available) 'newer version') available" ((@($ov.rows | Where-Object { $_.available -and -not $_.pilot } | ForEach-Object { "$($_.name) $($_.available)" }) -join ', ')) 'updates' }
                 $failing = @($ov.rows | Where-Object { [int]$_.failed -gt 0 })
-                if ($failing.Count) { & $add 'warn' "Failed installs on $(($failing | ForEach-Object { [int]$_.failed } | Measure-Object -Sum).Sum) device(s)" ((@($failing | Select-Object -First 5 | ForEach-Object { "$($_.name) ($($_.failed))" }) -join ', ')) 'updates' }
+                if ($failing.Count) { & $add 'warn' "Failed installs on $(Format-Count (($failing | ForEach-Object { [int]$_.failed } | Measure-Object -Sum).Sum) 'device')" ((@($failing | Select-Object -First 5 | ForEach-Object { "$($_.name) ($($_.failed))" }) -join ', ')) 'updates' }
             }
         }
         catch { }
@@ -355,7 +355,7 @@ function Global:Get-WebAttentionIntune {
         catch { }
     }
     if ($permMissing.Count) {
-        & $add 'warn' "$($permMissing.Count) Graph permission(s) missing" (((@($permMissing | ForEach-Object { "$($_.name) ($($_.for))" })) -join '; ') +
+        & $add 'warn' "$(Format-Count ($permMissing.Count) 'Graph permission') missing" (((@($permMissing | ForEach-Object { "$($_.name) ($($_.for))" })) -join '; ') +
             ' - in Entra ID: Add required permissions... adds them (Settings > Connection; on the server: Entra setup script...).') 'settings:permissions'
     }
     $order = @{ err = 0; warn = 1; ok = 2; info = 3 }
@@ -407,7 +407,7 @@ function Global:Set-WebAssignments {
         $changed.Add($a.appName)
     }
     Save-WebUndo $undo
-    Write-Log "[OK] Assignments grid: $($changes.Count) change(s) to $($changed.Count) app(s)."
+    Write-Log "[OK] Assignments grid: $(Format-Count ($changes.Count) 'change') to $(Format-Count ($changed.Count) 'app')."
     return @{ ok = $true; apps = $changed.ToArray() }
 }
 

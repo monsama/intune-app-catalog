@@ -429,7 +429,7 @@
               </section>
               <section class="tile">
                 <span class="ico" aria-hidden="true">&#8644;</span><h3>Keeping them in step</h3>
-                <p>Checks finds every difference - renamed apps, settings, groups, dependencies, unknown assignments, Winget IDs - each with its fix: <b>Pull</b> if Intune is right, <b>Push</b> if the catalog is.</p>
+                <p>Checks finds every difference - renamed apps, settings, groups, dependencies, unknown assignments, Winget IDs - each with its fix: <b>Pull</b> if Intune is right, <b>Send</b> if the catalog is.</p>
                 <button class="btn" id="tileDiff" title="Open the Checks page">Open Checks</button>
               </section>
             </div>
@@ -670,11 +670,6 @@
             <button class="btn" id="btnAboutCopy" title="Copy the version and environment - for a bug report or a support question">Copy details</button>
           </div>
         </article>
-        <article class="card" id="aboutFoldersCard" hidden>
-          <h2>Folders</h2>
-          <p class="sub">Where this app keeps its files - Settings &gt; Packaging &amp; folders changes them.</p>
-          <dl class="about" id="aboutFolders"></dl>
-        </article>
       </div>
       <div class="col">
         <article class="card">
@@ -695,6 +690,13 @@
             <button class="btn" data-about="security" title="How to report a security problem privately">Security policy</button>
             <button class="btn" data-about="license" title="The license text">License</button>
           </div>
+        </article>
+      </div>
+      <div class="col wide">
+        <article class="card" id="aboutFoldersCard" hidden>
+          <h2>Folders</h2>
+          <p class="sub">Where this app keeps its files - Settings &gt; Packaging &amp; folders changes them.</p>
+          <dl class="about" id="aboutFolders"></dl>
         </article>
       </div>
     </div>
@@ -1380,7 +1382,7 @@
   <div class="toolbar tight"><input type="file" id="csvFile" accept=".csv,text/csv" aria-label="The CSV file to import"><span class="muted" id="csvName"></span></div>
   <div class="preview" id="csvPreview" hidden></div>
   <p class="muted note" id="csvNote" aria-live="polite"></p>
-  <label class="chk" id="csvPushRow" hidden><input type="checkbox" id="csvPush" checked>Then push the settings of the changed apps already in Intune</label>
+  <label class="chk" id="csvPushRow" hidden><input type="checkbox" id="csvPush" checked>Then send the settings of the changed apps already in Intune</label>
   <p class="formerror" id="csvErr" hidden></p>
   <pre class="log" id="csvLog" tabindex="0" role="log" hidden></pre>
   <div class="actions end"><button class="btn" data-close id="btnCsvClose">Cancel</button><button class="btn primary" id="btnCsvGo" disabled title="Apply the changes shown above to the catalog">Apply</button></div>
@@ -1431,7 +1433,7 @@
     </section>
   </div>
   <div class="preview" id="batchPreview" hidden></div>
-  <label class="chk"><input type="checkbox" id="bPush" checked>Then push the settings of the apps already in Intune</label>
+  <label class="chk"><input type="checkbox" id="bPush" checked>Then send the settings of the apps already in Intune</label>
   <p class="formerror" id="batchErr" hidden></p>
   <pre class="log" id="batchLog" tabindex="0" role="log" hidden></pre>
   <div class="actions end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="btnBatchGo" title="Shows what changes on each app first; a second click applies it">Preview changes</button></div>
