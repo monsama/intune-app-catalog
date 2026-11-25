@@ -2075,9 +2075,10 @@ function Global:Get-PermissionReport {
       Pure: the Graph application permissions the app registration has
       (-Granted) against what this app uses, by feature (-Usage: Scripts,
       Inventory, Mail, GroupsPage as booleans). Rows @{ name; status = ok |
-      missing | partly | unused | optional; for; why }: missing and partly are
-      to add; unused is granted but not needed - removing it shrinks what the
-      certificate can do.
+      missing | partly | unused | optional | notset; for; why }: missing and
+      partly are to add; unused is granted but not needed - removing it shrinks
+      what the certificate can do; optional is granted and fine to keep;
+      notset is neither granted nor needed yet.
     #>
     param([string[]]$Granted, $Usage)
     $g = @($Granted | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
@@ -2105,7 +2106,8 @@ function Global:Get-PermissionReport {
         # Narrow read permissions "Add required permissions" grants: kept, not "remove it" (Mail.Send can send as anyone - that one is flagged).
         elseif ($isGranted -and $f[0] -ne 'Mail.Send') { & $row $f[0] 'optional' $f[2] 'Read only - nothing here uses it yet; it is used as soon as you do. Fine to keep.' }
         elseif ($isGranted) { & $row $f[0] 'unused' $f[2] $(if ($f[0] -eq 'Mail.Send') { 'No email alerts are set up - and Mail.Send can send as any mailbox: remove it, or limit it with an application access policy.' } else { 'Nothing here uses it yet.' }) }
-        else { & $row $f[0] 'optional' $f[2] 'Only when you use it.' }
+        # Not there and not needed yet (2.38.45): its own status - "Optional" alone read the same as one that is there.
+        else { & $row $f[0] 'notset' $f[2] 'Not needed yet - add it once you use this.' }
     }
     $known = @('DeviceManagementApps.ReadWrite.All', 'Group.ReadWrite.All', 'Group.Read.All', 'DeviceManagementScripts.ReadWrite.All', 'DeviceManagementManagedDevices.Read.All', 'Mail.Send', 'User.Read.All', 'DeviceManagementConfiguration.Read.All', 'Device.Read.All')
     # Directory.Read.All covers Device.Read.All and User.Read.All - known (not "remove it") when it stands in for it.
