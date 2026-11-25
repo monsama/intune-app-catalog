@@ -862,7 +862,16 @@ let recentData = null;
 const recentOpen = new Set();   // the entries opened - kept open when the list is read again (after an Undo)
 const rFieldName = { appName: 'Name', wingetId: 'Winget ID', appId: 'App ID', requiredFor: 'Required', availableFor: 'Available', uninstallFor: 'Uninstall', excludeFor: 'Excluded', managedUpdates: 'Managed updates', releases: 'Releases',
   'metadata.appVersion': 'App version', 'metadata.installCommand': 'Install command', 'metadata.uninstallCommand': 'Uninstall command', 'metadata.detectionRule': 'Detection rule', 'metadata.dependencies': 'Dependencies', 'metadata.description': 'Description', 'metadata.owner': 'Owner', 'metadata.publisher': 'Publisher' };
-const rField = f => rFieldName[f] || f.replace(/^metadata\./, '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
+// Sentence case, as everywhere else ("Return codes", not "Return Codes" - 2.38.40); the editor's own names first.
+const rField = f => { if (rFieldName[f]) return rFieldName[f]; const h = histField(f); if (h && h !== f && h !== f.replace(/^metadata\./, '')) return h;
+  const t = f.replace(/^metadata\./, '').replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase(); return t.charAt(0).toUpperCase() + t.slice(1); };
+// Return codes as a change people can read (2.38.40): what was added and taken away, not two lines of JSON.
+function rCodesChange(before, after) {
+  const parse = t => { try { const v = JSON.parse(t || '[]'); return Array.isArray(v) ? v.map(x => `${x.returnCode} ${x.type}`) : null; } catch { return null; } };
+  const b = parse(before), a = parse(after); if (!b || !a) return null;
+  const added = a.filter(x => !b.includes(x)), gone = b.filter(x => !a.includes(x));
+  return `${b.length} → ${a.length} codes${added.length ? ` · added: ${added.join(', ')}` : ''}${gone.length ? ` · removed: ${gone.join(', ')}` : ''}`;
+}
 function whenText(iso) {
   const d = new Date(iso); if (isNaN(d)) return iso;
   return fmtWhen(d);
@@ -890,16 +899,22 @@ function renderRecent() {
     toast(x.ok ? `${i.app}: undone (${x.undone.map(rField).join(', ')}).${x.skipped.length ? ' Left alone: ' + x.skipped.join('; ') : ''}` : x.error, !x.ok);
     if (x.ok) { await loadApps(); openRecent(); }
   };
-  const change = c => el('li', {}, el('span', { class: 'f', text: rField(c.field) }), el('span', { class: 'v' }, el('span', { class: 'b', text: c.before || '(empty)' }), el('span', { class: 'arr', text: '→', 'aria-label': 'to' }), el('span', { class: 'a', text: c.after || '(empty)' })));
+  const change = c => { const codes = /returnCodes$/i.test(c.field) ? rCodesChange(c.before, c.after) : null;
+    return el('li', {}, el('span', { class: 'f', text: rField(c.field) }), codes ? el('span', { class: 'v' }, el('span', { class: 'a', text: codes })) : el('span', { class: 'v' }, el('span', { class: 'b', text: c.before || '(empty)' }), el('span', { class: 'arr', text: '→', 'aria-label': 'to' }), el('span', { class: 'a', text: c.after || '(empty)' }))); };
   // The app's name over its changes - unless the group's line already names that one app.
-  const item = (i, named) => el('div', { class: 'ritem' }, el('div', { class: 'rapp' }, named ? '' : el('b', { text: i.app }), i.kind === 'intune' ? el('span', { class: 'pill info', text: 'Intune' }) : '',
+  const item = (i, named) => el('div', { class: 'ritem' }, el('div', { class: 'rapp' }, named ? '' : el('b', { text: i.app }),
       i.canUndo ? el('button', { class: 'btn small ghost', text: 'Undo', title: 'Put these fields back as they were', onclick: () => undoOne(i) }) : ''),
     i.changes.length ? el('ul', { class: 'rchanges' }, ...i.changes.slice(0, 12).map(change), i.changes.length > 12 ? el('li', { class: 'muted', text: `... ${i.changes.length - 12} more` }) : '') : '');
   $('recentList').replaceChildren(...(groups.length ? groups.map(g => {
     const apps = [...new Set(g.items.map(i => i.app))];
-    const what = g.text || [...new Set(g.items.flatMap(i => i.changes.map(c => rField(c.field))))].slice(0, 4).join(', ') || 'Changed';
+    // "Send settings" as on the buttons (older entries say Push), without the app's name the next column shows anyway.
+    let what = (g.text || '').replace(/^Push settings\b/, 'Send settings');
+    if (apps.length === 1 && what.endsWith(' ' + apps[0])) what = what.slice(0, -apps[0].length - 1);
+    what = what || [...new Set(g.items.flatMap(i => i.changes.map(c => rField(c.field))))].slice(0, 4).join(', ') || 'Changed';
     const head = el('summary', {}, el('span', { class: 'rwhen', text: whenText(g.at) }), el('span', { class: 'rsrc', text: g.by ? `${g.source} · ${g.by}` : g.source, title: g.by ? `By ${g.by}, from ${g.source}` : g.source }),
-      el('span', { class: 'rwhat', text: what }), el('span', { class: 'rapps muted', text: apps.length === 1 ? apps[0] : `${apps.length} apps: ${apps.slice(0, 3).join(', ')}${apps.length > 3 ? ', ...' : ''}` }));
+      // The Intune mark on the line itself (2.38.40) - it was only inside the opened ones, so most sends lacked it.
+      el('span', { class: 'rwhat' }, what, g.items.some(i => i.kind === 'intune') ? el('span', { class: 'pill info', text: 'Intune' }) : ''),
+      el('span', { class: 'rapps muted', text: apps.length === 1 ? apps[0] : `${apps.length} apps: ${apps.slice(0, 3).join(', ')}${apps.length > 3 ? ', ...' : ''}` }));
     const key = g.items[0] && g.items[0].id;
     const d = el('details', { open: recentOpen.has(key) || (!recentOpen.size && g.count === 1 && groups.indexOf(g) < 3) }, head, el('div', { class: 'rbody' }, ...g.items.map(i => item(i, apps.length === 1))));
     d.addEventListener('toggle', () => { if (d.open) recentOpen.add(key); else recentOpen.delete(key); });

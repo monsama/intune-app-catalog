@@ -896,7 +896,7 @@ function Global:Invoke-WebFillDetails {
     }
     $done = New-Object System.Collections.Generic.List[object]
     if ($plans.Count) {
-        $undo = New-WebUndo "Fill in details ($($plans.Count) app(s))"
+        $undo = New-WebUndo "Fill in details ($($plans.Count) app$(if ($plans.Count -ne 1) { 's' }))"
         Invoke-WithCatalogLock {
             foreach ($p in $plans) {
                 try {

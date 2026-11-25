@@ -551,9 +551,12 @@ function Global:Get-WebChangeSource {
         '/api/app-save' { 'Editor' } '/api/app-quick' { 'Side panel' } '/api/app-restore' { 'Earlier versions (restore)' } '/api/history-undo' { 'History (undo)' }
         '/api/batch-*' { 'Batch edit' } '/api/replace-group' { 'Replace group' } '/api/assignments-set' { 'Groups x apps' } '/api/undo-last' { 'Undo' }
         '/api/pull-apply' { 'Pull from Intune' } '/api/csv-import' { 'CSV import' } '/api/add-*' { 'Add apps' } '/api/checks-fix' { 'Checks (fix)' }
-        '/api/release-*' { 'Updates' } '/api/managed-*' { 'Managed updates' } '/api/winget-take-version' { 'Updates' } '/api/job-poll' { 'Step result' }
+        '/api/release-*' { 'Updates' } '/api/managed-*' { 'Managed updates' } '/api/winget-take-version' { 'Updates' } '/api/job-poll' { 'After the send' }
         '/api/retire-*' { 'Retire' } '/api/clear-appid*' { 'Clear App ID' } '/api/group-*' { 'Groups' }
-        default { if ($Path) { 'This app (' + ($Path -replace '^/api/', '') + ')' } else { 'This app' } }
+        # 2.38.40: words, not the request's name ("This app (deploy-start)").
+        '/api/deploy-start' { 'Send to Intune' } '/api/push-start' { 'Send groups' } '/api/package-start' { 'Build package' } '/api/pull-start' { 'Pull from Intune' }
+        '/api/upload-start' { 'Upload' } '/api/folder-upload-start' { 'Upload' } '/api/delete-intune' { 'Delete from Intune' } '/api/lob-retire' { 'Retire MSI app' }
+        default { if ($Path) { $w = ($Path -replace '^/api/', '' -replace '-', ' '); $w.Substring(0, 1).ToUpperInvariant() + $w.Substring(1) } else { 'This app' } }
     }
 }
 

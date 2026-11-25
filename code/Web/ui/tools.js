@@ -216,10 +216,16 @@ async function openRelease(name) {
   $('relVersion').value = suggest && suggest !== r.current ? suggest : '';
   $('relBuildRow').hidden = !pkg; $('relFolder').textContent = pkg ? `(${inst.folder})` : '';
   $('relProblem').textContent = r.detectionProblem || ''; $('relProblem').hidden = !r.detectionProblem;
-  $('relGroups').textContent = r.pilotGroups.length ? `Pilot groups: ${r.pilotGroups.join(', ')}.${(r.rings || []).length > 1 ? ` Then ${r.rings.slice(1).map(x => x.name).join(', then ')}, then everyone.` : ''}` : 'No pilot groups yet - set them in Settings > Updates.';
+  // No pilot groups (2.38.40): the release goes to everyone straight away - the app's own groups - instead of not at all.
+  const noPilot = !r.pilotGroups.length;
+  if (noPilot) $('relText').textContent = $('relText').textContent.replace(/, assigned Required to the pilot groups only\. Promote gives it to everyone; Withdraw takes it back\./, ' and gets the app\'s groups right away - there are no pilot groups to try it on first.');
+  $('relGroups').textContent = noPilot ? 'No pilot groups - it goes to everyone at once. To try new versions on a few devices first, choose pilot groups in Settings > Updates.' : `Pilot groups: ${r.pilotGroups.join(', ')}.${(r.rings || []).length > 1 ? ` Then ${r.rings.slice(1).map(x => x.name).join(', then ')}, then everyone.` : ''}`;
   $('relFast').checked = false; $('relFastNote').textContent = `(pilot for ${r.fastTrackHours || 4} hours, then everyone)`;
+  $('relFast').closest('label').hidden = noPilot;
   $('relErr').hidden = true; $('relLog').hidden = true; $('relLog').textContent = '';
-  $('btnRelGo').disabled = !r.pilotGroups.length || !!r.detectionProblem; $('btnRelGo').textContent = 'Release to pilot'; $('btnRelClose').textContent = 'Cancel'; $('btnRelClose').hidden = false;
+  $('btnRelGo').disabled = !!r.detectionProblem; $('btnRelGo').textContent = noPilot ? 'Release to everyone' : 'Release to pilot';
+  $('btnRelGo').title = noPilot ? 'Create the new version in Intune, superseding the current one, and give it the app\'s groups' : 'Create the new version in Intune, superseding the current one, and assign it to the pilot groups';
+  $('btnRelClose').textContent = 'Cancel'; $('btnRelClose').hidden = false;
   $('dlgRelease').showModal(); $('relVersion').focus();
   // Winget apps: Pick... beside the version lists winget's versions (newest first); a package's version comes from its installer.
   relVerPick.reset(); relVerPick.hide(pkg);
@@ -244,6 +250,16 @@ $('btnRelGo').addEventListener('click', async () => {
   const productCode = relInfo && relInfo.kind === 'package' && relInfo.installer ? relInfo.installer.productCode || '' : '';
   const made = await releaseStep({ name, version, productCode, fastTrack: $('relFast').checked }, '/api/release-start', 'relLog', `Creating ${name} ${version} in Intune...`);
   if (!made.ok) { $('relErr').textContent = made.error || 'The release failed - see the log.'; $('relErr').hidden = false; $('btnRelGo').disabled = false; loadApps(); return; }
+  if (relInfo && !relInfo.pilotGroups.length) {
+    // Straight to everyone: the app's groups on the new version, then off the old one (as Promote does).
+    const p1 = await releaseStep({ name, step: 'promote' }, '/api/release-assign', 'relLog', 'Giving it the app\'s groups...');
+    const p2 = p1.ok ? await releaseStep({ name, step: 'retire' }, '/api/release-assign', 'relLog', 'Taking the groups off the old version...') : { ok: false };
+    const done = p1.ok ? await api('/api/release-promoted', { name }) : { ok: false };
+    $('btnRelClose').textContent = 'Close'; $('btnRelClose').hidden = true; $('btnRelGo').textContent = 'Done'; $('btnRelGo').disabled = false;
+    toast(p1.ok && done.ok ? `${name} ${version} is released to everyone.${p2.ok ? '' : ' The old version still has its assignments - remove them in Intune.'}` : `${name} ${version} is in Intune, but giving it the app's groups failed - use Promote to try again, or Withdraw. ${p1.error || done.error || ''}`, !(p1.ok && done.ok && p2.ok));
+    loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
+    return;
+  }
   const assigned = await releaseStep({ name, step: 'pilot' }, '/api/release-assign', 'relLog', 'Assigning it to the pilot groups...');
   $('btnRelClose').textContent = 'Close'; $('btnRelClose').hidden = true; $('btnRelGo').textContent = 'Done'; $('btnRelGo').disabled = false;
   toast(assigned.ok ? `${name} ${version} is released to the pilot groups.` : `${name} ${version} is in Intune, but assigning it to pilot failed - Release again isn't needed: use Promote or Withdraw.`, !assigned.ok);

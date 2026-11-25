@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.38.40
+
+- **Release without pilot groups**: with no pilot groups set, "Release new
+  version" was greyed out. It now says "Release to everyone": the new version is
+  created, gets the app's groups and replaces the current one at once. The
+  nightly run does the same - before, it released to a pilot of nobody.
+- **Recent changes reads better**: the source is said in words ("Send to
+  Intune", "After the send" - not "This app (deploy-start)", "Step result");
+  "Send settings" as on the buttons, without repeating the app's name; field
+  names in one spelling ("Return codes"); return codes as what was added and
+  removed instead of two lines of JSON; the Intune mark on every line that
+  changed Intune (it showed only on the opened ones); "8 apps" instead of
+  "8 app(s)".
+
 ## 2.38.39
 
 - **One window per send**: each Send settings / Send groups gets its own small
