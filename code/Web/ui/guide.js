@@ -520,52 +520,64 @@ function multiPanel(sel) {
 
 // Sending what changed since the last send (Changes to send): its settings, or its groups - then the list is read again.
 // One queue for Send settings / Send groups (2.38.37): a click while one is still being sent lines the app up behind it
-// instead of being refused - they go one after the other, each as its own step.
+// instead of being refused - they go one after the other, each as its own step. Each send has its own small window
+// (2.38.39), side by side in the corner - the newest left of the others: waiting, sending (with its log), sent or failed.
 const sendQueue = [];
-let sendLoopRunning = false;
+let sendLoopRunning = false, sendSeq = 0;
 const sendKinds = {
-  settings: { title: 'Send settings to Intune', path: '/api/deploy-start', body: name => ({ name, metadataOnly: true }), start: 'Sending settings for ', what: 'Settings' },
-  groups: { title: 'Send groups to Intune', path: '/api/push-start', body: name => ({ names: [name], mode: 'AfterDeploy' }), start: 'Sending groups for ', what: 'Groups' },
+  settings: { title: 'Send settings', path: '/api/deploy-start', body: name => ({ name, metadataOnly: true }), start: 'Sending settings for ', what: 'Settings' },
+  groups: { title: 'Send groups', path: '/api/push-start', body: name => ({ names: [name], mode: 'AfterDeploy' }), start: 'Sending groups for ', what: 'Groups' },
 };
+function sendStack() {
+  let s = $('sendStack');
+  if (!s) { s = el('div', { id: 'sendStack', class: 'sendstack', role: 'region', 'aria-label': 'Sends to Intune' }); document.body.append(s); }
+  return s;
+}
+function sendCard(kind, name) {
+  const id = 'sendLog' + (++sendSeq);
+  const state = el('span', { class: 'pill', text: 'Waiting' });
+  const close = el('button', { type: 'button', class: 'btn small ghost', text: 'Close', disabled: true, title: 'It closes once it is sent' });
+  const log = el('pre', { class: 'log', id, tabindex: '0', role: 'log', hidden: true });
+  const card = el('section', { class: 'sendcard waiting', 'aria-label': `${sendKinds[kind].title}: ${name}` },
+    el('div', { class: 'trayhead' }, el('h2', { text: sendKinds[kind].title }), el('span', { class: 'spacer' }), state, close),
+    el('p', { class: 'sub', text: name }), log);
+  close.addEventListener('click', () => card.remove());
+  // Newest on the left: the stack runs right to left.
+  sendStack().append(card);
+  const set = (cls, text, done) => {
+    card.className = 'sendcard ' + cls; state.className = 'pill ' + ({ sending: 'info', sent: 'ok', failed: 'err' }[cls] || ''); state.textContent = text;
+    if (cls !== 'waiting') log.hidden = false;
+    close.disabled = !done; close.title = done ? 'Close this window' : 'It closes once it is sent';
+    // Sent: it goes by itself after a while; failed stays until closed, so the log can be read.
+    if (cls === 'sent') setTimeout(() => { if (card.isConnected && !card.matches(':hover, :focus-within')) card.remove(); }, 20000);
+  };
+  return { id, set };
+}
 // -after(doneNames): called once the queue has sent these names (Checks drops their findings and checks them again).
 function queueSend(kind, names, after) {
   const fresh = names.filter(n => !sendQueue.some(q => q.kind === kind && q.name === n));
-  for (const n of fresh) sendQueue.push({ kind, name: n, after });
-  if (sendLoopRunning) {
-    if (fresh.length) {
-      toast(`${fresh.join(', ')}: queued - ${sendKinds[kind].what.toLowerCase()} go after what is being sent now.`);
-      // The tray says what is still to come (2.38.38).
-      $('runText').textContent = `Now: ${sendNow || ''}${sendQueue.length ? ` · then: ${sendQueue.map(q => q.name).join(', ')}` : ''}`;
-      if (!$('dlgRun').open) $('dlgRun').show();
-    }
-    return;
-  }
-  runSendQueue();
+  for (const n of fresh) sendQueue.push({ kind, name: n, after, card: sendCard(kind, n) });
+  if (!sendLoopRunning) runSendQueue();
 }
-let sendNow = '';
 async function runSendQueue() {
   sendLoopRunning = true;
   const done = { settings: [], groups: [] }, failed = [], afters = new Map();
-  runDialog('Send to Intune', sendQueue.map(q => q.name).join(', '));
   try {
     while (sendQueue.length) {
       // Another action (a deploy, a check) still running: wait for it rather than give up.
       while (jobRunning) await new Promise(r => setTimeout(r, 1000));
       const q = sendQueue.shift(); if (!q) break;
       const k = sendKinds[q.kind];
-      sendNow = q.name;
-      $('runTitle').textContent = k.title; $('runText').textContent = `Now: ${q.name}${sendQueue.length ? ` · then: ${sendQueue.map(x => x.name).join(', ')}` : ''}`;
-      const ok = (await runEach([q.name], k.body, { path: k.path, log: 'runLog', startText: k.start })).length > 0;
+      q.card.set('sending', 'Sending...', false);
+      const ok = (await runEach([q.name], k.body, { path: k.path, log: q.card.id, startText: k.start })).length > 0;
+      q.card.set(ok ? 'sent' : 'failed', ok ? 'Sent' : 'Failed', true);
       if (ok) done[q.kind].push(q.name); else failed.push(q.name);
       if (q.after) { if (!afters.has(q.after)) afters.set(q.after, []); if (ok) afters.get(q.after).push(q.name); }
     }
-  } finally { sendLoopRunning = false; sendNow = ''; }
+  } finally { sendLoopRunning = false; }
   for (const [fn, names] of afters) { try { fn(names); } catch (e) { /* a page's follow-up failing doesn't undo the sends */ } }
-  const parts = [];
-  if (done.settings.length) parts.push(`Settings sent for ${nWord(done.settings.length, 'app')}`);
-  if (done.groups.length) parts.push(`Groups sent for ${nWord(done.groups.length, 'app')}`);
-  if (failed.length) parts.push(`not sent: ${failed.join(', ')}`);
-  toast(parts.join('; ') + '.', failed.length > 0); loadApps();
+  if (failed.length) toast(`Not sent: ${failed.join(', ')} - its window has the log.`, true);
+  loadApps();
 }
 function sendSettingsNow(names) { queueSend('settings', names); }
 function sendGroupsNow(names) { queueSend('groups', names); }

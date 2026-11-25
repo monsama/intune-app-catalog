@@ -161,6 +161,8 @@ function Global:ConvertTo-AppRecord {
         releaseRule  = (ConvertTo-AppReleaseRule $Raw.releaseRule)
         # Own packages: the nightly run releases a newer installer by itself (autoRelease), first downloading it from downloadUrl when set (https, signed).
         autoRelease  = [bool]$Raw.autoRelease
+        # A Winget app that keeps itself up to date (2.38.40): $null - not said, its Winget ID decides (Test-AppUpdatesItself).
+        selfUpdating = $(if ($null -ne $Raw.selfUpdating) { [bool]$Raw.selfUpdating } else { $null })
         # Own packages (2.36.0): a winget package only watched for its newest version - a new installer to release.
         watchWinget  = $(if ([string]$Raw.watchWinget -match '^[A-Za-z0-9][A-Za-z0-9._+\-]{0,127}$') { [string]$Raw.watchWinget } else { '' })
         downloadUrl  = $(if ([string]$Raw.downloadUrl -match '^https://[^\s"<>]+$' -and ([string]$Raw.downloadUrl).Length -le 2000) { [string]$Raw.downloadUrl } else { '' })
@@ -378,6 +380,7 @@ function Global:ConvertTo-SingleAppJson {
         if ($ruleParts.Count) { $fields.Add('  "releaseRule": { ' + ($ruleParts -join ', ') + ' }') }
     }
     if ($App.autoRelease) { $fields.Add('  "autoRelease": true') }
+    if ($null -ne $App.selfUpdating) { $fields.Add("  `"selfUpdating`": $(if ($App.selfUpdating) { 'true' } else { 'false' })") }
     if ($App.downloadUrl) { $fields.Add("  `"downloadUrl`": $(ConvertTo-JsonStringLiteral ([string]$App.downloadUrl))") }
     if ($App.watchWinget) { $fields.Add("  `"watchWinget`": $(ConvertTo-JsonStringLiteral ([string]$App.watchWinget))") }
     if ($App.office) { $fields.Add('  "office": ' + (ConvertTo-OfficeSettingsJson $App.office)) }

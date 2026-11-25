@@ -99,7 +99,9 @@ function Global:Add-WebWingetApps {
         $pub = (([string]$d.Publisher) -replace '[\x00-\x1f]', ' ').Trim()
         if ($pub.Length -gt 256) { $pub = $pub.Substring(0, 256) }
         $isStore = Test-StoreProductId $id
-        $managed = [bool]$Data.managed -and -not $isStore
+        # An app that updates itself (a browser, a meeting app - 2.38.40) stays on winget's latest even when managed
+        # updates are the default: a pinned version of it falls behind within days.
+        $managed = [bool]$Data.managed -and -not $isStore -and -not (Test-KnownSelfUpdatingApp $id)
         $edit = [pscustomobject]@{ appName = $name; wingetId = $id; appId = ''; requiredFor = $groups.Required; availableFor = $groups.Available; uninstallFor = @(); excludeFor = $groups.Exclude
             managedUpdates = $managed
             metadata = [pscustomobject]@{ description = $(if ($d.Description) { ([string]$d.Description).Substring(0, [Math]::Min(([string]$d.Description).Length, 2000)) } else { $name }); publisher = $pub

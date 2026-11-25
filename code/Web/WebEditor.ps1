@@ -53,6 +53,7 @@ function Global:Get-WebAppEditable {
         releaseRule  = $(if ($App.releaseRule) { [ordered]@{ days = $App.releaseRule.days; maxFailedPercent = $App.releaseRule.maxFailedPercent; minInstalled = $App.releaseRule.minInstalled } } else { $null })
         detectedName = [string]$App.detectedName
         autoRelease  = [bool]$App.autoRelease
+        updatesItself = [bool](Test-AppUpdatesItself $App)
         downloadUrl  = [string]$App.downloadUrl
         watchWinget  = [string]$App.watchWinget
         office       = $(if ($App.office) { ConvertTo-OfficeSettings $App.office } else { $null })
@@ -240,6 +241,8 @@ function Global:Merge-WebAppEdit {
         # The app's own release rule: what the editor sends (empty fields: Settings' rule), else what it had.
         releaseRule      = $(if ($null -ne $Edit.releaseRule) { ConvertTo-AppReleaseRule $Edit.releaseRule } elseif ($Existing) { $Existing.releaseRule } else { $null })
         autoRelease      = $(if ($null -ne $Edit.autoRelease) { [bool]$Edit.autoRelease } elseif ($Existing) { [bool]$Existing.autoRelease } else { $false })
+        # Said in the editor only when it differs from what its Winget ID suggests - else left to the ID (2.38.40).
+        selfUpdating     = $(if ($null -ne $Edit.updatesItself) { if ([bool]$Edit.updatesItself -eq [bool](Test-KnownSelfUpdatingApp ([string]$Edit.wingetId))) { $null } else { [bool]$Edit.updatesItself } } elseif ($Existing -and $Existing.PSObject.Properties['selfUpdating']) { $Existing.selfUpdating } else { $null })
         downloadUrl      = $(if ($null -ne $Edit.downloadUrl) { $u = ([string]$Edit.downloadUrl).Trim(); if ($u -match '^https://[^\s"<>]+$' -and $u.Length -le 2000) { $u } else { '' } } elseif ($Existing) { [string]$Existing.downloadUrl } else { '' })
         detectedName     = $(if ($null -ne $Edit.detectedName) { $dn = ([string]$Edit.detectedName).Trim(); if ($dn.Length -le 100) { $dn } else { $dn.Substring(0, 100) } } elseif ($Existing) { [string]$Existing.detectedName } else { '' })
         # iconChange: 'set' (with icon), 'remove', or anything else to keep the one it has.

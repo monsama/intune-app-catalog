@@ -46,7 +46,23 @@ try {
         if (-not [guid]::TryParse([string]$Config.AppId, [ref]$parsedAppId)) { throw "'$($Config.AppId)' isn't an Intune App ID (a GUID)." }
         $Config.AppId = $parsedAppId.ToString()
         Write-Step "Updating Microsoft 365 Apps in Intune"
-        Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.AppId)" -Method PATCH -Body $json -ContentType 'application/json' -ErrorAction Stop | Out-Null
+        # Intune sets some of an existing app's properties itself and refuses them in a PATCH ("Property is read-only:
+        # 'Publisher'" - 2.38.39): left out, and one it names as read-only is left out too and the update tried again.
+        $patch = [ordered]@{}; foreach ($p in $body.PSObject.Properties) { if ($p.Name -ne 'publisher') { $patch[$p.Name] = $p.Value } }
+        for ($try = 1; ; $try++) {
+            try {
+                Invoke-MgGraphRequest -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($Config.AppId)" -Method PATCH -Body ($patch | ConvertTo-Json -Depth 6) -ContentType 'application/json' -ErrorAction Stop | Out-Null
+                break
+            }
+            catch {
+                $msg = "$($_.Exception.Message) $($_.ErrorDetails.Message)"
+                if ($try -ge 5 -or $msg -notmatch "Property is read-only: '([A-Za-z]+)'") { throw }
+                $ro = $Matches[1]; $key = @($patch.Keys | Where-Object { $_ -ieq $ro }) | Select-Object -First 1
+                if (-not $key) { throw }
+                Write-Host "  [INFO] Intune keeps '$key' itself on an existing app - sent without it." -ForegroundColor Gray
+                $patch.Remove($key)
+            }
+        }
         Write-Host "  [OK] Updated $($Config.AppName) - devices pick up the new settings at their next Office update." -ForegroundColor Green
         Write-Result -Success $true -AppId ([string]$Config.AppId) -ErrorMessage ''
     }

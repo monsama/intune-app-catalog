@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.38.39
+
+- **One window per send**: each Send settings / Send groups gets its own small
+  window, side by side in the bottom right corner - the newest left of the
+  others. Each says Waiting, Sending..., Sent or Failed and has its own log;
+  a sent one closes by itself after a while, a failed one stays to be read.
+  They still go to Intune one after the other.
+- **Apps that update themselves**: browsers and meeting apps (Chrome, Firefox,
+  Edge, Brave, Zoom, Teams, Webex, Slack, ...) keep themselves current on the
+  device, so pinning their version only brings "can no longer be downloaded"
+  and weekly releases. They are known now: added from winget they stay on
+  winget's latest even when managed updates are the default, Home no longer
+  lists them as "without managed updates" and "Turn on for all" leaves them
+  out. The editor has "Updates itself" for any Winget app, and says so when
+  such an app has managed updates on.
+- **Microsoft 365 Apps: Send settings failed with "Property is read-only:
+  'Publisher'"**: an existing app's publisher is Intune's own - it isn't sent
+  any more when updating, and should Intune name another read-only property,
+  the update is tried again without it.
+
 ## 2.38.38
 
 - **Managed apps no longer differ for good after "Send settings"**: a managed app

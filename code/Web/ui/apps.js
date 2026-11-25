@@ -234,6 +234,7 @@ function fillEditor(a) {
   fillDeploy(a.deploy);
   setEditorIcon(a.icon || null, 'keep');
   $('aManaged').checked = !!a.managedUpdates;
+  $('aSelfUpd').checked = !!a.updatesItself; editorSelfKnown = !!a.updatesItself;
   const own = a.releaseRule || {};
   $('arDays').value = own.days ?? ''; $('arFailed').value = own.maxFailedPercent ?? ''; $('arMin').value = own.minInstalled ?? ''; $('arDetected').value = a.detectedName || ''; $('arAuto').checked = !!a.autoRelease; $('arUrl').value = a.downloadUrl || ''; $('aWatch').value = a.watchWinget || '';
   const pol = (prefs && prefs.releasePolicy) || {};
@@ -251,7 +252,7 @@ function fillEditor(a) {
 // Managed updates need a Winget ID; while one is ticked, the install commands and detection follow the App version.
 // Installs from (2.38.20): Winget, its own installer or the Microsoft Store - the Winget ID field only where it means
 // something (an own installer has none), named for what goes in it.
-let editorSrc = 'own';
+let editorSrc = 'own', editorSelfKnown = false;
 function srcFromField() { const v = $('aWinget').value.trim(); return !v ? null : isStoreId(v) ? 'store' : 'winget'; }
 // Microsoft 365 Apps (2.38.21): Intune's own Office app - its settings as the server keeps them (Get-OfficeDefaultSettings, -AppKeys, -Channels).
 const officeChannels = [['monthlyEnterprise', 'Monthly Enterprise Channel - once a month (recommended)'], ['current', 'Current Channel - new features as they come'],
@@ -318,6 +319,10 @@ function showManagedState() {
   const has = !!$('aWinget').value.trim();
   appVerPick.hide(!has || isStoreId($('aWinget').value.trim()));
   $('aRuleBox').hidden = !$('aManaged').checked;
+  // Updates itself (2.38.40): the other way to keep a Winget app current - offered while managed updates are off.
+  const storeId = has && isStoreId($('aWinget').value.trim());
+  $('aSelfRow').hidden = !has || storeId || $('aManaged').checked;
+  $('aSelfHint').hidden = !(has && !storeId && $('aManaged').checked && editorSelfKnown);
   $('arAutoRow').hidden = has; $('arUrlRow').hidden = has; $('aWatchRow').hidden = has;
   $('aManaged').parentElement.title = has ? 'Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Updates'
     : 'Release new versions of this package to the pilot groups first. Needs a detection rule that compares a version (MSI, or file/registry by version) - a release updates it to the new version.';
@@ -689,6 +694,7 @@ $('appForm').addEventListener('submit', async e => {
   if (deployTouched) app.deploy = readDeploy();
   app.iconChange = iconChange; if (iconChange === 'set') app.icon = editorIcon;
   app.managedUpdates = $('aManaged').checked;
+  if (!$('aSelfRow').hidden) app.updatesItself = $('aSelfUpd').checked;
   app.releaseRule = { days: $('arDays').value.trim(), maxFailedPercent: $('arFailed').value.trim(), minInstalled: $('arMin').value.trim() };
   app.detectedName = $('arDetected').value.trim();
   app.autoRelease = $('arAuto').checked && !$('aWinget').value.trim(); app.downloadUrl = $('arUrl').value.trim();

@@ -381,8 +381,14 @@ try {
         apps.push({ name: 'ZZ Unsent', hasAppId: true, unsent: 'settings', groups: ['SG-A'], version: '1.0' }); renderApps();`);
       // 2.38.37: Send settings while another is being sent lines it up instead of refusing it.
       const queued = await page.evaluate(async () => { const was = jobRunning, la = loadApps; loadApps = () => {}; jobRunning = true; sendSettingsNow(['ZZ Q1']); sendSettingsNow(['ZZ Q2']); sendSettingsNow(['ZZ Q2']);
-        const q = sendQueue.map(x => x.name).join(','); sendQueue.length = 0; jobRunning = was; await new Promise(r => setTimeout(r, 1200)); loadApps = la; const d = document.getElementById('dlgRun'); if (d.open) d.close(); return q; });
-      check(queued === 'ZZ Q1,ZZ Q2', `${label}: Send settings clicked again while one runs is queued (once per app), not refused`, queued);
+        const q = sendQueue.map(x => x.name).join(',');
+        // 2.38.39: each send its own window, side by side - the newest on the left (the stack runs right to left).
+        const cards = [...document.querySelectorAll('#sendStack .sendcard')].map(c => c.querySelector('.sub').textContent + ':' + c.querySelector('.pill').textContent);
+        const r = [...document.querySelectorAll('#sendStack .sendcard')].map(c => c.getBoundingClientRect().left);
+        sendQueue.length = 0; jobRunning = was; await new Promise(r => setTimeout(r, 1200)); loadApps = la; document.getElementById('sendStack').remove();
+        return { q, cards: cards.join('|'), newestLeft: r.length === 2 && r[1] < r[0] }; });
+      check(queued.q === 'ZZ Q1,ZZ Q2', `${label}: Send settings clicked again while one runs is queued (once per app), not refused`, JSON.stringify(queued));
+      check(queued.cards === 'ZZ Q1:Waiting|ZZ Q2:Waiting' && (size.width < 721 || queued.newestLeft), `${label}: each queued send has its own window, the newest left of the others`, JSON.stringify(queued));
       const unsentPill = page.locator('#grid tr', { hasText: 'ZZ Unsent' }).locator('button.pillbtn');
       check(await unsentPill.count() === 1 && /Changes to send/.test(await unsentPill.textContent()), `${label}: Changes to send is a pill that opens the changes`);
       await unsentPill.hover();
