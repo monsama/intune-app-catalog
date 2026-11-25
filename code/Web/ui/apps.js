@@ -1731,7 +1731,7 @@ async function openStatus(name) {
   // 2.38.9: who its groups target but hasn't reported yet - listed as "Waiting for report", after those that did.
   const waitN = r.waiting || 0, reported = (r.rows || []).length - waitN;
   $('statusSummary').textContent = (reported ? String(r.summary).replace(/\.?\s*$/, '.') : 'No device has reported yet.') + (r.truncated ? ' (Only the first rows are shown.)' : '')
-    + (waitN ? ` ${waitN} more in its groups haven't reported yet - a Required one appears once its device checks in and tries the app (Company Portal > Sync speeds it up), an Available one once its user installs it from the Company Portal.` : '')
+    + (waitN ? ` ${waitN} more in its groups haven't reported yet${r.onPrevious ? ` (${r.onPrevious} of them ${r.onPrevious === 1 ? 'has' : 'have'} ${r.previousVersion}, the version before - updated when ${r.onPrevious === 1 ? 'it checks' : 'they check'} in)` : ''} - a Required one appears once its device checks in and tries the app (Company Portal > Sync speeds it up), an Available one once its user installs it from the Company Portal.` : '')
     + ((r.targetNotes || []).length ? ' ' + r.targetNotes.join(' ') : '');
   const top = r.topErrors || [];
   $('statusErrors').hidden = !top.length;

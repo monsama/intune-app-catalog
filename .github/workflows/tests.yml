@@ -1,7 +1,10 @@
 name: tests
 
+# Pushes to main, and pull requests: a branch with a pull request ran every job twice (once for the push, once for
+# the pull request) - the same code, twice the runners.
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -62,6 +65,15 @@ jobs:
         if: matrix.shell == 'powershell'
         shell: powershell
         run: ./code/tests/WebGraph.Tests.ps1
+      # Send, read back, compare against a fake Intune that remembers; release flows end to end; a restart mid-step.
+      - name: RoundTrip.Tests.ps1 (pwsh)
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: ./code/tests/RoundTrip.Tests.ps1
+      - name: RoundTrip.Tests.ps1 (Windows PowerShell)
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: ./code/tests/RoundTrip.Tests.ps1
       # 500 generated apps: the requests that read the whole catalog, timed.
       - name: Scale.Tests.ps1 (pwsh)
         if: matrix.shell == 'pwsh'

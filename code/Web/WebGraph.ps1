@@ -66,6 +66,64 @@ function Global:Get-WebTestGraphAnswer {
     return @{ Status = 200; Reason = 'OK'; Text = $(if ($null -ne $entry) { $entry | ConvertTo-Json -Compress -Depth 20 } else { '' }) }
 }
 
+function Global:Get-WebTestGraphMemoryAnswer {
+    <#
+      Test mode with "__memory" in the answers file (2.38.44): Intune's own memory of an app, so a test can send,
+      read back and compare - what a PATCH sent to mobileApps/{id}, an app created there and the relationships set
+      with updateRelationships are kept in <answers file>.memory.json and given back on GET, laid over the stored
+      answer as Intune would merge them. $null for every other request (the stored answers answer those).
+      Steps run in other processes: the file is their shared memory.
+    #>
+    param($Answers, [string]$Path, [string]$Method, [string]$Uri, [string]$BodyText)
+    if (-not $Answers -or -not ($Answers.PSObject.Properties.Name -contains '__memory')) { return $null }
+    $rel = [Uri]::UnescapeDataString(($Uri -replace '^https://graph\.microsoft\.com/', ''))
+    if ($rel -notmatch '^beta/deviceAppManagement/mobileApps(?:/([0-9a-fA-F-]{36}))?(/updateRelationships|/relationships)?(?:\?.*)?$') { return $null }
+    $id = ([string]$Matches[1]).ToLowerInvariant(); $sub = [string]$Matches[2]
+    $file = "$Path.memory.json"
+    $mem = if (Test-Path -LiteralPath $file) { Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json } else { [pscustomobject]@{} }
+    $save = { [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $mem -Depth 30 -Compress), (New-Object System.Text.UTF8Encoding($false))) }
+    $entry = { param($k) if (-not ($mem.PSObject.Properties.Name -contains $k)) { $mem | Add-Member -NotePropertyName $k -NotePropertyValue ([pscustomobject]@{ app = [pscustomobject]@{}; rels = $null }) }; $mem.$k }
+    $body = if ($BodyText) { $BodyText | ConvertFrom-Json } else { $null }
+    $ok = { param($o) @{ Status = 200; Reason = 'OK'; Text = $(if ($null -ne $o) { ConvertTo-Json -InputObject $o -Depth 30 -Compress } else { '' }) } }
+    $stored = { param($k) $a = Get-WebTestGraphAnswer -Answers $Answers -Method 'GET' -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$k"; if ($a.Status -eq 200 -and $a.Text) { $a.Text | ConvertFrom-Json } else { $null } }
+    $m = $Method.ToUpperInvariant()
+    if ($m -eq 'POST' -and -not $id -and -not $sub -and $body) {
+        $newId = [guid]::NewGuid().ToString()
+        $e = & $entry $newId
+        foreach ($p in $body.PSObject.Properties) { $e.app | Add-Member -NotePropertyName $p.Name -NotePropertyValue $p.Value -Force }
+        $e.app | Add-Member -NotePropertyName id -NotePropertyValue $newId -Force
+        & $save; return (& $ok $e.app)
+    }
+    if (-not $id) { return $null }
+    if ($m -eq 'PATCH' -and -not $sub) {
+        $e = & $entry $id
+        foreach ($p in @($(if ($body) { $body.PSObject.Properties }))) { $e.app | Add-Member -NotePropertyName $p.Name -NotePropertyValue $p.Value -Force }
+        & $save; return (& $ok $null)
+    }
+    if ($m -eq 'POST' -and $sub -eq '/updateRelationships') {
+        $e = & $entry $id
+        # As Intune lists them: the target's name, and this app as the parent.
+        $e.rels = @(@($(if ($body) { $body.relationships })) | Where-Object { $_ } | ForEach-Object {
+                $t = ([string]$_.targetId).ToLowerInvariant()
+                $tn = if ($mem.PSObject.Properties.Name -contains $t -and $mem.$t.app.displayName) { [string]$mem.$t.app.displayName } else { $sa = & $stored $t; [string]$(if ($sa) { $sa.displayName }) }
+                $o = [ordered]@{}; foreach ($p in $_.PSObject.Properties) { $o[$p.Name] = $p.Value }
+                $o['targetType'] = 'child'; $o['targetDisplayName'] = $tn
+                [pscustomobject]$o
+            })
+        & $save; return (& $ok $null)
+    }
+    if ($m -eq 'GET' -and $sub -eq '/relationships' -and $mem.PSObject.Properties.Name -contains $id -and $null -ne $mem.$id.rels) { return (& $ok ([pscustomobject]@{ value = @($mem.$id.rels) })) }
+    if ($m -eq 'GET' -and -not $sub -and $mem.PSObject.Properties.Name -contains $id) {
+        $base = & $stored $id
+        $o = [ordered]@{}
+        if ($base) { foreach ($p in $base.PSObject.Properties) { $o[$p.Name] = $p.Value } }
+        foreach ($p in $mem.$id.app.PSObject.Properties) { $o[$p.Name] = $p.Value }
+        $o['id'] = $id
+        return (& $ok ([pscustomobject]$o))
+    }
+    return $null
+}
+
 function Global:Invoke-WebGraph {
     <#
       Runs -Action with Graph connected app-only (reusing a matching
@@ -95,7 +153,8 @@ function Global:Invoke-WebGraph {
                     }
                     return [pscustomobject]@{ responses = @($responses) }
                 }
-                $answer = Get-WebTestGraphAnswer -Answers $test.Answers -Method $Method -Uri $Uri -Counters $test.Counters
+                $answer = Get-WebTestGraphMemoryAnswer -Answers $test.Answers -Path $test.Path -Method $Method -Uri $Uri -BodyText $(if ($null -eq $Body) { '' } elseif ($Body -is [string]) { $Body } else { ConvertTo-Json -InputObject $Body -Depth 20 -Compress })
+                if (-not $answer) { $answer = Get-WebTestGraphAnswer -Answers $test.Answers -Method $Method -Uri $Uri -Counters $test.Counters }
                 if ($answer.Status -ge 300) { throw "$($answer.Status) $($answer.Reason): $($answer.Text)" }
                 if ($answer.Text) { $answer.Text | ConvertFrom-Json } else { $null }
             }.GetNewClosure()

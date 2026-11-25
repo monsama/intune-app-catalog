@@ -512,10 +512,23 @@ function Global:Get-WebInstallStatus {
     # shows who's coming instead of an empty table. Never fails the report: a group that can't be read is a note.
     # A cut-off report (5000 rows) misses devices that did report: then "waiting" would be wrong - left out, with a note.
     $exp = if ($report.Truncated) { @{ Members = @(); Notes = @("The report has more than $(@($report.Rows).Count) rows and was cut off - devices waiting for their first report aren't listed.") } } else { Get-WebExpectedInstallMembers -App $a }
+    # During an update (2.38.44): what the version before has on each device - the new release's report lists a device
+    # only once it tried the update, so one still on the old version showed as just "Waiting for report".
+    $before = @{}; $beforeVersion = ''
+    $prev = @(Get-WebPreviousReleases $a) | Select-Object -Last 1
+    if ($prev -and $prev.appId) {
+        $prevId = [string]$prev.appId; $beforeVersion = [string]$prev.version
+        $pr = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) Get-AppInstallStatusRows -AppId $prevId -Invoke $Graph }.GetNewClosure()
+        if ($pr.ok) { foreach ($r in @($pr.value.Rows)) { if ($r.DeviceName -and [string]$r.State -eq 'Installed') { $before[([string]$r.DeviceName).ToLowerInvariant()] = $true } } }
+    }
     $waiting = @(Get-ExpectedInstallRows -ReportRows @($report.Rows) -Members @($exp.Members) | ForEach-Object {
-        [ordered]@{ device = $(if ($_.Kind -eq 'device') { $_.Name } else { '' }); user = $(if ($_.Kind -eq 'user') { $(if ($_.Upn) { $_.Upn } else { $_.Name }) } else { '' })
-            state = 'Waiting for report'; detail = "In $(@($_.Groups) -join ', ')"; error = ''; version = ''; lastSeen = ''; meaning = ''; fix = ''; waiting = $true } })
-    return @{ ok = $true; app = $name; rows = @($rows) + @($waiting); waiting = $waiting.Count; truncated = [bool]$report.Truncated; summary = (Format-InstallStatusSummary @($report.Rows))
+        $dev = if ($_.Kind -eq 'device') { [string]$_.Name } else { '' }
+        $old = $dev -and $before.ContainsKey($dev.ToLowerInvariant())
+        [ordered]@{ device = $dev; user = $(if ($_.Kind -eq 'user') { $(if ($_.Upn) { $_.Upn } else { $_.Name }) } else { '' })
+            state = $(if ($old) { "Has $beforeVersion" } else { 'Waiting for report' })
+            detail = "In $(@($_.Groups) -join ', ')$(if ($old) { " - $beforeVersion is installed; it is updated when the device checks in (Company Portal > Sync speeds it up)" })"
+            error = ''; version = $(if ($old) { $beforeVersion } else { '' }); lastSeen = ''; meaning = ''; fix = ''; waiting = $true; previous = [bool]$old } })
+    return @{ ok = $true; app = $name; rows = @($rows) + @($waiting); waiting = $waiting.Count; onPrevious = @($waiting | Where-Object { $_.previous }).Count; previousVersion = $beforeVersion; truncated = [bool]$report.Truncated; summary = (Format-InstallStatusSummary @($report.Rows))
         targetNotes = @($exp.Notes)
         # The most common errors, explained - what to fix first.
         topErrors = @(Get-InstallErrorTop -Rows @($report.Rows) -Top 5) }
