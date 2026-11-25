@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.38.38
+
+- **Managed apps no longer differ for good after "Send settings"**: a managed app
+  is sent pinned to its version, with the detection script and return codes as
+  this version writes them (new in 2.38.34) - but the catalog file kept the
+  older form, so Checks kept reporting "Detection rule, Return codes" differ
+  right after a successful send. Checks now compares a managed app as it is
+  sent, and a send writes that form into the catalog too.
+- **Send settings from Checks queues too**: like on the Apps page (2.38.37), a
+  Send settings clicked while another send runs waits its turn instead of being
+  refused; the findings are checked again once it is sent. The tray says which
+  app is being sent now and which come after.
+
 ## 2.38.37
 
 - **Send settings / Send groups queue up**: clicking another app's "Send
