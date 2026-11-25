@@ -55,12 +55,13 @@ function Global:Get-WebDeployPlan {
         $store = (Test-StoreProductId ([string]$a.wingetId)) -or [bool]$a.office
         $pkg = if ($store) { @{ Found = $true } } else { Resolve-AppPackagePath -AppName $a.appName -Uncommon $unc -Index $index -PackagePath $a.packagePath }
         $reason = ''
+        $lt = if ($a.appId) { [string]$typeOf[([string]$a.appId).ToLowerInvariant()] } else { '' }
         if ($a.appId -and $tenantIds -and -not $tenantIds.ContainsKey(([string]$a.appId).ToLowerInvariant())) { $reason = "Its App ID isn't in this tenant (copied from another?) - clear it first: Catalog > Set up this tenant." }
         # A same-name app in Intune first: building a package would only lead to a duplicate.
         elseif (-not $a.appId -and $inIntune.ContainsKey(([string]$a.appName).Trim().ToLowerInvariant())) { $reason = 'An app with this name is already in Intune - link it (Checks > Link) instead of creating a second one.' }
         elseif (-not $store -and ($nonPkg = Get-NonPackageAppHint $a)) { $reason = $nonPkg }
         # Linked to a type it can't become (2.38.42) - the same refusals Start-WebDeploy gives, said here instead of mid-queue.
-        elseif ($store -and $a.appId -and ($lt = [string]$typeOf[([string]$a.appId).ToLowerInvariant()]) -and $lt -ne $(if ($a.office -and -not $a.wingetId) { 'officeSuiteApp' } else { 'winGetApp' })) { $reason = "It is linked to a $(Get-FriendlyIntuneAppType -ODataType $lt) in Intune, which can't become $(if ($a.office -and -not $a.wingetId) { 'Microsoft 365 Apps' } else { 'a Microsoft Store app' }) - clear its App ID (More > Clear App ID) and send it again." }
+        elseif ($store -and $lt -and $lt -ne $(if ($a.office -and -not $a.wingetId) { 'officeSuiteApp' } else { 'winGetApp' })) { $reason = "It is linked to a $(Get-FriendlyIntuneAppType -ODataType $lt) in Intune, which can't become $(if ($a.office -and -not $a.wingetId) { 'Microsoft 365 Apps' } else { 'a Microsoft Store app' }) - clear its App ID (More > Clear App ID) and send it again." }
         elseif (-not $pkg.Found) {
             $reason = if ($unc) { "No package (.intunewin) yet - build it with More > Package." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging builds it." }
         }
