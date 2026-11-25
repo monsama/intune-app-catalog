@@ -461,7 +461,18 @@ try {
         }
     }
 
-    $pool = [runspacefactory]::CreateRunspacePool(1, $maxConcurrency)
+    # Graph test mode (2.38.44): the workers get the stand-ins too (GraphLog.ps1) - a runspace starts without the
+    # functions this script has, so they'd load the real Graph module instead.
+    $pool = if ($global:TestGraphState) {
+        $iss = [initialsessionstate]::CreateDefault()
+        foreach ($fn in 'Import-Module', 'Get-MgContext', 'Connect-MgGraph', 'Disconnect-MgGraph', 'Invoke-MgGraphRequest', 'Get-WebTestGraphAnswer', 'Get-WebTestGraphMemoryAnswer', 'ConvertTo-TestGraphHashtable') {
+            $c = Get-Command $fn -CommandType Function -ErrorAction SilentlyContinue
+            if ($c) { $iss.Commands.Add((New-Object System.Management.Automation.Runspaces.SessionStateFunctionEntry($fn, $c.ScriptBlock.ToString()))) }
+        }
+        $iss.Variables.Add((New-Object System.Management.Automation.Runspaces.SessionStateVariableEntry('TestGraphState', $global:TestGraphState, '')))
+        [runspacefactory]::CreateRunspacePool(1, 1, $iss, $Host)
+    }
+    else { [runspacefactory]::CreateRunspacePool(1, $maxConcurrency) }
     $pool.Open()
     $jobs = New-Object System.Collections.Generic.List[object]
     $allResults = New-Object System.Collections.Generic.List[object]

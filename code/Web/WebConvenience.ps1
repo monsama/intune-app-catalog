@@ -531,9 +531,20 @@ function Global:Get-WebAssignmentFilters {
 
 function Global:Get-WebPermissionCheck {
     # Settings > Diagnostics > Check permissions: the app registration's Graph permissions (from the sign-in itself) against what is used here.
+    param($Data)
     if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Set up the connection in Settings first.' } }
     if ($Global:App.TestGraph) { $roles = @($Global:App.TestGraph.Answers.'TOKEN roles') }
     else {
+        # -fresh (the button, 2.38.44): signed in again first - the roles are those of the token, and the one the
+        # connection holds was issued before a permission just added (and consented) in Entra ID; it showed "Add it"
+        # for up to an hour. Home and the other pages keep using the connection as it is.
+        if ($Data -and $Data.fresh) {
+            try {
+                Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+                Connect-MgGraph -TenantId $Global:App.GraphTenantId -ClientId $Global:App.GraphClientId -CertificateThumbprint $Global:App.GraphCertificateThumbprint -NoWelcome -ErrorAction Stop
+            }
+            catch { return @{ ok = $false; error = "Signing in again failed: $(Get-InnermostErrorMessage $_.Exception)" } }
+        }
         $read = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) @((Get-MgContext).Scopes) }
         if (-not $read.ok) { return $read }
         $roles = @($read.value)

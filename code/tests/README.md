@@ -1,16 +1,17 @@
 # Tests
 
-Five suites, each a plain script - no test framework to install.
+Six suites, each a plain script - no test framework to install.
 
 ```
 pwsh -NoProfile -File code/tests/CatalogLogic.Tests.ps1   # pure logic
 pwsh -NoProfile -File code/tests/WebServer.Tests.ps1      # the real server, over HTTP
 pwsh -NoProfile -File code/tests/WebGraph.Tests.ps1       # the pages that read Graph, without a tenant
+pwsh -NoProfile -File code/tests/RoundTrip.Tests.ps1      # send, read back, compare; release flows; a restart
 pwsh -NoProfile -File code/tests/Scale.Tests.ps1          # 500 apps: how long the whole-catalog requests take
 node code/tests/ui/WebUi.Tests.mjs                        # every page in Chromium
 ```
 
-Every push runs the four PowerShell suites on Linux (PowerShell 7) and Windows
+Every pull request (and every push to main) runs the five PowerShell suites on Linux (PowerShell 7) and Windows
 (PowerShell 7 and Windows PowerShell 5.1), and the browser test on Linux -
 see `.github/workflows/tests.yml`.
 
@@ -51,6 +52,32 @@ does:
 tenant - everything that would stops at "Set up the connection first", and
 the test checks that it does. What it creates in the catalog and the script
 folder it removes again, and the settings file is put back as it was.
+
+## RoundTrip.Tests.ps1 - what is sent comes back the same
+
+A fake Intune that **remembers**: with `"__memory"` in the answers file
+(`Get-WebTestGraphMemoryAnswer`, `code\Web\WebGraph.ps1`), what a step
+PATCHes to `mobileApps/{id}`, an app it creates and the relationships it
+sets are kept in `<file>.memory.json` and given back on the next GET, laid
+over the stored answer as Intune merges them. So the test sends apps of
+each kind - an own package with a non-ASCII script detection, x64 before
+x86 and no return codes; one with a file rule, its own return codes and a
+supersedence; a managed Winget app; a Store app; Microsoft 365 Apps - and
+then expects Checks and Pull to find **nothing** to change. That is the
+kind of mismatch earlier sweeps found by hand: a second BOM on a script,
+the architectures in another order, missing return codes against Intune's
+defaults, Featured or supersedence lost on the way. It also changes a
+setting "in the portal" (the memory file) and expects Checks to see it and
+Pull to take it.
+
+Then the release flows, run by the server as one call each (promote:
+the new release gets the app's groups, the old one none, the catalog
+follows; withdraw: unassigned, deleted, not released again by itself), and
+a restart: a step that ended while the server was down is finished at the
+next start.
+
+Checks' detail step (SyncMetadata) reads in parallel runspaces; in test
+mode they get the stand-ins too.
 
 ## WebGraph.Tests.ps1 - the pages that read Graph
 

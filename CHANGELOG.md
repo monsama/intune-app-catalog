@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.38.44
+
+- **Better tests**: a new suite, RoundTrip.Tests.ps1, runs against a fake
+  Intune that remembers what it is sent. It sends apps of every kind and
+  expects Checks and Pull to find nothing to change - the kind of mismatch
+  earlier sweeps found by hand (a second BOM on a script, architectures in
+  another order, missing return codes, Featured or supersedence lost). It
+  also runs the release flows end to end and a restart in the middle of a
+  step. Checks' detail step now runs in the tests too (it never did).
+- CI runs once per pull request instead of twice (push and pull request).
+- **Check permissions signs in again** before it reads the permissions: one
+  just added and consented in Entra ID shows at once, not after the old
+  sign-in expires (up to an hour).
+- **Install status during an update**: devices that still have the version
+  before show it ("Has 3.0.23 - updated when the device checks in") instead
+  of only "Waiting for report".
+- A step left running is only picked up from its own record file at start -
+  nothing else in that folder is read or removed.
+
 ## 2.38.43
 
 The larger follow-ups from the 2.38.42 sweep:

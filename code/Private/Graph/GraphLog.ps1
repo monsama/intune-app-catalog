@@ -220,6 +220,7 @@ function global:Write-GraphLogFromInformation {
     # Only ever added when the app itself runs in test mode.
     if ($Global:App.TestGraph -and (Get-Command Get-WebTestGraphAnswer -ErrorAction SilentlyContinue)) {
         $parts.Add("function global:Get-WebTestGraphAnswer {`n$((Get-Command Get-WebTestGraphAnswer).ScriptBlock.ToString())`n}")
+        $parts.Add("function global:Get-WebTestGraphMemoryAnswer {`n$((Get-Command Get-WebTestGraphMemoryAnswer).ScriptBlock.ToString())`n}")
         $parts.Add(@'
 $global:TestGraphState = @{
     Answers  = (Get-Content -LiteralPath $env:INTUNE_CATALOG_TEST_GRAPH -Raw -Encoding UTF8 | ConvertFrom-Json)
@@ -255,7 +256,8 @@ function global:Invoke-MgGraphRequest {
     $bodyText = if ($null -eq $Body) { '' } elseif ($Body -is [string]) { $Body } else { $Body | ConvertTo-Json -Depth 20 -Compress }
     $call = @{ method = $Method.ToUpperInvariant(); uri = $Uri; body = $bodyText } | ConvertTo-Json -Compress
     Add-Content -LiteralPath $state.Calls -Value $call -Encoding UTF8
-    $answer = Get-WebTestGraphAnswer -Answers $state.Answers -Method $Method.ToUpperInvariant() -Uri $Uri -Counters $state.Counters
+    $answer = Get-WebTestGraphMemoryAnswer -Answers $state.Answers -Path $env:INTUNE_CATALOG_TEST_GRAPH -Method $Method -Uri $Uri -BodyText $bodyText
+    if (-not $answer) { $answer = Get-WebTestGraphAnswer -Answers $state.Answers -Method $Method.ToUpperInvariant() -Uri $Uri -Counters $state.Counters }
     if ($answer.Status -ge 300) { throw "Response status code does not indicate success: $($answer.Status) ($($answer.Reason)). $($answer.Text)" }
     if (-not $answer.Text) { return $null }
     return (ConvertTo-TestGraphHashtable ($answer.Text | ConvertFrom-Json))

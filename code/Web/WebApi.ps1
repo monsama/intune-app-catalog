@@ -341,7 +341,8 @@ function Global:Resume-WebSavedJobs {
     #>
     $dir = Get-WebJobRecordFolder
     if (-not (Test-Path -LiteralPath $dir)) { return }
-    foreach ($f in @(Get-ChildItem -LiteralPath $dir -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+    # Only the records themselves (<id>.json) - nothing else in the folder is read or removed.
+    foreach ($f in @(Get-ChildItem -LiteralPath $dir -Filter '*.json' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^[0-9a-f]{32}\.json$' })) {
         $rec = $null
         try { $rec = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
         if (-not $rec -or -not ([string]$rec.id -match '^[0-9a-f]{32}$') -or $Global:App.WebJobs.ContainsKey([string]$rec.id)) { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue; continue }
@@ -861,7 +862,7 @@ function Global:Invoke-WebApi {
         '/api/release-advanced' { return (Invoke-WithCatalogLock { Complete-WebAdvance $Data }) }
         '/api/alert-test'       { return (Send-WebTestAlert) }
         '/api/health'           { return (Get-WebHealth) }
-        '/api/permission-check' { return (Get-WebPermissionCheck) }
+        '/api/permission-check' { return (Get-WebPermissionCheck $Data) }
         '/api/filters' { return (Get-WebAssignmentFilters) }
         '/api/download-checks'  { return (Invoke-WebDownloadChecks) }
         '/api/retire-start'     { return (Start-WebRetire $Data) }
