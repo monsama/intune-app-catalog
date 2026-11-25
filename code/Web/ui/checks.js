@@ -401,7 +401,7 @@ function hcOpen(b, m) {
   const c = hcCard();
   if (hcFor && hcFor !== b) hcFor.setAttribute('aria-expanded', 'false');
   hcFor = b; b.setAttribute('aria-expanded', 'true');
-  const blank = t => t === '(blank)' || t === '(none)';
+  const blank = t => t === '(blank)' || t === '(none)' || t === '(not kept at the last send)';
   c.replaceChildren(
     el('header', {}, el('b', { text: m.title }), el('span', { text: m.sub || '' })),
     el('div', { class: 'hcbody' }, m.rows.length ? el('table', { class: 'hc' },

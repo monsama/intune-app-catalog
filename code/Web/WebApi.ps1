@@ -923,7 +923,10 @@ function Global:Get-WebUnsentDiff {
             $cur = $now[$part] | ConvertTo-Json -Depth 10 | ConvertFrom-Json
             $keys = @(@($was.PSObject.Properties.Name) + @($cur.PSObject.Properties.Name) | Select-Object -Unique)
             foreach ($k in $keys) {
-                $l = & $text $was.$k; $r = & $text $cur.$k
+                # A field the last send's record doesn't hold (a managed app's version, commands, detection and return
+                # codes go with its releases, so they weren't kept) isn't "blank in Intune" - said as what it is (2.38.36).
+                $l = if ($was.PSObject.Properties[$k]) { & $text $was.$k } else { '(not kept at the last send)' }
+                $r = & $text $cur.$k
                 if ($l -cne $r) { $rows.Add([ordered]@{ part = $what; field = (& $label $k); sent = $l; now = $r }) }
             }
         }

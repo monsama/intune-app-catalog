@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.38.36
+
+- **"Changes to send" no longer shows "(blank)" for what Intune does have**: an
+  app sent while it had managed updates doesn't keep its version, commands,
+  detection and return codes in the send record (its releases carry them).
+  When managed updates are off later, the card showed those fields as blank in
+  Intune; it now says "(not kept at the last send)".
+- **Home**: the buttons in "Needs attention" are one width and line up. The
+  message for a pinned version winget no longer offers says how to release the
+  current one.
+- **Settings > Packaging and Diagnostics**: one card per row, full width (the
+  Activity log reads better wide; on the server Packaging stood alone at half
+  width).
+
 ## 2.38.35
 
 - **The "what changed" card stays open to be read**: the card that opens when
