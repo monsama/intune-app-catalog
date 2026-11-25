@@ -349,7 +349,8 @@ function hcCard() {
   if (c) return c;
   c = el('div', { class: 'hovercard', id: 'cmpCard', role: 'dialog', 'aria-label': 'What differs', hidden: true });
   c.addEventListener('mouseenter', () => clearTimeout(hcCloseT));
-  c.addEventListener('mouseleave', hcLater);
+  // Clicked into (focus inside), it stays until a click elsewhere or Esc - reading a long list shouldn't need a steady hand.
+  c.addEventListener('mouseleave', () => { if (!c.contains(document.activeElement)) hcLater(); });
   c.addEventListener('keydown', e => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); hcClose(true); return; }
     // Tab past its last button (or Shift+Tab before its first) goes back to what opened it - the card sits at the end
@@ -362,7 +363,12 @@ function hcCard() {
   c.addEventListener('focusout', e => { if (!c.contains(e.relatedTarget) && e.relatedTarget !== hcFor) hcLater(); });
   document.body.append(c);
   document.addEventListener('pointerdown', e => { if (!c.hidden && !c.contains(e.target) && !(hcFor && hcFor.contains(e.target))) hcClose(); });
-  window.addEventListener('scroll', () => { if (!c.hidden && !c.contains(document.activeElement)) hcClose(); }, true);
+  // The page scrolling away under it closes it - not scrolling inside the card itself (2.38.35: a click into the card,
+  // then the wheel, closed it - the click focused nothing, so the card's own scroll counted as the page's).
+  window.addEventListener('scroll', e => { if (!c.hidden && !c.contains(e.target) && !c.contains(document.activeElement)) hcClose(); }, true);
+  // Clicked into, it keeps focus - so the arrow and page keys scroll it, and Esc closes it.
+  c.tabIndex = -1;
+  c.addEventListener('pointerdown', e => { if (!e.target.closest('button, a, input, select, textarea')) c.focus({ preventScroll: true }); });
   window.addEventListener('resize', () => hcClose());
   return c;
 }

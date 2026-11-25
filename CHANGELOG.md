@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.38.35
+
+- **The "what changed" card stays open to be read**: the card that opens when
+  pointing at "Changes to send" (and at a finding's fields in Checks) closed as
+  soon as it was clicked and scrolled - its own scrolling counted as the page
+  scrolling away. Clicked into, it now stays open while it is scrolled (wheel,
+  arrow and page keys) and when the pointer leaves it; a click elsewhere or Esc
+  closes it.
+
 ## 2.38.34
 
 A full review of the app: what runs on the devices, what is sent to Intune,

@@ -336,6 +336,15 @@ try {
       await a11y('Checks hover card');
       await page.mouse.move(2, 2); await page.waitForTimeout(400);
       check(await page.evaluate(() => document.getElementById('cmpCard').hidden), `${label}: the hover card closes when the pointer leaves`);
+      // 2.38.35: clicked into, it stays - scrolling inside it and moving the pointer away don't close it; Esc does.
+      await page.hover('#checkBody .difs');
+      await page.waitForSelector('#cmpCard:not([hidden])', { timeout: 3000 }).catch(() => { });
+      await page.click('#cmpCard header');
+      await page.evaluate(() => { const b = document.querySelector('#cmpCard .hcbody'); b.dispatchEvent(new Event('scroll')); });
+      await page.mouse.move(2, 2); await page.waitForTimeout(400);
+      check(await page.evaluate(() => !document.getElementById('cmpCard').hidden), `${label}: the hover card, clicked into, stays while it is scrolled and the pointer leaves`);
+      await page.keyboard.press('Escape');
+      check(await page.evaluate(() => document.getElementById('cmpCard').hidden), `${label}: ...and Esc closes it`);
       await page.focus('#checkBody .difs'); await page.keyboard.press('Enter');
       check(await page.evaluate(() => { const c = document.getElementById('cmpCard'); return !c.hidden && c.contains(document.activeElement); }), `${label}: Enter on the chips opens the card and moves into it`);
       await page.keyboard.press('Escape');
