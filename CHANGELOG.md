@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.38.39
+
+- **One window per send**: each Send settings / Send groups gets its own small
+  window, side by side in the bottom right corner - the newest left of the
+  others. Each says Waiting, Sending..., Sent or Failed and has its own log;
+  a sent one closes by itself after a while, a failed one stays to be read.
+  They still go to Intune one after the other.
+- **Microsoft 365 Apps: Send settings failed with "Property is read-only:
+  'Publisher'"**: an existing app's publisher is Intune's own - it isn't sent
+  any more when updating, and should Intune name another read-only property,
+  the update is tried again without it.
+
 ## 2.38.38
 
 - **Managed apps no longer differ for good after "Send settings"**: a managed app

@@ -1914,3 +1914,12 @@ input[type=radio]:disabled { opacity: .5; cursor: default; }
 #sec-packaging .cols > .col, #sec-diagnostics .cols > .col { grid-column: 1 / -1; }
 /* 2.38.37: the Stage column's next-step buttons one width (Send settings, Checks, Edit, ...), so they line up like the pills. */
 .stage .btn.small.next { min-width: 112px; justify-content: center; text-align: center; }
+/* 2.38.39: one small window per send, side by side in the bottom right corner - the newest left of the others. */
+.sendstack { position: fixed; right: 16px; bottom: 16px; z-index: 41; display: flex; flex-direction: row-reverse; flex-wrap: wrap-reverse; gap: 10px; max-width: calc(100vw - 32px); pointer-events: none; }
+.sendcard { pointer-events: auto; width: 320px; max-width: calc(100vw - 32px); background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); padding: 12px 14px; box-shadow: 0 10px 32px rgba(16, 24, 40, .25); box-sizing: border-box; }
+.sendcard .trayhead { display: flex; align-items: center; gap: 8px; }
+.sendcard .trayhead h2 { margin: 0; font-size: 14px; }
+.sendcard .sub { margin: 4px 0 0; }
+.sendcard .log { max-height: 26vh; margin-top: 8px; font-size: 11px; }
+.sendcard.failed { border-color: var(--err, #c42b1c); }
+@media (max-width: 720px) { .sendstack { flex-direction: column-reverse; flex-wrap: nowrap; } .sendcard { width: auto; } }
