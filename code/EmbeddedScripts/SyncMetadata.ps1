@@ -258,7 +258,9 @@ try {
             $odType = $rule.'@odata.type'
             if ($odType -eq '#microsoft.graph.win32LobAppPowerShellScriptDetection' -and $rule.scriptContent) {
                 $scriptText = $null
-                try { $scriptText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($rule.scriptContent)) } catch { }
+                # The BOM a non-ASCII script is sent with (2.38.34) isn't part of the script (2.38.42): kept, the next send
+                # added a second one, and PowerShell then fails on the first word.
+                try { $scriptText = ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($rule.scriptContent))).TrimStart([char]0xFEFF) } catch { }
                 $detectionRule = [pscustomobject]@{ Type = "Script"; Script_Content = $scriptText }
                 break
             }

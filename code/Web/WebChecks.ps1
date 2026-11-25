@@ -226,7 +226,8 @@ function Global:Complete-WebCheckDetails {
             if ($app.metadata) { $app = $app.PSObject.Copy(); $app.metadata = Get-MetadataWithoutOwnReleases -Metadata $app.metadata -App $app -CatalogNames $catNames }
         }
         # A Microsoft Store app has no install commands or detection in Intune to compare - its settings aren't checked.
-        $isStore = (Test-StoreProductId ([string]$app.wingetId)) -or [bool]$app.office
+        # Nor Intune's other own types (2.38.42) - only a Win32 app's settings are sent from here.
+        $isStore = (Test-StoreProductId ([string]$app.wingetId)) -or [bool]$app.office -or (-not ([string]$app.wingetId).Trim() -and [bool](Get-NonPackageAppHint $app))
         # Nor their dependencies (2.38.32): Intune's Store and Microsoft 365 app types take none from here - a permanent "differ".
         foreach ($f in @(Get-AppDetailFindings -CatalogApp $app -Result $one)) { if ($isStore -and [string]$f.Area -in 'Metadata', 'Dependencies') { continue }; $new.Add($f) }
         $texts = Get-AuditSummaryTexts -CatalogApp $app -Result $one

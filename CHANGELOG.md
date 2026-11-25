@@ -1,5 +1,54 @@
 # Changelog
 
+## 2.38.42
+
+A sweep for "the page offers it, then it fails" and "sent, stored and compared
+don't agree":
+
+- **Own packages with a script detection rule** (any uploaded .exe) can be
+  released - every release was refused before ("doesn't check for X").
+- **New installer for a managed app in Intune**: the editor's upload takes it
+  again (into its folder only), and offers Release new version, which builds
+  and sends it pilot first. The messages that pointed elsewhere are fixed.
+- **No pilot groups, every path**: the nightly run's own-package release and
+  its retry of an unassigned pilot went to a pilot assigned to nobody - they go
+  to everyone now. A pilot or ring step with no groups, and a promote or
+  rollback of an app without groups, are refused instead of leaving it
+  assigned to nobody.
+- **Releases**: checked again once the app is reserved (no second pilot app
+  when the nightly run and you release at once); not while the app is being
+  retired; a retirement includes a version in pilot.
+- **Steps that ran but couldn't be saved** (the App ID, the release) count as
+  failed, not "Done". A step finished by another page (a second tab, another
+  admin) still tells the page that started it how it ended.
+- **Sends that bypassed the queue** (batch edit, switching the winget command,
+  CSV import, Checks stages) wait for a running send instead of failing with
+  "sent for 0 of N".
+- **Menus say what the server would refuse**: Send settings and Package are
+  hidden for Intune's own non-Win32 apps (and refused on the server), Duplicate
+  for Microsoft 365, Retire's Uninstall is disabled with the reason (a pilot,
+  apps that depend on it), Roll back no longer needs managed updates, Delete old
+  versions counts rolled-back versions and names them, and Check winget works
+  when only own packages watch winget. The Send to Intune plan says up front
+  when a Store or Microsoft 365 app is linked to a type it can't become.
+- **Compared like they are sent**:
+  - Detection scripts with non-ASCII text no longer get a second BOM after a
+    Pull and a send (PowerShell failed on it, so the app was never detected).
+  - Architecture order (x64,x86 vs x86,x64), install context case and minimum
+    OS spelling no longer show as differences; install context and minimum OS
+    are now compared and offered in Pull instead of replaced silently.
+  - No return codes in the catalog equal Intune's five defaults.
+  - Sending an app without settings of its own keeps Intune's Featured flag
+    and supersedence recorded as unknown, not as off / none.
+  - Keeping an empty field in Pull marks it cleared, so the next send empties
+    it in Intune.
+  - Dependencies on a rolled-back release are named back to the app; deleted
+    releases leave the catalog's supersedence.
+  - Release assignment steps no longer mark the app's groups as sent.
+- **Add apps**: a batch that failed is named in the summary instead of
+  disappearing with the dialog.
+- Wording: Settings paths and menu names that had moved.
+
 ## 2.38.41
 
 - **Release to everyone works**: without pilot groups the server still refused

@@ -55,10 +55,13 @@ function Global:Get-WebDeployPlan {
         $store = (Test-StoreProductId ([string]$a.wingetId)) -or [bool]$a.office
         $pkg = if ($store) { @{ Found = $true } } else { Resolve-AppPackagePath -AppName $a.appName -Uncommon $unc -Index $index -PackagePath $a.packagePath }
         $reason = ''
+        $lt = if ($a.appId) { [string]$typeOf[([string]$a.appId).ToLowerInvariant()] } else { '' }
         if ($a.appId -and $tenantIds -and -not $tenantIds.ContainsKey(([string]$a.appId).ToLowerInvariant())) { $reason = "Its App ID isn't in this tenant (copied from another?) - clear it first: Catalog > Set up this tenant." }
         # A same-name app in Intune first: building a package would only lead to a duplicate.
         elseif (-not $a.appId -and $inIntune.ContainsKey(([string]$a.appName).Trim().ToLowerInvariant())) { $reason = 'An app with this name is already in Intune - link it (Checks > Link) instead of creating a second one.' }
         elseif (-not $store -and ($nonPkg = Get-NonPackageAppHint $a)) { $reason = $nonPkg }
+        # Linked to a type it can't become (2.38.42) - the same refusals Start-WebDeploy gives, said here instead of mid-queue.
+        elseif ($store -and $lt -and $lt -ne $(if ($a.office -and -not $a.wingetId) { 'officeSuiteApp' } else { 'winGetApp' })) { $reason = "It is linked to a $(Get-FriendlyIntuneAppType -ODataType $lt) in Intune, which can't become $(if ($a.office -and -not $a.wingetId) { 'Microsoft 365 Apps' } else { 'a Microsoft Store app' }) - clear its App ID (More > Clear App ID) and send it again." }
         elseif (-not $pkg.Found) {
             $reason = if ($unc) { "No package (.intunewin) yet - build it with More > Package." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging builds it." }
         }
@@ -157,6 +160,8 @@ function Global:Start-WebDeploy {
             $replacesLob = ([string]$a.appId).ToLowerInvariant()
             $a = $a.PSObject.Copy(); $a.appId = ''
         }
+        # Another of Intune's own types (2.38.42): Win32 settings can't be patched onto it - refused, not sent and failed.
+        elseif ($ty.ok -and $metadataOnly -and $ty.type -ne 'win32LobApp') { return @{ ok = $false; error = "$name is a $(Get-FriendlyIntuneAppType -ODataType $ty.type) in Intune - only a Win32 app's settings can be sent from here. Change it in the Intune portal." } }
     }
     if ($metadataOnly) {
         if (-not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune yet - Deploy it first." } }
@@ -639,20 +644,29 @@ function Global:Get-WebRetireAppIds {
     # The MSI line-of-business app it replaced, still in Intune (2.38.0): uninstalled and deleted with it - left alone,
     # its Required groups installed the app again, and once the app was archived nothing pointed to it any more.
     if ($App.lobToRetire -and [string]$App.lobToRetire -ne [string]$App.appId) { $out.Add(@{ appId = [string]$App.lobToRetire; version = 'MSI app'; lob = $true }) }
-    foreach ($r in @(@($App.releases) | Where-Object { $_ -and $_.state -in 'previous', 'rolledback' -and $_.appId -and [string]$_.appId -ne [string]$App.appId })) { $out.Add(@{ appId = [string]$r.appId; version = [string]$r.version }) }
+    foreach ($r in @(@($App.releases) | Where-Object { $_ -and $_.state -in 'previous', 'rolledback', 'pilot' -and $_.appId -and [string]$_.appId -ne [string]$App.appId })) { $out.Add(@{ appId = [string]$r.appId; version = [string]$r.version }) }
     return $out.ToArray()
+}
+
+function Global:Get-WebRetireBlock {
+    # Why the Uninstall step of a retirement can't start ('' when it can) - said in the dialog too (2.38.42), not only after its confirm.
+    param($App, $Apps)
+    $name = $App.appName
+    if (@(@($App.releases) | Where-Object { $_ -and $_.state -eq 'pilot' }).Count) { return "A new version of $name is in pilot - withdraw it first (Updates)." }
+    # Apps that depend on it would install it again (and Intune won't delete it while they do).
+    $dependents = @(@($Apps) | Where-Object { $_.appName -ne $name -and $_.metadata -and @($_.metadata.dependencies) -contains $name } | ForEach-Object { $_.appName })
+    if ($dependents.Count) { return "$($dependents -join ', ') depend$(if ($dependents.Count -eq 1) { 's' }) on $name - take it out of their dependencies (and send them to Intune) first." }
+    return ''
 }
 
 function Global:Start-WebRetire {
     param($Data)
     $name = [string]$Data.name
-    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    $all = @((Read-WebCatalogRecords).Apps)
+    $a = $all | Where-Object { $_.appName -eq $name } | Select-Object -First 1
     if (-not $a) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
     if (-not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune - nothing to uninstall. Remove it from the catalog instead." } }
-    if (@(@($a.releases) | Where-Object { $_ -and $_.state -eq 'pilot' }).Count) { return @{ ok = $false; error = "A new version of $name is in pilot - withdraw it first (Updates)." } }
-    # Apps that depend on it would install it again (and Intune won't delete it while they do).
-    $dependents = @((Read-WebCatalogRecords).Apps | Where-Object { $_.appName -ne $a.appName -and $_.metadata -and @($_.metadata.dependencies) -contains $a.appName } | ForEach-Object { $_.appName })
-    if ($dependents.Count) { return @{ ok = $false; error = "$($dependents -join ', ') depend$(if ($dependents.Count -eq 1) { 's' }) on $name - take it out of their dependencies (and send them to Intune) first." } }
+    $block = Get-WebRetireBlock -App $a -Apps $all; if ($block) { return @{ ok = $false; error = $block } }
     $groups = @(Get-RetireGroups $a)
     if (-not $groups.Count) { return @{ ok = $false; error = "$name has no groups - nothing to uninstall. Finish the retirement to delete it from Intune." } }
     # Every version of it in Intune gets the Uninstall: devices on an older release aren't detected by the current one.
@@ -684,9 +698,10 @@ function Global:Get-WebRetireStatus {
     # How far a retirement is: the install status report's devices that still have the app.
     param($Data)
     $name = [string]$Data.name
-    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    $all = @((Read-WebCatalogRecords).Apps)
+    $a = $all | Where-Object { $_.appName -eq $name } | Select-Object -First 1
     if (-not $a) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
-    $base = [ordered]@{ ok = $true; app = $name; retiringSince = [string]$a.retiringSince; inIntune = [bool]$a.appId; groups = @(Get-RetireGroups $a) }
+    $base = [ordered]@{ ok = $true; app = $name; retiringSince = [string]$a.retiringSince; inIntune = [bool]$a.appId; groups = @(Get-RetireGroups $a); blocked = [string](Get-WebRetireBlock -App $a -Apps $all) }
     if (-not $a.appId -or -not $a.retiringSince) { return $base }
     # Every version in Intune counts - a device on an older release still has it.
     $ids = @(Get-WebRetireAppIds $a | ForEach-Object { $_.appId })

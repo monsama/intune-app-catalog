@@ -94,6 +94,7 @@ function Global:Get-WebCatalog {
                 office       = $apps[$i].office
                 officeText   = [string]$(if ($apps[$i].office) { Get-OfficeSettingsSummary $apps[$i].office })
                 previousVersions = @(Get-WebPreviousReleases $apps[$i] | ForEach-Object { [string]$_.version })
+                rolledBackVersions = @(@($apps[$i].releases) | Where-Object { $_ -and $_.state -eq 'rolledback' } | ForEach-Object { [string]$_.version })
                 releaseIds   = @(@($apps[$i].releases) | Where-Object { $_ -and $_.appId } | ForEach-Object { ([string]$_.appId).ToLowerInvariant() })
                 retiringSince = [string]$apps[$i].retiringSince
                 lobToRetire  = [string]$apps[$i].lobToRetire
@@ -400,7 +401,12 @@ function Global:Complete-WebJob {
                 $app.intuneAppType = $(if ($After.Office) { 'Microsoft 365 Apps (Windows 10 and later)' } elseif ($After.Store) { 'Microsoft Store app (new)' } else { 'Windows app (Win32)' })
                 # It replaced an MSI line-of-business app: that one stays in Intune until it is retired (asked for, not done here).
                 if ($After.ReplacesLobAppId -and $newId) { $app.lobToRetire = ([string]$After.ReplacesLobAppId).ToLowerInvariant() }
-                if (-not $app.metadata -and $defaults) { $app.metadata = $defaults }
+                if (-not $app.metadata -and $defaults) {
+                    # An update with the defaults kept Intune's Featured flag and supersedence (sent as $null) - so they are
+                    # stored as not recorded (2.38.42), not as the defaults' off / none that a later send would then set.
+                    if ($After.WasUpdate) { $defaults = $defaults.PSObject.Copy(); $defaults.isFeatured = $null; $defaults.supersedes = $null }
+                    $app.metadata = $defaults
+                }
                 if ($After.PackageStamp) { $app.packageStamp = [string]$After.PackageStamp }
                 # A managed app is sent pinned (its commands, detection and return codes written for its version, as they
                 # are today) - the file takes that form too (2.38.38), or Checks compared the old form with Intune for good.
@@ -435,7 +441,12 @@ function Global:Get-WebJobPoll {
     # New output since -offset, and the result once the step has ended.
     param($Data)
     $id = [string]$Data.job
-    if (-not $id -or -not $Global:App.WebJobs.ContainsKey($id)) { return @{ ok = $false; error = 'No such job.' } }
+    if (-not $id -or -not $Global:App.WebJobs.ContainsKey($id)) {
+        # Finished by another page's poll (a second tab, another admin following it - 2.38.42): its result and what
+        # came after are kept for a few minutes, so the page that started it still learns how it ended.
+        if ($id -and $Global:App.WebJobsDone -and $Global:App.WebJobsDone.ContainsKey($id)) { $d = $Global:App.WebJobsDone[$id]; return @{ ok = $true; text = ''; offset = [int64]$Data.offset; done = $true; result = $d.Result; after = $d.After } }
+        return @{ ok = $false; error = 'No such job.' }
+    }
     $job = $Global:App.WebJobs[$id]
     $job.LastPoll = Get-Date
     $offset = [int64]$Data.offset
@@ -490,7 +501,7 @@ function Global:Get-WebJobPoll {
                     catch { $done = @{ ok = $false; error = $_.Exception.Message }; Write-Log "[WARN] $($_.Exception.Message)" }
                 }
                 # What was just sent becomes the "sent" fingerprint (settings, or groups) - a later catalog change shows as Changes to send.
-                if ($response.result -and $response.result.success -and [string]$job.Mode -notmatch '^(Release|Promote|Advance|Withdraw|Retire|Finish|Delete|Roll)') {
+                if ($response.result -and $response.result.success -and [string]$job.Mode -notmatch '^(Release|Promote|Advance|Withdraw|Retire|Finish|Delete|Roll|Assign .+ to pilot$|Give )') {
                     $part = switch ([string]$job.Step) { 'createapp' { 's' } 'createstoreapp' { 's' } 'createofficeapp' { 's' } 'targetedassign' { 'g' } 'batchassign' { 'g' } default { '' } }
                     if ($part) { try { Set-WebSentStamp -Names @($job.HistoryApps) -Part $part } catch { Write-Log "[WARN] Couldn't note what was sent: $($_.Exception.Message)" } }
                 }
@@ -504,6 +515,9 @@ function Global:Get-WebJobPoll {
             if ($after.finished) {
                 if ($job.BusyApp) { Exit-WebAppBusy $job.BusyApp }
                 if ($null -ne $after.after) { $response.after = $after.after }
+                if (-not $Global:App.WebJobsDone) { $Global:App.WebJobsDone = [hashtable]::Synchronized(@{}) }
+                foreach ($k in @($Global:App.WebJobsDone.Keys)) { if (((Get-Date) - $Global:App.WebJobsDone[$k].At).TotalMinutes -gt 10) { $Global:App.WebJobsDone.Remove($k) } }
+                $Global:App.WebJobsDone[$id] = @{ Result = $response.result; After = $response.after; At = (Get-Date) }
                 Remove-Item -LiteralPath (@($job.Cleanup) + $job.Log + @($job.Result | Where-Object { $_ })) -Force -ErrorAction SilentlyContinue
                 Write-Log "$(if ($response.result -and $response.result.success) { '[OK]' } else { '[WARN]' }) Finished: $($job.Mode)."
             }

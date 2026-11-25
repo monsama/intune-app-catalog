@@ -89,6 +89,8 @@ function Global:Start-WebRelease {
     $own = -not $a.wingetId
     if (-not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune yet - Deploy it first; that is its first release." } }
     if (Get-WebAppRelease $a) { return @{ ok = $false; error = "$name already has a version in pilot - promote or withdraw it first." } }
+    # Being retired (2.38.42): a new version would supersede what is being uninstalled.
+    if ($a.retiringSince) { return @{ ok = $false; error = "$name is being retired - finish or undo the retirement (More > Retire) before releasing a new version." } }
     if (-not (Test-ReleaseVersionText $version)) { return @{ ok = $false; error = "'$version' isn't a version a release can pin (letters, digits and . - + _)." } }
     $current = [string]$(if ($a.metadata) { $a.metadata.appVersion })
     if ($version -eq $current) { return @{ ok = $false; error = "$name is at $version already." } }
@@ -100,7 +102,7 @@ function Global:Start-WebRelease {
     # No pilot groups: the release goes to everyone at once (2.38.41) - the page and the nightly run promote it right after.
     if (-not $own) { [void](Initialize-SharedWingetPackage) }
     $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $own -PackagePath $a.packagePath
-    if (-not $pkg.Found) { return @{ ok = $false; error = $(if ($own) { "$name has no package to upload - put the new installer in its folder and build it (the release dialog does both)." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging & folders builds it." }) } }
+    if (-not $pkg.Found) { return @{ ok = $false; error = $(if ($own) { "$name has no package to upload - upload the new installer in its editor (Install & detection) - this release then builds and sends it." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging & folders builds it." }) } }
     $defaults = $null
     $m = $a.metadata
     if (-not $m) { $defaults = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon $own; $m = $defaults }
@@ -120,6 +122,10 @@ function Global:Start-WebRelease {
     $config.IsFeatured = $null
     $busy = Enter-WebAppBusy -Name $a.appName -What "releasing $version"
     if ($busy) { return @{ ok = $false; error = $busy } }
+    # Asked again now that it is ours (2.38.42): the winget check above can take a while, and a release started
+    # meanwhile (the nightly run, another admin) would otherwise get a second pilot app in Intune.
+    $again = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+    if (-not $again -or (Get-WebAppRelease $again) -or [string]$again.appId -ne [string]$a.appId) { Exit-WebAppBusy $a.appName; return @{ ok = $false; error = "$name changed while this release was prepared (a version is in pilot now, or it was sent again) - open Release again." } }
     $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "Release $name $version" -BusyApp $a.appName `
         -After @{ Kind = 'release'; AppName = $a.appName; Version = $version; FastTrack = [bool]$Data.fastTrack; ProductCode = $(if ($own) { [string]$next.metadata.detectionRule.Msi_ProductCode } else { '' }) }
     if ($started.ok) { Write-Log "[INFO] Releasing $name $version to pilot$(if ($Data.fastTrack) { ' on the fast track' }) (a new app superseding $current)..." }
@@ -134,6 +140,9 @@ function Global:Complete-WebRelease {
     $version = [string]$After.Version
     $code = [string]$After.ProductCode
     $fast = [bool]$After.FastTrack
+    $have = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $After.AppName } | Select-Object -First 1
+    $other = if ($have) { Get-WebAppRelease $have }
+    if ($other -and [string]$other.appId -ne $newId) { return @{ ok = $false; error = "$($After.AppName) has another version in pilot ($($other.version)) - the new app $newId is in Intune but not recorded; delete it there." } }
     [void](Update-WebCatalogApp -Name $After.AppName -Change {
             param($app)
             $now = (Get-Date).ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture)
@@ -192,6 +201,10 @@ function Global:Start-WebReleaseAssign {
         AvailableSettings = $(if ($step -eq 'promote') { Get-ReleaseAvailableSettings } else { $null })
         RequiredSettings = $(if ($step -in 'pilot', 'advance', 'promote', 'rollback') { Get-ReleaseAssignmentSettings -Policy $Global:App.ReleasePolicy -FastTrack ([bool]($pilot -and $pilot.fastTrack -and $step -ne 'rollback')) -NowUtc ([datetime]::UtcNow) } else { $null })
     }
+    # Assigned to nobody (2.38.42): a pilot with no groups would wait for ever, a promote without the app's groups
+    # (they live only in the portal, or weren't read) would leave every version assigned to nobody once 'retire' runs.
+    if ($step -in 'pilot', 'advance' -and -not @($g.Required).Count) { return @{ ok = $false; error = "There are no pilot groups for $($a.appName) $($pilot.version) - promote it instead: it goes to everyone (Settings > Updates sets pilot groups)." } }
+    if ($step -in 'promote', 'rollback' -and -not (@($g.Required).Count + @($g.Available).Count)) { return @{ ok = $false; error = "$($a.appName) has no Required or Available groups in the catalog - $(if ($step -eq 'promote') { 'promoting' } else { 'rolling back' }) would leave it assigned to nobody. Add its groups (the editor's Assignments) first." } }
     $gid = Add-WebGroupIdsToConfig $config; if ($gid) { return @{ ok = $false; error = $gid } }
     # The pilot assignment done: the release is no longer waiting for it.
     $after = if ($step -eq 'pilot') { @{ Kind = 'pilotassigned'; AppName = [string]$a.appName; AppId = [string]$id } } else { @{} }
@@ -276,7 +289,7 @@ function Global:Complete-WebWithdrawal {
     $del = Invoke-WebGraph -Permission 'DeviceManagementApps.ReadWrite.All' -Action { param($Graph) [void](& $Graph "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$id" 'DELETE'); $true }
     # Deleted from Intune: forgotten. Not deleted (2.38.33): kept as a withdrawn ('rolledback') release without groups - forgetting it made
     # it "In Intune, not in the catalog", and Add to catalog a second entry; Delete old versions removes it later.
-    if ($del.ok) { $a.releases = @(@($a.releases) | Where-Object { $_.state -ne 'pilot' }) }
+    if ($del.ok) { $a.releases = @(@($a.releases) | Where-Object { $_.state -ne 'pilot' }); Remove-WebSupersedesIds -App $a -Ids @($id) }
     else { foreach ($r in @($a.releases | Where-Object { $_.state -eq 'pilot' })) { $r.state = 'rolledback'; $r | Add-Member -NotePropertyName unassigned -NotePropertyValue $true -Force } }
     # Not released again by itself (the nightly run) - Release new version by hand still can.
     $a.blockedVersions = @(@($a.blockedVersions) + [string]$pilot.version | Where-Object { $_ } | Select-Object -Unique)
@@ -504,6 +517,9 @@ function Global:Remove-WebOldReleases {
                 $gone = @($old | Where-Object { $removed -contains [string]$_.version } | ForEach-Object { [string]$_.appId })
 
                 $fresh.releases = @(@($fresh.releases) | Where-Object { $gone -notcontains [string]$_.appId })
+                # Out of the catalog's supersedence too (2.38.42): an earlier Pull may have stored them there - a deleted app
+                # stayed a difference for good, and every send asked Intune to supersede it.
+                Remove-WebSupersedesIds -App $fresh -Ids $gone
                 Write-WebAppFile -App $fresh
             }
         } | Out-Null
@@ -711,6 +727,14 @@ function Global:Enter-WebAppBusy {
         return ''
     }
     finally { [System.Threading.Monitor]::Exit($held.SyncRoot) }
+}
+
+function Global:Remove-WebSupersedesIds {
+    # The catalog's supersedence without -Ids (apps deleted from Intune). $null (not recorded) stays $null.
+    param($App, [string[]]$Ids)
+    if (-not $App.metadata -or $null -eq $App.metadata.supersedes -or -not @($Ids).Count) { return }
+    $low = @($Ids | ForEach-Object { ([string]$_).ToLowerInvariant() })
+    $App.metadata.supersedes = @(@($App.metadata.supersedes) | Where-Object { $_ -and $low -notcontains ([string]$_.appId).ToLowerInvariant() })
 }
 
 function Global:Exit-WebAppBusy {

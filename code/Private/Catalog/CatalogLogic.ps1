@@ -158,7 +158,34 @@ function Global:Get-CatalogMetadataSimpleFields {
         @{ Key = "installTimeMinutes"; Label = "Install time required"; Win32Only = $true }
         @{ Key = "deviceRestartBehavior"; Label = "Device restart behavior"; Win32Only = $true }
         @{ Key = "allowAvailableUninstall"; Label = "Allow available uninstall"; Win32Only = $true }
+        # Compared (and kept in Pull) since 2.38.42 - before, a change in the portal was neither seen nor asked about,
+        # and Pull replaced the catalog's silently. Compared by meaning (Get-MetadataCompareText).
+        @{ Key = "installContext"; Label = "Install context"; Win32Only = $true; Unrecorded = $true }
+        @{ Key = "minOSKey"; Label = "Minimum OS"; Win32Only = $true; Unrecorded = $true }
     )
+}
+
+function Global:Get-MetadataCompareText {
+    <#
+      Pure (2.38.42): a field's value the way it is compared - architectures in one order (the form posts them in
+      page order, Intune lists them x86,x64,arm64), install context in any case, minimum OS keys in one spelling
+      (W10_21H2, Windows10_21H2, v10_21H2, 21H2 are the same).
+    #>
+    param([string]$Key, [string]$Value)
+    switch ($Key) {
+        'architecture' { $t = @($Value -split '[,.\s]+' | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ }); return ((@('x86', 'x64', 'arm64') | Where-Object { $t -contains $_ }) + @($t | Where-Object { $_ -notin 'x86', 'x64', 'arm64' } | Sort-Object)) -join ',' }
+        'installContext' { return $Value.Trim().ToLowerInvariant() }
+        'minOSKey' {
+            $v = $Value.Trim()
+            if ($v -match '^(?i)(?:W|Windows)(10|11)_(.+)$') { $mj = $Matches[1]; $r = $Matches[2].ToUpperInvariant() }
+            elseif ($v -match '^(?i)v10_(.+)$') { $mj = '10'; $r = $Matches[1].ToUpperInvariant() }
+            elseif ($v -match '^(?i)(\d{4}|\d{2}H\d|2H20)$') { $mj = '10'; $r = $v.ToUpperInvariant() }
+            else { return $v.ToUpperInvariant() }
+            if ($r -eq '2H20') { $r = '20H2' }; if ($r -eq '0') { $r = '1607' }
+            return "W$($mj)_$r"
+        }
+    }
+    return $Value
 }
 
 function Global:Get-WingetIdFromInstallCommand {
@@ -413,8 +440,10 @@ function Global:Get-CatalogMetadataFieldDiffs {
         # whitespace to strip) and cheaper than maintaining a field-by-field
         # allowlist that's one rediscovery of this same bug away from
         # needing a third entry.
-        $compareLocal = (ConvertTo-CanonicalLineEndings $localVal).TrimEnd()
-        $compareRemote = (ConvertTo-CanonicalLineEndings $remoteVal).TrimEnd()
+        $compareLocal = Get-MetadataCompareText -Key $f.Key -Value (ConvertTo-CanonicalLineEndings $localVal).TrimEnd()
+        $compareRemote = Get-MetadataCompareText -Key $f.Key -Value (ConvertTo-CanonicalLineEndings $remoteVal).TrimEnd()
+        # Not read from Intune (an older step, another app type): not a difference.
+        if ($f.Key -in 'installContext', 'minOSKey' -and -not $compareRemote) { continue }
         if ($zeroEqualsBlankFields -contains $f.Key) {
             if ($compareLocal -eq "0") { $compareLocal = "" }
             if ($compareRemote -eq "0") { $compareRemote = "" }
@@ -443,8 +472,10 @@ function Global:Get-CatalogMetadataFieldDiffs {
             if ($FirstOnly) { return $diffs.ToArray() }
         }
 
-        $localRcSummary = if (@($Local.returnCodes).Count -gt 0) { (@($Local.returnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
-        $remoteRcSummary = if (@($Remote.returnCodes).Count -gt 0) { (@($Remote.returnCodes) | ConvertTo-Json -Compress -Depth 5) } else { "" }
+        # No return codes in the catalog are sent as Intune's five defaults (2.38.42) - compared as those, not as "".
+        $rcOf = { param($list) $l = @(@($list) | Where-Object { $_ }); if (-not $l.Count) { $l = @(Get-DefaultReturnCodes) }; (@($l | ForEach-Object { "$([int]$_.returnCode):$([string]$_.type)" }) | Sort-Object) -join ', ' }
+        $localRcSummary = & $rcOf $Local.returnCodes
+        $remoteRcSummary = & $rcOf $Remote.returnCodes
         if ($localRcSummary -ne $remoteRcSummary) {
             $diffs.Add([pscustomobject]@{ Field = "Return codes"; Local = $localRcSummary; Remote = $remoteRcSummary })
         }
@@ -501,7 +532,13 @@ function Global:Merge-CatalogMetadata {
         $merged | Add-Member -NotePropertyName "supersedes" -NotePropertyValue $Local.supersedes -Force
     }
     # A kept field the catalog emptied on purpose stays marked (2.38.34) - else the next send left Intune's value.
-    $keptCleared = @(@($Local.clearedFields) | Where-Object { $_ -and -not ([string]$merged.$_).Trim() })
+    $keptCleared = New-Object System.Collections.Generic.List[string]
+    foreach ($c in @(@($Local.clearedFields) | Where-Object { $_ -and -not ([string]$merged.$_).Trim() })) { $keptCleared.Add([string]$c) }
+    # Kept empty where Intune has a value (2.38.42): marked too - else a send never empties it and the difference stays.
+    foreach ($f in (Get-CatalogMetadataSimpleFields)) {
+        if ($f.Key -in 'owner', 'developer', 'informationUrl', 'privacyUrl', 'notes', 'appVersion' -and $KeepLocalFields -contains $f.Label -and -not ([string]$Local.($f.Key)).Trim() -and ([string]$Remote.($f.Key)).Trim() -and -not $keptCleared.Contains($f.Key)) { $keptCleared.Add($f.Key) }
+    }
+    $keptCleared = $keptCleared.ToArray()
     $merged | Add-Member -NotePropertyName "clearedFields" -NotePropertyValue $keptCleared -Force
     return $merged
 }
@@ -2594,6 +2631,11 @@ function Global:Get-DownloadCheckVerdict {
     return @{ status = 'unknown'; text = "The $Version download answered HTTP $StatusCode - it may need a browser or be blocked here; devices may still get it." }
 }
 
+function Global:Get-DefaultReturnCodes {
+    # Pure (2.38.42): Intune's five default return codes - what a send uses when the catalog has none (CreateApp).
+    return @(@{ c = 0; t = 'success' }, @{ c = 1707; t = 'success' }, @{ c = 3010; t = 'softReboot' }, @{ c = 1641; t = 'hardReboot' }, @{ c = 1618; t = 'retry' }) | ForEach-Object { [pscustomobject]@{ returnCode = $_.c; type = $_.t } }
+}
+
 function Global:Add-WingetRetryReturnCode {
     <#
       Pure: return codes with 9009 = retry added - what a winget install
@@ -2605,7 +2647,7 @@ function Global:Add-WingetRetryReturnCode {
     param($ReturnCodes)
     $list = @(@($ReturnCodes) | Where-Object { $_ } | ForEach-Object { [pscustomobject]@{ returnCode = [int]$_.returnCode; type = [string]$_.type } })
     if (-not $list.Count) {
-        $list = @(@{ c = 0; t = 'success' }, @{ c = 1707; t = 'success' }, @{ c = 3010; t = 'softReboot' }, @{ c = 1641; t = 'hardReboot' }, @{ c = 1618; t = 'retry' }) | ForEach-Object { [pscustomobject]@{ returnCode = $_.c; type = $_.t } }
+        $list = @(Get-DefaultReturnCodes)
     }
     # winget's own exit codes (2.38.34) - it turns the installer's into these, so 1618 and 3010 above never reach Intune:
     #   0x8A150102 another installation is in progress -> retry; 0x8A150109 a restart finishes it -> soft reboot;
@@ -2649,7 +2691,7 @@ function Global:Test-ReleasePinned {
         return ''
     }
     $r = $Metadata.detectionRule
-    $v = switch ([string]$(if ($r) { $r.Type })) { 'Msi' { [string]$r.Msi_Version } 'File' { [string]$r.File_DetectionValue } 'Registry' { [string]$r.Reg_DetectionValue } default { '' } }
+    $v = switch ([string]$(if ($r) { $r.Type })) { 'Msi' { [string]$r.Msi_Version } 'File' { [string]$r.File_DetectionValue } 'Registry' { [string]$r.Reg_DetectionValue } 'Script' { if ([string]$r.Script_Content -match "(?m)^\`$pattern = '(?:[^']|'')*'; \`$want = '((?:[^']|'')*)'") { $Matches[1].Replace("''", "'") } else { '' } } default { '' } }
     if ($v -ne $Version) { return "Its detection rule doesn't check for $Version - it would count the old version as installed." }
     return ''
 }
@@ -2716,7 +2758,7 @@ function Global:Get-MetadataWithoutOwnReleases {
       Pure (2.38.34): a copy of $Metadata without what an app's own release
       steps put there - the update path to its earlier releases (supersedes
       whose appId is one of $App.releases) and dependencies on
-      "<catalog app> <version> (superseded|pilot)", named back as the catalog
+      "<catalog app> <version> (superseded|pilot|rolled back)", named back as the catalog
       app. Used on both sides of a compare (Checks) and before Pull stores
       Intune's values, so neither shows nor stores a promotion as a difference.
       -LocalMetadata with -NoRelations: Intune's relationships couldn't be read,
@@ -2741,7 +2783,7 @@ function Global:Get-MetadataWithoutOwnReleases {
         $names = @{}; foreach ($c in @($CatalogNames)) { if ($c) { $names[([string]$c).ToLowerInvariant()] = [string]$c } }
         $deps = @(@($m.dependencies) | ForEach-Object {
                 $d = [string]$_
-                if ($d -match '^(.+?) \S+ \((superseded|pilot)\)$' -and $names.ContainsKey($Matches[1].ToLowerInvariant())) { $names[$Matches[1].ToLowerInvariant()] } else { $d }
+                if ($d -match '^(.+?) \S+ \((superseded|pilot|rolled back)\)$' -and $names.ContainsKey($Matches[1].ToLowerInvariant())) { $names[$Matches[1].ToLowerInvariant()] } else { $d }
             } | Select-Object -Unique)
         & $set 'dependencies' $deps
     }

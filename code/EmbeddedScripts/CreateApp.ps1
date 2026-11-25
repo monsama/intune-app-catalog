@@ -609,7 +609,8 @@ try {
                 "@odata.type"          = "#microsoft.graph.win32LobAppPowerShellScriptDetection"
                 # With a BOM when it holds anything outside ASCII (2.38.34): Windows PowerShell reads a .ps1 without one in
                 # the ANSI code page, where some UTF-8 letters end a quoted string. ASCII-only scripts go as before.
-                scriptContent          = [Convert]::ToBase64String($(if ([string]$Config.DetectionRule.Script_Content -match '[^\x00-\x7F]') { [byte[]](0xEF, 0xBB, 0xBF) + [System.Text.Encoding]::UTF8.GetBytes($Config.DetectionRule.Script_Content) } else { [System.Text.Encoding]::UTF8.GetBytes($Config.DetectionRule.Script_Content) }))
+                # One BOM only (2.38.42): a script read back with it (an earlier Pull) has it dropped before it gets its own.
+                scriptContent          = $(& { $sc = ([string]$Config.DetectionRule.Script_Content).TrimStart([char]0xFEFF); [Convert]::ToBase64String($(if ($sc -match '[^\x00-\x7F]') { [byte[]](0xEF, 0xBB, 0xBF) + [System.Text.Encoding]::UTF8.GetBytes($sc) } else { [System.Text.Encoding]::UTF8.GetBytes($sc) })) })
                 enforceSignatureCheck  = $false
                 runAs32Bit             = $false
             }

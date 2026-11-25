@@ -581,11 +581,14 @@ function Global:Set-WebAppInstaller {
     if (-not $a) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
     if (([string]$a.wingetId).Trim()) { return @{ ok = $false; error = "$name installs from winget - it has no installer of its own." } }
     $folder = Join-Path (Get-AppFolder -Kind Packages -Create) (Get-SafeFileNameForApp -Name $a.appName)
-    # Files there already: replaced, or added to (-mode) - asked, never guessed. A managed app's new version is a release.
+    # Files there already: replaced, or added to (-mode) - asked, never guessed. A managed app's new installer
+    # only goes into the folder (2.38.42): Release new version then builds and sends it, pilot first - the
+    # app's version and detection stay until then. Not while a version is in pilot (that release uses the folder).
     $have = @(Get-PackageFolderFiles $folder)
     $mode = [string]$Data.mode
+    $release = [bool]($a.managedUpdates -and $a.appId)
+    if ($release -and (Get-WebAppRelease $a)) { return @{ ok = $false; error = "A version of $($a.appName) is in pilot - promote or withdraw it before putting a new installer in its folder." } }
     if ($have.Count) {
-        if ($a.managedUpdates -and $a.appId) { return @{ ok = $false; error = "$($a.appName) has managed updates - a new installer goes through Release new version (Updates), pilot first." } }
         if ($mode -notin 'replace', 'add') { return @{ ok = $false; needsChoice = $true; existing = $have.Count; error = "Its packages folder already holds $(Format-Count ($have.Count) 'file') - replace them, or add to them?" } }
     }
     try { $written = @(Copy-WebUploadInto $u $folder -Replace:($mode -eq 'replace')) } catch { return @{ ok = $false; error = $_.Exception.Message } }
@@ -623,7 +626,7 @@ function Global:Set-WebAppInstaller {
     $what = if ($u.Kind -eq 'file') { $u.FileName } else { "$(Format-Count ($written.Count) 'file') from $($u.FileName)$(if ($setup) { " (setup: $setup)" })" }
     Add-WebHistoryEntry -App $a.appName -Kind 'catalog' -Text "$(if ($mode -eq 'replace') { 'Packages folder replaced with' } else { 'Added to its packages folder:' }) $what$(if ($filled.Count) { "; filled in: $($filled -join ', ')" })"
     Write-Log "[OK] $($a.appName): $what in its packages folder$(if ($filled.Count) { " - filled in $($filled -join ', ')" })."
-    return @{ ok = $true; fileName = $u.FileName; files = $written.Count; setup = $setup; filled = $filled.ToArray(); kind = [string]$(if ($info) { $info.Kind }); folder = $folder }
+    return @{ ok = $true; fileName = $u.FileName; files = $written.Count; setup = $setup; filled = $filled.ToArray(); release = $release; kind = [string]$(if ($info) { $info.Kind }); folder = $folder }
 }
 
 # ---------------------------------------------------------------- an app's packages folder, as files (2.34.0)
