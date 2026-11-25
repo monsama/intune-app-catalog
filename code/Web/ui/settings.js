@@ -379,8 +379,18 @@ function setPkgState(p) {
   $('pkgShared').textContent = p.sharedFound ? `Shared Winget package (init.intunewin): ready - built ${p.sharedBuilt ? fmtWhen(p.sharedBuilt) : ''}. Every Winget app deploys with it; the app builds it again by itself if it goes missing.`
     : 'Shared Winget package (init.intunewin): not there yet - the app builds it by itself before the first Winget app is sent (or Build it now).';
   $('pkgShared').className = 'certstatus ' + (p.sharedFound ? 'ok' : 'warn');
+  // Packages folders no app uses (2.38.47): named, with one button that moves them to Backups.
+  const orph = p.orphans || [];
+  $('pkgOrphans').hidden = !orph.length; $('btnCleanOrphans').hidden = !orph.length;
+  if (orph.length) { $('pkgOrphans').textContent = `${nWord(orph.length, 'packages folder')} no app in the catalog uses: ${orph.slice(0, 6).map(o => o.name).join(', ')}${orph.length > 6 ? ', ...' : ''} (${fmtMB(orph.reduce((t, o) => t + (o.size || 0), 0))}).`; $('pkgOrphans').className = 'certstatus warn'; }
   if ($('btnBuildShared')) { $('btnBuildShared').textContent = p.sharedFound ? 'Rebuild init.intunewin' : 'Build init.intunewin'; $('btnBuildShared').title = p.sharedFound ? 'Build it again - only needed if the file was damaged; its content never changes' : 'Build it now'; }
 }
+$('btnCleanOrphans').addEventListener('click', async () => {
+  if (!(await ask('Move the packages folders no app uses to the Backups folder?\n\nThey are deleted from there after 30 days - until then a folder can be put back.', { ok: 'Clean up', danger: false }))) return;
+  const r = await api('/api/packages-cleanup');
+  toast(r.ok ? `Moved ${nWord(r.moved.length, 'folder')} to the Backups folder.${r.failed.length ? ' Not moved: ' + r.failed.join('; ') : ''}` : r.error, !r.ok || !!r.failed.length);
+  const k = await api('/api/packaging'); if (k.ok) setPkgState(k);
+});
 async function loadPrefs() {
   const [p, k] = await Promise.all([api('/api/prefs'), api('/api/packaging')]);
   if (k.ok) setPkgState(k);

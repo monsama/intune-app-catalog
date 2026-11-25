@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.38.47
+
+- **Packages folders are cleaned up**:
+  - Remove from catalog takes an own installer's packages folder along (to the
+    Backups folder). Left behind, adding the app again under its name stopped
+    at "already holds files" - and on the server nobody could empty it.
+  - Adding an installer where an earlier app's files still lie asks to replace
+    them (they go to the Backups folder).
+  - Settings > Packaging lists packages folders no app uses, with Clean up
+    folders.
+  - Removed packages folders are deleted from the Backups folder after 30 days.
+
 ## 2.38.46
 
 - **Steps start in every container**: the path of the PowerShell the app runs

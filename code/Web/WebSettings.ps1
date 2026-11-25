@@ -273,8 +273,33 @@ function Global:Get-WebPackaging {
     return @{ ok = $true; toolPath = [string]$r.ToolPath; toolFound = [bool]$r.ToolFound; toolVersion = [string]$r.ToolVersion
         sharedPath = [string]$r.SharedPath; sharedFound = [bool]$r.SharedFound
         sharedBuilt = $(if ($r.SharedFound) { try { ([DateTimeOffset](Get-Item -LiteralPath $r.SharedPath).LastWriteTime).ToString('o') } catch { '' } } else { '' })
-        packagesFolder = (Get-AppFolder -Kind Packages)
+        packagesFolder = (Get-AppFolder -Kind Packages); orphans = @(Get-WebOrphanPackageFolders | ForEach-Object { [ordered]@{ name = $_.Name; size = [long]$_.Size } })
         packager = $(if ([string]$Global:App.Packager -in 'builtin', 'tool') { [string]$Global:App.Packager } else { 'auto' }); packagerInUse = (Get-PackagerChoice) }
+}
+
+function Global:Get-WebOrphanPackageFolders {
+    # Folders in the packages folder no app in the catalog uses (2.38.47) - left by an app removed before its folder went with it.
+    $root = Get-AppFolder -Kind Packages
+    if (-not (Test-Path -LiteralPath $root -PathType Container)) { return @() }
+    $apps = @((Read-WebCatalogRecords).Apps)
+    $used = @{}
+    foreach ($a in $apps) {
+        $used[(Get-SafeFileNameForApp -Name $a.appName).ToLowerInvariant()] = $true
+        if ($a.packagePath) { $used[(Split-Path ([string]$a.packagePath) -Leaf).ToLowerInvariant()] = $true; $used[(Split-Path (Split-Path ([string]$a.packagePath) -Parent) -Leaf).ToLowerInvariant()] = $true }
+    }
+    return @(Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction SilentlyContinue | Where-Object { -not $_.Name.StartsWith('.') -and -not $used.ContainsKey($_.Name.ToLowerInvariant()) } | ForEach-Object {
+            [pscustomobject]@{ Name = $_.Name; Size = [long](@(Get-ChildItem -LiteralPath $_.FullName -Recurse -File -Force -ErrorAction SilentlyContinue) | Measure-Object Length -Sum).Sum }
+        })
+}
+
+function Global:Invoke-WebOrphanPackageCleanup {
+    # The folders above moved to Backups\removed-packages (deleted from there after 30 days by the housekeeping).
+    $moved = New-Object System.Collections.Generic.List[string]; $failed = New-Object System.Collections.Generic.List[string]
+    foreach ($o in @(Get-WebOrphanPackageFolders)) {
+        try { $t = Move-WebPackageFolderToBackups -Name $o.Name; if ($t) { $moved.Add($o.Name) } } catch { $failed.Add("$($o.Name): $($_.Exception.Message)") }
+    }
+    if ($moved.Count) { Write-Log "[OK] Packages folders no app uses moved to Backups: $($moved -join ', ')." }
+    return @{ ok = $true; moved = $moved.ToArray(); failed = $failed.ToArray() }
 }
 
 function Global:Invoke-WebPackagingSetup {

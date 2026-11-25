@@ -528,7 +528,14 @@ function Global:Add-WebInstallerApp {
     $folderWasNew = -not (Test-Path -LiteralPath $folder)
     if (Test-Path -LiteralPath $folder) {
         $other = @(Get-PackageFolderFiles $folder | Where-Object { $u.Kind -ne 'file' -or $_.path -ne $u.FileName })
-        if ($other.Count) { return @{ ok = $false; error = "$folder already holds files ($($other[0].path)) - choose another name, or empty that folder first." } }
+        # No app in the catalog has this name (checked above), so they are left from an earlier one (2.38.47): moved to
+        # Backups when asked - on the server nobody could empty the folder by hand.
+        if ($other.Count -and $Data.replaceFolder) {
+            try { $kept = Move-WebPackageFolderToBackups -Name $name; Write-Log "[INFO] $folder held files from an earlier app - moved to $kept." }
+            catch { return @{ ok = $false; error = "The files already in $folder couldn't be moved aside: $($_.Exception.Message)" } }
+            $folderWasNew = $true
+        }
+        elseif ($other.Count) { return @{ ok = $false; folderTaken = $true; files = @($other | ForEach-Object { [string]$_.path }); error = "$folder already holds files from an earlier app ($(@($other | Select-Object -First 3 | ForEach-Object { $_.path }) -join ', '))." } }
     }
     try { [void](Copy-WebUploadInto $u $folder) } catch { return @{ ok = $false; error = $_.Exception.Message } }
     $setup = if ($u.Kind -eq 'file') { '' } else { [string]$u.Setup }

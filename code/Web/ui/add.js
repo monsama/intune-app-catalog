@@ -423,8 +423,11 @@ async function doAdd(send) {
         ...(added.length && !send ? [{ label: added.length === 1 ? 'Send to Intune' : `Send ${added.length}`, run: () => openDeploy(added) }] : [])]);
     }
     else if (addSrc === 'installer') {
-      const r = await api('/api/add-installer', { uploadId: aiUpload.id, name: $('aiName').value.trim(), publisher: $('aiPublisher').value.trim(), version: $('aiVersion').value.trim(),
-        installCommand: $('aiInstall').value.trim(), uninstallCommand: $('aiUninstall').value.trim(), managed: $('aiManaged').checked, detection: aiDetection(), ...groups });
+      const body = { uploadId: aiUpload.id, name: $('aiName').value.trim(), publisher: $('aiPublisher').value.trim(), version: $('aiVersion').value.trim(),
+        installCommand: $('aiInstall').value.trim(), uninstallCommand: $('aiUninstall').value.trim(), managed: $('aiManaged').checked, detection: aiDetection(), ...groups };
+      let r = await api('/api/add-installer', body);
+      // Files left from an earlier app of this name (2.38.47): replaced when asked - they go to the Backups folder.
+      if (!r.ok && r.folderTaken && await ask(`${r.error}\n\nReplace them with this upload? They are moved to the Backups folder, not deleted.`, { ok: 'Replace', danger: false })) r = await api('/api/add-installer', { ...body, replaceFolder: true });
       if (!r.ok) { showAddError(r.error); return; }
       aiUpload.added = true;
       const build = $('aiBuild').checked;

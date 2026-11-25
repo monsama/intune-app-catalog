@@ -459,9 +459,29 @@ function Global:Remove-WebApp {
     Backup-WebAppFile $file
     try { Remove-Item -LiteralPath $file -Force -ErrorAction Stop }
     catch { return @{ ok = $false; error = "Couldn't remove $file`: $($_.Exception.Message)" } }
+    # Its own installer's folder goes along (2.38.47) - left behind, adding the app again under its name stopped at
+    # "already holds files", and on the server nobody could empty it. Kept in Backups, not deleted.
+    $moved = ''
+    if (-not ([string]$app.wingetId).Trim()) {
+        try { $moved = Move-WebPackageFolderToBackups -Name $app.appName } catch { Write-Log "[WARN] $($name)'s packages folder stays where it is: $($_.Exception.Message)" }
+    }
     Add-WebHistoryEntry -App $name -Kind 'catalog' -Text 'Removed from the catalog'
-    Write-Log "[OK] Removed from the catalog: $name (a copy is in the Backups folder; nothing in Intune changed)."
-    return @{ ok = $true }
+    Write-Log "[OK] Removed from the catalog: $name (a copy is in the Backups folder$(if ($moved) { ', its packages folder too' }); nothing in Intune changed)."
+    return @{ ok = $true; packagesMoved = $moved }
+}
+
+function Global:Move-WebPackageFolderToBackups {
+    # An app's packages folder moved to Backups\removed-packages\<folder>_<time> - '' when it had none (or an empty one).
+    param([string]$Name)
+    $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $Name)
+    if (-not (Test-Path -LiteralPath $folder -PathType Container)) { return '' }
+    if (-not @(Get-ChildItem -LiteralPath $folder -Force -ErrorAction SilentlyContinue).Count) { Remove-Item -LiteralPath $folder -Force -ErrorAction SilentlyContinue; return '' }
+    if (Test-WebPathThroughLink $folder) { throw "$folder is a link - left as it is." }
+    $dir = Join-Path (Get-AppFolder -Kind Backups -Create) 'removed-packages'
+    if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+    $target = Join-Path $dir ((Split-Path $folder -Leaf) + '_' + (Get-Date).ToString('yyyyMMdd-HHmmss', [Globalization.CultureInfo]::InvariantCulture))
+    Move-Item -LiteralPath $folder -Destination $target -ErrorAction Stop
+    return $target
 }
 
 function Global:Get-WebAppBackups {
